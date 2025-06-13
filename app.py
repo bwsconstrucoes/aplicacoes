@@ -11,8 +11,31 @@ DROPBOX_TOKEN = os.getenv("DROPBOX_TOKEN")
 dbx = dropbox.Dropbox(DROPBOX_TOKEN)
 
 def upload_dropbox(bio, path):
-    dbx.files_upload(bio.getvalue(), path, mode=dropbox.files.WriteMode.overwrite)
-    url = dbx.sharing_create_shared_link_with_settings(path).url
+    base, ext = os.path.splitext(path)
+    contador = 1
+    while True:
+        try:
+            dbx.files_get_metadata(path)
+            path = f"{base}({contador}){ext}"
+            contador += 1
+        except dropbox.exceptions.ApiError as e:
+            if isinstance(e.error, dropbox.files.GetMetadataError) and e.error.is_path() and e.error.get_path().is_not_found():
+                break
+            else:
+                raise e
+
+    dbx.files_upload(bio.getvalue(), path, mode=dropbox.files.WriteMode.add)
+    try:
+        url = dbx.sharing_create_shared_link_with_settings(path).url
+    except dropbox.exceptions.ApiError as e:
+        if (e.error.is_shared_link_already_exists()):
+            links = dbx.sharing_list_shared_links(path=path).links
+            if links:
+                url = links[0].url
+            else:
+                raise e
+        else:
+            raise e
     return url.replace("?dl=0", "?dl=1")
 
 def schedule_delete(path, delay):
