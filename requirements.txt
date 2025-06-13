@@ -1,0 +1,6 @@
+flask
+dropbox
+requests
+PyPDF2
+fpdf
+pillow
