@@ -50,9 +50,14 @@ def compilar_pdf():
             img.save(tmp.name); tmp.close()
             f = FPDF(); f.add_page(); f.image(tmp.name, x=0, y=0, w=210, h=297)
             os.unlink(tmp.name)
-            buf = BytesIO(); f.output(buf); buf.seek(0)
-            reader = PdfReader(buf)
-            for p in reader.pages: writer.add_page(p)
+            tmp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+            f.output(tmp_pdf.name)
+            tmp_pdf.close()
+            with open(tmp_pdf.name, "rb") as pdf_img:
+                reader = PdfReader(pdf_img)
+                for p in reader.pages:
+                    writer.add_page(p)
+            os.unlink(tmp_pdf.name)
 
     out = BytesIO(); writer.write(out); out.seek(0)
 
