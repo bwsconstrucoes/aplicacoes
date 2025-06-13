@@ -1,68 +1,76 @@
-from flask import Flask, request, jsonify, send_file
-import os, requests, threading, time, tempfile
+from flask import Flask, request, jsonify
+from PyPDF2 import PdfMerger
+import os
+import uuid
+import requests
 import dropbox
-from io import BytesIO
-from PyPDF2 import PdfReader, PdfWriter
-from fpdf import FPDF
-from PIL import Image
 
 app = Flask(__name__)
-DROPBOX_TOKEN = os.getenv("DROPBOX_TOKEN")
-dbx = dropbox.Dropbox(DROPBOX_TOKEN)
 
-def upload_dropbox(bio, path):
-    dbx.files_upload(bio.getvalue(), path, mode=dropbox.files.WriteMode.overwrite)
-    url = dbx.sharing_create_shared_link_with_settings(path).url
-    return url.replace("?dl=0", "?dl=1")
+# Token fixo do Dropbox
+dbx = dropbox.Dropbox(os.getenv("DROPBOX_TOKEN"))
 
-def schedule_delete(path, delay):
-    def _del():
-        time.sleep(delay)
-        try: dbx.files_delete_v2(path)
-        except: pass
-    threading.Thread(target=_del).start()
+def upload_dropbox(file_path, dropbox_path):
+    with open(file_path, "rb") as f:
+        dbx.files_upload(f.read(), dropbox_path, mode=dropbox.files.WriteMode.overwrite)
+    shared_link_metadata = dbx.sharing_create_shared_link_with_settings(dropbox_path)
+    return shared_link_metadata.url.replace("?dl=0", "?dl=1")
 
-@app.route('/compilar', methods=['POST'])
+@app.route("/")
+def index():
+    return "API de Processamento de PDFs Online!"
+
+@app.route("/compilar", methods=["POST"])
 def compilar_pdf():
-    data = request.get_json() or {}
-    links = data.get("links", [])
-    if not links: return jsonify({"erro": "Nenhum link."}), 400
-    pasta = data.get("pasta", "/pdf-compilados")
-    deletar = data.get("deletar", False)
-    salvar = data.get("salvar", True)
+    try:
+        data = request.get_json()
 
-    writer = PdfWriter()
-    for url in links:
-        r = requests.get(url)
-        if r.status_code != 200: continue
-        ct = r.headers.get("Content-Type", "")
-        bio = BytesIO(r.content)
-        if "pdf" in ct:
-            reader = PdfReader(bio)
-            for p in reader.pages:
-                writer.add_page(p)
-        elif "image" in ct:
-            img = Image.open(bio).convert("RGB")
-            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-            img.save(tmp.name); tmp.close()
-            f = FPDF(); f.add_page(); f.image(tmp.name, x=0, y=0, w=210, h=297)
-            os.unlink(tmp.name)
-            buf = BytesIO(); f.output(buf); buf.seek(0)
-            reader = PdfReader(buf)
-            for p in reader.pages: writer.add_page(p)
+        links = data.get("links")
+        pasta = data.get("pasta", "")
+        deletar = data.get("deletar", False)
+        salvar = data.get("salvar", False)
+        nome_arquivo = data.get("nome_arquivo")
 
-    out = BytesIO(); writer.write(out); out.seek(0)
+        if not links:
+            return jsonify({"erro": "Nenhum link fornecido."}), 400
 
-    if not salvar:
-        return send_file(out, mimetype='application/pdf', as_attachment=True, download_name="compilado.pdf")
+        if nome_arquivo and not nome_arquivo.lower().endswith(".pdf"):
+            nome_arquivo += ".pdf"
 
-    path = f"{pasta}/compilado.pdf"
-    link = upload_dropbox(out, path)
-    if deletar: schedule_delete(path, int(data.get("auto_delete", 300)))
-    return jsonify({"status": "ok", "link": link})
+        nome_arquivo = nome_arquivo or f"{uuid.uuid4().hex}.pdf"
+        output_path = f"/tmp/{nome_arquivo}"
 
-# pdf2texto continua igual...
+        merger = PdfMerger()
+        arquivos_baixados = []
+
+        for url in links:
+            response = requests.get(url)
+            if response.status_code == 200:
+                temp_path = f"/tmp/{uuid.uuid4().hex}.pdf"
+                with open(temp_path, "wb") as f:
+                    f.write(response.content)
+                arquivos_baixados.append(temp_path)
+                merger.append(temp_path)
+            else:
+                return jsonify({"erro": f"Erro ao baixar: {url}"}), 400
+
+        merger.write(output_path)
+        merger.close()
+
+        link = None
+        if salvar:
+            dropbox_path = f"{pasta}/{nome_arquivo}"
+            link = upload_dropbox(output_path, dropbox_path)
+
+        if deletar:
+            for arquivo in arquivos_baixados:
+                os.remove(arquivo)
+            os.remove(output_path)
+
+        return jsonify({"link": link or f"Arquivo gerado: {nome_arquivo}"})
+
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(debug=True)
