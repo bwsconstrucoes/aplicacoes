@@ -7,10 +7,36 @@ from fpdf import FPDF
 from PIL import Image
 
 app = Flask(__name__)
-DROPBOX_TOKEN = os.getenv("DROPBOX_TOKEN")
-dbx = dropbox.Dropbox(DROPBOX_TOKEN)
+
+DROPBOX_APP_KEY = os.getenv("DROPBOX_APP_KEY")
+DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET")
+DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
+DROPBOX_TOKEN = None
+DROPBOX_TOKEN_EXPIRATION = 0
+
+def get_dropbox_client():
+    global DROPBOX_TOKEN, DROPBOX_TOKEN_EXPIRATION
+    if not DROPBOX_TOKEN or time.time() > DROPBOX_TOKEN_EXPIRATION:
+        refresh_dropbox_token()
+    return dropbox.Dropbox(DROPBOX_TOKEN)
+
+def refresh_dropbox_token():
+    global DROPBOX_TOKEN, DROPBOX_TOKEN_EXPIRATION
+    response = requests.post("https://api.dropbox.com/oauth2/token", data={
+        "grant_type": "refresh_token",
+        "refresh_token": DROPBOX_REFRESH_TOKEN,
+        "client_id": DROPBOX_APP_KEY,
+        "client_secret": DROPBOX_APP_SECRET,
+    })
+    if response.status_code == 200:
+        data = response.json()
+        DROPBOX_TOKEN = data["access_token"]
+        DROPBOX_TOKEN_EXPIRATION = time.time() + data.get("expires_in", 14400) - 60
+    else:
+        raise Exception("Erro ao renovar token do Dropbox")
 
 def upload_dropbox(bio, path):
+    dbx = get_dropbox_client()
     base, ext = os.path.splitext(path)
     contador = 1
     while True:
@@ -41,8 +67,11 @@ def upload_dropbox(bio, path):
 def schedule_delete(path, delay):
     def _del():
         time.sleep(delay)
-        try: dbx.files_delete_v2(path)
-        except: pass
+        try:
+            dbx = get_dropbox_client()
+            dbx.files_delete_v2(path)
+        except:
+            pass
     threading.Thread(target=_del).start()
 
 @app.route('/compilar', methods=['POST'])
@@ -92,7 +121,29 @@ def compilar_pdf():
     if deletar: schedule_delete(path, int(data.get("auto_delete", 300)))
     return jsonify({"status": "ok", "link": link})
 
-# pdf2texto continua igual...
+@app.route('/pdf2texto', methods=['POST'])
+def pdf2texto():
+    data = request.get_json() or {}
+    url = data.get("url")
+    if not url: return jsonify({"erro": "Informe a URL do PDF."}), 400
+
+    r = requests.get(url)
+    if r.status_code != 200:
+        return jsonify({"erro": "Não foi possível baixar o PDF."}), 400
+
+    bio = BytesIO(r.content)
+    reader = PdfReader(bio)
+    texto = "\n".join([page.extract_text() or "" for page in reader.pages])
+    return jsonify({"status": "ok", "texto": texto})
+
+@app.route('/token-status', methods=['GET'])
+def token_status():
+    try:
+        dbx = get_dropbox_client()
+        account = dbx.users_get_current_account()
+        return jsonify({"status": "ok", "account": account.name.display_name})
+    except Exception as e:
+        return jsonify({"status": "erro", "detalhes": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
