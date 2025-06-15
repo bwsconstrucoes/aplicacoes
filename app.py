@@ -8,6 +8,7 @@ from PIL import Image
 
 app = Flask(__name__)
 
+# Configurações de ambiente
 DROPBOX_APP_KEY = os.getenv("DROPBOX_APP_KEY")
 DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
@@ -29,24 +30,25 @@ def refresh_dropbox_token():
         "client_secret": DROPBOX_APP_SECRET,
     })
     if resp.status_code == 200:
-        d = resp.json()
-        DROPBOX_TOKEN = d["access_token"]
-        DROPBOX_TOKEN_EXPIRATION = time.time() + d.get("expires_in", 14400) - 60
+        data = resp.json()
+        DROPBOX_TOKEN = data["access_token"]
+        DROPBOX_TOKEN_EXPIRATION = time.time() + int(data.get("expires_in", 14400)) - 60
     else:
-        raise Exception("Erro ao renovar token Dropbox: " + resp.text)
+        raise Exception(f"Erro ao renovar token: {resp.text}")
 
-def upload_dropbox(bio, pasta, nome_arquivo):
+def upload_dropbox(bio, path):
     dbx = get_dropbox_client()
-    path = f"{pasta.rstrip('/')}/{nome_arquivo}"
     base, ext = os.path.splitext(path)
     contador = 1
+    # renomear se arquivo já existe
     while True:
         try:
             dbx.files_get_metadata(path)
             path = f"{base}({contador}){ext}"
             contador += 1
         except dropbox.exceptions.ApiError as e:
-            if e.error.get_path().is_not_found():
+            err = e.error
+            if hasattr(err, 'get_path') and err.get_path().is_not_found():
                 break
             raise
     dbx.files_upload(bio.getvalue(), path, mode=dropbox.files.WriteMode.add)
@@ -55,87 +57,115 @@ def upload_dropbox(bio, pasta, nome_arquivo):
     except dropbox.exceptions.ApiError as e:
         if e.error.is_shared_link_already_exists():
             links = dbx.sharing_list_shared_links(path=path).links
-            url = links[0].url if links else None
+            url = links[0].url if links else ""
         else:
             raise
-    return url.replace("?dl=0", "?dl=1") if url else None
+    return url.replace("?dl=0", "?dl=1")
 
-def extract_text_from_pdf(bio):
-    reader = PdfReader(bio)
-    return "\n".join([page.extract_text() or "" for page in reader.pages])
-
-def convert_image_to_pdf_bytes(img_bio):
-    img = Image.open(img_bio).convert("RGB")
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-    img.save(tmp.name); tmp.close()
-    f = FPDF(); f.add_page(); f.image(tmp.name, x=0, y=0, w=210, h=297)
-    os.unlink(tmp.name)
-    tmp_pdf = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    f.output(tmp_pdf.name); tmp_pdf.close()
-    with open(tmp_pdf.name, "rb") as pdf_img:
-        content = BytesIO(pdf_img.read())
-    os.unlink(tmp_pdf.name)
-    return content
+def schedule_delete(path, delay):
+    def _del():
+        time.sleep(delay)
+        try:
+            dbx = get_dropbox_client()
+            dbx.files_delete_v2(path)
+        except:
+            pass
+    threading.Thread(target=_del, daemon=True).start()
 
 @app.route('/compilar', methods=['POST'])
-def compilar_pdf():
+def compilar():
     data = request.get_json() or {}
-    inputs = []
-
-    for link in data.get("links", []):
-        inputs.append({"filename": link.split("/")[-1], "link": link})
-
-    for att in data.get("attachments", []):
-        if att.get("base64") and att.get("filename"):
-            inputs.append({"filename": att["filename"], "base64": att["base64"]})
-
-    if not inputs:
-        return jsonify({"erro": "Informe URL ou attachments em base64."}), 400
-
+    attachments = data.get("attachments") or []
+    links = data.get("links") or []
     pasta = data.get("pasta", "/pdf-compilados")
     deletar = data.get("deletar", False)
     salvar = data.get("salvar", True)
+    nome_arquivo = data.get("nome_arquivo", "compilado.pdf")
+    if not nome_arquivo.lower().endswith(".pdf"):
+        nome_arquivo += ".pdf"
+
+    items = []
+    # processar links
+    for url in links:
+        items.append({"filename": os.path.basename(url), "url": url})
+    # processar base64
+    for att in attachments:
+        items.append({"filename": att.get("filename"), "base64": att.get("base64")})
 
     results = []
-
-    for item in inputs:
-        bio = BytesIO()
-        if "link" in item:
-            resp = requests.get(item["link"])
-            if resp.status_code != 200:
+    for item in items:
+        filename = item["filename"]
+        bio = None
+        if "url" in item:
+            r = requests.get(item["url"])
+            if r.status_code != 200:
                 continue
-            bio = BytesIO(resp.content)
-        else:
-            bio = BytesIO(base64.b64decode(item["base64"]))
+            bio = BytesIO(r.content)
+        elif "base64" in item:
+            try:
+                bio = BytesIO(base64.b64decode(item["base64"]))
+            except:
+                continue
 
-        text = ""
-        link_url = None
+        if not bio:
+            continue
 
+        reader = PdfReader(bio)
+        texto_paginas = [page.extract_text() or "" for page in reader.pages]
+
+        full_writer = PdfWriter()
         bio.seek(0)
-        header = bio.read(512)
-        bio.seek(0)
-        if header[:4] == b"%PDF":
-            text = extract_text_from_pdf(bio)
-        else:
-            pdf_bio = convert_image_to_pdf_bytes(bio)
-            text = extract_text_from_pdf(pdf_bio)
-            bio = pdf_bio
+        for p in reader.pages:
+            full_writer.add_page(p)
+        out = BytesIO()
+        full_writer.write(out)
+        out.seek(0)
 
+        link = None
         if salvar:
-            nome = item["filename"] if item["filename"].lower().endswith(".pdf") else item["filename"] + ".pdf"
-            link_url = upload_dropbox(bio, pasta, nome)
+            path = f"{pasta}/{filename}"
+            link = upload_dropbox(out, path)
             if deletar:
-                # opcional: agendar exclusão
-                ...
-        results.append({"filename": item["filename"], "texto": text, "link": link_url})
+                delay = int(data.get("auto_delete", 300))
+                schedule_delete(path, delay)
+
+        results.append({
+            "filename": filename,
+            "texto": texto_paginas,
+            "link": link
+        })
 
     return jsonify({"status": "ok", "results": results})
+
+@app.route('/pdf2texto', methods=['POST'])
+def pdf2texto():
+    data = request.get_json() or {}
+    url = data.get("url")
+    b64 = data.get("base64")
+    if not url and not b64:
+        return jsonify({"erro": "Informe a URL ou o conteúdo base64 do PDF."}), 400
+
+    if url:
+        r = requests.get(url)
+        if r.status_code != 200:
+            return jsonify({"erro": "Não foi possível baixar o PDF."}), 400
+        bio = BytesIO(r.content)
+    else:
+        try:
+            bio = BytesIO(base64.b64decode(b64))
+        except:
+            return jsonify({"erro": "Base64 inválida."}), 400
+
+    reader = PdfReader(bio)
+    texto_paginas = [page.extract_text() or "" for page in reader.pages]
+    return jsonify({"status": "ok", "texto": texto_paginas})
 
 @app.route('/token-status', methods=['GET'])
 def token_status():
     try:
-        acc = get_dropbox_client().users_get_current_account()
-        return jsonify({"status": "ok", "account": acc.name.display_name})
+        dbx = get_dropbox_client()
+        account = dbx.users_get_current_account()
+        return jsonify({"status": "ok", "account": account.name.display_name})
     except Exception as e:
         return jsonify({"status": "erro", "detalhes": str(e)}), 500
 
