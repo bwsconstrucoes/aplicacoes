@@ -1,6 +1,10 @@
 from flask import Flask, request, jsonify, send_file
-import os, requests, threading, time, tempfile, base64, binascii
+import os, requests, threading, time, tempfile
+import base64
+import binascii
+import re
 import dropbox
+import fitz  # PyMuPDF
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
 from fpdf import FPDF
@@ -8,6 +12,7 @@ from PIL import Image
 
 app = Flask(__name__)
 
+# Configurações de ambiente
 DROPBOX_APP_KEY = os.getenv("DROPBOX_APP_KEY")
 DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
@@ -31,7 +36,7 @@ def refresh_dropbox_token():
     if resp.status_code == 200:
         data = resp.json()
         DROPBOX_TOKEN = data["access_token"]
-        DROPBOX_TOKEN_EXPIRATION = time.time() + int(data.get("expires_in",14400)) - 60
+        DROPBOX_TOKEN_EXPIRATION = time.time() + int(data.get("expires_in", 14400)) - 60
     else:
         raise Exception(f"Erro ao renovar token: {resp.text}")
 
@@ -71,6 +76,11 @@ def schedule_delete(path, delay):
             pass
     threading.Thread(target=_del, daemon=True).start()
 
+def extrair_com_pymupdf(bio):
+    bio.seek(0)
+    doc = fitz.open(stream=bio.read(), filetype="pdf")
+    return [p.get_text("text") for p in doc]
+
 @app.route('/compilar', methods=['POST'])
 def compilar():
     data = request.get_json(silent=True) or {}
@@ -83,12 +93,10 @@ def compilar():
     if not nome_arquivo.lower().endswith(".pdf"):
         nome_arquivo += ".pdf"
 
-    print("DEBUG attachments:", attachments)
     items = []
     for url in links or []:
         items.append({"filename": os.path.basename(url), "url": url})
     for att in attachments or []:
-        print("DEBUG att keys:", att.keys())
         filename = att.get("filename")
         if "base64" in att:
             items.append({"filename": filename, "base64": att.get("base64")})
@@ -99,32 +107,25 @@ def compilar():
     for item in items:
         filename = item.get("filename")
         bio = None
-
         if item.get("url"):
             r = requests.get(item["url"])
-            if r.status_code != 200:
-                print("DEBUG url failed:", item["url"])
-                continue
-            bio = BytesIO(r.content)
+            if r.status_code == 200:
+                bio = BytesIO(r.content)
         elif item.get("base64"):
             try:
                 bio = BytesIO(base64.b64decode(item["base64"]))
-            except Exception as e:
-                print("DEBUG base64 decode failed:", e)
-                continue
+            except:
+                pass
         elif item.get("hex"):
             try:
                 bio = BytesIO(binascii.unhexlify(item["hex"]))
-            except Exception as e:
-                print("DEBUG hex decode failed:", e)
-                continue
-
+            except:
+                pass
         if not bio:
             continue
 
         reader = PdfReader(bio)
         texto_paginas = [page.extract_text() or "" for page in reader.pages]
-
         full_writer = PdfWriter()
         bio.seek(0)
         for p in reader.pages:
@@ -140,57 +141,35 @@ def compilar():
             if deletar:
                 schedule_delete(path, int(data.get("auto_delete", 300)))
 
-        results.append({
-            "filename": filename,
-            "texto": texto_paginas,
-            "link": link
-        })
+        results.append({"filename": filename, "texto": texto_paginas, "link": link})
 
     return jsonify({"status": "ok", "results": results})
 
 @app.route('/pdf2texto', methods=['POST'])
 def pdf2texto():
     data = request.get_json(silent=True) or {}
-    print("📥 DEBUG /pdf2texto received keys:", data.keys())
-    attachments = data.get("attachments") or []
-    print("📥 DEBUG attachments length:", len(attachments))
-    for i, att in enumerate(attachments):
-        print(f"📥 DEBUG attachment[{i}] keys:", att.keys())
-
+    attachments = data.get("attachments", [])
     if not attachments:
         return jsonify({"erro": "Informe ao menos um anexo em attachments."}), 400
 
-    # Vamos processar somente o primeiro anexo por enquanto
     att = attachments[0]
     raw = att.get("base64") or att.get("data") or att.get("hex")
     if not raw:
         return jsonify({"erro": "Anexo presente, mas sem base64/data/hex."}), 400
 
-    # Detecta e decodifica conforme formato
-    bio = None
     try:
-        # se for hex
-        import re
         if re.fullmatch(r"[0-9A-Fa-f]+", raw.strip()):
-            bio = BytesIO(bytes.fromhex(raw.strip()))
+            bio = BytesIO(binascii.unhexlify(raw.strip()))
         else:
             bio = BytesIO(base64.b64decode(raw))
     except Exception as e:
-        print("⚠️ DEBUG decoding error:", str(e))
         return jsonify({"erro": "Falha ao decodificar o anexo."}), 400
 
-    # Verifica se é realmente um PDF
-    sig = bio.getvalue()[:4]
-    if sig != b"%PDF":
+    if bio.getvalue()[:4] != b"%PDF":
         return jsonify({"erro": "Conteúdo do anexo não parece PDF."}), 400
 
-    # Lê texto
-    bio.seek(0)
-    reader = PdfReader(bio)
-    texts = [page.extract_text() or "" for page in reader.pages]
-
-    return jsonify({"status": "ok", "texto": texts})
-
+    textos = extrair_com_pymupdf(bio)
+    return jsonify({"status": "ok", "texto": textos})
 
 @app.route('/token-status', methods=['GET'])
 def token_status():
