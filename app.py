@@ -152,39 +152,45 @@ def compilar():
 def pdf2texto():
     data = request.get_json(silent=True) or {}
     print("📥 DEBUG /pdf2texto received keys:", data.keys())
-    print("📥 DEBUG full payload:", data)
+    attachments = data.get("attachments") or []
+    print("📥 DEBUG attachments length:", len(attachments))
+    for i, att in enumerate(attachments):
+        print(f"📥 DEBUG attachment[{i}] keys:", att.keys())
 
-    url = data.get("url")
-    b64 = data.get("base64") or data.get("data") or data.get("hex")
-    if not url and not b64:
-        return jsonify({"erro":"Informe a URL, base64 ou hex do PDF."}), 400
+    if not attachments:
+        return jsonify({"erro": "Informe ao menos um anexo em attachments."}), 400
 
+    # Vamos processar somente o primeiro anexo por enquanto
+    att = attachments[0]
+    raw = att.get("base64") or att.get("data") or att.get("hex")
+    if not raw:
+        return jsonify({"erro": "Anexo presente, mas sem base64/data/hex."}), 400
 
-    url = data.get("url")
-    b64 = data.get("base64")
-    hexstr = data.get("hex")
-    if not (url or b64 or hexstr):
-        return jsonify({"erro": "Informe a URL, base64 ou hex do PDF."}), 400
+    # Detecta e decodifica conforme formato
+    bio = None
+    try:
+        # se for hex
+        import re
+        if re.fullmatch(r"[0-9A-Fa-f]+", raw.strip()):
+            bio = BytesIO(bytes.fromhex(raw.strip()))
+        else:
+            bio = BytesIO(base64.b64decode(raw))
+    except Exception as e:
+        print("⚠️ DEBUG decoding error:", str(e))
+        return jsonify({"erro": "Falha ao decodificar o anexo."}), 400
 
-    if url:
-        r = requests.get(url)
-        if r.status_code != 200:
-            return jsonify({"erro": "Não foi possível baixar o PDF."}), 400
-        bio = BytesIO(r.content)
-    elif b64:
-        try:
-            bio = BytesIO(base64.b64decode(b64))
-        except:
-            return jsonify({"erro": "Base64 inválida."}), 400
-    else:
-        try:
-            bio = BytesIO(binascii.unhexlify(hexstr))
-        except:
-            return jsonify({"erro": "Hex inválido."}), 400
+    # Verifica se é realmente um PDF
+    sig = bio.getvalue()[:4]
+    if sig != b"%PDF":
+        return jsonify({"erro": "Conteúdo do anexo não parece PDF."}), 400
 
+    # Lê texto
+    bio.seek(0)
     reader = PdfReader(bio)
-    texto_paginas = [page.extract_text() or "" for page in reader.pages]
-    return jsonify({"status": "ok", "texto": texto_paginas})
+    texts = [page.extract_text() or "" for page in reader.pages]
+
+    return jsonify({"status": "ok", "texto": texts})
+
 
 @app.route('/token-status', methods=['GET'])
 def token_status():
