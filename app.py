@@ -40,7 +40,6 @@ def upload_dropbox(bio, path):
     dbx = get_dropbox_client()
     base, ext = os.path.splitext(path)
     contador = 1
-    # renomear se arquivo já existe
     while True:
         try:
             dbx.files_get_metadata(path)
@@ -85,10 +84,8 @@ def compilar():
         nome_arquivo += ".pdf"
 
     items = []
-    # processar links
     for url in links:
         items.append({"filename": os.path.basename(url), "url": url})
-    # processar base64
     for att in attachments:
         items.append({"filename": att.get("filename"), "base64": att.get("base64")})
 
@@ -98,8 +95,7 @@ def compilar():
         bio = None
         if "url" in item:
             r = requests.get(item["url"])
-            if r.status_code != 200:
-                continue
+            if r.status_code != 200: continue
             bio = BytesIO(r.content)
         elif "base64" in item:
             try:
@@ -107,8 +103,7 @@ def compilar():
             except:
                 continue
 
-        if not bio:
-            continue
+        if not bio: continue
 
         reader = PdfReader(bio)
         texto_paginas = [page.extract_text() or "" for page in reader.pages]
