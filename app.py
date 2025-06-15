@@ -141,28 +141,60 @@ def compilar():
 def pdf2texto():
     data = request.get_json(silent=True) or {}
     attachments = data.get("attachments", [])
+    pasta = data.get("pasta", "/pdf2texto-files")
+    salvar = data.get("salvar", False)
+
     if not attachments:
         return jsonify({"erro": "Informe ao menos um anexo em attachments."}), 400
 
-    att = attachments[0]
-    raw = att.get("base64") or att.get("data") or att.get("hex")
-    if not raw:
-        return jsonify({"erro": "Anexo presente, mas sem base64/data/hex."}), 400
+    results = []
+    for att in attachments:
+        filename = att.get("filename", "anexo.pdf")
+        raw = att.get("base64") or att.get("data") or att.get("hex")
+        if not raw:
+            continue
 
-    try:
-        import re
-        if re.fullmatch(r"[0-9A-Fa-f]+", raw.strip()):
-            bio = BytesIO(bytes.fromhex(raw.strip()))
-        else:
-            bio = BytesIO(base64.b64decode(raw))
-    except:
-        return jsonify({"erro": "Falha ao decodificar o anexo."}), 400
+        try:
+            import re
+            if re.fullmatch(r"[0-9A-Fa-f]+", raw.strip()):
+                bio = BytesIO(bytes.fromhex(raw.strip()))
+            else:
+                bio = BytesIO(base64.b64decode(raw))
+        except:
+            continue
 
-    if bio.getvalue()[:4] != b"%PDF":
-        return jsonify({"erro": "Conteúdo do anexo não parece PDF."}), 400
+        if bio.getvalue()[:4] != b"%PDF":
+            continue
 
-    textos = extrair_com_layout(bio)
-    return jsonify({"status": "ok", "texto": textos})
+        reader = PdfReader(bio)
+        page_texts = []
+        page_links = []
+
+        for idx, page in enumerate(reader.pages, start=1):
+            text = page.extract_text() or ""
+            page_texts.append(text)
+
+            if salvar:
+                writer = PdfWriter()
+                writer.add_page(page)
+                out = BytesIO()
+                writer.write(out)
+                out.seek(0)
+                link = upload_dropbox(out, f"{pasta}/{filename[:-4]}_page{idx}.pdf")
+                page_links.append(link)
+            else:
+                page_links.append(None)
+
+        results.append({
+            "filename": filename,
+            "paginas": [
+                {"numero": i+1, "texto": t.strip(), "link": page_links[i]}
+                for i, t in enumerate(page_texts)
+            ]
+        })
+
+    return jsonify({"status": "ok", "results": results})
+
 
 @app.route('/token-status', methods=['GET'])
 def token_status():
