@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, send_file
-import os, requests, threading, time, tempfile, base64, re
+import os, requests, threading, time, tempfile, base64, binascii
 import dropbox
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
@@ -8,7 +8,6 @@ from PIL import Image
 
 app = Flask(__name__)
 
-# Configurações de ambiente
 DROPBOX_APP_KEY = os.getenv("DROPBOX_APP_KEY")
 DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
@@ -39,17 +38,18 @@ def refresh_dropbox_token():
 def upload_dropbox(bio, path):
     dbx = get_dropbox_client()
     base, ext = os.path.splitext(path)
-    contador = 1
+    cnt = 1
     while True:
         try:
             dbx.files_get_metadata(path)
-            path = f"{base}({contador}){ext}"
-            contador += 1
+            path = f"{base}({cnt}){ext}"
+            cnt += 1
         except dropbox.exceptions.ApiError as e:
-            err = e.error
+            err = getattr(e, "error", None)
             if hasattr(err, 'get_path') and err.get_path().is_not_found():
                 break
-            raise
+            else:
+                raise
     dbx.files_upload(bio.getvalue(), path, mode=dropbox.files.WriteMode.add)
     try:
         url = dbx.sharing_create_shared_link_with_settings(path).url
@@ -65,23 +65,17 @@ def schedule_delete(path, delay):
     def _del():
         time.sleep(delay)
         try:
-            get_dropbox_client().files_delete_v2(path)
+            dbx = get_dropbox_client()
+            dbx.files_delete_v2(path)
         except:
             pass
     threading.Thread(target=_del, daemon=True).start()
 
 @app.route('/compilar', methods=['POST'])
 def compilar():
-    data = request.get_json() or {}
-    attachments = data.get("attachments") or []
-    links = data.get("links") or []
-
-    # 📌 ADICIONE ESTES PRINTS para depuração
-    print("DEBUG: payload completo:", data)
-    print("DEBUG: attachments recebido:", attachments)
-    for idx, att in enumerate(attachments):
-        print(f"DEBUG: attachment[{idx}] keys:", att.keys())
-
+    data = request.get_json(silent=True) or {}
+    attachments = data.get("attachments", [])
+    links = data.get("links", [])
     pasta = data.get("pasta", "/pdf-compilados")
     deletar = data.get("deletar", False)
     salvar = data.get("salvar", True)
@@ -89,39 +83,42 @@ def compilar():
     if not nome_arquivo.lower().endswith(".pdf"):
         nome_arquivo += ".pdf"
 
+    print("DEBUG attachments:", attachments)
     items = []
-    for url in (links if isinstance(links, list) else [links]):
+    for url in links or []:
         items.append({"filename": os.path.basename(url), "url": url})
-    for att in attachments:
-        items.append({
-            "filename": att.get("filename"),
-            "base64": att.get("base64"),
-            "hex": att.get("data")
-        })
+    for att in attachments or []:
+        print("DEBUG att keys:", att.keys())
+        filename = att.get("filename")
+        if "base64" in att:
+            items.append({"filename": filename, "base64": att.get("base64")})
+        elif "data" in att:
+            items.append({"filename": filename, "hex": att.get("data")})
 
     results = []
     for item in items:
         filename = item.get("filename")
         bio = None
+
         if item.get("url"):
-            try:
-                r = requests.get(item["url"])
-                if r.status_code != 200:
-                    continue
-                bio = BytesIO(r.content)
-            except:
+            r = requests.get(item["url"])
+            if r.status_code != 200:
+                print("DEBUG url failed:", item["url"])
                 continue
+            bio = BytesIO(r.content)
         elif item.get("base64"):
             try:
                 bio = BytesIO(base64.b64decode(item["base64"]))
-            except:
+            except Exception as e:
+                print("DEBUG base64 decode failed:", e)
                 continue
         elif item.get("hex"):
-            hexstr = re.sub(r'[^0-9a-fA-F]', '', item["hex"])
             try:
-                bio = BytesIO(bytes.fromhex(hexstr))
-            except:
+                bio = BytesIO(binascii.unhexlify(item["hex"]))
+            except Exception as e:
+                print("DEBUG hex decode failed:", e)
                 continue
+
         if not bio:
             continue
 
@@ -138,11 +135,10 @@ def compilar():
 
         link = None
         if salvar:
-            path = f"{pasta.rstrip('/')}/{filename}"
+            path = f"{pasta}/{filename}"
             link = upload_dropbox(out, path)
             if deletar:
-                delay = int(data.get("auto_delete", 300))
-                schedule_delete(path, delay)
+                schedule_delete(path, int(data.get("auto_delete", 300)))
 
         results.append({
             "filename": filename,
@@ -154,42 +150,41 @@ def compilar():
 
 @app.route('/pdf2texto', methods=['POST'])
 def pdf2texto():
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     url = data.get("url")
     b64 = data.get("base64")
-    hexdata = data.get("data")
-    if not (url or b64 or hexdata):
-        return jsonify({"erro":"Informe a URL, base64 ou hex do PDF."}),400
+    hexstr = data.get("hex")
+    if not (url or b64 or hexstr):
+        return jsonify({"erro": "Informe a URL, base64 ou hex do PDF."}), 400
 
-    bio = None
     if url:
         r = requests.get(url)
         if r.status_code != 200:
-            return jsonify({"erro":"Não foi possível baixar o PDF."}),400
+            return jsonify({"erro": "Não foi possível baixar o PDF."}), 400
         bio = BytesIO(r.content)
     elif b64:
         try:
             bio = BytesIO(base64.b64decode(b64))
         except:
-            return jsonify({"erro":"Base64 inválida."}),400
+            return jsonify({"erro": "Base64 inválida."}), 400
     else:
-        hexstr = re.sub(r'[^0-9a-fA-F]', '', hexdata)
         try:
-            bio = BytesIO(bytes.fromhex(hexstr))
+            bio = BytesIO(binascii.unhexlify(hexstr))
         except:
-            return jsonify({"erro":"Hex inválido."}),400
+            return jsonify({"erro": "Hex inválido."}), 400
 
     reader = PdfReader(bio)
     texto_paginas = [page.extract_text() or "" for page in reader.pages]
-    return jsonify({"status":"ok","texto": texto_paginas})
+    return jsonify({"status": "ok", "texto": texto_paginas})
 
 @app.route('/token-status', methods=['GET'])
 def token_status():
     try:
-        account = get_dropbox_client().users_get_current_account()
-        return jsonify({"status":"ok","account":account.name.display_name})
+        dbx = get_dropbox_client()
+        account = dbx.users_get_current_account()
+        return jsonify({"status": "ok", "account": account.name.display_name})
     except Exception as e:
-        return jsonify({"status":"erro","detalhes":str(e)}),500
+        return jsonify({"status": "erro", "detalhes": str(e)}), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
