@@ -1,6 +1,7 @@
-flask
-dropbox
+Flask
 requests
+dropbox
 PyPDF2
 fpdf
-pillow
+Pillow
+PyMuPDF
