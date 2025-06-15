@@ -32,7 +32,7 @@ def refresh_dropbox_token():
     if resp.status_code == 200:
         data = resp.json()
         DROPBOX_TOKEN = data["access_token"]
-        DROPBOX_TOKEN_EXPIRATION = time.time() + int(data.get("expires_in", 14400)) - 60
+        DROPBOX_TOKEN_EXPIRATION = time.time() + int(data.get("expires_in",14400)) - 60
     else:
         raise Exception(f"Erro ao renovar token: {resp.text}")
 
@@ -50,7 +50,6 @@ def upload_dropbox(bio, path):
             if hasattr(err, 'get_path') and err.get_path().is_not_found():
                 break
             raise
-
     dbx.files_upload(bio.getvalue(), path, mode=dropbox.files.WriteMode.add)
     try:
         url = dbx.sharing_create_shared_link_with_settings(path).url
@@ -66,8 +65,7 @@ def schedule_delete(path, delay):
     def _del():
         time.sleep(delay)
         try:
-            dbx = get_dropbox_client()
-            dbx.files_delete_v2(path)
+            get_dropbox_client().files_delete_v2(path)
         except:
             pass
     threading.Thread(target=_del, daemon=True).start()
@@ -80,54 +78,60 @@ def compilar():
     pasta = data.get("pasta", "/pdf-compilados")
     deletar = data.get("deletar", False)
     salvar = data.get("salvar", True)
+    nome_arquivo = data.get("nome_arquivo", "compilado.pdf")
+    if not nome_arquivo.lower().endswith(".pdf"):
+        nome_arquivo += ".pdf"
+
+    items = []
+    for url in (links if isinstance(links, list) else [links]):
+        items.append({"filename": os.path.basename(url), "url": url})
+    for att in attachments:
+        items.append({
+            "filename": att.get("filename"),
+            "base64": att.get("base64"),
+            "hex": att.get("data")
+        })
 
     results = []
-
-    for source in links + attachments:
-        # Montar item híbrido para iterar
-        filename = source.get("filename") or os.path.basename(source.get("url", "sem_nome.pdf"))
-
-        # decodificar conteúdo
+    for item in items:
+        filename = item.get("filename")
         bio = None
-        if source.get("url"):
-            r = requests.get(source["url"])
-            if r.status_code == 200:
-                bio = BytesIO(r.content)
-
-        else:
-            b64 = source.get("base64")
-            data_field = source.get("data")
-            if b64:
-                try:
-                    bio = BytesIO(base64.b64decode(b64))
-                except:
+        if item.get("url"):
+            try:
+                r = requests.get(item["url"])
+                if r.status_code != 200:
                     continue
-elif data_field:
-    # extrai apenas hex digits (e ignora espaços)
-    hexstr = re.sub(r'[^0-9a-fA-F]', '', data_field)
-    try:
-        bio = BytesIO(bytes.fromhex(hexstr))
-    except Exception as e:
-        print("Erro no HEX->bytes:", e)
-        continue
-
-
+                bio = BytesIO(r.content)
+            except:
+                continue
+        elif item.get("base64"):
+            try:
+                bio = BytesIO(base64.b64decode(item["base64"]))
+            except:
+                continue
+        elif item.get("hex"):
+            hexstr = re.sub(r'[^0-9a-fA-F]', '', item["hex"])
+            try:
+                bio = BytesIO(bytes.fromhex(hexstr))
+            except:
+                continue
         if not bio:
             continue
 
         reader = PdfReader(bio)
         texto_paginas = [page.extract_text() or "" for page in reader.pages]
 
-        # Reconstruir PDF completo
         full_writer = PdfWriter()
+        bio.seek(0)
         for p in reader.pages:
             full_writer.add_page(p)
         out = BytesIO()
-        full_writer.write(out); out.seek(0)
+        full_writer.write(out)
+        out.seek(0)
 
         link = None
         if salvar:
-            path = f"{pasta}/{filename}"
+            path = f"{pasta.rstrip('/')}/{filename}"
             link = upload_dropbox(out, path)
             if deletar:
                 delay = int(data.get("auto_delete", 300))
@@ -146,31 +150,39 @@ def pdf2texto():
     data = request.get_json() or {}
     url = data.get("url")
     b64 = data.get("base64")
-    if not url and not b64:
-        return jsonify({"erro": "Informe a URL ou o conteúdo base64 do PDF."}), 400
+    hexdata = data.get("data")
+    if not (url or b64 or hexdata):
+        return jsonify({"erro":"Informe a URL, base64 ou hex do PDF."}),400
 
+    bio = None
     if url:
         r = requests.get(url)
         if r.status_code != 200:
-            return jsonify({"erro": "Não foi possível baixar o PDF."}), 400
+            return jsonify({"erro":"Não foi possível baixar o PDF."}),400
         bio = BytesIO(r.content)
-    else:
+    elif b64:
         try:
             bio = BytesIO(base64.b64decode(b64))
         except:
-            return jsonify({"erro": "Base64 inválida."}), 400
+            return jsonify({"erro":"Base64 inválida."}),400
+    else:
+        hexstr = re.sub(r'[^0-9a-fA-F]', '', hexdata)
+        try:
+            bio = BytesIO(bytes.fromhex(hexstr))
+        except:
+            return jsonify({"erro":"Hex inválido."}),400
 
     reader = PdfReader(bio)
     texto_paginas = [page.extract_text() or "" for page in reader.pages]
-    return jsonify({"status": "ok", "texto": texto_paginas})
+    return jsonify({"status":"ok","texto": texto_paginas})
 
 @app.route('/token-status', methods=['GET'])
 def token_status():
     try:
         account = get_dropbox_client().users_get_current_account()
-        return jsonify({"status": "ok", "account": account.name.display_name})
+        return jsonify({"status":"ok","account":account.name.display_name})
     except Exception as e:
-        return jsonify({"status": "erro", "detalhes": str(e)}), 500
+        return jsonify({"status":"erro","detalhes":str(e)}),500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
