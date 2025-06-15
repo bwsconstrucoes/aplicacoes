@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, send_file
-import os, requests, threading, time, tempfile, base64
+import os, requests, threading, time, tempfile, base64, re
 import dropbox
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
@@ -50,6 +50,7 @@ def upload_dropbox(bio, path):
             if hasattr(err, 'get_path') and err.get_path().is_not_found():
                 break
             raise
+
     dbx.files_upload(bio.getvalue(), path, mode=dropbox.files.WriteMode.add)
     try:
         url = dbx.sharing_create_shared_link_with_settings(path).url
@@ -79,42 +80,49 @@ def compilar():
     pasta = data.get("pasta", "/pdf-compilados")
     deletar = data.get("deletar", False)
     salvar = data.get("salvar", True)
-    nome_arquivo = data.get("nome_arquivo", "compilado.pdf")
-    if not nome_arquivo.lower().endswith(".pdf"):
-        nome_arquivo += ".pdf"
-
-    items = []
-    for url in links:
-        items.append({"filename": os.path.basename(url), "url": url})
-    for att in attachments:
-        items.append({"filename": att.get("filename"), "base64": att.get("base64")})
 
     results = []
-    for item in items:
-        filename = item["filename"]
-        bio = None
-        if "url" in item:
-            r = requests.get(item["url"])
-            if r.status_code != 200: continue
-            bio = BytesIO(r.content)
-        elif "base64" in item:
-            try:
-                bio = BytesIO(base64.b64decode(item["base64"]))
-            except:
-                continue
 
-        if not bio: continue
+    for source in links + attachments:
+        # Montar item híbrido para iterar
+        filename = source.get("filename") or os.path.basename(source.get("url", "sem_nome.pdf"))
+
+        # decodificar conteúdo
+        bio = None
+        if source.get("url"):
+            r = requests.get(source["url"])
+            if r.status_code == 200:
+                bio = BytesIO(r.content)
+
+        else:
+            b64 = source.get("base64")
+            data_field = source.get("data")
+            if b64:
+                try:
+                    bio = BytesIO(base64.b64decode(b64))
+                except:
+                    continue
+            elif data_field:
+                m = re.search(r'\):\s*([0-9a-fA-F]+)', data_field)
+                if not m:
+                    continue
+                try:
+                    bio = BytesIO(bytes.fromhex(m.group(1)))
+                except:
+                    continue
+
+        if not bio:
+            continue
 
         reader = PdfReader(bio)
         texto_paginas = [page.extract_text() or "" for page in reader.pages]
 
+        # Reconstruir PDF completo
         full_writer = PdfWriter()
-        bio.seek(0)
         for p in reader.pages:
             full_writer.add_page(p)
         out = BytesIO()
-        full_writer.write(out)
-        out.seek(0)
+        full_writer.write(out); out.seek(0)
 
         link = None
         if salvar:
@@ -158,8 +166,7 @@ def pdf2texto():
 @app.route('/token-status', methods=['GET'])
 def token_status():
     try:
-        dbx = get_dropbox_client()
-        account = dbx.users_get_current_account()
+        account = get_dropbox_client().users_get_current_account()
         return jsonify({"status": "ok", "account": account.name.display_name})
     except Exception as e:
         return jsonify({"status": "erro", "detalhes": str(e)}), 500
