@@ -75,6 +75,13 @@ def compilar():
     data = request.get_json() or {}
     attachments = data.get("attachments") or []
     links = data.get("links") or []
+
+    # 📌 ADICIONE ESTES PRINTS para depuração
+    print("DEBUG: payload completo:", data)
+    print("DEBUG: attachments recebido:", attachments)
+    for idx, att in enumerate(attachments):
+        print(f"DEBUG: attachment[{idx}] keys:", att.keys())
+
     pasta = data.get("pasta", "/pdf-compilados")
     deletar = data.get("deletar", False)
     salvar = data.get("salvar", True)
