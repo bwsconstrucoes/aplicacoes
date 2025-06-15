@@ -102,14 +102,15 @@ def compilar():
                     bio = BytesIO(base64.b64decode(b64))
                 except:
                     continue
-            elif data_field:
-                m = re.search(r'\):\s*([0-9a-fA-F]+)', data_field)
-                if not m:
-                    continue
-                try:
-                    bio = BytesIO(bytes.fromhex(m.group(1)))
-                except:
-                    continue
+elif data_field:
+    # extrai apenas hex digits (e ignora espaços)
+    hexstr = re.sub(r'[^0-9a-fA-F]', '', data_field)
+    try:
+        bio = BytesIO(bytes.fromhex(hexstr))
+    except Exception as e:
+        print("Erro no HEX->bytes:", e)
+        continue
+
 
         if not bio:
             continue
