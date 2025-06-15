@@ -1,7 +1,7 @@
-Flask
-requests
-dropbox
-PyPDF2
-fpdf
-Pillow
-PyMuPDF
+flask==3.1.1
+dropbox==12.0.2
+requests==2.32.4
+PyPDF2==3.0.1
+fpdf==1.7.2
+pillow==11.2.1
+PyMuPDF==1.24.0

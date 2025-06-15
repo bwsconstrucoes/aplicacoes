@@ -1,18 +1,13 @@
-from flask import Flask, request, jsonify, send_file
-import os, requests, threading, time, tempfile
-import base64
-import binascii
-import re
+from flask import Flask, request, jsonify
+import os, requests, threading, time, base64, binascii
 import dropbox
 import fitz  # PyMuPDF
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
-from fpdf import FPDF
-from PIL import Image
 
 app = Flask(__name__)
 
-# Configurações de ambiente
+# Configurações Dropbox
 DROPBOX_APP_KEY = os.getenv("DROPBOX_APP_KEY")
 DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
@@ -33,12 +28,10 @@ def refresh_dropbox_token():
         "client_id": DROPBOX_APP_KEY,
         "client_secret": DROPBOX_APP_SECRET,
     })
-    if resp.status_code == 200:
-        data = resp.json()
-        DROPBOX_TOKEN = data["access_token"]
-        DROPBOX_TOKEN_EXPIRATION = time.time() + int(data.get("expires_in", 14400)) - 60
-    else:
-        raise Exception(f"Erro ao renovar token: {resp.text}")
+    resp.raise_for_status()
+    data = resp.json()
+    DROPBOX_TOKEN = data["access_token"]
+    DROPBOX_TOKEN_EXPIRATION = time.time() + int(data.get("expires_in", 14400)) - 60
 
 def upload_dropbox(bio, path):
     dbx = get_dropbox_client()
@@ -51,10 +44,9 @@ def upload_dropbox(bio, path):
             cnt += 1
         except dropbox.exceptions.ApiError as e:
             err = getattr(e, "error", None)
-            if hasattr(err, 'get_path') and err.get_path().is_not_found():
+            if hasattr(err, "get_path") and err.get_path().is_not_found():
                 break
-            else:
-                raise
+            raise
     dbx.files_upload(bio.getvalue(), path, mode=dropbox.files.WriteMode.add)
     try:
         url = dbx.sharing_create_shared_link_with_settings(path).url
@@ -76,10 +68,14 @@ def schedule_delete(path, delay):
             pass
     threading.Thread(target=_del, daemon=True).start()
 
-def extrair_com_pymupdf(bio):
-    bio.seek(0)
-    doc = fitz.open(stream=bio.read(), filetype="pdf")
-    return [p.get_text("text") for p in doc]
+def extrair_com_layout(bio):
+    doc = fitz.open(stream=bio.getvalue(), filetype="pdf")
+    textos = []
+    for p in doc:
+        blocks = p.get_text("blocks")
+        blocks.sort(key=lambda b: (b[1], b[0]))
+        textos.append("\n".join(b[4] for b in blocks))
+    return textos
 
 @app.route('/compilar', methods=['POST'])
 def compilar():
@@ -97,53 +93,49 @@ def compilar():
     for url in links or []:
         items.append({"filename": os.path.basename(url), "url": url})
     for att in attachments or []:
-        filename = att.get("filename")
+        fn = att.get("filename")
         if "base64" in att:
-            items.append({"filename": filename, "base64": att.get("base64")})
+            items.append({"filename": fn, "base64": att["base64"]})
         elif "data" in att:
-            items.append({"filename": filename, "hex": att.get("data")})
+            items.append({"filename": fn, "hex": att["data"]})
 
     results = []
+    full_writer = PdfWriter()
     for item in items:
-        filename = item.get("filename")
         bio = None
         if item.get("url"):
             r = requests.get(item["url"])
-            if r.status_code == 200:
-                bio = BytesIO(r.content)
+            if r.status_code != 200: continue
+            bio = BytesIO(r.content)
         elif item.get("base64"):
             try:
                 bio = BytesIO(base64.b64decode(item["base64"]))
-            except:
-                pass
+            except: continue
         elif item.get("hex"):
             try:
-                bio = BytesIO(binascii.unhexlify(item["hex"]))
-            except:
-                pass
-        if not bio:
-            continue
+                bio = BytesIO(bytes.fromhex(item["hex"]))
+            except: continue
+
+        if not bio: continue
 
         reader = PdfReader(bio)
-        texto_paginas = [page.extract_text() or "" for page in reader.pages]
-        full_writer = PdfWriter()
-        bio.seek(0)
         for p in reader.pages:
             full_writer.add_page(p)
-        out = BytesIO()
-        full_writer.write(out)
-        out.seek(0)
+        texto = [pg.extract_text() or "" for pg in reader.pages]
+        results.append({"filename": item["filename"], "texto": texto})
 
-        link = None
-        if salvar:
-            path = f"{pasta}/{filename}"
-            link = upload_dropbox(out, path)
-            if deletar:
-                schedule_delete(path, int(data.get("auto_delete", 300)))
+    out = BytesIO()
+    full_writer.write(out)
+    out.seek(0)
 
-        results.append({"filename": filename, "texto": texto_paginas, "link": link})
+    link = None
+    if salvar:
+        path = f"{pasta}/{nome_arquivo}"
+        link = upload_dropbox(out, path)
+        if deletar:
+            schedule_delete(path, int(data.get("auto_delete", 300)))
 
-    return jsonify({"status": "ok", "results": results})
+    return jsonify({"status": "ok", "file": nome_arquivo, "link": link, "results": results})
 
 @app.route('/pdf2texto', methods=['POST'])
 def pdf2texto():
@@ -158,28 +150,28 @@ def pdf2texto():
         return jsonify({"erro": "Anexo presente, mas sem base64/data/hex."}), 400
 
     try:
+        import re
         if re.fullmatch(r"[0-9A-Fa-f]+", raw.strip()):
-            bio = BytesIO(binascii.unhexlify(raw.strip()))
+            bio = BytesIO(bytes.fromhex(raw.strip()))
         else:
             bio = BytesIO(base64.b64decode(raw))
-    except Exception as e:
+    except:
         return jsonify({"erro": "Falha ao decodificar o anexo."}), 400
 
     if bio.getvalue()[:4] != b"%PDF":
         return jsonify({"erro": "Conteúdo do anexo não parece PDF."}), 400
 
-    textos = extrair_com_pymupdf(bio)
+    textos = extrair_com_layout(bio)
     return jsonify({"status": "ok", "texto": textos})
 
 @app.route('/token-status', methods=['GET'])
 def token_status():
     try:
-        dbx = get_dropbox_client()
-        account = dbx.users_get_current_account()
+        account = get_dropbox_client().users_get_current_account()
         return jsonify({"status": "ok", "account": account.name.display_name})
     except Exception as e:
         return jsonify({"status": "erro", "detalhes": str(e)}), 500
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host='0.0.0.0', port=port)
