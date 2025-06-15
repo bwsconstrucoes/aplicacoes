@@ -151,6 +151,15 @@ def compilar():
 @app.route('/pdf2texto', methods=['POST'])
 def pdf2texto():
     data = request.get_json(silent=True) or {}
+    print("📥 DEBUG /pdf2texto received keys:", data.keys())
+    print("📥 DEBUG full payload:", data)
+
+    url = data.get("url")
+    b64 = data.get("base64") or data.get("data") or data.get("hex")
+    if not url and not b64:
+        return jsonify({"erro":"Informe a URL, base64 ou hex do PDF."}), 400
+
+
     url = data.get("url")
     b64 = data.get("base64")
     hexstr = data.get("hex")
