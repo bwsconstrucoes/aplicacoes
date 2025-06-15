@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, send_file
-import os, requests, threading, time, tempfile
+import os, requests, threading, time, tempfile, base64
 import dropbox
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
@@ -74,6 +74,10 @@ def schedule_delete(path, delay):
             pass
     threading.Thread(target=_del).start()
 
+def extrair_texto_pdf(bio):
+    reader = PdfReader(bio)
+    return [page.extract_text() or "" for page in reader.pages]
+
 @app.route('/compilar', methods=['POST'])
 def compilar_pdf():
     data = request.get_json() or {}
@@ -125,16 +129,26 @@ def compilar_pdf():
 def pdf2texto():
     data = request.get_json() or {}
     url = data.get("url")
-    if not url: return jsonify({"erro": "Informe a URL do PDF."}), 400
+    arquivo_base64 = data.get("arquivo_base64")
 
-    r = requests.get(url)
-    if r.status_code != 200:
-        return jsonify({"erro": "Não foi possível baixar o PDF."}), 400
+    if url:
+        r = requests.get(url)
+        if r.status_code != 200:
+            return jsonify({"erro": "Não foi possível baixar o PDF."}), 400
+        bio = BytesIO(r.content)
+    elif arquivo_base64:
+        try:
+            bio = BytesIO(base64.b64decode(arquivo_base64))
+        except:
+            return jsonify({"erro": "Erro ao decodificar base64."}), 400
+    else:
+        return jsonify({"erro": "Informe a URL ou o conteúdo base64 do PDF."}), 400
 
-    bio = BytesIO(r.content)
-    reader = PdfReader(bio)
-    texto = "\n".join([page.extract_text() or "" for page in reader.pages])
-    return jsonify({"status": "ok", "texto": texto})
+    try:
+        textos = extrair_texto_pdf(bio)
+        return jsonify({"status": "ok", "paginas": textos})
+    except Exception as e:
+        return jsonify({"erro": str(e)}), 500
 
 @app.route('/token-status', methods=['GET'])
 def token_status():
