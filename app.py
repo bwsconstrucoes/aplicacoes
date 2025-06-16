@@ -4,6 +4,8 @@ import dropbox
 import fitz  # PyMuPDF
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
+from PIL import Image
+import tempfile
 
 app = Flask(__name__)
 
@@ -118,11 +120,35 @@ def compilar():
 
         if not bio: continue
 
-        reader = PdfReader(bio)
-        for p in reader.pages:
-            full_writer.add_page(p)
-        texto = [pg.extract_text() or "" for pg in reader.pages]
-        results.append({"filename": item["filename"], "texto": texto})
+        sig = bio.getvalue()[:4]
+        if sig != b"%PDF":
+            try:
+                from fpdf import FPDF
+                img = Image.open(bio).convert("RGB")
+                temp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
+                img.save(temp.name)
+                temp.close()
+                f = FPDF()
+                f.add_page()
+                f.image(temp.name, x=0, y=0, w=210, h=297)
+                os.unlink(temp.name)
+                pdf_img = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+                f.output(pdf_img.name)
+                pdf_img.close()
+                with open(pdf_img.name, "rb") as fimg:
+                    reader = PdfReader(fimg)
+                    for p in reader.pages:
+                        full_writer.add_page(p)
+                    texto = [pg.extract_text() or "" for pg in reader.pages]
+                    results.append({"filename": item["filename"], "texto": texto})
+                os.unlink(pdf_img.name)
+            except: continue
+        else:
+            reader = PdfReader(bio)
+            for p in reader.pages:
+                full_writer.add_page(p)
+            texto = [pg.extract_text() or "" for pg in reader.pages]
+            results.append({"filename": item["filename"], "texto": texto})
 
     out = BytesIO()
     full_writer.write(out)
@@ -194,7 +220,6 @@ def pdf2texto():
         })
 
     return jsonify({"status": "ok", "results": results})
-
 
 @app.route('/token-status', methods=['GET'])
 def token_status():
