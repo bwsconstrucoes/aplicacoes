@@ -1,7 +1,11 @@
-flask==3.1.1
-dropbox==12.0.2
-requests==2.32.4
-PyPDF2==3.0.1
-fpdf==1.7.2
-pillow==11.2.1
-PyMuPDF==1.24.0
+flask
+dropbox
+requests
+PyPDF2
+fpdf
+pillow
+fitz  # alias para PyMuPDF
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
