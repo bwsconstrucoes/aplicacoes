@@ -1,10 +1,10 @@
-flask
-dropbox
+Flask
 requests
+dropbox
+PyMuPDF
 PyPDF2
 fpdf
 pillow
-fitz  # alias para PyMuPDF
 google-api-python-client
 google-auth
 google-auth-httplib2
