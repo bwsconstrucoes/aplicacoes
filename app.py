@@ -1,52 +1,26 @@
 
 from flask import Flask, request, jsonify
-import os, requests, threading, time, base64
+import os, requests, threading, time, base64, binascii, json
 import dropbox
 import fitz  # PyMuPDF
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
-import json
+import tempfile
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 
 app = Flask(__name__)
 
-# === Configurações Dropbox ===
+# Dropbox configs
 DROPBOX_APP_KEY = os.getenv("DROPBOX_APP_KEY")
 DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
 DROPBOX_TOKEN = None
 DROPBOX_TOKEN_EXPIRATION = 0
 
-# === Autenticação Google Drive ===
-drive = None
-def autenticar_google_drive():
-    global drive
-    if drive: return drive
-    gauth = GoogleAuth()
-    gauth.LoadCredentialsFile("token.json")
-    if gauth.credentials is None:
-        gauth.LocalWebserverAuth()
-    elif gauth.access_token_expired:
-        gauth.Refresh()
-    else:
-        gauth.Authorize()
-    gauth.SaveCredentialsFile("token.json")
-    drive = GoogleDrive(gauth)
-    return drive
-
-def upload_google_drive(bio, filename, folder_id):
-    drive = autenticar_google_drive()
-    file_drive = drive.CreateFile({'title': filename, 'parents': [{'id': folder_id}]})
-    bio.seek(0)
-    file_drive.SetContentString(bio.read().decode('latin1'))
-    file_drive.Upload()
-    file_drive.InsertPermission({
-        'type': 'anyone',
-        'value': 'anyone',
-        'role': 'reader'
-    })
-    return file_drive['alternateLink']
+# Google Drive configs
+GOOGLE_FOLDER_ID = os.getenv("GOOGLE_FOLDER_ID")
 
 def get_dropbox_client():
     global DROPBOX_TOKEN, DROPBOX_TOKEN_EXPIRATION
@@ -92,6 +66,18 @@ def upload_dropbox(bio, path):
             raise
     return url.replace("?dl=0", "?dl=1")
 
+def upload_gdrive(bio, filename, folder_id):
+    creds_b64 = os.getenv("GOOGLE_CREDENTIALS_BASE64")
+    creds_dict = json.loads(base64.b64decode(creds_b64).decode())
+    creds = Credentials.from_service_account_info(creds_dict, scopes=["https://www.googleapis.com/auth/drive"])
+    service = build("drive", "v3", credentials=creds)
+    media = MediaIoBaseUpload(bio, mimetype="application/pdf", resumable=True)
+    file_metadata = {"name": filename, "parents": [folder_id]}
+    file = service.files().create(body=file_metadata, media_body=media, fields="id").execute()
+    file_id = file.get("id")
+    service.permissions().create(fileId=file_id, body={"role": "reader", "type": "anyone"}).execute()
+    return f"https://drive.google.com/uc?id={file_id}&export=download"
+
 def schedule_delete(path, delay):
     def _del():
         time.sleep(delay)
@@ -102,39 +88,24 @@ def schedule_delete(path, delay):
             pass
     threading.Thread(target=_del, daemon=True).start()
 
-def extrair_com_layout(bio):
-    doc = fitz.open(stream=bio.getvalue(), filetype="pdf")
-    textos = []
-    for p in doc:
-        blocks = p.get_text("blocks")
-        blocks.sort(key=lambda b: (b[1], b[0]))
-        textos.append("\n".join(b[4] for b in blocks))
-    return textos
-
-def salvar_arquivo(bio, destino, pasta, nome_arquivo):
-    if destino == "googledrive":
-        return upload_google_drive(bio, nome_arquivo, pasta)
-    return upload_dropbox(bio, f"{pasta}/{nome_arquivo}")
-
 @app.route('/compilar', methods=['POST'])
 def compilar():
     data = request.get_json(silent=True) or {}
     attachments = data.get("attachments", [])
     links = data.get("links", [])
-    pasta = data.get("pasta", "/pdf-compilados")
     deletar = data.get("deletar", False)
     salvar = data.get("salvar", True)
     nome_arquivo = data.get("nome_arquivo", "compilado.pdf")
-    destino = data.get("destino", "dropbox")
-
     if not nome_arquivo.lower().endswith(".pdf"):
         nome_arquivo += ".pdf"
+    destino = data.get("destino", "dropbox").lower()
+    pasta = data.get("pasta", "/pdf-compilados")
 
     items = []
     for url in links or []:
         items.append({"filename": os.path.basename(url), "url": url})
     for att in attachments or []:
-        fn = att.get("filename")
+        fn = att.get("filename", "anexo.pdf")
         if "base64" in att:
             items.append({"filename": fn, "base64": att["base64"]})
         elif "data" in att:
@@ -156,6 +127,7 @@ def compilar():
             try:
                 bio = BytesIO(bytes.fromhex(item["hex"]))
             except: continue
+
         if not bio: continue
 
         try:
@@ -163,9 +135,28 @@ def compilar():
             for p in reader.pages:
                 full_writer.add_page(p)
             texto = [pg.extract_text() or "" for pg in reader.pages]
-            results.append({"filename": item["filename"], "texto": texto})
         except:
-            continue
+            bio.seek(0)
+            doc = fitz.open(stream=bio.getvalue(), filetype="pdf")
+            texto = []
+            pdf_temp = PdfWriter()
+            for p in doc:
+                img = p.get_pixmap()
+                img_bytes = img.tobytes("png")
+                img_pdf = fitz.open()
+                rect = fitz.Rect(0, 0, img.width, img.height)
+                page = img_pdf.new_page(width=img.width, height=img.height)
+                page.insert_image(rect, stream=img_bytes)
+                temp = BytesIO()
+                img_pdf.save(temp)
+                img_pdf.close()
+                temp.seek(0)
+                sub_reader = PdfReader(temp)
+                for p in sub_reader.pages:
+                    full_writer.add_page(p)
+                texto.append("")
+
+        results.append({"filename": item["filename"], "texto": texto})
 
     out = BytesIO()
     full_writer.write(out)
@@ -173,9 +164,13 @@ def compilar():
 
     link = None
     if salvar:
-        link = salvar_arquivo(out, destino, pasta, nome_arquivo)
-        if deletar and destino == "dropbox":
-            schedule_delete(f"{pasta}/{nome_arquivo}", int(data.get("auto_delete", 300)))
+        if destino == "googledrive":
+            link = upload_gdrive(out, nome_arquivo, pasta)
+        else:
+            path = f"{pasta}/{nome_arquivo}"
+            link = upload_dropbox(out, path)
+            if deletar:
+                schedule_delete(path, int(data.get("auto_delete", 300)))
 
     return jsonify({"status": "ok", "file": nome_arquivo, "link": link, "results": results})
 
