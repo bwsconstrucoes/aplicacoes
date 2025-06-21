@@ -1,11 +1,7 @@
+
 Flask
-requests
 dropbox
-PyMuPDF
 PyPDF2
-fpdf
-pillow
-google-api-python-client
-google-auth
-google-auth-httplib2
-google-auth-oauthlib
+PyMuPDF
+PyDrive
+requests

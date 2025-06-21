@@ -1,20 +1,52 @@
+
 from flask import Flask, request, jsonify
-import os, requests, threading, time, base64, binascii
+import os, requests, threading, time, base64
 import dropbox
 import fitz  # PyMuPDF
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
-from PIL import Image
-import tempfile
+from pydrive.auth import GoogleAuth
+from pydrive.drive import GoogleDrive
+import json
 
 app = Flask(__name__)
 
-# Configurações Dropbox
+# === Configurações Dropbox ===
 DROPBOX_APP_KEY = os.getenv("DROPBOX_APP_KEY")
 DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
 DROPBOX_TOKEN = None
 DROPBOX_TOKEN_EXPIRATION = 0
+
+# === Autenticação Google Drive ===
+drive = None
+def autenticar_google_drive():
+    global drive
+    if drive: return drive
+    gauth = GoogleAuth()
+    gauth.LoadCredentialsFile("token.json")
+    if gauth.credentials is None:
+        gauth.LocalWebserverAuth()
+    elif gauth.access_token_expired:
+        gauth.Refresh()
+    else:
+        gauth.Authorize()
+    gauth.SaveCredentialsFile("token.json")
+    drive = GoogleDrive(gauth)
+    return drive
+
+def upload_google_drive(bio, filename, folder_id):
+    drive = autenticar_google_drive()
+    file_drive = drive.CreateFile({'title': filename, 'parents': [{'id': folder_id}]})
+    bio.seek(0)
+    file_drive.SetContentString(bio.read().decode('latin1'))
+    file_drive.Upload()
+    file_drive.InsertPermission({
+        'type': 'anyone',
+        'value': 'anyone',
+        'role': 'reader'
+    })
+    return file_drive['alternateLink']
 
 def get_dropbox_client():
     global DROPBOX_TOKEN, DROPBOX_TOKEN_EXPIRATION
@@ -79,6 +111,11 @@ def extrair_com_layout(bio):
         textos.append("\n".join(b[4] for b in blocks))
     return textos
 
+def salvar_arquivo(bio, destino, pasta, nome_arquivo):
+    if destino == "googledrive":
+        return upload_google_drive(bio, nome_arquivo, pasta)
+    return upload_dropbox(bio, f"{pasta}/{nome_arquivo}")
+
 @app.route('/compilar', methods=['POST'])
 def compilar():
     data = request.get_json(silent=True) or {}
@@ -88,6 +125,8 @@ def compilar():
     deletar = data.get("deletar", False)
     salvar = data.get("salvar", True)
     nome_arquivo = data.get("nome_arquivo", "compilado.pdf")
+    destino = data.get("destino", "dropbox")
+
     if not nome_arquivo.lower().endswith(".pdf"):
         nome_arquivo += ".pdf"
 
@@ -117,38 +156,16 @@ def compilar():
             try:
                 bio = BytesIO(bytes.fromhex(item["hex"]))
             except: continue
-
         if not bio: continue
 
-        sig = bio.getvalue()[:4]
-        if sig != b"%PDF":
-            try:
-                from fpdf import FPDF
-                img = Image.open(bio).convert("RGB")
-                temp = tempfile.NamedTemporaryFile(delete=False, suffix=".jpg")
-                img.save(temp.name)
-                temp.close()
-                f = FPDF()
-                f.add_page()
-                f.image(temp.name, x=0, y=0, w=210, h=297)
-                os.unlink(temp.name)
-                pdf_img = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-                f.output(pdf_img.name)
-                pdf_img.close()
-                with open(pdf_img.name, "rb") as fimg:
-                    reader = PdfReader(fimg)
-                    for p in reader.pages:
-                        full_writer.add_page(p)
-                    texto = [pg.extract_text() or "" for pg in reader.pages]
-                    results.append({"filename": item["filename"], "texto": texto})
-                os.unlink(pdf_img.name)
-            except: continue
-        else:
+        try:
             reader = PdfReader(bio)
             for p in reader.pages:
                 full_writer.add_page(p)
             texto = [pg.extract_text() or "" for pg in reader.pages]
             results.append({"filename": item["filename"], "texto": texto})
+        except:
+            continue
 
     out = BytesIO()
     full_writer.write(out)
@@ -156,78 +173,11 @@ def compilar():
 
     link = None
     if salvar:
-        path = f"{pasta}/{nome_arquivo}"
-        link = upload_dropbox(out, path)
-        if deletar:
-            schedule_delete(path, int(data.get("auto_delete", 300)))
+        link = salvar_arquivo(out, destino, pasta, nome_arquivo)
+        if deletar and destino == "dropbox":
+            schedule_delete(f"{pasta}/{nome_arquivo}", int(data.get("auto_delete", 300)))
 
     return jsonify({"status": "ok", "file": nome_arquivo, "link": link, "results": results})
-
-@app.route('/pdf2texto', methods=['POST'])
-def pdf2texto():
-    data = request.get_json(silent=True) or {}
-    attachments = data.get("attachments", [])
-    pasta = data.get("pasta", "/pdf2texto-files")
-    salvar = data.get("salvar", False)
-
-    if not attachments:
-        return jsonify({"erro": "Informe ao menos um anexo em attachments."}), 400
-
-    results = []
-    for att in attachments:
-        filename = att.get("filename", "anexo.pdf")
-        raw = att.get("base64") or att.get("data") or att.get("hex")
-        if not raw:
-            continue
-
-        try:
-            import re
-            if re.fullmatch(r"[0-9A-Fa-f]+", raw.strip()):
-                bio = BytesIO(bytes.fromhex(raw.strip()))
-            else:
-                bio = BytesIO(base64.b64decode(raw))
-        except:
-            continue
-
-        if bio.getvalue()[:4] != b"%PDF":
-            continue
-
-        reader = PdfReader(bio)
-        page_texts = []
-        page_links = []
-
-        for idx, page in enumerate(reader.pages, start=1):
-            text = page.extract_text() or ""
-            page_texts.append(text)
-
-            if salvar:
-                writer = PdfWriter()
-                writer.add_page(page)
-                out = BytesIO()
-                writer.write(out)
-                out.seek(0)
-                link = upload_dropbox(out, f"{pasta}/{filename[:-4]}_page{idx}.pdf")
-                page_links.append(link)
-            else:
-                page_links.append(None)
-
-        results.append({
-            "filename": filename,
-            "paginas": [
-                {"numero": i+1, "texto": t.strip(), "link": page_links[i]}
-                for i, t in enumerate(page_texts)
-            ]
-        })
-
-    return jsonify({"status": "ok", "results": results})
-
-@app.route('/token-status', methods=['GET'])
-def token_status():
-    try:
-        account = get_dropbox_client().users_get_current_account()
-        return jsonify({"status": "ok", "account": account.name.display_name})
-    except Exception as e:
-        return jsonify({"status": "erro", "detalhes": str(e)}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))
