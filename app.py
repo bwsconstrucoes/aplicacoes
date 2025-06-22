@@ -9,6 +9,7 @@ import tempfile
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
+from mimetypes import guess_type
 
 app = Flask(__name__)
 
@@ -115,20 +116,33 @@ def compilar():
     full_writer = PdfWriter()
     for item in items:
         bio = None
+        filename = item.get("filename", "arquivo")
         if item.get("url"):
             r = requests.get(item["url"])
-            if r.status_code != 200: continue
+            if r.status_code != 200:
+                print(f"❌ Ignorado (erro ao baixar): {filename}")
+                continue
+            content_type = r.headers.get("Content-Type", "")
+            if not ("pdf" in content_type or "image" in content_type):
+                print(f"❌ Ignorado (tipo não suportado): {filename}")
+                continue
             bio = BytesIO(r.content)
         elif item.get("base64"):
             try:
                 bio = BytesIO(base64.b64decode(item["base64"]))
-            except: continue
+            except:
+                print(f"❌ Ignorado (base64 inválido): {filename}")
+                continue
         elif item.get("hex"):
             try:
                 bio = BytesIO(bytes.fromhex(item["hex"]))
-            except: continue
+            except:
+                print(f"❌ Ignorado (hex inválido): {filename}")
+                continue
 
-        if not bio: continue
+        if not bio:
+            print(f"❌ Ignorado (conteúdo vazio): {filename}")
+            continue
 
         try:
             reader = PdfReader(bio)
@@ -136,27 +150,31 @@ def compilar():
                 full_writer.add_page(p)
             texto = [pg.extract_text() or "" for pg in reader.pages]
         except:
-            bio.seek(0)
-            doc = fitz.open(stream=bio.getvalue(), filetype="pdf")
-            texto = []
-            pdf_temp = PdfWriter()
-            for p in doc:
-                img = p.get_pixmap()
-                img_bytes = img.tobytes("png")
-                img_pdf = fitz.open()
-                rect = fitz.Rect(0, 0, img.width, img.height)
-                page = img_pdf.new_page(width=img.width, height=img.height)
-                page.insert_image(rect, stream=img_bytes)
-                temp = BytesIO()
-                img_pdf.save(temp)
-                img_pdf.close()
-                temp.seek(0)
-                sub_reader = PdfReader(temp)
-                for p in sub_reader.pages:
-                    full_writer.add_page(p)
-                texto.append("")
+            try:
+                bio.seek(0)
+                doc = fitz.open(stream=bio.getvalue(), filetype="pdf")
+                texto = []
+                pdf_temp = PdfWriter()
+                for p in doc:
+                    img = p.get_pixmap()
+                    img_bytes = img.tobytes("png")
+                    img_pdf = fitz.open()
+                    rect = fitz.Rect(0, 0, img.width, img.height)
+                    page = img_pdf.new_page(width=img.width, height=img.height)
+                    page.insert_image(rect, stream=img_bytes)
+                    temp = BytesIO()
+                    img_pdf.save(temp)
+                    img_pdf.close()
+                    temp.seek(0)
+                    sub_reader = PdfReader(temp)
+                    for p in sub_reader.pages:
+                        full_writer.add_page(p)
+                    texto.append("")
+            except:
+                print(f"❌ Ignorado (não é PDF nem imagem): {filename}")
+                continue
 
-        results.append({"filename": item["filename"], "texto": texto})
+        results.append({"filename": filename, "texto": texto})
 
     out = BytesIO()
     full_writer.write(out)
@@ -173,7 +191,6 @@ def compilar():
                 schedule_delete(path, int(data.get("auto_delete", 300)))
 
     return jsonify({"status": "ok", "file": nome_arquivo, "link": link, "results": results})
-
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
