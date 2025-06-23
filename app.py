@@ -191,6 +191,73 @@ def compilar():
                 schedule_delete(path, int(data.get("auto_delete", 300)))
 
     return jsonify({"status": "ok", "file": nome_arquivo, "link": link, "results": results})
+
+@app.route('/pdf2texto', methods=['POST'])
+def pdf2texto():
+    data = request.get_json(silent=True) or {}
+    attachments = data.get("attachments", [])
+    pasta = data.get("pasta", "/pdf2texto-files")
+    salvar = data.get("salvar", False)
+
+    if not attachments:
+        return jsonify({"erro": "Informe ao menos um anexo em attachments."}), 400
+
+    results = []
+    for att in attachments:
+        filename = att.get("filename", "anexo.pdf")
+        raw = att.get("base64") or att.get("data") or att.get("hex")
+        if not raw:
+            continue
+
+        try:
+            import re
+            if re.fullmatch(r"[0-9A-Fa-f]+", raw.strip()):
+                bio = BytesIO(bytes.fromhex(raw.strip()))
+            else:
+                bio = BytesIO(base64.b64decode(raw))
+        except:
+            continue
+
+        if bio.getvalue()[:4] != b"%PDF":
+            continue
+
+        reader = PdfReader(bio)
+        page_texts = []
+        page_links = []
+
+        for idx, page in enumerate(reader.pages, start=1):
+            text = page.extract_text() or ""
+            page_texts.append(text)
+
+            if salvar:
+                writer = PdfWriter()
+                writer.add_page(page)
+                out = BytesIO()
+                writer.write(out)
+                out.seek(0)
+                link = upload_dropbox(out, f"{pasta}/{filename[:-4]}_page{idx}.pdf")
+                page_links.append(link)
+            else:
+                page_links.append(None)
+
+        results.append({
+            "filename": filename,
+            "paginas": [
+                {"numero": i+1, "texto": t.strip(), "link": page_links[i]}
+                for i, t in enumerate(page_texts)
+            ]
+        })
+
+    return jsonify({"status": "ok", "results": results})
+
+@app.route('/token-status', methods=['GET'])
+def token_status():
+    try:
+        account = get_dropbox_client().users_get_current_account()
+        return jsonify({"status": "ok", "account": account.name.display_name})
+    except Exception as e:
+        return jsonify({"status": "erro", "detalhes": str(e)}), 500
+
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))
     app.run(host='0.0.0.0', port=port)
