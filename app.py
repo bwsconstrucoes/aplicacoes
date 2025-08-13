@@ -123,7 +123,8 @@ def compilar():
                 print(f"❌ Ignorado (erro ao baixar): {filename}")
                 continue
             content_type = r.headers.get("Content-Type", "")
-            if not ("pdf" in content_type or "image" in content_type):
+            if not ("pdf" in content_type or "image" in content_type or "octet-stream" in content_type):
+                continue
                 print(f"❌ Ignorado (tipo não suportado): {filename}")
                 continue
             bio = BytesIO(r.content)
