@@ -10,6 +10,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 from mimetypes import guess_type
+from urllib.parse import urlparse
 
 app = Flask(__name__)
 
@@ -197,60 +198,112 @@ def compilar():
 def pdf2texto():
     data = request.get_json(silent=True) or {}
     attachments = data.get("attachments", [])
+    links = data.get("links", [])  # ⇦ NOVO: também aceitar links
     pasta = data.get("pasta", "/pdf2texto-files")
-    salvar = data.get("salvar", False)
+    salvar = data.get("salvar", False)  # mantém exatamente como está no seu código
+
+    # Permitir que seja enviado só "links" (sem attachments)
+    if links:
+        attachments += [{"url": u} for u in links]
 
     if not attachments:
-        return jsonify({"erro": "Informe ao menos um anexo em attachments."}), 400
+        return jsonify({"erro": "Informe ao menos um anexo em attachments ou um link em links."}), 400
 
     results = []
+
     for att in attachments:
-        filename = att.get("filename", "anexo.pdf")
-        raw = att.get("base64") or att.get("data") or att.get("hex")
-        if not raw:
+        url = att.get("url")
+        bio = None
+
+        # filename segue opcional; com link você não precisa enviar
+        filename = att.get("filename") or ""
+
+        if url:
+            # Baixa o PDF do link
+            try:
+                r = requests.get(url)
+                if r.status_code != 200:
+                    continue
+                bio = BytesIO(r.content)
+            except Exception:
+                continue
+        else:
+            # Caminho original: base64 / hex / data
+            raw = att.get("base64") or att.get("data") or att.get("hex")
+            if not raw:
+                continue
+            try:
+                import re
+                sraw = str(raw).strip()
+                if re.fullmatch(r"[0-9A-Fa-f]+", sraw):
+                    bio = BytesIO(bytes.fromhex(sraw))
+                else:
+                    bio = BytesIO(base64.b64decode(raw))
+            except Exception:
+                continue
+
+        # Garante que é PDF (mantém sua validação)
+        if not bio or bio.getvalue()[:4] != b"%PDF":
             continue
 
+        # Extrai texto por página
         try:
-            import re
-            if re.fullmatch(r"[0-9A-Fa-f]+", raw.strip()):
-                bio = BytesIO(bytes.fromhex(raw.strip()))
-            else:
-                bio = BytesIO(base64.b64decode(raw))
-        except:
+            reader = PdfReader(bio)
+        except Exception:
             continue
 
-        if bio.getvalue()[:4] != b"%PDF":
-            continue
-
-        reader = PdfReader(bio)
         page_texts = []
         page_links = []
+
+        # Nome-base para salvar (só usado se salvar=True)
+        if filename.lower().endswith(".pdf"):
+            base_name = filename[:-4]
+        elif filename:
+            base_name = filename
+        else:
+            deduzido = ""
+            if url:
+                try:
+                    parsed = urlparse(url)
+                    deduzido = os.path.basename(parsed.path).strip("/")
+                except Exception:
+                    deduzido = ""
+            if deduzido.lower().endswith(".pdf"):
+                deduzido = deduzido[:-4]
+            base_name = deduzido or "arquivo"
 
         for idx, page in enumerate(reader.pages, start=1):
             text = page.extract_text() or ""
             page_texts.append(text)
 
             if salvar:
-                writer = PdfWriter()
-                writer.add_page(page)
-                out = BytesIO()
-                writer.write(out)
-                out.seek(0)
-                link = upload_dropbox(out, f"{pasta}/{filename[:-4]}_page{idx}.pdf")
-                page_links.append(link)
-            else:
-                page_links.append(None)
+                # Seu fluxo de salvar por página no Dropbox (usa 'pasta' aqui)
+                try:
+                    writer = PdfWriter()
+                    writer.add_page(page)
+                    out = BytesIO()
+                    writer.write(out)
+                    out.seek(0)
+                    link = upload_dropbox(out, f"{pasta}/{base_name}_page{idx}.pdf")
+                    page_links.append(link)
+                except Exception:
+                    page_links.append(None)
+
+        # Monta retorno (mantém compatibilidade)
+        paginas = []
+        for i, t in enumerate(page_texts):
+            item = {"numero": i + 1, "texto": t.strip()}
+            # Inclui link só quando realmente salvou
+            if salvar and i < len(page_links) and page_links[i]:
+                item["link"] = page_links[i]
+            paginas.append(item)
 
         results.append({
-            "filename": filename,
-            "paginas": [
-                {"numero": i+1, "texto": t.strip(), "link": page_links[i]}
-                for i, t in enumerate(page_texts)
-            ]
+            "filename": filename,  # pode ficar vazio quando veio por link
+            "paginas": paginas
         })
 
     return jsonify({"status": "ok", "results": results})
-
 @app.route('/token-status', methods=['GET'])
 def token_status():
     try:
