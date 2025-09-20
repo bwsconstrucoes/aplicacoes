@@ -1,12 +1,3 @@
-<<<<<<< HEAD
-
-Flask
-dropbox
-PyPDF2
-PyMuPDF
-PyDrive
-requests
-=======
 Flask
 requests
 dropbox
@@ -17,4 +8,3 @@ google-auth
 google-auth-httplib2
 google-auth-oauthlib
 gunicorn
->>>>>>> ea585c7 (Monorepo unificado: pdf-processor + encurtador)
