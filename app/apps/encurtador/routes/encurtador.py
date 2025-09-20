@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-from sheets import buscar_url_por_codigo, adicionar_link
+from ..sheets import buscar_url_por_codigo, adicionar_link
 import requests
 import csv
 
