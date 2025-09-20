@@ -1,3 +1,23 @@
+<<<<<<< HEAD
 .env
 __pycache__/
 *.pyc
+=======
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
+*.env
+
+# OS
+.DS_Store
+
+# Logs/IDE
+*.log
+.idea/
+.vscode/
+>>>>>>> ea585c7 (Monorepo unificado: pdf-processor + encurtador)
