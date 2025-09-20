@@ -1,7 +1,8 @@
 import os
 from flask import Flask
-from apps.pdf_processor import bp as pdf_bp
-from apps.encurtador import bp as encurtador_bp
+from app.apps.pdf_processor import bp as pdf_bp
+from app.apps.encurtador import bp as encurtador_bp
+
 
 def create_app():
     app = Flask(__name__)
