@@ -25,7 +25,7 @@ def novo_link():
     if sucesso:
         return jsonify({
             "status": "ok",
-            "short_url": f"https://link.bwsconstrucoes.com.br/{codigo}",
+            "short_url": f"https://aplicacoes.bwsconstrucoes.com.br/{codigo}",
             "original_url": url,
             "expira_em": expira_em
         })
