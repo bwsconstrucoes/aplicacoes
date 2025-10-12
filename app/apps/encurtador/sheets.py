@@ -167,7 +167,8 @@ def _google_service_sheets():
     return build("sheets", "v4", credentials=creds)
 
 
-def adicionar_link(url: str, codigo: str, expira_em: str) -> bool:
+def adicionar_link(codigo: str, url: str, expira_em: str) -> bool:
+    values = [[codigo, url, expira_em]]
     """
     Anexa uma linha na planilha (se as credenciais Google estiverem configuradas).
     Retorna True em caso de sucesso, False caso contrário.
