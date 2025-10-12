@@ -2,6 +2,7 @@ import csv
 import io
 import os
 import unicodedata
+import time
 from datetime import datetime, timezone
 import re
 from typing import Dict, List, Optional
@@ -36,8 +37,11 @@ def _detectar_delimitador(first_line: str) -> str:
 
 
 def _csv_url(sheet_id: str, sheet_name: str) -> str:
-    # CSV público da aba (compartilhamento "qualquer pessoa com o link: leitor")
-    return f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq?tqx=out:csv&sheet={quote(sheet_name)}"
+    cb = int(time.time())
+    return (
+        f"https://docs.google.com/spreadsheets/d/{sheet_id}/gviz/tq"
+        f"?tqx=out:csv&sheet={quote(sheet_name)}&cachebust={cb}"
+    )
 
 
 def _baixar_csv_linhas() -> List[str]:
