@@ -1,5 +1,6 @@
 import os, csv, time, unicodedata, requests, re
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
+import re
 from urllib.parse import quote
 
 SHEET_ID   = os.getenv("SHEET_ID", "1k-ydMq9JEhWGSt7P3D0ucYj2bWNMkhA9uk1kBJiOMb8")
@@ -13,23 +14,15 @@ def norm_col(col: str) -> str:
     return _strip_accents(col).strip().lower().replace(" ", "_")
 
 def _parse_expira_em(v: str):
-    if not v: return None
+    if not v:
+        return None
     v = v.strip()
-    if v.lower() == "nunca": return None
-    if " " in v and "T" not in v: v = v.replace(" ", "T", 1)
-    if v.endswith("Z"): v = v[:-1] + "+00:00"
-    m = re.match(r"^(.*?)([+-]\d{2}):?(\d{2})$", v)
-    if m: v = f"{m.group(1)}{m.group(2)}:{m.group(3)}"
-    try:
-        return datetime.fromisoformat(v)
-    except Exception:
-        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-            try:
-                dt = datetime.strptime(v, fmt)
-                return dt.replace(tzinfo=timezone.utc)
-            except Exception:
-                pass
-        raise ValueError("Formato de expiração inválido")
+    if v.lower() == "nunca":
+        return None
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})", v)  # pega só a parte YYYY-MM-DD
+    if not m:
+        raise ValueError("Formato de expiração inválido (esperado YYYY-MM-DD...)")
+    return datetime.strptime(m.group(1), "%Y-%m-%d").date()
 
 # -------- leitura via API (preferida) --------
 def _google_service_sheets():
@@ -104,8 +97,10 @@ def buscar_url_por_codigo(codigo: str):
                 exp = _parse_expira_em(v) if v else None
             except Exception:
                 return {"erro":"expiracao_invalida"}
-            if exp and datetime.now(exp.tzinfo or timezone.utc) >= exp:
-                return None
+            if isinstance(exp, date):
+                # expira no dia seguinte ao registrado (vale até 23:59 do próprio dia)
+                if date.today() > exp:
+		    return None
             return r
     return None
 
