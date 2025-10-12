@@ -3,6 +3,7 @@ import io
 import os
 import unicodedata
 from datetime import datetime, timezone
+import re
 from typing import Dict, List, Optional
 from urllib.parse import quote
 
@@ -93,26 +94,38 @@ def _carregar_linhas_normalizadas() -> List[Dict[str, str]]:
     return out
 
 
-def _parse_expira_em(v: str) -> Optional[datetime]:
-    if not v or v.strip().lower() == "nunca":
+def _parse_expira_em(v: str):
+    if not v:
         return None
     v = v.strip()
-    # Tenta ISO 8601 (com offset ou Z)
+    if v.lower() == "nunca":
+        return None
+
+    # tolerar "YYYY-MM-DD HH:MM:SS..." => vira "YYYY-MM-DDTHH:MM:SS..."
+    if " " in v and "T" not in v:
+        v = v.replace(" ", "T", 1)
+
+    # tolerar "Z" => "+00:00"
+    if v.endswith("Z"):
+        v = v[:-1] + "+00:00"
+
+    # normalizar offsets tipo -0300 ou -03:00
+    m = re.match(r"^(.*?)([+-]\d{2}):?(\d{2})$", v)
+    if m:
+        v = f"{m.group(1)}{m.group(2)}:{m.group(3)}"
+
     try:
-        # Python 3.11+ entende "YYYY-MM-DDTHH:MM:SS±HH:MM" e "…Z"
-        if v.endswith("Z"):
-            return datetime.fromisoformat(v.replace("Z", "+00:00"))
         return datetime.fromisoformat(v)
     except Exception:
-        pass
-    # Tentativas adicionais comuns
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%d/%m/%Y %H:%M:%S", "%Y-%m-%d"):
-        try:
-            dt = datetime.strptime(v, fmt)
-            return dt.replace(tzinfo=timezone.utc)  # fallback: UTC
-        except Exception:
-            continue
-    return None
+        # fallback: formatos comuns
+        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            try:
+                dt = datetime.strptime(v, fmt)
+                return dt.replace(tzinfo=timezone.utc)
+            except Exception:
+                pass
+        # se realmente não deu:
+        raise ValueError("Formato de expiração inválido")
 
 
 # ---------- API usada pelo encurtador ----------
