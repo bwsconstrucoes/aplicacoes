@@ -1,7 +1,5 @@
 import os, csv, time, unicodedata, requests, re
-import re
-from datetime import datetime, timezone, date
-import re
+from datetime import datetime, timezone, date, timedelta
 from urllib.parse import quote
 
 SHEET_ID   = os.getenv("SHEET_ID", "1k-ydMq9JEhWGSt7P3D0ucYj2bWNMkhA9uk1kBJiOMb8")
@@ -14,23 +12,25 @@ def _strip_accents(s: str) -> str:
 def norm_col(col: str) -> str:
     return _strip_accents(col).strip().lower().replace(" ", "_")
 
-def _parse_expira_em(v: str):
-    """
-    Regras simples e à prova de erro:
-    - vazio ou 'nunca'  -> sem expiração (None)
-    - qualquer string   -> usa só os 10 primeiros chars como 'YYYY-MM-DD'
-      (ex.: '2025-10-20T11:56:37-03:00' -> '2025-10-20')
-    - se não conseguir parsear -> sem expiração (None)
-    """
+def _parse_expira_em(v):
     if not v:
         return None
-    s = v.strip()
-    if s.lower() == "nunca":
+
+    # Se vier número (ex: 45687 do Google Sheets)
+    if isinstance(v, (int, float)):
+        # Sheets usa base 1899-12-30
+        base = datetime(1899, 12, 30)
+        return (base + timedelta(days=int(v))).date()
+
+    v = str(v).strip()
+    if v.lower() == "nunca":
         return None
-    try:
-        return datetime.strptime(s[:10], "%Y-%m-%d").date()
-    except Exception:
-        return None  # nunca explode; datas inválidas passam como "sem expiração"
+
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})", v)
+    if not m:
+        raise ValueError("Formato de expiração inválido (esperado YYYY-MM-DD...)")
+
+    return datetime.strptime(m.group(1), "%Y-%m-%d").date()
 
 # -------- leitura via API (preferida) --------
 def _google_service_sheets():
@@ -120,8 +120,8 @@ def buscar_url_por_codigo(codigo: str):
     if not codigo:
         return None
     for r in _carregar_linhas():
-        if r.get("codigo", "").strip().lower() == codigo.lower():
-            exp = _parse_expira_em((r.get("expira_em") or "").strip())
+        if (r.get("codigo","").strip().lower() == codigo.lower()):
+            exp = _parse_expira_em(r.get("expira_em"))
             if isinstance(exp, date) and date.today() > exp:
                 return None
             return r
