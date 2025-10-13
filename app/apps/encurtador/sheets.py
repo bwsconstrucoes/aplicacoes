@@ -1,5 +1,7 @@
 import os, csv, time, unicodedata, requests, re
+import re
 from datetime import datetime, timezone, date
+import re
 from urllib.parse import quote
 
 SHEET_ID   = os.getenv("SHEET_ID", "1k-ydMq9JEhWGSt7P3D0ucYj2bWNMkhA9uk1kBJiOMb8")
@@ -13,14 +15,16 @@ def norm_col(col: str) -> str:
     return _strip_accents(col).strip().lower().replace(" ", "_")
 
 def _parse_expira_em(v: str):
+    # aceita "nunca", "YYYY-MM-DD" ou ISO; devolve date ou None
     if not v:
         return None
     v = v.strip()
     if v.lower() == "nunca":
         return None
-    m = re.match(r"^(\d{4}-\d{2}-\d{2})", v)  # pega só a parte YYYY-MM-DD
+    m = re.match(r"^(\d{4}-\d{2}-\d{2})", v)  # pega só a parte da data
     if not m:
-        raise ValueError("Formato de expiração inválido (esperado YYYY-MM-DD...)")
+        # formato inválido -> não expira (evita 500)
+        return None
     return datetime.strptime(m.group(1), "%Y-%m-%d").date()
 
 # -------- leitura via API (preferida) --------
@@ -111,16 +115,16 @@ def buscar_url_por_codigo(codigo: str):
     if not codigo:
         return None
     for r in _carregar_linhas():
-        if r.get("codigo", "").strip().lower() == codigo.lower():
-            v = r.get("expira_em", "").strip()
+        if r.get("codigo","").strip().lower() == codigo.lower():
+            v = (r.get("expira_em") or "").strip()
+            # nunca deixe levantar exceção aqui:
+            exp = None
             try:
-                exp = _parse_expira_em(v) if v else None
+                exp = _parse_expira_em(v)
             except Exception:
-                return {"erro": "expiracao_invalida"}
-            if isinstance(exp, date):
-                # expira no dia seguinte ao registrado (vale até 23:59 do próprio dia)
-                if date.today() > exp:
-                    return None
+                exp = None
+            if isinstance(exp, date) and date.today() > exp:
+                return None
             return r
     return None
 
