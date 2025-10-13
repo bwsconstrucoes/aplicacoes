@@ -15,17 +15,22 @@ def norm_col(col: str) -> str:
     return _strip_accents(col).strip().lower().replace(" ", "_")
 
 def _parse_expira_em(v: str):
-    # aceita "nunca", "YYYY-MM-DD" ou ISO; devolve date ou None
+    """
+    Regras simples e à prova de erro:
+    - vazio ou 'nunca'  -> sem expiração (None)
+    - qualquer string   -> usa só os 10 primeiros chars como 'YYYY-MM-DD'
+      (ex.: '2025-10-20T11:56:37-03:00' -> '2025-10-20')
+    - se não conseguir parsear -> sem expiração (None)
+    """
     if not v:
         return None
-    v = v.strip()
-    if v.lower() == "nunca":
+    s = v.strip()
+    if s.lower() == "nunca":
         return None
-    m = re.match(r"^(\d{4}-\d{2}-\d{2})", v)  # pega só a parte da data
-    if not m:
-        # formato inválido -> não expira (evita 500)
-        return None
-    return datetime.strptime(m.group(1), "%Y-%m-%d").date()
+    try:
+        return datetime.strptime(s[:10], "%Y-%m-%d").date()
+    except Exception:
+        return None  # nunca explode; datas inválidas passam como "sem expiração"
 
 # -------- leitura via API (preferida) --------
 def _google_service_sheets():
@@ -115,14 +120,8 @@ def buscar_url_por_codigo(codigo: str):
     if not codigo:
         return None
     for r in _carregar_linhas():
-        if r.get("codigo","").strip().lower() == codigo.lower():
-            v = (r.get("expira_em") or "").strip()
-            # nunca deixe levantar exceção aqui:
-            exp = None
-            try:
-                exp = _parse_expira_em(v)
-            except Exception:
-                exp = None
+        if r.get("codigo", "").strip().lower() == codigo.lower():
+            exp = _parse_expira_em((r.get("expira_em") or "").strip())
             if isinstance(exp, date) and date.today() > exp:
                 return None
             return r
