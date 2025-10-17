@@ -5,10 +5,25 @@ Grava as abas Emails, Relatório e Runs.
 """
 
 import os
+import json
 from base64 import b64decode
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
+
+# Scopes necessários (Sheets de leitura/escrita):
+SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+def get_sheets_client():
+    creds_json_b64 = os.getenv("GOOGLE_CREDENTIALS_BASE64", "")
+    creds_dict = json.loads(b64decode(creds_json_b64).decode("utf-8"))
+    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(os.getenv("SPREADSHEET_ID"))
+    return sh
+
+# (restante do arquivo permanece igual)
+
 
 # ========== Autenticação Google ==========
 def get_sheets_client():
@@ -98,3 +113,4 @@ def get_status_summary():
         }
     except Exception as e:
         return {"erro": str(e)}
+
