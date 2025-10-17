@@ -1,18 +1,13 @@
-# -*- coding: utf-8 -*-
-"""
-Integração com Google Sheets.
-Grava as abas Emails, Relatório e Runs.
-"""
-
-import os
-import json
+import os, json
 from base64 import b64decode
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 
-# Scopes necessários (Sheets de leitura/escrita):
-SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive"
+]
 
 def get_sheets_client():
     creds_json_b64 = os.getenv("GOOGLE_CREDENTIALS_BASE64", "")
@@ -21,6 +16,7 @@ def get_sheets_client():
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(os.getenv("SPREADSHEET_ID"))
     return sh
+
 
 # (restante do arquivo permanece igual)
 

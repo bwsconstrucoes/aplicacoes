@@ -1,24 +1,18 @@
-# -*- coding: utf-8 -*-
-"""
-Upload de anexos para o Google Drive com link público.
-"""
-
-import os
-import json
+import os, json
+from base64 import b64decode
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 from google.oauth2.service_account import Credentials
 from io import BytesIO
-from base64 import b64decode
 
-# Scopes necessários para criar arquivo + permissão pública:
-DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
+SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 def get_drive_service():
     creds_json_b64 = os.getenv("GOOGLE_CREDENTIALS_BASE64", "")
     creds_dict = json.loads(b64decode(creds_json_b64).decode("utf-8"))
-    creds = Credentials.from_service_account_info(creds_dict, scopes=DRIVE_SCOPES)
+    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
     return build("drive", "v3", credentials=creds, cache_discovery=False)
+
 
 def upload_to_drive(filename, file_bytes):
     try:
