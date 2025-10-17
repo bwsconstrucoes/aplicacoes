@@ -4,6 +4,7 @@ Integração com Google Sheets.
 - Usa service account com scopes corretos (Sheets + Drive)
 - Garante cabeçalhos mesmo se a aba já existir sem header
 - Faz append via values.append (USER_ENTERED + INSERT_ROWS)
+- Corrige A1 notation para títulos com acento/espaço: 'Título'!A1
 """
 
 import os, json
@@ -28,6 +29,10 @@ HEADERS = {
     "Runs": ["Data/Hora","Conta","Total","Status","Mensagem","Valor Total Processado (R$)"],
 }
 
+def _a1(sheet_title: str, cell: str = "A1") -> str:
+    """Monta um range A1 seguro para títulos com acento/espaço."""
+    return f"'{sheet_title}'!{cell}"
+
 def get_sheets_client():
     creds_b64 = os.getenv("GOOGLE_CREDENTIALS_BASE64", "")
     creds_dict = json.loads(b64decode(creds_b64).decode("utf-8"))
@@ -43,27 +48,23 @@ def _get_or_create_ws(sh, title: str):
         ws = sh.worksheet(title)
     except WorksheetNotFound:
         ws = sh.add_worksheet(title=title, rows=200, cols=max(len(headers), 20))
-    # garantir header na linha 1
+    # garantir header na linha 1 (sempre usando 'Título'!A1)
     try:
         first_row = ws.row_values(1)
     except Exception:
         first_row = []
     if first_row != headers:
-        # escreve/atualiza cabeçalho
         sh.values_update(
-            f"{title}!A1",
+            _a1(title, "A1"),
             params={"valueInputOption": "USER_ENTERED"},
             body={"values": [headers]},
         )
     return ws
 
 def _append_row(spreadsheet, title: str, row: list):
-    """
-    Usa spreadsheets.values.append (mais robusto).
-    Range apenas com o nome da aba evita erros de range.
-    """
+    """Append robusto via spreadsheets.values.append (range com título entre aspas)."""
     spreadsheet.values_append(
-        title,
+        _a1(title, "A1"),
         params={
             "valueInputOption": "USER_ENTERED",
             "insertDataOption": "INSERT_ROWS",
