@@ -1,14 +1,22 @@
+# -*- coding: utf-8 -*-
+"""
+Integração com Google Sheets.
+Grava as abas Emails, Relatório e Runs.
+"""
+
 import os, json
 from base64 import b64decode
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
 
+# Scopes necessários
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
-    "https://www.googleapis.com/auth/drive"
+    "https://www.googleapis.com/auth/drive",
 ]
 
+# ========== Autenticação Google ==========
 def get_sheets_client():
     creds_json_b64 = os.getenv("GOOGLE_CREDENTIALS_BASE64", "")
     creds_dict = json.loads(b64decode(creds_json_b64).decode("utf-8"))
@@ -16,19 +24,6 @@ def get_sheets_client():
     gc = gspread.authorize(creds)
     sh = gc.open_by_key(os.getenv("SPREADSHEET_ID"))
     return sh
-
-
-# (restante do arquivo permanece igual)
-
-
-# ========== Autenticação Google ==========
-def get_sheets_client():
-    creds_json = b64decode(os.getenv("GOOGLE_CREDENTIALS_BASE64")).decode("utf-8")
-    creds = Credentials.from_service_account_info(eval(creds_json))
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(os.getenv("SPREADSHEET_ID"))
-    return sh
-
 
 # ========== Grava e-mails ==========
 def append_email_entry(entry):
@@ -44,7 +39,6 @@ def append_email_entry(entry):
         ])
     except Exception as e:
         print(f"[Erro append_email_entry] {e}")
-
 
 # ========== Grava anexos financeiros ==========
 def append_financial_entry(entry):
@@ -70,7 +64,6 @@ def append_financial_entry(entry):
     except Exception as e:
         print(f"[Erro append_financial_entry] {e}")
 
-
 # ========== Log das execuções ==========
 def log_run_summary(results):
     try:
@@ -90,7 +83,6 @@ def log_run_summary(results):
     except Exception as e:
         print(f"[Erro log_run_summary] {e}")
 
-
 # ========== Resumo p/ painel ==========
 def get_status_summary():
     try:
@@ -109,4 +101,3 @@ def get_status_summary():
         }
     except Exception as e:
         return {"erro": str(e)}
-
