@@ -1,16 +1,25 @@
 # -*- coding: utf-8 -*-
 """
-Coleta e-mails de múltiplas contas IMAP, identifica anexos financeiros
-(PDFs, XMLs), envia pro Google Drive e grava resultados no Google Sheets.
+Coletor financeiro:
+- Lê múltiplas contas IMAP a partir da aba "Configurações"
+- Filtra anexos financeiros relevantes (PDF/XML)
+- Envia anexos ao Google Drive (link público)
+- Extrai dados (PDF/XML/OCR opcional) e grava no Google Sheets:
+  - Emails (1 linha por e-mail processado, com contagem de anexos válidos)
+  - Relatório (1 linha por anexo válido)
+  - Runs (resumo da execução)
+Logs detalhados via stdout (Render Logs).
 """
 
 import imaplib
 import email
 import re
+import time
 from datetime import datetime, timedelta
 from email.header import decode_header
 import io
 import os
+import traceback
 from base64 import b64decode
 
 from .parser_financeiro import extract_financial_data_from_attachment
@@ -22,87 +31,207 @@ from .sheets_utils import (
 from .gdrive_utils import upload_to_drive
 
 
-def clean_text(text):
+# ------------------------ Utilidades ------------------------
+
+def _clean_spaces(text):
     if not text:
         return ""
-    text = str(text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
+    return re.sub(r"\s+", " ", str(text)).strip()
 
 
-def decode_mime(text):
+def _decode_mime(text):
     if not text:
         return ""
     parts = decode_header(text)
     decoded = ""
     for s, enc in parts:
         if isinstance(s, bytes):
-            decoded += s.decode(enc or "utf-8", errors="ignore")
+            try:
+                decoded += s.decode(enc or "utf-8", errors="ignore")
+            except Exception:
+                decoded += s.decode("latin-1", errors="ignore")
         else:
             decoded += s
     return decoded
 
 
-def is_relevant_attachment(filename):
+def _is_relevant_attachment(filename):
+    """
+    Regras simples: somente .pdf/.xml e com palavras-chave de financeiro,
+    exclui termos que usualmente não são títulos a pagar.
+    """
     if not filename:
         return False
     name = filename.lower()
+
+    # extensões
     if not (name.endswith(".pdf") or name.endswith(".xml")):
         return False
+
+    # descartar arquivos comuns não financeiros
     ignore_words = [
-        "assinatura", "signature", "comprovante", "relatorio",
-        "extrato", "planilha", "recibo", "manual", "foto"
+        "assinatura", "signature", "comprovante", "relatorio", "relatório",
+        "extrato", "planilha", "recibo", "manual", "foto", "imagem",
+        "contrato", "proposta", "orcamento", "orçamento", "pedido", "curriculo"
     ]
     if any(w in name for w in ignore_words):
         return False
+
+    # focar em financeiro
     keywords = [
-        "boleto", "nota", "nf", "nfe", "fatura", "duplicata", "danfe", "cobranca"
+        "boleto", "nota", "nf", "nfe", "danfe", "duplicata", "fatura", "cobranca", "cobrança"
     ]
     return any(k in name for k in keywords)
 
 
-def process_mailbox(label, host, user, password, since_days=90, max_emails=1000):
-    print(f"\n📥 Processando caixa: {user}")
+def _parse_date_header(date_header):
+    """
+    Tenta normalizar a data do cabeçalho do e-mail em YYYY-MM-DD.
+    """
+    if not date_header:
+        return datetime.now().strftime("%Y-%m-%d")
+    try:
+        # Ex.: Thu, 10 Oct 2025 15:23:11 -0300
+        # Pega só o "Thu, 10 Oct 2025 15:23:11"
+        base = date_header.split("(")[0].strip()
+        return datetime.strptime(base[:25], "%a, %d %b %Y %H:%M:%S").strftime("%Y-%m-%d")
+    except Exception:
+        try:
+            # Fallback: muitos servers variam o formato
+            return datetime.fromtimestamp(email.utils.mktime_tz(email.utils.parsedate_tz(date_header))).strftime("%Y-%m-%d")
+        except Exception:
+            return datetime.now().strftime("%Y-%m-%d")
+
+
+# ------------------------ Leitura de Configurações ------------------------
+
+def _load_mailbox_configs_from_sheet():
+    """
+    Lê a aba "Configurações" e encontra a tabela de contas:
+    colunas esperadas:
+    ativo | label | imap_host | imap_user | imap_password | search_since_days | max_emails_per_box
+    Retorna lista de dicts somente com ativo=TRUE.
+    """
+    import gspread
+    from google.oauth2.service_account import Credentials
+    import json
+
+    print("[CFG] Lendo configurações do Google Sheets...")
+    creds_json = b64decode(os.getenv("GOOGLE_CREDENTIALS_BASE64", "")).decode("utf-8")
+    creds = Credentials.from_service_account_info(json.loads(creds_json), scopes=[
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ])
+    gc = gspread.authorize(creds)
+    sh = gc.open_by_key(os.getenv("SPREADSHEET_ID"))
+    ws = sh.worksheet("Configurações")
+    values = ws.get_all_values()
+
+    # Localiza o cabeçalho da grade de contas
+    header = ["ativo", "label", "imap_host", "imap_user", "imap_password", "search_since_days", "max_emails_per_box"]
+    header_idx = None
+    for i, row in enumerate(values):
+        row_norm = [r.strip().lower() for r in row]
+        if row_norm[:len(header)] == header:
+            header_idx = i
+            break
+
+    if header_idx is None:
+        print("[CFG] Cabeçalho de contas não encontrado na aba Configurações. Verifique a planilha.")
+        return []
+
+    configs = []
+    for row in values[header_idx + 1:]:
+        if not any(cell.strip() for cell in row):
+            # linha em branco => fim da seção
+            break
+        try:
+            ativo = (row[0].strip().upper() == "TRUE")
+        except Exception:
+            ativo = False
+        if not ativo:
+            continue
+        try:
+            cfg = {
+                "label": row[1].strip(),
+                "host": row[2].strip(),
+                "user": row[3].strip(),
+                "password": row[4].strip(),
+                "since_days": int(row[5].strip() or "90"),
+                "max_emails": int(row[6].strip() or "1000"),
+            }
+            if cfg["host"] and cfg["user"]:
+                configs.append(cfg)
+        except Exception:
+            # linha malformada; ignora
+            continue
+
+    print(f"[CFG] Contas ativas encontradas: {len(configs)}")
+    for c in configs:
+        print(f"     - {c['label']} ({c['user']} @ {c['host']}) / since_days={c['since_days']} / max={c['max_emails']}")
+    return configs
+
+
+# ------------------------ Processamento de uma caixa ------------------------
+
+def _process_single_mailbox(label, host, user, password, since_days=90, max_emails=1000):
+    print(f"\n📥 [START] Caixa: {label}  <{user}>  host={host}")
+    start = time.time()
+
     mail = imaplib.IMAP4_SSL(host)
     mail.login(user, password)
+
+    # Processa INBOX (se quiser expandir para outras pastas no futuro, trocar aqui)
     mail.select("INBOX")
 
     date_limit = (datetime.now() - timedelta(days=int(since_days))).strftime("%d-%b-%Y")
-    _, search_data = mail.search(None, f'(SINCE "{date_limit}")')
+    typ, search_data = mail.search(None, f'(SINCE "{date_limit}")')
 
-    email_ids = search_data[0].split()
-    print(f"  Total encontrado: {len(email_ids)} emails (limite {max_emails})")
+    if typ != "OK":
+        print(f"[WARN] Search falhou para {user}: {typ}")
+        email_ids = []
+    else:
+        email_ids = search_data[0].split()
+
+    print(f"[INFO] {label}: {len(email_ids)} e-mails encontrados desde {date_limit} (limite {max_emails}).")
 
     total_emails = 0
-    total_attachments = 0
+    total_valid_atts = 0
     total_value = 0.0
 
+    # Percorre do mais recente para o mais antigo, respeitando o limite
     for eid in reversed(email_ids[-int(max_emails):]):
-        _, msg_data = mail.fetch(eid, "(RFC822)")
-        raw_email = msg_data[0][1]
-        msg = email.message_from_bytes(raw_email)
-
-        subject = decode_mime(msg.get("Subject"))
-        from_ = decode_mime(msg.get("From"))
-        date_ = msg.get("Date")
-        date_fmt = ""
         try:
-            date_fmt = datetime.strptime(date_[:25], "%a, %d %b %Y %H:%M:%S").strftime("%Y-%m-%d")
-        except Exception:
-            date_fmt = datetime.now().strftime("%Y-%m-%d")
-
-        valid_attachments = 0
-        for part in msg.walk():
-            if part.get_content_maintype() == "multipart":
+            typ, msg_data = mail.fetch(eid, "(RFC822)")
+            if typ != "OK":
                 continue
-            filename = part.get_filename()
-            if filename:
-                filename = decode_mime(filename)
-                if is_relevant_attachment(filename):
+            raw_email = msg_data[0][1]
+            msg = email.message_from_bytes(raw_email)
+
+            subject = _decode_mime(msg.get("Subject"))
+            from_ = _decode_mime(msg.get("From"))
+            date_fmt = _parse_date_header(msg.get("Date"))
+
+            valid_attachments = 0
+
+            for part in msg.walk():
+                if part.get_content_maintype() == "multipart":
+                    continue
+                filename = part.get_filename()
+                if not filename:
+                    continue
+                filename = _decode_mime(filename)
+
+                if _is_relevant_attachment(filename):
                     file_bytes = part.get_payload(decode=True)
+
+                    # 1) sobe pro Drive
                     drive_link = upload_to_drive(filename, file_bytes)
 
+                    # 2) extrai dados financeiros
                     extracted = extract_financial_data_from_attachment(filename, file_bytes)
+
+                    # 3) completa metadados e envia ao Relatório
                     extracted["Conta"] = label
                     extracted["Remetente"] = from_
                     extracted["Assunto"] = subject
@@ -111,63 +240,89 @@ def process_mailbox(label, host, user, password, since_days=90, max_emails=1000)
                     extracted["Link"] = drive_link
 
                     append_financial_entry(extracted)
+
+                    # 4) soma valor numérico (se houver)
                     total_value += extracted.get("ValorNum", 0.0)
                     valid_attachments += 1
-                    total_attachments += 1
+                    total_valid_atts += 1
 
-        append_email_entry({
-            "Conta": label,
-            "Remetente": from_,
-            "Assunto": subject,
-            "Data": date_fmt,
-            "Anexos Válidos": valid_attachments
-        })
-        total_emails += 1
+            # Registro básico do e-mail na aba Emails
+            append_email_entry({
+                "Conta": label,
+                "Remetente": from_,
+                "Assunto": subject,
+                "Data": date_fmt,
+                "Anexos Válidos": valid_attachments
+            })
+
+            total_emails += 1
+
+        except Exception as e:
+            print(f"[ERRO] Falha ao processar e-mail {eid} em {label}: {e}")
+            traceback.print_exc()
 
     mail.logout()
+    elapsed = time.time() - start
+    print(f"✅ [DONE] Caixa: {label} | emails={total_emails} | anexos_validos={total_valid_atts} | valor_total=R$ {total_value:,.2f} | tempo={elapsed:,.1f}s".replace(",", "X").replace(".", ",").replace("X", "."))
 
     return {
         "conta": label,
         "emails": total_emails,
-        "anexos": total_attachments,
+        "anexos": total_valid_atts,
         "valor_total": round(total_value, 2),
     }
 
 
+# ------------------------ Orquestração de todas as caixas ------------------------
+
 def process_all_mailboxes():
     """
-    Lê a aba Configurações e executa todas as caixas marcadas como TRUE.
+    Lê as contas na aba Configurações e executa todas com ativo=TRUE.
+    Loga um resumo consolidado na aba Runs (via log_run_summary).
     """
-    import gspread
-    from google.oauth2.service_account import Credentials
-
-    creds_json = b64decode(os.getenv("GOOGLE_CREDENTIALS_BASE64")).decode("utf-8")
-    creds = Credentials.from_service_account_info(eval(creds_json))
-    gc = gspread.authorize(creds)
-    sh = gc.open_by_key(os.getenv("SPREADSHEET_ID"))
-    ws = sh.worksheet("Configurações")
-
-    data = ws.get_all_records()
-    configs = []
-    current = None
-    for row in data:
-        if not row.get("ativo") and not row.get("label"):
-            continue
-        if row.get("ativo", "").strip().upper() == "TRUE":
-            current = {
-                "label": row.get("label", ""),
-                "imap_host": row.get("imap_host", ""),
-                "imap_user": row.get("imap_user", ""),
-                "imap_password": row.get("imap_password", ""),
-                "search_since_days": row.get("search_since_days", 90),
-                "max_emails_per_box": row.get("max_emails_per_box", 1000)
-            }
-            configs.append(current)
-
+    print("\n================ INÍCIO DA EXECUÇÃO (Email Financeiro) ================\n")
+    exec_start = time.time()
     resumo = []
-    for cfg in configs:
-        result = process_mailbox(**cfg)
-        resumo.append(result)
+    error_happened = False
 
-    log_run_summary(resumo)
-    print("\n✅ Execução finalizada com sucesso.\n")
+    try:
+        configs = _load_mailbox_configs_from_sheet()
+        if not configs:
+            print("[WARN] Nenhuma conta ativa encontrada na aba Configurações.")
+        for cfg in configs:
+            try:
+                r = _process_single_mailbox(
+                    label=cfg["label"],
+                    host=cfg["host"],
+                    user=cfg["user"],
+                    password=cfg["password"],
+                    since_days=cfg["since_days"],
+                    max_emails=cfg["max_emails"],
+                )
+                resumo.append(r)
+            except Exception as e:
+                error_happened = True
+                print(f"[ERRO] Caixa {cfg['label']} falhou: {e}")
+                traceback.print_exc()
+
+    except Exception as e:
+        error_happened = True
+        print(f"[ERRO] Falha ao carregar configurações: {e}")
+        traceback.print_exc()
+
+    # Mesmo com erro em alguma caixa, registra o que deu certo
+    try:
+        log_run_summary(resumo)
+    except Exception as e:
+        print(f"[ERRO] Falha ao registrar resumo (Runs): {e}")
+        traceback.print_exc()
+
+    elapsed = time.time() - exec_start
+    print("\n================ FIM DA EXECUÇÃO =================")
+    print(f"Resumo: {resumo}")
+    print("Tempo total: {:.1f}s".format(elapsed))
+    if error_happened:
+        print("Status: CONCLUÍDO COM ALERTAS (ver logs acima)")
+    else:
+        print("Status: CONCLUÍDO COM SUCESSO")
+    print("=================================================\n")
