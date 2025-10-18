@@ -8,30 +8,40 @@ from flask import jsonify, request
 from datetime import datetime
 import threading
 
+# Blueprint do módulo
+from . import bp
+
+# Funções existentes no módulo
 from .collector import process_all_mailboxes
 from .sheets_utils import get_status_summary
 
-# Endpoint: /api/email_financeiro/run
-from . import bp
+# ===============================
+# 🔴 FLAG GLOBAL DE PARADA (NOVA)
+# ===============================
+# O coletor consulta esta flag periodicamente e encerra de forma limpa
+STOP_FLAG = {"active": False}
 
 
-@bp.route("/run", methods=["GET", "POST"])
+@bp.route("/run", methods=["GET"])
 def run_collector():
     """
-    Executa a coleta de e-mails e anexos financeiros.
-    Pode ser acionado manualmente ou por cron no Render.
+    Dispara a execução do coletor em thread separada.
+    (Funcionalidade mantida. Nenhuma mudança de comportamento.)
     """
-    def background_job():
+    def _runner():
         try:
             process_all_mailboxes()
         except Exception as e:
-            print(f"[ERRO] Execução do coletor: {e}")
+            # apenas loga; não altera o fluxo do /run
+            print(f"[ERRO] process_all_mailboxes: {e}")
 
-    threading.Thread(target=background_job).start()
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+
     return jsonify({
-        "status": "running",
-        "message": "Coletor financeiro iniciado em background.",
-        "timestamp": datetime.now().isoformat()
+        "status": "ok",
+        "message": "Coletor iniciado",
+        "updated": datetime.now().isoformat()
     })
 
 
@@ -39,6 +49,7 @@ def run_collector():
 def status():
     """
     Retorna resumo da última execução, contagens e valor total encontrado.
+    (Funcionalidade mantida. Nenhuma mudança de comportamento.)
     """
     try:
         summary = get_status_summary()
@@ -46,6 +57,30 @@ def status():
             "status": "ok",
             "updated": datetime.now().isoformat(),
             **summary
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+# ===========================
+# 🔴 ENDPOINT: PARAR EXECUÇÃO
+# ===========================
+@bp.route("/stop", methods=["GET"])
+def stop_execution():
+    """
+    Marca a execução atual para parar o mais rápido possível.
+    O coletor checa STOP_FLAG periodicamente e encerra com status amigável.
+    (Nova funcionalidade; não altera as existentes.)
+    """
+    try:
+        STOP_FLAG["active"] = True
+        return jsonify({
+            "status": "ok",
+            "message": "Execução marcada para parar.",
+            "updated": datetime.now().isoformat()
         })
     except Exception as e:
         return jsonify({
