@@ -174,7 +174,7 @@ def _load_mailbox_configs_from_sheet():
 # ------------------------ Processamento de uma caixa ------------------------
 
 def _process_single_mailbox(label, host, user, password, since_days=90, max_emails=1000):
-    print(f\"\n📥 [START] Caixa: {label}  <{user}>  host={host}\")
+    print(f\"\n [START] Caixa: {label}  <{user}>  host={host}\")
     start = time.time()
 
     # ===== ADIÇÃO: respeita /stop ANTES de conectar =====
@@ -289,7 +289,7 @@ def _process_single_mailbox(label, host, user, password, since_days=90, max_emai
         pass
 
     elapsed = time.time() - start
-    print(f\"✅ [DONE] Caixa: {label} | emails={total_emails} | anexos_validos={total_valid_atts} | valor_total=R$ {total_value:,.2f} | tempo={elapsed:,.1f}s\".replace(\",\", \"X\").replace(\".\", \",\").replace(\"X\", \".\"))
+    print(f\" [DONE] Caixa: {label} | emails={total_emails} | anexos_validos={total_valid_atts} | valor_total=R$ {total_value:,.2f} | tempo={elapsed:,.1f}s\".replace(\",\", \"X\").replace(\".\", \",\").replace(\"X\", \".\"))
 
     return {
         "conta": label,
@@ -320,7 +320,7 @@ def process_all_mailboxes():
         for cfg in configs:
             # ===== ADIÇÃO: respeita /stop entre as caixas =====
             if STOP_FLAG.get("active"):
-                print("⏹️ Execução interrompida por /stop antes de processar a próxima caixa.")
+                print(" Execução interrompida por /stop antes de processar a próxima caixa.")
                 break
 
             try:
