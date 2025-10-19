@@ -140,7 +140,7 @@ def _load_mailbox_configs_from_sheet():
 # -------------- processamento --------------
 
 def _fetch_message_peek(mail: imaplib.IMAP4_SSL, eid: bytes):
-    """
+    r"""
     Faz FETCH com PEEK para não alterar \Seen.
     """
     typ, msg_data = mail.fetch(eid, "(BODY.PEEK[])")  # <- PEEK evita marcar como lido
