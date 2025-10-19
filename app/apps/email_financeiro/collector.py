@@ -22,11 +22,10 @@ import os
 import traceback
 from base64 import b64decode
 
-# ====== IMPORTANTE: apenas adicionamos esta importação ======
-# ela traz a STOP_FLAG definida em routes.py
+# STOP_FLAG (vem de routes.py)
 from .routes import STOP_FLAG
 
-# Suas dependências internas (mantidas)
+# Dependências internas existentes
 from .parser_financeiro import extract_financial_data_from_attachment
 from .sheets_utils import (
     append_email_entry,
@@ -177,35 +176,36 @@ def _process_single_mailbox(label, host, user, password, since_days=90, max_emai
     print("\n [START] Caixa:", label, f"<{user}>", "host=", host)
     start = time.time()
 
-    # ===== ADIÇÃO: respeita /stop ANTES de conectar =====
+    # Respeita /stop ANTES de conectar
     if STOP_FLAG.get("active"):
-        print(f\"[STOP] Interrompido antes de conectar: {label}\")
-        return {\"conta\": label, \"emails\": 0, \"anexos\": 0, \"valor_total\": 0.0}
+        print(f"[STOP] Interrompido antes de conectar: {label}")
+        return {"conta": label, "emails": 0, "anexos": 0, "valor_total": 0.0}
 
     mail = imaplib.IMAP4_SSL(host)
     mail.login(user, password)
 
-    # ===== ADIÇÃO: respeita /stop após login =====
+    # Respeita /stop após login
     if STOP_FLAG.get("active"):
-        print(f\"[STOP] Interrompido após login: {label}\")
+        print(f"[STOP] Interrompido após login: {label}")
         try:
             mail.logout()
         except Exception:
             pass
-        return {\"conta\": label, \"emails\": 0, \"anexos\": 0, \"valor_total\": 0.0}
+        return {"conta": label, "emails": 0, "anexos": 0, "valor_total": 0.0}
 
-    mail.select("INBOX")
+    # SOMENTE LEITURA: não altera flags
+    mail.select("INBOX", readonly=True)
 
     date_limit = (datetime.now() - timedelta(days=int(since_days))).strftime("%d-%b-%Y")
-    typ, search_data = mail.search(None, f'(SINCE \"{date_limit}\")')
+    typ, search_data = mail.search(None, f'(SINCE "{date_limit}")')
 
     if typ != "OK":
-        print(f\"[WARN] Search falhou para {user}: {typ}\")
+        print(f"[WARN] Search falhou para {user}: {typ}")
         email_ids = []
     else:
         email_ids = search_data[0].split()
 
-    print(f\"[INFO] {label}: {len(email_ids)} e-mails encontrados desde {date_limit} (limite {max_emails}).\")
+    print(f"[INFO] {label}: {len(email_ids)} e-mails encontrados desde {date_limit} (limite {max_emails}).")
 
     total_emails = 0
     total_valid_atts = 0
@@ -213,14 +213,15 @@ def _process_single_mailbox(label, host, user, password, since_days=90, max_emai
 
     # Percorre do mais recente para o mais antigo, respeitando o limite
     for eid in reversed(email_ids[-int(max_emails):]):
-        # ===== ADIÇÃO: respeita /stop durante o loop =====
+        # Respeita /stop durante o loop
         if STOP_FLAG.get("active"):
-            print(f\"[STOP] Interrompido durante processamento da caixa: {label}\")
+            print(f"[STOP] Interrompido durante processamento da caixa: {label}")
             break
 
         try:
-            typ, msg_data = mail.fetch(eid, "(RFC822)")
-            if typ != "OK":
+            # FETCH usando BODY.PEEK[] para NÃO marcar como lido
+            typ, msg_data = mail.fetch(eid, "(BODY.PEEK[])")
+            if typ != "OK" or not msg_data or not msg_data[0]:
                 continue
             raw_email = msg_data[0][1]
             msg = email.message_from_bytes(raw_email)
@@ -232,9 +233,9 @@ def _process_single_mailbox(label, host, user, password, since_days=90, max_emai
             valid_attachments = 0
 
             for part in msg.walk():
-                # ===== ADIÇÃO: respeita /stop dentro dos anexos =====
+                # Respeita /stop dentro dos anexos
                 if STOP_FLAG.get("active"):
-                    print(f\"[STOP] Interrompido dentro do loop de anexos: {label}\")
+                    print(f"[STOP] Interrompido dentro do loop de anexos: {label}")
                     break
 
                 if part.get_content_maintype() == "multipart":
@@ -280,7 +281,7 @@ def _process_single_mailbox(label, host, user, password, since_days=90, max_emai
             total_emails += 1
 
         except Exception as e:
-            print(f\"[ERRO] Falha ao processar e-mail {eid} em {label}: {e}\")
+            print(f"[ERRO] Falha ao processar e-mail {eid} em {label}: {e}")
             traceback.print_exc()
 
     try:
@@ -289,7 +290,7 @@ def _process_single_mailbox(label, host, user, password, since_days=90, max_emai
         pass
 
     elapsed = time.time() - start
-    print(f\" [DONE] Caixa: {label} | emails={total_emails} | anexos_validos={total_valid_atts} | valor_total=R$ {total_value:,.2f} | tempo={elapsed:,.1f}s\".replace(\",\", \"X\").replace(\".\", \",\").replace(\"X\", \".\"))
+    print(f" [DONE] Caixa: {label} | emails={total_emails} | anexos_validos={total_valid_atts} | valor_total=R$ {total_value:,.2f} | tempo={elapsed:,.1f}s".replace(",", "X").replace(".", ",").replace("X", "."))
 
     return {
         "conta": label,
@@ -318,7 +319,7 @@ def process_all_mailboxes():
             print("[WARN] Nenhuma conta ativa encontrada na aba Configurações.")
 
         for cfg in configs:
-            # ===== ADIÇÃO: respeita /stop entre as caixas =====
+            # Respeita /stop entre as caixas
             if STOP_FLAG.get("active"):
                 print(" Execução interrompida por /stop antes de processar a próxima caixa.")
                 break
@@ -359,7 +360,7 @@ def process_all_mailboxes():
     else:
         print("Status: CONCLUÍDO COM SUCESSO")
 
-    # ===== ADIÇÃO: reseta a flag p/ próximas execuções =====
+    # Reseta a flag p/ próximas execuções
     if STOP_FLAG.get("active"):
         STOP_FLAG["active"] = False
 
