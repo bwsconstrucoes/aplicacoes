@@ -14,10 +14,7 @@ from .collector_v2 import process_all_mailboxes_v2     # Fase 1
 from .collector_ai import process_all_mailboxes_ai     # Fase 2 (OCR/IA)
 
 # Flag /stop (se você já tinha; senão mantém aqui)
-try:
-    STOP_FLAG  # type: ignore
-except NameError:
-    STOP_FLAG = {"active": False}
+from .state import STOP_FLAG
 
 
 @bp.route("/run", methods=["GET"])

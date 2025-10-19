@@ -16,7 +16,7 @@ import traceback
 import os
 
 try:
-    from .routes import STOP_FLAG  # type: ignore
+    from .state import STOP_FLAG  # type: ignore
 except Exception:
     STOP_FLAG = {"active": False}
 

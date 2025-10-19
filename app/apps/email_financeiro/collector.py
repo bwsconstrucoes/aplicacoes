@@ -23,7 +23,7 @@ import traceback
 from base64 import b64decode
 
 # STOP_FLAG (vem de routes.py)
-from .routes import STOP_FLAG
+from .state import STOP_FLAG
 
 # Dependências internas existentes
 from .parser_financeiro import extract_financial_data_from_attachment

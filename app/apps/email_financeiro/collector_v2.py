@@ -19,7 +19,7 @@ import os
 
 # STOP opcional (se você já adicionou no routes.py)
 try:
-    from .routes import STOP_FLAG  # type: ignore
+    from .state import STOP_FLAG  # type: ignore
 except Exception:
     STOP_FLAG = {"active": False}
 
