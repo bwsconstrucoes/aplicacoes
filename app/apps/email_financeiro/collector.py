@@ -174,7 +174,7 @@ def _load_mailbox_configs_from_sheet():
 # ------------------------ Processamento de uma caixa ------------------------
 
 def _process_single_mailbox(label, host, user, password, since_days=90, max_emails=1000):
-    print(f\"\n [START] Caixa: {label}  <{user}>  host={host}\")
+    print("\n [START] Caixa:", label, f"<{user}>", "host=", host)
     start = time.time()
 
     # ===== ADIÇÃO: respeita /stop ANTES de conectar =====
