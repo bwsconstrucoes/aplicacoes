@@ -1,89 +1,76 @@
 # -*- coding: utf-8 -*-
-"""
-Rotas principais do módulo Email Financeiro
-Executa coleta, parsing e retorna status.
-"""
-
-from flask import jsonify, request
+from flask import jsonify
 from datetime import datetime
 import threading
 
-# Blueprint do módulo
 from . import bp
 
-# Funções existentes no módulo
-from .collector import process_all_mailboxes
+# Rotas originais
+from .collector import process_all_mailboxes            # (se você ainda usa o antigo)
 from .sheets_utils import get_status_summary
 
-# ===============================
-# 🔴 FLAG GLOBAL DE PARADA (NOVA)
-# ===============================
-# O coletor consulta esta flag periodicamente e encerra de forma limpa
-STOP_FLAG = {"active": False}
+# ---------------- ADIÇÕES ----------------
+from .collector_v2 import process_all_mailboxes_v2     # Fase 1
+from .collector_ai import process_all_mailboxes_ai     # Fase 2 (OCR/IA)
+
+# Flag /stop (se você já tinha; senão mantém aqui)
+try:
+    STOP_FLAG  # type: ignore
+except NameError:
+    STOP_FLAG = {"active": False}
 
 
 @bp.route("/run", methods=["GET"])
 def run_collector():
-    """
-    Dispara a execução do coletor em thread separada.
-    (Funcionalidade mantida. Nenhuma mudança de comportamento.)
-    """
     def _runner():
         try:
+            # mantém seu coletor original por compatibilidade
             process_all_mailboxes()
         except Exception as e:
-            # apenas loga; não altera o fluxo do /run
             print(f"[ERRO] process_all_mailboxes: {e}")
-
     t = threading.Thread(target=_runner, daemon=True)
     t.start()
-
-    return jsonify({
-        "status": "ok",
-        "message": "Coletor iniciado",
-        "updated": datetime.now().isoformat()
-    })
+    return jsonify({"status": "ok", "message": "Coletor iniciado", "updated": datetime.now().isoformat()})
 
 
 @bp.route("/status", methods=["GET"])
 def status():
-    """
-    Retorna resumo da última execução, contagens e valor total encontrado.
-    (Funcionalidade mantida. Nenhuma mudança de comportamento.)
-    """
     try:
         summary = get_status_summary()
-        return jsonify({
-            "status": "ok",
-            "updated": datetime.now().isoformat(),
-            **summary
-        })
+        return jsonify({"status": "ok", "updated": datetime.now().isoformat(), **summary})
     except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
-# ===========================
-# 🔴 ENDPOINT: PARAR EXECUÇÃO
-# ===========================
+# ---------- NOVOS ENDPOINTS SEM QUEBRAR O QUE EXISTE ----------
+
+@bp.route("/run_v2", methods=["GET"])
+def run_collector_v2():
+    """Fase 1 – IMAP readonly + parser rule-based melhorado"""
+    def _runner():
+        try:
+            process_all_mailboxes_v2()
+        except Exception as e:
+            print(f"[ERRO] process_all_mailboxes_v2: {e}")
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    return jsonify({"status": "ok", "message": "Coletor v2 iniciado", "updated": datetime.now().isoformat()})
+
+
+@bp.route("/run_ai", methods=["GET"])
+def run_collector_ai():
+    """Fase 2 – OCR + IA + fallback"""
+    def _runner():
+        try:
+            process_all_mailboxes_ai()
+        except Exception as e:
+            print(f"[ERRO] process_all_mailboxes_ai: {e}")
+    t = threading.Thread(target=_runner, daemon=True)
+    t.start()
+    return jsonify({"status": "ok", "message": "Coletor IA iniciado", "updated": datetime.now().isoformat()})
+
+
 @bp.route("/stop", methods=["GET"])
 def stop_execution():
-    """
-    Marca a execução atual para parar o mais rápido possível.
-    O coletor checa STOP_FLAG periodicamente e encerra com status amigável.
-    (Nova funcionalidade; não altera as existentes.)
-    """
-    try:
-        STOP_FLAG["active"] = True
-        return jsonify({
-            "status": "ok",
-            "message": "Execução marcada para parar.",
-            "updated": datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
+    STOP_FLAG["active"] = True
+    return jsonify({"status": "ok", "message": "Execução marcada para parar.", "updated": datetime.now().isoformat()})
