@@ -2,17 +2,16 @@ import os
 from flask import Flask
 from app.apps.pdf_processor import bp as pdf_bp
 from app.apps.encurtador import bp as encurtador_bp
-from app.apps.email_financeiro import bp as email_financeiro_bp  # novo
+from app.apps.email_financeiro import bp as email_financeiro_bp
+from app.apps.sheets_sync import bp as sheets_sync_bp
 
 def create_app():
     app = Flask(__name__)
 
-    # módulos já existentes
-    app.register_blueprint(pdf_bp)           # /compilar, /pdf2texto, /token-status
-    app.register_blueprint(encurtador_bp)    # /encurtador/*
-
-    # coletor financeiro
+    app.register_blueprint(pdf_bp)
+    app.register_blueprint(encurtador_bp)
     app.register_blueprint(email_financeiro_bp, url_prefix="/api/email_financeiro")
+    app.register_blueprint(sheets_sync_bp, url_prefix="/api/sheets_sync")
 
     @app.route("/")
     def index():
