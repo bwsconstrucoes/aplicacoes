@@ -157,30 +157,30 @@ def _sincronizar_gap(ss_origem, ss_destino, cfg):
 
     total_linhas = len(dados_origem)
 
-    # Limpa o intervalo seguro (até col_limpar_ate, respeitando col_protegida_de)
-    col_limpar_ate    = cfg.get("col_limpar_ate", 18)
-    col_protegida_de  = cfg.get("col_protegida_de")
-    num_cols_limpar   = col_limpar_ate  # limpa de A(1) até col_limpar_ate
-    _limpar_aba(
-        ws_destino,
-        col_inicio=1,
-        num_cols=num_cols_limpar,
-        col_protegida_de=col_protegida_de,
-    )
+    # Limpa apenas as colunas dos blocos (não limpa colunas protegidas individualmente)
+    col_protegida_de = cfg.get("col_protegida_de")
+    for bloco in cfg["blocos"]:
+        cd     = bloco["col_inicio_destino"]
+        nc     = bloco["num_cols"] - len(bloco.get("excluir_indices", []))
+        col_fim = cd + nc - 1
+        if col_protegida_de:
+            col_fim = min(col_fim, col_protegida_de - 1)
+        if col_fim >= cd:
+            col_a = _col_para_letra(cd)
+            col_b = _col_para_letra(col_fim)
+            ws_destino.batch_clear([f"{col_a}1:{col_b}"])
 
-    # Escreve cada bloco separadamente
+    # Escreve cada bloco
     total_escritas = 0
     for bloco in cfg["blocos"]:
-        ci      = bloco["col_inicio_origem"] - 1   # 0-based
+        ci      = bloco["col_inicio_origem"] - 1
         nc      = bloco["num_cols"]
         cd      = bloco["col_inicio_destino"]
-        excluir = bloco.get("excluir_indices", [])  # índices 0-based dentro do bloco a excluir
+        excluir = bloco.get("excluir_indices", [])
 
-        # Fatia o bloco de colunas da origem
         dados_bloco = []
         for linha in dados_origem:
-            fatia = linha[ci:ci + nc]
-            # Remove colunas indesejadas (de trás para frente para não deslocar índices)
+            fatia = list(linha[ci:ci + nc])
             for idx in sorted(excluir, reverse=True):
                 if idx < len(fatia):
                     fatia.pop(idx)

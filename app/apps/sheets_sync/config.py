@@ -116,15 +116,16 @@ PLANILHAS = {
                 "col_protegida_de"   : 26,    # Z em diante = não toca
             },
             {
-                # SSEspelhoSparkline: A→C, pula D, escreve E→I
-                # Origem SSEspelhoRecebimentoPedidos tem colunas A→I (9 cols)
-                # Col D do destino não é tocada
+                # SSEspelhoSparkline:
+                #   Copia A→C da origem → A→C do destino
+                #   Coluna D do destino tem fórmulas — NÃO TOCAR
+                #   Copia E→I da origem → E→I do destino
                 "modo"             : "gap",
                 "aba_origem"       : "SSEspelhoRecebimentoPedidos",
                 "origem_id"        : "1PvecWVPcqMmj1o056ZErevt0cjna6ggz48uNFTahu_M",
                 "aba_destino"      : "SSEspelhoSparkline",
-                "col_limpar_ate"   : 9,    # limpa A→I antes de escrever
-                "col_protegida_de" : None, # sem proteção além do gap
+                "col_limpar_ate"   : 9,    # limpa até I (col 9) antes de escrever
+                "col_protegida_de" : None,
                 "blocos": [
                     # Bloco 1: A→C da origem → A→C do destino
                     {
@@ -132,11 +133,11 @@ PLANILHAS = {
                         "num_cols"           : 3,  # A, B, C
                         "col_inicio_destino" : 1,  # A
                     },
-                    # Bloco 2: D→H da origem → E→I do destino (pula col D do destino)
+                    # Bloco 2: E→I da origem → E→I do destino (D fica intocada)
                     {
-                        "col_inicio_origem"  : 4,  # D da origem
-                        "num_cols"           : 5,  # D, E, F, G, H
-                        "col_inicio_destino" : 5,  # E do destino (D fica vazio)
+                        "col_inicio_origem"  : 5,  # E
+                        "num_cols"           : 5,  # E, F, G, H, I
+                        "col_inicio_destino" : 5,  # E
                     },
                 ],
             },
