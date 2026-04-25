@@ -25,7 +25,7 @@ def secao_omie(payload: dict, parametros_result: dict) -> dict:
 
 
 def _validar_entrada_omie(payload: dict):
-    for campo in ('omieAppKey', 'omieAppSecret', 'omieIdContaCorrente'):
+    for campo in ('omieAppKey', 'omieAppSecret'):
         if not as_string(payload.get(campo)):
             raise ValueError(f'Campo obrigatório não enviado: {campo}')
 
@@ -165,11 +165,18 @@ def _montar_payload_conta_pagar(payload: dict, parametros_result: dict,
                                  codigo_cliente: str, operacao: str,
                                  codigo_integracao_forcado: str = None) -> dict:
     saida = (parametros_result or {}).get('saida') or {}
-    codigo_integracao = (
-        as_string(codigo_integracao_forcado) or
-        as_string(payload.get('OmieCodigoLancamentoIntegracao')) or
-        ('Int' + as_string(payload.get('id')))
-    )
+
+    # Incluir → sempre "Int" + id
+    # Alterar → usa campo "Código Lançamento Integração Omie" do Pipefy (confirmado no blueprint)
+    if codigo_integracao_forcado:
+        codigo_integracao = as_string(codigo_integracao_forcado)
+    elif operacao == 'alterar':
+        codigo_integracao = as_string(payload.get('OmieCodigoLancamentoIntegracao'))
+    else:
+        codigo_integracao = 'Int' + as_string(payload.get('id'))
+
+    id_val = as_string(payload.get('id'))
+
     param = {
         'data_emissao':                  as_string(payload.get('OmieDataSolicitacao')),
         'codigo_lancamento_integracao':  codigo_integracao,
@@ -179,15 +186,23 @@ def _montar_payload_conta_pagar(payload: dict, parametros_result: dict,
         'codigo_categoria':              as_string(saida.get('Tipo de Despesa')),
         'data_previsao':                 as_string(saida.get('Vecimento')),
         'id_conta_corrente':             as_string(payload.get('omieIdContaCorrente')),
-        'numero_documento':              'SP' + as_string(payload.get('id')),
+        'numero_documento':              'SP' + id_val,
         'numero_parcela':                _montar_numero_parcela(payload),
         'observacao':                    _montar_observacao(payload, parametros_result),
         'retem_cofins': 'N', 'retem_csll': 'N', 'retem_inss': 'N',
         'retem_ir': 'N',     'retem_iss': 'N',  'retem_pis': 'N',
-        'numero_documento_fiscal':       _montar_numero_documento_fiscal(payload),
+        'valor_cofins': '', 'valor_csll': '', 'valor_inss': '',
+        'valor_ir': '',     'valor_iss': '',  'valor_pis': '',
+        # Correção: numero_documento_fiscal = "SP" + id (igual ao Make.com, não usa OmieNumeroNotaFiscal)
+        'numero_documento_fiscal':       'SP' + id_val,
         'numero_pedido':                 _montar_numero_pedido(payload),
         'distribuicao':                  _montar_distribuicao_base(payload, saida),
     }
+
+    # Correção: data_entrada só no Alterar (igual ao Make módulo 198)
+    if operacao == 'alterar':
+        param['data_entrada'] = as_string(payload.get('OmieDataSolicitacao'))
+
     _aplicar_rateio_multiplo(param, payload.get('OmieRateioMultiplo'))
     return {
         'call': 'AlterarContaPagar' if operacao == 'alterar' else 'IncluirContaPagar',
@@ -206,10 +221,6 @@ def _montar_numero_parcela(payload: dict) -> str:
 
 def _montar_numero_pedido(payload: dict) -> str:
     return as_string(payload.get('OmiePedidoSuprimentos') or '')[:15]
-
-
-def _montar_numero_documento_fiscal(payload: dict) -> str:
-    return re.sub(r'[.,]', '', as_string(payload.get('OmieNumeroNotaFiscal') or '')).strip()
 
 
 def _montar_observacao(payload: dict, parametros_result: dict) -> str:
@@ -239,19 +250,36 @@ def _montar_observacao(payload: dict, parametros_result: dict) -> str:
 
 
 def _montar_distribuicao_base(payload: dict, saida: dict) -> list:
+    """
+    Mapeamento conforme blueprint (módulos 191/198):
+      cCodDep ← saida['Centro de Custo X']   = código Omie do depto (col A→E da planilha resultado)
+      cDesDep ← OmieCentroX do payload       = nome limpo do centro de custo
+      nPerDep ← saida['Centro de Custo X %'] = percentual (col I,K,M,O,Q da planilha resultado)
+    """
     arr = []
     for i in range(1, 6):
         bruto = as_string(payload.get(f'OmieCentro{i}') or '')
         nome  = limpar_colchetes(bruto)
-        cod   = as_string(saida.get(f'Centro de Custo {i}'))
-        perc  = normalizar_percentual_omie(saida.get(f'Centro de Custo {i} %'))
+        cod   = as_string(saida.get(f'Centro de Custo {i}'))       # código Omie do depto
+        perc  = normalizar_percentual_omie(saida.get(f'Centro de Custo {i} %'))  # percentual
         vazio = not bruto or bruto == '[]'
-        arr.append({
-            'cCodDep': None if vazio else (cod or None),
-            'cDesDep': None if vazio else nome,
-            'nPerDep': None if (vazio or perc == 0) else perc,
-            'nValDep': None,
-        })
+
+        if i == 1:
+            # CC1 sempre presente (nunca null no Make)
+            arr.append({
+                'cCodDep': cod or None,
+                'cDesDep': nome or None,
+                'nPerDep': perc if perc else None,
+                'nValDep': None,
+            })
+        else:
+            # CC2→5: null se campo vazio/null no payload
+            arr.append({
+                'cCodDep': None if vazio else (cod or None),
+                'cDesDep': None if (vazio or bruto == '[]') else (nome or None),
+                'nPerDep': None if (vazio or perc == 0) else perc,
+                'nValDep': None,
+            })
     return arr
 
 
