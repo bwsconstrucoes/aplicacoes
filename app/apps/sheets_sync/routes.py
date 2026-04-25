@@ -2,7 +2,11 @@
 """
 sheets_sync/routes.py
 Endpoint: POST /api/sheets_sync/sincronizar
-Body JSON: { "spreadsheet_id": "ID_DA_PLANILHA_DESTINO" }
+Body JSON:
+  {
+    "spreadsheet_id":   "ID_DA_PLANILHA_DESTINO",
+    "spreadsheet_name": "Nome da Planilha"
+  }
 """
 
 from flask import Blueprint, request, jsonify
@@ -14,17 +18,19 @@ bp = Blueprint("sheets_sync", __name__)
 @bp.route("/sincronizar", methods=["POST"])
 def rota_sincronizar():
     dados = request.get_json(silent=True) or {}
-    destino_id = dados.get("spreadsheet_id", "").strip()
+
+    destino_id    = dados.get("spreadsheet_id", "").strip()
+    nome_planilha = dados.get("spreadsheet_name", "").strip()
 
     if not destino_id:
-        return jsonify({
-            "ok": False,
-            "erro": "Campo 'spreadsheet_id' obrigatório no corpo da requisição."
-        }), 400
+        return jsonify({"ok": False, "erro": "Campo 'spreadsheet_id' obrigatório."}), 400
+
+    if not nome_planilha:
+        return jsonify({"ok": False, "erro": "Campo 'spreadsheet_name' obrigatório."}), 400
 
     try:
-        resultado = sincronizar(destino_id)
-        status_http = 200 if resultado["ok"] else 207  # 207 = parcialmente ok
+        resultado = sincronizar(destino_id, nome_planilha)
+        status_http = 200 if resultado["ok"] else 207
         return jsonify(resultado), status_http
 
     except RuntimeError as e:
