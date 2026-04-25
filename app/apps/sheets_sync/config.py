@@ -67,33 +67,41 @@ PLANILHAS = {
     "Cotação de Suprimentos": {
         "abas": [
             {
-                # Bloco 1: Registros A→C  → destino A→C
-                # Gap:     D→H vazio (intencionalmente)
-                # Bloco 2: Registros I→S (exceto H) → destino I→R (10 colunas)
-                # Protege: S em diante (tem fórmulas)
+                # Colunas do destino RegistroCotePedEspelho:
+                #   A→C  : Registros A→C  (bloco 1)
+                #   D    : vazio (gap intencional)
+                #   E→G  : Registros E→G  (bloco 2)
+                #   H    : vazio (gap intencional)
+                #   I→R  : Registros I→S excluindo Q (bloco 3, 10 colunas)
+                #   S+   : fórmulas — NÃO TOCAR
+                #
+                # Mapeamento Registros I→S (11 colunas, índices 0-based):
+                #   idx 0=I, 1=J, 2=K, 3=L, 4=M, 5=N, 6=O, 7=P, 8=Q(excluir), 9=R, 10=S
                 "modo"             : "gap",
                 "aba_origem"       : "Registros",
                 "origem_id"        : "1JKhvjAUlTuqt2yMbqZNnzk4IGJ57Cx0MwMU4hGH_ajY",
                 "aba_destino"      : "RegistroCotePedEspelho",
-                "col_limpar_ate"   : 18,   # limpa A→R (cols 1-18) antes de escrever
+                "col_limpar_ate"   : 18,   # limpa A→R antes de escrever
                 "col_protegida_de" : 19,   # S em diante = não toca
                 "blocos": [
-                    # Bloco 1: colunas A→C da origem → A→C do destino
+                    # Bloco 1: A→C da origem → A→C do destino
                     {
                         "col_inicio_origem"  : 1,   # A
                         "num_cols"           : 3,   # A, B, C
                         "col_inicio_destino" : 1,   # A
                     },
-                    # Bloco 2: colunas I→S da origem (excluindo H) → I→R do destino
-                    # O SELECT já exclui H (Col8) e entrega 10 colunas
-                    # Origem: I=9, J=10, K=11, L=12, M=13, N=14, O=15, P=16, Q=17, R=18, S=19
-                    # SELECT retorna: Col1,2,3,4,5,6,7,8,10,11 = I,J,K,L,M,N,O,P,R,S (pula Q=Col9)
-                    # Na pratica o Python le I:S inteiro e filtra colunas pelo indice
+                    # Bloco 2: E→G da origem → E→G do destino
+                    {
+                        "col_inicio_origem"  : 5,   # E
+                        "num_cols"           : 3,   # E, F, G
+                        "col_inicio_destino" : 5,   # E
+                    },
+                    # Bloco 3: I→S da origem → I→R do destino (exclui Q = idx 8)
                     {
                         "col_inicio_origem"  : 9,    # I
                         "num_cols"           : 11,   # I→S = 11 colunas
                         "col_inicio_destino" : 9,    # I
-                        "excluir_indices"    : [7],  # índice 7 dentro do bloco = coluna P da origem (H relativo) -- ajustar se necessário
+                        "excluir_indices"    : [8],  # Q = índice 8 (0-based) dentro do bloco
                     },
                 ],
             },
@@ -105,17 +113,32 @@ PLANILHAS = {
                 "col_inicio_destino" : 2,     # B
                 "col_inicio_origem"  : 1,     # A
                 "num_cols"           : 24,    # A:X
-                "col_protegida_de"   : 26,    # Z em diante = não toca (Z=26)
+                "col_protegida_de"   : 26,    # Z em diante = não toca
             },
             {
-                "modo"               : "continuo",
-                "aba_origem"         : "SSEspelhoRecebimentoPedidos",
-                "origem_id"          : "1PvecWVPcqMmj1o056ZErevt0cjna6ggz48uNFTahu_M",
-                "aba_destino"        : "SSEspelhoSparkline",
-                "col_inicio_destino" : 1,     # A
-                "col_inicio_origem"  : 1,     # A
-                "num_cols"           : 6,     # A:F
-                "col_protegida_de"   : None,
+                # SSEspelhoSparkline: A→C, pula D, escreve E→I
+                # Origem SSEspelhoRecebimentoPedidos tem colunas A→I (9 cols)
+                # Col D do destino não é tocada
+                "modo"             : "gap",
+                "aba_origem"       : "SSEspelhoRecebimentoPedidos",
+                "origem_id"        : "1PvecWVPcqMmj1o056ZErevt0cjna6ggz48uNFTahu_M",
+                "aba_destino"      : "SSEspelhoSparkline",
+                "col_limpar_ate"   : 9,    # limpa A→I antes de escrever
+                "col_protegida_de" : None, # sem proteção além do gap
+                "blocos": [
+                    # Bloco 1: A→C da origem → A→C do destino
+                    {
+                        "col_inicio_origem"  : 1,  # A
+                        "num_cols"           : 3,  # A, B, C
+                        "col_inicio_destino" : 1,  # A
+                    },
+                    # Bloco 2: D→H da origem → E→I do destino (pula col D do destino)
+                    {
+                        "col_inicio_origem"  : 4,  # D da origem
+                        "num_cols"           : 5,  # D, E, F, G, H
+                        "col_inicio_destino" : 5,  # E do destino (D fica vazio)
+                    },
+                ],
             },
         ]
     },
