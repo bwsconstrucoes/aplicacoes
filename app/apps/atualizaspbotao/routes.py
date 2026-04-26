@@ -7,7 +7,7 @@ Header ou body: campo "secret" para autenticação
 """
 
 import logging
-from flask import Blueprint, request, make_response
+from flask import Blueprint, request, jsonify
 from .core import validar_payload, executar
 from .utils import as_string
 
@@ -22,16 +22,26 @@ def rota_executar():
     try:
         validar_payload(payload)
     except ValueError as e:
-        return make_response(_html_erro(str(e)), 400)
+        return jsonify({
+            'ok':       False,
+            'erro':     str(e),
+            'response': _html_erro(str(e)),
+        }), 400
 
     try:
         resultado = executar(payload)
-        html = _html_resultado(payload, resultado)
-        return make_response(html, 200)
+        resultado['ok']       = True
+        resultado['response'] = _html_resultado(payload, resultado)
+        return jsonify(resultado), 200
 
     except Exception as e:
         logger.exception('Erro ao executar atualizaspbotao')
-        return make_response(_html_erro(str(e)), 500)
+        msg = str(e)
+        return jsonify({
+            'ok':       False,
+            'erro':     msg,
+            'response': _html_erro(msg),
+        }), 500
 
 
 # ---------------------------------------------------------------------------
