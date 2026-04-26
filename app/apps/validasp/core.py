@@ -58,6 +58,26 @@ def _decodificar_b64(valor: str) -> str:
     return as_string(valor)
 
 
+def _decodificar_b64_inline(texto: str) -> str:
+    """
+    Procura tokens base64 dentro de um texto e os decodifica.
+    Base64 válido tem comprimento múltiplo de 4 e só caracteres A-Za-z0-9+/=
+    Aplica só em tokens com 8+ caracteres para evitar falsos positivos.
+    """
+    import re
+    def tentar_decode(match):
+        token = match.group(0)
+        try:
+            decoded = base64.b64decode(token).decode('utf-8')
+            if decoded.isprintable() and len(decoded) > 1:
+                return decoded
+        except Exception:
+            pass
+        return token
+    # Procura sequências base64 de 8+ chars
+    return re.sub(r'[A-Za-z0-9+/]{8,}={0,2}', tentar_decode, texto)
+
+
 def _normalizar_payload(p: dict) -> dict:
     """Decodifica campos que podem chegar em base64 do Pipefy."""
     campos_b64 = ['descricaodadespesa', 'nomedocredor', 'nomedotitulardaconta']
@@ -65,8 +85,7 @@ def _normalizar_payload(p: dict) -> dict:
     for campo in campos_b64:
         if campo in result:
             result[campo] = _decodificar_b64(result[campo])
-        # Também no bloco anuencia
-        if 'anuencia' in result and campo in result['anuencia']:
+        if 'anuencia' in result and campo in (result.get('anuencia') or {}):
             result['anuencia'][campo] = _decodificar_b64(result['anuencia'][campo])
     return result
 
@@ -251,7 +270,7 @@ def _telefone_valido(tel: str) -> bool:
 def _enviar_msg_responsavel(p: dict, zapi_config: dict) -> dict:
     bloco    = p.get('msg_responsavel') or {}
     tel_resp = as_string(bloco.get('telefone', ''))
-    mensagem = as_string(bloco.get('mensagem', ''))
+    mensagem = _decodificar_b64_inline(as_string(bloco.get('mensagem', '')))
 
     if not _telefone_valido(tel_resp) or not mensagem:
         return {'ok': False, 'motivo': 'telefone ou mensagem do responsável ausente'}
@@ -274,7 +293,7 @@ def _enviar_msg_responsavel(p: dict, zapi_config: dict) -> dict:
 def _enviar_msg_anuente(p: dict, short_url: str, zapi_config: dict) -> dict:
     bloco    = p.get('msg_anuente') or {}
     tel      = as_string(bloco.get('telefone', ''))
-    mensagem = as_string(bloco.get('mensagem', ''))
+    mensagem = _decodificar_b64_inline(as_string(bloco.get('mensagem', '')))
 
     if not _telefone_valido(tel) or not mensagem:
         return {'ok': False, 'motivo': 'telefone ou mensagem do anuente ausente'}
@@ -287,7 +306,7 @@ def _enviar_msg_anuente(p: dict, short_url: str, zapi_config: dict) -> dict:
 def _enviar_msg_erro_pipefy(p: dict, zapi_config: dict) -> dict:
     bloco    = p.get('msg_erro_pipefy') or {}
     tel      = as_string(bloco.get('telefone', ''))
-    mensagem = as_string(bloco.get('mensagem', ''))
+    mensagem = _decodificar_b64_inline(as_string(bloco.get('mensagem', '')))
 
     if not _telefone_valido(tel) or not mensagem:
         return {'ok': False, 'motivo': 'telefone ou mensagem de erro ausente'}
