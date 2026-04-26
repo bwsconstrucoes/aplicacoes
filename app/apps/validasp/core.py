@@ -14,6 +14,7 @@ import os
 import re
 import json
 import time
+import base64
 import logging
 import threading
 import requests
@@ -46,6 +47,30 @@ CONFIG = {
 }
 
 
+def _decodificar_b64(valor: str) -> str:
+    """Tenta decodificar base64. Retorna original se não for base64 válido."""
+    try:
+        decoded = base64.b64decode(as_string(valor)).decode('utf-8')
+        if decoded.isprintable():
+            return decoded
+    except Exception:
+        pass
+    return as_string(valor)
+
+
+def _normalizar_payload(p: dict) -> dict:
+    """Decodifica campos que podem chegar em base64 do Pipefy."""
+    campos_b64 = ['descricaodadespesa', 'nomedocredor', 'nomedotitulardaconta']
+    result = dict(p)
+    for campo in campos_b64:
+        if campo in result:
+            result[campo] = _decodificar_b64(result[campo])
+        # Também no bloco anuencia
+        if 'anuencia' in result and campo in result['anuencia']:
+            result['anuencia'][campo] = _decodificar_b64(result['anuencia'][campo])
+    return result
+
+
 def validar_payload(payload: dict):
     if not payload:
         raise ValueError('Payload vazio.')
@@ -61,7 +86,7 @@ def executar(payload: dict) -> dict:
     Retorna resultado sem esperar o SPsBD.
     """
     resultado = {'secoes': {}}
-    p = payload
+    p = _normalizar_payload(payload)  # decodifica campos base64
 
     # Credenciais Z-API do payload
     zapi_config = {
@@ -254,7 +279,8 @@ def _enviar_msg_anuente(p: dict, short_url: str, zapi_config: dict) -> dict:
     if not _telefone_valido(tel) or not mensagem:
         return {'ok': False, 'motivo': 'telefone ou mensagem do anuente ausente'}
 
-    mensagem = mensagem.replace('__LINK_ANUENCIA__', short_url)
+    mensagem = mensagem.replace('__link_anuencia__', short_url)
+    mensagem = mensagem.replace('__LINK_ANUENCIA__', short_url)  # fallback maiúsculas
     return enviar_texto(tel, mensagem, zapi_config=zapi_config)
 
 

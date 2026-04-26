@@ -2,6 +2,7 @@
 """validasp/routes.py — POST /api/validasp/executar"""
 
 import logging
+import base64
 from flask import Blueprint, request, jsonify
 from .core import validar_payload, executar, CONFIG
 from ..atualizaspbotao.utils import as_string
@@ -32,67 +33,69 @@ def rota_executar():
 
 
 # ---------------------------------------------------------------------------
+# HELPERS
+# ---------------------------------------------------------------------------
+
+def _decodificar_base64(valor: str) -> str:
+    """Tenta decodificar base64, retorna o valor original se não for base64."""
+    try:
+        decoded = base64.b64decode(valor).decode('utf-8')
+        # Só aceita se o resultado for texto legível (sem caracteres de controle)
+        if decoded.isprintable():
+            return decoded
+    except Exception:
+        pass
+    return valor
+
+
+def _campo(payload: dict, campo: str) -> str:
+    """Busca campo no payload ou no bloco anuencia."""
+    return as_string(
+        payload.get(campo) or
+        (payload.get('anuencia') or {}).get(campo, '')
+    )
+
+
+# ---------------------------------------------------------------------------
 # HTML DE RESPOSTA
 # ---------------------------------------------------------------------------
 
 def _html_resultado(payload: dict, resultado: dict) -> str:
-    sp_id  = as_string(payload.get('id'))
-    data   = as_string(payload.get('datadasolicitacao') or payload.get('anuencia', {}).get('datadasolicitacao', ''))
-    valor  = as_string(payload.get('valortotaldadespesa') or payload.get('anuencia', {}).get('valortotaldadespesa', ''))
-    desc   = as_string(payload.get('descricaodadespesa') or payload.get('anuencia', {}).get('descricaodadespesa', ''))
-    venc   = as_string(payload.get('datadevencimento') or payload.get('anuencia', {}).get('datadevencimento', ''))
+    sp_id = _campo(payload, 'id')
+    data  = _campo(payload, 'datadasolicitacao')
+    valor = _campo(payload, 'valortotaldadespesa')
 
     secoes = resultado.get('secoes', {})
 
     # Pipefy
-    ok_pipefy  = secoes.get('pipefy', {}).get('ok', False)
-    linha_pip  = "✅ Campo de validação atualizado no Pipefy." if ok_pipefy else "⚠️ Não foi possível atualizar o campo de validação no Pipefy."
+    ok_pipefy = secoes.get('pipefy', {}).get('ok', False)
+    linha_pip = "✅ Campo de validação atualizado no Pipefy." if ok_pipefy else "⚠️ Não foi possível atualizar o campo de validação no Pipefy."
 
     # Z-API responsável
-    zapi_resp   = secoes.get('zapiResponsavel', {})
-    ok_resp     = zapi_resp.get('ok', False)
-    linha_resp  = "✅ Notificação enviada ao responsável via WhatsApp." if ok_resp else "⚠️ Falha no envio da notificação ao responsável."
+    ok_resp    = secoes.get('zapiResponsavel', {}).get('ok', False)
+    linha_resp = "✅ Notificação enviada ao responsável via WhatsApp." if ok_resp else "⚠️ Falha no envio da notificação ao responsável."
 
-    # Z-API anuente
-    zapi_anu    = secoes.get('zapiAnuente', {})
+    # Z-API anuente — só exibe se não ignorado
+    zapi_anu     = secoes.get('zapiAnuente', {})
     ignorado_anu = zapi_anu.get('ignorado', False)
-    ok_anu      = zapi_anu.get('ok', False)
-    if ignorado_anu:
-        linha_anu = ""  # sem anuente — não exibe linha
-    elif ok_anu:
-        linha_anu = "✅ Notificação de anuência enviada via WhatsApp."
+    if not ignorado_anu:
+        ok_anu    = zapi_anu.get('ok', False)
+        linha_anu = "✅ Notificação de anuência enviada via WhatsApp." if ok_anu else "⚠️ Falha no envio da notificação de anuência."
     else:
-        linha_anu = "⚠️ Falha no envio da notificação de anuência."
+        linha_anu = ""
 
     # SPsBD
     ok_spsbd    = secoes.get('spsbd', {}).get('ok', False)
-    linha_spsbd = "✅ Base de dados em atualização (processamento em background)." if ok_spsbd else "⚠️ Não foi possível atualizar a base de dados."
+    linha_spsbd = "✅ Base de dados em atualização." if ok_spsbd else "⚠️ Não foi possível atualizar a base de dados."
 
-    # Link anuência — só exibe se anuente existir
-    link_sec  = secoes.get('linkAnuencia', {})
-    ignorado_link = link_sec.get('ignorado', False)
-    short_url = as_string(link_sec.get('short_url', ''))
-    if not ignorado_link and short_url:
-        linha_link = f'✅ Link de anuência gerado: <a href="{short_url}" style="color:#3498db">{short_url}</a>'
-    else:
-        linha_link = ""
-
-    # Monta linhas opcionais
-    linhas_opcionais = ""
-    for linha in [linha_resp, linha_anu, linha_spsbd]:
+    # Monta linhas de status
+    linhas_status = ""
+    for linha in [linha_pip, linha_resp, linha_anu, linha_spsbd]:
         if linha:
-            linhas_opcionais += f"""
+            linhas_status += f"""
                 <p style="text-align:center">
                     <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#999999">
                         {linha}
-                    </span>
-                </p>"""
-
-    if linha_link:
-        linhas_opcionais += f"""
-                <p style="text-align:center">
-                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#999999">
-                        {linha_link}
                     </span>
                 </p>"""
 
@@ -133,27 +136,9 @@ def _html_resultado(payload: dict, resultado: dict) -> str:
                     </span>
                 </p>
 
-                <p style="text-align:center">
-                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#555555">
-                        📋 {desc}
-                    </span>
-                </p>
-
-                <p style="text-align:center">
-                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#555555">
-                        🗓️ Vencimento: {venc}
-                    </span>
-                </p>
-
                 <hr style="border:none; border-top:1px solid #eeeeee; margin:10px 0">
 
-                <p style="text-align:center">
-                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#999999">
-                        {linha_pip}
-                    </span>
-                </p>
-
-                {linhas_opcionais}
+                {linhas_status}
 
                 <p style="text-align:center">&nbsp;</p>
                 <p style="text-align:center">
