@@ -36,9 +36,11 @@ def rota_executar():
 # ---------------------------------------------------------------------------
 
 def _html_resultado(payload: dict, resultado: dict) -> str:
-    sp_id = as_string(payload.get('id'))
-    data  = as_string(payload.get('datadasolicitacao', ''))
-    valor = as_string(payload.get('valortotaldadespesa', ''))
+    sp_id  = as_string(payload.get('id'))
+    data   = as_string(payload.get('datadasolicitacao') or payload.get('anuencia', {}).get('datadasolicitacao', ''))
+    valor  = as_string(payload.get('valortotaldadespesa') or payload.get('anuencia', {}).get('valortotaldadespesa', ''))
+    desc   = as_string(payload.get('descricaodadespesa') or payload.get('anuencia', {}).get('descricaodadespesa', ''))
+    venc   = as_string(payload.get('datadevencimento') or payload.get('anuencia', {}).get('datadevencimento', ''))
 
     secoes = resultado.get('secoes', {})
 
@@ -46,21 +48,53 @@ def _html_resultado(payload: dict, resultado: dict) -> str:
     ok_pipefy  = secoes.get('pipefy', {}).get('ok', False)
     linha_pip  = "✅ Campo de validação atualizado no Pipefy." if ok_pipefy else "⚠️ Não foi possível atualizar o campo de validação no Pipefy."
 
-    # Link anuência
-    link_sec   = secoes.get('linkAnuencia', {})
-    short_url  = as_string(link_sec.get('short_url', ''))
-    ok_link    = link_sec.get('ok', False)
-    linha_link = f'✅ Link de anuência gerado: <a href="{short_url}" style="color:#3498db">{short_url}</a>' if ok_link else "⚠️ Link de anuência gerado (URL longa)."
+    # Z-API responsável
+    zapi_resp   = secoes.get('zapiResponsavel', {})
+    ok_resp     = zapi_resp.get('ok', False)
+    linha_resp  = "✅ Notificação enviada ao responsável via WhatsApp." if ok_resp else "⚠️ Falha no envio da notificação ao responsável."
 
-    # Z-API
-    zapi_sec   = secoes.get('zapi', {})
-    ok_zapi    = zapi_sec.get('ok', False)
-    linha_zapi = "✅ Notificações enviadas via WhatsApp." if ok_zapi else "⚠️ Falha no envio de uma ou mais notificações WhatsApp."
+    # Z-API anuente
+    zapi_anu    = secoes.get('zapiAnuente', {})
+    ignorado_anu = zapi_anu.get('ignorado', False)
+    ok_anu      = zapi_anu.get('ok', False)
+    if ignorado_anu:
+        linha_anu = ""  # sem anuente — não exibe linha
+    elif ok_anu:
+        linha_anu = "✅ Notificação de anuência enviada via WhatsApp."
+    else:
+        linha_anu = "⚠️ Falha no envio da notificação de anuência."
 
     # SPsBD
-    spsbd_sec  = secoes.get('spsbd', {})
-    ok_spsbd   = spsbd_sec.get('ok', False)
-    linha_spsbd = "✅ Base de dados atualizada (SPsBD)." if ok_spsbd else "⚠️ Não foi possível atualizar a base de dados. Registro de falha criado."
+    ok_spsbd    = secoes.get('spsbd', {}).get('ok', False)
+    linha_spsbd = "✅ Base de dados em atualização (processamento em background)." if ok_spsbd else "⚠️ Não foi possível atualizar a base de dados."
+
+    # Link anuência — só exibe se anuente existir
+    link_sec  = secoes.get('linkAnuencia', {})
+    ignorado_link = link_sec.get('ignorado', False)
+    short_url = as_string(link_sec.get('short_url', ''))
+    if not ignorado_link and short_url:
+        linha_link = f'✅ Link de anuência gerado: <a href="{short_url}" style="color:#3498db">{short_url}</a>'
+    else:
+        linha_link = ""
+
+    # Monta linhas opcionais
+    linhas_opcionais = ""
+    for linha in [linha_resp, linha_anu, linha_spsbd]:
+        if linha:
+            linhas_opcionais += f"""
+                <p style="text-align:center">
+                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#999999">
+                        {linha}
+                    </span>
+                </p>"""
+
+    if linha_link:
+        linhas_opcionais += f"""
+                <p style="text-align:center">
+                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#999999">
+                        {linha_link}
+                    </span>
+                </p>"""
 
     return f"""<!DOCTYPE html>
 <html>
@@ -69,7 +103,7 @@ def _html_resultado(payload: dict, resultado: dict) -> str:
     <link rel="icon" type="image/x-icon" href="https://dl.dropboxusercontent.com/s/xzsjhm9xudwqf8o/favicon.ico">
 </head>
 <body>
-<table align="center" border="0" cellpadding="1" cellspacing="1" style="height:auto; width:400px">
+<table align="center" border="0" cellpadding="1" cellspacing="1" style="height:auto; width:420px">
     <tbody>
         <tr>
             <td>
@@ -82,37 +116,44 @@ def _html_resultado(payload: dict, resultado: dict) -> str:
         <tr>
             <td>
                 <h1 style="text-align:center">
-                    <span style="font-family:Verdana,Geneva,sans-serif; font-size:24px; color:#2c3e50">
+                    <span style="font-family:Verdana,Geneva,sans-serif; font-size:22px; color:#2c3e50">
                         <strong>✅ Solicitação de Pagamento Validada</strong>
                     </span>
                 </h1>
 
                 <p style="text-align:center">
-                    <span style="font-size:14px; font-family:Verdana,Geneva,sans-serif; color:#999999">
-                        Número: {sp_id} — Data: {data} — Valor: {valor}
+                    <span style="font-size:14px; font-family:Verdana,Geneva,sans-serif; color:#2c3e50">
+                        <strong>SP Nº {sp_id}</strong>
                     </span>
                 </p>
+
+                <p style="text-align:center">
+                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#555555">
+                        📅 Data: {data} &nbsp;|&nbsp; 💰 Valor: <strong>{valor}</strong>
+                    </span>
+                </p>
+
+                <p style="text-align:center">
+                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#555555">
+                        📋 {desc}
+                    </span>
+                </p>
+
+                <p style="text-align:center">
+                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#555555">
+                        🗓️ Vencimento: {venc}
+                    </span>
+                </p>
+
+                <hr style="border:none; border-top:1px solid #eeeeee; margin:10px 0">
 
                 <p style="text-align:center">
                     <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#999999">
                         {linha_pip}
                     </span>
                 </p>
-                <p style="text-align:center">
-                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#999999">
-                        {linha_zapi}
-                    </span>
-                </p>
-                <p style="text-align:center">
-                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#999999">
-                        {linha_spsbd}
-                    </span>
-                </p>
-                <p style="text-align:center">
-                    <span style="font-size:13px; font-family:Verdana,Geneva,sans-serif; color:#999999">
-                        {linha_link}
-                    </span>
-                </p>
+
+                {linhas_opcionais}
 
                 <p style="text-align:center">&nbsp;</p>
                 <p style="text-align:center">
@@ -144,7 +185,7 @@ def _html_erro(mensagem: str) -> str:
 <html>
 <head><title>Erro</title></head>
 <body>
-<table align="center" border="0" cellpadding="1" cellspacing="1" style="width:400px">
+<table align="center" border="0" cellpadding="1" cellspacing="1" style="width:420px">
     <tbody>
         <tr>
             <td>

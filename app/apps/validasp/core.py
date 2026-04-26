@@ -235,9 +235,9 @@ def _enviar_msg_responsavel(p: dict, zapi_config: dict) -> dict:
         {'tipo': 'texto', 'telefone': tel_resp, 'mensagem': mensagem, 'enabled': True}
     ]
 
-    # Requerente — envia se telefone válido e diferente do responsável
+    # Requerente — envia se telefone válido (mesmo que igual ao responsável)
     tel_requ = as_string(bloco.get('telefone_requerente', ''))
-    if _telefone_valido(tel_requ) and tel_requ != tel_resp:
+    if _telefone_valido(tel_requ):
         mensagens.append(
             {'tipo': 'texto', 'telefone': tel_requ, 'mensagem': mensagem, 'enabled': True}
         )
@@ -254,7 +254,7 @@ def _enviar_msg_anuente(p: dict, short_url: str, zapi_config: dict) -> dict:
     if not _telefone_valido(tel) or not mensagem:
         return {'ok': False, 'motivo': 'telefone ou mensagem do anuente ausente'}
 
-    mensagem = mensagem.replace('{{link_anuencia}}', short_url)
+    mensagem = mensagem.replace('__LINK_ANUENCIA__', short_url)
     return enviar_texto(tel, mensagem, zapi_config=zapi_config)
 
 
