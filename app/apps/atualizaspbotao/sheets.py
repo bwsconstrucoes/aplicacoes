@@ -118,7 +118,8 @@ def _build_log_maps(p: dict) -> list:
     }
     for i in range(1, 6):
         centro = p.get(f'LogCentro{i}')
-        if has_value(centro):
+        # Ignora vazio, null e '[]' (campo iniciado mas não preenchido no Pipefy)
+        if has_value(centro) and as_string(centro).strip() != '[]':
             maps.append({
                 **base,
                 'G': value_or_empty(centro),
