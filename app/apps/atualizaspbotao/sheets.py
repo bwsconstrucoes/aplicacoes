@@ -223,10 +223,10 @@ def _append_map_rows(sh, maps: list):
         for col_letter, value in m.items():
             arr[letter_to_column(col_letter) - 1] = value
         rows.append(arr)
-    last_row = len(sh.col_values(1))
-    col_a = column_to_letter(1)
-    col_b = column_to_letter(max_col)
-    sh.update(f'{col_a}{last_row + 1}:{col_b}{last_row + len(rows)}', rows, value_input_option='USER_ENTERED')
+
+    # Usa append_rows em vez de update — nunca ultrapassa o limite do grid
+    # e não depende de calcular last_row manualmente
+    sh.append_rows(rows, value_input_option='USER_ENTERED', insert_data_option='INSERT_ROWS')
 
 
 import re  # noqa: E402 (já importado mas necessário para _update_row_by_map)
