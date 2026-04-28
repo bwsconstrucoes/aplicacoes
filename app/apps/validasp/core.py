@@ -60,22 +60,22 @@ def _decodificar_b64(valor: str) -> str:
 
 def _decodificar_b64_inline(texto: str) -> str:
     """
-    Procura tokens base64 dentro de um texto e os decodifica.
-    Base64 válido tem comprimento múltiplo de 4 e só caracteres A-Za-z0-9+/=
-    Aplica só em tokens com 8+ caracteres para evitar falsos positivos.
+    Procura tokens base64 completos dentro de um texto e os decodifica.
+    Token base64 válido: termina com = ou ==, mínimo 20 caracteres
+    para evitar falsos positivos em palavras normais do texto.
     """
     import re
     def tentar_decode(match):
         token = match.group(0)
         try:
             decoded = base64.b64decode(token).decode('utf-8')
-            if decoded.isprintable() and len(decoded) > 1:
+            if len(decoded) > 3:
                 return decoded
         except Exception:
             pass
         return token
-    # Procura sequências base64 de 8+ chars
-    return re.sub(r'[A-Za-z0-9+/]{8,}={0,2}', tentar_decode, texto)
+    # Só substitui tokens com padding = (base64 real do Pipefy sempre tem)
+    return re.sub(r'[A-Za-z0-9+/]{20,}={1,2}', tentar_decode, texto)
 
 
 def _normalizar_payload(p: dict) -> dict:
