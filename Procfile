@@ -1,1 +1,1 @@
-web: gunicorn app.main:app
+web: gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 120 --workers 1 --threads 8 --worker-class gthread --log-level info
