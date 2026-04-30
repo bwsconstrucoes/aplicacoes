@@ -49,10 +49,6 @@ def webhook():
 
     payload = request.get_json(silent=True) or {}
 
-    # LOG TEMPORÁRIO DE DIAGNÓSTICO — remover após identificar o formato
-    import json
-    logger.info(f"[chatbot] PAYLOAD RECEBIDO: {json.dumps(payload, ensure_ascii=False)[:1000]}")
-
     # Extrai telefone e texto da mensagem Z-API
     telefone, texto = _extrair_mensagem(payload)
 
