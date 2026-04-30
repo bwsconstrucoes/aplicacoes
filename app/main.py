@@ -6,6 +6,7 @@ from app.apps.email_financeiro import bp as email_financeiro_bp
 from app.apps.sheets_sync import bp as sheets_sync_bp
 from app.apps.atualizaspbotao import bp as atualizaspbotao_bp
 from app.apps.validasp import bp as validasp_bp
+from app.apps.chatbot import bp as chatbot_bp
 
 
 def create_app():
@@ -17,6 +18,7 @@ def create_app():
     app.register_blueprint(sheets_sync_bp,        url_prefix="/api/sheets_sync")
     app.register_blueprint(atualizaspbotao_bp,    url_prefix="/api/atualizaspbotao")
     app.register_blueprint(validasp_bp,           url_prefix="/api/validasp")
+    app.register_blueprint(chatbot_bp,            url_prefix="/api/chatbot")
 
     @app.route("/")
     def index():
@@ -24,7 +26,7 @@ def create_app():
             "status": "ok",
             "modules": [
                 "pdf_processor", "encurtador", "email_financeiro",
-                "sheets_sync", "atualizaspbotao", "validasp"
+                "sheets_sync", "atualizaspbotao", "validasp", "chatbot"
             ]
         }
 
