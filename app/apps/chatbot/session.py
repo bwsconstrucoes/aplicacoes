@@ -2,27 +2,20 @@
 """
 chatbot/session.py
 Gerencia o estado da conversa por telefone.
-Usa dict em memória com TTL — adequado para o volume atual.
-Para escala futura, substituir por Redis.
-
-Estados possíveis:
-  AGUARDANDO_CPF       → bot pediu CPF, aguardando resposta
-  AGUARDANDO_COMPETENCIA → autenticado, bot pediu mês/ano
-  AUTENTICADO          → CPF validado, dados do colaborador disponíveis
+Usa dict em memória com TTL.
 """
 
+import re
 import threading
 import time
 import logging
 
 logger = logging.getLogger(__name__)
 
-# Timeout de sessão em segundos (30 minutos de inatividade)
 SESSION_TTL = 30 * 60
 
-# Máx tentativas de CPF errado antes de bloquear
 MAX_TENTATIVAS_CPF = 5
-BLOQUEIO_DURACAO = 60 * 60  # 1 hora
+BLOQUEIO_DURACAO = 60 * 60
 
 _sessions: dict = {}
 _bloqueios: dict = {}
@@ -33,89 +26,172 @@ def _agora() -> float:
     return time.time()
 
 
+def _normalizar_telefone(telefone: str) -> str:
+    digits = re.sub(r"\D", "", str(telefone or ""))
+
+    if digits and not digits.startswith("55"):
+        digits = "55" + digits
+
+    return digits
+
+
 def get_session(telefone: str) -> dict | None:
-    """Retorna a sessão do telefone ou None se não existir/expirada."""
+    telefone = _normalizar_telefone(telefone)
+
     with _lock:
         sess = _sessions.get(telefone)
+
         if not sess:
+            logger.info(f"[session] sem sessão ativa para {telefone[:6]}***")
             return None
-        if _agora() - sess['ultimo_acesso'] > SESSION_TTL:
+
+        if _agora() - sess["ultimo_acesso"] > SESSION_TTL:
             del _sessions[telefone]
+            logger.info(f"[session] sessão expirada para {telefone[:6]}***")
             return None
-        sess['ultimo_acesso'] = _agora()
+
+        sess["ultimo_acesso"] = _agora()
+
+        logger.info(
+            f"[session] sessão encontrada para {telefone[:6]}*** "
+            f"estado={sess.get('estado')}"
+        )
+
         return dict(sess)
 
 
 def criar_session(telefone: str, estado: str, dados: dict = None) -> dict:
-    """Cria ou reinicia a sessão do telefone."""
+    telefone = _normalizar_telefone(telefone)
+
     with _lock:
         sess = {
-            'telefone':      telefone,
-            'estado':        estado,
-            'dados':         dados or {},
-            'criado_em':     _agora(),
-            'ultimo_acesso': _agora(),
+            "telefone": telefone,
+            "estado": estado,
+            "dados": dados or {},
+            "criado_em": _agora(),
+            "ultimo_acesso": _agora(),
         }
+
         _sessions[telefone] = sess
+
+        logger.info(
+            f"[session] sessão criada para {telefone[:6]}*** "
+            f"estado={estado}"
+        )
+
         return dict(sess)
 
 
-def atualizar_session(telefone: str, estado: str = None, dados_extra: dict = None):
-    """Atualiza estado e/ou dados da sessão existente."""
+def atualizar_session(
+    telefone: str,
+    estado: str = None,
+    dados_extra: dict = None
+):
+    telefone = _normalizar_telefone(telefone)
+
     with _lock:
         sess = _sessions.get(telefone)
+
         if not sess:
+            logger.warning(
+                f"[session] tentativa de atualizar sessão inexistente "
+                f"para {telefone[:6]}***"
+            )
             return
+
+        estado_anterior = sess.get("estado")
+
         if estado:
-            sess['estado'] = estado
+            sess["estado"] = estado
+
         if dados_extra:
-            sess['dados'].update(dados_extra)
-        sess['ultimo_acesso'] = _agora()
+            sess["dados"].update(dados_extra)
+
+        sess["ultimo_acesso"] = _agora()
+
+        logger.info(
+            f"[session] sessão atualizada para {telefone[:6]}*** "
+            f"estado={estado_anterior} -> {sess.get('estado')}"
+        )
 
 
 def destruir_session(telefone: str):
-    """Remove a sessão (logout / reset)."""
+    telefone = _normalizar_telefone(telefone)
+
     with _lock:
-        _sessions.pop(telefone, None)
+        removida = _sessions.pop(telefone, None)
+
+        if removida:
+            logger.info(f"[session] sessão removida para {telefone[:6]}***")
 
 
 def registrar_tentativa_cpf_errado(telefone: str) -> int:
-    """Registra tentativa falha de CPF. Retorna o número de tentativas."""
+    telefone = _normalizar_telefone(telefone)
+
     with _lock:
-        entrada = _bloqueios.get(telefone, {'tentativas': 0, 'desde': _agora()})
-        entrada['tentativas'] += 1
+        entrada = _bloqueios.get(
+            telefone,
+            {
+                "tentativas": 0,
+                "desde": _agora(),
+            }
+        )
+
+        entrada["tentativas"] += 1
         _bloqueios[telefone] = entrada
-        return entrada['tentativas']
+
+        logger.warning(
+            f"[session] CPF errado para {telefone[:6]}*** "
+            f"tentativa={entrada['tentativas']}/{MAX_TENTATIVAS_CPF}"
+        )
+
+        return entrada["tentativas"]
 
 
 def esta_bloqueado(telefone: str) -> bool:
-    """Verifica se o telefone está bloqueado por excesso de tentativas."""
+    telefone = _normalizar_telefone(telefone)
+
     with _lock:
         entrada = _bloqueios.get(telefone)
+
         if not entrada:
             return False
-        if entrada['tentativas'] >= MAX_TENTATIVAS_CPF:
-            if _agora() - entrada['desde'] < BLOQUEIO_DURACAO:
+
+        if entrada["tentativas"] >= MAX_TENTATIVAS_CPF:
+            if _agora() - entrada["desde"] < BLOQUEIO_DURACAO:
+                logger.warning(f"[session] telefone bloqueado {telefone[:6]}***")
                 return True
-            else:
-                # Bloqueio expirado — reseta
-                del _bloqueios[telefone]
+
+            del _bloqueios[telefone]
+            logger.info(f"[session] bloqueio expirado para {telefone[:6]}***")
+
         return False
 
 
 def resetar_tentativas(telefone: str):
-    """Reseta tentativas de CPF após sucesso."""
+    telefone = _normalizar_telefone(telefone)
+
     with _lock:
-        _bloqueios.pop(telefone, None)
+        removido = _bloqueios.pop(telefone, None)
+
+        if removido:
+            logger.info(f"[session] tentativas resetadas para {telefone[:6]}***")
 
 
 def limpar_sessoes_expiradas():
-    """Limpeza periódica — pode ser chamada em background."""
     with _lock:
         agora = _agora()
-        expiradas = [t for t, s in _sessions.items()
-                     if agora - s['ultimo_acesso'] > SESSION_TTL]
-        for t in expiradas:
-            del _sessions[t]
+
+        expiradas = [
+            telefone
+            for telefone, sess in _sessions.items()
+            if agora - sess["ultimo_acesso"] > SESSION_TTL
+        ]
+
+        for telefone in expiradas:
+            del _sessions[telefone]
+
         if expiradas:
-            logger.info(f"[session] {len(expiradas)} sessão(ões) expirada(s) removida(s).")
+            logger.info(
+                f"[session] {len(expiradas)} sessão(ões) expirada(s) removida(s)."
+            )
