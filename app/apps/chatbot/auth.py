@@ -30,8 +30,30 @@ def _normalizar_tel(tel: str) -> str:
     return digits
 
 
+def _tels_equivalentes(tel1: str, tel2: str) -> bool:
+    """
+    Compara dois telefones ignorando o 9 extra do celular brasileiro.
+    5585987846225 == 558587846225 → True
+    """
+    def sem_nono(t: str) -> str:
+        # Remove prefixo 55 + DDD (4 dígitos) e verifica se tem 9 extra
+        if len(t) == 13 and t.startswith('55'):
+            # 55 + DDD(2) + 9 + numero(8) → remove o 9
+            return t[:4] + t[5:]
+        return t
+
+    t1 = _normalizar_tel(tel1)
+    t2 = _normalizar_tel(tel2)
+
+    if t1 == t2:
+        return True
+    if sem_nono(t1) == t2 or t1 == sem_nono(t2):
+        return True
+    return False
+
+
 def is_master(telefone: str) -> bool:
-    return _normalizar_tel(telefone) == _normalizar_tel(TELEFONE_MASTER)
+    return _tels_equivalentes(telefone, TELEFONE_MASTER)
 
 
 def validar_acesso(cpf: str, telefone_solicitante: str) -> dict:
@@ -66,9 +88,9 @@ def validar_acesso(cpf: str, telefone_solicitante: str) -> dict:
         logger.info(f"[auth] Acesso MASTER para CPF {cpf_norm[:3]}***")
         return {'ok': True, 'nivel': 'master', 'colaborador': colaborador, 'motivo': ''}
 
-    # Acesso normal — telefone deve bater com o CPF
+    # Acesso normal — telefone deve bater com o CPF (tolerando 9 extra)
     tel_planilha = colaborador.get('tel', '')
-    if tel_norm != tel_planilha:
+    if not _tels_equivalentes(tel_norm, tel_planilha):
         logger.warning(f"[auth] Telefone não corresponde ao CPF {cpf_norm[:3]}***")
         return {'ok': False, 'nivel': None, 'colaborador': None,
                 'motivo': 'cpf_telefone_nao_corresponde'}
