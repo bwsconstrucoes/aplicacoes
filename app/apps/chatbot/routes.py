@@ -1,9 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-chatbot/routes.py
-Webhook Z-API com lock por telefone para evitar race conditions.
-"""
-
 import os
 import time
 import logging
@@ -17,17 +12,13 @@ bp = Blueprint('chatbot', __name__)
 
 WEBHOOK_SECRET = os.getenv('CHATBOT_WEBHOOK_SECRET', '')
 
-# Lock por telefone — evita processamento paralelo do mesmo número
 _locks_por_telefone: dict = {}
 _locks_meta = threading.Lock()
-
-# Deduplicação — evita processar a mesma mensagem duas vezes (Z-API reenvio)
-_mensagens_recentes: dict = {}  # {chave: timestamp}
-_DEDUP_TTL = 10  # segundos
+_mensagens_recentes: dict = {}
+_DEDUP_TTL = 30  # aumentado para 30s
 
 
 def _get_lock(telefone: str) -> threading.Lock:
-    """Retorna (ou cria) o lock dedicado ao telefone."""
     with _locks_meta:
         if telefone not in _locks_por_telefone:
             _locks_por_telefone[telefone] = threading.Lock()
@@ -35,21 +26,17 @@ def _get_lock(telefone: str) -> threading.Lock:
 
 
 def _ja_processado(chave: str) -> bool:
-    """Verifica se essa mensagem já foi processada recentemente (deduplicação)."""
     agora = time.time()
     with _locks_meta:
-        # Limpa entradas antigas
         expiradas = [k for k, t in _mensagens_recentes.items() if agora - t > _DEDUP_TTL]
         for k in expiradas:
             del _mensagens_recentes[k]
-        # Verifica e registra
         if chave in _mensagens_recentes:
             return True
         _mensagens_recentes[chave] = agora
         return False
 
 
-# Limpeza periódica de sessões expiradas
 def _iniciar_limpeza_periodica():
     def loop():
         while True:
@@ -72,18 +59,25 @@ def webhook():
 
     payload = request.get_json(silent=True) or {}
 
+    # LOG COMPLETO para diagnóstico
+    import json
+    ts = time.strftime('%H:%M:%S')
+    logger.info(f"[webhook] {ts} payload={json.dumps(payload, ensure_ascii=False)[:800]}")
+
     telefone, texto = _extrair_mensagem(payload)
 
     if not telefone or not texto:
+        logger.info(f"[webhook] {ts} IGNORADO telefone={telefone!r} texto={texto!r}")
         return jsonify({'ok': True, 'ignorado': True}), 200
 
-    # Deduplicação — ignora reenvios da Z-API
-    chave_msg = f"{telefone}:{texto}:{int(time.time() // _DEDUP_TTL)}"
+    # Chave de deduplicação baseada no conteúdo exato
+    chave_msg = f"{telefone}:{texto}"
     if _ja_processado(chave_msg):
-        logger.info(f"[chatbot] Mensagem duplicada ignorada de {telefone[:6]}***")
+        logger.warning(f"[webhook] {ts} DUPLICADA de {telefone[:6]}*** texto={texto!r}")
         return jsonify({'ok': True, 'ignorado': True, 'motivo': 'duplicada'}), 200
 
-    # Processa em thread com lock por telefone
+    logger.info(f"[webhook] {ts} PROCESSANDO {telefone[:6]}*** texto={texto!r}")
+
     threading.Thread(
         target=_processar_com_lock,
         args=(telefone, texto),
@@ -94,16 +88,15 @@ def webhook():
 
 
 def _processar_com_lock(telefone: str, texto: str):
-    """Garante que apenas uma thread processa mensagens do mesmo telefone por vez."""
     lock = _get_lock(telefone)
     acquired = lock.acquire(timeout=30)
     if not acquired:
-        logger.warning(f"[chatbot] Timeout aguardando lock para {telefone[:6]}***")
+        logger.warning(f"[chatbot] Timeout lock {telefone[:6]}***")
         return
     try:
         processar_mensagem(telefone, texto)
     except Exception as e:
-        logger.exception(f"[chatbot] Erro ao processar de {telefone[:6]}***: {e}")
+        logger.exception(f"[chatbot] Erro {telefone[:6]}***: {e}")
     finally:
         lock.release()
 
@@ -120,7 +113,6 @@ def _extrair_mensagem(payload: dict) -> tuple[str, str]:
     )
     telefone = telefone.split('@')[0].strip()
 
-    texto = ''
     if isinstance(payload.get('text'), dict):
         texto = payload['text'].get('message', '')
     else:
@@ -137,9 +129,10 @@ def _extrair_mensagem(payload: dict) -> tuple[str, str]:
 @bp.route('/status', methods=['GET'])
 def status():
     return jsonify({
-        'ok':     True,
+        'ok': True,
         'modulo': 'chatbot',
-        'cache':  'carregado' if sheets_cache._cache['dados'] is not None else 'vazio',
+        'cache': 'carregado' if sheets_cache._cache['dados'] is not None else 'vazio',
+        'sessoes_ativas': len(session._sessions),
     }), 200
 
 
@@ -149,4 +142,4 @@ def invalidar_cache():
     if WEBHOOK_SECRET and secret != WEBHOOK_SECRET:
         return jsonify({'error': 'Unauthorized'}), 401
     sheets_cache.invalidar_cache()
-    return jsonify({'ok': True, 'mensagem': 'Cache invalidado.'}), 200
+    return jsonify({'ok': True}), 200
