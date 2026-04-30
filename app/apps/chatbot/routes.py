@@ -14,8 +14,10 @@ WEBHOOK_SECRET = os.getenv('CHATBOT_WEBHOOK_SECRET', '')
 
 _locks_por_telefone: dict = {}
 _locks_meta = threading.Lock()
-_mensagens_recentes: dict = {}
-_DEDUP_TTL = 30  # aumentado para 30s
+
+# Deduplicação por ID de mensagem (não por conteúdo)
+_ids_processados: dict = {}  # {msg_id: timestamp}
+_DEDUP_TTL = 60  # segundos
 
 
 def _get_lock(telefone: str) -> threading.Lock:
@@ -25,15 +27,17 @@ def _get_lock(telefone: str) -> threading.Lock:
         return _locks_por_telefone[telefone]
 
 
-def _ja_processado(chave: str) -> bool:
+def _ja_processado(msg_id: str) -> bool:
+    """Deduplicação por ID da mensagem — ignora reenvios do load balancer Z-API."""
     agora = time.time()
     with _locks_meta:
-        expiradas = [k for k, t in _mensagens_recentes.items() if agora - t > _DEDUP_TTL]
-        for k in expiradas:
-            del _mensagens_recentes[k]
-        if chave in _mensagens_recentes:
+        # Limpa IDs expirados
+        expirados = [k for k, t in _ids_processados.items() if agora - t > _DEDUP_TTL]
+        for k in expirados:
+            del _ids_processados[k]
+        if msg_id in _ids_processados:
             return True
-        _mensagens_recentes[chave] = agora
+        _ids_processados[msg_id] = agora
         return False
 
 
@@ -59,24 +63,17 @@ def webhook():
 
     payload = request.get_json(silent=True) or {}
 
-    # LOG COMPLETO para diagnóstico
-    import json
-    ts = time.strftime('%H:%M:%S')
-    logger.info(f"[webhook] {ts} payload={json.dumps(payload, ensure_ascii=False)[:800]}")
-
-    telefone, texto = _extrair_mensagem(payload)
+    telefone, texto, msg_id = _extrair_mensagem(payload)
 
     if not telefone or not texto:
-        logger.info(f"[webhook] {ts} IGNORADO telefone={telefone!r} texto={texto!r}")
         return jsonify({'ok': True, 'ignorado': True}), 200
 
-    # Chave de deduplicação baseada no conteúdo exato
-    chave_msg = f"{telefone}:{texto}"
-    if _ja_processado(chave_msg):
-        logger.warning(f"[webhook] {ts} DUPLICADA de {telefone[:6]}*** texto={texto!r}")
+    # Deduplicação por ID — bloqueia reenvios do load balancer Z-API
+    if msg_id and _ja_processado(msg_id):
+        logger.info(f"[webhook] Duplicata bloqueada id={msg_id} de {telefone[:6]}***")
         return jsonify({'ok': True, 'ignorado': True, 'motivo': 'duplicada'}), 200
 
-    logger.info(f"[webhook] {ts} PROCESSANDO {telefone[:6]}*** texto={texto!r}")
+    logger.info(f"[webhook] {telefone[:6]}*** id={msg_id} texto={texto!r[:30]}")
 
     threading.Thread(
         target=_processar_com_lock,
@@ -101,9 +98,18 @@ def _processar_com_lock(telefone: str, texto: str):
         lock.release()
 
 
-def _extrair_mensagem(payload: dict) -> tuple[str, str]:
+def _extrair_mensagem(payload: dict) -> tuple[str, str, str]:
+    """Retorna (telefone, texto, msg_id)."""
     if payload.get('fromMe') or payload.get('isGroup'):
-        return '', ''
+        return '', '', ''
+
+    # ID único da mensagem — usado para deduplicação
+    msg_id = (
+        payload.get('messageId') or
+        payload.get('id') or
+        (payload.get('message') or {}).get('id') or
+        ''
+    )
 
     telefone = (
         payload.get('phone') or
@@ -123,7 +129,7 @@ def _extrair_mensagem(payload: dict) -> tuple[str, str]:
             ''
         )
 
-    return telefone, str(texto).strip()
+    return telefone, str(texto).strip(), str(msg_id)
 
 
 @bp.route('/status', methods=['GET'])
