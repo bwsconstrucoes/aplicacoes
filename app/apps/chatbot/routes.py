@@ -65,6 +65,15 @@ def webhook():
 
     telefone, texto, msg_id = _extrair_mensagem(payload)
 
+    # LOG DIAGNÓSTICO — captura campos de ID disponíveis
+    import json
+    logger.info(
+        f"[webhook] RAW id_fields: messageId={payload.get('messageId')!r} "
+        f"id={payload.get('id')!r} "
+        f"msgId={(payload.get('message') or {}).get('id')!r} "
+        f"tel={telefone!r} txt={repr(texto)[:20]}"
+    )
+
     if not telefone or not texto:
         return jsonify({'ok': True, 'ignorado': True}), 200
 
