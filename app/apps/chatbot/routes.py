@@ -73,7 +73,7 @@ def webhook():
         logger.info(f"[webhook] Duplicata bloqueada id={msg_id} de {telefone[:6]}***")
         return jsonify({'ok': True, 'ignorado': True, 'motivo': 'duplicada'}), 200
 
-    logger.info(f"[webhook] {telefone[:6]}*** id={msg_id} texto={texto!r[:30]}")
+    logger.info(f"[webhook] {telefone[:6]}*** id={msg_id} texto={repr(texto)[:30]}")
 
     threading.Thread(
         target=_processar_com_lock,
