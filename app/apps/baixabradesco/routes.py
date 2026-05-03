@@ -8,6 +8,7 @@ from flask import request, jsonify
 
 from . import bp
 from .core import processar_baixabradesco
+from .diagnostico import executar_diagnostico
 
 
 def _authorized(payload: dict) -> bool:
@@ -44,3 +45,21 @@ def executar():
 @bp.route('/health', methods=['GET'])
 def health():
     return jsonify({'ok': True, 'app': 'baixabradesco', 'version': '2.0'})
+
+
+@bp.route('/diagnostico', methods=['POST'])
+def diagnostico():
+    """Diagnóstico completo — não executa nada, apenas analisa e reporta."""
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        if not _authorized(payload):
+            return jsonify({'ok': False, 'error': 'Não autorizado.'}), 401
+        result = executar_diagnostico(payload)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'app': 'baixabradesco',
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+        }), 500
