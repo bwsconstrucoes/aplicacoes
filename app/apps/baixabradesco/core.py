@@ -42,8 +42,9 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
     else:
         google_error = ''
 
-    salvar_comprovantes = bool(payload.get('salvar_comprovantes', True))
-    salvar_no_modo_teste = bool(payload.get('salvar_no_modo_teste', False))
+    opcoes = payload.get('opcoes') or {}
+    salvar_comprovantes = bool(payload.get('salvar_comprovantes', opcoes.get('salvar_comprovante', opcoes.get('salvar_comprovantes', True))))
+    salvar_no_modo_teste = bool(payload.get('salvar_no_modo_teste', opcoes.get('salvar_no_modo_teste', False)))
     pasta_dropbox = as_string(payload.get('pasta_dropbox') or payload.get('pasta') or '/BWS FINANCEIRO/COMPROVANTESTEMP/COMPROVANTESSP')
 
     plans: List[ExecutionPlan] = []
@@ -123,7 +124,25 @@ def load_attachment_bytes(att: AttachmentInput) -> bytes:
 
 
 def normalize_attachments(payload: Dict[str, Any]) -> List[AttachmentInput]:
+    """Aceita dois formatos de entrada:
+    1) simples: {"filename": "...pdf", "base64": "..."}
+    2) lote: {"attachments": [{"filename": "...pdf", "base64": "..."}]}
+       ou {"comprovantes": [...]}
+    """
     arr = payload.get('attachments') or payload.get('comprovantes') or []
+
+    # Formato simples usado no Make após Iterator do anexo.
+    if not arr and (payload.get('filename') or payload.get('fileName') or payload.get('base64') or payload.get('url')):
+        arr = [{
+            'filename': payload.get('filename') or payload.get('fileName') or payload.get('nome') or 'comprovante.pdf',
+            'base64': payload.get('base64') or payload.get('data') or '',
+            'url': payload.get('url') or payload.get('link') or '',
+        }]
+
+    # Segurança: se vier um único objeto em vez de lista.
+    if isinstance(arr, dict):
+        arr = [arr]
+
     out = []
     for item in arr:
         if not item:

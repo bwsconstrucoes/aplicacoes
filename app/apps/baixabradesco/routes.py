@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import traceback
 from flask import request, jsonify
 from . import bp
 from .core import processar_baixabradesco
@@ -22,8 +23,13 @@ def executar():
             return jsonify({'ok': False, 'error': 'Não autorizado.'}), 401
         result = processar_baixabradesco(payload)
         return jsonify(result)
+    except ValueError as e:
+        return jsonify({'ok': False, 'app': 'baixabradesco', 'error': str(e)}), 400
     except Exception as e:
-        return jsonify({'ok': False, 'app': 'baixabradesco', 'error': str(e)}), 500
+        body = {'ok': False, 'app': 'baixabradesco', 'error': str(e)}
+        if os.getenv('BAIXABRADESCO_DEBUG', '').lower() in {'1', 'true', 'sim', 'yes'}:
+            body['traceback'] = traceback.format_exc()
+        return jsonify(body), 500
 
 
 @bp.route('/health', methods=['GET'])
