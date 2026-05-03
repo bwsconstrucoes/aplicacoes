@@ -102,16 +102,42 @@ def row_to_spsagendar_record(r: Dict[str, str]) -> SpRecord:
 
 
 def load_base_bancos(gc=None) -> List[BankAccount]:
+    """Lê a aba BaseBancos.
+
+    Formato real da planilha:
+      Banco e Conta          | Código Conta Omie | Código | Título | CNPJ | Código Fornecedor Omie | Chave PIX
+      Bradesco - 7011-4      | 583772104         | ...
+      Bradesco - 22069-8     | 583782056         | ...
+      Caixa - 2625-5         | 583779709         | ...
+
+    A coluna 'Banco e Conta' tem o padrão: '<Banco> - <conta>'
+    onde <conta> é o número da conta (sem agência separada).
+    A agência é sempre 0624 para o Bradesco nas contas operacionais.
+    """
     gc = gc or get_gc()
     rows = get_sheet_rows(gc, BASE_BANCOS_ID, 'BaseBancos')
     out = []
     for r in rows:
-        agencia     = as_string(r.get('Agência') or r.get('Agencia') or r.get('AGENCIA'))
-        conta       = as_string(r.get('Conta') or r.get('CONTA'))
-        codigo_omie = as_string(r.get('Código Omie') or r.get('Codigo Omie') or r.get('nCodCC') or r.get('Código Conta Omie (nCodCC)'))
-        codigo_pipefy = as_string(r.get('Código Pipefy') or r.get('Codigo Pipefy') or r.get('Código Conta BWS Pipefy'))
-        descricao   = as_string(r.get('Descrição') or r.get('Descricao') or r.get('Conta BWS') or r.get('Banco'))
-        banco       = as_string(r.get('Banco') or r.get('BANCO'))
+        banco_conta  = as_string(r.get('Banco e Conta') or r.get('Banco'))
+        codigo_omie  = as_string(r.get('Código Conta Omie') or r.get('Código Omie') or r.get('nCodCC'))
+        codigo_pipefy = as_string(r.get('Código') or r.get('Código Pipefy'))
+        descricao    = as_string(r.get('Título') or r.get('Banco e Conta'))
+
+        if not banco_conta or not codigo_omie:
+            continue
+
+        # Extrai banco e conta do padrão "Bradesco - 7011-4"
+        if ' - ' in banco_conta:
+            partes = banco_conta.split(' - ', 1)
+            banco  = partes[0].strip()
+            conta  = partes[1].strip()
+        else:
+            banco = banco_conta
+            conta = ''
+
+        # Agência: para Bradesco é sempre 0624; para outros extrai se houver
+        agencia = _inferir_agencia(banco)
+
         ba = BankAccount(
             row_number        =int(r.get('_row_number', 0)),
             banco             =banco,
@@ -120,12 +146,27 @@ def load_base_bancos(gc=None) -> List[BankAccount]:
             chave_normalizada =account_key(agencia, conta),
             codigo_omie       =codigo_omie,
             codigo_pipefy     =codigo_pipefy,
-            descricao         =descricao,
+            descricao         =descricao or banco_conta,
             raw               =r,
         )
-        if ba.codigo_omie or ba.codigo_pipefy or ba.conta:
-            out.append(ba)
+        out.append(ba)
     return out
+
+
+def _inferir_agencia(banco: str) -> str:
+    """Retorna a agência padrão por banco conforme operação BWS."""
+    n = normalize_compact(banco)
+    if 'bradesco' in n:
+        return '0624'
+    if 'caixa' in n or 'cef' in n:
+        return '0477'
+    if 'bb' in n or 'brasil' in n:
+        return '3337'
+    if 'inter' in n:
+        return '0001'
+    if 'sicredi' in n:
+        return '0748'
+    return ''
 
 
 def find_bank_account(accounts: List[BankAccount], agencia: str, conta: str) -> Optional[BankAccount]:
