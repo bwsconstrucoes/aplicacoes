@@ -60,24 +60,35 @@ def load_spsagendar(gc=None) -> List[SpRecord]:
 
 
 def row_to_sp_record(r: Dict[str, str]) -> SpRecord:
+    # Mapeamento real da SPsBD (validado pelo usuário em 03/05/2026):
+    # A=ID, B=Solicitação, C=Vencim., D=Nome do Credor, E=CPF/CNPJ,
+    # F=Descrição da Despesa, G=Valor Total, H=Centro de Custo,
+    # I=Tipo de Despesa, J=Tipo de Pagamento, K=Responsável pelo Registro,
+    # L=Dt. Autorização, M=Responsável Autorização, N=Status Aut.,
+    # O=Status Pgt, P=Código Integração, Q=Anexo Link, R=Card Link,
+    # S=Anexo, T=Card, U=Status Aut. Símbolo, V=Status Pgt. Simbolo,
+    # W=Pesquisa, X=Data do Pagamento, Y=Info de Pgt, Z=Parcela,
+    # AA=Nº da NF, AB=Agendado, AC=Linha, AD=Nº do Pedido, AE=Anuente,
+    # AF=Status Anuencia, AG=Comprovante, AH=Validação,
+    # AI=Código de Barras, AJ=ID Pipefy Contrato, AK=Conta Pagamento
     return SpRecord(
-        row_number              =int(r.get('_row_number', 0)),
-        id                      =as_string(r.get('ID') or r.get('A')),
-        nome_credor             =as_string(r.get('Nome do Credor')),
-        cpf_cnpj                =as_string(r.get('CPF/CNPJ')),
-        descricao               =as_string(r.get('Descrição da Despesa')),
-        valor_total             =as_string(r.get('Valor Total')),
-        centro_custo            =as_string(r.get('Centro de Custo')),
-        tipo_pagamento          =as_string(r.get('Tipo de Pagamento')),
-        vencimento              =as_string(r.get('Vencim.') or r.get('Vencimento')),
-        codigo_integracao_omie  =as_string(r.get('Código Integração') or r.get('Código Lançamento Integração Omie')),
-        status_pgt              =as_string(r.get('Status Pgt')),
-        status_agendamento      =as_string(r.get('Status Agendamento') or r.get('Agendado')),
-        info_pgt                =as_string(r.get('Info de Pgt')),
-        numero_nf               =as_string(r.get('Nº da NF')),
-        conta_pagamento         =as_string(r.get('Conta Pagamento')),
-        link_card               =as_string(r.get('Card Link')),
-        raw                     =r,
+        row_number             =int(r.get('_row_number', 0)),
+        id                     =as_string(r.get('ID')),
+        nome_credor            =as_string(r.get('Nome do Credor')),
+        cpf_cnpj               =as_string(r.get('CPF/CNPJ')),
+        descricao              =as_string(r.get('Descrição da Despesa')),
+        valor_total            =as_string(r.get('Valor Total')),
+        centro_custo           =as_string(r.get('Centro de Custo')),
+        tipo_pagamento         =as_string(r.get('Tipo de Pagamento')),
+        vencimento             =as_string(r.get('Vencim.') or r.get('Vencimento')),
+        codigo_integracao_omie =as_string(r.get('Código Integração')),
+        status_pgt             =as_string(r.get('Status Pgt')),
+        status_agendamento     =as_string(r.get('Agendado')),
+        info_pgt               =as_string(r.get('Info de Pgt')),
+        numero_nf              =as_string(r.get('Nº da NF')),
+        conta_pagamento        =as_string(r.get('Conta Pagamento')),
+        link_card              =as_string(r.get('Card Link')),
+        raw                    =r,
     )
 
 
@@ -185,19 +196,19 @@ def find_bank_account(accounts: List[BankAccount], agencia: str, conta: str) -> 
 
 
 def build_spsbd_updates(plan) -> List[dict]:
-    """Monta lista de updates para a aba SPsBD.
-
-    Colunas conforme mapeamento validado com o módulo 1863:
-      O  = Status Pgt       → "Pago"
-      X  = Data Pagamento
-      AG = Link Comprovante (Dropbox)
-      AK = Conta Corrente usada no pagamento
+    """Monta updates para a SPsBD com colunas validadas pelo usuário:
+      O  = Status Pgt       → 'Pago'
+      X  = Data do Pagamento
+      AG = Comprovante (link Dropbox)
+      AK = Conta Pagamento  → gravar só o número ex: '50024-0'
     """
     if not plan.match or not plan.match.id:
         return []
     rec   = plan.receipt
     banco = plan.banco
-    conta_descricao = banco.descricao if banco else rec.conta_origem_raw
+
+    # AK: grava só o número da conta, ex: '50024-0' (não 'Bradesco - 50024-0')
+    conta = banco.conta if banco else rec.conta_origem
 
     return [{
         'sheet_id': SPS_SHEET_ID,
@@ -207,7 +218,7 @@ def build_spsbd_updates(plan) -> List[dict]:
             'O':  'Pago',
             'X':  rec.data_pagamento,
             'AG': rec.drive_link,
-            'AK': conta_descricao,
+            'AK': conta,
         },
     }]
 
