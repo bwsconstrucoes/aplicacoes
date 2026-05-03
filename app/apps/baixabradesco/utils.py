@@ -7,6 +7,7 @@ import re
 import unicodedata
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from datetime import datetime
+from typing import Tuple
 
 TWOPLACES = Decimal('0.01')
 
@@ -33,7 +34,7 @@ def only_digits(value: str) -> str:
     return re.sub(r'\D+', '', as_string(value))
 
 
-def money_to_decimal(value) -> Decimal | None:
+def money_to_decimal(value) -> 'Decimal | None':
     txt = as_string(value)
     if not txt:
         return None
@@ -66,9 +67,29 @@ def decimal_to_omie(value) -> str:
 
 
 def b64decode_bytes(data: str) -> bytes:
+    """Decodifica base64 de forma robusta.
+
+    Aceita:
+    - base64 sem padding (caso mais comum vindo do Make.com)
+    - base64 com prefixo data URI (data:application/pdf;base64,...)
+    - base64 com espaços ou quebras de linha embutidas
+    - base64 padrão com padding correto
+    """
     data = as_string(data)
+    # Remove prefixo data URI se presente
     if ',' in data and data.lower().startswith('data:'):
         data = data.split(',', 1)[1]
+    # Remove qualquer whitespace (Make pode enviar com quebras de linha entre chunks)
+    data = ''.join(data.split())
+    if not data:
+        raise ValueError('Base64 vazio após limpeza.')
+    # Adiciona padding necessário (len % 4 deve ser 0, 2 ou 3 — nunca 1)
+    remainder = len(data) % 4
+    if remainder == 1:
+        # Dado corrompido — tenta mesmo assim removendo o último char
+        data = data[:-1]
+    elif remainder in (2, 3):
+        data += '=' * (4 - remainder)
     return base64.b64decode(data)
 
 
