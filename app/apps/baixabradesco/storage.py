@@ -5,11 +5,25 @@ import os
 import time
 import requests
 import dropbox
-from io import BytesIO
 from typing import Optional
 
 _DROPBOX_TOKEN: Optional[str] = None
 _DROPBOX_TOKEN_EXPIRATION = 0.0
+
+
+def normalize_shared_link(url: str) -> str:
+    """Padroniza link compartilhado do Dropbox para download direto (dl=1)."""
+    url = str(url or '').strip()
+    if not url:
+        return ''
+    if '?dl=0' in url:
+        url = url.replace('?dl=0', '?dl=1')
+    if '&dl=0' in url:
+        url = url.replace('&dl=0', '&dl=1')
+    if 'dl=1' not in url:
+        sep = '&' if '?' in url else '?'
+        url = f'{url}{sep}dl=1'
+    return url
 
 
 def get_dropbox_client():
@@ -42,10 +56,10 @@ def refresh_dropbox_token():
 def upload_dropbox_bytes(file_bytes: bytes, path: str) -> dict:
     """Sobe bytes no Dropbox, evitando sobrescrever, e retorna link dl=1.
 
-    Replica a lógica encontrada em app/apps/pdf_processor/__init__.py:
+    Replica a lógica encontrada no pdf_processor:
     - se o arquivo existir, acrescenta (1), (2), ...
     - cria/reaproveita shared link
-    - troca ?dl=0 por ?dl=1
+    - troca dl=0 por dl=1, inclusive quando vier como &dl=0
     """
     dbx = get_dropbox_client()
     path = _normalize_dropbox_path(path)
@@ -75,7 +89,7 @@ def upload_dropbox_bytes(file_bytes: bytes, path: str) -> dict:
     return {
         'storage': 'dropbox',
         'path': final_path,
-        'url': (url or '').replace('?dl=0', '?dl=1'),
+        'url': normalize_shared_link(url),
     }
 
 
