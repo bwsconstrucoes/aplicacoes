@@ -165,7 +165,7 @@ def build_whatsapp_messages(plan, payload: dict) -> List[Dict[str, Any]]:
     ]
 
     # Comprovante em PDF
-    link_comprovante = rec.drive_link
+    link_comprovante = rec.drive_link.replace('?dl=0', '?dl=1').replace('&dl=0', '&dl=1') if rec.drive_link else ''
     if link_comprovante:
         msgs.append({
             'enabled': True,

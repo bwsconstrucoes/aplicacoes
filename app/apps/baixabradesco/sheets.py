@@ -11,6 +11,7 @@ from google.oauth2.service_account import Credentials
 
 from .models import SpRecord, BankAccount
 from .utils import as_string, normalize_compact, money_to_decimal, account_key, clean_account, only_digits
+from .storage import normalize_dropbox_link
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 SPS_SHEET_ID  = '1lrP1HOvwqyXiVdP2kuTgG7sJjl2QXl0WT4lwkd392DA'

@@ -60,7 +60,8 @@ def get_field_value(card_info: Optional[Dict[str, Any]], field_name: str) -> str
     if not card_info:
         return ''
     for f in (card_info.get('fields') or []):
-        label = as_string(f.get('field', {}).get('label') or f.get('name'))
+        field_meta = f.get('field') or {}
+        label = as_string(field_meta.get('label') or f.get('name'))
         if label.lower() == field_name.lower():
             return as_string(f.get('value'))
     return ''
@@ -99,7 +100,9 @@ def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None)
     cid   = as_string(plan.match.id)
     banco_pipefy = as_string(plan.banco.codigo_pipefy if plan.banco else '')
     forma = rec.forma_pagamento or (plan.match.sp.tipo_pagamento if plan.match.sp else '')
-    link  = rec.drive_link
+    if forma == 'BeeVale':
+        forma = 'Pix'
+    link  = rec.drive_link.replace('?dl=0', '?dl=1').replace('&dl=0', '&dl=1') if rec.drive_link else ''
 
     fase_atual = get_current_phase(card_info)
     procedimento = get_field_value(card_info, 'Selecione o Procedimento')

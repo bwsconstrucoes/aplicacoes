@@ -19,8 +19,10 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
         return MatchResult(status='localizado', metodo='id_comprovante_sem_spsbd', id=receipt.id_pipefy, sp=None, motivo='ID localizado no comprovante, mas não encontrado no índice local da SPsBD.')
 
     if receipt.tipo_comprovante == 'beevale':
-        cands = match_beevale(receipt, sps_agendar)
-        return _result_from_candidates(cands, 'beevale_valor_1015', 'BeeVale por valor com acréscimo de 1,5%.')
+        # BeeVale deve procurar na SPsBD completa, pois quando o comprovante chega
+        # o registro normalmente já saiu da SPsAgendar e está como 'agendado'.
+        cands = match_beevale(receipt, list(sps_index.values()))
+        return _result_from_candidates(cands, 'beevale_valor_1015_spsbd', 'BeeVale por valor base = valor pago / 1,015, buscando na SPsBD.')
 
     if receipt.tipo_comprovante == 'fgts_rescisorio':
         cands = match_fgts(receipt, sps_agendar)
@@ -52,6 +54,10 @@ def match_beevale(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[Sp
     for r in records:
         n = normalize_text(f'{r.nome_credor} {r.info_pgt} {r.tipo_pagamento}')
         if 'beevale' not in n:
+            continue
+        if normalize_compact(r.status_pgt) != 'pagar':
+            continue
+        if normalize_compact(r.status_agendamento) not in {'agendado', 'agendar', 'falhaagendar'}:
             continue
         base = money_to_decimal(r.valor_total)
         if base is None:

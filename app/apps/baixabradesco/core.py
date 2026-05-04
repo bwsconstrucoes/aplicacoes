@@ -86,6 +86,8 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 storage_info['path_previsto'] = f'{pasta_dropbox.rstrip("/")}/{page_filename}'
 
+            rec.drive_link = normalize_dropbox_link(rec.drive_link)
+
             match = match_receipt(rec, sps_index, sps_agendar)
             banco = find_bank_account(base_bancos, rec.agencia_origem, rec.conta_origem) if base_bancos else None
 
@@ -149,11 +151,16 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
 
             # 4. WhatsApp direto via Z-API, após getCard
             if enviar_whatsapp:
-                plan.whatsapp_messages = build_whatsapp_messages(plan, payload)
-                if plan.whatsapp_messages:
-                    plan.responses['zapi'] = _executar_zapi(plan.whatsapp_messages, payload)
-                else:
-                    plan.responses['zapi'] = [{'skipped': True, 'reason': 'sem_telefone_ou_campos_pipefy'}]
+                try:
+                    plan.whatsapp_messages = build_whatsapp_messages(plan, payload)
+                    if plan.whatsapp_messages:
+                        plan.responses['zapi'] = _executar_zapi(plan.whatsapp_messages, payload)
+                    else:
+                        plan.responses['zapi'] = [{'skipped': True, 'reason': 'sem_telefone_ou_campos_pipefy'}]
+                except Exception as e:
+                    # WhatsApp nunca pode derrubar a baixa; registra no output e segue.
+                    plan.responses['zapi'] = [{'ok': False, 'status': 0, 'error': str(e)}]
+                    plan.whatsapp_messages = []
 
         # Pipefy e Z-API são executados por plano acima, para manter o output correto.
 
