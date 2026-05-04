@@ -61,23 +61,29 @@ def _decodificar_b64(valor: str) -> str:
 def _decodificar_b64_inline(texto: str) -> str:
     """
     Procura tokens base64 dentro de um texto e os decodifica.
+    Aplica em loop até não restar tokens — trata base64 duplo ou aninhado.
     Aceita tokens com ou sem padding (=), mínimo 20 caracteres.
-    O Pipefy às vezes omite o padding no base64.
     """
     import re
     def tentar_decode(match):
         token = match.group(0)
         try:
-            # Adiciona padding se necessário
             padding = (4 - len(token) % 4) % 4
             decoded = base64.b64decode(token + '=' * padding).decode('utf-8')
-            # Aceita só se resultado for texto legível
-            if len(decoded) > 3 and all(c.isprintable() or c in '\n\r\t' for c in decoded):
+            if len(decoded) > 3 and all(c.isprintable() or c in '\n\r\t\xa0' for c in decoded):
                 return decoded
         except Exception:
             pass
         return token
-    return re.sub(r'[A-Za-z0-9+/]{20,}={0,2}', tentar_decode, texto)
+
+    padrao = re.compile(r'[A-Za-z0-9+/]{20,}={0,2}')
+    MAX_PASSES = 5
+    for _ in range(MAX_PASSES):
+        novo = padrao.sub(tentar_decode, texto)
+        if novo == texto:
+            break  # nenhum token foi substituído — encerra
+        texto = novo
+    return texto
 
 
 def _normalizar_payload(p: dict) -> dict:
