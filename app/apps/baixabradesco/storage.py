@@ -75,7 +75,7 @@ def upload_dropbox_bytes(file_bytes: bytes, path: str) -> dict:
     return {
         'storage': 'dropbox',
         'path': final_path,
-        'url': (url or '').replace('?dl=0', '?dl=1'),
+        'url': normalize_dropbox_link(url or ''),
     }
 
 
@@ -102,3 +102,11 @@ def _normalize_dropbox_path(path: str) -> str:
     while '//' in path:
         path = path.replace('//', '/')
     return path
+
+
+def normalize_dropbox_link(url: str) -> str:
+    url = str(url or '')
+    if not url:
+        return url
+    url = url.replace('?dl=0', '?dl=1').replace('&dl=0', '&dl=1')
+    return url

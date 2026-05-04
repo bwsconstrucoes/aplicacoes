@@ -217,7 +217,7 @@ def build_spsbd_updates(plan) -> List[dict]:
         'updates':  {
             'O':  'Pago',
             'X':  rec.data_pagamento,
-            'AG': rec.drive_link,
+            'AG': normalize_dropbox_link(rec.drive_link),
             'AK': conta,
         },
     }]

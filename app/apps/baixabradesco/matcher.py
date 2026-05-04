@@ -19,14 +19,8 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
         return MatchResult(status='localizado', metodo='id_comprovante_sem_spsbd', id=receipt.id_pipefy, sp=None, motivo='ID localizado no comprovante, mas não encontrado no índice local da SPsBD.')
 
     if receipt.tipo_comprovante == 'beevale':
-        # O comprovante chega depois do agendamento. Por isso a SP pode não estar
-        # mais na visão SPsAgendar, mas continua na SPsBD com AB = agendado.
-        cands = match_beevale(receipt, list(sps_index.values()))
-        return _result_from_candidates(
-            cands,
-            'beevale_valor_1015_spsbd',
-            'BeeVale por valor base = valor pago / 1,015, buscando na SPsBD.'
-        )
+        cands = match_beevale(receipt, sps_agendar)
+        return _result_from_candidates(cands, 'beevale_valor_1015', 'BeeVale por valor com acréscimo de 1,5%.')
 
     if receipt.tipo_comprovante == 'fgts_rescisorio':
         cands = match_fgts(receipt, sps_agendar)
@@ -51,38 +45,19 @@ def _result_from_candidates(cands: List[SpRecord], metodo: str, motivo: str) -> 
 
 
 def match_beevale(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
-    valor_pago = money_to_decimal(receipt.valor_pago)
-    if valor_pago is None:
+    valor = money_to_decimal(receipt.valor_pago)
+    if valor is None:
         return []
-
     out = []
     for r in records:
-        n = normalize_text(f'{r.nome_credor} {r.info_pgt} {r.tipo_pagamento} {r.descricao}')
+        n = normalize_text(f'{r.nome_credor} {r.info_pgt} {r.tipo_pagamento}')
         if 'beevale' not in n:
             continue
-
-        # Após o agendamento, o registro normalmente está em SPsBD com AB = agendado.
-        status_pgt = normalize_compact(r.status_pgt)
-        status_ag  = normalize_compact(r.status_agendamento)
-        validacao  = normalize_compact((r.raw or {}).get('Validação') or (r.raw or {}).get('Validacao'))
-        status_aut = normalize_compact(r.status_aut or (r.raw or {}).get('Status Aut.'))
-
-        if status_pgt and status_pgt != 'pagar':
-            continue
-        if status_ag and status_ag not in {'agendar', 'agendado', 'falhaagendar'}:
-            continue
-        if validacao and validacao != 'sim':
-            continue
-        if status_aut and status_aut not in {'autorizado', 'preautorizado'}:
-            continue
-
         base = money_to_decimal(r.valor_total)
         if base is None:
             continue
-
-        # Regra BeeVale: comprovante = valor base * 1,015.
         esperado = (base * BEEVALE_MULTIPLICADOR).quantize(Decimal('0.01'))
-        if abs(esperado - valor_pago) <= BEEVALE_TOL:
+        if abs(esperado - valor) <= BEEVALE_TOL:
             out.append(r)
     return out
 

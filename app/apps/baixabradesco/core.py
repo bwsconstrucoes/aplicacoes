@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import threading
-import time
 from typing import Dict, Any, List
 
 import requests
@@ -15,8 +14,8 @@ from .sheets import get_gc, load_spsbd_index, load_spsagendar, load_base_bancos,
 from .matcher import match_receipt
 from .omie import build_omie_plan, build_incluir_lanc_cc, execute_omie, execute_omie_lanccc, codigo_integracao
 from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
-from .zapi import build_whatsapp_messages, send_messages_batch
-from .storage import upload_dropbox_bytes, build_receipt_page_filename
+from .zapi import build_whatsapp_messages, send_messages_batch, resolve_zapi_auth, validate_zapi_auth
+from .storage import upload_dropbox_bytes, build_receipt_page_filename, normalize_dropbox_link
 
 
 def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -80,7 +79,8 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                     page_pdf = extract_single_page_pdf(pdf_bytes, page_num)
                     storage_info = upload_dropbox_bytes(page_pdf, f'{pasta_dropbox}/{page_filename}')
                     storage_info['status'] = 'salvo'
-                    rec.drive_link = storage_info.get('url', '')
+                    rec.drive_link = normalize_dropbox_link(storage_info.get('url', ''))
+                    storage_info['url'] = rec.drive_link
                 except Exception as e:
                     storage_info['status'] = f'erro_upload: {e}'
             else:
@@ -98,7 +98,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             plan.pipefy_get_query     = ''                                   # preenchido depois em lote
             plan.pipefy_update_mutation = ''                                 # preenchido depois com dados do get
             plan.sheets_updates       = build_spsbd_updates(plan)           if plan.match.id and atualizar_spsbd else []
-            plan.whatsapp_messages    = []  # montado depois do getCard, pois depende dos campos Pipefy
+            plan.whatsapp_messages    = []  # montado depois do getCard Pipefy
 
             if plan.match.id:
                 card_ids_para_get.append(plan.match.id)
@@ -107,57 +107,55 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     # ── GET em lote no Pipefy (uma única chamada para todos os cards) ──────────
     card_data: Dict[str, Any] = {}
-    pipefy_get_query = ''
-    if card_ids_para_get and (atualizar_pipefy or enviar_whatsapp):
-        pipefy_get_query = build_get_cards_query(list(set(card_ids_para_get)))
-        for p in plans:
-            if p.match.id:
-                p.pipefy_get_query = pipefy_get_query
-
-        if not modo_teste:
-            try:
-                resp  = execute_graphql(pipefy_get_query)
-                if resp.get('ok') and resp.get('body', {}).get('data'):
-                    for alias, cdata in resp['body']['data'].items():
-                        if cdata and cdata.get('id'):
-                            card_data[str(cdata['id'])] = cdata
-            except Exception:
-                pass  # falha no get não deve parar as demais atualizações possíveis
+    if card_ids_para_get and atualizar_pipefy and not modo_teste:
+        try:
+            query = build_get_cards_query(list(set(card_ids_para_get)))
+            resp  = execute_graphql(query)
+            if resp.get('ok') and resp.get('body', {}).get('data'):
+                for alias, cdata in resp['body']['data'].items():
+                    if cdata and cdata.get('id'):
+                        card_data[str(cdata['id'])] = cdata
+        except Exception as e:
+            pass  # falha no get não deve parar a execução
 
     # ── Executa planos em produção ─────────────────────────────────────────────
+    pipefy_mutations_batch: List[str] = []
+
     if not modo_teste:
         for plan in plans:
             if not plan.pode_executar:
                 continue
 
             card_info = card_data.get(str(plan.match.id)) if plan.match.id else None
-            falha_omie = False
+            if card_info:
+                plan.responses['pipefy_card_info'] = card_info
 
-            # 1. Omie com retry curto. Se falhar, mantém as demais atualizações
-            # e move o card para Falha Api no Pipefy.
+            # 1. Omie
             if plan.omie_requests and executar_omie:
-                omie_log, falha_omie = _executar_sequencia_omie(plan)
-                plan.responses['omie'] = omie_log
-                plan.responses['omie_falhou'] = falha_omie
+                plan.responses['omie'] = _executar_sequencia_omie(plan)
 
-            # 2. Sheets SPsBD: comprovante bancário confirma pagamento, então marca Pago
-            # mesmo que a baixa Omie precise ir para Falha Api.
+            # 2. Sheets SPsBD (em background para não atrasar resposta)
             if plan.sheets_updates and atualizar_spsbd:
                 _executar_sheets_async(plan.sheets_updates)
 
-            # 3. Pipefy: atualiza campos sempre que possível. Se Omie falhou, move para Falha Api.
+            # 3. Pipefy mutation montada com dados do get
             if atualizar_pipefy and plan.match.id:
-                mutation = build_update_card_mutation(plan, card_info, falha_omie=falha_omie)
+                mutation = build_update_card_mutation(plan, card_info)
                 plan.pipefy_update_mutation = mutation
-                plan.responses['pipefy'] = _executar_pipefy_batch([mutation])
+                try:
+                    plan.responses['pipefy'] = [execute_graphql(mutation)]
+                except Exception as e:
+                    plan.responses['pipefy'] = [{'ok': False, 'error': str(e)}]
 
-            # 4. WhatsApp direto via Z-API, montado depois do getCard.
-            if enviar_whatsapp and plan.match.id:
-                plan.responses['pipefy_card_info'] = card_info
+            # 4. WhatsApp direto via Z-API, após getCard
+            if enviar_whatsapp:
                 plan.whatsapp_messages = build_whatsapp_messages(plan, payload)
-                plan.responses.pop('pipefy_card_info', None)
                 if plan.whatsapp_messages:
                     plan.responses['zapi'] = _executar_zapi(plan.whatsapp_messages, payload)
+                else:
+                    plan.responses['zapi'] = [{'skipped': True, 'reason': 'sem_telefone_ou_campos_pipefy'}]
+
+        # Pipefy e Z-API são executados por plano acima, para manter o output correto.
 
     # ── Monta output de modo_teste (preview de tudo que seria feito) ───────────
     return {
@@ -217,52 +215,36 @@ def _decidir_execucao(plan: ExecutionPlan, executar_omie: bool, atualizar_pipefy
     plan.pode_executar = True
 
 
-def _executar_sequencia_omie(plan: ExecutionPlan) -> tuple[List[dict], bool]:
-    """Consulta → Altera → Baixa, com 1 retry curto por etapa.
-
-    Retorna (logs, falha_omie). Se o título já está PAGO, não é falha.
-    Se qualquer etapa necessária falhar após retry, as demais integrações continuam,
-    mas o Pipefy deve ser movido para Falha Api.
-    """
-    resultados: List[dict] = []
-    falha_omie = False
-
+def _executar_sequencia_omie(plan: ExecutionPlan) -> List[dict]:
+    """Consulta → Altera (se necessário) → Baixa. Retorna log de cada step."""
+    resultados = []
     for req in plan.omie_requests:
-        resp = _execute_omie_com_retry(req['request'])
+        resp = execute_omie(req['request'])
         resultados.append({'step': req['step'], 'response': resp})
 
         if req['step'] == 'consultar':
             body = resp.get('body') or {}
             if as_string(body.get('status_titulo')).upper() == 'PAGO':
                 resultados.append({'step': 'skip', 'motivo': 'Título já consta PAGO no Omie.'})
-                return resultados, False
+                break
+            # Se não encontrou o título, interrompe (não tenta alterar/baixar)
             if not resp.get('ok'):
-                falha_omie = True
-                resultados.append({'step': 'abort_consulta', 'motivo': 'Falha ao consultar título no Omie após retry.'})
-                return resultados, True
+                faultcode = as_string((body.get('faultcode') or ''))
+                if 'nao_encontrado' in faultcode.lower() or resp['status'] == 500:
+                    resultados.append({'step': 'abort', 'motivo': 'Título não encontrado no Omie. Inclua o título primeiro.'})
+                    break
 
-        if req['step'] == 'alterar_se_necessario' and not resp.get('ok'):
-            falha_omie = True
-            resultados.append({'step': 'abort_apos_alterar', 'motivo': 'Falha ao alterar título no Omie após retry.'})
-            return resultados, True
+        if req['step'] == 'alterar_se_necessario':
+            # Só altera se valor ou conta divergem (verificação simplificada: tenta sempre, Omie idempotente)
+            if not resp.get('ok'):
+                resultados.append({'step': 'abort_apos_alterar', 'motivo': 'Falha ao alterar título. Baixa cancelada.'})
+                break
 
         if req['step'] == 'baixar' and not resp.get('ok'):
-            falha_omie = True
-            resultados.append({'step': 'erro_baixa', 'motivo': 'Falha ao lançar pagamento no Omie após retry.'})
-            return resultados, True
+            resultados.append({'step': 'erro_baixa', 'motivo': 'Falha ao lançar pagamento no Omie.'})
 
-    return resultados, falha_omie
+    return resultados
 
-
-def _execute_omie_com_retry(body: dict, tentativas: int = 2, delay: float = 3.0) -> dict:
-    ultimo = None
-    for i in range(max(1, tentativas)):
-        ultimo = execute_omie(body)
-        if ultimo.get('ok'):
-            return ultimo
-        if i < tentativas - 1:
-            time.sleep(delay)
-    return ultimo or {'ok': False, 'status': 0, 'body': {}, 'raw': 'Falha desconhecida Omie'}
 
 def _executar_sheets_async(updates: list):
     def _run():
@@ -285,19 +267,16 @@ def _executar_pipefy_batch(mutations: List[str]) -> List[dict]:
     return resultados
 
 
-def _executar_zapi(msgs: list, payload: dict) -> list:
+def _executar_zapi(msgs: list, payload: dict):
     try:
-        zapi = payload.get('zapi') or {}
-        zapi_auth = {
-            'instanceId': as_string(zapi.get('instance_id') or zapi.get('instanceId') or payload.get('zapi_instance_id') or payload.get('instanceId')),
-            'apiToken':   as_string(zapi.get('api_token')   or zapi.get('apiToken')   or payload.get('zapi_api_token')   or payload.get('apiToken')),
-            'clientToken':as_string(zapi.get('client_token')or zapi.get('clientToken')or payload.get('zapi_client_token')or payload.get('clientToken')),
-        }
-        if zapi_auth['instanceId'] and zapi_auth['apiToken'] and zapi_auth['clientToken']:
-            return send_messages_batch(zapi_auth, msgs)
-        return [{'ok': False, 'skipped': True, 'reason': 'credenciais_zapi_ausentes'}]
+        zapi_auth = resolve_zapi_auth(payload)
+        missing = validate_zapi_auth(zapi_auth)
+        if missing:
+            return [{'ok': False, 'skipped': True, 'reason': 'credenciais_zapi_ausentes', 'missing': missing}]
+        return send_messages_batch(zapi_auth, msgs)
     except Exception as e:
-        return [{'ok': False, 'error': str(e)}]
+        return [{'ok': False, 'status': 0, 'error': str(e)}]
+
 
 def load_attachment_bytes(att: AttachmentInput) -> bytes:
     if att.base64:

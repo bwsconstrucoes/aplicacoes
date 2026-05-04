@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import List, Dict, Any
 
+import os
 import requests
 
 from .utils import as_string
@@ -10,6 +11,34 @@ from .pipefy import get_field_value, get_current_phase
 
 
 ZAPI_BASE = 'https://api.z-api.io/instances/{instance}/token/{token}'
+
+
+def resolve_zapi_auth(payload: dict | None = None) -> dict:
+    """Resolve credenciais Z-API por payload ou variáveis de ambiente do Render.
+
+    Prioridade:
+    1) payload.zapi.instance_id / api_token / client_token
+    2) payload.zapi_instance_id / zapi_api_token / zapi_client_token
+    3) env ZAPI_INSTANCE_ID / ZAPI_API_TOKEN / ZAPI_CLIENT_TOKEN
+    """
+    payload = payload or {}
+    zapi = payload.get('zapi') or {}
+    return {
+        'instanceId': as_string(zapi.get('instance_id') or zapi.get('instanceId') or payload.get('zapi_instance_id') or payload.get('instanceId') or os.getenv('ZAPI_INSTANCE_ID', '')),
+        'apiToken': as_string(zapi.get('api_token') or zapi.get('apiToken') or payload.get('zapi_api_token') or payload.get('apiToken') or os.getenv('ZAPI_API_TOKEN', '')),
+        'clientToken': as_string(zapi.get('client_token') or zapi.get('clientToken') or payload.get('zapi_client_token') or payload.get('clientToken') or os.getenv('ZAPI_CLIENT_TOKEN', '')),
+    }
+
+
+def validate_zapi_auth(auth: dict) -> str:
+    missing = []
+    if not auth.get('instanceId'):
+        missing.append('ZAPI_INSTANCE_ID')
+    if not auth.get('apiToken'):
+        missing.append('ZAPI_API_TOKEN')
+    if not auth.get('clientToken'):
+        missing.append('ZAPI_CLIENT_TOKEN')
+    return ', '.join(missing)
 
 
 def _zapi_headers(auth: dict) -> dict:
@@ -143,7 +172,7 @@ def build_whatsapp_messages(plan, payload: dict) -> List[Dict[str, Any]]:
             'type': 'document',
             'docType': 'pdf',
             'phone': telefone_resp,
-            'documentUrl': link_comprovante.replace('dl=0', 'dl=1'),
+            'documentUrl': link_comprovante.replace('?dl=0', '?dl=1').replace('&dl=0', '&dl=1'),
             'fileName': 'Comprovante de Pagamento',
         })
 
@@ -163,7 +192,7 @@ def build_whatsapp_messages(plan, payload: dict) -> List[Dict[str, Any]]:
                 'type': 'document',
                 'docType': 'pdf',
                 'phone': telefone_req,
-                'documentUrl': link_comprovante.replace('dl=0', 'dl=1'),
+                'documentUrl': link_comprovante.replace('?dl=0', '?dl=1').replace('&dl=0', '&dl=1'),
                 'fileName': 'Comprovante de Pagamento',
             })
 

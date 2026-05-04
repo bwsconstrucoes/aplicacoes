@@ -10,7 +10,6 @@ from .utils import as_string
 
 PIPEFY_URL = 'https://api.pipefy.com/graphql'
 PHASE_PAGO_ALIMENTAR_OMIE = '309521694'
-PHASE_FALHA_API = '310785170'
 
 # Campos buscados no get em lote — usados para montar a mensagem WhatsApp e verificar fase
 FIELDS_TO_FETCH = [
@@ -94,15 +93,12 @@ def execute_graphql(query: str) -> dict:
         return {'ok': False, 'status': 0, 'body': {}, 'error': str(e)}
 
 
-def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None, falha_omie: bool = False) -> str:
+def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None) -> str:
     """Monta a mutation de atualização do card com todos os campos necessários."""
     rec   = plan.receipt
     cid   = as_string(plan.match.id)
     banco_pipefy = as_string(plan.banco.codigo_pipefy if plan.banco else '')
     forma = rec.forma_pagamento or (plan.match.sp.tipo_pagamento if plan.match.sp else '')
-    # Pipefy aceita Pix, não BeeVale, no campo forma_de_pagamento.
-    if forma == 'BeeVale':
-        forma = 'Pix'
     link  = rec.drive_link
 
     fase_atual = get_current_phase(card_info)
@@ -126,13 +122,8 @@ def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None,
     add('n7', 'banco',                    banco_pipefy)
     add('n8', 'comprovante_html_email',   link.replace('dl=0', 'dl=1') if link else '')
 
-    # Se Omie falhou após retry, atualiza campos possíveis e move para Falha Api.
-    # Caso contrário, segue o fluxo normal para Pago / Alimentar Omie.
-    if falha_omie:
-        aliases.append(
-            f'n9: moveCardToPhase(input: {{card_id: "{cid}" destination_phase_id: {PHASE_FALHA_API}}}) {{ clientMutationId }}'
-        )
-    elif fase_atual != 'Pago / Alimentar Omie':
+    # Move para fase "Pago / Alimentar Omie" somente se ainda não estiver lá
+    if fase_atual != 'Pago / Alimentar Omie':
         aliases.append(
             f'n9: moveCardToPhase(input: {{card_id: "{cid}" destination_phase_id: {PHASE_PAGO_ALIMENTAR_OMIE}}}) {{ clientMutationId }}'
         )
