@@ -102,7 +102,7 @@ def fingerprint_bytes(data: bytes, filename: str = '') -> str:
 
 
 def now_baixa_id() -> str:
-    return 'Int' + datetime.now().strftime('%d%m%Y%H%M%S%f')[:20]
+    return 'Int' + datetime.now().strftime('%d%m%Y%H%M%S')
 
 
 def clean_account(value: str) -> str:
