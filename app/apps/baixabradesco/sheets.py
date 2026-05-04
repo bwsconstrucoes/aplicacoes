@@ -89,6 +89,7 @@ def row_to_sp_record(r: Dict[str, str]) -> SpRecord:
         numero_nf              =as_string(r.get('Nº da NF')),
         conta_pagamento        =as_string(r.get('Conta Pagamento')),
         link_card              =as_string(r.get('Card Link')),
+        codigo_barras          =as_string(r.get('Código de Barras')),
         raw                    =r,
     )
 
@@ -109,6 +110,7 @@ def row_to_spsagendar_record(r: Dict[str, str]) -> SpRecord:
         centro_custo     =as_string(r.get('Centro de Custo')),
         vencimento       =as_string(r.get('Vencim.') or r.get('Vencimento')),
         descricao        =as_string(r.get('Descrição da Despesa')),
+        codigo_barras    =as_string(r.get('Código de Barras')),
         raw              =r,
     )
 

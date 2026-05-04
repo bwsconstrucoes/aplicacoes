@@ -4,7 +4,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Dict, List
 from .models import ExtractedReceipt, SpRecord, MatchResult
-from .utils import money_to_decimal, normalize_text, normalize_compact, account_key, clean_account
+from .utils import money_to_decimal, normalize_text, normalize_compact, account_key, clean_account, only_digits
 
 BEEVALE_MULTIPLICADOR = Decimal('1.015')
 BEEVALE_TOL = Decimal('0.02')
@@ -27,6 +27,14 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
     if receipt.tipo_comprovante == 'fgts_rescisorio':
         cands = match_fgts(receipt, sps_agendar)
         return _result_from_candidates(cands, 'fgts_valor_natureza', 'FGTS/CEF por valor e natureza/descrição.')
+
+
+    if receipt.tipo_comprovante == 'boleto':
+        # Boleto sem ID deve procurar na SPsBD completa, pois após agendamento
+        # normalmente sai da SPsAgendar e fica com Agendado = 'agendado'.
+        cands = match_boleto_barcode(receipt, list(sps_index.values()))
+        if cands:
+            return _result_from_candidates(cands, 'boleto_codigo_barras_spsbd', 'Boleto localizado por código de barras + valor + status/agendamento na SPsBD.')
 
     cands = match_valor_conta_tipo(receipt, sps_agendar)
     if cands:
@@ -66,6 +74,50 @@ def match_beevale(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[Sp
         if abs(esperado - valor) <= BEEVALE_TOL:
             out.append(r)
     return out
+
+
+def normalize_barcode(txt: str) -> str:
+    return only_digits(txt or '')
+
+
+def match_boleto_barcode(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
+    """Localiza boleto sem ID pela SPsBD completa.
+
+    Critérios:
+    - Tipo de pagamento = Boleto
+    - Status Pgt = Pagar
+    - Agendado em agendado/agendar/falhaagendar
+    - Valor igual ao comprovante
+    - Código de barras igual, normalizado apenas com números
+    """
+    valor = money_to_decimal(receipt.valor_pago)
+    if valor is None:
+        return []
+
+    barcode_rec = normalize_barcode(getattr(receipt, 'codigo_barras', '') or '')
+    if not barcode_rec:
+        return []
+
+    out = []
+    for r in records:
+        if normalize_compact(r.status_pgt) != 'pagar':
+            continue
+
+        if normalize_compact(r.status_agendamento) not in {'agendado', 'agendar', 'falhaagendar'}:
+            continue
+
+        if normalize_compact(r.tipo_pagamento) != 'boleto':
+            continue
+
+        if money_to_decimal(r.valor_total) != valor:
+            continue
+
+        barcode_sp = normalize_barcode(getattr(r, 'codigo_barras', '') or '')
+        if barcode_sp and barcode_sp == barcode_rec:
+            out.append(r)
+
+    return out
+
 
 
 def match_fgts(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:

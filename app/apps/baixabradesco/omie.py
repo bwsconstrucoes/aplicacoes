@@ -11,6 +11,22 @@ URL_CONTAPAGAR = 'https://app.omie.com.br/api/v1/financas/contapagar/'
 URL_LANCCC = 'https://app.omie.com.br/api/v1/financas/contacorrentelancamentos/'
 
 
+# 🔹 NOVO: mascara credenciais para output
+def mascarar_omie_request(request: dict) -> dict:
+    if not isinstance(request, dict):
+        return request
+
+    seguro = dict(request)
+
+    if "app_key" in seguro:
+        seguro["app_key"] = "***REDACTED***"
+
+    if "app_secret" in seguro:
+        seguro["app_secret"] = "***REDACTED***"
+
+    return seguro
+
+
 def credentials_from_payload(payload: dict) -> Tuple[str, str]:
     """Retorna (app_key, app_secret) priorizando payload, depois env vars."""
     omie = payload.get('omie') or {}
@@ -100,7 +116,9 @@ def execute_omie(body: dict) -> dict:
             data = resp.json()
         except Exception:
             data = {'raw': resp.text}
+
         fault = as_string(data.get('faultstring') or data.get('faultcode') or '')
+
         return {
             'ok': 200 <= resp.status_code < 300 and not fault,
             'status': resp.status_code,
@@ -118,7 +136,9 @@ def execute_omie_lanccc(body: dict) -> dict:
             data = resp.json()
         except Exception:
             data = {'raw': resp.text}
+
         fault = as_string(data.get('faultstring') or data.get('faultcode') or '')
+
         return {
             'ok': 200 <= resp.status_code < 300 and not fault,
             'status': resp.status_code,
@@ -131,8 +151,9 @@ def execute_omie_lanccc(body: dict) -> dict:
 def build_omie_plan(plan, payload: dict) -> List[Dict[str, Any]]:
     """Monta sequência: consultar → alterar (se necessário) → baixar."""
     codigo = codigo_integracao(plan)
+
     return [
-        {'step': 'consultar',            'request': build_consultar_conta_pagar(codigo, payload)},
-        {'step': 'alterar_se_necessario','request': build_alterar_conta_pagar(plan, payload)},
-        {'step': 'baixar',               'request': build_lancar_pagamento(plan, payload)},
+        {'step': 'consultar',             'request': build_consultar_conta_pagar(codigo, payload)},
+        {'step': 'alterar_se_necessario', 'request': build_alterar_conta_pagar(plan, payload)},
+        {'step': 'baixar',                'request': build_lancar_pagamento(plan, payload)},
     ]

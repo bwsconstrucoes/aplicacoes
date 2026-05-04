@@ -16,6 +16,7 @@ from .omie import build_omie_plan, build_incluir_lanc_cc, execute_omie, execute_
 from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
 from .zapi import build_whatsapp_messages, send_messages_batch, resolve_zapi_auth, validate_zapi_auth
 from .storage import upload_dropbox_bytes, build_receipt_page_filename, normalize_dropbox_link
+from .fila import enqueue_failure
 
 
 def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -70,11 +71,36 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                 fingerprint=f'{fp_file}:{page_num}',
             )
 
-            # Salva comprovante no Dropbox (em produção)
-            storage_info = {'storage': 'dropbox', 'status': 'nao_salvo_modo_teste', 'url': '', 'path': ''}
+            # Primeiro localiza a SP/título. Só depois salva o comprovante.
+            # Isso evita gerar arquivos órfãos no Dropbox quando a baixa não puder
+            # ser vinculada a nenhuma solicitação financeira.
             page_filename = build_receipt_page_filename(att.filename, page_num, rec.id_pipefy)
 
-            if salvar_comprovante and not modo_teste:
+            match = match_receipt(rec, sps_index, sps_agendar)
+            banco = find_bank_account(base_bancos, rec.agencia_origem, rec.conta_origem) if base_bancos else None
+
+            storage_info = {
+                'storage': 'dropbox',
+                'status': 'nao_salvo_sem_match' if match.status != 'localizado' else 'nao_salvo_modo_teste',
+                'url': '',
+                'path': f'{pasta_dropbox.rstrip("/")}/{page_filename}',
+            }
+
+            # Se a SPsBD já possui comprovante, reutiliza o link e não salva novo arquivo.
+            link_existente = ''
+            if match.status == 'localizado' and match.sp:
+                link_existente = as_string((match.sp.raw or {}).get('Comprovante'))
+
+            if link_existente:
+                rec.drive_link = normalize_dropbox_link(link_existente)
+                storage_info = {
+                    'storage': 'dropbox',
+                    'status': 'reutilizado_spsbd',
+                    'url': rec.drive_link,
+                    'path': '',
+                    'motivo': 'SPsBD já possuía link de comprovante. Novo upload ignorado.',
+                }
+            elif match.status == 'localizado' and salvar_comprovante and not modo_teste:
                 try:
                     page_pdf = extract_single_page_pdf(pdf_bytes, page_num)
                     storage_info = upload_dropbox_bytes(page_pdf, f'{pasta_dropbox}/{page_filename}')
@@ -83,13 +109,10 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                     storage_info['url'] = rec.drive_link
                 except Exception as e:
                     storage_info['status'] = f'erro_upload: {e}'
-            else:
+            elif match.status == 'localizado':
                 storage_info['path_previsto'] = f'{pasta_dropbox.rstrip("/")}/{page_filename}'
 
             rec.drive_link = normalize_dropbox_link(rec.drive_link)
-
-            match = match_receipt(rec, sps_index, sps_agendar)
-            banco = find_bank_account(base_bancos, rec.agencia_origem, rec.conta_origem) if base_bancos else None
 
             plan = ExecutionPlan(receipt=rec, match=match, banco=banco)
             plan.responses['storage'] = storage_info
@@ -134,7 +157,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
 
             # 1. Omie
             if plan.omie_requests and executar_omie:
-                plan.responses['omie'] = _executar_sequencia_omie(plan)
+                plan.responses['omie'] = _executar_sequencia_omie(plan, payload)
 
             # 2. Sheets SPsBD (em background para não atrasar resposta)
             if plan.sheets_updates and atualizar_spsbd:
@@ -145,21 +168,30 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                 mutation = build_update_card_mutation(plan, card_info)
                 plan.pipefy_update_mutation = mutation
                 try:
-                    plan.responses['pipefy'] = [execute_graphql(mutation)]
+                    pipefy_resp = execute_graphql(mutation)
+                    plan.responses['pipefy'] = [pipefy_resp]
+                    if not pipefy_resp.get('ok'):
+                        fila_resp = enqueue_failure(plan, 'pipefy', 'pipefy_erro', str(pipefy_resp), payload)
+                        plan.responses['fila_pipefy'] = fila_resp
                 except Exception as e:
                     plan.responses['pipefy'] = [{'ok': False, 'error': str(e)}]
+                    plan.responses['fila_pipefy'] = enqueue_failure(plan, 'pipefy', 'pipefy_exception', str(e), payload)
 
             # 4. WhatsApp direto via Z-API, após getCard
             if enviar_whatsapp:
                 try:
                     plan.whatsapp_messages = build_whatsapp_messages(plan, payload)
                     if plan.whatsapp_messages:
-                        plan.responses['zapi'] = _executar_zapi(plan.whatsapp_messages, payload)
+                        zapi_resp = _executar_zapi(plan.whatsapp_messages, payload)
+                        plan.responses['zapi'] = zapi_resp
+                        if any(not r.get('ok') for r in zapi_resp):
+                            plan.responses['fila_zapi'] = enqueue_failure(plan, 'zapi', 'zapi_erro', str(zapi_resp), payload)
                     else:
                         plan.responses['zapi'] = [{'skipped': True, 'reason': 'sem_telefone_ou_campos_pipefy'}]
                 except Exception as e:
                     # WhatsApp nunca pode derrubar a baixa; registra no output e segue.
                     plan.responses['zapi'] = [{'ok': False, 'status': 0, 'error': str(e)}]
+                    plan.responses['fila_zapi'] = enqueue_failure(plan, 'zapi', 'zapi_exception', str(e), payload)
                     plan.whatsapp_messages = []
 
         # Pipefy e Z-API são executados por plano acima, para manter o output correto.
@@ -222,7 +254,7 @@ def _decidir_execucao(plan: ExecutionPlan, executar_omie: bool, atualizar_pipefy
     plan.pode_executar = True
 
 
-def _executar_sequencia_omie(plan: ExecutionPlan) -> List[dict]:
+def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
     """Consulta → Altera (se necessário) → Baixa. Retorna log de cada step."""
     resultados = []
     for req in plan.omie_requests:
@@ -249,6 +281,15 @@ def _executar_sequencia_omie(plan: ExecutionPlan) -> List[dict]:
 
         if req['step'] == 'baixar' and not resp.get('ok'):
             resultados.append({'step': 'erro_baixa', 'motivo': 'Falha ao lançar pagamento no Omie.'})
+
+    # Se houve falha temporária ou baixa não confirmada, registra na fila inteligente.
+    try:
+        falhou = any((not (r.get('response') or {}).get('ok')) for r in resultados if r.get('response'))
+        erro_baixa = any(r.get('step') in {'erro_baixa', 'abort_apos_alterar'} for r in resultados)
+        if falhou or erro_baixa:
+            plan.responses['fila_omie'] = enqueue_failure(plan, 'omie', 'omie_erro', str(resultados), payload)
+    except Exception:
+        pass
 
     return resultados
 

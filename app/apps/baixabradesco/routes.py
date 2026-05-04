@@ -9,6 +9,7 @@ from flask import request, jsonify
 from . import bp
 from .core import processar_baixabradesco
 from .diagnostico import executar_diagnostico
+from .fila import reprocessar_fila
 
 
 def _authorized(payload: dict) -> bool:
@@ -55,6 +56,23 @@ def diagnostico():
         if not _authorized(payload):
             return jsonify({'ok': False, 'error': 'Não autorizado.'}), 401
         result = executar_diagnostico(payload)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'app': 'baixabradesco',
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+        }), 500
+
+
+@bp.route('/reprocessar-fila', methods=['POST'])
+def reprocessar_fila_route():
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        if not _authorized(payload):
+            return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        result = reprocessar_fila(payload)
         return jsonify(result)
     except Exception as e:
         return jsonify({

@@ -34,6 +34,7 @@ class ExtractedReceipt:
     nome_recebedor: str = ''
     documento_recebedor: str = ''
     descricao: str = ''
+    codigo_barras: str = ''
     confianca: Dict[str, float] = field(default_factory=dict)
     pendencias: List[str] = field(default_factory=list)
 
@@ -57,6 +58,7 @@ class SpRecord:
     status_pgt: str = ''
     status_aut: str = ''
     link_card: str = ''
+    codigo_barras: str = ''
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
@@ -100,4 +102,12 @@ class ExecutionPlan:
 
     def to_dict(self) -> dict:
         data = asdict(self)
+        # Nunca expor credenciais Omie no output/Make.
+        for item in data.get('omie_requests') or []:
+            req = item.get('request') if isinstance(item, dict) else None
+            if isinstance(req, dict):
+                if 'app_key' in req:
+                    req['app_key'] = '***REDACTED***'
+                if 'app_secret' in req:
+                    req['app_secret'] = '***REDACTED***'
         return data

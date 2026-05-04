@@ -25,6 +25,7 @@ def parse_bradesco_text(filename: str, page: int, text: str, drive_link: str = '
     r.documento_recebedor = extract_documento_recebedor(text)
     r.agencia_origem, r.conta_origem, r.conta_origem_raw = extract_conta_origem(text)
     r.conta_destino_raw = extract_conta_destino(text)
+    r.codigo_barras = extract_codigo_barras(text)
 
     if (('cef matriz' in norm or 'caixa economica federal' in norm) and FGTS_CNPJ in digits):
         r.tipo_comprovante = 'fgts_rescisorio'
@@ -159,6 +160,33 @@ def extract_conta_origem(text: str):
 def extract_conta_destino(text: str) -> str:
     m = re.search(r'Conta\s*(?:destino|favorecido|benefici[aá]rio)\s*:?\s*([^\n\r]+)', text or '', flags=re.I)
     return as_string(m.group(1)) if m else ''
+
+
+def extract_codigo_barras(text: str) -> str:
+    """Extrai código de barras/linha digitável de boletos.
+
+    Normaliza para apenas números para permitir comparação direta com SPsBD,
+    mesmo que o comprovante venha com espaços e a planilha sem formatação.
+    """
+    txt = text or ''
+
+    patterns = [
+        # Ex.: 23793 45602 90250 077923 58004 480305 2 14370000052240
+        r'Código\s+de\s+barras\s*:?\s*([0-9\s\.\-]{44,80})',
+        r'Codigo\s+de\s+barras\s*:?\s*([0-9\s\.\-]{44,80})',
+        r'Linha\s+digit[aá]vel\s*:?\s*([0-9\s\.\-]{44,80})',
+    ]
+
+    for p in patterns:
+        m = re.search(p, txt, flags=re.I)
+        if m:
+            digits = only_digits(m.group(1))
+            if len(digits) >= 44:
+                return digits
+
+    digits_all = only_digits(txt)
+    m = re.search(r'(\d{44,48})', digits_all)
+    return m.group(1) if m else ''
 
 
 def build_confidence(r: ExtractedReceipt) -> dict:
