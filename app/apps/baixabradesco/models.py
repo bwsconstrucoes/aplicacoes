@@ -100,4 +100,11 @@ class ExecutionPlan:
 
     def to_dict(self) -> dict:
         data = asdict(self)
+        # Nunca expor credenciais Omie no output do Make/Render.
+        for item in data.get('omie_requests') or []:
+            req = item.get('request') or {}
+            if 'app_key' in req:
+                req['app_key'] = '***REDACTED***'
+            if 'app_secret' in req:
+                req['app_secret'] = '***REDACTED***'
         return data

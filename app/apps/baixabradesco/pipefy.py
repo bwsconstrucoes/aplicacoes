@@ -12,6 +12,7 @@ PIPEFY_URL = 'https://api.pipefy.com/graphql'
 PHASE_PAGO_ALIMENTAR_OMIE = '309521694'
 PHASE_FALHA_API = '310785170'
 
+# Campos buscados no get em lote — usados para montar a mensagem WhatsApp e verificar fase
 FIELDS_TO_FETCH = [
     'Código Lançamento Integração Omie',
     'Selecione o Procedimento',
@@ -56,15 +57,12 @@ def build_get_cards_query(card_ids: List[str]) -> str:
 
 
 def get_field_value(card_info: Optional[Dict[str, Any]], field_name: str) -> str:
-    """Extrai o valor de um campo pelo nome/label a partir do resultado do getCard."""
+    """Extrai o valor de um campo pelo nome a partir do resultado do getCard em lote."""
     if not card_info:
         return ''
-    wanted = as_string(field_name).strip().lower()
     for f in (card_info.get('fields') or []):
-        label = as_string(f.get('field', {}).get('label') or f.get('name')).strip().lower()
-        fid = as_string(f.get('field', {}).get('id')).strip().lower()
-        name = as_string(f.get('name')).strip().lower()
-        if wanted in {label, fid, name}:
+        label = as_string(f.get('field', {}).get('label') or f.get('name'))
+        if label.lower() == field_name.lower():
             return as_string(f.get('value'))
     return ''
 
@@ -96,37 +94,20 @@ def execute_graphql(query: str) -> dict:
         return {'ok': False, 'status': 0, 'body': {}, 'error': str(e)}
 
 
-def pipefy_forma_pagamento(plan) -> str:
-    """Valor aceito no campo forma_de_pagamento do Pipefy.
-
-    O processo interno pode classificar como BeeVale, mas no Pipefy o campo aceita Pix.
-    """
-    rec = plan.receipt
-    forma = rec.forma_pagamento or (plan.match.sp.tipo_pagamento if plan.match.sp else '')
-    if as_string(forma).strip().lower() == 'beevale':
-        return 'Pix'
-    return forma
-
-
-def build_update_card_mutation(
-    plan,
-    card_info: Optional[Dict[str, Any]] = None,
-    move_to_falha_api: bool = False,
-) -> str:
-    """Monta a mutation de atualização do card com todos os campos necessários.
-
-    Se a baixa Omie falhar após retry, atualiza os campos normalmente e move para
-    Falha Api (310785170), em vez de mover para Pago / Alimentar Omie.
-    """
-    rec = plan.receipt
-    cid = as_string(plan.match.id)
+def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None, falha_omie: bool = False) -> str:
+    """Monta a mutation de atualização do card com todos os campos necessários."""
+    rec   = plan.receipt
+    cid   = as_string(plan.match.id)
     banco_pipefy = as_string(plan.banco.codigo_pipefy if plan.banco else '')
-    forma = pipefy_forma_pagamento(plan)
-    link = rec.drive_link
+    forma = rec.forma_pagamento or (plan.match.sp.tipo_pagamento if plan.match.sp else '')
+    # Pipefy aceita Pix, não BeeVale, no campo forma_de_pagamento.
+    if forma == 'BeeVale':
+        forma = 'Pix'
+    link  = rec.drive_link
 
     fase_atual = get_current_phase(card_info)
     procedimento = get_field_value(card_info, 'Selecione o Procedimento')
-    banco_destino_pipefy = ''
+    banco_destino_pipefy = ''  # será preenchido se for Transferência de Recursos
 
     aliases = []
 
@@ -136,16 +117,18 @@ def build_update_card_mutation(
             f'{alias}: updateCardField(input: {{card_id: "{cid}" field_id: "{field_id}" new_value: "{v}"}}) {{ clientMutationId }}'
         )
 
-    add('n1', 'valida_o_sp_1', 'Sim')
-    add('n2', 'autoriza_o_dupla', 'SIM')
-    add('n3', 'quantidade_de_parcelas', 'Integração')
-    add('n4', 'data_do_pagamento', rec.data_pagamento)
-    add('n5', 'valor_total_pago', rec.valor_pago)
-    add('n6', 'forma_de_pagamento', forma)
-    add('n7', 'banco', banco_pipefy)
-    add('n8', 'comprovante_html_email', link.replace('dl=0', 'dl=1') if link else '')
+    add('n1', 'valida_o_sp_1',           'Sim')
+    add('n2', 'autoriza_o_dupla',         'SIM')
+    add('n3', 'quantidade_de_parcelas',   'Integração')
+    add('n4', 'data_do_pagamento',        rec.data_pagamento)
+    add('n5', 'valor_total_pago',         rec.valor_pago)
+    add('n6', 'forma_de_pagamento',       forma)
+    add('n7', 'banco',                    banco_pipefy)
+    add('n8', 'comprovante_html_email',   link.replace('dl=0', 'dl=1') if link else '')
 
-    if move_to_falha_api:
+    # Se Omie falhou após retry, atualiza campos possíveis e move para Falha Api.
+    # Caso contrário, segue o fluxo normal para Pago / Alimentar Omie.
+    if falha_omie:
         aliases.append(
             f'n9: moveCardToPhase(input: {{card_id: "{cid}" destination_phase_id: {PHASE_FALHA_API}}}) {{ clientMutationId }}'
         )
@@ -154,16 +137,12 @@ def build_update_card_mutation(
             f'n9: moveCardToPhase(input: {{card_id: "{cid}" destination_phase_id: {PHASE_PAGO_ALIMENTAR_OMIE}}}) {{ clientMutationId }}'
         )
 
+    # Se for Transferência de Recursos, atualiza banco_destino
     if procedimento == 'Transferência de Recursos' and banco_destino_pipefy:
         add('n10', 'banco_destino', banco_destino_pipefy)
 
     return 'mutation {\n' + '\n'.join(aliases) + '\n}'
 
 
-def build_move_falha_api_mutation(card_id: str) -> str:
-    cid = escape_gql(as_string(card_id))
-    return f'mutation {{\nmoveFalhaApi: moveCardToPhase(input: {{card_id: "{cid}" destination_phase_id: {PHASE_FALHA_API}}}) {{ clientMutationId }}\n}}'
-
-
 def escape_gql(value: str) -> str:
-    return as_string(value).replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ').replace('\r', '')
+    return value.replace('\\', '\\\\').replace('"', '\\"').replace('\n', ' ').replace('\r', '')

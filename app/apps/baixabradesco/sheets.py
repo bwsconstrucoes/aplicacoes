@@ -11,7 +11,6 @@ from google.oauth2.service_account import Credentials
 
 from .models import SpRecord, BankAccount
 from .utils import as_string, normalize_compact, money_to_decimal, account_key, clean_account, only_digits
-from .storage import normalize_shared_link
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 SPS_SHEET_ID  = '1lrP1HOvwqyXiVdP2kuTgG7sJjl2QXl0WT4lwkd392DA'
@@ -58,61 +57,6 @@ def load_spsagendar(gc=None) -> List[SpRecord]:
     gc = gc or get_gc()
     rows = get_sheet_rows(gc, SPS_SHEET_ID, 'SPsAgendar')
     return [row_to_spsagendar_record(r) for r in rows if as_string(r.get('ID') or r.get('A'))]
-
-
-def load_spsbd_matching(gc=None) -> List[SpRecord]:
-    """Base de busca para comprovantes SEM ID.
-
-    Diferente da aba SPsAgendar, aqui lemos a SPsBD diretamente, porque quando o
-    comprovante chega o registro normalmente já saiu da SPsAgendar por estar com
-    AB = 'agendado'.
-
-    Critérios equivalentes/ajustados da query operacional:
-    - A/ID preenchido
-    - O/Status Pgt = Pagar
-    - AB/Agendado em agendar, agendado ou falhaagendar
-    - AH/Validação = Sim
-    - N/Status Aut. em Autorizado, Pré-Autorizado ou vazio
-    - J/Tipo de Pagamento elegível: Pix, BeeVale, Boleto válido ou Transferência Bancária
-    """
-    gc = gc or get_gc()
-    rows = get_sheet_rows(gc, SPS_SHEET_ID, 'SPsBD')
-    out: List[SpRecord] = []
-    for r in rows:
-        sp = row_to_sp_record(r)
-        if not sp.id:
-            continue
-
-        status_pgt = normalize_compact(sp.status_pgt)
-        agendado = normalize_compact(sp.status_agendamento)
-        validacao = normalize_compact(r.get('Validação'))
-        status_aut = normalize_compact(r.get('Status Aut.'))
-        tipo = as_string(sp.tipo_pagamento)
-        tipo_norm = normalize_compact(tipo)
-        info_norm = normalize_compact(sp.info_pgt)
-        codigo_barras = as_string(r.get('Código de Barras'))
-
-        if status_pgt != 'pagar':
-            continue
-        if agendado not in {'agendar', 'agendado', 'falhaagendar'}:
-            continue
-        if validacao != 'sim':
-            continue
-        if status_aut not in {'autorizado', 'preautorizado', ''}:
-            continue
-
-        elegivel = (
-            tipo_norm == 'pix'
-            or tipo_norm == 'beevale'
-            or (tipo_norm == 'boleto' and 'INVALIDO' not in codigo_barras.upper())
-            or tipo_norm == 'transferenciabancaria'
-            or (tipo_norm == 'beevale' and 'beevale' in info_norm)
-            or ('beevale' in info_norm)
-        )
-        if not elegivel:
-            continue
-        out.append(sp)
-    return out
 
 
 def row_to_sp_record(r: Dict[str, str]) -> SpRecord:
@@ -273,7 +217,7 @@ def build_spsbd_updates(plan) -> List[dict]:
         'updates':  {
             'O':  'Pago',
             'X':  rec.data_pagamento,
-            'AG': normalize_shared_link(rec.drive_link),
+            'AG': rec.drive_link,
             'AK': conta,
         },
     }]

@@ -1,53 +1,40 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 from typing import Dict, List
 from .models import ExtractedReceipt, SpRecord, MatchResult
-from .utils import money_to_decimal, normalize_text, normalize_compact, account_key
+from .utils import money_to_decimal, normalize_text, normalize_compact, account_key, clean_account
 
 BEEVALE_MULTIPLICADOR = Decimal('1.015')
 BEEVALE_TOL = Decimal('0.02')
-TWOPLACES = Decimal('0.01')
 
 
-def match_receipt(
-    receipt: ExtractedReceipt,
-    sps_index: Dict[str, SpRecord],
-    sps_agendar: List[SpRecord],
-    sps_matching: List[SpRecord] | None = None,
-) -> MatchResult:
-    """Localiza o comprovante na base de SPs.
-
-    sps_agendar continua disponível, mas comprovantes sem ID devem consultar
-    preferencialmente sps_matching, que vem da SPsBD e aceita AB='agendado'.
-    """
-    base_sem_id = sps_matching or sps_agendar
-
+def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps_agendar: List[SpRecord]) -> MatchResult:
     if receipt.id_pipefy:
         sp = sps_index.get(receipt.id_pipefy)
         if sp:
-            return MatchResult(
-                status='localizado', metodo='id_comprovante', id=receipt.id_pipefy, sp=sp,
-                motivo='ID localizado no comprovante e encontrado na SPsBD.'
-            )
+            return MatchResult(status='localizado', metodo='id_comprovante', id=receipt.id_pipefy, sp=sp, motivo='ID localizado no comprovante e encontrado na SPsBD.')
         # Mesmo sem SPsBD, mantém ID como forte; depois Pipefy/Omie podem resolver.
-        return MatchResult(
-            status='localizado', metodo='id_comprovante_sem_spsbd', id=receipt.id_pipefy, sp=None,
-            motivo='ID localizado no comprovante, mas não encontrado no índice local da SPsBD.'
-        )
+        return MatchResult(status='localizado', metodo='id_comprovante_sem_spsbd', id=receipt.id_pipefy, sp=None, motivo='ID localizado no comprovante, mas não encontrado no índice local da SPsBD.')
 
     if receipt.tipo_comprovante == 'beevale':
-        cands = match_beevale(receipt, base_sem_id)
-        return _result_from_candidates(cands, 'beevale_valor_1015_spsbd', 'BeeVale por valor base = valor pago / 1,015, buscando na SPsBD.')
+        # O comprovante chega depois do agendamento. Por isso a SP pode não estar
+        # mais na visão SPsAgendar, mas continua na SPsBD com AB = agendado.
+        cands = match_beevale(receipt, list(sps_index.values()))
+        return _result_from_candidates(
+            cands,
+            'beevale_valor_1015_spsbd',
+            'BeeVale por valor base = valor pago / 1,015, buscando na SPsBD.'
+        )
 
     if receipt.tipo_comprovante == 'fgts_rescisorio':
-        cands = match_fgts(receipt, base_sem_id)
-        return _result_from_candidates(cands, 'fgts_valor_natureza_spsbd', 'FGTS/CEF por valor e natureza/descrição, buscando na SPsBD.')
+        cands = match_fgts(receipt, sps_agendar)
+        return _result_from_candidates(cands, 'fgts_valor_natureza', 'FGTS/CEF por valor e natureza/descrição.')
 
-    cands = match_valor_conta_tipo(receipt, base_sem_id)
+    cands = match_valor_conta_tipo(receipt, sps_agendar)
     if cands:
-        return _result_from_candidates(cands, 'valor_conta_tipo_spsbd', 'Comprovante sem ID localizado por valor + conta + tipo, buscando na SPsBD.')
+        return _result_from_candidates(cands, 'valor_conta_tipo', 'Comprovante sem ID localizado por valor + conta + tipo.')
 
     if receipt.tipo_comprovante == 'transferencia':
         return MatchResult(status='transferencia_sem_sp', metodo='transferencia_sem_id', motivo='Transferência sem ID e sem SP única encontrada.')
@@ -64,26 +51,38 @@ def _result_from_candidates(cands: List[SpRecord], metodo: str, motivo: str) -> 
 
 
 def match_beevale(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
-    """Localiza BeeVale pelo valor do comprovante.
-
-    O comprovante BeeVale vem com acréscimo de 1,5%. Portanto, se o comprovante
-    for R$ 1.776,25, a SP geralmente está em R$ 1.750,00.
-    """
     valor_pago = money_to_decimal(receipt.valor_pago)
     if valor_pago is None:
         return []
 
-    valor_base = (valor_pago / BEEVALE_MULTIPLICADOR).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
     out = []
     for r in records:
-        n = normalize_text(f'{r.nome_credor} {r.info_pgt} {r.tipo_pagamento}')
+        n = normalize_text(f'{r.nome_credor} {r.info_pgt} {r.tipo_pagamento} {r.descricao}')
         if 'beevale' not in n:
             continue
+
+        # Após o agendamento, o registro normalmente está em SPsBD com AB = agendado.
+        status_pgt = normalize_compact(r.status_pgt)
+        status_ag  = normalize_compact(r.status_agendamento)
+        validacao  = normalize_compact((r.raw or {}).get('Validação') or (r.raw or {}).get('Validacao'))
+        status_aut = normalize_compact(r.status_aut or (r.raw or {}).get('Status Aut.'))
+
+        if status_pgt and status_pgt != 'pagar':
+            continue
+        if status_ag and status_ag not in {'agendar', 'agendado', 'falhaagendar'}:
+            continue
+        if validacao and validacao != 'sim':
+            continue
+        if status_aut and status_aut not in {'autorizado', 'preautorizado'}:
+            continue
+
         base = money_to_decimal(r.valor_total)
         if base is None:
             continue
-        esperado = (base * BEEVALE_MULTIPLICADOR).quantize(TWOPLACES, rounding=ROUND_HALF_UP)
-        if abs(base - valor_base) <= BEEVALE_TOL or abs(esperado - valor_pago) <= BEEVALE_TOL:
+
+        # Regra BeeVale: comprovante = valor base * 1,015.
+        esperado = (base * BEEVALE_MULTIPLICADOR).quantize(Decimal('0.01'))
+        if abs(esperado - valor_pago) <= BEEVALE_TOL:
             out.append(r)
     return out
 
@@ -94,7 +93,7 @@ def match_fgts(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRec
         return []
     out = []
     for r in records:
-        txt = normalize_text(f'{r.nome_credor} {r.descricao} {r.centro_custo} {r.tipo_pagamento}')
+        txt = normalize_text(f'{r.nome_credor} {r.descricao} {r.centro_custo}')
         if not any(x in txt for x in ['fgts', 'cef', 'caixa', 'rescisoes', 'rescisao']):
             continue
         if money_to_decimal(r.valor_total) == valor:
@@ -113,9 +112,8 @@ def match_valor_conta_tipo(receipt: ExtractedReceipt, records: List[SpRecord]) -
         if money_to_decimal(r.valor_total) != valor:
             continue
         tipo_r = normalize_compact(r.tipo_pagamento)
-        info_r = normalize_compact(r.info_pgt)
         if tipo and tipo_r and tipo not in tipo_r and tipo_r not in tipo:
-            if not (tipo == 'pix' and ('beevale' in tipo_r or 'beevale' in info_r)):
+            if not (tipo == 'pix' and 'beevale' in normalize_compact(r.tipo_pagamento + r.info_pgt)):
                 continue
         if conta_key:
             # padrão: 0624 | 0022069-8 | Conta-Corrente
@@ -124,6 +122,5 @@ def match_valor_conta_tipo(receipt: ExtractedReceipt, records: List[SpRecord]) -
                 rk = account_key(parts[0], parts[1])
                 if rk != conta_key:
                     continue
-            # Se a SP ainda não tem Conta Pagamento, não elimina por conta.
         out.append(r)
     return out

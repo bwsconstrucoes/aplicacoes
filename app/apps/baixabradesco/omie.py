@@ -24,6 +24,17 @@ def omie_body(call: str, param: dict, payload: dict) -> dict:
     return {'call': call, 'param': [param], 'app_key': app_key, 'app_secret': app_secret}
 
 
+
+
+def sanitize_request(body: dict) -> dict:
+    """Copia request Omie removendo credenciais sensíveis para output."""
+    safe = dict(body or {})
+    if 'app_key' in safe:
+        safe['app_key'] = '***REDACTED***'
+    if 'app_secret' in safe:
+        safe['app_secret'] = '***REDACTED***'
+    return safe
+
 def build_consultar_conta_pagar(codigo_integracao: str, payload: dict) -> dict:
     return omie_body('ConsultarContaPagar', {'codigo_lancamento_integracao': codigo_integracao}, payload)
 

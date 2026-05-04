@@ -6,24 +6,10 @@ from typing import List, Dict, Any
 import requests
 
 from .utils import as_string
-from .pipefy import get_field_value, pipefy_forma_pagamento
+from .pipefy import get_field_value, get_current_phase
+
 
 ZAPI_BASE = 'https://api.z-api.io/instances/{instance}/token/{token}'
-
-
-def normalize_zapi_auth(payload: dict) -> dict:
-    zapi = payload.get('zapi') or {}
-    return {
-        'instanceId': as_string(
-            zapi.get('instance_id') or zapi.get('instanceId') or payload.get('zapi_instance_id') or payload.get('instanceId')
-        ),
-        'apiToken': as_string(
-            zapi.get('api_token') or zapi.get('apiToken') or payload.get('zapi_api_token') or payload.get('apiToken')
-        ),
-        'clientToken': as_string(
-            zapi.get('client_token') or zapi.get('clientToken') or payload.get('zapi_client_token') or payload.get('clientToken')
-        ),
-    }
 
 
 def _zapi_headers(auth: dict) -> dict:
@@ -33,7 +19,7 @@ def _zapi_headers(auth: dict) -> dict:
 def send_text(auth: dict, phone: str, message: str) -> dict:
     base = ZAPI_BASE.format(
         instance=as_string(auth.get('instanceId')),
-        token=as_string(auth.get('apiToken')),
+        token   =as_string(auth.get('apiToken')),
     )
     try:
         resp = requests.post(
@@ -54,7 +40,7 @@ def send_text(auth: dict, phone: str, message: str) -> dict:
 def send_document(auth: dict, phone: str, document_url: str, file_name: str, doc_type: str = 'pdf') -> dict:
     base = ZAPI_BASE.format(
         instance=as_string(auth.get('instanceId')),
-        token=as_string(auth.get('apiToken')),
+        token   =as_string(auth.get('apiToken')),
     )
     try:
         resp = requests.post(
@@ -73,62 +59,102 @@ def send_document(auth: dict, phone: str, document_url: str, file_name: str, doc
 
 
 def send_messages_batch(auth: dict, messages: List[Dict[str, Any]]) -> List[dict]:
+    """Envia lista de mensagens (text ou document) sequencialmente."""
     results = []
     for msg in messages:
         if not msg.get('enabled', True):
-            results.append({'skipped': True, 'reason': 'disabled', 'phone': msg.get('phone')})
+            results.append({'skipped': True})
             continue
         phone = as_string(msg.get('phone'))
-        if not phone or len(''.join(c for c in phone if c.isdigit())) <= 4:
-            results.append({'skipped': True, 'reason': 'phone_invalido', 'phone': phone})
+        if not phone or len(phone.replace('+', '').replace(' ', '')) <= 4:
+            results.append({'skipped': True, 'reason': 'phone_invalido'})
             continue
-        msg_type = as_string(msg.get('type') or 'text')
+        msg_type = as_string(msg.get('type', 'text'))
         if msg_type == 'text':
             results.append(send_text(auth, phone, as_string(msg.get('message'))))
         elif msg_type == 'document':
             results.append(send_document(
-                auth,
-                phone,
+                auth, phone,
                 document_url=as_string(msg.get('documentUrl') or msg.get('document')),
-                file_name=as_string(msg.get('fileName') or 'Comprovante de Pagamento'),
-                doc_type=as_string(msg.get('docType') or 'pdf'),
+                file_name   =as_string(msg.get('fileName') or 'Comprovante.pdf'),
+                doc_type    =as_string(msg.get('docType') or 'pdf'),
             ))
         else:
-            results.append({'skipped': True, 'reason': f'type_desconhecido: {msg_type}', 'phone': phone})
+            results.append({'skipped': True, 'reason': f'type_desconhecido: {msg_type}'})
     return results
 
 
-def build_whatsapp_messages(plan, payload: dict, card_info: dict | None = None) -> List[Dict[str, Any]]:
-    """Monta as mensagens no padrão do antigo módulo 1847, mas para envio direto pela Z-API.
+def build_whatsapp_messages(plan, payload: dict) -> List[Dict[str, Any]]:
+    """Monta a lista de mensagens a enviar para o responsável pela SP.
 
-    Destinatários:
-    - Responsável pela Solicitação;
-    - Requerente, se houver e for diferente.
-
-    Para cada destinatário envia:
-    - texto de Informação de Pagamento;
-    - PDF do comprovante, se houver link.
+    Replica a lógica do módulo 1847 do Make:
+    - Mensagem de texto com dados do pagamento
+    - PDF do comprovante
+    - Mensagem para o Requerente (se houver)
     """
+    card_info = plan.responses.get('pipefy_card_info')
     rec = plan.receipt
-    card_info = card_info or {}
 
+    # Telefone do responsável — vem do campo Pipefy "Responsável pela Solicitação"
+    # formato: ["Nome - 85999999999"]
     resp_field = get_field_value(card_info, 'Responsável pela Solicitação')
     telefone_resp = _extract_phone(resp_field)
+
     if not telefone_resp:
         return []
 
-    mensagem = _build_texto_pagamento(plan, card_info)
-    link_comprovante = as_string(rec.drive_link).replace('dl=0', 'dl=1')
+    # Centros de custo concatenados
+    ccs = []
+    for i in range(1, 6):
+        cc = get_field_value(card_info, f'Centro de Custo {i}')
+        if cc:
+            # Remove brackets do Pipefy: ["Valor"] → Valor
+            cc = cc.strip('[]"\'')
+            ccs.append(cc)
+    centro_custo_str = ' - '.join(ccs) if ccs else ''
 
-    msgs: List[Dict[str, Any]] = []
+    descricao = get_field_value(card_info, 'Descrição da Despesa') or ''
+    descricao = descricao[:255]
 
-    def add_destino(phone: str):
-        if not phone:
-            return
+    mensagem = (
+        f'*Informação de Pagamento*\n\n'
+        f'*Nº da SP:* {plan.match.id}\n'
+        f'Data do Pagamento: {rec.data_pagamento}\n'
+        f'Solicitante: {_strip_brackets(resp_field)}\n'
+        f'Centro de Custo: {centro_custo_str}\n'
+        f'Descrição: {descricao}\n'
+        f'Forma de Pagamento: {rec.forma_pagamento or rec.tipo_comprovante}'
+    )
+
+    msgs: List[Dict[str, Any]] = [
+        {
+            'enabled': True,
+            'type': 'text',
+            'phone': telefone_resp,
+            'message': mensagem,
+        },
+    ]
+
+    # Comprovante em PDF
+    link_comprovante = rec.drive_link
+    if link_comprovante:
+        msgs.append({
+            'enabled': True,
+            'type': 'document',
+            'docType': 'pdf',
+            'phone': telefone_resp,
+            'documentUrl': link_comprovante.replace('dl=0', 'dl=1'),
+            'fileName': 'Comprovante de Pagamento',
+        })
+
+    # Requerente (se houver)
+    requerente_field = get_field_value(card_info, 'Requerente')
+    telefone_req = _extract_phone(requerente_field)
+    if telefone_req and telefone_req != telefone_resp:
         msgs.append({
             'enabled': True,
             'type': 'text',
-            'phone': phone,
+            'phone': telefone_req,
             'message': mensagem,
         })
         if link_comprovante:
@@ -136,47 +162,17 @@ def build_whatsapp_messages(plan, payload: dict, card_info: dict | None = None) 
                 'enabled': True,
                 'type': 'document',
                 'docType': 'pdf',
-                'phone': phone,
-                'documentUrl': link_comprovante,
+                'phone': telefone_req,
+                'documentUrl': link_comprovante.replace('dl=0', 'dl=1'),
                 'fileName': 'Comprovante de Pagamento',
             })
-
-    add_destino(telefone_resp)
-
-    requerente_field = get_field_value(card_info, 'Requerente')
-    telefone_req = _extract_phone(requerente_field)
-    if telefone_req and telefone_req != telefone_resp:
-        add_destino(telefone_req)
 
     return msgs
 
 
-def _build_texto_pagamento(plan, card_info: dict) -> str:
-    rec = plan.receipt
-    resp_field = get_field_value(card_info, 'Responsável pela Solicitação')
-    ccs = []
-    for i in range(1, 6):
-        cc = _strip_pipefy_value(get_field_value(card_info, f'Centro de Custo {i}'))
-        if cc:
-            ccs.append(cc)
-    centro_custo_str = '-'.join(ccs)
-    descricao = get_field_value(card_info, 'Descrição da Despesa') or (plan.match.sp.descricao if plan.match.sp else '')
-    descricao = as_string(descricao)[:255]
-    forma = pipefy_forma_pagamento(plan) or rec.forma_pagamento or rec.tipo_comprovante
-
-    return (
-        '*Informação de Pagamento*\n\n'
-        f'*Nº da SP:* {plan.match.id}\n'
-        f'Data do Pagamento: {rec.data_pagamento}\n'
-        f'Solicitante: {_strip_pipefy_value(resp_field)}\n'
-        f'Centro de Custo: {centro_custo_str}\n'
-        f'Descrição: {descricao}\n'
-        f'Forma de Pagamento: {forma}'
-    )
-
-
 def _extract_phone(field_value: str) -> str:
-    v = _strip_pipefy_value(field_value)
+    """Extrai o telefone do formato Pipefy: ["Nome - 85999999999"] → 5585999999999"""
+    v = as_string(field_value).strip('[]"\'')
     if ' - ' in v:
         phone = v.split(' - ', 1)[1].strip()
     else:
@@ -189,10 +185,6 @@ def _extract_phone(field_value: str) -> str:
     return digits
 
 
-def _strip_pipefy_value(value: str) -> str:
-    v = as_string(value).strip()
-    # Campos de pessoa/dropdown do Pipefy costumam vir como ["Nome - telefone"]
-    if v.startswith('[') and v.endswith(']'):
-        v = v[1:-1]
-    v = v.strip().strip('"').strip("'")
-    return v
+def _strip_brackets(value: str) -> str:
+    """Remove brackets do formato Pipefy: ["Valor"] → Valor"""
+    return as_string(value).strip('[]"\'')
