@@ -17,6 +17,73 @@ SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapi
 SPS_SHEET_ID  = '1lrP1HOvwqyXiVdP2kuTgG7sJjl2QXl0WT4lwkd392DA'
 BASE_BANCOS_ID = '1C7MWQmr5uFGWuJ18osUNDapiojVXzQ_GxMMDQqxPsBk'
 
+# ── Cache de sessão para tabelas pequenas ──────────────────────────────────────
+_cache_bancos = None
+_cache_spsagendar = None
+
+
+def find_sps_by_ids(gc, sp_ids) -> dict:
+    """Busca múltiplos IDs pontualmente: lê só coluna A, depois só as linhas certas.
+    Muito mais eficiente que carregar 52k linhas inteiras.
+    """
+    if not sp_ids:
+        return {}
+    ws = gc.open_by_key(SPS_SHEET_ID).worksheet('SPsBD')
+    # Lê só coluna A (IDs) — leve
+    col_a = ws.col_values(1)
+    headers = ws.row_values(1)
+    id_to_row = {}
+    for row_idx, val in enumerate(col_a[1:], start=2):
+        if val in sp_ids:
+            id_to_row[val] = row_idx
+    result = {}
+    for sp_id, row_num in id_to_row.items():
+        row_values = ws.row_values(row_num)
+        r = {headers[i]: (row_values[i] if i < len(row_values) else '') for i in range(len(headers))}
+        r['_row_number'] = row_num
+        result[sp_id] = row_to_sp_record(r)
+    return result
+
+
+LOG_ABA = 'LogBaixaBradesco'
+
+
+def _get_log_sheet(gc):
+    ss = gc.open_by_key(SPS_SHEET_ID)
+    try:
+        return ss.worksheet(LOG_ABA)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = ss.add_worksheet(title=LOG_ABA, rows=10000, cols=6)
+        ws.append_row(['fingerprint', 'sp_id', 'valor', 'data', 'arquivo', 'processado_em'],
+                      value_input_option='USER_ENTERED')
+        return ws
+
+
+def check_fingerprint_processado(gc, fingerprint: str) -> bool:
+    """Retorna True se este fingerprint já foi processado com sucesso."""
+    try:
+        ws = _get_log_sheet(gc)
+        col_fp = ws.col_values(1)
+        return fingerprint in col_fp
+    except Exception:
+        return False
+
+
+def registrar_fingerprint(gc, fingerprint: str, sp_id: str, valor: str,
+                          data: str, arquivo: str):
+    """Registra fingerprint processado no log para evitar reprocessamento."""
+    try:
+        from datetime import datetime
+        ws = _get_log_sheet(gc)
+        ws.append_row(
+            [fingerprint, sp_id, valor, data, arquivo,
+             datetime.now().strftime('%d/%m/%Y %H:%M:%S')],
+            value_input_option='USER_ENTERED'
+        )
+    except Exception:
+        pass
+
+
 
 def get_gc():
     raw = os.getenv('GOOGLE_CREDENTIALS_BASE64', '')
@@ -54,10 +121,15 @@ def load_spsbd_index(gc=None) -> Dict[str, SpRecord]:
 
 
 def load_spsagendar(gc=None) -> List[SpRecord]:
-    """Lê a aba SPsAgendar — filtro operacional vindo de SPsBD."""
+    """Lê a aba SPsAgendar — filtro operacional (~18 registros, cacheada)."""
+    global _cache_spsagendar
+    if _cache_spsagendar is not None:
+        return _cache_spsagendar
     gc = gc or get_gc()
     rows = get_sheet_rows(gc, SPS_SHEET_ID, 'SPsAgendar')
-    return [row_to_spsagendar_record(r) for r in rows if as_string(r.get('ID') or r.get('A'))]
+    result = [row_to_spsagendar_record(r) for r in rows if as_string(r.get('ID') or r.get('A'))]
+    _cache_spsagendar = result
+    return result
 
 
 def row_to_sp_record(r: Dict[str, str]) -> SpRecord:
@@ -116,7 +188,8 @@ def row_to_spsagendar_record(r: Dict[str, str]) -> SpRecord:
 
 
 def load_base_bancos(gc=None) -> List[BankAccount]:
-    """Lê a aba BaseBancos.
+    """Lê a aba BaseBancos (~15 registros, cacheada).
+    Cache de sessão: evita múltiplas chamadas ao Sheets por request.
 
     Formato real da planilha:
       Banco e Conta          | Código Conta Omie | Código | Título | CNPJ | Código Fornecedor Omie | Chave PIX
@@ -128,6 +201,9 @@ def load_base_bancos(gc=None) -> List[BankAccount]:
     onde <conta> é o número da conta (sem agência separada).
     A agência é sempre 0624 para o Bradesco nas contas operacionais.
     """
+    global _cache_bancos
+    if _cache_bancos is not None:
+        return _cache_bancos
     gc = gc or get_gc()
     rows = get_sheet_rows(gc, BASE_BANCOS_ID, 'BaseBancos')
     out = []
@@ -164,6 +240,7 @@ def load_base_bancos(gc=None) -> List[BankAccount]:
             raw               =r,
         )
         out.append(ba)
+    _cache_bancos = out
     return out
 
 
