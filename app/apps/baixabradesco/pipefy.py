@@ -99,9 +99,21 @@ def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None)
     rec   = plan.receipt
     cid   = as_string(plan.match.id)
     banco_pipefy = as_string(plan.banco.codigo_pipefy if plan.banco else '')
-    forma = rec.forma_pagamento or (plan.match.sp.tipo_pagamento if plan.match.sp else '')
-    if forma == 'BeeVale':
-        forma = 'Pix'
+    _forma_raw = rec.forma_pagamento or (plan.match.sp.tipo_pagamento if plan.match.sp else '')
+    _FORMA_MAP = {
+        'transferência bancária': 'Transferência',
+        'transferencia bancaria': 'Transferência',
+        'transferência': 'Transferência',
+        'transferencia': 'Transferência',
+        'ted': 'TED',
+        'boleto': 'Boleto',
+        'pix': 'Pix',
+        'dda': 'DDA',
+        'beevale': 'Pix',
+        'débito em conta': 'Transferência',
+        'debito em conta': 'Transferência',
+    }
+    forma = _FORMA_MAP.get(_forma_raw.lower().strip(), _forma_raw)
     link  = rec.drive_link.replace('?dl=0', '?dl=1').replace('&dl=0', '&dl=1') if rec.drive_link else ''
 
     fase_atual = get_current_phase(card_info)
