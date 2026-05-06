@@ -76,6 +76,11 @@ def executar(payload: dict) -> dict:
         }
 
     # 4. Atualiza Log e SPsBD
+    # Preenche LogCentro1..5 a partir do OmieRateioMultiplo se vierem vazios
+    centros_rateio = _extrair_centros_do_rateio_multiplo(p)
+    if centros_rateio:
+        logger.info(f"[core] Centros extraídos do OmieRateioMultiplo: {list(centros_rateio.keys())}")
+        p.update(centros_rateio)
     result['secoes']['atualizaLogeSPsBD'] = secao_atualiza_log_e_spsbd(ss, p)
 
     # 5. Omie (API externa)
@@ -142,7 +147,52 @@ def _incorporar_parametros_omie(payload: dict, parametros_result: dict) -> dict:
     return p
 
 
-def _calcular_log_valor1(payload: dict) -> str:
+def _extrair_centros_do_rateio_multiplo(payload: dict) -> dict:
+    """
+    Quando LogCentro1..5 vierem vazios mas OmieRateioMultiplo tiver distribuicao,
+    preenche LogCentro1..5 e LogValor1..5 a partir da distribuicao do rateio.
+    O valor proporcional é calculado sobre SPsBDG (valor total).
+    """
+    import re as _re, json as _json
+
+    # Só atua se todos os LogCentros estiverem vazios
+    tem_centro = any(
+        payload.get(f'LogCentro{i}') for i in range(1, 6)
+    )
+    if tem_centro:
+        return {}
+
+    rateio_raw = as_string(payload.get('OmieRateioMultiplo') or '')
+    if not rateio_raw:
+        return {}
+
+    txt = rateio_raw.replace('\\"', '"')
+    m = _re.search(r'"distribuicao"\s*:\s*(\[.*?\])', txt, _re.DOTALL)
+    if not m:
+        return {}
+
+    try:
+        distribuicao = _json.loads(m.group(1))
+    except Exception:
+        return {}
+
+    if not distribuicao:
+        return {}
+
+    total = to_number_br(payload.get('SPsBDG') or '')
+    extra = {}
+    for i, item in enumerate(distribuicao[:5], start=1):
+        nome = as_string(item.get('cDesDep') or '')
+        perc = item.get('nPerDep') or 0
+        if nome:
+            extra[f'LogCentro{i}'] = nome
+            if total and perc:
+                valor_cc = round2(total * float(perc) / 100)
+                extra[f'LogValor{i}'] = number_to_br(valor_cc)
+            else:
+                extra[f'LogValor{i}'] = ''
+
+    return extra
     total = to_number_br(payload.get('SPsBDG') or '')
     v1    = to_number_br(payload.get('OmieApiO') or '')
     v2    = to_number_br(payload.get('OmieApiP') or '')
