@@ -40,6 +40,11 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
     if cands:
         return _result_from_candidates(cands, 'valor_conta_tipo', 'Comprovante sem ID localizado por valor + conta + tipo.')
 
+    # Fallback: PIX/transferência sem ID onde agendador já marcou AB=agendado, O=Pagar
+    cands = match_valor_conta_agendado(receipt, list(sps_index.values()))
+    if cands:
+        return _result_from_candidates(cands, 'valor_conta_agendado', 'Localizado por valor + conta + status Pagar/agendado na SPsBD.')
+
     if receipt.tipo_comprovante == 'transferencia':
         return MatchResult(status='transferencia_sem_sp', metodo='transferencia_sem_id', motivo='Transferência sem ID e sem SP única encontrada.')
 
@@ -155,5 +160,30 @@ def match_valor_conta_tipo(receipt: ExtractedReceipt, records: List[SpRecord]) -
                 rk = account_key(parts[0], parts[1])
                 if rk != conta_key:
                     continue
+        out.append(r)
+    return out
+
+def match_valor_conta_agendado(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
+    """Busca na SPsBD por valor + conta de débito + O=Pagar + AB=agendado.
+    Cobre PIX sem ID onde o agendador já marcou AB=agendado mas a baixa
+    ainda não foi registrada.
+    """
+    valor = money_to_decimal(receipt.valor_pago)
+    if valor is None:
+        return []
+    conta_rec = normalize_compact(clean_account(receipt.conta_origem or ''))
+    if not conta_rec:
+        return []
+    out = []
+    for r in records:
+        if normalize_compact(r.status_pgt) != 'pagar':
+            continue
+        if normalize_compact(r.status_agendamento) != 'agendado':
+            continue
+        if money_to_decimal(r.valor_total) != valor:
+            continue
+        conta_sp = normalize_compact(clean_account(r.conta_pagamento or ''))
+        if conta_sp and conta_rec and conta_sp != conta_rec:
+            continue
         out.append(r)
     return out
