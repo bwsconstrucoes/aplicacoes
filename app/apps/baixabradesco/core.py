@@ -10,7 +10,7 @@ from .models import AttachmentInput, ExecutionPlan
 from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
-from .sheets import get_gc, load_spsbd_index, find_sps_by_ids, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
+from .sheets import get_gc, load_spsbd_index, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
 from .matcher import match_receipt
 from .omie import build_omie_plan, build_incluir_lanc_cc, execute_omie, execute_omie_lanccc, codigo_integracao
 from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
@@ -40,18 +40,29 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
     base_bancos = []
     google_error = ''
 
-    # ── Etapa 1: Extrai e faz parse de todas as páginas primeiro ─────────────────
-    parsed_pages = []
+    try:
+        gc = get_gc()
+        sps_index   = load_spsbd_index(gc)
+        sps_agendar = load_spsagendar(gc)
+        base_bancos = load_base_bancos(gc)
+    except Exception as e:
+        google_error = str(e)
+        if not modo_teste:
+            raise RuntimeError(f'Falha ao carregar dados Google Sheets: {e}')
+
+    # ── Processa cada comprovante / cada página ────────────────────────────────
+    plans: List[ExecutionPlan] = []
+    card_ids_para_get: List[str] = []
+
     for att in attachments:
-        try:
-            pdf_bytes = load_attachment_bytes(att)
-        except Exception as e:
-            continue
-        fp_file = fingerprint_bytes(pdf_bytes, att.filename)
-        pages   = extract_pdf_pages(pdf_bytes)
+        pdf_bytes = load_attachment_bytes(att)
+        fp_file   = fingerprint_bytes(pdf_bytes, att.filename)
+        pages     = extract_pdf_pages(pdf_bytes)
+
         for page_num, text in pages:
             if not as_string(text):
                 continue
+
             rec = parse_bradesco_text(
                 filename=att.filename,
                 page=page_num,
@@ -59,47 +70,6 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                 drive_link='',
                 fingerprint=f'{fp_file}:{page_num}',
             )
-            parsed_pages.append((att, pdf_bytes, rec))
-
-    try:
-        gc          = get_gc()
-        sps_agendar = load_spsagendar(gc)   # ~18 registros, cacheado
-        base_bancos = load_base_bancos(gc)  # ~15 registros, cacheado
-
-        # Busca pontual: apenas os IDs que aparecem nos comprovantes
-        ids_encontrados = [rec.id_pipefy for _, _, rec in parsed_pages if rec.id_pipefy]
-        if ids_encontrados:
-            sps_index = find_sps_by_ids(gc, ids_encontrados)
-
-    except Exception as e:
-        google_error = str(e)
-        if not modo_teste:
-            raise RuntimeError(f'Falha ao carregar dados Google Sheets: {e}')
-
-    # ── Processa cada página já parseada ──────────────────────────────────────
-    plans: List[ExecutionPlan] = []
-    card_ids_para_get: List[str] = []
-
-    for att, pdf_bytes, rec in parsed_pages:
-        page_num = rec.page
-
-        # Verifica anti-duplicata por fingerprint (apenas produção)
-        ja_processado = False
-        if gc and not modo_teste:
-            try:
-                ja_processado = check_fingerprint_processado(gc, rec.fingerprint)
-            except Exception:
-                pass
-
-            # Se já processado, pula tudo.
-            if ja_processado:
-                plan = ExecutionPlan(receipt=rec, match=match_receipt(rec, sps_index, sps_agendar), banco=None)
-                plan.acao = 'ja_processado'
-                plan.pode_executar = False
-                plan.motivos_bloqueio.append(f'Fingerprint já processado com sucesso.')
-                plan.responses['storage'] = {'status': 'ignorado_duplicata'}
-                plans.append(plan)
-                continue
 
             # Primeiro localiza a SP/título. Só depois salva o comprovante.
             # Isso evita gerar arquivos órfãos no Dropbox quando a baixa não puder
@@ -189,20 +159,25 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             if plan.omie_requests and executar_omie:
                 plan.responses['omie'] = _executar_sequencia_omie(plan, payload)
 
-            # 2. Registra fingerprint se baixa foi OK (anti-duplicata)
-            if executar_omie and plan.responses.get('omie'):
-                baixa_ok = any(
-                    s.get('step') == 'baixar' and s.get('response', {}).get('ok')
-                    for s in plan.responses['omie']
-                )
-                if baixa_ok and gc:
-                    _executar_sheets_async([],
-                        fn=lambda: registrar_fingerprint(
-                            gc, plan.receipt.fingerprint, plan.match.id,
-                            plan.receipt.valor_pago, plan.receipt.data_pagamento,
-                            plan.receipt.filename
-                        )
-                    )
+            # 2. Registra fingerprint se baixa OK ou título já estava PAGO
+            _omie_ok = any(
+                s.get('step') == 'baixar' and s.get('response', {}).get('ok')
+                for s in (plan.responses.get('omie') or [])
+            )
+            _omie_ja_pago = getattr(plan, '_omie_ja_pago', False)
+            if (_omie_ok or _omie_ja_pago) and gc:
+                _fp   = plan.receipt.fingerprint
+                _sid  = plan.match.id if plan.match else ''
+                _val  = plan.receipt.valor_pago
+                _data = plan.receipt.data_pagamento
+                _arq  = plan.receipt.filename
+                _gc   = gc  # captura referência local para o thread
+                def _reg(fp=_fp, sid=_sid, v=_val, d=_data, a=_arq, g=_gc):
+                    try:
+                        registrar_fingerprint(g, fp, sid, v, d, a)
+                    except Exception:
+                        pass
+                threading.Thread(target=_reg, daemon=True).start()
 
             # 2. Sheets SPsBD (em background para não atrasar resposta)
             if plan.sheets_updates and atualizar_spsbd:
@@ -253,7 +228,6 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             'executaveis': sum(1 for p in plans if p.pode_executar),
             'nao_localizados': sum(1 for p in plans if p.match.status == 'nao_localizado'),
             'pendentes_validacao': sum(1 for p in plans if p.match.status == 'pendente_validacao'),
-            'ja_processados': sum(1 for p in plans if p.acao == 'ja_processado'),
             'google_error': google_error,
         },
         'planos': [p.to_dict() for p in plans],
@@ -311,6 +285,7 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
             body = resp.get('body') or {}
             if as_string(body.get('status_titulo')).upper() == 'PAGO':
                 resultados.append({'step': 'skip', 'motivo': 'Título já consta PAGO no Omie.'})
+                plan._omie_ja_pago = True
                 break
             # Se não encontrou o título, interrompe (não tenta alterar/baixar)
             if not resp.get('ok'):
@@ -340,13 +315,10 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
     return resultados
 
 
-def _executar_sheets_async(updates: list, fn=None):
+def _executar_sheets_async(updates: list):
     def _run():
         try:
-            if fn:
-                fn()
-            if updates:
-                execute_spsbd_updates(updates)
+            execute_spsbd_updates(updates)
         except Exception:
             pass
     t = threading.Thread(target=_run, daemon=True)
