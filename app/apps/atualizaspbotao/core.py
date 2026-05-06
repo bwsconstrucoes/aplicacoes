@@ -147,6 +147,17 @@ def _incorporar_parametros_omie(payload: dict, parametros_result: dict) -> dict:
     return p
 
 
+def _calcular_log_valor1(payload: dict) -> str:
+    total = to_number_br(payload.get('SPsBDG') or '')
+    v1    = to_number_br(payload.get('OmieApiO') or '')
+    v2    = to_number_br(payload.get('OmieApiP') or '')
+    v3    = to_number_br(payload.get('OmieApiQ') or '')
+    v4    = to_number_br(payload.get('OmieApiR') or '')
+    v5    = to_number_br(payload.get('OmieApiS') or '')
+    calculado = round2(total - (v1 + v2 + v3 + v4 + v5) + v1)
+    return number_to_br(calculado)
+
+
 def _extrair_centros_do_rateio_multiplo(payload: dict) -> dict:
     """
     Quando LogCentro1..5 vierem vazios mas OmieRateioMultiplo tiver distribuicao,
@@ -155,10 +166,7 @@ def _extrair_centros_do_rateio_multiplo(payload: dict) -> dict:
     """
     import re as _re, json as _json
 
-    # Só atua se todos os LogCentros estiverem vazios
-    tem_centro = any(
-        payload.get(f'LogCentro{i}') for i in range(1, 6)
-    )
+    tem_centro = any(payload.get(f'LogCentro{i}') for i in range(1, 6))
     if tem_centro:
         return {}
 
@@ -193,11 +201,3 @@ def _extrair_centros_do_rateio_multiplo(payload: dict) -> dict:
                 extra[f'LogValor{i}'] = ''
 
     return extra
-    total = to_number_br(payload.get('SPsBDG') or '')
-    v1    = to_number_br(payload.get('OmieApiO') or '')
-    v2    = to_number_br(payload.get('OmieApiP') or '')
-    v3    = to_number_br(payload.get('OmieApiQ') or '')
-    v4    = to_number_br(payload.get('OmieApiR') or '')
-    v5    = to_number_br(payload.get('OmieApiS') or '')
-    calculado = round2(total - (v1 + v2 + v3 + v4 + v5) + v1)
-    return number_to_br(calculado)
