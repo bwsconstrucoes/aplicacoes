@@ -45,19 +45,24 @@ def build_consultar_conta_pagar(codigo_integracao: str, payload: dict) -> dict:
 
 
 def build_alterar_conta_pagar(plan, payload: dict) -> dict:
+    """AlterarContaPagar sempre executa para garantir valor correto do título.
+
+    Regra (idêntica ao Make):
+    - BeeVale: valor_documento = valor_pago (acréscimo é taxa da plataforma)
+    - Demais:  valor_documento = valor_pago - acrescimos (valor original do título)
+    """
     rec = plan.receipt
     codigo = codigo_integracao(plan)
     valor_pago = money_to_decimal(rec.valor_pago)
     acresc = money_to_decimal(rec.acrescimos) or money_to_decimal('0')
 
-    # BeeVale: usa valor pago diretamente. Demais: valor pago - acréscimos
     if rec.tipo_comprovante == 'beevale' or valor_pago is None:
         valor_doc = valor_pago
     else:
-        valor_doc = valor_pago - (acresc or money_to_decimal('0'))
+        valor_doc = valor_pago - acresc
 
     return omie_body('AlterarContaPagar', {
-        'valor_documento': decimal_to_omie(decimal_to_br(valor_doc)) if valor_doc is not None else decimal_to_omie(rec.valor_pago),
+        'valor_documento': decimal_to_omie(valor_doc) if valor_doc is not None else decimal_to_omie(rec.valor_pago),
         'id_conta_corrente': as_string(plan.banco.codigo_omie if plan.banco else ''),
         'codigo_lancamento_integracao': codigo,
     }, payload)

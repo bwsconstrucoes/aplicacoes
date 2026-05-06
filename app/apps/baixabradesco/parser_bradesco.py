@@ -79,19 +79,38 @@ def _first_money_after(patterns, text: str) -> str:
 
 
 def extract_valor_pago(text: str) -> str:
+    # Prioriza "Valor total" (total pago) sobre "Valor R$" (valor original do boleto)
     return _first_money_after([
-        r'Valor\s*(?:pago|do pagamento|transferido|total)?\s*:?\s*R?\$?\s*([\d\.]+,\d{2})',
+        r'Valor\s+total\s*:?\s*R?\$?\s*([\d\.]+,\d{2})',
+        r'Valor\s+do\s+pagamento\s*:?\s*R?\$?\s*([\d\.]+,\d{2})',
+        r'Valor\s+(?:pago|transferido)\s*:?\s*R?\$?\s*([\d\.]+,\d{2})',
+        r'Valor\s+final\s*R?\$?\s*([\d\.]+,\d{2})',
         r'Valor\s*:?\s*R\$\s*([\d\.]+,\d{2})',
         r'R\$\s*([\d\.]+,\d{2})',
     ], text)
 
 
 def extract_acrescimos(text: str) -> str:
-    return _first_money_after([
-        r'Acr[eé]scimos?[^\d]{0,30}([\d\.]+,\d{2})',
-        r'Juros[^\d]{0,30}([\d\.]+,\d{2})',
-        r'Multa[^\d]{0,30}([\d\.]+,\d{2})',
+    """Extrai acréscimos totais (juros + multa somados).
+    O Bradesco exibe juros e multa separados. O Omie recebe o total.
+    """
+    # Tenta campo já somado primeiro
+    acresc_direto = _first_money_after([
+        r'Acr[eé]scimos?\s*(?:\(.*?\))?\s*:?\s*R?\$?\s*([\d\.]+,\d{2})',
     ], text)
+    if acresc_direto and acresc_direto != '0,00':
+        return acresc_direto
+
+    # Soma juros + multa individualmente
+    from decimal import Decimal
+    juros_str = _first_money_after([r'Juros\s*:?\s*R?\$?\s*([\d\.]+,\d{2})'], text)
+    multa_str = _first_money_after([r'Multa\s*:?\s*R?\$?\s*([\d\.]+,\d{2})'], text)
+    juros = money_to_decimal(juros_str) or Decimal('0')
+    multa = money_to_decimal(multa_str) or Decimal('0')
+    total = juros + multa
+    if total > Decimal('0'):
+        return decimal_to_br(total)
+    return '0,00'
 
 
 def extract_tarifa(text: str) -> str:
