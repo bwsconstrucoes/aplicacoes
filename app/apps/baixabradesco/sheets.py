@@ -82,7 +82,6 @@ def row_to_sp_record(r: Dict[str, str]) -> SpRecord:
         centro_custo           =as_string(r.get('Centro de Custo')),
         tipo_pagamento         =as_string(r.get('Tipo de Pagamento')),
         vencimento             =as_string(r.get('Vencim.') or r.get('Vencimento')),
-        codigo_barras          =as_string(r.get('Código de Barras')),
         codigo_integracao_omie =as_string(r.get('Código Integração')),
         status_pgt             =as_string(r.get('Status Pgt')),
         status_agendamento     =as_string(r.get('Agendado')),
