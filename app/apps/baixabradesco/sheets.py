@@ -272,3 +272,45 @@ def execute_spsbd_updates(updates: list):
 
         except Exception:
             pass
+
+# ── Controle de duplicatas via aba LogBaixaBradesco ───────────────────────────
+
+LOG_ABA = 'LogBaixaBradesco'
+
+
+def _get_log_sheet(gc):
+    ss = gc.open_by_key(SPS_SHEET_ID)
+    try:
+        return ss.worksheet(LOG_ABA)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = ss.add_worksheet(title=LOG_ABA, rows=10000, cols=6)
+        ws.append_row(
+            ['fingerprint', 'sp_id', 'valor', 'data', 'arquivo', 'processado_em'],
+            value_input_option='USER_ENTERED'
+        )
+        return ws
+
+
+def check_fingerprint_processado(gc, fingerprint: str) -> bool:
+    """Retorna True se este fingerprint já foi processado com sucesso."""
+    try:
+        ws = _get_log_sheet(gc)
+        col_fp = ws.col_values(1)
+        return fingerprint in col_fp
+    except Exception:
+        return False
+
+
+def registrar_fingerprint(gc, fingerprint: str, sp_id: str, valor: str,
+                          data: str, arquivo: str):
+    """Registra fingerprint processado para evitar reprocessamento."""
+    try:
+        from datetime import datetime
+        ws = _get_log_sheet(gc)
+        ws.append_row(
+            [fingerprint, sp_id, valor, data, arquivo,
+             datetime.now().strftime('%d/%m/%Y %H:%M:%S')],
+            value_input_option='USER_ENTERED'
+        )
+    except Exception:
+        pass
