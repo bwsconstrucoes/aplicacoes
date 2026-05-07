@@ -51,15 +51,19 @@ def parse_bradesco_text(filename: str, page: int, text: str, drive_link: str = '
 
 def extract_id_pipefy(text: str) -> str:
     patterns = [
-        r'Descri[cç][aã]o\s*:?\s*(\d{7,12})',
-        r'DESCRI[CÇ][AÃ]O\s*:?\s*(\d{7,12})',
-        r'\bSP\s*:?\s*(\d{7,12})\b',
-        r'\bID\s*:?\s*(\d{7,12})\b',
+        r'Descri[cç][aã]o\s*:?\s*(\d{7,12})(?!\d)',
+        r'DESCRI[CÇ][AÃ]O\s*:?\s*(\d{7,12})(?!\d)',
+        r'\bSP\s*:?\s*(\d{7,12})(?!\d)\b',
+        r'\bID\s*:?\s*(\d{7,12})(?!\d)\b',
     ]
     for p in patterns:
         m = re.search(p, text or '', flags=re.I)
         if m:
-            return m.group(1)
+            id_encontrado = m.group(1)
+            # Evita capturar início de QR Code Pix/EMV
+            if id_encontrado.startswith('000201'):
+                continue
+            return id_encontrado
     return ''
 
 

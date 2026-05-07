@@ -15,8 +15,11 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
         sp = sps_index.get(receipt.id_pipefy)
         if sp:
             return MatchResult(status='localizado', metodo='id_comprovante', id=receipt.id_pipefy, sp=sp, motivo='ID localizado no comprovante e encontrado na SPsBD.')
-        # Mesmo sem SPsBD, mantém ID como forte; depois Pipefy/Omie podem resolver.
-        return MatchResult(status='localizado', metodo='id_comprovante_sem_spsbd', id=receipt.id_pipefy, sp=None, motivo='ID localizado no comprovante, mas não encontrado no índice local da SPsBD.')
+        # ID não encontrado na SPsBD — pode ser falsa captura (QR Code, etc)
+        # Só retorna como localizado_sem_spsbd se o ID parecer válido (não começa com 000201)
+        if not receipt.id_pipefy.startswith('000201'):
+            return MatchResult(status='localizado', metodo='id_comprovante_sem_spsbd', id=receipt.id_pipefy, sp=None, motivo='ID localizado no comprovante, mas não encontrado no índice local da SPsBD.')
+        # ID parece ser QR Code EMV — ignora e tenta fallback
 
     if receipt.tipo_comprovante == 'beevale':
         # BeeVale deve procurar na SPsBD completa, pois quando o comprovante chega
@@ -25,14 +28,8 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
         return _result_from_candidates(cands, 'beevale_valor_1015_spsbd', 'BeeVale por valor base = valor pago / 1,015, buscando na SPsBD.')
 
     if receipt.tipo_comprovante == 'fgts_rescisorio':
-        cands = match_fgts_por_valor(receipt, sps_agendar)
-        if not cands and sps_index:
-            cands = match_fgts_por_valor(receipt, list(sps_index.values()))
-        if not cands:
-            cands = match_fgts(receipt, sps_agendar)
-        if not cands and sps_index:
-            cands = match_fgts(receipt, list(sps_index.values()))
-        return _result_from_candidates(cands, 'fgts_valor', 'FGTS/CEF por valor + Pagar + Agendado.')
+        cands = match_fgts(receipt, sps_agendar)
+        return _result_from_candidates(cands, 'fgts_valor_natureza', 'FGTS/CEF por valor e natureza/descrição.')
 
 
     if receipt.tipo_comprovante == 'boleto':
