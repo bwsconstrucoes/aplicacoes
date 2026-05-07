@@ -58,51 +58,42 @@ def load_spsbd_index(gc=None) -> Dict[str, SpRecord]:
 def load_spsbd_operacional(gc=None) -> Dict[str, SpRecord]:
     """Carrega apenas SPs operacionais da SPsBD (O=Pagar + AB=agendar/agendado/falhaagendar).
 
-    Em vez de carregar 52k linhas inteiras, lê só as colunas O e AB para filtrar,
-    depois busca as linhas completas apenas das que passam. Muito mais leve.
+    Estratégia: lê o range A:AK de uma vez (uma chamada à API) e filtra em memória.
+    Evita as 52k linhas completas e também evita múltiplas chamadas por linha.
     Usado para matches sem ID (fgts, boleto sem barcode, pix agendado).
     """
     gc = gc or get_gc()
     ws = gc.open_by_key(SPS_SHEET_ID).worksheet('SPsBD')
 
-    # Lê só colunas A (ID), O (Status Pgt) e AB (Agendado) — 3 colunas leves
-    col_a  = ws.col_values(1)   # ID
-    col_o  = ws.col_values(15)  # Status Pgt (O = coluna 15)
-    col_ab = ws.col_values(28)  # Agendado   (AB = coluna 28)
+    # Uma única chamada — lê até coluna AK que cobre todos os campos necessários
+    all_values = ws.get('A:AK')
+    if not all_values or len(all_values) < 2:
+        return {}
+
+    headers = all_values[0]
+    # Índices das colunas de filtro (0-based)
+    IDX_O  = 14  # Status Pgt
+    IDX_AB = 27  # Agendado
 
     STATUS_PGT_OK   = {'pagar'}
     STATUS_AGEND_OK = {'agendar', 'agendado', 'falhaagendar'}
 
-    # Filtra linhas que passam (pula header na linha 1)
-    rows_ok = []
-    for i in range(1, len(col_a)):
-        status_pgt   = (col_o[i]  if i < len(col_o)  else '').strip().lower()
-        status_agend = (col_ab[i] if i < len(col_ab) else '').strip().lower()
-        if status_pgt in STATUS_PGT_OK and status_agend in STATUS_AGEND_OK:
-            rows_ok.append(i + 1)  # linha real (1-based, header na linha 1)
-
-    if not rows_ok:
-        return {}
-
-    # Busca headers uma vez
-    headers = ws.row_values(1)
-
-    # Busca linhas completas em lote (máximo 100 por vez para não estourar quota)
     result = {}
-    BATCH = 100
-    for start in range(0, len(rows_ok), BATCH):
-        batch = rows_ok[start:start + BATCH]
-        for row_num in batch:
-            try:
-                row_values = ws.row_values(row_num)
-                r = {headers[i]: (row_values[i] if i < len(row_values) else '')
-                     for i in range(len(headers))}
-                r['_row_number'] = row_num
-                sp = row_to_sp_record(r)
-                if sp.id:
-                    result[sp.id] = sp
-            except Exception:
-                continue
+    for row_num, row in enumerate(all_values[1:], start=2):
+        # Estende row para evitar IndexError
+        row = list(row) + [''] * (len(headers) - len(row))
+
+        status_pgt   = (row[IDX_O]  if IDX_O  < len(row) else '').strip().lower()
+        status_agend = (row[IDX_AB] if IDX_AB < len(row) else '').strip().lower()
+
+        if status_pgt not in STATUS_PGT_OK or status_agend not in STATUS_AGEND_OK:
+            continue
+
+        r = {headers[i]: row[i] for i in range(len(headers))}
+        r['_row_number'] = row_num
+        sp = row_to_sp_record(r)
+        if sp.id:
+            result[sp.id] = sp
 
     return result
 
