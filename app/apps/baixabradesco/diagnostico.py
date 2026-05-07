@@ -200,6 +200,8 @@ def executar_diagnostico(payload: Dict[str, Any]) -> Dict[str, Any]:
         base_bancos = load_base_bancos(gc)
         from app.apps.baixabradesco.sheets import load_spsbd_operacional
         sps_operacional = load_spsbd_operacional(gc)
+        target_id = '1345786721'
+        target_sp = sps_operacional.get(target_id)
         sample_op = [
             {'id': sp.id, 'nome': sp.nome_credor, 'valor': sp.valor_total,
              'status_pgt': sp.status_pgt, 'status_agend': sp.status_agendamento}
@@ -209,6 +211,13 @@ def executar_diagnostico(payload: Dict[str, Any]) -> Dict[str, Any]:
             'spsbd_registros':    len(sps_index),
             'spsbd_operacional_registros': len(sps_operacional),
             'spsbd_operacional_sample': sample_op,
+            'target_sp_1345786721': {
+                'encontrada': target_sp is not None,
+                'status_pgt': target_sp.status_pgt if target_sp else None,
+                'status_agend': target_sp.status_agendamento if target_sp else None,
+                'valor': target_sp.valor_total if target_sp else None,
+                'nome': target_sp.nome_credor if target_sp else None,
+            },
             'spsagendar_registros': len(sps_agendar),
             'base_bancos_registros': len(base_bancos),
             'sample_ids': list(sps_index.keys())[:5],
