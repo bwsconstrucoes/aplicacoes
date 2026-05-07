@@ -25,7 +25,11 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
         return _result_from_candidates(cands, 'beevale_valor_1015_spsbd', 'BeeVale por valor base = valor pago / 1,015, buscando na SPsBD.')
 
     if receipt.tipo_comprovante == 'fgts_rescisorio':
+        # Busca primeiro na SPsAgendar, depois na SPsBD completa
+        # (SP pode estar como Agendado e fora da SPsAgendar)
         cands = match_fgts(receipt, sps_agendar)
+        if not cands and sps_index:
+            cands = match_fgts(receipt, list(sps_index.values()))
         return _result_from_candidates(cands, 'fgts_valor_natureza', 'FGTS/CEF por valor e natureza/descrição.')
 
 
@@ -126,17 +130,13 @@ def match_boleto_barcode(receipt: ExtractedReceipt, records: List[SpRecord]) -> 
 
 
 def match_fgts(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
-    """Localiza FGTS/CEF/Ministério da Fazenda por valor + natureza/descrição."""
     valor = money_to_decimal(receipt.valor_pago)
     if valor is None:
         return []
-    keywords = ['fgts', 'cef', 'caixa', 'rescisoes', 'rescisao',
-                'ministerio da fazenda', 'ministerio', 'fazenda',
-                'inss', 'rfb', 'receita federal']
     out = []
     for r in records:
-        txt = normalize_text(f'{r.nome_credor} {r.descricao} {r.centro_custo} {r.tipo_pagamento}')
-        if not any(x in txt for x in keywords):
+        txt = normalize_text(f'{r.nome_credor} {r.descricao} {r.centro_custo}')
+        if not any(x in txt for x in ['fgts', 'cef', 'caixa', 'rescisoes', 'rescisao']):
             continue
         if money_to_decimal(r.valor_total) == valor:
             out.append(r)
