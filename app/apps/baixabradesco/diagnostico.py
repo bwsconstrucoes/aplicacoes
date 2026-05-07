@@ -198,8 +198,17 @@ def executar_diagnostico(payload: Dict[str, Any]) -> Dict[str, Any]:
         sps_index   = load_spsbd_index(gc)
         sps_agendar = load_spsagendar(gc)
         base_bancos = load_base_bancos(gc)
+        from app.apps.baixabradesco.sheets import load_spsbd_operacional
+        sps_operacional = load_spsbd_operacional(gc)
+        sample_op = [
+            {'id': sp.id, 'nome': sp.nome_credor, 'valor': sp.valor_total,
+             'status_pgt': sp.status_pgt, 'status_agend': sp.status_agendamento}
+            for sp in list(sps_operacional.values())[:5]
+        ]
         return {
             'spsbd_registros':    len(sps_index),
+            'spsbd_operacional_registros': len(sps_operacional),
+            'spsbd_operacional_sample': sample_op,
             'spsagendar_registros': len(sps_agendar),
             'base_bancos_registros': len(base_bancos),
             'sample_ids': list(sps_index.keys())[:5],
