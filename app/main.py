@@ -8,6 +8,7 @@ from app.apps.atualizaspbotao import bp as atualizaspbotao_bp
 from app.apps.validasp import bp as validasp_bp
 from app.apps.chatbot import bp as chatbot_bp
 from app.apps.baixabradesco import bp as baixabradesco_bp
+from app.apps.sync_logs        import bp as sync_logs_bp     # ← NOVO
 
 
 def create_app():
@@ -21,6 +22,7 @@ def create_app():
     app.register_blueprint(validasp_bp,           url_prefix="/api/validasp")
     app.register_blueprint(chatbot_bp,            url_prefix="/api/chatbot")
     app.register_blueprint(baixabradesco_bp,      url_prefix="/api/baixabradesco")
+    app.register_blueprint(sync_logs_bp,          url_prefix="/api/sync_logs")
 
     @app.route("/")
     def index():
