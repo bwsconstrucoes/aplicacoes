@@ -126,13 +126,17 @@ def match_boleto_barcode(receipt: ExtractedReceipt, records: List[SpRecord]) -> 
 
 
 def match_fgts(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
+    """Localiza FGTS/CEF/Ministério da Fazenda por valor + natureza/descrição."""
     valor = money_to_decimal(receipt.valor_pago)
     if valor is None:
         return []
+    keywords = ['fgts', 'cef', 'caixa', 'rescisoes', 'rescisao',
+                'ministerio da fazenda', 'ministerio', 'fazenda',
+                'inss', 'rfb', 'receita federal']
     out = []
     for r in records:
-        txt = normalize_text(f'{r.nome_credor} {r.descricao} {r.centro_custo}')
-        if not any(x in txt for x in ['fgts', 'cef', 'caixa', 'rescisoes', 'rescisao']):
+        txt = normalize_text(f'{r.nome_credor} {r.descricao} {r.centro_custo} {r.tipo_pagamento}')
+        if not any(x in txt for x in keywords):
             continue
         if money_to_decimal(r.valor_total) == valor:
             out.append(r)
