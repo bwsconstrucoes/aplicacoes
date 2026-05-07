@@ -53,6 +53,59 @@ def load_spsbd_index(gc=None) -> Dict[str, SpRecord]:
     return idx
 
 
+
+
+def load_spsbd_operacional(gc=None) -> Dict[str, SpRecord]:
+    """Carrega apenas SPs operacionais da SPsBD (O=Pagar + AB=agendar/agendado/falhaagendar).
+
+    Em vez de carregar 52k linhas inteiras, lê só as colunas O e AB para filtrar,
+    depois busca as linhas completas apenas das que passam. Muito mais leve.
+    Usado para matches sem ID (fgts, boleto sem barcode, pix agendado).
+    """
+    gc = gc or get_gc()
+    ws = gc.open_by_key(SPS_SHEET_ID).worksheet('SPsBD')
+
+    # Lê só colunas A (ID), O (Status Pgt) e AB (Agendado) — 3 colunas leves
+    col_a  = ws.col_values(1)   # ID
+    col_o  = ws.col_values(15)  # Status Pgt (O = coluna 15)
+    col_ab = ws.col_values(28)  # Agendado   (AB = coluna 28)
+
+    STATUS_PGT_OK  = {'pagar'}
+    STATUS_AGEND_OK = {'agendar', 'agendado', 'falhaagendar'}
+
+    # Filtra linhas que passam (pula header na linha 1)
+    rows_ok = []
+    for i in range(1, len(col_a)):
+        status_pgt  = (col_o[i]  if i < len(col_o)  else '').strip().lower()
+        status_agend = (col_ab[i] if i < len(col_ab) else '').strip().lower()
+        if status_pgt in STATUS_PGT_OK and status_agend in STATUS_AGEND_OK:
+            rows_ok.append(i + 1)  # linha real (1-based, header na linha 1)
+
+    if not rows_ok:
+        return {}
+
+    # Busca headers uma vez
+    headers = ws.row_values(1)
+
+    # Busca linhas completas em lote (máximo 100 por vez para não estourar quota)
+    result = {}
+    BATCH = 100
+    for start in range(0, len(rows_ok), BATCH):
+        batch = rows_ok[start:start + BATCH]
+        for row_num in batch:
+            try:
+                row_values = ws.row_values(row_num)
+                r = {headers[i]: (row_values[i] if i < len(row_values) else '')
+                     for i in range(len(headers))}
+                r['_row_number'] = row_num
+                sp = row_to_sp_record(r)
+                if sp.id:
+                    result[sp.id] = sp
+            except Exception:
+                continue
+
+    return result
+
 def load_spsagendar(gc=None) -> List[SpRecord]:
     """Lê a aba SPsAgendar — filtro operacional vindo de SPsBD."""
     gc = gc or get_gc()
@@ -272,45 +325,3 @@ def execute_spsbd_updates(updates: list):
 
         except Exception:
             pass
-
-# ── Controle de duplicatas via aba LogBaixaBradesco ───────────────────────────
-
-LOG_ABA = 'LogBaixaBradesco'
-
-
-def _get_log_sheet(gc):
-    ss = gc.open_by_key(SPS_SHEET_ID)
-    try:
-        return ss.worksheet(LOG_ABA)
-    except gspread.exceptions.WorksheetNotFound:
-        ws = ss.add_worksheet(title=LOG_ABA, rows=10000, cols=6)
-        ws.append_row(
-            ['fingerprint', 'sp_id', 'valor', 'data', 'arquivo', 'processado_em'],
-            value_input_option='USER_ENTERED'
-        )
-        return ws
-
-
-def check_fingerprint_processado(gc, fingerprint: str) -> bool:
-    """Retorna True se este fingerprint já foi processado com sucesso."""
-    try:
-        ws = _get_log_sheet(gc)
-        col_fp = ws.col_values(1)
-        return fingerprint in col_fp
-    except Exception:
-        return False
-
-
-def registrar_fingerprint(gc, fingerprint: str, sp_id: str, valor: str,
-                          data: str, arquivo: str):
-    """Registra fingerprint processado para evitar reprocessamento."""
-    try:
-        from datetime import datetime
-        ws = _get_log_sheet(gc)
-        ws.append_row(
-            [fingerprint, sp_id, valor, data, arquivo,
-             datetime.now().strftime('%d/%m/%Y %H:%M:%S')],
-            value_input_option='USER_ENTERED'
-        )
-    except Exception:
-        pass

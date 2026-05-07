@@ -10,7 +10,7 @@ from .models import AttachmentInput, ExecutionPlan
 from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
-from .sheets import get_gc, load_spsbd_index, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
+from .sheets import get_gc, load_spsbd_index, load_spsbd_operacional, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
 from .matcher import match_receipt
 from .omie import build_omie_plan, build_incluir_lanc_cc, execute_omie, execute_omie_lanccc, codigo_integracao
 from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
@@ -42,9 +42,11 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
 
     try:
         gc = get_gc()
-        sps_index   = load_spsbd_index(gc)
-        sps_agendar = load_spsagendar(gc)
-        base_bancos = load_base_bancos(gc)
+        sps_agendar = load_spsagendar(gc)   # ~18 registros, leve
+        base_bancos = load_base_bancos(gc)  # ~15 registros, leve
+        # Carrega apenas SPs com O=Pagar e AB=agendar/agendado/falhaagendar
+        # Muito mais leve que as 52k linhas completas — necessário para matches sem ID
+        sps_index = load_spsbd_operacional(gc)
     except Exception as e:
         google_error = str(e)
         if not modo_teste:
