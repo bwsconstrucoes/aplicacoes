@@ -25,11 +25,7 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
         return _result_from_candidates(cands, 'beevale_valor_1015_spsbd', 'BeeVale por valor base = valor pago / 1,015, buscando na SPsBD.')
 
     if receipt.tipo_comprovante == 'fgts_rescisorio':
-        # Busca primeiro na SPsAgendar, depois na SPsBD completa
-        # (SP pode estar como Agendado e fora da SPsAgendar)
         cands = match_fgts(receipt, sps_agendar)
-        if not cands and sps_index:
-            cands = match_fgts(receipt, list(sps_index.values()))
         return _result_from_candidates(cands, 'fgts_valor_natureza', 'FGTS/CEF por valor e natureza/descrição.')
 
 
@@ -127,6 +123,25 @@ def match_boleto_barcode(receipt: ExtractedReceipt, records: List[SpRecord]) -> 
 
     return out
 
+
+
+
+def match_fgts_por_valor(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
+    """Match FGTS/CEF direto por valor + O=Pagar + AB=agendar/agendado/falhaagendar.
+    O parser já classificou como fgts_rescisorio pelo CNPJ da CEF — não precisa keyword.
+    """
+    valor = money_to_decimal(receipt.valor_pago)
+    if valor is None:
+        return []
+    out = []
+    for r in records:
+        if normalize_compact(r.status_pgt) != 'pagar':
+            continue
+        if normalize_compact(r.status_agendamento) not in {'agendado', 'agendar', 'falhaagendar'}:
+            continue
+        if money_to_decimal(r.valor_total) == valor:
+            out.append(r)
+    return out
 
 
 def match_fgts(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
