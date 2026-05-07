@@ -70,13 +70,13 @@ def load_spsbd_operacional(gc=None) -> Dict[str, SpRecord]:
     col_o  = ws.col_values(15)  # Status Pgt (O = coluna 15)
     col_ab = ws.col_values(28)  # Agendado   (AB = coluna 28)
 
-    STATUS_PGT_OK  = {'pagar'}
+    STATUS_PGT_OK   = {'pagar'}
     STATUS_AGEND_OK = {'agendar', 'agendado', 'falhaagendar'}
 
     # Filtra linhas que passam (pula header na linha 1)
     rows_ok = []
     for i in range(1, len(col_a)):
-        status_pgt  = (col_o[i]  if i < len(col_o)  else '').strip().lower()
+        status_pgt   = (col_o[i]  if i < len(col_o)  else '').strip().lower()
         status_agend = (col_ab[i] if i < len(col_ab) else '').strip().lower()
         if status_pgt in STATUS_PGT_OK and status_agend in STATUS_AGEND_OK:
             rows_ok.append(i + 1)  # linha real (1-based, header na linha 1)
