@@ -52,7 +52,7 @@ def _rows_via_api():
     svc = _google_service_sheets()
     if not svc:
         return None
-    rng = f"{SHEET_NAME}!A:C"
+    rng = f"{SHEET_NAME}!A:D"
     res = svc.spreadsheets().values().get(
         spreadsheetId=SHEET_ID,
         range=rng,
@@ -72,6 +72,7 @@ def _rows_via_api():
             "codigo": get("codigo"),
             "url": get("url"),
             "expira_em": get("expira_em"),
+            "conteudo_base64": get("conteudo_base64"),
         })
     return out
 
@@ -93,7 +94,7 @@ def _rows_via_csv():
     out = []
     for row in reader:
         row = {norm_col(k): (v or "").strip() for k, v in row.items()}
-        # tolerância a cabeçalhos “estranhos”
+        # tolerância a cabeçalhos "estranhos"
         def pick(key):
             if key in row:
                 return row[key]
@@ -105,6 +106,7 @@ def _rows_via_csv():
             "codigo": pick("codigo"),
             "url": pick("url"),
             "expira_em": pick("expira_em"),
+            "conteudo_base64": pick("conteudo_base64"),
         })
     return out
 
@@ -128,15 +130,16 @@ def buscar_url_por_codigo(codigo: str):
     return None
 
 # -------- escrita (se usar criar pelo servidor) --------
-def adicionar_link(codigo: str, url: str, expira_em: str) -> bool:
+def adicionar_link(codigo: str, url: str, expira_em: str, conteudo_base64: str = "") -> bool:
+    """Grava linha em A:D. conteudo_base64 vai pra coluna D quando o link for offload de rota2."""
     svc = _google_service_sheets()
     if not svc:
         return False
-    body = {"values": [[codigo, url, expira_em]]}
+    body = {"values": [[codigo, url, expira_em, conteudo_base64]]}
     try:
         svc.spreadsheets().values().append(
             spreadsheetId=SHEET_ID,
-            range=f"{SHEET_NAME}!A:C",
+            range=f"{SHEET_NAME}!A:D",
             valueInputOption="USER_ENTERED",
             insertDataOption="INSERT_ROWS",
             body=body,
