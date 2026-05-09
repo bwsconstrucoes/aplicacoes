@@ -58,6 +58,35 @@ PLANILHAS = {
                 "num_cols"           : 5,     # A:E
                 "col_protegida_de"   : None,
             },
+            {
+                # RegistroFornecedores (Mapa de Cotação)
+                # Equivalente a:
+                #   QUERY(IMPORTRANGE(...; "Registro!A:N");
+                #         "Select Col1..Col11, Col14")
+                # Resultado: 12 colunas contíguas no destino (A→L),
+                # comprimindo N para a posição de L (pula L,M da origem).
+                # Colunas M+ no destino podem ter fórmulas — NÃO TOCAR.
+                "modo"             : "gap",
+                "aba_origem"       : "Registro",
+                "origem_id"        : "1xIXuYhPRBgAnIk4aLV93kyWGikR7RKMAWVHPGiLYPQk",
+                "aba_destino"      : "RegistroFornecedores",
+                "col_limpar_ate"   : 12,    # limpa A→L antes de escrever
+                "col_protegida_de" : 13,    # M em diante = não toca
+                "blocos": [
+                    # Bloco 1: A→K da origem → A→K do destino (11 colunas)
+                    {
+                        "col_inicio_origem"  : 1,    # A
+                        "num_cols"           : 11,   # A..K
+                        "col_inicio_destino" : 1,    # A
+                    },
+                    # Bloco 2: N da origem → L do destino (1 coluna, gap em L,M da origem)
+                    {
+                        "col_inicio_origem"  : 14,   # N
+                        "num_cols"           : 1,
+                        "col_inicio_destino" : 12,   # L
+                    },
+                ],
+            },
         ]
     },
 
@@ -138,6 +167,41 @@ PLANILHAS = {
                         "col_inicio_origem"  : 5,  # E
                         "num_cols"           : 5,  # E, F, G, H, I
                         "col_inicio_destino" : 5,  # E
+                    },
+                ],
+            },
+            {
+                # RegistroFornecedores (Cotação de Suprimentos)
+                # Equivalente a:
+                #   QUERY(IMPORTRANGE(...; "Registro!A:S");
+                #         "Select Col1..Col11, Col14, Col19")
+                # Resultado: 13 colunas contíguas no destino (A→M),
+                # comprimindo N→L e S→M (pula L,M e O..R da origem).
+                # Colunas N+ no destino podem ter fórmulas — NÃO TOCAR.
+                "modo"             : "gap",
+                "aba_origem"       : "Registro",
+                "origem_id"        : "1xIXuYhPRBgAnIk4aLV93kyWGikR7RKMAWVHPGiLYPQk",
+                "aba_destino"      : "RegistroFornecedores",
+                "col_limpar_ate"   : 13,    # limpa A→M antes de escrever
+                "col_protegida_de" : 14,    # N em diante = não toca
+                "blocos": [
+                    # Bloco 1: A→K da origem → A→K do destino (11 colunas)
+                    {
+                        "col_inicio_origem"  : 1,    # A
+                        "num_cols"           : 11,   # A..K
+                        "col_inicio_destino" : 1,    # A
+                    },
+                    # Bloco 2: N da origem → L do destino
+                    {
+                        "col_inicio_origem"  : 14,   # N
+                        "num_cols"           : 1,
+                        "col_inicio_destino" : 12,   # L
+                    },
+                    # Bloco 3: S da origem → M do destino
+                    {
+                        "col_inicio_origem"  : 19,   # S
+                        "num_cols"           : 1,
+                        "col_inicio_destino" : 13,   # M
                     },
                 ],
             },
