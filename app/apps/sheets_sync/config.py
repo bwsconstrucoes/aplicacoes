@@ -87,6 +87,21 @@ PLANILHAS = {
                     },
                 ],
             },
+            {
+                # RegistroCotePedEspelho (Mapa de Cotação)
+                # Equivalente a:
+                #   IMPORTRANGE("1JKhvjAUlTuqt2yMbqZNnzk4IGJ57Cx0MwMU4hGH_ajY";
+                #               "RegistrosCotaçõesMapa!A1:F5000")
+                # Escreve A→F a partir de A1. Colunas G+ no destino preservadas.
+                "modo"               : "continuo",
+                "aba_origem"         : "RegistrosCotaçõesMapa",
+                "origem_id"          : "1JKhvjAUlTuqt2yMbqZNnzk4IGJ57Cx0MwMU4hGH_ajY",
+                "aba_destino"        : "RegistroCotePedEspelho",
+                "col_inicio_destino" : 1,    # A
+                "col_inicio_origem"  : 1,    # A
+                "num_cols"           : 6,    # A..F
+                "col_protegida_de"   : 7,    # G em diante = não toca
+            },
         ]
     },
 
