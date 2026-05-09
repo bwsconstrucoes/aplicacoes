@@ -220,6 +220,21 @@ PLANILHAS = {
                     },
                 ],
             },
+            {
+                # RegistroCotaçõesFornecedor (Cotação de Suprimentos)
+                # Equivalente a:
+                #   IMPORTRANGE("1JKhvjAUlTuqt2yMbqZNnzk4IGJ57Cx0MwMU4hGH_ajY";
+                #               "Cotações!A:Q")
+                # Escreve A→Q a partir de A1. Colunas R+ no destino preservadas.
+                "modo"               : "continuo",
+                "aba_origem"         : "Cotações",
+                "origem_id"          : "1JKhvjAUlTuqt2yMbqZNnzk4IGJ57Cx0MwMU4hGH_ajY",
+                "aba_destino"        : "RegistroCotaçõesFornecedor",
+                "col_inicio_destino" : 1,    # A
+                "col_inicio_origem"  : 1,    # A
+                "num_cols"           : 17,   # A..Q
+                "col_protegida_de"   : 18,   # R em diante = não toca
+            },
         ]
     },
 
