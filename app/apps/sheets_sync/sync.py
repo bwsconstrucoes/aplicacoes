@@ -12,6 +12,7 @@ Inclui:
   - Retry com backoff exponencial para erros transientes da Sheets API
   - Leitura em chunks para evitar OOM em abas grandes (Pedidos com 70k linhas)
   - _Config sem retry — falha rapido se a planilha mestre estiver indisponivel
+  - linha_inicio_destino para preservar cabecalhos manuais no destino (default 1)
 """
 
 import os
@@ -90,7 +91,7 @@ def _chamar_api(funcao, descricao: str):
             time.sleep(espera)
 
         except gspread.WorksheetNotFound:
-            raise  # nao tenta de novo
+            raise
 
         except Exception as e:
             ultima_excecao = e
@@ -172,15 +173,10 @@ def sincronizar(destino_id: str, nome_planilha: str) -> dict:
 
 
 # ===========================================================================
-# CARREGA THRESHOLDS DA ABA _Config
+# CARREGA THRESHOLDS DA ABA _Config (sem retry)
 # ===========================================================================
 
 def _carregar_thresholds(ss_origem) -> dict:
-    """
-    Le aba _Config (chave/valor) da planilha origem.
-    NAO faz retry — se falhar agora, propaga o erro rapido para nao prender
-    o request inteiro tentando ler 2 valores que provavelmente vao falhar de novo.
-    """
     try:
         ws = ss_origem.worksheet(ABA_CONFIG_INTERNA)
     except gspread.WorksheetNotFound:
@@ -190,7 +186,6 @@ def _carregar_thresholds(ss_origem) -> dict:
         logger.warning(f"[sheets_sync] Erro ao abrir {ABA_CONFIG_INTERNA}: {e}")
         return {}
 
-    # Chamada direta SEM retry — se der 503 aqui, melhor falhar rapido
     try:
         dados = ws.get(RANGE_CONFIG_INTERNA)
     except Exception as e:
@@ -212,7 +207,6 @@ def _carregar_thresholds(ss_origem) -> dict:
 # ===========================================================================
 
 def _col_letra_para_indice(letra: str) -> int:
-    """A=0, B=1, ..., Z=25, AA=26..."""
     letra = letra.upper()
     n = 0
     for c in letra:
@@ -304,7 +298,6 @@ def _aplicar_filtros(linha: list, filtros: list, thresholds: dict, hoje: date) -
 
 
 def _ler_aba_em_chunks(ws, linha_inicial: int, chunk_size: int, max_col: str = "Z"):
-    """Gera chunks de linhas da aba, parando quando vier vazio."""
     pos = linha_inicial
     while True:
         fim = pos + chunk_size - 1
@@ -330,15 +323,12 @@ def _sincronizar_filtrado(ss_origem, ss_destino, cfg: dict, thresholds: dict) ->
     t = time.time()
     hoje = date.today()
 
-    if "saida_continua" in cfg:
-        modo_saida = "continua"
-        s = cfg["saida_continua"]
-        indices_saida = [_col_letra_para_indice(c) for c in s["colunas_origem"]]
-    elif "saida_blocos" in cfg:
-        modo_saida = "blocos"
-        s = cfg["saida_blocos"]
-    else:
-        raise ValueError(f"Config sem saida_continua nem saida_blocos: {cfg['aba_destino']}")
+    s = cfg.get("saida_continua")
+    if not s:
+        raise ValueError(f"Config sem saida_continua: {cfg['aba_destino']}")
+
+    indices_saida = [_col_letra_para_indice(c) for c in s["colunas_origem"]]
+    linha_inicio = s.get("linha_inicio_destino", 1)
 
     linhas_filtradas = []
 
@@ -357,44 +347,29 @@ def _sincronizar_filtrado(ss_origem, ss_destino, cfg: dict, thresholds: dict) ->
         gc.collect()
         logger.info(f"[sheets_sync] {fonte['aba']}: {contador_fonte} linhas apos filtro")
 
-    if not linhas_filtradas:
-        # ainda assim limpa o destino para nao deixar dados stale
-        ws_destino = _garantir_aba(ss_destino, cfg["aba_destino"])
-        if modo_saida == "continua":
-            num_cols = len(indices_saida)
-            _limpar_aba(ws_destino, s["col_inicio_destino"], num_cols, s.get("col_protegida_de"))
-        else:
-            for bloco in s["blocos"]:
-                cd = bloco["col_inicio_destino"]
-                nc = len(bloco["colunas_origem"])
-                _limpar_aba(ws_destino, cd, nc, s.get("col_protegida_de"))
-        return {"ok": True, "linhas": 0, "segundos": round(time.time() - t, 2)}
-
     ws_destino = _garantir_aba(ss_destino, cfg["aba_destino"])
-
-    if modo_saida == "continua":
-        return _escrever_saida_continua(ws_destino, linhas_filtradas, indices_saida, s, t)
-    else:
-        return _escrever_saida_blocos(ws_destino, linhas_filtradas, s, t)
-
-
-def _escrever_saida_continua(ws_destino, linhas_filtradas, indices_saida, s, t):
-    dados_saida = [
-        [linha[i] if i < len(linha) else "" for i in indices_saida]
-        for linha in linhas_filtradas
-    ]
     num_cols = len(indices_saida)
 
+    # Limpa destino (respeitando linha_inicio e col_protegida_de)
     _limpar_aba(
         ws_destino,
         col_inicio=s["col_inicio_destino"],
         num_cols=num_cols,
         col_protegida_de=s.get("col_protegida_de"),
+        linha_inicio=linha_inicio,
     )
+
+    if not linhas_filtradas:
+        return {"ok": True, "linhas": 0, "segundos": round(time.time() - t, 2)}
+
+    dados_saida = [
+        [linha[i] if i < len(linha) else "" for i in indices_saida]
+        for linha in linhas_filtradas
+    ]
 
     col_letra = _col_para_letra(s["col_inicio_destino"])
     _chamar_api(
-        lambda: ws_destino.update(f"{col_letra}1", dados_saida, value_input_option="USER_ENTERED"),
+        lambda: ws_destino.update(f"{col_letra}{linha_inicio}", dados_saida, value_input_option="USER_ENTERED"),
         f"update destino {ws_destino.title}"
     )
 
@@ -402,50 +377,6 @@ def _escrever_saida_continua(ws_destino, linhas_filtradas, indices_saida, s, t):
         "ok"      : True,
         "linhas"  : len(dados_saida),
         "colunas" : num_cols,
-        "segundos": round(time.time() - t, 2),
-    }
-
-
-def _escrever_saida_blocos(ws_destino, linhas_filtradas, s, t):
-    col_protegida_de = s.get("col_protegida_de")
-
-    # Limpa cada bloco
-    for bloco in s["blocos"]:
-        cd = bloco["col_inicio_destino"]
-        nc = len(bloco["colunas_origem"])
-        col_fim = cd + nc - 1
-        if col_protegida_de:
-            col_fim = min(col_fim, col_protegida_de - 1)
-        if col_fim >= cd:
-            col_a = _col_para_letra(cd)
-            col_b = _col_para_letra(col_fim)
-            _chamar_api(
-                lambda a=col_a, b=col_b: ws_destino.batch_clear([f"{a}1:{b}"]),
-                f"batch_clear destino {ws_destino.title} {col_a}:{col_b}"
-            )
-
-    # Escreve cada bloco
-    total_cols = 0
-    for bloco in s["blocos"]:
-        indices_bloco = [_col_letra_para_indice(c) for c in bloco["colunas_origem"]]
-        cd = bloco["col_inicio_destino"]
-        dados_bloco = [
-            [linha[i] if i < len(linha) else "" for i in indices_bloco]
-            for linha in linhas_filtradas
-        ]
-        if not dados_bloco:
-            continue
-        col_letra = _col_para_letra(cd)
-        _chamar_api(
-            lambda d=dados_bloco, c=col_letra: ws_destino.update(f"{c}1", d, value_input_option="USER_ENTERED"),
-            f"update destino {ws_destino.title} bloco {col_letra}"
-        )
-        total_cols += len(indices_bloco)
-
-    return {
-        "ok"      : True,
-        "linhas"  : len(linhas_filtradas),
-        "colunas" : total_cols,
         "segundos": round(time.time() - t, 2),
     }
 
@@ -586,7 +517,7 @@ def _garantir_aba(ss, nome_aba):
         return ss.add_worksheet(title=nome_aba, rows=1000, cols=50)
 
 
-def _limpar_aba(ws, col_inicio: int, num_cols: int, col_protegida_de):
+def _limpar_aba(ws, col_inicio: int, num_cols: int, col_protegida_de, linha_inicio: int = 1):
     col_fim = col_inicio + num_cols - 1
     if col_protegida_de:
         col_fim = min(col_fim, col_protegida_de - 1)
@@ -595,8 +526,8 @@ def _limpar_aba(ws, col_inicio: int, num_cols: int, col_protegida_de):
     col_a = _col_para_letra(col_inicio)
     col_b = _col_para_letra(col_fim)
     _chamar_api(
-        lambda: ws.batch_clear([f"{col_a}1:{col_b}"]),
-        f"batch_clear {ws.title} {col_a}:{col_b}"
+        lambda: ws.batch_clear([f"{col_a}{linha_inicio}:{col_b}"]),
+        f"batch_clear {ws.title} {col_a}{linha_inicio}:{col_b}"
     )
 
 

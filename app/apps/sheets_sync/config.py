@@ -6,62 +6,8 @@ Configurações centralizadas de todas as planilhas suportadas.
 Modos suportados:
   - "continuo"  : escrita sequencial a partir de col_inicio_destino
   - "gap"       : escrita em blocos com colunas vazias no meio
-  - "filtrado"  : filtra linhas e seleciona colunas de uma ou mais abas origem,
-                  concatenando e escrevendo no destino (substitui QUERYs)
-
-Para adicionar uma nova planilha, basta incluir uma nova entrada em PLANILHAS.
+  - "filtrado"  : filtra linhas e seleciona colunas, substituindo QUERY
 """
-
-# ---------------------------------------------------------------------------
-# Estrutura modo "filtrado":
-#
-# {
-#   "modo"               : "filtrado",
-#   "aba_destino"        : nome da aba destino
-#   "origem_id"          : ID da planilha origem
-#   "fontes": [
-#       {
-#           "aba"           : nome da aba origem (ex: "Pendências")
-#           "linha_inicial" : primeira linha de dados (ex: 3)
-#           "filtros": [
-#               {"col": "A", "op": "gt",      "valor": 779166760, "tipo": "int"},
-#               {"col": "J", "op": "not_in",  "valor": ["RECEBIDO", "CANCELADO"]},
-#               {"col": "J", "op": "ne",      "valor": "CANCELADO"},
-#               {"col": "...", "op": "exclude_recebidos_antigos_30d"},  # filtro especial
-#           ],
-#           "threshold_chave": "threshold_pendencias",  # se o valor vier de _Config (opcional)
-#       },
-#       ...
-#   ]
-#   -- escolha UM dos dois modos de saída:
-#
-#   -- "saida_continua": colunas concatenadas a partir de col_inicio_destino
-#   "saida_continua": {
-#       "colunas_origem"     : ["A", "B", "E", ...],   # quais colunas extrair
-#       "col_inicio_destino" : 2,                       # B no destino
-#       "col_protegida_de"   : None,
-#   }
-#
-#   -- "saida_blocos": múltiplos blocos contíguos com gaps no destino
-#   "saida_blocos": {
-#       "blocos": [
-#           {"colunas_origem": [...], "col_inicio_destino": 1},
-#           {"colunas_origem": [...], "col_inicio_destino": 14},
-#       ],
-#       "col_limpar_ate"   : 24,    # limpa A..X antes de escrever
-#       "col_protegida_de" : 25,
-#   }
-# }
-#
-# OPERADORES de filtro suportados:
-#   "gt"      : maior que
-#   "lt"      : menor que
-#   "eq"      : igual
-#   "ne"      : diferente
-#   "in"      : valor em lista
-#   "not_in"  : valor NÃO em lista
-#   "exclude_recebidos_antigos_30d": filtro especial — exclui linhas com J=RECEBIDO E coluna O <= HOJE-30
-# ---------------------------------------------------------------------------
 
 PLANILHAS = {
 
@@ -72,6 +18,7 @@ PLANILHAS = {
         "abas": [
             # -----------------------------------------------------------
             # SSEspelho (filtrado — substitui QUERY)
+            # Dados em B2 — preserva cabeçalho na linha 1
             # -----------------------------------------------------------
             {
                 "modo"        : "filtrado",
@@ -96,14 +43,15 @@ PLANILHAS = {
                     },
                 ],
                 "saida_continua": {
-                    "colunas_origem"     : ["A", "B", "E", "F", "G", "H", "I", "J", "K", "U", "V", "W", "X"],
-                    "col_inicio_destino" : 2,     # B
-                    "col_protegida_de"   : None,
+                    "colunas_origem"      : ["A", "B", "E", "F", "G", "H", "I", "J", "K", "U", "V", "W", "X"],
+                    "col_inicio_destino"  : 2,     # B
+                    "linha_inicio_destino": 2,     # preserva linha 1 (cabeçalho)
+                    "col_protegida_de"    : None,
                 },
             },
 
             # -----------------------------------------------------------
-            # SSEspelhoRecebidos (cópia simples, mantém modo contínuo)
+            # SSEspelhoRecebidos
             # -----------------------------------------------------------
             {
                 "modo"               : "continuo",
@@ -154,7 +102,7 @@ PLANILHAS = {
     "Cotação de Suprimentos": {
         "abas": [
             # -----------------------------------------------------------
-            # RegistroCotePedEspelho (já era gap, sem mudança)
+            # RegistroCotePedEspelho
             # -----------------------------------------------------------
             {
                 "modo"             : "gap",
@@ -171,8 +119,9 @@ PLANILHAS = {
             },
 
             # -----------------------------------------------------------
-            # SSEspelho (Cotação de Suprimentos) - filtrado em blocos
-            # Substitui as 3 QUERYs (A1, N1, T1) em SSEspelhoCotações
+            # SSEspelho (Cotação de Suprimentos)
+            # Lê A:X filtrado das abas origem e cola em B:Y do destino.
+            # Dados começam em B1 (sem preservar linha 1).
             # -----------------------------------------------------------
             {
                 "modo"        : "filtrado",
@@ -196,31 +145,16 @@ PLANILHAS = {
                         ],
                     },
                 ],
-                "saida_blocos": {
-                    "blocos": [
-                        # Bloco A1: A:L origem → B:M destino (12 colunas, escrita a partir de B)
-                        {
-                            "colunas_origem"     : ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"],
-                            "col_inicio_destino" : 2,     # B
-                        },
-                        # Bloco N1: N:R origem → N:R destino (5 colunas)
-                        {
-                            "colunas_origem"     : ["N", "O", "P", "Q", "R"],
-                            "col_inicio_destino" : 14,    # N
-                        },
-                        # Bloco T1: T:X origem → T:X destino (5 colunas)
-                        {
-                            "colunas_origem"     : ["T", "U", "V", "W", "X"],
-                            "col_inicio_destino" : 20,    # T
-                        },
-                    ],
-                    "col_limpar_ate"   : 24,    # limpa B..X (col 2..24)
-                    "col_protegida_de" : 26,    # Z em diante = não toca (mantido do original)
+                "saida_continua": {
+                    "colunas_origem"      : ["A","B","C","D","E","F","G","H","I","J","K","L",
+                                             "M","N","O","P","Q","R","S","T","U","V","W","X"],
+                    "col_inicio_destino"  : 2,     # B
+                    "col_protegida_de"    : 26,    # Z em diante = não toca
                 },
             },
 
             # -----------------------------------------------------------
-            # SSEspelhoSparkline (gap, sem mudança)
+            # SSEspelhoSparkline
             # -----------------------------------------------------------
             {
                 "modo"             : "gap",
@@ -253,7 +187,7 @@ PLANILHAS = {
             },
 
             # -----------------------------------------------------------
-            # RegistroCotaçõesFornecedor (continuo, sem mudança)
+            # RegistroCotaçõesFornecedor
             # -----------------------------------------------------------
             {
                 "modo"               : "continuo",
@@ -272,12 +206,11 @@ PLANILHAS = {
 
 
 # ---------------------------------------------------------------------------
-# Configuração da aba interna _Config (presente nas planilhas origem
-# que precisam fornecer thresholds dinâmicos para filtros)
+# Aba interna _Config (lê thresholds dinâmicos)
 # ---------------------------------------------------------------------------
 
 ABA_CONFIG_INTERNA = "_Config"
-RANGE_CONFIG_INTERNA = "A2:B"   # lê chave (col A) e valor (col B), pulando cabeçalho
+RANGE_CONFIG_INTERNA = "A2:B"
 
 
 def identificar_planilha(nome: str) -> dict | None:
