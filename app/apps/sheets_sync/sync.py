@@ -11,6 +11,7 @@ Modos suportados:
 Inclui:
   - Retry com backoff exponencial para erros transientes da Sheets API
   - Leitura em chunks para evitar OOM em abas grandes (Pedidos com 70k linhas)
+  - _Config sem retry — falha rapido se a planilha mestre estiver indisponivel
 """
 
 import os
@@ -175,6 +176,11 @@ def sincronizar(destino_id: str, nome_planilha: str) -> dict:
 # ===========================================================================
 
 def _carregar_thresholds(ss_origem) -> dict:
+    """
+    Le aba _Config (chave/valor) da planilha origem.
+    NAO faz retry — se falhar agora, propaga o erro rapido para nao prender
+    o request inteiro tentando ler 2 valores que provavelmente vao falhar de novo.
+    """
     try:
         ws = ss_origem.worksheet(ABA_CONFIG_INTERNA)
     except gspread.WorksheetNotFound:
@@ -184,7 +190,13 @@ def _carregar_thresholds(ss_origem) -> dict:
         logger.warning(f"[sheets_sync] Erro ao abrir {ABA_CONFIG_INTERNA}: {e}")
         return {}
 
-    dados = _chamar_api(lambda: ws.get(RANGE_CONFIG_INTERNA), "get _Config")
+    # Chamada direta SEM retry — se der 503 aqui, melhor falhar rapido
+    try:
+        dados = ws.get(RANGE_CONFIG_INTERNA)
+    except Exception as e:
+        logger.error(f"[sheets_sync] Erro ao ler {ABA_CONFIG_INTERNA}: {e}")
+        raise RuntimeError(f"Não foi possível ler aba _Config: {e}")
+
     thresholds = {}
     for linha in dados:
         if len(linha) >= 2 and linha[0].strip():
