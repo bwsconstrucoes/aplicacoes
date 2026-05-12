@@ -2,238 +2,268 @@
 """
 sheets_sync/config.py
 Configurações centralizadas de todas as planilhas suportadas.
-A identificação é feita pelo nome da planilha (substring).
+
+Modos suportados:
+  - "continuo"  : escrita sequencial a partir de col_inicio_destino
+  - "gap"       : escrita em blocos com colunas vazias no meio
+  - "filtrado"  : filtra linhas e seleciona colunas de uma ou mais abas origem,
+                  concatenando e escrevendo no destino (substitui QUERYs)
+
 Para adicionar uma nova planilha, basta incluir uma nova entrada em PLANILHAS.
 """
 
 # ---------------------------------------------------------------------------
-# Estrutura de uma aba:
+# Estrutura modo "filtrado":
 #
 # {
-#   "aba_origem":   nome da aba na planilha de origem
-#   "origem_id":    ID da planilha de origem
-#   "aba_destino":  nome da aba na planilha de destino
-#   "modo":         "continuo" | "gap"
-#
-#   -- modo "continuo" (escrita sequencial a partir de col_inicio_destino):
-#   "col_inicio_destino": coluna inicial no destino (1=A, 2=B...)
-#   "col_inicio_origem":  coluna inicial na origem  (1=A, 2=B...)
-#   "num_cols":           quantas colunas copiar (None = até lastColumn)
-#   "col_protegida_de":   coluna a partir da qual NÃO limpar (None = sem proteção)
-#
-#   -- modo "gap" (escrita em dois blocos com colunas vazias no meio):
-#   "blocos": [
-#       {"col_inicio_origem": X, "num_cols": N, "col_inicio_destino": Y},
-#       {"col_inicio_origem": X, "num_cols": N, "col_inicio_destino": Y},
+#   "modo"               : "filtrado",
+#   "aba_destino"        : nome da aba destino
+#   "origem_id"          : ID da planilha origem
+#   "fontes": [
+#       {
+#           "aba"           : nome da aba origem (ex: "Pendências")
+#           "linha_inicial" : primeira linha de dados (ex: 3)
+#           "filtros": [
+#               {"col": "A", "op": "gt",      "valor": 779166760, "tipo": "int"},
+#               {"col": "J", "op": "not_in",  "valor": ["RECEBIDO", "CANCELADO"]},
+#               {"col": "J", "op": "ne",      "valor": "CANCELADO"},
+#               {"col": "...", "op": "exclude_recebidos_antigos_30d"},  # filtro especial
+#           ],
+#           "threshold_chave": "threshold_pendencias",  # se o valor vier de _Config (opcional)
+#       },
+#       ...
 #   ]
-#   "col_limpar_ate": última coluna a limpar antes de escrever (ex: 18 = R)
-#   "col_protegida_de": coluna a partir da qual NÃO limpar (None = sem proteção)
+#   -- escolha UM dos dois modos de saída:
+#
+#   -- "saida_continua": colunas concatenadas a partir de col_inicio_destino
+#   "saida_continua": {
+#       "colunas_origem"     : ["A", "B", "E", ...],   # quais colunas extrair
+#       "col_inicio_destino" : 2,                       # B no destino
+#       "col_protegida_de"   : None,
+#   }
+#
+#   -- "saida_blocos": múltiplos blocos contíguos com gaps no destino
+#   "saida_blocos": {
+#       "blocos": [
+#           {"colunas_origem": [...], "col_inicio_destino": 1},
+#           {"colunas_origem": [...], "col_inicio_destino": 14},
+#       ],
+#       "col_limpar_ate"   : 24,    # limpa A..X antes de escrever
+#       "col_protegida_de" : 25,
+#   }
 # }
+#
+# OPERADORES de filtro suportados:
+#   "gt"      : maior que
+#   "lt"      : menor que
+#   "eq"      : igual
+#   "ne"      : diferente
+#   "in"      : valor em lista
+#   "not_in"  : valor NÃO em lista
+#   "exclude_recebidos_antigos_30d": filtro especial — exclui linhas com J=RECEBIDO E coluna O <= HOJE-30
 # ---------------------------------------------------------------------------
 
 PLANILHAS = {
 
-    # -----------------------------------------------------------------------
+    # =======================================================================
     # Mapa de Cotação
-    # -----------------------------------------------------------------------
+    # =======================================================================
     "Mapa de Cotação": {
         "abas": [
+            # -----------------------------------------------------------
+            # SSEspelho (filtrado — substitui QUERY)
+            # -----------------------------------------------------------
             {
-                "modo"               : "continuo",
-                "aba_origem"         : "SSEspelho",
-                "origem_id"          : "1PvecWVPcqMmj1o056ZErevt0cjna6ggz48uNFTahu_M",
-                "aba_destino"        : "SSEspelho",
-                "col_inicio_destino" : 2,     # B
-                "col_inicio_origem"  : 1,     # A
-                "num_cols"           : 24,    # A:X
-                "col_protegida_de"   : None,
+                "modo"        : "filtrado",
+                "aba_destino" : "SSEspelho",
+                "origem_id"   : "1PvecWVPcqMmj1o056ZErevt0cjna6ggz48uNFTahu_M",
+                "fontes": [
+                    {
+                        "aba"            : "Pendências",
+                        "linha_inicial"  : 3,
+                        "filtros": [
+                            {"col": "A", "op": "gt", "tipo": "int", "threshold_chave": "threshold_pendencias"},
+                            {"col": "J", "op": "not_in", "valor": ["RECEBIDO", "CANCELADO"]},
+                        ],
+                    },
+                    {
+                        "aba"            : "Pedidos",
+                        "linha_inicial"  : 3,
+                        "filtros": [
+                            {"col": "A", "op": "gt", "tipo": "int", "threshold_chave": "threshold_pedidos"},
+                            {"col": "J", "op": "not_in", "valor": ["RECEBIDO", "CANCELADO"]},
+                        ],
+                    },
+                ],
+                "saida_continua": {
+                    "colunas_origem"     : ["A", "B", "E", "F", "G", "H", "I", "J", "K", "U", "V", "W", "X"],
+                    "col_inicio_destino" : 2,     # B
+                    "col_protegida_de"   : None,
+                },
             },
+
+            # -----------------------------------------------------------
+            # SSEspelhoRecebidos (cópia simples, mantém modo contínuo)
+            # -----------------------------------------------------------
             {
                 "modo"               : "continuo",
                 "aba_origem"         : "SSEspelhoRecebidos",
                 "origem_id"          : "1PvecWVPcqMmj1o056ZErevt0cjna6ggz48uNFTahu_M",
                 "aba_destino"        : "SSEspelhoRecebidos",
-                "col_inicio_destino" : 2,     # B
-                "col_inicio_origem"  : 1,     # A
-                "num_cols"           : 5,     # A:E
+                "col_inicio_destino" : 2,
+                "col_inicio_origem"  : 1,
+                "num_cols"           : 5,
                 "col_protegida_de"   : None,
             },
+
+            # -----------------------------------------------------------
+            # RegistroFornecedores (Mapa de Cotação)
+            # -----------------------------------------------------------
             {
-                # RegistroFornecedores (Mapa de Cotação)
-                # Equivalente a:
-                #   QUERY(IMPORTRANGE(...; "Registro!A:N");
-                #         "Select Col1..Col11, Col14")
-                # Resultado: 12 colunas contíguas no destino (A→L),
-                # comprimindo N para a posição de L (pula L,M da origem).
-                # Colunas M+ no destino podem ter fórmulas — NÃO TOCAR.
                 "modo"             : "gap",
                 "aba_origem"       : "Registro",
                 "origem_id"        : "1xIXuYhPRBgAnIk4aLV93kyWGikR7RKMAWVHPGiLYPQk",
                 "aba_destino"      : "RegistroFornecedores",
-                "col_limpar_ate"   : 12,    # limpa A→L antes de escrever
-                "col_protegida_de" : 13,    # M em diante = não toca
+                "col_limpar_ate"   : 12,
+                "col_protegida_de" : 13,
                 "blocos": [
-                    # Bloco 1: A→K da origem → A→K do destino (11 colunas)
-                    {
-                        "col_inicio_origem"  : 1,    # A
-                        "num_cols"           : 11,   # A..K
-                        "col_inicio_destino" : 1,    # A
-                    },
-                    # Bloco 2: N da origem → L do destino (1 coluna, gap em L,M da origem)
-                    {
-                        "col_inicio_origem"  : 14,   # N
-                        "num_cols"           : 1,
-                        "col_inicio_destino" : 12,   # L
-                    },
+                    {"col_inicio_origem": 1,  "num_cols": 11, "col_inicio_destino": 1},
+                    {"col_inicio_origem": 14, "num_cols": 1,  "col_inicio_destino": 12},
                 ],
             },
+
+            # -----------------------------------------------------------
+            # RegistroCotePedEspelho (Mapa de Cotação)
+            # -----------------------------------------------------------
             {
-                # RegistroCotePedEspelho (Mapa de Cotação)
-                # Equivalente a:
-                #   IMPORTRANGE("1JKhvjAUlTuqt2yMbqZNnzk4IGJ57Cx0MwMU4hGH_ajY";
-                #               "RegistrosCotaçõesMapa!A1:F5000")
-                # Escreve A→F a partir de A1. Colunas G+ no destino preservadas.
                 "modo"               : "continuo",
                 "aba_origem"         : "RegistrosCotaçõesMapa",
                 "origem_id"          : "1JKhvjAUlTuqt2yMbqZNnzk4IGJ57Cx0MwMU4hGH_ajY",
                 "aba_destino"        : "RegistroCotePedEspelho",
-                "col_inicio_destino" : 1,    # A
-                "col_inicio_origem"  : 1,    # A
-                "num_cols"           : 6,    # A..F
-                "col_protegida_de"   : 7,    # G em diante = não toca
+                "col_inicio_destino" : 1,
+                "col_inicio_origem"  : 1,
+                "num_cols"           : 6,
+                "col_protegida_de"   : 7,
             },
         ]
     },
 
-    # -----------------------------------------------------------------------
+    # =======================================================================
     # Cotação de Suprimentos
-    # -----------------------------------------------------------------------
+    # =======================================================================
     "Cotação de Suprimentos": {
         "abas": [
+            # -----------------------------------------------------------
+            # RegistroCotePedEspelho (já era gap, sem mudança)
+            # -----------------------------------------------------------
             {
-                # Colunas do destino RegistroCotePedEspelho:
-                #   A→C  : Registros A→C  (bloco 1)
-                #   D    : vazio (gap intencional)
-                #   E→G  : Registros E→G  (bloco 2)
-                #   H    : vazio (gap intencional)
-                #   I→R  : Registros I→S excluindo Q (bloco 3, 10 colunas)
-                #   S+   : fórmulas — NÃO TOCAR
-                #
-                # Mapeamento Registros I→S (11 colunas, índices 0-based):
-                #   idx 0=I, 1=J, 2=K, 3=L, 4=M, 5=N, 6=O, 7=P, 8=Q(excluir), 9=R, 10=S
                 "modo"             : "gap",
                 "aba_origem"       : "Registros",
                 "origem_id"        : "1JKhvjAUlTuqt2yMbqZNnzk4IGJ57Cx0MwMU4hGH_ajY",
                 "aba_destino"      : "RegistroCotePedEspelho",
-                "col_limpar_ate"   : 18,   # limpa A→R antes de escrever
-                "col_protegida_de" : 19,   # S em diante = não toca
+                "col_limpar_ate"   : 18,
+                "col_protegida_de" : 19,
                 "blocos": [
-                    # Bloco 1: A→C da origem → A→C do destino
-                    {
-                        "col_inicio_origem"  : 1,   # A
-                        "num_cols"           : 3,   # A, B, C
-                        "col_inicio_destino" : 1,   # A
-                    },
-                    # Bloco 2: E→G da origem → E→G do destino
-                    {
-                        "col_inicio_origem"  : 5,   # E
-                        "num_cols"           : 3,   # E, F, G
-                        "col_inicio_destino" : 5,   # E
-                    },
-                    # Bloco 3: I→S da origem → I→R do destino (exclui Q = idx 8)
-                    {
-                        "col_inicio_origem"  : 9,    # I
-                        "num_cols"           : 11,   # I→S = 11 colunas
-                        "col_inicio_destino" : 9,    # I
-                        "excluir_indices"    : [8],  # Q = índice 8 (0-based) dentro do bloco
-                    },
+                    {"col_inicio_origem": 1, "num_cols": 3,  "col_inicio_destino": 1},
+                    {"col_inicio_origem": 5, "num_cols": 3,  "col_inicio_destino": 5},
+                    {"col_inicio_origem": 9, "num_cols": 11, "col_inicio_destino": 9, "excluir_indices": [8]},
                 ],
             },
+
+            # -----------------------------------------------------------
+            # SSEspelho (Cotação de Suprimentos) - filtrado em blocos
+            # Substitui as 3 QUERYs (A1, N1, T1) em SSEspelhoCotações
+            # -----------------------------------------------------------
             {
-                "modo"               : "continuo",
-                "aba_origem"         : "SSEspelhoCotações",
-                "origem_id"          : "1PvecWVPcqMmj1o056ZErevt0cjna6ggz48uNFTahu_M",
-                "aba_destino"        : "SSEspelho",
-                "col_inicio_destino" : 2,     # B
-                "col_inicio_origem"  : 1,     # A
-                "num_cols"           : 24,    # A:X
-                "col_protegida_de"   : 26,    # Z em diante = não toca
+                "modo"        : "filtrado",
+                "aba_destino" : "SSEspelho",
+                "origem_id"   : "1PvecWVPcqMmj1o056ZErevt0cjna6ggz48uNFTahu_M",
+                "fontes": [
+                    {
+                        "aba"            : "Pendências",
+                        "linha_inicial"  : 3,
+                        "filtros": [
+                            {"col": "J", "op": "ne", "valor": "CANCELADO"},
+                            {"op": "exclude_recebidos_antigos_30d", "col_status": "J", "col_data": "O"},
+                        ],
+                    },
+                    {
+                        "aba"            : "Pedidos",
+                        "linha_inicial"  : 4,
+                        "filtros": [
+                            {"col": "J", "op": "ne", "valor": "CANCELADO"},
+                            {"op": "exclude_recebidos_antigos_30d", "col_status": "J", "col_data": "O"},
+                        ],
+                    },
+                ],
+                "saida_blocos": {
+                    "blocos": [
+                        # Bloco A1: A:L origem → B:M destino (12 colunas, escrita a partir de B)
+                        {
+                            "colunas_origem"     : ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"],
+                            "col_inicio_destino" : 2,     # B
+                        },
+                        # Bloco N1: N:R origem → N:R destino (5 colunas)
+                        {
+                            "colunas_origem"     : ["N", "O", "P", "Q", "R"],
+                            "col_inicio_destino" : 14,    # N
+                        },
+                        # Bloco T1: T:X origem → T:X destino (5 colunas)
+                        {
+                            "colunas_origem"     : ["T", "U", "V", "W", "X"],
+                            "col_inicio_destino" : 20,    # T
+                        },
+                    ],
+                    "col_limpar_ate"   : 24,    # limpa B..X (col 2..24)
+                    "col_protegida_de" : 26,    # Z em diante = não toca (mantido do original)
+                },
             },
+
+            # -----------------------------------------------------------
+            # SSEspelhoSparkline (gap, sem mudança)
+            # -----------------------------------------------------------
             {
-                # SSEspelhoSparkline:
-                #   Copia A→C da origem → A→C do destino
-                #   Coluna D do destino tem fórmulas — NÃO TOCAR
-                #   Copia E→I da origem → E→I do destino
                 "modo"             : "gap",
                 "aba_origem"       : "SSEspelhoRecebimentoPedidos",
                 "origem_id"        : "1PvecWVPcqMmj1o056ZErevt0cjna6ggz48uNFTahu_M",
                 "aba_destino"      : "SSEspelhoSparkline",
-                "col_limpar_ate"   : 9,    # limpa até I (col 9) antes de escrever
+                "col_limpar_ate"   : 9,
                 "col_protegida_de" : None,
                 "blocos": [
-                    # Bloco 1: A→C da origem → A→C do destino
-                    {
-                        "col_inicio_origem"  : 1,  # A
-                        "num_cols"           : 3,  # A, B, C
-                        "col_inicio_destino" : 1,  # A
-                    },
-                    # Bloco 2: E→I da origem → E→I do destino (D fica intocada)
-                    {
-                        "col_inicio_origem"  : 5,  # E
-                        "num_cols"           : 5,  # E, F, G, H, I
-                        "col_inicio_destino" : 5,  # E
-                    },
+                    {"col_inicio_origem": 1, "num_cols": 3, "col_inicio_destino": 1},
+                    {"col_inicio_origem": 5, "num_cols": 5, "col_inicio_destino": 5},
                 ],
             },
+
+            # -----------------------------------------------------------
+            # RegistroFornecedores (Cotação de Suprimentos)
+            # -----------------------------------------------------------
             {
-                # RegistroFornecedores (Cotação de Suprimentos)
-                # Equivalente a:
-                #   QUERY(IMPORTRANGE(...; "Registro!A:S");
-                #         "Select Col1..Col11, Col14, Col19")
-                # Resultado: 13 colunas contíguas no destino (A→M),
-                # comprimindo N→L e S→M (pula L,M e O..R da origem).
-                # Colunas N+ no destino podem ter fórmulas — NÃO TOCAR.
                 "modo"             : "gap",
                 "aba_origem"       : "Registro",
                 "origem_id"        : "1xIXuYhPRBgAnIk4aLV93kyWGikR7RKMAWVHPGiLYPQk",
                 "aba_destino"      : "RegistroFornecedores",
-                "col_limpar_ate"   : 13,    # limpa A→M antes de escrever
-                "col_protegida_de" : 14,    # N em diante = não toca
+                "col_limpar_ate"   : 13,
+                "col_protegida_de" : 14,
                 "blocos": [
-                    # Bloco 1: A→K da origem → A→K do destino (11 colunas)
-                    {
-                        "col_inicio_origem"  : 1,    # A
-                        "num_cols"           : 11,   # A..K
-                        "col_inicio_destino" : 1,    # A
-                    },
-                    # Bloco 2: N da origem → L do destino
-                    {
-                        "col_inicio_origem"  : 14,   # N
-                        "num_cols"           : 1,
-                        "col_inicio_destino" : 12,   # L
-                    },
-                    # Bloco 3: S da origem → M do destino
-                    {
-                        "col_inicio_origem"  : 19,   # S
-                        "num_cols"           : 1,
-                        "col_inicio_destino" : 13,   # M
-                    },
+                    {"col_inicio_origem": 1,  "num_cols": 11, "col_inicio_destino": 1},
+                    {"col_inicio_origem": 14, "num_cols": 1,  "col_inicio_destino": 12},
+                    {"col_inicio_origem": 19, "num_cols": 1,  "col_inicio_destino": 13},
                 ],
             },
+
+            # -----------------------------------------------------------
+            # RegistroCotaçõesFornecedor (continuo, sem mudança)
+            # -----------------------------------------------------------
             {
-                # RegistroCotaçõesFornecedor (Cotação de Suprimentos)
-                # Equivalente a:
-                #   IMPORTRANGE("1JKhvjAUlTuqt2yMbqZNnzk4IGJ57Cx0MwMU4hGH_ajY";
-                #               "Cotações!A:Q")
-                # Escreve A→Q a partir de A1. Colunas R+ no destino preservadas.
                 "modo"               : "continuo",
                 "aba_origem"         : "Cotações",
                 "origem_id"          : "1JKhvjAUlTuqt2yMbqZNnzk4IGJ57Cx0MwMU4hGH_ajY",
                 "aba_destino"        : "RegistroCotaçõesFornecedor",
-                "col_inicio_destino" : 1,    # A
-                "col_inicio_origem"  : 1,    # A
-                "num_cols"           : 17,   # A..Q
-                "col_protegida_de"   : 18,   # R em diante = não toca
+                "col_inicio_destino" : 1,
+                "col_inicio_origem"  : 1,
+                "num_cols"           : 17,
+                "col_protegida_de"   : 18,
             },
         ]
     },
@@ -241,11 +271,17 @@ PLANILHAS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Configuração da aba interna _Config (presente nas planilhas origem
+# que precisam fornecer thresholds dinâmicos para filtros)
+# ---------------------------------------------------------------------------
+
+ABA_CONFIG_INTERNA = "_Config"
+RANGE_CONFIG_INTERNA = "A2:B"   # lê chave (col A) e valor (col B), pulando cabeçalho
+
+
 def identificar_planilha(nome: str) -> dict | None:
-    """
-    Retorna a config da planilha cujo identificador está contido no nome.
-    Retorna None se não encontrar.
-    """
+    """Retorna a config da planilha cujo identificador está contido no nome."""
     for chave, config in PLANILHAS.items():
         if chave.lower() in nome.lower():
             return config
