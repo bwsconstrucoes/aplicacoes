@@ -147,11 +147,11 @@ def build_update_card_mutation(plan, card_info: Optional[Dict[str, Any]] = None)
     if procedimento == 'Transferência de Recursos' and banco_destino_pipefy:
         add('n10', 'banco_destino', banco_destino_pipefy)
 
-    # Move card Conexão DC1 para fase 340593562 (se preenchido)
-    dc_id = as_string(get_field_value(card_info, 'Conexão DC1'))
-    if dc_id and dc_id.strip():
+    # Move card Conexão DC ID1 para fase 340593562 (se preenchido)
+    dc_id = as_string(get_field_value(card_info, 'Conexão DC ID1')).strip()
+    if dc_id:
         aliases.append(
-            f'n_dc: moveCardToPhase(input: {{card_id: "{escape_gql(dc_id.strip())}" destination_phase_id: 340593562}}) {{ clientMutationId }}'
+            f'n_dc: moveCardToPhase(input: {{card_id: "{escape_gql(dc_id)}" destination_phase_id: 340593562}}) {{ clientMutationId }}'
         )
 
     return 'mutation {\n' + '\n'.join(aliases) + '\n}'
