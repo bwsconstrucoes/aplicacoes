@@ -277,35 +277,74 @@ def _montar_observacao(payload: dict, parametros_result: dict) -> str:
     return obs
 
 
+def _parsear_percentual(valor) -> float | None:
+    """
+    Converte percentual da planilha para float.
+    A planilha (localidade US) retorna formato americano: '20.0006746'
+    O normalizar_percentual_omie pode tratar ponto como milhar — aqui
+    fazemos a conversão direta e segura.
+    """
+    s = str(valor or '').strip().replace('%', '').replace('\xa0', '').strip()
+    if not s:
+        return None
+    try:
+        # Formato americano: ponto decimal, sem vírgula de milhar neste contexto
+        return round(float(s), 7)
+    except ValueError:
+        # Tenta formato brasileiro: vírgula decimal
+        try:
+            return round(float(s.replace('.', '').replace(',', '.')), 7)
+        except ValueError:
+            return None
+
+
 def _montar_distribuicao_base(payload: dict, saida: dict) -> list:
     """
     Mapeamento conforme blueprint (módulos 191/198):
-      cCodDep ← saida['Centro de Custo X']   = código Omie do depto (col A→E da planilha resultado)
+      cCodDep ← saida['Centro de Custo X']   = código Omie do depto
       cDesDep ← OmieCentroX do payload       = nome limpo do centro de custo
-      nPerDep ← saida['Centro de Custo X %'] = percentual (col I,K,M,O,Q da planilha resultado)
+      nPerDep ← saida['Centro de Custo X %'] = percentual
+
+    Omie exige nPerDep ou nValDep obrigatoriamente.
+    Se nPerDep vier nulo, calcula como fallback com base nos centros ativos.
     """
+    # Conta centros ativos para calcular percentual de fallback
+    centros_ativos = sum(
+        1 for i in range(1, 6)
+        if as_string(payload.get(f'OmieCentro{i}') or '').strip()
+        and as_string(payload.get(f'OmieCentro{i}') or '').strip() != '[]'
+    )
+    perc_fallback = round(100 / centros_ativos, 7) if centros_ativos > 0 else 100
+
     arr = []
     for i in range(1, 6):
         bruto = as_string(payload.get(f'OmieCentro{i}') or '')
         nome  = limpar_colchetes(bruto)
-        cod   = as_string(saida.get(f'Centro de Custo {i}'))       # código Omie do depto
-        perc  = normalizar_percentual_omie(saida.get(f'Centro de Custo {i} %'))  # percentual
+        cod   = as_string(saida.get(f'Centro de Custo {i}'))
+        perc  = _parsear_percentual(saida.get(f'Centro de Custo {i} %'))
         vazio = not bruto or bruto == '[]'
 
         if i == 1:
-            # CC1 sempre presente (nunca null no Make)
+            # CC1 sempre presente — nunca nulo no nPerDep
+            perc_final = perc if perc else perc_fallback
             arr.append({
                 'cCodDep': cod or None,
                 'cDesDep': nome or None,
-                'nPerDep': perc if perc else None,
+                'nPerDep': perc_final,
                 'nValDep': None,
             })
         else:
             # CC2→5: null se campo vazio/null no payload
+            if vazio:
+                perc_final = None
+            elif perc:
+                perc_final = perc
+            else:
+                perc_final = perc_fallback
             arr.append({
                 'cCodDep': None if vazio else (cod or None),
                 'cDesDep': None if (vazio or bruto == '[]') else (nome or None),
-                'nPerDep': None if (vazio or perc == 0) else perc,
+                'nPerDep': perc_final,
                 'nValDep': None,
             })
     return arr

@@ -62,7 +62,7 @@ def to_number_br(valor) -> float:
             n = s.replace(',', '')
     elif ',' in s:
         n = s.replace('.', '').replace(',', '.')
-    elif re.search(r'\.\d{1,6}$', s):
+    elif re.search(r'\.\d{1,10}$', s):  # aceita até 10 casas decimais (planilha US retorna até 7)
         n = s
     else:
         n = s.replace('.', '')
