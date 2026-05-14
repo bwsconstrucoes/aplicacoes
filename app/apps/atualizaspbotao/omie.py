@@ -117,6 +117,15 @@ def _extrair_codigo_cliente_do_erro(body: dict) -> str:
     return match.group(1) if match else ''
 
 
+def _is_erro_lancamento_nao_cadastrado(body: dict) -> bool:
+    fault = as_string(body.get('faultstring'))
+    code  = as_string(body.get('faultcode'))
+    return (
+        code == 'SOAP-ENV:Client-103' or
+        bool(re.search(r'Lançamento não cadastrado para o Código de Integração', fault, re.IGNORECASE))
+    )
+
+
 def _executar_operacao_conta_pagar(payload: dict, parametros_result: dict, cliente: dict) -> dict:
     if not cliente.get('ok') or not cliente.get('codigo_cliente_fornecedor'):
         return {
@@ -139,7 +148,10 @@ def _executar_operacao_conta_pagar(payload: dict, parametros_result: dict, clien
     if resp_inicial.get('ok'):
         return _montar_resultado_titulo(operacao_inicial, body_inicial, resp_inicial)
 
-    if operacao_inicial == 'incluir' and _is_erro_codigo_integracao_ja_cadastrado(resp_inicial.get('body') or {}):
+    body_resp = resp_inicial.get('body') or {}
+
+    # Fallback 1: Incluir falhou por duplicidade → tenta Alterar
+    if operacao_inicial == 'incluir' and _is_erro_codigo_integracao_ja_cadastrado(body_resp):
         codigo_integracao = as_string(
             (body_inicial.get('param') or [{}])[0].get('codigo_lancamento_integracao')
         )
@@ -153,6 +165,22 @@ def _executar_operacao_conta_pagar(payload: dict, parametros_result: dict, clien
             'acionado': True,
             'motivo': 'Inclusão falhou porque o lançamento já existia.',
             'tentativaInicial': {'operacao': 'incluir', 'request': body_inicial, 'response': resp_inicial}
+        }
+        return resultado
+
+    # Fallback 2: Alterar falhou porque não existe → tenta Incluir
+    if operacao_inicial == 'alterar' and _is_erro_lancamento_nao_cadastrado(body_resp):
+        logger.warning(f"[omie] AlterarContaPagar falhou com Client-103 — tentando IncluirContaPagar")
+        body_incluir = _montar_payload_conta_pagar(
+            payload, parametros_result,
+            cliente['codigo_cliente_fornecedor'], 'incluir'
+        )
+        resp_incluir = _executar_chamada_omie(URL_CONTAPAGAR, body_incluir)
+        resultado = _montar_resultado_titulo('incluir_apos_nao_cadastrado', body_incluir, resp_incluir)
+        resultado['fallback'] = {
+            'acionado': True,
+            'motivo': 'Alteração falhou porque o lançamento não existia — incluído.',
+            'tentativaInicial': {'operacao': 'alterar', 'request': body_inicial, 'response': resp_inicial}
         }
         return resultado
 
@@ -300,25 +328,48 @@ def _limpar_distribuicoes_nulas(arr: list) -> list:
 
 
 def _aplicar_rateio_multiplo(param: dict, rateio_raw):
-    import json
+    import json, re as _re
+
     txt = as_string(rateio_raw)
     if not txt:
         param['distribuicao'] = _limpar_distribuicoes_nulas(param['distribuicao'])
         if not param['distribuicao']:
             param['distribuicao'] = [{'cCodDep': None, 'cDesDep': None, 'nPerDep': 100, 'nValDep': None}]
         return
+
     try:
-        normalized = txt.strip()
-        if not normalized.startswith('{'):
-            normalized = '{' + normalized + '}'
-        fragment = json.loads(normalized)
+        txt = txt.replace('\\"', '"')
+        fragment = {}
+
+        # Extrai distribuicao via regex — robusto contra \n entre os blocos
+        m_dist = _re.search(r'"distribuicao"\s*:\s*(\[.*?\])', txt, _re.DOTALL)
+        if m_dist:
+            try:
+                fragment['distribuicao'] = json.loads(m_dist.group(1))
+            except ValueError:
+                pass
+
+        # Extrai categorias via regex
+        m_cat = _re.search(r'"categorias"\s*:\s*(\[.*?\])', txt, _re.DOTALL)
+        if m_cat:
+            try:
+                fragment['categorias'] = json.loads(m_cat.group(1))
+            except ValueError:
+                pass
+
         if isinstance(fragment.get('distribuicao'), list):
             param['distribuicao'] = _limpar_distribuicoes_nulas(fragment['distribuicao'])
         if isinstance(fragment.get('categorias'), list):
             param['categorias'] = fragment['categorias']
+
         if not param.get('distribuicao'):
             param['distribuicao'] = [{'cCodDep': None, 'cDesDep': None, 'nPerDep': 100, 'nValDep': None}]
-    except (ValueError, KeyError):
+
+        logger.info(f"[rateio_multiplo] distribuicao={len(param.get('distribuicao', []))} "
+                    f"categorias={len(param.get('categorias', []))}")
+
+    except Exception as e:
+        logger.error(f"[rateio_multiplo] Erro ao parsear: {e} | raw={txt[:200]}")
         param['distribuicao'] = _limpar_distribuicoes_nulas(param['distribuicao'])
         if not param['distribuicao']:
             param['distribuicao'] = [{'cCodDep': None, 'cDesDep': None, 'nPerDep': 100, 'nValDep': None}]
