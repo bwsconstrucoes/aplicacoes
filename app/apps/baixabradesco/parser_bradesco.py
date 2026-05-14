@@ -31,7 +31,7 @@ def parse_bradesco_text(filename: str, page: int, text: str, drive_link: str = '
         r.tipo_comprovante = 'fgts_rescisorio'
     elif BEEVALE_TEXT in norm:
         r.tipo_comprovante = 'beevale'
-    elif 'pix' in norm:
+    elif 'pix' in norm or 'txid' in norm or 'somapay' in norm or 'stark bank' in norm or 'bcb.pix' in norm or 'chave pix' in norm:
         r.tipo_comprovante = 'pix'
     elif 'boleto' in norm or 'codigo de barras' in norm or 'linha digitavel' in norm:
         r.tipo_comprovante = 'boleto'
@@ -72,12 +72,15 @@ def extract_descricao(text: str) -> str:
     return as_string(m.group(1)) if m else ''
 
 
-def _first_money_after(patterns, text: str) -> str:
+def _first_money_after(patterns, text: str, skip_zero: bool = False) -> str:
+    from decimal import Decimal
     for p in patterns:
         m = re.search(p, text or '', flags=re.I | re.S)
         if m:
             val = money_to_decimal(m.group(1))
             if val is not None:
+                if skip_zero and val == Decimal('0.00'):
+                    continue
                 return decimal_to_br(val)
     return ''
 
@@ -91,7 +94,7 @@ def extract_valor_pago(text: str) -> str:
         r'Valor\s+final\s*R?\$?\s*([\d\.]+,\d{2})',
         r'Valor\s*:?\s*R\$\s*([\d\.]+,\d{2})',
         r'R\$\s*([\d\.]+,\d{2})',
-    ], text)
+    ], text, skip_zero=True)
 
 
 def extract_acrescimos(text: str) -> str:
@@ -141,6 +144,8 @@ def classify_payment_type(text: str) -> str:
     if 'beevale' in n:
         return 'BeeVale'
     if 'pix' in n:
+        return 'Pix'
+    if 'chave pix' in n or 'txid' in n or 'somapay' in n or 'stark bank' in n or 'bcb.pix' in n:
         return 'Pix'
     if 'boleto' in n or 'codigo de barras' in n or 'linha digitavel' in n:
         return 'Boleto'
