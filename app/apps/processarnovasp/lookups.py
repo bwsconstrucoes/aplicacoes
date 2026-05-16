@@ -136,17 +136,29 @@ def codigo_centro_custo(gc, nome: str) -> Optional[str]:
 
 
 def codigo_tipo_despesa(gc, nome: str) -> Optional[str]:
+    """
+    Busca código da categoria Omie por nome de Tipo de Despesa.
+
+    Replica a fórmula original do Bases Resumo:
+        =SUBSTITUIR(SEERRO(PROCV(F3,'Base Tipo de Despesa'!B:D,3,FALSO),""),"T","")
+    O `SUBSTITUIR(..., "T", "")` remove o prefixo "T" do código Omie
+    (ex: "T2.04.01" → "2.04.01"). O Omie rejeita o código se vier com "T".
+    """
     if not nome:
         return None
     mapa = _carregar_tabela(gc, 'base_tipo_despesa')
-    if nome in mapa:
-        return mapa[nome]
-    from .utils import normalizar_texto
-    alvo = normalizar_texto(nome)
-    for k, v in mapa.items():
-        if normalizar_texto(k) == alvo:
-            return v
-    return None
+    valor = mapa.get(nome)
+    if valor is None:
+        from .utils import normalizar_texto
+        alvo = normalizar_texto(nome)
+        for k, v in mapa.items():
+            if normalizar_texto(k) == alvo:
+                valor = v
+                break
+    if valor is None:
+        return None
+    # SUBSTITUIR(..., "T", "") — remove TODOS os "T" do código (idêntico ao Sheets)
+    return valor.replace('T', '')
 
 
 def codigo_cliente_omie(gc, cpf_cnpj: str) -> Optional[str]:

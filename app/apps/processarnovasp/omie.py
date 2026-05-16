@@ -377,11 +377,24 @@ def _distribuicao_vazia(d: dict) -> bool:
 
 
 def _is_erro_ja_cadastrado(body: dict) -> bool:
+    """
+    Detecta especificamente o erro "Lançamento já cadastrado" do Omie.
+
+    IMPORTANTE: o Omie usa o faultcode `SOAP-ENV:Client-102` para VÁRIOS
+    erros de validação distintos (categoria não cadastrada, conta corrente
+    inválida, lançamento duplicado, etc.). Por isso a classificação tem
+    que se basear na MENSAGEM (faultstring), não no código.
+
+    Casos tratados como duplicidade:
+      - "Lançamento já cadastrado para o Código de Integração ..."
+      - "Já existe lançamento cadastrado para o código ..."
+    """
     fault = as_string(body.get('faultstring'))
-    code  = as_string(body.get('faultcode'))
-    return (
-        code == 'SOAP-ENV:Client-102' or
-        bool(re.search(r'Lançamento já cadastrado para o Código de Integração', fault, re.IGNORECASE))
+    if not fault:
+        return False
+    return bool(
+        re.search(r'lan[çc]amento\s+j[aá]\s+cadastrado', fault, re.IGNORECASE) or
+        re.search(r'j[aá]\s+existe\s+lan[çc]amento', fault, re.IGNORECASE)
     )
 
 

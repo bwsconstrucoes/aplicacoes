@@ -276,24 +276,30 @@ def _executar_padrao(gc, payload: dict, result: dict) -> dict:
             'motivo': 'omieAppKey/omieAppSecret não enviados.',
         }
 
-    # 6. Trata 3 desfechos do Omie (routers 225/612)
+    # 6. Pós-Omie — 3 RAMOS INDEPENDENTES (replica routers 225/612 do Make)
+    #
+    # No Make, cada rota tem seu próprio filtro e podem rodar em paralelo.
+    # Filtros exatos extraídos do blueprint:
+    #
+    #   Rota A (601/613 — Pipefy):
+    #       statusCode == 200  (sucesso HTTP)
+    #   Rota B (411/626 — SPsBD):
+    #       faultstring NÃO CONTÉM "Lançamento já cadastrado"
+    #       → roda em sucesso E em falha não-duplicidade
+    #   Rota C (721/723 — FalhaProcessar):
+    #       faultstring CONTÉM "API bloqueada" OU statusCode != 200
+    #       → roda em QUALQUER erro HTTP
     omie_secao = result['secoes']['omie']
-    if omie_secao.get('falha'):
-        # Falha de API → grava FalhaProcessar
-        try:
-            result['secoes']['falha_processar'] = sheets_mod.registrar_falha_processar(
-                gc, payload, motivo='Cadastrar Título Omie'
-            )
-        except Exception as e:
-            logger.exception('[padrao] falha FalhaProcessar')
-            result['secoes']['falha_processar'] = {'ok': False, 'erro': str(e)}
-        # Não grava SPsBD nem atualiza Pipefy (preserva semântica do Make)
-        return result
+    titulo     = omie_secao.get('titulo') or {}
+    status_http = titulo.get('codigo_status_http') or 0
+    faultstring = as_string(titulo.get('mensagem') or '')
 
-    # 7. Se sucesso Omie ou duplicidade → atualiza Pipefy + SPsBD
-    if omie_secao.get('ok') and not omie_secao.get('duplicado'):
-        # Sucesso → Pipefy (módulo 601 ou 613) + conex_o_sp dos pedidos vinculados
-        # tudo na MESMA mutation (1 round-trip HTTP em vez de N+1).
+    omie_http_ok  = (status_http == 200)
+    is_duplicidade = bool(omie_secao.get('duplicado'))
+    is_api_bloqueada = 'API bloqueada' in faultstring
+
+    # ---- Rota A: Pipefy (só se HTTP 200) ----
+    if omie_http_ok:
         ped_vinc = result['secoes'].get('pedido', {}).get('pedidos_vinculados') or []
         try:
             result['secoes']['pipefy'] = pipefy_mod.atualizar_card_pos_omie(
@@ -303,21 +309,45 @@ def _executar_padrao(gc, payload: dict, result: dict) -> dict:
             logger.exception('[padrao] falha Pipefy')
             result['secoes']['pipefy'] = {'ok': False, 'erro': str(e)}
 
-    # 8. SPsBD (módulo 411 ou 626 — mesmas linhas, só muda código Omie source)
-    try:
-        result['secoes']['spsbd'] = sheets_mod.inserir_spsbd(
-            gc, payload, rota='padrao', omie_secao=omie_secao, boleto_secao=bol
-        )
-    except Exception as e:
-        logger.exception('[padrao] falha SPsBD')
-        result['secoes']['spsbd'] = {'ok': False, 'erro': str(e)}
+    # ---- Rota B: SPsBD (em tudo EXCETO duplicidade real) ----
+    if not is_duplicidade:
+        try:
+            result['secoes']['spsbd'] = sheets_mod.inserir_spsbd(
+                gc, payload, rota='padrao', omie_secao=omie_secao, boleto_secao=bol
+            )
+        except Exception as e:
+            logger.exception('[padrao] falha SPsBD')
+            result['secoes']['spsbd'] = {'ok': False, 'erro': str(e)}
+    else:
+        result['secoes']['spsbd'] = {
+            'ok': False, 'pulado': True,
+            'motivo': 'Título já cadastrado no Omie (duplicidade)',
+        }
 
-    # 9. Log (módulo 738)
-    try:
-        result['secoes']['log'] = sheets_mod.inserir_log(gc, payload, rat['descritivo'])
-    except Exception as e:
-        logger.exception('[padrao] falha Log')
-        result['secoes']['log'] = {'ok': False, 'erro': str(e)}
-        notify_mod.alertar_falha_log(payload.get('id'))
+    # ---- Rota C: FalhaProcessar (em qualquer erro HTTP) ----
+    if not omie_http_ok or is_api_bloqueada:
+        try:
+            motivo = ('API bloqueada por consumo indevido' if is_api_bloqueada
+                      else 'Cadastrar Título Omie')
+            result['secoes']['falha_processar'] = sheets_mod.registrar_falha_processar(
+                gc, payload, motivo=motivo
+            )
+        except Exception as e:
+            logger.exception('[padrao] falha FalhaProcessar')
+            result['secoes']['falha_processar'] = {'ok': False, 'erro': str(e)}
+
+    # 9. Log (módulo 738) — sempre roda, exceto em duplicidade real
+    if not is_duplicidade:
+        try:
+            result['secoes']['log'] = sheets_mod.inserir_log(gc, payload, rat['descritivo'])
+        except Exception as e:
+            logger.exception('[padrao] falha Log')
+            result['secoes']['log'] = {'ok': False, 'erro': str(e)}
+            notify_mod.alertar_falha_log(payload.get('id'))
+    else:
+        result['secoes']['log'] = {
+            'ok': False, 'pulado': True,
+            'motivo': 'Título já cadastrado no Omie (duplicidade)',
+        }
 
     return result
