@@ -227,7 +227,7 @@ def criar_card_cancelar_sp(payload: dict, sp_duplicada: str) -> dict:
           {{field_id: "selecione_o_procedimento",   field_value: "Cancelar SP"}},
           {{field_id: "n_da_solicita_o",            field_value: "{sp_id}"}},
           {{field_id: "motivo",                     field_value: "{motivo}"}},
-          {{field_id: "colaborador_solicitante",    field_value: "383926903"}}
+          {{field_id: "colaborador_solicitante",    field_value: "620439304"}}
         ]
       }}) {{
         card {{ id title }}
