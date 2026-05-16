@@ -292,10 +292,12 @@ def _executar_padrao(gc, payload: dict, result: dict) -> dict:
 
     # 7. Se sucesso Omie ou duplicidade → atualiza Pipefy + SPsBD
     if omie_secao.get('ok') and not omie_secao.get('duplicado'):
-        # Sucesso → Pipefy (módulo 601 ou 613)
+        # Sucesso → Pipefy (módulo 601 ou 613) + conex_o_sp dos pedidos vinculados
+        # tudo na MESMA mutation (1 round-trip HTTP em vez de N+1).
+        ped_vinc = result['secoes'].get('pedido', {}).get('pedidos_vinculados') or []
         try:
             result['secoes']['pipefy'] = pipefy_mod.atualizar_card_pos_omie(
-                payload, omie_secao, bol
+                payload, omie_secao, bol, pedidos_vinculados=ped_vinc
             )
         except Exception as e:
             logger.exception('[padrao] falha Pipefy')

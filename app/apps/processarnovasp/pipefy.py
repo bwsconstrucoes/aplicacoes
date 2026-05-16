@@ -41,11 +41,17 @@ ETIQUETAS = {
 # Funções públicas
 # -----------------------------------------------------------------------------
 
-def atualizar_card_pos_omie(payload: dict, omie_secao: dict, boleto_secao: dict) -> dict:
+def atualizar_card_pos_omie(payload: dict, omie_secao: dict, boleto_secao: dict,
+                              pedidos_vinculados: list = None) -> dict:
     """
-    Equivalente aos blocos 601/613 do Make (fluxo principal R2 do router 6).
-    Atualiza: title, data_de_pagamento, código Omie, autorização dupla,
-              etiquetas, número do pedido, IA, baixa automática + dados boleto.
+    Equivalente aos blocos 601/613 do Make (fluxo principal R2 do router 6),
+    JÁ INCLUINDO o updateCardField de conex_o_sp para CADA pedido vinculado
+    (que no Make era feito em uma mutation separada por pedido em 694/695).
+
+    Tudo em UMA ÚNICA mutation GraphQL → 1 round-trip HTTP.
+
+    pedidos_vinculados: lista de dicts {'card_pedido': '<card_id>', 'pedido': '<num>'}
+                        retornada por pedidos.vincular().
     """
     sp_id = as_string(payload.get('id'))
     if not sp_id:
@@ -100,6 +106,14 @@ def atualizar_card_pos_omie(payload: dict, omie_secao: dict, boleto_secao: dict)
     if tipo_pagamento == 'BeeVale':
         parts.append(_mut_field(sp_id, 'tipo', 'Aleatória'))
         parts.append(_mut_field(sp_id, 'chave_pix_aleat_ria', 'Atualizar Chave Pix'))
+
+    # Pedidos vinculados — updates dos CARDS DE PEDIDO (não do card SP atual)
+    # Equivalente aos módulos 694/695 do Make, mas agora dentro da MESMA mutation
+    # do card pós-Omie. 1 round-trip HTTP para tudo.
+    for ped in (pedidos_vinculados or []):
+        card_pedido = as_string(ped.get('card_pedido'))
+        if card_pedido:
+            parts.append(_mut_field(card_pedido, 'conex_o_sp', sp_id))
 
     mutation = 'mutation {\n' + '\n'.join(parts) + '\n}'
     return _executar_mutation(mutation)
@@ -224,8 +238,12 @@ def criar_card_cancelar_sp(payload: dict, sp_duplicada: str) -> dict:
 
 def conectar_sp_a_pedido(card_id_pedido: str, id_sp: str) -> dict:
     """
-    Equivalente aos módulos 694/695 do Make: atualiza o card do pedido com o ID da SP
-    no campo `conex_o_sp`.
+    DEPRECATED: Esta função fazia 1 chamada HTTP por pedido vinculado.
+    Foi substituída pela integração do updateCardField(conex_o_sp) dentro da
+    mutation única de `atualizar_card_pos_omie` (passando `pedidos_vinculados`).
+
+    Mantida apenas para compatibilidade caso algum outro módulo a chame.
+    Não deve mais ser usada pelo fluxo principal.
     """
     if not card_id_pedido or not id_sp:
         return {'ok': False, 'erro': 'card_id_pedido ou id_sp vazio'}

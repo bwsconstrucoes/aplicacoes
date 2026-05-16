@@ -15,7 +15,6 @@ Colunas relevantes (0-based):
 
 import logging
 from .utils import as_string
-from . import pipefy as pipefy_mod
 
 logger = logging.getLogger(__name__)
 
@@ -33,12 +32,17 @@ def vincular(payload: dict, gc) -> dict:
     Lê o campo NumeroPedido, divide por vírgula, e para cada pedido:
       1. Localiza linha em Registros (filtro A == numero E L contém "A")
       2. Atualiza coluna F adicionando o ID da SP atual
-      3. Atualiza Pipefy do card do pedido (conex_o_sp) com o ID da SP
+      3. Retorna a lista de cards_pedido encontrados (sem chamar Pipefy direto).
+
+    A mutation Pipefy do conex_o_sp é feita posteriormente em UMA única
+    mutation agregada por pipefy.atualizar_card_pos_omie, evitando 1 round-trip
+    HTTP por pedido (otimização sobre o cenário Make antigo).
     """
     id_sp     = as_string(payload.get('id'))
     pedido    = as_string(payload.get('NumeroPedido') or '')
     if not pedido:
-        return {'executado': False, 'motivo': 'NumeroPedido vazio'}
+        return {'executado': False, 'motivo': 'NumeroPedido vazio',
+                'pedidos_vinculados': []}
 
     # Split por vírgula (ou retorna lista de 1 item)
     pedidos = [p.strip() for p in pedido.split(',') if p.strip()]
@@ -48,8 +52,9 @@ def vincular(payload: dict, gc) -> dict:
 
     # Lê todas as linhas uma vez (mais rápido que filterRows N vezes)
     todas = sh.get_all_values()
-    # mapeia número → (row_index 1-based, valores)
-    indice = {}
+    # Indexa pelo número do pedido, MAS aceita múltiplas linhas por número
+    # (a planilha pode ter o mesmo número repetido — só serve quem tem A no status).
+    indice_por_pedido = {}
     for i, row in enumerate(todas[1:], start=2):  # pula header
         if len(row) <= COL_STATUS:
             continue
@@ -57,44 +62,43 @@ def vincular(payload: dict, gc) -> dict:
         status = row[COL_STATUS].strip()
         if not num or 'A' not in status:
             continue
-        # mantém a primeira ocorrência ativa por número
-        indice.setdefault(num, (i, row))
+        # mantém a PRIMEIRA ativa para cada número
+        indice_por_pedido.setdefault(num, (i, row))
 
-    atualizados = []
-    not_found   = []
-    pipefy_acks = []
+    atualizados        = []
+    not_found          = []
+    pedidos_vinculados = []   # lista para a mutation agregada do Pipefy
 
     for num in pedidos:
-        if num not in indice:
+        if num not in indice_por_pedido:
             not_found.append(num)
             continue
 
-        row_idx, row = indice[num]
+        row_idx, row = indice_por_pedido[num]
         sps_atual = row[COL_SPS_LISTA].strip() if len(row) > COL_SPS_LISTA else ''
-        # se SP atual já está, pula
+
+        # se SP atual já está, ainda registra pra mutation do Pipefy (idempotente)
         if id_sp in [s.strip() for s in sps_atual.split(',')]:
             atualizados.append({'pedido': num, 'row': row_idx, 'skip': 'já vinculada'})
-            continue
+        else:
+            nova_lista = id_sp if not sps_atual else f'{sps_atual}, {id_sp}'
+            col_letter = _col_to_letter(COL_SPS_LISTA + 1)
+            sh.update(f'{col_letter}{row_idx}', [[nova_lista]],
+                      value_input_option='USER_ENTERED')
+            atualizados.append({'pedido': num, 'row': row_idx, 'nova_lista': nova_lista})
 
-        nova_lista = id_sp if not sps_atual else f'{sps_atual}, {id_sp}'
-        # Atualiza coluna F da linha
-        col_letter = _col_to_letter(COL_SPS_LISTA + 1)
-        sh.update(f'{col_letter}{row_idx}', [[nova_lista]], value_input_option='USER_ENTERED')
-        atualizados.append({'pedido': num, 'row': row_idx, 'nova_lista': nova_lista})
-
-        # Atualiza Pipefy do card do pedido (conex_o_sp)
+        # Coleta card_pedido pra mutation agregada
         card_pedido = row[COL_CARD_PEDIDO].strip() if len(row) > COL_CARD_PEDIDO else ''
         if card_pedido:
-            ack = pipefy_mod.conectar_sp_a_pedido(card_pedido, id_sp)
-            pipefy_acks.append({'pedido': num, 'card_pedido': card_pedido, 'ack': ack})
+            pedidos_vinculados.append({'pedido': num, 'card_pedido': card_pedido})
 
     return {
-        'executado':            True,
-        'pedidos':              pedidos,
-        'pedidos_atualizados':  len(atualizados),
-        'detalhes':             atualizados,
-        'nao_encontrados':      not_found,
-        'pipefy_acks':          pipefy_acks,
+        'executado':           True,
+        'pedidos':             pedidos,
+        'pedidos_atualizados': len(atualizados),
+        'detalhes':            atualizados,
+        'nao_encontrados':     not_found,
+        'pedidos_vinculados':  pedidos_vinculados,   # consumido por pipefy.atualizar_card_pos_omie
     }
 
 
