@@ -27,8 +27,7 @@ CONTRATO DE ENTRADA (vindo do Make):
       "AnexoLink": "https://...",
       "ContratoLocacao": "ID...",
       ...
-  },
-  "telemetria": { ... }  # opcional
+  }
 }
 
 CONTRATO DE SAÍDA (consumido por core.py):
@@ -158,8 +157,6 @@ def adaptar(payload: dict) -> dict:
         'omieAppKey':          as_string(payload.get('omieAppKey')),
         'omieAppSecret':       as_string(payload.get('omieAppSecret')),
         'omieIdContaCorrente': as_string(payload.get('omieIdContaCorrente') or '583772104'),
-        'registrar_telemetria': payload.get('registrar_telemetria'),
-        'telemetria':          payload.get('telemetria') or {},
     }
 
     fields = payload.get('fields') or {}

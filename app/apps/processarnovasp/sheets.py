@@ -36,49 +36,6 @@ EMPRESA_CPF_PADRAO = '00.079.526/0001-09'
 EMPRESA_NOME       = 'BWS CONSTRUÇÕES LTDA'
 
 
-# -----------------------------------------------------------------------------
-# Telemetria do Make (módulo 704) — opcional, vai pra planilha de logs cosméticos
-# -----------------------------------------------------------------------------
-
-PLANILHA_TELEMETRIA = '1cV4J5pYmECmyGofarOWBcpA5Rp4pwl--LN25hHClOU8'
-ABA_TELEMETRIA      = 'Página1'
-
-
-def registrar_telemetria(gc, contexto: dict) -> dict:
-    """
-    Append cosmético na planilha de telemetria (equivale ao módulo 704 do Make).
-    contexto deve trazer: scenario_id, scenario_name, execution_id, etc.
-    Se faltar, grava só com os campos que vierem.
-    """
-    try:
-        sh = gc.open_by_key(PLANILHA_TELEMETRIA).worksheet(ABA_TELEMETRIA)
-        row = [
-            as_string(contexto.get('creditsConsumed')),
-            as_string(contexto.get('dataConsumed')),
-            as_string(contexto.get('executionId')),
-            as_string(contexto.get('executionStartedAt') or datetime.now().isoformat()),
-            as_string(contexto.get('executionType') or 'render'),
-            as_string(contexto.get('executionUrl')),
-            as_string(contexto.get('scenario_id') or 'processarnovasp'),
-            as_string(contexto.get('isDLQExecution') or 'false'),
-            as_string(contexto.get('scenario_name') or 'FIN - Processar SP (Render)'),
-            as_string(contexto.get('operationsConsumed') or '1'),
-            as_string(contexto.get('url')),
-            as_string(contexto.get('team_id')),
-            as_string(contexto.get('team_name')),
-            as_string(contexto.get('dataLeft')),
-            as_string(contexto.get('organization_id')),
-            as_string(contexto.get('organization_name') or 'BWS'),
-            as_string(contexto.get('operationsLeft')),
-            as_string(contexto.get('zoneDomain')),
-        ]
-        sh.append_row(row, value_input_option='USER_ENTERED', insert_data_option='INSERT_ROWS')
-        return {'ok': True}
-    except Exception as e:
-        logger.warning(f'[telemetria] falhou: {e}')
-        return {'ok': False, 'erro': str(e)}
-
-
 # =============================================================================
 # SPsBD — escolhe variante com base no rota_e_omie
 # =============================================================================

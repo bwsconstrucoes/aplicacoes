@@ -116,10 +116,6 @@ def executar(payload: dict) -> dict:
     result['rota'] = rota
     logger.info(f'[core] SP={payload.get("id")} rota={rota}')
 
-    # Telemetria (cosmético)
-    if as_string(payload.get('registrar_telemetria') or 'true').lower() == 'true':
-        result['secoes']['telemetria'] = sheets_mod.registrar_telemetria(gc, payload.get('telemetria') or {})
-
     # Dispatch
     if rota == 'transferencia':
         return _executar_transferencia(gc, payload, result)
