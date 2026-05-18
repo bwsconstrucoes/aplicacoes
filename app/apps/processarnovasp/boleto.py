@@ -7,8 +7,11 @@ Reaproveita 100% as funções `modulo10`, `modulo11_*`, `validar_*` do atualizas
 """
 
 import re
+import logging
 from datetime import date, timedelta
 from .utils import as_string
+
+logger = logging.getLogger(__name__)
 
 
 # -----------------------------------------------------------------------------
@@ -209,13 +212,23 @@ def _adicionar_linha_sps_dda(ss, id_val, codigo: str):
 
 
 def _classificar_sps_dda(ss):
-    """Ordena SPsDDA por coluna A descendente (mais recente no topo)."""
+    """
+    Ordena SPsDDA por coluna A descendente (mais recente no topo).
+
+    Equivalente ao Apps Script:
+        sheet.getRange(2, 1, lastRow - 1, 4).sort({column: 1, ascending: false});
+
+    Importante: sh.row_count é a CAPACIDADE da planilha (default 1000),
+    não a última linha com dados. Por isso usamos len(sh.get_all_values())
+    para descobrir a última linha de fato preenchida.
+    """
     sh = ss.worksheet('SPsDDA')
-    last_row = sh.row_count
+    todas = sh.get_all_values()
+    last_row = len(todas)  # inclui a linha do header
     if last_row <= 1:
         return
     try:
         sh.sort((1, 'des'), range=f'A2:D{last_row}')
-    except Exception:
+    except Exception as e:
         # gspread.sort às vezes falha em planilhas grandes — fallback silencioso
-        pass
+        logger.warning(f'[SPsDDA] sort falhou: {e}')
