@@ -266,7 +266,7 @@ def _build_row_489(payload: dict) -> list:
     _set(row, 24, _formato_dados_pagto_col24(payload))
     _set(row, 26, _formato_nf_col26(payload))
     _set(row, 33, 'Sim' if as_string(payload.get('ValidacaoSP')) == 'Sim' else '')
-    _set(row, 37, as_string(payload.get('IA_Descricao')))
+    _set(row, 37, as_string(payload.get('IA_Duplicidade')))
     return row
 
 
@@ -314,7 +314,7 @@ def _build_row_642(payload: dict, boleto_secao: dict) -> list:
     _set(row, 29, as_string(payload.get('NumeroPedido')))
     _set(row, 33, 'Sim' if as_string(payload.get('ValidacaoSP')) == 'Sim' else '')
     _set(row, 34, _formato_codigo_barras_col34(payload, boleto_secao))
-    _set(row, 37, as_string(payload.get('IA_Descricao')))
+    _set(row, 37, as_string(payload.get('IA_Duplicidade')))
     return row
 
 
@@ -367,7 +367,7 @@ def _build_row_411_626(payload: dict, omie_secao: dict, boleto_secao: dict) -> l
     _set(row, 33, 'Sim' if as_string(payload.get('ValidacaoSP')) == 'Sim' else '')
     _set(row, 34, _formato_codigo_barras_col34(payload, boleto_secao))
     _set(row, 35, as_string(payload.get('ContratoLocacao')))
-    _set(row, 37, as_string(payload.get('IA_Descricao')))
+    _set(row, 37, as_string(payload.get('IA_Duplicidade')))
 
     return row
 
