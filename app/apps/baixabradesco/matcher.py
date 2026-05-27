@@ -73,7 +73,7 @@ def match_beevale(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[Sp
     out = []
     for r in records:
         n = normalize_text(f'{r.nome_credor} {r.info_pgt} {r.tipo_pagamento}')
-        if 'beevale' not in n:
+        if 'beevale' not in n and 'bee vale' not in n:
             continue
         if normalize_compact(r.status_pgt) != 'pagar':
             continue
