@@ -10,7 +10,7 @@ from .models import AttachmentInput, ExecutionPlan
 from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
-from .sheets import get_gc, load_spsbd_index, load_spsbd_operacional, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
+from .sheets import get_gc, load_spsbd_index, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
 from .matcher import match_receipt
 from .omie import build_omie_plan, build_incluir_lanc_cc, execute_omie, execute_omie_lanccc, codigo_integracao
 from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
@@ -38,6 +38,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
     sps_index = {}
     sps_agendar = []
     base_bancos = []
+    sps_omie_pendente = {}
     google_error = ''
 
     try:
@@ -47,6 +48,8 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         # Carrega apenas SPs com O=Pagar e AB=agendar/agendado/falhaagendar
         # Muito mais leve que as 52k linhas completas — necessário para matches sem ID
         sps_index = load_spsbd_operacional(gc)
+        # SPs com Pago+AG preenchido+X vazia: Omie possivelmente pendente
+        sps_omie_pendente = load_spsbd_omie_pendente(gc)
     except Exception as e:
         google_error = str(e)
         if not modo_teste:
@@ -79,6 +82,12 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             page_filename = build_receipt_page_filename(att.filename, page_num, rec.id_pipefy)
 
             match = match_receipt(rec, sps_index, sps_agendar)
+
+            # Fallback: SP já marcada Pago na planilha mas Omie pendente
+            if match.status == 'nao_localizado' and sps_omie_pendente:
+                match_pendente = match_omie_pendente(rec, sps_omie_pendente)
+                if match_pendente.status == 'localizado':
+                    match = match_pendente
             banco = find_bank_account(base_bancos, rec.agencia_origem, rec.conta_origem) if base_bancos else None
 
             storage_info = {
@@ -119,7 +128,12 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             plan = ExecutionPlan(receipt=rec, match=match, banco=banco)
             plan.responses['storage'] = storage_info
 
-            _decidir_execucao(plan, executar_omie, atualizar_pipefy, atualizar_spsbd, enviar_whatsapp)
+            if match.metodo == 'omie_pendente':
+                # SP já tem planilha/Pipefy atualizados — só executa Omie
+                plan.acao = 'baixar_omie_apenas'
+                plan.pode_executar = True
+            else:
+                _decidir_execucao(plan, executar_omie, atualizar_pipefy, atualizar_spsbd, enviar_whatsapp)
 
             plan.omie_requests        = build_omie_plan(plan, payload)       if plan.match.id and executar_omie else []
             plan.pipefy_get_query     = ''                                   # preenchido depois em lote
@@ -237,6 +251,50 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
+
+
+def match_omie_pendente(receipt: ExtractedReceipt, sps_pendente: Dict[str, SpRecord]) -> MatchResult:
+    """Localiza SP com Omie pendente pelo valor + conta de débito.
+    Usado quando a planilha já foi atualizada mas o Omie não foi baixado.
+    """
+    from .matcher import MatchResult
+    from .utils import money_to_decimal, normalize_compact, clean_account, account_key
+
+    valor = money_to_decimal(receipt.valor_pago)
+    if valor is None:
+        return MatchResult(status='nao_localizado', metodo='omie_pendente')
+
+    conta_rec = normalize_compact(clean_account(receipt.conta_origem or ''))
+    candidatos = []
+
+    for sp in sps_pendente.values():
+        base = money_to_decimal(sp.valor_total)
+        if base is None:
+            continue
+        # Aceita valor exato ou com acréscimo BeeVale 1,5%
+        from decimal import Decimal
+        BEEVALE_TOL = Decimal('0.02')
+        BEEVALE_MULT = Decimal('1.015')
+        valor_beevale = (base * BEEVALE_MULT).quantize(Decimal('0.01'))
+        if base != valor and abs(valor_beevale - valor) > BEEVALE_TOL:
+            continue
+        # Conta de débito deve bater
+        if conta_rec:
+            conta_sp = normalize_compact(clean_account(sp.conta_pagamento or ''))
+            if conta_sp and conta_sp != conta_rec:
+                continue
+        candidatos.append(sp)
+
+    if len(candidatos) == 1:
+        return MatchResult(status='localizado', metodo='omie_pendente',
+                          id=candidatos[0].id, sp=candidatos[0],
+                          motivo='SP localizada como Omie pendente (Pago na planilha, sem data pgt).')
+    if len(candidatos) > 1:
+        return MatchResult(status='pendente_validacao', metodo='omie_pendente',
+                          candidatos=candidatos,
+                          motivo=f'Múltiplos candidatos Omie pendente: {len(candidatos)}')
+    return MatchResult(status='nao_localizado', metodo='omie_pendente')
+
 
 def _decidir_execucao(plan: ExecutionPlan, executar_omie: bool, atualizar_pipefy: bool,
                       atualizar_spsbd: bool, enviar_whatsapp: bool):

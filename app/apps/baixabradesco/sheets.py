@@ -97,6 +97,49 @@ def load_spsbd_operacional(gc=None) -> Dict[str, SpRecord]:
 
     return result
 
+
+def load_spsbd_omie_pendente(gc=None) -> Dict[str, SpRecord]:
+    """Carrega SPs com O=Pago + AG preenchido + X vazia.
+    Indica planilha atualizada mas Omie possivelmente não baixado.
+    Usado como fallback quando match normal falha.
+    """
+    gc = gc or get_gc()
+    ws = gc.open_by_key(SPS_SHEET_ID).worksheet('SPsBD')
+
+    all_values = ws.get('A:AK')
+    if not all_values or len(all_values) < 2:
+        return {}
+
+    headers = all_values[0]
+    IDX_O  = 14  # Status Pgt (O)
+    IDX_X  = 23  # Data Pagamento (X)
+    IDX_AG = 32  # Comprovante (AG)
+
+    result = {}
+    for row_num, row in enumerate(all_values[1:], start=2):
+        row = list(row) + [''] * (len(headers) - len(row))
+
+        status_pgt = (row[IDX_O]  if IDX_O  < len(row) else '').strip().lower()
+        data_pgt   = (row[IDX_X]  if IDX_X  < len(row) else '').strip()
+        comprovante= (row[IDX_AG] if IDX_AG < len(row) else '').strip()
+
+        # Pago + sem data de pagamento + com comprovante = Omie provavelmente pendente
+        if status_pgt != 'pago':
+            continue
+        if data_pgt:
+            continue
+        if not comprovante:
+            continue
+
+        r = {headers[i]: row[i] for i in range(len(headers))}
+        r['_row_number'] = row_num
+        sp = row_to_sp_record(r)
+        if sp.id:
+            result[sp.id] = sp
+
+    return result
+
+
 def load_spsagendar(gc=None) -> List[SpRecord]:
     """Lê a aba SPsAgendar — filtro operacional vindo de SPsBD."""
     gc = gc or get_gc()
