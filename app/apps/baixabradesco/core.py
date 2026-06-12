@@ -336,9 +336,19 @@ def _decidir_execucao(plan: ExecutionPlan, executar_omie: bool, atualizar_pipefy
 
 def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
     """Consulta → Altera (se necessário) → Baixa. Retorna log de cada step."""
+    import time, re as _re
     resultados = []
     for req in plan.omie_requests:
         resp = execute_omie(req['request'])
+        # Retry automático para rate limit — extrai tempo de espera da mensagem
+        if not resp.get('ok'):
+            body = resp.get('body') or {}
+            if 'MISUSE_API_PROCESS' in as_string(body.get('faultcode') or ''):
+                faultstring = as_string(body.get('faultstring') or '')
+                m = _re.search(r'em (\d+) segundos', faultstring)
+                wait = int(m.group(1)) + 5 if m else 75
+                time.sleep(wait)
+                resp = execute_omie(req['request'])
         resultados.append({'step': req['step'], 'response': resp})
 
         if req['step'] == 'consultar':
