@@ -41,10 +41,11 @@ def processar_mensagem(telefone: str, texto: str):
     logger.info(f"[core] {telefone[:6]}*** estado={_estado_atual(telefone)} msg='{texto_norm[:30]}'")
 
     if session.esta_bloqueado(telefone):
-        zapi_sender.enviar_texto(
-            telefone,
-            "🔒 Acesso bloqueado por excesso de tentativas. Tente em 1 hora."
-        )
+        # NÃO responde a cada hit no estado bloqueado: evita spam e queima de
+        # quota da Z-API e quebra qualquer loop de eco (callbacks de status
+        # reentrando no webhook). O usuário já foi avisado do bloqueio no
+        # momento em que foi bloqueado (ver _processar_cpf).
+        logger.warning(f"[core] {telefone[:6]}*** bloqueado — ignorando sem responder.")
         return
 
     if texto_norm in PALAVRAS_RESET:
