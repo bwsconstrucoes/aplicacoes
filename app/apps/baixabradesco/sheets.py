@@ -300,12 +300,16 @@ def build_spsbd_updates(plan) -> List[dict]:
     # AK: grava só o número da conta, ex: '50024-0' (não 'Bradesco - 50024-0')
     conta = banco.conta if banco else rec.conta_origem
 
+    from datetime import datetime
+    carimbo = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
     return [{
         'sheet_id': SPS_SHEET_ID,
         'aba':      'SPsBD',
         'filtros':  {'A': '=' + plan.match.id},
         'updates':  {
             'O':  'Pago',
+            'V':  carimbo,
             'X':  rec.data_pagamento,
             'AG': normalize_dropbox_link(rec.drive_link),
             'AK': conta,
