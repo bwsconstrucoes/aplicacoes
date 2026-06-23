@@ -2,6 +2,8 @@
 """sheets.py — Atualização de Log e SPsBD via gspread (portado do AtualizaLogeSPsBD.gs)"""
 
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from .utils import (
     as_string, value_or_empty, has_value,
     letter_to_column, column_to_letter,
@@ -78,13 +80,22 @@ def atualizar_spsbd_codigo_integracao_omie(ss, payload: dict, codigo_integracao:
     if not sp_row:
         return {'ok': False, 'row': None, 'codigo': codigo_integracao, 'motivo': 'Registro não encontrado em SPsBD.'}
     col_p = letter_to_column('P')
-    sh_sp.update_cell(sp_row, col_p, codigo_integracao)
+    col_v = letter_to_column('V')
+    sh_sp.batch_update([
+        {'range': f'P{sp_row}', 'values': [[codigo_integracao]]},
+        {'range': f'V{sp_row}', 'values': [[_timestamp_fortaleza()]]},
+    ], value_input_option='USER_ENTERED')
     return {'ok': True, 'row': sp_row, 'codigo': codigo_integracao}
 
 
 # ---------------------------------------------------------------------------
 # BUILD DOS MAPS
 # ---------------------------------------------------------------------------
+
+def _timestamp_fortaleza() -> str:
+    """Retorna timestamp atual no fuso América/Fortaleza no formato YYYY-MM-DD HH:MM:SS."""
+    return datetime.now(ZoneInfo('America/Fortaleza')).strftime('%Y-%m-%d %H:%M:%S')
+
 
 def _build_spsbd_map(p: dict, ignore_blanks: bool) -> dict:
     result = {}
@@ -98,6 +109,8 @@ def _build_spsbd_map(p: dict, ignore_blanks: bool) -> dict:
             result[col] = '' if value is None else value
     if not ignore_blanks and not result.get('A'):
         result['A'] = as_string(p.get('id'))
+    # Carimbo de tempo na coluna V (sempre sobrescreve)
+    result['V'] = _timestamp_fortaleza()
     return result
 
 
