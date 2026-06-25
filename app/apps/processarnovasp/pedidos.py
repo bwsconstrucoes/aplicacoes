@@ -15,6 +15,7 @@ Colunas relevantes (0-based):
 
 import logging
 from .utils import as_string
+from .retry import com_retry
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +52,8 @@ def vincular(payload: dict, gc) -> dict:
     sh = ss.worksheet(SHEET_PEDIDOS)
 
     # Lê todas as linhas uma vez (mais rápido que filterRows N vezes)
-    todas = sh.get_all_values()
+    todas = com_retry(lambda: sh.get_all_values(),
+                      descricao='read Pedidos (Registros)')
     # Indexa pelo número do pedido, MAS aceita múltiplas linhas por número
     # (a planilha pode ter o mesmo número repetido — só serve quem tem A no status).
     indice_por_pedido = {}
@@ -83,8 +85,11 @@ def vincular(payload: dict, gc) -> dict:
         else:
             nova_lista = id_sp if not sps_atual else f'{sps_atual}, {id_sp}'
             col_letter = _col_to_letter(COL_SPS_LISTA + 1)
-            sh.update(f'{col_letter}{row_idx}', [[nova_lista]],
-                      value_input_option='USER_ENTERED')
+            com_retry(
+                lambda cl=col_letter, ri=row_idx, nl=nova_lista:
+                    sh.update(f'{cl}{ri}', [[nl]], value_input_option='USER_ENTERED'),
+                descricao=f'update Pedidos col {col_letter}{row_idx} (SP={id_sp})'
+            )
             atualizados.append({'pedido': num, 'row': row_idx, 'nova_lista': nova_lista})
 
         # Coleta card_pedido pra mutation agregada

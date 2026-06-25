@@ -10,6 +10,7 @@ import re
 import logging
 from datetime import date, timedelta
 from .utils import as_string
+from .retry import com_retry
 
 logger = logging.getLogger(__name__)
 
@@ -204,10 +205,13 @@ def _adicionar_linha_sps_dda(ss, id_val, codigo: str):
     from datetime import datetime
     sh = ss.worksheet('SPsDDA')
     agora = datetime.now().strftime('%d/%m/%Y %H:%M')
-    sh.append_row(
-        [agora, codigo, as_string(id_val), 'Baixar'],
-        value_input_option='USER_ENTERED',
-        insert_data_option='INSERT_ROWS',
+    com_retry(
+        lambda: sh.append_row(
+            [agora, codigo, as_string(id_val), 'Baixar'],
+            value_input_option='USER_ENTERED',
+            insert_data_option='INSERT_ROWS',
+        ),
+        descricao=f'append SPsDDA (SP={id_val})'
     )
 
 
@@ -223,12 +227,16 @@ def _classificar_sps_dda(ss):
     para descobrir a última linha de fato preenchida.
     """
     sh = ss.worksheet('SPsDDA')
-    todas = sh.get_all_values()
-    last_row = len(todas)  # inclui a linha do header
+    todas = com_retry(lambda: sh.get_all_values(),
+                      descricao='read SPsDDA (pré-sort)')
+    last_row = len(todas)
     if last_row <= 1:
         return
     try:
-        sh.sort((1, 'des'), range=f'A2:D{last_row}')
+        com_retry(
+            lambda: sh.sort((1, 'des'), range=f'A2:D{last_row}'),
+            descricao=f'sort SPsDDA A2:D{last_row}'
+        )
     except Exception as e:
-        # gspread.sort às vezes falha em planilhas grandes — fallback silencioso
-        logger.warning(f'[SPsDDA] sort falhou: {e}')
+        # Mesmo com retry, se falhar não bloqueia o fluxo
+        logger.warning(f'[SPsDDA] sort falhou após retries: {e}')

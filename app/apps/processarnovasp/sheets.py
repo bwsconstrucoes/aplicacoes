@@ -23,6 +23,7 @@ from .utils import (
     to_number_br, number_to_br, parse_data_pipefy, formatar_data_br,
     primeiro_token_dash, mes_ano_br, decodificar_b64_inline,
 )
+from .retry import com_retry
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,11 @@ def inserir_spsbd(gc, payload: dict, rota: str,
     else:
         raise ValueError(f'rota inválida: {rota}')
 
-    sh.append_row(row, value_input_option='USER_ENTERED', insert_data_option='INSERT_ROWS')
+    com_retry(
+        lambda: sh.append_row(row, value_input_option='USER_ENTERED',
+                              insert_data_option='INSERT_ROWS'),
+        descricao=f'append SPsBD (SP={payload.get("id")}, rota={rota})'
+    )
     return {'ok': True, 'rota': rota, 'colunas_preenchidas': sum(1 for c in row if c != '')}
 
 
@@ -450,7 +455,11 @@ def inserir_log(gc, payload: dict, rateio_descritivo: dict) -> dict:
         rows.append(row)
 
     if rows:
-        sh.append_rows(rows, value_input_option='USER_ENTERED', insert_data_option='INSERT_ROWS')
+        com_retry(
+            lambda: sh.append_rows(rows, value_input_option='USER_ENTERED',
+                                   insert_data_option='INSERT_ROWS'),
+            descricao=f'append Log (SP={sp_id}, {len(rows)} linhas)'
+        )
 
     return {'ok': True, 'linhas_inseridas': len(rows)}
 
@@ -464,7 +473,10 @@ def registrar_falha_processar(gc, payload: dict, motivo: str = 'Cadastrar Títul
     sh = ss.worksheet(ABA_FALHA)
     sp_id = as_string(payload.get('id'))
     agora = datetime.now().strftime('%d/%m/%Y %H:%M')
-    sh.append_row([sp_id, agora, motivo],
-                  value_input_option='USER_ENTERED',
-                  insert_data_option='INSERT_ROWS')
+    com_retry(
+        lambda: sh.append_row([sp_id, agora, motivo],
+                              value_input_option='USER_ENTERED',
+                              insert_data_option='INSERT_ROWS'),
+        descricao=f'append FalhaProcessar (SP={sp_id})'
+    )
     return {'ok': True}

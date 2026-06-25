@@ -29,6 +29,8 @@ import logging
 import threading
 from typing import Optional
 
+from .retry import com_retry
+
 logger = logging.getLogger(__name__)
 
 # IDs das planilhas
@@ -92,7 +94,8 @@ def _carregar_tabela(gc, tabela: str) -> dict:
 
     cfg = SHEETS_CONFIG[tabela]
     sh = gc.open_by_key(cfg['spreadsheet_id']).worksheet(cfg['sheet_name'])
-    todas = sh.get_all_values()
+    todas = com_retry(lambda: sh.get_all_values(),
+                      descricao=f'read lookup {tabela}')
     mapa = {}
     normaliza = cfg.get('normaliza_chave', False)
     for row in todas[1:]:  # pula header

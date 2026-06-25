@@ -140,8 +140,9 @@ def _executar_transferencia(gc, payload: dict, result: dict) -> dict:
     try:
         result['secoes']['spsbd'] = sheets_mod.inserir_spsbd(gc, payload, rota='transferencia')
     except Exception as e:
-        logger.exception('[transferencia] falha SPsBD')
+        logger.exception('[transferencia] falha SPsBD após retries')
         result['secoes']['spsbd'] = {'ok': False, 'erro': str(e)}
+        notify_mod.alertar_falha_log(payload.get('id'))
 
     # 3. Rateio (sem Omie — mas usamos a saída pra montar log com CONS)
     try:
@@ -197,8 +198,9 @@ def _executar_pagamento_futuro(gc, payload: dict, result: dict) -> dict:
             gc, payload, rota='pagamento_futuro', boleto_secao=bol
         )
     except Exception as e:
-        logger.exception('[pag_futuro] falha SPsBD')
+        logger.exception('[pag_futuro] falha SPsBD após retries')
         result['secoes']['spsbd'] = {'ok': False, 'erro': str(e)}
+        notify_mod.alertar_falha_log(payload.get('id'))
 
     # 5. Log (módulo 738)
     try:
@@ -312,8 +314,9 @@ def _executar_padrao(gc, payload: dict, result: dict) -> dict:
                 gc, payload, rota='padrao', omie_secao=omie_secao, boleto_secao=bol
             )
         except Exception as e:
-            logger.exception('[padrao] falha SPsBD')
+            logger.exception('[padrao] falha SPsBD após retries')
             result['secoes']['spsbd'] = {'ok': False, 'erro': str(e)}
+            notify_mod.alertar_falha_log(payload.get('id'))
     else:
         result['secoes']['spsbd'] = {
             'ok': False, 'pulado': True,
