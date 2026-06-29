@@ -10,6 +10,7 @@ from .models import AttachmentInput, ExecutionPlan
 from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
+from .parser_sicredi import parse_sicredi_text, is_sicredi
 from .sheets import get_gc, load_spsbd_index, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
 from .matcher import match_receipt
 from .omie import build_omie_plan, build_incluir_lanc_cc, execute_omie, execute_omie_lanccc, codigo_integracao
@@ -68,13 +69,23 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             if not as_string(text):
                 continue
 
-            rec = parse_bradesco_text(
-                filename=att.filename,
-                page=page_num,
-                text=text,
-                drive_link='',
-                fingerprint=f'{fp_file}:{page_num}',
-            )
+            # Detecta banco e chama parser correto
+            if is_sicredi(text):
+                rec = parse_sicredi_text(
+                    filename=att.filename,
+                    page=page_num,
+                    text=text,
+                    drive_link='',
+                    fingerprint=f'{fp_file}:{page_num}',
+                )
+            else:
+                rec = parse_bradesco_text(
+                    filename=att.filename,
+                    page=page_num,
+                    text=text,
+                    drive_link='',
+                    fingerprint=f'{fp_file}:{page_num}',
+                )
 
             # Primeiro localiza a SP/título. Só depois salva o comprovante.
             # Isso evita gerar arquivos órfãos no Dropbox quando a baixa não puder
@@ -336,19 +347,9 @@ def _decidir_execucao(plan: ExecutionPlan, executar_omie: bool, atualizar_pipefy
 
 def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
     """Consulta → Altera (se necessário) → Baixa. Retorna log de cada step."""
-    import time, re as _re
     resultados = []
     for req in plan.omie_requests:
         resp = execute_omie(req['request'])
-        # Retry automático para rate limit — extrai tempo de espera da mensagem
-        if not resp.get('ok'):
-            body = resp.get('body') or {}
-            if 'MISUSE_API_PROCESS' in as_string(body.get('faultcode') or ''):
-                faultstring = as_string(body.get('faultstring') or '')
-                m = _re.search(r'em (\d+) segundos', faultstring)
-                wait = int(m.group(1)) + 5 if m else 75
-                time.sleep(wait)
-                resp = execute_omie(req['request'])
         resultados.append({'step': req['step'], 'response': resp})
 
         if req['step'] == 'consultar':
