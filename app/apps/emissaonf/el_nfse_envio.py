@@ -59,7 +59,9 @@ def enviar(xml_gerarnfseenvio: str, de_verdade: bool = False, incluir_cabec: boo
         print(envelope)
         print("===== fim do preview =====")
         return None
-    headers = {"Content-Type": "text/xml; charset=utf-8", "SOAPAction": SOAPACTION}
+    headers = {"Content-Type": "text/xml; charset=utf-8", "SOAPAction": SOAPACTION,
+               "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BWS-NFSe/1.0",
+               "Accept": "text/xml, application/soap+xml, */*"}
     r = requests.post(ENDPOINT, data=envelope.encode("utf-8"), headers=headers,
                       cert=cert, timeout=timeout)
     return r

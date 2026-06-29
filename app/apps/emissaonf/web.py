@@ -33,6 +33,7 @@ import preview as _preview
 import montar_emissao as _me
 import el_nfse_envio as _envio
 import concluir as _concluir
+import substituicao as _sub
 
 bp = Blueprint("emissao", __name__)
 
@@ -91,6 +92,7 @@ def pagina():
                         status=403, mimetype="text/html")
     card_id = (request.args.get("card_id") or "").strip()
     token = request.args.get("token", "")
+    nota_sub = (request.args.get("nota_substituida") or request.args.get("notasubstituida") or "").strip()
     if not card_id:
         return Response(_pagina_pedir_card(token), mimetype="text/html")
     try:
@@ -98,7 +100,7 @@ def pagina():
     except Exception as e:
         return Response(_pagina_erro(f"Erro ao carregar o card {card_id}: "
                                      f"{type(e).__name__}: {e}"), mimetype="text/html")
-    return Response(_render_pagina(ctx, card_id, token), mimetype="text/html")
+    return Response(_render_pagina(ctx, card_id, token, nota_sub), mimetype="text/html")
 
 
 @bp.route("/emitir", methods=["POST"])
@@ -108,6 +110,7 @@ def emitir():
     card_id = (request.form.get("card_id") or "").strip()
     token = request.form.get("token", "")
     discr = request.form.get("discriminacao", "")
+    nota_sub = (request.form.get("nota_substituida") or "").strip()
     if not card_id:
         return Response(_pagina_erro("card_id ausente."), status=400, mimetype="text/html")
     if request.form.get("confirmo") != "on":
@@ -120,7 +123,11 @@ def emitir():
         _EMITINDO.add(card_id)
     try:
         ctx = _worker.preparar(card_id)
-        val = _val.checar(ctx["card"], ctx["r"])           # revalida no servidor
+        if nota_sub and not _sub.localizar_slot_por_numero(ctx["card"], nota_sub):
+            return Response(_pagina_erro(
+                f"Substituição: a NF {nota_sub} não foi encontrada nos slots A–E deste card. "
+                f"Confira o número no parâmetro 'nota_substituida' do link."), mimetype="text/html")
+        val = _val.checar(ctx["card"], ctx["r"], ignorar_numero=nota_sub or None)   # revalida no servidor
         if not val["ok"]:
             return Response(_pagina_erro("Bloqueado pela validação: " + " | ".join(val["bloqueios"])),
                             mimetype="text/html")
@@ -145,8 +152,16 @@ def emitir():
         res = _envio.parse_resposta(resp.text)
         if not res.get("numero"):
             erros = "; ".join(res.get("erros") or []) or "sem detalhes"
-            return Response(_pagina_erro("A prefeitura NÃO retornou número de NFS-e. " + erros),
-                            mimetype="text/html")
+            corpo = resp.text or ""
+            diag = (f"HTTP {resp.status_code}\n"
+                    f"Content-Type: {resp.headers.get('Content-Type', '?')}\n"
+                    f"Tamanho: {len(resp.content)} bytes\n"
+                    f"URL final: {resp.url}\n"
+                    f"------ início do corpo (até 1800 chars) ------\n"
+                    f"{corpo[:1800] if corpo else '(corpo vazio)'}")
+            return Response(_pagina_erro_diag(
+                "A prefeitura NÃO retornou número de NFS-e. " + erros, diag),
+                mimetype="text/html")
 
         numero = res["numero"]
         codigo = res.get("codigo_verificacao", "")
@@ -167,9 +182,31 @@ def emitir():
         except Exception as e:
             buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
 
+        # SUBSTITUIÇÃO: com a nova nota já concluída, cancela a antiga (card + planilha)
+        sub_info = None
+        if nota_sub:
+            sub_info = {"numero_antigo": nota_sub, "card": "", "planilha": ""}
+            try:
+                tk = ctx["cred"]["PIPEFY_TOKEN"]
+                rc = _sub.cancelar_no_card(ctx["card"], nota_sub, tk, novo_numero=numero)
+                sub_info["card"] = rc["msg"]
+                buf.write(f"\n>>> SUBSTITUIÇÃO (card): {rc['msg']}")
+            except Exception as e:
+                sub_info["card"] = f"ERRO ao cancelar no card: {type(e).__name__}: {e}"
+                buf.write(f"\n>>> SUBSTITUIÇÃO (card) ERRO: {e}")
+            try:
+                ws_notas = _worker.abrir_aba(ctx["gc"].open_by_key(_worker.ID_PROC), _worker.ABA_NOTAS)
+                rp = _sub.cancelar_na_planilha(ws_notas, nota_sub, novo_numero=numero)
+                sub_info["planilha"] = rp["msg"]
+                buf.write(f"\n>>> SUBSTITUIÇÃO (planilha): {rp['msg']}")
+            except Exception as e:
+                sub_info["planilha"] = f"ERRO ao marcar na planilha: {type(e).__name__}: {e}"
+                buf.write(f"\n>>> SUBSTITUIÇÃO (planilha) ERRO: {e}")
+
         rid = uuid.uuid4().hex
         _RESULTADOS[rid] = {"numero": numero, "codigo": codigo, "data": data_iso,
-                            "log": buf.getvalue(), "card_id": card_id, "prox": ctx.get("prox")}
+                            "log": buf.getvalue(), "card_id": card_id, "prox": ctx.get("prox"),
+                            "sub": sub_info}
         return redirect(url_for(".resultado", id=rid, token=token))
     except Exception as e:
         return Response(_pagina_erro(f"Erro ao emitir: {type(e).__name__}: {e}"), mimetype="text/html")
@@ -259,11 +296,38 @@ def _pagina_erro(msg):
     return _doc("Erro", f"<h1>Emissão de NFS-e</h1><div class='err'>{html.escape(msg)}</div>")
 
 
-def _render_pagina(ctx, card_id, token):
+def _pagina_erro_diag(msg, diag):
+    return _doc("Erro", f"<h1>Emissão de NFS-e</h1><div class='err'>{html.escape(msg)}</div>"
+                f"<div class='card'><b>Resposta crua da prefeitura (para diagnóstico)</b>"
+                f"<pre>{html.escape(diag)}</pre></div>")
+
+
+def _render_pagina(ctx, card_id, token, nota_sub=""):
     card, obra, r = ctx["card"], ctx["obra"], ctx["r"]
     prox = ctx["prox"]
-    val = _val.checar(card, r)
+    val = _val.checar(card, r, ignorar_numero=nota_sub or None)
     discr_atual = getattr(ctx.get("dados_rps"), "discriminacao", "") or ""
+
+    # substituição (opcional, via ?nota_substituida=NNN)
+    slot_old = _sub.localizar_slot_por_numero(card, nota_sub) if nota_sub else None
+    sub_ok = (not nota_sub) or bool(slot_old)
+    sub_banner = sub_hidden = sub_bloqueio = ""
+    if nota_sub and slot_old:
+        _si = {x["numero"]: x for x in _val.slots_preenchidos(card)}
+        _vo = _si.get(str(nota_sub).strip(), {}).get("valor")
+        _vt = f" (R$ {_val.brl(_vo)})" if _vo is not None else ""
+        sub_banner = ("<div style='background:#fde7c2;border:2px solid #e08600;color:#7a4a00;"
+                      "padding:14px;border-radius:8px;margin:0 0 16px;font-size:15px'>"
+                      f"🔁 <b>SUBSTITUIÇÃO DE NOTA</b> — esta emissão substitui a "
+                      f"<b>NF {html.escape(str(nota_sub))}</b>{_vt} (slot <b>{slot_old}</b>). "
+                      f"Ao emitir, a NF {html.escape(str(nota_sub))} será marcada como "
+                      "<b>Cancelada</b> no card e na planilha 'Notas BWS'. "
+                      "O teto abaixo já desconsidera a nota substituída.</div>")
+        sub_hidden = f"<input type='hidden' name='nota_substituida' value='{html.escape(str(nota_sub))}'>"
+    elif nota_sub and not slot_old:
+        sub_bloqueio = (f"<div class='err'>🚫 SUBSTITUIÇÃO: a NF {html.escape(str(nota_sub))} não foi "
+                        "encontrada nos slots A–E deste card. Confira o número no parâmetro "
+                        "'nota_substituida' do link.</div>")
 
     # espelho (HTML completo) embutido num iframe isolado
     try:
@@ -295,7 +359,8 @@ def _render_pagina(ctx, card_id, token):
         alertas += ("<div class='err'>⚠️ XML não assinado — emissão bloqueada.<br><b>Motivo:</b> "
                     + html.escape(_diag_cert()) + "</div>")
 
-    pode = val["ok"] and ctx.get("assinado")
+    alertas += sub_bloqueio
+    pode = val["ok"] and ctx.get("assinado") and sub_ok
 
     # formulário de emissão
     if pode:
@@ -306,6 +371,7 @@ def _render_pagina(ctx, card_id, token):
             <textarea name='discriminacao' rows='8'>{html.escape(discr_atual)}</textarea>
             <input type='hidden' name='card_id' value='{html.escape(card_id)}'>
             <input type='hidden' name='token' value='{html.escape(token)}'>
+            {sub_hidden}
             <label class='lbl'><input type='checkbox' name='confirmo' onchange="document.getElementById('btn').disabled=!this.checked">
               Confiro os dados e <b>autorizo a emissão</b> desta NFS-e.</label>
             <button id='btn' type='submit' disabled>✅ Confirmar e Emitir</button>
@@ -316,7 +382,7 @@ def _render_pagina(ctx, card_id, token):
         form = "<div class='card'><div class='warn'>Emissão bloqueada pela validação acima. " \
                "Ajuste o card no Pipefy e recarregue a página.</div></div>"
 
-    return _doc("Emissão NFS-e", cab + f"<div class='card'>{metrics}{alertas}</div>"
+    return _doc("Emissão NFS-e", sub_banner + cab + f"<div class='card'>{metrics}{alertas}</div>"
                 + form + f"<div class='card'><b>Espelho</b>{iframe}</div>")
 
 
@@ -326,10 +392,19 @@ def _pagina_resultado(r):
     if r.get("prox") and str(r["numero"]) != str(r["prox"]):
         aviso_num = (f"<div class='warn'>Número devolvido ({r['numero']}) ≠ esperado "
                      f"({r['prox']}). Confira a numeração.</div>")
+    sub_box = ""
+    sub = r.get("sub")
+    if sub:
+        sub_box = (f"<div class='card'><b>🔁 Substituição da NF {html.escape(str(sub['numero_antigo']))}</b>"
+                   f"<div class='lbl'>No card: {html.escape(str(sub.get('card','') or '—'))}</div>"
+                   f"<div class='lbl'>Na planilha: {html.escape(str(sub.get('planilha','') or '—'))}</div>"
+                   "<p class='sub'>Obs.: o cancelamento fiscal junto à prefeitura (ABRASF), se necessário, "
+                   "é um passo separado e não é feito automaticamente.</p></div>")
     return _doc("NFS-e emitida", f"""
       <h1>NFS-e emitida</h1>
       <div class='ok'>✅ Nota <b>{html.escape(str(r['numero']))}</b> emitida — código
         <b>{html.escape(str(r['codigo']))}</b> — emissão {html.escape(str(r['data']))}.</div>
       {aviso_num}
+      {sub_box}
       <div class='card'><b>Log do pós-emissão</b><pre>{log}</pre></div>
       <p>Pode fechar esta aba. Os 4 documentos sobem no Drive e os links vão pra Descrição do card.</p>""")
