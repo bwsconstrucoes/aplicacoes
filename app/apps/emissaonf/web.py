@@ -94,6 +94,21 @@ def _so_num(v) -> str:
     return "".join(c for c in str(v or "") if c.isdigit())
 
 
+# Contas p/ Pagamento (vão na discriminação). Mesmas opções do campo do Pipefy;
+# servem para suprir o campo numa substituição, em que o card não o traz mais.
+CONTAS_PAGAMENTO = [
+    "Bradesco - Agência: 624-6 - Conta Corrente: 7011-4",
+    "Bradesco - Agência: 624-6 - Conta Corrente: 49211-6",
+    "Bradesco - Agência: 624-6 - Conta Corrente: 22069-8",
+    "Bradesco - Agência: 624-6 - Conta Corrente: 50302-9",
+    "Bradesco - Agência: 624-6 - Conta Corrente: 50024-0",
+    "Banco do Brasil - Agência: 3515-7 - Conta Corrente: 22970-9",
+    "Banco do Nordeste - Agência: 313 - Conta Corrente: 168-5",
+    "Caixa Econômica - Agência: 1977 - Conta Corrente: 2625-5 - Op. 003",
+    "Banco Sicredi (748) - Agência: 2301 - Conta Corrente: 30008-0",
+]
+
+
 @bp.route("/", methods=["GET"])
 def pagina():
     if not _token_ok():
@@ -679,6 +694,22 @@ def _render_pagina(ctx, card_id, token, nota_sub=""):
     alertas += sub_bloqueio
     pode = val["ok"] and ctx.get("assinado") and sub_ok
 
+    # seletor de Conta p/ Pagamento — reescreve a linha na discriminação (que é o corpo emitido).
+    _opts_conta = "".join(f"<option value='{html.escape(c)}'>{html.escape(c)}</option>"
+                          for c in CONTAS_PAGAMENTO)
+    _conta_hint = ("  <span style='color:#b35900;font-weight:bold'>— substituição: o card não traz a "
+                   "conta, escolha aqui (vai na discriminação)</span>" if nota_sub else "")
+    # JS como string normal (NÃO f-string): troca a linha 'Conta p/ Pagamento:' no textarea.
+    # Usa replace com regex (.* para no fim da linha) — sem precisar de \n.
+    _script_conta = (
+        "<script>function _aplicarConta(sel){"
+        "if(!sel.value)return;"
+        "var ta=document.querySelector(\"textarea[name='discriminacao']\");"
+        "if(!ta)return;"
+        "ta.value=ta.value.replace(/Conta p\\/ Pagamento:.*/, 'Conta p/ Pagamento: '+sel.value);"
+        "}</script>"
+    )
+
     # formulário de emissão
     if pode:
         form = f"""
@@ -686,6 +717,13 @@ def _render_pagina(ctx, card_id, token, nota_sub=""):
           <form method='post' action='{url_for('.emitir')}' onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Emitindo...';">
             <label class='lbl'><b>Discriminação dos serviços</b> (editável — é o corpo da nota):</label>
             <textarea name='discriminacao' rows='8'>{html.escape(discr_atual)}</textarea>
+            <label class='lbl' style='margin-top:8px'><b>Conta p/ Pagamento</b>{_conta_hint}</label>
+            <select onchange="_aplicarConta(this)"
+                    style="width:100%;box-sizing:border-box;padding:8px;border:1px solid #c8d0da;border-radius:6px;margin-bottom:6px">
+              <option value="">— manter a conta atual da discriminação —</option>
+              {_opts_conta}
+            </select>
+            {_script_conta}
             <input type='hidden' name='card_id' value='{html.escape(card_id)}'>
             <input type='hidden' name='token' value='{html.escape(token)}'>
             {sub_hidden}

@@ -99,9 +99,15 @@ def checar(card: dict, r, ignorar_numero=None) -> dict:
     emi = _norm(card.get("emissao_nf"))
     if "PARCIAL" in emi and _dec_norm(card.get("valor_parcial")) <= 0:
         bloqueios.append("Emissão PARCIAL exige o campo 'Valor Parcial' preenchido.")
+    eh_substituicao = bool(ignorar_numero)
     if not _norm(card.get("tipo_medicao")):
-        bloqueios.append("'Tipo de Medição' é obrigatório e está vazio.")
-    if not _norm(card.get("banco")):
+        if eh_substituicao:
+            avisos.append("Substituição: 'Tipo de Medição' está vazio no card (foi limpo após a emissão "
+                          "anterior) — o cálculo está usando o PADRÃO (COM dedução). Confira abaixo se as "
+                          "retenções batem com a nota substituída; se ela era 'SEM DEDUÇÃO', me avise.")
+        else:
+            bloqueios.append("'Tipo de Medição' é obrigatório e está vazio.")
+    if not _norm(card.get("banco")) and not eh_substituicao:
         bloqueios.append("'Banco para Recebimento' é obrigatório e está vazio.")
 
     return {
