@@ -61,10 +61,21 @@ def enviar(xml_gerarnfseenvio: str, de_verdade: bool = False, incluir_cabec: boo
         return None
     headers = {"Content-Type": "text/xml; charset=utf-8", "SOAPAction": SOAPACTION,
                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BWS-NFSe/1.0",
-               "Accept": "text/xml, application/soap+xml, */*"}
-    r = requests.post(ENDPOINT, data=envelope.encode("utf-8"), headers=headers,
-                      cert=cert, timeout=timeout)
-    return r
+               "Accept": "text/xml, application/soap+xml, */*",
+               "Connection": "close"}
+    body = envelope.encode("utf-8")
+    # 408 = o servidor NÃO recebeu a requisição completa -> nenhuma nota criada -> seguro retentar.
+    # (Retentamos SÓ no 408, justamente para nunca arriscar nota duplicada.)
+    import time
+    ultima = None
+    for tentativa in range(1, 4):
+        ultima = requests.post(ENDPOINT, data=body, headers=headers, cert=cert, timeout=timeout)
+        if ultima.status_code != 408:
+            return ultima
+        print(f"[envio] HTTP 408 (corpo não chegou completo) — tentativa {tentativa}/3, "
+              f"retentando em {3 * tentativa}s...")
+        time.sleep(3 * tentativa)
+    return ultima
 
 
 def parse_resposta(texto: str) -> dict:
