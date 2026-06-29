@@ -23,7 +23,7 @@ import os
 import xml.etree.ElementTree as ET
 
 from credenciais import cliente_gspread, ler_credenciais
-from el_nfse_abrasf import carregar_certificado_a1
+from el_nfse_abrasf import carregar_certificado_a1, carregar_certificado_auto
 import adn_nfse
 import controle_nacional as ctrl
 import drive_upload as drive
@@ -83,12 +83,16 @@ def _casa(pend: dict, dm: dict) -> bool:
 def rodar(base: str = adn_nfse.BASE_PROD):
     gc = cliente_gspread()
     cred = ler_credenciais(gc)
-    senha = (cred.get("CERTIFICADO_SENHA") or cred.get("SENHA_CERTIFICADO")
-             or cred.get("CERT_SENHA"))
-    if not senha or not os.path.exists(CERT_PATH):
-        print(">>> Sem certificado/senha — não dá pra consultar o ADN. Abortado.")
+    senha = (cred.get("CERTIFICADO_SENHA") or cred.get("SENHA_CERTIFICADO") or cred.get("CERT_SENHA")
+             or os.getenv("EMISSAO_NF_CERTIFICADO_SENHA") or os.getenv("CERTIFICADO_SENHA")
+             or os.getenv("SENHA_CERTIFICADO") or os.getenv("CERT_SENHA"))
+    chave_pem, cert_pem = (None, None)
+    if senha:
+        chave_pem, cert_pem = carregar_certificado_auto(senha, CERT_PATH)
+    if not (senha and chave_pem and cert_pem):
+        print(">>> Sem certificado/senha (env CERTIFICADO_P12_BASE64 ou arquivo) — "
+              "não dá pra consultar o ADN. Abortado.")
         return
-    chave_pem, cert_pem = carregar_certificado_a1(CERT_PATH, senha)
     planilha = gc.open_by_key(ID_PROC)
 
     pendentes = ctrl.listar_pendentes(planilha)
