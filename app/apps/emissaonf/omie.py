@@ -10,17 +10,29 @@ ao campo, virando ex.: '3001/3072'. Em cancelamento, o número é removido do ca
 Credenciais (aba Credenciais): OMIE_KEY, OMIE_SECRET.
 """
 from __future__ import annotations
+import time
 import requests
 
 URL = "https://app.omie.com.br/api/v1/financas/contareceber/"
 
 
-def _post(call, param, creds, timeout=40):
+# mensagens do Omie quando o registro está travado por uma escrita recente
+_OMIE_TRAVA = ("já foi processada", "ja foi processada", "está sendo processada",
+               "sendo processada", "tente novamente")
+
+
+def _post(call, param, creds, timeout=40, _tentativa=1):
     body = {"call": call, "param": [param],
             "app_key": creds["OMIE_KEY"], "app_secret": creds["OMIE_SECRET"]}
     r = requests.post(URL, json=body, timeout=timeout)
+    corpo = r.text or ""
+    # O Omie trava o registro por alguns segundos após uma escrita (ex.: AlterarContaReceber
+    # do passo anterior). Espera e tenta de novo — as operações daqui são idempotentes.
+    if _tentativa <= 5 and any(m in corpo for m in _OMIE_TRAVA):
+        time.sleep(min(2 ** _tentativa, 10))   # 2, 4, 8, 10, 10
+        return _post(call, param, creds, timeout=timeout, _tentativa=_tentativa + 1)
     if r.status_code != 200:
-        raise RuntimeError(f"Omie {call} HTTP {r.status_code}: {r.text[:200]}")
+        raise RuntimeError(f"Omie {call} HTTP {r.status_code}: {corpo[:200]}")
     data = r.json()
     if isinstance(data, dict) and data.get("faultstring"):
         raise RuntimeError(f"Omie {call}: {data['faultstring']}")
