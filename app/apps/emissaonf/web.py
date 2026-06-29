@@ -89,6 +89,11 @@ def _diag_cert() -> str:
 # --------------------------------------------------------------------------- #
 # Rotas
 # --------------------------------------------------------------------------- #
+def _so_num(v) -> str:
+    """Só os dígitos do número da nota (robusto a '3.076'/'3076,00' do Pipefy)."""
+    return "".join(c for c in str(v or "") if c.isdigit())
+
+
 @bp.route("/", methods=["GET"])
 def pagina():
     if not _token_ok():
@@ -96,7 +101,7 @@ def pagina():
                         status=403, mimetype="text/html")
     card_id = (request.args.get("card_id") or "").strip()
     token = request.args.get("token", "")
-    nota_sub = (request.args.get("nota_substituida") or request.args.get("notasubstituida") or "").strip()
+    nota_sub = _so_num(request.args.get("nota_substituida") or request.args.get("notasubstituida"))
     if not card_id:
         return Response(_pagina_pedir_card(token), mimetype="text/html")
     try:
@@ -114,7 +119,7 @@ def emitir():
     card_id = (request.form.get("card_id") or "").strip()
     token = request.form.get("token", "")
     discr = request.form.get("discriminacao", "")
-    nota_sub = (request.form.get("nota_substituida") or "").strip()
+    nota_sub = _so_num(request.form.get("nota_substituida"))
     if not card_id:
         return Response(_pagina_erro("card_id ausente."), status=400, mimetype="text/html")
     if request.form.get("confirmo") != "on":
@@ -133,8 +138,8 @@ def emitir():
                 f"Confira o número no parâmetro 'nota_substituida' do link."), mimetype="text/html")
         # regra do município: só permite substituir por valor IGUAL ou MAIOR. Barramos antes de tentar.
         if nota_sub:
-            _slots_v = {x["numero"]: x["valor"] for x in _val.slots_preenchidos(ctx["card"])}
-            _v_old = _slots_v.get(str(nota_sub).strip())
+            _slots_v = {_so_num(x["numero"]): x["valor"] for x in _val.slots_preenchidos(ctx["card"])}
+            _v_old = _slots_v.get(nota_sub)
             try:
                 _v_new = Decimal(str(getattr(ctx["r"], "valor_total", 0) or 0))
             except Exception:
@@ -625,8 +630,8 @@ def _render_pagina(ctx, card_id, token, nota_sub=""):
     sub_ok = (not nota_sub) or bool(slot_old)
     sub_banner = sub_hidden = sub_bloqueio = ""
     if nota_sub and slot_old:
-        _si = {x["numero"]: x for x in _val.slots_preenchidos(card)}
-        _vo = _si.get(str(nota_sub).strip(), {}).get("valor")
+        _si = {_so_num(x["numero"]): x for x in _val.slots_preenchidos(card)}
+        _vo = _si.get(nota_sub, {}).get("valor")
         _vt = f" (R$ {_val.brl(_vo)})" if _vo is not None else ""
         sub_banner = ("<div style='background:#fde7c2;border:2px solid #e08600;color:#7a4a00;"
                       "padding:14px;border-radius:8px;margin:0 0 16px;font-size:15px'>"

@@ -19,15 +19,21 @@ import pipefy_update as pf
 STATUS_CANCELADA = "Cancelada"   # vocabulário que a validação trata como NÃO-válida
 
 
+def _so_digitos(v) -> str:
+    """Mantém só os dígitos (ex.: '3.076' / '3076,00' -> '3076')."""
+    return "".join(c for c in str(v or "") if c.isdigit())
+
+
 def localizar_slot_por_numero(card: dict, numero) -> str | None:
-    """Slot A–E cujo campo 'número da nota' == numero. None se não achar."""
+    """Slot A–E cujo campo 'número da nota' == numero. None se não achar.
+    Compara só por dígitos (robusto a '3.076' vindo do Pipefy)."""
     por_id = card.get("campos_por_id", {}) or {}
-    alvo = str(numero).strip()
+    alvo = _so_digitos(numero)
     if not alvo:
         return None
     for s in "ABCDE":
         f = pf.CAMPOS_SLOT[s]
-        if (por_id.get(f["numero"]) or "").strip() == alvo:
+        if _so_digitos(por_id.get(f["numero"])) == alvo:
             return s
     return None
 
@@ -49,10 +55,10 @@ def cancelar_na_planilha(ws_notas, numero, novo_numero=None) -> dict:
     """Marca a linha da nota antiga na 'Notas BWS' (coluna L = Observação).
     Localiza pela coluna F (Nº Nota)."""
     col = ws_notas.col_values(6)  # F = Nº Nota
-    alvo = str(numero).strip()
+    alvo = _so_digitos(numero)
     obs = "CANCELADA" + (f" — substituída pela NF {novo_numero}" if novo_numero else "")
     for i, v in enumerate(col, start=1):
-        if str(v).strip() == alvo:
+        if _so_digitos(v) == alvo:
             ws_notas.update(f"L{i}", [[obs]], value_input_option="USER_ENTERED")
             return {"ok": True, "linha": i, "msg": f"linha {i} da 'Notas BWS' marcada: {obs}"}
     return {"ok": False, "linha": None,
