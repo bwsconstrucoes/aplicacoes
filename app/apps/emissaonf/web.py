@@ -54,6 +54,33 @@ def _cert_temp(cert_pem: bytes, chave_pem: bytes):
     return cf.name, kf.name
 
 
+def _diag_cert() -> str:
+    """Diz exatamente por que o certificado não carregou (env, base64, senha, .p12)."""
+    import base64 as _b64
+    b64 = os.getenv("EMISSAO_NF_CERTIFICADO_P12_BASE64") or os.getenv("CERTIFICADO_P12_BASE64") or ""
+    senha = (os.getenv("EMISSAO_NF_CERTIFICADO_SENHA") or os.getenv("CERTIFICADO_SENHA")
+             or os.getenv("SENHA_CERTIFICADO") or os.getenv("CERT_SENHA") or "")
+    if not b64:
+        return "a env EMISSAO_NF_CERTIFICADO_P12_BASE64 não está definida (ou veio vazia) no serviço."
+    if not senha:
+        return "a env EMISSAO_NF_CERTIFICADO_SENHA não está definida no serviço."
+    try:
+        raw = _b64.b64decode(b64)
+    except Exception as e:
+        return f"o base64 do certificado é inválido ({e}). Refaça a cópia com Set-Clipboard."
+    if len(raw) < 200:
+        return (f"o base64 decodifica para apenas {len(raw)} bytes — provavelmente foi truncado "
+                f"na cópia. Refaça com Set-Clipboard e cole de novo.")
+    try:
+        from cryptography.hazmat.primitives.serialization import pkcs12
+        pkcs12.load_key_and_certificates(raw, senha.encode("utf-8"))
+        return ("certificado e senha carregam OK isoladamente — se a página ainda diz 'não assinado', "
+                "o código deployado pode estar desatualizado (confirme o push de el_nfse_abrasf.py/credenciais.py).")
+    except Exception as e:
+        return (f"falha ao abrir o .p12 com a senha: {type(e).__name__}: {e}. "
+                f"Quase sempre é senha incorreta ou .p12 truncado.")
+
+
 # --------------------------------------------------------------------------- #
 # Rotas
 # --------------------------------------------------------------------------- #
@@ -161,6 +188,24 @@ def resultado():
     return Response(_pagina_resultado(r), mimetype="text/html")
 
 
+@bp.route("/diag", methods=["GET"])
+def diag():
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    b64 = os.getenv("EMISSAO_NF_CERTIFICADO_P12_BASE64") or os.getenv("CERTIFICADO_P12_BASE64") or ""
+    linhas = [
+        f"EMISSAO_NF_CERTIFICADO_P12_BASE64 definida: {'sim' if b64 else 'NÃO'}"
+        + (f" (tamanho do texto: {len(b64)} chars)" if b64 else ""),
+        f"EMISSAO_NF_CERTIFICADO_SENHA definida: "
+        f"{'sim' if (os.getenv('EMISSAO_NF_CERTIFICADO_SENHA') or os.getenv('CERTIFICADO_SENHA')) else 'NÃO'}",
+        "",
+        "Resultado do teste de carregamento:",
+        _diag_cert(),
+    ]
+    corpo = "<h1>Diagnóstico do certificado</h1><pre>" + html.escape("\n".join(linhas)) + "</pre>"
+    return Response(_doc("Diagnóstico", corpo), mimetype="text/html")
+
+
 # --------------------------------------------------------------------------- #
 # HTML
 # --------------------------------------------------------------------------- #
@@ -247,7 +292,8 @@ def _render_pagina(ctx, card_id, token):
     alertas = "".join(f"<div class='err'>🚫 {html.escape(b)}</div>" for b in val["bloqueios"])
     alertas += "".join(f"<div class='warn'>⚠️ {html.escape(a)}</div>" for a in val["avisos"])
     if not ctx.get("assinado"):
-        alertas += "<div class='err'>⚠️ XML não assinado (certificado/senha ausente). Emissão bloqueada.</div>"
+        alertas += ("<div class='err'>⚠️ XML não assinado — emissão bloqueada.<br><b>Motivo:</b> "
+                    + html.escape(_diag_cert()) + "</div>")
 
     pode = val["ok"] and ctx.get("assinado")
 
