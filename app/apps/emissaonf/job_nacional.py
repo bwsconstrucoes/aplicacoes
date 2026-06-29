@@ -115,13 +115,25 @@ def rodar(base: str = adn_nfse.BASE_PROD):
         if dm and dm["emit"] == CNPJ_BWS:
             nacionais.append((dm, d))
     print(f"  {len(nacionais)} emitidas pela BWS")
+    for dm, _ in nacionais:
+        try:
+            print(f"    ADN BWS: toma={dm['toma']} dCompet={dm['dcompet']} "
+                  f"vServ={dm['vserv']:.2f} chave=...{dm['chave'][-8:]}")
+        except Exception:
+            pass
 
     ws_links = abrir_aba(planilha, ABA_LINKS)
     concluidas = 0
     for pend in pendentes:
         match = next((nd for nd in nacionais if _casa(pend, nd[0])), None)
         if not match:
-            print(f"  nota {pend['numero']}: ainda não no ADN — segue pendente")
+            try:
+                pv = f"{float(pend['vServ']):.2f}"
+            except Exception:
+                pv = pend.get("vServ")
+            print(f"  nota {pend['numero']}: ainda não casou — "
+                  f"pend(toma={_so_digitos(pend.get('toma_cnpj',''))} "
+                  f"dCompet={str(pend.get('dCompet',''))[:7]} vServ={pv})")
             continue
         dm, doc = match
         xml_nac = doc["xml"]
