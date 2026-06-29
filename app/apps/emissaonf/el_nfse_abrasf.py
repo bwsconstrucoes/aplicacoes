@@ -164,10 +164,9 @@ def montar_rps(d: DadosRps) -> etree._Element:
     # Faz esta nota substituir a nota antiga no município (IdentificacaoRps do RPS antigo).
     if getattr(d, "rps_substituido_numero", None):
         rsub = _e(ident_rps, "RpsSubstituido")
-        idsub = _e(rsub, "IdentificacaoRps")
-        _e(idsub, "Numero", d.rps_substituido_numero)
-        _e(idsub, "Serie", d.rps_substituido_serie or d.serie_rps)
-        _e(idsub, "Tipo", d.rps_substituido_tipo or d.tipo_rps)
+        _e(rsub, "Numero", d.rps_substituido_numero)
+        _e(rsub, "Serie", d.rps_substituido_serie or d.serie_rps)
+        _e(rsub, "Tipo", d.rps_substituido_tipo or d.tipo_rps)
 
     _e(inf, "Competencia", d.competencia)
 
