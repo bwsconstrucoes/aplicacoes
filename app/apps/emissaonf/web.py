@@ -123,6 +123,41 @@ CONTAS_PAGAMENTO = [
 ]
 
 
+def _efeitos_substituicao(ctx, nota_sub, numero, buf):
+    """Efeitos internos da substituição (a nova nota JÁ foi concluída): cancela a
+    nota antiga no card (slot Válida->Cancelada), marca CANCELADA na planilha 'Notas BWS'
+    e remove o número dela do título no Omie. Devolve um dict de status."""
+    info = {"numero_antigo": nota_sub, "card": "", "planilha": "", "omie": ""}
+    try:
+        tk = ctx["cred"]["PIPEFY_TOKEN"]
+        rc = _sub.cancelar_no_card(ctx["card"], nota_sub, tk, novo_numero=numero)
+        info["card"] = rc["msg"]
+        buf.write(f"\n>>> SUBSTITUIÇÃO (card): {rc['msg']}")
+    except Exception as e:
+        info["card"] = f"ERRO ao cancelar no card: {type(e).__name__}: {e}"
+        buf.write(f"\n>>> SUBSTITUIÇÃO (card) ERRO: {e}")
+    try:
+        ws_notas = _worker.abrir_aba(ctx["gc"].open_by_key(_worker.ID_PROC), _worker.ABA_NOTAS)
+        rp = _sub.cancelar_na_planilha(ws_notas, nota_sub, novo_numero=numero)
+        info["planilha"] = rp["msg"]
+        buf.write(f"\n>>> SUBSTITUIÇÃO (planilha): {rp['msg']}")
+    except Exception as e:
+        info["planilha"] = f"ERRO ao marcar na planilha: {type(e).__name__}: {e}"
+        buf.write(f"\n>>> SUBSTITUIÇÃO (planilha) ERRO: {e}")
+    try:
+        integracao = ctx["card"].get("omie_integracao", "")
+        if integracao:
+            _, doc_omie = omie.remover_documento(ctx["cred"], integracao, nota_sub)
+            info["omie"] = f"nº {nota_sub} removido do título (documento agora: {doc_omie or '(vazio)'})"
+        else:
+            info["omie"] = "card sem omie_integracao — nada a remover no Omie"
+        buf.write(f"\n>>> SUBSTITUIÇÃO (Omie): {info['omie']}")
+    except Exception as e:
+        info["omie"] = f"ERRO ao remover no Omie: {type(e).__name__}: {e}"
+        buf.write(f"\n>>> SUBSTITUIÇÃO (Omie) ERRO: {e}")
+    return info
+
+
 @bp.route("/", methods=["GET"])
 def pagina():
     if not _token_ok():
@@ -251,39 +286,10 @@ def emitir():
         except Exception as e:
             buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
 
-        # SUBSTITUIÇÃO: com a nova nota já concluída, cancela a antiga (card + planilha)
+        # SUBSTITUIÇÃO: com a nova nota já concluída, cancela a antiga (card + planilha + Omie)
         sub_info = None
         if nota_sub:
-            sub_info = {"numero_antigo": nota_sub, "card": "", "planilha": ""}
-            try:
-                tk = ctx["cred"]["PIPEFY_TOKEN"]
-                rc = _sub.cancelar_no_card(ctx["card"], nota_sub, tk, novo_numero=numero)
-                sub_info["card"] = rc["msg"]
-                buf.write(f"\n>>> SUBSTITUIÇÃO (card): {rc['msg']}")
-            except Exception as e:
-                sub_info["card"] = f"ERRO ao cancelar no card: {type(e).__name__}: {e}"
-                buf.write(f"\n>>> SUBSTITUIÇÃO (card) ERRO: {e}")
-            try:
-                ws_notas = _worker.abrir_aba(ctx["gc"].open_by_key(_worker.ID_PROC), _worker.ABA_NOTAS)
-                rp = _sub.cancelar_na_planilha(ws_notas, nota_sub, novo_numero=numero)
-                sub_info["planilha"] = rp["msg"]
-                buf.write(f"\n>>> SUBSTITUIÇÃO (planilha): {rp['msg']}")
-            except Exception as e:
-                sub_info["planilha"] = f"ERRO ao marcar na planilha: {type(e).__name__}: {e}"
-                buf.write(f"\n>>> SUBSTITUIÇÃO (planilha) ERRO: {e}")
-            # Omie: remove o nº da nota cancelada do campo numero_documento_fiscal do título
-            try:
-                integracao = ctx["card"].get("omie_integracao", "")
-                if integracao:
-                    _, doc_omie = omie.remover_documento(ctx["cred"], integracao, nota_sub)
-                    sub_info["omie"] = f"nº {nota_sub} removido do título (documento agora: {doc_omie or '(vazio)'})"
-                    buf.write(f"\n>>> SUBSTITUIÇÃO (Omie): {sub_info['omie']}")
-                else:
-                    sub_info["omie"] = "card sem omie_integracao — nada a remover no Omie"
-                    buf.write(f"\n>>> SUBSTITUIÇÃO (Omie): {sub_info['omie']}")
-            except Exception as e:
-                sub_info["omie"] = f"ERRO ao remover no Omie: {type(e).__name__}: {e}"
-                buf.write(f"\n>>> SUBSTITUIÇÃO (Omie) ERRO: {e}")
+            sub_info = _efeitos_substituicao(ctx, nota_sub, numero, buf)
 
         # dispara a busca nacional em background (não bloqueia a resposta ao usuário)
         try:
@@ -379,11 +385,16 @@ def _pagina_recuperar(token):
             <input name='card_id' style='padding:8px;border:1px solid #c8d0da;border-radius:6px'></label>
           <label class='lbl'>XML da NFS-e (baixe no portal da prefeitura e cole aqui):</label>
           <textarea name='xml' rows='12' placeholder='<?xml ...><CompNfse>...'></textarea>
+          <label class='lbl'>Nº da nota substituída (opcional — só se esta nota substituiu outra
+            que você cancelou/substituiu manualmente no portal):
+            <input name='nota_substituida' placeholder='ex.: 3069'
+                   style='padding:8px;border:1px solid #c8d0da;border-radius:6px'></label>
           <label class='lbl'><input type='checkbox' name='reenviar_whatsapp'> reenviar WhatsApp
             (deixe DESMARCADO — já foi enviado na emissão)</label>
           <label class='lbl'><input type='checkbox' name='completo'> rodar <b>concluir completo</b>
-            (marque SÓ se a nota foi emitida mas NÃO rodou bookkeeping — ex.: erro no concluir.
-            Faz Notas BWS + Omie + slots + entrega. Tem trava anti-duplicação.)</label>
+            (marque SÓ se a nota foi emitida mas NÃO rodou bookkeeping — ex.: erro no concluir,
+            ou substituição manual. Faz Notas BWS + Omie + slots + entrega. Se preencher o nº da
+            nota substituída acima, também cancela a antiga. Tem trava anti-duplicação.)</label>
           <input type='hidden' name='token' value='{t}'>
           <button type='submit'>Reprocessar entrega</button>
         </form>
@@ -402,6 +413,7 @@ def recuperar():
     xml_texto = (request.form.get("xml") or "").strip()
     zap = request.form.get("reenviar_whatsapp") == "on"
     completo = request.form.get("completo") == "on"
+    nota_sub = _so_num(request.form.get("nota_substituida"))
     if not card_id or not xml_texto:
         return Response(_pagina_erro("Informe o card_id e cole o XML da nota."), mimetype="text/html")
     try:
@@ -420,7 +432,12 @@ def recuperar():
         with contextlib.redirect_stdout(buf):
             if completo:
                 # nota emitida sem bookkeeping: roda o concluir inteiro (tem trava ja_existe)
-                _concluir.concluir(card_id, numero, codigo, data_iso, tmp)
+                ctx_sub = _worker.preparar(card_id) if nota_sub else None
+                _concluir.concluir(card_id, numero, codigo, data_iso, tmp, ctx=ctx_sub,
+                                   nota_substituida=(nota_sub or None))
+                # substituição manual: cancela a nota antiga (card + planilha + Omie)
+                if nota_sub:
+                    _efeitos_substituicao(ctx_sub, nota_sub, numero, buf)
             else:
                 _compl.completar(card_id, numero, codigo, data_iso, tmp,
                                  enviar_whatsapp=zap, discriminacao="")
