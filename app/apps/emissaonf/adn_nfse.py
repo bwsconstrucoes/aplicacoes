@@ -124,6 +124,38 @@ def consultar_eventos(cert_pem: bytes, chave_pem: bytes, chave_acesso: str,
     return _parse_lote(r.json(), 0)
 
 
+def diag_por_chave(cert_pem: bytes, chave_pem: bytes, chave_acesso: str,
+                   base: str = BASE_PROD, timeout: int = 40) -> str:
+    """Diagnóstico: tenta vários endpoints de busca POR CHAVE na API de
+    contribuinte federal (autenticada por certificado) e relata o que cada um
+    responde. Objetivo: descobrir se dá pra pegar a NFS-e / DANFSe nacional pela
+    chave SEM captcha e SEM esperar a distribuição por NSU. Tudo GET (sem efeito)."""
+    cert_path, key_path = _cert_temp(cert_pem, chave_pem)
+    cert = (cert_path, key_path)
+    sefin = "https://sefin.nfse.gov.br/sefinnacional"
+    candidatos = [
+        ("ADN  GET /NFSe/{chave}",        f"{base}/NFSe/{chave_acesso}"),
+        ("ADN  GET /NFSe/{chave}/Xml",    f"{base}/NFSe/{chave_acesso}/Xml"),
+        ("ADN  GET /NFSe/{chave}/DANFSE", f"{base}/NFSe/{chave_acesso}/DANFSE"),
+        ("ADN  GET /DANFSE/{chave}",      f"{base}/DANFSE/{chave_acesso}"),
+        ("SEFIN GET /nfse/{chave}",       f"{sefin}/nfse/{chave_acesso}"),
+        ("SEFIN GET /danfse/{chave}",     f"{sefin}/danfse/{chave_acesso}"),
+    ]
+    linhas = []
+    for nome, url in candidatos:
+        try:
+            r = requests.get(url, headers={"Accept": "*/*"}, cert=cert, timeout=timeout)
+            ct = r.headers.get("content-type", "")
+            if any(t in ct for t in ("json", "xml", "text")):
+                corpo = r.text[:280]
+            else:
+                corpo = f"<binário {len(r.content)} bytes> (provável PDF/zip)"
+            linhas.append(f"[{r.status_code}] {nome}\n      {url}\n      content-type: {ct}\n      {corpo}")
+        except Exception as e:
+            linhas.append(f"[ERRO] {nome}\n      {url}\n      {type(e).__name__}: {e}")
+    return "\n\n".join(linhas)
+
+
 def varrer_tudo(cert_pem: bytes, chave_pem: bytes, ultimo_nsu: int = 0,
                 cnpj_consulta: str | None = None, base: str = BASE_PROD,
                 max_paginas: int = 50) -> dict:

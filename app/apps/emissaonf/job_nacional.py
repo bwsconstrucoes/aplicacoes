@@ -152,6 +152,25 @@ def fechar_por_xml_nacional(xml_nac: str) -> bool:
         return False
 
 
+def diag_federal_chave(chave: str) -> str:
+    """Carrega o certificado (igual o job) e roda adn_nfse.diag_por_chave —
+    pra descobrir qual endpoint federal devolve a NFS-e/DANFSe nacional pela chave."""
+    gc = cliente_gspread()
+    cred = ler_credenciais(gc)
+    senha = (cred.get("CERTIFICADO_SENHA") or cred.get("SENHA_CERTIFICADO") or cred.get("CERT_SENHA")
+             or os.getenv("EMISSAO_NF_CERTIFICADO_SENHA") or os.getenv("CERTIFICADO_SENHA")
+             or os.getenv("SENHA_CERTIFICADO") or os.getenv("CERT_SENHA"))
+    if not senha:
+        return ">>> Sem senha de certificado (env EMISSAO_NF_CERTIFICADO_SENHA)."
+    chave_pem, cert_pem = carregar_certificado_auto(senha, CERT_PATH)
+    if not (chave_pem and cert_pem):
+        return ">>> Certificado não carregado (env EMISSAO_NF_CERTIFICADO_P12_BASE64)."
+    chave = "".join(c for c in (chave or "") if c.isdigit())
+    if len(chave) != 50:
+        return f">>> Chave inválida: esperado 50 dígitos, veio {len(chave)}."
+    return adn_nfse.diag_por_chave(cert_pem, chave_pem, chave)
+
+
 def rodar(base: str = adn_nfse.BASE_PROD):
     gc = cliente_gspread()
     cred = ler_credenciais(gc)

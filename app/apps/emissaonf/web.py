@@ -398,6 +398,38 @@ def nacional():
     return Response(_doc("Busca nacional", corpo), mimetype="text/html")
 
 
+@bp.route("/diag_nacional_chave", methods=["GET"])
+def diag_nacional_chave():
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    chave = "".join(c for c in (request.values.get("chave") or "") if c.isdigit())
+    if not chave:
+        t = html.escape(request.values.get("token", ""))
+        corpo = f"""
+          <h1>Diagnóstico nacional por chave</h1>
+          <div class='card'>
+            <p class='sub'>Testa, com o certificado da BWS, vários endpoints federais de busca
+            POR CHAVE — pra descobrir se dá pra pegar a NFS-e/DANFSe nacional sem captcha e sem
+            esperar a distribuição por NSU. Só faz GET (não altera nada).</p>
+            <form method='get' action='{url_for('.diag_nacional_chave')}'>
+              <label class='lbl'>Chave de acesso nacional (50 dígitos):</label>
+              <input type='text' name='chave' placeholder='2304285...' style='width:100%'>
+              <input type='hidden' name='token' value='{t}'>
+              <button type='submit'>Rodar diagnóstico</button>
+            </form>
+          </div>"""
+        return Response(_doc("Diagnóstico nacional por chave", corpo), mimetype="text/html")
+    buf = io.StringIO()
+    try:
+        import job_nacional
+        buf.write(job_nacional.diag_federal_chave(chave))
+    except Exception as e:
+        buf.write(f">>> ERRO: {type(e).__name__}: {e}")
+    corpo = ("<h1>Diagnóstico nacional por chave</h1>"
+             f"<div class='card'><b>Chave:</b> {html.escape(chave)}<pre>{html.escape(buf.getvalue())}</pre></div>")
+    return Response(_doc("Diagnóstico nacional por chave", corpo), mimetype="text/html")
+
+
 @bp.route("/nacional_xml", methods=["GET", "POST"])
 def nacional_xml():
     if not _token_ok():
