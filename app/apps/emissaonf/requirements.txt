@@ -1,0 +1,10 @@
+gspread
+requests
+signxml
+cryptography
+lxml
+fpdf2
+num2words
+google-api-python-client
+google-auth
+num2words

@@ -1,0 +1,32 @@
+# ===== SEGREDOS — NUNCA versionar =====
+credenciais.json
+certificado.p12
+*.p12
+*.pem
+
+# ===== rascunho / saída local =====
+_lixo/
+saida/
+testes/
+__pycache__/
+*.pyc
+*.bat
+*_tmp.pdf
+NFSe_*.xml
+emissao_*.json
+
+# PDFs/HTML gerados de referência (regeneráveis)
+danfse_*.pdf
+nfse_municipal_*.pdf
+recibo_*.pdf
+mun_*.pdf
+preview_nota.html
+recibo_*.html
+
+# saída do job nacional (XMLs baixados do ADN)
+adn_xml/
+
+# NÃO ignorar (dados/assets que o código LÊ — precisam ir pro Render):
+#   municipios_ibge.json, tomadores_cnpj.json
+#   recibo_logo.jpg, recibo_assinatura.png
+#   danfse_logo_nfse.png, danfse_brasao_eusebio.png, nota_mun_brasao.png
