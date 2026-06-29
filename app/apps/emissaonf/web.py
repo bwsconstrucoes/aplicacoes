@@ -126,7 +126,8 @@ CONTAS_PAGAMENTO = [
 def _efeitos_substituicao(ctx, nota_sub, numero, buf):
     """Efeitos internos da substituição (a nova nota JÁ foi concluída): cancela a
     nota antiga no card (slot Válida->Cancelada), marca CANCELADA na planilha 'Notas BWS'
-    e remove o número dela do título no Omie. Devolve um dict de status."""
+    e ajusta o título no Omie. O Omie é feito numa ÚNICA chamada (remove o nº antigo +
+    adiciona o novo), evitando a trava de registro do Omie. Devolve um dict de status."""
     info = {"numero_antigo": nota_sub, "card": "", "planilha": "", "omie": ""}
     try:
         tk = ctx["cred"]["PIPEFY_TOKEN"]
@@ -147,13 +148,13 @@ def _efeitos_substituicao(ctx, nota_sub, numero, buf):
     try:
         integracao = ctx["card"].get("omie_integracao", "")
         if integracao:
-            _, doc_omie = omie.remover_documento(ctx["cred"], integracao, nota_sub)
-            info["omie"] = f"nº {nota_sub} removido do título (documento agora: {doc_omie or '(vazio)'})"
+            _, doc_omie = omie.substituir_numero(ctx["cred"], integracao, nota_sub, numero)
+            info["omie"] = f"nº {nota_sub} → {numero} no título (documento agora: {doc_omie or '(vazio)'})"
         else:
-            info["omie"] = "card sem omie_integracao — nada a remover no Omie"
+            info["omie"] = "card sem omie_integracao — nada a ajustar no Omie"
         buf.write(f"\n>>> SUBSTITUIÇÃO (Omie): {info['omie']}")
     except Exception as e:
-        info["omie"] = f"ERRO ao remover no Omie: {type(e).__name__}: {e}"
+        info["omie"] = f"ERRO no Omie: {type(e).__name__}: {e}"
         buf.write(f"\n>>> SUBSTITUIÇÃO (Omie) ERRO: {e}")
     return info
 

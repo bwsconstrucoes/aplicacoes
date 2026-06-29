@@ -140,3 +140,15 @@ def remover_documento(creds, codigo_integracao, numero_cancelado):
     param = {"codigo_lancamento_integracao": codigo_integracao,
              "numero_documento_fiscal": novo}
     return _post("AlterarContaReceber", param, creds), novo
+
+
+def substituir_numero(creds, codigo_integracao, numero_antigo, numero_novo):
+    """Substituição: remove o nº antigo e adiciona o novo no numero_documento_fiscal
+    em UMA ÚNICA chamada AlterarContaReceber. Evita duas escritas seguidas no mesmo
+    título (que o Omie bloqueia por trava de registro / consumo redundante).
+    Retorna (resposta, doc_final)."""
+    atual = _ler_num_doc(consultar(creds, codigo_integracao))
+    doc = _merge_doc(_remove_doc(atual, numero_antigo), numero_novo)
+    param = {"codigo_lancamento_integracao": codigo_integracao,
+             "numero_documento_fiscal": doc}
+    return _post("AlterarContaReceber", param, creds), doc

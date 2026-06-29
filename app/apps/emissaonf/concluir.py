@@ -78,7 +78,12 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
         integracao = card.get("omie_integracao", "")
         validas_antes = [x for x in validacao.slots_preenchidos(card) if x["valida"]]
         primeira = len(validas_antes) == 0
-        if primeira:
+        if nota_substituida:
+            # substituição: o documento (remover antigo + adicionar novo) é feito numa
+            # ÚNICA chamada na etapa de substituição — aqui não tocamos no Omie.
+            print(f"[2] Omie ............... substituição: documento tratado na etapa de "
+                  f"substituição (chamada combinada, evita trava do Omie)")
+        elif primeira:
             cat = parse_categoria(obra.tributacao)
             ov = overrides_do_card(card)
             r_integral = calcular(card["valor_medicao"], cat, aliquota_iss=obra.aliquota_iss,
