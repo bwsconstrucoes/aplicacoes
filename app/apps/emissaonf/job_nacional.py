@@ -266,8 +266,15 @@ def fechar_via_sefin(numeros=None) -> int:
             print(f"  nota {num}: achei a chave mas falhou o /nfse — {type(e).__name__}: {e}")
             continue
         dm = _dados_match(xml_nac)
-        if not dm or not _casa(pend, dm):
-            print(f"  nota {num}: XML não casou com o pendente (proteção) — NÃO fechei.")
+        if not dm:
+            cab = xml_nac[:160].replace("\n", " ")
+            print(f"  nota {num}: XML nacional não parseou (_dados_match=None). Início: {cab}")
+            continue
+        if not _casa(pend, dm):
+            print(f"  nota {num}: não casou — "
+                  f"XML(emit={dm['emit']} toma={dm['toma']} dcompet={dm['dcompet']} vserv={dm['vserv']}) "
+                  f"vs pend(toma={_so_digitos(pend.get('toma_cnpj',''))} "
+                  f"dcompet={str(pend.get('dCompet',''))[:7]} vserv={pend.get('vServ')})")
             continue
         try:
             _fechar(planilha, ws_links, cred, pend, dm, xml_nac)
