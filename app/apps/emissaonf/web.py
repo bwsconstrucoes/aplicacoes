@@ -94,6 +94,20 @@ def _so_num(v) -> str:
     return "".join(c for c in str(v or "") if c.isdigit())
 
 
+def _parse_valor_br(v):
+    """Normaliza um valor digitado ('283.340,50', '300000', '300000.50') para 'NNNN.NN'.
+    Retorna None se vazio/ inválido."""
+    s = str(v or "").strip().replace("R$", "").replace(" ", "")
+    if not s:
+        return None
+    if "," in s:                       # formato BR: ponto = milhar, vírgula = decimal
+        s = s.replace(".", "").replace(",", ".")
+    try:
+        return f"{Decimal(s):.2f}"
+    except Exception:
+        return None
+
+
 # Contas p/ Pagamento (vão na discriminação). Mesmas opções do campo do Pipefy;
 # servem para suprir o campo numa substituição, em que o card não o traz mais.
 CONTAS_PAGAMENTO = [
@@ -119,12 +133,17 @@ def pagina():
     nota_sub = _so_num(request.args.get("nota_substituida") or request.args.get("notasubstituida"))
     if not card_id:
         return Response(_pagina_pedir_card(token), mimetype="text/html")
+    # overrides (só valem em substituição): tipo de medição e valor maior/igual
+    tm_over = (request.args.get("tipo_medicao") or "").strip() if nota_sub else ""
+    val_over = _parse_valor_br(request.args.get("valor")) if nota_sub else None
     try:
-        ctx = _worker.preparar(card_id)
+        ctx = _worker.preparar(card_id, tipo_medicao_override=(tm_over or None),
+                               valor_override=val_over)
     except Exception as e:
         return Response(_pagina_erro(f"Erro ao carregar o card {card_id}: "
                                      f"{type(e).__name__}: {e}"), mimetype="text/html")
-    return Response(_render_pagina(ctx, card_id, token, nota_sub), mimetype="text/html")
+    return Response(_render_pagina(ctx, card_id, token, nota_sub,
+                                   tm_over=tm_over, val_over=val_over), mimetype="text/html")
 
 
 @bp.route("/emitir", methods=["POST"])
@@ -135,6 +154,8 @@ def emitir():
     token = request.form.get("token", "")
     discr = request.form.get("discriminacao", "")
     nota_sub = _so_num(request.form.get("nota_substituida"))
+    tm_over = (request.form.get("tipo_medicao") or "").strip() if nota_sub else ""
+    val_over = _parse_valor_br(request.form.get("valor")) if nota_sub else None
     if not card_id:
         return Response(_pagina_erro("card_id ausente."), status=400, mimetype="text/html")
     if request.form.get("confirmo") != "on":
@@ -146,7 +167,8 @@ def emitir():
             return Response(_pagina_erro("Emissão já em andamento para este card."), mimetype="text/html")
         _EMITINDO.add(card_id)
     try:
-        ctx = _worker.preparar(card_id)
+        ctx = _worker.preparar(card_id, tipo_medicao_override=(tm_over or None),
+                               valor_override=val_over)
         if nota_sub and not _sub.localizar_slot_por_numero(ctx["card"], nota_sub):
             return Response(_pagina_erro(
                 f"Substituição: a NF {nota_sub} não foi encontrada nos slots A–E deste card. "
@@ -634,7 +656,7 @@ def _pagina_erro_diag(msg, diag):
                 f"<pre>{html.escape(diag)}</pre></div>")
 
 
-def _render_pagina(ctx, card_id, token, nota_sub=""):
+def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None):
     card, obra, r = ctx["card"], ctx["obra"], ctx["r"]
     prox = ctx["prox"]
     val = _val.checar(card, r, ignorar_numero=nota_sub or None)
@@ -710,11 +732,47 @@ def _render_pagina(ctx, card_id, token, nota_sub=""):
         "}</script>"
     )
 
+    # controles exclusivos da substituição: Tipo de Medição + Valor (recarregam e recalculam)
+    if nota_sub:
+        _tm_sem = " selected" if "SEM DEDUCAO" in (tm_over or "").upper() else ""
+        _tm_nor = " selected" if (tm_over or "").upper() == "NORMAL" else ""
+        _val_disp = _val.brl(ctx["r"].valor_total)
+        _controles_sub = f"""
+            <div style='background:#fff7ec;border:1px solid #e0a000;border-radius:8px;padding:12px;margin-bottom:12px'>
+              <div style='font-weight:bold;color:#7a4a00;margin-bottom:8px'>Opções da substituição</div>
+              <label class='lbl'>Tipo de Medição (afeta o cálculo das retenções):</label>
+              <select onchange="_recarregar('tipo_medicao', this.value)"
+                      style='width:100%;box-sizing:border-box;padding:8px;border:1px solid #c8d0da;border-radius:6px;margin-bottom:8px'>
+                <option value=''>— padrão (com dedução) —</option>
+                <option value='NORMAL'{_tm_nor}>Normal (com dedução)</option>
+                <option value='SEM DEDUCAO'{_tm_sem}>Sem dedução</option>
+              </select>
+              <label class='lbl'>Valor da nota (igual ou maior que a substituída):</label>
+              <div style='display:flex;gap:8px'>
+                <input id='valOver' type='text' value='{html.escape(_val_disp)}'
+                       style='flex:1;padding:8px;border:1px solid #c8d0da;border-radius:6px'>
+                <button type='button' onclick="_recarregar('valor', document.getElementById('valOver').value)"
+                        style='padding:8px 12px;border:1px solid #b35900;background:#fff;border-radius:6px;cursor:pointer'>Recalcular</button>
+              </div>
+              <p class='sub'>Mudar o tipo ou o valor recarrega a página e recalcula as retenções, pra você conferir antes de emitir. Deixe como está para manter o valor do card.</p>
+            </div>"""
+        _hidden_over = (f"<input type='hidden' name='tipo_medicao' value='{html.escape(tm_over or '')}'>"
+                        f"<input type='hidden' name='valor' value='{html.escape(val_over or '')}'>")
+        _script_recarregar = (
+            "<script>function _recarregar(p,v){"
+            "var u=new URL(window.location.href);"
+            "if(v){u.searchParams.set(p,v);}else{u.searchParams.delete(p);}"
+            "window.location.href=u.toString();}</script>"
+        )
+    else:
+        _controles_sub = _hidden_over = _script_recarregar = ""
+
     # formulário de emissão
     if pode:
         form = f"""
         <div class='card'>
           <form method='post' action='{url_for('.emitir')}' onsubmit="this.querySelector('button').disabled=true;this.querySelector('button').textContent='Emitindo...';">
+            {_controles_sub}
             <label class='lbl'><b>Discriminação dos serviços</b> (editável — é o corpo da nota):</label>
             <textarea name='discriminacao' rows='8'>{html.escape(discr_atual)}</textarea>
             <label class='lbl' style='margin-top:8px'><b>Conta p/ Pagamento</b>{_conta_hint}</label>
@@ -723,10 +781,10 @@ def _render_pagina(ctx, card_id, token, nota_sub=""):
               <option value="">— manter a conta atual da discriminação —</option>
               {_opts_conta}
             </select>
-            {_script_conta}
+            {_script_conta}{_script_recarregar}
             <input type='hidden' name='card_id' value='{html.escape(card_id)}'>
             <input type='hidden' name='token' value='{html.escape(token)}'>
-            {sub_hidden}
+            {sub_hidden}{_hidden_over}
             <label class='lbl'><input type='checkbox' name='confirmo' onchange="document.getElementById('btn').disabled=!this.checked">
               Confiro os dados e <b>autorizo a emissão</b> desta NFS-e.</label>
             <button id='btn' type='submit' disabled>✅ Confirmar e Emitir</button>

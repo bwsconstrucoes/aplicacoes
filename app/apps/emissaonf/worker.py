@@ -59,8 +59,10 @@ def proximo_numero(gc) -> tuple[int, int]:
     return ultimo + 1, ultimo
 
 
-def preparar(card_id: str) -> dict:
-    """Roda todo o pipeline até o XML assinado e devolve o contexto (sem efeitos)."""
+def preparar(card_id: str, tipo_medicao_override=None, valor_override=None) -> dict:
+    """Roda todo o pipeline até o XML assinado e devolve o contexto (sem efeitos).
+    tipo_medicao_override / valor_override: usados na SUBSTITUIÇÃO, em que o card já
+    não traz esses campos editáveis — injetam o valor antes do cálculo (reusa calcular)."""
     print(f"=== Card {card_id} ===\n")
     gc = cliente_gspread()
     cred = ler_credenciais(gc)
@@ -72,6 +74,9 @@ def preparar(card_id: str) -> dict:
                   or os.getenv("SENHA_CERTIFICADO") or os.getenv("CERT_SENHA"))
 
     card = extrair_card(get_card(card_id, token))
+    # override de tipo de medição (substituição): entra antes do cálculo de retenções
+    if tipo_medicao_override:
+        card["tipo_medicao"] = tipo_medicao_override
     print(f"Obra: {card['codigo_obra']} | Medição {card['numero_medicao']} | "
           f"Valor {brl(card['valor_medicao'])} | BDI {brl(card['bdi'])}")
 
@@ -80,7 +85,7 @@ def preparar(card_id: str) -> dict:
     print(f"Tributação: {obra.tributacao} | Alíq. ISS: {obra.aliquota_iss} | Município: {obra.municipio}")
 
     cat = parse_categoria(obra.tributacao)
-    base_valor = valor_base_nota(card)
+    base_valor = valor_override or valor_base_nota(card)
     ov = overrides_do_card(card)
     r = calcular(base_valor, cat, aliquota_iss=obra.aliquota_iss,
                  bdi_diferenciado=card["bdi"], iss_retido=True, overrides=ov)
