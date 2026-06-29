@@ -124,6 +124,26 @@ def consultar_eventos(cert_pem: bytes, chave_pem: bytes, chave_acesso: str,
     return _parse_lote(r.json(), 0)
 
 
+SEFIN_PROD = "https://sefin.nfse.gov.br/sefinnacional"
+
+
+def consultar_nfse_por_chave(cert_pem: bytes, chave_pem: bytes, chave_acesso: str,
+                             base_sefin: str = SEFIN_PROD, timeout: int = 40) -> str:
+    """GET SEFIN /nfse/{chave} (autenticado por certificado) -> XML nacional já
+    descompactado. É a fonte rápida do nacional pela chave: sem captcha, sem NSU."""
+    cert_path, key_path = _cert_temp(cert_pem, chave_pem)
+    url = f"{base_sefin}/nfse/{chave_acesso}"
+    r = requests.get(url, headers={"Accept": "application/json"},
+                     cert=(cert_path, key_path), timeout=timeout)
+    if r.status_code != 200:
+        raise RuntimeError(f"SEFIN /nfse/{{chave}} HTTP {r.status_code}: {r.text[:300]}")
+    data = r.json()
+    b64 = data.get("nfseXmlGZipB64") or data.get("NfseXmlGZipB64") or ""
+    if not b64:
+        raise RuntimeError(f"SEFIN devolveu 200 mas sem nfseXmlGZipB64: {str(data)[:300]}")
+    return _descompactar(b64)
+
+
 def diag_por_chave(cert_pem: bytes, chave_pem: bytes, chave_acesso: str,
                    base: str = BASE_PROD, timeout: int = 40) -> str:
     """Diagnóstico: tenta vários endpoints de busca POR CHAVE na API de

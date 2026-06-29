@@ -152,6 +152,26 @@ def fechar_por_xml_nacional(xml_nac: str) -> bool:
         return False
 
 
+def fechar_por_chave(chave: str) -> bool:
+    """Busca o XML nacional pela CHAVE na SEFIN (com o certificado) e fecha a
+    pendente correspondente. Sem captcha, sem distribuição por NSU."""
+    chave = "".join(c for c in (chave or "") if c.isdigit())
+    if len(chave) != 50:
+        print(f">>> Chave inválida: esperado 50 dígitos, veio {len(chave)}.")
+        return False
+    chave_pem, cert_pem = carregar_certificado_auto("", CERT_PATH)
+    if not (chave_pem and cert_pem):
+        print(">>> Certificado não carregado (env EMISSAO_NF_CERTIFICADO_P12_BASE64/SENHA).")
+        return False
+    try:
+        xml_nac = adn_nfse.consultar_nfse_por_chave(cert_pem, chave_pem, chave)
+    except Exception as e:
+        print(f">>> Falha ao buscar nacional na SEFIN: {type(e).__name__}: {e}")
+        return False
+    print(f"Nacional obtido pela SEFIN ({len(xml_nac)} chars). Fechando pendente...")
+    return fechar_por_xml_nacional(xml_nac)
+
+
 def diag_federal_chave(chave: str) -> str:
     """Carrega o certificado (igual o job) e roda adn_nfse.diag_por_chave —
     pra descobrir qual endpoint federal devolve a NFS-e/DANFSe nacional pela chave."""

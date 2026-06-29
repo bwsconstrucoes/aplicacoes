@@ -398,6 +398,40 @@ def nacional():
     return Response(_doc("Busca nacional", corpo), mimetype="text/html")
 
 
+@bp.route("/nacional_chave", methods=["GET"])
+def nacional_chave():
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    chave = "".join(c for c in (request.values.get("chave") or "") if c.isdigit())
+    if not chave:
+        t = html.escape(request.values.get("token", ""))
+        corpo = f"""
+          <h1>Fechar nacional pela chave</h1>
+          <div class='card'>
+            <p class='sub'>Cole a <b>chave de acesso nacional</b> (50 dígitos) e ele busca o XML
+            nacional direto na SEFIN com o certificado — sem captcha, sem esperar o NSU — gera a
+            DANFSe, regenera a municipal com a chave e completa os links. A chave aparece no portal
+            do município assim que a nota é transmitida.</p>
+            <form method='get' action='{url_for('.nacional_chave')}'>
+              <label class='lbl'>Chave de acesso nacional (50 dígitos):</label>
+              <input type='text' name='chave' placeholder='2304285...' style='width:100%'>
+              <input type='hidden' name='token' value='{t}'>
+              <button type='submit'>Fechar nacional</button>
+            </form>
+          </div>"""
+        return Response(_doc("Fechar nacional pela chave", corpo), mimetype="text/html")
+    buf = io.StringIO()
+    try:
+        import job_nacional
+        with contextlib.redirect_stdout(buf):
+            job_nacional.fechar_por_chave(chave)
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+    corpo = ("<h1>Fechar nacional pela chave</h1>"
+             f"<div class='card'><b>Chave:</b> {html.escape(chave)}<pre>{html.escape(buf.getvalue())}</pre></div>")
+    return Response(_doc("Fechar nacional pela chave", corpo), mimetype="text/html")
+
+
 @bp.route("/diag_nacional_chave", methods=["GET"])
 def diag_nacional_chave():
     if not _token_ok():
