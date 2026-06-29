@@ -172,6 +172,18 @@ def fechar_por_chave(chave: str) -> bool:
     return fechar_por_xml_nacional(xml_nac)
 
 
+def diag_dps_chave(chave: str) -> str:
+    """Carrega o certificado e roda adn_nfse.diag_dps_por_chave — testa o caminho
+    'só certificado' (buscar o nacional pelo ID da DPS, derivável do número)."""
+    chave = "".join(c for c in (chave or "") if c.isdigit())
+    if len(chave) != 50:
+        return f">>> Chave inválida: esperado 50 dígitos, veio {len(chave)}."
+    chave_pem, cert_pem = carregar_certificado_auto("", CERT_PATH)
+    if not (chave_pem and cert_pem):
+        return ">>> Certificado não carregado (env EMISSAO_NF_CERTIFICADO_P12_BASE64/SENHA)."
+    return adn_nfse.diag_dps_por_chave(cert_pem, chave_pem, chave)
+
+
 def diag_federal_chave(chave: str) -> str:
     """Carrega o certificado (igual o job) e roda adn_nfse.diag_por_chave —
     pra descobrir qual endpoint federal devolve a NFS-e/DANFSe nacional pela chave."""

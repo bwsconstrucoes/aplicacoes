@@ -144,6 +144,48 @@ def consultar_nfse_por_chave(cert_pem: bytes, chave_pem: bytes, chave_acesso: st
     return _descompactar(b64)
 
 
+def diag_dps_por_chave(cert_pem: bytes, chave_pem: bytes, chave_acesso: str,
+                       base_sefin: str = SEFIN_PROD, timeout: int = 40) -> str:
+    """Diagnóstico do caminho 'só certificado': pega o XML nacional pela chave,
+    extrai o ID da DPS de dentro dele, e testa se a SEFIN devolve o nacional por
+    esse ID. Se sim, o Cron pode montar o ID da DPS pelo número da nota e fechar
+    sozinho, sem chave, sem município."""
+    import re
+    linhas = []
+    try:
+        xml = consultar_nfse_por_chave(cert_pem, chave_pem, chave_acesso, base_sefin, timeout)
+    except Exception as e:
+        return f">>> Falha ao obter XML pela chave: {type(e).__name__}: {e}"
+    ids = re.findall(r'Id="([^"]+)"', xml)
+    dps_ids = [i for i in ids if i.upper().startswith("DPS")]
+    linhas.append(f"XML nacional obtido ({len(xml)} chars).")
+    linhas.append(f"Todos os Id= no XML: {ids[:12]}")
+    linhas.append(f"IDs de DPS encontrados: {dps_ids or '(nenhum começando com DPS)'}")
+    if not dps_ids:
+        # mostra um trecho pra inspecionar o formato do idDPS manualmente
+        m = re.search(r'(DPS[0-9A-Za-z]{20,60})', xml)
+        linhas.append(f"Trecho com 'DPS...': {m.group(1) if m else '(não achei)'}")
+    cert_path, key_path = _cert_temp(cert_pem, chave_pem)
+    cert = (cert_path, key_path)
+    testados = set()
+    for idd in dps_ids:
+        for nome, url in [
+            ("GET /dps/{id}",       f"{base_sefin}/dps/{idd}"),
+            ("GET /nfse/dps/{id}",  f"{base_sefin}/nfse/dps/{idd}"),
+        ]:
+            if url in testados:
+                continue
+            testados.add(url)
+            try:
+                r = requests.get(url, headers={"Accept": "application/json"}, cert=cert, timeout=timeout)
+                ct = r.headers.get("content-type", "")
+                corpo = r.text[:240] if any(t in ct for t in ("json", "xml", "text")) else f"<binário {len(r.content)}b>"
+                linhas.append(f"[{r.status_code}] {nome}\n      {url}\n      {corpo}")
+            except Exception as e:
+                linhas.append(f"[ERRO] {nome}\n      {url}\n      {type(e).__name__}: {e}")
+    return "\n".join(linhas)
+
+
 def diag_por_chave(cert_pem: bytes, chave_pem: bytes, chave_acesso: str,
                    base: str = BASE_PROD, timeout: int = 40) -> str:
     """Diagnóstico: tenta vários endpoints de busca POR CHAVE na API de

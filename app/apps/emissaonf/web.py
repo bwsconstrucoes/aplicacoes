@@ -456,7 +456,10 @@ def diag_nacional_chave():
     buf = io.StringIO()
     try:
         import job_nacional
-        buf.write(job_nacional.diag_federal_chave(chave))
+        if request.values.get("modo") == "dps":
+            buf.write(job_nacional.diag_dps_chave(chave))
+        else:
+            buf.write(job_nacional.diag_federal_chave(chave))
     except Exception as e:
         buf.write(f">>> ERRO: {type(e).__name__}: {e}")
     corpo = ("<h1>Diagnóstico nacional por chave</h1>"
