@@ -179,7 +179,7 @@ def emitir():
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf):
-                _concluir.concluir(card_id, numero, codigo, data_iso, nota_path)
+                _concluir.concluir(card_id, numero, codigo, data_iso, nota_path, ctx=ctx)
         except Exception as e:
             buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
 
@@ -294,6 +294,9 @@ def _pagina_recuperar(token):
           <textarea name='xml' rows='12' placeholder='<?xml ...><CompNfse>...'></textarea>
           <label class='lbl'><input type='checkbox' name='reenviar_whatsapp'> reenviar WhatsApp
             (deixe DESMARCADO — já foi enviado na emissão)</label>
+          <label class='lbl'><input type='checkbox' name='completo'> rodar <b>concluir completo</b>
+            (marque SÓ se a nota foi emitida mas NÃO rodou bookkeeping — ex.: erro no concluir.
+            Faz Notas BWS + Omie + slots + entrega. Tem trava anti-duplicação.)</label>
           <input type='hidden' name='token' value='{t}'>
           <button type='submit'>Reprocessar entrega</button>
         </form>
@@ -311,6 +314,7 @@ def recuperar():
     card_id = (request.form.get("card_id") or "").strip()
     xml_texto = (request.form.get("xml") or "").strip()
     zap = request.form.get("reenviar_whatsapp") == "on"
+    completo = request.form.get("completo") == "on"
     if not card_id or not xml_texto:
         return Response(_pagina_erro("Informe o card_id e cole o XML da nota."), mimetype="text/html")
     try:
@@ -327,8 +331,12 @@ def recuperar():
     buf = io.StringIO()
     try:
         with contextlib.redirect_stdout(buf):
-            _compl.completar(card_id, numero, codigo, data_iso, tmp,
-                             enviar_whatsapp=zap, discriminacao="")
+            if completo:
+                # nota emitida sem bookkeeping: roda o concluir inteiro (tem trava ja_existe)
+                _concluir.concluir(card_id, numero, codigo, data_iso, tmp)
+            else:
+                _compl.completar(card_id, numero, codigo, data_iso, tmp,
+                                 enviar_whatsapp=zap, discriminacao="")
     except Exception as e:
         buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
     finally:
@@ -337,11 +345,12 @@ def recuperar():
         except OSError:
             pass
 
-    corpo = (f"<h1>Recuperação da NF {html.escape(numero)}</h1>"
-             f"<div class='ok'>Entrega reprocessada — card {html.escape(card_id)}, "
+    modo = "concluir completo" if completo else "entrega"
+    corpo = (f"<h1>Recuperação da NF {html.escape(numero)} ({modo})</h1>"
+             f"<div class='ok'>Reprocessado — card {html.escape(card_id)}, "
              f"código {html.escape(codigo)}, emissão {html.escape(data_iso)}.</div>"
              f"<div class='card'><b>Log</b><pre>{html.escape(buf.getvalue())}</pre></div>"
-             "<p class='sub'>Confira no log se [a]/[b]/[c] subiram ao Drive e [f] atualizou a Descrição.</p>")
+             "<p class='sub'>Confira no log se cada passo concluiu sem ERRO.</p>")
     return Response(_doc("Recuperação", corpo), mimetype="text/html")
 
 

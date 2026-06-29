@@ -15,6 +15,8 @@ from base64 import b64decode
 import gspread
 from google.oauth2.service_account import Credentials
 
+import gspread_retry  # instala retry global em 429/5xx para todas as chamadas gspread  # noqa: F401
+
 SHEET_CREDENCIAIS = "1D4aVC7wVHL_t-5QpI6v7vtLJMjJpA7DpDnByTFB9i-U"
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",

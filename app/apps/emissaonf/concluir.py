@@ -39,8 +39,8 @@ from preview import brl
 ABA_LINKS = "Notas BWS Links"
 
 
-def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False):
-    ctx = preparar(card_id)
+def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx=None):
+    ctx = ctx or preparar(card_id)
     card, obra, r = ctx["card"], ctx["obra"], ctx["r"]
     gc, cred = ctx["gc"], ctx["cred"]
     token = cred["PIPEFY_TOKEN"]
