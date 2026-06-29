@@ -34,6 +34,8 @@ import montar_emissao as _me
 import el_nfse_envio as _envio
 import concluir as _concluir
 import substituicao as _sub
+import omie
+from decimal import Decimal
 import completar_imediato as _compl
 
 bp = Blueprint("emissao", __name__)
@@ -129,6 +131,20 @@ def emitir():
             return Response(_pagina_erro(
                 f"Substituição: a NF {nota_sub} não foi encontrada nos slots A–E deste card. "
                 f"Confira o número no parâmetro 'nota_substituida' do link."), mimetype="text/html")
+        # regra do município: só permite substituir por valor IGUAL ou MAIOR. Barramos antes de tentar.
+        if nota_sub:
+            _slots_v = {x["numero"]: x["valor"] for x in _val.slots_preenchidos(ctx["card"])}
+            _v_old = _slots_v.get(str(nota_sub).strip())
+            try:
+                _v_new = Decimal(str(getattr(ctx["r"], "valor_total", 0) or 0))
+            except Exception:
+                _v_new = None
+            if _v_old is not None and _v_new is not None and _v_new < _v_old:
+                return Response(_pagina_erro(
+                    f"Substituição bloqueada: o valor da nova nota (R$ {_val.brl(_v_new)}) é MENOR que o da "
+                    f"NF {nota_sub} (R$ {_val.brl(_v_old)}). O município só permite substituir por valor igual "
+                    f"ou maior. Valor menor (ou troca de competência) é caso de cancelamento — passo à parte."),
+                    mimetype="text/html")
         val = _val.checar(ctx["card"], ctx["r"], ignorar_numero=nota_sub or None)   # revalida no servidor
         if not val["ok"]:
             return Response(_pagina_erro("Bloqueado pela validação: " + " | ".join(val["bloqueios"])),
@@ -139,6 +155,9 @@ def emitir():
 
         dados = ctx["dados_rps"]
         dados.discriminacao = discr or getattr(dados, "discriminacao", "")
+        # substituição na prefeitura: a nova nota carrega o RPS da antiga (RpsSubstituido)
+        if nota_sub:
+            dados.rps_substituido_numero = nota_sub
         xml = _me.gerar_xml_preview(dados, ctx["chave_pem"], ctx["cert_pem"])
 
         cp, kp = _cert_temp(ctx["cert_pem"], ctx["chave_pem"])
@@ -180,7 +199,8 @@ def emitir():
         buf = io.StringIO()
         try:
             with contextlib.redirect_stdout(buf):
-                _concluir.concluir(card_id, numero, codigo, data_iso, nota_path, ctx=ctx)
+                _concluir.concluir(card_id, numero, codigo, data_iso, nota_path, ctx=ctx,
+                                   nota_substituida=(nota_sub or None))
         except Exception as e:
             buf.write(f"\n>>> ERRO no concluir: {type(e).__name__}: {e}")
 
@@ -204,6 +224,19 @@ def emitir():
             except Exception as e:
                 sub_info["planilha"] = f"ERRO ao marcar na planilha: {type(e).__name__}: {e}"
                 buf.write(f"\n>>> SUBSTITUIÇÃO (planilha) ERRO: {e}")
+            # Omie: remove o nº da nota cancelada do campo numero_documento_fiscal do título
+            try:
+                integracao = ctx["card"].get("omie_integracao", "")
+                if integracao:
+                    _, doc_omie = omie.remover_documento(ctx["cred"], integracao, nota_sub)
+                    sub_info["omie"] = f"nº {nota_sub} removido do título (documento agora: {doc_omie or '(vazio)'})"
+                    buf.write(f"\n>>> SUBSTITUIÇÃO (Omie): {sub_info['omie']}")
+                else:
+                    sub_info["omie"] = "card sem omie_integracao — nada a remover no Omie"
+                    buf.write(f"\n>>> SUBSTITUIÇÃO (Omie): {sub_info['omie']}")
+            except Exception as e:
+                sub_info["omie"] = f"ERRO ao remover no Omie: {type(e).__name__}: {e}"
+                buf.write(f"\n>>> SUBSTITUIÇÃO (Omie) ERRO: {e}")
 
         # dispara a busca nacional em background (não bloqueia a resposta ao usuário)
         try:

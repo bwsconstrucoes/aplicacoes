@@ -39,7 +39,8 @@ from preview import brl
 ABA_LINKS = "Notas BWS Links"
 
 
-def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx=None):
+def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx=None,
+             nota_substituida=None):
     ctx = ctx or preparar(card_id)
     card, obra, r = ctx["card"], ctx["obra"], ctx["r"]
     gc, cred = ctx["gc"], ctx["cred"]
@@ -161,8 +162,13 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
         dest, aviso = efeitos._ler_destinatarios(gc)
         if aviso:
             print(f"[9] WhatsApp ........... {aviso}")
-        msg = zapi.montar_mensagem(obra_cod, med, brl(r.valor_total),
-                                   card.get("periodo_ini", ""), card.get("periodo_fim", ""), numero)
+        if nota_substituida:
+            msg = zapi.montar_mensagem_substituicao(
+                obra_cod, med, brl(r.valor_total),
+                card.get("periodo_ini", ""), card.get("periodo_fim", ""), numero, nota_substituida)
+        else:
+            msg = zapi.montar_mensagem(obra_cod, med, brl(r.valor_total),
+                                       card.get("periodo_ini", ""), card.get("periodo_fim", ""), numero)
         envios = 0
         for dst in dest:
             if not zapi.deve_enviar(dst, obra_cod):

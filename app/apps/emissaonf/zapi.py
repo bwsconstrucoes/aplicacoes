@@ -72,6 +72,15 @@ def montar_mensagem(obra_cod, num_medicao, valor_brl, periodo_ini, periodo_fim, 
             f"Atenciosamente,\nBWS Bot 🤖")
 
 
+def montar_mensagem_substituicao(obra_cod, num_medicao, valor_brl, periodo_ini, periodo_fim,
+                                 numero_nota, numero_substituida) -> str:
+    return (f"🔁 *SUBSTITUIÇÃO DE NOTA FISCAL*\n\n"
+            f"*Obra:* {obra_cod}\n*Medição:* {num_medicao}\n*Valor:* {valor_brl}\n"
+            f"*Período:* {periodo_ini} à {periodo_fim}\n"
+            f"*Nº da NF:* {numero_nota}\n*Substitui a NF:* {numero_substituida}\n\n"
+            f"Atenciosamente,\nBWS Bot 🤖")
+
+
 def _base(creds):
     return f"https://api.z-api.io/instances/{creds['ZAPI_INSTANCE_ID']}/token/{creds['ZAPI_API_TOKEN']}"
 
