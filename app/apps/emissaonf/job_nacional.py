@@ -80,6 +80,78 @@ def _casa(pend: dict, dm: dict) -> bool:
         return False
 
 
+def _fechar(planilha, ws_links, cred, pend, dm, xml_nac):
+    """Fecha a parte nacional de uma pendente: DANFSe + XML nacional no Drive,
+    regenera a municipal com a chave, completa links na planilha e a Descrição."""
+    link_mun = pend.get("link_mun", "")
+    nome_base = f"NOTA FISCAL {pend['numero']} - {pend['med']} ª Medição {pend['obra']}"
+
+    danfse.gerar_danfse_pdf(xml_nac, "danfse_tmp.pdf")
+    with open("danfse_tmp.pdf", "rb") as fh:
+        _, link_nac = drive.enviar(f"{nome_base} (NFS-e Nacional).pdf", fh.read(), "pdf")
+    drive.enviar(f"{nome_base} (XML Nacional).xml", xml_nac.encode("utf-8"), "xml")
+
+    # regenera a MUNICIPAL agora COM a chave (mesmo nome -> mesmo link)
+    if pend.get("xml_abrasf_file_id"):
+        try:
+            xml_abrasf = drive.baixar(pend["xml_abrasf_file_id"]).decode("utf-8", "replace")
+            nota_municipal.gerar_nota_municipal_pdf(xml_abrasf, "mun_tmp.pdf", xml_nacional=xml_nac)
+            with open("mun_tmp.pdf", "rb") as fh:
+                _, lk = drive.enviar(f"{nome_base} (NFS-e).pdf", fh.read(), "pdf")
+            link_mun = lk or link_mun
+            print(f"  nota {pend['numero']}: municipal regenerada com a chave")
+        except Exception as e:
+            print(f"  nota {pend['numero']}: municipal NÃO regenerada — {type(e).__name__}: {e}")
+
+    notas_bws.atualizar_links_nota(ws_links, pend["numero"], link_nacional=link_nac)
+    ctrl.marcar_concluido(planilha, pend["numero"], link_nac, link_mun, dm["chave"])
+
+    try:
+        token = cred.get("PIPEFY_TOKEN", "")
+        if token and pend.get("card_id"):
+            pf.atualizar_descricao_links(pend["card_id"], link_mun, link_nac,
+                                         pend.get("link_rec", ""), token)
+            print(f"  nota {pend['numero']}: Descrição atualizada com o link nacional")
+    except Exception as e:
+        print(f"  nota {pend['numero']}: Descrição NÃO atualizada — {type(e).__name__}: {e}")
+
+    print(f"  nota {pend['numero']}: CONCLUÍDA (nacional no Drive)")
+
+
+def fechar_por_xml_nacional(xml_nac: str) -> bool:
+    """Fecha a pendente correspondente a partir de um XML nacional fornecido
+    (ex.: baixado do portal). NÃO usa ADN/NSU nem certificado — útil quando a
+    nota já existe no nacional mas ainda não saiu na distribuição por NSU."""
+    gc = cliente_gspread()
+    cred = ler_credenciais(gc)
+    planilha = gc.open_by_key(ID_PROC)
+
+    dm = _dados_match(xml_nac)
+    if not dm:
+        print(">>> XML nacional inválido (não achei infNFSe / namespace nacional).")
+        return False
+    if dm["emit"] != CNPJ_BWS:
+        print(f">>> XML nacional não é da BWS (emit={dm['emit']}).")
+        return False
+    print(f"XML nacional: toma={dm['toma']} dCompet={dm['dcompet']} "
+          f"vServ={dm['vserv']:.2f} chave=...{dm['chave'][-8:]}")
+
+    pendentes = ctrl.listar_pendentes(planilha)
+    pend = next((p for p in pendentes if _casa(p, dm)), None)
+    if not pend:
+        print(">>> Nenhuma pendente casou com esse XML (talvez já concluída). "
+              "Pendentes atuais: " + ", ".join(str(p.get("numero")) for p in pendentes))
+        return False
+
+    ws_links = abrir_aba(planilha, ABA_LINKS)
+    try:
+        _fechar(planilha, ws_links, cred, pend, dm, xml_nac)
+        return True
+    except Exception as e:
+        print(f">>> ERRO ao fechar nota {pend['numero']}: {type(e).__name__}: {e}")
+        return False
+
+
 def rodar(base: str = adn_nfse.BASE_PROD):
     gc = cliente_gspread()
     cred = ler_credenciais(gc)
@@ -136,43 +208,8 @@ def rodar(base: str = adn_nfse.BASE_PROD):
                   f"dCompet={str(pend.get('dCompet',''))[:7]} vServ={pv})")
             continue
         dm, doc = match
-        xml_nac = doc["xml"]
-        link_mun = pend.get("link_mun", "")   # municipal já foi gerada/linkada no concluir
-        nome_base = f"NOTA FISCAL {pend['numero']} - {pend['med']} ª Medição {pend['obra']}"
         try:
-            # DANFSe nacional (real, com chave)
-            danfse.gerar_danfse_pdf(xml_nac, "danfse_tmp.pdf")
-            with open("danfse_tmp.pdf", "rb") as fh:
-                _, link_nac = drive.enviar(f"{nome_base} (NFS-e Nacional).pdf", fh.read(), "pdf")
-            drive.enviar(f"{nome_base} (XML Nacional).xml", xml_nac.encode("utf-8"), "xml")
-
-            # regenera a MUNICIPAL agora COM a chave (substitui o mesmo arquivo -> mesmo link)
-            if pend.get("xml_abrasf_file_id"):
-                try:
-                    xml_abrasf = drive.baixar(pend["xml_abrasf_file_id"]).decode("utf-8", "replace")
-                    nota_municipal.gerar_nota_municipal_pdf(xml_abrasf, "mun_tmp.pdf", xml_nacional=xml_nac)
-                    with open("mun_tmp.pdf", "rb") as fh:
-                        _, lk = drive.enviar(f"{nome_base} (NFS-e).pdf", fh.read(), "pdf")
-                    link_mun = lk or link_mun
-                    print(f"  nota {pend['numero']}: municipal regenerada com a chave")
-                except Exception as e:
-                    print(f"  nota {pend['numero']}: municipal NÃO regenerada — {type(e).__name__}: {e}")
-
-            # Notas BWS Links: completa só o nacional (municipal já estava)
-            notas_bws.atualizar_links_nota(ws_links, pend["numero"], link_nacional=link_nac)
-            ctrl.marcar_concluido(planilha, pend["numero"], link_nac, link_mun, dm["chave"])
-
-            # Descrição do card: AGORA com os 3 links (municipal + nacional + recibo)
-            try:
-                token = cred.get("PIPEFY_TOKEN", "")
-                if token and pend.get("card_id"):
-                    pf.atualizar_descricao_links(pend["card_id"], link_mun, link_nac,
-                                                 pend.get("link_rec", ""), token)
-                    print(f"  nota {pend['numero']}: Descrição atualizada com o link nacional")
-            except Exception as e:
-                print(f"  nota {pend['numero']}: Descrição NÃO atualizada — {type(e).__name__}: {e}")
-
-            print(f"  nota {pend['numero']}: CONCLUÍDA (nacional no Drive)")
+            _fechar(planilha, ws_links, cred, pend, dm, doc["xml"])
             concluidas += 1
         except Exception as e:
             print(f"  nota {pend['numero']}: ERRO — {type(e).__name__}: {e}")

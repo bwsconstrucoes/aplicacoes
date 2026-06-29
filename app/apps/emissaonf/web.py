@@ -398,6 +398,43 @@ def nacional():
     return Response(_doc("Busca nacional", corpo), mimetype="text/html")
 
 
+@bp.route("/nacional_xml", methods=["GET", "POST"])
+def nacional_xml():
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    if request.method == "GET":
+        t = html.escape(token)
+        corpo = f"""
+          <h1>Fechar nacional pelo XML</h1>
+          <div class='card'>
+            <p class='sub'>Use quando a nota já existe no nacional (você baixou o XML no portal),
+            mas ainda não saiu na distribuição por NSU. Cole o <b>XML nacional</b> e ele fecha a
+            pendente na hora — gera a DANFSe, regenera a municipal com a chave e completa os links.</p>
+            <form method='post' action='{url_for('.nacional_xml')}'>
+              <label class='lbl'>XML nacional (baixado do portal):</label>
+              <textarea name='xml' rows='14' placeholder='<?xml ...><NFSe ...>'></textarea>
+              <input type='hidden' name='token' value='{t}'>
+              <button type='submit'>Fechar nacional</button>
+            </form>
+          </div>"""
+        return Response(_doc("Fechar nacional pelo XML", corpo), mimetype="text/html")
+
+    xml_nac = (request.form.get("xml") or "").strip()
+    if not xml_nac:
+        return Response(_pagina_erro("Cole o XML nacional."), mimetype="text/html")
+    buf = io.StringIO()
+    try:
+        import job_nacional
+        with contextlib.redirect_stdout(buf):
+            job_nacional.fechar_por_xml_nacional(xml_nac)
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+    corpo = ("<h1>Fechar nacional pelo XML</h1>"
+             f"<div class='card'><b>Log</b><pre>{html.escape(buf.getvalue())}</pre></div>")
+    return Response(_doc("Fechar nacional pelo XML", corpo), mimetype="text/html")
+
+
 # --------------------------------------------------------------------------- #
 # HTML
 # --------------------------------------------------------------------------- #
