@@ -36,6 +36,26 @@ from worker import ID_PROC, abrir_aba
 CNPJ_BWS = "00079526000109"
 CERT_PATH = "certificado.p12"
 ABA_LINKS = "Notas BWS Links"
+
+# Composição do ID da DPS (padrão E&L/Eusébio), confirmada por engenharia reversa:
+#   DPS + cLocEmi(7) + tpInsc(1) + CNPJ(14) + série(5) + nDPS(15)
+# onde nDPS = AA (ano, 2) + número zero-pad(13). Ex.: nota 3074/2026 ->
+#   DPS 2304285 2 00079526000109 00001 26 0000000003074
+CLOC_EMI_EUSEBIO = "2304285"
+SERIE_DPS = "00001"
+
+
+def _id_dps(numero, ano2: str) -> str:
+    """Monta o ID da DPS a partir do número da nota e do ano (2 dígitos)."""
+    ndps = f"{ano2}{int(numero):013d}"   # AA + número(13) = 15 dígitos
+    return f"DPS{CLOC_EMI_EUSEBIO}2{CNPJ_BWS}{SERIE_DPS}{ndps}"
+
+
+def _ano2_do_pendente(pend) -> str:
+    """Ano (2 dígitos) a partir da competência do pendente (YYYY-MM)."""
+    import re as _re
+    m = _re.search(r"(\d{4})", str(pend.get("dCompet") or pend.get("competencia") or ""))
+    return m.group(1)[2:] if m else ""
 BASE_RESTRITA = "https://adn.producaorestrita.nfse.gov.br/contribuintes"
 NS = "{http://www.sped.fazenda.gov.br/nfse}"
 
@@ -203,6 +223,61 @@ def diag_federal_chave(chave: str) -> str:
     return adn_nfse.diag_por_chave(cert_pem, chave_pem, chave)
 
 
+def fechar_via_sefin(numeros=None) -> int:
+    """Fecha pendentes buscando o nacional na SEFIN pelo ID da DPS (derivado do
+    número) — só com o certificado, sem NSU, sem captcha, sem município.
+    Para cada pendente: monta o ID da DPS -> /dps pega a chave -> /nfse pega o XML
+    -> confere CNPJ+competência+valor (_casa) -> fecha. Devolve quantas fechou.
+    `numeros`: lista opcional de números pra filtrar (usado na thread pós-emissão)."""
+    chave_pem, cert_pem = carregar_certificado_auto("", CERT_PATH)
+    if not (chave_pem and cert_pem):
+        print(">>> [SEFIN] certificado não carregado — pulando via SEFIN.")
+        return 0
+    gc = cliente_gspread()
+    cred = ler_credenciais(gc)
+    planilha = gc.open_by_key(ID_PROC)
+    pendentes = ctrl.listar_pendentes(planilha)
+    if numeros:
+        alvo = {str(n) for n in numeros}
+        pendentes = [p for p in pendentes if str(p.get("numero")) in alvo]
+    if not pendentes:
+        return 0
+    ws_links = abrir_aba(planilha, ABA_LINKS)
+    print(f"[SEFIN] tentando {len(pendentes)} pendente(s) por DPS/chave...")
+    fechadas = 0
+    for pend in pendentes:
+        num = pend.get("numero")
+        ano2 = _ano2_do_pendente(pend)
+        if not ano2:
+            print(f"  nota {num}: sem competência pra montar o ID da DPS — pulei.")
+            continue
+        id_dps = _id_dps(num, ano2)
+        try:
+            chave = adn_nfse.consultar_chave_por_dps(cert_pem, chave_pem, id_dps)
+        except Exception as e:
+            print(f"  nota {num}: erro no /dps — {type(e).__name__}: {e}")
+            continue
+        if not chave:
+            print(f"  nota {num}: ainda não consta na SEFIN (DPS {id_dps[-15:]}) — segue pendente.")
+            continue
+        try:
+            xml_nac = adn_nfse.consultar_nfse_por_chave(cert_pem, chave_pem, chave)
+        except Exception as e:
+            print(f"  nota {num}: achei a chave mas falhou o /nfse — {type(e).__name__}: {e}")
+            continue
+        dm = _dados_match(xml_nac)
+        if not dm or not _casa(pend, dm):
+            print(f"  nota {num}: XML não casou com o pendente (proteção) — NÃO fechei.")
+            continue
+        try:
+            _fechar(planilha, ws_links, cred, pend, dm, xml_nac)
+            fechadas += 1
+        except Exception as e:
+            print(f"  nota {num}: ERRO ao fechar — {type(e).__name__}: {e}")
+    print(f"[SEFIN] fechadas nesta passada: {fechadas}")
+    return fechadas
+
+
 def rodar(base: str = adn_nfse.BASE_PROD):
     gc = cliente_gspread()
     cred = ler_credenciais(gc)
@@ -224,6 +299,18 @@ def rodar(base: str = adn_nfse.BASE_PROD):
     if not pendentes:
         print("Nada a fazer.")
         return
+
+    # 1) Caminho rápido: SEFIN por DPS/chave (sem fila do NSU). Fecha o que já
+    #    estiver no nacional. Só recorre ao NSU pra quem sobrar.
+    try:
+        fechar_via_sefin()
+    except Exception as e:
+        print(f">>> [SEFIN] falhou geral (sigo pro NSU): {type(e).__name__}: {e}")
+    pendentes = ctrl.listar_pendentes(planilha)
+    if not pendentes:
+        print("Tudo fechado pela SEFIN. NSU não foi necessário.")
+        return
+    print(f"Restaram {len(pendentes)} após a SEFIN — tentando pelo NSU (rede de segurança)...")
 
     nsu0 = ctrl.ler_nsu(planilha)
     print(f"Varrendo ADN a partir do NSU {nsu0} (base {base})...")

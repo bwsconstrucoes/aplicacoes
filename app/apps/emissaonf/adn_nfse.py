@@ -127,6 +127,20 @@ def consultar_eventos(cert_pem: bytes, chave_pem: bytes, chave_acesso: str,
 SEFIN_PROD = "https://sefin.nfse.gov.br/sefinnacional"
 
 
+def consultar_chave_por_dps(cert_pem: bytes, chave_pem: bytes, id_dps: str,
+                            base_sefin: str = SEFIN_PROD, timeout: int = 40):
+    """GET SEFIN /dps/{idDps} (autenticado por certificado) -> chaveAcesso da
+    NFS-e gerada a partir daquela DPS, ou None se ainda não existe (404)."""
+    cert_path, key_path = _cert_temp(cert_pem, chave_pem)
+    r = requests.get(f"{base_sefin}/dps/{id_dps}", headers={"Accept": "application/json"},
+                     cert=(cert_path, key_path), timeout=timeout)
+    if r.status_code == 404:
+        return None
+    if r.status_code != 200:
+        raise RuntimeError(f"SEFIN /dps/{{id}} HTTP {r.status_code}: {r.text[:200]}")
+    return (r.json() or {}).get("chaveAcesso") or (r.json() or {}).get("ChaveAcesso")
+
+
 def consultar_nfse_por_chave(cert_pem: bytes, chave_pem: bytes, chave_acesso: str,
                              base_sefin: str = SEFIN_PROD, timeout: int = 40) -> str:
     """GET SEFIN /nfse/{chave} (autenticado por certificado) -> XML nacional já

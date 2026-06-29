@@ -377,13 +377,31 @@ def _rodar_nacional() -> str:
     return buf.getvalue()
 
 
+def _rodar_sefin_bg() -> str:
+    """Fecha pendentes pela SEFIN (DPS/chave) — caminho rápido, sem NSU."""
+    if not _NAC_LOCK.acquire(blocking=False):
+        return "(nacional já em execução — pulei)"
+    buf = io.StringIO()
+    try:
+        import job_nacional
+        with contextlib.redirect_stdout(buf):
+            job_nacional.fechar_via_sefin()
+    except Exception as e:
+        buf.write(f"\n>>> ERRO SEFIN: {type(e).__name__}: {e}")
+    finally:
+        _NAC_LOCK.release()
+    return buf.getvalue()
+
+
 def _auto_nacional_bg():
-    """Após emitir, tenta o nacional já (ele costuma subir em segundos).
-    Duas tentativas espaçadas cobrem o caso 'quase imediato' sem esperar o Cron."""
+    """Após emitir, fecha o nacional pela SEFIN assim que ele sobe (segundos).
+    A SEFIN tem a nota pela chave/DPS bem antes do ADN distribuir por NSU, então
+    tentamos em 60/180/300s — a maioria fecha já junto da emissão. O Cron de
+    10 em 10 min fica só como rede de segurança."""
     import time
-    for atraso in (12, 60):
+    for atraso in (60, 180, 300):
         time.sleep(atraso)
-        _rodar_nacional()
+        _rodar_sefin_bg()
 
 
 @bp.route("/nacional", methods=["GET"])
