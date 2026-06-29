@@ -34,6 +34,7 @@ import montar_emissao as _me
 import el_nfse_envio as _envio
 import concluir as _concluir
 import substituicao as _sub
+import completar_imediato as _compl
 
 bp = Blueprint("emissao", __name__)
 
@@ -259,6 +260,89 @@ def diag():
     ]
     corpo = "<h1>Diagnóstico</h1><pre>" + html.escape("\n".join(linhas)) + "</pre>"
     return Response(_doc("Diagnóstico", corpo), mimetype="text/html")
+
+
+def _ids_da_nota(xml_texto: str):
+    """Extrai (numero, codigo_verificacao, data_iso) de InfNfse do XML ABRASF."""
+    import xml.etree.ElementTree as _ET
+    root = _ET.fromstring(xml_texto.encode("utf-8"))
+    for el in root.iter():                       # remove namespace p/ os find funcionarem
+        if isinstance(el.tag, str) and "}" in el.tag:
+            el.tag = el.tag.split("}", 1)[1]
+    inf = root.find(".//InfNfse")
+    if inf is None:
+        return "", "", ""
+    def _txt(tag):
+        e = inf.find(tag)
+        return (e.text or "").strip() if e is not None else ""
+    data = _txt("DataEmissao")
+    return _txt("Numero"), _txt("CodigoVerificacao"), (data[:10] if data else "")
+
+
+def _pagina_recuperar(token):
+    t = html.escape(token)
+    return _doc("Recuperar entrega", f"""
+      <h1>Recuperar entrega de nota já emitida</h1>
+      <div class='card'>
+        <p class='sub'>Para notas emitidas cujos documentos não subiram ao Drive (ex.: falha de
+        credencial). NÃO refaz Notas BWS / Omie / slots — só a entrega (Drive + links + Descrição).
+        É idempotente, pode repetir.</p>
+        <form method='post' action='{url_for('.recuperar')}'>
+          <label class='lbl'>card_id (Pipefy):
+            <input name='card_id' style='padding:8px;border:1px solid #c8d0da;border-radius:6px'></label>
+          <label class='lbl'>XML da NFS-e (baixe no portal da prefeitura e cole aqui):</label>
+          <textarea name='xml' rows='12' placeholder='<?xml ...><CompNfse>...'></textarea>
+          <label class='lbl'><input type='checkbox' name='reenviar_whatsapp'> reenviar WhatsApp
+            (deixe DESMARCADO — já foi enviado na emissão)</label>
+          <input type='hidden' name='token' value='{t}'>
+          <button type='submit'>Reprocessar entrega</button>
+        </form>
+      </div>""")
+
+
+@bp.route("/recuperar", methods=["GET", "POST"])
+def recuperar():
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    token = request.values.get("token", "")
+    if request.method == "GET":
+        return Response(_pagina_recuperar(token), mimetype="text/html")
+
+    card_id = (request.form.get("card_id") or "").strip()
+    xml_texto = (request.form.get("xml") or "").strip()
+    zap = request.form.get("reenviar_whatsapp") == "on"
+    if not card_id or not xml_texto:
+        return Response(_pagina_erro("Informe o card_id e cole o XML da nota."), mimetype="text/html")
+    try:
+        numero, codigo, data_iso = _ids_da_nota(xml_texto)
+    except Exception as e:
+        return Response(_pagina_erro(f"XML inválido: {e}"), mimetype="text/html")
+    if not numero:
+        return Response(_pagina_erro("Não encontrei o Número da NFS-e no XML (esperava InfNfse/Numero). "
+                                     "Confira se colou o XML completo da nota."), mimetype="text/html")
+
+    tmp = os.path.join(_DIR, f"recuperar_{numero}.xml")
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(xml_texto)
+    buf = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(buf):
+            _compl.completar(card_id, numero, codigo, data_iso, tmp,
+                             enviar_whatsapp=zap, discriminacao="")
+    except Exception as e:
+        buf.write(f"\n>>> ERRO: {type(e).__name__}: {e}")
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+
+    corpo = (f"<h1>Recuperação da NF {html.escape(numero)}</h1>"
+             f"<div class='ok'>Entrega reprocessada — card {html.escape(card_id)}, "
+             f"código {html.escape(codigo)}, emissão {html.escape(data_iso)}.</div>"
+             f"<div class='card'><b>Log</b><pre>{html.escape(buf.getvalue())}</pre></div>"
+             "<p class='sub'>Confira no log se [a]/[b]/[c] subiram ao Drive e [f] atualizou a Descrição.</p>")
+    return Response(_doc("Recuperação", corpo), mimetype="text/html")
 
 
 # --------------------------------------------------------------------------- #

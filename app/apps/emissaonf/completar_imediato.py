@@ -33,13 +33,18 @@ from preview import brl
 
 ABA_LINKS = "Notas BWS Links"
 
+_SENTINEL = object()
 
-def completar(card_id, numero, codigo, data_iso, nota_xml_path):
+
+def completar(card_id, numero, codigo, data_iso, nota_xml_path,
+              enviar_whatsapp: bool = True, discriminacao=_SENTINEL):
     ctx = preparar(card_id)
     card, obra, r = ctx["card"], ctx["obra"], ctx["r"]
     gc, cred = ctx["gc"], ctx["cred"]
     token = cred["PIPEFY_TOKEN"]
-    discr_limpa = getattr(ctx.get("dados_rps"), "discriminacao", "") or ""
+    # discriminação: por padrão usa a do ctx; na recuperação passe "" para usar a do XML
+    discr_limpa = ((getattr(ctx.get("dados_rps"), "discriminacao", "") or "")
+                   if discriminacao is _SENTINEL else (discriminacao or ""))
     obra_cod = card["codigo_obra"]
     med = card["numero_medicao"]
     nome_base = f"NOTA FISCAL {numero} - {med} ª Medição {obra_cod}"
@@ -75,7 +80,7 @@ def completar(card_id, numero, codigo, data_iso, nota_xml_path):
     link_mun = ""
     try:
         nota_municipal.gerar_nota_municipal_pdf(xml_abrasf, "mun_tmp.pdf",
-                                                xml_nacional=None, discriminacao=discr_limpa)
+                                                xml_nacional=None, discriminacao=discr_limpa or None)
         with open("mun_tmp.pdf", "rb") as fh:
             _, link_mun = drive.enviar(f"{nome_base} (NFS-e).pdf", fh.read(), "pdf")
         print(f"[c] Municipal .......... {link_mun}")
@@ -109,7 +114,10 @@ def completar(card_id, numero, codigo, data_iso, nota_xml_path):
         print(f"[f] Descrição .......... ERRO: {e}")
 
     # [g] WhatsApp (texto + recibo)
-    try:
+    if not enviar_whatsapp:
+        print("[g] WhatsApp ........... pulado (recuperação)")
+    else:
+      try:
         dest, aviso = efeitos._ler_destinatarios(gc)
         if aviso:
             print(f"[g] WhatsApp ........... {aviso}")
@@ -127,7 +135,7 @@ def completar(card_id, numero, codigo, data_iso, nota_xml_path):
                 zapi.enviar_texto(cred, dst["telefone"], msg)
                 envios += 1
         print(f"[g] WhatsApp ........... {envios} envio(s)")
-    except Exception as e:
+      except Exception as e:
         print(f"[g] WhatsApp ........... ERRO: {e}")
 
     print("\n===== ENTREGA COMPLETA — pronto p/ o job_nacional.py =====")
