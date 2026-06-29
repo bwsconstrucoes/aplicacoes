@@ -99,6 +99,9 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
         mut = pf.montar_mutation(card["card_id"], slot, numero, data_br, r.valor_total, r.valor_liquido)
         pf.executar(mut, token)
         print(f"[3] Pipefy slots ....... slot {slot} preenchido + 12 campos limpos")
+    except pf.TodasNotasPreenchidas:
+        print("[3] Pipefy slots ....... 5 slots (A–E) cheios — pulei a atualização do card "
+              "(a nota foi emitida e os demais efeitos seguem normalmente)")
     except Exception as e:
         print(f"[3] Pipefy slots ....... ERRO: {e}")
 

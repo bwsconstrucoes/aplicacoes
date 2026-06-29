@@ -59,10 +59,13 @@ def proximo_numero(gc) -> tuple[int, int]:
     return ultimo + 1, ultimo
 
 
-def preparar(card_id: str, tipo_medicao_override=None, valor_override=None) -> dict:
+def preparar(card_id: str, tipo_medicao_override=None, valor_override=None,
+             nota_substituida=None) -> dict:
     """Roda todo o pipeline até o XML assinado e devolve o contexto (sem efeitos).
     tipo_medicao_override / valor_override: usados na SUBSTITUIÇÃO, em que o card já
-    não traz esses campos editáveis — injetam o valor antes do cálculo (reusa calcular)."""
+    não traz esses campos editáveis — injetam o valor antes do cálculo (reusa calcular).
+    nota_substituida: se informado e sem valor_override, o valor-base default passa a ser
+    o da nota antiga (a que está sendo substituída)."""
     print(f"=== Card {card_id} ===\n")
     gc = cliente_gspread()
     cred = ler_credenciais(gc)
@@ -77,6 +80,14 @@ def preparar(card_id: str, tipo_medicao_override=None, valor_override=None) -> d
     # override de tipo de medição (substituição): entra antes do cálculo de retenções
     if tipo_medicao_override:
         card["tipo_medicao"] = tipo_medicao_override
+    # substituição sem valor explícito: o valor-base default é o da nota antiga
+    if valor_override is None and nota_substituida:
+        import validacao as _v
+        _alvo = "".join(c for c in str(nota_substituida) if c.isdigit())
+        for _s in _v.slots_preenchidos(card):
+            if "".join(c for c in str(_s["numero"]) if c.isdigit()) == _alvo:
+                valor_override = f"{_s['valor']:.2f}"
+                break
     print(f"Obra: {card['codigo_obra']} | Medição {card['numero_medicao']} | "
           f"Valor {brl(card['valor_medicao'])} | BDI {brl(card['bdi'])}")
 

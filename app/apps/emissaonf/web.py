@@ -138,7 +138,7 @@ def pagina():
     val_over = _parse_valor_br(request.args.get("valor")) if nota_sub else None
     try:
         ctx = _worker.preparar(card_id, tipo_medicao_override=(tm_over or None),
-                               valor_override=val_over)
+                               valor_override=val_over, nota_substituida=(nota_sub or None))
     except Exception as e:
         return Response(_pagina_erro(f"Erro ao carregar o card {card_id}: "
                                      f"{type(e).__name__}: {e}"), mimetype="text/html")
@@ -168,7 +168,7 @@ def emitir():
         _EMITINDO.add(card_id)
     try:
         ctx = _worker.preparar(card_id, tipo_medicao_override=(tm_over or None),
-                               valor_override=val_over)
+                               valor_override=val_over, nota_substituida=(nota_sub or None))
         if nota_sub and not _sub.localizar_slot_por_numero(ctx["card"], nota_sub):
             return Response(_pagina_erro(
                 f"Substituição: a NF {nota_sub} não foi encontrada nos slots A–E deste card. "
