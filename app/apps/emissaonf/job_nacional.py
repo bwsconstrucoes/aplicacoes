@@ -88,9 +88,9 @@ def _dados_match(xml: str):
 
 
 def _casa(pend: dict, dm: dict) -> bool:
-    if dm["emit"] != CNPJ_BWS:
+    if dm["emit"].zfill(14) != CNPJ_BWS.zfill(14):
         return False
-    if dm["toma"] != _so_digitos(pend["toma_cnpj"]):
+    if dm["toma"].zfill(14) != _so_digitos(pend["toma_cnpj"]).zfill(14):
         return False
     if dm["dcompet"] != str(pend["dCompet"])[:7]:
         return False
