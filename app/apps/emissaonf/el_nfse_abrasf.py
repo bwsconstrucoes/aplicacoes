@@ -63,6 +63,8 @@ def carregar_certificado_auto(senha: str, caminho: str = "certificado.p12"):
     Se nenhuma existir, devolve (None, None)."""
     import os
     from base64 import b64decode
+    senha = senha or (os.getenv("EMISSAO_NF_CERTIFICADO_SENHA") or os.getenv("CERTIFICADO_SENHA")
+                      or os.getenv("SENHA_CERTIFICADO") or os.getenv("CERT_SENHA") or "")
     b64 = (os.getenv("EMISSAO_NF_CERTIFICADO_P12_BASE64")
            or os.getenv("CERTIFICADO_P12_BASE64") or "")
     if b64:

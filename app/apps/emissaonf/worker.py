@@ -25,7 +25,7 @@ from tributacao import (parse_categoria, calcular, valor_base_nota, overrides_do
 from municipios_ibge import carregar_cache, resolver
 from preview import montar_preview_html, brl
 from montar_emissao import montar_dados_rps, gerar_xml_preview
-from el_nfse_abrasf import carregar_certificado_a1
+from el_nfse_abrasf import carregar_certificado_a1, carregar_certificado_auto
 import efeitos
 
 # --- planilhas ---
@@ -67,7 +67,9 @@ def preparar(card_id: str) -> dict:
     token = cred.get("PIPEFY_TOKEN")
     if not token:
         raise KeyError("PIPEFY_TOKEN não encontrado na aba 'Credenciais'.")
-    senha_cert = cred.get("CERTIFICADO_SENHA") or cred.get("SENHA_CERTIFICADO") or cred.get("CERT_SENHA")
+    senha_cert = (cred.get("CERTIFICADO_SENHA") or cred.get("SENHA_CERTIFICADO") or cred.get("CERT_SENHA")
+                  or os.getenv("EMISSAO_NF_CERTIFICADO_SENHA") or os.getenv("CERTIFICADO_SENHA")
+                  or os.getenv("SENHA_CERTIFICADO") or os.getenv("CERT_SENHA"))
 
     card = extrair_card(get_card(card_id, token))
     print(f"Obra: {card['codigo_obra']} | Medição {card['numero_medicao']} | "
@@ -109,12 +111,15 @@ def preparar(card_id: str) -> dict:
     for a in avisos:
         print(f"  [aviso] {a}")
     chave_pem = cert_pem = None
-    if senha_cert and os.path.exists(CERT_PATH):
+    if senha_cert:
         try:
-            chave_pem, cert_pem = carregar_certificado_a1(CERT_PATH, senha_cert)
+            chave_pem, cert_pem = carregar_certificado_auto(senha_cert, CERT_PATH)
+            if not (chave_pem and cert_pem):
+                print("  [aviso] certificado A1 não encontrado (env CERTIFICADO_P12_BASE64 "
+                      "nem arquivo); XML sem assinatura")
         except Exception as e:
             print(f"  [aviso] não assinei o XML ({e}); estrutura sem assinatura")
-    elif not senha_cert:
+    else:
         print("  [aviso] CERTIFICADO_SENHA não está na aba Credenciais; XML sem assinatura")
     xml = gerar_xml_preview(dados_rps, chave_pem, cert_pem)
 
