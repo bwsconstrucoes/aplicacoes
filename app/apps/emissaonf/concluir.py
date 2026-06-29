@@ -132,11 +132,17 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
     except Exception as e:
         print(f"[6] Municipal (Drive) .. ERRO: {e}")
 
-    # 7) NOTAS BWS LINKS (municipal + recibo; nacional o job completa)
+    # 7) NOTAS BWS LINKS (municipal + recibo; coluna nacional recebe o link de
+    #    BUSCA MANUAL como placeholder — o job nacional troca pelo link real depois)
     try:
         ws_links = abrir_aba(planilha, ABA_LINKS)
+        import os as _os
+        _base = _os.getenv("EMISSAO_NF_BASE_URL", "").rstrip("/")
+        _tok = _os.getenv("EMISSAO_NF_TOKEN") or _os.getenv("EMISSAO_TOKEN") or ""
+        _link_nac_manual = f"{_base}/emissao/nacional?token={_tok}" if _base else ""
         notas_bws.gravar_links(ws_links, numero, obra_cod, ano, nome_base,
-                               link_municipal=link_mun, link_recibo=link_rec)
+                               link_municipal=link_mun, link_nacional=_link_nac_manual,
+                               link_recibo=link_rec)
         print(f"[7] Notas BWS Links .... linha gravada (municipal + recibo)")
     except Exception as e:
         print(f"[7] Notas BWS Links .... ERRO: {e}")

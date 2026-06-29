@@ -41,6 +41,7 @@ bp = Blueprint("emissao", __name__)
 _LOCK = threading.Lock()
 _EMITINDO: set[str] = set()
 _RESULTADOS: dict[str, dict] = {}
+_NAC_LOCK = threading.Lock()
 
 
 def _token_ok() -> bool:
@@ -204,6 +205,12 @@ def emitir():
                 sub_info["planilha"] = f"ERRO ao marcar na planilha: {type(e).__name__}: {e}"
                 buf.write(f"\n>>> SUBSTITUIÇÃO (planilha) ERRO: {e}")
 
+        # dispara a busca nacional em background (não bloqueia a resposta ao usuário)
+        try:
+            threading.Thread(target=_auto_nacional_bg, daemon=True).start()
+        except Exception:
+            pass
+
         rid = uuid.uuid4().hex
         _RESULTADOS[rid] = {"numero": numero, "codigo": codigo, "data": data_iso,
                             "log": buf.getvalue(), "card_id": card_id, "prox": ctx.get("prox"),
@@ -352,6 +359,43 @@ def recuperar():
              f"<div class='card'><b>Log</b><pre>{html.escape(buf.getvalue())}</pre></div>"
              "<p class='sub'>Confira no log se cada passo concluiu sem ERRO.</p>")
     return Response(_doc("Recuperação", corpo), mimetype="text/html")
+
+
+def _rodar_nacional() -> str:
+    """Roda o job nacional uma vez (protegido por lock). Devolve o log."""
+    if not _NAC_LOCK.acquire(blocking=False):
+        return "(job nacional já em execução — pulei esta chamada)"
+    buf = io.StringIO()
+    try:
+        import job_nacional
+        with contextlib.redirect_stdout(buf):
+            job_nacional.rodar()
+    except Exception as e:
+        buf.write(f"\n>>> ERRO job nacional: {type(e).__name__}: {e}")
+    finally:
+        _NAC_LOCK.release()
+    return buf.getvalue()
+
+
+def _auto_nacional_bg():
+    """Após emitir, tenta o nacional já (ele costuma subir em segundos).
+    Duas tentativas espaçadas cobrem o caso 'quase imediato' sem esperar o Cron."""
+    import time
+    for atraso in (12, 60):
+        time.sleep(atraso)
+        _rodar_nacional()
+
+
+@bp.route("/nacional", methods=["GET"])
+def nacional():
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    log = _rodar_nacional()
+    corpo = ("<h1>Busca nacional (manual)</h1>"
+             "<p class='sub'>Roda o job que casa as notas pendentes com o ADN e fecha a parte nacional "
+             "(DANFSe + chave + QR + 3º link na Descrição). Pode repetir — é idempotente.</p>"
+             f"<div class='card'><b>Log</b><pre>{html.escape(log)}</pre></div>")
+    return Response(_doc("Busca nacional", corpo), mimetype="text/html")
 
 
 # --------------------------------------------------------------------------- #
