@@ -239,7 +239,25 @@ def diag():
         "Resultado do teste de carregamento:",
         _diag_cert(),
     ]
-    corpo = "<h1>Diagnóstico do certificado</h1><pre>" + html.escape("\n".join(linhas)) + "</pre>"
+    # --- Google Drive: qual service account + personificação ---
+    import json as _json
+    from base64 import b64decode as _b64d
+    sa_email = sa_cid = "?"
+    try:
+        _info = _json.loads(_b64d(os.getenv("GOOGLE_CREDENTIALS_BASE64", "")).decode("utf-8"))
+        sa_email = _info.get("client_email", "?")
+        sa_cid = _info.get("client_id", "?")
+    except Exception as e:
+        sa_email = f"(erro ao ler GOOGLE_CREDENTIALS_BASE64: {e})"
+    _imp = os.getenv("EMISSAO_NF_DRIVE_IMPERSONAR", "contato@bwsconstrucoes.com.br")
+    linhas += [
+        "",
+        "----- Google Drive -----",
+        f"Service account (client_email): {sa_email}",
+        f"Client ID (este é o número a autorizar na DWD): {sa_cid}",
+        f"Personificando: {_imp or '(vazio = sem personificação / modo Drive Compartilhado)'}",
+    ]
+    corpo = "<h1>Diagnóstico</h1><pre>" + html.escape("\n".join(linhas)) + "</pre>"
     return Response(_doc("Diagnóstico", corpo), mimetype="text/html")
 
 

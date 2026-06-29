@@ -36,8 +36,12 @@ def _servico(caminho_json: str = "credenciais.json"):
         cred = Credentials.from_service_account_info(info, scopes=SCOPES)
     else:
         cred = Credentials.from_service_account_file(caminho_json, scopes=SCOPES)
-    if EMAIL_IMPERSONAR:
-        cred = cred.with_subject(EMAIL_IMPERSONAR)
+    # Quem personificar (delegação domain-wide). Configurável por env:
+    #   EMISSAO_NF_DRIVE_IMPERSONAR="" (vazio) => NÃO personifica
+    #   (use quando a PASTA_NOTAS estiver num Drive Compartilhado, que dispensa DWD).
+    imp = os.getenv("EMISSAO_NF_DRIVE_IMPERSONAR", EMAIL_IMPERSONAR)
+    if imp:
+        cred = cred.with_subject(imp)
     return build("drive", "v3", credentials=cred, cache_discovery=False)
 
 
