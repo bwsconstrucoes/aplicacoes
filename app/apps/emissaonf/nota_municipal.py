@@ -51,14 +51,23 @@ def valor_bruto_nf(xml_abrasf: str):
 
 def parse_nfse_municipal(xml: str) -> dict:
     root = ET.fromstring(xml.encode("utf-8") if isinstance(xml, str) else xml)
-    inf = root.find(".//InfNfse")
-    presS = inf.find("PrestadorServico")
-    presE = presS.find("Endereco")
-    decl = inf.find("DeclaracaoPrestacaoServico/InfDeclaracaoPrestacaoServico")
-    serv = decl.find("Servico")
-    val = serv.find("Valores")
-    toma = decl.find("TomadorServico")
-    tomaE = toma.find("Endereco")
+    # remove namespace default (alguns retornos ABRASF vêm com xmlns) p/ os .find funcionarem
+    for el in root.iter():
+        if isinstance(el.tag, str) and "}" in el.tag:
+            el.tag = el.tag.split("}", 1)[1]
+
+    def _fe(base, path):
+        """find encadeado tolerante a None (não estoura se um nível faltar)."""
+        return base.find(path) if base is not None else None
+
+    inf = _fe(root, ".//InfNfse")
+    presS = _fe(inf, "PrestadorServico")
+    presE = _fe(presS, "Endereco")
+    decl = _fe(inf, "DeclaracaoPrestacaoServico/InfDeclaracaoPrestacaoServico")
+    serv = _fe(decl, "Servico")
+    val = _fe(serv, "Valores")
+    toma = _fe(decl, "TomadorServico")
+    tomaE = _fe(toma, "Endereco")
 
     return {
         "numero": _t(inf, "Numero"),

@@ -28,7 +28,14 @@ MIME = {"pdf": "application/pdf", "xml": "application/xml", "txt": "text/plain"}
 
 
 def _servico(caminho_json: str = "credenciais.json"):
-    cred = Credentials.from_service_account_file(caminho_json, scopes=SCOPES)
+    import os, json
+    from base64 import b64decode
+    b64 = os.getenv("GOOGLE_CREDENTIALS_BASE64", "")
+    if b64:
+        info = json.loads(b64decode(b64).decode("utf-8"))
+        cred = Credentials.from_service_account_info(info, scopes=SCOPES)
+    else:
+        cred = Credentials.from_service_account_file(caminho_json, scopes=SCOPES)
     if EMAIL_IMPERSONAR:
         cred = cred.with_subject(EMAIL_IMPERSONAR)
     return build("drive", "v3", credentials=cred, cache_discovery=False)

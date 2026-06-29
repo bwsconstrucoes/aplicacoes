@@ -46,30 +46,36 @@ def _norm(s) -> str:
     return s.upper().strip()
 
 
-def slots_preenchidos(card: dict) -> list[dict]:
+def slots_preenchidos(card: dict, ignorar_numero=None) -> list[dict]:
     """Slots A–E já preenchidos no card, com status/número/valor e flag 'valida'.
-    Lê pelos field_id verificados em pipefy_update.CAMPOS_SLOT."""
+    Lê pelos field_id verificados em pipefy_update.CAMPOS_SLOT.
+    Se 'ignorar_numero' for passado, esse nº (nota em substituição) não conta como válido."""
     por_id = card.get("campos_por_id", {}) or {}
+    ign = str(ignorar_numero).strip() if ignorar_numero else None
     out = []
     for s in "ABCDE":
         f = pf.CAMPOS_SLOT[s]
         status = (por_id.get(f["status"]) or "").strip()
         if not status:
             continue
+        numero = (por_id.get(f["numero"]) or "").strip()
+        valida = _norm(status).startswith("VALID")   # 'Válida'
+        if ign and numero == ign:
+            valida = False                            # nota em substituição: não conta no teto
         out.append({
             "slot": s,
             "status": status,
-            "numero": (por_id.get(f["numero"]) or "").strip(),
+            "numero": numero,
             "valor": _dec_br(por_id.get(f["valor"])),
-            "valida": _norm(status).startswith("VALID"),   # 'Válida'
+            "valida": valida,
         })
     return out
 
 
-def checar(card: dict, r) -> dict:
+def checar(card: dict, r, ignorar_numero=None) -> dict:
     cap = _dec_norm(card.get("valor_medicao"))
     atual = Decimal(str(getattr(r, "valor_total", 0) or 0))
-    slots = slots_preenchidos(card)
+    slots = slots_preenchidos(card, ignorar_numero=ignorar_numero)
     ja_valido = sum((x["valor"] for x in slots if x["valida"]), Decimal("0"))
     total = ja_valido + atual
 
