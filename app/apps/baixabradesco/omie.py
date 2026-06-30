@@ -185,6 +185,12 @@ def resolver_conta_somapay(receipt) -> dict:
 def build_transferencia_somapay(plan, payload: dict) -> dict:
     """IncluirLancCC: transferência da conta Bradesco (origem) para a conta
     Somapay correta (destino), conforme a conta de débito do comprovante.
+
+    NOTA: a semântica do Omie é invertida em relação ao nome dos campos —
+    'cabecalho.nCodCC' funciona como conta de DESTINO do lançamento e
+    'transferencia.nCodCCDestino' como conta de ORIGEM do débito.
+    Por isso os valores estão trocados aqui para produzir o resultado correto:
+    débito sai do Bradesco e crédito entra na Somapay.
     """
     rec = plan.receipt
     banco_origem = plan.banco
@@ -198,12 +204,12 @@ def build_transferencia_somapay(plan, payload: dict) -> dict:
         'param': [{
             'cCodIntLanc': codigo_int,
             'cabecalho': {
-                'nCodCC': as_string(banco_origem.codigo_omie if banco_origem else ''),
+                'nCodCC': somapay['codigo_omie'],
                 'dDtLanc': rec.data_pagamento,
                 'nValorLanc': decimal_to_omie(rec.valor_pago),
             },
             'transferencia': {
-                'nCodCCDestino': somapay['codigo_omie'],
+                'nCodCCDestino': as_string(banco_origem.codigo_omie if banco_origem else ''),
             },
             'detalhes': {
                 'cCodCateg': '0.01.01',
