@@ -25,6 +25,14 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
         cands = match_beevale(receipt, list(sps_index.values()))
         return _result_from_candidates(cands, 'beevale_valor_1015_spsbd', 'BeeVale por valor base = valor pago / 1,015, buscando na SPsBD.')
 
+    if receipt.tipo_comprovante == 'somapay':
+        # Transferência Bradesco -> Somapay para baixa de rescisão/férias/etc.
+        # Sem ID — match por valor + Pagar + agendado + Tipo de Despesa específico.
+        cands = match_somapay(receipt, sps_agendar)
+        if not cands and sps_index:
+            cands = match_somapay(receipt, list(sps_index.values()))
+        return _result_from_candidates(cands, 'somapay_valor_tipo_despesa', 'Somapay por valor + Pagar/agendado + Tipo de Despesa (rescisão/férias/gratificação/PLR).')
+
     if receipt.tipo_comprovante == 'fgts_rescisorio':
         cands = match_fgts_por_valor(receipt, sps_agendar)
         if not cands and sps_index:
@@ -77,16 +85,13 @@ def match_beevale(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[Sp
             continue
         if normalize_compact(r.status_pgt) != 'pagar':
             continue
-        # Aceita status_agendamento vazio (BeeVale pode não ter passado pelo agendador)
-        agend = normalize_compact(r.status_agendamento)
-        if agend and agend not in {'agendado', 'agendar', 'falhaagendar'}:
+        if normalize_compact(r.status_agendamento) not in {'agendado', 'agendar', 'falhaagendar'}:
             continue
         base = money_to_decimal(r.valor_total)
         if base is None:
             continue
-        # Aceita com acréscimo 1,5% ou sem acréscimo (valor exato)
         esperado = (base * BEEVALE_MULTIPLICADOR).quantize(Decimal('0.01'))
-        if abs(esperado - valor) <= BEEVALE_TOL or base == valor:
+        if abs(esperado - valor) <= BEEVALE_TOL:
             out.append(r)
     return out
 
@@ -211,6 +216,39 @@ def match_valor_conta_agendado(receipt: ExtractedReceipt, records: List[SpRecord
             continue
         conta_sp = normalize_compact(clean_account(r.conta_pagamento or ''))
         if conta_sp and conta_rec and conta_sp != conta_rec:
+            continue
+        out.append(r)
+    return out
+
+SOMAPAY_TIPOS_DESPESA = {
+    'rescisoes e indenizacoes trabalhistas',
+    'gratificacoes e extras',
+    'ferias',
+    'participacao nos lucros e resultados',
+}
+
+
+def match_somapay(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
+    """Match Somapay: valor + Status Pgt=Pagar + Agendado(agendar/agendado/falhaagendar)
+    + Tipo de Despesa em {Rescisões e Indenizações Trabalhistas, Gratificações e Extras,
+    Férias, Participação nos Lucros e Resultados}.
+
+    Não usa conta no critério — o comprovante traz a conta Bradesco de débito,
+    mas a baixa real ocorre na conta Somapay (BWS ou IFPESANTACRUZ).
+    """
+    valor = money_to_decimal(receipt.valor_pago)
+    if valor is None:
+        return []
+    out = []
+    for r in records:
+        if normalize_compact(r.status_pgt) != 'pagar':
+            continue
+        if normalize_compact(r.status_agendamento) not in {'agendado', 'agendar', 'falhaagendar'}:
+            continue
+        if money_to_decimal(r.valor_total) != valor:
+            continue
+        tipo_despesa = normalize_compact((r.raw or {}).get('Tipo de Despesa', '') or '')
+        if tipo_despesa not in {normalize_compact(t) for t in SOMAPAY_TIPOS_DESPESA}:
             continue
         out.append(r)
     return out

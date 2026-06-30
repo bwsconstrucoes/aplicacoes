@@ -10,10 +10,9 @@ from .models import AttachmentInput, ExecutionPlan
 from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
-from .parser_sicredi import parse_sicredi_text, is_sicredi
 from .sheets import get_gc, load_spsbd_index, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
 from .matcher import match_receipt
-from .omie import build_omie_plan, build_incluir_lanc_cc, execute_omie, execute_omie_lanccc, codigo_integracao
+from .omie import build_omie_plan, build_incluir_lanc_cc, build_somapay_plan, execute_omie, execute_omie_lanccc, codigo_integracao
 from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
 from .zapi import build_whatsapp_messages, send_messages_batch, resolve_zapi_auth, validate_zapi_auth
 from .storage import upload_dropbox_bytes, build_receipt_page_filename, normalize_dropbox_link
@@ -69,23 +68,13 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             if not as_string(text):
                 continue
 
-            # Detecta banco e chama parser correto
-            if is_sicredi(text):
-                rec = parse_sicredi_text(
-                    filename=att.filename,
-                    page=page_num,
-                    text=text,
-                    drive_link='',
-                    fingerprint=f'{fp_file}:{page_num}',
-                )
-            else:
-                rec = parse_bradesco_text(
-                    filename=att.filename,
-                    page=page_num,
-                    text=text,
-                    drive_link='',
-                    fingerprint=f'{fp_file}:{page_num}',
-                )
+            rec = parse_bradesco_text(
+                filename=att.filename,
+                page=page_num,
+                text=text,
+                drive_link='',
+                fingerprint=f'{fp_file}:{page_num}',
+            )
 
             # Primeiro localiza a SP/título. Só depois salva o comprovante.
             # Isso evita gerar arquivos órfãos no Dropbox quando a baixa não puder
@@ -146,7 +135,10 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 _decidir_execucao(plan, executar_omie, atualizar_pipefy, atualizar_spsbd, enviar_whatsapp)
 
-            plan.omie_requests        = build_omie_plan(plan, payload)       if plan.match.id and executar_omie else []
+            if rec.tipo_comprovante == 'somapay' and plan.match.id and executar_omie:
+                plan.omie_requests = build_somapay_plan(plan, payload)
+            else:
+                plan.omie_requests = build_omie_plan(plan, payload) if plan.match.id and executar_omie else []
             plan.pipefy_get_query     = ''                                   # preenchido depois em lote
             plan.pipefy_update_mutation = ''                                 # preenchido depois com dados do get
             plan.sheets_updates       = build_spsbd_updates(plan)           if plan.match.id and atualizar_spsbd else []
@@ -346,9 +338,20 @@ def _decidir_execucao(plan: ExecutionPlan, executar_omie: bool, atualizar_pipefy
 
 
 def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
-    """Consulta → Altera (se necessário) → Baixa. Retorna log de cada step."""
+    """Consulta → Altera (se necessário) → Baixa. Retorna log de cada step.
+    Para Somapay, inclui step inicial de transferência (IncluirLancCC).
+    """
     resultados = []
     for req in plan.omie_requests:
+        # Step de transferência usa endpoint diferente (contacorrentelancamentos)
+        if req.get('lanccc'):
+            resp = execute_omie_lanccc(req['request'])
+            resultados.append({'step': req['step'], 'response': resp})
+            if not resp.get('ok'):
+                resultados.append({'step': 'abort_apos_transferencia', 'motivo': 'Falha na transferência Bradesco -> Somapay. Baixa cancelada.'})
+                break
+            continue
+
         resp = execute_omie(req['request'])
         resultados.append({'step': req['step'], 'response': resp})
 
