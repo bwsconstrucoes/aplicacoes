@@ -189,7 +189,7 @@ def build_transferencia_somapay(plan, payload: dict) -> dict:
     rec = plan.receipt
     banco_origem = plan.banco
     somapay = resolver_conta_somapay(rec)
-    codigo_int = 'IntCCSomapay' + codigo_integracao(plan).replace('Int', '')
+    codigo_int = ('CCS' + as_string(plan.match.id))[:20]
 
     return {
         'call': 'IncluirLancCC',
