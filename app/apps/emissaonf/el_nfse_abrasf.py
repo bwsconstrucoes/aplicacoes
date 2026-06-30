@@ -88,8 +88,8 @@ class DadosRps:
     # substituição (opcional): identifica o RPS da nota antiga que esta nota substitui.
     # Quando preenchido, o município marca a nota antiga como substituída na hora da emissão.
     rps_substituido_numero: int | str | None = None
-    rps_substituido_serie: str = ""   # vazio => usa a mesma série desta nota
-    rps_substituido_tipo: int = 0     # 0 => usa o mesmo tipo desta nota
+    rps_substituido_serie: str | None = None   # None => usa a série desta nota; "" => envia vazio (manual)
+    rps_substituido_tipo: int | None = None     # None => usa o tipo desta nota; 0 => envia 0 (manual)
 
     # valores
     valor_servicos: str = "0.00"
@@ -165,8 +165,13 @@ def montar_rps(d: DadosRps) -> etree._Element:
     if getattr(d, "rps_substituido_numero", None):
         rsub = _e(ident_rps, "RpsSubstituido")
         _e(rsub, "Numero", d.rps_substituido_numero)
-        _e(rsub, "Serie", d.rps_substituido_serie or d.serie_rps)
-        _e(rsub, "Tipo", d.rps_substituido_tipo or d.tipo_rps)
+        # None = não informado -> usa a série/tipo desta nota (notas do sistema).
+        # Valor explícito (inclusive "" ou 0) é enviado como está -> notas manuais
+        # têm Série vazia e Tipo 0, e precisam ser enviadas exatamente assim.
+        _serie_sub = d.serie_rps if d.rps_substituido_serie is None else d.rps_substituido_serie
+        _tipo_sub = d.tipo_rps if d.rps_substituido_tipo is None else d.rps_substituido_tipo
+        _e(rsub, "Serie", _serie_sub)
+        _e(rsub, "Tipo", _tipo_sub)
 
     _e(inf, "Competencia", d.competencia)
 
