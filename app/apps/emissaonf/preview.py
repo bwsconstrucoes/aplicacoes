@@ -48,14 +48,17 @@ def montar_discriminacao(card: dict, obra, r) -> str:
     if r.bdi_diferenciado > 0:
         linhas.append(f"Valor com BDI Diferenciado: {brl(r.bdi_diferenciado)}")
         linhas.append(f"Saldo sem BDI Diferenciado: {brl(base)}")
-    linhas.append(
-        f"Base de Cálculo INSS (Serviços {pct_inss_s}%: R$ {brl(r.base_inss)} - "
-        f"Materiais {pct_inss_m}%: R$ {brl(base - r.base_inss)})"
-    )
-    linhas.append(
-        f"Base de Cálculo ISS (Serviços {pct_iss_s}%: R$ {brl(r.base_iss)} - "
-        f"Materiais {pct_iss_m}%: R$ {brl(base - r.base_iss)})"
-    )
+    # Base de cálculo: só mostra a do imposto que de fato é retido (INSS/ISS > 0).
+    if r.inss > 0:
+        linhas.append(
+            f"Base de Cálculo INSS (Serviços {pct_inss_s}%: R$ {brl(r.base_inss)} - "
+            f"Materiais {pct_inss_m}%: R$ {brl(base - r.base_inss)})"
+        )
+    if r.iss > 0:
+        linhas.append(
+            f"Base de Cálculo ISS (Serviços {pct_iss_s}%: R$ {brl(r.base_iss)} - "
+            f"Materiais {pct_iss_m}%: R$ {brl(base - r.base_iss)})"
+        )
     # tributos: lista os retidos + INSS + ISS (informativos não-retidos podem ser adicionados depois)
     if "PIS" in r.federais_retidos:
         linhas.append(f"PIS (0,65%): {brl(r.pis)}")
@@ -65,8 +68,11 @@ def montar_discriminacao(card: dict, obra, r) -> str:
         linhas.append(f"IR (1,20%): {brl(r.ir)}")
     if "CSLL" in r.federais_retidos:
         linhas.append(f"CSLL (1,00%): {brl(r.csll)}")
-    linhas.append(f"INSS (11,00%): {brl(r.inss)}")
-    linhas.append(f"ISS ({brl(r.aliquota_iss)}%): {brl(r.iss)}")
+    # valores dos impostos: só os que têm retenção aparecem (INSS/ISS = 0 são omitidos)
+    if r.inss > 0:
+        linhas.append(f"INSS (11,00%): {brl(r.inss)}")
+    if r.iss > 0:
+        linhas.append(f"ISS ({brl(r.aliquota_iss)}%): {brl(r.iss)}")
     banco = card.get("banco") or obra.conta_pagamento
     linhas.append(f"Conta p/ Pagamento: {banco}")
     if _preenchido(card.get("observacoes")):
