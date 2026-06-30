@@ -236,17 +236,15 @@ def emitir():
 
         dados = ctx["dados_rps"]
         dados.discriminacao = discr or getattr(dados, "discriminacao", "")
-        # substituição na prefeitura: a nova nota carrega o RPS da antiga (RpsSubstituido)
+        # substituição na prefeitura: a nova nota carrega o RPS da antiga (RpsSubstituido).
+        # OBS: só funciona pra nota antiga emitida pelo SISTEMA (RPS série 1 / tipo 1).
+        # Nota emitida MANUAL no portal tem RPS série vazia / tipo 0, que a prefeitura
+        # NÃO aceita no RpsSubstituido (XSD: Série min 1 char, Tipo 1|2|3) — essas têm
+        # que ser substituídas pelo botão "Substituir" do portal + /recuperar.
         if nota_sub:
             dados.rps_substituido_numero = nota_sub
-            if str(serie_sub).strip() == "0":
-                # nota antiga MANUAL (emitida no portal): RPS com Série VAZIA e Tipo 0
-                dados.rps_substituido_serie = ""
-                dados.rps_substituido_tipo = 0
-            else:
-                # nota antiga do SISTEMA: RPS com Série "1" e Tipo 1
-                dados.rps_substituido_serie = "1"
-                dados.rps_substituido_tipo = 1
+            dados.rps_substituido_serie = "1"
+            dados.rps_substituido_tipo = 1
         xml = _me.gerar_xml_preview(dados, ctx["chave_pem"], ctx["cert_pem"])
 
         cp, kp = _cert_temp(ctx["cert_pem"], ctx["chave_pem"])
@@ -785,13 +783,12 @@ def _render_pagina(ctx, card_id, token, nota_sub="", tm_over="", val_over=None, 
                 <button type='button' onclick="_recarregar('valor', document.getElementById('valOver').value)"
                         style='padding:8px 12px;border:1px solid #b35900;background:#fff;border-radius:6px;cursor:pointer'>Recalcular</button>
               </div>
-              <label class='lbl' style='margin-top:8px'>RPS da nota substituída — escolha conforme como a nota antiga foi emitida:</label>
-              <select onchange="_recarregar('serie_sub', this.value)"
-                      style='width:100%;box-sizing:border-box;padding:8px;border:1px solid #c8d0da;border-radius:6px'>
-                <option value='1'{_ss_1}>1 — emitida pelo SISTEMA (série 1, tipo 1)</option>
-                <option value='0'{_ss_0}>0 — emitida MANUAL no portal (série vazia, tipo 0)</option>
-              </select>
-              <p class='sub'>No normal deixe em <b>1</b>. Se a substituição der erro <b>E76</b> ("RPS substituído não existe"), a nota antiga foi emitida manual: troque para <b>0</b> e emita de novo. Mudar o tipo ou o valor recarrega e recalcula as retenções.</p>
+              <p class='sub' style='margin-top:8px;background:#fff3e0;border:1px solid #e0a060;padding:8px;border-radius:6px'>
+                <b>Substituição automática</b> só funciona se a nota substituída foi emitida pelo
+                <b>sistema</b> (RPS série 1). Se a nota antiga foi emitida <b>manual no portal</b>
+                e der erro <b>E76</b> ou erro de <b>schema (Série/Tipo)</b>, a prefeitura não aceita
+                substituí-la por aqui — use o botão <b>"Substituir" do portal</b> e depois rode o
+                <b>/recuperar</b> com o número dela como substituída. Mudar o valor recalcula as retenções.</p>
             </div>"""
         _hidden_over = (f"<input type='hidden' name='tipo_medicao' value='{html.escape(tm_over or '')}'>"
                         f"<input type='hidden' name='valor' value='{html.escape(val_over or '')}'>"
