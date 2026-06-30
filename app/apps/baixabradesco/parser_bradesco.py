@@ -74,18 +74,22 @@ def extract_descricao(text: str) -> str:
     return as_string(m.group(1)) if m else ''
 
 
-def _first_money_after(patterns, text: str) -> str:
+def _first_money_after(patterns, text: str, skip_zero: bool = False) -> str:
+    from decimal import Decimal
     for p in patterns:
         m = re.search(p, text or '', flags=re.I | re.S)
         if m:
             val = money_to_decimal(m.group(1))
             if val is not None:
+                if skip_zero and val == Decimal('0.00'):
+                    continue
                 return decimal_to_br(val)
     return ''
 
 
 def extract_valor_pago(text: str) -> str:
     # Prioriza "Valor total" (total pago) sobre "Valor R$" (valor original do boleto)
+    # skip_zero=True: ignora campos zerados como "Valor final R$ 0,00"
     return _first_money_after([
         r'Valor\s+total\s*:?\s*R?\$?\s*([\d\.]+,\d{2})',
         r'Valor\s+do\s+pagamento\s*:?\s*R?\$?\s*([\d\.]+,\d{2})',
@@ -93,7 +97,7 @@ def extract_valor_pago(text: str) -> str:
         r'Valor\s+final\s*R?\$?\s*([\d\.]+,\d{2})',
         r'Valor\s*:?\s*R\$\s*([\d\.]+,\d{2})',
         r'R\$\s*([\d\.]+,\d{2})',
-    ], text)
+    ], text, skip_zero=True)
 
 
 def extract_acrescimos(text: str) -> str:
