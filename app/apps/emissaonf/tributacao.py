@@ -5,7 +5,7 @@ Motor de cálculo tributário das notas da BWS (substitui a aba Emissão).
 Padrão ÚNICO aceito (4 blocos, separados por hífen):
     ONERADA - <Ded.INSS> - <Ded.ISS> - <Impostos Retidos>
 
-  Ded.INSS / Ded.ISS : "NN/MM" (NN = % serviço, MM = % material) ou "SD" (sem dedução = 100% serviço)
+  Ded.INSS / Ded.ISS : "NN/MM" (NN = % serviço, MM = % material), "SD" (NÃO retém, base 0) ou "100/0" (retém sobre 100%)
   Impostos Retidos   : lista por vírgula de {IR, PIS, COFINS, CSLL} ou "SEM RETENÇÃO"
 
 Qualquer categoria fora desse padrão (CPRB, tags, 3 blocos, etc.) é recusada com crítica.
@@ -49,15 +49,15 @@ def _q(v) -> Decimal:
 class Categoria:
     bruta: str
     tributacao: str
-    ded_inss_serv: Decimal     # fração de serviço p/ base INSS (1.0 se SD)
-    ded_iss_serv: Decimal      # fração de serviço p/ base ISS (1.0 se SD)
+    ded_inss_serv: Decimal     # fração de serviço p/ base INSS (0 se SD = não retém)
+    ded_iss_serv: Decimal      # fração de serviço p/ base ISS (0 se SD = não retém)
     retencoes_federais: set    # subconjunto de {IR, PIS, COFINS, CSLL}
 
 
 def _parse_deducao(bloco: str, qual: str) -> Decimal:
     b = _norm(bloco)
     if b == "SD":
-        return Decimal("1")
+        return Decimal("0")          # SD = NÃO retém (base 0). Para 100%, usar "100/0".
     m = re.fullmatch(r"(\d{1,3})/(\d{1,3})", b)
     if not m:
         raise CategoriaInvalida(
