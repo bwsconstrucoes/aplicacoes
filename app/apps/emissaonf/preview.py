@@ -137,8 +137,8 @@ def montar_preview_html(card: dict, obra, r, numero_rps, numero_nfse_esperado, i
  <div class="sec"><h2>Apuração</h2>
    <table>
      <tr><th class="l">Tributo</th><th>Base</th><th>Alíq.</th><th>Valor</th><th>Retido?</th></tr>
-     <tr><td class="l">ISS</td><td>{brl(r.base_iss)}</td><td>{brl(r.aliquota_iss)}%</td><td>{brl(r.iss)}</td><td>{'Sim' if r.iss_retido else 'Não'}</td></tr>
-     <tr><td class="l">INSS</td><td>{brl(r.base_inss)}</td><td>11,00%</td><td>{brl(r.inss)}</td><td>Sim</td></tr>
+     <tr><td class="l">ISS</td><td>{brl(r.base_iss)}</td><td>{brl(r.aliquota_iss)}%</td><td>{brl(r.iss)}</td><td>{'Sim' if r.iss > 0 else 'Não'}</td></tr>
+     <tr><td class="l">INSS</td><td>{brl(r.base_inss)}</td><td>11,00%</td><td>{brl(r.inss)}</td><td>{'Sim' if r.inss > 0 else 'Não'}</td></tr>
      <tr><td class="l">IR</td><td>{brl(r.valor_total)}</td><td>1,20%</td><td>{brl(r.ir)}</td><td>{'Sim' if 'IR' in r.federais_retidos else 'Não'}</td></tr>
      <tr><td class="l">PIS</td><td>{brl(r.valor_total)}</td><td>0,65%</td><td>{brl(r.pis)}</td><td>{'Sim' if 'PIS' in r.federais_retidos else 'Não'}</td></tr>
      <tr><td class="l">COFINS</td><td>{brl(r.valor_total)}</td><td>3,00%</td><td>{brl(r.cofins)}</td><td>{'Sim' if 'COFINS' in r.federais_retidos else 'Não'}</td></tr>
