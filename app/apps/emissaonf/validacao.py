@@ -11,12 +11,26 @@ Devolve 'bloqueios' (impedem emitir) e 'avisos' (só alertam).
 """
 from __future__ import annotations
 import unicodedata
+from datetime import datetime
 from decimal import Decimal
 
 from pipefy import _num
 import pipefy_update as pf
 
 CENT = Decimal("0.01")
+
+
+def _parse_data_br(v):
+    """Converte a data do card (DD/MM/YYYY ou YYYY-MM-DD) em date. None se vazia/inválida."""
+    s = str(v or "").strip()
+    if not s:
+        return None
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            continue
+    return None
 
 
 def brl(v) -> str:
@@ -109,6 +123,14 @@ def checar(card: dict, r, ignorar_numero=None) -> dict:
             bloqueios.append("'Tipo de Medição' é obrigatório e está vazio.")
     if not _norm(card.get("banco")) and not eh_substituicao:
         bloqueios.append("'Banco para Recebimento' é obrigatório e está vazio.")
+
+    # ---- coerência do período da medição ----
+    p_ini = _parse_data_br(card.get("periodo_ini"))
+    p_fim = _parse_data_br(card.get("periodo_fim"))
+    if p_ini and p_fim and p_fim < p_ini:
+        bloqueios.append(
+            f"Período da medição incoerente: o término ({card.get('periodo_fim')}) é ANTERIOR "
+            f"ao início ({card.get('periodo_ini')}). Corrija as datas no card antes de emitir.")
 
     return {
         "ok": not bloqueios,
