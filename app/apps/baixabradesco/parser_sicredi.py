@@ -32,7 +32,6 @@ def parse_sicredi_text(filename: str, page: int, text: str,
     r.nome_recebedor   = extract_nome_recebedor(text)
     r.descricao        = extract_descricao(text)
 
-    # Classifica tipo
     if 'boleto' in norm or 'codigo de barras' in norm:
         r.tipo_comprovante = 'boleto'
     elif 'pix' in norm or 'id da transacao' in norm:
@@ -69,7 +68,6 @@ def _first_money(patterns, text: str, skip_zero: bool = True) -> str:
 
 
 def extract_id_pipefy(text: str) -> str:
-    """Sicredi boleto: 'Descrição do Pagamento: 1391008068'."""
     patterns = [
         r'Descri[cç][aã]o\s+do\s+Pagamento\s*:?\s*(\d{7,12})(?!\d)',
         r'Descri[cç][aã]o\s*:?\s*(\d{7,12})(?!\d)',
@@ -84,7 +82,6 @@ def extract_id_pipefy(text: str) -> str:
 
 
 def extract_valor_pago(text: str) -> str:
-    """Sicredi boleto: 'Valor Pago (R$): 1.956,00'. Sicredi PIX: 'Valor: R$ 390,70'."""
     return _first_money([
         r'Valor\s+Pago\s*\(R\$\)\s*:?\s*([\d\.]+,\d{2})',
         r'Valor\s+original\s*:?\s*R\$\s*([\d\.]+,\d{2})',
@@ -94,7 +91,6 @@ def extract_valor_pago(text: str) -> str:
 
 
 def extract_acrescimos(text: str) -> str:
-    """Soma Juros/Mora + Multa."""
     from decimal import Decimal
     juros_str = _first_money([r'Valor\s+do\s+Juros/Mora\s*\(R\$\)\s*:?\s*([\d\.]+,\d{2})'], text, skip_zero=False)
     multa_str = _first_money([r'Valor\s+da\s+Multa\s*\(R\$\)\s*:?\s*([\d\.]+,\d{2})'], text, skip_zero=False)
@@ -107,7 +103,6 @@ def extract_acrescimos(text: str) -> str:
 
 
 def extract_data_pagamento(text: str) -> str:
-    """Sicredi boleto: 'Data do Pagamento: 29/06/2026'. PIX: 'Realizado em: 25/06/2026'."""
     patterns = [
         r'Data\s+do\s+Pagamento\s*:?\s*(\d{2}/\d{2}/\d{4})',
         r'Realizado\s+em\s*:\s*(\d{2}/\d{2}/\d{4})',
@@ -130,17 +125,12 @@ def classify_payment_type(text: str) -> str:
 
 
 def extract_conta_origem(text: str):
-    """Sicredi: 'Conta Origem: 92945-8' + 'Cooperativa Origem: 02205'
-    ou 'Cooperativa e conta origem: 2205/92945-8'.
-    """
-    # Formato PIX: "2205/92945-8"
     m = re.search(r'Cooperativa\s+e\s+conta\s+origem\s*:\s*(\d+)/(\S+)', text or '', re.I)
     if m:
         coop = m.group(1).strip()
         conta = clean_account(m.group(2).strip())
         return coop, conta, f'{coop} | {conta}'
 
-    # Formato boleto separado
     mc = re.search(r'Cooperativa\s+Origem\s*:\s*(\d+)', text or '', re.I)
     ma = re.search(r'Conta\s+Origem\s*:\s*([\d\-]+)', text or '', re.I)
     if mc and ma:
