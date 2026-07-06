@@ -42,12 +42,15 @@ EMPRESA_NOME       = 'BWS CONSTRUÇÕES LTDA'
 # =============================================================================
 
 def inserir_spsbd(gc, payload: dict, rota: str,
-                  omie_secao: dict = None, boleto_secao: dict = None) -> dict:
+                  omie_secao: dict = None, boleto_secao: dict = None,
+                  ss=None) -> dict:
     """
     rota = 'transferencia' | 'pagamento_futuro' | 'padrao'
     omie_secao usado quando rota='padrao' para extrair código Omie.
+    ss (opcional): Spreadsheet já aberto — se fornecido evita fetch_metadata redundante.
     """
-    ss = gc.open_by_key(PLANILHA_PRINCIPAL)
+    if ss is None:
+        ss = gc.open_by_key(PLANILHA_PRINCIPAL)
     sh = ss.worksheet(ABA_SPSBD)
 
     if rota == 'transferencia':
@@ -381,12 +384,14 @@ def _build_row_411_626(payload: dict, omie_secao: dict, boleto_secao: dict) -> l
 # Log (append)
 # =============================================================================
 
-def inserir_log(gc, payload: dict, rateio_descritivo: dict) -> dict:
+def inserir_log(gc, payload: dict, rateio_descritivo: dict, ss=None) -> dict:
     """
     Append em aba Log: 1 linha por Centro de Custo preenchido.
     Equivalente aos módulos 731 (transferência/pag.fut) e 738 (fluxo principal).
+    ss (opcional): Spreadsheet já aberto — se fornecido evita fetch_metadata redundante.
     """
-    ss = gc.open_by_key(PLANILHA_PRINCIPAL)
+    if ss is None:
+        ss = gc.open_by_key(PLANILHA_PRINCIPAL)
     sh = ss.worksheet(ABA_LOG)
 
     sp_id      = as_string(payload.get('id'))
@@ -468,8 +473,10 @@ def inserir_log(gc, payload: dict, rateio_descritivo: dict) -> dict:
 # FalhaProcessar (append) — quando Omie retorna API bloqueada ou erro genérico
 # =============================================================================
 
-def registrar_falha_processar(gc, payload: dict, motivo: str = 'Cadastrar Título Omie') -> dict:
-    ss = gc.open_by_key(PLANILHA_PRINCIPAL)
+def registrar_falha_processar(gc, payload: dict, motivo: str = 'Cadastrar Título Omie',
+                              ss=None) -> dict:
+    if ss is None:
+        ss = gc.open_by_key(PLANILHA_PRINCIPAL)
     sh = ss.worksheet(ABA_FALHA)
     sp_id = as_string(payload.get('id'))
     agora = datetime.now().strftime('%d/%m/%Y %H:%M')

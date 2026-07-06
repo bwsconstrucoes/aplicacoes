@@ -77,7 +77,10 @@ SHEETS_CONFIG = {
 
 _CACHE_LOCK = threading.Lock()
 _CACHE: dict = {}     # tabela -> {'expira': ts, 'mapa': {chave: valor}}
-_CACHE_TTL_S = 30
+# TTL de 5min: Base CC, Base Tipo Despesa e ClientesOmie raramente mudam;
+# SPsDDA muda a cada SP mas é lida só uma vez por rodada.
+# 5min corta ~90% dos reads redundantes entre SPs concorrentes.
+_CACHE_TTL_S = 300
 
 
 def _agora() -> float:

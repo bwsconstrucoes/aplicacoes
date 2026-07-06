@@ -38,10 +38,21 @@ RETRYABLE_MESSAGES = (
     'deadline exceeded',
 )
 
-MAX_TENTATIVAS    = 5
-BASE_BACKOFF_S    = 1.0
-MAX_BACKOFF_S     = 30.0
-JITTER_PCT        = 0.25
+# Trechos que indicam especificamente 429 de quota por minuto/segundo
+# (quando aparecem, esperar 60s é a única saída — não adianta backoff exponencial curto)
+QUOTA_MINUTE_MESSAGES = (
+    'quota exceeded',
+    'per minute',
+    'per user',
+    'quota metric',
+    'resource_exhausted',
+)
+
+MAX_TENTATIVAS      = 5
+BASE_BACKOFF_S      = 1.0
+MAX_BACKOFF_S       = 65.0    # >60s para 429 de quota per minute (Google Sheets)
+QUOTA_MIN_BACKOFF_S = 30.0    # espera mínima quando detectamos 429 de quota per minute
+JITTER_PCT          = 0.25
 
 
 def _is_retryable(exc: Exception) -> bool:
@@ -81,16 +92,27 @@ def _extrair_retry_after(exc: Exception) -> float | None:
         return None
 
 
-def _calcular_backoff(tentativa: int, retry_after: float | None = None) -> float:
+def _is_quota_per_minute(exc: Exception) -> bool:
+    """Detecta erro 429 de quota per minute do Google Sheets."""
+    msg = str(exc).lower()
+    return any(t in msg for t in QUOTA_MINUTE_MESSAGES)
+
+
+def _calcular_backoff(tentativa: int, exc: Exception = None,
+                       retry_after: float | None = None) -> float:
     """Calcula tempo de espera antes da próxima tentativa (em segundos)."""
     if retry_after is not None and retry_after > 0:
         # Respeita o que o servidor pediu (com jitter pequeno pra suavizar concorrência)
         base = min(retry_after, MAX_BACKOFF_S)
+    elif exc is not None and _is_quota_per_minute(exc):
+        # 429 de quota per minute: espera 30s → 60s → 60s → 60s → 60s
+        # (não adianta esperar 1s ou 2s — a janela só reseta após 60s)
+        base = min(QUOTA_MIN_BACKOFF_S * (2 ** tentativa), MAX_BACKOFF_S)
     else:
-        # Exponencial: 1s, 2s, 4s, 8s, 16s
+        # Exponencial padrão para erros transitórios não-quota: 1s, 2s, 4s, 8s, 16s
         base = min(BASE_BACKOFF_S * (2 ** tentativa), MAX_BACKOFF_S)
     jitter = base * JITTER_PCT * (random.random() * 2 - 1)
-    return max(0.1, base + jitter)
+    return max(0.1, min(base + jitter, MAX_BACKOFF_S))
 
 
 def com_retry(operacao: Callable[[], Any], *, descricao: str = 'operação Sheets') -> Any:
@@ -118,7 +140,8 @@ def com_retry(operacao: Callable[[], Any], *, descricao: str = 'operação Sheet
                     f'Último erro: {e}'
                 )
                 raise
-            espera = _calcular_backoff(tentativa, _extrair_retry_after(e))
+            espera = _calcular_backoff(tentativa, exc=e,
+                                        retry_after=_extrair_retry_after(e))
             logger.warning(
                 f'[retry] {descricao}: tentativa {tentativa + 1}/{MAX_TENTATIVAS} '
                 f'falhou ({type(e).__name__}: {str(e)[:80]}). '

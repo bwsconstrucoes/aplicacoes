@@ -129,6 +129,9 @@ def executar(payload: dict) -> dict:
 # -----------------------------------------------------------------------------
 
 def _executar_transferencia(gc, payload: dict, result: dict) -> dict:
+    # Abre PLANILHA_PRINCIPAL uma única vez — reutilizado por SPsBD e Log
+    ss = gc.open_by_key(sheets_mod.PLANILHA_PRINCIPAL)
+
     # 1. Pipefy: title + autorização + etiqueta (modulo 607)
     try:
         result['secoes']['pipefy'] = pipefy_mod.atualizar_card_transferencia(payload)
@@ -138,7 +141,9 @@ def _executar_transferencia(gc, payload: dict, result: dict) -> dict:
 
     # 2. SPsBD addRow (modulo 489)
     try:
-        result['secoes']['spsbd'] = sheets_mod.inserir_spsbd(gc, payload, rota='transferencia')
+        result['secoes']['spsbd'] = sheets_mod.inserir_spsbd(
+            gc, payload, rota='transferencia', ss=ss
+        )
     except Exception as e:
         logger.exception('[transferencia] falha SPsBD após retries')
         result['secoes']['spsbd'] = {'ok': False, 'erro': str(e)}
@@ -149,7 +154,7 @@ def _executar_transferencia(gc, payload: dict, result: dict) -> dict:
         rat = rateio_mod.calcular(payload, gc)
         result['secoes']['rateio'] = rat
         # 4. Log
-        result['secoes']['log'] = sheets_mod.inserir_log(gc, payload, rat['descritivo'])
+        result['secoes']['log'] = sheets_mod.inserir_log(gc, payload, rat['descritivo'], ss=ss)
     except Exception as e:
         logger.exception('[transferencia] falha Log')
         result['secoes']['log'] = {'ok': False, 'erro': str(e)}
@@ -195,7 +200,7 @@ def _executar_pagamento_futuro(gc, payload: dict, result: dict) -> dict:
     # 4. SPsBD (módulo 642)
     try:
         result['secoes']['spsbd'] = sheets_mod.inserir_spsbd(
-            gc, payload, rota='pagamento_futuro', boleto_secao=bol
+            gc, payload, rota='pagamento_futuro', boleto_secao=bol, ss=ss
         )
     except Exception as e:
         logger.exception('[pag_futuro] falha SPsBD após retries')
@@ -204,7 +209,7 @@ def _executar_pagamento_futuro(gc, payload: dict, result: dict) -> dict:
 
     # 5. Log (módulo 738)
     try:
-        result['secoes']['log'] = sheets_mod.inserir_log(gc, payload, rat['descritivo'])
+        result['secoes']['log'] = sheets_mod.inserir_log(gc, payload, rat['descritivo'], ss=ss)
     except Exception as e:
         logger.exception('[pag_futuro] falha Log')
         result['secoes']['log'] = {'ok': False, 'erro': str(e)}
@@ -311,7 +316,8 @@ def _executar_padrao(gc, payload: dict, result: dict) -> dict:
     if not is_duplicidade:
         try:
             result['secoes']['spsbd'] = sheets_mod.inserir_spsbd(
-                gc, payload, rota='padrao', omie_secao=omie_secao, boleto_secao=bol
+                gc, payload, rota='padrao', omie_secao=omie_secao,
+                boleto_secao=bol, ss=ss
             )
         except Exception as e:
             logger.exception('[padrao] falha SPsBD após retries')
@@ -329,7 +335,7 @@ def _executar_padrao(gc, payload: dict, result: dict) -> dict:
             motivo = ('API bloqueada por consumo indevido' if is_api_bloqueada
                       else 'Cadastrar Título Omie')
             result['secoes']['falha_processar'] = sheets_mod.registrar_falha_processar(
-                gc, payload, motivo=motivo
+                gc, payload, motivo=motivo, ss=ss
             )
         except Exception as e:
             logger.exception('[padrao] falha FalhaProcessar')
@@ -338,7 +344,9 @@ def _executar_padrao(gc, payload: dict, result: dict) -> dict:
     # 9. Log (módulo 738) — sempre roda, exceto em duplicidade real
     if not is_duplicidade:
         try:
-            result['secoes']['log'] = sheets_mod.inserir_log(gc, payload, rat['descritivo'])
+            result['secoes']['log'] = sheets_mod.inserir_log(
+                gc, payload, rat['descritivo'], ss=ss
+            )
         except Exception as e:
             logger.exception('[padrao] falha Log')
             result['secoes']['log'] = {'ok': False, 'erro': str(e)}
