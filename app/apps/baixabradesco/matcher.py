@@ -85,13 +85,15 @@ def match_beevale(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[Sp
             continue
         if normalize_compact(r.status_pgt) != 'pagar':
             continue
-        if normalize_compact(r.status_agendamento) not in {'agendado', 'agendar', 'falhaagendar'}:
+        agend = normalize_compact(r.status_agendamento)
+        if agend and agend not in {'agendado', 'agendar', 'falhaagendar'}:
             continue
         base = money_to_decimal(r.valor_total)
         if base is None:
             continue
+        # Aceita com acréscimo 1,5% ou sem acréscimo (valor exato)
         esperado = (base * BEEVALE_MULTIPLICADOR).quantize(Decimal('0.01'))
-        if abs(esperado - valor) <= BEEVALE_TOL:
+        if abs(esperado - valor) <= BEEVALE_TOL or base == valor:
             out.append(r)
     return out
 
