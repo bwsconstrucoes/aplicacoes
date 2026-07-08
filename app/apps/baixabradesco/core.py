@@ -10,7 +10,6 @@ from .models import AttachmentInput, ExecutionPlan
 from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
-from .parser_sicredi import parse_sicredi_text, is_sicredi
 from .sheets import get_gc, load_spsbd_index, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
 from .matcher import match_receipt
 from .omie import build_omie_plan, build_incluir_lanc_cc, build_somapay_plan, execute_omie, execute_omie_lanccc, codigo_integracao
@@ -69,22 +68,17 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             if not as_string(text):
                 continue
 
-            if is_sicredi(text):
-                rec = parse_sicredi_text(
-                    filename=att.filename,
-                    page=page_num,
-                    text=text,
-                    drive_link='',
-                    fingerprint=f'{fp_file}:{page_num}',
-                )
-            else:
-                rec = parse_bradesco_text(
-                    filename=att.filename,
-                    page=page_num,
-                    text=text,
-                    drive_link='',
-                    fingerprint=f'{fp_file}:{page_num}',
-                )
+            rec = parse_bradesco_text(
+                filename=att.filename,
+                page=page_num,
+                text=text,
+                drive_link='',
+                fingerprint=f'{fp_file}:{page_num}',
+            )
+
+            # Ignora comprovantes de operação não realizada
+            if rec.tipo_comprovante == 'operacao_nao_realizada':
+                continue
 
             # Primeiro localiza a SP/título. Só depois salva o comprovante.
             # Isso evita gerar arquivos órfãos no Dropbox quando a baixa não puder
