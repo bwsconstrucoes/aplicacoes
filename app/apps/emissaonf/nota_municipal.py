@@ -14,7 +14,7 @@ import os
 import tempfile
 import xml.etree.ElementTree as ET
 
-from danfse import _l1, _brl, _cnpj, _cep, _data, _mun, NS as NS_NAC, LOGRADOURO_PRESTADOR_FORCADO
+from danfse import _l1, _brl, _cnpj, _cep, _data, _mun, NS as NS_NAC, LOGRADOURO_PRESTADOR_FORCADO, _requebrar_discriminacao
 
 # contatos fixos do prestador (não vêm no XML ABRASF; são dados da própria BWS)
 EMIT_EMAIL = "FINANCEIRO@BWSCONSTRUCOES.COM.BR"
@@ -283,7 +283,7 @@ def gerar_nota_municipal_pdf(xml_abrasf: str, saida_pdf: str, xml_nacional: str 
 
     # ---- DISCRIMINAÇÃO ----
     y = secao("DISCRIMINAÇÃO DOS SERVIÇOS", y)
-    y = caixa(d["discriminacao"], y, 22, fs=6.5, lh=2.7)
+    y = caixa(_requebrar_discriminacao(d["discriminacao"]), y, 22, fs=6.5, lh=2.7)
 
     # ---- OBSERVAÇÃO ----
     y = secao("OBSERVAÇÃO", y)

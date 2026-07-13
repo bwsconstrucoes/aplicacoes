@@ -10,6 +10,7 @@ Uso:
 """
 from __future__ import annotations
 import os
+import re
 import tempfile
 import xml.etree.ElementTree as ET
 
@@ -24,6 +25,22 @@ _AQUI = os.path.dirname(os.path.abspath(__file__))
 CACHE_MUN = os.path.join(_AQUI, "municipios_ibge.json")
 
 _SUBST = {"–": "-", "—": "-", "“": '"', "”": '"', "‘": "'", "’": "'", "\u00a0": " "}
+
+
+def _requebrar_discriminacao(texto) -> str:
+    """Reinsere as quebras de linha na discriminação quando o texto vem 'corrido'
+    (o sistema nacional / xDescServ colapsa os \\n num parágrafo só). Quebra antes
+    dos marcadores conhecidos, deixando a apresentação igual à 1ª nota municipal."""
+    if not texto:
+        return texto
+    t = " ".join(str(texto).split())          # tudo numa linha, espaços normalizados
+    marc = (r"PER[IÍ]ODO DA OBRA:", r"Valor da Nota:",
+            r"Base de C[aá]lculo", r"Conta p/ Pagamento:")
+    for m in marc:
+        t = re.sub(r"\s*(" + m + r")", r"\n\1", t)
+    # linhas de valor de imposto: IR/PIS/COFINS/CSLL/INSS/ISS seguidos de "(dígito"
+    t = re.sub(r"\s*((?:IR|PIS|COFINS|CSLL|INSS|ISS) \(\d)", r"\n\1", t)
+    return t.strip()
 
 
 def _l1(t) -> str:
@@ -356,7 +373,7 @@ def gerar_danfse_pdf(xml: str, saida_pdf: str) -> str:
     rv(X[0], y, "Descrição do Serviço", "", w=W)
     pdf.set_xy(ML, y + 2.4)
     pdf.set_font("Helvetica", "", 6.5)
-    pdf.multi_cell(W, 2.7, _l1(d["desc"]))
+    pdf.multi_cell(W, 2.7, _l1(_requebrar_discriminacao(d["desc"])))
     y += 15
     sep(y)
 
