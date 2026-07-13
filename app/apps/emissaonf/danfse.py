@@ -374,7 +374,9 @@ def gerar_danfse_pdf(xml: str, saida_pdf: str) -> str:
     pdf.set_xy(ML, y + 2.4)
     pdf.set_font("Helvetica", "", 6.5)
     pdf.multi_cell(W, 2.7, _l1(_requebrar_discriminacao(d["desc"])))
-    y += 15
+    # altura dinâmica: usa o quanto o texto realmente ocupou (mín. 15mm, como antes),
+    # senão a discriminação com várias linhas invade a seção seguinte.
+    y = max(y + 15, pdf.get_y() + 1.5)
     sep(y)
 
     # ===== TRIBUTAÇÃO MUNICIPAL =====

@@ -68,7 +68,10 @@ def concluir(card_id, numero, codigo, data_iso, nota_xml_path, forcar=False, ctx
     # 1) NOTAS BWS
     try:
         grav = notas_bws.gravar_linha(ws_notas, card, obra, r, numero, data_iso)
-        print(f"[1] Notas BWS .......... {'linha gravada (A–P)' if grav else 'já existia, pulei'}")
+        _med = notas_bws._num_medicao(card)
+        _td = (card.get("tipo_documento") or "(vazio)")
+        print(f"[1] Notas BWS .......... {'linha gravada (A–P)' if grav else 'já existia, pulei'} "
+              f"| Nº Med.: {_med} | Tipo de Documento: {_td}")
     except Exception as e:
         print(f"[1] Notas BWS .......... ERRO: {e}")
 

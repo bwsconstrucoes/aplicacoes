@@ -18,6 +18,17 @@ MESES = ["", "janeiro", "fevereiro", "março", "abril", "maio", "junho",
          "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"]
 
 
+def _num_medicao(card) -> str:
+    """Nº da medição para a coluna J. Quando o 'Tipo de Documento' do card é de
+    REAJUSTE (ex.: 'Solicitação de Pagamento de Medição de Reajuste'), o número
+    recebe o sufixo 'R' (ex.: '7R')."""
+    num = str(card.get("numero_medicao", "") or "").strip()
+    tipo_doc = str(card.get("tipo_documento", "") or "").upper()
+    if num and "REAJUSTE" in tipo_doc and not num.upper().endswith("R"):
+        return f"{num}R"
+    return num
+
+
 def montar_linha(card, obra, r, numero, data_emissao_iso) -> list:
     a, m, d = data_emissao_iso.split("-")
     mes_nome = MESES[int(m)]
@@ -38,7 +49,7 @@ def montar_linha(card, obra, r, numero, data_emissao_iso) -> list:
         f"{int(d):02d}/{int(m):02d}/{a}",             # G Data Emissão
         brl(valor),                                   # H Valor da Nota
         card.get("codigo_obra", ""),                  # I Código Obra
-        card.get("numero_medicao", ""),               # J Nº Med.
+        _num_medicao(card),                           # J Nº Med. ("7R" se Reajuste)
         "",                                           # K RF
         "",                                           # L Observação
         "",                                           # M Data de Recebimento

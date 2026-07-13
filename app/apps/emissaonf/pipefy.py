@@ -5,6 +5,7 @@ Entrada via Pipefy: getCardInfo por ID e extração dos campos que a emissão pr
 from __future__ import annotations
 import json
 import re
+import unicodedata
 import requests
 
 URL = "https://api.pipefy.com/graphql"
@@ -44,15 +45,31 @@ def _num(brl: str) -> str:
     return s or "0"
 
 
+def _chave_label(s) -> str:
+    """Normaliza o rótulo do campo p/ comparação: sem acento, sem caixa, sem
+    espaços extras e sem pontuação de borda (':', '.'). Evita que o campo não
+    seja encontrado por diferença boba de rótulo no Pipefy."""
+    t = unicodedata.normalize("NFKD", str(s or ""))
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    t = " ".join(t.split()).strip(" :.\u00a0")
+    return t.upper()
+
+
 def extrair_card(card: dict) -> dict:
     campos = {f["name"]: _v(f.get("value")) for f in card.get("fields", [])}
     campos_por_id = {(f.get("field") or {}).get("id"): _v(f.get("value"))
                      for f in card.get("fields", []) if (f.get("field") or {}).get("id")}
+    # índice normalizado: rótulo "limpo" -> valor
+    campos_norm = {_chave_label(k): v for k, v in campos.items()}
 
     def pega(*nomes):
         for n in nomes:
-            if campos.get(n) not in (None, "", []):
+            if campos.get(n) not in (None, "", []):     # match exato (rápido)
                 return campos[n]
+        for n in nomes:                                  # match tolerante
+            v = campos_norm.get(_chave_label(n))
+            if v not in (None, "", []):
+                return v
         return ""
 
     return {
@@ -73,7 +90,7 @@ def extrair_card(card: dict) -> dict:
         "emissao_nf": pega("Emissão de Nota Fiscal"),
         "valor_parcial": _num(pega("Valor Parcial")),
         "tipo_medicao": pega("Tipo de Medição"),
-        "tipo_documento": pega("Tipo de Documento"),
+        "tipo_documento": pega("Tipo de Documento", "Tipo do Documento", "Tipo Documento"),
         "banco": pega("Banco para Recebimento"),
         "empenho": pega("Nº do Empenho", "N do Empenho", "Número do Empenho"),
         "observacoes": pega("Observações", "Observacoes", "Observação"),
