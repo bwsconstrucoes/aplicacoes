@@ -172,6 +172,70 @@ def fechar_por_xml_nacional(xml_nac: str) -> bool:
         return False
 
 
+def regerar_pdfs(numeros, municipal: bool = True) -> list[dict]:
+    """Regrava os PDFs de notas JÁ concluídas (ex.: depois de corrigir o layout /
+    quebra de linha). Para cada número: lê a chave na aba 'Controle Nacional',
+    busca o XML nacional na SEFIN (certificado) e regera a DANFSe nacional — e,
+    se municipal=True, também a NFS-e municipal (com a chave).
+
+    Sobe no Drive com o MESMO nome => mesmo arquivo/link: não duplica nada no
+    Drive, na planilha nem no card. Devolve uma lista de status por nota."""
+    chave_pem, cert_pem = carregar_certificado_auto("", CERT_PATH)
+    if not (chave_pem and cert_pem):
+        raise RuntimeError("Certificado não carregado "
+                           "(EMISSAO_NF_CERTIFICADO_P12_BASE64/SENHA).")
+    gc = cliente_gspread()
+    planilha = gc.open_by_key(ID_PROC)
+    ws_ctrl = ctrl._ws(planilha)
+    linhas = ws_ctrl.get_all_values()
+    idx = {_so_digitos(l[0]): l for l in linhas[1:] if l and l[0]}
+
+    resultados = []
+    for n in numeros:
+        num = _so_digitos(n)
+        r = {"numero": num, "ok": False, "msg": ""}
+        ln = idx.get(num)
+        if not ln:
+            r["msg"] = "não encontrada na aba 'Controle Nacional'"
+            resultados.append(r); print(f"  nota {num}: {r['msg']}"); continue
+        obra = ln[3] if len(ln) > 3 else ""
+        med = ln[4] if len(ln) > 4 else ""
+        xml_abrasf_id = ln[9] if len(ln) > 9 else ""
+        chave = _so_digitos(ln[13] if len(ln) > 13 else "")
+        if len(chave) != 50:
+            r["msg"] = f"sem chave nacional válida na planilha (veio {len(chave)} dígitos)"
+            resultados.append(r); print(f"  nota {num}: {r['msg']}"); continue
+        try:
+            xml_nac = adn_nfse.consultar_nfse_por_chave(cert_pem, chave_pem, chave)
+            nome_base = f"NOTA FISCAL {num} - {med} ª Medição {obra}"
+            danfse.gerar_danfse_pdf(xml_nac, "danfse_tmp.pdf")
+            with open("danfse_tmp.pdf", "rb") as fh:
+                _, link_nac = drive.enviar(f"{nome_base} (NFS-e Nacional).pdf", fh.read(), "pdf")
+            feito = ["DANFSe nacional"]
+            if municipal and xml_abrasf_id:
+                try:
+                    xml_abrasf = drive.baixar(xml_abrasf_id).decode("utf-8", "replace")
+                    nota_municipal.gerar_nota_municipal_pdf(xml_abrasf, "mun_tmp.pdf",
+                                                            xml_nacional=xml_nac)
+                    with open("mun_tmp.pdf", "rb") as fh:
+                        drive.enviar(f"{nome_base} (NFS-e).pdf", fh.read(), "pdf")
+                    feito.append("municipal")
+                except Exception as e:
+                    feito.append(f"municipal FALHOU ({type(e).__name__})")
+            r["ok"] = True
+            r["msg"] = f"regravada: {', '.join(feito)}"
+            r["link"] = link_nac
+            print(f"  nota {num}: {r['msg']} -> {link_nac}")
+        except Exception as e:
+            r["msg"] = f"ERRO: {type(e).__name__}: {e}"
+            print(f"  nota {num}: {r['msg']}")
+        resultados.append(r)
+
+    ok = sum(1 for x in resultados if x["ok"])
+    print(f"\n=== REGRAVAÇÃO: {ok}/{len(resultados)} nota(s) regravada(s) ===")
+    return resultados
+
+
 def fechar_por_chave(chave: str) -> bool:
     """Busca o XML nacional pela CHAVE na SEFIN (com o certificado) e fecha a
     pendente correspondente. Sem captcha, sem distribuição por NSU."""

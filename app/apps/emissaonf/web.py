@@ -518,6 +518,50 @@ def nacional():
     return Response(_doc("Busca nacional", corpo), mimetype="text/html")
 
 
+@bp.route("/regerar", methods=["GET"])
+def regerar():
+    """Regrava os PDFs (DANFSe nacional + municipal) de notas JÁ concluídas — útil
+    depois de corrigir o layout. Sobe com o mesmo nome: mesmo link, sem duplicar."""
+    if not _token_ok():
+        return Response(_pagina_erro("Acesso não autorizado."), status=403, mimetype="text/html")
+    brutos = (request.values.get("numeros") or "").replace(";", ",").replace(" ", ",")
+    numeros = [n for n in (_so_num(x) for x in brutos.split(",")) if n]
+    t = html.escape(request.values.get("token", ""))
+    if not numeros:
+        corpo = f"""
+          <h1>Regravar PDFs de notas já emitidas</h1>
+          <div class='card'>
+            <p class='sub'>Informe os números das notas (separados por vírgula). Ele busca o XML
+            nacional pela chave (SEFIN) e <b>regera a DANFSe nacional + a NFS-e municipal</b> com o
+            layout atual, subindo no Drive com o <b>mesmo nome</b> — mesmo link, sem duplicar nada
+            na planilha nem no card. Só funciona para notas com a nacional já concluída
+            (chave na aba 'Controle Nacional').</p>
+            <form method='get' action='{url_for('.regerar')}'>
+              <label class='lbl'>Números das notas:
+                <input name='numeros' placeholder='ex.: 3080, 3081, 3082'
+                       style='width:100%;box-sizing:border-box;padding:8px;border:1px solid #c8d0da;border-radius:6px'></label>
+              <label class='lbl'><input type='checkbox' name='so_nacional'> regerar SÓ a nacional
+                (deixe desmarcado para regerar também a municipal)</label>
+              <input type='hidden' name='token' value='{t}'>
+              <button type='submit'>Regravar</button>
+            </form>
+          </div>"""
+        return Response(_doc("Regravar PDFs", corpo), mimetype="text/html")
+
+    so_nac = request.values.get("so_nacional") == "on"
+    buf = io.StringIO()
+    try:
+        import job_nacional
+        with contextlib.redirect_stdout(buf):
+            job_nacional.regerar_pdfs(numeros, municipal=not so_nac)
+    except Exception as e:
+        buf.write(f"\nERRO: {type(e).__name__}: {e}")
+    corpo = ("<h1>Regravar PDFs</h1>"
+             f"<p class='sub'>Notas: {html.escape(', '.join(numeros))}</p>"
+             f"<div class='card'><b>Log</b><pre>{html.escape(buf.getvalue())}</pre></div>")
+    return Response(_doc("Regravar PDFs", corpo), mimetype="text/html")
+
+
 @bp.route("/nacional_chave", methods=["GET"])
 def nacional_chave():
     if not _token_ok():
