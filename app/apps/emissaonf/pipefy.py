@@ -73,6 +73,7 @@ def extrair_card(card: dict) -> dict:
         "emissao_nf": pega("Emissão de Nota Fiscal"),
         "valor_parcial": _num(pega("Valor Parcial")),
         "tipo_medicao": pega("Tipo de Medição"),
+        "tipo_documento": pega("Tipo de Documento"),
         "banco": pega("Banco para Recebimento"),
         "empenho": pega("Nº do Empenho", "N do Empenho", "Número do Empenho"),
         "observacoes": pega("Observações", "Observacoes", "Observação"),
