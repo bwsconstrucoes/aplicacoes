@@ -1,5 +1,5 @@
 from flask import Blueprint, request, jsonify
-import os, requests, threading, time, base64, json
+import os, requests, threading, time, base64, json, gc
 import dropbox
 import fitz  # PyMuPDF
 from io import BytesIO
@@ -16,6 +16,38 @@ DROPBOX_APP_SECRET = os.getenv("DROPBOX_APP_SECRET")
 DROPBOX_REFRESH_TOKEN = os.getenv("DROPBOX_REFRESH_TOKEN")
 DROPBOX_TOKEN = None
 DROPBOX_TOKEN_EXPIRATION = 0
+
+# Teto de tamanho por arquivo baixado via URL. Evita que um download gigante
+# entre 100% na RAM e estoure a memória do worker. Ajuste se precisar compilar
+# arquivos maiores (ou transforme em envvar no futuro).
+MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+
+
+def _baixar_para_bio(url, limite=MAX_DOWNLOAD_BYTES):
+    """Baixa uma URL em streaming, com timeout e teto de tamanho.
+    Evita puxar o arquivo inteiro pra RAM de uma vez e barra downloads gigantes.
+    Retorna (bio, content_type) ou (None, None) em caso de falha/estouro."""
+    try:
+        with requests.get(url, stream=True, timeout=60) as r:
+            if r.status_code != 200:
+                return None, None
+            content_type = r.headers.get("Content-Type", "")
+            buf = BytesIO()
+            total = 0
+            for chunk in r.iter_content(chunk_size=65536):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > limite:
+                    print(f"❌ Ignorado (excede {limite} bytes): {url}")
+                    return None, None
+                buf.write(chunk)
+            buf.seek(0)
+            return buf, content_type
+    except Exception as e:
+        print(f"❌ Erro ao baixar {url}: {e}")
+        return None, None
+
 
 def get_dropbox_client():
     global DROPBOX_TOKEN, DROPBOX_TOKEN_EXPIRATION
@@ -90,6 +122,7 @@ def compilar():
     links = data.get("links", [])
     deletar = data.get("deletar", False)
     salvar = data.get("salvar", True)
+    incluir_texto = data.get("incluir_texto", True)  # permite desligar extração p/ poupar memória
     nome_arquivo = data.get("nome_arquivo", "compilado.pdf")
     if not nome_arquivo.lower().endswith(".pdf"):
         nome_arquivo += ".pdf"
@@ -112,24 +145,24 @@ def compilar():
         bio = None
         filename = item.get("filename", "arquivo")
         if item.get("url"):
-            r = requests.get(item["url"])
-            if r.status_code != 200:
-                print(f"❌ Ignorado (erro ao baixar): {filename}")
+            bio, content_type = _baixar_para_bio(item["url"])
+            if not bio:
                 continue
-            content_type = r.headers.get("Content-Type", "")
             if not ('pdf' in content_type or 'image' in content_type or 'octet-stream' in content_type):
+                bio = None
                 continue
-            bio = BytesIO(r.content)
         elif item.get("base64"):
             try:
                 bio = BytesIO(base64.b64decode(item["base64"]))
-            except:
+                item["base64"] = None  # solta a string base64 original (dobrava a memória)
+            except Exception:
                 print(f"❌ Ignorado (base64 inválido): {filename}")
                 continue
         elif item.get("hex"):
             try:
                 bio = BytesIO(bytes.fromhex(item["hex"]))
-            except:
+                item["hex"] = None
+            except Exception:
                 print(f"❌ Ignorado (hex inválido): {filename}")
                 continue
 
@@ -141,30 +174,35 @@ def compilar():
             reader = PdfReader(bio)
             for p in reader.pages:
                 full_writer.add_page(p)
-            texto = [pg.extract_text() or "" for pg in reader.pages]
-        except:
+            texto = [pg.extract_text() or "" for pg in reader.pages] if incluir_texto else []
+        except Exception:
+            doc = None
             try:
                 bio.seek(0)
                 doc = fitz.open(stream=bio.getvalue(), filetype="pdf")
                 texto = []
-                for p in doc:
-                    img = p.get_pixmap()
-                    img_bytes = img.tobytes("png")
+                for pagina in doc:
+                    pix = pagina.get_pixmap()
+                    w, h = pix.width, pix.height
+                    img_bytes = pix.tobytes("png")
+                    pix = None  # libera o pixmap (grande) imediatamente
                     img_pdf = fitz.open()
-                    rect = fitz.Rect(0, 0, img.width, img.height)
-                    page = img_pdf.new_page(width=img.width, height=img.height)
-                    page.insert_image(rect, stream=img_bytes)
+                    page = img_pdf.new_page(width=w, height=h)
+                    page.insert_image(fitz.Rect(0, 0, w, h), stream=img_bytes)
                     temp = BytesIO()
                     img_pdf.save(temp)
                     img_pdf.close()
+                    del img_bytes
                     temp.seek(0)
-                    sub_reader = PdfReader(temp)
-                    for p in sub_reader.pages:
-                        full_writer.add_page(p)
+                    for sp in PdfReader(temp).pages:
+                        full_writer.add_page(sp)
                     texto.append("")
-            except:
+            except Exception:
                 print(f"❌ Ignorado (não é PDF nem imagem): {filename}")
                 continue
+            finally:
+                if doc is not None:
+                    doc.close()  # fecha o documento fitz (antes vazava a cada arquivo)
 
         results.append({"filename": filename, "texto": texto})
 
@@ -181,6 +219,10 @@ def compilar():
             link = upload_dropbox(out, path)
             if deletar:
                 schedule_delete(path, int(data.get("auto_delete", 300)))
+
+    # libera os buffers grandes e força devolução ao alocador antes de responder
+    del full_writer, out
+    gc.collect()
 
     return jsonify({"status": "ok", "file": nome_arquivo, "link": link, "results": results})
 
@@ -205,12 +247,8 @@ def pdf2texto():
         filename = att.get("filename") or ""
 
         if url:
-            try:
-                r = requests.get(url)
-                if r.status_code != 200:
-                    continue
-                bio = BytesIO(r.content)
-            except Exception:
+            bio, _ = _baixar_para_bio(url)  # download seguro (streaming + timeout + teto)
+            if not bio:
                 continue
         else:
             raw = att.get("base64") or att.get("data") or att.get("hex")
@@ -277,6 +315,7 @@ def pdf2texto():
 
         results.append({"filename": filename, "paginas": paginas})
 
+    gc.collect()
     return jsonify({"status": "ok", "results": results})
 
 @bp.route('/token-status', methods=['GET'])
