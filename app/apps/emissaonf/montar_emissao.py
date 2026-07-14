@@ -5,6 +5,7 @@ e monta o XML de emissão. Usado em DRY-RUN: mostra o XML, não envia.
 """
 from __future__ import annotations
 import re
+from decimal import Decimal
 from lxml import etree
 
 from el_nfse_abrasf import (
@@ -64,12 +65,19 @@ def montar_dados_rps(card, obra, r, numero_rps, ibge_obra, data_emissao, cache) 
         razao = card.get("contratante") or obra.cliente
 
     fed = r.federais_retidos
+    # Dedução de material do ISS: a prefeitura calcula a BASE como
+    # (ValorServicos - ValorDeducoes). Sem isso, ela aplica a alíquota sobre o
+    # valor CHEIO e o ISS sai maior que o calculado aqui.
+    _deducoes = r.valor_total - r.base_iss
+    if _deducoes < 0:
+        _deducoes = Decimal("0.00")
     end_tomador = {"razao": razao, "logradouro": logr, "numero": num, "bairro": bairro,
                    "municipio": (tom.municipio if tom.ok else ""), "uf": uf, "cep": cep, "cmun": cmun}
     dados = DadosRps(
         numero_rps=numero_rps, serie_rps="1", data_emissao=data_emissao,
         competencia=data_emissao,
         valor_servicos=str(r.valor_total),
+        valor_deducoes=str(_deducoes),
         valor_iss=str(r.iss), aliquota=str(r.aliquota_iss),
         valor_inss=str(r.inss),
         valor_ir=str(r.ir) if "IR" in fed else "0.00",
