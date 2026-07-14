@@ -10,13 +10,17 @@ from .models import AttachmentInput, ExecutionPlan
 from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
-from .sheets import get_gc, load_spsbd_index, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
+from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
 from .matcher import match_receipt
 from .omie import build_omie_plan, build_incluir_lanc_cc, build_somapay_plan, execute_omie, execute_omie_lanccc, codigo_integracao
 from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
 from .zapi import build_whatsapp_messages, send_messages_batch, resolve_zapi_auth, validate_zapi_auth
 from .storage import upload_dropbox_bytes, build_receipt_page_filename, normalize_dropbox_link
 from .fila import enqueue_failure
+
+# Teto por comprovante baixado via URL — evita que um download gigante entre
+# 100% na RAM e derrube o worker (limite Render: 2GB).
+MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024  # 50 MB
 
 
 def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -45,11 +49,16 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         gc = get_gc()
         sps_agendar = load_spsagendar(gc)   # ~18 registros, leve
         base_bancos = load_base_bancos(gc)  # ~15 registros, leve
+        # ⚠️ Memória: baixa o range A:AK da SPsBD (todas as ~52k linhas) UMA
+        # única vez e compartilha entre os dois loaders. Antes cada loader
+        # fazia sua própria chamada, dobrando o pico de RAM por request.
+        _sps_values = load_spsbd_values(gc)
         # Carrega apenas SPs com O=Pagar e AB=agendar/agendado/falhaagendar
-        # Muito mais leve que as 52k linhas completas — necessário para matches sem ID
-        sps_index = load_spsbd_operacional(gc)
+        # Necessário para matches sem ID
+        sps_index = load_spsbd_operacional(gc, values=_sps_values)
         # SPs com Pago+AG preenchido+X vazia: Omie possivelmente pendente
-        sps_omie_pendente = load_spsbd_omie_pendente(gc)
+        sps_omie_pendente = load_spsbd_omie_pendente(gc, values=_sps_values)
+        del _sps_values  # libera as 52k linhas cruas imediatamente
     except Exception as e:
         google_error = str(e)
         if not modo_teste:
@@ -152,6 +161,9 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                 card_ids_para_get.append(plan.match.id)
 
             plans.append(plan)
+
+        # Libera os bytes do PDF deste anexo antes de passar ao próximo
+        del pdf_bytes
 
     # ── GET em lote no Pipefy (uma única chamada para todos os cards) ──────────
     card_data: Dict[str, Any] = {}
@@ -429,9 +441,20 @@ def load_attachment_bytes(att: AttachmentInput) -> bytes:
     if att.base64:
         return b64decode_bytes(att.base64)
     if att.url:
-        resp = requests.get(att.url, timeout=60)
-        resp.raise_for_status()
-        return resp.content
+        # Download em streaming com teto de tamanho — evita puxar um arquivo
+        # gigante inteiro pra RAM de uma vez (mesma proteção do pdf_processor).
+        with requests.get(att.url, stream=True, timeout=60) as resp:
+            resp.raise_for_status()
+            chunks = []
+            total = 0
+            for chunk in resp.iter_content(chunk_size=65536):
+                if not chunk:
+                    continue
+                total += len(chunk)
+                if total > MAX_ATTACHMENT_BYTES:
+                    raise ValueError(f'Comprovante excede o limite de {MAX_ATTACHMENT_BYTES // (1024*1024)} MB: {att.filename}')
+                chunks.append(chunk)
+            return b''.join(chunks)
     raise ValueError(f'Comprovante sem base64/url: {att.filename}')
 
 

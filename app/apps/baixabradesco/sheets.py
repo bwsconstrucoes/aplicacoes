@@ -42,6 +42,19 @@ def get_sheet_rows(gc, spreadsheet_id: str, aba: str) -> List[Dict[str, str]]:
     return out
 
 
+def load_spsbd_values(gc=None) -> list:
+    """Busca o range A:AK da SPsBD UMA única vez (~52k linhas × 37 colunas).
+
+    É a operação mais pesada de memória do módulo (~150-250 MB em strings).
+    Por isso deve ser chamada uma vez por request e o resultado compartilhado
+    entre load_spsbd_operacional e load_spsbd_omie_pendente — antes cada uma
+    fazia sua própria chamada, dobrando o pico de RAM.
+    """
+    gc = gc or get_gc()
+    ws = gc.open_by_key(SPS_SHEET_ID).worksheet('SPsBD')
+    return ws.get('A:AK')
+
+
 def load_spsbd_index(gc=None) -> Dict[str, SpRecord]:
     gc = gc or get_gc()
     rows = get_sheet_rows(gc, SPS_SHEET_ID, 'SPsBD')
@@ -55,18 +68,17 @@ def load_spsbd_index(gc=None) -> Dict[str, SpRecord]:
 
 
 
-def load_spsbd_operacional(gc=None) -> Dict[str, SpRecord]:
+def load_spsbd_operacional(gc=None, values: list | None = None) -> Dict[str, SpRecord]:
     """Carrega apenas SPs operacionais da SPsBD (O=Pagar + AB=agendar/agendado/falhaagendar).
 
-    Estratégia: lê o range A:AK de uma vez (uma chamada à API) e filtra em memória.
-    Evita as 52k linhas completas e também evita múltiplas chamadas por linha.
+    ⚠️ ws.get('A:AK') traz TODAS as ~52k linhas (só limita colunas). Por isso,
+    passe `values` pré-carregado via load_spsbd_values() quando este loader for
+    usado junto com load_spsbd_omie_pendente — evita baixar tudo duas vezes.
     Usado para matches sem ID (fgts, boleto sem barcode, pix agendado).
     """
-    gc = gc or get_gc()
-    ws = gc.open_by_key(SPS_SHEET_ID).worksheet('SPsBD')
-
-    # Uma única chamada — lê até coluna AK que cobre todos os campos necessários
-    all_values = ws.get('A:AK')
+    if values is None:
+        values = load_spsbd_values(gc)
+    all_values = values
     if not all_values or len(all_values) < 2:
         return {}
 
@@ -80,15 +92,14 @@ def load_spsbd_operacional(gc=None) -> Dict[str, SpRecord]:
 
     result = {}
     for row_num, row in enumerate(all_values[1:], start=2):
-        # Estende row para evitar IndexError
-        row = list(row) + [''] * (len(headers) - len(row))
-
         status_pgt   = (row[IDX_O]  if IDX_O  < len(row) else '').strip().lower()
         status_agend = (row[IDX_AB] if IDX_AB < len(row) else '').strip().lower()
 
         if status_pgt not in STATUS_PGT_OK or status_agend not in STATUS_AGEND_OK:
             continue
 
+        # Só materializa dict/estende a linha para as poucas que passam no filtro
+        row = list(row) + [''] * (len(headers) - len(row))
         r = {headers[i]: row[i] for i in range(len(headers))}
         r['_row_number'] = row_num
         sp = row_to_sp_record(r)
@@ -98,15 +109,17 @@ def load_spsbd_operacional(gc=None) -> Dict[str, SpRecord]:
     return result
 
 
-def load_spsbd_omie_pendente(gc=None) -> Dict[str, SpRecord]:
+def load_spsbd_omie_pendente(gc=None, values: list | None = None) -> Dict[str, SpRecord]:
     """Carrega SPs com O=Pago + AG preenchido + X vazia.
     Indica planilha atualizada mas Omie possivelmente não baixado.
     Usado como fallback quando match normal falha.
-    """
-    gc = gc or get_gc()
-    ws = gc.open_by_key(SPS_SHEET_ID).worksheet('SPsBD')
 
-    all_values = ws.get('A:AK')
+    Aceita `values` pré-carregado (ver load_spsbd_values) pelo mesmo motivo
+    de memória descrito em load_spsbd_operacional.
+    """
+    if values is None:
+        values = load_spsbd_values(gc)
+    all_values = values
     if not all_values or len(all_values) < 2:
         return {}
 
@@ -117,8 +130,6 @@ def load_spsbd_omie_pendente(gc=None) -> Dict[str, SpRecord]:
 
     result = {}
     for row_num, row in enumerate(all_values[1:], start=2):
-        row = list(row) + [''] * (len(headers) - len(row))
-
         status_pgt = (row[IDX_O]  if IDX_O  < len(row) else '').strip().lower()
         data_pgt   = (row[IDX_X]  if IDX_X  < len(row) else '').strip()
         comprovante= (row[IDX_AG] if IDX_AG < len(row) else '').strip()
@@ -131,6 +142,7 @@ def load_spsbd_omie_pendente(gc=None) -> Dict[str, SpRecord]:
         if not comprovante:
             continue
 
+        row = list(row) + [''] * (len(headers) - len(row))
         r = {headers[i]: row[i] for i in range(len(headers))}
         r['_row_number'] = row_num
         sp = row_to_sp_record(r)
@@ -317,8 +329,25 @@ def build_spsbd_updates(plan) -> List[dict]:
     }]
 
 
+def _letra_to_idx(letra: str) -> int:
+    """Converte letra de coluna (A, AB, AK...) em índice 1-based."""
+    letra = letra.upper().strip()
+    result = 0
+    for ch in letra:
+        result = result * 26 + (ord(ch) - 64)
+    return result
+
+
 def execute_spsbd_updates(updates: list):
-    """Executa updates na planilha via gspread (chamada direta, sem GAS)."""
+    """Executa updates na planilha via gspread (chamada direta, sem GAS).
+
+    Otimizado para memória: busca APENAS as colunas usadas nos filtros
+    (ex.: A:A para localizar a linha pelo ID) em vez de get_all_values(),
+    que baixava a planilha inteira (~52k linhas × todas as colunas) só para
+    achar uma linha — era a principal causa de pico de RAM, pior ainda
+    porque roda em thread por plano (N lotes = N downloads simultâneos).
+    A gravação usa batch_update (1 chamada) em vez de update_cell por célula.
+    """
     if not updates:
         return
     gc = get_gc()
@@ -326,40 +355,49 @@ def execute_spsbd_updates(updates: list):
         try:
             ss    = gc.open_by_key(upd['sheet_id'])
             sheet = ss.worksheet(upd['aba'])
-            all_values = sheet.get_all_values()
-            if not all_values:
-                continue
-            headers = all_values[0]
 
-            # Monta mapa coluna_letra → índice_coluna_1based
-            def letra_to_idx(letra: str) -> int:
-                letra = letra.upper().strip()
-                result = 0
-                for ch in letra:
-                    result = result * 26 + (ord(ch) - 64)
-                return result
-
-            filtros = upd.get('filtros', {})
+            filtros      = upd.get('filtros', {})
             updates_cols = upd.get('updates', {})
+            if not filtros or not updates_cols:
+                continue
 
-            for row_idx, row in enumerate(all_values[1:], start=2):
+            # Busca só as colunas dos filtros, a partir da linha 2 (pula header)
+            col_letras = list(filtros.keys())
+            col_ranges = [f'{l}2:{l}' for l in col_letras]
+            fetched = sheet.batch_get(col_ranges)
+
+            # col_data[letra] = lista de valores (índice 0 = linha 2 da planilha)
+            col_data = {}
+            for letra, vals in zip(col_letras, fetched):
+                col_data[letra] = [(v[0] if v else '') for v in vals]
+
+            n_rows = max((len(v) for v in col_data.values()), default=0)
+
+            target_row = None
+            for i in range(n_rows):
                 match = True
                 for col_letra, condicao in filtros.items():
-                    col_idx = letra_to_idx(col_letra) - 1
-                    val = row[col_idx] if col_idx < len(row) else ''
-                    op  = condicao[0] if condicao else '='
+                    vals = col_data.get(col_letra, [])
+                    val  = vals[i] if i < len(vals) else ''
+                    op   = condicao[0] if condicao else '='
                     alvo = condicao[1:].strip()
                     if op == '=' and val != alvo:
                         match = False; break
                     elif op == '!' and val == alvo:
                         match = False; break
-                if not match:
-                    continue
+                if match:
+                    target_row = i + 2  # +2: header pulado e i é 0-based
+                    break  # update_multiple=false: apenas primeira linha
 
-                for col_letra, novo_val in updates_cols.items():
-                    col_idx_1based = letra_to_idx(col_letra)
-                    sheet.update_cell(row_idx, col_idx_1based, novo_val)
-                break  # update_multiple=false: apenas primeira linha
+            if target_row is None:
+                continue
+
+            # Grava todas as células de uma vez (1 chamada à API)
+            data = [
+                {'range': f'{col_letra}{target_row}', 'values': [[novo_val]]}
+                for col_letra, novo_val in updates_cols.items()
+            ]
+            sheet.batch_update(data, value_input_option='USER_ENTERED')
 
         except Exception:
             pass
