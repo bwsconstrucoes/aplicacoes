@@ -125,6 +125,10 @@ MSG_INSTRUCAO = (
     "Para se cadastrar, toque no botão *📱 Compartilhar meu número* abaixo.\n"
     "Se o botão não aparecer, envie /start."
 )
+MSG_INDISPONIVEL = (
+    "⚠️ Sistema temporariamente indisponível para consulta.\n"
+    "Tente novamente em alguns minutos, por favor."
+)
 
 # ---------------------------------------------------------------------------
 # Google Sheets (singleton + cache de worksheets)
@@ -232,6 +236,30 @@ def _normalizar_cpf(bruto):
 # Consulta nas bases (somente leitura)
 # ---------------------------------------------------------------------------
 
+def _ler_valores_com_retry(sheet_id, nome_aba, tentativas=3):
+    """
+    Leitura de aba com retry + backoff progressivo. Cobre 429 (rate limit),
+    5xx do Google e falhas de rede. Lança RuntimeError após esgotar.
+    """
+    ultimo_erro = None
+    for t in range(tentativas):
+        try:
+            ws = _abrir_aba(sheet_id, nome_aba)
+            return ws.get_all_values()
+        except gspread.exceptions.APIError as e:
+            ultimo_erro = e
+            print(f"[telegram_bot] APIError lendo {nome_aba} "
+                  f"({t + 1}/{tentativas}): {e}")
+            time.sleep(2 * (t + 1))  # 2s, 4s, 6s
+        except Exception as e:
+            ultimo_erro = e
+            print(f"[telegram_bot] Erro lendo {nome_aba} "
+                  f"({t + 1}/{tentativas}): {e}")
+            time.sleep(1 + t)
+    raise RuntimeError(f"falha lendo {nome_aba} após {tentativas} "
+                       f"tentativas: {ultimo_erro}")
+
+
 _BASES_CONSULTA = [
     {"id": PLAN1_ID, "aba": PLAN1_ABA, "col_cpf": PLAN1_COL_CPF,
      "col_nome": PLAN1_COL_NOME, "col_tel": PLAN1_COL_TEL,
@@ -245,18 +273,21 @@ _BASES_CONSULTA = [
 def _consultar_bases(telefone=None, cpf=None):
     """
     Procura por telefone OU cpf nas bases de consulta (sem gravar nada).
-    Retorna dict {"cpf", "nome", "telefone_base", "base"} da primeira
-    ocorrência, ou None se não encontrado.
+    Retorna (pessoa, leitura_ok):
+      pessoa     -> dict {"cpf", "nome", "telefone_base", "base"} ou None
+      leitura_ok -> False se alguma base ficou inacessível (distingue
+                    "não encontrado" de "sistema indisponível")
     """
     alvo_tel = _variantes_telefone(telefone) if telefone else set()
     alvo_cpf = _normalizar_cpf(cpf) if cpf else None
+    leitura_ok = True
 
     for cfg in _BASES_CONSULTA:
         try:
-            ws = _abrir_aba(cfg["id"], cfg["aba"])
-            valores = ws.get_all_values()  # leitura única por aba
+            valores = _ler_valores_com_retry(cfg["id"], cfg["aba"])
         except Exception as e:
-            print(f"[telegram_bot] Erro lendo {cfg['rotulo']}: {e}")
+            print(f"[telegram_bot] Base {cfg['rotulo']} indisponível: {e}")
+            leitura_ok = False
             continue
 
         for linha in valores[1:]:  # pula cabeçalho
@@ -276,8 +307,8 @@ def _consultar_bases(telefone=None, cpf=None):
                     "nome": (nome_cel or "").strip(),
                     "telefone_base": tel_cel,
                     "base": cfg["rotulo"],
-                }
-    return None
+                }, True
+    return None, leitura_ok
 
 
 # ---------------------------------------------------------------------------
@@ -287,8 +318,8 @@ def _consultar_bases(telefone=None, cpf=None):
 def _buscar_cadastro_por_chat_id(chat_id):
     """Retorna (linha_index, nome) se o chat_id já existe na TelegramID."""
     try:
-        ws = _aba_telegram_id()
-        valores = ws.get_all_values()
+        _aba_telegram_id()  # garante que a aba existe
+        valores = _ler_valores_com_retry(PLAN_TGID_ID, ABA_TGID)
     except Exception as e:
         print(f"[telegram_bot] Erro lendo TelegramID: {e}")
         return None, None
@@ -422,7 +453,7 @@ def telegram_webhook():
                        remover_teclado=True)
             return jsonify({"ok": True})
 
-        pessoa = _consultar_bases(telefone=telefone)
+        pessoa, leitura_ok = _consultar_bases(telefone=telefone)
         if pessoa:
             ok = _gravar_cadastro(
                 chat_id, pessoa["cpf"], telefone, pessoa["nome"],
@@ -442,6 +473,11 @@ def telegram_webhook():
                 _log_pendencia("ERRO_GRAVACAO", telefone=telefone,
                                cpf=pessoa["cpf"], chat_id=chat_id,
                                nome=nome_tg)
+        elif not leitura_ok:
+            _tg_enviar(chat_id, MSG_INDISPONIVEL, teclado=_teclado_contato())
+            _log_pendencia("ERRO_LEITURA_BASES", telefone=telefone,
+                           chat_id=chat_id, nome=nome_tg,
+                           obs="Sheets indisponível durante cadastro por telefone")
         else:
             _tg_enviar(chat_id, MSG_NAO_ENCONTRADO_TEL, remover_teclado=True)
             _log_pendencia("TELEFONE_NAO_ENCONTRADO", telefone=telefone,
@@ -474,7 +510,7 @@ def telegram_webhook():
                        remover_teclado=True)
             return jsonify({"ok": True})
 
-        pessoa = _consultar_bases(cpf=apenas_digitos)
+        pessoa, leitura_ok = _consultar_bases(cpf=apenas_digitos)
         if pessoa:
             ok = _gravar_cadastro(
                 chat_id, pessoa["cpf"], "", pessoa["nome"],
@@ -499,6 +535,11 @@ def telegram_webhook():
                            remover_teclado=True)
                 _log_pendencia("ERRO_GRAVACAO", cpf=pessoa["cpf"],
                                chat_id=chat_id, nome=nome_tg)
+        elif not leitura_ok:
+            _tg_enviar(chat_id, MSG_INDISPONIVEL, remover_teclado=True)
+            _log_pendencia("ERRO_LEITURA_BASES", cpf=apenas_digitos,
+                           chat_id=chat_id, nome=nome_tg,
+                           obs="Sheets indisponível durante cadastro por CPF")
         else:
             _tg_enviar(chat_id, MSG_CPF_NAO_ENCONTRADO, remover_teclado=True)
             _log_pendencia("CPF_NAO_ENCONTRADO", cpf=apenas_digitos,
@@ -540,11 +581,23 @@ _CACHE_TGID_TTL = 120  # segundos — novo cadastro fica visível p/ envio em at
 
 
 def _linhas_telegram_id():
-    """Lê a aba TelegramID com cache em memória (TTL) p/ poupar cota da API."""
+    """
+    Lê a aba TelegramID com cache em memória (TTL).
+    Fallback: se o Sheets estiver indisponível e existir cache antigo,
+    usa o cache antigo — o envio não para por instabilidade momentânea.
+    """
     agora = time.time()
     if _CACHE_TGID["linhas"] is not None and (agora - _CACHE_TGID["ts"]) < _CACHE_TGID_TTL:
         return _CACHE_TGID["linhas"]
-    linhas = _aba_telegram_id().get_all_values()
+    try:
+        _aba_telegram_id()  # garante que a aba existe
+        linhas = _ler_valores_com_retry(PLAN_TGID_ID, ABA_TGID)
+    except Exception as e:
+        if _CACHE_TGID["linhas"] is not None:
+            print(f"[telegram_bot] Sheets indisponível; usando cache antigo "
+                  f"da TelegramID: {e}")
+            return _CACHE_TGID["linhas"]
+        raise
     _CACHE_TGID["linhas"] = linhas
     _CACHE_TGID["ts"] = agora
     return linhas
@@ -572,37 +625,83 @@ def _inferir_tipo(nome_ou_url):
     return "imagem" if base.endswith(_EXT_IMAGEM) else "documento"
 
 
+def _baixar_arquivo_url(url):
+    """
+    Baixa o arquivo da URL PELO SERVIDOR, seguindo redirects — necessário
+    para Google Drive/Dropbox, que o Telegram não consegue baixar sozinho.
+    Retorna (bytes, nome_sugerido) em caso de sucesso ou (None, erro).
+    """
+    try:
+        r = requests.get(url, timeout=60, allow_redirects=True, stream=True)
+        if r.status_code != 200:
+            return None, f"HTTP {r.status_code} ao baixar a URL"
+        ctype = (r.headers.get("Content-Type") or "").lower()
+        if "text/html" in ctype:
+            return None, ("a URL retornou uma página HTML e não um arquivo — "
+                          "verifique se o compartilhamento é público "
+                          "('qualquer pessoa com o link') e se o link é de "
+                          "download direto")
+        limite = 48 * 1024 * 1024  # limite de upload p/ bots no Telegram: 50 MB
+        partes = []
+        total = 0
+        for chunk in r.iter_content(chunk_size=256 * 1024):
+            partes.append(chunk)
+            total += len(chunk)
+            if total > limite:
+                return None, "arquivo excede 48 MB (limite do Telegram p/ bots)"
+        conteudo = b"".join(partes)
+        if not conteudo:
+            return None, "a URL retornou conteúdo vazio"
+        # Nome sugerido: Content-Disposition ou último trecho da URL
+        nome = ""
+        cd = r.headers.get("Content-Disposition", "")
+        m = re.search(r'filename="?([^";]+)"?', cd)
+        if m:
+            nome = m.group(1).strip()
+        if not nome:
+            nome = url.split("?")[0].rstrip("/").split("/")[-1] or "arquivo"
+        return conteudo, nome
+    except requests.RequestException as e:
+        return None, f"erro de rede ao baixar a URL: {e}"
+
+
 def _tg_enviar_arquivo(chat_id, tipo, url=None, conteudo_b64=None,
                        nome_arquivo=None, legenda=""):
     """
-    Envia documento ou imagem. Por URL o próprio Telegram baixa (a URL precisa
-    ser pública); por base64 fazemos upload multipart.
-    Retorna (ok: bool, detalhe: str).
+    Envia documento ou imagem. URLs são baixadas pelo servidor e enviadas
+    por upload multipart (compatível com Google Drive/Dropbox); base64 vai
+    direto por multipart. Retorna (ok: bool, detalhe: str).
     """
     metodo = "sendPhoto" if tipo == "imagem" else "sendDocument"
     campo = "photo" if tipo == "imagem" else "document"
     legenda = (legenda or "")[:1024]  # limite de caption do Telegram
 
+    if url:
+        conteudo, info = _baixar_arquivo_url(url)
+        if conteudo is None:
+            return False, info
+        if not nome_arquivo:
+            nome_arquivo = info
+    else:
+        try:
+            conteudo = base64.b64decode(conteudo_b64)
+        except Exception as e:
+            return False, f"base64 inválido: {e}"
+        if not conteudo:
+            return False, "arquivo_base64 vazio"
+
+    data = {"chat_id": chat_id}
+    if legenda:
+        data["caption"] = legenda
+        data["parse_mode"] = "Markdown"
+
     for tentativa in range(3):
         try:
-            if url:
-                payload = {"chat_id": chat_id, campo: url}
-                if legenda:
-                    payload["caption"] = legenda
-                    payload["parse_mode"] = "Markdown"
-                r = requests.post(f"{TELEGRAM_API}/{metodo}", json=payload,
-                                  timeout=60)
-            else:
-                arquivo = base64.b64decode(conteudo_b64)
-                data = {"chat_id": chat_id}
-                if legenda:
-                    data["caption"] = legenda
-                    data["parse_mode"] = "Markdown"
-                r = requests.post(
-                    f"{TELEGRAM_API}/{metodo}", data=data,
-                    files={campo: (nome_arquivo or "arquivo", arquivo)},
-                    timeout=120,
-                )
+            r = requests.post(
+                f"{TELEGRAM_API}/{metodo}", data=data,
+                files={campo: (nome_arquivo or "arquivo", conteudo)},
+                timeout=120,
+            )
             if r.status_code == 200:
                 return True, "ok"
             print(f"[telegram_bot] {metodo} HTTP {r.status_code}: "
@@ -611,15 +710,13 @@ def _tg_enviar_arquivo(chat_id, tipo, url=None, conteudo_b64=None,
                 espera = r.json().get("parameters", {}).get("retry_after", 3)
                 time.sleep(espera)
             elif 400 <= r.status_code < 500:
-                # erro definitivo (ex.: URL inacessível, chat bloqueou o bot)
+                # erro definitivo (ex.: chat bloqueou o bot, formato inválido)
                 return False, r.text[:300]
             else:
                 time.sleep(1 + tentativa)
         except requests.RequestException as e:
             print(f"[telegram_bot] Erro de rede {metodo}: {e}")
             time.sleep(1 + tentativa)
-        except Exception as e:
-            return False, f"erro processando arquivo: {e}"
     return False, "falha após 3 tentativas"
 
 
@@ -652,8 +749,13 @@ def telegram_enviar():
 
     # Lookup na TelegramID quando não veio chat_id direto
     if not chat_id:
-        chat_id = _lookup_chat_id(telefone=telefone or None,
-                                  cpf=cpf or None)
+        try:
+            chat_id = _lookup_chat_id(telefone=telefone or None,
+                                      cpf=cpf or None)
+        except Exception as e:
+            return jsonify({"ok": False, "erro": "base_indisponivel",
+                            "detalhe": f"Google Sheets inacessível: "
+                                       f"{str(e)[:200]}"}), 503
         if not chat_id:
             return jsonify({"ok": False, "erro": "nao_cadastrado",
                             "detalhe": "destinatário sem ID Telegram na "
@@ -670,11 +772,15 @@ def telegram_enviar():
         )
         if ok:
             return jsonify({"ok": True, "chat_id": chat_id, "enviado": tipo})
+        _log_pendencia("FALHA_ENVIO_ARQUIVO", telefone=telefone, cpf=cpf,
+                       chat_id=chat_id, obs=detalhe[:200])
         return jsonify({"ok": False, "erro": "falha_envio_arquivo",
                         "detalhe": detalhe}), 502
 
     if _tg_enviar(chat_id, mensagem):
         return jsonify({"ok": True, "chat_id": chat_id, "enviado": "texto"})
+    _log_pendencia("FALHA_ENVIO_TEXTO", telefone=telefone, cpf=cpf,
+                   chat_id=chat_id, obs=mensagem[:200])
     return jsonify({"ok": False, "erro": "falha_envio_texto"}), 502
 
 
