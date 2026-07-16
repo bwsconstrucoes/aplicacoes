@@ -385,6 +385,12 @@ def _tg_enviar(chat_id, texto, teclado=None, remover_teclado=False):
                 return True
             print(f"[telegram_bot] sendMessage HTTP {r.status_code}: "
                   f"{r.text[:300]}")
+            if (r.status_code == 400 and payload.get("parse_mode")
+                    and "parse" in r.text.lower()):
+                # Markdown desbalanceado na mensagem (ex.: * ou [ sem par):
+                # reenvia imediatamente como texto puro em vez de falhar
+                payload.pop("parse_mode", None)
+                continue
             if r.status_code == 429:
                 espera = r.json().get("parameters", {}).get("retry_after", 3)
                 time.sleep(espera)
@@ -706,6 +712,11 @@ def _tg_enviar_arquivo(chat_id, tipo, url=None, conteudo_b64=None,
                 return True, "ok"
             print(f"[telegram_bot] {metodo} HTTP {r.status_code}: "
                   f"{r.text[:300]}")
+            if (r.status_code == 400 and data.get("parse_mode")
+                    and "parse" in r.text.lower()):
+                # Markdown inválido na legenda: reenvia como texto puro
+                data.pop("parse_mode", None)
+                continue
             if r.status_code == 429:
                 espera = r.json().get("parameters", {}).get("retry_after", 3)
                 time.sleep(espera)
@@ -726,7 +737,12 @@ def telegram_enviar():
     if not TELEGRAM_SECRET or request.headers.get("X-Api-Key") != TELEGRAM_SECRET:
         return jsonify({"ok": False, "erro": "não autorizado"}), 403
 
-    dados = request.get_json(silent=True) or {}
+    dados = request.get_json(silent=True)
+    if not dados:
+        # Fallback: aceita application/x-www-form-urlencoded e multipart.
+        # No Make, isso evita quebrar o corpo quando a mensagem contém
+        # aspas duplas ou quebras de linha (que invalidam JSON montado em Raw).
+        dados = request.form.to_dict() if request.form else {}
     chat_id = dados.get("chat_id")
     telefone = (dados.get("telefone") or "").strip()
     cpf = (dados.get("cpf") or "").strip()
