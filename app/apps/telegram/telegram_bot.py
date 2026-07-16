@@ -1,0 +1,685 @@
+# -*- coding: utf-8 -*-
+"""
+telegram_bot.py — Blueprint Flask: autocadastro de ID Telegram (BWS)
+====================================================================
+Versão 2 — aba centralizada "TelegramID"
+
+Desenho:
+  - As abas "Dados Documentos" e "Colaborador (Cartões)" são SOMENTE CONSULTA
+    (validação de telefone/CPF + obtenção do nome). Nada é gravado nelas.
+  - Todo cadastro confirmado é gravado na aba "TelegramID" (criada
+    automaticamente se não existir), que é a base oficial de envio:
+        A=Data cadastro | B=CPF | C=Telefone | D=ID Telegram
+        E=Nome | F=Origem (TELEFONE/CPF) | G=Observação
+  - Falhas e tentativas não localizadas vão para a aba "Pendências Telegram".
+
+Fluxo do bot:
+  1. /start -> boas-vindas + botão "📱 Compartilhar meu número"
+  2. Contato compartilhado (número verificado pelo Telegram):
+       - telefone encontrado nas bases -> grava na TelegramID e confirma
+         chamando a pessoa pelo NOME da base
+       - não encontrado -> pede o CPF (fallback)
+  3. CPF digitado (11 dígitos):
+       - encontrado -> grava na TelegramID (telefone real do Telegram,
+         observação de divergência) e confirma pelo nome
+       - não encontrado -> orienta procurar o RH + log em pendências
+  4. chat_id já cadastrado -> "Você já está cadastrado" (atualiza telefone
+     se tiver mudado)
+
+Variáveis de ambiente (Render -> Environment):
+  TELEGRAM_BOT_TOKEN        -> token do @BotFather
+  TELEGRAM_SECRET_TOKEN     -> string aleatória sua (validação do webhook)
+  GOOGLE_CREDENTIALS_BASE64 -> já existente no monorepo (Service Account)
+
+Registro no app principal:
+  from telegram_bot import telegram_bp
+  app.register_blueprint(telegram_bp)
+
+Vinculação do webhook (uma vez, após o deploy):
+  https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://SEU-APP.onrender.com/telegram/webhook&secret_token=<SECRET>&allowed_updates=["message"]
+"""
+
+import base64
+import json
+import os
+import re
+import time
+from datetime import datetime
+
+import requests
+from flask import Blueprint, jsonify, request
+
+import gspread
+from google.oauth2.service_account import Credentials
+
+telegram_bp = Blueprint("telegram_bot", __name__)
+
+# ---------------------------------------------------------------------------
+# Configuração
+# ---------------------------------------------------------------------------
+
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_SECRET = os.environ.get("TELEGRAM_SECRET_TOKEN", "")
+TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+
+# --- Bases de CONSULTA (somente leitura) ---
+
+# Planilha 1 — Dados Documentos
+PLAN1_ID = "1fqi4QUOVGUd1_4Gg4vK5qP_IMOSgFaw8DD9MDgmM3vo"
+PLAN1_ABA = "Dados Documentos"
+PLAN1_COL_CPF = 1        # A
+PLAN1_COL_NOME = 5       # E
+PLAN1_COL_TEL = 23       # W  (padrão: "81 98790-7522")
+
+# Planilha 2 — Colaborador (Cartões)
+PLAN2_ID = "1C7MWQmr5uFGWuJ18osUNDapiojVXzQ_GxMMDQqxPsBk"
+PLAN2_ABA = "Colaborador (Cartões)"
+PLAN2_COL_CPF = 4        # D
+PLAN2_COL_NOME = 1       # A
+PLAN2_COL_TEL = 2        # B  (padrão: "5583999213393")
+
+# --- Base de GRAVAÇÃO (cadastros confirmados) ---
+# Fica na Planilha 2 (a mesma da aba "Colaborador (Cartões)").
+# Para mudar de planilha, altere apenas PLAN_TGID_ID.
+PLAN_TGID_ID = PLAN2_ID
+ABA_TGID = "TelegramID"
+TGID_CABECALHO = ["Data cadastro", "CPF", "Telefone", "ID Telegram",
+                  "Nome", "Origem", "Observação"]
+# Índices (1-based) da aba TelegramID
+TGID_COL_DATA = 1
+TGID_COL_CPF = 2
+TGID_COL_TEL = 3
+TGID_COL_ID = 4
+TGID_COL_NOME = 5
+TGID_COL_ORIGEM = 6
+TGID_COL_OBS = 7
+
+# --- Aba de pendências/auditoria (mesma planilha da TelegramID) ---
+ABA_PENDENCIAS = "Pendências Telegram"
+
+# --- Mensagens ---
+MSG_BOAS_VINDAS = (
+    "👷 *BWS Construções — Cadastro de Notificações*\n\n"
+    "Para receber os avisos da BWS por aqui (pagamentos, ponto, comunicados), "
+    "toque no botão abaixo para confirmar seu número de telefone."
+)
+MSG_SUCESSO = (
+    "✅ Cadastro confirmado, *{nome}*!\n\n"
+    "A partir de agora você receberá os avisos da BWS por este chat."
+)
+MSG_JA_CADASTRADO = (
+    "👍 Você já está cadastrado, *{nome}*.\n\n"
+    "Não precisa fazer mais nada — os avisos da BWS chegarão por este chat."
+)
+MSG_NAO_ENCONTRADO_TEL = (
+    "⚠️ Não encontrei seu número na base da BWS.\n\n"
+    "Se o seu Telegram usa um chip diferente do que está no seu cadastro, "
+    "me envie o seu *CPF* (somente números) que eu tento localizar por ele."
+)
+MSG_CPF_NAO_ENCONTRADO = (
+    "❌ CPF não localizado na base da BWS.\n\n"
+    "Procure o RH/Financeiro para verificar seu cadastro. "
+    "Sua tentativa foi registrada para análise."
+)
+MSG_INSTRUCAO = (
+    "Para se cadastrar, toque no botão *📱 Compartilhar meu número* abaixo.\n"
+    "Se o botão não aparecer, envie /start."
+)
+
+# ---------------------------------------------------------------------------
+# Google Sheets (singleton + cache de worksheets)
+# ---------------------------------------------------------------------------
+
+_GC = None
+_WS_CACHE = {}
+
+
+def _gspread_client():
+    global _GC
+    if _GC is None:
+        raw = base64.b64decode(os.environ["GOOGLE_CREDENTIALS_BASE64"])
+        info = json.loads(raw)
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive",
+        ]
+        creds = Credentials.from_service_account_info(info, scopes=scopes)
+        _GC = gspread.authorize(creds)
+    return _GC
+
+
+def _abrir_aba(sheet_id, nome_aba, criar_se_faltar=False, cabecalho=None,
+               cols=10):
+    chave = f"{sheet_id}::{nome_aba}"
+    if chave not in _WS_CACHE:
+        sh = _gspread_client().open_by_key(sheet_id)
+        try:
+            ws = sh.worksheet(nome_aba)
+        except gspread.exceptions.WorksheetNotFound:
+            if not criar_se_faltar:
+                raise
+            ws = sh.add_worksheet(title=nome_aba, rows=2000, cols=cols)
+            if cabecalho:
+                ws.append_row(cabecalho, value_input_option="USER_ENTERED")
+        _WS_CACHE[chave] = ws
+    return _WS_CACHE[chave]
+
+
+def _aba_telegram_id():
+    return _abrir_aba(PLAN_TGID_ID, ABA_TGID, criar_se_faltar=True,
+                      cabecalho=TGID_CABECALHO, cols=len(TGID_CABECALHO))
+
+
+def _aba_pendencias():
+    return _abrir_aba(
+        PLAN_TGID_ID, ABA_PENDENCIAS, criar_se_faltar=True,
+        cabecalho=["Data/Hora", "Evento", "Telefone Telegram",
+                   "CPF informado", "chat_id", "Nome Telegram", "Observação"],
+        cols=7,
+    )
+
+
+def _log_pendencia(evento, telefone="", cpf="", chat_id="", nome="", obs=""):
+    try:
+        _aba_pendencias().append_row(
+            [datetime.now().strftime("%d/%m/%Y %H:%M:%S"), evento, telefone,
+             cpf, str(chat_id), nome, obs],
+            value_input_option="USER_ENTERED",
+        )
+    except Exception as e:
+        print(f"[telegram_bot] Falha ao logar pendência: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Normalização de telefone/CPF
+# ---------------------------------------------------------------------------
+
+def _variantes_telefone(bruto):
+    """
+    Variantes canônicas de um telefone BR para matching robusto.
+    Canônico = DDD + número (sem o 55), com e sem o nono dígito.
+    Cobre: "+5585998322004", "5583999213393", "81 98790-7522".
+    """
+    d = re.sub(r"\D", "", bruto or "")
+    if not d:
+        return set()
+    if d.startswith("55") and len(d) >= 12:
+        d = d[2:]
+    if len(d) < 10:
+        return {d}
+    variantes = {d}
+    if len(d) == 11 and d[2] == "9":
+        variantes.add(d[:2] + d[3:])          # sem o nono dígito
+    elif len(d) == 10:
+        variantes.add(d[:2] + "9" + d[2:])    # com o nono dígito
+    return variantes
+
+
+def _telefone_canonico(bruto):
+    """Forma única para gravação: 55 + DDD + número (ex.: 5585998322004)."""
+    d = re.sub(r"\D", "", bruto or "")
+    if d.startswith("55") and len(d) >= 12:
+        return d
+    return "55" + d if d else ""
+
+
+def _normalizar_cpf(bruto):
+    d = re.sub(r"\D", "", bruto or "")
+    return d.zfill(11) if len(d) in (10, 11) else d
+
+
+# ---------------------------------------------------------------------------
+# Consulta nas bases (somente leitura)
+# ---------------------------------------------------------------------------
+
+_BASES_CONSULTA = [
+    {"id": PLAN1_ID, "aba": PLAN1_ABA, "col_cpf": PLAN1_COL_CPF,
+     "col_nome": PLAN1_COL_NOME, "col_tel": PLAN1_COL_TEL,
+     "rotulo": "Dados Documentos"},
+    {"id": PLAN2_ID, "aba": PLAN2_ABA, "col_cpf": PLAN2_COL_CPF,
+     "col_nome": PLAN2_COL_NOME, "col_tel": PLAN2_COL_TEL,
+     "rotulo": "Colaborador (Cartões)"},
+]
+
+
+def _consultar_bases(telefone=None, cpf=None):
+    """
+    Procura por telefone OU cpf nas bases de consulta (sem gravar nada).
+    Retorna dict {"cpf", "nome", "telefone_base", "base"} da primeira
+    ocorrência, ou None se não encontrado.
+    """
+    alvo_tel = _variantes_telefone(telefone) if telefone else set()
+    alvo_cpf = _normalizar_cpf(cpf) if cpf else None
+
+    for cfg in _BASES_CONSULTA:
+        try:
+            ws = _abrir_aba(cfg["id"], cfg["aba"])
+            valores = ws.get_all_values()  # leitura única por aba
+        except Exception as e:
+            print(f"[telegram_bot] Erro lendo {cfg['rotulo']}: {e}")
+            continue
+
+        for linha in valores[1:]:  # pula cabeçalho
+            tel_cel = linha[cfg["col_tel"] - 1] if len(linha) >= cfg["col_tel"] else ""
+            cpf_cel = linha[cfg["col_cpf"] - 1] if len(linha) >= cfg["col_cpf"] else ""
+            nome_cel = linha[cfg["col_nome"] - 1] if len(linha) >= cfg["col_nome"] else ""
+
+            bate = False
+            if alvo_tel and (_variantes_telefone(tel_cel) & alvo_tel):
+                bate = True
+            if alvo_cpf and _normalizar_cpf(cpf_cel) == alvo_cpf:
+                bate = True
+
+            if bate:
+                return {
+                    "cpf": _normalizar_cpf(cpf_cel),
+                    "nome": (nome_cel or "").strip(),
+                    "telefone_base": tel_cel,
+                    "base": cfg["rotulo"],
+                }
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Gravação na aba TelegramID
+# ---------------------------------------------------------------------------
+
+def _buscar_cadastro_por_chat_id(chat_id):
+    """Retorna (linha_index, nome) se o chat_id já existe na TelegramID."""
+    try:
+        ws = _aba_telegram_id()
+        valores = ws.get_all_values()
+    except Exception as e:
+        print(f"[telegram_bot] Erro lendo TelegramID: {e}")
+        return None, None
+    alvo = str(chat_id)
+    for i, linha in enumerate(valores[1:], start=2):
+        if len(linha) >= TGID_COL_ID and linha[TGID_COL_ID - 1].strip() == alvo:
+            nome = linha[TGID_COL_NOME - 1] if len(linha) >= TGID_COL_NOME else ""
+            return i, nome
+    return None, None
+
+
+def _gravar_cadastro(chat_id, cpf, telefone, nome, origem, obs=""):
+    """
+    Grava/atualiza o cadastro na aba TelegramID.
+    Se o chat_id já existir, atualiza a linha; senão, insere nova.
+    Retry com backoff para APIError (rate limit).
+    """
+    linha_existente, _ = _buscar_cadastro_por_chat_id(chat_id)
+    dados = [
+        datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
+        cpf,
+        _telefone_canonico(telefone),
+        str(chat_id),
+        nome,
+        origem,
+        obs,
+    ]
+    ws = _aba_telegram_id()
+    for tentativa in range(3):
+        try:
+            if linha_existente:
+                ws.update(f"A{linha_existente}:G{linha_existente}", [dados],
+                          value_input_option="USER_ENTERED")
+            else:
+                ws.append_row(dados, value_input_option="USER_ENTERED")
+            return True
+        except gspread.exceptions.APIError as e:
+            print(f"[telegram_bot] APIError gravando TelegramID "
+                  f"({tentativa + 1}/3): {e}")
+            time.sleep(2 * (tentativa + 1))
+        except Exception as e:
+            print(f"[telegram_bot] Erro gravando TelegramID: {e}")
+            time.sleep(1)
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Envio de mensagens ao Telegram (retry + checagem de status)
+# ---------------------------------------------------------------------------
+
+def _tg_enviar(chat_id, texto, teclado=None, remover_teclado=False):
+    payload = {"chat_id": chat_id, "text": texto, "parse_mode": "Markdown"}
+    if teclado:
+        payload["reply_markup"] = json.dumps(teclado)
+    elif remover_teclado:
+        payload["reply_markup"] = json.dumps({"remove_keyboard": True})
+
+    for tentativa in range(3):
+        try:
+            r = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload,
+                              timeout=15)
+            if r.status_code == 200:
+                return True
+            print(f"[telegram_bot] sendMessage HTTP {r.status_code}: "
+                  f"{r.text[:300]}")
+            if r.status_code == 429:
+                espera = r.json().get("parameters", {}).get("retry_after", 3)
+                time.sleep(espera)
+            else:
+                time.sleep(1 + tentativa)
+        except requests.RequestException as e:
+            print(f"[telegram_bot] Erro de rede sendMessage: {e}")
+            time.sleep(1 + tentativa)
+    return False
+
+
+def _teclado_contato():
+    return {
+        "keyboard": [[{"text": "📱 Compartilhar meu número",
+                       "request_contact": True}]],
+        "resize_keyboard": True,
+        "one_time_keyboard": True,
+    }
+
+
+def _primeiro_nome(nome_completo, fallback="colaborador"):
+    nome = (nome_completo or "").strip()
+    return nome.split()[0].title() if nome else fallback
+
+
+# ---------------------------------------------------------------------------
+# Webhook
+# ---------------------------------------------------------------------------
+
+@telegram_bp.route("/telegram/webhook", methods=["POST"])
+def telegram_webhook():
+    # Validação de origem: header enviado pelo Telegram em todo POST
+    if TELEGRAM_SECRET:
+        if request.headers.get("X-Telegram-Bot-Api-Secret-Token") != TELEGRAM_SECRET:
+            return jsonify({"ok": False, "erro": "não autorizado"}), 403
+
+    update = request.get_json(silent=True) or {}
+    msg = update.get("message") or update.get("edited_message")
+    if not msg:
+        return jsonify({"ok": True})  # ignora updates sem mensagem
+
+    chat_id = msg.get("chat", {}).get("id")
+    de = msg.get("from", {}) or {}
+    nome_tg = " ".join(filter(None, [de.get("first_name"),
+                                     de.get("last_name")])) or "colaborador"
+
+    # ---- 1) Contato compartilhado (caminho principal) ----
+    contato = msg.get("contact")
+    if contato:
+        # Segurança: só aceita o contato do PRÓPRIO usuário (não da agenda)
+        if contato.get("user_id") != de.get("id"):
+            _tg_enviar(chat_id,
+                       "⚠️ Compartilhe o *seu próprio* contato usando o "
+                       "botão, não um contato da agenda.",
+                       teclado=_teclado_contato())
+            return jsonify({"ok": True})
+
+        telefone = contato.get("phone_number", "")
+
+        # Já cadastrado? Atualiza telefone e confirma pelo nome.
+        linha, nome_cad = _buscar_cadastro_por_chat_id(chat_id)
+        if linha:
+            _tg_enviar(chat_id,
+                       MSG_JA_CADASTRADO.format(
+                           nome=_primeiro_nome(nome_cad, nome_tg)),
+                       remover_teclado=True)
+            return jsonify({"ok": True})
+
+        pessoa = _consultar_bases(telefone=telefone)
+        if pessoa:
+            ok = _gravar_cadastro(
+                chat_id, pessoa["cpf"], telefone, pessoa["nome"],
+                origem="TELEFONE",
+                obs=f"Validado por telefone na base {pessoa['base']}",
+            )
+            if ok:
+                _tg_enviar(chat_id,
+                           MSG_SUCESSO.format(
+                               nome=_primeiro_nome(pessoa["nome"], nome_tg)),
+                           remover_teclado=True)
+            else:
+                _tg_enviar(chat_id,
+                           "⚠️ Encontrei seu cadastro, mas houve um erro ao "
+                           "gravar. Tente novamente em instantes com /start.",
+                           remover_teclado=True)
+                _log_pendencia("ERRO_GRAVACAO", telefone=telefone,
+                               cpf=pessoa["cpf"], chat_id=chat_id,
+                               nome=nome_tg)
+        else:
+            _tg_enviar(chat_id, MSG_NAO_ENCONTRADO_TEL, remover_teclado=True)
+            _log_pendencia("TELEFONE_NAO_ENCONTRADO", telefone=telefone,
+                           chat_id=chat_id, nome=nome_tg,
+                           obs="Aguardando CPF do usuário")
+        return jsonify({"ok": True})
+
+    # ---- 2) Texto ----
+    texto = (msg.get("text") or "").strip()
+
+    if texto.startswith("/start"):
+        linha, nome_cad = _buscar_cadastro_por_chat_id(chat_id)
+        if linha:
+            _tg_enviar(chat_id,
+                       MSG_JA_CADASTRADO.format(
+                           nome=_primeiro_nome(nome_cad, nome_tg)),
+                       remover_teclado=True)
+        else:
+            _tg_enviar(chat_id, MSG_BOAS_VINDAS, teclado=_teclado_contato())
+        return jsonify({"ok": True})
+
+    # ---- 3) Fallback por CPF (11 dígitos) ----
+    apenas_digitos = re.sub(r"\D", "", texto)
+    if len(apenas_digitos) == 11 and not texto.startswith("/"):
+        linha, nome_cad = _buscar_cadastro_por_chat_id(chat_id)
+        if linha:
+            _tg_enviar(chat_id,
+                       MSG_JA_CADASTRADO.format(
+                           nome=_primeiro_nome(nome_cad, nome_tg)),
+                       remover_teclado=True)
+            return jsonify({"ok": True})
+
+        pessoa = _consultar_bases(cpf=apenas_digitos)
+        if pessoa:
+            ok = _gravar_cadastro(
+                chat_id, pessoa["cpf"], "", pessoa["nome"],
+                origem="CPF",
+                obs=(f"Validado por CPF na base {pessoa['base']}; telefone "
+                     f"do Telegram diverge do cadastrado "
+                     f"({pessoa['telefone_base']}) — RH conferir"),
+            )
+            if ok:
+                _tg_enviar(chat_id,
+                           MSG_SUCESSO.format(
+                               nome=_primeiro_nome(pessoa["nome"], nome_tg)),
+                           remover_teclado=True)
+                _log_pendencia("CADASTRO_CPF_DIVERGENTE",
+                               cpf=pessoa["cpf"], chat_id=chat_id,
+                               nome=nome_tg,
+                               obs=f"Telefone da base: {pessoa['telefone_base']}")
+            else:
+                _tg_enviar(chat_id,
+                           "⚠️ Encontrei seu cadastro, mas houve um erro ao "
+                           "gravar. Tente novamente em instantes.",
+                           remover_teclado=True)
+                _log_pendencia("ERRO_GRAVACAO", cpf=pessoa["cpf"],
+                               chat_id=chat_id, nome=nome_tg)
+        else:
+            _tg_enviar(chat_id, MSG_CPF_NAO_ENCONTRADO, remover_teclado=True)
+            _log_pendencia("CPF_NAO_ENCONTRADO", cpf=apenas_digitos,
+                           chat_id=chat_id, nome=nome_tg)
+        return jsonify({"ok": True})
+
+    # ---- 4) Qualquer outra coisa ----
+    _tg_enviar(chat_id, MSG_INSTRUCAO, teclado=_teclado_contato())
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# ENVIO DE MENSAGENS (consumido pelo Make e pelas aplicações Python)
+# ---------------------------------------------------------------------------
+#
+# POST /telegram/enviar
+# Header obrigatório:  X-Api-Key: <TELEGRAM_SECRET_TOKEN>
+# Body JSON — identifique o destinatário por UM dos campos:
+#   "chat_id":  123456789                (direto, sem lookup)
+#   "telefone": "5585999999999"          (lookup na aba TelegramID)
+#   "cpf":      "12345678901"            (lookup na aba TelegramID)
+#
+# Conteúdo:
+#   "mensagem":      "texto"             (texto puro OU legenda do arquivo)
+#   "arquivo_url":   "https://..."       (PDF/imagem público — o Telegram baixa)
+#   "arquivo_base64": "<base64>"         (alternativa p/ arquivo não público)
+#   "nome_arquivo":  "comprovante.pdf"   (obrigatório com arquivo_base64)
+#   "tipo":          "documento"|"imagem" (opcional; inferido pela extensão)
+#
+# Respostas:
+#   200 {"ok": true,  "chat_id": ..., "enviado": "texto|documento|imagem"}
+#   404 {"ok": false, "erro": "nao_cadastrado"}   -> destinatário sem TelegramID
+#   400/403/502 com "erro" descritivo
+# ---------------------------------------------------------------------------
+
+_EXT_IMAGEM = (".jpg", ".jpeg", ".png", ".webp", ".gif")
+_CACHE_TGID = {"linhas": None, "ts": 0.0}
+_CACHE_TGID_TTL = 120  # segundos — novo cadastro fica visível p/ envio em até 2 min
+
+
+def _linhas_telegram_id():
+    """Lê a aba TelegramID com cache em memória (TTL) p/ poupar cota da API."""
+    agora = time.time()
+    if _CACHE_TGID["linhas"] is not None and (agora - _CACHE_TGID["ts"]) < _CACHE_TGID_TTL:
+        return _CACHE_TGID["linhas"]
+    linhas = _aba_telegram_id().get_all_values()
+    _CACHE_TGID["linhas"] = linhas
+    _CACHE_TGID["ts"] = agora
+    return linhas
+
+
+def _lookup_chat_id(telefone=None, cpf=None):
+    """Procura o chat_id na aba TelegramID por telefone ou CPF."""
+    alvo_tel = _variantes_telefone(telefone) if telefone else set()
+    alvo_cpf = _normalizar_cpf(cpf) if cpf else None
+    for linha in _linhas_telegram_id()[1:]:
+        tel_cel = linha[TGID_COL_TEL - 1] if len(linha) >= TGID_COL_TEL else ""
+        cpf_cel = linha[TGID_COL_CPF - 1] if len(linha) >= TGID_COL_CPF else ""
+        id_cel = linha[TGID_COL_ID - 1] if len(linha) >= TGID_COL_ID else ""
+        if not id_cel.strip():
+            continue
+        if alvo_tel and (_variantes_telefone(tel_cel) & alvo_tel):
+            return id_cel.strip()
+        if alvo_cpf and _normalizar_cpf(cpf_cel) == alvo_cpf:
+            return id_cel.strip()
+    return None
+
+
+def _inferir_tipo(nome_ou_url):
+    base = (nome_ou_url or "").lower().split("?")[0]
+    return "imagem" if base.endswith(_EXT_IMAGEM) else "documento"
+
+
+def _tg_enviar_arquivo(chat_id, tipo, url=None, conteudo_b64=None,
+                       nome_arquivo=None, legenda=""):
+    """
+    Envia documento ou imagem. Por URL o próprio Telegram baixa (a URL precisa
+    ser pública); por base64 fazemos upload multipart.
+    Retorna (ok: bool, detalhe: str).
+    """
+    metodo = "sendPhoto" if tipo == "imagem" else "sendDocument"
+    campo = "photo" if tipo == "imagem" else "document"
+    legenda = (legenda or "")[:1024]  # limite de caption do Telegram
+
+    for tentativa in range(3):
+        try:
+            if url:
+                payload = {"chat_id": chat_id, campo: url}
+                if legenda:
+                    payload["caption"] = legenda
+                    payload["parse_mode"] = "Markdown"
+                r = requests.post(f"{TELEGRAM_API}/{metodo}", json=payload,
+                                  timeout=60)
+            else:
+                arquivo = base64.b64decode(conteudo_b64)
+                data = {"chat_id": chat_id}
+                if legenda:
+                    data["caption"] = legenda
+                    data["parse_mode"] = "Markdown"
+                r = requests.post(
+                    f"{TELEGRAM_API}/{metodo}", data=data,
+                    files={campo: (nome_arquivo or "arquivo", arquivo)},
+                    timeout=120,
+                )
+            if r.status_code == 200:
+                return True, "ok"
+            print(f"[telegram_bot] {metodo} HTTP {r.status_code}: "
+                  f"{r.text[:300]}")
+            if r.status_code == 429:
+                espera = r.json().get("parameters", {}).get("retry_after", 3)
+                time.sleep(espera)
+            elif 400 <= r.status_code < 500:
+                # erro definitivo (ex.: URL inacessível, chat bloqueou o bot)
+                return False, r.text[:300]
+            else:
+                time.sleep(1 + tentativa)
+        except requests.RequestException as e:
+            print(f"[telegram_bot] Erro de rede {metodo}: {e}")
+            time.sleep(1 + tentativa)
+        except Exception as e:
+            return False, f"erro processando arquivo: {e}"
+    return False, "falha após 3 tentativas"
+
+
+@telegram_bp.route("/telegram/enviar", methods=["POST"])
+def telegram_enviar():
+    # Autenticação: mesma chave secreta do webhook, no header X-Api-Key
+    if not TELEGRAM_SECRET or request.headers.get("X-Api-Key") != TELEGRAM_SECRET:
+        return jsonify({"ok": False, "erro": "não autorizado"}), 403
+
+    dados = request.get_json(silent=True) or {}
+    chat_id = dados.get("chat_id")
+    telefone = (dados.get("telefone") or "").strip()
+    cpf = (dados.get("cpf") or "").strip()
+    mensagem = (dados.get("mensagem") or "").strip()
+    arquivo_url = (dados.get("arquivo_url") or "").strip()
+    arquivo_b64 = (dados.get("arquivo_base64") or "").strip()
+    nome_arquivo = (dados.get("nome_arquivo") or "").strip()
+    tipo = (dados.get("tipo") or "").strip().lower()
+
+    if not chat_id and not telefone and not cpf:
+        return jsonify({"ok": False,
+                        "erro": "informe chat_id, telefone ou cpf"}), 400
+    if not mensagem and not arquivo_url and not arquivo_b64:
+        return jsonify({"ok": False,
+                        "erro": "informe mensagem e/ou arquivo"}), 400
+    if arquivo_b64 and not nome_arquivo:
+        return jsonify({"ok": False,
+                        "erro": "nome_arquivo é obrigatório com "
+                                "arquivo_base64"}), 400
+
+    # Lookup na TelegramID quando não veio chat_id direto
+    if not chat_id:
+        chat_id = _lookup_chat_id(telefone=telefone or None,
+                                  cpf=cpf or None)
+        if not chat_id:
+            return jsonify({"ok": False, "erro": "nao_cadastrado",
+                            "detalhe": "destinatário sem ID Telegram na "
+                                       "aba TelegramID"}), 404
+
+    # Envio
+    if arquivo_url or arquivo_b64:
+        if not tipo:
+            tipo = _inferir_tipo(nome_arquivo or arquivo_url)
+        ok, detalhe = _tg_enviar_arquivo(
+            chat_id, tipo, url=arquivo_url or None,
+            conteudo_b64=arquivo_b64 or None,
+            nome_arquivo=nome_arquivo or None, legenda=mensagem,
+        )
+        if ok:
+            return jsonify({"ok": True, "chat_id": chat_id, "enviado": tipo})
+        return jsonify({"ok": False, "erro": "falha_envio_arquivo",
+                        "detalhe": detalhe}), 502
+
+    if _tg_enviar(chat_id, mensagem):
+        return jsonify({"ok": True, "chat_id": chat_id, "enviado": "texto"})
+    return jsonify({"ok": False, "erro": "falha_envio_texto"}), 502
+
+
+# Rota de saúde (testa se o blueprint subiu e se o token está configurado)
+@telegram_bp.route("/telegram/health", methods=["GET"])
+def telegram_health():
+    return jsonify({"ok": True, "servico": "telegram_bot",
+                    "token_configurado": bool(TELEGRAM_TOKEN)})
