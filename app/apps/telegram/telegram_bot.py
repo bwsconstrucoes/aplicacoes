@@ -113,11 +113,13 @@ MSG_JA_CADASTRADO = (
     "👍 Você já está cadastrado, *{nome}*.\n\n"
     "Os avisos da BWS chegam automaticamente por aqui.\n\n"
     "O que você precisa?\n\n"
-    "*1* — 📄 Contracheque"
+    "*1* — 📄 Contracheque\n"
+    "*2* — 🔄 Atualizar meu número de telefone"
 )
 MSG_MENU = (
     "Olá, *{nome}*! O que você precisa?\n\n"
-    "*1* — 📄 Contracheque\n\n"
+    "*1* — 📄 Contracheque\n"
+    "*2* — 🔄 Atualizar meu número de telefone\n\n"
     "_Os avisos da BWS chegam automaticamente por aqui._"
 )
 MSG_NAO_ENCONTRADO_TEL = (
@@ -340,13 +342,34 @@ def _buscar_cadastro_por_chat_id(chat_id):
     return None, None
 
 
+def _buscar_linha_por_cpf(cpf):
+    """Índice da linha na TelegramID com o CPF informado, ou None."""
+    alvo = _normalizar_cpf(cpf)
+    if not alvo:
+        return None
+    try:
+        _aba_telegram_id()
+        valores = _ler_valores_com_retry(PLAN_TGID_ID, ABA_TGID)
+    except Exception as e:
+        print(f"[telegram_bot] Erro lendo TelegramID (busca CPF): {e}")
+        return None
+    for i, linha in enumerate(valores[1:], start=2):
+        cpf_cel = linha[TGID_COL_CPF - 1] if len(linha) >= TGID_COL_CPF else ""
+        if _normalizar_cpf(cpf_cel) == alvo:
+            return i
+    return None
+
+
 def _gravar_cadastro(chat_id, cpf, telefone, nome, origem, obs=""):
     """
-    Grava/atualiza o cadastro na aba TelegramID.
-    Se o chat_id já existir, atualiza a linha; senão, insere nova.
+    Grava/atualiza o cadastro na aba TelegramID — UMA linha por pessoa.
+    Prioridade: linha do chat_id; senão, linha do mesmo CPF (troca de conta
+    do Telegram substitui o chat_id antigo); senão, insere nova.
     Retry com backoff para APIError (rate limit).
     """
     linha_existente, _ = _buscar_cadastro_por_chat_id(chat_id)
+    if not linha_existente:
+        linha_existente = _buscar_linha_por_cpf(cpf)
     dados = [
         datetime.now().strftime("%d/%m/%Y %H:%M:%S"),
         cpf,
@@ -647,6 +670,15 @@ def _assist_entregar(chat_id, colaborador, ano, mes):
             pass
 
 
+def _sessao_ativa(chat_id):
+    """True se há sessão ativa do assistente (contracheque) p/ este chat."""
+    try:
+        from app.apps.chatbot import session as chat_session
+        return bool(chat_session.get_session(str(chat_id)))
+    except Exception:
+        return False
+
+
 def _assistente_processar_texto(chat_id, texto, nome_tg):
     """Camada de conversa do assistente. True = mensagem consumida."""
     try:
@@ -805,6 +837,24 @@ def telegram_webhook():
             _tg_enviar(chat_id, MSG_BOAS_VINDAS, teclado=_teclado_contato())
         return jsonify({"ok": True})
 
+    # ---- 2.4) Atualização de número de telefone ----
+    texto_norm_num = _norm_txt(texto)
+    pede_atualizacao = (
+        texto_norm_num == "2" or
+        (("atualizar" in texto_norm_num or "trocar" in texto_norm_num or
+          "mudar" in texto_norm_num or "mudei" in texto_norm_num or
+          "troquei" in texto_norm_num) and
+         ("numero" in texto_norm_num or "telefone" in texto_norm_num or
+          "celular" in texto_norm_num or "chip" in texto_norm_num))
+    )
+    if pede_atualizacao and not _sessao_ativa(chat_id) \
+            and _registro_por_chat_id(chat_id):
+        _tg_enviar(chat_id,
+                   "🔄 Sem problema! Toque no botão abaixo para confirmar "
+                   "o seu número atual — ele será atualizado no cadastro.",
+                   teclado=_teclado_contato())
+        return jsonify({"ok": True})
+
     # ---- 2.5) Assistente (contracheque e sessões ativas) ----
     if _assistente_processar_texto(chat_id, texto, nome_tg):
         return jsonify({"ok": True})
@@ -925,9 +975,16 @@ def _linhas_telegram_id():
 
 
 def _lookup_chat_id(telefone=None, cpf=None):
-    """Procura o chat_id na aba TelegramID por telefone ou CPF."""
+    """
+    Procura o chat_id na aba TelegramID por telefone ou CPF.
+    Fallback (telefone desatualizado na TelegramID): busca o CPF nas bases
+    de consulta pelo telefone informado e casa pela coluna CPF — cobre o
+    caso do RH atualizar o número na base sem a pessoa refazer o cadastro.
+    """
     alvo_tel = _variantes_telefone(telefone) if telefone else set()
     alvo_cpf = _normalizar_cpf(cpf) if cpf else None
+    cpfs_por_tel = {}
+
     for linha in _linhas_telegram_id()[1:]:
         tel_cel = linha[TGID_COL_TEL - 1] if len(linha) >= TGID_COL_TEL else ""
         cpf_cel = linha[TGID_COL_CPF - 1] if len(linha) >= TGID_COL_CPF else ""
@@ -938,6 +995,21 @@ def _lookup_chat_id(telefone=None, cpf=None):
             return id_cel.strip()
         if alvo_cpf and _normalizar_cpf(cpf_cel) == alvo_cpf:
             return id_cel.strip()
+        cpf_norm = _normalizar_cpf(cpf_cel)
+        if cpf_norm:
+            cpfs_por_tel[cpf_norm] = id_cel.strip()
+
+    # Fallback: telefone -> CPF (bases de consulta) -> TelegramID
+    if alvo_tel and cpfs_por_tel:
+        try:
+            pessoa, _ = _consultar_bases(telefone=telefone)
+        except Exception as e:
+            print(f"[telegram_bot] lookup fallback indisponível: {e}")
+            pessoa = None
+        if pessoa and pessoa.get("cpf"):
+            achado = cpfs_por_tel.get(_normalizar_cpf(pessoa["cpf"]))
+            if achado:
+                return achado
     return None
 
 
