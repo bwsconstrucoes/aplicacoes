@@ -1217,6 +1217,10 @@ def telegram_enviar():
     arquivo_b64 = (dados.get("arquivo_base64") or "").strip()
     nome_arquivo = (dados.get("nome_arquivo") or "").strip()
     tipo = (dados.get("tipo") or "").strip().lower()
+    # "0"/"false" suprime o aviso WhatsApp de não-cadastrado — usado por
+    # chamadores que JÁ entregam a mesma mensagem via WhatsApp (ex.: emissaonf)
+    avisar_whatsapp = (str(dados.get("avisar_whatsapp", "1")).strip().lower()
+                       not in ("0", "false", "nao", "não", "off"))
 
     # Upload multipart (campo de arquivo "arquivo" — recomendado no Make)
     arquivo_upload = request.files.get("arquivo")
@@ -1257,7 +1261,12 @@ def telegram_enviar():
                     tel_aviso = (pessoa or {}).get("telefone_base", "")
                 except Exception:
                     tel_aviso = ""
-            aviso = _wa_aviso_cadastro(tel_aviso)
+            if avisar_whatsapp:
+                aviso = _wa_aviso_cadastro(tel_aviso)
+            else:
+                aviso = {"ok": None,
+                         "detalhe": "aviso suprimido pelo chamador "
+                                    "(avisar_whatsapp=0)"}
             _log_pendencia("ENVIO_SEM_CADASTRO", telefone=telefone, cpf=cpf,
                            obs=f"Mensagem não entregue; aviso WhatsApp: "
                                f"{aviso.get('detalhe', '')}")

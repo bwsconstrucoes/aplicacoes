@@ -45,7 +45,10 @@ def _tg_espelho(creds, telefone, mensagem="", arquivo_url=None,
         return {"ok": False,
                 "erro": "TELEGRAM_API_KEY ausente (aba Credenciais) e "
                         "TELEGRAM_SECRET_TOKEN não definido"}
-    dados = {"telefone": telefone, "mensagem": mensagem or ""}
+    # avisar_whatsapp=0: o emissaonf já entrega a mesma mensagem via
+    # WhatsApp — suprime o aviso de "mensagem não entregue" da rota
+    dados = {"telefone": telefone, "mensagem": mensagem or "",
+             "avisar_whatsapp": "0"}
     if arquivo_url:
         dados["arquivo_url"] = arquivo_url
         if nome_arquivo:
