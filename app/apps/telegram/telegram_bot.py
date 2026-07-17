@@ -380,7 +380,17 @@ def _gravar_cadastro(chat_id, cpf, telefone, nome, origem, obs=""):
 # ---------------------------------------------------------------------------
 
 def _tg_enviar(chat_id, texto, teclado=None, remover_teclado=False):
-    payload = {"chat_id": chat_id, "text": texto, "parse_mode": "Markdown"}
+    payload = {
+        "chat_id": chat_id,
+        "text": texto,
+        "parse_mode": "Markdown",
+        # CRÍTICO: sem preview de link. O crawler do Telegram faz um GET real
+        # na URL para montar o preview — em links de ação de um clique (ex.:
+        # validação/anuência de SP), esse GET DISPARAVA o webhook antes do
+        # usuário clicar (incidente 2026-07-16).
+        "disable_web_page_preview": True,
+        "link_preview_options": {"is_disabled": True},
+    }
     if teclado:
         payload["reply_markup"] = json.dumps(teclado)
     elif remover_teclado:
