@@ -13,9 +13,55 @@ na mesma planilha de credenciais), com colunas:
 Credenciais (aba Credenciais): ZAPI_INSTANCE_ID, ZAPI_API_TOKEN, ZAPI_CLIENT_TOKEN.
 """
 from __future__ import annotations
+import os
 import requests
 
 ABA_DESTINATARIOS = "Destinatarios WhatsApp"
+
+# --- Integração multi-canal (WhatsApp + Telegram) -------------------------
+# Espelho Telegram via HTTP na rota /telegram/enviar do próprio monorepo
+# (funciona tanto no Render quanto rodando os scripts localmente).
+# API key: chave TELEGRAM_API_KEY na aba Credenciais OU env TELEGRAM_SECRET_TOKEN.
+# Toggles: env NOTIFICAR_WHATSAPP / NOTIFICAR_TELEGRAM ("0" desativa; padrão ligado).
+
+TELEGRAM_ENVIAR_URL = os.getenv(
+    "TELEGRAM_ENVIAR_URL",
+    "https://aplicacoes.bwsconstrucoes.com.br/telegram/enviar")
+
+_DESLIGADO = ("0", "false", "nao", "não", "off")
+
+
+def _ativo(env_nome: str) -> bool:
+    return os.getenv(env_nome, "1").strip().lower() not in _DESLIGADO
+
+
+def _tg_espelho(creds, telefone, mensagem="", arquivo_url=None,
+                nome_arquivo=None) -> dict:
+    """Espelho Telegram (lookup na aba TelegramID feito pelo servidor)."""
+    if not _ativo("NOTIFICAR_TELEGRAM"):
+        return {"ok": None, "detalhe": "canal desativado (NOTIFICAR_TELEGRAM=0)"}
+    key = (creds or {}).get("TELEGRAM_API_KEY") or os.getenv("TELEGRAM_SECRET_TOKEN", "")
+    if not key:
+        return {"ok": False,
+                "erro": "TELEGRAM_API_KEY ausente (aba Credenciais) e "
+                        "TELEGRAM_SECRET_TOKEN não definido"}
+    dados = {"telefone": telefone, "mensagem": mensagem or ""}
+    if arquivo_url:
+        dados["arquivo_url"] = arquivo_url
+        if nome_arquivo:
+            dados["nome_arquivo"] = nome_arquivo
+    try:
+        r = requests.post(TELEGRAM_ENVIAR_URL, data=dados,
+                          headers={"X-Api-Key": key}, timeout=120)
+        try:
+            corpo = r.json()
+        except Exception:
+            corpo = {"raw": r.text[:200]}
+        corpo.setdefault("ok", r.status_code == 200)
+        return corpo
+    except requests.RequestException as e:
+        return {"ok": False, "erro": str(e)}
+# ---------------------------------------------------------------------------
 
 
 def carregar_destinatarios(linhas: list[list[str]]) -> list[dict]:
@@ -86,18 +132,59 @@ def _base(creds):
 
 
 def enviar_texto(creds, telefone, mensagem):
-    r = requests.post(f"{_base(creds)}/send-text",
-                      json={"phone": telefone, "message": mensagem},
-                      headers={"Client-Token": creds["ZAPI_CLIENT_TOKEN"]}, timeout=40)
-    if r.status_code not in (200, 201):
-        raise RuntimeError(f"Z-API send-text HTTP {r.status_code}: {r.text[:200]}")
-    return r.json()
+    """Envia texto por WhatsApp (Z-API) + Telegram (espelho).
+    Lança RuntimeError somente se TODOS os canais ativos falharem —
+    preserva a contagem de envios dos chamadores (concluir/completar)."""
+    # --- WhatsApp (Z-API) ---
+    if _ativo("NOTIFICAR_WHATSAPP"):
+        try:
+            r = requests.post(f"{_base(creds)}/send-text",
+                              json={"phone": telefone, "message": mensagem},
+                              headers={"Client-Token": creds["ZAPI_CLIENT_TOKEN"]}, timeout=40)
+            if r.status_code in (200, 201):
+                wa = {"ok": True, "data": r.json()}
+            else:
+                wa = {"ok": False, "erro": f"HTTP {r.status_code}: {r.text[:200]}"}
+        except requests.RequestException as e:
+            wa = {"ok": False, "erro": str(e)}
+    else:
+        wa = {"ok": None, "detalhe": "canal desativado (NOTIFICAR_WHATSAPP=0)"}
+
+    # --- Telegram (espelho) ---
+    tg = _tg_espelho(creds, telefone, mensagem=mensagem)
+
+    if not (wa.get("ok") or tg.get("ok")):
+        raise RuntimeError(
+            f"envio falhou nos 2 canais — WhatsApp: {wa.get('erro') or wa.get('detalhe')} | "
+            f"Telegram: {tg.get('erro') or tg.get('detalhe')}")
+    return {"whatsapp": wa, "telegram": tg}
 
 
 def enviar_documento(creds, telefone, url_documento, nome_arquivo, extensao="pdf"):
-    r = requests.post(f"{_base(creds)}/send-document/{extensao}",
-                      json={"phone": telefone, "document": url_documento, "fileName": nome_arquivo},
-                      headers={"Client-Token": creds["ZAPI_CLIENT_TOKEN"]}, timeout=60)
-    if r.status_code not in (200, 201):
-        raise RuntimeError(f"Z-API send-document HTTP {r.status_code}: {r.text[:200]}")
-    return r.json()
+    """Envia documento por WhatsApp (Z-API) + Telegram (espelho).
+    Lança RuntimeError somente se TODOS os canais ativos falharem."""
+    # --- WhatsApp (Z-API) ---
+    if _ativo("NOTIFICAR_WHATSAPP"):
+        try:
+            r = requests.post(f"{_base(creds)}/send-document/{extensao}",
+                              json={"phone": telefone, "document": url_documento, "fileName": nome_arquivo},
+                              headers={"Client-Token": creds["ZAPI_CLIENT_TOKEN"]}, timeout=60)
+            if r.status_code in (200, 201):
+                wa = {"ok": True, "data": r.json()}
+            else:
+                wa = {"ok": False, "erro": f"HTTP {r.status_code}: {r.text[:200]}"}
+        except requests.RequestException as e:
+            wa = {"ok": False, "erro": str(e)}
+    else:
+        wa = {"ok": None, "detalhe": "canal desativado (NOTIFICAR_WHATSAPP=0)"}
+
+    # --- Telegram (espelho) ---
+    nome_tg = nome_arquivo if "." in (nome_arquivo or "") else f"{nome_arquivo}.{extensao}"
+    tg = _tg_espelho(creds, telefone, mensagem="",
+                     arquivo_url=url_documento, nome_arquivo=nome_tg)
+
+    if not (wa.get("ok") or tg.get("ok")):
+        raise RuntimeError(
+            f"envio falhou nos 2 canais — WhatsApp: {wa.get('erro') or wa.get('detalhe')} | "
+            f"Telegram: {tg.get('erro') or tg.get('detalhe')}")
+    return {"whatsapp": wa, "telegram": tg}

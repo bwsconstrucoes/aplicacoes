@@ -12,6 +12,26 @@ from .pipefy import get_field_value, get_current_phase
 
 ZAPI_BASE = 'https://api.z-api.io/instances/{instance}/token/{token}'
 
+_DESLIGADO = ('0', 'false', 'nao', 'não', 'off')
+
+
+def _wa_ativo() -> bool:
+    """Canal WhatsApp ligado? (env NOTIFICAR_WHATSAPP, padrão ligado)"""
+    return os.getenv('NOTIFICAR_WHATSAPP', '1').strip().lower() not in _DESLIGADO
+
+
+def _tg_espelho(phone: str, message: str = '', arquivo_url: str = None,
+                nome_arquivo: str = None) -> dict:
+    """Espelho Telegram via módulo compartilhado (lookup na aba TelegramID).
+    O toggle NOTIFICAR_TELEGRAM é aplicado dentro do notificador."""
+    try:
+        from app.apps.notificador import enviar_telegram
+        return enviar_telegram(telefone=phone, mensagem=message,
+                               arquivo_url=arquivo_url,
+                               nome_arquivo=nome_arquivo)
+    except Exception as e:
+        return {'ok': False, 'erro': str(e)}
+
 
 def resolve_zapi_auth(payload: dict | None = None) -> dict:
     """Resolve credenciais Z-API por payload ou variáveis de ambiente do Render.
@@ -46,45 +66,69 @@ def _zapi_headers(auth: dict) -> dict:
 
 
 def send_text(auth: dict, phone: str, message: str) -> dict:
-    base = ZAPI_BASE.format(
-        instance=as_string(auth.get('instanceId')),
-        token   =as_string(auth.get('apiToken')),
-    )
-    try:
-        resp = requests.post(
-            base + '/send-text',
-            json={'phone': phone, 'message': message},
-            headers=_zapi_headers(auth),
-            timeout=20,
+    # --- Canal WhatsApp (Z-API), respeitando o toggle ---
+    if _wa_ativo():
+        base = ZAPI_BASE.format(
+            instance=as_string(auth.get('instanceId')),
+            token   =as_string(auth.get('apiToken')),
         )
         try:
-            body = resp.json()
-        except Exception:
-            body = resp.text
-        return {'ok': resp.status_code == 200, 'status': resp.status_code, 'body': body}
-    except Exception as e:
-        return {'ok': False, 'status': 0, 'error': str(e)}
+            resp = requests.post(
+                base + '/send-text',
+                json={'phone': phone, 'message': message},
+                headers=_zapi_headers(auth),
+                timeout=20,
+            )
+            try:
+                body = resp.json()
+            except Exception:
+                body = resp.text
+            wa = {'ok': resp.status_code == 200, 'status': resp.status_code, 'body': body}
+        except Exception as e:
+            wa = {'ok': False, 'status': 0, 'error': str(e)}
+    else:
+        wa = {'ok': None, 'status': 0, 'detalhe': 'canal desativado (NOTIFICAR_WHATSAPP=0)'}
+
+    # --- Canal Telegram (espelho) ---
+    tg = _tg_espelho(phone, message=message)
+
+    return {'ok': bool(wa.get('ok')) or bool(tg.get('ok')),
+            'status': wa.get('status', 0), 'body': wa.get('body'),
+            'whatsapp': wa, 'telegram': tg}
 
 
 def send_document(auth: dict, phone: str, document_url: str, file_name: str, doc_type: str = 'pdf') -> dict:
-    base = ZAPI_BASE.format(
-        instance=as_string(auth.get('instanceId')),
-        token   =as_string(auth.get('apiToken')),
-    )
-    try:
-        resp = requests.post(
-            f'{base}/send-document/{doc_type}',
-            json={'phone': phone, 'document': document_url, 'fileName': file_name},
-            headers=_zapi_headers(auth),
-            timeout=30,
+    # --- Canal WhatsApp (Z-API), respeitando o toggle ---
+    if _wa_ativo():
+        base = ZAPI_BASE.format(
+            instance=as_string(auth.get('instanceId')),
+            token   =as_string(auth.get('apiToken')),
         )
         try:
-            body = resp.json()
-        except Exception:
-            body = resp.text
-        return {'ok': resp.status_code == 200, 'status': resp.status_code, 'body': body}
-    except Exception as e:
-        return {'ok': False, 'status': 0, 'error': str(e)}
+            resp = requests.post(
+                f'{base}/send-document/{doc_type}',
+                json={'phone': phone, 'document': document_url, 'fileName': file_name},
+                headers=_zapi_headers(auth),
+                timeout=30,
+            )
+            try:
+                body = resp.json()
+            except Exception:
+                body = resp.text
+            wa = {'ok': resp.status_code == 200, 'status': resp.status_code, 'body': body}
+        except Exception as e:
+            wa = {'ok': False, 'status': 0, 'error': str(e)}
+    else:
+        wa = {'ok': None, 'status': 0, 'detalhe': 'canal desativado (NOTIFICAR_WHATSAPP=0)'}
+
+    # --- Canal Telegram (espelho) ---
+    nome_tg = file_name if '.' in as_string(file_name) else f'{file_name}.{doc_type}'
+    tg = _tg_espelho(phone, message='', arquivo_url=document_url,
+                     nome_arquivo=nome_tg)
+
+    return {'ok': bool(wa.get('ok')) or bool(tg.get('ok')),
+            'status': wa.get('status', 0), 'body': wa.get('body'),
+            'whatsapp': wa, 'telegram': tg}
 
 
 def send_messages_batch(auth: dict, messages: List[Dict[str, Any]]) -> List[dict]:

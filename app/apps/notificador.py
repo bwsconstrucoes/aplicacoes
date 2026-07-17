@@ -186,6 +186,28 @@ def _canal_ativo(canal):
 
 
 # ---------------------------------------------------------------------------
+# Funções públicas auxiliares (usadas pelos zapi.py dos módulos)
+# ---------------------------------------------------------------------------
+
+def canal_ativo(canal):
+    """Exposição pública do toggle por canal (env NOTIFICAR_*)."""
+    return _canal_ativo(canal)
+
+
+def enviar_telegram(telefone=None, cpf=None, chat_id=None, mensagem="",
+                    arquivo_url=None, arquivo_base64=None, nome_arquivo=None,
+                    tipo=None):
+    """Envio SÓ pelo canal Telegram, respeitando o toggle NOTIFICAR_TELEGRAM.
+    Usado como espelho pelos módulos que mantêm o envio Z-API próprio."""
+    if not _canal_ativo("telegram"):
+        return {"ok": None, "detalhe": "canal desativado (env NOTIFICAR_*)"}
+    return _tg_notificar(telefone=telefone, cpf=cpf, chat_id=chat_id,
+                         mensagem=mensagem, arquivo_url=arquivo_url,
+                         arquivo_base64=arquivo_base64,
+                         nome_arquivo=nome_arquivo, tipo=tipo)
+
+
+# ---------------------------------------------------------------------------
 # Função pública
 # ---------------------------------------------------------------------------
 

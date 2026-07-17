@@ -20,6 +20,27 @@ logger = logging.getLogger(__name__)
 
 ZAPI_BASE_URL = "https://api.z-api.io/instances/{instance_id}/token/{api_token}"
 
+_DESLIGADO = ('0', 'false', 'nao', 'não', 'off')
+
+
+def _wa_ativo() -> bool:
+    """Canal WhatsApp ligado? (env NOTIFICAR_WHATSAPP, padrão ligado)"""
+    return os.getenv('NOTIFICAR_WHATSAPP', '1').strip().lower() not in _DESLIGADO
+
+
+def _tg_espelho(telefone: str, mensagem: str = '', arquivo_url: str = None,
+                nome_arquivo: str = None) -> dict:
+    """Espelho Telegram via módulo compartilhado (lookup na aba TelegramID).
+    O toggle NOTIFICAR_TELEGRAM é aplicado dentro do notificador."""
+    try:
+        from app.apps.notificador import enviar_telegram
+        return enviar_telegram(telefone=telefone, mensagem=mensagem,
+                               arquivo_url=arquivo_url,
+                               nome_arquivo=nome_arquivo)
+    except Exception as e:
+        logger.warning('[zapi] espelho Telegram falhou: %s', e)
+        return {'ok': False, 'erro': str(e)}
+
 
 def _get_config(override: dict = None) -> dict:
     """
@@ -67,23 +88,37 @@ def enviar_texto(telefone: str, mensagem: str, zapi_config: dict = None) -> dict
     if not telefone or not mensagem:
         return {'ok': False, 'erro': 'telefone e mensagem são obrigatórios'}
 
-    cfg  = _get_config(zapi_config)
-    url  = _base_url(cfg) + '/send-text'
-    body = {
-        'phone':   _normalizar_telefone(telefone),
-        'message': mensagem,
-    }
-
-    try:
-        resp = requests.post(url, json=body, headers=_headers(cfg), timeout=20)
-        ok   = 200 <= resp.status_code < 300
+    # --- Canal WhatsApp (Z-API), respeitando o toggle ---
+    if _wa_ativo():
+        cfg  = _get_config(zapi_config)
+        url  = _base_url(cfg) + '/send-text'
+        body = {
+            'phone':   _normalizar_telefone(telefone),
+            'message': mensagem,
+        }
         try:
-            data = resp.json()
-        except Exception:
-            data = {'raw': resp.text}
-        return {'ok': ok, 'status': resp.status_code, 'data': data}
-    except requests.RequestException as e:
-        return {'ok': False, 'erro': str(e)}
+            resp = requests.post(url, json=body, headers=_headers(cfg), timeout=20)
+            ok   = 200 <= resp.status_code < 300
+            try:
+                data = resp.json()
+            except Exception:
+                data = {'raw': resp.text}
+            wa = {'ok': ok, 'status': resp.status_code, 'data': data}
+        except requests.RequestException as e:
+            wa = {'ok': False, 'erro': str(e)}
+    else:
+        wa = {'ok': None, 'detalhe': 'canal desativado (NOTIFICAR_WHATSAPP=0)'}
+
+    # --- Canal Telegram (espelho) ---
+    tg = _tg_espelho(telefone, mensagem=mensagem)
+
+    return {
+        'ok': bool(wa.get('ok')) or bool(tg.get('ok')),
+        'whatsapp': wa,
+        'telegram': tg,
+        'status': wa.get('status'),
+        'data':   wa.get('data'),
+    }
 
 
 def enviar_arquivo(telefone: str, link_arquivo: str, caption: str = '',
@@ -94,25 +129,41 @@ def enviar_arquivo(telefone: str, link_arquivo: str, caption: str = '',
     if not telefone or not link_arquivo:
         return {'ok': False, 'erro': 'telefone e link_arquivo são obrigatórios'}
 
-    cfg  = _get_config(zapi_config)
-    url  = _base_url(cfg) + '/send-document/link'
-    body = {
-        'phone':    _normalizar_telefone(telefone),
-        'document': link_arquivo,
-        'fileName': link_arquivo.split('/')[-1][:50],
-        'caption':  caption or '',
-    }
-
-    try:
-        resp = requests.post(url, json=body, headers=_headers(cfg), timeout=30)
-        ok   = 200 <= resp.status_code < 300
+    # --- Canal WhatsApp (Z-API), respeitando o toggle ---
+    if _wa_ativo():
+        cfg  = _get_config(zapi_config)
+        url  = _base_url(cfg) + '/send-document/link'
+        body = {
+            'phone':    _normalizar_telefone(telefone),
+            'document': link_arquivo,
+            'fileName': link_arquivo.split('/')[-1][:50],
+            'caption':  caption or '',
+        }
         try:
-            data = resp.json()
-        except Exception:
-            data = {'raw': resp.text}
-        return {'ok': ok, 'status': resp.status_code, 'data': data}
-    except requests.RequestException as e:
-        return {'ok': False, 'erro': str(e)}
+            resp = requests.post(url, json=body, headers=_headers(cfg), timeout=30)
+            ok   = 200 <= resp.status_code < 300
+            try:
+                data = resp.json()
+            except Exception:
+                data = {'raw': resp.text}
+            wa = {'ok': ok, 'status': resp.status_code, 'data': data}
+        except requests.RequestException as e:
+            wa = {'ok': False, 'erro': str(e)}
+    else:
+        wa = {'ok': None, 'detalhe': 'canal desativado (NOTIFICAR_WHATSAPP=0)'}
+
+    # --- Canal Telegram (espelho) ---
+    tg = _tg_espelho(telefone, mensagem=caption or '',
+                     arquivo_url=link_arquivo,
+                     nome_arquivo=link_arquivo.split('/')[-1][:50])
+
+    return {
+        'ok': bool(wa.get('ok')) or bool(tg.get('ok')),
+        'whatsapp': wa,
+        'telegram': tg,
+        'status': wa.get('status'),
+        'data':   wa.get('data'),
+    }
 
 
 def enviar_multiplos(mensagens: list, zapi_config: dict = None) -> list:

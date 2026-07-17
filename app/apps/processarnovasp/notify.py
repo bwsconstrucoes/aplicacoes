@@ -1,8 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-notify.py — Mensagens de falha via Z-API (módulos 736/741 do Make).
+notify.py — Mensagens de falha (módulos 736/741 do Make).
 
-Usa o módulo genérico do validasp/zapi.py (reaproveita conexão Z-API).
+Usa o módulo compartilhado app/apps/notificador (WhatsApp via Z-API +
+Telegram via aba TelegramID, com liga/desliga por canal via env
+NOTIFICAR_WHATSAPP / NOTIFICAR_TELEGRAM).
+
+Correção 2026-07: a versão anterior chamava validasp.zapi.enviar_texto com
+assinatura errada (dict único) — o alerta nunca era enviado e a exceção era
+engolida pelo try/except.
 """
 
 import os
@@ -14,21 +20,14 @@ logger = logging.getLogger(__name__)
 
 def alertar_falha_log(sp_id: str, execucao_url: str = '') -> dict:
     """
-    Alerta WhatsApp ao admin quando registro de Log/SPsBD falha.
+    Alerta (WhatsApp + Telegram) ao admin quando registro de Log/SPsBD falha.
     Equivalente aos módulos 736 e 741 do Make.
     """
     try:
-        # importa lazy (módulo está em outro blueprint)
-        from app.apps.validasp.zapi import enviar_texto
+        # importa lazy (módulo compartilhado do monorepo)
+        from app.apps.notificador import notificar
 
-        instance_id  = os.getenv('ZAPI_INSTANCE_ID', '')
-        api_token    = os.getenv('ZAPI_API_TOKEN', '')
-        client_token = os.getenv('ZAPI_CLIENT_TOKEN', '')
-        master       = os.getenv('CHATBOT_MASTER_PHONE', '5585987846225')
-
-        if not (instance_id and api_token and client_token):
-            logger.warning('[notify] credenciais Z-API ausentes; pulando alerta')
-            return {'ok': False, 'motivo': 'credenciais ausentes'}
+        master = os.getenv('CHATBOT_MASTER_PHONE', '5585987846225')
 
         msg = (
             f'❌❌ *FALHA PROCESSAMENTO SP*\n\n'
@@ -38,14 +37,11 @@ def alertar_falha_log(sp_id: str, execucao_url: str = '') -> dict:
             f'\n\nAtenciosamente,\nBWS Bot 🤖'
         )
 
-        ack = enviar_texto({
-            'instance_id':  instance_id,
-            'api_token':    api_token,
-            'client_token': client_token,
-            'telefone':     master,
-            'mensagem':     msg,
-        })
-        return {'ok': True, 'ack': ack}
+        ack = notificar(telefone=master, mensagem=msg)
+        ok = any(bool(r.get('ok')) for r in ack.values())
+        if not ok:
+            logger.warning('[notify] alerta não entregue em nenhum canal: %s', ack)
+        return {'ok': ok, 'ack': ack}
     except Exception as e:
-        logger.exception('[notify] falha ao enviar Z-API')
+        logger.exception('[notify] falha ao enviar alerta')
         return {'ok': False, 'erro': str(e)}
