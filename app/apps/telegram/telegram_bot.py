@@ -900,6 +900,18 @@ def _lookup_chat_id(telefone=None, cpf=None):
     return None
 
 
+def _destravar_escapes(texto):
+    """Converte sequências de escape LITERAIS (\\n, \\t, \\r) em caracteres
+    reais. Necessário porque o corpo form-urlencoded do Make entrega o texto
+    cru — o "\\n" que no JSON virava quebra de linha chega como barra + n."""
+    if not texto or "\\" not in texto:
+        return texto
+    return (texto.replace("\\r\\n", "\n")
+                 .replace("\\n", "\n")
+                 .replace("\\t", "\t")
+                 .replace("\\r", ""))
+
+
 def _inferir_tipo(nome_ou_url):
     base = (nome_ou_url or "").lower().split("?")[0]
     return "imagem" if base.endswith(_EXT_IMAGEM) else "documento"
@@ -1026,7 +1038,7 @@ def telegram_enviar():
     chat_id = dados.get("chat_id")
     telefone = (dados.get("telefone") or "").strip()
     cpf = (dados.get("cpf") or "").strip()
-    mensagem = (dados.get("mensagem") or "").strip()
+    mensagem = _destravar_escapes((dados.get("mensagem") or "").strip())
     arquivo_url = (dados.get("arquivo_url") or "").strip()
     arquivo_b64 = (dados.get("arquivo_base64") or "").strip()
     nome_arquivo = (dados.get("nome_arquivo") or "").strip()
