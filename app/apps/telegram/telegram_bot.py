@@ -43,7 +43,9 @@ import base64
 import json
 import os
 import re
+import threading
 import time
+import unicodedata
 from datetime import datetime
 
 import requests
@@ -109,7 +111,14 @@ MSG_SUCESSO = (
 )
 MSG_JA_CADASTRADO = (
     "👍 Você já está cadastrado, *{nome}*.\n\n"
-    "Não precisa fazer mais nada — os avisos da BWS chegarão por este chat."
+    "Os avisos da BWS chegam automaticamente por aqui.\n\n"
+    "O que você precisa?\n\n"
+    "*1* — 📄 Contracheque"
+)
+MSG_MENU = (
+    "Olá, *{nome}*! O que você precisa?\n\n"
+    "*1* — 📄 Contracheque\n\n"
+    "_Os avisos da BWS chegam automaticamente por aqui._"
 )
 MSG_NAO_ENCONTRADO_TEL = (
     "⚠️ Não encontrei seu número na base da BWS.\n\n"
@@ -417,6 +426,251 @@ def _primeiro_nome(nome_completo, fallback="colaborador"):
 
 
 # ---------------------------------------------------------------------------
+# ASSISTENTE — Contracheque (porte do chatbot WhatsApp p/ o Telegram)
+# Reaproveita os módulos agnósticos de canal do app.apps.chatbot:
+#   session (estados/TTL), auth (níveis master/normal), sheets_cache
+#   (colaboradores + desligados), paystub (recorte do PDF por CPF) e
+#   dropbox_client (download da folha).
+# Diferença p/ o WhatsApp: aqui NÃO se pede CPF — a identidade já foi
+# verificada no cadastro da TelegramID (número validado pelo Telegram).
+# ---------------------------------------------------------------------------
+
+PALAVRAS_RESET = {"sair", "cancelar", "reset", "reiniciar", "inicio"}
+PALAVRAS_CONTRACHEQUE = ("contracheque", "holerite", "salario", "folha")
+
+
+def _norm_txt(texto):
+    t = unicodedata.normalize("NFD", (texto or "").strip().lower())
+    return "".join(ch for ch in t if unicodedata.category(ch) != "Mn")
+
+
+def _registro_por_chat_id(chat_id):
+    """Dados do cadastro na aba TelegramID: {cpf, telefone, nome} ou None."""
+    alvo = str(chat_id)
+    try:
+        linhas = _linhas_telegram_id()
+    except Exception as e:
+        print(f"[telegram_bot] assistente: TelegramID indisponível: {e}")
+        return None
+    for linha in linhas[1:]:
+        id_cel = linha[TGID_COL_ID - 1] if len(linha) >= TGID_COL_ID else ""
+        if id_cel.strip() == alvo:
+            return {
+                "cpf": linha[TGID_COL_CPF - 1] if len(linha) >= TGID_COL_CPF else "",
+                "telefone": linha[TGID_COL_TEL - 1] if len(linha) >= TGID_COL_TEL else "",
+                "nome": linha[TGID_COL_NOME - 1] if len(linha) >= TGID_COL_NOME else "",
+            }
+    return None
+
+
+def _assist_modulos():
+    """Import lazy dos módulos do chatbot (não derruba o cadastro se falhar)."""
+    from app.apps.chatbot import session as chat_session
+    from app.apps.chatbot import auth as chat_auth
+    from app.apps.chatbot import sheets_cache as chat_sheets
+    from app.apps.chatbot import paystub as chat_paystub
+    from app.apps.chatbot import dropbox_client as chat_dropbox
+    return chat_session, chat_auth, chat_sheets, chat_paystub, chat_dropbox
+
+
+def _assist_prompt_competencia(chat_id):
+    agora = datetime.now()
+    mes_atual = f"{agora.month:02d}/{agora.year}"
+    mes_ant = (f"{agora.month - 1:02d}/{agora.year}" if agora.month > 1
+               else f"12/{agora.year - 1}")
+    _tg_enviar(chat_id,
+               "📄 *Solicitação de Contracheque*\n\n"
+               "Para qual competência?\n\n"
+               f"• `{mes_atual}` — mês atual\n"
+               f"• `{mes_ant}` — mês anterior\n\n"
+               "Digite no formato *MM/AAAA*:")
+
+
+def _assist_iniciar(chat_id, chave, nome_tg):
+    """Pedido de contracheque: valida cadastro/desligamento e abre a sessão."""
+    chat_session, chat_auth, chat_sheets, _, _ = _assist_modulos()
+
+    registro = _registro_por_chat_id(chat_id)
+    if not registro or not registro.get("cpf"):
+        _tg_enviar(chat_id,
+                   "Para solicitar o contracheque, primeiro faça seu "
+                   "cadastro tocando no botão abaixo. 👇",
+                   teclado=_teclado_contato())
+        return
+
+    colaborador = chat_sheets.buscar_por_cpf(registro["cpf"]) or {
+        "cpf": _normalizar_cpf(registro["cpf"]),
+        "nome": registro.get("nome", ""),
+        "tel": registro.get("telefone", ""),
+        "status": "",
+    }
+    if chat_sheets.esta_desligado(colaborador):
+        _tg_enviar(chat_id,
+                   "ℹ️ Você não faz mais parte do quadro de colaboradores.\n\n"
+                   "Entre em contato com o *RH* para mais informações.")
+        return
+
+    # MASTER pode consultar o contracheque de qualquer CPF
+    if chat_auth.is_master(registro.get("telefone", "")):
+        chat_session.criar_session(chave, "AGUARDANDO_CPF_MASTER")
+        chat_session.atualizar_session(
+            chave, estado="AGUARDANDO_CPF_MASTER",
+            dados_extra={"colaborador": colaborador,
+                         "telefone_master": registro.get("telefone", "")})
+        _tg_enviar(chat_id,
+                   "🔑 *Acesso master*\n\n"
+                   "Envie o *CPF* do colaborador (somente números)\n"
+                   "ou `meu` para o seu próprio contracheque:")
+        return
+
+    chat_session.criar_session(chave, "AGUARDANDO_COMPETENCIA")
+    chat_session.atualizar_session(chave, estado="AGUARDANDO_COMPETENCIA",
+                                   dados_extra={"colaborador": colaborador})
+    _assist_prompt_competencia(chat_id)
+
+
+def _assist_cpf_master(chat_id, chave, texto, sess):
+    chat_session, chat_auth, chat_sheets, _, _ = _assist_modulos()
+    dados = sess.get("dados", {})
+    texto_norm = _norm_txt(texto)
+
+    if texto_norm == "meu":
+        colaborador = dados.get("colaborador")
+    else:
+        cpf = re.sub(r"\D", "", texto)
+        if len(cpf) != 11:
+            _tg_enviar(chat_id,
+                       "❌ CPF inválido. Informe os *11 dígitos*, "
+                       "ou `meu` para o seu próprio.")
+            return
+        r = chat_auth.validar_acesso(cpf, dados.get("telefone_master", ""))
+        if not r["ok"]:
+            if r.get("motivo") == "desligado":
+                _tg_enviar(chat_id,
+                           "ℹ️ Esse CPF consta como *desligado*. "
+                           "Envie outro CPF ou `sair`.")
+            else:
+                _tg_enviar(chat_id,
+                           "❌ CPF não encontrado na base. "
+                           "Envie outro CPF ou `sair`.")
+            return
+        colaborador = r["colaborador"]
+
+    chat_session.atualizar_session(chave, estado="AGUARDANDO_COMPETENCIA",
+                                   dados_extra={"colaborador": colaborador})
+    _assist_prompt_competencia(chat_id)
+
+
+def _assist_competencia(chat_id, chave, texto, sess):
+    chat_session, _, _, chat_paystub, _ = _assist_modulos()
+    colaborador = sess.get("dados", {}).get("colaborador")
+    if not colaborador:
+        chat_session.destruir_session(chave)
+        _tg_enviar(chat_id, "Sessão perdida. Envie *contracheque* para recomeçar.")
+        return
+
+    resultado = chat_paystub.parsear_competencia(texto)
+    if not resultado:
+        _tg_enviar(chat_id,
+                   "❌ Período não reconhecido.\n\n"
+                   "Informe no formato *MM/AAAA*. Exemplo: `04/2025`")
+        return
+
+    ano, mes = resultado
+    chat_session.destruir_session(chave)
+    _tg_enviar(chat_id,
+               f"⏳ Buscando contracheque de *{mes:02d}/{ano}*...\nAguarde. 🔍")
+    threading.Thread(target=_assist_entregar,
+                     args=(chat_id, dict(colaborador), ano, mes),
+                     daemon=True).start()
+
+
+def _assist_entregar(chat_id, colaborador, ano, mes):
+    """Roda em background: baixa a folha, recorta o contracheque e envia."""
+    try:
+        _, _, _, chat_paystub, chat_dropbox = _assist_modulos()
+        cpf = colaborador.get("cpf", "")
+        nome = colaborador.get("nome", "Colaborador")
+
+        pdf_bytes = chat_dropbox.baixar_pdf(ano, mes)
+        if not pdf_bytes:
+            _tg_enviar(chat_id,
+                       f"❌ Contracheque de *{mes:02d}/{ano}* não encontrado.\n\n"
+                       "Verifique o período ou entre em contato com o RH.")
+            return
+
+        recorte = chat_paystub.extrair_contracheque_por_cpf(pdf_bytes, cpf)
+        if not recorte:
+            _tg_enviar(chat_id,
+                       f"❌ Seu contracheque de *{mes:02d}/{ano}* não foi "
+                       "localizado no arquivo.\n\nEntre em contato com o RH.")
+            return
+
+        nome_arquivo = (f"Contracheque_{mes:02d}_{ano}_"
+                        f"{nome[:15].replace(' ', '_')}.pdf")
+        legenda = f"📄 Contracheque {mes:02d}/{ano} — {nome.title()}"
+        b64 = base64.b64encode(recorte).decode("ascii")
+
+        ok, detalhe = _tg_enviar_arquivo(chat_id, "documento",
+                                         conteudo_b64=b64,
+                                         nome_arquivo=nome_arquivo,
+                                         legenda=legenda)
+        if ok:
+            _tg_enviar(chat_id,
+                       "✅ Contracheque enviado!\n\n"
+                       "Para outra solicitação, envie *1* ou `contracheque`.")
+        else:
+            print(f"[telegram_bot] contracheque: falha no envio: {detalhe}")
+            _tg_enviar(chat_id, "❌ Erro ao enviar o arquivo. Tente novamente.")
+    except Exception as e:
+        print(f"[telegram_bot] contracheque: erro inesperado: {e}")
+        _tg_enviar(chat_id, "❌ Erro ao processar. Tente novamente em instantes.")
+    finally:
+        # PDF da folha pode ser grande — solta a memória imediatamente
+        try:
+            del pdf_bytes, recorte, b64
+        except Exception:
+            pass
+
+
+def _assistente_processar_texto(chat_id, texto, nome_tg):
+    """Camada de conversa do assistente. True = mensagem consumida."""
+    try:
+        chat_session, _, _, _, _ = _assist_modulos()
+    except Exception as e:
+        print(f"[telegram_bot] assistente indisponível (import): {e}")
+        return False
+
+    chave = str(chat_id)
+    texto_norm = _norm_txt(texto)
+
+    # Palavras de reset — só consomem se houver sessão ativa
+    if texto_norm in PALAVRAS_RESET:
+        if chat_session.get_session(chave):
+            chat_session.destruir_session(chave)
+            _tg_enviar(chat_id, "👋 Sessão encerrada. Até logo!")
+            return True
+        return False
+
+    sess = chat_session.get_session(chave)
+    if sess:
+        estado = sess.get("estado", "")
+        if estado == "AGUARDANDO_CPF_MASTER":
+            _assist_cpf_master(chat_id, chave, texto, sess)
+            return True
+        if estado == "AGUARDANDO_COMPETENCIA":
+            _assist_competencia(chat_id, chave, texto, sess)
+            return True
+        chat_session.destruir_session(chave)  # estado desconhecido
+
+    if texto_norm == "1" or any(p in texto_norm for p in PALAVRAS_CONTRACHEQUE):
+        _assist_iniciar(chat_id, chave, nome_tg)
+        return True
+
+    return False
+
+
+# ---------------------------------------------------------------------------
 # Webhook
 # ---------------------------------------------------------------------------
 
@@ -505,6 +759,10 @@ def telegram_webhook():
             _tg_enviar(chat_id, MSG_BOAS_VINDAS, teclado=_teclado_contato())
         return jsonify({"ok": True})
 
+    # ---- 2.5) Assistente (contracheque e sessões ativas) ----
+    if _assistente_processar_texto(chat_id, texto, nome_tg):
+        return jsonify({"ok": True})
+
     # ---- 3) Fallback por CPF (11 dígitos) ----
     apenas_digitos = re.sub(r"\D", "", texto)
     if len(apenas_digitos) == 11 and not texto.startswith("/"):
@@ -553,7 +811,13 @@ def telegram_webhook():
         return jsonify({"ok": True})
 
     # ---- 4) Qualquer outra coisa ----
-    _tg_enviar(chat_id, MSG_INSTRUCAO, teclado=_teclado_contato())
+    registro = _registro_por_chat_id(chat_id)
+    if registro:
+        _tg_enviar(chat_id,
+                   MSG_MENU.format(
+                       nome=_primeiro_nome(registro.get("nome"), nome_tg)))
+    else:
+        _tg_enviar(chat_id, MSG_INSTRUCAO, teclado=_teclado_contato())
     return jsonify({"ok": True})
 
 
@@ -672,11 +936,13 @@ def _baixar_arquivo_url(url):
 
 
 def _tg_enviar_arquivo(chat_id, tipo, url=None, conteudo_b64=None,
-                       nome_arquivo=None, legenda=""):
+                       conteudo_bytes=None, nome_arquivo=None, legenda=""):
     """
-    Envia documento ou imagem. URLs são baixadas pelo servidor e enviadas
-    por upload multipart (compatível com Google Drive/Dropbox); base64 vai
-    direto por multipart. Retorna (ok: bool, detalhe: str).
+    Envia documento ou imagem. Três origens possíveis:
+      url            -> baixada pelo servidor (compatível com Drive/Dropbox)
+      conteudo_bytes -> arquivo binário recebido por upload multipart
+      conteudo_b64   -> string base64
+    Retorna (ok: bool, detalhe: str).
     """
     metodo = "sendPhoto" if tipo == "imagem" else "sendDocument"
     campo = "photo" if tipo == "imagem" else "document"
@@ -688,6 +954,10 @@ def _tg_enviar_arquivo(chat_id, tipo, url=None, conteudo_b64=None,
             return False, info
         if not nome_arquivo:
             nome_arquivo = info
+    elif conteudo_bytes is not None:
+        conteudo = conteudo_bytes
+        if not conteudo:
+            return False, "arquivo enviado por upload está vazio"
     else:
         try:
             conteudo = base64.b64decode(conteudo_b64)
@@ -752,10 +1022,19 @@ def telegram_enviar():
     nome_arquivo = (dados.get("nome_arquivo") or "").strip()
     tipo = (dados.get("tipo") or "").strip().lower()
 
+    # Upload multipart (campo de arquivo "arquivo" — recomendado no Make)
+    arquivo_upload = request.files.get("arquivo")
+    bytes_upload = None
+    if arquivo_upload:
+        bytes_upload = arquivo_upload.read()
+        if not nome_arquivo:
+            nome_arquivo = arquivo_upload.filename or ""
+
     if not chat_id and not telefone and not cpf:
         return jsonify({"ok": False,
                         "erro": "informe chat_id, telefone ou cpf"}), 400
-    if not mensagem and not arquivo_url and not arquivo_b64:
+    if not mensagem and not arquivo_url and not arquivo_b64 \
+            and bytes_upload is None:
         return jsonify({"ok": False,
                         "erro": "informe mensagem e/ou arquivo"}), 400
     if arquivo_b64 and not nome_arquivo:
@@ -778,12 +1057,13 @@ def telegram_enviar():
                                        "aba TelegramID"}), 404
 
     # Envio
-    if arquivo_url or arquivo_b64:
+    if arquivo_url or arquivo_b64 or bytes_upload is not None:
         if not tipo:
             tipo = _inferir_tipo(nome_arquivo or arquivo_url)
         ok, detalhe = _tg_enviar_arquivo(
             chat_id, tipo, url=arquivo_url or None,
             conteudo_b64=arquivo_b64 or None,
+            conteudo_bytes=bytes_upload,
             nome_arquivo=nome_arquivo or None, legenda=mensagem,
         )
         if ok:
