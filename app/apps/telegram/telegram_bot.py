@@ -364,6 +364,10 @@ def _gravar_cadastro(chat_id, cpf, telefone, nome, origem, obs=""):
                           value_input_option="USER_ENTERED")
             else:
                 ws.append_row(dados, value_input_option="USER_ENTERED")
+            try:
+                _CACHE_TGID["ts"] = 0.0  # invalida o cache de envio
+            except Exception:
+                pass
             return True
         except gspread.exceptions.APIError as e:
             print(f"[telegram_bot] APIError gravando TelegramID "
@@ -714,13 +718,34 @@ def telegram_webhook():
 
         telefone = contato.get("phone_number", "")
 
-        # Já cadastrado? Atualiza telefone e confirma pelo nome.
+        # Já cadastrado? Se o telefone estiver vazio ou diferente, completa
+        # o cadastro com o número verificado (caso do cadastro feito por CPF).
         linha, nome_cad = _buscar_cadastro_por_chat_id(chat_id)
         if linha:
-            _tg_enviar(chat_id,
-                       MSG_JA_CADASTRADO.format(
-                           nome=_primeiro_nome(nome_cad, nome_tg)),
-                       remover_teclado=True)
+            registro = _registro_por_chat_id(chat_id) or {}
+            tel_atual = re.sub(r"\D", "", registro.get("telefone", ""))
+            tel_novo = _telefone_canonico(telefone)
+            if not tel_atual or tel_atual != tel_novo:
+                _gravar_cadastro(chat_id, registro.get("cpf", ""), telefone,
+                                 registro.get("nome", "") or nome_cad,
+                                 origem="TELEFONE",
+                                 obs="Telefone confirmado/atualizado pelo "
+                                     "botão de contato")
+                _log_pendencia("TELEFONE_CONFIRMADO", telefone=tel_novo,
+                               cpf=registro.get("cpf", ""), chat_id=chat_id,
+                               nome=nome_tg)
+                _tg_enviar(chat_id,
+                           "✅ Número confirmado, *{nome}*! Seu cadastro "
+                           "está completo.".format(
+                               nome=_primeiro_nome(
+                                   registro.get("nome", "") or nome_cad,
+                                   nome_tg)),
+                           remover_teclado=True)
+            else:
+                _tg_enviar(chat_id,
+                           MSG_JA_CADASTRADO.format(
+                               nome=_primeiro_nome(nome_cad, nome_tg)),
+                           remover_teclado=True)
             return jsonify({"ok": True})
 
         pessoa, leitura_ok = _consultar_bases(telefone=telefone)
@@ -761,10 +786,21 @@ def telegram_webhook():
     if texto.startswith("/start"):
         linha, nome_cad = _buscar_cadastro_por_chat_id(chat_id)
         if linha:
-            _tg_enviar(chat_id,
-                       MSG_JA_CADASTRADO.format(
-                           nome=_primeiro_nome(nome_cad, nome_tg)),
-                       remover_teclado=True)
+            registro = _registro_por_chat_id(chat_id) or {}
+            if not re.sub(r"\D", "", registro.get("telefone", "")):
+                _tg_enviar(chat_id,
+                           "📱 Seu cadastro está quase completo, *{nome}*! "
+                           "Toque no botão abaixo para confirmar o seu "
+                           "número de telefone.".format(
+                               nome=_primeiro_nome(
+                                   registro.get("nome", "") or nome_cad,
+                                   nome_tg)),
+                           teclado=_teclado_contato())
+            else:
+                _tg_enviar(chat_id,
+                           MSG_JA_CADASTRADO.format(
+                               nome=_primeiro_nome(nome_cad, nome_tg)),
+                           remover_teclado=True)
         else:
             _tg_enviar(chat_id, MSG_BOAS_VINDAS, teclado=_teclado_contato())
         return jsonify({"ok": True})
@@ -791,13 +827,18 @@ def telegram_webhook():
                 origem="CPF",
                 obs=(f"Validado por CPF na base {pessoa['base']}; telefone "
                      f"do Telegram diverge do cadastrado "
-                     f"({pessoa['telefone_base']}) — RH conferir"),
+                     f"({pessoa['telefone_base']}) — aguardando confirmação "
+                     f"do número pelo botão de contato"),
             )
             if ok:
                 _tg_enviar(chat_id,
                            MSG_SUCESSO.format(
-                               nome=_primeiro_nome(pessoa["nome"], nome_tg)),
-                           remover_teclado=True)
+                               nome=_primeiro_nome(pessoa["nome"], nome_tg)))
+                _tg_enviar(chat_id,
+                           "📱 *Falta só um passo:* toque no botão abaixo "
+                           "para confirmar o seu número de telefone e "
+                           "completar o cadastro.",
+                           teclado=_teclado_contato())
                 _log_pendencia("CADASTRO_CPF_DIVERGENTE",
                                cpf=pessoa["cpf"], chat_id=chat_id,
                                nome=nome_tg,
