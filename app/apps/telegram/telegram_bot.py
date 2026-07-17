@@ -912,6 +912,67 @@ def _destravar_escapes(texto):
                  .replace("\\r", ""))
 
 
+# --- Aviso de migração via WhatsApp p/ destinatário sem cadastro -----------
+# Quando um envio chega p/ alguém sem ID Telegram, em vez de falhar (404 e
+# cenário interrompido no Make), o servidor manda um alerta pelo WhatsApp
+# (Z-API) cobrando o cadastro — e responde 200 p/ o fluxo seguir.
+# Throttle de 6h por telefone p/ não bombardear a pessoa em lotes.
+
+TELEGRAM_BOT_LINK = os.environ.get("TELEGRAM_BOT_LINK",
+                                   "t.me/bwsconstrucoesbotbot")
+_AVISOS_WA = {}           # telefone -> timestamp do último aviso
+_AVISOS_WA_JANELA = 6 * 3600
+
+MSG_AVISO_CADASTRO_WA = (
+    "⚠️ *BWS Construções — Aviso importante*\n\n"
+    "Você deveria ter recebido *agora* uma mensagem da BWS, mas ela "
+    "*NÃO foi entregue* porque você ainda não fez o cadastro no *Telegram* "
+    "— o novo canal oficial de avisos da empresa.\n\n"
+    "Para não perder as próximas mensagens (pagamentos, comprovantes e "
+    "comunicados), faça o cadastro agora. Leva 1 minuto:\n\n"
+    "1️⃣ Abra: {link}\n"
+    "2️⃣ Toque em *INICIAR*\n"
+    "3️⃣ Toque em *📱 Compartilhar meu número*\n\n"
+    "_Não tem o Telegram? Instale pela loja de aplicativos, crie sua conta "
+    "e depois abra o link._\n\n"
+    "Dúvidas? Fale com o RH/Financeiro."
+)
+
+
+def _wa_aviso_cadastro(telefone):
+    """Envia o alerta de migração via Z-API. Retorna dict com o resultado."""
+    tel = re.sub(r"\D", "", telefone or "")
+    if not tel:
+        return {"ok": False, "detalhe": "sem telefone para avisar"}
+
+    agora = time.time()
+    ultimo = _AVISOS_WA.get(tel, 0)
+    if agora - ultimo < _AVISOS_WA_JANELA:
+        return {"ok": None, "detalhe": "aviso já enviado nas últimas 6h"}
+
+    instancia = os.environ.get("ZAPI_INSTANCE_ID", "")
+    token = os.environ.get("ZAPI_INSTANCE_TOKEN", "")
+    client_token = os.environ.get("ZAPI_CLIENT_TOKEN", "")
+    if not instancia or not token:
+        return {"ok": False,
+                "detalhe": "ZAPI_INSTANCE_ID/ZAPI_INSTANCE_TOKEN não configurados"}
+
+    url = (f"https://api.z-api.io/instances/{instancia}"
+           f"/token/{token}/send-text")
+    headers = {"Client-Token": client_token} if client_token else {}
+    mensagem = MSG_AVISO_CADASTRO_WA.format(link=TELEGRAM_BOT_LINK)
+    try:
+        r = requests.post(url, json={"phone": tel, "message": mensagem},
+                          headers=headers, timeout=20)
+        if r.status_code == 200:
+            _AVISOS_WA[tel] = agora
+            return {"ok": True, "detalhe": "aviso enviado via WhatsApp"}
+        return {"ok": False,
+                "detalhe": f"Z-API HTTP {r.status_code}: {r.text[:150]}"}
+    except requests.RequestException as e:
+        return {"ok": False, "detalhe": f"erro de rede Z-API: {e}"}
+
+
 def _inferir_tipo(nome_ou_url):
     base = (nome_ou_url or "").lower().split("?")[0]
     return "imagem" if base.endswith(_EXT_IMAGEM) else "documento"
@@ -1074,9 +1135,24 @@ def telegram_enviar():
                             "detalhe": f"Google Sheets inacessível: "
                                        f"{str(e)[:200]}"}), 503
         if not chat_id:
+            # Sem cadastro: avisa via WhatsApp e responde 200 p/ o cenário
+            # do Make NÃO ser interrompido (migração forçada, sem quebra).
+            tel_aviso = telefone
+            if not tel_aviso and cpf:
+                try:
+                    pessoa, _ = _consultar_bases(cpf=cpf)
+                    tel_aviso = (pessoa or {}).get("telefone_base", "")
+                except Exception:
+                    tel_aviso = ""
+            aviso = _wa_aviso_cadastro(tel_aviso)
+            _log_pendencia("ENVIO_SEM_CADASTRO", telefone=telefone, cpf=cpf,
+                           obs=f"Mensagem não entregue; aviso WhatsApp: "
+                               f"{aviso.get('detalhe', '')}")
             return jsonify({"ok": False, "erro": "nao_cadastrado",
-                            "detalhe": "destinatário sem ID Telegram na "
-                                       "aba TelegramID"}), 404
+                            "detalhe": "destinatário sem ID Telegram na aba "
+                                       "TelegramID; aviso de cadastro "
+                                       "disparado via WhatsApp",
+                            "aviso_whatsapp": aviso}), 200
 
     # Envio
     if arquivo_url or arquivo_b64 or bytes_upload is not None:
