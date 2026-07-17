@@ -34,6 +34,12 @@ Canal Telegram: chamada interna direta às funções do blueprint telegram
 (mesmo processo — sem overhead de HTTP). O destinatário precisa estar na
 aba TelegramID; caso contrário retorna {"ok": False, "erro": "nao_cadastrado"}.
 
+Liga/desliga por canal SEM mexer em código (env vars no Render):
+  NOTIFICAR_TELEGRAM = "1" (padrão) | "0" desativa o canal Telegram
+  NOTIFICAR_WHATSAPP = "1" (padrão) | "0" desativa o canal WhatsApp
+Canal desativado retorna {"ok": None, "detalhe": "canal desativado"} —
+não conta como falha, apenas não envia.
+
 Canal WhatsApp: HTTP direto para a API do Z-API (api.z-api.io).
 Variáveis de ambiente:
   ZAPI_INSTANCE_ID   -> id da instância (o mesmo dos teus cenários)
@@ -163,6 +169,23 @@ def _tg_notificar(telefone=None, cpf=None, chat_id=None, mensagem="",
 
 
 # ---------------------------------------------------------------------------
+# Liga/desliga por canal (env vars; lidas a cada chamada)
+# ---------------------------------------------------------------------------
+
+_DESLIGADO = ("0", "false", "nao", "não", "off")
+
+
+def _canal_ativo(canal):
+    if canal == "telegram":
+        valor = os.environ.get("NOTIFICAR_TELEGRAM", "1")
+    elif canal == "whatsapp":
+        valor = os.environ.get("NOTIFICAR_WHATSAPP", "1")
+    else:
+        return True
+    return valor.strip().lower() not in _DESLIGADO
+
+
+# ---------------------------------------------------------------------------
 # Função pública
 # ---------------------------------------------------------------------------
 
@@ -192,6 +215,11 @@ def notificar(telefone=None, cpf=None, chat_id=None, mensagem="",
 
     resultados = {}
     for canal in canais:
+        if not _canal_ativo(canal):
+            resultados[canal] = {"ok": None,
+                                 "detalhe": "canal desativado "
+                                            "(env NOTIFICAR_*)"}
+            continue
         if canal == "telegram":
             resultados["telegram"] = _tg_notificar(
                 telefone=telefone_norm or None, cpf=cpf, chat_id=chat_id,
