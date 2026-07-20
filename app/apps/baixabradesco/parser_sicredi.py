@@ -142,13 +142,16 @@ def extract_conta_origem(text: str):
 
 
 def extract_nome_recebedor(text: str) -> str:
+    # Captura nome até o próximo campo — funciona mesmo com texto em linha única
     for p in [
-        r'Nome\s+(?:do\s+)?(?:destinat[aá]rio|benefici[aá]rio|fantasia\s+benefici[aá]rio)\s*:?\s*([^\n\r]+)',
-        r'Raz[aã]o\s+Social\s+Benefici[aá]rio\s*:?\s*([^\n\r]+)',
+        r'Nome\s+(?:do\s+)?(?:destinat[aá]rio|benefici[aá]rio|fantasia\s+benefici[aá]rio)\s*:?\s*([^:\n\r]+?)(?=\s*(?:CPF|CNPJ|Institui|Ag[eê]ncia|Nome\s+(?:do\s+)?(?:Pag|Sac)|$))',
+        r'Raz[aã]o\s+Social\s+Benefici[aá]rio\s*:?\s*([^:\n\r]+?)(?=\s*(?:CPF|CNPJ|Nome|$))',
     ]:
         m = re.search(p, text or '', flags=re.I)
         if m:
-            return as_string(m.group(1))[:120]
+            val = as_string(m.group(1)).strip()
+            if val:
+                return val[:120]
     return ''
 
 
