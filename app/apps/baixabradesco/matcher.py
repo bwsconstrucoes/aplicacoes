@@ -199,7 +199,6 @@ def match_valor_conta_agendado(receipt: ExtractedReceipt, records: List[SpRecord
     """Busca na SPsBD por valor + conta de débito + O=Pagar + AB=agendado.
     Cobre PIX sem ID onde o agendador já marcou AB=agendado mas a baixa
     ainda não foi registrada.
-    Desempate por nome do destinatário quando há múltiplos candidatos.
     """
     valor = money_to_decimal(receipt.valor_pago)
     if valor is None:
@@ -220,12 +219,18 @@ def match_valor_conta_agendado(receipt: ExtractedReceipt, records: List[SpRecord
             continue
         out.append(r)
 
-    # Desempate por nome do destinatário (nome_recebedor do comprovante vs nome_credor da SP)
-    if len(out) > 1 and receipt.nome_recebedor:
-        nome_rec = normalize_compact(receipt.nome_recebedor)
-        filtrados = [r for r in out if nome_rec and normalize_compact(r.nome_credor) == nome_rec]
-        if len(filtrados) >= 1:
-            out = filtrados
+    # Desempate: nome do credor da SP presente no texto bruto do comprovante.
+    # Não depende de extração de campo — busca direta no texto do PDF.
+    if len(out) > 1:
+        texto_comprovante = normalize_text(receipt.text or '')
+        if texto_comprovante:
+            filtrados = [
+                r for r in out
+                if normalize_text(r.nome_credor or '') and
+                   normalize_text(r.nome_credor or '') in texto_comprovante
+            ]
+            if len(filtrados) >= 1:
+                out = filtrados
 
     return out
 
