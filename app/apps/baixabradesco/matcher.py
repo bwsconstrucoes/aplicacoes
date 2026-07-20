@@ -85,15 +85,13 @@ def match_beevale(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[Sp
             continue
         if normalize_compact(r.status_pgt) != 'pagar':
             continue
-        agend = normalize_compact(r.status_agendamento)
-        if agend and agend not in {'agendado', 'agendar', 'falhaagendar'}:
+        if normalize_compact(r.status_agendamento) not in {'agendado', 'agendar', 'falhaagendar'}:
             continue
         base = money_to_decimal(r.valor_total)
         if base is None:
             continue
-        # Aceita com acréscimo 1,5% ou sem acréscimo (valor exato)
         esperado = (base * BEEVALE_MULTIPLICADOR).quantize(Decimal('0.01'))
-        if abs(esperado - valor) <= BEEVALE_TOL or base == valor:
+        if abs(esperado - valor) <= BEEVALE_TOL:
             out.append(r)
     return out
 
@@ -201,6 +199,7 @@ def match_valor_conta_agendado(receipt: ExtractedReceipt, records: List[SpRecord
     """Busca na SPsBD por valor + conta de débito + O=Pagar + AB=agendado.
     Cobre PIX sem ID onde o agendador já marcou AB=agendado mas a baixa
     ainda não foi registrada.
+    Desempate por nome do destinatário quando há múltiplos candidatos.
     """
     valor = money_to_decimal(receipt.valor_pago)
     if valor is None:
@@ -220,6 +219,14 @@ def match_valor_conta_agendado(receipt: ExtractedReceipt, records: List[SpRecord
         if conta_sp and conta_rec and conta_sp != conta_rec:
             continue
         out.append(r)
+
+    # Desempate por nome do destinatário (nome_recebedor do comprovante vs nome_credor da SP)
+    if len(out) > 1 and receipt.nome_recebedor:
+        nome_rec = normalize_compact(receipt.nome_recebedor)
+        filtrados = [r for r in out if nome_rec and normalize_compact(r.nome_credor) == nome_rec]
+        if len(filtrados) >= 1:
+            out = filtrados
+
     return out
 
 SOMAPAY_TIPOS_DESPESA = {
