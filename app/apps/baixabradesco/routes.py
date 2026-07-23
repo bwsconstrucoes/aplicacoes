@@ -10,6 +10,7 @@ from . import bp
 from .core import processar_baixabradesco
 from .diagnostico import executar_diagnostico
 from .fila import reprocessar_fila
+from .fila_tardia import adiar_payload, processar_fila_tardia
 
 
 def _authorized(payload: dict) -> bool:
@@ -34,6 +35,20 @@ def executar():
 
     except ValueError as e:
         return jsonify({'ok': False, 'app': 'baixabradesco', 'error': str(e)}), 400
+
+    except RuntimeError as e:
+        # Falha na carga inicial do Sheets por quota: adia em vez de derrubar
+        # o cenário do Make — responde 200 e o cron reprocessa depois.
+        msg = str(e)
+        if 'Falha ao carregar dados Google Sheets' in msg and (
+            '429' in msg or 'Quota exceeded' in msg or 'RESOURCE_EXHAUSTED' in msg
+        ):
+            return jsonify(adiar_payload(payload, msg))
+        body = {'ok': False, 'app': 'baixabradesco', 'error': msg}
+        debug = os.getenv('BAIXABRADESCO_DEBUG', '').lower() in {'1', 'true', 'sim', 'yes'}
+        if debug:
+            body['traceback'] = traceback.format_exc()
+        return jsonify(body), 500
 
     except Exception as e:
         body = {'ok': False, 'app': 'baixabradesco', 'error': str(e)}
@@ -74,6 +89,22 @@ def reprocessar_fila_route():
             return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
         result = reprocessar_fila(payload)
         return jsonify(result)
+    except Exception as e:
+        return jsonify({
+            'ok': False,
+            'app': 'baixabradesco',
+            'error': str(e),
+            'traceback': traceback.format_exc(),
+        }), 500
+
+@bp.route('/processar-fila-tardia', methods=['POST'])
+def processar_fila_tardia_route():
+    """Reprocessa payloads adiados por quota. Disparado pelo cron-job.org."""
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        if not _authorized(payload):
+            return jsonify({'ok': False, 'app': 'baixabradesco', 'error': 'Não autorizado.'}), 401
+        return jsonify(processar_fila_tardia())
     except Exception as e:
         return jsonify({
             'ok': False,

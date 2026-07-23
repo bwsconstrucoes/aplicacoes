@@ -13,6 +13,7 @@ from gspread.exceptions import APIError
 
 _RETRYABLE = (429, 500, 502, 503, 504)
 _MAX_TENTATIVAS = 6
+_MAX_429 = 3  # 1 chamada + 2 re-tentativas (esperas de 30s e 65s)
 
 
 def _status(e: APIError):
@@ -30,21 +31,34 @@ def instalar() -> None:
 
     def request(self, *args, **kwargs):
         atraso = 1.0
+        tent_429 = 0
         ultima = None
         for _ in range(_MAX_TENTATIVAS):
             try:
                 return _orig(self, *args, **kwargs)
             except APIError as e:
-                if _status(e) not in _RETRYABLE:
+                st = _status(e)
+                if st not in _RETRYABLE:
                     raise
                 ultima = e
                 try:
                     ra = e.response.headers.get("Retry-After")
                 except Exception:
                     ra = None
-                espera = float(ra) if (ra and str(ra).replace(".", "", 1).isdigit()) else atraso
-                time.sleep(min(espera, 30))
-                atraso = min(atraso * 2, 16)
+                ra_f = float(ra) if (ra and str(ra).replace(".", "", 1).isdigit()) else None
+
+                if st == 429:
+                    # Quota é POR MINUTO — retry de 1s é inútil. Espera a janela
+                    # seguinte: 30s na 1ª re-tentativa, 65s na 2ª, depois desiste.
+                    tent_429 += 1
+                    if tent_429 >= _MAX_429:
+                        raise
+                    espera = max(ra_f or 0.0, 30.0 if tent_429 == 1 else 65.0)
+                    time.sleep(min(espera, 65))
+                else:
+                    espera = ra_f if ra_f is not None else atraso
+                    time.sleep(min(espera, 30))
+                    atraso = min(atraso * 2, 16)
         if ultima is not None:
             raise ultima
 
