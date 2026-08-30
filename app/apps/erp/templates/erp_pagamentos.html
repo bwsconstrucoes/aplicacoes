@@ -36,6 +36,21 @@
 <div class="kpis" id="kpis"></div>
 
 <div class="cartao">
+  <div class="cartao-cab"><h3>Baixa por comprovante</h3>
+    <small>mande o PDF ou a foto do comprovante — o sistema acha o título, baixa e guarda o documento</small></div>
+  <div class="form-grade">
+    <div class="campo"><label>Comprovante</label>
+      <input type="file" id="comp-arq" accept=".pdf,.png,.jpg,.jpeg,.webp" multiple></div>
+    <div class="campo"><label>Conta que pagou</label><select id="comp-conta"></select></div>
+    <div class="campo" style="align-self:end">
+      <label class="opcao" style="margin:0 0 6px"><input type="checkbox" id="comp-auto" checked>
+        <span class="rotulo">Baixar sozinho quando tiver certeza</span></label>
+      <button class="btn amarelo" id="btn-comp">Processar comprovante</button></div>
+  </div>
+  <div id="comp-resultado"></div>
+</div>
+
+<div class="cartao">
   <div class="cartao-cab"><h3>Lotes</h3>
     <small>organize por prioridade — como no Análise de SPs, agora com histórico</small></div>
   <div id="lista-lotes"></div>
@@ -91,6 +106,8 @@ async function carregar(){
     P = d.parcelas; CONTAS = d.contas;
     const l = await api("/erp/api/lotes"); LOTES = l.lotes;
     els("conta-baixa").innerHTML = CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("")
+      || `<option value="">— cadastre uma conta —</option>`;
+    els("comp-conta").innerHTML = CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("")
       || `<option value="">— cadastre uma conta —</option>`;
     els("lote-destino").innerHTML = `<option value="">— escolher lote —</option>` +
       LOTES.filter(l=>l.status==="ABERTO").map(l=>`<option value="${l.id}">${l.nome}</option>`).join("");
@@ -265,6 +282,70 @@ async function abrirLote(id){
     }));
     els("dlg").showModal();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+els("btn-comp").addEventListener("click", async () => {
+  const arqs = [...els("comp-arq").files];
+  if (!arqs.length) { aviso("mensagem","Escolha o(s) comprovante(s).","erro"); return; }
+  const b = els("btn-comp"); b.disabled = true;
+  els("comp-resultado").innerHTML = "";
+  for (const [i, arq] of arqs.entries()) {
+    b.textContent = `Lendo ${i+1} de ${arqs.length}…`;
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    if (els("comp-conta").value) fd.append("conta_id", els("comp-conta").value);
+    fd.append("automatico", els("comp-auto").checked ? "1" : "0");
+    try {
+      const d = await api("/erp/api/pagamentos/comprovante", {method:"POST", body: fd});
+      mostrarComprovante(arq.name, d.resultado, arq);
+    } catch(e){
+      els("comp-resultado").insertAdjacentHTML("beforeend",
+        `<div class="critica BLOQUEIA"><b>${arq.name}</b>: ${e.message}</div>`);
+    }
+  }
+  b.disabled = false; b.textContent = "Processar comprovante";
+  carregar();
+});
+
+function mostrarComprovante(nome, r, arquivo){
+  const l = r.leitura || {};
+  const cab = `<b>${nome}</b> · ${l.valor?moeda(l.valor):"valor ilegível"} ·
+    ${l.data?dataBR(l.data):"sem data"} · ${l.favorecido||"favorecido não lido"}
+    <small style="color:var(--tinta-suave)"> (leitura ${(l.confianca_leitura||"").toLowerCase()})</small>`;
+  if (r.situacao === "BAIXADO") {
+    els("comp-resultado").insertAdjacentHTML("beforeend",
+      `<div class="aviso ok">${cab}<br>✔ <b>${r.baixa.numero_sp}</b> baixado
+       (${r.baixa.motivos.join(", ")}) · comprovante guardado.</div>`);
+    return;
+  }
+  const id = "cf" + Math.random().toString(36).slice(2, 8);
+  const cands = (r.candidatas||[]).map(c=>`<label class="opcao">
+      <input type="radio" name="${id}" value="${c.parcela_id}">
+      <span class="rotulo">${c.numero_sp} · ${c.credor} · ${moeda(c.valor)} ·
+        vence ${dataBR(c.vencimento)} <small>(${Math.round(c.confianca*100)}% — ${c.motivos.join(", ")})</small></span>
+    </label>`).join("");
+  els("comp-resultado").insertAdjacentHTML("beforeend",
+    `<div class="critica ${r.situacao==="BAIXADO"?"ALERTA":"CRITICA"}" data-comp="${id}">
+      ${cab}<br>${r.mensagem}
+      ${cands ? `<div style="margin-top:8px">${cands}</div>
+        <button class="btn" style="margin-top:8px" data-confirmar="${id}">Baixar a selecionada</button>` : ""}
+    </div>`);
+  const bt = document.querySelector(`[data-confirmar="${id}"]`);
+  if (bt) bt.addEventListener("click", async () => {
+    const esc = document.querySelector(`[name="${id}"]:checked`);
+    if (!esc) { aviso("mensagem","Escolha a parcela.","erro"); return; }
+    const fd = new FormData();
+    fd.append("parcela_id", esc.value);
+    fd.append("conta_id", els("comp-conta").value || (CONTAS[0] && CONTAS[0].id));
+    fd.append("data", l.data || new Date().toISOString().slice(0,10));
+    if (arquivo) fd.append("arquivo", arquivo);
+    try {
+      const d = await api("/erp/api/pagamentos/comprovante/confirmar", {method:"POST", body: fd});
+      document.querySelector(`[data-comp="${id}"]`).outerHTML =
+        `<div class="aviso ok">✔ <b>${d.baixa.numero_sp}</b> baixado e comprovante anexado.</div>`;
+      carregar();
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  });
 }
 
 els("btn-novo-lote").addEventListener("click", () => {

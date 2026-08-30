@@ -1496,6 +1496,66 @@ def api_simular_tributacao(obra_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/pagamentos/comprovante", methods=["POST"])
+@login_obrigatorio
+def api_comprovante():
+    """Baixa por comprovante: lê o PDF/foto do banco, acha o título e baixa."""
+    from app.apps.erp.core.pagamentos.comprovante import processar_comprovante
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Envie o comprovante."}), 400
+    try:
+        conteudo = arquivo.read()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = processar_comprovante(
+                s, conteudo, arquivo.filename or "comprovante.pdf",
+                conta_bancaria_id=request.form.get("conta_id", type=int),
+                baixar_automatico=(request.form.get("automatico", "1") != "0"),
+                usuario=usuario)
+            s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao processar comprovante")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/pagamentos/comprovante/confirmar", methods=["POST"])
+@login_obrigatorio
+def api_comprovante_confirmar():
+    from app.apps.erp.core.pagamentos.comprovante import confirmar_baixa
+    arquivo = request.files.get("arquivo")
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = confirmar_baixa(
+                s, parcela_id=int(request.form["parcela_id"]),
+                conta_bancaria_id=int(request.form["conta_id"]),
+                data_pagamento=request.form.get("data") or date.today().isoformat(),
+                conteudo=(arquivo.read() if arquivo else None),
+                nome_arquivo=(arquivo.filename if arquivo else ""), usuario=usuario)
+            s.commit()
+        return jsonify({"ok": True, "baixa": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao confirmar baixa por comprovante")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/titulos/<int:titulo_id>/anexos")
+@login_obrigatorio
+def api_anexos_titulo(titulo_id: int):
+    from app.apps.erp.core.pagamentos.comprovante import anexos_do_titulo
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "anexos": anexos_do_titulo(s, titulo_id)})
+    except Exception as e:
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/health")
 def health():
     """Health check do módulo — não exige login."""

@@ -48,14 +48,17 @@
       RPA, guia DARF/GPS/FGTS/DAE, fatura de concessionária, boleto, contrato,
       termo de rescisão, comprovante bancário, prestação de contas de fundo fixo)
 - [x] **Pagamentos**: agenda, baixa em lote, Pix copia-e-cola + QR
-- [ ] Pagamentos — falta: comprovante anexado ao título e aviso a quem solicitou
+- [x] Baixa por COMPROVANTE: lê o PDF/foto do banco, acha o título por valor +
+      favorecido + nº da SP, baixa e anexa o documento (Dropbox) — `substitui o
+      baixabradesco dentro do ERP`
+- [ ] Pagamentos — falta: aviso a quem solicitou (WhatsApp/Telegram)
 - [x] **Lote**: prioridade, colar SPs da mensagem, acompanhar pago/não pago
 - [x] **Conciliação automática de verdade** (atribuição ótima, valores
       repetidos, tarifas/transferências classificadas)
 - [x] Tela de conciliação linha a linha por conta corrente, com ações
 - [x] Movimentações entre contas (lançamento simples)
-- [ ] Conciliação — falta: baixa por comprovante (PDF do banco, como o
-      baixabradesco faz hoje) e detecção de transferência pelo comprovante
+- [x] Conciliação — baixa por comprovante e reconhecimento de tarifa/
+      transferência pelo comprovante
 - [x] **Relatórios**: totais por 8 dimensões, DRE gerencial, analítico, CSV
 - [ ] Relatórios — falta: exportação em PDF e gráficos
 
