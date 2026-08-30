@@ -608,6 +608,36 @@ def api_editar_categoria(categoria_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/manutencao/banco")
+@login_obrigatorio
+def api_estado_banco():
+    from app.apps.erp.core.comum.migracoes import listar_estado
+    try:
+        return jsonify({"ok": True, "estado": listar_estado()})
+    except Exception as e:
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/manutencao/banco/aplicar", methods=["POST"])
+@login_obrigatorio
+def api_aplicar_migracoes():
+    """Botão de atualização do banco — restrito a ADMIN."""
+    from app.apps.erp.core.comum.migracoes import aplicar_pendentes
+    from app.apps.erp.db.models.cadastros import PerfilUsuario
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if usuario.perfil != PerfilUsuario.ADMIN:
+                return jsonify({"ok": False, "erro": "Restrito ao ADMIN."}), 403
+            nome = usuario.email
+        rel = aplicar_pendentes()
+        logger.info("ERP: %s aplicou %d migração(ões)", nome, len(rel["aplicadas"]))
+        return jsonify({"ok": True, "relatorio": rel})
+    except Exception as e:
+        logger.exception("ERP: falha ao aplicar migrações")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/health")
 def health():
     """Health check do módulo — não exige login."""

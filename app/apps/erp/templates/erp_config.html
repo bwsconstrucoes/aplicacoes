@@ -8,6 +8,13 @@
 
 <div class="kpis" id="kpis-config"></div>
 
+<div class="cartao" id="bloco-banco">
+  <div class="cartao-cab"><h3>Manutenção do banco</h3>
+    <small>estrutura de dados do ERP</small></div>
+  <div id="estado-banco" class="cartao-dica">verificando…</div>
+  <div style="margin-top:10px"><button class="btn amarelo oculto" id="btn-migrar">Aplicar atualizações do banco</button></div>
+</div>
+
 <div class="cartao">
   <div class="cartao-cab"><h3>Plano financeiro</h3>
     <small>categorias que dirigem o lançamento — natureza <b>resultado</b> (DRE) ou <b>fluxo</b> (caixa)</small></div>
@@ -72,6 +79,43 @@
 <script>
 let DADOS = {categorias: [], obras: [], contas: [], usuarios: []};
 
+async function checarBanco(){
+  try {
+    const d = await api("/erp/api/manutencao/banco");
+    const e = d.estado;
+    if (e.pendentes.length) {
+      els("estado-banco").innerHTML = `<span style="color:var(--vermelho)"><b>${e.pendentes.length}
+        atualização(ões) pendente(s):</b> ${e.pendentes.join(", ")}.</span><br>
+        Enquanto não forem aplicadas, telas que dependem delas mostram erro.`;
+      els("btn-migrar").classList.remove("oculto");
+    } else {
+      els("estado-banco").innerHTML = `Banco em dia — ${e.aplicadas.length} atualização(ões) aplicada(s).
+        Última: ${e.aplicadas.length ? e.aplicadas[e.aplicadas.length-1].nome + " em " +
+        e.aplicadas[e.aplicadas.length-1].em : "—"}.`;
+      els("btn-migrar").classList.add("oculto");
+    }
+  } catch(err) {
+    els("estado-banco").innerHTML = `<span style="color:var(--vermelho)">Não foi possível
+      verificar o banco: ${err.message}</span>`;
+  }
+}
+
+els("btn-migrar").addEventListener("click", async () => {
+  const b = els("btn-migrar"); b.disabled = true; b.textContent = "Aplicando…";
+  try {
+    const d = await api("/erp/api/manutencao/banco/aplicar", {method:"POST"});
+    const r = d.relatorio;
+    if (r.erro) {
+      aviso("mensagem", `Aplicadas: ${r.aplicadas.join(", ") || "nenhuma"}.<br>` +
+        `<b>Parou em ${r.erro.migracao}:</b> ${r.erro.erro}`, "erro");
+    } else {
+      aviso("mensagem", `Banco atualizado: ${r.aplicadas.length} migração(ões) aplicada(s).`, "ok");
+    }
+    checarBanco(); carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Aplicar atualizações do banco";
+});
+
 async function carregar(){
   try {
     const d = await api("/erp/api/config");
@@ -88,7 +132,14 @@ async function carregar(){
       <div class="kpi estatico roxo"><div class="kpi-rotulo">Usuários</div>
         <div class="kpi-valor">${DADOS.usuarios.length}</div></div>`;
     desenhar();
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  } catch(e){
+    aviso("mensagem", `Não foi possível carregar os cadastros: ${e.message}` +
+      (e.message.includes("does not exist")
+        ? "<br><b>Provável causa:</b> o banco está sem as últimas atualizações — "
+          + "use o botão <b>Aplicar atualizações do banco</b> acima."
+        : ""), "erro");
+    els("lista-grupos").innerHTML = "";
+  }
 }
 
 function desenhar(){
@@ -191,6 +242,7 @@ els("btn-nova-conta").addEventListener("click", () => formulario("Nova conta da 
   {id:"agencia", rotulo:"Agência", obrig:true}, {id:"conta", rotulo:"Conta", obrig:true},
 ], "/erp/api/config/conta"));
 
+checarBanco();
 ["busca-cat","busca-obra"].forEach(id => els(id).addEventListener("input", desenhar));
 els("ver-inativas").addEventListener("change", desenhar);
 
