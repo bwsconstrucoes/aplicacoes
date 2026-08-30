@@ -15,7 +15,7 @@ from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric,
     SmallInteger, Text, func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.apps.erp.db.database import Base
@@ -39,6 +39,11 @@ class StatusTitulo(str, enum.Enum):
     PAGO = "PAGO"
     CANCELADO = "CANCELADO"
     ESTORNADO = "ESTORNADO"
+
+
+class EspecieTitulo(str, enum.Enum):
+    PAGAR = "PAGAR"
+    RECEBER = "RECEBER"
 
 
 class StatusDedutibilidade(str, enum.Enum):
@@ -178,6 +183,13 @@ class Titulo(Base):
     forma_pagamento: Mapped[FormaPagamento] = mapped_column(
         pg_enum(FormaPagamento, "forma_pagamento"), nullable=False)
     fornecedor_conta_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("fornecedor_contas.id"))
+    especie: Mapped[str] = mapped_column(
+        pg_enum(EspecieTitulo, "especie_titulo"), nullable=False, default=EspecieTitulo.PAGAR)
+    numero_medicao: Mapped[Optional[str]] = mapped_column(Text)
+    periodo_inicio: Mapped[Optional[date]] = mapped_column(Date)
+    periodo_fim: Mapped[Optional[date]] = mapped_column(Date)
+    notas_fiscais: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
+    cliente_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("fornecedores.id"))
     dedutivel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     dedutibilidade: Mapped[str] = mapped_column(
         pg_enum(StatusDedutibilidade, "status_dedutibilidade"),
@@ -202,7 +214,9 @@ class Titulo(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    fornecedor: Mapped[Fornecedor] = relationship()
+    # duas FKs apontam para fornecedores (credor e cliente): explicitar qual é qual
+    fornecedor: Mapped[Fornecedor] = relationship(foreign_keys=[fornecedor_id])
+    cliente: Mapped[Optional[Fornecedor]] = relationship(foreign_keys=[cliente_id])
     categoria: Mapped[Categoria] = relationship()
     parcelas: Mapped[list["Parcela"]] = relationship(back_populates="titulo", order_by="Parcela.numero")
     rateios: Mapped[list["Rateio"]] = relationship(back_populates="titulo")
@@ -390,3 +404,26 @@ class LoteItem(Base):
 
     lote: Mapped[Lote] = relationship(back_populates="itens")
     parcela: Mapped[Parcela] = relationship()
+
+
+class Movimentacao(Base):
+    """Movimentação entre contas próprias — transferência, aplicação, resgate.
+    Lançamento propositalmente simples: valor, data, contas e uma descrição."""
+    __tablename__ = "movimentacoes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    tipo: Mapped[str] = mapped_column(Text, nullable=False, default="TRANSFERENCIA")
+    conta_origem_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("contas_bancarias.id"))
+    conta_destino_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("contas_bancarias.id"))
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    data_movimento: Mapped[date] = mapped_column(Date, nullable=False)
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
+    categoria_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("categorias.id"))
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    comprovante_anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    extrato_saida_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("extratos.id"))
+    extrato_entrada_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("extratos.id"))
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

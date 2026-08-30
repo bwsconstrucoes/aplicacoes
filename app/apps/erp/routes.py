@@ -38,6 +38,7 @@ ABAS = [
     ("titulos", "Títulos", "erp.pagina_titulos"),
     ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
     ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
+    ("receber", "Receber", "erp.pagina_receber"),
     ("relatorios", "Relatórios", "erp.pagina_relatorios"),
     ("importar", "Importar", "erp.pagina_importar"),
     ("config", "Configurações", "erp.pagina_config"),
@@ -126,6 +127,12 @@ def pagina_pagamentos():
 @login_obrigatorio
 def pagina_conciliacao():
     return render_template("erp_conciliacao.html", **_contexto("conciliacao"))
+
+
+@bp.route("/erp/receber")
+@login_obrigatorio
+def pagina_receber():
+    return render_template("erp_receber.html", **_contexto("receber"))
 
 
 @bp.route("/erp/relatorios")
@@ -1163,6 +1170,116 @@ def api_relatorios_csv():
                         headers={"Content-Disposition": f'attachment; filename="{nome}"'})
     except Exception as e:
         logger.exception("ERP: falha ao exportar CSV")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Extrato, movimentações e recebimentos
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/conciliacao/extrato")
+@login_obrigatorio
+def api_extrato():
+    from app.apps.erp.core.pagamentos.conciliacao import extrato_detalhado
+    try:
+        with get_session() as s:
+            linhas = extrato_detalhado(
+                s, conta_bancaria_id=request.args.get("conta_id", type=int),
+                situacao=request.args.get("situacao", "todos"))
+        return jsonify({"ok": True, "linhas": linhas})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar extrato")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/conciliacao/candidatos/<int:extrato_id>")
+@login_obrigatorio
+def api_candidatos(extrato_id: int):
+    from app.apps.erp.core.pagamentos.conciliacao import candidatos_para_extrato
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "candidatos": candidatos_para_extrato(s, extrato_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+@bp.route("/erp/api/movimentacoes", methods=["GET", "POST"])
+@login_obrigatorio
+def api_movimentacoes():
+    from app.apps.erp.core.titulos.receber import (
+        TIPOS_MOVIMENTO, criar_movimentacao, listar_movimentacoes,
+    )
+    if request.method == "GET":
+        try:
+            with get_session() as s:
+                return jsonify({"ok": True, "movimentacoes": listar_movimentacoes(s),
+                                "tipos": [{"chave": k, "rotulo": v[0], "conta": v[1],
+                                           "exige_origem": v[2], "exige_destino": v[3]}
+                                          for k, v in TIPOS_MOVIMENTO.items()]})
+        except Exception as e:
+            logger.exception("ERP: falha ao listar movimentações")
+            return jsonify({"ok": False, "erro": str(e)}), 500
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            mov = criar_movimentacao(s, d, usuario)
+            s.commit()
+            return jsonify({"ok": True, "movimentacao_id": mov.id})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao criar movimentação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/receber", methods=["GET", "POST"])
+@login_obrigatorio
+def api_receber():
+    from app.apps.erp.core.titulos.receber import criar_medicao, listar_receber
+    if request.method == "GET":
+        try:
+            with get_session() as s:
+                return jsonify({"ok": True, "titulos": listar_receber(s, {
+                    "obra_id": request.args.get("obra_id", type=int),
+                    "status": request.args.get("status")})})
+        except Exception as e:
+            logger.exception("ERP: falha ao listar recebíveis")
+            return jsonify({"ok": False, "erro": str(e)}), 500
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            t = criar_medicao(s, d, usuario)
+            s.commit()
+            return jsonify({"ok": True, "titulo": {"id": t.id, "numero_sp": t.numero_sp,
+                                                   "liquido": float(t.valor_liquido)}})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao lançar medição")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/receber/baixar", methods=["POST"])
+@login_obrigatorio
+def api_receber_baixar():
+    from app.apps.erp.core.titulos.receber import registrar_recebimento
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = registrar_recebimento(
+                s, parcela_id=int(d["parcela_id"]),
+                conta_bancaria_id=int(d["conta_bancaria_id"]),
+                data_recebimento=date.fromisoformat(d.get("data") or date.today().isoformat()),
+                valor=d.get("valor"), notas_fiscais=d.get("notas_fiscais") or [],
+                usuario=usuario)
+            s.commit()
+        return jsonify({"ok": True, "recebimento": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no recebimento")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

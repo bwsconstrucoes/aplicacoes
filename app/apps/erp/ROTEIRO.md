@@ -52,6 +52,8 @@
 - [x] **Lote**: prioridade, colar SPs da mensagem, acompanhar pago/não pago
 - [x] **Conciliação automática de verdade** (atribuição ótima, valores
       repetidos, tarifas/transferências classificadas)
+- [x] Tela de conciliação linha a linha por conta corrente, com ações
+- [x] Movimentações entre contas (lançamento simples)
 - [ ] Conciliação — falta: baixa por comprovante (PDF do banco, como o
       baixabradesco faz hoje) e detecção de transferência pelo comprovante
 - [x] **Relatórios**: totais por 8 dimensões, DRE gerencial, analítico, CSV
@@ -67,7 +69,7 @@
 - [ ] **BeeVale**: geração das informações (existe no spsbd)
 - [ ] **Auditoria**: as checagens do spsbd que ainda não vieram
 - [ ] **Ratear**: rateio por categoria (rateio por obra já funciona no lançamento)
-- [ ] **Títulos a receber**: medição lançada, baixa e conciliação do recebimento
+- [x] **Títulos a receber**: medição (nº, período, obra/contrato, retenções), baixa com várias notas fiscais
 - [ ] **Cruzamento estilo tela do Bradesco**: conferir conta correta e credor do
       Pix contra o que foi lançado
 - [ ] **Robô Bradesco**: adaptar para dar baixa via core do ERP

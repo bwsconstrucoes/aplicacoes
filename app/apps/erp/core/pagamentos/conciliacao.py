@@ -325,3 +325,102 @@ def painel(s: Session, conta_bancaria_id: Optional[int] = None) -> dict[str, Any
         "entradas_nao_conciliadas": sum(1 for e in extratos
                                         if e.id not in ids_ex and Decimal(e.valor) > 0),
     }
+
+
+def extrato_detalhado(s: Session, conta_bancaria_id: Optional[int] = None,
+                      situacao: str = "todos", limite: int = 800) -> list[dict[str, Any]]:
+    """O extrato linha a linha com a situação de cada lançamento — é o que a
+    tela de conciliação mostra: conciliado, pendente ou sem título."""
+    from app.apps.erp.db.models.financeiro import Movimentacao
+
+    q = select(Extrato).order_by(Extrato.data_lancamento.desc(), Extrato.id.desc())
+    if conta_bancaria_id:
+        q = q.where(Extrato.conta_bancaria_id == conta_bancaria_id)
+    extratos = list(s.scalars(q.limit(limite)).all())
+    if not extratos:
+        return []
+
+    ids = [e.id for e in extratos]
+    concs = {c.extrato_id: c for c in s.scalars(
+        select(Conciliacao).where(Conciliacao.extrato_id.in_(ids),
+                                  Conciliacao.desfeita_em.is_(None))).all()}
+    pagamentos = {p.id: p for p in s.scalars(
+        select(Pagamento).where(Pagamento.id.in_([c.pagamento_id for c in concs.values()] or [0]))
+        .options(selectinload(Pagamento.parcela).selectinload(Parcela.titulo)
+                 .selectinload(Titulo.fornecedor))).all()}
+    movs = s.scalars(select(Movimentacao).where(
+        Movimentacao.extrato_saida_id.in_(ids) | Movimentacao.extrato_entrada_id.in_(ids))).all()
+    mov_por_extrato: dict[int, Any] = {}
+    for m in movs:
+        for eid in (m.extrato_saida_id, m.extrato_entrada_id):
+            if eid:
+                mov_por_extrato[eid] = m
+    contas = {c.id: c.descricao for c in s.scalars(select(ContaBancaria)).all()}
+
+    linhas = []
+    for e in extratos:
+        c = concs.get(e.id)
+        mov = mov_por_extrato.get(e.id)
+        if c is not None:
+            pg = pagamentos.get(c.pagamento_id)
+            t = pg.parcela.titulo if pg else None
+            estado, detalhe = "CONCILIADO", {
+                "titulo": t.numero_sp if t else None,
+                "titulo_id": t.id if t else None,
+                "credor": t.fornecedor.razao_social if t else None,
+                "metodo": c.metodo, "confianca": float(c.confianca or 0) or None,
+            }
+        elif mov is not None:
+            estado, detalhe = "MOVIMENTACAO", {
+                "movimentacao_id": mov.id, "tipo": mov.tipo,
+                "descricao": mov.descricao}
+        else:
+            estado, detalhe = "SEM_TITULO", {
+                "classificacao": classificar_extrato(e.historico or "", e.nome_contraparte or ""),
+            }
+            detalhe["sugestao"] = _sugestao(detalhe["classificacao"])
+        if situacao != "todos" and situacao.upper() != estado:
+            continue
+        linhas.append({
+            "extrato_id": e.id, "conta": contas.get(e.conta_bancaria_id, "—"),
+            "conta_id": e.conta_bancaria_id,
+            "data": e.data_lancamento.isoformat(), "valor": float(e.valor),
+            "entrada": float(e.valor) > 0,
+            "historico": e.historico or "", "nome": e.nome_contraparte,
+            "documento": e.documento, "estado": estado, "detalhe": detalhe,
+        })
+    return linhas
+
+
+def candidatos_para_extrato(s: Session, extrato_id: int,
+                            janela_dias: int = 10) -> list[dict[str, Any]]:
+    """Pagamentos/recebimentos ainda não conciliados que combinam com a linha
+    do extrato — usado quando o financeiro concilia à mão."""
+    e = s.get(Extrato, extrato_id)
+    if e is None:
+        raise ErroValidacao("Lançamento do extrato não encontrado.")
+    ja = select(Conciliacao.pagamento_id).where(Conciliacao.desfeita_em.is_(None))
+    alvo = abs(Decimal(e.valor))
+    inicio = e.data_lancamento - timedelta(days=janela_dias)
+    fim = e.data_lancamento + timedelta(days=janela_dias)
+    pgs = s.scalars(select(Pagamento).where(
+        Pagamento.id.not_in(ja),
+        Pagamento.conta_bancaria_id == e.conta_bancaria_id,
+        Pagamento.data_pagamento.between(inicio, fim))
+        .options(selectinload(Pagamento.parcela).selectinload(Parcela.titulo)
+                 .selectinload(Titulo.fornecedor))).all()
+    saida = []
+    for pg in pgs:
+        t = pg.parcela.titulo
+        dif = (Decimal(pg.valor_pago) - alvo).quantize(Decimal("0.01"))
+        saida.append({
+            "pagamento_id": pg.id, "titulo": t.numero_sp,
+            "credor": t.fornecedor.razao_social, "descricao": t.descricao,
+            "valor": float(pg.valor_pago), "data": pg.data_pagamento.isoformat(),
+            "diferenca": float(dif), "valor_confere": abs(dif) <= Decimal("0.01"),
+            "dias": abs((pg.data_pagamento - e.data_lancamento).days),
+            "semelhanca_nome": round(
+                _semelhanca_nome(e.nome_contraparte, t.fornecedor.razao_social), 2),
+        })
+    saida.sort(key=lambda x: (not x["valor_confere"], x["dias"], -x["semelhanca_nome"]))
+    return saida

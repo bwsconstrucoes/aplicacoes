@@ -1,23 +1,53 @@
 {% extends "erp_base.html" %}
 {% block titulo %}Conciliação — ERP BWS{% endblock %}
-{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Extrato</h2></div>
+  <div class="campo"><label>Conta corrente</label><select id="conta"></select></div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Situação</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="radio" name="sit" value="todos" checked>
+        <span class="rotulo">Todos</span><span class="qtd" id="q-todos"></span></label>
+      <label class="opcao"><input type="radio" name="sit" value="CONCILIADO">
+        <span class="rotulo">Conciliados</span><span class="qtd" id="q-conc"></span></label>
+      <label class="opcao"><input type="radio" name="sit" value="SEM_TITULO">
+        <span class="rotulo">Sem título associado</span><span class="qtd" id="q-sem"></span></label>
+      <label class="opcao"><input type="radio" name="sit" value="MOVIMENTACAO">
+        <span class="rotulo">Movimentações</span><span class="qtd" id="q-mov"></span></label>
+    </div>
+  </div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Tipo</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-saidas" checked><span class="rotulo">Saídas</span></label>
+      <label class="opcao"><input type="checkbox" id="f-entradas" checked><span class="rotulo">Entradas</span></label>
+    </div>
+  </div>
+  <div class="campo"><label>Busca no histórico</label><input id="f-busca" placeholder="tarifa, pix, nome…"></div>
+  <button class="btn amarelo" id="btn-conciliar" style="width:100%; margin-top:10px">Conciliar automaticamente</button>
+  <a class="btn secundario" href="/erp/importar" style="display:block; text-align:center; margin-top:8px; text-decoration:none">Importar extrato (OFX)</a>
+{% endblock %}
 
 {% block conteudo %}
-<h2>Conciliação bancária <small>o que saiu do banco × o que foi baixado no sistema</small></h2>
 <div id="mensagem"></div>
-
-<div class="cartao">
-  <div class="tabela-barra" style="padding:0">
-    <div class="campo" style="margin:0"><label>Conta</label>
-      <select id="conta" style="min-width:240px"></select></div>
-    <span class="espaco"></span>
-    <a class="btn secundario" href="/erp/importar">Importar extrato (OFX)</a>
-    <button class="btn amarelo" id="btn-conciliar">Conciliar automaticamente</button>
-  </div>
-</div>
-
 <div class="kpis" id="kpis"></div>
-<div id="resultado"></div>
+<div id="pendencias"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo"></span>
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-mov">+ Movimentação entre contas</button>
+  </div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th>Data</th><th>Conta</th><th class="direita">Valor</th>
+      <th>Histórico</th><th>Situação</th><th>Vinculado a</th><th></th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
 
 <dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
   <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
@@ -26,36 +56,190 @@
 
 {% block scripts %}
 <script>
-let CONTAS = [];
+let LINHAS = [], CONTAS = [], TIPOS_MOV = [];
+const ESTADOS = {CONCILIADO: "Conciliado", SEM_TITULO: "Sem título",
+                 MOVIMENTACAO: "Movimentação"};
+const rotuloEstado = e => ESTADOS[e] || e;
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
 
 async function carregar(){
   try {
-    const conta = els("conta").value || "";
-    const d = await api("/erp/api/conciliacao/painel" + (conta ? `?conta_id=${conta}` : ""));
     if (!CONTAS.length) {
-      CONTAS = d.contas;
+      const p = await api("/erp/api/conciliacao/painel");
+      CONTAS = p.contas;
       els("conta").innerHTML = `<option value="">Todas as contas</option>` +
         CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("");
+      const m = await api("/erp/api/movimentacoes");
+      TIPOS_MOV = m.tipos;
     }
-    const p = d.painel;
-    const pct = p.pagamentos_total ? Math.round(p.pagamentos_conciliados/p.pagamentos_total*100) : 0;
-    els("kpis").innerHTML = `
-      <div class="kpi estatico ${pct===100?"verde":""}"><div class="kpi-rotulo">Pagamentos conciliados</div>
-        <div class="kpi-valor">${p.pagamentos_conciliados}/${p.pagamentos_total}</div>
-        <div class="kpi-sub">${pct}% do que foi baixado</div></div>
-      <div class="kpi estatico ambar"><div class="kpi-rotulo">Aguardando conciliação</div>
-        <div class="kpi-valor">${p.pagamentos_total - p.pagamentos_conciliados}</div>
-        <div class="kpi-sub">${moeda(p.pagamentos_pendentes_valor)}</div></div>
-      <div class="kpi estatico vermelho"><div class="kpi-rotulo">Saídas sem título</div>
-        <div class="kpi-valor">${p.saidas_nao_conciliadas}</div>
-        <div class="kpi-sub">dinheiro que saiu e não estava lançado</div></div>
-      <div class="kpi estatico ciano"><div class="kpi-rotulo">Entradas no extrato</div>
-        <div class="kpi-valor">${p.entradas_nao_conciliadas}</div>
-        <div class="kpi-sub">recebimentos a tratar</div></div>`;
+    const conta = els("conta").value;
+    const d = await api("/erp/api/conciliacao/extrato" + (conta?`?conta_id=${conta}`:""));
+    LINHAS = d.linhas;
+    desenhar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
-els("conta").addEventListener("change", carregar);
+function situacaoEscolhida(){
+  return document.querySelector('[name="sit"]:checked').value;
+}
+
+function visiveis(){
+  const sit = situacaoEscolhida();
+  const busca = (els("f-busca").value||"").toLowerCase().trim();
+  return LINHAS.filter(l => {
+    if (sit !== "todos" && l.estado !== sit) return false;
+    if (!els("f-saidas").checked && !l.entrada) return false;
+    if (!els("f-entradas").checked && l.entrada) return false;
+    if (busca && !`${l.historico} ${l.nome||""}`.toLowerCase().includes(busca)) return false;
+    return true;
+  });
+}
+
+function desenhar(){
+  const conc = LINHAS.filter(l=>l.estado==="CONCILIADO");
+  const sem = LINHAS.filter(l=>l.estado==="SEM_TITULO");
+  const mov = LINHAS.filter(l=>l.estado==="MOVIMENTACAO");
+  els("q-todos").textContent = LINHAS.length;
+  els("q-conc").textContent = conc.length;
+  els("q-sem").textContent = sem.length;
+  els("q-mov").textContent = mov.length;
+  const soma = a => a.reduce((x,l)=>x+Math.abs(l.valor),0);
+  const pct = LINHAS.length ? Math.round(conc.length/LINHAS.length*100) : 0;
+  els("kpis").innerHTML = `
+    <div class="kpi estatico ${pct===100?"verde":""}"><div class="kpi-rotulo">Extrato conciliado</div>
+      <div class="kpi-valor">${pct}%</div><div class="kpi-sub">${conc.length} de ${LINHAS.length} lançamentos</div></div>
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">Sem título associado</div>
+      <div class="kpi-valor">${sem.length}</div><div class="kpi-sub">${moeda(soma(sem))}</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Movimentações</div>
+      <div class="kpi-valor">${mov.length}</div><div class="kpi-sub">${moeda(soma(mov))}</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Saldo do período</div>
+      <div class="kpi-valor" style="font-size:19px">${moeda(LINHAS.reduce((a,l)=>a+l.valor,0))}</div></div>`;
+
+  const l = visiveis();
+  els("vazio").classList.toggle("oculto", l.length>0);
+  if (!l.length) els("vazio").innerHTML = LINHAS.length
+    ? "<b>Nada nesta situação</b>Troque o filtro à esquerda."
+    : "<b>Extrato vazio</b>Importe o arquivo OFX do banco para começar.";
+  els("corpo").innerHTML = l.map(x => {
+    const d = x.detalhe || {};
+    const selo = {CONCILIADO:"aprovado", SEM_TITULO:"bloqueado", MOVIMENTACAO:"pago"}[x.estado];
+    const vinculo = x.estado === "CONCILIADO"
+      ? `<a href="/erp/titulos">${d.titulo||""}</a><small>${d.credor||""} · ${rotulo(d.metodo||"")}${d.confianca?` ${Math.round(d.confianca*100)}%`:""}</small>`
+      : x.estado === "MOVIMENTACAO"
+        ? `${rotulo(d.tipo||"")}<small>${d.descricao||""}</small>`
+        : `<small>${d.sugestao||""}</small>`;
+    return `<tr>
+      <td class="dados">${dataBR(x.data)}</td>
+      <td><small>${x.conta}</small></td>
+      <td class="direita dados ${x.valor<0?"":"" }" style="${x.valor>0?"color:var(--verde)":""}">${numero(x.valor)}</td>
+      <td class="desc">${x.historico}${x.nome?`<small>${x.nome}</small>`:""}</td>
+      <td><span class="selo ${selo}">${rotuloEstado(x.estado)}</span></td>
+      <td class="desc">${vinculo}</td>
+      <td>${x.estado==="SEM_TITULO"
+        ? `<button class="btn secundario" data-resolver="${x.extrato_id}">Resolver</button>` : ""}</td>
+    </tr>`; }).join("");
+  document.querySelectorAll("[data-resolver]").forEach(b =>
+    b.addEventListener("click", () => resolver(+b.dataset.resolver)));
+  els("resumo").innerHTML = `<b>${l.length}</b> lançamento(s) · <b>${moeda(l.reduce((a,x)=>a+x.valor,0))}</b>`;
+}
+
+async function resolver(extratoId){
+  const linha = LINHAS.find(l=>l.extrato_id===extratoId);
+  let candidatos = [];
+  try { candidatos = (await api(`/erp/api/conciliacao/candidatos/${extratoId}`)).candidatos; } catch(e){}
+  els("dlg-titulo").textContent = `${dataBR(linha.data)} · ${moeda(linha.valor)}`;
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="cartao-dica">${linha.historico}${linha.nome?` · ${linha.nome}`:""} · conta ${linha.conta}</div>
+    ${linha.detalhe.sugestao?`<div class="aviso info">${linha.detalhe.sugestao}</div>`:""}
+
+    <h4>1 · Vincular a um pagamento já registrado</h4>
+    ${candidatos.length ? `<table><thead><tr><th></th><th>Título</th><th>Credor</th>
+      <th class="direita">Valor</th><th>Data</th><th>Nome</th></tr></thead><tbody>
+      ${candidatos.map(c=>`<tr><td><input type="radio" name="cand" value="${c.pagamento_id}"
+          ${c.valor_confere?"":"disabled title='valor diferente'"}></td>
+        <td class="dados">${c.titulo}</td><td>${c.credor}</td>
+        <td class="direita dados">${numero(c.valor)}${c.valor_confere?"":` <small style="color:var(--vermelho)">dif ${numero(c.diferenca)}</small>`}</td>
+        <td class="dados">${dataBR(c.data)}</td>
+        <td>${Math.round(c.semelhanca_nome*100)}%</td></tr>`).join("")}</tbody></table>
+      <button class="btn" style="margin-top:8px" id="b-vincular">Vincular</button>`
+      : `<div class="cartao-dica">Nenhum pagamento compatível na janela de 10 dias.</div>`}
+
+    <h4>2 · Registrar como movimentação (não é despesa)</h4>
+    <div class="form-grade">
+      <div class="campo"><label>Tipo</label><select id="m-tipo">
+        ${TIPOS_MOV.map(t=>`<option value="${t.chave}">${t.rotulo} → ${t.conta}</option>`).join("")}</select></div>
+      <div class="campo"><label>Conta de saída</label><select id="m-origem">
+        <option value="">—</option>${CONTAS.map(c=>`<option value="${c.id}" ${c.id===linha.conta_id&&linha.valor<0?"selected":""}>${c.descricao}</option>`).join("")}</select></div>
+      <div class="campo"><label>Conta de entrada</label><select id="m-destino">
+        <option value="">—</option>${CONTAS.map(c=>`<option value="${c.id}" ${c.id===linha.conta_id&&linha.valor>0?"selected":""}>${c.descricao}</option>`).join("")}</select></div>
+      <div class="campo"><label>Descrição</label><input id="m-desc" value="${(linha.historico||"").slice(0,60)}"></div>
+    </div>
+    <button class="btn" style="margin-top:8px" id="b-mov">Registrar movimentação</button>
+
+    <h4>3 · Foi um pagamento não lançado</h4>
+    <div class="cartao-dica">Se saiu dinheiro sem título no sistema, lance a solicitação
+      (com o documento, se houver) e depois volte aqui para vincular.</div>
+    <a class="btn secundario" href="/erp/lancar" style="text-decoration:none; display:inline-block; margin-top:8px">Ir para o lançamento</a>`;
+
+  const bv = els("b-vincular");
+  if (bv) bv.addEventListener("click", async () => {
+    const esc = document.querySelector('[name="cand"]:checked');
+    if (!esc) { aviso("dlg-msg","Escolha o pagamento.","erro"); return; }
+    try {
+      await api("/erp/api/conciliacao/manual", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({pagamento_id:+esc.value, extrato_id: extratoId})});
+      els("dlg").close(); aviso("mensagem","Lançamento conciliado.","ok"); carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("b-mov").addEventListener("click", async () => {
+    try {
+      await api("/erp/api/movimentacoes", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({tipo: els("m-tipo").value,
+          conta_origem_id: els("m-origem").value || null,
+          conta_destino_id: els("m-destino").value || null,
+          valor: Math.abs(linha.valor), data_movimento: linha.data,
+          descricao: els("m-desc").value,
+          extrato_saida_id: linha.valor < 0 ? extratoId : null,
+          extrato_entrada_id: linha.valor > 0 ? extratoId : null})});
+      els("dlg").close(); aviso("mensagem","Movimentação registrada.","ok"); carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+}
+
+els("btn-mov").addEventListener("click", () => {
+  els("dlg-titulo").textContent = "Movimentação entre contas";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="cartao-dica">Lançamento simples: só o essencial. Não é despesa, é dinheiro
+      mudando de lugar.</div>
+    <div class="form-grade">
+      <div class="campo"><label>Tipo</label><select id="n-tipo">
+        ${TIPOS_MOV.map(t=>`<option value="${t.chave}">${t.rotulo}</option>`).join("")}</select></div>
+      <div class="campo"><label>Valor *</label><input id="n-valor" inputmode="decimal" placeholder="0,00"></div>
+      <div class="campo"><label>Data *</label><input type="date" id="n-data" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="campo"><label>Conta de saída</label><select id="n-origem"><option value="">—</option>
+        ${CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("")}</select></div>
+      <div class="campo"><label>Conta de entrada</label><select id="n-destino"><option value="">—</option>
+        ${CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("")}</select></div>
+      <div class="campo" style="grid-column:span 2"><label>Descrição</label><input id="n-desc"></div>
+    </div>
+    <div style="margin-top:14px"><button class="btn" id="n-salvar">Registrar</button></div>`;
+  els("n-salvar").addEventListener("click", async () => {
+    try {
+      await api("/erp/api/movimentacoes", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({tipo: els("n-tipo").value, valor: els("n-valor").value,
+          data_movimento: els("n-data").value, conta_origem_id: els("n-origem").value||null,
+          conta_destino_id: els("n-destino").value||null, descricao: els("n-desc").value})});
+      els("dlg").close(); aviso("mensagem","Movimentação registrada.","ok"); carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+});
 
 els("btn-conciliar").addEventListener("click", async () => {
   const b = els("btn-conciliar"); b.disabled = true; b.textContent = "Conciliando…";
@@ -63,70 +247,44 @@ els("btn-conciliar").addEventListener("click", async () => {
     const d = await api("/erp/api/conciliacao/executar", {method:"POST",
       headers:{"Content-Type":"application/json"},
       body: JSON.stringify({conta_id: els("conta").value ? +els("conta").value : null})});
-    mostrar(d.relatorio);
-    aviso("mensagem", `${d.relatorio.conciliados} pagamento(s) conciliado(s) automaticamente` +
-      (d.relatorio.ambiguos.length ? ` · ${d.relatorio.ambiguos.length} caso(s) para você decidir` : "") +
-      (d.relatorio.sobras.length ? ` · ${d.relatorio.sobras.length} saída(s) sem título` : ""),
-      d.relatorio.ambiguos.length || d.relatorio.sobras.length ? "info" : "ok");
+    const r = d.relatorio;
+    els("pendencias").innerHTML = r.ambiguos.length ? `<div class="cartao">
+      <div class="cartao-cab"><h3>Precisa da sua decisão</h3>
+        <small>mesmo valor e data, credores diferentes</small></div>` +
+      r.ambiguos.map((a,i)=>`<div class="critica CRITICA" style="margin-bottom:10px">
+        <b>${moeda(a.valor)}</b> — ${a.motivo}
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:8px">
+          <div><div class="kpi-rotulo">Pagamentos</div>
+            ${a.pagamentos.map(p=>`<label class="opcao"><input type="radio" name="ap${i}" value="${p.pagamento_id}">
+              <span class="rotulo">${p.titulo} · ${p.credor}</span></label>`).join("")}</div>
+          <div><div class="kpi-rotulo">Extrato</div>
+            ${a.extratos.map(e=>`<label class="opcao"><input type="radio" name="ae${i}" value="${e.extrato_id}">
+              <span class="rotulo">${dataBR(e.data)} · ${e.historico}</span></label>`).join("")}</div>
+        </div>
+        <button class="btn" style="margin-top:8px" data-par="${i}">Conciliar par</button>
+      </div>`).join("") + `</div>` : "";
+    document.querySelectorAll("[data-par]").forEach(b2 => b2.addEventListener("click", async () => {
+      const i = b2.dataset.par;
+      const pg = document.querySelector(`[name="ap${i}"]:checked`);
+      const ex = document.querySelector(`[name="ae${i}"]:checked`);
+      if (!pg || !ex) { aviso("mensagem","Escolha um de cada lado.","erro"); return; }
+      await api("/erp/api/conciliacao/manual", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({pagamento_id:+pg.value, extrato_id:+ex.value})});
+      aviso("mensagem","Par conciliado.","ok"); els("btn-conciliar").click();
+    }));
+    aviso("mensagem", `${r.conciliados} conciliado(s) automaticamente` +
+      (r.ambiguos.length?` · ${r.ambiguos.length} para decidir`:"") +
+      (r.sobras.length?` · ${r.sobras.length} sem título`:""), r.ambiguos.length?"info":"ok");
     carregar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
   b.disabled = false; b.textContent = "Conciliar automaticamente";
 });
 
-function mostrar(r){
-  let html = "";
-  if (r.ambiguos.length) {
-    html += `<div class="cartao"><div class="cartao-cab"><h3>Precisa da sua decisão</h3>
-      <small>mesmo valor e data — o extrato não diz qual é qual</small></div>` +
-      r.ambiguos.map((a,i) => `
-        <div class="critica CRITICA" style="margin-bottom:12px">
-          <b>${moeda(a.valor)}</b> — ${a.motivo}
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px">
-            <div><div class="kpi-rotulo">Pagamentos no sistema</div>
-              ${a.pagamentos.map(p=>`<label class="opcao">
-                <input type="radio" name="amb-pg-${i}" value="${p.pagamento_id}">
-                <span class="rotulo">${p.titulo} · ${p.credor} · ${dataBR(p.data)}</span></label>`).join("")}</div>
-            <div><div class="kpi-rotulo">Lançamentos no extrato</div>
-              ${a.extratos.map(e=>`<label class="opcao">
-                <input type="radio" name="amb-ex-${i}" value="${e.extrato_id}">
-                <span class="rotulo">${dataBR(e.data)} · ${e.historico}${e.nome?" · "+e.nome:""}</span></label>`).join("")}</div>
-          </div>
-          <button class="btn" style="margin-top:10px" data-amb="${i}">Conciliar este par</button>
-        </div>`).join("") + `</div>`;
-  }
-  if (r.sobras.length) {
-    html += `<div class="cartao"><div class="cartao-cab"><h3>Saiu do banco sem título</h3>
-      <small>cada linha é dinheiro que saiu e não estava lançado — o sistema já classificou o que reconhece</small></div>
-      <div class="tabela-rolagem" style="max-height:420px"><table><thead><tr>
-        <th>Data</th><th class="direita">Valor</th><th>Histórico</th><th>O que parece ser</th>
-      </tr></thead><tbody>` +
-      r.sobras.map(x=>`<tr><td class="dados">${dataBR(x.data)}</td>
-        <td class="direita dados ${x.valor<0?"atrasado":""}">${numero(x.valor)}</td>
-        <td class="desc">${x.historico}${x.nome?`<small>${x.nome}</small>`:""}</td>
-        <td><small>${x.sugestao}</small></td></tr>`).join("") +
-      `</tbody></table></div>
-      <div class="cartao-dica">Tarifa, IOF e transferência entre contas próprias devem virar
-        lançamento nas contas indicadas. O restante merece investigação: pagamento feito fora
-        do sistema.</div></div>`;
-  }
-  if (!html) html = `<div class="cartao"><div class="vazio"><b>Tudo conciliado</b>
-    Nenhum caso pendente nesta conta.</div></div>`;
-  els("resultado").innerHTML = html;
-  document.querySelectorAll("[data-amb]").forEach(b => b.addEventListener("click", async () => {
-    const i = b.dataset.amb;
-    const pg = document.querySelector(`[name="amb-pg-${i}"]:checked`);
-    const ex = document.querySelector(`[name="amb-ex-${i}"]:checked`);
-    if (!pg || !ex) { aviso("mensagem","Escolha um pagamento e um lançamento do extrato.","erro"); return; }
-    try {
-      await api("/erp/api/conciliacao/manual", {method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({pagamento_id:+pg.value, extrato_id:+ex.value})});
-      aviso("mensagem","Par conciliado.","ok");
-      els("btn-conciliar").click();
-    } catch(e){ aviso("mensagem", e.message, "erro"); }
-  }));
-}
-
+els("conta").addEventListener("change", carregar);
+document.querySelectorAll('[name="sit"]').forEach(r=>r.addEventListener("change", desenhar));
+["f-saidas","f-entradas"].forEach(i=>els(i).addEventListener("change", desenhar));
+let deb; els("f-busca").addEventListener("input", ()=>{clearTimeout(deb); deb=setTimeout(desenhar,250);});
 carregar();
 </script>
 {% endblock %}

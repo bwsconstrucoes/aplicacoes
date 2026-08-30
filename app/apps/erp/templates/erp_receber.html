@@ -1,0 +1,171 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Receber — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Títulos a receber <small>medições de obra faturadas ao cliente</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="cartao">
+  <div class="tabela-barra" style="padding:0">
+    <input id="busca" placeholder="Buscar medição, cliente, obra…" style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px; min-width:260px">
+    <span class="espaco"></span>
+    <button class="btn amarelo" id="btn-nova">+ Lançar medição</button>
+  </div>
+</div>
+
+<div class="tabela-wrap">
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th>SP</th><th>Medição</th><th>Obra</th><th>Cliente</th><th>Período</th>
+      <th class="direita">Bruto</th><th class="direita">Retenções</th>
+      <th class="direita">A receber</th><th>Vencimento</th><th>Notas</th><th>Situação</th><th></th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let T = [], OBRAS = [], CLIENTES = [], CONTAS = [];
+const dec = v => { const n = parseFloat(String(v||"").replace(/[R$\s.]/g,"").replace(",",".")); return isNaN(n)?0:n; };
+
+async function carregar(){
+  try {
+    const d = await api("/erp/api/receber"); T = d.titulos;
+    if (!OBRAS.length) {
+      const c = await api("/erp/api/lancamento/dados");
+      OBRAS = c.dados.obras; CLIENTES = c.dados.fornecedores;
+      const p = await api("/erp/api/conciliacao/painel"); CONTAS = p.contas;
+    }
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenhar(){
+  const b = (els("busca").value||"").toLowerCase();
+  const l = T.filter(t => `${t.numero_sp} ${t.medicao} ${t.obra} ${t.cliente} ${t.descricao}`.toLowerCase().includes(b));
+  const soma = f => l.filter(f).reduce((a,t)=>a+t.valor,0);
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Medições</div>
+      <div class="kpi-valor">${l.length}</div><div class="kpi-sub">${moeda(soma(()=>true))}</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Recebido</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(l.reduce((a,t)=>a+t.recebido,0))}</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">A receber</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(soma(t=>t.status!=="PAGO"))}</div></div>
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">Atrasados</div>
+      <div class="kpi-valor">${l.filter(t=>t.atrasado).length}</div>
+      <div class="kpi-sub">${moeda(soma(t=>t.atrasado))}</div></div>`;
+  els("vazio").classList.toggle("oculto", l.length>0);
+  if (!l.length) els("vazio").innerHTML = "<b>Nenhuma medição lançada</b>Use <b>+ Lançar medição</b>.";
+  els("corpo").innerHTML = l.map(t=>`<tr>
+    <td class="dados">${t.numero_sp}</td><td class="dados">${t.medicao||"—"}</td>
+    <td>${t.obra}</td><td>${t.cliente}</td><td><small>${t.periodo||"—"}</small></td>
+    <td class="direita dados">${numero(t.valor_bruto)}</td>
+    <td class="direita dados">${numero(t.retencoes)}</td>
+    <td class="direita dados"><b>${numero(t.valor)}</b></td>
+    <td class="dados ${t.atrasado?"atrasado":""}">${dataBR(t.vencimento)}</td>
+    <td><small>${t.notas_fiscais.length ? t.notas_fiscais.join(", ") : "—"}</small></td>
+    <td><span class="selo ${t.status==="PAGO"?"aprovado":t.atrasado?"bloqueado":"aguardando"}">${rotulo(t.status)}</span></td>
+    <td>${t.status!=="PAGO"?`<button class="btn secundario" data-receber="${t.id}">Receber</button>`:""}</td>
+  </tr>`).join("");
+  document.querySelectorAll("[data-receber]").forEach(x =>
+    x.addEventListener("click", ()=>baixar(+x.dataset.receber)));
+}
+
+function baixar(id){
+  const t = T.find(x=>x.id===id);
+  const abertas = t.parcelas.filter(p=>p.status!=="PAGA");
+  els("dlg-titulo").textContent = `Receber ${t.numero_sp} · medição ${t.medicao}`;
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="cartao-dica">${t.cliente} · obra ${t.obra} · período ${t.periodo||"—"}</div>
+    <div class="form-grade">
+      <div class="campo"><label>Parcela</label><select id="r-parcela">
+        ${abertas.map(p=>`<option value="${p.parcela_id}">Parcela ${p.numero} · ${dataBR(p.vencimento)} · ${moeda(p.valor)}</option>`).join("")}
+      </select></div>
+      <div class="campo"><label>Conta que recebeu</label><select id="r-conta">
+        ${CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("")}</select></div>
+      <div class="campo"><label>Data do recebimento</label>
+        <input type="date" id="r-data" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="campo"><label>Valor recebido</label>
+        <input id="r-valor" placeholder="deixe vazio para o valor da parcela"></div>
+      <div class="campo" style="grid-column:span 2"><label>Notas fiscais emitidas</label>
+        <input id="r-notas" placeholder="1201, 1202, 1203" value="${t.notas_fiscais.join(', ')}">
+        <div class="dica">Um recebimento costuma quitar várias notas — separe por vírgula.</div></div>
+    </div>
+    <div style="margin-top:14px"><button class="btn" id="r-salvar">Registrar recebimento</button></div>`;
+  els("r-salvar").addEventListener("click", async () => {
+    try {
+      const d = await api("/erp/api/receber/baixar", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({parcela_id:+els("r-parcela").value,
+          conta_bancaria_id:+els("r-conta").value, data: els("r-data").value,
+          valor: els("r-valor").value || null,
+          notas_fiscais: els("r-notas").value.split(",").map(x=>x.trim()).filter(Boolean)})});
+      els("dlg").close();
+      const r = d.recebimento;
+      aviso("mensagem", `Recebimento de ${moeda(r.valor)} registrado em ${r.numero_sp}` +
+        (Math.abs(r.diferenca)>0.01 ? ` · <b>diferença de ${moeda(r.diferenca)}</b> em relação à parcela` : "") +
+        ` · notas ${r.notas_fiscais.join(", ")||"—"}`, "ok");
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+}
+
+els("btn-nova").addEventListener("click", () => {
+  els("dlg-titulo").textContent = "Lançar medição";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Obra *</label><select id="n-obra">
+        ${OBRAS.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("")}</select></div>
+      <div class="campo" style="grid-column:span 2"><label>Cliente / órgão *</label><select id="n-cliente">
+        ${CLIENTES.map(c=>`<option value="${c.id}">${c.nome}</option>`).join("")}</select>
+        <div class="dica">Não está na lista? Cadastre em Fornecedores (o CNPJ é consultado na Receita).</div></div>
+      <div class="campo"><label>Nº da medição *</label><input id="n-medicao" placeholder="03"></div>
+      <div class="campo"><label>Período de</label><input type="date" id="n-de"></div>
+      <div class="campo"><label>até</label><input type="date" id="n-ate"></div>
+      <div class="campo"><label>Valor bruto *</label><input id="n-valor" inputmode="decimal" placeholder="0,00"></div>
+      <div class="campo"><label>Vencimento *</label><input type="date" id="n-venc"></div>
+      <div class="campo" style="grid-column:span 2"><label>Descrição</label><input id="n-desc"></div>
+    </div>
+    <h4>Retenções do contrato</h4>
+    <div class="cartao-dica">ISS, INSS e caução reduzem o líquido a receber. Deixe zerado se não houver.</div>
+    <div class="form-grade" style="margin-top:8px">
+      <div class="campo"><label>ISS</label><input id="n-iss" placeholder="0,00"></div>
+      <div class="campo"><label>INSS</label><input id="n-inss" placeholder="0,00"></div>
+      <div class="campo"><label>IRRF</label><input id="n-irrf" placeholder="0,00"></div>
+      <div class="campo"><label>PCC (PIS/COFINS/CSLL)</label><input id="n-pcc" placeholder="0,00"></div>
+    </div>
+    <div class="cartao-dica">As notas fiscais são informadas na hora do recebimento, não agora.</div>
+    <div style="margin-top:14px"><button class="btn" id="n-salvar">Lançar medição</button></div>`;
+  els("n-salvar").addEventListener("click", async () => {
+    const ret = [];
+    [["ISS","n-iss"],["INSS","n-inss"],["IRRF","n-irrf"],["PCC","n-pcc"]].forEach(([t,i])=>{
+      if (dec(els(i).value) > 0) ret.push({tipo:t, valor:String(dec(els(i).value))});
+    });
+    try {
+      const d = await api("/erp/api/receber", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({obra_id:+els("n-obra").value, cliente_id:+els("n-cliente").value,
+          numero_medicao: els("n-medicao").value, periodo_inicio: els("n-de").value||null,
+          periodo_fim: els("n-ate").value||null, valor_bruto: String(dec(els("n-valor").value)),
+          vencimento: els("n-venc").value, descricao: els("n-desc").value, retencoes: ret})});
+      els("dlg").close();
+      aviso("mensagem", `Medição lançada em ${d.titulo.numero_sp} — líquido a receber ${moeda(d.titulo.liquido)}.`, "ok");
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+});
+
+els("busca").addEventListener("input", desenhar);
+carregar();
+</script>
+{% endblock %}

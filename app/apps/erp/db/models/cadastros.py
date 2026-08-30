@@ -135,6 +135,8 @@ class Fornecedor(Base):
     data_abertura: Mapped[Optional[date]] = mapped_column(Date)
     codigo_omie: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True)
     observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    e_cliente: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    e_fornecedor: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
