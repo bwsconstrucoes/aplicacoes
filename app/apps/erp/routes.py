@@ -37,6 +37,8 @@ ABAS = [
     ("lancar", "Lançar", "erp.pagina_lancar"),
     ("titulos", "Títulos", "erp.pagina_titulos"),
     ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
+    ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
+    ("relatorios", "Relatórios", "erp.pagina_relatorios"),
     ("importar", "Importar", "erp.pagina_importar"),
     ("config", "Configurações", "erp.pagina_config"),
 ]
@@ -118,6 +120,18 @@ def pagina_lancar():
 @login_obrigatorio
 def pagina_pagamentos():
     return render_template("erp_pagamentos.html", **_contexto("pagamentos"))
+
+
+@bp.route("/erp/conciliacao")
+@login_obrigatorio
+def pagina_conciliacao():
+    return render_template("erp_conciliacao.html", **_contexto("conciliacao"))
+
+
+@bp.route("/erp/relatorios")
+@login_obrigatorio
+def pagina_relatorios():
+    return render_template("erp_relatorios.html", **_contexto("relatorios"))
 
 
 @bp.route("/erp/importar")
@@ -1034,6 +1048,121 @@ def api_lote_por_sp():
             return jsonify({"ok": True, "reconhecidos": numeros, **parcelas_por_sp(s, numeros)})
     except Exception as e:
         logger.exception("ERP: falha ao buscar SPs coladas")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Conciliação
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/conciliacao/painel")
+@login_obrigatorio
+def api_conciliacao_painel():
+    from sqlalchemy import select
+    from app.apps.erp.core.pagamentos.conciliacao import painel
+    from app.apps.erp.db.models.cadastros import ContaBancaria
+    conta = request.args.get("conta_id", type=int)
+    try:
+        with get_session() as s:
+            contas = [{"id": c.id, "descricao": c.descricao}
+                      for c in s.scalars(select(ContaBancaria)
+                                         .where(ContaBancaria.ativo.is_(True))).all()]
+            return jsonify({"ok": True, "painel": painel(s, conta), "contas": contas})
+    except Exception as e:
+        logger.exception("ERP: falha no painel de conciliação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/conciliacao/executar", methods=["POST"])
+@login_obrigatorio
+def api_conciliar():
+    from app.apps.erp.core.pagamentos.conciliacao import conciliar_automatico
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = conciliar_automatico(
+                s, conta_bancaria_id=d.get("conta_id") or None, usuario=usuario)
+            s.commit()
+        return jsonify({"ok": True, "relatorio": rel})
+    except Exception as e:
+        logger.exception("ERP: falha na conciliação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/conciliacao/manual", methods=["POST"])
+@login_obrigatorio
+def api_conciliar_manual():
+    from app.apps.erp.core.pagamentos.conciliacao import conciliar_manual
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            conciliar_manual(s, int(d["pagamento_id"]), int(d["extrato_id"]), usuario,
+                             d.get("observacao", ""))
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na conciliação manual")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Relatórios
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/relatorios", methods=["POST"])
+@login_obrigatorio
+def api_relatorios():
+    from app.apps.erp.core.relatorios import analitico, dre_gerencial, resumo
+    d = request.get_json(silent=True) or {}
+    tipo = (d.get("tipo") or "resumo").strip()
+    filtros = d.get("filtros") or {}
+    try:
+        with get_session() as s:
+            if tipo == "dre":
+                return jsonify({"ok": True, "dre": dre_gerencial(s, filtros)})
+            if tipo == "analitico":
+                return jsonify({"ok": True, "linhas": analitico(s, filtros)})
+            return jsonify({"ok": True,
+                            "resumo": resumo(s, d.get("dimensao") or "grupo", filtros)})
+    except ValueError as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no relatório")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/relatorios/csv", methods=["POST"])
+@login_obrigatorio
+def api_relatorios_csv():
+    from flask import Response
+    from app.apps.erp.core.relatorios import analitico, para_csv, resumo
+    d = request.get_json(silent=True) or {}
+    filtros = d.get("filtros") or {}
+    try:
+        with get_session() as s:
+            if (d.get("tipo") or "") == "analitico":
+                linhas = analitico(s, filtros)
+                colunas = [("numero_sp", "SP"), ("competencia", "Competência"),
+                           ("credor", "Credor"), ("descricao", "Descrição"),
+                           ("grupo", "Grupo"), ("conta", "Conta"), ("obra", "Obra"),
+                           ("valor", "Valor"), ("vencimento", "Vencimento"),
+                           ("pagamento", "Pagamento"), ("situacao", "Situação"),
+                           ("dedutibilidade", "Dedutibilidade")]
+                nome = "erp_analitico.csv"
+            else:
+                r = resumo(s, d.get("dimensao") or "grupo", filtros)
+                linhas = r["linhas"]
+                colunas = [("chave", r["rotulo"]), ("titulos", "Títulos"),
+                           ("total", "Total"), ("pago", "Pago"), ("aberto", "Em aberto"),
+                           ("percentual", "%")]
+                nome = f"erp_{d.get('dimensao') or 'grupo'}.csv"
+            conteudo = para_csv(linhas, colunas)
+        return Response(conteudo.encode("utf-8-sig"), mimetype="text/csv",
+                        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+    except Exception as e:
+        logger.exception("ERP: falha ao exportar CSV")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

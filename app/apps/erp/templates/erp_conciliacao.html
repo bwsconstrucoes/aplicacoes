@@ -1,0 +1,132 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Conciliação — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Conciliação bancária <small>o que saiu do banco × o que foi baixado no sistema</small></h2>
+<div id="mensagem"></div>
+
+<div class="cartao">
+  <div class="tabela-barra" style="padding:0">
+    <div class="campo" style="margin:0"><label>Conta</label>
+      <select id="conta" style="min-width:240px"></select></div>
+    <span class="espaco"></span>
+    <a class="btn secundario" href="/erp/importar">Importar extrato (OFX)</a>
+    <button class="btn amarelo" id="btn-conciliar">Conciliar automaticamente</button>
+  </div>
+</div>
+
+<div class="kpis" id="kpis"></div>
+<div id="resultado"></div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let CONTAS = [];
+
+async function carregar(){
+  try {
+    const conta = els("conta").value || "";
+    const d = await api("/erp/api/conciliacao/painel" + (conta ? `?conta_id=${conta}` : ""));
+    if (!CONTAS.length) {
+      CONTAS = d.contas;
+      els("conta").innerHTML = `<option value="">Todas as contas</option>` +
+        CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("");
+    }
+    const p = d.painel;
+    const pct = p.pagamentos_total ? Math.round(p.pagamentos_conciliados/p.pagamentos_total*100) : 0;
+    els("kpis").innerHTML = `
+      <div class="kpi estatico ${pct===100?"verde":""}"><div class="kpi-rotulo">Pagamentos conciliados</div>
+        <div class="kpi-valor">${p.pagamentos_conciliados}/${p.pagamentos_total}</div>
+        <div class="kpi-sub">${pct}% do que foi baixado</div></div>
+      <div class="kpi estatico ambar"><div class="kpi-rotulo">Aguardando conciliação</div>
+        <div class="kpi-valor">${p.pagamentos_total - p.pagamentos_conciliados}</div>
+        <div class="kpi-sub">${moeda(p.pagamentos_pendentes_valor)}</div></div>
+      <div class="kpi estatico vermelho"><div class="kpi-rotulo">Saídas sem título</div>
+        <div class="kpi-valor">${p.saidas_nao_conciliadas}</div>
+        <div class="kpi-sub">dinheiro que saiu e não estava lançado</div></div>
+      <div class="kpi estatico ciano"><div class="kpi-rotulo">Entradas no extrato</div>
+        <div class="kpi-valor">${p.entradas_nao_conciliadas}</div>
+        <div class="kpi-sub">recebimentos a tratar</div></div>`;
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+els("conta").addEventListener("change", carregar);
+
+els("btn-conciliar").addEventListener("click", async () => {
+  const b = els("btn-conciliar"); b.disabled = true; b.textContent = "Conciliando…";
+  try {
+    const d = await api("/erp/api/conciliacao/executar", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({conta_id: els("conta").value ? +els("conta").value : null})});
+    mostrar(d.relatorio);
+    aviso("mensagem", `${d.relatorio.conciliados} pagamento(s) conciliado(s) automaticamente` +
+      (d.relatorio.ambiguos.length ? ` · ${d.relatorio.ambiguos.length} caso(s) para você decidir` : "") +
+      (d.relatorio.sobras.length ? ` · ${d.relatorio.sobras.length} saída(s) sem título` : ""),
+      d.relatorio.ambiguos.length || d.relatorio.sobras.length ? "info" : "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Conciliar automaticamente";
+});
+
+function mostrar(r){
+  let html = "";
+  if (r.ambiguos.length) {
+    html += `<div class="cartao"><div class="cartao-cab"><h3>Precisa da sua decisão</h3>
+      <small>mesmo valor e data — o extrato não diz qual é qual</small></div>` +
+      r.ambiguos.map((a,i) => `
+        <div class="critica CRITICA" style="margin-bottom:12px">
+          <b>${moeda(a.valor)}</b> — ${a.motivo}
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:10px">
+            <div><div class="kpi-rotulo">Pagamentos no sistema</div>
+              ${a.pagamentos.map(p=>`<label class="opcao">
+                <input type="radio" name="amb-pg-${i}" value="${p.pagamento_id}">
+                <span class="rotulo">${p.titulo} · ${p.credor} · ${dataBR(p.data)}</span></label>`).join("")}</div>
+            <div><div class="kpi-rotulo">Lançamentos no extrato</div>
+              ${a.extratos.map(e=>`<label class="opcao">
+                <input type="radio" name="amb-ex-${i}" value="${e.extrato_id}">
+                <span class="rotulo">${dataBR(e.data)} · ${e.historico}${e.nome?" · "+e.nome:""}</span></label>`).join("")}</div>
+          </div>
+          <button class="btn" style="margin-top:10px" data-amb="${i}">Conciliar este par</button>
+        </div>`).join("") + `</div>`;
+  }
+  if (r.sobras.length) {
+    html += `<div class="cartao"><div class="cartao-cab"><h3>Saiu do banco sem título</h3>
+      <small>cada linha é dinheiro que saiu e não estava lançado — o sistema já classificou o que reconhece</small></div>
+      <div class="tabela-rolagem" style="max-height:420px"><table><thead><tr>
+        <th>Data</th><th class="direita">Valor</th><th>Histórico</th><th>O que parece ser</th>
+      </tr></thead><tbody>` +
+      r.sobras.map(x=>`<tr><td class="dados">${dataBR(x.data)}</td>
+        <td class="direita dados ${x.valor<0?"atrasado":""}">${numero(x.valor)}</td>
+        <td class="desc">${x.historico}${x.nome?`<small>${x.nome}</small>`:""}</td>
+        <td><small>${x.sugestao}</small></td></tr>`).join("") +
+      `</tbody></table></div>
+      <div class="cartao-dica">Tarifa, IOF e transferência entre contas próprias devem virar
+        lançamento nas contas indicadas. O restante merece investigação: pagamento feito fora
+        do sistema.</div></div>`;
+  }
+  if (!html) html = `<div class="cartao"><div class="vazio"><b>Tudo conciliado</b>
+    Nenhum caso pendente nesta conta.</div></div>`;
+  els("resultado").innerHTML = html;
+  document.querySelectorAll("[data-amb]").forEach(b => b.addEventListener("click", async () => {
+    const i = b.dataset.amb;
+    const pg = document.querySelector(`[name="amb-pg-${i}"]:checked`);
+    const ex = document.querySelector(`[name="amb-ex-${i}"]:checked`);
+    if (!pg || !ex) { aviso("mensagem","Escolha um pagamento e um lançamento do extrato.","erro"); return; }
+    try {
+      await api("/erp/api/conciliacao/manual", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({pagamento_id:+pg.value, extrato_id:+ex.value})});
+      aviso("mensagem","Par conciliado.","ok");
+      els("btn-conciliar").click();
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  }));
+}
+
+carregar();
+</script>
+{% endblock %}

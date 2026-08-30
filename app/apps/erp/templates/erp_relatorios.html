@@ -1,0 +1,184 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Relatórios — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2><button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="campo"><label>Competência de</label><input type="month" id="f-de"></div>
+  <div class="campo"><label>até</label><input type="month" id="f-ate"></div>
+  <div class="campo"><label>Obra</label><select id="f-obra"><option value="">Todas</option></select></div>
+  <div class="campo"><label>Grupo do plano</label><select id="f-grupo"><option value="">Todos</option></select></div>
+  <div class="campo"><label>Credor</label><select id="f-credor"><option value="">Todos</option></select></div>
+  <div class="campo"><label>Natureza</label><select id="f-natureza">
+    <option value="">Todas</option><option value="RESULTADO">Resultado (DRE)</option>
+    <option value="FLUXO">Fluxo de caixa</option></select></div>
+  <label class="opcao" style="margin-top:8px"><input type="checkbox" id="f-pagos">
+    <span class="rotulo">Somente pagos</span></label>
+  <button class="btn" id="btn-gerar" style="width:100%; margin-top:14px">Gerar</button>
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+<div class="cartao">
+  <div class="tabela-barra" style="padding:0">
+    <div class="campo" style="margin:0"><label>Relatório</label>
+      <select id="tipo" style="min-width:200px">
+        <option value="resumo">Totais por dimensão</option>
+        <option value="dre">Resultado do período (DRE gerencial)</option>
+        <option value="analitico">Analítico (título a título)</option>
+      </select></div>
+    <div class="campo" id="campo-dim" style="margin:0"><label>Agrupar por</label>
+      <select id="dimensao" style="min-width:180px">
+        <option value="grupo">Grupo do plano</option>
+        <option value="subgrupo">Subgrupo</option>
+        <option value="categoria">Conta</option>
+        <option value="obra">Obra</option>
+        <option value="credor">Credor</option>
+        <option value="competencia">Competência</option>
+        <option value="situacao">Situação</option>
+        <option value="dedutibilidade">Dedutibilidade</option>
+      </select></div>
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-csv">Baixar CSV</button>
+  </div>
+</div>
+<div class="kpis" id="kpis"></div>
+<div id="saida"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function cadastros(){
+  try {
+    const d = await api("/erp/api/config");
+    els("f-obra").innerHTML = `<option value="">Todas</option>` +
+      d.dados.obras.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("");
+    const grupos = {};
+    d.dados.categorias.forEach(c => grupos[c.grupo_codigo] = c.grupo_nome);
+    els("f-grupo").innerHTML = `<option value="">Todos</option>` +
+      Object.keys(grupos).sort().map(g=>`<option value="${g}">${g} · ${grupos[g]}</option>`).join("");
+  } catch(e) { /* filtros opcionais */ }
+  try {
+    const d = await api("/erp/api/lancamento/dados");
+    els("f-credor").innerHTML = `<option value="">Todos</option>` +
+      d.dados.fornecedores.map(f=>`<option value="${f.id}">${f.nome}</option>`).join("");
+  } catch(e) {}
+}
+
+function filtros(){
+  return {competencia_de: els("f-de").value || null, competencia_ate: els("f-ate").value || null,
+    obra_id: els("f-obra").value || null, grupo: els("f-grupo").value || null,
+    credor_id: els("f-credor").value || null, natureza: els("f-natureza").value || null,
+    apenas_pagos: els("f-pagos").checked};
+}
+
+els("tipo").addEventListener("change", () => {
+  els("campo-dim").style.display = els("tipo").value === "resumo" ? "" : "none";
+});
+
+async function gerar(){
+  const tipo = els("tipo").value;
+  try {
+    const d = await api("/erp/api/relatorios", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({tipo, dimensao: els("dimensao").value, filtros: filtros()})});
+    if (tipo === "dre") return desenharDre(d.dre);
+    if (tipo === "analitico") return desenharAnalitico(d.linhas);
+    desenharResumo(d.resumo);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenharResumo(r){
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Total</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(r.total)}</div>
+      <div class="kpi-sub">${r.linhas.length} ${r.rotulo.toLowerCase()}(s)</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Pago</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(r.total_pago)}</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Em aberto</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(r.total_aberto)}</div></div>`;
+  const maior = Math.max(...r.linhas.map(l=>l.total), 1);
+  els("saida").innerHTML = `<div class="tabela-wrap"><div class="tabela-rolagem"><table>
+    <thead><tr><th>${r.rotulo}</th><th class="direita">Títulos</th>
+      <th class="direita">Total</th><th class="direita">Pago</th>
+      <th class="direita">Em aberto</th><th style="width:180px">Participação</th></tr></thead>
+    <tbody>${r.linhas.map(l=>`<tr>
+      <td>${l.chave}</td><td class="direita dados">${l.titulos}</td>
+      <td class="direita dados"><b>${numero(l.total)}</b></td>
+      <td class="direita dados">${numero(l.pago)}</td>
+      <td class="direita dados">${numero(l.aberto)}</td>
+      <td><span class="risco"><span class="trilha" style="width:110px">
+        <span class="preench" style="width:${l.total/maior*100}%"></span></span>
+        <span>${l.percentual}%</span></span></td></tr>`).join("")}</tbody>
+    <tfoot><tr><th>Total</th><th class="direita">—</th>
+      <th class="direita dados">${numero(r.total)}</th>
+      <th class="direita dados">${numero(r.total_pago)}</th>
+      <th class="direita dados">${numero(r.total_aberto)}</th><th></th></tr></tfoot>
+  </table></div></div>`;
+}
+
+function desenharDre(d){
+  els("kpis").innerHTML = `
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Receitas</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(d.receitas)}</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Custos (obra e tributos)</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(d.custos)}</div></div>
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">Despesas</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(d.despesas)}</div></div>
+    <div class="kpi estatico ${d.resultado_periodo>=0?"verde":"vermelho"}">
+      <div class="kpi-rotulo">Resultado do período</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(d.resultado_periodo)}</div></div>`;
+  const bloco = (titulo, grupos, dica) => `
+    <div class="cartao"><div class="cartao-cab"><h3>${titulo}</h3><small>${dica}</small></div>
+    <table><tbody>${grupos.map(g=>`
+      <tr style="background:#F7F9FC"><td><b>${g.codigo} · ${g.nome}</b></td>
+        <td class="direita dados"><b>${numero(g.total)}</b></td></tr>
+      ${g.subgrupos.map(sg=>`<tr><td style="padding-left:26px">${sg.codigo} ${sg.nome}</td>
+        <td class="direita dados">${numero(sg.total)}</td></tr>`).join("")}`).join("")}
+    </tbody></table></div>`;
+  els("saida").innerHTML =
+    bloco("Resultado", d.resultado, "contas que compõem a DRE gerencial") +
+    (d.fluxo.length ? bloco("Movimentações de fluxo", d.fluxo,
+      "não são resultado — investimentos, transferências, aportes e principal de empréstimos") : "");
+}
+
+function desenharAnalitico(l){
+  const total = l.reduce((a,x)=>a+x.valor,0);
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Linhas</div>
+      <div class="kpi-valor">${l.length}</div><div class="kpi-sub">rateio por obra</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Total</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(total)}</div></div>`;
+  els("saida").innerHTML = `<div class="tabela-wrap"><div class="tabela-rolagem"><table>
+    <thead><tr><th>SP</th><th>Comp.</th><th>Credor</th><th>Descrição</th><th>Conta</th>
+      <th>Obra</th><th class="direita">Valor</th><th>Vencimento</th><th>Pagamento</th>
+      <th>Situação</th><th>Dedut.</th></tr></thead>
+    <tbody>${l.map(x=>`<tr>
+      <td class="dados">${x.numero_sp}</td><td class="dados">${x.competencia}</td>
+      <td>${x.credor}</td><td class="desc">${x.descricao}</td>
+      <td><small>${x.conta}</small></td><td>${x.obra}</td>
+      <td class="direita dados">${numero(x.valor)}</td>
+      <td class="dados">${dataBR(x.vencimento)}</td>
+      <td class="dados">${dataBR(x.pagamento)}</td>
+      <td><span class="selo ${x.situacao==="PAGO"?"aprovado":"outro"}">${rotulo(x.situacao)}</span></td>
+      <td><small>${rotulo(x.dedutibilidade)}</small></td></tr>`).join("")}</tbody></table></div></div>`;
+}
+
+els("btn-gerar").addEventListener("click", gerar);
+els("btn-csv").addEventListener("click", async () => {
+  const r = await fetch("/erp/api/relatorios/csv", {method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({tipo: els("tipo").value, dimensao: els("dimensao").value, filtros: filtros()})});
+  if (!r.ok) { aviso("mensagem","Falha ao gerar o CSV.","erro"); return; }
+  const blob = await r.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = els("tipo").value === "analitico" ? "erp_analitico.csv" : `erp_${els("dimensao").value}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+});
+els("btn-limpar").addEventListener("click", () => {
+  ["f-de","f-ate","f-obra","f-grupo","f-credor","f-natureza"].forEach(i=>els(i).value="");
+  els("f-pagos").checked = false; gerar();
+});
+cadastros().then(gerar);
+</script>
+{% endblock %}

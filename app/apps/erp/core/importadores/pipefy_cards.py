@@ -112,13 +112,29 @@ query ($id: ID!, $after: String) {
 # Conversores
 # ---------------------------------------------------------------------------
 def _mapa_campos(card: dict[str, Any]) -> dict[str, str]:
-    """{id_do_campo: valor} — ignora campos vazios."""
+    """{id_do_campo: valor legível}.
+
+    Campos CONNECTOR do Pipefy devolvem em `value` o ID do card conectado
+    (ex.: ["1329563540"]), não o nome. O nome vem em `report_value`. Sem esta
+    distinção, "Tipo de Despesa" e "Centro de Custo" chegavam como número e
+    nunca casavam com a categoria nem com a obra.
+    """
     mapa: dict[str, str] = {}
     for f in card.get("fields") or []:
-        fid = ((f.get("field") or {}).get("id")) or ""
+        campo = f.get("field") or {}
+        fid = campo.get("id") or ""
+        if not fid:
+            continue
+        tipo = (campo.get("type") or "").lower()
         val = f.get("value")
-        if fid and val not in (None, "", "[]"):
-            mapa[fid] = val
+        rep = f.get("report_value")
+        if tipo in ("connector", "connector_field", "database_connection"):
+            # prefere o rótulo; só usa o ID se não houver rótulo
+            escolhido = rep if rep not in (None, "", "[]") else val
+        else:
+            escolhido = val if val not in (None, "", "[]") else rep
+        if escolhido not in (None, "", "[]"):
+            mapa[fid] = escolhido
     return mapa
 
 
@@ -237,8 +253,12 @@ def extrair_dados(card: dict[str, Any]) -> dict[str, Any]:
                       ("cnpj_1", "chave_pix_cpf", "chave_pix_de_email",
                        "chave_pix_telefone", "chave_pix_aleat_ria") if c.get(k)), "")
 
+    tipo_despesa = _texto(c.get("tipo_de_despesa"))
+    cc_parece_id = tipo_despesa.isdigit() if tipo_despesa else False
+
     return {
         "card_id": str(card.get("id")),
+        "tipo_despesa_e_id": cc_parece_id,
         "titulo_card": card.get("title") or "",
         "fase": ((card.get("current_phase") or {}).get("name")) or "",
         "procedimento": procedimento,
@@ -249,7 +269,7 @@ def extrair_dados(card: dict[str, Any]) -> dict[str, Any]:
         "descricao": descricao,
         "valor_total": str(total) if total else None,
         "forma_pagamento": forma,
-        "tipo_despesa": _texto(c.get("tipo_de_despesa")),
+        "tipo_despesa": tipo_despesa,
         "data_solicitacao": _data(c.get("data")),
         "nota_fiscal": _texto(c.get("n_da_nota_fiscal")),
         "tem_contrato": bool(_texto(c.get("contrato_de_loca_o"))),
@@ -368,10 +388,16 @@ def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
             cat, como = _achar_categoria(s, d["tipo_despesa"])
             cat_id = cat.id if cat else categoria_padrao_id
             if not cat_id:
-                pendencias.append({
-                    "card": cid, "titulo": d["titulo_card"],
-                    "motivo": f"tipo de despesa {d['tipo_despesa'] or '(vazio)'!r}: {como}. "
-                              f"Defina a tradução em Configurações › Tradução do plano antigo."})
+                if d.get("tipo_despesa_e_id"):
+                    motivo = (f"o campo 'Tipo de Despesa' veio como ID de card "
+                              f"({d['tipo_despesa']}) em vez do nome — o Pipefy não devolveu o "
+                              f"rótulo do conector. Escolha a categoria padrão do lote ou "
+                              f"cadastre a tradução deste ID em Configurações › Tradução.")
+                else:
+                    motivo = (f"tipo de despesa {d['tipo_despesa'] or '(vazio)'!r}: {como}. "
+                              f"Defina a tradução em Configurações › Tradução do plano antigo.")
+                pendencias.append({"card": cid, "titulo": d["titulo_card"],
+                                   "tipo_despesa": d["tipo_despesa"], "motivo": motivo})
                 continue
 
             # rateio: centros de custo → obras
@@ -388,9 +414,12 @@ def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
                     rateios = [{"obra_id": obra_padrao_id, "valor": str(total_parcelas)}]
                 else:
                     ccs = ", ".join(r["centro_custo"] for r in d["rateios"]) or "nenhum"
+                    dica = (" (veio como ID de card, não como nome — escolha a obra padrão "
+                            "do lote)" if any(r["centro_custo"].isdigit() for r in d["rateios"])
+                            else "")
                     pendencias.append({"card": cid, "titulo": d["titulo_card"],
                                        "motivo": f"centro(s) de custo sem obra "
-                                                 f"correspondente: {ccs}"})
+                                                 f"correspondente: {ccs}{dica}"})
                     continue
             # ajuste de centavos: rateio único fecha com o total
             if len(rateios) == 1:

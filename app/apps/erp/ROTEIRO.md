@@ -50,10 +50,12 @@
 - [x] **Pagamentos**: agenda, baixa em lote, Pix copia-e-cola + QR
 - [ ] Pagamentos — falta: comprovante anexado ao título e aviso a quem solicitou
 - [x] **Lote**: prioridade, colar SPs da mensagem, acompanhar pago/não pago
-- [ ] **Conciliação**: baixa por comprovante (o que o baixabradesco faz hoje),
-      OFX, conciliação automática de verdade — só sobra o que é ambíguo;
-      detectar tarifas e transferências entre contas próprias
-- [ ] **Relatórios**: PDF/Excel, analítico por dimensão, total por grupo
+- [x] **Conciliação automática de verdade** (atribuição ótima, valores
+      repetidos, tarifas/transferências classificadas)
+- [ ] Conciliação — falta: baixa por comprovante (PDF do banco, como o
+      baixabradesco faz hoje) e detecção de transferência pelo comprovante
+- [x] **Relatórios**: totais por 8 dimensões, DRE gerencial, analítico, CSV
+- [ ] Relatórios — falta: exportação em PDF e gráficos
 
 ## Fila (pedidos registrados, ainda não iniciados)
 
@@ -64,7 +66,7 @@
 - [ ] **Agenda do ERP**: calendário de obrigações com alerta para não esquecer
 - [ ] **BeeVale**: geração das informações (existe no spsbd)
 - [ ] **Auditoria**: as checagens do spsbd que ainda não vieram
-- [ ] **Ratear**: dividir entre obras e entre categorias (rateio por categoria)
+- [ ] **Ratear**: rateio por categoria (rateio por obra já funciona no lançamento)
 - [ ] **Títulos a receber**: medição lançada, baixa e conciliação do recebimento
 - [ ] **Cruzamento estilo tela do Bradesco**: conferir conta correta e credor do
       Pix contra o que foi lançado
