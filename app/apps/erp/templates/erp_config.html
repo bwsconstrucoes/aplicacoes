@@ -188,7 +188,10 @@ els("btn-migrar").addEventListener("click", async () => {
     const r = d.relatorio;
     if (r.erro) {
       aviso("mensagem", `Aplicadas: ${r.aplicadas.join(", ") || "nenhuma"}.<br>` +
-        `<b>Parou em ${r.erro.migracao}:</b> ${r.erro.erro}`, "erro");
+        `<b>Parou em ${r.erro.migracao}:</b> ${r.erro.erro}` +
+        (r.erro.dica ? `<br><i>Provável causa: ${r.erro.dica}</i>` : "") +
+        (r.pendentes_restantes.length ? `<br>Ainda pendentes: ${r.pendentes_restantes.join(", ")}` : ""),
+        "erro");
     } else {
       aviso("mensagem", `Banco atualizado: ${r.aplicadas.length} migração(ões) aplicada(s).`, "ok");
     }

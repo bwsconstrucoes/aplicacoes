@@ -46,10 +46,21 @@ ABAS = [
 ]
 
 
+def _migracoes_pendentes() -> list[str]:
+    """Consulta barata, usada para avisar em toda tela quando o banco está
+    atrás do código — evita a tela quebrar com 'column does not exist'."""
+    try:
+        from app.apps.erp.core.comum.migracoes import listar_estado
+        return listar_estado().get("pendentes", [])
+    except Exception:
+        return []
+
+
 def _contexto(aba: str) -> dict:
     return {"abas": ABAS, "aba_ativa": aba,
             "usuario_nome": session.get("erp_usuario_nome", ""),
-            "usuario_perfil": session.get("erp_usuario_perfil", "")}
+            "usuario_perfil": session.get("erp_usuario_perfil", ""),
+            "migracoes_pendentes": _migracoes_pendentes()}
 _ABERTOS = ("EM_ANALISE", "AGUARDANDO_APROVACAO", "APROVADO", "BLOQUEADO", "PAGO_PARCIAL")
 
 
@@ -1909,6 +1920,10 @@ def health():
         from sqlalchemy import text
         with get_session() as s:
             s.execute(text("SELECT 1"))
-        return jsonify({"ok": True, "modulo": "erp", "banco": "conectado"}), 200
+        pendentes = _migracoes_pendentes()
+        return jsonify({"ok": not pendentes, "modulo": "erp", "banco": "conectado",
+                        "migracoes_pendentes": pendentes,
+                        "aviso": ("aplique as atualizações em Configurações"
+                                  if pendentes else "estrutura em dia")}), 200
     except Exception as e:
         return jsonify({"ok": False, "modulo": "erp", "erro": str(e)}), 503

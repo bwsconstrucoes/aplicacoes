@@ -27,6 +27,16 @@
   </div>
 </header>
 
+{% if migracoes_pendentes %}
+<div style="background:#B3261E; color:#fff; padding:10px 16px; font-size:13.5px;
+            display:flex; gap:12px; align-items:center; flex-wrap:wrap">
+  <b>Banco desatualizado</b>
+  <span>{{ migracoes_pendentes|length }} atualização(ões) pendente(s)
+    ({{ migracoes_pendentes|join(', ') }}). Algumas telas vão falhar até aplicar.</span>
+  <a class="btn amarelo" style="margin-left:auto; text-decoration:none"
+     href="{{ url_for('erp.pagina_config') }}">Aplicar agora</a>
+</div>
+{% endif %}
 <div class="corpo {% block classe_corpo %}{% endblock %}">
   <aside class="filtros">{% block filtros %}{% endblock %}</aside>
   <main class="principal">{% block conteudo %}{% endblock %}</main>

@@ -58,7 +58,16 @@ def aplicar_pendentes() -> dict[str, Any]:
             aplicadas.append(nome)
             logger.info("ERP: migração %s aplicada", nome)
         except Exception as e:
-            erro = {"migracao": nome, "erro": str(e)}
+            texto = str(e)
+            dica = ""
+            if "unsafe use of new value" in texto:
+                dica = ("valor novo de enum usado na mesma migração em que foi criado — "
+                        "separe em duas migrações")
+            elif "already exists" in texto:
+                dica = "objeto já existe; a migração pode ter sido aplicada parcialmente"
+            elif "does not exist" in texto:
+                dica = "depende de uma migração anterior que não foi aplicada"
+            erro = {"migracao": nome, "erro": texto[:800], "dica": dica}
             logger.exception("ERP: falha na migração %s", nome)
             break
     return {"aplicadas": aplicadas, "erro": erro,
