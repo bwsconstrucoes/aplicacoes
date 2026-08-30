@@ -75,8 +75,14 @@
 - [ ] **Robô Bradesco**: adaptar para dar baixa via core do ERP
 - [ ] **Suprimentos**: pedidos de compra, three-way match; etapa/serviço da obra
       entra aqui (dentro do centro de custo), não antes
-- [ ] **Integração do pipe Centro de Custo**: fases da obra, aditivos, ISS,
-      tributação, anexos (contrato, CREA, seguro-garantia, OS)
+- [x] Cadastro completo da obra: endereço (local de entrega), CNO, ART/RRT,
+      contrato, vigência, data-base do reajuste, conta de recebimento,
+      tributação (ISS/INSS/federais) e ADITIVOS de valor e prazo
+- [x] Reclassificar conta/obra com título pago e conciliado, sem desfazer nada
+- [x] Desfazer baixa+conciliação em um passo (o ritual do Omie em um clique)
+- [ ] Obra — falta: anexos (contrato, CREA, seguro-garantia, OS) e fases de
+      acompanhamento; alerta de data-base do reajuste na agenda
+- [ ] Integrar com o módulo emissaonf: emitir a nota a partir da medição
 - [ ] **Open Finance / API bancária**: extrato e DDA automáticos (futuro)
 - [ ] Notificação a quem solicitou (WhatsApp/Telegram já existem no monorepo)
 - [ ] Aposentar o `.env` commitado: trocar a senha do banco no Render

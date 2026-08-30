@@ -1283,6 +1283,219 @@ def api_receber_baixar():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+# ---------------------------------------------------------------------------
+# Ajustes: reclassificar e desfazer
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/titulos/<int:titulo_id>/reclassificar", methods=["POST"])
+@login_obrigatorio
+def api_reclassificar(titulo_id: int):
+    """Troca conta do plano e/ou obra mesmo com o título pago e conciliado."""
+    from app.apps.erp.core.titulos.ajustes import reclassificar
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = reclassificar(s, titulo_id,
+                                categoria_id=d.get("categoria_id"),
+                                rateios=d.get("rateios"),
+                                motivo=d.get("motivo", ""), usuario=usuario)
+            s.commit()
+        return jsonify({"ok": True, "relatorio": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except Exception as e:
+        logger.exception("ERP: falha ao reclassificar")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/titulos/<int:titulo_id>/desfazer", methods=["GET", "POST"])
+@login_obrigatorio
+def api_desfazer(titulo_id: int):
+    """GET diz o que será desfeito; POST desfaz conciliação e baixa de uma vez."""
+    from app.apps.erp.core.titulos.ajustes import desfazer_em_cadeia, diagnosticar_desfazer
+    try:
+        if request.method == "GET":
+            with get_session() as s:
+                return jsonify({"ok": True, "diagnostico": diagnosticar_desfazer(s, titulo_id)})
+        d = request.get_json(silent=True) or {}
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = desfazer_em_cadeia(s, titulo_id, d.get("motivo", ""), usuario,
+                                     ate=(d.get("ate") or "APROVADO").upper())
+            s.commit()
+        return jsonify({"ok": True, "relatorio": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except Exception as e:
+        logger.exception("ERP: falha ao desfazer")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>", methods=["GET", "POST"])
+@login_obrigatorio
+def api_obra(obra_id: int):
+    """Cadastro completo da obra: identificação, endereço, contrato e tributação."""
+    from sqlalchemy import select
+    from app.apps.erp.core.titulos.tributacao import resumo_tributacao
+    from app.apps.erp.db.models.cadastros import Obra, ObraAditivo
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    try:
+        with get_session() as s:
+            obra = s.get(Obra, obra_id)
+            if obra is None:
+                return jsonify({"ok": False, "erro": "Obra não encontrada."}), 404
+            if request.method == "POST":
+                usuario = _usuario_logado(s)
+                d = request.get_json(silent=True) or {}
+                texto = ("nome objeto cliente cnpj_cliente contrato municipio uf cno endereco "
+                         "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
+                         "engenheiro_fiscal ordem_servico indice_reajuste regime_obra "
+                         "observacoes_fiscais orgao_resumido status").split()
+                numeros = ("valor_contrato aliquota_iss aliquota_iss_pct pct_servico_iss "
+                           "pct_servico_inss").split()
+                datas = ("vigencia_inicio vigencia_fim data_base_orcamento data_ordem_servico "
+                         "data_inicio data_termino").split()
+                booleanos = "iss_retido inss_retido aceita_deducao_material".split()
+                from decimal import Decimal, InvalidOperation
+                from datetime import date as _date
+                antes = {"aliquota_iss": str(obra.aliquota_iss_pct),
+                         "valor_contrato": str(obra.valor_contrato)}
+                for campo in texto:
+                    if campo in d:
+                        setattr(obra, campo, (str(d[campo]).strip() or None))
+                for campo in numeros:
+                    if campo in d:
+                        v = str(d[campo]).replace(".", "").replace(",", ".").strip()
+                        try:
+                            setattr(obra, campo, Decimal(v) if v else None)
+                        except InvalidOperation:
+                            return jsonify({"ok": False,
+                                            "erro": f"Valor inválido em {campo}."}), 400
+                for campo in datas:
+                    if campo in d:
+                        v = str(d[campo]).strip()
+                        setattr(obra, campo, _date.fromisoformat(v) if v else None)
+                for campo in booleanos:
+                    if campo in d:
+                        setattr(obra, campo, bool(d[campo]))
+                if "federais_retidos" in d:
+                    obra.federais_retidos = [str(x).upper() for x in (d["federais_retidos"] or [])]
+                if "prazo_execucao_dias" in d:
+                    obra.prazo_execucao_dias = int(d["prazo_execucao_dias"] or 0) or None
+                if "conta_recebimento_id" in d:
+                    obra.conta_recebimento_id = d["conta_recebimento_id"] or None
+                s.flush()
+                registrar_evento(s, "obra", obra.id, "ATUALIZADA",
+                                 {"codigo": obra.codigo, "antes": antes}, usuario.id)
+                s.commit()
+
+            aditivos = s.scalars(select(ObraAditivo)
+                                 .where(ObraAditivo.obra_id == obra.id)
+                                 .order_by(ObraAditivo.numero)).all()
+            acrescimo = sum(float(a.valor) for a in aditivos)
+            dias_extra = sum(a.dias for a in aditivos)
+            dados = {c: getattr(obra, c) for c in (
+                "id codigo nome objeto cliente cnpj_cliente contrato municipio uf cno endereco "
+                "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
+                "engenheiro_fiscal ordem_servico indice_reajuste regime_obra status "
+                "observacoes_fiscais orgao_resumido codigo_omie_depto ref_pipefy "
+                "iss_retido inss_retido aceita_deducao_material prazo_execucao_dias "
+                "conta_recebimento_id").split()}
+            for campo in ("valor_contrato", "aliquota_iss", "aliquota_iss_pct",
+                          "pct_servico_iss", "pct_servico_inss"):
+                v = getattr(obra, campo, None)
+                dados[campo] = float(v) if v is not None else None
+            for campo in ("vigencia_inicio", "vigencia_fim", "data_base_orcamento",
+                          "data_ordem_servico", "data_inicio", "data_termino"):
+                v = getattr(obra, campo, None)
+                dados[campo] = v.isoformat() if v else None
+            dados["federais_retidos"] = list(obra.federais_retidos or [])
+            dados["resumo_tributacao"] = resumo_tributacao(obra)
+            dados["valor_vigente"] = round(float(obra.valor_contrato or 0) + acrescimo, 2)
+            dados["aditivos"] = [{
+                "id": a.id, "numero": a.numero, "tipo": a.tipo, "valor": float(a.valor),
+                "dias": a.dias, "objeto": a.objeto,
+                "data_assinatura": a.data_assinatura.isoformat() if a.data_assinatura else None,
+                "nova_vigencia_fim": (a.nova_vigencia_fim.isoformat()
+                                      if a.nova_vigencia_fim else None)} for a in aditivos]
+            dados["dias_aditivados"] = dias_extra
+        return jsonify({"ok": True, "obra": dados})
+    except Exception as e:
+        logger.exception("ERP: falha no cadastro da obra %s", obra_id)
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>/aditivos", methods=["POST"])
+@login_obrigatorio
+def api_aditivo(obra_id: int):
+    from decimal import Decimal
+    from datetime import date as _date
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.cadastros import Obra, ObraAditivo
+    d = request.get_json(silent=True) or {}
+    numero = (d.get("numero") or "").strip()
+    tipo = (d.get("tipo") or "VALOR").upper()
+    if not numero:
+        return jsonify({"ok": False, "erro": "Informe o número do aditivo."}), 400
+    if tipo not in ("VALOR", "PRAZO", "VALOR_E_PRAZO", "REAJUSTE", "SUPRESSAO"):
+        return jsonify({"ok": False, "erro": f"Tipo inválido: {tipo}"}), 400
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            obra = s.get(Obra, obra_id)
+            if obra is None:
+                return jsonify({"ok": False, "erro": "Obra não encontrada."}), 404
+            valor = Decimal(str(d.get("valor") or 0).replace(".", "").replace(",", "."))
+            if tipo == "SUPRESSAO" and valor > 0:
+                valor = -valor                      # supressão reduz o contrato
+            nova_vig = (_date.fromisoformat(d["nova_vigencia_fim"])
+                        if d.get("nova_vigencia_fim") else None)
+            s.add(ObraAditivo(
+                obra_id=obra.id, numero=numero, tipo=tipo, valor=valor,
+                dias=int(d.get("dias") or 0), nova_vigencia_fim=nova_vig,
+                data_assinatura=(_date.fromisoformat(d["data_assinatura"])
+                                 if d.get("data_assinatura") else None),
+                objeto=(d.get("objeto") or "").strip() or None, criado_por=usuario.id))
+            if nova_vig:
+                obra.vigencia_fim = nova_vig       # o aditivo de prazo move a vigência
+            s.flush()
+            registrar_evento(s, "obra", obra.id, "ADITIVO_REGISTRADO", {
+                "numero": numero, "tipo": tipo, "valor": str(valor),
+                "dias": int(d.get("dias") or 0)}, usuario.id)
+            s.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.exception("ERP: falha ao registrar aditivo")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>/tributacao", methods=["POST"])
+@login_obrigatorio
+def api_simular_tributacao(obra_id: int):
+    """Simula as retenções de uma medição com o cadastro fiscal da obra."""
+    from app.apps.erp.core.titulos.tributacao import calcular
+    from app.apps.erp.db.models.cadastros import Obra
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            obra = s.get(Obra, obra_id)
+            if obra is None:
+                return jsonify({"ok": False, "erro": "Obra não encontrada."}), 404
+            calc = calcular(obra, d.get("valor") or 0,
+                            sem_deducao=bool(d.get("sem_deducao")),
+                            pct_servico_iss=d.get("pct_servico_iss"),
+                            pct_servico_inss=d.get("pct_servico_inss"),
+                            aliquota_iss=d.get("aliquota_iss"))
+        return jsonify({"ok": True, "calculo": calc.como_dict()})
+    except Exception as e:
+        logger.exception("ERP: falha ao simular tributação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/health")
 def health():
     """Health check do módulo — não exige login."""

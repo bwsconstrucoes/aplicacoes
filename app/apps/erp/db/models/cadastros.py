@@ -196,6 +196,35 @@ class Obra(Base):
     data_termino: Mapped[Optional[date]] = mapped_column(Date)
     orgao_resumido: Mapped[Optional[str]] = mapped_column(Text)
     ref_pipefy: Mapped[Optional[str]] = mapped_column(Text)
+    # endereço completo (serve de local de entrega nas compras)
+    cep: Mapped[Optional[str]] = mapped_column(Text)
+    bairro: Mapped[Optional[str]] = mapped_column(Text)
+    numero_endereco: Mapped[Optional[str]] = mapped_column(Text)
+    complemento: Mapped[Optional[str]] = mapped_column(Text)
+    codigo_ibge: Mapped[Optional[str]] = mapped_column(Text)
+    responsavel_tecnico: Mapped[Optional[str]] = mapped_column(Text)
+    art_rrt: Mapped[Optional[str]] = mapped_column(Text)
+    engenheiro_fiscal: Mapped[Optional[str]] = mapped_column(Text)
+    # contrato
+    vigencia_inicio: Mapped[Optional[date]] = mapped_column(Date)
+    vigencia_fim: Mapped[Optional[date]] = mapped_column(Date)
+    prazo_execucao_dias: Mapped[Optional[int]] = mapped_column(Integer)
+    data_base_orcamento: Mapped[Optional[date]] = mapped_column(Date)
+    indice_reajuste: Mapped[Optional[str]] = mapped_column(Text)
+    conta_recebimento_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("contas_bancarias.id"))
+    ordem_servico: Mapped[Optional[str]] = mapped_column(Text)
+    data_ordem_servico: Mapped[Optional[date]] = mapped_column(Date)
+    # tributação da nota
+    aliquota_iss_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 4))
+    iss_retido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    aceita_deducao_material: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    pct_servico_iss: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    pct_servico_inss: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    inss_retido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    federais_retidos: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
+    regime_obra: Mapped[Optional[str]] = mapped_column(Text)
+    observacoes_fiscais: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="ATIVA")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -264,4 +293,23 @@ class ContaBancaria(Base):
     conta: Mapped[str] = mapped_column(Text, nullable=False)
     codigo_omie: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ObraAditivo(Base):
+    """Aditivo de valor e/ou prazo. O valor do contrato vigente é o original
+    mais a soma dos aditivos — o histórico de cada alteração fica preservado."""
+    __tablename__ = "obra_aditivos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
+    numero: Mapped[str] = mapped_column(Text, nullable=False)
+    tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    dias: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    nova_vigencia_fim: Mapped[Optional[date]] = mapped_column(Date)
+    data_assinatura: Mapped[Optional[date]] = mapped_column(Date)
+    objeto: Mapped[Optional[str]] = mapped_column(Text)
+    anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

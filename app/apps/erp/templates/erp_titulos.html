@@ -52,6 +52,8 @@
       <button class="btn" data-acao="aprovar">✔ Liberar p/ pagamento</button>
       <button class="btn secundario" data-acao="devolver">↩ Devolver ao solicitante</button>
       <button class="btn perigo" data-acao="cancelar">✕ Cancelar SP</button>
+      <button class="btn secundario" data-acao="reclassificar">↔ Reclassificar</button>
+      <button class="btn secundario" data-acao="desfazer">⟲ Desfazer baixa</button>
     </span>
   </div>
   <div class="tabela-rolagem">
@@ -315,7 +317,94 @@ els("marca-todos").addEventListener("change", ev => {
   visiveis().forEach(t => ev.target.checked ? SELECAO.add(t.id) : SELECAO.delete(t.id));
   desenhar();
 });
-document.querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", () => executar(b.dataset.acao)));
+document.querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", () => {
+  const a = b.dataset.acao;
+  if (a === "reclassificar") return reclassificar();
+  if (a === "desfazer") return desfazer();
+  executar(a);
+}));
+
+async function reclassificar(){
+  if (SELECAO.size !== 1) { aviso("mensagem","Selecione um título para reclassificar.","erro"); return; }
+  const id = [...SELECAO][0];
+  const t = TITULOS.find(x=>x.id===id);
+  let cats = [], obras = [];
+  try {
+    const d = await api("/erp/api/lancamento/dados");
+    cats = d.dados.categorias; obras = d.dados.obras;
+  } catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  const porGrupo = {};
+  cats.forEach(c => (porGrupo[c.grupo] = porGrupo[c.grupo]||[]).push(c));
+  els("dlg-titulo").textContent = `Reclassificar ${t.numero_sp}`;
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="aviso info">Trocar a conta ou a obra <b>não desfaz baixa nem conciliação</b>:
+      o dinheiro saiu igual, muda só a classificação. A alteração fica na trilha.</div>
+    <div class="cartao-dica">${t.descricao} · ${t.fornecedor} · ${moeda(t.valor_liquido)} ·
+      situação <b>${ROTULOS[t.status]||t.status}</b></div>
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo" style="grid-column:span 2"><label>Nova conta do plano</label>
+        <select id="rc-cat"><option value="">— manter ${t.categoria} —</option>
+        ${Object.keys(porGrupo).map(g=>`<optgroup label="${g}">` +
+          porGrupo[g].map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("") +
+          `</optgroup>`).join("")}</select></div>
+      <div class="campo"><label>Nova obra (rateio integral)</label>
+        <select id="rc-obra"><option value="">— manter ${t.obra||"atual"} —</option>
+        ${obras.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("")}</select>
+        <div class="dica">Para dividir entre várias obras, use o detalhe do título.</div></div>
+      <div class="campo" style="grid-column:span 2"><label>Motivo *</label>
+        <input id="rc-motivo" placeholder="ex.: classificado como material, era locação"></div>
+    </div>
+    <div style="margin-top:14px"><button class="btn" id="rc-salvar">Reclassificar</button></div>`;
+  els("rc-salvar").addEventListener("click", async () => {
+    const corpo = {motivo: els("rc-motivo").value};
+    if (els("rc-cat").value) corpo.categoria_id = +els("rc-cat").value;
+    if (els("rc-obra").value) corpo.rateios = [{obra_id:+els("rc-obra").value, valor: t.valor_liquido}];
+    try {
+      const d = await api(`/erp/api/titulos/${id}/reclassificar`, {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+      els("dlg").close();
+      aviso("mensagem", `${d.relatorio.numero_sp} reclassificado: ${d.relatorio.mudancas.join("; ")}.
+        <br><small>${d.relatorio.preservado}</small>`, "ok");
+      SELECAO.clear(); carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+}
+
+async function desfazer(){
+  if (SELECAO.size !== 1) { aviso("mensagem","Selecione um título para desfazer a baixa.","erro"); return; }
+  const id = [...SELECAO][0];
+  try {
+    const {diagnostico: g} = await api(`/erp/api/titulos/${id}/desfazer`);
+    els("dlg-titulo").textContent = `Desfazer baixa de ${g.numero_sp}`;
+    els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+      <div class="aviso info">Em um passo só, na ordem certa. O que será desfeito:
+        <ul style="margin:6px 0 0 18px">${g.passos.map(p=>`<li>${p}</li>`).join("")}</ul></div>
+      <div class="cartao-dica">Situação atual: <b>${g.status}</b> ·
+        ${g.parcelas_pagas} de ${g.parcelas} parcela(s) paga(s) ·
+        ${g.pagamentos.length} pagamento(s) · ${g.conciliacoes} conciliação(ões).
+        Tudo fica registrado na trilha.</div>
+      <div class="form-grade" style="margin-top:12px">
+        <div class="campo"><label>Devolver o título para</label><select id="df-ate">
+          <option value="APROVADO">Aprovado (pronto para nova baixa)</option>
+          <option value="RASCUNHO">Rascunho (corrigir o lançamento)</option></select></div>
+        <div class="campo" style="grid-column:span 2"><label>Motivo *</label>
+          <input id="df-motivo" placeholder="ex.: baixa lançada na data errada"></div>
+      </div>
+      <div style="margin-top:14px"><button class="btn perigo" id="df-ok">Desfazer</button></div>`;
+    els("df-ok").addEventListener("click", async () => {
+      try {
+        const d = await api(`/erp/api/titulos/${id}/desfazer`, {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({motivo: els("df-motivo").value, ate: els("df-ate").value})});
+        els("dlg").close();
+        aviso("mensagem", `${d.relatorio.numero_sp}: ${d.relatorio.passos.join(" · ")}.`, "ok");
+        SELECAO.clear(); carregar();
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    });
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
 document.querySelectorAll("thead th[data-ordem]").forEach(th => th.addEventListener("click", () => {
   ORDEM = {campo: th.dataset.ordem, asc: ORDEM.campo === th.dataset.ordem ? !ORDEM.asc : true};
   document.querySelectorAll("thead .seta").forEach(s=>s.remove());
