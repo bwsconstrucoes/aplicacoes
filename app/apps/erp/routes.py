@@ -284,6 +284,7 @@ def api_config():
                     "sugestao_dedutivel": c.dedutivel_padrao,
                     "ativo": c.ativo,
                     "substituida_por": c.substituida_por_id,
+                    "personalizada": c.personalizada,
                     "tipos": [(t.value if hasattr(t, "value") else str(t)).split("_", 1)[0]
                               for t in (c.tipos_permitidos or [])],
                 } for c in cats],
@@ -541,6 +542,69 @@ def api_definir_dedutibilidade():
         return jsonify({"ok": True, "processados": processados, "erros": erros})
     except Exception as e:
         logger.exception("ERP: falha ao definir dedutibilidade")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/config/categoria/<int:categoria_id>", methods=["POST"])
+@login_obrigatorio
+def api_editar_categoria(categoria_id: int):
+    """Renomeia/ajusta uma conta. A edição marca a conta como personalizada —
+    reinstalar o plano padrão não sobrescreve mais o texto dela."""
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.cadastros import Categoria, PerfilUsuario, TipoTitulo
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if usuario.perfil not in (PerfilUsuario.ADMIN, PerfilUsuario.FINANCEIRO):
+                return jsonify({"ok": False, "erro": "Restrito a FINANCEIRO/ADMIN."}), 403
+            cat = s.get(Categoria, categoria_id)
+            if cat is None:
+                return jsonify({"ok": False, "erro": "Categoria não encontrada."}), 404
+            antes = {"codigo": cat.codigo, "descricao": cat.descricao,
+                     "natureza": cat.natureza, "ativo": cat.ativo}
+
+            if "descricao" in d:
+                nova_desc = (d.get("descricao") or "").strip()
+                if len(nova_desc) < 3:
+                    return jsonify({"ok": False, "erro": "Descrição muito curta."}), 400
+                cat.descricao = nova_desc
+            if "codigo" in d and (d.get("codigo") or "").strip():
+                novo_cod = d["codigo"].strip()
+                if novo_cod != cat.codigo:
+                    from sqlalchemy import select as _sel
+                    if s.scalars(_sel(Categoria).where(Categoria.codigo == novo_cod)).first():
+                        return jsonify({"ok": False, "erro": f"Já existe conta com o código {novo_cod}."}), 400
+                    cat.codigo = novo_cod
+            if "descricao_uso" in d:
+                cat.descricao_uso = (d.get("descricao_uso") or "").strip() or None
+            if "natureza" in d:
+                nat = (d.get("natureza") or "").strip().upper()
+                if nat not in ("RESULTADO", "FLUXO"):
+                    return jsonify({"ok": False, "erro": "Natureza deve ser RESULTADO ou FLUXO."}), 400
+                cat.natureza = nat
+            if "grupo_nome" in d and (d.get("grupo_nome") or "").strip():
+                cat.grupo_nome = d["grupo_nome"].strip()
+            if "subgrupo_nome" in d and (d.get("subgrupo_nome") or "").strip():
+                cat.subgrupo_nome = d["subgrupo_nome"].strip()
+            if "tipos" in d and isinstance(d["tipos"], list):
+                try:
+                    cat.tipos_permitidos = [TipoTitulo(t) for t in d["tipos"]]
+                except ValueError as e:
+                    return jsonify({"ok": False, "erro": f"Tipo inválido: {e}"}), 400
+            if "ativo" in d:
+                cat.ativo = bool(d["ativo"])
+
+            cat.personalizada = True
+            s.flush()
+            registrar_evento(s, "categoria", cat.id, "EDITADA",
+                             {"antes": antes, "depois": {
+                                 "codigo": cat.codigo, "descricao": cat.descricao,
+                                 "natureza": cat.natureza, "ativo": cat.ativo}}, usuario.id)
+            s.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.exception("ERP: falha ao editar categoria %s", categoria_id)
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

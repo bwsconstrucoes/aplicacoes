@@ -116,7 +116,7 @@ function desenhar(){
         return `<div style="margin:6px 0 12px">
           <div class="kpi-rotulo" style="margin-bottom:4px">${scod} ${snome}</div>
           <table><tbody>` + subs[sg].map(c => `
-            <tr class="${c.ativo?"":"zerada"}" style="${c.ativo?"":"opacity:.5"}">
+            <tr class="${c.ativo?"":"zerada"}" style="${c.ativo?"":"opacity:.5"};cursor:pointer" data-cat="${c.id}" title="Clique para renomear ou ajustar">
               <td class="dados" style="width:78px">${c.codigo}</td>
               <td class="desc">${c.descricao}${c.uso?`<small>${c.uso}</small>`:""}
                 ${c.ativo?"":`<small><b>aposentada</b> — lançamentos foram para outra conta</small>`}</td>
@@ -127,6 +127,8 @@ function desenhar(){
   }).join("");
   document.querySelectorAll("#lista-grupos .filtro-cab").forEach(b =>
     b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+  document.querySelectorAll("[data-cat]").forEach(tr =>
+    tr.addEventListener("click", () => editarCategoria(+tr.dataset.cat)));
 
   const fo = (els("busca-obra").value||"").toLowerCase();
   const obras = DADOS.obras.filter(o => `${o.codigo} ${o.nome} ${o.cliente||""}`.toLowerCase().includes(fo));
@@ -204,6 +206,49 @@ els("btn-instalar-plano").addEventListener("click", async () => {
   } catch(e){ aviso("mensagem", e.message, "erro"); }
   b.disabled = false; b.textContent = "Instalar plano padrão BWS";
 });
+
+function editarCategoria(id){
+  const c = DADOS.categorias.find(x => x.id === id);
+  if (!c) return;
+  els("dlg-titulo").textContent = `Editar conta ${c.codigo}`;
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo"><label>Código</label><input id="e-codigo" value="${c.codigo}"></div>
+      <div class="campo" style="grid-column:span 2"><label>Nome da conta</label>
+        <input id="e-descricao" value="${c.descricao.replace(/"/g,"&quot;")}"></div>
+      <div class="campo"><label>Natureza</label><select id="e-natureza">
+        <option value="RESULTADO" ${c.natureza==="RESULTADO"?"selected":""}>Resultado (DRE)</option>
+        <option value="FLUXO" ${c.natureza==="FLUXO"?"selected":""}>Fluxo de caixa</option></select></div>
+      <div class="campo"><label>Situação</label><select id="e-ativo">
+        <option value="1" ${c.ativo?"selected":""}>Em uso</option>
+        <option value="0" ${c.ativo?"":"selected"}>Aposentada</option></select></div>
+      <div class="campo"><label>Grupo</label><input id="e-grupo" value="${c.grupo_nome}"></div>
+      <div class="campo"><label>Subgrupo</label><input id="e-subgrupo" value="${c.subgrupo_nome}"></div>
+    </div>
+    <div class="campo" style="margin-top:12px"><label>Quando usar esta conta</label>
+      <textarea id="e-uso" style="font-family:inherit; font-size:14px">${c.uso||""}</textarea>
+      <div class="dica">Aparece para quem lança, evitando escolha errada.</div></div>
+    <div class="aviso info" style="margin-top:12px">Ao salvar, esta conta fica marcada como
+      <b>personalizada</b>: reinstalar o plano padrão não desfaz sua edição.</div>
+    <div style="display:flex; gap:8px">
+      <button class="btn" id="e-salvar">Salvar</button>
+      <button class="btn secundario" onclick="els('dlg').close()">Cancelar</button>
+    </div>`;
+  els("e-salvar").addEventListener("click", async () => {
+    try {
+      await api(`/erp/api/config/categoria/${id}`, {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({codigo: els("e-codigo").value, descricao: els("e-descricao").value,
+          natureza: els("e-natureza").value, ativo: els("e-ativo").value === "1",
+          grupo_nome: els("e-grupo").value, subgrupo_nome: els("e-subgrupo").value,
+          descricao_uso: els("e-uso").value})});
+      els("dlg").close();
+      aviso("mensagem", "Conta atualizada.", "ok");
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+}
 
 els("btn-substituir").addEventListener("click", () => {
   const opcoes = DADOS.categorias.filter(c=>c.ativo)

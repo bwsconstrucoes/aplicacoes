@@ -13,9 +13,11 @@
 #   2. DEDUTIBILIDADE NÃO É DA CONTA. É do documento; vive no título
 #      (status PENDENTE/DEDUTIVEL/INDEDUTIVEL/PARCIAL). Aqui fica apenas uma
 #      SUGESTÃO inicial para acelerar a triagem.
-#   3. MEIO DE PAGAMENTO NÃO É CATEGORIA. "Fundo fixo", "despesa com cartão" e
-#      "BeeVale" saem do plano — são forma de pagamento do título. A conta diz
-#      O QUE foi comprado.
+#   3. MEIO DE PAGAMENTO NÃO É CATEGORIA — mas FUNDO FIXO É. "Despesa com
+#      cartão" e "BeeVale" saem do plano (são forma de pagamento). O fundo fixo
+#      permanece como conta porque não é um meio de pagar: é um processo de
+#      PRESTAÇÃO DE CONTAS entre o administrativo da obra e a empresa, com
+#      comprovantes anexados e análise própria (tipo T10).
 #   4. ATIVO NÃO É DESPESA. Aquisições vão para o grupo 8 (investimento,
 #      natureza FLUXO), fora da DRE gerencial — corrige "Móveis e Utensílios"
 #      dentro de Materiais Aplicados e "Conservação Predial" dentro de Ativos.
@@ -186,6 +188,10 @@ PLANO: list[tuple[str, str, str, str, list[tuple]]] = [
         ("3.4.05", "Mobilização, desmobilização e canteiro", "RESULTADO", True, [MAT, SRV, EXC], ""),
         ("3.4.06", "Taxas, licenças e ART/RRT da obra", "RESULTADO", True, [GUI, EXC], ""),
         ("3.4.07", "Seguros da obra (risco de engenharia, garantia)", "RESULTADO", True, [SRV, EXC], ""),
+        ("3.4.08", "Fundo fixo da obra — prestação de contas", "RESULTADO", True, [FFX],
+         "Reembolso ao administrativo da obra mediante prestação de contas com os "
+         "comprovantes anexados. Item de valor relevante e com nota própria deve ser "
+         "lançado na sua conta específica; o fundo fixo cobre a miudeza do canteiro."),
     ]),
 
     # ------------------------------------------------------------- 4 PESSOAL
@@ -234,6 +240,8 @@ PLANO: list[tuple[str, str, str, str, list[tuple]]] = [
         ("5.2.04", "Cartórios, CREA e taxas administrativas", "RESULTADO", True, [GUI, REE], ""),
     ]),
     ("5", "Despesas administrativas", "5.3", "Operação administrativa", [
+        ("5.3.10", "Fundo fixo administrativo — prestação de contas", "RESULTADO", True, [FFX],
+         "Mesmo rito do fundo fixo de obra, para despesas miúdas da sede."),
         ("5.3.01", "Material de escritório e impressões", "RESULTADO", True, [MAT, FFX], ""),
         ("5.3.02", "Combustível administrativo", "RESULTADO", True, [MAT, FFX, REE], ""),
         ("5.3.03", "Manutenção de veículos e máquinas", "RESULTADO", True, [SRV, MAT], ""),
@@ -323,7 +331,8 @@ def _tipos(lista: list[str]) -> list[TipoTitulo]:
 def aplicar_plano(s: Session, usuario: Optional[Usuario] = None,
                   sobrescrever_descricoes: bool = True) -> dict[str, Any]:
     """Grava o plano no banco. Idempotente: cria o que falta e atualiza o que
-    mudou, preservando categorias criadas manualmente pela BWS."""
+    mudou. Contas criadas pela BWS e contas RENOMEADAS pelo usuário
+    (personalizada=True) têm o texto preservado."""
     criadas, atualizadas = [], []
     ordem = 0
     for grupo_cod, grupo_nome, sub_cod, sub_nome, categorias in PLANO:
@@ -346,7 +355,7 @@ def aplicar_plano(s: Session, usuario: Optional[Usuario] = None,
                     if getattr(cat, campo, None) != valor:
                         setattr(cat, campo, valor)
                         mudou = True
-                if sobrescrever_descricoes:
+                if sobrescrever_descricoes and not cat.personalizada:
                     if cat.descricao != desc:
                         cat.descricao = desc
                         mudou = True

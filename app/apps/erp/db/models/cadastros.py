@@ -220,6 +220,7 @@ class Categoria(Base):
     descricao_uso: Mapped[Optional[str]] = mapped_column(Text)
     substituida_por_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("categorias.id"))
     ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    personalizada: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     dedutivel_padrao: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     credito_pis_cofins: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     conta_contabil: Mapped[Optional[str]] = mapped_column(Text)
