@@ -293,6 +293,15 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
     from app.apps.erp.core.titulos.analise import analisar_titulo
     analisar_titulo(s, titulo, criticas_extra=criticas_transicao,
                     possivel_duplicidade=possivel_dup)
+
+    # dupla confirmação: lançamento de quem não é instância final trava
+    # aguardando o aval de um supervisor/gestor/diretor
+    from app.apps.erp.core.titulos.aval import marcar_para_aval
+    if marcar_para_aval(s, titulo, usuario):
+        registrar_evento(s, "titulo", titulo.id, "AGUARDANDO_AVAL", {
+            "numero_sp": titulo.numero_sp,
+            "motivo": f"lançado por {usuario.nome} ({usuario.perfil.value}) — "
+                      f"exige confirmação de segunda pessoa"}, usuario.id)
     return titulo
 
 
@@ -344,6 +353,12 @@ def _exigir_status(t: Titulo, *permitidos: StatusTitulo) -> None:
 def aprovar(s: Session, titulo_id: int, usuario: Usuario) -> Titulo:
     """Aprova título respeitando alçadas (E1) e segregação de funções (F2)."""
     t = obter(s, titulo_id)
+    if t.status == StatusTitulo.AGUARDANDO_AVAL:
+        raise ErroValidacao(
+            "Este título ainda aguarda o aval da segunda pessoa (supervisor, gestor "
+            "ou diretor financeiro). Só depois vai para liberação de pagamento.")
+    if t.exige_aval and t.avalizado_em is None:
+        raise ErroValidacao("Título sem aval registrado — não pode ser liberado.")
     _exigir_status(t, StatusTitulo.AGUARDANDO_APROVACAO, StatusTitulo.EM_ANALISE)
     if usuario.id == t.solicitante_id:
         raise ErroPermissao("Segregação de funções: quem lança não aprova o próprio título (F2).")

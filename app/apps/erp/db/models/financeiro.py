@@ -31,6 +31,7 @@ from app.apps.erp.db.models.cadastros import (
 class StatusTitulo(str, enum.Enum):
     RASCUNHO = "RASCUNHO"
     EM_ANALISE = "EM_ANALISE"
+    AGUARDANDO_AVAL = "AGUARDANDO_AVAL"
     DEVOLVIDO = "DEVOLVIDO"
     AGUARDANDO_APROVACAO = "AGUARDANDO_APROVACAO"
     APROVADO = "APROVADO"
@@ -206,6 +207,9 @@ class Titulo(Base):
     dedutibilidade_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     dedutibilidade_origem: Mapped[Optional[str]] = mapped_column(Text)
     forma_liquidacao: Mapped[Optional[str]] = mapped_column(Text)
+    exige_aval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    avalizado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    avalizado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     justificativa_excecao: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[StatusTitulo] = mapped_column(
         pg_enum(StatusTitulo, "status_titulo"), nullable=False, default=StatusTitulo.RASCUNHO)
@@ -432,4 +436,22 @@ class Movimentacao(Base):
     extrato_saida_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("extratos.id"))
     extrato_entrada_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("extratos.id"))
     criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TituloAval(Base):
+    """Assinatura da segunda pessoa. Guarda o resumo do título no momento do
+    aval — se algo mudar depois, dá para provar o que foi assinado."""
+    __tablename__ = "titulo_avais"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    titulo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("titulos.id"), nullable=False)
+    usuario_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
+    papel: Mapped[str] = mapped_column(Text, nullable=False)
+    decisao: Mapped[str] = mapped_column(Text, nullable=False)
+    motivo: Mapped[Optional[str]] = mapped_column(Text)
+    assinatura: Mapped[str] = mapped_column(Text, nullable=False)
+    resumo_assinado: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    ip: Mapped[Optional[str]] = mapped_column(Text)
+    dispositivo: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

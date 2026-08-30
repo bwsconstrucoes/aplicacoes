@@ -91,7 +91,12 @@
 - [x] Aviso ao solicitante quando o título é pago, via TELEGRAM, com o
       comprovante junto — idempotente (não reenvia a mesma baixa) e marcando
       correção quando valor/data mudam
-- [x] Histórico completo por título (o que mudou, quando, por quem) na tela
+- [x] Histórico completo por título na tela + histórico de QUALQUER cadastro
+      (obra, fornecedor, categoria, movimentação) e consulta ampla de auditoria
+- [x] AVAL em duas pessoas: lançamento de administrativo de obra/escritório
+      trava até a assinatura de supervisor, gestor ou diretor financeiro
+- [x] Perfil DIRETOR_FINANCEIRO; dados de pagamento ocultos para
+      administrativo de obra
 - [ ] Aposentar o `.env` commitado: trocar a senha do banco no Render
 
 ## Decisões registradas

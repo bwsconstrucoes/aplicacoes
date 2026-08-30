@@ -36,6 +36,7 @@ _LIMITE_GRADE = 500
 ABAS = [
     ("lancar", "Lançar", "erp.pagina_lancar"),
     ("titulos", "Títulos", "erp.pagina_titulos"),
+    ("confirmar", "Confirmar", "erp.pagina_confirmar"),
     ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
     ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
     ("receber", "Receber", "erp.pagina_receber"),
@@ -117,6 +118,12 @@ def pagina_lancar():
     return render_template("erp_lancar.html", **_contexto("lancar"))
 
 
+@bp.route("/erp/confirmar")
+@login_obrigatorio
+def pagina_confirmar():
+    return render_template("erp_confirmar.html", **_contexto("confirmar"))
+
+
 @bp.route("/erp/pagamentos")
 @login_obrigatorio
 def pagina_pagamentos():
@@ -156,7 +163,7 @@ def pagina_config():
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
-def _serializar(t, hoje: date) -> dict:
+def _serializar(t, hoje: date, ver_pagamento: bool = True) -> dict:
     venc = min((p.vencimento for p in t.parcelas), default=None)
     obras = sorted({r.obra.codigo for r in t.rateios if r.obra})
     return {
@@ -175,6 +182,9 @@ def _serializar(t, hoje: date) -> dict:
         "status": t.status.value,
         "dedutibilidade": (t.dedutibilidade.value if hasattr(t.dedutibilidade, "value")
                            else str(t.dedutibilidade)),
+        "exige_aval": bool(getattr(t, "exige_aval", False)),
+        "avalizado": bool(getattr(t, "avalizado_em", None)),
+        "ver_pagamento": ver_pagamento,
     }
 
 
@@ -186,9 +196,11 @@ def api_titulos():
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
+            from app.apps.erp.core.titulos.aval import pode_ver_dados_pagamento
+            ver_pg = pode_ver_dados_pagamento(usuario)
             itens = svc_titulos.listar(s, busca=busca, limite=_LIMITE_GRADE, usuario=usuario)
             hoje = date.today()
-            linhas = [_serializar(t, hoje) for t in itens
+            linhas = [_serializar(t, hoje, ver_pg) for t in itens
                       if not status or t.status.value in status]
     except Exception as e:
         logger.exception("ERP: falha ao listar títulos")
@@ -228,16 +240,22 @@ def api_titulo_detalhe(titulo_id: int):
             eventos = s.scalars(select(Evento).where(
                 Evento.entidade_tipo == "titulo", Evento.entidade_id == t.id)
                 .order_by(Evento.criado_em)).all()
+            from app.apps.erp.core.titulos.aval import (
+                historico_avais, pode_ver_dados_pagamento,
+            )
+            ver_pg = pode_ver_dados_pagamento(_usuario_logado(s))
             dados = {
-                "cabecalho": _serializar(t, date.today()),
+                "cabecalho": _serializar(t, date.today(), ver_pg),
+                "avais": historico_avais(s, t.id),
                 "bruto": float(t.valor_bruto),
                 "retencoes_total": float(t.valor_retencoes),
                 "dedutivel": t.dedutivel,
-                "forma_pagamento": t.forma_pagamento.value,
+                "forma_pagamento": t.forma_pagamento.value if ver_pg else "—",
                 "parcelas": [{"numero": p.numero,
                               "vencimento": p.vencimento.strftime("%d/%m/%Y"),
                               "valor": float(p.valor), "status": p.status.value,
-                              "boleto": (p.linha_digitavel or "")[:24]}
+                              "boleto": ((p.linha_digitavel or "")[:24] if ver_pg
+                                         else ("informado" if p.linha_digitavel else ""))}
                              for p in t.parcelas],
                 "rateios": [{"obra": f"{r.obra.codigo} · {r.obra.nome}",
                              "valor": float(r.valor),
@@ -1775,6 +1793,112 @@ def api_reenviar_aviso(pagamento_id: int):
         return jsonify({"ok": True, "aviso": rel})
     except Exception as e:
         logger.exception("ERP: falha ao reenviar aviso")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Aval (dupla confirmação)
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/avais/pendentes")
+@login_obrigatorio
+def api_avais_pendentes():
+    from app.apps.erp.core.titulos.aval import pendentes
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            return jsonify({"ok": True, "titulos": pendentes(s, usuario),
+                            "perfil": usuario.perfil.value, "quem": usuario.nome})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar avais pendentes")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/avais/<int:titulo_id>", methods=["POST"])
+@login_obrigatorio
+def api_avalizar(titulo_id: int):
+    """Assinatura da segunda pessoa: confirma ou recusa o título."""
+    from app.apps.erp.core.titulos.aval import registrar
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = registrar(s, titulo_id, usuario,
+                            decisao=(d.get("decisao") or "CONFIRMADO"),
+                            motivo=d.get("motivo", ""),
+                            ip=(request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                                or request.remote_addr or ""),
+                            dispositivo=request.headers.get("User-Agent", ""))
+            s.commit()
+        return jsonify({"ok": True, "aval": rel})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao registrar aval")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/historico/<entidade>/<int:entidade_id>")
+@login_obrigatorio
+def api_historico_geral(entidade: str, entidade_id: int):
+    """Histórico de QUALQUER cadastro: obra, fornecedor, categoria, título,
+    movimentação, lote — tudo que mudou, quando e por quem."""
+    from sqlalchemy import select
+    from app.apps.erp.db.models.financeiro import Evento
+    permitidas = ("titulo", "obra", "fornecedor", "categoria", "movimentacao",
+                  "lote", "conciliacao", "categoria_depara", "pagamento", "extrato")
+    if entidade not in permitidas:
+        return jsonify({"ok": False, "erro": f"Entidade inválida: {entidade}"}), 400
+    try:
+        with get_session() as s:
+            linhas = s.execute(
+                select(Evento, Usuario.nome)
+                .join(Usuario, Usuario.id == Evento.usuario_id, isouter=True)
+                .where(Evento.entidade_tipo == entidade, Evento.entidade_id == entidade_id)
+                .order_by(Evento.criado_em.desc()).limit(300)).all()
+            return jsonify({"ok": True, "eventos": [{
+                "quando": e.criado_em.strftime("%d/%m/%Y %H:%M:%S"),
+                "acao": e.acao, "por": nome or "sistema", "detalhe": e.detalhe,
+            } for e, nome in linhas]})
+    except Exception as e:
+        logger.exception("ERP: falha no histórico de %s", entidade)
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/auditoria")
+@login_obrigatorio
+def api_auditoria():
+    """Consulta ampla da trilha, para auditoria: por período, usuário, ação."""
+    from sqlalchemy import select
+    from app.apps.erp.core.auth.permissoes import exigir
+    from app.apps.erp.db.models.financeiro import Evento
+    try:
+        with get_session() as s:
+            exigir(_usuario_logado(s), "ver_relatorios")
+            stmt = (select(Evento, Usuario.nome)
+                    .join(Usuario, Usuario.id == Evento.usuario_id, isouter=True)
+                    .order_by(Evento.criado_em.desc()).limit(500))
+            if request.args.get("entidade"):
+                stmt = stmt.where(Evento.entidade_tipo == request.args["entidade"])
+            if request.args.get("acao"):
+                stmt = stmt.where(Evento.acao.ilike(f"%{request.args['acao']}%"))
+            if request.args.get("usuario_id", type=int):
+                stmt = stmt.where(Evento.usuario_id == request.args.get("usuario_id", type=int))
+            if request.args.get("de"):
+                stmt = stmt.where(Evento.criado_em >= f"{request.args['de']} 00:00:00")
+            if request.args.get("ate"):
+                stmt = stmt.where(Evento.criado_em <= f"{request.args['ate']} 23:59:59")
+            linhas = s.execute(stmt).all()
+            return jsonify({"ok": True, "eventos": [{
+                "quando": e.criado_em.strftime("%d/%m/%Y %H:%M:%S"),
+                "entidade": e.entidade_tipo, "entidade_id": e.entidade_id,
+                "acao": e.acao, "por": nome or "sistema", "detalhe": e.detalhe,
+            } for e, nome in linhas]})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except Exception as e:
+        logger.exception("ERP: falha na auditoria")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

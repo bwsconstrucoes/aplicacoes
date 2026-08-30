@@ -38,6 +38,7 @@ class RegimeTributario(str, enum.Enum):
 
 class PerfilUsuario(str, enum.Enum):
     ADMIN = "ADMIN"                          # tudo, inclusive configurações
+    DIRETOR_FINANCEIRO = "DIRETOR_FINANCEIRO"  # vê tudo e avaliza qualquer título
     FINANCEIRO = "FINANCEIRO"                # opera o sistema, não configura
     GESTOR_OBRA = "GESTOR_OBRA"              # lança e acompanha TODAS as obras
     SUPERVISOR_OBRA = "SUPERVISOR_OBRA"      # lança e acompanha as obras designadas

@@ -29,22 +29,27 @@ P = PerfilUsuario
 
 # ação → perfis autorizados
 PERMISSOES: dict[str, set[PerfilUsuario]] = {
-    "lancar":          {P.ADMIN, P.FINANCEIRO, P.GESTOR_OBRA, P.SUPERVISOR_OBRA,
-                        P.ADMINISTRATIVO_OBRA, P.LANCADOR},
-    "aprovar":         {P.ADMIN, P.FINANCEIRO, P.APROVADOR},
-    "pagar":           {P.ADMIN, P.FINANCEIRO},
-    "conciliar":       {P.ADMIN, P.FINANCEIRO},
-    "receber":         {P.ADMIN, P.FINANCEIRO},
-    "reclassificar":   {P.ADMIN, P.FINANCEIRO},
-    "desfazer":        {P.ADMIN, P.FINANCEIRO},
-    "importar":        {P.ADMIN, P.FINANCEIRO},
+    "lancar":          {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.LANCADOR},
+    "avalizar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA, P.SUPERVISOR_OBRA},
+    "aprovar":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.APROVADOR},
+    "pagar":           {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
+    "conciliar":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
+    "receber":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
+    "reclassificar":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
+    "desfazer":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
+    "importar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
+    "ver_dados_pagamento": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                            P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.APROVADOR},
     "configurar":      {P.ADMIN},
     "gerir_usuarios":  {P.ADMIN},
-    "ver_relatorios":  {P.ADMIN, P.FINANCEIRO, P.GESTOR_OBRA, P.SUPERVISOR_OBRA},
+    "ver_relatorios":  {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA},
 }
 
 ROTULOS = {
     P.ADMIN: "Administrador",
+    P.DIRETOR_FINANCEIRO: "Diretor financeiro",
     P.FINANCEIRO: "Administrativo financeiro",
     P.GESTOR_OBRA: "Gestor de obras (todas)",
     P.SUPERVISOR_OBRA: "Supervisor de obras (designadas)",
@@ -68,7 +73,8 @@ def exigir(usuario: Usuario, acao: str) -> None:
 
 def obras_do_usuario(s: Session, usuario: Usuario) -> Optional[list[int]]:
     """IDs das obras que o usuário enxerga. None = todas."""
-    if usuario.perfil in (P.ADMIN, P.FINANCEIRO, P.GESTOR_OBRA, P.APROVADOR, P.CONSULTA):
+    if usuario.perfil in (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                          P.APROVADOR, P.CONSULTA):
         return None
     if usuario.perfil == P.SUPERVISOR_OBRA:
         return [o.obra_id for o in s.scalars(
@@ -78,7 +84,8 @@ def obras_do_usuario(s: Session, usuario: Usuario) -> Optional[list[int]]:
 
 def aplicar_escopo(stmt: Select, s: Session, usuario: Usuario) -> Select:
     """Restringe a consulta de títulos ao que o usuário pode ver."""
-    if usuario.perfil in (P.ADMIN, P.FINANCEIRO, P.GESTOR_OBRA, P.APROVADOR, P.CONSULTA):
+    if usuario.perfil in (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                          P.APROVADOR, P.CONSULTA):
         return stmt
     if usuario.perfil in (P.ADMINISTRATIVO_OBRA, P.LANCADOR):
         return stmt.where(Titulo.solicitante_id == usuario.id)

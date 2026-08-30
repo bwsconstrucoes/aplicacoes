@@ -1,0 +1,138 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Confirmar — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Títulos para sua confirmação
+  <small>nenhum pagamento sai com a assinatura de uma pessoa só</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Aguardando seu aval</h3>
+    <small id="quem"></small></div>
+  <div id="lista"></div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let PEND = [];
+
+async function carregar(){
+  try {
+    const d = await api("/erp/api/avais/pendentes");
+    PEND = d.titulos;
+    els("quem").textContent = `${d.quem} · ${d.perfil.replace(/_/g," ").toLowerCase()}`;
+    const total = PEND.reduce((a,t)=>a+t.valor,0);
+    const risco = PEND.filter(t=>t.risco>=15).length;
+    els("kpis").innerHTML = `
+      <div class="kpi estatico ambar"><div class="kpi-rotulo">Aguardando você</div>
+        <div class="kpi-valor">${PEND.length}</div><div class="kpi-sub">${moeda(total)}</div></div>
+      <div class="kpi estatico vermelho"><div class="kpi-rotulo">Com apontamento</div>
+        <div class="kpi-valor">${risco}</div><div class="kpi-sub">risco na análise</div></div>
+      <div class="kpi estatico ciano"><div class="kpi-rotulo">Vencendo em 7 dias</div>
+        <div class="kpi-valor">${PEND.filter(t=>t.vencimento && t.vencimento <= new Date(Date.now()+7*864e5).toISOString().slice(0,10)).length}</div></div>`;
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenhar(){
+  if (!PEND.length) {
+    els("lista").innerHTML = `<div class="vazio"><b>Nada aguardando você</b>
+      Quando um administrativo de obra ou o escritório lançar um título que precise
+      da sua confirmação, ele aparece aqui.</div>`;
+    return;
+  }
+  els("lista").innerHTML = PEND.map(t => `
+    <div class="cartao" style="border-left:4px solid var(--amarelo); box-shadow:none; border:1px solid var(--borda)">
+      <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:baseline">
+        <b class="dados">${t.numero_sp}</b>
+        <span style="font-size:16px"><b>${moeda(t.valor)}</b></span>
+        <span class="selo outro">${t.obra||"sem obra"}</span>
+        ${t.risco>=15?`<span class="selo bloqueado">risco ${t.risco}</span>`:""}
+        <span class="espaco" style="flex:1"></span>
+        <small>lançado por <b>${t.solicitante}</b> em ${t.lancado_em}</small>
+      </div>
+      <div style="margin-top:6px">${t.credor} · <small>${t.documento_credor}</small></div>
+      <div class="cartao-dica" style="margin-top:4px">${t.descricao}<br>
+        ${t.categoria} · competência ${t.competencia} ·
+        ${t.parcelas} parcela(s) · 1º vencimento ${dataBR(t.vencimento)}</div>
+      <div style="margin-top:10px; display:flex; gap:8px">
+        <button class="btn" data-conf="${t.id}">✓ Confirmar e assinar</button>
+        <button class="btn secundario" data-rec="${t.id}">✕ Recusar</button>
+        <button class="btn secundario" data-ver="${t.id}">Ver detalhe</button>
+      </div>
+    </div>`).join("");
+  document.querySelectorAll("[data-conf]").forEach(b=>b.addEventListener("click",()=>assinar(+b.dataset.conf,"CONFIRMADO")));
+  document.querySelectorAll("[data-rec]").forEach(b=>b.addEventListener("click",()=>assinar(+b.dataset.rec,"RECUSADO")));
+  document.querySelectorAll("[data-ver]").forEach(b=>b.addEventListener("click",()=>verDetalhe(+b.dataset.ver)));
+}
+
+function assinar(id, decisao){
+  const t = PEND.find(x=>x.id===id);
+  const confirmar = decisao === "CONFIRMADO";
+  els("dlg-titulo").textContent = (confirmar?"Confirmar ":"Recusar ") + t.numero_sp;
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="aviso ${confirmar?"info":"erro"}">
+      ${confirmar
+        ? `Ao confirmar, você <b>assina</b> este título: ficam registrados seu nome, a data e
+           hora, o endereço de onde você acessou e um resumo do que foi assinado.
+           Depois disso ele segue para liberação de pagamento.`
+        : `O título volta para quem lançou, com o seu motivo.`}
+    </div>
+    <div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">
+      <table><tbody>
+        <tr><td>Credor</td><td><b>${t.credor}</b> <small>${t.documento_credor}</small></td></tr>
+        <tr><td>Descrição</td><td>${t.descricao}</td></tr>
+        <tr><td>Conta do plano</td><td>${t.categoria}</td></tr>
+        <tr><td>Obra</td><td>${t.obra||"—"}</td></tr>
+        <tr><td>Valor</td><td class="dados"><b>${moeda(t.valor)}</b>
+          ${t.valor_bruto!==t.valor?` <small>(bruto ${moeda(t.valor_bruto)})</small>`:""}</td></tr>
+        <tr><td>Vencimento</td><td class="dados">${dataBR(t.vencimento)}</td></tr>
+        <tr><td>Lançado por</td><td>${t.solicitante} em ${t.lancado_em}</td></tr>
+      </tbody></table>
+    </div>
+    <div class="campo" style="margin-top:12px">
+      <label>${confirmar?"Observação (opcional)":"Motivo da recusa *"}</label>
+      <input id="a-motivo" placeholder="${confirmar?"":"mínimo 10 caracteres"}"></div>
+    <div style="margin-top:14px">
+      <button class="btn ${confirmar?"":"perigo"}" id="a-ok">
+        ${confirmar?"Assinar e confirmar":"Recusar e devolver"}</button></div>`;
+  els("a-ok").addEventListener("click", async () => {
+    try {
+      const d = await api(`/erp/api/avais/${id}`, {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({decisao, motivo: els("a-motivo").value})});
+      els("dlg").close();
+      aviso("mensagem", `${d.aval.mensagem} <small>Assinatura ${d.aval.assinatura}</small>`, "ok");
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+}
+
+async function verDetalhe(id){
+  try {
+    const {titulo: t} = await api(`/erp/api/titulos/${id}`);
+    els("dlg-titulo").textContent = t.cabecalho.numero_sp;
+    els("dlg-corpo").innerHTML = `
+      <div class="cartao-dica">${t.cabecalho.descricao} · ${t.cabecalho.categoria}</div>
+      ${t.criticas.length?`<h4>Análise automática</h4>` + t.criticas.map(k=>
+        `<div class="critica ${k.severidade}"><code>${k.codigo}</code>${k.msg}</div>`).join(""):""}
+      <h4>Parcelas</h4><table><tbody>${t.parcelas.map(p=>`<tr>
+        <td class="dados">${p.numero}</td><td class="dados">${p.vencimento}</td>
+        <td class="direita dados">${numero(p.valor)}</td></tr>`).join("")}</tbody></table>
+      <h4>Rateio</h4><table><tbody>${t.rateios.map(r=>`<tr><td>${r.obra}</td>
+        <td class="direita dados">${numero(r.valor)}</td></tr>`).join("")}</tbody></table>`;
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+carregar();
+</script>
+{% endblock %}
