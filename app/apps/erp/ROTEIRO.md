@@ -88,7 +88,10 @@
 - [ ] Obra — falta: fases de acompanhamento; alerta de data-base do reajuste
 - [ ] Integrar com o módulo emissaonf: emitir a nota a partir da medição
 - [ ] **Open Finance / API bancária**: extrato e DDA automáticos (futuro)
-- [~] Notificação por WhatsApp DESCARTADA por ora: o operador tem login e vê o andamento na tela
+- [x] Aviso ao solicitante quando o título é pago, via TELEGRAM, com o
+      comprovante junto — idempotente (não reenvia a mesma baixa) e marcando
+      correção quando valor/data mudam
+- [x] Histórico completo por título (o que mudou, quando, por quem) na tela
 - [ ] Aposentar o `.env` commitado: trocar a senha do banco no Render
 
 ## Decisões registradas

@@ -279,12 +279,49 @@ async function detalhe(id){
         ${t.retencoes.map(r=>`<tr><td>${r.tipo}</td><td class="direita dados">${numero(r.base)}</td>
         <td class="direita dados">${r.aliquota}%</td><td class="direita dados">${numero(r.valor)}</td></tr>`).join("")}
         </tbody></table></div>`:""}
-      <h4>Trilha de auditoria</h4><div class="cartao" style="padding:0"><table><thead><tr><th>Quando</th>
-        <th>Ação</th><th>Detalhe</th></tr></thead><tbody>
-        ${t.trilha.map(e=>`<tr><td class="dados">${e.quando}</td><td>${e.acao}</td>
-        <td><small>${JSON.stringify(e.detalhe)}</small></td></tr>`).join("")}</tbody></table></div>`;
+      <h4>Histórico — tudo que mudou, quando e por quem</h4>
+      <div id="historico" class="cartao-dica">carregando…</div>`;
+    carregarHistorico(id);
     els("dlg").showModal();
   } catch(e) { aviso("mensagem", e.message, "erro"); }
+}
+
+async function carregarHistorico(id){
+  try {
+    const d = await api(`/erp/api/titulos/${id}/historico`);
+    const rotuloAcao = a => ({
+      CRIADO:"Lançado", ANALISADO:"Análise automática", APROVADO:"Liberado p/ pagamento",
+      DEVOLVIDO:"Devolvido", CANCELADO:"Cancelado", ESTORNADO:"Estornado",
+      RECLASSIFICADO:"Reclassificado", BAIXA_DESFEITA:"Baixa desfeita",
+      BAIXA_POR_COMPROVANTE:"Baixado por comprovante", ANEXO_GUARDADO:"Anexo adicionado",
+      DEDUTIBILIDADE_DEFINIDA:"Dedutibilidade definida",
+      ALERTAS_DUPLICIDADE_ACEITOS:"Alertas de duplicidade aceitos"}[a] || rotulo(a));
+    els("historico").innerHTML = `
+      <table><thead><tr><th style="width:130px">Quando</th><th style="width:190px">O que</th>
+        <th style="width:150px">Quem</th><th>Detalhe</th></tr></thead><tbody>
+      ${d.eventos.map(e=>`<tr><td class="dados">${e.quando}</td>
+        <td><b>${rotuloAcao(e.acao)}</b></td><td>${e.por}</td>
+        <td><small>${resumoDetalhe(e.detalhe)}</small></td></tr>`).join("")}
+      </tbody></table>
+      ${d.avisos.length ? `<h4>Avisos ao solicitante</h4><table><tbody>
+        ${d.avisos.map(a=>`<tr><td class="dados">${a.quando}</td>
+          <td><span class="selo ${a.situacao==="ENVIADO"?"aprovado":a.situacao==="FALHA"?"bloqueado":"outro"}">${rotulo(a.situacao)}</span></td>
+          <td>${a.destinatario||"—"}${a.com_anexo?" · com comprovante":""}</td>
+          <td><small>${a.erro||""}</small></td></tr>`).join("")}</tbody></table>` : ""}`;
+  } catch(e){ els("historico").innerHTML = `<span style="color:var(--vermelho)">${e.message}</span>`; }
+}
+
+function resumoDetalhe(d){
+  if (!d) return "";
+  if (d.mudancas) return d.mudancas.join("; ") + (d.motivo?` — <i>${d.motivo}</i>`:"");
+  if (d.passos) return d.passos.join(" · ") + (d.motivo?` — <i>${d.motivo}</i>`:"");
+  if (d.situacao && d.motivo !== undefined) return `${d.situacao}${d.motivo?` — ${d.motivo}`:""}`;
+  if (d.resultado) return `${d.resultado} · risco ${d.score} · ${d.criticas} apontamento(s)`;
+  if (d.numero_sp && d.valor_liquido) return `${moeda(parseFloat(d.valor_liquido))} · ${d.parcelas||1} parcela(s)`;
+  if (d.arquivo) return `${d.arquivo}${d.tamanho_kb?` (${d.tamanho_kb} KB)`:""}`;
+  if (d.motivo) return d.motivo;
+  const chaves = Object.keys(d).slice(0,4);
+  return chaves.map(k=>`${k}: ${JSON.stringify(d[k]).slice(0,40)}`).join(" · ");
 }
 
 async function executar(acao){

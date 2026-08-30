@@ -950,11 +950,21 @@ def api_baixar():
                         conta_bancaria_id=int(conta_id),
                         data_pagamento=date.fromisoformat(data_pg),
                         valor_pago=it.get("valor"), usuario=usuario)
-                    ok.append({"parcela_id": pg.parcela_id, "valor": float(pg.valor_pago)})
+                    ok.append({"parcela_id": pg.parcela_id, "valor": float(pg.valor_pago),
+                               "pagamento_id": pg.id})
                 except (ErroValidacao, ErroPermissao) as e:
                     erros.append({"parcela_id": it.get("parcela_id"), "erro": str(e)})
             s.commit()
-        return jsonify({"ok": True, "pagas": ok, "erros": erros})
+            avisos = []
+            if d.get("avisar", True):
+                from app.apps.erp.core.notificacoes import avisar_baixa
+                for item in ok:
+                    try:
+                        avisos.append(avisar_baixa(s, item["pagamento_id"]))
+                    except Exception as e:      # aviso não derruba a baixa
+                        logger.warning("ERP: aviso falhou (%s)", e)
+                s.commit()
+        return jsonify({"ok": True, "pagas": ok, "erros": erros, "avisos": avisos})
     except Exception as e:
         logger.exception("ERP: falha ao baixar pagamentos")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1515,6 +1525,19 @@ def api_comprovante():
                 baixar_automatico=(request.form.get("automatico", "1") != "0"),
                 usuario=usuario)
             s.commit()
+            if rel.get("situacao") == "BAIXADO" and rel.get("baixa"):
+                from app.apps.erp.core.notificacoes import avisar_baixa
+                from app.apps.erp.db.models.financeiro import Pagamento
+                from sqlalchemy import select as _sel
+                pg = s.scalars(_sel(Pagamento).where(
+                    Pagamento.parcela_id == rel["baixa"]["parcela_id"])
+                    .order_by(Pagamento.id.desc())).first()
+                if pg is not None:
+                    try:
+                        rel["aviso"] = avisar_baixa(s, pg.id)
+                        s.commit()
+                    except Exception as e:
+                        logger.warning("ERP: aviso do comprovante falhou (%s)", e)
         return jsonify({"ok": True, "resultado": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
@@ -1710,6 +1733,49 @@ def api_permissoes():
     from app.apps.erp.core.auth.permissoes import contexto_permissoes
     with get_session() as s:
         return jsonify({"ok": True, "contexto": contexto_permissoes(s, _usuario_logado(s))})
+
+
+@bp.route("/erp/api/titulos/<int:titulo_id>/historico")
+@login_obrigatorio
+def api_historico(titulo_id: int):
+    """Trilha completa do título: tudo que mudou, quando e por quem — mais os
+    avisos enviados ao solicitante."""
+    from sqlalchemy import select
+    from app.apps.erp.core.notificacoes import historico as historico_avisos
+    from app.apps.erp.db.models.financeiro import Evento
+    try:
+        with get_session() as s:
+            eventos = s.execute(select(Evento, Usuario.nome)
+                                .join(Usuario, Usuario.id == Evento.usuario_id, isouter=True)
+                                .where(Evento.entidade_tipo == "titulo",
+                                       Evento.entidade_id == titulo_id)
+                                .order_by(Evento.criado_em.desc())).all()
+            linhas = [{
+                "quando": e.criado_em.strftime("%d/%m/%Y %H:%M:%S"),
+                "acao": e.acao, "por": nome or "sistema",
+                "detalhe": e.detalhe,
+            } for e, nome in eventos]
+            return jsonify({"ok": True, "eventos": linhas,
+                            "avisos": historico_avisos(s, titulo_id)})
+    except Exception as e:
+        logger.exception("ERP: falha ao montar histórico")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/pagamentos/<int:pagamento_id>/avisar", methods=["POST"])
+@login_obrigatorio
+def api_reenviar_aviso(pagamento_id: int):
+    """Reenvio manual do aviso (quando a pessoa apagou a mensagem, por ex.)."""
+    from app.apps.erp.core.notificacoes import avisar_baixa
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            rel = avisar_baixa(s, pagamento_id, forcar=bool(d.get("forcar")))
+            s.commit()
+        return jsonify({"ok": True, "aviso": rel})
+    except Exception as e:
+        logger.exception("ERP: falha ao reenviar aviso")
+        return jsonify({"ok": False, "erro": str(e)}), 500
 
 
 @bp.route("/erp/health")
