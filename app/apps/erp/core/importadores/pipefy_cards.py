@@ -315,13 +315,11 @@ def _achar_obra(s: Session, nome_cc: str) -> Optional[Obra]:
     return s.scalars(select(Obra).where(Obra.nome.ilike(f"%{alvo}%"))).first()
 
 
-def _achar_categoria(s: Session, tipo_despesa: str) -> Optional[Categoria]:
-    if not tipo_despesa:
-        return None
-    alvo = tipo_despesa.strip()
-    cat = s.scalars(select(Categoria).where(Categoria.descricao.ilike(alvo))).first()
-    return cat or s.scalars(select(Categoria).where(
-        Categoria.descricao.ilike(f"%{alvo}%"))).first()
+def _achar_categoria(s: Session, tipo_despesa: str) -> tuple[Optional[Categoria], str]:
+    """Traduz o tipo de despesa do Pipefy (plano antigo) para a conta nova,
+    via de-para. Devolve (categoria, como_resolveu)."""
+    from app.apps.erp.core.cadastros.depara import resolver
+    return resolver(s, tipo_despesa)
 
 
 def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
@@ -366,13 +364,14 @@ def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
                     "razao_social": (d["credor_nome"] or "SEM NOME").upper(),
                     "origem": "IMPORTACAO_PIPEFY"}, usuario)
 
-            # categoria: tipo de despesa do card → categoria do plano
-            cat = _achar_categoria(s, d["tipo_despesa"])
+            # categoria: tipo de despesa do card → conta nova (via de-para)
+            cat, como = _achar_categoria(s, d["tipo_despesa"])
             cat_id = cat.id if cat else categoria_padrao_id
             if not cat_id:
-                pendencias.append({"card": cid, "titulo": d["titulo_card"],
-                                   "motivo": f"tipo de despesa {d['tipo_despesa']!r} "
-                                             f"sem categoria correspondente"})
+                pendencias.append({
+                    "card": cid, "titulo": d["titulo_card"],
+                    "motivo": f"tipo de despesa {d['tipo_despesa'] or '(vazio)'!r}: {como}. "
+                              f"Defina a tradução em Configurações › Tradução do plano antigo."})
                 continue
 
             # rateio: centros de custo → obras
@@ -441,6 +440,8 @@ def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
             s.flush()
             importados.append({"card": cid, "sp": titulo.numero_sp,
                                "credor": forn.razao_social,
+                               "categoria": f"{cat.codigo} · {cat.descricao}" if cat else "(padrão)",
+                               "traducao": como if cat else "categoria padrão do lote",
                                "valor": float(titulo.valor_liquido),
                                "status": titulo.status.value,
                                "risco": titulo.score_risco})

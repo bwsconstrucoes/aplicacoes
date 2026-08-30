@@ -33,6 +33,17 @@
 </div>
 
 <div class="cartao">
+  <div class="cartao-cab"><h3>Tradução do plano antigo</h3>
+    <small>como o "Tipo de Despesa" que vem dos cards do Pipefy vira conta no plano novo</small></div>
+  <div id="resumo-depara" class="cartao-dica">carregando…</div>
+  <div class="tabela-barra" style="padding:10px 0 0">
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-instalar-depara">Instalar traduções padrão</button>
+  </div>
+  <div id="lista-depara"></div>
+</div>
+
+<div class="cartao">
   <div class="cartao-cab"><h3>Obras (centros de custo)</h3>
     <small>o rateio dos títulos aponta para estas obras</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
@@ -78,6 +89,7 @@
 {% block scripts %}
 <script>
 let DADOS = {categorias: [], obras: [], contas: [], usuarios: []};
+let OPCOES_CAT = "";
 
 async function checarBanco(){
   try {
@@ -111,7 +123,56 @@ els("btn-migrar").addEventListener("click", async () => {
     } else {
       aviso("mensagem", `Banco atualizado: ${r.aplicadas.length} migração(ões) aplicada(s).`, "ok");
     }
-    checarBanco(); carregar();
+    checarBanco();
+carregarDepara();
+
+async function carregarDepara(){
+  try {
+    const d = await api("/erp/api/config/depara");
+    const p = d.depara.pendentes, ac = d.depara.a_confirmar, ok = d.depara.confirmadas;
+    els("resumo-depara").innerHTML =
+      `<b>${ok.length}</b> tradução(ões) ativas · ` +
+      (ac.length ? `<span style="color:var(--ambar)"><b>${ac.length}</b> sugeridas a confirmar</span> · ` : "") +
+      (p.length ? `<span style="color:var(--vermelho)"><b>${p.length}</b> sem destino</span>`
+                : "nenhuma pendência");
+    const linhas = [...p, ...ac];
+    els("lista-depara").innerHTML = linhas.length ? `
+      <div class="tabela-rolagem" style="max-height:340px; margin-top:10px"><table>
+        <thead><tr><th>Vem do Pipefy como</th><th>Vezes</th><th>Vai para</th><th></th></tr></thead>
+        <tbody>${linhas.map(l => `
+          <tr><td>${l.origem}</td><td class="dados">${l.ocorrencias}</td>
+            <td><select data-dep="${l.id}" style="padding:5px; border:1px solid var(--borda-forte); border-radius:6px; font-size:12.5px; max-width:320px">
+              <option value="">— escolher conta —</option>${OPCOES_CAT}</select></td>
+            <td><button class="btn secundario" data-salvar="${l.id}">Salvar</button></td></tr>`).join("")}
+        </tbody></table></div>` : "";
+    linhas.forEach(l => {
+      if (l.categoria_id) { const s = document.querySelector(`[data-dep="${l.id}"]`); if (s) s.value = l.categoria_id; }
+    });
+    document.querySelectorAll("[data-salvar]").forEach(b => b.addEventListener("click", async () => {
+      const id = b.dataset.salvar;
+      const sel = document.querySelector(`[data-dep="${id}"]`);
+      if (!sel.value) { aviso("mensagem", "Escolha a conta de destino.", "erro"); return; }
+      try {
+        await api("/erp/api/config/depara/definir", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({depara_id: id, categoria_id: sel.value})});
+        aviso("mensagem", "Tradução salva.", "ok");
+        carregarDepara();
+      } catch(e){ aviso("mensagem", e.message, "erro"); }
+    }));
+  } catch(e){ els("resumo-depara").innerHTML = `<span style="color:var(--vermelho)">${e.message}</span>`; }
+}
+
+els("btn-instalar-depara").addEventListener("click", async () => {
+  const b = els("btn-instalar-depara"); b.disabled = true; b.textContent = "Instalando…";
+  try {
+    const d = await api("/erp/api/config/depara/instalar", {method:"POST"});
+    aviso("mensagem", `${d.relatorio.criados} tradução(ões) instalada(s), ` +
+      `${d.relatorio.atualizados} atualizada(s).`, "ok");
+    carregarDepara();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Instalar traduções padrão";
+}); carregar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
   b.disabled = false; b.textContent = "Aplicar atualizações do banco";
 });
@@ -120,6 +181,8 @@ async function carregar(){
   try {
     const d = await api("/erp/api/config");
     DADOS = d.dados;
+    OPCOES_CAT = DADOS.categorias.filter(c=>c.ativo)
+      .map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("");
     els("kpis-config").innerHTML = `
       <div class="kpi estatico"><div class="kpi-rotulo">Categorias</div>
         <div class="kpi-valor">${DADOS.categorias.length}</div>
@@ -243,6 +306,55 @@ els("btn-nova-conta").addEventListener("click", () => formulario("Nova conta da 
 ], "/erp/api/config/conta"));
 
 checarBanco();
+carregarDepara();
+
+async function carregarDepara(){
+  try {
+    const d = await api("/erp/api/config/depara");
+    const p = d.depara.pendentes, ac = d.depara.a_confirmar, ok = d.depara.confirmadas;
+    els("resumo-depara").innerHTML =
+      `<b>${ok.length}</b> tradução(ões) ativas · ` +
+      (ac.length ? `<span style="color:var(--ambar)"><b>${ac.length}</b> sugeridas a confirmar</span> · ` : "") +
+      (p.length ? `<span style="color:var(--vermelho)"><b>${p.length}</b> sem destino</span>`
+                : "nenhuma pendência");
+    const linhas = [...p, ...ac];
+    els("lista-depara").innerHTML = linhas.length ? `
+      <div class="tabela-rolagem" style="max-height:340px; margin-top:10px"><table>
+        <thead><tr><th>Vem do Pipefy como</th><th>Vezes</th><th>Vai para</th><th></th></tr></thead>
+        <tbody>${linhas.map(l => `
+          <tr><td>${l.origem}</td><td class="dados">${l.ocorrencias}</td>
+            <td><select data-dep="${l.id}" style="padding:5px; border:1px solid var(--borda-forte); border-radius:6px; font-size:12.5px; max-width:320px">
+              <option value="">— escolher conta —</option>${OPCOES_CAT}</select></td>
+            <td><button class="btn secundario" data-salvar="${l.id}">Salvar</button></td></tr>`).join("")}
+        </tbody></table></div>` : "";
+    linhas.forEach(l => {
+      if (l.categoria_id) { const s = document.querySelector(`[data-dep="${l.id}"]`); if (s) s.value = l.categoria_id; }
+    });
+    document.querySelectorAll("[data-salvar]").forEach(b => b.addEventListener("click", async () => {
+      const id = b.dataset.salvar;
+      const sel = document.querySelector(`[data-dep="${id}"]`);
+      if (!sel.value) { aviso("mensagem", "Escolha a conta de destino.", "erro"); return; }
+      try {
+        await api("/erp/api/config/depara/definir", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({depara_id: id, categoria_id: sel.value})});
+        aviso("mensagem", "Tradução salva.", "ok");
+        carregarDepara();
+      } catch(e){ aviso("mensagem", e.message, "erro"); }
+    }));
+  } catch(e){ els("resumo-depara").innerHTML = `<span style="color:var(--vermelho)">${e.message}</span>`; }
+}
+
+els("btn-instalar-depara").addEventListener("click", async () => {
+  const b = els("btn-instalar-depara"); b.disabled = true; b.textContent = "Instalando…";
+  try {
+    const d = await api("/erp/api/config/depara/instalar", {method:"POST"});
+    aviso("mensagem", `${d.relatorio.criados} tradução(ões) instalada(s), ` +
+      `${d.relatorio.atualizados} atualizada(s).`, "ok");
+    carregarDepara();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Instalar traduções padrão";
+});
 ["busca-cat","busca-obra"].forEach(id => els(id).addEventListener("input", desenhar));
 els("ver-inativas").addEventListener("change", desenhar);
 

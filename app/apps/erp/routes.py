@@ -638,6 +638,54 @@ def api_aplicar_migracoes():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/config/depara")
+@login_obrigatorio
+def api_listar_depara():
+    from app.apps.erp.core.cadastros.depara import listar
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "depara": listar(s)})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar de-para")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/config/depara/instalar", methods=["POST"])
+@login_obrigatorio
+def api_instalar_depara():
+    from app.apps.erp.core.cadastros.depara import instalar_depara_padrao
+    from app.apps.erp.db.models.cadastros import PerfilUsuario
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if usuario.perfil not in (PerfilUsuario.ADMIN, PerfilUsuario.FINANCEIRO):
+                return jsonify({"ok": False, "erro": "Restrito a FINANCEIRO/ADMIN."}), 403
+            rel = instalar_depara_padrao(s, usuario)
+            s.commit()
+        return jsonify({"ok": True, "relatorio": rel})
+    except Exception as e:
+        logger.exception("ERP: falha ao instalar de-para")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/config/depara/definir", methods=["POST"])
+@login_obrigatorio
+def api_definir_depara():
+    from app.apps.erp.core.cadastros.depara import definir
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            definir(s, int(d.get("depara_id")), int(d.get("categoria_id")), usuario)
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao definir tradução")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/health")
 def health():
     """Health check do módulo — não exige login."""
