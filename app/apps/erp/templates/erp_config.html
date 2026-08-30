@@ -134,7 +134,8 @@ async function carregarDepara(){
       `<b>${ok.length}</b> tradução(ões) ativas · ` +
       (ac.length ? `<span style="color:var(--ambar)"><b>${ac.length}</b> sugeridas a confirmar</span> · ` : "") +
       (p.length ? `<span style="color:var(--vermelho)"><b>${p.length}</b> sem destino</span>`
-                : "nenhuma pendência");
+                : "nenhuma pendência") +
+      `<br><small>Para ver de onde vem cada conta, clique nela na lista do plano acima.</small>`;
     const linhas = [...p, ...ac];
     els("lista-depara").innerHTML = linhas.length ? `
       <div class="tabela-rolagem" style="max-height:340px; margin-top:10px"><table>
@@ -222,7 +223,7 @@ function desenhar(){
     const [gcod, gnome] = g.split("|");
     const subs = grupos[g];
     const total = Object.values(subs).reduce((a,l)=>a+l.length,0);
-    return `<div class="filtro aberto" style="border-top:1px solid var(--borda)">
+    return `<div class="filtro" style="border-top:1px solid var(--borda)">
       <button class="filtro-cab" type="button"><span><b>${gcod}</b> · ${gnome}</span>
         <span class="filtro-badge">${total}</span><span class="seta">▾</span></button>
       <div class="filtro-cont">` + Object.keys(subs).sort().map(sg => {
@@ -241,6 +242,7 @@ function desenhar(){
   }).join("");
   document.querySelectorAll("#lista-grupos .filtro-cab").forEach(b =>
     b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+  if (fc) document.querySelectorAll("#lista-grupos .filtro").forEach(f => f.classList.add("aberto"));
   document.querySelectorAll("[data-cat]").forEach(tr =>
     tr.addEventListener("click", () => editarCategoria(+tr.dataset.cat)));
 
@@ -316,7 +318,8 @@ async function carregarDepara(){
       `<b>${ok.length}</b> tradução(ões) ativas · ` +
       (ac.length ? `<span style="color:var(--ambar)"><b>${ac.length}</b> sugeridas a confirmar</span> · ` : "") +
       (p.length ? `<span style="color:var(--vermelho)"><b>${p.length}</b> sem destino</span>`
-                : "nenhuma pendência");
+                : "nenhuma pendência") +
+      `<br><small>Para ver de onde vem cada conta, clique nela na lista do plano acima.</small>`;
     const linhas = [...p, ...ac];
     els("lista-depara").innerHTML = linhas.length ? `
       <div class="tabela-rolagem" style="max-height:340px; margin-top:10px"><table>
@@ -371,9 +374,15 @@ els("btn-instalar-plano").addEventListener("click", async () => {
   b.disabled = false; b.textContent = "Instalar plano padrão BWS";
 });
 
-function editarCategoria(id){
+async function editarCategoria(id){
   const c = DADOS.categorias.find(x => x.id === id);
   if (!c) return;
+  let traducoes = [];
+  try {
+    const d = await api("/erp/api/config/depara");
+    traducoes = [...d.depara.confirmadas, ...d.depara.a_confirmar]
+      .filter(t => t.categoria_id === id);
+  } catch(e) { /* sem tradução não impede editar */ }
   els("dlg-titulo").textContent = `Editar conta ${c.codigo}`;
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
     <div class="form-grade">
@@ -392,6 +401,17 @@ function editarCategoria(id){
     <div class="campo" style="margin-top:12px"><label>Quando usar esta conta</label>
       <textarea id="e-uso" style="font-family:inherit; font-size:14px">${c.uso||""}</textarea>
       <div class="dica">Aparece para quem lança, evitando escolha errada.</div></div>
+    <h4>Vem do Pipefy como</h4>
+    ${traducoes.length
+      ? `<div class="cartao" style="padding:10px 12px">` + traducoes.map(t =>
+          `<div style="display:flex; gap:8px; align-items:baseline; padding:2px 0">
+             <span class="selo ${t.confirmado?"aprovado":"aguardando"}">${t.confirmado?"ativa":"a confirmar"}</span>
+             <b>${t.origem}</b>
+             <small style="color:var(--tinta-suave)">${t.ocorrencias} uso(s) na importação</small>
+           </div>`).join("") + `</div>`
+      : `<div class="cartao-dica">Nenhum "Tipo de Despesa" do Pipefy aponta para esta conta.
+         Se alguma SP antiga deveria cair aqui, defina a tradução no bloco
+         <b>Tradução do plano antigo</b>.</div>`}
     <div class="aviso info" style="margin-top:12px">Ao salvar, esta conta fica marcada como
       <b>personalizada</b>: reinstalar o plano padrão não desfaz sua edição.</div>
     <div style="display:flex; gap:8px">
