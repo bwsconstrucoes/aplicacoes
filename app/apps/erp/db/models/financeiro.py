@@ -12,7 +12,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from sqlalchemy import (
-    BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Numeric,
+    BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric,
     SmallInteger, Text, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -354,3 +354,39 @@ class Evento(Base):
     acao: Mapped[str] = mapped_column(Text, nullable=False)
     detalhe: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Lotes de pagamento
+# ---------------------------------------------------------------------------
+class Lote(Base):
+    __tablename__ = "lotes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
+    prioridade: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=3)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="ABERTO")
+    conta_bancaria_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("contas_bancarias.id"))
+    data_prevista: Mapped[Optional[date]] = mapped_column(Date)
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    fechado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    itens: Mapped[list["LoteItem"]] = relationship(
+        back_populates="lote", order_by="LoteItem.ordem", cascade="all, delete-orphan")
+
+
+class LoteItem(Base):
+    __tablename__ = "lote_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    lote_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("lotes.id"), nullable=False)
+    parcela_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("parcelas.id"), nullable=False)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    lote: Mapped[Lote] = relationship(back_populates="itens")
+    parcela: Mapped[Parcela] = relationship()

@@ -43,14 +43,13 @@
 
 ## Em andamento
 
-- [ ] **Leitura ampla de documentos** — foto de celular, PDF ruim, múltiplas
+- [x] **Leitura ampla de documentos** — `a2da83c` — foto de celular, PDF ruim, múltiplas
       páginas, todos os tipos (NFe, NFSe de qualquer município, CT-e, recibo,
       RPA, guia DARF/GPS/FGTS/DAE, fatura de concessionária, boleto, contrato,
       termo de rescisão, comprovante bancário, prestação de contas de fundo fixo)
-- [ ] **Pagamentos**: agenda, baixa, comprovante anexado ao título, aviso a quem
-      solicitou, Pix copia-e-cola e QR para pagar lendo a tela pelo celular
-- [ ] **Lote**: organizar por prioridade, colar IDs que voltam pelo WhatsApp,
-      acompanhar pago/não pago
+- [x] **Pagamentos**: agenda, baixa em lote, Pix copia-e-cola + QR
+- [ ] Pagamentos — falta: comprovante anexado ao título e aviso a quem solicitou
+- [x] **Lote**: prioridade, colar SPs da mensagem, acompanhar pago/não pago
 - [ ] **Conciliação**: baixa por comprovante (o que o baixabradesco faz hoje),
       OFX, conciliação automática de verdade — só sobra o que é ambíguo;
       detectar tarifas e transferências entre contas próprias

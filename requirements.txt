@@ -20,3 +20,4 @@ num2words
 qrcode[pil]
 SQLAlchemy>=2.0
 psycopg2-binary
+pillow

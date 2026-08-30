@@ -36,7 +36,7 @@ CONFIANCA_AUTO = Decimal("0.750")
 # Baixa de pagamento
 # ---------------------------------------------------------------------------
 def registrar_pagamento(s: Session, *, parcela_id: int, conta_bancaria_id: int,
-                        data_pagamento: date, valor_pago: Any,
+                        data_pagamento: date, valor_pago: Any = None,
                         meio: Optional[str] = None, usuario: Optional[Usuario] = None,
                         robo: bool = False,
                         comprovante_anexo_id: Optional[int] = None) -> Pagamento:
@@ -57,7 +57,10 @@ def registrar_pagamento(s: Session, *, parcela_id: int, conta_bancaria_id: int,
     if conta is None or not conta.ativo:
         raise ErroValidacao("Conta bancária da empresa inexistente ou inativa.")
 
-    valor = Decimal(str(valor_pago).replace(",", ".")).quantize(_CENT)
+    if valor_pago in (None, "", "None"):
+        valor = Decimal(parcela.valor).quantize(_CENT)   # baixa pelo valor da parcela
+    else:
+        valor = Decimal(str(valor_pago).replace(",", ".")).quantize(_CENT)
     if valor <= 0:
         raise ErroValidacao("Valor pago deve ser maior que zero.")
     if abs(valor - Decimal(parcela.valor)) > Decimal("0.01"):

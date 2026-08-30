@@ -36,6 +36,7 @@ _LIMITE_GRADE = 500
 ABAS = [
     ("lancar", "Lançar", "erp.pagina_lancar"),
     ("titulos", "Títulos", "erp.pagina_titulos"),
+    ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
     ("importar", "Importar", "erp.pagina_importar"),
     ("config", "Configurações", "erp.pagina_config"),
 ]
@@ -111,6 +112,12 @@ def pagina_titulos():
 @login_obrigatorio
 def pagina_lancar():
     return render_template("erp_lancar.html", **_contexto("lancar"))
+
+
+@bp.route("/erp/pagamentos")
+@login_obrigatorio
+def pagina_pagamentos():
+    return render_template("erp_pagamentos.html", **_contexto("pagamentos"))
 
 
 @bp.route("/erp/importar")
@@ -837,6 +844,196 @@ def api_criar_titulo():
         return jsonify({"ok": False, "erro": str(e)}), 403
     except Exception as e:
         logger.exception("ERP: falha ao criar título")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Pagamentos e lotes
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/pagamentos/agenda")
+@login_obrigatorio
+def api_agenda():
+    """Parcelas liberadas aguardando pagamento."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.apps.erp.db.models.cadastros import ContaBancaria
+    from app.apps.erp.db.models.financeiro import (
+        LoteItem, Parcela, StatusParcela, StatusTitulo, Titulo,
+    )
+    try:
+        with get_session() as s:
+            parcelas = s.scalars(
+                select(Parcela).join(Titulo, Parcela.titulo_id == Titulo.id)
+                .where(Parcela.status.in_([StatusParcela.ABERTA, StatusParcela.AGENDADA]),
+                       Titulo.status.in_([StatusTitulo.APROVADO, StatusTitulo.PAGO_PARCIAL]))
+                .options(selectinload(Parcela.titulo).selectinload(Titulo.fornecedor),
+                         selectinload(Parcela.titulo).selectinload(Titulo.rateios))
+                .order_by(Parcela.vencimento)).all()
+            em_lote = {i.parcela_id for i in s.scalars(select(LoteItem)).all()}
+            hoje = date.today()
+            itens = [{
+                "parcela_id": p.id, "titulo_id": p.titulo.id,
+                "numero_sp": p.titulo.numero_sp, "parcela": p.numero,
+                "credor": p.titulo.fornecedor.razao_social,
+                "descricao": p.titulo.descricao,
+                "obra": " + ".join(sorted({r.obra.codigo for r in p.titulo.rateios if r.obra})),
+                "valor": float(p.valor), "vencimento": p.vencimento.isoformat(),
+                "atrasada": p.vencimento < hoje,
+                "forma": p.titulo.forma_pagamento.value,
+                "tem_boleto": bool(p.linha_digitavel),
+                "em_lote": p.id in em_lote,
+            } for p in parcelas]
+            contas = [{"id": c.id, "descricao": c.descricao}
+                      for c in s.scalars(select(ContaBancaria)
+                                         .where(ContaBancaria.ativo.is_(True))).all()]
+        return jsonify({"ok": True, "parcelas": itens, "contas": contas})
+    except Exception as e:
+        logger.exception("ERP: falha na agenda de pagamentos")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/pagamentos/detalhe/<int:parcela_id>")
+@login_obrigatorio
+def api_detalhe_pagamento(parcela_id: int):
+    from app.apps.erp.core.pagamentos.lotes import dados_pagamento
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "pagamento": dados_pagamento(s, parcela_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except Exception as e:
+        logger.exception("ERP: falha no detalhe de pagamento")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/pagamentos/baixar", methods=["POST"])
+@login_obrigatorio
+def api_baixar():
+    """Registra o pagamento de uma ou várias parcelas."""
+    from app.apps.erp.core.pagamentos import service as svc_pag
+    d = request.get_json(silent=True) or {}
+    itens = d.get("itens") or []
+    conta_id = d.get("conta_bancaria_id")
+    data_pg = d.get("data_pagamento") or date.today().isoformat()
+    if not itens or not conta_id:
+        return jsonify({"ok": False, "erro": "Informe as parcelas e a conta de saída."}), 400
+    ok, erros = [], []
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            for it in itens:
+                try:
+                    pg = svc_pag.registrar_pagamento(
+                        s, parcela_id=int(it["parcela_id"]),
+                        conta_bancaria_id=int(conta_id),
+                        data_pagamento=date.fromisoformat(data_pg),
+                        valor_pago=it.get("valor"), usuario=usuario)
+                    ok.append({"parcela_id": pg.parcela_id, "valor": float(pg.valor_pago)})
+                except (ErroValidacao, ErroPermissao) as e:
+                    erros.append({"parcela_id": it.get("parcela_id"), "erro": str(e)})
+            s.commit()
+        return jsonify({"ok": True, "pagas": ok, "erros": erros})
+    except Exception as e:
+        logger.exception("ERP: falha ao baixar pagamentos")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/lotes")
+@login_obrigatorio
+def api_lotes():
+    from app.apps.erp.core.pagamentos.lotes import listar
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "lotes": listar(s)})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar lotes")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/lotes/<int:lote_id>")
+@login_obrigatorio
+def api_lote_detalhe(lote_id: int):
+    from app.apps.erp.core.pagamentos.lotes import detalhar
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "lote": detalhar(s, lote_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+@bp.route("/erp/api/lotes/criar", methods=["POST"])
+@login_obrigatorio
+def api_criar_lote():
+    from app.apps.erp.core.pagamentos.lotes import adicionar_parcelas, criar
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            lote = criar(s, d, usuario)
+            rel = {"incluidas": [], "recusadas": []}
+            if d.get("parcela_ids"):
+                rel = adicionar_parcelas(s, lote.id, d["parcela_ids"], usuario)
+            s.commit()
+            return jsonify({"ok": True, "lote_id": lote.id, "relatorio": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao criar lote")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/lotes/<int:lote_id>/parcelas", methods=["POST"])
+@login_obrigatorio
+def api_lote_parcelas(lote_id: int):
+    from app.apps.erp.core.pagamentos.lotes import adicionar_parcelas, remover_parcela
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if d.get("remover"):
+                remover_parcela(s, lote_id, int(d["remover"]), usuario)
+                s.commit()
+                return jsonify({"ok": True})
+            rel = adicionar_parcelas(s, lote_id, d.get("parcela_ids") or [], usuario)
+            s.commit()
+            return jsonify({"ok": True, "relatorio": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao alterar lote")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/lotes/<int:lote_id>/status", methods=["POST"])
+@login_obrigatorio
+def api_lote_status(lote_id: int):
+    from app.apps.erp.core.pagamentos.lotes import mudar_status
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            mudar_status(s, lote_id, (d.get("status") or "").upper(), usuario)
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/lotes/por-sp", methods=["POST"])
+@login_obrigatorio
+def api_lote_por_sp():
+    """Recebe o texto colado (a mensagem que volta do solicitante) e devolve
+    as parcelas correspondentes."""
+    from app.apps.erp.core.pagamentos.lotes import extrair_ids_sp, parcelas_por_sp
+    d = request.get_json(silent=True) or {}
+    numeros = extrair_ids_sp(d.get("texto") or "")
+    if not numeros:
+        return jsonify({"ok": False, "erro": "Nenhum número de SP reconhecido no texto."}), 400
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "reconhecidos": numeros, **parcelas_por_sp(s, numeros)})
+    except Exception as e:
+        logger.exception("ERP: falha ao buscar SPs coladas")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
