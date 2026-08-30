@@ -37,8 +37,11 @@ class RegimeTributario(str, enum.Enum):
 
 
 class PerfilUsuario(str, enum.Enum):
-    ADMIN = "ADMIN"
-    FINANCEIRO = "FINANCEIRO"
+    ADMIN = "ADMIN"                          # tudo, inclusive configurações
+    FINANCEIRO = "FINANCEIRO"                # opera o sistema, não configura
+    GESTOR_OBRA = "GESTOR_OBRA"              # lança e acompanha TODAS as obras
+    SUPERVISOR_OBRA = "SUPERVISOR_OBRA"      # lança e acompanha as obras designadas
+    ADMINISTRATIVO_OBRA = "ADMINISTRATIVO_OBRA"   # lança e acompanha o que ele lançou
     APROVADOR = "APROVADOR"
     LANCADOR = "LANCADOR"
     CONSULTA = "CONSULTA"
@@ -93,12 +96,26 @@ class Usuario(Base):
     perfil: Mapped[PerfilUsuario] = mapped_column(
         pg_enum(PerfilUsuario, "perfil_usuario"), nullable=False,
         default=PerfilUsuario.CONSULTA)
+    cpf: Mapped[Optional[str]] = mapped_column(Text)
+    telefone: Mapped[Optional[str]] = mapped_column(Text)
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Usuario {self.id} {self.email} {self.perfil}>"
+
+
+class UsuarioObra(Base):
+    """Obras que o supervisor enxerga. Gestor vê todas; administrativo de obra
+    vê o que ele mesmo lançou."""
+    __tablename__ = "usuario_obras"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
+    obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Alcada(Base):

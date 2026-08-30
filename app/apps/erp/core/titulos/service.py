@@ -311,7 +311,7 @@ def obter(s: Session, titulo_id: int) -> Titulo:
 
 def listar(s: Session, *, status: Optional[str] = None, fornecedor_id: Optional[int] = None,
            competencia: Optional[date] = None, busca: str = "",
-           limite: int = 500) -> list[Titulo]:
+           limite: int = 500, usuario: Optional[Usuario] = None) -> list[Titulo]:
     stmt = (select(Titulo)
             .options(selectinload(Titulo.parcelas), selectinload(Titulo.fornecedor),
                      selectinload(Titulo.categoria),
@@ -326,6 +326,9 @@ def listar(s: Session, *, status: Optional[str] = None, fornecedor_id: Optional[
     busca = (busca or "").strip()
     if busca:
         stmt = stmt.where(Titulo.descricao.ilike(f"%{busca}%") | Titulo.numero_sp.ilike(f"%{busca}%"))
+    if usuario is not None:
+        from app.apps.erp.core.auth.permissoes import aplicar_escopo
+        stmt = aplicar_escopo(stmt, s, usuario)
     return list(s.scalars(stmt).all())
 
 

@@ -43,7 +43,6 @@ logger = logging.getLogger(__name__)
 
 JANELA_DIAS = 7
 CONFIANCA_AUTOMATICA = 0.80
-PASTA_PADRAO = os.getenv("ERP_DROPBOX_COMPROVANTES", "/ERP/comprovantes")
 
 
 # ---------------------------------------------------------------------------
@@ -52,33 +51,11 @@ PASTA_PADRAO = os.getenv("ERP_DROPBOX_COMPROVANTES", "/ERP/comprovantes")
 def guardar_anexo(s: Session, conteudo: bytes, nome_arquivo: str, *,
                   entidade_tipo: str, entidade_id: int,
                   usuario: Optional[Usuario] = None,
-                  pasta: str = PASTA_PADRAO) -> Optional[Anexo]:
-    """Sobe para o Dropbox (reusando o cliente do monorepo) e registra o anexo.
-    Se o Dropbox não estiver configurado, registra o anexo mesmo assim com o
-    hash — o vínculo com o título não se perde."""
-    digest = hashlib.sha256(conteudo).hexdigest()
-    ja = s.scalars(select(Anexo).where(
-        Anexo.hash_sha256 == digest, Anexo.entidade_tipo == entidade_tipo,
-        Anexo.entidade_id == entidade_id)).first()
-    if ja is not None:
-        return ja
-
-    seguro = re.sub(r"[^A-Za-z0-9._-]+", "_", nome_arquivo or "comprovante.pdf")[:120]
-    caminho = f"{pasta.rstrip('/')}/{datetime.now():%Y-%m}/{entidade_id}_{seguro}"
-    try:
-        from app.apps.baixabradesco.storage import upload_dropbox_bytes
-        resultado = upload_dropbox_bytes(conteudo, caminho)
-        caminho = (resultado or {}).get("path_display") or caminho
-    except Exception as e:                       # Dropbox fora do ar não trava a baixa
-        logger.warning("ERP: comprovante não subiu ao Dropbox (%s) — anexo registrado local", e)
-
-    anexo = Anexo(entidade_tipo=entidade_tipo, entidade_id=entidade_id,
-                  nome_arquivo=seguro, dropbox_path=caminho, hash_sha256=digest,
-                  tamanho_bytes=len(conteudo),
-                  enviado_por=(usuario.id if usuario else None))
-    s.add(anexo)
-    s.flush()
-    return anexo
+                  categoria: str = "COMPROVANTE") -> Optional[Anexo]:
+    """Guarda o comprovante NO BANCO, comprimido — sem Dropbox."""
+    from app.apps.erp.core.documentos.armazenamento import salvar
+    return salvar(s, conteudo, nome_arquivo, entidade_tipo=entidade_tipo,
+                  entidade_id=entidade_id, categoria=categoria, usuario=usuario)
 
 
 # ---------------------------------------------------------------------------
@@ -266,7 +243,7 @@ def processar_comprovante(s: Session, conteudo: bytes, nome_arquivo: str, *,
                       "data": pg.data_pagamento.isoformat(),
                       "conta": conta.descricao, "confianca": melhor["confianca"],
                       "motivos": melhor["motivos"],
-                      "anexo": anexo.dropbox_path if anexo else None},
+                      "anexo_id": anexo.id if anexo else None},
             "mensagem": f"{melhor['numero_sp']} baixado e comprovante anexado."}
 
 
@@ -292,13 +269,9 @@ def confirmar_baixa(s: Session, *, parcela_id: int, conta_bancaria_id: int,
                      {"numero_sp": p.titulo.numero_sp, "valor": str(pg.valor_pago),
                       "arquivo": nome_arquivo}, usuario.id if usuario else None)
     return {"numero_sp": p.titulo.numero_sp, "valor": float(pg.valor_pago),
-            "anexo": anexo.dropbox_path if anexo else None}
+            "anexo_id": anexo.id if anexo else None}
 
 
 def anexos_do_titulo(s: Session, titulo_id: int) -> list[dict[str, Any]]:
-    linhas = s.scalars(select(Anexo).where(
-        Anexo.entidade_tipo == "titulo", Anexo.entidade_id == titulo_id)
-        .order_by(Anexo.criado_em.desc())).all()
-    return [{"id": a.id, "nome": a.nome_arquivo, "caminho": a.dropbox_path,
-             "tamanho": a.tamanho_bytes,
-             "em": a.criado_em.strftime("%d/%m/%Y %H:%M")} for a in linhas]
+    from app.apps.erp.core.documentos.armazenamento import listar
+    return listar(s, "titulo", titulo_id)

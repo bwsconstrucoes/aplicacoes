@@ -12,8 +12,8 @@ from decimal import Decimal
 from typing import Any, Optional
 
 from sqlalchemy import (
-    BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric,
-    SmallInteger, Text, func,
+    BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Integer, LargeBinary,
+    Numeric, SmallInteger, Text, func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -153,7 +153,13 @@ class Anexo(Base):
     entidade_tipo: Mapped[str] = mapped_column(Text, nullable=False)
     entidade_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
     nome_arquivo: Mapped[str] = mapped_column(Text, nullable=False)
-    dropbox_path: Mapped[str] = mapped_column(Text, nullable=False)
+    dropbox_path: Mapped[Optional[str]] = mapped_column(Text)   # legado; conteúdo vive no banco
+    conteudo: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
+    mime_type: Mapped[Optional[str]] = mapped_column(Text)
+    tamanho_original: Mapped[Optional[int]] = mapped_column(BigInteger)
+    comprimido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
+    categoria_anexo: Mapped[Optional[str]] = mapped_column(Text)
     hash_sha256: Mapped[str] = mapped_column(Text, nullable=False)
     tamanho_bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
     enviado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))

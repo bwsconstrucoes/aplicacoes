@@ -48,9 +48,10 @@
       RPA, guia DARF/GPS/FGTS/DAE, fatura de concessionária, boleto, contrato,
       termo de rescisão, comprovante bancário, prestação de contas de fundo fixo)
 - [x] **Pagamentos**: agenda, baixa em lote, Pix copia-e-cola + QR
-- [x] Baixa por COMPROVANTE: lê o PDF/foto do banco, acha o título por valor +
-      favorecido + nº da SP, baixa e anexa o documento (Dropbox) — `substitui o
-      baixabradesco dentro do ERP`
+- [x] Baixa por COMPROVANTE: lê o PDF/foto do banco, acha o título e anexa o
+      documento — anexos ficam NO BANCO, comprimidos (sem Dropbox)
+- [x] Operadores com perfis e escopo por obra (administrativo de obra,
+      supervisor, gestor, administrativo financeiro, admin)
 - [ ] Pagamentos — falta: aviso a quem solicitou (WhatsApp/Telegram)
 - [x] **Lote**: prioridade, colar SPs da mensagem, acompanhar pago/não pago
 - [x] **Conciliação automática de verdade** (atribuição ótima, valores
@@ -83,11 +84,11 @@
       tributação (ISS/INSS/federais) e ADITIVOS de valor e prazo
 - [x] Reclassificar conta/obra com título pago e conciliado, sem desfazer nada
 - [x] Desfazer baixa+conciliação em um passo (o ritual do Omie em um clique)
-- [ ] Obra — falta: anexos (contrato, CREA, seguro-garantia, OS) e fases de
-      acompanhamento; alerta de data-base do reajuste na agenda
+- [x] Anexos genéricos (obra, título, fornecedor, movimentação) no banco
+- [ ] Obra — falta: fases de acompanhamento; alerta de data-base do reajuste
 - [ ] Integrar com o módulo emissaonf: emitir a nota a partir da medição
 - [ ] **Open Finance / API bancária**: extrato e DDA automáticos (futuro)
-- [ ] Notificação a quem solicitou (WhatsApp/Telegram já existem no monorepo)
+- [~] Notificação por WhatsApp DESCARTADA por ora: o operador tem login e vê o andamento na tela
 - [ ] Aposentar o `.env` commitado: trocar a senha do banco no Render
 
 ## Decisões registradas

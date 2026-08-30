@@ -185,7 +185,8 @@ def api_titulos():
     status = [s for s in (request.args.get("status") or "").split(",") if s]
     try:
         with get_session() as s:
-            itens = svc_titulos.listar(s, busca=busca, limite=_LIMITE_GRADE)
+            usuario = _usuario_logado(s)
+            itens = svc_titulos.listar(s, busca=busca, limite=_LIMITE_GRADE, usuario=usuario)
             hoje = date.today()
             linhas = [_serializar(t, hoje) for t in itens
                       if not status or t.status.value in status]
@@ -1545,15 +1546,170 @@ def api_comprovante_confirmar():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
-@bp.route("/erp/api/titulos/<int:titulo_id>/anexos")
+@bp.route("/erp/api/anexos/<entidade>/<int:entidade_id>", methods=["GET", "POST"])
 @login_obrigatorio
-def api_anexos_titulo(titulo_id: int):
-    from app.apps.erp.core.pagamentos.comprovante import anexos_do_titulo
+def api_anexos(entidade: str, entidade_id: int):
+    """Anexos guardados no próprio banco, comprimidos."""
+    from app.apps.erp.core.documentos.armazenamento import listar, salvar
+    if entidade not in ("titulo", "obra", "movimentacao", "fornecedor"):
+        return jsonify({"ok": False, "erro": f"Entidade inválida: {entidade}"}), 400
     try:
         with get_session() as s:
-            return jsonify({"ok": True, "anexos": anexos_do_titulo(s, titulo_id)})
+            if request.method == "GET":
+                return jsonify({"ok": True, "anexos": listar(s, entidade, entidade_id)})
+            arquivo = request.files.get("arquivo")
+            if arquivo is None:
+                return jsonify({"ok": False, "erro": "Envie o arquivo."}), 400
+            usuario = _usuario_logado(s)
+            a = salvar(s, arquivo.read(), arquivo.filename or "arquivo",
+                       entidade_tipo=entidade, entidade_id=entidade_id,
+                       categoria=request.form.get("categoria", "OUTRO"),
+                       descricao=request.form.get("descricao", ""), usuario=usuario)
+            s.commit()
+            return jsonify({"ok": True, "anexo": {
+                "id": a.id, "nome": a.nome_arquivo,
+                "tamanho_kb": round((a.tamanho_bytes or 0) / 1024, 1),
+                "original_kb": round((a.tamanho_original or 0) / 1024, 1)}})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
+        logger.exception("ERP: falha no anexo")
         return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/anexo/<int:anexo_id>")
+@login_obrigatorio
+def baixar_anexo(anexo_id: int):
+    """Serve o arquivo direto do banco."""
+    from flask import Response
+    from app.apps.erp.core.documentos.armazenamento import obter
+    try:
+        with get_session() as s:
+            a = obter(s, anexo_id)
+            if not a.conteudo:
+                return jsonify({"ok": False,
+                                "erro": "Anexo antigo sem conteúdo no banco."}), 404
+            return Response(bytes(a.conteudo), mimetype=a.mime_type or "application/octet-stream",
+                            headers={"Content-Disposition":
+                                     f'inline; filename="{a.nome_arquivo}"'})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+@bp.route("/erp/api/anexos/<int:anexo_id>", methods=["DELETE"])
+@login_obrigatorio
+def api_excluir_anexo(anexo_id: int):
+    from app.apps.erp.core.documentos.armazenamento import excluir
+    try:
+        with get_session() as s:
+            excluir(s, anexo_id, _usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+@bp.route("/erp/api/usuarios", methods=["GET", "POST"])
+@login_obrigatorio
+def api_usuarios():
+    """Cadastro de operadores. Só o ADMIN mexe."""
+    from sqlalchemy import select
+    from app.apps.erp.core.auth.permissoes import ROTULOS, exigir
+    from app.apps.erp.core.auth.service import criar_usuario
+    from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
+    from app.apps.erp.db.models.cadastros import Obra, PerfilUsuario, Usuario, UsuarioObra
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                usuarios = s.scalars(select(Usuario).order_by(Usuario.nome)).all()
+                vinculos: dict[int, list[str]] = {}
+                for v in s.scalars(select(UsuarioObra)).all():
+                    obra = s.get(Obra, v.obra_id)
+                    vinculos.setdefault(v.usuario_id, []).append(
+                        obra.codigo if obra else str(v.obra_id))
+                return jsonify({"ok": True, "usuarios": [{
+                    "id": u.id, "nome": u.nome, "email": u.email,
+                    "cpf": u.cpf, "telefone": u.telefone,
+                    "perfil": u.perfil.value,
+                    "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
+                    "ativo": u.ativo, "obras": vinculos.get(u.id, []),
+                } for u in usuarios], "perfis": [
+                    {"chave": p.value, "rotulo": ROTULOS.get(p, p.value)}
+                    for p in PerfilUsuario]})
+
+            exigir(atual, "gerir_usuarios")
+            d = request.get_json(silent=True) or {}
+            cpf = somente_digitos(d.get("cpf") or "")
+            if cpf and not cpf_valido(cpf):
+                return jsonify({"ok": False, "erro": "CPF inválido."}), 400
+            u = criar_usuario(s, nome=d.get("nome") or "", email=d.get("email") or "",
+                              senha=d.get("senha") or "", perfil=d.get("perfil") or "CONSULTA",
+                              criado_por=atual)
+            u.cpf = cpf or None
+            u.telefone = somente_digitos(d.get("telefone") or "") or None
+            u.observacoes = (d.get("observacoes") or "").strip() or None
+            for obra_id in (d.get("obras") or []):
+                s.add(UsuarioObra(usuario_id=u.id, obra_id=int(obra_id)))
+            s.commit()
+            return jsonify({"ok": True, "usuario_id": u.id})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no cadastro de operador")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/usuarios/<int:usuario_id>", methods=["POST"])
+@login_obrigatorio
+def api_editar_usuario(usuario_id: int):
+    from sqlalchemy import select
+    from app.apps.erp.core.auth.permissoes import exigir
+    from app.apps.erp.core.auth.service import gerar_hash
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario, UsuarioObra
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            exigir(atual, "gerir_usuarios")
+            u = s.get(Usuario, usuario_id)
+            if u is None:
+                return jsonify({"ok": False, "erro": "Operador não encontrado."}), 404
+            for campo in ("nome", "telefone", "observacoes"):
+                if campo in d:
+                    valor = (d[campo] or "").strip()
+                    setattr(u, campo, somente_digitos(valor) if campo == "telefone" else valor or None)
+            if d.get("perfil"):
+                u.perfil = PerfilUsuario(d["perfil"])
+            if "ativo" in d:
+                u.ativo = bool(d["ativo"])
+            if d.get("senha"):
+                u.senha_hash = gerar_hash(d["senha"])
+            if "obras" in d:
+                for v in s.scalars(select(UsuarioObra).where(
+                        UsuarioObra.usuario_id == u.id)).all():
+                    s.delete(v)
+                s.flush()
+                for obra_id in (d.get("obras") or []):
+                    s.add(UsuarioObra(usuario_id=u.id, obra_id=int(obra_id)))
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except Exception as e:
+        logger.exception("ERP: falha ao editar operador")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/permissoes")
+@login_obrigatorio
+def api_permissoes():
+    from app.apps.erp.core.auth.permissoes import contexto_permissoes
+    with get_session() as s:
+        return jsonify({"ok": True, "contexto": contexto_permissoes(s, _usuario_logado(s))})
 
 
 @bp.route("/erp/health")

@@ -73,10 +73,16 @@
 
 <div class="cartao">
   <div class="cartao-cab"><h3>Usuários</h3><small>quem lança, quem autoriza, quem paga</small></div>
-  <table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Situação</th></tr></thead>
+  <div class="tabela-barra" style="padding:0 0 10px">
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-novo-op">+ Novo operador</button>
+  </div>
+  <table><thead><tr><th>Nome</th><th>E-mail</th><th>CPF</th><th>Telefone</th>
+    <th>Perfil</th><th>Obras</th><th>Situação</th></tr></thead>
     <tbody id="tb-usuarios"></tbody></table>
-  <div class="cartao-dica">Novos usuários e redefinição de senha são feitos pelo Shell do serviço
-    (<code>scripts/seed_admin.py</code> e <code>scripts/resetar_senha.py</code>).</div>
+  <div class="cartao-dica">O perfil define o que a pessoa vê: administrativo de obra enxerga
+    só o que ele lançou; supervisor, as obras designadas; gestor, todas as obras;
+    administrativo financeiro opera o sistema; administrador também configura.</div>
 </div>
 
 <dialog id="dlg">
@@ -90,6 +96,69 @@
 <script>
 let DADOS = {categorias: [], obras: [], contas: [], usuarios: []};
 let OPCOES_CAT = "";
+let OPERADORES = [], PERFIS = [];
+
+async function carregarOperadores(){
+  try {
+    const d = await api("/erp/api/usuarios");
+    OPERADORES = d.usuarios; PERFIS = d.perfis;
+    desenhar();
+  } catch(e){ /* sem permissão para ver operadores */ }
+}
+
+function formOperador(u){
+  const novo = !u;
+  u = u || {perfil:"ADMINISTRATIVO_OBRA", ativo:true, obras:[]};
+  els("dlg-titulo").textContent = novo ? "Novo operador" : `Editar ${u.nome}`;
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Nome *</label>
+        <input id="op-nome" value="${u.nome||""}"></div>
+      <div class="campo"><label>E-mail (login) *</label>
+        <input id="op-email" type="email" value="${u.email||""}" ${novo?"":"disabled"}></div>
+      <div class="campo"><label>CPF</label><input id="op-cpf" value="${u.cpf||""}" placeholder="somente números"></div>
+      <div class="campo"><label>Telefone</label><input id="op-tel" value="${u.telefone||""}" placeholder="85999998888"></div>
+      <div class="campo"><label>Perfil *</label><select id="op-perfil">
+        ${PERFIS.map(p=>`<option value="${p.chave}" ${p.chave===u.perfil?"selected":""}>${p.rotulo}</option>`).join("")}
+      </select></div>
+      <div class="campo"><label>${novo?"Senha *":"Nova senha (deixe vazio para manter)"}</label>
+        <input id="op-senha" type="password" placeholder="mínimo 8 caracteres"></div>
+      <div class="campo"><label>Situação</label><select id="op-ativo">
+        <option value="1" ${u.ativo?"selected":""}>Ativo</option>
+        <option value="0" ${u.ativo?"":"selected"}>Inativo</option></select></div>
+    </div>
+    <div id="op-obras-bloco" class="campo" style="margin-top:12px">
+      <label>Obras que este operador acompanha</label>
+      <div class="filtro-opcoes" style="max-height:180px; border:1px solid var(--borda); border-radius:8px; padding:6px">
+        ${DADOS.obras.map(o=>`<label class="opcao"><input type="checkbox" class="op-obra" value="${o.id}"
+          ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${o.codigo} · ${o.nome}</span></label>`).join("")}
+      </div>
+      <div class="dica">Vale para o <b>supervisor</b>. Gestor vê todas; administrativo de obra vê o que lançou.</div>
+    </div>
+    <div style="margin-top:14px"><button class="btn" id="op-salvar">Salvar</button></div>`;
+
+  function alternarObras(){
+    els("op-obras-bloco").style.display =
+      els("op-perfil").value === "SUPERVISOR_OBRA" ? "" : "none";
+  }
+  els("op-perfil").addEventListener("change", alternarObras); alternarObras();
+
+  els("op-salvar").addEventListener("click", async () => {
+    const corpo = {nome: els("op-nome").value, telefone: els("op-tel").value,
+      perfil: els("op-perfil").value, ativo: els("op-ativo").value === "1",
+      obras: [...document.querySelectorAll(".op-obra:checked")].map(i=>+i.value)};
+    if (els("op-senha").value) corpo.senha = els("op-senha").value;
+    if (novo) { corpo.email = els("op-email").value; corpo.cpf = els("op-cpf").value; }
+    try {
+      await api(novo ? "/erp/api/usuarios" : `/erp/api/usuarios/${u.id}`,
+        {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+      els("dlg").close();
+      aviso("mensagem", novo ? "Operador cadastrado." : "Operador atualizado.", "ok");
+      carregarOperadores();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+}
 
 async function checarBanco(){
   try {
@@ -125,6 +194,8 @@ els("btn-migrar").addEventListener("click", async () => {
     }
     checarBanco();
 carregarDepara();
+carregarOperadores();
+els("btn-novo-op").addEventListener("click", () => formOperador(null));
 
 async function carregarDepara(){
   try {
@@ -193,8 +264,8 @@ async function carregar(){
         <div class="kpi-sub">${DADOS.obras.length} no total</div></div>
       <div class="kpi estatico verde"><div class="kpi-rotulo">Contas da empresa</div>
         <div class="kpi-valor">${DADOS.contas.length}</div></div>
-      <div class="kpi estatico roxo"><div class="kpi-rotulo">Usuários</div>
-        <div class="kpi-valor">${DADOS.usuarios.length}</div></div>`;
+      <div class="kpi estatico roxo"><div class="kpi-rotulo">Operadores</div>
+        <div class="kpi-valor">${OPERADORES.length||DADOS.usuarios.length}</div></div>`;
     desenhar();
   } catch(e){
     aviso("mensagem", `Não foi possível carregar os cadastros: ${e.message}` +
@@ -261,9 +332,15 @@ function desenhar(){
       <td><span class="selo ${c.ativo?"aprovado":"outro"}">${c.ativo?"Ativa":"Inativa"}</span></td></tr>`).join("")
       || `<tr><td colspan="5" class="cartao-dica">Nenhuma conta cadastrada — necessária para registrar pagamentos.</td></tr>`;
 
-  els("tb-usuarios").innerHTML = DADOS.usuarios.map(u => `
-    <tr><td>${u.nome}</td><td>${u.email}</td><td>${rotulo(u.perfil)}</td>
+  els("tb-usuarios").innerHTML = OPERADORES.map(u => `
+    <tr style="cursor:pointer" data-op="${u.id}" title="Clique para editar">
+      <td>${u.nome}</td><td>${u.email}</td>
+      <td class="dados">${u.cpf||"—"}</td><td class="dados">${u.telefone||"—"}</td>
+      <td>${u.perfil_rotulo}</td>
+      <td><small>${u.obras.length ? u.obras.join(", ") : (u.perfil==="ADMINISTRATIVO_OBRA"?"o que lançou":"todas")}</small></td>
       <td><span class="selo ${u.ativo?"aprovado":"outro"}">${u.ativo?"Ativo":"Inativo"}</span></td></tr>`).join("");
+  document.querySelectorAll("[data-op]").forEach(tr =>
+    tr.addEventListener("click", () => formOperador(OPERADORES.find(x=>x.id===+tr.dataset.op))));
 }
 
 function formulario(titulo, campos, url){
@@ -309,6 +386,8 @@ els("btn-nova-conta").addEventListener("click", () => formulario("Nova conta da 
 
 checarBanco();
 carregarDepara();
+carregarOperadores();
+els("btn-novo-op").addEventListener("click", () => formOperador(null));
 
 async function carregarDepara(){
   try {
