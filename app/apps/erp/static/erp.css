@@ -1,0 +1,220 @@
+/* ==========================================================================
+   ERP BWS — estilo
+   Direção visual: a prancha técnica de engenharia. O cabeçalho é um CARIMBO
+   (title block) com células de fio de cabelo; rótulos em condensada caixa-alta
+   como legenda de projeto; números em monoespaçada tabular, alinhados à
+   direita como em caderno de medição. Sem cartões arredondados, sem sombras
+   decorativas — a informação é a decoração.
+   ========================================================================== */
+
+:root {
+  --tinta:        #14181D;   /* grafite da prancha */
+  --tinta-media:  #4A525C;
+  --tinta-fraca:  #8A929C;
+  --papel:        #F7F7F4;   /* papel de cópia */
+  --papel-alt:    #EFEFEA;
+  --fio:          #C9CCC4;   /* fio de cabelo */
+  --fio-forte:    #9BA098;
+  --marca:        #B45309;   /* âmbar de sinalização de obra */
+  --ok:           #2F6B4F;
+  --alerta:       #A8621E;
+  --erro:         #A3311F;
+  --selecao:      #FDF6E7;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--papel);
+  color: var(--tinta);
+  font-family: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.rotulo {
+  font-family: "Barlow Condensed", "Arial Narrow", sans-serif;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  font-weight: 600;
+  color: var(--tinta-fraca);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- carimbo */
+.carimbo {
+  border-bottom: 1px solid var(--fio-forte);
+  background: var(--papel);
+  position: sticky; top: 0; z-index: 40;
+}
+.carimbo-topo {
+  display: flex; align-items: baseline; gap: 18px;
+  padding: 10px 20px 8px;
+  border-bottom: 1px solid var(--fio);
+}
+.carimbo-topo h1 {
+  font-family: "Barlow Condensed", sans-serif;
+  text-transform: uppercase; letter-spacing: .14em;
+  font-size: 17px; font-weight: 700; margin: 0;
+}
+.carimbo-topo h1 span { color: var(--marca); }
+.carimbo-topo .via { margin-left: auto; display: flex; align-items: baseline; gap: 14px; }
+.carimbo-topo a { color: var(--tinta-media); text-decoration: none; }
+.carimbo-topo a:hover { color: var(--marca); text-decoration: underline; }
+
+.celulas { display: grid; grid-template-columns: repeat(5, 1fr); }
+.celula {
+  padding: 8px 20px 10px;
+  border-right: 1px solid var(--fio);
+}
+.celula:last-child { border-right: 0; }
+.celula .valor { font-size: 20px; font-weight: 600; margin-top: 3px; letter-spacing: -.01em; }
+.celula .sub { font-size: 11px; color: var(--tinta-fraca); margin-top: 1px; }
+.celula.destaque .valor { color: var(--marca); }
+
+/* ------------------------------------------------------------------ corpo */
+.corpo { display: grid; grid-template-columns: 232px 1fr; min-height: calc(100vh - 118px); }
+
+.filtros {
+  border-right: 1px solid var(--fio);
+  padding: 16px 16px 40px;
+  background: var(--papel-alt);
+}
+.filtros h2 { margin: 0 0 12px; }
+.campo { margin-bottom: 14px; }
+.campo label { display: block; margin-bottom: 5px; }
+.campo input[type="text"], .campo input[type="search"] {
+  width: 100%; padding: 6px 8px; font-size: 13px; font-family: inherit;
+  border: 1px solid var(--fio-forte); background: #fff; border-radius: 0;
+}
+.campo input:focus-visible, button:focus-visible, .linha:focus-visible {
+  outline: 2px solid var(--marca); outline-offset: 1px;
+}
+.opcao { display: flex; align-items: center; gap: 7px; padding: 2px 0; font-size: 13px; }
+.opcao input { accent-color: var(--marca); margin: 0; }
+.contagem { margin-left: auto; color: var(--tinta-fraca); font-size: 11px; }
+
+.botao {
+  font-family: "Barlow Condensed", sans-serif; text-transform: uppercase;
+  letter-spacing: .08em; font-weight: 600; font-size: 12px;
+  padding: 6px 12px; border: 1px solid var(--fio-forte); background: #fff;
+  color: var(--tinta); cursor: pointer; border-radius: 0;
+}
+.botao:hover { border-color: var(--tinta); }
+.botao.primario { background: var(--marca); border-color: var(--marca); color: #fff; }
+.botao.primario:hover { background: #96450a; }
+.botao:disabled { opacity: .4; cursor: not-allowed; }
+
+/* ------------------------------------------------------------------ grade */
+.painel { padding: 0; overflow: auto; }
+
+.barra-acoes {
+  position: sticky; top: 0; z-index: 30;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 16px; background: var(--selecao);
+  border-bottom: 1px solid var(--fio-forte);
+}
+.barra-acoes .resumo-sel { font-size: 12px; font-weight: 600; margin-right: 6px; }
+.barra-acoes input[type="text"] {
+  padding: 5px 8px; border: 1px solid var(--fio-forte); font-size: 12px;
+  font-family: inherit; min-width: 220px; background: #fff;
+}
+.barra-acoes .direita { margin-left: auto; }
+
+table { width: 100%; border-collapse: collapse; }
+thead th {
+  position: sticky; top: 0; z-index: 20;
+  background: var(--papel-alt); text-align: left;
+  font-family: "Barlow Condensed", sans-serif; text-transform: uppercase;
+  letter-spacing: .07em; font-size: 11px; color: var(--tinta-media);
+  padding: 7px 10px; border-bottom: 1px solid var(--fio-forte);
+  white-space: nowrap; cursor: pointer; user-select: none;
+}
+thead th.sem-ordem { cursor: default; }
+thead th .seta { color: var(--marca); }
+tbody td {
+  padding: 6px 10px; border-bottom: 1px solid var(--fio);
+  vertical-align: top; font-size: 13px;
+}
+tbody tr:hover { background: #fff; }
+tbody tr.marcada { background: var(--selecao); }
+td.direita, th.direita { text-align: right; }
+td.sp { font-weight: 600; white-space: nowrap; }
+td.desc { max-width: 340px; }
+td.desc small { display: block; color: var(--tinta-fraca); font-size: 11px; margin-top: 1px; }
+.venc-atrasado { color: var(--erro); font-weight: 600; }
+
+.selo {
+  font-family: "Barlow Condensed", sans-serif; text-transform: uppercase;
+  letter-spacing: .06em; font-size: 11px; font-weight: 600;
+  padding: 1px 6px; border: 1px solid currentColor; white-space: nowrap;
+}
+.selo.aguardando { color: var(--alerta); }
+.selo.aprovado   { color: var(--ok); }
+.selo.bloqueado  { color: var(--erro); }
+.selo.pago       { color: var(--tinta-media); }
+.selo.outro      { color: var(--tinta-fraca); }
+
+/* barra de risco: régua de escala, não barra de progresso genérica */
+.risco { display: flex; align-items: center; gap: 6px; }
+.risco .regua { width: 46px; height: 6px; background: #fff; border: 1px solid var(--fio); }
+.risco .regua i { display: block; height: 100%; background: var(--marca); }
+.risco .regua i.zero { background: var(--fio-forte); }
+
+.vazio { padding: 60px 20px; text-align: center; color: var(--tinta-fraca); }
+.vazio strong { display: block; color: var(--tinta); font-size: 15px; margin-bottom: 6px; }
+
+/* ---------------------------------------------------------------- detalhe */
+dialog {
+  border: 1px solid var(--tinta); padding: 0; width: min(920px, 94vw);
+  background: var(--papel); color: var(--tinta);
+}
+dialog::backdrop { background: rgba(20, 24, 29, .38); }
+.dlg-topo {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 12px 18px; border-bottom: 1px solid var(--fio-forte);
+}
+.dlg-topo h3 { margin: 0; font-family: "Barlow Condensed", sans-serif;
+  text-transform: uppercase; letter-spacing: .1em; font-size: 16px; }
+.dlg-corpo { padding: 16px 18px 22px; max-height: 72vh; overflow: auto; }
+.dlg-corpo h4 { margin: 18px 0 6px; }
+.dlg-corpo table { margin-top: 4px; }
+.critica { padding: 7px 10px; border-left: 3px solid var(--fio-forte); margin-bottom: 6px;
+  background: #fff; font-size: 13px; }
+.critica.ALERTA   { border-left-color: var(--alerta); }
+.critica.CRITICA  { border-left-color: var(--marca); }
+.critica.BLOQUEIA { border-left-color: var(--erro); }
+.critica code { font-family: "IBM Plex Mono", monospace; font-size: 11px;
+  color: var(--tinta-media); margin-right: 6px; }
+
+.aviso { padding: 10px 14px; background: #fff; border-left: 3px solid var(--erro);
+  margin: 10px 16px; font-size: 13px; }
+.aviso.ok { border-left-color: var(--ok); }
+
+/* --------------------------------------------------------------- entrada */
+.entrada { min-height: 100vh; display: grid; place-items: center; padding: 20px; }
+.entrada form {
+  width: min(360px, 100%); border: 1px solid var(--fio-forte); background: #fff;
+  padding: 26px 24px 22px;
+}
+.entrada h1 { font-family: "Barlow Condensed", sans-serif; text-transform: uppercase;
+  letter-spacing: .14em; font-size: 20px; margin: 0 0 2px; }
+.entrada h1 span { color: var(--marca); }
+.entrada p.sub { margin: 0 0 20px; color: var(--tinta-fraca); font-size: 12px; }
+.entrada label { display: block; margin-bottom: 4px; }
+.entrada input { width: 100%; padding: 8px; border: 1px solid var(--fio-forte);
+  font-family: inherit; font-size: 14px; margin-bottom: 14px; }
+.entrada .botao { width: 100%; padding: 9px; }
+
+@media (max-width: 820px) {
+  .corpo { grid-template-columns: 1fr; }
+  .filtros { border-right: 0; border-bottom: 1px solid var(--fio); }
+  .celulas { grid-template-columns: repeat(2, 1fr); }
+  .celula { border-bottom: 1px solid var(--fio); }
+  td.desc { max-width: 180px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

@@ -1,0 +1,340 @@
+# ============================================================================
+# BWS ERP — db/models/financeiro.py
+# Models do núcleo financeiro: documentos fiscais, pedidos, anexos, títulos,
+# parcelas, rateios, retenções, análises, pagamentos, extratos, conciliações,
+# sync_queue e eventos. Espelham fielmente o schema.sql.
+# ============================================================================
+from __future__ import annotations
+
+import enum
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any, Optional
+
+from sqlalchemy import (
+    BigInteger, Boolean, Date, DateTime, ForeignKey, Index, Numeric,
+    SmallInteger, Text, func,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.apps.erp.db.database import Base
+from app.apps.erp.db.models.cadastros import (
+    Categoria, ContaBancaria, Contrato, FormaPagamento, Fornecedor,
+    FornecedorConta, Obra, TipoTitulo, Usuario, pg_enum,
+)
+
+
+# ---------------------------------------------------------------------------
+# Enums do financeiro
+# ---------------------------------------------------------------------------
+class StatusTitulo(str, enum.Enum):
+    RASCUNHO = "RASCUNHO"
+    EM_ANALISE = "EM_ANALISE"
+    DEVOLVIDO = "DEVOLVIDO"
+    AGUARDANDO_APROVACAO = "AGUARDANDO_APROVACAO"
+    APROVADO = "APROVADO"
+    BLOQUEADO = "BLOQUEADO"
+    PAGO_PARCIAL = "PAGO_PARCIAL"
+    PAGO = "PAGO"
+    CANCELADO = "CANCELADO"
+    ESTORNADO = "ESTORNADO"
+
+
+class StatusParcela(str, enum.Enum):
+    ABERTA = "ABERTA"
+    AGENDADA = "AGENDADA"
+    PAGA = "PAGA"
+    CANCELADA = "CANCELADA"
+
+
+class TipoDocFiscal(str, enum.Enum):
+    NFE = "NFE"
+    NFSE = "NFSE"
+    CTE = "CTE"
+    NFCE = "NFCE"
+    FATURA = "FATURA"
+    RECIBO = "RECIBO"
+    CONTRATO = "CONTRATO"
+    OUTRO = "OUTRO"
+
+
+class SituacaoNota(str, enum.Enum):
+    AUTORIZADA = "AUTORIZADA"
+    CANCELADA = "CANCELADA"
+    DENEGADA = "DENEGADA"
+    DESCONHECIDA = "DESCONHECIDA"
+
+
+class TipoRetencao(str, enum.Enum):
+    INSS = "INSS"
+    ISS = "ISS"
+    IRRF = "IRRF"
+    PCC = "PCC"
+
+
+class DestinoSync(str, enum.Enum):
+    OMIE = "OMIE"
+    SHEETS = "SHEETS"
+    PIPEFY = "PIPEFY"
+
+
+class StatusSync(str, enum.Enum):
+    PENDENTE = "PENDENTE"
+    PROCESSANDO = "PROCESSANDO"
+    OK = "OK"
+    ERRO = "ERRO"
+    DESCARTADO = "DESCARTADO"
+
+
+# ---------------------------------------------------------------------------
+# Documentos
+# ---------------------------------------------------------------------------
+class DocumentoFiscal(Base):
+    __tablename__ = "documentos_fiscais"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    tipo: Mapped[TipoDocFiscal] = mapped_column(pg_enum(TipoDocFiscal, "tipo_doc_fiscal"), nullable=False)
+    chave_acesso: Mapped[Optional[str]] = mapped_column(Text, unique=True)
+    numero: Mapped[Optional[str]] = mapped_column(Text)
+    serie: Mapped[Optional[str]] = mapped_column(Text)
+    codigo_verificacao: Mapped[Optional[str]] = mapped_column(Text)
+    municipio_emissao: Mapped[Optional[str]] = mapped_column(Text)
+    emitente_doc: Mapped[str] = mapped_column(Text, nullable=False)
+    emitente_nome: Mapped[Optional[str]] = mapped_column(Text)
+    destinatario_doc: Mapped[Optional[str]] = mapped_column(Text)
+    valor_total: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    data_emissao: Mapped[Optional[date]] = mapped_column(Date)
+    situacao: Mapped[SituacaoNota] = mapped_column(
+        pg_enum(SituacaoNota, "situacao_nota"), nullable=False, default=SituacaoNota.DESCONHECIDA)
+    situacao_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    manifestacao: Mapped[Optional[str]] = mapped_column(Text)
+    xml_path: Mapped[Optional[str]] = mapped_column(Text)
+    pdf_path: Mapped[Optional[str]] = mapped_column(Text)
+    dados: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)
+    origem: Mapped[str] = mapped_column(Text, nullable=False, default="UPLOAD")
+    capturado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Pedido(Base):
+    __tablename__ = "pedidos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    numero: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    fornecedor_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("fornecedores.id"))
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    valor_total: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="ABERTO")
+    dados: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)
+    ref_origem: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Anexo(Base):
+    __tablename__ = "anexos"
+    __table_args__ = (
+        Index("idx_anexos_entidade", "entidade_tipo", "entidade_id"),
+        Index("idx_anexos_hash", "hash_sha256"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    entidade_tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    entidade_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    nome_arquivo: Mapped[str] = mapped_column(Text, nullable=False)
+    dropbox_path: Mapped[str] = mapped_column(Text, nullable=False)
+    hash_sha256: Mapped[str] = mapped_column(Text, nullable=False)
+    tamanho_bytes: Mapped[Optional[int]] = mapped_column(BigInteger)
+    enviado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Núcleo: títulos
+# ---------------------------------------------------------------------------
+class Titulo(Base):
+    __tablename__ = "titulos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    numero_sp: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    tipo: Mapped[TipoTitulo] = mapped_column(pg_enum(TipoTitulo, "tipo_titulo"), nullable=False)
+    fornecedor_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("fornecedores.id"), nullable=False)
+    descricao: Mapped[str] = mapped_column(Text, nullable=False)
+    valor_bruto: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    valor_retencoes: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    valor_liquido: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    competencia: Mapped[date] = mapped_column(Date, nullable=False)
+    data_emissao_doc: Mapped[Optional[date]] = mapped_column(Date)
+    categoria_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("categorias.id"), nullable=False)
+    pedido_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("pedidos.id"))
+    contrato_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("contratos.id"))
+    documento_fiscal_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("documentos_fiscais.id"))
+    forma_pagamento: Mapped[FormaPagamento] = mapped_column(
+        pg_enum(FormaPagamento, "forma_pagamento"), nullable=False)
+    fornecedor_conta_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("fornecedor_contas.id"))
+    dedutivel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    justificativa_excecao: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[StatusTitulo] = mapped_column(
+        pg_enum(StatusTitulo, "status_titulo"), nullable=False, default=StatusTitulo.RASCUNHO)
+    score_risco: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    solicitante_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
+    aprovador_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    aprovado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    estorna_titulo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulos.id"))
+    codigo_omie: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True)
+    ref_pipefy: Mapped[Optional[str]] = mapped_column(Text)
+    origem: Mapped[str] = mapped_column(Text, nullable=False, default="SISTEMA")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    fornecedor: Mapped[Fornecedor] = relationship()
+    categoria: Mapped[Categoria] = relationship()
+    parcelas: Mapped[list["Parcela"]] = relationship(back_populates="titulo", order_by="Parcela.numero")
+    rateios: Mapped[list["Rateio"]] = relationship(back_populates="titulo")
+    retencoes: Mapped[list["Retencao"]] = relationship(
+        back_populates="titulo", foreign_keys="Retencao.titulo_id")
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Titulo {self.numero_sp} {self.tipo} R${self.valor_liquido} {self.status}>"
+
+
+class Parcela(Base):
+    __tablename__ = "parcelas"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    titulo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("titulos.id"), nullable=False)
+    numero: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    vencimento: Mapped[date] = mapped_column(Date, nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    status: Mapped[StatusParcela] = mapped_column(
+        pg_enum(StatusParcela, "status_parcela"), nullable=False, default=StatusParcela.ABERTA)
+    linha_digitavel: Mapped[Optional[str]] = mapped_column(Text)
+    codigo_barras: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    titulo: Mapped[Titulo] = relationship(back_populates="parcelas")
+    pagamentos: Mapped[list["Pagamento"]] = relationship(
+        back_populates="parcela", foreign_keys="Pagamento.parcela_id")
+
+
+class Rateio(Base):
+    __tablename__ = "rateios"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    titulo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("titulos.id"), nullable=False)
+    obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    percentual: Mapped[Optional[Decimal]] = mapped_column(Numeric(7, 4))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    titulo: Mapped[Titulo] = relationship(back_populates="rateios")
+    obra: Mapped[Obra] = relationship()
+
+
+class Retencao(Base):
+    __tablename__ = "retencoes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    titulo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("titulos.id"), nullable=False)
+    tipo: Mapped[TipoRetencao] = mapped_column(pg_enum(TipoRetencao, "tipo_retencao"), nullable=False)
+    base_calculo: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    aliquota: Mapped[Decimal] = mapped_column(Numeric(7, 4), nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    cno_obra: Mapped[Optional[str]] = mapped_column(Text)
+    titulo_guia_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulos.id"))
+    memoria_calculo: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    titulo: Mapped[Titulo] = relationship(back_populates="retencoes", foreign_keys=[titulo_id])
+
+
+class Analise(Base):
+    __tablename__ = "analises"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    titulo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("titulos.id"), nullable=False)
+    motor_versao: Mapped[str] = mapped_column(Text, nullable=False)
+    resultado: Mapped[str] = mapped_column(Text, nullable=False)
+    score: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    criticas: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    executada_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# Caixa
+# ---------------------------------------------------------------------------
+class Pagamento(Base):
+    __tablename__ = "pagamentos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    parcela_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("parcelas.id"), nullable=False)
+    conta_bancaria_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("contas_bancarias.id"), nullable=False)
+    data_pagamento: Mapped[date] = mapped_column(Date, nullable=False)
+    valor_pago: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    meio: Mapped[FormaPagamento] = mapped_column(pg_enum(FormaPagamento, "forma_pagamento"), nullable=False)
+    comprovante_anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    executado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    executado_por_robo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    estorna_pagamento_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("pagamentos.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    parcela: Mapped[Parcela] = relationship(back_populates="pagamentos", foreign_keys=[parcela_id])
+
+
+class Extrato(Base):
+    __tablename__ = "extratos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    conta_bancaria_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("contas_bancarias.id"), nullable=False)
+    data_lancamento: Mapped[date] = mapped_column(Date, nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    historico: Mapped[Optional[str]] = mapped_column(Text)
+    documento: Mapped[Optional[str]] = mapped_column(Text)
+    nome_contraparte: Mapped[Optional[str]] = mapped_column(Text)
+    hash_linha: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    importado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class Conciliacao(Base):
+    __tablename__ = "conciliacoes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    pagamento_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("pagamentos.id"), nullable=False, unique=True)
+    extrato_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("extratos.id"), nullable=False, unique=True)
+    metodo: Mapped[str] = mapped_column(Text, nullable=False, default="MANUAL")
+    confianca: Mapped[Optional[Decimal]] = mapped_column(Numeric(4, 3))
+    conciliado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    conciliado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    desfeita_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+# ---------------------------------------------------------------------------
+# Sincronização e auditoria
+# ---------------------------------------------------------------------------
+class SyncQueue(Base):
+    __tablename__ = "sync_queue"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    entidade_tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    entidade_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    destino: Mapped[DestinoSync] = mapped_column(pg_enum(DestinoSync, "destino_sync"), nullable=False)
+    operacao: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)
+    status: Mapped[StatusSync] = mapped_column(
+        pg_enum(StatusSync, "status_sync"), nullable=False, default=StatusSync.PENDENTE)
+    tentativas: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=0)
+    ultimo_erro: Mapped[Optional[str]] = mapped_column(Text)
+    proximo_retry: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    processado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class Evento(Base):
+    __tablename__ = "eventos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    entidade_tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    entidade_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    acao: Mapped[str] = mapped_column(Text, nullable=False)
+    detalhe: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

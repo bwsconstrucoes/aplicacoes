@@ -13,10 +13,13 @@ from app.apps.processarnovasp  import bp as processarnovasp_bp
 from app.apps.emissaonf        import bp as emissao_bp            # ← emissão NFS-e
 from app.apps.whatsapp_gateway import bp as whatsapp_gateway_bp   # ← gateway WhatsApp / Evolution
 from app.apps.telegram         import bp as telegram_bp           # ← NOVO (bot Telegram / autocadastro)
+from app.apps.erp              import bp as erp_bp               # ← ERP financeiro (Postgres)
 
 
 def create_app():
     app = Flask(__name__)
+    # Chave de sessão — usada pelo login do ERP. Defina ERP_SECRET_KEY no Render.
+    app.secret_key = os.getenv("ERP_SECRET_KEY") or os.getenv("SECRET_KEY") or "bws-erp-dev"
 
     app.register_blueprint(pdf_bp)
     app.register_blueprint(encurtador_bp)
@@ -36,6 +39,9 @@ def create_app():
     # SEM url_prefix: as rotas já trazem o prefixo /telegram embutido no módulo
     # (/telegram/webhook e /telegram/health).
     app.register_blueprint(telegram_bp)                                             # ← NOVO
+    # SEM url_prefix: as rotas do ERP já trazem /erp embutido no módulo
+    # (/erp, /erp/entrar, /erp/api/... e /erp/health).
+    app.register_blueprint(erp_bp)
 
     @app.route("/")
     def index():
@@ -45,7 +51,7 @@ def create_app():
                 "pdf_processor", "encurtador", "email_financeiro",
                 "sheets_sync", "atualizaspbotao", "validasp",
                 "chatbot", "baixabradesco", "sync_logs", "processarnovasp",
-                "emissao", "whatsapp_gateway", "telegram"
+                "emissao", "whatsapp_gateway", "telegram", "erp"
             ]
         }
 

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP BWS — entrar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+</head>
+<body>
+<main class="entrada">
+  <form method="post" action="{{ url_for('erp.pagina_login') }}">
+    <h1>ERP <span>BWS</span></h1>
+    <p class="sub">Financeiro — contas a pagar</p>
+    {% if erro %}<div class="aviso" style="margin:0 0 14px">{{ erro }}</div>{% endif %}
+    <label class="rotulo" for="email">E-mail</label>
+    <input id="email" name="email" type="email" autocomplete="username" required autofocus>
+    <label class="rotulo" for="senha">Senha</label>
+    <input id="senha" name="senha" type="password" autocomplete="current-password" required>
+    <button class="botao primario" type="submit">Entrar</button>
+  </form>
+</main>
+</body>
+</html>

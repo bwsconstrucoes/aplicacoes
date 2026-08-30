@@ -21,3 +21,4 @@ venv/
 .idea/
 .vscode/
 >>>>>>> ea585c7 (Monorepo unificado: pdf-processor + encurtador)
+app/apps/erp/export_pipefy/

@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP BWS — títulos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+</head>
+<body>
+
+<!-- CARIMBO: cabeçalho no formato do title block de prancha técnica -->
+<header class="carimbo">
+  <div class="carimbo-topo">
+    <h1>ERP <span>BWS</span> · Títulos a pagar</h1>
+    <div class="via">
+      <span class="rotulo">{{ usuario_nome }} · {{ usuario_perfil }}</span>
+      <a class="rotulo" href="{{ url_for('erp.sair') }}">Sair</a>
+    </div>
+  </div>
+  <div class="celulas">
+    <div class="celula">
+      <div class="rotulo">Títulos em tela</div>
+      <div class="valor num" id="kpi-qtd">—</div>
+      <div class="sub" id="kpi-limite"></div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">Total líquido</div>
+      <div class="valor num" id="kpi-total">—</div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">Aguardando aprovação</div>
+      <div class="valor num" id="kpi-aguardando">—</div>
+      <div class="sub" id="kpi-aguardando-qtd"></div>
+    </div>
+    <div class="celula destaque">
+      <div class="rotulo">Bloqueados na análise</div>
+      <div class="valor num" id="kpi-bloqueado">—</div>
+      <div class="sub" id="kpi-bloqueado-qtd"></div>
+    </div>
+    <div class="celula">
+      <div class="rotulo">Vencem em 7 dias</div>
+      <div class="valor num" id="kpi-vencendo">—</div>
+      <div class="sub" id="kpi-vencendo-qtd"></div>
+    </div>
+  </div>
+</header>
+
+<div class="corpo">
+  <!-- FILTROS -->
+  <aside class="filtros">
+    <h2 class="rotulo">Filtros</h2>
+    <div class="campo">
+      <label class="rotulo" for="f-busca">Busca (SP, credor, descrição)</label>
+      <input id="f-busca" type="search" placeholder="ex.: SP000123 ou cimento">
+    </div>
+    <div class="campo">
+      <div class="rotulo" style="margin-bottom:6px">Situação</div>
+      <div id="f-status"></div>
+    </div>
+    <div class="campo">
+      <label class="opcao"><input type="checkbox" id="f-venc7"> Vencendo em 7 dias</label>
+      <label class="opcao"><input type="checkbox" id="f-atrasados"> Somente atrasados</label>
+    </div>
+    <div class="campo">
+      <label class="rotulo" for="f-min">Valor de / até</label>
+      <div style="display:flex; gap:6px">
+        <input id="f-min" type="text" inputmode="decimal" placeholder="mín.">
+        <input id="f-max" type="text" inputmode="decimal" placeholder="máx.">
+      </div>
+    </div>
+    <button class="botao" id="btn-limpar" type="button">Limpar filtros</button>
+  </aside>
+
+  <!-- GRADE -->
+  <main class="painel">
+    <div class="barra-acoes" id="barra" hidden>
+      <span class="resumo-sel num" id="sel-resumo"></span>
+      <button class="botao" data-acao="detalhe" type="button">Ver detalhe</button>
+      <button class="botao primario" data-acao="aprovar" type="button">Aprovar</button>
+      <button class="botao" data-acao="devolver" type="button">Devolver</button>
+      <button class="botao" data-acao="cancelar" type="button">Cancelar</button>
+      <input type="text" id="motivo" placeholder="Motivo (devolver / cancelar)">
+      <button class="botao direita" id="btn-limpar-sel" type="button">Limpar seleção</button>
+    </div>
+
+    <div id="mensagem"></div>
+
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem" style="width:30px"><input type="checkbox" id="marca-todos" aria-label="Marcar todos"></th>
+          <th data-ordem="numero_sp">SP</th>
+          <th data-ordem="fornecedor">Credor</th>
+          <th class="sem-ordem">Descrição</th>
+          <th data-ordem="vencimento">1º venc.</th>
+          <th class="direita" data-ordem="valor_liquido">Líquido</th>
+          <th class="direita sem-ordem">Parc.</th>
+          <th data-ordem="risco">Risco</th>
+          <th data-ordem="status">Situação</th>
+        </tr>
+      </thead>
+      <tbody id="corpo-tabela"></tbody>
+    </table>
+    <div class="vazio" id="vazio" hidden></div>
+  </main>
+</div>
+
+<dialog id="dlg">
+  <div class="dlg-topo">
+    <h3 id="dlg-titulo">—</h3>
+    <button class="botao direita" style="margin-left:auto" onclick="document.getElementById('dlg').close()">Fechar</button>
+  </div>
+  <div class="dlg-corpo" id="dlg-corpo"></div>
+</dialog>
+
+<script>
+const SITUACOES = ["EM_ANALISE","AGUARDANDO_APROVACAO","APROVADO","BLOQUEADO",
+                   "PAGO_PARCIAL","PAGO","DEVOLVIDO","CANCELADO","ESTORNADO","RASCUNHO"];
+const ABERTOS = ["EM_ANALISE","AGUARDANDO_APROVACAO","APROVADO","BLOQUEADO","PAGO_PARCIAL"];
+const rotulo = s => s.replace(/_/g," ").toLowerCase().replace(/^./, c => c.toUpperCase());
+const moeda = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const numero = v => (v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+let TITULOS = [], SELECAO = new Set(), ORDEM = {campo:"vencimento", asc:true};
+
+// ---- filtros de situação
+const divStatus = document.getElementById("f-status");
+SITUACOES.forEach(s => {
+  const lab = document.createElement("label");
+  lab.className = "opcao";
+  lab.innerHTML = `<input type="checkbox" value="${s}" ${ABERTOS.includes(s)?"checked":""}>
+                   <span>${rotulo(s)}</span><span class="contagem" data-cont="${s}"></span>`;
+  divStatus.appendChild(lab);
+});
+
+const els = id => document.getElementById(id);
+const statusMarcados = () => [...divStatus.querySelectorAll("input:checked")].map(i => i.value);
+
+async function carregar() {
+  const p = new URLSearchParams({busca: els("f-busca").value.trim(),
+                                status: statusMarcados().join(",")});
+  try {
+    const r = await fetch(`/erp/api/titulos?${p}`, {headers:{"Accept":"application/json"}});
+    if (r.status === 401) { location.href = "/erp/entrar"; return; }
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.erro);
+    TITULOS = d.titulos;
+    els("kpi-qtd").textContent = d.resumo.quantidade;
+    els("kpi-limite").textContent = d.limite_atingido ? "limite de 500 — refine os filtros" : "";
+    els("kpi-total").textContent = moeda(d.resumo.total);
+    els("kpi-aguardando").textContent = moeda(d.resumo.aguardando);
+    els("kpi-aguardando-qtd").textContent = `${d.resumo.qtd_aguardando} título(s)`;
+    els("kpi-bloqueado").textContent = moeda(d.resumo.bloqueado);
+    els("kpi-bloqueado-qtd").textContent = `${d.resumo.qtd_bloqueado} título(s)`;
+    els("kpi-vencendo").textContent = moeda(d.resumo.vencendo);
+    els("kpi-vencendo-qtd").textContent = `${d.resumo.qtd_vencendo} título(s)`;
+    desenhar();
+  } catch (e) {
+    aviso(`Não foi possível carregar os títulos: ${e.message}`, false);
+  }
+}
+
+function filtrarLocal(linhas) {
+  const min = parseFloat((els("f-min").value||"").replace(/\./g,"").replace(",","."));
+  const max = parseFloat((els("f-max").value||"").replace(/\./g,"").replace(",","."));
+  const hoje = new Date().toISOString().slice(0,10);
+  const lim7 = new Date(Date.now()+7*864e5).toISOString().slice(0,10);
+  return linhas.filter(l => {
+    if (!isNaN(min) && l.valor_liquido < min) return false;
+    if (!isNaN(max) && l.valor_liquido > max) return false;
+    if (els("f-venc7").checked && !(l.vencimento && l.vencimento <= lim7 && ABERTOS.includes(l.status))) return false;
+    if (els("f-atrasados").checked && !l.vencido) return false;
+    return true;
+  });
+}
+
+function ordenar(linhas) {
+  const {campo, asc} = ORDEM;
+  return [...linhas].sort((a,b) => {
+    let x = a[campo], y = b[campo];
+    if (x === null || x === undefined) return 1;
+    if (y === null || y === undefined) return -1;
+    if (typeof x === "string") return asc ? x.localeCompare(y,"pt-BR") : y.localeCompare(x,"pt-BR");
+    return asc ? x - y : y - x;
+  });
+}
+
+function classeSelo(s) {
+  if (s === "AGUARDANDO_APROVACAO" || s === "EM_ANALISE") return "aguardando";
+  if (s === "APROVADO") return "aprovado";
+  if (s === "BLOQUEADO") return "bloqueado";
+  if (s === "PAGO" || s === "PAGO_PARCIAL") return "pago";
+  return "outro";
+}
+
+function desenhar() {
+  const linhas = ordenar(filtrarLocal(TITULOS));
+  const cont = {};
+  TITULOS.forEach(l => cont[l.status] = (cont[l.status]||0)+1);
+  divStatus.querySelectorAll("[data-cont]").forEach(sp => {
+    sp.textContent = cont[sp.dataset.cont] || "";
+  });
+  const tbody = els("corpo-tabela");
+  tbody.innerHTML = "";
+  els("vazio").hidden = linhas.length > 0;
+  if (!linhas.length) {
+    els("vazio").innerHTML = TITULOS.length
+      ? "<strong>Nenhum título nestes filtros</strong>Ajuste a situação ou a faixa de valor à esquerda."
+      : "<strong>Nada lançado ainda</strong>Os títulos aparecem aqui assim que a primeira solicitação de pagamento for registrada.";
+  }
+  linhas.forEach(l => {
+    const tr = document.createElement("tr");
+    if (SELECAO.has(l.id)) tr.className = "marcada";
+    const venc = l.vencimento ? l.vencimento.split("-").reverse().join("/") : "—";
+    tr.innerHTML = `
+      <td><input type="checkbox" data-id="${l.id}" ${SELECAO.has(l.id)?"checked":""} aria-label="Selecionar ${l.numero_sp}"></td>
+      <td class="sp num">${l.numero_sp}</td>
+      <td>${l.fornecedor}</td>
+      <td class="desc">${l.descricao}<small>${l.categoria} · comp. ${l.competencia}</small></td>
+      <td class="num ${l.vencido ? "venc-atrasado" : ""}">${venc}</td>
+      <td class="direita num">${numero(l.valor_liquido)}</td>
+      <td class="direita num">${l.parcelas}</td>
+      <td><span class="risco"><span class="regua"><i class="${l.risco?"":"zero"}" style="width:${Math.min(l.risco,60)/60*100}%"></i></span><span class="num">${l.risco}</span></span></td>
+      <td><span class="selo ${classeSelo(l.status)}">${rotulo(l.status)}</span></td>`;
+    tr.querySelector("input").addEventListener("change", ev => {
+      ev.target.checked ? SELECAO.add(l.id) : SELECAO.delete(l.id);
+      desenhar();
+    });
+    tr.addEventListener("dblclick", () => abrirDetalhe(l.id));
+    tbody.appendChild(tr);
+  });
+  atualizarBarra(linhas);
+}
+
+function atualizarBarra(linhasVisiveis) {
+  const sel = TITULOS.filter(l => SELECAO.has(l.id));
+  els("barra").hidden = sel.length === 0;
+  if (sel.length) {
+    const soma = sel.reduce((a,l) => a + l.valor_liquido, 0);
+    els("sel-resumo").textContent = `${sel.length} selecionado(s) · ${moeda(soma)}`;
+  }
+  const todos = els("marca-todos");
+  todos.checked = linhasVisiveis.length > 0 && linhasVisiveis.every(l => SELECAO.has(l.id));
+}
+
+function aviso(texto, ok) {
+  els("mensagem").innerHTML = `<div class="aviso ${ok?"ok":""}">${texto}</div>`;
+  if (ok) setTimeout(() => els("mensagem").innerHTML = "", 6000);
+}
+
+async function abrirDetalhe(id) {
+  const r = await fetch(`/erp/api/titulos/${id}`);
+  const d = await r.json();
+  if (!d.ok) { aviso(d.erro, false); return; }
+  const t = d.titulo, c = t.cabecalho;
+  els("dlg-titulo").textContent = `${c.numero_sp} — ${c.fornecedor}`;
+  const linhasParc = t.parcelas.map(p => `<tr><td class="num">${p.numero}</td><td class="num">${p.vencimento}</td>
+      <td class="direita num">${numero(p.valor)}</td><td>${rotulo(p.status)}</td>
+      <td class="num">${p.boleto||"—"}</td></tr>`).join("");
+  const linhasRat = t.rateios.map(r => `<tr><td>${r.obra}</td>
+      <td class="direita num">${numero(r.valor)}</td><td class="direita num">${r.percentual.toFixed(2)}%</td></tr>`).join("");
+  const linhasRet = t.retencoes.map(r => `<tr><td>${r.tipo}</td><td class="direita num">${numero(r.base)}</td>
+      <td class="direita num">${r.aliquota}%</td><td class="direita num">${numero(r.valor)}</td></tr>`).join("");
+  els("dlg-corpo").innerHTML = `
+    <div class="celulas" style="border:1px solid var(--fio)">
+      <div class="celula"><div class="rotulo">Situação</div><div class="valor" style="font-size:15px">${rotulo(c.status)}</div></div>
+      <div class="celula"><div class="rotulo">Bruto</div><div class="valor num" style="font-size:15px">${numero(t.bruto)}</div></div>
+      <div class="celula"><div class="rotulo">Retenções</div><div class="valor num" style="font-size:15px">${numero(t.retencoes_total)}</div></div>
+      <div class="celula"><div class="rotulo">Líquido</div><div class="valor num" style="font-size:15px">${numero(c.valor_liquido)}</div></div>
+      <div class="celula"><div class="rotulo">Risco</div><div class="valor num" style="font-size:15px">${c.risco}</div></div>
+    </div>
+    <p class="rotulo" style="margin-top:10px">${c.categoria} · ${t.forma_pagamento} · comp. ${c.competencia}
+       ${t.dedutivel ? "" : " · INDEDUTÍVEL"}</p>
+    ${t.criticas.length ? `<h4 class="rotulo">Apontamentos da análise</h4>` +
+      t.criticas.map(k => `<div class="critica ${k.severidade}"><code>${k.codigo}</code>${k.msg}</div>`).join("") : ""}
+    <h4 class="rotulo">Parcelas</h4>
+    <table><thead><tr><th>Nº</th><th>Vencimento</th><th class="direita">Valor</th><th>Situação</th><th>Boleto</th></tr></thead><tbody>${linhasParc}</tbody></table>
+    <h4 class="rotulo">Rateio por obra</h4>
+    <table><thead><tr><th>Obra</th><th class="direita">Valor</th><th class="direita">%</th></tr></thead><tbody>${linhasRat}</tbody></table>
+    ${t.retencoes.length ? `<h4 class="rotulo">Retenções</h4>
+      <table><thead><tr><th>Tipo</th><th class="direita">Base</th><th class="direita">Alíquota</th><th class="direita">Valor</th></tr></thead><tbody>${linhasRet}</tbody></table>` : ""}
+    <h4 class="rotulo">Trilha de auditoria</h4>
+    <table><thead><tr><th>Quando</th><th>Ação</th><th>Detalhe</th></tr></thead><tbody>
+      ${t.trilha.map(e => `<tr><td class="num">${e.quando}</td><td>${e.acao}</td>
+        <td><small>${JSON.stringify(e.detalhe)}</small></td></tr>`).join("")}
+    </tbody></table>`;
+  els("dlg").showModal();
+}
+
+async function executar(acao) {
+  const ids = [...SELECAO];
+  const motivo = els("motivo").value.trim();
+  if ((acao === "devolver" || acao === "cancelar") && motivo.length < 5) {
+    aviso("Informe o motivo antes de devolver ou cancelar.", false);
+    els("motivo").focus();
+    return;
+  }
+  const r = await fetch("/erp/api/titulos/acao", {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({acao, ids, motivo})});
+  const d = await r.json();
+  if (!d.ok) { aviso(d.erro, false); return; }
+  let msg = `${d.processados.length} título(s) processado(s)${d.processados.length ? ": " + d.processados.join(", ") : "."}`;
+  if (d.erros.length) {
+    msg += `<br><strong>${d.erros.length} não passou(aram):</strong><br>` +
+           d.erros.map(e => `#${e.id}: ${e.erro}`).join("<br>");
+  }
+  aviso(msg, d.erros.length === 0);
+  SELECAO.clear();
+  els("motivo").value = "";
+  carregar();
+}
+
+// ---- eventos
+let debounce;
+els("f-busca").addEventListener("input", () => {
+  clearTimeout(debounce); debounce = setTimeout(carregar, 350);
+});
+divStatus.addEventListener("change", carregar);
+["f-min","f-max","f-venc7","f-atrasados"].forEach(id =>
+  els(id).addEventListener("input", desenhar));
+els("btn-limpar").addEventListener("click", () => {
+  els("f-busca").value = ""; els("f-min").value = ""; els("f-max").value = "";
+  els("f-venc7").checked = false; els("f-atrasados").checked = false;
+  divStatus.querySelectorAll("input").forEach(i => i.checked = ABERTOS.includes(i.value));
+  carregar();
+});
+els("marca-todos").addEventListener("change", ev => {
+  const visiveis = ordenar(filtrarLocal(TITULOS));
+  visiveis.forEach(l => ev.target.checked ? SELECAO.add(l.id) : SELECAO.delete(l.id));
+  desenhar();
+});
+els("btn-limpar-sel").addEventListener("click", () => { SELECAO.clear(); desenhar(); });
+document.querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", () => {
+  const acao = b.dataset.acao;
+  if (acao === "detalhe") {
+    if (SELECAO.size !== 1) { aviso("Selecione um único título para ver o detalhe.", false); return; }
+    abrirDetalhe([...SELECAO][0]);
+  } else executar(acao);
+}));
+document.querySelectorAll("thead th[data-ordem]").forEach(th => th.addEventListener("click", () => {
+  const campo = th.dataset.ordem;
+  ORDEM = {campo, asc: ORDEM.campo === campo ? !ORDEM.asc : true};
+  document.querySelectorAll("thead th .seta").forEach(s => s.remove());
+  th.insertAdjacentHTML("beforeend", `<span class="seta"> ${ORDEM.asc?"▲":"▼"}</span>`);
+  desenhar();
+}));
+
+carregar();
+</script>
+</body>
+</html>
