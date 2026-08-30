@@ -41,6 +41,13 @@ class StatusTitulo(str, enum.Enum):
     ESTORNADO = "ESTORNADO"
 
 
+class StatusDedutibilidade(str, enum.Enum):
+    PENDENTE = "PENDENTE"
+    DEDUTIVEL = "DEDUTIVEL"
+    INDEDUTIVEL = "INDEDUTIVEL"
+    PARCIAL = "PARCIAL"
+
+
 class StatusParcela(str, enum.Enum):
     ABERTA = "ABERTA"
     AGENDADA = "AGENDADA"
@@ -172,6 +179,15 @@ class Titulo(Base):
         pg_enum(FormaPagamento, "forma_pagamento"), nullable=False)
     fornecedor_conta_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("fornecedor_contas.id"))
     dedutivel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    dedutibilidade: Mapped[str] = mapped_column(
+        pg_enum(StatusDedutibilidade, "status_dedutibilidade"),
+        nullable=False, default=StatusDedutibilidade.PENDENTE)
+    dedutibilidade_valor: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    dedutibilidade_motivo: Mapped[Optional[str]] = mapped_column(Text)
+    dedutibilidade_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    dedutibilidade_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    dedutibilidade_origem: Mapped[Optional[str]] = mapped_column(Text)
+    forma_liquidacao: Mapped[Optional[str]] = mapped_column(Text)
     justificativa_excecao: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[StatusTitulo] = mapped_column(
         pg_enum(StatusTitulo, "status_titulo"), nullable=False, default=StatusTitulo.RASCUNHO)

@@ -12,15 +12,15 @@
   <div class="cartao-cab"><h3>Plano financeiro</h3>
     <small>categorias que dirigem o lançamento — natureza <b>resultado</b> (DRE) ou <b>fluxo</b> (caixa)</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
-    <input id="busca-cat" placeholder="Filtrar categoria…" style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px; min-width:240px">
+    <input id="busca-cat" placeholder="Filtrar categoria…" style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px; min-width:220px">
+    <label class="opcao" style="margin:0"><input type="checkbox" id="ver-inativas">
+      <span class="rotulo">Ver aposentadas</span></label>
     <span class="espaco"></span>
+    <button class="btn secundario" id="btn-substituir">⇄ Aposentar conta</button>
     <button class="btn secundario" id="btn-nova-cat">+ Nova categoria</button>
+    <button class="btn amarelo" id="btn-instalar-plano">Instalar plano padrão BWS</button>
   </div>
-  <div class="tabela-rolagem" style="max-height:420px">
-    <table><thead><tr><th>Código</th><th>Descrição</th><th>Natureza</th>
-      <th>Dedutível</th><th>Documentos aceitos</th></tr></thead>
-      <tbody id="tb-categorias"></tbody></table>
-  </div>
+  <div id="lista-grupos"></div>
   <div class="vazio oculto" id="vazio-cat"><b>Plano financeiro vazio</b>
     Importe a proposta pela aba <a href="/erp/importar">Importar</a> ou cadastre categoria por categoria.</div>
 </div>
@@ -93,13 +93,40 @@ async function carregar(){
 
 function desenhar(){
   const fc = (els("busca-cat").value||"").toLowerCase();
-  const cats = DADOS.categorias.filter(c => `${c.codigo} ${c.descricao}`.toLowerCase().includes(fc));
+  const verInativas = els("ver-inativas").checked;
+  const cats = DADOS.categorias.filter(c =>
+    (verInativas || c.ativo) &&
+    `${c.codigo} ${c.descricao} ${c.grupo_nome} ${c.subgrupo_nome}`.toLowerCase().includes(fc));
   els("vazio-cat").classList.toggle("oculto", cats.length>0);
-  els("tb-categorias").innerHTML = cats.map(c => `
-    <tr><td class="dados">${c.codigo}</td><td>${c.descricao}</td>
-      <td><span class="selo ${c.natureza==="FLUXO"?"pago":"outro"}">${c.natureza==="FLUXO"?"Fluxo":"Resultado"}</span></td>
-      <td>${c.dedutivel?"Sim":"<b>Não</b>"}</td>
-      <td><small>${c.tipos.length? c.tipos.join(", ") : "todos"}</small></td></tr>`).join("");
+  const grupos = {};
+  cats.forEach(c => {
+    const g = `${c.grupo_codigo}|${c.grupo_nome}`;
+    const sg = `${c.subgrupo_codigo}|${c.subgrupo_nome}`;
+    (grupos[g] = grupos[g] || {})[sg] = (grupos[g][sg] || []).concat([c]);
+  });
+  els("lista-grupos").innerHTML = Object.keys(grupos).sort().map(g => {
+    const [gcod, gnome] = g.split("|");
+    const subs = grupos[g];
+    const total = Object.values(subs).reduce((a,l)=>a+l.length,0);
+    return `<div class="filtro aberto" style="border-top:1px solid var(--borda)">
+      <button class="filtro-cab" type="button"><span><b>${gcod}</b> · ${gnome}</span>
+        <span class="filtro-badge">${total}</span><span class="seta">▾</span></button>
+      <div class="filtro-cont">` + Object.keys(subs).sort().map(sg => {
+        const [scod, snome] = sg.split("|");
+        return `<div style="margin:6px 0 12px">
+          <div class="kpi-rotulo" style="margin-bottom:4px">${scod} ${snome}</div>
+          <table><tbody>` + subs[sg].map(c => `
+            <tr class="${c.ativo?"":"zerada"}" style="${c.ativo?"":"opacity:.5"}">
+              <td class="dados" style="width:78px">${c.codigo}</td>
+              <td class="desc">${c.descricao}${c.uso?`<small>${c.uso}</small>`:""}
+                ${c.ativo?"":`<small><b>aposentada</b> — lançamentos foram para outra conta</small>`}</td>
+              <td style="width:96px"><span class="selo ${c.natureza==="FLUXO"?"pago":"outro"}">${c.natureza==="FLUXO"?"Fluxo":"Resultado"}</span></td>
+              <td style="width:150px"><small>${c.tipos.length? c.tipos.join(", ") : "todos"}</small></td>
+            </tr>`).join("") + `</tbody></table></div>`;
+      }).join("") + `</div></div>`;
+  }).join("");
+  document.querySelectorAll("#lista-grupos .filtro-cab").forEach(b =>
+    b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
 
   const fo = (els("busca-obra").value||"").toLowerCase();
   const obras = DADOS.obras.filter(o => `${o.codigo} ${o.nome} ${o.cliente||""}`.toLowerCase().includes(fo));
@@ -146,7 +173,6 @@ els("btn-nova-cat").addEventListener("click", () => formulario("Nova categoria",
   {id:"codigo", rotulo:"Código", obrig:true, dica:"3.01"},
   {id:"descricao", rotulo:"Descrição", obrig:true, dica:"Materiais básicos"},
   {id:"natureza", rotulo:"Natureza", opcoes:[["RESULTADO","Resultado (DRE)"],["FLUXO","Fluxo de caixa"]]},
-  {id:"dedutivel_padrao", rotulo:"Dedutível", opcoes:[["sim","Sim"],["nao","Não"]]},
 ], "/erp/api/config/categoria"));
 
 els("btn-nova-obra").addEventListener("click", () => formulario("Nova obra", [
@@ -164,6 +190,46 @@ els("btn-nova-conta").addEventListener("click", () => formulario("Nova conta da 
 ], "/erp/api/config/conta"));
 
 ["busca-cat","busca-obra"].forEach(id => els(id).addEventListener("input", desenhar));
+els("ver-inativas").addEventListener("change", desenhar);
+
+els("btn-instalar-plano").addEventListener("click", async () => {
+  if (!confirm("Grava o plano financeiro padrão da BWS no banco.\n\n" +
+               "Contas que já existem são atualizadas; nada é apagado e nenhum título muda de conta.\n\nContinuar?")) return;
+  const b = els("btn-instalar-plano"); b.disabled = true; b.textContent = "Instalando…";
+  try {
+    const d = await api("/erp/api/config/plano/instalar", {method:"POST"});
+    aviso("mensagem", `Plano aplicado: ${d.relatorio.criadas.length} conta(s) criada(s), ` +
+      `${d.relatorio.atualizadas.length} atualizada(s) — ${d.relatorio.total_no_plano} no plano.`, "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Instalar plano padrão BWS";
+});
+
+els("btn-substituir").addEventListener("click", () => {
+  const opcoes = DADOS.categorias.filter(c=>c.ativo)
+    .map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("");
+  els("dlg-titulo").textContent = "Aposentar conta e remanejar lançamentos";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="aviso info">A conta de origem fica inativa e <b>todos os títulos dela passam para a
+      conta de destino</b> automaticamente — sem editar título por título.</div>
+    <div class="form-grade">
+      <div class="campo"><label>Conta a aposentar</label><select id="sub-origem">${opcoes}</select></div>
+      <div class="campo"><label>Conta que recebe os lançamentos</label><select id="sub-destino">${opcoes}</select></div>
+    </div>
+    <div style="margin-top:16px"><button class="btn" id="dlg-sub">Aposentar e remanejar</button></div>`;
+  els("dlg-sub").addEventListener("click", async () => {
+    try {
+      const d = await api("/erp/api/config/categoria/substituir", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({origem_id: els("sub-origem").value, destino_id: els("sub-destino").value})});
+      els("dlg").close();
+      aviso("mensagem", `Conta ${d.relatorio.origem} aposentada — ` +
+        `${d.relatorio.titulos_remanejados} título(s) movido(s) para ${d.relatorio.destino}.`, "ok");
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+});
 carregar();
 </script>
 {% endblock %}

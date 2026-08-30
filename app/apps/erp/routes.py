@@ -138,6 +138,8 @@ def _serializar(t, hoje: date) -> dict:
         "parcelas": len(t.parcelas),
         "risco": t.score_risco or 0,
         "status": t.status.value,
+        "dedutibilidade": (t.dedutibilidade.value if hasattr(t.dedutibilidade, "value")
+                           else str(t.dedutibilidade)),
     }
 
 
@@ -266,7 +268,7 @@ def api_config():
     from app.apps.erp.db.models.cadastros import Categoria, ContaBancaria, Obra
     try:
         with get_session() as s:
-            cats = s.scalars(select(Categoria).order_by(Categoria.codigo)).all()
+            cats = s.scalars(select(Categoria).order_by(Categoria.ordem, Categoria.codigo)).all()
             obras = s.scalars(select(Obra).order_by(Obra.codigo)).all()
             contas = s.scalars(select(ContaBancaria).order_by(ContaBancaria.descricao)).all()
             usuarios = s.scalars(select(Usuario).order_by(Usuario.nome)).all()
@@ -274,7 +276,14 @@ def api_config():
                 "categorias": [{
                     "id": c.id, "codigo": c.codigo, "descricao": c.descricao,
                     "natureza": getattr(c, "natureza", "RESULTADO"),
-                    "dedutivel": c.dedutivel_padrao,
+                    "grupo_codigo": c.grupo_codigo or "0",
+                    "grupo_nome": c.grupo_nome or "Sem grupo",
+                    "subgrupo_codigo": c.subgrupo_codigo or "",
+                    "subgrupo_nome": c.subgrupo_nome or "",
+                    "uso": c.descricao_uso or "",
+                    "sugestao_dedutivel": c.dedutivel_padrao,
+                    "ativo": c.ativo,
+                    "substituida_por": c.substituida_por_id,
                     "tipos": [(t.value if hasattr(t, "value") else str(t)).split("_", 1)[0]
                               for t in (c.tipos_permitidos or [])],
                 } for c in cats],
@@ -440,6 +449,98 @@ def api_importar_ofx():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha na importação de OFX")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/config/plano/instalar", methods=["POST"])
+@login_obrigatorio
+def api_instalar_plano():
+    """Grava o plano financeiro padrão da BWS direto no banco (idempotente)."""
+    from app.apps.erp.core.cadastros.plano_padrao import aplicar_plano
+    from app.apps.erp.db.models.cadastros import PerfilUsuario
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if usuario.perfil not in (PerfilUsuario.ADMIN, PerfilUsuario.FINANCEIRO):
+                return jsonify({"ok": False, "erro": "Restrito a FINANCEIRO/ADMIN."}), 403
+            rel = aplicar_plano(s, usuario)
+            s.commit()
+        return jsonify({"ok": True, "relatorio": rel})
+    except Exception as e:
+        logger.exception("ERP: falha ao instalar plano financeiro")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/config/categoria/substituir", methods=["POST"])
+@login_obrigatorio
+def api_substituir_categoria():
+    """Aposenta uma conta e remaneja seus títulos para outra."""
+    from app.apps.erp.core.cadastros.plano_padrao import substituir_categoria
+    from app.apps.erp.db.models.cadastros import PerfilUsuario
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if usuario.perfil not in (PerfilUsuario.ADMIN, PerfilUsuario.FINANCEIRO):
+                return jsonify({"ok": False, "erro": "Restrito a FINANCEIRO/ADMIN."}), 403
+            rel = substituir_categoria(s, int(d.get("origem_id")),
+                                       int(d.get("destino_id")), usuario)
+            s.commit()
+        return jsonify({"ok": True, "relatorio": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao substituir categoria")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/titulos/dedutibilidade", methods=["POST"])
+@login_obrigatorio
+def api_definir_dedutibilidade():
+    """Define a dedutibilidade do título — decisão do financeiro (ou da IA),
+    tomada a partir do documento, não da categoria."""
+    from datetime import datetime, timezone
+    from decimal import Decimal
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.financeiro import StatusDedutibilidade, Titulo
+    d = request.get_json(silent=True) or {}
+    ids = d.get("ids") or []
+    situacao = (d.get("situacao") or "").strip().upper()
+    motivo = (d.get("motivo") or "").strip()
+    if situacao not in {s.value for s in StatusDedutibilidade}:
+        return jsonify({"ok": False, "erro": f"Situação inválida: {situacao!r}"}), 400
+    if situacao in ("INDEDUTIVEL", "PARCIAL") and len(motivo) < 10:
+        return jsonify({"ok": False, "erro": "Indedutível ou parcial exige motivo "
+                                             "(mínimo 10 caracteres)."}), 400
+    valor = d.get("valor_dedutivel")
+    processados, erros = [], []
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            for tid in ids:
+                t = s.get(Titulo, int(tid))
+                if t is None:
+                    erros.append({"id": tid, "erro": "título não encontrado"})
+                    continue
+                if situacao == "PARCIAL" and not valor:
+                    erros.append({"id": tid, "erro": "informe o valor dedutível"})
+                    continue
+                t.dedutibilidade = StatusDedutibilidade(situacao)
+                t.dedutivel = situacao in ("DEDUTIVEL", "PARCIAL")
+                t.dedutibilidade_valor = (Decimal(str(valor).replace(",", "."))
+                                          if situacao == "PARCIAL" else None)
+                t.dedutibilidade_motivo = motivo or None
+                t.dedutibilidade_por = usuario.id
+                t.dedutibilidade_em = datetime.now(timezone.utc)
+                t.dedutibilidade_origem = d.get("origem") or "HUMANO"
+                registrar_evento(s, "titulo", t.id, "DEDUTIBILIDADE_DEFINIDA",
+                                 {"situacao": situacao, "motivo": motivo,
+                                  "valor": str(valor) if valor else None}, usuario.id)
+                processados.append(t.numero_sp)
+            s.commit()
+        return jsonify({"ok": True, "processados": processados, "erros": erros})
+    except Exception as e:
+        logger.exception("ERP: falha ao definir dedutibilidade")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

@@ -11,7 +11,7 @@ from decimal import Decimal
 from typing import Optional
 
 from sqlalchemy import (
-    BigInteger, Boolean, Date, DateTime, Enum, ForeignKey, Index,
+    BigInteger, Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer,
     Numeric, SmallInteger, Text, func,
 )
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -213,6 +213,13 @@ class Categoria(Base):
     tipos_permitidos: Mapped[list[str]] = mapped_column(
         ARRAY(pg_enum(TipoTitulo, "tipo_titulo")), nullable=False, default=list)
     natureza: Mapped[str] = mapped_column(Text, nullable=False, default="RESULTADO")
+    grupo_codigo: Mapped[Optional[str]] = mapped_column(Text)
+    grupo_nome: Mapped[Optional[str]] = mapped_column(Text)
+    subgrupo_codigo: Mapped[Optional[str]] = mapped_column(Text)
+    subgrupo_nome: Mapped[Optional[str]] = mapped_column(Text)
+    descricao_uso: Mapped[Optional[str]] = mapped_column(Text)
+    substituida_por_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("categorias.id"))
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     dedutivel_padrao: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     credito_pis_cofins: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     conta_contabil: Mapped[Optional[str]] = mapped_column(Text)
