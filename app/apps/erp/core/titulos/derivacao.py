@@ -55,3 +55,52 @@ def derivar_tipo(cat: Categoria, escolha_rotulo: str | None = None) -> tuple[Tip
             if ROTULO_PERGUNTA[t] == escolha_rotulo:
                 return t, opcoes
     return None, opcoes
+
+
+# ordem de preferência quando a categoria aceita vários tipos e o contexto
+# não é conclusivo (o primeiro que a categoria aceitar vence)
+_PREFERENCIA = [
+    TipoTitulo.T1_MATERIAL_NFE, TipoTitulo.T2_SERVICO_NFSE, TipoTitulo.T5_EMPREITEIRO,
+    TipoTitulo.T3_FRETE_CTE, TipoTitulo.T4_LOCACAO, TipoTitulo.T9_CONCESSIONARIA,
+    TipoTitulo.T8_TRIBUTO_GUIA, TipoTitulo.T7_FOLHA_ENCARGOS, TipoTitulo.T6_SERVICO_PF_RPA,
+    TipoTitulo.T10_FUNDO_FIXO, TipoTitulo.T12_REEMBOLSO, TipoTitulo.T13_FINANCIAMENTO,
+    TipoTitulo.T11_ADIANTAMENTO, TipoTitulo.T14_EXCECAO_SEM_NOTA,
+]
+
+
+def derivar_por_contexto(cat, contexto: dict) -> TipoTitulo:
+    """Deduz o tipo interno a partir da categoria escolhida e do que o
+    lançamento traz (documento, forma de pagamento, contrato, pedido).
+    Quem lança nunca vê os códigos T*."""
+    permitidos = tipos_da_categoria(cat)
+    if len(permitidos) == 1:
+        return permitidos[0]
+
+    forma = (contexto.get("forma_pagamento") or "").upper()
+    tem_doc = bool((contexto.get("documento_numero") or "").strip()
+                   or contexto.get("documento_fiscal_id"))
+    tipo_doc = (contexto.get("tipo_documento") or "").upper()
+
+    candidatos: list[TipoTitulo] = []
+    if contexto.get("contrato_id"):
+        candidatos.append(TipoTitulo.T4_LOCACAO)
+    if forma == "GUIA":
+        candidatos.append(TipoTitulo.T8_TRIBUTO_GUIA)
+    if tipo_doc == "NFE":
+        candidatos.append(TipoTitulo.T1_MATERIAL_NFE)
+    elif tipo_doc == "NFSE":
+        candidatos.append(TipoTitulo.T2_SERVICO_NFSE)
+    elif tipo_doc == "CTE":
+        candidatos.append(TipoTitulo.T3_FRETE_CTE)
+    elif tipo_doc in ("RPA",):
+        candidatos.append(TipoTitulo.T6_SERVICO_PF_RPA)
+    if not tem_doc:
+        candidatos.append(TipoTitulo.T14_EXCECAO_SEM_NOTA)
+
+    for t in candidatos:
+        if t in permitidos:
+            return t
+    for t in _PREFERENCIA:
+        if t in permitidos:
+            return t
+    return permitidos[0]

@@ -34,6 +34,7 @@ _LIMITE_GRADE = 500
 
 # Abas do topo (chave, rótulo, endpoint)
 ABAS = [
+    ("lancar", "Lançar", "erp.pagina_lancar"),
     ("titulos", "Títulos", "erp.pagina_titulos"),
     ("importar", "Importar", "erp.pagina_importar"),
     ("config", "Configurações", "erp.pagina_config"),
@@ -104,6 +105,12 @@ def sair():
 @login_obrigatorio
 def pagina_titulos():
     return render_template("erp_titulos.html", **_contexto("titulos"))
+
+
+@bp.route("/erp/lancar")
+@login_obrigatorio
+def pagina_lancar():
+    return render_template("erp_lancar.html", **_contexto("lancar"))
 
 
 @bp.route("/erp/importar")
@@ -683,6 +690,152 @@ def api_definir_depara():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao definir tradução")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Lançamento
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/lancamento/dados")
+@login_obrigatorio
+def api_dados_lancamento():
+    """Cadastros necessários ao formulário, já filtrados para uso."""
+    from sqlalchemy import select
+    from app.apps.erp.db.models.cadastros import (
+        Categoria, Fornecedor, Obra, StatusConta,
+    )
+    try:
+        with get_session() as s:
+            forns = s.scalars(select(Fornecedor).where(Fornecedor.ativo.is_(True))
+                              .order_by(Fornecedor.razao_social)).all()
+            obras = s.scalars(select(Obra).where(Obra.status == "ATIVA")
+                              .order_by(Obra.codigo)).all()
+            cats = s.scalars(select(Categoria).where(Categoria.ativo.is_(True))
+                             .order_by(Categoria.ordem, Categoria.codigo)).all()
+            dados = {
+                "fornecedores": [{
+                    "id": f.id, "nome": f.razao_social, "documento": f.cnpj_cpf,
+                    "situacao_rfb": f.situacao_rfb,
+                    "contas": [{"id": ct.id, "forma": ct.forma.value,
+                                "identificacao": ct.pix_chave or
+                                f"{ct.banco_codigo}/{ct.agencia}/{ct.conta}"}
+                               for ct in f.contas if ct.status == StatusConta.HOMOLOGADA],
+                } for f in forns],
+                "obras": [{"id": o.id, "codigo": o.codigo, "nome": o.nome} for o in obras],
+                "categorias": [{
+                    "id": c.id, "codigo": c.codigo, "descricao": c.descricao,
+                    "grupo": c.grupo_nome or "", "subgrupo": c.subgrupo_nome or "",
+                    "uso": c.descricao_uso or "", "natureza": c.natureza,
+                    "tipos": [(t.value if hasattr(t, "value") else str(t))
+                              for t in (c.tipos_permitidos or [])],
+                } for c in cats],
+            }
+        return jsonify({"ok": True, "dados": dados})
+    except Exception as e:
+        logger.exception("ERP: falha ao carregar dados do lançamento")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/lancamento/ler-documento", methods=["POST"])
+@login_obrigatorio
+def api_ler_documento():
+    """Lê o anexo (XML/PDF/imagem) e devolve os campos sugeridos."""
+    from sqlalchemy import select
+    from app.apps.erp.core.documentos.leitor import ErroLeitura, ler_documento
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.db.models.cadastros import Fornecedor, Obra
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Nenhum arquivo enviado."}), 400
+    try:
+        lido = ler_documento(arquivo.read(), arquivo.filename or "")
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao ler documento")
+        return jsonify({"ok": False, "erro": f"Falha ao ler o documento: {e}"}), 500
+
+    # amarra ao que já existe no cadastro
+    try:
+        with get_session() as s:
+            doc = somente_digitos(lido.get("emitente_documento") or "")
+            forn = None
+            if doc:
+                forn = s.scalars(select(Fornecedor).where(Fornecedor.cnpj_cpf == doc)).first()
+            lido["fornecedor_id"] = forn.id if forn else None
+            lido["fornecedor_nome_cadastro"] = forn.razao_social if forn else None
+            obra_txt = (lido.get("obra_mencionada") or "").strip()
+            if obra_txt:
+                o = s.scalars(select(Obra).where(Obra.codigo == obra_txt.upper())).first()
+                lido["obra_id"] = o.id if o else None
+    except Exception:
+        logger.exception("ERP: falha ao casar documento com cadastros")
+    return jsonify({"ok": True, "documento": lido})
+
+
+@bp.route("/erp/api/lancamento/checar", methods=["POST"])
+@login_obrigatorio
+def api_checar_duplicidade():
+    """Crítica de duplicidade antes de gravar."""
+    from app.apps.erp.core.titulos.duplicidade import checar
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "critica": checar(s, d)})
+    except Exception as e:
+        logger.exception("ERP: falha na crítica de duplicidade")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/lancamento", methods=["POST"])
+@login_obrigatorio
+def api_criar_titulo():
+    """Grava o título. A crítica de duplicidade roda de novo aqui — o que
+    bloqueia na tela não pode passar por chamada direta."""
+    from app.apps.erp.core.titulos import service as svc
+    from app.apps.erp.core.titulos.duplicidade import checar
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            critica = checar(s, {
+                "fornecedor_id": d.get("fornecedor_id"),
+                "valor": d.get("valor_bruto"), "parcelas": d.get("parcelas") or [],
+                "competencia": d.get("competencia"), "descricao": d.get("descricao"),
+                "categoria_id": d.get("categoria_id"),
+                "documento_numero": d.get("documento_numero")})
+            if critica["bloqueios"] and not d.get("forcar"):
+                return jsonify({"ok": False, "erro": "Lançamento bloqueado por duplicidade.",
+                                "critica": critica}), 409
+            usuario = _usuario_logado(s)
+            if not d.get("tipo"):
+                from app.apps.erp.core.titulos.derivacao import derivar_por_contexto
+                from app.apps.erp.db.models.cadastros import Categoria
+                cat = s.get(Categoria, int(d.get("categoria_id") or 0))
+                if cat is None:
+                    return jsonify({"ok": False,
+                                    "erro": "Escolha a conta do plano financeiro."}), 400
+                tipo = derivar_por_contexto(cat, d)
+                d["tipo"] = tipo.value
+                if tipo.value == "T14_EXCECAO_SEM_NOTA" and not d.get("justificativa_excecao"):
+                    d["justificativa_excecao"] = (
+                        f"Lançamento sem documento fiscal vinculado — "
+                        f"registrado por {usuario.email}.")
+            titulo = svc.criar_titulo(s, d, usuario)
+            if critica["alertas"]:
+                from app.apps.erp.core.comum.auditoria import registrar_evento
+                registrar_evento(s, "titulo", titulo.id, "ALERTAS_DUPLICIDADE_ACEITOS",
+                                 {"alertas": critica["alertas"],
+                                  "confirmado_por": usuario.email}, usuario.id)
+            s.commit()
+            return jsonify({"ok": True, "titulo": {
+                "id": titulo.id, "numero_sp": titulo.numero_sp,
+                "status": titulo.status.value, "risco": titulo.score_risco}})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except Exception as e:
+        logger.exception("ERP: falha ao criar título")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

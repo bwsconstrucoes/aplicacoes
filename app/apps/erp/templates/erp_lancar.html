@@ -1,0 +1,347 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Lançar — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Nova solicitação de pagamento <small>anexe o documento e confira o que o sistema leu</small></h2>
+<div id="mensagem"></div>
+
+<!-- 1. DOCUMENTO -->
+<div class="cartao">
+  <div class="cartao-cab"><h3>1 · Documento</h3>
+    <small>XML da NFe, PDF ou foto — o sistema lê e preenche o resto</small></div>
+  <div class="form-grade">
+    <div class="campo" style="grid-column:span 2">
+      <label for="arq">Anexo</label>
+      <input type="file" id="arq" accept=".xml,.pdf,.png,.jpg,.jpeg,.webp">
+      <div class="dica">XML da NFe é lido com exatidão. PDF e imagem passam pela leitura
+        automática — sempre confira os campos antes de enviar.</div>
+    </div>
+    <div class="campo" style="align-self:end">
+      <button class="btn" id="btn-ler">Ler documento</button>
+      <button class="btn secundario" id="btn-manual" style="margin-left:6px">Lançar sem anexo</button>
+    </div>
+  </div>
+  <div id="leitura"></div>
+</div>
+
+<!-- 2. FORMULÁRIO -->
+<div id="form-bloco" class="oculto">
+  <div class="cartao">
+    <div class="cartao-cab"><h3>2 · Credor e classificação</h3></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label for="f-credor">Credor *</label>
+        <select id="f-credor"></select>
+        <div class="dica" id="dica-credor"></div></div>
+      <div class="campo"><label for="f-forma">Forma de pagamento *</label>
+        <select id="f-forma">
+          <option value="BOLETO">Boleto</option><option value="PIX">Pix</option>
+          <option value="TED">Transferência (TED)</option>
+          <option value="GUIA">Guia</option><option value="DEBITO_AUTOMATICO">Débito automático</option>
+        </select></div>
+      <div class="campo" id="campo-conta" style="display:none"><label for="f-conta">Conta homologada *</label>
+        <select id="f-conta"></select>
+        <div class="dica">Dados bancários vivem no cadastro do credor, nunca no lançamento.</div></div>
+    </div>
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo" style="grid-column:span 2"><label for="f-categoria">Conta do plano financeiro *</label>
+        <select id="f-categoria"></select>
+        <div class="dica" id="dica-categoria"></div></div>
+      <div class="campo"><label for="f-competencia">Competência *</label>
+        <input type="month" id="f-competencia"></div>
+      <div class="campo"><label for="f-emissao">Emissão do documento</label>
+        <input type="date" id="f-emissao"></div>
+    </div>
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo" style="grid-column:span 2"><label for="f-descricao">Descrição *</label>
+        <input id="f-descricao" placeholder="o que foi comprado ou contratado"></div>
+      <div class="campo"><label for="f-valor">Valor bruto *</label>
+        <input id="f-valor" inputmode="decimal" placeholder="0,00"></div>
+      <div class="campo"><label for="f-doc-numero">Nº do documento</label>
+        <input id="f-doc-numero" placeholder="nº da nota/recibo"></div>
+    </div>
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-cab"><h3>3 · Retenções</h3>
+      <small>reduzem o valor a pagar; o tributo vai para a conta única do plano</small></div>
+    <div id="lista-retencoes"></div>
+    <button class="btn secundario" id="btn-add-ret">+ Adicionar retenção</button>
+    <div class="cartao-dica">Líquido a pagar: <b id="liquido">R$ 0,00</b></div>
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-cab"><h3>4 · Parcelas</h3><small>a soma precisa fechar com o líquido</small></div>
+    <div id="lista-parcelas"></div>
+    <button class="btn secundario" id="btn-add-parc">+ Adicionar parcela</button>
+    <div class="cartao-dica">Soma das parcelas: <b id="soma-parcelas">R$ 0,00</b></div>
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-cab"><h3>5 · Rateio por obra</h3>
+      <small>pode dividir entre várias obras; a soma fecha com o líquido</small></div>
+    <div id="lista-rateios"></div>
+    <button class="btn secundario" id="btn-add-rat">+ Adicionar obra</button>
+    <div class="cartao-dica">Soma do rateio: <b id="soma-rateios">R$ 0,00</b></div>
+  </div>
+
+  <div class="cartao" id="bloco-critica"></div>
+
+  <div class="cartao">
+    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+      <button class="btn" id="btn-checar">Conferir duplicidade</button>
+      <button class="btn amarelo" id="btn-enviar">Enviar solicitação</button>
+      <span class="cartao-dica" style="margin:0">A análise automática roda ao enviar e define
+        se o título segue para autorização ou fica bloqueado.</span>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let D = {fornecedores: [], obras: [], categorias: []}, LIDO = null;
+let RET = [], PARC = [{}], RAT = [{}];
+
+const dec = v => {
+  const s = String(v||"").replace(/[R$\s]/g,"").replace(/\./g,"").replace(",",".");
+  const n = parseFloat(s); return isNaN(n) ? 0 : n;
+};
+const fmt = n => "R$ " + (n||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+async function carregar(){
+  try {
+    const d = await api("/erp/api/lancamento/dados");
+    D = d.dados;
+    if (!D.fornecedores.length || !D.obras.length || !D.categorias.length) {
+      aviso("mensagem", "Antes de lançar é preciso ter <b>credores</b>, <b>obras</b> e o " +
+        "<b>plano financeiro</b> cadastrados — veja a aba Configurações.", "info");
+    }
+    els("f-credor").innerHTML = `<option value="">— escolher —</option>` +
+      D.fornecedores.map(f=>`<option value="${f.id}">${f.nome} · ${f.documento}</option>`).join("");
+    const porGrupo = {};
+    D.categorias.forEach(c => (porGrupo[c.grupo] = porGrupo[c.grupo]||[]).push(c));
+    els("f-categoria").innerHTML = `<option value="">— escolher —</option>` +
+      Object.keys(porGrupo).map(g => `<optgroup label="${g}">` +
+        porGrupo[g].map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("") +
+        `</optgroup>`).join("");
+    els("f-competencia").value = new Date().toISOString().slice(0,7);
+    desenharLinhas();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenharLinhas(){
+  els("lista-retencoes").innerHTML = RET.map((r,i) => `
+    <div class="form-grade" style="margin-bottom:8px">
+      <div class="campo"><label>Tributo</label><select data-r="tipo" data-i="${i}">
+        ${["INSS","ISS","IRRF","PCC"].map(t=>`<option ${r.tipo===t?"selected":""}>${t}</option>`).join("")}
+      </select></div>
+      <div class="campo"><label>Base</label><input data-r="base_calculo" data-i="${i}" value="${r.base_calculo||""}"></div>
+      <div class="campo"><label>Alíquota %</label><input data-r="aliquota" data-i="${i}" value="${r.aliquota||""}"></div>
+      <div class="campo"><label>Valor</label><input data-r="valor" data-i="${i}" value="${r.valor||""}"></div>
+      <div class="campo" style="align-self:end"><button class="btn secundario" data-del-r="${i}">Remover</button></div>
+    </div>`).join("");
+  els("lista-parcelas").innerHTML = PARC.map((p,i) => `
+    <div class="form-grade" style="margin-bottom:8px">
+      <div class="campo"><label>Vencimento ${i+1}</label>
+        <input type="date" data-p="vencimento" data-i="${i}" value="${p.vencimento||""}"></div>
+      <div class="campo"><label>Valor</label><input data-p="valor" data-i="${i}" value="${p.valor||""}"></div>
+      <div class="campo" style="grid-column:span 2"><label>Linha digitável (boleto/guia)</label>
+        <input data-p="linha_digitavel" data-i="${i}" value="${p.linha_digitavel||""}" placeholder="somente para boleto ou guia"></div>
+      <div class="campo" style="align-self:end">${PARC.length>1?`<button class="btn secundario" data-del-p="${i}">Remover</button>`:""}</div>
+    </div>`).join("");
+  els("lista-rateios").innerHTML = RAT.map((r,i) => `
+    <div class="form-grade" style="margin-bottom:8px">
+      <div class="campo" style="grid-column:span 2"><label>Obra ${i+1}</label>
+        <select data-t="obra_id" data-i="${i}"><option value="">— escolher —</option>
+        ${D.obras.map(o=>`<option value="${o.id}" ${String(r.obra_id)===String(o.id)?"selected":""}>${o.codigo} · ${o.nome}</option>`).join("")}
+        </select></div>
+      <div class="campo"><label>Valor</label><input data-t="valor" data-i="${i}" value="${r.valor||""}"></div>
+      <div class="campo" style="align-self:end">${RAT.length>1?`<button class="btn secundario" data-del-t="${i}">Remover</button>`:""}</div>
+    </div>`).join("");
+
+  document.querySelectorAll("[data-r]").forEach(el => el.addEventListener("input", ev => {
+    RET[+ev.target.dataset.i][ev.target.dataset.r] = ev.target.value; totais(); }));
+  document.querySelectorAll("[data-p]").forEach(el => el.addEventListener("input", ev => {
+    PARC[+ev.target.dataset.i][ev.target.dataset.p] = ev.target.value; totais(); }));
+  document.querySelectorAll("[data-t]").forEach(el => el.addEventListener("input", ev => {
+    RAT[+ev.target.dataset.i][ev.target.dataset.t] = ev.target.value; totais(); }));
+  document.querySelectorAll("[data-del-r]").forEach(b => b.addEventListener("click", () => {
+    RET.splice(+b.dataset.delR,1); desenharLinhas(); totais(); }));
+  document.querySelectorAll("[data-del-p]").forEach(b => b.addEventListener("click", () => {
+    PARC.splice(+b.dataset.delP,1); desenharLinhas(); totais(); }));
+  document.querySelectorAll("[data-del-t]").forEach(b => b.addEventListener("click", () => {
+    RAT.splice(+b.dataset.delT,1); desenharLinhas(); totais(); }));
+  totais();
+}
+
+function totais(){
+  const bruto = dec(els("f-valor").value);
+  const ret = RET.reduce((a,r)=>a+dec(r.valor),0);
+  const liq = bruto - ret;
+  els("liquido").textContent = fmt(liq);
+  const sp = PARC.reduce((a,p)=>a+dec(p.valor),0);
+  const sr = RAT.reduce((a,r)=>a+dec(r.valor),0);
+  els("soma-parcelas").innerHTML = fmt(sp) +
+    (Math.abs(sp-liq) > 0.01 ? ` <span style="color:var(--vermelho)">— difere do líquido em ${fmt(Math.abs(sp-liq))}</span>` : " ✓");
+  els("soma-rateios").innerHTML = fmt(sr) +
+    (Math.abs(sr-liq) > 0.01 ? ` <span style="color:var(--vermelho)">— difere do líquido em ${fmt(Math.abs(sr-liq))}</span>` : " ✓");
+}
+
+// ---------- leitura do documento
+els("btn-ler").addEventListener("click", async () => {
+  const arq = els("arq").files[0];
+  if (!arq) { aviso("mensagem","Escolha o arquivo primeiro.","erro"); return; }
+  const b = els("btn-ler"); b.disabled = true; b.textContent = "Lendo…";
+  const fd = new FormData(); fd.append("arquivo", arq);
+  try {
+    const d = await api("/erp/api/lancamento/ler-documento", {method:"POST", body: fd});
+    LIDO = d.documento;
+    aplicarLeitura(LIDO);
+  } catch(e){ aviso("mensagem", e.message + " Você pode preencher manualmente.", "erro");
+    els("form-bloco").classList.remove("oculto"); }
+  b.disabled = false; b.textContent = "Ler documento";
+});
+
+function aplicarLeitura(x){
+  const conf = {ALTA:"aprovado", MEDIA:"aguardando", BAIXA:"bloqueado"}[x.confianca] || "outro";
+  els("leitura").innerHTML = `
+    <div class="aviso ${x.confianca==="ALTA"?"ok":"info"}" style="margin-top:12px">
+      <b>${x.tipo_documento||"Documento"}</b> lido
+      (<span class="selo ${conf}">confiança ${(x.confianca||"?").toLowerCase()}</span>
+       via ${(x.origem_leitura||"").replace(/_/g," ").toLowerCase()})<br>
+      ${x.emitente_nome||"—"} · ${x.emitente_documento||"—"}
+      ${x.fornecedor_id ? "· <b>credor já cadastrado</b>"
+        : `· <b style="color:var(--vermelho)">credor não cadastrado</b> — cadastre em Fornecedores`}
+      ${x.observacoes ? `<br><small>${x.observacoes}</small>` : ""}
+      ${x.dedutibilidade_sugerida && x.dedutibilidade_sugerida!=="PENDENTE"
+        ? `<br><small>Dedutibilidade sugerida: <b>${x.dedutibilidade_sugerida}</b> — ${x.dedutibilidade_motivo||""}
+           (o financeiro confirma depois)</small>` : ""}
+    </div>`;
+  if (x.fornecedor_id) els("f-credor").value = x.fornecedor_id;
+  if (x.descricao) els("f-descricao").value = x.descricao;
+  if (x.valor_total) els("f-valor").value = String(x.valor_total).replace(".",",");
+  if (x.numero_documento) els("f-doc-numero").value = x.numero_documento;
+  if (x.data_emissao) { els("f-emissao").value = x.data_emissao;
+    els("f-competencia").value = x.data_emissao.slice(0,7); }
+  if (x.parcelas && x.parcelas.length) PARC = x.parcelas.map(p => ({
+    vencimento: p.vencimento||"", valor: String(p.valor||"").replace(".",","),
+    linha_digitavel: p.linha_digitavel||""}));
+  if (x.retencoes && x.retencoes.length) RET = x.retencoes.map(r => ({
+    tipo: r.tipo, base_calculo: String(r.base_calculo||"").replace(".",","),
+    aliquota: String(r.aliquota||"").replace(".",","), valor: String(r.valor||"").replace(".",",")}));
+  if (x.obra_id) RAT = [{obra_id: x.obra_id, valor: String(x.valor_total||"").replace(".",",")}];
+  els("form-bloco").classList.remove("oculto");
+  desenharLinhas(); atualizarCredor();
+  els("form-bloco").scrollIntoView({behavior:"smooth", block:"start"});
+}
+
+els("btn-manual").addEventListener("click", () => {
+  els("form-bloco").classList.remove("oculto");
+  els("form-bloco").scrollIntoView({behavior:"smooth", block:"start"});
+});
+
+function atualizarCredor(){
+  const f = D.fornecedores.find(x => String(x.id) === els("f-credor").value);
+  const forma = els("f-forma").value;
+  const precisa = ["PIX","TED"].includes(forma);
+  els("campo-conta").style.display = precisa ? "" : "none";
+  if (!f) { els("dica-credor").textContent = ""; return; }
+  els("dica-credor").innerHTML = (f.situacao_rfb ? `Situação na Receita: <b>${f.situacao_rfb}</b>. ` : "") +
+    `${f.contas.length} conta(s) homologada(s).`;
+  const contas = f.contas.filter(c => c.forma === forma);
+  els("f-conta").innerHTML = contas.length
+    ? contas.map(c=>`<option value="${c.id}">${c.forma} · ${c.identificacao}</option>`).join("")
+    : `<option value="">— sem conta ${forma} homologada —</option>`;
+}
+els("f-credor").addEventListener("change", atualizarCredor);
+els("f-forma").addEventListener("change", atualizarCredor);
+els("f-categoria").addEventListener("change", () => {
+  const c = D.categorias.find(x => String(x.id) === els("f-categoria").value);
+  els("dica-categoria").innerHTML = c ? (c.uso || `${c.grupo} › ${c.subgrupo}`) +
+    (c.natureza === "FLUXO" ? " · <b>conta de fluxo</b> (não entra na DRE)" : "") : "";
+});
+els("f-valor").addEventListener("input", totais);
+els("btn-add-ret").addEventListener("click", () => { RET.push({tipo:"INSS"}); desenharLinhas(); });
+els("btn-add-parc").addEventListener("click", () => { PARC.push({}); desenharLinhas(); });
+els("btn-add-rat").addEventListener("click", () => { RAT.push({}); desenharLinhas(); });
+
+function montar(){
+  return {
+    fornecedor_id: els("f-credor").value ? +els("f-credor").value : null,
+    categoria_id: els("f-categoria").value ? +els("f-categoria").value : null,
+    descricao: els("f-descricao").value.trim(),
+    valor_bruto: String(dec(els("f-valor").value)),
+    competencia: els("f-competencia").value,
+    data_emissao_doc: els("f-emissao").value || null,
+    documento_numero: els("f-doc-numero").value.trim(),
+    forma_pagamento: els("f-forma").value,
+    fornecedor_conta_id: els("campo-conta").style.display === "none" ? null
+      : (els("f-conta").value ? +els("f-conta").value : null),
+    retencoes: RET.filter(r=>dec(r.valor)>0).map(r=>({tipo:r.tipo,
+      base_calculo:String(dec(r.base_calculo)), aliquota:String(dec(r.aliquota)),
+      valor:String(dec(r.valor))})),
+    parcelas: PARC.filter(p=>p.vencimento).map(p=>({vencimento:p.vencimento,
+      valor:String(dec(p.valor)), linha_digitavel:(p.linha_digitavel||"").trim()})),
+    rateios: RAT.filter(r=>r.obra_id).map(r=>({obra_id:+r.obra_id, valor:String(dec(r.valor))})),
+  };
+}
+
+function mostrarCritica(c){
+  const b = els("bloco-critica");
+  if (!c || (!c.bloqueios.length && !c.alertas.length)) {
+    b.innerHTML = `<div class="cartao-dica">Nenhuma duplicidade encontrada.</div>`;
+    return false;
+  }
+  b.innerHTML = `<div class="cartao-cab"><h3>Crítica de duplicidade</h3></div>` +
+    c.bloqueios.map(x=>`<div class="critica BLOQUEIA"><code>${x.codigo}</code><b>Bloqueio:</b> ${x.msg}</div>`).join("") +
+    c.alertas.map(x=>`<div class="critica CRITICA"><code>${x.codigo}</code>${x.msg}
+      ${x.titulo?`<br><small>${x.titulo.numero_sp}: ${x.titulo.descricao} · ${fmt(x.titulo.valor)} · vence ${dataBR(x.titulo.vencimento)}</small>`:""}
+    </div>`).join("") +
+    (c.bloqueios.length ? `<div class="cartao-dica">Bloqueio não passa: cancele o lançamento ou
+      corrija o documento. Se for realmente outro título, troque o nº do documento/boleto.</div>` : "");
+  return c.bloqueios.length > 0;
+}
+
+els("btn-checar").addEventListener("click", async () => {
+  const d = montar();
+  try {
+    const r = await api("/erp/api/lancamento/checar", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({fornecedor_id:d.fornecedor_id, valor:d.valor_bruto,
+        parcelas:d.parcelas, competencia:d.competencia, descricao:d.descricao,
+        categoria_id:d.categoria_id, documento_numero:d.documento_numero})});
+    mostrarCritica(r.critica);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+});
+
+els("btn-enviar").addEventListener("click", async () => {
+  const b = els("btn-enviar"); b.disabled = true; b.textContent = "Enviando…";
+  try {
+    const d = await api("/erp/api/lancamento", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(montar())});
+    const t = d.titulo;
+    aviso("mensagem", t.status === "BLOQUEADO"
+      ? `Solicitação <b>${t.numero_sp}</b> registrada e <b>bloqueada</b> pela análise (risco ${t.risco}). Veja em Títulos.`
+      : `Solicitação <b>${t.numero_sp}</b> enviada para autorização (risco ${t.risco}).`,
+      t.status === "BLOQUEADO" ? "info" : "ok");
+    RET = []; PARC = [{}]; RAT = [{}]; LIDO = null;
+    ["f-descricao","f-valor","f-doc-numero","f-emissao"].forEach(i=>els(i).value="");
+    els("leitura").innerHTML = ""; els("bloco-critica").innerHTML = "";
+    desenharLinhas();
+    window.scrollTo({top:0, behavior:"smooth"});
+  } catch(e){
+    if (e.message.includes("duplicidade")) {
+      try { const r = await (await fetch("/erp/api/lancamento", {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify(montar())})).json();
+        mostrarCritica(r.critica);
+      } catch(_) {}
+    }
+    aviso("mensagem", e.message, "erro");
+  }
+  b.disabled = false; b.textContent = "Enviar solicitação";
+});
+
+carregar();
+</script>
+{% endblock %}
