@@ -1,355 +1,327 @@
-<!doctype html>
-<html lang="pt-BR">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ERP BWS — títulos</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
-</head>
-<body>
+{% extends "erp_base.html" %}
+{% block titulo %}Títulos — ERP BWS{% endblock %}
 
-<!-- CARIMBO: cabeçalho no formato do title block de prancha técnica -->
-<header class="carimbo">
-  <div class="carimbo-topo">
-    <h1>ERP <span>BWS</span> · Títulos a pagar</h1>
-    <div class="via">
-      <span class="rotulo">{{ usuario_nome }} · {{ usuario_perfil }}</span>
-      <a class="rotulo" href="{{ url_for('erp.sair') }}">Sair</a>
-    </div>
+{% block filtros %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button>
   </div>
-  <div class="celulas">
-    <div class="celula">
-      <div class="rotulo">Títulos em tela</div>
-      <div class="valor num" id="kpi-qtd">—</div>
-      <div class="sub" id="kpi-limite"></div>
-    </div>
-    <div class="celula">
-      <div class="rotulo">Total líquido</div>
-      <div class="valor num" id="kpi-total">—</div>
-    </div>
-    <div class="celula">
-      <div class="rotulo">Aguardando aprovação</div>
-      <div class="valor num" id="kpi-aguardando">—</div>
-      <div class="sub" id="kpi-aguardando-qtd"></div>
-    </div>
-    <div class="celula destaque">
-      <div class="rotulo">Bloqueados na análise</div>
-      <div class="valor num" id="kpi-bloqueado">—</div>
-      <div class="sub" id="kpi-bloqueado-qtd"></div>
-    </div>
-    <div class="celula">
-      <div class="rotulo">Vencem em 7 dias</div>
-      <div class="valor num" id="kpi-vencendo">—</div>
-      <div class="sub" id="kpi-vencendo-qtd"></div>
-    </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="SP, credor, descrição…">
   </div>
-</header>
-
-<div class="corpo">
-  <!-- FILTROS -->
-  <aside class="filtros">
-    <h2 class="rotulo">Filtros</h2>
-    <div class="campo">
-      <label class="rotulo" for="f-busca">Busca (SP, credor, descrição)</label>
-      <input id="f-busca" type="search" placeholder="ex.: SP000123 ou cimento">
-    </div>
-    <div class="campo">
-      <div class="rotulo" style="margin-bottom:6px">Situação</div>
-      <div id="f-status"></div>
-    </div>
-    <div class="campo">
-      <label class="opcao"><input type="checkbox" id="f-venc7"> Vencendo em 7 dias</label>
-      <label class="opcao"><input type="checkbox" id="f-atrasados"> Somente atrasados</label>
-    </div>
-    <div class="campo">
-      <label class="rotulo" for="f-min">Valor de / até</label>
-      <div style="display:flex; gap:6px">
-        <input id="f-min" type="text" inputmode="decimal" placeholder="mín.">
-        <input id="f-max" type="text" inputmode="decimal" placeholder="máx.">
+  <div class="filtro aberto" id="filtro-status">
+    <button class="filtro-cab" type="button"><span>Situação</span>
+      <span class="filtro-badge" id="badge-status">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-status"></div></div>
+  </div>
+  <div class="filtro aberto" id="filtro-obra">
+    <button class="filtro-cab" type="button"><span>Obra</span>
+      <span class="filtro-badge" id="badge-obra">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-obra"></div></div>
+  </div>
+  <div class="filtro aberto" id="filtro-credor">
+    <button class="filtro-cab" type="button"><span>Credor</span>
+      <span class="filtro-badge" id="badge-credor">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-credor"></div></div>
+  </div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Vencimento e valor</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-venc7"><span class="rotulo">Vence em até 7 dias</span></label>
+      <label class="opcao"><input type="checkbox" id="f-atrasados"><span class="rotulo">Somente atrasados</span></label>
+      <div class="faixa" style="margin-top:8px">
+        <div><label>Valor mín.</label><input id="f-min" inputmode="decimal" placeholder="0,00"></div>
+        <div><label>Valor máx.</label><input id="f-max" inputmode="decimal" placeholder="0,00"></div>
       </div>
     </div>
-    <button class="botao" id="btn-limpar" type="button">Limpar filtros</button>
-  </aside>
+  </div>
+{% endblock %}
 
-  <!-- GRADE -->
-  <main class="painel">
-    <div class="barra-acoes" id="barra" hidden>
-      <span class="resumo-sel num" id="sel-resumo"></span>
-      <button class="botao" data-acao="detalhe" type="button">Ver detalhe</button>
-      <button class="botao primario" data-acao="aprovar" type="button">Aprovar</button>
-      <button class="botao" data-acao="devolver" type="button">Devolver</button>
-      <button class="botao" data-acao="cancelar" type="button">Cancelar</button>
-      <input type="text" id="motivo" placeholder="Motivo (devolver / cancelar)">
-      <button class="botao direita" id="btn-limpar-sel" type="button">Limpar seleção</button>
-    </div>
+{% block conteudo %}
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+<div class="chips" id="chips"></div>
 
-    <div id="mensagem"></div>
-
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo-tabela"></span>
+    <span class="espaco"></span>
+    <span id="acoes-lote" class="oculto" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+      <input id="motivo" placeholder="Motivo (devolver / cancelar)" style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px; min-width:220px">
+      <button class="btn" data-acao="aprovar">✔ Liberar p/ pagamento</button>
+      <button class="btn secundario" data-acao="devolver">↩ Devolver ao solicitante</button>
+      <button class="btn perigo" data-acao="cancelar">✕ Cancelar SP</button>
+    </span>
+  </div>
+  <div class="tabela-rolagem">
     <table>
-      <thead>
-        <tr>
-          <th class="sem-ordem" style="width:30px"><input type="checkbox" id="marca-todos" aria-label="Marcar todos"></th>
-          <th data-ordem="numero_sp">SP</th>
-          <th data-ordem="fornecedor">Credor</th>
-          <th class="sem-ordem">Descrição</th>
-          <th data-ordem="vencimento">1º venc.</th>
-          <th class="direita" data-ordem="valor_liquido">Líquido</th>
-          <th class="direita sem-ordem">Parc.</th>
-          <th data-ordem="risco">Risco</th>
-          <th data-ordem="status">Situação</th>
-        </tr>
-      </thead>
+      <thead><tr>
+        <th class="sem-ordem" style="width:34px"><input type="checkbox" id="marca-todos"></th>
+        <th data-ordem="numero_sp">SP</th>
+        <th data-ordem="fornecedor">Credor</th>
+        <th class="sem-ordem">Descrição</th>
+        <th class="sem-ordem">Obra</th>
+        <th data-ordem="vencimento">Vencimento</th>
+        <th class="direita" data-ordem="valor_liquido">Valor</th>
+        <th data-ordem="risco">Risco</th>
+        <th data-ordem="status">Situação</th>
+      </tr></thead>
       <tbody id="corpo-tabela"></tbody>
     </table>
-    <div class="vazio" id="vazio" hidden></div>
-  </main>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
 </div>
 
 <dialog id="dlg">
-  <div class="dlg-topo">
-    <h3 id="dlg-titulo">—</h3>
-    <button class="botao direita" style="margin-left:auto" onclick="document.getElementById('dlg').close()">Fechar</button>
-  </div>
+  <div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+    <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
   <div class="dlg-corpo" id="dlg-corpo"></div>
 </dialog>
+{% endblock %}
 
+{% block scripts %}
 <script>
-const SITUACOES = ["EM_ANALISE","AGUARDANDO_APROVACAO","APROVADO","BLOQUEADO",
-                   "PAGO_PARCIAL","PAGO","DEVOLVIDO","CANCELADO","ESTORNADO","RASCUNHO"];
+const SITUACOES = ["EM_ANALISE","AGUARDANDO_APROVACAO","APROVADO","BLOQUEADO","PAGO_PARCIAL",
+                   "PAGO","DEVOLVIDO","CANCELADO","ESTORNADO","RASCUNHO"];
 const ABERTOS = ["EM_ANALISE","AGUARDANDO_APROVACAO","APROVADO","BLOQUEADO","PAGO_PARCIAL"];
-const rotulo = s => s.replace(/_/g," ").toLowerCase().replace(/^./, c => c.toUpperCase());
-const moeda = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const numero = v => (v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
-
+const ROTULOS = {EM_ANALISE:"Em análise", AGUARDANDO_APROVACAO:"Aguardando autorização",
+  APROVADO:"Liberado p/ pagamento", BLOQUEADO:"Bloqueado na análise", PAGO_PARCIAL:"Pago parcial",
+  PAGO:"Pago", DEVOLVIDO:"Devolvido", CANCELADO:"Cancelado", ESTORNADO:"Estornado", RASCUNHO:"Rascunho"};
 let TITULOS = [], SELECAO = new Set(), ORDEM = {campo:"vencimento", asc:true};
+let F = {status: new Set(ABERTOS), obra: new Set(), credor: new Set()};
 
-// ---- filtros de situação
-const divStatus = document.getElementById("f-status");
-SITUACOES.forEach(s => {
-  const lab = document.createElement("label");
-  lab.className = "opcao";
-  lab.innerHTML = `<input type="checkbox" value="${s}" ${ABERTOS.includes(s)?"checked":""}>
-                   <span>${rotulo(s)}</span><span class="contagem" data-cont="${s}"></span>`;
-  divStatus.appendChild(lab);
-});
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
 
-const els = id => document.getElementById(id);
-const statusMarcados = () => [...divStatus.querySelectorAll("input:checked")].map(i => i.value);
-
-async function carregar() {
-  const p = new URLSearchParams({busca: els("f-busca").value.trim(),
-                                status: statusMarcados().join(",")});
-  try {
-    const r = await fetch(`/erp/api/titulos?${p}`, {headers:{"Accept":"application/json"}});
-    if (r.status === 401) { location.href = "/erp/entrar"; return; }
-    const d = await r.json();
-    if (!d.ok) throw new Error(d.erro);
-    TITULOS = d.titulos;
-    els("kpi-qtd").textContent = d.resumo.quantidade;
-    els("kpi-limite").textContent = d.limite_atingido ? "limite de 500 — refine os filtros" : "";
-    els("kpi-total").textContent = moeda(d.resumo.total);
-    els("kpi-aguardando").textContent = moeda(d.resumo.aguardando);
-    els("kpi-aguardando-qtd").textContent = `${d.resumo.qtd_aguardando} título(s)`;
-    els("kpi-bloqueado").textContent = moeda(d.resumo.bloqueado);
-    els("kpi-bloqueado-qtd").textContent = `${d.resumo.qtd_bloqueado} título(s)`;
-    els("kpi-vencendo").textContent = moeda(d.resumo.vencendo);
-    els("kpi-vencendo-qtd").textContent = `${d.resumo.qtd_vencendo} título(s)`;
-    desenhar();
-  } catch (e) {
-    aviso(`Não foi possível carregar os títulos: ${e.message}`, false);
-  }
-}
-
-function filtrarLocal(linhas) {
-  const min = parseFloat((els("f-min").value||"").replace(/\./g,"").replace(",","."));
-  const max = parseFloat((els("f-max").value||"").replace(/\./g,"").replace(",","."));
-  const hoje = new Date().toISOString().slice(0,10);
-  const lim7 = new Date(Date.now()+7*864e5).toISOString().slice(0,10);
-  return linhas.filter(l => {
-    if (!isNaN(min) && l.valor_liquido < min) return false;
-    if (!isNaN(max) && l.valor_liquido > max) return false;
-    if (els("f-venc7").checked && !(l.vencimento && l.vencimento <= lim7 && ABERTOS.includes(l.status))) return false;
-    if (els("f-atrasados").checked && !l.vencido) return false;
-    return true;
-  });
-}
-
-function ordenar(linhas) {
-  const {campo, asc} = ORDEM;
-  return [...linhas].sort((a,b) => {
-    let x = a[campo], y = b[campo];
-    if (x === null || x === undefined) return 1;
-    if (y === null || y === undefined) return -1;
-    if (typeof x === "string") return asc ? x.localeCompare(y,"pt-BR") : y.localeCompare(x,"pt-BR");
-    return asc ? x - y : y - x;
-  });
-}
-
-function classeSelo(s) {
-  if (s === "AGUARDANDO_APROVACAO" || s === "EM_ANALISE") return "aguardando";
-  if (s === "APROVADO") return "aprovado";
-  if (s === "BLOQUEADO") return "bloqueado";
-  if (s === "PAGO" || s === "PAGO_PARCIAL") return "pago";
+function classeSelo(s){
+  if(["AGUARDANDO_APROVACAO","EM_ANALISE"].includes(s)) return "aguardando";
+  if(s==="APROVADO") return "aprovado";
+  if(s==="BLOQUEADO") return "bloqueado";
+  if(["PAGO","PAGO_PARCIAL"].includes(s)) return "pago";
   return "outro";
 }
 
-function desenhar() {
-  const linhas = ordenar(filtrarLocal(TITULOS));
-  const cont = {};
-  TITULOS.forEach(l => cont[l.status] = (cont[l.status]||0)+1);
-  divStatus.querySelectorAll("[data-cont]").forEach(sp => {
-    sp.textContent = cont[sp.dataset.cont] || "";
+async function carregar(){
+  try {
+    const d = await api("/erp/api/titulos?status=" + [...F.status].join(","));
+    TITULOS = d.titulos;
+    montarFiltros();
+    desenhar();
+  } catch(e) { aviso("mensagem", "Não foi possível carregar: " + e.message, "erro"); }
+}
+
+function montarFiltros(){
+  const cont = (campo) => {
+    const m = {};
+    TITULOS.forEach(t => { const v = t[campo]; if(v) m[v] = (m[v]||0)+1; });
+    return m;
+  };
+  // situação (do universo fixo)
+  const cs = cont("status");
+  els("opcoes-status").innerHTML = SITUACOES.map(s =>
+    `<label class="opcao ${cs[s]?"":"zerada"}"><input type="checkbox" data-f="status" value="${s}"
+      ${F.status.has(s)?"checked":""}><span class="rotulo">${ROTULOS[s]||s}</span>
+      <span class="qtd">${cs[s]||0}</span></label>`).join("");
+  const co = cont("obra");
+  els("opcoes-obra").innerHTML = Object.keys(co).sort().map(o =>
+    `<label class="opcao"><input type="checkbox" data-f="obra" value="${o}" ${F.obra.has(o)?"checked":""}>
+      <span class="rotulo">${o}</span><span class="qtd">${co[o]}</span></label>`).join("")
+      || `<div class="cartao-dica">sem obras nos títulos carregados</div>`;
+  const cc = cont("fornecedor");
+  els("opcoes-credor").innerHTML = Object.keys(cc).sort().map(c =>
+    `<label class="opcao"><input type="checkbox" data-f="credor" value="${c}" ${F.credor.has(c)?"checked":""}>
+      <span class="rotulo">${c}</span><span class="qtd">${cc[c]}</span></label>`).join("");
+  ["status","obra","credor"].forEach(k => els("badge-"+k).textContent = F[k].size);
+  document.querySelectorAll('[data-f]').forEach(i => i.addEventListener("change", ev => {
+    const {f, value} = {f: ev.target.dataset.f, value: ev.target.value};
+    ev.target.checked ? F[f].add(value) : F[f].delete(value);
+    if (f === "status") carregar(); else { montarFiltros(); desenhar(); }
+  }));
+}
+
+function visiveis(){
+  const min = parseFloat((els("f-min").value||"").replace(/\./g,"").replace(",","."));
+  const max = parseFloat((els("f-max").value||"").replace(/\./g,"").replace(",","."));
+  const lim7 = new Date(Date.now()+7*864e5).toISOString().slice(0,10);
+  const busca = (els("f-busca").value||"").toLowerCase().trim();
+  let l = TITULOS.filter(t => {
+    if (F.obra.size && !F.obra.has(t.obra)) return false;
+    if (F.credor.size && !F.credor.has(t.fornecedor)) return false;
+    if (!isNaN(min) && t.valor_liquido < min) return false;
+    if (!isNaN(max) && t.valor_liquido > max) return false;
+    if (els("f-venc7").checked && !(t.vencimento && t.vencimento <= lim7 && ABERTOS.includes(t.status))) return false;
+    if (els("f-atrasados").checked && !t.vencido) return false;
+    if (busca && !(`${t.numero_sp} ${t.fornecedor} ${t.descricao} ${t.categoria}`.toLowerCase().includes(busca))) return false;
+    return true;
   });
-  const tbody = els("corpo-tabela");
-  tbody.innerHTML = "";
-  els("vazio").hidden = linhas.length > 0;
-  if (!linhas.length) {
-    els("vazio").innerHTML = TITULOS.length
-      ? "<strong>Nenhum título nestes filtros</strong>Ajuste a situação ou a faixa de valor à esquerda."
-      : "<strong>Nada lançado ainda</strong>Os títulos aparecem aqui assim que a primeira solicitação de pagamento for registrada.";
-  }
-  linhas.forEach(l => {
-    const tr = document.createElement("tr");
-    if (SELECAO.has(l.id)) tr.className = "marcada";
-    const venc = l.vencimento ? l.vencimento.split("-").reverse().join("/") : "—";
-    tr.innerHTML = `
-      <td><input type="checkbox" data-id="${l.id}" ${SELECAO.has(l.id)?"checked":""} aria-label="Selecionar ${l.numero_sp}"></td>
-      <td class="sp num">${l.numero_sp}</td>
-      <td>${l.fornecedor}</td>
-      <td class="desc">${l.descricao}<small>${l.categoria} · comp. ${l.competencia}</small></td>
-      <td class="num ${l.vencido ? "venc-atrasado" : ""}">${venc}</td>
-      <td class="direita num">${numero(l.valor_liquido)}</td>
-      <td class="direita num">${l.parcelas}</td>
-      <td><span class="risco"><span class="regua"><i class="${l.risco?"":"zero"}" style="width:${Math.min(l.risco,60)/60*100}%"></i></span><span class="num">${l.risco}</span></span></td>
-      <td><span class="selo ${classeSelo(l.status)}">${rotulo(l.status)}</span></td>`;
-    tr.querySelector("input").addEventListener("change", ev => {
-      ev.target.checked ? SELECAO.add(l.id) : SELECAO.delete(l.id);
-      desenhar();
-    });
-    tr.addEventListener("dblclick", () => abrirDetalhe(l.id));
-    tbody.appendChild(tr);
+  const {campo, asc} = ORDEM;
+  return l.sort((a,b) => {
+    let x=a[campo], y=b[campo];
+    if(x==null) return 1; if(y==null) return -1;
+    return typeof x === "string" ? (asc? x.localeCompare(y,"pt-BR") : y.localeCompare(x,"pt-BR")) : (asc? x-y : y-x);
   });
-  atualizarBarra(linhas);
 }
 
-function atualizarBarra(linhasVisiveis) {
-  const sel = TITULOS.filter(l => SELECAO.has(l.id));
-  els("barra").hidden = sel.length === 0;
-  if (sel.length) {
-    const soma = sel.reduce((a,l) => a + l.valor_liquido, 0);
-    els("sel-resumo").textContent = `${sel.length} selecionado(s) · ${moeda(soma)}`;
+function desenhar(){
+  const l = visiveis();
+  const soma = f => l.filter(f).reduce((a,t)=>a+t.valor_liquido,0);
+  const qtd  = f => l.filter(f).length;
+  const hoje = new Date().toISOString().slice(0,10);
+  const lim7 = new Date(Date.now()+7*864e5).toISOString().slice(0,10);
+  els("kpis").innerHTML = `
+    <button class="kpi estatico"><div class="kpi-rotulo">Em tela</div>
+      <div class="kpi-valor">${l.length}</div><div class="kpi-sub">${moeda(soma(()=>true))}</div></button>
+    <button class="kpi ambar" data-kpi="AGUARDANDO_APROVACAO"><div class="kpi-rotulo">Aguardando autorização</div>
+      <div class="kpi-valor">${qtd(t=>t.status==="AGUARDANDO_APROVACAO")}</div>
+      <div class="kpi-sub">${moeda(soma(t=>t.status==="AGUARDANDO_APROVACAO"))}</div></button>
+    <button class="kpi vermelho" data-kpi="BLOQUEADO"><div class="kpi-rotulo">Bloqueados</div>
+      <div class="kpi-valor">${qtd(t=>t.status==="BLOQUEADO")}</div>
+      <div class="kpi-sub">${moeda(soma(t=>t.status==="BLOQUEADO"))}</div></button>
+    <button class="kpi verde" data-kpi="APROVADO"><div class="kpi-rotulo">Liberados p/ pagar</div>
+      <div class="kpi-valor">${qtd(t=>t.status==="APROVADO")}</div>
+      <div class="kpi-sub">${moeda(soma(t=>t.status==="APROVADO"))}</div></button>
+    <button class="kpi ciano" data-kpi="_venc7"><div class="kpi-rotulo">Vencem em 7 dias</div>
+      <div class="kpi-valor">${qtd(t=>t.vencimento&&t.vencimento<=lim7&&ABERTOS.includes(t.status))}</div>
+      <div class="kpi-sub">${moeda(soma(t=>t.vencimento&&t.vencimento<=lim7&&ABERTOS.includes(t.status)))}</div></button>
+    <button class="kpi roxo" data-kpi="_atraso"><div class="kpi-rotulo">Atrasados</div>
+      <div class="kpi-valor">${qtd(t=>t.vencido)}</div>
+      <div class="kpi-sub">${moeda(soma(t=>t.vencido))}</div></button>`;
+  document.querySelectorAll("[data-kpi]").forEach(b => b.addEventListener("click", () => {
+    const k = b.dataset.kpi;
+    if (k === "_venc7") { els("f-venc7").checked = !els("f-venc7").checked; }
+    else if (k === "_atraso") { els("f-atrasados").checked = !els("f-atrasados").checked; }
+    else { F.status = new Set([k]); carregar(); return; }
+    desenhar();
+  }));
+
+  // chips
+  const chips = [];
+  if (els("f-busca").value.trim()) chips.push(["busca", els("f-busca").value.trim()]);
+  F.status.forEach(s => chips.push(["status", ROTULOS[s]||s, s]));
+  F.obra.forEach(o => chips.push(["obra", o, o]));
+  F.credor.forEach(c => chips.push(["credor", c, c]));
+  if (els("f-venc7").checked) chips.push(["venc7", "vence em 7 dias"]);
+  if (els("f-atrasados").checked) chips.push(["atraso", "atrasados"]);
+  els("chips").innerHTML = chips.map(([t,r,v]) =>
+    `<span class="chip"><small>${t}</small>${r}<button data-chip="${t}" data-valor="${v||""}">×</button></span>`).join("")
+    + `<span class="resumo">${l.length} de <b>${TITULOS.length}</b> carregados</span>`;
+  document.querySelectorAll("[data-chip]").forEach(b => b.addEventListener("click", () => {
+    const t = b.dataset.chip, v = b.dataset.valor;
+    if (["status","obra","credor"].includes(t)) { F[t].delete(v); if(t==="status") return carregar(); }
+    if (t === "busca") els("f-busca").value = "";
+    if (t === "venc7") els("f-venc7").checked = false;
+    if (t === "atraso") els("f-atrasados").checked = false;
+    montarFiltros(); desenhar();
+  }));
+
+  // tabela
+  els("vazio").classList.toggle("oculto", l.length > 0);
+  if (!l.length) els("vazio").innerHTML = TITULOS.length
+    ? "<b>Nenhum título nestes filtros</b>Ajuste a situação ou o período à esquerda."
+    : "<b>Nada lançado ainda</b>Importe as SPs do Pipefy na aba Importar, ou lance uma solicitação.";
+  els("corpo-tabela").innerHTML = l.map(t => `
+    <tr class="${SELECAO.has(t.id)?"marcada":""}" data-id="${t.id}">
+      <td><input type="checkbox" data-sel="${t.id}" ${SELECAO.has(t.id)?"checked":""}></td>
+      <td class="dados">${t.numero_sp}</td>
+      <td>${t.fornecedor}</td>
+      <td class="desc">${t.descricao}<small>${t.categoria}</small></td>
+      <td>${t.obra||"—"}</td>
+      <td class="dados ${t.vencido?"atrasado":""}">${dataBR(t.vencimento)}${t.parcelas>1?` <small>(${t.parcelas}x)</small>`:""}</td>
+      <td class="direita dados">${numero(t.valor_liquido)}</td>
+      <td><span class="risco"><span class="trilha"><span class="preench ${t.risco?"":"zero"}"
+        style="width:${Math.min(t.risco,60)/60*100}%"></span></span><span>${t.risco}</span></span></td>
+      <td><span class="selo ${classeSelo(t.status)}">${ROTULOS[t.status]||t.status}</span></td>
+    </tr>`).join("");
+  document.querySelectorAll("[data-sel]").forEach(c => c.addEventListener("change", ev => {
+    const id = +ev.target.dataset.sel;
+    ev.target.checked ? SELECAO.add(id) : SELECAO.delete(id);
+    desenhar();
+  }));
+  document.querySelectorAll("tbody tr").forEach(tr => tr.addEventListener("dblclick", () => detalhe(+tr.dataset.id)));
+
+  const sel = TITULOS.filter(t => SELECAO.has(t.id));
+  els("acoes-lote").classList.toggle("oculto", sel.length === 0);
+  els("resumo-tabela").innerHTML = sel.length
+    ? `<b>${sel.length}</b> selecionado(s) · <b>${moeda(sel.reduce((a,t)=>a+t.valor_liquido,0))}</b>`
+    : `<b>${l.length}</b> título(s) · <b>${moeda(l.reduce((a,t)=>a+t.valor_liquido,0))}</b>`;
+  els("marca-todos").checked = l.length>0 && l.every(t => SELECAO.has(t.id));
+}
+
+async function detalhe(id){
+  try {
+    const {titulo: t} = await api(`/erp/api/titulos/${id}`);
+    const c = t.cabecalho;
+    els("dlg-titulo").textContent = `${c.numero_sp} — ${c.fornecedor}`;
+    els("dlg-corpo").innerHTML = `
+      <div class="kpis">
+        <div class="kpi estatico"><div class="kpi-rotulo">Situação</div><div class="kpi-valor" style="font-size:15px">${ROTULOS[c.status]||c.status}</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Bruto</div><div class="kpi-valor" style="font-size:17px">${numero(t.bruto)}</div></div>
+        <div class="kpi estatico ambar"><div class="kpi-rotulo">Retenções</div><div class="kpi-valor" style="font-size:17px">${numero(t.retencoes_total)}</div></div>
+        <div class="kpi estatico verde"><div class="kpi-rotulo">Líquido</div><div class="kpi-valor" style="font-size:17px">${numero(c.valor_liquido)}</div></div>
+      </div>
+      <div class="cartao-dica">${c.categoria} · ${t.forma_pagamento} · competência ${c.competencia}${t.dedutivel?"":" · <b>INDEDUTÍVEL</b>"}</div>
+      ${t.criticas.length ? `<h4>Análise automática</h4>` + t.criticas.map(k =>
+        `<div class="critica ${k.severidade}"><code>${k.codigo}</code>${k.msg}</div>`).join("") : ""}
+      <h4>Parcelas</h4><div class="cartao" style="padding:0"><table><thead><tr><th>Nº</th><th>Vencimento</th>
+        <th class="direita">Valor</th><th>Situação</th><th>Boleto</th></tr></thead><tbody>
+        ${t.parcelas.map(p=>`<tr><td class="dados">${p.numero}</td><td class="dados">${p.vencimento}</td>
+        <td class="direita dados">${numero(p.valor)}</td><td>${rotulo(p.status)}</td>
+        <td class="dados">${p.boleto||"—"}</td></tr>`).join("")}</tbody></table></div>
+      <h4>Rateio por obra</h4><div class="cartao" style="padding:0"><table><thead><tr><th>Obra</th>
+        <th class="direita">Valor</th><th class="direita">%</th></tr></thead><tbody>
+        ${t.rateios.map(r=>`<tr><td>${r.obra}</td><td class="direita dados">${numero(r.valor)}</td>
+        <td class="direita dados">${r.percentual.toFixed(2)}%</td></tr>`).join("")}</tbody></table></div>
+      ${t.retencoes.length?`<h4>Retenções</h4><div class="cartao" style="padding:0"><table><thead><tr><th>Tipo</th>
+        <th class="direita">Base</th><th class="direita">Alíq.</th><th class="direita">Valor</th></tr></thead><tbody>
+        ${t.retencoes.map(r=>`<tr><td>${r.tipo}</td><td class="direita dados">${numero(r.base)}</td>
+        <td class="direita dados">${r.aliquota}%</td><td class="direita dados">${numero(r.valor)}</td></tr>`).join("")}
+        </tbody></table></div>`:""}
+      <h4>Trilha de auditoria</h4><div class="cartao" style="padding:0"><table><thead><tr><th>Quando</th>
+        <th>Ação</th><th>Detalhe</th></tr></thead><tbody>
+        ${t.trilha.map(e=>`<tr><td class="dados">${e.quando}</td><td>${e.acao}</td>
+        <td><small>${JSON.stringify(e.detalhe)}</small></td></tr>`).join("")}</tbody></table></div>`;
+    els("dlg").showModal();
+  } catch(e) { aviso("mensagem", e.message, "erro"); }
+}
+
+async function executar(acao){
+  const ids = [...SELECAO], motivo = els("motivo").value.trim();
+  if (["devolver","cancelar"].includes(acao) && motivo.length < 10) {
+    aviso("mensagem", "Informe o motivo (mínimo 10 caracteres) antes de devolver ou cancelar.", "erro");
+    els("motivo").focus(); return;
   }
-  const todos = els("marca-todos");
-  todos.checked = linhasVisiveis.length > 0 && linhasVisiveis.every(l => SELECAO.has(l.id));
+  try {
+    const d = await api("/erp/api/titulos/acao", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({acao, ids, motivo})});
+    let m = `${d.processados.length} título(s) processado(s)${d.processados.length?": "+d.processados.join(", "):"."}`;
+    if (d.erros.length) m += `<br><b>${d.erros.length} não passou(aram):</b><br>` + d.erros.map(e=>`#${e.id}: ${e.erro}`).join("<br>");
+    aviso("mensagem", m, d.erros.length ? "info" : "ok");
+    SELECAO.clear(); els("motivo").value = "";
+    carregar();
+  } catch(e) { aviso("mensagem", e.message, "erro"); }
 }
 
-function aviso(texto, ok) {
-  els("mensagem").innerHTML = `<div class="aviso ${ok?"ok":""}">${texto}</div>`;
-  if (ok) setTimeout(() => els("mensagem").innerHTML = "", 6000);
-}
-
-async function abrirDetalhe(id) {
-  const r = await fetch(`/erp/api/titulos/${id}`);
-  const d = await r.json();
-  if (!d.ok) { aviso(d.erro, false); return; }
-  const t = d.titulo, c = t.cabecalho;
-  els("dlg-titulo").textContent = `${c.numero_sp} — ${c.fornecedor}`;
-  const linhasParc = t.parcelas.map(p => `<tr><td class="num">${p.numero}</td><td class="num">${p.vencimento}</td>
-      <td class="direita num">${numero(p.valor)}</td><td>${rotulo(p.status)}</td>
-      <td class="num">${p.boleto||"—"}</td></tr>`).join("");
-  const linhasRat = t.rateios.map(r => `<tr><td>${r.obra}</td>
-      <td class="direita num">${numero(r.valor)}</td><td class="direita num">${r.percentual.toFixed(2)}%</td></tr>`).join("");
-  const linhasRet = t.retencoes.map(r => `<tr><td>${r.tipo}</td><td class="direita num">${numero(r.base)}</td>
-      <td class="direita num">${r.aliquota}%</td><td class="direita num">${numero(r.valor)}</td></tr>`).join("");
-  els("dlg-corpo").innerHTML = `
-    <div class="celulas" style="border:1px solid var(--fio)">
-      <div class="celula"><div class="rotulo">Situação</div><div class="valor" style="font-size:15px">${rotulo(c.status)}</div></div>
-      <div class="celula"><div class="rotulo">Bruto</div><div class="valor num" style="font-size:15px">${numero(t.bruto)}</div></div>
-      <div class="celula"><div class="rotulo">Retenções</div><div class="valor num" style="font-size:15px">${numero(t.retencoes_total)}</div></div>
-      <div class="celula"><div class="rotulo">Líquido</div><div class="valor num" style="font-size:15px">${numero(c.valor_liquido)}</div></div>
-      <div class="celula"><div class="rotulo">Risco</div><div class="valor num" style="font-size:15px">${c.risco}</div></div>
-    </div>
-    <p class="rotulo" style="margin-top:10px">${c.categoria} · ${t.forma_pagamento} · comp. ${c.competencia}
-       ${t.dedutivel ? "" : " · INDEDUTÍVEL"}</p>
-    ${t.criticas.length ? `<h4 class="rotulo">Apontamentos da análise</h4>` +
-      t.criticas.map(k => `<div class="critica ${k.severidade}"><code>${k.codigo}</code>${k.msg}</div>`).join("") : ""}
-    <h4 class="rotulo">Parcelas</h4>
-    <table><thead><tr><th>Nº</th><th>Vencimento</th><th class="direita">Valor</th><th>Situação</th><th>Boleto</th></tr></thead><tbody>${linhasParc}</tbody></table>
-    <h4 class="rotulo">Rateio por obra</h4>
-    <table><thead><tr><th>Obra</th><th class="direita">Valor</th><th class="direita">%</th></tr></thead><tbody>${linhasRat}</tbody></table>
-    ${t.retencoes.length ? `<h4 class="rotulo">Retenções</h4>
-      <table><thead><tr><th>Tipo</th><th class="direita">Base</th><th class="direita">Alíquota</th><th class="direita">Valor</th></tr></thead><tbody>${linhasRet}</tbody></table>` : ""}
-    <h4 class="rotulo">Trilha de auditoria</h4>
-    <table><thead><tr><th>Quando</th><th>Ação</th><th>Detalhe</th></tr></thead><tbody>
-      ${t.trilha.map(e => `<tr><td class="num">${e.quando}</td><td>${e.acao}</td>
-        <td><small>${JSON.stringify(e.detalhe)}</small></td></tr>`).join("")}
-    </tbody></table>`;
-  els("dlg").showModal();
-}
-
-async function executar(acao) {
-  const ids = [...SELECAO];
-  const motivo = els("motivo").value.trim();
-  if ((acao === "devolver" || acao === "cancelar") && motivo.length < 5) {
-    aviso("Informe o motivo antes de devolver ou cancelar.", false);
-    els("motivo").focus();
-    return;
-  }
-  const r = await fetch("/erp/api/titulos/acao", {
-    method: "POST", headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({acao, ids, motivo})});
-  const d = await r.json();
-  if (!d.ok) { aviso(d.erro, false); return; }
-  let msg = `${d.processados.length} título(s) processado(s)${d.processados.length ? ": " + d.processados.join(", ") : "."}`;
-  if (d.erros.length) {
-    msg += `<br><strong>${d.erros.length} não passou(aram):</strong><br>` +
-           d.erros.map(e => `#${e.id}: ${e.erro}`).join("<br>");
-  }
-  aviso(msg, d.erros.length === 0);
-  SELECAO.clear();
-  els("motivo").value = "";
-  carregar();
-}
-
-// ---- eventos
-let debounce;
-els("f-busca").addEventListener("input", () => {
-  clearTimeout(debounce); debounce = setTimeout(carregar, 350);
-});
-divStatus.addEventListener("change", carregar);
-["f-min","f-max","f-venc7","f-atrasados"].forEach(id =>
-  els(id).addEventListener("input", desenhar));
+let deb;
+els("f-busca").addEventListener("input", () => { clearTimeout(deb); deb = setTimeout(desenhar, 250); });
+["f-min","f-max","f-venc7","f-atrasados"].forEach(id => els(id).addEventListener("input", desenhar));
 els("btn-limpar").addEventListener("click", () => {
-  els("f-busca").value = ""; els("f-min").value = ""; els("f-max").value = "";
-  els("f-venc7").checked = false; els("f-atrasados").checked = false;
-  divStatus.querySelectorAll("input").forEach(i => i.checked = ABERTOS.includes(i.value));
+  F = {status: new Set(ABERTOS), obra: new Set(), credor: new Set()};
+  ["f-busca","f-min","f-max"].forEach(i => els(i).value = "");
+  els("f-venc7").checked = els("f-atrasados").checked = false;
   carregar();
 });
 els("marca-todos").addEventListener("change", ev => {
-  const visiveis = ordenar(filtrarLocal(TITULOS));
-  visiveis.forEach(l => ev.target.checked ? SELECAO.add(l.id) : SELECAO.delete(l.id));
+  visiveis().forEach(t => ev.target.checked ? SELECAO.add(t.id) : SELECAO.delete(t.id));
   desenhar();
 });
-els("btn-limpar-sel").addEventListener("click", () => { SELECAO.clear(); desenhar(); });
-document.querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", () => {
-  const acao = b.dataset.acao;
-  if (acao === "detalhe") {
-    if (SELECAO.size !== 1) { aviso("Selecione um único título para ver o detalhe.", false); return; }
-    abrirDetalhe([...SELECAO][0]);
-  } else executar(acao);
-}));
+document.querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", () => executar(b.dataset.acao)));
 document.querySelectorAll("thead th[data-ordem]").forEach(th => th.addEventListener("click", () => {
-  const campo = th.dataset.ordem;
-  ORDEM = {campo, asc: ORDEM.campo === campo ? !ORDEM.asc : true};
-  document.querySelectorAll("thead th .seta").forEach(s => s.remove());
+  ORDEM = {campo: th.dataset.ordem, asc: ORDEM.campo === th.dataset.ordem ? !ORDEM.asc : true};
+  document.querySelectorAll("thead .seta").forEach(s=>s.remove());
   th.insertAdjacentHTML("beforeend", `<span class="seta"> ${ORDEM.asc?"▲":"▼"}</span>`);
   desenhar();
 }));
-
 carregar();
 </script>
-</body>
-</html>
+{% endblock %}

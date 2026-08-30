@@ -1,0 +1,169 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Configurações — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Configurações <small>plano financeiro, obras, contas da empresa e usuários</small></h2>
+<div id="mensagem"></div>
+
+<div class="kpis" id="kpis-config"></div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Plano financeiro</h3>
+    <small>categorias que dirigem o lançamento — natureza <b>resultado</b> (DRE) ou <b>fluxo</b> (caixa)</small></div>
+  <div class="tabela-barra" style="padding:0 0 10px">
+    <input id="busca-cat" placeholder="Filtrar categoria…" style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px; min-width:240px">
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-nova-cat">+ Nova categoria</button>
+  </div>
+  <div class="tabela-rolagem" style="max-height:420px">
+    <table><thead><tr><th>Código</th><th>Descrição</th><th>Natureza</th>
+      <th>Dedutível</th><th>Documentos aceitos</th></tr></thead>
+      <tbody id="tb-categorias"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio-cat"><b>Plano financeiro vazio</b>
+    Importe a proposta pela aba <a href="/erp/importar">Importar</a> ou cadastre categoria por categoria.</div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Obras (centros de custo)</h3>
+    <small>o rateio dos títulos aponta para estas obras</small></div>
+  <div class="tabela-barra" style="padding:0 0 10px">
+    <input id="busca-obra" placeholder="Filtrar obra…" style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px; min-width:240px">
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-nova-obra">+ Nova obra</button>
+  </div>
+  <div class="tabela-rolagem" style="max-height:420px">
+    <table><thead><tr><th>Código</th><th>Nome / objeto</th><th>Cliente</th>
+      <th>Município</th><th>Contrato</th><th>Situação</th></tr></thead>
+      <tbody id="tb-obras"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio-obra"><b>Nenhuma obra cadastrada</b>
+    Importe o CSV das obras na aba <a href="/erp/importar">Importar</a>.</div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Contas bancárias da empresa</h3>
+    <small>de onde o dinheiro sai — usadas na baixa e na conciliação</small></div>
+  <div class="tabela-barra" style="padding:0 0 10px">
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-nova-conta">+ Nova conta</button>
+  </div>
+  <table><thead><tr><th>Descrição</th><th>Banco</th><th>Agência</th><th>Conta</th><th>Situação</th></tr></thead>
+    <tbody id="tb-contas"></tbody></table>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Usuários</h3><small>quem lança, quem autoriza, quem paga</small></div>
+  <table><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Situação</th></tr></thead>
+    <tbody id="tb-usuarios"></tbody></table>
+  <div class="cartao-dica">Novos usuários e redefinição de senha são feitos pelo Shell do serviço
+    (<code>scripts/seed_admin.py</code> e <code>scripts/resetar_senha.py</code>).</div>
+</div>
+
+<dialog id="dlg">
+  <div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+    <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let DADOS = {categorias: [], obras: [], contas: [], usuarios: []};
+
+async function carregar(){
+  try {
+    const d = await api("/erp/api/config");
+    DADOS = d.dados;
+    els("kpis-config").innerHTML = `
+      <div class="kpi estatico"><div class="kpi-rotulo">Categorias</div>
+        <div class="kpi-valor">${DADOS.categorias.length}</div>
+        <div class="kpi-sub">${DADOS.categorias.filter(c=>c.natureza==="FLUXO").length} de fluxo</div></div>
+      <div class="kpi estatico ciano"><div class="kpi-rotulo">Obras ativas</div>
+        <div class="kpi-valor">${DADOS.obras.filter(o=>o.status==="ATIVA").length}</div>
+        <div class="kpi-sub">${DADOS.obras.length} no total</div></div>
+      <div class="kpi estatico verde"><div class="kpi-rotulo">Contas da empresa</div>
+        <div class="kpi-valor">${DADOS.contas.length}</div></div>
+      <div class="kpi estatico roxo"><div class="kpi-rotulo">Usuários</div>
+        <div class="kpi-valor">${DADOS.usuarios.length}</div></div>`;
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenhar(){
+  const fc = (els("busca-cat").value||"").toLowerCase();
+  const cats = DADOS.categorias.filter(c => `${c.codigo} ${c.descricao}`.toLowerCase().includes(fc));
+  els("vazio-cat").classList.toggle("oculto", cats.length>0);
+  els("tb-categorias").innerHTML = cats.map(c => `
+    <tr><td class="dados">${c.codigo}</td><td>${c.descricao}</td>
+      <td><span class="selo ${c.natureza==="FLUXO"?"pago":"outro"}">${c.natureza==="FLUXO"?"Fluxo":"Resultado"}</span></td>
+      <td>${c.dedutivel?"Sim":"<b>Não</b>"}</td>
+      <td><small>${c.tipos.length? c.tipos.join(", ") : "todos"}</small></td></tr>`).join("");
+
+  const fo = (els("busca-obra").value||"").toLowerCase();
+  const obras = DADOS.obras.filter(o => `${o.codigo} ${o.nome} ${o.cliente||""}`.toLowerCase().includes(fo));
+  els("vazio-obra").classList.toggle("oculto", obras.length>0);
+  els("tb-obras").innerHTML = obras.map(o => `
+    <tr><td class="dados">${o.codigo}</td><td class="desc">${o.nome}${o.objeto?`<small>${o.objeto}</small>`:""}</td>
+      <td>${o.cliente||"—"}</td><td>${o.municipio||"—"}${o.uf?"/"+o.uf:""}</td>
+      <td class="dados">${o.contrato||"—"}</td>
+      <td><span class="selo ${o.status==="ATIVA"?"aprovado":"outro"}">${rotulo(o.status)}</span></td></tr>`).join("");
+
+  els("tb-contas").innerHTML = DADOS.contas.map(c => `
+    <tr><td>${c.descricao}</td><td class="dados">${c.banco}</td><td class="dados">${c.agencia}</td>
+      <td class="dados">${c.conta}</td>
+      <td><span class="selo ${c.ativo?"aprovado":"outro"}">${c.ativo?"Ativa":"Inativa"}</span></td></tr>`).join("")
+      || `<tr><td colspan="5" class="cartao-dica">Nenhuma conta cadastrada — necessária para registrar pagamentos.</td></tr>`;
+
+  els("tb-usuarios").innerHTML = DADOS.usuarios.map(u => `
+    <tr><td>${u.nome}</td><td>${u.email}</td><td>${rotulo(u.perfil)}</td>
+      <td><span class="selo ${u.ativo?"aprovado":"outro"}">${u.ativo?"Ativo":"Inativo"}</span></td></tr>`).join("");
+}
+
+function formulario(titulo, campos, url){
+  els("dlg-titulo").textContent = titulo;
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div><div class="form-grade">` +
+    campos.map(c => `<div class="campo"><label for="c-${c.id}">${c.rotulo}${c.obrig?" *":""}</label>` +
+      (c.opcoes ? `<select id="c-${c.id}">${c.opcoes.map(o=>`<option value="${o[0]}">${o[1]}</option>`).join("")}</select>`
+                : `<input id="c-${c.id}" placeholder="${c.dica||""}">`) +
+      `</div>`).join("") +
+    `</div><div style="margin-top:16px"><button class="btn" id="dlg-salvar">Salvar</button></div>`;
+  els("dlg-salvar").addEventListener("click", async () => {
+    const corpo = {};
+    campos.forEach(c => corpo[c.id] = els("c-"+c.id).value.trim());
+    try {
+      await api(url, {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+      els("dlg").close();
+      aviso("mensagem", "Cadastro criado.", "ok");
+      carregar();
+    } catch(e) { aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+}
+
+els("btn-nova-cat").addEventListener("click", () => formulario("Nova categoria", [
+  {id:"codigo", rotulo:"Código", obrig:true, dica:"3.01"},
+  {id:"descricao", rotulo:"Descrição", obrig:true, dica:"Materiais básicos"},
+  {id:"natureza", rotulo:"Natureza", opcoes:[["RESULTADO","Resultado (DRE)"],["FLUXO","Fluxo de caixa"]]},
+  {id:"dedutivel_padrao", rotulo:"Dedutível", opcoes:[["sim","Sim"],["nao","Não"]]},
+], "/erp/api/config/categoria"));
+
+els("btn-nova-obra").addEventListener("click", () => formulario("Nova obra", [
+  {id:"codigo", rotulo:"Código", obrig:true, dica:"ESCPE18"},
+  {id:"nome", rotulo:"Nome", obrig:true},
+  {id:"cliente", rotulo:"Cliente"}, {id:"contrato", rotulo:"Nº do contrato"},
+  {id:"municipio", rotulo:"Município"}, {id:"uf", rotulo:"UF"},
+  {id:"cno", rotulo:"CNO"}, {id:"aliquota_iss", rotulo:"Alíquota ISS (%)"},
+], "/erp/api/config/obra"));
+
+els("btn-nova-conta").addEventListener("click", () => formulario("Nova conta da empresa", [
+  {id:"descricao", rotulo:"Descrição", obrig:true, dica:"Bradesco BWS principal"},
+  {id:"banco_codigo", rotulo:"Banco (COMPE)", obrig:true, dica:"237"},
+  {id:"agencia", rotulo:"Agência", obrig:true}, {id:"conta", rotulo:"Conta", obrig:true},
+], "/erp/api/config/conta"));
+
+["busca-cat","busca-obra"].forEach(id => els(id).addEventListener("input", desenhar));
+carregar();
+</script>
+{% endblock %}

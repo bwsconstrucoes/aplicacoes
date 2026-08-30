@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}ERP BWS{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+</head>
+<body>
+<header class="topo">
+  <div class="topo-marca">
+    <div class="topo-brasao">BWS</div>
+    <div>
+      <div class="topo-titulo">ERP Financeiro</div>
+      <div class="topo-sub">BWS Construções</div>
+    </div>
+  </div>
+  <nav class="topo-abas">
+    {% for chave, rotulo, rota in abas %}
+      <a class="topo-aba {% if chave == aba_ativa %}ativa{% endif %}"
+         href="{{ url_for(rota) }}">{{ rotulo }}</a>
+    {% endfor %}
+  </nav>
+  <div class="topo-direita">
+    <div class="topo-meta">{{ usuario_nome }}<br>{{ usuario_perfil }}</div>
+    <a class="topo-btn" href="{{ url_for('erp.sair') }}">Sair</a>
+  </div>
+</header>
+
+<div class="corpo {% block classe_corpo %}{% endblock %}">
+  <aside class="filtros">{% block filtros %}{% endblock %}</aside>
+  <main class="principal">{% block conteudo %}{% endblock %}</main>
+</div>
+
+<script>
+const moeda = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const numero = v => (v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+const rotulo = s => (s||"").replace(/_/g," ").toLowerCase().replace(/^./, c => c.toUpperCase());
+const dataBR = iso => iso ? iso.split("-").reverse().join("/") : "—";
+const els = id => document.getElementById(id);
+function aviso(alvo, texto, tipo) {
+  els(alvo).innerHTML = `<div class="aviso ${tipo}">${texto}</div>`;
+  if (tipo === "ok") setTimeout(() => { const e = els(alvo); if (e) e.innerHTML = ""; }, 8000);
+}
+async function api(url, opcoes) {
+  const r = await fetch(url, opcoes);
+  if (r.status === 401) { location.href = "/erp/entrar"; throw new Error("Sessão expirada."); }
+  const d = await r.json();
+  if (!d.ok) throw new Error(d.erro || "Falha na operação.");
+  return d;
+}
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

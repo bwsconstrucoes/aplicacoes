@@ -1,0 +1,139 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Importar — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Importar <small>trazer para o ERP o que já existe no Pipefy e nas planilhas</small></h2>
+<div id="mensagem"></div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>SPs do Pipefy</h3>
+    <small>cole os IDs ou os links dos cards — o sistema lê cada card e cria o título</small></div>
+  <div class="campo">
+    <label for="cards">IDs dos cards</label>
+    <textarea id="cards" placeholder="1329563540&#10;1332040352&#10;https://app.pipefy.com/open-cards/1329567174"></textarea>
+    <div class="dica">Aceita um por linha, separados por vírgula ou URLs inteiras.
+      Card já importado é reconhecido e não duplica.</div>
+  </div>
+  <div class="form-grade" style="margin-top:10px">
+    <div class="campo"><label for="cat-padrao">Categoria quando o tipo de despesa não casar</label>
+      <select id="cat-padrao"><option value="">— deixar pendente —</option></select></div>
+    <div class="campo"><label for="obra-padrao">Obra quando o centro de custo não casar</label>
+      <select id="obra-padrao"><option value="">— deixar pendente —</option></select></div>
+  </div>
+  <div style="margin-top:12px; display:flex; gap:8px; align-items:center">
+    <button class="btn" id="btn-importar-cards">Importar SPs</button>
+    <label class="opcao" style="margin:0"><input type="checkbox" id="criar-forn" checked>
+      <span class="rotulo">Cadastrar fornecedor que ainda não existe</span></label>
+  </div>
+  <div id="resultado-cards"></div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Planilhas (CSV)</h3>
+    <small>carga inicial de obras e do plano financeiro</small></div>
+  <div class="form-grade">
+    <div class="campo"><label for="tipo-csv">O que importar</label>
+      <select id="tipo-csv"><option value="obras">Obras</option>
+        <option value="categorias">Plano financeiro (categorias)</option></select></div>
+    <div class="campo"><label for="arq-csv">Arquivo CSV</label><input type="file" id="arq-csv" accept=".csv"></div>
+  </div>
+  <div class="cartao-dica">Cabeçalhos esperados —
+    <b>obras</b>: codigo, nome, objeto, cliente, contrato, municipio, uf, codigo_omie_depto, cno ·
+    <b>categorias</b>: codigo, descricao, natureza, dedutivel_padrao, tipos_permitidos</div>
+  <div style="margin-top:12px"><button class="btn" id="btn-importar-csv">Importar CSV</button></div>
+  <div id="resultado-csv"></div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Extrato bancário (OFX)</h3>
+    <small>alimenta a conciliação — reimportar o mesmo arquivo não duplica</small></div>
+  <div class="form-grade">
+    <div class="campo"><label for="conta-ofx">Conta da empresa</label><select id="conta-ofx"></select></div>
+    <div class="campo"><label for="arq-ofx">Arquivo OFX</label><input type="file" id="arq-ofx" accept=".ofx"></div>
+  </div>
+  <div style="margin-top:12px"><button class="btn" id="btn-importar-ofx">Importar extrato</button></div>
+  <div id="resultado-ofx"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function preencher(){
+  try {
+    const d = await api("/erp/api/config");
+    els("cat-padrao").innerHTML = `<option value="">— deixar pendente —</option>` +
+      d.dados.categorias.map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("");
+    els("obra-padrao").innerHTML = `<option value="">— deixar pendente —</option>` +
+      d.dados.obras.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("");
+    els("conta-ofx").innerHTML = d.dados.contas.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("")
+      || `<option value="">— cadastre uma conta em Configurações —</option>`;
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function tabelaRelatorio(rel){
+  const linhas = [];
+  if (rel.importados?.length) linhas.push(`<h4>Importados (${rel.importados.length})</h4>
+    <table><thead><tr><th>Card</th><th>SP</th><th>Credor</th><th class="direita">Valor</th><th>Situação</th></tr></thead>
+    <tbody>${rel.importados.map(i=>`<tr><td class="dados">${i.card}</td><td class="dados">${i.sp}</td>
+      <td>${i.credor}</td><td class="direita dados">${numero(i.valor)}</td>
+      <td>${rotulo(i.status)}</td></tr>`).join("")}</tbody></table>`);
+  if (rel.ja_existiam?.length) linhas.push(`<h4>Já existiam (${rel.ja_existiam.length})</h4>
+    <div class="cartao-dica">${rel.ja_existiam.map(i=>`card ${i.card} → ${i.sp}`).join(" · ")}</div>`);
+  if (rel.pendencias?.length) linhas.push(`<h4>Precisam de decisão (${rel.pendencias.length})</h4>
+    <table><thead><tr><th>Card</th><th>Título no Pipefy</th><th>Motivo</th></tr></thead>
+    <tbody>${rel.pendencias.map(p=>`<tr><td class="dados">${p.card}</td><td>${p.titulo||"—"}</td>
+      <td>${p.motivo}</td></tr>`).join("")}</tbody></table>`);
+  return linhas.join("");
+}
+
+els("btn-importar-cards").addEventListener("click", async () => {
+  const b = els("btn-importar-cards");
+  b.disabled = true; b.textContent = "Lendo os cards…";
+  try {
+    const d = await api("/erp/api/importar/pipefy", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({texto: els("cards").value,
+        categoria_padrao_id: els("cat-padrao").value || null,
+        obra_padrao_id: els("obra-padrao").value || null,
+        criar_fornecedor: els("criar-forn").checked})});
+    els("resultado-cards").innerHTML = tabelaRelatorio(d.relatorio);
+    aviso("mensagem", `${d.relatorio.analisados} card(s) analisado(s): `
+      + `${d.relatorio.importados.length} importado(s), ${d.relatorio.pendencias.length} pendente(s).`,
+      d.relatorio.pendencias.length ? "info" : "ok");
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Importar SPs";
+});
+
+els("btn-importar-csv").addEventListener("click", async () => {
+  const arq = els("arq-csv").files[0];
+  if (!arq) { aviso("mensagem", "Escolha o arquivo CSV.", "erro"); return; }
+  const fd = new FormData();
+  fd.append("arquivo", arq); fd.append("tipo", els("tipo-csv").value);
+  try {
+    const d = await api("/erp/api/importar/csv", {method:"POST", body: fd});
+    const r = d.relatorio;
+    els("resultado-csv").innerHTML = r.rejeitadas?.length
+      ? `<h4>Rejeitadas</h4><table><thead><tr><th>Linha</th><th>Código</th><th>Motivo</th></tr></thead><tbody>
+         ${r.rejeitadas.map(x=>`<tr><td class="dados">${x.linha}</td><td class="dados">${x.codigo||"—"}</td>
+         <td>${x.motivo}</td></tr>`).join("")}</tbody></table>` : "";
+    aviso("mensagem", `${r.criadas} de ${r.no_arquivo} linha(s) importada(s).`,
+      r.rejeitadas?.length ? "info" : "ok");
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+});
+
+els("btn-importar-ofx").addEventListener("click", async () => {
+  const arq = els("arq-ofx").files[0];
+  if (!arq) { aviso("mensagem", "Escolha o arquivo OFX.", "erro"); return; }
+  const fd = new FormData();
+  fd.append("arquivo", arq); fd.append("conta_id", els("conta-ofx").value);
+  try {
+    const d = await api("/erp/api/importar/ofx", {method:"POST", body: fd});
+    aviso("mensagem", `Extrato lido: ${d.relatorio.novas} lançamento(s) novo(s), `
+      + `${d.relatorio.duplicadas} já existiam.`, "ok");
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+});
+
+preencher();
+</script>
+{% endblock %}

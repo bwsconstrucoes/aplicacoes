@@ -314,7 +314,8 @@ def listar(s: Session, *, status: Optional[str] = None, fornecedor_id: Optional[
            limite: int = 500) -> list[Titulo]:
     stmt = (select(Titulo)
             .options(selectinload(Titulo.parcelas), selectinload(Titulo.fornecedor),
-                     selectinload(Titulo.categoria))
+                     selectinload(Titulo.categoria),
+                     selectinload(Titulo.rateios).selectinload(Rateio.obra))
             .order_by(Titulo.id.desc()).limit(limite))
     if status:
         stmt = stmt.where(Titulo.status == StatusTitulo(status))

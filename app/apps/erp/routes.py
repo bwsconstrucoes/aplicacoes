@@ -31,6 +31,19 @@ bp = Blueprint("erp", __name__, template_folder="templates", static_folder="stat
                static_url_path="/erp/static")
 
 _LIMITE_GRADE = 500
+
+# Abas do topo (chave, rótulo, endpoint)
+ABAS = [
+    ("titulos", "Títulos", "erp.pagina_titulos"),
+    ("importar", "Importar", "erp.pagina_importar"),
+    ("config", "Configurações", "erp.pagina_config"),
+]
+
+
+def _contexto(aba: str) -> dict:
+    return {"abas": ABAS, "aba_ativa": aba,
+            "usuario_nome": session.get("erp_usuario_nome", ""),
+            "usuario_perfil": session.get("erp_usuario_perfil", "")}
 _ABERTOS = ("EM_ANALISE", "AGUARDANDO_APROVACAO", "APROVADO", "BLOQUEADO", "PAGO_PARCIAL")
 
 
@@ -90,9 +103,19 @@ def sair():
 @bp.route("/erp/titulos")
 @login_obrigatorio
 def pagina_titulos():
-    return render_template("erp_titulos.html",
-                           usuario_nome=session.get("erp_usuario_nome", ""),
-                           usuario_perfil=session.get("erp_usuario_perfil", ""))
+    return render_template("erp_titulos.html", **_contexto("titulos"))
+
+
+@bp.route("/erp/importar")
+@login_obrigatorio
+def pagina_importar():
+    return render_template("erp_importar.html", **_contexto("importar"))
+
+
+@bp.route("/erp/configuracoes")
+@login_obrigatorio
+def pagina_config():
+    return render_template("erp_config.html", **_contexto("config"))
 
 
 # ---------------------------------------------------------------------------
@@ -100,7 +123,9 @@ def pagina_titulos():
 # ---------------------------------------------------------------------------
 def _serializar(t, hoje: date) -> dict:
     venc = min((p.vencimento for p in t.parcelas), default=None)
+    obras = sorted({r.obra.codigo for r in t.rateios if r.obra})
     return {
+        "obra": " + ".join(obras) if obras else "",
         "id": t.id,
         "numero_sp": t.numero_sp,
         "fornecedor": t.fornecedor.razao_social,
@@ -229,6 +254,193 @@ def api_acao_lote():
         return jsonify({"ok": False, "erro": str(e)}), 500
     logger.info("ERP: %s em lote — %d ok, %d com erro", acao, len(oks), len(erros))
     return jsonify({"ok": True, "processados": oks, "erros": erros})
+
+
+# ---------------------------------------------------------------------------
+# Configurações
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/config")
+@login_obrigatorio
+def api_config():
+    from sqlalchemy import select
+    from app.apps.erp.db.models.cadastros import Categoria, ContaBancaria, Obra
+    try:
+        with get_session() as s:
+            cats = s.scalars(select(Categoria).order_by(Categoria.codigo)).all()
+            obras = s.scalars(select(Obra).order_by(Obra.codigo)).all()
+            contas = s.scalars(select(ContaBancaria).order_by(ContaBancaria.descricao)).all()
+            usuarios = s.scalars(select(Usuario).order_by(Usuario.nome)).all()
+            dados = {
+                "categorias": [{
+                    "id": c.id, "codigo": c.codigo, "descricao": c.descricao,
+                    "natureza": getattr(c, "natureza", "RESULTADO"),
+                    "dedutivel": c.dedutivel_padrao,
+                    "tipos": [(t.value if hasattr(t, "value") else str(t)).split("_", 1)[0]
+                              for t in (c.tipos_permitidos or [])],
+                } for c in cats],
+                "obras": [{
+                    "id": o.id, "codigo": o.codigo, "nome": o.nome,
+                    "objeto": (o.objeto or "")[:120], "cliente": o.cliente,
+                    "municipio": o.municipio, "uf": o.uf, "contrato": o.contrato,
+                    "status": o.status,
+                } for o in obras],
+                "contas": [{"id": b.id, "descricao": b.descricao, "banco": b.banco_codigo,
+                            "agencia": b.agencia, "conta": b.conta, "ativo": b.ativo}
+                           for b in contas],
+                "usuarios": [{"nome": u.nome, "email": u.email,
+                              "perfil": u.perfil.value, "ativo": u.ativo} for u in usuarios],
+            }
+        return jsonify({"ok": True, "dados": dados})
+    except Exception as e:
+        logger.exception("ERP: falha ao carregar configurações")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/config/categoria", methods=["POST"])
+@login_obrigatorio
+def api_nova_categoria():
+    from app.apps.erp.core.cadastros import categorias as svc_cat
+    dados = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            svc_cat.criar(s, {
+                "codigo": dados.get("codigo"), "descricao": dados.get("descricao"),
+                "natureza": dados.get("natureza") or "RESULTADO",
+                "dedutivel_padrao": (dados.get("dedutivel_padrao") or "sim") == "sim",
+            }, usuario)
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao criar categoria")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/config/obra", methods=["POST"])
+@login_obrigatorio
+def api_nova_obra():
+    from app.apps.erp.core.cadastros import obras as svc_obra
+    dados = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            svc_obra.criar(s, dados, usuario)
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao criar obra")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/config/conta", methods=["POST"])
+@login_obrigatorio
+def api_nova_conta():
+    from app.apps.erp.db.models.cadastros import ContaBancaria
+    d = request.get_json(silent=True) or {}
+    faltando = [c for c in ("descricao", "banco_codigo", "agencia", "conta") if not (d.get(c) or "").strip()]
+    if faltando:
+        return jsonify({"ok": False, "erro": f"Preencha: {', '.join(faltando)}."}), 400
+    try:
+        with get_session() as s:
+            s.add(ContaBancaria(descricao=d["descricao"].strip(),
+                                banco_codigo=d["banco_codigo"].strip(),
+                                agencia=d["agencia"].strip(), conta=d["conta"].strip()))
+            s.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.exception("ERP: falha ao criar conta bancária")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Importação
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/importar/pipefy", methods=["POST"])
+@login_obrigatorio
+def api_importar_pipefy():
+    from app.apps.erp.core.importadores.pipefy_cards import (
+        ErroPipefy, buscar_cards, extrair_ids, importar_cards,
+    )
+    d = request.get_json(silent=True) or {}
+    ids = extrair_ids(d.get("texto") or "")
+    if not ids:
+        return jsonify({"ok": False, "erro": "Nenhum ID de card reconhecido no texto colado."}), 400
+    if len(ids) > 100:
+        return jsonify({"ok": False, "erro": f"{len(ids)} cards de uma vez — importe em blocos de até 100."}), 400
+    try:
+        cards = buscar_cards(ids)
+        if not cards:
+            return jsonify({"ok": False, "erro": "Nenhum card encontrado com esses IDs."}), 404
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = importar_cards(
+                s, cards, usuario,
+                categoria_padrao_id=int(d["categoria_padrao_id"]) if d.get("categoria_padrao_id") else None,
+                obra_padrao_id=int(d["obra_padrao_id"]) if d.get("obra_padrao_id") else None,
+                criar_fornecedor=bool(d.get("criar_fornecedor", True)))
+            s.commit()
+        return jsonify({"ok": True, "relatorio": rel})
+    except ErroPipefy as e:
+        return jsonify({"ok": False, "erro": str(e)}), 502
+    except Exception as e:
+        logger.exception("ERP: falha na importação do Pipefy")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/importar/csv", methods=["POST"])
+@login_obrigatorio
+def api_importar_csv():
+    from app.apps.erp.core.importadores.planilhas import (
+        importar_categorias_csv, importar_obras_csv,
+    )
+    arquivo = request.files.get("arquivo")
+    tipo = (request.form.get("tipo") or "").strip()
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Arquivo não enviado."}), 400
+    if tipo not in ("obras", "categorias"):
+        return jsonify({"ok": False, "erro": f"Tipo inválido: {tipo!r}."}), 400
+    try:
+        conteudo = arquivo.read()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            fn = importar_obras_csv if tipo == "obras" else importar_categorias_csv
+            rel = fn(s, conteudo, usuario)
+            s.commit()
+        return jsonify({"ok": True, "relatorio": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na importação de CSV")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/importar/ofx", methods=["POST"])
+@login_obrigatorio
+def api_importar_ofx():
+    from app.apps.erp.core.pagamentos import service as svc_pag
+    from app.apps.erp.core.pagamentos.ofx import ErroOFX
+    arquivo = request.files.get("arquivo")
+    conta_id = request.form.get("conta_id")
+    if arquivo is None or not conta_id:
+        return jsonify({"ok": False, "erro": "Envie o arquivo e escolha a conta."}), 400
+    try:
+        conteudo = arquivo.read()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = svc_pag.importar_ofx(s, conteudo, int(conta_id), usuario)
+            s.commit()
+        return jsonify({"ok": True, "relatorio": rel})
+    except ErroOFX as e:
+        return jsonify({"ok": False, "erro": f"Arquivo OFX inválido: {e}"}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na importação de OFX")
+        return jsonify({"ok": False, "erro": str(e)}), 500
 
 
 @bp.route("/erp/health")
