@@ -748,7 +748,8 @@ def api_ler_documento():
     if arquivo is None:
         return jsonify({"ok": False, "erro": "Nenhum arquivo enviado."}), 400
     try:
-        lido = ler_documento(arquivo.read(), arquivo.filename or "")
+        lido = ler_documento(arquivo.read(), arquivo.filename or "",
+                             dica_usuario=(request.form.get("dica") or ""))
     except ErroLeitura as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:

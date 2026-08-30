@@ -14,9 +14,13 @@
     <div class="campo" style="grid-column:span 2">
       <label for="arq">Anexo</label>
       <input type="file" id="arq" accept=".xml,.pdf,.png,.jpg,.jpeg,.webp">
-      <div class="dica">XML da NFe é lido com exatidão. PDF e imagem passam pela leitura
-        automática — sempre confira os campos antes de enviar.</div>
+      <div class="dica">Nota, recibo, RPA, guia (DARF/GPS/FGTS), fatura, boleto, contrato,
+        termo de rescisão, comprovante ou prestação de contas — em PDF, <b>foto do celular</b>
+        ou XML. Documento digitalizado e foto torta funcionam; confira os campos depois.</div>
     </div>
+    <div class="campo" style="grid-column:span 2"><label for="dica">Ajuda para a leitura (opcional)</label>
+      <input id="dica" placeholder="ex.: guia de INSS da obra ESCPE18 / prestação de contas do fundo fixo">
+      <div class="dica">Uma frase de contexto melhora bastante a leitura de documento ruim.</div></div>
     <div class="campo" style="align-self:end">
       <button class="btn" id="btn-ler">Ler documento</button>
       <button class="btn secundario" id="btn-manual" style="margin-left:6px">Lançar sem anexo</button>
@@ -193,7 +197,7 @@ els("btn-ler").addEventListener("click", async () => {
   const arq = els("arq").files[0];
   if (!arq) { aviso("mensagem","Escolha o arquivo primeiro.","erro"); return; }
   const b = els("btn-ler"); b.disabled = true; b.textContent = "Lendo…";
-  const fd = new FormData(); fd.append("arquivo", arq);
+  const fd = new FormData(); fd.append("arquivo", arq); fd.append("dica", els("dica").value);
   try {
     const d = await api("/erp/api/lancamento/ler-documento", {method:"POST", body: fd});
     LIDO = d.documento;
@@ -213,7 +217,19 @@ function aplicarLeitura(x){
       ${x.emitente_nome||"—"} · ${x.emitente_documento||"—"}
       ${x.fornecedor_id ? "· <b>credor já cadastrado</b>"
         : `· <b style="color:var(--vermelho)">credor não cadastrado</b> — cadastre em Fornecedores`}
+      ${x.numero_documento ? `· doc nº ${x.numero_documento}` : ""}
+      ${x.municipio_emissao ? `· ${x.municipio_emissao}` : ""}
+      ${x.campos_ilegiveis && x.campos_ilegiveis.length
+        ? `<br><small style="color:var(--vermelho)">Não deu para ler:
+           <b>${x.campos_ilegiveis.join(", ")}</b> — preencha à mão.</small>` : ""}
       ${x.observacoes ? `<br><small>${x.observacoes}</small>` : ""}
+      ${x.dados_bancarios_no_documento
+        ? `<br><small>Dado bancário no documento: <b>${x.dados_bancarios_no_documento}</b>
+           — confira contra a conta homologada do credor (não é usado no pagamento).</small>` : ""}
+      ${x.itens && x.itens.length
+        ? `<br><small><b>${x.itens.length} item(ns)</b> na prestação de contas:
+           ${x.itens.slice(0,6).map(i=>`${i.descricao} ${fmt(parseFloat(i.valor||0))}`).join(" · ")}
+           ${x.itens.length>6?" …":""}</small>` : ""}
       ${x.dedutibilidade_sugerida && x.dedutibilidade_sugerida!=="PENDENTE"
         ? `<br><small>Dedutibilidade sugerida: <b>${x.dedutibilidade_sugerida}</b> — ${x.dedutibilidade_motivo||""}
            (o financeiro confirma depois)</small>` : ""}
