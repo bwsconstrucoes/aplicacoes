@@ -969,6 +969,11 @@ def api_ler_documento():
                     lido["obra_sugerida"] = sug_obra
             lido["categoria_sugerida"] = sugerir_categoria(
                 s, lido, usuario, lido.get("fornecedor_id"))
+            # nota de débito da locadora: acha o contrato e a parcela sozinho
+            from app.apps.erp.core.locacoes import identificar_contrato
+            achado = identificar_contrato(s, lido, lido.get("fornecedor_id"))
+            if achado:
+                lido["locacao_identificada"] = achado
     except Exception:
         logger.exception("ERP: falha ao casar documento com cadastros")
     return jsonify({"ok": True, "documento": lido})

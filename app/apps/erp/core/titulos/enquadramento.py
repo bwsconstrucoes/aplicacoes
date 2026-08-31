@@ -170,6 +170,28 @@ def avaliar(s: Session, dados: dict[str, Any],
                        f"Confirme se esta despesa não é a mesma locação sem contrato.",
                 "onde": CAMINHOS["LOCACAO"][1]})
 
+    # ---- nota de débito: documento típico de locadora
+    tipo_doc = (dados.get("tipo_documento") or "").upper()
+    parece_nota_debito = ("NOTA DE DEBITO" in texto or "NOTA DEBITO" in texto
+                          or "FATURA DE LOCACAO" in texto
+                          or (tipo_doc in ("FATURA", "OUTRO") and
+                              re.search(r"\bLOCA[CÇ][AÃ]O\b", texto)))
+    if parece_nota_debito and not ja_esta_certo("LOCACAO"):
+        mensagem = ("Isto é uma nota de débito de locação e não há contrato de locação "
+                    "cadastrado para este credor. Cadastre o contrato antes — sem ele "
+                    "ninguém acompanha o que está em obra nem quando devolver, que é "
+                    "exatamente como o equipamento se perde.")
+        existente = next((a for a in achados if a["caminho"] == "LOCACAO"), None)
+        if existente is not None:
+            # o texto já levantou a suspeita; a nota de débito confirma
+            existente["gravidade"] = "BLOQUEIA"
+            existente["codigo"] = "E6"
+            existente["msg"] = mensagem
+        else:
+            achados.append({"caminho": "LOCACAO", "gravidade": "BLOQUEIA",
+                            "codigo": "E6", "msg": mensagem,
+                            "onde": CAMINHOS["LOCACAO"][1]})
+
     # ---- gasto miúdo pulverizado que deveria ser fundo fixo
     valor = dados.get("valor_bruto") or dados.get("valor")
     try:

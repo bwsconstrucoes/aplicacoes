@@ -264,6 +264,22 @@ function aplicarLeitura(x){
         ? `<br><small>Dedutibilidade sugerida: <b>${x.dedutibilidade_sugerida}</b> — ${x.dedutibilidade_motivo||""}
            (o financeiro confirma depois)</small>` : ""}
     </div>`;
+  if (x.locacao_identificada) {
+    const L = x.locacao_identificada;
+    els("leitura").insertAdjacentHTML("beforeend", `
+      <div class="aviso ${L.parcela ? "ok" : "erro"}" style="margin-top:8px">
+        <b>Locação identificada:</b> contrato ${L.numero}
+        ${L.numero_externo ? `(nº da locadora ${L.numero_externo})` : ""} —
+        ${L.locadora} · ${moeda(L.valor_periodo)}/período
+        <small>(${L.confianca.toLowerCase()}: ${L.motivos.join(", ")})</small><br>
+        ${L.parcela
+          ? `Parcela prevista <b>${L.parcela.competencia}</b> de
+             ${moeda(L.parcela.valor_previsto)}, vence ${dataBR(L.parcela.vencimento)}.
+             <b>Lance por lá</b> para o contrato ficar em dia:
+             <a class="btn" href="/erp/locacoes" style="text-decoration:none">Ir para Locações</a>`
+          : L.aviso}
+      </div>`);
+  }
   if (x.categoria_sugerida) {
     els("f-categoria").value = x.categoria_sugerida.categoria_id;
     els("dica-categoria").innerHTML =

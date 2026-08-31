@@ -436,6 +436,101 @@ def detalhar(s: Session, contrato_id: int) -> dict[str, Any]:
     }
 
 
+def identificar_contrato(s: Session, documento: dict[str, Any],
+                         fornecedor_id: Optional[int] = None) -> Optional[dict[str, Any]]:
+    """Dada a nota de débito da locadora, acha o contrato e a parcela.
+
+    É o caso mais comum: todo mês a locadora manda a nota de débito e o boleto.
+    Em vez de a pessoa procurar o contrato, o sistema encontra — casando o
+    credor, o número do contrato citado no documento, o valor do período e a
+    competência. Se não achar, é porque a locação não está cadastrada, e aí
+    cobra-se o cadastro em vez de deixar passar.
+    """
+    forn_id = fornecedor_id or documento.get("fornecedor_id")
+    texto = " ".join(str(documento.get(k) or "") for k in (
+        "descricao", "numero_documento", "observacoes", "emitente_nome")).upper()
+
+    stmt = select(ContratoLocacao).where(ContratoLocacao.status == "ATIVO").options(
+        selectinload(ContratoLocacao.itens), selectinload(ContratoLocacao.fornecedor))
+    if forn_id:
+        stmt = stmt.where(ContratoLocacao.fornecedor_id == int(forn_id))
+    contratos = list(s.scalars(stmt).all())
+    if not contratos:
+        return None
+
+    valor_doc = None
+    try:
+        bruto = str(documento.get("valor_total") or documento.get("valor_bruto") or "").strip()
+        if bruto:
+            valor_doc = Decimal(bruto.replace(".", "").replace(",", ".")
+                                if "," in bruto else bruto).quantize(_CENT)
+    except Exception:
+        valor_doc = None
+
+    competencia = _data(documento.get("competencia_servico")) or \
+        _data(documento.get("data_emissao")) or date.today()
+
+    melhor, pontos_melhor, motivos_melhor = None, 0, []
+    for c in contratos:
+        pontos, motivos = 0, []
+        if c.numero.upper() in texto:
+            pontos += 5
+            motivos.append(f"contrato {c.numero} citado no documento")
+        if c.numero_externo and c.numero_externo.upper() in texto:
+            pontos += 5
+            motivos.append(f"nº da locadora ({c.numero_externo}) no documento")
+        if forn_id and c.fornecedor_id == int(forn_id):
+            pontos += 3
+            motivos.append("credor confere")
+        periodo = valor_periodo(s, c.id)
+        if valor_doc is not None and periodo > 0:
+            dif = abs(valor_doc - periodo)
+            if dif <= _CENT:
+                pontos += 4
+                motivos.append(f"valor bate com a parcela (R$ {periodo})")
+            elif dif <= periodo * Decimal("0.1"):
+                pontos += 2
+                motivos.append(f"valor próximo da parcela (R$ {periodo})")
+        equipamentos = [i.descricao.upper()[:14] for i in c.itens]
+        if any(e and e in texto for e in equipamentos):
+            pontos += 2
+            motivos.append("equipamento do contrato citado")
+        if pontos > pontos_melhor:
+            melhor, pontos_melhor, motivos_melhor = c, pontos, motivos
+
+    if melhor is None or pontos_melhor < 3:
+        return None
+
+    parcela = s.scalars(select(LocacaoParcela).where(
+        LocacaoParcela.contrato_id == melhor.id,
+        LocacaoParcela.status == "PREVISTA",
+        LocacaoParcela.competencia <= competencia.replace(day=28))
+        .order_by(LocacaoParcela.competencia.desc())).first()
+    if parcela is None:
+        parcela = s.scalars(select(LocacaoParcela).where(
+            LocacaoParcela.contrato_id == melhor.id,
+            LocacaoParcela.status == "PREVISTA")
+            .order_by(LocacaoParcela.competencia)).first()
+
+    return {
+        "contrato_id": melhor.id, "numero": melhor.numero,
+        "numero_externo": melhor.numero_externo,
+        "locadora": melhor.fornecedor.razao_social,
+        "obra": melhor.obra_id,
+        "valor_periodo": float(valor_periodo(s, melhor.id)),
+        "confianca": "ALTA" if pontos_melhor >= 7 else "MEDIA",
+        "motivos": motivos_melhor,
+        "parcela": ({"id": parcela.id,
+                     "competencia": parcela.competencia.strftime("%m/%Y"),
+                     "vencimento": parcela.vencimento.isoformat(),
+                     "valor_previsto": float(parcela.valor_previsto)}
+                    if parcela else None),
+        "aviso": (None if parcela else
+                  "Contrato encontrado, mas sem parcela prevista em aberto — "
+                  "gere a previsão antes de lançar."),
+    }
+
+
 def painel_por_obra(s: Session) -> list[dict[str, Any]]:
     """Quanto cada obra tem locado por período — a visão macro que falta hoje."""
     linhas = s.execute(
