@@ -74,6 +74,13 @@
 
 ## Fila (pedidos registrados, ainda não iniciados)
 
+- [x] LOCAÇÕES (núcleo): insumos com marca de locável, contrato com itens,
+      previsão de parcelas, devolução parcial, remanejo entre obras, alertas
+      de aluguel × compra, painel por obra
+- [ ] Locações — falta: tela, leitura do contrato por IA, mapa dos equipamentos
+- [ ] Cadastro de insumos como base de SUPRIMENTOS (categoria de insumo +
+      conta do plano); mapa das obras e do volume financeiro por região
+
 - [x] EMPREITAS: contrato com saldo, medição consumindo o saldo, foto
       obrigatória, adiantamento abatido, aditivo e geração do título na
       autorização — núcleo e tela

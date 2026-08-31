@@ -371,3 +371,38 @@ class UsuarioCategoria(Base):
     usuario_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
     categoria_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("categorias.id"), nullable=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class InsumoCategoria(Base):
+    """Categoria de suprimentos — distinta da conta do plano financeiro."""
+    __tablename__ = "insumo_categorias"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    codigo: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class Insumo(Base):
+    """Cadastro único de insumos, base para suprimentos e locação.
+
+    O mesmo item pode ser comprado ou locado: a marca `locavel` é o que faz
+    ele aparecer na lista de locação, sem precisar de uma segunda base.
+    Carrega as duas categorias: a de suprimento e a conta do plano financeiro.
+    """
+    __tablename__ = "insumos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    codigo: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    descricao: Mapped[str] = mapped_column(Text, nullable=False)
+    categoria_insumo_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("insumo_categorias.id"))
+    categoria_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("categorias.id"))
+    unidade: Mapped[Optional[str]] = mapped_column(Text)
+    locavel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    valor_referencia_compra: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    valor_referencia_locacao: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    categoria_insumo: Mapped[Optional[InsumoCategoria]] = relationship()

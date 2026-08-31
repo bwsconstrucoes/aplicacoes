@@ -219,6 +219,8 @@ class Titulo(Base):
     medicao_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("contrato_medicoes.id"))
     adiantamento_contrato: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    locacao_parcela_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("locacao_parcelas.id"))
     chave_acesso_nfe: Mapped[Optional[str]] = mapped_column(Text)
     cno_documento: Mapped[Optional[str]] = mapped_column(Text)
     exige_aval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -608,3 +610,83 @@ class PeriodoBloqueado(Base):
     liberado_expira: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+
+
+class ContratoLocacao(Base):
+    """Contrato de locação: o que está locado, onde, por quanto e até quando."""
+    __tablename__ = "contratos_locacao"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    numero: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    fornecedor_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("fornecedores.id"), nullable=False)
+    obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
+    categoria_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("categorias.id"))
+    numero_externo: Mapped[Optional[str]] = mapped_column(Text)
+    periodicidade: Mapped[str] = mapped_column(Text, nullable=False, default="MENSAL")
+    dia_vencimento: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    data_inicio: Mapped[date] = mapped_column(Date, nullable=False)
+    data_fim_prevista: Mapped[Optional[date]] = mapped_column(Date)
+    data_encerramento: Mapped[Optional[date]] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="ATIVO")
+    responsavel_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    fornecedor: Mapped[Fornecedor] = relationship()
+    obra: Mapped[Obra] = relationship()
+    itens: Mapped[list["LocacaoItem"]] = relationship(
+        back_populates="contrato", cascade="all, delete-orphan")
+
+
+class LocacaoItem(Base):
+    __tablename__ = "locacao_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    contrato_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("contratos_locacao.id"), nullable=False)
+    insumo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("insumos.id"))
+    descricao: Mapped[str] = mapped_column(Text, nullable=False)
+    quantidade: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    quantidade_devolvida: Mapped[Decimal] = mapped_column(
+        Numeric(14, 4), nullable=False, default=0)
+    valor_unitario: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    contrato: Mapped[ContratoLocacao] = relationship(back_populates="itens")
+
+
+class LocacaoMovimento(Base):
+    """Devolução, remanejo entre obras ou acréscimo de equipamento."""
+    __tablename__ = "locacao_movimentos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    contrato_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("contratos_locacao.id"), nullable=False)
+    item_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("locacao_itens.id"))
+    tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    quantidade: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    obra_origem_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    obra_destino_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    data_movimento: Mapped[date] = mapped_column(Date, nullable=False)
+    documento: Mapped[Optional[str]] = mapped_column(Text)
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LocacaoParcela(Base):
+    """Previsão de cobrança: é o que faz o financeiro reconhecer o boleto."""
+    __tablename__ = "locacao_parcelas"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    contrato_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("contratos_locacao.id"), nullable=False)
+    competencia: Mapped[date] = mapped_column(Date, nullable=False)
+    vencimento: Mapped[date] = mapped_column(Date, nullable=False)
+    valor_previsto: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    titulo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulos.id"))
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="PREVISTA")
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

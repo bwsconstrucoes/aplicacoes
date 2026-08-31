@@ -155,10 +155,12 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
             raise ErroValidacao(f"{regras.rotulo}: vínculo com pedido é obrigatório.")
     if regras.exige_contrato and not contrato_id:
         # o contrato de empreita do próprio ERP satisfaz a exigência
-        if not dados.get("contrato_servico_id"):
+        # contratos do próprio ERP satisfazem a exigência: empreita (medição) e
+        # locação (parcela prevista)
+        if not (dados.get("contrato_servico_id") or dados.get("locacao_contrato_id")):
             raise ErroValidacao(
                 f"{regras.rotulo}: vínculo com contrato é obrigatório. Cadastre o "
-                f"contrato de empreita e gere o título pela medição.")
+                f"contrato (empreita ou locação) e gere o título por ele.")
     if regras.exige_doc_fiscal and not doc_fiscal_id:
         if modo_transicao():
             criticas_transicao.append("A10: tipo exige documento fiscal vinculado (pendência de transição).")
