@@ -244,7 +244,7 @@ function aplicarLeitura(x){
        via ${(x.origem_leitura||"").replace(/_/g," ").toLowerCase()})<br>
       ${x.emitente_nome||"—"} · ${x.emitente_documento||"—"}
       ${x.fornecedor_id ? "· <b>credor já cadastrado</b>"
-        : `· <b style="color:var(--vermelho)">credor não cadastrado</b> — cadastre em Fornecedores`}
+        : `· <b>credor novo</b> — será cadastrado ao enviar a solicitação`}
       ${x.numero_documento ? `· doc nº ${x.numero_documento}` : ""}
       ${x.municipio_emissao ? `· ${x.municipio_emissao}` : ""}
       ${x.campos_ilegiveis && x.campos_ilegiveis.length
@@ -278,6 +278,28 @@ function aplicarLeitura(x){
   els("form-bloco").classList.remove("oculto");
   desenharLinhas(); atualizarCredor();
   els("form-bloco").scrollIntoView({behavior:"smooth", block:"start"});
+  conferirAutomatico();   // duplicidade é checada sozinha, sem depender de botão
+}
+
+async function conferirAutomatico(){
+  const d = montar();
+  if (!d.fornecedor_id && !d.documento_numero) return;
+  try {
+    const r = await api("/erp/api/lancamento/checar", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({fornecedor_id:d.fornecedor_id, valor:d.valor_bruto,
+        parcelas:d.parcelas, competencia:d.competencia, descricao:d.descricao,
+        categoria_id:d.categoria_id, documento_numero:d.documento_numero})});
+    const c = r.critica;
+    if (mostrarCritica(c)) {
+      // bloqueio: avisa de imediato, sem esperar o envio
+      aviso("mensagem", `<b>Este lançamento parece já existir.</b> ` +
+        c.bloqueios.map(b=>b.msg).join(" "), "erro");
+      els("bloco-critica").scrollIntoView({behavior:"smooth", block:"center"});
+    } else if (c.alertas.length) {
+      aviso("mensagem", `<b>Atenção:</b> ${c.alertas[0].msg} Confira o quadro abaixo.`, "info");
+    }
+  } catch(e) { /* silencioso: a checagem definitiva roda no envio */ }
 }
 
 els("btn-manual").addEventListener("click", () => {
@@ -313,6 +335,10 @@ els("btn-add-rat").addEventListener("click", () => { RAT.push({}); desenharLinha
 function montar(){
   return {
     fornecedor_id: els("f-credor").value ? +els("f-credor").value : null,
+    emitente_documento: (LIDO && !els("f-credor").value) ? LIDO.emitente_documento : null,
+    emitente_nome: (LIDO && !els("f-credor").value) ? LIDO.emitente_nome : null,
+    municipio_emissao: LIDO ? LIDO.municipio_emissao : null,
+    chave_acesso: LIDO ? LIDO.chave_acesso : null,
     categoria_id: els("f-categoria").value ? +els("f-categoria").value : null,
     descricao: els("f-descricao").value.trim(),
     valor_bruto: String(dec(els("f-valor").value)),

@@ -34,7 +34,8 @@
     <div class="campo" style="grid-column:span 2"><label id="rot-arq">Comprovantes</label>
       <input type="file" id="arqs" multiple accept=".pdf,.png,.jpg,.jpeg,.webp">
       <div class="dica" id="dica-arq">Cupom fiscal, recibo, nota — em PDF ou foto.
-        O que a leitura não pegar, você completa na tabela.</div></div>
+        <b>PDF com vários comprovantes é separado página a página</b>, virando uma linha
+        para cada. O que a leitura não pegar, você completa na tabela.</div></div>
     <div class="campo" style="align-self:end">
       <button class="btn" id="btn-ler">Ler comprovantes</button>
       <button class="btn secundario" id="btn-linha" style="margin-left:6px">+ Linha manual</button>
@@ -148,14 +149,18 @@ els("btn-ler").addEventListener("click", async () => {
         const fd = new FormData(); fd.append("arquivo", arq);
         try {
           const d = await api("/erp/api/prestacao/comprovante", {method:"POST", body: fd});
-          ITENS.push({...d.linha, obra_id:"", categoria_id:"", arquivo:arq.name});
+          // PDF com várias páginas volta como várias linhas
+          (d.linhas || [d.linha]).forEach(l =>
+            ITENS.push({...l, obra_id:"", categoria_id:"",
+                        arquivo: l.pagina ? `${arq.name} (pág. ${l.pagina})` : arq.name}));
         } catch(e) {
           ITENS.push({descricao:"", valor:"", obra_id:"", origem_leitura:"FALHA",
                       arquivo:arq.name, observacao:e.message});
         }
       }
-      els("progresso").innerHTML = `<div class="aviso ok">${arqs.length} comprovante(s) processado(s).
-        Complete o que ficou em branco.</div>`;
+      els("progresso").innerHTML = `<div class="aviso ok">${arqs.length} arquivo(s) processado(s) →
+        <b>${ITENS.length} despesa(s)</b>. PDF com várias páginas vira uma linha por página,
+        cada uma com o seu comprovante. Complete o que ficou em branco.</div>`;
     }
     desenhar(); conferir();
   } catch(e){ aviso("mensagem", e.message, "erro"); }

@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 import unicodedata
 from collections import Counter
@@ -106,6 +107,59 @@ def ler_comprovante_item(conteudo: bytes, nome_arquivo: str) -> dict[str, Any]:
         "observacao": d.get("observacoes") or "",
         "campos_ilegiveis": d.get("campos_ilegiveis") or [],
     }
+
+
+def separar_paginas_pdf(conteudo: bytes) -> list[bytes]:
+    """Quebra o PDF em um arquivo por página.
+
+    Na prestação de contas, o pessoal digitaliza os cupons em bloco: um PDF de
+    29 páginas são 29 comprovantes, não um documento só. Cada página vira uma
+    linha, com o seu próprio anexo — que é o que permite conferir depois.
+    """
+    try:
+        import fitz
+    except ImportError:
+        return []
+    doc = paginas = None
+    saida: list[bytes] = []
+    try:
+        doc = fitz.open(stream=conteudo, filetype="pdf")
+        if doc.page_count <= 1:
+            return []
+        for i in range(doc.page_count):
+            uma = fitz.open()
+            uma.insert_pdf(doc, from_page=i, to_page=i)
+            saida.append(uma.tobytes(garbage=3, deflate=True))
+            uma.close()
+    except Exception as e:
+        logger.warning("ERP/prestação: não foi possível separar o PDF (%s)", e)
+        return []
+    finally:
+        if doc is not None:
+            doc.close()
+        import gc
+        gc.collect()
+    return saida
+
+
+def ler_bloco_de_comprovantes(conteudo: bytes, nome_arquivo: str,
+                              limite: int = 40) -> list[dict[str, Any]]:
+    """Lê um PDF com vários comprovantes: uma linha por página."""
+    paginas = separar_paginas_pdf(conteudo)
+    if not paginas:
+        return [ler_comprovante_item(conteudo, nome_arquivo)]
+    base = os.path.splitext(nome_arquivo or "comprovantes")[0]
+    linhas = []
+    for i, pagina in enumerate(paginas[:limite], start=1):
+        linha = ler_comprovante_item(pagina, f"{base}_p{i:02d}.pdf")
+        linha["_conteudo_pagina"] = pagina
+        linha["_nome_pagina"] = f"{base}_p{i:02d}.pdf"
+        linha["pagina"] = i
+        linhas.append(linha)
+    if len(paginas) > limite:
+        logger.info("ERP/prestação: PDF com %d páginas, lidas as %d primeiras",
+                    len(paginas), limite)
+    return linhas
 
 
 def ler_fatura_cartao(conteudo: bytes, nome_arquivo: str) -> dict[str, Any]:

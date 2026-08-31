@@ -988,6 +988,32 @@ def api_criar_titulo():
                 return jsonify({"ok": False, "erro": "Lançamento bloqueado por duplicidade.",
                                 "critica": critica}), 409
             usuario = _usuario_logado(s)
+            # credor lido do documento e ainda não cadastrado: cadastra agora,
+            # no salvamento — não antes, para não criar fornecedor de rascunho
+            if not d.get("fornecedor_id") and d.get("emitente_documento"):
+                from app.apps.erp.core.cadastros import fornecedores as svc_forn
+                from app.apps.erp.core.cadastros.validadores import somente_digitos
+                from app.apps.erp.db.models.cadastros import Fornecedor as _F
+                from sqlalchemy import select as _sel
+                doc = somente_digitos(d["emitente_documento"])
+                existente = s.scalars(_sel(_F).where(_F.cnpj_cpf == doc)).first()
+                if existente is not None:
+                    d["fornecedor_id"] = existente.id
+                else:
+                    try:
+                        novo = svc_forn.criar(s, {
+                            "tipo_pessoa": "PJ" if len(doc) == 14 else "PF",
+                            "cnpj_cpf": doc,
+                            "razao_social": (d.get("emitente_nome") or "").strip(),
+                            "municipio": d.get("municipio_emissao") or None,
+                        }, usuario)
+                        s.flush()
+                        d["fornecedor_id"] = novo.id
+                        logger.info("ERP: credor %s cadastrado no salvamento do título", doc)
+                    except ErroValidacao as e:
+                        return jsonify({"ok": False,
+                                        "erro": f"Não foi possível cadastrar o credor "
+                                                f"automaticamente: {e}"}), 400
             if not d.get("tipo"):
                 from app.apps.erp.core.titulos.derivacao import derivar_por_contexto
                 from app.apps.erp.db.models.cadastros import Categoria
@@ -2366,22 +2392,28 @@ def api_titulos_da_obra(obra_id: int):
 def api_prestacao_comprovante():
     """Lê um comprovante e devolve a linha, guardando o arquivo no banco."""
     from app.apps.erp.core.documentos.armazenamento import salvar
-    from app.apps.erp.core.titulos.prestacao import ler_comprovante_item
+    from app.apps.erp.core.titulos.prestacao import ler_bloco_de_comprovantes
     arquivo = request.files.get("arquivo")
     if arquivo is None:
         return jsonify({"ok": False, "erro": "Envie o comprovante."}), 400
     try:
         conteudo = arquivo.read()
-        linha = ler_comprovante_item(conteudo, arquivo.filename or "comprovante")
+        nome = arquivo.filename or "comprovante"
+        # PDF com várias páginas = vários comprovantes, um por página
+        linhas = ler_bloco_de_comprovantes(conteudo, nome)
         with get_session() as s:
             usuario = _usuario_logado(s)
-            # guarda solto (entidade 0) e vincula ao título quando ele for criado
-            anexo = salvar(s, conteudo, arquivo.filename or "comprovante",
-                           entidade_tipo="prestacao_rascunho", entidade_id=usuario.id,
-                           categoria="COMPROVANTE", usuario=usuario)
-            linha["anexo_id"] = anexo.id
+            for linha in linhas:
+                pagina = linha.pop("_conteudo_pagina", None)
+                nome_pagina = linha.pop("_nome_pagina", nome)
+                anexo = salvar(s, pagina if pagina else conteudo, nome_pagina,
+                               entidade_tipo="prestacao_rascunho", entidade_id=usuario.id,
+                               categoria="COMPROVANTE", usuario=usuario)
+                linha["anexo_id"] = anexo.id
             s.commit()
-        return jsonify({"ok": True, "linha": linha})
+        return jsonify({"ok": True, "linhas": linhas,
+                        "paginas": len(linhas),
+                        "linha": linhas[0] if linhas else None})
     except Exception as e:
         logger.exception("ERP: falha ao ler comprovante da prestação")
         return jsonify({"ok": False, "erro": str(e)}), 500
