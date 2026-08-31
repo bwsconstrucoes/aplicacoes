@@ -8,19 +8,31 @@
 </head>
 <body>
 <header class="topo">
-  <div class="topo-marca">
+  <a class="topo-marca" href="{{ url_for('erp.pagina_inicio') }}"
+     style="text-decoration:none; color:inherit" title="Trocar de módulo">
     <div class="topo-brasao">BWS</div>
     <div>
-      <div class="topo-titulo">ERP Financeiro</div>
-      <div class="topo-sub">BWS Construções</div>
+      <div class="topo-titulo">ERP BWS</div>
+      <div class="topo-sub">{% if modulo %}{{ modulo.nome }}{% else %}Módulos{% endif %}</div>
     </div>
+  </a>
+
+  {% if modulos %}
+  <div class="modulos">
+    {% for m in modulos %}
+      <a class="modulo-btn {% if modulo and m.chave == modulo.chave %}ativo{% endif %}"
+         href="{{ url_for(m.abas[0][2]) }}" title="{{ m.descricao }}">{{ m.nome }}</a>
+    {% endfor %}
   </div>
+  {% endif %}
+
   <nav class="topo-abas">
     {% for chave, rotulo, rota in abas %}
       <a class="topo-aba {% if chave == aba_ativa %}ativa{% endif %}"
          href="{{ url_for(rota) }}">{{ rotulo }}</a>
     {% endfor %}
   </nav>
+
   <div class="topo-direita">
     <div class="topo-meta">{{ usuario_nome }}<br>{{ usuario_perfil }}</div>
     <a class="topo-btn" href="{{ url_for('erp.sair') }}">Sair</a>

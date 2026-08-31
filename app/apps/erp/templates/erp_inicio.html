@@ -1,0 +1,30 @@
+{% extends "erp_base.html" %}
+{% block titulo %}ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Módulos <small>escolha a área do sistema</small></h2>
+<div class="hub">
+  {% for m in modulos %}
+  <a class="hub-cartao" href="{{ url_for(m.abas[0][2]) }}"
+     style="border-top-color: {{ m.cor }}">
+    <h3>{{ m.nome }}</h3>
+    <p>{{ m.descricao }}</p>
+    <div class="telas">
+      {% for chave, rotulo, rota in m.abas %}<span class="tela">{{ rotulo }}</span>{% endfor %}
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+<div class="cartao" style="margin-top:20px">
+  <div class="cartao-cab"><h3>Em construção</h3>
+    <small>áreas previstas, ainda não abertas</small></div>
+  <div class="telas">
+    <span class="tela">Suprimentos — pedidos de compra e recebimento</span>
+    <span class="tela">Contratos e medições — emissão de nota</span>
+    <span class="tela">Pessoal</span>
+    <span class="tela">Agenda de obrigações</span>
+  </div>
+</div>
+{% endblock %}

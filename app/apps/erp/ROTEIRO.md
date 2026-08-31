@@ -1,5 +1,9 @@
 # ROTEIRO — ERP BWS
 
+> O sistema é um ERP, não um financeiro: cada área é um MÓDULO próprio
+> (Financeiro, Obras, Administração), com suas telas. Novos módulos previstos:
+> Suprimentos, Contratos/Medições (emissão de nota), Pessoal, Agenda.
+
 > Backlog vivo. Tudo que o Marcelo pediu ao longo das conversas fica registrado
 > aqui para não se perder entre sessões e não precisar ser repetido.
 > Marcar `[x]` quando entregue, com o commit. Atualizado a cada bloco.

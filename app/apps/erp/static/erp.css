@@ -80,6 +80,36 @@ a { color: var(--azul-claro); }
 }
 .topo-btn:hover { background: rgba(255,255,255,.18); }
 
+/* ---------- seletor de módulos: separa as áreas do sistema ---------- */
+.modulos {
+  display: flex; gap: 2px; background: rgba(0,0,0,.22); padding: 3px;
+  border-radius: 9px; margin-left: 6px;
+}
+.modulo-btn {
+  color: rgba(255,255,255,.7); text-decoration: none; font-size: 13px; font-weight: 700;
+  padding: 6px 12px; border-radius: 7px; white-space: nowrap; letter-spacing: .02em;
+}
+.modulo-btn:hover { color: #fff; background: rgba(255,255,255,.08); }
+.modulo-btn.ativo { background: var(--amarelo); color: var(--azul); }
+
+.topo-abas { border-left: 1px solid rgba(255,255,255,.18); padding-left: 12px; }
+
+/* ---------- página de módulos ---------- */
+.hub { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.hub-cartao {
+  background: var(--branco); border-radius: var(--raio); box-shadow: var(--sombra);
+  padding: 20px; border-top: 4px solid var(--azul); text-decoration: none; color: var(--tinta);
+  display: block; transition: transform .1s, box-shadow .1s;
+}
+.hub-cartao:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(11,44,92,.16); }
+.hub-cartao h3 { margin: 0 0 6px; font-size: 17px; }
+.hub-cartao p { margin: 0 0 14px; font-size: 13.5px; color: var(--tinta-suave); }
+.hub-cartao .telas { display: flex; flex-wrap: wrap; gap: 5px; }
+.hub-cartao .tela {
+  font-size: 12px; background: var(--papel); border: 1px solid var(--borda);
+  border-radius: 999px; padding: 3px 9px; color: var(--tinta-suave);
+}
+
 /* ============================ ESTRUTURA ============================ */
 .corpo { display: grid; grid-template-columns: var(--largura-filtros) 1fr; min-height: calc(100vh - var(--altura-topo)); }
 .corpo.sem-filtros { grid-template-columns: 1fr; }

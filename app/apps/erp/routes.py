@@ -32,19 +32,47 @@ bp = Blueprint("erp", __name__, template_folder="templates", static_folder="stat
 
 _LIMITE_GRADE = 500
 
-# Abas do topo (chave, rótulo, endpoint)
-ABAS = [
-    ("lancar", "Lançar", "erp.pagina_lancar"),
-    ("titulos", "Títulos", "erp.pagina_titulos"),
-    ("confirmar", "Confirmar", "erp.pagina_confirmar"),
-    ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
-    ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
-    ("receber", "Receber", "erp.pagina_receber"),
-    ("obras", "Obras", "erp.pagina_obras"),
-    ("relatorios", "Relatórios", "erp.pagina_relatorios"),
-    ("importar", "Importar", "erp.pagina_importar"),
-    ("config", "Configurações", "erp.pagina_config"),
+# ---------------------------------------------------------------------------
+# Navegação em MÓDULOS
+# O sistema não é um financeiro com apêndices: cada área é um módulo, com suas
+# próprias telas. A barra de abas mostra só o módulo em que a pessoa está.
+# ---------------------------------------------------------------------------
+MODULOS = [
+    {
+        "chave": "financeiro", "nome": "Financeiro", "sigla": "FIN",
+        "descricao": "Solicitações de pagamento, recebimentos, conciliação e relatórios",
+        "cor": "var(--azul-claro)",
+        "abas": [
+            ("lancar", "Lançar", "erp.pagina_lancar"),
+            ("titulos", "Solicitações", "erp.pagina_titulos"),
+            ("confirmar", "Confirmar", "erp.pagina_confirmar"),
+            ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
+            ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
+            ("receber", "Receber", "erp.pagina_receber"),
+            ("relatorios", "Relatórios", "erp.pagina_relatorios"),
+            ("importar", "Importar", "erp.pagina_importar"),
+        ],
+    },
+    {
+        "chave": "obras", "nome": "Obras", "sigla": "OBR",
+        "descricao": "Contratos, aditivos, vigências, tributação e documentação das obras",
+        "cor": "var(--amarelo)",
+        "abas": [
+            ("obras", "Painel de obras", "erp.pagina_obras"),
+        ],
+    },
+    {
+        "chave": "admin", "nome": "Administração", "sigla": "ADM",
+        "descricao": "Plano financeiro, operadores, banco de dados e auditoria",
+        "cor": "var(--roxo)",
+        "abas": [
+            ("config", "Configurações", "erp.pagina_config"),
+        ],
+    },
 ]
+
+# aba → módulo a que pertence
+_MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
 
 
 def _migracoes_pendentes() -> list[str]:
@@ -58,7 +86,10 @@ def _migracoes_pendentes() -> list[str]:
 
 
 def _contexto(aba: str) -> dict:
-    return {"abas": ABAS, "aba_ativa": aba,
+    chave = _MODULO_DA_ABA.get(aba, "financeiro")
+    modulo = next(m for m in MODULOS if m["chave"] == chave)
+    return {"modulos": MODULOS, "modulo": modulo, "abas": modulo["abas"],
+            "aba_ativa": aba,
             "usuario_nome": session.get("erp_usuario_nome", ""),
             "usuario_perfil": session.get("erp_usuario_perfil", ""),
             "migracoes_pendentes": _migracoes_pendentes()}
@@ -112,7 +143,7 @@ def pagina_login():
             session["erp_usuario_nome"] = usuario.nome
             session["erp_usuario_perfil"] = usuario.perfil.value
         logger.info("ERP: login de %s", email)
-        return redirect(url_for("erp.pagina_titulos"))
+        return redirect(url_for("erp.pagina_inicio"))
     except ErroAutenticacao as e:
         return render_template("erp_login.html", erro=str(e)), 401
     except Exception as e:  # falha de banco/config
@@ -137,6 +168,17 @@ def sair():
 @login_obrigatorio
 def pagina_titulos():
     return render_template("erp_titulos.html", **_contexto("titulos"))
+
+
+@bp.route("/erp/inicio")
+@login_obrigatorio
+def pagina_inicio():
+    """Porta de entrada: escolha do módulo."""
+    return render_template("erp_inicio.html", modulos=MODULOS, modulo=None,
+                           abas=[], aba_ativa="",
+                           usuario_nome=session.get("erp_usuario_nome", ""),
+                           usuario_perfil=session.get("erp_usuario_perfil", ""),
+                           migracoes_pendentes=_migracoes_pendentes())
 
 
 @bp.route("/erp/lancar")
