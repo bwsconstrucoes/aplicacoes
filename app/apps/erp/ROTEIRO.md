@@ -74,6 +74,13 @@
 
 ## Fila (pedidos registrados, ainda não iniciados)
 
+- [x] EMPREITAS: contrato com saldo, medição consumindo o saldo, foto
+      obrigatória, adiantamento abatido, aditivo e geração do título na
+      autorização — núcleo e tela
+- [x] Bloqueio de período (diretor fecha e destrava janela temporária)
+- [ ] Empreita — falta: retenção de garantia (5% por medição, liberada no fim)
+      e alçada por valor de contrato
+
 - [x] Categorias PERMITIDAS por operador (administrativo de obra não vê o plano
       inteiro) — seleção simples no cadastro do operador
 - [x] Rateio (obra e categoria) editável na reclassificação do título aberto

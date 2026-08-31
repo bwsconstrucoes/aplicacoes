@@ -48,6 +48,7 @@ MODULOS = [
             ("titulos", "Solicitações", "erp.pagina_titulos"),
             ("confirmar", "Confirmar", "erp.pagina_confirmar"),
             ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
+            ("empreitas", "Empreitas", "erp.pagina_empreitas"),
             ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
             ("receber", "Receber", "erp.pagina_receber"),
             ("relatorios", "Relatórios", "erp.pagina_relatorios"),
@@ -198,6 +199,12 @@ def pagina_confirmar():
 @login_obrigatorio
 def pagina_pagamentos():
     return render_template("erp_pagamentos.html", **_contexto("pagamentos"))
+
+
+@bp.route("/erp/empreitas")
+@login_obrigatorio
+def pagina_empreitas():
+    return render_template("erp_empreitas.html", **_contexto("empreitas"))
 
 
 @bp.route("/erp/conciliacao")
@@ -1770,7 +1777,8 @@ def api_comprovante_confirmar():
 def api_anexos(entidade: str, entidade_id: int):
     """Anexos guardados no próprio banco, comprimidos."""
     from app.apps.erp.core.documentos.armazenamento import listar, salvar
-    if entidade not in ("titulo", "obra", "movimentacao", "fornecedor"):
+    if entidade not in ("titulo", "obra", "movimentacao", "fornecedor",
+                        "medicao", "contrato_servico"):
         return jsonify({"ok": False, "erro": f"Entidade inválida: {entidade}"}), 400
     try:
         with get_session() as s:
@@ -2725,6 +2733,150 @@ def api_editar_parcelas(titulo_id: int):
     except Exception as e:
         logger.exception("ERP: falha ao alterar parcelas")
         return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Contratos de empreita
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/empreitas", methods=["GET", "POST"])
+@login_obrigatorio
+def api_empreitas():
+    from app.apps.erp.core.titulos.empreita import criar_contrato, listar
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, "contratos": listar(s, usuario)})
+            contrato = criar_contrato(s, request.get_json(silent=True) or {}, usuario)
+            s.commit()
+            return jsonify({"ok": True, "contrato": {
+                "id": contrato.id, "numero": contrato.numero,
+                "valor": float(contrato.valor_total), "status": contrato.status}})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha em empreitas")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/empreitas/<int:contrato_id>")
+@login_obrigatorio
+def api_empreita_detalhe(contrato_id: int):
+    from app.apps.erp.core.documentos.armazenamento import listar as listar_anexos
+    from app.apps.erp.core.titulos.empreita import detalhar
+    try:
+        with get_session() as s:
+            dados = detalhar(s, contrato_id)
+            for m in dados["medicoes"]:
+                m["anexos"] = listar_anexos(s, "medicao", m["id"])
+            dados["anexos"] = listar_anexos(s, "contrato_servico", contrato_id)
+            return jsonify({"ok": True, "contrato": dados})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+@bp.route("/erp/api/empreitas/<int:contrato_id>/aprovar", methods=["POST"])
+@login_obrigatorio
+def api_aprovar_empreita(contrato_id: int):
+    from app.apps.erp.core.titulos.empreita import aprovar_contrato
+    try:
+        with get_session() as s:
+            c = aprovar_contrato(s, contrato_id, _usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, "status": c.status})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/empreitas/<int:contrato_id>/aditivo", methods=["POST"])
+@login_obrigatorio
+def api_aditivar_empreita(contrato_id: int):
+    from app.apps.erp.core.titulos.empreita import aditivar
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            rel = aditivar(s, contrato_id, d.get("valor"), d.get("motivo", ""),
+                           _usuario_logado(s), quantidade=d.get("quantidade"))
+            s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/empreitas/<int:contrato_id>/medicoes", methods=["POST"])
+@login_obrigatorio
+def api_medir(contrato_id: int):
+    """Registra a medição (ainda não é pagamento) e devolve as críticas."""
+    from app.apps.erp.core.titulos.empreita import criticar_medicao, registrar_medicao
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if d.get("apenas_criticar"):
+                return jsonify({"ok": True,
+                                "criticas": criticar_medicao(s, contrato_id, d)})
+            criticas = criticar_medicao(s, contrato_id, d)
+            m = registrar_medicao(s, contrato_id, d, usuario)
+            s.commit()
+            return jsonify({"ok": True, "medicao": {
+                "id": m.id, "numero": m.numero, "valor": float(m.valor_medido),
+                "abatido": float(m.valor_adiantamento_abatido),
+                "liquido": float(m.valor_liquido)},
+                "criticas": [x for x in criticas if x["gravidade"] != "BLOQUEIA"]})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao medir")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/medicoes/<int:medicao_id>/autorizar", methods=["POST"])
+@login_obrigatorio
+def api_autorizar_medicao(medicao_id: int):
+    from app.apps.erp.core.titulos.empreita import autorizar_medicao
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            rel = autorizar_medicao(s, medicao_id, _usuario_logado(s), d)
+            s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao autorizar medição")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/periodo", methods=["GET", "POST"])
+@login_obrigatorio
+def api_periodo():
+    """Fechamento e destrave do período — só diretor e admin."""
+    from app.apps.erp.core.titulos.empreita import (
+        definir_bloqueio, destravar, periodo_bloqueado_ate,
+    )
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "GET":
+                limite = periodo_bloqueado_ate(s)
+                return jsonify({"ok": True,
+                                "bloqueado_ate": limite.isoformat() if limite else None})
+            d = request.get_json(silent=True) or {}
+            if d.get("destravar"):
+                rel = destravar(s, d.get("ate"), d.get("motivo", ""), usuario,
+                                horas=int(d.get("horas") or 24))
+            else:
+                rel = definir_bloqueio(s, d.get("ate"), usuario)
+            s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/health")

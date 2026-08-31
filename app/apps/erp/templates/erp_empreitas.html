@@ -1,0 +1,277 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Empreitas — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Contratos de empreita
+  <small>o combinado com o prestador, com saldo — a medição consome o saldo e vira pagamento</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="cartao">
+  <div class="tabela-barra" style="padding:0">
+    <input id="busca" placeholder="contrato, prestador, obra, serviço…"
+           style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; min-width:280px">
+    <span class="espaco"></span>
+    <button class="btn amarelo" id="btn-novo">+ Novo contrato</button>
+  </div>
+</div>
+
+<div class="tabela-wrap">
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th>Contrato</th><th>Serviço</th><th>Prestador</th><th>Obra</th>
+      <th class="direita">Contratado</th><th class="direita">Medido</th>
+      <th class="direita">Saldo</th><th>Avanço</th><th>Situação</th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let CT = [], OBRAS = [], FORN = [], CATS = [];
+const dec = v => { const n = parseFloat(String(v||"").replace(/[R$\s.]/g,"").replace(",",".")); return isNaN(n)?0:n; };
+
+async function carregar(){
+  try {
+    const d = await api("/erp/api/empreitas"); CT = d.contratos;
+    if (!OBRAS.length) {
+      const c = await api("/erp/api/lancamento/dados");
+      OBRAS = c.dados.obras; FORN = c.dados.fornecedores; CATS = c.dados.categorias;
+    }
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenhar(){
+  const b = (els("busca").value||"").toLowerCase();
+  const l = CT.filter(c => `${c.numero} ${c.objeto} ${c.prestador} ${c.obra}`.toLowerCase().includes(b));
+  const soma = f => l.reduce((a,c)=>a+(f(c)||0),0);
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Contratos</div>
+      <div class="kpi-valor">${l.length}</div>
+      <div class="kpi-sub">${l.filter(c=>c.status==="VIGENTE").length} vigentes</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Contratado</div>
+      <div class="kpi-valor" style="font-size:19px">${moeda(soma(c=>c.valor_vigente))}</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Medido</div>
+      <div class="kpi-valor" style="font-size:19px">${moeda(soma(c=>c.medido))}</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Saldo a executar</div>
+      <div class="kpi-valor" style="font-size:19px">${moeda(soma(c=>c.saldo))}</div></div>
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">Aguardando aval</div>
+      <div class="kpi-valor">${l.filter(c=>c.status==="AGUARDANDO_AVAL").length}</div></div>`;
+  els("vazio").classList.toggle("oculto", l.length>0);
+  if (!l.length) els("vazio").innerHTML = "<b>Nenhum contrato</b>Cadastre a empreita para medir e pagar por aqui.";
+  els("corpo").innerHTML = l.map(c=>`
+    <tr style="cursor:pointer" data-ct="${c.id}">
+      <td class="dados"><b>${c.numero}</b></td>
+      <td class="desc">${c.objeto}${c.quantidade?`<small>${c.quantidade} ${c.unidade||""}</small>`:""}</td>
+      <td>${c.prestador}</td><td class="dados">${c.obra}</td>
+      <td class="direita dados">${numero(c.valor_vigente)}</td>
+      <td class="direita dados">${numero(c.medido)}<small>${c.medicoes} medição(ões)</small></td>
+      <td class="direita dados">${numero(c.saldo)}</td>
+      <td><span class="risco"><span class="trilha"><span class="preench ${c.percentual_medido>=100?"zero":""}"
+        style="width:${Math.min(c.percentual_medido,100)}%"></span></span>
+        <span>${c.percentual_medido.toFixed(0)}%</span></span></td>
+      <td><span class="selo ${c.status==="VIGENTE"?"aprovado":c.status==="AGUARDANDO_AVAL"?"aguardando":"outro"}">${rotulo(c.status)}</span></td>
+    </tr>`).join("");
+  document.querySelectorAll("[data-ct]").forEach(tr=>tr.addEventListener("click",()=>abrir(+tr.dataset.ct)));
+}
+
+async function abrir(id){
+  try {
+    const {contrato: c} = await api(`/erp/api/empreitas/${id}`);
+    els("dlg-titulo").textContent = `${c.numero} — ${c.prestador}`;
+    els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+      <div class="kpis">
+        <div class="kpi estatico"><div class="kpi-rotulo">Contratado</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(c.valor_vigente)}</div>
+          <div class="kpi-sub">${c.aditivos?`original ${numero(c.valor_original)} + aditivos`:"sem aditivo"}</div></div>
+        <div class="kpi estatico verde"><div class="kpi-rotulo">Medido</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(c.medido)}</div>
+          <div class="kpi-sub">${c.percentual_medido.toFixed(1)}%</div></div>
+        <div class="kpi estatico ambar"><div class="kpi-rotulo">Saldo</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(c.saldo)}</div></div>
+        ${c.adiantamento_em_aberto>0?`<div class="kpi estatico vermelho">
+          <div class="kpi-rotulo">Adiantamento em aberto</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(c.adiantamento_em_aberto)}</div>
+          <div class="kpi-sub">será abatido na próxima medição</div></div>`:""}
+      </div>
+      <div class="cartao-dica">${c.objeto} · obra ${c.obra}
+        ${c.quantidade?` · ${c.quantidade} ${c.unidade} × ${moeda(c.preco_unitario)}`:""}
+        ${c.periodo?` · ${c.periodo}`:""} · ${c.exige_foto?"<b>exige foto na medição</b>":"foto opcional"}</div>
+
+      ${c.status==="AGUARDANDO_AVAL"?`<div class="aviso info">Contrato aguardando aval.
+        Quem cadastrou não pode aprovar.
+        <button class="btn" id="ct-aprovar" style="margin-left:8px">Aprovar contrato</button></div>`:""}
+
+      <h4>Medições</h4>
+      <table><thead><tr><th>Nº</th><th>Período</th><th class="direita">Qtd</th>
+        <th class="direita">Medido</th><th class="direita">Abatido</th>
+        <th class="direita">A pagar</th><th>Situação</th><th>Fotos</th><th></th></tr></thead>
+      <tbody>${c.medicoes.map(m=>`<tr>
+        <td class="dados">${m.numero}</td><td class="dados">${m.periodo}</td>
+        <td class="direita dados">${m.quantidade??"—"}</td>
+        <td class="direita dados">${numero(m.valor_medido)}</td>
+        <td class="direita dados">${m.abatido?numero(m.abatido):"—"}</td>
+        <td class="direita dados"><b>${numero(m.valor_liquido)}</b></td>
+        <td><span class="selo ${m.status==="FATURADA"?"aprovado":"aguardando"}">${rotulo(m.status)}</span>
+          <small>${m.medido_por}</small></td>
+        <td>${(m.anexos||[]).map(a=>`<a class="btn secundario" href="/erp/anexo/${a.id}" target="_blank">ver</a>`).join(" ")||"—"}</td>
+        <td>${m.status==="MEDIDA"?`<button class="btn secundario" data-foto="${m.id}">+ foto</button>
+          <button class="btn" data-aut="${m.id}">Autorizar</button>`:""}</td>
+      </tr>`).join("") || `<tr><td colspan="9" class="cartao-dica">Nenhuma medição ainda.</td></tr>`}
+      </tbody></table>
+
+      ${c.status==="VIGENTE"?`<h4>Nova medição</h4>
+      <div class="form-grade">
+        <div class="campo"><label>Período de</label><input type="date" id="md-ini"></div>
+        <div class="campo"><label>até</label><input type="date" id="md-fim"></div>
+        ${c.preco_unitario?`<div class="campo"><label>Quantidade (${c.unidade||"un"})</label>
+          <input id="md-qtd" placeholder="0"></div>`:""}
+        <div class="campo"><label>Valor medido</label><input id="md-valor" placeholder="0,00"></div>
+        <div class="campo" style="grid-column:span 2"><label>Observação</label>
+          <input id="md-obs" placeholder="o que foi executado"></div>
+      </div>
+      <div style="margin-top:10px; display:flex; gap:8px">
+        <button class="btn" id="md-registrar">Registrar medição</button>
+        <button class="btn secundario" id="ct-aditivo">+ Aditivo</button>
+      </div>
+      <div id="md-criticas"></div>`:""}`;
+
+    const bApr = els("ct-aprovar");
+    if (bApr) bApr.addEventListener("click", async () => {
+      try { await api(`/erp/api/empreitas/${id}/aprovar`, {method:"POST"});
+        aviso("mensagem","Contrato aprovado — pode medir.","ok"); els("dlg").close(); carregar();
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    });
+
+    const bQtd = els("md-qtd");
+    if (bQtd && c.preco_unitario) bQtd.addEventListener("input", () => {
+      els("md-valor").value = (dec(bQtd.value) * c.preco_unitario).toFixed(2).replace(".",",");
+    });
+
+    const bMed = els("md-registrar");
+    if (bMed) bMed.addEventListener("click", async () => {
+      const corpo = {periodo_inicio: els("md-ini").value || null,
+        periodo_fim: els("md-fim").value || null,
+        quantidade: bQtd ? bQtd.value : null,
+        valor_medido: els("md-valor").value, observacao: els("md-obs").value};
+      try {
+        const d = await api(`/erp/api/empreitas/${id}/medicoes`, {method:"POST",
+          headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+        let m = `Medição ${d.medicao.numero} registrada: ${moeda(d.medicao.valor)}`;
+        if (d.medicao.abatido) m += ` · adiantamento abatido ${moeda(d.medicao.abatido)} → a pagar ${moeda(d.medicao.liquido)}`;
+        aviso("mensagem", m + ". Anexe a foto e autorize.", "ok");
+        abrir(id); carregar();
+      } catch(e){
+        els("md-criticas").innerHTML = `<div class="critica BLOQUEIA">${e.message}</div>`;
+      }
+    });
+
+    const bAdi = els("ct-aditivo");
+    if (bAdi) bAdi.addEventListener("click", async () => {
+      const valor = prompt("Valor do aditivo (negativo para supressão):");
+      if (valor === null) return;
+      const motivo = prompt("Motivo do aditivo:");
+      if (motivo === null) return;
+      try {
+        const d = await api(`/erp/api/empreitas/${id}/aditivo`, {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({valor, motivo})});
+        aviso("mensagem", `Contrato agora vale ${moeda(d.resultado.valor_vigente)}.`, "ok");
+        abrir(id); carregar();
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    });
+
+    document.querySelectorAll("[data-foto]").forEach(b => b.addEventListener("click", () => {
+      const inp = document.createElement("input");
+      inp.type = "file"; inp.accept = "image/*,.pdf";
+      inp.onchange = async () => {
+        const fd = new FormData();
+        fd.append("arquivo", inp.files[0]); fd.append("categoria", "MEDICAO");
+        try {
+          await api(`/erp/api/anexos/medicao/${b.dataset.foto}`, {method:"POST", body: fd});
+          aviso("mensagem","Foto anexada à medição.","ok"); abrir(id);
+        } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+      };
+      inp.click();
+    }));
+
+    document.querySelectorAll("[data-aut]").forEach(b => b.addEventListener("click", async () => {
+      const f = FORN.find(x => x.nome === c.prestador);
+      const contaId = f && f.contas.length ? f.contas[0].id : null;
+      try {
+        const d = await api(`/erp/api/medicoes/${b.dataset.aut}/autorizar`, {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({fornecedor_conta_id: contaId})});
+        aviso("mensagem", `Medição ${d.resultado.medicao} autorizada → título
+          <b>${d.resultado.titulo}</b> de ${moeda(d.resultado.valor)}.
+          Saldo do contrato: ${moeda(d.resultado.saldo_restante)}.`, "ok");
+        abrir(id); carregar();
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    }));
+
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+els("btn-novo").addEventListener("click", () => {
+  els("dlg-titulo").textContent = "Novo contrato de empreita";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo"><label>Obra *</label><select id="n-obra">
+        ${OBRAS.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("")}</select></div>
+      <div class="campo" style="grid-column:span 2"><label>Prestador *</label><select id="n-forn">
+        ${FORN.map(f=>`<option value="${f.id}">${f.nome}</option>`).join("")}</select></div>
+      <div class="campo" style="grid-column:span 3"><label>Serviço contratado *</label>
+        <input id="n-objeto" placeholder="ex.: alvenaria de vedação do bloco A"></div>
+      <div class="campo"><label>Como será pago</label><select id="n-modo">
+        <option value="MEDICAO">Por medição (quantidade × preço)</option>
+        <option value="PARCELAS">Serviço fechado, em parcelas</option></select></div>
+      <div class="campo"><label>Unidade</label><input id="n-un" placeholder="m², m³, vb"></div>
+      <div class="campo"><label>Quantidade</label><input id="n-qtd" placeholder="1000"></div>
+      <div class="campo"><label>Preço unitário</label><input id="n-preco" placeholder="50,00"></div>
+      <div class="campo"><label>Valor total</label><input id="n-total" placeholder="calculado"></div>
+      <div class="campo"><label>Parcelas previstas</label><input id="n-parc" placeholder="3"></div>
+      <div class="campo"><label>Início</label><input type="date" id="n-ini"></div>
+      <div class="campo"><label>Término</label><input type="date" id="n-fim"></div>
+      <div class="campo"><label>Exigir foto na medição</label><select id="n-foto">
+        <option value="1" selected>Sim</option><option value="0">Não</option></select></div>
+    </div>
+    <div class="cartao-dica">O contrato nasce aguardando aval. Depois de aprovado, a obra
+      mede e o supervisor autoriza — só então nasce o título a pagar.</div>
+    <div style="margin-top:14px"><button class="btn" id="n-salvar">Cadastrar contrato</button></div>`;
+  const calc = () => {
+    const v = dec(els("n-qtd").value) * dec(els("n-preco").value);
+    if (v) els("n-total").value = v.toFixed(2).replace(".",",");
+  };
+  ["n-qtd","n-preco"].forEach(i=>els(i).addEventListener("input", calc));
+  els("n-salvar").addEventListener("click", async () => {
+    try {
+      const d = await api("/erp/api/empreitas", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({obra_id:+els("n-obra").value, fornecedor_id:+els("n-forn").value,
+          objeto: els("n-objeto").value, modo: els("n-modo").value,
+          unidade: els("n-un").value, quantidade: els("n-qtd").value,
+          preco_unitario: els("n-preco").value, valor_total: els("n-total").value,
+          parcelas_previstas: els("n-parc").value, data_inicio: els("n-ini").value || null,
+          data_fim: els("n-fim").value || null, exige_foto: els("n-foto").value === "1"})});
+      els("dlg").close();
+      aviso("mensagem", `Contrato ${d.contrato.numero} cadastrado (${moeda(d.contrato.valor)}) —
+        aguardando aval.`, "ok");
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+});
+
+els("busca").addEventListener("input", desenhar);
+carregar();
+</script>
+{% endblock %}
