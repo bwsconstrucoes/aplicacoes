@@ -214,6 +214,11 @@ class Titulo(Base):
     periodo_prestacao_inicio: Mapped[Optional[date]] = mapped_column(Date)
     periodo_prestacao_fim: Mapped[Optional[date]] = mapped_column(Date)
     alertas_confirmados: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    contrato_servico_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("contratos_servico.id"))
+    medicao_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("contrato_medicoes.id"))
+    adiantamento_contrato: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     exige_aval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     avalizado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     avalizado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
@@ -518,3 +523,86 @@ class TituloItem(Base):
     conferido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     observacao: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContratoServico(Base):
+    """Empreita/subcontratação: o acordo com o prestador, com saldo próprio.
+
+    Substitui a planilha da obra. O contrato guarda o combinado (quantidade,
+    preço, valor total); cada medição consome o saldo. Medir mais que o
+    contratado é impossível, e medir o mesmo período duas vezes é apontado —
+    que é exatamente o erro que hoje passa despercebido.
+    """
+    __tablename__ = "contratos_servico"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    numero: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
+    fornecedor_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("fornecedores.id"), nullable=False)
+    categoria_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("categorias.id"))
+    objeto: Mapped[str] = mapped_column(Text, nullable=False)
+    modo: Mapped[str] = mapped_column(Text, nullable=False, default="MEDICAO")
+    unidade: Mapped[Optional[str]] = mapped_column(Text)
+    quantidade: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    preco_unitario: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    valor_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    valor_aditivos: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    parcelas_previstas: Mapped[Optional[int]] = mapped_column(SmallInteger)
+    data_inicio: Mapped[Optional[date]] = mapped_column(Date)
+    data_fim: Mapped[Optional[date]] = mapped_column(Date)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="RASCUNHO")
+    exige_foto: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    aprovado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    aprovado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    obra: Mapped[Obra] = relationship()
+    fornecedor: Mapped[Fornecedor] = relationship()
+    medicoes: Mapped[list["ContratoMedicao"]] = relationship(
+        back_populates="contrato", order_by="ContratoMedicao.numero",
+        cascade="all, delete-orphan")
+
+
+class ContratoMedicao(Base):
+    """Uma medição do contrato: o que foi executado no período e vale pagar."""
+    __tablename__ = "contrato_medicoes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    contrato_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("contratos_servico.id"), nullable=False)
+    numero: Mapped[int] = mapped_column(SmallInteger, nullable=False)
+    periodo_inicio: Mapped[Optional[date]] = mapped_column(Date)
+    periodo_fim: Mapped[Optional[date]] = mapped_column(Date)
+    quantidade: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    percentual: Mapped[Optional[Decimal]] = mapped_column(Numeric(7, 4))
+    valor_medido: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    valor_adiantamento_abatido: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0)
+    valor_liquido: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="MEDIDA")
+    titulo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulos.id"))
+    medido_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    autorizado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    autorizado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    contrato: Mapped[ContratoServico] = relationship(back_populates="medicoes")
+
+
+class PeriodoBloqueado(Base):
+    """Trava do passado: até que data não se altera mais nada."""
+    __tablename__ = "periodos_bloqueados"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    ate_data: Mapped[date] = mapped_column(Date, nullable=False)
+    liberado_ate: Mapped[Optional[date]] = mapped_column(Date)
+    liberado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    liberado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    liberado_motivo: Mapped[Optional[str]] = mapped_column(Text)
+    liberado_expira: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
