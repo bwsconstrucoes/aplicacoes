@@ -271,10 +271,14 @@ class Rateio(Base):
     obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
     valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     percentual: Mapped[Optional[Decimal]] = mapped_column(Numeric(7, 4))
+    # conta própria da linha: uma nota pode ter material e serviço juntos
+    categoria_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("categorias.id"))
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     titulo: Mapped[Titulo] = relationship(back_populates="rateios")
     obra: Mapped[Obra] = relationship()
+    categoria: Mapped[Optional[Categoria]] = relationship()
 
 
 class Retencao(Base):

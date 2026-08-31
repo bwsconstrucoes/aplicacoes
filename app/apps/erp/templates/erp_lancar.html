@@ -82,8 +82,8 @@
   </div>
 
   <div class="cartao">
-    <div class="cartao-cab"><h3>5 · Rateio por obra</h3>
-      <small>pode dividir entre várias obras; a soma fecha com o líquido</small></div>
+    <div class="cartao-cab"><h3>5 · Rateio por obra e conta</h3>
+      <small>divide entre obras e, se a nota tiver naturezas diferentes, entre contas</small></div>
     <div id="lista-rateios"></div>
     <button class="btn secundario" id="btn-add-rat">+ Adicionar obra</button>
     <div class="cartao-dica">Soma do rateio: <b id="soma-rateios">R$ 0,00</b></div>
@@ -178,11 +178,17 @@ function desenharLinhas(){
     </div>`).join("");
   els("lista-rateios").innerHTML = RAT.map((r,i) => `
     <div class="form-grade" style="margin-bottom:8px">
-      <div class="campo" style="grid-column:span 2"><label>Obra ${i+1}</label>
+      <div class="campo"><label>Obra ${i+1}</label>
         <select data-t="obra_id" data-i="${i}"><option value="">— escolher —</option>
         ${D.obras.map(o=>`<option value="${o.id}" ${String(r.obra_id)===String(o.id)?"selected":""}>${o.codigo} · ${o.nome}</option>`).join("")}
         </select></div>
+      <div class="campo" style="grid-column:span 2"><label>Conta desta parte</label>
+        <select data-t="categoria_id" data-i="${i}">
+          <option value="">— mesma do título —</option>
+          ${D.categorias.map(x=>`<option value="${x.id}" ${String(r.categoria_id)===String(x.id)?"selected":""}>${x.codigo} · ${x.descricao}</option>`).join("")}
+        </select></div>
       <div class="campo"><label>Valor</label><input data-t="valor" data-i="${i}" value="${r.valor||""}"></div>
+      <div class="campo"><label>Descrição</label><input data-t="descricao" data-i="${i}" value="${r.descricao||""}" placeholder="ex.: material"></div>
       <div class="campo" style="align-self:end">${RAT.length>1?`<button class="btn secundario" data-del-t="${i}">Remover</button>`:""}</div>
     </div>`).join("");
 
@@ -321,7 +327,9 @@ function montar(){
       valor:String(dec(r.valor))})),
     parcelas: PARC.filter(p=>p.vencimento).map(p=>({vencimento:p.vencimento,
       valor:String(dec(p.valor)), linha_digitavel:(p.linha_digitavel||"").trim()})),
-    rateios: RAT.filter(r=>r.obra_id).map(r=>({obra_id:+r.obra_id, valor:String(dec(r.valor))})),
+    rateios: RAT.filter(r=>r.obra_id).map(r=>({obra_id:+r.obra_id, valor:String(dec(r.valor)),
+      categoria_id: r.categoria_id ? +r.categoria_id : null,
+      descricao: r.descricao || null})),
     interessados: [...document.querySelectorAll(".interessado:checked")].map(i=>+i.value),
   };
 }

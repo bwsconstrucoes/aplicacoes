@@ -74,7 +74,7 @@ def resumo(s: Session, dimensao: str, filtros: dict[str, Any]) -> dict[str, Any]
                SUM(CASE WHEN t.status <> 'PAGO' THEN r.valor ELSE 0 END) AS aberto
           FROM titulos t
           JOIN rateios r     ON r.titulo_id = t.id
-          JOIN categorias c  ON c.id = t.categoria_id
+          JOIN categorias c  ON c.id = COALESCE(r.categoria_id, t.categoria_id)
           JOIN obras o       ON o.id = r.obra_id
           JOIN fornecedores f ON f.id = t.fornecedor_id
          WHERE {where}
@@ -110,7 +110,7 @@ def analitico(s: Session, filtros: dict[str, Any], limite: int = 2000) -> list[d
                  WHERE p2.titulo_id = t.id) AS pagamento
           FROM titulos t
           JOIN rateios r     ON r.titulo_id = t.id
-          JOIN categorias c  ON c.id = t.categoria_id
+          JOIN categorias c  ON c.id = COALESCE(r.categoria_id, t.categoria_id)
           JOIN obras o       ON o.id = r.obra_id
           JOIN fornecedores f ON f.id = t.fornecedor_id
          WHERE {where}
@@ -138,7 +138,7 @@ def dre_gerencial(s: Session, filtros: dict[str, Any]) -> dict[str, Any]:
                SUM(r.valor) AS total
           FROM titulos t
           JOIN rateios r    ON r.titulo_id = t.id
-          JOIN categorias c ON c.id = t.categoria_id
+          JOIN categorias c ON c.id = COALESCE(r.categoria_id, t.categoria_id)
           JOIN obras o      ON o.id = r.obra_id
           JOIN fornecedores f ON f.id = t.fornecedor_id
          WHERE {where}

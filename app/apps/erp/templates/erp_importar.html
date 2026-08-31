@@ -25,6 +25,8 @@
     <button class="btn" id="btn-importar-cards">Importar SPs</button>
     <label class="opcao" style="margin:0"><input type="checkbox" id="criar-forn" checked>
       <span class="rotulo">Cadastrar fornecedor que ainda não existe</span></label>
+    <label class="opcao" style="margin:0"><input type="checkbox" id="trazer-anexos" checked>
+      <span class="rotulo">Trazer os anexos do card (nota, DANFE, comprovantes)</span></label>
   </div>
   <div id="resultado-cards"></div>
 </div>
@@ -74,10 +76,12 @@ async function preencher(){
 function tabelaRelatorio(rel){
   const linhas = [];
   if (rel.importados?.length) linhas.push(`<h4>Importados (${rel.importados.length})</h4>
-    <table><thead><tr><th>Card</th><th>SP</th><th>Credor</th><th class="direita">Valor</th><th>Situação</th></tr></thead>
+    <table><thead><tr><th>Card</th><th>SP</th><th>Credor</th><th class="direita">Valor</th><th>Situação</th><th>Anexos</th></tr></thead>
     <tbody>${rel.importados.map(i=>`<tr><td class="dados">${i.card}</td><td class="dados">${i.sp}</td>
       <td>${i.credor}</td><td class="direita dados">${numero(i.valor)}</td>
-      <td>${rotulo(i.status)}</td></tr>`).join("")}</tbody></table>`);
+      <td>${rotulo(i.status)}</td>
+      <td>${i.anexos ? `${i.anexos} anexo(s)` : "—"}
+        ${(i.anexos_com_erro||[]).length ? `<small style="color:var(--vermelho)">${i.anexos_com_erro.length} falhou</small>` : ""}</td></tr>`).join("")}</tbody></table>`);
   if (rel.ja_existiam?.length) linhas.push(`<h4>Já existiam (${rel.ja_existiam.length})</h4>
     <div class="cartao-dica">${rel.ja_existiam.map(i=>`card ${i.card} → ${i.sp}`).join(" · ")}</div>`);
   if (rel.pendencias?.length) linhas.push(`<h4>Precisam de decisão (${rel.pendencias.length})</h4>
@@ -96,7 +100,8 @@ els("btn-importar-cards").addEventListener("click", async () => {
       body: JSON.stringify({texto: els("cards").value,
         categoria_padrao_id: els("cat-padrao").value || null,
         obra_padrao_id: els("obra-padrao").value || null,
-        criar_fornecedor: els("criar-forn").checked})});
+        criar_fornecedor: els("criar-forn").checked,
+        baixar_anexos: els("trazer-anexos").checked})});
     els("resultado-cards").innerHTML = tabelaRelatorio(d.relatorio);
     aviso("mensagem", `${d.relatorio.analisados} card(s) analisado(s): `
       + `${d.relatorio.importados.length} importado(s), ${d.relatorio.pendencias.length} pendente(s).`,

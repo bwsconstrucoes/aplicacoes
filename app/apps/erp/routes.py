@@ -388,6 +388,9 @@ def api_titulo_detalhe(titulo_id: int):
                                          else ("informado" if p.linha_digitavel else ""))}
                              for p in t.parcelas],
                 "rateios": [{"obra": f"{r.obra.codigo} · {r.obra.nome}",
+                             "categoria": (f"{r.categoria.codigo} · {r.categoria.descricao}"
+                                           if getattr(r, "categoria", None) else None),
+                             "descricao": r.descricao,
                              "valor": float(r.valor),
                              "percentual": float(r.percentual or 0)} for r in t.rateios],
                 "retencoes": [{"tipo": r.tipo.value, "base": float(r.base_calculo),
@@ -575,7 +578,8 @@ def api_importar_pipefy():
                 s, cards, usuario,
                 categoria_padrao_id=int(d["categoria_padrao_id"]) if d.get("categoria_padrao_id") else None,
                 obra_padrao_id=int(d["obra_padrao_id"]) if d.get("obra_padrao_id") else None,
-                criar_fornecedor=bool(d.get("criar_fornecedor", True)))
+                criar_fornecedor=bool(d.get("criar_fornecedor", True)),
+                baixar_anexos=bool(d.get("baixar_anexos", True)))
             s.commit()
         return jsonify({"ok": True, "relatorio": rel})
     except ErroPipefy as e:

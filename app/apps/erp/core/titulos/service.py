@@ -248,7 +248,15 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
             raise ErroValidacao(f"Rateio {i}: valor deve ser maior que zero.")
         soma_rat += val
         pct = (val / valor_liquido * 100).quantize(Decimal("0.0001"))
-        rateios_obj.append(Rateio(obra_id=obra.id, valor=val, percentual=pct))
+        # conta própria da linha: uma nota pode ter material e serviço juntos
+        cat_linha = None
+        if r.get("categoria_id"):
+            cat_linha = s.get(Categoria, int(r["categoria_id"]))
+            if cat_linha is None or not cat_linha.ativo:
+                raise ErroValidacao(f"Rateio {i}: conta do plano inexistente ou aposentada.")
+        rateios_obj.append(Rateio(obra_id=obra.id, valor=val, percentual=pct,
+                                  categoria_id=cat_linha.id if cat_linha else None,
+                                  descricao=(r.get("descricao") or "").strip() or None))
     if abs(soma_rat - valor_liquido) > Decimal("0.01"):
         raise ErroValidacao(
             f"Soma dos rateios (R$ {soma_rat}) ≠ valor líquido (R$ {valor_liquido}).")

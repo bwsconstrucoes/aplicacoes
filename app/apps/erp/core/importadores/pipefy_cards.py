@@ -18,10 +18,9 @@
 from __future__ import annotations
 
 import json
-import re
-import logging
 import os
 import re
+import logging
 import time
 import urllib.request
 from datetime import datetime
@@ -112,6 +111,82 @@ query ($id: ID!, $after: String) {
 # ---------------------------------------------------------------------------
 # Conversores
 # ---------------------------------------------------------------------------
+# Campos de anexo do pipe financeiro → categoria do anexo no ERP
+CAMPOS_ANEXO = {
+    "anexos": "OUTRO",
+    "anexar_arquivos": "OUTRO",
+    "danfe": "NOTA",
+    "arquivo_xml": "NOTA",
+    "anexo_presta_o_de_conta": "PRESTACAO_CONTAS",
+    "comprovante": "COMPROVANTE",
+    "comprovante_1_pagamento": "COMPROVANTE",
+    "comprovante_2_pagamento": "COMPROVANTE",
+    "comprovante_3_pagamento": "COMPROVANTE",
+    "comprovante_4_pagamento": "COMPROVANTE",
+    "comprovante_5_pagamento": "COMPROVANTE",
+    "comprovante_6_pagamento": "COMPROVANTE",
+}
+MAX_ANEXO_BYTES = 20 * 1024 * 1024
+
+
+def extrair_urls_anexo(valor: Any) -> list[str]:
+    """O campo de anexo do Pipefy traz uma lista de URLs (JSON ou texto)."""
+    if valor in (None, "", "[]"):
+        return []
+    if isinstance(valor, list):
+        itens = valor
+    else:
+        texto = str(valor).strip()
+        try:
+            itens = json.loads(texto)
+            if not isinstance(itens, list):
+                itens = [itens]
+        except json.JSONDecodeError:
+            itens = [t for t in re.split(r"[\s,]+", texto) if t]
+    urls = []
+    for i in itens:
+        u = i.get("url") if isinstance(i, dict) else str(i)
+        if u and u.startswith("http"):
+            urls.append(u)
+    return urls
+
+
+def baixar_anexos_do_card(s, card_campos: dict[str, Any], titulo_id: int,
+                          usuario) -> list[dict[str, Any]]:
+    """Traz os arquivos do card para o banco do ERP.
+
+    Sem isso, a SP importada chega sem a nota e sem o comprovante — que é
+    justamente o que se precisa consultar depois. Falha de download não
+    interrompe a importação: fica relatada.
+    """
+    from urllib.parse import unquote, urlparse
+
+    from app.apps.erp.core.documentos.armazenamento import salvar
+
+    trazidos = []
+    for campo, categoria in CAMPOS_ANEXO.items():
+        for url in extrair_urls_anexo(card_campos.get(campo)):
+            nome = unquote(os.path.basename(urlparse(url).path)) or f"{campo}.bin"
+            try:
+                resp = requests.get(url, timeout=60, stream=True)
+                resp.raise_for_status()
+                conteudo = b""
+                for pedaco in resp.iter_content(64 * 1024):
+                    conteudo += pedaco
+                    if len(conteudo) > MAX_ANEXO_BYTES:
+                        raise ValueError(f"arquivo acima de "
+                                         f"{MAX_ANEXO_BYTES // (1024*1024)} MB")
+                anexo = salvar(s, conteudo, nome, entidade_tipo="titulo",
+                               entidade_id=titulo_id, categoria=categoria,
+                               descricao=f"Importado do Pipefy ({campo})", usuario=usuario)
+                trazidos.append({"campo": campo, "arquivo": anexo.nome_arquivo,
+                                 "kb": round((anexo.tamanho_bytes or 0) / 1024, 1)})
+            except Exception as e:
+                logger.warning("Pipefy: anexo %s não veio (%s)", nome, e)
+                trazidos.append({"campo": campo, "arquivo": nome, "erro": str(e)[:120]})
+    return trazidos
+
+
 def normalizar_codigo_barras(valor: Any) -> Optional[str]:
     """Extrai a linha digitável do campo do Pipefy.
 
@@ -285,6 +360,7 @@ def extrair_dados(card: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "card_id": str(card.get("id")),
+        "campos_crus": c,
         "tipo_despesa_e_id": cc_parece_id,
         "titulo_card": card.get("title") or "",
         "fase": ((card.get("current_phase") or {}).get("name")) or "",
@@ -372,7 +448,7 @@ def _achar_categoria(s: Session, tipo_despesa: str) -> tuple[Optional[Categoria]
 def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
                    categoria_padrao_id: Optional[int] = None,
                    obra_padrao_id: Optional[int] = None,
-                   criar_fornecedor: bool = True) -> dict[str, Any]:
+                   criar_fornecedor: bool = True, baixar_anexos: bool = True) -> dict[str, Any]:
     """Cria títulos a partir dos cards. Devolve relatório detalhado —
     o que entrou, o que já existia e o que precisa de decisão humana."""
     importados, ja_existiam, pendencias = [], [], []
@@ -494,7 +570,17 @@ def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
             titulo = svc_tit.criar_titulo(s, payload, usuario)
             titulo.ref_pipefy = cid
             s.flush()
+            anexos = []
+            if baixar_anexos:
+                try:
+                    anexos = baixar_anexos_do_card(s, d.get("campos_crus") or {},
+                                                   titulo.id, usuario)
+                except Exception as e:
+                    logger.warning("Pipefy: falha ao trazer anexos do card %s (%s)", cid, e)
+
             importados.append({"card": cid, "sp": titulo.numero_sp,
+                               "anexos": len([a for a in anexos if not a.get("erro")]),
+                               "anexos_com_erro": [a for a in anexos if a.get("erro")],
                                "credor": forn.razao_social,
                                "categoria": f"{cat.codigo} · {cat.descricao}" if cat else "(padrão)",
                                "traducao": como if cat else "categoria padrão do lote",
