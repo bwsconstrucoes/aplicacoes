@@ -78,7 +78,7 @@
     <button class="btn secundario" id="btn-novo-op">+ Novo operador</button>
   </div>
   <table><thead><tr><th>Nome</th><th>E-mail</th><th>CPF</th><th>Telefone</th>
-    <th>Perfil</th><th>Obras</th><th>Situação</th></tr></thead>
+    <th>Perfil</th><th>Fundo fixo</th><th>Obras</th><th>Situação</th></tr></thead>
     <tbody id="tb-usuarios"></tbody></table>
   <div class="cartao-dica">O perfil define o que a pessoa vê: administrativo de obra enxerga
     só o que ele lançou; supervisor, as obras designadas; gestor, todas as obras;
@@ -127,6 +127,22 @@ function formOperador(u){
         <option value="1" ${u.ativo?"selected":""}>Ativo</option>
         <option value="0" ${u.ativo?"":"selected"}>Inativo</option></select></div>
     </div>
+    <h4>Fundo fixo</h4>
+    <div class="form-grade">
+      <div class="campo"><label>Pode movimentar fundo fixo</label><select id="op-ff">
+        <option value="0" ${u.ff_autorizado?"":"selected"}>Não</option>
+        <option value="1" ${u.ff_autorizado?"selected":""}>Sim</option></select></div>
+      <div class="campo"><label>Limite por despesa</label>
+        <input id="op-ff-item" value="${u.ff_teto_item??""}" placeholder="ex.: 500,00">
+        <div class="dica">Acima disso, o gasto é apontado na conferência.</div></div>
+      <div class="campo"><label>Limite por prestação</label>
+        <input id="op-ff-total" value="${u.ff_teto_prestacao??""}" placeholder="ex.: 3.000,00">
+        <div class="dica">Acima disso, a prestação é bloqueada.</div></div>
+      <div class="campo"><label>Adiantamento em aberto</label>
+        <input value="${u.ff_saldo_adiantamento??0}" disabled>
+        <div class="dica">Atualizado pelas prestações; não se edita aqui.</div></div>
+    </div>
+
     <div id="op-obras-bloco" class="campo" style="margin-top:12px">
       <label>Obras que este operador acompanha</label>
       <div class="filtro-opcoes" style="max-height:180px; border:1px solid var(--borda); border-radius:8px; padding:6px">
@@ -146,6 +162,8 @@ function formOperador(u){
   els("op-salvar").addEventListener("click", async () => {
     const corpo = {nome: els("op-nome").value, telefone: els("op-tel").value,
       perfil: els("op-perfil").value, ativo: els("op-ativo").value === "1",
+      ff_autorizado: els("op-ff").value === "1",
+      ff_teto_item: els("op-ff-item").value, ff_teto_prestacao: els("op-ff-total").value,
       obras: [...document.querySelectorAll(".op-obra:checked")].map(i=>+i.value)};
     if (els("op-senha").value) corpo.senha = els("op-senha").value;
     if (novo) { corpo.email = els("op-email").value; corpo.cpf = els("op-cpf").value; }
@@ -340,6 +358,9 @@ function desenhar(){
       <td>${u.nome}</td><td>${u.email}</td>
       <td class="dados">${u.cpf||"—"}</td><td class="dados">${u.telefone||"—"}</td>
       <td>${u.perfil_rotulo}</td>
+      <td><small>${u.ff_autorizado
+        ? `até ${u.ff_teto_item?moeda(u.ff_teto_item):"—"} / despesa`
+        : `<span style="color:var(--tinta-suave)">não usa</span>`}</small></td>
       <td><small>${u.obras.length ? u.obras.join(", ") : (u.perfil==="ADMINISTRATIVO_OBRA"?"o que lançou":"todas")}</small></td>
       <td><span class="selo ${u.ativo?"aprovado":"outro"}">${u.ativo?"Ativo":"Inativo"}</span></td></tr>`).join("");
   document.querySelectorAll("[data-op]").forEach(tr =>

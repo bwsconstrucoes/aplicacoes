@@ -222,6 +222,15 @@ async function conferir(){
       body: JSON.stringify({itens: ITENS, modalidade: els("modalidade").value,
         periodo_inicio: els("p-inicio").value || null, periodo_fim: els("p-fim").value || null})});
     CRITICA = d.critica;
+    if (CRITICA.limites) {
+      const L = CRITICA.limites;
+      els("historico").insertAdjacentHTML("beforeend",
+        `<br><b>Sua alçada:</b> ` + (L.autorizado
+          ? `até ${L.teto_item?moeda(L.teto_item):"(sem limite definido)"} por despesa` +
+            (L.teto_prestacao?` · ${moeda(L.teto_prestacao)} por prestação`:"") +
+            (L.saldo_adiantamento>0?` · adiantamento em aberto ${moeda(L.saldo_adiantamento)}`:"")
+          : `<span style="color:var(--vermelho)">não autorizado a movimentar fundo fixo</span>`));
+    }
     els("bloco-critica").innerHTML = `
       <div class="cartao-cab"><h3>Conferência automática</h3>
         <small>${CRITICA.bloqueios} bloqueio(s) · ${CRITICA.criticas} ponto(s) de atenção</small></div>

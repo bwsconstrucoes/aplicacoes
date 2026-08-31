@@ -1753,6 +1753,11 @@ def api_usuarios():
                 return jsonify({"ok": True, "usuarios": [{
                     "id": u.id, "nome": u.nome, "email": u.email,
                     "cpf": u.cpf, "telefone": u.telefone,
+                    "ff_autorizado": u.ff_autorizado,
+                    "ff_teto_item": float(u.ff_teto_item) if u.ff_teto_item else None,
+                    "ff_teto_prestacao": (float(u.ff_teto_prestacao)
+                                          if u.ff_teto_prestacao else None),
+                    "ff_saldo_adiantamento": float(u.ff_saldo_adiantamento or 0),
                     "perfil": u.perfil.value,
                     "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
                     "ativo": u.ativo, "obras": vinculos.get(u.id, []),
@@ -1810,6 +1815,17 @@ def api_editar_usuario(usuario_id: int):
                 u.ativo = bool(d["ativo"])
             if d.get("senha"):
                 u.senha_hash = gerar_hash(d["senha"])
+            if "ff_autorizado" in d:
+                u.ff_autorizado = bool(d["ff_autorizado"])
+            from decimal import Decimal as _D, InvalidOperation as _IE
+            for campo in ("ff_teto_item", "ff_teto_prestacao"):
+                if campo in d:
+                    valor = str(d[campo] or "").replace(".", "").replace(",", ".").strip()
+                    try:
+                        setattr(u, campo, _D(valor) if valor else None)
+                    except _IE:
+                        return jsonify({"ok": False,
+                                        "erro": f"Valor inválido em {campo}."}), 400
             if "obras" in d:
                 for v in s.scalars(select(UsuarioObra).where(
                         UsuarioObra.usuario_id == u.id)).all():

@@ -71,6 +71,8 @@
 
 - [x] FUNDO FIXO: prestação de contas com itens, comprovante por linha,
       adiantamento × reembolso, histórico do solicitante e críticas antifraude
+- [x] Alçada de fundo fixo POR PESSOA (limite por despesa, por prestação,
+      autorização e saldo de adiantamento) no cadastro de operadores
 - [x] CARTÃO DE CRÉDITO: importa a fatura em PDF, extrai as compras, exige
       obra e categoria por linha
 - [x] Rateio de obra obrigatório no lançamento

@@ -44,7 +44,9 @@ from app.apps.erp.db.models.financeiro import (
 
 logger = logging.getLogger(__name__)
 
-TETO_ITEM_PADRAO = Decimal("500.00")     # acima disso, fundo fixo merece explicação
+# Não há teto fixo no sistema: o limite é de cada pessoa, definido no cadastro
+# de operadores. Quem não tem limite cadastrado não é bloqueado — o sistema
+# apenas avisa que falta definir, para não travar a operação por omissão.
 _CENT = Decimal("0.01")
 
 
@@ -165,13 +167,30 @@ def _historico_do_solicitante(s: Session, usuario_id: int,
     }
 
 
+def limites_da_pessoa(s: Session, usuario_id: int) -> dict[str, Any]:
+    """Alçada de fundo fixo cadastrada para a pessoa."""
+    u = s.get(Usuario, usuario_id)
+    if u is None:
+        return {"teto_item": None, "teto_prestacao": None, "autorizado": False,
+                "saldo_adiantamento": 0.0, "nome": "—"}
+    return {
+        "nome": u.nome,
+        "teto_item": float(u.ff_teto_item) if u.ff_teto_item else None,
+        "teto_prestacao": float(u.ff_teto_prestacao) if u.ff_teto_prestacao else None,
+        "saldo_adiantamento": float(u.ff_saldo_adiantamento or 0),
+        "autorizado": bool(u.ff_autorizado),
+    }
+
+
 def criticar(s: Session, itens: list[dict[str, Any]], *, solicitante_id: int,
              modalidade: str = "FUNDO_FIXO", total_declarado: Optional[Any] = None,
              periodo_inicio: Optional[date] = None,
-             periodo_fim: Optional[date] = None,
-             teto_item: Decimal = TETO_ITEM_PADRAO) -> dict[str, Any]:
-    """Roda as críticas sobre as linhas e sobre o conjunto."""
+             periodo_fim: Optional[date] = None) -> dict[str, Any]:
+    """Roda as críticas sobre as linhas e sobre o conjunto, usando a alçada
+    da pessoa que está prestando contas."""
     hist = _historico_do_solicitante(s, solicitante_id, modalidade)
+    limites = limites_da_pessoa(s, solicitante_id)
+    teto_item = (Decimal(str(limites["teto_item"])) if limites["teto_item"] else None)
     hoje = date.today()
     por_item: dict[int, list[dict[str, str]]] = {}
     gerais: list[dict[str, str]] = []
@@ -193,9 +212,10 @@ def criticar(s: Session, itens: list[dict[str, Any]], *, solicitante_id: int,
         desc = _normalizar(item.get("descricao") or "")
         estab = _normalizar(item.get("estabelecimento") or "")
 
-        if valor > teto_item:
-            marcar(i, "F1", f"Acima do teto de fundo fixo (R$ {teto_item}) — "
-                            f"despesa desse porte deveria seguir o fluxo normal.", "CRITICA")
+        if teto_item is not None and valor > teto_item:
+            marcar(i, "F1", f"Acima do limite de {limites['nome']} por despesa "
+                            f"(R$ {teto_item}) — gasto desse porte deveria seguir o "
+                            f"fluxo normal.", "CRITICA")
         if valor % Decimal("50") == 0 and valor >= Decimal("100"):
             marcar(i, "F2", "Valor exatamente redondo — confira o comprovante.")
         if d is None:
@@ -261,6 +281,24 @@ def criticar(s: Session, itens: list[dict[str, Any]], *, solicitante_id: int,
         gerais.append({"codigo": "F18", "gravidade": "ALERTA",
                        "msg": f"Maior prestação já feita por esta pessoa "
                               f"(anterior: R$ {hist['maior']:.2f})."})
+    if modalidade == "FUNDO_FIXO" and not limites["autorizado"]:
+        gerais.append({"codigo": "F20", "gravidade": "CRITICA",
+                       "msg": f"{limites['nome']} não está autorizado a movimentar fundo "
+                              f"fixo no cadastro de operadores."})
+    if limites["teto_item"] is None and modalidade == "FUNDO_FIXO":
+        gerais.append({"codigo": "F21", "gravidade": "ALERTA",
+                       "msg": f"{limites['nome']} está sem limite por despesa cadastrado — "
+                              f"defina em Administração › Operadores."})
+    if limites["teto_prestacao"] and float(soma) > limites["teto_prestacao"]:
+        gerais.append({"codigo": "F22", "gravidade": "BLOQUEIA",
+                       "msg": f"Total de R$ {soma} acima do limite de {limites['nome']} por "
+                              f"prestação (R$ {limites['teto_prestacao']:.2f})."})
+    if (modalidade == "FUNDO_FIXO" and limites["saldo_adiantamento"] > 0
+            and abs(float(soma) - limites["saldo_adiantamento"]) > 0.01):
+        gerais.append({"codigo": "F23", "gravidade": "ALERTA",
+                       "msg": f"Há adiantamento em aberto de "
+                              f"R$ {limites['saldo_adiantamento']:.2f} para esta pessoa; "
+                              f"a prestação soma R$ {soma}. Confira se é a mesma."})
     if len(itens) >= 15:
         gerais.append({"codigo": "F19", "gravidade": "ALERTA",
                        "msg": f"{len(itens)} itens — confira com atenção antes de aprovar."})
@@ -279,6 +317,7 @@ def criticar(s: Session, itens: list[dict[str, Any]], *, solicitante_id: int,
         "exige_atencao": bool(bloqueios or criticas_n),
         "historico": {k: v for k, v in hist.items()
                       if k not in ("documentos_usados", "descricoes")},
+        "limites": limites,
     }
 
 

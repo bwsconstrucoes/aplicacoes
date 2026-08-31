@@ -99,6 +99,12 @@ class Usuario(Base):
         default=PerfilUsuario.CONSULTA)
     cpf: Mapped[Optional[str]] = mapped_column(Text)
     telefone: Mapped[Optional[str]] = mapped_column(Text)
+    # fundo fixo: alçada de quem gasta, não do sistema
+    ff_teto_item: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    ff_teto_prestacao: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    ff_saldo_adiantamento: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0)
+    ff_autorizado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     observacoes: Mapped[Optional[str]] = mapped_column(Text)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
