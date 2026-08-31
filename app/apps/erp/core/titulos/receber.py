@@ -281,10 +281,10 @@ TIPOS_MOVIMENTO = {
     "TARIFA": ("Tarifa bancária", "6.2.01", True, False),
     "RENDIMENTO": ("Rendimento de aplicação", "1.3.01", False, True),
     # ---- neutras: passam pelo extrato, mas não são receita nem despesa
-    "RECEBIMENTO_INDEVIDO": ("Recebimento indevido (a devolver)", "9.1.01", False, True),
-    "DEVOLUCAO_INDEVIDO": ("Devolução de valor recebido por engano", "9.1.01", True, False),
-    "PAGAMENTO_INDEVIDO": ("Pagamento feito pela conta errada", "9.1.01", True, False),
-    "RESSARCIMENTO": ("Ressarcimento recebido de outra conta/empresa", "9.1.01", False, True),
+    "RECEBIMENTO_INDEVIDO": ("Recebimento indevido (a devolver)", "9.1.02", False, True),
+    "DEVOLUCAO_INDEVIDO": ("Devolução de valor recebido por engano", "9.1.02", True, False),
+    "PAGAMENTO_INDEVIDO": ("Pagamento feito pela conta errada", "9.1.03", True, False),
+    "RESSARCIMENTO": ("Ressarcimento recebido de outra conta/empresa", "9.1.03", False, True),
 }
 
 # tipos cuja natureza é neutra por definição: o par se anula
@@ -397,6 +397,66 @@ def vincular_par(s: Session, mov_id: int, par_id: int, usuario: Usuario,
     registrar_evento(s, "movimentacao", a.id, "PAR_NEUTRO_VINCULADO", {
         "com": b.id, "valor": str(a.valor), "motivo": motivo}, usuario.id)
     return {"vinculadas": [a.id, b.id], "valor": float(a.valor), "motivo": motivo}
+
+
+def resolver_par_no_extrato(s: Session, extrato_entrada_id: int, extrato_saida_id: int,
+                            *, motivo: str, contraparte: str = "",
+                            tipo: str = "RECEBIMENTO_INDEVIDO",
+                            usuario: Usuario) -> dict[str, Any]:
+    """Marca DUAS linhas do extrato como um par que se anula, criando as duas
+    movimentações e vinculando-as — tudo num passo só.
+
+    É como o financeiro pensa: 'esse crédito e esse débito são a mesma coisa,
+    entrou por engano e foi devolvido'. Não faz sentido obrigar a registrar
+    duas movimentações separadas e depois ligá-las na mão.
+    """
+    from app.apps.erp.db.models.financeiro import Extrato
+
+    entrada = s.get(Extrato, extrato_entrada_id)
+    saida = s.get(Extrato, extrato_saida_id)
+    if entrada is None or saida is None:
+        raise ErroValidacao("Lançamento do extrato não encontrado.")
+    if Decimal(entrada.valor) <= 0:
+        raise ErroValidacao("A primeira linha precisa ser a ENTRADA (crédito).")
+    if Decimal(saida.valor) >= 0:
+        raise ErroValidacao("A segunda linha precisa ser a SAÍDA (débito).")
+    if abs(Decimal(entrada.valor) + Decimal(saida.valor)) > Decimal("0.01"):
+        raise ErroValidacao(
+            f"Os valores não se anulam: entrou R$ {Decimal(entrada.valor):.2f} e saiu "
+            f"R$ {abs(Decimal(saida.valor)):.2f}. Se houve tarifa ou diferença, "
+            f"lance-a separadamente.")
+    if len((motivo or "").strip()) < 10:
+        raise ErroValidacao("Explique o que aconteceu (mínimo 10 caracteres).")
+
+    par_entrada = ("RECEBIMENTO_INDEVIDO" if tipo in ("RECEBIMENTO_INDEVIDO",
+                                                      "DEVOLUCAO_INDEVIDO")
+                   else "RESSARCIMENTO")
+    par_saida = ("DEVOLUCAO_INDEVIDO" if par_entrada == "RECEBIMENTO_INDEVIDO"
+                 else "PAGAMENTO_INDEVIDO")
+
+    mov_entrada = criar_movimentacao(s, {
+        "tipo": par_entrada, "conta_destino_id": entrada.conta_bancaria_id,
+        "valor": str(abs(Decimal(entrada.valor))),
+        "data_movimento": entrada.data_lancamento.isoformat(),
+        "descricao": (entrada.historico or "")[:120],
+        "motivo_neutra": motivo, "contraparte": contraparte,
+        "extrato_entrada_id": entrada.id}, usuario)
+    mov_saida = criar_movimentacao(s, {
+        "tipo": par_saida, "conta_origem_id": saida.conta_bancaria_id,
+        "valor": str(abs(Decimal(saida.valor))),
+        "data_movimento": saida.data_lancamento.isoformat(),
+        "descricao": (saida.historico or "")[:120],
+        "motivo_neutra": motivo, "contraparte": contraparte,
+        "extrato_saida_id": saida.id, "par_id": mov_entrada.id}, usuario)
+    s.flush()
+    registrar_evento(s, "movimentacao", mov_entrada.id, "PAR_NEUTRO_NO_EXTRATO", {
+        "entrada": {"extrato": entrada.id, "valor": str(entrada.valor)},
+        "saida": {"extrato": saida.id, "valor": str(saida.valor)},
+        "motivo": motivo, "contraparte": contraparte}, usuario.id)
+    return {"movimentacoes": [mov_entrada.id, mov_saida.id],
+            "valor": float(abs(Decimal(entrada.valor))),
+            "mensagem": f"As duas linhas foram marcadas como movimentação neutra "
+                        f"(conta {TIPOS_MOVIMENTO[par_entrada][1]}) e se anulam."}
 
 
 def neutras_sem_par(s: Session) -> list[dict[str, Any]]:

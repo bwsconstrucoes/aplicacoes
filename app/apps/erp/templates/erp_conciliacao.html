@@ -38,11 +38,13 @@
   <div class="tabela-barra">
     <span class="resumo" id="resumo"></span>
     <span class="espaco"></span>
+    <span id="acao-par" class="oculto"><button class="btn amarelo" id="btn-par">
+      ⇄ Marcar as 2 selecionadas como par que se anula</button></span>
     <button class="btn secundario" id="btn-mov">+ Movimentação entre contas</button>
   </div>
   <div class="tabela-rolagem">
     <table><thead><tr>
-      <th>Data</th><th>Conta</th><th class="direita">Valor</th>
+      <th style="width:34px"></th><th>Data</th><th>Conta</th><th class="direita">Valor</th>
       <th>Histórico</th><th>Situação</th><th>Vinculado a</th><th></th>
     </tr></thead><tbody id="corpo"></tbody></table>
   </div>
@@ -56,7 +58,7 @@
 
 {% block scripts %}
 <script>
-let LINHAS = [], CONTAS = [], TIPOS_MOV = [];
+let LINHAS = [], CONTAS = [], TIPOS_MOV = [], SEL = new Set();
 const ESTADOS = {CONCILIADO: "Conciliado", SEM_TITULO: "Sem título",
                  MOVIMENTACAO: "Movimentação"};
 const rotuloEstado = e => ESTADOS[e] || e;
@@ -152,6 +154,8 @@ function desenhar(){
         ? `${rotulo(d.tipo||"")}<small>${d.descricao||""}</small>`
         : `<small>${d.sugestao||""}</small>`;
     return `<tr>
+      <td>${x.estado==="SEM_TITULO"
+        ? `<input type="checkbox" data-sel="${x.extrato_id}" ${SEL.has(x.extrato_id)?"checked":""}>` : ""}</td>
       <td class="dados">${dataBR(x.data)}</td>
       <td><small>${x.conta}</small></td>
       <td class="direita dados ${x.valor<0?"":"" }" style="${x.valor>0?"color:var(--verde)":""}">${numero(x.valor)}</td>
@@ -163,6 +167,13 @@ function desenhar(){
     </tr>`; }).join("");
   document.querySelectorAll("[data-resolver]").forEach(b =>
     b.addEventListener("click", () => resolver(+b.dataset.resolver)));
+  document.querySelectorAll("[data-sel]").forEach(cb => cb.addEventListener("change", ev => {
+    const id = +ev.target.dataset.sel;
+    ev.target.checked ? SEL.add(id) : SEL.delete(id);
+    els("acao-par").classList.toggle("oculto", SEL.size !== 2);
+    if (SEL.size > 2) { SEL.delete(id); ev.target.checked = false;
+      aviso("mensagem","Selecione exatamente duas linhas: a entrada e a saída.","erro"); }
+  }));
   els("resumo").innerHTML = `<b>${l.length}</b> lançamento(s) · <b>${moeda(l.reduce((a,x)=>a+x.valor,0))}</b>`;
 }
 
@@ -251,6 +262,58 @@ async function resolver(extratoId){
   });
   els("dlg").showModal();
 }
+
+els("btn-par").addEventListener("click", () => {
+  const escolhidas = LINHAS.filter(l => SEL.has(l.extrato_id));
+  const entrada = escolhidas.find(l => l.valor > 0);
+  const saida = escolhidas.find(l => l.valor < 0);
+  if (!entrada || !saida) {
+    aviso("mensagem","Escolha uma linha de entrada (crédito) e uma de saída (débito).","erro");
+    return;
+  }
+  els("dlg-titulo").textContent = "Par que se anula";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="aviso info">As duas linhas conciliam normalmente, mas o par se anula:
+      não vira receita, nem despesa, nem custo de obra. Some dos relatórios gerenciais,
+      com o motivo registrado.</div>
+    <table><tbody>
+      <tr><td>Entrou</td><td class="dados">${dataBR(entrada.data)}</td>
+        <td class="desc">${entrada.historico}</td>
+        <td class="direita dados" style="color:var(--verde)">${numero(entrada.valor)}</td></tr>
+      <tr><td>Saiu</td><td class="dados">${dataBR(saida.data)}</td>
+        <td class="desc">${saida.historico}</td>
+        <td class="direita dados">${numero(saida.valor)}</td></tr>
+    </tbody></table>
+    ${Math.abs(entrada.valor + saida.valor) > 0.01
+      ? `<div class="critica BLOQUEIA">Os valores não se anulam
+         (diferença de ${moeda(Math.abs(entrada.valor + saida.valor))}).</div>` : ""}
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo"><label>O que aconteceu</label><select id="p-tipo">
+        <option value="RECEBIMENTO_INDEVIDO">Recebemos por engano e devolvemos (conta 9.1.02)</option>
+        <option value="RESSARCIMENTO">Pagamos pela conta errada e fomos ressarcidos (conta 9.1.03)</option>
+      </select></div>
+      <div class="campo"><label>Contraparte</label>
+        <input id="p-contra" value="${entrada.nome || saida.nome || ""}"
+               placeholder="empresa/parceiro envolvido"></div>
+      <div class="campo" style="grid-column:span 2"><label>Motivo *</label>
+        <input id="p-motivo" placeholder="ex.: parceiro depositou na conta da BWS por engano; devolvido em 27/08">
+        <div class="dica">É o que explica, meses depois, por que esse dinheiro passou pela conta.</div></div>
+    </div>
+    <div style="margin-top:14px"><button class="btn" id="p-ok">Marcar como par neutro</button></div>`;
+  els("p-ok").addEventListener("click", async () => {
+    try {
+      const d = await api("/erp/api/conciliacao/par-neutro", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({extrato_entrada_id: entrada.extrato_id,
+          extrato_saida_id: saida.extrato_id, tipo: els("p-tipo").value,
+          contraparte: els("p-contra").value, motivo: els("p-motivo").value})});
+      els("dlg").close(); SEL.clear();
+      aviso("mensagem", d.resultado.mensagem, "ok");
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+});
 
 els("btn-mov").addEventListener("click", () => {
   els("dlg-titulo").textContent = "Movimentação entre contas";

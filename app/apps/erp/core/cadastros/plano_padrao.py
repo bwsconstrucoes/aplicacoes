@@ -290,6 +290,13 @@ PLANO: list[tuple[str, str, str, str, list[tuple]]] = [
     ("9", "Movimentações financeiras", "9.1", "Transferências", [
         ("9.1.01", "Transferência entre contas da empresa", "FLUXO", True, [EXC],
          "Saída de uma conta e entrada em outra — não é despesa."),
+        ("9.1.02", "Valores de terceiros recebidos e devolvidos", "FLUXO", True, [EXC],
+         "Dinheiro que caiu na conta por engano e foi devolvido. A MESMA conta "
+         "registra as duas pontas: a entrada e a devolução. Saldo diferente de "
+         "zero significa que alguma devolução ficou pendente."),
+        ("9.1.03", "Pagamentos por conta errada e ressarcimentos", "FLUXO", True, [EXC],
+         "Conta paga pela conta bancária errada e o ressarcimento recebido depois. "
+         "As duas pontas na mesma conta; saldo zero é o caso encerrado."),
     ]),
     ("9", "Movimentações financeiras", "9.2", "Aplicações", [
         ("9.2.01", "Aplicação financeira — saída", "FLUXO", True, [EXC], ""),

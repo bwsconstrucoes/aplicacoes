@@ -2537,6 +2537,28 @@ def api_vincular_neutras():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/conciliacao/par-neutro", methods=["POST"])
+@login_obrigatorio
+def api_par_neutro():
+    """Marca duas linhas do extrato (a entrada e a saída) como par que se anula."""
+    from app.apps.erp.core.titulos.receber import resolver_par_no_extrato
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = resolver_par_no_extrato(
+                s, int(d["extrato_entrada_id"]), int(d["extrato_saida_id"]),
+                motivo=d.get("motivo", ""), contraparte=d.get("contraparte", ""),
+                tipo=(d.get("tipo") or "RECEBIMENTO_INDEVIDO"), usuario=usuario)
+            s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao resolver par neutro")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/health")
 def health():
     """Health check do módulo — não exige login."""

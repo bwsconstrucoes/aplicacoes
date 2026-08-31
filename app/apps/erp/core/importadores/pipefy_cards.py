@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import re
 import logging
 import os
 import re
@@ -111,6 +112,32 @@ query ($id: ID!, $after: String) {
 # ---------------------------------------------------------------------------
 # Conversores
 # ---------------------------------------------------------------------------
+def normalizar_codigo_barras(valor: Any) -> Optional[str]:
+    """Extrai a linha digitável do campo do Pipefy.
+
+    O campo não vem limpo: costuma trazer o VALOR colado no fim, separado por
+    hífen ("0019...0000100000-1000,00"), e, quando o boleto não existe ou não
+    passou na validação, vem a palavra INVALIDO ou só zeros. Nesses casos o
+    título tem que ser importado SEM código de barras, e não com lixo dentro.
+    """
+    texto = _texto(valor).strip()
+    if not texto:
+        return None
+    if "INVALID" in texto.upper() or "ERRO" in texto.upper():
+        return None
+    # o valor vem depois do último hífen: 0019...-1000,00
+    if "-" in texto:
+        texto = texto.rsplit("-", 1)[0]
+    digitos = re.sub(r"\D", "", texto)
+    if not digitos or set(digitos) == {"0"}:
+        return None
+    if len(digitos) not in (47, 48):
+        logger.info("Pipefy: código de barras com %d dígitos ignorado (esperado 47 ou 48)",
+                    len(digitos))
+        return None
+    return digitos
+
+
 def _mapa_campos(card: dict[str, Any]) -> dict[str, str]:
     """{id_do_campo: valor legível}.
 
@@ -212,15 +239,15 @@ def extrair_dados(card: dict[str, Any]) -> dict[str, Any]:
                            ("valor_da_parcela_2" if i == 2 else f"valor_parcela_{i}")))
         if venc and val:
             parcelas.append({"vencimento": venc, "valor": str(val),
-                             "linha_digitavel": somente_digitos(
-                                 _texto(c.get(f"c_digo_de_barras_{i}")))})
+                             "linha_digitavel": normalizar_codigo_barras(
+                                 c.get(f"c_digo_de_barras_{i}"))})
     if not parcelas:
         venc = _data(c.get("data_de_pagamento"))
         val = _valor(c.get("valor"))
         if venc and val:
             parcelas.append({"vencimento": venc, "valor": str(val),
-                             "linha_digitavel": somente_digitos(
-                                 _texto(c.get("c_digo_de_barras_11")))})
+                             "linha_digitavel": normalizar_codigo_barras(
+                                 c.get("c_digo_de_barras_11"))})
 
     # rateio: centros de custo 1..5
     rateios: list[dict[str, Any]] = []

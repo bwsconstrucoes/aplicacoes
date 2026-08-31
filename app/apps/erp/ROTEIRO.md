@@ -64,7 +64,9 @@
 - [x] Movimentações entre contas (lançamento simples)
 - [x] Movimentação NEUTRA: dinheiro que entrou/saiu por engano e foi
       devolvido/ressarcido — o par se anula e não entra em relatório algum;
-      ponta sem contraparte fica cobrada na conciliação
+      ponta sem contraparte fica cobrada na conciliação; contas 9.1.02
+      (valores de terceiros) e 9.1.03 (pagamento por conta errada), cada uma
+      servindo a entrada e a saída
 - [x] Conciliação — baixa por comprovante e reconhecimento de tarifa/
       transferência pelo comprovante
 - [x] **Relatórios**: totais por 8 dimensões, DRE gerencial, analítico, CSV
