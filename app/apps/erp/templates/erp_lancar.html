@@ -89,6 +89,16 @@
     <div class="cartao-dica">Soma do rateio: <b id="soma-rateios">R$ 0,00</b></div>
   </div>
 
+  <div class="cartao">
+    <div class="cartao-cab"><h3>6 · Quem mais acompanha</h3>
+      <small>além de você, estas pessoas recebem os avisos deste título</small></div>
+    <div id="lista-interessados" class="filtro-opcoes"
+         style="max-height:190px; border:1px solid var(--borda); border-radius:8px; padding:6px"></div>
+    <div class="cartao-dica">Para receber pelo Telegram, a pessoa precisa estar cadastrada
+      no bot (o cadastro liga o telefone/CPF ao Telegram dela). Quem não estiver aparece
+      marcado — o aviso fica registrado como não entregue.</div>
+  </div>
+
   <div class="cartao" id="bloco-critica"></div>
 
   <div class="cartao">
@@ -112,6 +122,18 @@ const dec = v => {
   const n = parseFloat(s); return isNaN(n) ? 0 : n;
 };
 const fmt = n => "R$ " + (n||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+async function carregarInteressados(){
+  try {
+    const d = await api("/erp/api/operadores/contato");
+    els("lista-interessados").innerHTML = d.operadores.map(o=>`
+      <label class="opcao"><input type="checkbox" class="interessado" value="${o.id}">
+        <span class="rotulo">${o.nome} <small>· ${o.perfil.replace(/_/g," ").toLowerCase()}</small></span>
+        ${o.tem_contato ? "" : `<span class="qtd" style="color:var(--vermelho)">sem contato</span>`}
+      </label>`).join("");
+  } catch(e){ els("lista-interessados").innerHTML =
+    `<div class="cartao-dica">Não foi possível listar os operadores.</div>`; }
+}
 
 async function carregar(){
   try {
@@ -300,6 +322,7 @@ function montar(){
     parcelas: PARC.filter(p=>p.vencimento).map(p=>({vencimento:p.vencimento,
       valor:String(dec(p.valor)), linha_digitavel:(p.linha_digitavel||"").trim()})),
     rateios: RAT.filter(r=>r.obra_id).map(r=>({obra_id:+r.obra_id, valor:String(dec(r.valor))})),
+    interessados: [...document.querySelectorAll(".interessado:checked")].map(i=>+i.value),
   };
 }
 
@@ -359,5 +382,6 @@ els("btn-enviar").addEventListener("click", async () => {
 });
 
 carregar();
+carregarInteressados();
 </script>
 {% endblock %}

@@ -1927,6 +1927,125 @@ def api_auditoria():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/interessados/<int:titulo_id>", methods=["GET", "POST", "DELETE"])
+@login_obrigatorio
+def api_interessados(titulo_id: int):
+    """Quem mais acompanha o título e recebe os avisos."""
+    from sqlalchemy import select
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.financeiro import TituloInteressado
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                from app.apps.erp.core.notificacoes import destinatarios
+                from app.apps.erp.db.models.financeiro import Titulo as _T
+                t = s.get(_T, titulo_id)
+                if t is None:
+                    return jsonify({"ok": False, "erro": "Título não encontrado."}), 404
+                extras = s.scalars(select(TituloInteressado).where(
+                    TituloInteressado.titulo_id == titulo_id)).all()
+                pessoas = destinatarios(s, t)
+                return jsonify({"ok": True,
+                    "interessados": [{"usuario_id": i.usuario_id,
+                                      "nome": (s.get(Usuario, i.usuario_id).nome
+                                               if s.get(Usuario, i.usuario_id) else "—"),
+                                      "motivo": i.motivo} for i in extras],
+                    "recebem_aviso": [{"id": u.id, "nome": u.nome,
+                                       "tem_contato": bool(u.telefone or u.cpf)}
+                                      for u in pessoas]})
+            d = request.get_json(silent=True) or {}
+            if request.method == "DELETE":
+                alvo = s.scalars(select(TituloInteressado).where(
+                    TituloInteressado.titulo_id == titulo_id,
+                    TituloInteressado.usuario_id == int(d.get("usuario_id")))).first()
+                if alvo is not None:
+                    s.delete(alvo)
+                    registrar_evento(s, "titulo", titulo_id, "INTERESSADO_REMOVIDO",
+                                     {"usuario_id": d.get("usuario_id")}, atual.id)
+                    s.commit()
+                return jsonify({"ok": True})
+            adicionados = []
+            for uid in (d.get("usuarios") or []):
+                pessoa = s.get(Usuario, int(uid))
+                if pessoa is None or not pessoa.ativo:
+                    continue
+                ja = s.scalars(select(TituloInteressado).where(
+                    TituloInteressado.titulo_id == titulo_id,
+                    TituloInteressado.usuario_id == pessoa.id)).first()
+                if ja is not None:
+                    continue
+                s.add(TituloInteressado(titulo_id=titulo_id, usuario_id=pessoa.id,
+                                        motivo=(d.get("motivo") or "").strip() or None,
+                                        adicionado_por=atual.id))
+                adicionados.append(pessoa.nome)
+            if adicionados:
+                registrar_evento(s, "titulo", titulo_id, "INTERESSADOS_ADICIONADOS",
+                                 {"pessoas": adicionados}, atual.id)
+            s.commit()
+            return jsonify({"ok": True, "adicionados": adicionados})
+    except Exception as e:
+        logger.exception("ERP: falha nos interessados")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>/interessados", methods=["GET", "POST"])
+@login_obrigatorio
+def api_obra_interessados(obra_id: int):
+    """Interessados fixos da obra: entram em todo título dela."""
+    from sqlalchemy import select
+    from app.apps.erp.core.auth.permissoes import exigir
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.financeiro import ObraInteressado
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                linhas = s.scalars(select(ObraInteressado).where(
+                    ObraInteressado.obra_id == obra_id)).all()
+                return jsonify({"ok": True, "interessados": [
+                    {"usuario_id": i.usuario_id,
+                     "nome": (s.get(Usuario, i.usuario_id).nome
+                              if s.get(Usuario, i.usuario_id) else "—")} for i in linhas]})
+            exigir(atual, "configurar")
+            d = request.get_json(silent=True) or {}
+            for i in s.scalars(select(ObraInteressado).where(
+                    ObraInteressado.obra_id == obra_id)).all():
+                s.delete(i)
+            s.flush()
+            nomes = []
+            for uid in (d.get("usuarios") or []):
+                pessoa = s.get(Usuario, int(uid))
+                if pessoa is not None and pessoa.ativo:
+                    s.add(ObraInteressado(obra_id=obra_id, usuario_id=pessoa.id))
+                    nomes.append(pessoa.nome)
+            registrar_evento(s, "obra", obra_id, "INTERESSADOS_DEFINIDOS",
+                             {"pessoas": nomes}, atual.id)
+            s.commit()
+            return jsonify({"ok": True, "interessados": nomes})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except Exception as e:
+        logger.exception("ERP: falha nos interessados da obra")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/operadores/contato")
+@login_obrigatorio
+def api_operadores_contato():
+    """Lista enxuta para escolher interessados, dizendo quem consegue receber."""
+    from sqlalchemy import select
+    try:
+        with get_session() as s:
+            usuarios = s.scalars(select(Usuario).where(Usuario.ativo.is_(True))
+                                 .order_by(Usuario.nome)).all()
+            return jsonify({"ok": True, "operadores": [
+                {"id": u.id, "nome": u.nome, "perfil": u.perfil.value,
+                 "tem_contato": bool(u.telefone or u.cpf)} for u in usuarios]})
+    except Exception as e:
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/health")
 def health():
     """Health check do módulo — não exige login."""

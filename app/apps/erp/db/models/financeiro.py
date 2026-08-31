@@ -455,3 +455,25 @@ class TituloAval(Base):
     ip: Mapped[Optional[str]] = mapped_column(Text)
     dispositivo: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TituloInteressado(Base):
+    """Quem mais acompanha o título e recebe os avisos, além do solicitante."""
+    __tablename__ = "titulo_interessados"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    titulo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("titulos.id"), nullable=False)
+    usuario_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
+    motivo: Mapped[Optional[str]] = mapped_column(Text)
+    adicionado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ObraInteressado(Base):
+    """Interessado fixo de uma obra: entra automaticamente em todo título dela."""
+    __tablename__ = "obra_interessados"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
+    usuario_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -88,9 +88,10 @@
 - [ ] Obra — falta: fases de acompanhamento; alerta de data-base do reajuste
 - [ ] Integrar com o módulo emissaonf: emitir a nota a partir da medição
 - [ ] **Open Finance / API bancária**: extrato e DDA automáticos (futuro)
-- [x] Aviso ao solicitante quando o título é pago, via TELEGRAM, com o
-      comprovante junto — idempotente (não reenvia a mesma baixa) e marcando
-      correção quando valor/data mudam
+- [x] Aviso quando o título é pago, via TELEGRAM, com o comprovante junto —
+      idempotente por pessoa, marcando correção quando valor/data mudam
+- [x] INTERESSADOS: quem lança escolhe outras pessoas para receberem os avisos;
+      a obra pode ter interessados fixos que entram em todo título dela
 - [x] Histórico completo por título na tela + histórico de QUALQUER cadastro
       (obra, fornecedor, categoria, movimentação) e consulta ampla de auditoria
 - [x] AVAL em duas pessoas: lançamento de administrativo de obra/escritório

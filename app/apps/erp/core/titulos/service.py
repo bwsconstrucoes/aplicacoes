@@ -282,7 +282,27 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
     s.add(titulo)
     s.flush()
 
+    # interessados adicionais: recebem os avisos junto com quem lançou
+    from app.apps.erp.db.models.financeiro import TituloInteressado
+    interessados = []
+    for uid in (dados.get("interessados") or []):
+        try:
+            uid = int(uid)
+        except (TypeError, ValueError):
+            continue
+        if uid == usuario.id:
+            continue                       # o solicitante já é destinatário
+        pessoa = s.get(Usuario, uid)
+        if pessoa is None or not pessoa.ativo:
+            continue
+        s.add(TituloInteressado(titulo_id=titulo.id, usuario_id=uid,
+                                adicionado_por=usuario.id))
+        interessados.append(pessoa.nome)
+    if interessados:
+        s.flush()
+
     registrar_evento(s, "titulo", titulo.id, "CRIADO", {
+        "interessados": interessados,
         "numero_sp": titulo.numero_sp, "tipo": tipo.value,
         "fornecedor": forn.razao_social, "valor_liquido": str(valor_liquido),
         "parcelas": len(parcelas_obj), "criticas_transicao": criticas_transicao,

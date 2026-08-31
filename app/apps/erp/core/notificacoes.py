@@ -28,7 +28,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.apps.erp.db.models.cadastros import Usuario
 from app.apps.erp.db.models.financeiro import (
-    Anexo, Pagamento, Parcela, Rateio, Titulo,
+    Anexo, ObraInteressado, Pagamento, Parcela, Rateio, Titulo, TituloInteressado,
 )
 
 logger = logging.getLogger(__name__)
@@ -97,9 +97,33 @@ def _texto_baixa(t: Titulo, p: Parcela, pg: Pagamento, obras: str,
     return "\n".join(linhas)
 
 
+def destinatarios(s: Session, titulo: Titulo) -> list[Usuario]:
+    """Quem recebe os avisos deste título: quem lançou, os interessados
+    adicionados no lançamento e os interessados fixos das obras do rateio.
+    Sem repetição e sem quem estiver inativo."""
+    ids: list[int] = [titulo.solicitante_id]
+    ids += [i.usuario_id for i in s.scalars(select(TituloInteressado).where(
+        TituloInteressado.titulo_id == titulo.id)).all()]
+    obras = [r.obra_id for r in s.scalars(select(Rateio).where(
+        Rateio.titulo_id == titulo.id)).all()]
+    if obras:
+        ids += [i.usuario_id for i in s.scalars(select(ObraInteressado).where(
+            ObraInteressado.obra_id.in_(obras))).all()]
+    vistos, saida = set(), []
+    for uid in ids:
+        if uid in vistos:
+            continue
+        vistos.add(uid)
+        u = s.get(Usuario, uid)
+        if u is not None and u.ativo:
+            saida.append(u)
+    return saida
+
+
 def avisar_baixa(s: Session, pagamento_id: int, *, forcar: bool = False,
                  enviar_comprovante: bool = True) -> dict[str, Any]:
-    """Avisa quem lançou o título de que ele foi pago, com o comprovante."""
+    """Avisa quem lançou e os demais interessados de que o título foi pago,
+    com o comprovante junto."""
     pg = s.get(Pagamento, pagamento_id, options=[
         selectinload(Pagamento.parcela).selectinload(Parcela.titulo)
         .selectinload(Titulo.fornecedor)])
@@ -123,16 +147,10 @@ def avisar_baixa(s: Session, pagamento_id: int, *, forcar: bool = False,
         "AND referencia <> :r AND situacao = 'ENVIADO' LIMIT 1"),
         {"t": t.id, "r": referencia}).first() is not None
 
-    solicitante = s.get(Usuario, t.solicitante_id)
-    if solicitante is None or not (solicitante.telefone or solicitante.cpf):
-        _registrar(s, evento="BAIXA", referencia=referencia, titulo_id=t.id,
-                   pagamento_id=pg.id,
-                   destinatario_id=(solicitante.id if solicitante else None),
-                   destino="", situacao="IGNORADO", mensagem="",
-                   erro="solicitante sem telefone/CPF cadastrado")
+    pessoas = destinatarios(s, t)
+    if not pessoas:
         return {"ok": False, "situacao": "SEM_DESTINO",
-                "motivo": f"{solicitante.nome if solicitante else 'solicitante'} não tem "
-                          f"telefone nem CPF no cadastro — aviso não enviado"}
+                "motivo": "nenhum destinatário ativo para este título"}
 
     obras = " + ".join(sorted({r.obra.codigo for r in
                               s.scalars(select(Rateio).where(Rateio.titulo_id == t.id)
@@ -149,29 +167,50 @@ def avisar_baixa(s: Session, pagamento_id: int, *, forcar: bool = False,
             nome_arquivo = anexo.nome_arquivo
             tipo = "image" if (anexo.mime_type or "").startswith("image/") else "document"
 
-    try:
-        from app.apps.notificador import enviar_telegram
-        resultado = enviar_telegram(
-            telefone=solicitante.telefone, cpf=solicitante.cpf,
-            mensagem=mensagem, arquivo_base64=arquivo_b64,
-            nome_arquivo=nome_arquivo, tipo=tipo)
-        ok = bool(resultado and resultado.get("ok"))
-        detalhe = str(resultado.get("detalhe") or resultado.get("erro") or "") if resultado else ""
-    except Exception as e:                      # falha de aviso não derruba a baixa
-        logger.exception("ERP/aviso: falha ao notificar %s", t.numero_sp)
-        ok, detalhe = False, str(e)
+    enviados, falhas, sem_destino = [], [], []
+    for pessoa in pessoas:
+        # referência por PESSOA: cada uma recebe uma vez, e o reenvio de um
+        # não dispara de novo para os outros
+        ref_pessoa = f"{referencia}:{pessoa.id}"
+        anterior_p = _ja_enviado(s, "BAIXA", ref_pessoa)
+        if anterior_p and anterior_p["situacao"] == "ENVIADO" and not forcar:
+            continue
+        if not (pessoa.telefone or pessoa.cpf):
+            sem_destino.append(pessoa.nome)
+            _registrar(s, evento="BAIXA", referencia=ref_pessoa, titulo_id=t.id,
+                       pagamento_id=pg.id, destinatario_id=pessoa.id, destino="",
+                       situacao="IGNORADO", mensagem="",
+                       erro="sem telefone/CPF no cadastro")
+            continue
+        try:
+            from app.apps.notificador import enviar_telegram
+            resultado = enviar_telegram(
+                telefone=pessoa.telefone, cpf=pessoa.cpf, mensagem=mensagem,
+                arquivo_base64=arquivo_b64, nome_arquivo=nome_arquivo, tipo=tipo)
+            ok = bool(resultado and resultado.get("ok"))
+            detalhe = str(resultado.get("detalhe") or resultado.get("erro") or "") if resultado else ""
+        except Exception as e:               # falha de aviso não derruba a baixa
+            logger.exception("ERP/aviso: falha ao notificar %s para %s",
+                             t.numero_sp, pessoa.nome)
+            ok, detalhe = False, str(e)
+        _registrar(s, evento="BAIXA", referencia=ref_pessoa, titulo_id=t.id,
+                   pagamento_id=pg.id, destinatario_id=pessoa.id,
+                   destino=pessoa.telefone or pessoa.cpf or "",
+                   situacao="ENVIADO" if ok else "FALHA", mensagem=mensagem,
+                   erro="" if ok else detalhe, com_anexo=bool(arquivo_b64))
+        (enviados if ok else falhas).append(
+            pessoa.nome if ok else f"{pessoa.nome}: {detalhe}")
 
-    _registrar(s, evento="BAIXA", referencia=referencia, titulo_id=t.id,
-               pagamento_id=pg.id, destinatario_id=solicitante.id,
-               destino=solicitante.telefone or solicitante.cpf or "",
-               situacao="ENVIADO" if ok else "FALHA", mensagem=mensagem,
-               erro="" if ok else detalhe, com_anexo=bool(arquivo_b64))
-    logger.info("ERP/aviso: %s → %s (%s)%s", t.numero_sp, solicitante.nome,
-                "enviado" if ok else f"falhou: {detalhe}",
-                " com comprovante" if arquivo_b64 else "")
-    return {"ok": ok, "situacao": "ENVIADO" if ok else "FALHA",
-            "destinatario": solicitante.nome, "correcao": houve_outro,
-            "com_comprovante": bool(arquivo_b64), "detalhe": detalhe}
+    if not enviados and not falhas and not sem_destino:
+        return {"ok": True, "situacao": "JA_ENVIADO",
+                "motivo": "todos os interessados já foram avisados desta baixa"}
+
+    logger.info("ERP/aviso: %s → %d enviado(s), %d falha(s), %d sem destino",
+                t.numero_sp, len(enviados), len(falhas), len(sem_destino))
+    return {"ok": bool(enviados), "situacao": "ENVIADO" if enviados else "FALHA",
+            "enviados": enviados, "falhas": falhas, "sem_destino": sem_destino,
+            "correcao": houve_outro, "com_comprovante": bool(arquivo_b64),
+            "destinatarios": len(pessoas)}
 
 
 def historico(s: Session, titulo_id: int) -> list[dict[str, Any]]:
