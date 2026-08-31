@@ -35,6 +35,9 @@ async function carregar(){
         <div class="kpi-valor">${PEND.length}</div><div class="kpi-sub">${moeda(total)}</div></div>
       <div class="kpi estatico vermelho"><div class="kpi-rotulo">Com apontamento</div>
         <div class="kpi-valor">${risco}</div><div class="kpi-sub">risco na análise</div></div>
+      <div class="kpi estatico vermelho"><div class="kpi-rotulo">Prestações com indício</div>
+        <div class="kpi-valor">${PEND.filter(t=>t.exige_conferencia).length}</div>
+        <div class="kpi-sub">precisam ser analisadas</div></div>
       <div class="kpi estatico ciano"><div class="kpi-rotulo">Vencendo em 7 dias</div>
         <div class="kpi-valor">${PEND.filter(t=>t.vencimento && t.vencimento <= new Date(Date.now()+7*864e5).toISOString().slice(0,10)).length}</div></div>`;
     desenhar();
@@ -52,6 +55,11 @@ function desenhar(){
     <div class="cartao" style="border-left:4px solid var(--amarelo); box-shadow:none; border:1px solid var(--borda)">
       <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:baseline">
         <b class="dados">${t.numero_sp}</b>
+        ${t.modalidade && t.modalidade!=="NORMAL"
+          ? `<span class="selo pago">${t.modalidade==="FUNDO_FIXO"
+              ? "Fundo fixo · "+rotulo(t.fundo_fixo_tipo||"") : "Cartão"} · ${t.itens} itens</span>` : ""}
+        ${t.bloqueios ? `<span class="selo bloqueado">${t.bloqueios} bloqueio(s)</span>` : ""}
+        ${t.criticas ? `<span class="selo aguardando">${t.criticas} apontamento(s)</span>` : ""}
         <span style="font-size:16px"><b>${moeda(t.valor)}</b></span>
         <span class="selo outro">${t.obra||"sem obra"}</span>
         ${t.risco>=15?`<span class="selo bloqueado">risco ${t.risco}</span>`:""}
@@ -62,15 +70,21 @@ function desenhar(){
       <div class="cartao-dica" style="margin-top:4px">${t.descricao}<br>
         ${t.categoria} · competência ${t.competencia} ·
         ${t.parcelas} parcela(s) · 1º vencimento ${dataBR(t.vencimento)}</div>
+      ${t.exige_conferencia ? `<div class="critica BLOQUEIA" style="margin-top:8px">
+        <b>${t.nao_conferidos} despesa(s) com indício ainda não analisada(s).</b>
+        Abra o detalhe, confira cada uma e registre a análise — só então dá para assinar.</div>` : ""}
       <div style="margin-top:10px; display:flex; gap:8px">
-        <button class="btn" data-conf="${t.id}">✓ Confirmar e assinar</button>
+        <button class="btn" data-conf="${t.id}" ${t.exige_conferencia?"disabled":""}>✓ Confirmar e assinar</button>
         <button class="btn secundario" data-rec="${t.id}">✕ Recusar</button>
         <button class="btn secundario" data-ver="${t.id}">Ver detalhe</button>
       </div>
     </div>`).join("");
   document.querySelectorAll("[data-conf]").forEach(b=>b.addEventListener("click",()=>assinar(+b.dataset.conf,"CONFIRMADO")));
   document.querySelectorAll("[data-rec]").forEach(b=>b.addEventListener("click",()=>assinar(+b.dataset.rec,"RECUSADO")));
-  document.querySelectorAll("[data-ver]").forEach(b=>b.addEventListener("click",()=>verDetalhe(+b.dataset.ver)));
+  document.querySelectorAll("[data-ver]").forEach(b=>b.addEventListener("click",()=>{
+    const t = PEND.find(x=>x.id===+b.dataset.ver);
+    (t && t.modalidade && t.modalidade!=="NORMAL") ? verPrestacao(t.id) : verDetalhe(+b.dataset.ver);
+  }));
 }
 
 function assinar(id, decisao){
@@ -114,6 +128,76 @@ function assinar(id, decisao){
     } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   });
   els("dlg").showModal();
+}
+
+async function verPrestacao(id){
+  try {
+    const {prestacao: p} = await api(`/erp/api/prestacao/${id}`);
+    const grave = i => (i.criticas||[]).some(x=>x.gravidade==="BLOQUEIA") ? "BLOQUEIA"
+      : (i.criticas||[]).some(x=>x.gravidade==="CRITICA") ? "CRITICA"
+      : (i.criticas||[]).length ? "ALERTA" : "";
+    const pendentes = p.itens.filter(i=>["BLOQUEIA","CRITICA"].includes(grave(i)) && !i.conferido);
+    els("dlg-titulo").textContent = `${p.numero_sp} — ${p.solicitante}`;
+    els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+      <div class="kpis">
+        <div class="kpi estatico"><div class="kpi-rotulo">${p.modalidade==="FUNDO_FIXO"
+          ? "Fundo fixo · "+rotulo(p.fundo_fixo_tipo||"") : "Cartão"}</div>
+          <div class="kpi-valor" style="font-size:18px">${moeda(p.total)}</div>
+          <div class="kpi-sub">${p.itens.length} despesa(s)${p.periodo?` · ${p.periodo}`:""}</div></div>
+        <div class="kpi estatico ${pendentes.length?"vermelho":"verde"}">
+          <div class="kpi-rotulo">Aguardando sua análise</div>
+          <div class="kpi-valor">${pendentes.length}</div>
+          <div class="kpi-sub">${p.itens.filter(i=>i.conferido).length} já conferida(s)</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">Análises registradas</div>
+          <div class="kpi-valor">${(p.alertas_confirmados||[]).length}</div></div>
+      </div>
+      <h4>Despesas — o que estiver marcado precisa de tratativa</h4>
+      <table><thead><tr><th>#</th><th>Data</th><th>Descrição</th>
+        <th class="direita">Valor</th><th>Obra</th><th>Compr.</th><th>Situação</th></tr></thead>
+      <tbody>${p.itens.map(i=>{
+        const g = grave(i);
+        const cor = {BLOQUEIA:"var(--vermelho)", CRITICA:"var(--ambar)", ALERTA:"var(--amarelo)"}[g];
+        return `<tr style="${cor?`border-left:4px solid ${cor}`:""}">
+          <td class="dados">${i.ordem}</td><td class="dados">${dataBR(i.data)}</td>
+          <td class="desc">${i.descricao}${i.estabelecimento?`<small>${i.estabelecimento}</small>`:""}
+            ${(i.criticas||[]).map(x=>`<small style="display:block; color:${
+              x.gravidade==="BLOQUEIA"?"var(--vermelho)":x.gravidade==="CRITICA"?"var(--ambar)":"var(--tinta-suave)"}">
+              <b>${x.codigo}</b> ${x.msg}</small>`).join("")}
+            ${i.observacao?`<small style="display:block"><i>análise: ${i.observacao}</i></small>`:""}</td>
+          <td class="direita dados">${numero(i.valor)}</td><td>${i.obra}</td>
+          <td>${i.anexo_id?`<a class="btn secundario" href="/erp/anexo/${i.anexo_id}" target="_blank">ver</a>`:"—"}</td>
+          <td>${!g ? `<span class="selo aprovado">ok</span>`
+            : i.conferido ? `<span class="selo aprovado">analisada</span>`
+            : `<button class="btn secundario" data-conferir="${i.id}">Analisar</button>`}</td>
+        </tr>`; }).join("")}</tbody></table>
+      ${(p.alertas_confirmados||[]).length?`<h4>Análises registradas</h4>` +
+        p.alertas_confirmados.map(a=>`<div class="critica ALERTA">
+          <b>${a.por}</b> (${rotulo(a.perfil)}): ${a.observacao}</div>`).join("") : ""}
+      <h4>Registrar análise do conjunto</h4>
+      <div class="campo"><label>O que você verificou</label>
+        <input id="an-obs" placeholder="ex.: conferi os 4 cupons com apontamento, valores batem"></div>
+      <div style="margin-top:10px"><button class="btn secundario" id="an-registrar">Registrar análise</button></div>`;
+
+    document.querySelectorAll("[data-conferir]").forEach(b => b.addEventListener("click", async () => {
+      const obs = prompt("O que você verificou nesta despesa? (fica registrado)");
+      if (obs === null) return;
+      try {
+        await api(`/erp/api/prestacao/${id}/conferir`, {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({item_id:+b.dataset.conferir, observacao: obs})});
+        verPrestacao(id); carregar();
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    }));
+    els("an-registrar").addEventListener("click", async () => {
+      try {
+        await api(`/erp/api/prestacao/${id}/conferir`, {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({observacao: els("an-obs").value})});
+        aviso("dlg-msg","Análise registrada.","ok"); verPrestacao(id);
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    });
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
 async function verDetalhe(id){

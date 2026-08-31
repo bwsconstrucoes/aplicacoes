@@ -2439,6 +2439,54 @@ def api_prestacao_historico():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/prestacoes/pendentes")
+@login_obrigatorio
+def api_prestacoes_pendentes():
+    """Prestações com apontamento aguardando análise — a fila do financeiro e
+    do diretor, complementar à do aval."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.apps.erp.core.auth.permissoes import aplicar_escopo
+    from app.apps.erp.db.models.financeiro import StatusTitulo, Titulo, TituloItem
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            stmt = (select(Titulo).where(
+                        Titulo.modalidade.in_(["FUNDO_FIXO", "CARTAO"]),
+                        Titulo.status.not_in([StatusTitulo.PAGO, StatusTitulo.CANCELADO,
+                                              StatusTitulo.ESTORNADO]))
+                    .options(selectinload(Titulo.fornecedor))
+                    .order_by(Titulo.id.desc()).limit(200))
+            stmt = aplicar_escopo(stmt, s, usuario)
+            saida = []
+            for t in s.scalars(stmt).all():
+                itens = s.scalars(select(TituloItem).where(
+                    TituloItem.titulo_id == t.id)).all()
+                bloqueios = criticas = pendentes_conf = 0
+                for i in itens:
+                    lista = i.criticas or []
+                    bloqueios += sum(1 for x in lista if x.get("gravidade") == "BLOQUEIA")
+                    criticas += sum(1 for x in lista if x.get("gravidade") == "CRITICA")
+                    if [x for x in lista if x.get("gravidade") in ("BLOQUEIA", "CRITICA")] \
+                            and not i.conferido_em:
+                        pendentes_conf += 1
+                solicitante = s.get(Usuario, t.solicitante_id)
+                saida.append({
+                    "id": t.id, "numero_sp": t.numero_sp, "modalidade": t.modalidade,
+                    "tipo": t.fundo_fixo_tipo, "status": t.status.value,
+                    "solicitante": solicitante.nome if solicitante else "—",
+                    "total": float(t.valor_liquido), "itens": len(itens),
+                    "bloqueios": bloqueios, "criticas": criticas,
+                    "nao_conferidos": pendentes_conf,
+                    "analises": len(t.alertas_confirmados or []),
+                    "competencia": t.competencia.strftime("%m/%Y"),
+                })
+            return jsonify({"ok": True, "prestacoes": saida})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar prestações pendentes")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/health")
 def health():
     """Health check do módulo — não exige login."""

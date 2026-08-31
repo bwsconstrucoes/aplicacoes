@@ -74,8 +74,9 @@
 - [x] CARTÃO DE CRÉDITO: importa a fatura em PDF, extrai as compras, exige
       obra e categoria por linha
 - [x] Rateio de obra obrigatório no lançamento
-- [ ] Prestação — falta: alerta das críticas chegar ao avalista/financeiro/
-      diretor na tela de Confirmar; conferência item a item na aprovação
+- [x] Críticas chegam a quem aprova: a tela Confirmar destaca os apontamentos,
+      exige análise item a item e só então libera a assinatura; o financeiro e
+      o diretor têm fila própria de prestações com indício
 - [ ] Módulo PESSOAL (pipes Cadastro de Colaboradores 301487297 e Despesas
       com Colaboradores 301433085 — estruturas já recebidas)
 

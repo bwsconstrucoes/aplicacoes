@@ -139,6 +139,16 @@ def registrar(s: Session, titulo_id: int, usuario: Usuario, *, decisao: str = "C
     if decisao == "RECUSADO" and len((motivo or "").strip()) < 10:
         raise ErroValidacao("Recusar exige motivo (mínimo 10 caracteres).")
 
+    # prestação com indício não pode ser assinada no escuro: alguém tem que
+    # abrir cada linha apontada e registrar que analisou
+    if decisao == "CONFIRMADO":
+        resumo = _resumo_criticas(s, t)
+        if resumo["exige_conferencia"]:
+            raise ErroValidacao(
+                f"Esta prestação tem {resumo['nao_conferidos']} despesa(s) com apontamento "
+                f"ainda não analisada(s). Abra o detalhe, confira cada uma e registre a "
+                f"análise antes de assinar.")
+
     quando = datetime.now(timezone.utc)
     resumo = _resumo(s, t)
     assinatura = _assinar(resumo, usuario, quando)
@@ -183,7 +193,14 @@ def pendentes(s: Session, usuario: Usuario, limite: int = 200) -> list[dict[str,
             continue
         solicitante = s.get(Usuario, t.solicitante_id)
         venc = min((p.vencimento for p in t.parcelas), default=None)
+        # prestações (fundo fixo/cartão) levam junto o resumo dos apontamentos:
+        # quem assina precisa ver o indício antes, não depois
+        alerta = _resumo_criticas(s, t)
         saida.append({
+            "modalidade": t.modalidade, "fundo_fixo_tipo": t.fundo_fixo_tipo,
+            "itens": alerta["itens"], "bloqueios": alerta["bloqueios"],
+            "criticas": alerta["criticas"], "nao_conferidos": alerta["nao_conferidos"],
+            "exige_conferencia": alerta["exige_conferencia"],
             "id": t.id, "numero_sp": t.numero_sp,
             "credor": t.fornecedor.razao_social,
             "documento_credor": t.fornecedor.cnpj_cpf,
@@ -200,6 +217,29 @@ def pendentes(s: Session, usuario: Usuario, limite: int = 200) -> list[dict[str,
             "lancado_em": t.criado_em.strftime("%d/%m/%Y %H:%M"),
         })
     return saida
+
+
+def _resumo_criticas(s: Session, t: Titulo) -> dict[str, Any]:
+    """Quantos apontamentos a prestação tem e quantos ainda não foram
+    conferidos por alguém — é o que obriga o avalista a abrir e olhar."""
+    from app.apps.erp.db.models.financeiro import TituloItem
+
+    if getattr(t, "modalidade", "NORMAL") == "NORMAL":
+        return {"itens": 0, "bloqueios": 0, "criticas": 0,
+                "nao_conferidos": 0, "exige_conferencia": False}
+    itens = s.scalars(select(TituloItem).where(TituloItem.titulo_id == t.id)).all()
+    bloqueios = criticas = nao_conferidos = 0
+    for i in itens:
+        lista = i.criticas or []
+        graves = [x for x in lista
+                  if x.get("gravidade") in ("BLOQUEIA", "CRITICA")]
+        bloqueios += sum(1 for x in lista if x.get("gravidade") == "BLOQUEIA")
+        criticas += sum(1 for x in lista if x.get("gravidade") == "CRITICA")
+        if graves and not i.conferido_em:
+            nao_conferidos += 1
+    return {"itens": len(itens), "bloqueios": bloqueios, "criticas": criticas,
+            "nao_conferidos": nao_conferidos,
+            "exige_conferencia": bool(nao_conferidos)}
 
 
 def historico_avais(s: Session, titulo_id: int) -> list[dict[str, Any]]:
