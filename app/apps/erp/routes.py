@@ -40,6 +40,7 @@ ABAS = [
     ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
     ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
     ("receber", "Receber", "erp.pagina_receber"),
+    ("obras", "Obras", "erp.pagina_obras"),
     ("relatorios", "Relatórios", "erp.pagina_relatorios"),
     ("importar", "Importar", "erp.pagina_importar"),
     ("config", "Configurações", "erp.pagina_config"),
@@ -166,6 +167,12 @@ def pagina_conciliacao():
 @login_obrigatorio
 def pagina_receber():
     return render_template("erp_receber.html", **_contexto("receber"))
+
+
+@bp.route("/erp/obras")
+@login_obrigatorio
+def pagina_obras():
+    return render_template("erp_obras.html", **_contexto("obras"))
 
 
 @bp.route("/erp/relatorios")
@@ -2043,6 +2050,192 @@ def api_operadores_contato():
                 {"id": u.id, "nome": u.nome, "perfil": u.perfil.value,
                  "tem_contato": bool(u.telefone or u.cpf)} for u in usuarios]})
     except Exception as e:
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Gestão de obras
+# ---------------------------------------------------------------------------
+FASES_OBRA = [
+    ("CRIACAO", "Criação / cadastro"),
+    ("AGUARDANDO_OS", "Aguardando ordem de serviço"),
+    ("EM_EXECUCAO", "Em execução"),
+    ("PARALISADA", "Paralisada"),
+    ("CONCLUIDA", "Concluída"),
+    ("CONCLUIDA_COM_DIVIDA", "Concluída com dívida"),
+    ("RECEBIMENTO_PROVISORIO", "Recebimento provisório"),
+    ("RECEBIMENTO_DEFINITIVO", "Recebimento definitivo"),
+    ("ACERVO_TECNICO", "Acervo técnico"),
+    ("DISTRATADA", "Distratada"),
+]
+
+
+@bp.route("/erp/api/obras")
+@login_obrigatorio
+def api_listar_obras():
+    """Painel de obras: situação, contrato, medições e o que foi gasto."""
+    from sqlalchemy import func, select
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.db.models.cadastros import Obra, ObraAditivo
+    from app.apps.erp.db.models.financeiro import EspecieTitulo, Rateio, Titulo
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            permitidas = obras_do_usuario(s, usuario)
+            stmt = select(Obra).order_by(Obra.codigo)
+            if permitidas is not None:
+                stmt = stmt.where(Obra.id.in_(permitidas or [0]))
+            obras = s.scalars(stmt).all()
+            ids = [o.id for o in obras] or [0]
+
+            aditivos: dict[int, float] = {}
+            for obra_id, total in s.execute(
+                    select(ObraAditivo.obra_id, func.sum(ObraAditivo.valor))
+                    .where(ObraAditivo.obra_id.in_(ids))
+                    .group_by(ObraAditivo.obra_id)):
+                aditivos[obra_id] = float(total or 0)
+
+            gastos: dict[int, float] = {}
+            recebidos: dict[int, float] = {}
+            for obra_id, especie, total in s.execute(
+                    select(Rateio.obra_id, Titulo.especie, func.sum(Rateio.valor))
+                    .join(Titulo, Titulo.id == Rateio.titulo_id)
+                    .where(Rateio.obra_id.in_(ids),
+                           Titulo.status.not_in(["CANCELADO", "ESTORNADO"]))
+                    .group_by(Rateio.obra_id, Titulo.especie)):
+                destino = recebidos if especie == EspecieTitulo.RECEBER else gastos
+                destino[obra_id] = float(total or 0)
+
+            fases = dict(FASES_OBRA)
+            hoje = date.today()
+            linhas = []
+            for o in obras:
+                contrato = float(o.valor_contrato or 0)
+                vigente = contrato + aditivos.get(o.id, 0.0)
+                gasto = gastos.get(o.id, 0.0)
+                linhas.append({
+                    "id": o.id, "codigo": o.codigo, "nome": o.nome,
+                    "objeto": (o.objeto or "")[:140], "cliente": o.cliente,
+                    "municipio": o.municipio, "uf": o.uf, "contrato": o.contrato,
+                    "fase": o.fase, "fase_rotulo": fases.get(o.fase, o.fase),
+                    "status": o.status,
+                    "valor_contrato": contrato, "aditivos": aditivos.get(o.id, 0.0),
+                    "valor_vigente": vigente,
+                    "gasto": gasto, "recebido": recebidos.get(o.id, 0.0),
+                    "margem": round(recebidos.get(o.id, 0.0) - gasto, 2),
+                    "vigencia_fim": o.vigencia_fim.isoformat() if o.vigencia_fim else None,
+                    "vence_em_dias": ((o.vigencia_fim - hoje).days
+                                      if o.vigencia_fim else None),
+                    "data_base": (o.data_base_orcamento.isoformat()
+                                  if o.data_base_orcamento else None),
+                    "reajuste_em_dias": ((o.data_base_orcamento.replace(
+                        year=o.data_base_orcamento.year + 1) - hoje).days
+                        if o.data_base_orcamento else None),
+                    "seguro_vigencia_fim": (o.seguro_vigencia_fim.isoformat()
+                                            if o.seguro_vigencia_fim else None),
+                    "cno": o.cno, "art_rrt": o.art_rrt,
+                    "aliquota_iss": float(o.aliquota_iss_pct or 0) or None,
+                })
+            return jsonify({"ok": True, "obras": linhas,
+                            "fases": [{"chave": k, "rotulo": v} for k, v in FASES_OBRA]})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar obras")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>/fase", methods=["POST"])
+@login_obrigatorio
+def api_mudar_fase(obra_id: int):
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.cadastros import Obra, ObraFase
+    d = request.get_json(silent=True) or {}
+    fase = (d.get("fase") or "").upper()
+    if fase not in dict(FASES_OBRA):
+        return jsonify({"ok": False, "erro": f"Fase inválida: {fase}"}), 400
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            obra = s.get(Obra, obra_id)
+            if obra is None:
+                return jsonify({"ok": False, "erro": "Obra não encontrada."}), 404
+            anterior = obra.fase
+            obra.fase = fase
+            obra.fase_desde = date.today()
+            if fase in ("CONCLUIDA", "CONCLUIDA_COM_DIVIDA") and not obra.data_conclusao:
+                obra.data_conclusao = date.today()
+            if fase == "RECEBIMENTO_PROVISORIO":
+                obra.data_recebimento_provisorio = date.today()
+            if fase == "RECEBIMENTO_DEFINITIVO":
+                obra.data_recebimento_definitivo = date.today()
+            s.add(ObraFase(obra_id=obra.id, fase=fase,
+                           observacao=(d.get("observacao") or "").strip() or None,
+                           usuario_id=usuario.id))
+            registrar_evento(s, "obra", obra.id, "FASE_ALTERADA",
+                             {"de": anterior, "para": fase,
+                              "observacao": d.get("observacao")}, usuario.id)
+            s.commit()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.exception("ERP: falha ao mudar fase")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>/fases")
+@login_obrigatorio
+def api_historico_fases(obra_id: int):
+    from sqlalchemy import select
+    from app.apps.erp.db.models.cadastros import ObraFase
+    fases = dict(FASES_OBRA)
+    try:
+        with get_session() as s:
+            linhas = s.execute(
+                select(ObraFase, Usuario.nome)
+                .join(Usuario, Usuario.id == ObraFase.usuario_id, isouter=True)
+                .where(ObraFase.obra_id == obra_id)
+                .order_by(ObraFase.criado_em.desc())).all()
+            return jsonify({"ok": True, "fases": [{
+                "fase": f.fase, "rotulo": fases.get(f.fase, f.fase),
+                "observacao": f.observacao, "por": nome or "—",
+                "quando": f.criado_em.strftime("%d/%m/%Y %H:%M")} for f, nome in linhas]})
+    except Exception as e:
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>/titulos")
+@login_obrigatorio
+def api_titulos_da_obra(obra_id: int):
+    """Tudo que passou pela obra: o que se gastou e o que se recebeu."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.apps.erp.db.models.financeiro import EspecieTitulo, Rateio, Titulo
+    try:
+        with get_session() as s:
+            linhas = s.execute(
+                select(Titulo, Rateio.valor)
+                .join(Rateio, Rateio.titulo_id == Titulo.id)
+                .where(Rateio.obra_id == obra_id,
+                       Titulo.status.not_in(["CANCELADO", "ESTORNADO"]))
+                .options(selectinload(Titulo.fornecedor), selectinload(Titulo.categoria),
+                         selectinload(Titulo.parcelas))
+                .order_by(Titulo.competencia.desc(), Titulo.id.desc()).limit(400)).all()
+            saida = []
+            for t, valor in linhas:
+                venc = min((p.vencimento for p in t.parcelas), default=None)
+                saida.append({
+                    "id": t.id, "numero_sp": t.numero_sp,
+                    "especie": (t.especie.value if hasattr(t.especie, "value")
+                                else str(t.especie)),
+                    "credor": t.fornecedor.razao_social, "descricao": t.descricao,
+                    "categoria": f"{t.categoria.codigo} · {t.categoria.descricao}",
+                    "grupo": t.categoria.grupo_nome or "",
+                    "valor": float(valor), "competencia": t.competencia.strftime("%m/%Y"),
+                    "vencimento": venc.isoformat() if venc else None,
+                    "status": t.status.value,
+                    "medicao": t.numero_medicao,
+                })
+            return jsonify({"ok": True, "titulos": saida})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar títulos da obra")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

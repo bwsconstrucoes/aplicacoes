@@ -1,0 +1,492 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Obras — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2><button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="código, nome, cliente…"></div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Fase da obra</span>
+      <span class="filtro-badge" id="badge-fase">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-fase"></div></div>
+  </div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Atenção</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-vigencia">
+        <span class="rotulo">Vigência vencendo (90 dias)</span></label>
+      <label class="opcao"><input type="checkbox" id="f-reajuste">
+        <span class="rotulo">Reajuste a pedir (60 dias)</span></label>
+      <label class="opcao"><input type="checkbox" id="f-fiscal">
+        <span class="rotulo">Sem tributação cadastrada</span></label>
+      <label class="opcao"><input type="checkbox" id="f-margem">
+        <span class="rotulo">Gasto acima do recebido</span></label>
+    </div>
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo"></span>
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-nova">+ Nova obra</button>
+  </div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th data-ordem="codigo">Código</th><th data-ordem="nome">Obra</th>
+      <th>Cliente</th><th data-ordem="fase">Fase</th>
+      <th class="direita" data-ordem="valor_vigente">Contrato vigente</th>
+      <th class="direita" data-ordem="recebido">Recebido</th>
+      <th class="direita" data-ordem="gasto">Gasto</th>
+      <th class="direita" data-ordem="margem">Saldo</th>
+      <th>Vigência</th><th>Alertas</th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let OBRAS = [], FASES = [], F = {fase: new Set()}, ORDEM = {campo:"codigo", asc:true};
+const CATEGORIAS_ANEXO = ["CONTRATO","ART","SEGURO","OS","MEDICAO","OUTRO"];
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+async function carregar(){
+  try {
+    const d = await api("/erp/api/obras");
+    OBRAS = d.obras; FASES = d.fases;
+    montarFiltros(); desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function montarFiltros(){
+  const cont = {};
+  OBRAS.forEach(o => cont[o.fase] = (cont[o.fase]||0)+1);
+  els("opcoes-fase").innerHTML = FASES.map(f=>`
+    <label class="opcao ${cont[f.chave]?"":"zerada"}">
+      <input type="checkbox" data-fase="${f.chave}" ${F.fase.has(f.chave)?"checked":""}>
+      <span class="rotulo">${f.rotulo}</span><span class="qtd">${cont[f.chave]||0}</span></label>`).join("");
+  els("badge-fase").textContent = F.fase.size;
+  document.querySelectorAll("[data-fase]").forEach(i=>i.addEventListener("change", ev=>{
+    ev.target.checked ? F.fase.add(ev.target.dataset.fase) : F.fase.delete(ev.target.dataset.fase);
+    montarFiltros(); desenhar();
+  }));
+}
+
+function alertas(o){
+  const a = [];
+  if (o.vence_em_dias !== null && o.vence_em_dias <= 90)
+    a.push({t: o.vence_em_dias < 0 ? "Vigência vencida" : `Vigência em ${o.vence_em_dias}d`,
+            c: o.vence_em_dias < 0 ? "bloqueado" : "aguardando"});
+  if (o.reajuste_em_dias !== null && o.reajuste_em_dias <= 60)
+    a.push({t: o.reajuste_em_dias < 0 ? "Reajuste vencido" : `Reajuste em ${o.reajuste_em_dias}d`,
+            c: "aguardando"});
+  if (!o.aliquota_iss) a.push({t:"Sem ISS", c:"bloqueado"});
+  if (!o.cno) a.push({t:"Sem CNO", c:"outro"});
+  if (o.gasto > o.recebido && o.recebido > 0) a.push({t:"Gasto > recebido", c:"bloqueado"});
+  return a;
+}
+
+function visiveis(){
+  const b = (els("f-busca").value||"").toLowerCase().trim();
+  let l = OBRAS.filter(o => {
+    if (F.fase.size && !F.fase.has(o.fase)) return false;
+    if (els("f-vigencia").checked && !(o.vence_em_dias !== null && o.vence_em_dias <= 90)) return false;
+    if (els("f-reajuste").checked && !(o.reajuste_em_dias !== null && o.reajuste_em_dias <= 60)) return false;
+    if (els("f-fiscal").checked && o.aliquota_iss) return false;
+    if (els("f-margem").checked && !(o.gasto > o.recebido && o.recebido > 0)) return false;
+    if (b && !`${o.codigo} ${o.nome} ${o.cliente||""} ${o.objeto||""}`.toLowerCase().includes(b)) return false;
+    return true;
+  });
+  const {campo, asc} = ORDEM;
+  return l.sort((x,y)=>{ let a=x[campo], c=y[campo];
+    if (a===null) return 1; if (c===null) return -1;
+    return typeof a === "string" ? (asc?a.localeCompare(c,"pt-BR"):c.localeCompare(a,"pt-BR")) : (asc?a-c:c-a); });
+}
+
+function desenhar(){
+  const l = visiveis();
+  const soma = f => l.reduce((a,o)=>a+(f(o)||0),0);
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Obras</div>
+      <div class="kpi-valor">${l.length}</div>
+      <div class="kpi-sub">${l.filter(o=>o.fase==="EM_EXECUCAO").length} em execução</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Contratos vigentes</div>
+      <div class="kpi-valor" style="font-size:19px">${moeda(soma(o=>o.valor_vigente))}</div>
+      <div class="kpi-sub">${moeda(soma(o=>o.aditivos))} em aditivos</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Recebido</div>
+      <div class="kpi-valor" style="font-size:19px">${moeda(soma(o=>o.recebido))}</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Gasto</div>
+      <div class="kpi-valor" style="font-size:19px">${moeda(soma(o=>o.gasto))}</div></div>
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">Precisam de atenção</div>
+      <div class="kpi-valor">${l.filter(o=>alertas(o).length).length}</div>
+      <div class="kpi-sub">vigência, reajuste, fiscal</div></div>`;
+
+  els("vazio").classList.toggle("oculto", l.length>0);
+  if (!l.length) els("vazio").innerHTML = OBRAS.length
+    ? "<b>Nada nestes filtros</b>" : "<b>Nenhuma obra</b>Cadastre ou importe pela aba Importar.";
+  els("corpo").innerHTML = l.map(o=>`
+    <tr style="cursor:pointer" data-obra="${o.id}">
+      <td class="dados"><b>${o.codigo}</b></td>
+      <td class="desc">${o.nome}${o.objeto?`<small>${o.objeto}</small>`:""}</td>
+      <td>${o.cliente||"—"}</td>
+      <td><span class="selo ${o.fase==="EM_EXECUCAO"?"aprovado":o.fase.startsWith("CONCLUIDA")?"pago":"outro"}">${o.fase_rotulo}</span></td>
+      <td class="direita dados">${numero(o.valor_vigente)}${o.aditivos?`<small>+${numero(o.aditivos)}</small>`:""}</td>
+      <td class="direita dados">${numero(o.recebido)}</td>
+      <td class="direita dados">${numero(o.gasto)}</td>
+      <td class="direita dados" style="color:${o.margem<0?"var(--vermelho)":"var(--verde)"}">${numero(o.margem)}</td>
+      <td class="dados ${o.vence_em_dias!==null && o.vence_em_dias<0?"atrasado":""}">${dataBR(o.vigencia_fim)}</td>
+      <td>${alertas(o).map(a=>`<span class="selo ${a.c}" style="margin-right:3px">${a.t}</span>`).join("")||"—"}</td>
+    </tr>`).join("");
+  document.querySelectorAll("[data-obra]").forEach(tr =>
+    tr.addEventListener("click", ()=>abrir(+tr.dataset.obra)));
+  els("resumo").innerHTML = `<b>${l.length}</b> obra(s) · contrato vigente <b>${moeda(soma(o=>o.valor_vigente))}</b>`;
+}
+
+// ------------------------------------------------------------------ detalhe
+async function abrir(id){
+  const o = OBRAS.find(x=>x.id===id);
+  els("dlg-titulo").textContent = `${o.codigo} — ${o.nome}`;
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="topo-abas" style="background:var(--azul); border-radius:8px; padding:4px; margin-bottom:14px">
+      ${["Resumo","Cadastro","Contrato","Tributação","Documentos","Movimento","Histórico"]
+        .map((t,i)=>`<button class="topo-aba ${i===0?"ativa":""}" data-painel="${i}">${t}</button>`).join("")}
+    </div>
+    <div id="painel"></div>`;
+  document.querySelectorAll("[data-painel]").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-painel]").forEach(x=>x.classList.remove("ativa"));
+    b.classList.add("ativa");
+    painel(+b.dataset.painel, id);
+  }));
+  els("dlg").showModal();
+  painel(0, id);
+}
+
+async function painel(i, id){
+  const o = OBRAS.find(x=>x.id===id);
+  const alvo = els("painel");
+  alvo.innerHTML = `<div class="cartao-dica">carregando…</div>`;
+
+  if (i === 0) {   // resumo
+    alvo.innerHTML = `
+      <div class="kpis">
+        <div class="kpi estatico"><div class="kpi-rotulo">Fase</div>
+          <div class="kpi-valor" style="font-size:15px">${o.fase_rotulo}</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">Contrato vigente</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(o.valor_vigente)}</div>
+          <div class="kpi-sub">original ${numero(o.valor_contrato)}</div></div>
+        <div class="kpi estatico verde"><div class="kpi-rotulo">Recebido</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(o.recebido)}</div></div>
+        <div class="kpi estatico ambar"><div class="kpi-rotulo">Gasto</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(o.gasto)}</div></div>
+        <div class="kpi estatico ${o.margem<0?"vermelho":"verde"}"><div class="kpi-rotulo">Saldo</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(o.margem)}</div></div>
+      </div>
+      ${alertas(o).length?`<div class="aviso info">Atenção: ${alertas(o).map(a=>a.t).join(" · ")}</div>`:""}
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">
+        <table><tbody>
+          <tr><td>Cliente</td><td>${o.cliente||"—"}</td></tr>
+          <tr><td>Objeto</td><td>${o.objeto||"—"}</td></tr>
+          <tr><td>Contrato</td><td class="dados">${o.contrato||"—"}</td></tr>
+          <tr><td>Local</td><td>${o.municipio||"—"}${o.uf?"/"+o.uf:""}</td></tr>
+          <tr><td>CNO</td><td class="dados">${o.cno||"—"}</td></tr>
+          <tr><td>ART/RRT</td><td class="dados">${o.art_rrt||"—"}</td></tr>
+          <tr><td>Vigência até</td><td class="dados">${dataBR(o.vigencia_fim)}</td></tr>
+          <tr><td>Data-base do orçamento</td><td class="dados">${dataBR(o.data_base)}</td></tr>
+        </tbody></table>
+      </div>
+      <h4>Mudar fase</h4>
+      <div class="form-grade">
+        <div class="campo"><label>Nova fase</label><select id="nova-fase">
+          ${FASES.map(f=>`<option value="${f.chave}" ${f.chave===o.fase?"selected":""}>${f.rotulo}</option>`).join("")}
+        </select></div>
+        <div class="campo" style="grid-column:span 2"><label>Observação</label>
+          <input id="fase-obs" placeholder="ex.: OS recebida em 12/09"></div>
+        <div class="campo" style="align-self:end"><button class="btn" id="btn-fase">Registrar fase</button></div>
+      </div>`;
+    els("btn-fase").addEventListener("click", async () => {
+      try {
+        await api(`/erp/api/obras/${id}/fase`, {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({fase: els("nova-fase").value, observacao: els("fase-obs").value})});
+        aviso("dlg-msg", "Fase registrada.", "ok"); carregar();
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    });
+    return;
+  }
+
+  if (i === 1 || i === 2 || i === 3) {   // cadastro / contrato / tributação
+    const {obra: d} = await api(`/erp/api/obras/${id}`);
+    const campo = (rot, id_, val, tipo="text") =>
+      `<div class="campo"><label>${rot}</label><input id="${id_}" type="${tipo}" value="${val??""}"></div>`;
+    if (i === 1) {
+      alvo.innerHTML = `<div class="form-grade">
+        ${campo("Código","o-codigo",d.codigo)}${campo("Nome","o-nome",d.nome)}
+        ${campo("Cliente","o-cliente",d.cliente)}${campo("CNPJ do cliente","o-cnpj",d.cnpj_cliente)}
+        ${campo("Objeto","o-objeto",d.objeto)}${campo("Órgão","o-orgao",d.orgao_resumido)}
+        ${campo("Endereço","o-endereco",d.endereco)}${campo("Número","o-numero",d.numero_endereco)}
+        ${campo("Bairro","o-bairro",d.bairro)}${campo("Município","o-municipio",d.municipio)}
+        ${campo("UF","o-uf",d.uf)}${campo("CEP","o-cep",d.cep)}
+        ${campo("CNO","o-cno",d.cno)}${campo("ART/RRT","o-art",d.art_rrt)}
+        ${campo("Responsável técnico","o-rt",d.responsavel_tecnico)}
+        ${campo("Fiscal do contrato","o-fiscal",d.engenheiro_fiscal)}
+      </div>
+      <div class="cartao-dica">O endereço serve de local de entrega nas compras.</div>
+      <div style="margin-top:12px"><button class="btn" id="o-salvar">Salvar cadastro</button></div>`;
+      salvarObra(id, {codigo:"o-codigo", nome:"o-nome", cliente:"o-cliente", cnpj_cliente:"o-cnpj",
+        objeto:"o-objeto", orgao_resumido:"o-orgao", endereco:"o-endereco",
+        numero_endereco:"o-numero", bairro:"o-bairro", municipio:"o-municipio", uf:"o-uf",
+        cep:"o-cep", cno:"o-cno", art_rrt:"o-art", responsavel_tecnico:"o-rt",
+        engenheiro_fiscal:"o-fiscal"});
+      return;
+    }
+    if (i === 2) {
+      alvo.innerHTML = `<div class="form-grade">
+        ${campo("Nº do contrato","c-contrato",d.contrato)}
+        ${campo("Valor do contrato","c-valor",d.valor_contrato)}
+        ${campo("Início da vigência","c-ini",d.vigencia_inicio,"date")}
+        ${campo("Fim da vigência","c-fim",d.vigencia_fim,"date")}
+        ${campo("Prazo de execução (dias)","c-prazo",d.prazo_execucao_dias)}
+        ${campo("Data-base do orçamento","c-base",d.data_base_orcamento,"date")}
+        ${campo("Índice de reajuste","c-indice",d.indice_reajuste)}
+        ${campo("Ordem de serviço","c-os",d.ordem_servico)}
+        ${campo("Data da OS","c-osdata",d.data_ordem_servico,"date")}
+        ${campo("Seguro-garantia (apólice)","c-seguro",d.seguro_garantia)}
+        ${campo("Seguro válido até","c-segfim",d.seguro_vigencia_fim,"date")}
+        ${campo("Caução (%)","c-caucao",d.caucao_pct)}
+      </div>
+      <div style="margin-top:12px"><button class="btn" id="o-salvar">Salvar contrato</button></div>
+      <h4>Aditivos — valor vigente ${moeda(d.valor_vigente)} (${d.dias_aditivados||0} dias aditivados)</h4>
+      <table><thead><tr><th>Nº</th><th>Tipo</th><th class="direita">Valor</th>
+        <th class="direita">Dias</th><th>Nova vigência</th><th>Objeto</th></tr></thead>
+        <tbody>${(d.aditivos||[]).map(a=>`<tr><td class="dados">${a.numero}</td>
+          <td>${rotulo(a.tipo)}</td><td class="direita dados">${numero(a.valor)}</td>
+          <td class="direita dados">${a.dias||"—"}</td><td class="dados">${dataBR(a.nova_vigencia_fim)}</td>
+          <td><small>${a.objeto||""}</small></td></tr>`).join("") ||
+          `<tr><td colspan="6" class="cartao-dica">Nenhum aditivo.</td></tr>`}</tbody></table>
+      <h4>Novo aditivo</h4>
+      <div class="form-grade">
+        <div class="campo"><label>Número</label><input id="a-num" placeholder="01"></div>
+        <div class="campo"><label>Tipo</label><select id="a-tipo">
+          <option value="VALOR">Valor</option><option value="PRAZO">Prazo</option>
+          <option value="VALOR_E_PRAZO">Valor e prazo</option>
+          <option value="REAJUSTE">Reajuste</option><option value="SUPRESSAO">Supressão</option>
+        </select></div>
+        <div class="campo"><label>Valor</label><input id="a-valor" placeholder="0,00"></div>
+        <div class="campo"><label>Dias</label><input id="a-dias" placeholder="0"></div>
+        <div class="campo"><label>Nova vigência</label><input type="date" id="a-vig"></div>
+        <div class="campo"><label>Assinatura</label><input type="date" id="a-ass"></div>
+        <div class="campo" style="grid-column:span 2"><label>Objeto</label><input id="a-obj"></div>
+        <div class="campo" style="align-self:end"><button class="btn secundario" id="a-salvar">Registrar aditivo</button></div>
+      </div>`;
+      salvarObra(id, {contrato:"c-contrato", valor_contrato:"c-valor", vigencia_inicio:"c-ini",
+        vigencia_fim:"c-fim", prazo_execucao_dias:"c-prazo", data_base_orcamento:"c-base",
+        indice_reajuste:"c-indice", ordem_servico:"c-os", data_ordem_servico:"c-osdata",
+        seguro_garantia:"c-seguro", seguro_vigencia_fim:"c-segfim", caucao_pct:"c-caucao"});
+      els("a-salvar").addEventListener("click", async () => {
+        try {
+          await api(`/erp/api/obras/${id}/aditivos`, {method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({numero: els("a-num").value, tipo: els("a-tipo").value,
+              valor: els("a-valor").value, dias: els("a-dias").value,
+              nova_vigencia_fim: els("a-vig").value||null,
+              data_assinatura: els("a-ass").value||null, objeto: els("a-obj").value})});
+          aviso("dlg-msg","Aditivo registrado.","ok"); painel(2, id); carregar();
+        } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+      });
+      return;
+    }
+    // tributação
+    alvo.innerHTML = `
+      <div class="aviso info">${d.resumo_tributacao}</div>
+      <div class="form-grade">
+        ${campo("Alíquota de ISS (%)","t-iss",d.aliquota_iss_pct)}
+        <div class="campo"><label>ISS retido pelo tomador</label><select id="t-issret">
+          <option value="1" ${d.iss_retido?"selected":""}>Sim</option>
+          <option value="0" ${d.iss_retido?"":"selected"}>Não (BWS recolhe)</option></select></div>
+        <div class="campo"><label>Município aceita dedução de material</label><select id="t-ded">
+          <option value="1" ${d.aceita_deducao_material?"selected":""}>Sim</option>
+          <option value="0" ${d.aceita_deducao_material?"":"selected"}>Não</option></select></div>
+        ${campo("% de serviço para ISS","t-pctiss",d.pct_servico_iss)}
+        ${campo("% de serviço para INSS","t-pctinss",d.pct_servico_inss)}
+        <div class="campo"><label>INSS retido</label><select id="t-inssret">
+          <option value="1" ${d.inss_retido?"selected":""}>Sim</option>
+          <option value="0" ${d.inss_retido?"":"selected"}>Não</option></select></div>
+      </div>
+      <div class="campo" style="margin-top:10px"><label>Federais retidos pelo tomador</label>
+        <div class="filtro-opcoes" style="border:1px solid var(--borda); border-radius:8px; padding:6px">
+          ${["IR","PIS","COFINS","CSLL"].map(f=>`<label class="opcao">
+            <input type="checkbox" class="t-fed" value="${f}" ${(d.federais_retidos||[]).includes(f)?"checked":""}>
+            <span class="rotulo">${f==="IR"?"IRRF (1,2%)":f}</span></label>`).join("")}
+        </div>
+        <div class="dica">Os três juntos (PIS+COFINS+CSLL) viram uma linha PCC de 4,65%.</div></div>
+      <div style="margin-top:12px; display:flex; gap:8px">
+        <button class="btn" id="o-salvar">Salvar tributação</button>
+        <button class="btn secundario" id="t-simular">Simular medição</button>
+        <input id="t-valor" placeholder="valor da medição" style="padding:8px; border:1px solid var(--borda-forte); border-radius:8px">
+      </div>
+      <div id="t-resultado"></div>`;
+    salvarObra(id, {aliquota_iss_pct:"t-iss", pct_servico_iss:"t-pctiss",
+      pct_servico_inss:"t-pctinss"}, () => ({
+        iss_retido: els("t-issret").value==="1", inss_retido: els("t-inssret").value==="1",
+        aceita_deducao_material: els("t-ded").value==="1",
+        federais_retidos: [...document.querySelectorAll(".t-fed:checked")].map(i=>i.value)}));
+    els("t-simular").addEventListener("click", async () => {
+      try {
+        const r = await api(`/erp/api/obras/${id}/tributacao`, {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({valor: els("t-valor").value})});
+        const c = r.calculo;
+        els("t-resultado").innerHTML = `<h4>Retenções de ${moeda(c.valor_bruto)}</h4>
+          <table><thead><tr><th>Tributo</th><th class="direita">Base</th>
+            <th class="direita">Alíquota</th><th class="direita">Valor</th><th>Como</th></tr></thead>
+          <tbody>${c.retencoes.map(x=>`<tr><td><b>${x.tipo}</b></td>
+            <td class="direita dados">${numero(parseFloat(x.base_calculo))}</td>
+            <td class="direita dados">${x.aliquota}%</td>
+            <td class="direita dados">${numero(parseFloat(x.valor))}</td>
+            <td><small>${x.explicacao}</small></td></tr>`).join("")}
+          <tr><td colspan="3"><b>Líquido a receber</b></td>
+            <td class="direita dados"><b>${numero(c.valor_liquido)}</b></td><td></td></tr>
+          </tbody></table>
+          ${c.avisos.map(a=>`<div class="critica ALERTA">${a}</div>`).join("")}`;
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    });
+    return;
+  }
+
+  if (i === 4) {   // documentos
+    const d = await api(`/erp/api/anexos/obra/${id}`);
+    alvo.innerHTML = `
+      <div class="form-grade">
+        <div class="campo"><label>Documento</label><input type="file" id="an-arq"></div>
+        <div class="campo"><label>Tipo</label><select id="an-cat">
+          ${CATEGORIAS_ANEXO.map(c=>`<option value="${c}">${rotulo(c)}</option>`).join("")}</select></div>
+        <div class="campo"><label>Descrição</label><input id="an-desc"></div>
+        <div class="campo" style="align-self:end"><button class="btn" id="an-enviar">Anexar</button></div>
+      </div>
+      <div class="cartao-dica">Contrato, ART/CREA, seguro-garantia, ordem de serviço, medições —
+        tudo fica guardado no banco do sistema, comprimido.</div>
+      <table><thead><tr><th>Documento</th><th>Tipo</th><th class="direita">Tamanho</th>
+        <th>Enviado</th><th></th></tr></thead><tbody>
+        ${d.anexos.map(a=>`<tr><td>${a.nome}${a.descricao?`<small>${a.descricao}</small>`:""}</td>
+          <td>${rotulo(a.categoria)}</td>
+          <td class="direita dados">${a.tamanho_kb} KB${a.comprimido?`<small>de ${a.original_kb}</small>`:""}</td>
+          <td class="dados">${a.em}</td>
+          <td><a class="btn secundario" href="/erp/anexo/${a.id}" target="_blank">Abrir</a></td></tr>`).join("")
+          || `<tr><td colspan="5" class="cartao-dica">Nenhum documento anexado.</td></tr>`}
+      </tbody></table>`;
+    els("an-enviar").addEventListener("click", async () => {
+      const arq = els("an-arq").files[0];
+      if (!arq) { aviso("dlg-msg","Escolha o arquivo.","erro"); return; }
+      const fd = new FormData();
+      fd.append("arquivo", arq); fd.append("categoria", els("an-cat").value);
+      fd.append("descricao", els("an-desc").value);
+      try {
+        await api(`/erp/api/anexos/obra/${id}`, {method:"POST", body: fd});
+        aviso("dlg-msg","Documento anexado.","ok"); painel(4, id);
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    });
+    return;
+  }
+
+  if (i === 5) {   // movimento
+    const d = await api(`/erp/api/obras/${id}/titulos`);
+    const pagar = d.titulos.filter(t=>t.especie==="PAGAR");
+    const receber = d.titulos.filter(t=>t.especie==="RECEBER");
+    const tabela = (linhas, rotuloCol) => `<table><thead><tr><th>SP</th><th>${rotuloCol}</th>
+      <th>Descrição</th><th>Conta</th><th class="direita">Valor</th><th>Comp.</th><th>Situação</th></tr></thead>
+      <tbody>${linhas.map(t=>`<tr><td class="dados">${t.numero_sp}</td><td>${t.credor}</td>
+        <td class="desc">${t.descricao}${t.medicao?`<small>medição ${t.medicao}</small>`:""}</td>
+        <td><small>${t.categoria}</small></td><td class="direita dados">${numero(t.valor)}</td>
+        <td class="dados">${t.competencia}</td>
+        <td><span class="selo ${t.status==="PAGO"?"aprovado":"outro"}">${rotulo(t.status)}</span></td>
+      </tr>`).join("") || `<tr><td colspan="7" class="cartao-dica">Nada aqui ainda.</td></tr>`}</tbody></table>`;
+    alvo.innerHTML = `<h4>Recebimentos — medições (${receber.length})</h4>${tabela(receber,"Cliente")}
+      <h4>Gastos — títulos a pagar (${pagar.length})</h4>${tabela(pagar,"Credor")}`;
+    return;
+  }
+
+  // histórico
+  const [fases, hist] = await Promise.all([
+    api(`/erp/api/obras/${id}/fases`), api(`/erp/api/historico/obra/${id}`)]);
+  alvo.innerHTML = `<h4>Fases</h4>
+    <table><tbody>${fases.fases.map(f=>`<tr><td class="dados">${f.quando}</td>
+      <td><b>${f.rotulo}</b></td><td>${f.por}</td><td><small>${f.observacao||""}</small></td></tr>`).join("")
+      || `<tr><td class="cartao-dica">Sem mudanças de fase registradas.</td></tr>`}</tbody></table>
+    <h4>Alterações no cadastro</h4>
+    <table><tbody>${hist.eventos.map(e=>`<tr><td class="dados">${e.quando}</td>
+      <td><b>${rotulo(e.acao)}</b></td><td>${e.por}</td>
+      <td><small>${JSON.stringify(e.detalhe).slice(0,90)}</small></td></tr>`).join("")}</tbody></table>`;
+}
+
+function salvarObra(id, mapa, extras){
+  const b = els("o-salvar");
+  if (!b) return;
+  b.addEventListener("click", async () => {
+    const corpo = {};
+    Object.entries(mapa).forEach(([campo, elemento]) => {
+      const el = els(elemento);
+      if (el) corpo[campo] = el.value;
+    });
+    if (extras) Object.assign(corpo, extras());
+    try {
+      await api(`/erp/api/obras/${id}`, {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+      aviso("dlg-msg", "Salvo.", "ok"); carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+}
+
+els("btn-nova").addEventListener("click", () => {
+  els("dlg-titulo").textContent = "Nova obra";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo"><label>Código *</label><input id="n-codigo" placeholder="ESCPE18"></div>
+      <div class="campo" style="grid-column:span 2"><label>Nome *</label><input id="n-nome"></div>
+      <div class="campo"><label>Cliente</label><input id="n-cliente"></div>
+      <div class="campo"><label>Município</label><input id="n-municipio"></div>
+      <div class="campo"><label>UF</label><input id="n-uf" maxlength="2"></div>
+    </div>
+    <div class="cartao-dica">Depois de criar, abra a obra para completar contrato,
+      tributação e documentos.</div>
+    <div style="margin-top:14px"><button class="btn" id="n-salvar">Criar obra</button></div>`;
+  els("n-salvar").addEventListener("click", async () => {
+    try {
+      await api("/erp/api/config/obra", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({codigo: els("n-codigo").value, nome: els("n-nome").value,
+          cliente: els("n-cliente").value, municipio: els("n-municipio").value,
+          uf: els("n-uf").value})});
+      els("dlg").close(); aviso("mensagem","Obra criada.","ok"); carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+});
+
+let deb; els("f-busca").addEventListener("input", ()=>{clearTimeout(deb); deb=setTimeout(desenhar,250);});
+["f-vigencia","f-reajuste","f-fiscal","f-margem"].forEach(i=>els(i).addEventListener("change", desenhar));
+els("btn-limpar").addEventListener("click", ()=>{
+  F.fase.clear(); els("f-busca").value="";
+  ["f-vigencia","f-reajuste","f-fiscal","f-margem"].forEach(i=>els(i).checked=false);
+  montarFiltros(); desenhar();
+});
+document.querySelectorAll("thead th[data-ordem]").forEach(th=>th.addEventListener("click",()=>{
+  ORDEM={campo:th.dataset.ordem, asc:ORDEM.campo===th.dataset.ordem?!ORDEM.asc:true};
+  document.querySelectorAll("thead .seta").forEach(s=>s.remove());
+  th.insertAdjacentHTML("beforeend",`<span class="seta"> ${ORDEM.asc?"▲":"▼"}</span>`);
+  desenhar();
+}));
+carregar();
+</script>
+{% endblock %}

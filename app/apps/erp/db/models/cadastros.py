@@ -243,12 +243,36 @@ class Obra(Base):
     federais_retidos: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
     regime_obra: Mapped[Optional[str]] = mapped_column(Text)
     observacoes_fiscais: Mapped[Optional[str]] = mapped_column(Text)
+    fase: Mapped[str] = mapped_column(Text, nullable=False, default="CRIACAO")
+    fase_desde: Mapped[Optional[date]] = mapped_column(Date)
+    seguro_garantia: Mapped[Optional[str]] = mapped_column(Text)
+    seguro_vigencia_fim: Mapped[Optional[date]] = mapped_column(Date)
+    caucao_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    retencao_contratual_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2))
+    crea_obra: Mapped[Optional[str]] = mapped_column(Text)
+    cei_obra: Mapped[Optional[str]] = mapped_column(Text)
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    data_conclusao: Mapped[Optional[date]] = mapped_column(Date)
+    data_recebimento_provisorio: Mapped[Optional[date]] = mapped_column(Date)
+    data_recebimento_definitivo: Mapped[Optional[date]] = mapped_column(Date)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="ATIVA")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Obra {self.codigo} {self.nome!r}>"
+
+
+class ObraFase(Base):
+    """Histórico de fases da obra — o acompanhamento que hoje vive no pipe."""
+    __tablename__ = "obra_fases"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
+    fase: Mapped[str] = mapped_column(Text, nullable=False)
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Categoria(Base):

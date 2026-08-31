@@ -52,12 +52,17 @@
 
 <div class="cartao">
   <div class="cartao-cab"><h3>Lotes</h3>
-    <small>organize por prioridade — como no Análise de SPs, agora com histórico</small></div>
+    <small>agrupe as SPs por prioridade para pagar em bloco</small></div>
+  <div class="cartao-dica" style="margin-bottom:8px">
+    <b>Como montar um lote:</b> marque as SPs na tabela abaixo (caixinha da esquerda) e use
+    <b>Novo lote</b> para criar já com elas, ou <b>Adicionar ao lote</b> para jogar num lote
+    existente. Também dá para colar a lista de SPs que o solicitante mandou.
+  </div>
   <div id="lista-lotes"></div>
   <div class="tabela-barra" style="padding:10px 0 0">
     <span class="espaco"></span>
     <button class="btn secundario" id="btn-colar-sp">Colar SPs (mensagem do solicitante)</button>
-    <button class="btn secundario" id="btn-novo-lote">+ Novo lote</button>
+    <button class="btn amarelo" id="btn-novo-lote">+ Novo lote com as selecionadas</button>
   </div>
 </div>
 
@@ -67,7 +72,7 @@
     <span class="espaco"></span>
     <span id="acoes" class="oculto" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
       <select id="lote-destino" style="padding:6px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px"></select>
-      <button class="btn secundario" data-acao="ao-lote">Adicionar ao lote</button>
+      <button class="btn secundario" data-acao="ao-lote">↗ Adicionar ao lote selecionado</button>
       <select id="conta-baixa" style="padding:6px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px"></select>
       <input type="date" id="data-baixa" style="padding:6px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px">
       <button class="btn amarelo" data-acao="baixar">Registrar pagamento</button>
@@ -360,7 +365,10 @@ els("btn-novo-lote").addEventListener("click", () => {
         <option value="5">Quando der</option></select></div>
       <div class="campo"><label>Data prevista</label><input type="date" id="l-data"></div>
     </div>
-    <div class="cartao-dica">${SEL.size} parcela(s) selecionada(s) entram no lote.</div>
+    <div class="${SEL.size?"aviso ok":"aviso erro"}">${SEL.size
+      ? `<b>${SEL.size} parcela(s) selecionada(s)</b> entram neste lote.`
+      : `<b>Nenhuma parcela selecionada.</b> O lote será criado vazio — depois marque as SPs
+         na tabela e use "Adicionar ao lote".`}</div>
     <div style="margin-top:14px"><button class="btn" id="l-salvar">Criar lote</button></div>`;
   els("l-salvar").addEventListener("click", async () => {
     try {

@@ -77,7 +77,7 @@
 - [ ] **Cruzamento estilo tela do Bradesco**: conferir conta correta e credor do
       Pix contra o que foi lançado
 - [ ] **Robô Bradesco**: adaptar para dar baixa via core do ERP
-- [ ] **Suprimentos**: pedidos de compra, three-way match; etapa/serviço da obra
+- [ ] **Suprimentos**: pedidos de compra, three-way match (o ERP deixa de ser só financeiro); etapa/serviço da obra
       entra aqui (dentro do centro de custo), não antes
 - [x] Cadastro completo da obra: endereço (local de entrega), CNO, ART/RRT,
       contrato, vigência, data-base do reajuste, conta de recebimento,
@@ -85,7 +85,10 @@
 - [x] Reclassificar conta/obra com título pago e conciliado, sem desfazer nada
 - [x] Desfazer baixa+conciliação em um passo (o ritual do Omie em um clique)
 - [x] Anexos genéricos (obra, título, fornecedor, movimentação) no banco
-- [ ] Obra — falta: fases de acompanhamento; alerta de data-base do reajuste
+- [x] GESTÃO DE OBRAS como área própria (aba Obras): painel com contrato
+      vigente, recebido, gasto e saldo; fases com histórico; contrato e
+      aditivos; tributação com simulador; documentos; movimento; auditoria
+- [ ] Obra — falta: alerta de reajuste na agenda (o painel já sinaliza)
 - [ ] Integrar com o módulo emissaonf: emitir a nota a partir da medição
 - [ ] **Open Finance / API bancária**: extrato e DDA automáticos (futuro)
 - [x] Aviso quando o título é pago, via TELEGRAM, com o comprovante junto —
