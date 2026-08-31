@@ -23,6 +23,8 @@ import re
 import logging
 import time
 import urllib.request
+
+import requests
 from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
