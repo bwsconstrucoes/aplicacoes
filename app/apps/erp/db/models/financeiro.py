@@ -207,6 +207,13 @@ class Titulo(Base):
     dedutibilidade_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     dedutibilidade_origem: Mapped[Optional[str]] = mapped_column(Text)
     forma_liquidacao: Mapped[Optional[str]] = mapped_column(Text)
+    modalidade: Mapped[str] = mapped_column(Text, nullable=False, default="NORMAL")
+    fundo_fixo_tipo: Mapped[Optional[str]] = mapped_column(Text)
+    adiantamento_titulo_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("titulos.id"))
+    periodo_prestacao_inicio: Mapped[Optional[date]] = mapped_column(Date)
+    periodo_prestacao_fim: Mapped[Optional[date]] = mapped_column(Date)
+    alertas_confirmados: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     exige_aval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     avalizado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     avalizado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
@@ -476,4 +483,28 @@ class ObraInteressado(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
     usuario_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TituloItem(Base):
+    """Linha da prestação de contas (fundo fixo) ou da fatura de cartão."""
+    __tablename__ = "titulo_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    titulo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("titulos.id"), nullable=False)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    data_despesa: Mapped[Optional[date]] = mapped_column(Date)
+    descricao: Mapped[str] = mapped_column(Text, nullable=False)
+    estabelecimento: Mapped[Optional[str]] = mapped_column(Text)
+    documento: Mapped[Optional[str]] = mapped_column(Text)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    categoria_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("categorias.id"))
+    anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    origem_leitura: Mapped[Optional[str]] = mapped_column(Text)
+    confianca: Mapped[Optional[str]] = mapped_column(Text)
+    criticas: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    conferido_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    conferido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

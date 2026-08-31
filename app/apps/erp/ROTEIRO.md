@@ -69,6 +69,16 @@
 
 ## Fila (pedidos registrados, ainda não iniciados)
 
+- [x] FUNDO FIXO: prestação de contas com itens, comprovante por linha,
+      adiantamento × reembolso, histórico do solicitante e críticas antifraude
+- [x] CARTÃO DE CRÉDITO: importa a fatura em PDF, extrai as compras, exige
+      obra e categoria por linha
+- [x] Rateio de obra obrigatório no lançamento
+- [ ] Prestação — falta: alerta das críticas chegar ao avalista/financeiro/
+      diretor na tela de Confirmar; conferência item a item na aprovação
+- [ ] Módulo PESSOAL (pipes Cadastro de Colaboradores 301487297 e Despesas
+      com Colaboradores 301433085 — estruturas já recebidas)
+
 - [ ] Detalhe do título que **expande como card**, com anexos e tudo que não
       cabe na tabela
 - [ ] **Encadeamento**: obra → cadastro da obra; conta → plano; credor →

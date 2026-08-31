@@ -233,6 +233,9 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
     # ---- rateios por obra
     rateios_in = dados.get("rateios") or []
     if not rateios_in:
+        raise ErroValidacao(
+            "Informe o rateio por obra — todo gasto precisa de centro de custo.")
+    if not rateios_in:
         raise ErroValidacao("Informe ao menos 1 rateio (obra + valor).")
     rateios_obj: list[Rateio] = []
     soma_rat = Decimal("0.00")

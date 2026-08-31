@@ -44,6 +44,7 @@ MODULOS = [
         "cor": "var(--azul-claro)",
         "abas": [
             ("lancar", "Lançar", "erp.pagina_lancar"),
+            ("prestacao", "Fundo fixo e cartão", "erp.pagina_prestacao"),
             ("titulos", "Solicitações", "erp.pagina_titulos"),
             ("confirmar", "Confirmar", "erp.pagina_confirmar"),
             ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
@@ -221,6 +222,12 @@ def pagina_obras():
 @login_obrigatorio
 def pagina_relatorios():
     return render_template("erp_relatorios.html", **_contexto("relatorios"))
+
+
+@bp.route("/erp/prestacao")
+@login_obrigatorio
+def pagina_prestacao():
+    return render_template("erp_prestacao.html", **_contexto("prestacao"))
 
 
 @bp.route("/erp/importar")
@@ -2278,6 +2285,157 @@ def api_titulos_da_obra(obra_id: int):
             return jsonify({"ok": True, "titulos": saida})
     except Exception as e:
         logger.exception("ERP: falha ao listar títulos da obra")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Prestação de contas: fundo fixo e fatura de cartão
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/prestacao/comprovante", methods=["POST"])
+@login_obrigatorio
+def api_prestacao_comprovante():
+    """Lê um comprovante e devolve a linha, guardando o arquivo no banco."""
+    from app.apps.erp.core.documentos.armazenamento import salvar
+    from app.apps.erp.core.titulos.prestacao import ler_comprovante_item
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Envie o comprovante."}), 400
+    try:
+        conteudo = arquivo.read()
+        linha = ler_comprovante_item(conteudo, arquivo.filename or "comprovante")
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            # guarda solto (entidade 0) e vincula ao título quando ele for criado
+            anexo = salvar(s, conteudo, arquivo.filename or "comprovante",
+                           entidade_tipo="prestacao_rascunho", entidade_id=usuario.id,
+                           categoria="COMPROVANTE", usuario=usuario)
+            linha["anexo_id"] = anexo.id
+            s.commit()
+        return jsonify({"ok": True, "linha": linha})
+    except Exception as e:
+        logger.exception("ERP: falha ao ler comprovante da prestação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/prestacao/fatura", methods=["POST"])
+@login_obrigatorio
+def api_prestacao_fatura():
+    """Lê a fatura do cartão e devolve todas as compras como linhas."""
+    from app.apps.erp.core.documentos.armazenamento import salvar
+    from app.apps.erp.core.titulos.prestacao import ler_fatura_cartao
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Envie o PDF da fatura."}), 400
+    try:
+        conteudo = arquivo.read()
+        rel = ler_fatura_cartao(conteudo, arquivo.filename or "fatura.pdf")
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            anexo = salvar(s, conteudo, arquivo.filename or "fatura.pdf",
+                           entidade_tipo="prestacao_rascunho", entidade_id=usuario.id,
+                           categoria="OUTRO", descricao="Fatura de cartão", usuario=usuario)
+            rel["anexo_fatura_id"] = anexo.id
+            s.commit()
+        return jsonify({"ok": True, "fatura": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao ler fatura")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/prestacao/criticar", methods=["POST"])
+@login_obrigatorio
+def api_prestacao_criticar():
+    from app.apps.erp.core.titulos.prestacao import criticar
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            from datetime import date as _d
+            return jsonify({"ok": True, "critica": criticar(
+                s, d.get("itens") or [], solicitante_id=usuario.id,
+                modalidade=(d.get("modalidade") or "FUNDO_FIXO").upper(),
+                total_declarado=d.get("total_declarado"),
+                periodo_inicio=_d.fromisoformat(d["periodo_inicio"]) if d.get("periodo_inicio") else None,
+                periodo_fim=_d.fromisoformat(d["periodo_fim"]) if d.get("periodo_fim") else None)})
+    except Exception as e:
+        logger.exception("ERP: falha na crítica da prestação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/prestacao", methods=["POST"])
+@login_obrigatorio
+def api_criar_prestacao():
+    from app.apps.erp.core.documentos.armazenamento import Anexo as _A
+    from app.apps.erp.core.titulos.prestacao import criar_prestacao
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            titulo = criar_prestacao(s, d, usuario)
+            # vincula os comprovantes ao título criado
+            for item in (d.get("itens") or []):
+                if item.get("anexo_id"):
+                    anexo = s.get(_A, int(item["anexo_id"]))
+                    if anexo is not None and anexo.entidade_tipo == "prestacao_rascunho":
+                        anexo.entidade_tipo = "titulo"
+                        anexo.entidade_id = titulo.id
+            if d.get("anexo_fatura_id"):
+                anexo = s.get(_A, int(d["anexo_fatura_id"]))
+                if anexo is not None:
+                    anexo.entidade_tipo = "titulo"
+                    anexo.entidade_id = titulo.id
+            s.commit()
+            return jsonify({"ok": True, "titulo": {
+                "id": titulo.id, "numero_sp": titulo.numero_sp,
+                "status": titulo.status.value, "total": float(titulo.valor_liquido)}})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao criar prestação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/prestacao/<int:titulo_id>")
+@login_obrigatorio
+def api_prestacao_detalhe(titulo_id: int):
+    from app.apps.erp.core.titulos.prestacao import detalhar
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "prestacao": detalhar(s, titulo_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+@bp.route("/erp/api/prestacao/<int:titulo_id>/conferir", methods=["POST"])
+@login_obrigatorio
+def api_conferir(titulo_id: int):
+    from app.apps.erp.core.titulos.prestacao import confirmar_analise
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = confirmar_analise(s, titulo_id, usuario,
+                                    item_id=d.get("item_id"),
+                                    observacao=d.get("observacao", ""))
+            s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/prestacao/historico")
+@login_obrigatorio
+def api_prestacao_historico():
+    from app.apps.erp.core.titulos.prestacao import historico_do_solicitante
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            alvo = request.args.get("usuario_id", type=int) or usuario.id
+            return jsonify({"ok": True, "historico": historico_do_solicitante(
+                s, alvo, (request.args.get("modalidade") or "FUNDO_FIXO").upper())})
+    except Exception as e:
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

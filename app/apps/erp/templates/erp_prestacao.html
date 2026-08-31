@@ -1,0 +1,264 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Fundo fixo e cartão — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Fundo fixo e fatura de cartão
+  <small>muitas despesas pequenas num lançamento só, cada uma com seu comprovante</small></h2>
+<div id="mensagem"></div>
+
+<div class="cartao">
+  <div class="tabela-barra" style="padding:0">
+    <div class="campo" style="margin:0"><label>Modalidade</label>
+      <select id="modalidade" style="min-width:230px">
+        <option value="FUNDO_FIXO">Fundo fixo — prestação de contas</option>
+        <option value="CARTAO">Fatura de cartão de crédito</option>
+      </select></div>
+    <div class="campo" style="margin:0" id="campo-tipo"><label>Natureza</label>
+      <select id="ff-tipo">
+        <option value="REEMBOLSO">Reembolso — gastei do meu bolso</option>
+        <option value="ADIANTAMENTO">Adiantamento — presto contas do que recebi</option>
+      </select></div>
+    <div class="campo" style="margin:0"><label>Período de</label>
+      <input type="date" id="p-inicio"></div>
+    <div class="campo" style="margin:0"><label>até</label>
+      <input type="date" id="p-fim"></div>
+  </div>
+  <div id="historico" class="cartao-dica" style="margin-top:10px"></div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3 id="titulo-anexo">1 · Comprovantes</h3>
+    <small id="sub-anexo">envie todos de uma vez — o sistema lê cada um e monta a lista</small></div>
+  <div class="form-grade">
+    <div class="campo" style="grid-column:span 2"><label id="rot-arq">Comprovantes</label>
+      <input type="file" id="arqs" multiple accept=".pdf,.png,.jpg,.jpeg,.webp">
+      <div class="dica" id="dica-arq">Cupom fiscal, recibo, nota — em PDF ou foto.
+        O que a leitura não pegar, você completa na tabela.</div></div>
+    <div class="campo" style="align-self:end">
+      <button class="btn" id="btn-ler">Ler comprovantes</button>
+      <button class="btn secundario" id="btn-linha" style="margin-left:6px">+ Linha manual</button>
+    </div>
+  </div>
+  <div id="progresso"></div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>2 · Despesas</h3>
+    <small id="sub-itens">confira cada linha; o vermelho precisa de tratativa</small></div>
+  <div class="tabela-rolagem" style="max-height:none">
+    <table><thead><tr>
+      <th style="width:34px">#</th><th style="width:120px">Data</th><th>Descrição</th>
+      <th style="width:150px">Estabelecimento</th><th style="width:90px">Doc.</th>
+      <th style="width:110px" class="direita">Valor</th>
+      <th style="width:150px">Obra</th>
+      <th style="width:180px" class="col-categoria">Categoria</th>
+      <th style="width:70px">Compr.</th><th style="width:44px"></th>
+    </tr></thead><tbody id="corpo"></tbody>
+    <tfoot><tr><th colspan="5">Total</th><th class="direita dados" id="total">0,00</th>
+      <th colspan="4"></th></tr></tfoot></table>
+  </div>
+  <div class="vazio" id="vazio">Nenhuma despesa ainda. Envie os comprovantes ou some linhas à mão.</div>
+</div>
+
+<div class="cartao" id="bloco-critica"></div>
+
+<div class="cartao">
+  <div class="form-grade">
+    <div class="campo"><label>Favorecido (quem recebe)</label><select id="favorecido"></select>
+      <div class="dica">No reembolso, é a pessoa que gastou; no cartão, a operadora.</div></div>
+    <div class="campo"><label>Vencimento</label><input type="date" id="vencimento"></div>
+  </div>
+  <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+    <button class="btn secundario" id="btn-conferir">Conferir</button>
+    <button class="btn amarelo" id="btn-enviar">Enviar prestação</button>
+    <span class="cartao-dica" style="margin:0">Bloqueios precisam ser corrigidos.
+      Alertas seguem, mas ficam registrados para quem aprova.</span>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let ITENS = [], OBRAS = [], CATEGORIAS = [], FORNECEDORES = [], CRITICA = null, ANEXO_FATURA = null;
+const dec = v => { const n = parseFloat(String(v||"").replace(/[R$\s.]/g,"").replace(",",".")); return isNaN(n)?0:n; };
+
+async function inicial(){
+  try {
+    const d = await api("/erp/api/lancamento/dados");
+    OBRAS = d.dados.obras; CATEGORIAS = d.dados.categorias; FORNECEDORES = d.dados.fornecedores;
+    els("favorecido").innerHTML = `<option value="">— escolher —</option>` +
+      FORNECEDORES.map(f=>`<option value="${f.id}">${f.nome}</option>`).join("");
+    const hoje = new Date();
+    els("p-inicio").value = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0,10);
+    els("p-fim").value = hoje.toISOString().slice(0,10);
+    els("vencimento").value = new Date(Date.now()+7*864e5).toISOString().slice(0,10);
+    carregarHistorico(); alternarModalidade(); desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function carregarHistorico(){
+  try {
+    const d = await api(`/erp/api/prestacao/historico?modalidade=${els("modalidade").value}`);
+    const h = d.historico;
+    els("historico").innerHTML = h.prestacoes
+      ? `<b>Seu histórico:</b> ${h.prestacoes} prestação(ões) · média ${moeda(h.media)} ·
+         maior ${moeda(h.maior)} · ${h.itens_media} itens em média.
+         ${h.ultimas ? `<br><small>Últimas: ${h.ultimas.map(u=>`${u.numero_sp} ${moeda(u.valor)} (${u.competencia}, ${rotulo(u.status)})`).join(" · ")}</small>` : ""}`
+      : `<b>Primeira prestação sua nesta modalidade.</b> As próximas serão comparadas com esta.`;
+  } catch(e){ els("historico").innerHTML = ""; }
+}
+
+function alternarModalidade(){
+  const cartao = els("modalidade").value === "CARTAO";
+  els("campo-tipo").style.display = cartao ? "none" : "";
+  els("titulo-anexo").textContent = cartao ? "1 · Fatura" : "1 · Comprovantes";
+  els("rot-arq").textContent = cartao ? "PDF da fatura" : "Comprovantes";
+  els("sub-anexo").textContent = cartao
+    ? "envie o PDF da fatura — o sistema extrai todas as compras"
+    : "envie todos de uma vez — o sistema lê cada um e monta a lista";
+  els("dica-arq").textContent = cartao
+    ? "A fatura fica anexada ao título. Cada compra vira uma linha, e você informa obra e categoria."
+    : "Cupom fiscal, recibo, nota — em PDF ou foto. O que a leitura não pegar, você completa na tabela.";
+  els("btn-ler").textContent = cartao ? "Ler fatura" : "Ler comprovantes";
+  els("arqs").multiple = !cartao;
+  document.querySelectorAll(".col-categoria").forEach(c=>c.style.display = cartao ? "" : "none");
+  carregarHistorico(); desenhar();
+}
+els("modalidade").addEventListener("change", alternarModalidade);
+
+els("btn-ler").addEventListener("click", async () => {
+  const arqs = [...els("arqs").files];
+  if (!arqs.length) { aviso("mensagem","Escolha o(s) arquivo(s).","erro"); return; }
+  const b = els("btn-ler"); b.disabled = true;
+  const cartao = els("modalidade").value === "CARTAO";
+  try {
+    if (cartao) {
+      b.textContent = "Lendo fatura…";
+      const fd = new FormData(); fd.append("arquivo", arqs[0]);
+      const d = await api("/erp/api/prestacao/fatura", {method:"POST", body: fd});
+      ANEXO_FATURA = d.fatura.anexo_fatura_id;
+      d.fatura.itens.forEach(i => ITENS.push({...i, obra_id:"", categoria_id:""}));
+      els("progresso").innerHTML = `<div class="aviso ok">${d.fatura.itens.length} compra(s)
+        extraída(s) da fatura · total declarado ${moeda(dec(d.fatura.total_fatura))}
+        ${d.fatura.observacoes?`<br><small>${d.fatura.observacoes}</small>`:""}</div>`;
+    } else {
+      for (const [i, arq] of arqs.entries()) {
+        b.textContent = `Lendo ${i+1}/${arqs.length}…`;
+        const fd = new FormData(); fd.append("arquivo", arq);
+        try {
+          const d = await api("/erp/api/prestacao/comprovante", {method:"POST", body: fd});
+          ITENS.push({...d.linha, obra_id:"", categoria_id:"", arquivo:arq.name});
+        } catch(e) {
+          ITENS.push({descricao:"", valor:"", obra_id:"", origem_leitura:"FALHA",
+                      arquivo:arq.name, observacao:e.message});
+        }
+      }
+      els("progresso").innerHTML = `<div class="aviso ok">${arqs.length} comprovante(s) processado(s).
+        Complete o que ficou em branco.</div>`;
+    }
+    desenhar(); conferir();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  b.disabled = false; alternarModalidade();
+});
+
+els("btn-linha").addEventListener("click", () => {
+  ITENS.push({data_despesa:"", descricao:"", valor:"", obra_id:"", categoria_id:"",
+              origem_leitura:"MANUAL", _sem_anexo_ok:true});
+  desenhar();
+});
+
+function desenhar(){
+  const cartao = els("modalidade").value === "CARTAO";
+  els("vazio").style.display = ITENS.length ? "none" : "";
+  const cri = (i) => (CRITICA && CRITICA.por_item[String(i)]) || [];
+  els("corpo").innerHTML = ITENS.map((it, i) => {
+    const c = cri(i);
+    const pior = c.some(x=>x.gravidade==="BLOQUEIA") ? "BLOQUEIA"
+               : c.some(x=>x.gravidade==="CRITICA") ? "CRITICA" : c.length ? "ALERTA" : "";
+    const cor = {BLOQUEIA:"var(--vermelho)", CRITICA:"var(--ambar)", ALERTA:"var(--amarelo)"}[pior];
+    return `<tr style="${cor?`border-left:4px solid ${cor}`:""}">
+      <td class="dados">${i+1}</td>
+      <td><input type="date" data-c="data_despesa" data-i="${i}" value="${it.data_despesa||""}" style="width:100%"></td>
+      <td><input data-c="descricao" data-i="${i}" value="${(it.descricao||"").replace(/"/g,"&quot;")}" style="width:100%">
+        ${c.length?`<div style="margin-top:3px">${c.map(x=>`<small style="display:block; color:${
+          x.gravidade==="BLOQUEIA"?"var(--vermelho)":x.gravidade==="CRITICA"?"var(--ambar)":"var(--tinta-suave)"}">
+          ${x.codigo} · ${x.msg}</small>`).join("")}</div>`:""}</td>
+      <td><input data-c="estabelecimento" data-i="${i}" value="${(it.estabelecimento||"").replace(/"/g,"&quot;")}" style="width:100%"></td>
+      <td><input data-c="documento" data-i="${i}" value="${it.documento||""}" style="width:100%"></td>
+      <td><input data-c="valor" data-i="${i}" value="${it.valor||""}" style="width:100%; text-align:right" class="dados"></td>
+      <td><select data-c="obra_id" data-i="${i}" style="width:100%">
+        <option value="">— obra —</option>
+        ${OBRAS.map(o=>`<option value="${o.id}" ${String(it.obra_id)===String(o.id)?"selected":""}>${o.codigo}</option>`).join("")}
+      </select></td>
+      <td class="col-categoria" style="display:${cartao?"":"none"}">
+        <select data-c="categoria_id" data-i="${i}" style="width:100%">
+          <option value="">— categoria —</option>
+          ${CATEGORIAS.map(x=>`<option value="${x.id}" ${String(it.categoria_id)===String(x.id)?"selected":""}>${x.codigo} · ${x.descricao.slice(0,28)}</option>`).join("")}
+        </select></td>
+      <td>${it.anexo_id?`<a class="btn secundario" href="/erp/anexo/${it.anexo_id}" target="_blank">ver</a>`
+            :`<small style="color:var(--tinta-suave)">—</small>`}</td>
+      <td><button class="btn secundario" data-del="${i}" title="remover">✕</button></td>
+    </tr>`;
+  }).join("");
+  document.querySelectorAll("[data-c]").forEach(el => el.addEventListener("change", ev => {
+    ITENS[+ev.target.dataset.i][ev.target.dataset.c] = ev.target.value;
+    total(); }));
+  document.querySelectorAll("[data-del]").forEach(b => b.addEventListener("click", () => {
+    ITENS.splice(+b.dataset.del, 1); CRITICA = null; desenhar(); }));
+  document.querySelectorAll(".col-categoria").forEach(c=>c.style.display = cartao ? "" : "none");
+  total();
+}
+
+function total(){
+  els("total").textContent = numero(ITENS.reduce((a,i)=>a+dec(i.valor),0));
+}
+
+async function conferir(){
+  if (!ITENS.length) return;
+  try {
+    const d = await api("/erp/api/prestacao/criticar", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({itens: ITENS, modalidade: els("modalidade").value,
+        periodo_inicio: els("p-inicio").value || null, periodo_fim: els("p-fim").value || null})});
+    CRITICA = d.critica;
+    els("bloco-critica").innerHTML = `
+      <div class="cartao-cab"><h3>Conferência automática</h3>
+        <small>${CRITICA.bloqueios} bloqueio(s) · ${CRITICA.criticas} ponto(s) de atenção</small></div>
+      ${CRITICA.gerais.map(g=>`<div class="critica ${g.gravidade}">
+        <code>${g.codigo}</code>${g.msg}</div>`).join("")}
+      ${!CRITICA.bloqueios && !CRITICA.criticas
+        ? `<div class="aviso ok">Nada suspeito. Total ${moeda(CRITICA.soma)}.</div>`
+        : `<div class="cartao-dica">Os apontamentos aparecem em cada linha acima.
+           Bloqueios impedem o envio; os demais seguem e serão mostrados a quem aprova.</div>`}`;
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+els("btn-conferir").addEventListener("click", conferir);
+["p-inicio","p-fim"].forEach(i=>els(i).addEventListener("change", conferir));
+
+els("btn-enviar").addEventListener("click", async () => {
+  const b = els("btn-enviar"); b.disabled = true; b.textContent = "Enviando…";
+  try {
+    const d = await api("/erp/api/prestacao", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({modalidade: els("modalidade").value,
+        fundo_fixo_tipo: els("ff-tipo").value, itens: ITENS,
+        periodo_inicio: els("p-inicio").value || null,
+        periodo_fim: els("p-fim").value || null,
+        fornecedor_id: els("favorecido").value || null,
+        vencimento: els("vencimento").value,
+        anexo_fatura_id: ANEXO_FATURA})});
+    aviso("mensagem", `Prestação <b>${d.titulo.numero_sp}</b> enviada — ${moeda(d.titulo.total)}
+      · situação ${rotulo(d.titulo.status)}.`, "ok");
+    ITENS = []; CRITICA = null; ANEXO_FATURA = null;
+    els("progresso").innerHTML = ""; els("bloco-critica").innerHTML = "";
+    desenhar(); carregarHistorico();
+    window.scrollTo({top:0, behavior:"smooth"});
+  } catch(e){ aviso("mensagem", e.message, "erro"); conferir(); }
+  b.disabled = false; b.textContent = "Enviar prestação";
+});
+
+inicial();
+</script>
+{% endblock %}
