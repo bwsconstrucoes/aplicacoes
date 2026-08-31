@@ -7,6 +7,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+from dataclasses import dataclass
 from typing import Optional
 
 from sqlalchemy import select
@@ -15,6 +16,20 @@ from sqlalchemy.orm import Session
 from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario
 
 _ITERACOES = 240_000
+
+
+@dataclass
+class UsuarioMinimo:
+    """Substituto do Usuario quando o banco ainda não tem as colunas que o
+    modelo espera. Carrega só o essencial para a sessão e para as permissões,
+    permitindo entrar no sistema e aplicar as migrações pendentes."""
+    id: int
+    nome: str
+    email: str
+    perfil: PerfilUsuario
+    ativo: bool = True
+    telefone: str = ""
+    cpf: str = ""
 
 
 class ErroAutenticacao(Exception):
@@ -42,11 +57,29 @@ def verificar_senha(senha: str, hash_armazenado: str) -> bool:
 
 
 def autenticar(s: Session, email: str, senha: str) -> Usuario:
+    """Autentica pelo mínimo necessário.
+
+    A consulta é feita por SQL direto porque o login precisa funcionar mesmo
+    quando o banco ainda não recebeu as migrações mais recentes — senão o
+    usuário não entra para clicar no botão que atualiza o banco.
+    """
+    from sqlalchemy import text as _text
+
     email = (email or "").strip().lower()
-    usuario = s.scalars(select(Usuario).where(Usuario.email == email)).first()
-    if usuario is None or not usuario.ativo or not verificar_senha(senha or "", usuario.senha_hash):
+    linha = s.execute(_text(
+        "SELECT id, senha_hash, ativo FROM usuarios WHERE email = :e"),
+        {"e": email}).first()
+    if linha is None or not linha[2] or not verificar_senha(senha or "", linha[1]):
         raise ErroAutenticacao("E-mail ou senha inválidos.")
-    return usuario
+    try:
+        return s.get(Usuario, linha[0])
+    except Exception:                       # banco atrás do modelo (migração pendente)
+        s.rollback()
+        dados = s.execute(_text(
+            "SELECT id, nome, email, perfil::text FROM usuarios WHERE id = :i"),
+            {"i": linha[0]}).first()
+        return UsuarioMinimo(id=dados[0], nome=dados[1], email=dados[2],
+                             perfil=PerfilUsuario(dados[3]))
 
 
 def criar_usuario(s: Session, *, nome: str, email: str, senha: str,

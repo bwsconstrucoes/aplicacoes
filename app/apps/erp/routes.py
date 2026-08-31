@@ -72,6 +72,21 @@ def _usuario_logado(s) -> Usuario | None:
     return s.get(Usuario, uid) if uid else None
 
 
+def _perfil_bruto(s) -> str:
+    """Perfil por SQL direto, sem passar pelo ORM.
+
+    Necessário no caminho de manutenção: se o banco ainda não tem as colunas
+    que o modelo espera, carregar o objeto Usuario quebra — e justamente o
+    botão que conserta o banco ficaria inutilizável (impasse circular)."""
+    from sqlalchemy import text as _text
+    uid = session.get("erp_usuario_id")
+    if not uid:
+        return ""
+    linha = s.execute(_text("SELECT perfil::text FROM usuarios WHERE id = :i"),
+                      {"i": uid}).first()
+    return linha[0] if linha else ""
+
+
 def login_obrigatorio(fn):
     @wraps(fn)
     def _wrap(*a, **kw):
@@ -688,15 +703,14 @@ def api_estado_banco():
 def api_aplicar_migracoes():
     """Botão de atualização do banco — restrito a ADMIN."""
     from app.apps.erp.core.comum.migracoes import aplicar_pendentes
-    from app.apps.erp.db.models.cadastros import PerfilUsuario
     try:
         with get_session() as s:
-            usuario = _usuario_logado(s)
-            if usuario.perfil != PerfilUsuario.ADMIN:
+            perfil = _perfil_bruto(s)      # SQL direto: funciona com o banco atrasado
+            if perfil != "ADMIN":
                 return jsonify({"ok": False, "erro": "Restrito ao ADMIN."}), 403
-            nome = usuario.email
         rel = aplicar_pendentes()
-        logger.info("ERP: %s aplicou %d migração(ões)", nome, len(rel["aplicadas"]))
+        logger.info("ERP: %s migração(ões) aplicada(s) por usuário %s",
+                    len(rel["aplicadas"]), session.get("erp_usuario_id"))
         return jsonify({"ok": True, "relatorio": rel})
     except Exception as e:
         logger.exception("ERP: falha ao aplicar migrações")
