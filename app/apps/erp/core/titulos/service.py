@@ -88,6 +88,8 @@ def proximo_numero_sp(s: Session) -> str:
 # Criação (lançamento dirigido)
 # ---------------------------------------------------------------------------
 def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
+    from app.apps.erp.core.titulos.enquadramento import exigir_caminho_correto
+    exigir_caminho_correto(s, dados, usuario)
     # ---- tipo e regras
     try:
         tipo = TipoTitulo(str(dados.get("tipo") or "").strip())
@@ -333,6 +335,10 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
 
     # dupla confirmação: lançamento de quem não é instância final trava
     # aguardando o aval de um supervisor/gestor/diretor
+    if dados.get("_enquadramento_vencido"):
+        registrar_evento(s, "titulo", titulo.id, "ENQUADRAMENTO_VENCIDO",
+                         dados["_enquadramento_vencido"], usuario.id)
+
     from app.apps.erp.core.titulos.aval import marcar_para_aval
     if marcar_para_aval(s, titulo, usuario):
         registrar_evento(s, "titulo", titulo.id, "AGUARDANDO_AVAL", {

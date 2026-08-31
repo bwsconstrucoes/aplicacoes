@@ -982,7 +982,10 @@ def api_checar_duplicidade():
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
-            return jsonify({"ok": True, "critica": checar(s, d)})
+            from app.apps.erp.core.titulos.enquadramento import avaliar
+            critica = checar(s, d)
+            critica["enquadramento"] = avaliar(s, d, _usuario_logado(s))
+            return jsonify({"ok": True, "critica": critica})
     except Exception as e:
         logger.exception("ERP: falha na crítica de duplicidade")
         return jsonify({"ok": False, "erro": str(e)}), 500

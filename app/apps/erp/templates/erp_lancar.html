@@ -374,6 +374,19 @@ function montar(){
 
 function mostrarCritica(c){
   const b = els("bloco-critica");
+  const enq = (c && c.enquadramento) || [];
+  if (enq.length) {
+    b.innerHTML = `<div class="cartao-cab"><h3>Caminho do lançamento</h3>
+      <small>esta despesa parece pertencer a outro fluxo</small></div>` +
+      enq.map(e=>`<div class="critica ${e.gravidade}">
+        <code>${e.codigo}</code>${e.msg}<br>
+        <b>Lance por:</b> ${e.onde}</div>`).join("") +
+      (c.bloqueios.length||c.alertas.length ? `<h4>Duplicidade</h4>` : "");
+    b.innerHTML += c.bloqueios.map(x=>`<div class="critica BLOQUEIA">
+      <code>${x.codigo}</code><b>Bloqueio:</b> ${x.msg}</div>`).join("") +
+      c.alertas.map(x=>`<div class="critica CRITICA"><code>${x.codigo}</code>${x.msg}</div>`).join("");
+    return enq.some(e=>e.gravidade==="BLOQUEIA") || c.bloqueios.length > 0;
+  }
   if (!c || (!c.bloqueios.length && !c.alertas.length)) {
     b.innerHTML = `<div class="cartao-dica">Nenhuma duplicidade encontrada.</div>`;
     return false;
