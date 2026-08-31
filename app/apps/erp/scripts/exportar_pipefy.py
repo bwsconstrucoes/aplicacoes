@@ -5,7 +5,9 @@
 #
 # COMO USAR (uma vez):
 #   1. Token: Pipefy > avatar (canto sup. direito) > Personal access tokens >
-#      Generate new token. Coloque no .env:  PIPEFY_TOKEN=seu_token
+#      Generate new token. Coloque no .env da RAIZ do monorepo:
+#          PIPEFY_API_TOKEN=seu_token
+#      (o mesmo nome que os outros módulos já usam)
 #   2. Listar os pipes e descobrir os IDs:
 #         python scripts/exportar_pipefy.py listar
 #   3. Exportar a ESTRUTURA (fases + campos do formulário) de um pipe:
@@ -28,10 +30,29 @@ import sys
 import time
 import urllib.request
 
-sys.path.insert(0, os.path.abspath(os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..")))
 
-from app.apps.erp.db.database import _carregar_dotenv  # reaproveita o carregador de .env
+
+def _carregar_dotenv() -> None:
+    """Lê o .env da raiz do monorepo. Autossuficiente de propósito: este script
+    só conversa com o Pipefy, então roda sem banco e sem SQLAlchemy instalado."""
+    raiz = os.path.abspath(os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", ".."))
+    caminho = os.path.join(raiz, ".env")
+    if not os.path.isfile(caminho):
+        return
+    try:
+        with open(caminho, "r", encoding="utf-8-sig") as f:
+            for linha in f:
+                linha = linha.strip()
+                if not linha or linha.startswith("#") or "=" not in linha:
+                    continue
+                chave, _, valor = linha.partition("=")
+                chave = chave.strip()
+                valor = valor.strip().strip('"').strip("'")
+                if chave and chave not in os.environ:
+                    os.environ[chave] = valor
+    except OSError:
+        pass
 
 _URL = "https://api.pipefy.com/graphql"
 _PASTA = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -73,9 +94,12 @@ query ($id: ID!, $after: String) {
 
 def _token() -> str:
     _carregar_dotenv()
-    tk = os.environ.get("PIPEFY_TOKEN", "").strip()
+    # o monorepo já usa PIPEFY_API_TOKEN nos outros módulos; aceita os dois nomes
+    tk = (os.environ.get("PIPEFY_API_TOKEN") or os.environ.get("PIPEFY_TOKEN") or "").strip()
     if not tk:
-        print("ERRO: defina PIPEFY_TOKEN no .env (Pipefy > Personal access tokens).")
+        print("ERRO: defina PIPEFY_API_TOKEN (ou PIPEFY_TOKEN) no .env da raiz do "
+              "monorepo, ou exporte na sessão:\n"
+              '  PowerShell:  $env:PIPEFY_API_TOKEN = "seu_token"')
         sys.exit(1)
     return tk
 
