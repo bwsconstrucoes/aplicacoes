@@ -219,6 +219,8 @@ class Titulo(Base):
     medicao_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("contrato_medicoes.id"))
     adiantamento_contrato: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    chave_acesso_nfe: Mapped[Optional[str]] = mapped_column(Text)
+    cno_documento: Mapped[Optional[str]] = mapped_column(Text)
     exige_aval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     avalizado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     avalizado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))

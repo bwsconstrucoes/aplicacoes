@@ -74,12 +74,12 @@
 
 ## Fila (pedidos registrados, ainda não iniciados)
 
-- [ ] Categorias PERMITIDAS por operador (administrativo de obra não vê o plano
+- [x] Categorias PERMITIDAS por operador (administrativo de obra não vê o plano
       inteiro) — seleção simples no cadastro do operador
-- [ ] Rateio (obra e categoria) editável na reclassificação do título aberto
-- [ ] IA sugerindo a categoria a partir da descrição do documento, marcada
+- [x] Rateio (obra e categoria) editável na reclassificação do título aberto
+- [x] IA sugerindo a categoria a partir da descrição do documento, marcada
       como sugestão para o usuário validar
-- [ ] Guardar a chave de acesso da NFe no título e cruzar CNO/endereço da nota
+- [x] Guardar a chave de acesso da NFe no título e cruzar CNO/endereço da nota
       com o cadastro das obras para sugerir o centro de custo
 
 - [x] FUNDO FIXO: prestação de contas com itens, comprovante por linha,

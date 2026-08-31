@@ -490,6 +490,7 @@ async function reclassificar(){
     const d = await api("/erp/api/lancamento/dados");
     cats = d.dados.categorias; obras = d.dados.obras;
   } catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  const cats2 = cats;
   const porGrupo = {};
   cats.forEach(c => (porGrupo[c.grupo] = porGrupo[c.grupo]||[]).push(c));
   els("dlg-titulo").textContent = `Reclassificar ${t.numero_sp}`;
@@ -504,18 +505,40 @@ async function reclassificar(){
         ${Object.keys(porGrupo).map(g=>`<optgroup label="${g}">` +
           porGrupo[g].map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("") +
           `</optgroup>`).join("")}</select></div>
-      <div class="campo"><label>Nova obra (rateio integral)</label>
-        <select id="rc-obra"><option value="">— manter ${t.obra||"atual"} —</option>
-        ${obras.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("")}</select>
-        <div class="dica">Para dividir entre várias obras, use o detalhe do título.</div></div>
+      <div class="campo" style="grid-column:span 2"><label>Novo rateio</label>
+        <div id="rc-linhas"></div>
+        <button class="btn secundario" id="rc-add" type="button">+ Linha de rateio</button>
+        <div class="dica">Deixe vazio para manter o rateio atual. A soma precisa fechar
+          com ${moeda(t.valor_liquido)}.</div></div>
       <div class="campo" style="grid-column:span 2"><label>Motivo *</label>
         <input id="rc-motivo" placeholder="ex.: classificado como material, era locação"></div>
     </div>
     <div style="margin-top:14px"><button class="btn" id="rc-salvar">Reclassificar</button></div>`;
+  let RCL = [];
+  function desenharRcl(){
+    els("rc-linhas").innerHTML = RCL.map((r,i)=>`
+      <div class="form-grade" style="margin-bottom:6px">
+        <div class="campo"><select data-rco="${i}"><option value="">— obra —</option>
+          ${obras.map(o=>`<option value="${o.id}" ${String(r.obra_id)===String(o.id)?"selected":""}>${o.codigo}</option>`).join("")}</select></div>
+        <div class="campo"><select data-rcc="${i}"><option value="">— mesma conta —</option>
+          ${cats.map(x=>`<option value="${x.id}" ${String(r.categoria_id)===String(x.id)?"selected":""}>${x.codigo} · ${x.descricao.slice(0,26)}</option>`).join("")}</select></div>
+        <div class="campo"><input data-rcv="${i}" value="${r.valor||""}" placeholder="valor"></div>
+        <div class="campo" style="align-self:end"><button class="btn secundario" data-rcd="${i}">✕</button></div>
+      </div>`).join("");
+    document.querySelectorAll("[data-rco]").forEach(el=>el.addEventListener("change",e=>{RCL[+e.target.dataset.rco].obra_id=e.target.value;}));
+    document.querySelectorAll("[data-rcc]").forEach(el=>el.addEventListener("change",e=>{RCL[+e.target.dataset.rcc].categoria_id=e.target.value;}));
+    document.querySelectorAll("[data-rcv]").forEach(el=>el.addEventListener("input",e=>{RCL[+e.target.dataset.rcv].valor=e.target.value;}));
+    document.querySelectorAll("[data-rcd]").forEach(b=>b.addEventListener("click",()=>{RCL.splice(+b.dataset.rcd,1); desenharRcl();}));
+  }
+  els("rc-add").addEventListener("click", ()=>{ RCL.push({}); desenharRcl(); });
+
   els("rc-salvar").addEventListener("click", async () => {
     const corpo = {motivo: els("rc-motivo").value};
     if (els("rc-cat").value) corpo.categoria_id = +els("rc-cat").value;
-    if (els("rc-obra").value) corpo.rateios = [{obra_id:+els("rc-obra").value, valor: t.valor_liquido}];
+    const linhas = RCL.filter(r=>r.obra_id && r.valor);
+    if (linhas.length) corpo.rateios = linhas.map(r=>({obra_id:+r.obra_id,
+      valor:String(r.valor).replace(/\./g,"").replace(",","."),
+      categoria_id: r.categoria_id ? +r.categoria_id : null}));
     try {
       const d = await api(`/erp/api/titulos/${id}/reclassificar`, {method:"POST",
         headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});

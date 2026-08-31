@@ -890,8 +890,12 @@ def api_dados_lancamento():
                               .order_by(Fornecedor.razao_social)).all()
             obras = s.scalars(select(Obra).where(Obra.status == "ATIVA")
                               .order_by(Obra.codigo)).all()
-            cats = s.scalars(select(Categoria).where(Categoria.ativo.is_(True))
-                             .order_by(Categoria.ordem, Categoria.codigo)).all()
+            from app.apps.erp.core.cadastros.sugestao import categorias_do_usuario
+            permitidas = categorias_do_usuario(s, _usuario_logado(s))
+            stmt_cat = select(Categoria).where(Categoria.ativo.is_(True))
+            if permitidas:
+                stmt_cat = stmt_cat.where(Categoria.id.in_(permitidas))
+            cats = s.scalars(stmt_cat.order_by(Categoria.ordem, Categoria.codigo)).all()
             dados = {
                 "fornecedores": [{
                     "id": f.id, "nome": f.razao_social, "documento": f.cnpj_cpf,
@@ -945,10 +949,19 @@ def api_ler_documento():
                 forn = s.scalars(select(Fornecedor).where(Fornecedor.cnpj_cpf == doc)).first()
             lido["fornecedor_id"] = forn.id if forn else None
             lido["fornecedor_nome_cadastro"] = forn.razao_social if forn else None
+            from app.apps.erp.core.cadastros.sugestao import sugerir_categoria, sugerir_obra
+            usuario = _usuario_logado(s)
             obra_txt = (lido.get("obra_mencionada") or "").strip()
             if obra_txt:
                 o = s.scalars(select(Obra).where(Obra.codigo == obra_txt.upper())).first()
                 lido["obra_id"] = o.id if o else None
+            if not lido.get("obra_id"):
+                sug_obra = sugerir_obra(s, lido)
+                if sug_obra:
+                    lido["obra_id"] = sug_obra["obra_id"]
+                    lido["obra_sugerida"] = sug_obra
+            lido["categoria_sugerida"] = sugerir_categoria(
+                s, lido, usuario, lido.get("fornecedor_id"))
     except Exception:
         logger.exception("ERP: falha ao casar documento com cadastros")
     return jsonify({"ok": True, "documento": lido})
@@ -1028,6 +1041,10 @@ def api_criar_titulo():
                         f"Lançamento sem documento fiscal vinculado — "
                         f"registrado por {usuario.email}.")
             titulo = svc.criar_titulo(s, d, usuario)
+            if d.get("chave_acesso"):
+                titulo.chave_acesso_nfe = str(d["chave_acesso"])[:44] or None
+            if d.get("cno_documento"):
+                titulo.cno_documento = str(d["cno_documento"])[:30] or None
             if critica["alertas"]:
                 from app.apps.erp.core.comum.auditoria import registrar_evento
                 registrar_evento(s, "titulo", titulo.id, "ALERTAS_DUPLICIDADE_ACEITOS",
@@ -1819,7 +1836,9 @@ def api_usuarios():
     from app.apps.erp.core.auth.permissoes import ROTULOS, exigir
     from app.apps.erp.core.auth.service import criar_usuario
     from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
-    from app.apps.erp.db.models.cadastros import Obra, PerfilUsuario, Usuario, UsuarioObra
+    from app.apps.erp.db.models.cadastros import (
+        Obra, PerfilUsuario, Usuario, UsuarioCategoria, UsuarioObra,
+    )
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
@@ -1838,6 +1857,9 @@ def api_usuarios():
                     "ff_teto_prestacao": (float(u.ff_teto_prestacao)
                                           if u.ff_teto_prestacao else None),
                     "ff_saldo_adiantamento": float(u.ff_saldo_adiantamento or 0),
+                    "categorias": [x.categoria_id for x in s.scalars(
+                        select(UsuarioCategoria).where(
+                            UsuarioCategoria.usuario_id == u.id)).all()],
                     "perfil": u.perfil.value,
                     "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
                     "ativo": u.ativo, "obras": vinculos.get(u.id, []),
@@ -1913,6 +1935,14 @@ def api_editar_usuario(usuario_id: int):
                 s.flush()
                 for obra_id in (d.get("obras") or []):
                     s.add(UsuarioObra(usuario_id=u.id, obra_id=int(obra_id)))
+            if "categorias" in d:
+                from app.apps.erp.db.models.cadastros import UsuarioCategoria
+                for v in s.scalars(select(UsuarioCategoria).where(
+                        UsuarioCategoria.usuario_id == u.id)).all():
+                    s.delete(v)
+                s.flush()
+                for cat_id in (d.get("categorias") or []):
+                    s.add(UsuarioCategoria(usuario_id=u.id, categoria_id=int(cat_id)))
             s.commit()
         return jsonify({"ok": True})
     except ErroPermissao as e:

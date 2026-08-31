@@ -254,6 +254,8 @@ function aplicarLeitura(x){
       ${x.dados_bancarios_no_documento
         ? `<br><small>Dado bancário no documento: <b>${x.dados_bancarios_no_documento}</b>
            — confira contra a conta homologada do credor (não é usado no pagamento).</small>` : ""}
+      ${x.obra_sugerida ? `<br><small>Obra sugerida: <b>${x.obra_sugerida.codigo}</b> —
+        ${x.obra_sugerida.motivo}</small>` : ""}
       ${x.itens && x.itens.length
         ? `<br><small><b>${x.itens.length} item(ns)</b> na prestação de contas:
            ${x.itens.slice(0,6).map(i=>`${i.descricao} ${fmt(parseFloat(i.valor||0))}`).join(" · ")}
@@ -262,6 +264,15 @@ function aplicarLeitura(x){
         ? `<br><small>Dedutibilidade sugerida: <b>${x.dedutibilidade_sugerida}</b> — ${x.dedutibilidade_motivo||""}
            (o financeiro confirma depois)</small>` : ""}
     </div>`;
+  if (x.categoria_sugerida) {
+    els("f-categoria").value = x.categoria_sugerida.categoria_id;
+    els("dica-categoria").innerHTML =
+      `<b style="color:var(--ambar)">Sugestão (${x.categoria_sugerida.confianca.toLowerCase()}):</b>
+       ${x.categoria_sugerida.codigo} · ${x.categoria_sugerida.descricao} —
+       ${x.categoria_sugerida.motivo}. <b>Confirme se está certo.</b>`;
+  }
+  if (x.obra_sugerida) RAT = [{obra_id: x.obra_sugerida.obra_id,
+                              valor: String(x.valor_total||"").replace(".",",")}];
   if (x.fornecedor_id) els("f-credor").value = x.fornecedor_id;
   if (x.descricao) els("f-descricao").value = x.descricao;
   if (x.valor_total) els("f-valor").value = String(x.valor_total).replace(".",",");
@@ -339,6 +350,7 @@ function montar(){
     emitente_nome: (LIDO && !els("f-credor").value) ? LIDO.emitente_nome : null,
     municipio_emissao: LIDO ? LIDO.municipio_emissao : null,
     chave_acesso: LIDO ? LIDO.chave_acesso : null,
+    cno_documento: LIDO ? (LIDO.cno || null) : null,
     categoria_id: els("f-categoria").value ? +els("f-categoria").value : null,
     descricao: els("f-descricao").value.trim(),
     valor_bruto: String(dec(els("f-valor").value)),

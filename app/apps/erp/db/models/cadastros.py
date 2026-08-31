@@ -361,3 +361,13 @@ class ObraAditivo(Base):
     anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class UsuarioCategoria(Base):
+    """Contas do plano liberadas para o operador. Lista vazia = todas."""
+    __tablename__ = "usuario_categorias"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
+    categoria_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("categorias.id"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
