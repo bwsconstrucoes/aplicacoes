@@ -1334,7 +1334,8 @@ def api_movimentacoes():
             usuario = _usuario_logado(s)
             mov = criar_movimentacao(s, d, usuario)
             s.commit()
-            return jsonify({"ok": True, "movimentacao_id": mov.id})
+            return jsonify({"ok": True, "movimentacao_id": mov.id,
+                            "neutra": mov.neutra, "par_id": mov.par_id})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
@@ -2500,6 +2501,39 @@ def api_prestacoes_pendentes():
             return jsonify({"ok": True, "prestacoes": saida})
     except Exception as e:
         logger.exception("ERP: falha ao listar prestações pendentes")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/movimentacoes/neutras")
+@login_obrigatorio
+def api_neutras():
+    """Pontas soltas: entrou e não foi devolvido, saiu e não foi ressarcido."""
+    from app.apps.erp.core.titulos.receber import neutras_sem_par
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "pendentes": neutras_sem_par(s)})
+    except Exception as e:
+        logger.exception("ERP: falha ao listar neutras")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/movimentacoes/vincular", methods=["POST"])
+@login_obrigatorio
+def api_vincular_neutras():
+    """Liga as duas pontas que se anulam."""
+    from app.apps.erp.core.titulos.receber import vincular_par
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rel = vincular_par(s, int(d["movimentacao_id"]), int(d["par_id"]),
+                               usuario, motivo=d.get("motivo", ""))
+            s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao vincular par neutro")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

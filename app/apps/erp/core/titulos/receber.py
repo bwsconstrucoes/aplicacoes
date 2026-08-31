@@ -280,6 +280,23 @@ TIPOS_MOVIMENTO = {
     "EMPRESTIMO_CAPTADO": ("Empréstimo captado", "9.4.01", False, True),
     "TARIFA": ("Tarifa bancária", "6.2.01", True, False),
     "RENDIMENTO": ("Rendimento de aplicação", "1.3.01", False, True),
+    # ---- neutras: passam pelo extrato, mas não são receita nem despesa
+    "RECEBIMENTO_INDEVIDO": ("Recebimento indevido (a devolver)", "9.1.01", False, True),
+    "DEVOLUCAO_INDEVIDO": ("Devolução de valor recebido por engano", "9.1.01", True, False),
+    "PAGAMENTO_INDEVIDO": ("Pagamento feito pela conta errada", "9.1.01", True, False),
+    "RESSARCIMENTO": ("Ressarcimento recebido de outra conta/empresa", "9.1.01", False, True),
+}
+
+# tipos cuja natureza é neutra por definição: o par se anula
+TIPOS_NEUTROS = {"RECEBIMENTO_INDEVIDO", "DEVOLUCAO_INDEVIDO",
+                 "PAGAMENTO_INDEVIDO", "RESSARCIMENTO"}
+
+# quem se anula com quem
+CONTRAPARTE_ESPERADA = {
+    "RECEBIMENTO_INDEVIDO": "DEVOLUCAO_INDEVIDO",
+    "DEVOLUCAO_INDEVIDO": "RECEBIMENTO_INDEVIDO",
+    "PAGAMENTO_INDEVIDO": "RESSARCIMENTO",
+    "RESSARCIMENTO": "PAGAMENTO_INDEVIDO",
 }
 
 
@@ -314,8 +331,20 @@ def criar_movimentacao(s: Session, dados: dict[str, Any], usuario: Usuario) -> M
     if categoria is None:
         categoria = s.scalars(select(Categoria).where(Categoria.codigo == codigo_conta)).first()
 
+    neutra = bool(dados.get("neutra")) or tipo in TIPOS_NEUTROS
+    if neutra and not (dados.get("motivo_neutra") or "").strip():
+        raise ErroValidacao(
+            "Movimentação neutra exige o motivo — é o que explica, depois, por que "
+            "esse dinheiro entrou ou saiu sem ser receita nem despesa.")
+
     mov = Movimentacao(
         tipo=tipo, conta_origem_id=origem_id, conta_destino_id=destino_id,
+        neutra=neutra,
+        motivo_neutra=(dados.get("motivo_neutra") or "").strip() or None,
+        contraparte=(dados.get("contraparte") or "").strip() or None,
+        sentido=("SAIDA" if exige_origem and not exige_destino else
+                 "ENTRADA" if exige_destino and not exige_origem else "INTERNA"),
+        par_id=int(dados["par_id"]) if dados.get("par_id") else None,
         valor=valor, data_movimento=data_mov,
         descricao=(dados.get("descricao") or rotulo).strip(),
         categoria_id=categoria.id if categoria else None,
@@ -325,11 +354,71 @@ def criar_movimentacao(s: Session, dados: dict[str, Any], usuario: Usuario) -> M
         criado_por=usuario.id)
     s.add(mov)
     s.flush()
+    # amarra as duas pontas: a contraparte também aponta de volta
+    if mov.par_id:
+        outra = s.get(Movimentacao, mov.par_id)
+        if outra is not None:
+            outra.par_id = mov.id
+            if neutra:
+                outra.neutra = True
+
     registrar_evento(s, "movimentacao", mov.id, "CRIADA", {
         "tipo": tipo, "valor": str(valor), "data": data_mov.isoformat(),
-        "origem": origem_id, "destino": destino_id,
+        "origem": origem_id, "destino": destino_id, "neutra": neutra,
+        "motivo": mov.motivo_neutra, "par_id": mov.par_id,
         "conta_plano": categoria.codigo if categoria else None}, usuario.id)
     return mov
+
+
+def vincular_par(s: Session, mov_id: int, par_id: int, usuario: Usuario,
+                 motivo: str = "") -> dict[str, Any]:
+    """Liga duas movimentações que se anulam (o recebido e o devolvido, o pago
+    por engano e o ressarcido). A partir daí o sistema as ignora nas leituras
+    gerenciais e para de cobrar a ponta solta."""
+    a = s.get(Movimentacao, mov_id)
+    b = s.get(Movimentacao, par_id)
+    if a is None or b is None:
+        raise ErroValidacao("Movimentação não encontrada.")
+    if a.id == b.id:
+        raise ErroValidacao("Uma movimentação não se anula com ela mesma.")
+    if abs(Decimal(a.valor) - Decimal(b.valor)) > Decimal("0.01"):
+        raise ErroValidacao(
+            f"Os valores não batem: R$ {a.valor} × R$ {b.valor}. "
+            f"Se houve tarifa ou diferença, lance-a à parte antes de vincular.")
+    motivo = (motivo or a.motivo_neutra or b.motivo_neutra or "").strip()
+    if len(motivo) < 10:
+        raise ErroValidacao("Explique o que aconteceu (mínimo 10 caracteres).")
+
+    for m, outro in ((a, b), (b, a)):
+        m.par_id = outro.id
+        m.neutra = True
+        m.motivo_neutra = motivo
+    s.flush()
+    registrar_evento(s, "movimentacao", a.id, "PAR_NEUTRO_VINCULADO", {
+        "com": b.id, "valor": str(a.valor), "motivo": motivo}, usuario.id)
+    return {"vinculadas": [a.id, b.id], "valor": float(a.valor), "motivo": motivo}
+
+
+def neutras_sem_par(s: Session) -> list[dict[str, Any]]:
+    """Pontas soltas: entrou e não foi devolvido, ou saiu e não foi ressarcido.
+    É o que precisa de cobrança — o resto já se resolveu sozinho."""
+    linhas = s.scalars(select(Movimentacao).where(
+        Movimentacao.neutra.is_(True), Movimentacao.par_id.is_(None))
+        .order_by(Movimentacao.data_movimento.desc())).all()
+    contas = {c.id: c.descricao for c in s.scalars(select(ContaBancaria)).all()}
+    hoje = date.today()
+    return [{
+        "id": m.id, "tipo": m.tipo,
+        "rotulo": TIPOS_MOVIMENTO.get(m.tipo, (m.tipo,))[0],
+        "valor": float(m.valor), "data": m.data_movimento.isoformat(),
+        "dias": (hoje - m.data_movimento).days,
+        "sentido": m.sentido, "contraparte": m.contraparte,
+        "motivo": m.motivo_neutra, "descricao": m.descricao,
+        "conta": contas.get(m.conta_origem_id or m.conta_destino_id, "—"),
+        "esperado": CONTRAPARTE_ESPERADA.get(m.tipo),
+        "esperado_rotulo": TIPOS_MOVIMENTO.get(
+            CONTRAPARTE_ESPERADA.get(m.tipo, ""), ("a contrapartida",))[0],
+    } for m in linhas]
 
 
 def listar_movimentacoes(s: Session, limite: int = 300) -> list[dict[str, Any]]:
@@ -345,4 +434,7 @@ def listar_movimentacoes(s: Session, limite: int = 300) -> list[dict[str, Any]]:
         "origem": contas.get(m.conta_origem_id), "destino": contas.get(m.conta_destino_id),
         "descricao": m.descricao, "conta_plano": categorias.get(m.categoria_id),
         "conciliada": bool(m.extrato_saida_id or m.extrato_entrada_id),
+        "neutra": m.neutra, "par_id": m.par_id, "motivo_neutra": m.motivo_neutra,
+        "contraparte": m.contraparte, "sentido": m.sentido,
+        "pendente_par": bool(m.neutra and not m.par_id),
     } for m in linhas]

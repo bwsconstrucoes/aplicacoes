@@ -444,6 +444,12 @@ class Movimentacao(Base):
     extrato_entrada_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("extratos.id"))
     criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # movimentação neutra: par que se anula, ignorado em toda leitura gerencial
+    neutra: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    par_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("movimentacoes.id"))
+    motivo_neutra: Mapped[Optional[str]] = mapped_column(Text)
+    contraparte: Mapped[Optional[str]] = mapped_column(Text)
+    sentido: Mapped[Optional[str]] = mapped_column(Text)
 
 
 class TituloAval(Base):

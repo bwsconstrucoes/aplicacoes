@@ -54,6 +54,8 @@ _PADROES = [
     ("RENDIMENTO", r"\b(RENDIMENTO|REMUNERACAO|CREDITO\s+DE\s+RENDIMENTO)\b"),
     ("TRANSFERENCIA_PROPRIA", r"\b(TRANSF(ERENCIA)?\s+ENTRE\s+CONTAS|APLICACAO|RESGATE|"
                               r"TRANSF\s+C/C|TED\s+MESMA\s+TITULARIDADE)\b"),
+    ("NEUTRA", r"\b(DEVOLUCAO|ESTORNO|RESSARCIMENTO|REEMBOLSO\s+DE\s+PAGAMENTO|"
+               r"CREDITO\s+INDEVIDO|DEPOSITO\s+INDEVIDO|DEVOLVIDO)\b"),
     ("IMPOSTO", r"\b(DARF|GPS|FGTS|GRF|DAS|GARE|TRIBUTO|IMPOSTO)\b"),
     ("SALARIO", r"\b(FOLHA|SALARIO|PAGAMENTO\s+SALARIO|CREDITO\s+SALARIO)\b"),
 ]
@@ -274,6 +276,8 @@ def _sugestao(tipo: Optional[str]) -> str:
                                  "(não é despesa).",
         "IMPOSTO": "Tributo pago sem título lançado — verifique a guia e lance no grupo 2.",
         "SALARIO": "Folha paga sem título lançado — verifique o lançamento da folha.",
+        "NEUTRA": "Parece devolução, estorno ou ressarcimento — registre como movimentação "
+                  "NEUTRA e ligue à contraparte: o par se anula e some dos relatórios.",
     }.get(tipo or "", "Saiu do banco sem título correspondente — investigar.")
 
 

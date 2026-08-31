@@ -78,6 +78,7 @@ async function carregar(){
     const d = await api("/erp/api/conciliacao/extrato" + (conta?`?conta_id=${conta}`:""));
     LINHAS = d.linhas;
     desenhar();
+    avisarNeutrasSoltas();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
@@ -95,6 +96,26 @@ function visiveis(){
     if (busca && !`${l.historico} ${l.nome||""}`.toLowerCase().includes(busca)) return false;
     return true;
   });
+}
+
+async function avisarNeutrasSoltas(){
+  try {
+    const n = await api("/erp/api/movimentacoes/neutras");
+    els("pendencias").innerHTML = n.pendentes.length ? `<div class="cartao">
+      <div class="cartao-cab"><h3>Movimentações neutras sem contraparte</h3>
+        <small>entrou e não foi devolvido, ou saiu e não foi ressarcido</small></div>
+      <table><thead><tr><th>Data</th><th>O que foi</th><th class="direita">Valor</th>
+        <th>Contraparte</th><th>Aguardando</th><th>Há</th></tr></thead><tbody>
+        ${n.pendentes.map(x=>`<tr><td class="dados">${dataBR(x.data)}</td>
+          <td class="desc">${x.rotulo}<small>${x.motivo||""}</small></td>
+          <td class="direita dados">${numero(x.valor)}</td>
+          <td>${x.contraparte||"—"}</td><td><small>${x.esperado_rotulo}</small></td>
+          <td class="dados ${x.dias>30?"atrasado":""}">${x.dias}d</td></tr>`).join("")}
+      </tbody></table>
+      <div class="cartao-dica">Enquanto a contraparte não for registrada e vinculada, o
+        valor fica em aberto — é o que evita esquecer de devolver ou de cobrar.</div>
+    </div>` : "";
+  } catch(e) {}
 }
 
 function desenhar(){
@@ -167,6 +188,9 @@ async function resolver(extratoId){
       : `<div class="cartao-dica">Nenhum pagamento compatível na janela de 10 dias.</div>`}
 
     <h4>2 · Registrar como movimentação (não é despesa)</h4>
+    <div class="cartao-dica">Para dinheiro que <b>entrou ou saiu por engano</b> e foi
+      devolvido/ressarcido, escolha um dos tipos de <b>movimentação neutra</b>: o par se
+      anula e não aparece em relatório nenhum.</div>
     <div class="form-grade">
       <div class="campo"><label>Tipo</label><select id="m-tipo">
         ${TIPOS_MOV.map(t=>`<option value="${t.chave}">${t.rotulo} → ${t.conta}</option>`).join("")}</select></div>
@@ -175,6 +199,13 @@ async function resolver(extratoId){
       <div class="campo"><label>Conta de entrada</label><select id="m-destino">
         <option value="">—</option>${CONTAS.map(c=>`<option value="${c.id}" ${c.id===linha.conta_id&&linha.valor>0?"selected":""}>${c.descricao}</option>`).join("")}</select></div>
       <div class="campo"><label>Descrição</label><input id="m-desc" value="${(linha.historico||"").slice(0,60)}"></div>
+      <div class="campo" style="grid-column:span 2"><label>Motivo (obrigatório nas neutras)</label>
+        <input id="m-motivo" placeholder="ex.: parceiro depositou na conta errada; será devolvido"></div>
+      <div class="campo"><label>Contraparte</label>
+        <input id="m-contra" placeholder="empresa/parceiro envolvido"></div>
+      <div class="campo"><label>Anula qual movimentação?</label>
+        <select id="m-par"><option value="">— ainda não tem par —</option></select>
+        <div class="dica">A outra ponta, se já estiver registrada.</div></div>
     </div>
     <button class="btn" style="margin-top:8px" id="b-mov">Registrar movimentação</button>
 
@@ -182,6 +213,14 @@ async function resolver(extratoId){
     <div class="cartao-dica">Se saiu dinheiro sem título no sistema, lance a solicitação
       (com o documento, se houver) e depois volte aqui para vincular.</div>
     <a class="btn secundario" href="/erp/lancar" style="text-decoration:none; display:inline-block; margin-top:8px">Ir para o lançamento</a>`;
+
+  // oferece as pontas soltas como par
+  try {
+    const n = await api("/erp/api/movimentacoes/neutras");
+    if (n.pendentes.length) els("m-par").innerHTML =
+      `<option value="">— ainda não tem par —</option>` +
+      n.pendentes.map(x=>`<option value="${x.id}">${dataBR(x.data)} · ${x.rotulo} · ${moeda(x.valor)}${x.contraparte?" · "+x.contraparte:""}</option>`).join("");
+  } catch(e) {}
 
   const bv = els("b-vincular");
   if (bv) bv.addEventListener("click", async () => {
@@ -203,6 +242,8 @@ async function resolver(extratoId){
           conta_destino_id: els("m-destino").value || null,
           valor: Math.abs(linha.valor), data_movimento: linha.data,
           descricao: els("m-desc").value,
+          motivo_neutra: els("m-motivo").value, contraparte: els("m-contra").value,
+          par_id: els("m-par").value || null,
           extrato_saida_id: linha.valor < 0 ? extratoId : null,
           extrato_entrada_id: linha.valor > 0 ? extratoId : null})});
       els("dlg").close(); aviso("mensagem","Movimentação registrada.","ok"); carregar();
