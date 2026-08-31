@@ -63,6 +63,7 @@
         <th data-ordem="numero_sp">SP</th>
         <th data-ordem="fornecedor">Credor</th>
         <th class="sem-ordem">Descrição</th>
+        <th data-ordem="categoria">Conta do plano</th>
         <th class="sem-ordem">Obra</th>
         <th data-ordem="vencimento">Vencimento</th>
         <th class="direita" data-ordem="valor_liquido">Valor</th>
@@ -227,7 +228,9 @@ function desenhar(){
       <td><input type="checkbox" data-sel="${t.id}" ${SELECAO.has(t.id)?"checked":""}></td>
       <td class="dados">${t.numero_sp}</td>
       <td>${t.fornecedor}</td>
-      <td class="desc">${t.descricao}<small>${t.categoria}</small></td>
+      <td class="desc">${t.descricao}</td>
+      <td class="desc"><b>${(t.categoria||"").split(" · ")[0]}</b>
+        <small>${(t.categoria||"").split(" · ")[1]||""}</small></td>
       <td>${t.obra||"—"}</td>
       <td class="dados ${t.vencido?"atrasado":""}">${dataBR(t.vencimento)}${t.parcelas>1?` <small>(${t.parcelas}x)</small>`:""}</td>
       <td class="direita dados">${numero(t.valor_liquido)}</td>
@@ -256,32 +259,116 @@ async function detalhe(id){
     const c = t.cabecalho;
     els("dlg-titulo").textContent = `${c.numero_sp} — ${c.fornecedor}`;
     els("dlg-corpo").innerHTML = `
+      ${t.porque_status ? `<div class="aviso info"><b>${ROTULOS[c.status]||c.status}.</b>
+        ${t.porque_status}</div>` : ""}
       <div class="kpis">
-        <div class="kpi estatico"><div class="kpi-rotulo">Situação</div><div class="kpi-valor" style="font-size:15px">${ROTULOS[c.status]||c.status}</div></div>
-        <div class="kpi estatico"><div class="kpi-rotulo">Bruto</div><div class="kpi-valor" style="font-size:17px">${numero(t.bruto)}</div></div>
-        <div class="kpi estatico ambar"><div class="kpi-rotulo">Retenções</div><div class="kpi-valor" style="font-size:17px">${numero(t.retencoes_total)}</div></div>
-        <div class="kpi estatico verde"><div class="kpi-rotulo">Líquido</div><div class="kpi-valor" style="font-size:17px">${numero(c.valor_liquido)}</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Bruto</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(t.bruto)}</div></div>
+        <div class="kpi estatico ambar"><div class="kpi-rotulo">Retenções</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(t.retencoes_total)}</div></div>
+        <div class="kpi estatico verde"><div class="kpi-rotulo">Líquido</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(c.valor_liquido)}</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">Pago</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(
+            (t.pagamentos||[]).reduce((a,p)=>a+p.valor,0))}</div>
+          <div class="kpi-sub">${(t.pagamentos||[]).length} pagamento(s)</div></div>
       </div>
-      <div class="cartao-dica">${c.categoria} · ${t.forma_pagamento} · competência ${c.competencia}${t.dedutivel?"":" · <b>INDEDUTÍVEL</b>"}</div>
+
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda); border-left:4px solid var(--azul-claro)">
+        <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:baseline">
+          <div><div class="kpi-rotulo">Conta do plano</div>
+            <div style="font-size:15px"><b>${c.categoria}</b></div></div>
+          <div><div class="kpi-rotulo">Obra</div>
+            <div style="font-size:15px"><b>${c.obra || "—"}</b></div></div>
+          <div><div class="kpi-rotulo">Competência</div>
+            <div style="font-size:15px">${c.competencia}</div></div>
+          <div><div class="kpi-rotulo">Dedutibilidade</div>
+            <div style="font-size:15px">${rotulo(c.dedutibilidade||"PENDENTE")}</div></div>
+          <span style="flex:1"></span>
+          <button class="btn secundario" id="btn-reclass-detalhe">↔ Alterar conta/obra</button>
+        </div>
+        <div class="cartao-dica">${t.forma_pagamento} · solicitado por ${t.solicitante||"—"}</div>
+      </div>
+
       ${t.criticas.length ? `<h4>Análise automática</h4>` + t.criticas.map(k =>
         `<div class="critica ${k.severidade}"><code>${k.codigo}</code>${k.msg}</div>`).join("") : ""}
-      <h4>Parcelas</h4><div class="cartao" style="padding:0"><table><thead><tr><th>Nº</th><th>Vencimento</th>
+
+      <h4>Parcelas ${t.pode_editar ? `<button class="link-btn" id="btn-editar-parc">alterar vencimento/boleto</button>` : ""}</h4>
+      <div class="cartao" style="padding:0"><table><thead><tr><th>Nº</th><th>Vencimento</th>
         <th class="direita">Valor</th><th>Situação</th><th>Boleto</th></tr></thead><tbody>
         ${t.parcelas.map(p=>`<tr><td class="dados">${p.numero}</td><td class="dados">${p.vencimento}</td>
         <td class="direita dados">${numero(p.valor)}</td><td>${rotulo(p.status)}</td>
         <td class="dados">${p.boleto||"—"}</td></tr>`).join("")}</tbody></table></div>
+
+      ${(t.pagamentos||[]).length ? `<h4>Como foi pago</h4>
+        <div class="cartao" style="padding:0"><table><thead><tr><th>Data</th>
+          <th class="direita">Valor</th><th>Meio</th><th>Conta de saída</th><th>Quem pagou</th>
+          <th>Comprovante</th></tr></thead><tbody>
+          ${t.pagamentos.map(p=>`<tr><td class="dados">${dataBR(p.data)}</td>
+            <td class="direita dados"><b>${numero(p.valor)}</b></td>
+            <td>${rotulo(p.meio)}</td><td>${p.conta}</td><td>${p.por}</td>
+            <td>${p.comprovante_id
+              ? `<a class="btn secundario" href="/erp/anexo/${p.comprovante_id}" target="_blank">ver</a>`
+              : "—"}</td></tr>`).join("")}</tbody></table></div>` : ""}
+
       <h4>Rateio por obra</h4><div class="cartao" style="padding:0"><table><thead><tr><th>Obra</th>
         <th class="direita">Valor</th><th class="direita">%</th></tr></thead><tbody>
         ${t.rateios.map(r=>`<tr><td>${r.obra}</td><td class="direita dados">${numero(r.valor)}</td>
         <td class="direita dados">${r.percentual.toFixed(2)}%</td></tr>`).join("")}</tbody></table></div>
+
       ${t.retencoes.length?`<h4>Retenções</h4><div class="cartao" style="padding:0"><table><thead><tr><th>Tipo</th>
         <th class="direita">Base</th><th class="direita">Alíq.</th><th class="direita">Valor</th></tr></thead><tbody>
         ${t.retencoes.map(r=>`<tr><td>${r.tipo}</td><td class="direita dados">${numero(r.base)}</td>
         <td class="direita dados">${r.aliquota}%</td><td class="direita dados">${numero(r.valor)}</td></tr>`).join("")}
         </tbody></table></div>`:""}
+
+      <h4>Anexos</h4>
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">
+        ${(t.anexos||[]).length ? `<table><tbody>${t.anexos.map(a=>`<tr>
+          <td>${a.nome}${a.descricao?`<small>${a.descricao}</small>`:""}</td>
+          <td>${rotulo(a.categoria)}</td><td class="dados">${a.tamanho_kb} KB</td>
+          <td class="dados">${a.em}</td>
+          <td><a class="btn secundario" href="/erp/anexo/${a.id}" target="_blank">Abrir</a></td>
+        </tr>`).join("")}</tbody></table>` : `<div class="cartao-dica">Nenhum anexo.</div>`}
+        <div class="form-grade" style="margin-top:10px">
+          <div class="campo"><label>Anexar documento</label><input type="file" id="an-arq"></div>
+          <div class="campo"><label>Tipo</label><select id="an-cat">
+            ${["COMPROVANTE","NOTA","CONTRATO","OUTRO"].map(x=>`<option value="${x}">${rotulo(x)}</option>`).join("")}
+          </select></div>
+          <div class="campo" style="align-self:end"><button class="btn secundario" id="an-enviar">Anexar</button></div>
+        </div>
+      </div>
+
+      ${(t.avais||[]).length ? `<h4>Assinaturas</h4><div class="cartao" style="padding:0">
+        <table><tbody>${t.avais.map(a=>`<tr><td class="dados">${a.quando}</td>
+          <td><b>${a.quem}</b> <small>${rotulo(a.papel)}</small></td>
+          <td><span class="selo ${a.decisao==="CONFIRMADO"?"aprovado":"bloqueado"}">${rotulo(a.decisao)}</span></td>
+          <td><small>${a.motivo||""} · assinatura ${a.assinatura} · IP ${a.ip||"—"}</small></td>
+        </tr>`).join("")}</tbody></table></div>` : ""}
+
       <h4>Histórico — tudo que mudou, quando e por quem</h4>
       <div id="historico" class="cartao-dica">carregando…</div>`;
     carregarHistorico(id);
+
+    const bAn = els("an-enviar");
+    if (bAn) bAn.addEventListener("click", async () => {
+      const arq = els("an-arq").files[0];
+      if (!arq) { aviso("mensagem","Escolha o arquivo.","erro"); return; }
+      const fd = new FormData();
+      fd.append("arquivo", arq); fd.append("categoria", els("an-cat").value);
+      try {
+        await api(`/erp/api/anexos/titulo/${id}`, {method:"POST", body: fd});
+        aviso("mensagem","Anexo guardado.","ok"); detalhe(id);
+      } catch(e){ aviso("mensagem", e.message, "erro"); }
+    });
+
+    const bRe = els("btn-reclass-detalhe");
+    if (bRe) bRe.addEventListener("click", () => {
+      SELECAO.clear(); SELECAO.add(id); els("dlg").close(); reclassificar();
+    });
+
+    const bParc = els("btn-editar-parc");
+    if (bParc) bParc.addEventListener("click", () => editarParcelas(id, t.parcelas));
     els("dlg").showModal();
   } catch(e) { aviso("mensagem", e.message, "erro"); }
 }
@@ -360,6 +447,39 @@ document.querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click"
   if (a === "desfazer") return desfazer();
   executar(a);
 }));
+
+function editarParcelas(id, parcelas){
+  const abertas = parcelas.filter(p => p.status !== "PAGA");
+  els("dlg-titulo").textContent = "Alterar parcelas";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="aviso info">Ajusta vencimento e boleto das parcelas <b>ainda não pagas</b>,
+      sem desfazer análise, aval ou rateio. A alteração fica na trilha.</div>
+    <table><thead><tr><th>Nº</th><th>Vencimento</th><th class="direita">Valor</th>
+      <th>Linha digitável</th></tr></thead><tbody>
+      ${abertas.map(p=>`<tr><td class="dados">${p.numero}</td>
+        <td><input type="date" data-pv="${p.parcela_id||p.numero}" value="${p.vencimento}"></td>
+        <td class="direita dados">${numero(p.valor)}</td>
+        <td><input data-pb="${p.parcela_id||p.numero}" value="${p.boleto||""}"
+             placeholder="somente para boleto/guia" style="width:100%"></td></tr>`).join("")}
+    </tbody></table>
+    <div class="campo" style="margin-top:12px"><label>Motivo *</label>
+      <input id="pe-motivo" placeholder="ex.: fornecedor reemitiu o boleto com nova data"></div>
+    <div style="margin-top:12px"><button class="btn" id="pe-salvar">Salvar</button></div>`;
+  els("pe-salvar").addEventListener("click", async () => {
+    const mudancas = [...document.querySelectorAll("[data-pv]")].map(el => ({
+      parcela_id: +el.dataset.pv, vencimento: el.value,
+      linha_digitavel: (document.querySelector(`[data-pb="${el.dataset.pv}"]`)||{}).value || ""}));
+    try {
+      const d = await api(`/erp/api/titulos/${id}/parcelas`, {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({parcelas: mudancas, motivo: els("pe-motivo").value})});
+      els("dlg").close();
+      aviso("mensagem", `Alterado: ${d.mudancas.join("; ")}.`, "ok");
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+}
 
 async function reclassificar(){
   if (SELECAO.size !== 1) { aviso("mensagem","Selecione um título para reclassificar.","erro"); return; }

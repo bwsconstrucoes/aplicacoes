@@ -245,6 +245,30 @@ def pagina_config():
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
+def _explicar_status(s, t) -> str:
+    """Em português: por que este título está parado onde está."""
+    from app.apps.erp.db.models.financeiro import StatusTitulo as _S
+    if t.status == _S.AGUARDANDO_AVAL:
+        solicitante = s.get(Usuario, t.solicitante_id)
+        perfil = solicitante.perfil.value.replace("_", " ").lower() if solicitante else "?"
+        return (f"Lançado por {solicitante.nome if solicitante else '—'} ({perfil}), "
+                f"que exige confirmação de uma segunda pessoa. Aguarda o aval de um "
+                f"supervisor da obra, gestor de obras ou diretor financeiro — na aba Confirmar.")
+    if t.status == _S.AGUARDANDO_APROVACAO:
+        return ("Passou na análise e aguarda a liberação para pagamento pelo financeiro "
+                "(botão 'Liberar p/ pagamento' na lista).")
+    if t.status == _S.BLOQUEADO:
+        return (f"A análise automática apontou risco {t.score_risco}. Revise os apontamentos "
+                f"abaixo; quem tem alçada pode liberar assumindo o registro.")
+    if t.status == _S.APROVADO:
+        return "Liberado — aparece na aba Pagamentos, pronto para ser pago."
+    if t.status == _S.DEVOLVIDO:
+        return "Devolvido a quem lançou; veja o motivo no histórico."
+    if t.status == _S.PAGO_PARCIAL:
+        return "Parte das parcelas já foi paga; o restante segue em Pagamentos."
+    return ""
+
+
 def _serializar(t, hoje: date, ver_pagamento: bool = True) -> dict:
     venc = min((p.vencimento for p in t.parcelas), default=None)
     obras = sorted({r.obra.codigo for r in t.rateios if r.obra})
@@ -313,7 +337,8 @@ def api_titulos():
 @login_obrigatorio
 def api_titulo_detalhe(titulo_id: int):
     from sqlalchemy import select
-    from app.apps.erp.db.models.financeiro import Analise, Evento
+    from app.apps.erp.db.models.cadastros import ContaBancaria
+    from app.apps.erp.db.models.financeiro import Analise, Evento, Parcela
     try:
         with get_session() as s:
             t = svc_titulos.obter(s, titulo_id)
@@ -326,14 +351,37 @@ def api_titulo_detalhe(titulo_id: int):
                 historico_avais, pode_ver_dados_pagamento,
             )
             ver_pg = pode_ver_dados_pagamento(_usuario_logado(s))
+            from app.apps.erp.core.documentos.armazenamento import listar as listar_anexos
+            from app.apps.erp.db.models.financeiro import Pagamento as _Pg
+            pagamentos = s.execute(
+                select(_Pg, ContaBancaria.descricao, Usuario.nome)
+                .join(Parcela, Parcela.id == _Pg.parcela_id)
+                .join(ContaBancaria, ContaBancaria.id == _Pg.conta_bancaria_id, isouter=True)
+                .join(Usuario, Usuario.id == _Pg.executado_por, isouter=True)
+                .where(Parcela.titulo_id == t.id)
+                .order_by(_Pg.data_pagamento)).all()
+            solicitante = s.get(Usuario, t.solicitante_id)
             dados = {
                 "cabecalho": _serializar(t, date.today(), ver_pg),
+                "pode_editar": ver_pg,
                 "avais": historico_avais(s, t.id),
+                "solicitante": solicitante.nome if solicitante else "—",
+                "modalidade": getattr(t, "modalidade", "NORMAL"),
+                "porque_status": _explicar_status(s, t),
+                "anexos": listar_anexos(s, "titulo", t.id),
+                "pagamentos": [{
+                    "id": pg.id, "parcela_id": pg.parcela_id,
+                    "data": pg.data_pagamento.isoformat(),
+                    "valor": float(pg.valor_pago),
+                    "meio": pg.meio.value if hasattr(pg.meio, "value") else str(pg.meio),
+                    "conta": conta or "—", "por": quem or "sistema",
+                    "comprovante_id": pg.comprovante_anexo_id,
+                } for pg, conta, quem in pagamentos],
                 "bruto": float(t.valor_bruto),
                 "retencoes_total": float(t.valor_retencoes),
                 "dedutivel": t.dedutivel,
                 "forma_pagamento": t.forma_pagamento.value if ver_pg else "—",
-                "parcelas": [{"numero": p.numero,
+                "parcelas": [{"parcela_id": p.id, "numero": p.numero,
                               "vencimento": p.vencimento.strftime("%d/%m/%Y"),
                               "valor": float(p.valor), "status": p.status.value,
                               "boleto": ((p.linha_digitavel or "")[:24] if ver_pg
@@ -1048,7 +1096,8 @@ def api_baixar():
                         s, parcela_id=int(it["parcela_id"]),
                         conta_bancaria_id=int(conta_id),
                         data_pagamento=date.fromisoformat(data_pg),
-                        valor_pago=it.get("valor"), usuario=usuario)
+                        valor_pago=it.get("valor_pago") or it.get("valor"),
+                        usuario=usuario)
                     ok.append({"parcela_id": pg.parcela_id, "valor": float(pg.valor_pago),
                                "pagamento_id": pg.id})
                 except (ErroValidacao, ErroPermissao) as e:
@@ -2556,6 +2605,59 @@ def api_par_neutro():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao resolver par neutro")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/titulos/<int:titulo_id>/parcelas", methods=["POST"])
+@login_obrigatorio
+def api_editar_parcelas(titulo_id: int):
+    """Ajusta vencimento e boleto das parcelas em aberto — sem desfazer nada."""
+    from datetime import date as _date
+    from app.apps.erp.core.auth.permissoes import exigir
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.financeiro import Parcela, StatusParcela, Titulo as _T
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir(usuario, "reclassificar")     # financeiro, diretor ou admin
+            t = s.get(_T, titulo_id)
+            if t is None:
+                return jsonify({"ok": False, "erro": "Título não encontrado."}), 404
+            motivo = (d.get("motivo") or "").strip()
+            if len(motivo) < 5:
+                return jsonify({"ok": False, "erro": "Informe o motivo da alteração."}), 400
+            mudancas = []
+            for alteracao in (d.get("parcelas") or []):
+                p = s.get(Parcela, int(alteracao.get("parcela_id", 0)))
+                if p is None or p.titulo_id != t.id:
+                    continue
+                if p.status == StatusParcela.PAGA:
+                    return jsonify({"ok": False,
+                                    "erro": f"Parcela {p.numero} já está paga — "
+                                            f"desfaça a baixa antes de alterar."}), 400
+                if alteracao.get("vencimento"):
+                    novo = _date.fromisoformat(alteracao["vencimento"])
+                    if novo != p.vencimento:
+                        mudancas.append(f"parcela {p.numero}: vencimento "
+                                        f"{p.vencimento:%d/%m/%Y} → {novo:%d/%m/%Y}")
+                        p.vencimento = novo
+                if "linha_digitavel" in alteracao:
+                    linha = somente_digitos(alteracao["linha_digitavel"] or "")
+                    if linha != (p.linha_digitavel or ""):
+                        mudancas.append(f"parcela {p.numero}: boleto atualizado")
+                        p.linha_digitavel = linha or None
+            if not mudancas:
+                return jsonify({"ok": False, "erro": "Nada foi alterado."}), 400
+            registrar_evento(s, "titulo", t.id, "PARCELAS_ALTERADAS",
+                             {"mudancas": mudancas, "motivo": motivo}, usuario.id)
+            s.commit()
+        return jsonify({"ok": True, "mudancas": mudancas})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except Exception as e:
+        logger.exception("ERP: falha ao alterar parcelas")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
