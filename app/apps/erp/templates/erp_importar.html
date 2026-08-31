@@ -82,6 +82,13 @@ function tabelaRelatorio(rel){
       <td>${rotulo(i.status)}</td>
       <td>${i.anexos ? `${i.anexos} anexo(s)` : "—"}
         ${(i.anexos_com_erro||[]).length ? `<small style="color:var(--vermelho)">${i.anexos_com_erro.length} falhou</small>` : ""}</td></tr>`).join("")}</tbody></table>`);
+  if (rel.contas_criadas?.length) linhas.push(`<h4>Contas de pagamento trazidas do card
+    (${rel.contas_criadas.length})</h4>
+    <div class="cartao-dica">Vieram já homologadas, porque a SP foi conferida no fluxo
+      anterior. Lançamentos novos continuam exigindo homologação aqui dentro.</div>
+    <table><thead><tr><th>Card</th><th>Credor</th><th>Chave / conta</th></tr></thead>
+    <tbody>${rel.contas_criadas.map(x=>`<tr><td class="dados">${x.card}</td>
+      <td>${x.credor}</td><td class="dados">${x.chave}</td></tr>`).join("")}</tbody></table>`);
   if (rel.ja_existiam?.length) linhas.push(`<h4>Já existiam (${rel.ja_existiam.length})</h4>
     <div class="cartao-dica">${rel.ja_existiam.map(i=>`card ${i.card} → ${i.sp}`).join(" · ")}</div>`);
   if (rel.pendencias?.length) linhas.push(`<h4>Precisam de decisão (${rel.pendencias.length})</h4>

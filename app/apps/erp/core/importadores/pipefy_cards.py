@@ -189,6 +189,68 @@ def baixar_anexos_do_card(s, card_campos: dict[str, Any], titulo_id: int,
     return trazidos
 
 
+def _conta_do_card(s, fornecedor, dados: dict[str, Any], usuario):
+    """Cria a conta do credor com o que está no card, já homologada.
+
+    Vale só na IMPORTAÇÃO: a SP foi lançada, conferida e muitas vezes paga no
+    Pipefy — o dado bancário já passou pelo crivo humano lá. Refazer a
+    homologação seria retrabalho puro. A conta nasce marcada com a origem, de
+    modo que dá para auditar depois o que veio da migração e o que foi
+    homologado aqui dentro.
+    """
+    from app.apps.erp.core.cadastros.validadores import somente_digitos
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.cadastros import FormaPagamento, FornecedorConta, StatusConta
+
+    forma = dados.get("forma_pagamento")
+    chave = (dados.get("chave_pix_no_card") or "").strip()
+    campos = dados.get("campos_crus") or {}
+
+    if forma == "PIX":
+        if not chave:
+            return None
+        digitos = somente_digitos(chave)
+        if "@" in chave:
+            tipo_chave = "EMAIL"
+        elif len(digitos) == 11 and chave.strip().isdigit():
+            tipo_chave = "CPF"
+        elif len(digitos) == 14:
+            tipo_chave = "CNPJ"
+        elif 10 <= len(digitos) <= 13:
+            tipo_chave = "TELEFONE"
+        else:
+            tipo_chave = "ALEATORIA"
+        conta = FornecedorConta(
+            fornecedor_id=fornecedor.id, forma=FormaPagamento.PIX,
+            pix_tipo=tipo_chave, pix_chave=chave,
+            titular_nome=fornecedor.razao_social, titular_doc=fornecedor.cnpj_cpf,
+            status=StatusConta.HOMOLOGADA,
+            homologada_por=(usuario.id if usuario else None),
+            homologada_em=datetime.now())
+    else:   # TED: banco/agência/conta digitados no card
+        banco = _texto(campos.get("banco") or campos.get("banco_1"))
+        agencia = _texto(campos.get("ag_ncia") or campos.get("agencia"))
+        numero = _texto(campos.get("conta") or campos.get("conta_corrente"))
+        if not (banco and agencia and numero):
+            return None
+        conta = FornecedorConta(
+            fornecedor_id=fornecedor.id, forma=FormaPagamento.TED,
+            banco_codigo=somente_digitos(banco)[:3] or banco[:3],
+            agencia=agencia, conta=numero,
+            titular_nome=fornecedor.razao_social, titular_doc=fornecedor.cnpj_cpf,
+            status=StatusConta.HOMOLOGADA,
+            homologada_por=(usuario.id if usuario else None),
+            homologada_em=datetime.now())
+    s.add(conta)
+    s.flush()
+    registrar_evento(s, "fornecedor", fornecedor.id, "CONTA_IMPORTADA_DO_PIPEFY", {
+        "forma": forma, "chave": conta.pix_chave or
+        f"{conta.banco_codigo}/{conta.agencia}/{conta.conta}",
+        "observacao": "homologada na migração; lançamentos novos seguem exigindo "
+                      "homologação manual"}, usuario.id if usuario else None)
+    return conta
+
+
 def normalizar_codigo_barras(valor: Any) -> Optional[str]:
     """Extrai a linha digitável do campo do Pipefy.
 
@@ -454,6 +516,7 @@ def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
     """Cria títulos a partir dos cards. Devolve relatório detalhado —
     o que entrou, o que já existia e o que precisa de decisão humana."""
     importados, ja_existiam, pendencias = [], [], []
+    contas_criadas: list[dict[str, Any]] = []
 
     for card in cards:
         d = extrair_dados(card)
@@ -544,13 +607,21 @@ def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
                               if c.status == StatusConta.HOMOLOGADA
                               and c.forma.value == d["forma_pagamento"]), None)
                 if conta is None:
-                    # sem conta homologada: importa como boleto/guia é impossível,
-                    # então registra pendência para o cadastro ser feito antes
-                    pendencias.append({
-                        "card": cid, "titulo": d["titulo_card"],
-                        "motivo": f"{forn.razao_social} sem conta {d['forma_pagamento']} "
-                                  f"HOMOLOGADA (chave no card: {d['chave_pix_no_card'] or '—'})"})
-                    continue
+                    # MIGRAÇÃO: a SP já existe e já foi paga/conferida no Pipefy.
+                    # Exigir homologação de novo seria refazer trabalho já feito.
+                    # A chave do card entra como conta homologada, marcada com a
+                    # origem — para lançamentos NOVOS a exigência continua valendo.
+                    conta = _conta_do_card(s, forn, d, usuario)
+                    if conta is None:
+                        pendencias.append({
+                            "card": cid, "titulo": d["titulo_card"],
+                            "motivo": f"{forn.razao_social}: forma {d['forma_pagamento']} "
+                                      f"sem chave/dados bancários no card e sem conta "
+                                      f"cadastrada — informe antes de importar."})
+                        continue
+                    contas_criadas.append({"card": cid, "credor": forn.razao_social,
+                                           "chave": conta.pix_chave or
+                                                    f"{conta.banco_codigo}/{conta.agencia}/{conta.conta}"})
                 conta_id = conta.id
 
             payload = {
@@ -599,4 +670,5 @@ def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
                                "motivo": f"erro inesperado: {e}"})
 
     return {"analisados": len(cards), "importados": importados,
+            "contas_criadas": contas_criadas,
             "ja_existiam": ja_existiam, "pendencias": pendencias}
