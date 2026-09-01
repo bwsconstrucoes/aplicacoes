@@ -153,6 +153,8 @@ async function carregar(){
         `</optgroup>`).join("");
     els("f-competencia").value = new Date().toISOString().slice(0,7);
     desenharLinhas();
+    comBusca("f-credor", "buscar credor por nome ou CNPJ…");
+    comBusca("f-categoria", "buscar conta do plano…");
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
@@ -180,7 +182,7 @@ function desenharLinhas(){
     <div class="form-grade" style="margin-bottom:8px">
       <div class="campo"><label>Obra ${i+1}</label>
         <select data-t="obra_id" data-i="${i}"><option value="">— escolher —</option>
-        ${D.obras.map(o=>`<option value="${o.id}" ${String(r.obra_id)===String(o.id)?"selected":""}>${o.codigo} · ${o.nome}</option>`).join("")}
+        ${D.obras.map(o=>`<option value="${o.id}" ${String(r.obra_id)===String(o.id)?"selected":""}>${rotuloObra(o)}</option>`).join("")}
         </select></div>
       <div class="campo" style="grid-column:span 2"><label>Conta desta parte</label>
         <select data-t="categoria_id" data-i="${i}">

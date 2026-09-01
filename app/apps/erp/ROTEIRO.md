@@ -78,6 +78,7 @@
       previsão de parcelas, devolução parcial, remanejo entre obras, alertas
       de aluguel × compra, painel por obra
 - [ ] Locações — falta: tela, leitura do contrato por IA, mapa dos equipamentos
+- [ ] Empreita com VÁRIOS serviços no mesmo contrato (hoje é um serviço só)
 - [ ] Cadastro de insumos como base de SUPRIMENTOS (categoria de insumo +
       conta do plano); mapa das obras e do volume financeiro por região
 

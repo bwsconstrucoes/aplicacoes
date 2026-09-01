@@ -146,6 +146,14 @@ function formOperador(u){
     <div class="campo" style="margin-top:12px">
       <label>Contas do plano liberadas para lançar</label>
       <input id="op-filtro-cat" placeholder="filtrar…" style="margin-bottom:6px">
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px">
+        ${[...new Set(DADOS.categorias.filter(x=>x.ativo).map(x=>x.grupo_codigo))].sort()
+          .map(g=>`<button type="button" class="btn secundario" data-grupo="${g}"
+            style="padding:4px 9px; font-size:12px">${g} · ${
+            (DADOS.categorias.find(x=>x.grupo_codigo===g)||{}).grupo_nome||""}</button>`).join("")}
+        <button type="button" class="btn secundario" data-grupo="__nenhum"
+          style="padding:4px 9px; font-size:12px">limpar tudo</button>
+      </div>
       <div class="filtro-opcoes" id="op-cats"
            style="max-height:200px; border:1px solid var(--borda); border-radius:8px; padding:6px">
         ${DADOS.categorias.filter(x=>x.ativo).map(x=>`<label class="opcao" data-cat-rot="${(x.codigo+' '+x.descricao).toLowerCase()}">
@@ -171,6 +179,21 @@ function formOperador(u){
       els("op-perfil").value === "SUPERVISOR_OBRA" ? "" : "none";
   }
   els("op-perfil").addEventListener("change", alternarObras); alternarObras();
+  document.querySelectorAll("[data-grupo]").forEach(b => b.addEventListener("click", () => {
+    const g = b.dataset.grupo;
+    if (g === "__nenhum") {
+      document.querySelectorAll(".op-cat").forEach(i => i.checked = false);
+      return;
+    }
+    // marca o grupo inteiro de uma vez; depois é só desmarcar as exceções
+    const doGrupo = DADOS.categorias.filter(x => x.grupo_codigo === g).map(x => String(x.id));
+    const todosMarcados = doGrupo.every(id =>
+      document.querySelector(`.op-cat[value="${id}"]`)?.checked);
+    doGrupo.forEach(id => {
+      const el = document.querySelector(`.op-cat[value="${id}"]`);
+      if (el) el.checked = !todosMarcados;
+    });
+  }));
   els("op-filtro-cat").addEventListener("input", ev => {
     const q = ev.target.value.toLowerCase();
     document.querySelectorAll("[data-cat-rot]").forEach(el =>

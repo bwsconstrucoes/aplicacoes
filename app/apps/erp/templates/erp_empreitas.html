@@ -226,7 +226,7 @@ els("btn-novo").addEventListener("click", () => {
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
     <div class="form-grade">
       <div class="campo"><label>Obra *</label><select id="n-obra">
-        ${OBRAS.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("")}</select></div>
+        ${OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("")}</select></div>
       <div class="campo" style="grid-column:span 2"><label>Prestador *</label><select id="n-forn">
         ${FORN.map(f=>`<option value="${f.id}">${f.nome}</option>`).join("")}</select></div>
       <div class="campo" style="grid-column:span 3"><label>Serviço contratado *</label>

@@ -1,0 +1,47 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Meus dados — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+{% block conteudo %}
+<h2>Meus dados de recebimento
+  <small>usados quando você pede reembolso de fundo fixo</small></h2>
+<div id="mensagem"></div>
+<div class="cartao" style="max-width:640px">
+  <div id="atual" class="cartao-dica">carregando…</div>
+  <div class="form-grade" style="margin-top:12px">
+    <div class="campo"><label>Tipo da chave</label><select id="tipo">
+      <option value="CPF">CPF</option><option value="EMAIL">E-mail</option>
+      <option value="TELEFONE">Telefone</option><option value="ALEATORIA">Aleatória</option>
+    </select></div>
+    <div class="campo" style="grid-column:span 2"><label>Chave Pix *</label>
+      <input id="chave" placeholder="sua chave"></div>
+  </div>
+  <div class="aviso info" style="margin-top:12px">A chave informada aqui passa pela
+    homologação do financeiro antes do primeiro pagamento — é o que protege contra
+    troca de chave.</div>
+  <div style="margin-top:12px"><button class="btn" id="salvar">Salvar chave</button></div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+async function carregar(){
+  try {
+    const d = await api("/erp/api/meu-cadastro");
+    const c = d.cadastro;
+    els("atual").innerHTML = `<b>${c.nome}</b>${c.cpf?` · CPF ${c.cpf}`:""}<br>` +
+      (c.pix_chave
+        ? `Chave atual: <b>${c.pix_tipo}: ${c.pix_chave}</b>`
+        : `<span style="color:var(--vermelho)">Sem chave cadastrada — reembolsos ficam parados.</span>`);
+    if (c.pix_chave) { els("chave").value = c.pix_chave; els("tipo").value = c.pix_tipo || "CPF"; }
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+els("salvar").addEventListener("click", async () => {
+  try {
+    const d = await api("/erp/api/meu-cadastro", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({pix_tipo: els("tipo").value, pix_chave: els("chave").value})});
+    aviso("mensagem", d.aviso, "ok"); carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+});
+carregar();
+</script>
+{% endblock %}

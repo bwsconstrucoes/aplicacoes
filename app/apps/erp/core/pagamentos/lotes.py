@@ -275,7 +275,7 @@ def extrair_ids_sp(texto: str) -> list[str]:
         n = a.lstrip("0") or "0"
         if n not in vistos:
             vistos.add(n)
-            saida.append(f"SP{int(n):06d}")
+            saida.append(f"{int(n):06d}")
     return saida
 
 
@@ -284,7 +284,9 @@ def parcelas_por_sp(s: Session, numeros_sp: list[str]) -> dict[str, Any]:
     é como o lote nasce a partir da mensagem que o solicitante devolve."""
     encontrados, nao_encontrados = [], []
     for numero in numeros_sp:
-        t = s.scalars(select(Titulo).where(Titulo.numero_sp == numero)
+        # aceita os dois formatos: títulos antigos nasceram com o prefixo "SP"
+        t = s.scalars(select(Titulo).where(
+            Titulo.numero_sp.in_([numero, f"SP{numero}"]))
                       .options(selectinload(Titulo.parcelas),
                                selectinload(Titulo.fornecedor))).first()
         if t is None:

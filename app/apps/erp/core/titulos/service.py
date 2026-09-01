@@ -81,7 +81,7 @@ def _competencia(valor: Any) -> date:
 def proximo_numero_sp(s: Session) -> str:
     """Número SP sequencial via sequence dedicada (migração 001)."""
     n = s.execute(text("SELECT nextval('seq_numero_sp')")).scalar_one()
-    return f"SP{n:06d}"
+    return f"{n:06d}"
 
 
 # ---------------------------------------------------------------------------

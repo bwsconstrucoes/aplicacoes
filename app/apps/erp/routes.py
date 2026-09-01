@@ -2887,6 +2887,82 @@ def api_periodo():
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/meu-cadastro")
+@login_obrigatorio
+def pagina_meu_cadastro():
+    return render_template("erp_meu_cadastro.html", **_contexto("prestacao"))
+
+
+@bp.route("/erp/api/meu-cadastro", methods=["GET", "POST"])
+@login_obrigatorio
+def api_meu_cadastro():
+    """Dados de recebimento de quem está logado.
+
+    No reembolso de fundo fixo o favorecido é a própria pessoa — faz sentido
+    ela mesma manter a chave Pix, sem depender do financeiro cadastrar.
+    """
+    from sqlalchemy import select
+    from app.apps.erp.core.cadastros import fornecedores as svc_forn
+    from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.cadastros import (
+        FormaPagamento, Fornecedor, FornecedorConta, StatusConta,
+    )
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            doc = somente_digitos(usuario.cpf or "")
+            pessoa = (s.scalars(select(Fornecedor).where(Fornecedor.cnpj_cpf == doc)).first()
+                      if doc else None)
+
+            if request.method == "GET":
+                conta = None
+                if pessoa is not None:
+                    conta = next((c for c in pessoa.contas
+                                  if c.status == StatusConta.HOMOLOGADA), None)
+                return jsonify({"ok": True, "cadastro": {
+                    "nome": usuario.nome, "cpf": usuario.cpf, "telefone": usuario.telefone,
+                    "fornecedor_id": pessoa.id if pessoa else None,
+                    "conta_descricao": (f"{conta.pix_tipo}: {conta.pix_chave}"
+                                        if conta and conta.pix_chave else None),
+                    "pix_chave": conta.pix_chave if conta else None,
+                    "pix_tipo": conta.pix_tipo if conta else None,
+                }})
+
+            d = request.get_json(silent=True) or {}
+            if not doc or not cpf_valido(doc):
+                return jsonify({"ok": False,
+                                "erro": "Seu CPF não está cadastrado ou é inválido. "
+                                        "Peça ao administrador para corrigir."}), 400
+            chave = (d.get("pix_chave") or "").strip()
+            if not chave:
+                return jsonify({"ok": False, "erro": "Informe a chave Pix."}), 400
+            if pessoa is None:
+                pessoa = svc_forn.criar(s, {"tipo_pessoa": "PF", "cnpj_cpf": doc,
+                                            "razao_social": usuario.nome}, usuario)
+                s.flush()
+            for c_ in pessoa.contas:
+                if c_.forma == FormaPagamento.PIX:
+                    c_.status = StatusConta.INATIVA
+            s.add(FornecedorConta(
+                fornecedor_id=pessoa.id, forma=FormaPagamento.PIX,
+                pix_tipo=(d.get("pix_tipo") or "CPF").upper(), pix_chave=chave,
+                titular_nome=usuario.nome, titular_doc=doc,
+                status=StatusConta.PENDENTE))
+            s.flush()
+            registrar_evento(s, "fornecedor", pessoa.id, "CONTA_INFORMADA_PELO_PROPRIO", {
+                "usuario": usuario.email, "chave": chave,
+                "observacao": "aguarda homologação do financeiro"}, usuario.id)
+            s.commit()
+        return jsonify({"ok": True, "aviso": "Chave registrada — o financeiro homologa "
+                                             "antes do primeiro pagamento."})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no meu cadastro")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/health")
 def health():
     """Health check do módulo — não exige login."""

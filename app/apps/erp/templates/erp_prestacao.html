@@ -67,14 +67,13 @@
 <div class="cartao">
   <div class="form-grade">
     <div class="campo"><label>Favorecido (quem recebe)</label><select id="favorecido"></select>
-      <div class="dica">No reembolso, é a pessoa que gastou; no cartão, a operadora.</div></div>
+      <div class="dica" id="dica-favorecido">No reembolso é você mesmo; no cartão, a operadora.</div></div>
     <div class="campo"><label>Vencimento</label><input type="date" id="vencimento"></div>
   </div>
   <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
-    <button class="btn secundario" id="btn-conferir">Conferir</button>
-    <button class="btn amarelo" id="btn-enviar">Enviar prestação</button>
-    <span class="cartao-dica" style="margin:0">Bloqueios precisam ser corrigidos.
-      Alertas seguem, mas ficam registrados para quem aprova.</span>
+    <button class="btn amarelo" id="btn-enviar">Conferir e enviar</button>
+    <span class="cartao-dica" style="margin:0">A conferência roda sozinha ao enviar:
+      bloqueios impedem, alertas aparecem para você confirmar antes de seguir.</span>
   </div>
 </div>
 {% endblock %}
@@ -89,7 +88,20 @@ async function inicial(){
     const d = await api("/erp/api/lancamento/dados");
     OBRAS = d.dados.obras; CATEGORIAS = d.dados.categorias; FORNECEDORES = d.dados.fornecedores;
     els("favorecido").innerHTML = `<option value="">— escolher —</option>` +
-      FORNECEDORES.map(f=>`<option value="${f.id}">${f.nome}</option>`).join("");
+      FORNECEDORES.map(f=>`<option value="${f.id}">${f.nome} · ${f.documento}</option>`).join("");
+    comBusca("favorecido", "buscar por nome ou CPF/CNPJ…");
+    // no reembolso, o favorecido é quem está lançando
+    try {
+      const eu = await api("/erp/api/meu-cadastro");
+      if (eu.cadastro.fornecedor_id) {
+        els("favorecido").value = eu.cadastro.fornecedor_id;
+      }
+      els("dica-favorecido").innerHTML = eu.cadastro.fornecedor_id
+        ? `Você receberá em: <b>${eu.cadastro.conta_descricao || "conta cadastrada"}</b>.
+           <a href="/erp/meu-cadastro">alterar</a>`
+        : `<b style="color:var(--vermelho)">Seus dados de recebimento não estão cadastrados.</b>
+           <a href="/erp/meu-cadastro">Cadastre a chave Pix</a> antes de pedir reembolso.`;
+    } catch(e) {}
     const hoje = new Date();
     els("p-inicio").value = new Date(hoje.getFullYear(), hoje.getMonth(), 1).toISOString().slice(0,10);
     els("p-fim").value = hoje.toISOString().slice(0,10);
@@ -248,11 +260,26 @@ async function conferir(){
     desenhar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
-els("btn-conferir").addEventListener("click", conferir);
+
 ["p-inicio","p-fim"].forEach(i=>els(i).addEventListener("change", conferir));
 
 els("btn-enviar").addEventListener("click", async () => {
-  const b = els("btn-enviar"); b.disabled = true; b.textContent = "Enviando…";
+  const b = els("btn-enviar"); b.disabled = true; b.textContent = "Conferindo…";
+  await conferir();
+  if (CRITICA && CRITICA.bloqueios) {
+    b.disabled = false; b.textContent = "Conferir e enviar";
+    aviso("mensagem", `<b>${CRITICA.bloqueios} bloqueio(s)</b> — corrija as linhas
+      marcadas em vermelho antes de enviar.`, "erro");
+    els("bloco-critica").scrollIntoView({behavior:"smooth", block:"center"});
+    return;
+  }
+  if (CRITICA && CRITICA.criticas &&
+      !confirm(`Há ${CRITICA.criticas} ponto(s) de atenção nesta prestação.\n\n` +
+               `Eles seguem registrados para quem aprova. Enviar mesmo assim?`)) {
+    b.disabled = false; b.textContent = "Conferir e enviar";
+    return;
+  }
+  b.textContent = "Enviando…";
   try {
     const d = await api("/erp/api/prestacao", {method:"POST",
       headers:{"Content-Type":"application/json"},

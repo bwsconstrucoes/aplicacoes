@@ -60,6 +60,46 @@ const numero = v => (v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maxim
 const rotulo = s => (s||"").replace(/_/g," ").toLowerCase().replace(/^./, c => c.toUpperCase());
 const dataBR = iso => iso ? iso.split("-").reverse().join("/") : "—";
 const els = id => document.getElementById(id);
+// Rótulo de obra sem repetir: quando código e nome são iguais, mostra um só.
+function rotuloObra(o) {
+  const cod = (o.codigo || "").trim(), nome = (o.nome || "").trim();
+  if (!nome || nome.toLowerCase() === cod.toLowerCase()) return cod;
+  return `${cod} · ${nome}`;
+}
+
+// Transforma um <select> longo em campo com busca. Lista de mil credores não
+// se navega rolando; digitar duas letras resolve.
+function comBusca(idSelect, textoVazio) {
+  const sel = els(idSelect);
+  if (!sel || sel.dataset.buscaPronta) return;
+  if (sel.options.length < 12) return;      // lista curta não precisa
+  sel.dataset.buscaPronta = "1";
+  const campo = document.createElement("input");
+  campo.type = "search";
+  campo.placeholder = textoVazio || "digite para filtrar…";
+  campo.style.cssText = "width:100%; margin-bottom:4px; padding:7px 9px;" +
+    "border:1px solid var(--borda-forte); border-radius:8px; font-size:13px";
+  sel.parentNode.insertBefore(campo, sel);
+  const todas = [...sel.querySelectorAll("option, optgroup")].map(el => el.cloneNode(true));
+  campo.addEventListener("input", () => {
+    const q = campo.value.toLowerCase().trim();
+    sel.innerHTML = "";
+    todas.forEach(el => {
+      if (el.tagName === "OPTGROUP") {
+        const grupo = el.cloneNode(false);
+        [...el.children].forEach(o => {
+          if (!q || o.textContent.toLowerCase().includes(q)) grupo.appendChild(o.cloneNode(true));
+        });
+        if (grupo.children.length) sel.appendChild(grupo);
+      } else if (!q || el.textContent.toLowerCase().includes(q)) {
+        sel.appendChild(el.cloneNode(true));
+      }
+    });
+    sel.size = q ? Math.min(8, sel.options.length) : 0;
+  });
+  sel.addEventListener("change", () => { sel.size = 0; });
+}
+
 function aviso(alvo, texto, tipo) {
   els(alvo).innerHTML = `<div class="aviso ${tipo}">${texto}</div>`;
   if (tipo === "ok") setTimeout(() => { const e = els(alvo); if (e) e.innerHTML = ""; }, 8000);
