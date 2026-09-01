@@ -1584,7 +1584,8 @@ def api_obra(obra_id: int):
                          "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
                          "engenheiro_fiscal ordem_servico indice_reajuste regime_obra "
                          "observacoes_fiscais orgao_resumido status").split()
-                numeros = ("valor_contrato aliquota_iss aliquota_iss_pct pct_servico_iss "
+                numeros = ("valor_contrato latitude longitude "
+                           "aliquota_iss aliquota_iss_pct pct_servico_iss "
                            "pct_servico_inss").split()
                 datas = ("vigencia_inicio vigencia_fim data_base_orcamento data_ordem_servico "
                          "data_inicio data_termino").split()
@@ -1598,7 +1599,14 @@ def api_obra(obra_id: int):
                         setattr(obra, campo, (str(d[campo]).strip() or None))
                 for campo in numeros:
                     if campo in d:
-                        v = str(d[campo]).replace(".", "").replace(",", ".").strip()
+                        bruto = str(d[campo]).strip()
+                        if campo in ("latitude", "longitude"):
+                            # coordenada não é moeda: o ponto é decimal, não milhar
+                            v = bruto.replace(",", ".")
+                        elif "," in bruto:
+                            v = bruto.replace(".", "").replace(",", ".")
+                        else:
+                            v = bruto
                         try:
                             setattr(obra, campo, Decimal(v) if v else None)
                         except InvalidOperation:
@@ -1634,7 +1642,8 @@ def api_obra(obra_id: int):
                 "observacoes_fiscais orgao_resumido codigo_omie_depto ref_pipefy "
                 "iss_retido inss_retido aceita_deducao_material prazo_execucao_dias "
                 "conta_recebimento_id").split()}
-            for campo in ("valor_contrato", "aliquota_iss", "aliquota_iss_pct",
+            for campo in ("valor_contrato", "latitude", "longitude",
+                          "aliquota_iss", "aliquota_iss_pct",
                           "pct_servico_iss", "pct_servico_inss"):
                 v = getattr(obra, campo, None)
                 dados[campo] = float(v) if v is not None else None
@@ -2332,6 +2341,8 @@ def api_listar_obras():
                     "seguro_vigencia_fim": (o.seguro_vigencia_fim.isoformat()
                                             if o.seguro_vigencia_fim else None),
                     "cno": o.cno, "art_rrt": o.art_rrt,
+                    "latitude": float(o.latitude) if o.latitude else None,
+                    "longitude": float(o.longitude) if o.longitude else None,
                     "aliquota_iss": float(o.aliquota_iss_pct or 0) or None,
                 })
             return jsonify({"ok": True, "obras": linhas,
@@ -3081,6 +3092,47 @@ def api_insumos():
             return jsonify({"ok": True, "insumo_id": i.id})
     except Exception as e:
         logger.exception("ERP: falha em insumos")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/locacoes/ler-contrato", methods=["POST"])
+@login_obrigatorio
+def api_ler_contrato_locacao():
+    """Lê o contrato da locadora e devolve o rascunho do cadastro."""
+    from app.apps.erp.core.documentos.armazenamento import salvar
+    from app.apps.erp.core.locacoes import ler_contrato
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Envie o contrato em PDF ou foto."}), 400
+    try:
+        conteudo = arquivo.read()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            rascunho = ler_contrato(s, conteudo, arquivo.filename or "contrato.pdf")
+            anexo = salvar(s, conteudo, arquivo.filename or "contrato.pdf",
+                           entidade_tipo="locacao_rascunho", entidade_id=usuario.id,
+                           categoria="CONTRATO", descricao="Contrato de locação",
+                           usuario=usuario)
+            rascunho["anexo_id"] = anexo.id
+            s.commit()
+        return jsonify({"ok": True, "rascunho": rascunho})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao ler contrato de locação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/mapa")
+@login_obrigatorio
+def api_mapa():
+    """Obras, equipamentos locados e volume financeiro por lugar."""
+    from app.apps.erp.core.locacoes import mapa
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, **mapa(s)})
+    except Exception as e:
+        logger.exception("ERP: falha no mapa")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

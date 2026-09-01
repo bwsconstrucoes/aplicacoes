@@ -33,6 +33,7 @@
   <div class="tabela-barra">
     <span class="resumo" id="resumo"></span>
     <span class="espaco"></span>
+    <button class="btn secundario" id="btn-mapa">🗺 Mapa</button>
     <button class="btn secundario" id="btn-nova">+ Nova obra</button>
   </div>
   <div class="tabela-rolagem">
@@ -240,6 +241,7 @@ async function painel(i, id){
         ${campo("UF","o-uf",d.uf)}${campo("CEP","o-cep",d.cep)}
         ${campo("CNO","o-cno",d.cno)}${campo("ART/RRT","o-art",d.art_rrt)}
         ${campo("Responsável técnico","o-rt",d.responsavel_tecnico)}
+        ${campo("Latitude","o-lat",d.latitude)}${campo("Longitude","o-lng",d.longitude)}
         ${campo("Fiscal do contrato","o-fiscal",d.engenheiro_fiscal)}
       </div>
       <div class="cartao-dica">O endereço serve de local de entrega nas compras.</div>
@@ -248,7 +250,7 @@ async function painel(i, id){
         objeto:"o-objeto", orgao_resumido:"o-orgao", endereco:"o-endereco",
         numero_endereco:"o-numero", bairro:"o-bairro", municipio:"o-municipio", uf:"o-uf",
         cep:"o-cep", cno:"o-cno", art_rrt:"o-art", responsavel_tecnico:"o-rt",
-        engenheiro_fiscal:"o-fiscal"});
+        engenheiro_fiscal:"o-fiscal", latitude:"o-lat", longitude:"o-lng"});
       return;
     }
     if (i === 2) {
@@ -447,6 +449,78 @@ function salvarObra(id, mapa, extras){
     } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   });
 }
+
+els("btn-mapa").addEventListener("click", async () => {
+  try {
+    const m = await api("/erp/api/mapa");
+    const maxGasto = Math.max(...m.regioes.map(r=>r.gasto), 1);
+    const comCoord = m.pontos.filter(p=>p.latitude && p.longitude);
+    els("dlg-titulo").textContent = "Onde estão as obras e os equipamentos";
+    els("dlg-corpo").innerHTML = `
+      <div class="kpis">
+        <div class="kpi estatico"><div class="kpi-rotulo">Obras ativas</div>
+          <div class="kpi-valor">${m.total_obras}</div>
+          <div class="kpi-sub">${m.regioes.length} município(s)</div></div>
+        <div class="kpi estatico ambar"><div class="kpi-rotulo">Locado por período</div>
+          <div class="kpi-valor" style="font-size:18px">${moeda(
+            m.regioes.reduce((a,r)=>a+r.locado_periodo,0))}</div>
+          <div class="kpi-sub">${m.regioes.reduce((a,r)=>a+r.equipamentos,0)} equipamento(s)</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">Gasto acumulado</div>
+          <div class="kpi-valor" style="font-size:18px">${moeda(
+            m.regioes.reduce((a,r)=>a+r.gasto,0))}</div></div>
+      </div>
+
+      <h4>Por município</h4>
+      <table><thead><tr><th>Município</th><th class="direita">Obras</th>
+        <th class="direita">Contratado</th><th class="direita">Gasto</th>
+        <th class="direita">Locado/período</th><th class="direita">Equip.</th>
+        <th style="width:130px">Peso</th></tr></thead>
+      <tbody>${m.regioes.map(r=>`<tr>
+        <td><b>${r.municipio}</b>${r.uf?`<small>${r.uf}</small>`:""}</td>
+        <td class="direita dados">${r.obras}</td>
+        <td class="direita dados">${numero(r.valor_contrato)}</td>
+        <td class="direita dados">${numero(r.gasto)}</td>
+        <td class="direita dados">${numero(r.locado_periodo)}</td>
+        <td class="direita dados">${r.equipamentos}</td>
+        <td><span class="trilha" style="display:block"><span class="preench"
+          style="width:${(r.gasto/maxGasto*100).toFixed(0)}%"></span></span></td>
+      </tr>`).join("")}</tbody></table>
+
+      ${comCoord.length ? `<h4>Mapa</h4>
+        <div id="mapa-svg" style="border:1px solid var(--borda); border-radius:8px;
+             background:var(--papel); padding:8px"></div>
+        <div class="cartao-dica">Tamanho do círculo = gasto acumulado; âmbar = tem
+          equipamento locado.</div>`
+        : `<div class="cartao-dica">Nenhuma obra tem coordenada preenchida ainda.
+           Informe latitude e longitude no cadastro da obra para ver o mapa —
+           ${m.total_obras} obra(s) apareceriam aqui.</div>`}`;
+
+    if (comCoord.length) {
+      const lats = comCoord.map(p=>p.latitude), lngs = comCoord.map(p=>p.longitude);
+      const minLa = Math.min(...lats), maxLa = Math.max(...lats);
+      const minLo = Math.min(...lngs), maxLo = Math.max(...lngs);
+      const L = 620, A = 380, pad = 40;
+      const x = lo => pad + ((lo-minLo)/((maxLo-minLo)||1)) * (L-2*pad);
+      const y = la => A - pad - ((la-minLa)/((maxLa-minLa)||1)) * (A-2*pad);
+      const maxG = Math.max(...comCoord.map(p=>p.gasto), 1);
+      els("mapa-svg").innerHTML = `<svg viewBox="0 0 ${L} ${A}" style="width:100%; height:auto">
+        ${comCoord.map(p=>{
+          const raio = 6 + Math.sqrt(p.gasto/maxG) * 22;
+          const cor = p.locado_periodo > 0 ? "var(--amarelo)" : "var(--azul-claro)";
+          return `<g>
+            <circle cx="${x(p.longitude)}" cy="${y(p.latitude)}" r="${raio}"
+              fill="${cor}" fill-opacity="0.55" stroke="var(--azul)" stroke-width="1.5">
+              <title>${p.codigo} — ${p.municipio||""}
+gasto ${moeda(p.gasto)}${p.locado_periodo?` · locado ${moeda(p.locado_periodo)}/período (${p.equipamentos} itens)`:""}</title>
+            </circle>
+            <text x="${x(p.longitude)}" y="${y(p.latitude)-raio-4}" text-anchor="middle"
+              style="font-size:11px; font-weight:700; fill:var(--azul)">${p.codigo}</text>
+          </g>`;}).join("")}
+      </svg>`;
+    }
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+});
 
 els("btn-nova").addEventListener("click", () => {
   els("dlg-titulo").textContent = "Nova obra";

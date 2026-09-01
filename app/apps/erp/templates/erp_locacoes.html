@@ -22,6 +22,7 @@
       <span class="rotulo">Só ativos</span></label>
     <span class="espaco"></span>
     <button class="btn secundario" id="btn-insumo">+ Equipamento no cadastro</button>
+    <button class="btn secundario" id="btn-ler">📄 Ler contrato da locadora</button>
     <button class="btn amarelo" id="btn-novo">+ Novo contrato</button>
   </div>
 </div>
@@ -210,7 +211,11 @@ async function acao(id, nome, corpo){
 }
 
 els("btn-novo").addEventListener("click", () => {
-  let ITS = [{}];
+  let ITS = window.__itensLidos && window.__itensLidos.length
+    ? window.__itensLidos.map(i => ({insumo_id: i.insumo_id, descricao: i.descricao,
+        quantidade: i.quantidade, valor_unitario: i.valor_unitario}))
+    : [{}];
+  window.__itensLidos = null;
   els("dlg-titulo").textContent = "Novo contrato de locação";
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
     <div class="form-grade">
@@ -310,6 +315,39 @@ els("btn-insumo").addEventListener("click", () => {
     } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   });
   els("dlg").showModal();
+});
+
+els("btn-ler").addEventListener("click", () => {
+  const inp = document.createElement("input");
+  inp.type = "file"; inp.accept = ".pdf,image/*";
+  inp.onchange = async () => {
+    aviso("mensagem", "Lendo o contrato…", "info");
+    const fd = new FormData(); fd.append("arquivo", inp.files[0]);
+    try {
+      const d = await api("/erp/api/locacoes/ler-contrato", {method:"POST", body: fd});
+      const r = d.rascunho;
+      els("btn-novo").click();
+      // preenche o formulário com o que foi lido
+      if (r.fornecedor_id) els("l-forn").value = r.fornecedor_id;
+      if (r.numero_externo) els("l-ext").value = r.numero_externo;
+      if (r.periodicidade) els("l-per").value = r.periodicidade;
+      if (r.dia_vencimento) els("l-dia").value = r.dia_vencimento;
+      if (r.data_inicio) els("l-ini").value = String(r.data_inicio).slice(0,10);
+      els("dlg-corpo").insertAdjacentHTML("afterbegin", `
+        <div class="aviso ${r.sem_cadastro.length ? "info" : "ok"}">
+          <b>Contrato lido</b> (confiança ${r.confianca.toLowerCase()}) —
+          ${r.itens.length} equipamento(s)${r.locadora?` · locadora: ${r.locadora}`:""}.
+          ${r.sem_cadastro.length
+            ? `<br><b>Sem correspondência no cadastro:</b> ${r.sem_cadastro.join("; ")}.
+               Escolha o equipamento na lista ou cadastre antes.`
+            : "<br>Todos os equipamentos foram reconhecidos no cadastro."}
+          <br><small>Confira quantidades e valores antes de salvar.</small>
+        </div>`);
+      window.__itensLidos = r.itens;
+      aviso("mensagem", "Contrato lido — confira os dados antes de salvar.", "ok");
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  };
+  inp.click();
 });
 
 els("busca").addEventListener("input", desenhar);

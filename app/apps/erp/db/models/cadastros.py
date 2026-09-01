@@ -258,6 +258,8 @@ class Obra(Base):
     crea_obra: Mapped[Optional[str]] = mapped_column(Text)
     cei_obra: Mapped[Optional[str]] = mapped_column(Text)
     observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    latitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
+    longitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
     data_conclusao: Mapped[Optional[date]] = mapped_column(Date)
     data_recebimento_provisorio: Mapped[Optional[date]] = mapped_column(Date)
     data_recebimento_definitivo: Mapped[Optional[date]] = mapped_column(Date)

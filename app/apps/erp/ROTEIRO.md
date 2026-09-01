@@ -77,7 +77,8 @@
 - [x] LOCAÇÕES (núcleo): insumos com marca de locável, contrato com itens,
       previsão de parcelas, devolução parcial, remanejo entre obras, alertas
       de aluguel × compra, painel por obra
-- [ ] Locações — falta: leitura do contrato por IA, mapa dos equipamentos
+- [x] Locações: leitura do contrato por IA (aproxima locadora e equipamentos
+      contra os cadastros) e MAPA das obras, equipamentos e volume por região
 - [x] Empreita com vários serviços (planilha de orçamento) e medição por item
 - [ ] Cadastro de insumos como base de SUPRIMENTOS (categoria de insumo +
       conta do plano); mapa das obras e do volume financeiro por região

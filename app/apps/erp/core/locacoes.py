@@ -28,6 +28,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
+import re
+
 from app.apps.erp.db.models.cadastros import Categoria, Fornecedor, Insumo, Obra, Usuario
 from app.apps.erp.db.models.financeiro import (
     ContratoLocacao, LocacaoItem, LocacaoMovimento, LocacaoParcela,
@@ -434,6 +436,153 @@ def detalhar(s: Session, contrato_id: int) -> dict[str, Any]:
             "por": (s.get(Usuario, m.usuario_id).nome if m.usuario_id else "—"),
         } for m in movimentos],
     }
+
+
+def ler_contrato(s: Session, conteudo: bytes, nome_arquivo: str) -> dict[str, Any]:
+    """Lê o contrato de locação e monta o rascunho do cadastro.
+
+    O contrato da locadora vem em texto corrido, com a lista de equipamentos,
+    quantidades e valores. A nomenclatura dela raramente bate com a nossa —
+    "ANDAIME FACHADEIRO 1,50M" contra "Andaime fachadeiro 1,5m" —, então cada
+    item lido é aproximado contra o cadastro de insumos locáveis, e o mesmo
+    vale para a locadora contra o cadastro de fornecedores.
+    """
+    from difflib import SequenceMatcher
+
+    from app.apps.erp.core.documentos.leitor import ErroLeitura, ler_documento
+
+    try:
+        d = ler_documento(conteudo, nome_arquivo,
+                          dica_usuario="É um CONTRATO DE LOCAÇÃO DE EQUIPAMENTOS. "
+                                       "Extraia em 'itens' cada equipamento locado com "
+                                       "descricao, quantidade e valor (unitário do "
+                                       "período). Em observacoes diga a periodicidade "
+                                       "(diária, semanal, quinzenal ou mensal), o dia de "
+                                       "vencimento e o número do contrato da locadora.")
+    except ErroLeitura as e:
+        raise ErroValidacao(f"Não consegui ler o contrato: {e}")
+
+    texto = " ".join(str(d.get(k) or "") for k in ("observacoes", "descricao")).upper()
+    periodicidade = "MENSAL"
+    for chave, termos in (("DIARIA", ("DIARI", "POR DIA", "/DIA")),
+                          ("SEMANAL", ("SEMANA",)),
+                          ("QUINZENAL", ("QUINZEN",)),
+                          ("MENSAL", ("MENSAL", "MES", "MÊS"))):
+        if any(t in texto for t in termos):
+            periodicidade = chave
+            break
+    dia = None
+    achado = re.search(r"(?:VENCIMENTO|VENCE)[^0-9]{0,20}(\d{1,2})", texto)
+    if achado:
+        try:
+            valor = int(achado.group(1))
+            dia = valor if 1 <= valor <= 31 else None
+        except ValueError:
+            dia = None
+
+    # locadora: casa pelo CNPJ e, na falta, por semelhança de nome
+    forn_id, forn_nome = d.get("fornecedor_id"), d.get("emitente_nome")
+    if not forn_id and forn_nome:
+        alvo = str(forn_nome).upper()
+        melhor, escore = None, 0.0
+        for f in s.scalars(select(Fornecedor).where(Fornecedor.ativo.is_(True))).all():
+            r = SequenceMatcher(None, alvo, (f.razao_social or "").upper()).ratio()
+            if f.nome_fantasia:
+                r = max(r, SequenceMatcher(None, alvo, f.nome_fantasia.upper()).ratio())
+            if r > escore:
+                melhor, escore = f, r
+        if melhor is not None and escore >= 0.72:
+            forn_id, forn_nome = melhor.id, melhor.razao_social
+
+    # equipamentos: aproxima cada linha contra os insumos locáveis
+    locaveis = s.scalars(select(Insumo).where(
+        Insumo.locavel.is_(True), Insumo.ativo.is_(True))).all()
+    itens = []
+    for linha in (d.get("itens") or []):
+        desc = (linha.get("descricao") or "").strip()
+        melhor, escore = None, 0.0
+        for i in locaveis:
+            r = SequenceMatcher(None, desc.upper(), i.descricao.upper()).ratio()
+            if r > escore:
+                melhor, escore = i, r
+        itens.append({
+            "descricao": desc,
+            "quantidade": linha.get("quantidade") or "",
+            "valor_unitario": linha.get("valor") or linha.get("valor_unitario") or "",
+            "insumo_id": melhor.id if (melhor and escore >= 0.6) else None,
+            "insumo_sugerido": (f"{melhor.codigo} · {melhor.descricao}"
+                                if melhor and escore >= 0.6 else None),
+            "confianca_insumo": ("ALTA" if escore >= 0.85 else
+                                 "MEDIA" if escore >= 0.6 else "BAIXA"),
+        })
+    return {
+        "fornecedor_id": forn_id, "locadora": forn_nome,
+        "numero_externo": d.get("numero_documento") or "",
+        "periodicidade": periodicidade, "dia_vencimento": dia,
+        "data_inicio": d.get("data_emissao") or "",
+        "itens": itens, "confianca": d.get("confianca") or "MEDIA",
+        "observacoes": d.get("observacoes") or "",
+        "sem_cadastro": [i["descricao"] for i in itens if not i["insumo_id"]],
+    }
+
+
+def mapa(s: Session) -> dict[str, Any]:
+    """Onde estão as obras, os equipamentos e o dinheiro."""
+    from app.apps.erp.db.models.financeiro import EspecieTitulo, Rateio, Titulo
+
+    obras = s.scalars(select(Obra).where(Obra.status == "ATIVA")).all()
+    locado: dict[int, float] = {}
+    itens_por_obra: dict[int, int] = {}
+    for obra_id, valor, qtd in s.execute(
+            select(LocacaoItem.obra_id,
+                   func.sum((LocacaoItem.quantidade - LocacaoItem.quantidade_devolvida)
+                            * LocacaoItem.valor_unitario),
+                   func.count(LocacaoItem.id))
+            .join(ContratoLocacao, ContratoLocacao.id == LocacaoItem.contrato_id)
+            .where(ContratoLocacao.status == "ATIVO",
+                   LocacaoItem.quantidade > LocacaoItem.quantidade_devolvida)
+            .group_by(LocacaoItem.obra_id)).all():
+        locado[obra_id] = float(valor or 0)
+        itens_por_obra[obra_id] = qtd
+
+    gasto: dict[int, float] = {}
+    for obra_id, total in s.execute(
+            select(Rateio.obra_id, func.sum(Rateio.valor))
+            .join(Titulo, Titulo.id == Rateio.titulo_id)
+            .where(Titulo.especie != EspecieTitulo.RECEBER,
+                   Titulo.status.not_in(["CANCELADO", "ESTORNADO"]))
+            .group_by(Rateio.obra_id)).all():
+        gasto[obra_id] = float(total or 0)
+
+    pontos, por_municipio = [], {}
+    for o in obras:
+        item = {
+            "obra_id": o.id, "codigo": o.codigo, "nome": o.nome,
+            "municipio": o.municipio, "uf": o.uf,
+            "latitude": float(o.latitude) if o.latitude else None,
+            "longitude": float(o.longitude) if o.longitude else None,
+            "valor_contrato": float(o.valor_contrato or 0),
+            "gasto": gasto.get(o.id, 0.0),
+            "locado_periodo": locado.get(o.id, 0.0),
+            "equipamentos": itens_por_obra.get(o.id, 0),
+            "fase": o.fase,
+        }
+        pontos.append(item)
+        chave = f"{o.municipio or 'Sem município'}/{o.uf or '--'}"
+        agr = por_municipio.setdefault(chave, {
+            "municipio": o.municipio or "Sem município", "uf": o.uf,
+            "obras": 0, "gasto": 0.0, "locado_periodo": 0.0, "equipamentos": 0,
+            "valor_contrato": 0.0})
+        agr["obras"] += 1
+        agr["gasto"] += item["gasto"]
+        agr["locado_periodo"] += item["locado_periodo"]
+        agr["equipamentos"] += item["equipamentos"]
+        agr["valor_contrato"] += item["valor_contrato"]
+
+    regioes = sorted(por_municipio.values(), key=lambda x: x["gasto"], reverse=True)
+    return {"pontos": pontos, "regioes": regioes,
+            "com_coordenada": sum(1 for p in pontos if p["latitude"]),
+            "total_obras": len(pontos)}
 
 
 def identificar_contrato(s: Session, documento: dict[str, Any],
