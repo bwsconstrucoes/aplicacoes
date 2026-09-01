@@ -61,6 +61,30 @@ const rotulo = s => (s||"").replace(/_/g," ").toLowerCase().replace(/^./, c => c
 const dataBR = iso => iso ? iso.split("-").reverse().join("/") : "—";
 const els = id => document.getElementById(id);
 // Rótulo de obra sem repetir: quando código e nome são iguais, mostra um só.
+// Converte texto em número aceitando os DOIS formatos.
+// "30.00" vindo da leitura por IA é trinta reais, não três mil: o ponto só é
+// separador de milhar quando há exatamente três dígitos depois dele.
+function paraNumero(v) {
+  if (typeof v === "number") return v;
+  let s = String(v == null ? "" : v).replace(/[R$\s]/g, "").trim();
+  if (!s) return 0;
+  const temVirgula = s.includes(","), temPonto = s.includes(".");
+  if (temVirgula && temPonto) {
+    s = s.lastIndexOf(",") > s.lastIndexOf(".")
+      ? s.replace(/\./g, "").replace(",", ".")
+      : s.replace(/,/g, "");
+  } else if (temVirgula) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else if (temPonto) {
+    const partes = s.split(".");
+    const ehMilhar = partes.length > 2 ||
+      (partes.length === 2 && partes[1].length === 3 && partes[0].length <= 3);
+    if (ehMilhar) s = s.replace(/\./g, "");
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
 function rotuloObra(o) {
   const cod = (o.codigo || "").trim(), nome = (o.nome || "").trim();
   if (!nome || nome.toLowerCase() === cod.toLowerCase()) return cod;

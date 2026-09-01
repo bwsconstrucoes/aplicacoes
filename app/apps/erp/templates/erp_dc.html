@@ -222,7 +222,18 @@ els("btn-nova").addEventListener("click", async () => {
     <div style="margin-top:14px; display:flex; gap:8px">
       <button class="btn amarelo" id="n-salvar">Conferir e enviar</button>
     </div>`;
-  COLABS = (await api(`/erp/api/colaboradores?obra_id=${els("n-obra").value}`)).colaboradores;
+  // o diálogo abre primeiro: falha ao carregar a lista não pode impedir a tela
+  els("dlg").showModal();
+  try {
+    COLABS = (await api(`/erp/api/colaboradores?obra_id=${els("n-obra").value}`)).colaboradores;
+  } catch(e) {
+    COLABS = [];
+    aviso("dlg-msg", "Não foi possível carregar os colaboradores: " + e.message, "erro");
+  }
+  if (!COLABS.length) {
+    aviso("dlg-msg", `Nenhum colaborador ativo nesta obra.
+      <a href="/erp/colaboradores">Cadastre</a> antes de lançar a despesa.`, "erro");
+  }
   els("n-obra").addEventListener("change", async () => {
     COLABS = (await api(`/erp/api/colaboradores?obra_id=${els("n-obra").value}`)).colaboradores;
     desenharItens();
@@ -301,7 +312,6 @@ els("btn-nova").addEventListener("click", async () => {
       carregar();
     } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   });
-  els("dlg").showModal();
 });
 els("busca").addEventListener("input", desenhar);
 carregar();
