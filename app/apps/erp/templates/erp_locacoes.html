@@ -165,24 +165,38 @@ async function abrir(id){
           <td><small>${m.observacao||""} · ${m.por}</small></td></tr>`).join("")}
         </tbody></table>`:""}`;
 
-    document.querySelectorAll("[data-dev]").forEach(b=>b.addEventListener("click",()=>{
+    document.querySelectorAll("[data-dev]").forEach(b=>b.addEventListener("click", async ()=>{
       const item = c.itens.find(x=>x.id===+b.dataset.dev);
-      const q = prompt(`Devolver quantos de "${item.descricao}"? (em obra: ${item.em_obra})`, item.em_obra);
-      if (q === null) return;
-      acao(id, "devolver", {item_id:item.id, quantidade:q,
-        observacao: prompt("Observação (opcional):") || ""});
+      const r = await perguntar({titulo:`Devolver ${item.descricao}`,
+        aviso:`Há <b>${item.em_obra}</b> em obra. A devolução reduz o valor das
+               próximas parcelas na hora.`,
+        campos:[{nome:"quantidade", rotulo:"Quantidade devolvida", obrigatorio:true,
+                 largura:1, valor:item.em_obra},
+                {nome:"documento", rotulo:"Nº do romaneio", largura:2},
+                {nome:"observacao", rotulo:"Observação", largura:3}],
+        textoOk:"Registrar devolução"});
+      if (!r) return;
+      acao(id, "devolver", {item_id:item.id, ...r});
     }));
-    document.querySelectorAll("[data-rem]").forEach(b=>b.addEventListener("click",()=>{
+    document.querySelectorAll("[data-rem]").forEach(b=>b.addEventListener("click", async ()=>{
       const item = c.itens.find(x=>x.id===+b.dataset.rem);
-      els("dlg-corpo").insertAdjacentHTML("afterbegin", `<div class="aviso info" id="rem-box">
-        Remanejar <b>${item.descricao}</b> para:
-        <select id="rem-obra" style="margin:0 8px">${OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("")}</select>
-        <button class="btn" id="rem-ok">Confirmar</button></div>`);
-      els("rem-ok").addEventListener("click", ()=>acao(id, "remanejar",
-        {item_id:item.id, obra_destino_id:+els("rem-obra").value}));
+      const r = await perguntar({titulo:`Remanejar ${item.descricao}`,
+        aviso:"O custo das próximas parcelas passa a ser apropriado na obra de destino.",
+        campos:[{nome:"obra_destino_id", rotulo:"Obra de destino", tipo:"select", largura:2,
+                 opcoes: OBRAS.map(o=>({valor:o.id, rotulo:rotuloObra(o)}))},
+                {nome:"observacao", rotulo:"Observação", largura:3}],
+        textoOk:"Remanejar"});
+      if (!r) return;
+      acao(id, "remanejar", {item_id:item.id, obra_destino_id:+r.obra_destino_id,
+                             observacao:r.observacao});
     }));
     document.querySelectorAll("[data-lanc]").forEach(b=>b.addEventListener("click", async ()=>{
-      const linha = prompt("Linha digitável do boleto (deixe vazio se for Pix):") || "";
+      const r = await perguntar({titulo:"Lançar parcela da locação",
+        aviso:"Informe a linha digitável se a locadora mandou boleto; sem ela o título nasce em Pix.",
+        campos:[{nome:"linha", rotulo:"Linha digitável do boleto", largura:3,
+                 exemplo:"opcional"}], textoOk:"Lançar título"});
+      if (!r) return;
+      const linha = r.linha || "";
       try {
         const d = await api(`/erp/api/locacoes/parcelas/${b.dataset.lanc}/lancar`, {method:"POST",
           headers:{"Content-Type":"application/json"}, body: JSON.stringify({linha_digitavel: linha})});

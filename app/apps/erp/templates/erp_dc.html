@@ -137,8 +137,11 @@ async function abrir(id){
     });
     const bD = els("dc-devolver");
     if (bD) bD.addEventListener("click", async () => {
-      const motivo = prompt("O que precisa ser corrigido?");
-      if (!motivo) return;
+      const r = await perguntar({titulo:"Devolver para correção",
+        campos:[{nome:"motivo", rotulo:"O que precisa ser corrigido", obrigatorio:true,
+                 tipo:"textarea", largura:3, linhas:3}], textoOk:"Devolver"});
+      if (!r) return;
+      const motivo = r.motivo;
       try {
         await api(`/erp/api/dc/${id}/devolver`, {method:"POST",
           headers:{"Content-Type":"application/json"}, body: JSON.stringify({motivo})});

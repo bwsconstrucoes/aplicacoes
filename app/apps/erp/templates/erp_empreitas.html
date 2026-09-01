@@ -221,14 +221,20 @@ async function abrir(id){
 
     const bAdi = els("ct-aditivo");
     if (bAdi) bAdi.addEventListener("click", async () => {
-      const valor = prompt("Valor do aditivo (negativo para supressão):");
-      if (valor === null) return;
-      const motivo = prompt("Motivo do aditivo:");
-      if (motivo === null) return;
+      const r = await perguntar({titulo:"Aditivo do contrato",
+        aviso:"Valor negativo faz supressão. O saldo é recalculado na hora.",
+        campos:[{nome:"valor", rotulo:"Valor do aditivo", obrigatorio:true, largura:1,
+                 exemplo:"10.000,00"},
+                {nome:"quantidade", rotulo:"Quantidade adicional", largura:1, exemplo:"200"},
+                {nome:"motivo", rotulo:"Motivo", obrigatorio:true, largura:3,
+                 tipo:"textarea", linhas:2, exemplo:"acréscimo combinado em obra"}],
+        textoOk:"Registrar aditivo"});
+      if (!r) return;
+      const {valor, motivo} = r;
       try {
         const d = await api(`/erp/api/empreitas/${id}/aditivo`, {method:"POST",
           headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({valor, motivo})});
+          body: JSON.stringify({valor, motivo, quantidade: r.quantidade})});
         aviso("mensagem", `Contrato agora vale ${moeda(d.resultado.valor_vigente)}.`, "ok");
         abrir(id); carregar();
       } catch(e){ aviso("dlg-msg", e.message, "erro"); }

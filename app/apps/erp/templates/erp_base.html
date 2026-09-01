@@ -110,6 +110,63 @@ function comBusca(idSelect, textoVazio) {
   sel.addEventListener("change", () => { sel.size = 0; });
 }
 
+// Substitui o prompt() do navegador, que tem a cara do sistema operacional e
+// destoa do resto. Devolve os valores preenchidos ou null se cancelar.
+function perguntar({titulo, campos, textoOk = "Confirmar", aviso: avisoTexto}) {
+  return new Promise(resolve => {
+    let dlg = els("dlg-pergunta");
+    if (!dlg) {
+      dlg = document.createElement("dialog");
+      dlg.id = "dlg-pergunta";
+      document.body.appendChild(dlg);
+    }
+    dlg.innerHTML = `
+      <div class="dlg-topo"><h3>${titulo}</h3>
+        <button class="topo-btn" style="margin-left:auto" data-cancelar>Cancelar</button></div>
+      <div class="dlg-corpo">
+        ${avisoTexto ? `<div class="aviso info">${avisoTexto}</div>` : ""}
+        <div class="form-grade">
+          ${campos.map((c, i) => `
+            <div class="campo" style="grid-column:span ${c.largura || 3}">
+              <label>${c.rotulo}${c.obrigatorio ? " *" : ""}</label>
+              ${c.tipo === "textarea"
+                ? `<textarea id="pg-${i}" rows="${c.linhas || 4}"
+                     placeholder="${c.exemplo || ""}">${c.valor || ""}</textarea>`
+                : c.tipo === "select"
+                ? `<select id="pg-${i}">${(c.opcoes || []).map(o =>
+                    `<option value="${o.valor}" ${o.valor === c.valor ? "selected" : ""}>${o.rotulo}</option>`).join("")}</select>`
+                : `<input id="pg-${i}" type="${c.tipo || "text"}"
+                     value="${c.valor || ""}" placeholder="${c.exemplo || ""}">`}
+              ${c.dica ? `<div class="dica">${c.dica}</div>` : ""}
+            </div>`).join("")}
+        </div>
+        <div id="pg-erro"></div>
+        <div style="margin-top:14px; display:flex; gap:8px">
+          <button class="btn" data-ok>${textoOk}</button>
+          <button class="btn secundario" data-cancelar>Cancelar</button>
+        </div>
+      </div>`;
+    const fechar = valor => { dlg.close(); resolve(valor); };
+    dlg.querySelectorAll("[data-cancelar]").forEach(b =>
+      b.addEventListener("click", () => fechar(null)));
+    dlg.querySelector("[data-ok]").addEventListener("click", () => {
+      const saida = {};
+      for (let i = 0; i < campos.length; i++) {
+        const valor = (els(`pg-${i}`).value || "").trim();
+        if (campos[i].obrigatorio && !valor) {
+          aviso("pg-erro", `Preencha ${campos[i].rotulo.toLowerCase()}.`, "erro");
+          return;
+        }
+        saida[campos[i].nome] = valor;
+      }
+      fechar(saida);
+    });
+    dlg.addEventListener("cancel", () => fechar(null), {once: true});
+    dlg.showModal();
+    setTimeout(() => els("pg-0") && els("pg-0").focus(), 50);
+  });
+}
+
 function aviso(alvo, texto, tipo) {
   els(alvo).innerHTML = `<div class="aviso ${tipo}">${texto}</div>`;
   if (tipo === "ok") setTimeout(() => { const e = els(alvo); if (e) e.innerHTML = ""; }, 8000);

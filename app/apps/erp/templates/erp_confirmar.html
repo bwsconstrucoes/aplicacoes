@@ -179,8 +179,14 @@ async function verPrestacao(id){
       <div style="margin-top:10px"><button class="btn secundario" id="an-registrar">Registrar análise</button></div>`;
 
     document.querySelectorAll("[data-conferir]").forEach(b => b.addEventListener("click", async () => {
-      const obs = prompt("O que você verificou nesta despesa? (fica registrado)");
-      if (obs === null) return;
+      const r = await perguntar({titulo:"Registrar análise da despesa",
+        aviso:"Fica gravado com seu nome e a data.",
+        campos:[{nome:"obs", rotulo:"O que você verificou", obrigatorio:true,
+                 tipo:"textarea", largura:3, linhas:3,
+                 exemplo:"conferi o cupom; compra autorizada por telefone"}],
+        textoOk:"Registrar"});
+      if (!r) return;
+      const obs = r.obs;
       try {
         await api(`/erp/api/prestacao/${id}/conferir`, {method:"POST",
           headers:{"Content-Type":"application/json"},

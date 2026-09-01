@@ -146,8 +146,13 @@ function formulario(c){
 }
 els("btn-novo").addEventListener("click", ()=>formulario(null));
 els("btn-funcao").addEventListener("click", async () => {
-  const nome = prompt("Nome da função:"); if (!nome) return;
-  const diaria = prompt("Valor da diária (opcional):") || "";
+  const r = await perguntar({titulo:"Nova função",
+    campos:[{nome:"nome", rotulo:"Nome da função", obrigatorio:true, largura:2,
+             exemplo:"Pedreiro"},
+            {nome:"diaria", rotulo:"Diária de referência", largura:1, exemplo:"180,00"}],
+    textoOk:"Cadastrar"});
+  if (!r) return;
+  const {nome, diaria} = r;
   try {
     await api("/erp/api/funcoes", {method:"POST", headers:{"Content-Type":"application/json"},
       body: JSON.stringify({nome, valor_diaria: diaria})});

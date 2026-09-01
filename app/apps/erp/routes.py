@@ -1262,9 +1262,21 @@ def api_criar_lote():
         with get_session() as s:
             usuario = _usuario_logado(s)
             lote = criar(s, d, usuario)
-            rel = {"incluidas": [], "recusadas": []}
-            if d.get("parcela_ids"):
-                rel = adicionar_parcelas(s, lote.id, d["parcela_ids"], usuario)
+            rel = {"incluidas": [], "recusadas": [], "nao_encontradas": []}
+            ids = list(d.get("parcela_ids") or [])
+            # o lote nasce com as SPs: coladas como texto ou marcadas na tabela
+            if d.get("texto"):
+                from app.apps.erp.core.pagamentos.lotes import (
+                    extrair_ids_sp, parcelas_por_sp,
+                )
+                numeros = extrair_ids_sp(d["texto"])
+                achado = parcelas_por_sp(s, numeros) if numeros else {}
+                ids += [x["parcela_id"] for x in achado.get("parcelas", [])
+                        if x.get("status") != "PAGA"]
+                rel["nao_encontradas"] = achado.get("nao_encontradas", [])
+            if ids:
+                achadas = adicionar_parcelas(s, lote.id, sorted(set(ids)), usuario)
+                rel.update({k: v for k, v in achadas.items()})
             s.commit()
             return jsonify({"ok": True, "lote_id": lote.id, "relatorio": rel})
     except ErroValidacao as e:
@@ -3378,6 +3390,36 @@ def api_lote_adicionar_sps(lote_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao adicionar SPs ao lote")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/lotes/<int:lote_id>", methods=["DELETE"])
+@login_obrigatorio
+def api_excluir_lote(lote_id: int):
+    """Apaga o agrupamento. As SPs continuam intactas — o lote não é um estado
+    do título, é só uma forma de olhar para um conjunto delas."""
+    from sqlalchemy import select
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.financeiro import Lote, LoteParcela
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            lote = s.get(Lote, lote_id)
+            if lote is None:
+                return jsonify({"ok": False, "erro": "Lote não encontrado."}), 404
+            nome = lote.nome
+            quantas = len(s.scalars(select(LoteParcela).where(
+                LoteParcela.lote_id == lote_id)).all())
+            for lp in s.scalars(select(LoteParcela).where(
+                    LoteParcela.lote_id == lote_id)).all():
+                s.delete(lp)
+            s.delete(lote)
+            registrar_evento(s, "lote", lote_id, "EXCLUIDO",
+                             {"nome": nome, "parcelas": quantas}, usuario.id)
+            s.commit()
+        return jsonify({"ok": True, "nome": nome})
+    except Exception as e:
+        logger.exception("ERP: falha ao excluir lote")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
