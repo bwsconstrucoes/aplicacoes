@@ -128,13 +128,43 @@ async function abrir(id){
       </tr>`).join("") || `<tr><td colspan="9" class="cartao-dica">Nenhuma medição ainda.</td></tr>`}
       </tbody></table>
 
+      ${(c.itens_orcamento||[]).length?`<h4>Orçamento contratado</h4>
+        <table><thead><tr><th>#</th><th>Serviço</th><th class="direita">Qtd</th>
+          <th class="direita">Preço</th><th class="direita">Total</th>
+          <th class="direita">Medido</th><th class="direita">Saldo</th><th>%</th></tr></thead>
+        <tbody>${c.itens_orcamento.map(i=>`<tr>
+          <td class="dados">${i.ordem}</td><td>${i.descricao}</td>
+          <td class="direita dados">${i.quantidade} ${i.unidade||""}</td>
+          <td class="direita dados">${numero(i.preco_unitario)}</td>
+          <td class="direita dados">${numero(i.valor_total)}</td>
+          <td class="direita dados">${i.medido}</td>
+          <td class="direita dados ${i.saldo<=0?"":""}">${i.saldo}</td>
+          <td><span class="risco"><span class="trilha"><span class="preench ${i.percentual>=100?"zero":""}"
+            style="width:${Math.min(i.percentual,100)}%"></span></span>
+            <span>${i.percentual.toFixed(0)}%</span></span></td></tr>`).join("")}
+        </tbody></table>`:""}
+
       ${c.status==="VIGENTE"?`<h4>Nova medição</h4>
       <div class="form-grade">
         <div class="campo"><label>Período de</label><input type="date" id="md-ini"></div>
         <div class="campo"><label>até</label><input type="date" id="md-fim"></div>
-        ${c.preco_unitario?`<div class="campo"><label>Quantidade (${c.unidade||"un"})</label>
-          <input id="md-qtd" placeholder="0"></div>`:""}
+      </div>
+      ${(c.itens_orcamento||[]).length?`
+        <div class="cartao-dica">Informe quanto avançou de cada serviço no período.</div>
+        <table><thead><tr><th>Serviço</th><th class="direita">Saldo</th>
+          <th style="width:120px">Executado</th><th class="direita">Valor</th></tr></thead>
+        <tbody>${c.itens_orcamento.filter(i=>i.saldo>0).map(i=>`<tr>
+          <td>${i.descricao}<small>${i.unidade||""} · ${moeda(i.preco_unitario)}/un</small></td>
+          <td class="direita dados">${i.saldo}</td>
+          <td><input data-mi="${i.id}" data-preco="${i.preco_unitario}" data-saldo="${i.saldo}"
+               placeholder="0" style="width:100%; text-align:right"></td>
+          <td class="direita dados" id="mv-${i.id}">—</td></tr>`).join("")}
+        </tbody><tfoot><tr><th colspan="3">Total da medição</th>
+          <th class="direita dados" id="md-total">0,00</th></tr></tfoot></table>`:`
+      <div class="form-grade">
         <div class="campo"><label>Valor medido</label><input id="md-valor" placeholder="0,00"></div>
+      </div>`}
+      <div class="form-grade">
         <div class="campo" style="grid-column:span 2"><label>Observação</label>
           <input id="md-obs" placeholder="o que foi executado"></div>
       </div>
@@ -151,17 +181,32 @@ async function abrir(id){
       } catch(e){ aviso("dlg-msg", e.message, "erro"); }
     });
 
-    const bQtd = els("md-qtd");
-    if (bQtd && c.preco_unitario) bQtd.addEventListener("input", () => {
-      els("md-valor").value = (dec(bQtd.value) * c.preco_unitario).toFixed(2).replace(".",",");
-    });
+    // medição por serviço: soma as linhas conforme se digita
+    document.querySelectorAll("[data-mi]").forEach(el => el.addEventListener("input", () => {
+      let total = 0;
+      document.querySelectorAll("[data-mi]").forEach(x => {
+        const q = dec(x.value), preco = parseFloat(x.dataset.preco);
+        const saldo = parseFloat(x.dataset.saldo);
+        const celula = els("mv-" + x.dataset.mi);
+        if (q > saldo) { x.style.borderColor = "var(--vermelho)";
+          celula.innerHTML = `<small style="color:var(--vermelho)">acima do saldo</small>`; return; }
+        x.style.borderColor = "";
+        celula.textContent = q ? numero(q * preco) : "—";
+        total += q * preco;
+      });
+      els("md-total").textContent = numero(total);
+    }));
 
     const bMed = els("md-registrar");
     if (bMed) bMed.addEventListener("click", async () => {
+      const linhas = [...document.querySelectorAll("[data-mi]")]
+        .filter(x => dec(x.value) > 0)
+        .map(x => ({contrato_item_id: +x.dataset.mi, quantidade: x.value}));
       const corpo = {periodo_inicio: els("md-ini").value || null,
         periodo_fim: els("md-fim").value || null,
-        quantidade: bQtd ? bQtd.value : null,
-        valor_medido: els("md-valor").value, observacao: els("md-obs").value};
+        itens: linhas,
+        valor_medido: els("md-valor") ? els("md-valor").value : null,
+        observacao: els("md-obs").value};
       try {
         const d = await api(`/erp/api/empreitas/${id}/medicoes`, {method:"POST",
           headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
@@ -234,32 +279,54 @@ els("btn-novo").addEventListener("click", () => {
       <div class="campo"><label>Como será pago</label><select id="n-modo">
         <option value="MEDICAO">Por medição (quantidade × preço)</option>
         <option value="PARCELAS">Serviço fechado, em parcelas</option></select></div>
-      <div class="campo"><label>Unidade</label><input id="n-un" placeholder="m², m³, vb"></div>
-      <div class="campo"><label>Quantidade</label><input id="n-qtd" placeholder="1000"></div>
-      <div class="campo"><label>Preço unitário</label><input id="n-preco" placeholder="50,00"></div>
-      <div class="campo"><label>Valor total</label><input id="n-total" placeholder="calculado"></div>
+      <div class="campo"><label>Valor total</label><input id="n-total" disabled placeholder="soma dos serviços"></div>
       <div class="campo"><label>Parcelas previstas</label><input id="n-parc" placeholder="3"></div>
       <div class="campo"><label>Início</label><input type="date" id="n-ini"></div>
       <div class="campo"><label>Término</label><input type="date" id="n-fim"></div>
       <div class="campo"><label>Exigir foto na medição</label><select id="n-foto">
         <option value="1" selected>Sim</option><option value="0">Não</option></select></div>
     </div>
+    <h4>Serviços contratados</h4>
+    <div id="n-itens"></div>
+    <button class="btn secundario" type="button" id="n-add">+ Serviço</button>
+    <div class="cartao-dica" style="margin-top:6px">Como um orçamento: cada serviço com
+      unidade, quantidade e preço. A medição depois é feita por serviço.</div>
     <div class="cartao-dica">O contrato nasce aguardando aval. Depois de aprovado, a obra
       mede e o supervisor autoriza — só então nasce o título a pagar.</div>
     <div style="margin-top:14px"><button class="btn" id="n-salvar">Cadastrar contrato</button></div>`;
+  let ITS = [{}];
   const calc = () => {
-    const v = dec(els("n-qtd").value) * dec(els("n-preco").value);
-    if (v) els("n-total").value = v.toFixed(2).replace(".",",");
+    const v = ITS.reduce((a,i)=>a + dec(i.quantidade)*dec(i.preco_unitario), 0);
+    els("n-total").value = v.toFixed(2).replace(".",",");
   };
-  ["n-qtd","n-preco"].forEach(i=>els(i).addEventListener("input", calc));
+  function desenharItens(){
+    els("n-itens").innerHTML = ITS.map((it,i)=>`
+      <div class="form-grade" style="margin-bottom:6px">
+        <div class="campo" style="grid-column:span 2"><input data-i="${i}" data-c="descricao"
+          value="${it.descricao||""}" placeholder="serviço (ex.: alvenaria de vedação)"></div>
+        <div class="campo"><input data-i="${i}" data-c="unidade" value="${it.unidade||""}" placeholder="m²"></div>
+        <div class="campo"><input data-i="${i}" data-c="quantidade" value="${it.quantidade||""}" placeholder="qtd"></div>
+        <div class="campo"><input data-i="${i}" data-c="preco_unitario" value="${it.preco_unitario||""}" placeholder="preço un."></div>
+        <div class="campo" style="align-self:end">${ITS.length>1?`<button class="btn secundario" type="button" data-del="${i}">✕</button>`:""}
+          <small class="dica">${moeda(dec(it.quantidade)*dec(it.preco_unitario))}</small></div>
+      </div>`).join("");
+    document.querySelectorAll("#n-itens [data-c]").forEach(el=>el.addEventListener("input",ev=>{
+      ITS[+ev.target.dataset.i][ev.target.dataset.c] = ev.target.value; calc(); desenharTotais(); }));
+    document.querySelectorAll("#n-itens [data-del]").forEach(b=>b.addEventListener("click",()=>{
+      ITS.splice(+b.dataset.del,1); desenharItens(); calc(); }));
+    calc();
+  }
+  function desenharTotais(){ /* o total já é recalculado em calc() */ }
+  els("n-add").addEventListener("click", ()=>{ ITS.push({}); desenharItens(); });
+  desenharItens();
   els("n-salvar").addEventListener("click", async () => {
     try {
       const d = await api("/erp/api/empreitas", {method:"POST",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify({obra_id:+els("n-obra").value, fornecedor_id:+els("n-forn").value,
           objeto: els("n-objeto").value, modo: els("n-modo").value,
-          unidade: els("n-un").value, quantidade: els("n-qtd").value,
-          preco_unitario: els("n-preco").value, valor_total: els("n-total").value,
+          itens: ITS.filter(i=>i.descricao && dec(i.quantidade)>0 && dec(i.preco_unitario)>0),
+          valor_total: els("n-total").value,
           parcelas_previstas: els("n-parc").value, data_inicio: els("n-ini").value || null,
           data_fim: els("n-fim").value || null, exige_foto: els("n-foto").value === "1"})});
       els("dlg").close();

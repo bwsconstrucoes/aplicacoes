@@ -690,3 +690,35 @@ class LocacaoParcela(Base):
     titulo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulos.id"))
     status: Mapped[str] = mapped_column(Text, nullable=False, default="PREVISTA")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContratoServicoItem(Base):
+    """Linha do orçamento da empreita: serviço, unidade, quantidade e preço."""
+    __tablename__ = "contrato_servico_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    contrato_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("contratos_servico.id"), nullable=False)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    descricao: Mapped[str] = mapped_column(Text, nullable=False)
+    unidade: Mapped[Optional[str]] = mapped_column(Text)
+    quantidade: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    preco_unitario: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    quantidade_aditivada: Mapped[Decimal] = mapped_column(
+        Numeric(14, 4), nullable=False, default=0)
+    insumo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("insumos.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class MedicaoItem(Base):
+    """Quanto de cada serviço foi executado nesta medição."""
+    __tablename__ = "medicao_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    medicao_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("contrato_medicoes.id"), nullable=False)
+    contrato_item_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("contrato_servico_itens.id"), nullable=False)
+    quantidade: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    observacao: Mapped[Optional[str]] = mapped_column(Text)

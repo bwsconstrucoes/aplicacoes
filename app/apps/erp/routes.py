@@ -49,6 +49,7 @@ MODULOS = [
             ("confirmar", "Confirmar", "erp.pagina_confirmar"),
             ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
             ("empreitas", "Empreitas", "erp.pagina_empreitas"),
+            ("locacoes", "Locações", "erp.pagina_locacoes"),
             ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
             ("receber", "Receber", "erp.pagina_receber"),
             ("relatorios", "Relatórios", "erp.pagina_relatorios"),
@@ -205,6 +206,12 @@ def pagina_pagamentos():
 @login_obrigatorio
 def pagina_empreitas():
     return render_template("erp_empreitas.html", **_contexto("empreitas"))
+
+
+@bp.route("/erp/locacoes")
+@login_obrigatorio
+def pagina_locacoes():
+    return render_template("erp_locacoes.html", **_contexto("locacoes"))
 
 
 @bp.route("/erp/conciliacao")
@@ -2960,6 +2967,120 @@ def api_meu_cadastro():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha no meu cadastro")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Locações
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/locacoes", methods=["GET", "POST"])
+@login_obrigatorio
+def api_locacoes():
+    from app.apps.erp.core.locacoes import criar, listar, painel_por_obra
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, "contratos": listar(s, usuario),
+                                "por_obra": painel_por_obra(s)})
+            c = criar(s, request.get_json(silent=True) or {}, usuario)
+            s.commit()
+            return jsonify({"ok": True, "contrato": {"id": c.id, "numero": c.numero}})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha em locações")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/locacoes/<int:contrato_id>")
+@login_obrigatorio
+def api_locacao_detalhe(contrato_id: int):
+    from app.apps.erp.core.locacoes import detalhar
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "contrato": detalhar(s, contrato_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+@bp.route("/erp/api/locacoes/<int:contrato_id>/<acao>", methods=["POST"])
+@login_obrigatorio
+def api_locacao_acao(contrato_id: int, acao: str):
+    from app.apps.erp.core.locacoes import devolver, gerar_previsao, remanejar
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if acao == "devolver":
+                rel = devolver(s, contrato_id, d, usuario)
+            elif acao == "remanejar":
+                rel = remanejar(s, contrato_id, d, usuario)
+            elif acao == "previsao":
+                rel = {"parcelas": gerar_previsao(s, contrato_id,
+                                                  meses=int(d.get("meses") or 6),
+                                                  usuario=usuario)}
+            else:
+                return jsonify({"ok": False, "erro": f"Ação inválida: {acao}"}), 400
+            s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na ação de locação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/locacoes/parcelas/<int:parcela_id>/lancar", methods=["POST"])
+@login_obrigatorio
+def api_lancar_locacao(parcela_id: int):
+    from app.apps.erp.core.locacoes import lancar_parcela
+    try:
+        with get_session() as s:
+            rel = lancar_parcela(s, parcela_id, request.get_json(silent=True) or {},
+                                 _usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/insumos", methods=["GET", "POST"])
+@login_obrigatorio
+def api_insumos():
+    from sqlalchemy import select
+    from app.apps.erp.db.models.cadastros import Insumo, InsumoCategoria
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                stmt = select(Insumo).where(Insumo.ativo.is_(True))
+                if request.args.get("locavel"):
+                    stmt = stmt.where(Insumo.locavel.is_(True))
+                itens = s.scalars(stmt.order_by(Insumo.descricao)).all()
+                return jsonify({"ok": True, "insumos": [{
+                    "id": i.id, "codigo": i.codigo, "descricao": i.descricao,
+                    "unidade": i.unidade, "locavel": i.locavel,
+                    "valor_compra": float(i.valor_referencia_compra or 0) or None,
+                    "valor_locacao": float(i.valor_referencia_locacao or 0) or None,
+                } for i in itens]})
+            d = request.get_json(silent=True) or {}
+            from decimal import Decimal as _D
+            i = Insumo(codigo=(d.get("codigo") or "").strip().upper(),
+                       descricao=(d.get("descricao") or "").strip(),
+                       unidade=(d.get("unidade") or "").strip() or None,
+                       locavel=bool(d.get("locavel")),
+                       categoria_id=d.get("categoria_id") or None,
+                       valor_referencia_compra=(_D(str(d["valor_compra"]).replace(",", "."))
+                                                if d.get("valor_compra") else None),
+                       valor_referencia_locacao=(_D(str(d["valor_locacao"]).replace(",", "."))
+                                                 if d.get("valor_locacao") else None))
+            if not i.codigo or not i.descricao:
+                return jsonify({"ok": False, "erro": "Informe código e descrição."}), 400
+            s.add(i)
+            s.commit()
+            return jsonify({"ok": True, "insumo_id": i.id})
+    except Exception as e:
+        logger.exception("ERP: falha em insumos")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

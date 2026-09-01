@@ -30,7 +30,8 @@ from app.apps.erp.db.models.cadastros import (
     Categoria, Fornecedor, Obra, PerfilUsuario, Usuario,
 )
 from app.apps.erp.db.models.financeiro import (
-    ContratoMedicao, ContratoServico, StatusTitulo, Titulo,
+    ContratoMedicao, ContratoServico, ContratoServicoItem, MedicaoItem,
+    StatusTitulo, Titulo,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,9 +82,20 @@ def criar_contrato(s: Session, dados: dict[str, Any], usuario: Usuario) -> Contr
     if modo not in ("MEDICAO", "PARCELAS"):
         raise ErroValidacao("Modo deve ser MEDICAO ou PARCELAS.")
 
+    itens_in = dados.get("itens") or []
     quantidade = _dec(dados.get("quantidade"), "quantidade") if dados.get("quantidade") else None
     preco = _dec(dados.get("preco_unitario"), "preço unitário") if dados.get("preco_unitario") else None
-    if modo == "MEDICAO" and quantidade and preco:
+    if itens_in:
+        # planilha de serviços: o valor do contrato é a soma das linhas
+        valor = Decimal("0.00")
+        for i, it in enumerate(itens_in, start=1):
+            q = _dec(it.get("quantidade"), f"quantidade do item {i}")
+            p_ = _dec(it.get("preco_unitario"), f"preço do item {i}")
+            if q <= 0 or p_ <= 0:
+                raise ErroValidacao(f"Item {i}: quantidade e preço devem ser maiores que zero.")
+            valor += (q * p_)
+        valor = valor.quantize(_CENT)
+    elif modo == "MEDICAO" and quantidade and preco:
         valor = (quantidade * preco).quantize(_CENT)
     else:
         valor = _dec(dados.get("valor_total"), "valor total").quantize(_CENT)
@@ -107,7 +119,17 @@ def criar_contrato(s: Session, dados: dict[str, Any], usuario: Usuario) -> Contr
         status="AGUARDANDO_AVAL", criado_por=usuario.id)
     s.add(contrato)
     s.flush()
+    for i, it in enumerate(itens_in, start=1):
+        s.add(ContratoServicoItem(
+            contrato_id=contrato.id, ordem=i,
+            descricao=(it.get("descricao") or "").strip()[:200] or f"Serviço {i}",
+            unidade=(it.get("unidade") or "").strip() or None,
+            quantidade=_dec(it.get("quantidade"), "quantidade"),
+            preco_unitario=_dec(it.get("preco_unitario"), "preço"),
+            insumo_id=it.get("insumo_id") or None))
+    s.flush()
     registrar_evento(s, "contrato_servico", contrato.id, "CRIADO", {
+        "itens": len(itens_in),
         "numero": contrato.numero, "obra": obra.codigo, "prestador": forn.razao_social,
         "objeto": objeto, "modo": modo, "valor": str(valor),
         "quantidade": str(quantidade) if quantidade else None,
@@ -250,12 +272,62 @@ def criticar_medicao(s: Session, contrato_id: int, dados: dict[str, Any]) -> lis
     return criticas
 
 
+def _saldo_por_item(s: Session, contrato_id: int) -> dict[int, dict[str, Any]]:
+    """Quanto resta de cada serviço do orçamento."""
+    itens = s.scalars(select(ContratoServicoItem).where(
+        ContratoServicoItem.contrato_id == contrato_id)
+        .order_by(ContratoServicoItem.ordem)).all()
+    medidos: dict[int, Decimal] = {}
+    for mi in s.scalars(select(MedicaoItem).join(
+            ContratoMedicao, ContratoMedicao.id == MedicaoItem.medicao_id).where(
+            ContratoMedicao.contrato_id == contrato_id,
+            ContratoMedicao.status != "CANCELADA")).all():
+        medidos[mi.contrato_item_id] = medidos.get(
+            mi.contrato_item_id, Decimal("0")) + Decimal(mi.quantidade)
+    saida = {}
+    for i in itens:
+        total = Decimal(i.quantidade) + Decimal(i.quantidade_aditivada)
+        feito = medidos.get(i.id, Decimal("0"))
+        saida[i.id] = {
+            "id": i.id, "ordem": i.ordem, "descricao": i.descricao,
+            "unidade": i.unidade, "quantidade": float(total),
+            "preco_unitario": float(i.preco_unitario),
+            "medido": float(feito), "saldo": float(total - feito),
+            "valor_total": float((total * Decimal(i.preco_unitario)).quantize(_CENT)),
+            "percentual": float((feito / total * 100).quantize(Decimal("0.01")))
+                          if total else 0.0,
+        }
+    return saida
+
+
 def registrar_medicao(s: Session, contrato_id: int, dados: dict[str, Any],
                       usuario: Usuario) -> ContratoMedicao:
     """A obra registra o que foi executado. Ainda não é pagamento."""
     c = s.get(ContratoServico, contrato_id)
     if c is None:
         raise ErroValidacao("Contrato não encontrado.")
+
+    # medição por item: soma as linhas e valida o saldo de cada serviço
+    linhas = dados.get("itens") or []
+    if linhas:
+        saldos = _saldo_por_item(s, contrato_id)
+        total = Decimal("0.00")
+        for l in linhas:
+            item_id = int(l.get("contrato_item_id") or 0)
+            info = saldos.get(item_id)
+            if info is None:
+                raise ErroValidacao("Serviço não pertence a este contrato.")
+            q = _dec(l.get("quantidade"), f"quantidade de {info['descricao']}")
+            if q <= 0:
+                continue
+            if float(q) > info["saldo"] + 0.0001:
+                raise ErroValidacao(
+                    f"{info['descricao']}: medindo {q} {info['unidade'] or ''} mas restam "
+                    f"apenas {info['saldo']}. Aditive o item antes.")
+            total += (q * Decimal(str(info["preco_unitario"])))
+        if total <= 0:
+            raise ErroValidacao("Informe a quantidade executada de ao menos um serviço.")
+        dados = {**dados, "valor_medido": str(total.quantize(_CENT))}
     criticas = criticar_medicao(s, contrato_id, dados)
     bloqueios = [x for x in criticas if x["gravidade"] == "BLOQUEIA"]
     if bloqueios:
@@ -279,6 +351,15 @@ def registrar_medicao(s: Session, contrato_id: int, dados: dict[str, Any],
         observacao=(dados.get("observacao") or "").strip() or None,
         status="MEDIDA", medido_por=usuario.id)
     s.add(m)
+    s.flush()
+    for l in (dados.get("itens") or []):
+        q = _dec(l.get("quantidade"), "quantidade")
+        if q <= 0:
+            continue
+        item = s.get(ContratoServicoItem, int(l["contrato_item_id"]))
+        s.add(MedicaoItem(medicao_id=m.id, contrato_item_id=item.id, quantidade=q,
+                          valor=(q * Decimal(item.preco_unitario)).quantize(_CENT),
+                          observacao=(l.get("observacao") or "").strip() or None))
     s.flush()
     registrar_evento(s, "contrato_servico", c.id, "MEDICAO_REGISTRADA", {
         "contrato": c.numero, "medicao": m.numero, "valor": str(valor),
@@ -357,8 +438,10 @@ def detalhar(s: Session, contrato_id: int) -> dict[str, Any]:
     if c is None:
         raise ErroValidacao("Contrato não encontrado.")
     est = saldo(s, contrato_id)
+    itens_orcamento = list(_saldo_por_item(s, contrato_id).values())
     return {
         "id": c.id, "numero": c.numero, "objeto": c.objeto, "modo": c.modo,
+        "itens_orcamento": itens_orcamento,
         "obra": f"{c.obra.codigo} · {c.obra.nome}", "obra_id": c.obra_id,
         "prestador": c.fornecedor.razao_social, "fornecedor_id": c.fornecedor_id,
         "unidade": c.unidade, "quantidade": float(c.quantidade) if c.quantidade else None,

@@ -1,0 +1,319 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Locações — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Locação de equipamentos
+  <small>o que está em obra, quanto custa por mês e o que já se pagou de aluguel</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+<div id="alertas-gerais"></div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Por obra</h3><small>quanto cada canteiro tem locado por período</small></div>
+  <div id="por-obra"></div>
+</div>
+
+<div class="cartao">
+  <div class="tabela-barra" style="padding:0">
+    <input id="busca" placeholder="contrato, locadora, obra, equipamento…"
+           style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; min-width:280px">
+    <label class="opcao" style="margin:0"><input type="checkbox" id="so-ativos" checked>
+      <span class="rotulo">Só ativos</span></label>
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-insumo">+ Equipamento no cadastro</button>
+    <button class="btn amarelo" id="btn-novo">+ Novo contrato</button>
+  </div>
+</div>
+
+<div class="tabela-wrap">
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th>Contrato</th><th>Locadora</th><th>Obra</th><th class="direita">Por período</th>
+      <th class="direita">Já pago</th><th>Tempo</th><th>Pendências</th><th>Situação</th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let LOC = [], POR_OBRA = [], OBRAS = [], FORN = [], INSUMOS = [];
+const dec = v => { const n = parseFloat(String(v||"").replace(/[R$\s.]/g,"").replace(",",".")); return isNaN(n)?0:n; };
+
+async function carregar(){
+  try {
+    const d = await api("/erp/api/locacoes");
+    LOC = d.contratos; POR_OBRA = d.por_obra;
+    if (!OBRAS.length) {
+      const c = await api("/erp/api/lancamento/dados");
+      OBRAS = c.dados.obras; FORN = c.dados.fornecedores;
+      INSUMOS = (await api("/erp/api/insumos?locavel=1")).insumos;
+    }
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenhar(){
+  const b = (els("busca").value||"").toLowerCase();
+  const l = LOC.filter(c => (!els("so-ativos").checked || c.status === "ATIVO")
+    && `${c.numero} ${c.numero_externo||""} ${c.locadora} ${c.obra}`.toLowerCase().includes(b));
+  const soma = f => l.reduce((a,c)=>a+(f(c)||0),0);
+  const comAlerta = l.filter(c=>c.alertas.length);
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Contratos ativos</div>
+      <div class="kpi-valor">${l.filter(c=>c.status==="ATIVO").length}</div>
+      <div class="kpi-sub">${soma(c=>c.itens)} equipamento(s) em obra</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Custo por período</div>
+      <div class="kpi-valor" style="font-size:19px">${moeda(soma(c=>c.valor_periodo))}</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Já pago em aluguel</div>
+      <div class="kpi-valor" style="font-size:19px">${moeda(soma(c=>c.pago_ate_agora))}</div></div>
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">Precisam de decisão</div>
+      <div class="kpi-valor">${comAlerta.length}</div>
+      <div class="kpi-sub">comprar, devolver ou renegociar</div></div>
+    <div class="kpi estatico roxo"><div class="kpi-rotulo">Parcelas vencidas sem lançar</div>
+      <div class="kpi-valor">${soma(c=>c.parcelas_vencidas_sem_lancar)}</div></div>`;
+
+  const criticos = l.filter(c=>c.alertas.some(a=>a.gravidade==="CRITICA"));
+  els("alertas-gerais").innerHTML = criticos.length ? `<div class="cartao">
+    <div class="cartao-cab"><h3>Aluguel que já pagou a compra</h3>
+      <small>a partir de ~10 meses, comprar costuma sair mais barato</small></div>
+    ${criticos.map(c=>`<div class="critica CRITICA">
+      <b>${c.numero} · ${c.locadora}</b> (${c.obra}, ${c.meses} meses)<br>
+      ${c.alertas.filter(a=>a.gravidade==="CRITICA").map(a=>a.msg).join("<br>")}</div>`).join("")}
+  </div>` : "";
+
+  els("por-obra").innerHTML = POR_OBRA.length ? `<table><tbody>
+    ${POR_OBRA.map(o=>`<tr><td><b>${o.obra}</b> <small>${o.nome||""}</small></td>
+      <td class="dados">${o.itens} item(ns)</td>
+      <td class="direita dados">${numero(o.valor_periodo)}/período</td></tr>`).join("")}
+    </tbody></table>` : `<div class="cartao-dica">Nada locado no momento.</div>`;
+
+  els("vazio").classList.toggle("oculto", l.length>0);
+  if (!l.length) els("vazio").innerHTML = "<b>Nenhum contrato de locação</b>Cadastre para acompanhar o que está em obra.";
+  els("corpo").innerHTML = l.map(c=>`
+    <tr style="cursor:pointer" data-loc="${c.id}">
+      <td class="dados"><b>${c.numero}</b>${c.numero_externo?`<small>${c.numero_externo}</small>`:""}</td>
+      <td>${c.locadora}</td><td class="dados">${c.obra}</td>
+      <td class="direita dados">${numero(c.valor_periodo)}<small>${c.periodicidade}</small></td>
+      <td class="direita dados">${numero(c.pago_ate_agora)}</td>
+      <td class="dados ${c.meses>=10?"atrasado":""}">${c.meses}m</td>
+      <td>${c.parcelas_vencidas_sem_lancar
+        ? `<span class="selo bloqueado">${c.parcelas_vencidas_sem_lancar} parcela(s) a lançar</span>`
+        : c.alertas.length ? `<span class="selo aguardando">${c.alertas.length} alerta(s)</span>` : "—"}</td>
+      <td><span class="selo ${c.status==="ATIVO"?"aprovado":"outro"}">${rotulo(c.status)}</span></td>
+    </tr>`).join("");
+  document.querySelectorAll("[data-loc]").forEach(tr=>tr.addEventListener("click",()=>abrir(+tr.dataset.loc)));
+}
+
+async function abrir(id){
+  try {
+    const {contrato: c} = await api(`/erp/api/locacoes/${id}`);
+    els("dlg-titulo").textContent = `${c.numero} — ${c.locadora}`;
+    els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+      ${c.alertas.map(a=>`<div class="critica ${a.gravidade}">${a.msg}</div>`).join("")}
+      <div class="kpis">
+        <div class="kpi estatico"><div class="kpi-rotulo">Por ${c.periodicidade_rotulo.toLowerCase()}</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(c.valor_periodo)}</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">Já pago</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(c.pago_ate_agora)}</div>
+          <div class="kpi-sub">${c.meses} meses</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Início</div>
+          <div class="kpi-valor" style="font-size:15px">${dataBR(c.inicio)}</div></div>
+      </div>
+      <div class="cartao-dica">Obra ${c.obra}${c.numero_externo?` · nº da locadora ${c.numero_externo}`:""}
+        ${c.dia_vencimento?` · vence dia ${c.dia_vencimento}`:""}</div>
+
+      <h4>Equipamentos</h4>
+      <table><thead><tr><th>Equipamento</th><th class="direita">Locado</th>
+        <th class="direita">Devolvido</th><th class="direita">Em obra</th>
+        <th class="direita">R$/un</th><th class="direita">Por período</th>
+        <th>Obra</th><th></th></tr></thead>
+      <tbody>${c.itens.map(i=>`<tr>
+        <td>${i.descricao}</td><td class="direita dados">${i.quantidade}</td>
+        <td class="direita dados">${i.devolvida||"—"}</td>
+        <td class="direita dados"><b>${i.em_obra}</b></td>
+        <td class="direita dados">${numero(i.valor_unitario)}</td>
+        <td class="direita dados">${numero(i.valor_periodo)}</td>
+        <td class="dados">${i.obra}</td>
+        <td>${i.em_obra>0?`<button class="btn secundario" data-dev="${i.id}">Devolver</button>
+          <button class="btn secundario" data-rem="${i.id}">Remanejar</button>`:""}</td>
+      </tr>`).join("")}</tbody></table>
+
+      <h4>Parcelas previstas</h4>
+      <table><thead><tr><th>Competência</th><th>Vencimento</th>
+        <th class="direita">Valor</th><th>Situação</th><th></th></tr></thead>
+      <tbody>${c.parcelas.map(p=>`<tr>
+        <td class="dados">${p.competencia}</td>
+        <td class="dados ${p.atrasada?"atrasado":""}">${dataBR(p.vencimento)}</td>
+        <td class="direita dados">${numero(p.valor)}</td>
+        <td><span class="selo ${p.status==="LANCADA"?"aprovado":p.atrasada?"bloqueado":"aguardando"}">${rotulo(p.status)}</span></td>
+        <td>${p.status==="PREVISTA"?`<button class="btn" data-lanc="${p.id}">Lançar título</button>`:""}</td>
+      </tr>`).join("")}</tbody></table>
+      <button class="btn secundario" id="gerar-prev">Gerar mais 6 parcelas</button>
+
+      ${c.movimentos.length?`<h4>Movimentações</h4><table><tbody>
+        ${c.movimentos.map(m=>`<tr><td class="dados">${dataBR(m.data)}</td>
+          <td><b>${rotulo(m.tipo)}</b> ${m.quantidade||""}</td>
+          <td>${m.de||""}${m.para?` → ${m.para}`:""}</td>
+          <td><small>${m.observacao||""} · ${m.por}</small></td></tr>`).join("")}
+        </tbody></table>`:""}`;
+
+    document.querySelectorAll("[data-dev]").forEach(b=>b.addEventListener("click",()=>{
+      const item = c.itens.find(x=>x.id===+b.dataset.dev);
+      const q = prompt(`Devolver quantos de "${item.descricao}"? (em obra: ${item.em_obra})`, item.em_obra);
+      if (q === null) return;
+      acao(id, "devolver", {item_id:item.id, quantidade:q,
+        observacao: prompt("Observação (opcional):") || ""});
+    }));
+    document.querySelectorAll("[data-rem]").forEach(b=>b.addEventListener("click",()=>{
+      const item = c.itens.find(x=>x.id===+b.dataset.rem);
+      els("dlg-corpo").insertAdjacentHTML("afterbegin", `<div class="aviso info" id="rem-box">
+        Remanejar <b>${item.descricao}</b> para:
+        <select id="rem-obra" style="margin:0 8px">${OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("")}</select>
+        <button class="btn" id="rem-ok">Confirmar</button></div>`);
+      els("rem-ok").addEventListener("click", ()=>acao(id, "remanejar",
+        {item_id:item.id, obra_destino_id:+els("rem-obra").value}));
+    }));
+    document.querySelectorAll("[data-lanc]").forEach(b=>b.addEventListener("click", async ()=>{
+      const linha = prompt("Linha digitável do boleto (deixe vazio se for Pix):") || "";
+      try {
+        const d = await api(`/erp/api/locacoes/parcelas/${b.dataset.lanc}/lancar`, {method:"POST",
+          headers:{"Content-Type":"application/json"}, body: JSON.stringify({linha_digitavel: linha})});
+        aviso("mensagem", `Título ${d.resultado.titulo} criado (${moeda(d.resultado.valor)})`
+          + (d.resultado.aviso?` · ${d.resultado.aviso}`:""), "ok");
+        abrir(id); carregar();
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    }));
+    els("gerar-prev").addEventListener("click", ()=>acao(id, "previsao", {meses:6}));
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function acao(id, nome, corpo){
+  try {
+    const d = await api(`/erp/api/locacoes/${id}/${nome}`, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+    const r = d.resultado;
+    aviso("mensagem", nome === "devolver"
+      ? `Devolvido. Novo valor por período: ${moeda(r.novo_valor_periodo)}` +
+        (r.contrato_encerrado?" · contrato encerrado.":` · ${r.parcelas_ajustadas} parcela(s) ajustada(s).`)
+      : nome === "remanejar" ? `${r.item}: ${r.de} → ${r.para}. ${r.aviso}`
+      : `${r.parcelas} parcela(s) previstas geradas.`, "ok");
+    abrir(id); carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+els("btn-novo").addEventListener("click", () => {
+  let ITS = [{}];
+  els("dlg-titulo").textContent = "Novo contrato de locação";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Locadora *</label>
+        <select id="l-forn">${FORN.map(f=>`<option value="${f.id}">${f.nome}</option>`).join("")}</select></div>
+      <div class="campo"><label>Obra *</label><select id="l-obra">
+        ${OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("")}</select></div>
+      <div class="campo"><label>Nº na locadora</label><input id="l-ext" placeholder="aparece na nota de débito"></div>
+      <div class="campo"><label>Periodicidade</label><select id="l-per">
+        <option value="MENSAL">Mensal</option><option value="QUINZENAL">Quinzenal</option>
+        <option value="SEMANAL">Semanal</option><option value="DIARIA">Diária</option></select></div>
+      <div class="campo"><label>Dia do vencimento</label><input id="l-dia" placeholder="10"></div>
+      <div class="campo"><label>Início *</label><input type="date" id="l-ini" value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="campo"><label>Fim previsto</label><input type="date" id="l-fim"></div>
+    </div>
+    <h4>Equipamentos locados</h4>
+    <div id="l-itens"></div>
+    <button class="btn secundario" type="button" id="l-add">+ Equipamento</button>
+    <div class="cartao-dica" style="margin-top:6px">Total por período:
+      <b id="l-total">R$ 0,00</b>. A previsão das parcelas é gerada automaticamente.</div>
+    <div style="margin-top:14px"><button class="btn" id="l-salvar">Cadastrar contrato</button></div>`;
+  function desenharItens(){
+    els("l-itens").innerHTML = ITS.map((it,i)=>`
+      <div class="form-grade" style="margin-bottom:6px">
+        <div class="campo" style="grid-column:span 2"><select data-i="${i}" data-c="insumo_id">
+          <option value="">— equipamento do cadastro —</option>
+          ${INSUMOS.map(x=>`<option value="${x.id}" ${String(it.insumo_id)===String(x.id)?"selected":""}
+            data-desc="${x.descricao}" data-loc="${x.valor_locacao||""}">${x.codigo} · ${x.descricao}</option>`).join("")}
+        </select></div>
+        <div class="campo"><input data-i="${i}" data-c="quantidade" value="${it.quantidade||""}" placeholder="qtd"></div>
+        <div class="campo"><input data-i="${i}" data-c="valor_unitario" value="${it.valor_unitario||""}" placeholder="R$/un por período"></div>
+        <div class="campo" style="align-self:end">${ITS.length>1?`<button class="btn secundario" type="button" data-del="${i}">✕</button>`:""}</div>
+      </div>`).join("");
+    document.querySelectorAll("#l-itens [data-c]").forEach(el=>el.addEventListener("change",ev=>{
+      const i = +ev.target.dataset.i, campo = ev.target.dataset.c;
+      ITS[i][campo] = ev.target.value;
+      if (campo === "insumo_id") {
+        const op = ev.target.selectedOptions[0];
+        ITS[i].descricao = op.dataset.desc || "";
+        if (!ITS[i].valor_unitario && op.dataset.loc) ITS[i].valor_unitario = op.dataset.loc;
+        desenharItens();
+      }
+      total();
+    }));
+    document.querySelectorAll("#l-itens [data-c='quantidade'], #l-itens [data-c='valor_unitario']")
+      .forEach(el=>el.addEventListener("input",ev=>{
+        ITS[+ev.target.dataset.i][ev.target.dataset.c] = ev.target.value; total(); }));
+    document.querySelectorAll("#l-itens [data-del]").forEach(b=>b.addEventListener("click",()=>{
+      ITS.splice(+b.dataset.del,1); desenharItens(); total(); }));
+    total();
+  }
+  const total = () => els("l-total").textContent =
+    moeda(ITS.reduce((a,i)=>a + dec(i.quantidade)*dec(i.valor_unitario), 0));
+  els("l-add").addEventListener("click", ()=>{ ITS.push({}); desenharItens(); });
+  desenharItens();
+  els("l-salvar").addEventListener("click", async () => {
+    try {
+      const d = await api("/erp/api/locacoes", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({fornecedor_id:+els("l-forn").value, obra_id:+els("l-obra").value,
+          numero_externo: els("l-ext").value, periodicidade: els("l-per").value,
+          dia_vencimento: els("l-dia").value || null, data_inicio: els("l-ini").value,
+          data_fim_prevista: els("l-fim").value || null,
+          itens: ITS.filter(i=>dec(i.quantidade)>0 && dec(i.valor_unitario)>0)
+                    .map(i=>({insumo_id: i.insumo_id||null, descricao: i.descricao || "Equipamento",
+                              quantidade: i.quantidade, valor_unitario: i.valor_unitario}))})});
+      els("dlg").close();
+      aviso("mensagem", `Contrato ${d.contrato.numero} cadastrado com previsão de parcelas.`, "ok");
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+});
+
+els("btn-insumo").addEventListener("click", () => {
+  els("dlg-titulo").textContent = "Equipamento no cadastro de insumos";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo"><label>Código *</label><input id="i-cod" placeholder="AND001"></div>
+      <div class="campo" style="grid-column:span 2"><label>Descrição *</label>
+        <input id="i-desc" placeholder="Andaime fachadeiro 1,5m"></div>
+      <div class="campo"><label>Unidade</label><input id="i-un" placeholder="un"></div>
+      <div class="campo"><label>Preço de compra</label><input id="i-compra" placeholder="380,00"></div>
+      <div class="campo"><label>Locação por mês</label><input id="i-loc" placeholder="38,00"></div>
+    </div>
+    <div class="cartao-dica">O preço de compra é o que permite alertar quando o aluguel
+      acumulado já teria pago o equipamento.</div>
+    <div style="margin-top:14px"><button class="btn" id="i-salvar">Cadastrar</button></div>`;
+  els("i-salvar").addEventListener("click", async () => {
+    try {
+      await api("/erp/api/insumos", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({codigo: els("i-cod").value, descricao: els("i-desc").value,
+          unidade: els("i-un").value, locavel: true,
+          valor_compra: els("i-compra").value, valor_locacao: els("i-loc").value})});
+      els("dlg").close(); aviso("mensagem","Equipamento cadastrado.","ok");
+      INSUMOS = (await api("/erp/api/insumos?locavel=1")).insumos;
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+});
+
+els("busca").addEventListener("input", desenhar);
+els("so-ativos").addEventListener("change", desenhar);
+carregar();
+</script>
+{% endblock %}

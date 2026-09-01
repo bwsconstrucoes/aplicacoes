@@ -66,8 +66,8 @@
 
 <div class="cartao">
   <div class="form-grade">
-    <div class="campo"><label>Favorecido (quem recebe)</label><select id="favorecido"></select>
-      <div class="dica" id="dica-favorecido">No reembolso é você mesmo; no cartão, a operadora.</div></div>
+    <div class="campo" style="grid-column:span 2"><label>Você receberá em</label>
+      <div id="dica-favorecido" class="cartao-dica" style="margin:0"></div></div>
     <div class="campo"><label>Vencimento</label><input type="date" id="vencimento"></div>
   </div>
   <div style="margin-top:12px; display:flex; gap:8px; align-items:center; flex-wrap:wrap">
@@ -80,22 +80,18 @@
 
 {% block scripts %}
 <script>
-let ITENS = [], OBRAS = [], CATEGORIAS = [], FORNECEDORES = [], CRITICA = null, ANEXO_FATURA = null;
+let ITENS = [], OBRAS = [], CATEGORIAS = [], FORNECEDORES = [], CRITICA = null,
+    ANEXO_FATURA = null, MEU_CADASTRO_ID = null;
 const dec = v => { const n = parseFloat(String(v||"").replace(/[R$\s.]/g,"").replace(",",".")); return isNaN(n)?0:n; };
 
 async function inicial(){
   try {
     const d = await api("/erp/api/lancamento/dados");
     OBRAS = d.dados.obras; CATEGORIAS = d.dados.categorias; FORNECEDORES = d.dados.fornecedores;
-    els("favorecido").innerHTML = `<option value="">— escolher —</option>` +
-      FORNECEDORES.map(f=>`<option value="${f.id}">${f.nome} · ${f.documento}</option>`).join("");
-    comBusca("favorecido", "buscar por nome ou CPF/CNPJ…");
-    // no reembolso, o favorecido é quem está lançando
+    // o favorecido é sempre quem está lançando — não há o que escolher
     try {
       const eu = await api("/erp/api/meu-cadastro");
-      if (eu.cadastro.fornecedor_id) {
-        els("favorecido").value = eu.cadastro.fornecedor_id;
-      }
+      MEU_CADASTRO_ID = eu.cadastro.fornecedor_id;
       els("dica-favorecido").innerHTML = eu.cadastro.fornecedor_id
         ? `Você receberá em: <b>${eu.cadastro.conta_descricao || "conta cadastrada"}</b>.
            <a href="/erp/meu-cadastro">alterar</a>`
@@ -287,7 +283,7 @@ els("btn-enviar").addEventListener("click", async () => {
         fundo_fixo_tipo: els("ff-tipo").value, itens: ITENS,
         periodo_inicio: els("p-inicio").value || null,
         periodo_fim: els("p-fim").value || null,
-        fornecedor_id: els("favorecido").value || null,
+        fornecedor_id: MEU_CADASTRO_ID,
         vencimento: els("vencimento").value,
         anexo_fatura_id: ANEXO_FATURA})});
     aviso("mensagem", `Prestação <b>${d.titulo.numero_sp}</b> enviada — ${moeda(d.titulo.total)}
