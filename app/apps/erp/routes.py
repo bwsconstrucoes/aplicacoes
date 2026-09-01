@@ -280,6 +280,27 @@ def pagina_config():
 # ---------------------------------------------------------------------------
 # API
 # ---------------------------------------------------------------------------
+def _colaboradores_do_titulo(s, t) -> list[dict]:
+    """Quem são as pessoas por trás deste pagamento."""
+    from sqlalchemy import select as _sel
+    from app.apps.erp.db.models.cadastros import Colaborador
+    from app.apps.erp.db.models.financeiro import TituloColaborador
+    saida = []
+    if getattr(t, "colaborador_id", None):
+        c = s.get(Colaborador, t.colaborador_id)
+        if c is not None:
+            saida.append({"id": c.id, "nome": c.nome, "cpf": c.cpf,
+                          "valor": float(t.valor_liquido)})
+    for v in s.scalars(_sel(TituloColaborador).where(
+            TituloColaborador.titulo_id == t.id)).all():
+        c = s.get(Colaborador, v.colaborador_id)
+        if c is not None:
+            saida.append({"id": c.id, "nome": c.nome, "cpf": c.cpf,
+                          "valor": float(v.valor) if v.valor else None,
+                          "observacao": v.observacao})
+    return saida
+
+
 def _explicar_status(s, t) -> str:
     """Em português: por que este título está parado onde está."""
     from app.apps.erp.db.models.financeiro import StatusTitulo as _S
@@ -404,6 +425,7 @@ def api_titulo_detalhe(titulo_id: int):
                 "modalidade": getattr(t, "modalidade", "NORMAL"),
                 "porque_status": _explicar_status(s, t),
                 "anexos": listar_anexos(s, "titulo", t.id),
+                "colaboradores": _colaboradores_do_titulo(s, t),
                 "pagamentos": [{
                     "id": pg.id, "parcela_id": pg.parcela_id,
                     "data": pg.data_pagamento.isoformat(),
@@ -3303,6 +3325,22 @@ def api_dc_acao(despesa_id: int, acao: str):
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha na ação da DC")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/historico")
+@login_obrigatorio
+def api_historico_colaborador(colaborador_id: int):
+    """Tudo que já se pagou a esta pessoa: DC, títulos diretos e rateados."""
+    from app.apps.erp.core.pessoal import historico
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "historico": historico(
+                s, colaborador_id, meses=request.args.get("meses", type=int) or 24)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except Exception as e:
+        logger.exception("ERP: falha no histórico do colaborador")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

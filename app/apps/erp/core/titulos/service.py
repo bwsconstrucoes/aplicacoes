@@ -320,6 +320,20 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
     if interessados:
         s.flush()
 
+    # vínculo com colaborador: guia de FGTS, rescisão, exame, vale — tudo que
+    # se paga por causa de uma pessoa aparece na ficha dela
+    if dados.get("colaborador_id"):
+        titulo.colaborador_id = int(dados["colaborador_id"])
+    for v in (dados.get("colaboradores") or []):
+        from app.apps.erp.db.models.financeiro import TituloColaborador
+        cid = int(v.get("colaborador_id") or v) if not isinstance(v, dict) else int(v["colaborador_id"])
+        valor_parte = v.get("valor") if isinstance(v, dict) else None
+        s.add(TituloColaborador(
+            titulo_id=titulo.id, colaborador_id=cid,
+            valor=Decimal(str(valor_parte).replace(",", ".")) if valor_parte else None,
+            observacao=(v.get("observacao") if isinstance(v, dict) else None)))
+    s.flush()
+
     registrar_evento(s, "titulo", titulo.id, "CRIADO", {
         "interessados": interessados,
         "numero_sp": titulo.numero_sp, "tipo": tipo.value,

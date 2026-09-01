@@ -415,6 +415,21 @@ def gerar_titulo(s: Session, despesa_id: int, dados: dict[str, Any],
             f"Despesa com colaboradores {d.numero}, paga por arquivo "
             f"{d.meio_pagamento}. Aprovada por supervisor, DP e diretoria.",
     }, usuario)
+    # DC de uma pessoa só: o título aponta direto para ela; de várias, cada uma
+    # entra no rateio por colaborador — assim a ficha de todos fica completa
+    pessoas = {i.colaborador_id for i in d.itens}
+    if len(pessoas) == 1:
+        titulo.colaborador_id = next(iter(pessoas))
+    else:
+        from app.apps.erp.db.models.financeiro import TituloColaborador
+        por_pessoa: dict[int, Decimal] = {}
+        for i in d.itens:
+            por_pessoa[i.colaborador_id] = por_pessoa.get(
+                i.colaborador_id, Decimal("0")) + Decimal(i.valor)
+        for cid, valor in por_pessoa.items():
+            s.add(TituloColaborador(titulo_id=titulo.id, colaborador_id=cid,
+                                    valor=valor, observacao=f"Parte na {d.numero}"))
+
     d.titulo_id = titulo.id
     d.status = "FATURADA"
     s.flush()
@@ -501,6 +516,92 @@ def detalhar(s: Session, despesa_id: int) -> dict[str, Any]:
             "observacao": i.observacao, "criticas": i.criticas or [],
             "conferido": bool(i.conferido_em),
         } for i in d.itens],
+    }
+
+
+def historico(s: Session, colaborador_id: int, meses: int = 24) -> dict[str, Any]:
+    """Tudo que já se pagou a esta pessoa, venha de onde vier.
+
+    Junta três origens: os itens de DC, os títulos lançados diretamente em nome
+    dela (rescisão, exame, vale) e a parte dela em títulos coletivos, como a
+    guia de FGTS do mês. Sem isso, o histórico teria buraco justamente nos
+    valores maiores.
+    """
+    from app.apps.erp.db.models.financeiro import (
+        StatusTitulo, Titulo, TituloColaborador,
+    )
+
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+    corte = date.today() - timedelta(days=meses * 31)
+    linhas: list[dict[str, Any]] = []
+
+    for item, dc in s.execute(
+            select(DespesaColaboradorItem, DespesaColaborador)
+            .join(DespesaColaborador,
+                  DespesaColaborador.id == DespesaColaboradorItem.despesa_id)
+            .where(DespesaColaboradorItem.colaborador_id == colaborador_id,
+                   DespesaColaborador.competencia >= corte,
+                   DespesaColaborador.status != "CANCELADA")
+            .order_by(DespesaColaborador.competencia.desc())).all():
+        linhas.append({
+            "origem": "DC", "referencia": dc.numero,
+            "data": dc.competencia.isoformat(),
+            "descricao": VERBAS.get(item.verba, (item.verba,))[0],
+            "quantidade": float(item.quantidade) if item.quantidade else None,
+            "valor": float(item.valor), "situacao": dc.status,
+            "titulo_id": dc.titulo_id, "id": dc.id,
+        })
+
+    for t in s.scalars(select(Titulo).where(
+            Titulo.colaborador_id == colaborador_id,
+            Titulo.status.not_in([StatusTitulo.CANCELADO, StatusTitulo.ESTORNADO]),
+            Titulo.competencia >= corte)).all():
+        linhas.append({
+            "origem": "TITULO", "referencia": t.numero_sp,
+            "data": t.competencia.isoformat(), "descricao": t.descricao,
+            "valor": float(t.valor_liquido), "situacao": t.status.value,
+            "titulo_id": t.id, "id": t.id,
+        })
+
+    for vinculo, t in s.execute(
+            select(TituloColaborador, Titulo)
+            .join(Titulo, Titulo.id == TituloColaborador.titulo_id)
+            .where(TituloColaborador.colaborador_id == colaborador_id,
+                   Titulo.status.not_in([StatusTitulo.CANCELADO, StatusTitulo.ESTORNADO]),
+                   Titulo.competencia >= corte)).all():
+        linhas.append({
+            "origem": "RATEADO", "referencia": t.numero_sp,
+            "data": t.competencia.isoformat(),
+            "descricao": f"{t.descricao} (parte desta pessoa)",
+            "valor": float(vinculo.valor) if vinculo.valor else None,
+            "situacao": t.status.value, "titulo_id": t.id, "id": t.id,
+            "observacao": vinculo.observacao,
+        })
+
+    linhas.sort(key=lambda x: x["data"], reverse=True)
+    por_verba: dict[str, float] = {}
+    total = 0.0
+    for l in linhas:
+        if l["valor"]:
+            total += l["valor"]
+            chave = l["descricao"][:40]
+            por_verba[chave] = por_verba.get(chave, 0.0) + l["valor"]
+    ultimos_12 = sum(l["valor"] or 0 for l in linhas
+                     if l["data"] >= (date.today() - timedelta(days=365)).isoformat())
+    return {
+        "colaborador": {"id": c.id, "nome": c.nome, "cpf": c.cpf,
+                        "funcao": c.funcao.nome if c.funcao else None,
+                        "obra": c.obra.codigo if c.obra else None,
+                        "situacao": c.situacao,
+                        "admissao": c.admissao.isoformat() if c.admissao else None,
+                        "demissao": c.demissao.isoformat() if c.demissao else None},
+        "lancamentos": linhas, "total": round(total, 2),
+        "ultimos_12_meses": round(ultimos_12, 2),
+        "por_verba": sorted(({"verba": k, "valor": round(v, 2)}
+                             for k, v in por_verba.items()),
+                            key=lambda x: x["valor"], reverse=True),
     }
 
 

@@ -81,6 +81,17 @@
     <div class="cartao-dica">Soma das parcelas: <b id="soma-parcelas">R$ 0,00</b></div>
   </div>
 
+  <div class="cartao" id="bloco-colaborador" class="oculto">
+    <div class="cartao-cab"><h3>Colaborador</h3>
+      <small>quando o pagamento é por causa de uma pessoa: rescisão, exame, vale, guia</small></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Colaborador</label>
+        <select id="f-colaborador"><option value="">— nenhum —</option></select>
+        <div class="dica">Vinculando aqui, o pagamento aparece na ficha da pessoa,
+          junto com as despesas em lote.</div></div>
+    </div>
+  </div>
+
   <div class="cartao">
     <div class="cartao-cab"><h3>5 · Rateio por obra e conta</h3>
       <small>divide entre obras e, se a nota tiver naturezas diferentes, entre contas</small></div>
@@ -122,6 +133,16 @@ const dec = v => {
   const n = parseFloat(s); return isNaN(n) ? 0 : n;
 };
 const fmt = n => "R$ " + (n||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
+
+async function carregarColaboradores(){
+  try {
+    const d = await api("/erp/api/colaboradores");
+    if (!d.colaboradores.length) return;
+    els("f-colaborador").innerHTML = `<option value="">— nenhum —</option>` +
+      d.colaboradores.map(c=>`<option value="${c.id}">${c.nome} · ${c.cpf}</option>`).join("");
+    comBusca("f-colaborador", "buscar por nome ou CPF…");
+  } catch(e) { /* módulo Pessoal pode não estar em uso */ }
+}
 
 async function carregarInteressados(){
   try {
@@ -387,6 +408,8 @@ function montar(){
       categoria_id: r.categoria_id ? +r.categoria_id : null,
       descricao: r.descricao || null})),
     interessados: [...document.querySelectorAll(".interessado:checked")].map(i=>+i.value),
+    colaborador_id: els("f-colaborador") && els("f-colaborador").value
+      ? +els("f-colaborador").value : null,
   };
 }
 

@@ -59,8 +59,48 @@ function desenhar(){
     <td><span class="selo ${c.situacao==="ATIVO"?"aprovado":"outro"}">${rotulo(c.situacao)}</span></td>
   </tr>`).join("");
   document.querySelectorAll("[data-c]").forEach(tr=>tr.addEventListener("click",
-    ()=>formulario(COL.find(x=>x.id===+tr.dataset.c))));
+    ()=>ficha(+tr.dataset.c)));
 }
+async function ficha(id){
+  try {
+    const {historico: h} = await api(`/erp/api/colaboradores/${id}/historico`);
+    const c = h.colaborador;
+    els("dlg-titulo").textContent = `${c.nome} — ${c.cpf}`;
+    els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+      <div class="kpis">
+        <div class="kpi estatico"><div class="kpi-rotulo">Pago no total</div>
+          <div class="kpi-valor" style="font-size:18px">${moeda(h.total)}</div>
+          <div class="kpi-sub">${h.lancamentos.length} lançamento(s)</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">Últimos 12 meses</div>
+          <div class="kpi-valor" style="font-size:18px">${moeda(h.ultimos_12_meses)}</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Situação</div>
+          <div class="kpi-valor" style="font-size:15px">${rotulo(c.situacao)}</div>
+          <div class="kpi-sub">${c.funcao||""} ${c.obra?"· "+c.obra:""}</div></div>
+      </div>
+      ${h.por_verba.length?`<h4>Por verba</h4><table><tbody>
+        ${h.por_verba.map(v=>`<tr><td>${v.verba}</td>
+          <td class="direita dados">${numero(v.valor)}</td></tr>`).join("")}</tbody></table>`:""}
+      <h4>Histórico de pagamentos</h4>
+      <div class="cartao-dica">Reúne as despesas em lote (DC), os títulos lançados em nome
+        dele e a parte dele nas guias coletivas, como o FGTS do mês.</div>
+      <table><thead><tr><th>Data</th><th>Origem</th><th>Referência</th><th>Descrição</th>
+        <th class="direita">Valor</th><th>Situação</th></tr></thead>
+      <tbody>${h.lancamentos.map(l=>`<tr>
+        <td class="dados">${dataBR(l.data)}</td>
+        <td><span class="selo ${l.origem==="DC"?"aprovado":l.origem==="RATEADO"?"outro":"aguardando"}">${
+          l.origem==="DC"?"Despesa":l.origem==="RATEADO"?"Rateado":"Título"}</span></td>
+        <td class="dados">${l.referencia}</td>
+        <td class="desc">${l.descricao}${l.quantidade?`<small>${l.quantidade} un</small>`:""}</td>
+        <td class="direita dados">${l.valor!==null?numero(l.valor):"—"}</td>
+        <td>${rotulo(l.situacao)}</td></tr>`).join("")
+        || `<tr><td colspan="6" class="cartao-dica">Nada pago a esta pessoa ainda.</td></tr>`}
+      </tbody></table>
+      <div style="margin-top:14px"><button class="btn secundario" id="ir-editar">Editar cadastro</button></div>`;
+    els("ir-editar").addEventListener("click", ()=>formulario(COL.find(x=>x.id===id)));
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
 function formulario(c){
   c = c || {};
   els("dlg-titulo").textContent = c.id ? c.nome : "Novo colaborador";

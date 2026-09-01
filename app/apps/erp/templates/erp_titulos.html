@@ -322,6 +322,15 @@ async function detalhe(id){
         <td class="direita dados">${r.aliquota}%</td><td class="direita dados">${numero(r.valor)}</td></tr>`).join("")}
         </tbody></table></div>`:""}
 
+      ${(t.colaboradores||[]).length?`<h4>Colaborador(es)</h4>
+        <div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">
+        <table><tbody>${t.colaboradores.map(c=>`<tr>
+          <td><b>${c.nome}</b><small>${c.cpf}</small></td>
+          <td class="direita dados">${c.valor!==null&&c.valor!==undefined?numero(c.valor):"—"}</td>
+          <td><small>${c.observacao||""}</small></td>
+          <td><a class="btn secundario" href="/erp/colaboradores">Ver ficha</a></td>
+        </tr>`).join("")}</tbody></table></div>`:""}
+
       <h4>Anexos</h4>
       <div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">
         ${(t.anexos||[]).length ? `<table><tbody>${t.anexos.map(a=>`<tr>

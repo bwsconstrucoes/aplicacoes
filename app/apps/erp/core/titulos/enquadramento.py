@@ -114,6 +114,11 @@ def avaliar(s: Session, dados: dict[str, Any],
     # aprovação; não faz sentido cobrar dela contrato de locação ou empreita
     if dados.get("despesa_colaborador_id"):
         enquadrado = True
+    # pagamento de pessoa (rescisão, guia, verba) também é caminho próprio:
+    # não se cobra dele contrato de locação nem de empreita
+    if (dados.get("colaborador_id") or dados.get("colaboradores")
+            or tipo.startswith("T7")):
+        enquadrado = True
 
     # ---- evidência de cadastro: o credor TEM contrato ativo
     if forn_id and not enquadrado:

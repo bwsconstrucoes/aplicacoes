@@ -221,6 +221,8 @@ class Titulo(Base):
     adiantamento_contrato: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     locacao_parcela_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("locacao_parcelas.id"))
+    colaborador_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("colaboradores.id"))
     chave_acesso_nfe: Mapped[Optional[str]] = mapped_column(Text)
     cno_documento: Mapped[Optional[str]] = mapped_column(Text)
     exige_aval: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -791,3 +793,20 @@ class DespesaColaboradorItem(Base):
     conferido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     despesa: Mapped[DespesaColaborador] = relationship(back_populates="itens")
+
+
+class TituloColaborador(Base):
+    """Guia ou verba que se refere a vários colaboradores (FGTS do mês, por ex.).
+
+    Existe para o histórico da pessoa não ter buraco: mesmo o pagamento feito
+    em bloco aparece na ficha de cada um, com a parte que lhe cabe.
+    """
+    __tablename__ = "titulo_colaboradores"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    titulo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("titulos.id"), nullable=False)
+    colaborador_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("colaboradores.id"), nullable=False)
+    valor: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

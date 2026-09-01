@@ -114,6 +114,8 @@
 - [x] Módulo PESSOAL: colaboradores (cadastro enxuto) e Despesas com
       Colaborador em lote, com cadeia supervisor → DP → diretor, críticas de
       repetição e geração do título rateado
+- [x] Todo pagamento de pessoa atrelado ao colaborador (DC, título direto e
+      parte em guia coletiva) com ficha de histórico consolidado
 - [ ] Pessoal — falta: formato exato do arquivo BeeVale/SomaPay (aguarda
       instrução) e anexo da planilha ao título
 - [ ] (antigo) Módulo PESSOAL (pipes Cadastro de Colaboradores 301487297 e Despesas
