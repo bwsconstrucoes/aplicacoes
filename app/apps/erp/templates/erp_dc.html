@@ -1,0 +1,297 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Despesas com colaborador — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+{% block conteudo %}
+<h2>Despesas com colaborador
+  <small>várias pessoas num lançamento só, aprovado por supervisor, DP e diretoria</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+<div class="cartao">
+  <div class="tabela-barra" style="padding:0">
+    <input id="busca" placeholder="DC, obra…" style="padding:7px 10px;
+      border:1px solid var(--borda-forte); border-radius:8px; min-width:240px">
+    <span class="espaco"></span>
+    <button class="btn amarelo" id="btn-nova">+ Nova despesa</button>
+  </div>
+</div>
+<div class="tabela-wrap"><div class="tabela-rolagem">
+  <table><thead><tr><th>DC</th><th>Obra</th><th>Competência</th>
+    <th class="direita">Pessoas</th><th class="direita">Valor</th><th>Meio</th>
+    <th>Situação</th><th>Aguardando</th><th>Alertas</th></tr></thead>
+  <tbody id="corpo"></tbody></table>
+</div><div class="vazio oculto" id="vazio"></div></div>
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+let DCS = [], VERBAS = [], OBRAS = [], COLABS = [], FORN = [];
+const dec = paraNumero;
+
+async function carregar(){
+  try {
+    const d = await api("/erp/api/dc");
+    DCS = d.despesas; VERBAS = d.verbas;
+    if (!OBRAS.length) {
+      const c = await api("/erp/api/lancamento/dados");
+      OBRAS = c.dados.obras; FORN = c.dados.fornecedores;
+    }
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenhar(){
+  const b = (els("busca").value||"").toLowerCase();
+  const l = DCS.filter(x => `${x.numero} ${x.obra}`.toLowerCase().includes(b));
+  const soma = f => l.reduce((a,x)=>a+(f(x)||0),0);
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Despesas</div>
+      <div class="kpi-valor">${l.length}</div>
+      <div class="kpi-sub">${soma(x=>x.pessoas)} pessoa(s)</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Aguardando aprovação</div>
+      <div class="kpi-valor">${l.filter(x=>x.status.startsWith("AGUARDANDO")).length}</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Aprovadas a faturar</div>
+      <div class="kpi-valor">${l.filter(x=>x.status==="APROVADA").length}</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Valor total</div>
+      <div class="kpi-valor" style="font-size:19px">${moeda(soma(x=>x.valor_total))}</div></div>
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">Com apontamento</div>
+      <div class="kpi-valor">${l.filter(x=>x.alertas).length}</div></div>`;
+  els("vazio").classList.toggle("oculto", l.length>0);
+  if (!l.length) els("vazio").innerHTML = "<b>Nenhuma despesa</b>Lance diárias, produção e verbas em lote.";
+  els("corpo").innerHTML = l.map(x=>`<tr style="cursor:pointer" data-dc="${x.id}">
+    <td class="dados"><b>${x.numero}</b></td><td class="dados">${x.obra}</td>
+    <td class="dados">${x.competencia}</td>
+    <td class="direita dados">${x.pessoas}</td>
+    <td class="direita dados">${numero(x.valor_total)}</td>
+    <td>${x.meio_pagamento}</td>
+    <td><span class="selo ${x.status==="FATURADA"?"pago":x.status==="APROVADA"?"aprovado":
+      x.status==="DEVOLVIDA"?"bloqueado":"aguardando"}">${rotulo(x.status)}</span></td>
+    <td><small>${x.proxima_etapa||"—"}</small></td>
+    <td>${x.alertas?`<span class="selo aguardando">${x.alertas}</span>`:"—"}</td>
+  </tr>`).join("");
+  document.querySelectorAll("[data-dc]").forEach(tr=>tr.addEventListener("click",()=>abrir(+tr.dataset.dc)));
+}
+
+async function abrir(id){
+  try {
+    const {despesa: d} = await api(`/erp/api/dc/${id}`);
+    els("dlg-titulo").textContent = `${d.numero} — ${d.obra}`;
+    els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+      ${d.motivo_devolucao?`<div class="critica BLOQUEIA">Devolvida: ${d.motivo_devolucao}</div>`:""}
+      <div class="kpis">
+        <div class="kpi estatico"><div class="kpi-rotulo">Total</div>
+          <div class="kpi-valor" style="font-size:18px">${numero(d.valor_total)}</div>
+          <div class="kpi-sub">${d.itens.length} lançamento(s)</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">Situação</div>
+          <div class="kpi-valor" style="font-size:15px">${rotulo(d.status)}</div>
+          <div class="kpi-sub">${d.proxima_etapa?`aguarda ${d.proxima_etapa}`:""}</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Pagamento</div>
+          <div class="kpi-valor" style="font-size:15px">${d.meio_pagamento}</div>
+          <div class="kpi-sub">${d.competencia}</div></div>
+      </div>
+      <table><thead><tr><th>Colaborador</th><th>Verba</th><th class="direita">Qtd</th>
+        <th class="direita">Valor</th><th>Obra</th><th>Apontamentos</th></tr></thead>
+      <tbody>${d.itens.map(i=>{
+        const g = (i.criticas||[]).some(c=>c.gravidade==="BLOQUEIA") ? "BLOQUEIA"
+          : (i.criticas||[]).some(c=>c.gravidade==="CRITICA") ? "CRITICA"
+          : (i.criticas||[]).length ? "ALERTA" : "";
+        const cor = {BLOQUEIA:"var(--vermelho)",CRITICA:"var(--ambar)",ALERTA:"var(--amarelo)"}[g];
+        return `<tr style="${cor?`border-left:4px solid ${cor}`:""}">
+          <td>${i.nome}<small>${i.cpf}</small></td><td>${i.verba_rotulo}</td>
+          <td class="direita dados">${i.quantidade??"—"}</td>
+          <td class="direita dados"><b>${numero(i.valor)}</b></td>
+          <td class="dados">${i.obra}</td>
+          <td>${(i.criticas||[]).map(c=>`<small style="display:block; color:${
+            c.gravidade==="BLOQUEIA"?"var(--vermelho)":c.gravidade==="CRITICA"?"var(--ambar)":"var(--tinta-suave)"}">
+            <b>${c.codigo}</b> ${c.msg}</small>`).join("")||"—"}
+            ${i.observacao?`<small><i>${i.observacao}</i></small>`:""}</td>
+        </tr>`;}).join("")}</tbody></table>
+
+      <h4>Aprovações</h4>
+      <table><tbody>${d.aprovacoes.map(a=>`<tr>
+        <td><b>${a.etapa}</b></td>
+        <td>${a.por||`<span style="color:var(--tinta-suave)">pendente</span>`}</td>
+        <td class="dados">${a.em||""}</td></tr>`).join("")}
+        <tr><td>Lançada por</td><td>${d.criado_por||"—"}</td><td></td></tr></tbody></table>
+
+      <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+        ${d.proxima_etapa?`<button class="btn" id="dc-aprovar">✓ Aprovar (${d.proxima_etapa})</button>
+          <button class="btn secundario" id="dc-devolver">Devolver</button>`:""}
+        ${d.status==="APROVADA"?`<button class="btn amarelo" id="dc-titulo">Gerar título financeiro</button>`:""}
+        <button class="btn secundario" id="dc-planilha">Planilha de pagamento</button>
+        ${d.titulo_id?`<a class="btn secundario" href="/erp/titulos?id=${d.titulo_id}"
+          style="text-decoration:none">Ver título</a>`:""}
+      </div>
+      <div id="dc-saida"></div>`;
+
+    const bA = els("dc-aprovar");
+    if (bA) bA.addEventListener("click", async () => {
+      try {
+        const r = await api(`/erp/api/dc/${id}/aprovar`, {method:"POST",
+          headers:{"Content-Type":"application/json"}, body:"{}"});
+        aviso("mensagem", `Aprovada — agora ${r.resultado.proxima_etapa
+          ? "aguarda "+r.resultado.proxima_etapa : "pronta para faturar"}.`, "ok");
+        abrir(id); carregar();
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    });
+    const bD = els("dc-devolver");
+    if (bD) bD.addEventListener("click", async () => {
+      const motivo = prompt("O que precisa ser corrigido?");
+      if (!motivo) return;
+      try {
+        await api(`/erp/api/dc/${id}/devolver`, {method:"POST",
+          headers:{"Content-Type":"application/json"}, body: JSON.stringify({motivo})});
+        aviso("mensagem","Devolvida para correção.","ok"); abrir(id); carregar();
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    });
+    const bT = els("dc-titulo");
+    if (bT) bT.addEventListener("click", async () => {
+      els("dc-saida").innerHTML = `<div class="form-grade" style="margin-top:10px">
+        <div class="campo" style="grid-column:span 2"><label>Favorecido do título</label>
+          <select id="dc-forn">${FORN.map(f=>`<option value="${f.id}">${f.nome}</option>`).join("")}</select>
+          <div class="dica">No BeeVale/SomaPay é a própria plataforma, não o colaborador.</div></div>
+        <div class="campo"><label>Vencimento</label><input type="date" id="dc-venc"
+          value="${d.data_prevista||new Date().toISOString().slice(0,10)}"></div>
+        <div class="campo" style="align-self:end"><button class="btn" id="dc-ok">Gerar</button></div>
+      </div>`;
+      comBusca("dc-forn", "buscar…");
+      els("dc-ok").addEventListener("click", async () => {
+        try {
+          const r = await api(`/erp/api/dc/${id}/gerar-titulo`, {method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body: JSON.stringify({fornecedor_id:+els("dc-forn").value,
+                                  vencimento: els("dc-venc").value})});
+          aviso("mensagem", `Título <b>${r.resultado.titulo}</b> gerado
+            (${moeda(r.resultado.valor)}, ${r.resultado.rateios} obra(s)).
+            ${r.resultado.proximo_passo}`, "ok");
+          abrir(id); carregar();
+        } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+      });
+    });
+    els("dc-planilha").addEventListener("click", async () => {
+      const r = await api(`/erp/api/dc/${id}/planilha`, {method:"POST",
+        headers:{"Content-Type":"application/json"}, body:"{}"});
+      const p = r.resultado;
+      els("dc-saida").innerHTML = `<h4>Planilha ${p.meio} — ${p.competencia}</h4>
+        ${p.sem_dados.length?`<div class="critica BLOQUEIA">Sem dados de pagamento:
+          ${p.sem_dados.join(", ")}. Complete o cadastro antes de gerar o arquivo.</div>`:""}
+        <table><thead><tr><th>Nome</th><th>CPF</th><th>Verba</th>
+          <th class="direita">Valor</th><th>Chave/Conta</th></tr></thead>
+        <tbody>${p.linhas.map(l=>`<tr><td>${l.nome}</td><td class="dados">${l.cpf}</td>
+          <td>${l.verba}</td><td class="direita dados">${numero(l.valor)}</td>
+          <td class="dados">${l.pix_chave||`${l.banco||""} ${l.agencia||""} ${l.conta||""}`||"—"}</td>
+        </tr>`).join("")}</tbody>
+        <tfoot><tr><th colspan="3">Total</th>
+          <th class="direita dados">${numero(p.total)}</th><th></th></tr></tfoot></table>
+        <div class="cartao-dica">Copie estas linhas para o arquivo do ${p.meio} e anexe a
+          planilha ao título depois de gerada.</div>`;
+    });
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+els("btn-nova").addEventListener("click", async () => {
+  let ITS = [{}];
+  els("dlg-titulo").textContent = "Nova despesa com colaborador";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo"><label>Obra *</label><select id="n-obra">
+        ${OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("")}</select></div>
+      <div class="campo"><label>Competência</label><input type="date" id="n-comp"
+        value="${new Date().toISOString().slice(0,10)}"></div>
+      <div class="campo"><label>Pagamento previsto</label><input type="date" id="n-prev"></div>
+      <div class="campo"><label>Meio de pagamento</label><select id="n-meio">
+        <option value="BEEVALE">BeeVale (Pix por QR)</option>
+        <option value="SOMAPAY">SomaPay (transferência)</option></select></div>
+      <div class="campo" style="grid-column:span 2"><label>Descrição</label>
+        <input id="n-desc" placeholder="ex.: serviço extra no sábado"></div>
+    </div>
+    <h4>Colaboradores</h4>
+    <div id="n-itens"></div>
+    <button class="btn secundario" type="button" id="n-add">+ Colaborador</button>
+    <div class="cartao-dica" style="margin-top:6px">Total: <b id="n-total">R$ 0,00</b></div>
+    <div id="n-criticas"></div>
+    <div style="margin-top:14px; display:flex; gap:8px">
+      <button class="btn amarelo" id="n-salvar">Conferir e enviar</button>
+    </div>`;
+  COLABS = (await api(`/erp/api/colaboradores?obra_id=${els("n-obra").value}`)).colaboradores;
+  els("n-obra").addEventListener("change", async () => {
+    COLABS = (await api(`/erp/api/colaboradores?obra_id=${els("n-obra").value}`)).colaboradores;
+    desenharItens();
+  });
+  function desenharItens(){
+    els("n-itens").innerHTML = ITS.map((it,i)=>`
+      <div class="form-grade" style="margin-bottom:6px">
+        <div class="campo" style="grid-column:span 2"><select data-i="${i}" data-c="colaborador_id">
+          <option value="">— colaborador —</option>
+          ${COLABS.map(c=>`<option value="${c.id}" ${String(it.colaborador_id)===String(c.id)?"selected":""}
+            data-diaria="${c.valor_diaria||""}">${c.nome} · ${c.cpf}</option>`).join("")}
+        </select></div>
+        <div class="campo"><select data-i="${i}" data-c="verba">
+          ${VERBAS.map(v=>`<option value="${v.chave}" ${it.verba===v.chave?"selected":""}>${v.rotulo}</option>`).join("")}
+        </select></div>
+        <div class="campo"><input data-i="${i}" data-c="quantidade" value="${it.quantidade||""}" placeholder="qtd"></div>
+        <div class="campo"><input data-i="${i}" data-c="valor" value="${it.valor||""}" placeholder="valor"></div>
+        <div class="campo" style="align-self:end">${ITS.length>1?`<button class="btn secundario" type="button" data-del="${i}">✕</button>`:""}</div>
+      </div>`).join("");
+    document.querySelectorAll("#n-itens [data-c]").forEach(el=>{
+      const ev = el.tagName === "SELECT" ? "change" : "input";
+      el.addEventListener(ev, e => {
+        const i = +e.target.dataset.i, campo = e.target.dataset.c;
+        ITS[i][campo] = e.target.value;
+        // diária: calcula pelo cadastro
+        if ((campo === "quantidade" || campo === "verba") && ITS[i].verba === "DIARIA") {
+          const sel = document.querySelector(`[data-i="${i}"][data-c="colaborador_id"]`);
+          const diaria = parseFloat(sel?.selectedOptions[0]?.dataset.diaria || 0);
+          if (diaria && dec(ITS[i].quantidade)) {
+            ITS[i].valor = (diaria * dec(ITS[i].quantidade)).toFixed(2).replace(".",",");
+            desenharItens();
+          }
+        }
+        total();
+      });
+    });
+    document.querySelectorAll("#n-itens [data-del]").forEach(b=>b.addEventListener("click",()=>{
+      ITS.splice(+b.dataset.del,1); desenharItens(); }));
+    total();
+  }
+  const total = () => els("n-total").textContent =
+    moeda(ITS.reduce((a,i)=>a+dec(i.valor),0));
+  els("n-add").addEventListener("click", ()=>{ ITS.push({verba:"DIARIA"}); desenharItens(); });
+  ITS = [{verba:"DIARIA"}]; desenharItens();
+
+  els("n-salvar").addEventListener("click", async () => {
+    const itens = ITS.filter(i=>i.colaborador_id && dec(i.valor)>0)
+      .map(i=>({colaborador_id:+i.colaborador_id, verba:i.verba,
+                quantidade:i.quantidade||null, valor:i.valor}));
+    if (!itens.length) { aviso("dlg-msg","Adicione ao menos um colaborador com valor.","erro"); return; }
+    try {
+      const cr = await api("/erp/api/dc/criticar", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({itens, obra_id:+els("n-obra").value})});
+      const c = cr.critica;
+      els("n-criticas").innerHTML = (c.bloqueios||c.criticas) ? `
+        <div class="cartao-cab" style="margin-top:10px"><h3>Conferência</h3>
+          <small>${c.bloqueios} bloqueio(s) · ${c.criticas} atenção</small></div>
+        ${Object.entries(c.por_item).map(([i,l])=>l.map(x=>`<div class="critica ${x.gravidade}">
+          <code>${x.codigo}</code>Linha ${+i+1}: ${x.msg}</div>`).join("")).join("")}
+        ${c.gerais.map(g=>`<div class="critica ${g.gravidade}"><code>${g.codigo}</code>${g.msg}</div>`).join("")}` : "";
+      if (c.bloqueios) { aviso("dlg-msg", `${c.bloqueios} bloqueio(s) — corrija antes de enviar.`, "erro"); return; }
+      if (c.criticas && !confirm(`Há ${c.criticas} ponto(s) de atenção. Enviar mesmo assim?`)) return;
+      const d = await api("/erp/api/dc", {method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({obra_id:+els("n-obra").value, competencia:els("n-comp").value,
+          data_prevista:els("n-prev").value||null, meio_pagamento:els("n-meio").value,
+          descricao:els("n-desc").value, itens})});
+      els("dlg").close();
+      aviso("mensagem", `<b>${d.despesa.numero}</b> criada (${moeda(d.despesa.total)}) —
+        aguardando o supervisor da obra.`, "ok");
+      carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+});
+els("busca").addEventListener("input", desenhar);
+carregar();
+</script>
+{% endblock %}

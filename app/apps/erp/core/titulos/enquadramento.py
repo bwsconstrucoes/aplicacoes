@@ -110,6 +110,10 @@ def avaliar(s: Session, dados: dict[str, Any],
     # evidência de cadastro: um mesmo credor pode ter locação e empreita ao
     # mesmo tempo, e cobrar os dois caminhos ao mesmo tempo seria só ruído.
     enquadrado = any(ja_esta_certo(k) for k in CAMINHOS)
+    # a despesa com colaborador já é um caminho próprio, com sua cadeia de
+    # aprovação; não faz sentido cobrar dela contrato de locação ou empreita
+    if dados.get("despesa_colaborador_id"):
+        enquadrado = True
 
     # ---- evidência de cadastro: o credor TEM contrato ativo
     if forn_id and not enquadrado:

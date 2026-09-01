@@ -43,6 +43,7 @@ class PerfilUsuario(str, enum.Enum):
     GESTOR_OBRA = "GESTOR_OBRA"              # lança e acompanha TODAS as obras
     SUPERVISOR_OBRA = "SUPERVISOR_OBRA"      # lança e acompanha as obras designadas
     ADMINISTRATIVO_OBRA = "ADMINISTRATIVO_OBRA"   # lança e acompanha o que ele lançou
+    DEPARTAMENTO_PESSOAL = "DEPARTAMENTO_PESSOAL"  # revisa despesas com colaboradores
     APROVADOR = "APROVADOR"
     LANCADOR = "LANCADOR"
     CONSULTA = "CONSULTA"
@@ -408,3 +409,46 @@ class Insumo(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     categoria_insumo: Mapped[Optional[InsumoCategoria]] = relationship()
+
+
+class Funcao(Base):
+    """Função na obra, com a diária de referência."""
+    __tablename__ = "funcoes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    valor_diaria: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class Colaborador(Base):
+    """Cadastro enxuto: o suficiente para pagar e para criticar o que se paga."""
+    __tablename__ = "colaboradores"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    cpf: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    matricula: Mapped[Optional[str]] = mapped_column(Text)
+    funcao_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("funcoes.id"))
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    admissao: Mapped[Optional[date]] = mapped_column(Date)
+    demissao: Mapped[Optional[date]] = mapped_column(Date)
+    regime: Mapped[str] = mapped_column(Text, nullable=False, default="CLT")
+    valor_diaria: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    aux_alimentacao: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    aux_transporte: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    pix_chave: Mapped[Optional[str]] = mapped_column(Text)
+    pix_tipo: Mapped[Optional[str]] = mapped_column(Text)
+    banco: Mapped[Optional[str]] = mapped_column(Text)
+    agencia: Mapped[Optional[str]] = mapped_column(Text)
+    conta: Mapped[Optional[str]] = mapped_column(Text)
+    telefone: Mapped[Optional[str]] = mapped_column(Text)
+    situacao: Mapped[str] = mapped_column(Text, nullable=False, default="ATIVO")
+    ref_pipefy: Mapped[Optional[str]] = mapped_column(Text)
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    funcao: Mapped[Optional[Funcao]] = relationship()
+    obra: Mapped[Optional[Obra]] = relationship()

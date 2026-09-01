@@ -111,7 +111,12 @@
 - [x] Críticas chegam a quem aprova: a tela Confirmar destaca os apontamentos,
       exige análise item a item e só então libera a assinatura; o financeiro e
       o diretor têm fila própria de prestações com indício
-- [ ] Módulo PESSOAL (pipes Cadastro de Colaboradores 301487297 e Despesas
+- [x] Módulo PESSOAL: colaboradores (cadastro enxuto) e Despesas com
+      Colaborador em lote, com cadeia supervisor → DP → diretor, críticas de
+      repetição e geração do título rateado
+- [ ] Pessoal — falta: formato exato do arquivo BeeVale/SomaPay (aguarda
+      instrução) e anexo da planilha ao título
+- [ ] (antigo) Módulo PESSOAL (pipes Cadastro de Colaboradores 301487297 e Despesas
       com Colaboradores 301433085 — estruturas já recebidas)
 
 - [ ] Detalhe do título que **expande como card**, com anexos e tudo que não

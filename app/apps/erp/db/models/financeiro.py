@@ -740,3 +740,54 @@ class IaUso(Base):
     usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     referencia: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class DespesaColaborador(Base):
+    """DC: lote de verbas de várias pessoas, aprovado em cadeia."""
+    __tablename__ = "despesas_colaborador"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    numero: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
+    competencia: Mapped[date] = mapped_column(Date, nullable=False)
+    data_prevista: Mapped[Optional[date]] = mapped_column(Date)
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
+    meio_pagamento: Mapped[str] = mapped_column(Text, nullable=False, default="BEEVALE")
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="RASCUNHO")
+    valor_total: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    titulo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulos.id"))
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    aprovado_supervisor: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    aprovado_supervisor_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    aprovado_dp: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    aprovado_dp_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    aprovado_diretor: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    aprovado_diretor_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    motivo_devolucao: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    itens: Mapped[list["DespesaColaboradorItem"]] = relationship(
+        back_populates="despesa", cascade="all, delete-orphan")
+
+
+class DespesaColaboradorItem(Base):
+    __tablename__ = "despesa_colaborador_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    despesa_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("despesas_colaborador.id"), nullable=False)
+    colaborador_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("colaboradores.id"), nullable=False)
+    verba: Mapped[str] = mapped_column(Text, nullable=False)
+    quantidade: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    valor_unitario: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    criticas: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    conferido_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    conferido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    despesa: Mapped[DespesaColaborador] = relationship(back_populates="itens")

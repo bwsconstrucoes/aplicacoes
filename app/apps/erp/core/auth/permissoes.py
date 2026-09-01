@@ -30,7 +30,8 @@ P = PerfilUsuario
 # ação → perfis autorizados
 PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "lancar":          {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.LANCADOR},
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.LANCADOR,
+                        P.DEPARTAMENTO_PESSOAL},
     "avalizar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA, P.SUPERVISOR_OBRA},
     "aprovar":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.APROVADOR},
     "pagar":           {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
@@ -45,6 +46,13 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "gerir_usuarios":  {P.ADMIN},
     "ver_relatorios":  {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA},
+    # Pessoal: o DP revisa a despesa com colaborador depois do supervisor,
+    # porque só ele conhece o cadastro e sabe se a verba é devida
+    "ver_pessoal":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
+    "lancar_dc":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
+    "editar_colaboradores": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL},
 }
 
 ROTULOS = {
@@ -54,6 +62,7 @@ ROTULOS = {
     P.GESTOR_OBRA: "Gestor de obras (todas)",
     P.SUPERVISOR_OBRA: "Supervisor de obras (designadas)",
     P.ADMINISTRATIVO_OBRA: "Administrativo de obra",
+    P.DEPARTAMENTO_PESSOAL: "Departamento pessoal",
     P.APROVADOR: "Aprovador",
     P.LANCADOR: "Lançador",
     P.CONSULTA: "Consulta",

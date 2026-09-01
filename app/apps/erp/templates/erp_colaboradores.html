@@ -1,0 +1,122 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Colaboradores — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+{% block conteudo %}
+<h2>Colaboradores <small>o cadastro mínimo para pagar e conferir o que se paga</small></h2>
+<div id="mensagem"></div>
+<div class="cartao">
+  <div class="tabela-barra" style="padding:0">
+    <input id="busca" placeholder="nome ou CPF…" style="padding:7px 10px;
+      border:1px solid var(--borda-forte); border-radius:8px; min-width:260px">
+    <select id="f-obra" style="min-width:180px"><option value="">todas as obras</option></select>
+    <label class="opcao" style="margin:0"><input type="checkbox" id="f-todos">
+      <span class="rotulo">Incluir desligados</span></label>
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-funcao">+ Função</button>
+    <button class="btn amarelo" id="btn-novo">+ Colaborador</button>
+  </div>
+</div>
+<div class="tabela-wrap"><div class="tabela-rolagem">
+  <table><thead><tr><th>Nome</th><th>CPF</th><th>Função</th><th>Obra</th>
+    <th>Regime</th><th class="direita">Diária</th><th class="direita">Alimentação</th>
+    <th>Pagamento</th><th>Situação</th></tr></thead><tbody id="corpo"></tbody></table>
+</div><div class="vazio oculto" id="vazio"></div></div>
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+{% block scripts %}
+<script>
+let COL = [], OBRAS = [], FUNCOES = [];
+async function carregar(){
+  try {
+    const q = els("f-todos").checked ? "?todos=1" : "";
+    const obra = els("f-obra").value;
+    const d = await api(`/erp/api/colaboradores${q}${obra?(q?"&":"?")+"obra_id="+obra:""}`);
+    COL = d.colaboradores;
+    if (!OBRAS.length) {
+      OBRAS = (await api("/erp/api/lancamento/dados")).dados.obras;
+      FUNCOES = (await api("/erp/api/funcoes")).funcoes;
+      els("f-obra").innerHTML = `<option value="">todas as obras</option>` +
+        OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("");
+    }
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+function desenhar(){
+  const b = (els("busca").value||"").toLowerCase();
+  const l = COL.filter(c => `${c.nome} ${c.cpf}`.toLowerCase().includes(b));
+  els("vazio").classList.toggle("oculto", l.length>0);
+  if (!l.length) els("vazio").innerHTML = "<b>Nenhum colaborador</b>Cadastre para lançar despesas.";
+  els("corpo").innerHTML = l.map(c=>`<tr style="cursor:pointer" data-c="${c.id}">
+    <td><b>${c.nome}</b>${c.matricula?`<small>mat. ${c.matricula}</small>`:""}</td>
+    <td class="dados">${c.cpf}</td><td>${c.funcao||"—"}</td><td class="dados">${c.obra||"—"}</td>
+    <td>${rotulo(c.regime)}</td>
+    <td class="direita dados">${c.valor_diaria?numero(c.valor_diaria):"—"}</td>
+    <td class="direita dados">${c.aux_alimentacao?numero(c.aux_alimentacao):"—"}</td>
+    <td>${c.tem_pagamento?`<span class="selo aprovado">ok</span>`
+      :`<span class="selo bloqueado">sem dados</span>`}</td>
+    <td><span class="selo ${c.situacao==="ATIVO"?"aprovado":"outro"}">${rotulo(c.situacao)}</span></td>
+  </tr>`).join("");
+  document.querySelectorAll("[data-c]").forEach(tr=>tr.addEventListener("click",
+    ()=>formulario(COL.find(x=>x.id===+tr.dataset.c))));
+}
+function formulario(c){
+  c = c || {};
+  els("dlg-titulo").textContent = c.id ? c.nome : "Novo colaborador";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Nome *</label>
+        <input id="c-nome" value="${c.nome||""}"></div>
+      <div class="campo"><label>CPF *</label><input id="c-cpf" value="${c.cpf||""}" ${c.id?"disabled":""}></div>
+      <div class="campo"><label>Matrícula</label><input id="c-mat" value="${c.matricula||""}"></div>
+      <div class="campo"><label>Função</label><select id="c-funcao"><option value="">—</option>
+        ${FUNCOES.map(f=>`<option value="${f.id}" ${String(c.funcao_id)===String(f.id)?"selected":""}>${f.nome}${f.valor_diaria?` (R$ ${f.valor_diaria})`:""}</option>`).join("")}</select></div>
+      <div class="campo"><label>Obra</label><select id="c-obra"><option value="">—</option>
+        ${OBRAS.map(o=>`<option value="${o.id}" ${String(c.obra_id)===String(o.id)?"selected":""}>${rotuloObra(o)}</option>`).join("")}</select></div>
+      <div class="campo"><label>Regime</label><select id="c-regime">
+        ${["CLT","DIARISTA","PJ"].map(r=>`<option ${c.regime===r?"selected":""}>${r}</option>`).join("")}</select></div>
+      <div class="campo"><label>Situação</label><select id="c-sit">
+        ${["ATIVO","AFASTADO","DESLIGADO"].map(r=>`<option ${c.situacao===r?"selected":""}>${r}</option>`).join("")}</select></div>
+      <div class="campo"><label>Diária</label><input id="c-diaria" value="${c.valor_diaria||""}"></div>
+      <div class="campo"><label>Auxílio-alimentação</label><input id="c-alim" value="${c.aux_alimentacao||""}"></div>
+      <div class="campo"><label>Auxílio-transporte</label><input id="c-transp" value="${c.aux_transporte||""}"></div>
+      <div class="campo"><label>Tipo da chave Pix</label><select id="c-pixtipo">
+        ${["CPF","EMAIL","TELEFONE","ALEATORIA"].map(t=>`<option ${c.pix_tipo===t?"selected":""}>${t}</option>`).join("")}</select></div>
+      <div class="campo" style="grid-column:span 2"><label>Chave Pix</label>
+        <input id="c-pix" value="${c.pix_chave||""}"></div>
+    </div>
+    <div class="cartao-dica">Diária e auxílios são a referência da conferência: o sistema
+      aponta quando a despesa lançada não bate com o cadastro.</div>
+    <div style="margin-top:14px"><button class="btn" id="c-salvar">Salvar</button></div>`;
+  els("c-salvar").addEventListener("click", async () => {
+    try {
+      await api("/erp/api/colaboradores", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({nome:els("c-nome").value, cpf:els("c-cpf").value||c.cpf,
+          matricula:els("c-mat").value, funcao_id:els("c-funcao").value||null,
+          obra_id:els("c-obra").value||null, regime:els("c-regime").value,
+          situacao:els("c-sit").value, valor_diaria:els("c-diaria").value,
+          aux_alimentacao:els("c-alim").value, aux_transporte:els("c-transp").value,
+          pix_tipo:els("c-pixtipo").value, pix_chave:els("c-pix").value})});
+      els("dlg").close(); aviso("mensagem","Colaborador salvo.","ok"); carregar();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+}
+els("btn-novo").addEventListener("click", ()=>formulario(null));
+els("btn-funcao").addEventListener("click", async () => {
+  const nome = prompt("Nome da função:"); if (!nome) return;
+  const diaria = prompt("Valor da diária (opcional):") || "";
+  try {
+    await api("/erp/api/funcoes", {method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({nome, valor_diaria: diaria})});
+    FUNCOES = (await api("/erp/api/funcoes")).funcoes;
+    aviso("mensagem", `Função ${nome} cadastrada.`, "ok");
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+});
+els("busca").addEventListener("input", desenhar);
+["f-obra","f-todos"].forEach(i=>els(i).addEventListener("change", carregar));
+carregar();
+</script>
+{% endblock %}

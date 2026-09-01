@@ -65,6 +65,15 @@ MODULOS = [
         ],
     },
     {
+        "chave": "pessoal", "nome": "Pessoal", "sigla": "PES",
+        "descricao": "Colaboradores e despesas com colaboradores (diárias, produção, verbas)",
+        "cor": "var(--verde)",
+        "abas": [
+            ("dc", "Despesas com colaborador", "erp.pagina_dc"),
+            ("colaboradores", "Colaboradores", "erp.pagina_colaboradores"),
+        ],
+    },
+    {
         "chave": "admin", "nome": "Administração", "sigla": "ADM",
         "descricao": "Plano financeiro, operadores, banco de dados e auditoria",
         "cor": "var(--roxo)",
@@ -212,6 +221,18 @@ def pagina_empreitas():
 @login_obrigatorio
 def pagina_locacoes():
     return render_template("erp_locacoes.html", **_contexto("locacoes"))
+
+
+@bp.route("/erp/dc")
+@login_obrigatorio
+def pagina_dc():
+    return render_template("erp_dc.html", **_contexto("dc"))
+
+
+@bp.route("/erp/colaboradores")
+@login_obrigatorio
+def pagina_colaboradores():
+    return render_template("erp_colaboradores.html", **_contexto("colaboradores"))
 
 
 @bp.route("/erp/conciliacao")
@@ -3151,6 +3172,137 @@ def api_ia_consumo():
         return jsonify({"ok": False, "erro": str(e)}), 403
     except Exception as e:
         logger.exception("ERP: falha no painel de IA")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Pessoal
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/colaboradores", methods=["GET", "POST"])
+@login_obrigatorio
+def api_colaboradores():
+    from app.apps.erp.core.pessoal import listar_colaboradores, salvar_colaborador
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, "colaboradores": listar_colaboradores(
+                    s, request.args.get("obra_id", type=int),
+                    ativos=request.args.get("todos") != "1")})
+            c = salvar_colaborador(s, request.get_json(silent=True) or {}, usuario)
+            s.commit()
+            return jsonify({"ok": True, "colaborador_id": c.id})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha em colaboradores")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/funcoes", methods=["GET", "POST"])
+@login_obrigatorio
+def api_funcoes():
+    from sqlalchemy import select
+    from decimal import Decimal as _D
+    from app.apps.erp.db.models.cadastros import Funcao
+    try:
+        with get_session() as s:
+            if request.method == "POST":
+                d = request.get_json(silent=True) or {}
+                nome = (d.get("nome") or "").strip()
+                if not nome:
+                    return jsonify({"ok": False, "erro": "Informe o nome da função."}), 400
+                f = Funcao(nome=nome,
+                           valor_diaria=(_D(str(d["valor_diaria"]).replace(",", "."))
+                                         if d.get("valor_diaria") else None))
+                s.add(f)
+                s.commit()
+                return jsonify({"ok": True, "funcao_id": f.id})
+            return jsonify({"ok": True, "funcoes": [
+                {"id": f.id, "nome": f.nome,
+                 "valor_diaria": float(f.valor_diaria) if f.valor_diaria else None}
+                for f in s.scalars(select(Funcao).where(Funcao.ativo.is_(True))
+                                   .order_by(Funcao.nome)).all()]})
+    except Exception as e:
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/dc", methods=["GET", "POST"])
+@login_obrigatorio
+def api_dc():
+    from app.apps.erp.core.pessoal import VERBAS, criar_despesa, listar
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, "despesas": listar(s, usuario),
+                                "verbas": [{"chave": k, "rotulo": v[0],
+                                            "exige_qtd": v[2]}
+                                           for k, v in VERBAS.items()]})
+            d = criar_despesa(s, request.get_json(silent=True) or {}, usuario)
+            s.commit()
+            return jsonify({"ok": True, "despesa": {
+                "id": d.id, "numero": d.numero, "status": d.status,
+                "total": float(d.valor_total)}})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha em DC")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/dc/criticar", methods=["POST"])
+@login_obrigatorio
+def api_dc_criticar():
+    from app.apps.erp.core.pessoal import criticar
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "critica": criticar(
+                s, d.get("itens") or [], obra_id=d.get("obra_id"),
+                despesa_id=d.get("despesa_id"))})
+    except Exception as e:
+        logger.exception("ERP: falha ao criticar DC")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/dc/<int:despesa_id>")
+@login_obrigatorio
+def api_dc_detalhe(despesa_id: int):
+    from app.apps.erp.core.pessoal import detalhar
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "despesa": detalhar(s, despesa_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+@bp.route("/erp/api/dc/<int:despesa_id>/<acao>", methods=["POST"])
+@login_obrigatorio
+def api_dc_acao(despesa_id: int, acao: str):
+    from app.apps.erp.core.pessoal import aprovar, devolver, gerar_titulo, planilha_pagamento
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if acao == "aprovar":
+                rel = aprovar(s, despesa_id, usuario, d.get("observacao", ""))
+            elif acao == "devolver":
+                rel = devolver(s, despesa_id, d.get("motivo", ""), usuario)
+            elif acao == "gerar-titulo":
+                rel = gerar_titulo(s, despesa_id, d, usuario)
+            elif acao == "planilha":
+                rel = planilha_pagamento(s, despesa_id)
+            else:
+                return jsonify({"ok": False, "erro": f"Ação inválida: {acao}"}), 400
+            s.commit()
+        return jsonify({"ok": True, "resultado": rel})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na ação da DC")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
