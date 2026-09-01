@@ -722,3 +722,21 @@ class MedicaoItem(Base):
     quantidade: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
     valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     observacao: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class IaUso(Base):
+    """Consumo de IA: uma linha por chamada, com tokens e custo."""
+    __tablename__ = "ia_uso"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    modelo: Mapped[str] = mapped_column(Text, nullable=False)
+    operacao: Mapped[str] = mapped_column(Text, nullable=False)
+    tokens_entrada: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_saida: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    custo_usd: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False, default=0)
+    duracao_ms: Mapped[Optional[int]] = mapped_column(Integer)
+    sucesso: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    erro: Mapped[Optional[str]] = mapped_column(Text)
+    usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    referencia: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

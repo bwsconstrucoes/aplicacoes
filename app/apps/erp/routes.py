@@ -3136,6 +3136,24 @@ def api_mapa():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/ia/consumo")
+@login_obrigatorio
+def api_ia_consumo():
+    """Painel de consumo de IA — restrito a quem administra."""
+    from app.apps.erp.core.auth.permissoes import exigir
+    from app.apps.erp.core.comum.ia_custo import painel
+    try:
+        with get_session() as s:
+            exigir(_usuario_logado(s), "configurar")
+            return jsonify({"ok": True, "consumo": painel(
+                s, dias=request.args.get("dias", type=int) or 90)})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except Exception as e:
+        logger.exception("ERP: falha no painel de IA")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/health")
 def health():
     """Health check do módulo — não exige login."""

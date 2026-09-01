@@ -100,6 +100,33 @@ function comBusca(idSelect, textoVazio) {
   sel.addEventListener("change", () => { sel.size = 0; });
 }
 
+// Converte texto em número aceitando os DOIS formatos.
+// Cuidado que custou caro: "30.00" vindo da leitura por IA é trinta reais, não
+// três mil. Só se trata o ponto como separador de milhar quando ele realmente
+// está nessa posição (três dígitos depois e nenhuma vírgula decimal).
+function paraNumero(v) {
+  if (typeof v === "number") return v;
+  let s = String(v ?? "").replace(/[R$\s]/g, "").trim();
+  if (!s) return 0;
+  const temVirgula = s.includes(","), temPonto = s.includes(".");
+  if (temVirgula && temPonto) {
+    // o separador decimal é o que aparece por último
+    s = s.lastIndexOf(",") > s.lastIndexOf(".")
+      ? s.replace(/\./g, "").replace(",", ".")
+      : s.replace(/,/g, "");
+  } else if (temVirgula) {
+    s = s.replace(/\./g, "").replace(",", ".");
+  } else if (temPonto) {
+    // "1.234" é mil duzentos e trinta e quatro; "30.00" e "30.5" são decimais
+    const partes = s.split(".");
+    const ehMilhar = partes.length > 2 ||
+      (partes.length === 2 && partes[1].length === 3 && partes[0].length <= 3);
+    if (ehMilhar) s = s.replace(/\./g, "");
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
 function aviso(alvo, texto, tipo) {
   els(alvo).innerHTML = `<div class="aviso ${tipo}">${texto}</div>`;
   if (tipo === "ok") setTimeout(() => { const e = els(alvo); if (e) e.innerHTML = ""; }, 8000);

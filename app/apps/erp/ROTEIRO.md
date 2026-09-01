@@ -74,6 +74,9 @@
 
 ## Fila (pedidos registrados, ainda não iniciados)
 
+- [x] Painel de consumo de IA (tokens, custo, por operação/modelo/pessoa)
+- [x] Conversão de valores decimais corrigida (30.00 vs 1.234)
+
 - [x] LOCAÇÕES (núcleo): insumos com marca de locável, contrato com itens,
       previsão de parcelas, devolução parcial, remanejo entre obras, alertas
       de aluguel × compra, painel por obra

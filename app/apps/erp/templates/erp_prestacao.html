@@ -82,7 +82,7 @@
 <script>
 let ITENS = [], OBRAS = [], CATEGORIAS = [], FORNECEDORES = [], CRITICA = null,
     ANEXO_FATURA = null, MEU_CADASTRO_ID = null;
-const dec = v => { const n = parseFloat(String(v||"").replace(/[R$\s.]/g,"").replace(",",".")); return isNaN(n)?0:n; };
+const dec = paraNumero;   // conversor único: trata "30.00" e "1.234,56" corretamente
 
 async function inicial(){
   try {

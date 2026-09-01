@@ -36,7 +36,7 @@
 {% block scripts %}
 <script>
 let CT = [], OBRAS = [], FORN = [], CATS = [];
-const dec = v => { const n = parseFloat(String(v||"").replace(/[R$\s.]/g,"").replace(",",".")); return isNaN(n)?0:n; };
+const dec = paraNumero;   // conversor único: trata "30.00" e "1.234,56" corretamente
 
 async function carregar(){
   try {

@@ -15,6 +15,8 @@
 # ============================================================================
 from __future__ import annotations
 
+import time as _time
+
 import json
 import logging
 import re
@@ -90,6 +92,7 @@ def por_ia(s: Session, documento: dict[str, Any],
         return None
     try:
         from openai import OpenAI
+        _inicio = _time.perf_counter()
         resp = OpenAI(api_key=os.environ["OPENAI_API_KEY"]).chat.completions.create(
             model=os.getenv("ERP_MODELO_IA", "gpt-4o-mini"), temperature=0, max_tokens=200,
             messages=[
@@ -102,6 +105,10 @@ def por_ia(s: Session, documento: dict[str, Any],
                 {"role": "user", "content":
                  f"Contas disponíveis (codigo|descrição|quando usar):\n{catalogo}\n\n"
                  f"Documento: {texto[:1200]}"}])
+        from app.apps.erp.core.documentos.leitor import _registrar_consumo
+        _registrar_consumo(resp, os.getenv("ERP_MODELO_IA", "gpt-4o-mini"),
+                           "sugestao_categoria",
+                           int((_time.perf_counter() - _inicio) * 1000))
         bruto = (resp.choices[0].message.content or "").strip()
         bruto = re.sub(r"^```(?:json)?|```$", "", bruto, flags=re.MULTILINE).strip()
         d = json.loads(bruto)

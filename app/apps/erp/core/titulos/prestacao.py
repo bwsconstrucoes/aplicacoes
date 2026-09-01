@@ -54,10 +54,16 @@ _CENT = Decimal("0.01")
 def _dec(v: Any, campo: str = "valor") -> Decimal:
     try:
         s = str(v or "").strip().replace("R$", "").replace(" ", "")
+        # "30.00" da leitura por IA é trinta reais; "1.234" é mil e duzentos.
+        # O ponto só é milhar quando há exatamente 3 dígitos depois dele.
         if "," in s and "." in s:
-            s = s.replace(".", "").replace(",", ".")
+            s = (s.replace(".", "").replace(",", ".")
+                 if s.rfind(",") > s.rfind(".") else s.replace(",", ""))
         elif "," in s:
-            s = s.replace(",", ".")
+            s = s.replace(".", "").replace(",", ".")
+        elif s.count(".") > 1 or (s.count(".") == 1 and len(s.split(".")[1]) == 3
+                                  and len(s.split(".")[0].lstrip("-")) <= 3):
+            s = s.replace(".", "")
         return Decimal(s).quantize(_CENT)
     except (InvalidOperation, TypeError):
         raise ErroValidacao(f"Valor inválido em {campo}: {v!r}")

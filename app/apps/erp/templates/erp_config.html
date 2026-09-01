@@ -604,6 +604,58 @@ els("btn-substituir").addEventListener("click", () => {
   });
   els("dlg").showModal();
 });
+async function carregarIA(){
+  try {
+    const d = await api("/erp/api/ia/consumo");
+    const c = d.consumo;
+    const brl = v => `US$ ${v.toFixed(4)}`;
+    els("ia-painel").innerHTML = `
+      <div class="kpis">
+        <div class="kpi estatico"><div class="kpi-rotulo">Este mês</div>
+          <div class="kpi-valor" style="font-size:18px">${brl(c.custo_mes_atual)}</div>
+          <div class="kpi-sub">projeção ${brl(c.projecao_mes)}</div></div>
+        <div class="kpi estatico ciano"><div class="kpi-rotulo">Últimos ${c.periodo_dias} dias</div>
+          <div class="kpi-valor" style="font-size:18px">${brl(c.custo_total)}</div>
+          <div class="kpi-sub">${c.chamadas} chamada(s)</div></div>
+        <div class="kpi estatico"><div class="kpi-rotulo">Tokens</div>
+          <div class="kpi-valor" style="font-size:18px">${(c.tokens/1000).toFixed(1)}k</div>
+          <div class="kpi-sub">${c.duracao_media_ms} ms em média</div></div>
+        ${c.falhas ? `<div class="kpi estatico vermelho"><div class="kpi-rotulo">Falhas</div>
+          <div class="kpi-valor">${c.falhas}</div></div>` : ""}
+      </div>
+      ${c.chamadas ? `
+      <h4>Por operação</h4>
+      <table><thead><tr><th>Operação</th><th class="direita">Chamadas</th>
+        <th class="direita">Tokens</th><th class="direita">Custo</th>
+        <th class="direita">Média</th></tr></thead>
+      <tbody>${c.por_operacao.map(o=>`<tr><td>${rotulo(o.operacao)}</td>
+        <td class="direita dados">${o.chamadas}</td>
+        <td class="direita dados">${(o.tokens/1000).toFixed(1)}k</td>
+        <td class="direita dados">${brl(o.custo)}</td>
+        <td class="direita dados">${brl(o.custo_medio)}</td></tr>`).join("")}</tbody></table>
+
+      <h4>Por mês</h4>
+      <table><tbody>${c.por_mes.map(m=>`<tr><td class="dados">${m.mes}</td>
+        <td class="dados">${m.chamadas} chamada(s)</td>
+        <td class="direita dados">${brl(m.custo)}</td></tr>`).join("")}</tbody></table>
+
+      <div class="form-grade">
+        <div><h4>Por modelo</h4><table><tbody>${c.por_modelo.map(m=>`<tr>
+          <td class="dados">${m.modelo}</td><td class="dados">${m.chamadas}</td>
+          <td class="direita dados">${brl(m.custo)}</td></tr>`).join("")}</tbody></table></div>
+        <div><h4>Por pessoa</h4><table><tbody>${c.por_pessoa.map(m=>`<tr>
+          <td>${m.pessoa}</td><td class="dados">${m.chamadas}</td>
+          <td class="direita dados">${brl(m.custo)}</td></tr>`).join("")}</tbody></table></div>
+      </div>
+      <div class="cartao-dica">Preços por milhão de tokens (entrada/saída):
+        ${Object.entries(c.precos).map(([m,p])=>`${m} US$ ${p[0]}/${p[1]}`).join(" · ")}.
+        Atualize em <code>core/comum/ia_custo.py</code> se a OpenAI mudar a tabela.</div>`
+      : `<div class="cartao-dica">Nenhuma chamada de IA registrada ainda. O consumo
+         passa a aparecer aqui conforme os documentos forem lidos.</div>`}`;
+  } catch(e){ els("ia-painel").innerHTML = `<div class="cartao-dica">${e.message}</div>`; }
+}
+
 carregar();
+carregarIA();
 </script>
 {% endblock %}

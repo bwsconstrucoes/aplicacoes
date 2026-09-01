@@ -24,6 +24,8 @@
 # ============================================================================
 from __future__ import annotations
 
+import time as _time
+
 import base64
 import gc
 import io
