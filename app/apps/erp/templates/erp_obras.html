@@ -57,7 +57,7 @@
 
 {% block scripts %}
 <script>
-let OBRAS = [], FASES = [], F = {fase: new Set()}, ORDEM = {campo:"codigo", asc:true};
+let OBRAS = [], FASES = [], CONTAS = [], F = {fase: new Set()}, ORDEM = {campo:"codigo", asc:true};
 const CATEGORIAS_ANEXO = ["CONTRATO","ART","SEGURO","OS","MEDICAO","OUTRO"];
 
 document.querySelectorAll(".filtro-cab").forEach(b =>
@@ -67,6 +67,9 @@ async function carregar(){
   try {
     const d = await api("/erp/api/obras");
     OBRAS = d.obras; FASES = d.fases;
+    if (!CONTAS.length) {
+      try { CONTAS = (await api("/erp/api/contas")).contas; } catch(e) { CONTAS = []; }
+    }
     montarFiltros(); desenhar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
@@ -242,6 +245,11 @@ async function painel(i, id){
         ${campo("CNO","o-cno",d.cno)}${campo("ART/RRT","o-art",d.art_rrt)}
         ${campo("Responsável técnico","o-rt",d.responsavel_tecnico)}
         ${campo("Latitude","o-lat",d.latitude)}${campo("Longitude","o-lng",d.longitude)}
+        <div class="campo"><label>Conta corrente de pagamento</label>
+          <select id="o-conta"><option value="">— não definida —</option>
+          ${(CONTAS||[]).map(x=>`<option value="${x.id}" ${String(d.conta_bancaria_id)===String(x.id)?"selected":""}>${x.descricao}</option>`).join("")}
+          </select><div class="dica">De onde saem os pagamentos desta obra — serve de
+          filtro nas solicitações.</div></div>
         ${campo("Fiscal do contrato","o-fiscal",d.engenheiro_fiscal)}
       </div>
       <div class="cartao-dica">O endereço serve de local de entrega nas compras.</div>
@@ -250,7 +258,8 @@ async function painel(i, id){
         objeto:"o-objeto", orgao_resumido:"o-orgao", endereco:"o-endereco",
         numero_endereco:"o-numero", bairro:"o-bairro", municipio:"o-municipio", uf:"o-uf",
         cep:"o-cep", cno:"o-cno", art_rrt:"o-art", responsavel_tecnico:"o-rt",
-        engenheiro_fiscal:"o-fiscal", latitude:"o-lat", longitude:"o-lng"});
+        engenheiro_fiscal:"o-fiscal", latitude:"o-lat", longitude:"o-lng",
+        conta_bancaria_id:"o-conta"});
       return;
     }
     if (i === 2) {

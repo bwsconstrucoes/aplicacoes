@@ -54,6 +54,10 @@
   <div class="cartao-cab"><h3>Lotes</h3>
     <small>agrupe as SPs por prioridade para pagar em bloco</small></div>
   <div class="cartao-dica" style="margin-bottom:8px">
+    <b>O que é cada situação:</b> <b>Aberto</b> = você ainda está montando;
+    <b>Enviado</b> = a lista foi passada para pagamento (banco, portal, tesouraria);
+    <b>Pago</b> = todas as SPs do lote foram baixadas; <b>Cancelado</b> = desistiu-se dele.
+    O lote não paga nada sozinho — ele agrupa SPs para acompanhar.<br><br>
     <b>Como montar um lote:</b> marque as SPs na tabela abaixo (caixinha da esquerda) e use
     <b>Novo lote</b> para criar já com elas, ou <b>Adicionar ao lote</b> para jogar num lote
     existente. Também dá para colar a lista de SPs que o solicitante mandou.
@@ -252,6 +256,21 @@ async function comoPagar(parcelaId){
 
 function copiar(txt){ navigator.clipboard.writeText(txt).then(()=>aviso("mensagem","Copiado.","ok")); }
 
+async function adicionarSPsAoLote(id){
+  const texto = prompt("Cole os números das SPs (vírgula, espaço ou uma por linha):");
+  if (!texto) return;
+  try {
+    const d = await api(`/erp/api/lotes/${id}/adicionar-sps`, {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify({texto})});
+    const r = d.resultado;
+    aviso("mensagem", `<b>${r.adicionadas}</b> parcela(s) adicionada(s) ao lote` +
+      (r.nao_encontradas.length ? ` · não encontradas: ${r.nao_encontradas.join(", ")}` : "") +
+      (r.ja_estavam.length ? ` · já estavam ou pagas: ${r.ja_estavam.join(", ")}` : ""),
+      r.adicionadas ? "ok" : "erro");
+    abrirLote(id); carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
 async function abrirLote(id){
   try {
     const {lote: l} = await api(`/erp/api/lotes/${id}`);
@@ -264,6 +283,13 @@ async function abrirLote(id){
           <div class="kpi-sub">${moeda(l.total_pago)}</div></div>
         <div class="kpi estatico"><div class="kpi-rotulo">Situação</div><div class="kpi-valor" style="font-size:16px">${rotulo(l.status)}</div></div>
       </div>
+      <div style="display:flex; gap:8px; margin-bottom:8px; align-items:center; flex-wrap:wrap">
+        <button class="btn amarelo" id="lote-add-sps">+ Colar SPs neste lote</button>
+        <span class="cartao-dica" style="margin:0">Cole a lista que veio do solicitante —
+          o sistema acha cada SP e traz as parcelas em aberto.</span>
+      </div>
+      ${l.itens.length ? "" : `<div class="aviso info">Lote vazio. Use o botão acima ou
+        marque as parcelas na tabela de pagamentos e clique em "Adicionar ao lote".</div>`}
       <div class="cartao" style="padding:0"><table><thead><tr><th>SP</th><th>Credor</th>
         <th>Vencimento</th><th class="direita">Valor</th><th>Situação</th><th></th></tr></thead><tbody>
         ${l.itens.map(i=>`<tr><td class="dados">${i.numero_sp}</td><td>${i.credor}</td>
@@ -275,7 +301,9 @@ async function abrirLote(id){
         ${["ABERTO","ENVIADO","PAGO","CANCELADO"].map(st=>
           `<button class="btn ${st===l.status?"":"secundario"}" data-status="${st}">${rotulo(st)}</button>`).join("")}
       </div>`;
-    document.querySelectorAll("[data-tirar]").forEach(b=>b.addEventListener("click", async ()=>{
+    const bAdd = els("lote-add-sps");
+  if (bAdd) bAdd.addEventListener("click", () => adicionarSPsAoLote(id));
+  document.querySelectorAll("[data-tirar]").forEach(b=>b.addEventListener("click", async ()=>{
       await api(`/erp/api/lotes/${id}/parcelas`, {method:"POST",
         headers:{"Content-Type":"application/json"}, body: JSON.stringify({remover:+b.dataset.tirar})});
       els("dlg").close(); carregar();

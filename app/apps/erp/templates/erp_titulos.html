@@ -8,7 +8,7 @@
   </div>
   <div class="busca">
     <span class="lupa">⌕</span>
-    <input id="f-busca" type="search" placeholder="SP, credor, descrição…">
+    <input id="f-busca" type="search" placeholder="SP, credor, descrição… (use -palavra para excluir)">
   </div>
   <div class="filtro aberto" id="filtro-status">
     <button class="filtro-cab" type="button"><span>Situação</span>
@@ -63,7 +63,7 @@
         <th data-ordem="numero_sp">SP</th>
         <th data-ordem="fornecedor">Credor</th>
         <th class="sem-ordem">Descrição</th>
-        <th data-ordem="categoria">Conta do plano</th>
+        <th data-ordem="categoria">Categoria de despesa</th>
         <th class="sem-ordem">Obra</th>
         <th data-ordem="vencimento">Vencimento</th>
         <th class="direita" data-ordem="valor_liquido">Valor</th>
@@ -115,6 +115,19 @@ async function carregar(){
 }
 
 function montarFiltros(){
+  const contas = {};
+  TITULOS.forEach(t => { const k = t.conta_obra || "(sem conta)";
+    contas[k] = (contas[k]||0)+1; });
+  els("opcoes-conta").innerHTML = Object.entries(contas).sort()
+    .map(([k,n])=>`<label class="opcao"><input type="checkbox" data-conta="${k}"
+      ${F.conta.has(k)?"checked":""}><span class="rotulo">${k}</span>
+      <span class="qtd">${n}</span></label>`).join("");
+  els("badge-conta").textContent = F.conta.size;
+  document.querySelectorAll("[data-conta]").forEach(i=>i.addEventListener("change", ev=>{
+    ev.target.checked ? F.conta.add(ev.target.dataset.conta)
+                      : F.conta.delete(ev.target.dataset.conta);
+    montarFiltros(); desenhar();
+  }));
   const cont = (campo) => {
     const m = {};
     TITULOS.forEach(t => { const v = t[campo]; if(v) m[v] = (m[v]||0)+1; });
@@ -150,6 +163,7 @@ function visiveis(){
   const busca = (els("f-busca").value||"").toLowerCase().trim();
   let l = TITULOS.filter(t => {
     if (F.obra.size && !F.obra.has(t.obra)) return false;
+    if (F.conta.size && !F.conta.has(t.conta_obra || "(sem conta)")) return false;
     if (F.credor.size && !F.credor.has(t.fornecedor)) return false;
     if (!isNaN(min) && t.valor_liquido < min) return false;
     if (!isNaN(max) && t.valor_liquido > max) return false;
@@ -276,7 +290,7 @@ async function detalhe(id){
 
       <div class="cartao" style="box-shadow:none; border:1px solid var(--borda); border-left:4px solid var(--azul-claro)">
         <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:baseline">
-          <div><div class="kpi-rotulo">Conta do plano</div>
+          <div><div class="kpi-rotulo">Categoria de despesa</div>
             <div style="font-size:15px"><b>${c.categoria}</b></div></div>
           <div><div class="kpi-rotulo">Obra</div>
             <div style="font-size:15px"><b>${c.obra || "—"}</b></div></div>

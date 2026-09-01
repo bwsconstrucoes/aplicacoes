@@ -23,7 +23,7 @@
       <div class="dica">Uma frase de contexto melhora bastante a leitura de documento ruim.</div></div>
     <div class="campo" style="align-self:end">
       <button class="btn" id="btn-ler">Ler documento</button>
-      <button class="btn secundario" id="btn-manual" style="margin-left:6px">Lançar sem anexo</button>
+      <button class="btn secundario" id="btn-manual" style="margin-left:6px">Lançar manualmente</button>
     </div>
   </div>
   <div id="leitura"></div>
@@ -48,7 +48,7 @@
         <div class="dica">Dados bancários vivem no cadastro do credor, nunca no lançamento.</div></div>
     </div>
     <div class="form-grade" style="margin-top:12px">
-      <div class="campo" style="grid-column:span 2"><label for="f-categoria">Conta do plano financeiro *</label>
+      <div class="campo" style="grid-column:span 2"><label for="f-categoria">Categoria de despesa *</label>
         <select id="f-categoria"></select>
         <div class="dica" id="dica-categoria"></div></div>
       <div class="campo"><label for="f-competencia">Competência *</label>
@@ -58,7 +58,7 @@
     </div>
     <div class="form-grade" style="margin-top:12px">
       <div class="campo" style="grid-column:span 2"><label for="f-descricao">Descrição *</label>
-        <input id="f-descricao" placeholder="o que foi comprado ou contratado"></div>
+        <input id="f-descricao" placeholder="o que foi comprado ou contratado"></textarea></div>
       <div class="campo"><label for="f-valor">Valor bruto *</label>
         <input id="f-valor" inputmode="decimal" placeholder="0,00"></div>
       <div class="campo"><label for="f-doc-numero">Nº do documento</label>
@@ -81,7 +81,7 @@
     <div class="cartao-dica">Soma das parcelas: <b id="soma-parcelas">R$ 0,00</b></div>
   </div>
 
-  <div class="cartao" id="bloco-colaborador" class="oculto">
+  <div class="cartao oculto" id="bloco-colaborador">
     <div class="cartao-cab"><h3>Colaborador</h3>
       <small>quando o pagamento é por causa de uma pessoa: rescisão, exame, vale, guia</small></div>
     <div class="form-grade">
@@ -134,6 +134,15 @@ const dec = v => {
 };
 const fmt = n => "R$ " + (n||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 
+function alternarColaborador(){
+  // o campo só faz sentido quando a despesa é de pessoal (grupo 4)
+  const sel = els("f-categoria");
+  const texto = sel && sel.selectedOptions[0] ? sel.selectedOptions[0].textContent : "";
+  const ehPessoal = /^4\./.test(texto.trim());
+  els("bloco-colaborador").classList.toggle("oculto", !ehPessoal);
+  if (!ehPessoal && els("f-colaborador")) els("f-colaborador").value = "";
+}
+
 async function carregarColaboradores(){
   try {
     const d = await api("/erp/api/colaboradores");
@@ -175,7 +184,7 @@ async function carregar(){
     els("f-competencia").value = new Date().toISOString().slice(0,7);
     desenharLinhas();
     comBusca("f-credor", "buscar credor por nome ou CNPJ…");
-    comBusca("f-categoria", "buscar conta do plano…");
+    comBusca("f-categoria", "buscar categoria de despesa…");
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 

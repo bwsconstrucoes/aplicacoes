@@ -26,13 +26,13 @@
 {% endblock %}
 {% block scripts %}
 <script>
-let DCS = [], VERBAS = [], OBRAS = [], COLABS = [], FORN = [];
+let DCS = [], VERBAS = [], CATEGORIAS = [], OBRAS = [], COLABS = [], FORN = [];
 const dec = paraNumero;
 
 async function carregar(){
   try {
     const d = await api("/erp/api/dc");
-    DCS = d.despesas; VERBAS = d.verbas;
+    DCS = d.despesas; VERBAS = d.verbas; CATEGORIAS = d.categorias || [];
     if (!OBRAS.length) {
       const c = await api("/erp/api/lancamento/dados");
       OBRAS = c.dados.obras; FORN = c.dados.fornecedores;
@@ -151,6 +151,9 @@ async function abrir(id){
         <div class="campo" style="grid-column:span 2"><label>Favorecido do título</label>
           <select id="dc-forn">${FORN.map(f=>`<option value="${f.id}">${f.nome}</option>`).join("")}</select>
           <div class="dica">No BeeVale/SomaPay é a própria plataforma, não o colaborador.</div></div>
+        <div class="campo"><label>Meio de pagamento</label><select id="dc-meio">
+          <option value="BEEVALE">BeeVale (Pix por QR)</option>
+          <option value="SOMAPAY">SomaPay (transferência)</option></select></div>
         <div class="campo"><label>Vencimento</label><input type="date" id="dc-venc"
           value="${d.data_prevista||new Date().toISOString().slice(0,10)}"></div>
         <div class="campo" style="align-self:end"><button class="btn" id="dc-ok">Gerar</button></div>
@@ -161,6 +164,7 @@ async function abrir(id){
           const r = await api(`/erp/api/dc/${id}/gerar-titulo`, {method:"POST",
             headers:{"Content-Type":"application/json"},
             body: JSON.stringify({fornecedor_id:+els("dc-forn").value,
+                                  meio_pagamento: els("dc-meio").value,
                                   vencimento: els("dc-venc").value})});
           aviso("mensagem", `Título <b>${r.resultado.titulo}</b> gerado
             (${moeda(r.resultado.valor)}, ${r.resultado.rateios} obra(s)).
@@ -201,11 +205,11 @@ els("btn-nova").addEventListener("click", async () => {
       <div class="campo"><label>Competência</label><input type="date" id="n-comp"
         value="${new Date().toISOString().slice(0,10)}"></div>
       <div class="campo"><label>Pagamento previsto</label><input type="date" id="n-prev"></div>
-      <div class="campo"><label>Meio de pagamento</label><select id="n-meio">
-        <option value="BEEVALE">BeeVale (Pix por QR)</option>
-        <option value="SOMAPAY">SomaPay (transferência)</option></select></div>
-      <div class="campo" style="grid-column:span 2"><label>Descrição</label>
-        <input id="n-desc" placeholder="ex.: serviço extra no sábado"></div>
+      <div class="campo" style="grid-column:span 3"><label>Descrição</label>
+        <textarea id="n-desc" rows="3"
+          placeholder="ex.: serviço extra no sábado, combinado com o encarregado"></textarea>
+        <div class="dica">O meio de pagamento (BeeVale ou SomaPay) é definido pelo
+          financeiro na hora de gerar o arquivo.</div></div>
     </div>
     <h4>Colaboradores</h4>
     <div id="n-itens"></div>
@@ -230,6 +234,10 @@ els("btn-nova").addEventListener("click", async () => {
         </select></div>
         <div class="campo"><select data-i="${i}" data-c="verba">
           ${VERBAS.map(v=>`<option value="${v.chave}" ${it.verba===v.chave?"selected":""}>${v.rotulo}</option>`).join("")}
+        </select></div>
+        <div class="campo"><select data-i="${i}" data-c="categoria_id">
+          <option value="">— categoria automática —</option>
+          ${CATEGORIAS.map(x=>`<option value="${x.id}" ${String(it.categoria_id)===String(x.id)?"selected":""}>${x.codigo} · ${x.descricao.slice(0,24)}</option>`).join("")}
         </select></div>
         <div class="campo"><input data-i="${i}" data-c="quantidade" value="${it.quantidade||""}" placeholder="qtd"></div>
         <div class="campo"><input data-i="${i}" data-c="valor" value="${it.valor||""}" placeholder="valor"></div>
@@ -264,6 +272,7 @@ els("btn-nova").addEventListener("click", async () => {
   els("n-salvar").addEventListener("click", async () => {
     const itens = ITS.filter(i=>i.colaborador_id && dec(i.valor)>0)
       .map(i=>({colaborador_id:+i.colaborador_id, verba:i.verba,
+                categoria_id: i.categoria_id ? +i.categoria_id : null,
                 quantidade:i.quantidade||null, valor:i.valor}));
     if (!itens.length) { aviso("dlg-msg","Adicione ao menos um colaborador com valor.","erro"); return; }
     try {
@@ -281,7 +290,7 @@ els("btn-nova").addEventListener("click", async () => {
       if (c.criticas && !confirm(`Há ${c.criticas} ponto(s) de atenção. Enviar mesmo assim?`)) return;
       const d = await api("/erp/api/dc", {method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({obra_id:+els("n-obra").value, competencia:els("n-comp").value,
-          data_prevista:els("n-prev").value||null, meio_pagamento:els("n-meio").value,
+          data_prevista:els("n-prev").value||null,
           descricao:els("n-desc").value, itens})});
       els("dlg").close();
       aviso("mensagem", `<b>${d.despesa.numero}</b> criada (${moeda(d.despesa.total)}) —

@@ -259,6 +259,8 @@ class Obra(Base):
     crea_obra: Mapped[Optional[str]] = mapped_column(Text)
     cei_obra: Mapped[Optional[str]] = mapped_column(Text)
     observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    conta_bancaria_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("contas_bancarias.id"))
     latitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
     longitude: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6))
     data_conclusao: Mapped[Optional[date]] = mapped_column(Date)

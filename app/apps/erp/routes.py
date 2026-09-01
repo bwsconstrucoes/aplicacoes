@@ -1627,6 +1627,9 @@ def api_obra(obra_id: int):
                          "bairro numero_endereco complemento cep responsavel_tecnico art_rrt "
                          "engenheiro_fiscal ordem_servico indice_reajuste regime_obra "
                          "observacoes_fiscais orgao_resumido status").split()
+                if "conta_bancaria_id" in d:
+                    obra.conta_bancaria_id = (int(d["conta_bancaria_id"])
+                                              if d["conta_bancaria_id"] else None)
                 numeros = ("valor_contrato latitude longitude "
                            "aliquota_iss aliquota_iss_pct pct_servico_iss "
                            "pct_servico_inss").split()
@@ -2384,6 +2387,7 @@ def api_listar_obras():
                     "seguro_vigencia_fim": (o.seguro_vigencia_fim.isoformat()
                                             if o.seguro_vigencia_fim else None),
                     "cno": o.cno, "art_rrt": o.art_rrt,
+                    "conta_bancaria_id": o.conta_bancaria_id,
                     "latitude": float(o.latitude) if o.latitude else None,
                     "longitude": float(o.longitude) if o.longitude else None,
                     "aliquota_iss": float(o.aliquota_iss_pct or 0) or None,
@@ -3257,7 +3261,9 @@ def api_dc():
         with get_session() as s:
             usuario = _usuario_logado(s)
             if request.method == "GET":
+                from app.apps.erp.core.pessoal import categorias_de_pessoal
                 return jsonify({"ok": True, "despesas": listar(s, usuario),
+                                "categorias": categorias_de_pessoal(s),
                                 "verbas": [{"chave": k, "rotulo": v[0],
                                             "exige_qtd": v[2]}
                                            for k, v in VERBAS.items()]})
@@ -3341,6 +3347,37 @@ def api_historico_colaborador(colaborador_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 404
     except Exception as e:
         logger.exception("ERP: falha no histórico do colaborador")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/lotes/<int:lote_id>/adicionar-sps", methods=["POST"])
+@login_obrigatorio
+def api_lote_adicionar_sps(lote_id: int):
+    """Cola-se a lista de SPs e as parcelas em aberto entram no lote."""
+    from app.apps.erp.core.pagamentos.lotes import (
+        adicionar_parcelas, extrair_ids_sp, parcelas_por_sp,
+    )
+    d = request.get_json(silent=True) or {}
+    numeros = extrair_ids_sp(d.get("texto") or "")
+    if not numeros:
+        return jsonify({"ok": False,
+                        "erro": "Nenhum número de SP reconhecido no texto."}), 400
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            achado = parcelas_por_sp(s, numeros)
+            ids = [p["parcela_id"] for p in achado.get("parcelas", [])
+                   if p.get("status") != "PAGA"]
+            rel = adicionar_parcelas(s, lote_id, ids, usuario) if ids else {"adicionadas": 0}
+            s.commit()
+        return jsonify({"ok": True, "resultado": {
+            "adicionadas": rel.get("adicionadas", len(ids)),
+            "ja_estavam": rel.get("ja_estavam", []),
+            "nao_encontradas": achado.get("nao_encontradas", [])}})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao adicionar SPs ao lote")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

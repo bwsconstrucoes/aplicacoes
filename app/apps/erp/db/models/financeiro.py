@@ -783,6 +783,7 @@ class DespesaColaboradorItem(Base):
     colaborador_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("colaboradores.id"), nullable=False)
     verba: Mapped[str] = mapped_column(Text, nullable=False)
+    categoria_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("categorias.id"))
     quantidade: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
     valor_unitario: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)

@@ -272,6 +272,26 @@ def criticar(s: Session, itens: list[dict[str, Any]], *, obra_id: Optional[int] 
 # ---------------------------------------------------------------------------
 # Despesa com colaborador
 # ---------------------------------------------------------------------------
+def _categoria_da_verba(s: Session, verba: Optional[str]) -> Optional[int]:
+    """Conta do plano correspondente à verba — a DC entra na análise de custo."""
+    codigo = VERBAS.get((verba or "").upper(), (None, None, None))[1]
+    if not codigo:
+        return None
+    cat = s.scalars(select(Categoria).where(Categoria.codigo == codigo)).first()
+    return cat.id if cat else None
+
+
+def categorias_de_pessoal(s: Session) -> list[dict[str, Any]]:
+    """Só as contas ligadas a colaboradores — quem lança não vê o plano inteiro."""
+    codigos = sorted({v[1] for v in VERBAS.values() if v[1]})
+    cats = s.scalars(select(Categoria).where(
+        Categoria.ativo.is_(True),
+        Categoria.codigo.in_(codigos) | Categoria.codigo.like("4.%"))
+        .order_by(Categoria.codigo)).all()
+    return [{"id": c.id, "codigo": c.codigo, "descricao": c.descricao,
+             "grupo": c.grupo_nome} for c in cats]
+
+
 def criar_despesa(s: Session, dados: dict[str, Any], usuario: Usuario) -> DespesaColaborador:
     obra = s.get(Obra, int(dados.get("obra_id") or 0))
     if obra is None:
@@ -291,7 +311,9 @@ def criar_despesa(s: Session, dados: dict[str, Any], usuario: Usuario) -> Despes
         numero=f"DC{n + 1:05d}", obra_id=obra.id, competencia=competencia,
         data_prevista=_data(dados.get("data_prevista")),
         descricao=(dados.get("descricao") or "").strip() or None,
-        meio_pagamento=(dados.get("meio_pagamento") or "BEEVALE").upper(),
+        # o meio de pagamento NÃO é escolhido por quem lança: é o financeiro
+        # que decide, na hora de gerar o arquivo
+        meio_pagamento=(dados.get("meio_pagamento") or "A_DEFINIR").upper(),
         status="AGUARDANDO_SUPERVISOR",
         valor_total=Decimal(str(critica["soma"])).quantize(_CENT),
         criado_por=usuario.id)
@@ -307,6 +329,8 @@ def criar_despesa(s: Session, dados: dict[str, Any], usuario: Usuario) -> Despes
                             if item.get("valor_unitario") else None),
             valor=_dec(item["valor"], "valor"),
             obra_id=int(item.get("obra_id") or obra.id),
+            categoria_id=(int(item["categoria_id"]) if item.get("categoria_id")
+                          else _categoria_da_verba(s, item.get("verba"))),
             observacao=(item.get("observacao") or "").strip() or None,
             criticas=critica["por_item"].get(str(i), [])))
     s.flush()
@@ -374,6 +398,11 @@ def gerar_titulo(s: Session, despesa_id: int, dados: dict[str, Any],
         raise ErroValidacao("Despesa não encontrada.")
     if d.status != "APROVADA":
         raise ErroValidacao(f"Despesa está {d.status} — só se fatura o que foi aprovado.")
+    meio = (dados.get("meio_pagamento") or d.meio_pagamento or "").upper()
+    if meio in ("", "A_DEFINIR"):
+        raise ErroValidacao("Informe o meio de pagamento (BeeVale ou SomaPay) "
+                            "antes de gerar o título.")
+    d.meio_pagamento = meio
     if d.titulo_id:
         raise ErroValidacao(f"Esta despesa já gerou o título {d.titulo_id}.")
 
@@ -409,7 +438,9 @@ def gerar_titulo(s: Session, despesa_id: int, dados: dict[str, Any],
         "parcelas": [{"vencimento": (dados.get("vencimento")
                                      or (d.data_prevista or date.today()).isoformat()),
                       "valor": str(d.valor_total)}],
-        "rateios": [{"obra_id": oid, "valor": str(v)} for oid, v in por_obra.items()],
+        "rateios": [{"obra_id": i.obra_id or d.obra_id, "valor": str(i.valor),
+                     "categoria_id": i.categoria_id,
+                     "descricao": VERBAS.get(i.verba, (i.verba,))[0]} for i in d.itens],
         "despesa_colaborador_id": d.id,
         "justificativa_excecao":
             f"Despesa com colaboradores {d.numero}, paga por arquivo "
@@ -510,6 +541,7 @@ def detalhar(s: Session, despesa_id: int) -> dict[str, Any]:
             "cpf": (s.get(Colaborador, i.colaborador_id).cpf
                     if s.get(Colaborador, i.colaborador_id) else ""),
             "verba": i.verba, "verba_rotulo": VERBAS.get(i.verba, (i.verba,))[0],
+            "categoria_id": i.categoria_id,
             "quantidade": float(i.quantidade) if i.quantidade else None,
             "valor_unitario": float(i.valor_unitario) if i.valor_unitario else None,
             "valor": float(i.valor), "obra": obras.get(i.obra_id, ""),
