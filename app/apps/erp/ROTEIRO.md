@@ -161,6 +161,19 @@
       trava até a assinatura de supervisor, gestor ou diretor financeiro
 - [x] Perfil DIRETOR_FINANCEIRO; dados de pagamento ocultos para
       administrativo de obra
+- [x] SEGURANÇA: autorização com padrão NEGAR — toda rota declara a ação que
+      exige e o que não declara é recusado; o detalhe de um registro passa a
+      respeitar o mesmo escopo da listagem, sem exceção entre obras. Fecha as
+      brechas de anexo (baixar/apagar qualquer arquivo por id sequencial),
+      dados bancários da parcela, lista de avisos do título, cancelamento em
+      lote, plano de contas, painéis financeiros, empreitas e locações
+- [ ] Segurança — falta: navegar em homologação com um usuário de cada perfil.
+      Os testes cobrem a RECUSA (que é o lado que importa); o caminho de quem
+      TEM acesso precisa de banco e não está coberto
+- [ ] Segurança — decidir: o administrativo de obra enxerga tudo da obra dele
+      ou só o que ele mesmo lançou? Hoje vale "só o que lançou", o mais
+      restritivo. Muda numa linha de `aplicar_escopo`, e vale para listagem e
+      detalhe ao mesmo tempo
 - [ ] Aposentar o `.env` commitado: trocar a senha do banco no Render
 
 ## Decisões registradas

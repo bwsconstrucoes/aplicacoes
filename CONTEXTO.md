@@ -277,6 +277,30 @@ Padrões obrigatórios pra qualquer código novo (origem: incidente OOM 2026-07)
 - Pool pequeno de propósito (`pool_size=5, max_overflow=5`): o serviço tem 2 GB
   e divide espaço com os demais módulos.
 
+### 3.9 Autorização do ERP (padrão NEGAR)
+
+Vale só para o `erp` — os demais módulos são chamados por máquina e usam secret
+próprio (§3.4). Aqui há gente operando, com perfis diferentes.
+
+São **duas** camadas, e confundi-las é o erro clássico:
+
+- **Alçada** — "este perfil pode esta ação?". Declarada em cada rota com
+  `@permissao("pagar")`. O `before_request` do blueprint recusa endpoint que
+  não esteja no registro, então **esquecer fecha a rota**, não abre.
+- **Escopo de objeto** — "pode NESTE registro?". Um supervisor tem a ação de
+  lançar; isso não o autoriza a abrir o título da obra de outro. Os
+  `exigir_*_no_escopo` respondem isso, e todos passam pelo **mesmo**
+  `aplicar_escopo` que a listagem usa — de modo que detalhe e lista não têm
+  como divergir sem que alguém altere os dois.
+
+Fora do escopo responde **404 "não encontrado", nunca 403**: o 403 num id que
+existe seria um oráculo — bastaria varrer os ids para mapear o sistema sem
+abrir um único registro.
+
+Dois testes estruturais sustentam isso e não dependem de lista escrita à mão:
+um exige declaração em toda rota registrada; o outro deriva do código as rotas
+que recebem id com ação ampla e exige que cada uma confira escopo.
+
 ---
 
 ## 4. Variáveis de ambiente
@@ -692,6 +716,19 @@ Quando eu pedir nova feature ou adaptação:
   sozinho e o resto do monorepo sobe normal. **Mesma família de decisão do
   Start Command (§2): nada que seja específico de um módulo pode ter o poder de
   derrubar o processo inteiro.**
+- **2026-09-01 — Autorização do ERP invertida para o padrão NEGAR.** Uma
+  auditoria das 125 rotas achou 94 sem verificação alguma: qualquer pessoa com
+  login baixava qualquer anexo (comprovantes bancários inclusive, por ids
+  sequenciais), via chave Pix e código de barras de qualquer parcela, cancelava
+  títulos em lote, mexia no plano de contas e entrava na lista de avisos de
+  título alheio — passando a receber o comprovante por Telegram.
+  **Causa raiz:** `permissoes.exigir()` existia e era bem escrito, mas a
+  autorização era *opt-in* por rota, e a maioria não tinha optado. A correção
+  não foi tapar 94 buracos: foi inverter o default, para que o esquecimento
+  feche em vez de abrir. Detalhe em §3.9.
+  **Decisão de negócio que guiou:** cada perfil só vê o que compete à sua
+  função, e o detalhe de um registro respeita exatamente o mesmo escopo que a
+  listagem — sem exceções de leitura entre obras.
 - **2026-09-01 — Navegação por MÓDULOS** (`9ee893d`). O ERP deixou de ser "um
   financeiro com apêndices": Financeiro, Obras, Pessoal e Administração viraram
   áreas próprias, cada uma com suas telas, e a barra mostra só a do módulo

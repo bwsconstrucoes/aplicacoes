@@ -123,6 +123,35 @@ download sem teto. Esse caminho não tem teste automatizado nenhum.
 Commitar só o que foi verificado. Se algo não deu para testar, dizer isso na
 mensagem do commit em vez de deixar implícito.
 
+## Autorização no ERP: o padrão é NEGAR
+
+Rota nova no ERP tem **duas** obrigações. Esquecer qualquer uma quebra a suíte
+antes de chegar à produção — é de propósito.
+
+1. **Declarar a ação exigida**, com `@permissao("pagar")` — ou por método,
+   `@permissao(GET="ver_erp", POST="configurar")`, quando ler e escrever têm
+   pesos diferentes. Rota sem declaração é recusada pelo guard, não liberada.
+   Rota realmente pública usa `@permissao_publica("motivo")`, com o motivo
+   escrito.
+2. **Conferir o escopo do objeto**, quando a rota recebe o número de um
+   registro (`<int:titulo_id>`, `<int:obra_id>`, …) e a ação é ampla o
+   bastante para alcançar perfil preso a obra ou a autoria. Use o
+   `exigir_*_no_escopo` correspondente, em `core/auth/permissoes.py`.
+
+As duas coisas são diferentes: a primeira responde "este perfil pode esta
+ação?"; a segunda, "pode NESTE registro?". Ter alçada para lançar não autoriza
+a mexer no título da obra de outro.
+
+**Fora do escopo responde 404 "não encontrado", nunca 403 "sem permissão".**
+Dizer "sem permissão" para um número que existe confirma a existência dele, e
+varrer os números mapearia o sistema sem abrir um registro. Levante
+`ErroNaoEncontrado` e deixe o errorhandler do blueprint responder — se a rota
+tiver um `except Exception`, reerga a exceção antes dele.
+
+Nunca escreva escopo novo à mão: `pode_ver_titulo` passa pelo mesmo
+`aplicar_escopo` da listagem, e é isso que garante que detalhe e lista não
+divirjam. Se a regra de escopo mudar, muda num lugar só.
+
 ## Padrões que já existem — reusar, não recriar
 
 - Resposta JSON: `{'ok': True, ...}` / `{'ok': False, 'erro': '...'}`.
