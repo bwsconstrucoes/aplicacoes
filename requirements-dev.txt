@@ -1,0 +1,5 @@
+# Dependências só de desenvolvimento/teste.
+# A suíte não sobe banco: precisa apenas do SQLAlchemy (para instanciar os
+# models) e do Flask (o pacote app.apps.erp importa o blueprint no __init__).
+-r requirements.txt
+pytest>=8
