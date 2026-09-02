@@ -236,9 +236,35 @@ def test_dados_bancarios_de_parcela_fora_do_escopo_devolvem_404(app, monkeypatch
 
 
 def test_interessados_de_titulo_fora_do_escopo_devolve_404(app, monkeypatch):
-    """A porta lateral: entrar na lista de avisos de um título alheio."""
-    sessao = SessaoFalsa(DE_OBRA, escalares=[None])
+    """A porta lateral: entrar na lista de avisos de um título alheio.
+
+    O título EXISTE no dublê de propósito. Se não existisse, a rota devolveria
+    404 por conta própria e o teste passaria mesmo sem a trava de escopo —
+    provando nada. Existindo, só a trava explica o 404.
+    """
+    from app.apps.erp.db.models.financeiro import Titulo
+
+    sessao = SessaoFalsa(DE_OBRA, Titulo(id=5, solicitante_id=999),
+                         escalares=[None])
 
     r = _chamar(app, monkeypatch, "/erp/api/interessados/5", sessao, 7)
 
     assert r.status_code == 404
+
+
+def test_nao_da_para_se_incluir_em_titulo_alheio_para_receber_comprovante(app, monkeypatch):
+    """O item 20 da auditoria, no caminho que realmente vazava.
+
+    Quem entra na lista de interessados passa a receber o aviso de pagamento
+    com o comprovante anexo. Sem escopo aqui, o resto do controle era inútil.
+    """
+    from app.apps.erp.db.models.financeiro import Titulo, TituloInteressado
+
+    sessao = SessaoFalsa(DE_OBRA, Titulo(id=5, solicitante_id=999),
+                         escalares=[None])
+
+    r = _chamar(app, monkeypatch, "/erp/api/interessados/5", sessao, 7, "post")
+
+    assert r.status_code == 404
+    incluidos = [o for o in sessao.adicionados if isinstance(o, TituloInteressado)]
+    assert incluidos == [], "ninguém pode ter entrado na lista de avisos"
