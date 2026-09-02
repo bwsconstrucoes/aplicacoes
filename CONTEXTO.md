@@ -756,6 +756,8 @@ documento é o que atravessa o monorepo:
   assinar sessão com uma string conhecida e versionada. Confirmar que
   `ERP_SECRET_KEY` está setada em produção — e, quando for mexer, considerar
   falhar na subida em vez de cair no literal.
-- O ROTEIRO ainda lista como aberto o aviso a quem solicitou o pagamento, mas
-  isso está implementado em `core/notificacoes.py` (Telegram, para quem lançou e
-  para os interessados, com idempotência). Do item sobra só a parte do WhatsApp.
+- **Aviso de pagamento pela metade:** o Telegram está pronto
+  (`core/notificacoes.py`, para quem lançou e para os interessados, idempotente
+  por pessoa), o WhatsApp não. O caminho já existe — `app/apps/notificador.py`
+  expõe `notificar()`, que cobre os dois canais, enquanto o ERP chama só
+  `enviar_telegram`.

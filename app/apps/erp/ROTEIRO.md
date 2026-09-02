@@ -56,7 +56,11 @@
       documento — anexos ficam NO BANCO, comprimidos (sem Dropbox)
 - [x] Operadores com perfis e escopo por obra (administrativo de obra,
       supervisor, gestor, administrativo financeiro, admin)
-- [ ] Pagamentos — falta: aviso a quem solicitou (WhatsApp/Telegram)
+- [x] Pagamentos — aviso a quem solicitou, por TELEGRAM — `e35f00f`, estendido
+      aos interessados em `f5a7957` (`core/notificacoes.py`)
+- [ ] Pagamentos — falta: a metade do WhatsApp. O `app/apps/notificador.py` já
+      tem `notificar()`, que cobre os dois canais; hoje `core/notificacoes.py`
+      chama só `enviar_telegram`
 - [x] **Lote**: prioridade, colar SPs da mensagem, acompanhar pago/não pago
 - [x] **Conciliação automática de verdade** (atribuição ótima, valores
       repetidos, tarifas/transferências classificadas)
@@ -113,13 +117,13 @@
       o diretor têm fila própria de prestações com indício
 - [x] Módulo PESSOAL: colaboradores (cadastro enxuto) e Despesas com
       Colaborador em lote, com cadeia supervisor → DP → diretor, críticas de
-      repetição e geração do título rateado
+      repetição e geração do título rateado — feito a partir das estruturas dos
+      pipes Cadastro de Colaboradores (301487297) e Despesas com Colaboradores
+      (301433085)
 - [x] Todo pagamento de pessoa atrelado ao colaborador (DC, título direto e
       parte em guia coletiva) com ficha de histórico consolidado
 - [ ] Pessoal — falta: formato exato do arquivo BeeVale/SomaPay (aguarda
       instrução) e anexo da planilha ao título
-- [ ] (antigo) Módulo PESSOAL (pipes Cadastro de Colaboradores 301487297 e Despesas
-      com Colaboradores 301433085 — estruturas já recebidas)
 
 - [ ] Detalhe do título que **expande como card**, com anexos e tudo que não
       cabe na tabela
