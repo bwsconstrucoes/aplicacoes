@@ -323,14 +323,14 @@ def _consultar_falso(sql, params=()):
     for marca, resposta in RESPOSTAS_FALSAS.items():
         if marca in sql:
             return resposta
-    if "GROUP BY mes" in sql:                          # fluxo de caixa mensal
+    if "date_trunc" in sql:                            # fluxo de caixa mensal
         return [(dt.date(2025, 1, 1), 4000.0, -2500.0),
                 (dt.date(2025, 2, 1), 6000.0, -3100.0),
                 (dt.date(2025, 3, 1), 2000.0, -5200.0)]
     if "GROUP BY ano" in sql:
         return ([(2024, -1000.0), (2025, 2500.0)] if "SUM(pago_recebido)" in sql
                 else [(2024, 5000.0, -4000.0), (2025, 9000.0, -6000.0)])
-    if "GROUP BY tipo, retido" in sql:                 # as linhas do DRE
+    if "AS retido" in sql:                             # as linhas do DRE
         return [("1. Contas a Receber", False, "Receita Bruta", 9000.0, 500.0),
                 ("1. Contas a Receber", True, "Retenções", 300.0, 0.0),
                 ("2. Contas a Pagar", False, "Despesas com Pessoal", -4000.0, -100.0),

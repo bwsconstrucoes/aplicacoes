@@ -194,7 +194,7 @@ def dre_linhas(f: Filtros) -> dict:
                COALESCE(NULLIF(grupo,''), '(sem grupo)') AS nome,
                SUM({EXECUTADO}), SUM({EM_ABERTO})
           FROM fato{where}
-         GROUP BY tipo, retido, nome"""
+         GROUP BY 1, 2, 3"""
     receita_liq = [0.0, 0.0]
     retencoes = [0.0, 0.0]
     despesas: dict[str, list[float]] = {}
@@ -284,12 +284,15 @@ def caixa_por_mes(f: Filtros) -> list[dict]:
     de fora: o cliente as reteve, nunca passaram pela conta da BWS."""
     where, params = f.where(f"{PAGO} AND NOT (tipo = ? AND {RETIDO}) AND data IS NOT NULL",
                             [REC])
+    # GROUP BY 1 (a posicao da coluna), nao `GROUP BY mes`: a tabela `fato` TEM
+    # uma coluna chamada `mes`, e o Postgres daria preferencia a ela em vez do
+    # apelido — agrupando pelo mes do ano, sem separar 2024 de 2025.
     sql = f"""
-        SELECT date_trunc('month', data)::date AS mes,
+        SELECT date_trunc('month', data)::date AS inicio_do_mes,
                SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END),
                SUM(CASE WHEN pago_recebido < 0 THEN pago_recebido ELSE 0 END)
           FROM fato{where}
-         GROUP BY mes ORDER BY mes"""
+         GROUP BY 1 ORDER BY 1"""
     saida, acumulado = [], 0.0
     for mes, entradas, saidas in consultar(sql, params):
         entradas, saidas = float(entradas or 0), float(saidas or 0)

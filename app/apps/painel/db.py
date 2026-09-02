@@ -68,23 +68,22 @@ def _montar_url() -> str:
 
 def obter_engine():
     """Engine SQLAlchemy so pelo pool de conexoes; as consultas sao SQL cru.
-    Pool pequeno de proposito: a instancia tem 2 GB e divide com 14 modulos."""
+    Pool pequeno de proposito: a instancia tem 2 GB e divide com 14 modulos.
+
+    O schema do painel e fixado como PARAMETRO DA CONEXAO (`options`), nao com
+    um `SET search_path` depois de conectar. A diferenca importa: o `SET` roda
+    dentro de uma transacao, e o pool do SQLAlchemy da rollback ao devolver a
+    conexao — o que desfazia o `SET`. Na pratica a primeira tela abria e a
+    segunda dizia que a tabela nao existia. Como parametro de conexao, o valor
+    vale para a sessao inteira e nenhum rollback o alcanca."""
     global _engine
     if _engine is None:
-        from sqlalchemy import create_engine, event
+        from sqlalchemy import create_engine
         _engine = create_engine(
             _montar_url(), pool_size=2, max_overflow=2,
             pool_pre_ping=True, pool_recycle=300, future=True,
+            connect_args={"options": f"-c search_path={SCHEMA},public"},
         )
-
-        @event.listens_for(_engine, "connect")
-        def _fixar_search_path(dbapi_conn, _rec):  # noqa: ANN001
-            # Toda conexao ja nasce apontando para o schema do painel. E o que
-            # permite o codigo do espelho falar em `titulos` sem colidir com o ERP.
-            cur = dbapi_conn.cursor()
-            cur.execute(f"SET search_path TO {SCHEMA}, public")
-            cur.close()
-
         logger.info("Painel: engine criada (schema %s).", SCHEMA)
     return _engine
 
