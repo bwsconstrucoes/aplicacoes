@@ -19,8 +19,11 @@ from flask import (
     Blueprint, jsonify, redirect, render_template, request, session, url_for,
 )
 
+from app.apps.erp.core.auth.permissoes import PERMISSOES, pode
 from app.apps.erp.core.auth.service import ErroAutenticacao, autenticar
-from app.apps.erp.core.comum.auditoria import ErroPermissao, ErroValidacao
+from app.apps.erp.core.comum.auditoria import (
+    ErroNaoEncontrado, ErroPermissao, ErroValidacao,
+)
 from app.apps.erp.core.titulos import service as svc_titulos
 from app.apps.erp.db.database import get_session
 from app.apps.erp.db.models.cadastros import Usuario
@@ -142,7 +145,104 @@ def login_obrigatorio(fn):
     return _wrap
 
 
+# ---------------------------------------------------------------------------
+# Autorização: o padrão é NEGAR
+#
+# Toda rota do ERP declara a ação que exige. O que não declara não passa —
+# `_guarda_permissao` recusa endpoint ausente do registro. É a inversão do
+# default: esquecer fecha a rota, em vez de deixá-la aberta a todo mundo.
+#
+# Rota realmente pública declara isso por escrito, com o motivo, em
+# `@permissao_publica(...)`. Silêncio nunca vale como liberação.
+#
+# Isto trata ALÇADA ("este perfil pode esta ação?"). Escopo de objeto ("pode
+# NESTE registro?") é a outra metade, e mora em permissoes.exigir_*_no_escopo.
+# ---------------------------------------------------------------------------
+_REGISTRO_PERMISSOES: dict[str, dict[str, str]] = {}   # endpoint -> {método: ação}
+_ENDPOINTS_PUBLICOS: dict[str, str] = {}               # endpoint -> motivo
+
+# o Flask serve o CSS/JS do blueprint por este endpoint; não é rota de negócio
+_ISENTOS = {"erp.static"}
+
+_TODOS_METODOS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+
+
+def permissao(acao: str | None = None, **por_metodo: str):
+    """Declara a ação exigida pela rota.
+
+    `@permissao("pagar")` vale para todos os métodos. Quando um mesmo endpoint
+    lê e escreve com sensibilidades diferentes, declare por método:
+    `@permissao(GET="ver_erp", POST="configurar")`.
+    """
+    if acao is None and not por_metodo:
+        raise ValueError("Declare a ação exigida pela rota.")
+    mapa = {m: acao for m in _TODOS_METODOS} if acao else {}
+    mapa.update({m.upper(): a for m, a in por_metodo.items()})
+    for a in set(mapa.values()):
+        if a not in PERMISSOES:
+            raise ValueError(f"Ação desconhecida em @permissao: {a!r}")
+
+    def _decorar(fn):
+        _REGISTRO_PERMISSOES[f"erp.{fn.__name__}"] = mapa
+        fn._permissao = mapa
+        return fn
+    return _decorar
+
+
+def permissao_publica(motivo: str):
+    """Rota sem autenticação. Exige motivo escrito — para a exceção ser uma
+    decisão visível na revisão, e não um descuido."""
+    def _decorar(fn):
+        _ENDPOINTS_PUBLICOS[f"erp.{fn.__name__}"] = motivo
+        fn._permissao_publica = motivo
+        return fn
+    return _decorar
+
+
+@bp.errorhandler(ErroNaoEncontrado)
+def _fora_do_escopo(e: ErroNaoEncontrado):
+    """Fora do escopo responde como inexistente — mesma resposta, mesmo status.
+
+    Se aqui saísse 403 "sem permissão", a diferença entre 403 e 404 viraria um
+    oráculo: bastaria varrer os ids para saber quais existem.
+    """
+    return jsonify({"ok": False, "erro": str(e) or "Não encontrado."}), 404
+
+
+@bp.before_request
+def _guarda_permissao():
+    endpoint = request.endpoint or ""
+    if endpoint in _ISENTOS or endpoint in _ENDPOINTS_PUBLICOS:
+        return None
+
+    mapa = _REGISTRO_PERMISSOES.get(endpoint)
+    if mapa is None:
+        # Rota nova que ninguém declarou. Fecha e grita: é assim que o
+        # esquecimento vira erro visível em vez de brecha silenciosa.
+        logger.error("ERP/permissao: endpoint %s sem declaração — acesso negado", endpoint)
+        return jsonify({"ok": False, "erro": "Rota sem permissão declarada."}), 403
+
+    acao = mapa.get(request.method)
+    if acao is None:
+        return jsonify({"ok": False, "erro": "Método não liberado nesta rota."}), 405
+
+    if not session.get("erp_usuario_id"):
+        return None          # login_obrigatorio responde (401 ou redireciona)
+
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        if usuario is None:
+            return None
+        if not pode(usuario, acao):
+            logger.warning("ERP/permissao: %s negado a %s (%s) em %s",
+                           acao, usuario.email, usuario.perfil.value, endpoint)
+            return jsonify({"ok": False,
+                            "erro": "Seu perfil não tem permissão para esta operação."}), 403
+    return None
+
+
 @bp.route("/erp/entrar", methods=["GET", "POST"])
+@permissao_publica("tela de login — porta de entrada do ERP")
 def pagina_login():
     if request.method == "GET":
         return render_template("erp_login.html", erro=None)
@@ -165,6 +265,7 @@ def pagina_login():
 
 
 @bp.route("/erp/sair")
+@permissao_publica("encerrar sessao nao pode exigir sessao valida")
 def sair():
     session.pop("erp_usuario_id", None)
     session.pop("erp_usuario_nome", None)
@@ -178,12 +279,14 @@ def sair():
 @bp.route("/erp/")
 @bp.route("/erp/titulos")
 @login_obrigatorio
+@permissao("ver_erp")
 def pagina_titulos():
     return render_template("erp_titulos.html", **_contexto("titulos"))
 
 
 @bp.route("/erp/inicio")
 @login_obrigatorio
+@permissao("ver_erp")
 def pagina_inicio():
     """Porta de entrada: escolha do módulo."""
     return render_template("erp_inicio.html", modulos=MODULOS, modulo=None,
@@ -195,84 +298,98 @@ def pagina_inicio():
 
 @bp.route("/erp/lancar")
 @login_obrigatorio
+@permissao("lancar")
 def pagina_lancar():
     return render_template("erp_lancar.html", **_contexto("lancar"))
 
 
 @bp.route("/erp/confirmar")
 @login_obrigatorio
+@permissao("ver_erp")
 def pagina_confirmar():
     return render_template("erp_confirmar.html", **_contexto("confirmar"))
 
 
 @bp.route("/erp/pagamentos")
 @login_obrigatorio
+@permissao("pagar")
 def pagina_pagamentos():
     return render_template("erp_pagamentos.html", **_contexto("pagamentos"))
 
 
 @bp.route("/erp/empreitas")
 @login_obrigatorio
+@permissao("ver_erp")
 def pagina_empreitas():
     return render_template("erp_empreitas.html", **_contexto("empreitas"))
 
 
 @bp.route("/erp/locacoes")
 @login_obrigatorio
+@permissao("ver_erp")
 def pagina_locacoes():
     return render_template("erp_locacoes.html", **_contexto("locacoes"))
 
 
 @bp.route("/erp/dc")
 @login_obrigatorio
+@permissao("ver_pessoal")
 def pagina_dc():
     return render_template("erp_dc.html", **_contexto("dc"))
 
 
 @bp.route("/erp/colaboradores")
 @login_obrigatorio
+@permissao("ver_pessoal")
 def pagina_colaboradores():
     return render_template("erp_colaboradores.html", **_contexto("colaboradores"))
 
 
 @bp.route("/erp/conciliacao")
 @login_obrigatorio
+@permissao("conciliar")
 def pagina_conciliacao():
     return render_template("erp_conciliacao.html", **_contexto("conciliacao"))
 
 
 @bp.route("/erp/receber")
 @login_obrigatorio
+@permissao("receber")
 def pagina_receber():
     return render_template("erp_receber.html", **_contexto("receber"))
 
 
 @bp.route("/erp/obras")
 @login_obrigatorio
+@permissao("ver_erp")
 def pagina_obras():
     return render_template("erp_obras.html", **_contexto("obras"))
 
 
 @bp.route("/erp/relatorios")
 @login_obrigatorio
+@permissao("ver_relatorios")
 def pagina_relatorios():
     return render_template("erp_relatorios.html", **_contexto("relatorios"))
 
 
 @bp.route("/erp/prestacao")
 @login_obrigatorio
+@permissao("ver_erp")
 def pagina_prestacao():
     return render_template("erp_prestacao.html", **_contexto("prestacao"))
 
 
 @bp.route("/erp/importar")
 @login_obrigatorio
+@permissao("importar")
 def pagina_importar():
     return render_template("erp_importar.html", **_contexto("importar"))
 
 
 @bp.route("/erp/configuracoes")
 @login_obrigatorio
+@permissao("configurar")
 def pagina_config():
     return render_template("erp_config.html", **_contexto("config"))
 
@@ -352,6 +469,7 @@ def _serializar(t, hoje: date, ver_pagamento: bool = True) -> dict:
 
 @bp.route("/erp/api/titulos")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_titulos():
     busca = (request.args.get("busca") or "").strip()
     status = [s for s in (request.args.get("status") or "").split(",") if s]
@@ -391,6 +509,7 @@ def api_titulos():
 
 @bp.route("/erp/api/titulos/<int:titulo_id>")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_titulo_detalhe(titulo_id: int):
     from sqlalchemy import select
     from app.apps.erp.db.models.cadastros import ContaBancaria
@@ -467,6 +586,7 @@ def api_titulo_detalhe(titulo_id: int):
 
 @bp.route("/erp/api/titulos/acao", methods=["POST"])
 @login_obrigatorio
+@permissao("aprovar")
 def api_acao_lote():
     payload = request.get_json(silent=True) or {}
     acao = (payload.get("acao") or "").strip()
@@ -507,6 +627,7 @@ def api_acao_lote():
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/config")
 @login_obrigatorio
+@permissao("configurar")
 def api_config():
     from sqlalchemy import select
     from app.apps.erp.db.models.cadastros import Categoria, ContaBancaria, Obra
@@ -552,6 +673,7 @@ def api_config():
 
 @bp.route("/erp/api/config/categoria", methods=["POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_nova_categoria():
     from app.apps.erp.core.cadastros import categorias as svc_cat
     dados = request.get_json(silent=True) or {}
@@ -574,6 +696,7 @@ def api_nova_categoria():
 
 @bp.route("/erp/api/config/obra", methods=["POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_nova_obra():
     from app.apps.erp.core.cadastros import obras as svc_obra
     dados = request.get_json(silent=True) or {}
@@ -592,6 +715,7 @@ def api_nova_obra():
 
 @bp.route("/erp/api/config/conta", methods=["POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_nova_conta():
     from app.apps.erp.db.models.cadastros import ContaBancaria
     d = request.get_json(silent=True) or {}
@@ -615,6 +739,7 @@ def api_nova_conta():
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/importar/pipefy", methods=["POST"])
 @login_obrigatorio
+@permissao("importar")
 def api_importar_pipefy():
     from app.apps.erp.core.importadores.pipefy_cards import (
         ErroPipefy, buscar_cards, extrair_ids, importar_cards,
@@ -648,6 +773,7 @@ def api_importar_pipefy():
 
 @bp.route("/erp/api/importar/csv", methods=["POST"])
 @login_obrigatorio
+@permissao("importar")
 def api_importar_csv():
     from app.apps.erp.core.importadores.planilhas import (
         importar_categorias_csv, importar_obras_csv,
@@ -675,6 +801,7 @@ def api_importar_csv():
 
 @bp.route("/erp/api/importar/ofx", methods=["POST"])
 @login_obrigatorio
+@permissao("importar")
 def api_importar_ofx():
     from app.apps.erp.core.pagamentos import service as svc_pag
     from app.apps.erp.core.pagamentos.ofx import ErroOFX
@@ -700,6 +827,7 @@ def api_importar_ofx():
 
 @bp.route("/erp/api/config/plano/instalar", methods=["POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_instalar_plano():
     """Grava o plano financeiro padrão da BWS direto no banco (idempotente)."""
     from app.apps.erp.core.cadastros.plano_padrao import aplicar_plano
@@ -719,6 +847,7 @@ def api_instalar_plano():
 
 @bp.route("/erp/api/config/categoria/substituir", methods=["POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_substituir_categoria():
     """Aposenta uma conta e remaneja seus títulos para outra."""
     from app.apps.erp.core.cadastros.plano_padrao import substituir_categoria
@@ -742,6 +871,7 @@ def api_substituir_categoria():
 
 @bp.route("/erp/api/titulos/dedutibilidade", methods=["POST"])
 @login_obrigatorio
+@permissao("reclassificar")
 def api_definir_dedutibilidade():
     """Define a dedutibilidade do título — decisão do financeiro (ou da IA),
     tomada a partir do documento, não da categoria."""
@@ -792,6 +922,7 @@ def api_definir_dedutibilidade():
 
 @bp.route("/erp/api/config/categoria/<int:categoria_id>", methods=["POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_editar_categoria(categoria_id: int):
     """Renomeia/ajusta uma conta. A edição marca a conta como personalizada —
     reinstalar o plano padrão não sobrescreve mais o texto dela."""
@@ -855,6 +986,7 @@ def api_editar_categoria(categoria_id: int):
 
 @bp.route("/erp/api/manutencao/banco")
 @login_obrigatorio
+@permissao("configurar")
 def api_estado_banco():
     from app.apps.erp.core.comum.migracoes import listar_estado
     try:
@@ -865,6 +997,7 @@ def api_estado_banco():
 
 @bp.route("/erp/api/manutencao/banco/aplicar", methods=["POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_aplicar_migracoes():
     """Botão de atualização do banco — restrito a ADMIN."""
     from app.apps.erp.core.comum.migracoes import aplicar_pendentes
@@ -884,6 +1017,7 @@ def api_aplicar_migracoes():
 
 @bp.route("/erp/api/config/depara")
 @login_obrigatorio
+@permissao("configurar")
 def api_listar_depara():
     from app.apps.erp.core.cadastros.depara import listar
     try:
@@ -896,6 +1030,7 @@ def api_listar_depara():
 
 @bp.route("/erp/api/config/depara/instalar", methods=["POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_instalar_depara():
     from app.apps.erp.core.cadastros.depara import instalar_depara_padrao
     from app.apps.erp.db.models.cadastros import PerfilUsuario
@@ -914,6 +1049,7 @@ def api_instalar_depara():
 
 @bp.route("/erp/api/config/depara/definir", methods=["POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_definir_depara():
     from app.apps.erp.core.cadastros.depara import definir
     d = request.get_json(silent=True) or {}
@@ -935,6 +1071,7 @@ def api_definir_depara():
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/lancamento/dados")
 @login_obrigatorio
+@permissao("lancar")
 def api_dados_lancamento():
     """Cadastros necessários ao formulário, já filtrados para uso."""
     from sqlalchemy import select
@@ -979,6 +1116,7 @@ def api_dados_lancamento():
 
 @bp.route("/erp/api/lancamento/ler-documento", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar")
 def api_ler_documento():
     """Lê o anexo (XML/PDF/imagem) e devolve os campos sugeridos."""
     from sqlalchemy import select
@@ -1031,6 +1169,7 @@ def api_ler_documento():
 
 @bp.route("/erp/api/lancamento/checar", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar")
 def api_checar_duplicidade():
     """Crítica de duplicidade antes de gravar."""
     from app.apps.erp.core.titulos.duplicidade import checar
@@ -1048,6 +1187,7 @@ def api_checar_duplicidade():
 
 @bp.route("/erp/api/lancamento", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar")
 def api_criar_titulo():
     """Grava o título. A crítica de duplicidade roda de novo aqui — o que
     bloqueia na tela não pode passar por chamada direta."""
@@ -1133,6 +1273,7 @@ def api_criar_titulo():
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/pagamentos/agenda")
 @login_obrigatorio
+@permissao("pagar")
 def api_agenda():
     """Parcelas liberadas aguardando pagamento."""
     from sqlalchemy import select
@@ -1175,6 +1316,7 @@ def api_agenda():
 
 @bp.route("/erp/api/pagamentos/detalhe/<int:parcela_id>")
 @login_obrigatorio
+@permissao("ver_dados_pagamento")
 def api_detalhe_pagamento(parcela_id: int):
     from app.apps.erp.core.pagamentos.lotes import dados_pagamento
     try:
@@ -1189,6 +1331,7 @@ def api_detalhe_pagamento(parcela_id: int):
 
 @bp.route("/erp/api/pagamentos/baixar", methods=["POST"])
 @login_obrigatorio
+@permissao("pagar")
 def api_baixar():
     """Registra o pagamento de uma ou várias parcelas."""
     from app.apps.erp.core.pagamentos import service as svc_pag
@@ -1232,6 +1375,7 @@ def api_baixar():
 
 @bp.route("/erp/api/lotes")
 @login_obrigatorio
+@permissao("pagar")
 def api_lotes():
     from app.apps.erp.core.pagamentos.lotes import listar
     try:
@@ -1244,6 +1388,7 @@ def api_lotes():
 
 @bp.route("/erp/api/lotes/<int:lote_id>")
 @login_obrigatorio
+@permissao("pagar")
 def api_lote_detalhe(lote_id: int):
     from app.apps.erp.core.pagamentos.lotes import detalhar
     try:
@@ -1255,6 +1400,7 @@ def api_lote_detalhe(lote_id: int):
 
 @bp.route("/erp/api/lotes/criar", methods=["POST"])
 @login_obrigatorio
+@permissao("pagar")
 def api_criar_lote():
     from app.apps.erp.core.pagamentos.lotes import adicionar_parcelas, criar
     d = request.get_json(silent=True) or {}
@@ -1288,6 +1434,7 @@ def api_criar_lote():
 
 @bp.route("/erp/api/lotes/<int:lote_id>/parcelas", methods=["POST"])
 @login_obrigatorio
+@permissao("pagar")
 def api_lote_parcelas(lote_id: int):
     from app.apps.erp.core.pagamentos.lotes import adicionar_parcelas, remover_parcela
     d = request.get_json(silent=True) or {}
@@ -1310,6 +1457,7 @@ def api_lote_parcelas(lote_id: int):
 
 @bp.route("/erp/api/lotes/<int:lote_id>/status", methods=["POST"])
 @login_obrigatorio
+@permissao("pagar")
 def api_lote_status(lote_id: int):
     from app.apps.erp.core.pagamentos.lotes import mudar_status
     d = request.get_json(silent=True) or {}
@@ -1325,6 +1473,7 @@ def api_lote_status(lote_id: int):
 
 @bp.route("/erp/api/lotes/por-sp", methods=["POST"])
 @login_obrigatorio
+@permissao("pagar")
 def api_lote_por_sp():
     """Recebe o texto colado (a mensagem que volta do solicitante) e devolve
     as parcelas correspondentes."""
@@ -1346,6 +1495,7 @@ def api_lote_por_sp():
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/conciliacao/painel")
 @login_obrigatorio
+@permissao("conciliar")
 def api_conciliacao_painel():
     from sqlalchemy import select
     from app.apps.erp.core.pagamentos.conciliacao import painel
@@ -1364,6 +1514,7 @@ def api_conciliacao_painel():
 
 @bp.route("/erp/api/conciliacao/executar", methods=["POST"])
 @login_obrigatorio
+@permissao("conciliar")
 def api_conciliar():
     from app.apps.erp.core.pagamentos.conciliacao import conciliar_automatico
     d = request.get_json(silent=True) or {}
@@ -1381,6 +1532,7 @@ def api_conciliar():
 
 @bp.route("/erp/api/conciliacao/manual", methods=["POST"])
 @login_obrigatorio
+@permissao("conciliar")
 def api_conciliar_manual():
     from app.apps.erp.core.pagamentos.conciliacao import conciliar_manual
     d = request.get_json(silent=True) or {}
@@ -1403,6 +1555,7 @@ def api_conciliar_manual():
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/relatorios", methods=["POST"])
 @login_obrigatorio
+@permissao("ver_relatorios")
 def api_relatorios():
     from app.apps.erp.core.relatorios import analitico, dre_gerencial, resumo
     d = request.get_json(silent=True) or {}
@@ -1425,6 +1578,7 @@ def api_relatorios():
 
 @bp.route("/erp/api/relatorios/csv", methods=["POST"])
 @login_obrigatorio
+@permissao("ver_relatorios")
 def api_relatorios_csv():
     from flask import Response
     from app.apps.erp.core.relatorios import analitico, para_csv, resumo
@@ -1461,6 +1615,7 @@ def api_relatorios_csv():
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/conciliacao/extrato")
 @login_obrigatorio
+@permissao("conciliar")
 def api_extrato():
     from app.apps.erp.core.pagamentos.conciliacao import extrato_detalhado
     try:
@@ -1476,6 +1631,7 @@ def api_extrato():
 
 @bp.route("/erp/api/conciliacao/candidatos/<int:extrato_id>")
 @login_obrigatorio
+@permissao("conciliar")
 def api_candidatos(extrato_id: int):
     from app.apps.erp.core.pagamentos.conciliacao import candidatos_para_extrato
     try:
@@ -1487,6 +1643,7 @@ def api_candidatos(extrato_id: int):
 
 @bp.route("/erp/api/movimentacoes", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao(GET="conciliar", POST="conciliar")
 def api_movimentacoes():
     from app.apps.erp.core.titulos.receber import (
         TIPOS_MOVIMENTO, criar_movimentacao, listar_movimentacoes,
@@ -1518,6 +1675,7 @@ def api_movimentacoes():
 
 @bp.route("/erp/api/receber", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao(GET="receber", POST="receber")
 def api_receber():
     from app.apps.erp.core.titulos.receber import criar_medicao, listar_receber
     if request.method == "GET":
@@ -1546,6 +1704,7 @@ def api_receber():
 
 @bp.route("/erp/api/receber/baixar", methods=["POST"])
 @login_obrigatorio
+@permissao("receber")
 def api_receber_baixar():
     from app.apps.erp.core.titulos.receber import registrar_recebimento
     d = request.get_json(silent=True) or {}
@@ -1572,6 +1731,7 @@ def api_receber_baixar():
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/titulos/<int:titulo_id>/reclassificar", methods=["POST"])
 @login_obrigatorio
+@permissao("reclassificar")
 def api_reclassificar(titulo_id: int):
     """Troca conta do plano e/ou obra mesmo com o título pago e conciliado."""
     from app.apps.erp.core.titulos.ajustes import reclassificar
@@ -1596,6 +1756,7 @@ def api_reclassificar(titulo_id: int):
 
 @bp.route("/erp/api/titulos/<int:titulo_id>/desfazer", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao("desfazer")
 def api_desfazer(titulo_id: int):
     """GET diz o que será desfeito; POST desfaz conciliação e baixa de uma vez."""
     from app.apps.erp.core.titulos.ajustes import desfazer_em_cadeia, diagnosticar_desfazer
@@ -1621,6 +1782,7 @@ def api_desfazer(titulo_id: int):
 
 @bp.route("/erp/api/obras/<int:obra_id>", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao(GET="ver_erp", POST="configurar")
 def api_obra(obra_id: int):
     """Cadastro completo da obra: identificação, endereço, contrato e tributação."""
     from sqlalchemy import select
@@ -1727,6 +1889,7 @@ def api_obra(obra_id: int):
 
 @bp.route("/erp/api/obras/<int:obra_id>/aditivos", methods=["POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_aditivo(obra_id: int):
     from decimal import Decimal
     from datetime import date as _date
@@ -1771,6 +1934,7 @@ def api_aditivo(obra_id: int):
 
 @bp.route("/erp/api/obras/<int:obra_id>/tributacao", methods=["POST"])
 @login_obrigatorio
+@permissao("ver_erp")
 def api_simular_tributacao(obra_id: int):
     """Simula as retenções de uma medição com o cadastro fiscal da obra."""
     from app.apps.erp.core.titulos.tributacao import calcular
@@ -1794,6 +1958,7 @@ def api_simular_tributacao(obra_id: int):
 
 @bp.route("/erp/api/pagamentos/comprovante", methods=["POST"])
 @login_obrigatorio
+@permissao("pagar")
 def api_comprovante():
     """Baixa por comprovante: lê o PDF/foto do banco, acha o título e baixa."""
     from app.apps.erp.core.pagamentos.comprovante import processar_comprovante
@@ -1833,6 +1998,7 @@ def api_comprovante():
 
 @bp.route("/erp/api/pagamentos/comprovante/confirmar", methods=["POST"])
 @login_obrigatorio
+@permissao("pagar")
 def api_comprovante_confirmar():
     from app.apps.erp.core.pagamentos.comprovante import confirmar_baixa
     arquivo = request.files.get("arquivo")
@@ -1856,6 +2022,7 @@ def api_comprovante_confirmar():
 
 @bp.route("/erp/api/anexos/<entidade>/<int:entidade_id>", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao(GET="ver_erp", POST="lancar")
 def api_anexos(entidade: str, entidade_id: int):
     """Anexos guardados no próprio banco, comprimidos."""
     from app.apps.erp.core.documentos.armazenamento import listar, salvar
@@ -1888,6 +2055,7 @@ def api_anexos(entidade: str, entidade_id: int):
 
 @bp.route("/erp/anexo/<int:anexo_id>")
 @login_obrigatorio
+@permissao("ver_erp")
 def baixar_anexo(anexo_id: int):
     """Serve o arquivo direto do banco."""
     from flask import Response
@@ -1907,6 +2075,7 @@ def baixar_anexo(anexo_id: int):
 
 @bp.route("/erp/api/anexos/<int:anexo_id>", methods=["DELETE"])
 @login_obrigatorio
+@permissao("lancar")
 def api_excluir_anexo(anexo_id: int):
     from app.apps.erp.core.documentos.armazenamento import excluir
     try:
@@ -1920,6 +2089,7 @@ def api_excluir_anexo(anexo_id: int):
 
 @bp.route("/erp/api/usuarios", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao("gerir_usuarios")
 def api_usuarios():
     """Cadastro de operadores. Só o ADMIN mexe."""
     from sqlalchemy import select
@@ -1983,6 +2153,7 @@ def api_usuarios():
 
 @bp.route("/erp/api/usuarios/<int:usuario_id>", methods=["POST"])
 @login_obrigatorio
+@permissao("gerir_usuarios")
 def api_editar_usuario(usuario_id: int):
     from sqlalchemy import select
     from app.apps.erp.core.auth.permissoes import exigir
@@ -2044,6 +2215,7 @@ def api_editar_usuario(usuario_id: int):
 
 @bp.route("/erp/api/permissoes")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_permissoes():
     from app.apps.erp.core.auth.permissoes import contexto_permissoes
     with get_session() as s:
@@ -2052,6 +2224,7 @@ def api_permissoes():
 
 @bp.route("/erp/api/titulos/<int:titulo_id>/historico")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_historico(titulo_id: int):
     """Trilha completa do título: tudo que mudou, quando e por quem — mais os
     avisos enviados ao solicitante."""
@@ -2079,6 +2252,7 @@ def api_historico(titulo_id: int):
 
 @bp.route("/erp/api/pagamentos/<int:pagamento_id>/avisar", methods=["POST"])
 @login_obrigatorio
+@permissao("pagar")
 def api_reenviar_aviso(pagamento_id: int):
     """Reenvio manual do aviso (quando a pessoa apagou a mensagem, por ex.)."""
     from app.apps.erp.core.notificacoes import avisar_baixa
@@ -2098,6 +2272,7 @@ def api_reenviar_aviso(pagamento_id: int):
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/avais/pendentes")
 @login_obrigatorio
+@permissao("avalizar")
 def api_avais_pendentes():
     from app.apps.erp.core.titulos.aval import pendentes
     try:
@@ -2112,6 +2287,7 @@ def api_avais_pendentes():
 
 @bp.route("/erp/api/avais/<int:titulo_id>", methods=["POST"])
 @login_obrigatorio
+@permissao("avalizar")
 def api_avalizar(titulo_id: int):
     """Assinatura da segunda pessoa: confirma ou recusa o título."""
     from app.apps.erp.core.titulos.aval import registrar
@@ -2138,6 +2314,7 @@ def api_avalizar(titulo_id: int):
 
 @bp.route("/erp/api/historico/<entidade>/<int:entidade_id>")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_historico_geral(entidade: str, entidade_id: int):
     """Histórico de QUALQUER cadastro: obra, fornecedor, categoria, título,
     movimentação, lote — tudo que mudou, quando e por quem."""
@@ -2165,6 +2342,7 @@ def api_historico_geral(entidade: str, entidade_id: int):
 
 @bp.route("/erp/api/auditoria")
 @login_obrigatorio
+@permissao("configurar")
 def api_auditoria():
     """Consulta ampla da trilha, para auditoria: por período, usuário, ação."""
     from sqlalchemy import select
@@ -2201,6 +2379,7 @@ def api_auditoria():
 
 @bp.route("/erp/api/interessados/<int:titulo_id>", methods=["GET", "POST", "DELETE"])
 @login_obrigatorio
+@permissao(GET="ver_erp", POST="lancar", DELETE="lancar")
 def api_interessados(titulo_id: int):
     """Quem mais acompanha o título e recebe os avisos."""
     from sqlalchemy import select
@@ -2263,6 +2442,7 @@ def api_interessados(titulo_id: int):
 
 @bp.route("/erp/api/obras/<int:obra_id>/interessados", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_obra_interessados(obra_id: int):
     """Interessados fixos da obra: entram em todo título dela."""
     from sqlalchemy import select
@@ -2304,6 +2484,7 @@ def api_obra_interessados(obra_id: int):
 
 @bp.route("/erp/api/operadores/contato")
 @login_obrigatorio
+@permissao("lancar")
 def api_operadores_contato():
     """Lista enxuta para escolher interessados, dizendo quem consegue receber."""
     from sqlalchemy import select
@@ -2337,6 +2518,7 @@ FASES_OBRA = [
 
 @bp.route("/erp/api/obras")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_listar_obras():
     """Painel de obras: situação, contrato, medições e o que foi gasto."""
     from sqlalchemy import func, select
@@ -2413,6 +2595,7 @@ def api_listar_obras():
 
 @bp.route("/erp/api/obras/<int:obra_id>/fase", methods=["POST"])
 @login_obrigatorio
+@permissao("configurar")
 def api_mudar_fase(obra_id: int):
     from app.apps.erp.core.comum.auditoria import registrar_evento
     from app.apps.erp.db.models.cadastros import Obra, ObraFase
@@ -2450,6 +2633,7 @@ def api_mudar_fase(obra_id: int):
 
 @bp.route("/erp/api/obras/<int:obra_id>/fases")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_historico_fases(obra_id: int):
     from sqlalchemy import select
     from app.apps.erp.db.models.cadastros import ObraFase
@@ -2471,6 +2655,7 @@ def api_historico_fases(obra_id: int):
 
 @bp.route("/erp/api/obras/<int:obra_id>/titulos")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_titulos_da_obra(obra_id: int):
     """Tudo que passou pela obra: o que se gastou e o que se recebeu."""
     from sqlalchemy import select
@@ -2512,6 +2697,7 @@ def api_titulos_da_obra(obra_id: int):
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/prestacao/comprovante", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar")
 def api_prestacao_comprovante():
     """Lê um comprovante e devolve a linha, guardando o arquivo no banco."""
     from app.apps.erp.core.documentos.armazenamento import salvar
@@ -2544,6 +2730,7 @@ def api_prestacao_comprovante():
 
 @bp.route("/erp/api/prestacao/fatura", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar")
 def api_prestacao_fatura():
     """Lê a fatura do cartão e devolve todas as compras como linhas."""
     from app.apps.erp.core.documentos.armazenamento import salvar
@@ -2571,6 +2758,7 @@ def api_prestacao_fatura():
 
 @bp.route("/erp/api/prestacao/criticar", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar")
 def api_prestacao_criticar():
     from app.apps.erp.core.titulos.prestacao import criticar
     d = request.get_json(silent=True) or {}
@@ -2591,6 +2779,7 @@ def api_prestacao_criticar():
 
 @bp.route("/erp/api/prestacao", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar")
 def api_criar_prestacao():
     from app.apps.erp.core.documentos.armazenamento import Anexo as _A
     from app.apps.erp.core.titulos.prestacao import criar_prestacao
@@ -2624,6 +2813,7 @@ def api_criar_prestacao():
 
 @bp.route("/erp/api/prestacao/<int:titulo_id>")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_prestacao_detalhe(titulo_id: int):
     from app.apps.erp.core.titulos.prestacao import detalhar
     try:
@@ -2635,6 +2825,7 @@ def api_prestacao_detalhe(titulo_id: int):
 
 @bp.route("/erp/api/prestacao/<int:titulo_id>/conferir", methods=["POST"])
 @login_obrigatorio
+@permissao("aprovar")
 def api_conferir(titulo_id: int):
     from app.apps.erp.core.titulos.prestacao import confirmar_analise
     d = request.get_json(silent=True) or {}
@@ -2652,6 +2843,7 @@ def api_conferir(titulo_id: int):
 
 @bp.route("/erp/api/prestacao/historico")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_prestacao_historico():
     from app.apps.erp.core.titulos.prestacao import historico_do_solicitante
     try:
@@ -2666,6 +2858,7 @@ def api_prestacao_historico():
 
 @bp.route("/erp/api/prestacoes/pendentes")
 @login_obrigatorio
+@permissao("aprovar")
 def api_prestacoes_pendentes():
     """Prestações com apontamento aguardando análise — a fila do financeiro e
     do diretor, complementar à do aval."""
@@ -2714,6 +2907,7 @@ def api_prestacoes_pendentes():
 
 @bp.route("/erp/api/movimentacoes/neutras")
 @login_obrigatorio
+@permissao("conciliar")
 def api_neutras():
     """Pontas soltas: entrou e não foi devolvido, saiu e não foi ressarcido."""
     from app.apps.erp.core.titulos.receber import neutras_sem_par
@@ -2727,6 +2921,7 @@ def api_neutras():
 
 @bp.route("/erp/api/movimentacoes/vincular", methods=["POST"])
 @login_obrigatorio
+@permissao("conciliar")
 def api_vincular_neutras():
     """Liga as duas pontas que se anulam."""
     from app.apps.erp.core.titulos.receber import vincular_par
@@ -2747,6 +2942,7 @@ def api_vincular_neutras():
 
 @bp.route("/erp/api/conciliacao/par-neutro", methods=["POST"])
 @login_obrigatorio
+@permissao("conciliar")
 def api_par_neutro():
     """Marca duas linhas do extrato (a entrada e a saída) como par que se anula."""
     from app.apps.erp.core.titulos.receber import resolver_par_no_extrato
@@ -2769,6 +2965,7 @@ def api_par_neutro():
 
 @bp.route("/erp/api/titulos/<int:titulo_id>/parcelas", methods=["POST"])
 @login_obrigatorio
+@permissao("reclassificar")
 def api_editar_parcelas(titulo_id: int):
     """Ajusta vencimento e boleto das parcelas em aberto — sem desfazer nada."""
     from datetime import date as _date
@@ -2825,6 +3022,7 @@ def api_editar_parcelas(titulo_id: int):
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/empreitas", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao(GET="ver_erp", POST="lancar")
 def api_empreitas():
     from app.apps.erp.core.titulos.empreita import criar_contrato, listar
     try:
@@ -2846,6 +3044,7 @@ def api_empreitas():
 
 @bp.route("/erp/api/empreitas/<int:contrato_id>")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_empreita_detalhe(contrato_id: int):
     from app.apps.erp.core.documentos.armazenamento import listar as listar_anexos
     from app.apps.erp.core.titulos.empreita import detalhar
@@ -2862,6 +3061,7 @@ def api_empreita_detalhe(contrato_id: int):
 
 @bp.route("/erp/api/empreitas/<int:contrato_id>/aprovar", methods=["POST"])
 @login_obrigatorio
+@permissao("aprovar")
 def api_aprovar_empreita(contrato_id: int):
     from app.apps.erp.core.titulos.empreita import aprovar_contrato
     try:
@@ -2877,6 +3077,7 @@ def api_aprovar_empreita(contrato_id: int):
 
 @bp.route("/erp/api/empreitas/<int:contrato_id>/aditivo", methods=["POST"])
 @login_obrigatorio
+@permissao("aprovar")
 def api_aditivar_empreita(contrato_id: int):
     from app.apps.erp.core.titulos.empreita import aditivar
     d = request.get_json(silent=True) or {}
@@ -2892,6 +3093,7 @@ def api_aditivar_empreita(contrato_id: int):
 
 @bp.route("/erp/api/empreitas/<int:contrato_id>/medicoes", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar")
 def api_medir(contrato_id: int):
     """Registra a medição (ainda não é pagamento) e devolve as críticas."""
     from app.apps.erp.core.titulos.empreita import criticar_medicao, registrar_medicao
@@ -2919,6 +3121,7 @@ def api_medir(contrato_id: int):
 
 @bp.route("/erp/api/medicoes/<int:medicao_id>/autorizar", methods=["POST"])
 @login_obrigatorio
+@permissao("aprovar")
 def api_autorizar_medicao(medicao_id: int):
     from app.apps.erp.core.titulos.empreita import autorizar_medicao
     d = request.get_json(silent=True) or {}
@@ -2938,6 +3141,7 @@ def api_autorizar_medicao(medicao_id: int):
 
 @bp.route("/erp/api/periodo", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao(GET="ver_erp", POST="configurar")
 def api_periodo():
     """Fechamento e destrave do período — só diretor e admin."""
     from app.apps.erp.core.titulos.empreita import (
@@ -2966,12 +3170,14 @@ def api_periodo():
 
 @bp.route("/erp/meu-cadastro")
 @login_obrigatorio
+@permissao("ver_erp")
 def pagina_meu_cadastro():
     return render_template("erp_meu_cadastro.html", **_contexto("prestacao"))
 
 
 @bp.route("/erp/api/meu-cadastro", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao("ver_erp")
 def api_meu_cadastro():
     """Dados de recebimento de quem está logado.
 
@@ -3045,6 +3251,7 @@ def api_meu_cadastro():
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/locacoes", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao(GET="ver_erp", POST="lancar")
 def api_locacoes():
     from app.apps.erp.core.locacoes import criar, listar, painel_por_obra
     try:
@@ -3065,6 +3272,7 @@ def api_locacoes():
 
 @bp.route("/erp/api/locacoes/<int:contrato_id>")
 @login_obrigatorio
+@permissao("ver_erp")
 def api_locacao_detalhe(contrato_id: int):
     from app.apps.erp.core.locacoes import detalhar
     try:
@@ -3076,6 +3284,7 @@ def api_locacao_detalhe(contrato_id: int):
 
 @bp.route("/erp/api/locacoes/<int:contrato_id>/<acao>", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar")
 def api_locacao_acao(contrato_id: int, acao: str):
     from app.apps.erp.core.locacoes import devolver, gerar_previsao, remanejar
     d = request.get_json(silent=True) or {}
@@ -3103,6 +3312,7 @@ def api_locacao_acao(contrato_id: int, acao: str):
 
 @bp.route("/erp/api/locacoes/parcelas/<int:parcela_id>/lancar", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar")
 def api_lancar_locacao(parcela_id: int):
     from app.apps.erp.core.locacoes import lancar_parcela
     try:
@@ -3117,6 +3327,7 @@ def api_lancar_locacao(parcela_id: int):
 
 @bp.route("/erp/api/insumos", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao(GET="ver_erp", POST="configurar")
 def api_insumos():
     from sqlalchemy import select
     from app.apps.erp.db.models.cadastros import Insumo, InsumoCategoria
@@ -3156,6 +3367,7 @@ def api_insumos():
 
 @bp.route("/erp/api/locacoes/ler-contrato", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar")
 def api_ler_contrato_locacao():
     """Lê o contrato da locadora e devolve o rascunho do cadastro."""
     from app.apps.erp.core.documentos.armazenamento import salvar
@@ -3184,6 +3396,7 @@ def api_ler_contrato_locacao():
 
 @bp.route("/erp/api/mapa")
 @login_obrigatorio
+@permissao("ver_relatorios")
 def api_mapa():
     """Obras, equipamentos locados e volume financeiro por lugar."""
     from app.apps.erp.core.locacoes import mapa
@@ -3197,6 +3410,7 @@ def api_mapa():
 
 @bp.route("/erp/api/ia/consumo")
 @login_obrigatorio
+@permissao("configurar")
 def api_ia_consumo():
     """Painel de consumo de IA — restrito a quem administra."""
     from app.apps.erp.core.auth.permissoes import exigir
@@ -3218,6 +3432,7 @@ def api_ia_consumo():
 # ---------------------------------------------------------------------------
 @bp.route("/erp/api/colaboradores", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao(GET="ver_pessoal", POST="editar_colaboradores")
 def api_colaboradores():
     from app.apps.erp.core.pessoal import listar_colaboradores, salvar_colaborador
     try:
@@ -3239,6 +3454,7 @@ def api_colaboradores():
 
 @bp.route("/erp/api/funcoes", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao(GET="ver_pessoal", POST="editar_colaboradores")
 def api_funcoes():
     from sqlalchemy import select
     from decimal import Decimal as _D
@@ -3267,6 +3483,7 @@ def api_funcoes():
 
 @bp.route("/erp/api/dc", methods=["GET", "POST"])
 @login_obrigatorio
+@permissao(GET="ver_pessoal", POST="lancar_dc")
 def api_dc():
     from app.apps.erp.core.pessoal import VERBAS, criar_despesa, listar
     try:
@@ -3293,6 +3510,7 @@ def api_dc():
 
 @bp.route("/erp/api/dc/criticar", methods=["POST"])
 @login_obrigatorio
+@permissao("lancar_dc")
 def api_dc_criticar():
     from app.apps.erp.core.pessoal import criticar
     d = request.get_json(silent=True) or {}
@@ -3308,6 +3526,7 @@ def api_dc_criticar():
 
 @bp.route("/erp/api/dc/<int:despesa_id>")
 @login_obrigatorio
+@permissao("ver_pessoal")
 def api_dc_detalhe(despesa_id: int):
     from app.apps.erp.core.pessoal import detalhar
     try:
@@ -3319,6 +3538,7 @@ def api_dc_detalhe(despesa_id: int):
 
 @bp.route("/erp/api/dc/<int:despesa_id>/<acao>", methods=["POST"])
 @login_obrigatorio
+@permissao("ver_pessoal")
 def api_dc_acao(despesa_id: int, acao: str):
     from app.apps.erp.core.pessoal import aprovar, devolver, gerar_titulo, planilha_pagamento
     d = request.get_json(silent=True) or {}
@@ -3348,6 +3568,7 @@ def api_dc_acao(despesa_id: int, acao: str):
 
 @bp.route("/erp/api/colaboradores/<int:colaborador_id>/historico")
 @login_obrigatorio
+@permissao("ver_pessoal")
 def api_historico_colaborador(colaborador_id: int):
     """Tudo que já se pagou a esta pessoa: DC, títulos diretos e rateados."""
     from app.apps.erp.core.pessoal import historico
@@ -3364,6 +3585,7 @@ def api_historico_colaborador(colaborador_id: int):
 
 @bp.route("/erp/api/lotes/<int:lote_id>/adicionar-sps", methods=["POST"])
 @login_obrigatorio
+@permissao("pagar")
 def api_lote_adicionar_sps(lote_id: int):
     """Cola-se a lista de SPs e as parcelas em aberto entram no lote."""
     from app.apps.erp.core.pagamentos.lotes import (
@@ -3395,6 +3617,7 @@ def api_lote_adicionar_sps(lote_id: int):
 
 @bp.route("/erp/api/lotes/<int:lote_id>", methods=["DELETE"])
 @login_obrigatorio
+@permissao("pagar")
 def api_excluir_lote(lote_id: int):
     """Apaga o agrupamento. As SPs continuam intactas — o lote não é um estado
     do título, é só uma forma de olhar para um conjunto delas."""
@@ -3424,6 +3647,7 @@ def api_excluir_lote(lote_id: int):
 
 
 @bp.route("/erp/health")
+@permissao_publica("health check do Render, sem dado de negocio")
 def health():
     """Health check do módulo — não exige login."""
     try:

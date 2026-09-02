@@ -21,7 +21,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
-from app.apps.erp.core.comum.auditoria import ErroPermissao
+from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado, ErroPermissao
 from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario, UsuarioObra
 from app.apps.erp.db.models.financeiro import Rateio, Titulo
 
@@ -29,6 +29,14 @@ P = PerfilUsuario
 
 # ação → perfis autorizados
 PERMISSOES: dict[str, set[PerfilUsuario]] = {
+    # Leitura geral das telas do ERP. Não é "qualquer um": é a declaração
+    # consciente de que a rota é aberta a todo operador, e o que ela devolve
+    # é limitado por ESCOPO DE OBJETO, não por alçada. Toda rota tem de
+    # declarar alguma ação — esta existe para que "aberto a todos" seja uma
+    # escolha escrita, e não o silêncio de quem esqueceu.
+    "ver_erp":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA},
     "lancar":          {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.LANCADOR,
                         P.DEPARTAMENTO_PESSOAL},
@@ -107,6 +115,40 @@ def aplicar_escopo(stmt: Select, s: Session, usuario: Usuario) -> Select:
             Titulo.solicitante_id == usuario.id,
             Titulo.id.in_(select(Rateio.titulo_id).where(Rateio.obra_id.in_(obras)))))
     return stmt.where(Titulo.solicitante_id == usuario.id)
+
+
+# ---------------------------------------------------------------------------
+# Escopo de OBJETO
+#
+# Alçada responde "este perfil pode executar esta ação?". Não responde "pode
+# executá-la NESTE registro?". Um supervisor tem a ação de lançar; isso não o
+# autoriza a abrir o título da obra de outro. As funções abaixo respondem a
+# segunda pergunta, e o fazem passando pelo MESMO `aplicar_escopo` que a
+# listagem usa — de modo que detalhe e lista não têm como divergir sem que
+# alguém altere os dois.
+# ---------------------------------------------------------------------------
+def pode_ver_titulo(s: Session, usuario: Usuario, titulo_id: int) -> bool:
+    """O título existe E está dentro do escopo deste usuário?"""
+    stmt = aplicar_escopo(select(Titulo.id).where(Titulo.id == titulo_id), s, usuario)
+    return s.scalar(stmt) is not None
+
+
+def exigir_titulo_no_escopo(s: Session, usuario: Usuario, titulo_id: int) -> None:
+    """Fora do escopo responde igual a inexistente — ver ErroNaoEncontrado."""
+    if not pode_ver_titulo(s, usuario, titulo_id):
+        raise ErroNaoEncontrado("Título não encontrado.")
+
+
+def pode_ver_obra(s: Session, usuario: Usuario, obra_id: int) -> bool:
+    obras = obras_do_usuario(s, usuario)
+    if obras is None:
+        return True                      # perfil que enxerga todas as obras
+    return int(obra_id) in set(obras)
+
+
+def exigir_obra_no_escopo(s: Session, usuario: Usuario, obra_id: int) -> None:
+    if not pode_ver_obra(s, usuario, obra_id):
+        raise ErroNaoEncontrado("Obra não encontrada.")
 
 
 def contexto_permissoes(s: Session, usuario: Usuario) -> dict[str, Any]:

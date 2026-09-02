@@ -28,3 +28,14 @@ class ErroValidacao(Exception):
 
 class ErroPermissao(Exception):
     """Usuário sem perfil para a operação."""
+
+
+class ErroNaoEncontrado(Exception):
+    """O registro não existe OU está fora do escopo de quem pediu.
+
+    Os dois casos respondem a mesma coisa de propósito. Dizer "sem permissão"
+    para um id que existe já entrega informação: confirma que aquele título,
+    anexo ou colaborador existe, e um laço sobre os ids mapeia o sistema
+    inteiro sem nunca abrir um registro. Quem está fora do escopo tem de ver
+    exatamente o que veria se o registro não existisse.
+    """
