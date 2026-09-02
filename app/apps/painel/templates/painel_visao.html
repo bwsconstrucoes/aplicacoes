@@ -1,0 +1,83 @@
+{% extends "painel_base.html" %}
+{% import "painel_grafico.html" as gr %}
+{% block titulo %}Visão Geral — Painel Financeiro BWS{% endblock %}
+
+{% block filtros %}{% include "painel_filtros.html" %}{% endblock %}
+
+{% block conteudo %}
+<h2>Visão Geral
+  <small>duas leituras do mesmo período: o resultado e o caixa</small>
+</h2>
+
+{% if chips %}
+<div class="chips">
+  {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
+</div>
+{% endif %}
+
+<!-- ===================== RESULTADO (DRE) ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Resultado — comprometido</h3>
+    <small>tudo que já foi ganho ou gasto, pago ou não</small>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi estatico verde">
+      <div class="kpi-rotulo">Receita líquida</div>
+      <div class="kpi-valor">{{ brl(dre.receita) }}</div>
+      <div class="kpi-sub">sem os impostos retidos pelo cliente</div>
+    </div>
+    <div class="kpi estatico vermelho">
+      <div class="kpi-rotulo">Despesas</div>
+      <div class="kpi-valor">{{ brl(dre.despesa) }}</div>
+      <div class="kpi-sub">custos e despesas do período</div>
+    </div>
+    <div class="kpi estatico">
+      <div class="kpi-rotulo">Resultado</div>
+      <div class="kpi-valor {{ classe_valor(dre.resultado) }}">{{ brl(dre.resultado) }}</div>
+      <div class="kpi-sub">receita líquida menos despesas</div>
+    </div>
+  </div>
+
+  <p class="cartao-dica">
+    Considerando só o que <b>já foi efetivamente pago ou recebido</b>:
+    receita líquida {{ brl(dre.receita_exec) }}, despesas {{ brl(dre.despesa_exec) }},
+    resultado <b class="{{ classe_valor(dre.resultado_exec) }}">{{ brl(dre.resultado_exec) }}</b>.
+  </p>
+
+  {{ gr.grafico(grafico_dre, "Resultado") }}
+</div>
+
+<!-- ===================== CAIXA ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Caixa — realizado</h3>
+    <small>o dinheiro que entrou e saiu de verdade</small>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi estatico verde">
+      <div class="kpi-rotulo">Entradas</div>
+      <div class="kpi-valor">{{ brl(caixa.entradas) }}</div>
+    </div>
+    <div class="kpi estatico vermelho">
+      <div class="kpi-rotulo">Saídas</div>
+      <div class="kpi-valor">{{ brl(caixa.saidas) }}</div>
+    </div>
+    <div class="kpi estatico ciano">
+      <div class="kpi-rotulo">Geração de caixa</div>
+      <div class="kpi-valor {{ classe_valor(caixa.geracao) }}">{{ brl(caixa.geracao) }}</div>
+      <div class="kpi-sub">entradas menos saídas</div>
+    </div>
+  </div>
+
+  <p class="cartao-dica">
+    Inclui aportes e devoluções de sócios, que são dinheiro de verdade mas ficam
+    fora do resultado. Não inclui os impostos retidos na fonte — esses o cliente
+    reteve e nunca passaram pela conta da BWS.
+  </p>
+
+  {{ gr.grafico(grafico_caixa, "Caixa acumulado") }}
+</div>
+{% endblock %}

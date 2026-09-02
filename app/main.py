@@ -1,3 +1,4 @@
+import logging
 import os
 from flask import Flask
 from app.apps.pdf_processor import bp as pdf_bp
@@ -14,6 +15,18 @@ from app.apps.emissaonf        import bp as emissao_bp            # ← emissão
 from app.apps.whatsapp_gateway import bp as whatsapp_gateway_bp   # ← gateway WhatsApp / Evolution
 from app.apps.telegram         import bp as telegram_bp           # ← NOVO (bot Telegram / autocadastro)
 from app.apps.erp              import bp as erp_bp               # ← ERP financeiro (Postgres)
+
+# O painel entra por importação PROTEGIDA, diferente dos demais. Ele é o módulo
+# mais novo e o único que depende de biblioteca de dados (pandas/pyarrow) na hora
+# de atualizar. Se algo faltar no ambiente, o certo é o painel ficar fora do ar
+# sozinho — não levar junto os outros 14 módulos que estão em produção.
+try:
+    from app.apps.painel import bp as painel_bp      # ← Painel financeiro OMIE
+except Exception as _erro_painel:                     # noqa: BLE001
+    painel_bp = None
+    logging.getLogger(__name__).exception(
+        "Painel OMIE não carregou (%s). Os demais módulos seguem normalmente.",
+        _erro_painel)
 
 
 def create_app():
@@ -42,6 +55,9 @@ def create_app():
     # SEM url_prefix: as rotas do ERP já trazem /erp embutido no módulo
     # (/erp, /erp/entrar, /erp/api/... e /erp/health).
     app.register_blueprint(erp_bp)
+    # SEM url_prefix: as rotas do painel já trazem /painel embutido no módulo.
+    if painel_bp is not None:
+        app.register_blueprint(painel_bp)
 
     @app.route("/")
     def index():
@@ -51,8 +67,8 @@ def create_app():
                 "pdf_processor", "encurtador", "email_financeiro",
                 "sheets_sync", "atualizaspbotao", "validasp",
                 "chatbot", "baixabradesco", "sync_logs", "processarnovasp",
-                "emissao", "whatsapp_gateway", "telegram", "erp"
-            ]
+                "emissao", "whatsapp_gateway", "telegram", "erp",
+            ] + (["painel"] if painel_bp is not None else [])
         }
 
     return app

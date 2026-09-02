@@ -1,0 +1,88 @@
+{# Barra lateral de filtros. Um formulario GET simples: os filtros ficam na
+   propria URL, entao a tela filtrada pode ser guardada nos favoritos ou enviada
+   para outra pessoa e abre exatamente igual. #}
+<form method="get" id="form-filtros">
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ request.path }}">Limpar</a>
+  </div>
+
+  {# preserva as opcoes da propria tela (quebra/visão do DRE) ao filtrar #}
+  {% if request.args.get('quebra') %}
+    <input type="hidden" name="quebra" value="{{ request.args.get('quebra') }}">
+  {% endif %}
+  {% if request.args.get('visao') %}
+    <input type="hidden" name="visao" value="{{ request.args.get('visao') }}">
+  {% endif %}
+
+  <div class="filtro aberto">
+    <button type="button" class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      Ano
+      {% if selecao.anos %}<span class="filtro-badge">{{ selecao.anos|length }}</span>{% endif %}
+      <span class="seta">▾</span>
+    </button>
+    <div class="filtro-cont">
+      <div class="filtro-opcoes">
+        {% for ano in opcoes.anos %}
+          <label class="opcao">
+            <input type="checkbox" name="ano" value="{{ ano }}"
+                   {% if ano|string in selecao.anos %}checked{% endif %}>
+            <span class="rotulo">{{ ano }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro {% if selecao.projetos %}aberto{% endif %}">
+    <button type="button" class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      Projeto
+      {% if selecao.projetos %}<span class="filtro-badge">{{ selecao.projetos|length }}</span>{% endif %}
+      <span class="seta">▾</span>
+    </button>
+    <div class="filtro-cont">
+      <div class="filtro-opcoes">
+        {% for p in opcoes.projetos %}
+          <label class="opcao">
+            <input type="checkbox" name="projeto" value="{{ p }}"
+                   {% if p in selecao.projetos %}checked{% endif %}>
+            <span class="rotulo" title="{{ p }}">{{ p }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro {% if selecao.obras %}aberto{% endif %}">
+    <button type="button" class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      Obra
+      {% if selecao.obras %}<span class="filtro-badge">{{ selecao.obras|length }}</span>{% endif %}
+      <span class="seta">▾</span>
+    </button>
+    <div class="filtro-cont">
+      <div class="filtro-opcoes">
+        {% for o in opcoes.obras %}
+          <label class="opcao">
+            <input type="checkbox" name="obra" value="{{ o }}"
+                   {% if o in selecao.obras %}checked{% endif %}>
+            <span class="rotulo" title="{{ o }}">{{ o }}</span>
+          </label>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cont" style="padding-top:10px">
+      <label class="opcao">
+        <input type="checkbox" name="trf" value="1" {% if selecao.trf %}checked{% endif %}>
+        <span class="rotulo">Incluir transferências entre contas</span>
+      </label>
+      <p class="cartao-dica" style="margin:6px 0 12px">
+        Transferências são dinheiro trocando de conta dentro da própria empresa.
+        Ficam de fora por padrão, senão o mesmo valor aparece como entrada e saída.
+      </p>
+      <button class="btn" type="submit" style="width:100%">Aplicar filtros</button>
+    </div>
+  </div>
+</form>

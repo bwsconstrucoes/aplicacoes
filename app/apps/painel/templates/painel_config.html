@@ -1,0 +1,233 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Configurações — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Configurações</h2>
+
+{% if primeira %}
+<div class="aviso info">
+  <b>O painel ainda não tem dados.</b>
+  Faça os dois passos abaixo, nesta ordem: primeiro preparar o banco, depois a
+  primeira carga do OMIE. A primeira carga é demorada — ela baixa toda a história
+  da empresa. As atualizações seguintes levam poucos minutos.
+</div>
+{% endif %}
+
+<!-- ===================== 1. BANCO ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>1. Preparar o banco</h3>
+    <small>cria e atualiza as tabelas do painel</small>
+  </div>
+
+  {% if migracoes.pendentes %}
+    <div class="aviso erro">
+      <b>{{ migracoes.pendentes|length }} atualização(ões) de banco pendente(s).</b>
+      Enquanto não aplicar, as telas não funcionam.
+      <br><small>{{ migracoes.pendentes|join(', ') }}</small>
+    </div>
+    <button class="btn amarelo" id="btn-migrar">Aplicar atualizações do banco</button>
+  {% else %}
+    <div class="aviso ok">
+      Banco em dia — {{ migracoes.aplicadas|length }} atualização(ões) aplicada(s).
+    </div>
+  {% endif %}
+  <div id="saida-migrar"></div>
+
+  {% if migracoes.aplicadas %}
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer; font-size:13px; color:var(--tinta-suave)">
+      Ver histórico
+    </summary>
+    <table style="margin-top:8px">
+      <tbody>
+        {% for a in migracoes.aplicadas %}
+        <tr><td class="dados">{{ a.nome }}</td><td class="dados direita">{{ a.em }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+</div>
+
+<!-- ===================== 2. DADOS ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>2. Atualizar os dados do OMIE</h3>
+    <small>toda madrugada, automático; aqui, quando você quiser</small>
+  </div>
+
+  {% if atualizacao %}
+    <div class="aviso {{ 'ok' if atualizacao.ok else 'erro' }}">
+      Última atualização
+      ({{ 'automática' if atualizacao.disparo == 'agendado' else 'manual' }},
+       {{ atualizacao.tipo }}):
+      <b>{{ atualizacao.fim.strftime('%d/%m/%Y às %H:%M') if atualizacao.fim else '—' }}</b>
+      — {{ atualizacao.mensagem }}
+    </div>
+  {% elif not migracoes.pendentes %}
+    <div class="aviso info">Nenhuma atualização feita ainda.</div>
+  {% endif %}
+
+  <div id="andamento" class="aviso info {% if not sincronizacao.rodando %}oculto{% endif %}">
+    <b>Atualizando…</b> <span id="andamento-etapa">
+      {{ sincronizacao.detalhe.etapa if sincronizacao.detalhe else '' }}</span>
+    <br><small>Pode fechar esta página; o trabalho continua no servidor.</small>
+  </div>
+
+  <div class="form-grade" style="margin-top:12px">
+    {% for chave, descricao in modos.items() %}
+      {% if chave != 'carga_inicial' or base_vazia %}
+      <div>
+        <button class="btn {% if chave == 'carga_inicial' %}amarelo{% elif chave != 'rapida' %}secundario{% endif %}"
+                data-modo="{{ chave }}" style="width:100%">
+          {% if chave == 'rapida' %}Atualizar agora
+          {% elif chave == 'completa' %}Atualização completa
+          {% elif chave == 'so_numeros' %}Só refazer os números
+          {% else %}Primeira carga{% endif %}
+        </button>
+        <p class="cartao-dica">{{ descricao }}</p>
+      </div>
+      {% endif %}
+    {% endfor %}
+  </div>
+  <div id="saida-sync"></div>
+</div>
+
+<!-- ===================== 3. AUTOMÁTICO ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>3. A atualização da madrugada</h3>
+    <small>como deixar automático</small>
+  </div>
+  <p style="font-size:13.5px; margin-top:0">
+    O painel não tem relógio próprio de propósito: um agendador dentro do serviço
+    gastaria memória e morreria a cada reinício do Render. Quem chama é um serviço
+    de fora, o mesmo arranjo já usado pelo módulo do Bradesco.
+  </p>
+  <p style="font-size:13.5px">
+    No <b>cron-job.org</b>, crie um job diário apontando para o endereço abaixo,
+    com método <b>POST</b> e este conteúdo. Troque
+    <code>SUA_PAINEL_SECRET</code> pelo valor que você cadastrou no Render.
+  </p>
+  <div class="campo">
+    <label>Endereço</label>
+    <input readonly value="{{ url_for('painel.sincronizar', _external=True) }}"
+           onclick="this.select()">
+  </div>
+  <div class="campo" style="margin-top:10px">
+    <label>Corpo do pedido (JSON)</label>
+    <textarea readonly onclick="this.select()">{"secret": "SUA_PAINEL_SECRET", "modo": "rapida"}</textarea>
+    <p class="dica">
+      Use <code>"modo": "completa"</code> uma vez por semana — é a versão que
+      também procura títulos apagados no OMIE, e demora bem mais.
+    </p>
+  </div>
+</div>
+
+<!-- ===================== 4. VARIÁVEIS ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>4. O que precisa estar configurado no Render</h3>
+  </div>
+  <table>
+    <thead><tr><th class="sem-ordem">Variável</th><th class="sem-ordem">Para quê</th></tr></thead>
+    <tbody>
+      <tr><td class="dados">PAINEL_SENHA</td><td>a senha para entrar aqui</td></tr>
+      <tr><td class="dados">PAINEL_SECRET</td><td>autoriza a atualização automática da madrugada</td></tr>
+      <tr><td class="dados">PAINEL_SHEET_PROJETOS</td><td>a planilha que diz qual obra pertence a qual projeto</td></tr>
+      <tr><td class="dados">OMIE_BWS_APP_KEY</td><td>acesso ao OMIE — a mesma do módulo do Bradesco</td></tr>
+      <tr><td class="dados">OMIE_BWS_APP_SECRET</td><td>acesso ao OMIE — a mesma do módulo do Bradesco</td></tr>
+      <tr><td class="dados">DATABASE_URL</td><td>o banco — já existe, é o mesmo do ERP</td></tr>
+      <tr><td class="dados">GOOGLE_CREDENTIALS_BASE64</td><td>leitura da planilha — já existe</td></tr>
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const saidaMigrar = els("saida-migrar");
+const saidaSync   = els("saida-sync");
+const andamento   = els("andamento");
+
+function aviso(alvo, tipo, html) {
+  alvo.innerHTML = '<div class="aviso ' + tipo + '" style="margin-top:12px">' + html + '</div>';
+}
+
+const btnMigrar = els("btn-migrar");
+if (btnMigrar) {
+  btnMigrar.onclick = async () => {
+    btnMigrar.disabled = true;
+    aviso(saidaMigrar, "info", "Aplicando…");
+    try {
+      const r = await fetch("{{ url_for('painel.aplicar_migracoes') }}", {method: "POST"});
+      const d = await r.json();
+      if (d.ok) {
+        aviso(saidaMigrar, "ok", "Pronto. Recarregando a página…");
+        setTimeout(() => location.reload(), 900);
+      } else {
+        aviso(saidaMigrar, "erro",
+          "<b>Falhou em " + d.erro.migracao + ".</b><br>" + d.erro.erro +
+          (d.erro.dica ? "<br><small>Provável causa: " + d.erro.dica + "</small>" : ""));
+        btnMigrar.disabled = false;
+      }
+    } catch (e) {
+      aviso(saidaMigrar, "erro", "Não consegui falar com o servidor: " + e);
+      btnMigrar.disabled = false;
+    }
+  };
+}
+
+document.querySelectorAll("button[data-modo]").forEach(b => {
+  b.onclick = async () => {
+    const modo = b.dataset.modo;
+    if (modo === "completa" || modo === "carga_inicial") {
+      if (!confirm("Essa atualização é demorada (pode levar horas na primeira " +
+                   "vez). Ela roda no servidor; você pode fechar a página. Começar?")) return;
+    }
+    document.querySelectorAll("button[data-modo]").forEach(x => x.disabled = true);
+    try {
+      const r = await fetch("{{ url_for('painel.sincronizar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({modo: modo})
+      });
+      const d = await r.json();
+      if (d.ok) {
+        andamento.classList.remove("oculto");
+        aviso(saidaSync, "ok", "Começou: " + d.descricao);
+        acompanhar();
+      } else {
+        aviso(saidaSync, "erro", d.erro);
+        document.querySelectorAll("button[data-modo]").forEach(x => x.disabled = false);
+      }
+    } catch (e) {
+      aviso(saidaSync, "erro", "Não consegui falar com o servidor: " + e);
+      document.querySelectorAll("button[data-modo]").forEach(x => x.disabled = false);
+    }
+  };
+});
+
+// Pergunta ao servidor de 5 em 5 segundos como está indo. Só enquanto a página
+// estiver aberta — quem fechar não interrompe nada.
+let acompanhando = false;
+async function acompanhar() {
+  if (acompanhando) return;
+  acompanhando = true;
+  while (true) {
+    await new Promise(r => setTimeout(r, 5000));
+    try {
+      const d = await (await fetch("{{ url_for('painel.estado') }}")).json();
+      if (d.sincronizacao.rodando) {
+        els("andamento-etapa").textContent = d.sincronizacao.detalhe.etapa || "";
+      } else {
+        location.reload();
+        return;
+      }
+    } catch (e) { /* rede instável: tenta de novo no próximo ciclo */ }
+  }
+}
+{% if sincronizacao.rodando %}acompanhar();{% endif %}
+</script>
+{% endblock %}

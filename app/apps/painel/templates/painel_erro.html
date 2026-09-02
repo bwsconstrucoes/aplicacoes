@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Erro — Painel Financeiro BWS</title>
+<link rel="stylesheet" href="{{ url_for('painel.static', filename='painel.css') }}">
+</head>
+<body>
+<div class="entrada">
+  <form onsubmit="return false" style="width:min(560px,100%)">
+    <div class="marca">
+      <div class="brasao">BWS</div>
+      <div>
+        <h1>Alguma coisa deu errado</h1>
+        <p class="sub">Painel Financeiro</p>
+      </div>
+    </div>
+    <div class="aviso erro" style="font-family:var(--fonte-dados); font-size:12.5px">
+      {{ erro }}
+    </div>
+    <p style="font-size:13.5px; color:var(--tinta-suave)">
+      Se a mensagem fala em tabela que não existe, o banco ainda não foi
+      preparado — vá em Configurações e aplique as atualizações do banco.
+    </p>
+    <a class="btn" href="{{ url_for('painel.configuracoes') }}"
+       style="display:inline-block; text-decoration:none">Ir para Configurações</a>
+  </form>
+</div>
+</body>
+</html>

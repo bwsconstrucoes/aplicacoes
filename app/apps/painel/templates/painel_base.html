@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Painel Financeiro BWS{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('painel.static', filename='painel.css') }}">
+</head>
+<body>
+<header class="topo">
+  <a class="topo-marca" href="{{ url_for('painel.visao_geral') }}"
+     style="text-decoration:none; color:inherit">
+    <div class="topo-brasao">BWS</div>
+    <div>
+      <div class="topo-titulo">Painel Financeiro</div>
+      <div class="topo-sub">Base OMIE</div>
+    </div>
+  </a>
+
+  <nav class="topo-abas">
+    {% for chave, rotulo, rota in abas %}
+      <a class="topo-aba {% if chave == aba_ativa %}ativa{% endif %}"
+         href="{{ url_for(rota) }}">{{ rotulo }}</a>
+    {% endfor %}
+  </nav>
+
+  <div class="topo-direita">
+    {% if atualizacao %}
+      <div class="topo-meta">
+        Dados de {{ atualizacao.fim.strftime('%d/%m/%Y %H:%M') if atualizacao.fim else '—' }}<br>
+        {{ 'atualização ' + atualizacao.disparo if atualizacao.ok else 'última tentativa falhou' }}
+      </div>
+    {% endif %}
+    <a class="topo-btn" href="{{ url_for('painel.sair') }}">Sair</a>
+  </div>
+</header>
+
+{% block avisos %}{% endblock %}
+
+<div class="corpo {% block classe_corpo %}{% endblock %}">
+  <aside class="filtros">{% block filtros %}{% endblock %}</aside>
+  <main class="principal">{% block conteudo %}{% endblock %}</main>
+</div>
+
+<script>
+// Formatacao em portugues, feita no navegador para o servidor nao gastar tempo
+// nem memoria montando texto. Os numeros chegam crus do banco.
+const moeda = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
+const els = id => document.getElementById(id);
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>
