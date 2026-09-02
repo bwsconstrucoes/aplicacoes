@@ -71,11 +71,48 @@
     <div class="aviso info">Nenhuma atualização feita ainda.</div>
   {% endif %}
 
-  <div id="andamento" class="aviso info {% if not sincronizacao.rodando %}oculto{% endif %}">
-    <b>Atualizando…</b> <span id="andamento-etapa">
-      {{ sincronizacao.detalhe.etapa if sincronizacao.detalhe else '' }}</span>
-    <br><small>Pode fechar esta página; o trabalho continua no servidor.</small>
+  {% if sincronizacao.interrompida %}
+  <div class="aviso erro">
+    <b>A atualização anterior foi interrompida.</b>
+    Ela começou em {{ sincronizacao.interrompida.inicio.strftime('%d/%m/%Y às %H:%M') }}
+    e parou de dar sinal há {{ sincronizacao.interrompida.silencio_minutos }} minutos,
+    na etapa "{{ sincronizacao.interrompida.etapa }}".
+    <br>Quase sempre isso é o serviço tendo reiniciado — o que acontece a cada
+    publicação de código. <b>Nada foi corrompido</b>: a carga só acrescenta e
+    atualiza, nunca duplica. É só rodar de novo.
   </div>
+  {% endif %}
+
+  <div id="andamento" class="aviso info {% if not sincronizacao.rodando %}oculto{% endif %}">
+    <b>Atualizando…</b>
+    <span id="andamento-etapa">{{ sincronizacao.detalhe.etapa if sincronizacao.detalhe else '' }}</span>
+    <div id="andamento-detalhe" class="dados" style="margin-top:4px; font-size:13px">
+      {{ sincronizacao.detalhe.detalhe_progresso if sincronizacao.detalhe else '' }}
+    </div>
+    <small>Pode fechar esta página; o trabalho continua no servidor.
+      Esta tela se atualiza sozinha e recarrega quando terminar.</small>
+  </div>
+
+  {% set prontas = etapas | selectattr('pronta') | list %}
+  {% if prontas and prontas | length < etapas | length %}
+  <div class="aviso ok">
+    <b>A primeira carga vai retomar de onde parou.</b>
+    {{ prontas | length }} de {{ etapas | length }} etapas já estão prontas — elas
+    não serão baixadas de novo.
+    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px">
+      {% for e in etapas %}
+        <span class="selo {{ 'aprovado' if e.pronta else 'outro' }}">
+          {{ '✓' if e.pronta else '○' }} {{ e.rotulo }}
+        </span>
+      {% endfor %}
+    </div>
+    <p class="dica" style="margin-top:8px">
+      Se desconfiar do que já entrou, dá para
+      <a href="#" id="link-esquecer">apagar essas marcas e começar do zero</a> —
+      mas aí a carga inteira é refeita, e são horas.
+    </p>
+  </div>
+  {% endif %}
 
   <div class="form-grade" style="margin-top:12px">
     {% for chave, descricao in modos.items() %}
@@ -233,6 +270,22 @@ document.querySelectorAll("button[data-modo]").forEach(b => {
   };
 });
 
+const linkEsquecer = els("link-esquecer");
+if (linkEsquecer) {
+  linkEsquecer.onclick = async (evento) => {
+    evento.preventDefault();
+    if (!confirm("Apagar as marcas de etapas concluídas? A próxima carga vai " +
+                 "baixar TUDO de novo, do começo — são horas. Só faça isso se " +
+                 "desconfiar do que já entrou.")) return;
+    try {
+      const r = await fetch("{{ url_for('painel.esquecer_etapas') }}", {method: "POST"});
+      if ((await r.json()).ok) location.reload();
+    } catch (e) {
+      aviso(saidaSync, "erro", "Não consegui falar com o servidor: " + e);
+    }
+  };
+}
+
 const btnImportar = els("btn-importar");
 btnImportar.onclick = async () => {
   const campo = els("arquivo-prestacao");
@@ -265,6 +318,7 @@ btnImportar.onclick = async () => {
 // Pergunta ao servidor de 5 em 5 segundos como está indo. Só enquanto a página
 // estiver aberta — quem fechar não interrompe nada.
 let acompanhando = false;
+let semSinal = 0;
 async function acompanhar() {
   if (acompanhando) return;
   acompanhando = true;
@@ -273,12 +327,21 @@ async function acompanhar() {
     try {
       const d = await (await fetch("{{ url_for('painel.estado') }}")).json();
       if (d.sincronizacao.rodando) {
-        els("andamento-etapa").textContent = d.sincronizacao.detalhe.etapa || "";
+        const detalhe = d.sincronizacao.detalhe || {};
+        els("andamento-etapa").textContent = detalhe.etapa || "";
+        els("andamento-detalhe").textContent = detalhe.detalhe_progresso || "";
+        semSinal = 0;
       } else {
         location.reload();
         return;
       }
-    } catch (e) { /* rede instável: tenta de novo no próximo ciclo */ }
+    } catch (e) {
+      // rede instável acontece; várias falhas seguidas já são outra coisa
+      if (++semSinal >= 6) {
+        els("andamento-detalhe").textContent =
+          "Sem resposta do servidor há um tempo. Recarregue a página.";
+      }
+    }
   }
 }
 {% if sincronizacao.rodando %}acompanhar();{% endif %}

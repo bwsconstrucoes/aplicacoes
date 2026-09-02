@@ -44,7 +44,7 @@ def espelho_limpo():
     resultado = migracoes_runner.aplicar_pendentes()
     assert not resultado.get("erro"), f"migração falhou: {resultado}"
 
-    tabelas = ("titulos", "rateio", "movimentos", "cat", "clientes",
+    tabelas = ("fato", "titulos", "rateio", "movimentos", "cat", "clientes",
                "contas_correntes", "depto_projeto", "sync_state")
 
     def _limpar():

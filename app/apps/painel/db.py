@@ -111,7 +111,13 @@ def obter_engine():
         _engine = create_engine(
             _montar_url(), pool_size=2, max_overflow=2,
             pool_pre_ping=True, pool_recycle=300, future=True,
-            connect_args={"options": f"-c search_path={SCHEMA},public"},
+            connect_args={
+                "options": f"-c search_path={SCHEMA},public",
+                # Banco fora do ar tem de dar ERRO, nao deixar a tela pendurada
+                # esperando para sempre. Dez segundos e mais do que suficiente
+                # para um banco que fica no mesmo datacenter.
+                "connect_timeout": 10,
+            },
         )
         logger.info("Painel: engine criada (schema %s).", SCHEMA)
     return _engine

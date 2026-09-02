@@ -546,16 +546,18 @@ def configuracoes():
     contexto = {"aba_ativa": "config", "abas": ABAS}
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
-        atualizacao, vazia = None, True
+        atualizacao, vazia, etapas = None, True, []
     else:
         from . import consultas
         atualizacao, vazia = consultas.atualizado_em(), consultas.base_vazia()
+        etapas = consultas.etapas_da_carga()
     return render_template(
         "painel_config.html", **contexto,
         migracoes=estado_migracoes,
         atualizacao=atualizacao,
         base_vazia=vazia,
         primeira=request.args.get("primeira") == "1",
+        etapas=etapas,
         modos=tarefas.MODOS,
         sincronizacao=tarefas.estado(),
     )
@@ -569,6 +571,20 @@ def aplicar_migracoes():
     from . import migracoes_runner
     resultado = migracoes_runner.aplicar_pendentes()
     return jsonify({"ok": resultado["erro"] is None, **resultado})
+
+
+@bp.route("/api/esquecer-etapas", methods=["POST"])
+def esquecer_etapas():
+    """Faz a proxima carga comecar do zero, em vez de retomar.
+
+    Botao separado de proposito: retomar e o certo em quase todo caso, e
+    refazer horas de download deve ser uma decisao, nao um acidente."""
+    from .db import conexao
+    from .sync.espelho import limpar_etapas
+    with conexao() as conn:
+        limpar_etapas(conn)
+    logger.info("Painel: etapas da carga esquecidas a pedido do usuário.")
+    return jsonify({"ok": True})
 
 
 @bp.route("/api/sincronizar", methods=["POST"])
