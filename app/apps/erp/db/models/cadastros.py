@@ -49,6 +49,17 @@ class PerfilUsuario(str, enum.Enum):
     CONSULTA = "CONSULTA"
 
 
+class EscopoVisao(str, enum.Enum):
+    """Alcance da visão do operador — configuração por PESSOA, não por cargo.
+
+    Só tem efeito nos perfis que filtram por autoria (ADMINISTRATIVO_OBRA e
+    LANCADOR). Quem já enxerga tudo continua enxergando; supervisor mantém a
+    regra dele.
+    """
+    PROPRIOS = "PROPRIOS"                    # só o que a própria pessoa lançou
+    OBRAS_DESIGNADAS = "OBRAS_DESIGNADAS"    # tudo das obras associadas a ela
+
+
 class FormaPagamento(str, enum.Enum):
     BOLETO = "BOLETO"
     PIX = "PIX"
@@ -98,6 +109,11 @@ class Usuario(Base):
     perfil: Mapped[PerfilUsuario] = mapped_column(
         pg_enum(PerfilUsuario, "perfil_usuario"), nullable=False,
         default=PerfilUsuario.CONSULTA)
+    # Alcance da visão: ver EscopoVisao. Default no mais restritivo, para que
+    # esquecer de configurar feche em vez de abrir.
+    escopo_visao: Mapped[EscopoVisao] = mapped_column(
+        pg_enum(EscopoVisao, "escopo_visao_usuario"), nullable=False,
+        default=EscopoVisao.PROPRIOS, server_default="PROPRIOS")
     cpf: Mapped[Optional[str]] = mapped_column(Text)
     telefone: Mapped[Optional[str]] = mapped_column(Text)
     # fundo fixo: alçada de quem gasta, não do sistema
@@ -113,6 +129,22 @@ class Usuario(Base):
 
     def __repr__(self) -> str:  # pragma: no cover
         return f"<Usuario {self.id} {self.email} {self.perfil}>"
+
+
+class Parametro(Base):
+    """Configuração do sistema, uma linha por chave (ex.: teto mensal de IA).
+
+    Não é lugar de credencial — isso continua na Environment do Render. É
+    para número e escolha que o ADMIN ajusta pela tela e que não justificam
+    uma coluna própria em tabela nenhuma.
+    """
+    __tablename__ = "parametros"
+
+    chave: Mapped[str] = mapped_column(Text, primary_key=True)
+    valor: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    atualizado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
 
 
 class UsuarioObra(Base):

@@ -449,16 +449,18 @@ def ler_contrato(s: Session, conteudo: bytes, nome_arquivo: str) -> dict[str, An
     """
     from difflib import SequenceMatcher
 
+    from app.apps.erp.core.comum.ia_custo import contexto
     from app.apps.erp.core.documentos.leitor import ErroLeitura, ler_documento
 
     try:
-        d = ler_documento(conteudo, nome_arquivo,
-                          dica_usuario="É um CONTRATO DE LOCAÇÃO DE EQUIPAMENTOS. "
-                                       "Extraia em 'itens' cada equipamento locado com "
-                                       "descricao, quantidade e valor (unitário do "
-                                       "período). Em observacoes diga a periodicidade "
-                                       "(diária, semanal, quinzenal ou mensal), o dia de "
-                                       "vencimento e o número do contrato da locadora.")
+        with contexto(operacao="contrato_locacao"):
+            d = ler_documento(conteudo, nome_arquivo,
+                              dica_usuario="É um CONTRATO DE LOCAÇÃO DE EQUIPAMENTOS. "
+                                           "Extraia em 'itens' cada equipamento locado com "
+                                           "descricao, quantidade e valor (unitário do "
+                                           "período). Em observacoes diga a periodicidade "
+                                           "(diária, semanal, quinzenal ou mensal), o dia de "
+                                           "vencimento e o número do contrato da locadora.")
     except ErroLeitura as e:
         raise ErroValidacao(f"Não consegui ler o contrato: {e}")
 

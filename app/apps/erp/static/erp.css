@@ -258,6 +258,7 @@ td.desc small { display: block; color: var(--tinta-suave); font-size: 11.5px; ma
 .aviso { padding: 10px 14px; border-radius: var(--raio-p); margin-bottom: 14px; font-size: 13.5px; }
 .aviso.erro { background: #FBE6E4; color: #7A1A14; border-left: 4px solid var(--vermelho); }
 .aviso.ok   { background: #E3F3E8; color: #124F26; border-left: 4px solid var(--verde); }
+.aviso.alerta { background: #FFF4D6; color: #6B4A00; border-left: 4px solid var(--amarelo); }
 .aviso.info { background: #E8EEFA; color: var(--azul); border-left: 4px solid var(--azul-claro); }
 
 .vazio { text-align: center; color: var(--tinta-suave); padding: 40px 10px; font-size: 14px; }

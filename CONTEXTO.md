@@ -301,6 +301,63 @@ Dois testes estruturais sustentam isso e não dependem de lista escrita à mão:
 um exige declaração em toda rota registrada; o outro deriva do código as rotas
 que recebem id com ação ampla e exige que cada uma confira escopo.
 
+**O alcance de quem lança é por PESSOA, não por cargo** (migração 029). O
+cadastro do operador tem o campo `escopo_visao`:
+
+- `PROPRIOS` — só o que a própria pessoa lançou. É o **default**, inclusive
+  para todo cadastro anterior à migração.
+- `OBRAS_DESIGNADAS` — o que ela lançou **mais** o que estiver rateado nas obras
+  associadas a ela em `usuario_obras`.
+
+Vale para `ADMINISTRATIVO_OBRA` e `LANCADOR` — os perfis que filtravam por
+autoria. Quem já enxergava tudo continua enxergando, e o `SUPERVISOR_OBRA`
+mantém a regra dele. Campo vazio, cadastro antigo ou valor estranho no banco
+caem todos em `PROPRIOS`: **a ausência de configuração fecha**. Quem está em
+`OBRAS_DESIGNADAS` sem nenhuma obra associada enxerga só a autoria — uma lista
+vazia não pode virar "vê tudo".
+
+### 3.10 Consumo de IA: um ponto de registro, um teto que só avisa
+
+Toda leitura por IA passa por `documentos/leitor._chamar_ia`, e é **ali** que o
+consumo é gravado em `ia_uso` — não em cada tela. Quem chama só declara a
+operação com `ia_custo.contexto(operacao="fatura_cartao")`; o usuário vem do
+`before_request` do blueprint; o leitor sabe os tokens. Tela nova que use o
+leitor já nasce contabilizada (sem declarar, cai em `leitura_documento`).
+Falha da OpenAI também é registrada (`sucesso=False`) — a chamada pode ter
+custado, e o painel precisa mostrar que a leitura está quebrando.
+
+O registro roda em **sessão própria, com commit**: perder uma linha do painel
+é aceitável, perder um lançamento não. Por isso ele sobrevive a um rollback da
+operação principal — é intencional.
+
+Teto mensal (`parametros.ia_teto_mensal_usd`, tela de Configurações): ao
+passar de 80% os ADMIN com telefone/CPF recebem um Telegram; ao estourar,
+outro. Uma vez por nível por mês (`parametros.ia_alerta_enviado`). **Nada é
+bloqueado** — o aviso existe para a decisão ser tomada antes da fatura, não
+para travar quem está lançando.
+
+Preços em `PRECOS` (US$/milhão de tokens). Modelo fora da tabela é cobrado
+pelo `PRECO_PADRAO` e aparece no painel como "preço estimado".
+
+### 3.11 Testes com banco de verdade
+
+A suíte sem banco (`SessaoFalsa`) cobre regra; **não cobre SQL** — e o escopo
+por obra/autoria é um `WHERE`. Por isso há uma segunda camada, marcada
+`@pytest.mark.banco`, que roda contra um Postgres **descartável**:
+
+- `ERP_TEST_DATABASE_URL` é a única entrada. O `conftest` **recusa** host que
+  não seja local e banco cujo nome não contenha "teste". A produção não tem
+  como ser alcançada por engano.
+- O banco é reconstruído do zero a cada sessão da suíte: `DROP SCHEMA`,
+  `schema.sql`, depois as 30 migrações pelo mesmo `aplicar_pendentes` do
+  botão de Configurações. Se uma migração quebrar em banco vazio, é aqui que
+  aparece.
+- Cada teste roda numa transação desfeita no fim (savepoint por `commit`).
+  As rotas do Flask usam a **mesma** sessão do teste (`app_real`), então o
+  que a rota grava também some.
+- `.github/workflows/testes.yml` sobe o Postgres a cada push e roda tudo;
+  `docker-compose.teste.yml` sobe o mesmo no PC (porta 5433).
+
 ---
 
 ## 4. Variáveis de ambiente
@@ -729,6 +786,37 @@ Quando eu pedir nova feature ou adaptação:
   **Decisão de negócio que guiou:** cada perfil só vê o que compete à sua
   função, e o detalhe de um registro respeita exatamente o mesmo escopo que a
   listagem — sem exceções de leitura entre obras.
+- **2026-09-02 — Banco de teste descartável no GitHub Actions.** O dono
+  pediu para cobrir com banco real o que o dublê não alcança. Avaliação:
+  Postgres/Docker no PC exigem instalação e alguém lembrar de rodar; um
+  segundo banco no Render custa e fica a um erro da produção. GitHub Actions
+  sobe o banco sozinho a cada push, de graça, e é o único caminho que também
+  funciona para as sessões do Claude (que não têm Docker). A trava de URL
+  (§3.11) foi a primeira coisa escrita.
+- **2026-09-02 — O registro de consumo de IA nunca funcionou; corrigido.** O
+  commit `fd7e306` criou a tabela, o painel e a tabela de preços — mas a
+  função que grava (`_registrar_consumo`) nunca foi escrita: a sugestão de
+  conta por IA a importava, a importação falhava dentro de um `except
+  Exception`, e o resultado era descartar uma resposta que já tinha custado
+  dinheiro. E o painel escrevia num `div` que não existia no HTML. Correção:
+  registro no ponto único do leitor (§3.10), operação declarada por contexto,
+  cartão na tela, teto mensal com aviso. Lição: funcionalidade "entregue" que
+  ninguém abriu na tela não foi entregue — o roteiro de homologação vale para
+  isso também.
+- **2026-09-02 — Alcance do operador virou configuração, não regra de cargo.**
+  A pergunta em aberto era se o administrativo de obra devia ver a obra inteira
+  ou só o que ele mesmo lançou. **Resposta do dono: depende da pessoa** — o
+  administrativo de uma obra grande precisa da obra inteira, o de outra não. Em
+  vez de escolher um dos dois para todo mundo, o alcance virou campo do cadastro
+  (§3.9). **A decisão que importa é o default:** quem já está cadastrado fica no
+  mais restritivo, e ampliar exige alguém escolher, operador por operador. Uma
+  migração que ampliasse alcance sozinha seria um vazamento silencioso.
+- **2026-09-02 — Senha do banco trocada no Render e usuário antigo apagado.** O
+  `.gitignore` estava com marcadores de conflito de merge commitados dentro
+  dele; foi reescrito. A varredura do histórico não achou senha de banco em
+  lugar nenhum, mas achou um token da prefeitura colado no código
+  (`emissaonf/consultar_status.py`, commit `fa985ab`) — o código passou a ler de
+  `EL_NFSE_TOKEN`, e o token continua no histórico até ser trocado na origem.
 - **2026-09-01 — Navegação por MÓDULOS** (`9ee893d`). O ERP deixou de ser "um
   financeiro com apêndices": Financeiro, Obras, Pessoal e Administração viraram
   áreas próprias, cada uma com suas telas, e a barra mostra só a do módulo

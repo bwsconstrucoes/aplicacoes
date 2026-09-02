@@ -231,6 +231,10 @@ def _chamar_ia(*, texto: str = "", imagens: Optional[list[tuple[str, str]]] = No
     if not partes:
         raise ErroLeitura("Nada a ler no arquivo.")
     modelo = MODELO_VISAO if imagens else MODELO_TEXTO
+    # Este é o ÚNICO ponto por onde toda leitura passa — por isso o consumo é
+    # registrado aqui, e não em cada tela. A operação (fatura, contrato,
+    # comprovante…) vem do contexto que quem chamou declarou.
+    inicio = _time.perf_counter()
     try:
         resp = cliente.chat.completions.create(
             model=modelo, temperature=0, max_tokens=2000,
@@ -238,10 +242,34 @@ def _chamar_ia(*, texto: str = "", imagens: Optional[list[tuple[str, str]]] = No
                       {"role": "user", "content": partes}])
     except Exception as e:
         logger.exception("ERP/leitor: falha na IA (%s)", modelo)
+        # chamada que falhou também conta: a OpenAI pode ter cobrado, e o
+        # painel precisa mostrar que a leitura está quebrando
+        _registrar_consumo(None, modelo, None, _ms(inicio), sucesso=False, erro=str(e))
         raise ErroLeitura(f"Serviço de leitura indisponível: {e}")
+    _registrar_consumo(resp, modelo, None, _ms(inicio))
     d = _extrair_json(resp.choices[0].message.content or "")
     d["modelo"] = modelo
     return d
+
+
+def _ms(inicio: float) -> int:
+    return int((_time.perf_counter() - inicio) * 1000)
+
+
+def _registrar_consumo(resposta: Any, modelo: str, operacao: Optional[str],
+                       duracao_ms: Optional[int], *, sucesso: bool = True,
+                       erro: str = "") -> None:
+    """Registra o consumo de uma chamada de IA em sessão própria.
+
+    `operacao` None usa a declarada no contexto (ver ia_custo.contexto). Nunca
+    levanta exceção: o registro é secundário à leitura.
+    """
+    from app.apps.erp.core.comum.ia_custo import registrar_autonomo
+    try:
+        registrar_autonomo(modelo=modelo, resposta=resposta, duracao_ms=duracao_ms,
+                           operacao=operacao, sucesso=sucesso, erro=erro)
+    except Exception as e:                   # pragma: no cover - defesa extra
+        logger.warning("ERP/leitor: consumo não registrado (%s)", e)
 
 
 # ---------------------------------------------------------------------------

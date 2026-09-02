@@ -103,6 +103,15 @@ Ao escrever teste novo, reusar `SessaoFalsa` e os construtores do `conftest.py`,
 e preencher os campos `NOT NULL` que a regra sob teste realmente lê — um objeto
 pela metade falha por motivo errado e faz perder tempo.
 
+**O que o dublê não alcança roda com banco de verdade**, nos testes marcados
+`@pytest.mark.banco` (hoje: o escopo por obra e por autoria, que vive no
+`WHERE`). Eles precisam de `ERP_TEST_DATABASE_URL` apontando para um Postgres
+**local e descartável, com "teste" no nome** — o `conftest.py` recusa qualquer
+outra coisa, então a produção não é alcançável por aqui. Sem a variável, são
+pulados e a suíte segue. O GitHub Actions (`.github/workflows/testes.yml`) sobe
+esse banco sozinho a cada envio; no PC, `docker-compose.teste.yml` faz o mesmo.
+Regra de escopo nova ganha um caso ali, não só no dublê.
+
 ### 2. A aplicação sobe?
 
 `python app/main.py` (porta 5000 por padrão). Uma importação quebrada em

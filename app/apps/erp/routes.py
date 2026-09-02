@@ -210,6 +210,22 @@ def _fora_do_escopo(e: ErroNaoEncontrado):
 
 
 @bp.before_request
+def _abrir_contexto_ia():
+    """Quem está logado "assina" as chamadas de IA desta requisição. Zerado a
+    cada requisição porque as threads do gunicorn são reaproveitadas."""
+    from flask import g
+    from app.apps.erp.core.comum.ia_custo import iniciar_contexto_requisicao
+    g.erp_ia_token = iniciar_contexto_requisicao(session.get("erp_usuario_id"))
+
+
+@bp.teardown_request
+def _fechar_contexto_ia(_exc=None):
+    from flask import g
+    from app.apps.erp.core.comum.ia_custo import encerrar_contexto_requisicao
+    encerrar_contexto_requisicao(g.pop("erp_ia_token", None))
+
+
+@bp.before_request
 def _guarda_permissao():
     endpoint = request.endpoint or ""
     if endpoint in _ISENTOS or endpoint in _ENDPOINTS_PUBLICOS:
@@ -1168,9 +1184,11 @@ def api_ler_documento():
     arquivo = request.files.get("arquivo")
     if arquivo is None:
         return jsonify({"ok": False, "erro": "Nenhum arquivo enviado."}), 400
+    from app.apps.erp.core.comum.ia_custo import contexto
     try:
-        lido = ler_documento(arquivo.read(), arquivo.filename or "",
-                             dica_usuario=(request.form.get("dica") or ""))
+        with contexto(operacao="leitura_documento"):
+            lido = ler_documento(arquivo.read(), arquivo.filename or "",
+                                 dica_usuario=(request.form.get("dica") or ""))
     except ErroLeitura as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
@@ -2210,11 +2228,11 @@ def api_excluir_anexo(anexo_id: int):
 def api_usuarios():
     """Cadastro de operadores. Só o ADMIN mexe."""
     from sqlalchemy import select
-    from app.apps.erp.core.auth.permissoes import ROTULOS, exigir
+    from app.apps.erp.core.auth.permissoes import ROTULOS, escopo_visao, exigir
     from app.apps.erp.core.auth.service import criar_usuario
     from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
     from app.apps.erp.db.models.cadastros import (
-        Obra, PerfilUsuario, Usuario, UsuarioCategoria, UsuarioObra,
+        EscopoVisao, Obra, PerfilUsuario, Usuario, UsuarioCategoria, UsuarioObra,
     )
     try:
         with get_session() as s:
@@ -2239,6 +2257,7 @@ def api_usuarios():
                             UsuarioCategoria.usuario_id == u.id)).all()],
                     "perfil": u.perfil.value,
                     "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
+                    "escopo_visao": escopo_visao(u).value,
                     "ativo": u.ativo, "obras": vinculos.get(u.id, []),
                 } for u in usuarios], "perfis": [
                     {"chave": p.value, "rotulo": ROTULOS.get(p, p.value)}
@@ -2255,6 +2274,11 @@ def api_usuarios():
             u.cpf = cpf or None
             u.telefone = somente_digitos(d.get("telefone") or "") or None
             u.observacoes = (d.get("observacoes") or "").strip() or None
+            # Escopo ausente ou desconhecido cai no mais restritivo.
+            try:
+                u.escopo_visao = EscopoVisao(d.get("escopo_visao"))
+            except ValueError:
+                u.escopo_visao = EscopoVisao.PROPRIOS
             for obra_id in (d.get("obras") or []):
                 s.add(UsuarioObra(usuario_id=u.id, obra_id=int(obra_id)))
             s.commit()
@@ -2278,7 +2302,9 @@ def api_editar_usuario(usuario_id: int):
     from app.apps.erp.core.auth.permissoes import exigir
     from app.apps.erp.core.auth.service import gerar_hash
     from app.apps.erp.core.cadastros.validadores import somente_digitos
-    from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario, UsuarioObra
+    from app.apps.erp.db.models.cadastros import (
+        EscopoVisao, PerfilUsuario, Usuario, UsuarioObra,
+    )
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
@@ -2293,6 +2319,13 @@ def api_editar_usuario(usuario_id: int):
                     setattr(u, campo, somente_digitos(valor) if campo == "telefone" else valor or None)
             if d.get("perfil"):
                 u.perfil = PerfilUsuario(d["perfil"])
+            if "escopo_visao" in d:
+                # Ampliar o alcance é escolha explícita; valor estranho fecha.
+                try:
+                    u.escopo_visao = EscopoVisao(d["escopo_visao"])
+                except ValueError:
+                    return jsonify({"ok": False,
+                                    "erro": "Escopo de visão inválido."}), 400
             if "ativo" in d:
                 u.ativo = bool(d["ativo"])
             if d.get("senha"):
@@ -3642,6 +3675,36 @@ def api_ia_consumo():
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no painel de IA")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/ia/teto", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_ia_teto():
+    """Teto mensal de gasto com IA (US$). Só avisa; não bloqueia nada."""
+    from app.apps.erp.core.auth.permissoes import exigir
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.core.comum.ia_custo import definir_teto_mensal, situacao_teto
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir(usuario, "configurar")
+            teto = definir_teto_mensal(s, d.get("teto"), usuario.id)
+            registrar_evento(s, "parametro", 0, "IA_TETO_ALTERADO",
+                             {"teto_usd": (str(teto) if teto is not None else None)},
+                             usuario.id)
+            s.commit()
+            return jsonify({"ok": True, "situacao": situacao_teto(s)})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao definir teto de IA")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

@@ -176,3 +176,116 @@ def perfis():
 @pytest.fixture
 def hoje():
     return date.today()
+
+
+# ===========================================================================
+# Banco de VERDADE — só para os testes marcados com @pytest.mark.banco
+#
+# A sessão dublada acima ignora WHERE/JOIN; o escopo por obra e por autoria
+# vive exatamente no WHERE. Então esses testes rodam contra um Postgres
+# descartável: esquema + migrações aplicados do zero, dados criados pelo
+# próprio teste, e cada teste dentro de uma transação que é desfeita no fim.
+#
+# A TRAVA é o que importa aqui: a única DATABASE_URL conhecida na empresa é a
+# da produção. Este bloco só aceita ERP_TEST_DATABASE_URL apontando para um
+# host local e para um banco cujo nome contenha "teste". Qualquer outra coisa
+# derruba a suíte com mensagem clara — nunca um "ops" contra o Render.
+# ===========================================================================
+import contextlib  # noqa: E402
+import os  # noqa: E402
+from urllib.parse import urlparse  # noqa: E402
+
+VARIAVEL_BANCO_TESTE = "ERP_TEST_DATABASE_URL"
+_HOSTS_LOCAIS = {"localhost", "127.0.0.1", "::1"}
+
+
+def url_de_teste_segura(url: str) -> str:
+    """Devolve a URL se — e só se — for de um banco local e de teste."""
+    partes = urlparse(url)
+    host = (partes.hostname or "").lower()
+    nome = partes.path.lstrip("/").lower()
+    problemas = []
+    if host not in _HOSTS_LOCAIS:
+        problemas.append(f"host '{host or '?'}' não é local")
+    if "teste" not in nome:
+        problemas.append(f"nome do banco '{nome or '?'}' não contém 'teste'")
+    if not partes.scheme.startswith("postgres"):
+        problemas.append("não é uma URL de Postgres")
+    if problemas:
+        raise RuntimeError(
+            f"{VARIAVEL_BANCO_TESTE} recusada ({'; '.join(problemas)}). A suíte só "
+            f"roda contra um Postgres LOCAL e DESCARTÁVEL, com 'teste' no nome — "
+            f"nunca contra o banco da empresa.")
+    return url
+
+
+@pytest.fixture(scope="session")
+def banco():
+    """Aponta o processo para o banco de teste e o reconstrói do zero:
+    esquema base + todas as migrações, pelos mesmos scripts da produção."""
+    bruto = os.environ.get(VARIAVEL_BANCO_TESTE, "").strip()
+    if not bruto:
+        pytest.skip(f"{VARIAVEL_BANCO_TESTE} não definida — testes com banco pulados")
+    url = url_de_teste_segura(bruto)
+
+    from sqlalchemy import text
+    from app.apps.erp.db import database
+    from app.apps.erp.core.comum.migracoes import aplicar_pendentes
+
+    os.environ["DATABASE_URL"] = url          # só neste processo, só para teste
+    database.reiniciar_engine()
+    eng = database.obter_engine()
+    schema = (RAIZ / "app" / "apps" / "erp" / "schema.sql").read_text(encoding="utf-8")
+    with eng.connect() as conn:
+        conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public;"))
+        conn.execute(text(schema))
+        conn.commit()
+    resultado = aplicar_pendentes()
+    assert not resultado.get("erro"), f"migração falhou no banco de teste: {resultado}"
+    yield eng
+    database.reiniciar_engine()
+
+
+@pytest.fixture
+def sessao_real(banco):
+    """Sessão de verdade dentro de UMA transação desfeita no fim do teste.
+
+    `commit()` dentro do teste (ou dentro de uma rota) só libera um savepoint;
+    a transação de fora nunca é confirmada — o banco volta limpo."""
+    from sqlalchemy.orm import Session
+    conn = banco.connect()
+    trans = conn.begin()
+    s = Session(bind=conn, join_transaction_mode="create_savepoint",
+                autoflush=False, expire_on_commit=False)
+    try:
+        yield s
+    finally:
+        s.close()
+        trans.rollback()
+        conn.close()
+
+
+@pytest.fixture
+def app_real(sessao_real, monkeypatch):
+    """App do ERP cujas rotas usam a MESMA sessão real do teste — assim o que
+    a rota grava é desfeito junto, e o que ela lê é o cenário montado."""
+    from flask import Flask
+    from app.apps.erp import routes
+
+    @contextlib.contextmanager
+    def _mesma_sessao():
+        yield sessao_real
+    monkeypatch.setattr(routes, "get_session", _mesma_sessao)
+
+    a = Flask(__name__)
+    a.secret_key = "teste"
+    a.register_blueprint(routes.bp)
+    return a
+
+
+def como(app, usuario_id: int):
+    """Cliente HTTP já logado como o usuário dado."""
+    c = app.test_client()
+    with c.session_transaction() as sessao:
+        sessao["erp_usuario_id"] = usuario_id
+    return c

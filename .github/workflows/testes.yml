@@ -1,0 +1,57 @@
+# ============================================================================
+# Suíte do ERP a cada envio — com um Postgres DESCARTÁVEL.
+#
+# Os 220 testes de regra de negócio rodam sem banco. Os marcados com "banco"
+# rodam contra o Postgres que este workflow sobe do zero: esquema + as 30
+# migrações + dados criados pelo próprio teste. Nada aqui enxerga o Render:
+# a única URL conhecida é a do container, que morre no fim da rodada.
+# ============================================================================
+name: testes
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: erp
+          POSTGRES_PASSWORD: erp
+          POSTGRES_DB: erp_teste
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U erp -d erp_teste"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # O nome do banco PRECISA conter "teste" e o host PRECISA ser local:
+      # o conftest recusa qualquer outra coisa.
+      ERP_TEST_DATABASE_URL: postgresql://erp:erp@localhost:5432/erp_teste
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Instalar dependências
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements-dev.txt
+
+      - name: Rodar a suíte (regras + banco de verdade)
+        run: python -m pytest -rs

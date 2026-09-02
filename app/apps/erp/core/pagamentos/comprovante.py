@@ -156,10 +156,13 @@ def processar_comprovante(s: Session, conteudo: bytes, nome_arquivo: str, *,
                           baixar_automatico: bool = True,
                           usuario: Optional[Usuario] = None) -> dict[str, Any]:
     """Lê o comprovante, encontra o título e dá a baixa, anexando o documento."""
+    from app.apps.erp.core.comum.ia_custo import contexto
     try:
-        lido = ler_documento(conteudo, nome_arquivo,
-                             dica_usuario="É um comprovante de pagamento bancário. "
-                                          "O emitente é o FAVORECIDO que recebeu.")
+        with contexto(operacao="comprovante_pagamento",
+                      usuario_id=(usuario.id if usuario else None)):
+            lido = ler_documento(conteudo, nome_arquivo,
+                                 dica_usuario="É um comprovante de pagamento bancário. "
+                                              "O emitente é o FAVORECIDO que recebeu.")
     except ErroLeitura as e:
         raise ErroValidacao(f"Não consegui ler o comprovante: {e}")
 
