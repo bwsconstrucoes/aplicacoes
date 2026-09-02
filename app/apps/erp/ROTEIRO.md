@@ -169,7 +169,9 @@
       lote, plano de contas, painéis financeiros, empreitas e locações
 - [ ] Segurança — falta: navegar em homologação com um usuário de cada perfil.
       Os testes cobrem a RECUSA (que é o lado que importa); o caminho de quem
-      TEM acesso precisa de banco e não está coberto
+      TEM acesso precisa de banco e não está coberto. Roteiro pronto em
+      `HOMOLOGACAO_PERFIS.md`; operadores de teste em
+      `scripts/seed_usuarios_teste.py`. Falta rodar
 - [x] Segurança — DECIDIDO: não é regra do cargo, é configuração por pessoa. O
       cadastro do operador escolhe entre "só os meus lançamentos" e "tudo das
       obras designadas" (migração 029). Padrão do que já existe: o mais
