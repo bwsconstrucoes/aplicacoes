@@ -1,0 +1,229 @@
+{% extends "painel_base.html" %}
+{% import "painel_grafico_linhas.html" as gr %}
+{% block titulo %}Necessidade de Caixa — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Necessidade de Caixa
+  <small>um conjunto de obras se paga sozinho, ou alguém segurou?</small>
+</h2>
+
+<div class="aviso info">
+  Esta tela <b>não usa os filtros da barra lateral</b>, de propósito. A linha
+  "empresa inteira" é a régua contra a qual você compara — se ela mudasse com o
+  filtro, não seria régua.
+</div>
+
+<!-- ===================== MONTAR O CONJUNTO ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Monte o conjunto A</h3>
+    <small>escolha obras ou projetos e quanto de cada um entra</small>
+  </div>
+
+  <form method="get" id="form-a">
+    <div id="linhas-a"></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; margin-top:10px">
+      <button type="button" class="btn secundario" id="btn-add">+ Adicionar</button>
+      <div class="campo" style="max-width:180px">
+        <label for="desde">A partir de</label>
+        <select id="desde" name="desde">
+          <option value="">(todo o período)</option>
+          {% for m in meses_disponiveis %}
+            <option value="{{ m }}" {% if desde == m %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo" style="max-width:220px">
+        <label for="saldo">Saldo de caixa no início (R$)</label>
+        <input id="saldo" name="saldo" type="number" step="1000" value="{{ saldo }}">
+        <p class="dica">O que a empresa tinha em conta antes do primeiro mês.</p>
+      </div>
+      <div class="campo" style="max-width:260px">
+        <label class="opcao" style="margin-top:18px">
+          <input type="checkbox" name="aportes" value="1" {% if incluir_aportes %}checked{% endif %}>
+          <span class="rotulo">Contar aportes e dividendos</span>
+        </label>
+      </div>
+      <button class="btn" type="submit" style="margin-bottom:2px">Simular</button>
+    </div>
+  </form>
+</div>
+
+{% if not simulacao.conjunto_montado %}
+  <div class="vazio">
+    <b>Escolha ao menos uma obra ou projeto</b>
+    Clique em "Adicionar", escolha o item e o quanto dele entra, e depois em "Simular".
+  </div>
+{% else %}
+
+<!-- ===================== O QUE ISSO QUER DIZER ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>O que os números dizem</h3>
+    <small>a leitura, em português</small>
+  </div>
+  {% for frase in simulacao.leitura %}
+    <p style="font-size:14px; margin:0 0 10px">{{ frase|safe }}</p>
+  {% endfor %}
+</div>
+
+<!-- ===================== KPIs ===================== -->
+<div class="kpis">
+  <div class="kpi estatico vermelho">
+    <div class="kpi-rotulo">Meses no vermelho (A)</div>
+    <div class="kpi-valor">{{ resumo.meses_negativos }}</div>
+    <div class="kpi-sub">de {{ simulacao.linhas|length }} meses</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Pior posição de A</div>
+    <div class="kpi-valor {{ classe_valor(resumo.pior_a) }}">{{ brl(resumo.pior_a) }}</div>
+    <div class="kpi-sub">{{ resumo.pior_mes or '—' }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Resto das obras no pior mês</div>
+    <div class="kpi-valor {{ classe_valor(resumo.resto_no_pior) }}">{{ brl(resumo.resto_no_pior) }}</div>
+  </div>
+  <div class="kpi estatico ciano">
+    <div class="kpi-rotulo">Empresa inteira no pior mês</div>
+    <div class="kpi-valor {{ classe_valor(resumo.empresa_no_pior) }}">{{ brl(resumo.empresa_no_pior) }}</div>
+    <div class="kpi-sub">sem contar empréstimo</div>
+  </div>
+</div>
+
+<!-- ===================== GRÁFICO ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Caixa acumulado</h3>
+    <small>as barras são os empréstimos tomados no mês</small>
+  </div>
+  {{ gr.grafico(grafico) }}
+  <div class="gr-legenda" style="margin-top:2px">
+    <span><i style="background:var(--vermelho)"></i>Conjunto A</span>
+    <span><i style="background:var(--verde)"></i>Resto das obras</span>
+    <span><i style="background:var(--azul)"></i>Empresa inteira</span>
+    <span><i style="background:var(--ambar)"></i>Caixa reconstruído</span>
+    <span><i style="background:var(--roxo)"></i>Empréstimo tomado no mês</span>
+  </div>
+  <p class="cartao-dica">
+    O <b>caixa reconstruído</b> soma tudo que explica o dinheiro em conta: as
+    obras, os aportes menos dividendos, o empréstimo líquido e o saldo inicial.
+    Ele nunca deveria ficar negativo — se ficar, entrou dinheiro de uma fonte
+    que o painel não conhece, e vale investigar.
+  </p>
+</div>
+
+<!-- ===================== TABELA MÊS A MÊS ===================== -->
+<div class="tabela-wrap" style="margin-bottom:14px">
+  <div class="tabela-barra"><span class="resumo">Mês a mês, do mais recente</span></div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Mês</th>
+          <th class="sem-ordem direita">Conjunto A</th>
+          <th class="sem-ordem direita">Resto das obras</th>
+          <th class="sem-ordem direita">Empresa inteira</th>
+          <th class="sem-ordem direita">Empréstimo líquido</th>
+          <th class="sem-ordem direita">Caixa reconstruído</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in simulacao.linhas|reverse %}
+        <tr>
+          <td class="dados">{{ l.rotulo }}</td>
+          <td class="dados direita {{ classe_valor(l.conjunto_a) }}">{{ brl(l.conjunto_a) }}</td>
+          <td class="dados direita {{ classe_valor(l.resto) }}">{{ brl(l.resto) }}</td>
+          <td class="dados direita {{ classe_valor(l.empresa) }}"><b>{{ brl(l.empresa) }}</b></td>
+          <td class="dados direita">{{ brl(l.emprestimo_liquido) }}</td>
+          <td class="dados direita {{ classe_valor(l.caixa_reconstruido) }}">{{ brl(l.caixa_reconstruido) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===================== COMPOSIÇÃO ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Composição</h3>
+    <small>quanto de cada obra entrou em A, e o que ela acumulou de caixa</small>
+  </div>
+  <div class="tabela-rolagem" style="max-height:420px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem">Projeto</th>
+          <th class="sem-ordem direita">% em A</th>
+          <th class="sem-ordem direita">Caixa acumulado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in simulacao.composicao %}
+        <tr class="{% if c.pct_a == 0 %}linha-sub{% endif %}">
+          <td class="desc">{{ c.obra }}</td>
+          <td>{{ c.projeto }}</td>
+          <td class="dados direita">{{ c.pct_a }}%</td>
+          <td class="dados direita {{ classe_valor(c.acumulado) }}">{{ brl(c.acumulado) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    As linhas com <b>0%</b> ficaram fora de A e compõem o "resto": obras que você
+    não listou, departamentos administrativos e obras <b>sem projeto</b> — obra
+    sem projeto é departamento do OMIE que não está na planilha de projetos.
+  </p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// As linhas do conjunto A viram parâmetros na própria URL (a=obra:CASA|100),
+// para a simulação poder ser salva nos favoritos e reaberta igual.
+const OPCOES = {{ opcoes_json|safe }};
+const ESCOLHIDOS = {{ escolhidos_json|safe }};
+const caixa = els("linhas-a");
+
+function novaLinha(item, pct) {
+  const div = document.createElement("div");
+  div.className = "form-grade";
+  div.style.cssText = "grid-template-columns:1fr 120px 44px; margin-bottom:8px";
+  const opcoes = OPCOES.map(o =>
+    `<option value="${o.valor}" ${o.valor === item ? "selected" : ""}>${o.rotulo}</option>`
+  ).join("");
+  div.innerHTML =
+    `<div class="campo"><select class="item">${opcoes}</select></div>` +
+    `<div class="campo"><input class="pct" type="number" min="0" max="100" step="5" value="${pct || 100}"></div>` +
+    `<button type="button" class="btn secundario remover" title="Remover">×</button>`;
+  div.querySelector(".remover").onclick = () => { div.remove(); };
+  caixa.appendChild(div);
+}
+
+els("btn-add").onclick = () => novaLinha(OPCOES[0] && OPCOES[0].valor, 100);
+
+// Antes de enviar, transforma as linhas em parâmetros `a`
+els("form-a").addEventListener("submit", () => {
+  caixa.querySelectorAll("input[name='a']").forEach(e => e.remove());
+  caixa.querySelectorAll(".form-grade").forEach(linha => {
+    const item = linha.querySelector(".item").value;
+    const pct = linha.querySelector(".pct").value;
+    if (!item) return;
+    const escondido = document.createElement("input");
+    escondido.type = "hidden"; escondido.name = "a";
+    escondido.value = item + "|" + pct;
+    els("form-a").appendChild(escondido);
+  });
+});
+
+if (ESCOLHIDOS.length) {
+  ESCOLHIDOS.forEach(e => novaLinha(e.item, e.pct));
+} else {
+  novaLinha(OPCOES[0] && OPCOES[0].valor, 100);
+}
+</script>
+{% endblock %}

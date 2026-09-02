@@ -1,0 +1,204 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Prestação de Contas — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Prestação de Contas
+  <small>quanto do resultado cabe a cada sócio</small>
+</h2>
+
+{% if not tem_participacoes %}
+<div class="aviso erro">
+  <b>Nenhuma participação cadastrada.</b>
+  Sem dizer quem participa de qual projeto e com quanto, não há o que dividir.
+  <a href="{{ url_for('painel.prestacao_parametros') }}">Cadastre em Parâmetros</a>
+  — ou, se você já tinha isso no computador, envie o arquivo em Configurações.
+</div>
+{% endif %}
+
+<form method="get" class="tabela-barra" style="border:0; padding:0 0 12px">
+  <div class="campo" style="max-width:300px">
+    <label for="medida">Base do cálculo</label>
+    <select id="medida" name="medida" onchange="this.form.submit()">
+      <option value="comprometido" {% if medida == 'comprometido' %}selected{% endif %}>
+        Comprometido — tudo que foi ganho e gasto
+      </option>
+      <option value="executado" {% if medida == 'executado' %}selected{% endif %}>
+        Executado — só o que já foi pago e recebido
+      </option>
+    </select>
+  </div>
+  <div class="espaco"></div>
+  <a class="btn secundario" href="{{ url_for('painel.prestacao_parametros') }}"
+     style="text-decoration:none; align-self:flex-end">Parâmetros e regras</a>
+</form>
+
+<!-- ===================== POSIÇÃO DOS SÓCIOS ===================== -->
+<div class="tabela-wrap" style="margin-bottom:14px">
+  <div class="tabela-barra">
+    <span class="resumo">
+      <b>Quota</b> = o que coube do resultado &nbsp;·&nbsp;
+      <b>Ajustes</b> = o que já foi retirado ou assumido &nbsp;·&nbsp;
+      <b>Saldo</b> = a diferença
+    </span>
+    <span class="espaco"></span>
+    <a class="btn secundario" style="text-decoration:none" href="{{ url_for('painel.baixar', assunto='posicao', **request.args) }}">⬇ Baixar planilha</a>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Sócio</th>
+          <th class="sem-ordem">Tipo</th>
+          <th class="sem-ordem direita">Projetos</th>
+          <th class="sem-ordem direita">Quota</th>
+          <th class="sem-ordem direita">Ajustes</th>
+          <th class="sem-ordem direita">Saldo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in posicao %}
+        <tr>
+          <td class="desc"><b>{{ p.socio }}</b></td>
+          <td><span class="selo {{ 'outro' if p.tipo == 'Externo' else 'pago' }}">{{ p.tipo }}</span></td>
+          <td class="dados direita">{{ p.projetos }}</td>
+          <td class="dados direita {{ classe_valor(p.quota) }}">{{ brl(p.quota) }}</td>
+          <td class="dados direita {{ classe_valor(p.ajustes) }}">{{ brl(p.ajustes) if p.ajustes else '—' }}</td>
+          <td class="dados direita {{ classe_valor(p.saldo) }}"><b>{{ brl(p.saldo) }}</b></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="vazio">Nada a dividir ainda.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===================== POR PROJETO ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Resultado por projeto</h3>
+    <small>antes e depois do rateio da estrutura</small>
+  </div>
+  <div class="tabela-rolagem" style="max-height:400px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Projeto</th>
+          <th class="sem-ordem direita">Receita bruta</th>
+          <th class="sem-ordem direita">Receita líquida</th>
+          <th class="sem-ordem direita">Despesas</th>
+          <th class="sem-ordem direita">Resultado direto</th>
+          <th class="sem-ordem direita">Rateio recebido</th>
+          <th class="sem-ordem direita">Resultado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for nome, n in projetos %}
+        <tr>
+          <td class="desc"><b>{{ nome or '(sem projeto)' }}</b></td>
+          <td class="dados direita">{{ brl(n.receita_bruta) }}</td>
+          <td class="dados direita">{{ brl(n.receita_liquida) }}</td>
+          <td class="dados direita">{{ brl(n.despesas) }}</td>
+          <td class="dados direita {{ classe_valor(n.resultado_direto) }}">{{ brl(n.resultado_direto) }}</td>
+          <td class="dados direita">{{ brl(n.rateio) }}</td>
+          <td class="dados direita {{ classe_valor(n.resultado) }}"><b>{{ brl(n.resultado) }}</b></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    <b>Resultado direto</b> é só o que aconteceu na obra. O <b>rateio</b> é o
+    pedaço do custo da matriz e da filial que coube a ela, dividido na proporção
+    do custo de pessoal — obra com mais gente consome mais estrutura.
+  </p>
+</div>
+
+<!-- ===================== QUOTAS ===================== -->
+{% if quotas %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Quota por sócio e projeto</h3>
+    <small>a conta aberta</small>
+  </div>
+  <div class="tabela-barra" style="border:0; padding:0 0 10px">
+    <span class="espaco"></span>
+    <a class="btn secundario" style="text-decoration:none" href="{{ url_for('painel.baixar', assunto='quotas', **request.args) }}">⬇ Baixar planilha</a>
+  </div>
+  <div class="tabela-rolagem" style="max-height:440px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Sócio</th>
+          <th class="sem-ordem">Projeto</th>
+          <th class="sem-ordem direita">%</th>
+          <th class="sem-ordem direita">Base</th>
+          <th class="sem-ordem direita">Crédito BWS</th>
+          <th class="sem-ordem direita">Quota</th>
+          <th class="sem-ordem">Como foi calculado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for q in quotas %}
+        <tr>
+          <td class="desc">{{ q.socio }}</td>
+          <td>{{ q.projeto }}</td>
+          <td class="dados direita">{{ '%.2f'|format(q.pct) }}%</td>
+          <td class="dados direita {{ classe_valor(q.base) }}">{{ brl(q.base) }}</td>
+          <td class="dados direita">{{ brl(q.credito_bws) if q.credito_bws else '—' }}</td>
+          <td class="dados direita {{ classe_valor(q.quota) }}"><b>{{ brl(q.quota) }}</b></td>
+          <td class="desc"><small>{{ q.visao }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    Num projeto <b>com sócio externo</b> a conta muda de propósito: o externo
+    entrou na obra, não na construtora, então não é ele quem paga a estrutura
+    administrativa. Cobra-se da parceria uma taxa de administração; todos
+    dividem o resultado direto menos essa taxa; e a taxa mais o rateio da obra
+    voltam só para os sócios da BWS. A soma das quotas fecha com o resultado do
+    projeto — ninguém some, nada conta duas vezes.
+  </p>
+</div>
+{% endif %}
+
+<!-- ===================== O QUE NÃO COUBE ===================== -->
+{% if sobras %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Custo que não coube em obra nenhuma</h3>
+    <small>{{ brl(total_sobras) }} no total</small>
+  </div>
+  <div class="aviso info">
+    Isto aparece aqui em vez de sumir: é custo real da empresa que o rateio não
+    conseguiu distribuir, quase sempre porque naquele mês nenhuma obra do lado
+    escolhido teve custo de pessoal para servir de referência.
+  </div>
+  <div class="tabela-rolagem" style="max-height:300px">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Origem</th>
+          <th class="sem-ordem">Mês</th>
+          <th class="sem-ordem direita">Valor</th>
+          <th class="sem-ordem">Por quê</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in sobras %}
+        <tr>
+          <td class="desc">{{ s.origem }}</td>
+          <td class="dados">{{ s.mes }}</td>
+          <td class="dados direita {{ classe_valor(s.valor) }}">{{ brl(s.valor) }}</td>
+          <td><small>{{ s.motivo }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

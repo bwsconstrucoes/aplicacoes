@@ -363,3 +363,281 @@ def comprometido_vs_executado(f: Filtros, nivel: str = "projeto",
             "pct": (abs(executado) / abs(comprometido) * 100) if comprometido else 0.0,
         })
     return saida
+
+
+# ---------------------------------------------------------------------------
+# Necessidade de Caixa
+# ---------------------------------------------------------------------------
+# Esta tela IGNORA os filtros da barra lateral, de propósito — como na versão
+# antiga. Ela responde "a empresa inteira precisou do banco, e quando?", e essa
+# régua tem de ser fixa: se mudasse com o filtro, não seria régua.
+
+# Como o OMIE nomeia cada tipo de movimento financeiro. Se o plano de contas
+# mudar os nomes, é aqui que se ajusta — as três telas leem daqui.
+E_EMPRESTIMO = "categoria ~* 'Empr[eé]st'"
+E_APORTE = "categoria ILIKE '%Aporte%'"
+E_DIVIDENDO = "categoria ILIKE '%Dividendo%'"
+E_APLICACAO = "categoria ~* '(Aplica|Resgate)'"
+
+# Base da simulação: só o que virou caixa, com data, e diferente de zero.
+_BASE_CAIXA = f"{PAGO} AND data IS NOT NULL AND pago_recebido <> 0"
+
+
+def caixa_mensal_por_obra() -> list[tuple]:
+    """Quanto cada obra gerou ou consumiu de caixa, mês a mês.
+
+    Base do DRE (operação), sem as retenções de receita. Devolve
+    (início do mês, obra, valor) — algumas milhares de linhas, não a base."""
+    sql = f"""
+        SELECT date_trunc('month', data)::date,
+               COALESCE(NULLIF(departamento,''), '(sem obra)'),
+               SUM(pago_recebido)
+          FROM fato
+         WHERE {_BASE_CAIXA} AND analise = 'DRE'
+           AND NOT (tipo = ? AND {RETIDO})
+         GROUP BY 1, 2 ORDER BY 1, 2"""
+    return [(mes, obra, float(valor or 0)) for mes, obra, valor in consultar(sql, [REC])]
+
+
+def financeiro_mensal() -> list[dict]:
+    """As fontes de dinheiro que NÃO vêm da operação, mês a mês.
+
+    Empréstimo tomado e principal pago, aporte recebido, dividendo e devolução
+    de aporte pagos, e um "outros" para o que sobra (venda de ativo, aumento de
+    capital). Aplicação e resgate ficam fora: são o caixa mudando de bolso."""
+    sql = f"""
+        SELECT date_trunc('month', data)::date,
+               SUM(CASE WHEN {E_EMPRESTIMO} AND pago_recebido > 0
+                        THEN pago_recebido ELSE 0 END) AS emprestimo_tomado,
+               SUM(CASE WHEN {E_EMPRESTIMO} AND pago_recebido < 0
+                        THEN pago_recebido ELSE 0 END) AS emprestimo_pago,
+               SUM(CASE WHEN {E_APORTE} AND pago_recebido > 0
+                        THEN pago_recebido ELSE 0 END) AS aporte_recebido,
+               SUM(CASE WHEN ({E_APORTE} AND pago_recebido < 0) OR {E_DIVIDENDO}
+                        THEN pago_recebido ELSE 0 END) AS dividendo_pago,
+               SUM(CASE WHEN NOT ({E_EMPRESTIMO}) AND NOT ({E_APORTE})
+                         AND NOT ({E_DIVIDENDO}) AND NOT ({E_APLICACAO})
+                        THEN pago_recebido ELSE 0 END) AS outros
+          FROM fato
+         WHERE {_BASE_CAIXA} AND analise = 'Fluxo de Caixa'
+         GROUP BY 1 ORDER BY 1"""
+    campos = ("emprestimo_tomado", "emprestimo_pago", "aporte_recebido",
+              "dividendo_pago", "outros")
+    return [dict(mes=linha[0], **{c: float(v or 0) for c, v in zip(campos, linha[1:])})
+            for linha in consultar(sql)]
+
+
+def obra_para_projeto() -> dict:
+    """A que projeto cada obra pertence. Quando a obra aparece com mais de um
+    projeto (dado inconsistente na planilha), vale o mais frequente."""
+    sql = """
+        SELECT departamento, projeto, COUNT(*) AS quantas
+          FROM fato
+         WHERE COALESCE(departamento,'') <> ''
+         GROUP BY 1, 2 ORDER BY 1, 3 DESC"""
+    mapa = {}
+    for obra, projeto, _quantas in consultar(sql):
+        if obra not in mapa:                       # o primeiro é o mais frequente
+            mapa[obra] = (projeto or "").strip()
+    return mapa
+
+
+# ---------------------------------------------------------------------------
+# Receita de Obra — por medição
+# ---------------------------------------------------------------------------
+# Uma medição é o que a obra faturou num período. No OMIE ela vira vários
+# títulos (as parcelas), sem número de documento que os ligue — o elo é a
+# observação. A chave que junta tudo isso é gravada na própria linha do fato
+# (migração 004), então quem agrupa é o banco.
+
+def medicoes(f: Filtros, visao: str = "todas", limite: int = 300) -> list[dict]:
+    """As medições de obra, da maior para a menor.
+
+    Bruto = o que já entrou + o que o cliente reteve + o que falta receber.
+    `visao`: 'todas', 'a_receber' (só com saldo) ou 'quitadas'."""
+    where, params = f.where("analise = 'DRE' AND tipo = ?", [REC])
+    tendo = {
+        "a_receber": "HAVING ABS(SUM(a_pagar_receber)) > 0.005",
+        "quitadas": "HAVING ABS(SUM(a_pagar_receber)) <= 0.005",
+    }.get(visao, "")
+    sql = f"""
+        SELECT COALESCE(NULLIF(medicao_rotulo,''), '(sem medição)'),
+               MAX(razao_social), MAX(departamento), MAX(projeto),
+               MAX(numero_documento), MAX(link), MAX(data),
+               SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
+               SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
+               SUM(a_pagar_receber)
+          FROM fato{where}
+         GROUP BY 1 {tendo}
+         ORDER BY ABS(SUM({COMPROMETIDO})) DESC LIMIT {int(limite)}"""
+    saida = []
+    for (rotulo, cliente, obra, projeto, documento, link, data,
+         recebido, retido, a_receber) in consultar(sql, params):
+        recebido, retido = float(recebido or 0), float(retido or 0)
+        a_receber = float(a_receber or 0)
+        bruto = recebido + retido + a_receber
+        if abs(bruto) <= 0.005:
+            continue
+        if abs(recebido) > 0.005 and abs(a_receber) <= 0.005:
+            situacao = "Recebida"
+        elif abs(recebido) > 0.005:
+            situacao = "Recebida em parte"
+        else:
+            situacao = "A receber"
+        saida.append({
+            "medicao": rotulo, "cliente": cliente or "", "obra": obra or "",
+            "projeto": projeto or "", "documento": documento or "",
+            "link": link or "", "data": data,
+            "recebido": recebido, "retido": retido, "a_receber": a_receber,
+            "bruto": bruto, "situacao": situacao,
+        })
+    return saida
+
+
+def total_das_medicoes(f: Filtros, visao: str = "todas") -> dict:
+    """Os totais das medições — somados pelo banco, não pela lista da tela.
+
+    A tela mostra as 300 maiores; o total tem de ser de TODAS, senão o rodapé
+    não bate com o DRE."""
+    where, params = f.where("analise = 'DRE' AND tipo = ?", [REC])
+    tendo = {
+        "a_receber": "HAVING ABS(SUM(a_pagar_receber)) > 0.005",
+        "quitadas": "HAVING ABS(SUM(a_pagar_receber)) <= 0.005",
+    }.get(visao, "")
+    sql = f"""
+        SELECT COUNT(*), SUM(recebido), SUM(retido), SUM(aberto)
+          FROM (
+            SELECT SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END) AS recebido,
+                   SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END) AS retido,
+                   SUM(a_pagar_receber) AS aberto
+              FROM fato{where}
+             GROUP BY COALESCE(NULLIF(medicao_rotulo,''), '(sem medição)') {tendo}
+          ) AS por_medicao"""
+    quantas, recebido, retido, aberto = consultar(sql, params)[0]
+    recebido, retido = float(recebido or 0), float(retido or 0)
+    aberto = float(aberto or 0)
+    return {"quantas": quantas or 0, "recebido": recebido, "retido": retido,
+            "a_receber": aberto, "bruto": recebido + retido + aberto}
+
+
+def recebimentos_da_medicao(medicao: str, limite: int = 200) -> list[dict]:
+    """Cada entrada de dinheiro que quitou uma medição, com data e valor exatos.
+
+    Vem da outra tabela (`fato_recebimentos`), que abre por movimento: um título
+    recebido em três parcelas aparece aqui como três linhas."""
+    sql = """
+        SELECT data, valor, juros, multa, desconto, conta_corrente, parcela,
+               origem, numero_documento
+          FROM fato_recebimentos
+         WHERE medicao = ?
+         ORDER BY data NULLS LAST, id
+         LIMIT %d""" % int(limite)
+    campos = ("data", "valor", "juros", "multa", "desconto", "conta_corrente",
+              "parcela", "origem", "numero_documento")
+    return [dict(zip(campos, linha)) for linha in consultar(sql, (medicao,))]
+
+
+def outras_receitas(f: Filtros, limite: int = 60) -> list[dict]:
+    """Receita que não é de obra: rendimento, estorno, devolução."""
+    where, params = f.where(
+        "analise = 'DRE' AND tipo = ? AND categoria <> 'Receita de Obras' "
+        f"AND NOT ({RETIDO})", [REC])
+    sql = f"""
+        SELECT categoria, SUM({EXECUTADO}), SUM({EM_ABERTO}), COUNT(*)
+          FROM fato{where} GROUP BY 1
+        HAVING ABS(SUM({COMPROMETIDO})) > 0.005
+         ORDER BY ABS(SUM({COMPROMETIDO})) DESC LIMIT {int(limite)}"""
+    return [{"categoria": c, "recebido": float(r or 0), "a_receber": float(a or 0),
+             "titulos": n} for c, r, a, n in consultar(sql, params)]
+
+
+# ---------------------------------------------------------------------------
+# Prestação de Contas — a base
+# ---------------------------------------------------------------------------
+# Três consultas pequenas, cada uma na granularidade exata que a conta precisa.
+# Trazer a base crua e agrupar aqui seria voltar ao problema que este painel
+# resolveu: são 185 mil linhas.
+
+# Lancamento sem data existe: titulo cujo vencimento nao pode ser lido. Ele NAO
+# some da apuracao — o valor e real e conta no resultado da obra. So nao da para
+# rateá-lo por mes, e o rateio o devolve como sobra, com o motivo escrito.
+SEM_DATA = "(sem data)"
+
+
+def _medida(medida: str) -> str:
+    return EXECUTADO if medida == "executado" else COMPROMETIDO
+
+
+def apuracao_por_obra_mes(medida: str = "comprometido") -> list[dict]:
+    """Receita líquida, retenções e despesas de cada obra, mês a mês.
+
+    É a base de tudo na prestação de contas. Umas poucas milhares de linhas
+    (obras × meses), não a base inteira."""
+    valor = _medida(medida)
+    sql = f"""
+        SELECT COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
+               COALESCE(NULLIF(departamento,''), '(sem obra)'),
+               COALESCE(NULLIF(projeto,''), ''),
+               SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {valor} ELSE 0 END),
+               SUM(CASE WHEN tipo = ? AND     ({RETIDO}) THEN {valor} ELSE 0 END),
+               SUM(CASE WHEN tipo = ?                    THEN {valor} ELSE 0 END)
+          FROM fato
+         WHERE analise = 'DRE'
+         GROUP BY 1, 2, 3
+        HAVING ABS(SUM({valor})) > 0.005
+         ORDER BY 1, 2"""
+    campos = ("mes", "obra", "projeto", "receita_liquida", "retencoes", "despesas")
+    return [dict(zip(campos, (linha[0], linha[1], linha[2],
+                             float(linha[3] or 0), float(linha[4] or 0),
+                             float(linha[5] or 0))))
+            for linha in consultar(sql, [REC, REC, PAG])]
+
+
+def custo_de_pessoal_por_obra_mes(grupo_pessoal: str,
+                                  medida: str = "comprometido") -> list[tuple]:
+    """Quanto cada obra gastou com pessoal, mês a mês.
+
+    É o "driver" do rateio: o custo administrativo é dividido entre as obras na
+    proporção do pessoal de cada uma. A ideia por trás: obra com mais gente
+    consome mais estrutura."""
+    valor = _medida(medida)
+    sql = f"""
+        SELECT COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
+               COALESCE(NULLIF(departamento,''), '(sem obra)'),
+               ABS(SUM({valor}))
+          FROM fato
+         WHERE analise = 'DRE' AND tipo = ?
+           AND TRIM(COALESCE(grupo,'')) = ?
+         GROUP BY 1, 2 HAVING ABS(SUM({valor})) > 0.005"""
+    return [(mes, obra, float(v or 0))
+            for mes, obra, v in consultar(sql, [PAG, grupo_pessoal])]
+
+
+def despesa_administrativa(deptos_admin, medida: str = "comprometido") -> list[dict]:
+    """As despesas dos departamentos administrativos, abertas por grupo e
+    categoria — é o que as regras de rateio selecionam."""
+    if not deptos_admin:
+        return []
+    valor = _medida(medida)
+    sql = f"""
+        SELECT COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'), departamento,
+               TRIM(COALESCE(grupo,'')), TRIM(COALESCE(categoria,'')),
+               SUM({valor})
+          FROM fato
+         WHERE analise = 'DRE' AND tipo = ?
+           AND departamento = ANY(?)
+         GROUP BY 1, 2, 3, 4 HAVING ABS(SUM({valor})) > 0.005"""
+    campos = ("mes", "depto", "grupo", "categoria", "valor")
+    return [dict(zip(campos, (l[0], l[1], l[2], l[3], float(l[4] or 0))))
+            for l in consultar(sql, [PAG, list(deptos_admin)])]
+
+
+def grupos_e_categorias() -> dict:
+    """O que existe na base, para montar as regras sem digitar nome à mão."""
+    grupos = [g for (g,) in consultar(
+        "SELECT DISTINCT TRIM(grupo) FROM fato "
+        " WHERE analise='DRE' AND COALESCE(TRIM(grupo),'') <> '' ORDER BY 1")]
+    categorias = [c for (c,) in consultar(
+        "SELECT DISTINCT TRIM(categoria) FROM fato "
+        " WHERE analise='DRE' AND COALESCE(TRIM(categoria),'') <> '' ORDER BY 1")]
+    return {"grupos": grupos, "categorias": categorias}

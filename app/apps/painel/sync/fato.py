@@ -297,6 +297,7 @@ COLUNAS_FATO = (
     "codigo_lancamento", "tipo", "analise", "situacao", "situacao_vencimento",
     "categoria", "grupo", "projeto", "departamento", "razao_social", "cnpj_cpf",
     "numero_documento", "pedido_compra", "conta_corrente", "observacao", "link",
+    "medicao", "medicao_rotulo",
     "data", "ano", "mes", "pago_recebido", "a_pagar_receber", "juros", "multa",
 )
 
@@ -383,10 +384,17 @@ def gerar_linhas_fato(conn):
 
             buckets = _buckets_rateio(rateio.get(cod, []), bruto, proj_map)
 
+            # Chave da medicao: e o que junta as parcelas de uma mesma medicao,
+            # que no OMIE sao titulos separados sem numero de documento. Guardada
+            # na linha para a tela poder agrupar no banco.
+            chave = chave_medicao(ndoc or "", observacao) or f"COD:{cod}"
+
             for dep, projeto, frac in buckets:
                 comum = (cod, tipo, analise, status, sit_venc)
                 identificacao = (projeto, dep, razao, cnpj, ndoc or "", nped or "",
-                                 conta, observacao, link, ddt, ano, mes)
+                                 conta, observacao, link,
+                                 chave, rotulo_medicao(chave),
+                                 ddt, ano, mes)
                 # linha LIQUIDA (categoria real). Juros e multa sao os encargos
                 # efetivamente pagos e ficam SEPARADOS do principal, para virarem
                 # linha financeira no DRE.

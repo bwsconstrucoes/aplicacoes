@@ -1,0 +1,148 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Receita de Obra — Painel Financeiro BWS{% endblock %}
+
+{% block filtros %}{% include "painel_filtros.html" %}{% endblock %}
+
+{% block conteudo %}
+<h2>Receita de Obra
+  <small>por medição — o que foi faturado, o que entrou e o que falta</small>
+</h2>
+
+{% if chips %}
+<div class="chips">
+  {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
+</div>
+{% endif %}
+
+{% if sem_medicao %}
+<div class="aviso info">
+  <b>As medições ainda não foram calculadas.</b>
+  A coluna que junta as parcelas de uma mesma medição é preenchida na
+  atualização da base. Vá em Configurações e clique em
+  <b>"Só refazer os números"</b> — leva um minuto e não baixa nada do OMIE.
+</div>
+{% endif %}
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Bruto faturado</div>
+    <div class="kpi-valor">{{ brl(total.bruto) }}</div>
+    <div class="kpi-sub">{{ total.quantas }} medições</div>
+  </div>
+  <div class="kpi estatico verde">
+    <div class="kpi-rotulo">Já recebido</div>
+    <div class="kpi-valor">{{ brl(total.recebido) }}</div>
+  </div>
+  <div class="kpi estatico ambar">
+    <div class="kpi-rotulo">Retido pelo cliente</div>
+    <div class="kpi-valor">{{ brl(total.retido) }}</div>
+    <div class="kpi-sub">imposto recolhido na fonte</div>
+  </div>
+  <div class="kpi estatico ciano">
+    <div class="kpi-rotulo">A receber</div>
+    <div class="kpi-valor {{ classe_valor(total.a_receber) }}">{{ brl(total.a_receber) }}</div>
+  </div>
+</div>
+
+<form method="get" class="tabela-barra" style="border:0; padding:0 0 12px">
+  {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
+  {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
+  {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
+  {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
+  <div class="campo" style="max-width:230px">
+    <label for="visao">Mostrar</label>
+    <select id="visao" name="visao" onchange="this.form.submit()">
+      <option value="todas" {% if visao == 'todas' %}selected{% endif %}>Todas as medições</option>
+      <option value="a_receber" {% if visao == 'a_receber' %}selected{% endif %}>Só com saldo a receber</option>
+      <option value="quitadas" {% if visao == 'quitadas' %}selected{% endif %}>Só as quitadas</option>
+    </select>
+  </div>
+</form>
+
+{% if not itens %}
+  <div class="vazio"><b>Sem medições</b>Nenhuma receita de obra nos filtros escolhidos.</div>
+{% else %}
+<div class="tabela-wrap" style="margin-bottom:14px">
+  <div class="tabela-barra">
+    <span class="resumo">
+      Mostrando as <b>{{ itens|length }}</b> maiores de <b>{{ total.quantas }}</b>.
+      Clique numa medição para ver os recebimentos.
+    </span>
+    <span class="espaco"></span>
+    <a class="btn secundario" style="text-decoration:none" href="{{ url_for('painel.baixar', assunto='medicoes', **request.args) }}">⬇ Baixar planilha</a>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Medição</th>
+          <th class="sem-ordem">Cliente</th>
+          <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">Bruto</th>
+          <th class="sem-ordem direita">Recebido</th>
+          <th class="sem-ordem direita">Retido</th>
+          <th class="sem-ordem direita">A receber</th>
+          <th class="sem-ordem">Situação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in itens %}
+        <tr>
+          <td class="desc">
+            <a href="{{ url_for('painel.receita_detalhe', medicao=m.medicao) }}"
+               style="font-weight:600">{{ m.medicao }}</a>
+            {% if m.documento %}<small>doc. {{ m.documento }}</small>{% endif %}
+          </td>
+          <td class="desc">{{ m.cliente }}</td>
+          <td>{{ m.obra }}</td>
+          <td class="dados direita"><b>{{ brl(m.bruto) }}</b></td>
+          <td class="dados direita">{{ brl(m.recebido) }}</td>
+          <td class="dados direita">{{ brl(m.retido) }}</td>
+          <td class="dados direita {{ classe_valor(m.a_receber) }}">{{ brl(m.a_receber) }}</td>
+          <td>
+            <span class="selo {% if m.situacao == 'Recebida' %}aprovado
+                              {% elif m.situacao == 'A receber' %}aguardando
+                              {% else %}pago{% endif %}">{{ m.situacao }}</span>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if outras %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Outras receitas</h3>
+    <small>o que não é medição de obra</small>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem direita">Recebido</th>
+          <th class="sem-ordem direita">A receber</th>
+          <th class="sem-ordem direita">Títulos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for o in outras %}
+        <tr>
+          <td class="desc">{{ o.categoria }}</td>
+          <td class="dados direita">{{ brl(o.recebido) }}</td>
+          <td class="dados direita {{ classe_valor(o.a_receber) }}">{{ brl(o.a_receber) }}</td>
+          <td class="dados direita">{{ o.titulos }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    Rendimento de aplicação, estorno, devolução. A categoria diz do que se trata.
+  </p>
+</div>
+{% endif %}
+{% endblock %}

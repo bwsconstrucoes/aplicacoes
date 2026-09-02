@@ -344,3 +344,6 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .selo-base { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px;
              color: var(--tinta-suave); margin-left: auto; }
 .selo-base b { color: var(--tinta); }
+
+/* barra do emprestimo tomado, na Necessidade de Caixa */
+.gr .b-emprestimo { fill: var(--roxo); }

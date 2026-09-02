@@ -47,6 +47,8 @@
         <b>Executado</b> = já recebido &nbsp;·&nbsp; <b>A executar</b> = ainda falta receber
       {% endif %}
     </span>
+    <span class="espaco"></span>
+    <a class="btn secundario" style="text-decoration:none" href="{{ url_for('painel.baixar', assunto='execucao', **request.args) }}">⬇ Baixar planilha</a>
   </div>
   <div class="tabela-rolagem">
     <table>

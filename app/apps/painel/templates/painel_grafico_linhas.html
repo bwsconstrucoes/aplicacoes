@@ -1,0 +1,40 @@
+{# Várias linhas sobre barras, já calculadas por graficos.linhas_com_barras(). #}
+{% macro grafico(g) %}
+  {% if g.vazio %}
+    <div class="vazio"><b>Sem dados</b>Nada a mostrar no período escolhido.</div>
+  {% else %}
+  <div class="gr">
+    <svg viewBox="0 0 {{ g.largura }} {{ g.altura }}" role="img"
+         aria-label="Caixa acumulado ao longo do tempo">
+      {% for m in g.marcas %}
+        <line class="grade" x1="{{ g.margem_esq }}" y1="{{ m.y }}"
+              x2="{{ g.largura - g.margem_dir }}" y2="{{ m.y }}"></line>
+        <text class="rot" x="{{ g.margem_esq - 8 }}" y="{{ m.y + 4 }}"
+              text-anchor="end">{{ m.rotulo }}</text>
+      {% endfor %}
+
+      {% for b in g.barras %}
+        <rect class="{{ b.classe }}" x="{{ b.x }}" y="{{ b.y }}"
+              width="{{ b.largura }}" height="{{ b.altura }}" rx="1" opacity=".45">
+          <title>{{ b.titulo }}</title>
+        </rect>
+      {% endfor %}
+
+      <line class="zero" x1="{{ g.margem_esq }}" y1="{{ g.y_zero }}"
+            x2="{{ g.largura - g.margem_dir }}" y2="{{ g.y_zero }}"></line>
+
+      {% for s in g.series %}
+        <path class="linha" style="stroke:{{ s.cor }}" d="{{ s.caminho }}"></path>
+        {% for p in s.pontos %}
+          <circle cx="{{ p.x }}" cy="{{ p.y }}" r="2.5" style="fill:{{ s.cor }}"></circle>
+        {% endfor %}
+      {% endfor %}
+
+      {% for r in g.rotulos_x %}
+        <text class="rot" x="{{ r.x }}" y="{{ g.altura - 10 }}"
+              text-anchor="middle">{{ r.texto }}</text>
+      {% endfor %}
+    </svg>
+  </div>
+  {% endif %}
+{% endmacro %}

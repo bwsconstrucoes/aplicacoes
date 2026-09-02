@@ -51,6 +51,34 @@ def _carregar_dotenv() -> None:
         pass
 
 
+def _recusar_producao_em_teste(url: str) -> None:
+    """Trava de seguranca: teste nunca encosta em banco que nao seja de teste.
+
+    O `.env` da raiz tem a DATABASE_URL da PRODUCAO — e correto, e como o
+    desenvolvimento local funciona. Mas o `_carregar_dotenv` abaixo le esse
+    arquivo, e uma unica funcao de teste que esqueca de dublar a conexao acaba
+    falando com o banco da empresa.
+
+    Aconteceu comigo durante a conversao: um teste novo chamou a prestacao de
+    contas sem dublar tudo, e o painel tentou abrir o Postgres do Render. So nao
+    deu em nada porque o usuario do banco nao tinha permissao de login.
+
+    Entao: com o pytest rodando, so passa URL local com "teste" no nome — a
+    mesma regra do `tests/conftest.py` do ERP. Fora do pytest, nada muda."""
+    if not os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    from urllib.parse import urlparse
+    partes = urlparse(url)
+    host = (partes.hostname or "").lower()
+    nome = partes.path.lstrip("/").lower()
+    if host not in {"localhost", "127.0.0.1", "::1"} or "teste" not in nome:
+        raise RuntimeError(
+            "O painel tentou abrir um banco que NAO e de teste durante a suite "
+            f"(host '{host or '?'}', banco '{nome or '?'}'). Ou o teste esqueceu "
+            "de dublar a conexao, ou faltou a fixture de banco. A producao nao e "
+            "alcancavel a partir do pytest, de proposito.")
+
+
 def _montar_url() -> str:
     _carregar_dotenv()
     url = os.environ.get("DATABASE_URL", "").strip()
@@ -59,6 +87,7 @@ def _montar_url() -> str:
             "DATABASE_URL nao definida. O painel guarda os dados no mesmo Postgres "
             "do ERP (painel do Render > Database > Connect > Internal Database URL)."
         )
+    _recusar_producao_em_teste(url)
     if url.startswith("postgres://"):
         url = url.replace("postgres://", "postgresql+psycopg2://", 1)
     elif url.startswith("postgresql://") and "+psycopg2" not in url:

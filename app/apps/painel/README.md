@@ -98,27 +98,64 @@ Uma de cada vez: a segunda chamada é recusada em vez de duplicar o trabalho.
 | `DATABASE_URL` | Postgres — já existe, é o do ERP |
 | `GOOGLE_CREDENTIALS_BASE64` | leitura da planilha — já existe |
 
-## O que ainda não foi convertido
+## Todas as telas
 
-`referencia_streamlit/` guarda as telas originais. Continuam sendo a fonte da
-verdade das regras enquanto a conversão não termina.
+| Tela | O que responde |
+|---|---|
+| Visão Geral | o resultado e o caixa, lado a lado |
+| DRE | receita, despesas por grupo e resultado, nas três leituras |
+| Receita de Obra | cada medição: o que foi faturado, o que entrou, o que falta |
+| Fluxo de Caixa | entradas e saídas mês a mês, e o acumulado |
+| Resultado por Obra | quanto cada obra ou projeto deu |
+| Comprometido × Executado | quanto de cada obra já andou, de cada lado |
+| Necessidade de Caixa | um conjunto de obras se paga sozinho, ou alguém segurou |
+| Prestação de Contas | quanto do resultado cabe a cada sócio |
 
-**Já convertidas:** Visão Geral, DRE, Fluxo de Caixa, Resultado por Obra/Projeto,
-Comprometido vs Executado.
+Todas exportam para planilha. É **CSV**, não `.xlsx`: gerar Excel de verdade
+exigiria uma biblioteca nova no serviço, e a regra da casa é não acrescentar
+dependência sem combinar. O CSV é escrito com ponto-e-vírgula, vírgula decimal
+e BOM — os três detalhes que fazem o Excel em português abrir certo. Se a
+formatação (cores, várias abas) passar a fazer falta, aí vale a conversa.
 
-**Faltam:**
-- Necessidade de Caixa (simulação por conjunto de obras)
-- Prestação de Contas (rateio administrativo e divisão entre sócios) — depende
-  também de trazer a configuração que hoje está no `prestacao_contas.db` local
-- Exportações em Excel e o PDF do DRE
-- Receita Analítico (a tabela `fato_recebimentos` já é preenchida, mas nenhuma
-  tela a lê ainda)
+## Como os números foram conferidos
 
-Cada tela convertida deve bater **número por número** com a original.
+Cada tela convertida foi comparada com a original, sobre a **base real**:
+
+- a tabela `fato`: 185.422 linhas nas duas, diferença máxima de R$ 4,60 em
+  R$ 343 milhões — arredondamento para centavos ao gravar em `NUMERIC(16,2)`;
+- a prestação de contas, sócio a sócio: diferença máxima de R$ 0,22 em
+  R$ 11 milhões.
+
+E a reconstrução inteira roda com **pico de 14,6 MB** de memória, contra os
+179 MB que o painel antigo consumia só para abrir a primeira tela.
+
+## Ainda não convertido
+
+- **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
+  Daria para refazer com o `fpdf2`, que já está — mas é reescrever o relatório
+  do zero. A planilha cobre a necessidade prática por enquanto.
+- **Cenários da prestação** (comparar duas configurações de rateio lado a lado).
+
+`referencia_streamlit/` guarda as telas originais até isso terminar.
 
 ## Uma diferença consciente em relação ao painel antigo
 
 No Fluxo de Caixa, lançamentos **sem data** ficam de fora. Na versão antiga eles
-caíam num grupo "NaT" que não aparecia no gráfico mas somava nos totais. Aqui a
-regra é explícita (`data IS NOT NULL`): fluxo de caixa é sobre quando o dinheiro
-andou, e sem data não há quando.
+caíam num grupo "NaT" que não aparecia no gráfico mas somava nos totais — o
+total e o gráfico contavam histórias diferentes. Fluxo de caixa é sobre quando o
+dinheiro andou, e sem data não há quando.
+
+Na **prestação de contas** é o contrário, e também de propósito: lançamento sem
+data continua contando no resultado da obra (o valor é real), só não dá para
+ratear por mês — então ele aparece como "sobra", com o motivo escrito na tela.
+
+## A trava contra a produção
+
+O `.env` da raiz tem a `DATABASE_URL` da **produção** — é assim que o
+desenvolvimento local funciona. Mas o painel lê esse arquivo, e um teste que
+esqueça de dublar a conexão acabaria falando com o banco da empresa. Aconteceu
+durante a conversão.
+
+Por isso `db.py` recusa qualquer banco que não seja local e com "teste" no nome
+**enquanto o pytest estiver rodando** — a mesma regra do `tests/conftest.py` do
+ERP, agora valendo também aqui. Fora do pytest, nada muda.

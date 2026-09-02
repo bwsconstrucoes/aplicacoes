@@ -304,6 +304,8 @@ def test_proporcoes_do_ranking_vao_de_0_a_100():
 # verdade e as telas são pedidas por HTTP, com o banco dublado.
 
 RESPOSTAS_FALSAS = {
+    "DISTINCT TRIM(grupo)": [("Materiais Aplicados",), ("Despesas com Pessoal",)],
+    "DISTINCT TRIM(categoria)": [("Salários",), ("Cimento",)],
     "DISTINCT ano": [(2025,), (2024,)],
     "DISTINCT projeto": [("PROJ-A",), ("PROJ-B",)],
     "DISTINCT departamento": [("Obra Um",), ("Obra Dois",)],
@@ -317,47 +319,95 @@ RESPOSTAS_FALSAS = {
 def _consultar_falso(sql, params=()):
     """Devolve linhas plausíveis para cada consulta, sem banco nenhum.
 
-    Cada ramo casa com um traço que só aquela consulta tem — e o `else` é um
-    erro de propósito: consulta nova sem resposta aqui tem de aparecer, não
-    passar batida devolvendo zero."""
+    A ordem importa: os ramos vão do marcador mais específico para o mais
+    genérico. E o final é um erro de propósito — consulta nova sem resposta
+    aqui tem de aparecer no teste, não passar batida devolvendo zero.
+    """
     for marca, resposta in RESPOSTAS_FALSAS.items():
         if marca in sql:
             return resposta
-    if "date_trunc" in sql:                            # fluxo de caixa mensal
+
+    # ---- prestação de contas: as três consultas com bucket "(sem data)" ----
+    if "COALESCE(to_char(data" in sql:
+        if "TRIM(COALESCE(grupo,'')) = " in sql:                # driver de pessoal
+            return [("2025-01", "Obra Um", 900.0)]
+        if "departamento = ANY" in sql:                         # despesa admin
+            return []
+        return [("2025-01", "Obra Um", "PROJ-A", 4000.0, 100.0, -1500.0)]
+
+    # ---- necessidade de caixa ----
+    if "emprestimo_tomado" in sql:
+        return []
+    if "COUNT(*) AS quantas" in sql:                            # obra -> projeto
+        return [("Obra Um", "PROJ-A", 12)]
+    if "SUM(pago_recebido)" in sql and "GROUP BY 1, 2 " in sql:
+        return [(dt.date(2025, 1, 1), "Obra Um", -1000.0),
+                (dt.date(2025, 2, 1), "Obra Um", 4000.0)]
+
+    # ---- receita de obra ----
+    if "medicao_rotulo" in sql and "COUNT(*)" in sql:           # os totais
+        return [(3, 7000.0, 300.0, 500.0)]
+    if "medicao_rotulo" in sql:                                 # as medições
+        return [("OBRA1 | Medição 3", "CLIENTE A", "Obra Um", "PROJ-A",
+                 "NF123", "", dt.date(2025, 5, 2), 7000.0, 300.0, 500.0)]
+    if "categoria <> 'Receita de Obras'" in sql:
+        return [("Estorno de Despesas", 900.0, 0.0, 4)]
+    if "FROM fato_recebimentos" in sql:
+        return [(dt.date(2025, 5, 2), 7000.0, 0.0, 0.0, 0.0, "Bradesco C/C",
+                 "1/1", "credito bancario", "NF123")]
+
+    # ---- as telas antigas ----
+    if "date_trunc" in sql:                                     # fluxo mensal
         return [(dt.date(2025, 1, 1), 4000.0, -2500.0),
                 (dt.date(2025, 2, 1), 6000.0, -3100.0),
                 (dt.date(2025, 3, 1), 2000.0, -5200.0)]
     if "GROUP BY ano" in sql:
         return ([(2024, -1000.0), (2025, 2500.0)] if "SUM(pago_recebido)" in sql
                 else [(2024, 5000.0, -4000.0), (2025, 9000.0, -6000.0)])
-    if "AS retido" in sql:                             # as linhas do DRE
+    if "AS retido" in sql:                                      # as linhas do DRE
         return [("1. Contas a Receber", False, "Receita Bruta", 9000.0, 500.0),
                 ("1. Contas a Receber", True, "Retenções", 300.0, 0.0),
                 ("2. Contas a Pagar", False, "Despesas com Pessoal", -4000.0, -100.0),
                 ("2. Contas a Pagar", False, "Materiais", -2000.0, -50.0)]
-    if "HAVING" in sql:                                # ranking de despesas
+    if "HAVING" in sql:                                         # ranking de despesas
         return [("Despesas com Pessoal", -4100.0), ("Materiais", -2050.0)]
-    if "COUNT(*)" in sql:                              # maiores credores
+    if "COUNT(*)" in sql:                                       # maiores credores
         return [("FORNECEDOR A LTDA", -3000.0, -200.0, 12)]
-    if "ABS(SUM(" in sql:                              # comprometido vs executado
+    if "ABS(SUM(" in sql:                                       # comprometido x exec
         return [("Obra Um", -8000.0, -2000.0), ("Obra Dois", -3000.0, -500.0)]
     if "GROUP BY 1" in sql and sql.count("SUM(CASE WHEN tipo") >= 2:
         return [("PROJ-A", 12000.0, -9000.0), ("PROJ-B", 4000.0, -6000.0)]
-    if "GROUP BY 1" in sql:                            # receita por obra
+    if "GROUP BY 1" in sql:                                     # receita por obra
         return [("Obra Um", 7000.0, 300.0, 500.0)]
-    if "pago_recebido > 0" in sql:                     # entradas e saídas do caixa
+    if "pago_recebido > 0" in sql:                              # caixa: entra e sai
         return [(18500.0, -12300.0)]
-    if sql.count("SUM(CASE WHEN tipo") == 4:           # o resumo do resultado
+    if sql.count("SUM(CASE WHEN tipo") == 4:                    # resumo do resultado
         return [(9500.0, -6150.0, 9000.0, -6000.0)]
     raise AssertionError(f"consulta sem resposta no dublê: {sql.strip()[:120]}")
 
 
+CONFIG_FALSA = {
+    "projeto_matriz": "PROJ-A", "depto_admin_matriz": "ADM MATRIZ",
+    "depto_admin_filial": "ADM FILIAL", "grupo_pessoal": "Despesas com Pessoal",
+    "taxa_adm_pct": "1.5", "residual": "1",
+}
+
+
 @pytest.fixture()
 def painel(monkeypatch):
-    """App do monorepo com o painel ligado e o banco dublado."""
+    """App do monorepo com o painel ligado e o banco dublado.
+
+    Dublar `consultas.consultar` não basta: `prestacao_dados` tem a própria
+    referência para o banco. Um teste que esqueça disso faz o painel abrir a
+    conexão de verdade — e como o `.env` da raiz aponta para a produção, é lá
+    que ele bateria. A trava em `painel/db.py` recusa isso, mas o certo é o
+    dublê cobrir tudo."""
     monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
-    from app.apps.painel import consultas
+    from app.apps.painel import consultas, prestacao_dados
     monkeypatch.setattr(consultas, "consultar", _consultar_falso)
+    monkeypatch.setattr(prestacao_dados, "config", lambda: dict(CONFIG_FALSA))
+    for nome in ("socios", "participacoes", "regras", "ajustes"):
+        monkeypatch.setattr(prestacao_dados, nome, lambda *a, **k: [])
 
     from app.main import create_app
     app = create_app()
@@ -477,3 +527,94 @@ def test_lado_a_receber_muda_a_explicacao(painel):
 def test_telas_novas_tambem_exigem_login(painel):
     for caminho in ("/painel/fluxo", "/painel/obras", "/painel/execucao"):
         assert painel.get(caminho).status_code == 302, caminho
+
+
+# ===========================================================================
+# 6. As telas que vieram depois
+# ===========================================================================
+def test_receita_de_obra_abre(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/receita").get_data(as_text=True)
+    assert "Receita de Obra" in html
+    assert "OBRA1 | Medição 3" in html
+    assert "Retido pelo cliente" in html
+    assert "Estorno de Despesas" in html          # as outras receitas
+
+
+def test_detalhe_da_medicao_abre_os_recebimentos(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/receita/OBRA1%20%7C%20Medi%C3%A7%C3%A3o%203").get_data(as_text=True)
+    assert "02/05/2025" in html
+    assert "credito bancario" in html
+
+
+def test_necessidade_de_caixa_pede_o_conjunto_antes_de_calcular(painel):
+    """Sem escolher obra nenhuma não há o que simular — e a tela diz isso em
+    vez de mostrar linhas zeradas como se fossem resposta."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/necessidade-caixa").get_data(as_text=True)
+    assert "Escolha ao menos uma obra ou projeto" in html
+
+
+def test_prestacao_avisa_quando_nao_ha_participacao(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/prestacao").get_data(as_text=True)
+    assert "Nenhuma participação cadastrada" in html
+
+
+def test_parametros_da_prestacao_abrem_em_todas_as_abas(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    for aba, marca in [("socios", "Adicionar ou renomear sócio"),
+                       ("participacoes", "Quem participa de qual projeto"),
+                       ("regras", "Nova regra"),
+                       ("ajustes", "Novo ajuste"),
+                       ("geral", "Parâmetros gerais")]:
+        html = painel.get(f"/painel/prestacao/parametros?aba={aba}").get_data(as_text=True)
+        assert marca in html, aba
+
+
+def test_planilha_sai_no_formato_que_o_excel_entende(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/baixar/dre")
+    assert r.status_code == 200
+    assert r.get_data().startswith(b"\xef\xbb\xbf")        # BOM
+    assert "attachment" in r.headers["Content-Disposition"]
+    assert ".csv" in r.headers["Content-Disposition"]
+    texto = r.get_data().decode("utf-8-sig")
+    assert texto.splitlines()[0] == "Linha;Executado;Em aberto;Comprometido"
+
+
+def test_a_planilha_respeita_os_filtros_da_tela(painel, monkeypatch):
+    """Baixar tem de trazer o que estava na tela, não a base inteira."""
+    vistos = []
+    from app.apps.painel import consultas
+    original = _consultar_falso
+
+    def espiao(sql, params=()):
+        vistos.append(list(params))
+        return original(sql, params)
+
+    monkeypatch.setattr(consultas, "consultar", espiao)
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    assert painel.get("/painel/baixar/dre?ano=2025&projeto=PROJ-A").status_code == 200
+    assert any([2025] in p for p in vistos)
+    assert any(["PROJ-A"] in p for p in vistos)
+
+
+def test_assunto_de_planilha_desconhecido_responde_404(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    assert painel.get("/painel/baixar/qualquer-coisa").status_code == 404
+
+
+def test_as_telas_novas_tambem_exigem_login(painel):
+    for caminho in ("/painel/receita", "/painel/necessidade-caixa",
+                    "/painel/prestacao", "/painel/prestacao/parametros",
+                    "/painel/baixar/dre"):
+        assert painel.get(caminho).status_code == 302, caminho
+
+
+def test_importar_prestacao_sem_arquivo_e_recusado(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.post("/painel/api/importar-prestacao")
+    assert r.status_code == 400
+    assert r.get_json()["ok"] is False

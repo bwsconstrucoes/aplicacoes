@@ -148,3 +148,74 @@ def proporcoes(itens, campo="valor"):
     for item in itens:
         item["pct"] = round(abs(float(item.get(campo) or 0)) / maior * 100, 1)
     return itens
+
+
+def linhas_com_barras(itens, series, barras=None, campo_rotulo="rotulo",
+                      max_rotulos=14) -> dict:
+    """Várias linhas sobre barras — o gráfico da Necessidade de Caixa.
+
+    `series` — [(chave, cor_css, nome), ...] desenhadas como linha.
+    `barras` — (chave, classe, nome) opcional, desenhada atrás das linhas.
+
+    Diferente de `barras_agrupadas`, aqui as linhas é que são o assunto: o
+    acumulado de cada conjunto ao longo do tempo. As barras são o contexto
+    (quando entrou empréstimo).
+    """
+    if not itens:
+        return {"vazio": True, "largura": LARGURA, "altura": ALTURA}
+
+    todos = []
+    for item in itens:
+        todos.extend(float(item.get(chave) or 0) for chave, _, _ in series)
+        if barras:
+            todos.append(float(item.get(barras[0]) or 0))
+    eixo = eixo_vertical(todos)
+
+    largura_util = LARGURA - MARGEM_ESQ - MARGEM_DIR
+    passo_x = largura_util / len(itens)
+
+    def _x(i):
+        return MARGEM_ESQ + passo_x * (i + 0.5)
+
+    desenhos = []
+    for chave, cor, nome in series:
+        pontos = [(round(_x(i), 2), round(eixo["y"](float(item.get(chave) or 0)), 2))
+                  for i, item in enumerate(itens)]
+        desenhos.append({
+            "nome": nome, "cor": cor,
+            "caminho": "M " + " L ".join(f"{x},{y}" for x, y in pontos),
+            # um ponto a cada N para o gráfico não virar um colar de bolinhas
+            "pontos": [{"x": x, "y": y} for j, (x, y) in enumerate(pontos)
+                       if len(pontos) <= 24 or j % max(len(pontos) // 24, 1) == 0],
+        })
+
+    retangulos = []
+    if barras:
+        chave, classe, _nome = barras
+        largura_barra = max(passo_x * 0.55, 1.5)
+        for i, item in enumerate(itens):
+            valor = float(item.get(chave) or 0)
+            if abs(valor) < 0.005:
+                continue
+            y_valor = eixo["y"](valor)
+            retangulos.append({
+                "x": round(_x(i) - largura_barra / 2, 2),
+                "y": round(min(y_valor, eixo["y_zero"]), 2),
+                "largura": round(largura_barra, 2),
+                "altura": round(max(abs(y_valor - eixo["y_zero"]), 0.5), 2),
+                "classe": classe,
+                "titulo": f"{item.get(campo_rotulo, '')}: {_moeda(valor)}",
+            })
+
+    # com 120 meses os rótulos se sobrepõem; mostra um a cada N
+    passo_rotulo = max(len(itens) // max_rotulos, 1)
+    rotulos_x = [{"x": round(_x(i), 2), "texto": str(item.get(campo_rotulo, ""))}
+                 for i, item in enumerate(itens)
+                 if i % passo_rotulo == 0 or i == len(itens) - 1]
+
+    return {
+        "vazio": False, "largura": LARGURA, "altura": ALTURA,
+        "margem_esq": MARGEM_ESQ, "margem_dir": MARGEM_DIR,
+        "series": desenhos, "barras": retangulos, "rotulos_x": rotulos_x,
+        "marcas": eixo["marcas"], "y_zero": eixo["y_zero"],
+    }

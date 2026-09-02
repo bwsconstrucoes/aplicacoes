@@ -126,10 +126,33 @@
   </div>
 </div>
 
-<!-- ===================== 4. VARIÁVEIS ===================== -->
+<!-- ===================== 4. PRESTAÇÃO DE CONTAS ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
-    <h3>4. O que precisa estar configurado no Render</h3>
+    <h3>4. Trazer a prestação de contas do computador</h3>
+    <small>uma vez só</small>
+  </div>
+  <p style="font-size:13.5px; margin-top:0">
+    Sócios, percentuais, regras de rateio e ajustes são a única coisa do painel
+    que <b>ninguém consegue refazer sozinho</b> — todo o resto vem do OMIE. Isso
+    não foi para o Git de propósito: são nomes de sócios e divisão de lucro.
+  </p>
+  <p style="font-size:13.5px">
+    Envie o arquivo <code>prestacao_contas.db</code>, que está na pasta
+    <code>app/apps/painel</code> do seu computador. Sócio com o mesmo nome é
+    reaproveitado; regras e ajustes são substituídos pelo que vier no arquivo.
+  </p>
+  <div class="campo">
+    <input type="file" id="arquivo-prestacao" accept=".db">
+  </div>
+  <button class="btn" id="btn-importar" style="margin-top:8px">Enviar arquivo</button>
+  <div id="saida-importar"></div>
+</div>
+
+<!-- ===================== 5. VARIÁVEIS ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>5. O que precisa estar configurado no Render</h3>
   </div>
   <table>
     <thead><tr><th class="sem-ordem">Variável</th><th class="sem-ordem">Para quê</th></tr></thead>
@@ -208,6 +231,35 @@ document.querySelectorAll("button[data-modo]").forEach(b => {
     }
   };
 });
+
+const btnImportar = els("btn-importar");
+btnImportar.onclick = async () => {
+  const campo = els("arquivo-prestacao");
+  if (!campo.files.length) {
+    aviso(els("saida-importar"), "erro", "Escolha o arquivo primeiro.");
+    return;
+  }
+  btnImportar.disabled = true;
+  aviso(els("saida-importar"), "info", "Enviando…");
+  const corpo = new FormData();
+  corpo.append("arquivo", campo.files[0]);
+  try {
+    const r = await fetch("{{ url_for('painel.importar_prestacao') }}",
+                          {method: "POST", body: corpo});
+    const d = await r.json();
+    if (d.ok) {
+      const c = d.importado;
+      aviso(els("saida-importar"), "ok",
+        `Pronto: ${c.socios} sócio(s), ${c.participacoes} participação(ões), ` +
+        `${c.regras} regra(s) e ${c.ajustes} ajuste(s).`);
+    } else {
+      aviso(els("saida-importar"), "erro", d.erro);
+    }
+  } catch (e) {
+    aviso(els("saida-importar"), "erro", "Não consegui falar com o servidor: " + e);
+  }
+  btnImportar.disabled = false;
+};
 
 // Pergunta ao servidor de 5 em 5 segundos como está indo. Só enquanto a página
 // estiver aberta — quem fechar não interrompe nada.

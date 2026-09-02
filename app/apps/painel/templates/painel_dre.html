@@ -22,6 +22,8 @@
       <b>Em aberto</b> = ainda falta &nbsp;·&nbsp;
       <b>Comprometido</b> = os dois somados
     </span>
+    <span class="espaco"></span>
+    <a class="btn secundario" style="text-decoration:none" href="{{ url_for('painel.baixar', assunto='dre', **request.args) }}">⬇ Baixar planilha</a>
   </div>
   <div class="tabela-rolagem">
     <table>

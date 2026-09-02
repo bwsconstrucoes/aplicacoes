@@ -1,0 +1,89 @@
+{% extends "painel_base.html" %}
+{% block titulo %}{{ medicao }} — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>{{ medicao }}
+  <small>os recebimentos que quitaram esta medição</small>
+</h2>
+
+<p style="margin:-6px 0 14px">
+  <a href="{{ url_for('painel.receita') }}" class="btn secundario"
+     style="text-decoration:none; display:inline-block">← Voltar às medições</a>
+</p>
+
+{% if not recebimentos %}
+  <div class="vazio">
+    <b>Sem recebimentos registrados</b>
+    Ou a medição ainda não foi paga, ou o detalhamento por entrada só existe
+    depois da próxima atualização da base.
+  </div>
+{% else %}
+
+<div class="kpis">
+  <div class="kpi estatico verde">
+    <div class="kpi-rotulo">Total recebido</div>
+    <div class="kpi-valor">{{ brl(total.valor) }}</div>
+    <div class="kpi-sub">em {{ recebimentos|length }} entrada(s)</div>
+  </div>
+  {% if total.juros or total.multa %}
+  <div class="kpi estatico ambar">
+    <div class="kpi-rotulo">Juros e multa</div>
+    <div class="kpi-valor">{{ brl(total.juros + total.multa) }}</div>
+    <div class="kpi-sub">cobrados por atraso</div>
+  </div>
+  {% endif %}
+  {% if total.desconto %}
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Descontos</div>
+    <div class="kpi-valor">{{ brl(total.desconto) }}</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo">Na ordem em que o dinheiro entrou</span>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Data</th>
+          <th class="sem-ordem">Parcela</th>
+          <th class="sem-ordem direita">Valor</th>
+          <th class="sem-ordem direita">Juros</th>
+          <th class="sem-ordem direita">Multa</th>
+          <th class="sem-ordem direita">Desconto</th>
+          <th class="sem-ordem">Conta</th>
+          <th class="sem-ordem">Origem</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in recebimentos %}
+        <tr>
+          <td class="dados">{{ r.data.strftime('%d/%m/%Y') if r.data else '—' }}</td>
+          <td class="dados">{{ r.parcela }}</td>
+          <td class="dados direita"><b>{{ brl(r.valor) }}</b></td>
+          <td class="dados direita">{{ brl(r.juros) if r.juros else '—' }}</td>
+          <td class="dados direita">{{ brl(r.multa) if r.multa else '—' }}</td>
+          <td class="dados direita">{{ brl(r.desconto) if r.desconto else '—' }}</td>
+          <td>{{ r.conta_corrente }}</td>
+          <td><small>{{ r.origem }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="cartao-dica">
+  <b>Origem</b> diz de onde o painel tirou cada entrada. O OMIE guarda o mesmo
+  recebimento de duas formas — uma baixa consolidada com o total, e os créditos
+  bancários um a um. Somar as duas dobraria o caixa, então o painel escolhe uma:
+  prefere os créditos (que mostram as parcelas) quando eles fecham com o total,
+  e cai na consolidada quando não fecham. Uma linha a menos de detalhe é melhor
+  que um total errado.
+</p>
+{% endif %}
+{% endblock %}
