@@ -187,6 +187,9 @@
       existia e o painel não tinha lugar na tela (2026-09-02)
 - [x] IA — teto mensal configurável em Configurações (migração 030) com aviso
       no Telegram aos ADMIN ao passar de 80% e ao estourar. Só avisa
+- [x] Testes com banco de verdade para o escopo por obra e por autoria, num
+      Postgres descartável que o GitHub Actions sobe a cada envio
+      (`tests/test_escopo_banco.py`, trava de URL no `conftest`)
 - [ ] IA — depois da migração 030: definir o teto na tela e conferir que o
       painel enche conforme os documentos são lidos
 - [ ] Trocar na origem o token da prefeitura que ficou no histórico do Git

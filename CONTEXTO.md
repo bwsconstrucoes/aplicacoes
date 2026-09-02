@@ -339,6 +339,25 @@ para travar quem está lançando.
 Preços em `PRECOS` (US$/milhão de tokens). Modelo fora da tabela é cobrado
 pelo `PRECO_PADRAO` e aparece no painel como "preço estimado".
 
+### 3.11 Testes com banco de verdade
+
+A suíte sem banco (`SessaoFalsa`) cobre regra; **não cobre SQL** — e o escopo
+por obra/autoria é um `WHERE`. Por isso há uma segunda camada, marcada
+`@pytest.mark.banco`, que roda contra um Postgres **descartável**:
+
+- `ERP_TEST_DATABASE_URL` é a única entrada. O `conftest` **recusa** host que
+  não seja local e banco cujo nome não contenha "teste". A produção não tem
+  como ser alcançada por engano.
+- O banco é reconstruído do zero a cada sessão da suíte: `DROP SCHEMA`,
+  `schema.sql`, depois as 30 migrações pelo mesmo `aplicar_pendentes` do
+  botão de Configurações. Se uma migração quebrar em banco vazio, é aqui que
+  aparece.
+- Cada teste roda numa transação desfeita no fim (savepoint por `commit`).
+  As rotas do Flask usam a **mesma** sessão do teste (`app_real`), então o
+  que a rota grava também some.
+- `.github/workflows/testes.yml` sobe o Postgres a cada push e roda tudo;
+  `docker-compose.teste.yml` sobe o mesmo no PC (porta 5433).
+
 ---
 
 ## 4. Variáveis de ambiente
@@ -767,6 +786,13 @@ Quando eu pedir nova feature ou adaptação:
   **Decisão de negócio que guiou:** cada perfil só vê o que compete à sua
   função, e o detalhe de um registro respeita exatamente o mesmo escopo que a
   listagem — sem exceções de leitura entre obras.
+- **2026-09-02 — Banco de teste descartável no GitHub Actions.** O dono
+  pediu para cobrir com banco real o que o dublê não alcança. Avaliação:
+  Postgres/Docker no PC exigem instalação e alguém lembrar de rodar; um
+  segundo banco no Render custa e fica a um erro da produção. GitHub Actions
+  sobe o banco sozinho a cada push, de graça, e é o único caminho que também
+  funciona para as sessões do Claude (que não têm Docker). A trava de URL
+  (§3.11) foi a primeira coisa escrita.
 - **2026-09-02 — O registro de consumo de IA nunca funcionou; corrigido.** O
   commit `fd7e306` criou a tabela, o painel e a tabela de preços — mas a
   função que grava (`_registrar_consumo`) nunca foi escrita: a sugestão de
