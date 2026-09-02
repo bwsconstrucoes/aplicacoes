@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ERP BWS — banco desatualizado</title>
+<link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+</head>
+<body>
+<main class="entrada">
+  <div>
+    <div class="marca">
+      <div class="brasao">BWS</div>
+      <div>
+        <h1>O banco está desatualizado</h1>
+        <p class="sub">O sistema subiu com uma versão nova e o banco ainda não recebeu as atualizações dela.</p>
+      </div>
+    </div>
+    <div class="aviso erro">Nada foi perdido. O ERP volta assim que as atualizações forem aplicadas.</div>
+    {% if e_admin %}
+      <p>Você é administrador: vá em <a href="{{ url_for('erp.pagina_config') }}">Configurações</a>
+        e clique em <b>"Aplicar atualizações do banco"</b>. Leva segundos.</p>
+    {% else %}
+      <p>Peça a um <b>administrador</b> para entrar em Configurações e clicar em
+        <b>"Aplicar atualizações do banco"</b>.</p>
+    {% endif %}
+    <p class="sub" style="margin-top:18px"><small>Detalhe técnico: {{ detalhe }}</small></p>
+    <p><a class="btn" href="{{ url_for('erp.sair') }}">Sair</a></p>
+  </div>
+</main>
+</body>
+</html>

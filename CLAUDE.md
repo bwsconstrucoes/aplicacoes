@@ -44,6 +44,12 @@ def load_spsbd_values(sheet_id: str) -> list[list[str]]:
 - **Nunca no start do gunicorn.** O ERP divide processo com `baixabradesco`,
   `emissaonf`, `telegram` e o gateway: uma migração com defeito no boot
   derrubaria o monorepo inteiro, não só o ERP.
+- **Coluna nova no modelo `Usuario` derruba o ERP se a migração não estiver
+  aplicada** — o código sobe para o Render antes do botão ser apertado. Por
+  isso nada que rode antes de toda rota (a guarda de permissão, o login) pode
+  carregar o `Usuario` pelo ORM: usa-se `_perfil_bruto` / SQL direto. Ao
+  juntar um ramo com migração, avisar o dono para apertar o botão **no mesmo
+  momento**, não depois.
 - Pelo mesmo motivo a engine do banco é **preguiçosa** (`db/database.py`): a
   conexão só nasce na primeira consulta. Não mover conexão para o topo do
   módulo — sem `DATABASE_URL`, o ERP deve falhar sozinho e deixar os outros 13

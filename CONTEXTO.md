@@ -786,6 +786,17 @@ Quando eu pedir nova feature ou adaptação:
   **Decisão de negócio que guiou:** cada perfil só vê o que compete à sua
   função, e o detalhe de um registro respeita exatamente o mesmo escopo que a
   listagem — sem exceções de leitura entre obras.
+- **2026-09-02 — ERP fora do ar por banco atrasado: a guarda de permissão
+  passou a ler o perfil por SQL direto.** A migração 029 acrescentou uma
+  coluna ao modelo `Usuario`; o código subiu para o Render antes de alguém
+  apertar "Aplicar atualizações do banco". A guarda (`before_request`)
+  carregava o `Usuario` pelo ORM em TODA rota, o SELECT pedia a coluna
+  inexistente e estourava em "Internal Server Error" — inclusive na tela de
+  Configurações, onde fica o botão. O `_perfil_bruto` já existia para o
+  caminho de manutenção, mas a guarda do bloco 0 não o usava. **Regra que
+  fica:** nada que rode antes de toda rota pode depender do ORM; e erro de
+  "coluna não existe" agora vira tela de "banco desatualizado" (503) com a
+  instrução, em vez de página branca. Teste estrutural segura os dois.
 - **2026-09-02 — Banco de teste descartável no GitHub Actions.** O dono
   pediu para cobrir com banco real o que o dublê não alcança. Avaliação:
   Postgres/Docker no PC exigem instalação e alguém lembrar de rodar; um

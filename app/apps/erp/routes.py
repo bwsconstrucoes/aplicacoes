@@ -19,6 +19,8 @@ from flask import (
     Blueprint, jsonify, redirect, render_template, request, session, url_for,
 )
 
+from sqlalchemy.exc import ProgrammingError
+
 from app.apps.erp.core.auth.permissoes import PERMISSOES, pode
 from app.apps.erp.core.auth.service import ErroAutenticacao, autenticar
 from app.apps.erp.core.comum.auditoria import (
@@ -26,7 +28,7 @@ from app.apps.erp.core.comum.auditoria import (
 )
 from app.apps.erp.core.titulos import service as svc_titulos
 from app.apps.erp.db.database import get_session
-from app.apps.erp.db.models.cadastros import Usuario
+from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +201,25 @@ def permissao_publica(motivo: str):
     return _decorar
 
 
+@bp.errorhandler(ProgrammingError)
+def _banco_atrasado(e: ProgrammingError):
+    """Coluna ou tabela que o código espera e o banco ainda não tem.
+
+    Acontece quando o código novo sobe antes de alguém apertar "Aplicar
+    atualizações do banco". Em vez de "Internal Server Error", diz o que é e
+    quem resolve. 503: o serviço está de pé, só o banco está atrasado."""
+    logger.error("ERP: banco atrasado em relação ao código (%s) em %s",
+                 str(e.orig or e).splitlines()[0], request.path)
+    if request.path.startswith("/erp/api/"):
+        return jsonify({"ok": False, "banco_atrasado": True,
+                        "erro": "O banco está desatualizado em relação ao sistema. "
+                                "Um administrador precisa aplicar as atualizações "
+                                "em Configurações."}), 503
+    return render_template("erp_banco_atrasado.html",
+                           detalhe=str(e.orig or e).splitlines()[0],
+                           e_admin=(session.get("erp_usuario_perfil") == "ADMIN")), 503
+
+
 @bp.errorhandler(ErroNaoEncontrado)
 def _fora_do_escopo(e: ErroNaoEncontrado):
     """Fora do escopo responde como inexistente — mesma resposta, mesmo status.
@@ -245,15 +266,26 @@ def _guarda_permissao():
     if not session.get("erp_usuario_id"):
         return None          # login_obrigatorio responde (401 ou redireciona)
 
+    # O perfil vem por SQL DIRETO, nunca pelo ORM. Esta função roda antes de
+    # TODA rota — inclusive da tela que aplica as migrações. Se carregasse o
+    # objeto Usuario e o banco estivesse uma migração atrasado (coluna nova no
+    # modelo, ainda não criada), quebraria aqui, e o botão que conserta o banco
+    # ficaria inalcançável: o impasse circular que derrubou o ERP em 2026-09-02.
     with get_session() as s:
-        usuario = _usuario_logado(s)
-        if usuario is None:
-            return None
-        if not pode(usuario, acao):
-            logger.warning("ERP/permissao: %s negado a %s (%s) em %s",
-                           acao, usuario.email, usuario.perfil.value, endpoint)
-            return jsonify({"ok": False,
-                            "erro": "Seu perfil não tem permissão para esta operação."}), 403
+        perfil = _perfil_bruto(s)
+    if not perfil:
+        return None          # usuário sumiu do banco: a rota responde
+    try:
+        perfil_enum = PerfilUsuario(perfil)
+    except ValueError:
+        logger.error("ERP/permissao: perfil desconhecido %r no usuário %s",
+                     perfil, session.get("erp_usuario_id"))
+        return jsonify({"ok": False, "erro": "Perfil de usuário inválido."}), 403
+    if perfil_enum not in PERMISSOES.get(acao, set()):
+        logger.warning("ERP/permissao: %s negado ao usuário %s (%s) em %s",
+                       acao, session.get("erp_usuario_id"), perfil, endpoint)
+        return jsonify({"ok": False,
+                        "erro": "Seu perfil não tem permissão para esta operação."}), 403
     return None
 
 

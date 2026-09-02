@@ -105,6 +105,14 @@ class SessaoFalsa:
         if "INSERT INTO eventos" in texto:
             self.eventos.append(params)
             return ResultadoFalso([])
+        # A guarda de permissão lê o perfil por SQL direto (para funcionar com
+        # o banco atrasado). O dublê responde a partir do Usuario guardado.
+        if "SELECT perfil::text FROM usuarios" in texto:
+            uid = (params or {}).get("i")
+            for o in self.objetos:
+                if isinstance(o, Usuario) and o.id == uid:
+                    return ResultadoFalso([(o.perfil.value,)])
+            return ResultadoFalso([])
         return ResultadoFalso(self.linhas_sql.pop(0) if self.linhas_sql else [])
 
     # -- escrita ------------------------------------------------------------
