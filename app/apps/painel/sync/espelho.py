@@ -312,17 +312,43 @@ def gravar_titulos(conn, registros, natureza):
 
 
 def _atualizar_sync_state(conn, entidade, registros, total_esperado):
-    """Grava maior dAlt visto, timestamp e total na sync_state."""
+    """Grava a maior data de alteracao vista, o horario e o total.
+
+    A comparacao com o que ja estava gravado acontece AQUI, em Python, e nao no
+    SQL. Duas razoes, as duas descobertas do jeito ruim:
+
+    1. O SQL usava `MAX(a, b)` — que no SQLite e o maior de dois valores, mas no
+       Postgres e uma funcao de agregacao de UM argumento. A carga inicial morria
+       com "function max(text, text) does not exist" depois de ja ter baixado
+       tudo. O equivalente no Postgres seria `GREATEST`.
+
+    2. Mesmo com `GREATEST`, a comparacao seria ERRADA: a coluna e TEXTO no
+       formato dd/mm/aaaa, e comparar texto poe "31/12/2024" acima de
+       "01/01/2025". Errava para o lado seguro (baixar demais, nunca de menos),
+       mas errava.
+
+    Comparar como DATA, em Python, resolve os dois — e usa o mesmo interpretador
+    de data que o resto do modulo ja usa.
+    """
     maior = None
     for rec in registros:
         d = _dalt_para_data((rec.get("info") or {}).get("dAlt"))
         if d and (maior is None or d > maior):
             maior = d
+
+    cur = conn.execute("SELECT ultima_dalt FROM sync_state WHERE entidade=?",
+                       (entidade,))
+    anterior = cur.fetchone()
+    cur.close()
+    guardada = _dalt_para_data(anterior[0]) if anterior else None
+    if guardada and (maior is None or guardada > maior):
+        maior = guardada
+
     maior_str = maior.strftime("%d/%m/%Y") if maior else None
     conn.execute(
         "INSERT INTO sync_state (entidade, ultima_dalt, ultima_sync, total_registros) "
         "VALUES (?,?,?,?) ON CONFLICT(entidade) DO UPDATE SET "
-        "ultima_dalt=COALESCE(MAX(excluded.ultima_dalt, sync_state.ultima_dalt), excluded.ultima_dalt), "
+        "ultima_dalt=excluded.ultima_dalt, "
         "ultima_sync=excluded.ultima_sync, total_registros=excluded.total_registros",
         (entidade, maior_str, dt.datetime.now().isoformat(timespec="seconds"), total_esperado),
     )
