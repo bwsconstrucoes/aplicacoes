@@ -323,6 +323,10 @@ def _consultar_falso(sql, params=()):
     for marca, resposta in RESPOSTAS_FALSAS.items():
         if marca in sql:
             return resposta
+    if "GROUP BY mes" in sql:                          # fluxo de caixa mensal
+        return [(dt.date(2025, 1, 1), 4000.0, -2500.0),
+                (dt.date(2025, 2, 1), 6000.0, -3100.0),
+                (dt.date(2025, 3, 1), 2000.0, -5200.0)]
     if "GROUP BY ano" in sql:
         return ([(2024, -1000.0), (2025, 2500.0)] if "SUM(pago_recebido)" in sql
                 else [(2024, 5000.0, -4000.0), (2025, 9000.0, -6000.0)])
@@ -335,6 +339,10 @@ def _consultar_falso(sql, params=()):
         return [("Despesas com Pessoal", -4100.0), ("Materiais", -2050.0)]
     if "COUNT(*)" in sql:                              # maiores credores
         return [("FORNECEDOR A LTDA", -3000.0, -200.0, 12)]
+    if "ABS(SUM(" in sql:                              # comprometido vs executado
+        return [("Obra Um", -8000.0, -2000.0), ("Obra Dois", -3000.0, -500.0)]
+    if "GROUP BY 1" in sql and sql.count("SUM(CASE WHEN tipo") >= 2:
+        return [("PROJ-A", 12000.0, -9000.0), ("PROJ-B", 4000.0, -6000.0)]
     if "GROUP BY 1" in sql:                            # receita por obra
         return [("Obra Um", 7000.0, 300.0, 500.0)]
     if "pago_recebido > 0" in sql:                     # entradas e saídas do caixa
@@ -428,3 +436,44 @@ def test_sair_derruba_a_sessao(painel):
     assert painel.get("/painel/").status_code == 200
     painel.get("/painel/sair")
     assert painel.get("/painel/").status_code == 302
+
+
+def test_fluxo_de_caixa_abre_e_acumula(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/fluxo")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "Fluxo de Caixa" in html
+    assert "01/2025" in html and "03/2025" in html
+    assert "Caixa acumulado" in html
+    # 1500 + 2900 - 3200 = 1200 acumulado no fim
+    assert "R$ 1.200,00" in html
+
+
+def test_resultado_por_obra_troca_o_agrupamento(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    por_projeto = painel.get("/painel/obras").get_data(as_text=True)
+    assert "Resultado por Projeto" in por_projeto
+    assert "PROJ-A" in por_projeto
+
+    por_obra = painel.get("/painel/obras?nivel=obra").get_data(as_text=True)
+    assert "Resultado por Obra" in por_obra
+
+
+def test_comprometido_vs_executado_calcula_o_percentual(painel):
+    """8.000 pagos de 10.000 comprometidos = 80% andado."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/execucao").get_data(as_text=True)
+    assert "Comprometido" in html
+    assert "80%" in html
+
+
+def test_lado_a_receber_muda_a_explicacao(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/execucao?tipo=receber").get_data(as_text=True)
+    assert "ainda falta receber" in html
+
+
+def test_telas_novas_tambem_exigem_login(painel):
+    for caminho in ("/painel/fluxo", "/painel/obras", "/painel/execucao"):
+        assert painel.get(caminho).status_code == 302, caminho

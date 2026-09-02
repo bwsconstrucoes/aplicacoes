@@ -13,9 +13,10 @@ Responsabilidades:
     Movimentos, Categorias, Clientes, ContasCorrentes.
   - Leitura das amostras .txt (offline) para teste headless sem bater na API.
 
-Variaveis de ambiente esperadas (as mesmas do modulo baixabradesco):
-  OMIE_BWS_APP_KEY     = sua app_key
-  OMIE_BWS_APP_SECRET  = seu app_secret
+Variaveis de ambiente esperadas (as mesmas ja cadastradas no Render):
+  OMIE_KEY     = sua app_key
+  OMIE_SECRET  = seu app_secret
+Apelidos aceitos: OMIE_BWS_APP_KEY / OMIE_BWS_APP_SECRET.
 
 Uso rapido:
   from omie_client import OmieClient
@@ -48,6 +49,16 @@ def _limpar_credencial(s):
     s = s or ""
     invisiveis = {0x200b, 0x200c, 0x200d, 0x2060, 0xfeff}
     return "".join(c for c in s if not (c.isspace() or ord(c) in invisiveis))
+
+
+def _do_ambiente(*nomes):
+    """Primeiro nome que existir no ambiente. Aceita os apelidos que o
+    repositorio acumulou para a mesma credencial."""
+    for nome in nomes:
+        valor = os.environ.get(nome)
+        if valor:
+            return valor
+    return ""
 
 
 def carregar_dotenv(caminho=".env"):
@@ -137,7 +148,7 @@ class OmieClient:
                  pausa_entre_chamadas=0.3, max_tentativas=8,
                  backoff_base=1.6, timeout=120, registros_por_pagina=500):
         if not app_key or not app_secret:
-            raise ValueError("app_key/app_secret ausentes. Configure OMIE_APP_KEY e OMIE_APP_SECRET.")
+            raise ValueError("app_key/app_secret ausentes. Configure OMIE_KEY e OMIE_SECRET.")
         self.app_key = app_key
         self.app_secret = app_secret
         self.pausa = float(pausa_entre_chamadas)
@@ -151,21 +162,24 @@ class OmieClient:
     @classmethod
     def de_ambiente(cls, caminho_env=".env", **kwargs):
         """Le a credencial do ambiente. No Render vem das variaveis do servico;
-        localmente, de um .env. Os nomes oficiais sao os do resto do repositorio
-        (`baixabradesco/omie.py`); os antigos do painel seguem aceitos para nao
-        quebrar quem ja tem .env local."""
+        localmente, de um .env.
+
+        A ordem dos nomes e a MESMA do `emissaonf/credenciais.py`, que ja resolve
+        esse apelido no repositorio: OMIE_KEY/OMIE_SECRET sao os nomes em uso no
+        Render; OMIE_BWS_APP_KEY/SECRET sao o apelido antigo, aceito para nao
+        quebrar quem tem .env local com os nomes velhos."""
         carregar_dotenv(caminho_env)
-        key = _limpar_credencial(os.environ.get("OMIE_BWS_APP_KEY")
-                                 or os.environ.get("OMIE_APP_KEY"))
-        secret = _limpar_credencial(os.environ.get("OMIE_BWS_APP_SECRET")
-                                    or os.environ.get("OMIE_APP_SECRET"))
+        key = _limpar_credencial(_do_ambiente("OMIE_KEY", "OMIE_BWS_APP_KEY",
+                                              "OMIE_APP_KEY"))
+        secret = _limpar_credencial(_do_ambiente("OMIE_SECRET", "OMIE_BWS_APP_SECRET",
+                                                 "OMIE_APP_SECRET"))
         if not key or not secret:
-            faltando = ", ".join(n for n, v in (("OMIE_BWS_APP_KEY", key),
-                                                ("OMIE_BWS_APP_SECRET", secret)) if not v)
+            faltando = ", ".join(n for n, v in (("OMIE_KEY", key),
+                                                ("OMIE_SECRET", secret)) if not v)
             raise ValueError(
                 f"Credenciais do OMIE ausentes ({faltando}). No Render, cadastre as "
-                "variaveis de ambiente OMIE_BWS_APP_KEY e OMIE_BWS_APP_SECRET nas "
-                "Settings do servico. Nunca escreva a chave no codigo.")
+                "variaveis de ambiente OMIE_KEY e OMIE_SECRET nas Settings do "
+                "servico. Nunca escreva a chave no codigo.")
         return cls(key, secret, **kwargs)
 
     # ------------------------------------------------------------------ 

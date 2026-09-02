@@ -1,0 +1,88 @@
+{% extends "painel_base.html" %}
+{% import "painel_grafico.html" as gr %}
+{% block titulo %}Fluxo de Caixa — Painel Financeiro BWS{% endblock %}
+
+{% block filtros %}{% include "painel_filtros.html" %}{% endblock %}
+
+{% block conteudo %}
+<h2>Fluxo de Caixa
+  <small>o dinheiro que entrou e saiu, mês a mês</small>
+</h2>
+
+{% if chips %}
+<div class="chips">
+  {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
+</div>
+{% endif %}
+
+{% if not meses %}
+  <div class="vazio">
+    <b>Sem movimento</b>
+    Nenhum título pago ou recebido nos filtros escolhidos.
+  </div>
+{% else %}
+
+<div class="kpis">
+  <div class="kpi estatico verde">
+    <div class="kpi-rotulo">Entradas</div>
+    <div class="kpi-valor">{{ brl(total.entradas) }}</div>
+  </div>
+  <div class="kpi estatico vermelho">
+    <div class="kpi-rotulo">Saídas</div>
+    <div class="kpi-valor">{{ brl(total.saidas) }}</div>
+  </div>
+  <div class="kpi estatico ciano">
+    <div class="kpi-rotulo">Geração de caixa</div>
+    <div class="kpi-valor {{ classe_valor(total.liquido) }}">{{ brl(total.liquido) }}</div>
+    <div class="kpi-sub">entradas menos saídas</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Caixa acumulado</div>
+    <div class="kpi-valor {{ classe_valor(total.acumulado) }}">{{ brl(total.acumulado) }}</div>
+    <div class="kpi-sub">no fim do último mês</div>
+  </div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Mês a mês</h3>
+    <small>{{ meses|length }} meses com movimento</small>
+  </div>
+  {{ gr.grafico(grafico, "Caixa acumulado") }}
+  <p class="cartao-dica">
+    As retenções na fonte não aparecem aqui: o cliente as reteve e recolheu, o
+    dinheiro nunca passou pela conta. Entra só o líquido recebido.
+  </p>
+</div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo">Do mês mais recente para o mais antigo</span>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Mês</th>
+          <th class="sem-ordem direita">Entradas</th>
+          <th class="sem-ordem direita">Saídas</th>
+          <th class="sem-ordem direita">No mês</th>
+          <th class="sem-ordem direita">Acumulado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in meses|reverse %}
+        <tr>
+          <td class="dados">{{ m.rotulo }}</td>
+          <td class="dados direita">{{ brl(m.entradas) }}</td>
+          <td class="dados direita">{{ brl(m.saidas) }}</td>
+          <td class="dados direita {{ classe_valor(m.liquido) }}">{{ brl(m.liquido) }}</td>
+          <td class="dados direita {{ classe_valor(m.acumulado) }}"><b>{{ brl(m.acumulado) }}</b></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

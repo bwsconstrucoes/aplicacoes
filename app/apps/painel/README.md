@@ -94,20 +94,31 @@ Uma de cada vez: a segunda chamada é recusada em vez de duplicar o trabalho.
 | `PAINEL_SENHA` | senha de entrada. **Sem ela ninguém entra** — falha fechado |
 | `PAINEL_SECRET` | autoriza a chamada do agendador |
 | `PAINEL_SHEET_PROJETOS` | id da planilha "Bases de Dados Pipefy" |
-| `OMIE_BWS_APP_KEY` / `OMIE_BWS_APP_SECRET` | acesso ao OMIE (as mesmas do `baixabradesco`) |
+| `OMIE_KEY` / `OMIE_SECRET` | acesso ao OMIE — já existem. Apelidos aceitos: `OMIE_BWS_APP_KEY`/`_SECRET` |
 | `DATABASE_URL` | Postgres — já existe, é o do ERP |
 | `GOOGLE_CREDENTIALS_BASE64` | leitura da planilha — já existe |
 
 ## O que ainda não foi convertido
 
 `referencia_streamlit/` guarda as telas originais. Continuam sendo a fonte da
-verdade das regras enquanto a conversão não termina:
+verdade das regras enquanto a conversão não termina.
 
-- Fluxo de Caixa (mês a mês)
-- Resultado por Obra/Projeto
-- Comprometido vs Executado
-- Necessidade de Caixa
-- Prestação de Contas (rateio administrativo e divisão entre sócios)
+**Já convertidas:** Visão Geral, DRE, Fluxo de Caixa, Resultado por Obra/Projeto,
+Comprometido vs Executado.
+
+**Faltam:**
+- Necessidade de Caixa (simulação por conjunto de obras)
+- Prestação de Contas (rateio administrativo e divisão entre sócios) — depende
+  também de trazer a configuração que hoje está no `prestacao_contas.db` local
 - Exportações em Excel e o PDF do DRE
+- Receita Analítico (a tabela `fato_recebimentos` já é preenchida, mas nenhuma
+  tela a lê ainda)
 
 Cada tela convertida deve bater **número por número** com a original.
+
+## Uma diferença consciente em relação ao painel antigo
+
+No Fluxo de Caixa, lançamentos **sem data** ficam de fora. Na versão antiga eles
+caíam num grupo "NaT" que não aparecia no gráfico mas somava nos totais. Aqui a
+regra é explícita (`data IS NOT NULL`): fluxo de caixa é sobre quando o dinheiro
+andou, e sem data não há quando.

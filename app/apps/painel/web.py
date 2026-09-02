@@ -7,7 +7,7 @@ no import: se o Postgres estiver fora do ar ou a DATABASE_URL faltar, o painel
 falha na primeira tela aberta e os outros 14 modulos sobem normalmente.
 
 Envvars: PAINEL_SENHA (entrada), PAINEL_SECRET (chamada do agendador),
-DATABASE_URL, OMIE_BWS_APP_KEY, OMIE_BWS_APP_SECRET, GOOGLE_CREDENTIALS_BASE64,
+DATABASE_URL, OMIE_KEY, OMIE_SECRET, GOOGLE_CREDENTIALS_BASE64,
 PAINEL_SHEET_PROJETOS.
 """
 from __future__ import annotations
@@ -129,14 +129,27 @@ def _filtros_do_pedido():
                    excluir_trf=request.args.get("trf") != "1")
 
 
+ABAS = [
+    ("visao", "Visão Geral", "painel.visao_geral"),
+    ("dre", "DRE", "painel.dre"),
+    ("fluxo", "Fluxo de Caixa", "painel.fluxo"),
+    ("obras", "Resultado por Obra", "painel.obras"),
+    ("execucao", "Comprometido × Executado", "painel.execucao"),
+    ("config", "Configurações", "painel.configuracoes"),
+]
+
+
+def _nivel_do_pedido() -> str:
+    """Agrupar por projeto (o conjunto) ou por obra (o departamento no OMIE)."""
+    return "obra" if request.args.get("nivel") == "obra" else "projeto"
+
+
 def _contexto_comum(aba: str):
     """O que toda tela precisa: abas, filtros disponiveis e a data da base."""
     from . import consultas
     return {
         "aba_ativa": aba,
-        "abas": [("visao", "Visão Geral", "painel.visao_geral"),
-                 ("dre", "DRE", "painel.dre"),
-                 ("config", "Configurações", "painel.configuracoes")],
+        "abas": ABAS,
         "opcoes": consultas.opcoes_de_filtro(),
         "atualizacao": consultas.atualizado_em(),
         "selecao": {
@@ -200,14 +213,78 @@ def dre():
     )
 
 
+@bp.route("/fluxo")
+def fluxo():
+    """Entradas e saidas mes a mes, e o caixa acumulado."""
+    from . import consultas, graficos
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+    f = _filtros_do_pedido()
+    meses = consultas.caixa_por_mes(f)
+    total = {
+        "entradas": sum(m["entradas"] for m in meses),
+        "saidas": sum(m["saidas"] for m in meses),
+        "liquido": sum(m["liquido"] for m in meses),
+        "acumulado": meses[-1]["acumulado"] if meses else 0.0,
+    }
+    # Com muitos meses o grafico vira uma parede de barras finas demais para
+    # ler. Os ultimos 36 (tres anos) cobrem a leitura util; a tabela abaixo
+    # continua mostrando tudo.
+    recentes = meses[-36:]
+    return render_template(
+        "painel_fluxo.html",
+        **_contexto_comum("fluxo"),
+        chips=f.resumo(),
+        meses=meses,
+        total=total,
+        grafico=graficos.barras_agrupadas(
+            recentes,
+            [("entradas", "b-receita", "Entradas"),
+             ("saidas", "b-despesa", "Saídas")],
+            campo_rotulo="rotulo", campo_linha="acumulado"),
+    )
+
+
+@bp.route("/obras")
+def obras():
+    """Receita liquida, despesa e resultado por projeto ou por obra."""
+    from . import consultas, graficos
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+    f = _filtros_do_pedido()
+    nivel = _nivel_do_pedido()
+    medida = "executado" if request.args.get("medida") == "executado" else "comprometido"
+    itens = consultas.resultado_por(f, nivel=nivel, medida=medida)
+    return render_template(
+        "painel_obras.html",
+        **_contexto_comum("obras"),
+        chips=f.resumo(), nivel=nivel, medida=medida,
+        itens=graficos.proporcoes(itens, campo="resultado"),
+    )
+
+
+@bp.route("/execucao")
+def execucao():
+    """Quanto de cada obra ja foi executado e quanto ainda falta."""
+    from . import consultas
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+    f = _filtros_do_pedido()
+    nivel = _nivel_do_pedido()
+    tipo = "receber" if request.args.get("tipo") == "receber" else "pagar"
+    return render_template(
+        "painel_execucao.html",
+        **_contexto_comum("execucao"),
+        chips=f.resumo(), nivel=nivel, tipo=tipo,
+        itens=consultas.comprometido_vs_executado(f, nivel=nivel, tipo=tipo),
+    )
+
+
 @bp.route("/configuracoes")
 def configuracoes():
     from . import migracoes_runner, tarefas
     estado_migracoes = migracoes_runner.listar_estado()
-    contexto = {"aba_ativa": "config",
-                "abas": [("visao", "Visão Geral", "painel.visao_geral"),
-                         ("dre", "DRE", "painel.dre"),
-                         ("config", "Configurações", "painel.configuracoes")]}
+    contexto = {"aba_ativa": "config", "abas": ABAS}
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
         atualizacao, vazia = None, True

@@ -272,3 +272,91 @@ def top_credores(f: Filtros, limite: int = 20) -> list[dict]:
     return [{"nome": nome, "pago": float(pago or 0), "aberto": float(aberto or 0),
              "titulos": qtd}
             for nome, pago, aberto, qtd in consultar(sql, params)]
+
+
+# ---------------------------------------------------------------------------
+# Fluxo de Caixa
+# ---------------------------------------------------------------------------
+def caixa_por_mes(f: Filtros) -> list[dict]:
+    """Entradas, saídas e o caixa acumulado, mês a mês.
+
+    Só o que foi efetivamente pago ou recebido. As retenções de receita ficam
+    de fora: o cliente as reteve, nunca passaram pela conta da BWS."""
+    where, params = f.where(f"{PAGO} AND NOT (tipo = ? AND {RETIDO}) AND data IS NOT NULL",
+                            [REC])
+    sql = f"""
+        SELECT date_trunc('month', data)::date AS mes,
+               SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END),
+               SUM(CASE WHEN pago_recebido < 0 THEN pago_recebido ELSE 0 END)
+          FROM fato{where}
+         GROUP BY mes ORDER BY mes"""
+    saida, acumulado = [], 0.0
+    for mes, entradas, saidas in consultar(sql, params):
+        entradas, saidas = float(entradas or 0), float(saidas or 0)
+        liquido = entradas + saidas
+        acumulado += liquido
+        saida.append({"mes": mes, "rotulo": mes.strftime("%m/%Y"),
+                      "entradas": entradas, "saidas": saidas,
+                      "liquido": liquido, "acumulado": acumulado})
+    return saida
+
+
+# ---------------------------------------------------------------------------
+# Resultado por obra / projeto
+# ---------------------------------------------------------------------------
+def resultado_por(f: Filtros, nivel: str = "projeto", medida: str = "comprometido",
+                  limite: int = 40) -> list[dict]:
+    """Receita líquida, despesa e resultado, por projeto ou por obra.
+
+    Mesma base do DRE, e a receita é a LÍQUIDA — sem as retenções."""
+    coluna = "departamento" if nivel == "obra" else "projeto"
+    valor = EXECUTADO if medida == "executado" else COMPROMETIDO
+    where, params = f.where("analise = 'DRE'")
+    # O resultado (receita + despesa) e repetido no ORDER BY em vez de `2 + 3`:
+    # no Postgres um numero solto no ORDER BY e a posicao da coluna, mas dentro
+    # de uma conta ele vira a constante — `2 + 3` ordenaria por 5, sempre igual.
+    resultado = (f"SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {valor} ELSE 0 END) "
+                 f"+ SUM(CASE WHEN tipo = ? THEN {valor} ELSE 0 END)")
+    sql = f"""
+        SELECT COALESCE(NULLIF({coluna},''), '(sem {coluna})'),
+               SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {valor} ELSE 0 END),
+               SUM(CASE WHEN tipo = ?                    THEN {valor} ELSE 0 END)
+          FROM fato{where} GROUP BY 1
+         ORDER BY {resultado} DESC LIMIT {int(limite)}"""
+    saida = []
+    # ordem dos parametros: os dois do SELECT, os do WHERE, os dois do ORDER BY
+    for nome, receita, despesa in consultar(sql, [REC, PAG] + params + [REC, PAG]):
+        receita, despesa = float(receita or 0), float(despesa or 0)
+        saida.append({"nome": nome, "receita": receita, "despesa": despesa,
+                      "resultado": receita + despesa})
+    return saida
+
+
+# ---------------------------------------------------------------------------
+# Comprometido vs Executado
+# ---------------------------------------------------------------------------
+def comprometido_vs_executado(f: Filtros, nivel: str = "projeto",
+                              tipo: str = "pagar", limite: int = 40) -> list[dict]:
+    """Quanto de cada obra já foi executado e quanto ainda falta.
+
+    Diferente do resultado: aqui não se somam receita e despesa, olha-se um lado
+    de cada vez — quanto daquilo que a obra vai custar já saiu, ou quanto do que
+    ela vai render já entrou."""
+    coluna = "departamento" if nivel == "obra" else "projeto"
+    alvo = PAG if tipo == "pagar" else REC
+    where, params = f.where("tipo = ?", [alvo])
+    sql = f"""
+        SELECT COALESCE(NULLIF({coluna},''), '(sem {coluna})'),
+               SUM({EXECUTADO}), SUM({EM_ABERTO})
+          FROM fato{where} GROUP BY 1
+         ORDER BY ABS(SUM({COMPROMETIDO})) DESC LIMIT {int(limite)}"""
+    saida = []
+    for nome, executado, a_executar in consultar(sql, params):
+        executado, a_executar = float(executado or 0), float(a_executar or 0)
+        comprometido = executado + a_executar
+        saida.append({
+            "nome": nome, "executado": executado, "a_executar": a_executar,
+            "comprometido": comprometido,
+            "pct": (abs(executado) / abs(comprometido) * 100) if comprometido else 0.0,
+        })
+    return saida

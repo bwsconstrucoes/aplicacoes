@@ -1,0 +1,98 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Comprometido vs Executado — Painel Financeiro BWS{% endblock %}
+
+{% block filtros %}{% include "painel_filtros.html" %}{% endblock %}
+
+{% block conteudo %}
+<h2>Comprometido vs Executado
+  <small>quanto de cada {{ 'obra' if nivel == 'obra' else 'projeto' }} já andou</small>
+</h2>
+
+{% if chips %}
+<div class="chips">
+  {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
+</div>
+{% endif %}
+
+<form method="get" class="tabela-barra" style="border:0; padding:0 0 12px">
+  {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
+  {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
+  {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
+  {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
+  <div class="campo" style="max-width:190px">
+    <label for="nivel">Agrupar por</label>
+    <select id="nivel" name="nivel" onchange="this.form.submit()">
+      <option value="projeto" {% if nivel == 'projeto' %}selected{% endif %}>Projeto</option>
+      <option value="obra" {% if nivel == 'obra' %}selected{% endif %}>Obra</option>
+    </select>
+  </div>
+  <div class="campo" style="max-width:190px">
+    <label for="tipo">Olhar o lado</label>
+    <select id="tipo" name="tipo" onchange="this.form.submit()">
+      <option value="pagar" {% if tipo == 'pagar' %}selected{% endif %}>A pagar (custos)</option>
+      <option value="receber" {% if tipo == 'receber' %}selected{% endif %}>A receber (medições)</option>
+    </select>
+  </div>
+</form>
+
+{% if not itens %}
+  <div class="vazio"><b>Sem dados</b>Nenhum lançamento nos filtros escolhidos.</div>
+{% else %}
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo">
+      {% if tipo == 'pagar' %}
+        <b>Executado</b> = já pago &nbsp;·&nbsp; <b>A executar</b> = ainda falta pagar
+      {% else %}
+        <b>Executado</b> = já recebido &nbsp;·&nbsp; <b>A executar</b> = ainda falta receber
+      {% endif %}
+    </span>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">{{ 'Obra' if nivel == 'obra' else 'Projeto' }}</th>
+          <th class="sem-ordem direita">Executado</th>
+          <th class="sem-ordem direita">A executar</th>
+          <th class="sem-ordem direita">Comprometido</th>
+          <th class="sem-ordem" style="width:24%">% andado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in itens %}
+        <tr>
+          <td class="desc">{{ i.nome }}</td>
+          <td class="dados direita">{{ brl(i.executado) }}</td>
+          <td class="dados direita">{{ brl(i.a_executar) }}</td>
+          <td class="dados direita"><b>{{ brl(i.comprometido) }}</b></td>
+          <td>
+            <div class="barra">
+              <div class="trilha">
+                <div class="preench" style="width:{{ '%.0f'|format(i.pct if i.pct < 100 else 100) }}%"></div>
+              </div>
+              <span class="dados" style="font-size:12px; min-width:38px; text-align:right">
+                {{ '%.0f'|format(i.pct) }}%
+              </span>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="cartao-dica">
+  {% if tipo == 'pagar' %}
+    Uma obra com 95% andado tem quase todo o custo já desembolsado. Se ela ainda
+    não faturou tudo, o dinheiro que falta entrar é maior do que parece na tela
+    de resultado.
+  {% else %}
+    Uma obra com 40% andado tem 60% da medição ainda por receber. Compare com o
+    lado "a pagar": se o custo já andou mais que a receita, a obra está
+    financiando o cliente.
+  {% endif %}
+</p>
+{% endif %}
+{% endblock %}
