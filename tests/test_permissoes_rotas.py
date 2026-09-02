@@ -157,6 +157,48 @@ def test_quem_tem_alcada_passa_pelo_guard(app, monkeypatch):
     assert r.status_code != 403
 
 
+@pytest.mark.parametrize("caminho, metodo", [
+    ("/erp/api/importar/pipefy", "post"),
+    ("/erp/api/importar/csv", "post"),
+    ("/erp/api/importar/ofx", "post"),
+    ("/erp/api/receber/baixar", "post"),
+    ("/erp/api/conciliacao/executar", "post"),
+    ("/erp/api/conciliacao/manual", "post"),
+    ("/erp/api/obras/1/fase", "post"),
+    ("/erp/api/config/categoria", "post"),
+    ("/erp/api/config/obra", "post"),
+    ("/erp/api/config/depara/definir", "post"),
+])
+def test_administrativo_de_obra_nao_executa_acao_de_alcada(app, monkeypatch,
+                                                           caminho, metodo):
+    """Bloco 2: todas estas rodavam para qualquer pessoa com login."""
+    r = _pedir(app, monkeypatch, caminho, P.ADMINISTRATIVO_OBRA, metodo)
+
+    assert r.status_code == 403
+
+
+@pytest.mark.parametrize("caminho", [
+    "/erp/api/pagamentos/agenda",
+    "/erp/api/lotes",
+    "/erp/api/conciliacao/painel",
+    "/erp/api/conciliacao/extrato",
+    "/erp/api/movimentacoes/neutras",
+    "/erp/api/mapa",
+])
+def test_painel_financeiro_negado_a_perfil_operacional(app, monkeypatch, caminho):
+    """Bloco 4: agregados que expunham a posição financeira inteira."""
+    r = _pedir(app, monkeypatch, caminho, P.ADMINISTRATIVO_OBRA)
+
+    assert r.status_code == 403
+
+
+def test_consulta_nao_enumera_operadores(app, monkeypatch):
+    """Lista de quem existe é o passo 1 para escolher alvo."""
+    r = _pedir(app, monkeypatch, "/erp/api/operadores/contato", P.CONSULTA)
+
+    assert r.status_code == 403
+
+
 def test_rota_publica_responde_sem_sessao(app):
     with app.test_client() as c:
         r = c.get("/erp/health")

@@ -482,6 +482,8 @@ def api_titulos():
             hoje = date.today()
             linhas = [_serializar(t, hoje, ver_pg) for t in itens
                       if not status or t.status.value in status]
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao listar títulos")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -579,6 +581,8 @@ def api_titulo_detalhe(titulo_id: int):
         return jsonify({"ok": True, "titulo": dados})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no detalhe do título %s", titulo_id)
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -615,6 +619,8 @@ def api_acao_lote():
                 except (ErroValidacao, ErroPermissao) as e:
                     erros.append({"id": tid, "erro": str(e)})
             s.commit()
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na ação em lote %s", acao)
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -666,6 +672,8 @@ def api_config():
                               "perfil": u.perfil.value, "ativo": u.ativo} for u in usuarios],
             }
         return jsonify({"ok": True, "dados": dados})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao carregar configurações")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -689,6 +697,8 @@ def api_nova_categoria():
         return jsonify({"ok": True})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao criar categoria")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -708,6 +718,8 @@ def api_nova_obra():
         return jsonify({"ok": True})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao criar obra")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -729,6 +741,8 @@ def api_nova_conta():
                                 agencia=d["agencia"].strip(), conta=d["conta"].strip()))
             s.commit()
         return jsonify({"ok": True})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao criar conta bancária")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -766,6 +780,8 @@ def api_importar_pipefy():
         return jsonify({"ok": True, "relatorio": rel})
     except ErroPipefy as e:
         return jsonify({"ok": False, "erro": str(e)}), 502
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na importação do Pipefy")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -794,6 +810,8 @@ def api_importar_csv():
         return jsonify({"ok": True, "relatorio": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na importação de CSV")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -820,6 +838,8 @@ def api_importar_ofx():
         return jsonify({"ok": False, "erro": f"Arquivo OFX inválido: {e}"}), 400
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na importação de OFX")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -840,6 +860,8 @@ def api_instalar_plano():
             rel = aplicar_plano(s, usuario)
             s.commit()
         return jsonify({"ok": True, "relatorio": rel})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao instalar plano financeiro")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -864,6 +886,8 @@ def api_substituir_categoria():
         return jsonify({"ok": True, "relatorio": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao substituir categoria")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -915,6 +939,8 @@ def api_definir_dedutibilidade():
                 processados.append(t.numero_sp)
             s.commit()
         return jsonify({"ok": True, "processados": processados, "erros": erros})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao definir dedutibilidade")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -979,6 +1005,8 @@ def api_editar_categoria(categoria_id: int):
                                  "natureza": cat.natureza, "ativo": cat.ativo}}, usuario.id)
             s.commit()
         return jsonify({"ok": True})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao editar categoria %s", categoria_id)
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -991,6 +1019,8 @@ def api_estado_banco():
     from app.apps.erp.core.comum.migracoes import listar_estado
     try:
         return jsonify({"ok": True, "estado": listar_estado()})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         return jsonify({"ok": False, "erro": str(e)}), 500
 
@@ -1010,6 +1040,8 @@ def api_aplicar_migracoes():
         logger.info("ERP: %s migração(ões) aplicada(s) por usuário %s",
                     len(rel["aplicadas"]), session.get("erp_usuario_id"))
         return jsonify({"ok": True, "relatorio": rel})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao aplicar migrações")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1023,6 +1055,8 @@ def api_listar_depara():
     try:
         with get_session() as s:
             return jsonify({"ok": True, "depara": listar(s)})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao listar de-para")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1042,6 +1076,8 @@ def api_instalar_depara():
             rel = instalar_depara_padrao(s, usuario)
             s.commit()
         return jsonify({"ok": True, "relatorio": rel})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao instalar de-para")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1061,6 +1097,8 @@ def api_definir_depara():
         return jsonify({"ok": True})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao definir tradução")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1109,6 +1147,8 @@ def api_dados_lancamento():
                 } for c in cats],
             }
         return jsonify({"ok": True, "dados": dados})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao carregar dados do lançamento")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1131,6 +1171,8 @@ def api_ler_documento():
                              dica_usuario=(request.form.get("dica") or ""))
     except ErroLeitura as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao ler documento")
         return jsonify({"ok": False, "erro": f"Falha ao ler o documento: {e}"}), 500
@@ -1180,6 +1222,8 @@ def api_checar_duplicidade():
             critica = checar(s, d)
             critica["enquadramento"] = avaliar(s, d, _usuario_logado(s))
             return jsonify({"ok": True, "critica": critica})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na crítica de duplicidade")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1263,6 +1307,8 @@ def api_criar_titulo():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao criar título")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1309,6 +1355,8 @@ def api_agenda():
                       for c in s.scalars(select(ContaBancaria)
                                          .where(ContaBancaria.ativo.is_(True))).all()]
         return jsonify({"ok": True, "parcelas": itens, "contas": contas})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na agenda de pagamentos")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1372,6 +1420,8 @@ def api_baixar():
                         logger.warning("ERP: aviso falhou (%s)", e)
                 s.commit()
         return jsonify({"ok": True, "pagas": ok, "erros": erros, "avisos": avisos})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao baixar pagamentos")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1385,6 +1435,8 @@ def api_lotes():
     try:
         with get_session() as s:
             return jsonify({"ok": True, "lotes": listar(s)})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao listar lotes")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1431,6 +1483,8 @@ def api_criar_lote():
             return jsonify({"ok": True, "lote_id": lote.id, "relatorio": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao criar lote")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1454,6 +1508,8 @@ def api_lote_parcelas(lote_id: int):
             return jsonify({"ok": True, "relatorio": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao alterar lote")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1489,6 +1545,8 @@ def api_lote_por_sp():
     try:
         with get_session() as s:
             return jsonify({"ok": True, "reconhecidos": numeros, **parcelas_por_sp(s, numeros)})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao buscar SPs coladas")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1511,6 +1569,8 @@ def api_conciliacao_painel():
                       for c in s.scalars(select(ContaBancaria)
                                          .where(ContaBancaria.ativo.is_(True))).all()]
             return jsonify({"ok": True, "painel": painel(s, conta), "contas": contas})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no painel de conciliação")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1529,6 +1589,8 @@ def api_conciliar():
                 s, conta_bancaria_id=d.get("conta_id") or None, usuario=usuario)
             s.commit()
         return jsonify({"ok": True, "relatorio": rel})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na conciliação")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1549,6 +1611,8 @@ def api_conciliar_manual():
         return jsonify({"ok": True})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na conciliação manual")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1575,6 +1639,8 @@ def api_relatorios():
                             "resumo": resumo(s, d.get("dimensao") or "grupo", filtros)})
     except ValueError as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no relatório")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1609,6 +1675,8 @@ def api_relatorios_csv():
             conteudo = para_csv(linhas, colunas)
         return Response(conteudo.encode("utf-8-sig"), mimetype="text/csv",
                         headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao exportar CSV")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1628,6 +1696,8 @@ def api_extrato():
                 s, conta_bancaria_id=request.args.get("conta_id", type=int),
                 situacao=request.args.get("situacao", "todos"))
         return jsonify({"ok": True, "linhas": linhas})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao listar extrato")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1659,6 +1729,8 @@ def api_movimentacoes():
                                 "tipos": [{"chave": k, "rotulo": v[0], "conta": v[1],
                                            "exige_origem": v[2], "exige_destino": v[3]}
                                           for k, v in TIPOS_MOVIMENTO.items()]})
+        except ErroNaoEncontrado:
+            raise        # recusa de escopo vira 404, nunca 500
         except Exception as e:
             logger.exception("ERP: falha ao listar movimentações")
             return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1672,6 +1744,8 @@ def api_movimentacoes():
                             "neutra": mov.neutra, "par_id": mov.par_id})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao criar movimentação")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1688,6 +1762,8 @@ def api_receber():
                 return jsonify({"ok": True, "titulos": listar_receber(s, {
                     "obra_id": request.args.get("obra_id", type=int),
                     "status": request.args.get("status")})})
+        except ErroNaoEncontrado:
+            raise        # recusa de escopo vira 404, nunca 500
         except Exception as e:
             logger.exception("ERP: falha ao listar recebíveis")
             return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1701,6 +1777,8 @@ def api_receber():
                                                    "liquido": float(t.valor_liquido)}})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao lançar medição")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1725,6 +1803,8 @@ def api_receber_baixar():
         return jsonify({"ok": True, "recebimento": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no recebimento")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1753,6 +1833,8 @@ def api_reclassificar(titulo_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao reclassificar")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1779,6 +1861,8 @@ def api_desfazer(titulo_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao desfazer")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1795,6 +1879,8 @@ def api_obra(obra_id: int):
     from app.apps.erp.core.comum.auditoria import registrar_evento
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
             obra = s.get(Obra, obra_id)
             if obra is None:
                 return jsonify({"ok": False, "erro": "Obra não encontrada."}), 404
@@ -1886,6 +1972,8 @@ def api_obra(obra_id: int):
                                       if a.nova_vigencia_fim else None)} for a in aditivos]
             dados["dias_aditivados"] = dias_extra
         return jsonify({"ok": True, "obra": dados})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no cadastro da obra %s", obra_id)
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1908,6 +1996,8 @@ def api_aditivo(obra_id: int):
         return jsonify({"ok": False, "erro": f"Tipo inválido: {tipo}"}), 400
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
             usuario = _usuario_logado(s)
             obra = s.get(Obra, obra_id)
             if obra is None:
@@ -1931,6 +2021,8 @@ def api_aditivo(obra_id: int):
                 "dias": int(d.get("dias") or 0)}, usuario.id)
             s.commit()
         return jsonify({"ok": True})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao registrar aditivo")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1946,6 +2038,8 @@ def api_simular_tributacao(obra_id: int):
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
             obra = s.get(Obra, obra_id)
             if obra is None:
                 return jsonify({"ok": False, "erro": "Obra não encontrada."}), 404
@@ -1955,6 +2049,8 @@ def api_simular_tributacao(obra_id: int):
                             pct_servico_inss=d.get("pct_servico_inss"),
                             aliquota_iss=d.get("aliquota_iss"))
         return jsonify({"ok": True, "calculo": calc.como_dict()})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao simular tributação")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -1990,11 +2086,15 @@ def api_comprovante():
                     try:
                         rel["aviso"] = avisar_baixa(s, pg.id)
                         s.commit()
+                    except ErroNaoEncontrado:
+                        raise        # recusa de escopo vira 404, nunca 500
                     except Exception as e:
                         logger.warning("ERP: aviso do comprovante falhou (%s)", e)
         return jsonify({"ok": True, "resultado": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao processar comprovante")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2019,6 +2119,8 @@ def api_comprovante_confirmar():
         return jsonify({"ok": True, "baixa": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao confirmar baixa por comprovante")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2159,6 +2261,8 @@ def api_usuarios():
         return jsonify({"ok": False, "erro": str(e)}), 403
     except ValueError as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no cadastro de operador")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2221,6 +2325,8 @@ def api_editar_usuario(usuario_id: int):
         return jsonify({"ok": True})
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao editar operador")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2258,6 +2364,8 @@ def api_historico(titulo_id: int):
             } for e, nome in eventos]
             return jsonify({"ok": True, "eventos": linhas,
                             "avisos": historico_avisos(s, titulo_id)})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao montar histórico")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2275,6 +2383,8 @@ def api_reenviar_aviso(pagamento_id: int):
             rel = avisar_baixa(s, pagamento_id, forcar=bool(d.get("forcar")))
             s.commit()
         return jsonify({"ok": True, "aviso": rel})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao reenviar aviso")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2293,6 +2403,8 @@ def api_avais_pendentes():
             usuario = _usuario_logado(s)
             return jsonify({"ok": True, "titulos": pendentes(s, usuario),
                             "perfil": usuario.perfil.value, "quem": usuario.nome})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao listar avais pendentes")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2320,6 +2432,8 @@ def api_avalizar(titulo_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 403
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao registrar aval")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2348,6 +2462,8 @@ def api_historico_geral(entidade: str, entidade_id: int):
                 "quando": e.criado_em.strftime("%d/%m/%Y %H:%M:%S"),
                 "acao": e.acao, "por": nome or "sistema", "detalhe": e.detalhe,
             } for e, nome in linhas]})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no histórico de %s", entidade)
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2385,6 +2501,8 @@ def api_auditoria():
             } for e, nome in linhas]})
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na auditoria")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2471,6 +2589,8 @@ def api_obra_interessados(obra_id: int):
     from app.apps.erp.db.models.financeiro import ObraInteressado
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
             atual = _usuario_logado(s)
             if request.method == "GET":
                 linhas = s.scalars(select(ObraInteressado).where(
@@ -2497,6 +2617,8 @@ def api_obra_interessados(obra_id: int):
             return jsonify({"ok": True, "interessados": nomes})
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha nos interessados da obra")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2515,6 +2637,8 @@ def api_operadores_contato():
             return jsonify({"ok": True, "operadores": [
                 {"id": u.id, "nome": u.nome, "perfil": u.perfil.value,
                  "tem_contato": bool(u.telefone or u.cpf)} for u in usuarios]})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         return jsonify({"ok": False, "erro": str(e)}), 500
 
@@ -2608,6 +2732,8 @@ def api_listar_obras():
                 })
             return jsonify({"ok": True, "obras": linhas,
                             "fases": [{"chave": k, "rotulo": v} for k, v in FASES_OBRA]})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao listar obras")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2625,6 +2751,8 @@ def api_mudar_fase(obra_id: int):
         return jsonify({"ok": False, "erro": f"Fase inválida: {fase}"}), 400
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
             usuario = _usuario_logado(s)
             obra = s.get(Obra, obra_id)
             if obra is None:
@@ -2646,6 +2774,8 @@ def api_mudar_fase(obra_id: int):
                               "observacao": d.get("observacao")}, usuario.id)
             s.commit()
         return jsonify({"ok": True})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao mudar fase")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2660,6 +2790,8 @@ def api_historico_fases(obra_id: int):
     fases = dict(FASES_OBRA)
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
             linhas = s.execute(
                 select(ObraFase, Usuario.nome)
                 .join(Usuario, Usuario.id == ObraFase.usuario_id, isouter=True)
@@ -2669,6 +2801,8 @@ def api_historico_fases(obra_id: int):
                 "fase": f.fase, "rotulo": fases.get(f.fase, f.fase),
                 "observacao": f.observacao, "por": nome or "—",
                 "quando": f.criado_em.strftime("%d/%m/%Y %H:%M")} for f, nome in linhas]})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         return jsonify({"ok": False, "erro": str(e)}), 500
 
@@ -2683,6 +2817,8 @@ def api_titulos_da_obra(obra_id: int):
     from app.apps.erp.db.models.financeiro import EspecieTitulo, Rateio, Titulo
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
             linhas = s.execute(
                 select(Titulo, Rateio.valor)
                 .join(Rateio, Rateio.titulo_id == Titulo.id)
@@ -2707,6 +2843,8 @@ def api_titulos_da_obra(obra_id: int):
                     "medicao": t.numero_medicao,
                 })
             return jsonify({"ok": True, "titulos": saida})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao listar títulos da obra")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2743,6 +2881,8 @@ def api_prestacao_comprovante():
         return jsonify({"ok": True, "linhas": linhas,
                         "paginas": len(linhas),
                         "linha": linhas[0] if linhas else None})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao ler comprovante da prestação")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2771,6 +2911,8 @@ def api_prestacao_fatura():
         return jsonify({"ok": True, "fatura": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao ler fatura")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2792,6 +2934,8 @@ def api_prestacao_criticar():
                 total_declarado=d.get("total_declarado"),
                 periodo_inicio=_d.fromisoformat(d["periodo_inicio"]) if d.get("periodo_inicio") else None,
                 periodo_fim=_d.fromisoformat(d["periodo_fim"]) if d.get("periodo_fim") else None)})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na crítica da prestação")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2826,6 +2970,8 @@ def api_criar_prestacao():
                 "status": titulo.status.value, "total": float(titulo.valor_liquido)}})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao criar prestação")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2872,6 +3018,8 @@ def api_prestacao_historico():
             alvo = request.args.get("usuario_id", type=int) or usuario.id
             return jsonify({"ok": True, "historico": historico_do_solicitante(
                 s, alvo, (request.args.get("modalidade") or "FUNDO_FIXO").upper())})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         return jsonify({"ok": False, "erro": str(e)}), 500
 
@@ -2920,6 +3068,8 @@ def api_prestacoes_pendentes():
                     "competencia": t.competencia.strftime("%m/%Y"),
                 })
             return jsonify({"ok": True, "prestacoes": saida})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao listar prestações pendentes")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2934,6 +3084,8 @@ def api_neutras():
     try:
         with get_session() as s:
             return jsonify({"ok": True, "pendentes": neutras_sem_par(s)})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao listar neutras")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2955,6 +3107,8 @@ def api_vincular_neutras():
         return jsonify({"ok": True, "resultado": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao vincular par neutro")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2978,6 +3132,8 @@ def api_par_neutro():
         return jsonify({"ok": True, "resultado": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao resolver par neutro")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3032,6 +3188,8 @@ def api_editar_parcelas(titulo_id: int):
         return jsonify({"ok": True, "mudancas": mudancas})
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao alterar parcelas")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3057,6 +3215,8 @@ def api_empreitas():
                 "valor": float(contrato.valor_total), "status": contrato.status}})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha em empreitas")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3134,6 +3294,8 @@ def api_medir(contrato_id: int):
                 "criticas": [x for x in criticas if x["gravidade"] != "BLOQUEIA"]})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao medir")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3154,6 +3316,8 @@ def api_autorizar_medicao(medicao_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 403
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao autorizar medição")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3261,6 +3425,8 @@ def api_meu_cadastro():
                                              "antes do primeiro pagamento."})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no meu cadastro")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3285,6 +3451,8 @@ def api_locacoes():
             return jsonify({"ok": True, "contrato": {"id": c.id, "numero": c.numero}})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha em locações")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3325,6 +3493,8 @@ def api_locacao_acao(contrato_id: int, acao: str):
         return jsonify({"ok": True, "resultado": rel})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na ação de locação")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3380,6 +3550,8 @@ def api_insumos():
             s.add(i)
             s.commit()
             return jsonify({"ok": True, "insumo_id": i.id})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha em insumos")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3409,6 +3581,8 @@ def api_ler_contrato_locacao():
         return jsonify({"ok": True, "rascunho": rascunho})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao ler contrato de locação")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3423,6 +3597,8 @@ def api_mapa():
     try:
         with get_session() as s:
             return jsonify({"ok": True, **mapa(s)})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no mapa")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3442,6 +3618,8 @@ def api_ia_consumo():
                 s, dias=request.args.get("dias", type=int) or 90)})
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no painel de IA")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3467,6 +3645,8 @@ def api_colaboradores():
             return jsonify({"ok": True, "colaborador_id": c.id})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha em colaboradores")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3497,6 +3677,8 @@ def api_funcoes():
                  "valor_diaria": float(f.valor_diaria) if f.valor_diaria else None}
                 for f in s.scalars(select(Funcao).where(Funcao.ativo.is_(True))
                                    .order_by(Funcao.nome)).all()]})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         return jsonify({"ok": False, "erro": str(e)}), 500
 
@@ -3523,6 +3705,8 @@ def api_dc():
                 "total": float(d.valor_total)}})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha em DC")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3539,6 +3723,8 @@ def api_dc_criticar():
             return jsonify({"ok": True, "critica": criticar(
                 s, d.get("itens") or [], obra_id=d.get("obra_id"),
                 despesa_id=d.get("despesa_id"))})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao criticar DC")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3581,6 +3767,8 @@ def api_dc_acao(despesa_id: int, acao: str):
         return jsonify({"ok": False, "erro": str(e)}), 403
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na ação da DC")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3598,6 +3786,8 @@ def api_historico_colaborador(colaborador_id: int):
                 s, colaborador_id, meses=request.args.get("meses", type=int) or 24)})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no histórico do colaborador")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3630,6 +3820,8 @@ def api_lote_adicionar_sps(lote_id: int):
             "nao_encontradas": achado.get("nao_encontradas", [])}})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao adicionar SPs ao lote")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3661,6 +3853,8 @@ def api_excluir_lote(lote_id: int):
                              {"nome": nome, "parcelas": quantas}, usuario.id)
             s.commit()
         return jsonify({"ok": True, "nome": nome})
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao excluir lote")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -3679,5 +3873,7 @@ def health():
                         "migracoes_pendentes": pendentes,
                         "aviso": ("aplique as atualizações em Configurações"
                                   if pendentes else "estrutura em dia")}), 200
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         return jsonify({"ok": False, "modulo": "erp", "erro": str(e)}), 503

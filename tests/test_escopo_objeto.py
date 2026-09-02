@@ -252,6 +252,40 @@ def test_interessados_de_titulo_fora_do_escopo_devolve_404(app, monkeypatch):
     assert r.status_code == 404
 
 
+# ---------------------------------------------------------------------------
+# Bloco 2 — obra alheia não abre, nem para leitura
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("caminho", [
+    "/erp/api/obras/99",
+    "/erp/api/obras/99/titulos",
+    "/erp/api/obras/99/fases",
+])
+def test_supervisor_nao_abre_obra_que_nao_e_dele(app, monkeypatch, caminho):
+    """Supervisor sem designação para a obra 99 — 'sem exceções entre obras'."""
+    sessao = SessaoFalsa(SUPERVISOR, UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    r = _chamar(app, monkeypatch, caminho, sessao, 2)
+
+    assert r.status_code == 404
+
+
+def test_simulacao_de_tributacao_de_obra_alheia_e_negada(app, monkeypatch):
+    sessao = SessaoFalsa(SUPERVISOR, UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    r = _chamar(app, monkeypatch, "/erp/api/obras/99/tributacao", sessao, 2, "post")
+
+    assert r.status_code == 404
+
+
+def test_obra_designada_passa_pelo_escopo(app, monkeypatch):
+    """A trava não pode fechar o que é legítimo: a obra 10 é dele."""
+    sessao = SessaoFalsa(SUPERVISOR, UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    r = _chamar(app, monkeypatch, "/erp/api/obras/10/fases", sessao, 2)
+
+    assert r.status_code != 404
+
+
 def test_nao_da_para_se_incluir_em_titulo_alheio_para_receber_comprovante(app, monkeypatch):
     """O item 20 da auditoria, no caminho que realmente vazava.
 
