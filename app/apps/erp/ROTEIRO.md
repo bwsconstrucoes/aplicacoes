@@ -182,6 +182,13 @@
       marcadores de conflito de merge dentro dele
 - [ ] Trocar na origem o token da prefeitura que ficou no histórico do Git
       (commit `fa985ab`); o código já lê de `EL_NFSE_TOKEN`
+- [ ] **PENDENTE DE JUNÇÃO — ramo `claude/oi-vjvrn8`** (2026-09-02). O dono
+      preferiu segurar enquanto o sistema está em construção. Contém: escopo do
+      operador por pessoa (migração 029), roteiro de homologação, operadores de
+      teste, credencial fora do código e `.gitignore` consertado. Ao juntar,
+      lembrar de: (1) definir `EL_NFSE_TOKEN` na Environment do Render, senão o
+      script de consulta de NFS-e para; (2) apertar "Aplicar atualizações do
+      banco" em Configurações — juntar o código NÃO aplica a migração
 
 ## Decisões registradas
 
