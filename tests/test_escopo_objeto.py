@@ -179,10 +179,7 @@ def app():
     return a
 
 
-def test_baixar_anexo_fora_do_escopo_devolve_404(app, monkeypatch):
-    """Prova ponta a ponta do bloco 1: a rota que baixava qualquer arquivo."""
-    sessao = SessaoFalsa(DE_OBRA, _anexo(), escalares=[None])
-
+def _chamar(app, monkeypatch, caminho, sessao, usuario_id, metodo="get"):
     @contextlib.contextmanager
     def _fake():
         yield sessao
@@ -190,8 +187,58 @@ def test_baixar_anexo_fora_do_escopo_devolve_404(app, monkeypatch):
     monkeypatch.setattr(routes, "get_session", _fake)
     with app.test_client() as c:
         with c.session_transaction() as flask_sessao:
-            flask_sessao["erp_usuario_id"] = 7
-        r = c.get("/erp/anexo/1")
+            flask_sessao["erp_usuario_id"] = usuario_id
+        return getattr(c, metodo)(caminho)
+
+
+# Cada teste abaixo cobre UMA rota. Não bastava testar as funções de escopo:
+# a função pode estar correta e a rota simplesmente não chamá-la — foi o que
+# o teste de mutação mostrou quando só existia o primeiro destes.
+def test_baixar_anexo_fora_do_escopo_devolve_404(app, monkeypatch):
+    sessao = SessaoFalsa(DE_OBRA, _anexo(), escalares=[None])
+
+    r = _chamar(app, monkeypatch, "/erp/anexo/1", sessao, 7)
 
     assert r.status_code == 404
     assert "não encontrado" in r.get_json()["erro"].lower()
+
+
+def test_excluir_anexo_fora_do_escopo_devolve_404(app, monkeypatch):
+    """Apagar era pior que ler: o anexo mora só no banco, sem segunda cópia."""
+    sessao = SessaoFalsa(DE_OBRA, _anexo(), escalares=[None])
+
+    r = _chamar(app, monkeypatch, "/erp/api/anexos/1", sessao, 7, "delete")
+
+    assert r.status_code == 404
+    assert sessao.adicionados == []
+
+
+def test_listar_anexos_de_titulo_fora_do_escopo_devolve_404(app, monkeypatch):
+    sessao = SessaoFalsa(DE_OBRA, escalares=[None])
+
+    r = _chamar(app, monkeypatch, "/erp/api/anexos/titulo/5", sessao, 7)
+
+    assert r.status_code == 404
+
+
+def test_dados_bancarios_de_parcela_fora_do_escopo_devolvem_404(app, monkeypatch):
+    """Supervisor TEM a ação de ver dados de pagamento — mas não neste título.
+
+    Por isso o perfil aqui é supervisor e não administrativo: com o
+    administrativo o guard barraria antes por alçada, e o teste não provaria
+    nada sobre escopo.
+    """
+    sessao = SessaoFalsa(SUPERVISOR, Parcela(id=1, titulo_id=5), escalares=[None])
+
+    r = _chamar(app, monkeypatch, "/erp/api/pagamentos/detalhe/1", sessao, 2)
+
+    assert r.status_code == 404
+
+
+def test_interessados_de_titulo_fora_do_escopo_devolve_404(app, monkeypatch):
+    """A porta lateral: entrar na lista de avisos de um título alheio."""
+    sessao = SessaoFalsa(DE_OBRA, escalares=[None])
+
+    r = _chamar(app, monkeypatch, "/erp/api/interessados/5", sessao, 7)
+
+    assert r.status_code == 404

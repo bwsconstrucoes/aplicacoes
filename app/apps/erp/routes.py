@@ -1326,6 +1326,8 @@ def api_detalhe_pagamento(parcela_id: int):
             return jsonify({"ok": True, "pagamento": dados_pagamento(s, parcela_id)})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroNaoEncontrado:
+        raise            # vira 404 no errorhandler, nao 500
     except Exception as e:
         logger.exception("ERP: falha no detalhe de pagamento")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2052,6 +2054,8 @@ def api_anexos(entidade: str, entidade_id: int):
                 "original_kb": round((a.tamanho_original or 0) / 1024, 1)}})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise            # vira 404 no errorhandler, nao 500
     except Exception as e:
         logger.exception("ERP: falha no anexo")
         return jsonify({"ok": False, "erro": str(e)}), 500
@@ -2449,6 +2453,8 @@ def api_interessados(titulo_id: int):
                                  {"pessoas": adicionados}, atual.id)
             s.commit()
             return jsonify({"ok": True, "adicionados": adicionados})
+    except ErroNaoEncontrado:
+        raise            # vira 404 no errorhandler, nao 500
     except Exception as e:
         logger.exception("ERP: falha nos interessados")
         return jsonify({"ok": False, "erro": str(e)}), 500
