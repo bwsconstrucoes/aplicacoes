@@ -36,6 +36,33 @@ VERSAO = "2026-09-02.1"
 # reconfigurar o logging raiz mexeria no log dos outros 14 modulos do monorepo.
 log = logging.getLogger("painel.espelho")
 
+# --------------------------------------------------------------------------- 
+# Progresso
+# --------------------------------------------------------------------------- 
+# Quem dispara a atualizacao (o modulo `tarefas`) pluga aqui uma funcao para
+# receber o andamento e mostra-lo na tela. Por padrao nao faz nada, entao este
+# modulo continua rodando sozinho, sem depender de quem o chama.
+#
+# E um gancho de modulo, e nao um parametro passado de funcao em funcao, porque
+# o progresso nasce dentro de lacos aninhados em meia duzia de funcoes — enfiar
+# um argumento em todas elas so para carregar o recado seria pior de ler.
+_relator = None
+
+
+def definir_progresso(funcao):
+    """Recebe uma funcao `f(etapa, detalhe)` chamada ao longo da atualizacao."""
+    global _relator
+    _relator = funcao
+
+
+def _progresso(etapa, detalhe=""):
+    if _relator is None:
+        return
+    try:
+        _relator(etapa, detalhe)
+    except Exception:      # informar andamento nunca pode derrubar a carga
+        log.exception("Painel: falha ao registrar o andamento (seguindo mesmo assim)")
+
 # Colunas de retencao (so existem em contas a receber, mas tratamos generico).
 RETENCOES = ["valor_ir", "valor_iss", "valor_inss", "valor_pis", "valor_cofins", "valor_csll"]
 
@@ -509,6 +536,8 @@ def carga_inicial(env=".env"):
             ("contareceber", "R", cli.listar_contas_receber),
         ):
             log.info("=== Carga inicial: %s ===", entidade)
+            rotulo = "contas a pagar" if natureza == "P" else "contas a receber"
+            _progresso(f"baixando {rotulo} do OMIE", "começando")
             tot_tit = tot_rat = 0
             total_esperado = None
             t0 = time.time()
@@ -524,6 +553,10 @@ def carga_inicial(env=".env"):
                 todos_para_state.extend(registros)
                 for cod, motivo in problemas:
                     log.warning("  [%s] rateio: %s", cod, motivo)
+                if pagina % 5 == 0 or pagina == total_paginas:
+                    _progresso(f"baixando {rotulo} do OMIE",
+                               f"página {pagina} de {total_paginas} — "
+                               f"{tot_tit:,} títulos".replace(",", "."))
                 if pagina % 20 == 0 or pagina == total_paginas:
                     log.info("  pag %d/%d  | titulos=%s  rateio=%s  (%.0fs)",
                              pagina, total_paginas,
@@ -536,6 +569,7 @@ def carga_inicial(env=".env"):
 
         # ---- Catalogos ----
         log.info("=== Carga inicial: categorias ===")
+        _progresso("baixando o plano de contas", "")
         tot = 0
         for pagina, total_paginas, total_registros, registros in cli.listar_categorias():
             tot += gravar_categorias(conn, registros)
@@ -548,10 +582,13 @@ def carga_inicial(env=".env"):
             (dt.datetime.now().isoformat(timespec="seconds"), tot))
 
         log.info("=== Carga inicial: clientes/fornecedores ===")
+        _progresso("baixando clientes e fornecedores", "")
         tot = 0
         for pagina, total_paginas, total_registros, registros in cli.listar_clientes():
             tot += gravar_clientes(conn, registros)
             if pagina % 20 == 0 or pagina == total_paginas:
+                _progresso("baixando clientes e fornecedores",
+                           f"página {pagina} de {total_paginas}")
                 log.info("  clientes pag %d/%d -> %s", pagina, total_paginas,
                          f"{tot:,}".replace(",", "."))
         conn.execute(
@@ -562,6 +599,7 @@ def carga_inicial(env=".env"):
         conn.commit()
 
         log.info("=== Carga inicial: contas correntes ===")
+        _progresso("baixando as contas correntes", "")
         sincronizar_contas_correntes(conn, cli)
 
         # ---- Movimentos + Planilha (helpers reutilizaveis) ----
@@ -601,6 +639,8 @@ def recarregar_titulos(env=".env"):
                 tot_tit += qt
                 todos_para_state.extend(registros)
                 if pagina % 20 == 0 or pagina == total_paginas:
+                    _progresso("baixando o que mudou no OMIE",
+                               f"página {pagina} de {total_paginas}")
                     log.info("  pag %d/%d  | titulos=%s  (%.0fs)", pagina, total_paginas,
                              f"{tot_tit:,}".replace(",", "."), time.time() - t0)
             _atualizar_sync_state(conn, entidade, todos_para_state, total_esperado or tot_tit)
@@ -644,6 +684,9 @@ def carregar_movimentos_full(conn, cli):
         tot_mov += qm
         ign += qi
         if pagina % 50 == 0 or pagina == total_paginas:
+            _progresso("baixando os pagamentos e recebimentos",
+                       f"página {pagina} de {total_paginas} — "
+                       f"{tot:,} movimentos".replace(",", "."))
             log.info("  mov pag %d/%d -> %s (%.0fs)", pagina, total_paginas,
                      f"{tot_mov:,}".replace(",", "."), time.time() - t0)
     conn.execute(

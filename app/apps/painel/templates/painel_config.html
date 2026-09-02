@@ -71,10 +71,26 @@
     <div class="aviso info">Nenhuma atualização feita ainda.</div>
   {% endif %}
 
+  {% if sincronizacao.interrompida %}
+  <div class="aviso erro">
+    <b>A atualização anterior foi interrompida.</b>
+    Ela começou em {{ sincronizacao.interrompida.inicio.strftime('%d/%m/%Y às %H:%M') }}
+    e parou de dar sinal há {{ sincronizacao.interrompida.silencio_minutos }} minutos,
+    na etapa "{{ sincronizacao.interrompida.etapa }}".
+    <br>Quase sempre isso é o serviço tendo reiniciado — o que acontece a cada
+    publicação de código. <b>Nada foi corrompido</b>: a carga só acrescenta e
+    atualiza, nunca duplica. É só rodar de novo.
+  </div>
+  {% endif %}
+
   <div id="andamento" class="aviso info {% if not sincronizacao.rodando %}oculto{% endif %}">
-    <b>Atualizando…</b> <span id="andamento-etapa">
-      {{ sincronizacao.detalhe.etapa if sincronizacao.detalhe else '' }}</span>
-    <br><small>Pode fechar esta página; o trabalho continua no servidor.</small>
+    <b>Atualizando…</b>
+    <span id="andamento-etapa">{{ sincronizacao.detalhe.etapa if sincronizacao.detalhe else '' }}</span>
+    <div id="andamento-detalhe" class="dados" style="margin-top:4px; font-size:13px">
+      {{ sincronizacao.detalhe.detalhe_progresso if sincronizacao.detalhe else '' }}
+    </div>
+    <small>Pode fechar esta página; o trabalho continua no servidor.
+      Esta tela se atualiza sozinha e recarrega quando terminar.</small>
   </div>
 
   <div class="form-grade" style="margin-top:12px">
@@ -265,6 +281,7 @@ btnImportar.onclick = async () => {
 // Pergunta ao servidor de 5 em 5 segundos como está indo. Só enquanto a página
 // estiver aberta — quem fechar não interrompe nada.
 let acompanhando = false;
+let semSinal = 0;
 async function acompanhar() {
   if (acompanhando) return;
   acompanhando = true;
@@ -273,12 +290,21 @@ async function acompanhar() {
     try {
       const d = await (await fetch("{{ url_for('painel.estado') }}")).json();
       if (d.sincronizacao.rodando) {
-        els("andamento-etapa").textContent = d.sincronizacao.detalhe.etapa || "";
+        const detalhe = d.sincronizacao.detalhe || {};
+        els("andamento-etapa").textContent = detalhe.etapa || "";
+        els("andamento-detalhe").textContent = detalhe.detalhe_progresso || "";
+        semSinal = 0;
       } else {
         location.reload();
         return;
       }
-    } catch (e) { /* rede instável: tenta de novo no próximo ciclo */ }
+    } catch (e) {
+      // rede instável acontece; várias falhas seguidas já são outra coisa
+      if (++semSinal >= 6) {
+        els("andamento-detalhe").textContent =
+          "Sem resposta do servidor há um tempo. Recarregue a página.";
+      }
+    }
   }
 }
 {% if sincronizacao.rodando %}acompanhar();{% endif %}

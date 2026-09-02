@@ -112,6 +112,12 @@ def atualizado_em() -> dict | None:
             "ok": ok, "mensagem": mensagem, "linhas": linhas}
 
 
+# Sem carimbo por mais que isto, a execucao e dada como morta. Generoso de
+# proposito: uma pagina lenta do OMIE nao pode ser confundida com um servidor
+# que caiu.
+MINUTOS_SEM_SINAL_ATE_MORTA = 10
+
+
 def base_vazia() -> bool:
     """True quando ainda nao houve nenhuma carga — a tela avisa em vez de
     mostrar tudo zerado como se fosse a verdade."""
@@ -645,3 +651,34 @@ def grupos_e_categorias() -> dict:
         "SELECT DISTINCT TRIM(categoria) FROM fato "
         " WHERE analise='DRE' AND COALESCE(TRIM(categoria),'') <> '' ORDER BY 1")]
     return {"grupos": grupos, "categorias": categorias}
+
+
+def execucao_em_andamento() -> dict | None:
+    """A atualização que ainda não terminou, se houver — e se ela está viva.
+
+    "Viva" é ter carimbado a hora recentemente. Uma execução que parou de
+    carimbar morreu junto com o processo (quase sempre um reinício do serviço,
+    que acontece a cada publicação de código). Sem essa distinção, a tela
+    mostrava a falha ANTERIOR como se fosse a atual — e quem lia ficava
+    diagnosticando um erro velho."""
+    from .horario import para_brasilia
+
+    linha = consultar(
+        "SELECT id, tipo, disparo, inicio, etapa, progresso, visto_em, "
+        "       EXTRACT(EPOCH FROM (now() - COALESCE(visto_em, inicio))) "
+        "  FROM execucoes WHERE fim IS NULL ORDER BY inicio DESC LIMIT 1")
+    if not linha:
+        return None
+    (execucao_id, tipo, disparo, inicio, etapa,
+     progresso, visto_em, silencio) = linha[0]
+    silencio = float(silencio or 0)
+    return {
+        "id": execucao_id, "tipo": tipo, "disparo": disparo,
+        "inicio": para_brasilia(inicio),
+        "etapa": etapa or "começando",
+        "progresso": progresso or "",
+        "detalhe_progresso": progresso or "",
+        "visto_em": para_brasilia(visto_em),
+        "silencio_minutos": round(silencio / 60, 1),
+        "viva": silencio < MINUTOS_SEM_SINAL_ATE_MORTA * 60,
+    }
