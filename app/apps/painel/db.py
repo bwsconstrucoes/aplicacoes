@@ -140,11 +140,54 @@ def traduzir_placeholders(sql: str) -> str:
     return "".join(saida)
 
 
+def _em_lote(cursor, sql, seq_params):
+    """INSERT/DELETE em lote num round-trip so.
+
+    Sem isto, gravar 120 mil titulos seria 120 mil idas e voltas ate o banco —
+    a diferenca entre minutos e horas."""
+    seq = [tuple(p) for p in seq_params]
+    if not seq:
+        return
+    from psycopg2.extras import execute_batch
+    execute_batch(cursor, traduzir_placeholders(sql), seq, page_size=500)
+
+
+class CursorCompat:
+    """Cursor com a mesma cara do sqlite3: aceita `?` como marcador.
+
+    Existe porque parte do codigo do espelho pede `conn.cursor()` e depois
+    chama `executemany` nele. Sem esta classe, so o caminho que passa pela
+    conexao era traduzido — e a carga inicial morria com
+    "'ConexaoCompat' object has no attribute 'cursor'"."""
+
+    def __init__(self, bruto):
+        self._bruto = bruto
+
+    def execute(self, sql, params=()):
+        self._bruto.execute(traduzir_placeholders(sql), tuple(params))
+        return self
+
+    def executemany(self, sql, seq_params):
+        _em_lote(self._bruto, sql, seq_params)
+        return self
+
+    def __iter__(self):
+        return iter(self._bruto)
+
+    def __getattr__(self, nome):
+        # fetchall, fetchone, fetchmany, rowcount, description, close...
+        return getattr(self._bruto, nome)
+
+
 class ConexaoCompat:
     """Conexao Postgres com a interface do sqlite3 usada pelo espelho."""
 
     def __init__(self, bruta):
         self._bruta = bruta
+
+    def cursor(self):
+        """Cursor no estilo sqlite3. Ver CursorCompat."""
+        return CursorCompat(self._bruta.cursor())
 
     def execute(self, sql, params=()):
         cur = self._bruta.cursor()
@@ -152,15 +195,8 @@ class ConexaoCompat:
         return cur
 
     def executemany(self, sql, seq_params):
-        seq = list(seq_params)
-        if not seq:
-            return None
         cur = self._bruta.cursor()
-        # execute_batch agrupa varios INSERT num round-trip so: numa carga de
-        # 120 mil titulos a diferenca e de horas para minutos.
-        from psycopg2.extras import execute_batch
-        execute_batch(cur, traduzir_placeholders(sql), [tuple(p) for p in seq],
-                      page_size=500)
+        _em_lote(cur, sql, seq_params)
         return cur
 
     def executar_em_stream(self, sql, params=(), por_vez=2000):
