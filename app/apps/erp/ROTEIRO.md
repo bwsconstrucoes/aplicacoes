@@ -169,12 +169,38 @@
       lote, plano de contas, painéis financeiros, empreitas e locações
 - [ ] Segurança — falta: navegar em homologação com um usuário de cada perfil.
       Os testes cobrem a RECUSA (que é o lado que importa); o caminho de quem
-      TEM acesso precisa de banco e não está coberto
-- [ ] Segurança — decidir: o administrativo de obra enxerga tudo da obra dele
-      ou só o que ele mesmo lançou? Hoje vale "só o que lançou", o mais
-      restritivo. Muda numa linha de `aplicar_escopo`, e vale para listagem e
-      detalhe ao mesmo tempo
-- [ ] Aposentar o `.env` commitado: trocar a senha do banco no Render
+      TEM acesso precisa de banco e não está coberto. Roteiro pronto em
+      `HOMOLOGACAO_PERFIS.md`; operadores de teste em
+      `scripts/seed_usuarios_teste.py`. Falta rodar
+- [x] Segurança — DECIDIDO: não é regra do cargo, é configuração por pessoa. O
+      cadastro do operador escolhe entre "só os meus lançamentos" e "tudo das
+      obras designadas" (migração 029). Padrão do que já existe: o mais
+      restritivo. Vale igual para listagem e detalhe, porque os dois passam
+      pelo mesmo `aplicar_escopo`
+- [x] Aposentar o `.env` commitado: senha do banco trocada no Render e usuário
+      antigo apagado (2026-09-02). O `.gitignore` foi reescrito — estava com
+      marcadores de conflito de merge dentro dele
+- [x] IA — consumo registrado de verdade: as cinco operações (leitura de
+      documento, comprovante do fundo fixo, fatura de cartão, contrato de
+      locação, sugestão de conta) mais o comprovante de pagamento passam pelo
+      ponto único do leitor e gravam em `ia_uso`. A função de registro não
+      existia e o painel não tinha lugar na tela (2026-09-02)
+- [x] IA — teto mensal configurável em Configurações (migração 030) com aviso
+      no Telegram aos ADMIN ao passar de 80% e ao estourar. Só avisa
+- [x] Testes com banco de verdade para o escopo por obra e por autoria, num
+      Postgres descartável que o GitHub Actions sobe a cada envio
+      (`tests/test_escopo_banco.py`, trava de URL no `conftest`)
+- [ ] IA — depois da migração 030: definir o teto na tela e conferir que o
+      painel enche conforme os documentos são lidos
+- [ ] Trocar na origem o token da prefeitura que ficou no histórico do Git
+      (commit `fa985ab`); o código já lê de `EL_NFSE_TOKEN`
+- [ ] **PENDENTE DE JUNÇÃO — ramo `claude/oi-vjvrn8`** (2026-09-02). O dono
+      preferiu segurar enquanto o sistema está em construção. Contém: escopo do
+      operador por pessoa (migração 029), roteiro de homologação, operadores de
+      teste, credencial fora do código e `.gitignore` consertado. Ao juntar,
+      lembrar de: (1) definir `EL_NFSE_TOKEN` na Environment do Render, senão o
+      script de consulta de NFS-e para; (2) apertar "Aplicar atualizações do
+      banco" em Configurações — juntar o código NÃO aplica a migração
 
 ## Decisões registradas
 

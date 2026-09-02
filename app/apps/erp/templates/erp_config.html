@@ -71,6 +71,21 @@
     <tbody id="tb-contas"></tbody></table>
 </div>
 
+<div class="cartao" id="bloco-ia">
+  <div class="cartao-cab"><h3>Consumo de IA</h3>
+    <small>leitura de documentos, faturas, contratos e sugestão de conta</small></div>
+  <div id="ia-alerta"></div>
+  <div class="form-grade" style="align-items:end; margin-bottom:10px">
+    <div class="campo"><label>Teto mensal (US$)</label>
+      <input id="ia-teto" placeholder="ex.: 25" inputmode="decimal" style="max-width:160px">
+      <div class="dica">Ao passar de 80% o administrador recebe um aviso no Telegram.
+        Nada é bloqueado — é só para ninguém descobrir a conta no fim do mês.
+        Vazio desliga o aviso.</div></div>
+    <div><button class="btn secundario" id="btn-ia-teto">Salvar teto</button></div>
+  </div>
+  <div id="ia-painel" class="cartao-dica">carregando…</div>
+</div>
+
 <div class="cartao">
   <div class="cartao-cab"><h3>Usuários</h3><small>quem lança, quem autoriza, quem paga</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
@@ -80,9 +95,11 @@
   <table><thead><tr><th>Nome</th><th>E-mail</th><th>CPF</th><th>Telefone</th>
     <th>Perfil</th><th>Fundo fixo</th><th>Obras</th><th>Situação</th></tr></thead>
     <tbody id="tb-usuarios"></tbody></table>
-  <div class="cartao-dica">O perfil define o que a pessoa vê: administrativo de obra enxerga
-    só o que ele lançou; supervisor, as obras designadas; gestor, todas as obras;
-    administrativo financeiro opera o sistema; administrador também configura.</div>
+  <div class="cartao-dica">O perfil define o que a pessoa <b>pode fazer</b>; o campo
+    "o que esta pessoa enxerga", no cadastro dela, define o <b>alcance</b>.
+    Administrativo de obra e lançador começam vendo só o que lançaram, e podem ser
+    ampliados para tudo das obras designadas — um a um. Supervisor vê as obras
+    designadas; gestor, todas; administrador também configura.</div>
 </div>
 
 <dialog id="dlg">
@@ -106,6 +123,17 @@ async function carregarOperadores(){
   } catch(e){ /* sem permissão para ver operadores */ }
 }
 
+// Em palavras, o que este operador alcança — espelha aplicar_escopo do core.
+function alcanceDoOperador(u){
+  const porObra = u.perfil === "SUPERVISOR_OBRA"
+    || (["ADMINISTRATIVO_OBRA","LANCADOR"].includes(u.perfil)
+        && u.escopo_visao === "OBRAS_DESIGNADAS");
+  if (porObra) return u.obras.length ? u.obras.join(", ") : "só o que lançou (sem obra designada)";
+  if (["ADMINISTRATIVO_OBRA","LANCADOR","DEPARTAMENTO_PESSOAL"].includes(u.perfil))
+    return "o que lançou";
+  return "todas";
+}
+
 function formOperador(u){
   const novo = !u;
   u = u || {perfil:"ADMINISTRATIVO_OBRA", ativo:true, obras:[]};
@@ -121,6 +149,13 @@ function formOperador(u){
       <div class="campo"><label>Perfil *</label><select id="op-perfil">
         ${PERFIS.map(p=>`<option value="${p.chave}" ${p.chave===u.perfil?"selected":""}>${p.rotulo}</option>`).join("")}
       </select></div>
+      <div class="campo" id="op-escopo-bloco"><label>O que esta pessoa enxerga</label>
+        <select id="op-escopo">
+          <option value="PROPRIOS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"":"selected"}>Só os lançamentos dela</option>
+          <option value="OBRAS_DESIGNADAS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"selected":""}>Tudo das obras designadas</option>
+        </select>
+        <div class="dica">Escolha por pessoa, não pelo cargo. Vale igual na
+          listagem e ao abrir um título.</div></div>
       <div class="campo"><label>${novo?"Senha *":"Nova senha (deixe vazio para manter)"}</label>
         <input id="op-senha" type="password" placeholder="mínimo 8 caracteres"></div>
       <div class="campo"><label>Situação</label><select id="op-ativo">
@@ -170,15 +205,27 @@ function formOperador(u){
         ${DADOS.obras.map(o=>`<label class="opcao"><input type="checkbox" class="op-obra" value="${o.id}"
           ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${o.codigo} · ${o.nome}</span></label>`).join("")}
       </div>
-      <div class="dica">Vale para o <b>supervisor</b>. Gestor vê todas; administrativo de obra vê o que lançou.</div>
+      <div class="dica">Vale para o <b>supervisor</b> e para quem estiver como
+        <b>"tudo das obras designadas"</b>. Gestor vê todas as obras.</div>
     </div>
     <div style="margin-top:14px"><button class="btn" id="op-salvar">Salvar</button></div>`;
 
+  // Perfis cujo alcance é escolhido pessoa a pessoa; os demais já veem tudo
+  // ou têm regra própria. Espelha ESCOPO_CONFIGURAVEL do core/auth.
+  const ESCOPO_CONFIGURAVEL = ["ADMINISTRATIVO_OBRA", "LANCADOR"];
+
   function alternarObras(){
-    els("op-obras-bloco").style.display =
-      els("op-perfil").value === "SUPERVISOR_OBRA" ? "" : "none";
+    const perfil = els("op-perfil").value;
+    const configuravel = ESCOPO_CONFIGURAVEL.includes(perfil);
+    els("op-escopo-bloco").style.display = configuravel ? "" : "none";
+    // Só faz sentido escolher obras para quem enxerga POR obra.
+    const porObra = perfil === "SUPERVISOR_OBRA"
+      || (configuravel && els("op-escopo").value === "OBRAS_DESIGNADAS");
+    els("op-obras-bloco").style.display = porObra ? "" : "none";
   }
-  els("op-perfil").addEventListener("change", alternarObras); alternarObras();
+  els("op-perfil").addEventListener("change", alternarObras);
+  els("op-escopo").addEventListener("change", alternarObras);
+  alternarObras();
   document.querySelectorAll("[data-grupo]").forEach(b => b.addEventListener("click", () => {
     const g = b.dataset.grupo;
     if (g === "__nenhum") {
@@ -203,6 +250,7 @@ function formOperador(u){
   els("op-salvar").addEventListener("click", async () => {
     const corpo = {nome: els("op-nome").value, telefone: els("op-tel").value,
       perfil: els("op-perfil").value, ativo: els("op-ativo").value === "1",
+      escopo_visao: els("op-escopo").value,
       ff_autorizado: els("op-ff").value === "1",
       ff_teto_item: els("op-ff-item").value, ff_teto_prestacao: els("op-ff-total").value,
       categorias: [...document.querySelectorAll(".op-cat:checked")].map(i=>+i.value),
@@ -403,7 +451,7 @@ function desenhar(){
       <td><small>${u.ff_autorizado
         ? `até ${u.ff_teto_item?moeda(u.ff_teto_item):"—"} / despesa`
         : `<span style="color:var(--tinta-suave)">não usa</span>`}</small></td>
-      <td><small>${u.obras.length ? u.obras.join(", ") : (u.perfil==="ADMINISTRATIVO_OBRA"?"o que lançou":"todas")}</small></td>
+      <td><small>${alcanceDoOperador(u)}</small></td>
       <td><span class="selo ${u.ativo?"aprovado":"outro"}">${u.ativo?"Ativo":"Inativo"}</span></td></tr>`).join("");
   document.querySelectorAll("[data-op]").forEach(tr =>
     tr.addEventListener("click", () => formOperador(OPERADORES.find(x=>x.id===+tr.dataset.op))));
@@ -604,16 +652,34 @@ els("btn-substituir").addEventListener("click", () => {
   });
   els("dlg").showModal();
 });
+function desenharAlertaIA(c){
+  // alcance do teto em palavras: é o que o dono quer ver antes da fatura
+  const usd = v => `US$ ${Number(v).toFixed(2)}`;
+  if (els("ia-teto") && document.activeElement !== els("ia-teto"))
+    els("ia-teto").value = c.teto_mensal != null ? String(c.teto_mensal).replace(".", ",") : "";
+  if (!c.teto_mensal) { els("ia-alerta").innerHTML = ""; return; }
+  const tipo = c.alerta_teto === "ESTOUROU" ? "erro" : (c.alerta_teto ? "alerta" : "ok");
+  const frase = c.alerta_teto === "ESTOUROU"
+    ? `<b>Teto do mês estourado:</b> ${usd(c.custo_mes_atual)} de ${usd(c.teto_mensal)} (${c.percentual_teto}%).`
+    : c.alerta_teto
+      ? `<b>Atenção:</b> ${c.percentual_teto}% do teto do mês já foi — ${usd(c.custo_mes_atual)} de ${usd(c.teto_mensal)}.`
+      : `${c.percentual_teto}% do teto do mês (${usd(c.custo_mes_atual)} de ${usd(c.teto_mensal)}).`;
+  els("ia-alerta").innerHTML = `<div class="aviso ${tipo}" style="margin-bottom:10px">${frase}
+    Nada é bloqueado; o aviso é para decidir com antecedência.</div>`;
+}
+
 async function carregarIA(){
   try {
     const d = await api("/erp/api/ia/consumo");
     const c = d.consumo;
     const brl = v => `US$ ${v.toFixed(4)}`;
+    desenharAlertaIA(c);
+    els("ia-painel").className = "";
     els("ia-painel").innerHTML = `
       <div class="kpis">
-        <div class="kpi estatico"><div class="kpi-rotulo">Este mês</div>
+        <div class="kpi estatico ${c.alerta_teto === "ESTOUROU" ? "vermelho" : ""}"><div class="kpi-rotulo">Este mês</div>
           <div class="kpi-valor" style="font-size:18px">${brl(c.custo_mes_atual)}</div>
-          <div class="kpi-sub">projeção ${brl(c.projecao_mes)}</div></div>
+          <div class="kpi-sub">projeção ${brl(c.projecao_mes)}${c.teto_mensal ? ` · teto US$ ${c.teto_mensal.toFixed(2)}` : ""}</div></div>
         <div class="kpi estatico ciano"><div class="kpi-rotulo">Últimos ${c.periodo_dias} dias</div>
           <div class="kpi-valor" style="font-size:18px">${brl(c.custo_total)}</div>
           <div class="kpi-sub">${c.chamadas} chamada(s)</div></div>
@@ -641,7 +707,7 @@ async function carregarIA(){
 
       <div class="form-grade">
         <div><h4>Por modelo</h4><table><tbody>${c.por_modelo.map(m=>`<tr>
-          <td class="dados">${m.modelo}</td><td class="dados">${m.chamadas}</td>
+          <td class="dados">${m.modelo}${m.preco_conhecido ? "" : ` <small title="modelo fora da tabela de preços — custo calculado pelo preço padrão">(preço estimado)</small>`}</td><td class="dados">${m.chamadas}</td>
           <td class="direita dados">${brl(m.custo)}</td></tr>`).join("")}</tbody></table></div>
         <div><h4>Por pessoa</h4><table><tbody>${c.por_pessoa.map(m=>`<tr>
           <td>${m.pessoa}</td><td class="dados">${m.chamadas}</td>
@@ -649,11 +715,28 @@ async function carregarIA(){
       </div>
       <div class="cartao-dica">Preços por milhão de tokens (entrada/saída):
         ${Object.entries(c.precos).map(([m,p])=>`${m} US$ ${p[0]}/${p[1]}`).join(" · ")}.
-        Atualize em <code>core/comum/ia_custo.py</code> se a OpenAI mudar a tabela.</div>`
+        Modelo fora da lista é cobrado a US$ ${c.preco_padrao[0]}/${c.preco_padrao[1]} e
+        aparece como "preço estimado". Atualize em <code>core/comum/ia_custo.py</code>
+        se a OpenAI mudar a tabela.</div>`
       : `<div class="cartao-dica">Nenhuma chamada de IA registrada ainda. O consumo
          passa a aparecer aqui conforme os documentos forem lidos.</div>`}`;
-  } catch(e){ els("ia-painel").innerHTML = `<div class="cartao-dica">${e.message}</div>`; }
+  } catch(e){
+    const alvo = els("ia-painel");
+    if (alvo) alvo.innerHTML = `<div class="cartao-dica">${e.message}</div>`;
+  }
 }
+
+els("btn-ia-teto") && els("btn-ia-teto").addEventListener("click", async () => {
+  try {
+    const d = await api("/erp/api/ia/teto", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({teto: els("ia-teto").value})});
+    aviso("ia-alerta", d.situacao.teto
+      ? `Teto salvo: US$ ${d.situacao.teto.toFixed(2)} por mês.`
+      : "Teto removido — o aviso está desligado.", "ok");
+    setTimeout(carregarIA, 1200);
+  } catch(e){ aviso("ia-alerta", e.message, "erro"); }
+});
 
 carregar();
 carregarIA();

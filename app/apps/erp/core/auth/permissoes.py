@@ -7,7 +7,9 @@
 #                       mas não mexe em configuração
 # GESTOR_OBRA           lança e acompanha TODAS as obras; não paga nem configura
 # SUPERVISOR_OBRA       lança e acompanha as obras designadas a ele
-# ADMINISTRATIVO_OBRA   lança e acompanha o que ELE MESMO lançou
+# ADMINISTRATIVO_OBRA   lança e acompanha o que ELE MESMO lançou — ou tudo das
+#                       obras designadas, se assim estiver configurado no
+#                       cadastro dele (campo escopo_visao, por PESSOA)
 # APROVADOR / LANCADOR / CONSULTA   perfis herdados, mantidos
 #
 # O escopo não é enfeite de tela: ele entra na consulta, então o que está fora
@@ -22,7 +24,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
 from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado, ErroPermissao
-from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario, UsuarioObra
+from app.apps.erp.db.models.cadastros import (
+    EscopoVisao, PerfilUsuario, Usuario, UsuarioObra,
+)
 from app.apps.erp.db.models.financeiro import Rateio, Titulo
 
 P = PerfilUsuario
@@ -88,32 +92,74 @@ def exigir(usuario: Usuario, acao: str) -> None:
             f"não tem permissão para esta operação.")
 
 
+# Perfis que enxergam a base inteira: nem escopo de obra, nem de autoria.
+VE_TUDO = (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+           P.APROVADOR, P.CONSULTA)
+
+# Perfis cujo alcance é configurável por pessoa (campo escopo_visao). O padrão
+# de todos eles é PROPRIOS — ampliar é escolha feita no cadastro do operador.
+ESCOPO_CONFIGURAVEL = (P.ADMINISTRATIVO_OBRA, P.LANCADOR)
+
+
+def escopo_visao(usuario: Usuario) -> EscopoVisao:
+    """Alcance configurado para esta pessoa; na dúvida, o mais restritivo.
+
+    Cadastro antigo, objeto recém-instanciado ou valor estranho no banco caem
+    todos em PROPRIOS: a ausência de configuração tem de fechar, nunca abrir.
+    """
+    valor = getattr(usuario, "escopo_visao", None)
+    try:
+        return EscopoVisao(valor)
+    except ValueError:
+        return EscopoVisao.PROPRIOS
+
+
+def _obras_designadas(s: Session, usuario: Usuario) -> list[int]:
+    """Obras associadas a esta pessoa em usuario_obras."""
+    return [o.obra_id for o in s.scalars(
+        select(UsuarioObra).where(UsuarioObra.usuario_id == usuario.id)).all()]
+
+
+def _ve_por_obra(usuario: Usuario) -> bool:
+    """Esta pessoa enxerga por OBRA (e não apenas o que ela mesma lançou)?"""
+    if usuario.perfil == P.SUPERVISOR_OBRA:
+        return True
+    return (usuario.perfil in ESCOPO_CONFIGURAVEL
+            and escopo_visao(usuario) is EscopoVisao.OBRAS_DESIGNADAS)
+
+
 def obras_do_usuario(s: Session, usuario: Usuario) -> Optional[list[int]]:
     """IDs das obras que o usuário enxerga. None = todas."""
-    if usuario.perfil in (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-                          P.APROVADOR, P.CONSULTA):
+    if usuario.perfil in VE_TUDO:
         return None
-    if usuario.perfil == P.SUPERVISOR_OBRA:
-        return [o.obra_id for o in s.scalars(
-            select(UsuarioObra).where(UsuarioObra.usuario_id == usuario.id)).all()]
-    return None          # administrativo de obra filtra por autoria, não por obra
+    if _ve_por_obra(usuario):
+        return _obras_designadas(s, usuario)
+    return None          # filtra por autoria, não por obra
+
+
+def _escopo_por_obras(stmt: Select, usuario: Usuario, obras: list[int]) -> Select:
+    """O que a pessoa lançou MAIS o que estiver rateado nas obras dela.
+
+    Sem obra designada sobra só a autoria — quem não foi associado a obra
+    nenhuma não passa a ver a base inteira por causa de uma lista vazia.
+    """
+    if not obras:
+        return stmt.where(Titulo.solicitante_id == usuario.id)
+    return stmt.where(or_(
+        Titulo.solicitante_id == usuario.id,
+        Titulo.id.in_(select(Rateio.titulo_id).where(Rateio.obra_id.in_(obras)))))
 
 
 def aplicar_escopo(stmt: Select, s: Session, usuario: Usuario) -> Select:
-    """Restringe a consulta de títulos ao que o usuário pode ver."""
-    if usuario.perfil in (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-                          P.APROVADOR, P.CONSULTA):
+    """Restringe a consulta de títulos ao que o usuário pode ver.
+
+    Um só caminho para listagem e detalhe: `pode_ver_titulo` passa por aqui,
+    então mudar a regra muda os dois de uma vez.
+    """
+    if usuario.perfil in VE_TUDO:
         return stmt
-    if usuario.perfil in (P.ADMINISTRATIVO_OBRA, P.LANCADOR):
-        return stmt.where(Titulo.solicitante_id == usuario.id)
-    if usuario.perfil == P.SUPERVISOR_OBRA:
-        obras = obras_do_usuario(s, usuario) or []
-        if not obras:
-            # supervisor sem obra designada só enxerga o que lançou
-            return stmt.where(Titulo.solicitante_id == usuario.id)
-        return stmt.where(or_(
-            Titulo.solicitante_id == usuario.id,
-            Titulo.id.in_(select(Rateio.titulo_id).where(Rateio.obra_id.in_(obras)))))
+    if _ve_por_obra(usuario):
+        return _escopo_por_obras(stmt, usuario, _obras_designadas(s, usuario))
     return stmt.where(Titulo.solicitante_id == usuario.id)
 
 

@@ -68,6 +68,18 @@ def obter_engine() -> Engine:
     return _engine
 
 
+def reiniciar_engine() -> None:
+    """Descarta a engine atual para a próxima consulta recriá-la lendo
+    DATABASE_URL de novo. Uso exclusivo da suíte de testes, que aponta o
+    processo para um banco descartável — ver tests/conftest.py, onde fica a
+    trava que impede apontar para qualquer banco que não seja local."""
+    global _engine, _SessionLocal
+    if _engine is not None:
+        _engine.dispose()
+    _engine = None
+    _SessionLocal = None
+
+
 def _fabrica() -> sessionmaker:
     obter_engine()
     assert _SessionLocal is not None
