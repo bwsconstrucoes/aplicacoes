@@ -3,11 +3,16 @@
 # sem nenhum filtro, pra vermos a estrutura real do retorno/erro.
 # So precisa do TOKEN (consulta nao usa certificado).
 
+import os
+
 import requests
 
-# ===== preencha o token (o mesmo do outro script) =====
-TOKEN = "f7e9ab2e-7fb2-492c-9bdf-30c582ef4d0b"
-# ======================================================
+# O token autentica o canal com a prefeitura e NÃO fica no código: leia da
+# Environment do Render (EL_NFSE_TOKEN). Sem ele o script para e explica.
+TOKEN = os.getenv("EL_NFSE_TOKEN", "").strip()
+if not TOKEN:
+    raise SystemExit(
+        "Defina EL_NFSE_TOKEN no ambiente antes de rodar esta consulta.")
 
 ID_DPS = "DPS230428520007952600010900001000000000003066"
 URLBASE = "https://ce-eusebio-pm-nfs-backend.cloud.el.com.br/nfse40"

@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-.env
-__pycache__/
-*.pyc
-=======
 # Python
 __pycache__/
 *.pyc
@@ -10,8 +5,17 @@ __pycache__/
 *.pyd
 .venv/
 venv/
+
+# Segredos — nunca versionar. A credencial mora na Environment do Render.
 .env
 *.env
+.env.*
+*.pem
+*.p12
+*.pfx
+*.key
+credentials*.json
+service_account*.json
 
 # OS
 .DS_Store
@@ -20,5 +24,6 @@ venv/
 *.log
 .idea/
 .vscode/
->>>>>>> ea585c7 (Monorepo unificado: pdf-processor + encurtador)
+
+# Exportação local do Pipefy (dado de cliente, não versionar)
 app/apps/erp/export_pipefy/

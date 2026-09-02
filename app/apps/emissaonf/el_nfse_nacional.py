@@ -354,8 +354,19 @@ class ELNfseNacional:
 # Exemplo replicando a nota real da BWS (RPS 3066) em HOMOLOGAÇÃO
 # --------------------------------------------------------------------------- #
 if __name__ == "__main__":
-    chave_pem, cert_pem = carregar_certificado_a1("certificado_bws.pfx", "SENHA_DO_PFX")
-    cliente = ELNfseNacional(token="COLE_AQUI_O_TOKEN", chave_pem=chave_pem,
+    import os
+
+    # Nada de credencial colada no código: quem roda o exemplo define as três
+    # variáveis no ambiente. Assim um token real nunca chega ao repositório.
+    _token = os.getenv("EL_NFSE_TOKEN", "").strip()
+    _senha_pfx = os.getenv("EMISSAO_NF_CERTIFICADO_SENHA", "").strip()
+    if not _token or not _senha_pfx:
+        raise SystemExit(
+            "Defina EL_NFSE_TOKEN e EMISSAO_NF_CERTIFICADO_SENHA no ambiente.")
+
+    chave_pem, cert_pem = carregar_certificado_a1(
+        os.getenv("EMISSAO_NF_CERTIFICADO", "certificado_bws.pfx"), _senha_pfx)
+    cliente = ELNfseNacional(token=_token, chave_pem=chave_pem,
                              cert_pem=cert_pem, ambiente="homologacao")
 
     dados = DadosDPS(
