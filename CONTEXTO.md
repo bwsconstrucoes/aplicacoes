@@ -301,6 +301,21 @@ Dois testes estruturais sustentam isso e não dependem de lista escrita à mão:
 um exige declaração em toda rota registrada; o outro deriva do código as rotas
 que recebem id com ação ampla e exige que cada uma confira escopo.
 
+**O alcance de quem lança é por PESSOA, não por cargo** (migração 029). O
+cadastro do operador tem o campo `escopo_visao`:
+
+- `PROPRIOS` — só o que a própria pessoa lançou. É o **default**, inclusive
+  para todo cadastro anterior à migração.
+- `OBRAS_DESIGNADAS` — o que ela lançou **mais** o que estiver rateado nas obras
+  associadas a ela em `usuario_obras`.
+
+Vale para `ADMINISTRATIVO_OBRA` e `LANCADOR` — os perfis que filtravam por
+autoria. Quem já enxergava tudo continua enxergando, e o `SUPERVISOR_OBRA`
+mantém a regra dele. Campo vazio, cadastro antigo ou valor estranho no banco
+caem todos em `PROPRIOS`: **a ausência de configuração fecha**. Quem está em
+`OBRAS_DESIGNADAS` sem nenhuma obra associada enxerga só a autoria — uma lista
+vazia não pode virar "vê tudo".
+
 ---
 
 ## 4. Variáveis de ambiente
@@ -729,6 +744,20 @@ Quando eu pedir nova feature ou adaptação:
   **Decisão de negócio que guiou:** cada perfil só vê o que compete à sua
   função, e o detalhe de um registro respeita exatamente o mesmo escopo que a
   listagem — sem exceções de leitura entre obras.
+- **2026-09-02 — Alcance do operador virou configuração, não regra de cargo.**
+  A pergunta em aberto era se o administrativo de obra devia ver a obra inteira
+  ou só o que ele mesmo lançou. **Resposta do dono: depende da pessoa** — o
+  administrativo de uma obra grande precisa da obra inteira, o de outra não. Em
+  vez de escolher um dos dois para todo mundo, o alcance virou campo do cadastro
+  (§3.9). **A decisão que importa é o default:** quem já está cadastrado fica no
+  mais restritivo, e ampliar exige alguém escolher, operador por operador. Uma
+  migração que ampliasse alcance sozinha seria um vazamento silencioso.
+- **2026-09-02 — Senha do banco trocada no Render e usuário antigo apagado.** O
+  `.gitignore` estava com marcadores de conflito de merge commitados dentro
+  dele; foi reescrito. A varredura do histórico não achou senha de banco em
+  lugar nenhum, mas achou um token da prefeitura colado no código
+  (`emissaonf/consultar_status.py`, commit `fa985ab`) — o código passou a ler de
+  `EL_NFSE_TOKEN`, e o token continua no histórico até ser trocado na origem.
 - **2026-09-01 — Navegação por MÓDULOS** (`9ee893d`). O ERP deixou de ser "um
   financeiro com apêndices": Financeiro, Obras, Pessoal e Administração viraram
   áreas próprias, cada uma com suas telas, e a barra mostra só a do módulo

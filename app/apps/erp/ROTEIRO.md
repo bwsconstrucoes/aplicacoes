@@ -170,11 +170,16 @@
 - [ ] Segurança — falta: navegar em homologação com um usuário de cada perfil.
       Os testes cobrem a RECUSA (que é o lado que importa); o caminho de quem
       TEM acesso precisa de banco e não está coberto
-- [ ] Segurança — decidir: o administrativo de obra enxerga tudo da obra dele
-      ou só o que ele mesmo lançou? Hoje vale "só o que lançou", o mais
-      restritivo. Muda numa linha de `aplicar_escopo`, e vale para listagem e
-      detalhe ao mesmo tempo
-- [ ] Aposentar o `.env` commitado: trocar a senha do banco no Render
+- [x] Segurança — DECIDIDO: não é regra do cargo, é configuração por pessoa. O
+      cadastro do operador escolhe entre "só os meus lançamentos" e "tudo das
+      obras designadas" (migração 029). Padrão do que já existe: o mais
+      restritivo. Vale igual para listagem e detalhe, porque os dois passam
+      pelo mesmo `aplicar_escopo`
+- [x] Aposentar o `.env` commitado: senha do banco trocada no Render e usuário
+      antigo apagado (2026-09-02). O `.gitignore` foi reescrito — estava com
+      marcadores de conflito de merge dentro dele
+- [ ] Trocar na origem o token da prefeitura que ficou no histórico do Git
+      (commit `fa985ab`); o código já lê de `EL_NFSE_TOKEN`
 
 ## Decisões registradas
 

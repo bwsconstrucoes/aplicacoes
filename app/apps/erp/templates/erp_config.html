@@ -80,9 +80,11 @@
   <table><thead><tr><th>Nome</th><th>E-mail</th><th>CPF</th><th>Telefone</th>
     <th>Perfil</th><th>Fundo fixo</th><th>Obras</th><th>Situação</th></tr></thead>
     <tbody id="tb-usuarios"></tbody></table>
-  <div class="cartao-dica">O perfil define o que a pessoa vê: administrativo de obra enxerga
-    só o que ele lançou; supervisor, as obras designadas; gestor, todas as obras;
-    administrativo financeiro opera o sistema; administrador também configura.</div>
+  <div class="cartao-dica">O perfil define o que a pessoa <b>pode fazer</b>; o campo
+    "o que esta pessoa enxerga", no cadastro dela, define o <b>alcance</b>.
+    Administrativo de obra e lançador começam vendo só o que lançaram, e podem ser
+    ampliados para tudo das obras designadas — um a um. Supervisor vê as obras
+    designadas; gestor, todas; administrador também configura.</div>
 </div>
 
 <dialog id="dlg">
@@ -106,6 +108,17 @@ async function carregarOperadores(){
   } catch(e){ /* sem permissão para ver operadores */ }
 }
 
+// Em palavras, o que este operador alcança — espelha aplicar_escopo do core.
+function alcanceDoOperador(u){
+  const porObra = u.perfil === "SUPERVISOR_OBRA"
+    || (["ADMINISTRATIVO_OBRA","LANCADOR"].includes(u.perfil)
+        && u.escopo_visao === "OBRAS_DESIGNADAS");
+  if (porObra) return u.obras.length ? u.obras.join(", ") : "só o que lançou (sem obra designada)";
+  if (["ADMINISTRATIVO_OBRA","LANCADOR","DEPARTAMENTO_PESSOAL"].includes(u.perfil))
+    return "o que lançou";
+  return "todas";
+}
+
 function formOperador(u){
   const novo = !u;
   u = u || {perfil:"ADMINISTRATIVO_OBRA", ativo:true, obras:[]};
@@ -121,6 +134,13 @@ function formOperador(u){
       <div class="campo"><label>Perfil *</label><select id="op-perfil">
         ${PERFIS.map(p=>`<option value="${p.chave}" ${p.chave===u.perfil?"selected":""}>${p.rotulo}</option>`).join("")}
       </select></div>
+      <div class="campo" id="op-escopo-bloco"><label>O que esta pessoa enxerga</label>
+        <select id="op-escopo">
+          <option value="PROPRIOS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"":"selected"}>Só os lançamentos dela</option>
+          <option value="OBRAS_DESIGNADAS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"selected":""}>Tudo das obras designadas</option>
+        </select>
+        <div class="dica">Escolha por pessoa, não pelo cargo. Vale igual na
+          listagem e ao abrir um título.</div></div>
       <div class="campo"><label>${novo?"Senha *":"Nova senha (deixe vazio para manter)"}</label>
         <input id="op-senha" type="password" placeholder="mínimo 8 caracteres"></div>
       <div class="campo"><label>Situação</label><select id="op-ativo">
@@ -170,15 +190,27 @@ function formOperador(u){
         ${DADOS.obras.map(o=>`<label class="opcao"><input type="checkbox" class="op-obra" value="${o.id}"
           ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${o.codigo} · ${o.nome}</span></label>`).join("")}
       </div>
-      <div class="dica">Vale para o <b>supervisor</b>. Gestor vê todas; administrativo de obra vê o que lançou.</div>
+      <div class="dica">Vale para o <b>supervisor</b> e para quem estiver como
+        <b>"tudo das obras designadas"</b>. Gestor vê todas as obras.</div>
     </div>
     <div style="margin-top:14px"><button class="btn" id="op-salvar">Salvar</button></div>`;
 
+  // Perfis cujo alcance é escolhido pessoa a pessoa; os demais já veem tudo
+  // ou têm regra própria. Espelha ESCOPO_CONFIGURAVEL do core/auth.
+  const ESCOPO_CONFIGURAVEL = ["ADMINISTRATIVO_OBRA", "LANCADOR"];
+
   function alternarObras(){
-    els("op-obras-bloco").style.display =
-      els("op-perfil").value === "SUPERVISOR_OBRA" ? "" : "none";
+    const perfil = els("op-perfil").value;
+    const configuravel = ESCOPO_CONFIGURAVEL.includes(perfil);
+    els("op-escopo-bloco").style.display = configuravel ? "" : "none";
+    // Só faz sentido escolher obras para quem enxerga POR obra.
+    const porObra = perfil === "SUPERVISOR_OBRA"
+      || (configuravel && els("op-escopo").value === "OBRAS_DESIGNADAS");
+    els("op-obras-bloco").style.display = porObra ? "" : "none";
   }
-  els("op-perfil").addEventListener("change", alternarObras); alternarObras();
+  els("op-perfil").addEventListener("change", alternarObras);
+  els("op-escopo").addEventListener("change", alternarObras);
+  alternarObras();
   document.querySelectorAll("[data-grupo]").forEach(b => b.addEventListener("click", () => {
     const g = b.dataset.grupo;
     if (g === "__nenhum") {
@@ -203,6 +235,7 @@ function formOperador(u){
   els("op-salvar").addEventListener("click", async () => {
     const corpo = {nome: els("op-nome").value, telefone: els("op-tel").value,
       perfil: els("op-perfil").value, ativo: els("op-ativo").value === "1",
+      escopo_visao: els("op-escopo").value,
       ff_autorizado: els("op-ff").value === "1",
       ff_teto_item: els("op-ff-item").value, ff_teto_prestacao: els("op-ff-total").value,
       categorias: [...document.querySelectorAll(".op-cat:checked")].map(i=>+i.value),
@@ -403,7 +436,7 @@ function desenhar(){
       <td><small>${u.ff_autorizado
         ? `até ${u.ff_teto_item?moeda(u.ff_teto_item):"—"} / despesa`
         : `<span style="color:var(--tinta-suave)">não usa</span>`}</small></td>
-      <td><small>${u.obras.length ? u.obras.join(", ") : (u.perfil==="ADMINISTRATIVO_OBRA"?"o que lançou":"todas")}</small></td>
+      <td><small>${alcanceDoOperador(u)}</small></td>
       <td><span class="selo ${u.ativo?"aprovado":"outro"}">${u.ativo?"Ativo":"Inativo"}</span></td></tr>`).join("");
   document.querySelectorAll("[data-op]").forEach(tr =>
     tr.addEventListener("click", () => formOperador(OPERADORES.find(x=>x.id===+tr.dataset.op))));

@@ -2210,11 +2210,11 @@ def api_excluir_anexo(anexo_id: int):
 def api_usuarios():
     """Cadastro de operadores. Só o ADMIN mexe."""
     from sqlalchemy import select
-    from app.apps.erp.core.auth.permissoes import ROTULOS, exigir
+    from app.apps.erp.core.auth.permissoes import ROTULOS, escopo_visao, exigir
     from app.apps.erp.core.auth.service import criar_usuario
     from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
     from app.apps.erp.db.models.cadastros import (
-        Obra, PerfilUsuario, Usuario, UsuarioCategoria, UsuarioObra,
+        EscopoVisao, Obra, PerfilUsuario, Usuario, UsuarioCategoria, UsuarioObra,
     )
     try:
         with get_session() as s:
@@ -2239,6 +2239,7 @@ def api_usuarios():
                             UsuarioCategoria.usuario_id == u.id)).all()],
                     "perfil": u.perfil.value,
                     "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
+                    "escopo_visao": escopo_visao(u).value,
                     "ativo": u.ativo, "obras": vinculos.get(u.id, []),
                 } for u in usuarios], "perfis": [
                     {"chave": p.value, "rotulo": ROTULOS.get(p, p.value)}
@@ -2255,6 +2256,11 @@ def api_usuarios():
             u.cpf = cpf or None
             u.telefone = somente_digitos(d.get("telefone") or "") or None
             u.observacoes = (d.get("observacoes") or "").strip() or None
+            # Escopo ausente ou desconhecido cai no mais restritivo.
+            try:
+                u.escopo_visao = EscopoVisao(d.get("escopo_visao"))
+            except ValueError:
+                u.escopo_visao = EscopoVisao.PROPRIOS
             for obra_id in (d.get("obras") or []):
                 s.add(UsuarioObra(usuario_id=u.id, obra_id=int(obra_id)))
             s.commit()
@@ -2278,7 +2284,9 @@ def api_editar_usuario(usuario_id: int):
     from app.apps.erp.core.auth.permissoes import exigir
     from app.apps.erp.core.auth.service import gerar_hash
     from app.apps.erp.core.cadastros.validadores import somente_digitos
-    from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario, UsuarioObra
+    from app.apps.erp.db.models.cadastros import (
+        EscopoVisao, PerfilUsuario, Usuario, UsuarioObra,
+    )
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
@@ -2293,6 +2301,13 @@ def api_editar_usuario(usuario_id: int):
                     setattr(u, campo, somente_digitos(valor) if campo == "telefone" else valor or None)
             if d.get("perfil"):
                 u.perfil = PerfilUsuario(d["perfil"])
+            if "escopo_visao" in d:
+                # Ampliar o alcance é escolha explícita; valor estranho fecha.
+                try:
+                    u.escopo_visao = EscopoVisao(d["escopo_visao"])
+                except ValueError:
+                    return jsonify({"ok": False,
+                                    "erro": "Escopo de visão inválido."}), 400
             if "ativo" in d:
                 u.ativo = bool(d["ativo"])
             if d.get("senha"):

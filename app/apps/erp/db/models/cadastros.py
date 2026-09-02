@@ -49,6 +49,17 @@ class PerfilUsuario(str, enum.Enum):
     CONSULTA = "CONSULTA"
 
 
+class EscopoVisao(str, enum.Enum):
+    """Alcance da visão do operador — configuração por PESSOA, não por cargo.
+
+    Só tem efeito nos perfis que filtram por autoria (ADMINISTRATIVO_OBRA e
+    LANCADOR). Quem já enxerga tudo continua enxergando; supervisor mantém a
+    regra dele.
+    """
+    PROPRIOS = "PROPRIOS"                    # só o que a própria pessoa lançou
+    OBRAS_DESIGNADAS = "OBRAS_DESIGNADAS"    # tudo das obras associadas a ela
+
+
 class FormaPagamento(str, enum.Enum):
     BOLETO = "BOLETO"
     PIX = "PIX"
@@ -98,6 +109,11 @@ class Usuario(Base):
     perfil: Mapped[PerfilUsuario] = mapped_column(
         pg_enum(PerfilUsuario, "perfil_usuario"), nullable=False,
         default=PerfilUsuario.CONSULTA)
+    # Alcance da visão: ver EscopoVisao. Default no mais restritivo, para que
+    # esquecer de configurar feche em vez de abrir.
+    escopo_visao: Mapped[EscopoVisao] = mapped_column(
+        pg_enum(EscopoVisao, "escopo_visao_usuario"), nullable=False,
+        default=EscopoVisao.PROPRIOS, server_default="PROPRIOS")
     cpf: Mapped[Optional[str]] = mapped_column(Text)
     telefone: Mapped[Optional[str]] = mapped_column(Text)
     # fundo fixo: alçada de quem gasta, não do sistema
