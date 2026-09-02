@@ -60,18 +60,50 @@ configuração associada ao OOM.
 
 ## Antes de commitar
 
-**Não existe suíte automatizada neste repositório** — sem `pytest`, sem CI. Não
-invente um `pytest` que não roda; testar aqui é manual:
+### 1. Rodar a suíte
 
-1. **A aplicação sobe?** `python app/main.py` (porta 5000 por padrão). Uma
-   importação quebrada em qualquer módulo derruba os 14 blueprints juntos, então
-   isso não é formalidade.
-2. **Exercitar a tela ou a rota que você tocou**, com dado real de verdade.
-3. **Se mexeu no ERP:** aplicar as migrações pendentes pelo botão e conferir
-   que a tela afetada carrega. Migração nova roda uma vez — reler o `.sql`
-   antes, porque metade aplicada dá trabalho para desfazer.
-4. **Se mexeu em memória ou em leitura de planilha:** ver `CONTEXTO.md` §3.7.
-   Nada de `get_all_values()` em aba grande, nada de download sem teto.
+```
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+São 108 testes sobre os fluxos críticos do ERP, em `tests/`: aval em duas
+pessoas, atribuição ótima da conciliação, medição de empreita consumindo saldo
+de item, cadeia supervisor → DP → diretor, e as críticas de duplicidade do
+fundo fixo. Rodam em menos de um segundo — não há desculpa para pular.
+
+**A suíte não sobe banco**, e é importante saber por quê antes de confiar nela:
+os models usam `JSONB`, `ARRAY` e ENUM do Postgres, que não existem em SQLite, e
+a única `DATABASE_URL` configurada aponta para a **produção** — nenhum teste
+encosta nela. Em vez disso os models são instanciados em memória e a `Session` é
+dublada (`tests/conftest.py`).
+
+O limite disso, dito sem rodeio: a sessão dublada **ignora `WHERE`, `JOIN` e
+`ORDER BY`** — devolve todos os objetos do tipo pedido. A suíte cobre a regra de
+negócio (alçada, cadeia de aprovação, aritmética de saldo, custo de conciliação,
+críticas). Ela **não** cobre SQL: um erro que só apareça no filtro de uma query
+passa batido. Por isso os passos 2 a 4 continuam valendo.
+
+Ao escrever teste novo, reusar `SessaoFalsa` e os construtores do `conftest.py`,
+e preencher os campos `NOT NULL` que a regra sob teste realmente lê — um objeto
+pela metade falha por motivo errado e faz perder tempo.
+
+### 2. A aplicação sobe?
+
+`python app/main.py` (porta 5000 por padrão). Uma importação quebrada em
+qualquer módulo derruba os 14 blueprints juntos, então isso não é formalidade —
+e é justamente o que a suíte, sozinha, não garante.
+
+### 3. Exercitar a tela ou a rota que você tocou
+
+Com dado real de verdade. Se mexeu no ERP, aplicar as migrações pendentes pelo
+botão e conferir que a tela afetada carrega. Migração nova roda uma vez — reler
+o `.sql` antes, porque metade aplicada dá trabalho para desfazer.
+
+### 4. Se mexeu em memória ou em leitura de planilha
+
+Ver `CONTEXTO.md` §3.7. Nada de `get_all_values()` em aba grande, nada de
+download sem teto. Esse caminho não tem teste automatizado nenhum.
 
 Commitar só o que foi verificado. Se algo não deu para testar, dizer isso na
 mensagem do commit em vez de deixar implícito.
