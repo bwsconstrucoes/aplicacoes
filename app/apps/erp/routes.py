@@ -518,6 +518,8 @@ def api_titulo_detalhe(titulo_id: int):
     from app.apps.erp.db.models.financeiro import Analise, Evento, Parcela
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
             t = svc_titulos.obter(s, titulo_id)
             analise = s.scalars(select(Analise).where(Analise.titulo_id == t.id)
                                 .order_by(Analise.executada_em.desc())).first()
@@ -2352,6 +2354,8 @@ def api_historico(titulo_id: int):
     from app.apps.erp.db.models.financeiro import Evento
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
             eventos = s.execute(select(Evento, Usuario.nome)
                                 .join(Usuario, Usuario.id == Evento.usuario_id, isouter=True)
                                 .where(Evento.entidade_tipo == "titulo",
@@ -2453,6 +2457,8 @@ def api_historico_geral(entidade: str, entidade_id: int):
         return jsonify({"ok": False, "erro": f"Entidade inválida: {entidade}"}), 400
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_entidade_no_escopo
+            exigir_entidade_no_escopo(s, _usuario_logado(s), entidade, entidade_id)
             linhas = s.execute(
                 select(Evento, Usuario.nome)
                 .join(Usuario, Usuario.id == Evento.usuario_id, isouter=True)
@@ -2984,6 +2990,8 @@ def api_prestacao_detalhe(titulo_id: int):
     from app.apps.erp.core.titulos.prestacao import detalhar
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
             return jsonify({"ok": True, "prestacao": detalhar(s, titulo_id)})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
@@ -2997,6 +3005,8 @@ def api_conferir(titulo_id: int):
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
             usuario = _usuario_logado(s)
             rel = confirmar_analise(s, titulo_id, usuario,
                                     item_id=d.get("item_id"),
@@ -3737,6 +3747,8 @@ def api_dc_detalhe(despesa_id: int):
     from app.apps.erp.core.pessoal import detalhar
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_despesa_no_escopo
+            exigir_despesa_no_escopo(s, _usuario_logado(s), despesa_id)
             return jsonify({"ok": True, "despesa": detalhar(s, despesa_id)})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
@@ -3750,6 +3762,8 @@ def api_dc_acao(despesa_id: int, acao: str):
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_despesa_no_escopo
+            exigir_despesa_no_escopo(s, _usuario_logado(s), despesa_id)
             usuario = _usuario_logado(s)
             if acao == "aprovar":
                 rel = aprovar(s, despesa_id, usuario, d.get("observacao", ""))
@@ -3782,6 +3796,8 @@ def api_historico_colaborador(colaborador_id: int):
     from app.apps.erp.core.pessoal import historico
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+            exigir_colaborador_no_escopo(s, _usuario_logado(s), colaborador_id)
             return jsonify({"ok": True, "historico": historico(
                 s, colaborador_id, meses=request.args.get("meses", type=int) or 24)})
     except ErroValidacao as e:

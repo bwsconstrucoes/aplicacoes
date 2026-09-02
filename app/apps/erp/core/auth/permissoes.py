@@ -200,6 +200,34 @@ def exigir_entidade_no_escopo(s: Session, usuario: Usuario,
         raise ErroNaoEncontrado("Registro não encontrado.")
 
 
+def exigir_despesa_no_escopo(s: Session, usuario: Usuario, despesa_id: int) -> None:
+    """Despesa com colaborador pertence a uma obra e segue o escopo dela."""
+    from app.apps.erp.db.models.financeiro import DespesaColaborador
+
+    d = s.get(DespesaColaborador, despesa_id)
+    if d is None:
+        raise ErroNaoEncontrado("Despesa não encontrada.")
+    try:
+        exigir_obra_no_escopo(s, usuario, d.obra_id)
+    except ErroNaoEncontrado:
+        raise ErroNaoEncontrado("Despesa não encontrada.")
+
+
+def exigir_colaborador_no_escopo(s: Session, usuario: Usuario,
+                                 colaborador_id: int) -> None:
+    """A ficha do colaborador é histórico de pagamento de uma pessoa física:
+    fica com quem responde pela obra dela."""
+    from app.apps.erp.db.models.cadastros import Colaborador
+
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroNaoEncontrado("Colaborador não encontrado.")
+    try:
+        exigir_obra_no_escopo(s, usuario, c.obra_id)
+    except ErroNaoEncontrado:
+        raise ErroNaoEncontrado("Colaborador não encontrado.")
+
+
 def exigir_anexo_no_escopo(s: Session, usuario: Usuario, anexo_id: int):
     """Anexo herda o escopo da entidade a que está preso.
 

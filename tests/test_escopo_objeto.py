@@ -253,6 +253,66 @@ def test_interessados_de_titulo_fora_do_escopo_devolve_404(app, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Bloco 3 — o detalhe segue exatamente o escopo da listagem
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("caminho", [
+    "/erp/api/titulos/5",
+    "/erp/api/titulos/5/historico",
+    "/erp/api/prestacao/5",
+])
+def test_detalhe_de_titulo_fora_do_escopo_devolve_404(app, monkeypatch, caminho):
+    """A listagem já filtrava; o detalhe por número era a porta aberta ao lado."""
+    sessao = SessaoFalsa(DE_OBRA, escalares=[None])
+
+    r = _chamar(app, monkeypatch, caminho, sessao, 7)
+
+    assert r.status_code == 404
+
+
+def test_titulo_no_escopo_nao_e_barrado():
+    """A trava não pode fechar o que a listagem abriria.
+
+    Verificado aqui, e não pela rota: a rota devolve 404 tanto para "fora do
+    escopo" quanto para "não existe" — que é exatamente a indistinguibilidade
+    pedida. Justamente por isso ela não serve para provar o caminho legítimo.
+    """
+    s = SessaoFalsa(DE_OBRA, escalares=[1])
+
+    permissoes.exigir_titulo_no_escopo(s, DE_OBRA, 5)   # não levanta
+
+
+def test_despesa_com_colaborador_de_obra_alheia_e_negada(app, monkeypatch):
+    from app.apps.erp.db.models.financeiro import DespesaColaborador
+
+    sessao = SessaoFalsa(SUPERVISOR, DespesaColaborador(id=3, obra_id=99),
+                         UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    r = _chamar(app, monkeypatch, "/erp/api/dc/3", sessao, 2)
+
+    assert r.status_code == 404
+
+
+def test_ficha_de_colaborador_de_obra_alheia_e_negada(app, monkeypatch):
+    """Histórico de pagamento de pessoa física — o dado mais sensível do módulo."""
+    from app.apps.erp.db.models.cadastros import Colaborador
+
+    sessao = SessaoFalsa(SUPERVISOR, Colaborador(id=8, obra_id=99),
+                         UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    r = _chamar(app, monkeypatch, "/erp/api/colaboradores/8/historico", sessao, 2)
+
+    assert r.status_code == 404
+
+
+def test_historico_geral_de_entidade_alheia_e_negado(app, monkeypatch):
+    sessao = SessaoFalsa(SUPERVISOR, UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    r = _chamar(app, monkeypatch, "/erp/api/historico/obra/99", sessao, 2)
+
+    assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # Bloco 2 — obra alheia não abre, nem para leitura
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("caminho", [
