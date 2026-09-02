@@ -1,0 +1,194 @@
+{% extends "painel_base.html" %}
+{% block titulo %}DRE — Painel Financeiro BWS{% endblock %}
+
+{% block filtros %}{% include "painel_filtros.html" %}{% endblock %}
+
+{% block conteudo %}
+<h2>DRE
+  <small>executado, em aberto e comprometido</small>
+</h2>
+
+{% if chips %}
+<div class="chips">
+  {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
+</div>
+{% endif %}
+
+<!-- ===================== O DRE ===================== -->
+<div class="tabela-wrap" style="margin-bottom:14px">
+  <div class="tabela-barra">
+    <span class="resumo">
+      <b>Executado</b> = já pago/recebido &nbsp;·&nbsp;
+      <b>Em aberto</b> = ainda falta &nbsp;·&nbsp;
+      <b>Comprometido</b> = os dois somados
+    </span>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Linha</th>
+          <th class="sem-ordem direita">Executado</th>
+          <th class="sem-ordem direita">Em aberto</th>
+          <th class="sem-ordem direita">Comprometido</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% macro linha_dre(l, classe='') %}
+          <tr class="{{ classe }}">
+            <td>{{ l.linha }}</td>
+            <td class="dados direita {{ classe_valor(l.executado) }}">{{ brl(l.executado) }}</td>
+            <td class="dados direita {{ classe_valor(l.aberto) }}">{{ brl(l.aberto) }}</td>
+            <td class="dados direita {{ classe_valor(l.comprometido) }}">{{ brl(l.comprometido) }}</td>
+          </tr>
+        {% endmacro %}
+
+        {{ linha_dre(linhas.receita_bruta) }}
+        {{ linha_dre(linhas.retencoes, 'linha-sub') }}
+        {{ linha_dre(linhas.receita_liquida, 'linha-destaque') }}
+
+        <tr><td colspan="4" style="padding-top:14px; font-size:11.5px;
+            text-transform:uppercase; letter-spacing:.06em; color:var(--tinta-suave)">
+          Despesas por grupo</td></tr>
+        {% for l in linhas.despesas %}{{ linha_dre(l) }}{% endfor %}
+        {{ linha_dre(linhas.total_despesas, 'linha-destaque') }}
+
+        {{ linha_dre(linhas.resultado, 'linha-total') }}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ===================== DESPESAS ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Para onde foi o dinheiro</h3>
+    <small>{{ despesas|length }} maiores</small>
+  </div>
+
+  <form method="get" class="tabela-barra" style="border:0; padding:0 0 10px">
+    {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
+    {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
+    {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
+    {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
+    <div class="campo" style="max-width:190px">
+      <label for="quebra">Quebrar por</label>
+      <select id="quebra" name="quebra" onchange="this.form.submit()">
+        <option value="grupo" {% if quebra == 'grupo' %}selected{% endif %}>Grupo</option>
+        <option value="categoria" {% if quebra == 'categoria' %}selected{% endif %}>Categoria</option>
+      </select>
+    </div>
+    <div class="campo" style="max-width:210px">
+      <label for="visao">Mostrar</label>
+      <select id="visao" name="visao" onchange="this.form.submit()">
+        <option value="comprometido" {% if visao == 'comprometido' %}selected{% endif %}>Comprometido</option>
+        <option value="executado" {% if visao == 'executado' %}selected{% endif %}>Só o que foi pago</option>
+        <option value="aberto" {% if visao == 'aberto' %}selected{% endif %}>Só o que falta pagar</option>
+      </select>
+    </div>
+  </form>
+
+  {% if despesas %}
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">{{ 'Categoria' if quebra == 'categoria' else 'Grupo' }}</th>
+          <th class="sem-ordem" style="width:38%">Peso</th>
+          <th class="sem-ordem direita">Valor</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in despesas %}
+        <tr>
+          <td class="desc">{{ d.nome }}</td>
+          <td>
+            <div class="barra">
+              <div class="trilha"><div class="preench despesa" style="width:{{ d.pct }}%"></div></div>
+            </div>
+          </td>
+          <td class="dados direita v-neg">{{ brl(d.valor) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="vazio"><b>Sem despesas</b>Nenhuma despesa nos filtros escolhidos.</div>
+  {% endif %}
+</div>
+
+<!-- ===================== RECEITA POR OBRA ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Receita por obra</h3>
+    <small>o que já entrou e o que ainda falta receber</small>
+  </div>
+  {% if receita_obra %}
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem direita">Recebido</th>
+          <th class="sem-ordem direita">Retido na fonte</th>
+          <th class="sem-ordem direita">A receber</th>
+          <th class="sem-ordem direita">Bruto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in receita_obra %}
+        <tr>
+          <td class="desc">{{ r.obra }}</td>
+          <td class="dados direita">{{ brl(r.recebido) }}</td>
+          <td class="dados direita">{{ brl(r.retido) }}</td>
+          <td class="dados direita {{ classe_valor(r.a_receber) }}">{{ brl(r.a_receber) }}</td>
+          <td class="dados direita"><b>{{ brl(r.bruto) }}</b></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    <b>Retido na fonte</b> é o imposto que o cliente segurou e recolheu no lugar
+    da BWS. Faz parte do valor bruto da medição, mas nunca entrou na conta.
+  </p>
+  {% else %}
+    <div class="vazio"><b>Sem receita</b>Nenhuma receita nos filtros escolhidos.</div>
+  {% endif %}
+</div>
+
+<!-- ===================== CREDORES ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Maiores credores</h3>
+    <small>quem mais recebeu — ou a quem mais se deve</small>
+  </div>
+  {% if credores %}
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Fornecedor</th>
+          <th class="sem-ordem direita">Já pago</th>
+          <th class="sem-ordem direita">A pagar</th>
+          <th class="sem-ordem direita">Títulos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in credores %}
+        <tr>
+          <td class="desc">{{ c.nome }}</td>
+          <td class="dados direita">{{ brl(c.pago) }}</td>
+          <td class="dados direita {{ classe_valor(c.aberto) }}">{{ brl(c.aberto) }}</td>
+          <td class="dados direita">{{ c.titulos }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+    <div class="vazio"><b>Sem credores</b>Nenhum pagamento nos filtros escolhidos.</div>
+  {% endif %}
+</div>
+{% endblock %}

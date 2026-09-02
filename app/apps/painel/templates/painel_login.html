@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar — Painel Financeiro BWS</title>
+<link rel="stylesheet" href="{{ url_for('painel.static', filename='painel.css') }}">
+</head>
+<body>
+<div class="entrada">
+  <form method="post" action="{{ url_for('painel.entrar') }}">
+    <div class="marca">
+      <div class="brasao">BWS</div>
+      <div>
+        <h1>Painel Financeiro</h1>
+        <p class="sub">Base OMIE</p>
+      </div>
+    </div>
+
+    {% if sem_senha %}
+      <div class="aviso erro">
+        <b>O painel ainda não tem senha.</b><br>
+        Cadastre a variável <code>PAINEL_SENHA</code> nas configurações do serviço
+        no Render e recarregue esta página. Enquanto isso, ninguém entra — nem
+        você. É de propósito: são dados financeiros.
+      </div>
+    {% else %}
+      {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+      <label for="senha">Senha</label>
+      <input id="senha" name="senha" type="password" autocomplete="current-password"
+             autofocus required>
+      <button class="btn" type="submit">Entrar</button>
+    {% endif %}
+  </form>
+</div>
+</body>
+</html>

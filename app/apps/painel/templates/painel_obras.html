@@ -1,0 +1,98 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Resultado por Obra — Painel Financeiro BWS{% endblock %}
+
+{% block filtros %}{% include "painel_filtros.html" %}{% endblock %}
+
+{% macro seletores(nivel, extra_nome=None, extra_valor=None, extra_opcoes=None, extra_rotulo=None) %}
+<form method="get" class="tabela-barra" style="border:0; padding:0 0 12px">
+  {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
+  {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
+  {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
+  {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
+  <div class="campo" style="max-width:190px">
+    <label for="nivel">Agrupar por</label>
+    <select id="nivel" name="nivel" onchange="this.form.submit()">
+      <option value="projeto" {% if nivel == 'projeto' %}selected{% endif %}>Projeto</option>
+      <option value="obra" {% if nivel == 'obra' %}selected{% endif %}>Obra</option>
+    </select>
+  </div>
+  {% if extra_nome %}
+  <div class="campo" style="max-width:230px">
+    <label for="{{ extra_nome }}">{{ extra_rotulo }}</label>
+    <select id="{{ extra_nome }}" name="{{ extra_nome }}" onchange="this.form.submit()">
+      {% for valor, texto in extra_opcoes %}
+        <option value="{{ valor }}" {% if extra_valor == valor %}selected{% endif %}>{{ texto }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+</form>
+{% endmacro %}
+
+{% block conteudo %}
+<h2>Resultado por {{ 'Obra' if nivel == 'obra' else 'Projeto' }}
+  <small>receita líquida menos despesas, na mesma base do DRE</small>
+</h2>
+
+{% if chips %}
+<div class="chips">
+  {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
+</div>
+{% endif %}
+
+{{ seletores(nivel, 'medida', medida,
+             [('comprometido', 'Comprometido — tudo que foi ganho e gasto'),
+              ('executado', 'Executado — só o que já foi pago e recebido')],
+             'Medida') }}
+
+{% if not itens %}
+  <div class="vazio"><b>Sem dados</b>Nenhum lançamento nos filtros escolhidos.</div>
+{% else %}
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo">
+      Do melhor resultado para o pior &nbsp;·&nbsp; <b>{{ itens|length }}</b>
+      {{ 'obras' if nivel == 'obra' else 'projetos' }}
+    </span>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">{{ 'Obra' if nivel == 'obra' else 'Projeto' }}</th>
+          <th class="sem-ordem direita">Receita líquida</th>
+          <th class="sem-ordem direita">Despesas</th>
+          <th class="sem-ordem direita">Resultado</th>
+          <th class="sem-ordem" style="width:26%">Peso</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for i in itens %}
+        <tr>
+          <td class="desc">{{ i.nome }}</td>
+          <td class="dados direita">{{ brl(i.receita) }}</td>
+          <td class="dados direita">{{ brl(i.despesa) }}</td>
+          <td class="dados direita {{ classe_valor(i.resultado) }}"><b>{{ brl(i.resultado) }}</b></td>
+          <td>
+            <div class="barra">
+              <div class="trilha">
+                <div class="preench {{ 'receita' if i.resultado >= 0 else 'despesa' }}"
+                     style="width:{{ i.pct }}%"></div>
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<p class="cartao-dica">
+  A receita aqui é a <b>líquida</b> — sem os impostos que o cliente reteve na
+  fonte. Obra com resultado negativo não quer dizer necessariamente prejuízo
+  final: pode ser obra em andamento, com custo já lançado e medição ainda por
+  faturar. Compare com a tela <b>Comprometido vs Executado</b>.
+</p>
+{% endif %}
+{% endblock %}

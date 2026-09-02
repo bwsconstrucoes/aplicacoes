@@ -27,3 +27,17 @@ service_account*.json
 
 # Exportação local do Pipefy (dado de cliente, não versionar)
 app/apps/erp/export_pipefy/
+
+# ---------------------------------------------------------------------------
+# Painel OMIE — dado nao entra no Git (ver README do modulo).
+# Espelho do OMIE, cache e exportacoes sao regenerados pela sincronizacao;
+# o que o usuario digita (prestacao de contas) vai para o Postgres, nao aqui.
+# ---------------------------------------------------------------------------
+app/apps/painel/*.db
+app/apps/painel/*.db-shm
+app/apps/painel/*.db-wal
+app/apps/painel/*.parquet
+app/apps/painel/*.xlsx
+app/apps/painel/*.csv
+app/apps/painel/amostra_api.json
+app/apps/painel/credenciais.json

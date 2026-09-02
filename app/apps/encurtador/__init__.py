@@ -3,7 +3,6 @@ from datetime import datetime
 from .sheets import buscar_url_por_codigo
 # Import original blueprints
 from .routes.encurtador import encurtador_routes
-from .routes.painel import painel_routes
 from .routes.api import api_routes
 
 # Composite blueprint (no prefix) to preserve original paths
@@ -11,7 +10,9 @@ bp = Blueprint("encurtador_root", __name__)
 
 # Register original blueprints into composite
 bp.register_blueprint(encurtador_routes)  # keeps url_prefix='/encurtador'
-bp.register_blueprint(painel_routes)
+# O /painel deste módulo era um marcador vazio ("Painel administrativo - Em
+# construção"). Foi removido porque o endereço /painel passou a ser o Painel
+# Financeiro OMIE, e o marcador sombreava a tela de verdade.
 bp.register_blueprint(api_routes)
 
 # Global redirect route from original app-bws/app.py
