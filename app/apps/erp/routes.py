@@ -3240,6 +3240,8 @@ def api_empreita_detalhe(contrato_id: int):
     from app.apps.erp.core.titulos.empreita import detalhar
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_empreita_no_escopo
+            exigir_empreita_no_escopo(s, _usuario_logado(s), contrato_id)
             dados = detalhar(s, contrato_id)
             for m in dados["medicoes"]:
                 m["anexos"] = listar_anexos(s, "medicao", m["id"])
@@ -3290,6 +3292,8 @@ def api_medir(contrato_id: int):
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_empreita_no_escopo
+            exigir_empreita_no_escopo(s, _usuario_logado(s), contrato_id)
             usuario = _usuario_logado(s)
             if d.get("apenas_criticar"):
                 return jsonify({"ok": True,
@@ -3475,6 +3479,8 @@ def api_locacao_detalhe(contrato_id: int):
     from app.apps.erp.core.locacoes import detalhar
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_locacao_no_escopo
+            exigir_locacao_no_escopo(s, _usuario_logado(s), contrato_id)
             return jsonify({"ok": True, "contrato": detalhar(s, contrato_id)})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
@@ -3488,6 +3494,8 @@ def api_locacao_acao(contrato_id: int, acao: str):
     d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_locacao_no_escopo
+            exigir_locacao_no_escopo(s, _usuario_logado(s), contrato_id)
             usuario = _usuario_logado(s)
             if acao == "devolver":
                 rel = devolver(s, contrato_id, d, usuario)
@@ -3517,6 +3525,8 @@ def api_lancar_locacao(parcela_id: int):
     from app.apps.erp.core.locacoes import lancar_parcela
     try:
         with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_parcela_locacao_no_escopo
+            exigir_parcela_locacao_no_escopo(s, _usuario_logado(s), parcela_id)
             rel = lancar_parcela(s, parcela_id, request.get_json(silent=True) or {},
                                  _usuario_logado(s))
             s.commit()

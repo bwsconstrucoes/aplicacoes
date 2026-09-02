@@ -313,6 +313,53 @@ def test_historico_geral_de_entidade_alheia_e_negado(app, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# Empreitas e locações — o mesmo furo, achado depois dos blocos
+# ---------------------------------------------------------------------------
+def test_empreita_de_obra_alheia_nao_abre(app, monkeypatch):
+    sessao = SessaoFalsa(SUPERVISOR, ContratoServico(id=3, obra_id=99),
+                         UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    r = _chamar(app, monkeypatch, "/erp/api/empreitas/3", sessao, 2)
+
+    assert r.status_code == 404
+
+
+def test_nao_da_para_medir_empreita_de_obra_alheia(app, monkeypatch):
+    """Medição vira título a pagar: medir contrato alheio move dinheiro."""
+    sessao = SessaoFalsa(SUPERVISOR, ContratoServico(id=3, obra_id=99),
+                         UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    r = _chamar(app, monkeypatch, "/erp/api/empreitas/3/medicoes", sessao, 2, "post")
+
+    assert r.status_code == 404
+    assert sessao.adicionados == []
+
+
+def test_locacao_de_obra_alheia_nao_abre(app, monkeypatch):
+    from app.apps.erp.db.models.financeiro import ContratoLocacao
+
+    sessao = SessaoFalsa(SUPERVISOR, ContratoLocacao(id=4, obra_id=99),
+                         UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    r = _chamar(app, monkeypatch, "/erp/api/locacoes/4", sessao, 2)
+
+    assert r.status_code == 404
+
+
+def test_parcela_de_locacao_alheia_nao_lanca(app, monkeypatch):
+    from app.apps.erp.db.models.financeiro import ContratoLocacao, LocacaoParcela
+
+    sessao = SessaoFalsa(SUPERVISOR, LocacaoParcela(id=7, contrato_id=4),
+                         ContratoLocacao(id=4, obra_id=99),
+                         UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    r = _chamar(app, monkeypatch,
+                "/erp/api/locacoes/parcelas/7/lancar", sessao, 2, "post")
+
+    assert r.status_code == 404
+
+
+# ---------------------------------------------------------------------------
 # Bloco 2 — obra alheia não abre, nem para leitura
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("caminho", [

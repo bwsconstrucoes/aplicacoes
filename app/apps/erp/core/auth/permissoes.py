@@ -228,6 +228,45 @@ def exigir_colaborador_no_escopo(s: Session, usuario: Usuario,
         raise ErroNaoEncontrado("Colaborador não encontrado.")
 
 
+def exigir_empreita_no_escopo(s: Session, usuario: Usuario, contrato_id: int) -> None:
+    """Contrato de empreita pertence a uma obra."""
+    from app.apps.erp.db.models.financeiro import ContratoServico
+
+    c = s.get(ContratoServico, contrato_id)
+    if c is None:
+        raise ErroNaoEncontrado("Contrato não encontrado.")
+    try:
+        exigir_obra_no_escopo(s, usuario, c.obra_id)
+    except ErroNaoEncontrado:
+        raise ErroNaoEncontrado("Contrato não encontrado.")
+
+
+def exigir_locacao_no_escopo(s: Session, usuario: Usuario, contrato_id: int) -> None:
+    from app.apps.erp.db.models.financeiro import ContratoLocacao
+
+    c = s.get(ContratoLocacao, contrato_id)
+    if c is None:
+        raise ErroNaoEncontrado("Contrato de locação não encontrado.")
+    try:
+        exigir_obra_no_escopo(s, usuario, c.obra_id)
+    except ErroNaoEncontrado:
+        raise ErroNaoEncontrado("Contrato de locação não encontrado.")
+
+
+def exigir_parcela_locacao_no_escopo(s: Session, usuario: Usuario,
+                                     parcela_id: int) -> None:
+    """A parcela da locação herda o escopo do contrato dela."""
+    from app.apps.erp.db.models.financeiro import LocacaoParcela
+
+    p = s.get(LocacaoParcela, parcela_id)
+    if p is None:
+        raise ErroNaoEncontrado("Parcela não encontrada.")
+    try:
+        exigir_locacao_no_escopo(s, usuario, p.contrato_id)
+    except ErroNaoEncontrado:
+        raise ErroNaoEncontrado("Parcela não encontrada.")
+
+
 def exigir_anexo_no_escopo(s: Session, usuario: Usuario, anexo_id: int):
     """Anexo herda o escopo da entidade a que está preso.
 

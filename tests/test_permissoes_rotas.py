@@ -52,6 +52,57 @@ def test_toda_rota_declara_permissao_ou_e_publica_explicita(app):
         "em produção; declare a ação: " + ", ".join(sem_declaracao))
 
 
+def test_rota_que_recebe_id_e_aberta_a_perfil_restrito_precisa_checar_escopo():
+    """Fecha a brecha de classe que o teste de inventário não pegava.
+
+    O inventário garante que toda rota declara uma AÇÃO. Não garante que uma
+    rota de ação ampla, ao receber o número de um registro, verifique se aquele
+    registro é do usuário. Foi assim que empreitas e locações passaram batido
+    pelos blocos: a auditoria enumerou casos à mão, e mão esquece.
+
+    Aqui a checagem é derivada do código, não de uma lista: se a ação é de
+    perfil restrito e a rota recebe um id, tem de haver escopo.
+    """
+    import ast
+    from pathlib import Path
+
+    fonte = Path(routes.__file__).read_text(encoding="utf-8")
+    # ações que perfis presos a obra/autoria possuem
+    AMPLAS = {"ver_erp", "lancar", "ver_pessoal", "lancar_dc"}
+
+    def chama_escopo(fn):
+        """Procura a CHAMADA, não o nome solto.
+
+        Conferir apenas o texto acusaria a linha de import como se fosse
+        verificação — e o teste passaria com a trava removida.
+        """
+        for sub in ast.walk(fn):
+            if isinstance(sub, ast.Call):
+                alvo = sub.func
+                nome = getattr(alvo, "id", None) or getattr(alvo, "attr", "")
+                if nome.startswith("exigir_") and nome.endswith("_no_escopo"):
+                    return True
+        return False
+
+    sem_escopo = []
+    for no in ast.walk(ast.parse(fonte)):
+        if not isinstance(no, ast.FunctionDef):
+            continue
+        mapa = routes._REGISTRO_PERMISSOES.get(f"erp.{no.name}")
+        if not mapa or not (set(mapa.values()) & AMPLAS):
+            continue
+        if not no.args.args:            # rota sem id na URL
+            continue
+        if chama_escopo(no):
+            continue
+        sem_escopo.append(no.name)
+
+    assert sem_escopo == [], (
+        "Rota recebe o número de um registro e é aberta a perfil restrito, mas "
+        "não confere se o registro é dele. Chame um exigir_*_no_escopo: "
+        + ", ".join(sem_escopo))
+
+
 def test_nenhuma_acao_declarada_e_desconhecida():
     """Erro de digitação em @permissao viraria rota impossível de acessar."""
     usadas = {a for mapa in routes._REGISTRO_PERMISSOES.values() for a in mapa.values()}
