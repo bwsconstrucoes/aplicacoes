@@ -64,6 +64,7 @@
       ({{ 'automática' if atualizacao.disparo == 'agendado' else 'manual' }},
        {{ atualizacao.tipo }}):
       <b>{{ atualizacao.fim.strftime('%d/%m/%Y às %H:%M') if atualizacao.fim else '—' }}</b>
+      <small>(hora de Brasília)</small>
       — {{ atualizacao.mensagem }}
     </div>
   {% elif not migracoes.pendentes %}

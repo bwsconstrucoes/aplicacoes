@@ -334,3 +334,35 @@ def test_o_dre_vira_uma_lista_corrida_na_ordem_certa():
     assert [l["linha"] for l in exportar.linhas_do_dre(dre)] == [
         "Receita bruta", "(−) Retenções", "Receita líquida",
         "Materiais", "Pessoal", "Total de despesas", "Resultado"]
+
+
+# ===========================================================================
+# 5. A hora que aparece na tela
+# ===========================================================================
+# O servidor roda em UTC. Sem converter, uma carga das 13h29 aparece como
+# 16h29 — e quem lê acha que o relógio quebrou, ou que aconteceu outra coisa.
+
+def test_hora_do_servidor_vira_hora_de_brasilia():
+    from app.apps.painel import horario
+    utc = dt.datetime(2026, 9, 2, 16, 29, tzinfo=dt.timezone.utc)
+    assert horario.texto(utc) == "02/09/2026 às 13:29"
+
+
+def test_data_sem_fuso_e_tratada_como_utc():
+    """Tratar como hora local deslocaria de novo, na direção errada — e o erro
+    passaria despercebido porque o número continua parecendo uma hora."""
+    from app.apps.painel import horario
+    assert horario.texto(dt.datetime(2026, 9, 2, 16, 29)) == "02/09/2026 às 13:29"
+
+
+def test_sem_data_mostra_travessao_e_nao_None():
+    from app.apps.painel import horario
+    assert horario.texto(None) == "—"
+
+
+def test_a_virada_do_dia_e_respeitada():
+    """01:00 UTC ainda é o dia anterior no Brasil. Errar isso joga um
+    lançamento para o dia seguinte no relatório."""
+    from app.apps.painel import horario
+    meia_noite = dt.datetime(2026, 9, 3, 1, 0, tzinfo=dt.timezone.utc)
+    assert horario.texto(meia_noite) == "02/09/2026 às 22:00"

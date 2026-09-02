@@ -30,6 +30,7 @@ def _com_controle(conn) -> None:
 def listar_estado() -> dict[str, Any]:
     """Diz quais migracoes ja foram aplicadas e quais faltam."""
     from .db import conexao
+    from .horario import texto
     with conexao() as conn:
         _com_controle(conn)
         cur = conn.execute("SELECT nome, aplicada_em FROM painel._migracoes ORDER BY nome")
@@ -37,7 +38,7 @@ def listar_estado() -> dict[str, Any]:
         cur.close()
     arquivos = sorted(f for f in os.listdir(PASTA) if f.endswith(".sql"))
     return {
-        "aplicadas": [{"nome": n, "em": aplicadas[n].strftime("%d/%m/%Y %H:%M")}
+        "aplicadas": [{"nome": n, "em": texto(aplicadas[n])}
                       for n in arquivos if n in aplicadas],
         "pendentes": [n for n in arquivos if n not in aplicadas],
     }

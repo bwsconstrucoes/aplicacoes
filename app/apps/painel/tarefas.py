@@ -63,7 +63,8 @@ def _executar(modo: str, disparo: str) -> None:
     from .db import conexao
     from .sync import espelho, fato
 
-    inicio = dt.datetime.now()
+    from .horario import agora
+    inicio = agora()
     _em_andamento = {"modo": modo, "disparo": disparo, "inicio": inicio.isoformat(),
                      "etapa": "iniciando"}
     execucao_id = None
@@ -90,7 +91,7 @@ def _executar(modo: str, disparo: str) -> None:
         with conexao() as conn:
             n_fato, n_receb = fato.reconstruir(conn)
 
-        duracao = (dt.datetime.now() - inicio).total_seconds()
+        duracao = (agora() - inicio).total_seconds()
         mensagem = (f"{n_fato:,} linhas de lançamento e {n_receb:,} recebimentos "
                     f"em {duracao/60:.1f} min.").replace(",", ".")
         logger.info("Painel: atualização %s concluída — %s", modo, mensagem)

@@ -27,7 +27,8 @@
   <div class="topo-direita">
     {% if atualizacao %}
       <div class="topo-meta">
-        Dados de {{ atualizacao.fim.strftime('%d/%m/%Y %H:%M') if atualizacao.fim else '—' }}<br>
+        Dados de {{ atualizacao.fim.strftime('%d/%m/%Y %H:%M') if atualizacao.fim else '—' }}
+        <small>(hora de Brasília)</small><br>
         {{ 'atualização ' + atualizacao.disparo if atualizacao.ok else 'última tentativa falhou' }}
       </div>
     {% endif %}

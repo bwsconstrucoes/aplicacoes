@@ -105,12 +105,23 @@ def sair():
 
 @bp.route("/saude")
 def saude():
-    """Checagem de servico. Nao devolve dado financeiro nenhum, so diz que o
-    modulo esta de pe e se as variaveis essenciais existem."""
+    """Checagem de servico. Nao devolve dado financeiro nenhum: so diz que o
+    modulo esta de pe, se as variaveis essenciais existem e QUAL VERSAO esta
+    rodando.
+
+    A versao esta aqui por um motivo pratico: depois de publicar uma correcao,
+    a unica forma de saber se ela ja subiu era clicar e ver se o erro se repete.
+    O Render entrega o commit publicado em RENDER_GIT_COMMIT; com ele da para
+    conferir antes de tentar de novo."""
     import os
+    from .horario import agora
+    commit = (os.getenv("RENDER_GIT_COMMIT", "")
+              or os.getenv("SOURCE_VERSION", "")).strip()
     return jsonify({
         "ok": True,
         "modulo": "painel",
+        "versao": commit[:8] if commit else "desconhecida (fora do Render)",
+        "agora": agora().strftime("%d/%m/%Y às %H:%M:%S") + " (Brasília)",
         "senha_configurada": bool(auth.senha_configurada()),
         "segredo_configurado": bool(os.getenv("PAINEL_SECRET", "").strip()),
         "banco_configurado": bool(os.getenv("DATABASE_URL", "").strip()),
@@ -694,8 +705,9 @@ def estado():
 def _serializar(d):
     if not d:
         return None
+    from .horario import texto
     saida = dict(d)
     for chave in ("inicio", "fim"):
         if saida.get(chave) is not None:
-            saida[chave] = saida[chave].strftime("%d/%m/%Y %H:%M")
+            saida[chave] = texto(saida[chave])
     return saida

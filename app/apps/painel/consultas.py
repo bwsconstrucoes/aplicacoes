@@ -103,8 +103,12 @@ def atualizado_em() -> dict | None:
         "  FROM execucoes WHERE fim IS NOT NULL ORDER BY inicio DESC LIMIT 1")
     if not linha:
         return None
+    from .horario import para_brasilia
     tipo, disparo, inicio, fim, ok, mensagem, linhas = linha[0]
-    return {"tipo": tipo, "disparo": disparo, "inicio": inicio, "fim": fim,
+    # convertido aqui, na fonte: se cada tela convertesse por conta propria,
+    # uma esqueceria e mostraria hora de Londres sem ninguem notar
+    return {"tipo": tipo, "disparo": disparo,
+            "inicio": para_brasilia(inicio), "fim": para_brasilia(fim),
             "ok": ok, "mensagem": mensagem, "linhas": linhas}
 
 
