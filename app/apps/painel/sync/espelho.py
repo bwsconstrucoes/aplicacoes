@@ -55,6 +55,63 @@ def definir_progresso(funcao):
     _relator = funcao
 
 
+# ---------------------------------------------------------------------------
+# Etapas concluidas — para a carga poder RETOMAR
+# ---------------------------------------------------------------------------
+# A carga inicial leva horas, e o servico reinicia a cada publicacao de codigo.
+# Sem marcar o que ja terminou, cada interrupcao custava a carga inteira de
+# novo — inclusive os 120 mil titulos, quando ela tinha morrido nos movimentos.
+#
+# A marca fica na propria `sync_state`, com o prefixo "carga:". E o mesmo lugar
+# onde o incremental ja anota onde parou; nao vale tabela nova so para isso.
+PREFIXO_ETAPA = "carga:"
+
+ETAPAS_DA_CARGA = [
+    ("contapagar", "contas a pagar"),
+    ("contareceber", "contas a receber"),
+    ("categorias", "plano de contas"),
+    ("clientes", "clientes e fornecedores"),
+    ("contas_correntes", "contas correntes"),
+    ("movimentos", "pagamentos e recebimentos"),
+    ("planilha", "de-para de obra e projeto"),
+]
+
+
+def etapas_concluidas(conn) -> set:
+    """Quais etapas da carga inicial ja terminaram."""
+    try:
+        cur = conn.execute(
+            "SELECT entidade FROM sync_state WHERE entidade LIKE ?",
+            (PREFIXO_ETAPA + "%",))
+        nomes = {linha[0][len(PREFIXO_ETAPA):] for linha in cur.fetchall()}
+        cur.close()
+        return nomes
+    except Exception:
+        conn.rollback()
+        return set()
+
+
+def _marcar_etapa(conn, nome: str) -> None:
+    """Anota que a etapa terminou INTEIRA.
+
+    Marcar antes do fim faria a retomada pular dado que nao chegou a entrar —
+    e o painel mostraria numeros incompletos como se fossem completos."""
+    conn.execute(
+        "INSERT INTO sync_state (entidade, ultima_sync) VALUES (?,?) "
+        "ON CONFLICT(entidade) DO UPDATE SET ultima_sync=excluded.ultima_sync",
+        (PREFIXO_ETAPA + nome, dt.datetime.now().isoformat(timespec="seconds")))
+    conn.commit()
+    log.info("Etapa concluida: %s", nome)
+
+
+def limpar_etapas(conn) -> None:
+    """Esquece o que ja foi feito. E o que faz a proxima carga comecar do zero."""
+    conn.execute("DELETE FROM sync_state WHERE entidade LIKE ?",
+                 (PREFIXO_ETAPA + "%",))
+    conn.commit()
+    log.info("Etapas da carga esquecidas: a proxima comeca do zero.")
+
+
 def _progresso(etapa, detalhe=""):
     if _relator is None:
         return
@@ -527,17 +584,46 @@ def gravar_clientes(conn, registros):
 # ----------------------------------------------------------------------------- 
 # Carga inicial real (API)
 # ----------------------------------------------------------------------------- 
-def carga_inicial(env=".env"):
+def carga_inicial(env=".env", retomar=True):
+    """Baixa a base inteira do OMIE.
+
+    Com `retomar` (o padrao), pula as etapas que ja terminaram numa tentativa
+    anterior: uma carga que morreu nos movimentos nao refaz os 120 mil titulos.
+    Para comecar do zero, chame `limpar_etapas(conn)` antes — a tela oferece
+    isso como um botao separado, para ser uma decisao e nao um acidente."""
     cli = OmieClient.de_ambiente(env)
     conn = conectar()
     try:
+        feitas = etapas_concluidas(conn) if retomar else set()
+        if feitas:
+            log.info("Retomando: %d etapa(s) ja concluida(s) — %s",
+                     len(feitas), ", ".join(sorted(feitas)))
+        total_etapas = len(ETAPAS_DA_CARGA)
+
+        def _posicao(nome):
+            """'etapa 3 de 7' — para a tela dizer onde estamos no todo."""
+            for i, (chave, _rotulo) in enumerate(ETAPAS_DA_CARGA, start=1):
+                if chave == nome:
+                    return "etapa %d de %d" % (i, total_etapas)
+            return ""
+
+        def _pular(nome, rotulo):
+            log.info("Pulando %s: ja concluida numa tentativa anterior.", nome)
+            _progresso("%s — %s" % (_posicao(nome), rotulo),
+                       "já estava pronto de antes")
+
         for entidade, natureza, metodo in (
             ("contapagar", "P", cli.listar_contas_pagar),
             ("contareceber", "R", cli.listar_contas_receber),
         ):
+            if entidade in feitas:
+                _pular(entidade, "contas a pagar" if natureza == "P"
+                       else "contas a receber")
+                continue
             log.info("=== Carga inicial: %s ===", entidade)
             rotulo = "contas a pagar" if natureza == "P" else "contas a receber"
-            _progresso(f"baixando {rotulo} do OMIE", "começando")
+            _progresso(f"baixando {rotulo} do OMIE",
+                       f"{_posicao(entidade)} — começando")
             tot_tit = tot_rat = 0
             total_esperado = None
             t0 = time.time()
@@ -555,8 +641,8 @@ def carga_inicial(env=".env"):
                     log.warning("  [%s] rateio: %s", cod, motivo)
                 if pagina % 5 == 0 or pagina == total_paginas:
                     _progresso(f"baixando {rotulo} do OMIE",
-                               f"página {pagina} de {total_paginas} — "
-                               f"{tot_tit:,} títulos".replace(",", "."))
+                               f"{_posicao(entidade)} — página {pagina} de "
+                               f"{total_paginas}, {tot_tit:,} títulos".replace(",", "."))
                 if pagina % 20 == 0 or pagina == total_paginas:
                     log.info("  pag %d/%d  | titulos=%s  rateio=%s  (%.0fs)",
                              pagina, total_paginas,
@@ -566,46 +652,73 @@ def carga_inicial(env=".env"):
             log.info("OK %s -> %s titulos, %s linhas de rateio.",
                      entidade, f"{tot_tit:,}".replace(",", "."),
                      f"{tot_rat:,}".replace(",", "."))
+            _marcar_etapa(conn, entidade)
 
         # ---- Catalogos ----
-        log.info("=== Carga inicial: categorias ===")
-        _progresso("baixando o plano de contas", "")
-        tot = 0
-        for pagina, total_paginas, total_registros, registros in cli.listar_categorias():
-            tot += gravar_categorias(conn, registros)
-            if pagina == total_paginas:
-                log.info("OK categorias -> %s registros.", f"{tot:,}".replace(",", "."))
-        conn.execute(
-            "INSERT INTO sync_state (entidade, ultima_sync, total_registros) VALUES ('categorias',?,?) "
-            "ON CONFLICT(entidade) DO UPDATE SET ultima_sync=excluded.ultima_sync, "
-            "total_registros=excluded.total_registros",
-            (dt.datetime.now().isoformat(timespec="seconds"), tot))
+        if "categorias" in feitas:
+            _pular("categorias", "plano de contas")
+        else:
+            log.info("=== Carga inicial: categorias ===")
+            _progresso("baixando o plano de contas", _posicao("categorias"))
+            tot = 0
+            for pagina, total_paginas, total_registros, registros in cli.listar_categorias():
+                tot += gravar_categorias(conn, registros)
+                if pagina == total_paginas:
+                    log.info("OK categorias -> %s registros.", f"{tot:,}".replace(",", "."))
+            conn.execute(
+                "INSERT INTO sync_state (entidade, ultima_sync, total_registros) VALUES ('categorias',?,?) "
+                "ON CONFLICT(entidade) DO UPDATE SET ultima_sync=excluded.ultima_sync, "
+                "total_registros=excluded.total_registros",
+                (dt.datetime.now().isoformat(timespec="seconds"), tot))
+            _marcar_etapa(conn, "categorias")
 
-        log.info("=== Carga inicial: clientes/fornecedores ===")
-        _progresso("baixando clientes e fornecedores", "")
-        tot = 0
-        for pagina, total_paginas, total_registros, registros in cli.listar_clientes():
-            tot += gravar_clientes(conn, registros)
-            if pagina % 20 == 0 or pagina == total_paginas:
-                _progresso("baixando clientes e fornecedores",
-                           f"página {pagina} de {total_paginas}")
-                log.info("  clientes pag %d/%d -> %s", pagina, total_paginas,
-                         f"{tot:,}".replace(",", "."))
-        conn.execute(
-            "INSERT INTO sync_state (entidade, ultima_sync, total_registros) VALUES ('clientes',?,?) "
-            "ON CONFLICT(entidade) DO UPDATE SET ultima_sync=excluded.ultima_sync, "
-            "total_registros=excluded.total_registros",
-            (dt.datetime.now().isoformat(timespec="seconds"), tot))
-        conn.commit()
+        if "clientes" in feitas:
+            _pular("clientes", "clientes e fornecedores")
+        else:
+            log.info("=== Carga inicial: clientes/fornecedores ===")
+            _progresso("baixando clientes e fornecedores", _posicao("clientes"))
+            tot = 0
+            for pagina, total_paginas, total_registros, registros in cli.listar_clientes():
+                tot += gravar_clientes(conn, registros)
+                if pagina % 20 == 0 or pagina == total_paginas:
+                    _progresso("baixando clientes e fornecedores",
+                               f"{_posicao('clientes')} — página {pagina} de {total_paginas}")
+                    log.info("  clientes pag %d/%d -> %s", pagina, total_paginas,
+                             f"{tot:,}".replace(",", "."))
+            conn.execute(
+                "INSERT INTO sync_state (entidade, ultima_sync, total_registros) VALUES ('clientes',?,?) "
+                "ON CONFLICT(entidade) DO UPDATE SET ultima_sync=excluded.ultima_sync, "
+                "total_registros=excluded.total_registros",
+                (dt.datetime.now().isoformat(timespec="seconds"), tot))
+            conn.commit()
+            _marcar_etapa(conn, "clientes")
 
-        log.info("=== Carga inicial: contas correntes ===")
-        _progresso("baixando as contas correntes", "")
-        sincronizar_contas_correntes(conn, cli)
+        if "contas_correntes" in feitas:
+            _pular("contas_correntes", "contas correntes")
+        else:
+            log.info("=== Carga inicial: contas correntes ===")
+            _progresso("baixando as contas correntes", _posicao("contas_correntes"))
+            sincronizar_contas_correntes(conn, cli)
+            _marcar_etapa(conn, "contas_correntes")
 
         # ---- Movimentos + Planilha (helpers reutilizaveis) ----
-        carregar_movimentos_full(conn, cli)
-        sincronizar_planilha(conn)
+        if "movimentos" in feitas:
+            _pular("movimentos", "pagamentos e recebimentos")
+        else:
+            carregar_movimentos_full(conn, cli)
+            _marcar_etapa(conn, "movimentos")
 
+        if "planilha" in feitas:
+            _pular("planilha", "de-para de obra e projeto")
+        else:
+            _progresso("lendo a planilha de projetos", _posicao("planilha"))
+            sincronizar_planilha(conn)
+            _marcar_etapa(conn, "planilha")
+
+        # As marcas existem para sobreviver a uma interrupcao. Terminou inteira,
+        # nao servem mais — e se ficassem, uma proxima "primeira carga" pularia
+        # as sete etapas e nao faria nada, sem dizer por que.
+        limpar_etapas(conn)
         _resumo(conn)
     finally:
         conn.close()

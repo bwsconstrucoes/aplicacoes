@@ -93,6 +93,27 @@
       Esta tela se atualiza sozinha e recarrega quando terminar.</small>
   </div>
 
+  {% set prontas = etapas | selectattr('pronta') | list %}
+  {% if prontas and prontas | length < etapas | length %}
+  <div class="aviso ok">
+    <b>A primeira carga vai retomar de onde parou.</b>
+    {{ prontas | length }} de {{ etapas | length }} etapas já estão prontas — elas
+    não serão baixadas de novo.
+    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px">
+      {% for e in etapas %}
+        <span class="selo {{ 'aprovado' if e.pronta else 'outro' }}">
+          {{ '✓' if e.pronta else '○' }} {{ e.rotulo }}
+        </span>
+      {% endfor %}
+    </div>
+    <p class="dica" style="margin-top:8px">
+      Se desconfiar do que já entrou, dá para
+      <a href="#" id="link-esquecer">apagar essas marcas e começar do zero</a> —
+      mas aí a carga inteira é refeita, e são horas.
+    </p>
+  </div>
+  {% endif %}
+
   <div class="form-grade" style="margin-top:12px">
     {% for chave, descricao in modos.items() %}
       {% if chave != 'carga_inicial' or base_vazia %}
@@ -248,6 +269,22 @@ document.querySelectorAll("button[data-modo]").forEach(b => {
     }
   };
 });
+
+const linkEsquecer = els("link-esquecer");
+if (linkEsquecer) {
+  linkEsquecer.onclick = async (evento) => {
+    evento.preventDefault();
+    if (!confirm("Apagar as marcas de etapas concluídas? A próxima carga vai " +
+                 "baixar TUDO de novo, do começo — são horas. Só faça isso se " +
+                 "desconfiar do que já entrou.")) return;
+    try {
+      const r = await fetch("{{ url_for('painel.esquecer_etapas') }}", {method: "POST"});
+      if ((await r.json()).ok) location.reload();
+    } catch (e) {
+      aviso(saidaSync, "erro", "Não consegui falar com o servidor: " + e);
+    }
+  };
+}
 
 const btnImportar = els("btn-importar");
 btnImportar.onclick = async () => {

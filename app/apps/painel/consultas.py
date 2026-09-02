@@ -682,3 +682,21 @@ def execucao_em_andamento() -> dict | None:
         "silencio_minutos": round(silencio / 60, 1),
         "viva": silencio < MINUTOS_SEM_SINAL_ATE_MORTA * 60,
     }
+
+
+def etapas_da_carga() -> list[dict]:
+    """Quais partes da primeira carga ja terminaram.
+
+    Serve para a tela dizer "vai retomar da etapa 5" em vez de deixar o dono
+    achando que vai esperar tudo de novo — e para ele poder decidir recomecar
+    do zero se desconfiar do que ja entrou."""
+    from .sync.espelho import ETAPAS_DA_CARGA, PREFIXO_ETAPA
+
+    try:
+        feitas = {nome[len(PREFIXO_ETAPA):] for (nome,) in consultar(
+            "SELECT entidade FROM sync_state WHERE entidade LIKE ?",
+            (PREFIXO_ETAPA + "%",))}
+    except Exception:
+        feitas = set()
+    return [{"chave": chave, "rotulo": rotulo, "pronta": chave in feitas}
+            for chave, rotulo in ETAPAS_DA_CARGA]
