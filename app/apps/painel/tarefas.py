@@ -9,42 +9,39 @@ Duas formas de disparar, as duas caindo aqui:
     sobreviveria a um reinício do Render.
   - MANUAL: o botão "Atualizar agora" na tela de Configurações.
 
-Roda numa thread de fundo, porque a atualização leva minutos (ou horas, na
-primeira vez) e a requisição HTTP não pode ficar esperando. UMA de cada vez: se
-já houver atualização rodando, a segunda é recusada em vez de duplicar o
-trabalho e o consumo de memória.
+A ATUALIZAÇÃO RODA EM PROCESSO SEPARADO, e isso não é preciosismo.
 
-O ANDAMENTO VAI PARA O BANCO, não só para a memória do processo. Isso conserta
-dois problemas que só apareceram no primeiro uso de verdade:
+O serviço sobe com `--workers 1 --max-requests 150`: o gunicorn **reinicia o
+processo** a cada ~150 requisições, uma proteção contra vazamento de memória
+posta depois do OOM de julho de 2026. Com um worker só, esse reinício leva
+junto qualquer thread de fundo. A própria tela de acompanhamento consulta o
+servidor a cada poucos segundos; somando o resto do monorepo, o processo se
+recicla a cada poucos minutos.
 
-  - uma carga de horas dizia apenas "baixando", sem nunca dizer quanto já andou;
-  - quando o serviço reiniciava no meio — um envio de código faz isso —, a
-    execução sumia da tela, e o dono via a falha ANTERIOR como se fosse a atual.
+Uma carga de horas rodando numa thread **nunca teria chance de terminar** — e
+foi o que aconteceu três vezes seguidas, sem que a causa aparecesse. Mexer no
+`--max-requests` não é opção: ele protege os outros 14 módulos.
 
-Agora a execução carimba a hora no banco enquanto está viva. Se parar de
-carimbar, a tela sabe dizer que ela foi interrompida, e por quê.
+Então quem faz o trabalho é `executar_sync.py`, iniciado destacado do worker.
+O andamento vai para o banco, e é de lá que a tela lê — o que já era assim, e é
+o que torna a separação possível sem inventar canal de comunicação nenhum.
+
+UMA DE CADA VEZ. A trava não pode mais ser de memória (processos diferentes não
+a enxergam): é o próprio banco que responde se já há execução viva.
 """
 from __future__ import annotations
 
 import logging
-import threading
+import os
+import subprocess
+import sys
 
 logger = logging.getLogger("painel.tarefas")
-
-# Trava de processo. Com --workers 1 (obrigatório neste serviço, ver CLAUDE.md)
-# uma trava em memória basta: só existe um processo servindo o painel.
-_trava = threading.Lock()
-_em_andamento: dict | None = None
 
 # De quanto em quanto tempo o andamento vai para o banco. Não é a cada página:
 # numa carga de mil páginas seriam mil escritas só para dizer "ainda estou
 # aqui". A cada 10 segundos dá andamento suficiente na tela sem incomodar o banco.
 SEGUNDOS_ENTRE_BATIMENTOS = 10
-
-# Sem carimbo por mais que isso, a execução é dada como morta. O valor é
-# generoso de propósito: uma página lenta do OMIE não pode ser confundida com
-# um servidor que caiu.
-MINUTOS_ATE_DAR_POR_MORTA = 10
 
 MODOS = {
     "rapida": "Atualização do dia — baixa o que mudou e refaz os números",
@@ -55,25 +52,18 @@ MODOS = {
 
 
 def estado() -> dict:
-    """O que a tela mostra.
+    """O que a tela mostra, lido do banco.
 
-    Junta o que está na memória DESTE processo com o que está registrado no
-    banco — porque quem reinicia perde a memória, mas o banco continua sabendo
-    que havia uma execução em curso."""
-    memoria = dict(_em_andamento) if _em_andamento else None
+    Antes isto olhava também uma variável em memória. Não olha mais: quem faz o
+    trabalho é outro processo, e memória não se compartilha entre processos. O
+    banco é a única fonte que os dois enxergam."""
     try:
         from .consultas import execucao_em_andamento
         registro = execucao_em_andamento()
     except Exception:      # banco fora do ar, ou migração ainda não aplicada
-        registro = None
-
-    if memoria:
-        if registro and not memoria.get("detalhe_progresso"):
-            memoria["detalhe_progresso"] = registro.get("progresso") or ""
-        return {"rodando": True, "detalhe": memoria, "interrompida": None}
+        return {"rodando": False, "detalhe": None, "interrompida": None}
 
     if registro and registro["viva"]:
-        # está rodando, mas este processo não é o dono da thread
         return {"rodando": True, "detalhe": registro, "interrompida": None}
     return {"rodando": False, "detalhe": None, "interrompida": registro}
 
@@ -84,8 +74,8 @@ def estado() -> dict:
 def _fechar_execucoes_orfas(conn) -> int:
     """Encerra execuções que ficaram abertas de um processo que morreu.
 
-    Sem isto, uma carga interrompida por reinício ficaria "em aberto" para
-    sempre, e a tela nunca mais mostraria o resultado de nada."""
+    Sem isto, uma carga interrompida ficaria "em aberto" para sempre, e a tela
+    nunca mais mostraria o resultado de nenhuma atualização."""
     cur = conn.execute(
         "UPDATE execucoes SET fim = now(), ok = FALSE, mensagem = ? "
         " WHERE fim IS NULL",
@@ -135,9 +125,14 @@ def _carimbar(execucao_id: int, etapa: str, detalhe: str) -> None:
         logger.exception("Painel: não consegui gravar o andamento")
 
 
-def _executar(modo: str, disparo: str) -> None:
-    """O trabalho de verdade. Sempre dentro da trava."""
-    global _em_andamento
+# ---------------------------------------------------------------------------
+# O trabalho
+# ---------------------------------------------------------------------------
+def executar_trabalho(modo: str, execucao_id: int) -> bool:
+    """Faz a atualização inteira. Chamado pelo processo separado.
+
+    Recebe a execução já aberta: quem clicou no botão a abriu, para a tela ter
+    o que mostrar mesmo antes de o processo separado começar."""
     import time
 
     from .db import conexao
@@ -145,33 +140,21 @@ def _executar(modo: str, disparo: str) -> None:
     from .sync import espelho, fato
 
     inicio = agora()
-    _em_andamento = {"modo": modo, "disparo": disparo, "inicio": inicio.isoformat(),
-                     "etapa": "começando", "detalhe_progresso": ""}
-    estado_local = {"id": None, "ultimo": 0.0}
+    ultimo = [0.0]
 
     def _anotar(etapa: str, detalhe: str = "") -> None:
-        """Memória sempre; banco de tempos em tempos."""
-        _em_andamento["etapa"] = etapa
-        _em_andamento["detalhe_progresso"] = detalhe
-        if estado_local["id"] is None:
+        """Vai para o banco de tempos em tempos, não a cada página."""
+        if time.time() - ultimo[0] < SEGUNDOS_ENTRE_BATIMENTOS:
             return
-        if time.time() - estado_local["ultimo"] < SEGUNDOS_ENTRE_BATIMENTOS:
-            return
-        estado_local["ultimo"] = time.time()
-        _carimbar(estado_local["id"], etapa, detalhe)
+        ultimo[0] = time.time()
+        _carimbar(execucao_id, etapa, detalhe)
 
     def _etapa(etapa: str, detalhe: str = "") -> None:
-        """Mudança de etapa: vai para o banco na hora, sem esperar o intervalo."""
-        _em_andamento["etapa"] = etapa
-        _em_andamento["detalhe_progresso"] = detalhe
-        if estado_local["id"] is not None:
-            estado_local["ultimo"] = time.time()
-            _carimbar(estado_local["id"], etapa, detalhe)
+        """Mudança de etapa: vai na hora, sem esperar o intervalo."""
+        ultimo[0] = time.time()
+        _carimbar(execucao_id, etapa, detalhe)
 
     try:
-        with conexao() as conn:
-            estado_local["id"] = _abrir_execucao(conn, modo, disparo)
-
         espelho.definir_progresso(_anotar)
         try:
             # ---- etapa 1: trazer do OMIE o que mudou ---------------------
@@ -200,38 +183,72 @@ def _executar(modo: str, disparo: str) -> None:
                     f"em {duracao/60:.1f} min.").replace(",", ".")
         logger.info("Painel: atualização %s concluída — %s", modo, mensagem)
         with conexao() as conn:
-            _fechar_execucao(conn, estado_local["id"], True, mensagem, n_fato)
+            _fechar_execucao(conn, execucao_id, True, mensagem, n_fato)
+        return True
 
     except Exception as e:  # noqa: BLE001 — a falha tem de aparecer na tela
         logger.exception("Painel: falha na atualização %s", modo)
-        if estado_local["id"] is not None:
-            try:
-                with conexao() as conn:
-                    _fechar_execucao(conn, estado_local["id"], False, str(e), None)
-            except Exception:
-                logger.exception("Painel: não consegui registrar a falha no banco")
-    finally:
-        _em_andamento = None
-        if _trava.locked():
-            _trava.release()
+        try:
+            with conexao() as conn:
+                _fechar_execucao(conn, execucao_id, False, str(e), None)
+        except Exception:
+            logger.exception("Painel: não consegui registrar a falha no banco")
+        return False
+
+
+# ---------------------------------------------------------------------------
+# O disparo
+# ---------------------------------------------------------------------------
+def _iniciar_processo(modo: str, execucao_id: int) -> None:
+    """Inicia o processo separado, DESTACADO do worker do gunicorn.
+
+    "Destacado" é o ponto: sem isto o processo morre junto quando o gunicorn
+    recicla o worker — que é exatamente o que estava matando a carga."""
+    comando = [sys.executable, "-m", "app.apps.painel.executar_sync",
+               modo, str(execucao_id)]
+    raiz = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+
+    extras: dict = {}
+    if os.name == "posix":
+        # sessão própria: o sinal que o gunicorn manda ao worker não o alcança
+        extras["start_new_session"] = True
+    else:
+        extras["creationflags"] = (getattr(subprocess, "DETACHED_PROCESS", 0)
+                                   | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
+
+    subprocess.Popen(comando, cwd=raiz, stdin=subprocess.DEVNULL,
+                     stdout=None, stderr=None, close_fds=True, **extras)
+    logger.info("Painel: atualização '%s' iniciada em processo separado "
+                "(execução %d).", modo, execucao_id)
 
 
 def disparar(modo: str, disparo: str = "manual") -> dict:
-    """Começa a atualização em segundo plano. Devolve o que dizer a quem pediu."""
+    """Começa a atualização. Devolve o que dizer a quem pediu."""
     if modo not in MODOS:
         return {"ok": False, "erro": f"Modo desconhecido: {modo}"}
-    if not _trava.acquire(blocking=False):
-        atual = _em_andamento or {}
+
+    from .db import conexao
+
+    # A trava é o banco, não a memória: quem faz o trabalho é outro processo,
+    # e memória não se compartilha entre processos.
+    atual = estado()
+    if atual["rodando"]:
+        etapa = (atual["detalhe"] or {}).get("etapa", "começando")
         return {"ok": False,
-                "erro": "Já existe uma atualização em andamento "
-                        f"({atual.get('etapa', 'começando')}). Espere ela terminar."}
-    # a trava é liberada dentro de _executar, no finally
+                "erro": f"Já existe uma atualização em andamento ({etapa}). "
+                        "Espere ela terminar."}
+
+    with conexao() as conn:
+        execucao_id = _abrir_execucao(conn, modo, disparo)
+
     try:
-        threading.Thread(target=_executar, args=(modo, disparo),
-                         name=f"painel-sync-{modo}", daemon=True).start()
-    except Exception as e:   # noqa: BLE001
-        # se a thread nem chegou a começar, ninguém vai soltar a trava lá dentro
-        _trava.release()
-        logger.exception("Painel: não consegui iniciar a atualização")
+        _iniciar_processo(modo, execucao_id)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Painel: não consegui iniciar o processo da atualização")
+        with conexao() as conn:
+            _fechar_execucao(conn, execucao_id, False,
+                             f"Não consegui iniciar a atualização: {e}", None)
         return {"ok": False, "erro": f"Não consegui iniciar a atualização: {e}"}
-    return {"ok": True, "modo": modo, "descricao": MODOS[modo]}
+
+    return {"ok": True, "modo": modo, "descricao": MODOS[modo],
+            "execucao": execucao_id}

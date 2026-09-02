@@ -323,7 +323,10 @@ async function acompanhar() {
   if (acompanhando) return;
   acompanhando = true;
   while (true) {
-    await new Promise(r => setTimeout(r, 5000));
+    // 15 segundos, não 5: cada consulta conta para o --max-requests que faz o
+    // gunicorn reciclar o processo. Acompanhar a carga não pode ser o que a
+    // atrapalha.
+    await new Promise(r => setTimeout(r, 15000));
     try {
       const d = await (await fetch("{{ url_for('painel.estado') }}")).json();
       if (d.sincronizacao.rodando) {
