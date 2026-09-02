@@ -1318,9 +1318,11 @@ def api_agenda():
 @login_obrigatorio
 @permissao("ver_dados_pagamento")
 def api_detalhe_pagamento(parcela_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_parcela_no_escopo
     from app.apps.erp.core.pagamentos.lotes import dados_pagamento
     try:
         with get_session() as s:
+            exigir_parcela_no_escopo(s, _usuario_logado(s), parcela_id)
             return jsonify({"ok": True, "pagamento": dados_pagamento(s, parcela_id)})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
@@ -2025,12 +2027,14 @@ def api_comprovante_confirmar():
 @permissao(GET="ver_erp", POST="lancar")
 def api_anexos(entidade: str, entidade_id: int):
     """Anexos guardados no próprio banco, comprimidos."""
+    from app.apps.erp.core.auth.permissoes import exigir_entidade_no_escopo
     from app.apps.erp.core.documentos.armazenamento import listar, salvar
     if entidade not in ("titulo", "obra", "movimentacao", "fornecedor",
                         "medicao", "contrato_servico"):
         return jsonify({"ok": False, "erro": f"Entidade inválida: {entidade}"}), 400
     try:
         with get_session() as s:
+            exigir_entidade_no_escopo(s, _usuario_logado(s), entidade, entidade_id)
             if request.method == "GET":
                 return jsonify({"ok": True, "anexos": listar(s, entidade, entidade_id)})
             arquivo = request.files.get("arquivo")
@@ -2059,9 +2063,11 @@ def api_anexos(entidade: str, entidade_id: int):
 def baixar_anexo(anexo_id: int):
     """Serve o arquivo direto do banco."""
     from flask import Response
+    from app.apps.erp.core.auth.permissoes import exigir_anexo_no_escopo
     from app.apps.erp.core.documentos.armazenamento import obter
     try:
         with get_session() as s:
+            exigir_anexo_no_escopo(s, _usuario_logado(s), anexo_id)
             a = obter(s, anexo_id)
             if not a.conteudo:
                 return jsonify({"ok": False,
@@ -2077,10 +2083,13 @@ def baixar_anexo(anexo_id: int):
 @login_obrigatorio
 @permissao("lancar")
 def api_excluir_anexo(anexo_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_anexo_no_escopo
     from app.apps.erp.core.documentos.armazenamento import excluir
     try:
         with get_session() as s:
-            excluir(s, anexo_id, _usuario_logado(s))
+            usuario = _usuario_logado(s)
+            exigir_anexo_no_escopo(s, usuario, anexo_id)
+            excluir(s, anexo_id, usuario)
             s.commit()
         return jsonify({"ok": True})
     except ErroValidacao as e:
@@ -2383,11 +2392,16 @@ def api_auditoria():
 def api_interessados(titulo_id: int):
     """Quem mais acompanha o título e recebe os avisos."""
     from sqlalchemy import select
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
     from app.apps.erp.core.comum.auditoria import registrar_evento
     from app.apps.erp.db.models.financeiro import TituloInteressado
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
+            # Sem esta trava, dava para se incluir como interessado num título
+            # fora do escopo e passar a receber o aviso de pagamento COM o
+            # comprovante — contornando por fora todo o resto do controle.
+            exigir_titulo_no_escopo(s, atual, titulo_id)
             if request.method == "GET":
                 from app.apps.erp.core.notificacoes import destinatarios
                 from app.apps.erp.db.models.financeiro import Titulo as _T

@@ -94,7 +94,11 @@ class SessaoFalsa:
         return ResultadoFalso([o for o in self.objetos if isinstance(o, entidade)])
 
     def scalar(self, stmt):
-        return self.escalares.pop(0) if self.escalares else 0
+        # Sem resposta preparada devolve None, não 0: uma checagem de escopo
+        # pergunta "achou?" e 0 seria "achei", liberando o acesso por descuido
+        # do dublê. O padrão do dublê tem de errar para o lado que fecha.
+        # Os SUM do core já tratam None com `or 0`.
+        return self.escalares.pop(0) if self.escalares else None
 
     def execute(self, stmt, params=None):
         texto = str(stmt)

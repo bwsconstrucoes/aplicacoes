@@ -4,6 +4,21 @@ Convenções deste repositório. Para o terreno completo — estrutura, endpoint
 variáveis de ambiente, histórico de decisões — ver `CONTEXTO.md` na raiz. Para o
 backlog do ERP, `app/apps/erp/ROTEIRO.md`.
 
+## Como responder ao dono da empresa
+
+Quem pede o trabalho é o dono da BWS e cliente do ERP — **não é programador**.
+Isso muda a resposta, não o cuidado com o código.
+
+- **Português simples, sem jargão.** Termo técnico inevitável vem com uma linha
+  de explicação junto.
+- **Diga o efeito, não a implementação.** O que muda para quem usa o sistema, o
+  que passa a ser possível ou impossível, o que a equipe vai sentir. Nome de
+  arquivo, de função e de biblioteca só quando forem necessários para a decisão.
+- **Nada de código na resposta**, a menos que seja pedido.
+- **Risco e escolha, sempre.** Trade-off, o que ficou de fora e o que não foi
+  verificado são decisão de negócio — e a decisão é dele. Não esconder atrás de
+  "está pronto".
+
 ## Idioma
 
 - **Código em inglês:** nomes de variáveis, funções, classes, argumentos.

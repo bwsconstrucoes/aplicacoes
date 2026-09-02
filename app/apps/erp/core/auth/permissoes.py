@@ -151,6 +151,72 @@ def exigir_obra_no_escopo(s: Session, usuario: Usuario, obra_id: int) -> None:
         raise ErroNaoEncontrado("Obra não encontrada.")
 
 
+def exigir_parcela_no_escopo(s: Session, usuario: Usuario, parcela_id: int) -> None:
+    """A parcela herda o escopo do título dela."""
+    from app.apps.erp.db.models.financeiro import Parcela
+
+    p = s.get(Parcela, parcela_id)
+    if p is None:
+        raise ErroNaoEncontrado("Parcela não encontrada.")
+    if not pode_ver_titulo(s, usuario, p.titulo_id):
+        raise ErroNaoEncontrado("Parcela não encontrada.")
+
+
+def exigir_entidade_no_escopo(s: Session, usuario: Usuario,
+                              entidade_tipo: str, entidade_id: int) -> None:
+    """Escopo de qualquer coisa que possa receber anexo.
+
+    Cada tipo é levado até o dono que já tem escopo definido: título ou obra.
+    Fornecedor e movimentação não pertencem a uma obra — são do cadastro
+    central —, então ficam com quem já enxerga todas as obras. É a leitura
+    estrita de "cada perfil vê o que compete à sua função": na dúvida, fecha.
+    """
+    from app.apps.erp.db.models.financeiro import ContratoMedicao, ContratoServico
+
+    tipo = (entidade_tipo or "").strip()
+    if tipo == "titulo":
+        exigir_titulo_no_escopo(s, usuario, entidade_id)
+        return
+    if tipo == "obra":
+        exigir_obra_no_escopo(s, usuario, entidade_id)
+        return
+    if tipo == "contrato_servico":
+        c = s.get(ContratoServico, entidade_id)
+        if c is None:
+            raise ErroNaoEncontrado("Contrato não encontrado.")
+        exigir_obra_no_escopo(s, usuario, c.obra_id)
+        return
+    if tipo == "medicao":
+        m = s.get(ContratoMedicao, entidade_id)
+        if m is None:
+            raise ErroNaoEncontrado("Medição não encontrada.")
+        c = s.get(ContratoServico, m.contrato_id)
+        if c is None:
+            raise ErroNaoEncontrado("Medição não encontrada.")
+        exigir_obra_no_escopo(s, usuario, c.obra_id)
+        return
+    if obras_do_usuario(s, usuario) is not None:
+        # perfil preso a obras não alcança cadastro central
+        raise ErroNaoEncontrado("Registro não encontrado.")
+
+
+def exigir_anexo_no_escopo(s: Session, usuario: Usuario, anexo_id: int):
+    """Anexo herda o escopo da entidade a que está preso.
+
+    Sem isto, os ids são sequenciais e um laço baixa o acervo inteiro.
+    """
+    from app.apps.erp.db.models.financeiro import Anexo
+
+    a = s.get(Anexo, anexo_id)
+    if a is None:
+        raise ErroNaoEncontrado("Anexo não encontrado.")
+    try:
+        exigir_entidade_no_escopo(s, usuario, a.entidade_tipo, a.entidade_id)
+    except ErroNaoEncontrado:
+        raise ErroNaoEncontrado("Anexo não encontrado.")
+    return a
+
+
 def contexto_permissoes(s: Session, usuario: Usuario) -> dict[str, Any]:
     """O que a tela precisa saber para esconder o que o usuário não pode."""
     obras = obras_do_usuario(s, usuario)

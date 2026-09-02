@@ -1,0 +1,197 @@
+"""Bloco 1 — escopo de objeto nos anexos, nos dados de pagamento e nos avisos.
+
+Alçada responde "este perfil pode esta ação?". Aqui responde-se a outra
+pergunta: "pode NESTE registro?". Sem isso, quem tem a ação alcança qualquer
+id — e os ids são sequenciais.
+
+Regra de resposta: fora do escopo devolve "não encontrado", igual a um id que
+não existe. Dizer "sem permissão" confirmaria a existência do registro.
+"""
+from __future__ import annotations
+
+import contextlib
+
+import pytest
+from flask import Flask
+
+from app.apps.erp import routes
+from app.apps.erp.core.auth import permissoes
+from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+from app.apps.erp.db.models.cadastros import PerfilUsuario as P, UsuarioObra
+from app.apps.erp.db.models.financeiro import (
+    Anexo, ContratoServico, Parcela,
+)
+
+from conftest import SessaoFalsa, novo_usuario
+
+
+ADMIN = novo_usuario(1, P.ADMIN)
+DE_OBRA = novo_usuario(7, P.ADMINISTRATIVO_OBRA)
+SUPERVISOR = novo_usuario(2, P.SUPERVISOR_OBRA)
+
+
+# ---------------------------------------------------------------------------
+# Título
+# ---------------------------------------------------------------------------
+def test_titulo_dentro_do_escopo_e_visivel():
+    s = SessaoFalsa(DE_OBRA, escalares=[1])          # a consulta achou
+
+    assert permissoes.pode_ver_titulo(s, DE_OBRA, 1) is True
+
+
+def test_titulo_fora_do_escopo_nao_e_visivel():
+    s = SessaoFalsa(DE_OBRA, escalares=[None])       # a consulta não achou
+
+    assert permissoes.pode_ver_titulo(s, DE_OBRA, 999) is False
+
+
+def test_titulo_fora_do_escopo_responde_nao_encontrado():
+    s = SessaoFalsa(DE_OBRA, escalares=[None])
+
+    with pytest.raises(ErroNaoEncontrado) as erro:
+        permissoes.exigir_titulo_no_escopo(s, DE_OBRA, 999)
+
+    assert "não encontrado" in str(erro.value).lower()
+
+
+# ---------------------------------------------------------------------------
+# Obra
+# ---------------------------------------------------------------------------
+def test_perfil_que_ve_todas_as_obras_passa():
+    assert permissoes.pode_ver_obra(SessaoFalsa(), ADMIN, 42) is True
+
+
+def test_supervisor_so_ve_a_obra_designada():
+    s = SessaoFalsa(SUPERVISOR, UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    assert permissoes.pode_ver_obra(s, SUPERVISOR, 10) is True
+    assert permissoes.pode_ver_obra(s, SUPERVISOR, 99) is False
+
+
+def test_obra_de_outro_supervisor_responde_nao_encontrado():
+    s = SessaoFalsa(SUPERVISOR, UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    with pytest.raises(ErroNaoEncontrado):
+        permissoes.exigir_obra_no_escopo(s, SUPERVISOR, 99)
+
+
+# ---------------------------------------------------------------------------
+# Anexo — item 1 da auditoria
+# ---------------------------------------------------------------------------
+def _anexo(id_=1, tipo="titulo", entidade_id=5):
+    return Anexo(id=id_, entidade_tipo=tipo, entidade_id=entidade_id,
+                 nome_arquivo="comprovante.pdf")
+
+
+def test_anexo_de_titulo_fora_do_escopo_e_negado():
+    s = SessaoFalsa(DE_OBRA, _anexo(), escalares=[None])
+
+    with pytest.raises(ErroNaoEncontrado):
+        permissoes.exigir_anexo_no_escopo(s, DE_OBRA, 1)
+
+
+def test_anexo_de_titulo_no_escopo_e_liberado():
+    s = SessaoFalsa(DE_OBRA, _anexo(), escalares=[1])
+
+    a = permissoes.exigir_anexo_no_escopo(s, DE_OBRA, 1)
+
+    assert a.nome_arquivo == "comprovante.pdf"
+
+
+def test_anexo_inexistente_e_anexo_fora_do_escopo_dizem_a_mesma_coisa():
+    """Se as mensagens diferissem, a diferença viraria um detector de ids."""
+    inexistente = SessaoFalsa(DE_OBRA)
+    fora = SessaoFalsa(DE_OBRA, _anexo(), escalares=[None])
+
+    with pytest.raises(ErroNaoEncontrado) as e1:
+        permissoes.exigir_anexo_no_escopo(inexistente, DE_OBRA, 1)
+    with pytest.raises(ErroNaoEncontrado) as e2:
+        permissoes.exigir_anexo_no_escopo(fora, DE_OBRA, 1)
+
+    assert str(e1.value) == str(e2.value)
+
+
+def test_anexo_de_obra_segue_o_escopo_da_obra():
+    s = SessaoFalsa(SUPERVISOR, _anexo(tipo="obra", entidade_id=99),
+                    UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    with pytest.raises(ErroNaoEncontrado):
+        permissoes.exigir_anexo_no_escopo(s, SUPERVISOR, 1)
+
+
+def test_anexo_de_medicao_segue_a_obra_do_contrato():
+    s = SessaoFalsa(SUPERVISOR,
+                    _anexo(tipo="contrato_servico", entidade_id=3),
+                    ContratoServico(id=3, obra_id=99),
+                    UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    with pytest.raises(ErroNaoEncontrado):
+        permissoes.exigir_anexo_no_escopo(s, SUPERVISOR, 1)
+
+
+def test_cadastro_central_fica_com_quem_ve_todas_as_obras():
+    """Fornecedor não pertence a obra nenhuma: na dúvida, fecha."""
+    de_obra = SessaoFalsa(SUPERVISOR, UsuarioObra(id=1, usuario_id=2, obra_id=10))
+
+    with pytest.raises(ErroNaoEncontrado):
+        permissoes.exigir_entidade_no_escopo(de_obra, SUPERVISOR, "fornecedor", 4)
+
+    # o admin passa sem erro
+    permissoes.exigir_entidade_no_escopo(SessaoFalsa(), ADMIN, "fornecedor", 4)
+
+
+# ---------------------------------------------------------------------------
+# Parcela — item 4 da auditoria (dados bancários do credor)
+# ---------------------------------------------------------------------------
+def test_parcela_de_titulo_fora_do_escopo_e_negada():
+    s = SessaoFalsa(DE_OBRA, Parcela(id=1, titulo_id=5), escalares=[None])
+
+    with pytest.raises(ErroNaoEncontrado):
+        permissoes.exigir_parcela_no_escopo(s, DE_OBRA, 1)
+
+
+def test_parcela_de_titulo_no_escopo_passa():
+    s = SessaoFalsa(DE_OBRA, Parcela(id=1, titulo_id=5), escalares=[1])
+
+    permissoes.exigir_parcela_no_escopo(s, DE_OBRA, 1)
+
+
+def test_parcela_inexistente_responde_igual_a_fora_do_escopo():
+    inexistente = SessaoFalsa(DE_OBRA)
+    fora = SessaoFalsa(DE_OBRA, Parcela(id=1, titulo_id=5), escalares=[None])
+
+    with pytest.raises(ErroNaoEncontrado) as e1:
+        permissoes.exigir_parcela_no_escopo(inexistente, DE_OBRA, 1)
+    with pytest.raises(ErroNaoEncontrado) as e2:
+        permissoes.exigir_parcela_no_escopo(fora, DE_OBRA, 1)
+
+    assert str(e1.value) == str(e2.value)
+
+
+# ---------------------------------------------------------------------------
+# Ponta a ponta: a resposta HTTP é 404, não 403
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def app():
+    a = Flask(__name__)
+    a.secret_key = "teste"
+    a.register_blueprint(routes.bp)
+    return a
+
+
+def test_baixar_anexo_fora_do_escopo_devolve_404(app, monkeypatch):
+    """Prova ponta a ponta do bloco 1: a rota que baixava qualquer arquivo."""
+    sessao = SessaoFalsa(DE_OBRA, _anexo(), escalares=[None])
+
+    @contextlib.contextmanager
+    def _fake():
+        yield sessao
+
+    monkeypatch.setattr(routes, "get_session", _fake)
+    with app.test_client() as c:
+        with c.session_transaction() as flask_sessao:
+            flask_sessao["erp_usuario_id"] = 7
+        r = c.get("/erp/anexo/1")
+
+    assert r.status_code == 404
+    assert "não encontrado" in r.get_json()["erro"].lower()
