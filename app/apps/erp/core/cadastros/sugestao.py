@@ -26,6 +26,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core.documentos.leitor import _registrar_consumo
 from app.apps.erp.db.models.cadastros import Categoria, Fornecedor, Obra, Usuario
 from app.apps.erp.db.models.financeiro import Titulo
 
@@ -90,11 +91,12 @@ def por_ia(s: Session, documento: dict[str, Any],
         texto += " · itens: " + "; ".join(str(i.get("descricao") or "") for i in itens[:8])
     if len(texto.strip(" ·")) < 8:
         return None
+    modelo = os.getenv("ERP_MODELO_IA", "gpt-4o-mini")
+    _inicio = _time.perf_counter()
     try:
         from openai import OpenAI
-        _inicio = _time.perf_counter()
         resp = OpenAI(api_key=os.environ["OPENAI_API_KEY"]).chat.completions.create(
-            model=os.getenv("ERP_MODELO_IA", "gpt-4o-mini"), temperature=0, max_tokens=200,
+            model=modelo, temperature=0, max_tokens=200,
             messages=[
                 {"role": "system", "content":
                  "Você classifica despesas de uma construtora no plano de contas dela. "
@@ -105,15 +107,23 @@ def por_ia(s: Session, documento: dict[str, Any],
                 {"role": "user", "content":
                  f"Contas disponíveis (codigo|descrição|quando usar):\n{catalogo}\n\n"
                  f"Documento: {texto[:1200]}"}])
-        from app.apps.erp.core.documentos.leitor import _registrar_consumo
-        _registrar_consumo(resp, os.getenv("ERP_MODELO_IA", "gpt-4o-mini"),
-                           "sugestao_categoria",
-                           int((_time.perf_counter() - _inicio) * 1000))
+    except Exception as e:
+        # a chamada falhou (ou nem saiu): registra a falha e desiste
+        logger.warning("ERP/sugestão: IA não classificou (%s)", e)
+        _registrar_consumo(None, modelo, "sugestao_categoria",
+                           int((_time.perf_counter() - _inicio) * 1000),
+                           sucesso=False, erro=str(e))
+        return None
+    # a chamada saiu e custou: registra ANTES de interpretar a resposta, para
+    # uma resposta mal formada não sumir com o gasto
+    _registrar_consumo(resp, modelo, "sugestao_categoria",
+                       int((_time.perf_counter() - _inicio) * 1000))
+    try:
         bruto = (resp.choices[0].message.content or "").strip()
         bruto = re.sub(r"^```(?:json)?|```$", "", bruto, flags=re.MULTILINE).strip()
         d = json.loads(bruto)
     except Exception as e:
-        logger.warning("ERP/sugestão: IA não classificou (%s)", e)
+        logger.warning("ERP/sugestão: resposta da IA ilegível (%s)", e)
         return None
     codigo = (d.get("codigo") or "").strip()
     if not codigo:

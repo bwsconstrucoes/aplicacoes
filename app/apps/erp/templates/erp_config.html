@@ -71,6 +71,21 @@
     <tbody id="tb-contas"></tbody></table>
 </div>
 
+<div class="cartao" id="bloco-ia">
+  <div class="cartao-cab"><h3>Consumo de IA</h3>
+    <small>leitura de documentos, faturas, contratos e sugestão de conta</small></div>
+  <div id="ia-alerta"></div>
+  <div class="form-grade" style="align-items:end; margin-bottom:10px">
+    <div class="campo"><label>Teto mensal (US$)</label>
+      <input id="ia-teto" placeholder="ex.: 25" inputmode="decimal" style="max-width:160px">
+      <div class="dica">Ao passar de 80% o administrador recebe um aviso no Telegram.
+        Nada é bloqueado — é só para ninguém descobrir a conta no fim do mês.
+        Vazio desliga o aviso.</div></div>
+    <div><button class="btn secundario" id="btn-ia-teto">Salvar teto</button></div>
+  </div>
+  <div id="ia-painel" class="cartao-dica">carregando…</div>
+</div>
+
 <div class="cartao">
   <div class="cartao-cab"><h3>Usuários</h3><small>quem lança, quem autoriza, quem paga</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
@@ -637,16 +652,34 @@ els("btn-substituir").addEventListener("click", () => {
   });
   els("dlg").showModal();
 });
+function desenharAlertaIA(c){
+  // alcance do teto em palavras: é o que o dono quer ver antes da fatura
+  const usd = v => `US$ ${Number(v).toFixed(2)}`;
+  if (els("ia-teto") && document.activeElement !== els("ia-teto"))
+    els("ia-teto").value = c.teto_mensal != null ? String(c.teto_mensal).replace(".", ",") : "";
+  if (!c.teto_mensal) { els("ia-alerta").innerHTML = ""; return; }
+  const tipo = c.alerta_teto === "ESTOUROU" ? "erro" : (c.alerta_teto ? "alerta" : "ok");
+  const frase = c.alerta_teto === "ESTOUROU"
+    ? `<b>Teto do mês estourado:</b> ${usd(c.custo_mes_atual)} de ${usd(c.teto_mensal)} (${c.percentual_teto}%).`
+    : c.alerta_teto
+      ? `<b>Atenção:</b> ${c.percentual_teto}% do teto do mês já foi — ${usd(c.custo_mes_atual)} de ${usd(c.teto_mensal)}.`
+      : `${c.percentual_teto}% do teto do mês (${usd(c.custo_mes_atual)} de ${usd(c.teto_mensal)}).`;
+  els("ia-alerta").innerHTML = `<div class="aviso ${tipo}" style="margin-bottom:10px">${frase}
+    Nada é bloqueado; o aviso é para decidir com antecedência.</div>`;
+}
+
 async function carregarIA(){
   try {
     const d = await api("/erp/api/ia/consumo");
     const c = d.consumo;
     const brl = v => `US$ ${v.toFixed(4)}`;
+    desenharAlertaIA(c);
+    els("ia-painel").className = "";
     els("ia-painel").innerHTML = `
       <div class="kpis">
-        <div class="kpi estatico"><div class="kpi-rotulo">Este mês</div>
+        <div class="kpi estatico ${c.alerta_teto === "ESTOUROU" ? "vermelho" : ""}"><div class="kpi-rotulo">Este mês</div>
           <div class="kpi-valor" style="font-size:18px">${brl(c.custo_mes_atual)}</div>
-          <div class="kpi-sub">projeção ${brl(c.projecao_mes)}</div></div>
+          <div class="kpi-sub">projeção ${brl(c.projecao_mes)}${c.teto_mensal ? ` · teto US$ ${c.teto_mensal.toFixed(2)}` : ""}</div></div>
         <div class="kpi estatico ciano"><div class="kpi-rotulo">Últimos ${c.periodo_dias} dias</div>
           <div class="kpi-valor" style="font-size:18px">${brl(c.custo_total)}</div>
           <div class="kpi-sub">${c.chamadas} chamada(s)</div></div>
@@ -674,7 +707,7 @@ async function carregarIA(){
 
       <div class="form-grade">
         <div><h4>Por modelo</h4><table><tbody>${c.por_modelo.map(m=>`<tr>
-          <td class="dados">${m.modelo}</td><td class="dados">${m.chamadas}</td>
+          <td class="dados">${m.modelo}${m.preco_conhecido ? "" : ` <small title="modelo fora da tabela de preços — custo calculado pelo preço padrão">(preço estimado)</small>`}</td><td class="dados">${m.chamadas}</td>
           <td class="direita dados">${brl(m.custo)}</td></tr>`).join("")}</tbody></table></div>
         <div><h4>Por pessoa</h4><table><tbody>${c.por_pessoa.map(m=>`<tr>
           <td>${m.pessoa}</td><td class="dados">${m.chamadas}</td>
@@ -682,11 +715,28 @@ async function carregarIA(){
       </div>
       <div class="cartao-dica">Preços por milhão de tokens (entrada/saída):
         ${Object.entries(c.precos).map(([m,p])=>`${m} US$ ${p[0]}/${p[1]}`).join(" · ")}.
-        Atualize em <code>core/comum/ia_custo.py</code> se a OpenAI mudar a tabela.</div>`
+        Modelo fora da lista é cobrado a US$ ${c.preco_padrao[0]}/${c.preco_padrao[1]} e
+        aparece como "preço estimado". Atualize em <code>core/comum/ia_custo.py</code>
+        se a OpenAI mudar a tabela.</div>`
       : `<div class="cartao-dica">Nenhuma chamada de IA registrada ainda. O consumo
          passa a aparecer aqui conforme os documentos forem lidos.</div>`}`;
-  } catch(e){ els("ia-painel").innerHTML = `<div class="cartao-dica">${e.message}</div>`; }
+  } catch(e){
+    const alvo = els("ia-painel");
+    if (alvo) alvo.innerHTML = `<div class="cartao-dica">${e.message}</div>`;
+  }
 }
+
+els("btn-ia-teto") && els("btn-ia-teto").addEventListener("click", async () => {
+  try {
+    const d = await api("/erp/api/ia/teto", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({teto: els("ia-teto").value})});
+    aviso("ia-alerta", d.situacao.teto
+      ? `Teto salvo: US$ ${d.situacao.teto.toFixed(2)} por mês.`
+      : "Teto removido — o aviso está desligado.", "ok");
+    setTimeout(carregarIA, 1200);
+  } catch(e){ aviso("ia-alerta", e.message, "erro"); }
+});
 
 carregar();
 carregarIA();

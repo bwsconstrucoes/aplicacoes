@@ -131,6 +131,22 @@ class Usuario(Base):
         return f"<Usuario {self.id} {self.email} {self.perfil}>"
 
 
+class Parametro(Base):
+    """Configuração do sistema, uma linha por chave (ex.: teto mensal de IA).
+
+    Não é lugar de credencial — isso continua na Environment do Render. É
+    para número e escolha que o ADMIN ajusta pela tela e que não justificam
+    uma coluna própria em tabela nenhuma.
+    """
+    __tablename__ = "parametros"
+
+    chave: Mapped[str] = mapped_column(Text, primary_key=True)
+    valor: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    atualizado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+
+
 class UsuarioObra(Base):
     """Obras que o supervisor enxerga. Gestor vê todas; administrativo de obra
     vê o que ele mesmo lançou."""

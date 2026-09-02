@@ -210,6 +210,22 @@ def _fora_do_escopo(e: ErroNaoEncontrado):
 
 
 @bp.before_request
+def _abrir_contexto_ia():
+    """Quem está logado "assina" as chamadas de IA desta requisição. Zerado a
+    cada requisição porque as threads do gunicorn são reaproveitadas."""
+    from flask import g
+    from app.apps.erp.core.comum.ia_custo import iniciar_contexto_requisicao
+    g.erp_ia_token = iniciar_contexto_requisicao(session.get("erp_usuario_id"))
+
+
+@bp.teardown_request
+def _fechar_contexto_ia(_exc=None):
+    from flask import g
+    from app.apps.erp.core.comum.ia_custo import encerrar_contexto_requisicao
+    encerrar_contexto_requisicao(g.pop("erp_ia_token", None))
+
+
+@bp.before_request
 def _guarda_permissao():
     endpoint = request.endpoint or ""
     if endpoint in _ISENTOS or endpoint in _ENDPOINTS_PUBLICOS:
@@ -1168,9 +1184,11 @@ def api_ler_documento():
     arquivo = request.files.get("arquivo")
     if arquivo is None:
         return jsonify({"ok": False, "erro": "Nenhum arquivo enviado."}), 400
+    from app.apps.erp.core.comum.ia_custo import contexto
     try:
-        lido = ler_documento(arquivo.read(), arquivo.filename or "",
-                             dica_usuario=(request.form.get("dica") or ""))
+        with contexto(operacao="leitura_documento"):
+            lido = ler_documento(arquivo.read(), arquivo.filename or "",
+                                 dica_usuario=(request.form.get("dica") or ""))
     except ErroLeitura as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
@@ -3657,6 +3675,36 @@ def api_ia_consumo():
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha no painel de IA")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/ia/teto", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_ia_teto():
+    """Teto mensal de gasto com IA (US$). Só avisa; não bloqueia nada."""
+    from app.apps.erp.core.auth.permissoes import exigir
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.core.comum.ia_custo import definir_teto_mensal, situacao_teto
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir(usuario, "configurar")
+            teto = definir_teto_mensal(s, d.get("teto"), usuario.id)
+            registrar_evento(s, "parametro", 0, "IA_TETO_ALTERADO",
+                             {"teto_usd": (str(teto) if teto is not None else None)},
+                             usuario.id)
+            s.commit()
+            return jsonify({"ok": True, "situacao": situacao_teto(s)})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ValueError as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao definir teto de IA")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

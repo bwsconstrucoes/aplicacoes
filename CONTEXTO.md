@@ -316,6 +316,29 @@ caem todos em `PROPRIOS`: **a ausência de configuração fecha**. Quem está em
 `OBRAS_DESIGNADAS` sem nenhuma obra associada enxerga só a autoria — uma lista
 vazia não pode virar "vê tudo".
 
+### 3.10 Consumo de IA: um ponto de registro, um teto que só avisa
+
+Toda leitura por IA passa por `documentos/leitor._chamar_ia`, e é **ali** que o
+consumo é gravado em `ia_uso` — não em cada tela. Quem chama só declara a
+operação com `ia_custo.contexto(operacao="fatura_cartao")`; o usuário vem do
+`before_request` do blueprint; o leitor sabe os tokens. Tela nova que use o
+leitor já nasce contabilizada (sem declarar, cai em `leitura_documento`).
+Falha da OpenAI também é registrada (`sucesso=False`) — a chamada pode ter
+custado, e o painel precisa mostrar que a leitura está quebrando.
+
+O registro roda em **sessão própria, com commit**: perder uma linha do painel
+é aceitável, perder um lançamento não. Por isso ele sobrevive a um rollback da
+operação principal — é intencional.
+
+Teto mensal (`parametros.ia_teto_mensal_usd`, tela de Configurações): ao
+passar de 80% os ADMIN com telefone/CPF recebem um Telegram; ao estourar,
+outro. Uma vez por nível por mês (`parametros.ia_alerta_enviado`). **Nada é
+bloqueado** — o aviso existe para a decisão ser tomada antes da fatura, não
+para travar quem está lançando.
+
+Preços em `PRECOS` (US$/milhão de tokens). Modelo fora da tabela é cobrado
+pelo `PRECO_PADRAO` e aparece no painel como "preço estimado".
+
 ---
 
 ## 4. Variáveis de ambiente
@@ -744,6 +767,16 @@ Quando eu pedir nova feature ou adaptação:
   **Decisão de negócio que guiou:** cada perfil só vê o que compete à sua
   função, e o detalhe de um registro respeita exatamente o mesmo escopo que a
   listagem — sem exceções de leitura entre obras.
+- **2026-09-02 — O registro de consumo de IA nunca funcionou; corrigido.** O
+  commit `fd7e306` criou a tabela, o painel e a tabela de preços — mas a
+  função que grava (`_registrar_consumo`) nunca foi escrita: a sugestão de
+  conta por IA a importava, a importação falhava dentro de um `except
+  Exception`, e o resultado era descartar uma resposta que já tinha custado
+  dinheiro. E o painel escrevia num `div` que não existia no HTML. Correção:
+  registro no ponto único do leitor (§3.10), operação declarada por contexto,
+  cartão na tela, teto mensal com aviso. Lição: funcionalidade "entregue" que
+  ninguém abriu na tela não foi entregue — o roteiro de homologação vale para
+  isso também.
 - **2026-09-02 — Alcance do operador virou configuração, não regra de cargo.**
   A pergunta em aberto era se o administrativo de obra devia ver a obra inteira
   ou só o que ele mesmo lançou. **Resposta do dono: depende da pessoa** — o

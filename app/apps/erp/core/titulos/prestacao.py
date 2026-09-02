@@ -92,12 +92,14 @@ def _normalizar(t: str) -> str:
 # ---------------------------------------------------------------------------
 def ler_comprovante_item(conteudo: bytes, nome_arquivo: str) -> dict[str, Any]:
     """Lê UM comprovante e devolve a linha correspondente."""
+    from app.apps.erp.core.comum.ia_custo import contexto
     from app.apps.erp.core.documentos.leitor import ErroLeitura, ler_documento
     try:
-        d = ler_documento(conteudo, nome_arquivo,
-                          dica_usuario="É um comprovante de despesa miúda (cupom fiscal, "
-                                       "recibo, nota de compra). Extraia data, valor total, "
-                                       "estabelecimento e o que foi comprado.")
+        with contexto(operacao="comprovante_fundo_fixo"):
+            d = ler_documento(conteudo, nome_arquivo,
+                              dica_usuario="É um comprovante de despesa miúda (cupom fiscal, "
+                                           "recibo, nota de compra). Extraia data, valor total, "
+                                           "estabelecimento e o que foi comprado.")
     except ErroLeitura as e:
         return {"descricao": "", "valor": "", "data_despesa": "",
                 "origem_leitura": "FALHA", "confianca": "BAIXA",
@@ -170,13 +172,15 @@ def ler_bloco_de_comprovantes(conteudo: bytes, nome_arquivo: str,
 
 def ler_fatura_cartao(conteudo: bytes, nome_arquivo: str) -> dict[str, Any]:
     """Lê a fatura inteira e devolve todas as compras como linhas."""
+    from app.apps.erp.core.comum.ia_custo import contexto
     from app.apps.erp.core.documentos.leitor import ErroLeitura, ler_documento
     try:
-        d = ler_documento(conteudo, nome_arquivo,
-                          dica_usuario="É uma FATURA DE CARTÃO DE CRÉDITO. Liste TODAS as "
-                                       "compras em 'itens', cada uma com data, "
-                                       "estabelecimento na descrição e valor. O total da "
-                                       "fatura vai em valor_total.")
+        with contexto(operacao="fatura_cartao"):
+            d = ler_documento(conteudo, nome_arquivo,
+                              dica_usuario="É uma FATURA DE CARTÃO DE CRÉDITO. Liste TODAS as "
+                                           "compras em 'itens', cada uma com data, "
+                                           "estabelecimento na descrição e valor. O total da "
+                                           "fatura vai em valor_total.")
     except ErroLeitura as e:
         raise ErroValidacao(f"Não consegui ler a fatura: {e}")
     itens = []

@@ -180,6 +180,15 @@
 - [x] Aposentar o `.env` commitado: senha do banco trocada no Render e usuário
       antigo apagado (2026-09-02). O `.gitignore` foi reescrito — estava com
       marcadores de conflito de merge dentro dele
+- [x] IA — consumo registrado de verdade: as cinco operações (leitura de
+      documento, comprovante do fundo fixo, fatura de cartão, contrato de
+      locação, sugestão de conta) mais o comprovante de pagamento passam pelo
+      ponto único do leitor e gravam em `ia_uso`. A função de registro não
+      existia e o painel não tinha lugar na tela (2026-09-02)
+- [x] IA — teto mensal configurável em Configurações (migração 030) com aviso
+      no Telegram aos ADMIN ao passar de 80% e ao estourar. Só avisa
+- [ ] IA — depois da migração 030: definir o teto na tela e conferir que o
+      painel enche conforme os documentos são lidos
 - [ ] Trocar na origem o token da prefeitura que ficou no histórico do Git
       (commit `fa985ab`); o código já lê de `EL_NFSE_TOKEN`
 - [ ] **PENDENTE DE JUNÇÃO — ramo `claude/oi-vjvrn8`** (2026-09-02). O dono
