@@ -324,3 +324,64 @@ def test_as_colunas_da_migracao_batem_com_o_mapeamento_da_planilha():
     for derivada in ("valor_num", "solicitacao_d", "vencimento_d",
                      "data_pagamento_d", "dt_autorizacao_d"):
         assert re.search(rf"^\s+{derivada}\s+", trecho, re.MULTILINE)
+
+
+# ---------------------------------------------------------------------------
+# A varredura completa: TODO literal de SQL do módulo
+# ---------------------------------------------------------------------------
+PALAVRAS_DE_SQL = re.compile(
+    r"\b(SELECT|INSERT|UPDATE|DELETE|WHERE|FROM|GROUP BY|ORDER BY|VALUES|"
+    r"CASE|COALESCE)\b", re.I)
+
+
+def _literais_de_texto(caminho):
+    """Todo literal de string do arquivo, pela árvore sintática.
+
+    Pela árvore, e não por expressão regular, porque boa parte do SQL deste
+    módulo é montada por pedaços dentro de f-strings — e uma regex sobre o
+    texto do arquivo pegaria os pedaços pela metade."""
+    arvore = ast.parse(caminho.read_text(encoding="utf-8"))
+    for no in ast.walk(arvore):
+        if isinstance(no, ast.Constant) and isinstance(no.value, str):
+            yield no.value, no.lineno
+        elif isinstance(no, ast.JoinedStr):
+            for parte in no.values:
+                if isinstance(parte, ast.Constant) and isinstance(parte.value, str):
+                    yield parte.value, no.lineno
+
+
+def test_todo_sql_do_modulo_sobrevive_a_traducao():
+    """A varredura que não depende de eu lembrar de listar um trecho novo.
+
+    Cada `LIKE '%pix%'`, cada expressão regular do Postgres, cada `%` que
+    aparecer em qualquer consulta deste módulo passa por aqui. Um deles mal
+    traduzido devolve resultado VAZIO em vez de erro — silencioso, que é o
+    pior tipo de defeito: o filtro simplesmente deixa de achar."""
+    from app.apps.analisesps.db import traduzir_placeholders
+
+    suspeitos = []
+    conferidos = 0
+    for arq in _arquivos():
+        if arq.suffix != ".py":
+            continue
+        for texto, linha in _literais_de_texto(arq):
+            if not PALAVRAS_DE_SQL.search(texto):
+                continue
+            if "%" not in texto and "?" not in texto:
+                continue
+            conferidos += 1
+            traduzido = traduzir_placeholders(texto)
+            quantos = traduzido.count("%s")
+            voltou = como_o_psycopg2_veria(traduzido, quantos)
+            esperado = texto
+            for i in range(quantos):
+                esperado = esperado.replace("?", f"'p{i}'", 1)
+            if voltou != esperado:
+                suspeitos.append(f"{arq.name}:{linha}  {texto[:70]!r}")
+
+    assert conferidos > 30, (
+        f"a varredura só achou {conferidos} pedaços de SQL — o filtro de "
+        "arquivos ou de palavras deve ter ficado estreito demais")
+    assert not suspeitos, (
+        "estes pedaços de SQL chegam DIFERENTES ao banco depois da tradução "
+        "dos marcadores:\n" + "\n".join(suspeitos))
