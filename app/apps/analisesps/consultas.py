@@ -324,10 +324,13 @@ def base_carregada() -> dict:
         quantas = linha[0] if linha else 0
     except Exception:  # noqa: BLE001 — tabela ainda não criada
         return {"pronta": False, "quantidade": 0, "ultima": None}
-    linha = consultar_um(
-        "SELECT valor FROM analisesps.meta WHERE chave = 'ultima_sincronizacao'")
-    return {"pronta": quantas > 0, "quantidade": quantas,
-            "ultima": linha[0] if linha else None}
+    try:
+        linha = consultar_um(
+            "SELECT valor FROM analisesps.meta WHERE chave = 'ultima_sincronizacao'")
+        ultima = linha[0] if linha else None
+    except Exception:  # noqa: BLE001 — não saber a data não justifica derrubar a tela
+        ultima = None
+    return {"pronta": quantas > 0, "quantidade": quantas, "ultima": ultima}
 
 
 # ---------------------------------------------------------------------------

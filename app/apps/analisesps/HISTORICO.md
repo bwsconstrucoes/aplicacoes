@@ -38,16 +38,27 @@ das SPs bate na casa do centavo com o Streamlit (R$ 250.061.950,39).
 O Streamlit original continua em `app/analisesps/app/` — **não** é importado
 pelo serviço e o dono ainda pode rodá-lo no PC.
 
-### O que está pendente AGORA — perguntar ao dono
+### O que está pendente AGORA
 
-Nada disto consta nos commits; só o dono sabe:
+Respondido pelo dono em **03/09/2026**:
 
-- As migrações **001 e 002** foram aplicadas no Render (tela de Configurações
-  do módulo)?
-- As duas senhas (perfil Consulta e perfil Operador) foram definidas na
-  Environment do Render? Sem elas ninguém entra — falha fechado.
-- A **carga da planilha** já rodou inteira alguma vez online?
-- O dono já parou de usar o Streamlit no PC, ou os dois convivem?
+- **Senhas:** cadastradas no Render. ✔
+- **Migrações 001 e 002:** **NÃO aplicadas.** O dono achava que sim, mas o
+  defeito abaixo prova que não — e explica por quê: a única tela que aplica
+  as migrações era a que estourava.
+- **Carga da planilha:** nunca rodou. A base está vazia no ar.
+- **Streamlit no PC:** continua em uso, e continuará até este módulo estar de
+  pé de verdade.
+
+**A sequência que falta, nesta ordem:**
+
+1. Publicar a correção do defeito de estreia (abaixo) — sem ela a tela de
+   Configurações não abre.
+2. Na tela de Configurações, apertar **"Aplicar atualizações do banco"**
+   (aplica 001 e 002).
+3. Ainda ali, disparar a **Primeira carga**. Demora alguns minutos; pode
+   fechar a página.
+4. Só então navegar as nove telas com dado real — **ninguém nunca fez isso**.
 
 ---
 
@@ -115,11 +126,43 @@ Mesma regra do ERP e do painel.
   aparecia e o boleto de 47 dígitos nunca casava com a SP.
 - **02/09 — `fpdf` antigo no PC** mascarava diferenças com o `fpdf2` do
   serviço. Ambiente local foi alinhado.
+- **03/09 — o impasse de estreia: a tela que conserta era a tela quebrada.**
+  Na primeira vez que o dono abriu o módulo no ar, Solicitações mostrou "a
+  base ainda não foi carregada" e Configurações estourou com "Deu erro".
+
+  Causa: `tarefas.ultima_concluida()` lia `analisesps.execucoes` **sem
+  proteção**, e essa tabela só nasce na migração 001. Com o banco de pé e as
+  migrações por aplicar — o estado exato de qualquer estreia — a leitura
+  estourava e derrubava a tela. E era a **única** tela com o botão que aplica
+  as migrações: sem ela, não havia como sair do estado.
+
+  Por que passou por 611 testes: os testes de Configurações ou derrubavam o
+  banco **inteiro** (aí `listar_estado()` falha primeiro, e a leitura da
+  última execução nem é tentada), ou dublavam `ultima_concluida`. Nenhum
+  cobria o meio-termo — e `listar_estado()` sobrevive sem migração nenhuma
+  porque ela mesma cria o schema e a tabela de controle.
+
+  A lição, que vale para o módulo todo: **"banco fora do ar" e "banco de pé,
+  estrutura ainda não criada" são dois cenários diferentes**, e o segundo é o
+  que todo mundo encontra no primeiro dia. Corrigido protegendo
+  `ultima_concluida()` (igual à `estado()` ao lado) e a leitura de
+  `analisesps.meta` em `base_carregada()`, que tinha o mesmo defeito. Um
+  teste novo monta a tela nesse estado.
 
 ## Coisas pequenas que mordem
 
-- As telas **não foram vistas num navegador** pelo chat que as fez (a
-  extensão não conectava). Foram geradas como HTML com dados de exemplo e
-  conferidas estruturalmente. **A primeira navegação real é do dono.**
+- As telas **quase não foram vistas num navegador**. O chat que as fez não
+  conseguiu conectar a extensão e as conferiu só estruturalmente. Em 03/09
+  duas foram abertas de verdade, num navegador, contra a aplicação rodando no
+  PC: a de **entrada** (o logo, o campo, o texto de ajuda e a folha de estilo
+  carregam; o login funciona) e a de **Configurações** com o banco fora de
+  alcance (o recado aparece no lugar certo, sem estourar). **As outras sete
+  continuam sem nenhuma navegação real**, e nenhuma foi vista com dado de
+  verdade — não há dado no ar ainda.
+- Na tela de Configurações com o banco inalcançável, o resumo da estrutura diz
+  **"0 aplicada(s), 0 pendente(s) — O banco está em dia"**. Não está: ele é
+  desconhecido. O recado de erro logo acima salva a leitura, mas a frase
+  deveria dizer que não dá para saber. Não foi mexido aqui para não misturar
+  com a correção do impasse de estreia.
 - Os 57 testes com banco só rodam no GitHub Actions. Sem `ERP_TEST_DATABASE_URL`
   são pulados.
