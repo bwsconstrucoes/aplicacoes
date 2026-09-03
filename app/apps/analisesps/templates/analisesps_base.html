@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Análise de SPs — BWS{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('analisesps.static', filename='analisesps.css') }}">
+</head>
+<body>
+<header class="topo">
+  <a class="topo-marca" href="{{ url_for('analisesps.solicitacoes') }}"
+     style="text-decoration:none; color:inherit">
+    <div class="topo-brasao">BWS</div>
+    <div>
+      <div class="topo-titulo">Análise de SPs</div>
+      <div class="topo-sub">Contas a pagar</div>
+    </div>
+  </a>
+
+  <nav class="topo-abas">
+    {% for chave, rotulo, rota in [
+        ('solicitacoes', 'Solicitações', 'analisesps.solicitacoes'),
+        ('lote',         'Lote',         'analisesps.tela_lote'),
+        ('relatorio',    'Relatório',    'analisesps.relatorio'),
+        ('auditoria',    'Auditoria',    'analisesps.auditoria'),
+        ('ratear',       'Ratear',       'analisesps.ratear'),
+        ('bradesco',     'Bradesco',     'analisesps.tela_bradesco'),
+        ('agenda',       'Agenda',       'analisesps.tela_agenda'),
+        ('log',          'Log',          'analisesps.log'),
+        ('configuracoes','Configurações','analisesps.configuracoes')] %}
+      <a class="topo-aba {% if aba == chave %}ativa{% endif %}"
+         href="{{ url_for(rota) }}">{{ rotulo }}</a>
+    {% endfor %}
+  </nav>
+
+  <div class="topo-direita">
+    {% if perfil %}
+      <div class="topo-meta">
+        Perfil <b>{{ perfil }}</b>
+        {% if not pode_operar %}<br><small>vê, mas não altera</small>{% endif %}
+      </div>
+    {% endif %}
+    <a class="topo-btn" href="{{ url_for('analisesps.sair') }}">Sair</a>
+  </div>
+</header>
+
+{% block avisos %}{% endblock %}
+
+<div class="corpo {% block classe_corpo %}{% endblock %}">
+  <aside class="filtros">{% block filtros %}{% endblock %}</aside>
+  <main class="principal">{% block conteudo %}{% endblock %}</main>
+</div>
+
+{% block scripts %}{% endblock %}
+</body>
+</html>

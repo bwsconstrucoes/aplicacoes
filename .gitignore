@@ -41,3 +41,22 @@ app/apps/painel/*.xlsx
 app/apps/painel/*.csv
 app/apps/painel/amostra_api.json
 app/apps/painel/credenciais.json
+
+# ---------------------------------------------------------------------------
+# Analise de SPs — o modulo pesa 217 MB no PC e so 1 MB e codigo.
+# O .gitignore de dentro da pasta ja barra tudo isto; a repeticao aqui e
+# proposital: se aquele arquivo for apagado por engano, 216 MB de ambiente,
+# base e credencial entrariam no historico — e do historico nao se tira.
+# A base vem da planilha SPsBD e vive no Postgres do ERP, nao em arquivo.
+# ---------------------------------------------------------------------------
+app/apps/analisesps/.venv/
+app/apps/analisesps/runtime/
+app/apps/analisesps/secrets/
+app/apps/analisesps/data/
+app/apps/analisesps/*.bat
+app/apps/analisesps/*.zip
+app/apps/analisesps/**/*.db
+app/apps/analisesps/**/*.db-shm
+app/apps/analisesps/**/*.db-wal
+app/apps/analisesps/**/credenciais.json
+app/apps/analisesps/**/.streamlit/secrets.toml

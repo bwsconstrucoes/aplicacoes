@@ -1,0 +1,129 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Agenda — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Agenda <small>compromissos que se repetem</small></h2>
+
+{% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+
+{% if not compromissos and not erro %}
+  <div class="aviso atencao">
+    <b>Nenhum compromisso cadastrado.</b><br>
+    A agenda vem da aba "Agenda" da planilha. Rode a sincronização das planilhas
+    de apoio, na tela de Configurações, para trazê-la.
+  </div>
+{% endif %}
+
+{% if alertas %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Precisa de atenção agora</h3>
+      <small>{{ alertas|length }}</small>
+    </div>
+    <table class="sps">
+      <thead><tr><th>Data</th><th>Compromisso</th><th>Categoria</th><th>Responsável</th></tr></thead>
+      <tbody>
+        {% for a in alertas %}
+          <tr>
+            <td class="venc-vencido">{{ a.data|data_br }}</td>
+            <td>{{ a.compromisso.titulo }}</td>
+            <td>{{ a.compromisso.categoria }}</td>
+            <td>{{ a.compromisso.responsavel }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="cartao-dica">
+      Cada compromisso tem a própria janela de aviso: avisar de um imposto com
+      um dia de antecedência é inútil, e de uma conta de luz com trinta é ruído.
+    </p>
+  </div>
+{% endif %}
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Próximos {{ dias }} dias</h3>
+    <small>{{ proximos|length }} ocorrência(s)</small>
+  </div>
+  <form method="get" style="display:flex; gap:10px; align-items:flex-end; margin-bottom:12px">
+    <div>
+      <label class="rotulo-campo">Olhar quantos dias à frente</label>
+      <select name="dias">
+        {% for d in [30, 60, 90, 180, 365] %}
+          <option value="{{ d }}" {% if dias == d %}selected{% endif %}>{{ d }} dias</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button class="btn secundario" type="submit">Ver</button>
+  </form>
+
+  <div class="tabela-rolagem">
+    <table class="sps">
+      <thead>
+        <tr><th>Data</th><th>Compromisso</th><th>Categoria</th>
+            <th>Repete</th><th>Responsável</th><th>Observação</th></tr>
+      </thead>
+      <tbody>
+        {% for o in proximos %}
+          <tr>
+            <td>{{ o.data|data_br }}</td>
+            <td>{{ o.compromisso.titulo }}</td>
+            <td>{{ o.compromisso.categoria }}</td>
+            <td>{{ o.compromisso.recorrencia }}</td>
+            <td class="cortar">{{ o.compromisso.responsavel }}</td>
+            <td class="cortar">
+              {% if o.data_original and o.data_original != o.data %}
+                movida de {{ o.data_original|data_br }} (dia não útil)
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="6" style="padding:22px; text-align:center; color:var(--tinta-suave)">
+            Nada nos próximos {{ dias }} dias.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    Datas que caem em fim de semana ou feriado são movidas: impostos, FGTS e
+    parcelamentos <b>antecipam</b> (pagar depois tem multa); o resto
+    <b>posterga</b>. Feriados nacionais são calculados, inclusive os que dependem
+    da Páscoa; os estaduais e municipais vêm da aba "Feriados".
+  </p>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Todos os compromissos</h3>
+    <small>{{ compromissos|length }}</small>
+  </div>
+  <div class="tabela-rolagem">
+    <table class="sps">
+      <thead>
+        <tr><th>Título</th><th>Categoria</th><th>Repete</th><th>Dia</th>
+            <th>Data base</th><th>Ajuste</th><th>Aviso</th><th>Situação</th></tr>
+      </thead>
+      <tbody>
+        {% for c in compromissos %}
+          <tr>
+            <td>{{ c.titulo }}</td>
+            <td>{{ c.categoria }}</td>
+            <td>{{ c.recorrencia }}</td>
+            <td>{{ c.dia_mes }}</td>
+            <td>{{ c.data_base }}</td>
+            <td>{{ c.ajuste_dia_util }}</td>
+            <td>{{ c.alerta_dias_antes }} d</td>
+            <td>{{ c.status }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    O cadastro continua sendo feito na planilha; esta tela mostra o que está lá.
+    Dia 31 quer dizer "último dia do mês", não o dia 31 — é o que faz um
+    compromisso de fim de mês cair em 28 de fevereiro em vez de sumir.
+  </p>
+</div>
+{% endblock %}

@@ -1,0 +1,174 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Configurações — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Configurações <small>versão publicada: {{ versao }}</small></h2>
+
+{% if erro_banco %}
+  <div class="aviso erro">
+    <b>O banco não respondeu.</b> {{ erro_banco }}
+  </div>
+{% endif %}
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Estrutura do banco</h3>
+    <small>{{ migracoes.aplicadas|length }} aplicada(s), {{ migracoes.pendentes|length }} pendente(s)</small>
+  </div>
+
+  {% if migracoes.pendentes %}
+    <div class="aviso atencao">
+      <b>Há atualização de banco pendente.</b> Enquanto ela não for aplicada,
+      as telas podem falhar. Aplique agora:
+      <ul style="margin:8px 0 0 18px">
+        {% for nome in migracoes.pendentes %}<li><code>{{ nome }}</code></li>{% endfor %}
+      </ul>
+    </div>
+    {% if pode_operar %}
+      <button class="btn" id="btn-migrar">Aplicar atualizações do banco</button>
+    {% else %}
+      <p class="cartao-dica">Só o perfil Operador aplica atualizações.</p>
+    {% endif %}
+  {% else %}
+    <div class="aviso bom">O banco está em dia.</div>
+  {% endif %}
+
+  {% if migracoes.aplicadas %}
+    <p class="cartao-dica">
+      Já aplicadas:
+      {% for m in migracoes.aplicadas %}<code>{{ m.nome }}</code> ({{ m.em }}){% if not loop.last %} · {% endif %}{% endfor %}
+    </p>
+  {% endif %}
+  <div id="saida-migrar"></div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>A base</h3>
+    <small>
+      {% if base.pronta %}
+        {{ '{:,}'.format(base.quantidade)|replace(',', '.') }} SPs
+      {% else %}vazia{% endif %}
+    </small>
+  </div>
+
+  <div id="andamento">
+    {% if andamento.rodando %}
+      <div class="aviso">
+        <b>Rodando agora:</b> {{ andamento.detalhe.etapa }}
+        {% if andamento.detalhe.progresso %}— {{ andamento.detalhe.progresso }}{% endif %}
+        <br><small>Pode fechar esta página: a carga continua no servidor.</small>
+      </div>
+    {% elif andamento.interrompida %}
+      <div class="aviso atencao">
+        <b>A última carga foi interrompida</b> em "{{ andamento.interrompida.etapa }}".
+        O serviço deve ter reiniciado. Nada foi corrompido — rodar de novo
+        retoma de onde parou.
+      </div>
+    {% elif ultima %}
+      <div class="aviso {{ 'bom' if ultima.ok else 'erro' }}">
+        <b>Última atualização:</b> {{ ultima.mensagem }}
+        <br><small>{{ ultima.tipo }} ({{ ultima.disparo }})</small>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if pode_operar %}
+    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">
+      {% for modo, descricao in modos.items() %}
+        <button class="btn {{ '' if modo == 'sincronizar' else 'secundario' }}"
+                data-modo="{{ modo }}" title="{{ descricao }}">
+          {{ descricao.split('—')[0].strip() }}
+        </button>
+      {% endfor %}
+    </div>
+    <p class="cartao-dica">
+      Uma de cada vez. Se já houver carga rodando, a segunda é recusada em vez
+      de duplicar o trabalho.
+    </p>
+  {% else %}
+    <p class="cartao-dica">Só o perfil Operador dispara atualização.</p>
+  {% endif %}
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Onde ficam as coisas</h3></div>
+  <p class="cartao-dica" style="margin:0">
+    Os dados vivem no mesmo banco do ERP, num espaço separado só deste módulo.
+    A origem continua sendo a planilha SPsBD: o que você altera aqui é gravado
+    na hora e devolvido para ela em seguida. Se a internet falhar no meio, a
+    alteração fica numa fila e sobe sozinha depois — nada se perde.
+  </p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const saida = document.getElementById("saida-migrar");
+
+const botaoMigrar = document.getElementById("btn-migrar");
+if (botaoMigrar) botaoMigrar.addEventListener("click", async () => {
+  botaoMigrar.disabled = true;
+  botaoMigrar.textContent = "Aplicando…";
+  try {
+    const r = await fetch("{{ url_for('analisesps.migrar') }}", {method: "POST"});
+    const d = await r.json();
+    if (d.erro) {
+      saida.innerHTML = '<div class="aviso erro"><b>Parou em ' + d.erro.migracao +
+        ':</b> ' + d.erro.erro + (d.erro.dica ? '<br><small>' + d.erro.dica + '</small>' : '') + '</div>';
+    } else {
+      saida.innerHTML = '<div class="aviso bom">Aplicadas: ' +
+        (d.aplicadas.join(", ") || "nenhuma pendente") + '. Recarregando…</div>';
+      setTimeout(() => location.reload(), 1200);
+    }
+  } catch (e) {
+    saida.innerHTML = '<div class="aviso erro">Falhou: ' + e + '</div>';
+  } finally {
+    botaoMigrar.disabled = false;
+    botaoMigrar.textContent = "Aplicar atualizações do banco";
+  }
+});
+
+document.querySelectorAll("button[data-modo]").forEach(b => {
+  b.addEventListener("click", async () => {
+    b.disabled = true;
+    try {
+      const r = await fetch("{{ url_for('analisesps.sincronizar') }}", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({modo: b.dataset.modo})
+      });
+      const d = await r.json();
+      if (!d.ok) { alert(d.erro); return; }
+      acompanhar();
+    } catch (e) { alert("Falhou: " + e); }
+    finally { b.disabled = false; }
+  });
+});
+
+// Acompanha a carga perguntando ao servidor. O andamento vem do BANCO, não da
+// memória de um processo — por isso continua certo mesmo se o serviço
+// reiniciar, e mesmo se você abrir esta tela de outro aparelho.
+let relogio = null;
+async function acompanhar() {
+  const alvo = document.getElementById("andamento");
+  if (relogio) clearInterval(relogio);
+  relogio = setInterval(async () => {
+    try {
+      const r = await fetch("{{ url_for('analisesps.andamento') }}");
+      const d = await r.json();
+      if (d.rodando) {
+        alvo.innerHTML = '<div class="aviso"><b>Rodando agora:</b> ' +
+          (d.etapa || "começando") + (d.progresso ? " — " + d.progresso : "") +
+          '<br><small>Pode fechar esta página: a carga continua no servidor.</small></div>';
+      } else {
+        clearInterval(relogio);
+        location.reload();
+      }
+    } catch (e) { /* rede oscilou: a próxima volta resolve */ }
+  }, 4000);
+}
+{% if andamento.rodando %}acompanhar();{% endif %}
+</script>
+{% endblock %}

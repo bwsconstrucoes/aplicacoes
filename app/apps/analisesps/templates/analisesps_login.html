@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Entrar — Análise de SPs BWS</title>
+<link rel="stylesheet" href="{{ url_for('analisesps.static', filename='analisesps.css') }}">
+</head>
+<body>
+<div class="entrada">
+  <form method="post" action="{{ url_for('analisesps.entrar', proximo=request.args.get('proximo','')) }}">
+    <div class="marca">
+      <div class="brasao">BWS</div>
+      <div>
+        <h1>Análise de SPs</h1>
+        <p class="sub">Contas a pagar</p>
+      </div>
+    </div>
+
+    {% if sem_senha %}
+      <div class="aviso erro">
+        <b>Este módulo ainda não tem senha.</b><br>
+        Cadastre <code>ANALISESPS_SENHA_OPERADOR</code> e
+        <code>ANALISESPS_SENHA_CONSULTA</code> nas configurações do serviço no
+        Render e recarregue esta página. Enquanto isso ninguém entra — nem
+        você. É de propósito: são os pagamentos da empresa.
+      </div>
+    {% else %}
+      {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+      <label for="senha">Senha</label>
+      <input id="senha" name="senha" type="password"
+             autocomplete="current-password" autofocus required>
+      <button class="btn" type="submit">Entrar</button>
+      <p class="sub" style="margin-top:14px">
+        A senha diz o que você pode fazer: uma abre em modo de consulta, que vê
+        e exporta; a outra abre como operador, que também altera.
+      </p>
+    {% endif %}
+  </form>
+</div>
+</body>
+</html>

@@ -1,0 +1,322 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Solicitações — Análise de SPs{% endblock %}
+
+{% macro caixas(nome, valores, marcados) %}
+  <div class="filtro-opcoes">
+    {% for v in valores %}
+      <label class="opcao">
+        <input type="checkbox" name="{{ nome }}" value="{{ v }}"
+               {% if v in marcados %}checked{% endif %}>
+        <span class="rotulo" title="{{ v }}">{{ v }}</span>
+      </label>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% macro bloco(titulo, nome, valores, marcados) %}
+  {% if valores %}
+    <div class="filtro {% if marcados %}aberto{% endif %}">
+      <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+        <span>{{ titulo }}</span>
+        {% if marcados %}<span class="filtro-badge">{{ marcados|length }}</span>{% endif %}
+        <span class="seta">▾</span>
+      </div>
+      <div class="filtro-cont">{{ caixas(nome, valores, marcados) }}</div>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% block filtros %}
+<form method="get" id="form-filtros">
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ url_for('analisesps.solicitacoes') }}">Limpar</a>
+  </div>
+
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="busca" value="{{ filtros.busca }}"
+           placeholder="ID, credor, nota, descrição…"
+           title="Vários termos separados por vírgula. Todos precisam aparecer.">
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Situação</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="filtro-opcoes">
+        {% set situacoes = [
+            ('pendencias', 'Pendências (a pagar)'),
+            ('risco', 'Risco de duplicidade'),
+            ('cadastro_incompleto', 'Cadastro incompleto'),
+            ('boleto_invalido', 'Boleto inválido'),
+            ('boleto_duplicado', 'Boleto duplicado')] %}
+        {% for chave, rotulo in situacoes %}
+          <label class="opcao">
+            <input type="checkbox" name="situacoes" value="{{ chave }}"
+                   {% if chave in filtros.situacoes %}checked{% endif %}>
+            <span class="rotulo">{{ rotulo }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      <p class="cartao-dica" style="margin:8px 2px 0">
+        Marcar duas exige as duas ao mesmo tempo.
+      </p>
+    </div>
+  </div>
+
+  {{ bloco('Status de pagamento', 'status_pgt', opcoes.status_pgt, filtros.status_pgt) }}
+  {{ bloco('Agendamento', 'status_agend', opcoes.status_agend, filtros.status_agend) }}
+  {{ bloco('Forma de pagamento', 'forma', opcoes.forma, filtros.forma) }}
+  {{ bloco('Conta', 'conta', opcoes.conta, filtros.conta) }}
+  {{ bloco('Tipo de despesa', 'tipo_despesa', opcoes.tipo_despesa, filtros.tipo_despesa) }}
+  {{ bloco('Centro de custo', 'centro_custo', opcoes.centro_custo, filtros.centro_custo) }}
+  {{ bloco('Projeto', 'projeto', opcoes.projeto, filtros.projeto) }}
+  {{ bloco('Responsável', 'responsavel', opcoes.responsavel, filtros.responsavel) }}
+
+  <div class="filtro {% if filtros.periodo_ini or filtros.periodo_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Vencimento</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label>
+          <input type="date" name="periodo_ini"
+                 value="{{ filtros.periodo_ini.isoformat() if filtros.periodo_ini else '' }}"></div>
+        <div><label>Até</label>
+          <input type="date" name="periodo_fim"
+                 value="{{ filtros.periodo_fim.isoformat() if filtros.periodo_fim else '' }}"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro {% if filtros.pgt_ini or filtros.pgt_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Data do pagamento</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label>
+          <input type="date" name="pgt_ini"
+                 value="{{ filtros.pgt_ini.isoformat() if filtros.pgt_ini else '' }}"></div>
+        <div><label>Até</label>
+          <input type="date" name="pgt_fim"
+                 value="{{ filtros.pgt_fim.isoformat() if filtros.pgt_fim else '' }}"></div>
+      </div>
+      <p class="cartao-dica" style="margin:8px 2px 0">
+        SP sem data de pagamento fica fora deste recorte.
+      </p>
+    </div>
+  </div>
+
+  <div class="filtro {% if filtros.valor_ini or filtros.valor_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Valor</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>Mínimo</label>
+          <input type="text" name="valor_ini" inputmode="decimal"
+                 placeholder="0,00"
+                 value="{{ ('%.2f'|format(filtros.valor_ini))|replace('.', ',') if filtros.valor_ini is not none else '' }}"></div>
+        <div><label>Máximo</label>
+          <input type="text" name="valor_fim" inputmode="decimal"
+                 placeholder="0,00"
+                 value="{{ ('%.2f'|format(filtros.valor_fim))|replace('.', ',') if filtros.valor_fim is not none else '' }}"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Ordenar por</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select name="ordem" style="width:100%; padding:7px 8px; border:1px solid var(--borda-forte); border-radius:6px">
+        {% for chave, rotulo in [
+            ('vencimento','Vencimento (mais antigo)'),
+            ('vencimento_desc','Vencimento (mais novo)'),
+            ('valor_desc','Valor (maior)'),
+            ('valor','Valor (menor)'),
+            ('credor','Credor'),
+            ('id','ID')] %}
+          <option value="{{ chave }}" {% if ordem == chave %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button>
+</form>
+{% endblock %}
+
+{% block conteudo %}
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">SPs no filtro</div>
+    <div class="kpi-valor">{{ '{:,}'.format(resumo.quantidade)|replace(',', '.') }}</div>
+    <div class="kpi-sub">de {{ '{:,}'.format(base.quantidade)|replace(',', '.') }} na base</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Valor total</div>
+    <div class="kpi-valor">{{ resumo.total|moeda }}</div>
+    <div class="kpi-sub">soma de tudo que o filtro alcança</div>
+  </div>
+  <div class="kpi estatico ambar">
+    <div class="kpi-rotulo">A pagar</div>
+    <div class="kpi-valor">{{ resumo.total_pagar|moeda }}</div>
+    <div class="kpi-sub">{{ '{:,}'.format(resumo.quantidade_pagar)|replace(',', '.') }} SP(s) com status Pagar</div>
+  </div>
+</div>
+
+<div class="tabela-wrap">
+  <div class="acoes">
+    {% if pode_operar %}
+      <div class="grupo">
+        <button class="btn" data-coluna="status_pgt" data-valor="Pago">Marcar Pago</button>
+        <button class="btn secundario" data-coluna="status_pgt" data-valor="Pagar">Marcar Pagar</button>
+      </div>
+      <div class="grupo">
+        <button class="btn secundario" data-coluna="agendado" data-valor="Agendar">Agendar</button>
+        <button class="btn secundario" data-coluna="agendado" data-valor="Agendado">Agendado</button>
+        <button class="btn secundario" data-coluna="agendado" data-valor="Desagendar">Desagendar</button>
+        <button class="btn secundario" data-coluna="agendado" data-valor="Falha Agendar">Falha</button>
+      </div>
+    {% else %}
+      <span class="resumo">Perfil <b>Consulta</b> — vê e exporta, não altera.</span>
+    {% endif %}
+    <button class="btn secundario" id="btn-codigos">QR / Código</button>
+    <a class="btn secundario" href="{{ url_for('analisesps.exportar', **args) }}">Exportar CSV</a>
+    <span class="selecao" id="contador">Nenhuma SP marcada</span>
+  </div>
+
+  <div class="tabela-rolagem">
+    <table class="sps">
+      <thead>
+        <tr>
+          <th class="sel"><input type="checkbox" id="marcar-todas"
+                                 title="Marcar todas as SPs desta página"></th>
+          <th>ID</th><th>Vencimento</th><th>Credor</th><th class="num">Valor</th>
+          <th>Status</th><th>Agend.</th><th>Forma</th><th>Centro de custo</th>
+          <th>Responsável</th><th>Conta</th><th>Nota</th><th>Alertas</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in linhas %}
+          {% set cancelada = (l.status_pgt or '')|lower|trim == 'cancelado' %}
+          <tr {% if cancelada %}class="cancelada"{% endif %} data-id="{{ l.id }}">
+            <td class="sel"><input type="checkbox" class="marca" value="{{ l.id }}"></td>
+            <td class="id"><a href="{{ url_for('analisesps.detalhe', sp_id=l.id) }}">{{ l.id }}</a></td>
+            <td class="{{ 'venc-vencido' if l.vencido else ('venc-hoje' if l.vence_hoje else '') }}">
+              {{ l.vencimento_d|data_br }}</td>
+            <td class="cortar" title="{{ l.credor }}">{{ l.credor }}</td>
+            <td class="num">{{ l.valor_num|moeda }}</td>
+            <td>
+              {% set st = (l.status_pgt or '')|lower|trim %}
+              <span class="selo {{ 'pagar' if st == 'pagar' else ('pago' if st == 'pago' else 'cancelado') }}">
+                {{ l.status_pgt or '—' }}</span>
+            </td>
+            <td>
+              {% if l.status_agend %}
+                <span class="selo {{ 'falha' if 'Falha' in l.status_agend else 'agendado' }}">
+                  {{ l.status_agend }}</span>
+              {% endif %}
+            </td>
+            <td class="cortar">{{ l.forma_pagamento }}</td>
+            <td class="cortar" title="{{ l.centro_custo }}">{{ l.centro_custo }}</td>
+            <td class="cortar">{{ l.responsavel }}</td>
+            <td class="cortar">{{ l.conta }}</td>
+            <td>{{ l.nf }}</td>
+            <td>
+              {% if l.risco %}<span class="selo risco" title="A análise marcou risco de duplicidade">Risco</span>{% endif %}
+              {% if l.cadastro_incompleto %}<span class="selo incompleto" title="Falta chave Pix, centro de custo ou integração Omie">Cadastro</span>{% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="13" style="padding:26px; text-align:center; color:var(--tinta-suave)">
+            Nenhuma SP com esses filtros.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="paginas">
+    {% set base_args = args.to_dict(flat=false) %}
+    {% if pagina > 1 %}
+      <a class="btn secundario" href="{{ url_for('analisesps.solicitacoes', **dict(base_args, pagina=pagina-1)) }}">‹ Anterior</a>
+    {% endif %}
+    <span>
+      {% if resumo.quantidade %}
+        <b>{{ primeira_linha }}</b>–<b>{{ ultima_linha }}</b>
+        de <b>{{ '{:,}'.format(resumo.quantidade)|replace(',', '.') }}</b>
+      {% endif %}
+    </span>
+    {% if tem_proxima %}
+      <a class="btn secundario" href="{{ url_for('analisesps.solicitacoes', **dict(base_args, pagina=pagina+1)) }}">Próxima ›</a>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Marcação e ações em lote. Sem biblioteca: são trinta linhas, e cada
+// biblioteca nova é peso que a instância de 2 GB divide com 15 módulos.
+const marcas = () => Array.from(document.querySelectorAll(".marca"));
+const marcadas = () => marcas().filter(c => c.checked);
+
+function atualizarContador() {
+  const n = marcadas().length;
+  const el = document.getElementById("contador");
+  el.textContent = n === 0 ? "Nenhuma SP marcada"
+                           : n + (n === 1 ? " SP marcada" : " SPs marcadas");
+  marcas().forEach(c => c.closest("tr").classList.toggle("marcada", c.checked));
+}
+
+document.getElementById("marcar-todas").addEventListener("change", e => {
+  marcas().forEach(c => { c.checked = e.target.checked; });
+  atualizarContador();
+});
+marcas().forEach(c => c.addEventListener("change", atualizarContador));
+
+document.querySelectorAll(".acoes button[data-coluna]").forEach(botao => {
+  botao.addEventListener("click", async () => {
+    const ids = marcadas().map(c => c.value);
+    if (!ids.length) { alert("Marque ao menos uma SP."); return; }
+    const rotulo = botao.textContent.trim();
+    if (!confirm(`${rotulo}: ${ids.length} SP(s).\n\nA alteração vai para a planilha. Confirma?`)) return;
+
+    botao.disabled = true;
+    try {
+      const r = await fetch("{{ url_for('analisesps.alterar') }}", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids: ids, coluna: botao.dataset.coluna,
+                              valor: botao.dataset.valor, acao: rotulo})
+      });
+      const dados = await r.json();
+      if (!dados.ok) { alert("Não deu certo: " + (dados.erro || "erro desconhecido")); return; }
+      if (dados.aviso) alert("Alterado aqui, mas o envio para a planilha ficou na fila:\n" + dados.aviso);
+      location.reload();
+    } catch (e) {
+      alert("Falhou a comunicação com o servidor: " + e);
+    } finally {
+      botao.disabled = false;
+    }
+  });
+});
+
+// "QR / Código": leva as SPs marcadas para a tela que monta o QR Pix ou o
+// código de barras de cada uma.
+document.getElementById("btn-codigos").addEventListener("click", () => {
+  const ids = marcadas().map(c => c.value);
+  if (!ids.length) { alert("Marque ao menos uma SP."); return; }
+  if (ids.length > 50) { alert("São no máximo 50 SPs por vez."); return; }
+  location.href = "{{ url_for('analisesps.codigos') }}?" +
+                  ids.map(i => "id=" + encodeURIComponent(i)).join("&");
+});
+
+atualizarContador();
+</script>
+{% endblock %}

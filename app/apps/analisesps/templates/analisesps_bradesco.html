@@ -1,0 +1,83 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Bradesco — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% macro tabela(titulo, itens, colunas) %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>{{ titulo }}</h3>
+      <small>{{ itens|length }} operação(ões)</small>
+    </div>
+    {% if itens %}
+      <div class="tabela-rolagem">
+        <table class="sps">
+          <thead>
+            <tr>{% for rotulo, _ in colunas %}<th>{{ rotulo }}</th>{% endfor %}</tr>
+          </thead>
+          <tbody>
+            {% for i in itens %}
+              <tr>
+                {% for _, campo in colunas %}
+                  {% set v = i.get(campo) %}
+                  <td class="cortar" title="{{ v }}">
+                    {% if campo == 'id' and v %}
+                      <a href="{{ url_for('analisesps.detalhe', sp_id=v) }}">{{ v }}</a>
+                    {% elif campo == 'alertas' and v %}
+                      <span class="selo falha">{{ v if v is string else v|join(' · ') }}</span>
+                    {% else %}{{ v if v is not none else '' }}{% endif %}
+                  </td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p class="cartao-dica" style="margin:0">Nenhuma operação deste tipo no texto colado.</p>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% block conteudo %}
+<h2>Conferência do Bradesco <small>extrato × SPs</small></h2>
+
+{% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Cole o extrato</h3></div>
+  <form method="post">
+    <textarea name="extrato" rows="10" class="campo-largo"
+              placeholder="Cole aqui a tela Detalhes das Operações do Bradesco. Pode misturar boleto, Pix e outros.">{{ colado }}</textarea>
+    <div style="display:flex; gap:12px; align-items:center; margin-top:10px; flex-wrap:wrap">
+      <button class="btn" type="submit">Conferir</button>
+      <label class="opcao" style="margin:0">
+        <input type="checkbox" name="foco" value="1" {% if foco %}checked{% endif %}>
+        <span class="rotulo">Comparar só com as SPs na fila de pagamento</span>
+      </label>
+    </div>
+    <p class="cartao-dica">
+      Com a fila marcada, a conferência olha só as SPs em Agendar, Agendado ou
+      Falha — derruba o ruído e foca no risco real de pagar duas vezes.
+      Desmarcado, compara com tudo que está a pagar ou já pago.
+    </p>
+  </form>
+</div>
+
+{% if resultado %}
+  {{ tabela('Boletos', resultado.boletos, [
+      ('Alertas','alertas'), ('Empresa','empresa'), ('Conta','conta_debito'),
+      ('Valor','valor'), ('SP','id'), ('Credor','credor'),
+      ('Cód. barras','codigo_barras'), ('Diferença','diff')]) }}
+
+  {{ tabela('Pix e transferências', resultado.pix, [
+      ('Alertas','alertas'), ('Empresa','empresa'), ('Conta','conta_debito'),
+      ('Valor','valor'), ('Nome no banco','nome'), ('SP','id'),
+      ('Credor','credor'), ('Classificação','classe'), ('Confiança','conf')]) }}
+
+  <p class="cartao-dica">
+    Uma operação sem SP encontrada não quer dizer pagamento indevido — pode ser
+    uma SP fora da fila, ou lançada depois. O que a tela aponta é o que merece
+    um olhar, não uma conclusão.
+  </p>
+{% endif %}
+{% endblock %}

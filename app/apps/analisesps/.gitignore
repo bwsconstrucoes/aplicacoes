@@ -1,0 +1,21 @@
+# --- Só-local / Windows: NÃO sobe pro Render ---
+runtime/
+data/
+secrets/
+*.bat
+
+# --- Dados e segredos ---
+*.db
+*.sqlite
+credenciais.json
+service_account.json
+.update_hash
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Streamlit (cofre nativo — nunca versionar)
+.streamlit/secrets.toml

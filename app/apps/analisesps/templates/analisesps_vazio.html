@@ -1,0 +1,26 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Base vazia — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+{% block conteudo %}
+  <div class="recado">
+    <h2 style="margin-top:0">A base ainda não foi carregada</h2>
+    <div class="aviso atencao">
+      Não há nenhuma SP aqui dentro. Isso <b>não</b> quer dizer que não há
+      contas a pagar — quer dizer que a primeira carga da planilha ainda não
+      rodou.
+    </div>
+    <p>
+      Na tela de Configurações há o botão que aplica a estrutura do banco e o
+      que dispara a primeira carga. Ela traz as SPs da planilha SPsBD e demora
+      alguns minutos; pode fechar a página, que ela continua rodando.
+    </p>
+    {% if pode_operar %}
+      <a class="btn" href="{{ url_for('analisesps.configuracoes') }}">Ir às Configurações</a>
+    {% else %}
+      <p class="cartao-dica">
+        Você entrou no perfil Consulta, que não dispara carga. Peça a quem tem
+        a senha de operador.
+      </p>
+    {% endif %}
+  </div>
+{% endblock %}

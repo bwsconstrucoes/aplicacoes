@@ -1,0 +1,184 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Relatório — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{# Barra proporcional ao maior valor da lista. Sem biblioteca de gráfico: são
+   dois divs e uma largura em porcentagem. O Plotly do painel antigo custava
+   mais de 3 MB de JavaScript por abertura de tela. #}
+{% macro barras(titulo, linhas) %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>{{ titulo }}</h3>
+      <small>{{ linhas|length }} item(ns)</small>
+    </div>
+    {% if linhas %}
+      {% set maior = linhas[0].total or 1 %}
+      {% for l in linhas %}
+        <div class="barra-linha">
+          <div class="barra-rotulo" title="{{ l.rotulo }}">{{ l.rotulo }}</div>
+          <div class="barra-trilho">
+            <div class="barra-cheia"
+                 style="width: {{ (100 * (l.total or 0) / maior)|round(1) }}%"></div>
+          </div>
+          <div class="barra-valor">{{ l.total|moeda }}</div>
+          <div class="barra-qtd">{{ l.quantidade }}</div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="cartao-dica" style="margin:0">Nada neste recorte.</p>
+    {% endif %}
+  </div>
+{% endmacro %}
+
+{% block conteudo %}
+<h2>Relatório <small>{{ tipos[tipo] }} · {{ periodos[periodo]|lower }}</small></h2>
+
+<form method="get" class="cartao" style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end">
+  {% for chave, valores in args.lists() %}
+    {% if chave not in ('tipo', 'periodo', 'dimensao') %}
+      {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
+    {% endif %}
+  {% endfor %}
+  <div>
+    <label class="rotulo-campo">Recorte</label>
+    <select name="tipo">
+      {% for chave, rotulo in tipos.items() %}
+        <option value="{{ chave }}" {% if tipo == chave %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="rotulo-campo">Período</label>
+    <select name="periodo">
+      {% for chave, rotulo in periodos.items() %}
+        <option value="{{ chave }}" {% if periodo == chave %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div>
+    <label class="rotulo-campo">Quebrar por</label>
+    <select name="dimensao">
+      {% for chave, rotulo in dimensoes.items() %}
+        <option value="{{ chave }}" {% if dimensao == chave %}selected{% endif %}>{{ rotulo }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <button class="btn" type="submit">Aplicar</button>
+  <a class="btn secundario"
+     href="{{ url_for('analisesps.exportar_relatorio', **args) }}">Exportar CSV</a>
+  <a class="btn secundario"
+     href="{{ url_for('analisesps.relatorio_pdf', **args) }}">Baixar PDF</a>
+  <span class="cartao-dica" style="margin:0">
+    SPs canceladas ficam de fora de todo o relatório.
+    {% if tipo == 'pagas' %}O período conta pela data do pagamento.
+    {% else %}O período conta pelo vencimento.{% endif %}
+  </span>
+</form>
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Total</div>
+    <div class="kpi-valor">{{ numeros.total|moeda }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Lançamentos</div>
+    <div class="kpi-valor">{{ '{:,}'.format(numeros.quantidade)|replace(',', '.') }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Ticket médio</div>
+    <div class="kpi-valor">{{ numeros.ticket|moeda }}</div>
+  </div>
+  {% if tipo != 'pagas' %}
+    <div class="kpi estatico vermelho">
+      <div class="kpi-rotulo">Vencidos</div>
+      <div class="kpi-valor">{{ numeros.vencidos_total|moeda }}</div>
+      <div class="kpi-sub">{{ numeros.vencidos_qtd }} lançamento(s)</div>
+    </div>
+  {% endif %}
+</div>
+
+{% if not numeros.quantidade %}
+  <div class="aviso">Nenhum lançamento neste recorte.</div>
+{% else %}
+
+  <div class="duas-colunas">
+    {{ barras('Por centro de custo', por_centro) }}
+    {{ barras('Por projeto', por_projeto) }}
+    {{ barras('Por tipo de despesa', por_tipo) }}
+    {{ barras('Por conta', por_conta) }}
+  </div>
+
+  {% if aging %}
+    <div class="cartao">
+      <div class="cartao-cab">
+        <h3>Há quanto tempo está atrasado</h3>
+        <small>só o que está a pagar</small>
+      </div>
+      <table class="sps">
+        <thead><tr><th>Atraso</th><th class="num">Qtd</th><th class="num">Total</th></tr></thead>
+        <tbody>
+          {% for f in aging %}
+            <tr>
+              <td>{{ f.faixa }}</td>
+              <td class="num">{{ f.quantidade }}</td>
+              <td class="num">{{ f.total|moeda }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="cartao-dica">Uma SP que vence hoje não está atrasada.</p>
+    </div>
+  {% endif %}
+
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Maiores credores</h3>
+      <small>agrupados por CPF/CNPJ, não pelo nome</small>
+    </div>
+    <div class="tabela-rolagem">
+      <table class="sps">
+        <thead>
+          <tr><th>CPF/CNPJ</th><th>Credor</th><th class="num">Qtd</th><th class="num">Total</th></tr>
+        </thead>
+        <tbody>
+          {% for c in credores %}
+            <tr>
+              <td>{{ c.documento }}</td>
+              <td class="cortar" title="{{ c.credor }}">{{ c.credor }}</td>
+              <td class="num">{{ c.quantidade }}</td>
+              <td class="num">{{ c.total|moeda }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="cartao-dica">
+      O mesmo fornecedor aparece escrito de vários jeitos; somar por nome o
+      partiria em três. Por isso o agrupamento é pelo documento.
+    </p>
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Quebra por {{ dimensoes[dimensao]|lower }}</h3>
+      <small>{{ quebra|length }} linha(s)</small>
+    </div>
+    <div class="tabela-rolagem">
+      <table class="sps">
+        <thead>
+          <tr><th>{{ dimensoes[dimensao] }}</th><th class="num">Qtd</th><th class="num">Total</th></tr>
+        </thead>
+        <tbody>
+          {% for l in quebra %}
+            <tr>
+              <td class="cortar" title="{{ l.rotulo }}">{{ l.rotulo }}</td>
+              <td class="num">{{ l.quantidade }}</td>
+              <td class="num">{{ l.total|moeda }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}
