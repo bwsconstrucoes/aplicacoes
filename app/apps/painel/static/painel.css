@@ -408,3 +408,13 @@ td.recuada { padding-left: 26px; color: var(--tinta-suave); }
   border: 1px solid #F0DCA8; border-radius: var(--raio-p);
   padding: 8px 12px; margin: 10px 0 0;
 }
+
+/* O cronometro do rodape. Discreto: e ferramenta de diagnostico, nao informacao
+   de negocio — mas fica visivel, porque "esta lento" precisa de um numero. */
+.rodape-tempo {
+  padding: 14px 22px 26px;
+  color: var(--tinta-suave);
+  font-size: 12px;
+  text-align: right;
+}
+.rodape-tempo b { color: var(--tinta); font-weight: 600; }

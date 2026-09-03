@@ -83,17 +83,63 @@ class Filtros:
 # ---------------------------------------------------------------------------
 # Opcoes dos filtros e estado da base
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# As listas que enfeitam toda tela — guardadas, nao refeitas a cada clique
+# ---------------------------------------------------------------------------
+# Anos, projetos, obras, grupos e categorias sao `SELECT DISTINCT` sobre o fato
+# inteiro. Sao cinco varreduras de 185 mil linhas ANTES de a tela chegar na
+# consulta que interessa, e elas rodavam em toda abertura de toda tela — para
+# devolver sempre a mesma coisa, porque essas listas so mudam quando entra
+# carga nova, uma vez por dia.
+#
+# Guardadas na memoria do processo, com o CARIMBO da ultima carga como chave:
+# terminou uma atualizacao, o carimbo muda e tudo e refeito sozinho. Nao ha
+# como servir lista velha depois de uma carga.
+#
+# Cabe na memoria sem susto (sao algumas centenas de textos curtos) e o gunicorn
+# recicla o processo a cada ~150 requisicoes de qualquer jeito.
+_LEMBRADO: dict[tuple, object] = {}
+_CARIMBO_LEMBRADO = [""]
+
+
+def _carimbo_da_base() -> str:
+    """Muda quando uma atualizacao termina. E a chave de tudo que fica guardado."""
+    linhas = consultar("SELECT MAX(fim) FROM execucoes WHERE fim IS NOT NULL")
+    return str(linhas[0][0]) if linhas else "sem-carga"
+
+
+def esquecer_listas() -> None:
+    """Joga fora o que esta guardado. Usado pelos testes e depois de uma carga."""
+    _LEMBRADO.clear()
+    _CARIMBO_LEMBRADO[0] = ""
+
+
+def _lembrando(chave: tuple, calcular):
+    """Devolve o que ja foi calculado para este carimbo, ou calcula e guarda."""
+    carimbo = _carimbo_da_base()
+    if carimbo != _CARIMBO_LEMBRADO[0]:
+        # entrou carga nova: tudo que estava guardado fala da base velha
+        _LEMBRADO.clear()
+        _CARIMBO_LEMBRADO[0] = carimbo
+    if chave not in _LEMBRADO:
+        _LEMBRADO[chave] = calcular()
+    return _LEMBRADO[chave]
+
+
 def opcoes_de_filtro() -> dict:
     """Anos, projetos e obras que existem na base. Sao valores distintos —
     algumas centenas de linhas, nao a base inteira."""
-    anos = [a for (a,) in consultar(
-        "SELECT DISTINCT ano FROM fato WHERE ano BETWEEN 2015 AND 2100 ORDER BY ano DESC")]
-    projetos = [p for (p,) in consultar(
-        "SELECT DISTINCT projeto FROM fato WHERE COALESCE(projeto,'') <> '' ORDER BY projeto")]
-    obras = [d for (d,) in consultar(
-        "SELECT DISTINCT departamento FROM fato "
-        " WHERE COALESCE(departamento,'') <> '' ORDER BY departamento")]
-    return {"anos": anos, "projetos": projetos, "obras": obras}
+    def calcular():
+        anos = [a for (a,) in consultar(
+            "SELECT DISTINCT ano FROM fato WHERE ano BETWEEN 2015 AND 2100 ORDER BY ano DESC")]
+        projetos = [p for (p,) in consultar(
+            "SELECT DISTINCT projeto FROM fato WHERE COALESCE(projeto,'') <> '' ORDER BY projeto")]
+        obras = [d for (d,) in consultar(
+            "SELECT DISTINCT departamento FROM fato "
+            " WHERE COALESCE(departamento,'') <> '' ORDER BY departamento")]
+        return {"anos": anos, "projetos": projetos, "obras": obras}
+
+    return _lembrando(("opcoes_de_filtro",), calcular)
 
 
 def atualizado_em() -> dict | None:
@@ -120,8 +166,12 @@ MINUTOS_SEM_SINAL_ATE_MORTA = 10
 
 def base_vazia() -> bool:
     """True quando ainda nao houve nenhuma carga — a tela avisa em vez de
-    mostrar tudo zerado como se fosse a verdade."""
-    return consultar("SELECT COUNT(*) FROM fato")[0][0] == 0
+    mostrar tudo zerado como se fosse a verdade.
+
+    `LIMIT 1` e nao `COUNT(*)`: a pergunta e "existe alguma linha?", e contar as
+    185 mil para responder isso custava uma varredura da tabela inteira em TODA
+    abertura de TODA tela."""
+    return not consultar("SELECT 1 FROM fato LIMIT 1")
 
 
 # ---------------------------------------------------------------------------
@@ -834,8 +884,13 @@ ORDENS = {
 
 def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
                        busca="", visao="comprometido", ordem="valor",
-                       pagina=1, por_pagina=200) -> dict:
+                       de="", ate="", pagina=1, por_pagina=200) -> dict:
     """Os lançamentos de despesa, um por linha, com filtros próprios.
+
+    `de` e `ate` são a faixa de data, no formato AAAA-MM-DD (o que o calendário
+    do navegador manda). A data é a mesma da coluna: pagamento quando o título
+    foi quitado, vencimento quando ainda está em aberto — por isso a faixa
+    responde "o que saiu (ou vence) nesse período".
 
     Devolve também os TOTAIS de toda a seleção — não só da página. O rodapé
     somando apenas as 200 linhas visíveis seria pior que não ter rodapé.
@@ -843,6 +898,18 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
     medida = {"executado": EXECUTADO, "aberto": EM_ABERTO}.get(visao, COMPROMETIDO)
 
     condicoes, extras = ["analise = 'DRE'", "tipo = ?"], [PAG]
+    # lançamento sem data fica de fora quando há faixa: não há como dizer se
+    # ele cai dentro dela, e incluir "por via das dúvidas" faria o total da
+    # faixa não bater com a soma das linhas que a pessoa está vendo
+    # CAST explícito: a data chega como texto do calendário do navegador, e
+    # deixar o banco adivinhar o tipo é o tipo de coisa que funciona num e
+    # quebra no outro
+    if de:
+        condicoes.append("data >= CAST(? AS DATE)")
+        extras.append(de)
+    if ate:
+        condicoes.append("data <= CAST(? AS DATE)")
+        extras.append(ate)
     if grupo:
         condicoes.append("COALESCE(NULLIF(grupo,''), '(sem grupo)') = ?")
         extras.append(grupo)
@@ -872,13 +939,19 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
     sql = f"""
         SELECT data, razao_social, cnpj_cpf, grupo, categoria, departamento,
                projeto, numero_documento, observacao, conta_corrente, situacao,
-               {EXECUTADO}, {EM_ABERTO}, juros, multa, link
+               {EXECUTADO}, {EM_ABERTO}, juros, multa, link,
+               situacao_vencimento, pedido_compra, medicao_rotulo,
+               codigo_lancamento
           FROM fato{where}
          ORDER BY {ordenacao}
          LIMIT {int(por_pagina)} OFFSET {int((pagina - 1) * por_pagina)}"""
     campos = ("data", "credor", "cnpj", "grupo", "categoria", "obra", "projeto",
               "documento", "observacao", "conta", "situacao", "pago", "a_pagar",
-              "juros", "multa", "link")
+              "juros", "multa", "link",
+              # já existiam no banco e não apareciam em lugar nenhum: o atraso
+              # (quitado / vencido / a vencer), a compra que originou o gasto,
+              # a medição em que ele caiu e o número para procurar no OMIE
+              "vencimento", "pedido", "medicao", "lancamento")
     linhas = []
     for bruta in consultar(sql, params):
         linha = dict(zip(campos, bruta))
@@ -905,15 +978,22 @@ def opcoes_do_analitico(f: Filtros) -> dict:
     """Grupos e categorias que existem DENTRO do recorte atual.
 
     Listar os 110 do plano de contas quando o filtro deixou 6 obriga a procurar
-    entre opções que não trazem nada."""
+    entre opções que não trazem nada.
+
+    Guardado por recorte: quem fica numa obra o dia inteiro paga essas duas
+    varreduras uma vez, não a cada clique."""
     where, params = f.where("analise = 'DRE' AND tipo = ?", [PAG])
-    grupos = [g for (g,) in consultar(
-        f"SELECT DISTINCT COALESCE(NULLIF(grupo,''), '(sem grupo)') "
-        f"  FROM fato{where} ORDER BY 1", params)]
-    categorias = [c for (c,) in consultar(
-        f"SELECT DISTINCT COALESCE(NULLIF(categoria,''), '(sem categoria)') "
-        f"  FROM fato{where} ORDER BY 1", params)]
-    return {"grupos": grupos, "categorias": categorias}
+
+    def calcular():
+        grupos = [g for (g,) in consultar(
+            f"SELECT DISTINCT COALESCE(NULLIF(grupo,''), '(sem grupo)') "
+            f"  FROM fato{where} ORDER BY 1", params)]
+        categorias = [c for (c,) in consultar(
+            f"SELECT DISTINCT COALESCE(NULLIF(categoria,''), '(sem categoria)') "
+            f"  FROM fato{where} ORDER BY 1", params)]
+        return {"grupos": grupos, "categorias": categorias}
+
+    return _lembrando(("opcoes_do_analitico", where, tuple(map(str, params))), calcular)
 
 
 # ---------------------------------------------------------------------------

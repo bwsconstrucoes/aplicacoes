@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import os
 import re
+import time
 import logging
+import threading
 from contextlib import contextmanager
 from typing import Iterator, Optional
 
@@ -254,13 +256,47 @@ def conexao() -> Iterator[ConexaoCompat]:
         conn.close()
 
 
+# ---------------------------------------------------------------------------
+# Cronometro das consultas
+# ---------------------------------------------------------------------------
+# "Esta tela esta lenta" nao e uma frase acionavel: lenta onde? Aqui cada
+# consulta e cronometrada e somada por REQUISICAO, para a tela poder dizer
+# quantas foram e quanto tempo o banco levou. Sem isso, otimizar e adivinhar.
+#
+# Vive num `threading.local` e nao no `g` do Flask porque `db.py` tambem roda
+# fora de requisicao — na carga, que e um processo separado.
+_medidas = threading.local()
+
+
+def iniciar_medicao() -> None:
+    """Zera o cronometro. Chamado uma vez por requisicao."""
+    _medidas.consultas = 0
+    _medidas.segundos = 0.0
+
+
+def medicao() -> tuple[int, float]:
+    """Quantas consultas rodaram e quantos segundos o banco levou, no total."""
+    return (getattr(_medidas, "consultas", 0), getattr(_medidas, "segundos", 0.0))
+
+
 def consultar(sql: str, params=()) -> list[tuple]:
     """Atalho de leitura para as telas. Devolve as linhas ja materializadas."""
-    with conexao() as conn:
-        cur = conn.execute(sql, params)
-        linhas = cur.fetchall()
-        cur.close()
-        return linhas
+    comeco = time.perf_counter()
+    try:
+        with conexao() as conn:
+            cur = conn.execute(sql, params)
+            linhas = cur.fetchall()
+            cur.close()
+            return linhas
+    finally:
+        gasto = time.perf_counter() - comeco
+        _medidas.consultas = getattr(_medidas, "consultas", 0) + 1
+        _medidas.segundos = getattr(_medidas, "segundos", 0.0) + gasto
+        # consulta lenta isolada aparece no log com o comeco do SQL, para dar
+        # para achar qual foi sem precisar reproduzir
+        if gasto > 1.0:
+            logger.warning("Painel: consulta levou %.1fs — %s",
+                           gasto, " ".join(sql.split())[:160])
 
 
 def consultar_um(sql: str, params=()) -> Optional[tuple]:

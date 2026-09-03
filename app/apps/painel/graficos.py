@@ -74,6 +74,26 @@ def eixo_vertical(valores, divisoes: int = 5) -> dict:
             "topo": topo, "base": base}
 
 
+# Largura aproximada de um rotulo do eixo, em px do desenho. "06/2025" e o pior
+# caso corrente; sobra folga para "2025" nao ficar espremido.
+LARGURA_ROTULO = 54
+
+
+def _passo_de_rotulo(itens, largura_util: float, campo_rotulo: str) -> int:
+    """De quantos em quantos periodos escrever o rotulo do eixo.
+
+    Mede pelo rotulo MAIS LONGO da serie: um eixo de anos ("2025") comporta o
+    dobro de marcas de um eixo de meses ("06/2025"), e fixar um numero so
+    deixaria um dos dois errado.
+    """
+    if not itens:
+        return 1
+    mais_longo = max((len(str(i.get(campo_rotulo, ""))) for i in itens), default=4)
+    largura = max(mais_longo * 7.5 + 10, 24)          # ~7,5px por caractere
+    cabem = max(int(largura_util // largura), 1)
+    return max(-(-len(itens) // cabem), 1)            # divisao para cima
+
+
 def barras_agrupadas(itens, campos, campo_rotulo="ano", campo_linha=None) -> dict:
     """Monta um gráfico de barras lado a lado, com uma linha por cima.
 
@@ -99,11 +119,19 @@ def barras_agrupadas(itens, campos, campo_rotulo="ano", campo_linha=None) -> dic
     largura_grupo = passo_x * 0.72
     largura_barra = largura_grupo / max(len(campos), 1)
 
+    # Quantos rotulos cabem sem um encostar no outro. Com 6 anos de historia
+    # sao 70 meses no eixo, e "06/2025" ocupa uns 48px: escrever todos vira uma
+    # tarja preta ilegivel, que foi exatamente o que aconteceu no Fluxo
+    # Financeiro. Escreve-se um a cada N, sempre incluindo o ultimo, que e o
+    # mes em que a pessoa esta.
+    passo_rotulo = _passo_de_rotulo(itens, largura_util, campo_rotulo)
+
     barras, rotulos_x, pontos = [], [], []
     for i, item in enumerate(itens):
         centro = MARGEM_ESQ + passo_x * (i + 0.5)
-        rotulos_x.append({"x": round(centro, 2),
-                          "texto": str(item.get(campo_rotulo, ""))})
+        if i % passo_rotulo == 0 or i == len(itens) - 1:
+            rotulos_x.append({"x": round(centro, 2),
+                              "texto": str(item.get(campo_rotulo, ""))})
         for j, (chave, classe, _nome) in enumerate(campos):
             valor = float(item.get(chave) or 0)
             y_valor = eixo["y"](valor)
