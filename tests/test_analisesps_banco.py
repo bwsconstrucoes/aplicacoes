@@ -121,14 +121,33 @@ def test_soma_e_contagem_saem_do_banco(banco_analisesps):
 
 
 def test_busca_livre_exige_todos_os_termos(banco_analisesps):
+    """Termos separados por vírgula: TODOS precisam aparecer, e podem estar em
+    campos diferentes da mesma SP."""
     from app.apps.analisesps import consultas
     semear([
-        sp("1", credor="VOTORANTIM CIMENTOS", descricao="entrega de cimento"),
-        sp("2", credor="VOTORANTIM CIMENTOS", descricao="frete"),
-        sp("3", credor="OUTRA EMPRESA", descricao="cimento"),
+        sp("1", credor="VOTORANTIM S.A.", descricao="entrega de areia"),
+        sp("2", credor="VOTORANTIM S.A.", descricao="frete"),
+        sp("3", credor="OUTRA EMPRESA", descricao="entrega de areia"),
     ])
-    achados = [l["id"] for l in consultas.listar({"busca": "votorantim, cimento"})]
+    achados = [l["id"] for l in consultas.listar({"busca": "votorantim, areia"})]
     assert achados == ["1"]
+
+
+def test_a_busca_casa_por_trecho_e_nao_por_palavra_inteira(banco_analisesps):
+    """Procurar "cimento" acha "CIMENTOS" — a busca é por TRECHO, como no
+    Streamlit, que usava `contains`.
+
+    Isto está aqui porque me enganou: escrevi um teste esperando que
+    "cimento" não casasse com o credor "VOTORANTIM CIMENTOS", e ele casa. O
+    comportamento é o certo e é o que o operador espera de uma busca; o que
+    faltava era estar escrito em algum lugar."""
+    from app.apps.analisesps import consultas
+    semear([
+        sp("1", credor="VOTORANTIM CIMENTOS", descricao="frete"),
+        sp("2", credor="AREIA E BRITA", descricao="cimento a granel"),
+    ])
+    achados = {l["id"] for l in consultas.listar({"busca": "cimento"})}
+    assert achados == {"1", "2"}
 
 
 def test_busca_nao_diferencia_maiuscula(banco_analisesps):
