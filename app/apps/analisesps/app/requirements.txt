@@ -1,0 +1,10 @@
+streamlit>=1.36
+pandas>=2.0
+gspread>=6.0
+google-auth>=2.28
+streamlit-autorefresh>=1.0
+streamlit-aggrid>=1.0
+openpyxl>=3.1
+reportlab>=4.0
+qrcode[pil]>=7.4
+python-barcode>=0.15

@@ -28,6 +28,17 @@ except Exception as _erro_painel:                     # noqa: BLE001
         "Painel OMIE não carregou (%s). Os demais módulos seguem normalmente.",
         _erro_painel)
 
+# Mesma proteção, mesma razão: a Análise de SPs é o módulo mais novo e depende
+# de banco e de Google. Se algo faltar, ela fica fora do ar sozinha em vez de
+# levar junto os 15 módulos que estão em produção.
+try:
+    from app.apps.analisesps import bp as analisesps_bp   # ← Análise de SPs
+except Exception as _erro_analisesps:                     # noqa: BLE001
+    analisesps_bp = None
+    logging.getLogger(__name__).exception(
+        "Análise de SPs não carregou (%s). Os demais módulos seguem normalmente.",
+        _erro_analisesps)
+
 
 def create_app():
     app = Flask(__name__)
@@ -58,6 +69,9 @@ def create_app():
     # SEM url_prefix: as rotas do painel já trazem /painel embutido no módulo.
     if painel_bp is not None:
         app.register_blueprint(painel_bp)
+    # SEM url_prefix: as rotas já trazem /analisesps embutido no módulo.
+    if analisesps_bp is not None:
+        app.register_blueprint(analisesps_bp)
 
     @app.route("/")
     def index():
@@ -69,6 +83,7 @@ def create_app():
                 "chatbot", "baixabradesco", "sync_logs", "processarnovasp",
                 "emissao", "whatsapp_gateway", "telegram", "erp",
             ] + (["painel"] if painel_bp is not None else [])
+              + (["analisesps"] if analisesps_bp is not None else [])
         }
 
     return app

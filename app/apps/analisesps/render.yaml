@@ -1,0 +1,39 @@
+# ===========================================================================
+# ESTE ARQUIVO NÃO ESTÁ EM USO. Fica aqui só como registro da ideia antiga.
+#
+# Ele propunha publicar a Análise de SPs como um SERVIÇO SEPARADO no Render,
+# com disco pago, mantendo o Streamlit. A decisão foi outra: o módulo virou
+# blueprint DENTRO do serviço que já existe, com os dados no Postgres do ERP,
+# em schema próprio — do mesmo jeito que foi feito com o painel.
+#
+# Por que: cada pessoa conectada ao Streamlit segura 162 MB de tabela na
+# memória do servidor (medido sobre as 59 mil SPs reais). Com quatro pessoas
+# isso não cabe, e o serviço separado ainda custaria assinatura à parte — o
+# plano de 2 GB que a empresa paga vale para o serviço do monorepo, não para
+# um novo. Do jeito que ficou, quem soma é o Postgres e o custo extra é zero.
+#
+# Nada aqui é lido pelo Render: ele só procura render.yaml na RAIZ do
+# repositório. O arquivo é inerte.
+# ===========================================================================
+
+# Render lê este arquivo na raiz do repositório (Blueprint).
+# A mesma árvore serve para o pacote local; aqui só o app/ é publicado.
+services:
+  - type: web
+    name: spsbd-app
+    runtime: python
+    rootDir: app                      # o código mora em app/
+    plan: starter                     # ajuste ao seu plano (2GB)
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    disk:                             # SQLite exige disco persistente + 1 instância
+      name: spsbd-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: SPSBD_DB
+        value: /var/data/spsbd_cache.db
+      - key: SPSBD_CREDENCIAIS
+        value: /etc/secrets/credenciais.json   # suba como "Secret File" chamado credenciais.json
+      - key: SPSBD_CONFIG_SHEET
+        value: 1D4aVC7wVHL_t-5QpI6v7vtLJMjJpA7DpDnByTFB9i-U
