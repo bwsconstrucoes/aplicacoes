@@ -1,0 +1,206 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Despesas Analítico — Painel Financeiro BWS{% endblock %}
+
+{% block filtros %}{% include "painel_filtros.html" %}{% endblock %}
+
+{% macro esconde(exceto) %}
+  {# leva os filtros da barra lateral e os desta tela adiante, menos o que o
+     próprio formulário está mandando #}
+  {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
+  {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
+  {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
+  {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
+  {% for campo, valor in [('grupo', grupo), ('categoria', categoria),
+                          ('credor', credor), ('busca', busca),
+                          ('visao', visao), ('ordem', ordem)] %}
+    {% if valor and campo != exceto %}
+      <input type="hidden" name="{{ campo }}" value="{{ valor }}">
+    {% endif %}
+  {% endfor %}
+{% endmacro %}
+
+{% block conteudo %}
+<h2>Despesas Analítico
+  <small>lançamento a lançamento</small>
+</h2>
+<p class="cartao-dica" style="margin:-8px 0 14px">
+  É aqui que se descobre de onde veio um número. <b>Pago</b> é o principal já
+  liquidado, <b>A pagar</b> é o saldo, e <b>Juros/Multa</b> são os encargos —
+  somados, dão o valor de fato, o mesmo que aparece no DRE.
+</p>
+
+{% if chips %}
+<div class="chips">
+  {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
+  {% if grupo %}<span class="chip">Grupo: {{ grupo }}</span>{% endif %}
+  {% if categoria %}<span class="chip">Categoria: {{ categoria }}</span>{% endif %}
+  {% if credor %}<span class="chip">Credor: {{ credor }}</span>{% endif %}
+</div>
+{% endif %}
+
+<!-- ===================== FILTROS DESTA TELA ===================== -->
+<div class="cartao">
+  <form method="get">
+    {{ esconde('todos') }}
+    <div class="form-grade">
+      <div class="campo">
+        <label for="busca">Buscar</label>
+        <input id="busca" name="busca" value="{{ busca }}" type="search"
+               placeholder="fornecedor, categoria, documento ou observação">
+      </div>
+      <div class="campo">
+        <label for="grupo">Grupo</label>
+        <select id="grupo" name="grupo">
+          <option value="">(todos)</option>
+          {% for g in opcoes_analitico.grupos %}
+            <option value="{{ g }}" {% if g == grupo %}selected{% endif %}>{{ g }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="categoria">Categoria</label>
+        <select id="categoria" name="categoria">
+          <option value="">(todas)</option>
+          {% for c in opcoes_analitico.categorias %}
+            <option value="{{ c }}" {% if c == categoria %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="visao">Visão</label>
+        <select id="visao" name="visao">
+          <option value="comprometido" {% if visao == 'comprometido' %}selected{% endif %}>Comprometido</option>
+          <option value="executado" {% if visao == 'executado' %}selected{% endif %}>Só pagas</option>
+          <option value="aberto" {% if visao == 'aberto' %}selected{% endif %}>Só a pagar</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="ordem">Ordenar por</label>
+        <select id="ordem" name="ordem">
+          <option value="valor" {% if ordem == 'valor' %}selected{% endif %}>Maior valor</option>
+          <option value="data" {% if ordem == 'data' %}selected{% endif %}>Mais recente</option>
+          <option value="credor" {% if ordem == 'credor' %}selected{% endif %}>Credor</option>
+          <option value="categoria" {% if ordem == 'categoria' %}selected{% endif %}>Categoria</option>
+        </select>
+      </div>
+      <div class="campo" style="align-self:end; display:flex; gap:8px">
+        <button class="btn" type="submit">Aplicar</button>
+        {% if grupo or categoria or credor or busca %}
+          <a class="btn secundario" style="text-decoration:none"
+             href="{{ url_for('painel.analitico') }}">Limpar</a>
+        {% endif %}
+      </div>
+    </div>
+    <p class="cartao-dica" style="margin-bottom:0">
+      A ordenação vale para a seleção inteira, não só para esta página.
+    </p>
+  </form>
+</div>
+
+<!-- ===================== TOTAIS DA SELEÇÃO ===================== -->
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Lançamentos</div>
+    <div class="kpi-valor">{{ '{:,}'.format(dados.quantos).replace(',', '.') }}</div>
+  </div>
+  <div class="kpi estatico vermelho">
+    <div class="kpi-rotulo">Pago</div>
+    <div class="kpi-valor">{{ brl(dados.total_pago) }}</div>
+  </div>
+  <div class="kpi estatico ambar">
+    <div class="kpi-rotulo">A pagar</div>
+    <div class="kpi-valor">{{ brl(dados.total_a_pagar) }}</div>
+  </div>
+  {% if dados.total_encargo %}
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Juros e multa</div>
+    <div class="kpi-valor">{{ brl(dados.total_encargo) }}</div>
+  </div>
+  {% endif %}
+  <div class="kpi estatico ciano">
+    <div class="kpi-rotulo">Total</div>
+    <div class="kpi-valor">{{ brl(dados.total) }}</div>
+    <div class="kpi-sub">da seleção inteira, não só desta página</div>
+  </div>
+</div>
+
+<!-- ===================== A TABELA ===================== -->
+{% if not dados.linhas %}
+  <div class="vazio"><b>Nada encontrado</b>Nenhum lançamento com esses filtros.</div>
+{% else %}
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo">
+      Página <b>{{ dados.pagina }}</b> de <b>{{ dados.paginas }}</b> ·
+      {{ dados.por_pagina }} por página
+    </span>
+    <span class="espaco"></span>
+    <a class="btn secundario" style="text-decoration:none"
+       href="{{ url_for('painel.baixar', assunto='analitico', **request.args) }}">
+      ⬇ Baixar Excel</a>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Data</th>
+          <th class="sem-ordem">Credor</th>
+          <th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem">Documento</th>
+          <th class="sem-ordem direita">Pago</th>
+          <th class="sem-ordem direita">A pagar</th>
+          <th class="sem-ordem direita">Juros/Multa</th>
+          <th class="sem-ordem direita">Total</th>
+          <th class="sem-ordem">Situação</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in dados.linhas %}
+        <tr>
+          <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
+          <td class="desc">
+            {{ l.credor }}
+            {% if l.observacao %}<small>{{ l.observacao[:70] }}</small>{% endif %}
+          </td>
+          <td class="desc">{{ l.categoria }}<small>{{ l.grupo }}</small></td>
+          <td>{{ l.obra }}</td>
+          <td class="dados">
+            {% if l.link %}<a href="{{ l.link }}" target="_blank" rel="noopener">{{ l.documento }}</a>
+            {% else %}{{ l.documento }}{% endif %}
+          </td>
+          <td class="dados direita">{{ brl(l.pago) if l.pago else '—' }}</td>
+          <td class="dados direita {{ classe_valor(l.a_pagar) }}">{{ brl(l.a_pagar) if l.a_pagar else '—' }}</td>
+          <td class="dados direita">{{ brl(l.juros + l.multa) if (l.juros or l.multa) else '—' }}</td>
+          <td class="dados direita"><b>{{ brl(l.total) }}</b></td>
+          <td><small>{{ l.situacao }}</small></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if dados.paginas > 1 %}
+  <div class="tabela-barra" style="border-top:1px solid var(--borda); border-bottom:0">
+    <form method="get" style="display:flex; gap:8px; align-items:center">
+      {{ esconde('pagina') }}
+      <span class="resumo">Ir para a página</span>
+      <input class="dados" name="pagina" type="number" min="1" max="{{ dados.paginas }}"
+             value="{{ dados.pagina }}" style="width:80px; padding:6px 8px;
+             border:1px solid var(--borda-forte); border-radius:6px">
+      <button class="btn secundario" type="submit">Ver</button>
+    </form>
+    <span class="espaco"></span>
+    <span class="resumo">
+      {% if dados.pagina > 1 %}
+        <a href="{{ pagina_link(dados.pagina - 1) }}">← anterior</a>
+      {% endif %}
+      {% if dados.pagina < dados.paginas %}
+        &nbsp;<a href="{{ pagina_link(dados.pagina + 1) }}">próxima →</a>
+      {% endif %}
+    </span>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

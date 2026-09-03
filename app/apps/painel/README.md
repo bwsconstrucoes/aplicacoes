@@ -107,7 +107,8 @@ Uma de cada vez: a segunda chamada é recusada em vez de duplicar o trabalho.
 | Tela | O que responde |
 |---|---|
 | Visão Geral | o resultado e o caixa, lado a lado |
-| DRE | receita, despesas por grupo e resultado, nas três leituras |
+| DRE | receita, despesas e resultado nas três leituras, o fluxo mês a mês e quatro abas de detalhe: Despesas, Receitas, Top Credores e Aportes |
+| Despesas Analítico | cada lançamento de despesa, com busca por fornecedor, categoria ou documento |
 | Receita de Obra | cada medição: o que foi faturado, o que entrou, o que falta |
 | Fluxo de Caixa | entradas e saídas mês a mês, e o acumulado |
 | Resultado por Obra | quanto cada obra ou projeto deu |
@@ -115,11 +116,15 @@ Uma de cada vez: a segunda chamada é recusada em vez de duplicar o trabalho.
 | Necessidade de Caixa | um conjunto de obras se paga sozinho, ou alguém segurou |
 | Prestação de Contas | quanto do resultado cabe a cada sócio |
 
-Todas exportam para planilha. É **CSV**, não `.xlsx`: gerar Excel de verdade
-exigiria uma biblioteca nova no serviço, e a regra da casa é não acrescentar
-dependência sem combinar. O CSV é escrito com ponto-e-vírgula, vírgula decimal
-e BOM — os três detalhes que fazem o Excel em português abrir certo. Se a
-formatação (cores, várias abas) passar a fazer falta, aí vale a conversa.
+Todas exportam para **Excel de verdade** (`.xlsx`), com cabeçalho fixo, filtro
+no topo, coluna de dinheiro em R$ e data no formato brasileiro. O botão do DRE
+baixa o relatório **inteiro**: um arquivo, uma aba por assunto — como era na
+tela antiga. Cada tela também baixa só a sua parte.
+
+Isso custou uma dependência nova, a `openpyxl` (250 KB). A primeira conversão
+tinha saído em CSV para evitá-la, e estava errado: em CSV o relatório de oito
+abas vira oito arquivos soltos que ninguém junta depois. A `openpyxl` escreve
+célula a célula, sem `pandas`, então o custo de memória continua baixo.
 
 ## Como os números foram conferidos
 

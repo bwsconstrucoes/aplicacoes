@@ -14,20 +14,98 @@ O painel financeiro do OMIE rodava em Streamlit, no computador do dono, lendo
 arquivos de uma pasta de 153 MB. Virou módulo Flask do monorepo, em `/painel`,
 com login próprio e os dados no Postgres do ERP (schema `painel`).
 
-**Oito telas convertidas**, todas conferidas contra a versão original com dados
-reais: Visão Geral, DRE, Receita de Obra, Fluxo de Caixa, Resultado por Obra,
-Comprometido × Executado, Necessidade de Caixa e Prestação de Contas.
+**Nove telas convertidas**, todas conferidas contra a versão original com dados
+reais: Visão Geral, DRE, Despesas Analítico, Receita de Obra, Fluxo de Caixa,
+Resultado por Obra, Comprometido × Executado, Necessidade de Caixa e Prestação
+de Contas.
 
-**Estado em 02/09/2026:** versão `cc48712` publicada, 403 testes passando.
+**Estado em 03/09/2026 (tarde):** a primeira carga terminou — o dono confirmou
+— e o painel e o ERP abrem normalmente; o banco de produção voltou a aceitar
+conexão (ver a seção sobre isso mais abaixo).
+
+O ramo **`painel-dre-fiel`** é o `painel-fiel` com a `main` trazida para dentro
+e com o teste do DRE consertado. É o que está pronto para publicar, **e ainda
+não foi publicado** — falta o "pode" do dono.
+
+### O que foi verificado neste ramo
+
+- **784 testes passando no GitHub Actions**, com Postgres de verdade (é o
+  número que vale; no PC sem banco são 625 e 159 pulados).
+- A aplicação sobe com os **18 blueprints** — uma importação quebrada em
+  qualquer módulo derrubaria todos juntos.
+- Os rótulos e a ordem das linhas do DRE conferidos um a um contra
+  `referencia_streamlit/`.
+- A classificação de aporte em SQL conferida contra a versão em Python: mesmos
+  padrões, mesma ordem de avaliação, mesma remoção de acento.
+
+**Não verificado:** nenhuma tela deste ramo foi aberta contra a base real. O
+`.env` com a `DATABASE_URL` de produção não está no repositório, e a regra da
+casa é que a produção não é alcançável a partir dos testes.
 
 ### O que está pendente AGORA
 
-O dono está tentando rodar a **primeira carga** — baixar toda a base do OMIE.
-Ela já falhou quatro vezes, cada uma por um motivo diferente; todos corrigidos.
-**Pergunte a ele se a carga terminou antes de qualquer outra coisa.**
+**Publicar o `painel-dre-fiel`.** Não tem migração de banco, então não é preciso
+apertar "Aplicar atualizações do banco" junto. Mas acrescenta uma biblioteca ao
+serviço (`openpyxl`, para o Excel), o que reinicia os 18 módulos — logo, vale a
+pergunta de sempre: **há carga ou sincronização rodando?**
 
-Sinal de que terminou: a tela de Configurações mostra
-*"185.422 linhas de lançamento e ... recebimentos em X min"*.
+Depois de publicar, o único pedaço que nunca viu dado real é o **bloco de
+aportes** — conferir na tela contra o Streamlit antes de considerar fechado.
+
+### A lição de 02/09/2026 — fidelidade vem antes de gosto
+
+A primeira versão do DRE tinha metade da tela antiga. Eu havia decidido por
+conta própria que as abas de Receitas, Top Credores e o bloco inteiro de
+Aportes não eram necessárias, e reescrevi os rótulos das linhas. O dono abriu
+a tela e disse, com razão:
+
+> *"Levei muito tempo pra construir o que tinha, pra simplesmente mudar. Tô
+> achando que era melhor ter deixado o Streamlit tal qual estava."*
+
+Ele chegou a pedir para voltar ao Streamlit. **Converter não é redesenhar.**
+Quando a tela nova tira coisa da antiga, quem perde é quem já sabia usá-la — e
+o ganho técnico não compra isso. O que se pode melhorar é o que ele reclamou:
+o filtro de obras com mais de cem itens, que não tinha busca.
+
+Antes de mexer numa tela, abra a original em `referencia_streamlit/` e confira
+item por item. O que sair, sai porque **ele** decidiu, não porque pareceu
+supérfluo.
+
+### Erro numérico que isso escondeu
+
+Na pressa de simplificar, a linha **"Juros e Multas Pagos"** ficou de fora do
+DRE. Não era só uma linha a menos na tela: os encargos sumiam do total de
+custos, e o resultado saía maior do que é. Está de volta.
+
+### A planilha voltou a fechar com o DRE
+
+Os encargos entram no DRE mas **não têm categoria** no plano financeiro do
+OMIE. Por isso a planilha antiga acrescentava, de propósito, uma linha
+"Juros e Multas Pagos" na aba de categorias — sem ela, duas abas do mesmo
+arquivo mostram totais diferentes, e quem soma a de categorias acha que a
+despesa é menor do que o próprio arquivo diz.
+
+Essa linha não tinha sido convertida. Voltou (03/09/2026), **só na planilha**:
+na tela a aba de despesas continua sendo o que veio do plano de contas, como no
+Streamlit. Há teste com banco de verdade exigindo que as duas abas fechem.
+
+### E o teste que deveria ter pego isso não rodava no PC
+
+Ao mudar o formato do DRE, o teste `test_dre_fecha_de_cima_a_baixo` ficou lendo
+o formato antigo e quebrou — mas ele é `@pytest.mark.banco`, e **sem Postgres
+local é pulado calado**. A suíte no PC deu tudo verde; quem acusou foi o GitHub
+Actions, que sobe o banco.
+
+Duas consequências práticas, que valem para qualquer mudança aqui:
+
+- **Verde no PC não é verde.** São ~158 testes pulados sem banco, e são
+  justamente os que olham o SQL. Antes de pedir para publicar, conferir o
+  resultado do GitHub Actions do ramo — ou subir o `docker-compose.teste.yml`.
+- **Cenário de teste com campo zerado não testa o campo.** O `juros` e a
+  `multa` do cenário eram zero em todas as linhas, então o SQL novo dos
+  encargos não era exercitado por nenhum teste com banco de verdade. Agora o
+  cenário tem encargo pago (entra) e encargo previsto num título em aberto
+  (não entra).
 
 ---
 
@@ -101,7 +179,7 @@ risco sempre explícito. Nada de esconder o que não foi testado atrás de
 | Postgres do ERP, schema `painel` | O disco do Render é apagado a cada reinício; a configuração da prestação de contas não é regenerável |
 | Módulo do serviço que já existe, não serviço novo | Sem custo adicional; reusa login, deploy e banco |
 | Gráficos em SVG desenhado na página | O Plotly custava 3 MB de JavaScript por tela |
-| Exportação em CSV, não `.xlsx` | Excel de verdade exigiria biblioteca nova; a regra da casa é não acrescentar sem combinar |
+| Exportação em `.xlsx` (`openpyxl`), **não** CSV | Revertida em 03/09/2026: o relatório tem oito abas, e em CSV isso vira oito arquivos soltos. O dono pediu Excel. Escreve célula a célula, sem `pandas` |
 | `pandas` não é dependência do painel | A única parte que o usava foi feita em Python puro |
 | Migrações aplicadas por botão, nunca no boot | Uma migração com defeito no start derrubaria os 15 módulos juntos |
 | Hora convertida para Brasília **na fonte** | O servidor roda em UTC; se cada tela convertesse, uma esqueceria |
@@ -122,14 +200,34 @@ Se alguma tela for mexida, refaça a comparação. As telas originais estão em
 
 ---
 
+## O banco de produção recusou conexão em 03/09/2026 — passou
+
+Na manhã de 03/09 o Postgres respondeu:
+
+    FATAL: role "erp_admin" is not permitted to log in
+
+Não era senha errada: era o servidor recusando o usuário. Na tarde do mesmo dia
+o dono confirmou que painel e ERP voltaram a abrir. Fica registrado porque, se
+acontecer de novo, **ERP e painel caem juntos** — usam o mesmo banco — e o lugar
+de olhar é a instância do Postgres no Render, não a senha.
+
+O que aquele dia deixou pendente continua pendente: o SQL do **bloco de aportes
+nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
+de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
+sai.
+
 ## O que falta
 
-1. **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
+1. **Rodar o bloco de aportes contra a base real.** O banco já voltou; o que
+   falta é abrir a tela publicada e comparar com o Streamlit. É o único pedaço
+   novo que ainda não viu dado de verdade, e este módulo já mandou três erros
+   de SQL para a produção.
+2. **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
    Daria para refazer com `fpdf2`, que já está — mas é reescrever o relatório.
-2. **Mensagem duplicada** na tela de Configurações: o mesmo erro aparece na
+3. **Mensagem duplicada** na tela de Configurações: o mesmo erro aparece na
    linha "Última atualização" e na caixa vermelha de interrupção.
-3. **Cenários da prestação** — comparar duas configurações de rateio lado a lado.
-4. **Converter `app/apps/spsbd_app`** (análise de SPs) do mesmo jeito. É
+4. **Cenários da prestação** — comparar duas configurações de rateio lado a lado.
+5. **Converter `app/apps/spsbd_app`** (análise de SPs) do mesmo jeito. É
    Streamlit, tem 835 MB (com um Python empacotado dentro), usa
    `streamlit-aggrid` — a parte mais difícil de portar — e traz um
    `render.yaml` propondo um serviço separado com disco pago, o que é uma

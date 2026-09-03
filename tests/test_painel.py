@@ -22,6 +22,7 @@ espírito da `SessaoFalsa` do ERP.
 from __future__ import annotations
 
 import datetime as dt
+import io
 
 import pytest
 
@@ -327,6 +328,30 @@ def _consultar_falso(sql, params=()):
         if marca in sql:
             return resposta
 
+    # ---- aportes e dividendos (o bloco do fim do DRE) ----
+    # Vem antes de tudo: o SQL de aporte cai em vários dos marcadores genéricos
+    # lá embaixo, e responder por engano com a linha de outra tela daria um erro
+    # de arity difícil de ler.
+    if "'Aporte de Parceiro'" in sql:
+        if "SUM(-pago_recebido)" in sql:                        # dividendo por obra
+            return [("Obra Um", 1200.0)]
+        if "ORDER BY 2, 3, 1" in sql:                           # os lançamentos
+            return [(dt.date(2025, 2, 3), "Obra Um", "SÓCIO A", "Aporte BWS",
+                     "Aportes BWS", 5000.0, "Bradesco C/C", "TED", "capital")]
+        if sql.strip().startswith("SELECT COUNT(*) FROM fato"):
+            return [(9,)]
+        if "= 'Dividendos'" in sql:                             # o quadro à parte
+            return [("SÓCIO A", 0.0, 1200.0, 2)]
+        if "GROUP BY 1, 2" in sql:                              # por obra / por tipo
+            return [("Obra Um", "SÓCIO A", 5000.0, 1000.0, 3),
+                    ("Obra Um", "SÓCIO B", 2000.0, 0.0, 1)]
+        return [("SÓCIO A", 5000.0, 1000.0, 3),                 # por sócio
+                ("SÓCIO B", 2000.0, 0.0, 1)]
+    # o resultado por obra do quadro "Resultado x dividendos"; o TRIM só existe
+    # nas consultas desse bloco
+    if "NULLIF(TRIM(departamento" in sql:
+        return [("Obra Um", 6000.0), ("Obra Dois", -800.0)]
+
     # ---- prestação de contas: as três consultas com bucket "(sem data)" ----
     if "COALESCE(to_char(data" in sql:
         if "TRIM(COALESCE(grupo,'')) = " in sql:                # driver de pessoal
@@ -356,6 +381,19 @@ def _consultar_falso(sql, params=()):
         return [(dt.date(2025, 5, 2), 7000.0, 0.0, 0.0, 0.0, "Bradesco C/C",
                  "1/1", "credito bancario", "NF123")]
 
+    # ---- despesas analitico ----
+    if "OFFSET" in sql:                                         # a página de lançamentos
+        return [(dt.date(2025, 4, 8), "FORNECEDOR A LTDA", "12.345.678/0001-90",
+                 "Despesas com Pessoal", "Salários", "Obra Um", "PROJ-A",
+                 "NF77", "folha de março", "Bradesco C/C", "Pago",
+                 -3000.0, 0.0, -20.0, -5.0, "")]
+    if "COUNT(*), SUM(" in sql:                                 # os totais da seleção
+        return [(37, -3000.0, -200.0, -25.0)]
+    if "DISTINCT COALESCE(NULLIF(grupo" in sql:
+        return [("Despesas com Pessoal",), ("Materiais",)]
+    if "DISTINCT COALESCE(NULLIF(categoria" in sql:
+        return [("Salários",), ("Cimento",)]
+
     # ---- as telas antigas ----
     if "date_trunc" in sql:                                     # fluxo mensal
         return [(dt.date(2025, 1, 1), 4000.0, -2500.0),
@@ -365,10 +403,15 @@ def _consultar_falso(sql, params=()):
         return ([(2024, -1000.0), (2025, 2500.0)] if "SUM(pago_recebido)" in sql
                 else [(2024, 5000.0, -4000.0), (2025, 9000.0, -6000.0)])
     if "AS retido" in sql:                                      # as linhas do DRE
-        return [("1. Contas a Receber", False, "Receita Bruta", 9000.0, 500.0),
-                ("1. Contas a Receber", True, "Retenções", 300.0, 0.0),
-                ("2. Contas a Pagar", False, "Despesas com Pessoal", -4000.0, -100.0),
-                ("2. Contas a Pagar", False, "Materiais", -2000.0, -50.0)]
+        # a última coluna é o encargo: juros e multa efetivamente pagos
+        return [("1. Contas a Receber", False, "Receita Bruta", 9000.0, 500.0, 0.0),
+                ("1. Contas a Receber", True, "Retenções", 300.0, 0.0, 0.0),
+                ("2. Contas a Pagar", False, "Despesas com Pessoal", -4000.0, -100.0, -25.0),
+                ("2. Contas a Pagar", False, "Materiais", -2000.0, -50.0, 0.0)]
+    # o total de juros e multa pagos, que vira uma linha na aba de categorias.
+    # Vem antes do ranking porque nao tem HAVING mas soma sobre o mesmo fato.
+    if "COALESCE(SUM(CASE WHEN" in sql and "(juros + multa)" in sql:
+        return [(-25.0,)]
     if "HAVING" in sql:                                         # ranking de despesas
         return [("Despesas com Pessoal", -4100.0), ("Materiais", -2050.0)]
     if "COUNT(*)" in sql:                                       # maiores credores
@@ -453,11 +496,44 @@ def test_dre_abre_com_as_tres_leituras(painel):
     r = painel.get("/painel/dre?ano=2025&quebra=grupo")
     assert r.status_code == 200
     html = r.get_data(as_text=True)
-    assert "Receita bruta" in html
-    assert "Receita líquida" in html
-    assert "Comprometido" in html
+    # os rótulos são os da tela original, não os que eu tinha inventado
+    assert "Receita Bruta de Serviços" in html
+    assert "(−) Retenções na fonte" in html
+    assert "= Receita Líquida" in html
+    assert "= Total Custos/Despesas" in html
+    assert "= RESULTADO" in html
+    assert "Juros e Multas Pagos" in html      # os encargos voltaram para o DRE
+    assert "Fluxo Financeiro" in html          # o gráfico mensal voltou
     assert "Despesas com Pessoal" in html
-    assert "Ano: 2025" in html     # o filtro virou chip na tela
+    assert "Ano: 2025" in html                 # o filtro virou chip na tela
+
+
+def test_juros_e_multa_pagos_entram_no_total_de_custos(painel):
+    """Não basta a linha aparecer na tela: ela tem de SOMAR.
+
+    A primeira versão do DRE deixou os encargos de fora, e o resultado saía
+    maior do que é de verdade — um erro que ninguém percebe olhando, porque a
+    tela continua parecendo uma planilha certa. O teste ao lado confere que o
+    rótulo aparece; este confere a aritmética.
+    """
+    from app.apps.painel import consultas
+
+    d = consultas.dre_linhas(consultas.Filtros())
+    linha = {l["linha"].strip(): l for l in d["linhas"] if l["linha"].strip()}
+
+    juros = linha["Juros e Multas Pagos"]["comprometido"]
+    total = linha["= Total Custos/Despesas"]["comprometido"]
+    assert round(juros, 2) == -25.00           # veio da última coluna do SQL
+
+    # as linhas recuadas (grupos + encargos) têm de dar exatamente o total
+    recuadas = sum(l["comprometido"] for l in d["linhas"]
+                   if l["linha"].startswith("  "))
+    assert round(recuadas, 2) == round(total, 2)
+    assert round(total, 2) == -6175.00         # -6.150 dos grupos, -25 de encargo
+
+    # e o resultado desce do total, encargo incluído
+    liquida = linha["= Receita Líquida"]["comprometido"]
+    assert round(liquida + total, 2) == round(linha["= RESULTADO"]["comprometido"], 2)
 
 
 def test_filtros_da_url_chegam_na_consulta(painel, monkeypatch):
@@ -573,15 +649,67 @@ def test_parametros_da_prestacao_abrem_em_todas_as_abas(painel):
         assert marca in html, aba
 
 
-def test_planilha_sai_no_formato_que_o_excel_entende(painel):
+def test_a_planilha_e_um_excel_de_verdade(painel):
+    """CSV virava oito arquivos soltos. O relatório do dono sempre foi um
+    arquivo com várias abas — voltou a ser."""
+    from openpyxl import load_workbook
+
     painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
     r = painel.get("/painel/baixar/dre")
     assert r.status_code == 200
-    assert r.get_data().startswith(b"\xef\xbb\xbf")        # BOM
+    assert r.get_data()[:2] == b"PK"                  # é mesmo um .xlsx
+    assert ".xlsx" in r.headers["Content-Disposition"]
     assert "attachment" in r.headers["Content-Disposition"]
-    assert ".csv" in r.headers["Content-Disposition"]
-    texto = r.get_data().decode("utf-8-sig")
-    assert texto.splitlines()[0] == "Linha;Executado;Em aberto;Comprometido"
+
+    folha = load_workbook(io.BytesIO(r.get_data()))["DRE"]
+    assert [c.value for c in folha[1]] == ["Linha", "Executado", "Em aberto",
+                                           "Comprometido"]
+    assert folha.freeze_panes == "A2"                 # cabeçalho fixo
+
+
+def test_o_relatorio_completo_tem_todas_as_abas(painel):
+    """Era assim na tela antiga: um arquivo, uma aba por assunto."""
+    from openpyxl import load_workbook
+
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/baixar/completo")
+    assert r.status_code == 200
+    livro = load_workbook(io.BytesIO(r.get_data()))
+    assert livro.sheetnames == [
+        "DRE", "Despesas Categoria", "Top Credores", "Receita de Obra",
+        "Outras Receitas", "Despesas Analitico", "Fluxo de Caixa",
+        "Resultado por Obra"]
+
+
+def test_a_aba_de_categorias_fecha_com_a_aba_do_dre(painel):
+    """Duas abas do mesmo arquivo não podem mostrar totais diferentes.
+
+    Juros e multa pagos entram no DRE mas não têm categoria no plano financeiro
+    do OMIE. A planilha antiga acrescentava a linha de propósito, para as duas
+    abas fecharem; sem ela, quem soma a aba de categorias acha que a despesa é
+    menor do que o próprio arquivo diz duas abas antes.
+    """
+    from openpyxl import load_workbook
+
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/baixar/completo")
+    livro = load_workbook(io.BytesIO(r.get_data()))
+
+    categorias = livro["Despesas Categoria"]
+    rotulos = [linha[0] for linha in categorias.iter_rows(min_row=2, values_only=True)]
+    assert "Juros e Multas Pagos" in rotulos
+
+    soma_categorias = sum(linha[1] for linha in
+                          categorias.iter_rows(min_row=2, values_only=True))
+
+    dre = {linha[0].strip(): linha[3] for linha in
+           dre_linhas_da_planilha(livro) if linha[0]}
+    assert round(soma_categorias, 2) == round(dre["= Total Custos/Despesas"], 2)
+
+
+def dre_linhas_da_planilha(livro):
+    """As linhas da aba DRE, já sem o cabeçalho."""
+    return livro["DRE"].iter_rows(min_row=2, values_only=True)
 
 
 def test_a_planilha_respeita_os_filtros_da_tela(painel, monkeypatch):
@@ -618,3 +746,104 @@ def test_importar_prestacao_sem_arquivo_e_recusado(painel):
     r = painel.post("/painel/api/importar-prestacao")
     assert r.status_code == 400
     assert r.get_json()["ok"] is False
+
+
+# ---------------------------------------------------------------------------
+# As abas de dentro do DRE
+# ---------------------------------------------------------------------------
+# A primeira conversão jogou fora metade da tela do DRE — Receitas, Top
+# Credores e o bloco inteiro de Aportes. O dono viu na hora e reclamou, com
+# razão. Estes testes existem para isso não voltar a acontecer sem alguém
+# perceber: cada aba tem de abrir e mostrar o que mostrava antes.
+
+def test_as_quatro_abas_do_dre_estao_na_tela(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre").get_data(as_text=True)
+    for rotulo in ("Despesas", "Receitas", "Top Credores", "Aportes e dividendos"):
+        assert rotulo in html
+
+
+def test_aba_de_receitas_traz_medicoes_e_outras_receitas(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre?bloco=receitas").get_data(as_text=True)
+    assert "Receita de Obra" in html
+    assert "Outras Receitas" in html
+    assert "OBRA1 | Medição 3" in html
+    assert "Estorno de Despesas" in html
+    assert "Bruto faturado" in html
+
+
+def test_aba_de_credores_lista_e_leva_ao_analitico(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre?bloco=credores").get_data(as_text=True)
+    assert "FORNECEDOR A LTDA" in html
+    # o nome tem de ser clicável: é assim que se chega ao lançamento
+    assert "credor=FORNECEDOR" in html.replace("+", " ").replace("%20", " ")
+
+
+def test_aba_de_aportes_mostra_os_quatro_recortes(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre?bloco=aportes").get_data(as_text=True)
+    assert "Aportes e devoluções" in html
+    assert "Por sócio ou parceiro" in html
+    assert "Por obra" in html
+    assert "Por tipo" in html
+    assert "Lançamentos" in html
+    assert "Falta p/ igualar" in html
+    assert "SÓCIO A" in html
+
+
+def test_aporte_nao_entra_em_nenhuma_linha_do_dre(painel):
+    """A regra que mais importa aqui: aporte é fluxo, não resultado.
+
+    Se um dia alguém somar aporte na despesa, o total do DRE muda sem que
+    nenhuma tela reclame — e o dono decide errado com base nisso."""
+    from app.apps.painel import consultas
+    where, _ = consultas.Filtros().where("analise = 'DRE'")
+    sql = f"SELECT 1 FROM fato{where}"
+    assert "Aporte" not in sql
+
+
+def test_dividendo_fica_fora_do_saldo_de_aporte(painel):
+    """Dividendo é distribuição de lucro. Abatê-lo do saldo faria parecer que o
+    sócio retirou o capital que colocou."""
+    from app.apps.painel import consultas
+    assert "Dividendos" not in consultas.NO_SALDO
+
+
+def test_resultado_x_dividendos_calcula_o_disponivel(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre?bloco=aportes").get_data(as_text=True)
+    assert "Resultado × dividendos" in html
+    assert "Disponível" in html
+    # 6.000,00 − 800,00 de resultado, menos 1.200,00 de dividendo pago
+    assert "4.000,00" in html
+
+
+def test_a_aba_pedida_sobrevive_a_mudanca_de_filtro(painel):
+    """Trocar a quebra das despesas não pode jogar a pessoa de volta na
+    primeira aba, nem apagar o filtro de obra que ela acabou de montar."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/dre?bloco=despesas&ano=2025&quebra=categoria"
+                      ).get_data(as_text=True)
+    assert '<input type="hidden" name="bloco" value="despesas">' in html
+    assert '<input type="hidden" name="ano" value="2025">' in html
+
+
+def test_aba_desconhecida_cai_na_primeira_em_vez_de_quebrar(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/dre?bloco=inventado")
+    assert r.status_code == 200
+    assert "Despesas por Grupo" in r.get_data(as_text=True)
+
+
+def test_o_excel_de_aportes_tem_uma_aba_por_recorte(painel):
+    from openpyxl import load_workbook
+
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/baixar/aportes")
+    assert r.status_code == 200
+    livro = load_workbook(io.BytesIO(r.get_data()))
+    assert livro.sheetnames == [
+        "Aportes por Socio", "Aportes por Obra", "Aportes por Tipo",
+        "Dividendos", "Lancamentos de Aporte", "Resultado x Dividendos"]

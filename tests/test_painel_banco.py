@@ -15,8 +15,8 @@ O cenário é pequeno de propósito — poucos números, todos verificáveis de 
 
     2025, obra CASA (projeto ALFA)
       R1  receita  1.000  RECEBIDA em 06/2025  (+ 100 retidos pelo cliente)
-      D1  despesa    400  PAGA em 06/2025
-      D2  despesa    250  A PAGAR
+      D1  despesa    400  PAGA em 06/2025  (+ 20 de juros e 5 de multa PAGOS)
+      D2  despesa    250  A PAGAR           (+ 999 de juros previstos, NAO pagos)
     2025, obra PONTE (projeto BETA)
       R2  receita  2.000  A RECEBER, vence 09/2025
       D3  despesa    900  PAGA em 07/2025
@@ -68,9 +68,11 @@ CENARIO = [
     _linha(codigo_lancamento=1, tipo=REC, situacao="Recebido",
            situacao_vencimento="Quitado", categoria="Impostos Retidos na Fonte",
            grupo="Retenções", razao_social="CLIENTE A", pago_recebido=100),
+    # juros e multa efetivamente PAGOS: despesa financeira, entra no DRE
     _linha(codigo_lancamento=2, situacao="Pago", situacao_vencimento="Quitado",
-           pago_recebido=-400),
-    _linha(codigo_lancamento=3, a_pagar_receber=-250),
+           pago_recebido=-400, juros=-20, multa=-5),
+    # encargo previsto num título AINDA NÃO pago: não entra, não foi pago
+    _linha(codigo_lancamento=3, a_pagar_receber=-250, juros=-999),
 
     # --- 2025, obra PONTE (projeto BETA) ---
     _linha(codigo_lancamento=4, tipo=REC, situacao="A Receber",
@@ -262,17 +264,77 @@ def test_opcoes_de_filtro_saem_da_base(consultas):
 # ---------------------------------------------------------------------------
 # 4. DRE
 # ---------------------------------------------------------------------------
+def _linhas_por_rotulo(d):
+    """As linhas da tela indexadas pelo rótulo, sem os espaçadores em branco."""
+    return {l["linha"].strip(): l for l in d["linhas"] if l["linha"].strip()}
+
+
 def test_dre_fecha_de_cima_a_baixo(consultas):
     """Bruta − retenções = líquida; líquida + despesas = resultado. Se alguma
-    linha não fechar, a tela mente com aparência de planilha."""
+    linha não fechar, a tela mente com aparência de planilha.
+
+    Confere as LINHAS da tela, não só os totais do topo: é a linha que o dono
+    lê. Os dois têm de contar a mesma história, e isso também está conferido
+    aqui."""
     d = consultas.dre_linhas(consultas.Filtros())
-    assert reais(d["receita_bruta"]["comprometido"]) == 3400.00
-    assert reais(d["retencoes"]["comprometido"]) == 100.00
-    assert reais(d["receita_liquida"]["comprometido"]) == 3300.00
-    assert reais(d["total_despesas"]["comprometido"]) == -1650.00
-    assert reais(d["resultado"]["comprometido"]) == 1650.00
-    soma_grupos = sum(g["comprometido"] for g in d["despesas"])
-    assert reais(soma_grupos) == reais(d["total_despesas"]["comprometido"])
+    linha = _linhas_por_rotulo(d)
+
+    bruta = linha["Receita Bruta de Serviços"]["comprometido"]
+    retencoes = linha["(−) Retenções na fonte"]["comprometido"]
+    liquida = linha["= Receita Líquida"]["comprometido"]
+    total_desp = linha["= Total Custos/Despesas"]["comprometido"]
+    resultado = linha["= RESULTADO"]["comprometido"]
+
+    assert reais(bruta) == 3400.00
+    assert reais(retencoes) == -100.00      # aparece negativa: ela explica o bruto
+    assert reais(liquida) == 3300.00
+    # 400 + 250 + 900 + 100 de despesa, MAIS 25 de juros e multa pagos
+    assert reais(total_desp) == -1675.00
+    assert reais(resultado) == 1625.00
+
+    # o encargo é o que foi PAGO (20 + 5). Os 999 de juros previstos num título
+    # ainda em aberto não entram — não saíram do caixa e não são despesa ainda.
+    assert reais(linha["Juros e Multas Pagos"]["comprometido"]) == -25.00
+
+    # a conta de cima a baixo, do jeito que a tela promete
+    assert reais(bruta + retencoes) == reais(liquida)
+    assert reais(liquida + total_desp) == reais(resultado)
+
+    # cada linha recuada é um grupo de despesa (mais "Juros e Multas Pagos",
+    # quando houver); juntas têm de dar exatamente o total
+    recuadas = [l["comprometido"] for l in d["linhas"]
+                if l["linha"].startswith("  ")]
+    assert reais(sum(recuadas)) == reais(total_desp)
+
+    # os números do topo da tela são os mesmos das linhas
+    assert reais(d["receita_bruta"]) == reais(bruta)
+    assert reais(d["retencoes"]) == -reais(retencoes)
+    assert reais(d["receita_liquida"]) == reais(liquida)
+    assert reais(d["despesas"]) == reais(total_desp)
+    assert reais(d["resultado"]) == reais(resultado)
+
+
+def test_a_lista_de_categorias_da_planilha_fecha_com_o_dre(consultas):
+    """A aba de categorias do relatório tem de somar o mesmo que a aba do DRE.
+
+    Os encargos entram no DRE mas não têm categoria no plano financeiro, então
+    a lista da planilha ganha a linha "Juros e Multas Pagos". Aqui o Postgres é
+    de verdade: prova que o SQL que soma o encargo é o MESMO recorte que o DRE
+    usa — se um filtrar diferente do outro, as duas abas divergem em silêncio.
+    """
+    f = consultas.Filtros()
+    linhas = consultas.despesas_por_categoria_com_encargo(f)
+    nomes = {l["nome"] for l in linhas}
+    assert "Juros e Multas Pagos" in nomes
+
+    dre = consultas.dre_linhas(f)
+    total_dre = {l["linha"].strip(): l for l in dre["linhas"]}["= Total Custos/Despesas"]
+    assert reais(sum(l["valor"] for l in linhas)) == reais(total_dre["comprometido"])
+
+    # o percentual foi refeito com a linha nova dentro: se ela tivesse entrado
+    # depois da conta, apareceria com 0% ao lado de um valor que existe
+    encargo = next(l for l in linhas if l["nome"] == "Juros e Multas Pagos")
+    assert encargo["pct_total"] > 0
 
 
 def test_despesas_por_grupo_e_por_categoria(consultas):

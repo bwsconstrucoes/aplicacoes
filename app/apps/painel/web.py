@@ -63,7 +63,27 @@ def _ajudantes_de_template():
             return "v-pos"
         return ""
 
-    return {"brl": brl, "classe_valor": classe_valor}
+    def link_analitico(**extras):
+        """Link para o Analitico preservando os filtros da tela atual.
+
+        Clicar num grupo de despesa tem de levar para os lancamentos DAQUELE
+        grupo, dentro do mesmo recorte de ano, projeto e obra — e nao para a
+        base inteira."""
+        args = {c: request.args.getlist(c) for c in
+                ("ano", "projeto", "obra") if request.args.getlist(c)}
+        if request.args.get("trf"):
+            args["trf"] = "1"
+        args.update({k: v for k, v in extras.items() if v})
+        return url_for("painel.analitico", **args)
+
+    def pagina_link(numero):
+        """Link para outra pagina do Analitico, guardando todos os filtros."""
+        args = request.args.to_dict(flat=False)
+        args["pagina"] = [str(numero)]
+        return url_for("painel.analitico", **args)
+
+    return {"brl": brl, "classe_valor": classe_valor,
+            "link_analitico": link_analitico, "pagina_link": pagina_link}
 
 
 @bp.errorhandler(Exception)
@@ -143,6 +163,7 @@ def _filtros_do_pedido():
 ABAS = [
     ("visao", "Visão Geral", "painel.visao_geral"),
     ("dre", "DRE", "painel.dre"),
+    ("analitico", "Despesas Analítico", "painel.analitico"),
     ("receita", "Receita de Obra", "painel.receita"),
     ("fluxo", "Fluxo de Caixa", "painel.fluxo"),
     ("obras", "Resultado por Obra", "painel.obras"),
@@ -205,25 +226,97 @@ def visao_geral():
     )
 
 
+# As abas de dentro do DRE, na mesma ordem da tela antiga (que usava
+# `st.tabs(["Despesas", "Receitas", "Top Credores"])`, com os aportes logo
+# abaixo). Cada uma e um link: so as consultas da aba aberta rodam, e a aba
+# escolhida entra na URL junto com os filtros.
+BLOCOS_DRE = [
+    ("despesas", "Despesas"),
+    ("receitas", "Receitas"),
+    ("credores", "Top Credores"),
+    ("aportes", "Aportes e dividendos"),
+]
+
+
 @bp.route("/dre")
 def dre():
+    """O DRE como a tela antiga o mostrava: os cinco numeros, a tabela linha a
+    linha, o Fluxo Financeiro mensal e, embaixo, as abas de detalhe."""
     from . import consultas, graficos
     if consultas.base_vazia():
         return redirect(url_for("painel.configuracoes", primeira="1"))
     f = _filtros_do_pedido()
     quebra = "categoria" if request.args.get("quebra") == "categoria" else "grupo"
     visao = request.args.get("visao", "comprometido")
+    medida = "comprometido" if request.args.get("medida") == "comprometido" else "executado"
+    bloco = request.args.get("bloco", "despesas")
+    if bloco not in dict(BLOCOS_DRE):
+        bloco = "despesas"
+    mensal = consultas.resultado_mensal(f, medida=medida)
+
+    # So o que a aba aberta precisa. Carregar os quatro blocos de uma vez seria
+    # multiplicar por quatro o custo de abrir o DRE, para mostrar um deles.
+    extra = {}
+    if bloco == "despesas":
+        extra["despesas"] = graficos.proporcoes(
+            consultas.despesas_por(f, quebra=quebra, visao=visao))
+    elif bloco == "receitas":
+        extra["medicoes"] = consultas.medicoes(f, limite=60)
+        extra["total_receita"] = consultas.total_das_medicoes(f)
+        extra["outras"] = consultas.outras_receitas(f)
+    elif bloco == "credores":
+        extra["credores"] = consultas.top_credores(f, limite=40)
+    else:
+        aportes = consultas.aportes(f)
+        divisao = consultas.resultado_dividendos(f)
+        extra["aportes"] = aportes
+        extra["divisao"] = divisao
+        extra["hipotese"] = consultas.hipotese_de_distribuicao(
+            aportes["por_socio"], divisao["disponivel"])
+
     return render_template(
         "painel_dre.html",
         **_contexto_comum("dre"),
         chips=f.resumo(),
-        quebra=quebra,
-        visao=visao,
-        linhas=consultas.dre_linhas(f),
-        despesas=graficos.proporcoes(
-            consultas.despesas_por(f, quebra=quebra, visao=visao)),
-        receita_obra=consultas.receita_por_obra(f),
-        credores=consultas.top_credores(f),
+        quebra=quebra, visao=visao, medida=medida,
+        bloco=bloco, blocos=BLOCOS_DRE,
+        dre=consultas.dre_linhas(f),
+        # os ultimos 36 meses no grafico; alem disso as barras ficam ilegiveis
+        grafico_mensal=graficos.barras_agrupadas(
+            mensal[-36:],
+            [("receita", "b-receita", "Receita"), ("despesa", "b-despesa", "Despesa")],
+            campo_rotulo="rotulo", campo_linha="acumulado"),
+        **extra,
+    )
+
+
+@bp.route("/analitico")
+def analitico():
+    """Despesas lancamento a lancamento — de onde veio cada numero do DRE."""
+    from . import consultas
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+    f = _filtros_do_pedido()
+    grupo = request.args.get("grupo", "")
+    categoria = request.args.get("categoria", "")
+    credor = request.args.get("credor", "")
+    busca = (request.args.get("busca") or "").strip()
+    visao = request.args.get("visao", "comprometido")
+    ordem = request.args.get("ordem", "valor")
+    try:
+        pagina = int(request.args.get("pagina") or 1)
+    except ValueError:
+        pagina = 1
+    return render_template(
+        "painel_analitico.html",
+        **_contexto_comum("analitico"),
+        chips=f.resumo(),
+        grupo=grupo, categoria=categoria, credor=credor, busca=busca,
+        visao=visao, ordem=ordem,
+        opcoes_analitico=consultas.opcoes_do_analitico(f),
+        dados=consultas.analitico_despesas(
+            f, grupo=grupo, categoria=categoria, credor=credor, busca=busca,
+            visao=visao, ordem=ordem, pagina=pagina),
     )
 
 
@@ -610,47 +703,100 @@ def sincronizar():
 
 @bp.route("/baixar/<assunto>")
 def baixar(assunto):
-    """Leva os numeros da tela para uma planilha.
+    """Leva os numeros para uma planilha do Excel.
 
-    Respeita os MESMOS filtros da tela: a URL de download so acrescenta o
-    assunto, o resto dos parametros e o que ja estava na barra de endereco.
-    Assim o arquivo baixado e exatamente o que estava na tela — nunca "a base
-    inteira" quando a pessoa estava vendo um recorte."""
+    Respeita os MESMOS filtros da tela: a URL do download so acrescenta o
+    assunto, o resto e o que ja estava na barra de endereco. Assim o arquivo e
+    exatamente o que estava na tela — nunca "a base inteira" quando a pessoa
+    estava vendo um recorte.
+
+    `completo` e o relatorio inteiro, uma aba por assunto — era assim na tela
+    antiga, e um arquivo so e melhor que oito soltos.
+    """
     from flask import Response
-    from . import consultas, exportar
+    from . import consultas, excel
 
     f = _filtros_do_pedido()
-    if assunto == "dre":
-        linhas = exportar.linhas_do_dre(consultas.dre_linhas(f))
-    elif assunto == "despesas":
-        linhas = consultas.despesas_por(
+    C = excel.COLUNAS
+
+    def _dre():
+        return consultas.dre_linhas(f)["linhas"]
+
+    def _analitico(limite=20000):
+        return consultas.analitico_despesas(
+            f, grupo=request.args.get("grupo", ""),
+            categoria=request.args.get("categoria", ""),
+            credor=request.args.get("credor", ""),
+            busca=(request.args.get("busca") or "").strip(),
+            visao=request.args.get("visao", "comprometido"),
+            ordem=request.args.get("ordem", "valor"),
+            pagina=1, por_pagina=limite)["linhas"]
+
+    def _abas_de_aporte():
+        # Na tela os lançamentos são cortados num teto; no arquivo saem todos —
+        # é para isso que se baixa o arquivo.
+        bloco = consultas.aportes(f)
+        divisao = consultas.resultado_dividendos(f)
+        return [
+            ("Aportes por Socio", C["aporte_socio"], bloco["por_socio"]),
+            ("Aportes por Obra", C["aporte_obra"], bloco["por_obra"]),
+            ("Aportes por Tipo", C["aporte_tipo"], bloco["por_tipo"]),
+            ("Dividendos", C["aporte_dividendos"], bloco["dividendos"]),
+            ("Lancamentos de Aporte", C["aporte_lancamentos"],
+             consultas.lancamentos_de_aporte(f, limite=None)["linhas"]),
+            ("Resultado x Dividendos", C["divisao"], divisao["linhas"]),
+        ]
+
+    montadores = {
+        "dre": lambda: [("DRE", C["dre"], _dre())],
+        "analitico": lambda: [("Despesas Analitico", C["analitico"], _analitico())],
+        "despesas": lambda: [("Despesas", C["despesas"], consultas.despesas_por(
             f, quebra=request.args.get("quebra", "grupo"),
-            visao=request.args.get("visao", "comprometido"), limite=500)
-    elif assunto == "medicoes":
-        linhas = consultas.medicoes(f, visao=request.args.get("visao", "todas"),
-                                    limite=5000)
-    elif assunto == "fluxo":
-        linhas = consultas.caixa_por_mes(f)
-    elif assunto == "obras":
-        linhas = consultas.resultado_por(f, nivel=_nivel_do_pedido(),
-                                         medida=request.args.get("medida", "comprometido"),
-                                         limite=500)
-    elif assunto == "execucao":
-        linhas = consultas.comprometido_vs_executado(
+            visao=request.args.get("visao", "comprometido"), limite=1000))],
+        "credores": lambda: [("Top Credores", C["credores"],
+                              consultas.top_credores(f, limite=1000))],
+        "medicoes": lambda: [("Receita de Obra", C["medicoes"], consultas.medicoes(
+            f, visao=request.args.get("visao", "todas"), limite=20000))],
+        "fluxo": lambda: [("Fluxo de Caixa", C["fluxo"], consultas.caixa_por_mes(f))],
+        "obras": lambda: [("Resultado por Obra", C["obras"], consultas.resultado_por(
             f, nivel=_nivel_do_pedido(),
-            tipo=request.args.get("tipo", "pagar"), limite=500)
-    elif assunto == "credores":
-        linhas = consultas.top_credores(f, limite=500)
-    elif assunto in ("quotas", "posicao"):
+            medida=request.args.get("medida", "comprometido"), limite=1000))],
+        "execucao": lambda: [("Comprometido x Executado", C["execucao"],
+                              consultas.comprometido_vs_executado(
+                                  f, nivel=_nivel_do_pedido(),
+                                  tipo=request.args.get("tipo", "pagar"), limite=1000))],
+        "aportes": _abas_de_aporte,
+        # o relatorio inteiro, na ordem da tela antiga
+        "completo": lambda: [
+            ("DRE", C["dre"], _dre()),
+            # com a linha dos encargos, senao esta aba nao fecha com a do DRE
+            ("Despesas Categoria", C["despesas"],
+             consultas.despesas_por_categoria_com_encargo(f, limite=1000)),
+            ("Top Credores", C["credores"], consultas.top_credores(f, limite=1000)),
+            ("Receita de Obra", C["medicoes"], consultas.medicoes(f, limite=20000)),
+            ("Outras Receitas", C["outras"], consultas.outras_receitas(f, limite=500)),
+            ("Despesas Analitico", C["analitico"], _analitico()),
+            ("Fluxo de Caixa", C["fluxo"], consultas.caixa_por_mes(f)),
+            ("Resultado por Obra", C["obras"],
+             consultas.resultado_por(f, nivel="obra", limite=1000)),
+        ],
+    }
+    if assunto in ("quotas", "posicao"):
         calculo = _calcular_prestacao(request.args.get("medida", "comprometido"))
-        linhas = calculo["quotas"] if assunto == "quotas" else calculo["posicao"]
+        abas = [(("Quotas" if assunto == "quotas" else "Posicao dos Socios"),
+                 C[assunto], calculo[assunto])]
+    elif assunto in montadores:
+        abas = montadores[assunto]()
     else:
         return jsonify({"ok": False, "erro": f"Não sei exportar '{assunto}'."}), 404
 
-    conteudo = exportar.montar_csv(exportar.COLUNAS[assunto], linhas)
-    nome = exportar.nome_do_arquivo(assunto)
-    return Response(conteudo, mimetype="text/csv; charset=utf-8",
-                    headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+    conteudo = excel.montar(abas)
+    nome = excel.nome_do_arquivo(assunto)
+    return Response(
+        conteudo,
+        mimetype=("application/vnd.openxmlformats-officedocument"
+                  ".spreadsheetml.sheet"),
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
 
 
 # Um .db de prestacao de contas tem dezenas de KB. O teto e generoso e mesmo
