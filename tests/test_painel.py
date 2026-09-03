@@ -481,9 +481,6 @@ def painel(monkeypatch):
     monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
     from app.apps.painel import consultas, prestacao_dados
     monkeypatch.setattr(consultas, "consultar", _consultar_falso)
-    # as listas de opções ficam guardadas por carimbo de carga; sem limpar,
-    # um teste herdaria a lista montada por outro
-    consultas.esquecer_listas()
     monkeypatch.setattr(prestacao_dados, "config", lambda: dict(CONFIG_FALSA))
     for nome in ("socios", "participacoes", "regras", "ajustes"):
         monkeypatch.setattr(prestacao_dados, nome, lambda *a, **k: [])
