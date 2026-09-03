@@ -610,6 +610,29 @@ def gravar_clientes(conn, registros):
 # ----------------------------------------------------------------------------- 
 # Carga inicial real (API)
 # ----------------------------------------------------------------------------- 
+def _resumo(conn) -> None:
+    """Conta o que ha no espelho e escreve no log.
+
+    E o fecho de toda operacao longa: se um numero vier absurdo — zero titulos,
+    zero clientes —, aparece aqui, no log, antes de chegar na tela como um
+    painel silenciosamente vazio.
+
+    Nao pode derrubar a carga: contar e informacao, nao o trabalho.
+    """
+    partes = []
+    for tabela in ("titulos", "rateio", "movimentos", "cat", "clientes",
+                   "contas_correntes", "depto_projeto"):
+        try:
+            cur = conn.execute(f"SELECT COUNT(*) FROM {tabela}")
+            quantas = cur.fetchone()[0]
+            cur.close()
+            partes.append(f"{tabela}={quantas:,}".replace(",", "."))
+        except Exception:
+            conn.rollback()
+            partes.append(f"{tabela}=?")
+    log.info("Espelho: %s", "  ".join(partes))
+
+
 def carga_inicial(env=".env", retomar=True):
     """Baixa a base inteira do OMIE.
 
@@ -822,10 +845,10 @@ def carregar_movimentos_full(conn, cli):
         qm, qi = gravar_movimentos(conn, registros)
         tot_mov += qm
         ign += qi
-        if pagina % 50 == 0 or pagina == total_paginas:
+        if pagina % 20 == 0 or pagina == total_paginas:
             _progresso("baixando os pagamentos e recebimentos",
                        f"página {pagina} de {total_paginas} — "
-                       f"{tot:,} movimentos".replace(",", "."))
+                       f"{tot_mov:,} movimentos".replace(",", "."))
             log.info("  mov pag %d/%d -> %s (%.0fs)", pagina, total_paginas,
                      f"{tot_mov:,}".replace(",", "."), time.time() - t0)
     conn.execute(
