@@ -7,6 +7,10 @@ Era um programa em Streamlit que rodava no computador do dono, lendo arquivos
 de uma pasta de 153 MB. Isto aqui é a mesma coisa online, no serviço que já
 existe — sem Streamlit, sem arquivo, com login.
 
+> **Pegando este trabalho agora?** Leia antes o `HISTORICO.md` ao lado. Ele
+> guarda as decisões já tomadas, os incidentes que custaram caro e o que está
+> pendente — é o que evita repetir discussão e repetir erro.
+
 ## Como está montado
 
 ```
