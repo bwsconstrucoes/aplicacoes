@@ -769,8 +769,9 @@ def baixar(assunto):
         # o relatorio inteiro, na ordem da tela antiga
         "completo": lambda: [
             ("DRE", C["dre"], _dre()),
+            # com a linha dos encargos, senao esta aba nao fecha com a do DRE
             ("Despesas Categoria", C["despesas"],
-             consultas.despesas_por(f, quebra="categoria", limite=1000)),
+             consultas.despesas_por_categoria_com_encargo(f, limite=1000)),
             ("Top Credores", C["credores"], consultas.top_credores(f, limite=1000)),
             ("Receita de Obra", C["medicoes"], consultas.medicoes(f, limite=20000)),
             ("Outras Receitas", C["outras"], consultas.outras_receitas(f, limite=500)),

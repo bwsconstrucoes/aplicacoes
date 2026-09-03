@@ -314,6 +314,29 @@ def test_dre_fecha_de_cima_a_baixo(consultas):
     assert reais(d["resultado"]) == reais(resultado)
 
 
+def test_a_lista_de_categorias_da_planilha_fecha_com_o_dre(consultas):
+    """A aba de categorias do relatório tem de somar o mesmo que a aba do DRE.
+
+    Os encargos entram no DRE mas não têm categoria no plano financeiro, então
+    a lista da planilha ganha a linha "Juros e Multas Pagos". Aqui o Postgres é
+    de verdade: prova que o SQL que soma o encargo é o MESMO recorte que o DRE
+    usa — se um filtrar diferente do outro, as duas abas divergem em silêncio.
+    """
+    f = consultas.Filtros()
+    linhas = consultas.despesas_por_categoria_com_encargo(f)
+    nomes = {l["nome"] for l in linhas}
+    assert "Juros e Multas Pagos" in nomes
+
+    dre = consultas.dre_linhas(f)
+    total_dre = {l["linha"].strip(): l for l in dre["linhas"]}["= Total Custos/Despesas"]
+    assert reais(sum(l["valor"] for l in linhas)) == reais(total_dre["comprometido"])
+
+    # o percentual foi refeito com a linha nova dentro: se ela tivesse entrado
+    # depois da conta, apareceria com 0% ao lado de um valor que existe
+    encargo = next(l for l in linhas if l["nome"] == "Juros e Multas Pagos")
+    assert encargo["pct_total"] > 0
+
+
 def test_despesas_por_grupo_e_por_categoria(consultas):
     grupos = {d["nome"]: d["valor"] for d in
               consultas.despesas_por(consultas.Filtros(), quebra="grupo")}

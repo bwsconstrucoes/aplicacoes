@@ -297,6 +297,38 @@ def despesas_por(f: Filtros, quebra: str = "grupo", visao: str = "comprometido",
     return linhas
 
 
+def encargo_pago(f: Filtros) -> float:
+    """Juros e multa efetivamente pagos, no mesmo recorte que o DRE usa."""
+    where, params = f.where("analise = 'DRE' AND tipo = ?", [PAG])
+    linhas = consultar(f"SELECT COALESCE(SUM({ENCARGO}), 0) FROM fato{where}", params)
+    return float(linhas[0][0] or 0) if linhas else 0.0
+
+
+def despesas_por_categoria_com_encargo(f: Filtros, limite: int = 1000) -> list[dict]:
+    """As despesas por categoria MAIS a linha dos encargos, como na planilha antiga.
+
+    Juros e multa pagos entram no DRE, mas nao tem categoria propria no plano
+    financeiro do OMIE. Sem acrescentar a linha, a aba de categorias soma menos
+    que a aba do DRE — o mesmo arquivo mostrando dois totais diferentes, que e
+    exatamente o tipo de coisa que faz perder a confianca no relatorio inteiro.
+
+    A tela antiga fazia isso de proposito, e so na planilha: na tela a aba de
+    despesas continua sendo o que veio do plano de contas.
+    """
+    linhas = despesas_por(f, quebra="categoria", limite=limite)
+    encargo = encargo_pago(f)
+    if abs(encargo) > 0.005:
+        # mesmo rotulo da linha do DRE: e por ele que se liga uma aba na outra
+        linhas.append({"nome": "Juros e Multas Pagos", "valor": encargo,
+                       "pct_total": 0.0})
+        # o percentual e sobre o total mostrado, entao refaz com a linha nova
+        total = sum(l["valor"] for l in linhas) or 1.0
+        for linha in linhas:
+            linha["pct_total"] = abs(linha["valor"] / total * 100)
+        linhas.sort(key=lambda l: l["valor"])
+    return linhas
+
+
 def receita_por_obra(f: Filtros, limite: int = 25) -> list[dict]:
     """Receita por obra: o que ja entrou, o que o cliente reteve e o que falta."""
     where, params = f.where("analise = 'DRE' AND tipo = ?", [REC])

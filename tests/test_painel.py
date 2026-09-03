@@ -408,6 +408,10 @@ def _consultar_falso(sql, params=()):
                 ("1. Contas a Receber", True, "Retenções", 300.0, 0.0, 0.0),
                 ("2. Contas a Pagar", False, "Despesas com Pessoal", -4000.0, -100.0, -25.0),
                 ("2. Contas a Pagar", False, "Materiais", -2000.0, -50.0, 0.0)]
+    # o total de juros e multa pagos, que vira uma linha na aba de categorias.
+    # Vem antes do ranking porque nao tem HAVING mas soma sobre o mesmo fato.
+    if "COALESCE(SUM(CASE WHEN" in sql and "(juros + multa)" in sql:
+        return [(-25.0,)]
     if "HAVING" in sql:                                         # ranking de despesas
         return [("Despesas com Pessoal", -4100.0), ("Materiais", -2050.0)]
     if "COUNT(*)" in sql:                                       # maiores credores
@@ -675,6 +679,37 @@ def test_o_relatorio_completo_tem_todas_as_abas(painel):
         "DRE", "Despesas Categoria", "Top Credores", "Receita de Obra",
         "Outras Receitas", "Despesas Analitico", "Fluxo de Caixa",
         "Resultado por Obra"]
+
+
+def test_a_aba_de_categorias_fecha_com_a_aba_do_dre(painel):
+    """Duas abas do mesmo arquivo não podem mostrar totais diferentes.
+
+    Juros e multa pagos entram no DRE mas não têm categoria no plano financeiro
+    do OMIE. A planilha antiga acrescentava a linha de propósito, para as duas
+    abas fecharem; sem ela, quem soma a aba de categorias acha que a despesa é
+    menor do que o próprio arquivo diz duas abas antes.
+    """
+    from openpyxl import load_workbook
+
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/baixar/completo")
+    livro = load_workbook(io.BytesIO(r.get_data()))
+
+    categorias = livro["Despesas Categoria"]
+    rotulos = [linha[0] for linha in categorias.iter_rows(min_row=2, values_only=True)]
+    assert "Juros e Multas Pagos" in rotulos
+
+    soma_categorias = sum(linha[1] for linha in
+                          categorias.iter_rows(min_row=2, values_only=True))
+
+    dre = {linha[0].strip(): linha[3] for linha in
+           dre_linhas_da_planilha(livro) if linha[0]}
+    assert round(soma_categorias, 2) == round(dre["= Total Custos/Despesas"], 2)
+
+
+def dre_linhas_da_planilha(livro):
+    """As linhas da aba DRE, já sem o cabeçalho."""
+    return livro["DRE"].iter_rows(min_row=2, values_only=True)
 
 
 def test_a_planilha_respeita_os_filtros_da_tela(painel, monkeypatch):

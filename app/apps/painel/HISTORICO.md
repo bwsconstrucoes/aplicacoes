@@ -29,8 +29,8 @@ não foi publicado** — falta o "pode" do dono.
 
 ### O que foi verificado neste ramo
 
-- **782 testes passando no GitHub Actions**, com Postgres de verdade (é o
-  número que vale; no PC sem banco são 624 e 158 pulados).
+- **784 testes passando no GitHub Actions**, com Postgres de verdade (é o
+  número que vale; no PC sem banco são 625 e 159 pulados).
 - A aplicação sobe com os **18 blueprints** — uma importação quebrada em
   qualquer módulo derrubaria todos juntos.
 - Os rótulos e a ordem das linhas do DRE conferidos um a um contra
@@ -76,6 +76,18 @@ supérfluo.
 Na pressa de simplificar, a linha **"Juros e Multas Pagos"** ficou de fora do
 DRE. Não era só uma linha a menos na tela: os encargos sumiam do total de
 custos, e o resultado saía maior do que é. Está de volta.
+
+### A planilha voltou a fechar com o DRE
+
+Os encargos entram no DRE mas **não têm categoria** no plano financeiro do
+OMIE. Por isso a planilha antiga acrescentava, de propósito, uma linha
+"Juros e Multas Pagos" na aba de categorias — sem ela, duas abas do mesmo
+arquivo mostram totais diferentes, e quem soma a de categorias acha que a
+despesa é menor do que o próprio arquivo diz.
+
+Essa linha não tinha sido convertida. Voltou (03/09/2026), **só na planilha**:
+na tela a aba de despesas continua sendo o que veio do plano de contas, como no
+Streamlit. Há teste com banco de verdade exigindo que as duas abas fechem.
 
 ### E o teste que deveria ter pego isso não rodava no PC
 
@@ -210,19 +222,12 @@ sai.
    falta é abrir a tela publicada e comparar com o Streamlit. É o único pedaço
    novo que ainda não viu dado de verdade, e este módulo já mandou três erros
    de SQL para a produção.
-2. **A planilha não bate com o DRE por causa dos encargos.** No Streamlit, a
-   aba de despesas por categoria recebia de propósito uma linha
-   "Despesas Financeiras / Juros e Multas Pagos", justamente para fechar com o
-   DRE. O Excel novo não tem essa linha: a aba "Despesas Categoria" soma menos
-   que a aba "DRE", pela diferença dos encargos. É pequeno e é conserto de
-   poucas linhas, mas é uma diferença em relação ao original — e o combinado
-   aqui é que o que sai, sai porque o dono decidiu.
-3. **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
+2. **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
    Daria para refazer com `fpdf2`, que já está — mas é reescrever o relatório.
-4. **Mensagem duplicada** na tela de Configurações: o mesmo erro aparece na
+3. **Mensagem duplicada** na tela de Configurações: o mesmo erro aparece na
    linha "Última atualização" e na caixa vermelha de interrupção.
-5. **Cenários da prestação** — comparar duas configurações de rateio lado a lado.
-6. **Converter `app/apps/spsbd_app`** (análise de SPs) do mesmo jeito. É
+4. **Cenários da prestação** — comparar duas configurações de rateio lado a lado.
+5. **Converter `app/apps/spsbd_app`** (análise de SPs) do mesmo jeito. É
    Streamlit, tem 835 MB (com um Python empacotado dentro), usa
    `streamlit-aggrid` — a parte mais difícil de portar — e traz um
    `render.yaml` propondo um serviço separado com disco pago, o que é uma
