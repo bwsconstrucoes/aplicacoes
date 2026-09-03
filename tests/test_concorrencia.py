@@ -30,13 +30,18 @@ from conftest import SessaoFalsa, novo_usuario
 # 1. As quatro operações travam a linha antes de "ler, conferir, gravar"
 # ---------------------------------------------------------------------------
 def _funcao_trava(fn) -> bool:
-    """A função chama `s.get(..., with_for_update=True)`?"""
+    """A função chama `s.get(..., with_for_update=True, populate_existing=True)`?
+
+    As DUAS chaves: sem `populate_existing`, um objeto que a rota já carregou
+    (ao conferir o escopo) volta da memória da sessão sem SELECT nenhum — e
+    sem trava. Foi assim que a primeira versão falhou no Postgres de verdade.
+    """
     arvore = ast.parse(inspect.getsource(fn))
     for no in ast.walk(arvore):
         if isinstance(no, ast.Call) and getattr(no.func, "attr", "") == "get":
-            for kw in no.keywords:
-                if kw.arg == "with_for_update" and getattr(kw.value, "value", None) is True:
-                    return True
+            chaves = {kw.arg: getattr(kw.value, "value", None) for kw in no.keywords}
+            if chaves.get("with_for_update") is True and chaves.get("populate_existing") is True:
+                return True
     return False
 
 
@@ -165,7 +170,9 @@ def test_a_trava_de_linha_bloqueia_a_segunda_conexao(banco, sessao_real):
     u = Usuario(nome="Trava", email="trava@teste.bws.local",
                 senha_hash=gerar_hash("senha-teste-123"), perfil=P.ADMIN)
     sessao_real.add(u); sessao_real.commit()
-    sessao_real.get(Usuario, u.id, with_for_update=True)     # segura a linha
+    # o objeto JÁ está na sessão — é o cenário da rota, que carrega o registro
+    # ao conferir o escopo antes de chamar a função que trava
+    sessao_real.get(Usuario, u.id, with_for_update=True, populate_existing=True)
 
     with banco.connect() as outra:
         outra.execute(text("SET lock_timeout = '300ms'"))

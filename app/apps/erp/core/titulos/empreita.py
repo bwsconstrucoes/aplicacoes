@@ -306,7 +306,7 @@ def registrar_medicao(s: Session, contrato_id: int, dados: dict[str, Any],
     # FOR UPDATE no contrato: duas medições simultâneas liam o mesmo saldo e
     # as duas passavam pela crítica. Com a trava, a segunda só lê o saldo
     # depois que a primeira gravou.
-    c = s.get(ContratoServico, contrato_id, with_for_update=True)
+    c = s.get(ContratoServico, contrato_id, with_for_update=True, populate_existing=True)
     if c is None:
         raise ErroValidacao("Contrato não encontrado.")
 
@@ -378,7 +378,7 @@ def autorizar_medicao(s: Session, medicao_id: int, usuario: Usuario,
     # FOR UPDATE: duas autorizações da mesma medição gerariam dois títulos.
     m = s.get(ContratoMedicao, medicao_id, options=[
         selectinload(ContratoMedicao.contrato).selectinload(ContratoServico.fornecedor)],
-        with_for_update=True)
+        with_for_update=True, populate_existing=True)
     if m is None:
         raise ErroValidacao("Medição não encontrada.")
     if m.status != "MEDIDA":

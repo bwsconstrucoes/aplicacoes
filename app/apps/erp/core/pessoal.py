@@ -395,8 +395,12 @@ def gerar_titulo(s: Session, despesa_id: int, dados: dict[str, Any],
     # FOR UPDATE: dois cliques no mesmo segundo liam "sem título" os dois e
     # nasciam DOIS títulos para a mesma despesa. Com a trava, o segundo espera
     # o primeiro terminar e então vê o titulo_id já preenchido.
+    # populate_existing: a rota já carregou esta despesa ao conferir o escopo;
+    # sem isso o get devolveria o objeto da memória SEM ir ao banco — e sem
+    # pedir a trava. Descoberto por teste com Postgres de verdade.
     d = s.get(DespesaColaborador, despesa_id, options=[
-        selectinload(DespesaColaborador.itens)], with_for_update=True)
+        selectinload(DespesaColaborador.itens)], with_for_update=True,
+        populate_existing=True)
     if d is None:
         raise ErroValidacao("Despesa não encontrada.")
     if d.status != "APROVADA":
