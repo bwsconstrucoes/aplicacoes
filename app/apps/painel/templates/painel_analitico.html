@@ -15,7 +15,7 @@
   {% for campo, valor in [('grupo', grupo), ('categoria', categoria),
                           ('credor', credor), ('busca', busca),
                           ('visao', visao), ('ordem', ordem),
-                          ('de', de), ('ate', ate)] %}
+                          ('de', de), ('ate', ate), ('base', base)] %}
     {% if valor and campo not in proprios %}
       <input type="hidden" name="{{ campo }}" value="{{ valor }}">
     {% endif %}
@@ -30,9 +30,11 @@
   É aqui que se descobre de onde veio um número. <b>Pago</b> é o principal já
   liquidado, <b>A pagar</b> é o saldo, e <b>Juros/Multa</b> são os encargos —
   somados, dão o valor de fato, o mesmo que aparece no DRE.<br>
-  A <b>data</b> é a do <b>pagamento</b> quando o título foi quitado e a do
-  <b>vencimento</b> quando ainda está em aberto — a coluna Situação diz qual dos
-  dois é cada linha. Lançamento sem data nenhuma fica de fora da faixa.
+  A coluna <b>Data</b> é a que o DRE e o fluxo de caixa usam: o <b>pagamento</b>
+  quando o título foi quitado, o <b>vencimento</b> quando ainda está em aberto.
+  Ao lado dela, <b>Vencimento</b> e <b>Pagamento</b> aparecem separados, e
+  <b>Atraso</b> é a diferença entre os dois — só existe no que já foi pago.
+  Lançamento sem a data escolhida fica de fora da faixa.
 </p>
 
 {% if chips or grupo or categoria or credor or de or ate %}
@@ -46,11 +48,21 @@
 </div>
 {% endif %}
 
+{% if not duas_datas %}
+<div class="cartao" style="border-left:4px solid var(--ambar); margin-bottom:14px">
+  <b>Vencimento e Pagamento ainda estão vazios.</b>
+  As colunas foram criadas agora e quem as preenche é a próxima atualização da
+  base — a da madrugada faz isso sozinha. Para ver hoje, vá em
+  <a href="{{ url_for('painel.configuracoes') }}">Configurações</a> e rode
+  <b>“Só refazer os números”</b>: não baixa nada do OMIE, só recalcula.
+</div>
+{% endif %}
+
 <!-- ===================== FILTROS DESTA TELA ===================== -->
 <div class="cartao">
   <form method="get">
     {{ esconde(['grupo', 'categoria', 'credor', 'busca',
-                'visao', 'ordem', 'de', 'ate']) }}
+                'visao', 'ordem', 'de', 'ate', 'base']) }}
     <div class="form-grade">
       <div class="campo">
         <label for="busca">Buscar</label>
@@ -84,6 +96,14 @@
         <input id="ate" name="ate" type="date" value="{{ ate }}">
       </div>
       <div class="campo">
+        <label for="base">Filtrar a data por</label>
+        <select id="base" name="base">
+          {% for chave, (_coluna, rotulo) in bases.items() %}
+            <option value="{{ chave }}" {% if base == chave %}selected{% endif %}>{{ rotulo }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
         <label for="visao">Visão</label>
         <select id="visao" name="visao">
           <option value="comprometido" {% if visao == 'comprometido' %}selected{% endif %}>Comprometido</option>
@@ -96,6 +116,8 @@
         <select id="ordem" name="ordem">
           <option value="valor" {% if ordem == 'valor' %}selected{% endif %}>Maior valor</option>
           <option value="data" {% if ordem == 'data' %}selected{% endif %}>Mais recente</option>
+          <option value="vencimento" {% if ordem == 'vencimento' %}selected{% endif %}>Vencimento</option>
+          <option value="atraso" {% if ordem == 'atraso' %}selected{% endif %}>Maior atraso</option>
           <option value="credor" {% if ordem == 'credor' %}selected{% endif %}>Credor</option>
           <option value="categoria" {% if ordem == 'categoria' %}selected{% endif %}>Categoria</option>
         </select>
@@ -161,6 +183,9 @@
       <thead>
         <tr>
           <th class="sem-ordem">Data</th>
+          <th class="sem-ordem">Vencimento</th>
+          <th class="sem-ordem">Pagamento</th>
+          <th class="sem-ordem direita">Atraso</th>
           <th class="sem-ordem">Credor</th>
           <th class="sem-ordem">Categoria</th>
           <th class="sem-ordem">Obra</th>
@@ -176,6 +201,14 @@
         {% for l in dados.linhas %}
         <tr>
           <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
+          <td class="dados">{{ l.data_vencimento.strftime('%d/%m/%Y') if l.data_vencimento else '—' }}</td>
+          <td class="dados">{{ l.data_pagamento.strftime('%d/%m/%Y') if l.data_pagamento else '—' }}</td>
+          <td class="dados direita">
+            {% if l.atraso is none %}—
+            {% elif l.atraso > 0 %}<span class="v-neg">{{ l.atraso }}d</span>
+            {% elif l.atraso < 0 %}<span class="v-pos">{{ l.atraso }}d</span>
+            {% else %}0d{% endif %}
+          </td>
           <td class="desc">
             {{ l.credor }}
             {% if l.observacao %}<small>{{ l.observacao[:70] }}</small>{% endif %}
