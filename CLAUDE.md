@@ -19,6 +19,53 @@ Isso muda a resposta, não o cuidado com o código.
   verificado são decisão de negócio — e a decisão é dele. Não esconder atrás de
   "está pronto".
 
+## Três áreas, três chats — e a memória fica no repositório
+
+O dono trabalha com **um chat por área**, na nuvem (claude.ai/code), sem
+depender do Claude Code no PC. Cada chat nasce de uma cópia limpa da `main` e
+**não lembra de nada** que outro chat conversou. O que atravessa sessões é
+**só o que está escrito no repositório**. Por isso:
+
+| Área | Pasta | Leia ANTES de mexer | Registre o estado em |
+|---|---|---|---|
+| ERP financeiro | `app/apps/erp/` | `ROTEIRO.md`, `HISTORICO.md`, `CONTEXTO.md` §2.1 e §3.8–3.11 | `HISTORICO.md` e `ROTEIRO.md` |
+| Painel OMIE | `app/apps/painel/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
+| Análise de SPs | `app/apps/analisesps/` | `README.md`, `HISTORICO.md` | `HISTORICO.md` |
+
+**Ao começar** uma sessão numa área: ler os arquivos da linha, conferir a
+seção "Pendente AGORA" e **perguntar ao dono** se aquilo já aconteceu — o
+estado do mundo pode ter mudado desde que o arquivo foi escrito.
+
+**Antes de encerrar, ou sempre que uma entrega ficar pronta**, atualizar o
+`HISTORICO.md` da área: onde o trabalho está, o que está pendente agora, as
+decisões tomadas (com o motivo), os incidentes e o que ficou de fora. Escrever
+para quem nunca viu a conversa. Uma sessão que termina sem atualizar o
+histórico **perdeu** o que aprendeu — o chat não é memória, o repositório é.
+
+**Mudança que atravessa áreas** (este arquivo, `CONTEXTO.md`, `tests/conftest.py`,
+`.github/workflows/`, `app/main.py`, `requirements.txt`) é registrada em
+`CONTEXTO.md` › "Histórico de decisões", além do histórico da área.
+
+**Juntar na `main` publica no Render na hora.** Regras:
+
+1. Só com o dono dizendo "pode". Trabalho em ramo é seguro; a `main` é produção.
+2. **Perguntar antes se há carga do painel ou sincronização do Análise de SPs
+   em andamento**: publicar reinicia o serviço e mata o trabalho longo. Já
+   aconteceu, causado por outro chat que não sabia.
+3. Ramo com migração de banco: avisar o dono para apertar "Aplicar
+   atualizações do banco" **no mesmo momento** da junção — ERP em
+   Configurações, painel e Análise de SPs nas telas de configuração deles.
+4. Se a `main` andou, trazer a `main` para o ramo, rodar a suíte, e só então
+   juntar. O GitHub Actions roda a suíte com banco de verdade a cada envio.
+
+**Mensagem de abertura** que o dono usa num chat novo (basta trocar a área):
+
+> Trabalhe na área **[ERP / Painel OMIE / Análise de SPs]** deste repositório.
+> Leia o `CLAUDE.md` e os arquivos da área indicados nele, me diga em que pé o
+> trabalho está e o que consta como pendente, e confirme comigo antes de
+> começar. Não mexa nas outras áreas. Trabalhe no seu ramo e me pergunte antes
+> de juntar na linha principal.
+
 ## Idioma
 
 - **Código em inglês:** nomes de variáveis, funções, classes, argumentos.
