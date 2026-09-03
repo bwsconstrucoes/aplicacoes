@@ -161,20 +161,37 @@ def test_duas_medicoes_nao_apontam_para_o_mesmo_titulo(sessao_real):
 
 
 @pytest.mark.banco
-def test_a_trava_de_linha_bloqueia_a_segunda_conexao(banco, sessao_real):
-    """FOR UPDATE de verdade: quem chega depois espera — aqui, com um limite de
-    espera curto, recebe erro em vez de passar por cima."""
+def test_a_trava_de_linha_bloqueia_a_segunda_conexao(banco):
+    """FOR UPDATE de verdade, no cenário da rota: a sessão já carregou o
+    registro (ao conferir o escopo) e depois pede a trava. Uma segunda conexão
+    tem de esperar — aqui, com limite de espera curto, recebe erro.
+
+    A linha precisa estar COMMITADA para a segunda conexão enxergá-la, então
+    este teste não usa a transação desfeita da fixture: cria, trava, confere e
+    apaga por conta própria."""
+    from sqlalchemy.orm import Session
     from app.apps.erp.core.auth.service import gerar_hash
     from app.apps.erp.db.models.cadastros import Usuario
 
-    u = Usuario(nome="Trava", email="trava@teste.bws.local",
-                senha_hash=gerar_hash("senha-teste-123"), perfil=P.ADMIN)
-    sessao_real.add(u); sessao_real.commit()
-    # o objeto JÁ está na sessão — é o cenário da rota, que carrega o registro
-    # ao conferir o escopo antes de chamar a função que trava
-    sessao_real.get(Usuario, u.id, with_for_update=True, populate_existing=True)
+    with banco.connect() as ca:
+        with ca.begin():
+            uid = ca.execute(text(
+                "INSERT INTO usuarios (nome, email, senha_hash, perfil) "
+                "VALUES ('Trava', 'trava@teste.bws.local', :h, 'ADMIN') RETURNING id"),
+                {"h": gerar_hash("senha-teste-123")}).scalar_one()
+        try:
+            tx = ca.begin()
+            sa = Session(bind=ca, join_transaction_mode="create_savepoint")
+            sa.get(Usuario, uid)                                   # já na sessão…
+            sa.get(Usuario, uid, with_for_update=True, populate_existing=True)   # …e trava
 
-    with banco.connect() as outra:
-        outra.execute(text("SET lock_timeout = '300ms'"))
-        with pytest.raises(OperationalError):
-            outra.execute(text("SELECT id FROM usuarios WHERE id = :i FOR UPDATE"), {"i": u.id})
+            with banco.connect() as cb:
+                cb.execute(text("SET lock_timeout = '300ms'"))
+                with pytest.raises(OperationalError):
+                    cb.execute(text("SELECT id FROM usuarios WHERE id = :i FOR UPDATE"),
+                               {"i": uid})
+            sa.close()
+            tx.rollback()
+        finally:
+            with ca.begin():
+                ca.execute(text("DELETE FROM usuarios WHERE id = :i"), {"i": uid})
