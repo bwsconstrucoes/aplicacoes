@@ -1,0 +1,277 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Auditoria — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% macro sp_link(id) %}
+  <a href="{{ url_for('analisesps.detalhe', sp_id=id) }}">{{ id }}</a>
+{% endmacro %}
+
+{% macro tabela_sps(linhas, extras) %}
+  <div class="tabela-rolagem">
+    <table class="sps">
+      <thead>
+        <tr>
+          <th>SP</th><th>Credor</th><th class="num">Valor</th><th>Vencimento</th>
+          {% for rotulo, _ in extras %}<th>{{ rotulo }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in linhas %}
+          <tr>
+            <td>{{ sp_link(l.id) }}</td>
+            <td class="cortar" title="{{ l.credor }}">{{ l.credor }}</td>
+            <td class="num">{{ l.valor_num|moeda }}</td>
+            <td>{{ l.vencimento_d|data_br }}</td>
+            {% for _, campo in extras %}
+              <td class="cortar" title="{{ l[campo] }}">{{ l[campo] }}</td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endmacro %}
+
+{% macro aviso_teto(linhas) %}
+  {% if linhas|length >= teto %}
+    <div class="aviso atencao">
+      Mostrando as primeiras <b>{{ teto }}</b>. Há mais — trate estas e
+      recarregue, ou ligue os filtros da lista para estreitar o recorte.
+    </div>
+  {% endif %}
+{% endmacro %}
+
+{% block conteudo %}
+<h2>
+  Auditoria
+  <small>{% if usar_filtros %}sobre o recorte filtrado{% else %}sobre a base inteira{% endif %}</small>
+</h2>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>O que auditar</h3></div>
+  <div class="atalhos">
+    <a class="atalho {% if not checagem %}ativo{% endif %}"
+       href="{{ url_for('analisesps.auditoria', usar_filtros=('1' if usar_filtros else '')) }}">
+      Visão geral</a>
+    {% for chave, rotulo in checagens.items() %}
+      <a class="atalho {% if checagem == chave %}ativo{% endif %}"
+         href="{{ url_for('analisesps.auditoria', checagem=chave,
+                          usar_filtros=('1' if usar_filtros else '')) }}">{{ rotulo }}</a>
+    {% endfor %}
+  </div>
+  <p class="cartao-dica">
+    Por padrão a auditoria olha a <b>base inteira</b>, e não o que está filtrado
+    na tela de Solicitações — auditoria que enxerga só o pedaço já filtrado
+    encontra só o que já se estava olhando.
+    {% if usar_filtros %}
+      <a href="{{ url_for('analisesps.auditoria', checagem=checagem) }}">Voltar à base inteira</a>
+    {% else %}
+      <a href="{{ url_for('analisesps.auditoria', checagem=checagem, usar_filtros='1') }}">Usar os filtros mesmo assim</a>
+    {% endif %}
+  </p>
+</div>
+
+{% if not checagem %}
+  <div class="kpis">
+    {% for chave, rotulo in checagens.items() %}
+      <a class="kpi {% if contagens.get(chave) %}ambar{% endif %}"
+         href="{{ url_for('analisesps.auditoria', checagem=chave,
+                          usar_filtros=('1' if usar_filtros else '')) }}"
+         style="text-decoration:none; color:inherit">
+        <div class="kpi-rotulo">{{ rotulo }}</div>
+        <div class="kpi-valor">{{ contagens.get(chave, 0) }}</div>
+        <div class="kpi-sub">
+          {% if contagens.get(chave) %}clique para ver{% else %}nada a apontar{% endif %}
+        </div>
+      </a>
+    {% endfor %}
+  </div>
+
+{% elif checagem == 'pontualidade' %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Pontualidade do registro</h3>
+      <small>antecedência = vencimento menos solicitação</small>
+    </div>
+    <div class="aviso">
+      Antecedência <b>negativa</b> quer dizer que a SP foi registrada
+      <b>depois</b> de vencer — o que gera juros. Quem está no topo é quem mais
+      lança em cima da hora.
+    </div>
+    <form method="get" style="display:flex; gap:10px; align-items:flex-end; margin-bottom:12px">
+      <input type="hidden" name="checagem" value="pontualidade">
+      {% if usar_filtros %}<input type="hidden" name="usar_filtros" value="1">{% endif %}
+      <div>
+        <label class="rotulo-campo">Mínimo de lançamentos por pessoa</label>
+        <input type="number" name="minimo" value="{{ minimo }}" min="1" max="200" style="width:90px">
+      </div>
+      <button class="btn secundario" type="submit">Aplicar</button>
+      <span class="cartao-dica" style="margin:0">
+        Quem tem uma SP só não deve encabeçar o ranking por causa dela.
+      </span>
+    </form>
+    <div class="tabela-rolagem">
+      <table class="sps">
+        <thead>
+          <tr>
+            <th>Responsável</th><th class="num">SPs</th>
+            <th class="num">Antecedência média</th><th class="num">Mediana</th>
+            <th class="num">Atrasadas</th><th class="num">%</th>
+            <th class="num">R$ atrasado</th><th class="num">R$ total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in resultado %}
+            <tr>
+              <td class="cortar" title="{{ l.responsavel }}">{{ l.responsavel }}</td>
+              <td class="num">{{ l.quantidade }}</td>
+              <td class="num {% if (l.media_dias or 0) < 0 %}venc-vencido{% endif %}">
+                {{ l.media_dias }} d</td>
+              <td class="num">{{ l.mediana_dias }} d</td>
+              <td class="num">{{ l.atrasados }}</td>
+              <td class="num">{{ l.percentual_atrasados }}%</td>
+              <td class="num">{{ l.valor_atrasado|moeda }}</td>
+              <td class="num">{{ l.valor_total|moeda }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="8" style="padding:20px; text-align:center; color:var(--tinta-suave)">
+              Sem dados suficientes — é preciso ter data de solicitação e de vencimento.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+{% elif checagem == 'codigos_barras' %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Boletos inválidos</h3>
+      <small>{{ resultado.invalidos|length }}</small>
+    </div>
+    <p class="cartao-dica">
+      Sem código, só com zeros, ou com a palavra "inválido" escrita. Só entre as
+      que estão a pagar.
+    </p>
+    {{ aviso_teto(resultado.invalidos) }}
+    {{ tabela_sps(resultado.invalidos, [('Código de barras', 'codigo_barras')]) }}
+  </div>
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Boletos repetidos</h3>
+      <small>{{ resultado.duplicados|length }}</small>
+    </div>
+    <p class="cartao-dica">
+      O mesmo código em mais de uma SP. A contagem considera as pagas também —
+      é onde existe o risco de pagar duas vezes — mas a lista mostra as que
+      ainda estão a pagar, que são as que dá para evitar.
+    </p>
+    {{ aviso_teto(resultado.duplicados) }}
+    {{ tabela_sps(resultado.duplicados, [('Código de barras', 'codigo_barras')]) }}
+  </div>
+
+{% elif checagem == 'nf_duplicada' %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Nota fiscal repetida</h3>
+      <small>{{ resultado|length }}</small>
+    </div>
+    <p class="cartao-dica">
+      Mesmo CPF/CNPJ com o mesmo número de nota em SPs diferentes. É o indício
+      mais direto de pagamento em duplicidade.
+    </p>
+    {{ aviso_teto(resultado) }}
+    {{ tabela_sps(resultado, [('CPF/CNPJ', 'documento'), ('Nº NF', 'nf'),
+                              ('Quantas', 'quantos')]) }}
+  </div>
+
+{% elif checagem == 'possivel_duplicidade' %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Possível duplicidade</h3>
+      <small>{{ resultado|length }}</small>
+    </div>
+    <p class="cartao-dica">
+      Mesmo CPF/CNPJ e mesmo valor, com as SPs a poucos dias uma da outra.
+      Complementa a análise da IA por um caminho que não depende de ninguém ter
+      escrito nada.
+    </p>
+    <form method="get" style="display:flex; gap:10px; align-items:flex-end; margin-bottom:12px">
+      <input type="hidden" name="checagem" value="possivel_duplicidade">
+      {% if usar_filtros %}<input type="hidden" name="usar_filtros" value="1">{% endif %}
+      <div>
+        <label class="rotulo-campo">Janela, em dias</label>
+        <input type="number" name="dias" value="{{ dias }}" min="0" max="365" style="width:90px">
+      </div>
+      <button class="btn secundario" type="submit">Aplicar</button>
+      <span class="cartao-dica" style="margin:0">
+        Dois aluguéis iguais com trinta dias de diferença são o normal, não duplicidade.
+      </span>
+    </form>
+    {{ aviso_teto(resultado) }}
+    <div class="tabela-rolagem">
+      <table class="sps">
+        <thead>
+          <tr><th>SP</th><th>Credor</th><th class="num">Valor</th><th>CPF/CNPJ</th>
+              <th>Solicitação</th><th class="num">No grupo</th><th class="num">Janela</th></tr>
+        </thead>
+        <tbody>
+          {% for l in resultado %}
+            <tr>
+              <td>{{ sp_link(l.id) }}</td>
+              <td class="cortar" title="{{ l.credor }}">{{ l.credor }}</td>
+              <td class="num">{{ l.valor_num|moeda }}</td>
+              <td>{{ l.documento }}</td>
+              <td>{{ l.solicitacao_d|data_br }}</td>
+              <td class="num">{{ l.quantos }}</td>
+              <td class="num">{{ l.janela }} d</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+{% elif checagem == 'risco_ia' %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Risco apontado pela análise</h3>
+      <small>{{ resultado|length }}</small>
+    </div>
+    {% if not resultado %}
+      <div class="aviso bom">Nenhuma SP marcada como "COM RISCO".</div>
+    {% else %}
+      {{ aviso_teto(resultado) }}
+      {{ tabela_sps(resultado, [('CPF/CNPJ', 'documento'), ('Análise', 'analise_ia')]) }}
+    {% endif %}
+  </div>
+
+{% elif checagem == 'sem_classificacao' %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Sem centro de custo ou projeto</h3>
+      <small>{{ resultado|length }}</small>
+    </div>
+    <p class="cartao-dica">
+      Sem essas informações a despesa não entra em nenhum relatório por obra.
+      Ela existe, mas some da análise.
+    </p>
+    {{ aviso_teto(resultado) }}
+    {{ tabela_sps(resultado, [('Falta', 'faltando'), ('Centro de custo', 'centro_custo'),
+                              ('Projeto', 'projeto')]) }}
+  </div>
+
+{% elif checagem == 'sem_integracao' %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Falta integrar no Omie</h3>
+      <small>{{ resultado|length }}</small>
+    </div>
+    <p class="cartao-dica">
+      SPs ainda ativas — nem pagas nem canceladas — e sem código de integração.
+      É trabalho que ainda precisa ser feito.
+    </p>
+    {{ aviso_teto(resultado) }}
+    {{ tabela_sps(resultado, [('Status', 'status_pgt')]) }}
+  </div>
+{% endif %}
+{% endblock %}

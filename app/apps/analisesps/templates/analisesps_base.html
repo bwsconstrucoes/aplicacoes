@@ -18,10 +18,19 @@
   </a>
 
   <nav class="topo-abas">
-    <a class="topo-aba {% if aba == 'solicitacoes' %}ativa{% endif %}"
-       href="{{ url_for('analisesps.solicitacoes') }}">Solicitações</a>
-    <a class="topo-aba {% if aba == 'configuracoes' %}ativa{% endif %}"
-       href="{{ url_for('analisesps.configuracoes') }}">Configurações</a>
+    {% for chave, rotulo, rota in [
+        ('solicitacoes', 'Solicitações', 'analisesps.solicitacoes'),
+        ('lote',         'Lote',         'analisesps.tela_lote'),
+        ('relatorio',    'Relatório',    'analisesps.relatorio'),
+        ('auditoria',    'Auditoria',    'analisesps.auditoria'),
+        ('ratear',       'Ratear',       'analisesps.ratear'),
+        ('bradesco',     'Bradesco',     'analisesps.tela_bradesco'),
+        ('agenda',       'Agenda',       'analisesps.tela_agenda'),
+        ('log',          'Log',          'analisesps.log'),
+        ('configuracoes','Configurações','analisesps.configuracoes')] %}
+      <a class="topo-aba {% if aba == chave %}ativa{% endif %}"
+         href="{{ url_for(rota) }}">{{ rotulo }}</a>
+    {% endfor %}
   </nav>
 
   <div class="topo-direita">

@@ -328,3 +328,189 @@ def base_carregada() -> dict:
         "SELECT valor FROM analisesps.meta WHERE chave = 'ultima_sincronizacao'")
     return {"pronta": quantas > 0, "quantidade": quantas,
             "ultima": linha[0] if linha else None}
+
+
+# ---------------------------------------------------------------------------
+# RELATÓRIO
+#
+# As mesmas contas do `relatorio.py` do Streamlit, feitas pelo banco. Lá elas
+# rodavam sobre o DataFrame inteiro na memória; aqui cada uma é uma consulta
+# que devolve dezenas de linhas, não dezenas de milhares.
+#
+# Uma regra vale para o relatório todo e vem do original: CANCELADAS FICAM DE
+# FORA. Uma SP cancelada não é despesa, e somá-la inflaria todo total.
+# ---------------------------------------------------------------------------
+SEM_CANCELADAS = "lower(trim(coalesce(status_pgt,''))) <> 'cancelado'"
+
+# As dimensões que o relatório sabe quebrar. É uma lista fechada de propósito:
+# o nome da coluna entra no texto do SQL, então ele não pode vir de fora.
+DIMENSOES = {
+    "projeto": "Projeto",
+    "centro_custo": "Centro de Custo",
+    "tipo_despesa": "Tipo de Despesa",
+    "conta": "Conta",
+    "responsavel": "Responsável",
+    "status_pgt": "Status de Pagamento",
+    "forma_pagamento": "Forma de Pagamento",
+}
+
+VAZIO = "(vazio)"
+
+# Os três recortes do relatório, e a data que manda em cada um.
+TIPOS = {
+    "geral": "Visão geral",
+    "pagar": "Contas a pagar",
+    "pagas": "Contas pagas",
+}
+
+PERIODOS = {"tudo": "Todo o período", "semana": "Esta semana", "mes": "Este mês"}
+
+
+def _where_relatorio(f: dict, tipo: str) -> tuple[str, list]:
+    """O filtro da barra lateral, mais o recorte do relatório.
+
+    `tipo` escolhe o universo e, com ele, a data que importa: contas a pagar se
+    olham pelo VENCIMENTO; contas pagas, pela DATA DO PAGAMENTO. Misturar as
+    duas dá um total que não fecha com nada."""
+    onde, params = _condicoes(f)
+    onde.append(SEM_CANCELADAS)
+
+    if tipo == "pagar":
+        onde.append("lower(trim(coalesce(status_pgt,''))) = 'pagar'")
+    elif tipo == "pagas":
+        onde.append("lower(trim(coalesce(status_pgt,''))) = 'pago'")
+
+    return " WHERE " + " AND ".join(onde), params
+
+
+def coluna_de_data(tipo: str) -> str:
+    """Qual data manda em cada recorte. Ver `_where_relatorio`."""
+    return "data_pagamento_d" if tipo == "pagas" else "vencimento_d"
+
+
+def _periodo(tipo: str, periodo: str) -> str:
+    """O atalho de período: esta semana, este mês, ou tudo.
+
+    Calculado com a data de Brasília, não com a do servidor — senão, entre 21h
+    e meia-noite, "este mês" viraria o mês seguinte.
+
+    `date_trunc('week')` do Postgres começa na SEGUNDA, que é como a semana é
+    contada no original (`hoje.weekday()`)."""
+    coluna = coluna_de_data(tipo)
+    if periodo == "semana":
+        return (f" AND {coluna} >= date_trunc('week', {SQL_HOJE})::date"
+                f" AND {coluna} <= (date_trunc('week', {SQL_HOJE})"
+                " + interval '6 days')::date")
+    if periodo == "mes":
+        return (f" AND {coluna} >= date_trunc('month', {SQL_HOJE})::date"
+                f" AND {coluna} < (date_trunc('month', {SQL_HOJE})"
+                " + interval '1 month')::date")
+    return ""
+
+
+def numeros_do_relatorio(f: dict, tipo: str = "geral",
+                         periodo: str = "tudo") -> dict:
+    """Total, quantidade, ticket médio e vencidos — numa consulta só."""
+    from .db import consultar_um
+    where, params = _where_relatorio(f, tipo)
+    recorte = _periodo(tipo, periodo)
+    linha = consultar_um(
+        "SELECT count(*), coalesce(sum(valor_num),0), "
+        f"       count(*) FILTER (WHERE vencimento_d < {SQL_HOJE}), "
+        "       coalesce(sum(valor_num) FILTER "
+        f"               (WHERE vencimento_d < {SQL_HOJE}), 0) "
+        f"  FROM analisesps.sps{where}{recorte}", tuple(params))
+    if not linha:
+        return {"quantidade": 0, "total": 0, "ticket": 0,
+                "vencidos_qtd": 0, "vencidos_total": 0}
+    quantidade, total = linha[0], linha[1]
+    return {
+        "quantidade": quantidade,
+        "total": total,
+        "ticket": (total / quantidade) if quantidade else 0,
+        "vencidos_qtd": linha[2],
+        "vencidos_total": linha[3],
+    }
+
+
+def agregar(f: dict, dimensao: str, tipo: str = "geral", periodo: str = "tudo",
+            limite: int = 30) -> list[dict]:
+    """Soma por uma dimensão, da maior para a menor.
+
+    Valor em branco vira "(vazio)" em vez de sumir — é assim no original, e é o
+    certo: uma despesa sem centro de custo continua sendo despesa, e escondê-la
+    faria a soma das partes não bater com o total."""
+    if dimensao not in DIMENSOES:
+        raise ValueError(f"Dimensão não permitida no relatório: {dimensao}")
+    from .db import consultar
+    where, params = _where_relatorio(f, tipo)
+    recorte = _periodo(tipo, periodo)
+    linhas = consultar(
+        f"SELECT CASE WHEN trim(coalesce({dimensao},'')) = '' THEN ? "
+        f"            ELSE trim({dimensao}) END AS rotulo, "
+        "        count(*), coalesce(sum(valor_num),0) "
+        f"  FROM analisesps.sps{where}{recorte} "
+        "  GROUP BY 1 ORDER BY 3 DESC, 1 LIMIT ?",
+        (VAZIO,) + tuple(params) + (limite,))
+    return [{"rotulo": r[0], "quantidade": r[1], "total": r[2]} for r in linhas]
+
+
+def top_credores(f: dict, tipo: str = "geral", periodo: str = "tudo",
+                 limite: int = 30) -> list[dict]:
+    """Os maiores credores, agrupados por CPF/CNPJ — não pelo nome.
+
+    O agrupamento por documento é o do original, e existe porque o mesmo credor
+    aparece escrito de vários jeitos ("ACME LTDA", "Acme Ltda ME"). Somar por
+    nome partiria o mesmo fornecedor em três."""
+    from .db import consultar
+    where, params = _where_relatorio(f, tipo)
+    recorte = _periodo(tipo, periodo)
+    linhas = consultar(
+        "SELECT CASE WHEN trim(coalesce(documento,'')) = '' THEN ? "
+        "            ELSE trim(documento) END AS doc, "
+        # O nome exibido é o mais frequente naquele documento — mesma escolha
+        # do original, que usava a moda.
+        "       mode() WITHIN GROUP (ORDER BY trim(coalesce(credor,''))), "
+        "       count(*), coalesce(sum(valor_num),0) "
+        f"  FROM analisesps.sps{where}{recorte} "
+        "  GROUP BY 1 ORDER BY 4 DESC, 2 LIMIT ?",
+        ("(sem CPF/CNPJ)",) + tuple(params) + (limite,))
+    return [{"documento": r[0], "credor": r[1], "quantidade": r[2], "total": r[3]}
+            for r in linhas]
+
+
+# As faixas de atraso do original, na mesma ordem e com os mesmos limites.
+FAIXAS_ATRASO = [(1, 7, "1 a 7 dias"), (8, 15, "8 a 15 dias"),
+                 (16, 30, "16 a 30 dias"), (31, 60, "31 a 60 dias"),
+                 (61, 90, "61 a 90 dias"), (91, None, "mais de 90 dias")]
+
+
+def aging_vencidos(f: dict, periodo: str = "tudo") -> list[dict]:
+    """Quanto está atrasado, e há quanto tempo. Só o que está a pagar.
+
+    A conta do atraso usa o dia de Brasília. Uma SP que vence HOJE não está
+    atrasada — o original exige atraso maior que zero, e a tradução mantém.
+
+    As faixas entram no texto do SQL, e não como parâmetro, porque são números
+    fixos escritos aqui — nunca chegam de fora."""
+    from .db import consultar
+    where, params = _where_relatorio(f, "pagar")
+    recorte = _periodo("pagar", periodo)
+
+    casos = []
+    for inicio, fim, nome in FAIXAS_ATRASO:
+        ate = f" AND atraso <= {int(fim)}" if fim else ""
+        casos.append(f"WHEN atraso >= {int(inicio)}{ate} THEN '{nome}'")
+
+    linhas = consultar(
+        "SELECT faixa, count(*), coalesce(sum(valor_num),0) FROM ("
+        f"  SELECT valor_num, CASE {' '.join(casos)} END AS faixa FROM ("
+        f"    SELECT valor_num, ({SQL_HOJE} - vencimento_d) AS atraso "
+        f"      FROM analisesps.sps{where}{recorte}"
+        "  ) AS com_atraso WHERE atraso > 0"
+        ") AS por_faixa WHERE faixa IS NOT NULL GROUP BY 1",
+        tuple(params))
+
+    achados = {r[0]: {"faixa": r[0], "quantidade": r[1], "total": r[2]}
+               for r in linhas}
+    return [achados[nome] for _, _, nome in FAIXAS_ATRASO if nome in achados]

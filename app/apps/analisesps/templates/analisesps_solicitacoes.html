@@ -186,6 +186,7 @@
     {% else %}
       <span class="resumo">Perfil <b>Consulta</b> — vê e exporta, não altera.</span>
     {% endif %}
+    <button class="btn secundario" id="btn-codigos">QR / Código</button>
     <a class="btn secundario" href="{{ url_for('analisesps.exportar', **args) }}">Exportar CSV</a>
     <span class="selecao" id="contador">Nenhuma SP marcada</span>
   </div>
@@ -304,6 +305,16 @@ document.querySelectorAll(".acoes button[data-coluna]").forEach(botao => {
       botao.disabled = false;
     }
   });
+});
+
+// "QR / Código": leva as SPs marcadas para a tela que monta o QR Pix ou o
+// código de barras de cada uma.
+document.getElementById("btn-codigos").addEventListener("click", () => {
+  const ids = marcadas().map(c => c.value);
+  if (!ids.length) { alert("Marque ao menos uma SP."); return; }
+  if (ids.length > 50) { alert("São no máximo 50 SPs por vez."); return; }
+  location.href = "{{ url_for('analisesps.codigos') }}?" +
+                  ids.map(i => "id=" + encodeURIComponent(i)).join("&");
 });
 
 atualizarContador();

@@ -476,3 +476,71 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   .tabela-rolagem { max-height: none; }
   .acoes { position: static; }
 }
+
+
+/* ==========================================================================
+   As telas que vieram depois da primeira entrega
+   ========================================================================== */
+
+/* Duas colunas que viram uma no celular. */
+.duas-colunas {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 14px;
+}
+
+.rotulo-campo {
+  display: block; font-size: 11.5px; font-weight: 700; color: var(--tinta-suave);
+  text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px;
+}
+.campo-largo {
+  width: 100%; padding: 8px 10px; border: 1px solid var(--borda-forte);
+  border-radius: var(--raio-p); font-size: 13.5px; font-family: inherit;
+}
+textarea.campo-largo { font-family: var(--fonte-dados); font-size: 13px; resize: vertical; }
+.campo-largo:focus { outline: 2px solid var(--azul-claro); border-color: var(--azul-claro); }
+select, input[type=number], input[type=search], input[type=text], input[type=date] {
+  padding: 7px 9px; border: 1px solid var(--borda-forte);
+  border-radius: var(--raio-p); font-size: 13.5px; font-family: inherit;
+  background: var(--branco); color: var(--tinta);
+}
+
+/* Barras do relatorio. Sem biblioteca de grafico: dois divs e uma largura em
+   porcentagem. O Plotly do painel antigo custava mais de 3 MB de JavaScript
+   por abertura de tela, e isto aqui resolve o mesmo. */
+.barra-linha {
+  display: grid; grid-template-columns: 190px 1fr 120px 52px;
+  gap: 10px; align-items: center; padding: 3px 0; font-size: 13px;
+}
+.barra-rotulo { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.barra-trilho { background: #EEF2FA; border-radius: 4px; height: 16px; overflow: hidden; }
+.barra-cheia {
+  background: linear-gradient(90deg, var(--azul), var(--azul-claro));
+  height: 100%; border-radius: 4px; min-width: 2px;
+}
+.barra-valor { font-family: var(--fonte-dados); text-align: right; white-space: nowrap; }
+.barra-qtd { font-family: var(--fonte-dados); text-align: right; color: var(--tinta-suave); font-size: 12px; }
+
+/* Atalhos da auditoria */
+.atalhos { display: flex; flex-wrap: wrap; gap: 6px; }
+.atalho {
+  display: inline-block; padding: 6px 11px; border-radius: 999px;
+  border: 1px solid var(--borda-forte); background: var(--branco);
+  color: var(--azul); font-size: 13px; font-weight: 600; text-decoration: none;
+}
+.atalho:hover { background: #EEF2FA; }
+.atalho.ativo { background: var(--azul); color: #fff; border-color: var(--azul); }
+
+/* KPI que e link (a visao geral da auditoria) */
+a.kpi { display: block; }
+
+/* Codigos de pagamento */
+.qr { width: 230px; height: 230px; image-rendering: pixelated; border-radius: var(--raio-p); }
+.codigo-barras { overflow-x: auto; padding: 6px 0 12px; }
+.codigo-barras svg { max-width: 100%; height: auto; }
+
+/* O texto cru do lote, para quem so consulta */
+.lote-texto {
+  background: #F7F9FD; border: 1px solid var(--borda); border-radius: var(--raio-p);
+  padding: 10px 12px; font-family: var(--fonte-dados); font-size: 13px;
+  white-space: pre-wrap; margin: 0;
+}

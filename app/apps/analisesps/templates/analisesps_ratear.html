@@ -1,0 +1,131 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Ratear — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Ratear <small>gera o JSON que atualiza o título no Omie</small></h2>
+
+{% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+
+{% if not referencias.obras %}
+  <div class="aviso atencao">
+    <b>As listas de obras e categorias ainda não foram carregadas.</b><br>
+    Elas vêm das abas "C. Diários" e "Plano Financeiro". Rode a sincronização
+    das planilhas de apoio, na tela de Configurações.
+  </div>
+{% else %}
+
+<form method="post">
+  <div class="duas-colunas">
+    <div class="cartao">
+      <div class="cartao-cab">
+        <h3>Por centro de custo</h3>
+        <small>obrigatório · {{ referencias.obras|length }} obras</small>
+      </div>
+      <table class="sps" id="tabela-cc">
+        <thead><tr><th>Obra</th><th style="width:160px">Valor</th><th style="width:40px"></th></tr></thead>
+        <tbody>
+          {% for i in range(3) %}
+            <tr>
+              <td>
+                <select name="cc_nome" class="campo-largo">
+                  <option value="">—</option>
+                  {% for o in referencias.obras %}
+                    <option value="{{ o.nome }}">{{ o.nome }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td><input name="cc_valor" class="campo-largo" inputmode="decimal"
+                         placeholder="1.234,56"></td>
+              <td><button type="button" class="link-btn remover">×</button></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="button" class="btn secundario" data-add="tabela-cc">Mais uma linha</button>
+    </div>
+
+    <div class="cartao">
+      <div class="cartao-cab">
+        <h3>Por categoria de despesa</h3>
+        <small>opcional · {{ referencias.categorias|length }} categorias</small>
+      </div>
+      <table class="sps" id="tabela-cat">
+        <thead><tr><th>Categoria</th><th style="width:160px">Valor</th><th style="width:40px"></th></tr></thead>
+        <tbody>
+          {% for i in range(3) %}
+            <tr>
+              <td>
+                <select name="cat_nome" class="campo-largo">
+                  <option value="">—</option>
+                  {% for c in referencias.categorias %}
+                    <option value="{{ c.nome }}">{{ c.nome }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+              <td><input name="cat_valor" class="campo-largo" inputmode="decimal"
+                         placeholder="1.234,56"></td>
+              <td><button type="button" class="link-btn remover">×</button></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="button" class="btn secundario" data-add="tabela-cat">Mais uma linha</button>
+
+      <div style="margin-top:12px">
+        <label class="rotulo-campo">Valor a ratear na categoria</label>
+        <input name="base_categoria" class="campo-largo" inputmode="decimal"
+               placeholder="deixe vazio para usar a soma acima">
+      </div>
+    </div>
+  </div>
+
+  <p class="cartao-dica">
+    Os valores vão no padrão brasileiro — <b>1.234,56</b>. Os percentuais fecham
+    100% com o menor erro possível, e os valores da categoria fecham a base
+    informada. Sobra de centavo cai na maior linha, que é onde ela some.
+  </p>
+
+  {% if pode_operar %}
+    <button class="btn" type="submit">Gerar os JSONs</button>
+  {% else %}
+    <p class="cartao-dica">O perfil Consulta não gera rateio.</p>
+  {% endif %}
+</form>
+
+{% if resultado %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Pronto — copie e cole no Omie</h3>
+    </div>
+    {% for nome, conteudo in resultado.items() %}
+      <label class="rotulo-campo">{{ nome }}</label>
+      <textarea class="campo-largo copiavel" rows="8" readonly>{{ conteudo }}</textarea>
+    {% endfor %}
+  </div>
+{% endif %}
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.querySelectorAll("button[data-add]").forEach(b => {
+  b.addEventListener("click", () => {
+    const corpo = document.getElementById(b.dataset.add).querySelector("tbody");
+    const nova = corpo.rows[0].cloneNode(true);
+    nova.querySelectorAll("select, input").forEach(c => { c.value = ""; });
+    corpo.appendChild(nova);
+  });
+});
+document.addEventListener("click", e => {
+  if (!e.target.classList.contains("remover")) return;
+  const corpo = e.target.closest("tbody");
+  if (corpo.rows.length > 1) e.target.closest("tr").remove();
+  else e.target.closest("tr").querySelectorAll("select, input").forEach(c => { c.value = ""; });
+});
+document.querySelectorAll(".copiavel").forEach(c => {
+  c.addEventListener("focus", () => c.select());
+  c.addEventListener("click", () => c.select());
+});
+</script>
+{% endblock %}

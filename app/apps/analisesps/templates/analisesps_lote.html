@@ -1,0 +1,205 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Lote — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>
+  Lote
+  <small>{{ montado.quantidade }} SP(s) reconhecida(s) · total {{ montado.total_geral|moeda }}</small>
+</h2>
+
+{% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>O lote</h3>
+    <small>
+      {% if lote.salvo_em %}
+        salvo por {{ lote.salvo_por or '—' }}
+      {% else %}ainda não salvo{% endif %}
+    </small>
+  </div>
+
+  <div class="aviso">
+    O lote é <b>um só, compartilhado</b>. Quem salvar por último sobrescreve o
+    anterior — a equipe trabalha sobre a mesma remessa, e dois lotes paralelos
+    seriam pior. Repare em quem salvou por último antes de apagar algo.
+  </div>
+
+  {% if pode_operar %}
+    <form method="post">
+      <div class="duas-colunas">
+        <div>
+          <label class="rotulo-campo">IDs das SPs</label>
+          <textarea name="conteudo" rows="10" class="campo-largo"
+                    placeholder="Pagar amanhã&#10;1384831053&#10;1384844943&#10;&#10;Aguardando anuência&#10;1384852359">{{ lote.conteudo }}</textarea>
+          <p class="cartao-dica">
+            Linha só com números vira lista de SPs. Qualquer outra linha vira
+            <b>título de grupo</b>, e as SPs abaixo dela ficam agrupadas ali.
+          </p>
+        </div>
+        <div>
+          <label class="rotulo-campo">Extrair SPs de mensagens coladas</label>
+          <textarea name="extracao" rows="10" class="campo-largo"
+                    placeholder="Cole aqui as mensagens do WhatsApp.&#10;&#10;Solicitação de Pagamento Validada&#10;Nº da SP: 1426036778"></textarea>
+          <p class="cartao-dica">
+            Pesca os números de 10 dígitos e cria um grupo novo no topo.
+            Telefone, CNPJ, valor e data não são confundidos com SP.
+          </p>
+        </div>
+      </div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px">
+        <button class="btn" type="submit" name="acao" value="salvar">Salvar lote</button>
+        <button class="btn secundario" type="submit" name="acao" value="extrair">Extrair SPs do texto</button>
+        <button class="btn secundario" type="submit" name="acao" value="remover_pagos">Tirar as pagas</button>
+        <button class="btn secundario" type="submit" name="acao" value="remover_cancelados">Tirar as canceladas</button>
+      </div>
+    </form>
+  {% else %}
+    <pre class="lote-texto">{{ lote.conteudo or '(o lote está vazio)' }}</pre>
+    <p class="cartao-dica">O perfil Consulta vê o lote, mas não o altera.</p>
+  {% endif %}
+</div>
+
+{% if montado.nao_encontrados %}
+  <div class="aviso atencao">
+    <b>{{ montado.nao_encontrados|length }} número(s) do lote não existem na base:</b>
+    {{ montado.nao_encontrados|join(', ') }}.<br>
+    Ou foram digitados errado, ou a SP é mais nova que a última sincronização.
+  </div>
+{% endif %}
+
+{% for grupo in montado.grupos %}
+  {% set gi = loop.index %}
+  {% if grupo.linhas or grupo.titulo %}
+    <div class="cartao">
+      <div class="cartao-cab">
+        <h3>{{ grupo.titulo_exibido }}</h3>
+        <small>{{ grupo.linhas|length }} SP(s) · {{ grupo.total|moeda }}</small>
+      </div>
+
+      {% if grupo.linhas %}
+        <div class="acoes">
+          {% if pode_operar %}
+            <div class="grupo">
+              <button class="btn" data-coluna="status_pgt" data-valor="Pago"
+                      data-grupo="{{ gi }}">Marcar Pago</button>
+              <button class="btn secundario" data-coluna="agendado" data-valor="Agendado"
+                      data-grupo="{{ gi }}">Agendado</button>
+            </div>
+          {% endif %}
+          <a class="btn secundario"
+             href="{{ url_for('analisesps.codigos') }}?{% for l in grupo.linhas %}id={{ l.id }}{% if not loop.last %}&amp;{% endif %}{% endfor %}">
+            QR / Código deste grupo</a>
+          <span class="selecao" id="contador-{{ gi }}">Nenhuma SP marcada</span>
+        </div>
+
+        <div class="tabela-rolagem">
+          <table class="sps" data-grupo="{{ gi }}">
+            <thead>
+              <tr>
+                <th class="sel"><input type="checkbox" class="marcar-todas"
+                                       data-grupo="{{ gi }}"></th>
+                <th>SP</th><th>Vencimento</th><th>Credor</th><th class="num">Valor</th>
+                <th>Status</th><th>Agend.</th><th>Forma</th><th>Conta</th><th>Alertas</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for l in grupo.linhas %}
+                {% set cancelada = (l.status_pgt or '')|lower|trim == 'cancelado' %}
+                <tr {% if cancelada %}class="cancelada"{% endif %}>
+                  <td class="sel"><input type="checkbox" class="marca"
+                                         data-grupo="{{ gi }}"
+                                         value="{{ l.id }}"></td>
+                  <td class="id"><a href="{{ url_for('analisesps.detalhe', sp_id=l.id) }}">{{ l.id }}</a></td>
+                  <td class="{{ 'venc-vencido' if l.vencido else ('venc-hoje' if l.vence_hoje else '') }}">
+                    {{ l.vencimento_d|data_br }}</td>
+                  <td class="cortar" title="{{ l.credor }}">{{ l.credor }}</td>
+                  <td class="num">{{ l.valor_num|moeda }}</td>
+                  <td>
+                    {% set st = (l.status_pgt or '')|lower|trim %}
+                    <span class="selo {{ 'pagar' if st == 'pagar' else ('pago' if st == 'pago' else 'cancelado') }}">
+                      {{ l.status_pgt or '—' }}</span>
+                  </td>
+                  <td>
+                    {% if l.status_agend %}
+                      <span class="selo {{ 'falha' if 'Falha' in l.status_agend else 'agendado' }}">
+                        {{ l.status_agend }}</span>
+                    {% endif %}
+                  </td>
+                  <td class="cortar">{{ l.forma_pagamento }}</td>
+                  <td class="cortar">{{ l.conta }}</td>
+                  <td>
+                    {% if l.risco %}<span class="selo risco">Risco</span>{% endif %}
+                    {% if l.cadastro_incompleto %}<span class="selo incompleto">Cadastro</span>{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      {% endif %}
+
+      {% if grupo.nao_encontrados %}
+        <p class="cartao-dica">
+          Não encontradas neste grupo: {{ grupo.nao_encontrados|join(', ') }}
+        </p>
+      {% endif %}
+    </div>
+  {% endif %}
+{% else %}
+  <div class="aviso">
+    O lote está vazio. Cole os números das SPs acima, ou use a extração para
+    tirá-los das mensagens do WhatsApp.
+  </div>
+{% endfor %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Cada grupo tem a sua marcação, independente dos outros. É o que evita a
+// confusão do Streamlit, em que marcar numa tabela "vestia" a tabela seguinte.
+function marcasDoGrupo(g) {
+  return Array.from(document.querySelectorAll('.marca[data-grupo="' + g + '"]'));
+}
+function atualizar(g) {
+  const marcadas = marcasDoGrupo(g).filter(c => c.checked);
+  const el = document.getElementById("contador-" + g);
+  if (el) el.textContent = marcadas.length === 0 ? "Nenhuma SP marcada"
+        : marcadas.length + (marcadas.length === 1 ? " SP marcada" : " SPs marcadas");
+  marcasDoGrupo(g).forEach(c => c.closest("tr").classList.toggle("marcada", c.checked));
+}
+document.querySelectorAll(".marcar-todas").forEach(t => {
+  t.addEventListener("change", () => {
+    marcasDoGrupo(t.dataset.grupo).forEach(c => { c.checked = t.checked; });
+    atualizar(t.dataset.grupo);
+  });
+});
+document.querySelectorAll(".marca").forEach(c => {
+  c.addEventListener("change", () => atualizar(c.dataset.grupo));
+});
+
+document.querySelectorAll(".acoes button[data-coluna]").forEach(botao => {
+  botao.addEventListener("click", async () => {
+    const g = botao.dataset.grupo;
+    const ids = marcasDoGrupo(g).filter(c => c.checked).map(c => c.value);
+    if (!ids.length) { alert("Marque ao menos uma SP deste grupo."); return; }
+    if (!confirm(`${botao.textContent.trim()}: ${ids.length} SP(s).\n\nA alteração vai para a planilha. Confirma?`)) return;
+    botao.disabled = true;
+    try {
+      const r = await fetch("{{ url_for('analisesps.alterar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids: ids, coluna: botao.dataset.coluna,
+                              valor: botao.dataset.valor,
+                              acao: botao.textContent.trim()})
+      });
+      const d = await r.json();
+      if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
+      location.reload();
+    } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
+    finally { botao.disabled = false; }
+  });
+});
+</script>
+{% endblock %}

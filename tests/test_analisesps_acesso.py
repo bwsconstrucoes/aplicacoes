@@ -80,21 +80,57 @@ def test_toda_rota_publica_tem_motivo_escrito(app):
 # ---------------------------------------------------------------------------
 # Sem login não se alcança nada
 # ---------------------------------------------------------------------------
-@pytest.mark.parametrize("metodo,url", [
+TODAS_AS_TELAS = [
     ("GET", "/analisesps/"),
     ("GET", "/analisesps/solicitacoes"),
-    ("GET", "/analisesps/configuracoes"),
     ("GET", "/analisesps/sp/123"),
+    ("GET", "/analisesps/lote"),
+    ("POST", "/analisesps/lote"),
+    ("GET", "/analisesps/relatorio"),
+    ("GET", "/analisesps/auditoria"),
+    ("GET", "/analisesps/ratear"),
+    ("POST", "/analisesps/ratear"),
+    ("GET", "/analisesps/bradesco"),
+    ("POST", "/analisesps/bradesco"),
+    ("GET", "/analisesps/agenda"),
+    ("GET", "/analisesps/log"),
+    ("GET", "/analisesps/codigos"),
+    ("GET", "/analisesps/configuracoes"),
     ("GET", "/analisesps/exportar"),
     ("GET", "/analisesps/api/andamento"),
     ("POST", "/analisesps/api/alterar"),
     ("POST", "/analisesps/api/migrar"),
-])
+    ("GET", "/analisesps/sair"),
+]
+
+
+@pytest.mark.parametrize("metodo,url", TODAS_AS_TELAS)
 def test_sem_login_manda_para_a_entrada(app, metodo, url):
     with app.test_client() as cliente:
         resposta = cliente.open(url, method=metodo, json={})
     assert resposta.status_code in (301, 302)
     assert "entrar" in resposta.headers.get("Location", "")
+
+
+def test_a_lista_de_telas_cobre_todas_as_rotas(app):
+    """Este teste é a rede do teste acima: acrescentar uma tela e esquecer de
+    conferir que ela exige login passaria despercebido sem ele."""
+    testadas = {url for _, url in TODAS_AS_TELAS}
+    faltando = []
+    for regra in app.url_map.iter_rules():
+        if not regra.endpoint.startswith("analisesps."):
+            continue
+        funcao = app.view_functions.get(regra.endpoint)
+        exigencia = getattr(funcao, "_analisesps_exigencia", None)
+        if isinstance(exigencia, tuple) or regra.endpoint == auth.ENDPOINT_ESTILO:
+            continue                          # pública, com motivo escrito
+        caminho = str(regra).replace("<sp_id>", "123").replace(
+            "<path:filename>", "x")
+        if caminho not in testadas:
+            faltando.append(caminho)
+    assert not faltando, (
+        "Estas rotas não estão na lista TODAS_AS_TELAS e portanto ninguém "
+        "conferiu que exigem login: " + ", ".join(sorted(faltando)))
 
 
 def test_sincronizar_sem_segredo_e_sem_sessao_e_recusada(app):

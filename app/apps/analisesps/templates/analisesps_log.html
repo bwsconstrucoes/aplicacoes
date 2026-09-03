@@ -1,0 +1,100 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Log — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Registro de alterações <small>últimos {{ dias }} dias</small></h2>
+
+{% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Total no período</div>
+    <div class="kpi-valor">{{ contagem.values()|sum }}</div>
+  </div>
+  <div class="kpi estatico verde">
+    <div class="kpi-rotulo">Já na planilha</div>
+    <div class="kpi-valor">{{ contagem.get('enviado', 0) }}</div>
+  </div>
+  <div class="kpi estatico ambar">
+    <div class="kpi-rotulo">Aguardando envio</div>
+    <div class="kpi-valor">{{ contagem.get('pendente', 0) }}</div>
+    <div class="kpi-sub">{{ na_fila }} na fila agora</div>
+  </div>
+  <div class="kpi estatico vermelho">
+    <div class="kpi-rotulo">Com erro</div>
+    <div class="kpi-valor">{{ contagem.get('erro', 0) }}</div>
+  </div>
+</div>
+
+<div class="cartao">
+  <form method="get" style="display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end">
+    <div>
+      <label class="rotulo-campo">Situação</label>
+      <select name="status">
+        {% for chave, rotulo in [('todos','Todas'),('enviado','Já na planilha'),
+                                 ('pendente','Aguardando envio'),('erro','Com erro')] %}
+          <option value="{{ chave }}" {% if status == chave %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="rotulo-campo">Período</label>
+      <select name="dias">
+        {% for d in [7, 30, 90] %}
+          <option value="{{ d }}" {% if dias == d %}selected{% endif %}>últimos {{ d }} dias</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="rotulo-campo">Número da SP</label>
+      <input type="search" name="busca" value="{{ busca }}" placeholder="parte do número">
+    </div>
+    <button class="btn secundario" type="submit">Filtrar</button>
+  </form>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Alterações</h3>
+    <small>{{ linhas|length }} registro(s){% if linhas|length >= 500 %}, mostrando as mais recentes{% endif %}</small>
+  </div>
+  <div class="tabela-rolagem">
+    <table class="sps">
+      <thead>
+        <tr>
+          <th>Quando</th><th>SP</th><th>Campo</th><th>De</th><th>Para</th>
+          <th>Ação</th><th>Perfil</th><th>Situação</th><th>Enviado em</th><th>Erro</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in linhas %}
+          <tr>
+            <td>{{ l.criado_em|data_br }}</td>
+            <td><a href="{{ url_for('analisesps.detalhe', sp_id=l.sp_id) }}">{{ l.sp_id }}</a></td>
+            <td>{{ l.campo }}</td>
+            <td class="cortar">{{ l.valor_anterior or '—' }}</td>
+            <td class="cortar">{{ l.valor or '—' }}</td>
+            <td class="cortar">{{ l.acao }}</td>
+            <td>{{ l.perfil }}</td>
+            <td>
+              <span class="selo {{ 'pago' if l.status == 'enviado' else ('falha' if l.status == 'erro' else 'pagar') }}">
+                {{ {'enviado':'na planilha','pendente':'aguardando','erro':'erro'}.get(l.status, l.status) }}</span>
+            </td>
+            <td>{{ l.enviado_em|data_br }}</td>
+            <td class="cortar" title="{{ l.erro or '' }}">{{ l.erro or '' }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="10" style="padding:22px; text-align:center; color:var(--tinta-suave)">
+            Nenhuma alteração neste filtro.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="cartao-dica">
+    "Aguardando" quer dizer que a alteração já está gravada aqui e ainda vai
+    subir para a planilha. Nada se perde: a fila é reenviada sozinha.
+    O registro guarda o <b>perfil</b> que alterou, não a pessoa.
+  </p>
+</div>
+{% endblock %}

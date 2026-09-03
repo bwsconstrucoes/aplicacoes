@@ -371,3 +371,134 @@ def sincronizar_apoios(anotar=None) -> dict:
         logger.exception("Análise de SPs: falhou ler a planilha fiscal")
 
     return {"contas": contas, "fiscais": fiscais}
+
+
+# ---------------------------------------------------------------------------
+# Agenda, feriados e as listas do rateio
+#
+# Três abas curtas, na mesma planilha de credenciais. São dezenas de linhas
+# cada, então aqui `get_all_values()` é legítimo — a regra contra ele vale para
+# a aba de 59 mil linhas, não para uma de trinta.
+# ---------------------------------------------------------------------------
+def sincronizar_agenda(anotar=None) -> dict:
+    """Traz a aba Agenda e a aba Feriados."""
+    from . import agenda
+    from .credenciais import SHEET_CREDENCIAIS
+    from .db import conexao
+    from .formatos import para_data
+
+    anotar = anotar or (lambda *a, **k: None)
+    anotar("trazendo a agenda")
+
+    compromissos = 0
+    try:
+        valores = com_retry(_aba(SHEET_CREDENCIAIS, agenda.ABA_AGENDA).get_all_values)
+        registros = []
+        if valores:
+            cabecalho = [str(x).strip() for x in valores[0]]
+            posicao = {c: cabecalho.index(c) for c in agenda.COLUNAS
+                       if c in cabecalho}
+            for linha in valores[1:]:
+                if not any(str(x).strip() for x in linha):
+                    continue
+                registro = {
+                    c: (str(linha[posicao[c]]).strip()
+                        if c in posicao and posicao[c] < len(linha) else "")
+                    for c in agenda.COLUNAS}
+                if registro.get("id"):
+                    registros.append(registro)
+        if registros:
+            with conexao() as conn:
+                compromissos = agenda.gravar(conn, registros)
+    except Exception:  # noqa: BLE001 — agenda que falta não derruba a carga
+        logger.exception("Análise de SPs: falhou ler a aba Agenda")
+
+    feriados = 0
+    try:
+        valores = com_retry(
+            _aba(SHEET_CREDENCIAIS, agenda.ABA_FERIADOS).get_all_values)
+        dias = []
+        for linha in (valores[1:] if valores else []):
+            dia = para_data(linha[0]) if linha else None
+            if dia:
+                nome = str(linha[1]).strip() if len(linha) > 1 else ""
+                dias.append((dia, nome))
+        with conexao() as conn:
+            feriados = agenda.gravar_feriados(conn, dias)
+    except Exception:  # noqa: BLE001 — a aba de feriados é opcional
+        logger.info("Análise de SPs: sem aba de feriados locais (é opcional).")
+
+    return {"compromissos": compromissos, "feriados": feriados}
+
+
+def sincronizar_referencias_rateio(anotar=None) -> dict:
+    """Traz as obras (aba 'C. Diários') e as categorias (aba 'Plano Financeiro').
+
+    São as listas que a tela de Ratear oferece. Curtas e mudam pouco, mas
+    precisam estar certas: um código de obra errado gera um JSON que o Omie
+    aceita e lança no lugar errado."""
+    from .db import conexao
+
+    anotar = anotar or (lambda *a, **k: None)
+    anotar("trazendo as listas do rateio")
+    obras = categorias = 0
+
+    def _ler(aba_nome, coluna_nome, coluna_codigo):
+        valores = com_retry(_aba(PLANILHA_SPS, aba_nome).get_all_values)
+        if not valores:
+            return []
+        cabecalho = [str(x).strip().lower() for x in valores[0]]
+        try:
+            i_nome = cabecalho.index(coluna_nome.lower())
+            i_codigo = cabecalho.index(coluna_codigo.lower())
+        except ValueError:
+            logger.warning("Análise de SPs: a aba '%s' não tem as colunas "
+                           "'%s' e '%s'.", aba_nome, coluna_nome, coluna_codigo)
+            return []
+        saida = []
+        for linha in valores[1:]:
+            nome = str(linha[i_nome]).strip() if i_nome < len(linha) else ""
+            codigo = str(linha[i_codigo]).strip() if i_codigo < len(linha) else ""
+            if nome:
+                saida.append((nome, codigo))
+        return saida
+
+    for tipo, aba_nome, coluna_nome, coluna_codigo in (
+            ("obra", "C. Diários", "Obra", "Código"),
+            ("categoria", "Plano Financeiro", "Categoria", "Código")):
+        try:
+            linhas = _ler(aba_nome, coluna_nome, coluna_codigo)
+            if not linhas:
+                continue
+            with conexao() as conn:
+                conn.execute(
+                    "DELETE FROM analisesps.referencias_rateio WHERE tipo = ?",
+                    (tipo,))
+                conn.executemany(
+                    "INSERT INTO analisesps.referencias_rateio "
+                    "  (tipo, nome, codigo) VALUES (?, ?, ?) "
+                    "ON CONFLICT (tipo, nome) DO UPDATE SET "
+                    "  codigo = EXCLUDED.codigo",
+                    [(tipo, nome, codigo) for nome, codigo in linhas])
+                conn.commit()
+            if tipo == "obra":
+                obras = len(linhas)
+            else:
+                categorias = len(linhas)
+        except Exception:  # noqa: BLE001
+            logger.exception("Análise de SPs: falhou ler a aba '%s'", aba_nome)
+
+    return {"obras": obras, "categorias": categorias}
+
+
+def referencias_rateio() -> dict:
+    """As listas que a tela de Ratear oferece, prontas para montar as opções."""
+    from .db import consultar
+    linhas = consultar(
+        "SELECT tipo, nome, coalesce(codigo,'') FROM analisesps.referencias_rateio "
+        " ORDER BY tipo, nome")
+    saida = {"obras": [], "categorias": []}
+    for tipo, nome, codigo in linhas:
+        chave = "obras" if tipo == "obra" else "categorias"
+        saida[chave].append({"nome": nome, "codigo": codigo})
+    return saida

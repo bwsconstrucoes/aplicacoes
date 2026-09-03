@@ -430,6 +430,438 @@ def sincronizar():
 
 
 # ---------------------------------------------------------------------------
+# RELATÓRIO
+# ---------------------------------------------------------------------------
+@bp.route("/relatorio")
+@exige_consulta
+def relatorio():
+    from . import consultas
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+
+    filtros = _filtros_do_pedido()
+    tipo = request.args.get("tipo", "geral")
+    if tipo not in consultas.TIPOS:
+        tipo = "geral"
+    periodo = request.args.get("periodo", "tudo")
+    if periodo not in consultas.PERIODOS:
+        periodo = "tudo"
+    dimensao = request.args.get("dimensao", "centro_custo")
+    if dimensao not in consultas.DIMENSOES:
+        dimensao = "centro_custo"
+
+    return render_template(
+        "analisesps_relatorio.html",
+        aba="relatorio", base=base,
+        numeros=consultas.numeros_do_relatorio(filtros, tipo, periodo),
+        por_projeto=consultas.agregar(filtros, "projeto", tipo, periodo, 15),
+        por_centro=consultas.agregar(filtros, "centro_custo", tipo, periodo, 15),
+        por_tipo=consultas.agregar(filtros, "tipo_despesa", tipo, periodo, 15),
+        por_conta=consultas.agregar(filtros, "conta", tipo, periodo, 15),
+        quebra=consultas.agregar(filtros, dimensao, tipo, periodo, 100),
+        credores=consultas.top_credores(filtros, tipo, periodo, 30),
+        aging=consultas.aging_vencidos(filtros, periodo),
+        tipo=tipo, periodo=periodo, dimensao=dimensao,
+        tipos=consultas.TIPOS, periodos=consultas.PERIODOS,
+        dimensoes=consultas.DIMENSOES,
+        args=request.args, filtros=filtros,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+# ---------------------------------------------------------------------------
+# AUDITORIA
+# ---------------------------------------------------------------------------
+@bp.route("/auditoria")
+@exige_consulta
+def auditoria():
+    from . import auditoria as checagens
+    from . import consultas
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+
+    filtros = _filtros_do_pedido()
+    usar_filtros = request.args.get("usar_filtros") == "1"
+    checagem = request.args.get("checagem", "")
+    if checagem not in checagens.CHECAGENS:
+        checagem = ""
+
+    resultado = None
+    if checagem == "pontualidade":
+        try:
+            minimo = max(1, int(request.args.get("minimo", 5)))
+        except ValueError:
+            minimo = 5
+        resultado = checagens.pontualidade(filtros, usar_filtros, minimo)
+    elif checagem == "risco_ia":
+        resultado = checagens.risco_ia(filtros, usar_filtros)
+    elif checagem == "nf_duplicada":
+        resultado = checagens.nf_duplicada(filtros, usar_filtros)
+    elif checagem == "possivel_duplicidade":
+        try:
+            dias = max(0, int(request.args.get("dias", 7)))
+        except ValueError:
+            dias = 7
+        resultado = checagens.possivel_duplicidade(filtros, usar_filtros, dias)
+    elif checagem == "sem_classificacao":
+        resultado = checagens.sem_classificacao(filtros, usar_filtros)
+    elif checagem == "sem_integracao":
+        resultado = checagens.sem_integracao_omie(filtros, usar_filtros)
+    elif checagem == "codigos_barras":
+        resultado = checagens.codigos_de_barras(filtros, usar_filtros)
+
+    return render_template(
+        "analisesps_auditoria.html",
+        aba="auditoria", base=base,
+        checagens=checagens.CHECAGENS, checagem=checagem,
+        contagens=checagens.resumo(filtros, usar_filtros) if not checagem else None,
+        resultado=resultado, usar_filtros=usar_filtros,
+        teto=checagens.TETO,
+        minimo=request.args.get("minimo", 5),
+        dias=request.args.get("dias", 7),
+        args=request.args, filtros=filtros,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+# ---------------------------------------------------------------------------
+# LOTE
+# ---------------------------------------------------------------------------
+@bp.route("/lote", methods=["GET", "POST"])
+@exige_consulta
+def tela_lote():
+    from . import consultas, lote
+
+    # A permissão é conferida ANTES de qualquer outra coisa. Com a base ainda
+    # vazia, a checagem de carga respondia primeiro e o perfil Consulta recebia
+    # a tela amigável em vez de 403. Nada era alterado — mas a resposta a uma
+    # tentativa de escrita sem alçada tem de ser sempre a mesma, independente
+    # do estado do banco.
+    if request.method == "POST" and not auth.pode_operar():
+        return auth._sem_permissao()
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+
+    aviso = None
+    if request.method == "POST":
+        acao = request.form.get("acao", "salvar")
+        conteudo = request.form.get("conteudo", "")
+        perfil = auth.perfil_atual() or ""
+
+        if acao == "extrair":
+            achados = lote.extrair_ids(request.form.get("extracao", ""))
+            if achados:
+                conteudo, titulo = lote.acrescentar_grupo(conteudo, achados)
+                aviso = (f"{len(achados)} SP(s) encontrada(s) no texto colado — "
+                         f"entraram no grupo \"{titulo}\".")
+            else:
+                aviso = ("Não achei nenhum número de SP no texto colado. "
+                         "Uma SP tem 10 dígitos.")
+        elif acao in ("remover_pagos", "remover_cancelados"):
+            alvo = {"pago"} if acao == "remover_pagos" else {"cancelado"}
+            montado = lote.montar(conteudo)
+            status = {i: (l.get("status_pgt") or "")
+                      for i, l in montado["linhas"].items()}
+            conteudo, quantos = lote.remover_por_status(conteudo, alvo, status)
+            rotulo = "paga(s)" if acao == "remover_pagos" else "cancelada(s)"
+            aviso = f"{quantos} SP(s) {rotulo} saíram do lote."
+
+        lote.salvar(conteudo, perfil)
+        return redirect(url_for("analisesps.tela_lote", aviso=aviso or ""))
+
+    guardado = lote.ler()
+    montado = lote.montar(guardado["conteudo"])
+    return render_template(
+        "analisesps_lote.html",
+        aba="lote", base=base, lote=guardado, montado=montado,
+        aviso=request.args.get("aviso") or None,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+# ---------------------------------------------------------------------------
+# CÓDIGOS DE PAGAMENTO — QR Pix e código de barras
+# ---------------------------------------------------------------------------
+@bp.route("/codigos")
+@exige_consulta
+def codigos():
+    """Monta o QR Pix ou o código de barras das SPs pedidas.
+
+    É a tela que substitui abrir card por card no Pipefy para copiar a chave:
+    quem vai pagar abre isto e tem tudo numa página só.
+
+    Teto de SPs por vez, e ele é proposital: cada QR é uma imagem gerada aqui
+    dentro. Cinquenta já é mais do que alguém paga de uma sentada."""
+    from . import consultas, pagamentos
+
+    pedidos = [i.strip() for i in request.args.getlist("id") if i.strip()][:50]
+    if not pedidos:
+        return render_template("analisesps_erro.html",
+                               titulo="Nada selecionado",
+                               mensagem="Marque as SPs na lista e clique em "
+                                        "\"QR / Código\"."), 400
+
+    blocos = []
+    for sp_id in pedidos:
+        registro = consultas.uma(sp_id)
+        if registro is None:
+            blocos.append({"id": sp_id, "erro": "SP não encontrada na base."})
+            continue
+
+        forma = str(registro.get("forma_pagamento") or "").strip().lower()
+        bloco = {"id": sp_id, "sp": registro, "tipo": None,
+                 "erro": None, "imagem": None, "copia_cola": None}
+
+        try:
+            if "boleto" in forma:
+                bloco["tipo"] = "boleto"
+                svg, situacao = pagamentos.barcode_svg(
+                    registro.get("codigo_barras") or "")
+                if situacao != "ok":
+                    bloco["erro"] = f"Código de barras {situacao}."
+                else:
+                    bloco["imagem"] = svg
+                    bloco["copia_cola"] = str(
+                        registro.get("codigo_barras") or "").strip()
+            elif "pix" in forma or "beevale" in forma:
+                bloco["tipo"] = "pix"
+                chave = str(registro.get("info_pgt") or "")
+                png, carga = pagamentos.gerar_pix(
+                    chave, float(registro.get("valor_num") or 0),
+                    str(registro.get("credor") or ""),
+                    copia_cola=("00020" in chave))
+                import base64
+                bloco["imagem"] = base64.b64encode(png).decode("ascii")
+                bloco["copia_cola"] = carga
+            else:
+                bloco["erro"] = (f"Forma de pagamento \"{forma or '—'}\" não "
+                                 "gera QR nem código de barras.")
+        except Exception as e:  # noqa: BLE001 — uma SP ruim não some com as outras
+            logger.exception("Análise de SPs: falhou montar o código da SP %s", sp_id)
+            bloco["erro"] = str(e)
+
+        blocos.append(bloco)
+
+    return render_template("analisesps_codigos.html", aba="solicitacoes",
+                           blocos=blocos, pode_operar=auth.pode_operar(),
+                           perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+# ---------------------------------------------------------------------------
+# RATEAR
+# ---------------------------------------------------------------------------
+@bp.route("/ratear", methods=["GET", "POST"])
+@exige_consulta
+def ratear():
+    from . import rateio, sincronizacao
+
+    resultado = erro = None
+    try:
+        referencias = sincronizacao.referencias_rateio()
+    except Exception as e:  # noqa: BLE001 — banco fora do ar dá recado, não 500
+        # Uma tela que estoura com 500 quando o banco cai é justamente a que
+        # ninguém consegue usar para entender o que houve. As outras telas
+        # degradam com recado; esta passou a fazer o mesmo.
+        logger.exception("Análise de SPs: não consegui ler as listas do rateio")
+        referencias = {"obras": [], "categorias": []}
+        erro = (f"Não consegui ler as listas de obras e categorias: {e}")
+
+    if request.method == "POST":
+        if not auth.pode_operar():
+            return auth._sem_permissao()
+        mapa_obra = {o["nome"]: o["codigo"] for o in referencias["obras"]}
+        mapa_categoria = {c["nome"]: c["codigo"] for c in referencias["categorias"]}
+
+        def _linhas(prefixo, mapa, campo):
+            saida = []
+            nomes = request.form.getlist(f"{prefixo}_nome")
+            valores = request.form.getlist(f"{prefixo}_valor")
+            for nome, valor in zip(nomes, valores):
+                nome = (nome or "").strip()
+                if not nome:
+                    continue
+                saida.append({campo: nome, "codigo": mapa.get(nome, ""),
+                              "valor": rateio._to_float(valor)})
+            return saida
+
+        try:
+            resultado = rateio.gerar_jsons(
+                _linhas("cc", mapa_obra, "obra"),
+                _linhas("cat", mapa_categoria, "categoria"),
+                base_cat=rateio._to_float(request.form.get("base_categoria", "")) or None)
+        except Exception as e:  # noqa: BLE001 — o motivo tem de aparecer na tela
+            logger.exception("Análise de SPs: falhou gerar o rateio")
+            erro = str(e)
+
+    return render_template(
+        "analisesps_ratear.html", aba="ratear",
+        referencias=referencias, resultado=resultado, erro=erro,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+# ---------------------------------------------------------------------------
+# BRADESCO
+# ---------------------------------------------------------------------------
+@bp.route("/bradesco", methods=["GET", "POST"])
+@exige_consulta
+def tela_bradesco():
+    from . import bradesco, consultas
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+
+    colado = ""
+    resultado = None
+    erro = None
+    foco = request.form.get("foco", "1") == "1"
+
+    if request.method == "POST":
+        colado = request.form.get("extrato", "")
+        if not colado.strip():
+            erro = "Cole o texto da tela de operações do Bradesco."
+        else:
+            try:
+                resultado = bradesco.cruzar_tudo(colado, _candidatas_bradesco(),
+                                                 foco_agendados=foco)
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Análise de SPs: falhou cruzar o extrato")
+                erro = str(e)
+
+    return render_template(
+        "analisesps_bradesco.html", aba="bradesco", base=base,
+        colado=colado, resultado=resultado, erro=erro, foco=foco,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+def _candidatas_bradesco() -> list[dict]:
+    """As SPs que podem ter sido pagas: as que estão a pagar ou já pagas.
+
+    Não traz a base inteira. Uma conferência de extrato olha o que está na fila
+    de pagamento — puxar 59 mil linhas para casar com trinta operações do banco
+    seria justamente o desperdício de memória que este módulo evita."""
+    from . import consultas
+    from .db import consultar
+
+    linhas = consultar(
+        "SELECT id, credor, valor_num, conta, forma_pagamento, status_pgt, "
+        f"       ({consultas.SQL_STATUS_AGEND}) AS status_agend, "
+        "       codigo_barras, centro_custo, vencimento, documento, "
+        "       coalesce(f.doc_fiscal, '') AS sp_fiscal "
+        "  FROM analisesps.sps s "
+        "  LEFT JOIN analisesps.sp_fiscal f ON f.sp_id = s.id "
+        " WHERE lower(trim(coalesce(status_pgt,''))) IN ('pagar','pago')")
+    nomes = ["id", "credor", "valor_num", "conta", "forma_pagamento",
+             "status_pgt", "status_agend", "codigo_barras", "centro_custo",
+             "vencimento", "documento", "sp_fiscal"]
+    return [dict(zip(nomes, linha)) for linha in linhas]
+
+
+# ---------------------------------------------------------------------------
+# AGENDA
+# ---------------------------------------------------------------------------
+@bp.route("/agenda")
+@exige_consulta
+def tela_agenda():
+    from . import agenda
+
+    try:
+        dias = max(1, min(730, int(request.args.get("dias", 90))))
+    except ValueError:
+        dias = 90
+
+    try:
+        proximos = agenda.proximos(dias)
+        alertas = agenda.a_vencer()
+        compromissos = agenda.listar()
+        erro = None
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou montar a agenda")
+        proximos, alertas, compromissos, erro = [], [], [], str(e)
+
+    return render_template(
+        "analisesps_agenda.html", aba="agenda",
+        proximos=proximos, alertas=alertas, compromissos=compromissos,
+        dias=dias, erro=erro,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+# ---------------------------------------------------------------------------
+# LOG
+# ---------------------------------------------------------------------------
+@bp.route("/log")
+@exige_consulta
+def log():
+    from . import colunas
+    from .db import consultar, consultar_um
+
+    try:
+        dias = int(request.args.get("dias", 90))
+    except ValueError:
+        dias = 90
+    dias = dias if dias in (7, 30, 90) else 90
+    status = request.args.get("status", "todos")
+    if status not in ("todos", "pendente", "enviado", "erro"):
+        status = "todos"
+    busca = (request.args.get("busca") or "").strip()
+
+    onde = ["criado_em >= now() - make_interval(days => ?)"]
+    params: list = [dias]
+    if status != "todos":
+        onde.append("status = ?")
+        params.append(status)
+    if busca:
+        onde.append("sp_id LIKE ?")
+        params.append(f"%{busca}%")
+    where = " WHERE " + " AND ".join(onde)
+
+    try:
+        contagem = consultar(
+            "SELECT status, count(*) FROM analisesps.log_alteracoes"
+            " WHERE criado_em >= now() - make_interval(days => ?)"
+            " GROUP BY status", (dias,))
+        registros = consultar(
+            "SELECT criado_em, sp_id, coluna, valor, valor_anterior, acao, "
+            "       perfil, status, enviado_em, erro "
+            f"  FROM analisesps.log_alteracoes{where} "
+            " ORDER BY criado_em DESC LIMIT 500", tuple(params))
+        pendentes = consultar_um("SELECT count(*) FROM analisesps.fila")
+        erro = None
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou ler o registro de alterações")
+        contagem, registros, pendentes, erro = [], [], (0,), str(e)
+
+    nomes = ["criado_em", "sp_id", "coluna", "valor", "valor_anterior", "acao",
+             "perfil", "status", "enviado_em", "erro"]
+    linhas = []
+    for registro in registros:
+        item = dict(zip(nomes, registro))
+        item["campo"] = colunas.ROTULOS.get(item["coluna"], item["coluna"])
+        linhas.append(item)
+
+    return render_template(
+        "analisesps_log.html", aba="log",
+        linhas=linhas, contagem=dict(contagem),
+        na_fila=(pendentes[0] if pendentes else 0),
+        dias=dias, status=status, busca=busca, erro=erro,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+# ---------------------------------------------------------------------------
 # Erros
 # ---------------------------------------------------------------------------
 @bp.errorhandler(500)

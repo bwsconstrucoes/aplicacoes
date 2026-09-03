@@ -26,6 +26,9 @@ página. O custo extra é zero.
 web.py             rotas e telas
 auth.py            login por senha, dois perfis, padrão NEGAR
 consultas.py       as perguntas que as telas fazem ao banco
+auditoria.py       as sete checagens da tela de Auditoria
+lote.py            o lote de trabalho: agrupar, extrair SPs, guardar
+agenda.py          calendário de compromissos que se repetem
 colunas.py         o mapeamento da aba SPsBD (A:AL) — fonte única
 formatos.py        "6.750,00" e "31/12/2026" <-> número e data
 credenciais.py     Google pelo padrão do emissaonf
@@ -35,6 +38,13 @@ sincronizacao.py   a ponte com a planilha, nos dois sentidos
 tarefas.py         a carga em segundo plano, com andamento e retomada
 executar_sync.py   o processo separado que faz o trabalho longo
 migracoes/         .sql numerados; aplicados por botão, nunca no boot
+
+reaproveitados do Streamlit, quase sem mudança:
+  pagamentos.py    QR Pix e código de barras
+  pix_brcode.py    montagem do BR Code e o dígito verificador
+  bradesco.py      conferência do extrato (só a varredura mudou)
+  rateio.py        o rateio que fecha 100% com o menor erro
+
 app/               o Streamlit ORIGINAL — não sobe para o serviço
 ```
 
@@ -166,9 +176,20 @@ sem abrir nada nem perguntar a ninguém. Não devolve dado da empresa.
   tradução dos marcadores (um `LIKE '%falha%'` mal traduzido volta vazio, sem
   erro nenhum — silencioso, que é o pior tipo);
 - **telas** — cada página monta, com os números em português;
-- **banco** (`@pytest.mark.banco`) — o SQL contra um Postgres de verdade: a
-  migração, o `ON CONFLICT`, as cinco situações, o fuso de Brasília, a
-  paginação e a fila.
+- **banco** (`@pytest.mark.banco`) — o SQL contra um Postgres de verdade: as
+  migrações, o `ON CONFLICT`, as cinco situações, o fuso de Brasília, a
+  paginação, a fila, as somas do relatório, as sete checagens da auditoria, o
+  lote e a agenda;
+- **lote, rateio e agenda** — o agrupamento do lote, a extração de SPs de
+  mensagens, o rateio fechando 100% em qualquer combinação, e o calendário:
+  Páscoa, feriados móveis, ajuste para dia útil e o "dia 31 = último dia do
+  mês".
+
+E dois testes que valem por muitos: **nenhuma tela pode devolver erro 500 com o
+banco fora do ar** (uma tela que estoura é justamente a que ninguém consegue
+usar para descobrir o que houve), e **toda tela precisa dizer o que houve** em
+vez de abrir vazia — abrir vazia faria alguém concluir que não há contas a
+pagar.
 
 ## Duas coisas que a base real ensinou
 
@@ -184,11 +205,33 @@ ordenada por data, e um no ano 2925 nunca vence — os dois envenenariam todo
 filtro por período sem ninguém notar. Recusadas, aparecem em branco: visível, e
 cobrável de quem preencheu.
 
-## Ainda não convertido
+## As telas
 
-Da versão em Streamlit, esta entrega cobre **Solicitações**, a ficha da SP, a
-exportação e as Configurações. Faltam: Lote, Relatório, Auditoria, Ratear,
-Bradesco, Agenda e Log — e, dentro delas, o QR Pix, o código de barras, o
-BeeVale e o cancelamento de SP no Pipefy.
+| Tela | O que responde |
+|---|---|
+| Solicitações | a lista, com todos os filtros e as ações em lote |
+| Lote | a remessa que está sendo tratada agora, em grupos |
+| Relatório | quanto, por obra, projeto, tipo, conta e credor |
+| Auditoria | sete checagens do que está errado na base |
+| Ratear | o JSON que atualiza o título no Omie |
+| Bradesco | o extrato colado, cruzado com as SPs |
+| Agenda | compromissos que se repetem, já ajustados a dia útil |
+| Log | toda alteração feita por aqui, e se já subiu |
+| Configurações | migrações do banco e a sincronização |
+
+Mais a **ficha de cada SP** e a tela de **códigos de pagamento**, que monta o
+QR Pix ou o código de barras das SPs marcadas — substitui abrir card por card
+no Pipefy para copiar a chave.
+
+## O que ficou de fora, e por quê
+
+- **Cancelar SP no Pipefy** e **gerar BeeVale**. As duas conversam com o Pipefy
+  e com o Google Drive escrevendo, não lendo. São ações sem volta, e o BeeVale
+  ainda tem a pendência do Drive (erro 403 de cota da service account, que
+  precisa de um Shared Drive). Ficam para quando isso estiver resolvido.
+- **Relatório em PDF e em Excel.** A exportação é CSV, pela regra da casa de
+  não acrescentar dependência sem combinar. O serviço tem `fpdf2`, então o PDF
+  é possível — mas é reescrever o relatório do zero.
+- **Enviar comprovante por e-mail.** Depende de SMTP configurado no serviço.
 
 O Streamlit continua rodando no computador do dono enquanto isso, intocado.

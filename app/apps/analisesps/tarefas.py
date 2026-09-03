@@ -253,6 +253,8 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             elif etapa == "apoios":
                 mudar_etapa("trazendo as planilhas de apoio")
                 sincronizacao.sincronizar_apoios(anotar)
+                sincronizacao.sincronizar_agenda(anotar)
+                sincronizacao.sincronizar_referencias_rateio(anotar)
 
             _marcar_etapa_feita(execucao_id, etapa)
 
