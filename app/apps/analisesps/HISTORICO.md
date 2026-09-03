@@ -35,8 +35,8 @@ existe, com login próprio, dados no Postgres do ERP em schema próprio
 57 com banco rodam só no GitHub Actions. Conferido contra a base real: a soma
 das SPs bate na casa do centavo com o Streamlit (R$ 250.061.950,39).
 
-O Streamlit original continua em `app/analisesps/app/` — **não** é importado
-pelo serviço e o dono ainda pode rodá-lo no PC.
+**Em 03/09/2026 a pasta foi enxugada:** sobrou só o que roda no Render. O
+Streamlit original saiu daqui — ver "Decisões já tomadas" abaixo.
 
 ### O que está pendente AGORA
 
@@ -111,8 +111,20 @@ Mesma regra do ERP e do painel.
 - **Datas:** a conversão recupera 857 autorizações que apareciam vazias
   (1.664 SPs com data em duplicidade e quebra de linha) e recusa cinco com ano
   digitado errado (202, 203, 204, 260, 2925).
+- **A pasta do módulo só guarda o que roda no Render** (decidido pelo dono em
+  03/09/2026). Saíram daqui: o Streamlit original (`app/`), os quatro atalhos
+  `.bat` que o abriam, a base local `spsbd_cache.db` de 60 MB, um ambiente
+  Python obsoleto de 35 MB e duas pastas vazias. Saiu também o `render.yaml`,
+  que já se declarava inerte no próprio cabeçalho.
 
-## O que ficou de fora, e por quê
+  **Movido, não apagado.** O Streamlit ainda é o que o dono usa no dia a dia
+  até o módulo online estar de pé, e os `.bat` procuram tudo ao lado deles —
+  então o conjunto inteiro foi para uma pasta irmã fora do repositório,
+  `analise-sps-streamlit-pc/`, e continua funcionando como antes. Nada do
+  serviço importava aquilo: nem o código, nem a suíte, nem o Render.
+
+  A base de 60 MB é regenerável — sai da planilha SPsBD. Quando o dono parar
+  de usar o Streamlit, a pasta inteira pode ser apagada.
 
 - **Cancelar SP no Pipefy** e **gerar BeeVale**: ações sem volta, e o BeeVale
   depende de um Shared Drive (erro 403 de cota da service account).

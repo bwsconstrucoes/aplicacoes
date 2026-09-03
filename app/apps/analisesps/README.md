@@ -46,13 +46,18 @@ reaproveitados do Streamlit, quase sem mudança:
   pix_brcode.py    montagem do BR Code e o dígito verificador
   bradesco.py      conferência do extrato (só a varredura mudou)
   rateio.py        o rateio que fecha 100% com o menor erro
-
-app/               o Streamlit ORIGINAL — não sobe para o serviço
 ```
 
-A pasta `app/` continua ali, intocada, e é o que o dono roda no computador
-dele. Ela não é importada por nada daqui e não tem `__init__.py`, então não
-atrapalha. Fica até a conversão terminar.
+**Não há mais nada aqui além disso.** Em 03/09/2026 o Streamlit original saiu
+desta pasta, junto com os atalhos `.bat` que o abriam e a base local de 60 MB.
+Ele não era importado por nada do serviço, nunca subiu para o Render e ainda é
+o que o dono usa no computador dele — por isso foi **movido**, não apagado, para
+uma pasta irmã fora do repositório (`analise-sps-streamlit-pc/`), onde continua
+funcionando como antes. Saiu também o `render.yaml`, que já se declarava
+inerte: era o registro da ideia abandonada de um serviço separado, e essa
+história está contada logo acima.
+
+O critério, daqui em diante: **nesta pasta só entra o que roda no Render.**
 
 ## Os dois perfis
 
@@ -262,4 +267,5 @@ travessão vira hífen, não "?".
   não acrescentar sem combinar. O CSV cobre a necessidade prática.
 - **Enviar comprovante por e-mail.** Depende de SMTP configurado no serviço.
 
-O Streamlit continua rodando no computador do dono enquanto isso, intocado.
+O Streamlit continua rodando no computador do dono enquanto isso, intocado —
+agora fora do repositório, em `analise-sps-streamlit-pc/`.
