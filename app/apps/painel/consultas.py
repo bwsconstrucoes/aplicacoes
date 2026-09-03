@@ -195,47 +195,87 @@ def caixa_por_ano(f: Filtros) -> list[dict]:
 # ---------------------------------------------------------------------------
 # DRE
 # ---------------------------------------------------------------------------
+# Juros e multa efetivamente PAGOS sao despesa financeira: entram no DRE, na
+# linha "Juros e Multas Pagos", e somam no total. Ficaram de fora da primeira
+# versao desta tela, e o resultado saia maior do que era.
+ENCARGO = f"CASE WHEN {PAGO} THEN (juros + multa) ELSE 0 END"
+
+
 def dre_linhas(f: Filtros) -> dict:
-    """As linhas do DRE: receita bruta, retencoes, receita liquida, despesas por
-    grupo e o resultado — nas tres leituras."""
+    """O DRE, linha a linha, na MESMA ordem e com os MESMOS rotulos da tela que
+    o dono construiu:
+
+        Receita Bruta de Servicos
+        (-) Retencoes na fonte          <- negativa, ela reconstroi o bruto
+        = Receita Liquida
+        (em branco)
+          <um grupo de despesa por linha, indentado>
+          Juros e Multas Pagos          <- so aparece se houver
+        = Total Custos/Despesas
+        (em branco)
+        = RESULTADO
+
+    Cada linha vem nas tres leituras: executado, em aberto e comprometido.
+    """
     where, params = f.where("analise = 'DRE'")
     sql = f"""
         SELECT tipo, ({RETIDO}) AS retido,
                COALESCE(NULLIF(grupo,''), '(sem grupo)') AS nome,
-               SUM({EXECUTADO}), SUM({EM_ABERTO})
+               SUM({EXECUTADO}), SUM({EM_ABERTO}), SUM({ENCARGO})
           FROM fato{where}
          GROUP BY 1, 2, 3"""
-    receita_liq = [0.0, 0.0]
+    receita_liquida = [0.0, 0.0]
     retencoes = [0.0, 0.0]
     despesas: dict[str, list[float]] = {}
-    for tipo, retido, nome, executado, aberto in consultar(sql, params):
+    encargo = 0.0
+    for tipo, retido, nome, executado, aberto, enc in consultar(sql, params):
         executado, aberto = float(executado or 0), float(aberto or 0)
         if tipo == REC:
-            alvo = retencoes if retido else receita_liq
+            alvo = retencoes if retido else receita_liquida
             alvo[0] += executado
             alvo[1] += aberto
         else:
             linha = despesas.setdefault(nome, [0.0, 0.0])
             linha[0] += executado
             linha[1] += aberto
+            encargo += float(enc or 0)
 
-    def _linha(nome, par):
-        return {"linha": nome, "executado": par[0], "aberto": par[1],
-                "comprometido": par[0] + par[1]}
+    def _linha(rotulo, executado, aberto, estilo=""):
+        return {"linha": rotulo, "executado": executado, "aberto": aberto,
+                "comprometido": executado + aberto, "estilo": estilo}
 
-    # despesas sao negativas: ordenar crescente poe a maior despesa em cima
-    grupos = sorted(despesas.items(), key=lambda kv: kv[1][0] + kv[1][1])
-    bruta = [receita_liq[0] + retencoes[0], receita_liq[1] + retencoes[1]]
-    total_desp = [sum(v[0] for v in despesas.values()),
+    bruta = [receita_liquida[0] + retencoes[0], receita_liquida[1] + retencoes[1]]
+    total_desp = [sum(v[0] for v in despesas.values()) + encargo,
                   sum(v[1] for v in despesas.values())]
-    resultado = [receita_liq[0] + total_desp[0], receita_liq[1] + total_desp[1]]
+
+    linhas = [
+        _linha("Receita Bruta de Serviços", bruta[0], bruta[1], "destaque"),
+        # negativa de proposito: e ela que explica a diferenca entre bruto e liquido
+        _linha("(−) Retenções na fonte", -retencoes[0], -retencoes[1], "sub"),
+        _linha("= Receita Líquida", receita_liquida[0], receita_liquida[1], "destaque"),
+        {"linha": "", "estilo": "branco"},
+    ]
+    # em ordem alfabetica, como na tela antiga — ordenar por valor faz a lista
+    # dancar a cada mudanca de filtro, e nao se acha mais nada
+    for nome in sorted(despesas):
+        linhas.append(_linha("  " + nome, despesas[nome][0], despesas[nome][1]))
+    if abs(encargo) > 0.005:
+        linhas.append(_linha("  Juros e Multas Pagos", encargo, 0.0))
+    linhas.append(_linha("= Total Custos/Despesas", total_desp[0], total_desp[1],
+                         "destaque"))
+    linhas.append({"linha": "", "estilo": "branco"})
+    linhas.append(_linha("= RESULTADO", receita_liquida[0] + total_desp[0],
+                         receita_liquida[1] + total_desp[1], "total"))
+
     return {
-        "receita_bruta": _linha("Receita bruta", bruta),
-        "retencoes": _linha("(−) Impostos retidos na fonte", retencoes),
-        "receita_liquida": _linha("Receita líquida", receita_liq),
-        "despesas": [_linha(nome, par) for nome, par in grupos],
-        "total_despesas": _linha("Total de despesas", total_desp),
-        "resultado": _linha("Resultado", resultado),
+        "linhas": linhas,
+        # os cinco numeros do topo, os mesmos da tela antiga
+        "receita_liquida": receita_liquida[0] + receita_liquida[1],
+        "retencoes": retencoes[0] + retencoes[1],
+        "receita_bruta": bruta[0] + bruta[1],
+        "despesas": total_desp[0] + total_desp[1],
+        "resultado": (receita_liquida[0] + receita_liquida[1]
+                      + total_desp[0] + total_desp[1]),
     }
 
 
@@ -248,8 +288,13 @@ def despesas_por(f: Filtros, quebra: str = "grupo", visao: str = "comprometido",
     sql = (f"SELECT COALESCE(NULLIF({coluna},''), '(sem {coluna})'), SUM({medida}) "
            f"  FROM fato{where} GROUP BY 1 HAVING SUM({medida}) <> 0 "
            f" ORDER BY SUM({medida}) ASC LIMIT {int(limite)}")
-    return [{"nome": nome, "valor": float(valor or 0)}
-            for nome, valor in consultar(sql, params)]
+    linhas = [{"nome": nome, "valor": float(valor or 0)}
+              for nome, valor in consultar(sql, params)]
+    # o percentual e sobre o total das despesas mostradas, como na tela antiga
+    total = sum(l["valor"] for l in linhas) or 1.0
+    for linha in linhas:
+        linha["pct_total"] = abs(linha["valor"] / total * 100)
+    return linhas
 
 
 def receita_por_obra(f: Filtros, limite: int = 25) -> list[dict]:
@@ -700,3 +745,341 @@ def etapas_da_carga() -> list[dict]:
         feitas = set()
     return [{"chave": chave, "rotulo": rotulo, "pronta": chave in feitas}
             for chave, rotulo in ETAPAS_DA_CARGA]
+
+
+def resultado_mensal(f: Filtros, medida: str = "executado") -> list[dict]:
+    """Receita, despesa e resultado acumulado mês a mês — o gráfico "Fluxo
+    Financeiro" que fica dentro da tela do DRE.
+
+    São duas leituras diferentes, e a distinção importa:
+
+    - **executado**: só o que foi pago ou recebido, pelo mês em que o dinheiro
+      andou. O acumulado mostra a geração de caixa já efetivada.
+    - **comprometido**: realizado mais em aberto, pelo mês da data do título
+      (pagamento quando houve, senão vencimento). Mostra a geração projetada.
+    """
+    if medida == "comprometido":
+        valor = COMPROMETIDO
+        extra = "data IS NOT NULL"
+    else:
+        valor = "pago_recebido"
+        extra = f"{PAGO} AND data IS NOT NULL"
+
+    where, params = f.where(f"analise = 'DRE' AND {extra} AND NOT (tipo = ? AND {RETIDO})",
+                            [REC])
+    sql = f"""
+        SELECT to_char(data, 'YYYY-MM'),
+               SUM(CASE WHEN tipo = ? THEN {valor} ELSE 0 END),
+               SUM(CASE WHEN tipo = ? THEN {valor} ELSE 0 END)
+          FROM fato{where}
+         GROUP BY 1 ORDER BY 1"""
+    saida, acumulado = [], 0.0
+    for mes, receita, despesa in consultar(sql, [REC, PAG] + params):
+        receita, despesa = float(receita or 0), float(despesa or 0)
+        resultado = receita + despesa
+        acumulado += resultado
+        ano, _, m = (mes or "").partition("-")
+        saida.append({"mes": mes, "rotulo": f"{m}/{ano}", "receita": receita,
+                      "despesa": despesa, "resultado": resultado,
+                      "acumulado": acumulado})
+    return saida
+
+
+# ---------------------------------------------------------------------------
+# Despesas Analítico — lançamento a lançamento
+# ---------------------------------------------------------------------------
+# É a tela que responde "de onde veio esse número". Sem ela, o painel mostra
+# totais que ninguém consegue conferir — e um total que não se abre não se
+# discute com fornecedor nenhum.
+
+ORDENS = {
+    "valor": "ABS({medida}) DESC",
+    "data": "data DESC NULLS LAST",
+    "credor": "razao_social ASC",
+    "categoria": "categoria ASC",
+}
+
+
+def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
+                       busca="", visao="comprometido", ordem="valor",
+                       pagina=1, por_pagina=200) -> dict:
+    """Os lançamentos de despesa, um por linha, com filtros próprios.
+
+    Devolve também os TOTAIS de toda a seleção — não só da página. O rodapé
+    somando apenas as 200 linhas visíveis seria pior que não ter rodapé.
+    """
+    medida = {"executado": EXECUTADO, "aberto": EM_ABERTO}.get(visao, COMPROMETIDO)
+
+    condicoes, extras = ["analise = 'DRE'", "tipo = ?"], [PAG]
+    if grupo:
+        condicoes.append("COALESCE(NULLIF(grupo,''), '(sem grupo)') = ?")
+        extras.append(grupo)
+    if categoria:
+        condicoes.append("COALESCE(NULLIF(categoria,''), '(sem categoria)') = ?")
+        extras.append(categoria)
+    if credor:
+        condicoes.append("COALESCE(NULLIF(razao_social,''), '(sem fornecedor)') = ?")
+        extras.append(credor)
+    if busca:
+        # uma caixa de busca que varre o que a pessoa lê na tela: fornecedor,
+        # categoria, documento e a observação do título
+        condicoes.append("(razao_social ILIKE ? OR categoria ILIKE ? "
+                         " OR numero_documento ILIKE ? OR observacao ILIKE ?)")
+        extras.extend([f"%{busca}%"] * 4)
+
+    where, params = f.where(" AND ".join(condicoes), extras)
+
+    total_sql = f"""
+        SELECT COUNT(*), SUM({EXECUTADO}), SUM({EM_ABERTO}),
+               SUM({ENCARGO})
+          FROM fato{where}"""
+    quantos, executado, aberto, encargo = consultar(total_sql, params)[0]
+
+    ordenacao = ORDENS.get(ordem, ORDENS["valor"]).format(medida=medida)
+    pagina = max(int(pagina or 1), 1)
+    sql = f"""
+        SELECT data, razao_social, cnpj_cpf, grupo, categoria, departamento,
+               projeto, numero_documento, observacao, conta_corrente, situacao,
+               {EXECUTADO}, {EM_ABERTO}, juros, multa, link
+          FROM fato{where}
+         ORDER BY {ordenacao}
+         LIMIT {int(por_pagina)} OFFSET {int((pagina - 1) * por_pagina)}"""
+    campos = ("data", "credor", "cnpj", "grupo", "categoria", "obra", "projeto",
+              "documento", "observacao", "conta", "situacao", "pago", "a_pagar",
+              "juros", "multa", "link")
+    linhas = []
+    for bruta in consultar(sql, params):
+        linha = dict(zip(campos, bruta))
+        for campo in ("pago", "a_pagar", "juros", "multa"):
+            linha[campo] = float(linha[campo] or 0)
+        linha["total"] = linha["pago"] + linha["a_pagar"]
+        linhas.append(linha)
+
+    quantos = quantos or 0
+    return {
+        "linhas": linhas,
+        "quantos": quantos,
+        "pagina": pagina,
+        "paginas": max((quantos + por_pagina - 1) // por_pagina, 1),
+        "por_pagina": por_pagina,
+        "total_pago": float(executado or 0),
+        "total_a_pagar": float(aberto or 0),
+        "total_encargo": float(encargo or 0),
+        "total": float(executado or 0) + float(aberto or 0) + float(encargo or 0),
+    }
+
+
+def opcoes_do_analitico(f: Filtros) -> dict:
+    """Grupos e categorias que existem DENTRO do recorte atual.
+
+    Listar os 110 do plano de contas quando o filtro deixou 6 obriga a procurar
+    entre opções que não trazem nada."""
+    where, params = f.where("analise = 'DRE' AND tipo = ?", [PAG])
+    grupos = [g for (g,) in consultar(
+        f"SELECT DISTINCT COALESCE(NULLIF(grupo,''), '(sem grupo)') "
+        f"  FROM fato{where} ORDER BY 1", params)]
+    categorias = [c for (c,) in consultar(
+        f"SELECT DISTINCT COALESCE(NULLIF(categoria,''), '(sem categoria)') "
+        f"  FROM fato{where} ORDER BY 1", params)]
+    return {"grupos": grupos, "categorias": categorias}
+
+
+# ---------------------------------------------------------------------------
+# Aportes e devoluções — o bloco que fica no fim do DRE
+# ---------------------------------------------------------------------------
+# Aporte NÃO entra no resultado: é dinheiro que o sócio ou o parceiro coloca (ou
+# retira) da obra, não receita nem despesa. Mas na hora de avaliar uma obra ele é
+# essencial — uma obra pode estar no vermelho e mesmo assim pagando as contas
+# porque alguém injetou dinheiro. Por isso o bloco vive na mesma tela do DRE,
+# com os mesmos filtros, mas separado da tabela.
+#
+# Tudo aqui é em CAIXA (só o que entrou ou saiu de fato): saldo de sócio é
+# posição financeira, não competência.
+
+# A classificação é a MESMA do `classificar_aporte` em Python — só que escrita em
+# SQL, para o Postgres agrupar sem trazer linha nenhuma para cá. Gerar o SQL a
+# partir do mesmo dicionário é o que garante que as duas não divirjam: mexer na
+# lista de padrões conserta os dois lugares de uma vez.
+_CAT_SIMPLES = ("translate(lower(COALESCE(categoria,'')), "
+                "'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc')")
+
+
+def _sql_tipo_aporte() -> str:
+    from .sync.fato import TIPOS_APORTE, _APORTE_GENERICO, _sem_acento
+
+    def ramo(padroes, tipo):
+        # Os padrões são só letras e espaços, então a alternância do regex é
+        # segura — e cabe numa linha, ao contrário de um OR por padrão.
+        alternativas = "|".join(_sem_acento(p) for p in padroes)
+        return f"WHEN {_CAT_SIMPLES} ~ '{alternativas}' THEN '{tipo}'"
+
+    ramos = [ramo(padroes, tipo) for tipo, padroes in TIPOS_APORTE.items()]
+    ramos.append(ramo(_APORTE_GENERICO, "Outros aportes"))
+    return "CASE " + " ".join(ramos) + " END"
+
+
+def _sql_tipos_no_saldo() -> str:
+    from .sync.fato import TIPOS_NO_SALDO
+    return ", ".join(f"'{t}'" for t in sorted(TIPOS_NO_SALDO))
+
+
+TIPO_APORTE = _sql_tipo_aporte()
+NO_SALDO = _sql_tipos_no_saldo()
+
+# Nome de quem aportou e obra onde entrou — com o mesmo rótulo de "faltando" que
+# a tela antiga usava, senão o vazio some no meio da tabela.
+_SOCIO = "COALESCE(NULLIF(TRIM(razao_social),''), '(sem contraparte)')"
+_OBRA = "COALESCE(NULLIF(TRIM(departamento),''), '(sem obra)')"
+
+# Entrada é o que o sócio colocou; saída, o que voltou para ele.
+_APORTADO = "SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END)"
+_DEVOLVIDO = "SUM(CASE WHEN pago_recebido < 0 THEN -pago_recebido ELSE 0 END)"
+
+
+def _agregado_de_aporte(f: Filtros, chaves: list[str]) -> list[dict]:
+    """Aportado / devolvido / saldo agrupado pelas colunas pedidas."""
+    where, params = f.where(
+        f"{PAGO} AND ({TIPO_APORTE}) IN ({NO_SALDO})")
+    grupos = ", ".join(str(i + 1) for i in range(len(chaves)))
+    sql = f"""
+        SELECT {', '.join(chaves)}, {_APORTADO}, {_DEVOLVIDO}, COUNT(*)
+          FROM fato{where}
+         GROUP BY {grupos}"""
+    n = len(chaves)
+    saida = []
+    for linha in consultar(sql, params):
+        aportado, devolvido = float(linha[n] or 0), float(linha[n + 1] or 0)
+        saida.append({"chaves": list(linha[:n]), "aportado": aportado,
+                      "devolvido": devolvido, "saldo": aportado - devolvido,
+                      "lancamentos": linha[n + 2]})
+    saida.sort(key=lambda x: -x["saldo"])
+    return saida
+
+
+def aportes(f: Filtros) -> dict:
+    """O bloco inteiro de aportes, do jeito que a tela antiga mostrava.
+
+    Devolve os quatro recortes (sócio, obra, tipo, lançamentos), o quadro de
+    dividendos — que fica FORA do saldo — e os três totais do topo."""
+    por_socio = [dict(l, socio=l["chaves"][0])
+                 for l in _agregado_de_aporte(f, [_SOCIO])]
+    por_obra = [dict(l, obra=l["chaves"][0], socio=l["chaves"][1])
+                for l in _agregado_de_aporte(f, [_OBRA, _SOCIO])]
+    por_tipo = [dict(l, obra=l["chaves"][0], tipo=l["chaves"][1])
+                for l in _agregado_de_aporte(f, [_OBRA, TIPO_APORTE])]
+
+    # "Falta p/ igualar": a distância até o MAIOR aportador da mesma obra. É uma
+    # referência de igualdade, não uma cobrança — o sistema não conhece a quota
+    # que os sócios combinaram entre si.
+    maior = {}
+    for l in por_obra:
+        maior[l["obra"]] = max(maior.get(l["obra"], l["saldo"]), l["saldo"])
+    for l in por_obra:
+        l["falta"] = maior[l["obra"]] - l["saldo"]
+
+    total_ap = sum(l["aportado"] for l in por_socio)
+    total_dev = sum(l["devolvido"] for l in por_socio)
+    for l in por_socio:
+        l["pct"] = (l["aportado"] / total_ap * 100) if total_ap else 0.0
+
+    return {
+        "por_socio": por_socio, "por_obra": por_obra, "por_tipo": por_tipo,
+        "dividendos": dividendos_por_socio(f),
+        "lancamentos": lancamentos_de_aporte(f),
+        "aportado": total_ap, "devolvido": total_dev,
+        "saldo": total_ap - total_dev,
+        "tem_dados": bool(por_socio),
+    }
+
+
+def dividendos_por_socio(f: Filtros) -> list[dict]:
+    """Dividendo é distribuição de LUCRO, não devolução de capital.
+
+    Por isso ele não abate o saldo de aporte — abater faria parecer que o sócio
+    retirou o que colocou, o que não aconteceu. Fica em quadro próprio."""
+    where, params = f.where(f"{PAGO} AND ({TIPO_APORTE}) = 'Dividendos'")
+    sql = f"""
+        SELECT {_SOCIO},
+               SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END),
+               SUM(CASE WHEN pago_recebido < 0 THEN -pago_recebido ELSE 0 END),
+               COUNT(*)
+          FROM fato{where}
+         GROUP BY 1"""
+    saida = [{"socio": socio, "recebido": float(receb or 0), "pago": float(pago or 0),
+              "liquido": float(pago or 0) - float(receb or 0), "lancamentos": quantos}
+             for socio, receb, pago, quantos in consultar(sql, params)]
+    saida.sort(key=lambda x: -x["liquido"])
+    return saida
+
+
+# Teto do detalhamento na tela. A versão antiga mostrava tudo porque já tinha a
+# base inteira na memória — que é justamente o que não se faz mais aqui. Quem
+# precisa da lista completa baixa o Excel, que sai sem teto.
+LIMITE_LANCAMENTOS = 400
+
+
+def lancamentos_de_aporte(f: Filtros, limite: int | None = LIMITE_LANCAMENTOS) -> dict:
+    where, params = f.where(f"{PAGO} AND ({TIPO_APORTE}) IS NOT NULL")
+    (quantos,) = consultar(f"SELECT COUNT(*) FROM fato{where}", params)[0]
+    teto = f" LIMIT {int(limite)}" if limite else ""
+    sql = f"""
+        SELECT data, {_OBRA}, {_SOCIO}, {TIPO_APORTE},
+               COALESCE(NULLIF(categoria,''), '(sem categoria)'),
+               pago_recebido, COALESCE(conta_corrente,''),
+               COALESCE(numero_documento,''), COALESCE(observacao,'')
+          FROM fato{where}
+         ORDER BY 2, 3, 1{teto}"""
+    campos = ("data", "obra", "socio", "tipo", "categoria", "valor",
+              "conta", "documento", "observacao")
+    return {"quantos": quantos, "teto": limite,
+            "linhas": [dict(zip(campos, linha)) for linha in consultar(sql, params)]}
+
+
+def resultado_dividendos(f: Filtros) -> dict:
+    """A ponte entre RESULTADO e DIVIDENDO, obra por obra.
+
+    O resultado sai do DRE, em caixa (só o que foi pago ou recebido). O dividendo
+    sai do fluxo — ele não é despesa, é distribuição do resultado já apurado. Os
+    dois nunca se somam: um alimenta o outro.
+
+        Disponível = resultado realizado − dividendos já pagos
+    """
+    where_r, params_r = f.where(f"analise = 'DRE' AND {PAGO}")
+    resultado = {obra: float(valor or 0) for obra, valor in consultar(
+        f"SELECT {_OBRA}, SUM(pago_recebido) FROM fato{where_r} GROUP BY 1",
+        params_r)}
+
+    where_d, params_d = f.where(
+        f"{PAGO} AND ({TIPO_APORTE}) = 'Dividendos' AND pago_recebido < 0")
+    pagos = {obra: float(valor or 0) for obra, valor in consultar(
+        f"SELECT {_OBRA}, SUM(-pago_recebido) FROM fato{where_d} GROUP BY 1",
+        params_d)}
+
+    linhas = [{"obra": obra,
+               "resultado": resultado.get(obra, 0.0),
+               "dividendos": pagos.get(obra, 0.0),
+               "disponivel": resultado.get(obra, 0.0) - pagos.get(obra, 0.0)}
+              for obra in set(resultado) | set(pagos)]
+    linhas.sort(key=lambda x: -x["resultado"])
+
+    return {
+        "linhas": linhas,
+        "resultado": sum(l["resultado"] for l in linhas),
+        "dividendos": sum(l["dividendos"] for l in linhas),
+        "disponivel": sum(l["disponivel"] for l in linhas),
+        "tem_dados": bool(linhas),
+    }
+
+
+def hipotese_de_distribuicao(por_socio: list[dict], disponivel: float) -> list[dict]:
+    """Reparte o disponível na proporção do que cada um aportou.
+
+    É simulação, e a tela diz isso: o sistema NÃO conhece a quota acordada entre
+    os sócios. Serve para dar ordem de grandeza, não para fechar conta."""
+    base = [l for l in por_socio if l["saldo"] > 0]
+    total = sum(l["saldo"] for l in base)
+    if not base or total <= 0 or disponivel <= 0:
+        return []
+    return [{"socio": l["socio"], "saldo": l["saldo"],
+             "pct": l["saldo"] / total * 100,
+             "valor": l["saldo"] / total * disponivel} for l in base]

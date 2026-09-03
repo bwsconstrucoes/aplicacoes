@@ -19,11 +19,12 @@ Nenhum teste aqui abre banco: as funções recebem listas e devolvem listas.
 from __future__ import annotations
 
 import datetime as dt
+import io
 import json
 
 import pytest
 
-from app.apps.painel import exportar, prestacao, simulacao
+from app.apps.painel import excel, prestacao, simulacao
 
 
 # ===========================================================================
@@ -299,41 +300,60 @@ def test_saldo_inicial_levanta_a_linha_do_caixa():
 # ===========================================================================
 # 4. A exportação
 # ===========================================================================
-def test_o_csv_abre_certo_no_excel_em_portugues():
-    """Três detalhes decidem se o arquivo abre certo ou vira uma coluna só com
-    os acentos quebrados: o BOM, o ponto-e-vírgula e a vírgula decimal."""
-    conteudo = exportar.montar_csv(
-        [("nome", "Descrição"), ("valor", "Valor")],
-        [{"nome": "Manutenção", "valor": -1234.5}])
-    assert conteudo.startswith(b"\xef\xbb\xbf")          # BOM
-    texto = conteudo.decode("utf-8-sig")
-    assert texto.splitlines()[0] == "Descrição;Valor"     # ponto-e-vírgula
-    assert texto.splitlines()[1] == "Manutenção;-1234,50"  # vírgula decimal
+def test_a_planilha_marca_dinheiro_como_dinheiro():
+    """Sem o formato de moeda a coluna vira número solto e ninguém soma nada
+    olhando. Quem decide é o TÍTULO da coluna, não o valor."""
+    from openpyxl import load_workbook
+
+    livro = load_workbook(io.BytesIO(excel.montar(
+        [("Teste", [("nome", "Descrição"), ("valor", "Valor")],
+          [{"nome": "Manutenção", "valor": -1234.5}])])))
+    folha = livro["Teste"]
+    assert folha["A1"].value == "Descrição"
+    assert folha["B2"].value == -1234.5              # número, não texto
+    assert "R$" in folha["B2"].number_format
 
 
-def test_data_no_csv_sai_no_formato_brasileiro():
-    conteudo = exportar.montar_csv([("data", "Data")],
-                                   [{"data": dt.date(2025, 3, 9)}])
-    assert "09/03/2025" in conteudo.decode("utf-8-sig")
+def test_data_na_planilha_sai_no_formato_brasileiro():
+    from openpyxl import load_workbook
+
+    livro = load_workbook(io.BytesIO(excel.montar(
+        [("Teste", [("data", "Data")], [{"data": dt.date(2025, 3, 9)}])])))
+    celula = livro["Teste"]["A2"]
+    assert celula.value == dt.datetime(2025, 3, 9, 0, 0)
+    assert celula.number_format == "DD/MM/YYYY"
 
 
 def test_campo_ausente_vira_celula_vazia_e_nao_erro():
-    conteudo = exportar.montar_csv([("a", "A"), ("b", "B")], [{"a": 1}])
-    assert conteudo.decode("utf-8-sig").splitlines()[1] == "1;"
+    from openpyxl import load_workbook
+
+    livro = load_workbook(io.BytesIO(excel.montar(
+        [("Teste", [("a", "A"), ("b", "B")], [{"a": 1}])])))
+    assert livro["Teste"]["B2"].value is None
 
 
-def test_o_dre_vira_uma_lista_corrida_na_ordem_certa():
-    dre = {
-        "receita_bruta": {"linha": "Receita bruta"},
-        "retencoes": {"linha": "(−) Retenções"},
-        "receita_liquida": {"linha": "Receita líquida"},
-        "despesas": [{"linha": "Materiais"}, {"linha": "Pessoal"}],
-        "total_despesas": {"linha": "Total de despesas"},
-        "resultado": {"linha": "Resultado"},
-    }
-    assert [l["linha"] for l in exportar.linhas_do_dre(dre)] == [
-        "Receita bruta", "(−) Retenções", "Receita líquida",
-        "Materiais", "Pessoal", "Total de despesas", "Resultado"]
+def test_aba_vazia_entra_com_aviso_em_vez_de_sumir():
+    """Aba que some deixa quem abre sem saber se não havia dado ou se o
+    relatório falhou na metade."""
+    from openpyxl import load_workbook
+
+    livro = load_workbook(io.BytesIO(excel.montar(
+        [("Top Credores", [("nome", "Credor")], [])])))
+    assert livro.sheetnames == ["Top Credores"]
+    assert "sem dados" in livro["Top Credores"]["A1"].value
+
+
+def test_nome_de_aba_longo_ou_proibido_nao_derruba_o_arquivo():
+    r"""O Excel recusa aba com mais de 31 caracteres ou com : \ / ? * [ ] —
+    e um arquivo recusado é pior do que uma aba com nome cortado."""
+    from openpyxl import load_workbook
+
+    nome = "Comprometido x Executado / por obra [2025]"
+    livro = load_workbook(io.BytesIO(excel.montar(
+        [(nome, [("a", "A")], [{"a": 1}])])))
+    (saida,) = livro.sheetnames
+    assert len(saida) <= 31
+    assert not set(saida) & set(r':\/?*[]')
 
 
 # ===========================================================================

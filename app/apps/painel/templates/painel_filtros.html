@@ -1,76 +1,66 @@
-{# Barra lateral de filtros. Um formulario GET simples: os filtros ficam na
-   propria URL, entao a tela filtrada pode ser guardada nos favoritos ou enviada
-   para outra pessoa e abre exatamente igual. #}
+{# Barra lateral de filtros.
+
+   Um formulário GET simples: os filtros ficam na própria URL, então a tela
+   filtrada pode ser guardada nos favoritos ou enviada para outra pessoa e abre
+   exatamente igual.
+
+   A LISTA DE OBRAS TEM MAIS DE CEM ITENS. Sem busca, achar uma obra era rolar
+   até encontrar, marcar, e rolar de novo para a próxima — inviável. Por isso
+   cada lista longa tem campo de busca, e o que está marcado sobe para o topo,
+   para não se perder de vista enquanto se procura o próximo.
+#}
 <form method="get" id="form-filtros">
   <div class="filtros-cab">
     <h2>Filtros</h2>
     <a class="link-btn" href="{{ request.path }}">Limpar</a>
   </div>
 
-  {# preserva as opcoes da propria tela (quebra/visão do DRE) ao filtrar #}
-  {% if request.args.get('quebra') %}
-    <input type="hidden" name="quebra" value="{{ request.args.get('quebra') }}">
-  {% endif %}
-  {% if request.args.get('visao') %}
-    <input type="hidden" name="visao" value="{{ request.args.get('visao') }}">
-  {% endif %}
+  {# preserva as opções da própria tela (quebra/visão/nível) ao filtrar #}
+  {% for campo in ['quebra', 'visao', 'nivel', 'medida', 'tipo', 'bloco'] %}
+    {% if request.args.get(campo) %}
+      <input type="hidden" name="{{ campo }}" value="{{ request.args.get(campo) }}">
+    {% endif %}
+  {% endfor %}
 
-  <div class="filtro aberto">
+  {% macro lista(nome, rotulo, itens, marcados, com_busca=False) %}
+  <div class="filtro {% if marcados %}aberto{% endif %}" data-filtro="{{ nome }}">
     <button type="button" class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      Ano
-      {% if selecao.anos %}<span class="filtro-badge">{{ selecao.anos|length }}</span>{% endif %}
+      {{ rotulo }}
+      <span class="filtro-badge {% if not marcados %}oculto{% endif %}"
+            data-contador>{{ marcados|length }}</span>
       <span class="seta">▾</span>
     </button>
     <div class="filtro-cont">
-      <div class="filtro-opcoes">
-        {% for ano in opcoes.anos %}
-          <label class="opcao">
-            <input type="checkbox" name="ano" value="{{ ano }}"
-                   {% if ano|string in selecao.anos %}checked{% endif %}>
-            <span class="rotulo">{{ ano }}</span>
+      {% if com_busca %}
+      <div class="busca-filtro">
+        <input type="search" placeholder="Buscar {{ rotulo|lower }}…" data-busca
+               autocomplete="off" aria-label="Buscar {{ rotulo|lower }}">
+        <span class="busca-conta" data-visiveis></span>
+      </div>
+      <div class="filtro-acoes">
+        <button type="button" class="link-btn" data-marcar-visiveis>Marcar os que aparecem</button>
+        <button type="button" class="link-btn" data-desmarcar>Limpar</button>
+      </div>
+      {% endif %}
+      <div class="filtro-opcoes" data-opcoes>
+        {% for item in itens %}
+          <label class="opcao" data-texto="{{ item }}">
+            <input type="checkbox" name="{{ nome }}" value="{{ item }}"
+                   {% if item|string in marcados %}checked{% endif %}>
+            <span class="rotulo" title="{{ item }}">{{ item }}</span>
           </label>
         {% endfor %}
       </div>
+      {% if com_busca %}
+        <p class="sem-resultado oculto" data-vazio>Nada encontrado.</p>
+      {% endif %}
     </div>
   </div>
+  {% endmacro %}
 
-  <div class="filtro {% if selecao.projetos %}aberto{% endif %}">
-    <button type="button" class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      Projeto
-      {% if selecao.projetos %}<span class="filtro-badge">{{ selecao.projetos|length }}</span>{% endif %}
-      <span class="seta">▾</span>
-    </button>
-    <div class="filtro-cont">
-      <div class="filtro-opcoes">
-        {% for p in opcoes.projetos %}
-          <label class="opcao">
-            <input type="checkbox" name="projeto" value="{{ p }}"
-                   {% if p in selecao.projetos %}checked{% endif %}>
-            <span class="rotulo" title="{{ p }}">{{ p }}</span>
-          </label>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
-
-  <div class="filtro {% if selecao.obras %}aberto{% endif %}">
-    <button type="button" class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      Obra
-      {% if selecao.obras %}<span class="filtro-badge">{{ selecao.obras|length }}</span>{% endif %}
-      <span class="seta">▾</span>
-    </button>
-    <div class="filtro-cont">
-      <div class="filtro-opcoes">
-        {% for o in opcoes.obras %}
-          <label class="opcao">
-            <input type="checkbox" name="obra" value="{{ o }}"
-                   {% if o in selecao.obras %}checked{% endif %}>
-            <span class="rotulo" title="{{ o }}">{{ o }}</span>
-          </label>
-        {% endfor %}
-      </div>
-    </div>
-  </div>
+  {{ lista('ano', 'Ano', opcoes.anos, selecao.anos) }}
+  {{ lista('projeto', 'Projeto', opcoes.projetos, selecao.projetos, com_busca=True) }}
+  {{ lista('obra', 'Obra', opcoes.obras, selecao.obras, com_busca=True) }}
 
   <div class="filtro aberto">
     <div class="filtro-cont" style="padding-top:10px">
@@ -86,3 +76,84 @@
     </div>
   </div>
 </form>
+
+<script>
+// ---------------------------------------------------------------------------
+// Busca dentro do filtro
+// ---------------------------------------------------------------------------
+// Tudo acontece no navegador: a lista inteira já veio do servidor, então
+// buscar não recarrega a página nem perde o que já estava marcado.
+(function () {
+  // "Fortaleza" tem de ser achado digitando "fortaleza"; "SÃO" digitando "sao".
+  // Sem tirar o acento, quem digita rápido não acha nada e acha que quebrou.
+  const simples = t => (t || "").normalize("NFD")
+                                .replace(/[̀-ͯ]/g, "")
+                                .toLowerCase().trim();
+
+  document.querySelectorAll(".filtro[data-filtro]").forEach(bloco => {
+    const busca = bloco.querySelector("[data-busca]");
+    const opcoes = bloco.querySelector("[data-opcoes]");
+    const contador = bloco.querySelector("[data-contador]");
+    const visiveis = bloco.querySelector("[data-visiveis]");
+    const vazio = bloco.querySelector("[data-vazio]");
+    const linhas = Array.from(opcoes.querySelectorAll(".opcao"));
+
+    function atualizarContador() {
+      const marcados = linhas.filter(l => l.querySelector("input").checked).length;
+      contador.textContent = marcados;
+      contador.classList.toggle("oculto", marcados === 0);
+    }
+
+    // O que está marcado sobe para o topo: procurando a décima obra, as nove
+    // já escolhidas continuam à vista, e dá para conferir sem rolar de volta.
+    function reordenar() {
+      const marcados = linhas.filter(l => l.querySelector("input").checked);
+      const resto = linhas.filter(l => !l.querySelector("input").checked);
+      [...marcados, ...resto].forEach(l => opcoes.appendChild(l));
+    }
+
+    function filtrar() {
+      const termo = simples(busca ? busca.value : "");
+      let mostrando = 0;
+      linhas.forEach(linha => {
+        const marcado = linha.querySelector("input").checked;
+        // o que já está marcado nunca some da lista, mesmo fora da busca
+        const casa = !termo || marcado || simples(linha.dataset.texto).includes(termo);
+        linha.classList.toggle("oculto", !casa);
+        if (casa) mostrando++;
+      });
+      if (visiveis) {
+        visiveis.textContent = termo ? `${mostrando} de ${linhas.length}`
+                                     : `${linhas.length} itens`;
+      }
+      if (vazio) vazio.classList.toggle("oculto", mostrando > 0);
+    }
+
+    opcoes.addEventListener("change", () => { atualizarContador(); });
+
+    if (busca) {
+      busca.addEventListener("input", filtrar);
+      // Enter dentro da busca filtra, não envia o formulário meio preenchido
+      busca.addEventListener("keydown", e => {
+        if (e.key === "Enter") { e.preventDefault(); filtrar(); }
+        if (e.key === "Escape") { busca.value = ""; filtrar(); }
+      });
+      const marcarVisiveis = bloco.querySelector("[data-marcar-visiveis]");
+      const desmarcar = bloco.querySelector("[data-desmarcar]");
+      marcarVisiveis.onclick = () => {
+        linhas.filter(l => !l.classList.contains("oculto"))
+              .forEach(l => { l.querySelector("input").checked = true; });
+        atualizarContador(); reordenar(); filtrar();
+      };
+      desmarcar.onclick = () => {
+        linhas.forEach(l => { l.querySelector("input").checked = false; });
+        atualizarContador(); filtrar();
+      };
+    }
+
+    reordenar();
+    atualizarContador();
+    filtrar();
+  });
+})();
+</script>

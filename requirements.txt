@@ -24,3 +24,4 @@ pillow
 # Código de barras do boleto (Análise de SPs). Python puro, sem nada
 # compilado — a tela que a usa vem numa entrega seguinte.
 python-barcode>=0.15
+openpyxl  # relatorio do painel em Excel (uma aba por assunto)

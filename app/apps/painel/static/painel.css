@@ -347,3 +347,64 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 
 /* barra do emprestimo tomado, na Necessidade de Caixa */
 .gr .b-emprestimo { fill: var(--roxo); }
+
+/* ==========================================================================
+   BUSCA DENTRO DO FILTRO
+   A lista de obras passa de cem itens. Sem busca, achar uma era rolar até ela,
+   marcar, e rolar de novo para a próxima — e o que já estava marcado sumia de
+   vista no meio do caminho.
+   ========================================================================== */
+.busca-filtro { position: relative; margin: 2px 0 8px; }
+.busca-filtro input {
+  width: 100%; padding: 7px 10px; border: 1.5px solid var(--borda-forte);
+  border-radius: var(--raio-p); font-size: 13px; background: var(--papel);
+}
+.busca-filtro input:focus {
+  outline: 2px solid var(--azul-claro); border-color: var(--azul-claro); background: #fff;
+}
+.busca-conta {
+  display: block; font-size: 11px; color: var(--tinta-suave); margin-top: 3px;
+  font-family: var(--fonte-dados);
+}
+.filtro-acoes { display: flex; gap: 4px; margin-bottom: 4px; }
+.filtro-acoes .link-btn { font-size: 12px; padding: 2px 4px; }
+.sem-resultado {
+  font-size: 12.5px; color: var(--tinta-suave); text-align: center;
+  padding: 10px 0; margin: 0;
+}
+/* a lista cresce: com busca, dá para ver mais de uma vez */
+.filtro-opcoes { max-height: 320px; }
+/* o que está marcado sobe para o topo e fica destacado, para não se perder
+   de vista enquanto se procura o próximo */
+.opcao:has(input:checked) { background: #E8EEFA; font-weight: 600; }
+
+/* linhas do DRE: em branco separando blocos, e grupos recuados sob o total */
+.linha-branca td { padding: 3px 0; border-bottom: 0; }
+td.recuada { padding-left: 26px; color: var(--tinta-suave); }
+
+/* ============ ABAS DENTRO DA TELA ============
+   A tela antiga do DRE separava Despesas, Receitas e Top Credores em abas.
+   Aqui cada aba e um link com os filtros na URL: so as consultas da aba aberta
+   rodam, e a aba escolhida pode ser guardada nos favoritos. */
+.abas-internas {
+  display: flex; gap: 4px; margin: 0 0 14px; flex-wrap: wrap;
+  border-bottom: 2px solid var(--borda);
+}
+.abas-internas a {
+  padding: 9px 15px; font-size: 13.5px; font-weight: 600; text-decoration: none;
+  color: var(--tinta-suave); border-radius: var(--raio-p) var(--raio-p) 0 0;
+  border-bottom: 3px solid transparent; margin-bottom: -2px; white-space: nowrap;
+}
+.abas-internas a:hover { color: var(--azul); background: #EEF2FA; }
+.abas-internas a.ativa {
+  color: var(--azul); background: var(--branco);
+  border-bottom-color: var(--amarelo);
+}
+
+/* Aviso de que a lista mostrada foi cortada. Aparece quando ha mais linhas do
+   que o teto da tela — o Excel sai completo. */
+.aviso-teto {
+  font-size: 12.5px; color: var(--ambar); background: #FFF8E8;
+  border: 1px solid #F0DCA8; border-radius: var(--raio-p);
+  padding: 8px 12px; margin: 10px 0 0;
+}

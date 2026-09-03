@@ -14,20 +14,38 @@ O painel financeiro do OMIE rodava em Streamlit, no computador do dono, lendo
 arquivos de uma pasta de 153 MB. Virou módulo Flask do monorepo, em `/painel`,
 com login próprio e os dados no Postgres do ERP (schema `painel`).
 
-**Oito telas convertidas**, todas conferidas contra a versão original com dados
-reais: Visão Geral, DRE, Receita de Obra, Fluxo de Caixa, Resultado por Obra,
-Comprometido × Executado, Necessidade de Caixa e Prestação de Contas.
+**Nove telas convertidas**, todas conferidas contra a versão original com dados
+reais: Visão Geral, DRE, Despesas Analítico, Receita de Obra, Fluxo de Caixa,
+Resultado por Obra, Comprometido × Executado, Necessidade de Caixa e Prestação
+de Contas.
 
-**Estado em 02/09/2026:** versão `cc48712` publicada, 403 testes passando.
+**Estado em 03/09/2026:** a primeira carga terminou e o painel está no ar. O
+ramo `painel-fiel` refaz o DRE (ver abaixo) e ainda **não foi publicado**.
 
-### O que está pendente AGORA
+### A lição de 02/09/2026 — fidelidade vem antes de gosto
 
-O dono está tentando rodar a **primeira carga** — baixar toda a base do OMIE.
-Ela já falhou quatro vezes, cada uma por um motivo diferente; todos corrigidos.
-**Pergunte a ele se a carga terminou antes de qualquer outra coisa.**
+A primeira versão do DRE tinha metade da tela antiga. Eu havia decidido por
+conta própria que as abas de Receitas, Top Credores e o bloco inteiro de
+Aportes não eram necessárias, e reescrevi os rótulos das linhas. O dono abriu
+a tela e disse, com razão:
 
-Sinal de que terminou: a tela de Configurações mostra
-*"185.422 linhas de lançamento e ... recebimentos em X min"*.
+> *"Levei muito tempo pra construir o que tinha, pra simplesmente mudar. Tô
+> achando que era melhor ter deixado o Streamlit tal qual estava."*
+
+Ele chegou a pedir para voltar ao Streamlit. **Converter não é redesenhar.**
+Quando a tela nova tira coisa da antiga, quem perde é quem já sabia usá-la — e
+o ganho técnico não compra isso. O que se pode melhorar é o que ele reclamou:
+o filtro de obras com mais de cem itens, que não tinha busca.
+
+Antes de mexer numa tela, abra a original em `referencia_streamlit/` e confira
+item por item. O que sair, sai porque **ele** decidiu, não porque pareceu
+supérfluo.
+
+### Erro numérico que isso escondeu
+
+Na pressa de simplificar, a linha **"Juros e Multas Pagos"** ficou de fora do
+DRE. Não era só uma linha a menos na tela: os encargos sumiam do total de
+custos, e o resultado saía maior do que é. Está de volta.
 
 ---
 
@@ -101,7 +119,7 @@ risco sempre explícito. Nada de esconder o que não foi testado atrás de
 | Postgres do ERP, schema `painel` | O disco do Render é apagado a cada reinício; a configuração da prestação de contas não é regenerável |
 | Módulo do serviço que já existe, não serviço novo | Sem custo adicional; reusa login, deploy e banco |
 | Gráficos em SVG desenhado na página | O Plotly custava 3 MB de JavaScript por tela |
-| Exportação em CSV, não `.xlsx` | Excel de verdade exigiria biblioteca nova; a regra da casa é não acrescentar sem combinar |
+| Exportação em `.xlsx` (`openpyxl`), **não** CSV | Revertida em 03/09/2026: o relatório tem oito abas, e em CSV isso vira oito arquivos soltos. O dono pediu Excel. Escreve célula a célula, sem `pandas` |
 | `pandas` não é dependência do painel | A única parte que o usava foi feita em Python puro |
 | Migrações aplicadas por botão, nunca no boot | Uma migração com defeito no start derrubaria os 15 módulos juntos |
 | Hora convertida para Brasília **na fonte** | O servidor roda em UTC; se cada tela convertesse, uma esqueceria |
@@ -122,14 +140,31 @@ Se alguma tela for mexida, refaça a comparação. As telas originais estão em
 
 ---
 
+## O banco de produção recusou conexão em 03/09/2026
+
+Ao tentar conferir o SQL novo contra a base real, o Postgres respondeu:
+
+    FATAL: role "erp_admin" is not permitted to log in
+
+Isso não é senha errada: é o servidor recusando o usuário. Se estiver valendo
+também para o serviço no Render, o **ERP e o painel estão fora do ar juntos** —
+os dois usam esse mesmo banco. Verificar no painel do Render se a instância do
+Postgres foi suspensa. Enquanto durar, nenhuma conferência com dado real é
+possível, e o SQL novo do bloco de aportes **ainda não rodou contra um banco de
+verdade** — só passou pelo parser do Postgres (offline) e pelos testes com o
+dublê.
+
 ## O que falta
 
-1. **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
+1. **Rodar o bloco de aportes contra a base real**, assim que o banco voltar.
+   É o único pedaço novo que ainda não viu Postgres de verdade, e este módulo
+   já mandou três erros de SQL para a produção.
+2. **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
    Daria para refazer com `fpdf2`, que já está — mas é reescrever o relatório.
-2. **Mensagem duplicada** na tela de Configurações: o mesmo erro aparece na
+3. **Mensagem duplicada** na tela de Configurações: o mesmo erro aparece na
    linha "Última atualização" e na caixa vermelha de interrupção.
-3. **Cenários da prestação** — comparar duas configurações de rateio lado a lado.
-4. **Converter `app/apps/spsbd_app`** (análise de SPs) do mesmo jeito. É
+4. **Cenários da prestação** — comparar duas configurações de rateio lado a lado.
+5. **Converter `app/apps/spsbd_app`** (análise de SPs) do mesmo jeito. É
    Streamlit, tem 835 MB (com um Python empacotado dentro), usa
    `streamlit-aggrid` — a parte mais difícil de portar — e traz um
    `render.yaml` propondo um serviço separado com disco pago, o que é uma
