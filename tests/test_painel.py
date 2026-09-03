@@ -504,6 +504,34 @@ def test_dre_abre_com_as_tres_leituras(painel):
     assert "Ano: 2025" in html                 # o filtro virou chip na tela
 
 
+def test_juros_e_multa_pagos_entram_no_total_de_custos(painel):
+    """Não basta a linha aparecer na tela: ela tem de SOMAR.
+
+    A primeira versão do DRE deixou os encargos de fora, e o resultado saía
+    maior do que é de verdade — um erro que ninguém percebe olhando, porque a
+    tela continua parecendo uma planilha certa. O teste ao lado confere que o
+    rótulo aparece; este confere a aritmética.
+    """
+    from app.apps.painel import consultas
+
+    d = consultas.dre_linhas(consultas.Filtros())
+    linha = {l["linha"].strip(): l for l in d["linhas"] if l["linha"].strip()}
+
+    juros = linha["Juros e Multas Pagos"]["comprometido"]
+    total = linha["= Total Custos/Despesas"]["comprometido"]
+    assert round(juros, 2) == -25.00           # veio da última coluna do SQL
+
+    # as linhas recuadas (grupos + encargos) têm de dar exatamente o total
+    recuadas = sum(l["comprometido"] for l in d["linhas"]
+                   if l["linha"].startswith("  "))
+    assert round(recuadas, 2) == round(total, 2)
+    assert round(total, 2) == -6175.00         # -6.150 dos grupos, -25 de encargo
+
+    # e o resultado desce do total, encargo incluído
+    liquida = linha["= Receita Líquida"]["comprometido"]
+    assert round(liquida + total, 2) == round(linha["= RESULTADO"]["comprometido"], 2)
+
+
 def test_filtros_da_url_chegam_na_consulta(painel, monkeypatch):
     """A tela filtrada tem de poder ser salva nos favoritos e reabrir igual."""
     vistos = []
