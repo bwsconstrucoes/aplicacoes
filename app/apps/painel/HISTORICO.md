@@ -19,38 +19,72 @@ reais: Visão Geral, DRE, Despesas Analítico, Receita de Obra, Fluxo de Caixa,
 Resultado por Obra, Comprometido × Executado, Necessidade de Caixa e Prestação
 de Contas.
 
-**Estado em 03/09/2026 (tarde):** a primeira carga terminou — o dono confirmou
-— e o painel e o ERP abrem normalmente; o banco de produção voltou a aceitar
-conexão (ver a seção sobre isso mais abaixo).
-
-O ramo **`painel-dre-fiel`** é o `painel-fiel` com a `main` trazida para dentro
-e com o teste do DRE consertado. É o que está pronto para publicar, **e ainda
-não foi publicado** — falta o "pode" do dono.
-
-### O que foi verificado neste ramo
-
-- **784 testes passando no GitHub Actions**, com Postgres de verdade (é o
-  número que vale; no PC sem banco são 625 e 159 pulados).
-- A aplicação sobe com os **18 blueprints** — uma importação quebrada em
-  qualquer módulo derrubaria todos juntos.
-- Os rótulos e a ordem das linhas do DRE conferidos um a um contra
-  `referencia_streamlit/`.
-- A classificação de aporte em SQL conferida contra a versão em Python: mesmos
-  padrões, mesma ordem de avaliação, mesma remoção de acento.
-
-**Não verificado:** nenhuma tela deste ramo foi aberta contra a base real. O
-`.env` com a `DATABASE_URL` de produção não está no repositório, e a regra da
-casa é que a produção não é alcançável a partir dos testes.
+**Estado em 03/09/2026 (noite):** o DRE fiel está publicado (`6bcd006`), o
+dono usou o painel com dado real e trouxe a primeira leva de defeitos e pedidos
+de quem usa. Eles viraram o ramo **`painel-filtro-e-velocidade`**, pronto e
+**ainda não publicado**.
 
 ### O que está pendente AGORA
 
-**Publicar o `painel-dre-fiel`.** Não tem migração de banco, então não é preciso
-apertar "Aplicar atualizações do banco" junto. Mas acrescenta uma biblioteca ao
-serviço (`openpyxl`, para o Excel), o que reinicia os 18 módulos — logo, vale a
-pergunta de sempre: **há carga ou sincronização rodando?**
+**Publicar o `painel-filtro-e-velocidade`.** 806 testes passando com Postgres
+de verdade, aplicação subindo com os 18 blueprints. Sem migração de banco e sem
+dependência nova, então não é preciso apertar "Aplicar atualizações do banco" —
+mas publicar reinicia o serviço, então vale a pergunta de sempre: **há carga ou
+sincronização rodando?**
 
-Depois de publicar, o único pedaço que nunca viu dado real é o **bloco de
-aportes** — conferir na tela contra o Streamlit antes de considerar fechado.
+Duas coisas continuam sem conferência contra dado real, e as duas dependem de
+alguém abrir a tela publicada:
+
+1. o **bloco de aportes** do DRE, que nunca viu a base de verdade;
+2. **quanto o painel ficou mais rápido.** O rodapé agora mostra o tempo da tela
+   e quantas consultas foram — é ler o número no Analítico e comparar com a
+   sensação de antes. Se continuar lento com poucas consultas, o gargalo não é
+   o código.
+
+### A leva de 03/09/2026 — o que o uso real mostrou
+
+Publicado o DRE, o dono usou o painel de verdade pela primeira vez. Saiu daí:
+
+**Um defeito que nenhum teste pegaria e que estava em duas telas.** Escolher um
+valor no filtro e clicar em Aplicar não fazia nada — a tela voltava ao que era,
+sem erro. O formulário mandava o mesmo campo **duas vezes**: escondido com o
+valor velho (para "levar os filtros adiante") e na lista com o valor novo. Vira
+`?visao=comprometido&visao=aberto`, e o Flask fica com o primeiro. Valia para
+qualquer campo que já tivesse valor, no Analítico **e** no DRE.
+
+A lição: um filtro que não pega é invisível para teste que só confere status
+200. `tests/test_painel.py` agora varre **todos os formulários de todas as
+telas** atrás de nome repetido — a classe inteira, não o caso.
+
+**Oito varreduras da base para mostrar uma tela.** Abrir qualquer tela varria
+as 185 mil linhas cinco vezes antes de chegar na consulta que interessa:
+`base_vazia()` fazia `COUNT(*)` para saber se existia UMA linha, e as listas de
+Ano/Projeto/Obra (mais Grupo/Categoria no Analítico) eram refeitas a cada
+clique para devolver sempre a mesma coisa. Agora ficam guardadas na memória do
+processo, com o carimbo da última carga como chave.
+
+**Por que o carimbo é seguro:** toda atualização, nos quatro modos, abre e
+fecha uma linha em `execucoes` (`tarefas.py`). O fato não muda sem isso, então
+lista velha depois de carga nova não é possível. Nos **testes** é, porque eles
+trocam o banco na mão — daí a fixture `autouse` no `conftest.py`.
+
+**E um cronômetro, porque "está lento" não é acionável.** O rodapé mostra o
+tempo da tela, quantas consultas foram e quanto delas foi banco; consulta acima
+de 1 segundo sai no log com o começo do SQL. Sem número, otimizar é adivinhar —
+e este ramo melhora o que dava para provar que era desperdício, não o que
+parecia lento.
+
+**Os pedidos de quem usa:** filtro que sobrevive à troca de aba (antes as abas
+do topo iam para a tela limpa); rótulos de data que não se amontoam no Fluxo
+Financeiro (o gráfico de linhas já pulava rótulos, o de barras não); faixa de
+data no Analítico; e — porque o dono perguntou "que data é essa?" — está
+escrito na tela que a data é a do pagamento quando quitado e a do vencimento
+quando em aberto.
+
+**Quatro dados que estavam no banco e não apareciam em tela nenhuma:** situação
+do vencimento (quitado / vencido / a vencer), pedido de compra, medição e o
+número do lançamento no OMIE. Vale procurar por outros antes de inventar
+coluna nova.
 
 ### A lição de 02/09/2026 — fidelidade vem antes de gosto
 
@@ -222,12 +256,18 @@ sai.
    falta é abrir a tela publicada e comparar com o Streamlit. É o único pedaço
    novo que ainda não viu dado de verdade, e este módulo já mandou três erros
    de SQL para a produção.
-2. **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
+2. **Separar data de vencimento e data de pagamento.** Hoje são uma coluna só
+   (`fato.data`): pagamento quando quitado, vencimento quando em aberto. Foi a
+   primeira coisa que o dono não entendeu na tela. Separadas, dá para filtrar
+   por qualquer uma e medir atraso de pagamento. Exige migração e refazer o
+   fato (`so_numeros`) — não precisa baixar nada do OMIE de novo. **Proposto ao
+   dono em 03/09/2026 e não decidido.**
+3. **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
    Daria para refazer com `fpdf2`, que já está — mas é reescrever o relatório.
-3. **Mensagem duplicada** na tela de Configurações: o mesmo erro aparece na
+4. **Mensagem duplicada** na tela de Configurações: o mesmo erro aparece na
    linha "Última atualização" e na caixa vermelha de interrupção.
-4. **Cenários da prestação** — comparar duas configurações de rateio lado a lado.
-5. **Converter `app/apps/spsbd_app`** (análise de SPs) do mesmo jeito. É
+5. **Cenários da prestação** — comparar duas configurações de rateio lado a lado.
+6. **Converter `app/apps/spsbd_app`** (análise de SPs) do mesmo jeito. É
    Streamlit, tem 835 MB (com um Python empacotado dentro), usa
    `streamlit-aggrid` — a parte mais difícil de portar — e traz um
    `render.yaml` propondo um serviço separado com disco pago, o que é uma

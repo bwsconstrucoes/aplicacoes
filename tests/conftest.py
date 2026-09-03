@@ -297,3 +297,27 @@ def como(app, usuario_id: int):
     with c.session_transaction() as sessao:
         sessao["erp_usuario_id"] = usuario_id
     return c
+
+
+@pytest.fixture(autouse=True)
+def _listas_do_painel_nao_atravessam_testes():
+    """As listas de Ano/Projeto/Obra do painel ficam guardadas na memória do
+    processo, com o carimbo da última carga como chave.
+
+    Em produção isso está certo: a base só muda quando uma atualização termina,
+    e aí o carimbo muda junto. Nos testes não: um teste troca o conteúdo do
+    banco sem passar por atualização nenhuma, e herdaria a lista montada pelo
+    teste anterior — que foi como este trecho apareceu, com a lista de um
+    cenário aparecendo dentro de outro.
+
+    Autouse porque o esquecimento não pode depender de quem escreve o teste
+    lembrar dele.
+    """
+    try:
+        from app.apps.painel import consultas
+    except Exception:                 # painel indisponível: nada a esquecer
+        yield
+        return
+    consultas.esquecer_listas()
+    yield
+    consultas.esquecer_listas()

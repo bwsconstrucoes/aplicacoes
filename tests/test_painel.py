@@ -291,6 +291,32 @@ def test_barra_negativa_desce_a_partir_do_zero():
     assert positiva["y"] < g["y_zero"]
 
 
+def test_com_muitos_meses_os_rotulos_nao_se_amontoam():
+    """Seis anos de história são ~70 meses no eixo. Escrever "06/2025" em todos
+    vira uma tarja preta: as datas se sobrepõem e não se lê nenhuma."""
+    meses = [{"rotulo": f"{m % 12 + 1:02d}/{2020 + m // 12}", "receita": 100.0,
+              "despesa": -80.0} for m in range(84)]
+    g = graficos.barras_agrupadas(
+        meses, [("receita", "b-verde", "Receita"), ("despesa", "b-vermelho", "Despesa")],
+        campo_rotulo="rotulo")
+
+    # o desenho tem 810px úteis; com 84 rótulos de ~54px não cabe nem um terço
+    assert len(g["rotulos_x"]) < 20
+    # e os que sobraram não podem estar colados um no outro
+    xs = sorted(r["x"] for r in g["rotulos_x"])
+    assert min(b - a for a, b in zip(xs, xs[1:])) >= 40
+    # o último mês é o que interessa a quem olha: nunca some
+    assert g["rotulos_x"][-1]["texto"] == meses[-1]["rotulo"]
+
+
+def test_com_poucos_periodos_todos_os_rotulos_aparecem():
+    """Pular rótulo onde cabe todo mundo seria esconder informação à toa."""
+    anos = [{"ano": a, "receita": 10.0, "despesa": -8.0} for a in range(2019, 2027)]
+    g = graficos.barras_agrupadas(
+        anos, [("receita", "b-verde", "R"), ("despesa", "b-vermelho", "D")])
+    assert len(g["rotulos_x"]) == len(anos)
+
+
 def test_proporcoes_do_ranking_vao_de_0_a_100():
     itens = graficos.proporcoes([{"valor": -1000.0}, {"valor": -250.0}])
     assert itens[0]["pct"] == 100.0
@@ -310,6 +336,9 @@ RESPOSTAS_FALSAS = {
     "DISTINCT ano": [(2025,), (2024,)],
     "DISTINCT projeto": [("PROJ-A",), ("PROJ-B",)],
     "DISTINCT departamento": [("Obra Um",), ("Obra Dois",)],
+    # o carimbo da base: e ele que diz se as listas guardadas ainda valem
+    "MAX(fim) FROM execucoes": [(dt.datetime(2026, 9, 2, 3, 12),)],
+    "SELECT 1 FROM fato LIMIT 1": [(1,)],
     "FROM execucoes": [("rapida", "agendado",
                         dt.datetime(2026, 9, 2, 3, 0), dt.datetime(2026, 9, 2, 3, 12),
                         True, "185.422 linhas em 11,4 min.", 185422)],
@@ -370,6 +399,15 @@ def _consultar_falso(sql, params=()):
                 (dt.date(2025, 2, 1), "Obra Um", 4000.0)]
 
     # ---- receita de obra ----
+    # O analítico cita `medicao_rotulo` desde que ganhou a coluna da medição, e
+    # cairia nos dois ramos abaixo. Vem antes, com um marcador só dele.
+    if "situacao_vencimento, pedido_compra" in sql:             # a página de lançamentos
+        return [(dt.date(2025, 4, 8), "FORNECEDOR A LTDA", "12.345.678/0001-90",
+                 "Despesas com Pessoal", "Salários", "Obra Um", "PROJ-A",
+                 "NF77", "folha de março", "Bradesco C/C", "Pago",
+                 -3000.0, 0.0, -20.0, -5.0, "",
+                 # as quatro que estavam no banco e não apareciam na tela
+                 "Quitado", "PC-4471", "Obra Um · Medição 3", 998877)]
     if "medicao_rotulo" in sql and "COUNT(*)" in sql:           # os totais
         return [(3, 7000.0, 300.0, 500.0)]
     if "medicao_rotulo" in sql:                                 # as medições
@@ -381,12 +419,7 @@ def _consultar_falso(sql, params=()):
         return [(dt.date(2025, 5, 2), 7000.0, 0.0, 0.0, 0.0, "Bradesco C/C",
                  "1/1", "credito bancario", "NF123")]
 
-    # ---- despesas analitico ----
-    if "OFFSET" in sql:                                         # a página de lançamentos
-        return [(dt.date(2025, 4, 8), "FORNECEDOR A LTDA", "12.345.678/0001-90",
-                 "Despesas com Pessoal", "Salários", "Obra Um", "PROJ-A",
-                 "NF77", "folha de março", "Bradesco C/C", "Pago",
-                 -3000.0, 0.0, -20.0, -5.0, "")]
+    # ---- despesas analitico: ver o ramo la em cima ----
     if "COUNT(*), SUM(" in sql:                                 # os totais da seleção
         return [(37, -3000.0, -200.0, -25.0)]
     if "DISTINCT COALESCE(NULLIF(grupo" in sql:
@@ -847,3 +880,218 @@ def test_o_excel_de_aportes_tem_uma_aba_por_recorte(painel):
     assert livro.sheetnames == [
         "Aportes por Socio", "Aportes por Obra", "Aportes por Tipo",
         "Dividendos", "Lancamentos de Aporte", "Resultado x Dividendos"]
+
+
+# ===========================================================================
+# 8. O filtro que não pegava — e a varredura da classe inteira
+# ===========================================================================
+# Um formulário GET que manda o MESMO nome duas vezes — uma escondida com o
+# valor velho, outra na caixa com o valor novo — vira "?visao=comprometido&
+# visao=aberto". O Flask lê o PRIMEIRO. Efeito na tela: a pessoa escolhe, clica
+# em Aplicar, e o filtro volta ao que era, sem erro nenhum.
+#
+# Aconteceu em duas telas ao mesmo tempo (Analítico e DRE), porque o jeito de
+# levar os filtros adiante é o mesmo nas duas. Por isso o teste não confere um
+# caso: varre TODOS os formulários de TODAS as telas.
+import html.parser
+
+
+class _Formularios(html.parser.HTMLParser):
+    """Coleta, por formulário, os campos escondidos e os que a pessoa preenche."""
+
+    def __init__(self):
+        super().__init__()
+        self.formularios = []
+        self._atual = None
+
+    def handle_starttag(self, tag, attrs):
+        a = dict(attrs)
+        if tag == "form":
+            self._atual = {"metodo": (a.get("method") or "get").lower(),
+                           "ocultos": [], "visiveis": []}
+            self.formularios.append(self._atual)
+            return
+        if self._atual is None or "name" not in a:
+            return
+        if tag == "input" and (a.get("type") or "").lower() == "hidden":
+            self._atual["ocultos"].append(a["name"])
+        elif tag in ("input", "select", "textarea"):
+            self._atual["visiveis"].append(a["name"])
+
+    def handle_endtag(self, tag):
+        if tag == "form":
+            self._atual = None
+
+
+TELAS_COM_FILTRO = [
+    "/painel/", "/painel/dre", "/painel/analitico", "/painel/receita",
+    "/painel/fluxo", "/painel/obras", "/painel/execucao",
+]
+
+
+@pytest.mark.parametrize("caminho", TELAS_COM_FILTRO)
+def test_nenhum_formulario_manda_o_mesmo_campo_duas_vezes(painel, caminho):
+    """O valor velho não pode viajar junto com o novo.
+
+    Se um nome aparece escondido E numa caixa do mesmo formulário, o servidor
+    recebe os dois e fica com o primeiro — o filtro simplesmente não pega, e
+    não há erro nenhum para investigar.
+    """
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get(caminho)
+    assert r.status_code == 200
+
+    leitor = _Formularios()
+    leitor.feed(r.get_data(as_text=True))
+    for i, form in enumerate(leitor.formularios):
+        if form["metodo"] != "get":
+            continue
+        repetidos = sorted(set(form["ocultos"]) & set(form["visiveis"]))
+        assert not repetidos, (
+            f"{caminho}: o formulário {i} manda {repetidos} escondido e na tela "
+            f"ao mesmo tempo — o valor velho vence e o filtro não pega")
+
+
+# ===========================================================================
+# 9. O que veio do uso real: velocidade, filtros que ficam, faixa de data
+# ===========================================================================
+def test_trocar_de_aba_nao_joga_o_filtro_fora(painel):
+    """Estar numa obra no DRE e clicar em "Despesas Analítico" tem de continuar
+    naquela obra. Antes as abas do topo iam para a tela limpa, e quem tinha
+    acabado de montar o filtro montava tudo de novo."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/dre?ano=2025&obra=Obra+Um&trf=1")
+    html_ = r.get_data(as_text=True)
+
+    # o link da aba do Analítico tem de carregar os três filtros
+    import re as _re
+    destinos = _re.findall(r'class="topo-aba[^"]*"\s+href="([^"]+)"', html_)
+    analitico = [d for d in destinos if "/analitico" in d]
+    assert analitico, "a aba do Analítico sumiu do topo"
+    assert "ano=2025" in analitico[0]
+    assert "obra=Obra+Um" in analitico[0] or "obra=Obra%20Um" in analitico[0]
+    assert "trf=1" in analitico[0]
+
+
+def test_a_faixa_de_data_chega_na_consulta(painel, monkeypatch):
+    """O filtro de faixa não pode ficar só bonito na tela."""
+    from app.apps.painel import consultas
+    vistos = []
+    original = _consultar_falso
+
+    def espiao(sql, params=()):
+        vistos.append((sql, list(params)))
+        return original(sql, params)
+
+    monkeypatch.setattr(consultas, "consultar", espiao)
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/analitico?de=2025-01-01&ate=2025-03-31")
+    assert r.status_code == 200
+
+    da_pagina = [(s, p) for s, p in vistos if "situacao_vencimento, pedido_compra" in s]
+    assert da_pagina, "a consulta dos lançamentos não rodou"
+    sql, params = da_pagina[0]
+    assert "data >= CAST(" in sql and "data <= CAST(" in sql
+    assert "2025-01-01" in params and "2025-03-31" in params
+    # e a tela mostra que está filtrada, senão o número parece o total
+    assert "01/01/2025" in r.get_data(as_text=True)
+
+
+def test_faixa_invertida_e_endireitada_em_vez_de_nao_trazer_nada(painel, monkeypatch):
+    """Digitar o fim antes do começo devolveria zero lançamentos sem dizer por
+    quê. Vira a faixa e segue."""
+    from app.apps.painel import consultas
+    vistos = []
+    monkeypatch.setattr(consultas, "consultar",
+                        lambda s, p=(): (vistos.append((s, list(p))),
+                                         _consultar_falso(s, p))[1])
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    painel.get("/painel/analitico?de=2025-03-31&ate=2025-01-01")
+    sql, params = [x for x in vistos if "situacao_vencimento, pedido_compra" in x[0]][0]
+    assert params.index("2025-01-01") < params.index("2025-03-31")
+
+
+def test_data_invalida_na_barra_de_endereco_nao_derruba_a_tela(painel):
+    """A faixa é conveniência: texto estranho é ignorado, não vira erro 500."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/analitico?de=ontem&ate=');DROP+TABLE")
+    assert r.status_code == 200
+
+
+def test_o_analitico_mostra_o_que_estava_escondido_no_banco(painel):
+    """Situação do vencimento, pedido de compra e medição já existiam na base e
+    não apareciam em tela nenhuma."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html_ = painel.get("/painel/analitico").get_data(as_text=True)
+    assert "Quitado" in html_                    # situação do vencimento
+    assert "PC-4471" in html_                    # pedido de compra
+    assert "Medição 3" in html_                  # a medição em que o custo caiu
+
+
+def test_a_planilha_do_analitico_leva_as_colunas_novas(painel):
+    from openpyxl import load_workbook
+
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/baixar/analitico")
+    aba = load_workbook(io.BytesIO(r.get_data()))["Despesas Analitico"]
+    cabecalho = [c.value for c in next(aba.iter_rows(max_row=1))]
+    for coluna in ("Situação do vencimento", "Pedido de compra", "Medição",
+                   "Nº no OMIE"):
+        assert coluna in cabecalho
+
+
+def test_saber_se_a_base_esta_vazia_nao_conta_a_base_inteira(painel, monkeypatch):
+    """`COUNT(*)` numa tabela de 185 mil linhas para responder "existe alguma?"
+    era uma varredura completa em TODA abertura de TODA tela."""
+    from app.apps.painel import consultas
+    vistos = []
+    monkeypatch.setattr(consultas, "consultar",
+                        lambda s, p=(): (vistos.append(s), _consultar_falso(s, p))[1])
+    consultas.base_vazia()
+    assert vistos == ["SELECT 1 FROM fato LIMIT 1"]
+
+
+def test_as_listas_de_opcoes_nao_sao_refeitas_a_cada_tela(painel, monkeypatch):
+    """Anos, projetos e obras só mudam quando entra carga nova. Refazer as três
+    varreduras a cada clique era o grosso do tempo de abertura."""
+    from app.apps.painel import consultas
+    consultas.esquecer_listas()
+    contadas = []
+    monkeypatch.setattr(consultas, "consultar",
+                        lambda s, p=(): (contadas.append(s), _consultar_falso(s, p))[1])
+
+    consultas.opcoes_de_filtro()
+    distintos = lambda: sum(1 for s in contadas if "SELECT DISTINCT" in s)
+    assert distintos() == 3                      # a primeira vez paga
+    consultas.opcoes_de_filtro()
+    consultas.opcoes_de_filtro()
+    assert distintos() == 3                      # as seguintes, não
+
+
+def test_carga_nova_joga_fora_a_lista_guardada(painel, monkeypatch):
+    """O contrário seria pior que a lentidão: obra nova entra na base e não
+    aparece no filtro até o servidor reiniciar."""
+    from app.apps.painel import consultas
+    consultas.esquecer_listas()
+    carimbo = ["2026-09-02 03:12:00"]
+
+    def falso(sql, params=()):
+        if "MAX(fim) FROM execucoes" in sql:
+            return [(carimbo[0],)]
+        if "DISTINCT departamento" in sql:
+            return [("Obra Um",)] if carimbo[0].endswith("12:00") else [
+                ("Obra Um",), ("Obra Nova",)]
+        return _consultar_falso(sql, params)
+
+    monkeypatch.setattr(consultas, "consultar", falso)
+    assert consultas.opcoes_de_filtro()["obras"] == ["Obra Um"]
+    carimbo[0] = "2026-09-03 04:00:00"           # terminou uma carga
+    assert consultas.opcoes_de_filtro()["obras"] == ["Obra Um", "Obra Nova"]
+
+
+def test_a_tela_diz_quanto_tempo_levou(painel):
+    """"Está lento" precisa de um número, senão otimizar é adivinhar."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html_ = painel.get("/painel/analitico").get_data(as_text=True)
+    assert "Tela montada em" in html_
+    assert "consulta" in html_ and "ao banco" in html_

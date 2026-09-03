@@ -12,10 +12,12 @@ PAINEL_SHEET_PROJETOS.
 """
 from __future__ import annotations
 
+import re
+import time
 import logging
 
 from flask import (
-    Blueprint, jsonify, redirect, render_template, request, session, url_for,
+    Blueprint, g, jsonify, redirect, render_template, request, session, url_for,
 )
 
 from . import auth
@@ -33,6 +35,9 @@ bp = Blueprint("painel", __name__,
 @bp.before_request
 def _porta_de_entrada():
     """Padrao NEGAR: rota que nao esteja na lista de publicas exige login."""
+    from . import db
+    db.iniciar_medicao()
+    g._painel_comeco = time.perf_counter()
     return auth.exigir_login()
 
 
@@ -82,7 +87,31 @@ def _ajudantes_de_template():
         args["pagina"] = [str(numero)]
         return url_for("painel.analitico", **args)
 
-    return {"brl": brl, "classe_valor": classe_valor,
+    def com_filtros(rota):
+        """Link de aba levando os filtros da barra lateral junto.
+
+        Estar filtrado numa obra e trocar de tela nao pode jogar o filtro fora:
+        quem esta olhando uma obra no DRE quer os lancamentos DAQUELA obra no
+        Analitico, nao a base inteira."""
+        args = {c: request.args.getlist(c) for c in
+                ("ano", "projeto", "obra") if request.args.getlist(c)}
+        if request.args.get("trf"):
+            args["trf"] = "1"
+        return url_for(rota, **args)
+
+    def cronometro():
+        """Quanto a tela levou e quanto disso foi o banco. Sem isto, 'esta
+        lento' nao tem por onde comecar."""
+        from . import db
+        consultas, segundos_banco = db.medicao()
+        comeco = getattr(g, "_painel_comeco", None)
+        total = (time.perf_counter() - comeco) if comeco else 0.0
+        return {"consultas": consultas,
+                "ms_banco": int(segundos_banco * 1000),
+                "ms_total": int(total * 1000)}
+
+    return {"brl": brl, "classe_valor": classe_valor, "com_filtros": com_filtros,
+            "cronometro": cronometro,
             "link_analitico": link_analitico, "pagina_link": pagina_link}
 
 
@@ -172,6 +201,26 @@ ABAS = [
     ("prestacao", "Prestação de Contas", "painel.prestacao_contas"),
     ("config", "Configurações", "painel.configuracoes"),
 ]
+
+
+_DATA_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _faixa_de_data() -> tuple[str, str]:
+    """A faixa de data do Analitico, so se vier no formato do calendario.
+
+    Texto que nao seja uma data e descartado em silencio em vez de virar erro:
+    a faixa e conveniencia, e uma tela que quebra porque alguem colou algo
+    estranho na barra de endereco e pior do que uma faixa ignorada.
+    """
+    de = (request.args.get("de") or "").strip()
+    ate = (request.args.get("ate") or "").strip()
+    de = de if _DATA_ISO.match(de) else ""
+    ate = ate if _DATA_ISO.match(ate) else ""
+    # invertida (fim antes do comeco) devolveria vazio sem explicar por que
+    if de and ate and de > ate:
+        de, ate = ate, de
+    return de, ate
 
 
 def _nivel_do_pedido() -> str:
@@ -303,6 +352,7 @@ def analitico():
     busca = (request.args.get("busca") or "").strip()
     visao = request.args.get("visao", "comprometido")
     ordem = request.args.get("ordem", "valor")
+    de, ate = _faixa_de_data()
     try:
         pagina = int(request.args.get("pagina") or 1)
     except ValueError:
@@ -312,11 +362,11 @@ def analitico():
         **_contexto_comum("analitico"),
         chips=f.resumo(),
         grupo=grupo, categoria=categoria, credor=credor, busca=busca,
-        visao=visao, ordem=ordem,
+        visao=visao, ordem=ordem, de=de, ate=ate,
         opcoes_analitico=consultas.opcoes_do_analitico(f),
         dados=consultas.analitico_despesas(
             f, grupo=grupo, categoria=categoria, credor=credor, busca=busca,
-            visao=visao, ordem=ordem, pagina=pagina),
+            visao=visao, ordem=ordem, de=de, ate=ate, pagina=pagina),
     )
 
 
@@ -723,6 +773,7 @@ def baixar(assunto):
         return consultas.dre_linhas(f)["linhas"]
 
     def _analitico(limite=20000):
+        de, ate = _faixa_de_data()
         return consultas.analitico_despesas(
             f, grupo=request.args.get("grupo", ""),
             categoria=request.args.get("categoria", ""),
@@ -730,6 +781,7 @@ def baixar(assunto):
             busca=(request.args.get("busca") or "").strip(),
             visao=request.args.get("visao", "comprometido"),
             ordem=request.args.get("ordem", "valor"),
+            de=de, ate=ate,
             pagina=1, por_pagina=limite)["linhas"]
 
     def _abas_de_aporte():

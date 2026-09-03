@@ -7,14 +7,14 @@
 {# Leva os filtros da barra lateral e a aba aberta adiante em qualquer
    formulário desta tela. Sem isto, mudar a quebra das despesas jogaria fora o
    filtro de obra que a pessoa acabou de montar. #}
-{% macro esconde(exceto='') %}
+{% macro esconde(proprios=[]) %}
   {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
   {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
   {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
   {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
   {% for campo, valor in [('bloco', bloco), ('quebra', quebra),
                           ('visao', visao), ('medida', medida)] %}
-    {% if valor and campo != exceto %}
+    {% if valor and campo not in proprios %}
       <input type="hidden" name="{{ campo }}" value="{{ valor }}">
     {% endif %}
   {% endfor %}
@@ -109,7 +109,7 @@
   </div>
 
   <form method="get" class="tabela-barra" style="border:0; padding:0 0 10px">
-    {{ esconde('medida') }}
+    {{ esconde(['medida']) }}
     <div class="campo" style="max-width:420px">
       <label for="medida">Medida do gráfico</label>
       <select id="medida" name="medida" onchange="this.form.submit()">
@@ -154,7 +154,7 @@
   </div>
 
   <form method="get" class="tabela-barra" style="border:0; padding:0 0 10px">
-    {{ esconde('quebra') }}
+    {{ esconde(['quebra', 'visao']) }}
     <div class="campo" style="max-width:190px">
       <label for="quebra">Quebrar por</label>
       <select id="quebra" name="quebra" onchange="this.form.submit()">

@@ -20,7 +20,7 @@
   <nav class="topo-abas">
     {% for chave, rotulo, rota in abas %}
       <a class="topo-aba {% if chave == aba_ativa %}ativa{% endif %}"
-         href="{{ url_for(rota) }}">{{ rotulo }}</a>
+         href="{{ com_filtros(rota) }}">{{ rotulo }}</a>
     {% endfor %}
   </nav>
 
@@ -42,6 +42,13 @@
   <aside class="filtros">{% block filtros %}{% endblock %}</aside>
   <main class="principal">{% block conteudo %}{% endblock %}</main>
 </div>
+
+{% set tempo = cronometro() %}
+<footer class="rodape-tempo">
+  Tela montada em <b>{{ tempo.ms_total }} ms</b> —
+  {{ tempo.consultas }} consulta{{ '' if tempo.consultas == 1 else 's' }} ao banco,
+  {{ tempo.ms_banco }} ms delas.
+</footer>
 
 <script>
 // Formatacao em portugues, feita no navegador para o servidor nao gastar tempo

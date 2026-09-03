@@ -480,3 +480,47 @@ def test_o_schema_continua_valendo_na_segunda_consulta(painel_no_banco):
             cur = conn.execute("SELECT current_setting('search_path')")
             assert cur.fetchone()[0].startswith("painel")
             cur.close()
+
+
+# ---------------------------------------------------------------------------
+# 9. A faixa de data do Analítico, com Postgres de verdade
+# ---------------------------------------------------------------------------
+def test_faixa_de_data_recorta_o_analitico(consultas):
+    """A comparação de data é SQL: o dublê a ignoraria e diria que passou.
+
+    No cenário há despesas em 06/2025 (400 pagos e 250 em aberto), 07/2025 (900)
+    e 03/2024 (100).
+    """
+    f = consultas.Filtros()
+    so_junho = consultas.analitico_despesas(f, de="2025-06-01", ate="2025-06-30")
+    assert so_junho["quantos"] == 2
+    assert reais(so_junho["total"]) == -675.00          # 400 + 250 + 25 de encargo
+
+    ate_junho = consultas.analitico_despesas(f, ate="2025-06-30")
+    assert ate_junho["quantos"] == 3                    # entra a de 2024 também
+
+    de_julho = consultas.analitico_despesas(f, de="2025-07-01")
+    assert de_julho["quantos"] == 1
+    assert reais(de_julho["total"]) == -900.00
+
+
+def test_sem_faixa_o_lancamento_sem_data_continua_contando(consultas):
+    """Quem não tem data não cabe numa faixa — mas some só quando há faixa.
+
+    O cenário tem uma receita de 300 sem data. Ela não é despesa, então o teste
+    olha o total de lançamentos de despesa: nenhum deles perde a data, e o
+    número tem de ser o mesmo com e sem faixa aberta."""
+    f = consultas.Filtros()
+    assert consultas.analitico_despesas(f)["quantos"] == 4
+    # faixa que cobre tudo devolve o mesmo
+    tudo = consultas.analitico_despesas(f, de="2000-01-01", ate="2100-12-31")
+    assert tudo["quantos"] == 4
+
+
+def test_as_colunas_novas_vem_preenchidas_do_banco(consultas):
+    """Situação do vencimento, pedido, medição e número do lançamento saem da
+    tabela — se algum nome estivesse errado, o SQL quebraria aqui."""
+    linha = consultas.analitico_despesas(consultas.Filtros())["linhas"][0]
+    for campo in ("vencimento", "pedido", "medicao", "lancamento"):
+        assert campo in linha
+    assert linha["lancamento"] is not None

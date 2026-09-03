@@ -3,17 +3,20 @@
 
 {% block filtros %}{% include "painel_filtros.html" %}{% endblock %}
 
-{% macro esconde(exceto) %}
-  {# leva os filtros da barra lateral e os desta tela adiante, menos o que o
-     próprio formulário está mandando #}
+{# Leva adiante os filtros da barra lateral e os desta tela. `proprios` é a
+   lista de campos que o formulário JÁ TEM como caixa ou lista — esses não podem
+   sair repetidos aqui, senão o valor velho viaja junto com o novo e o servidor
+   lê o primeiro: o filtro parece que não pega. #}
+{% macro esconde(proprios=[]) %}
   {% for a in selecao.anos %}<input type="hidden" name="ano" value="{{ a }}">{% endfor %}
   {% for p in selecao.projetos %}<input type="hidden" name="projeto" value="{{ p }}">{% endfor %}
   {% for o in selecao.obras %}<input type="hidden" name="obra" value="{{ o }}">{% endfor %}
   {% if selecao.trf %}<input type="hidden" name="trf" value="1">{% endif %}
   {% for campo, valor in [('grupo', grupo), ('categoria', categoria),
                           ('credor', credor), ('busca', busca),
-                          ('visao', visao), ('ordem', ordem)] %}
-    {% if valor and campo != exceto %}
+                          ('visao', visao), ('ordem', ordem),
+                          ('de', de), ('ate', ate)] %}
+    {% if valor and campo not in proprios %}
       <input type="hidden" name="{{ campo }}" value="{{ valor }}">
     {% endif %}
   {% endfor %}
@@ -26,22 +29,28 @@
 <p class="cartao-dica" style="margin:-8px 0 14px">
   É aqui que se descobre de onde veio um número. <b>Pago</b> é o principal já
   liquidado, <b>A pagar</b> é o saldo, e <b>Juros/Multa</b> são os encargos —
-  somados, dão o valor de fato, o mesmo que aparece no DRE.
+  somados, dão o valor de fato, o mesmo que aparece no DRE.<br>
+  A <b>data</b> é a do <b>pagamento</b> quando o título foi quitado e a do
+  <b>vencimento</b> quando ainda está em aberto — a coluna Situação diz qual dos
+  dois é cada linha. Lançamento sem data nenhuma fica de fora da faixa.
 </p>
 
-{% if chips %}
+{% if chips or grupo or categoria or credor or de or ate %}
 <div class="chips">
   {% for c in chips %}<span class="chip">{{ c }}</span>{% endfor %}
   {% if grupo %}<span class="chip">Grupo: {{ grupo }}</span>{% endif %}
   {% if categoria %}<span class="chip">Categoria: {{ categoria }}</span>{% endif %}
   {% if credor %}<span class="chip">Credor: {{ credor }}</span>{% endif %}
+  {% if de %}<span class="chip">De: {{ de[8:10] }}/{{ de[5:7] }}/{{ de[:4] }}</span>{% endif %}
+  {% if ate %}<span class="chip">Até: {{ ate[8:10] }}/{{ ate[5:7] }}/{{ ate[:4] }}</span>{% endif %}
 </div>
 {% endif %}
 
 <!-- ===================== FILTROS DESTA TELA ===================== -->
 <div class="cartao">
   <form method="get">
-    {{ esconde('todos') }}
+    {{ esconde(['grupo', 'categoria', 'credor', 'busca',
+                'visao', 'ordem', 'de', 'ate']) }}
     <div class="form-grade">
       <div class="campo">
         <label for="busca">Buscar</label>
@@ -67,6 +76,14 @@
         </select>
       </div>
       <div class="campo">
+        <label for="de">Data — de</label>
+        <input id="de" name="de" type="date" value="{{ de }}">
+      </div>
+      <div class="campo">
+        <label for="ate">Data — até</label>
+        <input id="ate" name="ate" type="date" value="{{ ate }}">
+      </div>
+      <div class="campo">
         <label for="visao">Visão</label>
         <select id="visao" name="visao">
           <option value="comprometido" {% if visao == 'comprometido' %}selected{% endif %}>Comprometido</option>
@@ -85,7 +102,7 @@
       </div>
       <div class="campo" style="align-self:end; display:flex; gap:8px">
         <button class="btn" type="submit">Aplicar</button>
-        {% if grupo or categoria or credor or busca %}
+        {% if grupo or categoria or credor or busca or de or ate %}
           <a class="btn secundario" style="text-decoration:none"
              href="{{ url_for('painel.analitico') }}">Limpar</a>
         {% endif %}
@@ -167,13 +184,18 @@
           <td>{{ l.obra }}</td>
           <td class="dados">
             {% if l.link %}<a href="{{ l.link }}" target="_blank" rel="noopener">{{ l.documento }}</a>
-            {% else %}{{ l.documento }}{% endif %}
+            {% else %}{{ l.documento or '—' }}{% endif %}
+            {% if l.pedido %}<small>PC {{ l.pedido }}</small>{% endif %}
+            {% if l.medicao %}<small>{{ l.medicao }}</small>{% endif %}
           </td>
           <td class="dados direita">{{ brl(l.pago) if l.pago else '—' }}</td>
           <td class="dados direita {{ classe_valor(l.a_pagar) }}">{{ brl(l.a_pagar) if l.a_pagar else '—' }}</td>
           <td class="dados direita">{{ brl(l.juros + l.multa) if (l.juros or l.multa) else '—' }}</td>
           <td class="dados direita"><b>{{ brl(l.total) }}</b></td>
-          <td><small>{{ l.situacao }}</small></td>
+          <td>
+            <small>{{ l.situacao }}</small>
+            {% if l.vencimento %}<small>{{ l.vencimento }}</small>{% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
@@ -183,7 +205,7 @@
   {% if dados.paginas > 1 %}
   <div class="tabela-barra" style="border-top:1px solid var(--borda); border-bottom:0">
     <form method="get" style="display:flex; gap:8px; align-items:center">
-      {{ esconde('pagina') }}
+      {{ esconde() }}
       <span class="resumo">Ir para a página</span>
       <input class="dados" name="pagina" type="number" min="1" max="{{ dados.paginas }}"
              value="{{ dados.pagina }}" style="width:80px; padding:6px 8px;
