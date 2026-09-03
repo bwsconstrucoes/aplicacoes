@@ -832,6 +832,16 @@ Quando eu pedir nova feature ou adaptação:
   financeiro com apêndices": Financeiro, Obras, Pessoal e Administração viraram
   áreas próprias, cada uma com suas telas, e a barra mostra só a do módulo
   corrente. Obras deixou de ser um cadastro e virou área (`43e85e1`).
+- **2026-09-03 — `openpyxl` entra no `requirements.txt`** (ramo
+  `painel-dre-fiel`). O painel voltou a exportar `.xlsx` em vez de CSV: o
+  relatório completo tem oito assuntos, e em CSV isso vira oito arquivos
+  soltos. A decisão anterior — "não acrescentar dependência sem combinar" —
+  foi revista pelo dono, que pediu Excel. `openpyxl` escreve célula a célula,
+  **sem `pandas`**, então não recria o problema de memória da §9 (o painel
+  antigo estourava 179 MB só para abrir uma tela). Como mexe no
+  `requirements.txt`, atinge os 18 blueprints: publicar reinicia o serviço
+  inteiro, e vale a pergunta de sempre sobre carga do painel ou sincronização
+  do Análise de SPs em andamento.
 
 ---
 
