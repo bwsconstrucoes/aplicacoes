@@ -385,3 +385,138 @@ def test_todo_sql_do_modulo_sobrevive_a_traducao():
     assert not suspeitos, (
         "estes pedaços de SQL chegam DIFERENTES ao banco depois da tradução "
         "dos marcadores:\n" + "\n".join(suspeitos))
+
+
+# ---------------------------------------------------------------------------
+# Bradesco: a normalização do código de barras
+# ---------------------------------------------------------------------------
+LINHA_44 = "34191790010104351004791020150008291070026000"
+DIGITAVEL_47 = "34191.79001 01043.510047 91020.150008 2 91070026000"
+
+
+def test_a_linha_digitavel_e_o_codigo_de_barras_viram_o_mesmo():
+    """O boleto aparece de duas formas: o código de barras de 44 dígitos e a
+    linha digitável de 47, que a pessoa digita. São o mesmo boleto, e a
+    conferência do extrato depende de os dois casarem.
+
+    Este teste nasceu de um defeito silencioso: o import que faz essa conversão
+    era achatado (`import pagamentos`), o que dentro de um pacote não resolve —
+    e como ele mora num `try/except`, a falha não aparecia. O código caía no
+    caminho simples e a conferência deixava de casar QUALQUER boleto na forma
+    de 47 dígitos, sem erro nenhum na tela."""
+    from app.apps.analisesps import bradesco
+    assert bradesco._norm_barcode(LINHA_44) == bradesco._norm_barcode(DIGITAVEL_47)
+    assert len(bradesco._norm_barcode(DIGITAVEL_47)) == 44
+
+
+def test_codigo_estranho_nao_estoura():
+    """Dado ruim colado do banco não pode derrubar a conferência."""
+    from app.apps.analisesps import bradesco
+    for entrada in ("", "abc", None, "123"):
+        bradesco._norm_barcode(entrada)          # não pode levantar
+
+
+# ---------------------------------------------------------------------------
+# Nenhum import achatado sobrou
+# ---------------------------------------------------------------------------
+def test_nenhum_modulo_do_pacote_e_importado_de_forma_achatada():
+    """Os arquivos vindos do Streamlit se importavam pelo nome curto, porque lá
+    a pasta estava no caminho de busca. Dentro de um pacote isso não resolve.
+
+    O perigo é que boa parte desses imports mora dentro de `try/except`: a
+    falha não aparece, e a função cai num caminho de reserva — em silêncio."""
+    import ast
+
+    nossos = {c.stem for c in MODULO.glob("*.py")} - {"__init__"}
+    achados = []
+    for caminho in _arquivos():
+        if caminho.suffix != ".py":
+            continue
+        arvore = ast.parse(caminho.read_text(encoding="utf-8"))
+        for no in ast.walk(arvore):
+            if isinstance(no, ast.Import):
+                for nome in no.names:
+                    if nome.name.split(".")[0] in nossos:
+                        achados.append(f"{caminho.name}:{no.lineno}  import {nome.name}")
+            elif isinstance(no, ast.ImportFrom):
+                if no.level == 0 and no.module and no.module.split(".")[0] in nossos:
+                    achados.append(f"{caminho.name}:{no.lineno}  from {no.module} import ...")
+    assert not achados, (
+        "estes imports usam o nome curto de um módulo do próprio pacote; dentro "
+        "de um pacote eles não resolvem. Use `from . import x`:\n"
+        + "\n".join(achados))
+
+
+# ---------------------------------------------------------------------------
+# Nada que o serviço não tenha
+# ---------------------------------------------------------------------------
+def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
+    """As duas bibliotecas que o Streamlit usava e que o serviço NÃO tem.
+
+    `pandas` é o ponto: era ele que abria as 59 mil SPs na memória. Se voltar a
+    entrar por descuido, volta junto o problema que motivou a conversão."""
+    import ast
+
+    proibidas = {"pandas", "streamlit", "numpy", "altair", "st_aggrid",
+                 "reportlab", "openpyxl"}
+    achados = []
+    for caminho in _arquivos():
+        if caminho.suffix != ".py":
+            continue
+        arvore = ast.parse(caminho.read_text(encoding="utf-8"))
+        for no in ast.walk(arvore):
+            nomes = []
+            if isinstance(no, ast.Import):
+                nomes = [a.name.split(".")[0] for a in no.names]
+            elif isinstance(no, ast.ImportFrom) and no.module:
+                nomes = [no.module.split(".")[0]]
+            for nome in nomes:
+                if nome in proibidas:
+                    achados.append(f"{caminho.name}:{no.lineno}  {nome}")
+    assert not achados, (
+        "o serviço não tem estas bibliotecas — e o pandas, em particular, é o "
+        "que abria as 59 mil SPs na memória:\n" + "\n".join(achados))
+
+
+def test_tudo_que_o_modulo_importa_esta_no_requirements():
+    """Uma biblioteca que falta no `requirements.txt` só aparece no Render,
+    depois da publicação, e derruba o módulo inteiro no start."""
+    import ast
+    import sys
+
+    # .../aplicacoes/app/apps/analisesps -> parents[2] é a raiz do repositório.
+    raiz = MODULO.parents[2]
+    requisitos = (raiz / "requirements.txt").read_text(encoding="utf-8").lower()
+
+    # O nome que se importa nem sempre é o que se instala.
+    INSTALADO_COMO = {
+        "flask": "flask", "gspread": "gspread", "google": "google-auth",
+        "qrcode": "qrcode", "barcode": "python-barcode",
+        "psycopg2": "psycopg2-binary", "sqlalchemy": "sqlalchemy",
+        "PIL": "pillow", "requests": "requests",
+    }
+
+    faltando = []
+    for caminho in _arquivos():
+        if caminho.suffix != ".py":
+            continue
+        arvore = ast.parse(caminho.read_text(encoding="utf-8"))
+        for no in ast.walk(arvore):
+            nomes = []
+            if isinstance(no, ast.Import):
+                nomes = [a.name.split(".")[0] for a in no.names]
+            elif isinstance(no, ast.ImportFrom) and no.level == 0 and no.module:
+                nomes = [no.module.split(".")[0]]
+            for nome in nomes:
+                if nome in sys.stdlib_module_names:
+                    continue
+                if nome in {c.stem for c in MODULO.glob("*.py")}:
+                    continue
+                pacote = INSTALADO_COMO.get(nome)
+                if pacote is None:
+                    faltando.append(f"{caminho.name}:{no.lineno}  '{nome}' "
+                                    "não está na lista de nomes conhecidos")
+                elif pacote not in requisitos:
+                    faltando.append(f"{caminho.name}:{no.lineno}  '{nome}' precisa "
+                                    f"de '{pacote}' no requirements.txt")
+    assert not faltando, "\n".join(faltando)

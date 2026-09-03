@@ -263,13 +263,19 @@ def _registro(r) -> dict:
 
 
 def _norm_barcode(s) -> str:
-    """Normaliza p/ código de barras (linha digitável 47 -> 44; mantém 44/48)."""
+    """Normaliza p/ código de barras (linha digitável 47 -> 44; mantém 44/48).
+
+    O import é RELATIVO. No Streamlit ele era achatado (`import pagamentos`) e
+    funcionava porque a pasta estava no caminho; dentro de um pacote, não. E
+    como ele mora num `try/except`, a falha não apareceria: o código cairia em
+    `_digits(s)` e a conferência do Bradesco deixaria de casar qualquer boleto
+    digitado na forma de 47 dígitos — em silêncio, sem erro nenhum na tela."""
     try:
-        import pagamentos
+        from . import pagamentos
         d, _ = pagamentos.codigo_boleto(s)
         if d:
             return d
-    except Exception:
+    except Exception:  # noqa: BLE001 — código estranho cai no caminho simples
         pass
     return _digits(s)
 
