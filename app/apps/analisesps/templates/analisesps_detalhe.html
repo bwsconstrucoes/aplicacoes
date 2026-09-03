@@ -78,6 +78,32 @@
 </div>
 {% endif %}
 
+{% if pode_operar %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Alterar</h3>
+    <small>vai para a planilha em seguida</small>
+  </div>
+  <div class="acoes" style="position:static; border:0; padding:0">
+    <div class="grupo">
+      <button class="btn" data-coluna="status_pgt" data-valor="Pago">Marcar Pago</button>
+      <button class="btn secundario" data-coluna="status_pgt" data-valor="Pagar">Marcar Pagar</button>
+      <button class="btn secundario" data-coluna="status_pgt" data-valor="Cancelado">Cancelar</button>
+    </div>
+    <div class="grupo">
+      <button class="btn secundario" data-coluna="agendado" data-valor="Agendar">Agendar</button>
+      <button class="btn secundario" data-coluna="agendado" data-valor="Agendado">Agendado</button>
+      <button class="btn secundario" data-coluna="agendado" data-valor="Desagendar">Desagendar</button>
+      <button class="btn secundario" data-coluna="agendado" data-valor="Falha Agendar">Falha</button>
+    </div>
+  </div>
+  <p class="cartao-dica">
+    "Cancelar" aqui muda o <b>status na planilha</b>. Não cancela o card no
+    Pipefy — isso continua sendo feito por lá.
+  </p>
+</div>
+{% endif %}
+
 <div style="display:flex; gap:8px; flex-wrap:wrap">
   {% if sp.card_link %}
     <a class="btn secundario" href="{{ sp.card_link }}" target="_blank" rel="noopener">Abrir card no Pipefy</a>
@@ -85,6 +111,34 @@
   {% if sp.anexo_link %}
     <a class="btn secundario" href="{{ sp.anexo_link }}" target="_blank" rel="noopener">Abrir anexo</a>
   {% endif %}
+  <a class="btn secundario"
+     href="{{ url_for('analisesps.codigos', id=sp.id) }}">QR / Código</a>
   <a class="btn secundario" href="{{ url_for('analisesps.solicitacoes') }}">Voltar</a>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if pode_operar %}
+<script>
+document.querySelectorAll(".acoes button[data-coluna]").forEach(botao => {
+  botao.addEventListener("click", async () => {
+    const rotulo = botao.textContent.trim();
+    if (!confirm(`${rotulo} na SP {{ sp.id }}.\n\nA alteração vai para a planilha. Confirma?`)) return;
+    botao.disabled = true;
+    try {
+      const r = await fetch("{{ url_for('analisesps.alterar') }}", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids: ["{{ sp.id }}"], coluna: botao.dataset.coluna,
+                              valor: botao.dataset.valor, acao: rotulo})
+      });
+      const d = await r.json();
+      if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
+      if (d.aviso) alert("Alterado aqui, mas o envio para a planilha ficou na fila:\n" + d.aviso);
+      location.reload();
+    } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
+    finally { botao.disabled = false; }
+  });
+});
+</script>
+{% endif %}
 {% endblock %}

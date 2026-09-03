@@ -47,6 +47,17 @@
   <small>{% if usar_filtros %}sobre o recorte filtrado{% else %}sobre a base inteira{% endif %}</small>
 </h2>
 
+{% if checagem %}
+  <p style="margin:-6px 0 14px">
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.exportar_auditoria', **args) }}">Exportar esta checagem</a>
+    <span class="cartao-dica" style="margin-left:10px">
+      Auditoria serve para alguém ir atrás — e ir atrás quer dizer mandar a
+      lista. Ler da tela e digitar de novo é onde o erro entra.
+    </span>
+  </p>
+{% endif %}
+
 <div class="cartao">
   <div class="cartao-cab"><h3>O que auditar</h3></div>
   <div class="atalhos">

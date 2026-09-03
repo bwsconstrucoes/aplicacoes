@@ -10,6 +10,19 @@
 
 {% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
 
+{% if montado.quantidade %}
+  <p style="margin:-6px 0 14px">
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.exportar_lote') }}">Exportar o lote</a>
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.lote_pdf') }}">Relatório do Lote (PDF)</a>
+    <span class="cartao-dica" style="margin-left:10px">
+      Sai com os mesmos grupos e o total de cada um — é o que se manda
+      para quem vai efetivar os pagamentos.
+    </span>
+  </p>
+{% endif %}
+
 <div class="cartao">
   <div class="cartao-cab">
     <h3>O lote</h3>

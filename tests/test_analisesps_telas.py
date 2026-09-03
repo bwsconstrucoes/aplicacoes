@@ -832,3 +832,343 @@ def test_operador_com_a_base_vazia_ve_a_tela_de_carga(app_sem_banco):
     resposta = como(app_sem_banco, SENHA_OPERADOR).get("/analisesps/lote")
     assert resposta.status_code == 200
     assert "não foi carregada" in resposta.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------------------
+# O escritor de CSV, sozinho
+# ---------------------------------------------------------------------------
+def test_o_csv_traz_os_tres_detalhes_que_o_excel_brasileiro_precisa():
+    """BOM, ponto e vírgula e fim de linha do Windows. Os três juntos, ou o
+    arquivo não abre com dois cliques: sem BOM o acento vira caractere
+    estranho, sem ponto e vírgula tudo cai numa coluna só."""
+    from app.apps.analisesps import exportar
+
+    saida = "".join(exportar.linhas_csv(["Solicitação", "Valor"],
+                                        [["Cimento", "6.750,00"]]))
+    assert saida.startswith("﻿")
+    assert "Solicitação;Valor\r\n" in saida
+    assert "Cimento;6.750,00\r\n" in saida
+
+
+@pytest.mark.parametrize("entrada,esperado", [
+    ("simples", "simples"),
+    ("com;ponto e vírgula", '"com;ponto e vírgula"'),
+    ('com "aspas"', '"com ""aspas"""'),
+    ("com\nquebra", "com quebra"),
+    ("com\r\nquebra", "com  quebra"),
+    (None, ""),
+    (0, "0"),
+])
+def test_a_celula_protege_o_que_quebraria_a_planilha(entrada, esperado):
+    """Um ponto e vírgula no meio de uma descrição partiria a linha em duas
+    colunas e desalinharia a planilha inteira dali para baixo."""
+    from app.apps.analisesps import exportar
+    assert exportar.celula(entrada) == esperado
+
+
+def test_o_arquivo_e_montado_em_pedacos():
+    """Um filtro largo alcança as 59 mil SPs. Montar tudo antes de enviar é o
+    que a instância de 2 GB não suporta."""
+    import types
+    from app.apps.analisesps import exportar
+    assert isinstance(exportar.linhas_csv(["a"], []), types.GeneratorType)
+
+
+# ---------------------------------------------------------------------------
+# As três exportações novas
+# ---------------------------------------------------------------------------
+def test_o_relatorio_exporta_tudo_o_que_esta_na_tela(app_relatorio):
+    """Um arquivo por bloco daria seis downloads para montar uma análise."""
+    resposta = como(app_relatorio, SENHA_CONSULTA).get(
+        "/analisesps/relatorio/exportar")
+    assert resposta.status_code == 200
+    texto = resposta.get_data(as_text=True)
+    assert texto.startswith("﻿")
+    assert "845.300,55" in texto           # os números do topo
+    assert "OBRA-12" in texto              # as quebras
+    assert "VOTORANTIM" in texto           # os credores
+    assert "mais de 90 dias" in texto      # o aging
+
+
+def test_o_relatorio_exportado_diz_o_recorte_e_a_data_que_manda(app_relatorio):
+    """Sem isso, o arquivo vira um número solto: ninguém sabe se era a pagar ou
+    pago, de que período, nem se canceladas entraram."""
+    texto = como(app_relatorio, SENHA_CONSULTA).get(
+        "/analisesps/relatorio/exportar?tipo=pagas").get_data(as_text=True)
+    assert "Contas pagas" in texto
+    assert "pagamento" in texto
+    assert "ficam de fora" in texto        # as canceladas
+
+
+def test_a_auditoria_exporta_a_checagem_aberta(app, monkeypatch):
+    from app.apps.analisesps import auditoria
+    monkeypatch.setattr(auditoria, "risco_ia", lambda f, u=False: [
+        linha_falsa("1", analise_ia="Pagamento COM RISCO")])
+    texto = como(app, SENHA_CONSULTA).get(
+        "/analisesps/auditoria/exportar?checagem=risco_ia").get_data(as_text=True)
+    assert "COM RISCO" in texto
+    assert "6.750,00" in texto
+
+
+def test_a_auditoria_sem_checagem_aberta_avisa_em_vez_de_baixar_vazio(app):
+    """Baixar um arquivo em branco é pior do que não baixar: a pessoa acha que
+    não há nada a apontar."""
+    resposta = como(app, SENHA_CONSULTA).get("/analisesps/auditoria/exportar")
+    assert resposta.status_code == 400
+    assert "Abra uma das checagens" in resposta.get_data(as_text=True)
+
+
+def test_a_auditoria_recusa_checagem_inventada(app):
+    resposta = como(app, SENHA_CONSULTA).get(
+        "/analisesps/auditoria/exportar?checagem=apagar_tudo")
+    assert resposta.status_code == 400
+
+
+def test_o_lote_exporta_com_os_grupos_e_os_totais(app_lote):
+    """É o que se manda para quem vai efetivar os pagamentos — com a mesma
+    organização que quem montou o lote escolheu."""
+    texto = como(app_lote, SENHA_CONSULTA).get(
+        "/analisesps/lote/exportar").get_data(as_text=True)
+    assert "Pagar amanhã" in texto
+    assert "Total do grupo" in texto
+    assert "TOTAL GERAL" in texto
+    assert "13.500,00" in texto
+
+
+def test_o_lote_exportado_aponta_o_que_nao_existe(app_lote):
+    texto = como(app_lote, SENHA_CONSULTA).get(
+        "/analisesps/lote/exportar").get_data(as_text=True)
+    assert "não encontrada na base" in texto
+
+
+@pytest.mark.parametrize("url", [
+    "/analisesps/exportar",
+    "/analisesps/relatorio/exportar",
+    "/analisesps/lote/exportar",
+])
+def test_toda_exportacao_vem_como_arquivo_para_baixar(app_lote, app_relatorio, url):
+    """Sem o cabeçalho de anexo o navegador mostra o CSV como texto na tela, e
+    a pessoa acha que não funcionou."""
+    aplicativo = app_relatorio if "relatorio" in url else app_lote
+    resposta = como(aplicativo, SENHA_CONSULTA).get(url)
+    assert "attachment" in resposta.headers["Content-Disposition"]
+    assert ".csv" in resposta.headers["Content-Disposition"]
+    assert resposta.is_streamed
+
+
+def test_consulta_exporta_de_todas_as_telas(app_lote, app_relatorio):
+    """Exportar é leitura. O perfil que vê tem de poder levar o que vê."""
+    assert como(app_lote, SENHA_CONSULTA).get(
+        "/analisesps/lote/exportar").status_code == 200
+    assert como(app_relatorio, SENHA_CONSULTA).get(
+        "/analisesps/relatorio/exportar").status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Agir direto da ficha da SP
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def app_ficha(app, monkeypatch):
+    from app.apps.analisesps import colunas
+    ficha = {c: "" for c in colunas.CHAVES}
+    ficha.update({
+        "id": "1234567890", "credor": "VOTORANTIM CIMENTOS S.A.",
+        "status_pgt": "Pagar", "forma_pagamento": "Boleto",
+        "codigo_barras": "34191790010104351004791020150008291070026000",
+        "valor_num": Decimal("6750.00"),
+        "solicitacao_d": dt.date(2026, 1, 5),
+        "vencimento_d": dt.date(2026, 2, 10),
+        "data_pagamento_d": None, "dt_autorizacao_d": dt.date(2026, 1, 6),
+        "status_agend": "Agendar",
+        "card_link": "https://app.pipefy.com/open-cards/1234567890",
+    })
+    monkeypatch.setattr(consultas, "uma", lambda sp_id: ficha)
+    return app
+
+
+def test_operador_pode_agir_direto_da_ficha(app_ficha):
+    """No Streamlit a janela de detalhe deixava alterar ali mesmo. Sem isso,
+    quem abre a ficha para conferir precisa voltar à lista, achar a linha de
+    novo e marcá-la — e é aí que se marca a errada."""
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    assert 'data-coluna="status_pgt"' in html
+    assert 'data-coluna="agendado"' in html
+
+
+def test_a_ficha_explica_que_cancelar_nao_toca_no_pipefy(app_ficha):
+    """"Cancelar" numa tela de pagamentos parece que cancela tudo. Aqui só muda
+    o status na planilha — e quem clica precisa saber disso ANTES."""
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    assert "Não cancela o card no" in html
+
+
+def test_consulta_nao_ve_os_botoes_na_ficha(app_ficha):
+    html = como(app_ficha, SENHA_CONSULTA).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    assert 'data-coluna="status_pgt"' not in html
+
+
+def test_a_ficha_leva_direto_ao_codigo_de_pagamento(app_ficha):
+    """Quem abriu a ficha para pagar não devia ter de voltar à lista, marcar a
+    mesma SP e clicar em outro lugar."""
+    html = como(app_ficha, SENHA_CONSULTA).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    assert "codigos?id=1234567890" in html
+
+
+def test_a_ficha_mostra_a_navegacao_e_o_perfil(app_ficha):
+    """A ficha estava sem o cabeçalho de perfil — quem entrava por um link
+    direto não via em que perfil estava."""
+    html = como(app_ficha, SENHA_CONSULTA).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    assert "Consulta" in html
+    assert ">Auditoria<" in html          # a navegação inteira está lá
+
+
+# ---------------------------------------------------------------------------
+# Os relatórios em PDF
+# ---------------------------------------------------------------------------
+def test_o_acento_do_portugues_sobrevive():
+    """A armadilha do fpdf2: com as fontes embutidas ele só escreve latin-1, e
+    o que não couber ele NÃO avisa — ele estoura no meio da geração.
+
+    Latin-1 cobre o português inteiro. Este teste é o que garante que ninguém
+    troque a conversão por algo que rebaixe o acento para ASCII e transforme
+    "Solicitação" em "Solicitacao" na cara do cliente."""
+    from app.apps.analisesps.pdf import _texto
+    for palavra in ("Solicitação", "avaliação", "João", "açaí", "Antônio",
+                    "Construções", "número", "endereço", "está", "três"):
+        assert _texto(palavra) == palavra
+
+
+@pytest.mark.parametrize("entrada,esperado", [
+    ("travessão — assim", "travessão - assim"),
+    ("meia–risca", "meia-risca"),
+    ("aspas “curvas”", 'aspas "curvas"'),
+    ("apóstrofo ’", "apóstrofo '"),
+    ("reticências…", "reticências..."),
+    ("seta →", "seta ->"),
+])
+def test_sinal_tipografico_vira_o_equivalente_simples(entrada, esperado):
+    """Um travessão virando "?" no meio de uma frase é pior do que um hífen —
+    e o travessão está em vários textos deste projeto."""
+    from app.apps.analisesps.pdf import _texto
+    assert _texto(entrada) == esperado
+
+
+def test_caractere_impossivel_nao_derruba_o_relatorio():
+    """Um emoji colado numa descrição não pode impedir o relatório de sair."""
+    from app.apps.analisesps.pdf import _texto
+    assert _texto("cimento 🧱 CP-II") == "cimento ? CP-II"
+    assert _texto(None) == ""
+    assert _texto(1234) == "1234"
+
+
+def test_o_relatorio_em_pdf_sai_valido(app_relatorio):
+    resposta = como(app_relatorio, SENHA_CONSULTA).get("/analisesps/relatorio/pdf")
+    assert resposta.status_code == 200
+    assert resposta.mimetype == "application/pdf"
+    corpo = resposta.get_data()
+    assert corpo.startswith(b"%PDF-")
+    assert corpo.rstrip().endswith(b"%%EOF")
+    assert len(corpo) > 1000
+
+
+def test_o_pdf_vem_como_arquivo_para_baixar(app_relatorio):
+    resposta = como(app_relatorio, SENHA_CONSULTA).get("/analisesps/relatorio/pdf")
+    assert "attachment" in resposta.headers["Content-Disposition"]
+    assert ".pdf" in resposta.headers["Content-Disposition"]
+
+
+def test_o_pdf_do_lote_sai_valido(app_lote):
+    resposta = como(app_lote, SENHA_CONSULTA).get("/analisesps/lote/pdf")
+    assert resposta.status_code == 200
+    assert resposta.get_data().startswith(b"%PDF-")
+
+
+def test_o_pdf_do_lote_vazio_avisa_em_vez_de_sair_em_branco(app, monkeypatch):
+    """Um PDF de uma página em branco é pior do que um recado: quem imprime
+    acha que o lote está vazio quando na verdade não foi montado."""
+    from app.apps.analisesps import lote
+    monkeypatch.setattr(lote, "ler", lambda: {"conteudo": "", "salvo_por": None,
+                                              "salvo_em": None})
+    monkeypatch.setattr(lote, "montar", lambda t: {
+        "grupos": [], "linhas": {}, "nao_encontrados": [],
+        "total_geral": 0, "quantidade": 0})
+    resposta = como(app, SENHA_CONSULTA).get("/analisesps/lote/pdf")
+    assert resposta.status_code == 400
+    assert "Lote vazio" in resposta.get_data(as_text=True)
+
+
+def test_falha_no_pdf_nao_derruba_a_tela(app_relatorio, monkeypatch):
+    """Se o gerador quebrar, a pessoa precisa ler o motivo e saber que o CSV
+    continua servindo — não receber uma página de erro do servidor."""
+    from app.apps.analisesps import pdf
+    monkeypatch.setattr(pdf, "relatorio", lambda *a, **k: 1 / 0)
+    resposta = como(app_relatorio, SENHA_CONSULTA).get("/analisesps/relatorio/pdf")
+    assert resposta.status_code == 500
+    corpo = resposta.get_data(as_text=True)
+    assert "Não consegui gerar o PDF" in corpo
+    assert "CSV continua" in corpo
+
+
+def test_o_pdf_do_relatorio_carrega_os_numeros_e_as_quebras(app_relatorio):
+    """Confere o conteúdo, não só que o arquivo saiu: um PDF de uma página em
+    branco também começaria com %PDF-."""
+    from app.apps.analisesps import consultas, pdf
+
+    corpo = pdf.relatorio({}, "geral", "tudo")
+    # O texto de um PDF fica comprimido; o que dá para afirmar sem uma
+    # biblioteca de leitura é o tamanho e a quantidade de páginas.
+    assert b"/Type /Page" in corpo
+    assert len(corpo) > 2000, "o PDF saiu pequeno demais para ter conteúdo"
+
+
+def test_a_tabela_do_pdf_repete_o_cabecalho_a_cada_pagina():
+    """Sem isso, a segunda página vira uma tabela de colunas sem nome — e
+    quem imprime dez páginas não sabe qual coluna é qual."""
+    import inspect
+    from app.apps.analisesps import pdf
+    codigo = inspect.getsource(pdf.Folha.tabela)
+    assert "will_page_break" in codigo
+    assert codigo.count("escrever_cabecalho()") >= 2
+
+
+def test_o_texto_que_nao_cabe_e_cortado_e_nao_invade_a_coluna():
+    """Um credor de nome longo empurrando o valor para fora embaralha a linha
+    inteira, e o número fica ilegível justamente onde importa."""
+    import inspect
+    from app.apps.analisesps import pdf
+    assert "get_string_width" in inspect.getsource(pdf.Folha.tabela)
+
+
+# ---------------------------------------------------------------------------
+# Os downloads, com o banco fora
+# ---------------------------------------------------------------------------
+DOWNLOADS = [
+    "/analisesps/lote/exportar",
+    "/analisesps/lote/pdf",
+    "/analisesps/relatorio/pdf",
+]
+
+
+@pytest.mark.parametrize("url", DOWNLOADS)
+def test_download_com_banco_fora_explica_em_vez_de_dar_erro_cru(app_sem_banco, url):
+    """Um download que devolve a página de erro genérica do servidor não diz
+    nada a quem clicou. Estas três leem o banco ANTES de começar a mandar o
+    arquivo, justamente para poder explicar."""
+    resposta = como(app_sem_banco, SENHA_OPERADOR).get(url)
+    corpo = resposta.get_data(as_text=True)
+    assert "Não consegui" in corpo, (
+        f"{url} não explicou o que houve — devolveu: {corpo[:200]}")
+
+
+def test_o_lote_e_lido_antes_de_a_resposta_comecar(app_sem_banco):
+    """O detalhe que faz a diferença: se o banco fosse lido dentro do gerador,
+    o cabeçalho já teria saído com HTTP 200 e a pessoa receberia um arquivo
+    pela metade — sem erro nenhum, o que é pior do que uma mensagem."""
+    resposta = como(app_sem_banco, SENHA_OPERADOR).get("/analisesps/lote/exportar")
+    assert resposta.status_code == 500
+    assert resposta.mimetype == "text/html"

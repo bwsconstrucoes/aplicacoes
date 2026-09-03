@@ -64,6 +64,10 @@
     </select>
   </div>
   <button class="btn" type="submit">Aplicar</button>
+  <a class="btn secundario"
+     href="{{ url_for('analisesps.exportar_relatorio', **args) }}">Exportar CSV</a>
+  <a class="btn secundario"
+     href="{{ url_for('analisesps.relatorio_pdf', **args) }}">Baixar PDF</a>
   <span class="cartao-dica" style="margin:0">
     SPs canceladas ficam de fora de todo o relatório.
     {% if tipo == 'pagas' %}O período conta pela data do pagamento.

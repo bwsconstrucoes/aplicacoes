@@ -37,6 +37,8 @@ horario.py         hora de Brasília (o servidor roda em UTC)
 sincronizacao.py   a ponte com a planilha, nos dois sentidos
 tarefas.py         a carga em segundo plano, com andamento e retomada
 executar_sync.py   o processo separado que faz o trabalho longo
+exportar.py        o CSV que o Excel em português abre com dois cliques
+pdf.py             os relatórios em PDF (fpdf2, que o serviço já tem)
 migracoes/         .sql numerados; aplicados por botão, nunca no boot
 
 reaproveitados do Streamlit, quase sem mudança:
@@ -223,15 +225,41 @@ Mais a **ficha de cada SP** e a tela de **códigos de pagamento**, que monta o
 QR Pix ou o código de barras das SPs marcadas — substitui abrir card por card
 no Pipefy para copiar a chave.
 
+## Levar o que está na tela
+
+Toda tela que mostra número deixa levar o número:
+
+| Tela | CSV | PDF |
+|---|---|---|
+| Solicitações | sim | — |
+| Relatório | sim | **sim** |
+| Auditoria (cada checagem) | sim | — |
+| Lote | sim | **sim** |
+
+O CSV sai com **BOM, ponto e vírgula e vírgula nos centavos** — os três
+detalhes que fazem o Excel em português abrir com dois cliques, sem passar pelo
+assistente de importação. As regras vivem num lugar só (`exportar.py`); repetir
+em cada tela é como elas passam a divergir.
+
+O PDF usa o `fpdf2`, que **já está no serviço** — nenhuma dependência nova.
+
+**A armadilha do PDF, para quem mexer nele depois:** com as fontes embutidas, o
+`fpdf2` só escreve o que couber em **latin-1**, e o que não couber ele não
+avisa — ele ESTOURA no meio da geração. Latin-1 cobre o português inteiro
+(ç, ã, õ, é); o que ele não cobre são os sinais tipográficos que entram sem
+ninguém perceber: o travessão "—", as aspas curvas, as reticências de um
+caractere só. Por isso todo texto passa por `_texto()` antes de ir para a
+página. Um teste confere que "Solicitação" continua com cedilha e que o
+travessão vira hífen, não "?".
+
 ## O que ficou de fora, e por quê
 
 - **Cancelar SP no Pipefy** e **gerar BeeVale**. As duas conversam com o Pipefy
   e com o Google Drive escrevendo, não lendo. São ações sem volta, e o BeeVale
   ainda tem a pendência do Drive (erro 403 de cota da service account, que
   precisa de um Shared Drive). Ficam para quando isso estiver resolvido.
-- **Relatório em PDF e em Excel.** A exportação é CSV, pela regra da casa de
-  não acrescentar dependência sem combinar. O serviço tem `fpdf2`, então o PDF
-  é possível — mas é reescrever o relatório do zero.
+- **Exportação em `.xlsx`.** Exigiria uma biblioteca nova; a regra da casa é
+  não acrescentar sem combinar. O CSV cobre a necessidade prática.
 - **Enviar comprovante por e-mail.** Depende de SMTP configurado no serviço.
 
 O Streamlit continua rodando no computador do dono enquanto isso, intocado.

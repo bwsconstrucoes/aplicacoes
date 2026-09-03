@@ -494,6 +494,10 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         "qrcode": "qrcode", "barcode": "python-barcode",
         "psycopg2": "psycopg2-binary", "sqlalchemy": "sqlalchemy",
         "PIL": "pillow", "requests": "requests",
+        # O pacote chama-se fpdf2, mas o que se importa é `fpdf`. Cuidado: o
+        # `fpdf` ANTIGO (1.7.x) também usa esse nome e NÃO serve — ele tem
+        # outra interface. O serviço tem o fpdf2; o PC precisa ter o mesmo.
+        "fpdf": "fpdf2",
     }
 
     faltando = []

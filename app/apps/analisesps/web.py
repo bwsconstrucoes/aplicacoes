@@ -195,7 +195,9 @@ def detalhe(sp_id):
                                titulo="Não encontrado",
                                mensagem="Esta SP não existe na base."), 404
     return render_template("analisesps_detalhe.html", sp=registro,
-                           pode_operar=auth.pode_operar())
+                           aba="solicitacoes",
+                           pode_operar=auth.pode_operar(),
+                           perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
 
 
 # ---------------------------------------------------------------------------
@@ -240,32 +242,25 @@ def exportar():
             linha["descricao"],
         ]
 
-    def limpar(valor):
-        """Ponto-e-vírgula e quebra de linha dentro de uma célula quebrariam o
-        arquivo. Viram espaço; a aspa dupla é escapada como o CSV manda."""
-        texto = "" if valor is None else str(valor)
-        texto = texto.replace("\r", " ").replace("\n", " ").replace('"', '""')
-        return f'"{texto}"' if (";" in texto or '"' in texto) else texto
-
-    def gerar():
-        yield "﻿"                      # BOM: o Excel reconhece o acento
-        yield ";".join(cabecalho) + "\r\n"
+    def blocos():
+        """Percorre por páginas. Uma de cada vez na memória, não as 59 mil
+        linhas que um filtro largo alcança."""
         pagina = 1
         while True:
             linhas = consultas.listar(filtros, ordem=ordem, pagina=pagina)
             if not linhas:
                 break
             for linha in linhas:
-                yield ";".join(limpar(c) for c in campos(linha)) + "\r\n"
+                yield campos(linha)
             if len(linhas) < consultas.POR_PAGINA:
                 break
             pagina += 1
 
-    from .horario import agora
-    nome = f"analise_sps_{agora().strftime('%Y-%m-%d_%H%M')}.csv"
-    return Response(gerar(), mimetype="text/csv; charset=utf-8",
-                    headers={"Content-Disposition":
-                             f'attachment; filename="{nome}"'})
+    # O BOM, o ponto e vírgula e o escape do texto vivem num lugar só
+    # (`exportar.py`). Repetir essas regras em cada tela é como elas passam a
+    # divergir — e aí um arquivo abre certo e o outro não.
+    from . import exportar as saida
+    return saida.resposta("analise_sps", cabecalho, blocos())
 
 
 # ---------------------------------------------------------------------------
@@ -859,6 +854,265 @@ def log():
         dias=dias, status=status, busca=busca, erro=erro,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+# ---------------------------------------------------------------------------
+# EXPORTAÇÃO DO RELATÓRIO E DA AUDITORIA
+#
+# A tela de Solicitações já exportava. Estas duas não, e é justamente delas que
+# sai o número que vai para uma reunião — copiar da tela à mão é onde o erro
+# entra.
+# ---------------------------------------------------------------------------
+@bp.route("/relatorio/exportar")
+@exige_consulta
+def exportar_relatorio():
+    """O relatório inteiro num arquivo só, em blocos.
+
+    Sai tudo o que está na tela: os números do topo, cada quebra, os credores e
+    o aging — um bloco embaixo do outro, com uma linha em branco entre eles.
+    Um arquivo por bloco daria seis downloads para montar uma análise."""
+    from . import consultas, exportar as saida
+    from .formatos import moeda
+
+    filtros = _filtros_do_pedido()
+    tipo = request.args.get("tipo", "geral")
+    if tipo not in consultas.TIPOS:
+        tipo = "geral"
+    periodo = request.args.get("periodo", "tudo")
+    if periodo not in consultas.PERIODOS:
+        periodo = "tudo"
+
+    def blocos():
+        numeros = consultas.numeros_do_relatorio(filtros, tipo, periodo)
+        yield ["Relatório", consultas.TIPOS[tipo]]
+        yield ["Período", consultas.PERIODOS[periodo]]
+        yield ["Contagem pela data de",
+               "pagamento" if tipo == "pagas" else "vencimento"]
+        yield ["Canceladas", "ficam de fora"]
+        yield ["Lançamentos", numeros["quantidade"]]
+        yield ["Total", moeda(numeros["total"])]
+        yield ["Ticket médio", moeda(numeros["ticket"])]
+        yield ["Vencidos (quantidade)", numeros["vencidos_qtd"]]
+        yield ["Vencidos (valor)", moeda(numeros["vencidos_total"])]
+
+        for dimensao, rotulo in consultas.DIMENSOES.items():
+            linhas = consultas.agregar(filtros, dimensao, tipo, periodo, 1000)
+            if not linhas:
+                continue
+            yield []
+            yield [f"Por {rotulo.lower()}", "Quantidade", "Total"]
+            for l in linhas:
+                yield [l["rotulo"], l["quantidade"], moeda(l["total"])]
+
+        credores = consultas.top_credores(filtros, tipo, periodo, 1000)
+        if credores:
+            yield []
+            yield ["CPF/CNPJ", "Credor", "Quantidade", "Total"]
+            for c in credores:
+                yield [c["documento"], c["credor"], c["quantidade"],
+                       moeda(c["total"])]
+
+        aging = consultas.aging_vencidos(filtros, periodo)
+        if aging:
+            yield []
+            yield ["Atraso", "Quantidade", "Total"]
+            for f in aging:
+                yield [f["faixa"], f["quantidade"], moeda(f["total"])]
+
+    return saida.resposta(f"relatorio_{tipo}", ["Relatório da Análise de SPs"],
+                          blocos())
+
+
+@bp.route("/auditoria/exportar")
+@exige_consulta
+def exportar_auditoria():
+    """A checagem aberta na tela, em arquivo.
+
+    Auditoria serve para alguém ir atrás — e ir atrás quer dizer mandar a lista
+    para outra pessoa. Ler da tela e digitar de novo é onde o erro entra."""
+    from . import auditoria as checagens
+    from . import exportar as saida
+    from .formatos import data_br, moeda
+
+    filtros = _filtros_do_pedido()
+    usar_filtros = request.args.get("usar_filtros") == "1"
+    checagem = request.args.get("checagem", "")
+    if checagem not in checagens.CHECAGENS:
+        return render_template(
+            "analisesps_erro.html", titulo="Nada para exportar",
+            mensagem="Abra uma das checagens antes de exportar."), 400
+
+    def sps(linhas, extras):
+        yield ["SP", "Credor", "Valor", "Vencimento"] + [r for r, _ in extras]
+        for l in linhas:
+            yield ([l["id"], l["credor"], moeda(l["valor_num"]),
+                    data_br(l.get("vencimento_d"))]
+                   + [l.get(campo) for _, campo in extras])
+
+    if checagem == "pontualidade":
+        try:
+            minimo = max(1, int(request.args.get("minimo", 5)))
+        except ValueError:
+            minimo = 5
+
+        def blocos():
+            yield ["Responsável", "SPs", "Antecedência média (dias)",
+                   "Mediana (dias)", "Atrasadas", "% atrasadas",
+                   "R$ atrasado", "R$ total"]
+            for l in checagens.pontualidade(filtros, usar_filtros, minimo):
+                yield [l["responsavel"], l["quantidade"], l["media_dias"],
+                       l["mediana_dias"], l["atrasados"],
+                       l["percentual_atrasados"], moeda(l["valor_atrasado"]),
+                       moeda(l["valor_total"])]
+
+    elif checagem == "codigos_barras":
+        def blocos():
+            achados = checagens.codigos_de_barras(filtros, usar_filtros)
+            yield ["Boletos inválidos"]
+            yield from sps(achados["invalidos"],
+                           [("Código de barras", "codigo_barras")])
+            yield []
+            yield ["Boletos repetidos"]
+            yield from sps(achados["duplicados"],
+                           [("Código de barras", "codigo_barras")])
+
+    else:
+        colunas_extras = {
+            "risco_ia": [("CPF/CNPJ", "documento"), ("Análise", "analise_ia")],
+            "nf_duplicada": [("CPF/CNPJ", "documento"), ("Nº NF", "nf"),
+                             ("Quantas", "quantos")],
+            "possivel_duplicidade": [("CPF/CNPJ", "documento"),
+                                     ("No grupo", "quantos"),
+                                     ("Janela (dias)", "janela")],
+            "sem_classificacao": [("Falta", "faltando"),
+                                  ("Centro de custo", "centro_custo"),
+                                  ("Projeto", "projeto")],
+            "sem_integracao": [("Status", "status_pgt")],
+        }
+        funcao = {
+            "risco_ia": checagens.risco_ia,
+            "nf_duplicada": checagens.nf_duplicada,
+            "possivel_duplicidade": checagens.possivel_duplicidade,
+            "sem_classificacao": checagens.sem_classificacao,
+            "sem_integracao": checagens.sem_integracao_omie,
+        }[checagem]
+
+        def blocos():
+            yield from sps(funcao(filtros, usar_filtros),
+                           colunas_extras[checagem])
+
+    return saida.resposta(f"auditoria_{checagem}",
+                          [checagens.CHECAGENS[checagem]], blocos())
+
+
+@bp.route("/lote/exportar")
+@exige_consulta
+def exportar_lote():
+    """O lote, grupo a grupo, com o total de cada um.
+
+    É o que se manda para quem vai efetivar os pagamentos: a mesma organização
+    da tela, com os títulos que quem montou o lote escolheu."""
+    from . import exportar as saida
+    from . import lote
+    from .formatos import data_br, moeda
+
+    # O lote é lido AQUI, antes de a resposta começar a ser enviada. Se fosse
+    # lido lá dentro do gerador, o cabeçalho já teria saído com HTTP 200 e a
+    # pessoa receberia um arquivo pela metade, sem erro nenhum — pior do que
+    # uma mensagem.
+    try:
+        montado = lote.montar(lote.ler()["conteudo"])
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou montar o lote para exportar")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui montar o lote",
+            mensagem=f"{e}"), 500
+
+    def blocos():
+        for grupo in montado["grupos"]:
+            if not grupo["linhas"] and not grupo["nao_encontrados"]:
+                continue
+            yield [grupo["titulo_exibido"]]
+            yield ["SP", "Vencimento", "Credor", "Valor", "Status",
+                   "Agendamento", "Forma", "Conta", "Informação p/ pgt"]
+            for l in grupo["linhas"]:
+                yield [l["id"], data_br(l["vencimento_d"]), l["credor"],
+                       moeda(l["valor_num"]), l["status_pgt"],
+                       l["status_agend"], l["forma_pagamento"], l["conta"],
+                       l["info_pgt"]]
+            yield ["", "", "Total do grupo", moeda(grupo["total"])]
+            for perdida in grupo["nao_encontrados"]:
+                yield [perdida, "não encontrada na base"]
+            yield []
+        yield ["", "", "TOTAL GERAL", moeda(montado["total_geral"])]
+
+    return saida.resposta("lote", ["Lote de pagamentos"], blocos())
+
+
+@bp.route("/relatorio/pdf")
+@exige_consulta
+def relatorio_pdf():
+    """O mesmo relatório da tela, em PDF, para anexar ou imprimir."""
+    from flask import Response
+
+    from . import consultas, pdf
+    from .horario import agora
+
+    filtros = _filtros_do_pedido()
+    tipo = request.args.get("tipo", "geral")
+    if tipo not in consultas.TIPOS:
+        tipo = "geral"
+    periodo = request.args.get("periodo", "tudo")
+    if periodo not in consultas.PERIODOS:
+        periodo = "tudo"
+
+    try:
+        conteudo = pdf.relatorio(filtros, tipo, periodo)
+    except Exception as e:  # noqa: BLE001 — falha no PDF nao derruba a tela
+        logger.exception("Análise de SPs: falhou gerar o PDF do relatório")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui gerar o PDF",
+            mensagem=f"{e}. A exportação em CSV continua disponível."), 500
+
+    nome = f"relatorio_{tipo}_{agora().strftime('%Y-%m-%d_%H%M')}.pdf"
+    return Response(conteudo, mimetype="application/pdf",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="{nome}"'})
+
+
+@bp.route("/lote/pdf")
+@exige_consulta
+def lote_pdf():
+    """O papel que acompanha a remessa de pagamentos."""
+    from flask import Response
+
+    from . import lote, pdf
+    from .horario import agora
+
+    try:
+        montado = lote.montar(lote.ler()["conteudo"])
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou montar o lote para o PDF")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui montar o lote",
+            mensagem=f"{e}"), 500
+    if not montado["quantidade"]:
+        return render_template(
+            "analisesps_erro.html", titulo="Lote vazio",
+            mensagem="Não há SPs no lote para pôr no relatório."), 400
+
+    try:
+        conteudo = pdf.relatorio_do_lote(montado)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou gerar o PDF do lote")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui gerar o PDF",
+            mensagem=f"{e}. A exportação em CSV continua disponível."), 500
+
+    nome = f"lote_{agora().strftime('%Y-%m-%d_%H%M')}.pdf"
+    return Response(conteudo, mimetype="application/pdf",
+                    headers={"Content-Disposition":
+                             f'attachment; filename="{nome}"'})
 
 
 # ---------------------------------------------------------------------------
