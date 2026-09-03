@@ -392,8 +392,11 @@ def gerar_titulo(s: Session, despesa_id: int, dados: dict[str, Any],
     """
     from app.apps.erp.core.titulos.service import criar_titulo
 
+    # FOR UPDATE: dois cliques no mesmo segundo liam "sem título" os dois e
+    # nasciam DOIS títulos para a mesma despesa. Com a trava, o segundo espera
+    # o primeiro terminar e então vê o titulo_id já preenchido.
     d = s.get(DespesaColaborador, despesa_id, options=[
-        selectinload(DespesaColaborador.itens)])
+        selectinload(DespesaColaborador.itens)], with_for_update=True)
     if d is None:
         raise ErroValidacao("Despesa não encontrada.")
     if d.status != "APROVADA":

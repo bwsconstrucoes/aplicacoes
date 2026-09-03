@@ -102,6 +102,14 @@ mais de uma tabela e merecem a mesma leitura.
 
 ---
 
+## Situação em 03/09/2026
+
+Os itens 1, 2 e 3 abaixo foram feitos: FOR UPDATE em `gerar_titulo`,
+`registrar_medicao`, `autorizar_medicao` e `devolver` (teste estrutural em
+`tests/test_concorrencia.py` impede a trava de sumir), e a migração 031 criou
+as três restrições únicas parciais. A conciliação disputada responde 409 com
+recado em vez de 500. O item 4 (aviso em dois tempos) continua aberto.
+
 ## Se for corrigir — em ordem de valor
 
 1. **Trava de linha nas três operações "leio, confiro, gravo"**: DC (gerar

@@ -30,9 +30,12 @@ banco de verdade no GitHub Actions. Suíte: ~290 sem banco, ~400 com banco.
    que estava colado no código) e **trocar o token na origem** — ele continua
    no histórico do Git, commit `fa985ab`.
 3. **Definir o teto mensal de IA** em Configurações › Consumo de IA.
-4. **Homologação por perfil**: roteiro pronto em `HOMOLOGACAO_PERFIS.md`,
-   operadores de teste em `scripts/seed_usuarios_teste.py`. Falta navegar.
-5. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
+4. **Homologação por perfil**: a parte mecânica (o que abre e o que é
+   recusado, tela a tela, perfil a perfil) roda sozinha no GitHub a cada envio
+   (`tests/test_homologacao_banco.py`). Para o olho humano ficou só o roteiro
+   reduzido: visual, leitura de documento por IA, avalizar/pagar com dado real.
+5. **Migração 031** (restrições de concorrência): apertar o botão ao juntar.
+6. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)
 
@@ -97,8 +100,11 @@ e escolha sempre explícitos. Ver o topo do `CLAUDE.md`.
 
 ## O que falta (além do pendente AGORA)
 
-- Consistência transacional: ver `AUDITORIA_TRANSACIONAL.md`. Nenhuma
-  correção feita; o risco é duas pessoas na mesma operação no mesmo segundo.
+- Consistência transacional: os quatro casos da `AUDITORIA_TRANSACIONAL.md`
+  ganharam trava de linha (FOR UPDATE) e restrições únicas no banco
+  (migração 031) em 03/09/2026. Ficaram de fora, ainda sem olhar: fechamento
+  da prestação do fundo fixo, parcelas de locação, estorno, importação OFX,
+  cancelamento em lote.
 - Retenção de garantia na empreita; BeeVale/SomaPay; Suprimentos; Agenda —
   ver `ROTEIRO.md`.
 

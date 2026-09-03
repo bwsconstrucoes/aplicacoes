@@ -173,7 +173,9 @@ def gerar_previsao(s: Session, contrato_id: int, meses: int = 6,
 def devolver(s: Session, contrato_id: int, dados: dict[str, Any],
              usuario: Usuario) -> dict[str, Any]:
     """Devolução total ou parcial: reduz as próximas parcelas."""
-    item = s.get(LocacaoItem, int(dados.get("item_id") or 0))
+    # FOR UPDATE: duas devoluções simultâneas somariam sobre o mesmo saldo e
+    # devolveriam mais do que há em obra.
+    item = s.get(LocacaoItem, int(dados.get("item_id") or 0), with_for_update=True)
     if item is None or item.contrato_id != contrato_id:
         raise ErroValidacao("Equipamento não encontrado neste contrato.")
     qtd = _dec(dados.get("quantidade"), "quantidade devolvida")

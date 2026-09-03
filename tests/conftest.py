@@ -74,7 +74,7 @@ class SessaoFalsa:
         self.eventos = []
 
     # -- leitura ------------------------------------------------------------
-    def get(self, modelo, ident, options=None):
+    def get(self, modelo, ident, options=None, with_for_update=None):
         for o in self.objetos:
             if isinstance(o, modelo) and getattr(o, "id", None) == ident:
                 return o

@@ -167,6 +167,11 @@
       brechas de anexo (baixar/apagar qualquer arquivo por id sequencial),
       dados bancários da parcela, lista de avisos do título, cancelamento em
       lote, plano de contas, painéis financeiros, empreitas e locações
+- [x] Consistência transacional: travas de linha nas quatro operações de risco
+      e restrições únicas no banco (migração 031). Conciliação disputada vira
+      recado (409), não erro
+- [x] Homologação por perfil — a parte mecânica virou teste com banco
+      (`tests/test_homologacao_banco.py`, 393 casos); sobra o olho humano
 - [ ] Segurança — falta: navegar em homologação com um usuário de cada perfil.
       Os testes cobrem a RECUSA (que é o lado que importa); o caminho de quem
       TEM acesso precisa de banco e não está coberto. Roteiro pronto em

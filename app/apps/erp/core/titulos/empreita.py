@@ -303,7 +303,10 @@ def _saldo_por_item(s: Session, contrato_id: int) -> dict[int, dict[str, Any]]:
 def registrar_medicao(s: Session, contrato_id: int, dados: dict[str, Any],
                       usuario: Usuario) -> ContratoMedicao:
     """A obra registra o que foi executado. Ainda não é pagamento."""
-    c = s.get(ContratoServico, contrato_id)
+    # FOR UPDATE no contrato: duas medições simultâneas liam o mesmo saldo e
+    # as duas passavam pela crítica. Com a trava, a segunda só lê o saldo
+    # depois que a primeira gravou.
+    c = s.get(ContratoServico, contrato_id, with_for_update=True)
     if c is None:
         raise ErroValidacao("Contrato não encontrado.")
 
@@ -372,8 +375,10 @@ def registrar_medicao(s: Session, contrato_id: int, dados: dict[str, Any],
 def autorizar_medicao(s: Session, medicao_id: int, usuario: Usuario,
                       dados_pagamento: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """O supervisor confere e autoriza: aí sim vira título a pagar."""
+    # FOR UPDATE: duas autorizações da mesma medição gerariam dois títulos.
     m = s.get(ContratoMedicao, medicao_id, options=[
-        selectinload(ContratoMedicao.contrato).selectinload(ContratoServico.fornecedor)])
+        selectinload(ContratoMedicao.contrato).selectinload(ContratoServico.fornecedor)],
+        with_for_update=True)
     if m is None:
         raise ErroValidacao("Medição não encontrada.")
     if m.status != "MEDIDA":

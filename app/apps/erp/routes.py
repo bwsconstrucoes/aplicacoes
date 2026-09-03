@@ -19,7 +19,7 @@ from flask import (
     Blueprint, jsonify, redirect, render_template, request, session, url_for,
 )
 
-from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from app.apps.erp.core.auth.permissoes import PERMISSOES, pode
 from app.apps.erp.core.auth.service import ErroAutenticacao, autenticar
@@ -1641,6 +1641,11 @@ def api_conciliar():
                 s, conta_bancaria_id=d.get("conta_id") or None, usuario=usuario)
             s.commit()
         return jsonify({"ok": True, "relatorio": rel})
+    except IntegrityError:
+        # outra pessoa executou a conciliação no mesmo instante: a restrição
+        # única barrou a repetição. Nada gravado; é só rodar de novo.
+        return jsonify({"ok": False, "erro": "Outra conciliação acabou de rodar. "
+                        "Recarregue a tela e execute de novo."}), 409
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
