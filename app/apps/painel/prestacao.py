@@ -327,3 +327,154 @@ def posicao_dos_socios(quotas, ajustes) -> list[dict]:
         alvo["quota"] = round(alvo["quota"], 2)
         alvo["ajustes"] = round(alvo["ajustes"], 2)
     return sorted(posicao.values(), key=lambda p: -p["saldo"])
+
+
+# ---------------------------------------------------------------------------
+# 6. Cenários de rateio: ajustar e comparar ANTES de gravar
+# ---------------------------------------------------------------------------
+# Mudar uma regra de rateio muda quanto de custo administrativo cai em cada
+# obra — e, por consequência, quanto cabe a cada sócio. Gravar para depois
+# olhar o efeito é caro: se ficou pior, é preciso lembrar como estava antes.
+#
+# O cenário resolve isso: as regras são alteradas EM MEMÓRIA, o cálculo inteiro
+# roda duas vezes (com as regras gravadas e com as do cenário) e a tela mostra
+# obra a obra o que mudaria. Nada toca o banco enquanto você não mandar.
+
+ESCOPOS = ("AMBAS", "MATRIZ", "FILIAL")
+
+
+def normalizar_regra_do_cenario(regra: dict, mudanca: dict) -> dict:
+    """Aplica sobre uma regra gravada o que a pessoa mexeu na tela do cenário.
+
+    Só os parâmetros entram: **%**, **escopo**, **vigência** e **ativa**. Quais
+    grupos e categorias a regra pega continua sendo coisa da tela de Regras —
+    é lá que existe a lista para escolher, e duplicar essa escolha aqui seria
+    duas telas para a mesma decisão.
+
+    Valor fora da faixa não vira erro na cara de quem está simulando: é preso
+    no limite (0 a 100), como fazia a tela antiga."""
+    nova = dict(regra)
+
+    if "pct" in mudanca:
+        try:
+            pct = float(str(mudanca["pct"]).replace(",", "."))
+        except (TypeError, ValueError):
+            pct = float(regra.get("pct") or 100.0)
+        nova["pct"] = min(max(pct, 0.0), 100.0)
+
+    if "escopo" in mudanca:
+        escopo = str(mudanca["escopo"] or "").strip().upper()
+        nova["escopo"] = escopo if escopo in ESCOPOS else "AMBAS"
+
+    for campo in ("mes_ini", "mes_fim"):
+        if campo in mudanca:
+            nova[campo] = str(mudanca[campo] or "").strip()
+
+    if "ativo" in mudanca:
+        nova["ativo"] = 1 if mudanca["ativo"] in (1, True, "1", "on", "true", "True") else 0
+
+    return nova
+
+
+def regras_do_cenario(regras_gravadas, mudancas: dict) -> list[dict]:
+    """As regras gravadas com as alterações do cenário por cima.
+
+    `mudancas` é {id da regra: {campo: valor}}. Regra que ninguém mexeu passa
+    inteira — assim um cenário que altera uma linha só não precisa carregar as
+    outras trinta."""
+    saida = []
+    for regra in regras_gravadas:
+        mudanca = mudancas.get(str(regra["id"]), {})
+        saida.append(normalizar_regra_do_cenario(regra, mudanca) if mudanca
+                     else dict(regra))
+    return saida
+
+
+def _por_obra(apurado) -> dict:
+    """Soma rateio e resultado por obra — é a granularidade em que a diferença
+    entre dois cenários faz sentido de olhar."""
+    total: dict[str, dict] = {}
+    for linha in apurado:
+        alvo = total.setdefault(linha["obra"], {"rateio": 0.0, "resultado": 0.0})
+        alvo["rateio"] += linha["rateio"]
+        alvo["resultado"] += linha["resultado"]
+    return total
+
+
+# Diferença abaixo de meio centavo é ruído de arredondamento, não mudança.
+LIMITE_DE_RUIDO = 0.005
+
+
+def comparar_por_obra(apurado_oficial, apurado_cenario) -> list[dict]:
+    """O efeito do cenário, obra a obra.
+
+    `delta_resultado` NEGATIVO significa que a obra passa a receber MAIS custo
+    administrativo — e portanto piora. É contraintuitivo o suficiente para estar
+    escrito também na tela.
+
+    Obra que não mudou fica de fora: numa lista de cem obras, mostrar as noventa
+    que continuam iguais esconde as dez que interessam."""
+    oficial = _por_obra(apurado_oficial)
+    cenario = _por_obra(apurado_cenario)
+
+    linhas = []
+    for obra in sorted(set(oficial) | set(cenario)):
+        a = oficial.get(obra, {"rateio": 0.0, "resultado": 0.0})
+        b = cenario.get(obra, {"rateio": 0.0, "resultado": 0.0})
+        delta_resultado = b["resultado"] - a["resultado"]
+        delta_rateio = b["rateio"] - a["rateio"]
+        if abs(delta_resultado) <= LIMITE_DE_RUIDO and abs(delta_rateio) <= LIMITE_DE_RUIDO:
+            continue
+        linhas.append({
+            "obra": obra,
+            "rateio_oficial": a["rateio"], "rateio_cenario": b["rateio"],
+            "delta_rateio": delta_rateio,
+            "resultado_oficial": a["resultado"], "resultado_cenario": b["resultado"],
+            "delta_resultado": delta_resultado,
+        })
+    # pior primeiro: quem passa a receber mais custo é o que se quer ver antes
+    linhas.sort(key=lambda l: l["delta_resultado"])
+    return linhas
+
+
+def resumo_do_cenario(rateio_oficial, rateio_cenario) -> dict:
+    """Os quatro números do topo: quanto foi rateado e quanto sobrou, dos dois
+    lados. A sobra importa tanto quanto o rateio — ela é custo da empresa que
+    ficou sem dono, e um cenário que rateia mais só porque empurrou valor para a
+    sobra não melhorou nada."""
+    def _totais(rateio):
+        return (sum(rateio["alocacoes"].values()),
+                sum(s["valor"] for s in rateio["sobras"]))
+
+    rateado_of, sobra_of = _totais(rateio_oficial)
+    rateado_cen, sobra_cen = _totais(rateio_cenario)
+    return {
+        "rateado_oficial": rateado_of, "rateado_cenario": rateado_cen,
+        "delta_rateado": rateado_cen - rateado_of,
+        "sobra_oficial": sobra_of, "sobra_cenario": sobra_cen,
+        "delta_sobra": sobra_cen - sobra_of,
+    }
+
+
+# Só estes cinco o cenário mexe. Grupos e categorias são da tela de Regras.
+CAMPOS_DO_CENARIO = ("pct", "escopo", "mes_ini", "mes_fim", "ativo")
+
+
+def cenario_difere(regras_gravadas, regras_cenario) -> bool:
+    """O cenário mudou alguma coisa em relação ao gravado?
+
+    Não dá para comparar os dicionários direto: o formulário devolve tudo como
+    texto e o banco devolve `pct` como número, então uma regra intocada
+    pareceria alterada e a tela diria "mexeu" sempre. A comparação é campo a
+    campo, com os dois lados no mesmo tipo."""
+    def _chave(regra):
+        return (round(float(regra.get("pct") or 0), 4),
+                str(regra.get("escopo") or "AMBAS").upper(),
+                str(regra.get("mes_ini") or "").strip(),
+                str(regra.get("mes_fim") or "").strip(),
+                int(regra.get("ativo", 1) or 0))
+
+    if len(regras_gravadas) != len(regras_cenario):
+        return True
+    return any(_chave(a) != _chave(b)
+               for a, b in zip(regras_gravadas, regras_cenario))

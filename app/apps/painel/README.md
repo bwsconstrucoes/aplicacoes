@@ -115,6 +115,7 @@ Uma de cada vez: a segunda chamada é recusada em vez de duplicar o trabalho.
 | Comprometido × Executado | quanto de cada obra já andou, de cada lado |
 | Necessidade de Caixa | um conjunto de obras se paga sozinho, ou alguém segurou |
 | Prestação de Contas | quanto do resultado cabe a cada sócio |
+| Cenários de rateio | e se a regra fosse outra? o efeito obra a obra, antes de gravar |
 
 Todas exportam para **Excel de verdade** (`.xlsx`), com cabeçalho fixo, filtro
 no topo, coluna de dinheiro em R$ e data no formato brasileiro. O botão do DRE
@@ -143,7 +144,12 @@ E a reconstrução inteira roda com **pico de 14,6 MB** de memória, contra os
 - **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
   Daria para refazer com o `fpdf2`, que já está — mas é reescrever o relatório
   do zero. A planilha cobre a necessidade prática por enquanto.
-- **Cenários da prestação** (comparar duas configurações de rateio lado a lado).
+
+É o único que falta. Os **cenários da prestação** foram convertidos em
+04/09/2026, com uma diferença consciente: **criar regra nova** continua sendo na
+tela de Regras. No editor antigo dava para acrescentar uma linha ali dentro, mas
+com as colunas de grupo e categoria desabilitadas — a regra nascia sem saber o
+que pega.
 
 `referencia_streamlit/` guarda as telas originais até isso terminar.
 

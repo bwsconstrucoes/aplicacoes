@@ -203,3 +203,157 @@ def test_texto_longo_no_andamento_e_cortado(sem_execucoes):
     andamento = consultas.execucao_em_andamento()
     assert len(andamento["etapa"]) == 200
     assert len(andamento["progresso"]) == 200
+
+
+# ---------------------------------------------------------------------------
+# 4. A mesma interrupção não é contada duas vezes
+# ---------------------------------------------------------------------------
+# A tela de Configurações tem dois lugares que falam de atualização: a linha
+# "Última atualização" e a caixa vermelha "A atualização anterior foi
+# interrompida". Quando duas cargas seguidas morrem — e morrem em série, porque
+# a causa é o serviço reiniciar — as duas mostravam a MESMA frase, sobre duas
+# execuções diferentes. Quem lia via dois erros e ia procurar dois problemas.
+def test_execucao_que_morreu_e_reconhecivel_depois_de_encerrada(sem_execucoes):
+    """Quem chega ao fim sozinho zera a etapa; quem foi encerrado pelo faxineiro
+    de órfãs deixa a etapa preenchida. É esse o sinal que distingue as duas —
+    sem ele não dá para saber, depois, se a execução terminou ou morreu."""
+    from app.apps.painel import tarefas
+    from app.apps.painel.db import conexao
+
+    morreu = _abrir()
+    tarefas._carimbar(morreu, "baixando títulos", "página 12")
+    with conexao() as conn:
+        tarefas._fechar_execucoes_orfas(conn)
+
+    concluiu = _abrir()
+    with conexao() as conn:
+        tarefas._fechar_execucao(conn, concluiu, True, "tudo certo", 10)
+
+    with conexao() as conn:
+        cur = conn.execute("SELECT id, etapa FROM execucoes ORDER BY id")
+        etapas = dict(cur.fetchall())
+        cur.close()
+    assert etapas[morreu] is not None, "a que morreu tem de guardar a etapa"
+    assert etapas[concluiu] is None, "a que terminou sozinha zera a etapa"
+
+
+def test_a_linha_de_cima_ignora_interrompida_quando_a_caixa_ja_avisa(sem_execucoes):
+    """Com `so_concluidas`, "Última atualização" volta a responder a pergunta
+    útil — quando a base foi atualizada de verdade —, em vez de repetir a
+    interrupção que a caixa vermelha já está contando."""
+    from app.apps.painel import consultas, tarefas
+    from app.apps.painel.db import conexao
+
+    # uma que deu certo, ontem
+    boa = _abrir(modo="rapida")
+    with conexao() as conn:
+        tarefas._fechar_execucao(conn, boa, True, "27 mil linhas", 27000)
+
+    # e depois uma que morreu no meio
+    morreu = _abrir(modo="rapida")
+    tarefas._carimbar(morreu, "baixando títulos", "página 12")
+    with conexao() as conn:
+        tarefas._fechar_execucoes_orfas(conn)
+
+    # sem o filtro, a linha de cima mostra a interrupção — que a caixa também
+    # vai mostrar. É a duplicidade que o dono viu.
+    assert "Interrompida" in consultas.atualizado_em()["mensagem"]
+
+    # com o filtro, ela volta a falar da última atualização que de fato terminou
+    concluida = consultas.atualizado_em(so_concluidas=True)
+    assert concluida["mensagem"] == "27 mil linhas"
+    assert concluida["ok"] is True
+
+
+def test_a_tela_de_configuracoes_conta_a_interrupcao_uma_vez_so(sem_execucoes, monkeypatch):
+    """O teste que fecha o caso: a tela inteira, montada, com uma carga morta
+    aberta e uma interrupção já encerrada antes dela."""
+    from app.apps.painel import tarefas
+    from app.apps.painel.db import conexao
+
+    antiga = _abrir(modo="rapida")
+    tarefas._carimbar(antiga, "baixando títulos", "página 3")
+    with conexao() as conn:
+        tarefas._fechar_execucoes_orfas(conn)
+
+    # a atual: aberta e sem dar sinal há muito tempo
+    atual = _abrir(modo="rapida")
+    tarefas._carimbar(atual, "refazendo os números", "bloco 4")
+    _envelhecer(atual, 120)
+
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+
+    html = cliente.get("/painel/configuracoes").get_data(as_text=True)
+    assert html.count("foi interrompida") == 1, "a interrupção aparece uma vez só"
+    assert "Interrompida: o serviço reiniciou" not in html, \
+        "a frase do faxineiro de órfãs não pode aparecer junto com a caixa"
+    assert "Nenhuma atualização feita ainda" not in html, \
+        "houve atualização — ela é que morreu; dizer que não houve é falso"
+
+
+# ---------------------------------------------------------------------------
+# 5. Gravar um cenário de rateio
+# ---------------------------------------------------------------------------
+# Precisa de banco de verdade: o que se prova é o UPDATE — que ele altera só os
+# parâmetros e que os ids sobrevivem. O dublê de sessão ignora WHERE e não veria
+# nem uma coisa nem outra.
+@pytest.fixture()
+def com_regras(sem_execucoes):
+    """Duas regras gravadas, com grupos e categorias escolhidos."""
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM regras")
+        conn.execute(
+            "INSERT INTO regras (nome, depto, todas, grupos, categorias, pct,"
+            " escopo, mes_ini, mes_fim, ativo) VALUES"
+            " ('Matriz','ADM MATRIZ',0,'[\"Despesas Administrativas\"]','[]',"
+            "  100,'AMBAS','','',1),"
+            " ('Filial','ADM FILIAL',1,'[]','[]',80,'FILIAL','2025-01','',1)")
+        conn.commit()
+    yield
+    with conexao() as conn:
+        conn.execute("DELETE FROM regras")
+        conn.commit()
+
+
+def test_gravar_o_cenario_mexe_nos_parametros_e_preserva_o_resto(com_regras):
+    """Grupos e categorias são escolhidos na tela de Regras, onde existe a lista.
+    Gravar um cenário não pode encostar neles — nem trocar os ids.
+
+    A tela antiga fazia isso com um DELETE de todas as regras seguido de um
+    INSERT de todas: os ids mudavam a cada gravação."""
+    from app.apps.painel import prestacao, prestacao_dados
+
+    antes = prestacao_dados.regras()
+    ids_antes = [r["id"] for r in antes]
+    grupos_antes = [r["grupos"] for r in antes]
+
+    cenario = prestacao.regras_do_cenario(antes, {
+        str(antes[0]["id"]): {"pct": "35", "escopo": "MATRIZ"},
+        str(antes[1]["id"]): {"ativo": 0},
+    })
+    assert prestacao_dados.salvar_parametros_das_regras(cenario) == 2
+
+    depois = prestacao_dados.regras()
+    assert [r["id"] for r in depois] == ids_antes, "os ids têm de sobreviver"
+    assert [r["grupos"] for r in depois] == grupos_antes, \
+        "grupos são da tela de Regras; o cenário não os toca"
+    assert float(depois[0]["pct"]) == 35.0
+    assert depois[0]["escopo"] == "MATRIZ"
+    assert int(depois[1]["ativo"]) == 0
+    # e a que ninguém desligou continua ligada
+    assert int(depois[0]["ativo"]) == 1
+
+
+def test_gravar_cenario_vazio_nao_apaga_regra_nenhuma(com_regras):
+    """Um POST sem regra nenhuma (formulário perdido, sessão estranha) não pode
+    virar um DELETE silencioso das regras que dividem o resultado."""
+    from app.apps.painel import prestacao_dados
+
+    assert prestacao_dados.salvar_parametros_das_regras([]) == 0
+    assert len(prestacao_dados.regras()) == 2

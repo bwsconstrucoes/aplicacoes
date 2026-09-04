@@ -566,24 +566,65 @@ def _mes_do_pedido(texto):
         return None
 
 
-def _calcular_prestacao(medida: str):
+# As chaves da configuracao que decidem O QUE e lido do banco. Duas
+# configuracoes que concordam nelas leem exatamente a mesma coisa — e e isso que
+# autoriza a tela de cenarios a ler uma vez so e calcular duas.
+CHAVES_QUE_MUDAM_A_LEITURA = ("grupo_pessoal", "depto_admin_matriz",
+                              "depto_admin_filial")
+
+
+def _base_da_prestacao(config, medida: str) -> dict:
+    """As tres leituras do banco de que a prestacao inteira depende.
+
+    Separadas do calculo porque a tela de cenarios roda a conta DUAS vezes — com
+    as regras gravadas e com as do cenario — sobre exatamente os mesmos dados.
+    Ler duas vezes seria varrer as 185 mil linhas do fato em dobro para obter o
+    mesmo resultado."""
+    from . import consultas
+    return {
+        "apuracao": consultas.apuracao_por_obra_mes(medida),
+        "pessoal": consultas.custo_de_pessoal_por_obra_mes(
+            config["grupo_pessoal"], medida),
+        "admin": consultas.despesa_administrativa(
+            [config["depto_admin_matriz"], config["depto_admin_filial"]], medida),
+    }
+
+
+def _apurar_com(regras, config, base) -> dict:
+    """A parte da prestacao que depende das REGRAS de rateio: quais obras
+    existem, quanto de custo administrativo cai em cada uma e o que sobra.
+
+    E exatamente o que a tela de cenarios compara. Socios, quotas e ajustes nao
+    entram aqui porque nao mudam com a regra de rateio — e porque cada um deles
+    e uma leitura a mais no banco, que seria feita duas vezes para nada."""
+    from . import prestacao
+
+    obras = prestacao.classificar_obras(base["apuracao"], config)
+    rateio = prestacao.calcular_rateio(base["admin"], base["pessoal"], obras,
+                                       regras, config)
+    return {"obras": obras, "rateio": rateio,
+            "apurado": prestacao.apurar(base["apuracao"], obras,
+                                        rateio["alocacoes"])}
+
+
+def _calcular_prestacao(medida: str, regras=None, config=None, base=None):
     """Junta a base do banco com a configuracao e roda a conta inteira.
 
     Fica aqui, e nao dentro da rota, porque a tela de resultado e a de
     configuracao precisam do mesmo calculo — e porque assim da para chamar de
-    um teste sem passar por HTTP."""
-    from . import consultas, prestacao, prestacao_dados
+    um teste sem passar por HTTP.
 
-    config = prestacao_dados.config()
-    apuracao = consultas.apuracao_por_obra_mes(medida)
-    obras = prestacao.classificar_obras(apuracao, config)
-    pessoal = consultas.custo_de_pessoal_por_obra_mes(config["grupo_pessoal"], medida)
-    admin = consultas.despesa_administrativa(
-        [config["depto_admin_matriz"], config["depto_admin_filial"]], medida)
+    `regras` e `config` existem para o CENARIO: com eles a mesma conta roda com
+    parametros que NAO estao gravados, sem tocar no banco. Sem eles, roda com o
+    que esta gravado — que e o caso de todas as outras telas."""
+    from . import prestacao, prestacao_dados
 
-    rateio = prestacao.calcular_rateio(admin, pessoal, obras,
-                                       prestacao_dados.regras(), config)
-    apurado = prestacao.apurar(apuracao, obras, rateio["alocacoes"])
+    config = config if config is not None else prestacao_dados.config()
+    regras = regras if regras is not None else prestacao_dados.regras()
+    base = base if base is not None else _base_da_prestacao(config, medida)
+
+    conta = _apurar_com(regras, config, base)
+    obras, rateio, apurado = conta["obras"], conta["rateio"], conta["apurado"]
     por_projeto = prestacao.totalizar_por_projeto(apurado)
     quotas = prestacao.quotas_por_socio(por_projeto,
                                         prestacao_dados.participacoes(), config)
@@ -621,6 +662,102 @@ def prestacao_contas():
         rateio_total=sum(calculo["rateio"]["alocacoes"].values()),
         tem_participacoes=bool(prestacao_dados.participacoes()),
     )
+
+
+def _cenario_do_pedido(regras_gravadas, args):
+    """Le da URL o que a pessoa mexeu: `pct_12=50`, `ativo_12=on`, ...
+
+    O cenario viaja na URL, e nao numa sessao no servidor, por tres motivos: o
+    servico roda com UM worker e reinicia a cada ~150 requisicoes (estado em
+    memoria nao sobrevive), o link fica compartilhavel — da para mandar o
+    cenario para o contador — e recarregar a pagina nao perde o que foi mexido.
+    """
+    from . import prestacao
+
+    mudancas = {}
+    for regra in regras_gravadas:
+        rid = str(regra["id"])
+        mudanca = {}
+        for campo in ("pct", "escopo", "mes_ini", "mes_fim"):
+            if f"{campo}_{rid}" in args:
+                mudanca[campo] = args.get(f"{campo}_{rid}")
+        # Caixa desmarcada NAO chega no formulario. Por isso a marca separada
+        # `viu_<id>`, escondida: sem ela nao daria para distinguir "desmarcou"
+        # de "nao mexeu", e desativar uma regra seria impossivel.
+        if f"viu_{rid}" in args:
+            mudanca["ativo"] = 1 if f"ativo_{rid}" in args else 0
+        if mudanca:
+            mudancas[rid] = mudanca
+    return prestacao.regras_do_cenario(regras_gravadas, mudancas)
+
+
+@bp.route("/prestacao/cenarios")
+def prestacao_cenarios():
+    """Ajustar as regras de rateio e ver o efeito ANTES de gravar."""
+    from . import consultas, graficos, prestacao, prestacao_dados
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+
+    medida = "executado" if request.args.get("medida") == "executado" else "comprometido"
+    regras_gravadas = prestacao_dados.regras()
+    regras_cenario = _cenario_do_pedido(regras_gravadas, request.args)
+
+    config_oficial = prestacao_dados.config()
+    config_cenario = dict(config_oficial)
+    # O residuo tambem faz parte do cenario: e ele que decide se o que as regras
+    # nao pegaram fica no proprio lado ou some da conta.
+    if "residual_cenario" in request.args:
+        config_cenario["residual"] = "1" if request.args.get("residual") else "0"
+
+    # UMA leitura do banco para as duas contas. O cenario so mexe no residuo e
+    # nos parametros das regras — nada que mude o QUE e lido —, entao ler duas
+    # vezes seria varrer as 185 mil linhas do fato em dobro pelo mesmo dado.
+    assert all(config_cenario[c] == config_oficial[c]
+               for c in CHAVES_QUE_MUDAM_A_LEITURA), \
+        "cenario mexeu em chave que muda a leitura: a base nao pode ser reusada"
+    base = _base_da_prestacao(config_oficial, medida)
+    oficial = _apurar_com(regras_gravadas, config_oficial, base)
+    cenario = _apurar_com(regras_cenario, config_cenario, base)
+
+    comparacao = prestacao.comparar_por_obra(oficial["apurado"], cenario["apurado"])
+    grafico = graficos.barras_agrupadas(
+        comparacao[:30], [("delta_resultado", "b-receita", "Δ Resultado")],
+        campo_rotulo="obra", classes_por_sinal=("b-receita", "b-despesa"))
+
+    return render_template(
+        "painel_prestacao_cenarios.html",
+        **_contexto_comum("prestacao"),
+        medida=medida,
+        regras_gravadas=regras_gravadas,
+        regras_cenario={str(r["id"]): r for r in regras_cenario},
+        escopos=prestacao.ESCOPOS,
+        residual_oficial=str(config_oficial.get("residual", "1")) == "1",
+        residual_cenario=str(config_cenario.get("residual", "1")) == "1",
+        resumo=prestacao.resumo_do_cenario(oficial["rateio"], cenario["rateio"]),
+        comparacao=comparacao,
+        grafico=grafico,
+        mexeu=(prestacao.cenario_difere(regras_gravadas, regras_cenario)
+               or config_cenario != config_oficial),
+    )
+
+
+@bp.route("/prestacao/cenarios/gravar", methods=["POST"])
+def prestacao_cenarios_gravar():
+    """Promove o cenario a oficial. So com a confirmacao marcada."""
+    from . import prestacao_dados
+
+    if not request.form.get("confirma"):
+        return redirect(url_for("painel.prestacao_cenarios"))
+
+    regras_gravadas = prestacao_dados.regras()
+    regras_cenario = _cenario_do_pedido(regras_gravadas, request.form)
+    prestacao_dados.salvar_parametros_das_regras(regras_cenario)
+    if "residual_cenario" in request.form:
+        prestacao_dados.salvar_config(
+            "residual", "1" if request.form.get("residual") else "0")
+    logger.info("Painel: cenario de rateio gravado como oficial (%d regras).",
+                len(regras_cenario))
+    return redirect(url_for("painel.prestacao_contas", gravado="1"))
 
 
 @bp.route("/prestacao/parametros", methods=["GET", "POST"])
@@ -694,12 +831,20 @@ def configuracoes():
     from . import migracoes_runner, tarefas
     estado_migracoes = migracoes_runner.listar_estado()
     contexto = {"aba_ativa": "config", "abas": ABAS}
+    sincronizacao = tarefas.estado()
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
     else:
         from . import consultas
-        atualizacao, vazia = consultas.atualizado_em(), consultas.base_vazia()
+        # A caixa vermelha logo abaixo ja conta, com etapa e tempo de silencio,
+        # que a atualizacao anterior morreu. Quando ela esta na tela, esta linha
+        # para de repetir interrupcao e passa a responder outra pergunta, que e
+        # a util no momento: quando a base foi atualizada de verdade pela
+        # ultima vez.
+        atualizacao = consultas.atualizado_em(
+            so_concluidas=bool(sincronizacao["interrompida"]))
+        vazia = consultas.base_vazia()
         etapas = consultas.etapas_da_carga()
     return render_template(
         "painel_config.html", **contexto,
@@ -709,7 +854,7 @@ def configuracoes():
         primeira=request.args.get("primeira") == "1",
         etapas=etapas,
         modos=tarefas.MODOS,
-        sincronizacao=tarefas.estado(),
+        sincronizacao=sincronizacao,
     )
 
 

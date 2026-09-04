@@ -76,11 +76,16 @@ def _fechar_execucoes_orfas(conn) -> int:
 
     Sem isto, uma carga interrompida ficaria "em aberto" para sempre, e a tela
     nunca mais mostraria o resultado de nenhuma atualização."""
+    # `etapa` fica preenchida DE PROPOSITO: e o que distingue, depois, uma
+    # execucao que morreu de uma que chegou ao fim sozinha (`_fechar_execucao`
+    # zera a etapa). A tela usa isso para nao contar a mesma interrupcao duas
+    # vezes — na linha "Ultima atualizacao" e na caixa vermelha logo abaixo.
     cur = conn.execute(
-        "UPDATE execucoes SET fim = now(), ok = FALSE, mensagem = ? "
+        "UPDATE execucoes SET fim = now(), ok = FALSE, mensagem = ?, "
+        "       etapa = COALESCE(etapa, ?) "
         " WHERE fim IS NULL",
         ("Interrompida: o serviço reiniciou durante a atualização. Nada foi "
-         "corrompido — é só rodar de novo.",))
+         "corrompido — é só rodar de novo.", "interrompida"))
     quantas = cur.rowcount or 0
     cur.close()
     conn.commit()

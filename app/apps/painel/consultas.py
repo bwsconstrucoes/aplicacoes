@@ -142,11 +142,20 @@ def opcoes_de_filtro() -> dict:
     return _lembrando(("opcoes_de_filtro",), calcular)
 
 
-def atualizado_em() -> dict | None:
-    """Quando a base foi atualizada pela ultima vez, e como foi."""
+def atualizado_em(so_concluidas: bool = False) -> dict | None:
+    """Quando a base foi atualizada pela ultima vez, e como foi.
+
+    Com `so_concluidas`, ignora as execucoes que MORRERAM no meio — as que o
+    faxineiro de orfas fechou, e que se reconhecem pela etapa preenchida
+    (quem chega ao fim sozinho zera a etapa). Serve para a tela de
+    Configuracoes: quando a caixa vermelha de interrupcao ja esta contando essa
+    historia, repetir a mesma coisa aqui em cima so confunde — a pergunta que
+    esta linha responde passa a ser "e quando a base foi atualizada de
+    verdade pela ultima vez?"."""
+    condicao = "fim IS NOT NULL" + (" AND etapa IS NULL" if so_concluidas else "")
     linha = consultar(
         "SELECT tipo, disparo, inicio, fim, ok, mensagem, linhas_fato "
-        "  FROM execucoes WHERE fim IS NOT NULL ORDER BY inicio DESC LIMIT 1")
+        f"  FROM execucoes WHERE {condicao} ORDER BY inicio DESC LIMIT 1")
     if not linha:
         return None
     from .horario import para_brasilia

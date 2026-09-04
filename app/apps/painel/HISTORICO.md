@@ -19,15 +19,24 @@ reais: Visão Geral, DRE, Despesas Analítico, Receita de Obra, Fluxo de Caixa,
 Resultado por Obra, Comprometido × Executado, Necessidade de Caixa e Prestação
 de Contas.
 
-**Estado em 04/09/2026:** o `painel-filtro-e-velocidade` **foi publicado** — está
-na `main` no commit de junção `a0dcfef`, e o ramo remoto já foi apagado. O que
-sobrou dele como pendência é conferência em tela, não código (ver abaixo).
+**Estado em 04/09/2026 (fim do dia):** duas levas foram publicadas — o
+`painel-filtro-e-velocidade` (junção `a0dcfef`) e o `painel-duas-datas`
+(junção `0bfa75b`, com a migração `006` aplicada pelo dono). No ramo de trabalho,
+**prontos e não publicados**: a correção da mensagem duplicada em Configurações e
+a tela nova de **Cenários de rateio**.
 
-O ramo **`painel-duas-datas`** (um commit, `7313803`) foi enviado por uma sessão
-que encerrou antes de juntar. Está **trazido para o ramo de trabalho atual** e
-**ainda não publicado**.
+Com isso, **dez telas convertidas** — falta só o PDF do DRE.
 
 ### O que está pendente AGORA
+
+**Publicar o que está no ramo de trabalho:** a correção da mensagem duplicada em
+Configurações e a tela de **Cenários de rateio**. Sem migração e sem dependência
+nova — não é preciso apertar "Aplicar atualizações do banco". Mas publicar
+reinicia o serviço, então vale a pergunta de sempre: **há carga ou sincronização
+rodando?**
+
+<details>
+<summary>O que já foi publicado nesta leva (04/09/2026)</summary>
 
 **Decidir se o `painel-duas-datas` vai ao ar.** Ele responde ao item 2 de "O que
 falta": vencimento e pagamento viram colunas próprias no Despesas Analítico, com
@@ -64,6 +73,73 @@ alguém abrir a tela publicada:
    sensação de antes. Se continuar lento com poucas consultas, o gargalo não é
    o código.
 3. as **duas datas e o atraso**, depois de refeito o fato.
+
+</details>
+
+### A leva de 04/09/2026 — as duas datas no ar, e duas pendências fechadas
+
+**As duas datas foram publicadas** (junção `0bfa75b`) e o dono aplicou a
+migração. As colunas nasceram vazias, como estava previsto, e ele teve de
+apertar "Só refazer os números" — o que o incomodou, com razão. Fica a lição:
+**entrega que exige um clique do dono para valer é entrega pela metade.**
+Migração que cria coluna derivada deveria deixar a reconstrução agendada
+sozinha. Proposto a ele e não decidido.
+
+**Quanto o painel ficou rápido: medido.** O dono leu o rodapé — **478 ms de
+tela, 8 consultas, 443 ms delas no banco**. Ou seja **93% do tempo é banco**, e
+o código gasta 35 ms. Isso encerra a dúvida que estava aqui desde 03/09: não
+adianta mexer em Python para acelerar; o que sobra está nas consultas.
+
+Medido aqui também, com banco de verdade, quantas consultas cada tela faz:
+Analítico 7, Visão Geral 7, DRE 6, Fluxo 4, Resultado por Obra 4. Dessas, no
+Analítico, **3 são a mesma pergunta trivial repetida** — o carimbo da última
+carga, que o `_lembrando` consulta a cada chamada. Dá para fazer uma vez por
+requisição. **Não foi feito**: é a consulta barata, o ganho provável são
+dezenas de milissegundos dos 443, e não valia atravessar outra entrega.
+
+**A mensagem duplicada em Configurações, corrigida.** A causa era pior que
+"texto repetido": cargas mortas acontecem em série (a causa é o serviço
+reiniciar, e toda publicação reinicia), então a linha "Última atualização" e a
+caixa vermelha mostravam a **mesma frase sobre duas execuções diferentes** —
+quem lia procurava dois problemas onde havia um. Agora, com a caixa na tela, a
+linha de cima passa a responder outra pergunta: quando a base foi atualizada de
+verdade. E parou de dizer "Nenhuma atualização feita ainda" quando houve
+atualização e ela morreu.
+
+Para isso a execução encerrada pelo faxineiro de órfãs passou a ser
+**reconhecível**: quem termina sozinho zera a `etapa`, quem morreu a mantém.
+Isso já acontecia por acaso; agora é de propósito, escrito e com teste.
+
+**Cenários de rateio: convertidos.** Era o item 5 da lista de pendências e a
+penúltima tela do Streamlit sem equivalente. A pessoa mexe em **%**, **escopo**,
+**vigência** e **liga/desliga** de cada regra, clica em Recalcular, e vê obra a
+obra o que mudaria — com os quatro números do topo (rateado e não rateado, dos
+dois lados), a tabela de diferenças e um gráfico do Δ Resultado. Nada toca o
+banco até apertar Gravar, atrás de uma confirmação.
+
+Três decisões que valem registro:
+
+- **O cenário viaja na URL, não numa sessão.** O serviço roda com um worker e
+  reinicia a cada ~150 requisições: estado de simulação em memória não
+  sobreviveria. Na URL sobrevive, e o link dá para mandar para o contador.
+- **Gravar é UPDATE por id, não DELETE + INSERT.** A tela antiga apagava todas
+  as regras e reinseria — os ids mudavam a cada gravação. E só os parâmetros são
+  gravados: grupos e categorias continuam sendo da tela de Regras, onde existe a
+  lista para escolher.
+- **Uma leitura do banco para as duas contas.** A tela roda a apuração duas
+  vezes (gravado e cenário) sobre os mesmos dados. Ler duas vezes varreria o
+  fato em dobro; a primeira versão fazia isso e custava 17 consultas por tela.
+  Agora são 8.
+
+O que **não** foi convertido do original, de propósito: **acrescentar regra
+nova** dentro do cenário. O editor antigo permitia, mas com as colunas de grupo
+e categoria desabilitadas — uma regra nascia sem saber o que pega. Criar regra
+continua sendo na tela de Regras, e a tela diz isso.
+
+**Ainda sem conferência contra a base real:** os números do cenário. A conta foi
+conferida à mão num caso montado (CASA −750, PREDIO −250, PONTE +1.000, com o
+resíduo caindo do lado certo) e há teste com banco de verdade exigindo esses
+valores — mas nenhum deles olhou a base da empresa.
 
 ### A leva de 03/09/2026 — o que o uso real mostrou
 
@@ -290,9 +366,10 @@ sai.
    baixar nada do OMIE de novo.
 3. **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
    Daria para refazer com `fpdf2`, que já está — mas é reescrever o relatório.
-4. **Mensagem duplicada** na tela de Configurações: o mesmo erro aparece na
-   linha "Última atualização" e na caixa vermelha de interrupção.
-5. **Cenários da prestação** — comparar duas configurações de rateio lado a lado.
+4. **Mensagem duplicada** na tela de Configurações. ~~Pendente~~ — **corrigida**
+   em 04/09/2026, no ramo de trabalho e ainda não publicada.
+5. **Cenários da prestação.** ~~Pendente~~ — **feito**, no ramo de trabalho e
+   ainda não publicado. Ver "A leva de 04/09/2026" acima.
 6. **Converter `app/apps/spsbd_app`** (análise de SPs) do mesmo jeito. É
    Streamlit, tem 835 MB (com um Python empacotado dentro), usa
    `streamlit-aggrid` — a parte mais difícil de portar — e traz um
