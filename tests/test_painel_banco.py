@@ -16,7 +16,9 @@ O cenário é pequeno de propósito — poucos números, todos verificáveis de 
     2025, obra CASA (projeto ALFA)
       R1  receita  1.000  RECEBIDA em 06/2025  (+ 100 retidos pelo cliente)
       D1  despesa    400  PAGA em 06/2025  (+ 20 de juros e 5 de multa PAGOS)
+                             venceu 01/06, paga 10/06 -> 9 dias de atraso
       D2  despesa    250  A PAGAR           (+ 999 de juros previstos, NAO pagos)
+                             vence 30/06, sem data de pagamento
     2025, obra PONTE (projeto BETA)
       R2  receita  2.000  A RECEBER, vence 09/2025
       D3  despesa    900  PAGA em 07/2025
@@ -53,6 +55,9 @@ def _linha(**campos):
         "razao_social": "FORNECEDOR X", "cnpj_cpf": "", "numero_documento": "",
         "pedido_compra": "", "conta_corrente": "", "observacao": "", "link": "",
         "data": dt.date(2025, 6, 10), "ano": 2025, "mes": 6,
+        # as duas datas cruas: `data` continua sendo a das telas (pagamento se
+        # quitado, senão vencimento); estas são cada uma a sua
+        "data_vencimento": dt.date(2025, 6, 10), "data_pagamento": None,
         "pago_recebido": 0, "a_pagar_receber": 0, "juros": 0, "multa": 0,
     }
     base.update(campos)
@@ -68,11 +73,16 @@ CENARIO = [
     _linha(codigo_lancamento=1, tipo=REC, situacao="Recebido",
            situacao_vencimento="Quitado", categoria="Impostos Retidos na Fonte",
            grupo="Retenções", razao_social="CLIENTE A", pago_recebido=100),
-    # juros e multa efetivamente PAGOS: despesa financeira, entra no DRE
+    # juros e multa efetivamente PAGOS: despesa financeira, entra no DRE.
+    # Venceu em 01/06 e só foi paga em 10/06 — nove dias de atraso.
     _linha(codigo_lancamento=2, situacao="Pago", situacao_vencimento="Quitado",
-           pago_recebido=-400, juros=-20, multa=-5),
-    # encargo previsto num título AINDA NÃO pago: não entra, não foi pago
-    _linha(codigo_lancamento=3, a_pagar_receber=-250, juros=-999),
+           pago_recebido=-400, juros=-20, multa=-5,
+           data_vencimento=dt.date(2025, 6, 1),
+           data_pagamento=dt.date(2025, 6, 10)),
+    # encargo previsto num título AINDA NÃO pago: não entra, não foi pago.
+    # Vence no fim do mês e não tem data de pagamento nenhuma.
+    _linha(codigo_lancamento=3, a_pagar_receber=-250, juros=-999,
+           data_vencimento=dt.date(2025, 6, 30)),
 
     # --- 2025, obra PONTE (projeto BETA) ---
     _linha(codigo_lancamento=4, tipo=REC, situacao="A Receber",
@@ -82,11 +92,15 @@ CENARIO = [
     _linha(codigo_lancamento=5, situacao="Pago", situacao_vencimento="Quitado",
            projeto="BETA", departamento="PONTE", grupo="Despesas com Pessoal",
            categoria="Salários", pago_recebido=-900,
-           data=dt.date(2025, 7, 15), mes=7),
+           data=dt.date(2025, 7, 15), mes=7,
+           data_vencimento=dt.date(2025, 7, 10),      # cinco dias de atraso
+           data_pagamento=dt.date(2025, 7, 15)),
 
     # --- 2024, obra CASA ---
     _linha(codigo_lancamento=6, situacao="Pago", situacao_vencimento="Quitado",
-           data=dt.date(2024, 3, 5), ano=2024, mes=3, pago_recebido=-100),
+           data=dt.date(2024, 3, 5), ano=2024, mes=3, pago_recebido=-100,
+           data_vencimento=dt.date(2024, 3, 10),      # paga ANTES de vencer
+           data_pagamento=dt.date(2024, 3, 5)),
 
     # --- a receber SEM data: backlog de hoje, sem ano de realização ---
     _linha(codigo_lancamento=8, tipo=REC, situacao="A Receber",
@@ -524,3 +538,62 @@ def test_as_colunas_novas_vem_preenchidas_do_banco(consultas):
     for campo in ("vencimento", "pedido", "medicao", "lancamento"):
         assert campo in linha
     assert linha["lancamento"] is not None
+
+
+# ---------------------------------------------------------------------------
+# 10. Vencimento e pagamento separados — e o atraso entre os dois
+# ---------------------------------------------------------------------------
+def test_a_faixa_filtra_pela_data_que_a_pessoa_escolheu(consultas):
+    """Junho tem duas despesas pela data das telas, mas responder "o que VENCEU
+    em junho" e "o que foi PAGO em junho" são perguntas diferentes — e antes o
+    painel não sabia responder nem uma nem outra."""
+    f = consultas.Filtros()
+    de, ate = "2025-06-01", "2025-06-30"
+
+    venceu = consultas.analitico_despesas(f, de=de, ate=ate, base="vencimento")
+    assert venceu["quantos"] == 2                 # a de 400 (01/06) e a de 250 (30/06)
+
+    pagou = consultas.analitico_despesas(f, de=de, ate=ate, base="pagamento")
+    assert pagou["quantos"] == 1                  # só a de 400; a outra não foi paga
+    assert reais(pagou["total"]) == -425.00       # 400 + 25 de juros e multa
+
+
+def test_o_atraso_sai_do_banco_em_dias(consultas):
+    """A conta é subtração de duas datas no Postgres. Se um dia ela virar texto
+    ou vier em horas, é aqui que aparece."""
+    linhas = {l["lancamento"]: l for l in
+              consultas.analitico_despesas(consultas.Filtros())["linhas"]}
+
+    assert linhas[2]["atraso"] == 9               # venceu 01/06, paga 10/06
+    assert linhas[5]["atraso"] == 5               # venceu 10/07, paga 15/07
+    assert linhas[6]["atraso"] == -5              # paga 05/03, vencia 10/03
+    assert linhas[3]["atraso"] is None            # não foi paga: não há atraso
+
+
+def test_ordenar_por_atraso_traz_o_pior_primeiro(consultas):
+    """É a pergunta que a coluna existe para responder: quem mais demorou."""
+    linhas = consultas.analitico_despesas(consultas.Filtros(), ordem="atraso")["linhas"]
+    atrasos = [l["atraso"] for l in linhas if l["atraso"] is not None]
+    assert atrasos == sorted(atrasos, reverse=True)
+    assert atrasos[0] == 9
+
+
+def test_a_tela_sabe_se_as_colunas_novas_ja_foram_preenchidas(consultas):
+    """Elas nascem vazias e quem preenche é a próxima atualização. Enquanto
+    isso a tela precisa dizer isso, em vez de mostrar traço."""
+    consultas.esquecer_listas()
+    assert consultas.duas_datas_prontas() is True
+
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET data_vencimento = NULL")
+        conn.commit()
+    consultas.esquecer_listas()
+    try:
+        assert consultas.duas_datas_prontas() is False
+    finally:
+        with conexao() as conn:
+            conn.execute("UPDATE fato SET data_vencimento = data "
+                         "WHERE situacao_vencimento <> 'Quitado'")
+            conn.commit()
+        consultas.esquecer_listas()

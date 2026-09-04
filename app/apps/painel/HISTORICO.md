@@ -19,20 +19,43 @@ reais: Visão Geral, DRE, Despesas Analítico, Receita de Obra, Fluxo de Caixa,
 Resultado por Obra, Comprometido × Executado, Necessidade de Caixa e Prestação
 de Contas.
 
-**Estado em 03/09/2026 (noite):** o DRE fiel está publicado (`6bcd006`), o
-dono usou o painel com dado real e trouxe a primeira leva de defeitos e pedidos
-de quem usa. Eles viraram o ramo **`painel-filtro-e-velocidade`**, pronto e
+**Estado em 04/09/2026:** o `painel-filtro-e-velocidade` **foi publicado** — está
+na `main` no commit de junção `a0dcfef`, e o ramo remoto já foi apagado. O que
+sobrou dele como pendência é conferência em tela, não código (ver abaixo).
+
+O ramo **`painel-duas-datas`** (um commit, `7313803`) foi enviado por uma sessão
+que encerrou antes de juntar. Está **trazido para o ramo de trabalho atual** e
 **ainda não publicado**.
 
 ### O que está pendente AGORA
 
-**Publicar o `painel-filtro-e-velocidade`.** 806 testes passando com Postgres
-de verdade, aplicação subindo com os 18 blueprints. Sem migração de banco e sem
-dependência nova, então não é preciso apertar "Aplicar atualizações do banco" —
-mas publicar reinicia o serviço, então vale a pergunta de sempre: **há carga ou
-sincronização rodando?**
+**Decidir se o `painel-duas-datas` vai ao ar.** Ele responde ao item 2 de "O que
+falta": vencimento e pagamento viram colunas próprias no Despesas Analítico, com
+o atraso em dias entre as duas, seletor de por qual data a faixa filtra, e as
+duas datas na planilha.
 
-Duas coisas continuam sem conferência contra dado real, e as duas dependem de
+O que a publicação dele exige, e que os ramos anteriores não exigiam:
+
+- **Tem migração de banco** (`006_duas_datas_no_fato.sql`). Ao juntar, apertar
+  "Aplicar atualizações do banco" **no mesmo momento**.
+- **A migração cria as colunas vazias.** Quem preenche é a próxima atualização
+  do fato — a carga da madrugada resolve sozinha; para ver no mesmo dia, é
+  Configurações › "Só refazer os números" (não baixa nada do OMIE). Enquanto
+  estiverem vazias, a tela avisa, com o caminho escrito.
+- Sem dependência nova.
+
+Verificado em 04/09/2026, com a `main` de hoje já dentro do ramo: **1140 testes
+passando com Postgres de verdade** (75 pulados, todos por decisão registrada no
+próprio teste de homologação do ERP), aplicação subindo com os 16 blueprints
+registrados, e as seis migrações do painel aplicadas do zero num banco limpo,
+uma a uma, sem erro.
+
+O que **não** foi verificado, e é o risco a dizer em voz alta: o número que sai
+na tela com a base real. As colunas novas nunca viram dado do OMIE de verdade —
+os testes provam que o vencimento vem do título e o pagamento vem do movimento,
+mas nenhum deles olha a base da empresa.
+
+Três coisas continuam sem conferência contra dado real, e as três dependem de
 alguém abrir a tela publicada:
 
 1. o **bloco de aportes** do DRE, que nunca viu a base de verdade;
@@ -40,6 +63,7 @@ alguém abrir a tela publicada:
    e quantas consultas foram — é ler o número no Analítico e comparar com a
    sensação de antes. Se continuar lento com poucas consultas, o gargalo não é
    o código.
+3. as **duas datas e o atraso**, depois de refeito o fato.
 
 ### A leva de 03/09/2026 — o que o uso real mostrou
 
@@ -256,12 +280,14 @@ sai.
    falta é abrir a tela publicada e comparar com o Streamlit. É o único pedaço
    novo que ainda não viu dado de verdade, e este módulo já mandou três erros
    de SQL para a produção.
-2. **Separar data de vencimento e data de pagamento.** Hoje são uma coluna só
-   (`fato.data`): pagamento quando quitado, vencimento quando em aberto. Foi a
-   primeira coisa que o dono não entendeu na tela. Separadas, dá para filtrar
-   por qualquer uma e medir atraso de pagamento. Exige migração e refazer o
-   fato (`so_numeros`) — não precisa baixar nada do OMIE de novo. **Proposto ao
-   dono em 03/09/2026 e não decidido.**
+2. **Separar data de vencimento e data de pagamento.** ~~Pendente~~ — **feito
+   em código**, no ramo `painel-duas-datas`, que já está no ramo de trabalho e
+   **espera a decisão do dono para ir ao ar**. A coluna `fato.data` continua
+   existindo e continua sendo a que o DRE, o fluxo de caixa e as outras sete
+   telas usam: as duas novas são acréscimo, não substituição — trocar o
+   significado de `data` mexeria em nove telas já conferidas contra o
+   Streamlit. Exige a migração `006` e refazer o fato (`so_numeros`), sem
+   baixar nada do OMIE de novo.
 3. **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
    Daria para refazer com `fpdf2`, que já está — mas é reescrever o relatório.
 4. **Mensagem duplicada** na tela de Configurações: o mesmo erro aparece na
