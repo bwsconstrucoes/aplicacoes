@@ -661,8 +661,10 @@ def validar():
                         "SENHA_VALIDACAO na Environment do Render ou na aba "
                         "Credenciais da planilha."}, 409
 
-    import hmac
-    if not hmac.compare_digest(str(dados.get("senha") or ""), esperada):
+    # `auth.confere` e não `hmac.compare_digest` direto: com texto, o
+    # compare_digest só aceita ASCII, e uma senha de validação com acento
+    # estouraria aqui em vez de ser recusada. Ver `auth.confere`.
+    if not auth.confere(dados.get("senha") or "", esperada):
         logger.warning("Análise de SPs: %s tentou validar com senha errada.",
                        auth.nome_atual() or "sem nome")
         return {"ok": False, "erro": "Senha de validação incorreta."}, 403

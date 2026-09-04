@@ -108,6 +108,21 @@ def publica(motivo: str):
 # ---------------------------------------------------------------------------
 # Senhas
 # ---------------------------------------------------------------------------
+def confere(digitada: str, esperada: str) -> bool:
+    """Compara duas senhas em tempo constante, aceitando acento.
+
+    `hmac.compare_digest` com TEXTO só aceita ASCII: uma senha com "ç" ou "ã"
+    faz a comparação ESTOURAR, e o login vira erro 500 em vez de "senha
+    incorreta" — quem digitou nunca descobre que só errou a senha. Foi um
+    defeito real, encontrado no painel em 05/09/2026 e trazido para cá no
+    mesmo dia, porque o código era o mesmo.
+
+    Comparar os BYTES resolve, sem perder o tempo constante: a comparação
+    continua não vazando, pelo relógio, quantos caracteres acertaram."""
+    return hmac.compare_digest(str(digitada or "").encode("utf-8"),
+                               str(esperada or "").encode("utf-8"))
+
+
 def senha_do_perfil(perfil: str) -> str:
     return os.getenv(VARIAVEL_SENHA[perfil], "").strip()
 
@@ -131,7 +146,7 @@ def identificar(digitada: str) -> str | None:
         esperada = senha_do_perfil(perfil)
         if not esperada:
             continue
-        if hmac.compare_digest(digitada, esperada) and achado is None:
+        if confere(digitada, esperada) and achado is None:
             achado = perfil
     if (achado and senha_do_perfil(OPERADOR)
             and senha_do_perfil(OPERADOR) == senha_do_perfil(CONSULTA)):
@@ -282,4 +297,4 @@ def segredo_de_maquina_confere(recebido: str) -> bool:
     esperado = os.getenv("ANALISESPS_SECRET", "").strip()
     if not esperado:
         return False
-    return hmac.compare_digest(str(recebido or ""), esperado)
+    return confere(recebido, esperado)

@@ -288,6 +288,42 @@ def test_o_nome_nao_da_poder_nenhum(app):
     assert resposta.status_code == 403
 
 
+def test_senha_com_acento_e_recusada_e_nao_derruba_a_tela(app):
+    """Defeito real, achado no painel em 05/09/2026 e trazido para cá no mesmo
+    dia porque o código era o mesmo.
+
+    `hmac.compare_digest` com TEXTO só aceita ASCII: uma senha com "ç" ou "ã"
+    fazia a comparação ESTOURAR, e o login virava erro 500 em vez de "senha
+    incorreta". Quem digitou nunca descobriria que só errou a senha — ia achar
+    que o sistema caiu. Vale para as três portas que comparam senha: o login,
+    o segredo do agendador e a senha de validação."""
+    with app.test_client() as cliente:
+        resposta = cliente.post("/analisesps/entrar",
+                                data={"senha": "não-é-a-senha-çãô",
+                                      "nome": "Marcelo"})
+    assert resposta.status_code == 200, "estourou em vez de recusar"
+    assert "Senha incorreta" in resposta.get_data(as_text=True)
+
+
+def test_a_senha_certa_com_acento_entra(app, monkeypatch):
+    """O outro lado: corrigir não pode ter quebrado a senha que funciona.
+    Se um dia a senha do Render tiver acento, ela precisa valer."""
+    from app.apps.analisesps import auth
+    monkeypatch.setenv(auth.VARIAVEL_SENHA[auth.OPERADOR], "operação-2026")
+    with app.test_client() as cliente:
+        resposta = cliente.post("/analisesps/entrar",
+                                data={"senha": "operação-2026",
+                                      "nome": "Marcelo"})
+    assert resposta.status_code in (301, 302), "a senha certa foi recusada"
+
+
+def test_o_segredo_do_agendador_com_acento_nao_derruba(app):
+    """A mesma comparação, na porta que a máquina usa."""
+    from app.apps.analisesps import auth
+    assert auth.confere("çãõ", "outra") is False
+    assert auth.confere("igual-çãõ", "igual-çãõ") is True
+
+
 def test_saude_responde_sem_login_e_nao_vaza_dado(app):
     """Serve para saber qual versão está no ar. Não pode contar mais que isso."""
     with app.test_client() as cliente:

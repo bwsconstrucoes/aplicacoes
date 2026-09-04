@@ -337,6 +337,23 @@ Três decisões que valem estar escritas:
 O botão **só existe na tela do Lote**. Nas Solicitações o botão vizinho é o de
 MANDAR para o lote, e os dois na mesma barra seriam a confusão pronta.
 
+### Defeito trazido do painel: senha com acento derrubava o login
+
+Em 05/09 o painel descobriu, no uso real, que `hmac.compare_digest` **com
+texto só aceita ASCII**: uma senha com "ç" ou "ã" fazia a comparação
+ESTOURAR, e o login virava erro 500 em vez de "senha incorreta". Quem digitou
+nunca descobriria que só errou a senha — concluiria que o sistema caiu.
+
+**O código daqui era o mesmo**, nas TRÊS portas que comparam senha: o login,
+o segredo do agendador e a senha de validação. Corrigido no mesmo dia:
+`auth.confere` compara os BYTES, o que aceita acento sem perder o tempo
+constante. Três testes travam isso, e foi conferido que os três falham com o
+código de antes.
+
+A lição, que vale para as outras áreas: **quando um módulo acha um defeito
+num pedaço que foi copiado, os outros têm o mesmo defeito.** Procurar leva
+minutos; descobrir em produção leva um susto.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
