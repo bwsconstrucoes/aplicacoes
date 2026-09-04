@@ -59,7 +59,7 @@
   <div class="tabela-barra">
     <span class="resumo">Do mês mais recente para o mais antigo</span>
     <span class="espaco"></span>
-    <a class="btn secundario" style="text-decoration:none" href="{{ url_for('painel.baixar', assunto='fluxo', **request.args) }}">⬇ Baixar planilha</a>
+    <a class="btn secundario" style="text-decoration:none" href="{{ link_baixar('fluxo') }}">⬇ Baixar planilha</a>
   </div>
   <div class="tabela-rolagem">
     <table>

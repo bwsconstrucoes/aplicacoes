@@ -68,10 +68,10 @@
     </span>
     <span class="espaco"></span>
     <a class="btn secundario" style="text-decoration:none"
-       href="{{ url_for('painel.baixar', assunto='completo', **request.args) }}">
+       href="{{ link_baixar('completo') }}">
       ⬇ Baixar Excel (tudo)</a>
     <a class="btn secundario" style="text-decoration:none"
-       href="{{ url_for('painel.baixar', assunto='completo', formato='pdf', **request.args) }}">
+       href="{{ link_baixar('completo', formato='pdf') }}">
       ⬇ Baixar PDF (tudo)</a>
   </div>
   <div class="tabela-rolagem" style="max-height:none">
@@ -561,7 +561,7 @@
     <p class="aviso-teto">
       Mostrando os primeiros {{ aportes.lancamentos.linhas|length }} de
       <b>{{ aportes.lancamentos.quantos }}</b> lançamentos. A lista completa sai
-      no <a href="{{ url_for('painel.baixar', assunto='aportes', **request.args) }}">Excel
+      no <a href="{{ link_baixar('aportes') }}">Excel
       de aportes</a>.
     </p>
   {% endif %}

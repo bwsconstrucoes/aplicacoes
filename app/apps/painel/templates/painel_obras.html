@@ -55,7 +55,7 @@
       {{ 'obras' if nivel == 'obra' else 'projetos' }}
     </span>
     <span class="espaco"></span>
-    <a class="btn secundario" style="text-decoration:none" href="{{ url_for('painel.baixar', assunto='obras', **request.args) }}">⬇ Baixar planilha</a>
+    <a class="btn secundario" style="text-decoration:none" href="{{ link_baixar('obras') }}">⬇ Baixar planilha</a>
   </div>
   <div class="tabela-rolagem">
     <table>

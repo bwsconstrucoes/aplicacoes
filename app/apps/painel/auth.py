@@ -19,6 +19,7 @@ from __future__ import annotations
 import os
 import hmac
 import logging
+import unicodedata
 
 from flask import redirect, request, session, url_for
 
@@ -39,12 +40,35 @@ def senha_configurada() -> str:
     return os.getenv("PAINEL_SENHA", "").strip()
 
 
+def _para_comparar(valor) -> bytes:
+    """Prepara um segredo para a comparacao em tempo constante.
+
+    DUAS COISAS ACONTECEM AQUI, e as duas custaram uma queda em producao.
+
+    1. VIRA BYTES. O `hmac.compare_digest` recusa TEXTO que tenha qualquer
+       caractere fora do ASCII — e nao devolve False: levanta TypeError. Uma
+       senha com acento (ou um "ç" digitado sem querer) derrubava a tela de
+       login com "comparing strings with non-ASCII characters is not supported"
+       em vez de dizer "senha incorreta". E se a senha CONFIGURADA tivesse
+       acento, ninguem entrava nunca. Com bytes, a funcao aceita qualquer coisa
+       e continua sendo tempo constante.
+
+    2. NORMALIZA (NFC). "ç" pode ser gravado como um caractere ou como "c" mais
+       a cedilha separada, dependendo do teclado e do sistema. Os dois parecem
+       iguais na tela e NAO sao iguais em bytes. Sem isto, a mesma senha
+       digitada no celular e no computador podia nao bater. E o que a RFC 8265
+       recomenda para senha, e nao afrouxa nada: texto identico continua
+       identico depois de normalizado."""
+    return unicodedata.normalize("NFC", str(valor or "")).encode("utf-8")
+
+
 def senha_confere(digitada: str) -> bool:
     """Compara em tempo constante. Sem senha no ambiente, nada confere."""
     esperada = senha_configurada()
     if not esperada:
         return False
-    return hmac.compare_digest(str(digitada or ""), esperada)
+    return hmac.compare_digest(_para_comparar(digitada),
+                               _para_comparar(esperada))
 
 
 def esta_logado() -> bool:
@@ -76,4 +100,6 @@ def segredo_de_maquina_confere(recebido: str) -> bool:
     esperado = os.getenv("PAINEL_SECRET", "").strip()
     if not esperado:
         return False
-    return hmac.compare_digest(str(recebido or ""), esperado)
+    # mesmo cuidado da senha: um acento aqui derrubaria a carga da madrugada
+    return hmac.compare_digest(_para_comparar(recebido),
+                               _para_comparar(esperado))
