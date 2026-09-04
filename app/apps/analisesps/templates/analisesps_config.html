@@ -104,6 +104,68 @@
   {% endif %}
 </div>
 
+{# ---------------------------------------------------------------------------
+   O BEEVALE PRECISA DE DUAS COISAS QUE VIVEM FORA DO PROGRAMA. Este cartão
+   responde "ficou salvo?" sem ninguém precisar entrar no Render — e sem
+   mostrar segredo na tela: diz se ESTÁ configurado, não o quê.
+--------------------------------------------------------------------------- #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>BeeVale — Drive e Pipefy</h3></div>
+
+  {% if not integracoes.ok %}
+    <div class="aviso atencao">
+      Não consegui conferir agora: {{ integracoes.erro }}
+      <br><small>Costuma ser internet ou a planilha de credenciais fora de
+      alcance. O resto desta tela continua valendo.</small>
+    </div>
+  {% else %}
+    <table class="sps">
+      <tbody>
+        <tr>
+          <td><b>Pasta do Google Drive</b><br>
+            <small>onde as planilhas geradas ficam guardadas
+            (<code>DRIVE_FOLDER_ID</code>)</small></td>
+          <td>
+            {% if integracoes.pasta_drive %}
+              <b>Configurada</b>
+              <br><small>termina em <code>…{{ integracoes.pasta_fim }}</code></small>
+            {% else %}
+              <b>Não configurada</b>
+              <br><small>sem ela, "Gerar BeeVale" não sai do lugar</small>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td><b>Token do Pipefy</b><br>
+            <small>para ler o CPF e o valor do card, e escrever os links de
+            volta (<code>PIPEFY_TOKEN</code>)</small></td>
+          <td>
+            {% if integracoes.pipefy %}<b>Configurado</b>
+            {% else %}<b>Não configurado</b>{% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    {% if pode_operar %}
+      <div style="margin-top:10px">
+        <button class="btn secundario" id="btn-conferir-drive"
+                title="Olha a pasta sem escrever nada nela">
+          Conferir a pasta do Drive</button>
+      </div>
+      <div id="saida-drive"></div>
+    {% endif %}
+
+    <p class="cartao-dica" style="margin-top:10px">
+      <b>A pegadinha da pasta, dita uma vez:</b> ela precisa ser de um
+      <b>Drive Compartilhado</b>, não uma pasta do "Meu Drive". A conta de
+      serviço não tem espaço próprio no Google — numa pasta comum o envio é
+      recusado por falta de cota, mesmo que a pasta esteja compartilhada com
+      ela. O botão acima diz qual das duas é a sua.
+    </p>
+  {% endif %}
+</div>
+
 <div class="cartao">
   <div class="cartao-cab"><h3>Onde ficam as coisas</h3></div>
   <p class="cartao-dica" style="margin:0">
@@ -140,6 +202,29 @@ if (botaoMigrar) botaoMigrar.addEventListener("click", async () => {
     botaoMigrar.disabled = false;
     botaoMigrar.textContent = "Aplicar atualizações do banco";
   }
+});
+
+const btnDrive = document.getElementById("btn-conferir-drive");
+if (btnDrive) btnDrive.addEventListener("click", async () => {
+  const alvo = document.getElementById("saida-drive");
+  btnDrive.disabled = true;
+  alvo.innerHTML = '<div class="aviso">Perguntando ao Google…</div>';
+  try {
+    const r = await fetch("{{ url_for('analisesps.conferir_drive') }}",
+                          {method: "POST"});
+    const d = await r.json();
+    if (!d.ok) {
+      alvo.innerHTML = '<div class="aviso erro">' + (d.erro || "não deu certo") + '</div>';
+    } else if (d.aviso) {
+      alvo.innerHTML = '<div class="aviso atencao"><b>Achei a pasta "' + d.nome +
+        '", mas ela NÃO é de um Drive Compartilhado.</b><br>' + d.aviso + '</div>';
+    } else {
+      alvo.innerHTML = '<div class="aviso bom"><b>Pasta "' + d.nome +
+        '", em Drive Compartilhado.</b> É o que o BeeVale precisa.</div>';
+    }
+  } catch (e) {
+    alvo.innerHTML = '<div class="aviso erro">Falhou: ' + e + '</div>';
+  } finally { btnDrive.disabled = false; }
 });
 
 document.querySelectorAll("button[data-modo]").forEach(b => {

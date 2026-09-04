@@ -287,12 +287,43 @@ caractere só. Por isso todo texto passa por `_texto()` antes de ir para a
 página. Um teste confere que "Solicitação" continua com cedilha e que o
 travessão vira hífen, não "?".
 
+## BeeVale — o único caminho que escreve fora daqui
+
+Tudo o mais neste módulo grava na planilha SPsBD e no banco. O BeeVale sobe
+arquivo no Google Drive e **reescreve o card no Pipefy**, e isso não tem
+desfazer. São três arquivos: `beevale.py` (as regras e os dois `.xlsx`),
+`pipefy.py` (o pouco que se lê e escreve lá) e `drive.py` (a subida).
+
+São **duas telas com riscos muito diferentes**, e vale não confundi-las:
+
+| | O que faz | Escreve fora? |
+|---|---|---|
+| **Cadastro BeeVale** | cola-se e-mails/CPFs, sai a planilha para baixar | **não** |
+| **Gerar BeeVale** | monta, sobe no Drive, escreve nos cards | **sim, sem desfazer** |
+
+A segunda tem uma tela de conferência antes: quem está pronto, quem está
+impedido e por quê, com o valor do card ao lado do valor da base — duas
+origens diferentes, e é ali que uma divergência aparece antes de virar recarga
+errada. E a ordem das operações é fixa, com teste: **Drive primeiro, Pipefy
+por último.** Se o arquivo não sobe, nenhum card é tocado.
+
+### A armadilha da pasta do Drive
+
+A conta de serviço do Google **não tem espaço de armazenamento próprio**. Ela
+grava numa pasta de **Drive Compartilhado** (Shared Drive) onde seja membro
+com permissão de gravar. Numa pasta comum do "Meu Drive" — mesmo compartilhada
+com ela como Editor — o Google recusa com `storageQuotaExceeded`, que parece
+falta de espaço e não é: o conserto é **mover a pasta para um Drive
+Compartilhado**.
+
+Configure `DRIVE_FOLDER_ID` (e `PIPEFY_TOKEN`) no Render ou na aba
+Credenciais. Em **Configurações** há um cartão que diz se os dois estão
+salvos, e um botão que confere a pasta **sem escrever nada** nela.
+
 ## O que ficou de fora, e por quê
 
-- **Cancelar SP no Pipefy** e **gerar BeeVale**. As duas conversam com o Pipefy
-  e com o Google Drive escrevendo, não lendo. São ações sem volta, e o BeeVale
-  ainda tem a pendência do Drive (erro 403 de cota da service account, que
-  precisa de um Shared Drive). Ficam para quando isso estiver resolvido.
+- **Cancelar SP no Pipefy.** O botão abre o formulário deles, como no
+  Streamlit — quem cancela é o Pipefy, não este módulo.
 - **Exportação em `.xlsx`.** Exigiria uma biblioteca nova; a regra da casa é
   não acrescentar sem combinar. O CSV cobre a necessidade prática.
 - **Enviar comprovante por e-mail.** Depende de SMTP configurado no serviço.

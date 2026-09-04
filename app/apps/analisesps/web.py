@@ -701,7 +701,7 @@ def validar():
 @bp.route("/configuracoes")
 @exige_consulta
 def configuracoes():
-    from . import consultas, migracoes_runner, tarefas
+    from . import consultas, credenciais, migracoes_runner, tarefas
     try:
         migracoes = migracoes_runner.listar_estado()
         erro_banco = None
@@ -709,15 +709,53 @@ def configuracoes():
         migracoes = {"aplicadas": [], "pendentes": []}
         erro_banco = str(e)
 
+    # O que o BeeVale precisa para funcionar. Só diz se ESTÁ CONFIGURADO —
+    # nunca mostra o valor de um segredo na tela.
+    #
+    # Dentro de um try porque ler um segredo pode ir à planilha, e ESTA tela é
+    # a que conserta o módulo quando algo quebra: ela não pode ser a próxima a
+    # cair. Foi assim que o módulo travou na estreia (03/09).
+    from . import beevale
+    try:
+        pasta = beevale.pasta_do_drive()
+        integracoes = {
+            "ok": True,
+            "pasta_drive": bool(pasta),
+            # Os últimos seis caracteres bastam para o dono reconhecer QUAL
+            # pasta ele colou, sem publicar o identificador inteiro na tela.
+            "pasta_fim": pasta[-6:] if pasta else "",
+            "pipefy": bool(credenciais.token("PIPEFY_TOKEN")),
+        }
+    except Exception as e:  # noqa: BLE001 — sem internet, a tela ainda abre
+        logger.exception("Análise de SPs: não consegui conferir as integrações")
+        integracoes = {"ok": False, "erro": str(e)}
+
     return render_template(
         "analisesps_config.html",
-        migracoes=migracoes, erro_banco=erro_banco,
+        migracoes=migracoes, erro_banco=erro_banco, integracoes=integracoes,
         base=consultas.base_carregada(),
         andamento=tarefas.estado(),
         ultima=tarefas.ultima_concluida() if not erro_banco else None,
         modos=tarefas.MODOS,
         versao=os.getenv("RENDER_GIT_COMMIT", "")[:8] or "desenvolvimento",
         pode_operar=auth.pode_operar())
+
+
+@bp.route("/api/conferir-drive", methods=["POST"])
+@exige_operador
+def conferir_drive():
+    """Olha a pasta do Drive SEM escrever nada.
+
+    Existe para o dono conferir o identificador que acabou de colar sem
+    precisar gerar um BeeVale de verdade — e para dizer, na hora, se a pasta é
+    de Drive Compartilhado, que é a pegadinha que faz a subida falhar."""
+    from . import beevale, drive
+    pasta = beevale.pasta_do_drive()
+    if not pasta:
+        return {"ok": False,
+                "erro": "Nenhuma pasta configurada. Defina DRIVE_FOLDER_ID no "
+                        "Render (ou na aba Credenciais)."}
+    return drive.conferir_pasta(pasta)
 
 
 @bp.route("/api/migrar", methods=["POST"])
@@ -1175,6 +1213,123 @@ def codigos():
                            pode_operar=auth.pode_operar(),
                            perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+# ---------------------------------------------------------------------------
+# BEEVALE — o cartão de benefício dos terceirizados
+#
+# São DUAS telas, e a diferença entre elas é o que decide o cuidado de cada uma:
+#
+#   /beevale/cadastro  cola-se a lista e sai um arquivo para baixar. Não
+#                      escreve em lugar nenhum. Errou, gera de novo.
+#   /beevale/gerar     mostra o que VAI acontecer; o botão dispara a subida no
+#                      Drive e a escrita nos cards do Pipefy. SEM DESFAZER.
+#
+# A segunda é a única coisa neste módulo que altera o Pipefy. Por isso ela é
+# POST separado do GET: recarregar a página não pode refazer a operação.
+# ---------------------------------------------------------------------------
+@bp.route("/beevale/cadastro", methods=["GET", "POST"])
+@exige_operador
+def beevale_cadastro():
+    """Cola-se e-mails ou CPFs; sai a planilha de cadastro para o portal."""
+    from . import beevale
+
+    texto = ""
+    encontrados: list = []
+    nao_achados: list = []
+    erro = None
+
+    if request.method == "POST":
+        texto = request.form.get("texto", "")
+        cpfs = beevale.extrair_cpfs(texto)
+        if not cpfs:
+            erro = ("Não achei nenhum CPF no que você colou. Vale a lista de "
+                    "e-mails que o portal do BeeVale devolve, ou os CPFs "
+                    "soltos com 11 dígitos.")
+        else:
+            try:
+                encontrados, nao_achados = beevale.buscar_por_cpf(cpfs)
+            except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+                logger.exception("Análise de SPs: falhou o cadastro BeeVale")
+                erro = str(e)
+
+    if encontrados and request.form.get("acao") == "baixar":
+        from .horario import agora
+        conteudo = beevale.cadastro_xlsx(encontrados)
+        nome = f"Cadastro_BeeVale_{agora().strftime('%d.%m.%Y_%H.%M.%S')}.xlsx"
+        return Response(
+            conteudo, mimetype=beevale.MIME_XLSX,
+            headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+    return render_template(
+        "analisesps_beevale_cadastro.html", aba="solicitacoes",
+        texto=texto, encontrados=encontrados, nao_achados=nao_achados,
+        erro=erro, origem=_origem_pedida(),
+        pasta_configurada=bool(beevale.pasta_do_drive()),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual(), pode_operar=True)
+
+
+@bp.route("/beevale/gerar")
+@exige_operador
+def beevale_gerar():
+    """A CONFERÊNCIA, antes de qualquer coisa sem volta.
+
+    Só lê: mostra o que cada card tem, o que está impedido, e se a pasta do
+    Drive está configurada. Nada acontece até o operador apertar o botão, que
+    é um POST para a rota abaixo."""
+    from . import beevale, consultas
+
+    ids = [i.strip() for i in request.args.getlist("id") if i.strip()]
+    if not ids:
+        return render_template("analisesps_erro.html",
+                               titulo="Nada selecionado",
+                               mensagem="Marque as SPs BeeVale na lista e "
+                                        "clique em \"Gerar BeeVale\"."), 400
+
+    pasta = beevale.pasta_do_drive()
+    preparado, erro = {"prontos": [], "erros": []}, None
+    if pasta:
+        try:
+            preparado = beevale.preparar(ids)
+        except Exception as e:  # noqa: BLE001 — Pipefy fora do ar, token errado…
+            logger.exception("Análise de SPs: falhou preparar o BeeVale")
+            erro = str(e)
+
+    # As SPs como a base as conhece — para o operador conferir credor e valor
+    # sem confiar só no que o Pipefy devolveu.
+    registros = {i: consultas.uma(i) for i in ids}
+
+    return render_template(
+        "analisesps_beevale_gerar.html", aba="solicitacoes", ids=ids,
+        pasta=pasta, preparado=preparado, erro=erro, registros=registros,
+        origem=_origem_pedida(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual(), pode_operar=True)
+
+
+@bp.route("/api/beevale/gerar", methods=["POST"])
+@exige_operador
+def beevale_executar():
+    """O passo SEM DESFAZER: sobe no Drive e escreve nos cards do Pipefy."""
+    from . import beevale
+
+    dados = request.get_json(silent=True) or {}
+    ids, erro = _ids_do_pedido(dados)
+    if erro:
+        return erro
+
+    try:
+        resultado = beevale.gerar(ids)
+    except beevale.ErroDoBeeVale as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou gerar o BeeVale")
+        return {"ok": False, "erro": f"Falhou: {e}"}, 500
+
+    logger.info("Análise de SPs: %s gerou BeeVale de %d SP(s).",
+                auth.nome_atual() or "sem nome", len(ids))
+    return {"ok": True, **resultado}
 
 
 # ---------------------------------------------------------------------------

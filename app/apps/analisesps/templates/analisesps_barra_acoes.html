@@ -79,6 +79,20 @@
     {% endif %}
     <button class="btn secundario" id="ba-cards" data-precisa-selecao
             title="Abre no Pipefy o card de cada SP marcada">Abrir cards</button>
+    {% if pode_operar %}
+      {# Os dois do Streamlit, com os mesmos nomes. "Gerar" só habilita quando
+         TODAS as marcadas são BeeVale — era assim lá, e é o que impede subir
+         no Drive o arquivo de uma SP que se paga por boleto. "Cadastro" não
+         depende de seleção nenhuma: é uma lista colada na mão. #}
+      <button class="btn secundario" id="ba-beevale" data-precisa-selecao
+              data-url="{{ url_for('analisesps.beevale_gerar') }}"
+              title="Monta as planilhas BeeVale das SPs marcadas">
+        Gerar BeeVale</button>
+      <a class="btn secundario"
+         href="{{ url_for('analisesps.beevale_cadastro', origem=origem) }}"
+         title="Planilha de cadastro para quem ainda não tem cartão">
+        Cadastro BeeVale</a>
+    {% endif %}
     {% if tela != 'codigos' %}
       <button class="btn secundario" id="ba-codigos" data-precisa-selecao>QR / Código</button>
     {% endif %}

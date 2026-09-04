@@ -569,6 +569,94 @@ descartável — a produção não foi tocada), e os 18 blueprints sobem. O que
 **não** foi verificado: nada disto foi exercitado no navegador com dado real —
 são mudanças de tela, e o teste confere o HTML, não o que o olho vê.
 
+### Décima terceira leva (05/09) — o BeeVale voltou
+
+O dono perguntou pelas três funções do BeeVale ("gerar a planilha, cadastro,
+e o gerar") e não as encontrou. **Estavam mesmo faltando**: na conversão do
+Streamlit elas não vieram, e o `HISTORICO` registrava isso como "não voltou"
+por causa de um erro 403 de cota no Drive. A decisão do dono foi: **criar
+tudo, e ele informa a pasta depois.**
+
+**O que voltou, com os mesmos nomes do Streamlit:**
+
+- **Cadastro BeeVale** — cola-se a lista de e-mails/CPFs que o portal
+  devolveu, e sai a planilha de cadastro para baixar. **Não escreve em lugar
+  nenhum**: lê a planilha "Dados Documentos" e devolve um arquivo. Funciona
+  hoje, sem depender de nada configurado.
+- **Gerar BeeVale** — as SPs marcadas, uma tela de **conferência** primeiro
+  (o que cada card tem, o que está impedido e por quê), e só então o botão que
+  monta as duas planilhas por card, sobe no Drive e escreve os links e a
+  Documentação Fiscal no card do Pipefy.
+
+**Três coisas foram feitas diferente do Streamlit, e cada uma tem motivo:**
+
+1. **A conferência antes.** No Streamlit o diálogo abria e o botão fazia tudo.
+   Aqui a tela lista, ANTES, quem está pronto e quem está impedido — e mostra
+   o valor do card **ao lado** do valor da base. São duas origens diferentes;
+   é aqui que uma divergência aparece antes de virar recarga errada.
+2. **A ordem é sagrada, e há teste para ela:** primeiro tudo o que pode falhar
+   sem estragar (buscar, montar, subir no Drive), e **só no fim** a escrita nos
+   cards. Se o Drive recusar, nenhum card foi tocado. Marcar o card e depois
+   descobrir que o arquivo não subiu deixaria um card dizendo "pronto" quando
+   não está — e ninguém teria como saber.
+3. **Sucesso pela metade não conta como sucesso.** Arquivo no Drive com o card
+   sem atualizar aparece como problema na tela, com os links à mão para colar
+   no card manualmente.
+
+**A resposta à pergunta "a pasta do Drive ficou salva?":** não dava para saber
+de dentro do código — é uma variável do Render/planilha de credenciais, que
+esta máquina não enxerga. Por isso **Configurações ganhou um cartão que
+responde**: diz se `DRIVE_FOLDER_ID` e `PIPEFY_TOKEN` estão configurados
+(sem mostrar o valor — só os **seis últimos caracteres** da pasta, o
+suficiente para reconhecer qual é), e um botão **"Conferir a pasta do Drive"**
+que olha a pasta **sem escrever nada** e diz o nome dela.
+
+> **A ARMADILHA DA COTA, escrita uma vez para não se perder de novo.** A conta
+> de serviço do Google **não tem espaço de armazenamento próprio**. Ela grava
+> numa pasta de **Drive Compartilhado** (Shared Drive) onde seja membro com
+> permissão de gravar. Numa pasta comum do "Meu Drive" — **mesmo
+> compartilhada com ela como Editor** — o Google recusa com
+> `storageQuotaExceeded`, cuja tradução ao pé da letra ("cota estourada") faz
+> pensar em falta de espaço e manda consertar a coisa errada. O conserto é
+> **mover a pasta para um Drive Compartilhado**. O `drive.py` traduz esse erro
+> para essa instrução, e o botão de conferir avisa antes de qualquer geração.
+>
+> Vale notar: o `email_financeiro`, neste mesmo repositório, já sobe arquivo no
+> Drive com a **mesma** conta de serviço, numa pasta que funciona. Ou seja, o
+> caminho é viável — o que falhou em 02/09 foi a pasta, não a conta.
+
+**Trava mantida do Streamlit:** "Gerar BeeVale" só habilita quando **todas** as
+SPs marcadas têm forma de pagamento BeeVale. Não é preciosismo: gerar a
+recarga de uma SP que se paga por boleto põe dinheiro no cartão de quem não
+devia receber, **e** marca o card como resolvido.
+
+**Arquivos novos:** `beevale.py` (as regras e os dois arquivos `.xlsx`),
+`pipefy.py` (o pouco que se lê e escreve lá) e `drive.py` (a subida). O
+`pipefy.py` é o **único lugar do módulo que escreve fora** da planilha SPsBD —
+está dito no alto do arquivo. Nenhuma dependência nova: o `openpyxl` já estava
+no `requirements.txt` por causa do painel, e a autenticação do Drive usa o
+`google-auth` que o gspread já traz. A credencial é a de sempre
+(`GOOGLE_CREDENTIALS_BASE64`).
+
+**O que FALTA para funcionar de verdade** (nesta ordem):
+
+1. o dono informar a pasta do Drive → `DRIVE_FOLDER_ID` no Render, **de um
+   Drive Compartilhado**;
+2. conferir que `PIPEFY_TOKEN` está no Render (Configurações diz);
+3. apertar "Conferir a pasta do Drive" e ver "em Drive Compartilhado";
+4. **gerar UMA SP primeiro**, conferir o card, e só então usar em leva.
+
+**Verificado:** os testes cobrem o layout das duas planilhas (contrato com o
+portal do BeeVale), o CPF saindo como texto (o zero da frente some se virar
+número, e o portal recusa), a descrição do card sendo preservada, os links não
+empilhando a cada geração, a ordem Drive→Pipefy, o Drive falhando sem tocar no
+card, o card sem CPF não parando os outros, e o id de card não numérico sendo
+recusado (ele entra na consulta sem aspas — texto ali seria injeção).
+
+**NÃO verificado, e é a parte que importa:** nenhum teste encosta no Drive ou
+no Pipefy de verdade — os dois são dublados. A primeira geração real **é** o
+teste. Faça com uma SP só.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
@@ -613,8 +701,11 @@ principal para uma coluna a mais, na véspera de uma publicação sem ninguém
 acordado, não vale o risco.
 
 ### O que ainda NÃO voltou
-- **Gerar BeeVale** (depende do Shared Drive — erro 403 de cota) e **cancelar
-  a SP por dentro do Pipefy** (o botão abre o formulário deles, como lá).
+- **Cancelar a SP por dentro do Pipefy** (o botão abre o formulário deles,
+  como lá).
+
+  *(O **BeeVale** saiu desta lista em 05/09 — ver a décima terceira leva. O
+  código está pronto; falta o dono informar a pasta do Drive.)*
 - **A coluna SP Fiscal na lista** (ver acima).
 - **Reenviar comprovante por e-mail** (depende de SMTP no serviço).
 

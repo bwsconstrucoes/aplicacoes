@@ -36,7 +36,8 @@
             <input type="checkbox" class="marca" value="{{ l.id }}"
                    {% if grupo is defined %}data-grupo="{{ grupo }}"{% endif %}
                    data-valor="{{ l.valor_num or 0 }}"
-                   data-card="{{ l.card_link or '' }}">
+                   data-card="{{ l.card_link or '' }}"
+                   data-forma="{{ l.forma_pagamento or '' }}">
           </td>
 
           {% for c in colunas %}

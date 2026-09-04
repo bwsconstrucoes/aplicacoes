@@ -2731,3 +2731,130 @@ def test_o_lote_e_lido_antes_de_a_resposta_comecar(app_sem_banco):
     resposta = como(app_sem_banco, SENHA_OPERADOR).get("/analisesps/lote/exportar")
     assert resposta.status_code == 500
     assert resposta.mimetype == "text/html"
+
+
+# ---------------------------------------------------------------------------
+# BeeVale — as duas telas
+# ---------------------------------------------------------------------------
+def test_o_cadastro_beevale_nao_depende_do_drive(app, monkeypatch):
+    """É o lado inofensivo: cola-se a lista e sai um arquivo. Não escreve em
+    lugar nenhum, e por isso funciona mesmo com a pasta do Drive não
+    configurada — que é o estado de hoje."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "")
+    monkeypatch.setattr(beevale, "buscar_por_cpf", lambda cpfs: (
+        [beevale.registro("Ana Silva", "1990-04-25", "5548999887766", cpfs[0])],
+        []))
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/beevale/cadastro",
+        data={"texto": "01234567890@bwsconstrucoes.com.br"})
+
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+    assert "Ana Silva" in html
+    assert "012.345.678-90" in html
+
+
+def test_o_cadastro_beevale_avisa_quem_ficou_de_fora(app, monkeypatch):
+    """Gerar o arquivo sem notar que faltou gente é o erro que só aparece no
+    portal, depois."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "buscar_por_cpf",
+                        lambda cpfs: ([], list(cpfs)))
+
+    html = como(app, SENHA_OPERADOR).post(
+        "/analisesps/beevale/cadastro",
+        data={"texto": "01234567890"}).get_data(as_text=True)
+
+    assert "não estão na planilha Dados" in html
+    assert "01234567890" in html, "quem faltou tem de aparecer pelo número"
+
+
+def test_baixar_o_cadastro_devolve_um_xlsx(app, monkeypatch):
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "buscar_por_cpf", lambda cpfs: (
+        [beevale.registro("Ana Silva", "", "", cpfs[0])], []))
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/beevale/cadastro",
+        data={"texto": "01234567890", "acao": "baixar"})
+
+    assert resposta.status_code == 200
+    assert "spreadsheetml" in resposta.headers["Content-Type"]
+    assert "Cadastro_BeeVale_" in resposta.headers["Content-Disposition"]
+    assert resposta.get_data()[:2] == b"PK"        # xlsx é um zip
+
+
+def test_gerar_beevale_sem_pasta_do_drive_avisa_e_nao_oferece_o_botao(
+        app, monkeypatch):
+    """O estado de hoje. A tela tem de dizer o que falta — e NÃO pode mostrar
+    um botão que só falharia."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "")
+    monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(i))
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/beevale/gerar?id=1").get_data(as_text=True)
+
+    assert "Falta dizer qual é a pasta do Google Drive" in html
+    assert 'id="btn-gerar"' not in html
+
+
+def test_gerar_beevale_mostra_o_que_vai_acontecer_antes_de_fazer(
+        app, monkeypatch):
+    """A tela é de CONFERÊNCIA: nada acontece até o operador apertar. É a única
+    coisa do módulo que altera o Pipefy, e não tem desfazer."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "pasta")
+    monkeypatch.setattr(beevale, "preparar", lambda ids: {
+        "prontos": [{"sp": "1", "cpf": "012.345.678-90", "nome": "Ana Silva",
+                     "valor": 850.5, "cadastro": {}, "descricao_atual": ""}],
+        "erros": [{"sp": "2", "motivo": "Campo vazio."}]})
+    monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(i))
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/beevale/gerar?id=1&id=2").get_data(as_text=True)
+
+    assert "Não tem desfazer" in html
+    assert "Ana Silva" in html
+    assert "Campo vazio." in html
+    assert 'id="btn-gerar"' in html
+
+
+def test_o_perfil_consulta_nao_gera_beevale(app):
+    """Ele sobe arquivo e reescreve card. Ver e exportar não dá esse direito."""
+    cliente = como(app, SENHA_CONSULTA)
+    for url in ("/analisesps/beevale/cadastro", "/analisesps/beevale/gerar?id=1"):
+        assert cliente.get(url).status_code == 403, url
+    assert cliente.post("/analisesps/api/beevale/gerar",
+                        json={"ids": ["1"]}).status_code == 403
+
+
+def test_a_barra_oferece_o_beevale_para_quem_opera(app):
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'id="ba-beevale"' in html
+    assert "Cadastro BeeVale" in html
+
+
+def test_a_linha_diz_a_forma_de_pagamento_para_a_trava_do_beevale(app):
+    """O botão só habilita quando TODAS as marcadas são BeeVale, e é do
+    atributo da linha que o navegador tira isso."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "data-forma=" in html
+
+
+def test_configuracoes_diz_se_a_pasta_do_drive_esta_salva(app, monkeypatch):
+    """A pergunta do dono: "ficou salvo?". A tela responde sem ninguém entrar
+    no Render — e sem mostrar o valor do segredo."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "1ycGeXKyABC123")
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/configuracoes").get_data(as_text=True)
+
+    assert "Pasta do Google Drive" in html
+    assert "…ABC123" in html
+    assert "1ycGeXKy" not in html, "o identificador inteiro não vai para a tela"
