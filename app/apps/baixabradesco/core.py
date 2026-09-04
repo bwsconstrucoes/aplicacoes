@@ -10,7 +10,7 @@ from .models import AttachmentInput, ExecutionPlan
 from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
-from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, check_fingerprint_processado, registrar_fingerprint
+from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, load_fingerprints_processados, registrar_fingerprint
 from .matcher import match_receipt
 from .omie import build_omie_plan, build_incluir_lanc_cc, build_somapay_plan, execute_omie, execute_omie_lanccc, codigo_integracao
 from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
@@ -43,12 +43,16 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
     sps_agendar = []
     base_bancos = []
     sps_omie_pendente = {}
+    fingerprints_processados: set = set()
     google_error = ''
 
     try:
         gc = get_gc()
         sps_agendar = load_spsagendar(gc)   # ~18 registros, leve
         base_bancos = load_base_bancos(gc)  # ~15 registros, leve
+        # Uma leitura só da coluna de comprovantes já baixados. É o que impede
+        # a mesma página virar baixa duas vezes.
+        fingerprints_processados = load_fingerprints_processados(gc)
         # ⚠️ Memória: baixa o range A:AK da SPsBD (todas as ~52k linhas) UMA
         # única vez e compartilha entre os dois loaders. Antes cada loader
         # fazia sua própria chamada, dobrando o pico de RAM por request.
@@ -67,6 +71,8 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
     # ── Processa cada comprovante / cada página ────────────────────────────────
     plans: List[ExecutionPlan] = []
     card_ids_para_get: List[str] = []
+    recusados: List[Dict[str, Any]] = []   # páginas que o banco não efetivou
+    duplicados: List[Dict[str, Any]] = []  # páginas que já haviam sido baixadas
 
     for att in attachments:
         pdf_bytes = load_attachment_bytes(att)
@@ -85,9 +91,29 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                 fingerprint=f'{fp_file}:{page_num}',
             )
 
-            # Ignora comprovantes de operação não realizada
+            # Comprovante que o banco não efetivou: nunca vira baixa. Fica
+            # registrado no resumo para não sumir em silêncio.
             if rec.tipo_comprovante == 'operacao_nao_realizada':
+                recusados.append({
+                    'arquivo': att.filename,
+                    'pagina': page_num,
+                    'motivo': 'O banco não efetivou a operação (comprovante recusado).',
+                })
                 continue
+
+            # Esta mesma página já virou baixa antes? Então não vira de novo.
+            # A conferência é em memória, contra a lista carregada uma vez por
+            # lote — e a página processada agora entra na lista, para que o
+            # mesmo PDF repetido dentro do próprio lote também seja barrado.
+            if rec.fingerprint and rec.fingerprint in fingerprints_processados:
+                duplicados.append({
+                    'arquivo': att.filename,
+                    'pagina': page_num,
+                    'motivo': 'Comprovante já baixado antes (consta na LogBaixaBradesco).',
+                })
+                continue
+            if rec.fingerprint:
+                fingerprints_processados.add(rec.fingerprint)
 
             # Primeiro localiza a SP/título. Só depois salva o comprovante.
             # Isso evita gerar arquivos órfãos no Dropbox quando a baixa não puder
@@ -263,8 +289,12 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             'executaveis': sum(1 for p in plans if p.pode_executar),
             'nao_localizados': sum(1 for p in plans if p.match.status == 'nao_localizado'),
             'pendentes_validacao': sum(1 for p in plans if p.match.status == 'pendente_validacao'),
+            'recusados_nao_efetivados': len(recusados),
+            'duplicados_ja_baixados': len(duplicados),
             'google_error': google_error,
         },
+        'recusados': recusados,
+        'duplicados': duplicados,
         'planos': [p.to_dict() for p in plans],
     }
 

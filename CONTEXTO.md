@@ -843,6 +843,50 @@ Quando eu pedir nova feature ou adaptação:
   inteiro, e vale a pergunta de sempre sobre carga do painel ou sincronização
   do Análise de SPs em andamento.
 
+- **2026-09-04 — O `baixabradesco` vira a quarta área com chat próprio, e ganha
+  memória escrita.** Até aqui a aplicação que dá baixa nos comprovantes
+  bancários era a única em produção sem `README.md` nem `HISTORICO.md`: tudo o
+  que se sabia dela vivia em resumos de chat, fora do repositório. Passou a ter
+  os dois, e entrou na tabela do `CLAUDE.md` (por isso o registro aqui — o
+  `CLAUDE.md` atravessa as áreas). O `§5.9` continua sendo o mapa de endpoints;
+  o `README.md` da pasta é o detalhe.
+- **2026-09-04 — Comprovante que o banco NÃO efetivou passava como pagamento
+  feito.** O leitor barrava apenas a frase exata "Operação Não Realizada". Um
+  comprovante real de 16/06/2026 dizia **"Transação Não Realizada"** (saldo
+  insuficiente, pendente de aprovação) e era lido como boleto normal: valor,
+  data, conta de débito e código de barras completos — tudo o que o casador
+  precisa para achar a SP de verdade, baixar o título no Omie e marcar a SP
+  como paga. Um pagamento que nunca saiu do banco viraria baixa.
+  **Correção:** a recusa passou a ser uma lista de frases (`FRASES_RECUSA` em
+  `baixabradesco/parser_bradesco.py`), comparada contra o texto já normalizado,
+  cobrindo "operação/transação/pagamento não realizada/efetivada/efetuada",
+  "não foi efetuada", "pendente de aprovação", "aguardando aprovação" e
+  "cancelada". A checagem passou a rodar **antes** de qualquer extração, então
+  um comprovante recusado não entrega nem valor nem código de barras. O leitor
+  do Sicredi ganhou a mesma trava. E o que era ignorado em silêncio agora
+  aparece no resumo da resposta (`recusados_nao_efetivados`), para o Make e para
+  quem investiga. Coberto por `tests/test_baixabradesco_recusa.py`, com o
+  comprovante real anonimizado como exemplo — inclusive o teste ao contrário,
+  que garante que o rodapé "Cancelamentos, Reclamações" de todo comprovante
+  Bradesco não barre um pagamento bom.
+
+- **2026-09-04 — A trava contra baixa em duplicidade estava solta, e o Sicredi
+  saiu de cena.** A impressão digital de cada página de comprovante era gravada
+  na aba `LogBaixaBradesco` e **nunca conferida**: a função existia, era
+  importada pelo `core.py` e não era chamada. Quem segurava pagamento repetido
+  era o Omie respondendo "título já pago" — proteção de terceiro. Agora a lista
+  é lida **uma vez por lote** (`load_fingerprints_processados`) e conferida em
+  memória, antes de procurar a SP; a página processada entra na lista do próprio
+  lote, cobrindo o PDF repetido dentro do mesmo pedido; o que foi barrado
+  aparece no retorno em `duplicados_ja_baixados`. **A leitura única é
+  obrigatória**: uma consulta por página recriaria o padrão que derrubou a
+  instância em julho de 2026 (§9, item 4b) — há teste segurando isso. Limite
+  aceito: a impressão digital inclui o nome do arquivo, então o mesmo PDF
+  reenviado com outro nome conta como novo; mudar invalidaria o registro
+  histórico. **Na mesma conversa o dono decidiu que a empresa não usa mais o
+  Sicredi**: o `parser_sicredi.py` continua no repositório sem ligação com o
+  fluxo, e ligar o desvio exige cobrir com teste antes.
+
 ---
 
 ## 10. Pendências conhecidas
