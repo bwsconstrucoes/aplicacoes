@@ -76,3 +76,27 @@ def gravar(pessoa: str, chave: str, valor: dict) -> None:
     except Exception:  # noqa: BLE001
         logger.exception("Análise de SPs: não consegui guardar a preferência %r",
                          chave)
+
+
+def pessoas_conhecidas() -> list[dict]:
+    """Quem já tem lote ou preferência guardados aqui.
+
+    Existe por causa de uma fragilidade real do "nome como chave": digitar
+    "Marcelo" hoje e "Marcelo Leitão" amanhã dá DUAS pessoas, e a segunda
+    encontra o lote vazio sem entender por quê. O navegador já devolve o nome
+    da última vez, o que resolve o caso comum; isto resolve o outro — o de
+    quem trocou de máquina e digitou diferente.
+
+    Não é controle de acesso: as quatro pessoas dividem a mesma senha, e a
+    separação por nome é organizacional, não uma tranca. Dito assim para
+    ninguém confundir as duas coisas."""
+    try:
+        from .db import consultar
+        linhas = consultar(
+            "SELECT pessoa, max(salvo_por), max(salvo_em) "
+            "  FROM analisesps.lote WHERE pessoa <> '' "
+            " GROUP BY pessoa ORDER BY 3 DESC LIMIT 20")
+    except Exception:  # noqa: BLE001 — banco fora, ou migração 003 por aplicar
+        logger.exception("Análise de SPs: não consegui listar quem já usou")
+        return []
+    return [{"chave": l[0], "nome": l[1] or l[0]} for l in linhas]

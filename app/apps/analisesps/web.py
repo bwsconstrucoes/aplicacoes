@@ -64,21 +64,42 @@ def entrar():
             destino = request.args.get("proximo") or ""
             # Só aceita destino interno: um "proximo" apontando para fora
             # viraria um jeito de usar o login da empresa como trampolim.
-            if destino.startswith("/analisesps"):
-                return redirect(destino)
-            return redirect(url_for("analisesps.solicitacoes"))
+            alvo = (destino if destino.startswith("/analisesps")
+                    else url_for("analisesps.solicitacoes"))
+            return _lembrar_o_nome(redirect(alvo), nome)
         else:
             erro = "Senha incorreta."
             logger.warning("Análise de SPs: tentativa de entrada com senha "
                            "errada (nome informado: %r).", nome)
 
-    return render_template("analisesps_login.html",
-                           sem_senha=not configurados, erro=erro, nome=nome)
+    # Na tela, o nome já vem preenchido com o da última vez NESTE navegador.
+    return render_template(
+        "analisesps_login.html", sem_senha=not configurados, erro=erro,
+        nome=nome or request.cookies.get(auth.COOKIE_NOME, ""))
+
+
+def _lembrar_o_nome(resposta, nome: str):
+    """Guarda o nome no navegador, para não redigitá-lo todo dia.
+
+    Só o NOME. A sessão continua morrendo quando o navegador fecha — é ela
+    que diz que alguém digitou a senha, e isso não se lembra. Quem abrir
+    amanhã vê a tela de senha com o campo do nome já preenchido, e nada mais.
+
+    `httponly` porque nenhum script da página precisa ler isto, e `samesite`
+    para o cookie não viajar em pedido vindo de outro site."""
+    resposta.set_cookie(
+        auth.COOKIE_NOME, auth.limpar_nome(nome),
+        max_age=auth.DIAS_LEMBRANDO_O_NOME * 24 * 3600,
+        httponly=True, samesite="Lax", secure=request.is_secure)
+    return resposta
 
 
 @bp.route("/sair")
 @exige_consulta
 def sair():
+    """Larga a sessão. O NOME continua lembrado neste navegador — sair é
+    encerrar o acesso, não esquecer quem você é. Quem quiser trocar de pessoa
+    apaga o campo e digita outro; é o mesmo campo."""
     auth.sair_da_sessao()
     return redirect(url_for("analisesps.entrar"))
 
@@ -153,8 +174,22 @@ def escolher_colunas():
     perfil Consulta olha."""
     from . import tabela
 
-    if request.form.get("acao") == "padrao":
+    acao = request.form.get("acao", "")
+    if acao == "padrao":
         escolhidas = []          # vazio = volta ao padrão, ver tabela.py
+    elif acao == "alternar":
+        # Mostrar/esconder UMA coluna, sem abrir a lista inteira. É o caminho
+        # da descrição, que se esconde e se mostra dez vezes por dia.
+        alvo = request.form.get("coluna", "")
+        atuais = [c.chave for c in _colunas_da_pessoa()]
+        if alvo in tabela.POR_CHAVE:
+            if alvo in atuais:
+                atuais.remove(alvo)
+            else:
+                atuais.append(alvo)
+        # Tirar a última coluna deixaria a tabela vazia; nesse caso o padrão
+        # volta, e é melhor do que uma tabela sem coluna nenhuma.
+        escolhidas = atuais
     else:
         escolhidas = [c for c in request.form.getlist("coluna")
                       if c in tabela.POR_CHAVE]
@@ -315,7 +350,8 @@ def solicitacoes():
         colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
         args=request.args, opcoes=_opcoes_dos_filtros(),
         pode_operar=auth.pode_operar(),
-        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
 
 
 # De onde a pessoa veio, e para onde "Voltar" tem de levar. Lista fechada de
@@ -379,6 +415,7 @@ def detalhe(sp_id):
 
     return render_template("analisesps_detalhe.html", aba="solicitacoes",
                            perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual(),
                            **contexto)
 
 
@@ -763,7 +800,8 @@ def relatorio():
         dimensoes=consultas.DIMENSOES,
         args=request.args, filtros=filtros, opcoes=_opcoes_dos_filtros(),
         pode_operar=auth.pode_operar(),
-        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
 
 
 # ---------------------------------------------------------------------------
@@ -834,7 +872,8 @@ def auditoria():
         dias=request.args.get("dias", 7),
         args=request.args, filtros=filtros,
         pode_operar=auth.pode_operar(),
-        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
 
 
 # ---------------------------------------------------------------------------
@@ -943,9 +982,21 @@ def tela_lote():
     if antes and not (antes.get("conteudo") or "").strip():
         antes = None
 
+    # Quem chega com o lote vazio e é nome NOVO por aqui provavelmente
+    # digitou o nome diferente da última vez — "Marcelo" ontem, "Marcelo
+    # Leitão" hoje. Sem este aviso, ele conclui que o sistema perdeu o
+    # trabalho dele.
+    outras = []
+    if not guardado["conteudo"].strip() and lote.por_pessoa():
+        conhecidas = preferencias.pessoas_conhecidas()
+        outras = [p for p in conhecidas if p["chave"] != pessoa]
+        if len(outras) == len(conhecidas) and not conhecidas:
+            outras = []
+
     return render_template(
         "analisesps_lote.html",
         aba="lote", base=base, lote=guardado, montado=montado, antes=antes,
+        outras_pessoas=outras,
         colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
         painel=painel,
         aviso=request.args.get("aviso") or None,
@@ -1021,7 +1072,8 @@ def codigos():
                            aba="lote" if origem == "lote" else "solicitacoes",
                            blocos=blocos, origem=origem,
                            pode_operar=auth.pode_operar(),
-                           perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+                           perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
 
 
 # ---------------------------------------------------------------------------
@@ -1074,7 +1126,8 @@ def ratear():
         "analisesps_ratear.html", aba="ratear",
         referencias=referencias, resultado=resultado, erro=erro,
         pode_operar=auth.pode_operar(),
-        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
 
 
 # ---------------------------------------------------------------------------
@@ -1111,7 +1164,8 @@ def tela_bradesco():
         "analisesps_bradesco.html", aba="bradesco", base=base,
         colado=colado, resultado=resultado, erro=erro, foco=foco,
         pode_operar=auth.pode_operar(),
-        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
 
 
 def _candidatas_bradesco() -> list[dict]:
@@ -1183,7 +1237,8 @@ def tela_agenda():
         anterior=anterior, seguinte=seguinte, hoje=hoje,
         dias=dias, erro=erro,
         pode_operar=auth.pode_operar(),
-        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
 
 
 # ---------------------------------------------------------------------------
@@ -1252,7 +1307,8 @@ def log():
         na_fila=(pendentes[0] if pendentes else 0),
         dias=dias, status=status, busca=busca, erro=erro,
         pode_operar=auth.pode_operar(),
-        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
 
 
 # ---------------------------------------------------------------------------

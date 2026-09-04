@@ -53,6 +53,20 @@ CHAVE_NOME = "analisesps_nome"
 # entrada de texto gigante, já que ele vai para o banco e para a tela.
 MAX_NOME = 40
 
+# O nome fica lembrado NESTE navegador, para a pessoa não redigitá-lo todo
+# dia. É um cookie separado da sessão, e de propósito:
+#
+#   - a SESSÃO morre quando o navegador fecha, e tem de continuar morrendo:
+#     é ela que diz que alguém digitou a senha;
+#   - o NOME não é segredo nem credencial. Lembrá-lo não abre nada — quem
+#     abrir o navegador continua vendo a tela de senha, com o campo do nome
+#     já preenchido.
+#
+# Guardar a senha "para facilitar" seria outra conversa, e a resposta seria
+# não. São os pagamentos da empresa.
+COOKIE_NOME = "analisesps_ultimo_nome"
+DIAS_LEMBRANDO_O_NOME = 180
+
 CONSULTA = "consulta"
 OPERADOR = "operador"
 

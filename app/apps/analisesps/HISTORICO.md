@@ -237,6 +237,47 @@ Relatório 326 ms.
   dono — e o Streamlit tinha uma grade de mês, com ◀ ▶ e o que cai em cada
   dia. Lista não responde "como está a semana que vem".
 
+### Quarta leva (05/09) — descrição, tipo de despesa e o nome lembrado
+
+- **Descrição e Tipo de Despesa entram nas colunas padrão**, nas duas telas.
+  Sobre o nome: o dono pediu "Categoria da Despesa". Na SPsBD existe **Tipo
+  de Despesa** (coluna I) e é essa a classificação que a SP carrega —
+  "Categoria de Despesa" no sentido do Omie é outra coisa e só aparece na
+  tela de Ratear, não é gravada em cada SP. O rótulo ficou o da planilha.
+- **A descrição tem tratamento próprio** (`tipo: "longo"`): letra menor,
+  cortada na largura, texto inteiro no `title`. É a única coluna que compete
+  com a tela toda.
+- **Um clique esconde e devolve a descrição**, ao lado da lista de colunas.
+  Abrir a lista inteira para mexer numa coluna só é caro demais para uma
+  coisa que se faz dez vezes por dia.
+- **As colunas são as mesmas nas duas telas** — sempre foram, porque as duas
+  leem a mesma escolha. Agora há teste travando isso.
+
+### O NOME é a chave — e o que se fez para ele não virar armadilha
+
+O dono perguntou se o nome ficava gravado, e explicou por quê: *"como vão ser
+salvas minhas informações de filtros e lote?"*. A pergunta expõe a fragilidade
+real de usar o nome como chave — digitar "Marcelo" hoje e "Marcelo Leitão"
+amanhã dá **duas pessoas**, e a segunda encontra tudo vazio.
+
+Três coisas, nesta ordem de importância:
+
+1. **O navegador lembra o nome** (cookie próprio, 180 dias). Ao voltar, o
+   campo já vem preenchido — resolve o caso comum, que é a mesma pessoa na
+   mesma máquina. **Só o nome**: a sessão continua morrendo quando o navegador
+   fecha, porque é ela que diz que alguém digitou a senha. Guardar a senha
+   "para facilitar" seria outra conversa, e a resposta seria não.
+2. **O nome fica à vista no alto da tela.** Fora da vista, um nome digitado
+   diferente daria outro lote sem ninguém notar.
+3. **Nome novo com lote vazio recebe aviso**, dizendo de quem há lote
+   guardado e que maiúscula e acento não separam, mas palavra a mais separa.
+   Sem isso a pessoa abre o Lote, vê vazio e conclui que o sistema perdeu o
+   trabalho dela.
+
+A chave normaliza maiúscula, acento e espaço sobrando. **Não é controle de
+acesso**: as quatro pessoas dividem a mesma senha, e a separação por nome é
+organizacional, não uma tranca. Dito assim para ninguém confundir as duas.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
