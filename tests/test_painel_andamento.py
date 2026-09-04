@@ -203,3 +203,94 @@ def test_texto_longo_no_andamento_e_cortado(sem_execucoes):
     andamento = consultas.execucao_em_andamento()
     assert len(andamento["etapa"]) == 200
     assert len(andamento["progresso"]) == 200
+
+
+# ---------------------------------------------------------------------------
+# 4. A mesma interrupção não é contada duas vezes
+# ---------------------------------------------------------------------------
+# A tela de Configurações tem dois lugares que falam de atualização: a linha
+# "Última atualização" e a caixa vermelha "A atualização anterior foi
+# interrompida". Quando duas cargas seguidas morrem — e morrem em série, porque
+# a causa é o serviço reiniciar — as duas mostravam a MESMA frase, sobre duas
+# execuções diferentes. Quem lia via dois erros e ia procurar dois problemas.
+def test_execucao_que_morreu_e_reconhecivel_depois_de_encerrada(sem_execucoes):
+    """Quem chega ao fim sozinho zera a etapa; quem foi encerrado pelo faxineiro
+    de órfãs deixa a etapa preenchida. É esse o sinal que distingue as duas —
+    sem ele não dá para saber, depois, se a execução terminou ou morreu."""
+    from app.apps.painel import tarefas
+    from app.apps.painel.db import conexao
+
+    morreu = _abrir()
+    tarefas._carimbar(morreu, "baixando títulos", "página 12")
+    with conexao() as conn:
+        tarefas._fechar_execucoes_orfas(conn)
+
+    concluiu = _abrir()
+    with conexao() as conn:
+        tarefas._fechar_execucao(conn, concluiu, True, "tudo certo", 10)
+
+    with conexao() as conn:
+        cur = conn.execute("SELECT id, etapa FROM execucoes ORDER BY id")
+        etapas = dict(cur.fetchall())
+        cur.close()
+    assert etapas[morreu] is not None, "a que morreu tem de guardar a etapa"
+    assert etapas[concluiu] is None, "a que terminou sozinha zera a etapa"
+
+
+def test_a_linha_de_cima_ignora_interrompida_quando_a_caixa_ja_avisa(sem_execucoes):
+    """Com `so_concluidas`, "Última atualização" volta a responder a pergunta
+    útil — quando a base foi atualizada de verdade —, em vez de repetir a
+    interrupção que a caixa vermelha já está contando."""
+    from app.apps.painel import consultas, tarefas
+    from app.apps.painel.db import conexao
+
+    # uma que deu certo, ontem
+    boa = _abrir(modo="rapida")
+    with conexao() as conn:
+        tarefas._fechar_execucao(conn, boa, True, "27 mil linhas", 27000)
+
+    # e depois uma que morreu no meio
+    morreu = _abrir(modo="rapida")
+    tarefas._carimbar(morreu, "baixando títulos", "página 12")
+    with conexao() as conn:
+        tarefas._fechar_execucoes_orfas(conn)
+
+    # sem o filtro, a linha de cima mostra a interrupção — que a caixa também
+    # vai mostrar. É a duplicidade que o dono viu.
+    assert "Interrompida" in consultas.atualizado_em()["mensagem"]
+
+    # com o filtro, ela volta a falar da última atualização que de fato terminou
+    concluida = consultas.atualizado_em(so_concluidas=True)
+    assert concluida["mensagem"] == "27 mil linhas"
+    assert concluida["ok"] is True
+
+
+def test_a_tela_de_configuracoes_conta_a_interrupcao_uma_vez_so(sem_execucoes, monkeypatch):
+    """O teste que fecha o caso: a tela inteira, montada, com uma carga morta
+    aberta e uma interrupção já encerrada antes dela."""
+    from app.apps.painel import tarefas
+    from app.apps.painel.db import conexao
+
+    antiga = _abrir(modo="rapida")
+    tarefas._carimbar(antiga, "baixando títulos", "página 3")
+    with conexao() as conn:
+        tarefas._fechar_execucoes_orfas(conn)
+
+    # a atual: aberta e sem dar sinal há muito tempo
+    atual = _abrir(modo="rapida")
+    tarefas._carimbar(atual, "refazendo os números", "bloco 4")
+    _envelhecer(atual, 120)
+
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+
+    html = cliente.get("/painel/configuracoes").get_data(as_text=True)
+    assert html.count("foi interrompida") == 1, "a interrupção aparece uma vez só"
+    assert "Interrompida: o serviço reiniciou" not in html, \
+        "a frase do faxineiro de órfãs não pode aparecer junto com a caixa"
+    assert "Nenhuma atualização feita ainda" not in html, \
+        "houve atualização — ela é que morreu; dizer que não houve é falso"

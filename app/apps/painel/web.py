@@ -694,12 +694,20 @@ def configuracoes():
     from . import migracoes_runner, tarefas
     estado_migracoes = migracoes_runner.listar_estado()
     contexto = {"aba_ativa": "config", "abas": ABAS}
+    sincronizacao = tarefas.estado()
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
     else:
         from . import consultas
-        atualizacao, vazia = consultas.atualizado_em(), consultas.base_vazia()
+        # A caixa vermelha logo abaixo ja conta, com etapa e tempo de silencio,
+        # que a atualizacao anterior morreu. Quando ela esta na tela, esta linha
+        # para de repetir interrupcao e passa a responder outra pergunta, que e
+        # a util no momento: quando a base foi atualizada de verdade pela
+        # ultima vez.
+        atualizacao = consultas.atualizado_em(
+            so_concluidas=bool(sincronizacao["interrompida"]))
+        vazia = consultas.base_vazia()
         etapas = consultas.etapas_da_carga()
     return render_template(
         "painel_config.html", **contexto,
@@ -709,7 +717,7 @@ def configuracoes():
         primeira=request.args.get("primeira") == "1",
         etapas=etapas,
         modos=tarefas.MODOS,
-        sincronizacao=tarefas.estado(),
+        sincronizacao=sincronizacao,
     )
 
 
