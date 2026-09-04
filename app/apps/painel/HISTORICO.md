@@ -79,6 +79,39 @@ alguém abrir a tela publicada:
 
 </details>
 
+### A queda de 04/09/2026 — a senha com acento
+
+O dono abriu o painel e recebeu a tela de erro com **"comparing strings with
+non-ASCII characters is not supported"**.
+
+**Causa:** o `hmac.compare_digest` do Python, usado para conferir a senha em
+tempo constante, **recusa texto com qualquer caractere fora do ASCII** — e não
+devolve `False`: levanta `TypeError`. Um "ç" ou um "ã" na senha derrubava a tela
+de login. E se a senha CONFIGURADA (`PAINEL_SENHA`) tivesse acento, **ninguém
+entrava nunca**, nem sabendo a senha.
+
+**Correção:** comparar **bytes** em vez de texto. O `compare_digest` aceita
+bytes de qualquer conteúdo e continua sendo tempo constante. Vale também para o
+`PAINEL_SECRET` — um acento ali derrubaria a carga da madrugada, e a falha
+apareceria de noite, sem ninguém olhando.
+
+Junto veio a **normalização NFC**: "ç" pode ser gravado como um caractere ou
+como "c" mais a cedilha, dependendo do teclado. Os dois são iguais na tela e
+diferentes em bytes, então a mesma senha digitada no celular e no computador
+podia não bater. É o que a RFC 8265 recomenda para senha, e não afrouxa nada:
+texto idêntico continua idêntico depois de normalizado.
+
+**Por que nenhum teste pegou:** todos os testes de login usavam
+`"segredo-de-teste"` — ASCII puro. **Cenário de teste sem o caractere que
+importa não testa o caractere que importa**, e é a segunda vez que essa mesma
+lição aparece neste arquivo (a primeira foi o `juros` zerado, em 03/09). Agora
+há cinco testes com acento, inclusive o do segredo do agendador.
+
+**O MESMO DEFEITO EXISTE NO ANÁLISE DE SPs**, em três lugares
+(`analisesps/auth.py` linhas 120 e 271, `analisesps/web.py` linha 628). Não foi
+mexido daqui — é outra área, outro chat. **Foi avisado ao dono.** O ERP não tem
+o problema: lá a comparação é entre hashes, que são sempre ASCII.
+
 ### A leva de 04/09/2026 — as duas datas no ar, e duas pendências fechadas
 
 **As duas datas foram publicadas** (junção `0bfa75b`) e o dono aplicou a

@@ -1316,3 +1316,57 @@ def test_assunto_desconhecido_em_pdf_tambem_responde_404(painel):
 
 def test_o_pdf_tambem_exige_login(painel):
     assert painel.get("/painel/baixar/completo?formato=pdf").status_code == 302
+
+
+# ---------------------------------------------------------------------------
+# A senha com acento — a queda de 04/09/2026
+# ---------------------------------------------------------------------------
+# O `hmac.compare_digest` recusa TEXTO fora do ASCII e levanta TypeError em vez
+# de devolver False. Resultado em produção: quem digitasse uma senha com acento
+# via a tela de erro do painel, e se a senha CONFIGURADA tivesse acento ninguém
+# entrava nunca. A correção compara BYTES.
+def test_senha_com_acento_nao_derruba_a_tela(painel, monkeypatch):
+    """Digitar errado tem de dar "senha incorreta", não uma tela de erro."""
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    r = painel.post("/painel/entrar", data={"senha": "seçãoçã"})
+    assert r.status_code == 401, "senha errada é 401, não 500"
+    assert "incorreta" in r.get_data(as_text=True).lower()
+
+
+def test_senha_configurada_com_acento_deixa_entrar(painel, monkeypatch):
+    """O caso grave: com acento na senha do ambiente, ninguém entrava — nem
+    quem sabia a senha."""
+    monkeypatch.setenv("PAINEL_SENHA", "Construção2026")
+    r = painel.post("/painel/entrar", data={"senha": "Construção2026"})
+    assert r.status_code == 302, "a senha certa tem de entrar"
+    assert "/painel/entrar" not in r.headers["Location"]
+
+
+def test_a_mesma_senha_digitada_de_dois_jeitos_bate(painel, monkeypatch):
+    """"ç" pode vir como um caractere ou como "c" + cedilha, dependendo do
+    teclado. Os dois parecem iguais na tela; sem normalizar, não batem."""
+    import unicodedata
+    senha = "Construção2026"
+    decomposta = unicodedata.normalize("NFD", senha)
+    assert decomposta != senha, "o teste precisa das duas formas diferentes"
+
+    monkeypatch.setenv("PAINEL_SENHA", senha)
+    r = painel.post("/painel/entrar", data={"senha": decomposta})
+    assert r.status_code == 302
+
+
+def test_senha_errada_continua_sendo_recusada(painel, monkeypatch):
+    """A correção não pode ter afrouxado nada."""
+    monkeypatch.setenv("PAINEL_SENHA", "Construção2026")
+    for chute in ("Construcao2026", "construção2026", "", "Construção2027"):
+        r = painel.post("/painel/entrar", data={"senha": chute})
+        assert r.status_code == 401, chute
+
+
+def test_o_segredo_do_agendador_tambem_aceita_acento(painel, monkeypatch):
+    """Mesma armadilha: um acento no PAINEL_SECRET derrubaria a carga da
+    madrugada — e a falha apareceria de noite, sem ninguém olhando."""
+    from app.apps.painel import auth
+    monkeypatch.setenv("PAINEL_SECRET", "segrêdo-da-máquina")
+    assert auth.segredo_de_maquina_confere("segrêdo-da-máquina") is True
+    assert auth.segredo_de_maquina_confere("outro") is False
