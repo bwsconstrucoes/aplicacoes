@@ -139,6 +139,33 @@ def salvar_regra(dados: dict, regra_id=None) -> None:
         conn.commit()
 
 
+def salvar_parametros_das_regras(regras) -> int:
+    """Grava um cenário por cima das regras oficiais — só os PARÂMETROS.
+
+    Mexe em `pct`, `escopo`, `mes_ini`, `mes_fim` e `ativo`, que é exatamente o
+    que a tela de cenários deixa alterar. Grupos e categorias não são tocados:
+    quem os escolhe é a tela de Regras, onde existe a lista para escolher.
+
+    A tela antiga fazia isto com um DELETE de todas as regras seguido de um
+    INSERT de todas — o que trocava os ids a cada gravação e perdia o vínculo de
+    qualquer coisa que apontasse para uma regra. Aqui é UPDATE por id.
+
+    Devolve quantas regras foram alteradas."""
+    if not regras:
+        return 0
+    with conexao() as conn:
+        for regra in regras:
+            conn.execute(
+                "UPDATE regras SET pct=?, escopo=?, mes_ini=?, mes_fim=?, ativo=?"
+                " WHERE id=?",
+                (float(regra.get("pct") or 0), regra.get("escopo") or "AMBAS",
+                 (regra.get("mes_ini") or "").strip(),
+                 (regra.get("mes_fim") or "").strip(),
+                 1 if int(regra.get("ativo", 1)) else 0, int(regra["id"])))
+        conn.commit()
+    return len(regras)
+
+
 def apagar_regra(regra_id: int) -> None:
     with conexao() as conn:
         conn.execute("DELETE FROM regras WHERE id = ?", (int(regra_id),))

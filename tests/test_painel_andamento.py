@@ -294,3 +294,66 @@ def test_a_tela_de_configuracoes_conta_a_interrupcao_uma_vez_so(sem_execucoes, m
         "a frase do faxineiro de órfãs não pode aparecer junto com a caixa"
     assert "Nenhuma atualização feita ainda" not in html, \
         "houve atualização — ela é que morreu; dizer que não houve é falso"
+
+
+# ---------------------------------------------------------------------------
+# 5. Gravar um cenário de rateio
+# ---------------------------------------------------------------------------
+# Precisa de banco de verdade: o que se prova é o UPDATE — que ele altera só os
+# parâmetros e que os ids sobrevivem. O dublê de sessão ignora WHERE e não veria
+# nem uma coisa nem outra.
+@pytest.fixture()
+def com_regras(sem_execucoes):
+    """Duas regras gravadas, com grupos e categorias escolhidos."""
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM regras")
+        conn.execute(
+            "INSERT INTO regras (nome, depto, todas, grupos, categorias, pct,"
+            " escopo, mes_ini, mes_fim, ativo) VALUES"
+            " ('Matriz','ADM MATRIZ',0,'[\"Despesas Administrativas\"]','[]',"
+            "  100,'AMBAS','','',1),"
+            " ('Filial','ADM FILIAL',1,'[]','[]',80,'FILIAL','2025-01','',1)")
+        conn.commit()
+    yield
+    with conexao() as conn:
+        conn.execute("DELETE FROM regras")
+        conn.commit()
+
+
+def test_gravar_o_cenario_mexe_nos_parametros_e_preserva_o_resto(com_regras):
+    """Grupos e categorias são escolhidos na tela de Regras, onde existe a lista.
+    Gravar um cenário não pode encostar neles — nem trocar os ids.
+
+    A tela antiga fazia isso com um DELETE de todas as regras seguido de um
+    INSERT de todas: os ids mudavam a cada gravação."""
+    from app.apps.painel import prestacao, prestacao_dados
+
+    antes = prestacao_dados.regras()
+    ids_antes = [r["id"] for r in antes]
+    grupos_antes = [r["grupos"] for r in antes]
+
+    cenario = prestacao.regras_do_cenario(antes, {
+        str(antes[0]["id"]): {"pct": "35", "escopo": "MATRIZ"},
+        str(antes[1]["id"]): {"ativo": 0},
+    })
+    assert prestacao_dados.salvar_parametros_das_regras(cenario) == 2
+
+    depois = prestacao_dados.regras()
+    assert [r["id"] for r in depois] == ids_antes, "os ids têm de sobreviver"
+    assert [r["grupos"] for r in depois] == grupos_antes, \
+        "grupos são da tela de Regras; o cenário não os toca"
+    assert float(depois[0]["pct"]) == 35.0
+    assert depois[0]["escopo"] == "MATRIZ"
+    assert int(depois[1]["ativo"]) == 0
+    # e a que ninguém desligou continua ligada
+    assert int(depois[0]["ativo"]) == 1
+
+
+def test_gravar_cenario_vazio_nao_apaga_regra_nenhuma(com_regras):
+    """Um POST sem regra nenhuma (formulário perdido, sessão estranha) não pode
+    virar um DELETE silencioso das regras que dividem o resultado."""
+    from app.apps.painel import prestacao_dados
+
+    assert prestacao_dados.salvar_parametros_das_regras([]) == 0
+    assert len(prestacao_dados.regras()) == 2

@@ -208,3 +208,169 @@ def test_importar_a_configuracao_do_arquivo_local(cadastro_limpo, tmp_path):
             conn.execute(f"DELETE FROM {tabela}")
         conn.execute("UPDATE config SET valor = '1.5' WHERE chave = 'taxa_adm_pct'")
         conn.commit()
+
+
+# ---------------------------------------------------------------------------
+# Cenários de rateio, de ponta a ponta
+# ---------------------------------------------------------------------------
+# O cenário base de `test_painel_banco.py` não tem departamento administrativo,
+# então não haveria o que ratear e a comparação sairia vazia sem provar nada.
+# Aqui a base é montada de propósito: duas obras da matriz, uma da filial,
+# pessoal em cada uma e despesa administrativa dos dois lados.
+DESP, REC = "2. Contas a Pagar", "1. Contas a Receber"
+
+
+def _linha_de_fato(**mudancas):
+    base = dict(codigo_lancamento=0, tipo=DESP, analise="DRE", situacao="Pago",
+                situacao_vencimento="Quitado", categoria="Serviços",
+                grupo="Obra", projeto="BWSCE", departamento="CASA",
+                razao_social="F", pago_recebido=0.0, a_pagar_receber=0.0,
+                juros=0.0, multa=0.0, data="2025-07-10", ano=2025, mes=7)
+    base.update(mudancas)
+    return base
+
+
+# pessoal: CASA 300, PREDIO 100 (matriz) e PONTE 400 (filial)
+# administrativo: matriz 2.000, filial 1.000
+BASE_COM_ADMINISTRATIVO = [
+    _linha_de_fato(codigo_lancamento=1, tipo=REC, departamento="CASA", pago_recebido=10000),
+    _linha_de_fato(codigo_lancamento=2, departamento="CASA", pago_recebido=-4000),
+    _linha_de_fato(codigo_lancamento=3, grupo="Despesas com Pessoal",
+                   departamento="CASA", pago_recebido=-300),
+    _linha_de_fato(codigo_lancamento=4, tipo=REC, departamento="PREDIO", pago_recebido=6000),
+    _linha_de_fato(codigo_lancamento=5, grupo="Despesas com Pessoal",
+                   departamento="PREDIO", pago_recebido=-100),
+    _linha_de_fato(codigo_lancamento=6, tipo=REC, projeto="BWSNE",
+                   departamento="PONTE", pago_recebido=8000),
+    _linha_de_fato(codigo_lancamento=7, projeto="BWSNE", grupo="Despesas com Pessoal",
+                   departamento="PONTE", pago_recebido=-400),
+    _linha_de_fato(codigo_lancamento=8, departamento="BWS Construções",
+                   grupo="Despesas Administrativas", categoria="Aluguéis",
+                   pago_recebido=-2000),
+    _linha_de_fato(codigo_lancamento=9, projeto="BWSNE", departamento="BWSNE",
+                   grupo="Despesas Administrativas", categoria="Aluguéis",
+                   pago_recebido=-1000),
+]
+
+
+@pytest.fixture()
+def base_para_cenario(painel_no_banco):
+    """Substitui o fato pela base com administrativo, e devolve o id da regra."""
+    from app.apps.painel import consultas, prestacao_dados
+    from app.apps.painel.db import conexao
+
+    colunas = list(BASE_COM_ADMINISTRATIVO[0].keys())
+    marcas = ",".join(["?"] * len(colunas))
+    with conexao() as conn:
+        conn.execute("TRUNCATE TABLE fato")
+        conn.executemany(
+            f"INSERT INTO fato ({', '.join(colunas)}) VALUES ({marcas})",
+            [tuple(l[c] for c in colunas) for l in BASE_COM_ADMINISTRATIVO])
+        conn.execute("DELETE FROM regras")
+        conn.execute(
+            "INSERT INTO regras (nome, depto, todas, grupos, categorias, pct,"
+            " escopo, mes_ini, mes_fim, ativo) VALUES"
+            " ('Administrativo matriz','BWS Construções',1,'[]','[]',100,"
+            "  'AMBAS','','',1)")
+        conn.commit()
+    consultas.esquecer_listas()
+    yield prestacao_dados.regras()[0]["id"]
+    with conexao() as conn:
+        conn.execute("DELETE FROM regras")
+        conn.commit()
+
+
+def _apuracao(regras):
+    """Roda a conta que a tela de cenários roda, com as regras dadas."""
+    from app.apps.painel import consultas, prestacao, prestacao_dados
+
+    config = prestacao_dados.config()
+    apuracao = consultas.apuracao_por_obra_mes("comprometido")
+    obras = prestacao.classificar_obras(apuracao, config)
+    rateio = prestacao.calcular_rateio(
+        consultas.despesa_administrativa(
+            [config["depto_admin_matriz"], config["depto_admin_filial"]]),
+        consultas.custo_de_pessoal_por_obra_mes(config["grupo_pessoal"]),
+        obras, regras, config)
+    return prestacao.apurar(apuracao, obras, rateio["alocacoes"])
+
+
+def test_estreitar_o_escopo_da_regra_muda_quem_paga_a_estrutura(base_para_cenario):
+    """A conta conferida na mão, que é o ponto do teste.
+
+    GRAVADO (escopo AMBAS): os 2.000 da matriz se dividem pelo pessoal das TRÊS
+    obras (300/100/400) — CASA −750, PREDIO −250, PONTE −1.000; e os 1.000 da
+    filial, que nenhuma regra pega, caem no resíduo do lado da filial: PONTE
+    −1.000. Total em PONTE: −2.000.
+
+    CENÁRIO (escopo MATRIZ): os mesmos 2.000 se dividem só entre as obras da
+    matriz (300/100) — CASA −1.500, PREDIO −500 — e PONTE fica só com o
+    resíduo da filial, −1.000.
+
+    Então CASA e PREDIO pioram e PONTE melhora. É exatamente a pergunta que a
+    tela existe para responder antes de gravar."""
+    from app.apps.painel import prestacao, prestacao_dados
+
+    gravadas = prestacao_dados.regras()
+    cenario = prestacao.regras_do_cenario(
+        gravadas, {str(base_para_cenario): {"escopo": "MATRIZ"}})
+
+    comparacao = prestacao.comparar_por_obra(_apuracao(gravadas),
+                                             _apuracao(cenario))
+    por_obra = {l["obra"]: l for l in comparacao}
+    assert set(por_obra) == {"CASA", "PREDIO", "PONTE"}
+
+    assert reais(por_obra["CASA"]["rateio_oficial"]) == -750.00
+    assert reais(por_obra["CASA"]["rateio_cenario"]) == -1500.00
+    assert reais(por_obra["CASA"]["delta_resultado"]) == -750.00
+
+    assert reais(por_obra["PREDIO"]["delta_resultado"]) == -250.00
+
+    assert reais(por_obra["PONTE"]["rateio_oficial"]) == -2000.00
+    assert reais(por_obra["PONTE"]["rateio_cenario"]) == -1000.00
+    assert reais(por_obra["PONTE"]["delta_resultado"]) == 1000.00
+
+    # pior primeiro: quem passa a receber mais custo aparece no topo
+    assert comparacao[0]["obra"] == "CASA"
+
+
+def test_o_cenario_nao_faz_custo_sumir(base_para_cenario):
+    """A invariante que mais importa: rateio move custo, não cria nem apaga.
+    Um cenário em que todas as obras melhoram seria dinheiro evaporando."""
+    from app.apps.painel import prestacao, prestacao_dados
+
+    gravadas = prestacao_dados.regras()
+    for mudanca in ({"escopo": "MATRIZ"}, {"pct": "40"}, {"ativo": 0}):
+        cenario = prestacao.regras_do_cenario(
+            gravadas, {str(base_para_cenario): mudanca})
+        comparacao = prestacao.comparar_por_obra(_apuracao(gravadas),
+                                                 _apuracao(cenario))
+        movido = sum(l["delta_rateio"] for l in comparacao)
+        assert abs(movido) < 0.01, f"{mudanca} fez custo aparecer ou sumir: {movido}"
+
+
+def test_a_tela_de_cenarios_desenha_a_comparacao_com_banco_de_verdade(
+        base_para_cenario, monkeypatch):
+    """A tela inteira, com o banco por trás: tabela, gráfico e botão de gravar.
+    É o teste que pega um erro de SQL — que este módulo já mandou três vezes
+    para a produção."""
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+
+    rid = base_para_cenario
+    html = cliente.get(
+        f"/painel/prestacao/cenarios?viu_{rid}=1&ativo_{rid}=on"
+        f"&pct_{rid}=100&escopo_{rid}=MATRIZ").get_data(as_text=True)
+
+    assert "Δ Resultado" in html, "a tabela de comparação apareceu"
+    assert "CASA" in html and "PONTE" in html
+    # o gráfico colore pelo sinal: há obra que piora e obra que melhora
+    assert 'class="b-despesa"' in html and 'class="b-receita"' in html
+    assert "Gravar cenário como oficial" in html
+    # e nada foi gravado só por abrir a tela
+    from app.apps.painel import prestacao_dados
+    assert prestacao_dados.regras()[0]["escopo"] == "AMBAS"
