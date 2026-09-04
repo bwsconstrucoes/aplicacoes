@@ -1,0 +1,168 @@
+# BaixaBradesco — decisões, incidentes e o que falta
+
+Este arquivo existe para uma sessão nova (ou uma pessoa nova) pegar o trabalho
+sem repetir o que já foi discutido e sem repetir o que já deu errado.
+
+O `README.md` ao lado explica **como a aplicação é**. Este aqui explica **por que
+ela é assim**, e o que aconteceu no caminho. Leia os dois antes de mexer.
+
+---
+
+## Onde o trabalho está
+
+A baixa de comprovantes era um cenário do Make.com montado peça por peça. Virou
+esta aplicação, dentro do monorepo, em `/api/baixabradesco`. O Make continua
+existindo: ele recebe o e-mail com o comprovante e chama a rota. Toda a decisão
+— de quem é o comprovante, quanto foi pago, o que atualizar — passou para cá.
+
+Está em produção e funcionando: Pix, boleto, transferência, FGTS, folha pela
+Somapay e vale-alimentação BeeVale. Foi construída em sessões no Claude.ai, sem
+memória entre elas, o que explica por que só agora ela ganhou documentação.
+
+**Estado em 04/09/2026:** área sem documentação própria e **sem nenhum teste
+automatizado**. Esta sessão começou por aí — primeiro escrever o que a aplicação
+faz, depois cobrir com teste as três peças onde um erro custa dinheiro sem dar
+sinal: os dois leitores de comprovante e o casador de pagamentos.
+
+### O que está pendente AGORA
+
+**Nada foi publicado por esta sessão até aqui.** O que existe é documentação
+(este arquivo, o `README.md`, a linha nova no `CLAUDE.md` e o registro no
+`CONTEXTO.md`), em ramo próprio, aguardando o "pode" do dono.
+
+Em seguida vêm os testes automatizados dos leitores e do casador. Para escrever
+os casos de verdade são necessários **comprovantes de exemplo** — e antes de
+qualquer um entrar no Git, número de conta, CNPJ, CPF e nome viram fictícios,
+mantendo o formato do texto.
+
+### Duas coisas achadas na leitura do código, que o dono precisa decidir
+
+Nenhuma foi mexida. Estão aqui porque mudam dinheiro:
+
+1. **O leitor do Sicredi nunca é chamado.** O `parser_sicredi.py` está escrito e
+   completo, mas o `core.py` manda toda página para o leitor do Bradesco. Ou
+   seja: comprovante do Sicredi hoje é lido com as regras do Bradesco. Ele pode
+   até casar por valor e conta, mas os campos próprios do Sicredi (o número da
+   SP em "Descrição do Pagamento", o "Valor Pago (R$)") não são procurados.
+2. **A trava contra pagar duas vezes só grava, não confere.** Existe a aba
+   `LogBaixaBradesco` e existe a função que pergunta "esta página já foi
+   processada?" — ela é importada pelo `core.py` e **nunca é chamada**. O
+   registro é gravado depois da baixa; a consulta antes da baixa não acontece.
+   Na prática, quem segura o pagamento repetido hoje é o Omie, que responde
+   "título já PAGO" e faz o robô parar. É uma proteção de terceiro, não nossa.
+A terceira era pior e **já foi corrigida nesta sessão** — está descrita no
+incidente de 04/09/2026, mais abaixo.
+
+## Decisões já tomadas (e por quê)
+
+- **Cada página do PDF é um comprovante.** O banco emite vários numa folha só.
+- **`modo_teste` é o padrão.** A aplicação só escreve se o Make mandar
+  `modo_teste: false`. Um pedido malformado não vira baixa indevida.
+- **O comprovante só vai para o Dropbox depois de casar com uma SP.** Antes,
+  todo comprovante virava arquivo, inclusive os que ninguém sabia de quem eram.
+- **O Omie é sempre alterado antes de baixar**, mesmo que pareça desnecessário.
+  Garante que o título fique com o valor real do comprovante, e não com o que
+  alguém digitou.
+- **Duas candidatas sem desempate = não executa.** Vale mais um comprovante
+  parado para conferência do que uma baixa no título errado.
+- **O número que parece SP mas começa com `000201` é ignorado.** É o início do
+  QR Code do Pix, e já foi confundido com número de SP.
+- **Na folha Somapay, a semântica dos campos de transferência do Omie está
+  invertida em relação ao que o nome sugere** — foi validado em produção assim.
+  Está comentado no código: não "consertar".
+- **Cota do Google estourada não é erro para o Make.** O pedido é guardado em
+  disco e a resposta é "recebido, adiado"; um cron externo reprocessa a cada 5
+  minutos. A alternativa era o cenário do Make quebrar no meio de um lote.
+- **A fila em `/tmp` some quando o serviço reinicia.** Aceito: o Make pode
+  reenviar. Publicar uma versão nova reinicia o serviço, então publicar durante
+  um lote grande perde o que estava adiado.
+
+## Incidentes
+
+- **Julho de 2026 — a instância morria de falta de memória**, e esta aplicação
+  era o pico residual. Três causas aqui dentro: a planilha de 52 mil linhas era
+  baixada duas vezes por pedido; a gravação na SPsBD lia a planilha **inteira**
+  só para achar uma linha, e fazia isso numa thread por comprovante (um lote de
+  dez comprovantes disparava dez downloads simultâneos da planilha); e o
+  download do comprovante por endereço não tinha teto. Corrigido: leitura única
+  e compartilhada, gravação por busca só das colunas de filtro, e teto de 50 MB
+  no download. **A regra que fica: nunca voltar a ler a planilha inteira.**
+  Registro completo no `CONTEXTO.md` §9.
+- **Regressões por remendo sobre versão velha.** Já se perderam, e foi preciso
+  reescrever, o pulo do valor zerado, as funções de registro de duplicata e uma
+  das estratégias de casamento — todas por editar um arquivo local desatualizado
+  em relação ao que estava publicado. **Antes de editar, conferir se o arquivo
+  tem os marcadores esperados.**
+- **`Agendado` contra `agendado` custou dias de investigação.** Todo status
+  vindo de planilha é comparado normalizado.
+- **Cota do Google (erro 429) derrubando módulos vizinhos.** A conta de serviço
+  é uma só para todo o monorepo: quando esta aplicação consome a janela do
+  minuto, os outros módulos param junto. Existe uma nova tentativa automática
+  com esperas de 30 e 65 segundos (a cota é por minuto, esperar 1 segundo é
+  inútil). Por isso o tempo limite dos módulos HTTP no Make deve ser 300
+  segundos.
+
+- **04/09/2026 — comprovante que o banco não efetivou passava como pagamento
+  feito.** O leitor barrava só a frase exata "Operação Não Realizada". Um
+  comprovante real de 16/06/2026 dizia **"Transação Não Realizada"** — boleto
+  recusado por saldo insuficiente, pendente de aprovação — e era lido como um
+  boleto comum: valor, data, conta de débito e código de barras completos.
+  Com isso o casador acharia a SP de verdade pelo código de barras, o Omie
+  baixaria o título e a planilha marcaria a SP como paga. Dinheiro que nunca
+  saiu do banco, registrado como pago.
+  **Como ficou:** a recusa virou uma lista de frases, comparada contra o texto
+  já sem acento e em minúsculas, cobrindo as redações que o banco usa
+  ("operação/transação/pagamento não realizada/efetivada/efetuada", "não foi
+  efetuada", "pendente de aprovação", "aguardando aprovação", "cancelada"). A
+  checagem passou a acontecer **antes** de extrair qualquer campo, então um
+  comprovante recusado nem chega ao casador com valor ou código de barras. O
+  leitor do Sicredi ganhou a mesma trava. E o que antes era ignorado em silêncio
+  passou a aparecer no resumo da resposta, em `recusados_nao_efetivados`.
+  **O que ficou de fora, de propósito:** palavras soltas como "cancelado" ou
+  "agendado" não entraram na lista. O rodapé de todo comprovante Bradesco tem
+  "Cancelamentos, Reclamações" — uma palavra solta barraria pagamento bom. Há um
+  teste justamente para segurar isso. Se aparecer alguma redação de recusa que
+  não está na lista, é só acrescentar a frase.
+
+## O que ficou de fora, e é bom saber
+
+- **Comprovante sem número de SP e sem casamento fica parado** como
+  "pendente de validação". Não há tratamento automático além das tentativas
+  descritas no `README.md`; alguém precisa olhar.
+- **WhatsApp está implementado mas normalmente desligado** nos testes.
+- **Não existe tela.** Só chamadas de máquina.
+- **A senha da rota é opcional no código**: se `BAIXABRADESCO_SECRET` estiver
+  vazia no Render, qualquer um que descubra o endereço consegue chamar.
+- **A migração do Z-API para o gateway de WhatsApp próprio** está prevista no
+  `CONTEXTO.md` §10 e ainda não foi feita aqui.
+
+---
+
+## Registro por sessão
+
+### 04/09/2026 — a área ganha memória escrita
+
+Primeira sessão dedicada a esta área. O código foi lido inteiro e virou
+`README.md` (o que a aplicação faz, quem chama, de onde vêm os dados, variáveis
+de ambiente, planilhas e serviços) e este histórico, consolidando o resumo das
+sessões anteriores do Claude.ai. A área entrou na tabela do `CLAUDE.md`, e essa
+mudança — que atravessa todas as áreas — ficou registrada no `CONTEXTO.md`.
+
+Na leitura apareceram três divergências entre a documentação antiga e o código
+de verdade: o leitor do Sicredi que nunca é chamado, a trava de duplicidade que
+grava mas não confere, e a checagem estreita de comprovante recusado. As duas
+primeiras estão descritas acima, aguardando decisão do dono.
+
+A terceira foi corrigida no mesmo dia, depois que o dono mandou um comprovante
+de "Transação Não Realizada" e disse que esse tipo não pode passar — detalhe no
+incidente acima. Junto veio o primeiro teste automatizado da área
+(`tests/test_baixabradesco_recusa.py`, 14 casos), com o comprovante real
+guardado como exemplo em `tests/exemplos_baixabradesco/`, com conta, CNPJ,
+nomes e código de barras trocados por fictícios.
+
+**Verificado:** suíte inteira do repositório passando (789 testes, os de banco
+pulados por falta de `ERP_TEST_DATABASE_URL` neste ambiente) e a aplicação
+subindo com todos os blueprints.
+**Não verificado:** nenhum comprovante recusado passou pelo caminho completo em
+produção depois da correção — a primeira vez que o Make mandar um, vale conferir
+no retorno o campo `recusados_nao_efetivados`.

@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 from .models import ExtractedReceipt
 from .utils import normalize_text, only_digits, money_to_decimal, decimal_to_br, clean_account, as_string
+from .parser_bradesco import receipt_recusado
 
 
 def is_sicredi(text: str) -> bool:
@@ -21,6 +22,13 @@ def parse_sicredi_text(filename: str, page: int, text: str,
         drive_link=drive_link, fingerprint=fingerprint,
     )
     norm = normalize_text(text)
+
+    # Mesma trava do leitor do Bradesco: comprovante que o banco não efetivou
+    # não pode virar baixa. Barrado antes de extrair qualquer campo.
+    if receipt_recusado(norm):
+        r.tipo_comprovante = 'operacao_nao_realizada'
+        r.pendencias.append('Comprovante recusado: o banco não efetivou a operação.')
+        return r
 
     r.id_pipefy        = extract_id_pipefy(text)
     r.valor_pago       = extract_valor_pago(text)

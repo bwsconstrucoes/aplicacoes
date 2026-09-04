@@ -67,6 +67,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
     # ── Processa cada comprovante / cada página ────────────────────────────────
     plans: List[ExecutionPlan] = []
     card_ids_para_get: List[str] = []
+    recusados: List[Dict[str, Any]] = []   # páginas que o banco não efetivou
 
     for att in attachments:
         pdf_bytes = load_attachment_bytes(att)
@@ -85,8 +86,14 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                 fingerprint=f'{fp_file}:{page_num}',
             )
 
-            # Ignora comprovantes de operação não realizada
+            # Comprovante que o banco não efetivou: nunca vira baixa. Fica
+            # registrado no resumo para não sumir em silêncio.
             if rec.tipo_comprovante == 'operacao_nao_realizada':
+                recusados.append({
+                    'arquivo': att.filename,
+                    'pagina': page_num,
+                    'motivo': 'O banco não efetivou a operação (comprovante recusado).',
+                })
                 continue
 
             # Primeiro localiza a SP/título. Só depois salva o comprovante.
@@ -263,8 +270,10 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             'executaveis': sum(1 for p in plans if p.pode_executar),
             'nao_localizados': sum(1 for p in plans if p.match.status == 'nao_localizado'),
             'pendentes_validacao': sum(1 for p in plans if p.match.status == 'pendente_validacao'),
+            'recusados_nao_efetivados': len(recusados),
             'google_error': google_error,
         },
+        'recusados': recusados,
         'planos': [p.to_dict() for p in plans],
     }
 
