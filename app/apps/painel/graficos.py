@@ -94,12 +94,17 @@ def _passo_de_rotulo(itens, largura_util: float, campo_rotulo: str) -> int:
     return max(-(-len(itens) // cabem), 1)            # divisao para cima
 
 
-def barras_agrupadas(itens, campos, campo_rotulo="ano", campo_linha=None) -> dict:
+def barras_agrupadas(itens, campos, campo_rotulo="ano", campo_linha=None,
+                    classes_por_sinal=None) -> dict:
     """Monta um gráfico de barras lado a lado, com uma linha por cima.
 
     `itens`  — lista de dicionários, um por período.
     `campos` — [(chave, classe_css, nome_na_legenda), ...] das barras.
     `campo_linha` — chave opcional desenhada como linha (o resultado, o acumulado).
+    `classes_por_sinal` — (classe_positivo, classe_negativo) opcional. Quando
+        dado, a cor da barra sai do SINAL do valor e não do campo. Serve para
+        gráfico de diferença, em que o que importa é para que lado ela foi —
+        e não qual série é.
 
     Devolve tudo pronto para o template: retângulos, pontos e a régua.
     """
@@ -134,6 +139,8 @@ def barras_agrupadas(itens, campos, campo_rotulo="ano", campo_linha=None) -> dic
                               "texto": str(item.get(campo_rotulo, ""))})
         for j, (chave, classe, _nome) in enumerate(campos):
             valor = float(item.get(chave) or 0)
+            if classes_por_sinal:
+                classe = classes_por_sinal[0] if valor >= 0 else classes_por_sinal[1]
             y_valor = eixo["y"](valor)
             topo = min(y_valor, eixo["y_zero"])
             altura = abs(y_valor - eixo["y_zero"])

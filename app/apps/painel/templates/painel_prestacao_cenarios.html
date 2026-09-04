@@ -1,0 +1,212 @@
+{% extends "painel_base.html" %}
+{% import "painel_grafico.html" as gr %}
+{% block titulo %}Cenários de rateio — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Cenários de rateio
+  <small>mexa nas regras e veja o efeito antes de gravar</small>
+</h2>
+
+<p class="dica" style="margin-top:-6px">
+  Aqui nada é gravado enquanto você não mandar. Altere a <b>porcentagem</b>, o
+  <b>escopo</b>, a <b>vigência</b> ou desligue uma regra, clique em
+  <b>Recalcular</b>, e a tela mostra obra a obra o que mudaria em relação ao que
+  está gravado hoje.<br>
+  <b>Quais grupos e categorias</b> cada regra pega continua sendo mexido em
+  <a href="{{ url_for('painel.prestacao_parametros', aba='regras') }}">Parâmetros e regras</a>,
+  onde existe a lista para escolher.
+</p>
+
+<form method="get">
+  <input type="hidden" name="medida" value="{{ medida }}">
+  {# Sem esta marca não dá para distinguir "desmarcou a regra" de "não mexeu":
+     caixa desmarcada simplesmente não é enviada pelo navegador. #}
+  <input type="hidden" name="residual_cenario" value="1">
+
+  <div class="tabela-wrap" style="margin-bottom:14px">
+    <div class="tabela-barra">
+      <span class="resumo">
+        <b>{{ regras_gravadas | length }}</b> regra{{ '' if regras_gravadas | length == 1 else 's' }} de rateio
+      </span>
+      <span class="espaco"></span>
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px">
+        <input type="checkbox" name="residual" {% if residual_cenario %}checked{% endif %}>
+        Aplicar resíduo <small>(o que as regras não pegam fica 100% no próprio lado)</small>
+      </label>
+    </div>
+
+    {% if not regras_gravadas %}
+      <div class="vazio"><b>Nenhuma regra de rateio cadastrada.</b>
+        Sem regra não há o que simular —
+        <a href="{{ url_for('painel.prestacao_parametros', aba='regras') }}">cadastre uma</a>.
+      </div>
+    {% else %}
+    <div class="tabela-rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem">Regra</th>
+            <th class="sem-ordem">Pega</th>
+            <th class="sem-ordem direita">% rateado</th>
+            <th class="sem-ordem">Escopo</th>
+            <th class="sem-ordem">De (AAAA-MM)</th>
+            <th class="sem-ordem">Até (AAAA-MM)</th>
+            <th class="sem-ordem">Ativa</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for r in regras_gravadas %}
+          {% set c = regras_cenario[r.id | string] %}
+          <tr>
+            <td class="desc">{{ r.nome }}<small>{{ r.depto }}</small>
+              <input type="hidden" name="viu_{{ r.id }}" value="1"></td>
+            <td class="desc"><small>{{ r.resumo }}</small></td>
+            <td class="direita">
+              <input name="pct_{{ r.id }}" type="number" step="0.5" min="0" max="100"
+                     value="{{ '%.1f' | format(c.pct | float) }}" style="width:88px; text-align:right">
+            </td>
+            <td>
+              <select name="escopo_{{ r.id }}">
+                {% for e in escopos %}
+                  <option value="{{ e }}" {% if c.escopo == e %}selected{% endif %}>{{ e | capitalize }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><input name="mes_ini_{{ r.id }}" value="{{ c.mes_ini or '' }}"
+                       placeholder="—" style="width:96px"></td>
+            <td><input name="mes_fim_{{ r.id }}" value="{{ c.mes_fim or '' }}"
+                       placeholder="—" style="width:96px"></td>
+            <td><input type="checkbox" name="ativo_{{ r.id }}"
+                       {% if c.ativo | int %}checked{% endif %}></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="tabela-barra">
+      <button class="btn">Recalcular</button>
+      <a class="btn secundario" style="text-decoration:none"
+         href="{{ url_for('painel.prestacao_cenarios', medida=medida) }}">↩ Voltar ao que está gravado</a>
+      <span class="espaco"></span>
+      <a class="btn secundario" style="text-decoration:none"
+         href="{{ url_for('painel.prestacao_contas', medida=medida) }}">Prestação de Contas</a>
+    </div>
+    {% endif %}
+  </div>
+</form>
+
+{% if regras_gravadas %}
+<!-- ===================== OS QUATRO NÚMEROS ===================== -->
+<div class="kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Rateado — gravado</div>
+    <div class="kpi-valor">{{ brl(resumo.rateado_oficial) }}</div>
+    <div class="kpi-sub">o que as regras de hoje distribuem</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Rateado — cenário</div>
+    <div class="kpi-valor">{{ brl(resumo.rateado_cenario) }}</div>
+    <div class="kpi-sub {{ classe_valor(resumo.delta_rateado) }}">{{ brl(resumo.delta_rateado) }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Não rateado — gravado</div>
+    <div class="kpi-valor">{{ brl(resumo.sobra_oficial) }}</div>
+    <div class="kpi-sub">custo que ficou sem dono</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Não rateado — cenário</div>
+    <div class="kpi-valor">{{ brl(resumo.sobra_cenario) }}</div>
+    {# sobra que cresce e piora: por isso o sinal invertido na cor #}
+    <div class="kpi-sub {{ classe_valor(-resumo.delta_sobra) }}">{{ brl(resumo.delta_sobra) }}</div>
+  </div>
+</div>
+<p class="dica" style="margin-top:-6px">
+  <b>Não rateado</b> é custo da empresa que ficou sem dono — quase sempre por
+  falta de mês ou por não haver obra com pessoal no período. Um cenário que
+  rateia mais só porque empurrou valor para cá não melhorou nada.
+</p>
+
+<!-- ===================== EFEITO POR OBRA ===================== -->
+{% if not mexeu %}
+  <div class="aviso info">
+    <b>Nada alterado ainda.</b> Mexa numa regra acima e clique em Recalcular
+    para ver o efeito.
+  </div>
+{% elif not comparacao %}
+  <div class="aviso info">
+    <b>O cenário dá exatamente o mesmo resultado que o gravado.</b>
+    Nenhuma obra muda de valor com essas alterações.
+  </div>
+{% else %}
+  <div class="tabela-wrap" style="margin-bottom:14px">
+    <div class="tabela-barra">
+      <span class="resumo">
+        <b>Δ = cenário − gravado.</b> Δ Resultado <b>negativo</b> significa que a
+        obra passa a receber <b>mais</b> custo administrativo — e portanto piora.
+        Obra que não muda não aparece.
+      </span>
+    </div>
+    <div class="tabela-rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem">Obra</th>
+            <th class="sem-ordem direita">Rateio gravado</th>
+            <th class="sem-ordem direita">Rateio cenário</th>
+            <th class="sem-ordem direita">Δ Rateio</th>
+            <th class="sem-ordem direita">Resultado gravado</th>
+            <th class="sem-ordem direita">Resultado cenário</th>
+            <th class="sem-ordem direita">Δ Resultado</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for l in comparacao %}
+          <tr>
+            <td class="desc">{{ l.obra }}</td>
+            <td class="direita dados">{{ brl(l.rateio_oficial) }}</td>
+            <td class="direita dados">{{ brl(l.rateio_cenario) }}</td>
+            <td class="direita dados {{ classe_valor(-l.delta_rateio) }}">{{ brl(l.delta_rateio) }}</td>
+            <td class="direita dados">{{ brl(l.resultado_oficial) }}</td>
+            <td class="direita dados">{{ brl(l.resultado_cenario) }}</td>
+            <td class="direita dados {{ classe_valor(l.delta_resultado) }}">{{ brl(l.delta_resultado) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="cartao" style="margin-bottom:14px">
+    <div class="cartao-cab">
+      <h3>Δ Resultado por obra</h3>
+      <small>verde melhora, vermelho piora — as 30 maiores diferenças</small>
+    </div>
+    {{ gr.grafico(grafico) }}
+  </div>
+
+  <!-- ===================== GRAVAR ===================== -->
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Gravar este cenário</h3>
+      <small>substitui os parâmetros das regras oficiais</small>
+    </div>
+    <form method="post" action="{{ url_for('painel.prestacao_cenarios_gravar') }}">
+      {% for chave, valores in request.args.lists() %}
+        {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
+      {% endfor %}
+      <label style="display:flex; align-items:center; gap:8px; font-size:13.5px">
+        <input type="checkbox" name="confirma" value="1">
+        Entendo que gravar substitui a <b>porcentagem, o escopo, a vigência e o
+        estado</b> das regras oficiais — e o resíduo — pelos deste cenário.
+      </label>
+      <p class="dica">
+        Grupos e categorias de cada regra <b>não</b> são tocados. Depois de
+        gravar, a Prestação de Contas passa a usar estes números.
+      </p>
+      <button class="btn amarelo">Gravar cenário como oficial</button>
+    </form>
+  </div>
+{% endif %}
+{% endif %}
+{% endblock %}

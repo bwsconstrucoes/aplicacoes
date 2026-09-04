@@ -67,6 +67,10 @@
       <small>(hora de Brasília)</small>
       — {{ atualizacao.mensagem }}
     </div>
+  {% elif sincronizacao.interrompida %}
+    {# Nada aqui de proposito: a caixa vermelha logo abaixo ja conta o que
+       houve, com a etapa e o tempo de silencio. Dizer "nenhuma atualizacao
+       feita ainda" seria falso — houve, e foi ela que morreu. #}
   {% elif not migracoes.pendentes %}
     <div class="aviso info">Nenhuma atualização feita ainda.</div>
   {% endif %}

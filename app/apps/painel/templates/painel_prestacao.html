@@ -7,6 +7,13 @@
   <small>quanto do resultado cabe a cada sócio</small>
 </h2>
 
+{% if request.args.get('gravado') %}
+<div class="aviso ok">
+  <b>Cenário gravado.</b> As regras oficiais passaram a usar os parâmetros que
+  você simulou, e os números abaixo já são os novos.
+</div>
+{% endif %}
+
 {% if not tem_participacoes %}
 <div class="aviso erro">
   <b>Nenhuma participação cadastrada.</b>
@@ -29,6 +36,8 @@
     </select>
   </div>
   <div class="espaco"></div>
+  <a class="btn secundario" href="{{ url_for('painel.prestacao_cenarios', medida=medida) }}"
+     style="text-decoration:none; align-self:flex-end">Cenários de rateio</a>
   <a class="btn secundario" href="{{ url_for('painel.prestacao_parametros') }}"
      style="text-decoration:none; align-self:flex-end">Parâmetros e regras</a>
 </form>

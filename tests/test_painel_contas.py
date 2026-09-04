@@ -386,3 +386,158 @@ def test_a_virada_do_dia_e_respeitada():
     from app.apps.painel import horario
     meia_noite = dt.datetime(2026, 9, 3, 1, 0, tzinfo=dt.timezone.utc)
     assert horario.texto(meia_noite) == "02/09/2026 às 22:00"
+
+
+# ===========================================================================
+# 6. Cenários de rateio — ajustar e comparar antes de gravar
+# ===========================================================================
+# Mudar uma regra de rateio muda quanto de custo cai em cada obra e, por
+# consequência, quanto cabe a cada sócio. O cenário existe para ver isso ANTES
+# de gravar. O que se prova aqui:
+#   - a alteração fica em memória: as regras gravadas não são tocadas;
+#   - a comparação só mostra obra que mudou, e Δ negativo é obra que piorou;
+#   - o total continua fechando: rateio move custo, o cenário não cria nem apaga;
+#   - valor absurdo digitado é preso no limite, não vira erro na cara de quem
+#     está simulando.
+REGRA_BASE = {
+    "id": 7, "nome": "Administrativo matriz", "depto": "ADM MATRIZ",
+    "todas": 1, "grupos": "[]", "categorias": "[]", "pct": 100.0,
+    "escopo": "AMBAS", "mes_ini": "", "mes_fim": "", "ativo": 1,
+}
+
+
+def _cenario(mudanca):
+    return prestacao.regras_do_cenario([dict(REGRA_BASE)], {"7": mudanca})
+
+
+def test_o_cenario_nao_toca_nas_regras_gravadas():
+    """A promessa da tela é "nada é gravado enquanto você não mandar". Se o
+    cálculo alterasse a lista recebida, a tela de Regras passaria a mostrar o
+    cenário como se fosse o oficial."""
+    gravadas = [dict(REGRA_BASE)]
+    prestacao.regras_do_cenario(gravadas, {"7": {"pct": "40", "ativo": 0}})
+    assert gravadas[0]["pct"] == 100.0
+    assert gravadas[0]["ativo"] == 1
+
+
+def test_regra_que_ninguem_mexeu_passa_inteira():
+    """Um cenário que altera uma regra não pode alterar as outras trinta."""
+    outra = dict(REGRA_BASE, id=8, nome="Filial", pct=55.0)
+    saida = prestacao.regras_do_cenario([dict(REGRA_BASE), outra],
+                                        {"7": {"pct": "40"}})
+    assert saida[0]["pct"] == 40.0
+    assert saida[1]["pct"] == 55.0
+
+
+def test_porcentagem_absurda_e_presa_no_limite():
+    """Quem está simulando digita rápido. 500% vira 100, e -30 vira 0 — a tela
+    antiga fazia igual. Recusar com erro atrapalharia mais do que ajuda."""
+    assert _cenario({"pct": "500"})[0]["pct"] == 100.0
+    assert _cenario({"pct": "-30"})[0]["pct"] == 0.0
+    # vírgula decimal, que é como se digita em português
+    assert _cenario({"pct": "12,5"})[0]["pct"] == 12.5
+    # texto sem sentido não derruba a tela: fica como estava
+    assert _cenario({"pct": "abc"})[0]["pct"] == 100.0
+
+
+def test_escopo_desconhecido_cai_em_ambas():
+    assert _cenario({"escopo": "matriz"})[0]["escopo"] == "MATRIZ"
+    assert _cenario({"escopo": "inventado"})[0]["escopo"] == "AMBAS"
+
+
+def test_desligar_a_regra_no_cenario_para_de_ratear():
+    """Regra desligada não pega nada — e, sem resíduo, o custo administrativo
+    deixa de ser distribuído."""
+    obras = _obras()
+    config_sem_residuo = dict(CONFIG, residual="0")
+    ligada = prestacao.calcular_rateio(ADMIN, PESSOAL, obras,
+                                       [dict(REGRA_BASE)], config_sem_residuo)
+    desligada = prestacao.calcular_rateio(ADMIN, PESSOAL, obras,
+                                          _cenario({"ativo": 0}), config_sem_residuo)
+    assert sum(ligada["alocacoes"].values()) != 0
+    assert sum(desligada["alocacoes"].values()) == 0
+
+
+def test_a_comparacao_mostra_so_a_obra_que_mudou():
+    """Numa lista de cem obras, mostrar as noventa que continuam iguais esconde
+    as dez que interessam."""
+    obras = _obras()
+    oficial = prestacao.calcular_rateio(ADMIN, PESSOAL, obras,
+                                        [dict(REGRA_BASE)], CONFIG)
+    # só a matriz: PONTE (filial) deixa de receber desta regra
+    cenario = prestacao.calcular_rateio(ADMIN, PESSOAL, obras,
+                                        _cenario({"escopo": "MATRIZ"}), CONFIG)
+    comparacao = prestacao.comparar_por_obra(
+        prestacao.apurar(APURACAO, obras, oficial["alocacoes"]),
+        prestacao.apurar(APURACAO, obras, cenario["alocacoes"]))
+
+    mudaram = {l["obra"] for l in comparacao}
+    assert "PONTE" in mudaram
+    for linha in comparacao:
+        assert abs(linha["delta_resultado"]) > prestacao.LIMITE_DE_RUIDO
+
+
+def test_delta_negativo_e_a_obra_que_passa_a_receber_mais_custo():
+    """É contraintuitivo o bastante para estar escrito na tela — e para ter
+    teste: mais rateio significa resultado MENOR, e o Δ tem de sair negativo.
+    Se o sinal invertesse, a tela mostraria em verde a obra que piorou."""
+    obras = _obras()
+    sem_rateio = prestacao.apurar(APURACAO, obras, {})
+    com_rateio = prestacao.apurar(
+        APURACAO, obras,
+        prestacao.calcular_rateio(ADMIN, PESSOAL, obras,
+                                  [dict(REGRA_BASE)], CONFIG)["alocacoes"])
+
+    comparacao = prestacao.comparar_por_obra(sem_rateio, com_rateio)
+    assert comparacao, "o rateio muda alguma coisa"
+    for linha in comparacao:
+        # o rateio é custo (negativo): quem recebe mais, piora
+        assert linha["delta_rateio"] < 0
+        assert linha["delta_resultado"] < 0
+    # a pior obra vem primeiro
+    assert comparacao[0]["delta_resultado"] == min(
+        l["delta_resultado"] for l in comparacao)
+
+
+def test_o_cenario_move_custo_mas_nao_cria_nem_apaga():
+    """A invariante que vale para o rateio vale para o cenário: o que sai do
+    administrativo chega nas obras ou aparece como sobra. Um cenário que
+    "melhora" tudo só porque perdeu dinheiro no caminho seria um erro caro."""
+    obras = _obras()
+    total_admin = sum(l["valor"] for l in ADMIN)
+    for mudanca in ({"pct": "40"}, {"escopo": "MATRIZ"}, {"ativo": 0}):
+        rateio = prestacao.calcular_rateio(ADMIN, PESSOAL, obras,
+                                           _cenario(mudanca), CONFIG)
+        distribuido = sum(rateio["alocacoes"].values())
+        sobrou = sum(s["valor"] for s in rateio["sobras"])
+        assert abs((distribuido + sobrou) - total_admin) < 0.01, mudanca
+
+
+def test_o_resumo_conta_o_rateado_e_o_que_sobrou_dos_dois_lados():
+    """A sobra importa tanto quanto o rateio: um cenário que rateia menos
+    porque empurrou valor para a sobra não melhorou nada, e a tela precisa
+    deixar isso visível."""
+    obras = _obras()
+    oficial = prestacao.calcular_rateio(ADMIN, PESSOAL, obras,
+                                        [dict(REGRA_BASE)], CONFIG)
+    cenario = prestacao.calcular_rateio(ADMIN, PESSOAL, obras,
+                                        _cenario({"pct": "50"}), CONFIG)
+    resumo = prestacao.resumo_do_cenario(oficial, cenario)
+    assert resumo["delta_rateado"] == pytest.approx(
+        resumo["rateado_cenario"] - resumo["rateado_oficial"])
+    assert resumo["delta_sobra"] == pytest.approx(
+        resumo["sobra_cenario"] - resumo["sobra_oficial"])
+
+
+def test_sem_mexer_em_nada_a_tela_nao_diz_que_mexeu():
+    """O formulário devolve TODOS os campos a cada Recalcular, inclusive os que
+    ninguém tocou — e o banco devolve `pct` como número enquanto o formulário
+    devolve texto. Comparar os dicionários direto acusaria alteração sempre."""
+    gravadas = [dict(REGRA_BASE)]
+    igual = prestacao.regras_do_cenario(
+        gravadas, {"7": {"pct": "100.0", "escopo": "AMBAS",
+                         "mes_ini": "", "mes_fim": "", "ativo": "on"}})
+    assert not prestacao.cenario_difere(gravadas, igual)
+
+    diferente = prestacao.regras_do_cenario(gravadas, {"7": {"pct": "99"}})
+    assert prestacao.cenario_difere(gravadas, diferente)

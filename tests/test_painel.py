@@ -776,6 +776,7 @@ def test_assunto_de_planilha_desconhecido_responde_404(painel):
 def test_as_telas_novas_tambem_exigem_login(painel):
     for caminho in ("/painel/receita", "/painel/necessidade-caixa",
                     "/painel/prestacao", "/painel/prestacao/parametros",
+                    "/painel/prestacao/cenarios",
                     "/painel/baixar/dre"):
         assert painel.get(caminho).status_code == 302, caminho
 
@@ -1178,3 +1179,93 @@ def test_a_planilha_do_analitico_leva_as_duas_datas(painel):
     cabecalho = [c.value for c in next(aba.iter_rows(max_row=1))]
     for coluna in ("Vencimento", "Pagamento", "Atraso (dias)"):
         assert coluna in cabecalho
+
+
+# ---------------------------------------------------------------------------
+# Cenários de rateio: a tela que simula sem gravar
+# ---------------------------------------------------------------------------
+REGRAS_FALSAS = [{
+    "id": 7, "nome": "Administrativo matriz", "depto": "ADM MATRIZ",
+    "todas": 1, "grupos": "[]", "categorias": "[]", "pct": 100.0,
+    "escopo": "AMBAS", "mes_ini": "", "mes_fim": "", "ativo": 1,
+    "resumo": "todas as despesas",
+}]
+
+
+@pytest.fixture()
+def painel_com_regra(painel, monkeypatch):
+    """O painel do teste normalmente não tem regra nenhuma. Aqui tem uma, que é
+    o que a tela de cenários precisa para ter o que simular."""
+    from app.apps.painel import prestacao_dados
+    monkeypatch.setattr(prestacao_dados, "regras",
+                        lambda *a, **k: [dict(r) for r in REGRAS_FALSAS])
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    return painel
+
+
+def test_a_tela_de_cenarios_abre_e_mostra_a_regra(painel_com_regra):
+    html = painel_com_regra.get("/painel/prestacao/cenarios").get_data(as_text=True)
+    assert "Administrativo matriz" in html
+    assert 'name="pct_7"' in html
+    assert "Nada alterado ainda" in html, "sem mexer, a tela diz que nada mudou"
+
+
+def test_sem_regra_nenhuma_a_tela_avisa_em_vez_de_quebrar(painel):
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/prestacao/cenarios")
+    assert r.status_code == 200
+    assert "Nenhuma regra de rateio cadastrada" in r.get_data(as_text=True)
+
+
+def test_o_cenario_viaja_na_url_e_sobrevive_a_recarregar(painel_com_regra):
+    """O serviço roda com um worker e reinicia a cada ~150 requisições: estado
+    de simulação em memória não sobreviveria. Na URL, sobrevive — e o link
+    ainda dá para mandar para outra pessoa."""
+    html = painel_com_regra.get(
+        "/painel/prestacao/cenarios?pct_7=40&viu_7=1&ativo_7=on").get_data(as_text=True)
+    assert 'value="40.0"' in html, "o valor simulado volta preenchido na tela"
+    assert "Nada alterado ainda" not in html
+
+
+def test_a_tela_de_cenarios_nao_grava_nada_sozinha(painel_com_regra, monkeypatch):
+    """A promessa da tela. Abrir e simular não pode encostar no banco."""
+    from app.apps.painel import prestacao_dados
+
+    def _proibido(*a, **k):
+        raise AssertionError("a tela de cenários gravou sem ninguém mandar")
+
+    monkeypatch.setattr(prestacao_dados, "salvar_parametros_das_regras", _proibido)
+    monkeypatch.setattr(prestacao_dados, "salvar_config", _proibido)
+    assert painel_com_regra.get(
+        "/painel/prestacao/cenarios?pct_7=10&viu_7=1").status_code == 200
+
+
+def test_gravar_sem_confirmar_nao_grava(painel_com_regra, monkeypatch):
+    """A caixa de confirmação não é enfeite: gravar troca as regras que
+    dividem o resultado entre os sócios."""
+    from app.apps.painel import prestacao_dados
+    gravou = []
+    monkeypatch.setattr(prestacao_dados, "salvar_parametros_das_regras",
+                        lambda regras: gravou.append(regras))
+
+    r = painel_com_regra.post("/painel/prestacao/cenarios/gravar",
+                              data={"pct_7": "40", "viu_7": "1"})
+    assert r.status_code == 302
+    assert not gravou, "sem a confirmação marcada, nada pode ser gravado"
+
+
+def test_gravar_com_confirmacao_leva_os_parametros_simulados(painel_com_regra, monkeypatch):
+    from app.apps.painel import prestacao_dados
+    gravou = []
+    monkeypatch.setattr(prestacao_dados, "salvar_parametros_das_regras",
+                        lambda regras: gravou.append(regras))
+
+    r = painel_com_regra.post(
+        "/painel/prestacao/cenarios/gravar",
+        data={"confirma": "1", "pct_7": "40", "escopo_7": "MATRIZ", "viu_7": "1"})
+    assert r.status_code == 302
+    assert "/painel/prestacao" in r.headers["Location"]
+    assert len(gravou) == 1
+    assert gravou[0][0]["pct"] == 40.0
+    assert gravou[0][0]["escopo"] == "MATRIZ"
+    assert gravou[0][0]["ativo"] == 0, "caixa não enviada = regra desligada"
