@@ -14,10 +14,21 @@
 <div class="cartao">
   <div class="cartao-cab">
     <h3>Estrutura do banco</h3>
-    <small>{{ migracoes.aplicadas|length }} aplicada(s), {{ migracoes.pendentes|length }} pendente(s)</small>
+    <small>
+      {%- if erro_banco -%}não deu para saber
+      {%- else -%}{{ migracoes.aplicadas|length }} aplicada(s), {{ migracoes.pendentes|length }} pendente(s)
+      {%- endif -%}
+    </small>
   </div>
 
-  {% if migracoes.pendentes %}
+  {% if erro_banco %}
+    <div class="aviso atencao">
+      <b>Não dá para saber como está a estrutura</b> enquanto o banco não
+      responder. Isso <u>não</u> quer dizer que ela esteja em dia: quer dizer
+      que a pergunta não chegou a ser feita. Resolva o acesso ao banco (o
+      recado acima diz o que ele respondeu) e recarregue esta página.
+    </div>
+  {% elif migracoes.pendentes %}
     <div class="aviso atencao">
       <b>Há atualização de banco pendente.</b> Enquanto ela não for aplicada,
       as telas podem falhar. Aplique agora:
@@ -47,7 +58,8 @@
   <div class="cartao-cab">
     <h3>A base</h3>
     <small>
-      {% if base.pronta %}
+      {% if base.desconhecida %}não deu para saber
+      {% elif base.pronta %}
         {{ '{:,}'.format(base.quantidade)|replace(',', '.') }} SPs
       {% else %}vazia{% endif %}
     </small>

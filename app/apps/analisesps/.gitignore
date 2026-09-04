@@ -1,21 +1,15 @@
-# --- Só-local / Windows: NÃO sobe pro Render ---
-runtime/
-data/
-secrets/
-*.bat
+# O que sobrou aqui roda no Render, e só. O Streamlit do PC, seus atalhos .bat
+# e a base local de 60 MB saíram desta pasta em 03/09/2026 — as regras que os
+# escondiam saíram junto.
 
 # --- Dados e segredos ---
 *.db
 *.sqlite
 credenciais.json
 service_account.json
-.update_hash
 
 # --- Python ---
 __pycache__/
 *.pyc
 .venv/
 venv/
-
-# Streamlit (cofre nativo — nunca versionar)
-.streamlit/secrets.toml

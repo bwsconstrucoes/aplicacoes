@@ -321,6 +321,92 @@ def test_carga_interrompida_aparece_como_interrompida(app, monkeypatch):
     assert "retoma de onde parou" in html
 
 
+def test_configuracoes_monta_com_o_banco_de_pe_e_as_migracoes_por_aplicar(
+        monkeypatch):
+    """O estado de estreia do módulo: banco respondendo, migrações ainda não
+    aplicadas.
+
+    Este é o caso REAL que quebrou na primeira vez que o dono abriu o módulo
+    no ar, e é o pior lugar possível para quebrar: a tela de Configurações é
+    a ÚNICA com o botão que aplica as migrações. Estourando ela, não havia
+    como sair do estado — a tela que conserta era a tela quebrada.
+
+    Passou por toda a suíte porque os outros testes daqui ou derrubam o banco
+    inteiro (e aí a leitura da última execução nem é tentada), ou dublam
+    `ultima_concluida`. Nenhum exercitava o meio-termo: `listar_estado()`
+    funciona — ela mesma cria o schema e a tabela de controle —, mas
+    `analisesps.execucoes` ainda não existe."""
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", SENHA_OPERADOR)
+    monkeypatch.setenv("ANALISESPS_SENHA_CONSULTA", SENHA_CONSULTA)
+
+    from app.apps.analisesps import db as banco
+    from app.apps.analisesps import migracoes_runner
+
+    monkeypatch.setattr(migracoes_runner, "listar_estado",
+                        lambda: {"aplicadas": [],
+                                 "pendentes": ["001_estrutura.sql",
+                                               "002_agenda_e_lote.sql"]})
+
+    def sem_tabela(*a, **k):
+        raise RuntimeError(
+            'relation "analisesps.execucoes" does not exist')
+
+    monkeypatch.setattr(banco, "consultar", sem_tabela)
+    monkeypatch.setattr(banco, "consultar_um", sem_tabela)
+
+    a = Flask(__name__)
+    a.secret_key = "teste"
+    a.register_blueprint(web.bp)
+    a.config["TESTING"] = False        # queremos a resposta, não a exceção crua
+
+    resposta = como(a, SENHA_OPERADOR).get("/analisesps/configuracoes")
+    assert resposta.status_code == 200, (
+        "Configurações estourou com as migrações por aplicar — é a única tela "
+        "que sabe aplicá-las")
+    html = resposta.get_data(as_text=True)
+    assert "001_estrutura.sql" in html
+    assert "002_agenda_e_lote.sql" in html
+
+
+def test_configuracoes_nao_diz_que_o_banco_esta_em_dia_quando_nao_sabe(
+        monkeypatch):
+    """Com o banco inalcançável, a tela dizia "0 aplicada(s), 0 pendente(s) —
+    O banco está em dia" e "A base: vazia".
+
+    As duas frases afirmam o que não se sabe, e afirmam justamente o
+    contrário do que está acontecendo. Quem lê conclui que a estrutura está
+    pronta e que não há SPs — e para de procurar a causa no lugar certo.
+    "Não deu para saber" é a única resposta honesta aqui."""
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", SENHA_OPERADOR)
+    monkeypatch.setenv("ANALISESPS_SENHA_CONSULTA", SENHA_CONSULTA)
+
+    from app.apps.analisesps import db as banco
+
+    def banco_fora(*a, **k):
+        raise RuntimeError("could not connect to server")
+
+    monkeypatch.setattr(banco, "conexao", banco_fora)
+    monkeypatch.setattr(banco, "consultar", banco_fora)
+    monkeypatch.setattr(banco, "consultar_um", banco_fora)
+
+    a = Flask(__name__)
+    a.secret_key = "teste"
+    a.register_blueprint(web.bp)
+    a.config["TESTING"] = False
+
+    resposta = como(a, SENHA_OPERADOR).get("/analisesps/configuracoes")
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+
+    assert "O banco não respondeu" in html
+    assert "O banco está em dia" not in html, (
+        "a tela afirmou que o banco está em dia sem ter conseguido perguntar")
+    assert "aplicada(s)" not in html, (
+        "a contagem de migrações é falsa quando a consulta nem aconteceu")
+    assert html.count("não deu para saber") >= 2, (
+        "estrutura e base precisam as duas dizer que não se sabe")
+
+
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
     monkeypatch.delenv("ANALISESPS_SENHA_OPERADOR", raising=False)
     monkeypatch.delenv("ANALISESPS_SENHA_CONSULTA", raising=False)
