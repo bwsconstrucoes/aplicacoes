@@ -434,6 +434,32 @@ pergunta de negócio: meio a meio? pelo rateio do Omie? Somar o valor cheio nas
 duas faria o total do relatório passar do total real. Ficou como está até
 alguém decidir.
 
+### Nona leva (05/09) — a tela dos códigos de pagamento
+
+Dois defeitos que o uso mostrou, e o segundo era caro:
+
+**1. Faltava marcar dali.** O caminho normal é: gerar o código, pagar, marcar.
+Sem a barra de ações na tela dos códigos, era voltar para a lista, procurar as
+mesmas SPs de novo e marcar lá. No Streamlit os códigos apareciam LOGO ABAIXO
+da barra, na mesma tela — a barra sempre esteve ao alcance.
+
+Agora a barra está lá, e **as SPs já chegam marcadas**: quem entrou nesta tela
+foi porque escolheu aquelas. Os botões que não fazem sentido aqui ficam de
+fora — gerar o QR estando nele, e mexer no lote.
+
+**2. Clicar no número da SP destruía o trabalho.** O número abria a ficha em
+tela cheia; voltar trazia a lista, e **os códigos recém-gerados sumiam**. Quem
+só queria conferir um dado tinha de refazer todo o caminho — escolher as SPs,
+gerar de novo — e isso no meio de um pagamento.
+
+Agora abre no **modal**, por cima dos códigos. Continua sendo um link de
+verdade: ctrl+clique e botão do meio abrem a página inteira em outra aba, que
+é o certo — um modal não sobrevive à aba nova.
+
+O modal passou a abrir também **no clique de qualquer link marcado**, não só
+no duplo clique de uma linha de tabela. Nas tabelas o número segue abrindo o
+card no Pipefy, como o dono pediu; fora delas, abre a ficha.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

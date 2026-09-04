@@ -1510,6 +1510,72 @@ def test_a_procura_nao_aplica_o_filtro_sozinha(app):
     assert 'class="procura-opcao"' in conteudo
 
 
+# ---------------------------------------------------------------------------
+# A TELA DE CÓDIGOS DE PAGAMENTO
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def app_codigos(app, monkeypatch):
+    from app.apps.analisesps import consultas, pagamentos
+    monkeypatch.setattr(consultas, "uma",
+                        lambda i: linha_falsa(i, forma_pagamento="Pix",
+                                              info_pgt="Chave Pix: x@y.com"))
+    monkeypatch.setattr(pagamentos, "gerar_pix",
+                        lambda *a, **k: ("QRFALSO", "carga-pix"))
+    return app
+
+
+def test_a_tela_de_codigos_tem_o_botao_de_agendar(app_codigos):
+    """O caminho normal é: gerar o código, pagar, e marcar. Sem a barra aqui,
+    era voltar para a lista, procurar as mesmas SPs de novo e marcar lá — e no
+    Streamlit os códigos apareciam LOGO ABAIXO da barra, na mesma tela."""
+    html = como(app_codigos, SENHA_OPERADOR).get(
+        "/analisesps/codigos?id=1&id=2").get_data(as_text=True)
+    assert 'id="barra-acoes"' in html
+    for valor in ("Agendar", "Agendado", "Falha Agendar", "Desagendar", "Pago"):
+        assert f'data-valor="{valor}"' in html, f"faltou {valor}"
+
+
+def test_as_sps_ja_chegam_marcadas_na_tela_de_codigos(app_codigos):
+    """Quem chegou aqui foi porque escolheu estas SPs. Obrigar a marcar de
+    novo seria repetir o trabalho que acabou de ser feito."""
+    html = como(app_codigos, SENHA_OPERADOR).get(
+        "/analisesps/codigos?id=1&id=2").get_data(as_text=True)
+    assert html.count('class="marca"') == 2
+    assert html.count("checked") >= 2
+
+
+def test_a_tela_de_codigos_nao_oferece_gerar_codigo_nem_mexer_no_lote(
+        app_codigos):
+    """Botão que não faz sentido onde está é convite a errar."""
+    html = como(app_codigos, SENHA_OPERADOR).get(
+        "/analisesps/codigos?id=1&origem=lote").get_data(as_text=True)
+    assert 'id="ba-codigos"' not in html, "oferece gerar o QR estando nele"
+    assert 'id="ba-remover-lote"' not in html
+    assert 'id="ba-enviar-lote"' not in html
+
+
+def test_o_numero_da_sp_nos_codigos_abre_a_ficha_no_modal(app_codigos):
+    """Abrir em tela cheia fazia sumir os códigos recém-gerados, e voltar
+    obrigava a refazer tudo só para conferir um dado."""
+    html = como(app_codigos, SENHA_OPERADOR).get(
+        "/analisesps/codigos?id=1").get_data(as_text=True)
+    assert "data-ficha=" in html, "o número não sabe qual ficha abrir"
+    assert 'id="ficha-modal"' in html, "não há modal nesta tela"
+    # E continua sendo um link de verdade: abrir em nova aba tem de dar a
+    # página inteira.
+    assert "/analisesps/sp/1" in html
+
+
+def test_o_clique_do_link_da_ficha_respeita_a_nova_aba(app):
+    """Ctrl+clique e botão do meio abrem em nova aba — e aí o certo é a página
+    inteira, não um modal que a outra aba não tem."""
+    conteudo = (Path(__file__).resolve().parents[1] / "app" / "apps"
+                / "analisesps" / "templates"
+                / "analisesps_ficha_modal.html").read_text(encoding="utf-8")
+    assert "a[data-ficha]" in conteudo
+    assert "ctrlKey" in conteudo and "metaKey" in conteudo
+
+
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
     monkeypatch.delenv("ANALISESPS_SENHA_OPERADOR", raising=False)
     monkeypatch.delenv("ANALISESPS_SENHA_CONSULTA", raising=False)

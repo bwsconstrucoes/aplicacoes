@@ -12,6 +12,8 @@
 
    Parâmetros esperados de quem inclui:
      origem      'solicitacoes' ou 'lote' — para onde as telas filhas voltam
+     tela        (opcional) 'codigos' esconde os botões que não fazem sentido
+                 lá: gerar o QR estando nele, e mexer no lote
      com_pgt     mostra "Marcar Pago/Pagar" (só Solicitações; no Lote o dono
                  mandou tirar, e o Streamlit nunca teve)
 --------------------------------------------------------------------------- #}
@@ -46,7 +48,7 @@
                 data-precisa-selecao
                 title="Apaga o campo Agendado na planilha">Desagendar</button>
       </div>
-      {% if origem == 'lote' %}
+      {% if origem == 'lote' and tela != 'codigos' %}
         {# Tirar do lote o que estiver marcado, em qualquer grupo. Fica aqui,
            com os outros, porque é a mesma seleção e o mesmo gesto — e porque
            antes só dava para editar o texto do lote na mão, achando o número
@@ -67,7 +69,7 @@
   </div>
 
   <div class="ba-direita">
-    {% if origem != 'lote' and pode_operar %}
+    {% if origem != 'lote' and pode_operar and tela != 'codigos' %}
       <button class="btn secundario" id="ba-enviar-lote" data-precisa-selecao
               title="Manda as marcadas para o Lote, num grupo novo">Enviar ao Lote</button>
     {% endif %}
@@ -77,14 +79,16 @@
     {% endif %}
     <button class="btn secundario" id="ba-cards" data-precisa-selecao
             title="Abre no Pipefy o card de cada SP marcada">Abrir cards</button>
-    <button class="btn secundario" id="ba-codigos" data-precisa-selecao>QR / Código</button>
-    {% if origem == 'solicitacoes' %}
+    {% if tela != 'codigos' %}
+      <button class="btn secundario" id="ba-codigos" data-precisa-selecao>QR / Código</button>
+    {% endif %}
+    {% if origem == 'solicitacoes' and tela != 'codigos' %}
       <a class="btn secundario" href="{{ url_for('analisesps.exportar', **args) }}">Exportar CSV</a>
     {% endif %}
   </div>
 </div>
 
-{% if pode_operar %}
+{% if pode_operar and tela != 'codigos' %}
   {% if origem != 'lote' %}
     {# O envio ao Lote é POST: acrescenta um grupo lá e leva a pessoa junto. #}
     <form method="post" action="{{ url_for('analisesps.tela_lote') }}"

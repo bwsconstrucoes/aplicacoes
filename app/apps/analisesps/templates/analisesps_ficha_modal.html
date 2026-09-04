@@ -42,11 +42,29 @@
     }
   }
 
+  // Na TABELA: duplo clique na linha. O clique simples fica para o número da
+  // SP, que abre o card no Pipefy.
   document.querySelectorAll("tr[data-ficha]").forEach(tr => {
     tr.addEventListener("dblclick", e => {
       // Duplo clique em cima de um link ou da caixa de marcar não abre a ficha.
       if (e.target.closest("a, input, button")) return;
       abrir(tr.dataset.ficha, tr.dataset.id || "");
+    });
+  });
+
+  // FORA DA TABELA (tela de códigos): o número da SP é um link, e clicar nele
+  // abre a ficha AQUI. Abrir em tela cheia fazia sumir os códigos que
+  // acabaram de ser gerados, e voltar obrigava a refazer tudo só para
+  // conferir um dado.
+  //
+  // Continua sendo um link de verdade: quem abrir em nova aba (ctrl+clique,
+  // botão do meio) recebe a página inteira, que é o certo — e por isso essas
+  // combinações não são interceptadas.
+  document.querySelectorAll("a[data-ficha]").forEach(link => {
+    link.addEventListener("click", e => {
+      if (e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0) return;
+      e.preventDefault();
+      abrir(link.dataset.ficha, link.dataset.id || "");
     });
   });
 

@@ -859,3 +859,7 @@ a.kpi { display: block; }
 .procura-nada {
   margin: 0 0 8px; font-size: 12px; color: var(--tinta-suave); font-style: italic;
 }
+
+/* A caixa de marcar no cabecalho de cada codigo gerado */
+.marca-codigo { display: inline-flex; align-items: center; margin-right: 8px; }
+.marca-codigo input { width: 16px; height: 16px; cursor: pointer; }

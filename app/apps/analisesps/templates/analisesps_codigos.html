@@ -11,12 +11,33 @@
   copia-e-cola.
 </p>
 
+{# A barra de ações, aqui também. O caminho normal é: gerar o código, pagar,
+   e marcar. Sem ela, era voltar para a lista, procurar as mesmas SPs de novo
+   e marcar lá — e no Streamlit os códigos apareciam LOGO ABAIXO da barra, na
+   mesma tela. As SPs já vêm marcadas: quem chegou aqui foi porque escolheu
+   estas. #}
+{% if blocos %}
+  {% with tela='codigos', com_pgt=true %}
+    {% include "analisesps_barra_acoes.html" %}
+  {% endwith %}
+{% endif %}
+
 {% for b in blocos %}
   <div class="cartao">
     <div class="cartao-cab">
       <h3>
         {% if b.sp %}
-          <a href="{{ url_for('analisesps.detalhe', sp_id=b.id) }}">{{ b.id }}</a>
+          <label class="marca-codigo">
+            <input type="checkbox" class="marca" value="{{ b.id }}" checked
+                   data-valor="{{ b.sp.valor_num or 0 }}"
+                   data-card="{{ b.sp.card_link or '' }}">
+          </label>
+          {# O número abre a ficha NO MODAL. Abrir em tela cheia fazia sumir
+             os códigos recém-gerados, e voltar obrigava a refazer tudo só
+             para conferir um dado. #}
+          <a href="{{ url_for('analisesps.detalhe', sp_id=b.id, origem=origem) }}"
+             data-ficha="{{ url_for('analisesps.detalhe', sp_id=b.id, origem=origem) }}"
+             data-id="{{ b.id }}">{{ b.id }}</a>
           — {{ b.sp.credor }}
         {% else %}{{ b.id }}{% endif %}
       </h3>
@@ -52,6 +73,7 @@
 {% endblock %}
 
 {% block scripts %}
+{% include "analisesps_ficha_modal.html" %}
 <script>
 // Um clique no campo seleciona tudo — quem está pagando copia e cola sem mirar.
 document.querySelectorAll(".copiavel").forEach(campo => {
