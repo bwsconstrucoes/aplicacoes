@@ -317,20 +317,29 @@ def base_carregada() -> dict:
     """Quantas SPs existem e quando foi a última sincronização.
 
     Serve para a tela dizer "a base ainda não foi carregada" em vez de mostrar
-    uma lista vazia como se não houvesse nada a pagar."""
+    uma lista vazia como se não houvesse nada a pagar.
+
+    `desconhecida` separa dois estados que parecem iguais e não são: a base
+    VAZIA (a pergunta foi feita, e a resposta é zero) e a base que NÃO DEU
+    PARA CONSULTAR (banco fora do ar, ou estrutura ainda não criada). Dizer
+    "vazia" no segundo caso é afirmar o que não se sabe — e foi assim que a
+    tela de Configurações chegou a informar "o banco está em dia" justamente
+    quando não conseguia falar com ele."""
     from .db import consultar_um
     try:
         linha = consultar_um("SELECT count(*) FROM analisesps.sps")
         quantas = linha[0] if linha else 0
     except Exception:  # noqa: BLE001 — tabela ainda não criada
-        return {"pronta": False, "quantidade": 0, "ultima": None}
+        return {"pronta": False, "quantidade": 0, "ultima": None,
+                "desconhecida": True}
     try:
         linha = consultar_um(
             "SELECT valor FROM analisesps.meta WHERE chave = 'ultima_sincronizacao'")
         ultima = linha[0] if linha else None
     except Exception:  # noqa: BLE001 — não saber a data não justifica derrubar a tela
         ultima = None
-    return {"pronta": quantas > 0, "quantidade": quantas, "ultima": ultima}
+    return {"pronta": quantas > 0, "quantidade": quantas, "ultima": ultima,
+            "desconhecida": False}
 
 
 # ---------------------------------------------------------------------------

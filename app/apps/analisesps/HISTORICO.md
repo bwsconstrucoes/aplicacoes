@@ -50,6 +50,19 @@ Respondido pelo dono em **03/09/2026**:
 - **Streamlit no PC:** continua em uso, e continuará até este módulo estar de
   pé de verdade.
 
+**Verificado em 04/09/2026, com um Postgres de verdade** (descartável, nesta
+máquina — a produção não foi tocada), reproduzindo o estado exato da estreia:
+
+- com o código que está **hoje no ar**, Configurações responde **500 "Deu
+  erro"**. Confirmado, não deduzido.
+- com a correção do ramo, ela responde **200**, lista as duas atualizações
+  pendentes e mostra o botão.
+- apertando o botão, as **duas migrações aplicam sem erro**, e em seguida as
+  **nove telas abrem** com a base ainda vazia.
+
+Ou seja: falta publicar. A correção resolve o impasse e a sequência seguinte
+funciona.
+
 **A sequência que falta, nesta ordem:**
 
 1. Publicar a correção do defeito de estreia (abaixo) — sem ela a tela de
@@ -161,6 +174,17 @@ Mesma regra do ERP e do painel.
   `analisesps.meta` em `base_carregada()`, que tinha o mesmo defeito. Um
   teste novo monta a tela nesse estado.
 
+- **04/09 — a tela afirmava o que não tinha conseguido perguntar.** Com o
+  banco fora de alcance, Configurações mostrava o recado de erro certo e, logo
+  abaixo, "0 aplicada(s), 0 pendente(s) — **O banco está em dia**" e "A base:
+  **vazia**". As duas frases dizem o contrário do que estava acontecendo:
+  quem lê conclui que a estrutura está pronta e que não há SPs, e para de
+  procurar a causa no lugar certo. Agora as duas dizem **"não deu para
+  saber"**, e a estrutura ganha um aviso explicando que a pergunta não chegou
+  a ser feita. `base_carregada()` passa a devolver `desconhecida`, que separa
+  "consultei e deu zero" de "não consegui consultar". Teste novo trava as
+  duas frases; conferido que ele falha sem a correção.
+
 ## Coisas pequenas que mordem
 
 - As telas **quase não foram vistas num navegador**. O chat que as fez não
@@ -171,10 +195,8 @@ Mesma regra do ERP e do painel.
   alcance (o recado aparece no lugar certo, sem estourar). **As outras sete
   continuam sem nenhuma navegação real**, e nenhuma foi vista com dado de
   verdade — não há dado no ar ainda.
-- Na tela de Configurações com o banco inalcançável, o resumo da estrutura diz
-  **"0 aplicada(s), 0 pendente(s) — O banco está em dia"**. Não está: ele é
-  desconhecido. O recado de erro logo acima salva a leitura, mas a frase
-  deveria dizer que não dá para saber. Não foi mexido aqui para não misturar
-  com a correção do impasse de estreia.
+- ~~Na tela de Configurações com o banco inalcançável, o resumo da estrutura
+  diz "0 aplicada(s), 0 pendente(s) — O banco está em dia".~~ **Corrigido em
+  04/09/2026** (ver abaixo).
 - Os 57 testes com banco só rodam no GitHub Actions. Sem `ERP_TEST_DATABASE_URL`
   são pulados.
