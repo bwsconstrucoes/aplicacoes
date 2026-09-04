@@ -52,6 +52,16 @@ def _filtro_momento(valor):
     return momento_br(valor)
 
 
+@bp.app_template_filter("com_links")
+def _filtro_com_links(texto):
+    """Texto livre com os endereços já clicáveis, escapado antes de tudo.
+
+    A descrição da SP costuma trazer o link de uma pasta ou de um contrato.
+    Como texto puro, era preciso selecionar na mão e colar no navegador."""
+    from .formatos import com_links
+    return com_links(texto)
+
+
 # ---------------------------------------------------------------------------
 # Entrada e saída
 # ---------------------------------------------------------------------------

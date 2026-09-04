@@ -512,6 +512,63 @@ a mesma escolha. O cabeçalho usa **"Obra"**, a palavra do dono, porque cabe na
 coluna estreita; a barra de filtros diz "Obra (centro de custo)", que é onde a
 ponte com o nome da planilha cabe.
 
+### Décima segunda leva (05/09) — o botão que parecia quebrado
+
+**"Clico em Agendado no modal e não acontece nada."** Não era defeito de
+ligação, e vale registrar porque a conclusão é contraintuitiva: a **trava da
+Validação** — restaurada do Streamlit — punha `disabled` nos quatro botões de
+agendamento quando a coluna Validação não estava em "Sim". E **botão
+desabilitado não recebe nem o clique**: para quem não leu o aviso logo acima,
+ele é indistinguível de um botão quebrado.
+
+A trava continua valendo (nada é gravado sem Validação = "Sim"), mas agora ela
+**se explica**: o botão tem cara de cadeado, aceita o clique, e o clique diz
+por que não foi — oferecendo validar ali mesmo. Trocar um bloqueio mudo por um
+bloqueio que fala custa nada e evita o chamado.
+
+> Nota de fidelidade, para quem for mexer nisso: no Streamlit a trava valia no
+> **detalhe** e no **lote** ("Alterar Status" só habilitava com todos os
+> selecionados validados). Na **tela de códigos**, o botão "📅 Agendado" era
+> *sempre clicável*. Aqui a barra de ações de cima **não** exige Validação em
+> nenhuma tela — é mais permissivo que o Streamlit. Está assim de propósito
+> até o dono decidir: apertar a barra tiraria função que ele já usa hoje.
+
+**A ficha foi virada de cabeça para baixo, a pedido do dono:**
+
+- a **Descrição subiu para o topo**, logo abaixo do cabeçalho. É o que diz do
+  que se trata a SP, e é a primeira coisa que se procura ao abrir; estava no
+  fim de tudo, depois de vinte e sete campos.
+- o **código de barras / QR desceu para o fim**. É o passo final de quem já
+  conferiu o resto e vai pagar.
+
+**Link escrito na descrição virou link clicável.** A descrição costuma trazer
+o endereço de uma pasta ou de um contrato, e como texto puro era selecionar na
+mão e colar no navegador.
+
+> O cuidado que isso exige, para não ser desfeito por engano: a descrição vem
+> da **planilha**, que qualquer um edita. O filtro `com_links` **escapa o texto
+> inteiro primeiro** e só depois transforma em link o que sobrou — sem isso,
+> uma célula com `<script>` dentro rodaria na tela de quem abrisse a SP. Por
+> devolver HTML pronto, no template ele vai com `|safe`; quem mexer nele mexe
+> nos dois lados. Há teste para o `<script>`, para a aspa dentro do endereço e
+> para o ponto final da frase não entrar no link. Usa `html.escape` da
+> biblioteca padrão de propósito — nenhuma dependência nova.
+
+**"Cancelar SP" deixou de ser vermelho.** Ele só **abre** o formulário do
+Pipefy; não cancela nada por si. Em vermelho puxava o olho toda vez que a
+ficha abria, como se fosse a ação principal.
+
+**Defeito achado de passagem, e sério:** abrir uma SP em **página inteira**
+vindo do **Lote** estourava a tela. O endereço da volta era montado colando
+`"analisesps."` com a origem, e dava `analisesps.lote` — que não existe; a tela
+do Lote chama-se `tela_lote`. Só não aparecia sempre porque o caminho normal
+hoje é o modal. Corrigido, com teste.
+
+**Verificado:** 1342 testes verdes, agora **com Postgres de verdade** (local e
+descartável — a produção não foi tocada), e os 18 blueprints sobem. O que
+**não** foi verificado: nada disto foi exercitado no navegador com dado real —
+são mudanças de tela, e o teste confere o HTML, não o que o olho vê.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

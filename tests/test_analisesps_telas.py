@@ -529,12 +529,80 @@ def test_o_agendamento_exige_validacao_como_no_streamlit(app_ficha, monkeypatch)
     html = como(app_ficha, SENHA_OPERADOR).get(
         "/analisesps/sp/1234567890").get_data(as_text=True)
     assert "Agendamento bloqueado" in html
-    assert "disabled" in html
+    assert 'data-bloqueado="1"' in html
 
     registro["validacao"] = "Sim"
     html = como(app_ficha, SENHA_OPERADOR).get(
         "/analisesps/sp/1234567890").get_data(as_text=True)
     assert "Agendamento bloqueado" not in html
+    assert "data-bloqueado" not in html
+
+
+def test_o_agendamento_travado_nao_vira_botao_morto(app_ficha, monkeypatch):
+    """O dono clicou em "Agendado" no modal e nada aconteceu.
+
+    Não era defeito de ligação: a trava da Validação punha `disabled` nos
+    botões, e botão desabilitado não recebe nem o clique — quem não leu o
+    aviso logo acima via um botão simplesmente quebrado. A trava continua
+    valendo (nada é gravado), mas agora o clique diz por que não foi."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["validacao"] = ""
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+
+    trecho = html[html.index('data-coluna="agendado"'):]
+    trecho = trecho[:trecho.index("</button>")]
+    assert "disabled" not in trecho, (
+        "botão desabilitado não recebe clique — volta a parecer quebrado")
+    assert "bloqueado" in trecho
+
+
+def test_a_descricao_vem_antes_do_codigo_de_pagamento(app_ficha, monkeypatch):
+    """Pedido do dono: a descrição é a primeira coisa que se procura ao abrir
+    a SP, e estava no fim de tudo; o código de pagamento é o último passo."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["descricao"] = "Concreto usinado da obra"
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert html.index("ficha-descricao") < html.index("ficha-codigo")
+
+
+def test_o_link_escrito_na_descricao_fica_clicavel(app_ficha, monkeypatch):
+    """Às vezes a descrição traz o endereço de uma pasta ou de um contrato.
+    Como texto puro, era selecionar na mão e colar no navegador."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["descricao"] = "Contrato em https://drive.google.com/x/y ok"
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert 'href="https://drive.google.com/x/y"' in html
+
+
+def test_cancelar_sp_nao_e_botao_vermelho(app_ficha):
+    """Ele só ABRE o formulário do Pipefy — não cancela nada por si. Em
+    vermelho puxava o olho para si toda vez que a ficha abria."""
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    trecho = html[html.index("Cancelar%20SP") - 400:html.index("Cancelar SP")]
+    assert "perigo" not in trecho
+
+
+def test_a_volta_da_ficha_aberta_pelo_lote_nao_quebra(app_ficha):
+    """O endereço da volta era montado colando "analisesps." com a origem, e
+    dava "analisesps.lote" — que não existe. A tela do Lote se chama
+    "tela_lote", então abrir uma SP a partir do Lote estourava a página."""
+    resposta = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?origem=lote")
+    assert resposta.status_code == 200
+    assert "/analisesps/lote" in resposta.get_data(as_text=True)
 
 
 def test_o_qr_volta_para_de_onde_veio(app, monkeypatch):

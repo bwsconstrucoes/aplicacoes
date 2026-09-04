@@ -238,6 +238,17 @@ window.ligarFicha = function (raiz) {
     botao.addEventListener("click", async () => {
       const rotulo = botao.textContent.trim();
       const valor = botao.dataset.valor;
+      // Trava da Validacao, como no Streamlit. Antes o botao vinha
+      // `disabled`: nao gravava nada, mas tambem nao dizia nada — quem nao
+      // leu o aviso logo acima achava que o botao estava quebrado.
+      if (botao.dataset.bloqueado) {
+        const validarAgora = caixa.querySelector("#ficha-validar");
+        const querValidar = confirm(
+          `Não dá para "${rotulo}" nesta SP: a coluna Validação precisa `
+          + `estar como "Sim".\n\nQuer validar a SP ${sp} agora?`);
+        if (querValidar && validarAgora) validarAgora.click();
+        return;
+      }
       const efeito = botao.dataset.coluna === "agendado" && valor === "Desagendar"
           ? `Apagar o agendamento da SP ${sp}`
           : `${rotulo} na SP ${sp}`;
