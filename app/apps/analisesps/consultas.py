@@ -25,6 +25,19 @@ logger = logging.getLogger("analisesps.consultas")
 # não tem teto — a navegação alcança qualquer linha.
 POR_PAGINA = 200
 
+# Colunas cuja célula pode trazer MAIS DE UM valor. Hoje só o centro de custo
+# (as obras): a planilha aceita duas na mesma célula quando a despesa é
+# rateada entre elas. Tanto a lista do filtro quanto o casamento abrem a
+# célula antes de comparar.
+MULTIPLAS_NA_CELULA = {"centro_custo"}
+
+# COMO A CÉLULA É ABERTA. A vírgula é o separador que o dono citou
+# ("CONS, CRECHE SWAP"), mas a base real também traz BARRA
+# ("OBRA-12 / OBRA-13") — está num teste escrito na época da conversão, a
+# partir do dado de verdade. Aceitar os dois, e o ponto e vírgula de quebra,
+# custa nada e evita descobrir o terceiro em produção.
+SEPARADOR_DE_OBRAS = "[,;/]"
+
 # Os campos varridos pela busca livre. Iguais aos do Streamlit.
 CAMPOS_BUSCA = ["id", "credor", "documento", "descricao", "tipo_despesa",
                 "centro_custo", "responsavel", "nf", "pedido", "analise_ia"]
@@ -179,14 +192,24 @@ def _condicoes(f: dict) -> tuple[list[str], list]:
             pedacos.append(f"({SQL_STATUS_AGEND}) = ''")
         onde.append("(" + " OR ".join(pedacos) + ")")
 
-    # Centro de custo casa por "contém": na planilha ele às vezes vem com mais
-    # de um código na mesma célula. Mesma regra do original.
-    centros = [v for v in (f.get("centro_custo") or []) if str(v).strip()]
+    # Centro de custo (as OBRAS). A célula às vezes traz mais de uma, separadas
+    # por vírgula: "CONS, CRECHE SWAP".
+    #
+    # Antes o casamento era por "contém", copiado do Streamlit. Funcionava na
+    # maioria dos casos e errava num que aparece: procurar a obra "CONS"
+    # trazia também "CONSTRUÇÃO DO GALPÃO", porque uma é pedaço da outra.
+    # Agora a célula é ABERTA na vírgula e a comparação é com a obra INTEIRA —
+    # que é o que a pessoa escolheu na lista.
+    centros = [str(v).strip() for v in (f.get("centro_custo") or [])
+               if str(v).strip()]
     if centros:
         pedacos = []
         for c in centros:
-            pedacos.append("lower(coalesce(centro_custo,'')) LIKE ?")
-            params.append(f"%{_como_texto_literal(str(c).lower())}%")
+            pedacos.append(
+                "EXISTS (SELECT 1 FROM unnest(regexp_split_to_array("
+                f"          coalesce(centro_custo,''), '{SEPARADOR_DE_OBRAS}')"
+                "        ) AS o WHERE lower(btrim(o)) = ?)")
+            params.append(c.lower())
         onde.append("(" + " OR ".join(pedacos) + ")")
 
     # Situações (as caixas de marcar). Somam-se: marcar duas exige as duas.
@@ -348,6 +371,24 @@ def opcoes(coluna: str, limite: int = 400) -> list[str]:
     if coluna not in permitidas:
         raise ValueError(f"Coluna não permitida em filtro: {coluna}")
     from .db import consultar
+
+    if coluna in MULTIPLAS_NA_CELULA:
+        # A célula pode trazer MAIS DE UMA obra, separadas por vírgula
+        # ("CONS, CRECHE SWAP"). Sem separar, a lista do filtro oferecia a
+        # combinação inteira como se fosse uma obra — e a obra sozinha, que é
+        # o que se procura, não aparecia em lugar nenhum.
+        #
+        # `unnest(string_to_array(...))` abre a célula em uma linha por obra;
+        # o resto é o mesmo agrupamento de sempre.
+        linhas = consultar(
+            "SELECT obra, count(*) FROM ("
+            "  SELECT btrim(unnest(regexp_split_to_array("
+            f"           {coluna}, '{SEPARADOR_DE_OBRAS}'))) AS obra "
+            f"    FROM analisesps.sps WHERE trim(coalesce({coluna},'')) <> ''"
+            ") AS abertas WHERE obra <> '' "
+            " GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?", (limite,))
+        return [linha[0] for linha in linhas]
+
     linhas = consultar(
         f"SELECT trim({coluna}), count(*) FROM analisesps.sps "
         f" WHERE trim(coalesce({coluna},'')) <> '' "

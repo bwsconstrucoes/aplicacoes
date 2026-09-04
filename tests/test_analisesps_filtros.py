@@ -139,12 +139,22 @@ def test_agendamento_mistura_valor_e_ausencia_com_ou():
     assert params == ["Agendar"]
 
 
-def test_centro_de_custo_casa_por_conter():
-    """Na planilha o centro de custo às vezes vem com mais de um código na
-    mesma célula. Igualdade exata perderia essas linhas."""
+def test_a_obra_casa_com_a_celula_aberta_e_nao_por_pedaco():
+    """Na planilha a célula às vezes traz mais de uma obra ("CONS, CRECHE
+    SWAP", "OBRA-12 / OBRA-13"). Igualdade exata perderia essas linhas.
+
+    Até 05/09/2026 a solução era casar por "contém", copiada do Streamlit.
+    Funcionava na maioria dos casos e errava num que aparece: procurar a obra
+    "CONS" trazia também "CONSTRUÇÃO DO GALPÃO", porque uma é pedaço da outra.
+
+    Agora a célula é ABERTA nos separadores e a comparação é com a obra
+    INTEIRA — a que a pessoa escolheu na lista. O valor continua entrando como
+    PARÂMETRO, nunca no meio do comando."""
     onde, params = montar(centro_custo=["OBRA-12"])
-    assert "LIKE" in onde[0]
-    assert params == ["%obra-12%"]
+    assert "regexp_split_to_array" in onde[0], "voltou a casar por pedaço"
+    assert "LIKE" not in onde[0]
+    assert params == ["obra-12"], "o valor tem de ir como parâmetro"
+    assert "OBRA-12" not in onde[0] and "obra-12" not in onde[0]
 
 
 def test_situacoes_conhecidas_entram_e_desconhecidas_sao_ignoradas():

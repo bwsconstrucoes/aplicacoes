@@ -400,6 +400,40 @@ da planilha, quatro vezes a cota, para o mesmo trabalho.
 a segunda inserção é recusada pelo banco, e a tela recebe o recado em
 português em vez de um erro.
 
+### Oitava leva (05/09) — o filtro de obras
+
+Uma célula de centro de custo pode trazer **mais de uma obra**: a planilha
+aceita "CONS, CRECHE SWAP" quando a despesa é rateada entre elas. A lista do
+filtro oferecia **a combinação inteira** como se fosse uma obra — e a obra
+sozinha, que é o que se procura, não aparecia em lugar nenhum.
+
+- **A lista agora vem separada**: cada obra uma vez, sem combinações.
+- **O filtro ficou pesquisável.** Blocos com doze opções ou mais ganham um
+  campo de procura. Ele filtra as caixas já carregadas — não vai ao servidor,
+  não aplica nada, só ajuda a achar. Ignora acento e maiúscula ("sao" acha
+  "SÃO"), e **nunca esconde uma opção já marcada**: escondê-la faria a pessoa
+  achar que desmarcou sozinha.
+- O bloco passou a se chamar **"Obra (centro de custo)"** — o nome que o dono
+  usa, com o da planilha entre parênteses.
+
+**Um defeito antigo corrigido junto.** O casamento era por "contém", copiado
+do Streamlit: procurar a obra **CONS** trazia também **CONSTRUÇÃO DO GALPÃO**,
+porque uma é pedaço da outra. Agora a célula é aberta nos separadores e a
+comparação é com a obra INTEIRA. Silencioso do jeito pior: o número na tela
+estava errado e ninguém tinha como notar.
+
+**Os separadores são três, e isso veio de um teste, não de um palpite.** O
+dono citou a vírgula; um teste escrito na conversão, a partir da base real,
+usava **barra** ("OBRA-12 / OBRA-13"). Aceitar vírgula, barra e ponto e
+vírgula custa nada e evita descobrir o terceiro em produção.
+
+**O que NÃO foi mexido, e é decisão sua:** o **Relatório** continua agrupando
+pela célula inteira — "CONS, CRECHE SWAP" aparece como uma linha só. Separar
+ali exigiria dividir o VALOR entre as duas obras, e dividir por quanto é
+pergunta de negócio: meio a meio? pelo rateio do Omie? Somar o valor cheio nas
+duas faria o total do relatório passar do total real. Ficou como está até
+alguém decidir.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

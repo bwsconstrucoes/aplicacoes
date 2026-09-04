@@ -264,8 +264,13 @@ def test_o_termo_de_busca_com_por_cento_e_texto_e_nao_curinga():
     _, params = consultas._condicoes({"busca": "nota_1"})
     assert params == ["%nota\\_1%"]
 
-    _, params = consultas._condicoes({"centro_custo": ["OBRA_1"]})
-    assert params == ["%obra\\_1%"]
+    # A obra não passa mais por LIKE: desde 05/09/2026 a célula é aberta nos
+    # separadores e a comparação é de igualdade. Sem curinga, não há o que
+    # escapar — e a proteção que importa continua de pé: o valor vai como
+    # PARÂMETRO, nunca no meio do comando.
+    onde, params = consultas._condicoes({"centro_custo": ["OBRA_1"]})
+    assert params == ["obra_1"]
+    assert "OBRA_1" not in " ".join(onde)
 
 
 def test_a_barra_invertida_digitada_tambem_e_escapada():

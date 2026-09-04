@@ -1451,6 +1451,65 @@ def test_a_hora_da_ultima_atualizacao_fica_a_vista(app):
     assert "base de" in html
 
 
+# ---------------------------------------------------------------------------
+# O FILTRO DE OBRAS
+# ---------------------------------------------------------------------------
+def test_o_filtro_de_obra_e_pesquisavel_quando_ha_muitas(app, monkeypatch):
+    """Doze obras cabem na tela e se acham com o olho; oitenta, não — e rolar
+    a lista procurando "creche" é coisa que se faz vinte vezes por dia."""
+    from app.apps.analisesps import consultas
+    muitas = [f"OBRA {i:02d}" for i in range(30)]
+    monkeypatch.setattr(consultas, "opcoes",
+                        lambda coluna, limite=400:
+                        muitas if coluna == "centro_custo" else ["Pagar"])
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes?f=1").get_data(as_text=True)
+    assert "procura-opcao" in html, "faltou o campo de procura"
+    assert "Obra (centro de custo)" in html
+
+
+def test_lista_curta_nao_ganha_campo_de_procura(app, monkeypatch):
+    """Campo de procura numa lista de três é ruído."""
+    from app.apps.analisesps import consultas
+    monkeypatch.setattr(consultas, "opcoes",
+                        lambda coluna, limite=400: ["A", "B", "C"])
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes?f=1").get_data(as_text=True)
+    # O script sempre menciona a classe; o que não pode existir é o CAMPO.
+    assert 'class="procura-opcao"' not in html
+
+
+def test_a_procura_nao_esconde_a_opcao_ja_marcada(app):
+    """Esconder uma obra marcada porque ela não casa com o texto digitado
+    faria a pessoa achar que desmarcou sozinha."""
+    js = (Path(__file__).resolve().parents[1] / "app" / "apps" / "analisesps"
+          / "templates" / "analisesps_filtros.html").read_text(encoding="utf-8")
+    assert "marcada" in js and "|| marcada" in js
+
+
+def test_a_procura_ignora_acento_e_maiuscula(app):
+    """Quem procura "sao" tem de achar "SÃO"."""
+    conteudo = (Path(__file__).resolve().parents[1] / "app" / "apps"
+                / "analisesps" / "templates"
+                / "analisesps_filtros.html").read_text(encoding="utf-8")
+    assert "normalize(\"NFD\")" in conteudo
+    assert "toLowerCase()" in conteudo
+
+
+def test_a_procura_nao_aplica_o_filtro_sozinha(app):
+    """O campo procura DENTRO do bloco: filtra as caixas já carregadas, sem ir
+    ao servidor. Digitar nele não pode disparar a consulta nem mandar o
+    formulário — senão cada letra viraria uma ida ao banco."""
+    conteudo = (Path(__file__).resolve().parents[1] / "app" / "apps"
+                / "analisesps" / "templates"
+                / "analisesps_filtros.html").read_text(encoding="utf-8")
+    # O envio automático só olha os campos do filtro, e o de procura tem
+    # classe própria e barra o Enter.
+    assert "stopPropagation()" in conteudo
+    assert 'class="procura-opcao"' in conteudo
+
+
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
     monkeypatch.delenv("ANALISESPS_SENHA_OPERADOR", raising=False)
     monkeypatch.delenv("ANALISESPS_SENHA_CONSULTA", raising=False)
