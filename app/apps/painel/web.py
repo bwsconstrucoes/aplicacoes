@@ -903,6 +903,43 @@ def sincronizar():
     return jsonify(tarefas.disparar(modo, disparo))
 
 
+def _subtitulo_do_relatorio(f) -> str:
+    """A linha de contexto da capa: quando foi gerado e sobre o que.
+
+    Um relatorio financeiro sem o recorte escrito na capa e perigoso: seis meses
+    depois ninguem lembra se aquilo era a empresa inteira ou uma obra so."""
+    from .horario import agora
+    recorte = " · ".join(f.resumo()) or "todos os anos, projetos e obras"
+    return (f"Gerado em {agora():%d/%m/%Y às %H:%M} (Brasília)  ·  "
+            f"Recorte: {recorte}")
+
+
+def _resumo_do_relatorio(f) -> list:
+    """Os numeros da capa — os mesmos cinco da Visao Geral e do DRE."""
+    from . import consultas
+    from .pdf import brl
+    dre = consultas.resultado_dre(f)
+    return [
+        ("Resultado (DRE) — comprometido", ""),
+        ("Receita líquida", brl(dre["receita"])),
+        ("Despesas", brl(dre["despesa"])),
+        ("Resultado", brl(dre["resultado"])),
+    ]
+
+
+def _graficos_do_relatorio(f) -> list:
+    """O Fluxo Financeiro mensal, desenhado com a MESMA geometria da tela."""
+    from . import consultas, graficos
+    mensal = consultas.resultado_mensal(f, medida="comprometido")
+    if not mensal:
+        return []
+    return [(graficos.barras_agrupadas(
+        mensal[-36:],
+        [("receita", "b-receita", "Receita"), ("despesa", "b-despesa", "Despesa")],
+        campo_rotulo="rotulo", campo_linha="acumulado"),
+        "Fluxo Financeiro mensal — comprometido")]
+
+
 @bp.route("/baixar/<assunto>")
 def baixar(assunto):
     """Leva os numeros para uma planilha do Excel.
@@ -993,6 +1030,23 @@ def baixar(assunto):
         abas = montadores[assunto]()
     else:
         return jsonify({"ok": False, "erro": f"Não sei exportar '{assunto}'."}), 404
+
+    # O PDF sai das MESMAS abas que a planilha. Nao ha um montador para cada
+    # formato: se houvesse, o dia em que os dois discordassem ninguem saberia
+    # qual esta certo.
+    if request.args.get("formato") == "pdf":
+        from . import pdf as pdf_painel
+        conteudo = pdf_painel.montar(
+            abas, titulo="Relatório Financeiro BWS Construções",
+            subtitulo=_subtitulo_do_relatorio(f),
+            resumo=_resumo_do_relatorio(f),
+            observacao=("Os mesmos números da planilha do botão ao lado. "
+                        "As listas longas saem cortadas aqui e completas lá."),
+            graficos_iniciais=_graficos_do_relatorio(f) if assunto == "completo" else ())
+        return Response(
+            conteudo, mimetype="application/pdf",
+            headers={"Content-Disposition":
+                     f'attachment; filename="{pdf_painel.nome_do_arquivo(assunto)}"'})
 
     conteudo = excel.montar(abas)
     nome = excel.nome_do_arquivo(assunto)
