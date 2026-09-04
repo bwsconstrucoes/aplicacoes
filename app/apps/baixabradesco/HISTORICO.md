@@ -26,14 +26,27 @@ sinal: os dois leitores de comprovante e o casador de pagamentos.
 
 ### O que está pendente AGORA
 
-**Nada foi publicado por esta sessão até aqui.** O que existe é documentação
-(este arquivo, o `README.md`, a linha nova no `CLAUDE.md` e o registro no
-`CONTEXTO.md`), em ramo próprio, aguardando o "pode" do dono.
+**Publicado em 04/09/2026** (junção `16039ac`, com o dono confirmando que não
+havia carga do painel nem sincronização do Análise de SPs rodando): as duas
+correções — comprovante recusado pelo banco e trava de duplicidade — mais o
+`README.md`, este arquivo, a linha da área no `CLAUDE.md` e o registro no
+`CONTEXTO.md`. **Sem migração de banco**: não foi preciso apertar "Aplicar
+atualizações do banco".
 
-Em seguida vêm os testes automatizados dos leitores e do casador. Para escrever
-os casos de verdade são necessários **comprovantes de exemplo** — e antes de
-qualquer um entrar no Git, número de conta, CNPJ, CPF e nome viram fictícios,
-mantendo o formato do texto.
+Falta a segunda metade da rede de proteção: **testes dos leitores de comprovante
+e do casador de pagamentos** cobrindo Pix, boleto, transferência, FGTS e
+BeeVale. Hoje existem 23 testes, todos em volta das duas travas corrigidas —
+nenhum sobre a leitura dos campos de um comprovante bom nem sobre a escolha da
+SP certa.
+
+Para escrever esses casos são necessários **comprovantes de exemplo de cada
+tipo**, que só o dono tem. Antes de qualquer um entrar no Git, número de conta,
+CNPJ, CPF, nome e código de barras viram fictícios, mantendo o formato do texto —
+foi assim com o único exemplo que já está guardado.
+
+**Conferir na primeira baixa real depois da publicação:** no retorno do Make, os
+campos `recusados_nao_efetivados` e `duplicados_ja_baixados`; e que nenhum
+comprovante legítimo está sendo barrado por engano.
 
 ### As três divergências achadas na leitura do código — todas resolvidas
 
