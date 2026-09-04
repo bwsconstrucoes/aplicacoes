@@ -8,11 +8,50 @@ from .utils import normalize_text, only_digits, money_to_decimal, decimal_to_br,
 FGTS_CNPJ = '00360305000104'
 BEEVALE_TEXT = 'beevale pagamentos e beneficios'
 
+# Frases que provam que o pagamento NÃO aconteceu. Comparadas contra o texto já
+# normalizado (minúsculas, sem acento). O Bradesco usa redações diferentes para
+# a mesma coisa — "Operação Não Realizada" no Pix, "Transação Não Realizada" no
+# boleto, e a linha de aprovação pendente quando falta assinatura ou saldo.
+# Só entram aqui frases que não têm outra leitura possível.
+FRASES_RECUSA = (
+    'operacao nao realizada',
+    'operacao nao efetivada',
+    'operacao nao efetuada',
+    'transacao nao realizada',
+    'transacao nao efetivada',
+    'transacao nao efetuada',
+    'pagamento nao realizado',
+    'pagamento nao efetivado',
+    'pagamento nao efetuado',
+    'nao foi efetuada',
+    'nao foi efetuado',
+    'nao foi realizada',
+    'nao foi realizado',
+    'pendente de aprovacao',
+    'aguardando aprovacao',
+    'transacao cancelada',
+    'pagamento cancelado',
+    'operacao cancelada',
+)
+
+
+def receipt_recusado(norm: str) -> bool:
+    """Diz se o texto (já normalizado) é de um pagamento que o banco não fez."""
+    return any(frase in (norm or '') for frase in FRASES_RECUSA)
+
 
 def parse_bradesco_text(filename: str, page: int, text: str, drive_link: str = '', fingerprint: str = '') -> ExtractedReceipt:
     r = ExtractedReceipt(filename=filename, page=page, text=text or '', drive_link=drive_link, fingerprint=fingerprint)
     norm = normalize_text(text)
     digits = only_digits(text)
+
+    # Comprovante que o banco NÃO efetivou nunca pode virar baixa: o dinheiro
+    # não saiu. Barrado antes de extrair qualquer campo, para que nem valor nem
+    # código de barras cheguem ao casador.
+    if receipt_recusado(norm):
+        r.tipo_comprovante = 'operacao_nao_realizada'
+        r.pendencias.append('Comprovante recusado: o banco não efetivou a operação.')
+        return r  # ignora completamente — não extrai nada
 
     r.id_pipefy = extract_id_pipefy(text)
     r.descricao = extract_descricao(text)
@@ -26,10 +65,6 @@ def parse_bradesco_text(filename: str, page: int, text: str, drive_link: str = '
     r.agencia_origem, r.conta_origem, r.conta_origem_raw = extract_conta_origem(text)
     r.conta_destino_raw = extract_conta_destino(text)
     r.codigo_barras = extract_codigo_barras(text)
-
-    if 'operacao nao realizada' in norm or 'operação não realizada' in norm:
-        r.tipo_comprovante = 'operacao_nao_realizada'
-        return r  # ignora completamente — não extrai nada
 
     if (('cef matriz' in norm or 'caixa economica federal' in norm) and FGTS_CNPJ in digits):
         r.tipo_comprovante = 'fgts_rescisorio'
