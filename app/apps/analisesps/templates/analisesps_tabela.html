@@ -1,0 +1,102 @@
+{# ---------------------------------------------------------------------------
+   A TABELA DE SPs — uma só, para Solicitações e para cada grupo do Lote.
+
+   As colunas vêm de `tabela.py`, que espelha o GRID_COLS do Streamlit. Cada
+   pessoa escolhe o que vê; a ORDEM é sempre a mesma, para a tabela não mudar
+   de cara de uma pessoa para outra.
+
+   Duas cópias deste HTML era o que havia antes, e elas já divergiam: o Lote
+   mostrava menos colunas que as Solicitações sem que ninguém tivesse decidido
+   isso.
+
+   Espera de quem inclui:
+     linhas   as SPs
+     colunas  a lista vinda de tabela.escolhidas()
+     grupo    (opcional) o número do grupo, no Lote
+--------------------------------------------------------------------------- #}
+<div class="tabela-rolagem">
+  <table class="sps">
+    <thead>
+      <tr>
+        <th class="sel"><input type="checkbox" class="marcar-todas"
+               {% if grupo is defined %}data-grupo="{{ grupo }}"{% endif %}
+               title="Marcar todas as SPs {{ 'deste grupo' if grupo is defined else 'desta página' }}"></th>
+        {% for c in colunas %}
+          <th{% if c.tipo == 'moeda' %} class="num"{% endif %}>{{ c.rotulo }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in linhas %}
+        {% set cancelada = (l.status_pgt or '')|lower|trim == 'cancelado' %}
+        <tr class="{{ 'cancelada ' if cancelada }}{{ 'com-risco ' if l.risco }}{{ 'incompleta' if l.cadastro_incompleto and not l.risco }}"
+            data-id="{{ l.id }}"
+            data-ficha="{{ url_for('analisesps.detalhe', sp_id=l.id, origem=origem) }}">
+          <td class="sel">
+            <input type="checkbox" class="marca" value="{{ l.id }}"
+                   {% if grupo is defined %}data-grupo="{{ grupo }}"{% endif %}
+                   data-valor="{{ l.valor_num or 0 }}"
+                   data-card="{{ l.card_link or '' }}">
+          </td>
+
+          {% for c in colunas %}
+            {% if c.tipo == 'id' %}
+              {# O número abre o CARD NO PIPEFY, como no Streamlit. A ficha
+                 daqui abre com duplo clique na linha. #}
+              <td class="id">
+                {% if l.card_link %}
+                  <a href="{{ l.card_link }}" target="_blank" rel="noopener"
+                     title="Abrir o card no Pipefy">{{ l.id }}</a>
+                {% else %}{{ l.id }}{% endif %}
+              </td>
+
+            {% elif c.tipo == 'data' %}
+              <td class="{{ 'venc-vencido' if c.chave == 'vencimento_d' and l.vencido
+                            else ('venc-hoje' if c.chave == 'vencimento_d' and l.vence_hoje else '') }}">
+                {{ l[c.chave]|data_br }}</td>
+
+            {% elif c.tipo == 'moeda' %}
+              <td class="num">{{ l[c.chave]|moeda }}</td>
+
+            {% elif c.tipo == 'status' %}
+              {% set st = (l.status_pgt or '')|trim|lower %}
+              <td><span class="selo {{ 'pagar' if st == 'pagar' else ('pago' if st == 'pago' else 'cancelado') }}">
+                {{ l.status_pgt or '—' }}</span></td>
+
+            {% elif c.tipo == 'agend' %}
+              <td>
+                {% if l.status_agend %}
+                  {% set ag = (l.status_agend or '')|trim|lower %}
+                  <span class="selo {{ 'agendar' if ag == 'agendar' else ('agendado' if ag == 'agendado' else ('falha' if 'falha' in ag else 'verificar')) }}">
+                    {{ l.status_agend }}</span>
+                {% endif %}
+              </td>
+
+            {% elif c.tipo == 'link' %}
+              <td class="cortar">
+                {% if l[c.chave] and l[c.chave].startswith('http') %}
+                  <a href="{{ l[c.chave] }}" target="_blank" rel="noopener">abrir</a>
+                {% else %}{{ l[c.chave] or '' }}{% endif %}
+              </td>
+
+            {% elif c.tipo == 'alertas' %}
+              <td>
+                {% if l.risco %}<span class="selo risco"
+                     title="A análise marcou risco de duplicidade">Risco</span>{% endif %}
+                {% if l.cadastro_incompleto %}<span class="selo incompleto"
+                     title="Falta chave Pix, centro de custo ou integração Omie">Cadastro</span>{% endif %}
+              </td>
+
+            {% else %}
+              <td class="cortar" title="{{ l[c.chave] or '' }}">{{ l[c.chave] or '' }}</td>
+            {% endif %}
+          {% endfor %}
+        </tr>
+      {% else %}
+        <tr><td colspan="{{ colunas|length + 1 }}"
+                style="padding:22px; text-align:center; color:var(--tinta-suave)">
+          {{ vazio|default('Nenhuma SP aqui.') }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

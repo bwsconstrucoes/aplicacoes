@@ -26,68 +26,16 @@
   {% include "analisesps_barra_acoes.html" %}
 {% endwith %}
 
+{% with colunas=colunas, todas=todas_colunas %}
+  {% include "analisesps_colunas.html" %}
+{% endwith %}
+
 <div class="tabela-wrap">
-  <div class="tabela-rolagem">
-    <table class="sps">
-      <thead>
-        <tr>
-          <th class="sel"><input type="checkbox" class="marcar-todas"
-                                 title="Marcar todas as SPs desta página"></th>
-          <th>ID</th><th>Vencimento</th><th>Credor</th><th class="num">Valor</th>
-          <th>Status</th><th>Agend.</th><th>Forma</th><th>Centro de custo</th>
-          <th>Responsável</th><th>Conta</th><th>Nota</th><th>Alertas</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for l in linhas %}
-          {% set cancelada = (l.status_pgt or '')|lower|trim == 'cancelado' %}
-          <tr class="{{ 'cancelada ' if cancelada }}{{ 'com-risco ' if l.risco }}{{ 'incompleta' if l.cadastro_incompleto and not l.risco }}"
-              data-id="{{ l.id }}"
-              data-ficha="{{ url_for('analisesps.detalhe', sp_id=l.id) }}">
-            <td class="sel"><input type="checkbox" class="marca" value="{{ l.id }}"
-                                   data-valor="{{ l.valor_num or 0 }}"
-                                   data-card="{{ l.card_link or '' }}"></td>
-            {# O número da SP abre o CARD NO PIPEFY, como no Streamlit. A ficha
-               daqui abre com duplo clique na linha. #}
-            <td class="id">
-              {% if l.card_link %}
-                <a href="{{ l.card_link }}" target="_blank" rel="noopener"
-                   title="Abrir o card no Pipefy">{{ l.id }}</a>
-              {% else %}{{ l.id }}{% endif %}
-            </td>
-            <td class="{{ 'venc-vencido' if l.vencido else ('venc-hoje' if l.vence_hoje else '') }}">
-              {{ l.vencimento_d|data_br }}</td>
-            <td class="cortar" title="{{ l.credor }}">{{ l.credor }}</td>
-            <td class="num">{{ l.valor_num|moeda }}</td>
-            <td>
-              {% set st = (l.status_pgt or '')|lower|trim %}
-              <span class="selo {{ 'pagar' if st == 'pagar' else ('pago' if st == 'pago' else 'cancelado') }}">
-                {{ l.status_pgt or '—' }}</span>
-            </td>
-            <td>
-              {% if l.status_agend %}
-  {%- set _ag = (l.status_agend or '')|trim|lower -%}
-              <span class="selo {{ 'agendar' if _ag == 'agendar' else ('agendado' if _ag == 'agendado' else ('falha' if 'falha' in _ag else 'verificar')) }}">
-                  {{ l.status_agend }}</span>
-              {% endif %}
-            </td>
-            <td class="cortar">{{ l.forma_pagamento }}</td>
-            <td class="cortar" title="{{ l.centro_custo }}">{{ l.centro_custo }}</td>
-            <td class="cortar">{{ l.responsavel }}</td>
-            <td class="cortar">{{ l.conta }}</td>
-            <td>{{ l.nf }}</td>
-            <td>
-              {% if l.risco %}<span class="selo risco" title="A análise marcou risco de duplicidade">Risco</span>{% endif %}
-              {% if l.cadastro_incompleto %}<span class="selo incompleto" title="Falta chave Pix, centro de custo ou integração Omie">Cadastro</span>{% endif %}
-            </td>
-          </tr>
-        {% else %}
-          <tr><td colspan="13" style="padding:26px; text-align:center; color:var(--tinta-suave)">
-            Nenhuma SP com esses filtros.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  {# Sem `grupo`: aqui a lista é uma só. No Lote cada tabela tem o seu, e é
+     assim que "marcar todas" sabe quais linhas alcança. #}
+  {% with origem='solicitacoes', vazio='Nenhuma SP com esses filtros.' %}
+    {% include "analisesps_tabela.html" %}
+  {% endwith %}
 
   <div class="paginas">
     {% set base_args = args.to_dict(flat=false) %}
@@ -105,6 +53,8 @@
     {% endif %}
   </div>
 </div>
+
+{% include "analisesps_kpis.html" %}
 {% endblock %}
 
 {% block scripts %}

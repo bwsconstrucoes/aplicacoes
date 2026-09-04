@@ -18,7 +18,8 @@ from decimal import Decimal
 import pytest
 from flask import Flask
 
-from app.apps.analisesps import consultas, web
+from app.apps.analisesps import consultas
+from app.apps.analisesps import preferencias, web
 
 
 SENHA_OPERADOR = "operador-de-teste"
@@ -81,6 +82,17 @@ def app(monkeypatch):
     ])
     monkeypatch.setattr(consultas, "opcoes",
                         lambda coluna, limite=400: ["Pagar", "Pago", "Cancelado"])
+    # Os números de baixo (o painel_kpis do Streamlit). São SQL de verdade na
+    # aplicação; aqui basta que a tela saiba desenhá-los.
+    monkeypatch.setattr(consultas, "contagem_agendamento", lambda f: {
+        "Agendar": 1, "Agendado": 1, "Falha Agendar": 0, "Pago": 0})
+    monkeypatch.setattr(consultas, "soma_por", lambda f, coluna, limite=12: [
+        {"nome": "BRADESCO 7011-4", "quantidade": 1, "total": Decimal("6750.00")}])
+    # As colunas da tabela saem das preferências, que ficam no banco. Sem
+    # dublar, cada tela tentaria abrir conexão só para saber o que mostrar.
+    monkeypatch.setattr(preferencias, "ler", lambda pessoa, chave: {})
+    monkeypatch.setattr(preferencias, "gravar",
+                        lambda pessoa, chave, valor: None)
 
     a = Flask(__name__)
     a.secret_key = "teste"
@@ -665,6 +677,113 @@ def test_a_coluna_da_validacao_continua_fechada_na_porta_comum(app):
         json={"ids": ["1"], "coluna": "validacao", "valor": "Sim"})
     assert resposta.status_code == 400
     assert "não é alterável" in resposta.get_json()["erro"]
+
+
+# ---------------------------------------------------------------------------
+# AS COLUNAS DA TABELA
+# ---------------------------------------------------------------------------
+def test_a_tabela_oferece_as_colunas_do_streamlit(app):
+    """A conversão reduziu a tabela a nove colunas; o dono trabalhava com
+    vinte. A coluna que falta é sempre a de que ele precisava naquele minuto —
+    Validação, Nº NF, Data Pgt, Responsável, CPF/CNPJ."""
+    from app.apps.analisesps import tabela
+    rotulos = {c.rotulo for c in tabela.DEFINICOES}
+    for esperado in ("ID", "Data", "Vencimento", "Credor", "CPF/CNPJ",
+                     "Tipo de Despesa", "Centro de Custo", "Valor",
+                     "Status Pgt", "Status Agend", "Forma de Pgt",
+                     "Conta Corrente", "Validação", "Informação p/ Pgt",
+                     "Nº NF", "Data Pgt", "Comprovante", "Responsável"):
+        assert esperado in rotulos, f"sumiu a coluna {esperado!r} do Streamlit"
+
+
+def test_a_escolha_de_colunas_nao_deixa_a_tabela_sem_nenhuma(app):
+    """Vazio não é escolha, é acidente — e uma tabela sem coluna nenhuma é
+    uma tela que ninguém consegue usar para descobrir o que houve."""
+    from app.apps.analisesps import tabela
+    assert tabela.escolhidas([]) == tabela.escolhidas(None)
+    assert tabela.escolhidas(["nao_existe"]) == tabela.escolhidas(None)
+    assert tabela.escolhidas("lixo") == tabela.escolhidas(None)
+
+
+def test_a_ordem_das_colunas_e_sempre_a_mesma(app):
+    """A ordem é a da definição, nunca a da escolha: se cada pessoa visse as
+    colunas noutra ordem, uma não conseguiria explicar a tela para a outra."""
+    from app.apps.analisesps import tabela
+    escolhidas = tabela.escolhidas(["nf", "id", "credor"])
+    assert [c.chave for c in escolhidas] == ["id", "credor", "nf"]
+
+
+def test_escolher_colunas_nao_e_alterar_dado(app):
+    """É `@exige_consulta` de propósito: escolher o que se vê não muda nada da
+    empresa, e o perfil que só olha tem direito de escolher como olha."""
+    resposta = como(app, SENHA_CONSULTA).post(
+        "/analisesps/colunas",
+        data={"coluna": ["id"], "voltar": "/analisesps/solicitacoes"})
+    assert resposta.status_code in (301, 302)
+
+
+def test_a_volta_da_escolha_de_colunas_nao_sai_do_modulo(app):
+    """O destino vem do formulário. Sem conferir, esta rota viraria trampolim
+    para fora — a mesma armadilha do login."""
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/colunas",
+        data={"coluna": ["id"], "voltar": "https://exemplo-malicioso.com"})
+    assert resposta.status_code in (301, 302)
+    assert "exemplo-malicioso" not in resposta.headers["Location"]
+
+
+# ---------------------------------------------------------------------------
+# OS NÚMEROS DE BAIXO, E O RISCO
+# ---------------------------------------------------------------------------
+def test_os_numeros_de_baixo_voltaram(app, monkeypatch):
+    """O `painel_kpis` do Streamlit: quanto por conta corrente, quanto por
+    forma de pagamento, e como está a divisão do agendamento. Sumiu na
+    conversão justamente a resposta de "quanto vai sair de cada conta", que é
+    a pergunta de quem efetiva os pagamentos."""
+    from decimal import Decimal
+    from app.apps.analisesps import consultas
+    monkeypatch.setattr(consultas, "contagem_agendamento", lambda f: {
+        "Agendar": 3, "Agendado": 2, "Falha Agendar": 1, "Pago": 4})
+    monkeypatch.setattr(consultas, "soma_por", lambda f, c, limite=12: [
+        {"nome": "BRADESCO 7011-4", "quantidade": 2, "total": Decimal("9000.00")}])
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "Σ por conta corrente" in html
+    assert "Σ por forma de pagamento" in html
+    assert "BRADESCO 7011-4" in html
+    assert "9.000,00" in html
+
+
+def test_remover_risco_grava_a_revisao_com_o_nome_de_quem_revisou(app,
+                                                                  monkeypatch):
+    """No Streamlit, "Remover Risco" escrevia na coluna da análise que aquilo
+    já tinha sido olhado. É o que tira a SP da lista de risco — e a palavra
+    "COM RISCO" no texto é justamente o que a põe lá.
+
+    Fica registrado QUEM revisou: dizer "pode pagar, eu conferi" é uma
+    responsabilidade, e responsabilidade sem nome não é responsabilidade."""
+    from app.apps.analisesps import web as tela
+    gravado = {}
+    monkeypatch.setattr(tela, "_gravar_alteracao",
+                        lambda ids, coluna, valor, acao: gravado.update(
+                            ids=ids, coluna=coluna, valor=valor, acao=acao)
+                        or {"ok": True, "alteradas": len(ids)})
+
+    resposta = como(app, SENHA_OPERADOR, nome="Marcelo").post(
+        "/analisesps/api/sem-risco", json={"ids": ["1"]})
+    assert resposta.status_code == 200
+    assert gravado["coluna"] == "analise_ia"
+    assert gravado["valor"].startswith("SEM RISCO")
+    assert "Marcelo" in gravado["valor"], "não diz quem revisou"
+    assert "COM RISCO" not in gravado["valor"], (
+        "o texto novo ainda casa com a regra que marca risco")
+
+
+def test_a_consulta_nao_remove_risco(app):
+    resposta = como(app, SENHA_CONSULTA).post(
+        "/analisesps/api/sem-risco", json={"ids": ["1"]})
+    assert resposta.status_code == 403
 
 
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):

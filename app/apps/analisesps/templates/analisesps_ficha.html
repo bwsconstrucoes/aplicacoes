@@ -62,6 +62,13 @@
 {% if tem_risco %}
   <div class="aviso erro">
     <b>Risco de duplicidade:</b> {{ sp.analise_ia }}
+    {% if pode_operar %}
+      <div style="margin-top:8px">
+        <button class="btn secundario" id="ficha-sem-risco"
+                title="Marca esta SP como revisada — sai da lista de risco">
+          Remover risco</button>
+      </div>
+    {% endif %}
     {% if risco_ids %}
       <div style="margin-top:8px">
         Lançamento(s) apontado(s):
@@ -78,7 +85,8 @@
 {% if pode_operar %}
   <div class="ficha-acoes" data-sp="{{ sp.id }}"
        data-url-alterar="{{ url_for('analisesps.alterar') }}"
-       data-url-validar="{{ url_for('analisesps.validar') }}">
+       data-url-validar="{{ url_for('analisesps.validar') }}"
+       data-url-sem-risco="{{ url_for('analisesps.sem_risco') }}">
     {% if not validado %}
       <div class="aviso atencao" style="width:100%">
         <b>Agendamento bloqueado:</b> a coluna <b>Validação</b> precisa estar

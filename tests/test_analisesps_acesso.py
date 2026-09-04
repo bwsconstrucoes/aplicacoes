@@ -106,6 +106,8 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/api/andamento"),
     ("POST", "/analisesps/api/alterar"),
     ("POST", "/analisesps/api/validar"),
+    ("POST", "/analisesps/api/sem-risco"),
+    ("POST", "/analisesps/colunas"),
     ("POST", "/analisesps/api/migrar"),
     ("GET", "/analisesps/sair"),
 ]
@@ -200,6 +202,7 @@ def test_senhas_iguais_dao_o_perfil_de_maior_poder(app, monkeypatch):
 @pytest.mark.parametrize("metodo,url", [
     ("POST", "/analisesps/api/alterar"),
     ("POST", "/analisesps/api/validar"),
+    ("POST", "/analisesps/api/sem-risco"),
     ("POST", "/analisesps/api/migrar"),
 ])
 def test_consulta_nao_alcanca_rota_de_operador(app, metodo, url):

@@ -698,3 +698,36 @@ a.kpi { display: block; }
   font-size: 11.5px; font-weight: 700; color: var(--azul-claro);
   text-transform: uppercase; letter-spacing: .06em;
 }
+
+/* ==========================================================================
+   ESCOLHER AS COLUNAS — fechado por padrao, para nao competir com a tabela
+   ========================================================================== */
+.escolher-colunas {
+  margin: 0 0 12px; padding: 8px 14px; background: var(--branco);
+  border: 1px solid var(--borda); border-radius: var(--raio-p);
+}
+.escolher-colunas > summary {
+  cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--tinta-suave);
+  list-style: none; display: flex; align-items: center; gap: 8px;
+}
+.escolher-colunas > summary::before { content: "▸"; }
+.escolher-colunas[open] > summary::before { content: "▾"; }
+.escolher-colunas > summary::-webkit-details-marker { display: none; }
+.escolher-colunas .qtd {
+  font-family: var(--fonte-dados); font-weight: 800; color: var(--azul);
+}
+.colunas-opcoes {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 4px 14px; margin-top: 12px;
+}
+.colunas-opcoes .opcao {
+  display: flex; align-items: center; gap: 7px; font-size: 13px; cursor: pointer;
+}
+
+/* Os numeros de baixo (o painel_kpis do Streamlit) */
+.kpis-baixo {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px; margin-top: 16px;
+}
+.sps.compacta { font-size: 12.5px; }
+.sps.compacta th, .sps.compacta td { padding: 5px 8px; }

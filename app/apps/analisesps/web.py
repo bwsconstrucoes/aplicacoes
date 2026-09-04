@@ -130,6 +130,46 @@ def _filtro_cru() -> dict:
     return cru
 
 
+def _TODAS_COLUNAS() -> list:
+    from . import tabela
+    return tabela.DEFINICOES
+
+
+def _colunas_da_pessoa() -> list:
+    """As colunas que ESTA pessoa vê na tabela. Nunca derruba a tela: se a
+    preferência não puder ser lida, mostra o padrão."""
+    from . import tabela
+    guardado = preferencias.ler(auth.pessoa_atual(), tabela.PREFERENCIA)
+    return tabela.escolhidas(guardado)
+
+
+@bp.route("/colunas", methods=["POST"])
+@exige_consulta
+def escolher_colunas():
+    """Guarda as colunas escolhidas e devolve a pessoa à tela de onde veio.
+
+    É `@exige_consulta`, e não `@exige_operador`, de propósito: escolher o que
+    se vê não altera dado nenhum da empresa — é preferência de quem olha, e o
+    perfil Consulta olha."""
+    from . import tabela
+
+    if request.form.get("acao") == "padrao":
+        escolhidas = []          # vazio = volta ao padrão, ver tabela.py
+    else:
+        escolhidas = [c for c in request.form.getlist("coluna")
+                      if c in tabela.POR_CHAVE]
+
+    preferencias.gravar(auth.pessoa_atual(), tabela.PREFERENCIA,
+                        {"colunas": escolhidas})
+
+    # A volta sai do formulário, então é conferida: destino de fora daqui
+    # transformaria esta rota em trampolim.
+    voltar = (request.form.get("voltar") or "").strip()
+    if voltar.startswith("/analisesps"):
+        return redirect(voltar)
+    return redirect(url_for("analisesps.solicitacoes"))
+
+
 def _opcoes_dos_filtros() -> dict:
     """O que cada lista suspensa da barra lateral oferece.
 
@@ -255,6 +295,14 @@ def solicitacoes():
     resumo = consultas.resumo(filtros)
     ultima = (pagina - 1) * consultas.POR_PAGINA + len(linhas)
 
+    # Os números que o Streamlit mostrava embaixo da tabela. São SQL, não
+    # contas sobre as 200 linhas da página: quem soma é o banco, sobre o
+    # filtro inteiro — que é justamente a pergunta ("quanto tem para pagar
+    # nisto que estou olhando?").
+    agendamento = consultas.contagem_agendamento(filtros)
+    por_conta = consultas.soma_por(filtros, "conta")
+    por_forma = consultas.soma_por(filtros, "forma_pagamento")
+
     return render_template(
         "analisesps_solicitacoes.html",
         linhas=linhas, resumo=resumo, base=base,
@@ -263,6 +311,8 @@ def solicitacoes():
         ultima_linha=ultima,
         tem_proxima=ultima < resumo["quantidade"],
         ordem=ordem, filtros=filtros,
+        agendamento=agendamento, por_conta=por_conta, por_forma=por_forma,
+        colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
         args=request.args, opcoes=_opcoes_dos_filtros(),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
@@ -499,6 +549,32 @@ def alterar():
                 "erro": f"A coluna '{coluna}' não é alterável por aqui."}, 400
 
     return _gravar_alteracao(ids, coluna, valor, acao)
+
+
+@bp.route("/api/sem-risco", methods=["POST"])
+@exige_operador
+def sem_risco():
+    """Marca a SP como revisada: o risco de duplicidade foi olhado e não era.
+
+    Escreve na coluna da análise (AL) o mesmo texto do Streamlit, com a data
+    da revisão — "SEM RISCO (revisado em DD/MM/AAAA)". A palavra importa: é
+    "COM RISCO" no texto que faz a SP aparecer na lista de risco, e é tirando
+    essa palavra que ela sai de lá.
+
+    Não é uma alteração comum, então também não passa pela porta comum: quem
+    revisa está dizendo "eu conferi e pode pagar", e isso fica registrado com
+    o nome de quem disse."""
+    from .horario import agora
+
+    dados = request.get_json(silent=True) or {}
+    ids, erro = _ids_do_pedido(dados)
+    if erro:
+        return erro
+
+    quem = auth.nome_atual() or "sem nome"
+    texto = (f"SEM RISCO (revisado por {quem} em "
+             f"{agora().strftime('%d/%m/%Y')})")
+    return _gravar_alteracao(ids, "analise_ia", texto, "Remover risco")
 
 
 @bp.route("/api/validar", methods=["POST"])
@@ -802,6 +878,32 @@ def tela_lote():
     guardado = lote.ler(pessoa)
     montado = lote.montar(guardado["conteudo"])
 
+    # O "Painel por status" que ficava embaixo do lote colado, no Streamlit:
+    # quatro listas por situação de agendamento, lidas da base inteira e não
+    # do lote. É onde se encontra a SP que ficou para trás e que ninguém
+    # colou em lote nenhum.
+    # No Streamlit estas quatro listas vinham INTEIRAS ("sem teto: exibe todos
+    # os registros"), o que lá custava só memória do PC. Aqui cada linha vira
+    # HTML que atravessa a internet: com 200 por status a página do Lote
+    # passava de 1 MB. Vinte de cada, por vencimento mais próximo, respondem
+    # "o que está prestes a vencer e ainda não foi tratado" — que é a pergunta
+    # que o painel existe para responder. O resto está a um clique, nas
+    # Solicitações já filtradas.
+    NO_PAINEL = 20
+    painel = []
+    for rotulo in ("Agendar", "Agendado", "Falha Agendar", "Verificar"):
+        try:
+            linhas = consultas.listar({"status_agend": [rotulo]},
+                                      ordem="vencimento", pagina=1)[:NO_PAINEL]
+            numeros = consultas.resumo({"status_agend": [rotulo]})
+        except Exception:  # noqa: BLE001 — o painel é um extra; o lote é o principal
+            logger.exception("Análise de SPs: falhou montar o painel de %r", rotulo)
+            continue
+        painel.append({"rotulo": rotulo, "linhas": linhas,
+                       "quantidade": numeros["quantidade"],
+                       "total": numeros["total"],
+                       "tem_mais": numeros["quantidade"] > len(linhas)})
+
     # O lote de quando ele era de todo mundo. Só aparece para quem ainda não
     # tem lote próprio — depois de começar o seu, ninguém quer ser lembrado.
     antes = lote.lote_de_antes() if not guardado["conteudo"].strip() else None
@@ -811,6 +913,8 @@ def tela_lote():
     return render_template(
         "analisesps_lote.html",
         aba="lote", base=base, lote=guardado, montado=montado, antes=antes,
+        colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
+        painel=painel,
         aviso=request.args.get("aviso") or None,
         pode_operar=auth.pode_operar(), nome=auth.nome_atual(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))

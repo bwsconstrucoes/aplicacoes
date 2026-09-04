@@ -1,0 +1,37 @@
+{# ---------------------------------------------------------------------------
+   ESCOLHER AS COLUNAS DA TABELA — some no Streamlit, volta aqui.
+
+   Fica guardado por pessoa: quem paga quer Conta e Informação p/ Pgt; quem
+   confere quer Validação e Autorização. Uma tabela só, com vinte colunas para
+   todo mundo, não serve a nenhum dos dois.
+
+   É um formulário separado do filtro de propósito: mudar coluna não é mudar
+   o que se está procurando, e misturar os dois faria cada clique numa caixa
+   de coluna refazer a consulta do filtro.
+--------------------------------------------------------------------------- #}
+<details class="escolher-colunas">
+  <summary>Colunas da tabela <span class="qtd">{{ colunas|length }} de {{ todas|length }}</span></summary>
+  <form method="post" action="{{ url_for('analisesps.escolher_colunas') }}">
+    <input type="hidden" name="voltar" value="{{ request.full_path }}">
+    <div class="colunas-opcoes">
+      {% set marcadas = colunas|map(attribute='chave')|list %}
+      {% for c in todas %}
+        <label class="opcao">
+          <input type="checkbox" name="coluna" value="{{ c.chave }}"
+                 {% if c.chave in marcadas %}checked{% endif %}>
+          <span class="rotulo">{{ c.rotulo }}</span>
+        </label>
+      {% endfor %}
+    </div>
+    <div style="display:flex; gap:8px; margin-top:10px">
+      <button class="btn" type="submit">Salvar</button>
+      <button class="btn secundario" type="submit" name="acao" value="padrao"
+              title="Volta às colunas que a tela mostra para quem nunca escolheu">Voltar ao padrão</button>
+    </div>
+    <p class="cartao-dica" style="margin:8px 0 0">
+      A escolha é sua e fica guardada — outra pessoa continua vendo as dela.
+      Sem nenhuma marcada, volta ao padrão: tabela sem coluna não é escolha,
+      é acidente.
+    </p>
+  </form>
+</details>

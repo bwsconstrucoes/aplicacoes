@@ -174,10 +174,49 @@ O botão aparece em dois lugares: na barra de ações (validar várias de uma ve
 como no Streamlit) e dentro do próprio aviso de "agendamento bloqueado", que é
 onde a pessoa descobre que falta validar.
 
+### Segunda leva (04/09, depois do "prossiga")
+
+- **A tabela voltou a ter as vinte colunas do Streamlit** (`tabela.py` espelha
+  o `GRID_COLS` dele). A conversão tinha reduzido a nove, e a coluna que falta
+  é sempre a de que se precisava naquele minuto: Validação, Nº NF, Data Pgt,
+  Responsável, CPF/CNPJ.
+- **Cada pessoa escolhe o que vê**, e a escolha fica guardada — como a
+  configuração de tabela do Streamlit. A ORDEM é sempre a da definição, nunca
+  a da escolha: se cada um visse as colunas noutra ordem, um não conseguiria
+  explicar a tela para o outro. Sem nenhuma marcada, volta ao padrão — tabela
+  sem coluna não é escolha, é acidente.
+- **Uma tabela só** (`analisesps_tabela.html`) para Solicitações e para o
+  Lote. Eram duas cópias, e já divergiam: o Lote mostrava menos colunas sem
+  que ninguém tivesse decidido isso.
+- **Os números de baixo** (o `painel_kpis`): Σ por conta corrente, Σ por forma
+  de pagamento e a divisão do agendamento. Sumira justamente a resposta de
+  "quanto vai sair de cada conta". Tudo SQL sobre o filtro inteiro, não sobre
+  as 200 linhas da página — somar a página daria um número menor e
+  convincente, que é o pior tipo de número errado.
+- **Painel por status no Lote**, as quatro listas que ficavam embaixo. Leem a
+  BASE, não o lote: é ali que se acha a SP que ficou para trás e que ninguém
+  colou em lote nenhum.
+- **Remover Risco**, com o nome de quem revisou no texto gravado. Dizer "pode
+  pagar, eu conferi" é responsabilidade, e responsabilidade sem nome não é
+  responsabilidade.
+
+**Uma diferença deliberada, e o número que a justifica:** no Streamlit as
+quatro listas do painel vinham INTEIRAS ("sem teto: exibe todos"). Lá isso
+custava memória do PC; aqui cada linha vira HTML que atravessa a internet.
+Medido com as 59 mil SPs: com 200 por status a página do Lote dava **1,2 MB**.
+Com vinte, **162 KB** — e as demais estão a um clique, nas Solicitações já
+filtradas. Tempos com a base cheia: Solicitações 247 ms, Lote 261 ms,
+Relatório 326 ms.
+
 ### O que ainda NÃO voltou
-- **Remover Risco**, **Gerar BeeVale**, **Cancelar SP no Pipefy por dentro**,
-  **reenviar comprovante por e-mail**, **escolher as colunas da tabela**.
-- **Auto-atualizar a cada 90s.**
+- **Gerar BeeVale** (depende do Shared Drive — erro 403 de cota) e **cancelar
+  a SP por dentro do Pipefy** (o botão abre o formulário deles, como lá).
+- **Reenviar comprovante por e-mail** (depende de SMTP no serviço).
+- **Auto-atualizar a cada 90s.** Não foi esquecimento: aqui a carga roda em
+  processo separado e a tela já lê o estado do banco. Recarregar sozinha a
+  cada 90 s custaria uma consulta por pessoa por minuto e meio, o dia inteiro,
+  para mudar quase nada. Se fizer falta, vira uma caixa de "atualizar sozinha"
+  guardada por pessoa — mas melhor esperar sentir a falta.
 
 ---
 
