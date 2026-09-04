@@ -487,7 +487,10 @@ def test_os_quatro_do_agendamento_sao_os_do_streamlit(app):
         "/analisesps/solicitacoes").get_data(as_text=True)
     for valor in ("Agendar", "Agendado", "Falha Agendar", "Desagendar"):
         assert f'data-valor="{valor}"' in html, f"sumiu o botão {valor}"
-    assert "Remover informação" in html
+    # O rótulo é o do Streamlit. Chegou a ser "Remover informação", que
+    # descrevia o efeito; o dono pediu o nome que ele usa — e agora convive na
+    # mesma barra com "Remover do lote", que é outra coisa.
+    assert ">Desagendar</button>" in html
 
 
 def test_o_lote_nao_tem_marcar_pago(app_lote):
@@ -1225,6 +1228,106 @@ def test_ligado_e_desligado_querem_dizer_a_mesma_coisa_em_todo_lugar(app):
     assert agenda.esta_ativo({})
     for desligado in ("cancelado", "inativo", "Desativado", " ARQUIVADO "):
         assert not agenda.esta_ativo({"status": desligado}), desligado
+
+
+# ---------------------------------------------------------------------------
+# TIRAR DO LOTE, PELA BARRA DO ALTO
+# ---------------------------------------------------------------------------
+def test_o_botao_de_agendamento_chama_desagendar(app):
+    """O dono quer o termo do Streamlit. "Remover informação" descrevia o
+    efeito, mas não era o nome que ele usa — e agora convive na mesma barra
+    com "Remover do lote", que é outra coisa."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert ">Desagendar</button>" in html
+    assert "Remover informação" not in html
+
+
+def test_remover_do_lote_tira_de_grupos_diferentes_de_uma_vez(app_lote,
+                                                              monkeypatch):
+    """Marcar linhas em grupos diferentes e tirar todas de uma vez. Antes só
+    dava editando o texto do lote na mão, achando o número no meio dos outros."""
+    from app.apps.analisesps import lote
+    guardado = {"conteudo": "Pagar amanhã\n1 2\n\nSemana que vem\n3"}
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": guardado["conteudo"], "salvo_por": "Marcelo",
+        "salvo_em": None})
+    monkeypatch.setattr(lote, "salvar",
+                        lambda c, quem="", pessoa="": guardado.update(conteudo=c))
+
+    resposta = como(app_lote, SENHA_OPERADOR).post(
+        "/analisesps/lote", data={"acao": "remover_ids", "ids": "1,3"},
+        follow_redirects=True)
+    assert resposta.status_code == 200
+    assert "1" not in guardado["conteudo"].split()
+    assert "3" not in guardado["conteudo"].split()
+    assert "2" in guardado["conteudo"], "tirou o que não foi marcado"
+    # Os títulos ficam mesmo quando o grupo esvazia: apagá-los faria a remessa
+    # perder a divisão que alguém montou.
+    assert "Pagar amanhã" in guardado["conteudo"]
+    assert "Semana que vem" in guardado["conteudo"]
+
+
+def test_remover_do_lote_nao_mexe_na_sp(app_lote, monkeypatch):
+    """"Remover" numa tela de pagamentos assusta, e com razão. Este mexe SÓ na
+    lista: não altera status, não entra na fila da planilha, não toca no
+    Pipefy."""
+    from app.apps.analisesps import lote, web as tela
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "Grupo\n1", "salvo_por": None, "salvo_em": None})
+    monkeypatch.setattr(lote, "salvar", lambda c, quem="", pessoa="": None)
+
+    gravou = []
+    monkeypatch.setattr(tela, "_gravar_alteracao",
+                        lambda *a, **k: gravou.append(a) or {"ok": True})
+
+    como(app_lote, SENHA_OPERADOR).post(
+        "/analisesps/lote", data={"acao": "remover_ids", "ids": "1"},
+        follow_redirects=True)
+    assert not gravou, "tirar do lote escreveu na planilha"
+
+
+def test_marcar_o_que_nao_esta_no_lote_e_explicado(app_lote, monkeypatch):
+    """O painel por status embaixo mostra SPs que NÃO estão no lote. Marcar
+    uma delas e mandar remover não é erro — simplesmente não há o que tirar,
+    e a tela precisa dizer isso em vez de fingir que fez."""
+    from app.apps.analisesps import lote
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "Grupo\n1", "salvo_por": None, "salvo_em": None})
+    monkeypatch.setattr(lote, "salvar", lambda c, quem="", pessoa="": None)
+
+    cliente = como(app_lote, SENHA_OPERADOR)
+    nenhuma = cliente.post("/analisesps/lote",
+                           data={"acao": "remover_ids", "ids": "99"},
+                           follow_redirects=True).get_data(as_text=True)
+    assert "Nenhuma das SPs marcadas estava no lote" in nenhuma
+
+    metade = cliente.post("/analisesps/lote",
+                          data={"acao": "remover_ids", "ids": "1,99"},
+                          follow_redirects=True).get_data(as_text=True)
+    assert "1 SP(s) saíram do lote" in metade
+    assert "já não estavam nele" in metade
+
+
+def test_o_botao_de_remover_so_existe_na_tela_do_lote(app, app_lote):
+    """Nas Solicitações não há lote de onde tirar — o botão de lá é o de
+    MANDAR para o lote. Dois botões parecidos com efeitos opostos na mesma
+    barra seria pedir para alguém errar."""
+    nas_solicitacoes = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'id="ba-remover-lote"' not in nas_solicitacoes
+    assert 'id="ba-enviar-lote"' in nas_solicitacoes
+
+    no_lote = como(app_lote, SENHA_OPERADOR).get(
+        "/analisesps/lote").get_data(as_text=True)
+    assert 'id="ba-remover-lote"' in no_lote
+    assert 'id="ba-enviar-lote"' not in no_lote
+
+
+def test_a_consulta_nao_tira_do_lote(app_lote):
+    resposta = como(app_lote, SENHA_CONSULTA).post(
+        "/analisesps/lote", data={"acao": "remover_ids", "ids": "1"})
+    assert resposta.status_code == 403
 
 
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):

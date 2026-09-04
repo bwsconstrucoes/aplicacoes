@@ -123,6 +123,40 @@ def remover_por_status(texto: str, status_alvo: set[str],
     return "\n".join(linhas_novas).strip("\n"), removidos
 
 
+def remover_ids(texto: str, ids) -> tuple[str, int]:
+    """Tira do lote as SPs pedidas, estejam em que grupo estiverem.
+
+    É o "Remover" da barra do alto: marcar linhas em grupos diferentes e tirar
+    todas de uma vez. Sem ele, tirar uma SP do lote era editar o texto na mão
+    e achar o número no meio dos outros.
+
+    Os TÍTULOS DOS GRUPOS FICAM, mesmo que o grupo esvazie — apagar o título
+    junto faria a remessa perder a divisão que alguém montou, e reconstruir
+    isso custa mais do que uma linha vazia incomoda. Mesma decisão do
+    `remover_por_status` ao lado."""
+    alvos = {str(i).strip() for i in (ids or []) if str(i).strip()}
+    if not alvos:
+        return str(texto or ""), 0
+
+    linhas_novas: list[str] = []
+    removidos = 0
+
+    for bruta in str(texto or "").split("\n"):
+        linha = bruta.strip()
+        if not linha:
+            continue
+        pedacos = [p for p in SEPARADORES.split(linha) if p]
+        if pedacos and all(SO_DIGITOS.fullmatch(p) for p in pedacos):
+            mantidos = [p for p in pedacos if p not in alvos]
+            removidos += len(pedacos) - len(mantidos)
+            if mantidos:
+                linhas_novas.append(" ".join(mantidos))
+        else:
+            linhas_novas.append(linha)      # título de grupo: sempre fica
+
+    return "\n".join(linhas_novas).strip("\n"), removidos
+
+
 # ---------------------------------------------------------------------------
 # Onde o lote fica guardado
 # ---------------------------------------------------------------------------

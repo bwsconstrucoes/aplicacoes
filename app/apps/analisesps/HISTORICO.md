@@ -311,6 +311,32 @@ Os padrões do Streamlit ficaram: o **dia da repetição sai da primeira data**
 dizer "último dia do mês"**, e **imposto, FGTS e parcelamento antecipam**
 quando caem em dia não útil.
 
+### Sexta leva (05/09) — o Lote
+
+- **"Remover informação" virou "Desagendar"**, o termo do Streamlit e o que o
+  dono usa. O rótulo antigo descrevia o efeito, mas agora convive na mesma
+  barra com "Remover do lote" — e dois "remover" com efeitos diferentes lado
+  a lado é pedir para alguém errar.
+- **"Remover do lote" entrou na barra fixa**, junto dos outros. Tira as SPs
+  marcadas do lote, **em qualquer grupo, de uma vez**. Antes, tirar uma SP
+  era editar o texto do lote na mão e achar o número no meio dos outros.
+
+Três decisões que valem estar escritas:
+
+1. **Não altera a SP.** Mexe só na lista: não escreve na planilha, não entra
+   na fila, não toca no Pipefy. A confirmação diz isso — "remover" numa tela
+   de pagamentos assusta, e com razão.
+2. **Os títulos dos grupos ficam**, mesmo que o grupo esvazie. Apagá-los
+   junto faria a remessa perder a divisão que alguém montou, e remontar custa
+   mais do que uma linha vazia incomoda. Mesma decisão do "Tirar as pagas".
+3. **O painel por status embaixo mostra SPs que NÃO estão no lote.** Marcar
+   uma delas e mandar remover não é erro — não há o que tirar, e a tela diz
+   isso em vez de fingir que fez. Quando a seleção mistura as duas coisas, ela
+   conta quantas saíram e quantas já não estavam lá.
+
+O botão **só existe na tela do Lote**. Nas Solicitações o botão vizinho é o de
+MANDAR para o lote, e os dois na mesma barra seriam a confusão pronta.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

@@ -152,6 +152,22 @@
     finally { btnValidar.disabled = false; }
   });
 
+  // --- Tirar do lote o que esta marcado ------------------------------------
+  //
+  // Mexe SO na lista do lote: nao altera status, nao vai para a planilha.
+  // A confirmacao diz isso, porque "remover" numa tela de pagamentos assusta.
+  const btnRemover = document.getElementById("ba-remover-lote");
+  if (btnRemover) btnRemover.addEventListener("click", () => {
+    const ids = idsMarcados();
+    if (!ids) return;
+    if (!confirm(`Tirar ${ids.length} SP(s) do lote.\n\nIsto mexe só na sua `
+                 + `lista — não altera nada na planilha nem no Pipefy. `
+                 + `Confirma?`)) return;
+    const form = document.getElementById("form-remover-lote");
+    form.querySelector("input[name=ids]").value = ids.join(",");
+    form.submit();
+  });
+
   // --- Abrir no Pipefy os cards das marcadas -------------------------------
   //
   // Uma aba por card. O navegador bloqueia isso por padrão quando não parte de

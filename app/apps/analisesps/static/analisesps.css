@@ -831,3 +831,8 @@ a.kpi { display: block; }
 .form-agenda-acoes { grid-column: 1 / -1; display: flex; gap: 8px; }
 .acoes-linha { white-space: nowrap; }
 .acoes-linha .link-btn + form { margin-left: 8px; }
+
+/* "Remover do lote" na barra: acao de tirar, nao de alterar. Discreto, mas
+   distinguivel dos botoes que escrevem na planilha. */
+.barra-acoes .btn.perigo { border-color: #E0B4B0; color: #8C3A33; }
+.barra-acoes .btn.perigo:hover:not(:disabled) { background: #FDF3F2; }

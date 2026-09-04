@@ -925,6 +925,26 @@ def tela_lote():
                 aviso = f"{len(crus)} SP(s) entraram no grupo \"{titulo}\"."
             else:
                 aviso = "Nenhuma SP marcada."
+        elif acao == "remover_ids":
+            # Veio da barra do alto: tira do lote o que estiver marcado, em
+            # qualquer grupo. O painel por status embaixo mostra SPs que NÃO
+            # estão no lote — marcar uma delas e mandar remover não é erro,
+            # simplesmente não há o que tirar, e a tela diz isso.
+            pedidos = [i.strip() for i in
+                       (request.form.get("ids") or "").split(",") if i.strip()]
+            conteudo = lote.ler(pessoa)["conteudo"]
+            conteudo, quantos = lote.remover_ids(conteudo, pedidos)
+            se_faltou = len(pedidos) - quantos
+            if quantos:
+                aviso = f"{quantos} SP(s) saíram do lote."
+                if se_faltou:
+                    aviso += (f" Outra(s) {se_faltou} já não estavam nele — "
+                              "provavelmente vieram do painel por status.")
+            elif pedidos:
+                aviso = ("Nenhuma das SPs marcadas estava no lote. As do "
+                         "painel por status embaixo não fazem parte dele.")
+            else:
+                aviso = "Nenhuma SP marcada."
         elif acao == "trazer_antigo":
             antigo_ = lote.lote_de_antes().get("conteudo") or ""
             if antigo_.strip():

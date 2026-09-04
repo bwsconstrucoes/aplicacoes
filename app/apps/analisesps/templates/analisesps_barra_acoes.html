@@ -43,10 +43,19 @@
         <button class="btn secundario" data-coluna="agendado" data-valor="Falha Agendar"
                 data-precisa-selecao>Falha Agendar</button>
         <button class="btn secundario" data-coluna="agendado" data-valor="Desagendar"
-                data-rotulo="Desagendar (remover informação)"
                 data-precisa-selecao
-                title="Apaga o Agendado na planilha">Remover informação</button>
+                title="Apaga o campo Agendado na planilha">Desagendar</button>
       </div>
+      {% if origem == 'lote' %}
+        {# Tirar do lote o que estiver marcado, em qualquer grupo. Fica aqui,
+           com os outros, porque é a mesma seleção e o mesmo gesto — e porque
+           antes só dava para editar o texto do lote na mão, achando o número
+           no meio dos outros. NÃO altera a SP: mexe só na lista. #}
+        <button class="btn secundario perigo" id="ba-remover-lote"
+                data-precisa-selecao
+                title="Tira as SPs marcadas do lote. Não altera nada na planilha.">
+          Remover do lote</button>
+      {% endif %}
     {% else %}
       <span class="ba-aviso">Perfil <b>Consulta</b> — vê e exporta, não altera.</span>
     {% endif %}
@@ -75,11 +84,19 @@
   </div>
 </div>
 
-{% if origem != 'lote' and pode_operar %}
-  {# O envio ao Lote é POST: acrescenta um grupo lá e leva a pessoa junto. #}
-  <form method="post" action="{{ url_for('analisesps.tela_lote') }}"
-        id="form-enviar-lote" style="display:none">
-    <input type="hidden" name="acao" value="receber_ids">
-    <input type="hidden" name="ids" value="">
-  </form>
+{% if pode_operar %}
+  {% if origem != 'lote' %}
+    {# O envio ao Lote é POST: acrescenta um grupo lá e leva a pessoa junto. #}
+    <form method="post" action="{{ url_for('analisesps.tela_lote') }}"
+          id="form-enviar-lote" style="display:none">
+      <input type="hidden" name="acao" value="receber_ids">
+      <input type="hidden" name="ids" value="">
+    </form>
+  {% else %}
+    <form method="post" action="{{ url_for('analisesps.tela_lote') }}"
+          id="form-remover-lote" style="display:none">
+      <input type="hidden" name="acao" value="remover_ids">
+      <input type="hidden" name="ids" value="">
+    </form>
+  {% endif %}
 {% endif %}
