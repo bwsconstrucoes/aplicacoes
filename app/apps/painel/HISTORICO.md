@@ -84,11 +84,20 @@ alguém abrir a tela publicada:
 O dono abriu o painel e recebeu a tela de erro com **"comparing strings with
 non-ASCII characters is not supported"**.
 
+**O que aconteceu de verdade:** ele estava **errando a senha**, e o que digitou
+tinha acento. Em vez de "senha incorreta", levou a tela de erro. A senha
+configurada não tem acento — **ninguém ficou trancado fora**, e não houve
+indisponibilidade.
+
 **Causa:** o `hmac.compare_digest` do Python, usado para conferir a senha em
 tempo constante, **recusa texto com qualquer caractere fora do ASCII** — e não
-devolve `False`: levanta `TypeError`. Um "ç" ou um "ã" na senha derrubava a tela
-de login. E se a senha CONFIGURADA (`PAINEL_SENHA`) tivesse acento, **ninguém
-entrava nunca**, nem sabendo a senha.
+devolve `False`: levanta `TypeError`. Basta o texto DIGITADO ter acento para
+derrubar a tela.
+
+**O caso pior, que não aconteceu mas era possível:** se a `PAINEL_SENHA`
+configurada tivesse acento, ninguém entraria nunca, nem sabendo a senha. Fica
+registrado porque a correção fecha os dois casos, e porque trocar a senha para
+uma com acento era uma armadilha esperando.
 
 **Correção:** comparar **bytes** em vez de texto. O `compare_digest` aceita
 bytes de qualquer conteúdo e continua sendo tempo constante. Vale também para o
