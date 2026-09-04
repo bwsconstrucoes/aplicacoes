@@ -45,6 +45,11 @@ Coluna = namedtuple("Coluna", "chave rotulo tipo padrao")
 # Sobre "Tipo de Despesa": é a classificação de despesa que existe NA SP
 # (coluna I da SPsBD). "Categoria de Despesa" no sentido do Omie é outra
 # coisa e só aparece na tela de Ratear — ela não é gravada em cada SP.
+#
+# Sobre "Obra": é o CENTRO DE CUSTO da planilha (coluna H). O cabeçalho usa a
+# palavra que o dono usa; a barra de filtros diz "Obra (centro de custo)"
+# porque lá cabe, e é ela que faz a ponte com o nome da planilha. A célula
+# pode trazer mais de uma obra — ver `consultas.MULTIPLAS_NA_CELULA`.
 DEFINICOES = [
     Coluna("id",               "ID",                  "id",      True),
     Coluna("solicitacao_d",    "Data",                "data",    False),
@@ -53,8 +58,8 @@ DEFINICOES = [
     Coluna("descricao",        "Descrição",           "longo",   True),
     Coluna("documento",        "CPF/CNPJ",            "texto",   False),
     Coluna("tipo_despesa",     "Tipo de Despesa",     "texto",   True),
-    Coluna("centro_custo",     "Centro de Custo",     "texto",   False),
     Coluna("valor_num",        "Valor",               "moeda",   True),
+    Coluna("centro_custo",     "Obra",                "texto",   True),
     Coluna("status_pgt",       "Status Pgt",          "status",  True),
     Coluna("status_agend",     "Status Agend",        "agend",   True),
     Coluna("forma_pagamento",  "Forma de Pgt",        "texto",   True),

@@ -697,11 +697,24 @@ def test_a_tabela_oferece_as_colunas_do_streamlit(app):
     from app.apps.analisesps import tabela
     rotulos = {c.rotulo for c in tabela.DEFINICOES}
     for esperado in ("ID", "Data", "Vencimento", "Credor", "CPF/CNPJ",
-                     "Tipo de Despesa", "Centro de Custo", "Valor",
+                     "Tipo de Despesa", "Valor",
                      "Status Pgt", "Status Agend", "Forma de Pgt",
                      "Conta Corrente", "Validação", "Informação p/ Pgt",
                      "Nº NF", "Data Pgt", "Comprovante", "Responsável"):
         assert esperado in rotulos, f"sumiu a coluna {esperado!r} do Streamlit"
+    # O "Centro de Custo" do Streamlit se chama OBRA aqui: é a palavra que o
+    # dono usa, e cabe no cabeçalho estreito. A barra de filtros diz "Obra
+    # (centro de custo)", que é onde a ponte com o nome da planilha cabe.
+    assert "Obra" in rotulos
+
+
+def test_a_obra_vem_marcada_e_logo_depois_do_valor(app):
+    """Pedido do dono: a obra faltava na lista, e o lugar dela é ao lado do
+    valor — é a pergunta seguinte a "quanto é": "de qual obra?"."""
+    from app.apps.analisesps import tabela
+    escolhidas = [c.chave for c in tabela.escolhidas(None)]
+    assert "centro_custo" in escolhidas, "a obra não vem marcada"
+    assert escolhidas.index("centro_custo") == escolhidas.index("valor_num") + 1
 
 
 def test_a_escolha_de_colunas_nao_deixa_a_tabela_sem_nenhuma(app):
@@ -1677,6 +1690,82 @@ def test_a_montagem_do_codigo_vive_num_lugar_so(app):
     assert hasattr(tela, "_codigo_de_pagamento")
     vazio = tela._codigo_de_pagamento("1", None)
     assert vazio["erro"] and vazio["sp"] is None
+
+
+# ---------------------------------------------------------------------------
+# A HORA NA TELA
+# ---------------------------------------------------------------------------
+def test_o_carimbo_da_base_sai_em_portugues_com_a_hora(app):
+    """O dono viu na tela: "base de 2026-09-04T17:25:31.319885-03:00".
+
+    O carimbo da última sincronização é guardado como TEXTO em
+    `analisesps.meta`, e o formatador só sabia converter data de verdade — o
+    resto passava cru. E aqui a HORA é o ponto: "a base é de quando?"
+    respondido só com o dia diz "hoje", que é o que já se sabia."""
+    from app.apps.analisesps import formatos
+
+    assert formatos.momento_br(
+        "2026-09-04T17:25:31.319885-03:00") == "04/09/2026 às 17:25"
+    # O mesmo instante, escrito em UTC, tem de dar a mesma hora de Brasília.
+    assert formatos.momento_br(
+        "2026-09-04T20:25:31.319885+00:00") == "04/09/2026 às 17:25"
+    # Sem fuso, vale a convenção do módulo: o serviço roda em UTC.
+    assert formatos.momento_br("2026-09-04T20:25:31") == "04/09/2026 às 17:25"
+
+
+def test_o_dia_mostrado_e_o_dia_em_brasilia(app):
+    """Uma sincronização das 22h daqui é 1h do dia seguinte em UTC. Sem
+    converter, a tela mostraria a data de amanhã."""
+    from app.apps.analisesps import formatos
+    assert formatos.data_br("2026-09-05T01:30:00+00:00") == "04/09/2026"
+    assert formatos.momento_br(
+        "2026-09-05T01:30:00+00:00") == "04/09/2026 às 22:30"
+
+
+def test_o_formatador_nunca_estraga_o_que_nao_entende(app):
+    """Vazio continua vazio, e texto que não é data passa inteiro — nunca
+    "None" nem exceção na cara de quem só abriu uma tela."""
+    from app.apps.analisesps import formatos
+    for vazio in (None, "", "   "):
+        assert formatos.momento_br(vazio) == ""
+        assert formatos.data_br(vazio) == ""
+    assert formatos.momento_br("sem data aqui") == "sem data aqui"
+    # E uma data pura (sem hora) não ganha hora inventada.
+    import datetime as dt
+    assert formatos.momento_br(dt.date(2026, 9, 4)) == "04/09/2026"
+
+
+def test_a_tela_mostra_a_hora_da_base(app, monkeypatch):
+    from app.apps.analisesps import consultas
+    monkeypatch.setattr(consultas, "base_carregada", lambda: {
+        "pronta": True, "quantidade": 59055, "desconhecida": False,
+        "ultima": "2026-09-04T17:25:31.319885-03:00"})
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "base de 04/09/2026 às 17:25" in html
+    # O carimbo cru ainda existe na página, num atributo escondido: é o valor
+    # que o script compara para saber se a base mudou. O que não pode é ele
+    # aparecer como TEXTO.
+    import re
+    visivel = re.sub(r"<[^>]+>", " ", html)
+    assert "T17:25:31" not in visivel, "o carimbo cru vazou para a tela"
+
+
+def test_o_registro_de_alteracoes_mostra_a_hora(app, monkeypatch):
+    """Duas mudanças no mesmo dia, sem a hora, ficam indistinguíveis — e a
+    pergunta que se faz num registro de alterações é "quando foi isso?"."""
+    import datetime as dt
+    from app.apps.analisesps import db as banco
+    quando = dt.datetime(2026, 9, 4, 20, 25, tzinfo=dt.timezone.utc)
+    monkeypatch.setattr(banco, "consultar", lambda sql, params=(): (
+        [] if "count(*)" in sql else
+        [(quando, "1", "agendado", "Agendado", "", "Agendar", "operador",
+          "Marcelo", "enviado", quando, None)]))
+    monkeypatch.setattr(banco, "consultar_um", lambda sql, params=(): (0,))
+
+    html = como(app, SENHA_CONSULTA).get(
+        "/analisesps/log").get_data(as_text=True)
+    assert "04/09/2026 às 17:25" in html
 
 
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):

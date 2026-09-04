@@ -489,6 +489,29 @@ dentro de uma página HTML isso é inválido, e alguns navegadores param de
 desenhar o resto a partir dali. Agora só o `<svg>` vai para dentro. Estava
 assim desde a conversão, na tela de códigos — foi um teste que apontou.
 
+### Décima primeira leva (05/09) — a hora crua e a coluna Obra
+
+**O carimbo aparecia cru na tela:** *"base de 2026-09-04T17:25:31.319885-03:00"*.
+A última sincronização é guardada como **texto** em `analisesps.meta`, e o
+formatador de data só sabia converter data de verdade — o resto passava
+inteiro. Agora há `momento_br`, que aceita texto, data e data-e-hora, e
+devolve **"04/09/2026 às 17:25"**, na hora de Brasília.
+
+E aqui a **hora é o ponto**: "a base é de quando?" respondido só com o dia diz
+"hoje", que é o que já se sabia. Pelo mesmo motivo, o **registro de
+alterações** passou a mostrar a hora — duas mudanças no mesmo dia, sem ela,
+ficam indistinguíveis.
+
+**Um defeito de fuso corrigido junto:** uma sincronização das 22h daqui é 1h
+do dia seguinte em UTC. Sem converter antes de cortar a hora, a tela mostraria
+**a data de amanhã**. O `data_br` agora normaliza para Brasília antes.
+
+**A coluna Obra entrou nas colunas padrão**, logo depois do Valor — é a
+pergunta seguinte a "quanto é": "de qual obra?". Vale nas duas telas, que leem
+a mesma escolha. O cabeçalho usa **"Obra"**, a palavra do dono, porque cabe na
+coluna estreita; a barra de filtros diz "Obra (centro de custo)", que é onde a
+ponte com o nome da planilha cabe.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

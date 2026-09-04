@@ -114,12 +114,53 @@ def moeda(valor) -> str:
     return ("-" if n < 0 else "") + ".".join(grupos) + "," + centavos
 
 
+def _como_momento(valor):
+    """Aceita data, data-e-hora ou o TEXTO de uma delas. None quando não dá.
+
+    O texto existe porque nem tudo que a tela mostra vem de uma coluna de
+    data: o carimbo da última sincronização, por exemplo, é guardado como
+    texto em `analisesps.meta`. Sem isto, ele aparecia cru na tela —
+    "2026-09-04T17:25:31.319885-03:00" no lugar de "04/09/2026 às 17:25"."""
+    if isinstance(valor, dt.datetime) or isinstance(valor, dt.date):
+        return valor
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+    try:
+        return dt.datetime.fromisoformat(texto)
+    except ValueError:
+        pass
+    # Já veio no formato brasileiro? Então não há o que converter.
+    return None
+
+
 def data_br(valor) -> str:
     """Data do banco -> "31/12/2026". Vazio vira vazio, nunca "None"."""
-    if valor is None:
+    if valor is None or (isinstance(valor, str) and not valor.strip()):
         return ""
-    if isinstance(valor, dt.datetime):
-        valor = valor.date()
-    if isinstance(valor, dt.date):
-        return valor.strftime("%d/%m/%Y")
+    momento = _como_momento(valor)
+    if isinstance(momento, dt.datetime):
+        # Data e hora viram o DIA EM BRASÍLIA. Sem converter, uma
+        # sincronização das 22h daqui (1h do dia seguinte em UTC) apareceria
+        # com a data de amanhã.
+        from .horario import para_brasilia
+        return (para_brasilia(momento) or momento).strftime("%d/%m/%Y")
+    if isinstance(momento, dt.date):
+        return momento.strftime("%d/%m/%Y")
     return str(valor)
+
+
+def momento_br(valor) -> str:
+    """Data E HORA, na hora de Brasília -> "31/12/2026 às 17:25".
+
+    Para o que só faz sentido com a hora: "a base é de quando?". Dizer só o
+    dia responderia "hoje", que é justamente o que já se sabia."""
+    if valor is None or (isinstance(valor, str) and not valor.strip()):
+        return ""
+    momento = _como_momento(valor)
+    if momento is None:
+        return str(valor)
+    if not isinstance(momento, dt.datetime):
+        return momento.strftime("%d/%m/%Y")
+    from .horario import texto as _texto_br
+    return _texto_br(momento)

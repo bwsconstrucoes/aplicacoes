@@ -46,7 +46,7 @@
            ser respondível de relance, sem abrir Configurações. #}
         {% if base is defined and base and base.ultima %}
           <br><small title="A tela busca atualizações a cada 90 segundos">
-            base de {{ base.ultima|data_br }}</small>
+            base de {{ base.ultima|momento_br }}</small>
         {% endif %}
       </div>
     {% endif %}

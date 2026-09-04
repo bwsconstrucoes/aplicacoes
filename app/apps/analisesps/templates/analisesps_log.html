@@ -70,7 +70,7 @@
       <tbody>
         {% for l in linhas %}
           <tr>
-            <td>{{ l.criado_em|data_br }}</td>
+            <td>{{ l.criado_em|momento_br }}</td>
             <td><a href="{{ url_for('analisesps.detalhe', sp_id=l.sp_id) }}">{{ l.sp_id }}</a></td>
             <td>{{ l.campo }}</td>
             <td class="cortar">{{ l.valor_anterior or '—' }}</td>
@@ -82,7 +82,7 @@
               <span class="selo {{ 'pago' if l.status == 'enviado' else ('falha' if l.status == 'erro' else 'pagar') }}">
                 {{ {'enviado':'na planilha','pendente':'aguardando','erro':'erro'}.get(l.status, l.status) }}</span>
             </td>
-            <td>{{ l.enviado_em|data_br }}</td>
+            <td>{{ l.enviado_em|momento_br }}</td>
             <td class="cortar" title="{{ l.erro or '' }}">{{ l.erro or '' }}</td>
           </tr>
         {% else %}

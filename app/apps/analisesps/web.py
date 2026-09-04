@@ -44,6 +44,14 @@ def _filtro_data(valor):
     return data_br(valor)
 
 
+@bp.app_template_filter("momento_br")
+def _filtro_momento(valor):
+    """Data E hora, na hora de Brasília. Para o que só faz sentido com a
+    hora — "a base é de quando?"."""
+    from .formatos import momento_br
+    return momento_br(valor)
+
+
 # ---------------------------------------------------------------------------
 # Entrada e saída
 # ---------------------------------------------------------------------------
