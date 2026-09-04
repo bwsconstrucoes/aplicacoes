@@ -278,6 +278,39 @@ A chave normaliza maiúscula, acento e espaço sobrando. **Não é controle de
 acesso**: as quatro pessoas dividem a mesma senha, e a separação por nome é
 organizacional, não uma tranca. Dito assim para ninguém confundir as duas.
 
+### Quinta leva (05/09) — a Agenda volta a aceitar lembretes
+
+*"e agenda? como faço pra adicionar lembretes? nao ta funcionando"* — e não
+estava mesmo. A conversão deixou a agenda **só de leitura**: os compromissos
+vinham da aba "Agenda" da planilha de Credenciais e não havia como pôr nada
+nela pela tela. Sem alguém preencher a aba à mão, a agenda abria vazia e sem
+explicar o porquê. O Streamlit tinha "Novo compromisso" e "Editar".
+
+- **Novo lembrete, editar e desligar**, pela tela.
+- **A PLANILHA CONTINUA SENDO A DONA.** Grava-se lá PRIMEIRO e só depois
+  aqui. Se fosse ao contrário, uma falha de rede deixaria o lembrete vivo na
+  tela e invisível na planilha — e a próxima sincronização não o traria de
+  volta: ele existiria só aqui, até alguém reparar. Falhando a planilha,
+  **nada é salvo** e a tela diz o que houve.
+- **Sem fila, de propósito.** A fila das SPs existe porque são centenas de
+  células e a conexão oscila. Aqui é uma linha por vez, algumas por mês —
+  escrita direta, com erro na cara, é mais honesto e muito mais simples.
+- **A aba "Agenda" é criada se não existir**, com o cabeçalho certo. É a
+  causa mais provável de "não funciona": sem a aba, não há o que trazer.
+- **Desligar não apaga.** O lembrete some da vista e continua guardado —
+  desligar um lembrete de imposto por engano e não ter como trazê-lo de volta
+  seria pior do que o engano.
+- **Defeito corrigido de passagem:** "ligado" e "desligado" queriam dizer
+  coisas diferentes em lugares diferentes — o calendário exigia status
+  "ativo"; os próximos só descartavam "cancelado". Um compromisso marcado
+  "inativo" aparecia num e não no outro. Agora há uma regra só
+  (`agenda.esta_ativo`).
+
+Os padrões do Streamlit ficaram: o **dia da repetição sai da primeira data**
+(não há campo separado, para os dois não se contradizerem), **dia 31 quer
+dizer "último dia do mês"**, e **imposto, FGTS e parcelamento antecipam**
+quando caem em dia não útil.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
@@ -324,10 +357,6 @@ acordado, não vale o risco.
 ### O que ainda NÃO voltou
 - **Gerar BeeVale** (depende do Shared Drive — erro 403 de cota) e **cancelar
   a SP por dentro do Pipefy** (o botão abre o formulário deles, como lá).
-- **Criar e editar compromissos da Agenda pela tela.** O Streamlit tinha, e
-  escrevia de volta na aba Agenda da planilha. Aqui a agenda é só leitura: o
-  caminho de escrita para essa aba não existe, e inventá-lo é entrega
-  própria. A grade do mês, que era o que faltava para enxergar, já está.
 - **A coluna SP Fiscal na lista** (ver acima).
 - **Reenviar comprovante por e-mail** (depende de SMTP no serviço).
 - **Auto-atualizar a cada 90s.** Não foi esquecimento: aqui a carga roda em

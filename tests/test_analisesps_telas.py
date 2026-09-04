@@ -1093,6 +1093,140 @@ def test_nome_novo_com_lote_vazio_avisa_em_vez_de_deixar_a_pessoa_no_escuro(
     assert "Maiúscula e acento não fazem diferença" in html
 
 
+# ---------------------------------------------------------------------------
+# A AGENDA VOLTA A ACEITAR LEMBRETES
+#
+# "e agenda? como faço pra adicionar lembretes? nao ta funcionando" — e não
+# estava mesmo: a conversão deixou a agenda só de leitura. Sem a aba da
+# planilha preenchida à mão, ela abria vazia e sem explicar.
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def agenda_gravavel(app, monkeypatch):
+    """A agenda com a planilha dublada — aqui não há Google. Guarda o que
+    teria ido para a aba Agenda, que é o que precisa ser conferido."""
+    from app.apps.analisesps import agenda, sincronizacao
+    guardados = {}
+    escrito = []
+
+    monkeypatch.setattr(sincronizacao, "escrever_compromisso",
+                        lambda r: escrito.append(dict(r)))
+    monkeypatch.setattr(agenda, "gravar",
+                        lambda conn, regs: [guardados.update({r["id"]: r})
+                                            for r in regs] and len(regs))
+    monkeypatch.setattr(agenda, "salvar",
+                        lambda r: (sincronizacao.escrever_compromisso(r),
+                                   guardados.update({r["id"]: r})))
+    monkeypatch.setattr(agenda, "listar", lambda: list(guardados.values()))
+    monkeypatch.setattr(agenda, "um", lambda i: guardados.get(i))
+    monkeypatch.setattr(agenda, "proximos", lambda dias=90: [])
+    monkeypatch.setattr(agenda, "a_vencer", lambda: [])
+    monkeypatch.setattr(agenda, "feriados_extra", lambda: set())
+    app.escrito = escrito
+    app.guardados = guardados
+    return app
+
+
+def test_a_agenda_aceita_um_lembrete_novo(agenda_gravavel):
+    """E o lembrete vai para a PLANILHA, não só para o banco: a aba Agenda é
+    a dona. Se fosse só aqui, a próxima sincronização traria de volta um mundo
+    sem ele."""
+    cliente = como(agenda_gravavel, SENHA_OPERADOR, nome="Marcelo")
+    resposta = cliente.post("/analisesps/agenda", data={
+        "acao": "salvar", "titulo": "FGTS da obra", "categoria": "FGTS",
+        "data_base": "2026-01-07", "recorrencia": "mensal",
+        "alerta_dias_antes": "5", "responsavel": "Maria"},
+        follow_redirects=True)
+    assert resposta.status_code == 200
+
+    assert len(agenda_gravavel.escrito) == 1, "não foi para a planilha"
+    guardado = agenda_gravavel.escrito[0]
+    assert guardado["titulo"] == "FGTS da obra"
+    assert guardado["criado_por"] == "Marcelo", "não diz quem cadastrou"
+    # O padrão de FGTS é ANTECIPAR: imposto pago depois do vencimento tem multa.
+    assert guardado["ajuste_dia_util"] == "antecipa"
+    # O dia da repetição sai da data, como no Streamlit — não há campo à parte
+    # para os dois não se contradizerem.
+    assert guardado["dia_mes"] == "7"
+
+
+def test_o_lembrete_sem_titulo_ou_sem_data_e_recusado_com_explicacao(
+        agenda_gravavel):
+    """Recusar em silêncio faria a pessoa achar que salvou."""
+    cliente = como(agenda_gravavel, SENHA_OPERADOR)
+    sem_titulo = cliente.post("/analisesps/agenda", data={
+        "acao": "salvar", "titulo": "  ", "data_base": "2026-01-07"})
+    assert "precisa de um título" in sem_titulo.get_data(as_text=True)
+
+    sem_data = cliente.post("/analisesps/agenda", data={
+        "acao": "salvar", "titulo": "Conta de luz", "data_base": ""})
+    assert "primeira ocorrência" in sem_data.get_data(as_text=True)
+    assert not agenda_gravavel.escrito, "gravou mesmo faltando o essencial"
+
+
+def test_desligar_um_lembrete_nao_o_apaga(agenda_gravavel):
+    """Desligar um lembrete de imposto por engano e não ter como trazê-lo de
+    volta seria pior do que o engano. Ele some da vista e fica guardado."""
+    from app.apps.analisesps import agenda
+    cliente = como(agenda_gravavel, SENHA_OPERADOR)
+    cliente.post("/analisesps/agenda", data={
+        "acao": "salvar", "titulo": "Conta de luz", "categoria": "Conta",
+        "data_base": "2026-01-15", "recorrencia": "mensal"},
+        follow_redirects=True)
+    ident = agenda_gravavel.escrito[0]["id"]
+
+    cliente.post("/analisesps/agenda", data={"acao": "desligar", "id": ident},
+                 follow_redirects=True)
+    guardado = agenda_gravavel.guardados[ident]
+    assert guardado["status"] == "inativo"
+    assert not agenda.esta_ativo(guardado), "continuou contando no calendário"
+    assert guardado["titulo"] == "Conta de luz", "o compromisso foi apagado"
+
+    cliente.post("/analisesps/agenda", data={"acao": "religar", "id": ident},
+                 follow_redirects=True)
+    assert agenda.esta_ativo(agenda_gravavel.guardados[ident])
+
+
+def test_se_a_planilha_falhar_nada_e_salvo(agenda_gravavel, monkeypatch):
+    """A planilha é a dona. Salvar só aqui deixaria o lembrete vivo na tela e
+    invisível lá — e a próxima sincronização não o traria de volta."""
+    from app.apps.analisesps import agenda, sincronizacao
+
+    def explode(registro):
+        raise RuntimeError("cota do Google estourada")
+
+    monkeypatch.setattr(sincronizacao, "escrever_compromisso", explode)
+    monkeypatch.setattr(agenda, "salvar",
+                        lambda r: sincronizacao.escrever_compromisso(r))
+
+    resposta = como(agenda_gravavel, SENHA_OPERADOR).post(
+        "/analisesps/agenda", data={
+            "acao": "salvar", "titulo": "Não deve entrar",
+            "categoria": "Conta", "data_base": "2026-02-01",
+            "recorrencia": "mensal"})
+    assert "Não consegui gravar na planilha" in resposta.get_data(as_text=True)
+    assert not agenda_gravavel.guardados, "salvou aqui mesmo falhando lá"
+
+
+def test_a_consulta_nao_cadastra_lembrete(agenda_gravavel):
+    resposta = como(agenda_gravavel, SENHA_CONSULTA).post(
+        "/analisesps/agenda", data={"acao": "salvar", "titulo": "X",
+                                    "data_base": "2026-01-07"})
+    assert resposta.status_code == 403
+    assert not agenda_gravavel.escrito
+
+
+def test_ligado_e_desligado_querem_dizer_a_mesma_coisa_em_todo_lugar(app):
+    """O calendário exigia status "ativo"; os próximos só descartavam
+    "cancelado". Um compromisso marcado "inativo" aparecia num e não no
+    outro — e ninguém entenderia por quê."""
+    from app.apps.analisesps import agenda
+    assert agenda.esta_ativo({"status": "ativo"})
+    assert agenda.esta_ativo({"status": ""})
+    assert agenda.esta_ativo({})
+    for desligado in ("cancelado", "inativo", "Desativado", " ARQUIVADO "):
+        assert not agenda.esta_ativo({"status": desligado}), desligado
+
+
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
     monkeypatch.delenv("ANALISESPS_SENHA_OPERADOR", raising=False)
     monkeypatch.delenv("ANALISESPS_SENHA_CONSULTA", raising=False)

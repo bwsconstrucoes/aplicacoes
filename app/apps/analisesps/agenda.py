@@ -43,6 +43,20 @@ AJUSTES = ["posterga", "antecipa", "nenhum"]
 # Categorias cujo padrão é ANTECIPAR quando cai em dia não útil. Ver o topo.
 _ANTECIPA_POR_PADRAO = {"Imposto", "FGTS", "Parcelamento"}
 
+# Um compromisso desligado não aparece em lugar nenhum — nem no calendário,
+# nem nos próximos, nem nos avisos. Ele não é apagado: some da vista e
+# continua guardado, porque desligar um lembrete de imposto por engano e não
+# ter como trazê-lo de volta seria pior do que o engano.
+DESLIGADOS = {"cancelado", "inativo", "desativado", "arquivado"}
+
+
+def esta_ativo(compromisso: dict) -> bool:
+    """Vale para o calendário, para os próximos e para os avisos — os três
+    tinham de concordar, e antes não concordavam: um usava "cancelado", o
+    outro exigia "ativo"."""
+    return (str(compromisso.get("status") or "ativo").strip().lower()
+            not in DESLIGADOS)
+
 
 def ajuste_sugerido(categoria: str) -> str:
     return "antecipa" if str(categoria).strip() in _ANTECIPA_POR_PADRAO else "posterga"
@@ -254,7 +268,7 @@ def lembretes(lista: list, hoje: date) -> list:
     fer = _todos_feriados(anos)
     out = []
     for c in lista:
-        if str(c.get("status", "ativo")).strip().lower() not in ("", "ativo"):
+        if not esta_ativo(c):
             continue
         try:
             alerta = int(float(c.get("alerta_dias_antes") or 0))
@@ -369,7 +383,7 @@ def proximos(dias_a_frente: int = 90) -> list[dict]:
     feriados = _todos_feriados(range(hoje.year, fim.year + 2))
     saida = []
     for compromisso in lista:
-        if str(compromisso.get("status", "")).strip().lower() == "cancelado":
+        if not esta_ativo(compromisso):
             continue
         modo = str(compromisso.get("ajuste_dia_util", "nenhum")).strip().lower()
 
@@ -431,7 +445,7 @@ def calendario(ano: int, mes: int) -> dict:
     feriados = _todos_feriados({inicio.year, fim.year})
     por_dia: dict = {}
     for c in listar():
-        if str(c.get("status") or "ativo").strip().lower() not in ("", "ativo"):
+        if not esta_ativo(c):
             continue
         for d in ocorrencias(c, inicio, fim, feriados):
             por_dia.setdefault(d, []).append(c)
@@ -463,3 +477,93 @@ def mes_vizinho(ano: int, mes: int, passo: int) -> tuple:
     """O mês anterior ou o seguinte, virando o ano quando precisa."""
     indice = (ano * 12 + (mes - 1)) + passo
     return indice // 12, indice % 12 + 1
+
+
+# ---------------------------------------------------------------------------
+# CRIAR E EDITAR PELA TELA
+#
+# O Streamlit tinha "Novo compromisso" e "Editar", e escrevia de volta na aba
+# Agenda da planilha. A conversão deixou a agenda só de leitura, e sem a aba
+# preenchida à mão ela ficava vazia — parecia quebrada.
+#
+# A PLANILHA CONTINUA SENDO A DONA. Grava-se lá PRIMEIRO e só depois aqui: se
+# fosse ao contrário, uma falha de rede deixaria o compromisso vivo na tela e
+# invisível na planilha, e a próxima sincronização não o traria de volta —
+# ele existiria só aqui, até alguém reparar. São poucas linhas e a escrita é
+# rápida; não vale uma fila como a das SPs.
+# ---------------------------------------------------------------------------
+def novo_id() -> str:
+    """Um identificador para o compromisso novo.
+
+    Baseado no relógio de Brasília, com segundos: dois compromissos criados no
+    mesmo segundo são improváveis com quatro pessoas, e o `ON CONFLICT` da
+    gravação protegeria de qualquer forma."""
+    from .horario import agora
+    return "AG" + agora().strftime("%Y%m%d%H%M%S")
+
+
+def normalizar(dados: dict, criado_por: str = "") -> dict:
+    """Põe o que veio da tela no formato da planilha, com os padrões certos.
+
+    Devolve o registro pronto. Levanta ValueError com uma frase em português
+    quando falta o essencial — a tela mostra essa frase."""
+    from .formatos import para_data
+    from .horario import agora
+
+    titulo = " ".join(str(dados.get("titulo") or "").split())[:120]
+    if not titulo:
+        raise ValueError("O compromisso precisa de um título.")
+
+    categoria = str(dados.get("categoria") or "").strip()
+    if categoria not in CATEGORIAS:
+        categoria = "Outro"
+
+    recorrencia = str(dados.get("recorrencia") or "").strip().lower()
+    if recorrencia not in RECORRENCIAS:
+        recorrencia = "mensal"
+
+    data_base = para_data(dados.get("data_base"))
+    if data_base is None:
+        raise ValueError("Informe a data da primeira ocorrência.")
+
+    ajuste = str(dados.get("ajuste_dia_util") or "").strip().lower()
+    if ajuste not in AJUSTES:
+        ajuste = ajuste_sugerido(categoria)
+
+    try:
+        alerta = max(0, min(60, int(str(dados.get("alerta_dias_antes") or 3))))
+    except (TypeError, ValueError):
+        alerta = 3
+
+    # O dia do mês SAI da data escolhida, como no Streamlit — não há campo
+    # separado, para os dois não se contradizerem. Dia 31 quer dizer "último
+    # dia do mês"; ver o topo deste arquivo.
+    return {
+        "id": str(dados.get("id") or "").strip() or novo_id(),
+        "titulo": titulo,
+        "descricao": str(dados.get("descricao") or "").strip()[:500],
+        "categoria": categoria,
+        "data_base": fmt_date(data_base),
+        "recorrencia": recorrencia,
+        "dia_mes": str(data_base.day),
+        "ajuste_dia_util": ajuste,
+        "alerta_dias_antes": str(alerta),
+        "status": ("inativo"
+                   if str(dados.get("status") or "").strip().lower() in DESLIGADOS
+                   else "ativo"),
+        "concluido_em": str(dados.get("concluido_em") or "").strip(),
+        "responsavel": " ".join(str(dados.get("responsavel") or "").split())[:60],
+        "criado_por": str(dados.get("criado_por") or criado_por).strip()[:60],
+        "criado_em": (str(dados.get("criado_em") or "").strip()
+                      or agora().strftime("%d/%m/%Y %H:%M")),
+    }
+
+
+def salvar(registro: dict) -> None:
+    """Grava na PLANILHA e depois aqui. Ver o cabeçalho desta seção."""
+    from . import sincronizacao
+    from .db import conexao
+
+    sincronizacao.escrever_compromisso(registro)
+    with conexao() as conn:
+        gravar(conn, [registro])

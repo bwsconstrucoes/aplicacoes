@@ -252,7 +252,7 @@ cobrável de quem preencheu.
 | Auditoria | sete checagens do que está errado na base |
 | Ratear | o JSON que atualiza o título no Omie |
 | Bradesco | o extrato colado, cruzado com as SPs |
-| Agenda | compromissos que se repetem, já ajustados a dia útil |
+| Agenda | calendário do mês e os lembretes que se repetem, já ajustados a dia útil — e é aqui que se cadastram |
 | Log | toda alteração feita por aqui, e se já subiu |
 | Configurações | migrações do banco e a sincronização |
 

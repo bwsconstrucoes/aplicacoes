@@ -1194,10 +1194,52 @@ def _candidatas_bradesco() -> list[dict]:
 # ---------------------------------------------------------------------------
 # AGENDA
 # ---------------------------------------------------------------------------
-@bp.route("/agenda")
+@bp.route("/agenda", methods=["GET", "POST"])
 @exige_consulta
 def tela_agenda():
     from . import agenda
+
+    # A permissão é conferida ANTES de qualquer outra coisa — mesma regra do
+    # Lote, e pelo mesmo motivo: a resposta a uma escrita sem alçada tem de
+    # ser sempre a mesma, independente do estado do banco.
+    if request.method == "POST" and not auth.pode_operar():
+        return auth._sem_permissao()
+
+    aviso = erro_form = None
+    editando = (request.args.get("editar") or "").strip()
+
+    if request.method == "POST":
+        acao = request.form.get("acao", "salvar")
+        try:
+            if acao == "desligar":
+                atual = agenda.um(request.form.get("id", "")) or {}
+                if not atual:
+                    raise ValueError("Compromisso não encontrado.")
+                atual["status"] = "inativo"
+                agenda.salvar(agenda.normalizar(atual))
+                aviso = (f"\"{atual.get('titulo')}\" foi desligado. Ele não "
+                         "some da planilha — para voltar, é só religar.")
+            elif acao == "religar":
+                atual = agenda.um(request.form.get("id", "")) or {}
+                if not atual:
+                    raise ValueError("Compromisso não encontrado.")
+                atual["status"] = "ativo"
+                agenda.salvar(agenda.normalizar(atual))
+                aviso = f"\"{atual.get('titulo')}\" voltou a valer."
+            else:
+                registro = agenda.normalizar(request.form.to_dict(),
+                                             criado_por=auth.nome_atual())
+                agenda.salvar(registro)
+                aviso = (f"\"{registro['titulo']}\" guardado — aqui e na aba "
+                         "Agenda da planilha.")
+        except ValueError as e:
+            erro_form = str(e)
+        except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+            logger.exception("Análise de SPs: falhou salvar o compromisso")
+            erro_form = (f"Não consegui gravar na planilha: {e}. Nada foi "
+                         "salvo — nem aqui, nem lá.")
+        if not erro_form:
+            return redirect(url_for("analisesps.tela_agenda", aviso=aviso))
 
     try:
         dias = max(1, min(730, int(request.args.get("dias", 90))))
@@ -1230,12 +1272,21 @@ def tela_agenda():
     anterior = agenda.mes_vizinho(ano, mes, -1)
     seguinte = agenda.mes_vizinho(ano, mes, 1)
 
+    em_edicao = None
+    if editando:
+        em_edicao = agenda.um(editando)
+
     return render_template(
         "analisesps_agenda.html", aba="agenda",
         proximos=proximos, alertas=alertas, compromissos=compromissos,
         grade=grade, ano=ano, mes=mes, meses=agenda.MESES,
         anterior=anterior, seguinte=seguinte, hoje=hoje,
         dias=dias, erro=erro,
+        em_edicao=em_edicao, novo=(editando == "novo"),
+        erro_form=erro_form,
+        aviso=request.args.get("aviso") or None,
+        categorias=agenda.CATEGORIAS, recorrencias=agenda.RECORRENCIAS,
+        ajustes=agenda.AJUSTES, agenda_ativo=agenda.esta_ativo,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
