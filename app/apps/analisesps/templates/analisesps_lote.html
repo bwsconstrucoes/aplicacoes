@@ -104,6 +104,9 @@
   {% with origem='lote', com_pgt=false %}
     {% include "analisesps_barra_acoes.html" %}
   {% endwith %}
+  {% with colunas=colunas, todas=todas_colunas %}
+    {% include "analisesps_colunas.html" %}
+  {% endwith %}
 {% endif %}
 
 {% for grupo in montado.grupos %}
@@ -156,62 +159,10 @@
             QR / Código deste grupo</a>
         </div>
 
-        <div class="tabela-rolagem">
-          <table class="sps" data-grupo="{{ gi }}">
-            <thead>
-              <tr>
-                <th class="sel"><input type="checkbox" class="marcar-todas"
-                                       data-grupo="{{ gi }}"></th>
-                <th>SP</th><th>Vencimento</th><th>Credor</th><th class="num">Valor</th>
-                <th>Status</th><th>Agend.</th><th>Forma</th><th>Conta</th><th>Alertas</th>
-              </tr>
-            </thead>
-            <tbody>
-              {% for l in grupo.linhas %}
-                {% set cancelada = (l.status_pgt or '')|lower|trim == 'cancelado' %}
-                <tr class="{{ 'cancelada ' if cancelada }}{{ 'com-risco ' if l.risco }}{{ 'incompleta' if l.cadastro_incompleto and not l.risco }}"
-                    data-id="{{ l.id }}"
-                    data-ficha="{{ url_for('analisesps.detalhe', sp_id=l.id, origem='lote') }}">
-                  <td class="sel"><input type="checkbox" class="marca"
-                                         data-grupo="{{ gi }}"
-                                         data-valor="{{ l.valor_num or 0 }}"
-                                         data-card="{{ l.card_link or '' }}"
-                                         value="{{ l.id }}"></td>
-                  {# O número abre o CARD NO PIPEFY, como no Streamlit; a ficha
-                     daqui abre com duplo clique na linha. #}
-                  <td class="id">
-                    {% if l.card_link %}
-                      <a href="{{ l.card_link }}" target="_blank" rel="noopener"
-                         title="Abrir o card no Pipefy">{{ l.id }}</a>
-                    {% else %}{{ l.id }}{% endif %}
-                  </td>
-                  <td class="{{ 'venc-vencido' if l.vencido else ('venc-hoje' if l.vence_hoje else '') }}">
-                    {{ l.vencimento_d|data_br }}</td>
-                  <td class="cortar" title="{{ l.credor }}">{{ l.credor }}</td>
-                  <td class="num">{{ l.valor_num|moeda }}</td>
-                  <td>
-                    {% set st = (l.status_pgt or '')|lower|trim %}
-                    <span class="selo {{ 'pagar' if st == 'pagar' else ('pago' if st == 'pago' else 'cancelado') }}">
-                      {{ l.status_pgt or '—' }}</span>
-                  </td>
-                  <td>
-                    {% if l.status_agend %}
-                      {%- set _ag = (l.status_agend or '')|trim|lower -%}
-                      <span class="selo {{ 'agendar' if _ag == 'agendar' else ('agendado' if _ag == 'agendado' else ('falha' if 'falha' in _ag else 'verificar')) }}">
-                        {{ l.status_agend }}</span>
-                    {% endif %}
-                  </td>
-                  <td class="cortar">{{ l.forma_pagamento }}</td>
-                  <td class="cortar">{{ l.conta }}</td>
-                  <td>
-                    {% if l.risco %}<span class="selo risco">Risco</span>{% endif %}
-                    {% if l.cadastro_incompleto %}<span class="selo incompleto">Cadastro</span>{% endif %}
-                  </td>
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
+        {% with linhas=grupo.linhas, grupo=gi, origem='lote',
+                     vazio='Nenhum número deste grupo foi encontrado na base.' %}
+          {% include "analisesps_tabela.html" %}
+        {% endwith %}
       {% endif %}
 
       {% if grupo.nao_encontrados %}
@@ -227,6 +178,42 @@
     tirá-los das mensagens do WhatsApp.
   </div>
 {% endfor %}
+
+{# ---------------------------------------------------------------------------
+   PAINEL POR STATUS — as quatro listas que ficavam sob o lote no Streamlit.
+
+   Lê a BASE inteira, não o lote: é aqui que se acha a SP que ficou para trás
+   e que ninguém colou em lote nenhum. A marcação é a mesma da tela, então dá
+   para agendar daqui pela barra do alto, junto com o que veio do lote.
+--------------------------------------------------------------------------- #}
+{% if painel %}
+  <h3 style="margin:26px 0 10px">Painel por status</h3>
+  {% for p in painel %}
+    <div class="cartao">
+      <div class="cartao-cab">
+        <h3>{{ p.rotulo }}</h3>
+        <small>{{ '{:,}'.format(p.quantidade)|replace(',', '.') }} SP(s) ·
+          {{ p.total|moeda }}{% if p.tem_mais %} · mostrando as
+          {{ p.linhas|length }} de vencimento mais próximo{% endif %}</small>
+      </div>
+      {% if p.tem_mais %}
+        <p class="cartao-dica" style="margin:0 0 8px">
+          <a href="{{ url_for('analisesps.solicitacoes', f=1, status_agend=p.rotulo) }}">
+            Ver as {{ '{:,}'.format(p.quantidade)|replace(',', '.') }} nas
+            Solicitações</a> — lá dá para filtrar e paginar.
+        </p>
+      {% endif %}
+      {% if p.linhas %}
+        {% with linhas=p.linhas, grupo='st' ~ loop.index, origem='lote',
+                vazio='Nenhuma.' %}
+          {% include "analisesps_tabela.html" %}
+        {% endwith %}
+      {% else %}
+        <p class="cartao-dica" style="margin:0">Nenhuma neste status.</p>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

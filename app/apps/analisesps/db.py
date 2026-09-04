@@ -268,3 +268,51 @@ def consultar(sql: str, params=()) -> list[tuple]:
 def consultar_um(sql: str, params=()) -> Optional[tuple]:
     linhas = consultar(sql, params)
     return linhas[0] if linhas else None
+
+
+# ---------------------------------------------------------------------------
+# O BANCO PODE ESTAR ATRASADO — e isso é um estado normal, não um defeito
+#
+# O código sobe para o Render ANTES de alguém apertar "Aplicar atualizações do
+# banco" na tela de Configurações. Entre uma coisa e outra, o programa novo
+# conversa com o banco velho. Se ele simplesmente estourar, a pessoa encontra
+# telas quebradas justamente quando precisa abrir Configurações para
+# consertar — foi assim que este módulo travou na estreia, em 03/09/2026.
+#
+# Então, onde uma coluna nova é usada, pergunta-se antes se ela existe. A
+# resposta é guardada: são até quatro pessoas usando, e perguntar ao banco a
+# cada requisição seria pagar todo dia por um estado que dura minutos.
+# ---------------------------------------------------------------------------
+_colunas_conhecidas: dict = {}
+
+
+def tem_coluna(tabela: str, coluna: str) -> bool:
+    """A coluna já existe no banco? Guardado depois da primeira pergunta.
+
+    Diante de qualquer falha responde False — que é o lado seguro: o programa
+    segue pelo caminho antigo, que funciona nos dois bancos."""
+    chave = (tabela, coluna)
+    if chave in _colunas_conhecidas:
+        return _colunas_conhecidas[chave]
+    try:
+        linha = consultar_um(
+            "SELECT 1 FROM information_schema.columns "
+            " WHERE table_schema = ? AND table_name = ? AND column_name = ?",
+            (SCHEMA, tabela, coluna))
+        existe = bool(linha)
+    except Exception:  # noqa: BLE001 — banco fora do ar
+        logger.exception("Análise de SPs: não consegui perguntar se %s.%s existe",
+                         tabela, coluna)
+        return False
+    if existe:
+        # Só o SIM é guardado. O NÃO tem de ser reperguntado, senão o processo
+        # que rodou antes do botão continuaria achando que a coluna não existe
+        # até o próximo reinício.
+        _colunas_conhecidas[chave] = True
+    return existe
+
+
+def esquecer_colunas() -> None:
+    """Zera o que se sabe do formato do banco. Chamado logo depois de aplicar
+    as migrações, para o processo enxergar o que acabou de nascer."""
+    _colunas_conhecidas.clear()

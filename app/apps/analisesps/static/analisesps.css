@@ -586,9 +586,11 @@ a.kpi { display: block; }
 .selo.risco     { background: #FFE7E7; color: var(--sl-risco); }
 .selo.incompleto{ background: #FFF0DB; color: #A35F00; }
 
-/* O numero da SP herda o alerta, como no Streamlit (vermelho = risco). */
-.sps tr.com-risco .id a      { color: var(--sl-risco); font-weight: 700; }
-.sps tr.incompleta .id a     { color: #A35F00; font-weight: 700; }
+/* O NUMERO DA SP NAO E PINTADO. O Streamlit tingia o ID de vermelho ou
+   laranja conforme o alerta, e na conversao isso somou com o vencimento
+   vermelho ao lado: a linha inteira ficava gritando. O dono pediu para tirar
+   (04/09/2026). O alerta continua visivel onde nao compete com nada — na
+   coluna Alertas, em selo. */
 
 /* ==========================================================================
    A BARRA DE ACOES — uma por tela, colada no alto, o total no meio
@@ -686,7 +688,10 @@ a.kpi { display: block; }
   color: var(--azul); white-space: nowrap;
 }
 .ficha-links { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-.ficha-links .btn.perigo { border-color: var(--sl-vermelho); color: var(--sl-vermelho); }
+/* "Cancelar SP" e uma acao seria, mas nao e a acao principal da ficha: em
+   vermelho puro ele puxava o olho para si toda vez que a ficha abria. Fica
+   discreto, e a confirmacao continua sendo o formulario do Pipefy. */
+.ficha-links .btn.perigo { border-color: #E0B4B0; color: #8C3A33; }
 .ficha-acoes {
   display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
   padding: 12px; margin: 12px 0; background: var(--papel);
@@ -697,4 +702,97 @@ a.kpi { display: block; }
 .filtros-estado {
   font-size: 11.5px; font-weight: 700; color: var(--azul-claro);
   text-transform: uppercase; letter-spacing: .06em;
+}
+
+/* ==========================================================================
+   ESCOLHER AS COLUNAS — fechado por padrao, para nao competir com a tabela
+   ========================================================================== */
+.escolher-colunas {
+  margin: 0 0 12px; padding: 8px 14px; background: var(--branco);
+  border: 1px solid var(--borda); border-radius: var(--raio-p);
+}
+.escolher-colunas > summary {
+  cursor: pointer; font-size: 12.5px; font-weight: 700; color: var(--tinta-suave);
+  list-style: none; display: flex; align-items: center; gap: 8px;
+}
+.escolher-colunas > summary::before { content: "▸"; }
+.escolher-colunas[open] > summary::before { content: "▾"; }
+.escolher-colunas > summary::-webkit-details-marker { display: none; }
+.escolher-colunas .qtd {
+  font-family: var(--fonte-dados); font-weight: 800; color: var(--azul);
+}
+.colunas-opcoes {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 4px 14px; margin-top: 12px;
+}
+.colunas-opcoes .opcao {
+  display: flex; align-items: center; gap: 7px; font-size: 13px; cursor: pointer;
+}
+
+/* Os numeros de baixo (o painel_kpis do Streamlit) */
+.kpis-baixo {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px; margin-top: 16px;
+}
+.sps.compacta { font-size: 12.5px; }
+.sps.compacta th, .sps.compacta td { padding: 5px 8px; }
+
+/* O periodo da Auditoria — controle proprio, separado do filtro da lista */
+.auditoria-periodo {
+  display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+  margin: 12px 0 4px; padding: 10px 12px;
+  background: var(--papel); border-radius: var(--raio-p);
+}
+.auditoria-periodo input[type=date], .auditoria-periodo select {
+  padding: 7px 8px; border: 1px solid var(--borda-forte);
+  border-radius: var(--raio-p); font-size: 13px;
+}
+
+/* ==========================================================================
+   O CALENDARIO DA AGENDA — a grade de mes que o Streamlit tinha
+   ========================================================================== */
+.mes-nav { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+
+.calendario {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  gap: 1px; background: var(--borda); border: 1px solid var(--borda);
+  border-radius: var(--raio-p); overflow: hidden;
+}
+.cal-cab {
+  background: #EEF2FA; padding: 6px 8px; font-size: 11.5px; font-weight: 700;
+  color: var(--tinta-suave); text-transform: uppercase; letter-spacing: .06em;
+}
+.cal-dia {
+  background: var(--branco); min-height: 84px; padding: 5px 6px;
+  display: flex; flex-direction: column; gap: 3px;
+}
+.cal-dia.fora     { background: #FAFBFD; }
+.cal-dia.fora .cal-numero { color: var(--borda-forte); }
+.cal-dia.nao-util { background: #F4F6FA; }
+.cal-dia.hoje     { outline: 2px solid var(--azul-claro); outline-offset: -2px; }
+.cal-numero {
+  font-family: var(--fonte-dados); font-size: 12px; font-weight: 700;
+  color: var(--tinta-suave);
+}
+.cal-dia.hoje .cal-numero { color: var(--azul); }
+.cal-item {
+  font-size: 11px; line-height: 1.25; padding: 2px 5px; border-radius: 4px;
+  background: #E7EDF7; color: var(--azul);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  border-left: 3px solid var(--azul-claro);
+}
+/* Cores por categoria: a mesma leitura por cor da tabela de SPs */
+.cal-item.cat-imposto, .cal-item.cat-fgts {
+  background: #FFEAEA; color: #8C1F19; border-left-color: var(--vermelho);
+}
+.cal-item.cat-emprestimo, .cal-item.cat-parcelamento {
+  background: #F5E8FF; color: #4A2C6B; border-left-color: var(--sl-roxo);
+}
+.cal-item.cat-conta {
+  background: #E7F3E1; color: #26551A; border-left-color: var(--sl-verde);
+}
+
+@media (max-width: 760px) {
+  .cal-dia { min-height: 56px; }
+  .cal-item { font-size: 10px; }
 }

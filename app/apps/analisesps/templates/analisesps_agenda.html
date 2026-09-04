@@ -41,6 +41,56 @@
   </div>
 {% endif %}
 
+{# ---------------------------------------------------------------------------
+   O CALENDÁRIO DO MÊS — o que o Streamlit tinha e a conversão trocou por
+   listas. Lista não responde "como está a semana que vem"; calendário sim.
+--------------------------------------------------------------------------- #}
+{% if grade %}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>{{ meses[mes - 1]|capitalize }} de {{ ano }}</h3>
+    <small>{{ grade.quantos }} ocorrência(s) no mês</small>
+  </div>
+
+  <div class="mes-nav">
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.tela_agenda', ano=anterior[0], mes=anterior[1], dias=dias) }}">‹
+      {{ meses[anterior[1] - 1] }}</a>
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.tela_agenda', dias=dias) }}">Hoje</a>
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.tela_agenda', ano=seguinte[0], mes=seguinte[1], dias=dias) }}">{{ meses[seguinte[1] - 1] }}
+      ›</a>
+  </div>
+
+  <div class="calendario">
+    {% for dn in ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'] %}
+      <div class="cal-cab">{{ dn }}</div>
+    {% endfor %}
+    {% for semana in grade.semanas %}
+      {% for d in semana %}
+        <div class="cal-dia {{ '' if d.do_mes else 'fora' }}
+                    {{ 'hoje' if d.hoje }} {{ 'nao-util' if d.feriado or d.fim_de_semana }}">
+          <div class="cal-numero">{{ d.dia }}</div>
+          {% for c in d.compromissos %}
+            <div class="cal-item cat-{{ c.categoria|lower|replace(' ', '-')|replace('ó','o')|replace('é','e') }}"
+                 title="{{ c.titulo }} — {{ c.categoria }}{% if c.responsavel %} · {{ c.responsavel }}{% endif %}">
+              {{ c.titulo }}</div>
+          {% endfor %}
+        </div>
+      {% endfor %}
+    {% endfor %}
+  </div>
+
+  <p class="cartao-dica">
+    Dias em cinza são fim de semana ou feriado — as datas que caem neles são
+    movidas conforme a regra de cada compromisso (impostos e parcelamentos
+    antecipam; o resto posterga). Passe o mouse num item para ver a categoria
+    e o responsável.
+  </p>
+</div>
+{% endif %}
+
 <div class="cartao">
   <div class="cartao-cab">
     <h3>Próximos {{ dias }} dias</h3>

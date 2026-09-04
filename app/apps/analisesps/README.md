@@ -30,6 +30,8 @@ auditoria.py       as sete checagens da tela de Auditoria
 lote.py            o lote de trabalho: agrupar, extrair SPs, guardar
 agenda.py          calendário de compromissos que se repetem
 colunas.py         o mapeamento da aba SPsBD (A:AL) — fonte única
+tabela.py          as colunas da lista — espelha o GRID_COLS do Streamlit
+preferencias.py    o que cada pessoa deixou do jeito dela (filtro, colunas)
 formatos.py        "6.750,00" e "31/12/2026" <-> número e data
 credenciais.py     Google pelo padrão do emissaonf
 db.py              conexão com o Postgres + adaptador de compatibilidade

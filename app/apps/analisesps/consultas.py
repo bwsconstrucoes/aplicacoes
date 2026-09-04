@@ -237,6 +237,54 @@ def resumo(f: dict) -> dict:
             "quantidade_pagar": linha[2], "total_pagar": linha[3]}
 
 
+def contagem_agendamento(f: dict) -> dict:
+    """Agendar / Agendado / Pago / Falha — a mesma divisão do Streamlit.
+
+    Os quatro grupos são EXCLUDENTES e nesta ordem de prioridade: pago ganha
+    de tudo (não interessa como foi agendado, já saiu); depois falha; depois
+    agendado; o resto é "a agendar". Sem essa ordem, uma SP paga que tinha
+    ficado com "Falha Agendar" apareceria nas duas contas, e a soma dos
+    quatro passaria do total."""
+    from .db import consultar_um
+    where, params = _where(f)
+    pago = "lower(trim(coalesce(status_pgt,''))) = 'pagar'"
+    linha = consultar_um(
+        "SELECT "
+        "  count(*) FILTER (WHERE lower(trim(coalesce(status_pgt,''))) = 'pago'), "
+        "  count(*) FILTER (WHERE lower(trim(coalesce(status_pgt,''))) <> 'pago' "
+        "                     AND lower(coalesce(agendado,'')) LIKE '%falha%'), "
+        "  count(*) FILTER (WHERE lower(trim(coalesce(status_pgt,''))) <> 'pago' "
+        "                     AND lower(coalesce(agendado,'')) NOT LIKE '%falha%' "
+        "                     AND lower(trim(coalesce(agendado,''))) = 'agendado'), "
+        "  count(*) FILTER (WHERE lower(trim(coalesce(status_pgt,''))) <> 'pago' "
+        "                     AND lower(coalesce(agendado,'')) NOT LIKE '%falha%' "
+        "                     AND lower(trim(coalesce(agendado,''))) <> 'agendado') "
+        f"  FROM analisesps.sps{where}", tuple(params))
+    if not linha:
+        return {"Pago": 0, "Falha Agendar": 0, "Agendado": 0, "Agendar": 0}
+    return {"Pago": linha[0], "Falha Agendar": linha[1],
+            "Agendado": linha[2], "Agendar": linha[3]}
+
+
+def soma_por(f: dict, coluna: str, limite: int = 12) -> list[dict]:
+    """Σ do valor por conta ou por forma de pagamento, como no Streamlit.
+
+    A coluna é escolhida por NÓS, de uma lista fechada — nunca vem de quem
+    chama. Nome de coluna não entra como parâmetro do banco, e concatenar o
+    que veio de fora aqui seria a porta aberta clássica."""
+    permitidas = {"conta", "forma_pagamento"}
+    if coluna not in permitidas:
+        raise ValueError(f"Não somo por '{coluna}'.")
+    from .db import consultar
+    where, params = _where(f)
+    linhas = consultar(
+        f"SELECT coalesce(nullif(trim({coluna}), ''), '(sem informação)'), "
+        "       count(*), coalesce(sum(valor_num), 0) "
+        f"  FROM analisesps.sps{where} "
+        f" GROUP BY 1 ORDER BY 3 DESC LIMIT ?", tuple(params) + (limite,))
+    return [{"nome": l[0], "quantidade": l[1], "total": l[2]} for l in linhas]
+
+
 CAMPOS_LISTA = [
     "id", "solicitacao_d", "vencimento_d", "credor", "documento",
     "tipo_despesa", "centro_custo", "projeto", "valor_num", "responsavel",

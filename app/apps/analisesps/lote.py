@@ -132,6 +132,18 @@ def remover_por_status(texto: str, status_alvo: set[str],
 COMPARTILHADO = ""
 
 
+def por_pessoa() -> bool:
+    """O banco já sabe separar o lote por pessoa?
+
+    Entre a publicação do código e o apertar do botão "Aplicar atualizações do
+    banco" existe uma janela em que o programa é novo e o banco é velho. Nessa
+    janela o lote continua sendo um só — que é como funcionava na véspera, e
+    portanto não surpreende ninguém. Melhor isso do que a tela do Lote
+    estourar justamente enquanto se espera o botão."""
+    from .db import tem_coluna
+    return tem_coluna("lote", "pessoa")
+
+
 def ler(pessoa: str = "") -> dict:
     """O lote DESTA pessoa, com quem salvou por último e quando.
 
@@ -139,18 +151,33 @@ def ler(pessoa: str = "") -> dict:
     sobrescrevia o trabalho do outro sem aviso. Agora cada um tem o seu — foi
     decisão do dono, e é como era no Streamlit, que rodava numa máquina só."""
     from .db import consultar_um
-    linha = consultar_um(
-        "SELECT conteudo, salvo_por, salvo_em FROM analisesps.lote "
-        " WHERE pessoa = ?", (str(pessoa or ""),))
+    if por_pessoa():
+        linha = consultar_um(
+            "SELECT conteudo, salvo_por, salvo_em FROM analisesps.lote "
+            " WHERE pessoa = ?", (str(pessoa or ""),))
+    else:
+        linha = consultar_um(
+            "SELECT conteudo, salvo_por, salvo_em FROM analisesps.lote "
+            " WHERE id = 1")
     if not linha:
-        return {"conteudo": "", "salvo_por": None, "salvo_em": None}
+        return {"conteudo": "", "salvo_por": None, "salvo_em": None,
+                "compartilhado": not por_pessoa()}
     return {"conteudo": linha[0] or "", "salvo_por": linha[1],
-            "salvo_em": linha[2]}
+            "salvo_em": linha[2], "compartilhado": not por_pessoa()}
 
 
 def salvar(conteudo: str, quem: str = "", pessoa: str = "") -> None:
     """Guarda o lote da pessoa. `quem` é o nome que a tela mostra depois."""
     from .db import conexao
+    if not por_pessoa():
+        # Banco ainda atrasado: grava onde ele sabe, sem perder o trabalho.
+        with conexao() as conn:
+            conn.execute(
+                "UPDATE analisesps.lote SET conteudo = ?, salvo_por = ?, "
+                "       salvo_em = now() WHERE id = 1",
+                (str(conteudo or ""), quem))
+            conn.commit()
+        return
     with conexao() as conn:
         conn.execute(
             "INSERT INTO analisesps.lote (pessoa, conteudo, salvo_por, salvo_em) "
@@ -162,6 +189,8 @@ def salvar(conteudo: str, quem: str = "", pessoa: str = "") -> None:
 
 
 def lote_de_antes() -> dict:
+    if not por_pessoa():
+        return {"conteudo": "", "salvo_por": None, "salvo_em": None}
     """O lote de quando ele era compartilhado — só para oferecer, uma vez.
 
     Copiar sozinho para as quatro pessoas faria quatro cópias do mesmo lote

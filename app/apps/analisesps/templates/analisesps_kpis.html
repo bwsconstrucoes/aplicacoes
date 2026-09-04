@@ -1,0 +1,66 @@
+{# ---------------------------------------------------------------------------
+   OS NÚMEROS DE BAIXO — o `painel_kpis` do Streamlit.
+
+   Ficavam sob a tabela: quanto por conta corrente, quanto por forma de
+   pagamento, e como o agendamento está dividido. A conversão deixou só três
+   caixinhas em cima, e sumiu justamente com a resposta de "quanto vai sair de
+   cada conta" — que é a pergunta de quem vai efetivar os pagamentos.
+
+   Tudo aqui vem do BANCO, sobre o filtro inteiro — não das 200 linhas da
+   página. Somar a página daria um número menor e convincente, que é o pior
+   tipo de número errado.
+--------------------------------------------------------------------------- #}
+<div class="kpis-baixo">
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>Agendamento</h3>
+      <small>as {{ '{:,}'.format(resumo.quantidade)|replace(',', '.') }} SPs do filtro</small>
+    </div>
+    <div class="kpis-grupo">
+      <div class="kpi-g"><div class="kpi-g-rotulo">A agendar</div>
+        <div class="kpi-g-valor" style="color:var(--sl-roxo)">{{ agendamento['Agendar'] }}</div></div>
+      <div class="kpi-g"><div class="kpi-g-rotulo">Agendadas</div>
+        <div class="kpi-g-valor" style="color:var(--sl-verde)">{{ agendamento['Agendado'] }}</div></div>
+      <div class="kpi-g"><div class="kpi-g-rotulo">Falha</div>
+        <div class="kpi-g-valor" style="color:#A35F00">{{ agendamento['Falha Agendar'] }}</div></div>
+      <div class="kpi-g"><div class="kpi-g-rotulo">Pagas</div>
+        <div class="kpi-g-valor" style="color:var(--sl-azul)">{{ agendamento['Pago'] }}</div></div>
+    </div>
+    <p class="cartao-dica" style="margin:0">
+      Os quatro grupos não se cruzam: paga ganha de tudo, depois falha, depois
+      agendada; o que sobra é a agendar. Somados, dão o total do filtro.
+    </p>
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Σ por conta corrente</h3></div>
+    <table class="sps compacta">
+      <thead><tr><th>Conta</th><th class="num">SPs</th><th class="num">Σ Valor</th></tr></thead>
+      <tbody>
+        {% for c in por_conta %}
+          <tr><td class="cortar" title="{{ c.nome }}">{{ c.nome }}</td>
+              <td class="num">{{ c.quantidade }}</td>
+              <td class="num">{{ c.total|moeda }}</td></tr>
+        {% else %}
+          <tr><td colspan="3" class="cartao-dica">Nada neste filtro.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Σ por forma de pagamento</h3></div>
+    <table class="sps compacta">
+      <thead><tr><th>Forma</th><th class="num">SPs</th><th class="num">Σ Valor</th></tr></thead>
+      <tbody>
+        {% for c in por_forma %}
+          <tr><td class="cortar" title="{{ c.nome }}">{{ c.nome }}</td>
+              <td class="num">{{ c.quantidade }}</td>
+              <td class="num">{{ c.total|moeda }}</td></tr>
+        {% else %}
+          <tr><td colspan="3" class="cartao-dica">Nada neste filtro.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

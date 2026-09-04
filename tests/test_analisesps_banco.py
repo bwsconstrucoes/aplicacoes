@@ -1009,3 +1009,100 @@ def test_o_registro_de_alteracoes_guarda_quem_foi(banco_analisesps):
         "SELECT pessoa, perfil FROM analisesps.log_alteracoes WHERE sp_id = '1'")
     assert linha[0] == "Marcelo"
     assert linha[1] == "operador"
+
+
+# ---------------------------------------------------------------------------
+# NOTA REPETIDA x PARCELAMENTO
+#
+# Só com Postgres de verdade: a regra vive inteira no SQL (janela, agrupamento
+# e as expressões que pescam o número da parcela na descrição). O dublê da
+# suíte ignora WHERE e GROUP BY — aqui ele provaria nada.
+# ---------------------------------------------------------------------------
+def _sp_nf(conn, sp_id, doc, nf, parcela="", descricao="", venc="2026-09-10",
+           solicitacao="2026-08-01"):
+    conn.execute(
+        "INSERT INTO analisesps.sps (id, credor, valor_num, vencimento_d, "
+        "  solicitacao_d, status_pgt, documento, nf, parcela, descricao) "
+        "VALUES (?, 'FORNECEDOR', 1000, ?, ?, 'Pagar', ?, ?, ?, ?)",
+        (sp_id, venc, solicitacao, doc, nf, parcela, descricao))
+
+
+@pytest.mark.banco
+def test_parcelamento_nao_e_apontado_como_nota_repetida(banco_analisesps):
+    """Uma nota parcelada em três gera três SPs com o mesmo número. Apontar as
+    três como duplicidade todo mês é o jeito mais rápido de fazer alguém
+    parar de olhar a auditoria. Pedido do dono em 04/09/2026."""
+    from app.apps.analisesps import auditoria
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        # Parcelamento pela coluna Parcela: não é duplicidade.
+        _sp_nf(conn, "1000000001", "11.111/0001", "NF-100", parcela="001/003")
+        _sp_nf(conn, "1000000002", "11.111/0001", "NF-100", parcela="002/003")
+        _sp_nf(conn, "1000000003", "11.111/0001", "NF-100", parcela="003/003")
+        # Parcelamento escrito só na descrição: também não é.
+        _sp_nf(conn, "3000000001", "33.333/0001", "NF-300",
+               descricao="parcela 1 de 2")
+        _sp_nf(conn, "3000000002", "33.333/0001", "NF-300",
+               descricao="parcela 2 de 2")
+        conn.commit()
+
+    apontadas = {a["id"] for a in auditoria.nf_duplicada({})}
+    assert not apontadas, f"parcelamento apontado como duplicidade: {apontadas}"
+
+
+@pytest.mark.banco
+def test_a_nota_repetida_de_verdade_continua_sendo_apontada(banco_analisesps):
+    """A regra afrouxou de propósito, mas não pode cegar: sem marca de parcela
+    nenhuma, ou com a MESMA parcela repetida, "é parcelamento" não explica — e
+    o certo é alguém olhar. Na dúvida, aponta: conferir à toa custa pouco
+    perto de pagar duas vezes."""
+    from app.apps.analisesps import auditoria
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        # Sem parcela nenhuma: é duplicidade até prova em contrário.
+        _sp_nf(conn, "2000000001", "22.222/0001", "NF-200")
+        _sp_nf(conn, "2000000002", "22.222/0001", "NF-200")
+        # Duas SPs dividindo a MESMA parcela: alguém lançou duas vezes.
+        _sp_nf(conn, "4000000001", "44.444/0001", "NF-400", parcela="001/002")
+        _sp_nf(conn, "4000000002", "44.444/0001", "NF-400", parcela="001/002")
+        # Parcelamento pela metade: uma tem marca, a outra não.
+        _sp_nf(conn, "5000000001", "55.555/0001", "NF-500", parcela="001/002")
+        _sp_nf(conn, "5000000002", "55.555/0001", "NF-500")
+        conn.commit()
+
+    apontadas = {a["id"] for a in auditoria.nf_duplicada({})}
+    assert {"2000000001", "2000000002"} <= apontadas, "sem parcela, tem de apontar"
+    assert {"4000000001", "4000000002"} <= apontadas, "mesma parcela, tem de apontar"
+    assert {"5000000001", "5000000002"} <= apontadas, (
+        "parcelamento que não se explica inteiro tem de apontar")
+
+
+@pytest.mark.banco
+def test_o_periodo_da_auditoria_recorta_de_verdade(banco_analisesps):
+    """O recorte vive no WHERE, que o dublê da suíte ignora."""
+    import datetime as dt
+    from app.apps.analisesps import auditoria
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        _sp_nf(conn, "6000000001", "66.666/0001", "NF-600",
+               venc="2026-09-15", solicitacao="2026-08-01")
+        _sp_nf(conn, "6000000002", "66.666/0001", "NF-600",
+               venc="2026-09-15", solicitacao="2026-08-01")
+        _sp_nf(conn, "7000000001", "77.777/0001", "NF-700",
+               venc="2026-12-15", solicitacao="2026-11-01")
+        _sp_nf(conn, "7000000002", "77.777/0001", "NF-700",
+               venc="2026-12-15", solicitacao="2026-11-01")
+        conn.commit()
+
+    setembro = {a["id"] for a in auditoria.nf_duplicada(
+        {}, periodo={"campo": "vencimento",
+                     "de": dt.date(2026, 9, 1), "ate": dt.date(2026, 9, 30)})}
+    assert setembro == {"6000000001", "6000000002"}
+
+    por_solicitacao = {a["id"] for a in auditoria.nf_duplicada(
+        {}, periodo={"campo": "solicitacao",
+                     "de": dt.date(2026, 11, 1), "ate": dt.date(2026, 11, 30)})}
+    assert por_solicitacao == {"7000000001", "7000000002"}

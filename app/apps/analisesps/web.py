@@ -130,6 +130,46 @@ def _filtro_cru() -> dict:
     return cru
 
 
+def _TODAS_COLUNAS() -> list:
+    from . import tabela
+    return tabela.DEFINICOES
+
+
+def _colunas_da_pessoa() -> list:
+    """As colunas que ESTA pessoa vê na tabela. Nunca derruba a tela: se a
+    preferência não puder ser lida, mostra o padrão."""
+    from . import tabela
+    guardado = preferencias.ler(auth.pessoa_atual(), tabela.PREFERENCIA)
+    return tabela.escolhidas(guardado)
+
+
+@bp.route("/colunas", methods=["POST"])
+@exige_consulta
+def escolher_colunas():
+    """Guarda as colunas escolhidas e devolve a pessoa à tela de onde veio.
+
+    É `@exige_consulta`, e não `@exige_operador`, de propósito: escolher o que
+    se vê não altera dado nenhum da empresa — é preferência de quem olha, e o
+    perfil Consulta olha."""
+    from . import tabela
+
+    if request.form.get("acao") == "padrao":
+        escolhidas = []          # vazio = volta ao padrão, ver tabela.py
+    else:
+        escolhidas = [c for c in request.form.getlist("coluna")
+                      if c in tabela.POR_CHAVE]
+
+    preferencias.gravar(auth.pessoa_atual(), tabela.PREFERENCIA,
+                        {"colunas": escolhidas})
+
+    # A volta sai do formulário, então é conferida: destino de fora daqui
+    # transformaria esta rota em trampolim.
+    voltar = (request.form.get("voltar") or "").strip()
+    if voltar.startswith("/analisesps"):
+        return redirect(voltar)
+    return redirect(url_for("analisesps.solicitacoes"))
+
+
 def _opcoes_dos_filtros() -> dict:
     """O que cada lista suspensa da barra lateral oferece.
 
@@ -255,6 +295,14 @@ def solicitacoes():
     resumo = consultas.resumo(filtros)
     ultima = (pagina - 1) * consultas.POR_PAGINA + len(linhas)
 
+    # Os números que o Streamlit mostrava embaixo da tabela. São SQL, não
+    # contas sobre as 200 linhas da página: quem soma é o banco, sobre o
+    # filtro inteiro — que é justamente a pergunta ("quanto tem para pagar
+    # nisto que estou olhando?").
+    agendamento = consultas.contagem_agendamento(filtros)
+    por_conta = consultas.soma_por(filtros, "conta")
+    por_forma = consultas.soma_por(filtros, "forma_pagamento")
+
     return render_template(
         "analisesps_solicitacoes.html",
         linhas=linhas, resumo=resumo, base=base,
@@ -263,6 +311,8 @@ def solicitacoes():
         ultima_linha=ultima,
         tem_proxima=ultima < resumo["quantidade"],
         ordem=ordem, filtros=filtros,
+        agendamento=agendamento, por_conta=por_conta, por_forma=por_forma,
+        colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
         args=request.args, opcoes=_opcoes_dos_filtros(),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
@@ -414,8 +464,10 @@ def _gravar_alteracao(ids: list, coluna: str, valor: str, acao: str):
     sem ninguém notar."""
     from .db import conexao
 
+    from .db import tem_coluna
     perfil = auth.perfil_atual() or "?"
     quem = auth.nome_atual()
+    com_pessoa = tem_coluna("log_alteracoes", "pessoa")
     with conexao() as conn:
         marcadores = ",".join(["?"] * len(ids))
         cur = conn.execute(
@@ -443,13 +495,25 @@ def _gravar_alteracao(ids: list, coluna: str, valor: str, acao: str):
                 "  valor = EXCLUDED.valor, criado_em = now(), "
                 "  tentativas = 0, ultimo_erro = NULL",
                 (sp_id, coluna, valor))
-            conn.execute(
-                "INSERT INTO analisesps.log_alteracoes "
-                "  (sp_id, coluna, valor, valor_anterior, acao, perfil, "
-                "   pessoa, status) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente')",
-                (sp_id, coluna, valor, anteriores.get(sp_id), acao, perfil,
-                 quem))
+            if com_pessoa:
+                conn.execute(
+                    "INSERT INTO analisesps.log_alteracoes "
+                    "  (sp_id, coluna, valor, valor_anterior, acao, perfil, "
+                    "   pessoa, status) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente')",
+                    (sp_id, coluna, valor, anteriores.get(sp_id), acao,
+                     perfil, quem))
+            else:
+                # Banco ainda sem a coluna `pessoa` (migração 003 por
+                # aplicar). Registrar sem o nome é muito melhor do que
+                # recusar a alteração: o pagamento não pode esperar o botão.
+                conn.execute(
+                    "INSERT INTO analisesps.log_alteracoes "
+                    "  (sp_id, coluna, valor, valor_anterior, acao, perfil, "
+                    "   status) "
+                    "VALUES (?, ?, ?, ?, ?, ?, 'pendente')",
+                    (sp_id, coluna, valor, anteriores.get(sp_id), acao,
+                     perfil))
         conn.commit()
 
     logger.info("Análise de SPs: %s (%s) alterou '%s' de %d SP(s) para '%s'.",
@@ -499,6 +563,32 @@ def alterar():
                 "erro": f"A coluna '{coluna}' não é alterável por aqui."}, 400
 
     return _gravar_alteracao(ids, coluna, valor, acao)
+
+
+@bp.route("/api/sem-risco", methods=["POST"])
+@exige_operador
+def sem_risco():
+    """Marca a SP como revisada: o risco de duplicidade foi olhado e não era.
+
+    Escreve na coluna da análise (AL) o mesmo texto do Streamlit, com a data
+    da revisão — "SEM RISCO (revisado em DD/MM/AAAA)". A palavra importa: é
+    "COM RISCO" no texto que faz a SP aparecer na lista de risco, e é tirando
+    essa palavra que ela sai de lá.
+
+    Não é uma alteração comum, então também não passa pela porta comum: quem
+    revisa está dizendo "eu conferi e pode pagar", e isso fica registrado com
+    o nome de quem disse."""
+    from .horario import agora
+
+    dados = request.get_json(silent=True) or {}
+    ids, erro = _ids_do_pedido(dados)
+    if erro:
+        return erro
+
+    quem = auth.nome_atual() or "sem nome"
+    texto = (f"SEM RISCO (revisado por {quem} em "
+             f"{agora().strftime('%d/%m/%Y')})")
+    return _gravar_alteracao(ids, "analise_ia", texto, "Remover risco")
 
 
 @bp.route("/api/validar", methods=["POST"])
@@ -572,7 +662,13 @@ def configuracoes():
 @exige_operador
 def migrar():
     from . import migracoes_runner
-    return migracoes_runner.aplicar_pendentes()
+    from .db import esquecer_colunas
+    resultado = migracoes_runner.aplicar_pendentes()
+    # O processo guardava que certas colunas não existiam. Depois de aplicar,
+    # elas existem — e sem esquecer, este worker continuaria pelo caminho
+    # antigo até o próximo reinício.
+    esquecer_colunas()
+    return resultado
 
 
 @bp.route("/api/andamento")
@@ -690,37 +786,50 @@ def auditoria():
     if checagem not in checagens.CHECAGENS:
         checagem = ""
 
+    # O período da auditoria é um controle SÓ DELA, separado do filtro da
+    # lista: auditar a base inteira dá o retrato de sempre; auditar um mês
+    # responde "o que entrou errado neste fechamento".
+    from .formatos import para_data
+    campo = request.args.get("campo_data", "vencimento")
+    if campo not in checagens.CAMPOS_PERIODO:
+        campo = "vencimento"
+    periodo = {"campo": campo,
+               "de": para_data((request.args.get("de") or "").strip() or None),
+               "ate": para_data((request.args.get("ate") or "").strip() or None)}
+
     resultado = None
     if checagem == "pontualidade":
         try:
             minimo = max(1, int(request.args.get("minimo", 5)))
         except ValueError:
             minimo = 5
-        resultado = checagens.pontualidade(filtros, usar_filtros, minimo)
+        resultado = checagens.pontualidade(filtros, usar_filtros, minimo, periodo)
     elif checagem == "risco_ia":
-        resultado = checagens.risco_ia(filtros, usar_filtros)
+        resultado = checagens.risco_ia(filtros, usar_filtros, periodo)
     elif checagem == "nf_duplicada":
-        resultado = checagens.nf_duplicada(filtros, usar_filtros)
+        resultado = checagens.nf_duplicada(filtros, usar_filtros, periodo)
     elif checagem == "possivel_duplicidade":
         try:
             dias = max(0, int(request.args.get("dias", 7)))
         except ValueError:
             dias = 7
-        resultado = checagens.possivel_duplicidade(filtros, usar_filtros, dias)
+        resultado = checagens.possivel_duplicidade(filtros, usar_filtros, dias, periodo)
     elif checagem == "sem_classificacao":
-        resultado = checagens.sem_classificacao(filtros, usar_filtros)
+        resultado = checagens.sem_classificacao(filtros, usar_filtros, periodo)
     elif checagem == "sem_integracao":
-        resultado = checagens.sem_integracao_omie(filtros, usar_filtros)
+        resultado = checagens.sem_integracao_omie(filtros, usar_filtros, periodo)
     elif checagem == "codigos_barras":
-        resultado = checagens.codigos_de_barras(filtros, usar_filtros)
+        resultado = checagens.codigos_de_barras(filtros, usar_filtros, periodo)
 
     return render_template(
         "analisesps_auditoria.html",
         aba="auditoria", base=base,
         checagens=checagens.CHECAGENS, checagem=checagem,
-        contagens=checagens.resumo(filtros, usar_filtros) if not checagem else None,
+        contagens=(checagens.resumo(filtros, usar_filtros, periodo)
+                   if not checagem else None),
         resultado=resultado, usar_filtros=usar_filtros,
-        teto=checagens.TETO,
+        teto=checagens.TETO, periodo=periodo,
+        campos_periodo=checagens.CAMPOS_PERIODO,
         minimo=request.args.get("minimo", 5),
         dias=request.args.get("dias", 7),
         args=request.args, filtros=filtros,
@@ -802,6 +911,32 @@ def tela_lote():
     guardado = lote.ler(pessoa)
     montado = lote.montar(guardado["conteudo"])
 
+    # O "Painel por status" que ficava embaixo do lote colado, no Streamlit:
+    # quatro listas por situação de agendamento, lidas da base inteira e não
+    # do lote. É onde se encontra a SP que ficou para trás e que ninguém
+    # colou em lote nenhum.
+    # No Streamlit estas quatro listas vinham INTEIRAS ("sem teto: exibe todos
+    # os registros"), o que lá custava só memória do PC. Aqui cada linha vira
+    # HTML que atravessa a internet: com 200 por status a página do Lote
+    # passava de 1 MB. Vinte de cada, por vencimento mais próximo, respondem
+    # "o que está prestes a vencer e ainda não foi tratado" — que é a pergunta
+    # que o painel existe para responder. O resto está a um clique, nas
+    # Solicitações já filtradas.
+    NO_PAINEL = 20
+    painel = []
+    for rotulo in ("Agendar", "Agendado", "Falha Agendar", "Verificar"):
+        try:
+            linhas = consultas.listar({"status_agend": [rotulo]},
+                                      ordem="vencimento", pagina=1)[:NO_PAINEL]
+            numeros = consultas.resumo({"status_agend": [rotulo]})
+        except Exception:  # noqa: BLE001 — o painel é um extra; o lote é o principal
+            logger.exception("Análise de SPs: falhou montar o painel de %r", rotulo)
+            continue
+        painel.append({"rotulo": rotulo, "linhas": linhas,
+                       "quantidade": numeros["quantidade"],
+                       "total": numeros["total"],
+                       "tem_mais": numeros["quantidade"] > len(linhas)})
+
     # O lote de quando ele era de todo mundo. Só aparece para quem ainda não
     # tem lote próprio — depois de começar o seu, ninguém quer ser lembrado.
     antes = lote.lote_de_antes() if not guardado["conteudo"].strip() else None
@@ -811,6 +946,8 @@ def tela_lote():
     return render_template(
         "analisesps_lote.html",
         aba="lote", base=base, lote=guardado, montado=montado, antes=antes,
+        colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
+        painel=painel,
         aviso=request.args.get("aviso") or None,
         pode_operar=auth.pode_operar(), nome=auth.nome_atual(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
@@ -1013,18 +1150,37 @@ def tela_agenda():
     except ValueError:
         dias = 90
 
+    # O mês que a grade mostra. Vem da barra de endereço para que "mês
+    # seguinte" seja um link — funciona com o botão voltar do navegador e dá
+    # para mandar o endereço de um mês para alguém.
+    from .horario import agora
+    hoje = agora().date()
+    try:
+        ano = int(request.args.get("ano", hoje.year))
+        mes = int(request.args.get("mes", hoje.month))
+        if not (1 <= mes <= 12 and 2000 <= ano <= 2100):
+            raise ValueError
+    except ValueError:
+        ano, mes = hoje.year, hoje.month
+
     try:
         proximos = agenda.proximos(dias)
         alertas = agenda.a_vencer()
         compromissos = agenda.listar()
+        grade = agenda.calendario(ano, mes)
         erro = None
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Análise de SPs: falhou montar a agenda")
-        proximos, alertas, compromissos, erro = [], [], [], str(e)
+        proximos, alertas, compromissos, grade, erro = [], [], [], None, str(e)
+
+    anterior = agenda.mes_vizinho(ano, mes, -1)
+    seguinte = agenda.mes_vizinho(ano, mes, 1)
 
     return render_template(
         "analisesps_agenda.html", aba="agenda",
         proximos=proximos, alertas=alertas, compromissos=compromissos,
+        grade=grade, ano=ano, mes=mes, meses=agenda.MESES,
+        anterior=anterior, seguinte=seguinte, hoje=hoje,
         dias=dias, erro=erro,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
@@ -1059,6 +1215,12 @@ def log():
         params.append(f"%{busca}%")
     where = " WHERE " + " AND ".join(onde)
 
+    # A coluna `pessoa` só existe depois da migração 003. Enquanto ela não
+    # for aplicada, a tela mostra o registro sem o nome — que é o que havia
+    # até 03/09 — em vez de não abrir.
+    from .db import tem_coluna
+    com_pessoa = tem_coluna("log_alteracoes", "pessoa")
+
     try:
         contagem = consultar(
             "SELECT status, count(*) FROM analisesps.log_alteracoes"
@@ -1066,7 +1228,8 @@ def log():
             " GROUP BY status", (dias,))
         registros = consultar(
             "SELECT criado_em, sp_id, coluna, valor, valor_anterior, acao, "
-            "       perfil, pessoa, status, enviado_em, erro "
+            "       perfil, " + ("pessoa" if com_pessoa else "NULL") + ", "
+            "       status, enviado_em, erro "
             f"  FROM analisesps.log_alteracoes{where} "
             " ORDER BY criado_em DESC LIMIT 500", tuple(params))
         pendentes = consultar_um("SELECT count(*) FROM analisesps.fila")

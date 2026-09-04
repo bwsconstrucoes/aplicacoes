@@ -243,6 +243,26 @@ window.ligarFicha = function (raiz) {
     finally { validar.disabled = false; }
   });
 
+  // O botao de remover risco vive DENTRO do aviso de risco, e nao na caixa de
+  // acoes — por isso e procurado no documento (ou no modal), nao na caixa.
+  const semRisco = (raiz || document).querySelector("#ficha-sem-risco");
+  if (semRisco) semRisco.addEventListener("click", async () => {
+    if (!confirm(`Marcar a SP ${sp} como REVISADA — ela sai da lista de risco `
+                 + `de duplicidade.\n\nFica registrado que foi você quem `
+                 + `revisou. Confirma?`)) return;
+    semRisco.disabled = true;
+    try {
+      const r = await fetch(caixa.dataset.urlSemRisco, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids: [sp]})
+      });
+      const d = await r.json();
+      if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
+      location.reload();
+    } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
+    finally { semRisco.disabled = false; }
+  });
+
   // "Limpar Pgto": as duas colunas de uma vez, como no Streamlit — Status Pgt
   // volta para "Pagar" e o Agendado fica vazio.
   const limpar = caixa.querySelector("#ficha-limpar");
