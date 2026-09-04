@@ -35,23 +35,19 @@ os casos de verdade são necessários **comprovantes de exemplo** — e antes de
 qualquer um entrar no Git, número de conta, CNPJ, CPF e nome viram fictícios,
 mantendo o formato do texto.
 
-### Duas coisas achadas na leitura do código, que o dono precisa decidir
+### As três divergências achadas na leitura do código — todas resolvidas
 
-Nenhuma foi mexida. Estão aqui porque mudam dinheiro:
+A documentação antiga descrevia três proteções que **o código não tinha**. As
+três foram tratadas em 04/09/2026:
 
-1. **O leitor do Sicredi nunca é chamado.** O `parser_sicredi.py` está escrito e
-   completo, mas o `core.py` manda toda página para o leitor do Bradesco. Ou
-   seja: comprovante do Sicredi hoje é lido com as regras do Bradesco. Ele pode
-   até casar por valor e conta, mas os campos próprios do Sicredi (o número da
-   SP em "Descrição do Pagamento", o "Valor Pago (R$)") não são procurados.
-2. **A trava contra pagar duas vezes só grava, não confere.** Existe a aba
-   `LogBaixaBradesco` e existe a função que pergunta "esta página já foi
-   processada?" — ela é importada pelo `core.py` e **nunca é chamada**. O
-   registro é gravado depois da baixa; a consulta antes da baixa não acontece.
-   Na prática, quem segura o pagamento repetido hoje é o Omie, que responde
-   "título já PAGO" e faz o robô parar. É uma proteção de terceiro, não nossa.
-A terceira era pior e **já foi corrigida nesta sessão** — está descrita no
-incidente de 04/09/2026, mais abaixo.
+1. **Comprovante recusado pelo banco passava como pagamento feito.** Corrigido —
+   ver o incidente abaixo.
+2. **A trava contra pagar duas vezes só gravava, não conferia.** Corrigido — ver
+   o incidente abaixo.
+3. **O leitor do Sicredi nunca é chamado.** Fica como está, por decisão do dono:
+   **a empresa não usa mais o Sicredi**. O arquivo continua no repositório, sem
+   ligação com o fluxo. Se voltar a usar, é ligar o desvio e cobrir com teste
+   antes.
 
 ## Decisões já tomadas (e por quê)
 
@@ -124,6 +120,27 @@ incidente de 04/09/2026, mais abaixo.
   teste justamente para segurar isso. Se aparecer alguma redação de recusa que
   não está na lista, é só acrescentar a frase.
 
+- **04/09/2026 — a trava contra pagar duas vezes estava solta.** Cada página de
+  comprovante ganha uma impressão digital, e ela era gravada na aba
+  `LogBaixaBradesco` depois de cada baixa. Só que **ninguém consultava a lista
+  antes de executar**: a função de conferência existia, era importada pelo
+  `core.py` e nunca era chamada. Na prática, quem segurava o pagamento repetido
+  era o Omie respondendo "título já pago" — proteção de terceiro, não nossa, e
+  que não cobre o caso de o título ter sido reaberto ou de existir outro título
+  com o mesmo valor.
+  **Como ficou:** a lista é lida **uma vez por lote** e conferida em memória,
+  página a página, antes de procurar a SP. A página processada agora entra na
+  lista do próprio lote, então o mesmo PDF enviado duas vezes no mesmo pedido
+  também é barrado. O que foi barrado aparece no resumo da resposta, em
+  `duplicados_ja_baixados`.
+  **O cuidado que não pode ser esquecido:** a leitura é UMA por lote, de
+  propósito. Uma consulta por página faria um lote de dez comprovantes virar dez
+  leituras da mesma coluna — exatamente o padrão que derrubou a instância em
+  julho de 2026 e que estoura a cota do Google. Há teste segurando isso.
+  **O limite que fica:** a impressão digital usa o conteúdo do arquivo **mais o
+  nome dele**. O mesmo PDF reenviado com outro nome conta como novo. Mudar isso
+  invalidaria todo o registro histórico, então ficou como está.
+
 ## O que ficou de fora, e é bom saber
 
 - **Comprovante sem número de SP e sem casamento fica parado** como
@@ -166,3 +183,14 @@ subindo com todos os blueprints.
 **Não verificado:** nenhum comprovante recusado passou pelo caminho completo em
 produção depois da correção — a primeira vez que o Make mandar um, vale conferir
 no retorno o campo `recusados_nao_efetivados`.
+
+Na sequência, o dono decidiu as outras duas: **ignorar o Sicredi** (não é mais
+usado) e **ajustar a trava de duplicidade**, que foi ligada ao fluxo com mais
+nove testes (`tests/test_baixabradesco_duplicidade.py`) — inclusive um que
+segura a leitura única por lote, para ninguém reintroduzir o problema de memória
+de julho.
+
+**Não verificado, e vale conferir na primeira baixa real:** o campo
+`duplicados_ja_baixados` no retorno, e que um comprovante legítimo **não** está
+sendo barrado por engano. Se aparecer barrado à toa, o suspeito é um comprovante
+que já havia sido processado e depois teve o título reaberto no Omie.

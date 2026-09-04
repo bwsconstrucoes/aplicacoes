@@ -186,25 +186,29 @@ conta corrente), **Pipefy** (cards), **Dropbox** (arquivo do comprovante),
 
 ## Ressalvas do código de hoje (conferidas em 04/09/2026, na `main`)
 
-Duas coisas que estão escritas na documentação antiga como se funcionassem, e
-que **no código de hoje não acontecem**:
+**O leitor do Sicredi nunca é chamado.** O `core.py` manda toda página para o
+leitor do Bradesco; o `parser_sicredi.py` existe, está completo e ninguém o usa.
+Fica assim de propósito: em 04/09/2026 o dono confirmou que **não usa mais o
+Sicredi**. Se algum dia voltar a usar, é ligar o desvio no `core.py` — e cobrir
+com teste antes.
 
-1. **O leitor do Sicredi nunca é chamado.** O `core.py` manda toda página para o
-   leitor do Bradesco. O `parser_sicredi.py` existe, está completo e ninguém o
-   usa.
-2. **A trava contra pagar duas vezes só grava, não confere.** A função que
-   pergunta "esta página já foi processada?" está escrita e é importada, mas
-   nunca é chamada antes de executar. O registro é gravado; a consulta não
-   acontece.
+Duas coisas foram corrigidas em 04/09/2026 e estão descritas no `HISTORICO.md`:
 
-Os dois estão registrados aqui e no `HISTORICO.md` para o dono decidir; nenhum
-foi alterado.
+1. **Comprovante recusado pelo banco.** Antes, só a frase exata "Operação Não
+   Realizada" barrava. Um comprovante real que dizia "Transação Não Realizada"
+   passava como boleto comum. Hoje a recusa é uma lista de frases
+   (`FRASES_RECUSA` no `parser_bradesco.py`), conferida **antes** de extrair
+   qualquer campo — um comprovante recusado não entrega nem valor nem código de
+   barras ao casador — e o que foi barrado aparece no resumo da resposta, em
+   `recusados_nao_efetivados`.
+2. **A trava contra pagar duas vezes.** A lista de comprovantes já baixados era
+   gravada e nunca conferida. Hoje ela é lida **uma vez por lote** e conferida
+   página a página, e o que foi barrado aparece em `duplicados_ja_baixados`.
+   ⚠️ Nunca trocar essa leitura única por uma consulta por página: um lote de
+   dez comprovantes viraria dez leituras da mesma coluna, que é o padrão que
+   derrubou a instância em julho de 2026.
 
-Uma terceira, essa **já corrigida em 04/09/2026**: o comprovante recusado pelo
-banco só era barrado se o texto dissesse exatamente "Operação Não Realizada".
-Um comprovante real que dizia "Transação Não Realizada" passava como boleto
-normal. Hoje a recusa é uma lista de frases (`FRASES_RECUSA` no
-`parser_bradesco.py`), a checagem acontece antes de qualquer extração — um
-comprovante recusado não entrega nem valor nem código de barras —, o leitor do
-Sicredi usa a mesma trava, e o que foi recusado aparece no resumo da resposta em
-`recusados_nao_efetivados`.
+Um limite que fica, e é bom saber: a impressão digital do comprovante é feita
+com o conteúdo do arquivo **mais o nome dele**. O mesmo PDF reenviado com outro
+nome conta como comprovante novo. Quem segura, nesse caso, é o Omie respondendo
+"título já pago".

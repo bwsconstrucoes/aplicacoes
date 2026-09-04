@@ -870,6 +870,23 @@ Quando eu pedir nova feature ou adaptação:
   que garante que o rodapé "Cancelamentos, Reclamações" de todo comprovante
   Bradesco não barre um pagamento bom.
 
+- **2026-09-04 — A trava contra baixa em duplicidade estava solta, e o Sicredi
+  saiu de cena.** A impressão digital de cada página de comprovante era gravada
+  na aba `LogBaixaBradesco` e **nunca conferida**: a função existia, era
+  importada pelo `core.py` e não era chamada. Quem segurava pagamento repetido
+  era o Omie respondendo "título já pago" — proteção de terceiro. Agora a lista
+  é lida **uma vez por lote** (`load_fingerprints_processados`) e conferida em
+  memória, antes de procurar a SP; a página processada entra na lista do próprio
+  lote, cobrindo o PDF repetido dentro do mesmo pedido; o que foi barrado
+  aparece no retorno em `duplicados_ja_baixados`. **A leitura única é
+  obrigatória**: uma consulta por página recriaria o padrão que derrubou a
+  instância em julho de 2026 (§9, item 4b) — há teste segurando isso. Limite
+  aceito: a impressão digital inclui o nome do arquivo, então o mesmo PDF
+  reenviado com outro nome conta como novo; mudar invalidaria o registro
+  histórico. **Na mesma conversa o dono decidiu que a empresa não usa mais o
+  Sicredi**: o `parser_sicredi.py` continua no repositório sem ligação com o
+  fluxo, e ligar o desvio exige cobrir com teste antes.
+
 ---
 
 ## 10. Pendências conhecidas
