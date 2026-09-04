@@ -937,6 +937,18 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
     medida = {"executado": EXECUTADO, "aberto": EM_ABERTO}.get(visao, COMPROMETIDO)
 
     condicoes, extras = ["analise = 'DRE'", "tipo = ?"], [PAG]
+
+    # A VISÃO FILTRA, não só ordena. Até 04/09/2026 ela mudava apenas por qual
+    # coluna a lista era ordenada: escolher "Só a pagar" e clicar em Aplicar
+    # devolvia a mesma lista, com as contas já quitadas no meio, mostrando zero
+    # na coluna "A pagar". O rótulo prometia um recorte que não existia.
+    #
+    # "Só pagas" inclui a linha em que só os encargos foram pagos: juros e multa
+    # quitados são dinheiro que saiu, mesmo com o principal ainda em aberto.
+    if visao == "aberto":
+        condicoes.append(f"ABS({EM_ABERTO}) > 0.005")
+    elif visao == "executado":
+        condicoes.append(f"ABS({EXECUTADO}) + ABS({ENCARGO}) > 0.005")
     # lançamento sem data fica de fora quando há faixa: não há como dizer se
     # ele cai dentro dela, e incluir "por via das dúvidas" faria o total da
     # faixa não bater com a soma das linhas que a pessoa está vendo
@@ -1004,6 +1016,14 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
         for campo in ("pago", "a_pagar", "juros", "multa"):
             linha[campo] = float(linha[campo] or 0)
         linha["total"] = linha["pago"] + linha["a_pagar"]
+        # A "medição" de uma despesa comum É o número do documento: quando não
+        # há medição na observação, `chave_medicao` cai em "DOC:<documento>" e o
+        # rótulo vira o próprio documento. Mostrar isso numa coluna chamada
+        # Medição repete o dado ao lado e faz parecer que toda nota é medição.
+        # Vazio aqui quer dizer o que tem de querer: esta despesa não está
+        # amarrada a nenhuma medição.
+        if (linha.get("medicao") or "").strip() == (linha.get("documento") or "").strip():
+            linha["medicao"] = ""
         linhas.append(linha)
 
     quantos = quantos or 0

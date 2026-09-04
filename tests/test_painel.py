@@ -1370,3 +1370,89 @@ def test_o_segredo_do_agendador_tambem_aceita_acento(painel, monkeypatch):
     monkeypatch.setenv("PAINEL_SECRET", "segrêdo-da-máquina")
     assert auth.segredo_de_maquina_confere("segrêdo-da-máquina") is True
     assert auth.segredo_de_maquina_confere("outro") is False
+
+
+# ===========================================================================
+# 10. O download tem de levar TODOS os filtros da tela
+# ===========================================================================
+# O defeito de 04/09/2026, achado pelo dono: a tela dizia 481 lançamentos e o
+# arquivo baixado tinha 316 linhas. Causa: os botões faziam
+# `url_for(..., **request.args)`, e `**` sobre um MultiDict pega UM valor por
+# chave. Ano, projeto e obra são múltiplos — quem filtrava três obras baixava um
+# arquivo com as de uma só, sem aviso nenhum.
+#
+# É a classe inteira do problema que está sob teste aqui, não o caso: um número
+# na tela que não bate com o arquivo destrói a confiança em todos os outros.
+TELAS_QUE_BAIXAM = [
+    "/painel/analitico", "/painel/dre", "/painel/fluxo",
+    "/painel/obras", "/painel/execucao", "/painel/receita",
+]
+
+
+@pytest.mark.parametrize("caminho", TELAS_QUE_BAIXAM)
+def test_o_botao_de_baixar_leva_todas_as_obras_filtradas(painel, caminho):
+    """Três obras na tela têm de virar três obras no link do arquivo."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get(f"{caminho}?obra=CASA&obra=PREDIO&obra=PONTE&ano=2025&ano=2024")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+
+    links = [t for t in html.split('href="') if "/painel/baixar/" in t[:40]]
+    assert links, f"{caminho}: nenhum botão de baixar na tela"
+    for link in links:
+        endereco = link.split('"')[0]
+        assert endereco.count("obra=") == 3, (
+            f"{caminho}: o link de download leva {endereco.count('obra=')} obra(s) "
+            f"das 3 filtradas — {endereco}")
+        assert endereco.count("ano=") == 2, f"{caminho}: {endereco}"
+
+
+def test_nenhum_template_usa_o_atalho_que_derruba_filtro(painel):
+    """A trava contra a recaída: `**request.args` num link de download volta a
+    engolir os filtros múltiplos, e o defeito é invisível — o arquivo abre, só
+    vem incompleto. Quem precisa de link novo usa o ajudante `link_baixar`."""
+    import glob
+
+    culpados = []
+    for arquivo in glob.glob("app/apps/painel/templates/*.html"):
+        with open(arquivo, encoding="utf-8") as f:
+            texto = f.read()
+        if "painel.baixar" in texto and "**request.args" in texto:
+            for linha in texto.splitlines():
+                if "painel.baixar" in linha and "**request.args" in linha:
+                    culpados.append(f"{arquivo.split('/')[-1]}: {linha.strip()}")
+    assert not culpados, (
+        "estes links de download engolem os filtros múltiplos; use link_baixar():\n"
+        + "\n".join(culpados))
+
+
+def test_o_link_do_arquivo_nao_leva_a_pagina_em_que_a_pessoa_estava(painel):
+    """O arquivo é a seleção inteira, não a página que está na tela."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/analitico?pagina=3&obra=CASA").get_data(as_text=True)
+    link = [t.split('"')[0] for t in html.split('href="')
+            if "/painel/baixar/" in t[:40]][0]
+    assert "pagina=" not in link, link
+    assert "obra=CASA" in link
+
+
+def test_o_rodape_diz_quantas_paginas_existem(painel, monkeypatch):
+    """Quem chega no fim da tabela digitava um número sem saber até onde ia: o
+    total só existia no `max` do campo, que ninguém vê."""
+    from app.apps.painel import consultas
+
+    real = consultas.analitico_despesas
+
+    def _com_varias_paginas(*a, **k):
+        dados = real(*a, **k)
+        dados.update(quantos=481, paginas=3, pagina=1)
+        return dados
+
+    monkeypatch.setattr(consultas, "analitico_despesas", _com_varias_paginas)
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html = painel.get("/painel/analitico").get_data(as_text=True)
+
+    assert "Ir para a página" in html
+    depois = html.split("Ir para a página", 1)[1]
+    assert "de <b>3</b>" in depois, "o rodapé tem de dizer de quantas páginas"
+    assert "481" in depois, "e quantos lançamentos são"

@@ -79,6 +79,44 @@ alguém abrir a tela publicada:
 
 </details>
 
+### A leva de 04/09/2026 (noite) — quatro defeitos que o uso real mostrou
+
+O dono foi usar o Despesas Analítico de verdade e trouxe quatro coisas. As duas
+primeiras são graves porque **mentem sobre número**.
+
+**1. A tela dizia 481 lançamentos e o arquivo baixado tinha 316.** Os botões de
+download faziam `url_for(..., **request.args)`. O `**` sobre um MultiDict pega
+**um valor por chave** — e ano, projeto e obra são múltiplos. Quem filtrava três
+obras baixava o arquivo de **uma**, sem aviso nenhum: o arquivo abre, só vem
+incompleto. Valia para **os dez** botões de download do painel.
+
+A correção é um ajudante `link_baixar()` no `web.py`, que usa
+`to_dict(flat=False)` — o mesmo cuidado que o `pagina_link` ao lado já tomava
+desde sempre. E há teste varrendo **todos os templates** atrás de `**request.args`
+num link de download: é a classe inteira do problema, não o caso.
+
+**2. A "Visão" do Analítico não filtrava.** Escolher "Só a pagar" e clicar em
+Aplicar devolvia a mesma lista, com as contas quitadas no meio mostrando zero na
+coluna. A visão só decidia **por qual coluna ordenar** — o rótulo prometia um
+recorte que não existia. Agora ela entra no `WHERE`. "Só pagas" inclui a linha
+em que só os encargos foram pagos: juros quitados são dinheiro que saiu.
+
+**3. A coluna Documento aparecia com o dado duplicado.** Quando a observação não
+traz medição, a chave de agrupamento cai no **próprio documento**
+(`DOC:<numero>`), e o rótulo dela vira o número. A tela mostrava o documento e,
+embaixo, o mesmo número como "medição". Agora a medição fica vazia quando é eco
+do documento — e vazio ali quer dizer o que tem de querer: esta despesa não está
+amarrada a nenhuma medição. Vale para a tela, a planilha e o PDF.
+
+**4. O rodapé da paginação não dizia quantas páginas existem.** O total só
+estava no `max` do campo, que ninguém vê: quem chegava lá embaixo digitava um
+número sem saber até onde ia. Agora diz "de N" e quantos lançamentos são.
+
+**A lição que atravessa as três primeiras:** nenhuma delas quebra a tela. Todas
+devolvem 200 e um número plausível. Teste que só confere status não pega nada
+disso — é a mesma lição do filtro que não pegava, em 03/09, e é a terceira vez
+que ela aparece neste arquivo.
+
 ### A queda de 04/09/2026 — a senha com acento
 
 O dono abriu o painel e recebeu a tela de erro com **"comparing strings with

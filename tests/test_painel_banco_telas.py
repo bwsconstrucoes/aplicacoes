@@ -374,3 +374,119 @@ def test_a_tela_de_cenarios_desenha_a_comparacao_com_banco_de_verdade(
     # e nada foi gravado só por abrir a tela
     from app.apps.painel import prestacao_dados
     assert prestacao_dados.regras()[0]["escopo"] == "AMBAS"
+
+
+# ---------------------------------------------------------------------------
+# A Visão do Analítico tem de FILTRAR
+# ---------------------------------------------------------------------------
+# Defeito achado pelo dono em 04/09/2026: escolher "Só a pagar" e clicar em
+# Aplicar não mudava nada. A visão só decidia por qual coluna ordenar; as contas
+# já quitadas continuavam na lista, mostrando zero na coluna "A pagar".
+#
+# Precisa de banco de verdade: a diferença está no WHERE, e o dublê de sessão
+# ignora WHERE — ele devolveria as mesmas linhas nos três casos e o teste
+# passaria sem provar nada.
+@pytest.fixture()
+def base_paga_e_em_aberto(painel_no_banco):
+    """Três despesas: uma quitada, uma inteiramente em aberto e uma em que só
+    os juros foram pagos."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+
+    linhas = [
+        _linha_de_fato(codigo_lancamento=901, razao_social="QUITADA",
+                       situacao="Pago", pago_recebido=-1000, a_pagar_receber=0),
+        _linha_de_fato(codigo_lancamento=902, razao_social="EM ABERTO",
+                       situacao="A pagar", pago_recebido=0, a_pagar_receber=-700),
+        _linha_de_fato(codigo_lancamento=903, razao_social="SO OS JUROS",
+                       situacao="Pago", pago_recebido=0, a_pagar_receber=0,
+                       juros=-30),
+    ]
+    colunas = list(linhas[0].keys())
+    marcas = ",".join(["?"] * len(colunas))
+    with conexao() as conn:
+        conn.execute("TRUNCATE TABLE fato")
+        conn.executemany(
+            f"INSERT INTO fato ({', '.join(colunas)}) VALUES ({marcas})",
+            [tuple(l[c] for c in colunas) for l in linhas])
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+def _credores(visao):
+    from app.apps.painel import consultas
+    dados = consultas.analitico_despesas(consultas.Filtros(), visao=visao)
+    return {l["credor"] for l in dados["linhas"]}, dados["quantos"]
+
+
+def test_so_a_pagar_tira_o_que_ja_foi_quitado(base_paga_e_em_aberto):
+    credores, quantos = _credores("aberto")
+    assert credores == {"EM ABERTO"}
+    assert quantos == 1, "o contador da tela conta o mesmo que a lista mostra"
+
+
+def test_so_pagas_tira_o_que_ainda_falta_pagar(base_paga_e_em_aberto):
+    credores, quantos = _credores("executado")
+    assert "EM ABERTO" not in credores
+    assert "QUITADA" in credores
+    assert "SO OS JUROS" in credores, (
+        "juros pagos são dinheiro que saiu: a linha conta como paga")
+    assert quantos == 2
+
+
+def test_comprometido_continua_mostrando_tudo(base_paga_e_em_aberto):
+    credores, quantos = _credores("comprometido")
+    assert credores == {"QUITADA", "EM ABERTO", "SO OS JUROS"}
+    assert quantos == 3
+
+
+def test_o_contador_da_tela_bate_com_o_que_o_arquivo_leva(base_paga_e_em_aberto):
+    """O defeito irmão, também achado pelo dono: a tela dizia 481 lançamentos e
+    o arquivo trazia 316. O número do topo e as linhas têm de vir da MESMA
+    seleção, em qualquer visão."""
+    from app.apps.painel import consultas
+
+    for visao in ("comprometido", "aberto", "executado"):
+        dados = consultas.analitico_despesas(
+            consultas.Filtros(), visao=visao, por_pagina=20000)
+        assert dados["quantos"] == len(dados["linhas"]), visao
+
+
+def test_a_medicao_nao_repete_o_numero_do_documento(painel_no_banco):
+    """Defeito achado pelo dono: a coluna Documento aparecia com o dado
+    duplicado — o número em cima e o mesmo número embaixo, como "medição".
+
+    Causa: quando a observação não traz medição nenhuma, a chave de agrupamento
+    cai no PRÓPRIO documento (`DOC:<numero>`), e o rótulo dela vira o número.
+    Uma despesa comum não é medição, e a coluna passou a dizer isso ficando
+    vazia."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+
+    linhas = [
+        _linha_de_fato(codigo_lancamento=910, razao_social="SEM MEDICAO",
+                       numero_documento="NF 1234", medicao_rotulo="NF 1234",
+                       pago_recebido=-100),
+        _linha_de_fato(codigo_lancamento=911, razao_social="COM MEDICAO",
+                       numero_documento="NF 5678",
+                       medicao_rotulo="OBRA X | Medição 3", pago_recebido=-200),
+    ]
+    colunas = list(linhas[0].keys())
+    marcas = ",".join(["?"] * len(colunas))
+    with conexao() as conn:
+        conn.execute("TRUNCATE TABLE fato")
+        conn.executemany(
+            f"INSERT INTO fato ({', '.join(colunas)}) VALUES ({marcas})",
+            [tuple(l[c] for c in colunas) for l in linhas])
+        conn.commit()
+    consultas.esquecer_listas()
+
+    por_credor = {l["credor"]: l for l in
+                  consultas.analitico_despesas(consultas.Filtros())["linhas"]}
+
+    assert por_credor["SEM MEDICAO"]["documento"] == "NF 1234"
+    assert por_credor["SEM MEDICAO"]["medicao"] == "", (
+        "medição igual ao documento é eco, não informação")
+    # e a medição de verdade continua aparecendo
+    assert por_credor["COM MEDICAO"]["medicao"] == "OBRA X | Medição 3"
