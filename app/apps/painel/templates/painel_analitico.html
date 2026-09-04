@@ -175,7 +175,7 @@
     </span>
     <span class="espaco"></span>
     <a class="btn secundario" style="text-decoration:none"
-       href="{{ url_for('painel.baixar', assunto='analitico', **request.args) }}">
+       href="{{ link_baixar('analitico') }}">
       ⬇ Baixar Excel</a>
   </div>
   <div class="tabela-rolagem">
@@ -243,6 +243,11 @@
       <input class="dados" name="pagina" type="number" min="1" max="{{ dados.paginas }}"
              value="{{ dados.pagina }}" style="width:80px; padding:6px 8px;
              border:1px solid var(--borda-forte); border-radius:6px">
+      {# quantas paginas existem so estava no `max` do campo, que ninguem ve —
+         quem chegava aqui embaixo digitava um numero sem saber ate onde ia #}
+      <span class="resumo">de <b>{{ dados.paginas }}</b> ·
+        <b>{{ '{:,}'.format(dados.quantos).replace(',', '.') }}</b>
+        lançamento{{ '' if dados.quantos == 1 else 's' }}</span>
       <button class="btn secundario" type="submit">Ver</button>
     </form>
     <span class="espaco"></span>

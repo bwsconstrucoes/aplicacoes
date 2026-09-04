@@ -79,6 +79,86 @@ alguém abrir a tela publicada:
 
 </details>
 
+### A leva de 04/09/2026 (noite) — quatro defeitos que o uso real mostrou
+
+O dono foi usar o Despesas Analítico de verdade e trouxe quatro coisas. As duas
+primeiras são graves porque **mentem sobre número**.
+
+**1. A tela dizia 481 lançamentos e o arquivo baixado tinha 316.** Os botões de
+download faziam `url_for(..., **request.args)`. O `**` sobre um MultiDict pega
+**um valor por chave** — e ano, projeto e obra são múltiplos. Quem filtrava três
+obras baixava o arquivo de **uma**, sem aviso nenhum: o arquivo abre, só vem
+incompleto. Valia para **os dez** botões de download do painel.
+
+A correção é um ajudante `link_baixar()` no `web.py`, que usa
+`to_dict(flat=False)` — o mesmo cuidado que o `pagina_link` ao lado já tomava
+desde sempre. E há teste varrendo **todos os templates** atrás de `**request.args`
+num link de download: é a classe inteira do problema, não o caso.
+
+**2. A "Visão" do Analítico não filtrava.** Escolher "Só a pagar" e clicar em
+Aplicar devolvia a mesma lista, com as contas quitadas no meio mostrando zero na
+coluna. A visão só decidia **por qual coluna ordenar** — o rótulo prometia um
+recorte que não existia. Agora ela entra no `WHERE`. "Só pagas" inclui a linha
+em que só os encargos foram pagos: juros quitados são dinheiro que saiu.
+
+**3. A coluna Documento aparecia com o dado duplicado.** Quando a observação não
+traz medição, a chave de agrupamento cai no **próprio documento**
+(`DOC:<numero>`), e o rótulo dela vira o número. A tela mostrava o documento e,
+embaixo, o mesmo número como "medição". Agora a medição fica vazia quando é eco
+do documento — e vazio ali quer dizer o que tem de querer: esta despesa não está
+amarrada a nenhuma medição. Vale para a tela, a planilha e o PDF.
+
+**4. O rodapé da paginação não dizia quantas páginas existem.** O total só
+estava no `max` do campo, que ninguém vê: quem chegava lá embaixo digitava um
+número sem saber até onde ia. Agora diz "de N" e quantos lançamentos são.
+
+**A lição que atravessa as três primeiras:** nenhuma delas quebra a tela. Todas
+devolvem 200 e um número plausível. Teste que só confere status não pega nada
+disso — é a mesma lição do filtro que não pegava, em 03/09, e é a terceira vez
+que ela aparece neste arquivo.
+
+### A queda de 04/09/2026 — a senha com acento
+
+O dono abriu o painel e recebeu a tela de erro com **"comparing strings with
+non-ASCII characters is not supported"**.
+
+**O que aconteceu de verdade:** ele estava **errando a senha**, e o que digitou
+tinha acento. Em vez de "senha incorreta", levou a tela de erro. A senha
+configurada não tem acento — **ninguém ficou trancado fora**, e não houve
+indisponibilidade.
+
+**Causa:** o `hmac.compare_digest` do Python, usado para conferir a senha em
+tempo constante, **recusa texto com qualquer caractere fora do ASCII** — e não
+devolve `False`: levanta `TypeError`. Basta o texto DIGITADO ter acento para
+derrubar a tela.
+
+**O caso pior, que não aconteceu mas era possível:** se a `PAINEL_SENHA`
+configurada tivesse acento, ninguém entraria nunca, nem sabendo a senha. Fica
+registrado porque a correção fecha os dois casos, e porque trocar a senha para
+uma com acento era uma armadilha esperando.
+
+**Correção:** comparar **bytes** em vez de texto. O `compare_digest` aceita
+bytes de qualquer conteúdo e continua sendo tempo constante. Vale também para o
+`PAINEL_SECRET` — um acento ali derrubaria a carga da madrugada, e a falha
+apareceria de noite, sem ninguém olhando.
+
+Junto veio a **normalização NFC**: "ç" pode ser gravado como um caractere ou
+como "c" mais a cedilha, dependendo do teclado. Os dois são iguais na tela e
+diferentes em bytes, então a mesma senha digitada no celular e no computador
+podia não bater. É o que a RFC 8265 recomenda para senha, e não afrouxa nada:
+texto idêntico continua idêntico depois de normalizado.
+
+**Por que nenhum teste pegou:** todos os testes de login usavam
+`"segredo-de-teste"` — ASCII puro. **Cenário de teste sem o caractere que
+importa não testa o caractere que importa**, e é a segunda vez que essa mesma
+lição aparece neste arquivo (a primeira foi o `juros` zerado, em 03/09). Agora
+há cinco testes com acento, inclusive o do segredo do agendador.
+
+**O MESMO DEFEITO EXISTE NO ANÁLISE DE SPs**, em três lugares
+(`analisesps/auth.py` linhas 120 e 271, `analisesps/web.py` linha 628). Não foi
+mexido daqui — é outra área, outro chat. **Foi avisado ao dono.** O ERP não tem
+o problema: lá a comparação é entre hashes, que são sempre ASCII.
+
 ### A leva de 04/09/2026 — as duas datas no ar, e duas pendências fechadas
 
 **As duas datas foram publicadas** (junção `0bfa75b`) e o dono aplicou a

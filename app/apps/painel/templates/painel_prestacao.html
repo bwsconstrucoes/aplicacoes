@@ -51,7 +51,7 @@
       <b>Saldo</b> = a diferença
     </span>
     <span class="espaco"></span>
-    <a class="btn secundario" style="text-decoration:none" href="{{ url_for('painel.baixar', assunto='posicao', **request.args) }}">⬇ Baixar planilha</a>
+    <a class="btn secundario" style="text-decoration:none" href="{{ link_baixar('posicao') }}">⬇ Baixar planilha</a>
   </div>
   <div class="tabela-rolagem">
     <table>
@@ -133,7 +133,7 @@
   </div>
   <div class="tabela-barra" style="border:0; padding:0 0 10px">
     <span class="espaco"></span>
-    <a class="btn secundario" style="text-decoration:none" href="{{ url_for('painel.baixar', assunto='quotas', **request.args) }}">⬇ Baixar planilha</a>
+    <a class="btn secundario" style="text-decoration:none" href="{{ link_baixar('quotas') }}">⬇ Baixar planilha</a>
   </div>
   <div class="tabela-rolagem" style="max-height:440px">
     <table>

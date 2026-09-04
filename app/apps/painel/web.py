@@ -87,6 +87,24 @@ def _ajudantes_de_template():
         args["pagina"] = [str(numero)]
         return url_for("painel.analitico", **args)
 
+    def link_baixar(assunto, **extras):
+        """Link de download levando os filtros da tela — TODOS eles.
+
+        Existe por causa de um defeito que custou confianca no numero: os botoes
+        faziam `url_for(..., **request.args)`, e `**` sobre um MultiDict pega
+        UMA valor por chave. Ano, projeto e obra sao multiplos: quem filtrava
+        tres obras via 481 lancamentos na tela e baixava um arquivo com so as
+        de uma obra — sem aviso nenhum de que o resto tinha ficado para tras.
+
+        `to_dict(flat=False)` mantem a lista inteira, e o `url_for` repete o
+        parametro para cada valor. E o mesmo cuidado que o `pagina_link` acima
+        ja tomava."""
+        args = request.args.to_dict(flat=False)
+        args.pop("pagina", None)      # o arquivo e a selecao inteira, nao a pagina
+        for chave, valor in extras.items():
+            args[chave] = [valor]
+        return url_for("painel.baixar", assunto=assunto, **args)
+
     def com_filtros(rota):
         """Link de aba levando os filtros da barra lateral junto.
 
@@ -111,7 +129,7 @@ def _ajudantes_de_template():
                 "ms_total": int(total * 1000)}
 
     return {"brl": brl, "classe_valor": classe_valor, "com_filtros": com_filtros,
-            "cronometro": cronometro,
+            "cronometro": cronometro, "link_baixar": link_baixar,
             "link_analitico": link_analitico, "pagina_link": pagina_link}
 
 
