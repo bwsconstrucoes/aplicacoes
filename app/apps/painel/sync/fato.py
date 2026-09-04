@@ -298,7 +298,11 @@ COLUNAS_FATO = (
     "categoria", "grupo", "projeto", "departamento", "razao_social", "cnpj_cpf",
     "numero_documento", "pedido_compra", "conta_corrente", "observacao", "link",
     "medicao", "medicao_rotulo",
-    "data", "ano", "mes", "pago_recebido", "a_pagar_receber", "juros", "multa",
+    # `data` e a das telas: pagamento quando quitado, senao vencimento. As duas
+    # abaixo sao as datas CRUAS, cada uma a sua — e a diferenca entre elas e o
+    # atraso, que nao existia em lugar nenhum do painel.
+    "data", "ano", "mes", "data_vencimento", "data_pagamento",
+    "pago_recebido", "a_pagar_receber", "juros", "multa",
 )
 
 
@@ -354,6 +358,11 @@ def gerar_linhas_fato(conn):
             ddt = _data_para_dt(data)
             ano = ddt.year if ddt else None
             mes = ddt.month if ddt else None
+            # e as duas separadas, cada uma a sua. A de pagamento so existe se o
+            # titulo foi mesmo quitado: gravar a data de um movimento de titulo
+            # em aberto faria parecer pago o que nao foi.
+            dvenc_dt = _data_para_dt(dvenc)
+            dpago_dt = _data_para_dt(dpg) if quitado else None
 
             if quitado:
                 sit_venc = "Quitado"
@@ -394,7 +403,7 @@ def gerar_linhas_fato(conn):
                 identificacao = (projeto, dep, razao, cnpj, ndoc or "", nped or "",
                                  conta, observacao, link,
                                  chave, rotulo_medicao(chave),
-                                 ddt, ano, mes)
+                                 ddt, ano, mes, dvenc_dt, dpago_dt)
                 # linha LIQUIDA (categoria real). Juros e multa sao os encargos
                 # efetivamente pagos e ficam SEPARADOS do principal, para virarem
                 # linha financeira no DRE.

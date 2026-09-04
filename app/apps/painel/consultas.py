@@ -877,14 +877,44 @@ def resultado_mensal(f: Filtros, medida: str = "executado") -> list[dict]:
 ORDENS = {
     "valor": "ABS({medida}) DESC",
     "data": "data DESC NULLS LAST",
+    "vencimento": "data_vencimento DESC NULLS LAST",
+    # o que mais demorou a ser pago primeiro: e a pergunta que a coluna de
+    # atraso existe para responder
+    "atraso": "(data_pagamento - data_vencimento) DESC NULLS LAST",
     "credor": "razao_social ASC",
     "categoria": "categoria ASC",
 }
 
 
+# Por qual data a faixa filtra. A de sempre continua sendo a padrao: e a que o
+# DRE e o fluxo de caixa usam, e trocar isso por baixo mudaria o significado da
+# tela sem ninguem pedir.
+BASES_DE_DATA = {
+    "movimento": ("data", "Pagamento ou vencimento"),
+    "vencimento": ("data_vencimento", "Só o vencimento"),
+    "pagamento": ("data_pagamento", "Só o pagamento"),
+}
+
+
+def duas_datas_prontas() -> bool:
+    """As colunas de vencimento e pagamento ja foram preenchidas?
+
+    Elas nascem vazias: a migracao cria a coluna, quem preenche e a proxima
+    atualizacao da base. Enquanto isso a tela precisa DIZER isso, em vez de
+    mostrar uma coluna de travessoes e deixar a pessoa achar que a informacao
+    nao existe."""
+    def calcular():
+        return bool(consultar(
+            "SELECT 1 FROM fato WHERE data_vencimento IS NOT NULL LIMIT 1"))
+
+    # so muda quando o fato e refeito, e ai o carimbo muda junto
+    return _lembrando(("duas_datas_prontas",), calcular)
+
+
 def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
                        busca="", visao="comprometido", ordem="valor",
-                       de="", ate="", pagina=1, por_pagina=200) -> dict:
+                       de="", ate="", base="movimento",
+                       pagina=1, por_pagina=200) -> dict:
     """Os lançamentos de despesa, um por linha, com filtros próprios.
 
     `de` e `ate` são a faixa de data, no formato AAAA-MM-DD (o que o calendário
@@ -904,11 +934,12 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
     # CAST explícito: a data chega como texto do calendário do navegador, e
     # deixar o banco adivinhar o tipo é o tipo de coisa que funciona num e
     # quebra no outro
+    coluna_data = BASES_DE_DATA.get(base, BASES_DE_DATA["movimento"])[0]
     if de:
-        condicoes.append("data >= CAST(? AS DATE)")
+        condicoes.append(f"{coluna_data} >= CAST(? AS DATE)")
         extras.append(de)
     if ate:
-        condicoes.append("data <= CAST(? AS DATE)")
+        condicoes.append(f"{coluna_data} <= CAST(? AS DATE)")
         extras.append(ate)
     if grupo:
         condicoes.append("COALESCE(NULLIF(grupo,''), '(sem grupo)') = ?")
@@ -941,7 +972,11 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
                projeto, numero_documento, observacao, conta_corrente, situacao,
                {EXECUTADO}, {EM_ABERTO}, juros, multa, link,
                situacao_vencimento, pedido_compra, medicao_rotulo,
-               codigo_lancamento
+               codigo_lancamento, data_vencimento, data_pagamento,
+               -- atraso em dias: so faz sentido no que ja foi pago. Subtracao de
+               -- DATE no Postgres ja devolve o numero de dias, sem funcao nenhuma
+               CASE WHEN data_pagamento IS NOT NULL AND data_vencimento IS NOT NULL
+                    THEN data_pagamento - data_vencimento END
           FROM fato{where}
          ORDER BY {ordenacao}
          LIMIT {int(por_pagina)} OFFSET {int((pagina - 1) * por_pagina)}"""
@@ -951,7 +986,9 @@ def analitico_despesas(f: Filtros, grupo="", categoria="", credor="",
               # já existiam no banco e não apareciam em lugar nenhum: o atraso
               # (quitado / vencido / a vencer), a compra que originou o gasto,
               # a medição em que ele caiu e o número para procurar no OMIE
-              "vencimento", "pedido", "medicao", "lancamento")
+              "vencimento", "pedido", "medicao", "lancamento",
+              # as duas datas separadas, e a diferenca entre elas
+              "data_vencimento", "data_pagamento", "atraso")
     linhas = []
     for bruta in consultar(sql, params):
         linha = dict(zip(campos, bruta))

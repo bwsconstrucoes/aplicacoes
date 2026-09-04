@@ -353,6 +353,9 @@ def analitico():
     visao = request.args.get("visao", "comprometido")
     ordem = request.args.get("ordem", "valor")
     de, ate = _faixa_de_data()
+    base = request.args.get("base", "movimento")
+    if base not in consultas.BASES_DE_DATA:
+        base = "movimento"
     try:
         pagina = int(request.args.get("pagina") or 1)
     except ValueError:
@@ -362,11 +365,15 @@ def analitico():
         **_contexto_comum("analitico"),
         chips=f.resumo(),
         grupo=grupo, categoria=categoria, credor=credor, busca=busca,
-        visao=visao, ordem=ordem, de=de, ate=ate,
+        visao=visao, ordem=ordem, de=de, ate=ate, base=base,
+        bases=consultas.BASES_DE_DATA,
+        # as colunas novas nascem vazias; a tela avisa em vez de mostrar
+        # travessão e deixar parecer que o dado não existe
+        duas_datas=consultas.duas_datas_prontas(),
         opcoes_analitico=consultas.opcoes_do_analitico(f),
         dados=consultas.analitico_despesas(
             f, grupo=grupo, categoria=categoria, credor=credor, busca=busca,
-            visao=visao, ordem=ordem, de=de, ate=ate, pagina=pagina),
+            visao=visao, ordem=ordem, de=de, ate=ate, base=base, pagina=pagina),
     )
 
 
@@ -781,7 +788,7 @@ def baixar(assunto):
             busca=(request.args.get("busca") or "").strip(),
             visao=request.args.get("visao", "comprometido"),
             ordem=request.args.get("ordem", "valor"),
-            de=de, ate=ate,
+            de=de, ate=ate, base=request.args.get("base", "movimento"),
             pagina=1, por_pagina=limite)["linhas"]
 
     def _abas_de_aporte():
