@@ -204,6 +204,16 @@
 // funcionar. Sem isso, a ficha no modal abriria bonita e inerte.
 // ---------------------------------------------------------------------------
 window.ligarFicha = function (raiz) {
+  // Um clique no campo do codigo seleciona tudo — quem esta pagando copia e
+  // cola sem mirar. Vale tambem para a ficha aberta no modal, onde estes
+  // campos nascem depois que a pagina ja rodou.
+  (raiz || document).querySelectorAll(".copiavel").forEach(campo => {
+    if (campo.dataset.ligada) return;
+    campo.dataset.ligada = "1";
+    campo.addEventListener("focus", () => campo.select());
+    campo.addEventListener("click", () => campo.select());
+  });
+
   const caixa = (raiz || document).querySelector(".ficha-acoes");
   if (!caixa || caixa.dataset.ligada) return;
   caixa.dataset.ligada = "1";

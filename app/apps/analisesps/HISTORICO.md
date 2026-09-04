@@ -460,6 +460,35 @@ O modal passou a abrir também **no clique de qualquer link marcado**, não só
 no duplo clique de uma linha de tabela. Nas tabelas o número segue abrindo o
 card no Pipefy, como o dono pediu; fora delas, abre a ficha.
 
+### Décima leva (05/09) — o código de pagamento dentro da ficha
+
+Pedido do dono: ao abrir a SP no modal, mostrar já o QR Pix ou o código de
+barras. Quem abre a ficha para conferir um dado quase sempre está a caminho de
+pagar, e voltar à lista só para gerar o código era um caminho a mais em cada
+pagamento.
+
+- **A montagem do código virou função** (`_codigo_de_pagamento`), usada pela
+  tela de códigos E pela ficha. Duas cópias divergiriam no dia em que uma
+  ganhasse um caso — e a que ficasse para trás mostraria um código errado a
+  quem está pagando.
+- **O botão "QR / Código" saiu da ficha**, por decisão do dono: com o código
+  ali, virou redundante.
+- **SP que já saiu recebe aviso antes do código.** Mostrar um QR de pagamento
+  numa SP marcada como Paga é o caminho curto para pagar duas vezes. O código
+  continua aparecendo — às vezes é justamente o que se quer conferir —, mas
+  com o aviso na frente.
+- **Forma sem código explica**, em vez de deixar um espaço em branco que
+  pareceria falha do sistema.
+- **"Remover do lote" perdeu a cor de alerta**, por decisão do dono: ele não
+  altera nada na planilha, então não merecia se destacar. O aviso continua na
+  confirmação do clique, que é onde importa.
+
+**Um defeito antigo corrigido junto.** O gerador devolve o código de barras
+como um SVG de ARQUIVO, com cabeçalho XML e `<!DOCTYPE>` próprios. Colado
+dentro de uma página HTML isso é inválido, e alguns navegadores param de
+desenhar o resto a partir dali. Agora só o `<svg>` vai para dentro. Estava
+assim desde a conversão, na tela de códigos — foi um teste que apontou.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

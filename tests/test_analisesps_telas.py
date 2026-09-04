@@ -464,7 +464,11 @@ def test_a_ficha_em_modal_vem_sem_o_resto_da_tela(app_ficha):
         "/analisesps/sp/1234567890?modal=1")
     html = resposta.get_data(as_text=True)
     assert resposta.status_code == 200
-    assert "<nav" not in html and "<!doctype" not in html.lower()
+    # Marcas do gabarito da PÁGINA. Não se procura "<!doctype" aqui porque o
+    # código de barras é um SVG e traz o DOCTYPE dele — o que se quer saber é
+    # se veio o cabeçalho e o menu do módulo.
+    assert "<html" not in html.lower()
+    assert "topo-abas" not in html
     assert "1234567890" in html
 
 
@@ -1576,6 +1580,105 @@ def test_o_clique_do_link_da_ficha_respeita_a_nova_aba(app):
     assert "ctrlKey" in conteudo and "metaKey" in conteudo
 
 
+# ---------------------------------------------------------------------------
+# O CÓDIGO DE PAGAMENTO DENTRO DA FICHA
+# ---------------------------------------------------------------------------
+def test_a_ficha_ja_mostra_o_qr_pix(app_ficha, monkeypatch):
+    """Quem abre a SP para conferir um dado quase sempre está a caminho de
+    pagar. Voltar à lista só para gerar o QR era um caminho a mais em cada
+    pagamento."""
+    from app.apps.analisesps import consultas, pagamentos
+    registro = dict(consultas.uma("1234567890") or {})
+    registro.update(forma_pagamento="Pix", info_pgt="Chave Pix: x@y.com",
+                    status_pgt="Pagar")
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+    monkeypatch.setattr(pagamentos, "gerar_pix",
+                        lambda *a, **k: (b"PNGFALSO", "carga-pix"))
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert "data:image/png;base64," in html
+    assert "carga-pix" in html
+    # O botão "QR / Código" saiu: com o código aqui, ele virou redundante.
+    assert "QR / Código" not in html
+
+
+def test_a_ficha_ja_mostra_o_codigo_de_barras(app_ficha, monkeypatch):
+    from app.apps.analisesps import consultas, pagamentos
+    registro = dict(consultas.uma("1234567890") or {})
+    registro.update(forma_pagamento="Boleto", codigo_barras="23793381286",
+                    status_pgt="Pagar")
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+    monkeypatch.setattr(pagamentos, "barcode_svg",
+                        lambda barras: ("<svg>falso</svg>", "ok"))
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert "<svg>falso</svg>" in html
+    assert "Linha digitável" in html
+    assert "23793381286" in html
+
+
+def test_a_ficha_avisa_antes_de_mostrar_o_codigo_de_uma_sp_que_ja_saiu(
+        app_ficha, monkeypatch):
+    """Mostrar um código de pagamento numa SP já paga é o caminho curto para
+    pagar duas vezes. O código continua aparecendo — às vezes é justamente o
+    que se quer conferir —, mas com o aviso na frente."""
+    from app.apps.analisesps import consultas, pagamentos
+    registro = dict(consultas.uma("1234567890") or {})
+    registro.update(forma_pagamento="Pix", info_pgt="Chave Pix: x@y.com",
+                    status_pgt="Pago")
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+    monkeypatch.setattr(pagamentos, "gerar_pix",
+                        lambda *a, **k: (b"PNGFALSO", "carga-pix"))
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert "data:image/png;base64," in html, "escondeu o código"
+    assert "pagar de novo" in html, "mostrou o código sem avisar"
+
+
+def test_forma_sem_codigo_explica_em_vez_de_ficar_vazio(app_ficha, monkeypatch):
+    """Um espaço em branco faria a pessoa achar que o sistema falhou."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro.update(forma_pagamento="Transferência", status_pgt="Pagar")
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert "gera QR nem código de barras" in html
+
+
+def test_uma_sp_com_codigo_ruim_nao_derruba_a_ficha(app_ficha, monkeypatch):
+    """A ficha tem muito mais coisa do que o código. Se a geração falhar, o
+    resto continua servindo."""
+    from app.apps.analisesps import consultas, pagamentos
+    registro = dict(consultas.uma("1234567890") or {})
+    registro.update(forma_pagamento="Pix", info_pgt="lixo", status_pgt="Pagar")
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    def explode(*a, **k):
+        raise RuntimeError("chave Pix impossível")
+
+    monkeypatch.setattr(pagamentos, "gerar_pix", explode)
+    resposta = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1")
+    assert resposta.status_code == 200
+    assert "chave Pix impossível" in resposta.get_data(as_text=True)
+
+
+def test_a_montagem_do_codigo_vive_num_lugar_so(app):
+    """Duas telas mostram o código: a de códigos, que monta até cinquenta de
+    uma vez, e a ficha. Duas cópias divergiriam no dia em que uma ganhasse um
+    caso — e a que ficasse para trás mostraria um código errado a quem está
+    pagando."""
+    from app.apps.analisesps import web as tela
+    assert hasattr(tela, "_codigo_de_pagamento")
+    vazio = tela._codigo_de_pagamento("1", None)
+    assert vazio["erro"] and vazio["sp"] is None
+
+
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
     monkeypatch.delenv("ANALISESPS_SENHA_OPERADOR", raising=False)
     monkeypatch.delenv("ANALISESPS_SENHA_CONSULTA", raising=False)
@@ -2303,12 +2406,18 @@ def test_consulta_nao_ve_os_botoes_na_ficha(app_ficha):
     assert 'data-coluna="status_pgt"' not in html
 
 
-def test_a_ficha_leva_direto_ao_codigo_de_pagamento(app_ficha):
+def test_a_ficha_traz_o_codigo_de_pagamento_nela_mesma(app_ficha):
     """Quem abriu a ficha para pagar não devia ter de voltar à lista, marcar a
-    mesma SP e clicar em outro lugar."""
+    mesma SP e clicar em outro lugar.
+
+    Era um LINK para a tela de códigos; desde 05/09/2026 o código está na
+    própria ficha, e o link saiu por ter virado redundante. Vale também para
+    o perfil Consulta: ver o código não é alterar nada."""
     html = como(app_ficha, SENHA_CONSULTA).get(
         "/analisesps/sp/1234567890").get_data(as_text=True)
-    assert "codigos?id=1234567890" in html
+    assert "codigos?id=1234567890" not in html, "o link redundante voltou"
+    assert "Linha digitável" in html, "o código não está na ficha"
+    assert "<svg" in html
 
 
 def test_a_ficha_mostra_a_navegacao_e_o_perfil(app_ficha):

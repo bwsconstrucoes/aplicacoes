@@ -404,9 +404,14 @@ def detalhe(sp_id):
     apontadas = [i for i in dict.fromkeys(re.findall(r"\d{9,}", analise))
                  if i != str(sp_id)][:8]
 
+    # O código de pagamento junto da ficha: quem abre a SP para conferir um
+    # dado quase sempre está a caminho de pagar, e voltar à lista só para
+    # gerar o QR era um caminho a mais em cada pagamento.
+    codigo = _codigo_de_pagamento(str(sp_id), registro)
+
     contexto = dict(
         sp=registro, origem=_origem_pedida(),
-        pendencias=faltando, risco_ids=apontadas,
+        pendencias=faltando, risco_ids=apontadas, codigo=codigo,
         hook_omie=os.getenv("ANALISESPS_HOOK_OMIE", "").strip(),
         pode_operar=auth.pode_operar())
 
@@ -1067,6 +1072,62 @@ def tela_lote():
 # ---------------------------------------------------------------------------
 # CÓDIGOS DE PAGAMENTO — QR Pix e código de barras
 # ---------------------------------------------------------------------------
+def _codigo_de_pagamento(sp_id: str, registro) -> dict:
+    """O QR Pix ou o código de barras de UMA SP.
+
+    Vive fora das rotas porque duas telas o mostram: a de códigos, que monta
+    até cinquenta de uma vez, e a ficha, que mostra o da SP aberta. Duas
+    cópias divergiriam no dia em que uma delas ganhasse um caso — e a que
+    ficasse para trás mostraria um código errado a quem está pagando.
+
+    Nunca levanta: uma SP com dado ruim vira um bloco com o erro escrito, e as
+    outras continuam aparecendo."""
+    from . import pagamentos
+
+    if registro is None:
+        return {"id": sp_id, "sp": None, "tipo": None, "imagem": None,
+                "copia_cola": None, "erro": "SP não encontrada na base."}
+
+    forma = str(registro.get("forma_pagamento") or "").strip().lower()
+    bloco = {"id": sp_id, "sp": registro, "tipo": None,
+             "erro": None, "imagem": None, "copia_cola": None}
+
+    try:
+        if "boleto" in forma:
+            bloco["tipo"] = "boleto"
+            svg, situacao = pagamentos.barcode_svg(
+                registro.get("codigo_barras") or "")
+            if situacao != "ok":
+                bloco["erro"] = f"Código de barras {situacao}."
+            else:
+                # O gerador devolve um SVG de ARQUIVO, com cabeçalho XML e
+                # DOCTYPE próprios. Colado dentro de uma página HTML isso é
+                # inválido — e alguns navegadores param de desenhar o resto a
+                # partir dali. Fica só o `<svg>` para dentro.
+                inicio = svg.find("<svg")
+                bloco["imagem"] = svg[inicio:] if inicio >= 0 else svg
+                bloco["copia_cola"] = str(
+                    registro.get("codigo_barras") or "").strip()
+        elif "pix" in forma or "beevale" in forma:
+            bloco["tipo"] = "pix"
+            chave = str(registro.get("info_pgt") or "")
+            png, carga = pagamentos.gerar_pix(
+                chave, float(registro.get("valor_num") or 0),
+                str(registro.get("credor") or ""),
+                copia_cola=("00020" in chave))
+            import base64
+            bloco["imagem"] = base64.b64encode(png).decode("ascii")
+            bloco["copia_cola"] = carga
+        else:
+            bloco["erro"] = (f"Forma de pagamento \"{forma or '—'}\" não "
+                             "gera QR nem código de barras.")
+    except Exception as e:  # noqa: BLE001 — uma SP ruim não some com as outras
+        logger.exception("Análise de SPs: falhou montar o código da SP %s", sp_id)
+        bloco["erro"] = str(e)
+
+    return bloco
+
+
 @bp.route("/codigos")
 @exige_consulta
 def codigos():
@@ -1086,46 +1147,8 @@ def codigos():
                                mensagem="Marque as SPs na lista e clique em "
                                         "\"QR / Código\"."), 400
 
-    blocos = []
-    for sp_id in pedidos:
-        registro = consultas.uma(sp_id)
-        if registro is None:
-            blocos.append({"id": sp_id, "erro": "SP não encontrada na base."})
-            continue
-
-        forma = str(registro.get("forma_pagamento") or "").strip().lower()
-        bloco = {"id": sp_id, "sp": registro, "tipo": None,
-                 "erro": None, "imagem": None, "copia_cola": None}
-
-        try:
-            if "boleto" in forma:
-                bloco["tipo"] = "boleto"
-                svg, situacao = pagamentos.barcode_svg(
-                    registro.get("codigo_barras") or "")
-                if situacao != "ok":
-                    bloco["erro"] = f"Código de barras {situacao}."
-                else:
-                    bloco["imagem"] = svg
-                    bloco["copia_cola"] = str(
-                        registro.get("codigo_barras") or "").strip()
-            elif "pix" in forma or "beevale" in forma:
-                bloco["tipo"] = "pix"
-                chave = str(registro.get("info_pgt") or "")
-                png, carga = pagamentos.gerar_pix(
-                    chave, float(registro.get("valor_num") or 0),
-                    str(registro.get("credor") or ""),
-                    copia_cola=("00020" in chave))
-                import base64
-                bloco["imagem"] = base64.b64encode(png).decode("ascii")
-                bloco["copia_cola"] = carga
-            else:
-                bloco["erro"] = (f"Forma de pagamento \"{forma or '—'}\" não "
-                                 "gera QR nem código de barras.")
-        except Exception as e:  # noqa: BLE001 — uma SP ruim não some com as outras
-            logger.exception("Análise de SPs: falhou montar o código da SP %s", sp_id)
-            bloco["erro"] = str(e)
-
-        blocos.append(bloco)
+    blocos = [_codigo_de_pagamento(sp_id, consultas.uma(sp_id))
+              for sp_id in pedidos]
 
     origem = _origem_pedida()
     return render_template("analisesps_codigos.html",

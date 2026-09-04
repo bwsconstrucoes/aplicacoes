@@ -832,10 +832,9 @@ a.kpi { display: block; }
 .acoes-linha { white-space: nowrap; }
 .acoes-linha .link-btn + form { margin-left: 8px; }
 
-/* "Remover do lote" na barra: acao de tirar, nao de alterar. Discreto, mas
-   distinguivel dos botoes que escrevem na planilha. */
-.barra-acoes .btn.perigo { border-color: #E0B4B0; color: #8C3A33; }
-.barra-acoes .btn.perigo:hover:not(:disabled) { background: #FDF3F2; }
+/* "Remover do lote" ficou igual aos demais, por decisao do dono (05/09/2026):
+   ele nao altera nada na planilha, entao nao merecia cor de alerta. O aviso
+   continua na confirmacao do clique, que e onde importa. */
 
 /* O aviso de que a base mudou. Discreto e no rodape: nao pode tapar a tabela
    nem competir com o que a pessoa esta fazendo. */
@@ -863,3 +862,10 @@ a.kpi { display: block; }
 /* A caixa de marcar no cabecalho de cada codigo gerado */
 .marca-codigo { display: inline-flex; align-items: center; margin-right: 8px; }
 .marca-codigo input { width: 16px; height: 16px; cursor: pointer; }
+
+/* O codigo de pagamento dentro da ficha */
+.ficha-codigo {
+  padding: 14px; margin: 12px 0; background: var(--papel);
+  border-radius: var(--raio-p);
+}
+.ficha-codigo .qr { max-width: 190px; }

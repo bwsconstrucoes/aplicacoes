@@ -49,7 +49,6 @@
      href="https://app.pipefy.com/public/form/RCvCgX9c?n_da_solicita_o={{ sp.id }}&selecione_o_procedimento=Cancelar%20SP"
      target="_blank" rel="noopener"
      title="Abre no Pipefy o formulário de pedido de cancelamento desta SP">Cancelar SP</a>
-  <a class="btn secundario" href="{{ url_for('analisesps.codigos', id=sp.id, origem=origem or 'solicitacoes') }}">QR / Código</a>
 </div>
 
 {% if pendencias %}
@@ -77,6 +76,45 @@
              href="https://app.pipefy.com/open-cards/{{ rid }}"
              target="_blank" rel="noopener">SP {{ rid }}</a>
         {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+
+{# ---------------------------------------------------------------------------
+   O CÓDIGO DE PAGAMENTO, NA PRÓPRIA FICHA.
+
+   Quem abre a SP para conferir um dado quase sempre está a caminho de pagar.
+   Voltar à lista só para gerar o QR era um caminho a mais em cada pagamento —
+   e o botão "QR / Código" que ficava aqui saiu junto, porque virou redundante.
+--------------------------------------------------------------------------- #}
+{% if codigo %}
+  {% set st = (sp.status_pgt or '')|trim|lower %}
+  <div class="ficha-codigo">
+    {% if st and st != 'pagar' %}
+      {# Mostrar um código de pagamento numa SP que já saiu é o caminho curto
+         para pagar duas vezes. O código continua aparecendo — às vezes é
+         justamente o que se quer conferir —, mas com o aviso na frente. #}
+      <div class="aviso atencao" style="width:100%">
+        <b>Atenção: esta SP está como "{{ sp.status_pgt }}".</b>
+        O código abaixo é o dela; confira antes de pagar de novo.
+      </div>
+    {% endif %}
+
+    {% if codigo.erro %}
+      <div class="aviso">{{ codigo.erro }}</div>
+    {% elif codigo.tipo == 'boleto' %}
+      <div class="codigo-barras">{{ codigo.imagem|safe }}</div>
+      <label class="rotulo-campo">Linha digitável</label>
+      <input class="campo-largo copiavel" readonly value="{{ codigo.copia_cola }}">
+    {% elif codigo.tipo == 'pix' %}
+      <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start">
+        <img class="qr" alt="QR Pix da SP {{ sp.id }}"
+             src="data:image/png;base64,{{ codigo.imagem }}">
+        <div style="flex:1; min-width:240px">
+          <label class="rotulo-campo">Pix copia e cola</label>
+          <textarea class="campo-largo copiavel" rows="4" readonly>{{ codigo.copia_cola }}</textarea>
+        </div>
       </div>
     {% endif %}
   </div>
