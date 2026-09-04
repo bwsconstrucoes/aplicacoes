@@ -25,15 +25,18 @@ de Contas.
 **prontos e não publicados**: a correção da mensagem duplicada em Configurações e
 a tela nova de **Cenários de rateio**.
 
-Com isso, **dez telas convertidas** — falta só o PDF do DRE.
+Com isso a **conversão do painel terminou**: dez telas e o relatório em
+PDF, tudo o que o Streamlit fazia.
 
 ### O que está pendente AGORA
 
-**Publicar o que está no ramo de trabalho:** a correção da mensagem duplicada em
-Configurações e a tela de **Cenários de rateio**. Sem migração e sem dependência
-nova — não é preciso apertar "Aplicar atualizações do banco". Mas publicar
-reinicia o serviço, então vale a pergunta de sempre: **há carga ou sincronização
-rodando?**
+**Publicar o relatório em PDF**, que está no ramo de trabalho e é a última peça
+da conversão. Sem migração e sem dependência nova — não é preciso apertar
+"Aplicar atualizações do banco". Mas publicar reinicia o serviço, então vale a
+pergunta de sempre: **há carga ou sincronização rodando?**
+
+Publicados hoje: as duas datas (`0bfa75b`) e os cenários de rateio mais a
+correção da mensagem duplicada (`376fe72`).
 
 <details>
 <summary>O que já foi publicado nesta leva (04/09/2026)</summary>
@@ -135,6 +138,40 @@ O que **não** foi convertido do original, de propósito: **acrescentar regra
 nova** dentro do cenário. O editor antigo permitia, mas com as colunas de grupo
 e categoria desabilitadas — uma regra nascia sem saber o que pega. Criar regra
 continua sendo na tela de Regras, e a tela diz isso.
+
+**O PDF do DRE: a conversão terminou.** Era o ultimo item sem equivalente, e
+ficou por ultimo por um motivo concreto — o gerador original usa `reportlab`,
+que **não está no serviço**. Feito com `fpdf2`, que já está: **nenhuma
+dependência nova**.
+
+A decisão que faz o relatório ser confiável: **o PDF recebe as MESMAS abas que o
+Excel**. Quem monta o relatório completo é a rota de download, num lugar só. Não
+há um montador por formato — se houvesse, o dia em que os dois discordassem
+ninguém saberia qual está certo. A única diferença é o teto: o PDF corta cada
+seção em 2.500 linhas (como o original fazia) e **escreve na página** que
+cortou, com o caminho para a planilha.
+
+Duas armadilhas resolvidas, e ambas com teste que acusa se alguém as desfizer:
+
+- **O acento.** Com a fonte embutida, o `fpdf2` só escreve latin-1 — e o que não
+  couber **estoura no meio da geração**, sem avisar. O português inteiro cabe;
+  os sinais tipográficos não (travessão, aspas curvas, reticências), e eles
+  estão espalhados pelos textos deste projeto. Todo texto passa por `_texto()`.
+  É o mesmo caminho que o `emissaonf` e o `analisesps` já usam — **e o código
+  não é compartilhado de propósito**: cada área é mexida por uma sessão que não
+  conhece as outras, e o relatório do painel não pode quebrar porque alguém
+  ajustou o PDF de outro módulo.
+- **O texto que não cabe na coluna.** Sem cortar, o `fpdf2` escreve por cima da
+  coluna vizinha e a tabela vira mancha justamente nas linhas mais longas.
+
+**O gráfico do PDF usa a geometria do `graficos.py`** — a mesma que desenha o
+SVG na tela, redesenhada com as primitivas do `fpdf2`. Recalcular aqui abriria a
+porta para o gráfico do PDF e o da tela contarem histórias diferentes.
+
+**Memória medida**, porque é o recurso escasso: o pior caso que o teto permite
+(oito seções de 2.500 linhas, 20 mil linhas) gera um PDF de 1,2 MB com **pico de
+32,5 MB**. Para comparar: o painel antigo gastava 179 MB só para abrir a
+primeira tela.
 
 **Ainda sem conferência contra a base real:** os números do cenário. A conta foi
 conferida à mão num caso montado (CASA −750, PREDIO −250, PONTE +1.000, com o
@@ -364,8 +401,8 @@ sai.
    significado de `data` mexeria em nove telas já conferidas contra o
    Streamlit. Exige a migração `006` e refazer o fato (`so_numeros`), sem
    baixar nada do OMIE de novo.
-3. **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
-   Daria para refazer com `fpdf2`, que já está — mas é reescrever o relatório.
+3. **PDF do DRE.** ~~Pendente~~ — **feito** em 04/09/2026, com `fpdf2`. Ver
+   "A leva de 04/09/2026" acima. **Com isso a conversão do painel terminou.**
 4. **Mensagem duplicada** na tela de Configurações. ~~Pendente~~ — **corrigida**
    em 04/09/2026, no ramo de trabalho e ainda não publicada.
 5. **Cenários da prestação.** ~~Pendente~~ — **feito**, no ramo de trabalho e

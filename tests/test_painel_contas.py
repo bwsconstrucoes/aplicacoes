@@ -24,7 +24,7 @@ import json
 
 import pytest
 
-from app.apps.painel import excel, prestacao, simulacao
+from app.apps.painel import excel, pdf, prestacao, simulacao
 
 
 # ===========================================================================
@@ -541,3 +541,135 @@ def test_sem_mexer_em_nada_a_tela_nao_diz_que_mexeu():
 
     diferente = prestacao.regras_do_cenario(gravadas, {"7": {"pct": "99"}})
     assert prestacao.cenario_difere(gravadas, diferente)
+
+
+# ===========================================================================
+# 7. O relatório em PDF
+# ===========================================================================
+# Era o último pedaço do painel antigo sem equivalente. O que se prova aqui:
+#   - o acento não derruba a geração (a armadilha do `fpdf2`, que estoura no
+#     meio em vez de avisar);
+#   - o PDF e a planilha saem das MESMAS abas, então não podem divergir;
+#   - lista longa é cortada com o corte ESCRITO, e seção vazia não some.
+ABA_SIMPLES = [("Teste", [("nome", "Descrição"), ("valor", "Valor")],
+                [{"nome": "Manutenção", "valor": -1234.5}])]
+
+
+def _texto_do_pdf(conteudo: bytes) -> str:
+    import pypdf
+    leitor = pypdf.PdfReader(io.BytesIO(conteudo))
+    return "\n".join(p.extract_text() for p in leitor.pages)
+
+
+def test_o_pdf_sai_e_e_um_pdf():
+    conteudo = pdf.montar(ABA_SIMPLES, "Relatório")
+    assert conteudo.startswith(b"%PDF")
+
+
+def test_acento_e_travessao_nao_derrubam_a_geracao():
+    """A armadilha do `fpdf2`: com a fonte embutida ele só escreve latin-1, e o
+    que não couber ESTOURA no meio da geração em vez de avisar. Português
+    inteiro cabe; o travessão e as aspas curvas não — e eles estão espalhados
+    pelos textos deste projeto."""
+    linhas = [{"nome": "Construção — “Ação” … Ltda ½ ★", "valor": -10.0}]
+    conteudo = pdf.montar(
+        [("Seção", [("nome", "Descrição"), ("valor", "Valor")], linhas)],
+        "Relatório Financeiro BWS Construções",
+        subtitulo="Recorte: obra × projeto — 2025")
+    texto = _texto_do_pdf(conteudo)
+    assert "Construções" in texto, "o acento tem de sobreviver, não virar '?'"
+    assert "Ação" in texto
+    assert "—" not in texto, "o travessão vira hífen antes de ir para a página"
+
+
+def test_o_pdf_e_a_planilha_saem_das_mesmas_abas():
+    """A garantia que faz o relatório ser confiável: os dois formatos recebem a
+    mesma estrutura. Se cada um montasse a sua, o dia em que discordassem
+    ninguém saberia qual está certo."""
+    from openpyxl import load_workbook
+
+    abas = [("DRE", [("linha", "Linha"), ("valor", "Comprometido")],
+             [{"linha": "Receita Líquida", "valor": 32780.0},
+              {"linha": "RESULTADO", "valor": -26790.0}])]
+    texto = _texto_do_pdf(pdf.montar(abas, "Relatório"))
+    folha = load_workbook(io.BytesIO(excel.montar(abas)))["DRE"]
+
+    assert "32.780,00" in texto and "26.790,00" in texto
+    assert folha["B2"].value == 32780.0 and folha["B3"].value == -26790.0
+
+
+def test_dinheiro_no_pdf_segue_a_mesma_regra_da_planilha():
+    """Quem decide se a coluna é dinheiro é o TÍTULO, nos dois formatos. Se as
+    regras divergissem, o mesmo número sairia formatado de dois jeitos."""
+    texto = _texto_do_pdf(pdf.montar(
+        [("T", [("valor", "Valor"), ("titulos", "Títulos")],
+          [{"valor": -1234.5, "titulos": 3}])], "R"))
+    assert "-R$ 1.234,50" in texto
+    assert "R$ 3" not in texto, "contagem não é dinheiro"
+
+
+def test_lista_longa_e_cortada_e_o_corte_esta_escrito():
+    """Um PDF de cem mil linhas ninguém abre. Cortar calado seria pior: quem
+    somasse a lista acharia que a despesa é menor do que é."""
+    linhas = [{"n": f"Fornecedor {i}", "valor": -float(i)}
+              for i in range(pdf.TETO_DE_LINHAS + 40)]
+    texto = _texto_do_pdf(pdf.montar(
+        [("Credores", [("n", "Credor"), ("valor", "Valor")], linhas)], "R"))
+    assert "Mostrando as 2.500 primeiras" in texto
+    assert "2.540" in texto, "diz de quantas"
+    assert "planilha" in texto, "e onde está a lista completa"
+
+
+def test_secao_vazia_avisa_em_vez_de_sumir():
+    """Seção que some deixa quem lê achando que esqueceu de pedir. É a mesma
+    decisão já tomada para as abas da planilha."""
+    texto = _texto_do_pdf(pdf.montar(
+        [("Aportes", [("a", "A")], [])], "Relatório"))
+    assert "Aportes" in texto
+    assert "Nenhum lançamento" in texto
+
+
+def test_texto_comprido_e_cortado_para_nao_invadir_a_coluna_vizinha():
+    """Sem cortar, o `fpdf2` escreve por cima da coluna do lado e a tabela vira
+    uma mancha ilegível justamente nas linhas mais longas."""
+    nome = "Fornecedor com um nome absurdamente comprido " * 4
+    texto = _texto_do_pdf(pdf.montar(
+        [("T", [("n", "Credor"), ("v", "Valor")], [{"n": nome, "v": -1.0}])], "R"))
+    assert nome not in texto, "o nome inteiro não cabia e tem de sair cortado"
+    assert "Fornecedor com um nome" in texto
+
+
+def test_o_grafico_do_pdf_usa_a_geometria_da_tela():
+    """O desenho vem de `graficos.py`, que já é a fonte de verdade do SVG. Se o
+    PDF recalculasse, os dois poderiam contar histórias diferentes."""
+    from app.apps.painel import graficos
+
+    g = graficos.barras_agrupadas(
+        [{"rotulo": "01/2025", "receita": 100.0, "despesa": -60.0},
+         {"rotulo": "02/2025", "receita": 80.0, "despesa": -90.0}],
+        [("receita", "b-receita", "Receita"), ("despesa", "b-despesa", "Despesa")],
+        campo_rotulo="rotulo")
+    texto = _texto_do_pdf(pdf.montar(
+        ABA_SIMPLES, "R", graficos_iniciais=[(g, "Fluxo Financeiro mensal")]))
+    assert "Fluxo Financeiro mensal" in texto
+    assert "01/2025" in texto and "02/2025" in texto
+    assert "Receita" in texto and "Despesa" in texto      # a legenda
+
+
+def test_grafico_sem_dados_nao_desenha_nada_nem_quebra():
+    from app.apps.painel import graficos
+    vazio = graficos.barras_agrupadas([], [("v", "b-receita", "V")])
+    conteudo = pdf.montar(ABA_SIMPLES, "R", graficos_iniciais=[(vazio, "Fluxo")])
+    assert conteudo.startswith(b"%PDF")
+    assert "Fluxo" not in _texto_do_pdf(conteudo)
+
+
+def test_o_recorte_dos_filtros_esta_na_capa():
+    """Um relatório financeiro sem o recorte escrito é perigoso: seis meses
+    depois ninguém lembra se aquilo era a empresa inteira ou uma obra só."""
+    texto = _texto_do_pdf(pdf.montar(
+        ABA_SIMPLES, "Relatório Financeiro BWS",
+        subtitulo="Recorte: CASA · 2025",
+        resumo=[("Resultado", "R$ 10,00")]))
+    assert "Recorte: CASA" in texto
+    assert "Resultado" in texto and "R$ 10,00" in texto

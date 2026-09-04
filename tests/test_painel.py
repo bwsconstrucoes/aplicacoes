@@ -1269,3 +1269,50 @@ def test_gravar_com_confirmacao_leva_os_parametros_simulados(painel_com_regra, m
     assert gravou[0][0]["pct"] == 40.0
     assert gravou[0][0]["escopo"] == "MATRIZ"
     assert gravou[0][0]["ativo"] == 0, "caixa não enviada = regra desligada"
+
+
+# ---------------------------------------------------------------------------
+# O relatório em PDF
+# ---------------------------------------------------------------------------
+def test_o_mesmo_endereco_baixa_excel_ou_pdf(painel):
+    """`formato=pdf` é o único acréscimo: os filtros continuam sendo os da tela.
+    Duas rotas separadas divergiriam no dia em que alguém mexesse numa só."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+
+    excel = painel.get("/painel/baixar/dre")
+    assert excel.status_code == 200
+    assert "spreadsheetml" in excel.headers["Content-Type"]
+    assert excel.get_data().startswith(b"PK")            # xlsx é um zip
+
+    pdf = painel.get("/painel/baixar/dre?formato=pdf")
+    assert pdf.status_code == 200
+    assert pdf.headers["Content-Type"] == "application/pdf"
+    assert pdf.get_data().startswith(b"%PDF")
+    assert ".pdf" in pdf.headers["Content-Disposition"]
+
+
+def test_o_relatorio_completo_em_pdf_sai_inteiro(painel):
+    """As oito seções do relatório antigo, num arquivo só — como era lá."""
+    import pypdf, io as _io
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/baixar/completo?formato=pdf")
+    assert r.status_code == 200
+
+    leitor = pypdf.PdfReader(_io.BytesIO(r.get_data()))
+    texto = "\n".join(p.extract_text() for p in leitor.pages)
+    for secao in ("DRE", "Top Credores", "Receita de Obra", "Outras Receitas",
+                  "Despesas Analitico", "Fluxo de Caixa", "Resultado por Obra"):
+        assert secao in texto, secao
+    assert "Relatório Financeiro BWS Construções" in texto
+    assert "pagina 1" in texto, "o rodapé numera as páginas"
+
+
+def test_assunto_desconhecido_em_pdf_tambem_responde_404(painel):
+    """A checagem do assunto vem ANTES do formato: pedir PDF não pode ser um
+    caminho por fora da validação."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    assert painel.get("/painel/baixar/inventado?formato=pdf").status_code == 404
+
+
+def test_o_pdf_tambem_exige_login(painel):
+    assert painel.get("/painel/baixar/completo?formato=pdf").status_code == 302

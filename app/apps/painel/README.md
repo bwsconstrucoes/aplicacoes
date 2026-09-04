@@ -122,6 +122,12 @@ no topo, coluna de dinheiro em R$ e data no formato brasileiro. O botão do DRE
 baixa o relatório **inteiro**: um arquivo, uma aba por assunto — como era na
 tela antiga. Cada tela também baixa só a sua parte.
 
+**E em PDF**, para mandar por e-mail ou imprimir: `?formato=pdf` no mesmo
+endereço do download. O PDF sai das **mesmas abas** que a planilha — um montador
+só, no `web.py` — então os dois não podem divergir. A diferença é o teto: o PDF
+corta cada seção em 2.500 linhas e **escreve na página** que cortou, com o
+caminho para a planilha; a planilha leva tudo.
+
 Isso custou uma dependência nova, a `openpyxl` (250 KB). A primeira conversão
 tinha saído em CSV para evitá-la, e estava errado: em CSV o relatório de oito
 abas vira oito arquivos soltos que ninguém junta depois. A `openpyxl` escreve
@@ -139,17 +145,20 @@ Cada tela convertida foi comparada com a original, sobre a **base real**:
 E a reconstrução inteira roda com **pico de 14,6 MB** de memória, contra os
 179 MB que o painel antigo consumia só para abrir a primeira tela.
 
-## Ainda não convertido
+## A conversão terminou
 
-- **PDF do DRE.** O gerador original usa `reportlab`, que não está no serviço.
-  Daria para refazer com o `fpdf2`, que já está — mas é reescrever o relatório
-  do zero. A planilha cobre a necessidade prática por enquanto.
+Não falta mais nada do painel antigo. As duas últimas peças saíram em
+04/09/2026:
 
-É o único que falta. Os **cenários da prestação** foram convertidos em
-04/09/2026, com uma diferença consciente: **criar regra nova** continua sendo na
-tela de Regras. No editor antigo dava para acrescentar uma linha ali dentro, mas
-com as colunas de grupo e categoria desabilitadas — a regra nascia sem saber o
-que pega.
+- **Cenários de rateio**, com uma diferença consciente: **criar regra nova**
+  continua sendo na tela de Regras. No editor antigo dava para acrescentar uma
+  linha ali dentro, mas com as colunas de grupo e categoria desabilitadas — a
+  regra nascia sem saber o que pega.
+- **O relatório em PDF**, feito com `fpdf2` (que já estava no serviço) e não com
+  o `reportlab` do original, que não está. Nenhuma dependência nova.
+
+`referencia_streamlit/` fica como referência para conferir número, não como
+coisa a converter.
 
 `referencia_streamlit/` guarda as telas originais até isso terminar.
 
