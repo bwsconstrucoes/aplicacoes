@@ -70,6 +70,9 @@
     <a class="btn secundario" style="text-decoration:none"
        href="{{ url_for('painel.baixar', assunto='completo', **request.args) }}">
       ⬇ Baixar Excel (tudo)</a>
+    <a class="btn secundario" style="text-decoration:none"
+       href="{{ url_for('painel.baixar', assunto='completo', formato='pdf', **request.args) }}">
+      ⬇ Baixar PDF (tudo)</a>
   </div>
   <div class="tabela-rolagem" style="max-height:none">
     <table>
