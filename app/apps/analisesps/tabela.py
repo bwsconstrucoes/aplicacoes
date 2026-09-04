@@ -32,9 +32,11 @@ Coluna = namedtuple("Coluna", "chave rotulo tipo padrao")
 #   link    — abre em outra aba quando começa com http
 #   alertas — Risco / Cadastro incompleto
 #
-# padrao: se vem marcada para quem nunca escolheu. As oito primeiras são as
-# que a conversão já mostrava — quem não mexer em nada não vê a tela mudar de
-# cara, só ganha o botão para acrescentar o resto.
+# padrao: o que vem marcado para quem nunca escolheu. O conjunto foi definido
+# pelo dono olhando a tela (04/09/2026): entra VALIDAÇÃO — é ela que destrava
+# o agendamento, e não vê-la é trabalhar às cegas — e fica de fora
+# RESPONSÁVEL, que ele não usa no dia a dia. Quem quiser qualquer uma das
+# outras acrescenta pelo botão, e a escolha fica guardada.
 DEFINICOES = [
     Coluna("id",               "ID",                  "id",      True),
     Coluna("solicitacao_d",    "Data",                "data",    False),
@@ -48,7 +50,7 @@ DEFINICOES = [
     Coluna("status_agend",     "Status Agend",        "agend",   True),
     Coluna("forma_pagamento",  "Forma de Pgt",        "texto",   True),
     Coluna("conta",            "Conta Corrente",      "texto",   True),
-    Coluna("validacao",        "Validação",           "texto",   False),
+    Coluna("validacao",        "Validação",           "texto",   True),
     Coluna("info_pgt",         "Informação p/ Pgt",   "texto",   False),
     Coluna("nf",               "Nº NF",               "texto",   False),
     Coluna("data_pagamento_d", "Data Pgt",            "data",    False),

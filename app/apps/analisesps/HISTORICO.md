@@ -208,9 +208,86 @@ Com vinte, **162 KB** — e as demais estão a um clique, nas Solicitações já
 filtradas. Tempos com a base cheia: Solicitações 247 ms, Lote 261 ms,
 Relatório 326 ms.
 
+### Terceira leva (04/09, o dono olhando a tela)
+
+- **Validação entra nas colunas padrão; Responsável sai.** Escolha dele: é a
+  Validação que destrava o agendamento, e não vê-la é trabalhar às cegas.
+- **O número da SP não é mais pintado.** Somado ao vencimento vermelho ao
+  lado, a linha inteira ficava gritando. O alerta continua em selo, na coluna
+  Alertas, onde não compete com nada.
+- **"Cancelar SP" ficou discreto.** É ação séria, mas não é a principal da
+  ficha; em vermelho puro puxava o olho toda vez que a ficha abria.
+- **Período na Auditoria, nas sete checagens.** Auditar a base inteira dá o
+  retrato de sempre; auditar um mês responde "o que entrou errado neste
+  fechamento". Recorta por vencimento ou por data da solicitação — a coluna é
+  escolhida de uma lista fechada, nunca vem de fora.
+- **Nota repetida deixa de acusar parcelamento.** Uma nota parcelada em três
+  gera três SPs com o mesmo número, e apontar as três todo mês é o jeito mais
+  rápido de fazer alguém parar de olhar a auditoria.
+
+  A regra, dita como ela é: **o grupo só sai da lista quando TODAS as SPs têm
+  marca de parcela e essas marcas são todas diferentes.** Se duas dividem a
+  mesma parcela, ou se alguma está sem marca, o grupo continua aparecendo —
+  aí "é parcelamento" não explica. Na dúvida, aponta: conferir à toa custa
+  pouco perto de pagar duas vezes. A marca sai da coluna Parcela ("001/003");
+  quando ela está vazia, procura-se na descrição ("2/3", "parcela 2",
+  "2ª parcela"). A coluna ganha da descrição, porque descrição é texto livre
+  e erra mais.
+- **A Agenda voltou a ter calendário.** "A agenda só tem uma lista", disse o
+  dono — e o Streamlit tinha uma grade de mês, com ◀ ▶ e o que cai em cada
+  dia. Lista não responde "como está a semana que vem".
+
+### A janela entre publicar e apertar o botão
+
+Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
+um risco que estava latente: o código sobe para o Render ANTES de alguém
+apertar "Aplicar atualizações do banco". Nesse intervalo o programa é novo e o
+banco é velho — foi exatamente assim que o módulo travou na estreia, em 03/09.
+
+Agora, onde uma coluna nova é usada, **pergunta-se antes se ela existe**
+(`db.tem_coluna`, com a resposta guardada). Sem a migração 003 aplicada:
+
+- o **lote volta a ser um só**, como era na véspera — em vez de a tela
+  estourar;
+- as **alterações continuam funcionando**, só que o registro fica sem o nome
+  de quem mexeu. Recusar a alteração seria pior: o pagamento não espera o
+  botão;
+- a tela de **Log** abre sem a coluna "Quem".
+
+E **aplicar as migrações zera o que o processo sabia** do formato do banco —
+sem isso, o worker continuaria pelo caminho antigo até o próximo reinício, e
+o dono apertaria o botão sem ver efeito nenhum.
+
+Verificado montando o estado exato da produção (001 e 002 aplicadas, 003 não):
+as nove telas abrem, alterar funciona, enviar ao lote funciona, e depois do
+botão tudo passa a usar o formato novo na mesma sessão.
+
+### Discrepâncias procuradas e NÃO encontradas
+
+Varredura pedida pelo dono, comparando com o Streamlit do histórico:
+
+- **Ordenação** — as seis opções batem (vencimento ↑↓, valor ↑↓, credor, ID).
+- **Situações do filtro** — as cinco batem (pendências, risco, cadastro
+  incompleto, boleto inválido, boleto duplicado).
+- **Relatório** — os três recortes, os três períodos e as dimensões de quebra
+  batem; o Streamlit tinha cinco dimensões, aqui há sete.
+- **`conta_fmt`** — no Streamlit era só `conta` sem espaços. Não havia
+  normalização escondida a copiar.
+
+**Uma sobra conhecida:** a coluna **SP Fiscal** do grid do Streamlit não
+existe na tabela daqui — ela mora noutra tabela (`sp_fiscal`) e exigiria um
+JOIN na consulta da lista. Ficou de fora de propósito: mexer na consulta
+principal para uma coluna a mais, na véspera de uma publicação sem ninguém
+acordado, não vale o risco.
+
 ### O que ainda NÃO voltou
 - **Gerar BeeVale** (depende do Shared Drive — erro 403 de cota) e **cancelar
   a SP por dentro do Pipefy** (o botão abre o formulário deles, como lá).
+- **Criar e editar compromissos da Agenda pela tela.** O Streamlit tinha, e
+  escrevia de volta na aba Agenda da planilha. Aqui a agenda é só leitura: o
+  caminho de escrita para essa aba não existe, e inventá-lo é entrega
+  própria. A grade do mês, que era o que faltava para enxergar, já está.
+- **A coluna SP Fiscal na lista** (ver acima).
 - **Reenviar comprovante por e-mail** (depende de SMTP no serviço).
 - **Auto-atualizar a cada 90s.** Não foi esquecimento: aqui a carga roda em
   processo separado e a tela já lê o estado do banco. Recarregar sozinha a

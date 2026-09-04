@@ -402,3 +402,64 @@ def a_vencer(dias_de_alerta: int = 7) -> list[dict]:
     é ruído."""
     from .horario import agora
     return lembretes(listar(), agora().date())
+
+
+# ---------------------------------------------------------------------------
+# O CALENDÁRIO DO MÊS
+#
+# O Streamlit mostrava a agenda numa grade de mês, com ◀ ▶ para navegar e o
+# dia clicável abrindo o que cai nele. A conversão deixou só listas, e lista
+# não responde "como está a semana que vem" — que é a pergunta que se faz
+# olhando um calendário.
+# ---------------------------------------------------------------------------
+def calendario(ano: int, mes: int) -> dict:
+    """A grade do mês, semana a semana, com o que cai em cada dia.
+
+    A grade inclui os dias vizinhos que completam a primeira e a última
+    semana — é o que faz o calendário parecer um calendário. Eles vêm
+    marcados como `do_mes: False` para a tela desenhar apagados.
+
+    Começa no DOMINGO, como o do Streamlit e como todo calendário de parede
+    no Brasil."""
+    import calendar as _cal
+    from .horario import agora
+
+    hoje = agora().date()
+    semanas_datas = _cal.Calendar(firstweekday=6).monthdatescalendar(ano, mes)
+    inicio, fim = semanas_datas[0][0], semanas_datas[-1][-1]
+
+    feriados = _todos_feriados({inicio.year, fim.year})
+    por_dia: dict = {}
+    for c in listar():
+        if str(c.get("status") or "ativo").strip().lower() not in ("", "ativo"):
+            continue
+        for d in ocorrencias(c, inicio, fim, feriados):
+            por_dia.setdefault(d, []).append(c)
+
+    semanas = []
+    for semana in semanas_datas:
+        linha = []
+        for d in semana:
+            linha.append({
+                "data": d,
+                "dia": d.day,
+                "do_mes": d.month == mes,
+                "hoje": d == hoje,
+                "feriado": d in feriados,
+                "fim_de_semana": d.weekday() >= 5,
+                "compromissos": por_dia.get(d, []),
+            })
+        semanas.append(linha)
+
+    return {"ano": ano, "mes": mes, "semanas": semanas,
+            "quantos": sum(len(v) for v in por_dia.values())}
+
+
+MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho",
+         "agosto", "setembro", "outubro", "novembro", "dezembro"]
+
+
+def mes_vizinho(ano: int, mes: int, passo: int) -> tuple:
+    """O mês anterior ou o seguinte, virando o ano quando precisa."""
+    indice = (ano * 12 + (mes - 1)) + passo
+    return indice // 12, indice % 12 + 1

@@ -464,8 +464,10 @@ def _gravar_alteracao(ids: list, coluna: str, valor: str, acao: str):
     sem ninguém notar."""
     from .db import conexao
 
+    from .db import tem_coluna
     perfil = auth.perfil_atual() or "?"
     quem = auth.nome_atual()
+    com_pessoa = tem_coluna("log_alteracoes", "pessoa")
     with conexao() as conn:
         marcadores = ",".join(["?"] * len(ids))
         cur = conn.execute(
@@ -493,13 +495,25 @@ def _gravar_alteracao(ids: list, coluna: str, valor: str, acao: str):
                 "  valor = EXCLUDED.valor, criado_em = now(), "
                 "  tentativas = 0, ultimo_erro = NULL",
                 (sp_id, coluna, valor))
-            conn.execute(
-                "INSERT INTO analisesps.log_alteracoes "
-                "  (sp_id, coluna, valor, valor_anterior, acao, perfil, "
-                "   pessoa, status) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente')",
-                (sp_id, coluna, valor, anteriores.get(sp_id), acao, perfil,
-                 quem))
+            if com_pessoa:
+                conn.execute(
+                    "INSERT INTO analisesps.log_alteracoes "
+                    "  (sp_id, coluna, valor, valor_anterior, acao, perfil, "
+                    "   pessoa, status) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente')",
+                    (sp_id, coluna, valor, anteriores.get(sp_id), acao,
+                     perfil, quem))
+            else:
+                # Banco ainda sem a coluna `pessoa` (migração 003 por
+                # aplicar). Registrar sem o nome é muito melhor do que
+                # recusar a alteração: o pagamento não pode esperar o botão.
+                conn.execute(
+                    "INSERT INTO analisesps.log_alteracoes "
+                    "  (sp_id, coluna, valor, valor_anterior, acao, perfil, "
+                    "   status) "
+                    "VALUES (?, ?, ?, ?, ?, ?, 'pendente')",
+                    (sp_id, coluna, valor, anteriores.get(sp_id), acao,
+                     perfil))
         conn.commit()
 
     logger.info("Análise de SPs: %s (%s) alterou '%s' de %d SP(s) para '%s'.",
@@ -648,7 +662,13 @@ def configuracoes():
 @exige_operador
 def migrar():
     from . import migracoes_runner
-    return migracoes_runner.aplicar_pendentes()
+    from .db import esquecer_colunas
+    resultado = migracoes_runner.aplicar_pendentes()
+    # O processo guardava que certas colunas não existiam. Depois de aplicar,
+    # elas existem — e sem esquecer, este worker continuaria pelo caminho
+    # antigo até o próximo reinício.
+    esquecer_colunas()
+    return resultado
 
 
 @bp.route("/api/andamento")
@@ -766,37 +786,50 @@ def auditoria():
     if checagem not in checagens.CHECAGENS:
         checagem = ""
 
+    # O período da auditoria é um controle SÓ DELA, separado do filtro da
+    # lista: auditar a base inteira dá o retrato de sempre; auditar um mês
+    # responde "o que entrou errado neste fechamento".
+    from .formatos import para_data
+    campo = request.args.get("campo_data", "vencimento")
+    if campo not in checagens.CAMPOS_PERIODO:
+        campo = "vencimento"
+    periodo = {"campo": campo,
+               "de": para_data((request.args.get("de") or "").strip() or None),
+               "ate": para_data((request.args.get("ate") or "").strip() or None)}
+
     resultado = None
     if checagem == "pontualidade":
         try:
             minimo = max(1, int(request.args.get("minimo", 5)))
         except ValueError:
             minimo = 5
-        resultado = checagens.pontualidade(filtros, usar_filtros, minimo)
+        resultado = checagens.pontualidade(filtros, usar_filtros, minimo, periodo)
     elif checagem == "risco_ia":
-        resultado = checagens.risco_ia(filtros, usar_filtros)
+        resultado = checagens.risco_ia(filtros, usar_filtros, periodo)
     elif checagem == "nf_duplicada":
-        resultado = checagens.nf_duplicada(filtros, usar_filtros)
+        resultado = checagens.nf_duplicada(filtros, usar_filtros, periodo)
     elif checagem == "possivel_duplicidade":
         try:
             dias = max(0, int(request.args.get("dias", 7)))
         except ValueError:
             dias = 7
-        resultado = checagens.possivel_duplicidade(filtros, usar_filtros, dias)
+        resultado = checagens.possivel_duplicidade(filtros, usar_filtros, dias, periodo)
     elif checagem == "sem_classificacao":
-        resultado = checagens.sem_classificacao(filtros, usar_filtros)
+        resultado = checagens.sem_classificacao(filtros, usar_filtros, periodo)
     elif checagem == "sem_integracao":
-        resultado = checagens.sem_integracao_omie(filtros, usar_filtros)
+        resultado = checagens.sem_integracao_omie(filtros, usar_filtros, periodo)
     elif checagem == "codigos_barras":
-        resultado = checagens.codigos_de_barras(filtros, usar_filtros)
+        resultado = checagens.codigos_de_barras(filtros, usar_filtros, periodo)
 
     return render_template(
         "analisesps_auditoria.html",
         aba="auditoria", base=base,
         checagens=checagens.CHECAGENS, checagem=checagem,
-        contagens=checagens.resumo(filtros, usar_filtros) if not checagem else None,
+        contagens=(checagens.resumo(filtros, usar_filtros, periodo)
+                   if not checagem else None),
         resultado=resultado, usar_filtros=usar_filtros,
-        teto=checagens.TETO,
+        teto=checagens.TETO, periodo=periodo,
+        campos_periodo=checagens.CAMPOS_PERIODO,
         minimo=request.args.get("minimo", 5),
         dias=request.args.get("dias", 7),
         args=request.args, filtros=filtros,
@@ -1117,18 +1150,37 @@ def tela_agenda():
     except ValueError:
         dias = 90
 
+    # O mês que a grade mostra. Vem da barra de endereço para que "mês
+    # seguinte" seja um link — funciona com o botão voltar do navegador e dá
+    # para mandar o endereço de um mês para alguém.
+    from .horario import agora
+    hoje = agora().date()
+    try:
+        ano = int(request.args.get("ano", hoje.year))
+        mes = int(request.args.get("mes", hoje.month))
+        if not (1 <= mes <= 12 and 2000 <= ano <= 2100):
+            raise ValueError
+    except ValueError:
+        ano, mes = hoje.year, hoje.month
+
     try:
         proximos = agenda.proximos(dias)
         alertas = agenda.a_vencer()
         compromissos = agenda.listar()
+        grade = agenda.calendario(ano, mes)
         erro = None
     except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
         logger.exception("Análise de SPs: falhou montar a agenda")
-        proximos, alertas, compromissos, erro = [], [], [], str(e)
+        proximos, alertas, compromissos, grade, erro = [], [], [], None, str(e)
+
+    anterior = agenda.mes_vizinho(ano, mes, -1)
+    seguinte = agenda.mes_vizinho(ano, mes, 1)
 
     return render_template(
         "analisesps_agenda.html", aba="agenda",
         proximos=proximos, alertas=alertas, compromissos=compromissos,
+        grade=grade, ano=ano, mes=mes, meses=agenda.MESES,
+        anterior=anterior, seguinte=seguinte, hoje=hoje,
         dias=dias, erro=erro,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
@@ -1163,6 +1215,12 @@ def log():
         params.append(f"%{busca}%")
     where = " WHERE " + " AND ".join(onde)
 
+    # A coluna `pessoa` só existe depois da migração 003. Enquanto ela não
+    # for aplicada, a tela mostra o registro sem o nome — que é o que havia
+    # até 03/09 — em vez de não abrir.
+    from .db import tem_coluna
+    com_pessoa = tem_coluna("log_alteracoes", "pessoa")
+
     try:
         contagem = consultar(
             "SELECT status, count(*) FROM analisesps.log_alteracoes"
@@ -1170,7 +1228,8 @@ def log():
             " GROUP BY status", (dias,))
         registros = consultar(
             "SELECT criado_em, sp_id, coluna, valor, valor_anterior, acao, "
-            "       perfil, pessoa, status, enviado_em, erro "
+            "       perfil, " + ("pessoa" if com_pessoa else "NULL") + ", "
+            "       status, enviado_em, erro "
             f"  FROM analisesps.log_alteracoes{where} "
             " ORDER BY criado_em DESC LIMIT 500", tuple(params))
         pendentes = consultar_um("SELECT count(*) FROM analisesps.fila")

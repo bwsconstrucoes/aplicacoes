@@ -44,7 +44,14 @@
 {% block conteudo %}
 <h2>
   Auditoria
-  <small>{% if usar_filtros %}sobre o recorte filtrado{% else %}sobre a base inteira{% endif %}</small>
+  <small>
+    {% if usar_filtros %}sobre o recorte filtrado{% else %}sobre a base inteira{% endif %}
+    {% if periodo.de or periodo.ate %}
+      · {{ campos_periodo[periodo.campo][1] }}
+      {% if periodo.de %}de {{ periodo.de|data_br }}{% endif %}
+      {% if periodo.ate %}até {{ periodo.ate|data_br }}{% endif %}
+    {% endif %}
+  </small>
 </h2>
 
 {% if checagem %}
@@ -70,6 +77,43 @@
                           usar_filtros=('1' if usar_filtros else '')) }}">{{ rotulo }}</a>
     {% endfor %}
   </div>
+  {# O PERÍODO é da auditoria, não da lista. Auditar a base inteira dá o
+     retrato de sempre; auditar um mês responde "o que entrou errado neste
+     fechamento". Vale para as sete checagens. #}
+  <form method="get" class="auditoria-periodo">
+    <input type="hidden" name="checagem" value="{{ checagem }}">
+    {% if usar_filtros %}<input type="hidden" name="usar_filtros" value="1">{% endif %}
+    {% for chave, valores in request.args.lists()
+       if chave in ('minimo', 'dias') %}
+      {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
+    {% endfor %}
+    <div>
+      <label class="rotulo-campo">Período por</label>
+      <select name="campo_data">
+        {% for chave, par in campos_periodo.items() %}
+          <option value="{{ chave }}"
+            {% if periodo.campo == chave %}selected{% endif %}>{{ par[1] }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="rotulo-campo">De</label>
+      <input type="date" name="de"
+             value="{{ periodo.de.isoformat() if periodo.de else '' }}">
+    </div>
+    <div>
+      <label class="rotulo-campo">Até</label>
+      <input type="date" name="ate"
+             value="{{ periodo.ate.isoformat() if periodo.ate else '' }}">
+    </div>
+    <button class="btn secundario" type="submit">Aplicar período</button>
+    {% if periodo.de or periodo.ate %}
+      <a class="link-btn"
+         href="{{ url_for('analisesps.auditoria', checagem=checagem,
+                          usar_filtros=('1' if usar_filtros else '')) }}">Todo o período</a>
+    {% endif %}
+  </form>
+
   <p class="cartao-dica">
     Por padrão a auditoria olha a <b>base inteira</b>, e não o que está filtrado
     na tela de Solicitações — auditoria que enxerga só o pedaço já filtrado

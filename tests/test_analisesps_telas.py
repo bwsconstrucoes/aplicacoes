@@ -13,6 +13,7 @@ são dubladas, porque o que está sob teste aqui é a TELA, não o SQL (esse tem
 from __future__ import annotations
 
 import datetime as dt
+from pathlib import Path
 from decimal import Decimal
 
 import pytest
@@ -786,6 +787,172 @@ def test_a_consulta_nao_remove_risco(app):
     assert resposta.status_code == 403
 
 
+# ---------------------------------------------------------------------------
+# A LEVA DE 04/09 À NOITE — o dono olhando a tela e apontando
+# ---------------------------------------------------------------------------
+def test_validacao_vem_marcada_e_responsavel_nao(app):
+    """Escolha do dono, olhando a tela: Validação aparece porque é ela que
+    destrava o agendamento — não vê-la é trabalhar às cegas. Responsável fica
+    de fora porque ele não usa no dia a dia. Quem quiser, acrescenta."""
+    from app.apps.analisesps import tabela
+    padrao = {c.chave for c in tabela.escolhidas(None)}
+    assert "validacao" in padrao
+    assert "responsavel" not in padrao
+
+
+def test_o_numero_da_sp_nao_e_pintado(app, monkeypatch):
+    """O Streamlit tingia o ID conforme o alerta. Somado ao vencimento
+    vermelho ao lado, a linha inteira ficava gritando — o dono pediu para
+    tirar. O alerta continua, em selo, na coluna Alertas, onde não compete
+    com nada."""
+    css = (Path(__file__).resolve().parents[1] / "app" / "apps" / "analisesps"
+           / "static" / "analisesps.css").read_text(encoding="utf-8")
+    assert ".id a" not in css, "voltou a pintar o número da SP"
+
+
+# ---------------------------------------------------------------------------
+# AUDITORIA POR PERÍODO
+# ---------------------------------------------------------------------------
+def test_a_auditoria_aceita_periodo_em_todas_as_checagens(app, monkeypatch):
+    """Auditar a base inteira dá o retrato de sempre; auditar um mês responde
+    "o que entrou errado neste fechamento". As duas perguntas são legítimas, e
+    o dono pediu a segunda."""
+    from app.apps.analisesps import auditoria
+    vistos = {}
+    for nome in ("risco_ia", "nf_duplicada", "sem_classificacao",
+                 "sem_integracao_omie"):
+        monkeypatch.setattr(auditoria, nome,
+                            lambda f, u=False, p=None, _n=nome:
+                            vistos.update({_n: p}) or [])
+    monkeypatch.setattr(auditoria, "codigos_de_barras",
+                        lambda f, u=False, p=None:
+                        vistos.update({"codigos_barras": p}) or {})
+    monkeypatch.setattr(auditoria, "pontualidade",
+                        lambda f, u=False, m=5, p=None:
+                        vistos.update({"pontualidade": p}) or [])
+    monkeypatch.setattr(auditoria, "possivel_duplicidade",
+                        lambda f, u=False, d=7, p=None:
+                        vistos.update({"possivel_duplicidade": p}) or [])
+
+    cliente = como(app, SENHA_OPERADOR)
+    for chave in ("pontualidade", "risco_ia", "nf_duplicada",
+                  "possivel_duplicidade", "sem_classificacao",
+                  "sem_integracao", "codigos_barras"):
+        cliente.get(f"/analisesps/auditoria?checagem={chave}"
+                    "&de=2026-09-01&ate=2026-09-30")
+
+    for chave, periodo in vistos.items():
+        assert periodo is not None, f"{chave} não recebeu o período"
+        assert periodo["de"] == dt.date(2026, 9, 1), chave
+        assert periodo["ate"] == dt.date(2026, 9, 30), chave
+
+
+def test_o_periodo_da_auditoria_so_recorta_pelas_datas_que_conhecemos(
+        app, monkeypatch):
+    """A coluna do recorte é escolhida por nós, de uma lista fechada. Nome de
+    coluna não entra como parâmetro do banco — e concatenar o que veio de fora
+    aqui seria a porta aberta clássica."""
+    from app.apps.analisesps import auditoria
+    assert set(auditoria.CAMPOS_PERIODO) == {"vencimento", "solicitacao"}
+    monkeypatch.setattr(auditoria, "resumo", lambda f, u=False, p=None: {})
+
+    resposta = como(app, SENHA_OPERADOR).get(
+        "/analisesps/auditoria?campo_data=valor_num;DROP+TABLE&de=2026-01-01")
+    assert resposta.status_code == 200, "campo inventado derrubou a tela"
+
+
+def test_a_tela_da_auditoria_mostra_o_controle_de_periodo(app, monkeypatch):
+    from app.apps.analisesps import auditoria
+    monkeypatch.setattr(auditoria, "resumo", lambda f, u=False, p=None: {})
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/auditoria").get_data(as_text=True)
+    assert 'name="de"' in html and 'name="ate"' in html
+    assert 'name="campo_data"' in html
+
+
+# ---------------------------------------------------------------------------
+# NOTA REPETIDA x PARCELAMENTO
+# ---------------------------------------------------------------------------
+def test_a_regra_de_parcelas_esta_escrita_onde_se_le(app):
+    """A regra é sutil o bastante para precisar estar dita: o grupo só sai da
+    lista quando TODAS as SPs têm marca de parcela e as marcas são todas
+    diferentes. Se duas dividem a mesma parcela, ou alguma está sem marca, o
+    grupo continua aparecendo — porque aí "é parcelamento" não explica."""
+    from app.apps.analisesps import auditoria
+    doc = auditoria.nf_duplicada.__doc__ or ""
+    assert "parcela" in doc.lower()
+    assert "MARCA_PARCELA" in dir(auditoria) or hasattr(auditoria, "MARCA_PARCELA")
+
+
+# ---------------------------------------------------------------------------
+# A AGENDA VOLTA A TER CALENDÁRIO
+# ---------------------------------------------------------------------------
+def test_a_agenda_tem_a_grade_do_mes(app_agenda):
+    """"A agenda só tem uma lista", disse o dono. O Streamlit mostrava um
+    calendário de mês, com navegação e o que cai em cada dia — lista não
+    responde "como está a semana que vem"."""
+    html = como(app_agenda, SENHA_OPERADOR).get(
+        "/analisesps/agenda").get_data(as_text=True)
+    assert 'class="calendario"' in html
+    assert html.count('class="cal-cab"') == 7, "faltam dias da semana"
+
+
+def test_a_grade_do_mes_vira_o_ano(app):
+    """Dezembro → janeiro do ano seguinte, e janeiro → dezembro do anterior."""
+    from app.apps.analisesps import agenda
+    assert agenda.mes_vizinho(2026, 12, 1) == (2027, 1)
+    assert agenda.mes_vizinho(2026, 1, -1) == (2025, 12)
+
+
+def test_mes_invalido_na_agenda_nao_derruba_a_tela(app_agenda):
+    """O mês vem da barra de endereço — e barra de endereço recebe qualquer
+    coisa, inclusive por engano de quem copiou o link pela metade."""
+    cliente = como(app_agenda, SENHA_OPERADOR)
+    for pedaco in ("?mes=13", "?mes=abc&ano=xyz", "?ano=1800", "?mes=0"):
+        assert cliente.get("/analisesps/agenda" + pedaco).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# O BANCO PODE ESTAR ATRASADO
+# ---------------------------------------------------------------------------
+def test_o_modulo_aguenta_o_banco_sem_a_migracao_003(app, monkeypatch):
+    """O código sobe para o Render ANTES de alguém apertar "Aplicar
+    atualizações do banco". Nessa janela o programa é novo e o banco é velho.
+
+    Foi assim que este módulo travou na estreia, em 03/09. Agora, onde uma
+    coluna nova é usada, pergunta-se antes se ela existe — e sem ela o
+    programa segue pelo caminho de antes, que funciona nos dois bancos."""
+    from app.apps.analisesps import db as banco, lote
+
+    # O banco responde, mas não conhece a coluna `pessoa`.
+    monkeypatch.setattr(banco, "tem_coluna", lambda tabela, coluna: False)
+    banco.esquecer_colunas()
+
+    assert lote.por_pessoa() is False
+    # E o lote continua sendo lido — pelo caminho antigo, o de uma linha só.
+    lido = []
+    monkeypatch.setattr(banco, "consultar_um",
+                        lambda sql, params=(): lido.append(sql) or None)
+    lote.ler("marcelo")
+    assert "WHERE id = 1" in lido[0], (
+        "com o banco atrasado, o lote tem de ser lido como era antes")
+
+
+def test_aplicar_as_migracoes_faz_o_processo_reaprender_o_banco(app,
+                                                                monkeypatch):
+    """Sem esquecer o que sabia, este worker continuaria achando que a coluna
+    nova não existe até o próximo reinício — e o dono apertaria o botão sem
+    ver efeito nenhum."""
+    from app.apps.analisesps import db as banco, migracoes_runner
+    monkeypatch.setattr(migracoes_runner, "aplicar_pendentes",
+                        lambda: {"aplicadas": [], "erro": None,
+                                 "pendentes_restantes": []})
+    banco._colunas_conhecidas[("lote", "pessoa")] = True
+    como(app, SENHA_OPERADOR).post("/analisesps/api/migrar")
+    assert not banco._colunas_conhecidas, (
+        "o processo continuou com a ideia antiga do formato do banco")
+
+
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
     monkeypatch.delenv("ANALISESPS_SENHA_OPERADOR", raising=False)
     monkeypatch.delenv("ANALISESPS_SENHA_CONSULTA", raising=False)
@@ -862,7 +1029,7 @@ def test_recorte_e_periodo_desconhecidos_caem_no_padrao(app_relatorio):
 # ---------------------------------------------------------------------------
 def test_a_auditoria_abre_com_o_resumo(app, monkeypatch):
     from app.apps.analisesps import auditoria
-    monkeypatch.setattr(auditoria, "resumo", lambda f, u=False: {
+    monkeypatch.setattr(auditoria, "resumo", lambda f, u=False, p=None: {
         "pontualidade": 8, "risco_ia": 3, "possivel_duplicidade": 0,
         "nf_duplicada": 2, "codigos_barras": 5, "sem_classificacao": 41,
         "sem_integracao": 0})
@@ -878,7 +1045,7 @@ def test_a_auditoria_olha_a_base_inteira_por_padrao(app, monkeypatch):
     from app.apps.analisesps import auditoria
     vistos = {}
     monkeypatch.setattr(auditoria, "resumo",
-                        lambda f, u=False: vistos.update(usou_filtros=u) or {})
+                        lambda f, u=False, p=None: vistos.update(usou_filtros=u) or {})
     html = como(app, SENHA_CONSULTA).get("/analisesps/auditoria").get_data(as_text=True)
     assert vistos["usou_filtros"] is False
     assert "base inteira" in html
@@ -886,7 +1053,7 @@ def test_a_auditoria_olha_a_base_inteira_por_padrao(app, monkeypatch):
 
 def test_checagem_inventada_e_ignorada(app, monkeypatch):
     from app.apps.analisesps import auditoria
-    monkeypatch.setattr(auditoria, "resumo", lambda f, u=False: {})
+    monkeypatch.setattr(auditoria, "resumo", lambda f, u=False, p=None: {})
     resposta = como(app, SENHA_CONSULTA).get(
         "/analisesps/auditoria?checagem=apagar_tudo")
     assert resposta.status_code == 200
@@ -1127,6 +1294,24 @@ def test_bradesco_nao_conclui_no_lugar_de_quem_le(app, monkeypatch):
 # ---------------------------------------------------------------------------
 # Agenda
 # ---------------------------------------------------------------------------
+@pytest.fixture
+def app_agenda(app, monkeypatch):
+    """A agenda com um compromisso mensal — o bastante para a grade do mês
+    aparecer com alguma coisa dentro."""
+    from app.apps.analisesps import agenda
+    compromisso = {"id": "1", "titulo": "FGTS", "categoria": "FGTS",
+                   "recorrencia": "mensal", "dia_mes": "7",
+                   "data_base": "07/01/2026", "ajuste_dia_util": "antecipa",
+                   "alerta_dias_antes": "5", "status": "ativo",
+                   "responsavel": "Ana", "descricao": "", "concluido_em": "",
+                   "criado_por": "", "criado_em": ""}
+    monkeypatch.setattr(agenda, "listar", lambda: [compromisso])
+    monkeypatch.setattr(agenda, "proximos", lambda dias=90: [])
+    monkeypatch.setattr(agenda, "a_vencer", lambda: [])
+    monkeypatch.setattr(agenda, "feriados_extra", lambda: set())
+    return app
+
+
 def test_a_agenda_monta(app, monkeypatch):
     import datetime as dt
     from app.apps.analisesps import agenda
@@ -1379,7 +1564,7 @@ def test_o_relatorio_exportado_diz_o_recorte_e_a_data_que_manda(app_relatorio):
 
 def test_a_auditoria_exporta_a_checagem_aberta(app, monkeypatch):
     from app.apps.analisesps import auditoria
-    monkeypatch.setattr(auditoria, "risco_ia", lambda f, u=False: [
+    monkeypatch.setattr(auditoria, "risco_ia", lambda f, u=False, p=None: [
         linha_falsa("1", analise_ia="Pagamento COM RISCO")])
     texto = como(app, SENHA_CONSULTA).get(
         "/analisesps/auditoria/exportar?checagem=risco_ia").get_data(as_text=True)
