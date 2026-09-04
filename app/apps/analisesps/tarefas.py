@@ -97,11 +97,22 @@ def estado() -> dict:
 
 
 def ultima_concluida() -> dict | None:
-    from .db import consultar_um
-    linha = consultar_um(
-        "SELECT tipo, disparo, inicio, fim, ok, mensagem, linhas "
-        "  FROM analisesps.execucoes WHERE fim IS NOT NULL "
-        " ORDER BY fim DESC LIMIT 1")
+    """A última atualização que terminou, ou None se não houver.
+
+    Protegida como a `estado()` acima, e pelo mesmo motivo: esta função
+    alimenta a tela de Configurações, que é o ÚNICO lugar com o botão que
+    aplica as migrações. Antes de elas rodarem a tabela `execucoes` não
+    existe — e uma exceção aqui derrubava justamente a tela que o dono
+    precisa abrir para sair desse estado."""
+    try:
+        from .db import consultar_um
+        linha = consultar_um(
+            "SELECT tipo, disparo, inicio, fim, ok, mensagem, linhas "
+            "  FROM analisesps.execucoes WHERE fim IS NOT NULL "
+            " ORDER BY fim DESC LIMIT 1")
+    except Exception:  # noqa: BLE001 — banco fora do ar, ou migração ainda não aplicada
+        logger.exception("Análise de SPs: não consegui ler a última execução")
+        return None
     if not linha:
         return None
     return {"tipo": linha[0], "disparo": linha[1], "inicio": linha[2],

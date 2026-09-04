@@ -321,6 +321,53 @@ def test_carga_interrompida_aparece_como_interrompida(app, monkeypatch):
     assert "retoma de onde parou" in html
 
 
+def test_configuracoes_monta_com_o_banco_de_pe_e_as_migracoes_por_aplicar(
+        monkeypatch):
+    """O estado de estreia do módulo: banco respondendo, migrações ainda não
+    aplicadas.
+
+    Este é o caso REAL que quebrou na primeira vez que o dono abriu o módulo
+    no ar, e é o pior lugar possível para quebrar: a tela de Configurações é
+    a ÚNICA com o botão que aplica as migrações. Estourando ela, não havia
+    como sair do estado — a tela que conserta era a tela quebrada.
+
+    Passou por toda a suíte porque os outros testes daqui ou derrubam o banco
+    inteiro (e aí a leitura da última execução nem é tentada), ou dublam
+    `ultima_concluida`. Nenhum exercitava o meio-termo: `listar_estado()`
+    funciona — ela mesma cria o schema e a tabela de controle —, mas
+    `analisesps.execucoes` ainda não existe."""
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", SENHA_OPERADOR)
+    monkeypatch.setenv("ANALISESPS_SENHA_CONSULTA", SENHA_CONSULTA)
+
+    from app.apps.analisesps import db as banco
+    from app.apps.analisesps import migracoes_runner
+
+    monkeypatch.setattr(migracoes_runner, "listar_estado",
+                        lambda: {"aplicadas": [],
+                                 "pendentes": ["001_estrutura.sql",
+                                               "002_agenda_e_lote.sql"]})
+
+    def sem_tabela(*a, **k):
+        raise RuntimeError(
+            'relation "analisesps.execucoes" does not exist')
+
+    monkeypatch.setattr(banco, "consultar", sem_tabela)
+    monkeypatch.setattr(banco, "consultar_um", sem_tabela)
+
+    a = Flask(__name__)
+    a.secret_key = "teste"
+    a.register_blueprint(web.bp)
+    a.config["TESTING"] = False        # queremos a resposta, não a exceção crua
+
+    resposta = como(a, SENHA_OPERADOR).get("/analisesps/configuracoes")
+    assert resposta.status_code == 200, (
+        "Configurações estourou com as migrações por aplicar — é a única tela "
+        "que sabe aplicá-las")
+    html = resposta.get_data(as_text=True)
+    assert "001_estrutura.sql" in html
+    assert "002_agenda_e_lote.sql" in html
+
+
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
     monkeypatch.delenv("ANALISESPS_SENHA_OPERADOR", raising=False)
     monkeypatch.delenv("ANALISESPS_SENHA_CONSULTA", raising=False)
