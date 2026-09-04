@@ -77,12 +77,14 @@
 
 {% if pode_operar %}
   <div class="ficha-acoes" data-sp="{{ sp.id }}"
-       data-url-alterar="{{ url_for('analisesps.alterar') }}">
+       data-url-alterar="{{ url_for('analisesps.alterar') }}"
+       data-url-validar="{{ url_for('analisesps.validar') }}">
     {% if not validado %}
       <div class="aviso atencao" style="width:100%">
         <b>Agendamento bloqueado:</b> a coluna <b>Validação</b> precisa estar
         como "Sim" (agora está: {{ sp.validacao or '—' }}). Era assim no
         Streamlit — agendar sem validar é o que a trava impede.
+        <button class="btn" id="ficha-validar" style="margin-left:8px">Validar</button>
       </div>
     {% endif %}
     <div class="ba-grupo">

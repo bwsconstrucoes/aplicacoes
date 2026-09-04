@@ -398,36 +398,21 @@ def exportar():
 # ---------------------------------------------------------------------------
 # Alteração — só o Operador
 # ---------------------------------------------------------------------------
-@bp.route("/api/alterar", methods=["POST"])
-@exige_operador
-def alterar():
-    """Altera uma coluna editável em uma ou mais SPs.
+def _gravar_alteracao(ids: list, coluna: str, valor: str, acao: str):
+    """O caminho de TODA alteração — e é o que garante que nada se perca:
 
-    O caminho é sempre o mesmo, e é o que garante que nada se perca:
-      1. grava no banco na hora — quem está na tela vê o efeito imediatamente;
+      1. grava no banco na hora — quem está na tela vê o efeito já;
       2. põe a célula na fila de escrita para a planilha;
-      3. registra no log.
+      3. registra no log, com o valor anterior e com quem mexeu.
+
     O envio para a planilha acontece depois, no processo separado. Se a
-    internet cair no meio, a alteração continua na fila e sobe sozinha."""
-    from . import colunas
+    internet cair no meio, a alteração continua na fila e sobe sozinha.
+
+    Vive fora da rota porque a validação usa o MESMO caminho: só muda a letra
+    da coluna. Duas cópias divergiriam no dia em que uma delas ganhasse um
+    passo — e a que ficasse para trás deixaria de enfileirar, ou de registrar,
+    sem ninguém notar."""
     from .db import conexao
-
-    dados = request.get_json(silent=True) or {}
-    ids = [str(i).strip() for i in (dados.get("ids") or []) if str(i).strip()]
-    coluna = str(dados.get("coluna") or "").strip()
-    valor = str(dados.get("valor") or "").strip()
-    acao = str(dados.get("acao") or "Alterar").strip()
-
-    if not ids:
-        return {"ok": False, "erro": "Nenhuma SP selecionada."}, 400
-    if coluna not in colunas.EDITAVEIS:
-        # Só as duas colunas que o operador mexe no dia a dia. Qualquer outra é
-        # somente leitura — a planilha é a dona do resto.
-        return {"ok": False,
-                "erro": f"A coluna '{coluna}' não é alterável por aqui."}, 400
-    if len(ids) > 500:
-        return {"ok": False,
-                "erro": "São no máximo 500 SPs por vez. Refine a seleção."}, 400
 
     perfil = auth.perfil_atual() or "?"
     quem = auth.nome_atual()
@@ -477,6 +462,85 @@ def alterar():
     return {"ok": True, "alteradas": len(ids),
             "envio": resultado.get("ok", False),
             "aviso": None if resultado.get("ok") else resultado.get("erro")}
+
+
+def _ids_do_pedido(dados: dict):
+    """Os IDs do corpo, conferidos. Devolve (ids, erro)."""
+    ids = [str(i).strip() for i in (dados.get("ids") or []) if str(i).strip()]
+    if not ids:
+        return None, ({"ok": False, "erro": "Nenhuma SP selecionada."}, 400)
+    if len(ids) > 500:
+        return None, ({"ok": False,
+                       "erro": "São no máximo 500 SPs por vez. Refine a "
+                               "seleção."}, 400)
+    return ids, None
+
+
+@bp.route("/api/alterar", methods=["POST"])
+@exige_operador
+def alterar():
+    """Altera uma coluna editável em uma ou mais SPs."""
+    from . import colunas
+
+    dados = request.get_json(silent=True) or {}
+    ids, erro = _ids_do_pedido(dados)
+    if erro:
+        return erro
+
+    coluna = str(dados.get("coluna") or "").strip()
+    valor = str(dados.get("valor") or "").strip()
+    acao = str(dados.get("acao") or "Alterar").strip()
+
+    if coluna not in colunas.EDITAVEIS:
+        # As colunas do dia a dia. Qualquer outra é somente leitura POR AQUI —
+        # a planilha é a dona do resto. A Validação é a exceção, e tem porta
+        # própria (`/api/validar`) porque exige senha própria.
+        return {"ok": False,
+                "erro": f"A coluna '{coluna}' não é alterável por aqui."}, 400
+
+    return _gravar_alteracao(ids, coluna, valor, acao)
+
+
+@bp.route("/api/validar", methods=["POST"])
+@exige_operador
+def validar():
+    """Marca Validação = "Sim" nas SPs pedidas.
+
+    É a MESMA gravação de sempre — banco, fila, log, planilha —, só que na
+    coluna AH em vez da O ou da AB. O que a separa não é o mecanismo, é o
+    significado: a Validação é o que destrava o agendamento, e destravá-la é
+    dizer "eu conferi". Por isso, como no Streamlit, ela pede uma SENHA
+    PRÓPRIA (SENHA_VALIDACAO): se a senha de Operador servisse, a trava
+    perderia o sentido — quem agenda seria o mesmo que autoriza a agendar.
+
+    Sem a senha cadastrada, a ação não existe. Falha fechado, como todo o
+    resto deste módulo."""
+    from . import credenciais
+
+    dados = request.get_json(silent=True) or {}
+    ids, erro = _ids_do_pedido(dados)
+    if erro:
+        return erro
+
+    try:
+        esperada = credenciais.token("SENHA_VALIDACAO", "").strip()
+    except Exception:  # noqa: BLE001 — planilha de credenciais fora do ar
+        logger.exception("Análise de SPs: não consegui ler a senha de validação")
+        esperada = ""
+
+    if not esperada:
+        return {"ok": False,
+                "erro": "A senha de validação não está cadastrada. Ponha "
+                        "SENHA_VALIDACAO na Environment do Render ou na aba "
+                        "Credenciais da planilha."}, 409
+
+    import hmac
+    if not hmac.compare_digest(str(dados.get("senha") or ""), esperada):
+        logger.warning("Análise de SPs: %s tentou validar com senha errada.",
+                       auth.nome_atual() or "sem nome")
+        return {"ok": False, "erro": "Senha de validação incorreta."}, 403
+
+    return _gravar_alteracao(ids, "validacao", "Sim", "Validar")
 
 
 # ---------------------------------------------------------------------------

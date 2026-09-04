@@ -587,6 +587,86 @@ def test_a_ficha_traz_de_volta_os_links_que_o_streamlit_tinha(app_ficha,
     assert "consultastatusomie" in html and "atualizatitulo" in html
 
 
+def test_validar_escreve_na_planilha_como_qualquer_outra_alteracao(app,
+                                                                    monkeypatch):
+    """Validar não é especial no MECANISMO — é a mesma gravação de sempre, só
+    que na coluna AH em vez da O ou da AB: banco, fila, log, planilha.
+
+    O que a separa é o significado. A Validação é o que destrava o
+    agendamento, então destravá-la pede uma senha PRÓPRIA: se a de Operador
+    servisse, quem agenda seria o mesmo que autoriza a agendar, e a trava não
+    travaria nada."""
+    from app.apps.analisesps import credenciais, web as tela
+    monkeypatch.setattr(credenciais, "token",
+                        lambda nome, padrao="": "senha-de-validacao")
+
+    gravado = {}
+    monkeypatch.setattr(tela, "_gravar_alteracao",
+                        lambda ids, coluna, valor, acao: gravado.update(
+                            ids=ids, coluna=coluna, valor=valor, acao=acao)
+                        or {"ok": True, "alteradas": len(ids)})
+
+    cliente = como(app, SENHA_OPERADOR)
+
+    errada = cliente.post("/analisesps/api/validar",
+                          json={"ids": ["1"], "senha": "chute"})
+    assert errada.status_code == 403
+    assert not gravado, "gravou mesmo com a senha errada"
+
+    certa = cliente.post("/analisesps/api/validar",
+                         json={"ids": ["1", "2"],
+                               "senha": "senha-de-validacao"})
+    assert certa.status_code == 200
+    assert gravado["coluna"] == "validacao"
+    assert gravado["valor"] == "Sim"
+    assert gravado["ids"] == ["1", "2"]
+
+
+def test_sem_senha_de_validacao_cadastrada_ninguem_valida(app, monkeypatch):
+    """Falha fechado, como o resto do módulo. E a mensagem diz onde cadastrar,
+    senão vira um botão que não funciona e ninguém sabe por quê."""
+    from app.apps.analisesps import credenciais
+    monkeypatch.setattr(credenciais, "token", lambda nome, padrao="": "")
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/api/validar", json={"ids": ["1"], "senha": "qualquer"})
+    assert resposta.status_code == 409
+    assert "SENHA_VALIDACAO" in resposta.get_json()["erro"]
+
+
+def test_a_consulta_nao_valida(app):
+    """Validar é escrita. O perfil que só olha não escreve, aqui como em tudo."""
+    resposta = como(app, SENHA_CONSULTA).post(
+        "/analisesps/api/validar", json={"ids": ["1"], "senha": "x"})
+    assert resposta.status_code == 403
+
+
+def test_validar_aparece_onde_se_precisa_dele(app, app_ficha, monkeypatch):
+    """Na barra, para validar várias de uma vez; e na própria trava do
+    agendamento, que é onde a pessoa descobre que falta validar."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'id="ba-validar"' in html
+
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["validacao"] = ""
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+    ficha = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    assert 'id="ficha-validar"' in ficha
+
+
+def test_a_coluna_da_validacao_continua_fechada_na_porta_comum(app):
+    """A porta de sempre não pode validar: senão bastaria pedir a coluna
+    "validacao" ali e a senha de validação viraria enfeite."""
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/api/alterar",
+        json={"ids": ["1"], "coluna": "validacao", "valor": "Sim"})
+    assert resposta.status_code == 400
+    assert "não é alterável" in resposta.get_json()["erro"]
+
+
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
     monkeypatch.delenv("ANALISESPS_SENHA_OPERADOR", raising=False)
     monkeypatch.delenv("ANALISESPS_SENHA_CONSULTA", raising=False)

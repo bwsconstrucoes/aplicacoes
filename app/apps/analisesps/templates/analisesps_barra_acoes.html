@@ -18,6 +18,7 @@
 <div class="barra-acoes" id="barra-acoes"
      data-url-alterar="{{ url_for('analisesps.alterar') }}"
      data-url-codigos="{{ url_for('analisesps.codigos') }}"
+     data-url-validar="{{ url_for('analisesps.validar') }}"
      data-origem="{{ origem }}">
 
   <div class="ba-esquerda">
@@ -60,6 +61,10 @@
     {% if origem != 'lote' and pode_operar %}
       <button class="btn secundario" id="ba-enviar-lote" data-precisa-selecao
               title="Manda as marcadas para o Lote, num grupo novo">Enviar ao Lote</button>
+    {% endif %}
+    {% if pode_operar %}
+      <button class="btn secundario" id="ba-validar" data-precisa-selecao
+              title="Marca Validação = Sim (pede a senha de validação)">Validar</button>
     {% endif %}
     <button class="btn secundario" id="ba-cards" data-precisa-selecao
             title="Abre no Pipefy o card de cada SP marcada">Abrir cards</button>

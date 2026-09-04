@@ -138,7 +138,11 @@ chaveado por pessoa (a linha única `id = 1` vira a pessoa `''`), e o log ganha
 a coluna `pessoa`. **Precisa do botão "Aplicar atualizações do banco"** logo
 depois de publicar.
 
-### Uma variável nova no Render
+### Variáveis novas no Render
+
+`SENHA_VALIDACAO` — a senha do botão Validar. Já existia no Streamlit, na aba
+Credenciais da planilha; serve tanto de lá quanto da Environment do Render.
+**Sem ela ninguém valida**, e a tela diz onde cadastrar em vez de só falhar.
 
 `ANALISESPS_HOOK_OMIE` — o endereço do gancho do Make que o Streamlit usava
 nos botões **Consulta** e **Atualizar** do Omie. **Não foi copiado para o
@@ -147,12 +151,30 @@ versiona. Sem a variável os dois botões simplesmente não aparecem — melhor 
 que aparecerem quebrados. O valor está no `app.py` do Streamlit, na pasta que
 foi movida para fora do repositório.
 
-### O que ainda NÃO voltou
+### Validar voltou — e a hesitação era minha, não do problema
 
-- **Validar** (gravar Validação = "Sim"). No Streamlit exigia uma senha
-  própria (`SENHA_VALIDACAO`, vinda da aba de Credenciais) e escreve numa
-  coluna que hoje é somente leitura. Ficou de fora desta entrega: mexer no
-  conjunto de colunas graváveis merece uma conversa antes.
+Ficou de fora numa primeira passada com a desculpa de que "escreve numa coluna
+que hoje é somente leitura". O dono cortou a conversa: *"qual o problema? Quando
+aplicamos mudança de status muda a planilha da mesma forma, só que é coluna
+diferente."* Está certo. É o mesmo caminho — banco, fila, log, planilha —, só a
+letra da coluna muda (AH em vez de O ou AB).
+
+O que realmente separa a Validação das outras não é o mecanismo, é o
+significado: **ela é o que destrava o agendamento**. Por isso, como no
+Streamlit, pede uma **senha própria** (`SENHA_VALIDACAO`, do Render ou da aba
+Credenciais). Se a senha de Operador servisse, quem agenda seria o mesmo que
+autoriza a agendar, e a trava não travaria nada.
+
+Detalhe de construção que importa: `validacao` **continua fora de
+`EDITAVEIS`**, e a validação tem porta própria (`/api/validar`). Se ela
+entrasse na lista das colunas comuns, bastaria pedir `coluna: "validacao"` na
+rota de sempre e a senha viraria enfeite. Há teste para isso.
+
+O botão aparece em dois lugares: na barra de ações (validar várias de uma vez,
+como no Streamlit) e dentro do próprio aviso de "agendamento bloqueado", que é
+onde a pessoa descobre que falta validar.
+
+### O que ainda NÃO voltou
 - **Remover Risco**, **Gerar BeeVale**, **Cancelar SP no Pipefy por dentro**,
   **reenviar comprovante por e-mail**, **escolher as colunas da tabela**.
 - **Auto-atualizar a cada 90s.**

@@ -126,6 +126,32 @@
     form.submit();
   });
 
+  // --- Validar as marcadas -------------------------------------------------
+  //
+  // Grava Validacao = "Sim". E a mesma escrita de sempre (banco, fila, log,
+  // planilha), so que na coluna AH. O que muda e o significado: validar e o
+  // que destrava o agendamento, entao pede senha PROPRIA — se a de Operador
+  // servisse, quem agenda seria o mesmo que autoriza a agendar.
+  const btnValidar = document.getElementById("ba-validar");
+  if (btnValidar) btnValidar.addEventListener("click", async () => {
+    const ids = idsMarcados();
+    if (!ids) return;
+    const senha = prompt(`Validar ${ids.length} SP(s) — marca Validação = "Sim".`
+                         + `\n\nSenha de validação:`);
+    if (senha === null) return;
+    btnValidar.disabled = true;
+    try {
+      const r = await fetch(barra.dataset.urlValidar, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids: ids, senha: senha})
+      });
+      const d = await r.json();
+      if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
+      location.reload();
+    } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
+    finally { btnValidar.disabled = false; }
+  });
+
   // --- Abrir no Pipefy os cards das marcadas -------------------------------
   //
   // Uma aba por card. O navegador bloqueia isso por padrão quando não parte de
@@ -197,6 +223,24 @@ window.ligarFicha = function (raiz) {
       } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
       finally { botao.disabled = false; }
     });
+  });
+
+  const validar = caixa.querySelector("#ficha-validar");
+  if (validar) validar.addEventListener("click", async () => {
+    const senha = prompt(`Validar a SP ${sp} — marca Validação = "Sim" e `
+                         + `destrava o agendamento.\n\nSenha de validação:`);
+    if (senha === null) return;
+    validar.disabled = true;
+    try {
+      const r = await fetch(caixa.dataset.urlValidar, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids: [sp], senha: senha})
+      });
+      const d = await r.json();
+      if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
+      location.reload();
+    } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
+    finally { validar.disabled = false; }
   });
 
   // "Limpar Pgto": as duas colunas de uma vez, como no Streamlit — Status Pgt
