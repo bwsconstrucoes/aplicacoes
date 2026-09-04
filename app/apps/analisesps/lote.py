@@ -126,27 +126,49 @@ def remover_por_status(texto: str, status_alvo: set[str],
 # ---------------------------------------------------------------------------
 # Onde o lote fica guardado
 # ---------------------------------------------------------------------------
-def ler() -> dict:
-    """O lote guardado, com quem salvou por último e quando."""
+# A chave do lote de antes de 04/09/2026, quando havia UM lote para todo mundo.
+# Ninguém escreve nele: ele existe só para que o trabalho que estava salvo na
+# véspera da mudança não desapareça, e para ser trazido por botão.
+COMPARTILHADO = ""
+
+
+def ler(pessoa: str = "") -> dict:
+    """O lote DESTA pessoa, com quem salvou por último e quando.
+
+    Até 04/09/2026 havia um lote só, de todo mundo: quem salvasse depois
+    sobrescrevia o trabalho do outro sem aviso. Agora cada um tem o seu — foi
+    decisão do dono, e é como era no Streamlit, que rodava numa máquina só."""
     from .db import consultar_um
     linha = consultar_um(
-        "SELECT conteudo, salvo_por, salvo_em FROM analisesps.lote WHERE id = 1")
+        "SELECT conteudo, salvo_por, salvo_em FROM analisesps.lote "
+        " WHERE pessoa = ?", (str(pessoa or ""),))
     if not linha:
         return {"conteudo": "", "salvo_por": None, "salvo_em": None}
     return {"conteudo": linha[0] or "", "salvo_por": linha[1],
             "salvo_em": linha[2]}
 
 
-def salvar(conteudo: str, perfil: str = "") -> None:
+def salvar(conteudo: str, quem: str = "", pessoa: str = "") -> None:
+    """Guarda o lote da pessoa. `quem` é o nome que a tela mostra depois."""
     from .db import conexao
     with conexao() as conn:
         conn.execute(
-            "INSERT INTO analisesps.lote (id, conteudo, salvo_por, salvo_em) "
-            "VALUES (1, ?, ?, now()) "
-            "ON CONFLICT (id) DO UPDATE SET conteudo = EXCLUDED.conteudo, "
+            "INSERT INTO analisesps.lote (pessoa, conteudo, salvo_por, salvo_em) "
+            "VALUES (?, ?, ?, now()) "
+            "ON CONFLICT (pessoa) DO UPDATE SET conteudo = EXCLUDED.conteudo, "
             "  salvo_por = EXCLUDED.salvo_por, salvo_em = now()",
-            (str(conteudo or ""), perfil))
+            (str(pessoa or ""), str(conteudo or ""), quem))
         conn.commit()
+
+
+def lote_de_antes() -> dict:
+    """O lote de quando ele era compartilhado — só para oferecer, uma vez.
+
+    Copiar sozinho para as quatro pessoas faria quatro cópias do mesmo lote
+    sem ninguém pedir, e a segunda pessoa a "terminar" apagaria SPs que ainda
+    estavam na lista da primeira. Oferecer por botão deixa a escolha com quem
+    sabe de quem era aquele trabalho."""
+    return ler(COMPARTILHADO)
 
 
 # ---------------------------------------------------------------------------

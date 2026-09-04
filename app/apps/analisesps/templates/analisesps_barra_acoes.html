@@ -1,0 +1,85 @@
+{# ---------------------------------------------------------------------------
+   A BARRA DE AÇÕES — uma só por tela, colada no alto, valendo para o que
+   estiver marcado.
+
+   Copia a barra fixa do Streamlit: os botões ficavam no topo, contínuos com a
+   barra de abas, e agiam sobre a seleção INTEIRA — inclusive quando as linhas
+   marcadas estavam em tabelas diferentes do Lote. Aqui era uma barra por
+   grupo, e cada uma só enxergava o próprio grupo.
+
+   O TOTAL DA SELEÇÃO FICA NO MEIO, GRANDE. É o número que decide se a remessa
+   vai ou não vai, e estava perdido num canto em letra miúda.
+
+   Parâmetros esperados de quem inclui:
+     origem      'solicitacoes' ou 'lote' — para onde as telas filhas voltam
+     com_pgt     mostra "Marcar Pago/Pagar" (só Solicitações; no Lote o dono
+                 mandou tirar, e o Streamlit nunca teve)
+--------------------------------------------------------------------------- #}
+<div class="barra-acoes" id="barra-acoes"
+     data-url-alterar="{{ url_for('analisesps.alterar') }}"
+     data-url-codigos="{{ url_for('analisesps.codigos') }}"
+     data-url-validar="{{ url_for('analisesps.validar') }}"
+     data-origem="{{ origem }}">
+
+  <div class="ba-esquerda">
+    {% if pode_operar %}
+      {% if com_pgt %}
+        <div class="ba-grupo">
+          <button class="btn" data-coluna="status_pgt" data-valor="Pago"
+                  data-precisa-selecao>Marcar Pago</button>
+          <button class="btn secundario" data-coluna="status_pgt" data-valor="Pagar"
+                  data-precisa-selecao>Marcar Pagar</button>
+        </div>
+      {% endif %}
+
+      {# Os quatro do Streamlit, nesta ordem e com estes nomes. "Desagendar" é
+         o que apaga o campo Agendado na planilha — o dono chama de "remover
+         informação", e o rótulo diz as duas coisas. #}
+      <div class="ba-grupo">
+        <button class="btn secundario" data-coluna="agendado" data-valor="Agendar"
+                data-precisa-selecao>Agendar</button>
+        <button class="btn secundario" data-coluna="agendado" data-valor="Agendado"
+                data-precisa-selecao>Agendado</button>
+        <button class="btn secundario" data-coluna="agendado" data-valor="Falha Agendar"
+                data-precisa-selecao>Falha Agendar</button>
+        <button class="btn secundario" data-coluna="agendado" data-valor="Desagendar"
+                data-rotulo="Desagendar (remover informação)"
+                data-precisa-selecao
+                title="Apaga o Agendado na planilha">Remover informação</button>
+      </div>
+    {% else %}
+      <span class="ba-aviso">Perfil <b>Consulta</b> — vê e exporta, não altera.</span>
+    {% endif %}
+  </div>
+
+  <div class="ba-centro">
+    <div class="ba-rotulo" id="ba-quantos">Nenhuma SP marcada</div>
+    <div class="ba-total" id="ba-valor">R$ 0,00</div>
+  </div>
+
+  <div class="ba-direita">
+    {% if origem != 'lote' and pode_operar %}
+      <button class="btn secundario" id="ba-enviar-lote" data-precisa-selecao
+              title="Manda as marcadas para o Lote, num grupo novo">Enviar ao Lote</button>
+    {% endif %}
+    {% if pode_operar %}
+      <button class="btn secundario" id="ba-validar" data-precisa-selecao
+              title="Marca Validação = Sim (pede a senha de validação)">Validar</button>
+    {% endif %}
+    <button class="btn secundario" id="ba-cards" data-precisa-selecao
+            title="Abre no Pipefy o card de cada SP marcada">Abrir cards</button>
+    <button class="btn secundario" id="ba-codigos" data-precisa-selecao>QR / Código</button>
+    {% if origem == 'solicitacoes' %}
+      <a class="btn secundario" href="{{ url_for('analisesps.exportar', **args) }}">Exportar CSV</a>
+    {% endif %}
+  </div>
+</div>
+
+{% if origem != 'lote' and pode_operar %}
+  {# O envio ao Lote é POST: acrescenta um grupo lá e leva a pessoa junto. #}
+  <form method="post" action="{{ url_for('analisesps.tela_lote') }}"
+        id="form-enviar-lote" style="display:none">
+    <input type="hidden" name="acao" value="receber_ids">
+    <input type="hidden" name="ids" value="">
+  </form>
+{% endif %}

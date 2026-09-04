@@ -28,16 +28,32 @@
     <h3>O lote</h3>
     <small>
       {% if lote.salvo_em %}
-        salvo por {{ lote.salvo_por or '—' }}
+        de {{ nome or lote.salvo_por or '—' }}
       {% else %}ainda não salvo{% endif %}
     </small>
   </div>
 
   <div class="aviso">
-    O lote é <b>um só, compartilhado</b>. Quem salvar por último sobrescreve o
-    anterior — a equipe trabalha sobre a mesma remessa, e dois lotes paralelos
-    seriam pior. Repare em quem salvou por último antes de apagar algo.
+    Este lote é <b>seu</b>. Cada pessoa tem o dela, separado pelo nome com que
+    entrou — ninguém sobrescreve o trabalho de ninguém.
   </div>
+
+  {% if antes %}
+    <div class="aviso atencao">
+      <b>Há um lote guardado de antes</b>, de quando ele era compartilhado
+      ({{ antes.conteudo.split('\n')|length }} linha(s), salvo por
+      {{ antes.salvo_por or '—' }}). Ele não some — fica onde está até alguém
+      trazer.
+      {% if pode_operar %}
+        <form method="post" style="display:inline">
+          <input type="hidden" name="acao" value="trazer_antigo">
+          <input type="hidden" name="conteudo" value="{{ lote.conteudo }}">
+          <button class="btn secundario" type="submit"
+                  style="margin-left:8px">Trazer para o meu</button>
+        </form>
+      {% endif %}
+    </div>
+  {% endif %}
 
   {% if pode_operar %}
     <form method="post">
@@ -83,29 +99,61 @@
   </div>
 {% endif %}
 
+{% if montado.quantidade %}
+  {# Sem "Marcar Pago": o dono mandou tirar, e o Streamlit nunca o teve aqui. #}
+  {% with origem='lote', com_pgt=false %}
+    {% include "analisesps_barra_acoes.html" %}
+  {% endwith %}
+{% endif %}
+
 {% for grupo in montado.grupos %}
   {% set gi = loop.index %}
   {% if grupo.linhas or grupo.titulo %}
     <div class="cartao">
       <div class="cartao-cab">
         <h3>{{ grupo.titulo_exibido }}</h3>
-        <small>{{ grupo.linhas|length }} SP(s) · {{ grupo.total|moeda }}</small>
+      </div>
+
+      {# Os números do grupo, à vista. O total no meio e grande: é ele que
+         decide se a remessa vai. Antes era uma linha de letra miúda. #}
+      {% set ag = grupo.linhas|map(attribute='status_agend')|map('lower')|list %}
+      {% set st = grupo.linhas|map(attribute='status_pgt')|map('lower')|list %}
+      <div class="kpis-grupo">
+        <div class="kpi-g">
+          <div class="kpi-g-rotulo">SPs</div>
+          <div class="kpi-g-valor">{{ grupo.linhas|length }}</div>
+        </div>
+        <div class="kpi-g destaque">
+          <div class="kpi-g-rotulo">Total do grupo</div>
+          <div class="kpi-g-valor">{{ grupo.total|moeda }}</div>
+        </div>
+        <div class="kpi-g">
+          <div class="kpi-g-rotulo">A pagar</div>
+          <div class="kpi-g-valor">{{ st|select('equalto', 'pagar')|list|length }}</div>
+        </div>
+        <div class="kpi-g">
+          <div class="kpi-g-rotulo">Pagas</div>
+          <div class="kpi-g-valor">{{ st|select('equalto', 'pago')|list|length }}</div>
+        </div>
+        <div class="kpi-g">
+          <div class="kpi-g-rotulo">Agendadas</div>
+          <div class="kpi-g-valor">{{ ag|select('equalto', 'agendado')|list|length }}</div>
+        </div>
+        <div class="kpi-g">
+          <div class="kpi-g-rotulo">Falha</div>
+          <div class="kpi-g-valor">{{ ag|select('equalto', 'falha agendar')|list|length }}</div>
+        </div>
       </div>
 
       {% if grupo.linhas %}
-        <div class="acoes">
-          {% if pode_operar %}
-            <div class="grupo">
-              <button class="btn" data-coluna="status_pgt" data-valor="Pago"
-                      data-grupo="{{ gi }}">Marcar Pago</button>
-              <button class="btn secundario" data-coluna="agendado" data-valor="Agendado"
-                      data-grupo="{{ gi }}">Agendado</button>
-            </div>
-          {% endif %}
+        {# Sem botões de status aqui: eles são da barra do alto, e valem para
+           tudo o que estiver marcado — inclusive linhas de grupos diferentes.
+           "Marcar Pago" saiu por ordem do dono, e o Streamlit nunca o teve
+           nesta tela. #}
+        <div class="acoes-grupo">
           <a class="btn secundario"
-             href="{{ url_for('analisesps.codigos') }}?{% for l in grupo.linhas %}id={{ l.id }}{% if not loop.last %}&amp;{% endif %}{% endfor %}">
+             href="{{ url_for('analisesps.codigos', origem='lote') }}&{% for l in grupo.linhas %}id={{ l.id }}{% if not loop.last %}&amp;{% endif %}{% endfor %}">
             QR / Código deste grupo</a>
-          <span class="selecao" id="contador-{{ gi }}">Nenhuma SP marcada</span>
         </div>
 
         <div class="tabela-rolagem">
@@ -121,11 +169,22 @@
             <tbody>
               {% for l in grupo.linhas %}
                 {% set cancelada = (l.status_pgt or '')|lower|trim == 'cancelado' %}
-                <tr {% if cancelada %}class="cancelada"{% endif %}>
+                <tr class="{{ 'cancelada ' if cancelada }}{{ 'com-risco ' if l.risco }}{{ 'incompleta' if l.cadastro_incompleto and not l.risco }}"
+                    data-id="{{ l.id }}"
+                    data-ficha="{{ url_for('analisesps.detalhe', sp_id=l.id, origem='lote') }}">
                   <td class="sel"><input type="checkbox" class="marca"
                                          data-grupo="{{ gi }}"
+                                         data-valor="{{ l.valor_num or 0 }}"
+                                         data-card="{{ l.card_link or '' }}"
                                          value="{{ l.id }}"></td>
-                  <td class="id"><a href="{{ url_for('analisesps.detalhe', sp_id=l.id) }}">{{ l.id }}</a></td>
+                  {# O número abre o CARD NO PIPEFY, como no Streamlit; a ficha
+                     daqui abre com duplo clique na linha. #}
+                  <td class="id">
+                    {% if l.card_link %}
+                      <a href="{{ l.card_link }}" target="_blank" rel="noopener"
+                         title="Abrir o card no Pipefy">{{ l.id }}</a>
+                    {% else %}{{ l.id }}{% endif %}
+                  </td>
                   <td class="{{ 'venc-vencido' if l.vencido else ('venc-hoje' if l.vence_hoje else '') }}">
                     {{ l.vencimento_d|data_br }}</td>
                   <td class="cortar" title="{{ l.credor }}">{{ l.credor }}</td>
@@ -137,7 +196,8 @@
                   </td>
                   <td>
                     {% if l.status_agend %}
-                      <span class="selo {{ 'falha' if 'Falha' in l.status_agend else 'agendado' }}">
+                      {%- set _ag = (l.status_agend or '')|trim|lower -%}
+                      <span class="selo {{ 'agendar' if _ag == 'agendar' else ('agendado' if _ag == 'agendado' else ('falha' if 'falha' in _ag else 'verificar')) }}">
                         {{ l.status_agend }}</span>
                     {% endif %}
                   </td>
@@ -170,49 +230,6 @@
 {% endblock %}
 
 {% block scripts %}
-<script>
-// Cada grupo tem a sua marcação, independente dos outros. É o que evita a
-// confusão do Streamlit, em que marcar numa tabela "vestia" a tabela seguinte.
-function marcasDoGrupo(g) {
-  return Array.from(document.querySelectorAll('.marca[data-grupo="' + g + '"]'));
-}
-function atualizar(g) {
-  const marcadas = marcasDoGrupo(g).filter(c => c.checked);
-  const el = document.getElementById("contador-" + g);
-  if (el) el.textContent = marcadas.length === 0 ? "Nenhuma SP marcada"
-        : marcadas.length + (marcadas.length === 1 ? " SP marcada" : " SPs marcadas");
-  marcasDoGrupo(g).forEach(c => c.closest("tr").classList.toggle("marcada", c.checked));
-}
-document.querySelectorAll(".marcar-todas").forEach(t => {
-  t.addEventListener("change", () => {
-    marcasDoGrupo(t.dataset.grupo).forEach(c => { c.checked = t.checked; });
-    atualizar(t.dataset.grupo);
-  });
-});
-document.querySelectorAll(".marca").forEach(c => {
-  c.addEventListener("change", () => atualizar(c.dataset.grupo));
-});
-
-document.querySelectorAll(".acoes button[data-coluna]").forEach(botao => {
-  botao.addEventListener("click", async () => {
-    const g = botao.dataset.grupo;
-    const ids = marcasDoGrupo(g).filter(c => c.checked).map(c => c.value);
-    if (!ids.length) { alert("Marque ao menos uma SP deste grupo."); return; }
-    if (!confirm(`${botao.textContent.trim()}: ${ids.length} SP(s).\n\nA alteração vai para a planilha. Confirma?`)) return;
-    botao.disabled = true;
-    try {
-      const r = await fetch("{{ url_for('analisesps.alterar') }}", {
-        method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ids: ids, coluna: botao.dataset.coluna,
-                              valor: botao.dataset.valor,
-                              acao: botao.textContent.trim()})
-      });
-      const d = await r.json();
-      if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
-      location.reload();
-    } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
-    finally { botao.disabled = false; }
-  });
-});
-</script>
+<script src="{{ url_for('analisesps.static', filename='analisesps.js') }}"></script>
+{% include "analisesps_ficha_modal.html" %}
 {% endblock %}

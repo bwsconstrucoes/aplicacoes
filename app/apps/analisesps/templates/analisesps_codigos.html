@@ -44,7 +44,11 @@
   </div>
 {% endfor %}
 
-<a class="btn secundario" href="{{ url_for('analisesps.solicitacoes') }}">Voltar</a>
+{# Volta para DE ONDE A PESSOA VEIO. Estava fixo em Solicitações: quem gerava
+   o QR de um grupo do Lote era largado noutra tela, e tinha de refazer o
+   caminho inteiro. #}
+<a class="btn secundario"
+   href="{{ url_for('analisesps.tela_lote' if origem == 'lote' else 'analisesps.solicitacoes') }}">Voltar</a>
 {% endblock %}
 
 {% block scripts %}

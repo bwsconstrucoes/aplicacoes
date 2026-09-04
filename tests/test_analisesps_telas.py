@@ -89,9 +89,11 @@ def app(monkeypatch):
     return a
 
 
-def como(app, senha):
+def como(app, senha, nome="Marcelo"):
+    """Entra no módulo. O NOME é obrigatório desde 04/09/2026 — ele separa o
+    lote e os filtros de cada pessoa, e assina o registro de alterações."""
     cliente = app.test_client()
-    cliente.post("/analisesps/entrar", data={"senha": senha})
+    cliente.post("/analisesps/entrar", data={"senha": senha, "nome": nome})
     return cliente
 
 
@@ -110,12 +112,17 @@ def test_os_valores_saem_em_portugues(app):
     """Ponto no milhar, vírgula nos centavos, data DD/MM/AAAA. Um número em
     formato americano numa tela de contas a pagar é erro de leitura esperando
     para acontecer."""
+    import re
     html = como(app, SENHA_OPERADOR).get(
         "/analisesps/solicitacoes").get_data(as_text=True)
-    assert "6.750,00" in html
-    assert "10/02/2026" in html
-    assert "6750.00" not in html
-    assert "2026-02-10" not in html
+    # Só o que a pessoa LÊ. A tabela também carrega o valor cru em
+    # `data-valor`, que é o que a barra de ações soma — número de máquina,
+    # invisível, e que não pode ser confundido com número de tela.
+    visivel = re.sub(r"<[^>]+>", " ", html)
+    assert "6.750,00" in visivel
+    assert "10/02/2026" in visivel
+    assert "6750.00" not in visivel, "número em formato americano na tela"
+    assert "2026-02-10" not in visivel, "data em formato americano na tela"
 
 
 def test_a_soma_do_filtro_aparece(app):
@@ -407,6 +414,259 @@ def test_configuracoes_nao_diz_que_o_banco_esta_em_dia_quando_nao_sabe(
         "estrutura e base precisam as duas dizer que não se sabe")
 
 
+# ---------------------------------------------------------------------------
+# A VOLTA AO STREAMLIT
+#
+# O dono conviveu anos com o programa em Streamlit e a conversão trocou coisas
+# que ele não pediu. Cada teste daqui trava um comportamento que ELE apontou
+# como perdido — não são preferências de quem escreveu o código.
+# ---------------------------------------------------------------------------
+def test_o_numero_da_sp_abre_o_card_no_pipefy(app, monkeypatch):
+    """No Streamlit a coluna ID era um link para o card. Virou link para a
+    ficha interna, e o caminho para o Pipefy — que é onde se resolve o problema
+    de verdade — passou a exigir dois cliques a mais."""
+    from app.apps.analisesps import consultas
+    monkeypatch.setattr(consultas, "listar", lambda f, **k: [
+        linha_falsa("1", card_link="https://app.pipefy.com/open-cards/1")])
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "app.pipefy.com/open-cards/1" in html, (
+        "o número da SP não leva mais ao card")
+
+
+def test_o_duplo_clique_na_linha_abre_a_ficha(app):
+    """A ficha volta a abrir POR CIMA da lista, como o modal do Streamlit: sem
+    perder a rolagem, o filtro nem a marcação a cada consulta."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "data-ficha=" in html, "a linha não sabe qual ficha abrir"
+    assert 'id="ficha-modal"' in html, "não há modal na tela"
+    assert "dblclick" in html
+
+
+def test_a_ficha_em_modal_vem_sem_o_resto_da_tela(app_ficha):
+    """O modal busca só o miolo. Se viesse a página inteira, apareceria um
+    cabeçalho e um menu dentro da janelinha."""
+    resposta = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1")
+    html = resposta.get_data(as_text=True)
+    assert resposta.status_code == 200
+    assert "<nav" not in html and "<!doctype" not in html.lower()
+    assert "1234567890" in html
+
+
+def test_a_barra_de_acoes_e_uma_so_e_mostra_o_total_marcado(app):
+    """Era uma barra por tabela no Lote, e o total da seleção ficava num canto
+    em letra miúda. O dono pediu o número no meio e em destaque: é ele que
+    decide se a remessa vai."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert html.count('id="barra-acoes"') == 1, "mais de uma barra na tela"
+    assert 'id="ba-valor"' in html, "a barra não mostra o total da seleção"
+    assert 'data-valor=' in html, "as linhas não dizem o valor que a barra soma"
+
+
+def test_os_quatro_do_agendamento_sao_os_do_streamlit(app):
+    """Agendar, Agendado, Falha Agendar e Desagendar — nesta ordem e com estes
+    nomes. "Desagendar" é o que apaga o campo na planilha; o rótulo na tela diz
+    "Remover informação" porque é assim que o dono chama."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    for valor in ("Agendar", "Agendado", "Falha Agendar", "Desagendar"):
+        assert f'data-valor="{valor}"' in html, f"sumiu o botão {valor}"
+    assert "Remover informação" in html
+
+
+def test_o_lote_nao_tem_marcar_pago(app_lote):
+    """O dono mandou tirar, e o Streamlit nunca teve esse botão nesta tela.
+    Marcar como pago no meio da remessa é o erro que não tem volta."""
+    html = como(app_lote, SENHA_OPERADOR).get(
+        "/analisesps/lote").get_data(as_text=True)
+    assert 'data-valor="Pago"' not in html
+    assert "Marcar Pago" not in html
+
+
+def test_cada_grupo_do_lote_mostra_os_seus_numeros(app_lote):
+    """Pedido do dono: KPIs no cabeçalho de cada grupo, com o total em
+    destaque. Antes era uma linha de letra miúda ao lado do título."""
+    html = como(app_lote, SENHA_OPERADOR).get(
+        "/analisesps/lote").get_data(as_text=True)
+    assert "Total do grupo" in html
+    assert "kpis-grupo" in html
+
+
+def test_o_agendamento_exige_validacao_como_no_streamlit(app_ficha, monkeypatch):
+    """A trava tinha sumido na conversão: qualquer um agendava qualquer coisa.
+
+    No Streamlit os quatro botões de agendamento só abriam com a coluna
+    Validação em "Sim" — é a conferência que separa "alguém pediu" de "alguém
+    conferiu"."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+
+    registro["validacao"] = ""
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    assert "Agendamento bloqueado" in html
+    assert "disabled" in html
+
+    registro["validacao"] = "Sim"
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    assert "Agendamento bloqueado" not in html
+
+
+def test_o_qr_volta_para_de_onde_veio(app, monkeypatch):
+    """Estava fixo em Solicitações: quem gerava o QR de um grupo do Lote era
+    largado em outra tela e tinha de refazer o caminho."""
+    from app.apps.analisesps import consultas
+    monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(i))
+    cliente = como(app, SENHA_OPERADOR)
+    do_lote = cliente.get(
+        "/analisesps/codigos?id=1&origem=lote").get_data(as_text=True)
+    assert "/analisesps/lote" in do_lote
+
+    de_fora = cliente.get(
+        "/analisesps/codigos?id=1&origem=https://exemplo-malicioso.com"
+    ).get_data(as_text=True)
+    assert "exemplo-malicioso" not in de_fora, (
+        "o destino da volta veio da barra de endereço sem ser conferido")
+
+
+def test_a_barra_de_filtros_e_a_mesma_nas_duas_telas(app, monkeypatch):
+    """O dono pediu: o filtro de Solicitações vale no Relatório. Antes o
+    Relatório aceitava os filtros por baixo do pano, mas não tinha onde
+    mexer neles."""
+    from decimal import Decimal
+    from app.apps.analisesps import consultas
+    monkeypatch.setattr(consultas, "numeros_do_relatorio", lambda *a, **k: {
+        "quantidade": 0, "total": Decimal("0"), "media": Decimal("0"),
+        "vencidas": 0, "total_vencidas": Decimal("0")})
+    monkeypatch.setattr(consultas, "agregar", lambda *a, **k: [])
+    monkeypatch.setattr(consultas, "top_credores", lambda *a, **k: [])
+    monkeypatch.setattr(consultas, "aging_vencidos", lambda *a, **k: [])
+    cliente = como(app, SENHA_OPERADOR)
+    for tela in ("/analisesps/solicitacoes", "/analisesps/relatorio"):
+        html = cliente.get(tela + "?f=1").get_data(as_text=True)
+        assert 'id="form-filtros"' in html, f"{tela} está sem a barra"
+        assert 'name="status_pgt"' in html, f"{tela} está sem os filtros"
+
+
+def test_a_barra_de_filtros_nao_tem_mais_botao_de_aplicar(app):
+    """No Streamlit marcar já refazia a tela. O botão era um passo a mais em
+    cada filtro, o dia inteiro."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes?f=1").get_data(as_text=True)
+    assert "form.submit()" in html, "a barra não se aplica sozinha"
+    # O botão continua existindo para quem está sem JavaScript — e SÓ para
+    # esse caso, dentro do <noscript>.
+    antes, _, depois = html.partition("<noscript>")
+    assert "Aplicar filtros" not in antes
+
+
+def test_a_ficha_traz_de_volta_os_links_que_o_streamlit_tinha(app_ficha,
+                                                              monkeypatch):
+    """Anexo, comprovante e os dois atalhos do Omie. Os do Omie dependem de uma
+    variável no Render; sem ela os botões não aparecem, em vez de aparecerem
+    quebrados."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["comprovante"] = "https://exemplo/comprovante.pdf"
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    monkeypatch.delenv("ANALISESPS_HOOK_OMIE", raising=False)
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    assert "comprovante.pdf" in html
+    assert "consultastatusomie" not in html
+
+    monkeypatch.setenv("ANALISESPS_HOOK_OMIE", "https://exemplo/hook")
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    assert "consultastatusomie" in html and "atualizatitulo" in html
+
+
+def test_validar_escreve_na_planilha_como_qualquer_outra_alteracao(app,
+                                                                    monkeypatch):
+    """Validar não é especial no MECANISMO — é a mesma gravação de sempre, só
+    que na coluna AH em vez da O ou da AB: banco, fila, log, planilha.
+
+    O que a separa é o significado. A Validação é o que destrava o
+    agendamento, então destravá-la pede uma senha PRÓPRIA: se a de Operador
+    servisse, quem agenda seria o mesmo que autoriza a agendar, e a trava não
+    travaria nada."""
+    from app.apps.analisesps import credenciais, web as tela
+    monkeypatch.setattr(credenciais, "token",
+                        lambda nome, padrao="": "senha-de-validacao")
+
+    gravado = {}
+    monkeypatch.setattr(tela, "_gravar_alteracao",
+                        lambda ids, coluna, valor, acao: gravado.update(
+                            ids=ids, coluna=coluna, valor=valor, acao=acao)
+                        or {"ok": True, "alteradas": len(ids)})
+
+    cliente = como(app, SENHA_OPERADOR)
+
+    errada = cliente.post("/analisesps/api/validar",
+                          json={"ids": ["1"], "senha": "chute"})
+    assert errada.status_code == 403
+    assert not gravado, "gravou mesmo com a senha errada"
+
+    certa = cliente.post("/analisesps/api/validar",
+                         json={"ids": ["1", "2"],
+                               "senha": "senha-de-validacao"})
+    assert certa.status_code == 200
+    assert gravado["coluna"] == "validacao"
+    assert gravado["valor"] == "Sim"
+    assert gravado["ids"] == ["1", "2"]
+
+
+def test_sem_senha_de_validacao_cadastrada_ninguem_valida(app, monkeypatch):
+    """Falha fechado, como o resto do módulo. E a mensagem diz onde cadastrar,
+    senão vira um botão que não funciona e ninguém sabe por quê."""
+    from app.apps.analisesps import credenciais
+    monkeypatch.setattr(credenciais, "token", lambda nome, padrao="": "")
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/api/validar", json={"ids": ["1"], "senha": "qualquer"})
+    assert resposta.status_code == 409
+    assert "SENHA_VALIDACAO" in resposta.get_json()["erro"]
+
+
+def test_a_consulta_nao_valida(app):
+    """Validar é escrita. O perfil que só olha não escreve, aqui como em tudo."""
+    resposta = como(app, SENHA_CONSULTA).post(
+        "/analisesps/api/validar", json={"ids": ["1"], "senha": "x"})
+    assert resposta.status_code == 403
+
+
+def test_validar_aparece_onde_se_precisa_dele(app, app_ficha, monkeypatch):
+    """Na barra, para validar várias de uma vez; e na própria trava do
+    agendamento, que é onde a pessoa descobre que falta validar."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'id="ba-validar"' in html
+
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["validacao"] = ""
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+    ficha = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    assert 'id="ficha-validar"' in ficha
+
+
+def test_a_coluna_da_validacao_continua_fechada_na_porta_comum(app):
+    """A porta de sempre não pode validar: senão bastaria pedir a coluna
+    "validacao" ali e a senha de validação viraria enfeite."""
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/api/alterar",
+        json={"ids": ["1"], "coluna": "validacao", "valor": "Sim"})
+    assert resposta.status_code == 400
+    assert "não é alterável" in resposta.get_json()["erro"]
+
+
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
     monkeypatch.delenv("ANALISESPS_SENHA_OPERADOR", raising=False)
     monkeypatch.delenv("ANALISESPS_SENHA_CONSULTA", raising=False)
@@ -522,9 +782,14 @@ def app_lote(app, monkeypatch):
     from app.apps.analisesps import lote
     guardado = {"conteudo": "Pagar amanhã\n1 2\n\nDepois\n3",
                 "salvo_por": "operador", "salvo_em": None}
-    monkeypatch.setattr(lote, "ler", lambda: guardado)
+    # `ler` e `salvar` passaram a receber a PESSOA: cada um tem o seu lote.
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": guardado)
+    monkeypatch.setattr(lote, "lote_de_antes", lambda: {"conteudo": "",
+                                                        "salvo_por": None,
+                                                        "salvo_em": None})
     monkeypatch.setattr(lote, "salvar",
-                        lambda c, p="": guardado.update(conteudo=c, salvo_por=p))
+                        lambda c, quem="", pessoa="": guardado.update(
+                            conteudo=c, salvo_por=quem))
     monkeypatch.setattr(lote, "montar", lambda texto: {
         "grupos": [
             {"titulo": "Pagar amanhã", "titulo_exibido": "Pagar amanhã",
@@ -546,13 +811,14 @@ def test_a_tela_de_lote_monta_os_grupos(app_lote):
     assert "13.500,00" in html
 
 
-def test_o_lote_avisa_que_e_compartilhado(app_lote):
-    """Duas pessoas veem o mesmo lote e a segunda a salvar sobrescreve a
-    primeira. É de propósito, mas precisa estar escrito na tela — ninguém pode
-    apagar o trabalho do outro sem perceber."""
+def test_o_lote_e_de_cada_um_e_a_tela_diz_isso(app_lote):
+    """O lote era um só, de todo mundo, e a segunda pessoa a salvar apagava o
+    trabalho da primeira. Desde 04/09/2026 cada um tem o seu, separado pelo
+    nome com que entrou — e a tela precisa dizer de quem é aquele lote, senão
+    a pessoa continua com medo de mexer."""
     html = como(app_lote, SENHA_OPERADOR).get("/analisesps/lote").get_data(as_text=True)
-    assert "compartilhado" in html.lower()
-    assert "sobrescreve" in html.lower()
+    assert "Este lote é <b>seu</b>" in html
+    assert "sobrescreve" in html.lower(), "tem de dizer que ninguém apaga o do outro"
 
 
 def test_o_lote_aponta_os_numeros_que_nao_existem(app_lote):
@@ -800,14 +1066,20 @@ def test_o_log_monta(app, monkeypatch):
     assert "na planilha" in html
 
 
-def test_o_log_diz_que_guarda_o_perfil_e_nao_a_pessoa(app, monkeypatch):
-    """A consequência de não ter cadastro de usuários. Precisa estar escrita
-    onde ela aparece, e não só no código."""
+def test_o_log_mostra_quem_alterou_e_com_que_alcada(app, monkeypatch):
+    """Antes o registro sabia só QUE PERFIL mexeu. Agora sabe QUEM.
+
+    As duas colunas continuam, e são coisas diferentes: "Quem" é a pessoa,
+    "Perfil" é o que a senha dela permitia. E a tela avisa que as linhas
+    antigas não têm nome — naquele momento o módulo realmente não sabia, e
+    inventar um nome ali seria pior do que o traço."""
     from app.apps.analisesps import db as banco
     monkeypatch.setattr(banco, "consultar", lambda sql, params=(): [])
     monkeypatch.setattr(banco, "consultar_um", lambda sql, params=(): (0,))
     html = como(app, SENHA_CONSULTA).get("/analisesps/log").get_data(as_text=True)
-    assert "perfil" in html.lower() and "não a pessoa" in html
+    assert "<th>Quem</th>" in html
+    assert "<th>Perfil</th>" in html
+    assert "aparecem sem nome" in html
 
 
 def test_o_log_com_banco_fora_mostra_recado(app, monkeypatch):
@@ -1082,12 +1354,20 @@ def test_operador_pode_agir_direto_da_ficha(app_ficha):
     assert 'data-coluna="agendado"' in html
 
 
-def test_a_ficha_explica_que_cancelar_nao_toca_no_pipefy(app_ficha):
-    """"Cancelar" numa tela de pagamentos parece que cancela tudo. Aqui só muda
-    o status na planilha — e quem clica precisa saber disso ANTES."""
+def test_cancelar_na_ficha_e_o_pedido_no_pipefy_como_no_streamlit(app_ficha):
+    """No Streamlit, "Cancelar" abria o formulário de cancelamento NO PIPEFY.
+
+    Na conversão virou um botão que gravava "Cancelado" na planilha — mesma
+    palavra, outra ação, e sem volta pelo caminho errado: quem pedia o
+    cancelamento da SP acabava só marcando a planilha, e o card seguia vivo
+    lá. Voltou a ser o formulário; e a tela diz, onde os botões estão, que
+    daqui não se mexe no Pipefy."""
     html = como(app_ficha, SENHA_OPERADOR).get(
         "/analisesps/sp/1234567890").get_data(as_text=True)
-    assert "Não cancela o card no" in html
+    assert "app.pipefy.com/public/form/" in html, "sumiu o pedido de cancelamento"
+    assert 'data-valor="Cancelado"' not in html, (
+        "voltou o botão que grava Cancelado na planilha chamando-se Cancelar")
+    assert "O Pipefy não é" in html and "alterado por aqui" in html
 
 
 def test_consulta_nao_ve_os_botoes_na_ficha(app_ficha):

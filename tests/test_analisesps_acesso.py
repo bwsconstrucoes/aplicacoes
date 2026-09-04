@@ -39,7 +39,8 @@ def app(monkeypatch):
 
 
 def entrar(cliente, senha):
-    resposta = cliente.post("/analisesps/entrar", data={"senha": senha})
+    resposta = cliente.post("/analisesps/entrar",
+                            data={"senha": senha, "nome": "Marcelo"})
     assert resposta.status_code in (301, 302), "o login deveria ter funcionado"
 
 
@@ -104,6 +105,7 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/lote/pdf"),
     ("GET", "/analisesps/api/andamento"),
     ("POST", "/analisesps/api/alterar"),
+    ("POST", "/analisesps/api/validar"),
     ("POST", "/analisesps/api/migrar"),
     ("GET", "/analisesps/sair"),
 ]
@@ -197,6 +199,7 @@ def test_senhas_iguais_dao_o_perfil_de_maior_poder(app, monkeypatch):
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("metodo,url", [
     ("POST", "/analisesps/api/alterar"),
+    ("POST", "/analisesps/api/validar"),
     ("POST", "/analisesps/api/migrar"),
 ])
 def test_consulta_nao_alcanca_rota_de_operador(app, metodo, url):
@@ -239,9 +242,46 @@ def test_login_nao_redireciona_para_fora_do_modulo(app, destino):
     um endereço de entrada que jogasse noutro lugar depois da senha digitada."""
     with app.test_client() as cliente:
         resposta = cliente.post(f"/analisesps/entrar?proximo={destino}",
-                                data={"senha": SENHA_OPERADOR})
+                                data={"senha": SENHA_OPERADOR,
+                                      "nome": "Marcelo"})
     assert resposta.status_code in (301, 302)
     assert resposta.headers["Location"].endswith("/analisesps/solicitacoes")
+
+
+def test_sem_nome_ninguem_entra(app):
+    """O nome não é senha, mas é obrigatório.
+
+    Sem ele o módulo não sabe de quem é o lote nem de quem são os filtros, e o
+    registro de alterações volta a dizer só o perfil. Deixar entrar sem nome
+    seria criar de novo, e em silêncio, o problema que o dono pediu para
+    resolver."""
+    with app.test_client() as cliente:
+        resposta = cliente.post("/analisesps/entrar",
+                                data={"senha": SENHA_OPERADOR, "nome": "   "})
+    assert resposta.status_code == 200, "não podia ter entrado"
+    assert "Diga o seu nome" in resposta.get_data(as_text=True)
+
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar",
+                     data={"senha": SENHA_OPERADOR, "nome": ""})
+        # E continua fora: a tela seguinte manda de volta para o login.
+        seguinte = cliente.get("/analisesps/solicitacoes")
+    assert seguinte.status_code in (301, 302)
+    assert "/analisesps/entrar" in seguinte.headers["Location"]
+
+
+def test_o_nome_nao_da_poder_nenhum(app):
+    """Quem digita um nome bonito com a senha de Consulta continua Consulta.
+
+    Está escrito porque é o mal-entendido óbvio: o campo parece login e não é.
+    Quem autentica é a senha — o nome só etiqueta o trabalho."""
+    with app.test_client() as cliente:
+        cliente.post("/analisesps/entrar",
+                     data={"senha": SENHA_CONSULTA, "nome": "Diretor"})
+        resposta = cliente.post("/analisesps/api/alterar",
+                                json={"ids": ["1"], "coluna": "status_pgt",
+                                      "valor": "Pago"})
+    assert resposta.status_code == 403
 
 
 def test_saude_responde_sem_login_e_nao_vaza_dado(app):

@@ -64,7 +64,7 @@
       <thead>
         <tr>
           <th>Quando</th><th>SP</th><th>Campo</th><th>De</th><th>Para</th>
-          <th>Ação</th><th>Perfil</th><th>Situação</th><th>Enviado em</th><th>Erro</th>
+          <th>Ação</th><th>Quem</th><th>Perfil</th><th>Situação</th><th>Enviado em</th><th>Erro</th>
         </tr>
       </thead>
       <tbody>
@@ -76,6 +76,7 @@
             <td class="cortar">{{ l.valor_anterior or '—' }}</td>
             <td class="cortar">{{ l.valor or '—' }}</td>
             <td class="cortar">{{ l.acao }}</td>
+            <td>{{ l.pessoa or '—' }}</td>
             <td>{{ l.perfil }}</td>
             <td>
               <span class="selo {{ 'pago' if l.status == 'enviado' else ('falha' if l.status == 'erro' else 'pagar') }}">
@@ -85,7 +86,7 @@
             <td class="cortar" title="{{ l.erro or '' }}">{{ l.erro or '' }}</td>
           </tr>
         {% else %}
-          <tr><td colspan="10" style="padding:22px; text-align:center; color:var(--tinta-suave)">
+          <tr><td colspan="11" style="padding:22px; text-align:center; color:var(--tinta-suave)">
             Nenhuma alteração neste filtro.</td></tr>
         {% endfor %}
       </tbody>
@@ -94,7 +95,9 @@
   <p class="cartao-dica">
     "Aguardando" quer dizer que a alteração já está gravada aqui e ainda vai
     subir para a planilha. Nada se perde: a fila é reenviada sozinha.
-    O registro guarda o <b>perfil</b> que alterou, não a pessoa.
+    "Quem" é o nome que a pessoa informou ao entrar; "Perfil" é o que a senha
+    dela permite. Linhas anteriores a 04/09/2026 aparecem sem nome — naquele
+    momento o módulo realmente não sabia quem era.
   </p>
 </div>
 {% endblock %}

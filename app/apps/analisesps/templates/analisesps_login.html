@@ -27,13 +27,22 @@
       </div>
     {% else %}
       {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+      <label for="nome">Seu nome</label>
+      <input id="nome" name="nome" type="text" maxlength="40"
+             value="{{ nome or '' }}" autocomplete="nickname" autofocus required
+             placeholder="como a equipe te chama">
       <label for="senha">Senha</label>
       <input id="senha" name="senha" type="password"
-             autocomplete="current-password" autofocus required>
+             autocomplete="current-password" required>
       <button class="btn" type="submit">Entrar</button>
       <p class="sub" style="margin-top:14px">
-        A senha diz o que você pode fazer: uma abre em modo de consulta, que vê
-        e exporta; a outra abre como operador, que também altera.
+        A <b>senha</b> diz o que você pode fazer: uma abre em modo de consulta,
+        que vê e exporta; a outra abre como operador, que também altera.
+      </p>
+      <p class="sub">
+        O <b>nome</b> não é senha e não dá poder nenhum a mais — ele separa o
+        que é seu do que é dos outros: o seu lote, os seus filtros, e o seu
+        nome no registro de quem alterou o quê.
       </p>
     {% endif %}
   </form>

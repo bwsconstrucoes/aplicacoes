@@ -36,6 +36,29 @@
   --fonte: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --fonte-dados: ui-monospace, "SF Mono", "Roboto Mono", Menlo, Consolas, monospace;
 
+  /* ------------------------------------------------------------------
+     AS CORES DO STREAMLIT. O dono trabalhou anos com elas e lê a tabela
+     pela cor antes de ler o texto — trocar a paleta na conversao custou
+     tempo de leitura a cada linha. Sao os mesmos tons do `_estiliza()`:
+
+       Status Pgt      Pagar  vermelho   Pago  azul
+       Agendamento     Agendar roxo   Agendado verde   Falha  laranja
+       Vencimento      atrasado vermelho    vence hoje amarelo
+       ID              risco vermelho forte   cadastro incompleto laranja
+
+     UMA EXCECAO, DITA POR ESCRITO: o amarelo do "vence hoje" (#FBBC04)
+     como TEXTO sobre branco fica ilegivel para quem nao enxerga bem. Ele
+     virou fundo, com tinta escura por cima — a cor que se reconhece e a
+     mesma, a leitura melhora.
+     ------------------------------------------------------------------ */
+  --sl-vermelho:  #FF0000;
+  --sl-azul:      #0000FF;
+  --sl-roxo:      #9900FF;
+  --sl-verde:     #38761D;
+  --sl-laranja:   #FF9900;
+  --sl-amarelo:   #FBBC04;
+  --sl-risco:     #D50000;
+
   --largura-filtros: 288px;
   --altura-topo: 60px;
 }
@@ -543,4 +566,135 @@ a.kpi { display: block; }
   background: #F7F9FD; border: 1px solid var(--borda); border-radius: var(--raio-p);
   padding: 10px 12px; font-family: var(--fonte-dados); font-size: 13px;
   white-space: pre-wrap; margin: 0;
+}
+
+
+/* ==========================================================================
+   AS CORES DA TABELA — iguais as do Streamlit (ver :root)
+   ========================================================================== */
+.venc-vencido { color: var(--sl-vermelho); font-weight: 700; }
+.venc-hoje    { background: #FFF3CC; color: #7A5600; font-weight: 700;
+                border-radius: 4px; padding: 1px 5px; }
+
+.selo.pagar     { background: #FFEAEA; color: var(--sl-vermelho); }
+.selo.pago      { background: #E9E9FF; color: var(--sl-azul); }
+.selo.cancelado { background: #F0F0F3; color: var(--cinza); }
+.selo.agendar   { background: #F5E8FF; color: var(--sl-roxo); }
+.selo.agendado  { background: #E7F3E1; color: var(--sl-verde); }
+.selo.falha     { background: #FFF0DB; color: #A35F00; }
+.selo.verificar { background: #EDEFF3; color: var(--cinza); }
+.selo.risco     { background: #FFE7E7; color: var(--sl-risco); }
+.selo.incompleto{ background: #FFF0DB; color: #A35F00; }
+
+/* O numero da SP herda o alerta, como no Streamlit (vermelho = risco). */
+.sps tr.com-risco .id a      { color: var(--sl-risco); font-weight: 700; }
+.sps tr.incompleta .id a     { color: #A35F00; font-weight: 700; }
+
+/* ==========================================================================
+   A BARRA DE ACOES — uma por tela, colada no alto, o total no meio
+   ========================================================================== */
+.barra-acoes {
+  position: sticky; top: var(--altura-topo); z-index: 25;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  gap: 12px; margin: 0 0 14px;
+  padding: 10px 14px; background: var(--branco);
+  border: 1px solid var(--borda); border-radius: var(--raio);
+  box-shadow: var(--sombra);
+}
+.barra-acoes .ba-esquerda,
+.barra-acoes .ba-direita { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.barra-acoes .ba-direita { justify-content: flex-end; }
+.barra-acoes .ba-grupo { display: flex; }
+.barra-acoes .ba-grupo .btn { border-radius: 0; }
+.barra-acoes .ba-grupo .btn:first-child { border-radius: var(--raio-p) 0 0 var(--raio-p); }
+.barra-acoes .ba-grupo .btn:last-child  { border-radius: 0 var(--raio-p) var(--raio-p) 0; }
+.barra-acoes .ba-grupo .btn + .btn { margin-left: -1px; }
+.barra-acoes .ba-grupo + .ba-grupo { margin-left: 10px; }
+.barra-acoes .ba-aviso { font-size: 13px; color: var(--tinta-suave); }
+
+/* O TOTAL DA SELECAO. Fica no centro e grande de proposito: e o numero que
+   decide se a remessa vai, e estava num canto em letra miuda. */
+.barra-acoes .ba-centro { text-align: center; min-width: 190px; }
+.barra-acoes .ba-rotulo {
+  font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 700; color: var(--tinta-suave);
+}
+.barra-acoes .ba-total {
+  font-family: var(--fonte-dados); font-size: 26px; font-weight: 800;
+  line-height: 1.1; color: var(--tinta-suave);
+}
+.barra-acoes.tem-selecao { border-color: var(--azul-claro); }
+.barra-acoes.tem-selecao .ba-total  { color: var(--azul); }
+.barra-acoes.tem-selecao .ba-rotulo { color: var(--azul-claro); }
+.barra-acoes .btn:disabled { opacity: .45; cursor: not-allowed; }
+
+@media (max-width: 1100px) {
+  .barra-acoes { grid-template-columns: 1fr; }
+  .barra-acoes .ba-direita { justify-content: flex-start; }
+  .barra-acoes .ba-centro { text-align: left; }
+}
+
+/* Os numeros no cabecalho de cada grupo do Lote */
+.kpis-grupo {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px;
+}
+.kpis-grupo .kpi-g {
+  flex: 1 1 90px; padding: 8px 12px; background: var(--papel);
+  border-radius: var(--raio-p); border: 1px solid var(--borda);
+}
+.kpis-grupo .kpi-g-rotulo {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+  font-weight: 700; color: var(--tinta-suave);
+}
+.kpis-grupo .kpi-g-valor {
+  font-family: var(--fonte-dados); font-size: 17px; font-weight: 800;
+  margin-top: 2px;
+}
+.kpis-grupo .kpi-g.destaque {
+  flex: 2 1 200px; background: #EEF4FC; border-color: var(--azul-claro);
+}
+.kpis-grupo .kpi-g.destaque .kpi-g-valor { font-size: 24px; color: var(--azul); }
+
+.acoes-grupo { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+
+/* ==========================================================================
+   O MODAL DA FICHA — duplo clique na linha
+   ========================================================================== */
+.modal-ficha {
+  width: min(940px, 94vw); max-height: 88vh; padding: 0;
+  border: 0; border-radius: var(--raio); box-shadow: var(--sombra-forte);
+  color: var(--tinta);
+}
+.modal-ficha::backdrop { background: rgba(7, 30, 64, .45); }
+.modal-ficha .modal-cab {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 12px 18px;
+  background: var(--azul); color: var(--branco);
+  font-weight: 800; font-family: var(--fonte-dados);
+}
+.modal-ficha .modal-corpo { padding: 18px; overflow: auto; max-height: calc(88vh - 52px); }
+
+.ficha-topo {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px; margin-bottom: 12px;
+}
+.ficha-topo h3 { margin: 0; font-size: 17px; }
+.ficha-credor { color: var(--tinta-suave); font-size: 13.5px; margin-top: 2px; }
+.ficha-valor {
+  font-family: var(--fonte-dados); font-size: 24px; font-weight: 800;
+  color: var(--azul); white-space: nowrap;
+}
+.ficha-links { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.ficha-links .btn.perigo { border-color: var(--sl-vermelho); color: var(--sl-vermelho); }
+.ficha-acoes {
+  display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
+  padding: 12px; margin: 12px 0; background: var(--papel);
+  border-radius: var(--raio-p);
+}
+
+/* O que a barra de filtros mostra enquanto reconsulta */
+.filtros-estado {
+  font-size: 11.5px; font-weight: 700; color: var(--azul-claro);
+  text-transform: uppercase; letter-spacing: .06em;
 }

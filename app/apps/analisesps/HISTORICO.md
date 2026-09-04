@@ -75,6 +75,112 @@ funciona.
 
 ---
 
+## 04/09/2026 — a volta ao Streamlit
+
+O dono navegou o módulo pela primeira vez e o veredito foi: **"muita coisa foi
+mudada do Streamlit sem necessidade; ficaram funções perdidas e nomenclatura
+alterada; eu não pedi isso"**. Ele tem razão, e isso muda o critério daqui em
+diante:
+
+> **Em dúvida, faça como o Streamlit fazia.** Quem for mexer nesta área tem o
+> programa original no histórico do Git (saiu da pasta em 03/09, mas nada se
+> perde): `git show 285d236:app/apps/analisesps/app/app.py`. Compare ANTES de
+> inventar. O dono trabalhou anos com aquelas telas.
+
+### O achado grave: "Cancelar" queria dizer duas coisas
+
+No Streamlit, **Cancelar SP** abria o formulário público do Pipefy que PEDE o
+cancelamento da solicitação. Na conversão virou um botão que grava
+`Status Pgt = "Cancelado"` na planilha. Mesma palavra, ação diferente, e o
+erro é silencioso: quem queria cancelar a SP marcava a planilha e ia embora
+achando que tinha resolvido — enquanto o card seguia vivo no Pipefy.
+
+Corrigido: o botão voltou a ser o formulário do Pipefy, e onde ficam os botões
+que escrevem está dito, com todas as letras, que **daqui não se altera o
+Pipefy — só a planilha SPsBD**.
+
+### O que foi devolvido ao lugar
+
+| O que era no Streamlit | Como estava | Agora |
+|---|---|---|
+| Coluna ID = link para o card do Pipefy | link para a ficha interna | link para o card |
+| Ficha em **modal** por cima da lista | página inteira; voltar recomeçava tudo | modal no duplo clique na linha |
+| Agendamento só com **Validação = "Sim"** | qualquer um agendava qualquer coisa | trava de volta |
+| Barra de ações **fixa e única**, para a seleção inteira | uma barra por grupo, cada uma cega para as outras | uma só, colada no alto |
+| Sem "Marcar Pago" no Lote | tinha | tirado |
+| Agendar / Agendado / Desagendar / Falha Agendar | faltavam no Lote | os quatro, em todo lugar |
+| **Enviar Lote** (marcadas → grupo "Novo Lote N") | sumido | de volta |
+| **Abrir cards** (todas as marcadas de uma vez) | sumido | de volta |
+| **Limpar Pgto** (Status → Pagar, Agendado vazio) | sumido | de volta |
+| Links **Consulta** e **Atualizar** do Omie | sumidos | de volta, por variável de ambiente |
+| Barra de filtros **única para o programa todo** | só nas Solicitações | Solicitações e Relatório |
+| Filtro aplica ao clicar, sem botão | botão "Aplicar filtros" | aplica sozinho, com meio segundo de espera |
+| Filtro **guardado** entre sessões | perdido a cada navegação | guardado por pessoa, no banco |
+| Cores da tabela (vermelho/azul/roxo/verde/laranja) | paleta nova | as do Streamlit |
+
+### O que o dono pediu de novo (não vem do Streamlit)
+
+- **Nome no login.** O módulo não tinha noção de pessoa; o lote era um só e o
+  registro de alterações sabia apenas o perfil. Agora cada um informa o nome ao
+  entrar. **O nome não autentica**: quem manda continua sendo a senha. Ele
+  serve para separar o lote, guardar os filtros e assinar o log.
+- **Lote por pessoa.** Reverte a decisão de 02/09 ("o lote é compartilhado").
+  O lote que existia não foi apagado: virou o "lote de antes", e a tela oferece
+  trazê-lo por botão para quem ainda não tem o seu.
+- **KPIs no cabeçalho de cada grupo do Lote**, com o total em destaque.
+- **O total da seleção no meio da barra, grande.** É o número que decide se a
+  remessa vai; estava num canto em letra miúda.
+
+### Migração 003
+
+`003_pessoa_e_preferencias.sql`: tabela de preferências, o lote passa a ser
+chaveado por pessoa (a linha única `id = 1` vira a pessoa `''`), e o log ganha
+a coluna `pessoa`. **Precisa do botão "Aplicar atualizações do banco"** logo
+depois de publicar.
+
+### Variáveis novas no Render
+
+`SENHA_VALIDACAO` — a senha do botão Validar. Já existia no Streamlit, na aba
+Credenciais da planilha; serve tanto de lá quanto da Environment do Render.
+**Sem ela ninguém valida**, e a tela diz onde cadastrar em vez de só falhar.
+
+`ANALISESPS_HOOK_OMIE` — o endereço do gancho do Make que o Streamlit usava
+nos botões **Consulta** e **Atualizar** do Omie. **Não foi copiado para o
+código de propósito**: é um endereço que dispara ação, e endereço assim não se
+versiona. Sem a variável os dois botões simplesmente não aparecem — melhor do
+que aparecerem quebrados. O valor está no `app.py` do Streamlit, na pasta que
+foi movida para fora do repositório.
+
+### Validar voltou — e a hesitação era minha, não do problema
+
+Ficou de fora numa primeira passada com a desculpa de que "escreve numa coluna
+que hoje é somente leitura". O dono cortou a conversa: *"qual o problema? Quando
+aplicamos mudança de status muda a planilha da mesma forma, só que é coluna
+diferente."* Está certo. É o mesmo caminho — banco, fila, log, planilha —, só a
+letra da coluna muda (AH em vez de O ou AB).
+
+O que realmente separa a Validação das outras não é o mecanismo, é o
+significado: **ela é o que destrava o agendamento**. Por isso, como no
+Streamlit, pede uma **senha própria** (`SENHA_VALIDACAO`, do Render ou da aba
+Credenciais). Se a senha de Operador servisse, quem agenda seria o mesmo que
+autoriza a agendar, e a trava não travaria nada.
+
+Detalhe de construção que importa: `validacao` **continua fora de
+`EDITAVEIS`**, e a validação tem porta própria (`/api/validar`). Se ela
+entrasse na lista das colunas comuns, bastaria pedir `coluna: "validacao"` na
+rota de sempre e a senha viraria enfeite. Há teste para isso.
+
+O botão aparece em dois lugares: na barra de ações (validar várias de uma vez,
+como no Streamlit) e dentro do próprio aviso de "agendamento bloqueado", que é
+onde a pessoa descobre que falta validar.
+
+### O que ainda NÃO voltou
+- **Remover Risco**, **Gerar BeeVale**, **Cancelar SP no Pipefy por dentro**,
+  **reenviar comprovante por e-mail**, **escolher as colunas da tabela**.
+- **Auto-atualizar a cada 90s.**
+
+---
+
 ## Regras que não se discutem
 
 ### 1. Nada de abrir a base inteira em memória
