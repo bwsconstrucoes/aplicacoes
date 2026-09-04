@@ -1,0 +1,143 @@
+{# ---------------------------------------------------------------------------
+   A FICHA DA SP — o mesmo conteúdo serve à página inteira e ao modal.
+
+   Segue a ordem do modal do Streamlit, que é a que o dono conhece: primeiro a
+   fileira de links (card, anexo, comprovante, Omie, cancelamento), depois as
+   pendências, depois o risco de duplicidade com os lançamentos apontados,
+   depois os botões, e por último a tabela com todos os campos.
+
+   O AGENDAMENTO SÓ ABRE COM VALIDAÇÃO = "Sim". Era assim no Streamlit e a
+   regra tinha sumido na conversão: qualquer um agendava qualquer coisa.
+--------------------------------------------------------------------------- #}
+{% macro campo(rotulo, valor) %}
+  <div class="campo">
+    <div class="rotulo">{{ rotulo }}</div>
+    <div class="valor {% if not valor %}vazio{% endif %}">{{ valor if valor else '—' }}</div>
+  </div>
+{% endmacro %}
+
+{% set validado = (sp.validacao or '')|trim|lower == 'sim' %}
+{% set tem_risco = 'COM RISCO' in (sp.analise_ia or '')|upper %}
+
+<div class="ficha-topo">
+  <div>
+    <h3>SP {{ sp.id }}</h3>
+    <div class="ficha-credor">{{ sp.credor }}</div>
+  </div>
+  <div class="ficha-valor">{{ sp.valor_num|moeda }}</div>
+</div>
+
+<div class="ficha-links">
+  {% if sp.card_link %}
+    <a class="btn secundario" href="{{ sp.card_link }}" target="_blank" rel="noopener">Abrir Card</a>
+  {% endif %}
+  {% if sp.anexo_link %}
+    <a class="btn secundario" href="{{ sp.anexo_link }}" target="_blank" rel="noopener">Anexo</a>
+  {% endif %}
+  {% if sp.comprovante and sp.comprovante.startswith('http') %}
+    <a class="btn secundario" href="{{ sp.comprovante }}" target="_blank" rel="noopener">Comprovante</a>
+  {% endif %}
+  {% if hook_omie %}
+    <a class="btn secundario" href="{{ hook_omie }}?id={{ sp.id }}&acao=consultastatusomie"
+       target="_blank" rel="noopener" title="Consulta o status do título no Omie">Consulta</a>
+    <a class="btn secundario" href="{{ hook_omie }}?id={{ sp.id }}&acao=atualizatitulo"
+       target="_blank" rel="noopener" title="Manda o Omie atualizar o título">Atualizar</a>
+  {% endif %}
+  {# CANCELAR = pedido de cancelamento NO PIPEFY, como no Streamlit. Não é o
+     mesmo que marcar "Cancelado" na planilha — ver a nota nos botões abaixo. #}
+  <a class="btn secundario perigo"
+     href="https://app.pipefy.com/public/form/RCvCgX9c?n_da_solicita_o={{ sp.id }}&selecione_o_procedimento=Cancelar%20SP"
+     target="_blank" rel="noopener"
+     title="Abre no Pipefy o formulário de pedido de cancelamento desta SP">Cancelar SP</a>
+  <a class="btn secundario" href="{{ url_for('analisesps.codigos', id=sp.id, origem=origem or 'solicitacoes') }}">QR / Código</a>
+</div>
+
+{% if pendencias %}
+  <div class="aviso atencao">
+    <b>Pendências:</b> {{ pendencias|join('  ·  ') }}<br>
+    <small>Atualize estes itens no cadastro do lançamento.</small>
+  </div>
+{% endif %}
+
+{% if tem_risco %}
+  <div class="aviso erro">
+    <b>Risco de duplicidade:</b> {{ sp.analise_ia }}
+    {% if risco_ids %}
+      <div style="margin-top:8px">
+        Lançamento(s) apontado(s):
+        {% for rid in risco_ids %}
+          <a class="btn secundario" style="padding:2px 8px"
+             href="https://app.pipefy.com/open-cards/{{ rid }}"
+             target="_blank" rel="noopener">SP {{ rid }}</a>
+        {% endfor %}
+      </div>
+    {% endif %}
+  </div>
+{% endif %}
+
+{% if pode_operar %}
+  <div class="ficha-acoes" data-sp="{{ sp.id }}"
+       data-url-alterar="{{ url_for('analisesps.alterar') }}">
+    {% if not validado %}
+      <div class="aviso atencao" style="width:100%">
+        <b>Agendamento bloqueado:</b> a coluna <b>Validação</b> precisa estar
+        como "Sim" (agora está: {{ sp.validacao or '—' }}). Era assim no
+        Streamlit — agendar sem validar é o que a trava impede.
+      </div>
+    {% endif %}
+    <div class="ba-grupo">
+      {% for v in ['Agendar', 'Agendado', 'Desagendar', 'Falha Agendar'] %}
+        <button class="btn secundario" data-coluna="agendado" data-valor="{{ v }}"
+                {% if not validado %}disabled{% endif %}>{{ v }}</button>
+      {% endfor %}
+    </div>
+    <div class="ba-grupo">
+      <button class="btn" data-coluna="status_pgt" data-valor="Pago">Marcar Pago</button>
+      <button class="btn secundario" data-coluna="status_pgt" data-valor="Pagar">Marcar Pagar</button>
+      <button class="btn secundario" id="ficha-limpar"
+              title="Status Pgt volta para 'Pagar' e o Agendado fica vazio">Limpar Pgto</button>
+    </div>
+    <p class="cartao-dica" style="width:100%">
+      Estes botões escrevem <b>na planilha SPsBD</b>, e só nela. O Pipefy não é
+      alterado por aqui — para cancelar a SP no Pipefy, use o botão
+      <b>Cancelar SP</b> acima, que abre o formulário de lá.
+    </p>
+  </div>
+{% endif %}
+
+<div class="ficha">
+  {{ campo('Valor', sp.valor_num|moeda) }}
+  {{ campo('Vencimento', sp.vencimento_d|data_br) }}
+  {{ campo('Status Pgt', sp.status_pgt) }}
+  {{ campo('Agendado', sp.status_agend) }}
+  {{ campo('Forma de pagamento', sp.forma_pagamento) }}
+  {{ campo('Conta', sp.conta) }}
+  {{ campo('Data do pagamento', sp.data_pagamento_d|data_br) }}
+  {{ campo('Informação p/ pagamento', sp.info_pgt) }}
+  {{ campo('Código de barras', sp.codigo_barras) }}
+  {{ campo('Parcela', sp.parcela) }}
+  {{ campo('Credor', sp.credor) }}
+  {{ campo('CPF/CNPJ', sp.documento) }}
+  {{ campo('Data da solicitação', sp.solicitacao_d|data_br) }}
+  {{ campo('Responsável', sp.responsavel) }}
+  {{ campo('Centro de custo', sp.centro_custo) }}
+  {{ campo('Projeto', sp.projeto) }}
+  {{ campo('Tipo de despesa', sp.tipo_despesa) }}
+  {{ campo('Pedido', sp.pedido) }}
+  {{ campo('Nº da nota', sp.nf) }}
+  {{ campo('Cód. integração Omie', sp.codigo_integracao) }}
+  {{ campo('Autorização SP', sp.status_aut) }}
+  {{ campo('Data da autorização', sp.dt_autorizacao_d|data_br) }}
+  {{ campo('Resp. autorização', sp.resp_autorizacao) }}
+  {{ campo('Anuente', sp.anuente) }}
+  {{ campo('Status anuência', sp.status_anuencia) }}
+  {{ campo('Validação', sp.validacao) }}
+  {{ campo('ID contrato Pipefy', sp.id_contrato) }}
+</div>
+
+{% if sp.descricao %}
+  <div class="cartao" style="margin-top:12px">
+    <div class="cartao-cab"><h3>Descrição</h3></div>
+    <p style="margin:0; white-space:pre-wrap">{{ sp.descricao }}</p>
+  </div>
+{% endif %}

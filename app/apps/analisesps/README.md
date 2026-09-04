@@ -59,6 +59,33 @@ história está contada logo acima.
 
 O critério, daqui em diante: **nesta pasta só entra o que roda no Render.**
 
+## O critério, depois de 04/09/2026: faça como o Streamlit fazia
+
+O dono usou o programa em Streamlit por anos. A conversão trocou coisas que
+ele não pediu — nomes de botões, o caminho do link da SP, a ficha que era
+modal e virou página, regras de negócio que sumiram sem ninguém notar. Ele
+apontou isso na primeira navegação, e o critério passou a ser este:
+
+> **Em dúvida, copie o Streamlit.** Ele está no histórico do Git:
+> `git show 285d236:app/apps/analisesps/app/app.py`. Compare antes de inventar.
+
+Diferença proposital é bem-vinda — mas é *decidida*, não acidental, e fica
+escrita no `HISTORICO.md`.
+
+## Quem é quem
+
+Não há cadastro de usuários: são até quatro pessoas e o módulo tem prazo de
+validade. Mas cada um **informa o nome ao entrar**, ao lado da senha.
+
+**O nome não é senha e não dá poder nenhum.** Quem autentica é a senha, e só
+ela: digitar "Diretor" com a senha de Consulta continua sendo Consulta. O nome
+serve para três coisas: separar o **lote** de cada um, guardar os **filtros**
+de cada um, e assinar o **registro de alterações** — que antes sabia só qual
+perfil mexeu.
+
+Se um dia for preciso IMPEDIR que alguém se passe por outro, o lugar é o
+cadastro de usuários do ERP. Aqui é etiqueta honesta entre colegas.
+
 ## Os dois perfis
 
 | Perfil | O que faz | Variável no Render |
@@ -157,6 +184,7 @@ seria ou perdido, ou versionado por engano.
 | `ANALISESPS_SENHA_OPERADOR` | senha de quem altera. **Sem ela, ninguém opera** |
 | `ANALISESPS_SENHA_CONSULTA` | senha de quem só olha. **Sem ela, ninguém consulta** |
 | `ANALISESPS_SECRET` | autoriza a chamada do agendador |
+| `ANALISESPS_HOOK_OMIE` | gancho do Make dos botões "Consulta" e "Atualizar" da ficha. **Opcional**: sem ela os dois botões não aparecem |
 | `DATABASE_URL` | Postgres — já existe, é o do ERP |
 | `GOOGLE_CREDENTIALS_BASE64` | leitura da planilha — já existe |
 

@@ -2,143 +2,18 @@
 {% block titulo %}SP {{ sp.id }} — Análise de SPs{% endblock %}
 {% block classe_corpo %}sem-filtros{% endblock %}
 
-{% macro campo(rotulo, valor) %}
-  <div class="campo">
-    <div class="rotulo">{{ rotulo }}</div>
-    <div class="valor {% if not valor %}vazio{% endif %}">{{ valor if valor else '—' }}</div>
-  </div>
-{% endmacro %}
-
 {% block conteudo %}
-<h2>
-  SP {{ sp.id }}
-  <small>{{ sp.credor }}</small>
-</h2>
-
 <div class="cartao">
-  <div class="cartao-cab">
-    <h3>Pagamento</h3>
-    <small>{{ sp.valor_num|moeda }}</small>
-  </div>
-  <div class="ficha">
-    {{ campo('Valor', sp.valor_num|moeda) }}
-    {{ campo('Vencimento', sp.vencimento_d|data_br) }}
-    {{ campo('Status', sp.status_pgt) }}
-    {{ campo('Agendamento', sp.status_agend) }}
-    {{ campo('Forma de pagamento', sp.forma_pagamento) }}
-    {{ campo('Conta', sp.conta) }}
-    {{ campo('Data do pagamento', sp.data_pagamento_d|data_br) }}
-    {{ campo('Informação p/ pagamento', sp.info_pgt) }}
-    {{ campo('Código de barras', sp.codigo_barras) }}
-    {{ campo('Parcela', sp.parcela) }}
-  </div>
+  {% include "analisesps_ficha.html" %}
 </div>
 
-<div class="cartao">
-  <div class="cartao-cab"><h3>Origem</h3></div>
-  <div class="ficha">
-    {{ campo('Credor', sp.credor) }}
-    {{ campo('CPF/CNPJ', sp.documento) }}
-    {{ campo('Data da solicitação', sp.solicitacao_d|data_br) }}
-    {{ campo('Responsável', sp.responsavel) }}
-    {{ campo('Centro de custo', sp.centro_custo) }}
-    {{ campo('Projeto', sp.projeto) }}
-    {{ campo('Tipo de despesa', sp.tipo_despesa) }}
-    {{ campo('Pedido', sp.pedido) }}
-    {{ campo('Nº da nota', sp.nf) }}
-    {{ campo('Cód. integração Omie', sp.codigo_integracao) }}
-  </div>
-</div>
-
-<div class="cartao">
-  <div class="cartao-cab"><h3>Autorização e conferência</h3></div>
-  <div class="ficha">
-    {{ campo('Autorização SP', sp.status_aut) }}
-    {{ campo('Data da autorização', sp.dt_autorizacao_d|data_br) }}
-    {{ campo('Resp. autorização', sp.resp_autorizacao) }}
-    {{ campo('Anuente', sp.anuente) }}
-    {{ campo('Status anuência', sp.status_anuencia) }}
-    {{ campo('Validação', sp.validacao) }}
-    {{ campo('Comprovante', sp.comprovante) }}
-    {{ campo('ID contrato Pipefy', sp.id_contrato) }}
-  </div>
-</div>
-
-{% if sp.descricao or sp.analise_ia %}
-<div class="cartao">
-  <div class="cartao-cab"><h3>Descrição e análise</h3></div>
-  {% if sp.descricao %}
-    <p style="margin:0 0 10px; white-space:pre-wrap">{{ sp.descricao }}</p>
-  {% endif %}
-  {% if sp.analise_ia %}
-    <div class="aviso {{ 'erro' if 'COM RISCO' in (sp.analise_ia|upper) else '' }}">
-      <b>Análise:</b> {{ sp.analise_ia }}
-    </div>
-  {% endif %}
-</div>
-{% endif %}
-
-{% if pode_operar %}
-<div class="cartao">
-  <div class="cartao-cab">
-    <h3>Alterar</h3>
-    <small>vai para a planilha em seguida</small>
-  </div>
-  <div class="acoes" style="position:static; border:0; padding:0">
-    <div class="grupo">
-      <button class="btn" data-coluna="status_pgt" data-valor="Pago">Marcar Pago</button>
-      <button class="btn secundario" data-coluna="status_pgt" data-valor="Pagar">Marcar Pagar</button>
-      <button class="btn secundario" data-coluna="status_pgt" data-valor="Cancelado">Cancelar</button>
-    </div>
-    <div class="grupo">
-      <button class="btn secundario" data-coluna="agendado" data-valor="Agendar">Agendar</button>
-      <button class="btn secundario" data-coluna="agendado" data-valor="Agendado">Agendado</button>
-      <button class="btn secundario" data-coluna="agendado" data-valor="Desagendar">Desagendar</button>
-      <button class="btn secundario" data-coluna="agendado" data-valor="Falha Agendar">Falha</button>
-    </div>
-  </div>
-  <p class="cartao-dica">
-    "Cancelar" aqui muda o <b>status na planilha</b>. Não cancela o card no
-    Pipefy — isso continua sendo feito por lá.
-  </p>
-</div>
-{% endif %}
-
-<div style="display:flex; gap:8px; flex-wrap:wrap">
-  {% if sp.card_link %}
-    <a class="btn secundario" href="{{ sp.card_link }}" target="_blank" rel="noopener">Abrir card no Pipefy</a>
-  {% endif %}
-  {% if sp.anexo_link %}
-    <a class="btn secundario" href="{{ sp.anexo_link }}" target="_blank" rel="noopener">Abrir anexo</a>
-  {% endif %}
-  <a class="btn secundario"
-     href="{{ url_for('analisesps.codigos', id=sp.id) }}">QR / Código</a>
-  <a class="btn secundario" href="{{ url_for('analisesps.solicitacoes') }}">Voltar</a>
+<div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px">
+  {# Volta para de onde a pessoa veio. Estava fixo em Solicitações: quem abria
+     uma SP a partir do Lote era jogado para outra tela. #}
+  <a class="btn secundario" href="{{ url_for('analisesps.' + (origem or 'solicitacoes')) }}">Voltar</a>
 </div>
 {% endblock %}
 
 {% block scripts %}
-{% if pode_operar %}
-<script>
-document.querySelectorAll(".acoes button[data-coluna]").forEach(botao => {
-  botao.addEventListener("click", async () => {
-    const rotulo = botao.textContent.trim();
-    if (!confirm(`${rotulo} na SP {{ sp.id }}.\n\nA alteração vai para a planilha. Confirma?`)) return;
-    botao.disabled = true;
-    try {
-      const r = await fetch("{{ url_for('analisesps.alterar') }}", {
-        method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({ids: ["{{ sp.id }}"], coluna: botao.dataset.coluna,
-                              valor: botao.dataset.valor, acao: rotulo})
-      });
-      const d = await r.json();
-      if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
-      if (d.aviso) alert("Alterado aqui, mas o envio para a planilha ficou na fila:\n" + d.aviso);
-      location.reload();
-    } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
-    finally { botao.disabled = false; }
-  });
-});
-</script>
-{% endif %}
+<script src="{{ url_for('analisesps.static', filename='analisesps.js') }}"></script>
 {% endblock %}

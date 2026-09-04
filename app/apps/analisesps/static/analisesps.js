@@ -1,0 +1,220 @@
+// ---------------------------------------------------------------------------
+// A BARRA DE AÇÕES — uma só por tela, para o que estiver marcado.
+//
+// Antes cada tabela do Lote tinha a sua barra: com seis grupos, seis barras de
+// botões iguais, e cada uma só enxergava o próprio grupo. Agora a marcação é
+// da TELA — marcar em grupos diferentes e agendar tudo de uma vez é uma ação
+// só. É como era no Streamlit, que tinha uma barra fixa no alto valendo para a
+// seleção inteira.
+//
+// Sem biblioteca: são cem linhas. Cada biblioteca nova é peso que a instância
+// de 2 GB divide com quinze outros módulos.
+// ---------------------------------------------------------------------------
+(function () {
+  const barra = document.getElementById("barra-acoes");
+  if (!barra) return;
+
+  const marcas = () => Array.from(document.querySelectorAll("input.marca"));
+  const marcadas = () => marcas().filter(c => c.checked);
+
+  const moeda = v => v.toLocaleString("pt-BR",
+      {style: "currency", currency: "BRL"});
+
+  function atualizar() {
+    const sel = marcadas();
+    const total = sel.reduce(
+        (soma, c) => soma + (parseFloat(c.dataset.valor || "0") || 0), 0);
+
+    const quantos = document.getElementById("ba-quantos");
+    const valor = document.getElementById("ba-valor");
+    if (quantos) {
+      quantos.textContent = sel.length === 0 ? "Nenhuma SP marcada"
+          : sel.length + (sel.length === 1 ? " SP marcada" : " SPs marcadas");
+    }
+    if (valor) valor.textContent = moeda(total);
+    barra.classList.toggle("tem-selecao", sel.length > 0);
+
+    marcas().forEach(c => c.closest("tr").classList.toggle("marcada", c.checked));
+
+    // "Marcar todas" de cada grupo reflete o estado real do grupo dela.
+    document.querySelectorAll("input.marcar-todas").forEach(t => {
+      const grupo = t.dataset.grupo;
+      const doGrupo = grupo === undefined ? marcas()
+          : marcas().filter(c => c.dataset.grupo === grupo);
+      const marcadasNo = doGrupo.filter(c => c.checked).length;
+      t.checked = doGrupo.length > 0 && marcadasNo === doGrupo.length;
+      t.indeterminate = marcadasNo > 0 && marcadasNo < doGrupo.length;
+    });
+
+    // Botões que só fazem sentido com algo marcado.
+    barra.querySelectorAll("[data-precisa-selecao]").forEach(b => {
+      b.disabled = sel.length === 0;
+    });
+  }
+
+  document.querySelectorAll("input.marcar-todas").forEach(t => {
+    t.addEventListener("change", () => {
+      const grupo = t.dataset.grupo;
+      const alvo = grupo === undefined ? marcas()
+          : marcas().filter(c => c.dataset.grupo === grupo);
+      alvo.forEach(c => { c.checked = t.checked; });
+      atualizar();
+    });
+  });
+  marcas().forEach(c => c.addEventListener("change", atualizar));
+
+  function idsMarcados(minimo) {
+    const ids = marcadas().map(c => c.value);
+    if (ids.length < (minimo || 1)) {
+      alert("Marque ao menos uma SP.");
+      return null;
+    }
+    return ids;
+  }
+
+  // --- Alterar coluna (status de pagamento e agendamento) ------------------
+  barra.querySelectorAll("button[data-coluna]").forEach(botao => {
+    botao.addEventListener("click", async () => {
+      const ids = idsMarcados();
+      if (!ids) return;
+      const rotulo = botao.dataset.rotulo || botao.textContent.trim();
+      const valor = botao.dataset.valor || "";
+      const efeito = valor === ""
+          ? `APAGAR o agendamento de ${ids.length} SP(s)`
+          : `${rotulo}: ${ids.length} SP(s)`;
+      if (!confirm(`${efeito}.\n\nA alteração vai para a planilha. Confirma?`)) return;
+
+      botao.disabled = true;
+      try {
+        const r = await fetch(barra.dataset.urlAlterar, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ids: ids, coluna: botao.dataset.coluna,
+                                valor: valor, acao: rotulo})
+        });
+        const d = await r.json();
+        if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
+        if (d.aviso) alert("Alterado aqui, mas o envio para a planilha ficou na fila:\n" + d.aviso);
+        location.reload();
+      } catch (e) {
+        alert("Falhou a comunicação com o servidor: " + e);
+      } finally {
+        botao.disabled = false;
+      }
+    });
+  });
+
+  // --- QR Pix / código de barras das marcadas ------------------------------
+  const btnCodigos = document.getElementById("ba-codigos");
+  if (btnCodigos) btnCodigos.addEventListener("click", () => {
+    const ids = idsMarcados();
+    if (!ids) return;
+    if (ids.length > 50) { alert("São no máximo 50 SPs por vez."); return; }
+    const volta = barra.dataset.origem || "";
+    location.href = barra.dataset.urlCodigos + "?"
+        + ids.map(i => "id=" + encodeURIComponent(i)).join("&")
+        + (volta ? "&origem=" + encodeURIComponent(volta) : "");
+  });
+
+  // --- Mandar as marcadas para o lote --------------------------------------
+  const btnLote = document.getElementById("ba-enviar-lote");
+  if (btnLote) btnLote.addEventListener("click", () => {
+    const ids = idsMarcados();
+    if (!ids) return;
+    const form = document.getElementById("form-enviar-lote");
+    form.querySelector("input[name=ids]").value = ids.join(",");
+    form.submit();
+  });
+
+  // --- Abrir no Pipefy os cards das marcadas -------------------------------
+  //
+  // Uma aba por card. O navegador bloqueia isso por padrão quando não parte de
+  // um clique — parte, mas o aviso fica de qualquer forma, porque o bloqueio
+  // silencioso é o que faz alguém achar que o botão não funciona.
+  const btnCards = document.getElementById("ba-cards");
+  if (btnCards) btnCards.addEventListener("click", () => {
+    const links = marcadas()
+        .map(c => c.dataset.card)
+        .filter(u => u && u.startsWith("http"));
+    if (!links.length) {
+      alert("Nenhuma das SPs marcadas tem link de card do Pipefy.");
+      return;
+    }
+    if (links.length > 15 &&
+        !confirm(`Isso vai abrir ${links.length} abas. Continua?`)) return;
+    let bloqueada = false;
+    links.forEach(u => { if (!window.open(u, "_blank", "noopener")) bloqueada = true; });
+    if (bloqueada) {
+      alert("O navegador bloqueou as abas. Libere as janelas pop-up para este "
+            + "site e tente de novo.");
+    }
+  });
+
+  atualizar();
+})();
+
+
+// ---------------------------------------------------------------------------
+// OS BOTÕES DA FICHA — valem para a página inteira e para o modal.
+//
+// Exposto em window porque o modal carrega a ficha DEPOIS que esta página já
+// rodou: quem monta o conteúdo precisa avisar aqui para os botões passarem a
+// funcionar. Sem isso, a ficha no modal abriria bonita e inerte.
+// ---------------------------------------------------------------------------
+window.ligarFicha = function (raiz) {
+  const caixa = (raiz || document).querySelector(".ficha-acoes");
+  if (!caixa || caixa.dataset.ligada) return;
+  caixa.dataset.ligada = "1";
+
+  const sp = caixa.dataset.sp;
+  const url = caixa.dataset.urlAlterar;
+
+  async function mandar(mudancas, rotulo) {
+    for (const [coluna, valor] of mudancas) {
+      const r = await fetch(url, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids: [sp], coluna: coluna, valor: valor,
+                              acao: rotulo})
+      });
+      const d = await r.json();
+      if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return false; }
+    }
+    return true;
+  }
+
+  caixa.querySelectorAll("button[data-coluna]").forEach(botao => {
+    botao.addEventListener("click", async () => {
+      const rotulo = botao.textContent.trim();
+      const valor = botao.dataset.valor;
+      const efeito = botao.dataset.coluna === "agendado" && valor === "Desagendar"
+          ? `Apagar o agendamento da SP ${sp}`
+          : `${rotulo} na SP ${sp}`;
+      if (!confirm(efeito + ".\n\nIsto escreve na planilha SPsBD. O Pipefy NÃO "
+                   + "é alterado. Confirma?")) return;
+      botao.disabled = true;
+      try {
+        if (await mandar([[botao.dataset.coluna, valor]], rotulo)) location.reload();
+      } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
+      finally { botao.disabled = false; }
+    });
+  });
+
+  // "Limpar Pgto": as duas colunas de uma vez, como no Streamlit — Status Pgt
+  // volta para "Pagar" e o Agendado fica vazio.
+  const limpar = caixa.querySelector("#ficha-limpar");
+  if (limpar) limpar.addEventListener("click", async () => {
+    if (!confirm(`Limpar o pagamento da SP ${sp}: Status Pgt volta para "Pagar" `
+                 + `e o Agendado fica vazio.\n\nIsto escreve na planilha SPsBD. `
+                 + `Confirma?`)) return;
+    limpar.disabled = true;
+    try {
+      const ok = await mandar([["status_pgt", "Pagar"], ["agendado", "Desagendar"]],
+                              "Ficha: Limpar Pgto");
+      if (ok) location.reload();
+    } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
+    finally { limpar.disabled = false; }
+  });
+};
+
+// A ficha aberta como página inteira liga na hora.
+document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document));

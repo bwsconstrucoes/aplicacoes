@@ -1,0 +1,223 @@
+{# ---------------------------------------------------------------------------
+   A BARRA DE FILTROS — uma só, usada por Solicitações e por Relatório.
+
+   Era só das Solicitações. O Relatório aceitava os mesmos filtros por baixo
+   do pano, mas não tinha onde mexer neles: quem filtrava numa tela e ia para
+   a outra perdia tudo. No Streamlit a barra era uma só para o programa
+   inteiro, e é assim de novo.
+
+   NÃO HÁ BOTÃO "APLICAR". Marcar uma caixa já refaz a tela, como era no
+   Streamlit. O envio espera meio segundo depois do último clique — quem marca
+   cinco caixas seguidas gera UMA consulta ao banco, não cinco.
+
+   O campo escondido `f` diz "esta barra de endereço já carrega um filtro,
+   mesmo que vazio". Sem ele não haveria como distinguir "acabei de chegar"
+   de "limpei de propósito", e o filtro limpo voltaria preenchido sozinho.
+--------------------------------------------------------------------------- #}
+{# Os parâmetros da tela que NÃO são filtro e precisam sobreviver a mexer na
+   barra. Hoje são os três controles do Relatório. #}
+{% set nao_filtro = ['tipo', 'periodo', 'dimensao'] %}
+
+{# O Relatório não tem ordenação de lista; a barra é a mesma, então o valor
+   precisa de um padrão em vez de estourar. #}
+{% set ordem = ordem|default('vencimento', true) %}
+
+{% macro caixas(nome, valores, marcados) %}
+  <div class="filtro-opcoes">
+    {% for v in valores %}
+      <label class="opcao">
+        <input type="checkbox" name="{{ nome }}" value="{{ v }}"
+               {% if v in marcados %}checked{% endif %}>
+        <span class="rotulo" title="{{ v }}">{{ v }}</span>
+      </label>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% macro bloco(titulo, nome, valores, marcados) %}
+  {% if valores %}
+    <div class="filtro {% if marcados %}aberto{% endif %}">
+      <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+        <span>{{ titulo }}</span>
+        {% if marcados %}<span class="filtro-badge">{{ marcados|length }}</span>{% endif %}
+        <span class="seta">▾</span>
+      </div>
+      <div class="filtro-cont">{{ caixas(nome, valores, marcados) }}</div>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+<form method="get" id="form-filtros"
+      action="{{ url_for(request.endpoint) }}">
+  {# A marca: ver o cabeçalho deste arquivo. #}
+  <input type="hidden" name="f" value="1">
+
+  {# O que a tela tem e não é filtro (o tipo e o período do Relatório) viaja
+     junto, senão mexer no filtro jogaria o Relatório de volta ao padrão. #}
+  {# request.args direto: uma barra de endereço sem parâmetro nenhum é um
+     MultiDict VAZIO, e `args or {}` o trocaria por um dicionário comum, que
+     não tem .lists(). #}
+  {% for chave, valores in request.args.lists() if chave in nao_filtro %}
+    {% for v in valores %}<input type="hidden" name="{{ chave }}" value="{{ v }}">{% endfor %}
+  {% endfor %}
+
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <span class="filtros-estado" id="filtros-estado" hidden>atualizando…</span>
+    <a class="link-btn" href="{{ url_for(request.endpoint, f=1) }}">Limpar</a>
+  </div>
+
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="busca" value="{{ filtros.busca }}"
+           placeholder="ID, credor, nota, descrição…"
+           title="Vários termos separados por vírgula. Todos precisam aparecer.">
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Situação</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="filtro-opcoes">
+        {% set situacoes = [
+            ('pendencias', 'Pendências (a pagar)'),
+            ('risco', 'Risco de duplicidade'),
+            ('cadastro_incompleto', 'Cadastro incompleto'),
+            ('boleto_invalido', 'Boleto inválido'),
+            ('boleto_duplicado', 'Boleto duplicado')] %}
+        {% for chave, rotulo in situacoes %}
+          <label class="opcao">
+            <input type="checkbox" name="situacoes" value="{{ chave }}"
+                   {% if chave in filtros.situacoes %}checked{% endif %}>
+            <span class="rotulo">{{ rotulo }}</span>
+          </label>
+        {% endfor %}
+      </div>
+      <p class="cartao-dica" style="margin:8px 2px 0">
+        Marcar duas exige as duas ao mesmo tempo.
+      </p>
+    </div>
+  </div>
+
+  {{ bloco('Status de pagamento', 'status_pgt', opcoes.status_pgt, filtros.status_pgt) }}
+  {{ bloco('Agendamento', 'status_agend', opcoes.status_agend, filtros.status_agend) }}
+  {{ bloco('Forma de pagamento', 'forma', opcoes.forma, filtros.forma) }}
+  {{ bloco('Conta', 'conta', opcoes.conta, filtros.conta) }}
+  {{ bloco('Tipo de despesa', 'tipo_despesa', opcoes.tipo_despesa, filtros.tipo_despesa) }}
+  {{ bloco('Centro de custo', 'centro_custo', opcoes.centro_custo, filtros.centro_custo) }}
+  {{ bloco('Projeto', 'projeto', opcoes.projeto, filtros.projeto) }}
+  {{ bloco('Responsável', 'responsavel', opcoes.responsavel, filtros.responsavel) }}
+
+  <div class="filtro {% if filtros.periodo_ini or filtros.periodo_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Vencimento</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label>
+          <input type="date" name="periodo_ini"
+                 value="{{ filtros.periodo_ini.isoformat() if filtros.periodo_ini else '' }}"></div>
+        <div><label>Até</label>
+          <input type="date" name="periodo_fim"
+                 value="{{ filtros.periodo_fim.isoformat() if filtros.periodo_fim else '' }}"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro {% if filtros.pgt_ini or filtros.pgt_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Data do pagamento</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label>
+          <input type="date" name="pgt_ini"
+                 value="{{ filtros.pgt_ini.isoformat() if filtros.pgt_ini else '' }}"></div>
+        <div><label>Até</label>
+          <input type="date" name="pgt_fim"
+                 value="{{ filtros.pgt_fim.isoformat() if filtros.pgt_fim else '' }}"></div>
+      </div>
+      <p class="cartao-dica" style="margin:8px 2px 0">
+        SP sem data de pagamento fica fora deste recorte.
+      </p>
+    </div>
+  </div>
+
+  <div class="filtro {% if filtros.valor_ini or filtros.valor_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Valor</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>Mínimo</label>
+          <input type="text" name="valor_ini" inputmode="decimal"
+                 placeholder="0,00"
+                 value="{{ ('%.2f'|format(filtros.valor_ini))|replace('.', ',') if filtros.valor_ini is not none else '' }}"></div>
+        <div><label>Máximo</label>
+          <input type="text" name="valor_fim" inputmode="decimal"
+                 placeholder="0,00"
+                 value="{{ ('%.2f'|format(filtros.valor_fim))|replace('.', ',') if filtros.valor_fim is not none else '' }}"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Ordenar por</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select name="ordem" style="width:100%; padding:7px 8px; border:1px solid var(--borda-forte); border-radius:6px">
+        {% for chave, rotulo in [
+            ('vencimento','Vencimento (mais antigo)'),
+            ('vencimento_desc','Vencimento (mais novo)'),
+            ('valor_desc','Valor (maior)'),
+            ('valor','Valor (menor)'),
+            ('credor','Credor'),
+            ('id','ID')] %}
+          <option value="{{ chave }}" {% if ordem == chave %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  {# Sem botão: a barra se aplica sozinha (o script abaixo). Ele fica para
+     quem navega por teclado e para o caso de o JavaScript não carregar — aí a
+     barra continua servindo, só que no modo antigo. #}
+  <noscript>
+    <button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button>
+  </noscript>
+</form>
+
+<script>
+// A barra se aplica sozinha, como no Streamlit — mas esperando meio segundo
+// depois do ÚLTIMO clique. Sem essa espera, marcar cinco caixas seguidas
+// seriam cinco recarregamentos da tela e cinco consultas ao banco.
+(function () {
+  const form = document.getElementById("form-filtros");
+  if (!form) return;
+  const estado = document.getElementById("filtros-estado");
+  let relogio = null;
+
+  function agendar(espera) {
+    if (relogio) clearTimeout(relogio);
+    if (estado) estado.hidden = false;
+    relogio = setTimeout(() => form.submit(), espera);
+  }
+
+  // Caixas e listas: meio segundo, que é o tempo de marcar mais uma.
+  form.addEventListener("change", e => {
+    if (e.target.matches("input[type=checkbox], select, input[type=date]")) agendar(500);
+  });
+
+  // Texto e número: espera mais, porque a pessoa ainda está digitando.
+  form.addEventListener("input", e => {
+    if (e.target.matches("input[type=search], input[type=text], input[type=number]")) agendar(900);
+  });
+
+  // Enter no campo de busca aplica na hora, sem esperar.
+  form.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); agendar(0); }
+  });
+})();
+</script>

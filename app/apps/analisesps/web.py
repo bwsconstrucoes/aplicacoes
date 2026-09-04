@@ -19,6 +19,7 @@ from flask import (Blueprint, Response, redirect, render_template, request,
                    session, url_for)
 
 from . import auth
+from . import preferencias
 from .auth import exige_consulta, exige_operador, publica
 
 logger = logging.getLogger("analisesps.web")
@@ -52,21 +53,27 @@ def entrar():
     configurados = auth.perfis_configurados()
     erro = None
 
+    nome = auth.limpar_nome(request.form.get("nome", ""))
+
     if request.method == "POST" and configurados:
         perfil = auth.identificar(request.form.get("senha", ""))
-        if perfil:
-            auth.entrar_na_sessao(perfil)
+        if not nome:
+            erro = "Diga o seu nome — é ele que separa o seu lote do dos outros."
+        elif perfil:
+            auth.entrar_na_sessao(perfil, nome)
             destino = request.args.get("proximo") or ""
             # Só aceita destino interno: um "proximo" apontando para fora
             # viraria um jeito de usar o login da empresa como trampolim.
             if destino.startswith("/analisesps"):
                 return redirect(destino)
             return redirect(url_for("analisesps.solicitacoes"))
-        erro = "Senha incorreta."
-        logger.warning("Análise de SPs: tentativa de entrada com senha errada.")
+        else:
+            erro = "Senha incorreta."
+            logger.warning("Análise de SPs: tentativa de entrada com senha "
+                           "errada (nome informado: %r).", nome)
 
     return render_template("analisesps_login.html",
-                           sem_senha=not configurados, erro=erro)
+                           sem_senha=not configurados, erro=erro, nome=nome)
 
 
 @bp.route("/sair")
@@ -92,6 +99,88 @@ def saude():
 # ---------------------------------------------------------------------------
 # A tela principal
 # ---------------------------------------------------------------------------
+# As chaves que formam "o filtro". Uma só lista, usada para ler da barra de
+# endereço, para guardar e para restaurar — três lugares que não podem
+# divergir. `pagina` de propósito fica de fora: ninguém quer voltar amanhã na
+# página 7.
+CHAVES_FILTRO = ("busca", "status_pgt", "conta", "forma", "status_agend",
+                 "tipo_despesa", "projeto", "responsavel", "centro_custo",
+                 "situacoes", "periodo_ini", "periodo_fim", "pgt_ini",
+                 "pgt_fim", "valor_ini", "valor_fim", "ordem")
+
+# Marca que a barra de endereço JÁ carrega um filtro — mesmo que ele esteja
+# vazio. Sem ela não há como distinguir "acabei de chegar nesta tela" de
+# "limpei o filtro de propósito": as duas seriam um endereço sem parâmetro
+# nenhum, e o filtro limpo voltaria preenchido no instante seguinte.
+MARCA_FILTRO = "f"
+
+
+def _filtro_cru() -> dict:
+    """O filtro como veio na barra de endereço, sem conversão nenhuma.
+
+    É esta forma que vai para o banco: texto igual ao que a tela mandou.
+    Guardar a versão já convertida (datas viram objetos, valores viram número)
+    obrigaria a desconverter na volta, e é aí que aparece a diferença entre o
+    que a pessoa marcou e o que ela reencontra."""
+    cru = {}
+    for chave in CHAVES_FILTRO:
+        valores = [v for v in request.args.getlist(chave) if str(v).strip()]
+        if valores:
+            cru[chave] = valores
+    return cru
+
+
+def _opcoes_dos_filtros() -> dict:
+    """O que cada lista suspensa da barra lateral oferece.
+
+    Vive aqui, e não dentro de cada rota, porque Solicitações e Relatório
+    mostram a MESMA barra. Duas cópias divergiriam no dia em que alguém
+    acrescentasse um filtro em uma só."""
+    from . import consultas
+    return {
+        "status_pgt": consultas.opcoes("status_pgt"),
+        "conta": consultas.opcoes("conta"),
+        "forma": consultas.opcoes("forma_pagamento"),
+        "tipo_despesa": consultas.opcoes("tipo_despesa"),
+        "projeto": consultas.opcoes("projeto"),
+        "responsavel": consultas.opcoes("responsavel"),
+        "centro_custo": consultas.opcoes("centro_custo", limite=200),
+        "status_agend": consultas.opcoes_agendamento(),
+    }
+
+
+def _lembrar_filtro(endpoint: str):
+    """Guarda o filtro desta tela, ou traz de volta o da última vez.
+
+    Devolve um redirecionamento quando há filtro guardado a restaurar, e None
+    quando a tela pode seguir e desenhar.
+
+    O caminho é sempre o mesmo, venha a pessoa de onde vier: chegou com a
+    marca, o que está na barra de endereço é a verdade e vira o guardado;
+    chegou sem a marca (clicou no menu, digitou o endereço, voltou de outra
+    tela), o guardado volta. É isso que faz o filtro de Solicitações valer
+    também no Relatório — os dois guardam no mesmo lugar."""
+    pessoa = auth.pessoa_atual()
+
+    if request.args.get(MARCA_FILTRO):
+        preferencias.gravar(pessoa, preferencias.FILTRO, _filtro_cru())
+        return None
+
+    guardado = preferencias.ler(pessoa, preferencias.FILTRO)
+    if not guardado:
+        return None
+
+    # Preserva o que a tela já tinha e não é filtro (o tipo do relatório, por
+    # exemplo), e acrescenta o filtro guardado por cima.
+    destino = {c: request.args.getlist(c) for c in request.args
+               if c not in CHAVES_FILTRO and c != "pagina"}
+    for chave, valores in guardado.items():
+        if chave in CHAVES_FILTRO:
+            destino[chave] = valores
+    destino[MARCA_FILTRO] = "1"
+    return redirect(url_for(endpoint, **destino))
+
+
 def _filtros_do_pedido() -> dict:
     """Lê os filtros da barra de endereço. Tudo opcional."""
     def lista(nome):
@@ -151,6 +240,10 @@ def solicitacoes():
         return render_template("analisesps_vazio.html", base=base,
                                pode_operar=auth.pode_operar())
 
+    voltar = _lembrar_filtro("analisesps.solicitacoes")
+    if voltar is not None:
+        return voltar
+
     filtros = _filtros_do_pedido()
     ordem = request.args.get("ordem", "vencimento")
     try:
@@ -170,34 +263,73 @@ def solicitacoes():
         ultima_linha=ultima,
         tem_proxima=ultima < resumo["quantidade"],
         ordem=ordem, filtros=filtros,
-        args=request.args,
-        opcoes={
-            "status_pgt": consultas.opcoes("status_pgt"),
-            "conta": consultas.opcoes("conta"),
-            "forma": consultas.opcoes("forma_pagamento"),
-            "tipo_despesa": consultas.opcoes("tipo_despesa"),
-            "projeto": consultas.opcoes("projeto"),
-            "responsavel": consultas.opcoes("responsavel"),
-            "centro_custo": consultas.opcoes("centro_custo", limite=200),
-            "status_agend": consultas.opcoes_agendamento(),
-        },
+        args=request.args, opcoes=_opcoes_dos_filtros(),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+
+# De onde a pessoa veio, e para onde "Voltar" tem de levar. Lista fechada de
+# propósito: o destino sai da barra de endereço, e um destino livre viraria um
+# jeito de usar este módulo como trampolim para fora.
+ORIGENS = {"solicitacoes": "analisesps.solicitacoes",
+           "lote": "analisesps.tela_lote"}
+
+
+def _origem_pedida() -> str:
+    pedida = (request.args.get("origem") or "").strip()
+    return pedida if pedida in ORIGENS else "solicitacoes"
 
 
 @bp.route("/sp/<sp_id>")
 @exige_consulta
 def detalhe(sp_id):
-    from . import consultas
+    """A ficha da SP. Como página inteira, ou como pedaço para o modal.
+
+    `?modal=1` devolve só o miolo, sem cabeçalho nem menu: é o que o duplo
+    clique na linha busca para abrir a ficha POR CIMA da lista, sem perder a
+    rolagem, o filtro nem a marcação. Era assim no Streamlit."""
+    import re
+    from . import consultas, pagamentos
+
     registro = consultas.uma(sp_id)
     if registro is None:
+        if request.args.get("modal"):
+            return ('<div class="aviso erro">Esta SP não existe na base.</div>',
+                    404)
         return render_template("analisesps_erro.html",
                                titulo="Não encontrado",
                                mensagem="Esta SP não existe na base."), 404
-    return render_template("analisesps_detalhe.html", sp=registro,
-                           aba="solicitacoes",
-                           pode_operar=auth.pode_operar(),
-                           perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
+
+    # O que falta preencher no cadastro do lançamento — mesma conta do
+    # Streamlit, e o módulo já tinha a função pronta, sem uso.
+    try:
+        faltando = pagamentos.pendencias(
+            registro.get("forma_pagamento", ""), registro.get("info_pgt", ""),
+            registro.get("centro_custo", ""), registro.get("codigo_integracao", ""),
+            registro.get("status_pgt", ""))
+    except Exception:  # noqa: BLE001 — a ficha abre mesmo sem esse aviso
+        logger.exception("Análise de SPs: falhou calcular as pendências da SP")
+        faltando = []
+
+    # As SPs que a análise apontou como possível duplicidade. Ficam como link
+    # para o card de cada uma — é o que o Streamlit fazia, e é o que resolve a
+    # dúvida sem ter de procurar o número na mão.
+    analise = str(registro.get("analise_ia") or "")
+    apontadas = [i for i in dict.fromkeys(re.findall(r"\d{9,}", analise))
+                 if i != str(sp_id)][:8]
+
+    contexto = dict(
+        sp=registro, origem=_origem_pedida(),
+        pendencias=faltando, risco_ids=apontadas,
+        hook_omie=os.getenv("ANALISESPS_HOOK_OMIE", "").strip(),
+        pode_operar=auth.pode_operar())
+
+    if request.args.get("modal"):
+        return render_template("analisesps_ficha.html", **contexto)
+
+    return render_template("analisesps_detalhe.html", aba="solicitacoes",
+                           perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+                           **contexto)
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +430,7 @@ def alterar():
                 "erro": "São no máximo 500 SPs por vez. Refine a seleção."}, 400
 
     perfil = auth.perfil_atual() or "?"
+    quem = auth.nome_atual()
     with conexao() as conn:
         marcadores = ",".join(["?"] * len(ids))
         cur = conn.execute(
@@ -327,13 +460,15 @@ def alterar():
                 (sp_id, coluna, valor))
             conn.execute(
                 "INSERT INTO analisesps.log_alteracoes "
-                "  (sp_id, coluna, valor, valor_anterior, acao, perfil, status) "
-                "VALUES (?, ?, ?, ?, ?, ?, 'pendente')",
-                (sp_id, coluna, valor, anteriores.get(sp_id), acao, perfil))
+                "  (sp_id, coluna, valor, valor_anterior, acao, perfil, "
+                "   pessoa, status) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, 'pendente')",
+                (sp_id, coluna, valor, anteriores.get(sp_id), acao, perfil,
+                 quem))
         conn.commit()
 
-    logger.info("Análise de SPs: %s alterou '%s' de %d SP(s) para '%s'.",
-                perfil, coluna, len(ids), valor)
+    logger.info("Análise de SPs: %s (%s) alterou '%s' de %d SP(s) para '%s'.",
+                quem or "sem nome", perfil, coluna, len(ids), valor)
 
     # Tenta subir já, sem prender a tela: se falhar, fica na fila.
     from . import tarefas
@@ -437,6 +572,10 @@ def relatorio():
         return render_template("analisesps_vazio.html", base=base,
                                pode_operar=auth.pode_operar())
 
+    voltar = _lembrar_filtro("analisesps.relatorio")
+    if voltar is not None:
+        return voltar
+
     filtros = _filtros_do_pedido()
     tipo = request.args.get("tipo", "geral")
     if tipo not in consultas.TIPOS:
@@ -462,7 +601,7 @@ def relatorio():
         tipo=tipo, periodo=periodo, dimensao=dimensao,
         tipos=consultas.TIPOS, periodos=consultas.PERIODOS,
         dimensoes=consultas.DIMENSOES,
-        args=request.args, filtros=filtros,
+        args=request.args, filtros=filtros, opcoes=_opcoes_dos_filtros(),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
 
@@ -546,11 +685,12 @@ def tela_lote():
         return render_template("analisesps_vazio.html", base=base,
                                pode_operar=auth.pode_operar())
 
+    pessoa = auth.pessoa_atual()
     aviso = None
     if request.method == "POST":
         acao = request.form.get("acao", "salvar")
         conteudo = request.form.get("conteudo", "")
-        perfil = auth.perfil_atual() or ""
+        quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
 
         if acao == "extrair":
             achados = lote.extrair_ids(request.form.get("extracao", ""))
@@ -561,6 +701,28 @@ def tela_lote():
             else:
                 aviso = ("Não achei nenhum número de SP no texto colado. "
                          "Uma SP tem 10 dígitos.")
+        elif acao == "receber_ids":
+            # Veio da barra de ações das Solicitações: as SPs marcadas entram
+            # num grupo novo NO TOPO, e o que já estava fica abaixo. É o
+            # "Enviar Lote" do Streamlit, que tinha sumido na conversão.
+            crus = [i.strip() for i in
+                    (request.form.get("ids") or "").split(",") if i.strip()]
+            conteudo = lote.ler(pessoa)["conteudo"]
+            if crus:
+                conteudo, titulo = lote.acrescentar_grupo(conteudo, crus)
+                aviso = f"{len(crus)} SP(s) entraram no grupo \"{titulo}\"."
+            else:
+                aviso = "Nenhuma SP marcada."
+        elif acao == "trazer_antigo":
+            antigo_ = lote.lote_de_antes().get("conteudo") or ""
+            if antigo_.strip():
+                juntos = [t for t in (antigo_.strip(), conteudo.strip()) if t]
+                conteudo = "\n\n".join(juntos)
+                aviso = ("O lote de quando ele era compartilhado veio para o "
+                         "seu. Ele continua guardado onde estava — trazer não "
+                         "tira de ninguém.")
+            else:
+                aviso = "Não há lote antigo guardado."
         elif acao in ("remover_pagos", "remover_cancelados"):
             alvo = {"pago"} if acao == "remover_pagos" else {"cancelado"}
             montado = lote.montar(conteudo)
@@ -570,16 +732,23 @@ def tela_lote():
             rotulo = "paga(s)" if acao == "remover_pagos" else "cancelada(s)"
             aviso = f"{quantos} SP(s) {rotulo} saíram do lote."
 
-        lote.salvar(conteudo, perfil)
+        lote.salvar(conteudo, quem, pessoa)
         return redirect(url_for("analisesps.tela_lote", aviso=aviso or ""))
 
-    guardado = lote.ler()
+    guardado = lote.ler(pessoa)
     montado = lote.montar(guardado["conteudo"])
+
+    # O lote de quando ele era de todo mundo. Só aparece para quem ainda não
+    # tem lote próprio — depois de começar o seu, ninguém quer ser lembrado.
+    antes = lote.lote_de_antes() if not guardado["conteudo"].strip() else None
+    if antes and not (antes.get("conteudo") or "").strip():
+        antes = None
+
     return render_template(
         "analisesps_lote.html",
-        aba="lote", base=base, lote=guardado, montado=montado,
+        aba="lote", base=base, lote=guardado, montado=montado, antes=antes,
         aviso=request.args.get("aviso") or None,
-        pode_operar=auth.pode_operar(),
+        pode_operar=auth.pode_operar(), nome=auth.nome_atual(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
 
 
@@ -646,8 +815,11 @@ def codigos():
 
         blocos.append(bloco)
 
-    return render_template("analisesps_codigos.html", aba="solicitacoes",
-                           blocos=blocos, pode_operar=auth.pode_operar(),
+    origem = _origem_pedida()
+    return render_template("analisesps_codigos.html",
+                           aba="lote" if origem == "lote" else "solicitacoes",
+                           blocos=blocos, origem=origem,
+                           pode_operar=auth.pode_operar(),
                            perfil=auth.ROTULOS.get(auth.perfil_atual(), ""))
 
 
@@ -830,7 +1002,7 @@ def log():
             " GROUP BY status", (dias,))
         registros = consultar(
             "SELECT criado_em, sp_id, coluna, valor, valor_anterior, acao, "
-            "       perfil, status, enviado_em, erro "
+            "       perfil, pessoa, status, enviado_em, erro "
             f"  FROM analisesps.log_alteracoes{where} "
             " ORDER BY criado_em DESC LIMIT 500", tuple(params))
         pendentes = consultar_um("SELECT count(*) FROM analisesps.fila")
@@ -840,7 +1012,7 @@ def log():
         contagem, registros, pendentes, erro = [], [], (0,), str(e)
 
     nomes = ["criado_em", "sp_id", "coluna", "valor", "valor_anterior", "acao",
-             "perfil", "status", "enviado_em", "erro"]
+             "perfil", "pessoa", "status", "enviado_em", "erro"]
     linhas = []
     for registro in registros:
         item = dict(zip(nomes, registro))

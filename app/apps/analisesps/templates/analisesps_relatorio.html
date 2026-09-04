@@ -1,6 +1,8 @@
 {% extends "analisesps_base.html" %}
 {% block titulo %}Relatório — Análise de SPs{% endblock %}
-{% block classe_corpo %}sem-filtros{% endblock %}
+{# A barra de filtros voltou para esta tela: é a MESMA de Solicitações, e o
+   que se filtra numa vale na outra. #}
+{% block filtros %}{% include "analisesps_filtros.html" %}{% endblock %}
 
 {# Barra proporcional ao maior valor da lista. Sem biblioteca de gráfico: são
    dois divs e uma largura em porcentagem. O Plotly do painel antigo custava

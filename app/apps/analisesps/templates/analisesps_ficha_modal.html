@@ -1,0 +1,58 @@
+{# ---------------------------------------------------------------------------
+   O MODAL DA FICHA — duplo clique na linha abre a SP sem sair da lista.
+
+   O Streamlit abria a ficha num modal por cima da tabela: quem estava
+   conferindo trinta SPs não perdia a rolagem, nem o filtro, nem a marcação a
+   cada consulta. Na conversão virou página inteira, e voltar recomeçava tudo.
+
+   O conteúdo vem do servidor (a mesma ficha da página), buscado na hora do
+   duplo clique — não há trinta fichas escondidas no HTML da lista.
+--------------------------------------------------------------------------- #}
+<dialog id="ficha-modal" class="modal-ficha">
+  <div class="modal-cab">
+    <span id="ficha-modal-titulo">SP</span>
+    <button class="btn secundario" id="ficha-modal-fechar" title="Fecha (Esc)">Fechar</button>
+  </div>
+  <div class="modal-corpo" id="ficha-modal-corpo">
+    <p class="cartao-dica">Carregando…</p>
+  </div>
+</dialog>
+
+<script>
+// Duplo clique na linha abre a ficha por cima da lista.
+(function () {
+  const modal = document.getElementById("ficha-modal");
+  const corpo = document.getElementById("ficha-modal-corpo");
+  const titulo = document.getElementById("ficha-modal-titulo");
+  if (!modal || !modal.showModal) return;   // navegador antigo: o link ainda serve
+
+  async function abrir(url, id) {
+    titulo.textContent = "SP " + id;
+    corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+    modal.showModal();
+    try {
+      const r = await fetch(url + (url.includes("?") ? "&" : "?") + "modal=1");
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      corpo.innerHTML = await r.text();
+      // A ficha carregada tem os próprios botões; liga-os agora.
+      if (window.ligarFicha) window.ligarFicha(corpo);
+    } catch (e) {
+      corpo.innerHTML = '<div class="aviso erro">Não consegui abrir a ficha: '
+                        + e + '</div>';
+    }
+  }
+
+  document.querySelectorAll("tr[data-ficha]").forEach(tr => {
+    tr.addEventListener("dblclick", e => {
+      // Duplo clique em cima de um link ou da caixa de marcar não abre a ficha.
+      if (e.target.closest("a, input, button")) return;
+      abrir(tr.dataset.ficha, tr.dataset.id || "");
+    });
+  });
+
+  document.getElementById("ficha-modal-fechar")
+          .addEventListener("click", () => modal.close());
+  // Clique fora fecha, como todo modal.
+  modal.addEventListener("click", e => { if (e.target === modal) modal.close(); });
+})();
+</script>

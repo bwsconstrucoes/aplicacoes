@@ -17,10 +17,18 @@ simplesmente não existe — ninguém entra por ele. Falha fechado, sempre.
 POR QUE SENHA E NÃO CADASTRO DE USUÁRIO. São até quatro pessoas, e este módulo
 tem prazo de validade: o ERP vai substituí-lo. Cadastro com nome, hash e tela
 de administração é o certo para o que fica; para o que sai de cena, é peso sem
-retorno. A consequência, dita com clareza porque um dia ela vai incomodar: o
-registro de alterações sabe QUE PERFIL mexeu, não QUAL PESSOA. Se rastrear a
-pessoa passar a importar, o lugar certo é o cadastro de usuários do ERP — não
-um cadastro novo aqui.
+retorno.
+
+QUEM AUTENTICA É A SENHA; O NOME APENAS IDENTIFICA. Desde 04/09/2026 a pessoa
+também informa o NOME dela ao entrar. Isso não é login: digitar "Marcelo" não
+dá poder nenhum a mais — quem decide o que se pode fazer continua sendo a
+senha, e só ela. O nome serve para três coisas concretas, todas pedidas pelo
+dono: o lote passa a ser de cada um, os filtros ficam guardados por pessoa, e
+o registro de alterações passa a dizer QUEM mexeu, não só que perfil.
+
+Não confunda os dois. Se um dia for preciso IMPEDIR que alguém se passe por
+outro, o lugar certo continua sendo o cadastro de usuários do ERP — aqui o
+nome é uma etiqueta honesta entre colegas, não uma tranca.
 
 A DECLARAÇÃO É OBRIGATÓRIA. Toda rota do blueprint diz o que exige, com
 `@exige_consulta`, `@exige_operador` ou `@publica("motivo")`. Rota que esquece
@@ -39,6 +47,11 @@ from flask import current_app, redirect, request, session, url_for
 logger = logging.getLogger("analisesps.auth")
 
 CHAVE_SESSAO = "analisesps_perfil"
+CHAVE_NOME = "analisesps_nome"
+
+# Teto do nome. Não é regra de negócio: é para o campo não virar porta de
+# entrada de texto gigante, já que ele vai para o banco e para a tela.
+MAX_NOME = 40
 
 CONSULTA = "consulta"
 OPERADOR = "operador"
@@ -129,13 +142,53 @@ def pode_operar() -> bool:
     return perfil_atual() == OPERADOR
 
 
-def entrar_na_sessao(perfil: str) -> None:
+def entrar_na_sessao(perfil: str, nome: str = "") -> None:
     session[CHAVE_SESSAO] = perfil
+    session[CHAVE_NOME] = limpar_nome(nome)
     session.permanent = False      # a sessão morre quando o navegador fecha
 
 
 def sair_da_sessao() -> None:
     session.pop(CHAVE_SESSAO, None)
+    session.pop(CHAVE_NOME, None)
+
+
+# ---------------------------------------------------------------------------
+# A pessoa
+# ---------------------------------------------------------------------------
+def limpar_nome(bruto: str) -> str:
+    """O nome como ele vai aparecer: sem espaço sobrando e sem tamanho absurdo.
+
+    Não corrige maiúscula nem acento — nome de gente é como a pessoa escreve."""
+    nome = " ".join(str(bruto or "").split())
+    return nome[:MAX_NOME]
+
+
+def chave_pessoa(nome: str) -> str:
+    """A forma usada para GUARDAR (lote e preferências), não para mostrar.
+
+    "Marcelo", "marcelo" e "MARCELO" têm de ser a mesma pessoa — senão quem
+    digita com a inicial minúscula um dia encontra o lote vazio e conclui que
+    o sistema perdeu o trabalho dele. Acento também não pode separar: "João" e
+    "Joao" são a mesma pessoa para quem digita com pressa."""
+    import unicodedata
+    nome = limpar_nome(nome).lower()
+    sem_acento = unicodedata.normalize("NFKD", nome)
+    return "".join(c for c in sem_acento if not unicodedata.combining(c))
+
+
+def nome_atual() -> str:
+    """O nome como a pessoa digitou — é o que vai para a tela e para o log."""
+    return limpar_nome(session.get(CHAVE_NOME, ""))
+
+
+def pessoa_atual() -> str:
+    """A chave da pessoa logada. Vazia quando ninguém se identificou.
+
+    Chave vazia é um estado legítimo, não um erro: uma sessão aberta antes
+    desta mudança continua valendo até a pessoa sair. Ela cai no lote e nas
+    preferências de pessoa '' — que é justamente o espaço do "antes"."""
+    return chave_pessoa(session.get(CHAVE_NOME, ""))
 
 
 # ---------------------------------------------------------------------------

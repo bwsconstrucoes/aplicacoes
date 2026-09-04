@@ -401,7 +401,8 @@ def test_alterar_grava_enfileira_e_registra(banco_analisesps, monkeypatch):
     aplicativo.config["TESTING"] = True
 
     with aplicativo.test_client() as cliente:
-        cliente.post("/analisesps/entrar", data={"senha": "op"})
+        cliente.post("/analisesps/entrar",
+                     data={"senha": "op", "nome": "Marcelo"})
         resposta = cliente.post("/analisesps/api/alterar", json={
             "ids": ["1", "2"], "coluna": "status_pgt",
             "valor": "Pago", "acao": "Marcar Pago"})
@@ -440,7 +441,8 @@ def test_alterar_a_mesma_celula_duas_vezes_deixa_so_a_ultima(banco_analisesps,
     aplicativo.config["TESTING"] = True
 
     with aplicativo.test_client() as cliente:
-        cliente.post("/analisesps/entrar", data={"senha": "op"})
+        cliente.post("/analisesps/entrar",
+                     data={"senha": "op", "nome": "Marcelo"})
         for valor in ("Pago", "Pagar", "Cancelado"):
             cliente.post("/analisesps/api/alterar", json={
                 "ids": ["1"], "coluna": "status_pgt", "valor": valor})
@@ -470,7 +472,8 @@ def test_coluna_nao_editavel_e_recusada(banco_analisesps, monkeypatch):
     aplicativo.config["TESTING"] = True
 
     with aplicativo.test_client() as cliente:
-        cliente.post("/analisesps/entrar", data={"senha": "op"})
+        cliente.post("/analisesps/entrar",
+                     data={"senha": "op", "nome": "Marcelo"})
         resposta = cliente.post("/analisesps/api/alterar", json={
             "ids": ["1"], "coluna": "credor", "valor": "OUTRO"})
 
@@ -496,7 +499,8 @@ def test_alterar_sp_inexistente_nao_grava_nada(banco_analisesps, monkeypatch):
     aplicativo.config["TESTING"] = True
 
     with aplicativo.test_client() as cliente:
-        cliente.post("/analisesps/entrar", data={"senha": "op"})
+        cliente.post("/analisesps/entrar",
+                     data={"senha": "op", "nome": "Marcelo"})
         resposta = cliente.post("/analisesps/api/alterar", json={
             "ids": ["1", "999"], "coluna": "status_pgt", "valor": "Pago"})
 
@@ -929,3 +933,79 @@ def test_o_feriado_local_entra_no_calculo_do_ano(banco_analisesps):
     do_ano = agenda.feriados_do_ano(2026)
     assert dt.date(2026, 3, 19) in do_ano       # o local
     assert dt.date(2026, 12, 25) in do_ano      # e os nacionais continuam
+
+
+# ---------------------------------------------------------------------------
+# QUEM É QUEM: o lote e os filtros de cada pessoa
+#
+# Estes só provam alguma coisa contra um Postgres de verdade: o dublê da suíte
+# ignora WHERE, e é exatamente o WHERE (`pessoa = ?`) que separa o trabalho de
+# um do trabalho do outro. Num dublê, o lote da Joana "voltaria" para o
+# Marcelo e o teste passaria mesmo com o defeito.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_cada_pessoa_tem_o_seu_lote(banco_analisesps):
+    """Era um lote só: quem salvasse por último apagava o do outro, sem aviso."""
+    from app.apps.analisesps import lote
+
+    lote.salvar("Pagar amanhã\n1111111111", "Marcelo", "marcelo")
+    lote.salvar("Semana que vem\n2222222222", "Joana", "joana")
+
+    assert "1111111111" in lote.ler("marcelo")["conteudo"]
+    assert "2222222222" not in lote.ler("marcelo")["conteudo"]
+    assert "2222222222" in lote.ler("joana")["conteudo"]
+    assert lote.ler("joana")["salvo_por"] == "Joana"
+
+    # Salvar de novo troca só o da própria pessoa.
+    lote.salvar("Outra coisa\n3333333333", "Marcelo", "marcelo")
+    assert "2222222222" in lote.ler("joana")["conteudo"], (
+        "salvar o lote de um apagou o do outro")
+
+
+@pytest.mark.banco
+def test_o_lote_de_antes_nao_se_perde(banco_analisesps):
+    """Havia um lote compartilhado no dia da mudança. Ele não é apagado nem
+    copiado para todo mundo — fica guardado, e a tela oferece trazer."""
+    from app.apps.analisesps import lote
+    lote.salvar("Lote da equipe\n9999999999", "operador", lote.COMPARTILHADO)
+
+    assert lote.ler("marcelo")["conteudo"] == "", "o lote novo já nasceu cheio"
+    assert "9999999999" in lote.lote_de_antes()["conteudo"]
+
+
+@pytest.mark.banco
+def test_o_filtro_guardado_e_de_cada_um(banco_analisesps):
+    """O filtro volta sozinho na próxima vez, e o de um não vaza para o outro."""
+    from app.apps.analisesps import preferencias
+
+    preferencias.gravar("marcelo", preferencias.FILTRO,
+                        {"status_pgt": ["Pagar"], "busca": ["cimento"]})
+    preferencias.gravar("joana", preferencias.FILTRO, {"status_pgt": ["Pago"]})
+
+    assert preferencias.ler("marcelo", preferencias.FILTRO)["busca"] == ["cimento"]
+    assert preferencias.ler("joana", preferencias.FILTRO)["status_pgt"] == ["Pago"]
+    assert "busca" not in preferencias.ler("joana", preferencias.FILTRO)
+
+    # Guardar de novo substitui, não acumula.
+    preferencias.gravar("marcelo", preferencias.FILTRO, {})
+    assert preferencias.ler("marcelo", preferencias.FILTRO) == {}
+    assert preferencias.ler("joana", preferencias.FILTRO) != {}, (
+        "limpar o filtro de um limpou o do outro")
+
+
+@pytest.mark.banco
+def test_o_registro_de_alteracoes_guarda_quem_foi(banco_analisesps):
+    """Antes o log sabia só que perfil mexeu. A pergunta que aparece quando um
+    pagamento sai errado é "quem fez isso?", e ela não tinha resposta."""
+    from app.apps.analisesps.db import conexao, consultar_um
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.log_alteracoes "
+            "  (sp_id, coluna, valor, acao, perfil, pessoa, status) "
+            "VALUES ('1', 'agendado', 'Agendado', 'Agendar', 'operador', "
+            "        'Marcelo', 'pendente')")
+        conn.commit()
+    linha = consultar_um(
+        "SELECT pessoa, perfil FROM analisesps.log_alteracoes WHERE sp_id = '1'")
+    assert linha[0] == "Marcelo"
+    assert linha[1] == "operador"
