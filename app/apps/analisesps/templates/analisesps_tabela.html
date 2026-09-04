@@ -79,6 +79,13 @@
                 {% else %}{{ l[c.chave] or '' }}{% endif %}
               </td>
 
+            {% elif c.tipo == 'longo' %}
+              {# A descrição é o texto mais comprido da linha. Letra menor e
+                 corte na largura para ela não empurrar o resto da tabela para
+                 fora da tela; o texto inteiro fica no title, e a coluna se
+                 esconde num clique. #}
+              <td class="texto-longo" title="{{ l[c.chave] or '' }}">{{ l[c.chave] or '' }}</td>
+
             {% elif c.tipo == 'alertas' %}
               <td>
                 {% if l.risco %}<span class="selo risco"

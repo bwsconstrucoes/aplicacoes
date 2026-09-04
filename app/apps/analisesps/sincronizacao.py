@@ -431,6 +431,76 @@ def sincronizar_agenda(anotar=None) -> dict:
     return {"compromissos": compromissos, "feriados": feriados}
 
 
+def escrever_compromisso(registro: dict) -> None:
+    """Grava um compromisso na aba Agenda da planilha de Credenciais.
+
+    A planilha é a DONA da agenda: o que se cria pela tela tem de nascer lá,
+    senão a próxima sincronização traria de volta um mundo sem ele.
+
+    CRIA A ABA SE ELA NÃO EXISTIR. É a causa mais provável de "a agenda não
+    funciona": sem a aba, não há o que trazer, e a tela abre vazia sem
+    explicar. Criar com o cabeçalho certo resolve na primeira vez que alguém
+    cadastra alguma coisa.
+
+    Atualiza a linha do mesmo `id` quando ela já existe; senão acrescenta no
+    fim. Uma leitura da coluna do id resolve as duas."""
+    from . import agenda
+    from .credenciais import SHEET_CREDENCIAIS
+
+    planilha = com_retry(lambda: cliente().open_by_key(SHEET_CREDENCIAIS))
+    try:
+        aba = com_retry(lambda: planilha.worksheet(agenda.ABA_AGENDA))
+    except Exception:  # noqa: BLE001 — a aba não existe ainda
+        logger.info("Análise de SPs: criando a aba %r na planilha de "
+                    "Credenciais.", agenda.ABA_AGENDA)
+        aba = com_retry(lambda: planilha.add_worksheet(
+            title=agenda.ABA_AGENDA, rows=200, cols=len(agenda.COLUNAS)))
+        com_retry(lambda: aba.update([list(agenda.COLUNAS)], "A1"))
+
+    valores = com_retry(aba.get_all_values)
+    cabecalho = [str(x).strip() for x in valores[0]] if valores else []
+    if not cabecalho or "id" not in cabecalho:
+        # Aba existente, mas sem cabeçalho reconhecível. Escrever por baixo
+        # dela embaralharia o que já está lá — melhor parar e dizer.
+        if any(any(str(x).strip() for x in linha) for linha in valores):
+            raise RuntimeError(
+                f"A aba \"{agenda.ABA_AGENDA}\" da planilha de Credenciais "
+                "tem conteúdo mas não tem a linha de cabeçalho com as colunas "
+                "esperadas (a primeira precisa se chamar 'id'). Ajuste o "
+                "cabeçalho antes de cadastrar por aqui.")
+        com_retry(lambda: aba.update([list(agenda.COLUNAS)], "A1"))
+        cabecalho = list(agenda.COLUNAS)
+        valores = [cabecalho]
+
+    linha = [str(registro.get(c, "") or "") for c in cabecalho]
+
+    coluna_id = cabecalho.index("id") + 1
+    ids = com_retry(lambda: aba.col_values(coluna_id))
+    numero = None
+    for i, valor in enumerate(ids[1:], start=2):
+        if str(valor).strip() == str(registro.get("id", "")).strip():
+            numero = i
+            break
+
+    if numero is None:
+        com_retry(lambda: aba.append_row(linha, value_input_option="USER_ENTERED"))
+    else:
+        fim = _letra_da_coluna(len(cabecalho))
+        com_retry(lambda: aba.update([linha], f"A{numero}:{fim}{numero}",
+                                     value_input_option="USER_ENTERED"))
+
+
+def _letra_da_coluna(numero: int) -> str:
+    """1 -> A, 26 -> Z, 27 -> AA. A agenda tem catorze colunas hoje, mas
+    contar na mão é o tipo de coisa que quebra no dia em que passar de vinte
+    e seis."""
+    letras = ""
+    while numero > 0:
+        numero, resto = divmod(numero - 1, 26)
+        letras = chr(65 + resto) + letras
+    return letras
+
+
 def sincronizar_referencias_rateio(anotar=None) -> dict:
     """Traz as obras (aba 'C. Diários') e as categorias (aba 'Plano Financeiro').
 

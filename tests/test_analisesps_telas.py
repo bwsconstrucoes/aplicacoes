@@ -953,6 +953,280 @@ def test_aplicar_as_migracoes_faz_o_processo_reaprender_o_banco(app,
         "o processo continuou com a ideia antiga do formato do banco")
 
 
+# ---------------------------------------------------------------------------
+# DESCRIÇÃO E TIPO DE DESPESA (pedido de 04/09, à noite)
+# ---------------------------------------------------------------------------
+def test_descricao_e_tipo_de_despesa_vem_na_tabela(app):
+    """Pedido do dono. A descrição é o texto mais comprido da linha, então sai
+    com letra menor e cortada na largura — o texto inteiro fica no title."""
+    from app.apps.analisesps import tabela
+    padrao = {c.chave for c in tabela.escolhidas(None)}
+    assert "descricao" in padrao
+    assert "tipo_despesa" in padrao
+    assert tabela.POR_CHAVE["descricao"].tipo == "longo"
+
+
+def test_a_descricao_sai_menor_e_com_o_texto_inteiro_no_title(app, monkeypatch):
+    from app.apps.analisesps import consultas
+    longo = ("Compra de cimento CP-II 50kg, 200 sacos, entrega na obra da "
+             "Rua das Palmeiras, conforme pedido 4471")
+    monkeypatch.setattr(consultas, "listar",
+                        lambda f, **k: [linha_falsa("1", descricao=longo)])
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'class="texto-longo"' in html
+    assert longo in html, "o texto inteiro tem de ficar no title"
+
+
+def test_as_colunas_sao_as_mesmas_nas_duas_telas(app_lote, monkeypatch):
+    """Pedido explícito do dono. As duas telas leem a MESMA escolha, então não
+    há como divergirem — este teste existe para que continuem assim."""
+    import re
+    from app.apps.analisesps import consultas
+    monkeypatch.setattr(consultas, "listar", lambda f, **k: [linha_falsa("1")])
+
+    def cabecalho(html):
+        i = html.find("<thead>")
+        return re.findall(r"<th[^>]*>([^<]+)</th>", html[i:i + 1200])
+
+    cliente = como(app_lote, SENHA_OPERADOR)
+    das_solicitacoes = cabecalho(
+        cliente.get("/analisesps/solicitacoes").get_data(as_text=True))
+    do_lote = cabecalho(cliente.get("/analisesps/lote").get_data(as_text=True))
+    assert das_solicitacoes == do_lote, "as duas telas divergiram nas colunas"
+
+
+def test_a_descricao_se_esconde_e_volta_num_clique(app):
+    """A descrição ocupa muito, e o dono quer poder tirá-la sem abrir a lista
+    de colunas — é coisa que se faz dez vezes por dia."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "Esconder a descrição" in html
+    assert 'value="alternar"' in html
+
+
+def test_alternar_uma_coluna_nao_mexe_nas_outras(app, monkeypatch):
+    from app.apps.analisesps import preferencias, tabela, web as tela
+
+    guardado = {"colunas": [c.chave for c in tabela.escolhidas(None)]}
+    monkeypatch.setattr(preferencias, "ler",
+                        lambda pessoa, chave: dict(guardado))
+    monkeypatch.setattr(preferencias, "gravar",
+                        lambda pessoa, chave, valor: guardado.update(valor))
+
+    antes = set(guardado["colunas"])
+    como(app, SENHA_OPERADOR).post(
+        "/analisesps/colunas",
+        data={"acao": "alternar", "coluna": "descricao",
+              "voltar": "/analisesps/solicitacoes"})
+    depois = set(guardado["colunas"])
+    assert antes - depois == {"descricao"}, "mexeu em mais do que pediram"
+
+    como(app, SENHA_OPERADOR).post(
+        "/analisesps/colunas",
+        data={"acao": "alternar", "coluna": "descricao",
+              "voltar": "/analisesps/solicitacoes"})
+    assert set(guardado["colunas"]) == antes, "não voltou ao que era"
+
+
+# ---------------------------------------------------------------------------
+# O NOME, QUE É A CHAVE DO LOTE E DOS FILTROS
+# ---------------------------------------------------------------------------
+def test_o_navegador_lembra_o_nome_mas_nunca_a_senha(app):
+    """O dono perguntou se o nome ficaria gravado. Fica — NESTE navegador, e
+    só o nome. A sessão continua morrendo quando o navegador fecha: é ela que
+    diz que alguém digitou a senha, e isso não se lembra."""
+    from app.apps.analisesps import auth as guarda
+
+    cliente = app.test_client()
+    resposta = cliente.post("/analisesps/entrar",
+                            data={"senha": SENHA_OPERADOR, "nome": "Marcelo"})
+    biscoitos = "; ".join(str(v) for _, v in resposta.headers)
+    assert guarda.COOKIE_NOME in biscoitos, "o nome não ficou lembrado"
+    assert SENHA_OPERADOR not in biscoitos, "a SENHA foi parar num cookie"
+
+    cliente.get("/analisesps/sair")
+    login = cliente.get("/analisesps/entrar").get_data(as_text=True)
+    assert 'value="Marcelo"' in login, "o campo não veio preenchido"
+    assert 'type="password"' in login, "parou de pedir a senha"
+
+
+def test_o_mesmo_nome_escrito_diferente_e_a_mesma_pessoa(app):
+    """Maiúscula, acento e espaço sobrando não podem separar ninguém do
+    próprio lote — quem digita com a inicial minúscula um dia encontraria a
+    tela vazia e concluiria que o sistema perdeu o trabalho dele."""
+    from app.apps.analisesps import auth as guarda
+    base = guarda.chave_pessoa("Marcelo")
+    assert guarda.chave_pessoa("MARCELO") == base
+    assert guarda.chave_pessoa("  marcelo ") == base
+    assert guarda.chave_pessoa("João") == guarda.chave_pessoa("Joao")
+    # E o que REALMENTE separa, que é o caso do aviso na tela do Lote:
+    assert guarda.chave_pessoa("Marcelo Leitão") != base
+
+
+def test_o_nome_aparece_no_alto_da_tela(app):
+    """É por ele que o sistema sabe de quem é o lote. Fora da vista, um nome
+    digitado diferente por engano daria outro lote sem ninguém notar."""
+    html = como(app, SENHA_OPERADOR, nome="Marcelo").get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "<b>Marcelo</b>" in html
+
+
+def test_nome_novo_com_lote_vazio_avisa_em_vez_de_deixar_a_pessoa_no_escuro(
+        app_lote, monkeypatch):
+    """O caso que o dono levantou: e se eu escrever o nome diferente amanhã?
+
+    Sem aviso, ele abre o Lote, vê vazio e conclui que o sistema perdeu o
+    trabalho. Com aviso, ele lê que o nome é novo, vê de quem há lote
+    guardado, e sabe o que fazer."""
+    from app.apps.analisesps import lote, preferencias
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "", "salvo_por": None, "salvo_em": None})
+    monkeypatch.setattr(lote, "por_pessoa", lambda: True)
+    monkeypatch.setattr(preferencias, "pessoas_conhecidas",
+                        lambda: [{"chave": "marcelo", "nome": "Marcelo"}])
+
+    html = como(app_lote, SENHA_OPERADOR, nome="Marcelo Leitao").get(
+        "/analisesps/lote").get_data(as_text=True)
+    assert "ainda não tem lote aqui" in html
+    assert "Marcelo</b>" in html
+    assert "Maiúscula e acento não fazem diferença" in html
+
+
+# ---------------------------------------------------------------------------
+# A AGENDA VOLTA A ACEITAR LEMBRETES
+#
+# "e agenda? como faço pra adicionar lembretes? nao ta funcionando" — e não
+# estava mesmo: a conversão deixou a agenda só de leitura. Sem a aba da
+# planilha preenchida à mão, ela abria vazia e sem explicar.
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def agenda_gravavel(app, monkeypatch):
+    """A agenda com a planilha dublada — aqui não há Google. Guarda o que
+    teria ido para a aba Agenda, que é o que precisa ser conferido."""
+    from app.apps.analisesps import agenda, sincronizacao
+    guardados = {}
+    escrito = []
+
+    monkeypatch.setattr(sincronizacao, "escrever_compromisso",
+                        lambda r: escrito.append(dict(r)))
+    monkeypatch.setattr(agenda, "gravar",
+                        lambda conn, regs: [guardados.update({r["id"]: r})
+                                            for r in regs] and len(regs))
+    monkeypatch.setattr(agenda, "salvar",
+                        lambda r: (sincronizacao.escrever_compromisso(r),
+                                   guardados.update({r["id"]: r})))
+    monkeypatch.setattr(agenda, "listar", lambda: list(guardados.values()))
+    monkeypatch.setattr(agenda, "um", lambda i: guardados.get(i))
+    monkeypatch.setattr(agenda, "proximos", lambda dias=90: [])
+    monkeypatch.setattr(agenda, "a_vencer", lambda: [])
+    monkeypatch.setattr(agenda, "feriados_extra", lambda: set())
+    app.escrito = escrito
+    app.guardados = guardados
+    return app
+
+
+def test_a_agenda_aceita_um_lembrete_novo(agenda_gravavel):
+    """E o lembrete vai para a PLANILHA, não só para o banco: a aba Agenda é
+    a dona. Se fosse só aqui, a próxima sincronização traria de volta um mundo
+    sem ele."""
+    cliente = como(agenda_gravavel, SENHA_OPERADOR, nome="Marcelo")
+    resposta = cliente.post("/analisesps/agenda", data={
+        "acao": "salvar", "titulo": "FGTS da obra", "categoria": "FGTS",
+        "data_base": "2026-01-07", "recorrencia": "mensal",
+        "alerta_dias_antes": "5", "responsavel": "Maria"},
+        follow_redirects=True)
+    assert resposta.status_code == 200
+
+    assert len(agenda_gravavel.escrito) == 1, "não foi para a planilha"
+    guardado = agenda_gravavel.escrito[0]
+    assert guardado["titulo"] == "FGTS da obra"
+    assert guardado["criado_por"] == "Marcelo", "não diz quem cadastrou"
+    # O padrão de FGTS é ANTECIPAR: imposto pago depois do vencimento tem multa.
+    assert guardado["ajuste_dia_util"] == "antecipa"
+    # O dia da repetição sai da data, como no Streamlit — não há campo à parte
+    # para os dois não se contradizerem.
+    assert guardado["dia_mes"] == "7"
+
+
+def test_o_lembrete_sem_titulo_ou_sem_data_e_recusado_com_explicacao(
+        agenda_gravavel):
+    """Recusar em silêncio faria a pessoa achar que salvou."""
+    cliente = como(agenda_gravavel, SENHA_OPERADOR)
+    sem_titulo = cliente.post("/analisesps/agenda", data={
+        "acao": "salvar", "titulo": "  ", "data_base": "2026-01-07"})
+    assert "precisa de um título" in sem_titulo.get_data(as_text=True)
+
+    sem_data = cliente.post("/analisesps/agenda", data={
+        "acao": "salvar", "titulo": "Conta de luz", "data_base": ""})
+    assert "primeira ocorrência" in sem_data.get_data(as_text=True)
+    assert not agenda_gravavel.escrito, "gravou mesmo faltando o essencial"
+
+
+def test_desligar_um_lembrete_nao_o_apaga(agenda_gravavel):
+    """Desligar um lembrete de imposto por engano e não ter como trazê-lo de
+    volta seria pior do que o engano. Ele some da vista e fica guardado."""
+    from app.apps.analisesps import agenda
+    cliente = como(agenda_gravavel, SENHA_OPERADOR)
+    cliente.post("/analisesps/agenda", data={
+        "acao": "salvar", "titulo": "Conta de luz", "categoria": "Conta",
+        "data_base": "2026-01-15", "recorrencia": "mensal"},
+        follow_redirects=True)
+    ident = agenda_gravavel.escrito[0]["id"]
+
+    cliente.post("/analisesps/agenda", data={"acao": "desligar", "id": ident},
+                 follow_redirects=True)
+    guardado = agenda_gravavel.guardados[ident]
+    assert guardado["status"] == "inativo"
+    assert not agenda.esta_ativo(guardado), "continuou contando no calendário"
+    assert guardado["titulo"] == "Conta de luz", "o compromisso foi apagado"
+
+    cliente.post("/analisesps/agenda", data={"acao": "religar", "id": ident},
+                 follow_redirects=True)
+    assert agenda.esta_ativo(agenda_gravavel.guardados[ident])
+
+
+def test_se_a_planilha_falhar_nada_e_salvo(agenda_gravavel, monkeypatch):
+    """A planilha é a dona. Salvar só aqui deixaria o lembrete vivo na tela e
+    invisível lá — e a próxima sincronização não o traria de volta."""
+    from app.apps.analisesps import agenda, sincronizacao
+
+    def explode(registro):
+        raise RuntimeError("cota do Google estourada")
+
+    monkeypatch.setattr(sincronizacao, "escrever_compromisso", explode)
+    monkeypatch.setattr(agenda, "salvar",
+                        lambda r: sincronizacao.escrever_compromisso(r))
+
+    resposta = como(agenda_gravavel, SENHA_OPERADOR).post(
+        "/analisesps/agenda", data={
+            "acao": "salvar", "titulo": "Não deve entrar",
+            "categoria": "Conta", "data_base": "2026-02-01",
+            "recorrencia": "mensal"})
+    assert "Não consegui gravar na planilha" in resposta.get_data(as_text=True)
+    assert not agenda_gravavel.guardados, "salvou aqui mesmo falhando lá"
+
+
+def test_a_consulta_nao_cadastra_lembrete(agenda_gravavel):
+    resposta = como(agenda_gravavel, SENHA_CONSULTA).post(
+        "/analisesps/agenda", data={"acao": "salvar", "titulo": "X",
+                                    "data_base": "2026-01-07"})
+    assert resposta.status_code == 403
+    assert not agenda_gravavel.escrito
+
+
+def test_ligado_e_desligado_querem_dizer_a_mesma_coisa_em_todo_lugar(app):
+    """O calendário exigia status "ativo"; os próximos só descartavam
+    "cancelado". Um compromisso marcado "inativo" aparecia num e não no
+    outro — e ninguém entenderia por quê."""
+    from app.apps.analisesps import agenda
+    assert agenda.esta_ativo({"status": "ativo"})
+    assert agenda.esta_ativo({"status": ""})
+    assert agenda.esta_ativo({})
+    for desligado in ("cancelado", "inativo", "Desativado", " ARQUIVADO "):
+        assert not agenda.esta_ativo({"status": desligado}), desligado
+
+
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
     monkeypatch.delenv("ANALISESPS_SENHA_OPERADOR", raising=False)
     monkeypatch.delenv("ANALISESPS_SENHA_CONSULTA", raising=False)

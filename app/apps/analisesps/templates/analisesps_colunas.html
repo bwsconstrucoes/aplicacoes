@@ -9,6 +9,8 @@
    o que se está procurando, e misturar os dois faria cada clique numa caixa
    de coluna refazer a consulta do filtro.
 --------------------------------------------------------------------------- #}
+{% set marcadas_agora = colunas|map(attribute='chave')|list %}
+<div class="linha-colunas">
 <details class="escolher-colunas">
   <summary>Colunas da tabela <span class="qtd">{{ colunas|length }} de {{ todas|length }}</span></summary>
   <form method="post" action="{{ url_for('analisesps.escolher_colunas') }}">
@@ -35,3 +37,15 @@
     </p>
   </form>
 </details>
+
+{# Um clique para a descrição sair ou voltar. Abrir a lista inteira para
+   mexer numa coluna só é caro demais para uma coisa que se faz o dia todo. #}
+<form method="post" action="{{ url_for('analisesps.escolher_colunas') }}">
+  <input type="hidden" name="acao" value="alternar">
+  <input type="hidden" name="coluna" value="descricao">
+  <input type="hidden" name="voltar" value="{{ request.full_path }}">
+  <button class="btn-alternar" type="submit">
+    {% if 'descricao' in marcadas_agora %}Esconder a descrição{% else %}Mostrar a descrição{% endif %}
+  </button>
+</form>
+</div>

@@ -6,6 +6,117 @@
 <h2>Agenda <small>compromissos que se repetem</small></h2>
 
 {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+{% if aviso %}<div class="aviso bom">{{ aviso }}</div>{% endif %}
+{% if erro_form %}<div class="aviso erro">{{ erro_form }}</div>{% endif %}
+
+{% if pode_operar %}
+  <p style="margin:-4px 0 14px">
+    <a class="btn" href="{{ url_for('analisesps.tela_agenda', editar='novo') }}">
+      + Novo lembrete</a>
+    <span class="cartao-dica" style="margin-left:10px">
+      Contas, impostos, FGTS, empréstimos — o que se repete e não pode passar
+      em branco.
+    </span>
+  </p>
+{% endif %}
+
+{# ---------------------------------------------------------------------------
+   O FORMULÁRIO — o "Novo compromisso" que o Streamlit tinha e a conversão
+   deixou de fora, o que fazia a agenda parecer quebrada: sem a aba da
+   planilha preenchida à mão, não havia como pôr nada nela.
+
+   A planilha continua sendo a dona: grava-se lá primeiro e só depois aqui.
+--------------------------------------------------------------------------- #}
+{% if pode_operar and (novo or em_edicao) %}
+  {% set c = em_edicao or {} %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>{{ 'Novo lembrete' if novo else 'Editar lembrete' }}</h3>
+      {% if em_edicao %}<small>{{ c.id }}</small>{% endif %}
+    </div>
+    <form method="post" class="form-agenda">
+      <input type="hidden" name="acao" value="salvar">
+      {% if em_edicao %}
+        <input type="hidden" name="id" value="{{ c.id }}">
+        <input type="hidden" name="criado_por" value="{{ c.criado_por or '' }}">
+        <input type="hidden" name="criado_em" value="{{ c.criado_em or '' }}">
+        <input type="hidden" name="status" value="{{ c.status or 'ativo' }}">
+      {% endif %}
+
+      <div class="campo-largo-2">
+        <label class="rotulo-campo">Título</label>
+        <input type="text" name="titulo" maxlength="120" required
+               value="{{ c.titulo or '' }}"
+               placeholder="ex.: FGTS, Conta de luz da obra, Parcela do trator">
+      </div>
+
+      <div>
+        <label class="rotulo-campo">Categoria</label>
+        <select name="categoria">
+          {% for cat in categorias %}
+            <option value="{{ cat }}" {% if c.categoria == cat %}selected{% endif %}>{{ cat }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="rotulo-campo">Primeira data</label>
+        <input type="date" name="data_base" required
+               value="{{ c.data_base_d.isoformat() if c.data_base_d else '' }}">
+      </div>
+
+      <div>
+        <label class="rotulo-campo">Repete</label>
+        <select name="recorrencia">
+          {% for r in recorrencias %}
+            <option value="{{ r }}" {% if c.recorrencia == r %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="rotulo-campo">Se cair em fim de semana ou feriado</label>
+        <select name="ajuste_dia_util">
+          {% for a in ajustes %}
+            <option value="{{ a }}" {% if c.ajuste_dia_util == a %}selected{% endif %}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label class="rotulo-campo">Avisar quantos dias antes</label>
+        <input type="number" name="alerta_dias_antes" min="0" max="60"
+               value="{{ c.alerta_dias_antes or 3 }}">
+      </div>
+
+      <div>
+        <label class="rotulo-campo">Responsável</label>
+        <input type="text" name="responsavel" maxlength="60"
+               value="{{ c.responsavel or '' }}">
+      </div>
+
+      <div class="campo-largo-2">
+        <label class="rotulo-campo">Observação (opcional)</label>
+        <input type="text" name="descricao" maxlength="500"
+               value="{{ c.descricao or '' }}">
+      </div>
+
+      <div class="form-agenda-acoes">
+        <button class="btn" type="submit">Guardar</button>
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_agenda') }}">Cancelar</a>
+      </div>
+
+      <p class="cartao-dica campo-largo-2" style="margin:0">
+        O dia da repetição sai da <b>primeira data</b>: escolher dia 7 repete
+        todo dia 7; escolher <b>dia 31</b> quer dizer "último dia do mês", e
+        funciona em fevereiro. Imposto, FGTS e parcelamento vêm com
+        <b>antecipa</b> por padrão — pagar depois do vencimento tem multa.
+        O lembrete é guardado também na aba "Agenda" da planilha.
+      </p>
+    </form>
+  </div>
+{% endif %}
 
 {% if not compromissos and not erro %}
   <div class="aviso atencao">
@@ -152,7 +263,8 @@
     <table class="sps">
       <thead>
         <tr><th>Título</th><th>Categoria</th><th>Repete</th><th>Dia</th>
-            <th>Data base</th><th>Ajuste</th><th>Aviso</th><th>Situação</th></tr>
+            <th>Data base</th><th>Ajuste</th><th>Aviso</th><th>Situação</th>
+            {% if pode_operar %}<th></th>{% endif %}</tr>
       </thead>
       <tbody>
         {% for c in compromissos %}
@@ -164,7 +276,23 @@
             <td>{{ c.data_base }}</td>
             <td>{{ c.ajuste_dia_util }}</td>
             <td>{{ c.alerta_dias_antes }} d</td>
-            <td>{{ c.status }}</td>
+            <td>{{ c.status or 'ativo' }}</td>
+            {% if pode_operar %}
+              <td class="acoes-linha">
+                <a class="link-btn"
+                   href="{{ url_for('analisesps.tela_agenda', editar=c.id) }}">Editar</a>
+                <form method="post" style="display:inline">
+                  {# Desligar NÃO apaga: o compromisso some da vista e continua
+                     guardado. Desligar um lembrete de imposto por engano e não
+                     ter como trazê-lo de volta seria pior do que o engano. #}
+                  <input type="hidden" name="acao"
+                         value="{{ 'religar' if not agenda_ativo(c) else 'desligar' }}">
+                  <input type="hidden" name="id" value="{{ c.id }}">
+                  <button class="link-btn" type="submit">
+                    {{ 'Religar' if not agenda_ativo(c) else 'Desligar' }}</button>
+                </form>
+              </td>
+            {% endif %}
           </tr>
         {% endfor %}
       </tbody>

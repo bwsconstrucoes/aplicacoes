@@ -31,19 +31,28 @@ Coluna = namedtuple("Coluna", "chave rotulo tipo padrao")
 #   agend   — selo colorido de Agendamento
 #   link    — abre em outra aba quando começa com http
 #   alertas — Risco / Cadastro incompleto
+#   longo   — texto comprido (a descrição): letra menor e cortado na largura,
+#             com o texto inteiro no title. É a única coluna que compete com a
+#             tela toda, e por isso tem tratamento próprio.
 #
 # padrao: o que vem marcado para quem nunca escolheu. O conjunto foi definido
-# pelo dono olhando a tela (04/09/2026): entra VALIDAÇÃO — é ela que destrava
-# o agendamento, e não vê-la é trabalhar às cegas — e fica de fora
-# RESPONSÁVEL, que ele não usa no dia a dia. Quem quiser qualquer uma das
-# outras acrescenta pelo botão, e a escolha fica guardada.
+# pelo dono olhando a tela (04/09/2026): entram VALIDAÇÃO — é ela que destrava
+# o agendamento, e não vê-la é trabalhar às cegas —, TIPO DE DESPESA e
+# DESCRIÇÃO; fica de fora RESPONSÁVEL, que ele não usa no dia a dia. Quem
+# quiser qualquer uma das outras acrescenta pelo botão, e a escolha fica
+# guardada.
+#
+# Sobre "Tipo de Despesa": é a classificação de despesa que existe NA SP
+# (coluna I da SPsBD). "Categoria de Despesa" no sentido do Omie é outra
+# coisa e só aparece na tela de Ratear — ela não é gravada em cada SP.
 DEFINICOES = [
     Coluna("id",               "ID",                  "id",      True),
     Coluna("solicitacao_d",    "Data",                "data",    False),
     Coluna("vencimento_d",     "Vencimento",          "data",    True),
     Coluna("credor",           "Credor",              "texto",   True),
+    Coluna("descricao",        "Descrição",           "longo",   True),
     Coluna("documento",        "CPF/CNPJ",            "texto",   False),
-    Coluna("tipo_despesa",     "Tipo de Despesa",     "texto",   False),
+    Coluna("tipo_despesa",     "Tipo de Despesa",     "texto",   True),
     Coluna("centro_custo",     "Centro de Custo",     "texto",   False),
     Coluna("valor_num",        "Valor",               "moeda",   True),
     Coluna("status_pgt",       "Status Pgt",          "status",  True),
@@ -86,3 +95,10 @@ def escolhidas(guardado) -> list:
     # A ORDEM é a da definição, nunca a da escolha: a tabela tem de ficar
     # sempre com a mesma cara, senão cada pessoa lê num lugar diferente.
     return [c for c in DEFINICOES if c.chave in marcadas]
+
+
+# A coluna que mais atrapalha quando não se quer ela: comprida, e no meio da
+# tabela. Ganha um botão próprio de mostrar/esconder, ao lado da lista de
+# colunas — abrir a lista inteira para tirar uma coluna só é caro demais para
+# uma coisa que se faz dez vezes por dia.
+ALTERNAVEL = "descricao"

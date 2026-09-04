@@ -38,6 +38,21 @@
     entrou — ninguém sobrescreve o trabalho de ninguém.
   </div>
 
+  {% if outras_pessoas %}
+    <div class="aviso atencao">
+      <b>Você entrou como "{{ nome }}", e este nome ainda não tem lote aqui.</b><br>
+      Já existe lote guardado de:
+      {% for p in outras_pessoas %}<b>{{ p.nome }}</b>{% if not loop.last %}, {% endif %}{% endfor %}.
+      <br><small>
+        O sistema separa o lote e os filtros <b>pelo nome que você digita ao
+        entrar</b>. Se você é uma dessas pessoas e escreveu o nome de um jeito
+        diferente hoje, saia e entre de novo escrevendo igual — o seu trabalho
+        está lá, intacto. Maiúscula e acento não fazem diferença; palavra a
+        mais ou a menos, faz.
+      </small>
+    </div>
+  {% endif %}
+
   {% if antes %}
     <div class="aviso atencao">
       <b>Há um lote guardado de antes</b>, de quando ele era compartilhado
