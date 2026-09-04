@@ -1330,6 +1330,127 @@ def test_a_consulta_nao_tira_do_lote(app_lote):
     assert resposta.status_code == 403
 
 
+# ---------------------------------------------------------------------------
+# A BUSCA POR ATUALIZAÇÕES DE 90 EM 90 SEGUNDOS
+#
+# "a busca por atualizacoes a cada 90s acho que nao tá acontecendo" — e não
+# estava. O Streamlit tinha "Auto-atualizar (90s)", ligado por padrão; a
+# conversão deixou de fora, apostando num agendador externo que não dá sinal
+# de ter sido configurado. Sem os dois, a base só se atualizava quando alguém
+# apertasse o botão em Configurações.
+# ---------------------------------------------------------------------------
+def test_a_tela_pergunta_por_atualizacoes(app):
+    """A marca com o carimbo da última sincronização e o endereço de quem
+    responde. É comparando com esse carimbo que a tela sabe se mudou algo."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'id="frescor"' in html
+    assert "/api/frescor" in html
+    assert html.count("analisesps.js") == 1, "o script entrou duas vezes"
+
+
+def test_o_frescor_dispara_a_sincronizacao_quando_ela_esta_velha(app,
+                                                                 monkeypatch):
+    """É isto que substitui o agendador externo: quem estiver com a tela
+    aberta mantém a base viva para todo mundo."""
+    from app.apps.analisesps import tarefas
+    pedidos = []
+    monkeypatch.setattr(tarefas, "estado",
+                        lambda: {"rodando": False, "detalhe": None,
+                                 "interrompida": None})
+    monkeypatch.setattr(tarefas, "_minutos_desde_a_ultima_sincronizacao",
+                        lambda: 20.0)
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="manual":
+                        pedidos.append((modo, disparo)) or {"ok": True})
+
+    resposta = como(app, SENHA_OPERADOR).get("/analisesps/api/frescor")
+    assert resposta.status_code == 200
+    assert resposta.get_json()["disparou"] is True
+    assert pedidos == [("sincronizar", "tela aberta")]
+
+
+def test_o_frescor_nao_dispara_a_toda_hora(app, monkeypatch):
+    """Com quatro pessoas com a tela aberta o dia inteiro, um disparo a cada
+    90 s seriam quarenta sincronizações por hora, todas lendo a planilha."""
+    from app.apps.analisesps import tarefas
+    pedidos = []
+    monkeypatch.setattr(tarefas, "estado",
+                        lambda: {"rodando": False, "detalhe": None,
+                                 "interrompida": None})
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="manual":
+                        pedidos.append(modo) or {"ok": True})
+
+    # Acabou de sincronizar: não dispara.
+    monkeypatch.setattr(tarefas, "_minutos_desde_a_ultima_sincronizacao",
+                        lambda: 1.0)
+    assert como(app, SENHA_OPERADOR).get(
+        "/analisesps/api/frescor").get_json()["disparou"] is False
+    assert not pedidos
+
+    # Já está rodando: também não.
+    monkeypatch.setattr(tarefas, "_minutos_desde_a_ultima_sincronizacao",
+                        lambda: 99.0)
+    monkeypatch.setattr(tarefas, "estado",
+                        lambda: {"rodando": True, "detalhe": {"etapa": "delta"},
+                                 "interrompida": None})
+    assert como(app, SENHA_OPERADOR).get(
+        "/analisesps/api/frescor").get_json()["disparou"] is False
+    assert not pedidos
+
+
+def test_o_frescor_nunca_estoura_na_cara_de_quem_so_olhava(app, monkeypatch):
+    """É chamado de fundo, de 90 em 90 segundos. Uma falha aqui não pode virar
+    erro na tela de quem estava conferindo uma lista."""
+    from app.apps.analisesps import consultas, tarefas
+
+    def explode(*a, **k):
+        raise RuntimeError("banco caiu")
+
+    monkeypatch.setattr(tarefas, "estado", explode)
+    monkeypatch.setattr(consultas, "base_carregada", explode)
+
+    resposta = como(app, SENHA_OPERADOR).get("/analisesps/api/frescor")
+    assert resposta.status_code == 200
+    assert resposta.get_json()["disparou"] is False
+
+
+def test_quem_so_consulta_tambem_mantem_a_base_viva(app, monkeypatch):
+    """A base é de todos. Se só o Operador mantivesse, uma tarde inteira com
+    o Consulta aberto deixaria a base parada."""
+    from app.apps.analisesps import tarefas
+    monkeypatch.setattr(tarefas, "estado",
+                        lambda: {"rodando": False, "detalhe": None,
+                                 "interrompida": None})
+    monkeypatch.setattr(tarefas, "_minutos_desde_a_ultima_sincronizacao",
+                        lambda: 99.0)
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="manual": {"ok": True})
+    assert como(app, SENHA_CONSULTA).get(
+        "/analisesps/api/frescor").status_code == 200
+
+
+def test_a_tela_nao_se_recarrega_por_baixo_de_quem_esta_marcando(app):
+    """Recarregar por baixo de quem acabou de marcar vinte linhas apagaria a
+    seleção — pior do que ver um número com dois minutos de idade. O script
+    confere a seleção antes de recarregar, e senão só avisa."""
+    css_js = (Path(__file__).resolve().parents[1] / "app" / "apps"
+              / "analisesps" / "static" / "analisesps.js").read_text(
+                  encoding="utf-8")
+    assert "temSelecao" in css_js
+    assert "temModalAberto" in css_js
+    assert "avisar()" in css_js
+
+
+def test_a_hora_da_ultima_atualizacao_fica_a_vista(app):
+    """"Está atualizando?" tem de ser respondível de relance, sem abrir
+    Configurações."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "base de" in html
+
+
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
     monkeypatch.delenv("ANALISESPS_SENHA_OPERADOR", raising=False)
     monkeypatch.delenv("ANALISESPS_SENHA_CONSULTA", raising=False)

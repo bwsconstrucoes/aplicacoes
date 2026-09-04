@@ -354,6 +354,52 @@ A lição, que vale para as outras áreas: **quando um módulo acha um defeito
 num pedaço que foi copiado, os outros têm o mesmo defeito.** Procurar leva
 minutos; descobrir em produção leva um susto.
 
+### Sétima leva (05/09) — a busca por atualizações de 90 em 90 segundos
+
+*"a busca por atualizacoes a cada 90s acho que nao tá acontecendo"* — e não
+estava. Pior: **provavelmente nada estava atualizando a base sozinho.**
+
+O Streamlit tinha "Auto-atualizar (90s)", ligado por padrão. A conversão
+deixou de fora, apostando num **agendador externo** (cron-job.org chamando
+`/api/sincronizar` com o `ANALISESPS_SECRET`) — e **não há sinal de que esse
+agendador tenha sido configurado**. Sem os dois, a base só se atualizava
+quando alguém apertasse o botão em Configurações.
+
+O que foi feito:
+
+- **A tela aberta pergunta a cada 90 s** (`/api/frescor`) e, se a última
+  sincronização tiver mais de **cinco minutos**, **dispara** a sincronização
+  no processo separado. Quem estiver com a tela aberta mantém a base viva
+  para todo mundo — inclusive o perfil Consulta, porque a base é de todos.
+- **Cinco minutos, e não 90 segundos, para o disparo.** Com quatro pessoas
+  com a tela aberta o dia inteiro, disparar a cada 90 s seriam quarenta
+  sincronizações por hora, todas lendo a planilha e gastando cota do Google.
+- **A tela NÃO se recarrega sozinha quando há SPs marcadas** (nem com a ficha
+  aberta). Recarregar por baixo de quem acabou de marcar vinte linhas
+  apagaria a seleção, e isso é pior do que ver um número com dois minutos de
+  idade: aparece um aviso discreto no rodapé e quem decide é a pessoa.
+- **A hora da última sincronização ficou à vista, no alto.** "Está
+  atualizando?" tem de ser respondível de relance.
+
+**O agendador externo continua valendo** e continua sendo melhor: ele atualiza
+a base de madrugada, com todo mundo dormindo. Isto aqui é a rede de segurança
+para quando ele não existe.
+
+### Defeito que esta mudança expôs: a trava não era do banco
+
+"Uma atualização por vez" era conferida pelo **programa**: perguntava "está
+rodando?" e, se não, abria uma execução. **Entre a pergunta e a resposta cabe
+outra requisição.** Com o botão manual isso quase nunca acontecia — uma
+pessoa, um clique. Com quatro telas perguntando quase ao mesmo tempo, passa a
+acontecer: quatro processos de sincronização nascendo juntos, quatro leituras
+da planilha, quatro vezes a cota, para o mesmo trabalho.
+
+**Migração 004** põe um índice único parcial: no máximo UMA linha com
+`fim IS NULL`. Agora quem recusa é o Postgres, e o programa traduz a recusa em
+"já existe uma atualização em andamento". Conferido contra banco de verdade:
+a segunda inserção é recusada pelo banco, e a tela recebe o recado em
+português em vez de um erro.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
@@ -402,11 +448,6 @@ acordado, não vale o risco.
   a SP por dentro do Pipefy** (o botão abre o formulário deles, como lá).
 - **A coluna SP Fiscal na lista** (ver acima).
 - **Reenviar comprovante por e-mail** (depende de SMTP no serviço).
-- **Auto-atualizar a cada 90s.** Não foi esquecimento: aqui a carga roda em
-  processo separado e a tela já lê o estado do banco. Recarregar sozinha a
-  cada 90 s custaria uma consulta por pessoa por minuto e meio, o dia inteiro,
-  para mudar quase nada. Se fizer falta, vira uma caixa de "atualizar sozinha"
-  guardada por pessoa — mas melhor esperar sentir a falta.
 
 ---
 

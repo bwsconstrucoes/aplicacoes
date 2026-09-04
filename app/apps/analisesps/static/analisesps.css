@@ -836,3 +836,16 @@ a.kpi { display: block; }
    distinguivel dos botoes que escrevem na planilha. */
 .barra-acoes .btn.perigo { border-color: #E0B4B0; color: #8C3A33; }
 .barra-acoes .btn.perigo:hover:not(:disabled) { background: #FDF3F2; }
+
+/* O aviso de que a base mudou. Discreto e no rodape: nao pode tapar a tabela
+   nem competir com o que a pessoa esta fazendo. */
+.aviso-frescor {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  z-index: 60; display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; background: var(--azul); color: var(--branco);
+  border-radius: 999px; box-shadow: var(--sombra-forte); font-size: 13.5px;
+}
+.aviso-frescor .btn {
+  background: var(--amarelo); border-color: var(--amarelo);
+  color: var(--azul-fundo); padding: 5px 12px; font-size: 12.5px;
+}

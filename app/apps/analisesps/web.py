@@ -729,6 +729,44 @@ def andamento():
     }
 
 
+@bp.route("/api/frescor")
+@exige_consulta
+def frescor():
+    """A pergunta que a tela aberta faz de 90 em 90 segundos.
+
+    Faz duas coisas de uma vez, e é de propósito:
+
+      1. DISPARA a sincronização se a última estiver velha. É o que substitui
+         o agendador externo — sem ele, a base só se atualizava quando alguém
+         apertasse o botão em Configurações.
+      2. Devolve o carimbo da última sincronização, para a tela saber se
+         mudou alguma coisa desde que foi aberta.
+
+    A tela NÃO se recarrega sozinha quando há SPs marcadas: recarregar por
+    baixo de quem acabou de marcar vinte linhas apagaria a seleção, e isso é
+    pior do que ver um dado com dois minutos de idade. Ela mostra um aviso e
+    deixa a pessoa decidir."""
+    from . import consultas, tarefas
+
+    acao = tarefas.manter_fresco()
+
+    # TUDO daqui para baixo dentro da proteção, e não só a leitura da base:
+    # esta rota é chamada de fundo de 90 em 90 segundos, e um erro nela
+    # apareceria na tela de quem só estava conferindo uma lista. Um teste
+    # pegou justamente a chamada que tinha ficado de fora.
+    carimbo, quantidade, rodando = "", 0, False
+    try:
+        base = consultas.base_carregada()
+        carimbo = str(base.get("ultima") or "")
+        quantidade = base.get("quantidade") or 0
+        rodando = tarefas.estado()["rodando"]
+    except Exception:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou ler o frescor da base")
+
+    return {"ok": True, "carimbo": carimbo, "quantidade": quantidade,
+            "disparou": acao.get("disparou", False), "rodando": rodando}
+
+
 @bp.route("/api/sincronizar", methods=["POST"])
 @publica("chamada por máquina (agendador); protegida por ANALISESPS_SECRET")
 def sincronizar():

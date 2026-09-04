@@ -298,3 +298,71 @@ window.ligarFicha = function (raiz) {
 
 // A ficha aberta como página inteira liga na hora.
 document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document));
+
+
+// ---------------------------------------------------------------------------
+// A BUSCA POR ATUALIZACOES DE 90 EM 90 SEGUNDOS
+//
+// O Streamlit tinha "Auto-atualizar (90s)", ligado por padrao. A conversao
+// deixou de fora, e com isso a base so se atualizava quando alguem apertava o
+// botao em Configuracoes — o agendador externo que deveria chamar a
+// sincronizacao nao da sinal de ter sido configurado.
+//
+// Aqui a tela aberta faz duas coisas a cada 90 s: pede ao servidor que
+// DISPARE a sincronizacao se ela estiver velha, e pergunta se a base mudou.
+//
+// E NAO RECARREGA SOZINHA COM SPs MARCADAS. Recarregar por baixo de quem
+// acabou de marcar vinte linhas apagaria a selecao — e isso e pior do que ver
+// um numero com dois minutos de idade. Nesse caso aparece um aviso discreto e
+// quem decide e a pessoa.
+// ---------------------------------------------------------------------------
+(function () {
+  const marca = document.getElementById("frescor");
+  if (!marca) return;
+
+  const CADA = 90000;
+  const url = marca.dataset.url;
+  let carimboInicial = marca.dataset.carimbo || "";
+  let avisando = false;
+
+  function temSelecao() {
+    return document.querySelectorAll("input.marca:checked").length > 0;
+  }
+
+  function temModalAberto() {
+    const modal = document.getElementById("ficha-modal");
+    return !!(modal && modal.open);
+  }
+
+  function avisar() {
+    if (avisando) return;
+    avisando = true;
+    const barra = document.createElement("div");
+    barra.className = "aviso-frescor";
+    barra.innerHTML =
+      '<span>A base foi atualizada desde que você abriu esta tela.</span>' +
+      '<button class="btn" type="button">Ver o que mudou</button>';
+    barra.querySelector("button").addEventListener(
+      "click", () => location.reload());
+    document.body.appendChild(barra);
+  }
+
+  async function bater() {
+    try {
+      const r = await fetch(url, {headers: {"Accept": "application/json"}});
+      if (!r.ok) return;                 // sessao caiu, rede oscilou: cala
+      const d = await r.json();
+      if (!d.carimbo) return;
+      if (!carimboInicial) { carimboInicial = d.carimbo; return; }
+      if (d.carimbo === carimboInicial) return;
+
+      // Mudou. Se ninguem esta no meio de nada, recarrega; senao, avisa.
+      if (temSelecao() || temModalAberto()) avisar();
+      else location.reload();
+    } catch (e) {
+      // De fundo: um erro aqui nao pode aparecer na cara de quem so olhava.
+    }
+  }
+
+  setInterval(bater, CADA);
+})();

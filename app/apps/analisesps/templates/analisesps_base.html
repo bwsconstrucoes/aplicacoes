@@ -42,6 +42,12 @@
       <div class="topo-meta">
         {% if nome %}<b>{{ nome }}</b> · {% endif %}Perfil <b>{{ perfil }}</b>
         {% if not pode_operar %}<br><small>vê, mas não altera</small>{% endif %}
+        {# A hora da última sincronização, à vista. "Está atualizando?" tem de
+           ser respondível de relance, sem abrir Configurações. #}
+        {% if base is defined and base and base.ultima %}
+          <br><small title="A tela busca atualizações a cada 90 segundos">
+            base de {{ base.ultima|data_br }}</small>
+        {% endif %}
       </div>
     {% endif %}
     <a class="topo-btn" href="{{ url_for('analisesps.sair') }}">Sair</a>
@@ -50,11 +56,29 @@
 
 {% block avisos %}{% endblock %}
 
+{# ---------------------------------------------------------------------------
+   A busca por atualizações de 90 em 90 segundos, como no Streamlit. Só nas
+   telas que mostram dado da base — não faz sentido na Agenda nem nas
+   Configurações. A marca leva o carimbo da última sincronização: é comparando
+   com ele que a tela sabe se algo mudou.
+--------------------------------------------------------------------------- #}
+{% if base is defined and base and base.ultima is defined %}
+  <span id="frescor" hidden
+        data-url="{{ url_for('analisesps.frescor') }}"
+        data-carimbo="{{ base.ultima or '' }}"></span>
+{% endif %}
+
 <div class="corpo {% block classe_corpo %}{% endblock %}">
   <aside class="filtros">{% block filtros %}{% endblock %}</aside>
   <main class="principal">{% block conteudo %}{% endblock %}</main>
 </div>
 
+{# O script do módulo entra em TODAS as telas: a busca por atualizações de 90
+   em 90 segundos vale em qualquer uma que mostre dado da base, não só nas
+   duas que têm tabela. Cada pedaço dele confere se o seu elemento existe
+   antes de fazer qualquer coisa, então carregar em tela que não usa não
+   custa nada. #}
+<script src="{{ url_for('analisesps.static', filename='analisesps.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
