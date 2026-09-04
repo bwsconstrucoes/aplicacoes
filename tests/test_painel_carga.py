@@ -21,6 +21,7 @@ próprio teste.
 from __future__ import annotations
 
 import os
+import datetime as dt
 
 import pytest
 
@@ -330,3 +331,44 @@ def test_apagar_movimentos_da_janela(espelho_limpo):
     assert apagados == 2
     restantes = {c for (c,) in consultar("SELECT ncodtitulo FROM movimentos")}
     assert restantes == {1, 4, 5, 6}
+
+
+def test_as_duas_datas_chegam_do_omie_ate_o_fato(espelho_limpo):
+    """O caminho inteiro para as colunas novas: o título traz o vencimento, o
+    movimento traz o pagamento, e o fato tem de guardar cada um no seu lugar.
+
+    Sem este teste, `data_vencimento` e `data_pagamento` poderiam ficar vazias
+    na produção sem nada acusar — a tela mostraria traço e pareceria que o OMIE
+    não tem a informação.
+    """
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato, projetos
+
+    # vence 10/03, pago 15/03: cinco dias de atraso
+    titulo = _titulo_do_omie(1, valor=1000.0, natureza="R")
+    em_aberto = _titulo_do_omie(2, valor=500.0, natureza="R",
+                                status_titulo="A RECEBER")
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo, em_aberto], "R")
+        espelho.gravar_movimentos(conn, [_movimento_do_omie(1)])
+        espelho.gravar_categorias(conn, [_categoria_do_omie()])
+        espelho.gravar_clientes(conn, [
+            {"codigo_cliente_omie": 555, "razao_social": "CLIENTE TAL LTDA",
+             "nome_fantasia": "", "cnpj_cpf": ""}])
+        projetos.gravar(conn, {"D1": "ALFA"})
+        fato.reconstruir_fato(conn)
+
+    linhas = {c: (dv, dp) for c, dv, dp in consultar(
+        "SELECT codigo_lancamento, data_vencimento, data_pagamento FROM fato "
+        " ORDER BY codigo_lancamento")}
+
+    venc, pago = linhas[1]
+    assert venc == dt.date(2025, 3, 10)
+    assert pago == dt.date(2025, 3, 15)
+
+    # o que não foi recebido não pode ganhar data de pagamento: seria dizer que
+    # entrou dinheiro que não entrou
+    venc2, pago2 = linhas[2]
+    assert venc2 == dt.date(2025, 3, 10)
+    assert pago2 is None

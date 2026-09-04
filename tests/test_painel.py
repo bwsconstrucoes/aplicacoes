@@ -338,6 +338,10 @@ RESPOSTAS_FALSAS = {
     "DISTINCT departamento": [("Obra Um",), ("Obra Dois",)],
     # o carimbo da base: e ele que diz se as listas guardadas ainda valem
     "MAX(fim) FROM execucoes": [(dt.datetime(2026, 9, 2, 3, 12),)],
+    # as colunas de vencimento/pagamento já preenchidas — a tela sem o aviso.
+    # O marcador é a consulta INTEIRA: "data_vencimento IS NOT NULL" sozinho
+    # também aparece no CASE que calcula o atraso, e roubaria aquela resposta.
+    "SELECT 1 FROM fato WHERE data_vencimento IS NOT NULL LIMIT 1": [(1,)],
     "SELECT 1 FROM fato LIMIT 1": [(1,)],
     "FROM execucoes": [("rapida", "agendado",
                         dt.datetime(2026, 9, 2, 3, 0), dt.datetime(2026, 9, 2, 3, 12),
@@ -407,7 +411,9 @@ def _consultar_falso(sql, params=()):
                  "NF77", "folha de março", "Bradesco C/C", "Pago",
                  -3000.0, 0.0, -20.0, -5.0, "",
                  # as quatro que estavam no banco e não apareciam na tela
-                 "Quitado", "PC-4471", "Obra Um · Medição 3", 998877)]
+                 "Quitado", "PC-4471", "Obra Um · Medição 3", 998877,
+                 # vencimento, pagamento e o atraso entre os dois
+                 dt.date(2025, 4, 1), dt.date(2025, 4, 8), 7)]
     if "medicao_rotulo" in sql and "COUNT(*)" in sql:           # os totais
         return [(3, 7000.0, 300.0, 500.0)]
     if "medicao_rotulo" in sql:                                 # as medições
@@ -1095,3 +1101,80 @@ def test_a_tela_diz_quanto_tempo_levou(painel):
     html_ = painel.get("/painel/analitico").get_data(as_text=True)
     assert "Tela montada em" in html_
     assert "consulta" in html_ and "ao banco" in html_
+
+
+# ===========================================================================
+# 10. Vencimento e pagamento, cada um na sua coluna
+# ===========================================================================
+def test_o_analitico_mostra_as_duas_datas_e_o_atraso(painel):
+    """Era uma coluna só, que às vezes era o pagamento e às vezes o vencimento —
+    e não havia como saber qual. Agora são três colunas."""
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html_ = painel.get("/painel/analitico").get_data(as_text=True)
+    assert "<th class=\"sem-ordem\">Vencimento</th>" in html_
+    assert "<th class=\"sem-ordem\">Pagamento</th>" in html_
+    assert "01/04/2025" in html_ and "08/04/2025" in html_
+    assert "7d" in html_                          # o atraso entre as duas
+
+
+def test_a_pessoa_escolhe_por_qual_data_a_faixa_filtra(painel, monkeypatch):
+    """"O que venceu em junho" e "o que foi pago em junho" são perguntas
+    diferentes, e a mesma faixa tem de servir às duas."""
+    from app.apps.painel import consultas
+    vistos = []
+    monkeypatch.setattr(consultas, "consultar",
+                        lambda s, p=(): (vistos.append(s), _consultar_falso(s, p))[1])
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+
+    painel.get("/painel/analitico?de=2025-06-01&base=vencimento")
+    sql = [s for s in vistos if "situacao_vencimento, pedido_compra" in s][0]
+    assert "data_vencimento >= CAST(" in sql
+
+    vistos.clear()
+    painel.get("/painel/analitico?de=2025-06-01&base=pagamento")
+    sql = [s for s in vistos if "situacao_vencimento, pedido_compra" in s][0]
+    assert "data_pagamento >= CAST(" in sql
+
+
+def test_base_de_data_desconhecida_cai_na_de_sempre(painel, monkeypatch):
+    """Nome inventado na barra de endereço não pode virar erro nem, pior,
+    virar coluna nenhuma e devolver a base inteira sem filtro."""
+    from app.apps.painel import consultas
+    vistos = []
+    monkeypatch.setattr(consultas, "consultar",
+                        lambda s, p=(): (vistos.append(s), _consultar_falso(s, p))[1])
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/analitico?de=2025-06-01&base=coluna_inventada")
+    assert r.status_code == 200
+    sql = [s for s in vistos if "situacao_vencimento, pedido_compra" in s][0]
+    assert "data >= CAST(" in sql
+
+
+def test_enquanto_as_colunas_estiverem_vazias_a_tela_avisa(painel, monkeypatch):
+    """Elas nascem vazias: a migração cria a coluna, quem preenche é a próxima
+    atualização. Mostrar uma coluna de traços sem explicar faria parecer que o
+    OMIE não tem a informação."""
+    from app.apps.painel import consultas
+
+    def sem_as_datas(sql, params=()):
+        if "data_vencimento IS NOT NULL LIMIT 1" in sql:
+            return []
+        return _consultar_falso(sql, params)
+
+    monkeypatch.setattr(consultas, "consultar", sem_as_datas)
+    consultas.esquecer_listas()
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    html_ = painel.get("/painel/analitico").get_data(as_text=True)
+    assert "ainda estão vazios" in html_
+    assert "Só refazer os números" in html_
+
+
+def test_a_planilha_do_analitico_leva_as_duas_datas(painel):
+    from openpyxl import load_workbook
+
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    r = painel.get("/painel/baixar/analitico")
+    aba = load_workbook(io.BytesIO(r.get_data()))["Despesas Analitico"]
+    cabecalho = [c.value for c in next(aba.iter_rows(max_row=1))]
+    for coluna in ("Vencimento", "Pagamento", "Atraso (dias)"):
+        assert coluna in cabecalho
