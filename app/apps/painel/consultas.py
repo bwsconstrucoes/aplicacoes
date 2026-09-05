@@ -103,9 +103,31 @@ _CARIMBO_LEMBRADO = [""]
 
 
 def _carimbo_da_base() -> str:
-    """Muda quando uma atualizacao termina. E a chave de tudo que fica guardado."""
-    linhas = consultar("SELECT MAX(fim) FROM execucoes WHERE fim IS NOT NULL")
-    return str(linhas[0][0]) if linhas else "sem-carga"
+    """Muda quando uma atualizacao termina. E a chave de tudo que fica guardado.
+
+    Perguntado UMA VEZ POR REQUISICAO. Antes ia ao banco a cada `_lembrando`, e
+    no Analitico eram tres idas para trazer a mesma resposta — 3 das 8 consultas
+    da tela eram a mesma pergunta. A consulta e barata, mas cada uma e uma
+    viagem de rede ate o banco, que fica em outro servico.
+
+    Guardado no `g` do Flask, que morre junto com a requisicao: nao ha risco de
+    carimbo velho sobrevivendo a uma carga nova. FORA de requisicao — na carga,
+    que roda em processo separado — nao guarda nada e pergunta sempre, porque um
+    processo que vive horas nao pode carregar uma resposta congelada."""
+    def _consultar():
+        linhas = consultar("SELECT MAX(fim) FROM execucoes WHERE fim IS NOT NULL")
+        return str(linhas[0][0]) if linhas else "sem-carga"
+
+    try:
+        from flask import g, has_request_context
+        if not has_request_context():
+            return _consultar()
+    except Exception:                 # sem Flask por perto: pergunta e pronto
+        return _consultar()
+
+    if not hasattr(g, "_painel_carimbo"):
+        g._painel_carimbo = _consultar()
+    return g._painel_carimbo
 
 
 def esquecer_listas() -> None:

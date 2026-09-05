@@ -30,13 +30,14 @@ PDF, tudo o que o Streamlit fazia.
 
 ### O que está pendente AGORA
 
-**Publicar o relatório em PDF**, que está no ramo de trabalho e é a última peça
-da conversão. Sem migração e sem dependência nova — não é preciso apertar
-"Aplicar atualizações do banco". Mas publicar reinicia o serviço, então vale a
-pergunta de sempre: **há carga ou sincronização rodando?**
+**Nada de código.** Tudo o que foi feito em 04/09/2026 está publicado: as duas
+datas (`0bfa75b`), os cenários de rateio e a mensagem duplicada (`376fe72`), o
+relatório em PDF (`3132e72`) e as correções do Analítico mais a senha com acento
+(`b1ae033`).
 
-Publicados hoje: as duas datas (`0bfa75b`) e os cenários de rateio mais a
-correção da mensagem duplicada (`376fe72`).
+O que está pendente é **conferência com dado real** — ver "O que falta" no fim
+deste arquivo. Nenhum teste alcança isso: depende de abrir a tela publicada e
+comparar com o Streamlit.
 
 <details>
 <summary>O que já foi publicado nesta leva (04/09/2026)</summary>
@@ -175,10 +176,16 @@ adianta mexer em Python para acelerar; o que sobra está nas consultas.
 
 Medido aqui também, com banco de verdade, quantas consultas cada tela faz:
 Analítico 7, Visão Geral 7, DRE 6, Fluxo 4, Resultado por Obra 4. Dessas, no
-Analítico, **3 são a mesma pergunta trivial repetida** — o carimbo da última
-carga, que o `_lembrando` consulta a cada chamada. Dá para fazer uma vez por
-requisição. **Não foi feito**: é a consulta barata, o ganho provável são
-dezenas de milissegundos dos 443, e não valia atravessar outra entrega.
+Analítico, **3 eram a mesma pergunta trivial repetida** — o carimbo da última
+carga, que o `_lembrando` consultava a cada chamada.
+
+**Corrigido no fim do dia:** o carimbo passou a ser perguntado **uma vez por
+requisição**, guardado no `g` do Flask (que morre junto com a requisição, então
+não há risco de carimbo velho sobreviver a uma carga nova). Fora de requisição —
+na carga, que roda em processo separado e vive horas — não guarda nada e
+pergunta sempre. **O Analítico caiu de 7 para 5 consultas.** Há teste contando
+as idas ao banco numa mesma tela, e outro exigindo que carga nova continue
+jogando fora a lista velha.
 
 **A mensagem duplicada em Configurações, corrigida.** A causa era pior que
 "texto repetido": cargas mortas acontecem em série (a causa é o serviço
@@ -469,29 +476,45 @@ sai.
 
 ## O que falta
 
-1. **Rodar o bloco de aportes contra a base real.** O banco já voltou; o que
-   falta é abrir a tela publicada e comparar com o Streamlit. É o único pedaço
-   novo que ainda não viu dado de verdade, e este módulo já mandou três erros
-   de SQL para a produção.
-2. **Separar data de vencimento e data de pagamento.** ~~Pendente~~ — **feito
-   em código**, no ramo `painel-duas-datas`, que já está no ramo de trabalho e
-   **espera a decisão do dono para ir ao ar**. A coluna `fato.data` continua
-   existindo e continua sendo a que o DRE, o fluxo de caixa e as outras sete
-   telas usam: as duas novas são acréscimo, não substituição — trocar o
-   significado de `data` mexeria em nove telas já conferidas contra o
-   Streamlit. Exige a migração `006` e refazer o fato (`so_numeros`), sem
-   baixar nada do OMIE de novo.
-3. **PDF do DRE.** ~~Pendente~~ — **feito** em 04/09/2026, com `fpdf2`. Ver
-   "A leva de 04/09/2026" acima. **Com isso a conversão do painel terminou.**
-4. **Mensagem duplicada** na tela de Configurações. ~~Pendente~~ — **corrigida**
-   em 04/09/2026, no ramo de trabalho e ainda não publicada.
-5. **Cenários da prestação.** ~~Pendente~~ — **feito**, no ramo de trabalho e
-   ainda não publicado. Ver "A leva de 04/09/2026" acima.
-6. **Converter `app/apps/spsbd_app`** (análise de SPs) do mesmo jeito. É
-   Streamlit, tem 835 MB (com um Python empacotado dentro), usa
-   `streamlit-aggrid` — a parte mais difícil de portar — e traz um
-   `render.yaml` propondo um serviço separado com disco pago, o que é uma
-   decisão diferente da que foi tomada aqui e precisa ser conversada.
+**A conversão do painel terminou** — dez telas e o relatório em PDF, tudo o que
+o Streamlit fazia. O que resta não é código a escrever; é **conferência com dado
+real**, e ela depende de alguém abrir a tela publicada.
+
+### Conferir com a base da empresa (só o dono consegue)
+
+1. **O bloco de aportes do DRE.** Nunca viu dado de verdade. É o pedaço mais
+   antigo nessa condição, e este módulo já mandou três erros de SQL para a
+   produção.
+2. **As duas datas e o atraso**, no Despesas Analítico, contra o OMIE.
+3. **Os cenários de rateio:** simular uma mudança óbvia e ver se o efeito bate
+   com a intuição de quem conhece as obras.
+4. **O PDF contra a planilha** do mesmo recorte. Por construção os dois saem das
+   mesmas abas — o teste é confirmar isso com dado real.
+5. **Se o arquivo do Analítico agora traz o mesmo número da tela.** Era 481 na
+   tela e 316 no arquivo; a causa foi corrigida em 04/09 e a confirmação é do
+   dono.
+
+### Decisão do dono, não decidida
+
+6. **Migração que cria coluna derivada deveria agendar a reconstrução sozinha.**
+   Hoje ela cria a coluna vazia e alguém tem de apertar "Só refazer os números"
+   — o dono passou por isso em 04/09 e reclamou, com razão. **Entrega que exige
+   um clique do dono para valer é entrega pela metade.** Proposto e não decidido.
+
+### Fora desta área
+
+7. **O mesmo defeito da senha com acento existe no Análise de SPs**
+   (`analisesps/auth.py` linhas 120 e 271, `analisesps/web.py` 628). Não foi
+   mexido daqui — outra área, outro chat. **Avisado ao dono em 04/09.** O ERP
+   não tem o problema: lá a comparação é entre hashes, sempre ASCII.
+8. **Converter `app/apps/spsbd_app`.** Já está em andamento pelo chat da área,
+   que publicou várias vezes em 04/09.
+
+### Melhorias possíveis, nenhuma urgente
+
+9. **O que sobrou de lentidão está no banco, não no código.** Medido pelo dono
+   em 04/09: 478 ms de tela, 443 deles no banco — 93%. Otimizar Python daqui
+   não move o ponteiro; o que resta é SQL e índice.
 
 ---
 
