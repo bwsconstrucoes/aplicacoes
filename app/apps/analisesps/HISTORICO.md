@@ -512,6 +512,247 @@ a mesma escolha. O cabeçalho usa **"Obra"**, a palavra do dono, porque cabe na
 coluna estreita; a barra de filtros diz "Obra (centro de custo)", que é onde a
 ponte com o nome da planilha cabe.
 
+### Décima segunda leva (05/09) — o botão que parecia quebrado
+
+**"Clico em Agendado no modal e não acontece nada."** Não era defeito de
+ligação, e vale registrar porque a conclusão é contraintuitiva: a **trava da
+Validação** — restaurada do Streamlit — punha `disabled` nos quatro botões de
+agendamento quando a coluna Validação não estava em "Sim". E **botão
+desabilitado não recebe nem o clique**: para quem não leu o aviso logo acima,
+ele é indistinguível de um botão quebrado.
+
+A trava continua valendo (nada é gravado sem Validação = "Sim"), mas agora ela
+**se explica**: o botão tem cara de cadeado, aceita o clique, e o clique diz
+por que não foi — oferecendo validar ali mesmo. Trocar um bloqueio mudo por um
+bloqueio que fala custa nada e evita o chamado.
+
+> Nota de fidelidade, para quem for mexer nisso: no Streamlit a trava valia no
+> **detalhe** e no **lote** ("Alterar Status" só habilitava com todos os
+> selecionados validados). Na **tela de códigos**, o botão "📅 Agendado" era
+> *sempre clicável*. Aqui a barra de ações de cima **não** exige Validação em
+> nenhuma tela — é mais permissivo que o Streamlit. Está assim de propósito
+> até o dono decidir: apertar a barra tiraria função que ele já usa hoje.
+
+**A ficha foi virada de cabeça para baixo, a pedido do dono:**
+
+- a **Descrição subiu para o topo**, logo abaixo do cabeçalho. É o que diz do
+  que se trata a SP, e é a primeira coisa que se procura ao abrir; estava no
+  fim de tudo, depois de vinte e sete campos.
+- o **código de barras / QR desceu para o fim**. É o passo final de quem já
+  conferiu o resto e vai pagar.
+
+**Link escrito na descrição virou link clicável.** A descrição costuma trazer
+o endereço de uma pasta ou de um contrato, e como texto puro era selecionar na
+mão e colar no navegador.
+
+> O cuidado que isso exige, para não ser desfeito por engano: a descrição vem
+> da **planilha**, que qualquer um edita. O filtro `com_links` **escapa o texto
+> inteiro primeiro** e só depois transforma em link o que sobrou — sem isso,
+> uma célula com `<script>` dentro rodaria na tela de quem abrisse a SP. Por
+> devolver HTML pronto, no template ele vai com `|safe`; quem mexer nele mexe
+> nos dois lados. Há teste para o `<script>`, para a aspa dentro do endereço e
+> para o ponto final da frase não entrar no link. Usa `html.escape` da
+> biblioteca padrão de propósito — nenhuma dependência nova.
+
+**"Cancelar SP" deixou de ser vermelho.** Ele só **abre** o formulário do
+Pipefy; não cancela nada por si. Em vermelho puxava o olho toda vez que a
+ficha abria, como se fosse a ação principal.
+
+**Defeito achado de passagem, e sério:** abrir uma SP em **página inteira**
+vindo do **Lote** estourava a tela. O endereço da volta era montado colando
+`"analisesps."` com a origem, e dava `analisesps.lote` — que não existe; a tela
+do Lote chama-se `tela_lote`. Só não aparecia sempre porque o caminho normal
+hoje é o modal. Corrigido, com teste.
+
+**Verificado:** 1342 testes verdes, agora **com Postgres de verdade** (local e
+descartável — a produção não foi tocada), e os 18 blueprints sobem. O que
+**não** foi verificado: nada disto foi exercitado no navegador com dado real —
+são mudanças de tela, e o teste confere o HTML, não o que o olho vê.
+
+### Décima terceira leva (05/09) — o BeeVale voltou
+
+O dono perguntou pelas três funções do BeeVale ("gerar a planilha, cadastro,
+e o gerar") e não as encontrou. **Estavam mesmo faltando**: na conversão do
+Streamlit elas não vieram, e o `HISTORICO` registrava isso como "não voltou"
+por causa de um erro 403 de cota no Drive. A decisão do dono foi: **criar
+tudo, e ele informa a pasta depois.**
+
+**O que voltou, com os mesmos nomes do Streamlit:**
+
+- **Cadastro BeeVale** — cola-se a lista de e-mails/CPFs que o portal
+  devolveu, e sai a planilha de cadastro para baixar. **Não escreve em lugar
+  nenhum**: lê a planilha "Dados Documentos" e devolve um arquivo. Funciona
+  hoje, sem depender de nada configurado.
+- **Gerar BeeVale** — as SPs marcadas, uma tela de **conferência** primeiro
+  (o que cada card tem, o que está impedido e por quê), e só então o botão que
+  monta as duas planilhas por card, sobe no Drive e escreve os links e a
+  Documentação Fiscal no card do Pipefy.
+
+**Três coisas foram feitas diferente do Streamlit, e cada uma tem motivo:**
+
+1. **A conferência antes.** No Streamlit o diálogo abria e o botão fazia tudo.
+   Aqui a tela lista, ANTES, quem está pronto e quem está impedido — e mostra
+   o valor do card **ao lado** do valor da base. São duas origens diferentes;
+   é aqui que uma divergência aparece antes de virar recarga errada.
+2. **A ordem é sagrada, e há teste para ela:** primeiro tudo o que pode falhar
+   sem estragar (buscar, montar, subir no Drive), e **só no fim** a escrita nos
+   cards. Se o Drive recusar, nenhum card foi tocado. Marcar o card e depois
+   descobrir que o arquivo não subiu deixaria um card dizendo "pronto" quando
+   não está — e ninguém teria como saber.
+3. **Sucesso pela metade não conta como sucesso.** Arquivo no Drive com o card
+   sem atualizar aparece como problema na tela, com os links à mão para colar
+   no card manualmente.
+
+**A resposta à pergunta "a pasta do Drive ficou salva?":** não dava para saber
+de dentro do código — é uma variável do Render/planilha de credenciais, que
+esta máquina não enxerga. Por isso **Configurações ganhou um cartão que
+responde**: diz se `DRIVE_FOLDER_ID` e `PIPEFY_TOKEN` estão configurados
+(sem mostrar o valor — só os **seis últimos caracteres** da pasta, o
+suficiente para reconhecer qual é), e um botão **"Conferir a pasta do Drive"**
+que olha a pasta **sem escrever nada** e diz o nome dela.
+
+> **A ARMADILHA DA COTA, escrita uma vez para não se perder de novo.** A conta
+> de serviço do Google **não tem espaço de armazenamento próprio**. Ela grava
+> numa pasta de **Drive Compartilhado** (Shared Drive) onde seja membro com
+> permissão de gravar. Numa pasta comum do "Meu Drive" — **mesmo
+> compartilhada com ela como Editor** — o Google recusa com
+> `storageQuotaExceeded`, cuja tradução ao pé da letra ("cota estourada") faz
+> pensar em falta de espaço e manda consertar a coisa errada. O conserto é
+> **mover a pasta para um Drive Compartilhado**. O `drive.py` traduz esse erro
+> para essa instrução, e o botão de conferir avisa antes de qualquer geração.
+>
+> Vale notar: o `email_financeiro`, neste mesmo repositório, já sobe arquivo no
+> Drive com a **mesma** conta de serviço, numa pasta que funciona. Ou seja, o
+> caminho é viável — o que falhou em 02/09 foi a pasta, não a conta.
+
+**Trava mantida do Streamlit:** "Gerar BeeVale" só habilita quando **todas** as
+SPs marcadas têm forma de pagamento BeeVale. Não é preciosismo: gerar a
+recarga de uma SP que se paga por boleto põe dinheiro no cartão de quem não
+devia receber, **e** marca o card como resolvido.
+
+**Arquivos novos:** `beevale.py` (as regras e os dois arquivos `.xlsx`),
+`pipefy.py` (o pouco que se lê e escreve lá) e `drive.py` (a subida). O
+`pipefy.py` é o **único lugar do módulo que escreve fora** da planilha SPsBD —
+está dito no alto do arquivo. Nenhuma dependência nova: o `openpyxl` já estava
+no `requirements.txt` por causa do painel, e a autenticação do Drive usa o
+`google-auth` que o gspread já traz. A credencial é a de sempre
+(`GOOGLE_CREDENTIALS_BASE64`).
+
+**O que FALTA para funcionar de verdade** (nesta ordem):
+
+1. o dono informar a pasta do Drive → `DRIVE_FOLDER_ID` no Render, **de um
+   Drive Compartilhado**;
+2. conferir que `PIPEFY_TOKEN` está no Render (Configurações diz);
+3. apertar "Conferir a pasta do Drive" e ver "em Drive Compartilhado";
+4. **gerar UMA SP primeiro**, conferir o card, e só então usar em leva.
+
+**Verificado:** os testes cobrem o layout das duas planilhas (contrato com o
+portal do BeeVale), o CPF saindo como texto (o zero da frente some se virar
+número, e o portal recusa), a descrição do card sendo preservada, os links não
+empilhando a cada geração, a ordem Drive→Pipefy, o Drive falhando sem tocar no
+card, o card sem CPF não parando os outros, e o id de card não numérico sendo
+recusado (ele entra na consulta sem aspas — texto ali seria injeção).
+
+**NÃO verificado, e é a parte que importa:** nenhum teste encosta no Drive ou
+no Pipefy de verdade — os dois são dublados. A primeira geração real **é** o
+teste. Faça com uma SP só.
+
+### Décima quarta leva (05/09) — a lentidão, medida em vez de deduzida
+
+O dono reclamou: *"funcional, mas não é legal — você está toda hora esperando
+a tela carregar"*, e disse que o Streamlit, que ele já achava lento, é **mais
+rápido** que isto. Uma sessão anterior já tinha apontado uma causa; esta
+**mediu**, e o número mudou o plano.
+
+**Como foi medido, para quem quiser repetir:** um Postgres local e descartável
+com **59.055 SPs** sintéticas (a produção não foi tocada), cronometrando cada
+consulta e depois a tela inteira pelo cliente de teste. Vale a ressalva: o
+banco estava na MESMA máquina, sem a latência de rede que existe no Render.
+Os números reais lá são maiores; as proporções, as mesmas.
+
+| | Antes | Depois |
+|---|---|---|
+| Solicitações | 376 ms · 15 idas ao banco | **162 ms · 8 idas** |
+| Solicitações filtrada | 359 ms | **154 ms** |
+| Solicitações pelo menu | 357 ms | **151 ms** |
+| Relatório pelo menu | 404 ms | **219 ms** |
+
+**Correção da análise anterior, para o histórico não guardar número errado:**
+ela dizia "doze idas ao banco". São **quinze**. E a primeira contagem que fiz
+disse vinte — eu tinha instrumentado `consultar` e `consultar_um` ao mesmo
+tempo, e `consultar_um` chama `consultar`, então tudo contou dobrado. Quinze é
+o número certo.
+
+**Causa 1, a maior: as sete listas do filtro, 194 ms por clique.** Cada uma
+varre as 59 mil SPs inteiras para descobrir quais valores existem naquela
+coluna. Os índices não ajudam — a consulta limpa o texto antes de agrupar.
+**Índice de expressão foi tentado** (inclusive um que casa exatamente com a
+expressão da consulta) e o Postgres continuou preferindo a varredura; não é
+caminho, e fica registrado para ninguém tentar de novo.
+
+O desperdício é que essas listas quase nunca mudam: os projetos e as contas da
+empresa são os mesmos hoje e amanhã. Passam a ser calculadas **uma vez por
+carga**, com o carimbo da última sincronização como chave. Isso funciona
+**entre processos** sem combinação nenhuma: a carga roda num processo separado
+e não tem como avisar o da tela, mas o carimbo que ela grava no banco é o
+próprio aviso.
+
+> **O custo, que é do dono e ele aceitou:** um projeto novo cadastrado na
+> planilha só aparece na listinha do filtro depois da próxima sincronização
+> (a tela dispara uma a cada 5 min). A SP nova aparece na LISTA normalmente —
+> é só o menu de filtro que demora a saber do valor novo.
+
+**Causa 2: duas varreduras da mesma tabela filtrada.** O resumo (44 ms) e a
+divisão do agendamento (48 ms) percorriam separadamente exatamente as mesmas
+linhas. Juntos numa consulta só: **59 ms**, porque a varredura é uma e as
+contagens vão de carona. Conferido com dado real em quatro filtros diferentes:
+as contas batem exatamente com as das duas funções antigas.
+
+> **Tentado e DESCARTADO:** juntar também as duas somas (por conta e por forma
+> de pagamento) numa consulta com CTE. Ficou **pior** — 67 ms contra 51 ms —,
+> porque o banco precisa guardar o resultado do meio. Ficam separadas. Está
+> aqui para não ser "otimizado" de novo por intuição.
+
+**Causa 3: quem clica no menu carrega a tela duas vezes.** Chegar sem filtro na
+barra de endereço dispara um redirecionamento para o endereço COM o filtro
+guardado — e a função inteira roda duas vezes por clique. O redirecionamento
+continua (é ele que faz o filtro sobreviver à troca de tela), mas agora é a
+**primeira coisa** que a tela confere: antes ele já tinha perguntado o tamanho
+da base para nada. A perna que só redireciona caiu de 4 idas ao banco para 1.
+
+**O que NÃO foi mexido, e por quê:** as duas somas por conta e por forma
+(51 ms) e o resumo (59 ms) varrem a tabela filtrada e não têm como não varrer —
+somar o que o filtro alcança é a pergunta. O **Relatório** ainda faz 12 idas
+(oito agregações); é o próximo lugar a olhar se ele continuar pesado, e é uma
+mudança maior do que estas.
+
+**Há teste para o ganho não se desfazer sozinho:** que as listas não são
+refeitas sem carga nova, que uma carga nova as refaz, e que o resumo junto
+varre a tabela uma vez só. É o tipo de correção que uma refatoração distraída
+desmancha, e cujo efeito só aparece em produção, como lentidão sem culpado.
+
+### Décima quinta leva (05/09) — a pasta do Drive vira campo na tela
+
+O dono pediu: *"deixa esse campo lá pra poder colar a informação da pasta e
+salvar"*. Feito, em **Configurações**. Guardado na tabela `meta`, que já
+existe — **sem migração nova**, então funciona no dia da publicação.
+
+Três decisões que valem registro:
+
+1. **O que é colado na tela GANHA do Render e da planilha.** É o contrário da
+   regra geral da casa ("ambiente ganha da planilha"), e de propósito: se um
+   valor do Render vencesse em silêncio, o dono colaria a pasta, apertaria
+   salvar, veria "salvo" — e nada mudaria. Um campo que aceita e ignora é pior
+   do que campo nenhum. Para a regra não virar surpresa, a tela **diz de onde**
+   o valor que está valendo veio.
+2. **Aceita o endereço inteiro da pasta**, copiado da barra do navegador, e
+   guarda só o identificador. Exigir que a pessoa recorte o pedaço certo de
+   uma URL é pedir para errar. O campo mostra depois o que FICOU salvo.
+3. **A pasta aparece no campo; o token do Pipefy, nunca.** A pasta não é
+   segredo — é o endereço de uma pasta — e ele precisa poder conferir e trocar
+   o que colou. O token é segredo de verdade: com ele se lê e se escreve nos
+   cards da empresa, e a tela só diz se está configurado. Há teste para os dois.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
@@ -556,8 +797,11 @@ principal para uma coluna a mais, na véspera de uma publicação sem ninguém
 acordado, não vale o risco.
 
 ### O que ainda NÃO voltou
-- **Gerar BeeVale** (depende do Shared Drive — erro 403 de cota) e **cancelar
-  a SP por dentro do Pipefy** (o botão abre o formulário deles, como lá).
+- **Cancelar a SP por dentro do Pipefy** (o botão abre o formulário deles,
+  como lá).
+
+  *(O **BeeVale** saiu desta lista em 05/09 — ver a décima terceira leva. O
+  código está pronto; falta o dono informar a pasta do Drive.)*
 - **A coluna SP Fiscal na lista** (ver acima).
 - **Reenviar comprovante por e-mail** (depende de SMTP no serviço).
 

@@ -87,6 +87,17 @@ def app(monkeypatch):
     # aplicação; aqui basta que a tela saiba desenhá-los.
     monkeypatch.setattr(consultas, "contagem_agendamento", lambda f: {
         "Agendar": 1, "Agendado": 1, "Falha Agendar": 0, "Pago": 0})
+    # A tela pede os dois JUNTOS desde 05/09 — eram duas varreduras da mesma
+    # tabela filtrada, e numa consulta só custam quase metade.
+    monkeypatch.setattr(consultas, "resumo_e_agendamento", lambda f: (
+        consultas.resumo(f), consultas.contagem_agendamento(f)))
+    # As listas do filtro ficam guardadas até a próxima carga; sem limpar, o
+    # que um teste calculou valeria no seguinte.
+    monkeypatch.setattr(consultas, "opcoes_de_filtro",
+                        lambda carimbo=None: dict(
+                            {a: consultas.opcoes(c, limite=l)
+                             for a, (c, l) in consultas.COLUNAS_DE_FILTRO.items()},
+                            status_agend=consultas.opcoes_agendamento()))
     monkeypatch.setattr(consultas, "soma_por", lambda f, coluna, limite=12: [
         {"nome": "BRADESCO 7011-4", "quantidade": 1, "total": Decimal("6750.00")}])
     # As colunas da tabela saem das preferências, que ficam no banco. Sem
@@ -529,12 +540,80 @@ def test_o_agendamento_exige_validacao_como_no_streamlit(app_ficha, monkeypatch)
     html = como(app_ficha, SENHA_OPERADOR).get(
         "/analisesps/sp/1234567890").get_data(as_text=True)
     assert "Agendamento bloqueado" in html
-    assert "disabled" in html
+    assert 'data-bloqueado="1"' in html
 
     registro["validacao"] = "Sim"
     html = como(app_ficha, SENHA_OPERADOR).get(
         "/analisesps/sp/1234567890").get_data(as_text=True)
     assert "Agendamento bloqueado" not in html
+    assert "data-bloqueado" not in html
+
+
+def test_o_agendamento_travado_nao_vira_botao_morto(app_ficha, monkeypatch):
+    """O dono clicou em "Agendado" no modal e nada aconteceu.
+
+    Não era defeito de ligação: a trava da Validação punha `disabled` nos
+    botões, e botão desabilitado não recebe nem o clique — quem não leu o
+    aviso logo acima via um botão simplesmente quebrado. A trava continua
+    valendo (nada é gravado), mas agora o clique diz por que não foi."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["validacao"] = ""
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+
+    trecho = html[html.index('data-coluna="agendado"'):]
+    trecho = trecho[:trecho.index("</button>")]
+    assert "disabled" not in trecho, (
+        "botão desabilitado não recebe clique — volta a parecer quebrado")
+    assert "bloqueado" in trecho
+
+
+def test_a_descricao_vem_antes_do_codigo_de_pagamento(app_ficha, monkeypatch):
+    """Pedido do dono: a descrição é a primeira coisa que se procura ao abrir
+    a SP, e estava no fim de tudo; o código de pagamento é o último passo."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["descricao"] = "Concreto usinado da obra"
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert html.index("ficha-descricao") < html.index("ficha-codigo")
+
+
+def test_o_link_escrito_na_descricao_fica_clicavel(app_ficha, monkeypatch):
+    """Às vezes a descrição traz o endereço de uma pasta ou de um contrato.
+    Como texto puro, era selecionar na mão e colar no navegador."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["descricao"] = "Contrato em https://drive.google.com/x/y ok"
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert 'href="https://drive.google.com/x/y"' in html
+
+
+def test_cancelar_sp_nao_e_botao_vermelho(app_ficha):
+    """Ele só ABRE o formulário do Pipefy — não cancela nada por si. Em
+    vermelho puxava o olho para si toda vez que a ficha abria."""
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    trecho = html[html.index("Cancelar%20SP") - 400:html.index("Cancelar SP")]
+    assert "perigo" not in trecho
+
+
+def test_a_volta_da_ficha_aberta_pelo_lote_nao_quebra(app_ficha):
+    """O endereço da volta era montado colando "analisesps." com a origem, e
+    dava "analisesps.lote" — que não existe. A tela do Lote se chama
+    "tela_lote", então abrir uma SP a partir do Lote estourava a página."""
+    resposta = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?origem=lote")
+    assert resposta.status_code == 200
+    assert "/analisesps/lote" in resposta.get_data(as_text=True)
 
 
 def test_o_qr_volta_para_de_onde_veio(app, monkeypatch):
@@ -765,6 +844,8 @@ def test_os_numeros_de_baixo_voltaram(app, monkeypatch):
     from app.apps.analisesps import consultas
     monkeypatch.setattr(consultas, "contagem_agendamento", lambda f: {
         "Agendar": 3, "Agendado": 2, "Falha Agendar": 1, "Pago": 4})
+    monkeypatch.setattr(consultas, "resumo_e_agendamento", lambda f: (
+        consultas.resumo(f), consultas.contagem_agendamento(f)))
     monkeypatch.setattr(consultas, "soma_por", lambda f, c, limite=12: [
         {"nome": "BRADESCO 7011-4", "quantidade": 2, "total": Decimal("9000.00")}])
 
@@ -2663,3 +2744,174 @@ def test_o_lote_e_lido_antes_de_a_resposta_comecar(app_sem_banco):
     resposta = como(app_sem_banco, SENHA_OPERADOR).get("/analisesps/lote/exportar")
     assert resposta.status_code == 500
     assert resposta.mimetype == "text/html"
+
+
+# ---------------------------------------------------------------------------
+# BeeVale — as duas telas
+# ---------------------------------------------------------------------------
+def test_o_cadastro_beevale_nao_depende_do_drive(app, monkeypatch):
+    """É o lado inofensivo: cola-se a lista e sai um arquivo. Não escreve em
+    lugar nenhum, e por isso funciona mesmo com a pasta do Drive não
+    configurada — que é o estado de hoje."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("", ""))
+    monkeypatch.setattr(beevale, "buscar_por_cpf", lambda cpfs: (
+        [beevale.registro("Ana Silva", "1990-04-25", "5548999887766", cpfs[0])],
+        []))
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/beevale/cadastro",
+        data={"texto": "01234567890@bwsconstrucoes.com.br"})
+
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+    assert "Ana Silva" in html
+    assert "012.345.678-90" in html
+
+
+def test_o_cadastro_beevale_avisa_quem_ficou_de_fora(app, monkeypatch):
+    """Gerar o arquivo sem notar que faltou gente é o erro que só aparece no
+    portal, depois."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "buscar_por_cpf",
+                        lambda cpfs: ([], list(cpfs)))
+
+    html = como(app, SENHA_OPERADOR).post(
+        "/analisesps/beevale/cadastro",
+        data={"texto": "01234567890"}).get_data(as_text=True)
+
+    assert "não estão na planilha Dados" in html
+    assert "01234567890" in html, "quem faltou tem de aparecer pelo número"
+
+
+def test_baixar_o_cadastro_devolve_um_xlsx(app, monkeypatch):
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "buscar_por_cpf", lambda cpfs: (
+        [beevale.registro("Ana Silva", "", "", cpfs[0])], []))
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/beevale/cadastro",
+        data={"texto": "01234567890", "acao": "baixar"})
+
+    assert resposta.status_code == 200
+    assert "spreadsheetml" in resposta.headers["Content-Type"]
+    assert "Cadastro_BeeVale_" in resposta.headers["Content-Disposition"]
+    assert resposta.get_data()[:2] == b"PK"        # xlsx é um zip
+
+
+def test_gerar_beevale_sem_pasta_do_drive_avisa_e_nao_oferece_o_botao(
+        app, monkeypatch):
+    """O estado de hoje. A tela tem de dizer o que falta — e NÃO pode mostrar
+    um botão que só falharia."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("", ""))
+    monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(i))
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/beevale/gerar?id=1").get_data(as_text=True)
+
+    assert "Falta dizer qual é a pasta do Google Drive" in html
+    assert 'id="btn-gerar"' not in html
+
+
+def test_gerar_beevale_mostra_o_que_vai_acontecer_antes_de_fazer(
+        app, monkeypatch):
+    """A tela é de CONFERÊNCIA: nada acontece até o operador apertar. É a única
+    coisa do módulo que altera o Pipefy, e não tem desfazer."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("pasta", "tela"))
+    monkeypatch.setattr(beevale, "preparar", lambda ids: {
+        "prontos": [{"sp": "1", "cpf": "012.345.678-90", "nome": "Ana Silva",
+                     "valor": 850.5, "cadastro": {}, "descricao_atual": ""}],
+        "erros": [{"sp": "2", "motivo": "Campo vazio."}]})
+    monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(i))
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/beevale/gerar?id=1&id=2").get_data(as_text=True)
+
+    assert "Não tem desfazer" in html
+    assert "Ana Silva" in html
+    assert "Campo vazio." in html
+    assert 'id="btn-gerar"' in html
+
+
+def test_o_perfil_consulta_nao_gera_beevale(app):
+    """Ele sobe arquivo e reescreve card. Ver e exportar não dá esse direito."""
+    cliente = como(app, SENHA_CONSULTA)
+    for url in ("/analisesps/beevale/cadastro", "/analisesps/beevale/gerar?id=1"):
+        assert cliente.get(url).status_code == 403, url
+    assert cliente.post("/analisesps/api/beevale/gerar",
+                        json={"ids": ["1"]}).status_code == 403
+
+
+def test_a_barra_oferece_o_beevale_para_quem_opera(app):
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'id="ba-beevale"' in html
+    assert "Cadastro BeeVale" in html
+
+
+def test_a_linha_diz_a_forma_de_pagamento_para_a_trava_do_beevale(app):
+    """O botão só habilita quando TODAS as marcadas são BeeVale, e é do
+    atributo da linha que o navegador tira isso."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "data-forma=" in html
+
+
+def test_configuracoes_diz_se_a_pasta_do_drive_esta_salva(app, monkeypatch):
+    """A pergunta do dono: "ficou salvo?". A tela responde sem ninguém entrar
+    no Render, e diz DE ONDE o valor veio — se um valor do Render vencesse em
+    silêncio, ele colaria a pasta, veria "salvo" e nada mudaria."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive",
+                        lambda: ("1ycGeXKyABC123", "tela"))
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/configuracoes").get_data(as_text=True)
+
+    assert "Pasta do Google Drive" in html
+    assert "…ABC123" in html
+    # A pasta APARECE no campo, e é de propósito: ela não é segredo (é o
+    # endereço de uma pasta) e ele precisa poder conferir e trocar o que
+    # colou. O que nunca aparece é o token do Pipefy.
+    assert 'value="1ycGeXKyABC123"' in html
+    assert 'id="btn-salvar-pasta"' in html
+
+
+def test_o_token_do_pipefy_nunca_aparece_na_tela(app, monkeypatch):
+    """Esse SIM é segredo: com ele se lê e se escreve nos cards da empresa. A
+    tela diz apenas se está configurado."""
+    from app.apps.analisesps import beevale, credenciais
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("pasta", "tela"))
+    monkeypatch.setattr(credenciais, "token", lambda nome, padrao="": (
+        "token-secreto-do-pipefy" if nome == "PIPEFY_TOKEN" else padrao))
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/configuracoes").get_data(as_text=True)
+
+    assert "token-secreto-do-pipefy" not in html
+    assert "Token do Pipefy" in html
+
+
+def test_a_pasta_colada_como_endereco_inteiro_e_aceita(app, monkeypatch):
+    """É o que se copia sem pensar: a barra do navegador com a pasta aberta.
+    Exigir que ele recorte o pedaço certo de uma URL é pedir para errar."""
+    from app.apps.analisesps import beevale
+    salvas = []
+    monkeypatch.setattr(beevale, "gravar_pasta_do_drive",
+                        lambda p: salvas.append(p) or "1ycGeXKyABC123")
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/api/pasta-drive",
+        json={"pasta": "https://drive.google.com/drive/folders/1ycGeXKyABC123"})
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()["ok"] is True
+    assert resposta.get_json()["pasta"] == "1ycGeXKyABC123"
+
+
+def test_o_perfil_consulta_nao_troca_a_pasta_do_drive(app):
+    assert como(app, SENHA_CONSULTA).post(
+        "/analisesps/api/pasta-drive",
+        json={"pasta": "outra"}).status_code == 403

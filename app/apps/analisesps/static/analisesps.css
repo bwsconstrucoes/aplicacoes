@@ -688,15 +688,29 @@ a.kpi { display: block; }
   color: var(--azul); white-space: nowrap;
 }
 .ficha-links { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-/* "Cancelar SP" e uma acao seria, mas nao e a acao principal da ficha: em
-   vermelho puro ele puxava o olho para si toda vez que a ficha abria. Fica
-   discreto, e a confirmacao continua sendo o formulario do Pipefy. */
-.ficha-links .btn.perigo { border-color: #E0B4B0; color: #8C3A33; }
+/* "Cancelar SP" ficou igual aos outros botoes da fileira: ele so ABRE o
+   formulario do Pipefy, nao cancela nada por si. Em vermelho puxava o olho
+   para si toda vez que a ficha abria, como se fosse a acao principal. */
+
+/* A DESCRICAO, no alto da ficha. Texto de gente: respeita a quebra de linha
+   digitada e quebra palavra comprida (link colado) em vez de esticar a caixa. */
+.ficha-descricao { margin: 0 0 12px; }
+.texto-livre {
+  margin: 0; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.texto-livre a { color: var(--azul); }
 .ficha-acoes {
   display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
   padding: 12px; margin: 12px 0; background: var(--papel);
   border-radius: var(--raio-p);
 }
+/* Agendamento travado pela Validacao. NAO usa `disabled`: botao desabilitado
+   nao recebe clique, e assim ele parecia apenas quebrado. Aqui ele tem cara
+   de cadeado, aceita o clique e o clique diz por que nao foi. */
+.ficha-acoes .btn.bloqueado {
+  opacity: .55; border-style: dashed; cursor: help;
+}
+.ficha-acoes .btn.bloqueado:hover { background: var(--branco); }
 
 /* O que a barra de filtros mostra enquanto reconsulta */
 .filtros-estado {

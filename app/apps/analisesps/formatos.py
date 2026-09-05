@@ -164,3 +164,57 @@ def momento_br(valor) -> str:
         return momento.strftime("%d/%m/%Y")
     from .horario import texto as _texto_br
     return _texto_br(momento)
+
+
+# ---------------------------------------------------------------------------
+# Link dentro de texto livre
+#
+# A descrição da SP vem digitada por gente, e com frequência traz o endereço
+# de uma pasta, de um contrato ou de um comprovante. Como texto puro, era
+# preciso selecionar na mão e colar no navegador.
+#
+# A ordem aqui importa e não é detalhe de estilo: PRIMEIRO escapa o texto
+# inteiro, DEPOIS transforma em link o que sobrou. Ao contrário, uma descrição
+# com HTML dentro entraria na página como HTML.
+# ---------------------------------------------------------------------------
+_ENDERECO = re.compile(
+    r"""(?xi)
+    \b(
+        (?:https?://|www\.)         # com esquema, ou começando por www.
+        [^\s<>"']+                  # o corpo do endereço
+    )
+    """)
+
+# Pontuação que quase sempre é da frase, não do endereço: "veja em
+# https://x.com/y." termina com o ponto final da frase.
+_PONTUACAO_FINAL = ".,;:!?)]}>”’'\""
+
+
+def com_links(texto) -> str:
+    """Texto livre virando HTML seguro, com os endereços já clicáveis.
+
+    Devolve HTML PRONTO — no template vai com `|safe`, senão as tags saem na
+    tela como texto. Por isso o escape aqui não é opcional: a descrição vem da
+    planilha, que qualquer um edita, e sem ele uma célula com `<script>`
+    dentro rodaria na tela de quem abrisse a SP. Usa o `html.escape` da
+    biblioteca padrão de propósito — nada de dependência nova para isto."""
+    import html as _html
+
+    if texto is None:
+        return ""
+
+    seguro = _html.escape(str(texto), quote=True)
+
+    def trocar(achado):
+        bruto = achado.group(1)
+        rabo = ""
+        while bruto and bruto[-1] in _PONTUACAO_FINAL:
+            rabo = bruto[-1] + rabo
+            bruto = bruto[:-1]
+        if not bruto:
+            return achado.group(0)
+        destino = bruto if bruto.lower().startswith("http") else "https://" + bruto
+        return (f'<a href="{destino}" target="_blank" rel="noopener noreferrer">'
+                f'{bruto}</a>{rabo}')
+
+    return _ENDERECO.sub(trocar, seguro)

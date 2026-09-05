@@ -190,3 +190,72 @@ def test_hoje_e_o_de_brasilia_e_nao_o_do_servidor():
     o dia — sem a conversão, uma SP que vence amanhã apareceria em vermelho
     como atrasada para quem confere à noite."""
     assert "America/Sao_Paulo" in consultas.SQL_HOJE
+
+
+# ---------------------------------------------------------------------------
+# AS LISTAS DE FILTRO FICAM GUARDADAS ATÉ A PRÓXIMA CARGA
+#
+# Medido com as 59.055 SPs de verdade: montar as sete listas custava 194 ms, e
+# era isso a CADA clique no filtro — o pedaço mais caro da tela. Estes testes
+# existem para que a correção não se desfaça sem ninguém notar: é o tipo de
+# coisa que uma refatoração distraída remove, e o efeito só aparece em
+# produção, como lentidão sem culpado.
+# ---------------------------------------------------------------------------
+def test_a_lista_do_filtro_nao_e_refeita_a_cada_clique(monkeypatch):
+    from app.apps.analisesps import consultas
+    consultas.esquecer_opcoes_de_filtro()
+
+    idas = []
+    monkeypatch.setattr(consultas, "opcoes",
+                        lambda coluna, limite=400: idas.append(coluna) or ["A"])
+
+    consultas.opcoes_de_filtro(carimbo="2026-09-05T10:00:00")
+    primeira = len(idas)
+    consultas.opcoes_de_filtro(carimbo="2026-09-05T10:00:00")
+    consultas.opcoes_de_filtro(carimbo="2026-09-05T10:00:00")
+
+    assert primeira == len(consultas.COLUNAS_DE_FILTRO)
+    assert len(idas) == primeira, "as listas foram refeitas sem carga nova"
+
+
+def test_uma_carga_nova_refaz_as_listas(monkeypatch):
+    """O carimbo da sincronização É o aviso. A carga roda num processo
+    separado e não tem como falar com este; o que ela grava no banco, sim."""
+    from app.apps.analisesps import consultas
+    consultas.esquecer_opcoes_de_filtro()
+
+    idas = []
+    monkeypatch.setattr(consultas, "opcoes",
+                        lambda coluna, limite=400: idas.append(coluna) or ["A"])
+
+    consultas.opcoes_de_filtro(carimbo="2026-09-05T10:00:00")
+    consultas.opcoes_de_filtro(carimbo="2026-09-05T10:05:00")   # carga nova
+
+    assert len(idas) == 2 * len(consultas.COLUNAS_DE_FILTRO)
+
+
+def test_a_barra_de_filtros_traz_as_sete_listas_mais_o_agendamento(monkeypatch):
+    """Guardar não pode significar entregar menos do que a tela desenha."""
+    from app.apps.analisesps import consultas
+    consultas.esquecer_opcoes_de_filtro()
+    monkeypatch.setattr(consultas, "opcoes", lambda coluna, limite=400: ["A"])
+
+    listas = consultas.opcoes_de_filtro(carimbo="x")
+
+    for chave in ("status_pgt", "conta", "forma", "tipo_despesa", "projeto",
+                  "responsavel", "centro_custo", "status_agend"):
+        assert chave in listas, chave
+
+
+def test_a_tela_pede_o_resumo_e_o_agendamento_numa_ida_so(monkeypatch):
+    """Eram duas varreduras da MESMA tabela filtrada (44 ms + 48 ms medidos).
+    Numa consulta só custam 59 ms — a varredura é uma, as contagens vão de
+    carona."""
+    import inspect
+    from app.apps.analisesps import consultas
+
+    fonte = inspect.getsource(consultas.resumo_e_agendamento)
+    assert fonte.count("FROM analisesps.sps") == 1, (
+        "voltou a varrer a tabela mais de uma vez")
+    # Os oito números que a tela precisa, todos na mesma consulta.
+    assert fonte.count("count(*)") + fonte.count("sum(valor_num)") >= 8

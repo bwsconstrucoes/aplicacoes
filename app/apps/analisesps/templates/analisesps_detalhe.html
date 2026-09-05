@@ -9,8 +9,13 @@
 
 <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px">
   {# Volta para de onde a pessoa veio. Estava fixo em Solicitações: quem abria
-     uma SP a partir do Lote era jogado para outra tela. #}
-  <a class="btn secundario" href="{{ url_for('analisesps.' + (origem or 'solicitacoes')) }}">Voltar</a>
+     uma SP a partir do Lote era jogado para outra tela.
+
+     O nome do endereço é escrito por extenso de propósito: montá-lo colando
+     "analisesps." com a origem dava "analisesps.lote", que não existe — a
+     tela do Lote se chama "tela_lote". Vindo do Lote, esta página quebrava. #}
+  <a class="btn secundario"
+     href="{{ url_for('analisesps.tela_lote' if origem == 'lote' else 'analisesps.solicitacoes') }}">Voltar</a>
 </div>
 {% endblock %}
 

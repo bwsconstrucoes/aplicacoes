@@ -111,6 +111,12 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/colunas"),
     ("POST", "/analisesps/agenda"),
     ("POST", "/analisesps/api/migrar"),
+    ("GET", "/analisesps/beevale/cadastro"),
+    ("POST", "/analisesps/beevale/cadastro"),
+    ("GET", "/analisesps/beevale/gerar"),
+    ("POST", "/analisesps/api/beevale/gerar"),
+    ("POST", "/analisesps/api/conferir-drive"),
+    ("POST", "/analisesps/api/pasta-drive"),
     ("GET", "/analisesps/sair"),
 ]
 
