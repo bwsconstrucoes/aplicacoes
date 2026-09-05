@@ -812,6 +812,97 @@ class PrecoHistorico(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class StatusPedidoCompra(str, enum.Enum):
+    AGUARDANDO_AUTORIZACAO = "AGUARDANDO_AUTORIZACAO"
+    AUTORIZADO = "AUTORIZADO"
+    RECUSADO = "RECUSADO"
+    CANCELADO = "CANCELADO"
+
+
+class PedidoCompra(Base):
+    """O pedido fechado com um fornecedor.
+
+    Nasce de duas formas — do mapa (e aí quem autoriza vê as alternativas que o
+    comprador tinha) ou direto, sem mapa — e as duas vão para a mesma fila de
+    autorização. Nasce SEM autorização: o comprador não compra sozinho.
+    """
+    __tablename__ = "pedidos_compra"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    numero: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    cotacao_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("cotacoes.id"))
+    fornecedor_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("fornecedores.id"), nullable=False)
+    contato_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("fornecedor_contatos.id"))
+    condicao_pagamento_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("condicoes_pagamento.id"))
+    entrega: Mapped[Optional[ModoEntrega]] = mapped_column(pg_enum(ModoEntrega, "modo_entrega"))
+    frete: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    desconto: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    previsao_entrega: Mapped[Optional[date]] = mapped_column(Date)
+    antecipado: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    codigo_barras: Mapped[Optional[str]] = mapped_column(Text)
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    status: Mapped[StatusPedidoCompra] = mapped_column(
+        pg_enum(StatusPedidoCompra, "status_pedido_compra"), nullable=False,
+        default=StatusPedidoCompra.AGUARDANDO_AUTORIZACAO)
+    motivo: Mapped[Optional[str]] = mapped_column(Text)
+    criado_por: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    autorizado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    autorizado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class PedidoItem(Base):
+    """A linha do pedido, com o preço que foi fechado."""
+    __tablename__ = "pedido_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    pedido_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("pedidos_compra.id", ondelete="CASCADE"), nullable=False)
+    suprimento_item_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("suprimento_itens.id"), nullable=False)
+    numero: Mapped[int] = mapped_column(Integer, nullable=False)
+    quantidade: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
+    preco_unitario: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+
+
+class PedidoItemReserva(Base):
+    """A garantia, no banco, de que um item não entra em dois pedidos vivos.
+
+    A chave primária é a regra: o item entra aqui quando o pedido nasce e sai
+    quando o pedido é recusado ou cancelado.
+    """
+    __tablename__ = "pedido_item_reserva"
+
+    suprimento_item_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("suprimento_itens.id", ondelete="CASCADE"),
+        primary_key=True)
+    pedido_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("pedidos_compra.id", ondelete="CASCADE"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PrevisaoPagamento(Base):
+    """A obrigação que nasce com a autorização do pedido.
+
+    Não é título: vira título quando a nota fiscal chegar. Guardar separado
+    deixa claro o que já é dívida documentada e o que ainda é compromisso.
+    """
+    __tablename__ = "previsoes_pagamento"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    pedido_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("pedidos_compra.id", ondelete="CASCADE"), nullable=False)
+    numero: Mapped[int] = mapped_column(Integer, nullable=False)
+    vencimento: Mapped[date] = mapped_column(Date, nullable=False)
+    valor: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
+    entrada: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    titulo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulos.id"))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Funcao(Base):
     """Função na obra, com a diária de referência."""
     __tablename__ = "funcoes"

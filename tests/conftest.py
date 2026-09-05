@@ -75,6 +75,7 @@ class SessaoFalsa:
         # que a guarda lê por SQL direto.
         self.permissoes_por_usuario = dict(permissoes_por_usuario or {})
         self.adicionados = []
+        self.removidos = []
         self.eventos = []
         self.desfeita = False
 
@@ -149,6 +150,13 @@ class SessaoFalsa:
 
     def commit(self):  # pragma: no cover - nenhum teste comita
         pass
+
+    def delete(self, obj):
+        """Anota a remoção e tira o objeto de circulação, para o teste poder
+        exigir que a regra tenha apagado o que devia."""
+        self.removidos.append(obj)
+        if obj in self.objetos:
+            self.objetos.remove(obj)
 
     def rollback(self):
         """A sessão real desfaz; o dublê só anota que foi chamado, para o teste

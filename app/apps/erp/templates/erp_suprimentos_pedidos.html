@@ -1,0 +1,167 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Pedidos de compra — ERP BWS{% endblock %}
+
+{% block conteudo %}
+<h2>Pedidos de compra
+  <small>o comprador fecha, alguém autoriza — e só então nasce a previsão de pagamento</small></h2>
+<div id="mensagem"></div>
+
+<div class="barra-acoes">
+  <select id="f-status">
+    <option value="AGUARDANDO_AUTORIZACAO">aguardando autorização</option>
+    <option value="AUTORIZADO">autorizados</option>
+    <option value="RECUSADO">recusados</option>
+    <option value="CANCELADO">cancelados</option>
+    <option value="">todos</option>
+  </select>
+</div>
+
+<table>
+  <thead><tr>
+    <th>Pedido</th><th>Fornecedor</th><th class="direita">Itens</th>
+    <th class="direita">Total</th><th>Situação</th><th></th>
+  </tr></thead>
+  <tbody id="tb-pedidos"></tbody>
+</table>
+
+<dialog id="dlg">
+  <div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+    <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const ROTULO = {AGUARDANDO_AUTORIZACAO: "aguardando autorização",
+                AUTORIZADO: "autorizado", RECUSADO: "recusado", CANCELADO: "cancelado"};
+
+function moeda(v){ return Number(v || 0).toLocaleString("pt-BR",
+  {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+
+async function carregar(){
+  try {
+    const p = els("f-status").value ? `?status=${els("f-status").value}` : "";
+    const d = await api("/erp/api/suprimentos/pedidos" + p);
+    els("tb-pedidos").innerHTML = d.pedidos.map(x => `
+      <tr><td><b>${x.numero}</b>${x.cotacao_id ? `<br><small>do mapa</small>`
+            : `<br><small>pedido direto</small>`}
+          ${x.antecipado ? `<br><small style="color:var(--ambar)">pagamento antecipado</small>` : ""}</td>
+        <td>${x.fornecedor}</td>
+        <td class="direita dados">${x.itens}</td>
+        <td class="direita dados">${moeda(x.total)}</td>
+        <td>${ROTULO[x.status] || x.status}</td>
+        <td class="direita"><button class="btn secundario" data-abrir="${x.id}"
+            style="padding:4px 9px; font-size:12px">abrir</button></td></tr>`).join("")
+      || `<tr><td colspan="6">nenhum pedido nesta situação</td></tr>`;
+    document.querySelectorAll("[data-abrir]").forEach(b =>
+      b.addEventListener("click", () => abrir(+b.dataset.abrir)));
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function abrir(id){
+  try {
+    const d = await api(`/erp/api/suprimentos/pedidos/${id}`);
+    const p = d.pedido;
+    els("dlg-titulo").textContent = `${p.numero} · ${p.fornecedor}`;
+    els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+      <div class="cartao-dica">
+        ${p.condicao ? `Pagamento: <b>${p.condicao}</b> · ` : ""}
+        ${p.entrega ? (p.entrega === "COLETA" ? "coleta nossa" : "entrega do fornecedor") : ""}
+        ${Number(p.frete) > 0 ? ` · frete R$ ${moeda(p.frete)}` : ""}
+        ${Number(p.desconto) > 0 ? ` · desconto R$ ${moeda(p.desconto)}` : ""}
+        ${p.previsao_entrega ? ` · entrega prevista ${data(p.previsao_entrega)}` : ""}
+        ${p.antecipado ? ` · <b>pagamento antecipado</b>` : ""}
+      </div>
+      <table style="margin-top:10px"><thead><tr>
+        ${p.status === "AGUARDANDO_AUTORIZACAO" ? "<th></th>" : ""}
+        <th>Item</th><th>Obra</th><th class="direita">Qtd</th>
+        <th class="direita">Unitário</th><th class="direita">Total</th></tr></thead>
+        <tbody>${p.itens.map(i => `<tr>
+          ${p.status === "AGUARDANDO_AUTORIZACAO"
+            ? `<td><input type="checkbox" class="rec" value="${i.id}"
+                 title="marcar para NÃO autorizar este item"></td>` : ""}
+          <td>${i.insumo}${i.especificacao ? `<br><small>${i.especificacao}</small>` : ""}</td>
+          <td class="dados">${i.obra}</td>
+          <td class="direita dados">${i.quantidade} ${i.unidade}</td>
+          <td class="direita dados">${moeda(i.preco_unitario)}</td>
+          <td class="direita dados">${moeda(i.total)}</td></tr>`).join("")}</tbody>
+        <tfoot><tr><td colspan="${p.status === "AGUARDANDO_AUTORIZACAO" ? 5 : 4}"
+          class="direita"><b>Total do pedido</b></td>
+          <td class="direita dados"><b>${moeda(p.total)}</b></td></tr></tfoot></table>
+      ${p.previsoes.length ? `<h4 style="margin-top:14px">Previsão de pagamento</h4>
+        <table><thead><tr><th>Parcela</th><th>Vencimento</th>
+          <th class="direita">Valor</th><th>Situação</th></tr></thead>
+          <tbody>${p.previsoes.map(v => `<tr><td class="dados">${v.numero}${
+            v.entrada ? " <small>(entrada)</small>" : ""}</td>
+            <td class="dados">${data(v.vencimento)}</td>
+            <td class="direita dados">${moeda(v.valor)}</td>
+            <td>${v.titulo_id ? "virou título" : "previsto"}</td></tr>`).join("")}</tbody>
+        </table>` : ""}
+      ${p.mapa ? blocoDoMapa(p.mapa) : `<div class="cartao-dica" style="margin-top:12px">
+        Pedido direto, sem cotação — não há mapa para comparar.</div>`}
+      ${p.motivo ? `<div class="aviso alerta" style="margin-top:10px">${p.motivo}</div>` : ""}
+      ${p.status === "AGUARDANDO_AUTORIZACAO" ? `
+        <div class="cartao-dica" style="margin-top:12px">Marque a caixinha dos itens
+          que NÃO devem ser autorizados: eles saem do pedido e voltam para a fila.</div>
+        <div style="margin-top:10px; display:flex; gap:8px">
+          <button class="btn" id="btn-autorizar">Autorizar</button>
+          <button class="btn secundario" id="btn-recusar">Recusar o pedido</button>
+        </div>` : p.status === "AUTORIZADO" ? `
+        <div style="margin-top:12px"><button class="btn secundario"
+          id="btn-cancelar">Cancelar pedido</button></div>` : ""}`;
+
+    if (p.status === "AGUARDANDO_AUTORIZACAO") {
+      els("btn-autorizar").addEventListener("click", () => decidir(id, "autorizar", {
+        itens_recusados: [...document.querySelectorAll(".rec:checked")].map(i => +i.value)}));
+      els("btn-recusar").addEventListener("click", () => pedirMotivo(id, "recusar",
+        "Por que este pedido não vai ser autorizado?"));
+    }
+    if (p.status === "AUTORIZADO")
+      els("btn-cancelar").addEventListener("click", () => pedirMotivo(id, "cancelar",
+        "Por que o pedido está sendo cancelado?"));
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// O mapa vai junto de propósito: julgar a escolha do comprador exige ver as
+// alternativas que ele tinha, não só a que ele marcou.
+function blocoDoMapa(m){
+  return `<h4 style="margin-top:14px">Como estava o mapa ${m.numero}</h4>
+    <div style="overflow-x:auto"><table><thead><tr><th>Insumo</th>
+      ${m.fornecedores.map(f => `<th class="direita">${f.fornecedor}</th>`).join("")}</tr></thead>
+      <tbody>${m.itens.map(i => `<tr><td>${i.insumo}</td>
+        ${m.fornecedores.map(f => {
+          const c = i.precos[f.id];
+          return `<td class="direita dados ${i.menor_preco_de === f.id ? "menor-preco" : ""}">${
+            c ? moeda(c.preco_unitario) : "—"}</td>`;
+        }).join("")}</tr>`).join("")}</tbody>
+      <tfoot><tr><td><b>Total com frete e desconto</b></td>
+        ${m.fornecedores.map(f => `<td class="direita dados">${moeda(f.total)}</td>`).join("")}
+      </tr></tfoot></table></div>`;
+}
+
+async function pedirMotivo(id, acao, titulo){
+  const r = await perguntar({titulo, campos: [
+    {nome: "motivo", rotulo: "Motivo", tipo: "textarea", linhas: 3, obrigatorio: true}],
+    textoOk: "Confirmar"});
+  if (!r) return;
+  decidir(id, acao, {motivo: r.motivo});
+}
+
+async function decidir(id, acao, corpo){
+  try {
+    await api(`/erp/api/suprimentos/pedidos/${id}/${acao}`, {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+    els("dlg").close();
+    aviso("mensagem", acao === "autorizar"
+      ? "Pedido autorizado. A previsão de pagamento já está no financeiro."
+      : `Pedido ${acao === "recusar" ? "recusado" : "cancelado"}.`, "ok");
+    carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+els("f-status").addEventListener("change", carregar);
+carregar();
+</script>
+{% endblock %}

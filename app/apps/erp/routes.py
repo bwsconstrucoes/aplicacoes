@@ -87,6 +87,7 @@ MODULOS = [
         "abas": [
             ("sup_solicitacoes", "Solicitações", "erp.pagina_suprimentos"),
             ("sup_cotacoes", "Cotações", "erp.pagina_suprimentos_cotacoes"),
+            ("sup_pedidos", "Pedidos", "erp.pagina_suprimentos_pedidos"),
             ("sup_precos", "Banco de preços", "erp.pagina_suprimentos_precos"),
             ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_cadastros"),
         ],
@@ -723,6 +724,125 @@ def api_ler_proposta(coluna_id: int):
         raise
     except Exception as e:
         logger.exception("ERP/suprimentos: falha ao ler a proposta")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# --- Pedido de compra e autorização -----------------------------------------
+def _recusa_de_compras(atual):
+    """Vê pedidos quem compra ou quem autoriza. Os dois papéis precisam da mesma
+    lista — um para acompanhar o que fechou, outro para liberar.
+
+    Devolve a resposta de recusa, ou None quando pode passar. Não levanta
+    exceção porque isto também protege uma PÁGINA, e a guarda do blueprint já
+    responde 403 no mesmo formato."""
+    if pode(atual, "comprar") or pode(atual, "autorizar_pedido"):
+        return None
+    return jsonify({"ok": False,
+                    "erro": "Esta tela é de quem compra ou autoriza pedido."}), 403
+
+
+@bp.route("/erp/suprimentos/pedidos")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_pedidos():
+    with get_session() as s:
+        recusa = _recusa_de_compras(_usuario_logado(s))
+    return recusa or render_template("erp_suprimentos_pedidos.html",
+                                     **_contexto("sup_pedidos"))
+
+
+@bp.route("/erp/api/suprimentos/pedidos", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_suprimentos", POST="comprar")
+def api_pedidos():
+    from app.apps.erp.core.suprimentos import pedido as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                recusa = _recusa_de_compras(atual)
+                if recusa:
+                    return recusa
+                return jsonify({"ok": True, "pedidos": svc.listar(
+                    s, status=request.args.get("status"))})
+            ped = svc.fechar_direto(s, request.get_json(silent=True) or {}, atual)
+            saida = {"ok": True, "id": ped.id, "numero": ped.numero}
+            s.commit()
+            return jsonify(saida)
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha no pedido de compra")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/fechar", methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_fechar_do_mapa(cotacao_id: int):
+    """Fecha com um fornecedor os itens escolhidos no mapa. Um mesmo mapa gera
+    vários pedidos, um por fornecedor."""
+    from app.apps.erp.core.suprimentos import pedido as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            ped = svc.fechar_do_mapa(s, cotacao_id,
+                                     int(d.get("cotacao_fornecedor_id") or 0),
+                                     [int(x) for x in (d.get("itens") or [])],
+                                     d, atual)
+            saida = {"ok": True, "id": ped.id, "numero": ped.numero}
+            s.commit()
+            return jsonify(saida)
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao fechar pedido do mapa")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_pedido(pedido_id: int):
+    """O pedido com o mapa de origem embutido — quem autoriza precisa ver as
+    alternativas que o comprador tinha, não só a escolha final."""
+    from app.apps.erp.core.suprimentos import pedido as svc
+    with get_session() as s:
+        recusa = _recusa_de_compras(_usuario_logado(s))
+        return recusa or jsonify({"ok": True, "pedido": svc.detalhar(s, pedido_id)})
+
+
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/<acao>", methods=["POST"])
+@login_obrigatorio
+@permissao("autorizar_pedido")
+def api_decidir_pedido(pedido_id: int, acao: str):
+    from app.apps.erp.core.suprimentos import pedido as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if acao == "autorizar":
+                svc.autorizar(s, pedido_id, atual,
+                              [int(x) for x in (d.get("itens_recusados") or [])])
+            elif acao == "recusar":
+                svc.recusar(s, pedido_id, d.get("motivo") or "", atual)
+            elif acao == "cancelar":
+                svc.cancelar(s, pedido_id, d.get("motivo") or "", atual)
+            else:
+                return jsonify({"ok": False, "erro": "Ação desconhecida."}), 400
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao decidir o pedido")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
