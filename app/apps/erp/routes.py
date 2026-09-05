@@ -867,32 +867,42 @@ def api_recebimento(pedido_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
-@bp.route("/erp/api/suprimentos/zerar", methods=["GET", "POST"])
+@bp.route("/erp/api/manutencao/limpeza/areas")
 @login_obrigatorio
 @permissao("configurar")
-def api_suprimentos_zerar():
-    """Apaga o MOVIMENTO de Suprimentos lançado num teste.
+def api_limpeza_areas():
+    """As áreas que podem ser zeradas, para a tela montar as caixinhas."""
+    from app.apps.erp.core.manutencao import limpeza
+    return jsonify({"ok": True, "areas": limpeza.catalogo(),
+                    "preservado_sempre": sorted(limpeza.JAMAIS),
+                    "frase": limpeza.FRASE_DE_CONFIRMACAO})
 
-    Só o ADMIN chega aqui. GET conta o que sairia, sem tocar em nada; POST
-    executa, e exige a frase de confirmação digitada. Cadastros e financeiro
-    ficam de fora — ver `core/suprimentos/limpeza.py`.
+
+@bp.route("/erp/api/manutencao/limpeza", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_limpeza():
+    """Zera o MOVIMENTO das áreas escolhidas. Cadastro nunca sai por aqui.
+
+    GET conta o que sairia, sem tocar em nada; POST executa, e exige a frase
+    digitada. Ver `core/manutencao/limpeza.py` para o desenho e as travas.
     """
-    from app.apps.erp.core.suprimentos import limpeza
+    from app.apps.erp.core.manutencao import limpeza
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
             if request.method == "GET":
-                return jsonify({"ok": True, "resumo": limpeza.resumo(
-                    s, request.args.get("desde"))})
+                areas = [a for a in (request.args.get("areas") or "").split(",") if a]
+                return jsonify({"ok": True, "resumo": limpeza.resumo(s, areas)})
             d = request.get_json(silent=True) or {}
-            relatorio = limpeza.zerar(s, d.get("confirmacao") or "", atual,
-                                      d.get("desde"))
+            relatorio = limpeza.zerar(s, d.get("areas") or [],
+                                      d.get("confirmacao") or "", atual)
             s.commit()
             return jsonify({"ok": True, "relatorio": relatorio})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
-        logger.exception("ERP/suprimentos: falha ao zerar o movimento")
+        logger.exception("ERP/manutenção: falha ao zerar o movimento")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

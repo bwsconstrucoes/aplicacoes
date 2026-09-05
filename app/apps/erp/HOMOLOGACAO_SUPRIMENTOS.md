@@ -124,22 +124,22 @@ coluna é.
 ## Para recomeçar do zero
 
 Testar suja o sistema, e desfazer um a um seria pior que o teste. Em
-**Configurações › Zerar o movimento de Suprimentos** há o botão que limpa.
+**Configurações › Zerar movimento do ERP** há o botão que limpa — e ele cobre
+o ERP inteiro, não só Suprimentos: financeiro, extratos e conciliação,
+despesas com colaborador, medições, locações, anexos, consumo de IA e a trilha
+de auditoria. Você marca as áreas.
 
-- **Sai:** solicitações, cotações e mapas, pedidos, previsões de pagamento,
-  recebimentos, o banco de preços e as propostas anexadas.
-- **Fica:** insumos, fornecedores, unidades, condições de pagamento, obras,
-  operadores — e **todo o financeiro**. A carga das planilhas não se perde, e
-  título, pagamento e conciliação nem são tocados.
-- **Duas etapas:** primeiro ele conta o que sairia; só depois de ver o número é
-  que aparece a confirmação, que exige digitar `ZERAR SUPRIMENTOS`.
-- **Recusa** se alguma previsão de pagamento já tiver virado título — aí deixou
-  de ser teste e virou dinheiro.
-- Dá para limitar por data ("apagar o que foi lançado a partir de"), para o dia
-  em que já houver movimento de verdade no módulo.
-- Fica registrado quem apertou, quando e quantas linhas saíram.
+- **Cadastro nunca sai por aqui.** Obras, fornecedores, plano de contas,
+  colaboradores, contas bancárias, operadores, insumos, unidades e condições de
+  pagamento ficam sempre. A carga das planilhas não se perde.
+- **Três etapas:** marcar as áreas, ver a contagem do que sairia, e só então
+  digitar `ZERAR`.
+- **Ele recusa em vez de apagar em cascata.** Se você marcar só o financeiro e
+  houver um pedido de compra apontando para um título, ele para e diz "falta
+  marcar suprimentos" — nunca leva junto uma área que você não escolheu.
+- Fica registrado quem apertou, quando e quantas linhas saíram de cada tabela.
 
-Rode o roteiro à vontade: zerar e recomeçar custa dois cliques.
+Rode o roteiro à vontade: zerar e recomeçar custa três cliques.
 
 ## Se algo quebrar
 
