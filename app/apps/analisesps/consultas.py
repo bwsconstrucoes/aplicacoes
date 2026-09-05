@@ -289,6 +289,50 @@ def contagem_agendamento(f: dict) -> dict:
             "Agendado": linha[2], "Agendar": linha[3]}
 
 
+def resumo_e_agendamento(f: dict) -> tuple[dict, dict]:
+    """Os dois de cima NUMA IDA SÓ ao banco.
+
+    Separados, cada um varria a tabela filtrada por conta própria: medidos aqui
+    com as 59 mil SPs, 44 ms + 48 ms. Juntos, 59 ms — porque a varredura é uma
+    só e as contagens vão de carona. As duas funções acima continuam existindo
+    para quem precisa de um dos dois sozinho (a exportação, por exemplo).
+
+    O SQL é montado a partir das MESMAS peças das duas funções, de propósito:
+    duas cópias do texto divergiriam no dia em que a regra de "pago ganha de
+    tudo" mudasse em uma delas."""
+    from .db import consultar_um
+    where, params = _where(f)
+    # O `lower(...)` vai escrito em cada linha, e não numa variável costurada
+    # depois: há um teste que lê este arquivo linha a linha procurando LIKE
+    # contra texto sem `lower()` — no Postgres o LIKE distingue maiúscula, e
+    # esse já foi um defeito de verdade aqui. Esconder a normalização atrás de
+    # uma variável cega o teste sem consertar nada.
+    pago = "lower(trim(coalesce(status_pgt,'')))"
+    linha = consultar_um(
+        "SELECT count(*), coalesce(sum(valor_num), 0), "
+        f"       count(*) FILTER (WHERE {pago} = 'pagar'), "
+        "       coalesce(sum(valor_num) FILTER "
+        f"                (WHERE {pago} = 'pagar'), 0), "
+        f"       count(*) FILTER (WHERE {pago} = 'pago'), "
+        f"       count(*) FILTER (WHERE {pago} <> 'pago' "
+        "                          AND lower(coalesce(agendado,'')) LIKE '%falha%'), "
+        f"       count(*) FILTER (WHERE {pago} <> 'pago' "
+        "                          AND lower(coalesce(agendado,'')) NOT LIKE '%falha%' "
+        "                          AND lower(trim(coalesce(agendado,''))) = 'agendado'), "
+        f"       count(*) FILTER (WHERE {pago} <> 'pago' "
+        "                          AND lower(coalesce(agendado,'')) NOT LIKE '%falha%' "
+        "                          AND lower(trim(coalesce(agendado,''))) <> 'agendado') "
+        f"  FROM analisesps.sps{where}", tuple(params))
+    if not linha:
+        return ({"quantidade": 0, "total": 0, "quantidade_pagar": 0,
+                 "total_pagar": 0},
+                {"Pago": 0, "Falha Agendar": 0, "Agendado": 0, "Agendar": 0})
+    return ({"quantidade": linha[0], "total": linha[1],
+             "quantidade_pagar": linha[2], "total_pagar": linha[3]},
+            {"Pago": linha[4], "Falha Agendar": linha[5],
+             "Agendado": linha[6], "Agendar": linha[7]})
+
+
 def soma_por(f: dict, coluna: str, limite: int = 12) -> list[dict]:
     """Σ do valor por conta ou por forma de pagamento, como no Streamlit.
 
@@ -394,6 +438,83 @@ def opcoes(coluna: str, limite: int = 400) -> list[str]:
         f" WHERE trim(coalesce({coluna},'')) <> '' "
         f" GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?", (limite,))
     return [linha[0] for linha in linhas]
+
+
+# ---------------------------------------------------------------------------
+# AS LISTAS DE FILTRO, GUARDADAS ATÉ A PRÓXIMA CARGA
+#
+# Medido nesta máquina, com as 59.055 SPs de verdade: montar as sete listas
+# custa 194 ms, e era isso a CADA clique no filtro. Cada uma varre a tabela
+# inteira para descobrir quais valores existem naquela coluna, e o índice não
+# ajuda — a consulta limpa o texto antes de agrupar, e aí o banco lê tudo.
+# Índice de expressão foi tentado e o Postgres continuou preferindo a varredura;
+# não é caminho.
+#
+# O desperdício é que essas listas quase nunca mudam: os projetos, as contas e
+# os tipos de despesa da empresa são os mesmos hoje e amanhã. Só mudam quando
+# entra SP nova — ou seja, quando a carga da planilha roda.
+#
+# Então a chave do que fica guardado é O CARIMBO DA ÚLTIMA SINCRONIZAÇÃO. Ele
+# muda, as listas são refeitas; não muda, valem as de antes. Funciona ENTRE
+# PROCESSOS sem combinação nenhuma: a carga roda num processo separado e não
+# tem como avisar este, mas o carimbo que ela grava no banco é o próprio aviso.
+#
+# O CUSTO, dito na cara: um projeto novo cadastrado na planilha só aparece na
+# listinha depois da próxima sincronização (a tela dispara uma a cada 5 min).
+# A SP nova aparece na LISTA normalmente — é só o menu de filtro que demora a
+# saber do valor novo.
+# ---------------------------------------------------------------------------
+COLUNAS_DE_FILTRO = {
+    "status_pgt": ("status_pgt", 400),
+    "conta": ("conta", 400),
+    "forma": ("forma_pagamento", 400),
+    "tipo_despesa": ("tipo_despesa", 400),
+    "projeto": ("projeto", 400),
+    "responsavel": ("responsavel", 400),
+    "centro_custo": ("centro_custo", 200),
+}
+
+# Trocado inteiro a cada recálculo, nunca alterado no lugar: com 4 threads no
+# mesmo processo, duas podem recalcular ao mesmo tempo — e trocar a referência
+# de uma vez faz com que a pior consequência disso seja trabalho repetido, e
+# nunca uma lista pela metade na tela.
+_LISTAS_GUARDADAS: dict = {"carimbo": object(), "valores": {}}
+
+
+def opcoes_de_filtro(carimbo=None) -> dict:
+    """As sete listas da barra lateral, de uma vez.
+
+    `carimbo` é o valor de `ultima_sincronizacao` — quem chama normalmente já
+    o tem em mãos (veio do `base_carregada()`), e passá-lo evita uma consulta
+    a mais só para descobrir se o que está guardado ainda serve."""
+    if carimbo is None:
+        from .db import consultar_um
+        try:
+            linha = consultar_um("SELECT valor FROM analisesps.meta "
+                                 "WHERE chave = 'ultima_sincronizacao'")
+            carimbo = linha[0] if linha else ""
+        except Exception:  # noqa: BLE001 — sem carimbo, recalcula; não quebra
+            carimbo = None
+
+    guardado = _LISTAS_GUARDADAS
+    if guardado["carimbo"] == carimbo and guardado["valores"]:
+        return dict(guardado["valores"], status_agend=opcoes_agendamento())
+
+    valores = {apelido: opcoes(coluna, limite=limite)
+               for apelido, (coluna, limite) in COLUNAS_DE_FILTRO.items()}
+    _substituir_listas(carimbo, valores)
+    return dict(valores, status_agend=opcoes_agendamento())
+
+
+def _substituir_listas(carimbo, valores) -> None:
+    global _LISTAS_GUARDADAS
+    _LISTAS_GUARDADAS = {"carimbo": carimbo, "valores": valores}
+
+
+def esquecer_opcoes_de_filtro() -> None:
+    """Joga fora o que está guardado. Para os testes e para quem mexer na
+    estrutura sem passar por uma sincronização."""
+    _substituir_listas(object(), {})
 
 
 def opcoes_agendamento() -> list[str]:

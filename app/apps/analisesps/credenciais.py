@@ -77,6 +77,22 @@ def cliente():
     return _cache_cliente
 
 
+def credencial_bruta() -> dict | None:
+    """O JSON da service account, já decodificado — ou None se não houver.
+
+    Existe porque o Drive não passa pelo gspread: ele fala REST direto, e
+    precisa montar a própria sessão autenticada. Decodificar em dois lugares
+    daria duas mensagens de erro diferentes para a mesma variável faltando."""
+    b64 = os.getenv("GOOGLE_CREDENTIALS_BASE64", "").strip()
+    if not b64:
+        return None
+    try:
+        return json.loads(b64decode(b64).decode("utf-8"))
+    except Exception:  # noqa: BLE001 — quem chama decide o que dizer
+        logger.exception("Análise de SPs: GOOGLE_CREDENTIALS_BASE64 ilegível")
+        return None
+
+
 def com_retry(fn, tentativas: int = 5, espera: float = 1.5):
     """Repete a chamada quando o Google oscila.
 

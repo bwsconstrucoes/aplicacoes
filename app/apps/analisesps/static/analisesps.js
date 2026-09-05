@@ -116,6 +116,31 @@
         + (volta ? "&origem=" + encodeURIComponent(volta) : "");
   });
 
+  // --- BeeVale das marcadas ------------------------------------------------
+  //
+  // So habilita quando TODAS as marcadas sao BeeVale, como no Streamlit. Nao e
+  // preciosismo: gerar a planilha de recarga de uma SP que se paga por boleto
+  // poe dinheiro no cartao de quem nao devia receber, e o card fica marcado
+  // como resolvido.
+  const btnBeeVale = document.getElementById("ba-beevale");
+  if (btnBeeVale) btnBeeVale.addEventListener("click", () => {
+    const sel = marcadas();
+    if (!sel.length) return;
+    const forasteiras = sel.filter(
+      c => !(c.dataset.forma || "").toLowerCase().includes("beevale"));
+    if (forasteiras.length) {
+      alert("O BeeVale so vale para SPs cuja forma de pagamento e BeeVale.\n\n"
+            + forasteiras.length + " das marcadas nao sao ("
+            + forasteiras.slice(0, 5).map(c => c.value).join(", ")
+            + (forasteiras.length > 5 ? "…" : "") + ").");
+      return;
+    }
+    const volta = barra.dataset.origem || "";
+    location.href = btnBeeVale.dataset.url + "?"
+        + sel.map(c => "id=" + encodeURIComponent(c.value)).join("&")
+        + (volta ? "&origem=" + encodeURIComponent(volta) : "");
+  });
+
   // --- Mandar as marcadas para o lote --------------------------------------
   const btnLote = document.getElementById("ba-enviar-lote");
   if (btnLote) btnLote.addEventListener("click", () => {
@@ -238,6 +263,17 @@ window.ligarFicha = function (raiz) {
     botao.addEventListener("click", async () => {
       const rotulo = botao.textContent.trim();
       const valor = botao.dataset.valor;
+      // Trava da Validacao, como no Streamlit. Antes o botao vinha
+      // `disabled`: nao gravava nada, mas tambem nao dizia nada — quem nao
+      // leu o aviso logo acima achava que o botao estava quebrado.
+      if (botao.dataset.bloqueado) {
+        const validarAgora = caixa.querySelector("#ficha-validar");
+        const querValidar = confirm(
+          `Não dá para "${rotulo}" nesta SP: a coluna Validação precisa `
+          + `estar como "Sim".\n\nQuer validar a SP ${sp} agora?`);
+        if (querValidar && validarAgora) validarAgora.click();
+        return;
+      }
       const efeito = botao.dataset.coluna === "agendado" && valor === "Desagendar"
           ? `Apagar o agendamento da SP ${sp}`
           : `${rotulo} na SP ${sp}`;

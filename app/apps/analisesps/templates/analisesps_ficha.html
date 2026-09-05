@@ -1,10 +1,16 @@
 {# ---------------------------------------------------------------------------
    A FICHA DA SP — o mesmo conteúdo serve à página inteira e ao modal.
 
-   Segue a ordem do modal do Streamlit, que é a que o dono conhece: primeiro a
-   fileira de links (card, anexo, comprovante, Omie, cancelamento), depois as
-   pendências, depois o risco de duplicidade com os lançamentos apontados,
-   depois os botões, e por último a tabela com todos os campos.
+   ORDEM DE LEITURA, na ordem em que a pessoa precisa das coisas:
+     1. cabeçalho (SP, credor, valor)
+     2. a DESCRIÇÃO — é o que diz do que se trata, e é a primeira pergunta de
+        quem abre a ficha. Ficava no fim, depois de tudo.
+     3. os links (card, anexo, comprovante, Omie, cancelamento no Pipefy)
+     4. pendências e risco de duplicidade
+     5. os botões de agendamento e pagamento
+     6. a tabela com todos os campos
+     7. o CÓDIGO DE PAGAMENTO, por último — é o passo final, de quem já
+        conferiu o resto e vai pagar.
 
    O AGENDAMENTO SÓ ABRE COM VALIDAÇÃO = "Sim". Era assim no Streamlit e a
    regra tinha sumido na conversão: qualquer um agendava qualquer coisa.
@@ -27,6 +33,18 @@
   <div class="ficha-valor">{{ sp.valor_num|moeda }}</div>
 </div>
 
+{# A DESCRIÇÃO LOGO NO ALTO: é do que se trata a SP, e é a primeira coisa que
+   se procura ao abrir. Os endereços que vêm digitados dentro dela viram link
+   clicável — antes era selecionar na mão e colar no navegador. #}
+{% if sp.descricao %}
+  <div class="cartao ficha-descricao">
+    <div class="cartao-cab"><h3>Descrição</h3></div>
+    {# `|safe` porque o filtro JÁ escapou o texto e devolveu HTML pronto —
+       sem ele, as tags do link sairiam escritas na tela. #}
+    <p class="texto-livre">{{ sp.descricao|com_links|safe }}</p>
+  </div>
+{% endif %}
+
 <div class="ficha-links">
   {% if sp.card_link %}
     <a class="btn secundario" href="{{ sp.card_link }}" target="_blank" rel="noopener">Abrir Card</a>
@@ -44,8 +62,9 @@
        target="_blank" rel="noopener" title="Manda o Omie atualizar o título">Atualizar</a>
   {% endif %}
   {# CANCELAR = pedido de cancelamento NO PIPEFY, como no Streamlit. Não é o
-     mesmo que marcar "Cancelado" na planilha — ver a nota nos botões abaixo. #}
-  <a class="btn secundario perigo"
+     mesmo que marcar "Cancelado" na planilha — ver a nota nos botões abaixo.
+     Sem cor de alerta: só ABRE um formulário, não cancela nada por si. #}
+  <a class="btn secundario"
      href="https://app.pipefy.com/public/form/RCvCgX9c?n_da_solicita_o={{ sp.id }}&selecione_o_procedimento=Cancelar%20SP"
      target="_blank" rel="noopener"
      title="Abre no Pipefy o formulário de pedido de cancelamento desta SP">Cancelar SP</a>
@@ -81,45 +100,6 @@
   </div>
 {% endif %}
 
-{# ---------------------------------------------------------------------------
-   O CÓDIGO DE PAGAMENTO, NA PRÓPRIA FICHA.
-
-   Quem abre a SP para conferir um dado quase sempre está a caminho de pagar.
-   Voltar à lista só para gerar o QR era um caminho a mais em cada pagamento —
-   e o botão "QR / Código" que ficava aqui saiu junto, porque virou redundante.
---------------------------------------------------------------------------- #}
-{% if codigo %}
-  {% set st = (sp.status_pgt or '')|trim|lower %}
-  <div class="ficha-codigo">
-    {% if st and st != 'pagar' %}
-      {# Mostrar um código de pagamento numa SP que já saiu é o caminho curto
-         para pagar duas vezes. O código continua aparecendo — às vezes é
-         justamente o que se quer conferir —, mas com o aviso na frente. #}
-      <div class="aviso atencao" style="width:100%">
-        <b>Atenção: esta SP está como "{{ sp.status_pgt }}".</b>
-        O código abaixo é o dela; confira antes de pagar de novo.
-      </div>
-    {% endif %}
-
-    {% if codigo.erro %}
-      <div class="aviso">{{ codigo.erro }}</div>
-    {% elif codigo.tipo == 'boleto' %}
-      <div class="codigo-barras">{{ codigo.imagem|safe }}</div>
-      <label class="rotulo-campo">Linha digitável</label>
-      <input class="campo-largo copiavel" readonly value="{{ codigo.copia_cola }}">
-    {% elif codigo.tipo == 'pix' %}
-      <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start">
-        <img class="qr" alt="QR Pix da SP {{ sp.id }}"
-             src="data:image/png;base64,{{ codigo.imagem }}">
-        <div style="flex:1; min-width:240px">
-          <label class="rotulo-campo">Pix copia e cola</label>
-          <textarea class="campo-largo copiavel" rows="4" readonly>{{ codigo.copia_cola }}</textarea>
-        </div>
-      </div>
-    {% endif %}
-  </div>
-{% endif %}
-
 {% if pode_operar %}
   <div class="ficha-acoes" data-sp="{{ sp.id }}"
        data-url-alterar="{{ url_for('analisesps.alterar') }}"
@@ -127,16 +107,23 @@
        data-url-sem-risco="{{ url_for('analisesps.sem_risco') }}">
     {% if not validado %}
       <div class="aviso atencao" style="width:100%">
-        <b>Agendamento bloqueado:</b> a coluna <b>Validação</b> precisa estar
+        <b>🔒 Agendamento bloqueado:</b> a coluna <b>Validação</b> precisa estar
         como "Sim" (agora está: {{ sp.validacao or '—' }}). Era assim no
         Streamlit — agendar sem validar é o que a trava impede.
         <button class="btn" id="ficha-validar" style="margin-left:8px">Validar</button>
       </div>
     {% endif %}
+    {# ATENÇÃO ao `data-bloqueado` em vez de `disabled`: botão desabilitado não
+       recebe clique nenhum, e quem não leu o aviso acima via um botão que
+       simplesmente não fazia nada. Assim a trava continua valendo — nada é
+       gravado —, mas o clique diz por que não foi, e oferece validar ali. #}
     <div class="ba-grupo">
       {% for v in ['Agendar', 'Agendado', 'Desagendar', 'Falha Agendar'] %}
-        <button class="btn secundario" data-coluna="agendado" data-valor="{{ v }}"
-                {% if not validado %}disabled{% endif %}>{{ v }}</button>
+        <button class="btn secundario{% if not validado %} bloqueado{% endif %}"
+                data-coluna="agendado" data-valor="{{ v }}"
+                {% if not validado %}data-bloqueado="1"
+                title="Bloqueado: a Validação desta SP não está como 'Sim'."{% endif %}
+        >{{ v }}</button>
       {% endfor %}
     </div>
     <div class="ba-grupo">
@@ -183,9 +170,42 @@
   {{ campo('ID contrato Pipefy', sp.id_contrato) }}
 </div>
 
-{% if sp.descricao %}
-  <div class="cartao" style="margin-top:12px">
-    <div class="cartao-cab"><h3>Descrição</h3></div>
-    <p style="margin:0; white-space:pre-wrap">{{ sp.descricao }}</p>
+{# ---------------------------------------------------------------------------
+   O CÓDIGO DE PAGAMENTO, NO FIM DA FICHA.
+
+   É o último passo de quem já conferiu o resto e vai pagar — por isso fica
+   depois dos campos, e não antes. Estar aqui evita voltar à lista só para
+   gerar o QR; o botão "QR / Código" que ficava na ficha saiu junto, porque
+   virou redundante.
+--------------------------------------------------------------------------- #}
+{% if codigo %}
+  {% set st = (sp.status_pgt or '')|trim|lower %}
+  <div class="ficha-codigo">
+    {% if st and st != 'pagar' %}
+      {# Mostrar um código de pagamento numa SP que já saiu é o caminho curto
+         para pagar duas vezes. O código continua aparecendo — às vezes é
+         justamente o que se quer conferir —, mas com o aviso na frente. #}
+      <div class="aviso atencao" style="width:100%">
+        <b>Atenção: esta SP está como "{{ sp.status_pgt }}".</b>
+        O código abaixo é o dela; confira antes de pagar de novo.
+      </div>
+    {% endif %}
+
+    {% if codigo.erro %}
+      <div class="aviso">{{ codigo.erro }}</div>
+    {% elif codigo.tipo == 'boleto' %}
+      <div class="codigo-barras">{{ codigo.imagem|safe }}</div>
+      <label class="rotulo-campo">Linha digitável</label>
+      <input class="campo-largo copiavel" readonly value="{{ codigo.copia_cola }}">
+    {% elif codigo.tipo == 'pix' %}
+      <div style="display:flex; gap:18px; flex-wrap:wrap; align-items:flex-start">
+        <img class="qr" alt="QR Pix da SP {{ sp.id }}"
+             src="data:image/png;base64,{{ codigo.imagem }}">
+        <div style="flex:1; min-width:240px">
+          <label class="rotulo-campo">Pix copia e cola</label>
+          <textarea class="campo-largo copiavel" rows="4" readonly>{{ codigo.copia_cola }}</textarea>
+        </div>
+      </div>
+    {% endif %}
   </div>
 {% endif %}
