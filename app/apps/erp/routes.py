@@ -21,7 +21,9 @@ from flask import (
 
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
-from app.apps.erp.core.auth.permissoes import PERMISSOES, pode
+from app.apps.erp.core.auth.permissoes import (
+    ACAO_ROTULOS, PERMISSOES, PROTEGIDAS_DO_ADMIN, ROTULOS, decidir, pode,
+)
 from app.apps.erp.core.auth.service import ErroAutenticacao, autenticar
 from app.apps.erp.core.comum.auditoria import (
     ErroNaoEncontrado, ErroPermissao, ErroValidacao,
@@ -118,7 +120,32 @@ _ABERTOS = ("EM_ANALISE", "AGUARDANDO_APROVACAO", "APROVADO", "BLOQUEADO", "PAGO
 # ---------------------------------------------------------------------------
 def _usuario_logado(s) -> Usuario | None:
     uid = session.get("erp_usuario_id")
-    return s.get(Usuario, uid) if uid else None
+    if not uid:
+        return None
+    u = s.get(Usuario, uid)
+    if u is not None:
+        u.permissoes_extras = _excecoes_brutas(s, uid)
+    return u
+
+
+def _excecoes_brutas(s, usuario_id: int) -> dict[str, bool]:
+    """As marcações de permissão da pessoa, por SQL direto (ação → concedida).
+
+    SQL direto e não ORM pelo mesmo motivo do perfil: esta leitura acontece em
+    toda requisição, inclusive na tela que aplica as migrações. Enquanto a
+    migração 032 não tiver rodado, a tabela não existe — e aí a resposta certa
+    é "nenhuma exceção", que faz valer o cargo, e não derrubar o ERP.
+    """
+    from sqlalchemy import text as _text
+    try:
+        linhas = s.execute(
+            _text("SELECT acao, concedida FROM usuario_permissoes WHERE usuario_id = :i"),
+            {"i": usuario_id}).all()
+    except Exception:
+        logger.warning("ERP/permissao: usuario_permissoes indisponível "
+                       "(migração 032 pendente?) — valendo só o cargo")
+        return {}
+    return {acao: bool(concedida) for acao, concedida in linhas}
 
 
 def _perfil_bruto(s) -> str:
@@ -273,6 +300,7 @@ def _guarda_permissao():
     # ficaria inalcançável: o impasse circular que derrubou o ERP em 2026-09-02.
     with get_session() as s:
         perfil = _perfil_bruto(s)
+        excecoes = _excecoes_brutas(s, session["erp_usuario_id"]) if perfil else {}
     if not perfil:
         return None          # usuário sumiu do banco: a rota responde
     try:
@@ -281,7 +309,7 @@ def _guarda_permissao():
         logger.error("ERP/permissao: perfil desconhecido %r no usuário %s",
                      perfil, session.get("erp_usuario_id"))
         return jsonify({"ok": False, "erro": "Perfil de usuário inválido."}), 403
-    if perfil_enum not in PERMISSOES.get(acao, set()):
+    if not decidir(perfil_enum, acao, excecoes):
         logger.warning("ERP/permissao: %s negado ao usuário %s (%s) em %s",
                        acao, session.get("erp_usuario_id"), perfil, endpoint)
         return jsonify({"ok": False,
@@ -2401,6 +2429,87 @@ def api_editar_usuario(usuario_id: int):
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao editar operador")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/usuarios/<int:usuario_id>/permissoes", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="gerir_usuarios", POST="gerir_usuarios")
+def api_permissoes_do_usuario(usuario_id: int):
+    """As marcações de permissão de UMA pessoa, sobre o que o cargo já dá.
+
+    GET devolve, para cada ação: o que o cargo dá, o que está marcado à mão e o
+    resultado. POST grava as marcações — só as que diferem do cargo viram linha,
+    para o cadastro não guardar repetição do que o cargo já responde.
+    """
+    from sqlalchemy import select
+    from app.apps.erp.core.auth.permissoes import exigir
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.cadastros import Usuario, UsuarioPermissao
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            exigir(atual, "gerir_usuarios")
+            u = s.get(Usuario, usuario_id)
+            if u is None:
+                return jsonify({"ok": False, "erro": "Operador não encontrado."}), 404
+
+            marcadas = {r.acao: r.concedida for r in s.scalars(
+                select(UsuarioPermissao).where(
+                    UsuarioPermissao.usuario_id == usuario_id)).all()
+                if r.usuario_id == usuario_id}
+
+            if request.method == "GET":
+                acoes = []
+                for acao in sorted(PERMISSOES):
+                    do_cargo = u.perfil in PERMISSOES[acao]
+                    marcada = marcadas.get(acao)
+                    acoes.append({
+                        "acao": acao,
+                        "rotulo": ACAO_ROTULOS.get(acao, acao),
+                        "do_cargo": do_cargo,
+                        "marcada": marcada,
+                        "efetiva": decidir(u.perfil, acao, marcadas),
+                        "travada": u.perfil is PerfilUsuario.ADMIN and acao in PROTEGIDAS_DO_ADMIN,
+                    })
+                return jsonify({"ok": True, "usuario": {"id": u.id, "nome": u.nome,
+                                                        "perfil": u.perfil.value,
+                                                        "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value)},
+                                "acoes": acoes})
+
+            pedido = (request.get_json(silent=True) or {}).get("permissoes") or {}
+            desconhecidas = [a for a in pedido if a not in PERMISSOES]
+            if desconhecidas:
+                return jsonify({"ok": False,
+                                "erro": f"Ação desconhecida: {', '.join(sorted(desconhecidas))}."}), 400
+
+            for linha in s.scalars(select(UsuarioPermissao).where(
+                    UsuarioPermissao.usuario_id == usuario_id)).all():
+                if linha.usuario_id == usuario_id:
+                    s.delete(linha)
+            s.flush()
+
+            gravadas = {}
+            for acao, valor in pedido.items():
+                quer = bool(valor)
+                if quer == (u.perfil in PERMISSOES[acao]):
+                    continue          # igual ao cargo: não vira exceção
+                s.add(UsuarioPermissao(usuario_id=usuario_id, acao=acao,
+                                       concedida=quer, definida_por=atual.id))
+                gravadas[acao] = quer
+
+            registrar_evento(s, "usuario", usuario_id, "PERMISSOES_AJUSTADAS",
+                             {"permissoes": gravadas}, atual.id)
+            s.commit()
+            logger.info("ERP: permissões de %s ajustadas por %s: %s",
+                        usuario_id, atual.id, gravadas)
+        return jsonify({"ok": True, "permissoes": gravadas})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao ajustar permissões do operador")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

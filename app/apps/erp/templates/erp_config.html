@@ -208,6 +208,18 @@ function formOperador(u){
       <div class="dica">Vale para o <b>supervisor</b> e para quem estiver como
         <b>"tudo das obras designadas"</b>. Gestor vê todas as obras.</div>
     </div>
+    ${novo ? "" : `
+    <div class="campo" style="margin-top:12px">
+      <label>O que esta pessoa pode fazer</label>
+      <div class="filtro-opcoes" id="op-perms"
+           style="max-height:260px; border:1px solid var(--borda); border-radius:8px; padding:6px">
+        <small>carregando…</small>
+      </div>
+      <div class="dica">O <b>cargo</b> já define o essencial. Aqui você acrescenta
+        ou tira <b>desta pessoa</b> — por exemplo, deixar alguém autorizando
+        enquanto o diretor está de férias. O que estiver diferente do cargo fica
+        marcado como <b>ajuste</b>.</div>
+    </div>`}
     <div style="margin-top:14px"><button class="btn" id="op-salvar">Salvar</button></div>`;
 
   // Perfis cujo alcance é escolhido pessoa a pessoa; os demais já veem tudo
@@ -247,6 +259,23 @@ function formOperador(u){
       el.style.display = el.dataset.catRot.includes(q) ? "" : "none");
   });
 
+  // As permissões da pessoa só existem depois que ela existe: no cadastro novo
+  // o bloco nem aparece, e o ajuste fino se faz ao editar.
+  async function carregarPermissoes(){
+    try {
+      const d = await api(`/erp/api/usuarios/${u.id}/permissoes`);
+      els("op-perms").innerHTML = d.acoes.map(a => `
+        <label class="opcao" title="${a.do_cargo ? "o cargo já dá" : "o cargo não dá"}">
+          <input type="checkbox" class="op-perm" value="${a.acao}"
+                 ${a.efetiva ? "checked" : ""} ${a.travada ? "disabled" : ""}>
+          <span class="rotulo">${a.rotulo}${
+            a.travada ? ' <small>(o administrador não perde esta)</small>'
+            : a.marcada === null || a.marcada === undefined ? ""
+            : ` <b>· ajuste</b>`}</span></label>`).join("");
+    } catch(e){ els("op-perms").innerHTML = `<small>não foi possível carregar: ${e.message}</small>`; }
+  }
+  if (!novo) carregarPermissoes();
+
   els("op-salvar").addEventListener("click", async () => {
     const corpo = {nome: els("op-nome").value, telefone: els("op-tel").value,
       perfil: els("op-perfil").value, ativo: els("op-ativo").value === "1",
@@ -260,6 +289,14 @@ function formOperador(u){
     try {
       await api(novo ? "/erp/api/usuarios" : `/erp/api/usuarios/${u.id}`,
         {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+      const caixas = [...document.querySelectorAll(".op-perm")];
+      if (!novo && caixas.length) {
+        const permissoes = {};
+        caixas.forEach(i => permissoes[i.value] = i.checked);
+        await api(`/erp/api/usuarios/${u.id}/permissoes`,
+          {method:"POST", headers:{"Content-Type":"application/json"},
+           body: JSON.stringify({permissoes})});
+      }
       els("dlg").close();
       aviso("mensagem", novo ? "Operador cadastrado." : "Operador atualizado.", "ok");
       carregarOperadores();

@@ -149,33 +149,34 @@ marcado como herdado, com a data e o link da origem.
 
 ---
 
-## 6. Permissão: a proposta da camada aditiva
+## 6. Permissão: decidido e construído em 04/09/2026
 
-O ditado pede que a pessoa passe a ter acesso **por área** (financeiro, obras,
-pessoal, suprimentos) e, em cada uma, um **nível** (administrador, operador,
-leitor) — "alguém pode lançar SP e autorizar um pedido".
+O dono resolveu a questão com uma frase melhor do que a proposta original:
+"cadastro uma pessoa, ela tem uma função principal e a gente vai agregando
+permissões — pode fazer isso, não pode fazer aquilo, pode ver essa tela".
 
-Hoje o ERP tem **um perfil por pessoa**, global, e 125 rotas dependem dele.
-Trocar isso agora significa refazer a proteção de todas elas antes de o dono ter
-testado a que existe.
+**Como ficou.** O cargo continua sendo a base. No cadastro do operador há agora
+a lista de tudo o que o ERP sabe fazer, em português, com o que vem do cargo já
+marcado. Marcar acrescenta; desmarcar tira. Só o que difere do cargo é guardado
+(tabela `usuario_permissoes`, migração 032).
 
-**Proposta: não trocar, acrescentar.** O perfil atual continua sendo a base — é
-ele que responde por tudo que já está no ar. Ao lado dele, a pessoa recebe
-**funções de suprimentos** (solicitar, comprar, autorizar pedido, administrar
-cadastro de insumo). As rotas velhas continuam perguntando o perfil; as rotas
-novas perguntam a função.
+**Por que resolve mais do que parece.** Nas palavras dele: "o diretor sai de
+férias e eu quero deixar outra pessoa responsável por autorizar". Sem isso,
+seria preciso inventar um cargo novo para cada arranjo temporário.
 
-Vantagens:
+**Alçada por valor** (autorizar até tanto) ficou registrada como desejável e
+não é usada hoje. Entra quando o pedido de compra tiver a tela de autorização.
 
-- nada do que está no ar muda de comportamento — risco zero para o que existe;
-- entrega hoje o que o dono pediu ("lança SP **e** autoriza pedido");
-- se o desenho provar seu valor, a mesma mecânica se estende ao financeiro e ao
-  pessoal depois, área por área, sem parada geral;
-- se não provar, joga-se fora só a camada nova.
+**A trava contra o tiro no pé.** O administrador não consegue desmarcar de si
+mesmo as telas que consertam o sistema — Configurações, cadastro de operadores
+e a entrada no ERP. Sem isso, um clique errado deixaria a empresa sem ninguém
+que pudesse desfazer.
 
-Desvantagem, dita com todas as letras: por um tempo convivem **dois** jeitos de
-dizer quem pode o quê. É dívida — e a forma de pagá-la é migrar área por área,
-não deixar as duas para sempre.
+**A dívida, dita com todas as letras.** Por um tempo convivem dois jeitos de
+dizer quem pode o quê: o cargo e as exceções. Enquanto forem poucas, é mais
+simples do que a alternativa. Se um dia metade das pessoas tiver dez exceções,
+é sinal de que os cargos precisam ser redesenhados — e aí vale o trabalho de
+transformar área e nível em estrutura.
 
 ---
 

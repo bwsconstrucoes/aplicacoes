@@ -316,6 +316,29 @@ caem todos em `PROPRIOS`: **a ausência de configuração fecha**. Quem está em
 `OBRAS_DESIGNADAS` sem nenhuma obra associada enxerga só a autoria — uma lista
 vazia não pode virar "vê tudo".
 
+**A alçada também é ajustável por PESSOA** (migração 032). O cargo continua
+sendo a base — é ele que responde por tudo que já está no ar —, e a tabela
+`usuario_permissoes` guarda só as **exceções** marcadas no cadastro de alguém:
+`concedida=TRUE` acrescenta uma ação que o cargo não dá, `concedida=FALSE` tira
+uma que o cargo daria. Sem linha, vale o cargo, e a tabela nascer vazia não muda
+o comportamento de ninguém.
+
+Motivo prático, nas palavras do dono: "de repente o diretor sai de férias e eu
+quero deixar outra pessoa responsável por autorizar alguma coisa" — sem
+inventar um cargo novo para cada arranjo.
+
+Três cuidados que sustentam isso:
+
+- a decisão mora em **um lugar só**: `pode()` (com o objeto `Usuario`) e
+  `decidir()` (com valores soltos, para a guarda) aplicam a mesma regra, e um
+  teste percorre perfil × ação × marcação exigindo que as duas concordem;
+- o **ADMIN não se tranca para fora**: `configurar`, `gerir_usuarios` e
+  `ver_erp` não podem ser desmarcadas dele, senão um clique errado deixaria o
+  sistema sem ninguém que consertasse;
+- as exceções são lidas por **SQL direto**, como o perfil, e se a tabela ainda
+  não existir a leitura falha em silêncio e vale o cargo. Pelo mesmo motivo do
+  §3.8: o botão que aplica as migrações não pode depender da migração.
+
 ### 3.10 Consumo de IA: um ponto de registro, um teto que só avisa
 
 Toda leitura por IA passa por `documentos/leitor._chamar_ia`, e é **ali** que o
@@ -707,6 +730,22 @@ Quando eu pedir nova feature ou adaptação:
 ## 9. Histórico de decisões arquiteturais
 
 > Lista para manter contexto de decisões já tomadas.
+
+- **2026-09-04 — Permissão fina por pessoa, sem refazer a matriz de perfis.**
+  O dono pediu que cada pessoa tenha uma função principal e, além dela,
+  permissões marcadas uma a uma no cadastro. Duas saídas eram possíveis:
+  substituir o perfil global por uma matriz área × nível, ou manter o perfil e
+  acrescentar exceções. Escolhida a segunda (migração 032, tabela
+  `usuario_permissoes`), porque a primeira exigiria refazer a proteção das 125
+  rotas antes de o dono ter homologado a que acabou de ser endurecida — e o
+  ganho prático que ele descreveu ("deixar outra pessoa autorizando enquanto o
+  diretor está de férias") já sai da segunda. Detalhes em §3.9. A dívida está
+  escrita: um dia as áreas viram estrutura, não exceção.
+- **2026-09-04 — Suprimentos: especificação antes de código.** As seis
+  planilhas em uso foram lidas e confrontadas com o ditado do dono; o resultado
+  está em `app/apps/erp/SUPRIMENTOS.md`, com as decisões dele e o plano em
+  cinco fases. O `tests/conftest.py` ganhou o dublê das exceções de permissão
+  (`permissoes_por_usuario`) — mudança que atravessa áreas.
 
 - **2026-07-10 — WhatsApp: Z-API → Evolution API (self-hosted).** Escolhida a
   Evolution API (open source, multi-instância, envia mídia) em vez do WAHA
