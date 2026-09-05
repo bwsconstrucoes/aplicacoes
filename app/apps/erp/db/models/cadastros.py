@@ -147,6 +147,28 @@ class Parametro(Base):
     atualizado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
 
 
+class UsuarioPermissao(Base):
+    """Exceção de permissão marcada no cadastro de UMA pessoa.
+
+    O cargo (`Usuario.perfil`) é a base e responde por tudo que já existe.
+    Aqui ficam só as marcações feitas à mão: `concedida=True` acrescenta uma
+    ação que o cargo não dá ("o Pedro também autoriza pedido"); `concedida=False`
+    tira uma que o cargo daria ("a Ana não paga"). Sem linha, vale o cargo.
+
+    É o que permite deixar outra pessoa autorizando enquanto o diretor está de
+    férias, sem inventar um cargo novo para isso.
+    """
+    __tablename__ = "usuario_permissoes"
+
+    usuario_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True)
+    acao: Mapped[str] = mapped_column(Text, primary_key=True)
+    concedida: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    definida_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    definida_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+
+
 class UsuarioObra(Base):
     """Obras que o supervisor enxerga. Gestor vê todas; administrativo de obra
     vê o que ele mesmo lançou."""

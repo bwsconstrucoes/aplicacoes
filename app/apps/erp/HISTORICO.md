@@ -17,9 +17,11 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 Suprimentos ainda não começou.
 
-**Estado em 02/09/2026:** `main` com a autorização padrão-NEGAR, o alcance por
-operador (migração 029), o consumo de IA com teto (migração 030) e a suíte com
-banco de verdade no GitHub Actions. Suíte: ~290 sem banco, ~400 com banco.
+**Estado em 04/09/2026:** `main` com a autorização padrão-NEGAR, o alcance por
+operador (029), o consumo de IA com teto (030), as travas de concorrência (031)
+e a homologação por perfil rodando sozinha no GitHub. No ramo, ainda não
+publicado: a **permissão fina por pessoa** (032) e a **especificação de
+Suprimentos**. Suíte: 836 sem banco, ~1.400 com banco.
 
 ### O que está pendente AGORA
 
@@ -34,8 +36,15 @@ banco de verdade no GitHub Actions. Suíte: ~290 sem banco, ~400 com banco.
    recusado, tela a tela, perfil a perfil) roda sozinha no GitHub a cada envio
    (`tests/test_homologacao_banco.py`). Para o olho humano ficou só o roteiro
    reduzido: visual, leitura de documento por IA, avalizar/pagar com dado real.
-5. **Migração 031** (restrições de concorrência): apertar o botão ao juntar.
-6. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
+5. **Migrações 031 e 032**: apertar o botão ao juntar. A 031 são as restrições
+   de concorrência; a 032 é a tabela das permissões por pessoa. Enquanto a 032
+   não rodar, o ERP funciona normalmente **pelo cargo** — a tela de cadastro é
+   que não consegue mostrar os ajustes.
+6. **Suprimentos**: a especificação está fechada em `SUPRIMENTOS.md`, com as
+   decisões do dono e o plano em cinco fases. Nada construído. A fase 1
+   (cadastros e importação dos 111 fornecedores e 115 insumos) é o próximo
+   passo, quando o dono mandar.
+7. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)
 

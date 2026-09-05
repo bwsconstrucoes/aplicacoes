@@ -67,6 +67,28 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "editar_colaboradores": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL},
 }
 
+# Nome de cada ação em português, para a tela de cadastro do operador. Quem
+# marca a caixinha não é programador: "pagar" precisa dizer o que libera.
+ACAO_ROTULOS = {
+    "ver_erp":              "Entrar no ERP e ver as telas",
+    "lancar":               "Lançar título",
+    "avalizar":             "Avalizar (1º aval)",
+    "aprovar":              "Aprovar título",
+    "pagar":                "Dar baixa em pagamento",
+    "conciliar":            "Conciliar extrato",
+    "receber":              "Lançar recebimento",
+    "reclassificar":        "Reclassificar lançamento",
+    "desfazer":             "Desfazer operação",
+    "importar":             "Importar extrato e planilha",
+    "ver_dados_pagamento":  "Ver dados bancários e chave Pix",
+    "configurar":           "Abrir Configurações",
+    "gerir_usuarios":       "Cadastrar e editar operadores",
+    "ver_relatorios":       "Ver relatórios",
+    "ver_pessoal":          "Ver despesas de colaborador",
+    "lancar_dc":            "Lançar despesa de colaborador",
+    "editar_colaboradores": "Cadastrar e editar colaboradores",
+}
+
 ROTULOS = {
     P.ADMIN: "Administrador",
     P.DIRETOR_FINANCEIRO: "Diretor financeiro",
@@ -81,8 +103,52 @@ ROTULOS = {
 }
 
 
+# Ações que o ADMIN nunca perde, por mais que alguém desmarque no cadastro.
+# Sem isso, um clique errado tira do único administrador a tela que conserta o
+# erro — e não sobra ninguém para desfazer.
+PROTEGIDAS_DO_ADMIN = ("configurar", "gerir_usuarios", "ver_erp")
+
+
+def excecoes_do_usuario(usuario: Usuario) -> dict[str, bool]:
+    """As marcações feitas no cadastro DESTA pessoa (ação → concedida).
+
+    Vem preenchida por quem carregou o usuário (`_usuario_logado`). Objeto sem
+    o atributo — construído em teste, ou carregado por um caminho antigo — vale
+    como "nenhuma exceção", isto é, exatamente o cargo.
+    """
+    valor = getattr(usuario, "permissoes_extras", None)
+    return valor if isinstance(valor, dict) else {}
+
+
 def pode(usuario: Usuario, acao: str) -> bool:
-    return usuario is not None and usuario.perfil in PERMISSOES.get(acao, set())
+    """Pode esta ação? O cargo decide; a marcação no cadastro corrige.
+
+    Ordem: o cargo dá a base, a exceção da pessoa vence, e o ADMIN não pode ser
+    trancado para fora das telas que consertam o sistema.
+    """
+    if usuario is None:
+        return False
+    base = usuario.perfil in PERMISSOES.get(acao, set())
+    marcada = excecoes_do_usuario(usuario).get(acao)
+    efetiva = base if marcada is None else bool(marcada)
+    if not efetiva and usuario.perfil is P.ADMIN and acao in PROTEGIDAS_DO_ADMIN:
+        return True
+    return efetiva
+
+
+def decidir(perfil: PerfilUsuario, acao: str, excecoes: dict[str, bool]) -> bool:
+    """A mesma decisão de `pode`, a partir de valores soltos.
+
+    Existe porque a guarda que roda antes de toda rota lê perfil e exceções por
+    SQL direto, sem carregar o objeto Usuario — ver a explicação em
+    `routes._guarda_permissao`. Regra num lugar só: se mudar aqui, muda nos dois.
+    """
+    base = perfil in PERMISSOES.get(acao, set())
+    marcada = (excecoes or {}).get(acao)
+    efetiva = base if marcada is None else bool(marcada)
+    if not efetiva and perfil is P.ADMIN and acao in PROTEGIDAS_DO_ADMIN:
+        return True
+    return efetiva
 
 
 def exigir(usuario: Usuario, acao: str) -> None:
@@ -337,6 +403,7 @@ def contexto_permissoes(s: Session, usuario: Usuario) -> dict[str, Any]:
         "perfil": usuario.perfil.value,
         "perfil_rotulo": ROTULOS.get(usuario.perfil, usuario.perfil.value),
         "pode": {acao: pode(usuario, acao) for acao in PERMISSOES},
+        "excecoes": dict(excecoes_do_usuario(usuario)),
         "escopo_obras": obras,
         "escopo_descricao": (
             "todas as obras" if obras is None and usuario.perfil != P.ADMINISTRATIVO_OBRA
