@@ -66,10 +66,14 @@ class SessaoFalsa:
     `scalar()` (usado nos SUM) consome a fila `escalares`.
     """
 
-    def __init__(self, *objetos, escalares=None, linhas_sql=None):
+    def __init__(self, *objetos, escalares=None, linhas_sql=None,
+                 permissoes_por_usuario=None):
         self.objetos = list(objetos)
         self.escalares = list(escalares or [])
         self.linhas_sql = list(linhas_sql or [])
+        # {usuario_id: {acao: concedida}} — as marcações do cadastro da pessoa,
+        # que a guarda lê por SQL direto.
+        self.permissoes_por_usuario = dict(permissoes_por_usuario or {})
         self.adicionados = []
         self.eventos = []
 
@@ -114,6 +118,12 @@ class SessaoFalsa:
                 if isinstance(o, Usuario) and o.id == uid:
                     return ResultadoFalso([(o.perfil.value,)])
             return ResultadoFalso([])
+        # Exceções de permissão da pessoa, também lidas por SQL direto. Sem
+        # nada configurado, responde vazio — que é o mesmo que "vale o cargo".
+        if "FROM usuario_permissoes" in texto:
+            uid = (params or {}).get("i")
+            marcadas = (self.permissoes_por_usuario or {}).get(uid, {})
+            return ResultadoFalso([(acao, bool(v)) for acao, v in marcadas.items()])
         return ResultadoFalso(self.linhas_sql.pop(0) if self.linhas_sql else [])
 
     # -- escrita ------------------------------------------------------------

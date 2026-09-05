@@ -206,6 +206,13 @@ As duas coisas são diferentes: a primeira responde "este perfil pode esta
 ação?"; a segunda, "pode NESTE registro?". Ter alçada para lançar não autoriza
 a mexer no título da obra de outro.
 
+**A alçada do perfil pode ser ajustada por pessoa** (migração 032): a tabela
+`usuario_permissoes` guarda exceções marcadas no cadastro — concede o que o
+cargo não dá, ou tira o que ele daria. Ao criar ação nova, dê a ela um nome em
+português em `ACAO_ROTULOS`, senão ela aparece na tela de cadastro com o nome
+técnico. A decisão vive em `pode()` e `decidir()`, que têm de concordar sempre —
+há teste percorrendo perfil × ação × marcação.
+
 **Fora do escopo responde 404 "não encontrado", nunca 403 "sem permissão".**
 Dizer "sem permissão" para um número que existe confirma a existência dele, e
 varrer os números mapearia o sistema sem abrir um registro. Levante
