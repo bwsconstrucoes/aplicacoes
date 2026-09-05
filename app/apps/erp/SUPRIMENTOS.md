@@ -108,15 +108,74 @@ Onze achados. Os cinco primeiros mudam o desenho.
 Recomendação para cada ponto que estava em aberto. Onde o dono não disser o
 contrário, é por aqui que se constrói.
 
+### 4.1 Decidido pelo dono em 04/09/2026
+
+| # | Questão | Decisão | Observação |
+|---|---|---|---|
+| 1 | Aprovar o mapa ou o pedido? | **Sempre o pedido.** Existem dois tipos — pedido com mapa e pedido sem mapa (direto) — e a mesma tela de autorização atende os dois: quando o pedido veio de um mapa, o mapa aparece junto, com as alternativas que o comprador tinha | Uma fila só de autorização, dois modos de exibição |
+| 2 | Previsão de entrega calculada? | **Não.** A data é digitada por quem solicita e, depois, pelo comprador ao fechar com o fornecedor | A tabela de prazos por região e o calendário de feriados **não** serão migrados |
+| 3 | Registro de Cotações (planilha de 39 MB) | **Descartada.** Era só a forma de armazenar os dados, não tem regra a preservar | Não precisa ser lida |
+| 4 | Banco de preços | **Entra no módulo** — ver seção 4.3 | Pedido novo do dono, não estava no ditado |
+
+### 4.2 Recomendações ainda em aberto
+
 | # | Questão | Recomendação | Por quê |
 |---|---|---|---|
-| 1 | Aprovar o mapa ou o pedido? | **O pedido** — com o mapa embutido na tela de aprovação | Quem autoriza assume um valor com um fornecedor, e isso é o pedido. O mapa ao lado dá o contexto sem criar duas alçadas |
-| 2 | Pendência: tabela nova ou saldo do item? | **Saldo do item** | Mesmo padrão da medição de empreita, que já funciona. Preserva o histórico e evita duas verdades sobre o mesmo material |
-| 3 | Perfis por área agora? | **Adiar** | Mexer na matriz de 125 rotas antes de o dono homologar o que acabou de ser endurecido é trocar o alicerce com a casa em pé. Suprimentos entra com ações próprias na matriz atual |
-| 4 | Formas de pagamento | **Regra, não lista** | Entrada em %, primeiro vencimento, intervalo e número de parcelas geram as 121 combinações — e geram as parcelas do título sozinhas |
-| 5 | Previsão de entrega | **Sugerida pelo sistema, editável** | Traz a tabela de prazos e o calendário. A obra para de chutar, e o comprador continua com a palavra final |
-| 6 | Almoxarifado | **Só a situação, sem controle de estoque** | Registrar que o item foi atendido do estoque é barato; controlar estoque é outro módulo |
-| 7 | Situações | **15, incluindo `AUTORIZAÇÃO`; sem `FINALIZADO`** | É o que os dados mostram em uso |
+| 5 | Pendência: tabela nova ou saldo do item? | **Saldo do item** | Mesmo padrão da medição de empreita, que já funciona. Preserva o histórico e evita duas verdades sobre o mesmo material |
+| 6 | Perfis por área agora? | **Camada aditiva** (ver seção 6) | Manter o perfil atual como base e acrescentar funções por área. Não mexe nas 125 rotas já protegidas |
+| 7 | Formas de pagamento | **Regra, não lista** | Entrada em %, primeiro vencimento, intervalo e número de parcelas geram as 121 combinações — e geram as parcelas do título sozinhas |
+| 8 | Almoxarifado | **Só a situação, sem controle de estoque** | Registrar que o item foi atendido do estoque é barato; controlar estoque é outro módulo |
+| 9 | Situações | **15, incluindo `AUTORIZAÇÃO`; sem `FINALIZADO`** | É o que os dados mostram em uso |
+
+### 4.3 Banco de preços (pedido do dono, 04/09/2026)
+
+Tela de consulta ao histórico de preços dos insumos — **cotados e comprados**.
+
+**O que fica guardado.** Todo preço que entra num mapa e todo preço que vira
+pedido gera um registro: insumo, especificação, unidade, quantidade, preço
+unitário, fornecedor, data, condição de pagamento, frete, obra e o mapa ou
+pedido de origem. Preço **cotado** e preço **comprado** ficam distinguidos — o
+comprado vale mais, porque alguém aceitou pagar aquilo.
+
+**O que a tela faz.** Busca por insumo, com filtro de período, fornecedor, obra
+e categoria. Para cada insumo: último preço, menor, maior e média no período, e
+a lista de ocorrências com **link para o mapa ou o pedido de origem**.
+
+**Por que importa mais do que parece.** É o que responde "este preço está bom?"
+na hora de fechar, sem depender de memória. E resolve de graça a herança de
+preço de outro mapa (parte 2, item 10.1): o mapa novo puxa o preço do banco,
+marcado como herdado, com a data e o link da origem.
+
+
+---
+
+## 6. Permissão: a proposta da camada aditiva
+
+O ditado pede que a pessoa passe a ter acesso **por área** (financeiro, obras,
+pessoal, suprimentos) e, em cada uma, um **nível** (administrador, operador,
+leitor) — "alguém pode lançar SP e autorizar um pedido".
+
+Hoje o ERP tem **um perfil por pessoa**, global, e 125 rotas dependem dele.
+Trocar isso agora significa refazer a proteção de todas elas antes de o dono ter
+testado a que existe.
+
+**Proposta: não trocar, acrescentar.** O perfil atual continua sendo a base — é
+ele que responde por tudo que já está no ar. Ao lado dele, a pessoa recebe
+**funções de suprimentos** (solicitar, comprar, autorizar pedido, administrar
+cadastro de insumo). As rotas velhas continuam perguntando o perfil; as rotas
+novas perguntam a função.
+
+Vantagens:
+
+- nada do que está no ar muda de comportamento — risco zero para o que existe;
+- entrega hoje o que o dono pediu ("lança SP **e** autoriza pedido");
+- se o desenho provar seu valor, a mesma mecânica se estende ao financeiro e ao
+  pessoal depois, área por área, sem parada geral;
+- se não provar, joga-se fora só a camada nova.
+
+Desvantagem, dita com todas as letras: por um tempo convivem **dois** jeitos de
+dizer quem pode o quê. É dívida — e a forma de pagá-la é migrar área por área,
+não deixar as duas para sempre.
 
 ---
 
@@ -124,10 +183,11 @@ contrário, é por aqui que se constrói.
 
 Cinco fases. Cada uma entrega algo que funciona sozinho.
 
-**Fase 1 — Cadastros e importação.** Unidades, insumos (com prazos), fornecedores
-(com região, porte, cotadores e dados de pagamento), formas de pagamento como
-regra, municípios e feriados. Importar os 111 fornecedores e os insumos das
-planilhas. Fluxo de **solicitação de cadastro de insumo** com aprovação.
+**Fase 1 — Cadastros e importação.** Unidades, insumos, fornecedores (com região,
+porte, cotadores e dados de pagamento) e formas de pagamento como regra.
+Importar os 111 fornecedores e os 115 insumos das planilhas. Fluxo de
+**solicitação de cadastro de insumo** com aprovação. Sem prazos e sem
+calendário — decisão 2.
 
 **Fase 2 — Solicitação.** Cabeçalho (título, previsão, prioridade) e itens
 (insumo, especificação, quantidade, unidade, obra). Entrada assistida por IA
@@ -143,16 +203,50 @@ direto sem mapa, tela de autorização com o mapa embutido, relatório ao fornec
 separado por endereço de entrega, geração de previsão de pagamento e de título
 antecipado.
 
-**Fase 5 — Logística e recebimento.** Situações do pedido, cobrança automática de
+**Fase 5 — Logística, recebimento e banco de preços.** Situações do pedido, cobrança automática de
 atualização, recebimento na obra com nota fiscal lida por IA, boletos, frete,
-pendência por saldo e os alertas cruzados entre suprimento e financeiro.
+pendência por saldo, os alertas cruzados entre suprimento e financeiro e a tela
+do banco de preços (que se alimenta desde a fase 3, mas só ganha valor com
+histórico).
 
 ---
 
 ## 6. O que ainda não foi verificado
 
-- A planilha **Registro de Cotações** (39 MB) não foi lida. Pode conter campos do
-  pedido que não apareceram em outro lugar.
 - Os **cinco relatórios do mapa** não foram especificados — dependem dos modelos.
 - Não se sabe quantas solicitações e pedidos existem hoje, nem se há histórico a
   migrar ou se o sistema começa vazio.
+
+---
+
+## 7. Sugestões (opinião, não decisão)
+
+Coisas que a leitura das planilhas sugeriu e que o dono ainda não pediu.
+
+1. **Alerta de preço fora da curva.** Com o banco de preços funcionando, o mapa
+   pode avisar na hora: "este preço está 40% acima do último comprado deste
+   insumo". Não bloqueia — avisa, como as críticas que já existem no ERP. É o
+   uso mais valioso do banco de preços, e sai quase de graça depois dele.
+
+2. **Medir o ciclo.** Guardando as datas de cada mudança de situação, o sistema
+   responde sozinho: quantos dias entre solicitar e receber, por obra, por
+   comprador, por categoria. Hoje ninguém sabe esse número. Custa pouco, porque
+   a trilha de auditoria já vai existir.
+
+3. **Não migrar o histórico das planilhas.** Trazer os cadastros (insumos,
+   fornecedores) sim; trazer solicitações e pedidos antigos, não. O histórico
+   velho tem o vício da planilha e sujaria o banco de preços logo no começo. A
+   decisão é do dono — mas a recomendação é começar limpo, como já foi feito
+   com o plano de contas do Omie.
+
+4. **As observações viram auditoria.** Hoje um único campo de texto guarda quem
+   encaminhou, quando, para quem e o número do pedido anterior. No ERP isso é
+   evento registrado, pesquisável e impossível de sobrescrever sem deixar
+   rastro. O campo de observação continua existindo, mas para o que é
+   observação de verdade.
+
+5. **Portal do fornecedor, mais adiante.** Em vez de o fornecedor mandar PDF ou
+   foto e a IA ler, ele receberia um link e digitaria os preços na tela. A
+   leitura por IA continua necessária para quem não usar o link — mas cada
+   fornecedor que usar é uma leitura a menos para conferir. Fica para depois de
+   o mapa estar de pé.
