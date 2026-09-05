@@ -206,6 +206,12 @@ As duas coisas são diferentes: a primeira responde "este perfil pode esta
 ação?"; a segunda, "pode NESTE registro?". Ter alçada para lançar não autoriza
 a mexer no título da obra de outro.
 
+**A ação declarada tem de decidir sozinha quem entra.** Rota que declara uma
+ação e confere outra por dentro faz a declaração mentir — e a homologação com
+banco de verdade acusa isso. Quando duas ações diferentes precisam abrir a
+mesma tela, crie uma ação própria e registre a implicação em `ACOES_IMPLICADAS`
+(ex.: quem tem `comprar` ou `autorizar_pedido` ganha `ver_pedidos_compra`).
+
 **A alçada do perfil pode ser ajustada por pessoa** (migração 032): a tabela
 `usuario_permissoes` guarda exceções marcadas no cadastro — concede o que o
 cargo não dá, ou tira o que ele daria. Ao criar ação nova, dê a ela um nome em

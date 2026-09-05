@@ -77,6 +77,20 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "comprar":             {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "autorizar_pedido":    {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "administrar_insumos": {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    # A fila de pedidos serve a DOIS papéis: quem compra acompanha o que fechou,
+    # quem autoriza libera. Ver a seção de ações implicadas abaixo.
+    "ver_pedidos_compra":  {P.ADMIN, P.DIRETOR_FINANCEIRO},
+}
+
+# Ações que uma pessoa ganha de graça por já ter outra.
+#
+# Existe por um motivo prático: marcar alguém como comprador e ele não
+# conseguir abrir a própria fila de pedidos seria uma armadilha — e a saída
+# fácil (a rota declarar uma ação e conferir outra por dentro) é justamente o
+# que o teste estrutural proíbe, porque aí a declaração deixa de dizer a
+# verdade sobre quem entra.
+ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
+    "ver_pedidos_compra": ("comprar", "autorizar_pedido"),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -104,6 +118,7 @@ ACAO_ROTULOS = {
     "comprar":              "Cotar e fechar pedido de compra",
     "autorizar_pedido":     "Autorizar pedido de compra",
     "administrar_insumos":  "Decidir o cadastro de insumos",
+    "ver_pedidos_compra":   "Ver a fila de pedidos de compra",
 }
 
 ROTULOS = {
@@ -145,12 +160,8 @@ def pode(usuario: Usuario, acao: str) -> bool:
     """
     if usuario is None:
         return False
-    base = usuario.perfil in PERMISSOES.get(acao, set())
-    marcada = excecoes_do_usuario(usuario).get(acao)
-    efetiva = base if marcada is None else bool(marcada)
-    if not efetiva and usuario.perfil is P.ADMIN and acao in PROTEGIDAS_DO_ADMIN:
-        return True
-    return efetiva
+    excecoes = excecoes_do_usuario(usuario)
+    return decidir(usuario.perfil, acao, excecoes)
 
 
 def decidir(perfil: PerfilUsuario, acao: str, excecoes: dict[str, bool]) -> bool:
@@ -160,9 +171,16 @@ def decidir(perfil: PerfilUsuario, acao: str, excecoes: dict[str, bool]) -> bool
     SQL direto, sem carregar o objeto Usuario — ver a explicação em
     `routes._guarda_permissao`. Regra num lugar só: se mudar aqui, muda nos dois.
     """
+    excecoes = excecoes or {}
     base = perfil in PERMISSOES.get(acao, set())
-    marcada = (excecoes or {}).get(acao)
+    marcada = excecoes.get(acao)
     efetiva = base if marcada is None else bool(marcada)
+    if not efetiva and acao in ACOES_IMPLICADAS and marcada is not True:
+        # Desmarcar explicitamente continua valendo (marcada is False fecha),
+        # mas quem NÃO tem marcação nenhuma ganha pela ação que já possui.
+        if marcada is None:
+            efetiva = any(decidir(perfil, outra, excecoes)
+                          for outra in ACOES_IMPLICADAS[acao])
     if not efetiva and perfil is P.ADMIN and acao in PROTEGIDAS_DO_ADMIN:
         return True
     return efetiva

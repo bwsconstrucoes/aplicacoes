@@ -728,41 +728,26 @@ def api_ler_proposta(coluna_id: int):
 
 
 # --- Pedido de compra e autorização -----------------------------------------
-def _recusa_de_compras(atual):
-    """Vê pedidos quem compra ou quem autoriza. Os dois papéis precisam da mesma
-    lista — um para acompanhar o que fechou, outro para liberar.
-
-    Devolve a resposta de recusa, ou None quando pode passar. Não levanta
-    exceção porque isto também protege uma PÁGINA, e a guarda do blueprint já
-    responde 403 no mesmo formato."""
-    if pode(atual, "comprar") or pode(atual, "autorizar_pedido"):
-        return None
-    return jsonify({"ok": False,
-                    "erro": "Esta tela é de quem compra ou autoriza pedido."}), 403
-
-
+# A fila de pedidos serve a dois papéis — quem compra e quem autoriza —, e por
+# isso tem ação própria (`ver_pedidos_compra`), que ambos ganham de graça. A
+# alternativa (declarar "ver_suprimentos" e conferir outra coisa por dentro)
+# faria a declaração mentir sobre quem entra, e há teste estrutural para isso.
 @bp.route("/erp/suprimentos/pedidos")
 @login_obrigatorio
-@permissao("ver_suprimentos")
+@permissao("ver_pedidos_compra")
 def pagina_suprimentos_pedidos():
-    with get_session() as s:
-        recusa = _recusa_de_compras(_usuario_logado(s))
-    return recusa or render_template("erp_suprimentos_pedidos.html",
-                                     **_contexto("sup_pedidos"))
+    return render_template("erp_suprimentos_pedidos.html", **_contexto("sup_pedidos"))
 
 
 @bp.route("/erp/api/suprimentos/pedidos", methods=["GET", "POST"])
 @login_obrigatorio
-@permissao(GET="ver_suprimentos", POST="comprar")
+@permissao(GET="ver_pedidos_compra", POST="comprar")
 def api_pedidos():
     from app.apps.erp.core.suprimentos import pedido as svc
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
             if request.method == "GET":
-                recusa = _recusa_de_compras(atual)
-                if recusa:
-                    return recusa
                 return jsonify({"ok": True, "pedidos": svc.listar(
                     s, status=request.args.get("status"))})
             ped = svc.fechar_direto(s, request.get_json(silent=True) or {}, atual)
@@ -807,14 +792,13 @@ def api_fechar_do_mapa(cotacao_id: int):
 
 @bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>")
 @login_obrigatorio
-@permissao("ver_suprimentos")
+@permissao("ver_pedidos_compra")
 def api_pedido(pedido_id: int):
     """O pedido com o mapa de origem embutido — quem autoriza precisa ver as
     alternativas que o comprador tinha, não só a escolha final."""
     from app.apps.erp.core.suprimentos import pedido as svc
     with get_session() as s:
-        recusa = _recusa_de_compras(_usuario_logado(s))
-        return recusa or jsonify({"ok": True, "pedido": svc.detalhar(s, pedido_id)})
+        return jsonify({"ok": True, "pedido": svc.detalhar(s, pedido_id)})
 
 
 @bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/relatorio")

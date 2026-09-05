@@ -384,11 +384,22 @@ def test_o_diretor_ve_a_fila_mesmo_sem_a_acao_de_comprar(monkeypatch):
         "/erp/api/suprimentos/pedidos").status_code == 200
 
 
+def test_marcar_alguem_como_comprador_ja_abre_a_fila(monkeypatch):
+    """Marcar o comprador e ele não conseguir abrir a própria fila seria uma
+    armadilha — por isso a ação é implicada."""
+    pessoa = novo_usuario(9, P.FINANCEIRO)
+    s = SessaoFalsa(pessoa, *_cadastro(),
+                    permissoes_por_usuario={9: {"comprar": True}})
+    c = _cliente(s, monkeypatch, 9)
+
+    assert c.get("/erp/api/suprimentos/pedidos").status_code == 200
+    assert c.get("/erp/suprimentos/pedidos").status_code == 200
+
+
 def test_o_comprador_nao_autoriza_o_proprio_pedido(monkeypatch):
     """Separação básica: quem pede não libera. O comprador tem 'comprar', mas
     'autorizar_pedido' é de outra pessoa."""
     comprador = novo_usuario(9, P.FINANCEIRO)
-    comprador.permissoes_extras = {"comprar": True}
     pedido, linha, reserva = _pedido_pronto()
     s = SessaoFalsa(comprador, *_cadastro(), _item(), pedido, linha, reserva,
                     permissoes_por_usuario={9: {"comprar": True}})
