@@ -284,3 +284,49 @@ Coisas que a leitura das planilhas sugeriu e que o dono ainda não pediu.
    leitura por IA continua necessária para quem não usar o link — mas cada
    fornecedor que usar é uma leitura a menos para conferir. Fica para depois de
    o mapa estar de pé.
+
+---
+
+## 8. Onde o módulo parou em 05/09/2026
+
+Construído das fases 1 a 5, **nunca operado contra a base real**. A suíte cobre
+as regras; o que só o uso mostra está escrito abaixo.
+
+### 8.1 O que existe e funciona (pelos testes)
+
+| Tela | O que faz |
+|---|---|
+| Suprimentos › Cadastros | carga por CSV das planilhas (com prévia), condições de pagamento como regra, unidades, categorias, e o fluxo de cadastro de insumo (pedir → decidir → avisar) |
+| Suprimentos › Solicitações | pedido de material com obra **por item**, prioridade, previsão, as 15 situações com fluxo, busca, e a entrada assistida por IA (colar a lista) |
+| Suprimentos › Cotações | mapa com preço por célula, menor preço destacado, total com frete/desconto/acréscimo, leitura da proposta do fornecedor por IA, herança de preço de cotação anterior |
+| Suprimentos › Pedidos | fechamento do mapa ou direto, fila única de autorização com o mapa embutido, recusa parcial, previsão de pagamento, relatório por endereço de entrega e recebimento na obra |
+| Suprimentos › Banco de preços | histórico de cotado e comprado, com último, menor, maior, média e o último comprado |
+
+### 8.2 O que falta, e por quê
+
+1. **Disparo da cotação por e-mail.** O monorepo tem WhatsApp (Z-API) e
+   Telegram, mas **não tem envio de e-mail** — e 109 dos 111 fornecedores só
+   recebem cotação por e-mail. Falta o dono decidir por qual conta sai
+   (Google Workspace da empresa, provavelmente) para então escolher o caminho
+   técnico. Enquanto isso, o relatório da cotação pode ser copiado da tela.
+2. **Previsão de pagamento virando título.** Passa pelas regras fiscais que o
+   ERP já aplica — tipo de título, documento fiscal, conta homologada do
+   fornecedor. Contornar isso por dentro do suprimento criaria um segundo
+   caminho para o dinheiro sair, e é justamente o que o ERP evita. O caminho
+   certo é a nota fiscal do recebimento alimentar o lançamento pelo fluxo do
+   financeiro.
+3. **Os cinco relatórios do mapa** continuam sem especificação (dependem dos
+   modelos que o dono ia mandar). Dois já existem na prática: melhor preço por
+   item (o "pulverizado" no rodapé) e melhor fornecedor único.
+4. **Alertas automáticos** de cobrança (previsão vencida, material não
+   recebido, recebido sem lançamento) **existem como aviso na tela do pedido**,
+   mas ninguém é notificado por Telegram ainda.
+5. **Assinatura do comprador** nos relatórios enviados ao fornecedor.
+
+### 8.3 O que só o uso vai mostrar
+
+- Se a IA acerta lendo propostas de fornecedor de verdade (PDF ruim, foto de
+  WhatsApp) — os testes usam respostas controladas.
+- Se a carga das planilhas casa com os 111 fornecedores e 115 insumos reais.
+- Quanto o consumo de IA cresce com o módulo em uso: vale conferir o painel em
+  Configurações › Consumo de IA depois da primeira semana.

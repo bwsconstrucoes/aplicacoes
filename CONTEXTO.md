@@ -741,6 +741,20 @@ Quando eu pedir nova feature ou adaptação:
   ganho prático que ele descreveu ("deixar outra pessoa autorizando enquanto o
   diretor está de férias") já sai da segunda. Detalhes em §3.9. A dívida está
   escrita: um dia as áreas viram estrutura, não exceção.
+- **2026-09-05 — Suprimentos construído, das fases 1 a 5.** Migrações 033 a
+  037: cadastros (unidades, condições de pagamento como regra, fornecedor com
+  região/porte/cotador, solicitação de cadastro de insumo), solicitação com
+  obra por item e 15 situações, mapa de cotação com banco de preços, pedido
+  com autorização e previsão de pagamento, e recebimento com pendência como
+  saldo do item. O que NÃO entrou, e por quê: o disparo da cotação por e-mail
+  (o monorepo não tem envio de e-mail, e a conta é decisão do dono) e a
+  conversão da previsão em título (passa pelas regras fiscais do ERP e não
+  deve ser contornada por dentro do suprimento). Detalhes e pendências em
+  `app/apps/erp/SUPRIMENTOS.md`.
+- **2026-09-05 — A ação declarada decide sozinha quem entra.** Uma tela nova
+  declarava uma ação e conferia outra por dentro; a homologação com banco
+  acusou. Regra registrada no CLAUDE.md: quando duas ações precisam abrir a
+  mesma tela, cria-se ação própria com a implicação em `ACOES_IMPLICADAS`.
 - **2026-09-04 — Suprimentos: especificação antes de código.** As seis
   planilhas em uso foram lidas e confrontadas com o ditado do dono; o resultado
   está em `app/apps/erp/SUPRIMENTOS.md`, com as decisões dele e o plano em
