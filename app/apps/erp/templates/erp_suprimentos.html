@@ -149,6 +149,7 @@ function abrirNovo(){
       <tbody id="ns-itens">${linhaDeItem(1)}</tbody></table>
     <div style="margin-top:10px; display:flex; gap:8px">
       <button class="btn secundario" id="ns-mais">Mais um item</button>
+      <button class="btn secundario" id="ns-colar">Colar lista da planilha</button>
       <button class="btn" id="ns-salvar">Registrar pedido</button>
     </div>`;
   ligarLinhas();
@@ -157,6 +158,7 @@ function abrirNovo(){
     corpo.insertAdjacentHTML("beforeend", linhaDeItem(corpo.children.length + 1));
     ligarLinhas();
   });
+  els("ns-colar").addEventListener("click", colarLista);
   els("ns-salvar").addEventListener("click", salvarNovo);
   els("dlg").showModal();
 }
@@ -175,6 +177,56 @@ function ligarLinhas(){
     const alvo = sel.closest("tr").querySelector(".it-un");
     if (un && [...alvo.options].some(o => o.value === un)) alvo.value = un;
   });
+}
+
+// A quantidade de material já está tabulada em algum lugar quando o cronograma
+// é montado. Redigitar 40 linhas é onde se perde tempo e entra erro de
+// digitação — então cola-se o texto e a IA monta as linhas para CONFERIR.
+async function colarLista(){
+  const r = await perguntar({
+    titulo: "Colar lista de materiais",
+    aviso: "A IA lê e monta as linhas para você conferir. Ela sugere e aponta o " +
+           "que não reconheceu — nada é gravado sem você revisar.",
+    campos: [{nome: "texto", rotulo: "Cole aqui", tipo: "textarea", linhas: 10,
+              obrigatorio: true,
+              exemplo: "Vergalhão CA50 12.5mm\t180\tM\nCola PU 800ml\t12\tUN"}],
+    textoOk: "Ler lista"});
+  if (!r) return;
+  aviso("dlg-msg", "Lendo…", "info");
+  try {
+    const d = await api("/erp/api/suprimentos/ler-lista", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({texto: r.texto})});
+    aplicarLeitura(d.leitura);
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+function aplicarLeitura(leitura){
+  const corpo = els("ns-itens");
+  const vazias = [...corpo.children].filter(tr => !tr.querySelector(".it-insumo").value);
+  vazias.forEach(tr => tr.remove());
+  leitura.itens.forEach((linha, i) => {
+    corpo.insertAdjacentHTML("beforeend", linhaDeItem(corpo.children.length + 1));
+    const tr = corpo.lastElementChild;
+    if (linha.insumo_id) tr.querySelector(".it-insumo").value = linha.insumo_id;
+    if (linha.quantidade) tr.querySelector(".it-qtd").value = linha.quantidade;
+    if (linha.unidade) tr.querySelector(".it-un").value = linha.unidade;
+    if (linha.obra_id) tr.querySelector(".it-obra").value = linha.obra_id;
+    if (linha.especificacao) tr.querySelector(".it-espec").value = linha.especificacao;
+    // O que a IA não reconheceu fica marcado na tela, com o texto original ao
+    // lado — quem pediu escolhe o insumo certo em vez de a máquina chutar.
+    if (!linha.insumo_id) {
+      tr.style.background = "var(--fundo-aviso, #fff8e1)";
+      tr.querySelector(".it-espec").placeholder = `lido: ${linha.descricao_lida}`;
+      tr.querySelector(".it-insumo").title = `não reconhecido: ${linha.descricao_lida}`;
+    }
+  });
+  if (!corpo.children.length) corpo.insertAdjacentHTML("beforeend", linhaDeItem(1));
+  ligarLinhas();
+  aviso("dlg-msg", leitura.resumo +
+    (leitura.nao_reconhecidos.length
+      ? " Escolha o insumo nas linhas destacadas." : ""),
+    leitura.nao_reconhecidos.length ? "alerta" : "ok");
 }
 
 async function salvarNovo(){

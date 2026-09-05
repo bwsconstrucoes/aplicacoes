@@ -201,7 +201,8 @@ calendário — decisão 2.
 > título, previsão e prioridade; itens com insumo, especificação, quantidade,
 > unidade e **obra por item**; as 15 situações com fluxo que recusa salto sem
 > sentido; a tela Suprimentos › Solicitações com busca e filtros; escopo igual
-> ao do financeiro. **Falta** a entrada assistida por IA (colar a planilha).
+> ao do financeiro, e a entrada assistida por IA — cola-se a lista de materiais
+> e a IA monta as linhas, marcando o que não reconheceu. **Fase 2 completa.**
 
 **Fase 2 — Solicitação.** Cabeçalho (título, previsão, prioridade) e itens
 (insumo, especificação, quantidade, unidade, obra). Entrada assistida por IA

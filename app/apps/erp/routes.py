@@ -492,11 +492,11 @@ def api_suprimentos_cadastros():
             # quem pede material não tem — nem deve ter — acesso àquela tela.
             "obras": [{"id": o.id, "codigo": o.codigo, "nome": o.nome}
                       for o in s.scalars(select(Obra).order_by(Obra.codigo)).all()
-                      if getattr(o, "status", "ATIVA") != "ENCERRADA"],
+                      if getattr(o, "status", None) != "ENCERRADA"],
             "insumos": [{"id": i.id, "codigo": i.codigo, "descricao": i.descricao,
                          "unidade": i.unidade}
                         for i in s.scalars(select(Insumo).order_by(Insumo.descricao)).all()
-                        if i.ativo],
+                        if i.ativo is not False],
         })
 
 
@@ -572,6 +572,25 @@ def api_suprimento_solicitacoes():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP/suprimentos: falha na solicitação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/ler-lista", methods=["POST"])
+@login_obrigatorio
+@permissao("solicitar_suprimento")
+def api_suprimentos_ler_lista():
+    """Cola a lista de materiais e a IA monta as linhas — para conferir, não
+    para gravar. Nada entra no banco por aqui."""
+    from app.apps.erp.core.suprimentos import leitura
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True,
+                            "leitura": leitura.ler_lista(s, d.get("texto") or "")})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao ler a lista colada")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

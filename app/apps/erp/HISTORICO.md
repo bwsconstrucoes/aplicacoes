@@ -44,10 +44,11 @@ Suprimentos**. Suíte: 836 sem banco, ~1.400 com banco.
    das condições de pagamento, a tela Suprimentos › Cadastros e a carga por
    CSV, mais o fluxo de cadastro de insumo (pedir → decidir → avisar). Para
    trazer os 111 fornecedores e os 115 insumos, o dono exporta a aba da
-   planilha como CSV e usa a prévia antes de gravar. A fase 2 está quase
+   planilha como CSV e usa a prévia antes de gravar. A fase 2 também está
    pronta (migração 034): solicitação com itens, obra por item, as 15
-   situações e a tela de acompanhamento. Falta a entrada assistida por IA
-   (colar a planilha do cronograma e a IA gerar as linhas).
+   situações com fluxo, a tela de acompanhamento e a entrada assistida por IA
+   (cola-se a lista e a IA monta as linhas). A fase 3 (cotação e mapa) é o
+   próximo passo.
 7. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)
