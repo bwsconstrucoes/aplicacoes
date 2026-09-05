@@ -161,14 +161,14 @@ def test_descricao_vazia_fica_so_com_os_links():
 def test_sem_pasta_do_drive_nao_comeca(monkeypatch):
     """A trava mais importante: sem lugar para guardar o arquivo, o link que
     iria para o card não existiria. Melhor não começar do que parar no meio."""
-    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "")
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("", ""))
     with pytest.raises(beevale.ErroDoBeeVale) as erro:
         beevale.gerar(["525982424"])
     assert "DRIVE_FOLDER_ID" in str(erro.value)
 
 
 def test_tem_teto_de_sps_por_vez(monkeypatch):
-    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "pasta")
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("pasta", "tela"))
     demais = [str(i) for i in range(beevale.MAXIMO_POR_VEZ + 1)]
     with pytest.raises(beevale.ErroDoBeeVale):
         beevale.gerar(demais)
@@ -193,7 +193,7 @@ def test_o_card_so_e_alterado_DEPOIS_de_o_arquivo_estar_no_drive(monkeypatch):
     olhar não tem como saber."""
     from app.apps.analisesps import drive
     pipefy = _pipefy_falso(monkeypatch)
-    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "pasta")
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("pasta", "tela"))
 
     aconteceu = []
 
@@ -219,7 +219,7 @@ def test_drive_falhando_nao_toca_no_pipefy(monkeypatch):
     """Se o arquivo não sobe, o card fica exatamente como estava."""
     from app.apps.analisesps import drive
     pipefy = _pipefy_falso(monkeypatch)
-    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "pasta")
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("pasta", "tela"))
 
     def recusa(conteudo, nome, pasta):
         raise drive.ErroDoDrive("cota estourada")
@@ -241,7 +241,7 @@ def test_arquivo_no_drive_sem_o_card_atualizado_aparece_como_problema(monkeypatc
     dizendo que falta fazer, e só quem vê a tela sabe que os arquivos existem."""
     from app.apps.analisesps import drive
     pipefy = _pipefy_falso(monkeypatch)
-    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "pasta")
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("pasta", "tela"))
     monkeypatch.setattr(drive, "subir_xlsx",
                         lambda c, n, p: {"id": "x", "link": "https://drive/" + n})
     monkeypatch.setattr(pipefy, "atualizar_descricao_e_doc_fiscal",
@@ -259,7 +259,7 @@ def test_card_sem_cpf_nao_para_os_outros(monkeypatch):
     """Uma SP com o campo vazio é comum. Ela sai da lista com o motivo escrito;
     as demais seguem."""
     from app.apps.analisesps import pipefy
-    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "pasta")
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("pasta", "tela"))
     monkeypatch.setattr(pipefy, "buscar_cards", lambda ids, token=None: {
         "1": {"id": "1", "campos": {pipefy.CAMPO_CADASTRO: "",
                                     pipefy.CAMPO_VALOR: "10,00",

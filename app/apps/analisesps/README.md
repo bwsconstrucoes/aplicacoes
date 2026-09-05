@@ -316,9 +316,33 @@ com ela como Editor — o Google recusa com `storageQuotaExceeded`, que parece
 falta de espaço e não é: o conserto é **mover a pasta para um Drive
 Compartilhado**.
 
-Configure `DRIVE_FOLDER_ID` (e `PIPEFY_TOKEN`) no Render ou na aba
-Credenciais. Em **Configurações** há um cartão que diz se os dois estão
-salvos, e um botão que confere a pasta **sem escrever nada** nela.
+**A pasta é colada em Configurações**, num campo próprio — aceita o endereço
+inteiro copiado da barra do navegador e guarda só o identificador, na tabela
+`meta`. O que é colado ali **ganha** do `DRIVE_FOLDER_ID` do Render e da aba
+Credenciais; é o contrário da regra geral da casa, e de propósito: um campo que
+aceita e ignora seria pior do que campo nenhum. A tela diz de onde veio o valor
+que está valendo, e tem um botão que confere a pasta **sem escrever nada** nela.
+
+O `PIPEFY_TOKEN` continua no Render ou na aba Credenciais — esse é segredo de
+verdade, e a tela só diz se está configurado, nunca o mostra.
+
+## Por que a tela é rápida, e o que quebra isso
+
+Medido com 59.055 SPs num Postgres local: a tela custava **376 ms e 15 idas ao
+banco** por clique. Hoje custa **162 ms e 8 idas**. Duas coisas fazem isso, e
+as duas são fáceis de desfazer sem perceber:
+
+- **As sete listas do filtro ficam guardadas até a próxima carga** da planilha
+  (194 ms por clique, era o pedaço mais caro). Cada uma varre a tabela inteira,
+  e o índice não ajuda porque a consulta limpa o texto antes de agrupar —
+  índice de expressão foi tentado e o Postgres continuou preferindo a
+  varredura. A chave do que fica guardado é o carimbo da última sincronização,
+  o que faz a invalidação funcionar **entre processos** de graça.
+- **O resumo e a divisão do agendamento saem numa consulta só.** Eram duas
+  varreduras das mesmas linhas. Juntar as duas somas (por conta e por forma)
+  também foi tentado e ficou PIOR — não repita.
+
+Há testes que falham se qualquer uma das duas for desfeita.
 
 ## O que ficou de fora, e por quê
 

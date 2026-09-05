@@ -87,6 +87,17 @@ def app(monkeypatch):
     # aplicação; aqui basta que a tela saiba desenhá-los.
     monkeypatch.setattr(consultas, "contagem_agendamento", lambda f: {
         "Agendar": 1, "Agendado": 1, "Falha Agendar": 0, "Pago": 0})
+    # A tela pede os dois JUNTOS desde 05/09 — eram duas varreduras da mesma
+    # tabela filtrada, e numa consulta só custam quase metade.
+    monkeypatch.setattr(consultas, "resumo_e_agendamento", lambda f: (
+        consultas.resumo(f), consultas.contagem_agendamento(f)))
+    # As listas do filtro ficam guardadas até a próxima carga; sem limpar, o
+    # que um teste calculou valeria no seguinte.
+    monkeypatch.setattr(consultas, "opcoes_de_filtro",
+                        lambda carimbo=None: dict(
+                            {a: consultas.opcoes(c, limite=l)
+                             for a, (c, l) in consultas.COLUNAS_DE_FILTRO.items()},
+                            status_agend=consultas.opcoes_agendamento()))
     monkeypatch.setattr(consultas, "soma_por", lambda f, coluna, limite=12: [
         {"nome": "BRADESCO 7011-4", "quantidade": 1, "total": Decimal("6750.00")}])
     # As colunas da tabela saem das preferências, que ficam no banco. Sem
@@ -833,6 +844,8 @@ def test_os_numeros_de_baixo_voltaram(app, monkeypatch):
     from app.apps.analisesps import consultas
     monkeypatch.setattr(consultas, "contagem_agendamento", lambda f: {
         "Agendar": 3, "Agendado": 2, "Falha Agendar": 1, "Pago": 4})
+    monkeypatch.setattr(consultas, "resumo_e_agendamento", lambda f: (
+        consultas.resumo(f), consultas.contagem_agendamento(f)))
     monkeypatch.setattr(consultas, "soma_por", lambda f, c, limite=12: [
         {"nome": "BRADESCO 7011-4", "quantidade": 2, "total": Decimal("9000.00")}])
 
@@ -2741,7 +2754,7 @@ def test_o_cadastro_beevale_nao_depende_do_drive(app, monkeypatch):
     lugar nenhum, e por isso funciona mesmo com a pasta do Drive não
     configurada — que é o estado de hoje."""
     from app.apps.analisesps import beevale
-    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "")
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("", ""))
     monkeypatch.setattr(beevale, "buscar_por_cpf", lambda cpfs: (
         [beevale.registro("Ana Silva", "1990-04-25", "5548999887766", cpfs[0])],
         []))
@@ -2791,7 +2804,7 @@ def test_gerar_beevale_sem_pasta_do_drive_avisa_e_nao_oferece_o_botao(
     """O estado de hoje. A tela tem de dizer o que falta — e NÃO pode mostrar
     um botão que só falharia."""
     from app.apps.analisesps import beevale
-    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "")
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("", ""))
     monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(i))
 
     html = como(app, SENHA_OPERADOR).get(
@@ -2806,7 +2819,7 @@ def test_gerar_beevale_mostra_o_que_vai_acontecer_antes_de_fazer(
     """A tela é de CONFERÊNCIA: nada acontece até o operador apertar. É a única
     coisa do módulo que altera o Pipefy, e não tem desfazer."""
     from app.apps.analisesps import beevale
-    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "pasta")
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("pasta", "tela"))
     monkeypatch.setattr(beevale, "preparar", lambda ids: {
         "prontos": [{"sp": "1", "cpf": "012.345.678-90", "nome": "Ana Silva",
                      "valor": 850.5, "cadastro": {}, "descricao_atual": ""}],
@@ -2848,13 +2861,57 @@ def test_a_linha_diz_a_forma_de_pagamento_para_a_trava_do_beevale(app):
 
 def test_configuracoes_diz_se_a_pasta_do_drive_esta_salva(app, monkeypatch):
     """A pergunta do dono: "ficou salvo?". A tela responde sem ninguém entrar
-    no Render — e sem mostrar o valor do segredo."""
+    no Render, e diz DE ONDE o valor veio — se um valor do Render vencesse em
+    silêncio, ele colaria a pasta, veria "salvo" e nada mudaria."""
     from app.apps.analisesps import beevale
-    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: "1ycGeXKyABC123")
+    monkeypatch.setattr(beevale, "pasta_do_drive",
+                        lambda: ("1ycGeXKyABC123", "tela"))
 
     html = como(app, SENHA_OPERADOR).get(
         "/analisesps/configuracoes").get_data(as_text=True)
 
     assert "Pasta do Google Drive" in html
     assert "…ABC123" in html
-    assert "1ycGeXKy" not in html, "o identificador inteiro não vai para a tela"
+    # A pasta APARECE no campo, e é de propósito: ela não é segredo (é o
+    # endereço de uma pasta) e ele precisa poder conferir e trocar o que
+    # colou. O que nunca aparece é o token do Pipefy.
+    assert 'value="1ycGeXKyABC123"' in html
+    assert 'id="btn-salvar-pasta"' in html
+
+
+def test_o_token_do_pipefy_nunca_aparece_na_tela(app, monkeypatch):
+    """Esse SIM é segredo: com ele se lê e se escreve nos cards da empresa. A
+    tela diz apenas se está configurado."""
+    from app.apps.analisesps import beevale, credenciais
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("pasta", "tela"))
+    monkeypatch.setattr(credenciais, "token", lambda nome, padrao="": (
+        "token-secreto-do-pipefy" if nome == "PIPEFY_TOKEN" else padrao))
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/configuracoes").get_data(as_text=True)
+
+    assert "token-secreto-do-pipefy" not in html
+    assert "Token do Pipefy" in html
+
+
+def test_a_pasta_colada_como_endereco_inteiro_e_aceita(app, monkeypatch):
+    """É o que se copia sem pensar: a barra do navegador com a pasta aberta.
+    Exigir que ele recorte o pedaço certo de uma URL é pedir para errar."""
+    from app.apps.analisesps import beevale
+    salvas = []
+    monkeypatch.setattr(beevale, "gravar_pasta_do_drive",
+                        lambda p: salvas.append(p) or "1ycGeXKyABC123")
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/api/pasta-drive",
+        json={"pasta": "https://drive.google.com/drive/folders/1ycGeXKyABC123"})
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()["ok"] is True
+    assert resposta.get_json()["pasta"] == "1ycGeXKyABC123"
+
+
+def test_o_perfil_consulta_nao_troca_a_pasta_do_drive(app):
+    assert como(app, SENHA_CONSULTA).post(
+        "/analisesps/api/pasta-drive",
+        json={"pasta": "outra"}).status_code == 403

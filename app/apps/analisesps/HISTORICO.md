@@ -657,6 +657,102 @@ recusado (ele entra na consulta sem aspas — texto ali seria injeção).
 no Pipefy de verdade — os dois são dublados. A primeira geração real **é** o
 teste. Faça com uma SP só.
 
+### Décima quarta leva (05/09) — a lentidão, medida em vez de deduzida
+
+O dono reclamou: *"funcional, mas não é legal — você está toda hora esperando
+a tela carregar"*, e disse que o Streamlit, que ele já achava lento, é **mais
+rápido** que isto. Uma sessão anterior já tinha apontado uma causa; esta
+**mediu**, e o número mudou o plano.
+
+**Como foi medido, para quem quiser repetir:** um Postgres local e descartável
+com **59.055 SPs** sintéticas (a produção não foi tocada), cronometrando cada
+consulta e depois a tela inteira pelo cliente de teste. Vale a ressalva: o
+banco estava na MESMA máquina, sem a latência de rede que existe no Render.
+Os números reais lá são maiores; as proporções, as mesmas.
+
+| | Antes | Depois |
+|---|---|---|
+| Solicitações | 376 ms · 15 idas ao banco | **162 ms · 8 idas** |
+| Solicitações filtrada | 359 ms | **154 ms** |
+| Solicitações pelo menu | 357 ms | **151 ms** |
+| Relatório pelo menu | 404 ms | **219 ms** |
+
+**Correção da análise anterior, para o histórico não guardar número errado:**
+ela dizia "doze idas ao banco". São **quinze**. E a primeira contagem que fiz
+disse vinte — eu tinha instrumentado `consultar` e `consultar_um` ao mesmo
+tempo, e `consultar_um` chama `consultar`, então tudo contou dobrado. Quinze é
+o número certo.
+
+**Causa 1, a maior: as sete listas do filtro, 194 ms por clique.** Cada uma
+varre as 59 mil SPs inteiras para descobrir quais valores existem naquela
+coluna. Os índices não ajudam — a consulta limpa o texto antes de agrupar.
+**Índice de expressão foi tentado** (inclusive um que casa exatamente com a
+expressão da consulta) e o Postgres continuou preferindo a varredura; não é
+caminho, e fica registrado para ninguém tentar de novo.
+
+O desperdício é que essas listas quase nunca mudam: os projetos e as contas da
+empresa são os mesmos hoje e amanhã. Passam a ser calculadas **uma vez por
+carga**, com o carimbo da última sincronização como chave. Isso funciona
+**entre processos** sem combinação nenhuma: a carga roda num processo separado
+e não tem como avisar o da tela, mas o carimbo que ela grava no banco é o
+próprio aviso.
+
+> **O custo, que é do dono e ele aceitou:** um projeto novo cadastrado na
+> planilha só aparece na listinha do filtro depois da próxima sincronização
+> (a tela dispara uma a cada 5 min). A SP nova aparece na LISTA normalmente —
+> é só o menu de filtro que demora a saber do valor novo.
+
+**Causa 2: duas varreduras da mesma tabela filtrada.** O resumo (44 ms) e a
+divisão do agendamento (48 ms) percorriam separadamente exatamente as mesmas
+linhas. Juntos numa consulta só: **59 ms**, porque a varredura é uma e as
+contagens vão de carona. Conferido com dado real em quatro filtros diferentes:
+as contas batem exatamente com as das duas funções antigas.
+
+> **Tentado e DESCARTADO:** juntar também as duas somas (por conta e por forma
+> de pagamento) numa consulta com CTE. Ficou **pior** — 67 ms contra 51 ms —,
+> porque o banco precisa guardar o resultado do meio. Ficam separadas. Está
+> aqui para não ser "otimizado" de novo por intuição.
+
+**Causa 3: quem clica no menu carrega a tela duas vezes.** Chegar sem filtro na
+barra de endereço dispara um redirecionamento para o endereço COM o filtro
+guardado — e a função inteira roda duas vezes por clique. O redirecionamento
+continua (é ele que faz o filtro sobreviver à troca de tela), mas agora é a
+**primeira coisa** que a tela confere: antes ele já tinha perguntado o tamanho
+da base para nada. A perna que só redireciona caiu de 4 idas ao banco para 1.
+
+**O que NÃO foi mexido, e por quê:** as duas somas por conta e por forma
+(51 ms) e o resumo (59 ms) varrem a tabela filtrada e não têm como não varrer —
+somar o que o filtro alcança é a pergunta. O **Relatório** ainda faz 12 idas
+(oito agregações); é o próximo lugar a olhar se ele continuar pesado, e é uma
+mudança maior do que estas.
+
+**Há teste para o ganho não se desfazer sozinho:** que as listas não são
+refeitas sem carga nova, que uma carga nova as refaz, e que o resumo junto
+varre a tabela uma vez só. É o tipo de correção que uma refatoração distraída
+desmancha, e cujo efeito só aparece em produção, como lentidão sem culpado.
+
+### Décima quinta leva (05/09) — a pasta do Drive vira campo na tela
+
+O dono pediu: *"deixa esse campo lá pra poder colar a informação da pasta e
+salvar"*. Feito, em **Configurações**. Guardado na tabela `meta`, que já
+existe — **sem migração nova**, então funciona no dia da publicação.
+
+Três decisões que valem registro:
+
+1. **O que é colado na tela GANHA do Render e da planilha.** É o contrário da
+   regra geral da casa ("ambiente ganha da planilha"), e de propósito: se um
+   valor do Render vencesse em silêncio, o dono colaria a pasta, apertaria
+   salvar, veria "salvo" — e nada mudaria. Um campo que aceita e ignora é pior
+   do que campo nenhum. Para a regra não virar surpresa, a tela **diz de onde**
+   o valor que está valendo veio.
+2. **Aceita o endereço inteiro da pasta**, copiado da barra do navegador, e
+   guarda só o identificador. Exigir que a pessoa recorte o pedaço certo de
+   uma URL é pedir para errar. O campo mostra depois o que FICOU salvo.
+3. **A pasta aparece no campo; o token do Pipefy, nunca.** A pasta não é
+   segredo — é o endereço de uma pasta — e ele precisa poder conferir e trocar
+   o que colou. O token é segredo de verdade: com ele se lê e se escreve nos
+   cards da empresa, e a tela só diz se está configurado. Há teste para os dois.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

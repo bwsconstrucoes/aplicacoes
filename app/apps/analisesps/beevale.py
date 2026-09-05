@@ -56,10 +56,78 @@ class ErroDoBeeVale(RuntimeError):
     """Falha com mensagem já pronta para a tela."""
 
 
-def pasta_do_drive() -> str:
-    """A pasta onde os arquivos são guardados. Vazio = não configurada."""
+# Onde a pasta fica guardada quando o dono a cola na tela de Configurações.
+# É a tabela `meta`, que já existe (a mesma do carimbo da sincronização) — não
+# precisou de migração, e por isso este campo funciona no dia da publicação.
+CHAVE_PASTA = "drive_folder_id"
+
+
+def pasta_do_drive() -> tuple[str, str]:
+    """A pasta do Drive e DE ONDE ela veio. ("", "") = não configurada.
+
+    A ORDEM É O CONTRÁRIO DA REGRA GERAL DA CASA, e é de propósito. Em todo o
+    resto, ambiente ganha da planilha. Aqui, o que o dono cola na tela ganha de
+    tudo: se um valor no Render vencesse em silêncio, ele colaria a pasta,
+    apertaria salvar, veria "salvo" — e nada mudaria. Um campo que aceita e
+    ignora é pior do que campo nenhum.
+
+    A tela diz qual das três origens está valendo, para a regra não virar
+    surpresa quando alguém mexer no Render."""
+    from .db import consultar_um
+    try:
+        linha = consultar_um("SELECT valor FROM analisesps.meta WHERE chave = ?",
+                             (CHAVE_PASTA,))
+        if linha and str(linha[0] or "").strip():
+            return str(linha[0]).strip(), "tela"
+    except Exception:  # noqa: BLE001 — banco atrasado não pode derrubar a tela
+        logger.exception("Análise de SPs: não consegui ler a pasta do Drive")
+
+    import os as _os
     from . import credenciais
-    return credenciais.token("DRIVE_FOLDER_ID", "").strip()
+    for apelido in ("DRIVE_FOLDER_ID", "BEEVALE_DRIVE_FOLDER_ID"):
+        valor = (_os.getenv(apelido) or "").strip()
+        if valor:
+            return valor, "Render"
+    try:
+        valor = credenciais.token("DRIVE_FOLDER_ID", "").strip()
+    except Exception:  # noqa: BLE001 — planilha fora de alcance
+        valor = ""
+    return (valor, "planilha de credenciais") if valor else ("", "")
+
+
+def gravar_pasta_do_drive(pasta: str) -> str:
+    """Guarda a pasta que o dono colou. Devolve o que ficou salvo.
+
+    Aceita tanto o identificador solto quanto o ENDEREÇO INTEIRO da pasta
+    copiado da barra do navegador — que é o que se copia sem pensar. Exigir
+    que a pessoa recorte o pedaço certo de uma URL é pedir para errar."""
+    from .db import conexao
+
+    pasta = str(pasta or "").strip()
+    achado = re.search(r"/folders/([A-Za-z0-9_-]{10,})", pasta)
+    if achado:
+        pasta = achado.group(1)
+    else:
+        achado = re.search(r"[?&]id=([A-Za-z0-9_-]{10,})", pasta)
+        if achado:
+            pasta = achado.group(1)
+    pasta = pasta.strip().strip("/")
+
+    if pasta and not re.fullmatch(r"[A-Za-z0-9_-]{10,}", pasta):
+        raise ErroDoBeeVale(
+            "Isso não parece o identificador de uma pasta do Drive. Cole o "
+            "endereço da pasta (a barra do navegador, quando ela está aberta) "
+            "ou só o pedaço depois de \"/folders/\".")
+
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.meta (chave, valor) VALUES (?, ?) "
+            "ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor",
+            (CHAVE_PASTA, pasta))
+        conn.commit()
+    logger.info("Análise de SPs: pasta do Drive %s.",
+                "gravada" if pasta else "apagada")
+    return pasta
 
 
 # ---------------------------------------------------------------------------
@@ -432,7 +500,7 @@ def gerar(ids: list, escrever_no_pipefy: bool = True) -> dict:
     Devolve {'feitos', 'erros', 'atualizados', 'nao_atualizados'}."""
     from . import drive
 
-    pasta = pasta_do_drive()
+    pasta, _origem = pasta_do_drive()
     if not pasta:
         raise ErroDoBeeVale(
             "A pasta do Drive não está configurada. Defina DRIVE_FOLDER_ID "

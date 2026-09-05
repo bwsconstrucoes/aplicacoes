@@ -223,23 +223,19 @@ def escolher_colunas():
     return redirect(url_for("analisesps.solicitacoes"))
 
 
-def _opcoes_dos_filtros() -> dict:
+def _opcoes_dos_filtros(carimbo=None) -> dict:
     """O que cada lista suspensa da barra lateral oferece.
 
     Vive aqui, e não dentro de cada rota, porque Solicitações e Relatório
     mostram a MESMA barra. Duas cópias divergiriam no dia em que alguém
-    acrescentasse um filtro em uma só."""
+    acrescentasse um filtro em uma só.
+
+    As listas ficam guardadas até a próxima carga da planilha — era o pedaço
+    mais caro da tela, 194 ms a cada clique no filtro. O porquê está escrito
+    em `consultas.opcoes_de_filtro`. Passar o `carimbo` que a tela já tem em
+    mãos poupa mais uma consulta."""
     from . import consultas
-    return {
-        "status_pgt": consultas.opcoes("status_pgt"),
-        "conta": consultas.opcoes("conta"),
-        "forma": consultas.opcoes("forma_pagamento"),
-        "tipo_despesa": consultas.opcoes("tipo_despesa"),
-        "projeto": consultas.opcoes("projeto"),
-        "responsavel": consultas.opcoes("responsavel"),
-        "centro_custo": consultas.opcoes("centro_custo", limite=200),
-        "status_agend": consultas.opcoes_agendamento(),
-    }
+    return consultas.opcoes_de_filtro(carimbo)
 
 
 def _lembrar_filtro(endpoint: str):
@@ -326,16 +322,20 @@ def inicio():
 def solicitacoes():
     from . import consultas
 
+    # O FILTRO GUARDADO É CONFERIDO ANTES DE QUALQUER CONSULTA. Quem clica no
+    # menu chega sem filtro na barra de endereço e é redirecionado para o
+    # endereço com ele — ou seja, esta função roda DUAS vezes por clique. Tudo
+    # o que for perguntado ao banco antes daqui é perguntado à toa na primeira.
+    voltar = _lembrar_filtro("analisesps.solicitacoes")
+    if voltar is not None:
+        return voltar
+
     base = consultas.base_carregada()
     if not base["pronta"]:
         # Base vazia não é "nada a pagar" — é base não carregada. Dizer isso
         # evita que alguém conclua que não há contas em aberto.
         return render_template("analisesps_vazio.html", base=base,
                                pode_operar=auth.pode_operar())
-
-    voltar = _lembrar_filtro("analisesps.solicitacoes")
-    if voltar is not None:
-        return voltar
 
     filtros = _filtros_do_pedido()
     ordem = request.args.get("ordem", "vencimento")
@@ -345,14 +345,19 @@ def solicitacoes():
         pagina = 1
 
     linhas = consultas.listar(filtros, ordem=ordem, pagina=pagina)
-    resumo = consultas.resumo(filtros)
-    ultima = (pagina - 1) * consultas.POR_PAGINA + len(linhas)
 
     # Os números que o Streamlit mostrava embaixo da tabela. São SQL, não
     # contas sobre as 200 linhas da página: quem soma é o banco, sobre o
     # filtro inteiro — que é justamente a pergunta ("quanto tem para pagar
     # nisto que estou olhando?").
-    agendamento = consultas.contagem_agendamento(filtros)
+    #
+    # O resumo e a divisão do agendamento saem JUNTOS: eram duas varreduras da
+    # mesma tabela filtrada (44 ms + 48 ms medidos), e numa consulta só custam
+    # 59 ms. As duas somas por conta e por forma continuam separadas — juntá-las
+    # foi tentado e ficou PIOR (66 ms contra 51 ms), porque o banco precisa
+    # guardar o resultado do meio.
+    resumo, agendamento = consultas.resumo_e_agendamento(filtros)
+    ultima = (pagina - 1) * consultas.POR_PAGINA + len(linhas)
     por_conta = consultas.soma_por(filtros, "conta")
     por_forma = consultas.soma_por(filtros, "forma_pagamento")
 
@@ -366,7 +371,7 @@ def solicitacoes():
         ordem=ordem, filtros=filtros,
         agendamento=agendamento, por_conta=por_conta, por_forma=por_forma,
         colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
-        args=request.args, opcoes=_opcoes_dos_filtros(),
+        args=request.args, opcoes=_opcoes_dos_filtros(base.get("ultima")),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
@@ -717,10 +722,12 @@ def configuracoes():
     # cair. Foi assim que o módulo travou na estreia (03/09).
     from . import beevale
     try:
-        pasta = beevale.pasta_do_drive()
+        pasta, origem = beevale.pasta_do_drive()
         integracoes = {
             "ok": True,
             "pasta_drive": bool(pasta),
+            "pasta": pasta,
+            "origem": origem,
             # Os últimos seis caracteres bastam para o dono reconhecer QUAL
             # pasta ele colou, sem publicar o identificador inteiro na tela.
             "pasta_fim": pasta[-6:] if pasta else "",
@@ -741,6 +748,32 @@ def configuracoes():
         pode_operar=auth.pode_operar())
 
 
+@bp.route("/api/pasta-drive", methods=["POST"])
+@exige_operador
+def gravar_pasta_drive():
+    """Guarda a pasta do Drive que o dono colou na tela de Configurações.
+
+    Ela não é segredo — é o endereço de uma pasta —, então mora na tabela
+    `meta` do próprio módulo e não na planilha de credenciais. Vantagem
+    prática: dá para trocar sem entrar no Render, e vale na hora."""
+    from . import beevale
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        salva = beevale.gravar_pasta_do_drive(dados.get("pasta", ""))
+    except beevale.ErroDoBeeVale as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou gravar a pasta do Drive")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+
+    logger.info("Análise de SPs: %s %s a pasta do Drive.",
+                auth.nome_atual() or "sem nome",
+                "gravou" if salva else "apagou")
+    return {"ok": True, "pasta": salva,
+            "fim": salva[-6:] if salva else ""}
+
+
 @bp.route("/api/conferir-drive", methods=["POST"])
 @exige_operador
 def conferir_drive():
@@ -750,7 +783,7 @@ def conferir_drive():
     precisar gerar um BeeVale de verdade — e para dizer, na hora, se a pasta é
     de Drive Compartilhado, que é a pegadinha que faz a subida falhar."""
     from . import beevale, drive
-    pasta = beevale.pasta_do_drive()
+    pasta, _origem = beevale.pasta_do_drive()
     if not pasta:
         return {"ok": False,
                 "erro": "Nenhuma pasta configurada. Defina DRIVE_FOLDER_ID no "
@@ -865,14 +898,18 @@ def sincronizar():
 def relatorio():
     from . import consultas
 
+    # O FILTRO GUARDADO É CONFERIDO ANTES DE QUALQUER CONSULTA. Quem clica no
+    # menu chega sem filtro na barra de endereço e é redirecionado para o
+    # endereço com ele — ou seja, esta função roda DUAS vezes por clique. Tudo
+    # o que for perguntado ao banco antes daqui é perguntado à toa na primeira.
+    voltar = _lembrar_filtro("analisesps.relatorio")
+    if voltar is not None:
+        return voltar
+
     base = consultas.base_carregada()
     if not base["pronta"]:
         return render_template("analisesps_vazio.html", base=base,
                                pode_operar=auth.pode_operar())
-
-    voltar = _lembrar_filtro("analisesps.relatorio")
-    if voltar is not None:
-        return voltar
 
     filtros = _filtros_do_pedido()
     tipo = request.args.get("tipo", "geral")
@@ -1265,7 +1302,7 @@ def beevale_cadastro():
         "analisesps_beevale_cadastro.html", aba="solicitacoes",
         texto=texto, encontrados=encontrados, nao_achados=nao_achados,
         erro=erro, origem=_origem_pedida(),
-        pasta_configurada=bool(beevale.pasta_do_drive()),
+        pasta_configurada=bool(beevale.pasta_do_drive()[0]),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual(), pode_operar=True)
 
@@ -1287,7 +1324,7 @@ def beevale_gerar():
                                mensagem="Marque as SPs BeeVale na lista e "
                                         "clique em \"Gerar BeeVale\"."), 400
 
-    pasta = beevale.pasta_do_drive()
+    pasta, _origem = beevale.pasta_do_drive()
     preparado, erro = {"prontos": [], "erros": []}, None
     if pasta:
         try:

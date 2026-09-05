@@ -116,6 +116,7 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/beevale/gerar"),
     ("POST", "/analisesps/api/beevale/gerar"),
     ("POST", "/analisesps/api/conferir-drive"),
+    ("POST", "/analisesps/api/pasta-drive"),
     ("GET", "/analisesps/sair"),
 ]
 
