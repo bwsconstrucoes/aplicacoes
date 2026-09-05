@@ -152,7 +152,12 @@ def test_as_unidades_e_condicoes_vieram_povoadas(sessao_real):
 
 
 def test_condicao_sem_entrada_e_sem_prazo_e_recusada_pelo_banco(sessao_real):
-    """A regra vale mesmo que um caminho novo esqueça de conferir."""
+    """A regra vale mesmo que um caminho novo esqueça de conferir.
+
+    Este teste já pegou um defeito de verdade: a trava original usava
+    `array_length`, que devolve NULO para vetor vazio — e CHECK com resultado
+    nulo passa. A trava não travava nada.
+    """
     with pytest.raises(IntegrityError):
         sessao_real.execute(text(
             "INSERT INTO condicoes_pagamento (nome, entrada_percentual, dias) "

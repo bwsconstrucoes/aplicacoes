@@ -60,8 +60,13 @@ CREATE TABLE IF NOT EXISTS condicoes_pagamento (
                                       AND entrada_percentual <= 100),
     -- Sem entrada e sem prazo não é condição nenhuma: seria um título sem
     -- vencimento. Fecha aqui, e não no meio de um lançamento.
+    --
+    -- `cardinality` e não `array_length`: para um vetor vazio, array_length
+    -- devolve NULO, e CHECK com resultado nulo PASSA. A trava escrita com
+    -- array_length não travava nada — foi o teste com Postgres de verdade que
+    -- mostrou isso, e é o motivo de esses testes existirem.
     CONSTRAINT ck_condicao_tem_algo CHECK (entrada_percentual > 0
-                                       OR array_length(dias, 1) >= 1)
+                                       OR cardinality(dias) >= 1)
 );
 
 INSERT INTO condicoes_pagamento (nome, entrada_percentual, dias, ordem) VALUES
