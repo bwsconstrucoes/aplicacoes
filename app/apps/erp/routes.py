@@ -89,7 +89,7 @@ MODULOS = [
             ("sup_cotacoes", "Cotações", "erp.pagina_suprimentos_cotacoes"),
             ("sup_pedidos", "Pedidos", "erp.pagina_suprimentos_pedidos"),
             ("sup_precos", "Banco de preços", "erp.pagina_suprimentos_precos"),
-            ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_cadastros"),
+            ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_insumos"),
         ],
     },
     {
@@ -101,6 +101,12 @@ MODULOS = [
         ],
     },
 ]
+
+# Ações que as telas consultam para esconder botão que a pessoa não pode usar.
+# Repetir a lista aqui é de propósito: `_contexto` roda em TODA página, e
+# perguntar por 20 ações a cada carregamento seria desperdício.
+ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
+                 "autorizar_pedido", "solicitar_suprimento", "configurar")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -123,6 +129,9 @@ def _contexto(aba: str) -> dict:
             "aba_ativa": aba,
             "usuario_nome": session.get("erp_usuario_nome", ""),
             "usuario_perfil": session.get("erp_usuario_perfil", ""),
+            # O que esta pessoa pode, para a tela não oferecer botão que vai
+            # responder 403. NÃO é a trava — a trava é o @permissao da rota.
+            "pode": _pode_agora(*ACOES_NA_TELA),
             "migracoes_pendentes": _migracoes_pendentes()}
 _ABERTOS = ("EM_ANALISE", "AGUARDANDO_APROVACAO", "APROVADO", "BLOQUEADO", "PAGO_PARCIAL")
 
@@ -457,13 +466,6 @@ def pagina_obras():
 # ---------------------------------------------------------------------------
 # Suprimentos — fase 1: os cadastros. A especificação está em SUPRIMENTOS.md.
 # ---------------------------------------------------------------------------
-@bp.route("/erp/suprimentos/cadastros")
-@login_obrigatorio
-@permissao("ver_suprimentos")
-def pagina_suprimentos_cadastros():
-    return render_template("erp_suprimentos_cadastros.html", **_contexto("sup_cadastros"))
-
-
 @bp.route("/erp/api/suprimentos/cadastros")
 @login_obrigatorio
 @permissao("ver_suprimentos")
@@ -548,6 +550,364 @@ def api_condicao_pagamento():
             return jsonify({"ok": True, "id": c.id})
     except Exception as e:
         logger.exception("ERP: falha ao cadastrar condição de pagamento")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Suprimentos — cadastros, em quatro telas em vez de uma
+#
+# A primeira versão empilhava carga de planilha, condição de pagamento, pedido
+# de cadastro de insumo, unidades e categorias numa página só — e não havia
+# como criar uma categoria de insumo, o que travava o módulo inteiro (sem
+# categoria não se cadastra insumo, sem insumo não se pede material).
+#
+# Agora cada coisa tem o seu lugar: INSUMOS e FORNECEDORES são telas de
+# gestão, com filtro à esquerda, busca e edição em linha; CONFIGURAÇÕES é o
+# que o administrador mexe uma vez; IMPORTAÇÕES é a carga inicial.
+# ---------------------------------------------------------------------------
+def _pode_agora(*acoes: str) -> dict[str, bool]:
+    """As ações que a pessoa logada tem AGORA, para a tela esconder o que ela
+    não pode fazer.
+
+    Não é a trava — a trava é o @permissao de cada rota. É só para não
+    oferecer um botão que vai responder 403. Lê perfil e marcações por SQL
+    direto, pelo mesmo motivo do resto da guarda.
+    """
+    from app.apps.erp.core.auth.permissoes import decidir
+    try:
+        with get_session() as s:
+            perfil = _perfil_bruto(s)
+            excecoes = _excecoes_brutas(s, session["erp_usuario_id"]) if perfil else {}
+        alvo = PerfilUsuario(perfil)
+    except Exception:
+        return {a: False for a in acoes}
+    return {a: decidir(alvo, a, excecoes) for a in acoes}
+
+
+def _contexto_cadastros(sub: str) -> dict:
+    ctx = _contexto("sup_cadastros")
+    ctx["sub_aba"] = sub
+    return ctx
+
+
+@bp.route("/erp/suprimentos/insumos")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_insumos():
+    return render_template("erp_suprimentos_insumos.html",
+                           **_contexto_cadastros("insumos"))
+
+
+@bp.route("/erp/suprimentos/fornecedores")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_fornecedores():
+    return render_template("erp_suprimentos_fornecedores.html",
+                           **_contexto_cadastros("fornecedores"))
+
+
+@bp.route("/erp/suprimentos/configuracoes")
+@login_obrigatorio
+@permissao("administrar_insumos")
+def pagina_suprimentos_configuracoes():
+    return render_template("erp_suprimentos_config.html",
+                           **_contexto_cadastros("config"))
+
+
+@bp.route("/erp/suprimentos/importacoes")
+@login_obrigatorio
+@permissao("administrar_insumos")
+def pagina_suprimentos_importacoes():
+    return render_template("erp_suprimentos_importar.html",
+                           **_contexto_cadastros("importar"))
+
+
+@bp.route("/erp/suprimentos/cadastros")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_cadastros():
+    """Endereço antigo da tela única. Continua funcionando e leva a Insumos."""
+    return redirect(url_for("erp.pagina_suprimentos_insumos"))
+
+
+# ---------------------------------------------------------------------------
+# Suprimentos — API dos cadastros
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/suprimentos/insumos", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_suprimentos", POST="administrar_insumos")
+def api_suprimentos_insumos():
+    """GET: a tela de gestão inteira (lista + filtros + indicadores).
+    POST: cadastro direto, por quem administra Suprimentos."""
+    from app.apps.erp.core.suprimentos import cadastro as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True, **svc.gerenciar_insumos(s)})
+            atual = _usuario_logado(s)
+            insumo = svc.criar_insumo(s, request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "id": insumo.id, "codigo": insumo.codigo})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha no cadastro de insumo")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/insumos/<int:insumo_id>", methods=["PATCH"])
+@login_obrigatorio
+@permissao("administrar_insumos")
+def api_suprimentos_insumo_editar(insumo_id: int):
+    """Correção de uma célula, como numa planilha: só o que veio muda."""
+    from app.apps.erp.core.suprimentos import cadastro as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            insumo = svc.editar_insumo(s, insumo_id,
+                                       request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "id": insumo.id})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao editar insumo")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/categorias-insumo", methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_insumos")
+def api_suprimentos_categoria_criar():
+    """A categoria que faltava. Sem ela não havia insumo, e sem insumo não
+    havia solicitação, cotação nem pedido."""
+    from app.apps.erp.core.suprimentos import cadastro as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            c = svc.criar_categoria(s, request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "id": c.id, "codigo": c.codigo})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao criar categoria de insumo")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/categorias-insumo/<int:categoria_id>",
+          methods=["PATCH"])
+@login_obrigatorio
+@permissao("administrar_insumos")
+def api_suprimentos_categoria_editar(categoria_id: int):
+    from app.apps.erp.core.suprimentos import cadastro as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            c = svc.editar_categoria(s, categoria_id,
+                                     request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "id": c.id})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao editar categoria de insumo")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/unidades", methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_insumos")
+def api_suprimentos_unidade_criar():
+    from app.apps.erp.core.suprimentos import cadastro as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            u = svc.criar_unidade(s, request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "codigo": u.codigo})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao criar unidade de compra")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/unidades/<codigo>", methods=["PATCH"])
+@login_obrigatorio
+@permissao("administrar_insumos")
+def api_suprimentos_unidade_editar(codigo: str):
+    from app.apps.erp.core.suprimentos import cadastro as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            u = svc.editar_unidade(s, codigo,
+                                   request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "codigo": u.codigo})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao editar unidade de compra")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/condicoes/<int:condicao_id>", methods=["PATCH"])
+@login_obrigatorio
+@permissao("administrar_insumos")
+def api_suprimentos_condicao_editar(condicao_id: int):
+    """Só liga e desliga. A regra (entrada e prazos) não se edita: pedido
+    antigo aponta para ela, e mudar a regra reescreveria o passado."""
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.db.models.cadastros import CondicaoPagamento
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            c = s.get(CondicaoPagamento, condicao_id, with_for_update=True,
+                      populate_existing=True)
+            if c is None:
+                return jsonify({"ok": False,
+                                "erro": "Condição de pagamento não encontrada."}), 404
+            if "ativo" in d:
+                c.ativo = bool(d.get("ativo"))
+            if "ordem" in d:
+                c.ordem = int(d.get("ordem") or 0)
+            registrar_evento(s, "condicao_pagamento", c.id, "EDITADA",
+                             {"ativo": c.ativo, "ordem": c.ordem},
+                             atual.id if atual else None)
+            s.commit()
+            return jsonify({"ok": True, "id": c.id})
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao editar condição de pagamento")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/fornecedores", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_suprimentos", POST="administrar_fornecedores")
+def api_suprimentos_fornecedores():
+    """GET: a tela de gestão de fornecedores. POST: cadastro novo."""
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True, **svc.gerenciar(s)})
+            atual = _usuario_logado(s)
+            f = svc.criar(s, request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "id": f.id})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha no cadastro de fornecedor")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/<int:fornecedor_id>",
+          methods=["PATCH"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_fornecedor_editar(fornecedor_id: int):
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            f = svc.editar(s, fornecedor_id,
+                           request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "id": f.id})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao editar fornecedor")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/<int:fornecedor_id>/contatos",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_fornecedor_contato(fornecedor_id: int):
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            c = svc.acrescentar_contato(s, fornecedor_id,
+                                        request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "id": c.id})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao acrescentar contato")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/fornecedores/contatos/<int:contato_id>",
+          methods=["DELETE"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_suprimentos_fornecedor_contato_remover(contato_id: int):
+    from app.apps.erp.core.suprimentos import fornecedores as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            svc.remover_contato(s, contato_id, atual)
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao remover contato")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/exemplo", methods=["GET", "POST", "DELETE"])
+@login_obrigatorio
+@permissao("administrar_insumos")
+def api_suprimentos_exemplo():
+    """Dados fictícios para simular o fluxo, e a remoção exata deles.
+
+    GET diz se estão no sistema; POST traz; DELETE remove só o que foi trazido
+    — e recusa inteiro se algo já tiver sido usado de verdade.
+    """
+    from app.apps.erp.core.suprimentos import exemplo as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, **svc.situacao(s)})
+            if request.method == "POST":
+                rel = svc.criar(s, atual)
+                s.commit()
+                quantos = " · ".join(
+                    f"{n} {svc.ROTULOS.get(k, k)}" for k, n in rel["marcas"].items() if n)
+                recado = f"Dados de exemplo criados: {quantos}."
+                if rel["avisos"]:
+                    recado += " Observações: " + "; ".join(rel["avisos"]) + "."
+                return jsonify({"ok": True, "mensagem": recado, "relatorio": rel})
+            rel = svc.remover(s, atual)
+            s.commit()
+            quantos = " · ".join(
+                f"{n} {svc.ROTULOS.get(k, k)}" for k, n in rel["removidos"].items() if n)
+            return jsonify({"ok": True,
+                            "mensagem": f"Dados de exemplo removidos: {quantos or 'nada restava'}.",
+                            "relatorio": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha nos dados de exemplo")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

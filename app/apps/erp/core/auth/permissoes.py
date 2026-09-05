@@ -77,6 +77,7 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "comprar":             {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "autorizar_pedido":    {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "administrar_insumos": {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    "administrar_fornecedores": {P.ADMIN, P.DIRETOR_FINANCEIRO},
     # A fila de pedidos serve a DOIS papéis: quem compra acompanha o que fechou,
     # quem autoriza libera. Ver a seção de ações implicadas abaixo.
     "ver_pedidos_compra":  {P.ADMIN, P.DIRETOR_FINANCEIRO},
@@ -117,7 +118,8 @@ ACAO_ROTULOS = {
     "solicitar_suprimento": "Pedir material para a obra",
     "comprar":              "Cotar e fechar pedido de compra",
     "autorizar_pedido":     "Autorizar pedido de compra",
-    "administrar_insumos":  "Decidir o cadastro de insumos",
+    "administrar_insumos":  "Cadastrar e corrigir insumos",
+    "administrar_fornecedores": "Cadastrar e corrigir fornecedores",
     "ver_pedidos_compra":   "Ver a fila de pedidos de compra",
 }
 

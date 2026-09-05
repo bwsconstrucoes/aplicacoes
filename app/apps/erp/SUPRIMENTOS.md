@@ -296,8 +296,11 @@ as regras; o que só o uso mostra está escrito abaixo.
 
 | Tela | O que faz |
 |---|---|
-| Suprimentos › Cadastros | carga por CSV das planilhas (com prévia), condições de pagamento como regra, unidades, categorias, e o fluxo de cadastro de insumo (pedir → decidir → avisar) |
-| Suprimentos › Solicitações | pedido de material com obra **por item**, prioridade, previsão, as 15 situações com fluxo, busca, e a entrada assistida por IA (colar a lista) |
+| Suprimentos › Cadastros › Insumos | gestão tipo planilha: filtro à esquerda por categoria, unidade e grupo do plano, busca, ordenação por coluna, **edição na própria célula**, KPIs do que está incompleto (sem conta, sem unidade, sem preço) e exportação do que está na tela |
+| Suprimentos › Cadastros › Fornecedores | a mesma gestão para fornecedor: porte, região, canal, **o que ele vende** (a marcação que decide quem recebe cada cotação) e os contatos; KPIs de quem NÃO vai receber cotação |
+| Suprimentos › Cadastros › Categorias, unidades e pagamento | cadastra e desativa categoria de insumo e unidade de compra, cadastra condição de pagamento como regra, e decide os pedidos de cadastro de insumo (pedir → decidir → avisar) |
+| Suprimentos › Cadastros › Importações | carga por CSV das planilhas (com prévia) e os **dados de exemplo** para simular |
+| Suprimentos › Solicitações | pedido de material com obra **por item**, prioridade, previsão, as 15 situações com fluxo, filtro à esquerda, e a entrada assistida por IA (colar a lista). **É daqui que a cotação nasce**: filtra-se, marcam-se os itens e o botão abre o mapa já sugerindo quem vende aquelas categorias |
 | Suprimentos › Cotações | mapa com preço por célula, menor preço destacado, total com frete/desconto/acréscimo, leitura da proposta do fornecedor por IA, herança de preço de cotação anterior |
 | Suprimentos › Pedidos | fechamento do mapa ou direto, fila única de autorização com o mapa embutido, recusa parcial, previsão de pagamento, relatório por endereço de entrega e recebimento na obra |
 | Suprimentos › Banco de preços | histórico de cotado e comprado, com último, menor, maior, média e o último comprado |
@@ -322,6 +325,25 @@ as regras; o que só o uso mostra está escrito abaixo.
    recebido, recebido sem lançamento) **existem como aviso na tela do pedido**,
    mas ninguém é notificado por Telegram ainda.
 5. **Assinatura do comprador** nos relatórios enviados ao fornecedor.
+
+### 8.2.1 Como a tela ficou depois do primeiro uso (05/09/2026, noite)
+
+O dono abriu o módulo e a tela de Cadastros não serviu. O relato dele, resumido
+sem suavizar: tela grande cheia de informação onde ninguém localiza nada;
+caixinha com mais de cem itens para escolher e sem busca; conta de receita
+oferecida para um insumo; e — o que travava tudo — **não havia como cadastrar
+categoria de insumo**, então não havia como cadastrar insumo, então não havia
+como testar solicitação nem cotação.
+
+O princípio que ele deu, e que vale para o ERP inteiro: *"tudo que pode ter
+muita coisa tem que ter tela de pesquisa e filtragem; não pode abrir uma caixa
+com mais de cem itens para escolher"* e *"a vantagem da planilha é a
+velocidade de gerir: eu filtro, analiso, altero, edito, com facilidade"*.
+
+Daí as quatro sub-telas, os filtros na esquerda (o padrão do resto do ERP), a
+busca em toda lista longa, a edição na célula e os KPIs. E daí também a
+cotação nascer na tela de Solicitações: quem já filtrou o que precisa comprar
+não deveria reescolher os mesmos itens numa segunda tela.
 
 ### 8.3 O que só o uso vai mostrar
 

@@ -1,0 +1,16 @@
+{# Sub-navegação dos cadastros de Suprimentos.
+
+   Existe porque "Cadastros" não é uma tela: é o insumo, o fornecedor, a
+   configuração que o administrador mexe uma vez e a carga de planilha. Numa
+   página só, quem está configurando se perde — e foi o que aconteceu na
+   primeira versão. #}
+<nav class="subabas">
+  <a class="subaba {% if sub_aba == 'insumos' %}ativa{% endif %}"
+     href="{{ url_for('erp.pagina_suprimentos_insumos') }}">Insumos</a>
+  <a class="subaba {% if sub_aba == 'fornecedores' %}ativa{% endif %}"
+     href="{{ url_for('erp.pagina_suprimentos_fornecedores') }}">Fornecedores</a>
+  <a class="subaba {% if sub_aba == 'config' %}ativa{% endif %}"
+     href="{{ url_for('erp.pagina_suprimentos_configuracoes') }}">Categorias, unidades e pagamento</a>
+  <a class="subaba {% if sub_aba == 'importar' %}ativa{% endif %}"
+     href="{{ url_for('erp.pagina_suprimentos_importacoes') }}">Importações</a>
+</nav>

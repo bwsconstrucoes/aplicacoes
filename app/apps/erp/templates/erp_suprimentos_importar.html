@@ -1,0 +1,146 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Importações de Suprimentos — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "erp_suprimentos_subnav.html" %}
+<h2>Importações
+  <small>trazer para o ERP o que já está nas planilhas</small></h2>
+<div id="mensagem"></div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Carga por arquivo CSV</h3>
+    <small>rodar de novo não duplica</small></div>
+  <div class="cartao-dica">Na planilha do Google, <b>Arquivo › Fazer download ›
+    CSV</b> da aba que interessa, e traga o arquivo aqui. O fornecedor casa pelo
+    CNPJ e o insumo pela descrição, então a carga pode ser refeita quantas vezes
+    for preciso — o que já existe é atualizado, não duplicado.</div>
+
+  <div class="form-grade" style="margin-top:12px">
+    <div class="campo"><label for="tipo-carga">O que trazer</label>
+      <select id="tipo-carga">
+        <option value="fornecedores">Fornecedores (aba Registro)</option>
+        <option value="insumos">Insumos (aba Cadastrar)</option>
+      </select></div>
+    <div class="campo" style="grid-column:span 2"><label for="arq-carga">Arquivo CSV</label>
+      <input type="file" id="arq-carga" accept=".csv"></div>
+  </div>
+
+  <div class="cartao-dica" style="margin-top:10px">Colunas aceitas —
+    <b>fornecedores</b>: Razão Social, Nome do Fornecedor, CNPJ/CPF, Contato, Email,
+    Telefone, Categoria de Insumo, Cidade, Região de Atuação, Envio de Cotações,
+    Porte do Fornecedor ·
+    <b>insumos</b>: Insumos, Categoria do Insumo, Plano Financeiro, UND.</div>
+
+  <div class="aviso info" style="margin-top:10px">A categoria de insumo <b>não é
+    criada pela importação</b>: categoria que não existe no ERP é apenas
+    relatada. Inventar categoria na carga é como a base começa a apodrecer —
+    cadastre-as antes em <a href="{{ url_for('erp.pagina_suprimentos_configuracoes') }}"
+    >Categorias, unidades e pagamento</a>.</div>
+
+  <div style="margin-top:14px; display:flex; gap:8px">
+    <button class="btn secundario" id="btn-previa">Ver prévia (não grava)</button>
+    <button class="btn" id="btn-carregar">Trazer para o ERP</button>
+  </div>
+  <div id="resultado-carga" style="margin-top:14px"></div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Dados de exemplo</h3>
+    <small>para simular o fluxo antes de usar de verdade</small></div>
+  <div class="cartao-dica">Traz um punhado de categorias, insumos, fornecedores e
+    solicitações fictícias, o suficiente para percorrer solicitação → cotação →
+    mapa → pedido sem depender de cadastro nenhum. O botão ao lado remove
+    exatamente o que foi trazido — nada além disso.</div>
+  <div id="exemplo-estado" class="cartao-dica">verificando…</div>
+  <div style="margin-top:12px; display:flex; gap:8px">
+    <button class="btn secundario" id="btn-exemplo">Trazer dados de exemplo</button>
+    <button class="btn perigo" id="btn-exemplo-remover">Remover os dados de exemplo</button>
+  </div>
+  <div id="resultado-exemplo" style="margin-top:12px"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function enviar(simular){
+  const tipo = els("tipo-carga").value;
+  const arquivo = els("arq-carga").files[0];
+  if (!arquivo) return aviso("mensagem", "Escolha o arquivo CSV.", "erro");
+  const fd = new FormData();
+  fd.append("arquivo", arquivo);
+  els("resultado-carga").innerHTML = `<div class="cartao-dica">lendo o arquivo…</div>`;
+  try {
+    const r = await api(`/erp/api/suprimentos/importar/${tipo}?simular=${simular ? 1 : 0}`,
+                        {method: "POST", body: fd});
+    const rel = r.relatorio;
+    els("resultado-carga").innerHTML = `
+      <div class="aviso ${simular ? "info" : "ok"}">
+        ${simular ? "Prévia — nada foi gravado." : "Carga concluída."}
+        <b>${rel.no_arquivo}</b> linha(s) no arquivo ·
+        <b>${rel.criados}</b> novo(s) · <b>${rel.atualizados}</b> atualizado(s)
+        ${rel.rejeitados.length ? ` · <b>${rel.rejeitados.length}</b> recusada(s)` : ""}
+      </div>
+      ${rel.categorias_nao_encontradas && rel.categorias_nao_encontradas.length ? `
+        <div class="aviso info">Categorias citadas na planilha e ainda não
+          cadastradas no ERP: <b>${rel.categorias_nao_encontradas.join(", ")}</b>.
+          Cadastre-as e rode a carga de novo para as ligações serem feitas.</div>` : ""}
+      ${rel.rejeitados.length ? `
+        <table style="margin-top:10px"><thead><tr>
+          <th>Linha</th><th>Registro</th><th>Por que não entrou</th></tr></thead>
+          <tbody>${rel.rejeitados.map(x => `<tr><td class="dados">${x.linha}</td>
+            <td>${x.fornecedor || x.insumo || "—"}</td><td>${x.motivo}</td></tr>`).join("")}
+          </tbody></table>` : ""}`;
+  } catch(e){
+    els("resultado-carga").innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  }
+}
+
+els("btn-previa").addEventListener("click", () => enviar(true));
+els("btn-carregar").addEventListener("click", () => enviar(false));
+
+// ------------------------------------------------------------- exemplo
+async function estadoExemplo(){
+  try {
+    const r = await api("/erp/api/suprimentos/exemplo");
+    els("exemplo-estado").innerHTML = r.presente
+      ? `Há dados de exemplo no sistema: ${r.resumo.map(x => `<b>${x.quantos}</b> ${x.rotulo}`).join(" · ")}.`
+      : "Nenhum dado de exemplo no sistema no momento.";
+    els("btn-exemplo").disabled = r.presente;
+    els("btn-exemplo-remover").disabled = !r.presente;
+  } catch(e){ els("exemplo-estado").textContent = e.message; }
+}
+
+async function exemplo(metodo){
+  els("resultado-exemplo").innerHTML = `<div class="cartao-dica">trabalhando…</div>`;
+  try {
+    const r = await api("/erp/api/suprimentos/exemplo", {method: metodo});
+    els("resultado-exemplo").innerHTML =
+      `<div class="aviso ok">${r.mensagem}</div>`;
+    estadoExemplo();
+  } catch(e){
+    els("resultado-exemplo").innerHTML = "";
+    aviso("mensagem", e.message, "erro");
+  }
+}
+
+els("btn-exemplo").addEventListener("click", () => exemplo("POST"));
+els("btn-exemplo-remover").addEventListener("click", async () => {
+  const d = await perguntar({
+    titulo: "Remover os dados de exemplo",
+    textoOk: "Remover",
+    aviso: "Sai só o que o botão de exemplo criou. Se algum desses insumos ou " +
+           "fornecedores já tiver sido usado num pedido de verdade, a remoção " +
+           "é recusada e nada sai.",
+    campos: [{nome: "confirmar", rotulo: 'Digite REMOVER para confirmar',
+              obrigatorio: true, largura: 3}]});
+  if (!d) return;
+  if (d.confirmar.trim().toUpperCase() !== "REMOVER")
+    return aviso("mensagem", "Confirmação não confere. Nada foi removido.", "erro");
+  exemplo("DELETE");
+});
+
+estadoExemplo();
+</script>
+{% endblock %}

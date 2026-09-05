@@ -4,18 +4,32 @@
 
 {% block conteudo %}
 <h2>Configurações <small>plano financeiro, obras, contas da empresa e usuários</small></h2>
+
+{# Uma coisa de cada vez. Empilhar oito blocos numa página só faz quem está
+   configurando perder a noção de onde está — foi a reclamação, e é a razão
+   desta faixa. A seção escolhida fica no endereço, então o F5 não perde o
+   lugar e o link pode ser mandado para alguém. #}
+<nav class="subabas" id="subabas-config">
+  <a class="subaba" href="#plano" data-ir="plano">Plano financeiro</a>
+  <a class="subaba" href="#obras" data-ir="obras">Obras</a>
+  <a class="subaba" href="#contas" data-ir="contas">Contas bancárias</a>
+  <a class="subaba" href="#usuarios" data-ir="usuarios">Operadores</a>
+  <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
+  <a class="subaba" href="#manutencao" data-ir="manutencao">Banco e limpeza</a>
+</nav>
+
 <div id="mensagem"></div>
 
 <div class="kpis" id="kpis-config"></div>
 
-<div class="cartao" id="bloco-banco">
+<div class="cartao" id="bloco-banco" data-secao="manutencao">
   <div class="cartao-cab"><h3>Manutenção do banco</h3>
     <small>estrutura de dados do ERP</small></div>
   <div id="estado-banco" class="cartao-dica">verificando…</div>
   <div style="margin-top:10px"><button class="btn amarelo oculto" id="btn-migrar">Aplicar atualizações do banco</button></div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao="plano">
   <div class="cartao-cab"><h3>Plano financeiro</h3>
     <small>categorias que dirigem o lançamento — natureza <b>resultado</b> (DRE) ou <b>fluxo</b> (caixa)</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
@@ -32,7 +46,7 @@
     Importe a proposta pela aba <a href="/erp/importar">Importar</a> ou cadastre categoria por categoria.</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao="plano">
   <div class="cartao-cab"><h3>Tradução do plano antigo</h3>
     <small>como o "Tipo de Despesa" que vem dos cards do Pipefy vira conta no plano novo</small></div>
   <div id="resumo-depara" class="cartao-dica">carregando…</div>
@@ -43,7 +57,7 @@
   <div id="lista-depara"></div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao="obras">
   <div class="cartao-cab"><h3>Obras (centros de custo)</h3>
     <small>o rateio dos títulos aponta para estas obras</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
@@ -60,7 +74,7 @@
     Importe o CSV das obras na aba <a href="/erp/importar">Importar</a>.</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao="contas">
   <div class="cartao-cab"><h3>Contas bancárias da empresa</h3>
     <small>de onde o dinheiro sai — usadas na baixa e na conciliação</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
@@ -71,7 +85,7 @@
     <tbody id="tb-contas"></tbody></table>
 </div>
 
-<div class="cartao" id="bloco-zerar">
+<div class="cartao" id="bloco-zerar" data-secao="manutencao">
   <div class="cartao-cab"><h3>Zerar movimento do ERP</h3>
     <small>para limpar o que foi lançado testando e começar o uso de verdade</small></div>
   <div class="cartao-dica">
@@ -85,7 +99,7 @@
   <div id="zer-resultado"></div>
 </div>
 
-<div class="cartao" id="bloco-ia">
+<div class="cartao" id="bloco-ia" data-secao="ia">
   <div class="cartao-cab"><h3>Consumo de IA</h3>
     <small>leitura de documentos, faturas, contratos e sugestão de conta</small></div>
   <div id="ia-alerta"></div>
@@ -100,7 +114,7 @@
   <div id="ia-painel" class="cartao-dica">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao="usuarios">
   <div class="cartao-cab"><h3>Usuários</h3><small>quem lança, quem autoriza, quem paga</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
     <span class="espaco"></span>
@@ -125,6 +139,31 @@
 
 {% block scripts %}
 <script>
+// ------------------------------------------------------------------ seções
+// Mostra uma seção de cada vez. Nada é removido da página — só escondido —
+// então todo o resto do script continua achando os elementos que precisa.
+const SECAO_PADRAO = "plano";
+
+function mostrarSecao(chave){
+  const alvo = [...document.querySelectorAll("#subabas-config [data-ir]")]
+    .some(a => a.dataset.ir === chave) ? chave : SECAO_PADRAO;
+  document.querySelectorAll("[data-secao]").forEach(bloco =>
+    bloco.hidden = bloco.dataset.secao !== alvo);
+  document.querySelectorAll("#subabas-config [data-ir]").forEach(a =>
+    a.classList.toggle("ativa", a.dataset.ir === alvo));
+  // O aviso de banco desatualizado é o único que aparece em qualquer seção:
+  // se o banco está atrás do código, a pessoa precisa ver isso agora.
+  const banco = els("bloco-banco");
+  if (banco && alvo !== "manutencao" && !els("btn-migrar").classList.contains("oculto")) {
+    banco.hidden = false;
+  }
+}
+
+window.addEventListener("hashchange", () =>
+  mostrarSecao((location.hash || "").replace("#", "")));
+document.addEventListener("DOMContentLoaded", () =>
+  mostrarSecao((location.hash || "").replace("#", "") || SECAO_PADRAO));
+
 let DADOS = {categorias: [], obras: [], contas: [], usuarios: []};
 let OPCOES_CAT = "";
 let OPERADORES = [], PERFIS = [];
@@ -400,6 +439,9 @@ async function checarBanco(){
         atualização(ões) pendente(s):</b> ${e.pendentes.join(", ")}.</span><br>
         Enquanto não forem aplicadas, telas que dependem delas mostram erro.`;
       els("btn-migrar").classList.remove("oculto");
+      // Banco atrasado é assunto de agora: o bloco aparece esteja a pessoa em
+      // que seção estiver.
+      els("bloco-banco").hidden = false;
     } else {
       els("estado-banco").innerHTML = `Banco em dia — ${e.aplicadas.length} atualização(ões) aplicada(s).
         Última: ${e.aplicadas.length ? e.aplicadas[e.aplicadas.length-1].nome + " em " +

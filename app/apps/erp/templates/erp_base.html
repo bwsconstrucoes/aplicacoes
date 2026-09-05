@@ -46,7 +46,7 @@
   <span>{{ migracoes_pendentes|length }} atualização(ões) pendente(s)
     ({{ migracoes_pendentes|join(', ') }}). Algumas telas vão falhar até aplicar.</span>
   <a class="btn amarelo" style="margin-left:auto; text-decoration:none"
-     href="{{ url_for('erp.pagina_config') }}">Aplicar agora</a>
+     href="{{ url_for('erp.pagina_config') }}#manutencao">Aplicar agora</a>
 </div>
 {% endif %}
 <div class="corpo {% block classe_corpo %}{% endblock %}">

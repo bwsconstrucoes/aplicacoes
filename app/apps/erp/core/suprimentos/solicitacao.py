@@ -267,6 +267,10 @@ def listar_itens(s: Session, usuario: Usuario, *, status: Optional[str] = None,
             "previsao_entrega": (sol.previsao_entrega.isoformat()
                                  if sol is not None and sol.previsao_entrega else None),
             "insumo": getattr(insumo, "descricao", ""),
+            # A categoria do insumo vai junto porque é ela que sugere QUEM
+            # cotar quando a cotação nasce daqui, na própria tela.
+            "insumo_id": i.insumo_id,
+            "categoria_insumo_id": getattr(insumo, "categoria_insumo_id", None),
             "especificacao": i.especificacao,
             "quantidade": str(i.quantidade), "unidade": i.unidade,
             "quantidade_recebida": str(i.quantidade_recebida or 0),

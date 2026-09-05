@@ -1,35 +1,82 @@
 {% extends "erp_base.html" %}
 {% block titulo %}Banco de preços — ERP BWS{% endblock %}
 
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="insumo, especificação, fornecedor…"></div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Insumo</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <div class="cartao-dica" style="margin:0 0 6px">Menor, maior e média só
+        aparecem com UM insumo escolhido — misturar cimento com vergalhão daria
+        uma média sem significado.</div>
+      <select id="f-insumo"><option value="">todos os insumos</option></select>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Período</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <select id="f-periodo">
+        <option value="90">últimos 3 meses</option>
+        <option value="180">últimos 6 meses</option>
+        <option value="365">último ano</option>
+        <option value="">tudo</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Origem do preço</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-comprado">
+        <span class="rotulo">Só o que foi comprado</span></label>
+      <div class="cartao-dica">"Comprado" é o que a empresa aceitou pagar;
+        "cotado" é só proposta recebida.</div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Fornecedor</span>
+      <span class="filtro-badge" id="badge-fornecedor">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <input id="f-busca-fornecedor" type="search" placeholder="filtrar fornecedores…"
+             style="width:100%; margin-bottom:6px; padding:6px 8px;
+                    border:1px solid var(--borda-forte); border-radius:6px; font-size:12.5px">
+      <div class="filtro-opcoes" id="opcoes-fornecedor"></div>
+    </div>
+  </div>
+{% endblock %}
+
 {% block conteudo %}
 <h2>Banco de preços
   <small>o que já foi cotado e comprado — para responder "este preço está bom?"</small></h2>
 <div id="mensagem"></div>
-
-<div class="barra-acoes">
-  <input id="f-busca" placeholder="insumo, especificação ou fornecedor" style="min-width:280px">
-  <select id="f-insumo" style="min-width:240px"><option value="">todos os insumos</option></select>
-  <select id="f-periodo">
-    <option value="90">últimos 3 meses</option>
-    <option value="180">últimos 6 meses</option>
-    <option value="365">último ano</option>
-    <option value="">tudo</option>
-  </select>
-</div>
-
 <div id="resumo"></div>
 
-<table>
-  <thead><tr>
-    <th>Data</th><th>Insumo</th><th>Fornecedor</th>
-    <th class="direita">Preço unitário</th><th class="direita">Qtd</th><th>Tipo</th><th></th>
-  </tr></thead>
-  <tbody id="tb-precos"></tbody>
-</table>
-{% endblock %}
-
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo-tabela"></span>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead><tr>
+        <th>Data</th><th>Insumo</th><th>Fornecedor</th>
+        <th class="direita">Preço unitário</th><th class="direita">Qtd</th>
+        <th>Origem</th><th></th>
+      </tr></thead>
+      <tbody id="tb-precos"></tbody>
+    </table>
+  </div>
+</div>
 {% block scripts %}
 <script>
+let REGISTROS = [];
+const FORNECEDORES = new Set();
+
 function moeda(v){ return Number(v || 0).toLocaleString("pt-BR",
   {minimumFractionDigits: 2, maximumFractionDigits: 4}); }
 
@@ -37,6 +84,38 @@ async function carregarInsumos(){
   const d = await api("/erp/api/suprimentos/cadastros");
   els("f-insumo").innerHTML = `<option value="">todos os insumos</option>` +
     d.insumos.map(i => `<option value="${i.id}">${i.descricao}</option>`).join("");
+  // Lista longa não se navega rolando: duas letras digitadas resolvem.
+  comBusca("f-insumo", "digite o nome do insumo…");
+}
+
+// O fornecedor sai dos próprios registros que voltaram: a lista do filtro
+// nunca fica desencontrada do que está na tela.
+function montarFiltroDeFornecedor(){
+  const contagem = {};
+  REGISTROS.forEach(r => { const n = r.fornecedor || "";
+    if (n) contagem[n] = (contagem[n] || 0) + 1; });
+  const q = (els("f-busca-fornecedor").value || "").toLowerCase().trim();
+  els("opcoes-fornecedor").innerHTML = Object.keys(contagem).sort()
+    .filter(n => !q || n.toLowerCase().includes(q))
+    .map(n => `<label class="opcao"><input type="checkbox" data-fornecedor="${n}"
+        ${FORNECEDORES.has(n) ? "checked" : ""}>
+      <span class="rotulo">${n}</span><span class="qtd">${contagem[n]}</span></label>`).join("")
+    || `<div class="cartao-dica">nenhum fornecedor nestes registros</div>`;
+  els("badge-fornecedor").textContent = FORNECEDORES.size;
+  document.querySelectorAll("[data-fornecedor]").forEach(i =>
+    i.addEventListener("change", ev => {
+      const n = ev.target.dataset.fornecedor;
+      ev.target.checked ? FORNECEDORES.add(n) : FORNECEDORES.delete(n);
+      carregar();
+    }));
+}
+
+function visiveis(){
+  return REGISTROS.filter(r => {
+    if (els("f-comprado").checked && r.tipo !== "COMPRADO") return false;
+    if (FORNECEDORES.size && !FORNECEDORES.has(r.fornecedor || "")) return false;
+    return true;
+  });
 }
 
 function desenharResumo(r, temInsumo){
@@ -72,9 +151,14 @@ async function carregar(){
     if (els("f-periodo").value) p.set("dias", els("f-periodo").value);
     if (els("f-busca").value.trim()) p.set("busca", els("f-busca").value.trim());
     const d = await api("/erp/api/suprimentos/precos?" + p.toString());
+    REGISTROS = d.historico.registros;
+    montarFiltroDeFornecedor();
     desenharResumo(d.historico.resumo, !!els("f-insumo").value);
-    els("tb-precos").innerHTML = d.historico.registros.map(r => `
-      <tr><td class="dados">${data(r.data)}</td>
+    const lista = visiveis();
+    els("resumo-tabela").innerHTML =
+      `<b>${lista.length}</b> registro(s) de ${REGISTROS.length} no período`;
+    els("tb-precos").innerHTML = lista.map(r => `
+      <tr><td class="dados">${dataBR(r.data)}</td>
         <td>${r.insumo}${r.especificacao ? `<br><small>${r.especificacao}</small>` : ""}</td>
         <td>${r.fornecedor || "—"}</td>
         <td class="direita dados">${moeda(r.preco_unitario)}</td>
@@ -87,9 +171,21 @@ async function carregar(){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
 ["f-insumo", "f-periodo"].forEach(id => els(id).addEventListener("change", carregar));
 els("f-busca").addEventListener("input", () => {
   clearTimeout(window._t); window._t = setTimeout(carregar, 300);
+});
+els("f-comprado").addEventListener("change", carregar);
+els("f-busca-fornecedor").addEventListener("input", montarFiltroDeFornecedor);
+els("btn-limpar").addEventListener("click", () => {
+  FORNECEDORES.clear();
+  els("f-busca").value = ""; els("f-busca-fornecedor").value = "";
+  els("f-insumo").value = ""; els("f-periodo").value = "90";
+  els("f-comprado").checked = false;
+  carregar();
 });
 
 carregarInsumos().then(carregar).catch(e => aviso("mensagem", e.message, "erro"));
