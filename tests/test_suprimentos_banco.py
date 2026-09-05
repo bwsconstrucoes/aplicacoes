@@ -225,3 +225,88 @@ def test_pedido_autorizado_sem_quem_autorizou_e_recusado(sessao_real):
             "INSERT INTO pedidos_compra (numero, fornecedor_id, status, criado_por) "
             "VALUES ('PC-9999', :f, 'AUTORIZADO', :u)"),
             {"f": forn.id, "u": dono.id})
+
+
+# ---------------------------------------------------------------------------
+# Zerar o movimento: o que sai e, principalmente, o que FICA
+# ---------------------------------------------------------------------------
+def test_zerar_leva_o_movimento_e_deixa_os_cadastros(sessao_real):
+    """A prova que importa: depois de zerar, o insumo e o fornecedor que
+    custaram uma importação continuam lá, e a solicitação sumiu."""
+    from app.apps.erp.core.suprimentos import limpeza
+    from app.apps.erp.db.models.cadastros import Fornecedor, TipoPessoa
+
+    s = sessao_real
+    obra = _obra(s, "ZER-A")
+    insumo = _insumo(s, "INS-9401")
+    dono = _usuario(s, "Dono", "zerar@teste.bws.local", P.ADMIN)
+    forn = Fornecedor(tipo_pessoa=TipoPessoa.PJ, cnpj_cpf="11444777000161",
+                      razao_social="FORNECEDOR ZERAR LTDA")
+    s.add(forn)
+    sol, item = _pedido_de(s, dono, obra, insumo)
+    s.flush()
+
+    antes = limpeza.resumo(s)
+    assert antes["total"] >= 2, "solicitação e item deveriam estar contados"
+    assert antes["impedimentos"] == []
+
+    relatorio = limpeza.zerar(s, limpeza.FRASE_DE_CONFIRMACAO, dono)
+    s.flush()
+
+    assert relatorio["total"] >= 2
+    assert s.execute(text("SELECT count(*) FROM suprimento_itens")).scalar() == 0
+    assert s.execute(text("SELECT count(*) FROM suprimento_solicitacoes")).scalar() == 0
+    # E o que não pode sair:
+    assert s.get(Insumo, insumo.id) is not None
+    assert s.get(Fornecedor, forn.id) is not None
+    assert s.execute(text("SELECT count(*) FROM unidades_compra")).scalar() >= 16
+    assert s.execute(text("SELECT count(*) FROM condicoes_pagamento")).scalar() >= 20
+
+
+def test_zerar_de_novo_nao_reclama_e_nao_apaga_nada(sessao_real):
+    """Rodar duas vezes é o que uma pessoa nervosa faz."""
+    from app.apps.erp.core.suprimentos import limpeza
+    dono = _usuario(s := sessao_real, "Dono", "zerar2@teste.bws.local", P.ADMIN)
+
+    limpeza.zerar(s, limpeza.FRASE_DE_CONFIRMACAO, dono)
+    segundo = limpeza.zerar(s, limpeza.FRASE_DE_CONFIRMACAO, dono)
+
+    assert segundo["total"] == 0
+
+
+def test_zerar_recusa_quando_a_previsao_virou_titulo(sessao_real):
+    """Com título, isto virou dinheiro no financeiro — e a limpeza para."""
+    from app.apps.erp.core.suprimentos import limpeza
+    from app.apps.erp.db.models.cadastros import (
+        Fornecedor, PrevisaoPagamento, TipoPessoa,
+    )
+    from app.apps.erp.db.models.financeiro import (
+        FormaPagamento, StatusTitulo, TipoTitulo, Titulo,
+    )
+    from datetime import date as _date
+    from decimal import Decimal as _D
+
+    s = sessao_real
+    dono = _usuario(s, "Dono", "zerar3@teste.bws.local", P.ADMIN)
+    forn = Fornecedor(tipo_pessoa=TipoPessoa.PJ, cnpj_cpf="34028316000103",
+                      razao_social="FORNECEDOR TITULO LTDA")
+    cat = Categoria(codigo="9.9.97", descricao="Compras teste")
+    s.add_all([forn, cat])
+    s.flush()
+    titulo = Titulo(numero_sp="SP-ZER-1", tipo=TipoTitulo.T5_EMPREITEIRO,
+                    fornecedor_id=forn.id, descricao="x", valor_bruto=_D("10"),
+                    valor_liquido=_D("10"), competencia=_date(2026, 9, 1),
+                    categoria_id=cat.id, forma_pagamento=FormaPagamento.PIX,
+                    status=StatusTitulo.APROVADO, solicitante_id=dono.id)
+    pedido = PedidoCompra(numero="PC-ZER-1", fornecedor_id=forn.id, criado_por=dono.id)
+    s.add_all([titulo, pedido])
+    s.flush()
+    s.add(PrevisaoPagamento(pedido_id=pedido.id, numero=1,
+                            vencimento=_date(2026, 10, 1), valor=_D("10"),
+                            titulo_id=titulo.id))
+    s.flush()
+
+    with pytest.raises(Exception, match="já virou título"):
+        limpeza.zerar(s, limpeza.FRASE_DE_CONFIRMACAO, dono)
+
+    assert s.execute(text("SELECT count(*) FROM pedidos_compra")).scalar() == 1

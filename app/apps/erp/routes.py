@@ -867,6 +867,35 @@ def api_recebimento(pedido_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/suprimentos/zerar", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_suprimentos_zerar():
+    """Apaga o MOVIMENTO de Suprimentos lançado num teste.
+
+    Só o ADMIN chega aqui. GET conta o que sairia, sem tocar em nada; POST
+    executa, e exige a frase de confirmação digitada. Cadastros e financeiro
+    ficam de fora — ver `core/suprimentos/limpeza.py`.
+    """
+    from app.apps.erp.core.suprimentos import limpeza
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, "resumo": limpeza.resumo(
+                    s, request.args.get("desde"))})
+            d = request.get_json(silent=True) or {}
+            relatorio = limpeza.zerar(s, d.get("confirmacao") or "", atual,
+                                      d.get("desde"))
+            s.commit()
+            return jsonify({"ok": True, "relatorio": relatorio})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao zerar o movimento")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/suprimentos/pendencias")
 @login_obrigatorio
 @permissao("ver_suprimentos")
