@@ -15,13 +15,14 @@ Leia os três antes de mexer. Atualize este ao encerrar a sessão.
 
 ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
-Suprimentos ainda não começou.
+**Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
-**Estado em 04/09/2026:** `main` com a autorização padrão-NEGAR, o alcance por
+**Estado em 05/09/2026 (madrugada):** `main` com a autorização padrão-NEGAR, o alcance por
 operador (029), o consumo de IA com teto (030), as travas de concorrência (031)
-e a homologação por perfil rodando sozinha no GitHub. No ramo, ainda não
-publicado: a **permissão fina por pessoa** (032) e a **especificação de
-Suprimentos**. Suíte: 836 sem banco, ~1.400 com banco.
+e a homologação por perfil rodando sozinha no GitHub, mais a **permissão fina
+por pessoa** (032). No ramo `claude/oi-vjvrn8`, ainda não publicado: o **módulo
+de Suprimentos** inteiro (migrações 033 a 037). Suíte: 1.149 sem banco, mais os
+casos com banco de verdade.
 
 ### O que está pendente AGORA
 
@@ -36,15 +37,20 @@ Suprimentos**. Suíte: 836 sem banco, ~1.400 com banco.
    recusado, tela a tela, perfil a perfil) roda sozinha no GitHub a cada envio
    (`tests/test_homologacao_banco.py`). Para o olho humano ficou só o roteiro
    reduzido: visual, leitura de documento por IA, avalizar/pagar com dado real.
-5. **Migrações 031 e 032**: apertar o botão ao juntar. A 031 são as restrições
+5. **Migrações 031 a 037**: apertar o botão ao juntar. A 031 são as restrições
    de concorrência; a 032 é a tabela das permissões por pessoa. Enquanto a 032
    não rodar, o ERP funciona normalmente **pelo cargo** — a tela de cadastro é
    que não consegue mostrar os ajustes.
-6. **Suprimentos**: a especificação está fechada em `SUPRIMENTOS.md`, com as
-   decisões do dono e o plano em cinco fases. Nada construído. A fase 1
-   (cadastros e importação dos 111 fornecedores e 115 insumos) é o próximo
-   passo, quando o dono mandar.
-7. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
+6. **Suprimentos**: as fases 1 a 5 estão construídas (migrações 033 a 037) e
+   documentadas em `SUPRIMENTOS.md`, com o que falta em cada uma. Nenhuma tela
+   foi operada contra a base real — é o que o dono precisa fazer primeiro.
+   Para trazer os 111 fornecedores e os 115 insumos, ele exporta a aba da
+   planilha como CSV e usa a prévia antes de gravar.
+7. **Decisão pendente do dono**: por qual conta sai o e-mail de cotação. O
+   monorepo tem WhatsApp (Z-API) mas **não tem envio de e-mail** — e 109 dos
+   111 fornecedores só recebem cotação por e-mail. Enquanto isso não se
+   decide, o disparo automático não existe.
+8. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)
 

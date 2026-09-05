@@ -1,0 +1,290 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Cadastros de Suprimentos — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Cadastros de Suprimentos
+  <small>a base que a solicitação, a cotação e o pedido vão usar</small></h2>
+<div id="mensagem"></div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Carga inicial das planilhas</h3>
+    <small>exporte a aba como CSV e traga para cá — rodar de novo não duplica</small></div>
+  <div class="form-grade">
+    <div class="campo"><label for="tipo-carga">O que trazer</label>
+      <select id="tipo-carga">
+        <option value="fornecedores">Fornecedores (aba Registro)</option>
+        <option value="insumos">Insumos (aba Cadastrar)</option>
+      </select></div>
+    <div class="campo"><label for="arq-carga">Arquivo CSV</label>
+      <input type="file" id="arq-carga" accept=".csv"></div>
+  </div>
+  <div class="cartao-dica">Colunas aceitas —
+    <b>fornecedores</b>: Razão Social, Nome do Fornecedor, CNPJ/CPF, Contato, Email,
+    Telefone, Categoria de Insumo, Cidade, Região de Atuação, Envio de Cotações,
+    Porte do Fornecedor ·
+    <b>insumos</b>: Insumos, Categoria do Insumo, Plano Financeiro, UND.
+    Fornecedor casa por CNPJ e insumo pela descrição, então a carga pode ser
+    refeita quantas vezes for preciso.</div>
+  <div style="margin-top:12px; display:flex; gap:8px">
+    <button class="btn secundario" id="btn-previa">Ver prévia (não grava)</button>
+    <button class="btn" id="btn-carregar">Trazer para o ERP</button>
+  </div>
+  <div id="resultado-carga"></div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Condições de pagamento</h3>
+    <small>quanto entra na hora e em quantos dias vencem as demais parcelas</small></div>
+  <div class="cartao-dica">Guardadas como <b>regra</b>, não como texto: é isso que
+    permite o pedido virar previsão de pagamento com as parcelas já certas.
+    Exemplos — <i>à vista</i>: entrada 100%, sem prazos · <i>30/60/90</i>: entrada 0,
+    prazos 30, 60 e 90 · <i>30% + 28/56</i>: entrada 30, prazos 28 e 56.</div>
+  <div class="form-grade" style="margin-top:10px">
+    <div class="campo"><label for="cond-nome">Nome</label>
+      <input id="cond-nome" placeholder="ex.: 30% + 28/56 dias"></div>
+    <div class="campo"><label for="cond-entrada">Entrada (%)</label>
+      <input id="cond-entrada" value="0" inputmode="decimal"></div>
+    <div class="campo"><label for="cond-dias">Prazos em dias</label>
+      <input id="cond-dias" placeholder="ex.: 28/56 ou 30, 60, 90"></div>
+  </div>
+  <div style="margin-top:10px"><button class="btn" id="btn-cond">Cadastrar condição</button></div>
+  <table style="margin-top:12px"><thead><tr>
+    <th>Condição</th><th>Em palavras</th><th class="direita">Parcelas</th></tr></thead>
+    <tbody id="tb-condicoes"></tbody></table>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Cadastro de insumo</h3>
+    <small>quem precisa pede; quem responde por suprimentos decide o nome, a
+      categoria e a conta</small></div>
+  <div class="cartao-dica">Não é burocracia: liberar o cadastro para todos produz
+    "Cimento CP-II", "cimento cp 2" e "CIMENTO CPII 50KG" como três insumos
+    diferentes, e em um mês nenhum relatório de compras fecha.</div>
+  <div class="form-grade" style="margin-top:10px">
+    <div class="campo" style="grid-column:span 2"><label for="sol-descricao">Qual material</label>
+      <input id="sol-descricao" placeholder="ex.: Cola/Selante PU sachê 800ml"></div>
+    <div class="campo"><label for="sol-unidade">Unidade</label>
+      <select id="sol-unidade"><option value="">—</option></select></div>
+    <div class="campo" style="grid-column:span 3"><label for="sol-justificativa">Para que precisa</label>
+      <input id="sol-justificativa" placeholder="ex.: junta do piso da CREPETERRA"></div>
+  </div>
+  <div style="margin-top:10px"><button class="btn" id="btn-solicitar">Pedir cadastro</button></div>
+
+  <h4 style="margin-top:16px">Pedidos</h4>
+  <table><thead><tr><th>Material</th><th>Quem pediu</th><th>Para que</th>
+    <th>Situação</th><th></th></tr></thead>
+    <tbody id="tb-solicitacoes"></tbody></table>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Unidades de compra</h3>
+    <small>a unidade em que cada insumo é pedido</small></div>
+  <div id="lista-unidades" class="cartao-dica">carregando…</div>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Categorias de insumo</h3>
+    <small>usadas para escolher quem cotar — o fornecedor recebe só o que ele vende</small></div>
+  <div id="lista-categorias" class="cartao-dica">carregando…</div>
+</div>
+<dialog id="dlg">
+  <div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+    <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let DADOS = {unidades: [], condicoes: [], categorias_insumo: []};
+let ULTIMA_LISTA = [];
+
+// Aceita "28/56", "30, 60, 90" ou "30 60" — quem digita não deveria ter de
+// adivinhar o separador.
+function lerDias(texto){
+  return [...new Set((texto || "").split(/[^0-9]+/).filter(Boolean).map(Number))]
+    .sort((a, b) => a - b);
+}
+
+async function carregar(){
+  try {
+    DADOS = await api("/erp/api/suprimentos/cadastros");
+    els("tb-condicoes").innerHTML = DADOS.condicoes.map(c => `
+      <tr><td>${c.nome}</td><td><small>${c.em_palavras}</small></td>
+      <td class="direita dados">${(c.entrada_percentual > 0 ? 1 : 0) + c.dias.length}</td></tr>`).join("")
+      || `<tr><td colspan="3">nenhuma condição cadastrada ainda</td></tr>`;
+    els("lista-unidades").innerHTML = DADOS.unidades
+      .map(u => `<b>${u.codigo}</b> ${u.descricao}`).join(" · ") || "nenhuma";
+    els("lista-categorias").innerHTML = DADOS.categorias_insumo
+      .map(c => `${c.nome}`).join(" · ") || "nenhuma cadastrada — traga o plano antes";
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function relatorioDaCarga(rel){
+  const linhas = [];
+  linhas.push(`<div class="cartao-dica">
+    ${rel.simulacao ? "<b>Prévia — nada foi gravado.</b> " : ""}
+    Linhas no arquivo: <b>${rel.no_arquivo}</b> ·
+    ${rel.simulacao ? "seriam criados" : "criados"}: <b>${rel.criados}</b> ·
+    ${rel.simulacao ? "já existiam" : "atualizados"}: <b>${rel.atualizados}</b></div>`);
+  if (rel.sem_conta_do_plano) linhas.push(`<div class="aviso alerta">
+    ${rel.sem_conta_do_plano} insumo(s) sem conta do plano financeiro. Eles entram,
+    mas o pedido feito com eles não nasce apropriado — vale completar depois.</div>`);
+  if (rel.categorias_nao_encontradas?.length) linhas.push(`<h4>Categorias que não existem no ERP
+    (${rel.categorias_nao_encontradas.length})</h4>
+    <div class="cartao-dica">Não foram criadas de propósito: inventar categoria na
+    importação é como a base começa a apodrecer. Cadastre e traga o arquivo de novo —
+    ${rel.categorias_nao_encontradas.join(" · ")}</div>`);
+  if (rel.rejeitados?.length) linhas.push(`<h4>Recusadas (${rel.rejeitados.length})</h4>
+    <table><thead><tr><th>Linha</th><th>Registro</th><th>Motivo</th></tr></thead>
+    <tbody>${rel.rejeitados.map(r => `<tr><td class="dados">${r.linha}</td>
+      <td>${r.fornecedor || r.insumo || ""}</td><td>${r.motivo}</td></tr>`).join("")}</tbody></table>`);
+  return linhas.join("");
+}
+
+async function carga(simular){
+  const arq = els("arq-carga").files[0];
+  if (!arq) { aviso("mensagem", "Escolha o arquivo CSV.", "erro"); return; }
+  const fd = new FormData();
+  fd.append("arquivo", arq);
+  try {
+    const d = await api(`/erp/api/suprimentos/importar/${els("tipo-carga").value}` +
+                        (simular ? "?simular=1" : ""), {method: "POST", body: fd});
+    els("resultado-carga").innerHTML = relatorioDaCarga(d.relatorio);
+    if (!simular) { aviso("mensagem", "Carga concluída.", "ok"); carregar(); }
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+els("btn-previa").addEventListener("click", () => carga(true));
+els("btn-carregar").addEventListener("click", () => carga(false));
+
+els("btn-cond").addEventListener("click", async () => {
+  const corpo = {nome: els("cond-nome").value.trim(),
+                 entrada_percentual: els("cond-entrada").value.replace(",", "."),
+                 dias: lerDias(els("cond-dias").value)};
+  try {
+    await api("/erp/api/suprimentos/condicoes", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+    els("cond-nome").value = ""; els("cond-dias").value = ""; els("cond-entrada").value = "0";
+    aviso("mensagem", "Condição cadastrada.", "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+});
+
+// ---------------------------------------------------------------------------
+// Pedido de cadastro de insumo
+// ---------------------------------------------------------------------------
+const ROTULO_SITUACAO = {PENDENTE: "aguardando decisão", CADASTRADO: "cadastrado",
+                         RECUSADO: "recusado"};
+
+async function carregarSolicitacoes(){
+  try {
+    const d = await api("/erp/api/suprimentos/insumos/solicitacoes");
+    ULTIMA_LISTA = d.solicitacoes;
+    els("tb-solicitacoes").innerHTML = d.solicitacoes.map(x => `
+      <tr><td>${x.descricao}${x.unidade ? ` <small>(${x.unidade})</small>` : ""}</td>
+        <td>${x.solicitante}</td>
+        <td><small>${x.justificativa || "—"}</small></td>
+        <td>${ROTULO_SITUACAO[x.status] || x.status}
+          ${x.status !== "PENDENTE" && !x.avisado
+            ? ` <small style="color:var(--ambar)">(sem aviso)</small>` : ""}
+          ${x.motivo ? `<br><small>${x.motivo}</small>` : ""}</td>
+        <td class="direita">${x.status === "PENDENTE" ? `
+          <button class="btn secundario" data-cadastrar="${x.id}"
+                  style="padding:4px 9px; font-size:12px">Cadastrar</button>
+          <button class="btn secundario" data-recusar="${x.id}"
+                  style="padding:4px 9px; font-size:12px">Recusar</button>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="5">nenhum pedido</td></tr>`;
+    ligarBotoesDaDecisao();
+  } catch(e){ /* quem não pode ver, não vê a lista — e isso não é erro de tela */ }
+}
+
+function ligarBotoesDaDecisao(){
+  document.querySelectorAll("[data-cadastrar]").forEach(b =>
+    b.addEventListener("click", () => abrirDecisao(+b.dataset.cadastrar)));
+  document.querySelectorAll("[data-recusar]").forEach(b =>
+    b.addEventListener("click", async () => {
+      const r = await perguntar({
+        titulo: "Recusar o cadastro",
+        aviso: "Quem pediu recebe o motivo por mensagem — recusa sem explicação " +
+               "faz a pessoa pedir de novo amanhã.",
+        campos: [{nome: "motivo", rotulo: "Motivo", tipo: "textarea",
+                  obrigatorio: true, linhas: 3,
+                  exemplo: "ex.: já existe o Selante PU 400ml"}],
+        textoOk: "Recusar"});
+      if (!r) return;
+      await decidir(+b.dataset.recusar, {acao: "recusar", motivo: r.motivo});
+    }));
+}
+
+function abrirDecisao(id){
+  els("dlg-titulo").textContent = "Cadastrar insumo";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="cartao-dica">O nome que ficar aqui é o que a empresa inteira vai
+      usar. A conta do plano é o que faz o pedido de compra virar previsão de
+      pagamento já apropriada.</div>
+    <div class="form-grade" style="margin-top:10px">
+      <div class="campo" style="grid-column:span 2"><label>Nome definitivo</label>
+        <input id="dec-descricao"></div>
+      <div class="campo"><label>Unidade</label>
+        <select id="dec-unidade"><option value="">—</option>
+          ${DADOS.unidades.map(u=>`<option value="${u.codigo}">${u.codigo} · ${u.descricao}</option>`).join("")}
+        </select></div>
+      <div class="campo"><label>Categoria de insumo</label>
+        <select id="dec-categoria">${DADOS.categorias_insumo
+          .map(c=>`<option value="${c.id}">${c.nome}</option>`).join("")}</select></div>
+      <div class="campo"><label>Conta do plano financeiro</label>
+        <select id="dec-conta"><option value="">— carregando —</option></select></div>
+    </div>
+    <div style="margin-top:14px"><button class="btn" id="dec-salvar">Cadastrar</button></div>`;
+  const pedido = (ULTIMA_LISTA || []).find(x => x.id === id) || {};
+  els("dec-descricao").value = pedido.descricao || "";
+  if (pedido.unidade) els("dec-unidade").value = pedido.unidade;
+  api("/erp/api/config").then(d => {
+    els("dec-conta").innerHTML = `<option value="">— escolha —</option>` +
+      d.dados.categorias.map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("");
+  }).catch(() => {
+    // Quem decide o cadastro é ADMIN ou diretor, que enxerga Configurações.
+    // Se um dia isso mudar, o aviso é melhor do que uma lista vazia sem razão.
+    els("dec-conta").innerHTML = `<option value="">— sem acesso ao plano de contas —</option>`;
+  });
+  els("dec-salvar").addEventListener("click", () => decidir(id, {
+    acao: "cadastrar", descricao: els("dec-descricao").value,
+    unidade: els("dec-unidade").value,
+    categoria_insumo_id: els("dec-categoria").value,
+    categoria_id: els("dec-conta").value}));
+  els("dlg").showModal();
+}
+
+async function decidir(id, corpo){
+  try {
+    await api(`/erp/api/suprimentos/insumos/solicitacoes/${id}`, {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+    if (els("dlg").open) els("dlg").close();
+    aviso("mensagem", corpo.acao === "cadastrar"
+      ? "Insumo cadastrado. Quem pediu foi avisado." : "Pedido recusado.", "ok");
+    carregarSolicitacoes(); carregar();
+  } catch(e){ aviso(els("dlg").open ? "dlg-msg" : "mensagem", e.message, "erro"); }
+}
+
+els("btn-solicitar").addEventListener("click", async () => {
+  try {
+    await api("/erp/api/suprimentos/insumos/solicitacoes", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({descricao: els("sol-descricao").value,
+                            justificativa: els("sol-justificativa").value,
+                            unidade: els("sol-unidade").value})});
+    els("sol-descricao").value = ""; els("sol-justificativa").value = "";
+    aviso("mensagem", "Pedido registrado. Você será avisado quando for decidido.", "ok");
+    carregarSolicitacoes();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+});
+
+carregar().then(() => {
+  els("sol-unidade").innerHTML = `<option value="">—</option>` +
+    DADOS.unidades.map(u=>`<option value="${u.codigo}">${u.codigo} · ${u.descricao}</option>`).join("");
+});
+carregarSolicitacoes();
+</script>
+{% endblock %}
