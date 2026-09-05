@@ -417,3 +417,76 @@ def test_acao_desconhecida_no_pedido_e_recusada(monkeypatch):
     r = _cliente(s, monkeypatch, 2).post("/erp/api/suprimentos/pedidos/50/voar", json={})
 
     assert r.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# O relatório que vai para o fornecedor
+# ---------------------------------------------------------------------------
+def test_o_relatorio_agrupa_por_endereco_de_entrega():
+    """Um mesmo pedido leva material para obras diferentes, e o motorista
+    precisa saber o que desce em cada lugar."""
+    obra_b = Obra(id=2, codigo="IGARASSU", nome="Igarassu",
+                  endereco="Rua B", numero_endereco="10", municipio="Igarassu", uf="PE")
+    obra_a = Obra(id=1, codigo="CREPETERRA", nome="Crepeterra",
+                  endereco="Rua A", numero_endereco="100", municipio="Eusébio", uf="CE")
+    item1 = _item(7, "100")
+    item2 = _item(8, "50")
+    item2.obra_id = 2
+    pedido = PedidoCompra(id=50, numero="PC-0001", fornecedor_id=100,
+                          frete=Decimal("0"), desconto=Decimal("0"),
+                          status=SP.AUTORIZADO, criado_por=1)
+    l1 = PedidoItem(id=60, pedido_id=50, suprimento_item_id=7, numero=1,
+                    quantidade=Decimal("100"), preco_unitario=Decimal("38"))
+    l2 = PedidoItem(id=61, pedido_id=50, suprimento_item_id=8, numero=2,
+                    quantidade=Decimal("50"), preco_unitario=Decimal("10"))
+    s = SessaoFalsa(*[o for o in _cadastro() if not isinstance(o, Obra)],
+                    obra_a, obra_b, item1, item2, pedido, l1, l2)
+
+    r = svc.relatorio_para_o_fornecedor(s, 50)
+
+    assert len(r["locais"]) == 2
+    enderecos = {b["endereco"] for b in r["locais"]}
+    assert "Rua A, 100, Eusébio, CE" in enderecos
+    assert "Rua B, 10, Igarassu, PE" in enderecos
+    assert r["total"] == "4300.00"
+
+
+def test_duas_obras_no_mesmo_endereco_entram_no_mesmo_bloco():
+    """O dono pediu: permitir entrega de mais de uma obra em um único endereço."""
+    obra_a = Obra(id=1, codigo="OBRA-A", nome="A", endereco="Rua Única",
+                  numero_endereco="1", municipio="Fortaleza", uf="CE")
+    obra_b = Obra(id=2, codigo="OBRA-B", nome="B", endereco="Rua Única",
+                  numero_endereco="1", municipio="Fortaleza", uf="CE")
+    item1, item2 = _item(7), _item(8, "50")
+    item2.obra_id = 2
+    pedido = PedidoCompra(id=50, numero="PC-0001", fornecedor_id=100,
+                          frete=Decimal("0"), desconto=Decimal("0"),
+                          status=SP.AUTORIZADO, criado_por=1)
+    l1 = PedidoItem(id=60, pedido_id=50, suprimento_item_id=7, numero=1,
+                    quantidade=Decimal("100"), preco_unitario=Decimal("38"))
+    l2 = PedidoItem(id=61, pedido_id=50, suprimento_item_id=8, numero=2,
+                    quantidade=Decimal("50"), preco_unitario=Decimal("10"))
+    s = SessaoFalsa(*[o for o in _cadastro() if not isinstance(o, Obra)],
+                    obra_a, obra_b, item1, item2, pedido, l1, l2)
+
+    r = svc.relatorio_para_o_fornecedor(s, 50)
+
+    assert len(r["locais"]) == 1
+    assert len(r["locais"][0]["obras"]) == 2
+    assert len(r["locais"][0]["itens"]) == 2
+
+
+def test_obra_sem_endereco_aparece_dita_no_relatorio():
+    """Em branco, o motorista descobre no caminho."""
+    obra = Obra(id=1, codigo="SEM-END", nome="Sem endereço")
+    pedido = PedidoCompra(id=50, numero="PC-0001", fornecedor_id=100,
+                          frete=Decimal("0"), desconto=Decimal("0"),
+                          status=SP.AUTORIZADO, criado_por=1)
+    linha = PedidoItem(id=60, pedido_id=50, suprimento_item_id=7, numero=1,
+                       quantidade=Decimal("1"), preco_unitario=Decimal("1"))
+    s = SessaoFalsa(*[o for o in _cadastro() if not isinstance(o, Obra)],
+                    obra, _item(7, "1"), pedido, linha)
+
+    r = svc.relatorio_para_o_fornecedor(s, 50)
+
+    assert r["locais"][0]["endereco"] == "Endereço não informado"

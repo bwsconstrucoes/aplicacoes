@@ -817,6 +817,17 @@ def api_pedido(pedido_id: int):
         return recusa or jsonify({"ok": True, "pedido": svc.detalhar(s, pedido_id)})
 
 
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/relatorio")
+@login_obrigatorio
+@permissao("comprar")
+def api_pedido_relatorio(pedido_id: int):
+    """O pedido como o fornecedor precisa ler: agrupado por endereço de entrega."""
+    from app.apps.erp.core.suprimentos import pedido as svc
+    with get_session() as s:
+        return jsonify({"ok": True,
+                        "relatorio": svc.relatorio_para_o_fornecedor(s, pedido_id)})
+
+
 @bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/<acao>", methods=["POST"])
 @login_obrigatorio
 @permissao("autorizar_pedido")

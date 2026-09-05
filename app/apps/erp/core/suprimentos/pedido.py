@@ -435,6 +435,66 @@ def detalhar(s: Session, pedido_id: int) -> dict[str, Any]:
     }
 
 
+def relatorio_para_o_fornecedor(s: Session, pedido_id: int) -> dict[str, Any]:
+    """O pedido como o fornecedor precisa lê-lo: agrupado por ENDEREÇO DE ENTREGA.
+
+    Um mesmo pedido pode levar material para obras diferentes, e o motorista
+    precisa saber o que desce em cada lugar. Obras que compartilham endereço
+    entram no mesmo bloco — foi o que o dono pediu ("permitir entrega de mais
+    de uma obra em um único endereço").
+    """
+    from app.apps.erp.db.models.cadastros import Insumo, Obra
+
+    pedido = s.get(PedidoCompra, pedido_id)
+    if pedido is None:
+        raise ErroNaoEncontrado("Pedido não encontrado.")
+    forn = s.get(Fornecedor, pedido.fornecedor_id)
+    cond = (s.get(CondicaoPagamento, pedido.condicao_pagamento_id)
+            if pedido.condicao_pagamento_id else None)
+
+    blocos: dict[str, dict[str, Any]] = {}
+    for linha in _itens(s, pedido.id):
+        item = s.get(SuprimentoItem, linha.suprimento_item_id)
+        obra = s.get(Obra, item.obra_id) if item is not None else None
+        insumo = s.get(Insumo, item.insumo_id) if item is not None else None
+        endereco = _endereco(obra)
+        bloco = blocos.setdefault(endereco, {"endereco": endereco, "obras": [],
+                                             "itens": []})
+        rotulo_obra = f"{getattr(obra, 'codigo', '')} · {getattr(obra, 'nome', '')}".strip(" ·")
+        if rotulo_obra and rotulo_obra not in bloco["obras"]:
+            bloco["obras"].append(rotulo_obra)
+        bloco["itens"].append({
+            "insumo": getattr(insumo, "descricao", ""),
+            "especificacao": getattr(item, "especificacao", None),
+            "quantidade": str(linha.quantidade),
+            "unidade": getattr(item, "unidade", ""),
+            "obra": getattr(obra, "codigo", ""),
+        })
+
+    return {
+        "numero": pedido.numero,
+        "fornecedor": getattr(forn, "razao_social", ""),
+        "condicao": getattr(cond, "nome", None),
+        "entrega": pedido.entrega.value if pedido.entrega else None,
+        "previsao_entrega": (pedido.previsao_entrega.isoformat()
+                             if pedido.previsao_entrega else None),
+        "observacoes": pedido.observacoes,
+        "total": str(total(s, pedido)),
+        "locais": list(blocos.values()),
+    }
+
+
+def _endereco(obra) -> str:
+    """O endereço de entrega em uma linha. Obra sem endereço cadastrado aparece
+    como tal — em branco no relatório, o motorista descobre no caminho."""
+    if obra is None:
+        return "Endereço não informado"
+    partes = [getattr(obra, "endereco", None), getattr(obra, "numero_endereco", None),
+              getattr(obra, "municipio", None), getattr(obra, "uf", None)]
+    texto = ", ".join(p for p in partes if p)
+    return texto or "Endereço não informado"
+
+
 def listar(s: Session, *, status: Optional[str] = None) -> list[dict[str, Any]]:
     pedidos = list(s.scalars(select(PedidoCompra)).all())
     if status:

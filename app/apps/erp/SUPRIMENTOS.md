@@ -221,8 +221,9 @@ proposta na coluna do fornecedor, herança de preço de mapa anterior.
 > **Fase 4 em andamento desde 05/09/2026** (migração 036): pedido fechado do
 > mapa ou direto, fila única de autorização com o mapa embutido, recusa
 > parcial, e a previsão de pagamento gerada pela condição de pagamento.
-> **Falta** o relatório enviado ao fornecedor (separado por endereço de
-> entrega) e a conversão da previsão em título, que acontece no recebimento.
+> Inclui o relatório para o fornecedor, agrupado por endereço de entrega.
+> **Falta** a conversão da previsão em título, que acontece no recebimento
+> (fase 5).
 
 **Fase 4 — Pedido, autorização e financeiro.** Fechamento por fornecedor, pedido
 direto sem mapa, tela de autorização com o mapa embutido, relatório ao fornecedor

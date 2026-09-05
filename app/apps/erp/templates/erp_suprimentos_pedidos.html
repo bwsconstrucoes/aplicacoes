@@ -101,6 +101,9 @@ async function abrir(id){
       ${p.mapa ? blocoDoMapa(p.mapa) : `<div class="cartao-dica" style="margin-top:12px">
         Pedido direto, sem cotação — não há mapa para comparar.</div>`}
       ${p.motivo ? `<div class="aviso alerta" style="margin-top:10px">${p.motivo}</div>` : ""}
+      <div style="margin-top:12px"><button class="btn secundario" id="btn-relatorio">
+        Ver o pedido como o fornecedor vai receber</button></div>
+      <div id="area-relatorio"></div>
       ${p.status === "AGUARDANDO_AUTORIZACAO" ? `
         <div class="cartao-dica" style="margin-top:12px">Marque a caixinha dos itens
           que NÃO devem ser autorizados: eles saem do pedido e voltam para a fila.</div>
@@ -111,6 +114,7 @@ async function abrir(id){
         <div style="margin-top:12px"><button class="btn secundario"
           id="btn-cancelar">Cancelar pedido</button></div>` : ""}`;
 
+    els("btn-relatorio").addEventListener("click", () => verRelatorio(id));
     if (p.status === "AGUARDANDO_AUTORIZACAO") {
       els("btn-autorizar").addEventListener("click", () => decidir(id, "autorizar", {
         itens_recusados: [...document.querySelectorAll(".rec:checked")].map(i => +i.value)}));
@@ -139,6 +143,34 @@ function blocoDoMapa(m){
       <tfoot><tr><td><b>Total com frete e desconto</b></td>
         ${m.fornecedores.map(f => `<td class="direita dados">${moeda(f.total)}</td>`).join("")}
       </tr></tfoot></table></div>`;
+}
+
+// O fornecedor precisa ler o pedido separado por ONDE ENTREGAR: um mesmo
+// pedido leva material para obras diferentes, e o motorista precisa saber o
+// que desce em cada lugar.
+async function verRelatorio(id){
+  try {
+    const d = await api(`/erp/api/suprimentos/pedidos/${id}/relatorio`);
+    const r = d.relatorio;
+    const texto = [
+      `PEDIDO ${r.numero} — ${r.fornecedor}`,
+      r.condicao ? `Pagamento: ${r.condicao}` : "",
+      r.entrega ? `Entrega: ${r.entrega === "COLETA" ? "coleta nossa" : "por conta do fornecedor"}` : "",
+      r.previsao_entrega ? `Precisamos em obra até: ${data(r.previsao_entrega)}` : "",
+      "",
+      ...r.locais.flatMap(l => [
+        `ENTREGAR EM: ${l.endereco}`,
+        `Obra(s): ${l.obras.join(" · ")}`,
+        ...l.itens.map(i => `  - ${i.insumo}${i.especificacao ? ` (${i.especificacao})` : ""}` +
+                            ` — ${i.quantidade} ${i.unidade}`),
+        ""]),
+      r.observacoes ? `Observações: ${r.observacoes}` : "",
+    ].filter(x => x !== "").join("\n");
+    els("area-relatorio").innerHTML = `<div class="cartao-dica" style="margin-top:10px">
+      Copie e envie ao fornecedor. Cada bloco é um endereço de entrega.</div>
+      <textarea rows="${Math.min(20, texto.split("\n").length + 2)}"
+        style="width:100%; font-family:monospace">${texto}</textarea>`;
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
 async function pedirMotivo(id, acao, titulo){
