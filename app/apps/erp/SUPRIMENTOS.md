@@ -184,6 +184,12 @@ transformar área e nível em estrutura.
 
 Cinco fases. Cada uma entrega algo que funciona sozinho.
 
+> **Fase 1 entregue em 04/09/2026** (migração 033): unidades, condições de
+> pagamento como regra, fornecedor com região/porte/canal/categorias, cotador,
+> solicitação de cadastro de insumo, a regra que gera as parcelas, a tela
+> Suprimentos › Cadastros e a carga por CSV das duas planilhas. Falta ligar a
+> solicitação de cadastro de insumo à tela — a tabela existe, o fluxo não.
+
 **Fase 1 — Cadastros e importação.** Unidades, insumos, fornecedores (com região,
 porte, cotadores e dados de pagamento) e formas de pagamento como regra.
 Importar os 111 fornecedores e os 115 insumos das planilhas. Fluxo de

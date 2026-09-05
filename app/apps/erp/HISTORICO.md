@@ -36,14 +36,16 @@ Suprimentos**. Suíte: 836 sem banco, ~1.400 com banco.
    recusado, tela a tela, perfil a perfil) roda sozinha no GitHub a cada envio
    (`tests/test_homologacao_banco.py`). Para o olho humano ficou só o roteiro
    reduzido: visual, leitura de documento por IA, avalizar/pagar com dado real.
-5. **Migrações 031 e 032**: apertar o botão ao juntar. A 031 são as restrições
+5. **Migrações 031, 032 e 033**: apertar o botão ao juntar. A 031 são as restrições
    de concorrência; a 032 é a tabela das permissões por pessoa. Enquanto a 032
    não rodar, o ERP funciona normalmente **pelo cargo** — a tela de cadastro é
    que não consegue mostrar os ajustes.
-6. **Suprimentos**: a especificação está fechada em `SUPRIMENTOS.md`, com as
-   decisões do dono e o plano em cinco fases. Nada construído. A fase 1
-   (cadastros e importação dos 111 fornecedores e 115 insumos) é o próximo
-   passo, quando o dono mandar.
+6. **Suprimentos**: a fase 1 está pronta (migração 033) — cadastros, a regra
+   das condições de pagamento, a tela Suprimentos › Cadastros e a carga por
+   CSV. Para trazer os 111 fornecedores e os 115 insumos, o dono exporta a aba
+   da planilha como CSV e usa a prévia antes de gravar. Falta ligar a
+   solicitação de cadastro de insumo à tela: a tabela existe, o fluxo não.
+   A fase 2 (solicitação de suprimentos) é o próximo passo.
 7. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)

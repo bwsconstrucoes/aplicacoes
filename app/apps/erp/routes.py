@@ -12,7 +12,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from flask import (
@@ -78,6 +78,14 @@ MODULOS = [
         "abas": [
             ("dc", "Despesas com colaborador", "erp.pagina_dc"),
             ("colaboradores", "Colaboradores", "erp.pagina_colaboradores"),
+        ],
+    },
+    {
+        "chave": "suprimentos", "nome": "Suprimentos", "sigla": "SUP",
+        "descricao": "Insumos, fornecedores, cotação e pedidos de compra",
+        "cor": "var(--ambar)",
+        "abas": [
+            ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_cadastros"),
         ],
     },
     {
@@ -440,6 +448,131 @@ def pagina_receber():
 @permissao("ver_erp")
 def pagina_obras():
     return render_template("erp_obras.html", **_contexto("obras"))
+
+
+# ---------------------------------------------------------------------------
+# Suprimentos — fase 1: os cadastros. A especificação está em SUPRIMENTOS.md.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/suprimentos/cadastros")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos_cadastros():
+    return render_template("erp_suprimentos_cadastros.html", **_contexto("sup_cadastros"))
+
+
+@bp.route("/erp/api/suprimentos/cadastros")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimentos_cadastros():
+    """Tudo que a tela de cadastros precisa, numa consulta só."""
+    from sqlalchemy import select
+    from app.apps.erp.core.suprimentos.pagamento import descrever
+    from app.apps.erp.db.models.cadastros import (
+        CondicaoPagamento, InsumoCategoria, UnidadeCompra,
+    )
+    with get_session() as s:
+        unidades = s.scalars(select(UnidadeCompra).order_by(UnidadeCompra.ordem)).all()
+        condicoes = s.scalars(select(CondicaoPagamento)
+                              .order_by(CondicaoPagamento.ordem)).all()
+        categorias = s.scalars(select(InsumoCategoria)
+                               .order_by(InsumoCategoria.nome)).all()
+        return jsonify({
+            "ok": True,
+            "unidades": [{"codigo": u.codigo, "descricao": u.descricao,
+                          "ativo": u.ativo} for u in unidades],
+            "condicoes": [{"id": c.id, "nome": c.nome,
+                           "entrada_percentual": float(c.entrada_percentual or 0),
+                           "dias": list(c.dias or []),
+                           "em_palavras": descrever(c.entrada_percentual, c.dias),
+                           "ativo": c.ativo} for c in condicoes],
+            "categorias_insumo": [{"id": c.id, "codigo": c.codigo, "nome": c.nome}
+                                  for c in categorias],
+        })
+
+
+@bp.route("/erp/api/suprimentos/condicoes", methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_insumos")
+def api_condicao_pagamento():
+    """Cadastra uma condição de pagamento como REGRA: quanto entra na hora e em
+    quantos dias vencem as demais. Arranjo novo é uma linha, não código novo."""
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.core.suprimentos.pagamento import gerar_parcelas
+    from app.apps.erp.db.models.cadastros import CondicaoPagamento
+    from datetime import date as _date
+    d = request.get_json(silent=True) or {}
+    nome = (d.get("nome") or "").strip()
+    if not nome:
+        return jsonify({"ok": False, "erro": "Dê um nome à condição."}), 400
+    try:
+        entrada = Decimal(str(d.get("entrada_percentual") or 0))
+        dias = sorted({int(x) for x in (d.get("dias") or [])})
+    except (ValueError, TypeError, InvalidOperation):
+        return jsonify({"ok": False, "erro": "Entrada e prazos têm de ser números."}), 400
+    try:
+        # Prova a regra antes de gravar: condição que não gera parcela nenhuma
+        # só apareceria como defeito no primeiro pedido que a usasse.
+        gerar_parcelas("1000.00", _date.today(), entrada, dias)
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            c = CondicaoPagamento(nome=nome, entrada_percentual=entrada, dias=dias,
+                                  ordem=int(d.get("ordem") or 0))
+            s.add(c)
+            s.flush()
+            registrar_evento(s, "condicao_pagamento", c.id, "CRIADA",
+                             {"nome": nome, "entrada": str(entrada), "dias": dias},
+                             atual.id if atual else None)
+            s.commit()
+            return jsonify({"ok": True, "id": c.id})
+    except Exception as e:
+        logger.exception("ERP: falha ao cadastrar condição de pagamento")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/importar/<tipo>", methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_insumos")
+def api_suprimentos_importar(tipo: str):
+    """Carga de fornecedores ou insumos por CSV exportado da planilha.
+
+    Com `?simular=1` só relata o que aconteceria — é a prévia que se confere
+    antes de deixar gravar. Rodar duas vezes não duplica: fornecedor casa por
+    CNPJ, insumo pela descrição.
+    """
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.core.importadores import suprimentos as imp
+    if tipo not in ("fornecedores", "insumos"):
+        return jsonify({"ok": False, "erro": "Tipo de carga desconhecido."}), 400
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Anexe o arquivo CSV."}), 400
+    conteudo = arquivo.read()
+    if not conteudo:
+        return jsonify({"ok": False, "erro": "Arquivo vazio."}), 400
+    simular = str(request.args.get("simular") or "").strip() in ("1", "true", "sim")
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            funcao = (imp.importar_fornecedores_csv if tipo == "fornecedores"
+                      else imp.importar_insumos_csv)
+            rel = funcao(s, conteudo, atual, simular=simular)
+            if simular:
+                s.rollback()
+            else:
+                registrar_evento(s, "importacao", 0, f"SUPRIMENTOS_{tipo.upper()}",
+                                 rel, atual.id if atual else None)
+                s.commit()
+            logger.info("ERP/suprimentos: carga de %s (%s) — %s",
+                        tipo, "prévia" if simular else "gravada", rel)
+        return jsonify({"ok": True, "relatorio": rel})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na carga de %s", tipo)
+        return jsonify({"ok": False, "erro": str(e)}), 500
 
 
 @bp.route("/erp/relatorios")

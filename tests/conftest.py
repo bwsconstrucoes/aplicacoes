@@ -76,6 +76,7 @@ class SessaoFalsa:
         self.permissoes_por_usuario = dict(permissoes_por_usuario or {})
         self.adicionados = []
         self.eventos = []
+        self.desfeita = False
 
     # -- leitura ------------------------------------------------------------
     def get(self, modelo, ident, options=None, with_for_update=None,
@@ -135,6 +136,11 @@ class SessaoFalsa:
 
     def commit(self):  # pragma: no cover - nenhum teste comita
         pass
+
+    def rollback(self):
+        """A sessão real desfaz; o dublê só anota que foi chamado, para o teste
+        da prévia poder exigir que a rota tenha desfeito."""
+        self.desfeita = True
 
 
 # ---------------------------------------------------------------------------
