@@ -65,6 +65,18 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "lancar_dc":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
     "editar_colaboradores": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL},
+    # Suprimentos. Não existe cargo de "comprador" no ERP, e não vai existir:
+    # pela decisão de 04/09/2026, quem compra e quem autoriza pedido ganham a
+    # ação MARCADA no cadastro, uma pessoa de cada vez. O padrão abaixo é
+    # deliberadamente estreito — pedir material é de todo mundo da obra,
+    # comprar e autorizar não são de ninguém por herança de cargo.
+    "ver_suprimentos":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                            P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.CONSULTA},
+    "solicitar_suprimento": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
+                             P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA},
+    "comprar":             {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    "autorizar_pedido":    {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    "administrar_insumos": {P.ADMIN, P.DIRETOR_FINANCEIRO},
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -87,6 +99,11 @@ ACAO_ROTULOS = {
     "ver_pessoal":          "Ver despesas de colaborador",
     "lancar_dc":            "Lançar despesa de colaborador",
     "editar_colaboradores": "Cadastrar e editar colaboradores",
+    "ver_suprimentos":      "Ver as telas de Suprimentos",
+    "solicitar_suprimento": "Pedir material para a obra",
+    "comprar":              "Cotar e fechar pedido de compra",
+    "autorizar_pedido":     "Autorizar pedido de compra",
+    "administrar_insumos":  "Decidir o cadastro de insumos",
 }
 
 ROTULOS = {
