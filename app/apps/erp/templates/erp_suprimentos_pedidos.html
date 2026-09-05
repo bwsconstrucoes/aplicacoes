@@ -104,6 +104,7 @@ async function abrir(id){
       <div style="margin-top:12px"><button class="btn secundario" id="btn-relatorio">
         Ver o pedido como o fornecedor vai receber</button></div>
       <div id="area-relatorio"></div>
+      <div id="area-recebimento"></div>
       ${p.status === "AGUARDANDO_AUTORIZACAO" ? `
         <div class="cartao-dica" style="margin-top:12px">Marque a caixinha dos itens
           que NÃO devem ser autorizados: eles saem do pedido e voltam para a fila.</div>
@@ -115,6 +116,7 @@ async function abrir(id){
           id="btn-cancelar">Cancelar pedido</button></div>` : ""}`;
 
     els("btn-relatorio").addEventListener("click", () => verRelatorio(id));
+    if (p.status === "AUTORIZADO") mostrarRecebimento(id);
     if (p.status === "AGUARDANDO_AUTORIZACAO") {
       els("btn-autorizar").addEventListener("click", () => decidir(id, "autorizar", {
         itens_recusados: [...document.querySelectorAll(".rec:checked")].map(i => +i.value)}));
@@ -143,6 +145,60 @@ function blocoDoMapa(m){
       <tfoot><tr><td><b>Total com frete e desconto</b></td>
         ${m.fornecedores.map(f => `<td class="direita dados">${moeda(f.total)}</td>`).join("")}
       </tr></tfoot></table></div>`;
+}
+
+// Quem confere é a OBRA. E o que não chegou vira SALDO do próprio item — não
+// um registro novo em outro lugar, para o material não passar a ter duas
+// verdades.
+async function mostrarRecebimento(id){
+  try {
+    const d = await api(`/erp/api/suprimentos/pedidos/${id}/recebimento`);
+    const sit = d.situacao;
+    els("area-recebimento").innerHTML = `
+      ${sit.avisos.map(a => `<div class="aviso alerta" style="margin-top:10px">${a}</div>`).join("")}
+      <h4 style="margin-top:14px">Recebimento na obra</h4>
+      <table><thead><tr><th>Item</th><th class="direita">Pedido</th>
+        <th class="direita">Já recebido</th><th class="direita">Falta</th>
+        <th class="direita">Chegou agora</th></tr></thead>
+        <tbody>${sit.itens.map(i => `<tr>
+          <td>${i.insumo}${i.especificacao ? `<br><small>${i.especificacao}</small>` : ""}</td>
+          <td class="direita dados">${i.pedido} ${i.unidade}</td>
+          <td class="direita dados">${i.recebido}</td>
+          <td class="direita dados">${i.saldo}</td>
+          <td class="direita">${Number(i.saldo) > 0
+            ? `<input class="rec-qtd" data-item="${i.pedido_item_id}"
+                 style="width:80px; text-align:right" inputmode="decimal"
+                 placeholder="0">` : "<small>completo</small>"}</td></tr>`).join("")}
+        </tbody></table>
+      ${sit.tudo_recebido ? `<div class="cartao-dica" style="margin-top:8px">
+        Tudo recebido.</div>` : `
+        <div class="form-grade" style="margin-top:10px">
+          <div class="campo"><label>Nota fiscal</label><input id="rec-nota"></div>
+          <div class="campo"><label>Data</label>
+            <input id="rec-data" type="date" value="${new Date().toISOString().slice(0,10)}"></div>
+        </div>
+        <div style="margin-top:10px"><button class="btn" id="btn-receber">
+          Registrar o que chegou</button></div>`}`;
+    if (!sit.tudo_recebido)
+      els("btn-receber").addEventListener("click", () => registrarRecebimento(id));
+  } catch(e){ els("area-recebimento").innerHTML =
+    `<div class="aviso erro" style="margin-top:10px">${e.message}</div>`; }
+}
+
+async function registrarRecebimento(id){
+  const itens = [...document.querySelectorAll(".rec-qtd")]
+    .filter(i => i.value.trim())
+    .map(i => ({pedido_item_id: +i.dataset.item, quantidade: i.value.trim()}));
+  if (!itens.length) { aviso("dlg-msg", "Diga quanto chegou de cada item.", "erro"); return; }
+  try {
+    await api(`/erp/api/suprimentos/pedidos/${id}/recebimento`, {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({itens, nota_numero: els("rec-nota").value,
+                            data: els("rec-data").value})});
+    aviso("dlg-msg", "Recebimento registrado.", "ok");
+    mostrarRecebimento(id);
+    carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
 // O fornecedor precisa ler o pedido separado por ONDE ENTREGAR: um mesmo

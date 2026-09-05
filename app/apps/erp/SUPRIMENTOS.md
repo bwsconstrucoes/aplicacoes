@@ -230,6 +230,13 @@ direto sem mapa, tela de autorização com o mapa embutido, relatório ao fornec
 separado por endereço de entrega, geração de previsão de pagamento e de título
 antecipado.
 
+> **Fase 5 em andamento desde 05/09/2026** (migração 037): recebimento na obra,
+> parcial ou total, com a **pendência como saldo do próprio item**; a situação
+> cruzada entre suprimento e financeiro, com avisos que não bloqueiam; e a fila
+> de pendências. **Falta** a conversão da previsão em título — ela passa pelas
+> regras fiscais do ERP (tipo de título, documento fiscal, conta homologada) e
+> não deve ser contornada por dentro do suprimento.
+
 **Fase 5 — Logística, recebimento e banco de preços.** Situações do pedido, cobrança automática de
 atualização, recebimento na obra com nota fiscal lida por IA, boletos, frete,
 pendência por saldo, os alertas cruzados entre suprimento e financeiro e a tela

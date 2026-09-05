@@ -903,6 +903,39 @@ class PrevisaoPagamento(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class Recebimento(Base):
+    """O que chegou na obra, conferido por quem está lá.
+
+    Um pedido pode ter vários recebimentos: o material vem em partes, e cada
+    chegada é um registro com a sua nota e a sua data.
+    """
+    __tablename__ = "recebimentos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    pedido_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("pedidos_compra.id"), nullable=False)
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    data: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    nota_numero: Mapped[Optional[str]] = mapped_column(Text)
+    anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    recebido_por: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class RecebimentoItem(Base):
+    """Quanto de cada item do pedido chegou nesta remessa."""
+    __tablename__ = "recebimento_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    recebimento_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("recebimentos.id", ondelete="CASCADE"), nullable=False)
+    pedido_item_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("pedido_itens.id"), nullable=False)
+    quantidade: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
+
+
 class Funcao(Base):
     """Função na obra, com a diária de referência."""
     __tablename__ = "funcoes"

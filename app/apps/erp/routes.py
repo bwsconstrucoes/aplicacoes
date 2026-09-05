@@ -857,6 +857,43 @@ def api_decidir_pedido(pedido_id: int, acao: str):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+# --- Recebimento na obra ----------------------------------------------------
+# Quem confere é a obra: a rota exige apenas "ver_suprimentos", e o escopo por
+# obra já limita o que cada pessoa enxerga.
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/recebimento",
+          methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_recebimento(pedido_id: int):
+    from app.apps.erp.core.suprimentos import recebimento as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, "situacao": svc.situacao(s, pedido_id)})
+            svc.registrar(s, pedido_id, request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha no recebimento")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/pendencias")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_pendencias():
+    """O que ficou com saldo. Pendência tem tratamento mais urgente que
+    solicitação nova: já foi pedida uma vez, e alguém está esperando."""
+    from app.apps.erp.core.suprimentos import recebimento as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "pendencias": svc.pendencias(s, _usuario_logado(s))})
+
+
 @bp.route("/erp/api/suprimentos/precos")
 @login_obrigatorio
 @permissao("comprar")
