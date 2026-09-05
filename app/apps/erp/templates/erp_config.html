@@ -71,6 +71,27 @@
     <tbody id="tb-contas"></tbody></table>
 </div>
 
+<div class="cartao" id="bloco-zerar">
+  <div class="cartao-cab"><h3>Zerar o movimento de Suprimentos</h3>
+    <small>para limpar o que foi lançado durante um teste</small></div>
+  <div class="cartao-dica">
+    <b>Sai:</b> solicitações de material, cotações e mapas, pedidos de compra,
+    previsões de pagamento, recebimentos, o banco de preços e as propostas
+    anexadas.<br>
+    <b>Fica:</b> insumos, fornecedores, unidades, condições de pagamento, obras,
+    operadores — e <b>todo o financeiro</b>: títulos, pagamentos e conciliação
+    não são tocados.
+  </div>
+  <div class="form-grade" style="align-items:end; margin-top:10px">
+    <div class="campo"><label>Apagar o que foi lançado a partir de</label>
+      <input id="zer-desde" type="date">
+      <div class="dica">Deixe vazio para apagar todo o movimento do módulo.</div></div>
+  </div>
+  <div style="margin-top:10px"><button class="btn secundario" id="btn-zer-previa">
+    Ver o que sairia</button></div>
+  <div id="zer-resultado"></div>
+</div>
+
 <div class="cartao" id="bloco-ia">
   <div class="cartao-cab"><h3>Consumo de IA</h3>
     <small>leitura de documentos, faturas, contratos e sugestão de conta</small></div>
@@ -304,6 +325,54 @@ function formOperador(u){
   });
   els("dlg").showModal();
 }
+
+// Botão que APAGA. Duas etapas de propósito: primeiro conta o que sairia, e só
+// depois de ver o número é que aparece a confirmação — que exige digitar a
+// frase, não só clicar em "sim".
+async function previaDeZerar(){
+  try {
+    const p = els("zer-desde").value ? `?desde=${els("zer-desde").value}` : "";
+    const d = await api("/erp/api/suprimentos/zerar" + p);
+    const r = d.resumo;
+    if (r.impedimentos.length) {
+      els("zer-resultado").innerHTML = `<div class="aviso erro" style="margin-top:10px">
+        Não dá para zerar: ${r.impedimentos.join(" · ")} já virou título no
+        financeiro. Isto deixou de ser teste — resolva pelo financeiro primeiro.</div>`;
+      return;
+    }
+    if (!r.total) {
+      els("zer-resultado").innerHTML = `<div class="cartao-dica" style="margin-top:10px">
+        Não há movimento para apagar.</div>`;
+      return;
+    }
+    els("zer-resultado").innerHTML = `
+      <div class="aviso alerta" style="margin-top:10px">
+        Sairiam <b>${r.total}</b> registro(s):
+        ${r.detalhe.map(x => `${x.linhas} ${x.rotulo}`).join(" · ")}.</div>
+      <div class="cartao-dica">Continuam intocados: ${r.preservado.join(" · ")}.</div>
+      <div class="form-grade" style="align-items:end; margin-top:10px">
+        <div class="campo"><label>Digite <b>${r.frase}</b> para confirmar</label>
+          <input id="zer-frase" placeholder="${r.frase}"></div>
+      </div>
+      <div style="margin-top:10px"><button class="btn" id="btn-zer-fazer">
+        Apagar os ${r.total} registros</button></div>`;
+    els("btn-zer-fazer").addEventListener("click", executarZerar);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function executarZerar(){
+  try {
+    const d = await api("/erp/api/suprimentos/zerar", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({confirmacao: els("zer-frase").value,
+                            desde: els("zer-desde").value || null})});
+    els("zer-resultado").innerHTML = `<div class="aviso ok" style="margin-top:10px">
+      ${d.relatorio.total} registro(s) apagados. Os cadastros continuam no lugar.</div>`;
+    aviso("mensagem", "Movimento de Suprimentos zerado.", "ok");
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+els("btn-zer-previa").addEventListener("click", previaDeZerar);
 
 async function checarBanco(){
   try {

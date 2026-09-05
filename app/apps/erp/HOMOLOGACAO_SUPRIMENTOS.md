@@ -121,6 +121,26 @@ coluna é.
 
 ---
 
+## Para recomeçar do zero
+
+Testar suja o sistema, e desfazer um a um seria pior que o teste. Em
+**Configurações › Zerar o movimento de Suprimentos** há o botão que limpa.
+
+- **Sai:** solicitações, cotações e mapas, pedidos, previsões de pagamento,
+  recebimentos, o banco de preços e as propostas anexadas.
+- **Fica:** insumos, fornecedores, unidades, condições de pagamento, obras,
+  operadores — e **todo o financeiro**. A carga das planilhas não se perde, e
+  título, pagamento e conciliação nem são tocados.
+- **Duas etapas:** primeiro ele conta o que sairia; só depois de ver o número é
+  que aparece a confirmação, que exige digitar `ZERAR SUPRIMENTOS`.
+- **Recusa** se alguma previsão de pagamento já tiver virado título — aí deixou
+  de ser teste e virou dinheiro.
+- Dá para limitar por data ("apagar o que foi lançado a partir de"), para o dia
+  em que já houver movimento de verdade no módulo.
+- Fica registrado quem apertou, quando e quantas linhas saíram.
+
+Rode o roteiro à vontade: zerar e recomeçar custa dois cliques.
+
 ## Se algo quebrar
 
 Anote **em qual passo** e o que apareceu na tela. Erro com o texto "o banco

@@ -53,6 +53,19 @@ class ResultadoFalso:
     def first(self):
         return self._linhas[0] if self._linhas else None
 
+    def scalar(self):
+        """Primeira coluna da primeira linha, como o SQLAlchemy devolve num
+        `SELECT count(*)`. Sem linha nenhuma, devolve None."""
+        if not self._linhas:
+            return None
+        primeira = self._linhas[0]
+        return primeira[0] if isinstance(primeira, (tuple, list)) else primeira
+
+    @property
+    def rowcount(self) -> int:
+        """Quantas linhas o comando alcançou — o que um DELETE devolve."""
+        return len(self._linhas)
+
     def __iter__(self):
         return iter(self._linhas)
 
@@ -75,6 +88,7 @@ class SessaoFalsa:
         # que a guarda lê por SQL direto.
         self.permissoes_por_usuario = dict(permissoes_por_usuario or {})
         self.adicionados = []
+        self.executados = []
         self.removidos = []
         self.eventos = []
         self.desfeita = False
@@ -122,6 +136,9 @@ class SessaoFalsa:
 
     def execute(self, stmt, params=None):
         texto = str(stmt)
+        # Guarda o que foi executado: é assim que um teste consegue exigir que
+        # uma regra tenha recusado ANTES de tocar no banco.
+        self.executados.append(texto)
         if "INSERT INTO eventos" in texto:
             self.eventos.append(params)
             return ResultadoFalso([])
