@@ -51,6 +51,8 @@ function desenharMapa(){
 
   const cab = colunas.map(c => `<th style="min-width:150px">
       ${c.fornecedor}
+      <br><button class="btn secundario" data-proposta="${c.id}"
+          style="padding:3px 8px; font-size:11px">ler proposta</button>
       <br><small>${c.condicao || "sem condição"} ·
         ${c.entrega ? (c.entrega === "COLETA" ? "coleta" : "entrega") : "—"}</small>
       ${Number(c.frete) > 0 ? `<br><small>frete R$ ${moeda(c.frete)}</small>` : ""}
@@ -108,6 +110,53 @@ function desenharMapa(){
   els("btn-salvar-precos").addEventListener("click", salvarPrecos);
   els("btn-add-forn").addEventListener("click", abrirFornecedor);
   els("btn-herdar").addEventListener("click", herdarPrecos);
+  document.querySelectorAll("[data-proposta]").forEach(b =>
+    b.addEventListener("click", () => lerProposta(+b.dataset.proposta)));
+}
+
+// A proposta chega como PDF, foto do WhatsApp ou texto colado. A IA casa o que
+// veio com os itens QUE JÁ ESTÃO NO MAPA — problema bem mais fácil do que
+// adivinhar material do zero. O que ela não casar volta escrito na tela.
+async function lerProposta(colunaId){
+  const r = await perguntar({
+    titulo: "Ler proposta do fornecedor",
+    aviso: "Anexe o PDF/foto ou cole o texto. A IA preenche a coluna para você " +
+           "conferir — nada é gravado sem você mandar salvar. O arquivo fica " +
+           "guardado no mapa como prova.",
+    campos: [{nome: "texto", rotulo: "Cole o texto da proposta", tipo: "textarea",
+              linhas: 8, exemplo: "Vergalhão CA50 12.5mm — 100 M — R$ 38,50/un"}],
+    textoOk: "Ler"});
+  if (!r || !r.texto.trim()) return;
+  aviso("mensagem", "Lendo a proposta…", "info");
+  try {
+    const d = await api(`/erp/api/suprimentos/cotacoes/fornecedores/${colunaId}/proposta`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({texto: r.texto})});
+    aplicarProposta(colunaId, d.leitura);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function aplicarProposta(colunaId, leitura){
+  leitura.sugestoes.forEach(sug => {
+    const campo = document.querySelector(
+      `.cel[data-col="${colunaId}"][data-lin="${sug.cotacao_item_id}"]`);
+    if (campo) {
+      campo.value = sug.preco;
+      campo.style.outline = sug.confianca === "ALTA"
+        ? "2px solid var(--verde)" : "2px solid var(--ambar)";
+      campo.title = `lido da proposta: ${sug.descricao_lida}` +
+        (sug.confianca === "MEDIA" ? " — confira, a correspondência não é exata" : "");
+    }
+  });
+  const partes = [leitura.resumo];
+  if (leitura.nao_casados.length)
+    partes.push("Não casou com o mapa: " +
+      leitura.nao_casados.map(x => x.descricao).join(" · "));
+  if (leitura.condicoes_lidas)
+    partes.push("Condições lidas: " + leitura.condicoes_lidas);
+  partes.push("Confira e clique em Salvar preços.");
+  aviso("mensagem", partes.join(" "),
+        leitura.nao_casados.length ? "alerta" : "ok");
 }
 
 async function abrirMapa(id){

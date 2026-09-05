@@ -696,6 +696,36 @@ def api_cotacao_precos(cotacao_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/suprimentos/cotacoes/fornecedores/<int:coluna_id>/proposta",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_ler_proposta(coluna_id: int):
+    """Lê a proposta do fornecedor (arquivo ou texto colado) e devolve os
+    preços casados com as linhas do mapa. Não grava preço: devolve sugestão."""
+    from app.apps.erp.core.suprimentos import proposta
+    arquivo = request.files.get("arquivo")
+    texto = (request.form.get("texto") if arquivo is not None
+             else (request.get_json(silent=True) or {}).get("texto")) or ""
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            leitura = proposta.ler(
+                s, coluna_id,
+                conteudo=arquivo.read() if arquivo is not None else None,
+                nome_arquivo=getattr(arquivo, "filename", "") or "",
+                texto=texto, usuario=atual)
+            s.commit()
+            return jsonify({"ok": True, "leitura": leitura})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao ler a proposta")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/suprimentos/precos")
 @login_obrigatorio
 @permissao("comprar")
