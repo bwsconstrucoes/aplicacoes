@@ -682,6 +682,136 @@ class SuprimentoItem(Base):
         return (self.quantidade or Decimal(0)) - (self.quantidade_recebida or Decimal(0))
 
 
+class StatusCotacao(str, enum.Enum):
+    ABERTA = "ABERTA"
+    FECHADA = "FECHADA"
+    CANCELADA = "CANCELADA"
+
+
+class ModoEntrega(str, enum.Enum):
+    """Quem leva o material: o fornecedor entrega ou a obra coleta. Muda a
+    logística e às vezes é o que decide a compra."""
+    ENTREGA = "ENTREGA"
+    COLETA = "COLETA"
+
+
+class OrigemPreco(str, enum.Enum):
+    """Como o preço entrou no mapa. HERDADO precisa aparecer na tela: comprar
+    com base num preço de três meses atrás sem perceber é o risco."""
+    DIGITADO = "DIGITADO"
+    IA = "IA"
+    HERDADO = "HERDADO"
+
+
+class TipoPreco(str, enum.Enum):
+    """COTADO é o que o fornecedor ofereceu; COMPRADO é o que a empresa aceitou
+    pagar. O comprado vale mais ao julgar se um preço novo está bom."""
+    COTADO = "COTADO"
+    COMPRADO = "COMPRADO"
+
+
+class Cotacao(Base):
+    """A rodada de cotação. Dela nasce o mapa."""
+    __tablename__ = "cotacoes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    numero: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    titulo: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[StatusCotacao] = mapped_column(
+        pg_enum(StatusCotacao, "status_cotacao"), nullable=False,
+        default=StatusCotacao.ABERTA)
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    criado_por: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CotacaoItem(Base):
+    """A linha do mapa: o item da solicitação que está sendo cotado."""
+    __tablename__ = "cotacao_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    cotacao_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cotacoes.id", ondelete="CASCADE"), nullable=False)
+    suprimento_item_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("suprimento_itens.id"), nullable=False)
+    numero: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class CotacaoFornecedor(Base):
+    """A coluna do mapa: o fornecedor e as condições que ele ofereceu.
+
+    Forma de pagamento, frete, desconto e modo de entrega vivem aqui porque
+    todos mudam o preço final — comparar só o preço unitário engana.
+    """
+    __tablename__ = "cotacao_fornecedores"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    cotacao_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cotacoes.id", ondelete="CASCADE"), nullable=False)
+    fornecedor_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("fornecedores.id"), nullable=False)
+    contato_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("fornecedor_contatos.id"))
+    condicao_pagamento_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("condicoes_pagamento.id"))
+    entrega: Mapped[Optional[ModoEntrega]] = mapped_column(
+        pg_enum(ModoEntrega, "modo_entrega"))
+    frete: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    desconto: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False, default=0)
+    acrescimo_percentual: Mapped[Decimal] = mapped_column(
+        Numeric(6, 3), nullable=False, default=0)
+    respondido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    respondido_por: Mapped[Optional[str]] = mapped_column(Text)
+    anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class CotacaoPreco(Base):
+    """O preço de um item para um fornecedor — uma célula do mapa."""
+    __tablename__ = "cotacao_precos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    cotacao_fornecedor_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cotacao_fornecedores.id", ondelete="CASCADE"),
+        nullable=False)
+    cotacao_item_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("cotacao_itens.id", ondelete="CASCADE"), nullable=False)
+    preco_unitario: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    origem: Mapped[OrigemPreco] = mapped_column(
+        pg_enum(OrigemPreco, "origem_preco"), nullable=False, default=OrigemPreco.DIGITADO)
+    herdado_de_cotacao_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("cotacoes.id"))
+    registrado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class PrecoHistorico(Base):
+    """O banco de preços: tudo que já foi cotado e comprado.
+
+    É o que responde "este preço está bom?" na hora de fechar, sem depender da
+    memória de ninguém — e é de onde sai o preço herdado de uma cotação
+    anterior.
+    """
+    __tablename__ = "precos_historico"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    insumo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("insumos.id"), nullable=False)
+    especificacao: Mapped[Optional[str]] = mapped_column(Text)
+    unidade: Mapped[Optional[str]] = mapped_column(Text, ForeignKey("unidades_compra.codigo"))
+    preco_unitario: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
+    quantidade: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 3))
+    fornecedor_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("fornecedores.id"))
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    condicao_pagamento_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("condicoes_pagamento.id"))
+    tipo: Mapped[TipoPreco] = mapped_column(pg_enum(TipoPreco, "tipo_preco"), nullable=False)
+    cotacao_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("cotacoes.id"))
+    data: Mapped[date] = mapped_column(Date, nullable=False, default=date.today)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Funcao(Base):
     """Função na obra, com a diária de referência."""
     __tablename__ = "funcoes"
