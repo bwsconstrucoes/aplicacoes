@@ -231,6 +231,9 @@ def test_o_mapa_marca_o_menor_preco_de_cada_linha():
     assert linha["menor_preco_de"] == 21
     assert linha["precos"][21]["total"] == "3800.00", "38 x 100 unidades"
     assert linha["insumo"] == "Vergalhão CA50 12.5mm"
+    assert linha["insumo_id"] == 10, (
+        "a tela puxa o preço anterior POR INSUMO — sem este campo ela "
+        "consultaria pelo número do item e não acharia nada")
 
 
 def test_o_frete_muda_quem_e_o_melhor():
@@ -383,3 +386,70 @@ def test_preco_herdado_fica_marcado_na_celula():
 
     celula = next(o for o in s.adicionados if isinstance(o, CotacaoPreco))
     assert celula.origem.value == "HERDADO" and celula.herdado_de_cotacao_id == 9
+
+
+# ---------------------------------------------------------------------------
+# As rotas: preço é assunto de quem compra
+# ---------------------------------------------------------------------------
+import contextlib
+
+from flask import Flask
+
+
+def _cliente(sessao, monkeypatch, usuario_id):
+    from app.apps.erp import routes
+    app = Flask(__name__)
+    app.secret_key = "teste"
+    app.register_blueprint(routes.bp)
+    monkeypatch.setattr(routes, "get_session",
+                        lambda: contextlib.nullcontext(sessao))
+    c = app.test_client()
+    with c.session_transaction() as web:
+        web["erp_usuario_id"] = usuario_id
+    return c
+
+
+def test_quem_pede_material_na_obra_nao_ve_preco(monkeypatch):
+    """Decisão do dono: a obra acompanha a entrega, mas preço e fornecedor
+    ficam com suprimentos."""
+    s = SessaoFalsa(novo_usuario(5, P.ADMINISTRATIVO_OBRA), *_cadastro())
+    c = _cliente(s, monkeypatch, 5)
+
+    for caminho in ("/erp/suprimentos/cotacoes", "/erp/suprimentos/precos",
+                    "/erp/api/suprimentos/precos",
+                    "/erp/api/suprimentos/cotacoes"):
+        assert c.get(caminho).status_code == 403, caminho
+
+
+def test_o_comprador_ve_o_mapa_e_o_banco_de_precos(monkeypatch):
+    s = SessaoFalsa(COMPRADOR, *_cadastro())
+    c = _cliente(s, monkeypatch, 1)
+
+    assert c.get("/erp/api/suprimentos/cotacoes").status_code == 200
+    assert c.get("/erp/api/suprimentos/precos").status_code == 200
+
+
+def test_lancar_precos_em_lote_conta_o_que_entrou_e_o_que_foi_recusado(monkeypatch):
+    cot = Cotacao(id=1, numero="COT-0001", titulo="x",
+                  status=StatusCotacao.ABERTA, criado_por=1)
+    linha = CotacaoItem(id=11, cotacao_id=1, suprimento_item_id=7, numero=1)
+    coluna = CotacaoFornecedor(id=21, cotacao_id=1, fornecedor_id=100)
+    s = SessaoFalsa(COMPRADOR, *_cadastro(), cot, _item(), linha, coluna)
+    c = _cliente(s, monkeypatch, 1)
+
+    r = c.post("/erp/api/suprimentos/cotacoes/1/precos", json={"precos": [
+        {"cotacao_fornecedor_id": 21, "cotacao_item_id": 11, "preco": "38,50"},
+        {"cotacao_fornecedor_id": 21, "cotacao_item_id": 11, "preco": "0"},
+    ]})
+
+    corpo = r.get_json()
+    assert r.status_code == 200
+    assert corpo["gravados"] == 1 and len(corpo["recusados"]) == 1
+    assert "maior que zero" in corpo["recusados"][0]["motivo"]
+
+
+def test_lote_vazio_avisa(monkeypatch):
+    s = SessaoFalsa(COMPRADOR, *_cadastro())
+    r = _cliente(s, monkeypatch, 1).post("/erp/api/suprimentos/cotacoes/1/precos",
+                                         json={"precos": []})
+    assert r.status_code == 400

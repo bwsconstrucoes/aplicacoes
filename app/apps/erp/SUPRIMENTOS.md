@@ -208,6 +208,11 @@ calendário — decisão 2.
 (insumo, especificação, quantidade, unidade, obra). Entrada assistida por IA
 colando planilha. Acompanhamento por item.
 
+> **Fase 3 em andamento desde 05/09/2026** (migração 035): o mapa com preço por
+> item e por fornecedor, o total com frete/desconto/acréscimo, o menor preço
+> destacado, o banco de preços e a herança de preço entre cotações. **Falta** o
+> disparo por e-mail e WhatsApp e a leitura das propostas por IA.
+
 **Fase 3 — Cotação e mapa.** Seleção de itens e fornecedores, disparo por e-mail
 e WhatsApp com registro de envio, mapa com preço por item, leitura das propostas
 por IA com crítica do que não reconheceu, menor preço destacado, anexo da

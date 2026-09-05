@@ -278,6 +278,7 @@ def montar_mapa(s: Session, cotacao_id: int) -> dict[str, Any]:
         itens_saida.append({
             "id": linha.id, "numero": linha.numero,
             "suprimento_item_id": linha.suprimento_item_id,
+            "insumo_id": getattr(item, "insumo_id", None),
             "insumo": getattr(insumo, "descricao", ""),
             "especificacao": getattr(item, "especificacao", None),
             "quantidade": str(getattr(item, "quantidade", "")),

@@ -295,3 +295,12 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   td.desc { max-width: 180px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Mapa de cotação: a célula do menor preço da linha. Cor discreta e com
+   contorno, porque a decisão de compra se toma olhando o mapa inteiro — não
+   pode virar um festival de destaque. */
+.menor-preco {
+  background: color-mix(in srgb, var(--verde) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--verde) 45%, transparent);
+  border-radius: var(--raio-p);
+}

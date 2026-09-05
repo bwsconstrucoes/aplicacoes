@@ -1,0 +1,97 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Banco de preços — ERP BWS{% endblock %}
+
+{% block conteudo %}
+<h2>Banco de preços
+  <small>o que já foi cotado e comprado — para responder "este preço está bom?"</small></h2>
+<div id="mensagem"></div>
+
+<div class="barra-acoes">
+  <input id="f-busca" placeholder="insumo, especificação ou fornecedor" style="min-width:280px">
+  <select id="f-insumo" style="min-width:240px"><option value="">todos os insumos</option></select>
+  <select id="f-periodo">
+    <option value="90">últimos 3 meses</option>
+    <option value="180">últimos 6 meses</option>
+    <option value="365">último ano</option>
+    <option value="">tudo</option>
+  </select>
+</div>
+
+<div id="resumo"></div>
+
+<table>
+  <thead><tr>
+    <th>Data</th><th>Insumo</th><th>Fornecedor</th>
+    <th class="direita">Preço unitário</th><th class="direita">Qtd</th><th>Tipo</th><th></th>
+  </tr></thead>
+  <tbody id="tb-precos"></tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function moeda(v){ return Number(v || 0).toLocaleString("pt-BR",
+  {minimumFractionDigits: 2, maximumFractionDigits: 4}); }
+
+async function carregarInsumos(){
+  const d = await api("/erp/api/suprimentos/cadastros");
+  els("f-insumo").innerHTML = `<option value="">todos os insumos</option>` +
+    d.insumos.map(i => `<option value="${i.id}">${i.descricao}</option>`).join("");
+}
+
+function desenharResumo(r, temInsumo){
+  if (!r.ocorrencias) { els("resumo").innerHTML =
+    `<div class="cartao-dica">Nenhum preço registrado com esses filtros.</div>`; return; }
+  // Menor/maior/média só fazem sentido para UM insumo: misturar cimento com
+  // vergalhão daria uma média que não quer dizer nada.
+  els("resumo").innerHTML = `<div class="cartao"><div class="kpis">
+    <div class="kpi"><div class="kpi-rotulo">Ocorrências</div>
+      <div class="kpi-valor">${r.ocorrencias}</div></div>
+    ${temInsumo ? `
+    <div class="kpi"><div class="kpi-rotulo">Último preço</div>
+      <div class="kpi-valor">${moeda(r.ultimo)}</div></div>
+    <div class="kpi verde"><div class="kpi-rotulo">Menor</div>
+      <div class="kpi-valor">${moeda(r.menor)}</div></div>
+    <div class="kpi"><div class="kpi-rotulo">Maior</div>
+      <div class="kpi-valor">${moeda(r.maior)}</div></div>
+    <div class="kpi"><div class="kpi-rotulo">Média</div>
+      <div class="kpi-valor">${moeda(r.media)}</div></div>
+    <div class="kpi roxo"><div class="kpi-rotulo">Último comprado</div>
+      <div class="kpi-valor">${r.ultimo_comprado ? moeda(r.ultimo_comprado) : "—"}</div>
+      <div class="kpi-nota">o que a empresa aceitou pagar</div></div>` : `
+    <div class="kpi"><div class="kpi-rotulo">Escolha um insumo</div>
+      <div class="kpi-nota">para ver menor, maior e média — misturar insumos
+        daria uma média sem significado</div></div>`}
+  </div></div>`;
+}
+
+async function carregar(){
+  try {
+    const p = new URLSearchParams();
+    if (els("f-insumo").value) p.set("insumo_id", els("f-insumo").value);
+    if (els("f-periodo").value) p.set("dias", els("f-periodo").value);
+    if (els("f-busca").value.trim()) p.set("busca", els("f-busca").value.trim());
+    const d = await api("/erp/api/suprimentos/precos?" + p.toString());
+    desenharResumo(d.historico.resumo, !!els("f-insumo").value);
+    els("tb-precos").innerHTML = d.historico.registros.map(r => `
+      <tr><td class="dados">${data(r.data)}</td>
+        <td>${r.insumo}${r.especificacao ? `<br><small>${r.especificacao}</small>` : ""}</td>
+        <td>${r.fornecedor || "—"}</td>
+        <td class="direita dados">${moeda(r.preco_unitario)}</td>
+        <td class="direita dados">${r.quantidade || "—"} ${r.unidade || ""}</td>
+        <td>${r.tipo === "COMPRADO"
+              ? `<b style="color:var(--verde)">comprado</b>` : "cotado"}</td>
+        <td class="direita">${r.cotacao_id
+          ? `<a href="/erp/suprimentos/cotacoes">ver cotação</a>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="7">nenhum preço registrado</td></tr>`;
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+["f-insumo", "f-periodo"].forEach(id => els(id).addEventListener("change", carregar));
+els("f-busca").addEventListener("input", () => {
+  clearTimeout(window._t); window._t = setTimeout(carregar, 300);
+});
+
+carregarInsumos().then(carregar).catch(e => aviso("mensagem", e.message, "erro"));
+</script>
+{% endblock %}

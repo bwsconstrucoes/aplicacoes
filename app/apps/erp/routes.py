@@ -86,6 +86,8 @@ MODULOS = [
         "cor": "var(--ambar)",
         "abas": [
             ("sup_solicitacoes", "Solicitações", "erp.pagina_suprimentos"),
+            ("sup_cotacoes", "Cotações", "erp.pagina_suprimentos_cotacoes"),
+            ("sup_precos", "Banco de preços", "erp.pagina_suprimentos_precos"),
             ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_cadastros"),
         ],
     },
@@ -469,7 +471,7 @@ def api_suprimentos_cadastros():
     from sqlalchemy import select
     from app.apps.erp.core.suprimentos.pagamento import descrever
     from app.apps.erp.db.models.cadastros import (
-        CondicaoPagamento, Insumo, InsumoCategoria, Obra, UnidadeCompra,
+        CondicaoPagamento, Fornecedor, Insumo, InsumoCategoria, Obra, UnidadeCompra,
     )
     with get_session() as s:
         unidades = s.scalars(select(UnidadeCompra).order_by(UnidadeCompra.ordem)).all()
@@ -493,6 +495,12 @@ def api_suprimentos_cadastros():
             "obras": [{"id": o.id, "codigo": o.codigo, "nome": o.nome}
                       for o in s.scalars(select(Obra).order_by(Obra.codigo)).all()
                       if getattr(o, "status", None) != "ENCERRADA"],
+            "fornecedores": [{"id": f.id, "nome": f.razao_social,
+                              "porte": f.porte.value if f.porte else None,
+                              "regioes": list(f.regioes_atuacao or [])}
+                             for f in s.scalars(select(Fornecedor)
+                                                .order_by(Fornecedor.razao_social)).all()
+                             if f.ativo is not False and f.e_fornecedor is not False],
             "insumos": [{"id": i.id, "codigo": i.codigo, "descricao": i.descricao,
                          "unidade": i.unidade}
                         for i in s.scalars(select(Insumo).order_by(Insumo.descricao)).all()
@@ -573,6 +581,140 @@ def api_suprimento_solicitacoes():
     except Exception as e:
         logger.exception("ERP/suprimentos: falha na solicitação")
         return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# --- Cotação e mapa ---------------------------------------------------------
+# Tudo que MOSTRA PREÇO exige a ação "comprar": pela decisão do dono, quem pede
+# material na obra acompanha a entrega, mas não vê preço nem fornecedor.
+@bp.route("/erp/suprimentos/cotacoes")
+@login_obrigatorio
+@permissao("comprar")
+def pagina_suprimentos_cotacoes():
+    return render_template("erp_suprimentos_cotacoes.html", **_contexto("sup_cotacoes"))
+
+
+@bp.route("/erp/suprimentos/precos")
+@login_obrigatorio
+@permissao("comprar")
+def pagina_suprimentos_precos():
+    return render_template("erp_suprimentos_precos.html", **_contexto("sup_precos"))
+
+
+@bp.route("/erp/api/suprimentos/cotacoes", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_cotacoes():
+    from sqlalchemy import select
+    from app.apps.erp.core.suprimentos import cotacao as svc
+    from app.apps.erp.db.models.cadastros import Cotacao
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                cotacoes = sorted(s.scalars(select(Cotacao)).all(),
+                                  key=lambda c: c.id or 0, reverse=True)
+                return jsonify({"ok": True, "cotacoes": [
+                    {"id": c.id, "numero": c.numero, "titulo": c.titulo,
+                     "status": c.status.value if c.status else "ABERTA",
+                     "criado_em": c.criado_em.isoformat() if c.criado_em else None}
+                    for c in cotacoes]})
+            cot = svc.criar(s, request.get_json(silent=True) or {}, atual)
+            saida = {"ok": True, "id": cot.id, "numero": cot.numero}
+            s.commit()
+            return jsonify(saida)
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha na cotação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/mapa")
+@login_obrigatorio
+@permissao("comprar")
+def api_cotacao_mapa(cotacao_id: int):
+    from app.apps.erp.core.suprimentos import cotacao as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "mapa": svc.montar_mapa(s, cotacao_id)})
+
+
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/fornecedores",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_cotacao_fornecedor(cotacao_id: int):
+    from app.apps.erp.core.suprimentos import cotacao as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            coluna = svc.adicionar_fornecedor(s, cotacao_id,
+                                              request.get_json(silent=True) or {}, atual)
+            saida = {"ok": True, "id": coluna.id}
+            s.commit()
+            return jsonify(saida)
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao acrescentar fornecedor ao mapa")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/precos", methods=["POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_cotacao_precos(cotacao_id: int):
+    """Lança vários preços de uma vez — é assim que se preenche uma coluna
+    inteira depois de ler a proposta do fornecedor."""
+    from app.apps.erp.core.suprimentos import cotacao as svc
+    d = request.get_json(silent=True) or {}
+    lancamentos = d.get("precos") or []
+    if not lancamentos:
+        return jsonify({"ok": False, "erro": "Nenhum preço informado."}), 400
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            gravados, recusados = 0, []
+            for linha in lancamentos:
+                try:
+                    svc.lancar_preco(s, int(linha["cotacao_fornecedor_id"]),
+                                     int(linha["cotacao_item_id"]), linha.get("preco"),
+                                     atual, origem=(linha.get("origem") or "DIGITADO"),
+                                     observacao=linha.get("observacao") or "",
+                                     herdado_de=linha.get("herdado_de"))
+                    gravados += 1
+                except ErroValidacao as e:
+                    recusados.append({"item": linha.get("cotacao_item_id"),
+                                      "motivo": str(e)})
+            s.commit()
+            return jsonify({"ok": True, "gravados": gravados, "recusados": recusados})
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao lançar preços")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/precos")
+@login_obrigatorio
+@permissao("comprar")
+def api_banco_de_precos():
+    """O histórico de preços cotados e comprados, com o resumo do período."""
+    from datetime import date as _date, timedelta as _td
+    from app.apps.erp.core.suprimentos import cotacao as svc
+    dias = request.args.get("dias")
+    desde = None
+    if dias:
+        try:
+            desde = _date.today() - _td(days=int(dias))
+        except ValueError:
+            desde = None
+    with get_session() as s:
+        return jsonify({"ok": True, "historico": svc.historico_de_precos(
+            s, insumo_id=request.args.get("insumo_id"),
+            fornecedor_id=request.args.get("fornecedor_id"),
+            desde=desde, busca=(request.args.get("busca") or "").strip())})
 
 
 @bp.route("/erp/api/suprimentos/ler-lista", methods=["POST"])
