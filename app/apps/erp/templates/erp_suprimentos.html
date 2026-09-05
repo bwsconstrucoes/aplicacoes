@@ -1,0 +1,208 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Solicitações de Suprimentos — ERP BWS{% endblock %}
+
+{% block conteudo %}
+<h2>Solicitações de Suprimentos
+  <small>o que foi pedido, para qual obra e em que pé está — item a item</small></h2>
+<div id="mensagem"></div>
+
+<div class="barra-acoes">
+  <button class="btn" id="btn-nova">Novo pedido de material</button>
+  <input id="f-busca" placeholder="procurar por título, insumo ou especificação"
+         style="min-width:280px">
+  <select id="f-status"><option value="">todas as situações</option></select>
+  <select id="f-obra"><option value="">todas as obras</option></select>
+</div>
+
+<table>
+  <thead><tr>
+    <th>Pedido</th><th>Material</th><th class="direita">Qtd</th><th>Obra</th>
+    <th>Prioridade</th><th>Previsão</th><th>Situação</th><th></th>
+  </tr></thead>
+  <tbody id="tb-itens"></tbody>
+</table>
+
+<dialog id="dlg">
+  <div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+    <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let BASE = {obras: [], insumos: [], unidades: [], situacoes: []};
+let ITENS = [];
+
+const ROTULO_PRIORIDADE = {ALTA: "Alta", MEDIA: "Média", NORMAL: "Normal"};
+
+async function carregarBase(){
+  const sup = await api("/erp/api/suprimentos/cadastros");
+  BASE.obras = sup.obras;
+  BASE.unidades = sup.unidades;
+  BASE.insumos = sup.insumos;
+  els("f-obra").innerHTML = `<option value="">todas as obras</option>` +
+    BASE.obras.map(o => `<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("");
+}
+
+function desenhar(){
+  els("tb-itens").innerHTML = ITENS.map(i => `
+    <tr>
+      <td><b>${i.solicitacao}</b><br><small>${i.titulo}</small></td>
+      <td>${i.insumo}${i.especificacao ? `<br><small>${i.especificacao}</small>` : ""}</td>
+      <td class="direita dados">${i.quantidade} ${i.unidade}
+        ${Number(i.quantidade_recebida) > 0
+          ? `<br><small>recebido ${i.quantidade_recebida}</small>` : ""}</td>
+      <td class="dados">${i.obra}</td>
+      <td>${ROTULO_PRIORIDADE[i.prioridade] || i.prioridade}</td>
+      <td class="dados">${i.previsao_entrega ? data(i.previsao_entrega) : "—"}</td>
+      <td>${i.status_rotulo}</td>
+      <td class="direita">${i.proximas.length ? `
+        <select data-mover="${i.id}" style="min-width:150px">
+          <option value="">mover para…</option>
+          ${i.proximas.map(p => `<option value="${p}">${rotuloSituacao(p)}</option>`).join("")}
+        </select>` : ""}</td>
+    </tr>`).join("") || `<tr><td colspan="8">nenhum item por aqui</td></tr>`;
+
+  document.querySelectorAll("[data-mover]").forEach(sel =>
+    sel.addEventListener("change", async () => {
+      if (!sel.value) return;
+      try {
+        await api(`/erp/api/suprimentos/itens/${sel.dataset.mover}/situacao`,
+          {method: "POST", headers: {"Content-Type": "application/json"},
+           body: JSON.stringify({status: sel.value})});
+        aviso("mensagem", "Situação atualizada.", "ok");
+        carregar();
+      } catch(e){ aviso("mensagem", e.message, "erro"); sel.value = ""; }
+    }));
+}
+
+function rotuloSituacao(chave){
+  const achou = BASE.situacoes.find(s => s.chave === chave);
+  return achou ? achou.rotulo : chave;
+}
+
+async function carregar(){
+  try {
+    const p = new URLSearchParams();
+    if (els("f-status").value) p.set("status", els("f-status").value);
+    if (els("f-obra").value) p.set("obra_id", els("f-obra").value);
+    if (els("f-busca").value.trim()) p.set("busca", els("f-busca").value.trim());
+    const d = await api("/erp/api/suprimentos/solicitacoes?" + p.toString());
+    ITENS = d.itens;
+    // As situações usadas saem dos próprios dados: a lista do filtro nunca
+    // fica desencontrada do que existe.
+    if (!BASE.situacoes.length) {
+      const vistas = new Map();
+      ITENS.forEach(i => vistas.set(i.status, i.status_rotulo));
+      BASE.situacoes = [...vistas].map(([chave, rotulo]) => ({chave, rotulo}));
+      els("f-status").innerHTML = `<option value="">todas as situações</option>` +
+        BASE.situacoes.map(s => `<option value="${s.chave}">${s.rotulo}</option>`).join("");
+    }
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// Novo pedido
+// ---------------------------------------------------------------------------
+function linhaDeItem(n){
+  return `<tr data-item>
+    <td class="dados">${n}</td>
+    <td><select class="it-insumo" style="min-width:200px">
+      <option value="">— escolha —</option>
+      ${BASE.insumos.map(i => `<option value="${i.id}" data-unidade="${i.unidade || ""}">${i.descricao}</option>`).join("")}
+    </select></td>
+    <td><input class="it-espec" placeholder="ex.: 6mm, cinza" style="min-width:130px"></td>
+    <td><input class="it-qtd" inputmode="decimal" style="width:80px"></td>
+    <td><select class="it-un" style="width:90px">
+      ${BASE.unidades.map(u => `<option value="${u.codigo}">${u.codigo}</option>`).join("")}
+    </select></td>
+    <td><select class="it-obra" style="min-width:170px">
+      ${BASE.obras.map(o => `<option value="${o.id}">${o.codigo}</option>`).join("")}
+    </select></td>
+    <td><button type="button" class="btn secundario" data-tirar
+        style="padding:4px 9px; font-size:12px">tirar</button></td></tr>`;
+}
+
+function abrirNovo(){
+  els("dlg-titulo").textContent = "Novo pedido de material";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Título do pedido *</label>
+        <input id="ns-titulo" placeholder="ex.: armadura da fundação">
+        <div class="dica">É por ele que você vai achar este pedido depois.</div></div>
+      <div class="campo"><label>Precisa em obra até</label>
+        <input id="ns-previsao" type="date"></div>
+      <div class="campo"><label>Prioridade</label>
+        <select id="ns-prioridade">
+          <option value="NORMAL">Normal</option>
+          <option value="MEDIA">Média</option>
+          <option value="ALTA">Alta — se atrasar, para a obra</option>
+        </select></div>
+    </div>
+    <div class="cartao-dica" style="margin-top:10px">Uma mesma solicitação pode
+      pedir material para <b>obras diferentes</b> — a obra é de cada item.</div>
+    <table style="margin-top:10px"><thead><tr>
+      <th>#</th><th>Insumo</th><th>Especificação</th><th>Qtd</th><th>Un.</th>
+      <th>Obra</th><th></th></tr></thead>
+      <tbody id="ns-itens">${linhaDeItem(1)}</tbody></table>
+    <div style="margin-top:10px; display:flex; gap:8px">
+      <button class="btn secundario" id="ns-mais">Mais um item</button>
+      <button class="btn" id="ns-salvar">Registrar pedido</button>
+    </div>`;
+  ligarLinhas();
+  els("ns-mais").addEventListener("click", () => {
+    const corpo = els("ns-itens");
+    corpo.insertAdjacentHTML("beforeend", linhaDeItem(corpo.children.length + 1));
+    ligarLinhas();
+  });
+  els("ns-salvar").addEventListener("click", salvarNovo);
+  els("dlg").showModal();
+}
+
+function ligarLinhas(){
+  document.querySelectorAll("[data-tirar]").forEach(b => b.onclick = () => {
+    const corpo = els("ns-itens");
+    if (corpo.children.length === 1) return;   // pedido sem item não existe
+    b.closest("tr").remove();
+    [...corpo.children].forEach((tr, i) => tr.firstElementChild.textContent = i + 1);
+  });
+  // Escolher o insumo já traz a unidade do cadastro — quem pede não deveria
+  // ter de lembrar se cimento é saco ou quilo.
+  document.querySelectorAll(".it-insumo").forEach(sel => sel.onchange = () => {
+    const un = sel.selectedOptions[0]?.dataset.unidade;
+    const alvo = sel.closest("tr").querySelector(".it-un");
+    if (un && [...alvo.options].some(o => o.value === un)) alvo.value = un;
+  });
+}
+
+async function salvarNovo(){
+  const itens = [...document.querySelectorAll("[data-item]")].map(tr => ({
+    insumo_id: tr.querySelector(".it-insumo").value,
+    especificacao: tr.querySelector(".it-espec").value,
+    quantidade: tr.querySelector(".it-qtd").value,
+    unidade: tr.querySelector(".it-un").value,
+    obra_id: tr.querySelector(".it-obra").value,
+  })).filter(i => i.insumo_id);
+  try {
+    const d = await api("/erp/api/suprimentos/solicitacoes", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({titulo: els("ns-titulo").value,
+                            previsao_entrega: els("ns-previsao").value,
+                            prioridade: els("ns-prioridade").value, itens})});
+    els("dlg").close();
+    aviso("mensagem", `Pedido ${d.numero} registrado.`, "ok");
+    carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+els("btn-nova").addEventListener("click", abrirNovo);
+["f-status", "f-obra"].forEach(id => els(id).addEventListener("change", carregar));
+els("f-busca").addEventListener("input", () => {
+  clearTimeout(window._t); window._t = setTimeout(carregar, 300);
+});
+
+carregarBase().then(carregar).catch(e => aviso("mensagem", e.message, "erro"));
+</script>
+{% endblock %}

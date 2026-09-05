@@ -588,6 +588,100 @@ class InsumoSolicitacao(Base):
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class PrioridadeSolicitacao(str, enum.Enum):
+    """A empresa nem sempre consegue comprar tudo. A prioridade é o que permite
+    ao comprador focar no que, se atrasar, para a obra."""
+    ALTA = "ALTA"
+    MEDIA = "MEDIA"
+    NORMAL = "NORMAL"
+
+
+class StatusItemSuprimento(str, enum.Enum):
+    """As 15 situações que a planilha usa hoje. O acompanhamento é POR ITEM:
+    os itens de uma mesma solicitação seguem caminhos diferentes."""
+    SOLICITACAO = "SOLICITACAO"
+    SALA_TECNICA = "SALA_TECNICA"
+    COTACAO = "COTACAO"
+    ANALISE_PROPOSTAS = "ANALISE_PROPOSTAS"
+    AUTORIZACAO = "AUTORIZACAO"
+    PEDIDO_EMITIDO = "PEDIDO_EMITIDO"
+    ALMOXARIFADO = "ALMOXARIFADO"
+    AGUARDANDO_COLETA = "AGUARDANDO_COLETA"
+    AGUARDANDO_ENTREGA = "AGUARDANDO_ENTREGA"
+    EM_TRANSITO = "EM_TRANSITO"
+    ENTREGUE = "ENTREGUE"
+    RECEBIDO = "RECEBIDO"
+    PENDENCIA = "PENDENCIA"
+    CANCELADO = "CANCELADO"
+    SUSPENSO = "SUSPENSO"
+
+
+class SuprimentoSolicitacao(Base):
+    """O pedido de material feito pela obra ou pela sala técnica.
+
+    O `titulo` é texto livre ("armadura da fundação") e é o que torna a
+    solicitação localizável depois — é por ele que se procura.
+    """
+    __tablename__ = "suprimento_solicitacoes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    numero: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    titulo: Mapped[str] = mapped_column(Text, nullable=False)
+    previsao_entrega: Mapped[Optional[date]] = mapped_column(Date)
+    prioridade: Mapped[PrioridadeSolicitacao] = mapped_column(
+        pg_enum(PrioridadeSolicitacao, "prioridade_solicitacao"),
+        nullable=False, default=PrioridadeSolicitacao.NORMAL)
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    solicitante_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"), nullable=False)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    itens: Mapped[list["SuprimentoItem"]] = relationship(
+        back_populates="solicitacao", order_by="SuprimentoItem.numero",
+        cascade="all, delete-orphan")
+
+
+class SuprimentoItem(Base):
+    """Uma linha da solicitação: insumo, especificação, quantidade e OBRA.
+
+    A obra é do item, não da solicitação — uma mesma solicitação pode pedir
+    material para obras diferentes, e o relatório ao fornecedor separa por
+    endereço de entrega.
+
+    `especificacao` é texto livre e não é enfeite: o catálogo guarda "Tarucel
+    p/ Junta de Dilatação" e a especificação guarda "6mm". Sem ela, o catálogo
+    precisaria de uma entrada para cada variação.
+    """
+    __tablename__ = "suprimento_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    solicitacao_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("suprimento_solicitacoes.id", ondelete="CASCADE"),
+        nullable=False)
+    numero: Mapped[int] = mapped_column(Integer, nullable=False)
+    insumo_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("insumos.id"), nullable=False)
+    especificacao: Mapped[Optional[str]] = mapped_column(Text)
+    quantidade: Mapped[Decimal] = mapped_column(Numeric(14, 3), nullable=False)
+    quantidade_recebida: Mapped[Decimal] = mapped_column(
+        Numeric(14, 3), nullable=False, default=0)
+    unidade: Mapped[str] = mapped_column(
+        Text, ForeignKey("unidades_compra.codigo"), nullable=False)
+    obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
+    status: Mapped[StatusItemSuprimento] = mapped_column(
+        pg_enum(StatusItemSuprimento, "status_item_suprimento"),
+        nullable=False, default=StatusItemSuprimento.SOLICITACAO)
+    observacoes: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    solicitacao: Mapped[SuprimentoSolicitacao] = relationship(back_populates="itens")
+
+    @property
+    def saldo(self) -> Decimal:
+        """O que falta chegar. É isto que a pendência é: saldo do próprio item,
+        e não um registro novo em outra tabela."""
+        return (self.quantidade or Decimal(0)) - (self.quantidade_recebida or Decimal(0))
+
+
 class Funcao(Base):
     """Função na obra, com a diária de referência."""
     __tablename__ = "funcoes"

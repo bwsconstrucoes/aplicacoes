@@ -197,6 +197,12 @@ Importar os 111 fornecedores e os 115 insumos das planilhas. Fluxo de
 **solicitação de cadastro de insumo** com aprovação. Sem prazos e sem
 calendário — decisão 2.
 
+> **Fase 2 parcialmente entregue em 05/09/2026** (migração 034): cabeçalho com
+> título, previsão e prioridade; itens com insumo, especificação, quantidade,
+> unidade e **obra por item**; as 15 situações com fluxo que recusa salto sem
+> sentido; a tela Suprimentos › Solicitações com busca e filtros; escopo igual
+> ao do financeiro. **Falta** a entrada assistida por IA (colar a planilha).
+
 **Fase 2 — Solicitação.** Cabeçalho (título, previsão, prioridade) e itens
 (insumo, especificação, quantidade, unidade, obra). Entrada assistida por IA
 colando planilha. Acompanhamento por item.

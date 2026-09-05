@@ -85,6 +85,7 @@ MODULOS = [
         "descricao": "Insumos, fornecedores, cotação e pedidos de compra",
         "cor": "var(--ambar)",
         "abas": [
+            ("sup_solicitacoes", "Solicitações", "erp.pagina_suprimentos"),
             ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_cadastros"),
         ],
     },
@@ -468,7 +469,7 @@ def api_suprimentos_cadastros():
     from sqlalchemy import select
     from app.apps.erp.core.suprimentos.pagamento import descrever
     from app.apps.erp.db.models.cadastros import (
-        CondicaoPagamento, InsumoCategoria, UnidadeCompra,
+        CondicaoPagamento, Insumo, InsumoCategoria, Obra, UnidadeCompra,
     )
     with get_session() as s:
         unidades = s.scalars(select(UnidadeCompra).order_by(UnidadeCompra.ordem)).all()
@@ -487,6 +488,15 @@ def api_suprimentos_cadastros():
                            "ativo": c.ativo} for c in condicoes],
             "categorias_insumo": [{"id": c.id, "codigo": c.codigo, "nome": c.nome}
                                   for c in categorias],
+            # Obras e insumos vêm por aqui, e não pela tela de Configurações:
+            # quem pede material não tem — nem deve ter — acesso àquela tela.
+            "obras": [{"id": o.id, "codigo": o.codigo, "nome": o.nome}
+                      for o in s.scalars(select(Obra).order_by(Obra.codigo)).all()
+                      if getattr(o, "status", "ATIVA") != "ENCERRADA"],
+            "insumos": [{"id": i.id, "codigo": i.codigo, "descricao": i.descricao,
+                         "unidade": i.unidade}
+                        for i in s.scalars(select(Insumo).order_by(Insumo.descricao)).all()
+                        if i.ativo],
         })
 
 
@@ -529,6 +539,76 @@ def api_condicao_pagamento():
             return jsonify({"ok": True, "id": c.id})
     except Exception as e:
         logger.exception("ERP: falha ao cadastrar condição de pagamento")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/suprimentos")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_suprimentos():
+    return render_template("erp_suprimentos.html", **_contexto("sup_solicitacoes"))
+
+
+@bp.route("/erp/api/suprimentos/solicitacoes", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_suprimentos", POST="solicitar_suprimento")
+def api_suprimento_solicitacoes():
+    """Os itens que a pessoa pode ver, e o registro de um pedido novo."""
+    from app.apps.erp.core.suprimentos import solicitacao as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                itens = svc.listar_itens(
+                    s, atual, status=request.args.get("status"),
+                    obra_id=request.args.get("obra_id"),
+                    busca=(request.args.get("busca") or "").strip())
+                return jsonify({"ok": True, "itens": itens})
+            sol = svc.criar(s, request.get_json(silent=True) or {}, atual)
+            numero = sol.numero
+            s.commit()
+            return jsonify({"ok": True, "numero": numero})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha na solicitação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/solicitacoes/<int:solicitacao_id>")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimento_solicitacao(solicitacao_id: int):
+    """Uma solicitação com seus itens. Fora do alcance responde 404, nunca 403."""
+    from app.apps.erp.core.suprimentos import solicitacao as svc
+    with get_session() as s:
+        return jsonify({"ok": True,
+                        "solicitacao": svc.obter(s, solicitacao_id, _usuario_logado(s))})
+
+
+@bp.route("/erp/api/suprimentos/itens/<int:item_id>/situacao", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimento_situacao(item_id: int):
+    """Move o item pelo fluxo. Só quem enxerga o item pode mexer nele."""
+    from app.apps.erp.core.suprimentos import solicitacao as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            visiveis = {i["id"] for i in svc.listar_itens(s, atual)}
+            if item_id not in visiveis:
+                raise ErroNaoEncontrado("Item não encontrado.")
+            svc.mudar_situacao(s, item_id, d.get("status") or "", atual,
+                               d.get("observacao") or "")
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao mudar situação do item")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

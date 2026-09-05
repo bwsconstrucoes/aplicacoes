@@ -81,8 +81,21 @@ class SessaoFalsa:
     # -- leitura ------------------------------------------------------------
     def get(self, modelo, ident, options=None, with_for_update=None,
             populate_existing=False):
+        # A maioria dos modelos tem `id`, mas alguns têm chave própria
+        # (unidades_compra por `codigo`, parametros por `chave`). Sem olhar a
+        # chave real, o dublê não acha esses e o teste falha por motivo errado.
+        chaves = ["id"]
+        try:
+            chaves = [c.name for c in modelo.__table__.primary_key.columns] or ["id"]
+        except AttributeError:
+            pass
         for o in self.objetos:
-            if isinstance(o, modelo) and getattr(o, "id", None) == ident:
+            if not isinstance(o, modelo):
+                continue
+            if len(chaves) == 1 and getattr(o, chaves[0], None) == ident:
+                return o
+            if len(chaves) > 1 and isinstance(ident, (tuple, list)) and \
+                    tuple(getattr(o, c, None) for c in chaves) == tuple(ident):
                 return o
         return None
 

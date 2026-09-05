@@ -244,7 +244,11 @@ function abrirDecisao(id){
   api("/erp/api/config").then(d => {
     els("dec-conta").innerHTML = `<option value="">— escolha —</option>` +
       d.dados.categorias.map(c=>`<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("");
-  }).catch(() => { els("dec-conta").innerHTML = `<option value="">— não foi possível carregar —</option>`; });
+  }).catch(() => {
+    // Quem decide o cadastro é ADMIN ou diretor, que enxerga Configurações.
+    // Se um dia isso mudar, o aviso é melhor do que uma lista vazia sem razão.
+    els("dec-conta").innerHTML = `<option value="">— sem acesso ao plano de contas —</option>`;
+  });
   els("dec-salvar").addEventListener("click", () => decidir(id, {
     acao: "cadastrar", descricao: els("dec-descricao").value,
     unidade: els("dec-unidade").value,
