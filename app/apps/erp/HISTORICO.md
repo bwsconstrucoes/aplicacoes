@@ -42,10 +42,10 @@ Suprimentos**. Suíte: 836 sem banco, ~1.400 com banco.
    que não consegue mostrar os ajustes.
 6. **Suprimentos**: a fase 1 está pronta (migração 033) — cadastros, a regra
    das condições de pagamento, a tela Suprimentos › Cadastros e a carga por
-   CSV. Para trazer os 111 fornecedores e os 115 insumos, o dono exporta a aba
-   da planilha como CSV e usa a prévia antes de gravar. Falta ligar a
-   solicitação de cadastro de insumo à tela: a tabela existe, o fluxo não.
-   A fase 2 (solicitação de suprimentos) é o próximo passo.
+   CSV, mais o fluxo de cadastro de insumo (pedir → decidir → avisar). Para
+   trazer os 111 fornecedores e os 115 insumos, o dono exporta a aba da
+   planilha como CSV e usa a prévia antes de gravar. A fase 2 (solicitação de
+   suprimentos) é o próximo passo.
 7. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)

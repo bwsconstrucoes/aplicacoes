@@ -532,6 +532,62 @@ def api_condicao_pagamento():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/suprimentos/insumos/solicitacoes", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_suprimentos", POST="solicitar_suprimento")
+def api_solicitacoes_insumo():
+    """Pedir o cadastro de um insumo que ainda não existe, e ver os pedidos."""
+    from app.apps.erp.core.suprimentos import insumos as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                pendentes = str(request.args.get("pendentes") or "") in ("1", "true", "sim")
+                return jsonify({"ok": True,
+                                "solicitacoes": svc.listar(s, atual, pendentes)})
+            pedido = svc.solicitar(s, request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "id": pedido.id})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha no pedido de cadastro de insumo")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/insumos/solicitacoes/<int:solicitacao_id>",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_insumos")
+def api_decidir_solicitacao_insumo(solicitacao_id: int):
+    """Cadastrar ou recusar. O nome final, a categoria e a conta do plano são
+    de quem decide — é isso que mantém a base de insumos limpa."""
+    from app.apps.erp.core.suprimentos import insumos as svc
+    d = request.get_json(silent=True) or {}
+    acao = (d.get("acao") or "").strip().lower()
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if acao == "cadastrar":
+                insumo = svc.cadastrar(s, solicitacao_id, d, atual)
+                resposta = {"ok": True, "insumo_id": insumo.id, "codigo": insumo.codigo}
+            elif acao == "recusar":
+                svc.recusar(s, solicitacao_id, d.get("motivo") or "", atual)
+                resposta = {"ok": True}
+            else:
+                return jsonify({"ok": False,
+                                "erro": "Diga se é para cadastrar ou recusar."}), 400
+            s.commit()
+            return jsonify(resposta)
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao decidir cadastro de insumo")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/suprimentos/importar/<tipo>", methods=["POST"])
 @login_obrigatorio
 @permissao("administrar_insumos")
