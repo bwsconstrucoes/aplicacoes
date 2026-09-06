@@ -296,14 +296,92 @@ as regras; o que só o uso mostra está escrito abaixo.
 
 | Tela | O que faz |
 |---|---|
-| Suprimentos › Cadastros › Insumos | gestão tipo planilha: filtro à esquerda por categoria, unidade e grupo do plano, busca, ordenação por coluna, **edição na própria célula**, KPIs do que está incompleto (sem conta, sem unidade, sem preço) e exportação do que está na tela |
+| Suprimentos › Cadastros › Insumos | gestão tipo planilha: filtro à esquerda por categoria, unidade usual e grupo do plano, busca, ordenação por coluna, **edição na própria célula**, KPIs do que está incompleto (sem conta, sem preço) e exportação do que está na tela. **A unidade do cadastro é só sugestão** — ver §8.3 |
 | Suprimentos › Cadastros › Fornecedores | a mesma gestão para fornecedor: porte, região, canal, **o que ele vende** (a marcação que decide quem recebe cada cotação) e os contatos; KPIs de quem NÃO vai receber cotação |
 | Suprimentos › Cadastros › Categorias, unidades e pagamento | cadastra e desativa categoria de insumo e unidade de compra, cadastra condição de pagamento como regra, e decide os pedidos de cadastro de insumo (pedir → decidir → avisar) |
 | Suprimentos › Cadastros › Importações | carga por CSV das planilhas (com prévia) e os **dados de exemplo** para simular |
-| Suprimentos › Solicitações | pedido de material com obra **por item**, prioridade, previsão, as 15 situações com fluxo, filtro à esquerda, e a entrada assistida por IA (colar a lista). **É daqui que a cotação nasce**: filtra-se, marcam-se os itens e o botão abre o mapa já sugerindo quem vende aquelas categorias |
-| Suprimentos › Cotações | mapa com preço por célula, menor preço destacado, total com frete/desconto/acréscimo, leitura da proposta do fornecedor por IA, herança de preço de cotação anterior |
-| Suprimentos › Pedidos | fechamento do mapa ou direto, fila única de autorização com o mapa embutido, recusa parcial, previsão de pagamento, relatório por endereço de entrega e recebimento na obra |
+| Suprimentos › Solicitações | pedido de material com obra **por item**, prioridade, previsão, as 15 situações com fluxo, filtro à esquerda, e a entrada assistida por IA (colar a lista). **É daqui que a cotação nasce**: filtra-se, marcam-se os itens e o botão abre o mapa já sugerindo quem vende aquelas categorias. O comprador **corrige o item** com motivo obrigatório — ver §8.3 |
+| Suprimentos › Cotações | mapa **em formato de planilha** (denso, zebrado, coluna do insumo fixa na rolagem) com preço por célula, **menor preço da linha em verde**, **a situação de cada insumo colorida ao lado dele**, total com frete/desconto/acréscimo, leitura da proposta do fornecedor por IA, herança de preço de cotação anterior, disparo por e-mail e correção do item pelo lápis da linha |
+| Suprimentos › Pedidos | fechamento do mapa ou direto, fila única de autorização com o mapa embutido, recusa parcial, previsão de pagamento, **o pedido enviado por e-mail ao fornecedor** (com preço, condição de pagamento e endereço de entrega — ver §8.1.2) e recebimento na obra |
 | Suprimentos › Banco de preços | histórico de cotado e comprado, com último, menor, maior, média e o último comprado |
+
+### 8.1.0 As cores das situações
+
+Vêm da **formatação condicional da coluna de status** da planilha "Registro de
+Suprimentos" (aba Insumos, coluna L) — lidas do arquivo, não escolhidas. A
+equipe lê a planilha pela cor antes de ler o texto.
+
+Onde ficam: bloco `.sit-` em `app/apps/erp/static/erp.css`, uma linha por
+situação. **Para trocar uma cor é ali e em lugar nenhum mais** — a lista de
+Solicitações, o filtro da esquerda e o mapa de cotação usam a mesma classe.
+
+Como foram lidas, se precisar repetir: a planilha principal é grande demais
+para o conector exportar; a cópia "Registro de Suprimentos (Natan)" exporta e
+carrega a mesma formatação. Baixada como `.xlsx` e lida com `openpyxl`
+(`ws.conditional_formatting`). O texto puro do Google **não** traz cor de
+célula.
+
+⚠️ **AUTORIZAÇÃO é a única cor inventada** — aquela cópia não tem esse status.
+Duas outras escolhas nossas: letra branca nos quatro fundos escuros (preta ali
+não se lê) e CANCELADO riscado (a planilha deixa a linha inteira branca, o que
+não cabe numa etiqueta).
+
+### 8.1.1 Duas regras que o dono pediu em 06/09/2026
+
+**A unidade de medida NÃO é do insumo — é do pedido.** O cadastro guarda uma
+"unidade usual", que serve só como sugestão preenchida sozinha ao escolher o
+insumo. O motivo, nas palavras dele: cerâmica normalmente se compra por metro
+quadrado, mas um dia vem por caixa; cimento normalmente é saco, mas um dia é
+bag. Travar o insumo numa unidade obrigaria a criar um insumo para cada
+variação. Pelo mesmo motivo o catálogo é **genérico** e o detalhe vai no campo
+de **especificação**, em texto livre.
+
+**O comprador corrige o item da solicitação, com motivo obrigatório.** A obra
+erra a unidade, escreve mal a especificação, confunde um insumo com o vizinho.
+O botão está na lista de Solicitações e no lápis da linha do mapa. Regras:
+
+| Regra | Por quê |
+|---|---|
+| Motivo obrigatório, com o que era → o que passou a ser, quem e quando | correção sem assinatura vira "eu não pedi isso" duas semanas depois |
+| Recusada depois do pedido de compra emitido, com recebimento lançado, ou com o item preso a um pedido em pé | o fornecedor recebeu uma coisa; o sistema não pode passar a dizer outra |
+| Trocar insumo ou unidade **apaga os preços daquela linha** no mapa aberto, avisando | eram preços de outra coisa; deixá-los fecharia a compra pelo preço errado |
+| Mapa já fechado não é tocado | mapa fechado é histórico |
+| A tela não oferece o botão onde a regra vai negar | há teste percorrendo as 15 situações exigindo que as duas concordem |
+
+O registro sai da trilha de auditoria (`eventos`, ação `CORRIGIDO`) — não há
+registro paralelo que possa divergir. Na lista, a linha ganha a marca
+"corrigido N×"; clicando, abre-se o histórico.
+
+### 8.1.2 Os dois documentos que o fornecedor recebe (06/09/2026)
+
+A cotação PERGUNTA preço; o pedido FECHA. São documentos diferentes de
+propósito, e os dois saem por e-mail pela conta da empresa da obra
+(`core/suprimentos/envio.montar_mensagem` e `.montar_pedido`).
+
+| | Cotação | Pedido de compra |
+|---|---|---|
+| Item com **especificação** | sim | sim |
+| Quantidade e unidade | sim | sim |
+| **Endereço de entrega**, por obra | sim | sim |
+| Preço unitário, frete, desconto, TOTAL | **nunca** | sim |
+| Condição de pagamento | pede que informem | a acertada, por extenso |
+| Prazo | retorno até | material em obra até |
+| CNPJ e endereço da empresa | sim | sim |
+
+Por que o endereço entra na cotação: o frete depende da distância. Itens de
+obras diferentes saem em blocos separados e a numeração dos itens não
+reinicia, porque o fornecedor cita o número na proposta. Obra sem endereço
+cadastrado diz "Endereço não informado" em vez de sair em branco.
+
+Por que o preço NÃO entra na cotação: seria entregar ao fornecedor A o preço
+do fornecedor B. Por que entra no pedido: é o que impede a discussão de nota
+com valor diferente do combinado.
+
+**Só sai pedido AUTORIZADO** — mandar antes é comprar sem alçada. A tela mostra
+o documento de qualquer jeito, mas o botão fica desligado com o motivo escrito.
+O endereço de entrega das duas telas vem do mesmo lugar
+(`core/suprimentos/entrega.py`): se a obra ganhar um campo de endereço novo,
+os dois documentos mudam juntos.
 
 ### 8.2 O que falta, e por quê
 

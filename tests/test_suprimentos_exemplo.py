@@ -85,6 +85,16 @@ def test_toda_solicitacao_diz_de_qual_obra_veio():
             f"{titulo} está sem o código da obra"
 
 
+def test_o_e_mail_do_fornecedor_de_exemplo_e_um_endereco_valido():
+    """"Aços Exemplo" virava "cotacao@açosexemplo.exemplo", que não é endereço
+    de e-mail nenhum — e o disparo da cotação recusaria na cara do dono."""
+    from app.apps.erp.core.comum.email import endereco_valido
+    for razao, fantasia, *_resto in svc.FORNECEDORES:
+        endereco = f"cotacao@{svc._apelido(fantasia)}.exemplo"
+        assert endereco.isascii(), f"{razao}: {endereco} tem caractere fora do ASCII"
+        assert endereco_valido(endereco), f"{razao}: {endereco} não é endereço"
+
+
 def test_o_fornecedor_de_exemplo_se_identifica_como_exemplo():
     """Eles são fictícios de propósito, e a tela precisa deixar isso óbvio —
     senão alguém manda cotação de verdade para um CNPJ que não existe."""

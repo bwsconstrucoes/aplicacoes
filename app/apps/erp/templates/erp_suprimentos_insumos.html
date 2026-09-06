@@ -19,7 +19,7 @@
   </div>
 
   <div class="filtro aberto">
-    <button class="filtro-cab" type="button"><span>Unidade</span>
+    <button class="filtro-cab" type="button"><span>Unidade usual</span>
       <span class="filtro-badge" id="badge-unidade">0</span><span class="seta">▾</span></button>
     <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-unidade"></div></div>
   </div>
@@ -40,7 +40,7 @@
       <label class="opcao"><input type="checkbox" id="f-sem-conta">
         <span class="rotulo">Sem conta do plano</span></label>
       <label class="opcao"><input type="checkbox" id="f-sem-unidade">
-        <span class="rotulo">Sem unidade</span></label>
+        <span class="rotulo">Sem unidade usual</span></label>
       <label class="opcao"><input type="checkbox" id="f-sem-preco">
         <span class="rotulo">Sem preço no banco de preços</span></label>
     </div>
@@ -56,14 +56,14 @@
   <div class="tabela-barra">
     <span class="resumo" id="resumo"></span>
     <span class="espaco"></span>
-    <button class="btn secundario" id="btn-csv">⤓ Exportar o que está na tela</button>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn" id="btn-novo">+ Novo insumo</button>
   </div>
   <div class="tabela-rolagem">
     <table><thead><tr>
       <th data-ordem="codigo">Código</th>
       <th data-ordem="descricao">Insumo</th>
-      <th data-ordem="unidade">Un.</th>
+      <th data-ordem="unidade" title="Unidade sugerida. Cada pedido escolhe a sua.">Un. usual</th>
       <th data-ordem="categoria_insumo">Categoria</th>
       <th data-ordem="conta_codigo">Conta do plano financeiro</th>
       <th class="direita" data-ordem="ultimo_preco">Último preço</th>
@@ -202,10 +202,10 @@ function desenhar(){
       <div class="kpi-rotulo">Sem conta do plano</div>
       <div class="kpi-valor">${k.sem_conta || 0}</div>
       <div class="kpi-sub">não viram previsão de pagamento</div></button>
-    <button class="kpi ${els("f-sem-unidade").checked ? "ativo" : ""} ambar" data-pendencia="f-sem-unidade">
-      <div class="kpi-rotulo">Sem unidade</div>
+    <button class="kpi ${els("f-sem-unidade").checked ? "ativo" : ""} ciano" data-pendencia="f-sem-unidade">
+      <div class="kpi-rotulo">Sem unidade usual</div>
       <div class="kpi-valor">${k.sem_unidade || 0}</div>
-      <div class="kpi-sub">cotação sai sem "em quê"</div></button>
+      <div class="kpi-sub">não impede pedir: a unidade se escolhe no pedido</div></button>
     <button class="kpi ${els("f-sem-preco").checked ? "ativo" : ""} ciano" data-pendencia="f-sem-preco">
       <div class="kpi-rotulo">Com preço conhecido</div>
       <div class="kpi-valor">${k.com_preco || 0}</div>
@@ -413,7 +413,9 @@ async function novoInsumo(){
   if (!categoria) return;
 
   const unidade = await escolherDaLista({
-    titulo: "Unidade de compra",
+    // Unidade USUAL, não obrigatória: cimento costuma vir em saco, mas um dia
+    // vem em bag. Quem pede escolhe a unidade daquele pedido.
+    titulo: "Unidade usual (só a sugestão — pode pular)",
     itens: D.unidades.filter(u => u.ativo)
                      .map(u => ({id: u.codigo, rotulo: `${u.codigo} · ${u.descricao}`}))});
   if (unidade === null) return;
@@ -437,7 +439,7 @@ function abrirFicha(id){
   els("dlg-titulo").textContent = `${i.codigo} — ${i.descricao}`;
   els("dlg-corpo").innerHTML = `
     <div id="ficha-msg"></div>
-    <div class="cartao-dica">Categoria, unidade e conta se corrigem clicando na
+    <div class="cartao-dica">Categoria, unidade usual e conta se corrigem clicando na
       própria célula da tabela. Aqui ficam as marcações do item.</div>
     <div style="margin-top:12px; display:flex; flex-direction:column; gap:10px">
       <label class="opcao"><input type="checkbox" id="fi-ativo" ${i.ativo ? "checked" : ""}>
@@ -462,17 +464,6 @@ function abrirFicha(id){
   els("dlg").showModal();
 }
 
-function exportar(){
-  const l = visiveis();
-  const linhas = [["Código", "Insumo", "Unidade", "Categoria", "Conta", "Último preço", "Ativo"]]
-    .concat(l.map(i => [i.codigo, i.descricao, i.unidade, i.categoria_insumo, i.conta,
-                        i.ultimo_preco ?? "", i.ativo ? "sim" : "não"]));
-  const csv = linhas.map(l => l.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob(["﻿" + csv], {type: "text/csv;charset=utf-8"}));
-  a.download = "insumos.csv";
-  a.click();
-}
 
 ["f-busca", "f-inativos", "f-locavel", "f-sem-conta", "f-sem-unidade", "f-sem-preco"]
   .forEach(id => els(id).addEventListener("input", () => { LIMITE = 200; desenhar(); }));
@@ -485,7 +476,8 @@ els("btn-limpar").addEventListener("click", () => {
   LIMITE = 200; montarFiltros(); desenhar();
 });
 els("btn-novo").addEventListener("click", novoInsumo);
-els("btn-csv").addEventListener("click", exportar);
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 if (!PODE_EDITAR) els("btn-novo").style.display = "none";
 
 carregar();

@@ -253,6 +253,7 @@ def listar_itens(s: Session, usuario: Usuario, *, status: Optional[str] = None,
     if obra_id:
         itens = [i for i in itens if i.obra_id == int(obra_id)]
 
+    correcoes = _quantas_correcoes(s)
     saida = []
     for i in sorted(itens, key=lambda x: (x.solicitacao_id or 0, x.numero or 0)):
         sol = s.get(SuprimentoSolicitacao, i.solicitacao_id)
@@ -278,6 +279,10 @@ def listar_itens(s: Session, usuario: Usuario, *, status: Optional[str] = None,
             "obra": getattr(obra, "codigo", ""), "obra_id": i.obra_id,
             "status": i.status.value, "status_rotulo": ROTULOS_STATUS[i.status],
             "proximas": [x.value for x in FLUXO.get(i.status, ()) + DE_QUALQUER_LUGAR],
+            # Quantas vezes o comprador já corrigiu esta linha. A marca na tela
+            # é o que evita a discussão de "eu não pedi isso".
+            "correcoes": correcoes.get(i.id, 0),
+            "corrigivel": pode_corrigir(s, i),
         }
         if busca:
             alvo = busca.lower()
@@ -311,3 +316,224 @@ def obter(s: Session, solicitacao_id: int, usuario: Usuario) -> dict[str, Any]:
         "itens": [x for x in listar_itens(s, usuario)
                   if x["solicitacao_id"] == solicitacao_id],
     }
+
+
+# ---------------------------------------------------------------------------
+# Correção do item pelo comprador
+#
+# A obra pede errado: unidade trocada, especificação mal escrita, o insumo
+# vizinho no lugar do certo. Hoje isso volta por telefone e o pedido fica
+# parado. Quem recebe é quem tem condição de corrigir — mas correção sem
+# assinatura vira "eu não pedi isso": por isso o MOTIVO é obrigatório e tudo
+# fica gravado (o que era, o que passou a ser, quem mudou e quando), do mesmo
+# jeito que a planilha já escreve hoje.
+# ---------------------------------------------------------------------------
+
+# Depois que o pedido de compra saiu, corrigir aqui faria o pedido mentir: o
+# fornecedor já recebeu uma coisa e o sistema passaria a dizer outra.
+CORRECAO_TARDE_DEMAIS = {
+    StatusItemSuprimento.PEDIDO_EMITIDO,
+    StatusItemSuprimento.AGUARDANDO_COLETA,
+    StatusItemSuprimento.AGUARDANDO_ENTREGA,
+    StatusItemSuprimento.EM_TRANSITO,
+    StatusItemSuprimento.ENTREGUE,
+    StatusItemSuprimento.RECEBIDO,
+    StatusItemSuprimento.CANCELADO,
+}
+
+# Trocar QUALQUER um destes muda o que está sendo comprado — os preços já
+# digitados no mapa passam a ser de outra coisa.
+MUDA_O_QUE_SE_COMPRA = ("insumo_id", "unidade")
+
+CAMPOS_CORRIGIVEIS = ("insumo_id", "especificacao", "quantidade", "unidade", "obra_id")
+
+ROTULOS_CAMPOS = {
+    "insumo_id": "insumo", "especificacao": "especificação",
+    "quantidade": "quantidade", "unidade": "unidade", "obra_id": "obra",
+}
+
+
+def editar_item(s: Session, item_id: int, dados: dict[str, Any],
+                usuario: Usuario) -> dict[str, Any]:
+    """Corrige um item da solicitação, exigindo motivo e deixando registro.
+
+    Devolve o que mudou e os avisos — entre eles, o que foi apagado do mapa
+    de cotação quando a correção mudou o material ou a unidade.
+    """
+    item = s.get(SuprimentoItem, item_id, with_for_update=True, populate_existing=True)
+    if item is None:
+        raise ErroNaoEncontrado("Item não encontrado.")
+
+    motivo = " ".join((dados.get("motivo") or "").split())
+    if len(motivo) < 5:
+        raise ErroValidacao(
+            "Escreva o motivo da correção (ex.: 'unidade trocada na obra'). "
+            "É o que explica a mudança para quem pediu.")
+
+    if item.status in CORRECAO_TARDE_DEMAIS:
+        raise ErroValidacao(
+            f"Este item já está em {ROTULOS_STATUS[item.status]} — corrigir "
+            f"agora faria o pedido de compra dizer uma coisa e o sistema outra. "
+            f"Cancele o item e abra outro, ou trate como pendência.")
+    if (item.quantidade_recebida or Decimal(0)) > 0:
+        raise ErroValidacao(
+            "Já houve recebimento neste item. Corrigir agora bagunçaria o "
+            "saldo do que falta chegar.")
+    if _tem_pedido_vivo(s, item.id):
+        raise ErroValidacao(
+            "Este item já entrou num pedido de compra que está em pé. "
+            "Recuse ou cancele o pedido antes de corrigir.")
+
+    mudancas = _aplicar_correcao(s, item, dados)
+    if not mudancas:
+        raise ErroValidacao("Nada foi alterado.")
+
+    avisos = []
+    if any(c in mudancas for c in MUDA_O_QUE_SE_COMPRA):
+        apagados = _apagar_precos_do_mapa(s, item.id)
+        if apagados:
+            avisos.append(
+                f"{apagados} preço(s) já digitado(s) no mapa foram apagados: "
+                f"eram de outro material/unidade. Peça a cotação de novo.")
+
+    registrar_evento(s, "suprimento_item", item.id, "CORRIGIDO",
+                     {"motivo": motivo, "mudancas": mudancas,
+                      "situacao": item.status.value},
+                     usuario.id if usuario else None)
+    return {"mudancas": mudancas, "avisos": avisos, "motivo": motivo}
+
+
+def _aplicar_correcao(s: Session, item: SuprimentoItem,
+                      dados: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Só mexe no que veio na correção. Campo ausente fica como está — senão
+    corrigir a unidade apagaria a especificação sem ninguém pedir."""
+    mudancas: dict[str, dict[str, Any]] = {}
+
+    if "insumo_id" in dados and dados["insumo_id"]:
+        novo = s.get(Insumo, int(dados["insumo_id"]))
+        if novo is None:
+            raise ErroValidacao("Insumo não encontrado.")
+        if novo.id != item.insumo_id:
+            antigo = s.get(Insumo, item.insumo_id)
+            mudancas["insumo_id"] = {"de": getattr(antigo, "descricao", item.insumo_id),
+                                     "para": novo.descricao}
+            item.insumo_id = novo.id
+
+    if "unidade" in dados:
+        unidade = (dados.get("unidade") or "").strip().upper()
+        if not unidade:
+            raise ErroValidacao("Informe a unidade.")
+        if s.get(UnidadeCompra, unidade) is None:
+            raise ErroValidacao(f"A unidade {unidade} não existe no cadastro.")
+        if unidade != item.unidade:
+            mudancas["unidade"] = {"de": item.unidade, "para": unidade}
+            item.unidade = unidade
+
+    if "quantidade" in dados:
+        quantidade = _decimal(dados.get("quantidade"), "Quantidade")
+        if quantidade <= 0:
+            raise ErroValidacao("Quantidade tem de ser maior que zero.")
+        if quantidade != item.quantidade:
+            mudancas["quantidade"] = {"de": str(item.quantidade), "para": str(quantidade)}
+            item.quantidade = quantidade
+
+    if "especificacao" in dados:
+        especificacao = " ".join((dados.get("especificacao") or "").split()) or None
+        if especificacao != item.especificacao:
+            mudancas["especificacao"] = {"de": item.especificacao, "para": especificacao}
+            item.especificacao = especificacao
+
+    if "obra_id" in dados and dados["obra_id"]:
+        obra = s.get(Obra, int(dados["obra_id"]))
+        if obra is None:
+            raise ErroValidacao("Obra não encontrada.")
+        if obra.id != item.obra_id:
+            antiga = s.get(Obra, item.obra_id)
+            mudancas["obra_id"] = {"de": getattr(antiga, "codigo", item.obra_id),
+                                   "para": obra.codigo}
+            item.obra_id = obra.id
+
+    return mudancas
+
+
+def _tem_pedido_vivo(s: Session, item_id: int) -> bool:
+    """A reserva existe enquanto o pedido está em pé. É ela que impede o mesmo
+    item de entrar em dois pedidos — e serve aqui pela mesma razão."""
+    from app.apps.erp.db.models.cadastros import PedidoItemReserva
+    return s.get(PedidoItemReserva, item_id) is not None
+
+
+def _apagar_precos_do_mapa(s: Session, item_id: int) -> int:
+    """Tira do mapa os preços deste item quando o material ou a unidade muda.
+
+    Deixar o preço ali seria pior que apagar: alguém fecharia a compra pelo
+    preço de outra coisa. O que foi apagado fica no evento da correção.
+    """
+    from app.apps.erp.db.models.cadastros import (
+        Cotacao, CotacaoItem, CotacaoPreco, StatusCotacao,
+    )
+    abertas = {c.id for c in s.scalars(select(Cotacao)).all()
+               if c.status is StatusCotacao.ABERTA}
+    linhas = {ci.id for ci in s.scalars(select(CotacaoItem)).all()
+              if ci.suprimento_item_id == item_id and ci.cotacao_id in abertas}
+    if not linhas:
+        return 0
+    apagados = 0
+    for preco in list(s.scalars(select(CotacaoPreco)).all()):
+        if preco.cotacao_item_id in linhas:
+            s.delete(preco)
+            apagados += 1
+    return apagados
+
+
+def historico_do_item(s: Session, item_id: int) -> list[dict[str, Any]]:
+    """As correções deste item, em português, para aparecer na ficha.
+
+    Sai da trilha de auditoria — não há registro paralelo que possa divergir.
+    """
+    from sqlalchemy import text
+    linhas = s.execute(
+        text("SELECT e.criado_em, u.nome, e.detalhe FROM eventos e "
+             "LEFT JOIN usuarios u ON u.id = e.usuario_id "
+             "WHERE e.entidade_tipo = 'suprimento_item' AND e.entidade_id = :i "
+             "AND e.acao = 'CORRIGIDO' ORDER BY e.criado_em"),
+        {"i": item_id}).all()
+    saida = []
+    for quando, quem, detalhe in linhas:
+        detalhe = detalhe if isinstance(detalhe, dict) else {}
+        saida.append({
+            "quando": quando.isoformat() if quando is not None else None,
+            "quem": quem or "—",
+            "motivo": detalhe.get("motivo") or "",
+            "mudancas": [
+                f"{ROTULOS_CAMPOS.get(campo, campo)}: "
+                f"{v.get('de') if v.get('de') not in (None, '') else '—'} → "
+                f"{v.get('para') if v.get('para') not in (None, '') else '—'}"
+                for campo, v in (detalhe.get("mudancas") or {}).items()
+            ],
+        })
+    return saida
+
+
+def _quantas_correcoes(s: Session) -> dict[int, int]:
+    """Quantas vezes cada item já foi corrigido — uma consulta só, para a lista
+    poder mostrar a marca sem uma ida ao banco por linha."""
+    from sqlalchemy import text
+    try:
+        linhas = s.execute(
+            text("SELECT entidade_id, COUNT(*) FROM eventos "
+                 "WHERE entidade_tipo = 'suprimento_item' AND acao = 'CORRIGIDO' "
+                 "GROUP BY entidade_id")).all()
+    except Exception:                                   # pragma: no cover
+        return {}
+    return {int(i): int(q) for i, q in linhas}
+
+
+def pode_corrigir(s: Session, item: SuprimentoItem) -> bool:
+    """A mesma regra que `editar_item` aplica, para a tela não oferecer um
+    botão que o servidor vai recusar."""
+    if item.status in CORRECAO_TARDE_DEMAIS:
+        return False
+    if (item.quantidade_recebida or Decimal(0)) > 0:
+        return False
+    return not _tem_pedido_vivo(s, item.id)

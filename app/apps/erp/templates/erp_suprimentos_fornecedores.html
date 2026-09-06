@@ -60,7 +60,7 @@
   <div class="tabela-barra">
     <span class="resumo" id="resumo"></span>
     <span class="espaco"></span>
-    <button class="btn secundario" id="btn-csv">⤓ Exportar o que está na tela</button>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn" id="btn-novo">+ Novo fornecedor</button>
   </div>
   <div class="tabela-rolagem">
@@ -434,19 +434,6 @@ async function novoFornecedor(){
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
-function exportar(){
-  const l = visiveis();
-  const linhas = [["Razão social", "Fantasia", "CNPJ/CPF", "Cidade", "UF", "Porte",
-                   "Regiões", "Categorias", "E-mail", "Telefone", "Ativo"]]
-    .concat(l.map(f => [f.razao_social, f.nome_fantasia, f.cnpj_cpf, f.municipio, f.uf,
-                        f.porte_rotulo, f.regioes.join(" / "), f.categorias.join(" / "),
-                        f.email, f.telefone, f.ativo ? "sim" : "não"]));
-  const csv = linhas.map(l => l.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob(["﻿" + csv], {type: "text/csv;charset=utf-8"}));
-  a.download = "fornecedores.csv";
-  a.click();
-}
 
 ["f-busca", "f-inativos", "f-sem-categoria", "f-sem-contato", "f-sem-email"]
   .forEach(id => els(id).addEventListener("input", () => { LIMITE = 200; desenhar(); }));
@@ -459,7 +446,8 @@ els("btn-limpar").addEventListener("click", () => {
   LIMITE = 200; montarFiltros(); desenhar();
 });
 els("btn-novo").addEventListener("click", novoFornecedor);
-els("btn-csv").addEventListener("click", exportar);
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 if (!PODE_EDITAR) els("btn-novo").style.display = "none";
 
 carregar();

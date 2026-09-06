@@ -51,6 +51,7 @@
   <div class="tabela-barra">
     <span class="resumo" id="resumo"></span>
     <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <span id="acoes-lote" class="oculto" style="display:flex; gap:8px; align-items:center">
       <button class="btn" id="btn-cotar">Gerar cotação com os selecionados</button>
     </span>
@@ -125,7 +126,7 @@ function montarFiltros(){
   els("opcoes-status").innerHTML = BASE.situacoes.map(s => `
     <label class="opcao"><input type="checkbox" data-status="${s.chave}"
       ${F.status.has(s.chave) ? "checked" : ""}>
-      <span class="rotulo">${s.rotulo}</span>
+      <span class="rotulo">${selo(s.chave, s.rotulo)}</span>
       <span class="qtd">${porStatus[s.chave] || 0}</span></label>`).join("")
     || `<div class="cartao-dica">nenhum item ainda</div>`;
   els("badge-status").textContent = F.status.size;
@@ -219,7 +220,9 @@ function desenhar(){
       <td>${JA_COTADOS.has(i.status) ? "" :
         `<input type="checkbox" data-marca="${i.id}" ${MARCADOS.has(i.id) ? "checked" : ""}>`}</td>
       <td><b>${i.solicitacao}</b><br><small>${i.titulo}</small></td>
-      <td class="desc">${i.insumo}${i.especificacao ? `<small>${i.especificacao}</small>` : ""}</td>
+      <td class="desc">${i.insumo}${i.especificacao ? `<small>${i.especificacao}</small>` : ""}
+        ${i.correcoes ? `<small class="corrigido" data-hist="${i.id}"
+          title="Clique para ver o que mudou, por quem e por quê">corrigido ${i.correcoes}×</small>` : ""}</td>
       <td class="direita dados">${quantidadeBR(i.quantidade)} ${i.unidade}
         ${Number(i.quantidade_recebida) > 0
           ? `<br><small>recebido ${quantidadeBR(i.quantidade_recebida)}</small>` : ""}</td>
@@ -227,8 +230,12 @@ function desenhar(){
       <td>${ROTULO_PRIORIDADE[i.prioridade] || i.prioridade}</td>
       <td class="dados ${i.previsao_entrega && i.previsao_entrega < hoje ? "atrasado" : ""}"
         >${dataBR(i.previsao_entrega)}</td>
-      <td>${i.status_rotulo}</td>
-      <td class="direita">${i.proximas.length ? `
+      <td>${selo(i.status, i.status_rotulo)}</td>
+      <td class="direita" style="white-space:nowrap">
+        ${PODE_COTAR && i.corrigivel ? `<button class="btn secundario" data-corrigir="${i.id}"
+          title="Corrigir o que a obra pediu — exige motivo e fica registrado"
+          style="padding:4px 8px; font-size:12px">corrigir</button>` : ""}
+        ${i.proximas.length ? `
         <select data-mover="${i.id}" style="min-width:150px">
           <option value="">mover para…</option>
           ${i.proximas.map(p => `<option value="${p}">${rotuloSituacao(p)}</option>`).join("")}
@@ -254,6 +261,11 @@ function desenhar(){
       } catch(e){ aviso("mensagem", e.message, "erro"); sel.value = ""; }
     }));
 
+  document.querySelectorAll("[data-corrigir]").forEach(b =>
+    b.addEventListener("click", () => corrigirItem(+b.dataset.corrigir)));
+  document.querySelectorAll("[data-hist]").forEach(m =>
+    m.addEventListener("click", () => verHistorico(+m.dataset.hist)));
+
   els("acoes-lote").classList.toggle("oculto", !(PODE_COTAR && MARCADOS.size));
   els("resumo").innerHTML = `<b>${l.length}</b> item(ns) · ` +
     `<b>${MARCADOS.size}</b> selecionado(s)`;
@@ -269,6 +281,71 @@ els("marca-todos").addEventListener("change", ev => {
   ev.target.checked ? l.forEach(i => MARCADOS.add(i.id)) : MARCADOS.clear();
   desenhar();
 });
+
+// ---------------------------------------------------------------------------
+// Correção do pedido pelo comprador
+//
+// A obra erra: pede em saco o que vem em bag, escreve o material errado,
+// confunde um insumo com o vizinho. Hoje isso volta por telefone e o pedido
+// fica parado. Quem recebe corrige — mas correção sem assinatura vira "eu não
+// pedi isso": o MOTIVO é obrigatório e tudo fica gravado.
+// ---------------------------------------------------------------------------
+async function corrigirItem(id){
+  const i = ITENS.find(x => x.id === id);
+  if (!i) return;
+  const d = await perguntar({
+    titulo: `Corrigir ${i.solicitacao} · item ${i.numero}`,
+    textoOk: "Corrigir e registrar",
+    aviso: "Fica gravado o que era, o que passou a ser, quem mudou e quando. " +
+           "Se o material ou a unidade mudar, os preços já digitados no mapa " +
+           "desta linha são apagados — eram de outra coisa.",
+    campos: [
+      {nome: "insumo_id", rotulo: "Insumo", tipo: "select", largura: 3,
+       valor: String(i.insumo_id),
+       opcoes: BASE.insumos.map(x => ({valor: String(x.id), rotulo: x.descricao}))},
+      {nome: "especificacao", rotulo: "Especificação", largura: 2,
+       valor: i.especificacao || "", exemplo: "ex.: CP-II 50kg, cinza"},
+      {nome: "quantidade", rotulo: "Quantidade", largura: 1,
+       valor: quantidadeBR(i.quantidade)},
+      {nome: "unidade", rotulo: "Unidade", tipo: "select", largura: 1,
+       valor: i.unidade,
+       opcoes: BASE.unidades.map(u => ({valor: u.codigo,
+                                        rotulo: `${u.codigo} · ${u.descricao}`}))},
+      {nome: "obra_id", rotulo: "Obra que recebe", tipo: "select", largura: 2,
+       valor: String(i.obra_id),
+       opcoes: BASE.obras.map(o => ({valor: String(o.id), rotulo: rotuloObra(o)}))},
+      {nome: "motivo", rotulo: "Motivo da correção", tipo: "textarea", linhas: 2,
+       obrigatorio: true, largura: 3,
+       exemplo: "ex.: material solicitado errado — a obra queria CP-V"}]});
+  if (!d) return;
+  try {
+    const r = await api(`/erp/api/suprimentos/itens/${id}`, {method: "PATCH",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(d)});
+    const quantos = Object.keys(r.mudancas || {}).length;
+    aviso("mensagem", `${quantos} campo(s) corrigido(s) e registrado(s).` +
+      (r.avisos && r.avisos.length ? " " + r.avisos.join(" ") : ""),
+      r.avisos && r.avisos.length ? "alerta" : "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function verHistorico(id){
+  const i = ITENS.find(x => x.id === id) || {};
+  try {
+    const r = await api(`/erp/api/suprimentos/itens/${id}/historico`);
+    els("dlg-titulo").textContent = `Correções de ${i.solicitacao || ""} · ${i.insumo || ""}`;
+    els("dlg-corpo").innerHTML = r.historico.length ? r.historico.map(h => `
+      <div class="cartao-dica" style="margin-bottom:8px">
+        <b>${momentoBR(h.quando)}</b> — ${escapar(h.quem)}<br>
+        <i>${escapar(h.motivo)}</i>
+        <ul style="margin:6px 0 0 16px">
+          ${h.mudancas.map(m => `<li>${escapar(m)}</li>`).join("")}
+        </ul>
+      </div>`).join("")
+      : `<div class="cartao-dica">Nenhuma correção registrada.</div>`;
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
 
 // ---------------------------------------------------------------------------
 // Cotação a partir daqui
@@ -398,6 +475,7 @@ function linhaDeItem(n){
     <td><input class="it-espec" placeholder="ex.: 6mm, cinza" style="min-width:130px"></td>
     <td><input class="it-qtd" inputmode="decimal" style="width:80px"></td>
     <td><select class="it-un" style="width:90px">
+      <option value="">— un. —</option>
       ${BASE.unidades.map(u => `<option value="${u.codigo}">${u.codigo}</option>`).join("")}
     </select></td>
     <td><select class="it-obra" style="min-width:170px">
@@ -431,7 +509,8 @@ function abrirNovo(){
     <div class="cartao-dica" style="margin-top:10px">Uma mesma solicitação pode
       pedir material para <b>obras diferentes</b> — a obra é de cada item.</div>
     <table style="margin-top:10px"><thead><tr>
-      <th>#</th><th>Insumo</th><th>Especificação</th><th>Qtd</th><th>Un.</th>
+      <th>#</th><th>Insumo</th><th>Especificação</th><th>Qtd</th>
+      <th title="A unidade é deste pedido. O cadastro só sugere.">Un.</th>
       <th>Obra</th><th></th></tr></thead>
       <tbody id="ns-itens">${linhaDeItem(1)}</tbody></table>
     <div style="margin-top:10px; display:flex; gap:8px">
@@ -457,8 +536,9 @@ function ligarLinhas(){
     b.closest("tr").remove();
     [...corpo.children].forEach((tr, i) => tr.firstElementChild.textContent = i + 1);
   });
-  // Escolher o insumo já traz a unidade do cadastro — quem pede não deveria
-  // ter de lembrar se cimento é saco ou quilo.
+  // Escolher o insumo SUGERE a unidade usual do cadastro — mas não trava:
+  // cimento costuma vir em saco e um dia vem em bag, cerâmica costuma ir por
+  // metro quadrado e um dia vai por caixa. Quem pede troca na hora.
   document.querySelectorAll(".it-insumo").forEach(sel => {
     sel.onchange = () => {
       const un = sel.selectedOptions[0]?.dataset.unidade;
@@ -577,5 +657,8 @@ els("btn-limpar").addEventListener("click", () => {
 });
 
 carregarBase().then(carregar).catch(e => aviso("mensagem", e.message, "erro"));
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}

@@ -56,7 +56,6 @@ MODULOS = [
             ("confirmar", "Confirmar", "erp.pagina_confirmar"),
             ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
             ("empreitas", "Empreitas", "erp.pagina_empreitas"),
-            ("locacoes", "Locações", "erp.pagina_locacoes"),
             ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
             ("receber", "Receber", "erp.pagina_receber"),
             ("relatorios", "Relatórios", "erp.pagina_relatorios"),
@@ -88,6 +87,7 @@ MODULOS = [
             ("sup_solicitacoes", "Solicitações", "erp.pagina_suprimentos"),
             ("sup_cotacoes", "Cotações", "erp.pagina_suprimentos_cotacoes"),
             ("sup_pedidos", "Pedidos", "erp.pagina_suprimentos_pedidos"),
+            ("locacoes", "Locações", "erp.pagina_locacoes"),
             ("sup_precos", "Banco de preços", "erp.pagina_suprimentos_precos"),
             ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_insumos"),
         ],
@@ -98,6 +98,7 @@ MODULOS = [
         "cor": "var(--roxo)",
         "abas": [
             ("config", "Configurações", "erp.pagina_config"),
+            ("empresas", "Empresas", "erp.pagina_empresas"),
         ],
     },
 ]
@@ -421,11 +422,27 @@ def pagina_empreitas():
     return render_template("erp_empreitas.html", **_contexto("empreitas"))
 
 
-@bp.route("/erp/locacoes")
+@bp.route("/erp/suprimentos/locacoes")
 @login_obrigatorio
 @permissao("ver_erp")
 def pagina_locacoes():
+    """Locação de equipamento vive em SUPRIMENTOS, e não no financeiro.
+
+    Quem demanda a locação é a obra, e quem atende é suprimentos — que resolve
+    a mesma necessidade de três formas: remanejando o que já existe, comprando
+    ou locando. A obrigação de pagar continua sendo do financeiro: a parcela
+    vira título lá, e os dois lados se enxergam pelo número do contrato.
+    """
     return render_template("erp_locacoes.html", **_contexto("locacoes"))
+
+
+@bp.route("/erp/locacoes")
+@login_obrigatorio
+@permissao("ver_erp")
+def pagina_locacoes_antiga():
+    """O endereço antigo, de quando Locações ficava no Financeiro. Continua
+    respondendo porque há link salvo e gente com a tela nos favoritos."""
+    return redirect(url_for("erp.pagina_locacoes"))
 
 
 @bp.route("/erp/dc")
@@ -1172,6 +1189,37 @@ def api_pedido_relatorio(pedido_id: int):
                         "relatorio": svc.relatorio_para_o_fornecedor(s, pedido_id)})
 
 
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/envio",
+          methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_pedido_envio(pedido_id: int):
+    """GET mostra o pedido como o fornecedor vai receber, antes de mandar.
+    POST manda de verdade, pela conta de e-mail da empresa da obra.
+
+    A rota é declarada ANTES da rota genérica de ações do pedido de propósito:
+    "envio" é um segmento fixo e não pode cair no `<acao>` de autorizar/recusar,
+    que exige outra permissão.
+    """
+    from app.apps.erp.core.suprimentos import envio as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True,
+                                "envio": svc.preparar_pedido(s, pedido_id)})
+            d = request.get_json(silent=True) or {}
+            resultado = svc.disparar_pedido(s, pedido_id, d, _usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, **resultado})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao mandar o pedido")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/<acao>", methods=["POST"])
 @login_obrigatorio
 @permissao("autorizar_pedido")
@@ -1354,6 +1402,44 @@ def api_suprimento_situacao(item_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/suprimentos/itens/<int:item_id>", methods=["PATCH"])
+@login_obrigatorio
+@permissao("comprar")
+def api_suprimento_item_corrigir(item_id: int):
+    """Corrige o item da solicitação: insumo, especificação, quantidade,
+    unidade ou obra — com motivo obrigatório e registro de quem mudou."""
+    from app.apps.erp.core.suprimentos import solicitacao as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if item_id not in {i["id"] for i in svc.listar_itens(s, atual)}:
+                raise ErroNaoEncontrado("Item não encontrado.")
+            resultado = svc.editar_item(s, item_id, d, atual)
+            s.commit()
+            return jsonify({"ok": True, **resultado})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao corrigir item")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/itens/<int:item_id>/historico")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimento_item_historico(item_id: int):
+    """As correções já feitas neste item. Fora do alcance responde 404."""
+    from app.apps.erp.core.suprimentos import solicitacao as svc
+    with get_session() as s:
+        atual = _usuario_logado(s)
+        if item_id not in {i["id"] for i in svc.listar_itens(s, atual)}:
+            raise ErroNaoEncontrado("Item não encontrado.")
+        return jsonify({"ok": True, "historico": svc.historico_do_item(s, item_id)})
+
+
 @bp.route("/erp/api/suprimentos/insumos/solicitacoes", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="ver_suprimentos", POST="solicitar_suprimento")
@@ -1451,6 +1537,223 @@ def api_suprimentos_importar(tipo: str):
     except Exception as e:
         logger.exception("ERP: falha na carga de %s", tipo)
         return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Empresas — o CNPJ que executa a obra, compra e fatura (migração 038)
+#
+# A BWS passa a operar com mais de um. É daqui que sai o e-mail da cotação, a
+# logo do relatório e, amanhã, a nota fiscal.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/empresas")
+@login_obrigatorio
+@permissao("configurar")
+def pagina_empresas():
+    return render_template("erp_empresas.html", **_contexto("empresas"))
+
+
+@bp.route("/erp/api/empresas", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_empresas():
+    from app.apps.erp.core.cadastros import empresas as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True, **svc.gerenciar(s)})
+            atual = _usuario_logado(s)
+            e = svc.criar(s, request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "id": e.id})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no cadastro de empresa")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/empresas/<int:empresa_id>", methods=["PATCH"])
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_editar(empresa_id: int):
+    from app.apps.erp.core.cadastros import empresas as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            e = svc.editar(s, empresa_id, request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "id": e.id})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao editar empresa")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/empresas/<int:empresa_id>/conta-email", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_conta_email(empresa_id: int):
+    """Servidor, porta, usuário, segurança e a senha (cifrada ao gravar).
+
+    A senha só vem quando está sendo TROCADA — campo em branco mantém a que
+    está lá. É o que evita apagar a senha ao corrigir a porta.
+    """
+    from app.apps.erp.core.cadastros import empresas as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            e = svc.definir_conta_de_email(s, empresa_id,
+                                           request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, "id": e.id})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao definir a conta de e-mail da empresa")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/empresas/<int:empresa_id>/testar-email", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_testar_email(empresa_id: int):
+    """Manda uma mensagem de teste. É o que transforma 'acho que configurei'
+    em 'está configurado'."""
+    from app.apps.erp.core.cadastros import empresas as svc
+    from app.apps.erp.core.comum import email as correio
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            empresa = svc.obter(s, empresa_id)
+            destino = (d.get("para") or "").strip() or getattr(atual, "email", "")
+            registro = correio.testar_conta(s, empresa, destino, atual)
+            saida = {"ok": True, "situacao": registro.situacao,
+                     "erro": registro.erro, "para": destino}
+            s.commit()
+            return jsonify(saida)
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha no teste de e-mail")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/empresas/<int:empresa_id>/logo",
+          methods=["GET", "POST", "DELETE"])
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_logo(empresa_id: int):
+    """A logo da empresa: GET devolve a imagem, POST troca, DELETE tira.
+
+    Fica em "configurar" — e não numa ação ampla — porque hoje só a tela de
+    Empresas mostra a logo. Quando o relatório ao fornecedor passar a
+    carregá-la, quem abre relatório vai precisar ler esta rota; nessa hora a
+    ação muda E a rota ganha conferência de escopo, porque a regra do ERP é
+    que rota com número de registro aberta a perfil restrito confere se o
+    registro é dele (tests/test_permissoes_rotas.py). Abrir agora, sem
+    ninguém precisar, seria abrir por antecipação.
+    """
+    from flask import Response
+    from app.apps.erp.core.cadastros import empresas as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                empresa = svc.obter(s, empresa_id)
+                if not empresa.logo:
+                    raise ErroNaoEncontrado("Esta empresa não tem logo.")
+                return Response(empresa.logo,
+                                mimetype=empresa.logo_mime or "image/png",
+                                headers={"Cache-Control": "private, max-age=300"})
+            atual = _usuario_logado(s)
+            if request.method == "DELETE":
+                svc.remover_logo(s, empresa_id, atual)
+                s.commit()
+                return jsonify({"ok": True})
+            arquivo = request.files.get("arquivo")
+            if arquivo is None:
+                return jsonify({"ok": False, "erro": "Anexe o arquivo da logo."}), 400
+            svc.definir_logo(s, empresa_id, arquivo.filename or "logo",
+                             arquivo.mimetype or "", arquivo.read(), atual)
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na logo da empresa")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>/empresa", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_obra_empresa(obra_id: int):
+    """Liga a obra à empresa que a executa. Sem isso o disparo da cotação não
+    sabe por qual e-mail sair."""
+    from app.apps.erp.core.cadastros import empresas as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            svc.definir_empresa_da_obra(s, obra_id, d.get("empresa_id"), atual)
+            s.commit()
+            return jsonify({"ok": True})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao ligar obra e empresa")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Disparar a cotação — e provar que disparou
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/envio",
+          methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_cotacao_envio(cotacao_id: int):
+    """GET mostra quem recebe, de qual empresa sai e o texto que vai.
+    POST manda — um envio e um registro por fornecedor."""
+    from app.apps.erp.core.suprimentos import envio as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True, **svc.preparar(s, cotacao_id)})
+            atual = _usuario_logado(s)
+            rel = svc.disparar(s, cotacao_id,
+                               request.get_json(silent=True) or {}, atual)
+            s.commit()
+            return jsonify({"ok": True, **rel})
+    except ErroNaoEncontrado as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao disparar a cotação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/envios")
+@login_obrigatorio
+@permissao("comprar")
+def api_cotacao_envios(cotacao_id: int):
+    """Tudo que já saiu desta cotação, com o texto exato e o resultado."""
+    from app.apps.erp.core.comum import email as correio
+    with get_session() as s:
+        return jsonify({"ok": True,
+                        "envios": correio.historico(s, "cotacao", cotacao_id)})
 
 
 @bp.route("/erp/relatorios")
@@ -1596,6 +1899,100 @@ def api_titulos():
                     "limite_atingido": len(itens) >= _LIMITE_GRADE})
 
 
+def _origem_do_titulo(s, t) -> dict | None:
+    """O contrato que originou o título, quando ele nasceu de uma locação.
+
+    Devolve o suficiente para a tela dizer o que é e mandar a pessoa para a
+    gestão: número do contrato, locadora, obra, competência e o endereço da
+    tela de Locações.
+    """
+    parcela_id = getattr(t, "locacao_parcela_id", None)
+    if not parcela_id:
+        return None
+    from app.apps.erp.db.models.cadastros import Fornecedor, Obra
+    from app.apps.erp.db.models.financeiro import ContratoLocacao, LocacaoParcela
+    parcela = s.get(LocacaoParcela, parcela_id)
+    if parcela is None:
+        return None
+    contrato = s.get(ContratoLocacao, parcela.contrato_id)
+    if contrato is None:
+        return None
+    obra = s.get(Obra, contrato.obra_id) if contrato.obra_id else None
+    forn = s.get(Fornecedor, contrato.fornecedor_id) if contrato.fornecedor_id else None
+    return {
+        "tipo": "LOCACAO",
+        "rotulo": "Locação de equipamento",
+        "contrato": contrato.numero,
+        "contrato_externo": contrato.numero_externo,
+        "contrato_id": contrato.id,
+        "locadora": getattr(forn, "razao_social", ""),
+        "obra": getattr(obra, "codigo", ""),
+        "competencia": parcela.competencia.strftime("%m/%Y"),
+        "valor_previsto": float(parcela.valor_previsto or 0),
+        "situacao_contrato": contrato.status,
+        "link": url_for("erp.pagina_locacoes") + f"?contrato={contrato.id}",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Exportar o que está na tela
+#
+# UMA ROTA SÓ, e não uma por tela. A tela já tem as linhas filtradas na frente
+# do usuário — ela manda de volta o que está mostrando, e aqui isso vira .xlsx
+# ou .pdf. Assim "exportar" passa a existir em toda tela sem escrever código
+# de servidor nenhum para cada uma, e o arquivo é exatamente o que a pessoa
+# estava vendo, com os filtros dela impressos no cabeçalho.
+# ---------------------------------------------------------------------------
+LIMITE_EXPORTACAO = 50000
+
+
+@bp.route("/erp/api/exportar", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_exportar():
+    """Recebe o que está na tela e devolve a planilha ou o PDF."""
+    from app.apps.erp.core.comum import exportar as svc
+
+    d = request.get_json(silent=True) or {}
+    formato = (d.get("formato") or "xlsx").lower()
+    if formato not in ("xlsx", "pdf"):
+        return jsonify({"ok": False, "erro": "Formato deve ser xlsx ou pdf."}), 400
+
+    linhas = d.get("linhas") or []
+    if len(linhas) > LIMITE_EXPORTACAO:
+        return jsonify({"ok": False,
+                        "erro": f"São {len(linhas)} linhas. Filtre um pouco antes "
+                                f"de exportar — o teto é {LIMITE_EXPORTACAO}."}), 400
+    colunas = d.get("colunas") or []
+    if not colunas:
+        return jsonify({"ok": False, "erro": "Nada para exportar."}), 400
+
+    titulo = (d.get("titulo") or "Relatório").strip()[:120]
+    quem = session.get("erp_usuario_nome", "")
+    try:
+        if formato == "xlsx":
+            conteudo = svc.para_excel(
+                titulo, colunas, linhas, subtitulo=(d.get("subtitulo") or "")[:200],
+                filtros=d.get("filtros"), quem=quem)
+            tipo = ("application/vnd.openxmlformats-officedocument"
+                    ".spreadsheetml.sheet")
+        else:
+            conteudo = svc.para_pdf(
+                titulo, colunas, linhas, subtitulo=(d.get("subtitulo") or "")[:200],
+                filtros=d.get("filtros"), quem=quem, paisagem=d.get("paisagem"))
+            tipo = "application/pdf"
+    except Exception as e:
+        logger.exception("ERP: falha ao exportar %s em %s", titulo, formato)
+        return jsonify({"ok": False, "erro": f"Não deu para gerar o arquivo: {e}"}), 500
+
+    from flask import Response
+    nome = svc.nome_de_arquivo(titulo, formato)
+    return Response(conteudo, mimetype=tipo, headers={
+        "Content-Disposition": f'attachment; filename="{nome}"',
+        "Content-Length": str(len(conteudo)),
+    })
+
+
 @bp.route("/erp/api/titulos/<int:titulo_id>")
 @login_obrigatorio
 @permissao("ver_erp")
@@ -1629,6 +2026,10 @@ def api_titulo_detalhe(titulo_id: int):
             solicitante = s.get(Usuario, t.solicitante_id)
             dados = {
                 "cabecalho": _serializar(t, date.today(), ver_pg),
+                # DE ONDE ESTE TÍTULO VEIO. Sem isto, a conta de aluguel que
+                # chega todo mês é uma despesa órfã: quem confere não sabe de
+                # qual contrato é, nem se o valor bate com o que está em obra.
+                "origem": _origem_do_titulo(s, t),
                 "pode_editar": ver_pg,
                 "avais": historico_avais(s, t.id),
                 "solicitante": solicitante.nome if solicitante else "—",

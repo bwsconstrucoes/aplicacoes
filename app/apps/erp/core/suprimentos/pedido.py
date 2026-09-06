@@ -438,6 +438,11 @@ def detalhar(s: Session, pedido_id: int) -> dict[str, Any]:
 def relatorio_para_o_fornecedor(s: Session, pedido_id: int) -> dict[str, Any]:
     """O pedido como o fornecedor precisa lê-lo: agrupado por ENDEREÇO DE ENTREGA.
 
+    Versão estruturada, para quem quiser montar o documento de outro jeito
+    (imprimir, WhatsApp). O texto que sai POR E-MAIL é montado em
+    `core/suprimentos/envio.montar_pedido` — lá vão também os preços, o total
+    e a condição de pagamento, porque é aquele documento que firma a compra.
+
     Um mesmo pedido pode levar material para obras diferentes, e o motorista
     precisa saber o que desce em cada lugar. Obras que compartilham endereço
     entram no mesmo bloco — foi o que o dono pediu ("permitir entrega de mais
@@ -485,14 +490,14 @@ def relatorio_para_o_fornecedor(s: Session, pedido_id: int) -> dict[str, Any]:
 
 
 def _endereco(obra) -> str:
-    """O endereço de entrega em uma linha. Obra sem endereço cadastrado aparece
-    como tal — em branco no relatório, o motorista descobre no caminho."""
-    if obra is None:
-        return "Endereço não informado"
-    partes = [getattr(obra, "endereco", None), getattr(obra, "numero_endereco", None),
-              getattr(obra, "municipio", None), getattr(obra, "uf", None)]
-    texto = ", ".join(p for p in partes if p)
-    return texto or "Endereço não informado"
+    """O endereço de entrega em uma linha.
+
+    Delega ao módulo comum (`core/suprimentos/entrega`) porque a cotação usa a
+    mesma resposta: se o endereço da obra mudar de forma, os dois documentos
+    têm de mudar juntos.
+    """
+    from app.apps.erp.core.suprimentos.entrega import endereco_da_obra
+    return endereco_da_obra(obra)
 
 
 def listar(s: Session, *, status: Optional[str] = None) -> list[dict[str, Any]]:
