@@ -220,9 +220,9 @@ function desenhar(){
         `<input type="checkbox" data-marca="${i.id}" ${MARCADOS.has(i.id) ? "checked" : ""}>`}</td>
       <td><b>${i.solicitacao}</b><br><small>${i.titulo}</small></td>
       <td class="desc">${i.insumo}${i.especificacao ? `<small>${i.especificacao}</small>` : ""}</td>
-      <td class="direita dados">${i.quantidade} ${i.unidade}
+      <td class="direita dados">${quantidadeBR(i.quantidade)} ${i.unidade}
         ${Number(i.quantidade_recebida) > 0
-          ? `<br><small>recebido ${i.quantidade_recebida}</small>` : ""}</td>
+          ? `<br><small>recebido ${quantidadeBR(i.quantidade_recebida)}</small>` : ""}</td>
       <td class="dados">${i.obra}</td>
       <td>${ROTULO_PRIORIDADE[i.prioridade] || i.prioridade}</td>
       <td class="dados ${i.previsao_entrega && i.previsao_entrega < hoje ? "atrasado" : ""}"
@@ -308,7 +308,7 @@ async function gerarCotacao(){
       <div style="max-height:180px; overflow:auto">
         <table><tbody>${escolhidos.map(i => `<tr>
           <td>${i.insumo}${i.especificacao ? `<small> — ${i.especificacao}</small>` : ""}</td>
-          <td class="direita dados">${i.quantidade} ${i.unidade}</td>
+          <td class="direita dados">${quantidadeBR(i.quantidade)} ${i.unidade}</td>
           <td class="dados">${i.obra}</td></tr>`).join("")}</tbody></table>
       </div>
     </div>

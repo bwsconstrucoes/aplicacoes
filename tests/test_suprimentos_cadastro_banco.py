@@ -194,7 +194,7 @@ def test_a_remocao_e_recusada_se_o_insumo_de_exemplo_ja_foi_usado(plano):
 
     # Um pedido DE VERDADE usando um insumo que veio do exemplo.
     insumo = s.query(Insumo).filter(
-        Insumo.descricao == "Cimento CP-II-Z 32 saco 50kg").one()
+        Insumo.descricao == "Vergalhão CA50 12.5mm").one()
     sol = SuprimentoSolicitacao(numero="SS-EXEMPLO-1", titulo="pedido de verdade",
                                 solicitante_id=usuario.id)
     s.add(sol)

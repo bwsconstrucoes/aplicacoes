@@ -75,9 +75,6 @@
 const ROTULO = {AGUARDANDO_AUTORIZACAO: "aguardando autorização",
                 AUTORIZADO: "autorizado", RECUSADO: "recusado", CANCELADO: "cancelado"};
 
-function moeda(v){ return Number(v || 0).toLocaleString("pt-BR",
-  {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
-
 let PEDIDOS = [];
 const FORNECEDORES = new Set();
 
@@ -132,7 +129,7 @@ function desenhar(){
       <div class="kpi-valor">${l.length}</div>
       <div class="kpi-sub">de ${PEDIDOS.length} nesta situação</div></div>
     <div class="kpi estatico ciano"><div class="kpi-rotulo">Valor somado</div>
-      <div class="kpi-valor" style="font-size:19px">R$ ${moeda(total)}</div></div>
+      <div class="kpi-valor" style="font-size:19px">R$ ${numero(total)}</div></div>
     <button class="kpi ambar ${els("f-antecipado").checked ? "ativo" : ""}"
       data-pendencia="f-antecipado">
       <div class="kpi-rotulo">Pagamento antecipado</div>
@@ -156,14 +153,14 @@ function desenhar(){
           ${x.antecipado ? `<br><small style="color:var(--ambar)">pagamento antecipado</small>` : ""}</td>
         <td>${x.fornecedor}</td>
         <td class="direita dados">${x.itens}</td>
-        <td class="direita dados">${moeda(x.total)}</td>
+        <td class="direita dados">${numero(x.total)}</td>
         <td>${ROTULO[x.status] || x.status}</td>
         <td class="direita"><button class="btn secundario" data-abrir="${x.id}"
             style="padding:4px 9px; font-size:12px">abrir</button></td></tr>`).join("")
       || `<tr><td colspan="6">nenhum pedido nesta situação</td></tr>`;
   document.querySelectorAll("[data-abrir]").forEach(b =>
     b.addEventListener("click", () => abrir(+b.dataset.abrir)));
-  els("resumo").innerHTML = `<b>${l.length}</b> pedido(s) · <b>R$ ${moeda(total)}</b>`;
+  els("resumo").innerHTML = `<b>${l.length}</b> pedido(s) · <b>R$ ${numero(total)}</b>`;
 }
 
 async function abrir(id){
@@ -175,9 +172,9 @@ async function abrir(id){
       <div class="cartao-dica">
         ${p.condicao ? `Pagamento: <b>${p.condicao}</b> · ` : ""}
         ${p.entrega ? (p.entrega === "COLETA" ? "coleta nossa" : "entrega do fornecedor") : ""}
-        ${Number(p.frete) > 0 ? ` · frete R$ ${moeda(p.frete)}` : ""}
-        ${Number(p.desconto) > 0 ? ` · desconto R$ ${moeda(p.desconto)}` : ""}
-        ${p.previsao_entrega ? ` · entrega prevista ${data(p.previsao_entrega)}` : ""}
+        ${Number(p.frete) > 0 ? ` · frete R$ ${numero(p.frete)}` : ""}
+        ${Number(p.desconto) > 0 ? ` · desconto R$ ${numero(p.desconto)}` : ""}
+        ${p.previsao_entrega ? ` · entrega prevista ${dataBR(p.previsao_entrega)}` : ""}
         ${p.antecipado ? ` · <b>pagamento antecipado</b>` : ""}
       </div>
       <table style="margin-top:10px"><thead><tr>
@@ -190,19 +187,19 @@ async function abrir(id){
                  title="marcar para NÃO autorizar este item"></td>` : ""}
           <td>${i.insumo}${i.especificacao ? `<br><small>${i.especificacao}</small>` : ""}</td>
           <td class="dados">${i.obra}</td>
-          <td class="direita dados">${i.quantidade} ${i.unidade}</td>
-          <td class="direita dados">${moeda(i.preco_unitario)}</td>
-          <td class="direita dados">${moeda(i.total)}</td></tr>`).join("")}</tbody>
+          <td class="direita dados">${quantidadeBR(i.quantidade)} ${i.unidade}</td>
+          <td class="direita dados">${numero(i.preco_unitario)}</td>
+          <td class="direita dados">${numero(i.total)}</td></tr>`).join("")}</tbody>
         <tfoot><tr><td colspan="${p.status === "AGUARDANDO_AUTORIZACAO" ? 5 : 4}"
           class="direita"><b>Total do pedido</b></td>
-          <td class="direita dados"><b>${moeda(p.total)}</b></td></tr></tfoot></table>
+          <td class="direita dados"><b>${numero(p.total)}</b></td></tr></tfoot></table>
       ${p.previsoes.length ? `<h4 style="margin-top:14px">Previsão de pagamento</h4>
         <table><thead><tr><th>Parcela</th><th>Vencimento</th>
           <th class="direita">Valor</th><th>Situação</th></tr></thead>
           <tbody>${p.previsoes.map(v => `<tr><td class="dados">${v.numero}${
             v.entrada ? " <small>(entrada)</small>" : ""}</td>
-            <td class="dados">${data(v.vencimento)}</td>
-            <td class="direita dados">${moeda(v.valor)}</td>
+            <td class="dados">${dataBR(v.vencimento)}</td>
+            <td class="direita dados">${numero(v.valor)}</td>
             <td>${v.titulo_id ? "virou título" : "previsto"}</td></tr>`).join("")}</tbody>
         </table>` : ""}
       ${p.mapa ? blocoDoMapa(p.mapa) : `<div class="cartao-dica" style="margin-top:12px">
@@ -247,10 +244,10 @@ function blocoDoMapa(m){
         ${m.fornecedores.map(f => {
           const c = i.precos[f.id];
           return `<td class="direita dados ${i.menor_preco_de === f.id ? "menor-preco" : ""}">${
-            c ? moeda(c.preco_unitario) : "—"}</td>`;
+            c ? numero(c.preco_unitario) : "—"}</td>`;
         }).join("")}</tr>`).join("")}</tbody>
       <tfoot><tr><td><b>Total com frete e desconto</b></td>
-        ${m.fornecedores.map(f => `<td class="direita dados">${moeda(f.total)}</td>`).join("")}
+        ${m.fornecedores.map(f => `<td class="direita dados">${numero(f.total)}</td>`).join("")}
       </tr></tfoot></table></div>`;
 }
 
@@ -271,7 +268,7 @@ async function mostrarRecebimento(id){
           <td>${i.insumo}${i.especificacao ? `<br><small>${i.especificacao}</small>` : ""}</td>
           <td class="direita dados">${i.pedido} ${i.unidade}</td>
           <td class="direita dados">${i.recebido}</td>
-          <td class="direita dados">${i.saldo}</td>
+          <td class="direita dados">${quantidadeBR(i.saldo)}</td>
           <td class="direita">${Number(i.saldo) > 0
             ? `<input class="rec-qtd" data-item="${i.pedido_item_id}"
                  style="width:80px; text-align:right" inputmode="decimal"
@@ -319,13 +316,13 @@ async function verRelatorio(id){
       `PEDIDO ${r.numero} — ${r.fornecedor}`,
       r.condicao ? `Pagamento: ${r.condicao}` : "",
       r.entrega ? `Entrega: ${r.entrega === "COLETA" ? "coleta nossa" : "por conta do fornecedor"}` : "",
-      r.previsao_entrega ? `Precisamos em obra até: ${data(r.previsao_entrega)}` : "",
+      r.previsao_entrega ? `Precisamos em obra até: ${dataBR(r.previsao_entrega)}` : "",
       "",
       ...r.locais.flatMap(l => [
         `ENTREGAR EM: ${l.endereco}`,
         `Obra(s): ${l.obras.join(" · ")}`,
         ...l.itens.map(i => `  - ${i.insumo}${i.especificacao ? ` (${i.especificacao})` : ""}` +
-                            ` — ${i.quantidade} ${i.unidade}`),
+                            ` — ${quantidadeBR(i.quantidade)} ${i.unidade}`),
         ""]),
       r.observacoes ? `Observações: ${r.observacoes}` : "",
     ].filter(x => x !== "").join("\n");

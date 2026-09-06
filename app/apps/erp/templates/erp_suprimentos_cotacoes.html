@@ -91,9 +91,6 @@ function desenharLista(){
     b.addEventListener("click", () => abrirMapa(+b.dataset.cotacao)));
 }
 
-function moeda(v){ return Number(v || 0).toLocaleString("pt-BR",
-  {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
-
 function desenharMapa(){
   if (!MAPA) { els("painel-mapa").innerHTML = ""; return; }
   const colunas = MAPA.fornecedores;
@@ -113,13 +110,13 @@ function desenharMapa(){
           style="padding:3px 8px; font-size:11px">ler proposta</button>
       <br><small>${c.condicao || "sem condição"} ·
         ${c.entrega ? (c.entrega === "COLETA" ? "coleta" : "entrega") : "—"}</small>
-      ${Number(c.frete) > 0 ? `<br><small>frete R$ ${moeda(c.frete)}</small>` : ""}
-      ${Number(c.desconto) > 0 ? `<br><small>desc. R$ ${moeda(c.desconto)}</small>` : ""}
+      ${Number(c.frete) > 0 ? `<br><small>frete R$ ${numero(c.frete)}</small>` : ""}
+      ${Number(c.desconto) > 0 ? `<br><small>desc. R$ ${numero(c.desconto)}</small>` : ""}
       <br><small>${c.itens_cotados}/${c.itens_no_mapa} itens</small></th>`).join("");
 
   const linhas = MAPA.itens.map(i => `<tr>
       <td>${i.insumo}${i.especificacao ? `<br><small>${i.especificacao}</small>` : ""}</td>
-      <td class="direita dados">${i.quantidade} ${i.unidade}</td>
+      <td class="direita dados">${quantidadeBR(i.quantidade)} ${i.unidade}</td>
       ${colunas.map(c => {
         const cel = i.precos[c.id];
         if (!cel) return `<td class="direita"><input class="cel" data-col="${c.id}"
@@ -128,7 +125,7 @@ function desenharMapa(){
         return `<td class="direita ${melhor ? "menor-preco" : ""}">
           <input class="cel" data-col="${c.id}" data-lin="${i.id}"
                  value="${cel.preco_unitario}" style="width:90px; text-align:right">
-          <br><small>${moeda(cel.total)}</small>
+          <br><small>${numero(cel.total)}</small>
           ${cel.origem === "HERDADO" ? `<br><small title="preço de outra cotação"
              style="color:var(--ambar)">herdado</small>` : ""}
           ${cel.origem === "IA" ? `<br><small style="color:var(--ciano)">lido</small>` : ""}
@@ -136,7 +133,7 @@ function desenharMapa(){
       }).join("")}
     </tr>`).join("");
 
-  const totais = colunas.map(c => `<td class="direita dados"><b>${moeda(c.total)}</b>
+  const totais = colunas.map(c => `<td class="direita dados"><b>${numero(c.total)}</b>
       ${c.itens_cotados < c.itens_no_mapa
         ? `<br><small>não cotou tudo</small>`
         : (MAPA.melhor_fornecedor_unico === c.id
@@ -152,7 +149,7 @@ function desenharMapa(){
         <tfoot><tr><td colspan="2"><b>Total</b></td>${totais}</tr>
           <tr><td colspan="2"><small>comprando cada item de quem tem o menor preço</small></td>
             <td colspan="${colunas.length}" class="direita dados">
-              ${moeda(MAPA.total_pulverizado)} <small>(sem frete)</small></td></tr>
+              ${numero(MAPA.total_pulverizado)} <small>(sem frete)</small></td></tr>
         </tfoot></table>
     </div>
     <div style="margin-top:12px; display:flex; gap:8px">
@@ -313,7 +310,7 @@ async function novaCotacao(){
            border-radius:8px; padding:6px">
         ${d.itens.map(i => `<label class="opcao"><input type="checkbox" class="nc-item"
           value="${i.id}"><span class="rotulo">${i.solicitacao} · ${i.insumo}
-          ${i.especificacao ? `(${i.especificacao})` : ""} — ${i.quantidade} ${i.unidade}
+          ${i.especificacao ? `(${i.especificacao})` : ""} — ${quantidadeBR(i.quantidade)} ${i.unidade}
           · ${i.obra}</span></label>`).join("")}
       </div></div>
     <div style="margin-top:14px"><button class="btn" id="nc-salvar">Abrir cotação</button></div>`;
