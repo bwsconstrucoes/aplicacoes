@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import unicodedata
 from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Optional
@@ -281,6 +283,17 @@ def _digito_cnpj(base: str) -> str:
     return base + d1 + d2
 
 
+def _apelido(nome: str) -> str:
+    """Nome de fantasia → pedaço de endereço de e-mail.
+
+    Sem acento e sem cedilha: "Aços Exemplo" virava
+    "cotacao@açosexemplo.exemplo", que não é endereço de e-mail nenhum.
+    """
+    sem_acento = unicodedata.normalize("NFKD", nome or "")
+    limpo = "".join(c for c in sem_acento if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]", "", limpo.lower()) or "fornecedor"
+
+
 def _conta(s: Session, codigo: str,
            reserva: Optional[Categoria] = None) -> Optional[Categoria]:
     """A conta do plano com este código, ou a conta de reserva.
@@ -352,7 +365,7 @@ def criar(s: Session, usuario: Usuario) -> dict[str, Any]:
         forn = svc_forn.criar(s, {
             "tipo_pessoa": "PJ", "cnpj_cpf": documento, "razao_social": razao,
             "nome_fantasia": fantasia, "municipio": cidade, "uf": uf,
-            "email": f"cotacao@{fantasia.lower().replace(' ', '')}.exemplo",
+            "email": f"cotacao@{_apelido(fantasia)}.exemplo",
             "telefone": "(85) 0000-0000",
             "observacoes": "Fornecedor de exemplo, criado para simulação.",
             "porte": porte, "regioes_atuacao": regioes,

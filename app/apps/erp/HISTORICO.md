@@ -69,24 +69,69 @@ Ação nova de permissão: `administrar_fornecedores` (cadastrar e corrigir
 fornecedor pela tela de Suprimentos). Como toda ação, pode ser dada ou tirada
 pessoa a pessoa no cadastro do operador.
 
+### Empresa (mais de um CNPJ) e o disparo da cotação — 06/09/2026
+
+No ramo `claude/oi-vjvrn8`, **com migração 038**, ainda não publicado.
+
+O dono avisou que a BWS vai operar com mais de um CNPJ, e que a obra tem de
+dizer por qual empresa ela corre. Três coisas passam a depender disso: de qual
+e-mail a cotação sai, qual logo vai no relatório e, amanhã, qual CNPJ fatura.
+
+| O que entrou | Onde |
+|---|---|
+| Cadastro de **empresa**: razão social, CNPJ, inscrições, endereço, telefone, e-mail, site e **logo** | Administração › Empresas |
+| **Obra ligada à empresa** — e a lista das obras que ainda não têm, na barra da esquerda, para acertar clicando | idem |
+| **Conta de e-mail por empresa** (servidor, porta, usuário, senha, segurança, remetente, responder-para) e o **botão de teste** que prova que funciona | idem, aba "Conta de e-mail" |
+| **Disparar a cotação**: manda a lista de itens para os fornecedores do mapa, pela conta da empresa da obra | Suprimentos › Cotações |
+| **Registro de cada envio**: para quem, quando, por quem, o texto exato e o resultado | tabela `envios_email`; a coluna de cada fornecedor no mapa mostra "enviada" ou o motivo de não ter saído |
+
+Decisões, com o motivo:
+
+- **SMTP da própria empresa, não um serviço de envio.** Porque o fornecedor
+  RESPONDE: saindo de compras@ da empresa, a conversa continua onde ela já
+  acontece. O custo é que o SMTP conta menos — ver o parágrafo seguinte.
+- **"Enviado" quer dizer que o servidor de saída aceitou.** Não quer dizer
+  entregue, e muito menos lido. Está escrito assim na tela. Certeza de entrega
+  exige serviço de envio com retorno (aviso de entregue/rejeitado), que é
+  outra decisão e outro custo — fica anotado como pendência.
+- **A senha vai cifrada** (`core/comum/segredos.py`), com a chave em
+  `ERP_CHAVE_SEGREDOS` na Environment do Render. **Sem a chave, gravar a senha
+  é recusado** com o recado do que falta; o resto do cadastro salva normal.
+  Trocar a chave invalida as senhas guardadas — é redigitar.
+- **Cotação com obras de empresas diferentes faz o sistema PERGUNTAR**, nunca
+  sortear: por qual CNPJ a compra corre é decisão do comprador.
+- **Cada fornecedor recebe só a lista de itens, nunca o mapa** — mandar o mapa
+  seria entregar ao fornecedor A o preço do fornecedor B.
+- **Um fornecedor fora do ar não derruba os outros**: cada um é um envio e um
+  registro, e quem falhou fica com o motivo escrito e o botão de reenviar.
+
+⚠️ **A migração 038 acrescenta uma coluna à tabela `obras`.** Enquanto o botão
+"Aplicar atualizações do banco" não for apertado, TODA tela que carrega obra
+quebra — e obra é carregada em quase tudo. Juntar este ramo e apertar o botão
+têm de acontecer no mesmo momento, com o dono na frente do computador.
+
 ### O que está pendente AGORA
 
 1. **Apertar "Aplicar atualizações do banco"** (Configurações, como ADMIN) para
    as migrações 029 e 030. Enquanto não apertar, o ERP mostra a tela "O banco
    está desatualizado". **Pergunte ao dono se já apertou.**
-2. **Definir `EL_NFSE_TOKEN` na Environment do Render** (token da prefeitura,
+2. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
+   a senha da conta de e-mail das empresas. Gera-se uma vez com
+   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+   Sem ela tudo funciona, menos guardar senha de e-mail.
+3. **Definir `EL_NFSE_TOKEN` na Environment do Render** (token da prefeitura,
    que estava colado no código) e **trocar o token na origem** — ele continua
    no histórico do Git, commit `fa985ab`.
-3. **Definir o teto mensal de IA** em Configurações › Consumo de IA.
-4. **Homologação por perfil**: a parte mecânica (o que abre e o que é
+4. **Definir o teto mensal de IA** em Configurações › Consumo de IA.
+5. **Homologação por perfil**: a parte mecânica (o que abre e o que é
    recusado, tela a tela, perfil a perfil) roda sozinha no GitHub a cada envio
    (`tests/test_homologacao_banco.py`). Para o olho humano ficou só o roteiro
    reduzido: visual, leitura de documento por IA, avalizar/pagar com dado real.
-5. **Migrações 031 a 037**: apertar o botão ao juntar. A 031 são as restrições
+6. **Migrações 031 a 038**: apertar o botão ao juntar. A 031 são as restrições
    de concorrência; a 032 é a tabela das permissões por pessoa. Enquanto a 032
    não rodar, o ERP funciona normalmente **pelo cargo** — a tela de cadastro é
    que não consegue mostrar os ajustes.
-6. **Suprimentos**: construído e com as telas de cadastro refeitas, mas
+7. **Suprimentos**: construído e com as telas de cadastro refeitas, mas
    **ainda não operado contra a base real** — é o que o dono precisa fazer
    primeiro. Caminho sugerido: Cadastros › Importações › **Dados de exemplo**
    para simular o fluxo inteiro sem digitar nada, e depois `Remover os dados
@@ -95,11 +140,13 @@ pessoa a pessoa no cadastro do operador.
    gravar). **A carga não cria categoria de insumo** — cadastre as categorias
    primeiro, senão os fornecedores entram sem saber o que vendem e não
    recebem cotação nenhuma.
-7. **Decisão pendente do dono**: por qual conta sai o e-mail de cotação. O
-   monorepo tem WhatsApp (Z-API) mas **não tem envio de e-mail** — e 109 dos
-   111 fornecedores só recebem cotação por e-mail. Enquanto isso não se
-   decide, o disparo automático não existe.
-8. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
+8. **Decidido em 06/09/2026**: o e-mail sai por SMTP da própria empresa, e
+   cada empresa tem a sua conta. Falta o dono preencher servidor, porta,
+   usuário e senha de aplicativo em Administração › Empresas, e apertar
+   "Mandar mensagem de teste". **Continua em aberto**: se um dia a empresa
+   quiser saber que o fornecedor RECEBEU (e não só que o servidor aceitou),
+   isso exige um serviço de envio com retorno — outro custo, outra decisão.
+9. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)
 

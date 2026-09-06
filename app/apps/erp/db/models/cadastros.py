@@ -12,9 +12,9 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger, Boolean, Date, DateTime, Enum, ForeignKey, Index, Integer,
-    Numeric, SmallInteger, Text, func,
+    LargeBinary, Numeric, SmallInteger, Text, func,
 )
-from sqlalchemy.dialects.postgresql import ARRAY
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.apps.erp.db.database import Base
@@ -303,6 +303,11 @@ class Obra(Base):
     numero_endereco: Mapped[Optional[str]] = mapped_column(Text)
     complemento: Mapped[Optional[str]] = mapped_column(Text)
     codigo_ibge: Mapped[Optional[str]] = mapped_column(Text)
+    # A empresa (CNPJ) que executa esta obra — migração 038. Opcional porque
+    # as obras que já existem nasceram antes do cadastro de empresas; o
+    # disparo da cotação é que exige.
+    empresa_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("empresas.id"))
     responsavel_tecnico: Mapped[Optional[str]] = mapped_column(Text)
     art_rrt: Mapped[Optional[str]] = mapped_column(Text)
     engenheiro_fiscal: Mapped[Optional[str]] = mapped_column(Text)
@@ -977,3 +982,107 @@ class Colaborador(Base):
 
     funcao: Mapped[Optional[Funcao]] = relationship()
     obra: Mapped[Optional[Obra]] = relationship()
+
+
+# ---------------------------------------------------------------------------
+# A empresa que executa a obra (migração 038)
+# ---------------------------------------------------------------------------
+class Empresa(Base):
+    """O CNPJ que compra, contrata e fatura.
+
+    A BWS passa a operar com mais de um. Cada obra aponta para a empresa que
+    a executa, e é dela que sai o e-mail da cotação, a logo do relatório e,
+    amanhã, a nota fiscal.
+
+    A conta de envio mora aqui, e não numa variável do Render, porque é o que
+    permite "Construtora A" mandar de compras@a e "Construtora B" de
+    compras@b sem ninguém mexer em configuração de servidor. A senha vai
+    CIFRADA (ver `core/comum/segredos.py`) — nunca em claro.
+    """
+    __tablename__ = "empresas"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    razao_social: Mapped[str] = mapped_column(Text, nullable=False)
+    nome_fantasia: Mapped[Optional[str]] = mapped_column(Text)
+    cnpj: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    inscricao_estadual: Mapped[Optional[str]] = mapped_column(Text)
+    inscricao_municipal: Mapped[Optional[str]] = mapped_column(Text)
+
+    cep: Mapped[Optional[str]] = mapped_column(Text)
+    logradouro: Mapped[Optional[str]] = mapped_column(Text)
+    numero: Mapped[Optional[str]] = mapped_column(Text)
+    complemento: Mapped[Optional[str]] = mapped_column(Text)
+    bairro: Mapped[Optional[str]] = mapped_column(Text)
+    municipio: Mapped[Optional[str]] = mapped_column(Text)
+    uf: Mapped[Optional[str]] = mapped_column(Text)
+
+    telefone: Mapped[Optional[str]] = mapped_column(Text)
+    email: Mapped[Optional[str]] = mapped_column(Text)
+    site: Mapped[Optional[str]] = mapped_column(Text)
+
+    logo: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
+    logo_mime: Mapped[Optional[str]] = mapped_column(Text)
+    logo_nome: Mapped[Optional[str]] = mapped_column(Text)
+
+    smtp_servidor: Mapped[Optional[str]] = mapped_column(Text)
+    smtp_porta: Mapped[Optional[int]] = mapped_column(Integer)
+    smtp_usuario: Mapped[Optional[str]] = mapped_column(Text)
+    smtp_senha_cifrada: Mapped[Optional[str]] = mapped_column(Text)
+    smtp_seguranca: Mapped[str] = mapped_column(Text, nullable=False,
+                                                default="STARTTLS")
+    smtp_remetente: Mapped[Optional[str]] = mapped_column(Text)
+    smtp_responder_para: Mapped[Optional[str]] = mapped_column(Text)
+    smtp_conferido_em: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True))
+
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    padrao: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    def __repr__(self) -> str:  # pragma: no cover
+        return f"<Empresa {self.id} {self.cnpj} {self.razao_social!r}>"
+
+
+class EnvioEmail(Base):
+    """O registro de cada e-mail que saiu do sistema.
+
+    Existe para responder à pergunta do comprador — "isso foi mandado
+    mesmo?" — sem depender da caixa de e-mail de ninguém. Guarda o corpo
+    inteiro de propósito: seis meses depois, "o que foi que a gente pediu?"
+    é uma pergunta real.
+
+    O que ele NÃO prova: `ENVIADO` quer dizer que o servidor de saída aceitou
+    a mensagem. Não quer dizer entregue, e muito menos lido.
+    """
+    __tablename__ = "envios_email"
+    __table_args__ = (
+        Index("idx_envios_entidade", "entidade_tipo", "entidade_id"),
+        Index("idx_envios_destinatario", "destinatario_tipo", "destinatario_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    empresa_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("empresas.id"))
+    entidade_tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    entidade_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    destinatario_tipo: Mapped[Optional[str]] = mapped_column(Text)
+    destinatario_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+    para: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False,
+                                            default=list)
+    copia: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False,
+                                             default=list)
+    responder_para: Mapped[Optional[str]] = mapped_column(Text)
+    assunto: Mapped[str] = mapped_column(Text, nullable=False)
+    corpo: Mapped[str] = mapped_column(Text, nullable=False)
+    anexos: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    situacao: Mapped[str] = mapped_column(Text, nullable=False)
+    erro: Mapped[Optional[str]] = mapped_column(Text)
+    enviado_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())

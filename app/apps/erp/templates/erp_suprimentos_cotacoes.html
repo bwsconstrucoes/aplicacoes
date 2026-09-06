@@ -112,7 +112,8 @@ function desenharMapa(){
         ${c.entrega ? (c.entrega === "COLETA" ? "coleta" : "entrega") : "—"}</small>
       ${Number(c.frete) > 0 ? `<br><small>frete R$ ${numero(c.frete)}</small>` : ""}
       ${Number(c.desconto) > 0 ? `<br><small>desc. R$ ${numero(c.desconto)}</small>` : ""}
-      <br><small>${c.itens_cotados}/${c.itens_no_mapa} itens</small></th>`).join("");
+      <br><small>${c.itens_cotados}/${c.itens_no_mapa} itens</small>
+      <br>${situacaoDoEnvio(c.id)}</th>`).join("");
 
   const linhas = MAPA.itens.map(i => `<tr>
       <td>${i.insumo}${i.especificacao ? `<br><small>${i.especificacao}</small>` : ""}</td>
@@ -152,10 +153,12 @@ function desenharMapa(){
               ${numero(MAPA.total_pulverizado)} <small>(sem frete)</small></td></tr>
         </tfoot></table>
     </div>
-    <div style="margin-top:12px; display:flex; gap:8px">
+    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
       <button class="btn" id="btn-salvar-precos">Salvar preços</button>
       <button class="btn secundario" id="btn-add-forn">Acrescentar fornecedor</button>
       <button class="btn secundario" id="btn-herdar">Puxar preços anteriores</button>
+      <span class="espaco" style="flex:1"></span>
+      <button class="btn" id="btn-disparar">✉ Disparar a cotação</button>
     </div>
     <div class="cartao-dica" style="margin-top:8px">A célula em verde é o menor
       preço da linha. "Herdado" quer dizer que o preço veio de outra cotação —
@@ -165,8 +168,152 @@ function desenharMapa(){
   els("btn-salvar-precos").addEventListener("click", salvarPrecos);
   els("btn-add-forn").addEventListener("click", abrirFornecedor);
   els("btn-herdar").addEventListener("click", herdarPrecos);
+  els("btn-disparar").addEventListener("click", abrirDisparo);
   document.querySelectorAll("[data-proposta]").forEach(b =>
     b.addEventListener("click", () => lerProposta(+b.dataset.proposta)));
+}
+
+// ---------------------------------------------------------------------------
+// Disparar a cotação
+//
+// O comprador precisa de duas certezas: que saiu, e para quem. Por isso o
+// modal mostra o texto exato ANTES de mandar, e a coluna de cada fornecedor
+// passa a dizer "enviada em tal dia" ou o motivo de não ter saído.
+//
+// O que o sistema NÃO promete está escrito na tela com todas as letras:
+// registrar que o servidor aceitou não é o mesmo que o fornecedor ter lido.
+// ---------------------------------------------------------------------------
+let ENVIOS = {};          // coluna_id → último envio
+
+function situacaoDoEnvio(colunaId){
+  const e = ENVIOS[colunaId];
+  if (!e) return `<small style="color:var(--tinta-suave)">não enviada</small>`;
+  if (e.situacao === "ENVIADO")
+    return `<small style="color:var(--verde)">enviada ${dataBR((e.quando||"").slice(0,10))}</small>`;
+  return `<small style="color:var(--vermelho)" title="${(e.erro||"").replace(/"/g,"&quot;")}"
+            >não saiu</small>`;
+}
+
+async function carregarEnvios(){
+  ENVIOS = {};
+  try {
+    const d = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/envios`);
+    // o histórico vem do mais novo para o mais velho: o primeiro de cada
+    // fornecedor é o último envio para ele
+    d.envios.forEach(e => {
+      if (e.destinatario_tipo !== "cotacao_fornecedor") return;
+      if (!(e.destinatario_id in ENVIOS)) ENVIOS[e.destinatario_id] = e;
+    });
+  } catch(e){ /* sem histórico não impede o mapa de abrir */ }
+}
+
+async function abrirDisparo(){
+  let p;
+  try {
+    p = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/envio`);
+  } catch(e){ return aviso("mensagem", e.message, "erro"); }
+
+  const marcados = new Set(p.destinatarios.filter(d => d.pode).map(d => d.coluna_id));
+  els("dlg-titulo").textContent = `Disparar ${MAPA.numero} — ${MAPA.titulo}`;
+  els("dlg-corpo").innerHTML = `
+    <div id="disp-msg"></div>
+
+    ${p.precisa_escolher_empresa ? `<div class="aviso info">
+      Esta cotação tem itens de obras de <b>empresas diferentes</b>. Escolha por
+      qual delas ela sai — o fornecedor responde para quem mandou.</div>` : ""}
+    ${p.obras_sem_empresa.length ? `<div class="aviso info">
+      Obras sem empresa definida: <b>${p.obras_sem_empresa.join(", ")}</b>.
+      Acerte em Administração › Empresas.</div>` : ""}
+    ${p.conta_pronta ? "" : `<div class="aviso erro">${p.o_que_falta}</div>`}
+
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Sai pela empresa</label>
+        <select id="disp-empresa">
+          ${(p.empresas_possiveis.length ? p.empresas_possiveis
+             : (p.empresa ? [p.empresa] : [])).map(e =>
+            `<option value="${e.id}" ${p.empresa && e.id === p.empresa.id ? "selected" : ""}
+              >${e.razao_social} · ${e.cnpj}</option>`).join("")}
+        </select>
+        ${p.empresa ? `<div class="dica">Quem recebe vê: ${escapar(p.empresa.remetente)}</div>` : ""}</div>
+      <div class="campo"><label>Pedir retorno até</label>
+        <input id="disp-prazo" type="date"></div>
+      <div class="campo" style="grid-column:span 3"><label>Observação (entra no e-mail)</label>
+        <input id="disp-obs" placeholder="ex.: entrega na obra, das 8h às 17h"></div>
+    </div>
+
+    <div class="cartao" style="margin-top:12px">
+      <div class="cartao-cab"><h3>Quem recebe</h3>
+        <small>cada um recebe só a lista de itens, nunca o mapa</small></div>
+      <div id="disp-destinos"></div>
+    </div>
+
+    <div class="cartao">
+      <div class="cartao-cab"><h3>O que vai ser mandado</h3>
+        <small>é este texto, exatamente</small></div>
+      <div class="dados" style="white-space:pre-wrap; font-size:12.5px;
+           max-height:240px; overflow:auto; background:#F7F9FC; padding:10px;
+           border-radius:8px">${(p.corpo || "").replace(/</g, "&lt;")}</div>
+    </div>
+
+    <div class="cartao-dica">${p.aviso}</div>
+
+    <div style="margin-top:14px; display:flex; gap:8px">
+      <button class="btn" id="disp-ok" ${p.conta_pronta ? "" : "disabled"}>Disparar agora</button>
+      <button class="btn secundario" onclick="els('dlg').close()">Cancelar</button>
+    </div>`;
+
+  const pintar = () => {
+    els("disp-destinos").innerHTML = p.destinatarios.map(d => `
+      <label class="opcao">
+        <input type="checkbox" data-dest="${d.coluna_id}"
+          ${marcados.has(d.coluna_id) ? "checked" : ""} ${d.pode ? "" : "disabled"}>
+        <span class="rotulo">${d.fornecedor}
+          <small style="display:block; color:var(--tinta-suave)">${
+            d.pode ? d.para.join(", ") : d.motivo}</small>
+          ${d.ultimo_envio ? `<small style="display:block; color:${
+            d.ultimo_envio.situacao === "ENVIADO" ? "var(--verde)" : "var(--vermelho)"}">
+            último envio: ${d.ultimo_envio.situacao === "ENVIADO"
+              ? `saiu em ${dataBR((d.ultimo_envio.quando||"").slice(0,10))}`
+              : d.ultimo_envio.erro}</small>` : ""}
+        </span></label>`).join("")
+      || `<div class="cartao-dica">nenhum fornecedor no mapa</div>`;
+    document.querySelectorAll("[data-dest]").forEach(c =>
+      c.addEventListener("change", ev => {
+        const id = +ev.target.dataset.dest;
+        ev.target.checked ? marcados.add(id) : marcados.delete(id);
+      }));
+  };
+  pintar();
+
+  els("disp-ok").addEventListener("click", async () => {
+    if (!marcados.size)
+      return aviso("disp-msg", "Marque ao menos um fornecedor.", "erro");
+    els("disp-ok").disabled = true;
+    aviso("disp-msg", "Mandando…", "info");
+    try {
+      const r = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/envio`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({empresa_id: +els("disp-empresa").value,
+                              colunas: [...marcados],
+                              prazo: els("disp-prazo").value,
+                              observacao: els("disp-obs").value})});
+      els("dlg").close();
+      const tipo = r.falhas.length || r.sem_endereco.length ? "alerta" : "ok";
+      let recado = `${r.resumo} Saiu de ${r.remetente}.`;
+      if (r.falhas.length) recado += "<br><b>Não saiu para:</b> " +
+        r.falhas.map(f => `${f.fornecedor} — ${f.motivo}`).join("; ");
+      if (r.sem_endereco.length) recado += "<br><b>Sem e-mail no cadastro:</b> " +
+        r.sem_endereco.join(", ");
+      aviso("mensagem", recado, tipo);
+      await carregarEnvios();
+      desenharMapa();
+    } catch(e){
+      els("disp-ok").disabled = false;
+      aviso("disp-msg", e.message, "erro");
+    }
+  });
+
+  els("dlg").showModal();
 }
 
 // A proposta chega como PDF, foto do WhatsApp ou texto colado. A IA casa o que
@@ -219,6 +366,7 @@ async function abrirMapa(id){
   try {
     const d = await api(`/erp/api/suprimentos/cotacoes/${id}/mapa`);
     MAPA = d.mapa;
+    await carregarEnvios();
     els("resumo-cotacao").innerHTML =
       `<b>${MAPA.numero}</b> · ${MAPA.titulo} · ${MAPA.fornecedores.length} fornecedor(es)`;
     desenharMapa();
