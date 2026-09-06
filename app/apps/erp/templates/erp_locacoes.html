@@ -154,7 +154,12 @@ async function abrir(id){
         <td class="dados ${p.atrasada?"atrasado":""}">${dataBR(p.vencimento)}</td>
         <td class="direita dados">${numero(p.valor)}</td>
         <td><span class="selo ${p.status==="LANCADA"?"aprovado":p.atrasada?"bloqueado":"aguardando"}">${rotulo(p.status)}</span></td>
-        <td>${p.status==="PREVISTA"?`<button class="btn" data-lanc="${p.id}">Lançar título</button>`:""}</td>
+        <td>${p.status==="PREVISTA"
+          ? `<button class="btn" data-lanc="${p.id}">Lançar título</button>`
+          : (p.titulo_id
+             ? `<a class="link-btn" href="/erp/titulos?titulo=${p.titulo_id}"
+                  title="Abrir a conta a pagar deste mês">ver o título ›</a>`
+             : "")}</td>
       </tr>`).join("")}</tbody></table>
       <button class="btn secundario" id="gerar-prev">Gerar mais 6 parcelas</button>
 
@@ -191,17 +196,41 @@ async function abrir(id){
                              observacao:r.observacao});
     }));
     document.querySelectorAll("[data-lanc]").forEach(b=>b.addEventListener("click", async ()=>{
+      // Dados bancários vivem no CADASTRO do fornecedor, nunca no lançamento —
+      // por isso aqui só se ESCOLHE uma conta já homologada. Sem escolher e
+      // sem boleto, o financeiro recusa; então a tela recusa antes, dizendo
+      // o que fazer, em vez de oferecer um botão que sempre falha.
+      const locadora = (FORN || []).find(f => f.id === c.fornecedor_id) || {};
+      const contas = locadora.contas || [];
       const r = await perguntar({titulo:"Lançar parcela da locação",
-        aviso:"Informe a linha digitável se a locadora mandou boleto; sem ela o título nasce em Pix.",
+        aviso:"Com boleto, informe a linha digitável. Sem boleto, escolha a "
+              + "conta homologada da locadora — é por ela que o pagamento sai.",
         campos:[{nome:"linha", rotulo:"Linha digitável do boleto", largura:3,
-                 exemplo:"opcional"}], textoOk:"Lançar título"});
+                 exemplo:"opcional — se a locadora mandou boleto"},
+                {nome:"conta", rotulo:"Conta da locadora (Pix/TED)", tipo:"select",
+                 largura:3,
+                 opcoes:[{valor:"", rotulo: contas.length
+                          ? "— escolha —" : "nenhuma conta homologada no cadastro"}]
+                         .concat(contas.map(c=>({valor:String(c.id),
+                                 rotulo:`${c.forma} · ${c.identificacao}`})))}],
+        textoOk:"Lançar título"});
       if (!r) return;
       const linha = r.linha || "";
+      if (!linha && !r.conta) {
+        return aviso("dlg-msg", contas.length
+          ? "Escolha a conta da locadora, ou informe a linha digitável do boleto."
+          : `${c.locadora} não tem conta bancária homologada no cadastro. `
+            + "Cadastre e homologue a conta antes de lançar, ou lance por boleto.",
+          "erro");
+      }
       try {
-        const d = await api(`/erp/api/locacoes/parcelas/${b.dataset.lanc}/lancar`, {method:"POST",
-          headers:{"Content-Type":"application/json"}, body: JSON.stringify({linha_digitavel: linha})});
-        aviso("mensagem", `Título ${d.resultado.titulo} criado (${moeda(d.resultado.valor)})`
-          + (d.resultado.aviso?` · ${d.resultado.aviso}`:""), "ok");
+        const d2 = await api(`/erp/api/locacoes/parcelas/${b.dataset.lanc}/lancar`, {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({linha_digitavel: linha,
+                                fornecedor_conta_id: r.conta ? +r.conta : null,
+                                forma_pagamento: linha ? "BOLETO" : "PIX"})});
+        aviso("mensagem", `Título ${d2.resultado.titulo} criado (${moeda(d2.resultado.valor)})`
+          + (d2.resultado.aviso?` · ${d2.resultado.aviso}`:""), "ok");
         abrir(id); carregar();
       } catch(e){ aviso("dlg-msg", e.message, "erro"); }
     }));
@@ -366,6 +395,13 @@ els("btn-ler").addEventListener("click", () => {
 
 els("busca").addEventListener("input", desenhar);
 els("so-ativos").addEventListener("change", desenhar);
-carregar();
+
+// Vindo do título no financeiro ("abrir o contrato em Suprimentos"), o
+// endereço traz ?contrato=N e a ficha já abre — em vez de largar a pessoa
+// numa lista para procurar de novo o que ela acabou de clicar.
+carregar().then(() => {
+  const pedido = new URLSearchParams(location.search).get("contrato");
+  if (pedido) abrir(+pedido);
+});
 </script>
 {% endblock %}

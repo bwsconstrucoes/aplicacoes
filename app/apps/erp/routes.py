@@ -56,7 +56,6 @@ MODULOS = [
             ("confirmar", "Confirmar", "erp.pagina_confirmar"),
             ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
             ("empreitas", "Empreitas", "erp.pagina_empreitas"),
-            ("locacoes", "Locações", "erp.pagina_locacoes"),
             ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
             ("receber", "Receber", "erp.pagina_receber"),
             ("relatorios", "Relatórios", "erp.pagina_relatorios"),
@@ -88,6 +87,7 @@ MODULOS = [
             ("sup_solicitacoes", "Solicitações", "erp.pagina_suprimentos"),
             ("sup_cotacoes", "Cotações", "erp.pagina_suprimentos_cotacoes"),
             ("sup_pedidos", "Pedidos", "erp.pagina_suprimentos_pedidos"),
+            ("locacoes", "Locações", "erp.pagina_locacoes"),
             ("sup_precos", "Banco de preços", "erp.pagina_suprimentos_precos"),
             ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_insumos"),
         ],
@@ -422,11 +422,27 @@ def pagina_empreitas():
     return render_template("erp_empreitas.html", **_contexto("empreitas"))
 
 
-@bp.route("/erp/locacoes")
+@bp.route("/erp/suprimentos/locacoes")
 @login_obrigatorio
 @permissao("ver_erp")
 def pagina_locacoes():
+    """Locação de equipamento vive em SUPRIMENTOS, e não no financeiro.
+
+    Quem demanda a locação é a obra, e quem atende é suprimentos — que resolve
+    a mesma necessidade de três formas: remanejando o que já existe, comprando
+    ou locando. A obrigação de pagar continua sendo do financeiro: a parcela
+    vira título lá, e os dois lados se enxergam pelo número do contrato.
+    """
     return render_template("erp_locacoes.html", **_contexto("locacoes"))
+
+
+@bp.route("/erp/locacoes")
+@login_obrigatorio
+@permissao("ver_erp")
+def pagina_locacoes_antiga():
+    """O endereço antigo, de quando Locações ficava no Financeiro. Continua
+    respondendo porque há link salvo e gente com a tela nos favoritos."""
+    return redirect(url_for("erp.pagina_locacoes"))
 
 
 @bp.route("/erp/dc")
@@ -1883,6 +1899,41 @@ def api_titulos():
                     "limite_atingido": len(itens) >= _LIMITE_GRADE})
 
 
+def _origem_do_titulo(s, t) -> dict | None:
+    """O contrato que originou o título, quando ele nasceu de uma locação.
+
+    Devolve o suficiente para a tela dizer o que é e mandar a pessoa para a
+    gestão: número do contrato, locadora, obra, competência e o endereço da
+    tela de Locações.
+    """
+    parcela_id = getattr(t, "locacao_parcela_id", None)
+    if not parcela_id:
+        return None
+    from app.apps.erp.db.models.cadastros import Fornecedor, Obra
+    from app.apps.erp.db.models.financeiro import ContratoLocacao, LocacaoParcela
+    parcela = s.get(LocacaoParcela, parcela_id)
+    if parcela is None:
+        return None
+    contrato = s.get(ContratoLocacao, parcela.contrato_id)
+    if contrato is None:
+        return None
+    obra = s.get(Obra, contrato.obra_id) if contrato.obra_id else None
+    forn = s.get(Fornecedor, contrato.fornecedor_id) if contrato.fornecedor_id else None
+    return {
+        "tipo": "LOCACAO",
+        "rotulo": "Locação de equipamento",
+        "contrato": contrato.numero,
+        "contrato_externo": contrato.numero_externo,
+        "contrato_id": contrato.id,
+        "locadora": getattr(forn, "razao_social", ""),
+        "obra": getattr(obra, "codigo", ""),
+        "competencia": parcela.competencia.strftime("%m/%Y"),
+        "valor_previsto": float(parcela.valor_previsto or 0),
+        "situacao_contrato": contrato.status,
+        "link": url_for("erp.pagina_locacoes") + f"?contrato={contrato.id}",
+    }
+
+
 @bp.route("/erp/api/titulos/<int:titulo_id>")
 @login_obrigatorio
 @permissao("ver_erp")
@@ -1916,6 +1967,10 @@ def api_titulo_detalhe(titulo_id: int):
             solicitante = s.get(Usuario, t.solicitante_id)
             dados = {
                 "cabecalho": _serializar(t, date.today(), ver_pg),
+                # DE ONDE ESTE TÍTULO VEIO. Sem isto, a conta de aluguel que
+                # chega todo mês é uma despesa órfã: quem confere não sabe de
+                # qual contrato é, nem se o valor bate com o que está em obra.
+                "origem": _origem_do_titulo(s, t),
                 "pode_editar": ver_pg,
                 "avais": historico_avais(s, t.id),
                 "solicitante": solicitante.nome if solicitante else "—",

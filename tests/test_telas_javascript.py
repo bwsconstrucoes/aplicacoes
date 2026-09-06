@@ -175,3 +175,55 @@ def test_o_javascript_da_tela_e_valido(tela: Path):
         r = subprocess.run(["node", "--check", caminho], capture_output=True, text=True)
         Path(caminho).unlink()
         assert r.returncode == 0, f"{tela.name} bloco {i}:\n{r.stderr}"
+
+
+# ---------------------------------------------------------------------------
+# O elemento existe na página?
+#
+# O defeito que motivou este teste: a tela de Solicitações do financeiro
+# chamava `els("opcoes-conta")` para um painel de filtro que NUNCA foi
+# escrito no HTML. `els(...)` devolveu nulo, o `innerHTML` estourou dentro do
+# `try`, e a tela ficou meses mostrando "Não foi possível carregar" — sem erro
+# nenhum no console, porque o `catch` engoliu.
+#
+# A regra: todo id pedido por `els("x")` tem de aparecer como `id="x"` em
+# algum lugar do arquivo — no HTML da página ou no HTML que o próprio
+# JavaScript monta. Ids que a tela cria por `createElement` ficam na lista de
+# exceções abaixo, com o motivo.
+# ---------------------------------------------------------------------------
+
+# Ids criados em tempo de execução (createElement) e não escritos como id="".
+IDS_CRIADOS_EM_CODIGO = {
+    "dlg-pergunta",     # erp_base.html: a caixa de diálogo genérica
+}
+
+
+def _ids_pedidos(codigo: str) -> set[str]:
+    return set(re.findall(r'els\(\s*"([\w-]+)"\s*\)', codigo)) | \
+           set(re.findall(r'getElementById\(\s*"([\w-]+)"\s*\)', codigo))
+
+
+@pytest.mark.parametrize("tela", TELAS + [BASE], ids=lambda p: p.name)
+def test_a_tela_nao_procura_elemento_que_nao_existe(tela: Path):
+    texto = tela.read_text(encoding="utf-8")
+    # AQUI o código vai CRU, sem passar por `_so_codigo`: o id que interessa
+    # mora dentro das aspas de `els("...")`, e é justamente o conteúdo das
+    # aspas que aquela função joga fora.
+    codigo = "\n".join(_blocos(tela))
+    # ids escritos como id="x" — no HTML da página e dentro das strings de JS
+    escritos = set(re.findall(r'id="([\w-]+)"', texto))
+    escritos |= set(re.findall(r"id='([\w-]+)'", texto))
+    # a base é comum a todas as telas: o que ela declara vale para todas
+    escritos |= set(re.findall(r'id="([\w-]+)"', BASE.read_text(encoding="utf-8")))
+    # e ids montados com interpolação (id="pg-${i}") não se resolvem aqui
+    prefixos = tuple(p for p in re.findall(r'id="([\w-]*?)\$\{', texto))
+
+    faltando = sorted(
+        i for i in _ids_pedidos(codigo)
+        if i not in escritos
+        and i not in IDS_CRIADOS_EM_CODIGO
+        and not any(i.startswith(p) for p in prefixos if p))
+    assert not faltando, (
+        f"{tela.name} procura o(s) elemento(s) {faltando}, que não existe(m) "
+        f"em lugar nenhum da página. No navegador `els(...)` devolve nulo e a "
+        f"tela quebra — normalmente dentro de um try, sem aviso no console.")

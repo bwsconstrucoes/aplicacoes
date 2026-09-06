@@ -259,6 +259,60 @@ A cor passou a aparecer também na **lista de Solicitações** e no **filtro de
 situação** da esquerda, e não só no mapa: é onde a equipe procura pelo estado
 do item.
 
+### Locações mudou de lugar, e a tela de Solicitações estava morta — 06/09/2026
+
+Ramo `claude/oi-vjvrn8`, sem migração nova.
+
+**Locação de equipamento saiu do Financeiro e foi para Suprimentos.** O motivo,
+nas palavras do dono: quem demanda a locação é a obra, e quem atende é
+suprimentos — que resolve a mesma necessidade de três formas, remanejando o que
+já existe, comprando ou **locando**. O endereço antigo (`/erp/locacoes`)
+continua respondendo e redireciona, porque há link salvo e favorito.
+
+**A obrigação de pagar continua sendo do financeiro**, e agora os dois lados se
+enxergam:
+
+- o **título** ganhou um bloco "de onde veio": contrato, locadora, obra,
+  competência, valor previsto — e o botão "Abrir o contrato em Suprimentos",
+  que abre a ficha direto (`?contrato=N`);
+- a **parcela do contrato**, depois de lançada, mostra "ver o título ›" e abre
+  a ficha do título direto (`?titulo=N`).
+
+Sem isso, a conta de aluguel que chega todo mês é uma despesa órfã: quem
+confere não sabe de qual contrato é nem se o valor bate com o que está em obra.
+
+**Defeito corrigido no caminho**: o botão "Lançar título" da locação sempre
+falhava quando não havia boleto. O financeiro exige conta HOMOLOGADA escolhida
+(dados bancários vivem no cadastro, nunca no lançamento) e o modal nunca
+perguntava a conta. Agora o modal oferece as contas homologadas da locadora, e
+recusa na tela — dizendo o que fazer — quando não há nenhuma.
+
+### A tela de Solicitações do financeiro estava quebrada — 06/09/2026
+
+⚠️ **Achado grave, e por acaso.** `Financeiro › Solicitações` — a tela central
+de contas a pagar — não carregava: mostrava "Não foi possível carregar" e uma
+lista vazia. Duas causas somadas, as duas no JavaScript da tela:
+
+1. o estado dos filtros não tinha o conjunto `conta`, e `montarFiltros()` lia
+   `F.conta.has(...)`;
+2. o painel de filtro `opcoes-conta` **nunca foi escrito no HTML**, e o código
+   fazia `els("opcoes-conta").innerHTML = ...`.
+
+Os dois estouravam **dentro de um `try`**, então o `catch` engolia: nada no
+console, nenhum erro de servidor, nenhum teste falhando. O filtro também
+apontava para um campo `conta_obra` que a API nunca mandou — o certo é
+`categoria`. Ficou corrigido e o filtro "Conta do plano" passou a existir de
+verdade.
+
+**A brecha de teste foi fechada**: `tests/test_telas_javascript.py` ganhou
+`test_a_tela_nao_procura_elemento_que_nao_existe` — todo id pedido por
+`els("x")` tem de aparecer como `id="x"` em algum lugar da página. Foi provado
+que o teste falha com o defeito de volta e passa sem ele. É a terceira vez que
+um defeito só de tela passa por todos os testes; esta classe agora tem guarda.
+
+**Varredura**: as 26 telas do ERP foram abertas num navegador de verdade, uma a
+uma, conferindo aviso de erro e erro de JavaScript. Todas carregam.
+
 ### O que está pendente AGORA
 
 1. **Apertar "Aplicar atualizações do banco"** (Configurações, como ADMIN) para

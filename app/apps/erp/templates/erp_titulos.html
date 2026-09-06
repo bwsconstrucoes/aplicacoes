@@ -25,6 +25,12 @@
       <span class="filtro-badge" id="badge-credor">0</span><span class="seta">▾</span></button>
     <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-credor"></div></div>
   </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Conta do plano</span>
+      <span class="filtro-badge" id="badge-conta">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-conta"></div></div>
+  </div>
   <div class="filtro aberto">
     <button class="filtro-cab" type="button"><span>Vencimento e valor</span><span class="seta">▾</span></button>
     <div class="filtro-cont">
@@ -92,7 +98,10 @@ const ROTULOS = {EM_ANALISE:"Em análise", AGUARDANDO_APROVACAO:"Aguardando auto
   APROVADO:"Liberado p/ pagamento", BLOQUEADO:"Bloqueado na análise", PAGO_PARCIAL:"Pago parcial",
   PAGO:"Pago", DEVOLVIDO:"Devolvido", CANCELADO:"Cancelado", ESTORNADO:"Estornado", RASCUNHO:"Rascunho"};
 let TITULOS = [], SELECAO = new Set(), ORDEM = {campo:"vencimento", asc:true};
-let F = {status: new Set(ABERTOS), obra: new Set(), credor: new Set()};
+// `conta` faltava aqui e a tela inteira morria: montarFiltros() lia
+// F.conta.has(...) e estourava antes de desenhar a primeira linha.
+let F = {status: new Set(ABERTOS), obra: new Set(), credor: new Set(),
+         conta: new Set()};
 
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
@@ -116,7 +125,7 @@ async function carregar(){
 
 function montarFiltros(){
   const contas = {};
-  TITULOS.forEach(t => { const k = t.conta_obra || "(sem conta)";
+  TITULOS.forEach(t => { const k = t.categoria || "(sem conta)";
     contas[k] = (contas[k]||0)+1; });
   els("opcoes-conta").innerHTML = Object.entries(contas).sort()
     .map(([k,n])=>`<label class="opcao"><input type="checkbox" data-conta="${k}"
@@ -163,7 +172,7 @@ function visiveis(){
   const busca = (els("f-busca").value||"").toLowerCase().trim();
   let l = TITULOS.filter(t => {
     if (F.obra.size && !F.obra.has(t.obra)) return false;
-    if (F.conta.size && !F.conta.has(t.conta_obra || "(sem conta)")) return false;
+    if (F.conta.size && !F.conta.has(t.categoria || "(sem conta)")) return false;
     if (F.credor.size && !F.credor.has(t.fornecedor)) return false;
     if (!isNaN(min) && t.valor_liquido < min) return false;
     if (!isNaN(max) && t.valor_liquido > max) return false;
@@ -267,6 +276,35 @@ function desenhar(){
   els("marca-todos").checked = l.length>0 && l.every(t => SELECAO.has(t.id));
 }
 
+// DE ONDE ESTE TÍTULO VEIO.
+//
+// A conta de aluguel chega todo mês e, sem isto, é uma despesa órfã: quem
+// confere não sabe de qual contrato é nem se o valor bate com o que ainda
+// está em obra. Aqui o título diz o contrato, a locadora, a obra e a
+// competência — e o link leva para a gestão da locação, em Suprimentos.
+function blocoDaOrigem(o){
+  if (o.tipo !== "LOCACAO") return "";
+  const difere = Math.abs((o.valor_previsto || 0) - 0) > 0;
+  return `<div class="cartao" style="box-shadow:none; margin-bottom:12px;
+       border:1px solid var(--borda); border-left:4px solid var(--roxo)">
+    <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:baseline">
+      <div><div class="kpi-rotulo">${escapar(o.rotulo)}</div>
+        <div style="font-size:15px"><b>${escapar(o.contrato)}</b>${
+          o.contrato_externo ? ` <small>(nº da locadora ${escapar(o.contrato_externo)})</small>` : ""}</div></div>
+      <div><div class="kpi-rotulo">Locadora</div>
+        <div style="font-size:15px">${escapar(o.locadora)}</div></div>
+      <div><div class="kpi-rotulo">Obra</div>
+        <div style="font-size:15px"><b>${escapar(o.obra)}</b></div></div>
+      <div><div class="kpi-rotulo">Competência</div>
+        <div style="font-size:15px">${escapar(o.competencia)}</div></div>
+      ${difere ? `<div><div class="kpi-rotulo">Previsto no contrato</div>
+        <div style="font-size:15px">${numero(o.valor_previsto)}</div></div>` : ""}
+      <a class="btn secundario" style="margin-left:auto; text-decoration:none"
+         href="${o.link}">Abrir o contrato em Suprimentos ›</a>
+    </div>
+  </div>`;
+}
+
 async function detalhe(id){
   try {
     const {titulo: t} = await api(`/erp/api/titulos/${id}`);
@@ -275,6 +313,7 @@ async function detalhe(id){
     els("dlg-corpo").innerHTML = `
       ${t.porque_status ? `<div class="aviso info"><b>${ROTULOS[c.status]||c.status}.</b>
         ${t.porque_status}</div>` : ""}
+      ${t.origem ? blocoDaOrigem(t.origem) : ""}
       <div class="kpis">
         <div class="kpi estatico"><div class="kpi-rotulo">Bruto</div>
           <div class="kpi-valor" style="font-size:17px">${numero(t.bruto)}</div></div>
@@ -455,7 +494,8 @@ let deb;
 els("f-busca").addEventListener("input", () => { clearTimeout(deb); deb = setTimeout(desenhar, 250); });
 ["f-min","f-max","f-venc7","f-atrasados"].forEach(id => els(id).addEventListener("input", desenhar));
 els("btn-limpar").addEventListener("click", () => {
-  F = {status: new Set(ABERTOS), obra: new Set(), credor: new Set()};
+  F = {status: new Set(ABERTOS), obra: new Set(), credor: new Set(),
+       conta: new Set()};
   ["f-busca","f-min","f-max"].forEach(i => els(i).value = "");
   els("f-venc7").checked = els("f-atrasados").checked = false;
   carregar();
@@ -614,6 +654,12 @@ document.querySelectorAll("thead th[data-ordem]").forEach(th => th.addEventListe
   th.insertAdjacentHTML("beforeend", `<span class="seta"> ${ORDEM.asc?"▲":"▼"}</span>`);
   desenhar();
 }));
-carregar();
+
+// Vindo da parcela da locação ("ver o título"), o endereço traz ?titulo=N e a
+// ficha já abre. Mesmo caminho de volta que o financeiro tem para o contrato.
+carregar().then(() => {
+  const pedido = new URLSearchParams(location.search).get("titulo");
+  if (pedido) detalhe(+pedido);
+});
 </script>
 {% endblock %}
