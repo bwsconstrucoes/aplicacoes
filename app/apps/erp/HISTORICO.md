@@ -366,28 +366,47 @@ do mapa), Conciliação, Pagamentos, Confirmar e Prestação de contas.
 Verificado baixando os arquivos de verdade num navegador, tela por tela, e
 abrindo o `.xlsx` e o `.pdf` produzidos. 21 testes novos.
 
+### PUBLICADO NA MAIN EM 06/09/2026 — e as migrações foram aplicadas
+
+O dono autorizou, confirmou que não havia carga do painel nem sincronização do
+Análise de SPs rodando, juntou-se na `main`, e ele apertou "Aplicar
+atualizações do banco" logo depois da subida. Ele confirmou: **rodou tudo
+certo**. Então, em produção agora:
+
+- migrações **029 a 038** aplicadas (inclusive a 038, que acrescenta a coluna
+  de empresa em `obras`);
+- empresa por CNPJ, conta de e-mail por empresa, disparo da cotação;
+- os dois documentos do fornecedor (cotação e pedido de compra);
+- mapa em formato de planilha, com as cores da planilha do dono;
+- unidade destravada e a correção do item pelo comprador;
+- Locações dentro de Suprimentos, ligada ao financeiro nos dois sentidos;
+- exportação em Excel e PDF em doze telas;
+- **a tela Financeiro › Solicitações, que estava morta, voltou a funcionar.**
+
+**Ainda não conferido pelo dono na base real** — a lista sugerida a ele foi:
+Financeiro › Solicitações (a que estava quebrada), Suprimentos › Cotações (as
+cores), Administração › Empresas (cadastrar a BWS) e os botões Excel/PDF em
+qualquer lista.
+
 ### O que está pendente AGORA
 
-1. **Apertar "Aplicar atualizações do banco"** (Configurações, como ADMIN) para
-   as migrações 029 e 030. Enquanto não apertar, o ERP mostra a tela "O banco
-   está desatualizado". **Pergunte ao dono se já apertou.**
-2. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
+1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
    a senha da conta de e-mail das empresas. Gera-se uma vez com
    `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
    Sem ela tudo funciona, menos guardar senha de e-mail.
-3. **Definir `EL_NFSE_TOKEN` na Environment do Render** (token da prefeitura,
+2. **Definir `EL_NFSE_TOKEN` na Environment do Render** (token da prefeitura,
    que estava colado no código) e **trocar o token na origem** — ele continua
    no histórico do Git, commit `fa985ab`.
-4. **Definir o teto mensal de IA** em Configurações › Consumo de IA.
-5. **Homologação por perfil**: a parte mecânica (o que abre e o que é
+3. **Definir o teto mensal de IA** em Configurações › Consumo de IA.
+4. **Homologação por perfil**: a parte mecânica (o que abre e o que é
    recusado, tela a tela, perfil a perfil) roda sozinha no GitHub a cada envio
    (`tests/test_homologacao_banco.py`). Para o olho humano ficou só o roteiro
    reduzido: visual, leitura de documento por IA, avalizar/pagar com dado real.
-6. **Migrações 031 a 038**: apertar o botão ao juntar. A 031 são as restrições
-   de concorrência; a 032 é a tabela das permissões por pessoa. Enquanto a 032
-   não rodar, o ERP funciona normalmente **pelo cargo** — a tela de cadastro é
-   que não consegue mostrar os ajustes.
-7. **Suprimentos**: construído e com as telas de cadastro refeitas, mas
+5. **A tradução do plano de contas precisa do olho do dono**
+   (`PLANO_DA_PLANILHA`, em `core/suprimentos/exemplo.py`): são os nomes
+   antigos da planilha dele apontados para as contas do ERP. Errar aí joga a
+   compra na conta de custo errada, e ninguém percebe olhando a tela.
+6. **Como começar a operar Suprimentos**: construído e com as telas de cadastro refeitas, mas
    **ainda não operado contra a base real** — é o que o dono precisa fazer
    primeiro. Caminho sugerido: Cadastros › Importações › **Dados de exemplo**
    para simular o fluxo inteiro sem digitar nada, e depois `Remover os dados
@@ -396,16 +415,26 @@ abrindo o `.xlsx` e o `.pdf` produzidos. 21 testes novos.
    gravar). **A carga não cria categoria de insumo** — cadastre as categorias
    primeiro, senão os fornecedores entram sem saber o que vendem e não
    recebem cotação nenhuma.
-8. **Decidido em 06/09/2026**: o e-mail sai por SMTP da própria empresa, e
+7. **Decidido em 06/09/2026**: o e-mail sai por SMTP da própria empresa, e
    cada empresa tem a sua conta. Falta o dono preencher servidor, porta,
    usuário e senha de aplicativo em Administração › Empresas, e apertar
    "Mandar mensagem de teste". **Continua em aberto**: se um dia a empresa
    quiser saber que o fornecedor RECEBEU (e não só que o servidor aceitou),
    isso exige um serviço de envio com retorno — outro custo, outra decisão.
-9. **Confirmar com o dono a cor de AUTORIZAÇÃO** — é a única das 15 que não
+8. **Confirmar com o dono a cor de AUTORIZAÇÃO** — é a única das 15 que não
    veio da planilha (a cópia de onde as cores saíram não tem esse status).
    Trocar mexe só no bloco `.sit-` do `erp.css`.
-10. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
+9. **Fila combinada com o dono, nesta ordem**: (a) os quatro relatórios do
+   mapa — R2 resumo por item, R3 por fornecedor, R4 melhor fornecedor único,
+   R5 comparativo — mais o mapa em PDF deitado; (b) previsão de devolução por
+   equipamento e a conferência mensal de locação; (c) o agente de cobrança por
+   WhatsApp; (d) relatório de compras por obra, abrindo até o insumo; (e)
+   despesa com colaboradores, testada e mostrada como se fez em Suprimentos.
+10. **Decisão pendente do dono sobre celular**: fazer o "Caminho 1" (as telas
+   atuais caberem no celular, só para consultar — as seis testadas ficam com
+   687px numa tela de 390px) ou esperar o "Caminho 2" (telas próprias de
+   consulta e aprovação). Ele ainda não respondeu.
+11. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)
 
