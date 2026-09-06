@@ -302,7 +302,7 @@ as regras; o que só o uso mostra está escrito abaixo.
 | Suprimentos › Cadastros › Importações | carga por CSV das planilhas (com prévia) e os **dados de exemplo** para simular |
 | Suprimentos › Solicitações | pedido de material com obra **por item**, prioridade, previsão, as 15 situações com fluxo, filtro à esquerda, e a entrada assistida por IA (colar a lista). **É daqui que a cotação nasce**: filtra-se, marcam-se os itens e o botão abre o mapa já sugerindo quem vende aquelas categorias. O comprador **corrige o item** com motivo obrigatório — ver §8.3 |
 | Suprimentos › Cotações | mapa **em formato de planilha** (denso, zebrado, coluna do insumo fixa na rolagem) com preço por célula, **menor preço da linha em verde**, **a situação de cada insumo colorida ao lado dele**, total com frete/desconto/acréscimo, leitura da proposta do fornecedor por IA, herança de preço de cotação anterior, disparo por e-mail e correção do item pelo lápis da linha |
-| Suprimentos › Pedidos | fechamento do mapa ou direto, fila única de autorização com o mapa embutido, recusa parcial, previsão de pagamento, relatório por endereço de entrega e recebimento na obra |
+| Suprimentos › Pedidos | fechamento do mapa ou direto, fila única de autorização com o mapa embutido, recusa parcial, previsão de pagamento, **o pedido enviado por e-mail ao fornecedor** (com preço, condição de pagamento e endereço de entrega — ver §8.1.2) e recebimento na obra |
 | Suprimentos › Banco de preços | histórico de cotado e comprado, com último, menor, maior, média e o último comprado |
 
 ### 8.1.1 Duas regras que o dono pediu em 06/09/2026
@@ -330,6 +330,37 @@ O botão está na lista de Solicitações e no lápis da linha do mapa. Regras:
 O registro sai da trilha de auditoria (`eventos`, ação `CORRIGIDO`) — não há
 registro paralelo que possa divergir. Na lista, a linha ganha a marca
 "corrigido N×"; clicando, abre-se o histórico.
+
+### 8.1.2 Os dois documentos que o fornecedor recebe (06/09/2026)
+
+A cotação PERGUNTA preço; o pedido FECHA. São documentos diferentes de
+propósito, e os dois saem por e-mail pela conta da empresa da obra
+(`core/suprimentos/envio.montar_mensagem` e `.montar_pedido`).
+
+| | Cotação | Pedido de compra |
+|---|---|---|
+| Item com **especificação** | sim | sim |
+| Quantidade e unidade | sim | sim |
+| **Endereço de entrega**, por obra | sim | sim |
+| Preço unitário, frete, desconto, TOTAL | **nunca** | sim |
+| Condição de pagamento | pede que informem | a acertada, por extenso |
+| Prazo | retorno até | material em obra até |
+| CNPJ e endereço da empresa | sim | sim |
+
+Por que o endereço entra na cotação: o frete depende da distância. Itens de
+obras diferentes saem em blocos separados e a numeração dos itens não
+reinicia, porque o fornecedor cita o número na proposta. Obra sem endereço
+cadastrado diz "Endereço não informado" em vez de sair em branco.
+
+Por que o preço NÃO entra na cotação: seria entregar ao fornecedor A o preço
+do fornecedor B. Por que entra no pedido: é o que impede a discussão de nota
+com valor diferente do combinado.
+
+**Só sai pedido AUTORIZADO** — mandar antes é comprar sem alçada. A tela mostra
+o documento de qualquer jeito, mas o botão fica desligado com o motivo escrito.
+O endereço de entrega das duas telas vem do mesmo lugar
+(`core/suprimentos/entrega.py`): se a obra ganhar um campo de endereço novo,
+os dois documentos mudam juntos.
 
 ### 8.2 O que falta, e por quê
 

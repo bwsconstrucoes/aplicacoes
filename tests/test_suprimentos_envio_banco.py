@@ -325,3 +325,269 @@ def test_obra_sem_empresa_aparece_na_preparacao(sessao_real, chave):
     p = svc.preparar(s, cot.id)
 
     assert p["obras_sem_empresa"] == ["ORFA-01"]
+
+
+# ---------------------------------------------------------------------------
+# O que o fornecedor lê: especificação e ONDE entregar
+# ---------------------------------------------------------------------------
+def _obra_com_endereco(s, codigo, empresa_id, **endereco):
+    o = Obra(codigo=codigo, nome=f"Obra {codigo}", status="ATIVA",
+             empresa_id=empresa_id, **endereco)
+    s.add(o)
+    s.flush()
+    return o
+
+
+def test_a_cotacao_diz_a_especificacao_de_cada_item(sessao_real, chave,
+                                                    correio_mudo):
+    """Sem a especificação, "cimento" cobre CP-II e CP-V, e chega o errado."""
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    obra = _obra(s, "OBRA-A", a.id)
+    forn = _fornecedor(s, "FORNECEDOR UM LTDA", "71000003000174", "um@f.exemplo")
+    cot = _cotacao_com(s, usuario, [(obra, _insumo(s))], [forn])
+
+    corpo = svc.montar_mensagem(s, cot.id, a)["corpo"]
+
+    assert "conforme projeto" in corpo, "a especificação tem de ir junto do item"
+
+
+def test_a_cotacao_diz_onde_entregar(sessao_real, chave, correio_mudo):
+    """O frete depende da distância: pedir preço sem dizer o endereço é
+    receber um preço que muda depois."""
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    obra = _obra_com_endereco(s, "OBRA-A", a.id, endereco="Rua das Flores",
+                              numero_endereco="120", bairro="Centro",
+                              municipio="Barbalha", uf="CE")
+    forn = _fornecedor(s, "FORNECEDOR UM LTDA", "71000003000174", "um@f.exemplo")
+    cot = _cotacao_com(s, usuario, [(obra, _insumo(s))], [forn])
+
+    corpo = svc.montar_mensagem(s, cot.id, a)["corpo"]
+
+    assert "ENTREGAR EM: Rua das Flores, 120, Centro, Barbalha, CE" in corpo
+    assert "OBRA-A" in corpo
+
+
+def test_cotacao_para_duas_obras_separa_os_enderecos(sessao_real, chave):
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    uma = _obra_com_endereco(s, "OBRA-UMA", a.id, endereco="Rua A",
+                             municipio="Crato", uf="CE")
+    outra = _obra_com_endereco(s, "OBRA-DUAS", a.id, endereco="Rua B",
+                               municipio="Juazeiro", uf="CE")
+    forn = _fornecedor(s, "FORNECEDOR UM LTDA", "71000003000174", "um@f.exemplo")
+    cot = _cotacao_com(s, usuario,
+                       [(uma, _insumo(s, "Cimento")),
+                        (outra, _insumo(s, "Areia"))], [forn])
+
+    corpo = svc.montar_mensagem(s, cot.id, a)["corpo"]
+
+    assert corpo.count("ENTREGAR EM:") == 2
+    assert "Rua A, Crato, CE" in corpo and "Rua B, Juazeiro, CE" in corpo
+    # a numeração dos itens não reinicia a cada endereço: o fornecedor cita o
+    # número do item na proposta
+    assert "  1." in corpo and "  2." in corpo
+
+
+def test_obra_sem_endereco_diz_isso_em_vez_de_ficar_em_branco(sessao_real, chave):
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    obra = _obra(s, "SEM-END", a.id)
+    forn = _fornecedor(s, "FORNECEDOR UM LTDA", "71000003000174", "um@f.exemplo")
+    cot = _cotacao_com(s, usuario, [(obra, _insumo(s))], [forn])
+
+    corpo = svc.montar_mensagem(s, cot.id, a)["corpo"]
+
+    assert "Endereço não informado" in corpo
+
+
+# ---------------------------------------------------------------------------
+# O pedido de compra: o documento que FIRMA
+# ---------------------------------------------------------------------------
+def _pedido_pronto(s, usuario, empresa, *, autorizar=True, condicao=True):
+    """Um pedido de compra fechado do mapa, opcionalmente já autorizado."""
+    from app.apps.erp.core.suprimentos import pedido as svc_ped
+    from app.apps.erp.db.models.cadastros import CondicaoPagamento
+
+    obra = _obra_com_endereco(s, f"OBRA-{usuario.id}", empresa.id,
+                              endereco="Av. Central", numero_endereco="900",
+                              municipio="Barbalha", uf="CE")
+    forn = _fornecedor(s, "FORNECEDOR DO PEDIDO LTDA", "71000005000150",
+                       "pedido@fornecedor.exemplo")
+    cot = _cotacao_com(s, usuario, [(obra, _insumo(s, "Cimento CP-II"))], [forn])
+
+    from app.apps.erp.db.models.cadastros import CotacaoFornecedor, CotacaoItem
+    from sqlalchemy import select as _select
+    coluna = [c for c in s.scalars(_select(CotacaoFornecedor)).all()
+              if c.cotacao_id == cot.id][0]
+    linha = [c for c in s.scalars(_select(CotacaoItem)).all()
+             if c.cotacao_id == cot.id][0]
+    svc_cot.lancar_preco(s, coluna.id, linha.id, "38,50", usuario)
+    s.flush()
+
+    cond = None
+    if condicao:
+        cond = CondicaoPagamento(nome="28/56 dias", entrada_percentual=0,
+                                 dias=[28, 56])
+        s.add(cond)
+        s.flush()
+        coluna.condicao_pagamento_id = cond.id
+        s.flush()
+
+    # `cotacao_itens` são as LINHAS do mapa, não os itens da solicitação.
+    pedido = svc_ped.fechar_do_mapa(s, cot.id, coluna.id, [linha.id], {},
+                                    usuario)
+    s.flush()
+    if autorizar:
+        svc_ped.autorizar(s, pedido.id, usuario)
+        s.flush()
+    return pedido
+
+
+def test_o_pedido_traz_especificacao_preco_endereco_e_condicao(sessao_real, chave):
+    """Os quatro pedaços que fazem o documento firmar a compra."""
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    pedido = _pedido_pronto(s, usuario, a)
+
+    corpo = svc.montar_pedido(s, pedido.id, a)["corpo"]
+
+    assert "conforme projeto" in corpo, "sem especificação chega o material errado"
+    assert "ENTREGAR EM: Av. Central, 900, Barbalha, CE" in corpo
+    assert "R$ 38,50" in corpo, "o preço unitário fecha a discussão da nota"
+    assert "TOTAL DO PEDIDO" in corpo
+    assert "28/56 dias" in corpo, "a condição acertada tem de estar no papel"
+    assert "CNPJ" in corpo, "o fornecedor fatura contra um CNPJ"
+
+
+def test_o_pedido_soma_certo(sessao_real, chave):
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    pedido = _pedido_pronto(s, usuario, a)
+
+    corpo = svc.montar_pedido(s, pedido.id, a)["corpo"]
+
+    # 14 unidades a 38,50 = 539,00
+    assert "R$ 539,00" in corpo
+
+
+def test_pedido_sem_condicao_cadastrada_diz_a_combinar(sessao_real, chave):
+    """Em branco, o fornecedor inventa o prazo dele."""
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    pedido = _pedido_pronto(s, usuario, a, condicao=False)
+
+    corpo = svc.montar_pedido(s, pedido.id, a)["corpo"]
+
+    assert "Condição de pagamento: a combinar" in corpo
+
+
+def test_pedido_nao_autorizado_nao_sai(sessao_real, chave, correio_mudo):
+    """Mandar antes da autorização é comprar sem alçada: o fornecedor entrega
+    e a conta chega."""
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    pedido = _pedido_pronto(s, usuario, a, autorizar=False)
+
+    with pytest.raises(ErroValidacao, match="autorizado"):
+        svc.disparar_pedido(s, pedido.id, {}, usuario)
+    assert correio_mudo == [], "a recusa vem antes de qualquer envio"
+
+
+def test_pedido_autorizado_sai_e_fica_registrado(sessao_real, chave, correio_mudo):
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    pedido = _pedido_pronto(s, usuario, a)
+
+    r = svc.disparar_pedido(s, pedido.id, {}, usuario)
+    s.flush()
+
+    assert r["ok"] is True
+    assert r["para"] == ["pedido@fornecedor.exemplo"]
+    assert len(correio_mudo) == 1
+    assert pedido.numero in correio_mudo[0]["assunto"]
+
+    registros = correio.historico(s, "pedido_compra", pedido.id)
+    assert len(registros) == 1
+    assert registros[0]["situacao"] == "ENVIADO"
+    assert "TOTAL DO PEDIDO" in registros[0]["corpo"], \
+        "o registro guarda o texto exato que o fornecedor recebeu"
+
+
+def test_fornecedor_sem_e_mail_recusa_com_o_nome_dele(sessao_real, chave,
+                                                      correio_mudo):
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    pedido = _pedido_pronto(s, usuario, a)
+    forn = s.get(Fornecedor, pedido.fornecedor_id)
+    forn.email = None
+    s.flush()
+
+    with pytest.raises(ErroValidacao, match="sem e-mail"):
+        svc.disparar_pedido(s, pedido.id, {}, usuario)
+
+
+def test_a_tela_do_pedido_mostra_o_texto_antes_de_mandar(sessao_real, chave):
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    pedido = _pedido_pronto(s, usuario, a)
+
+    p = svc.preparar_pedido(s, pedido.id)
+
+    assert p["autorizado"] is True
+    assert p["para"] == ["pedido@fornecedor.exemplo"]
+    assert p["conta_pronta"] is True
+    assert "PEDIDO DE COMPRA" in p["corpo"]
+    assert p["envios"] == []
+    assert "não é o mesmo que entregue" in p["aviso"]
+
+
+def test_a_tela_avisa_quando_o_pedido_ainda_nao_foi_autorizado(sessao_real, chave):
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    pedido = _pedido_pronto(s, usuario, a, autorizar=False)
+
+    p = svc.preparar_pedido(s, pedido.id)
+
+    assert p["autorizado"] is False
+    assert p["situacao"] == "AGUARDANDO_AUTORIZACAO"
+
+
+def test_o_cnpj_sai_pontuado_no_documento(sessao_real, chave):
+    """Catorze dígitos seguidos ninguém confere. O fornecedor bate este número
+    contra o cadastro dele antes de faturar."""
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    pedido = _pedido_pronto(s, usuario, a)
+
+    corpo = svc.montar_pedido(s, pedido.id, a)["corpo"]
+
+    assert "CNPJ 71.000.001/0001-84" in corpo
+
+
+def test_a_condicao_nao_aparece_repetida(sessao_real, chave):
+    """"28/56 dias (28/56 dias)" é ruído: a explicação só entra quando
+    acrescenta alguma coisa ao nome cadastrado."""
+    s = sessao_real
+    usuario = _usuario(s)
+    a = _empresa(s, usuario, CNPJ_A, "CONSTRUTORA A LTDA")
+    pedido = _pedido_pronto(s, usuario, a)
+
+    corpo = svc.montar_pedido(s, pedido.id, a)["corpo"]
+
+    assert "Condição de pagamento: 28/56 dias" in corpo
+    assert "(28/56 dias)" not in corpo

@@ -175,6 +175,51 @@ Decisões, com o motivo:
 linha fica verde, e o rodapé diz qual fornecedor sai melhor no total (com
 frete, desconto e acréscimo dentro).
 
+### O documento que o fornecedor recebe — 06/09/2026
+
+Ramo `claude/oi-vjvrn8`, sem migração nova.
+
+O dono perguntou pela ESPECIFICAÇÃO no documento do fornecedor ("o mesmo nome
+de insumo com um detalhe diferente já é outra coisa"), pediu para ver como o
+documento está, e listou o que ele tem de levar: itens e quantidades, o local
+da entrega e a forma/condição de pagamento acertada, "pra firmar a compra".
+
+São DOIS documentos diferentes, e agora os dois saem por e-mail pela conta da
+empresa da obra:
+
+| | Cotação | Pedido de compra |
+|---|---|---|
+| Para quê | pedir preço | FIRMAR a compra |
+| Itens com **especificação** | sim (já tinha) | sim (já tinha) |
+| Quantidade e unidade | sim | sim |
+| **Endereço de entrega**, por obra | **passou a ter** | sim |
+| Preço unitário, frete, desconto, TOTAL | **nunca** | **passou a ter** |
+| Condição de pagamento | pede que o fornecedor informe | a que foi acertada |
+| Prazo | pede retorno até tal dia | precisamos em obra até tal dia |
+| CNPJ e endereço da empresa | sim | sim |
+
+Decisões, com o motivo:
+
+- **O endereço vai na cotação** porque o frete depende da distância: pedir
+  preço sem dizer onde entregar é receber um preço que muda depois. Itens de
+  obras diferentes saem em blocos separados, e a numeração NÃO reinicia (o
+  fornecedor cita o número do item na proposta).
+- **Obra sem endereço cadastrado diz "Endereço não informado"** em vez de sair
+  em branco — em branco, o motorista descobre no caminho.
+- **O preço vai no pedido** e não vai na cotação. No pedido é o que impede a
+  discussão de nota com valor diferente do combinado; na cotação seria
+  entregar ao fornecedor A o preço do fornecedor B.
+- **Só sai pedido AUTORIZADO.** Mandar um pedido que ainda está na fila é
+  comprar sem alçada: o fornecedor entrega e a conta chega. A tela mostra o
+  documento mesmo assim, mas o botão fica desligado com o motivo escrito.
+- **O CNPJ sai pontuado** (71.000.001/0001-84). O fornecedor confere esse
+  número contra o cadastro dele antes de faturar.
+- **Cada envio fica registrado** com o texto exato, como o da cotação — e vale
+  a mesma ressalva: "enviado" quer dizer que o servidor de saída aceitou.
+
+A tela de Pedidos deixou de mostrar um texto para copiar e colar: agora mostra
+o documento como ele vai sair, diz de qual e-mail sai e para quem, e manda.
+
 ### O que está pendente AGORA
 
 1. **Apertar "Aplicar atualizações do banco"** (Configurações, como ADMIN) para

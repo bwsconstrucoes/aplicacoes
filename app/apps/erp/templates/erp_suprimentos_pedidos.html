@@ -206,7 +206,7 @@ async function abrir(id){
         Pedido direto, sem cotação — não há mapa para comparar.</div>`}
       ${p.motivo ? `<div class="aviso alerta" style="margin-top:10px">${p.motivo}</div>` : ""}
       <div style="margin-top:12px"><button class="btn secundario" id="btn-relatorio">
-        Ver o pedido como o fornecedor vai receber</button></div>
+        Ver e mandar o pedido ao fornecedor</button></div>
       <div id="area-relatorio"></div>
       <div id="area-recebimento"></div>
       ${p.status === "AGUARDANDO_AUTORIZACAO" ? `
@@ -305,32 +305,69 @@ async function registrarRecebimento(id){
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
-// O fornecedor precisa ler o pedido separado por ONDE ENTREGAR: um mesmo
-// pedido leva material para obras diferentes, e o motorista precisa saber o
-// que desce em cada lugar.
+// O DOCUMENTO QUE FIRMA A COMPRA.
+//
+// Vai por e-mail, pela conta da empresa da obra, e leva tudo que o fornecedor
+// precisa para faturar e entregar: item com ESPECIFICAÇÃO (é ela que diz qual
+// variação do material foi comprada), quantidade, preço unitário e total,
+// ENDEREÇO DE ENTREGA de cada obra, CONDIÇÃO DE PAGAMENTO acertada e o prazo.
+//
+// Só sai pedido AUTORIZADO — mandar antes seria comprar sem alçada.
 async function verRelatorio(id){
+  const area = els("area-relatorio");
+  area.innerHTML = `<div class="cartao-dica" style="margin-top:10px">carregando…</div>`;
   try {
-    const d = await api(`/erp/api/suprimentos/pedidos/${id}/relatorio`);
-    const r = d.relatorio;
-    const texto = [
-      `PEDIDO ${r.numero} — ${r.fornecedor}`,
-      r.condicao ? `Pagamento: ${r.condicao}` : "",
-      r.entrega ? `Entrega: ${r.entrega === "COLETA" ? "coleta nossa" : "por conta do fornecedor"}` : "",
-      r.previsao_entrega ? `Precisamos em obra até: ${dataBR(r.previsao_entrega)}` : "",
-      "",
-      ...r.locais.flatMap(l => [
-        `ENTREGAR EM: ${l.endereco}`,
-        `Obra(s): ${l.obras.join(" · ")}`,
-        ...l.itens.map(i => `  - ${i.insumo}${i.especificacao ? ` (${i.especificacao})` : ""}` +
-                            ` — ${quantidadeBR(i.quantidade)} ${i.unidade}`),
-        ""]),
-      r.observacoes ? `Observações: ${r.observacoes}` : "",
-    ].filter(x => x !== "").join("\n");
-    els("area-relatorio").innerHTML = `<div class="cartao-dica" style="margin-top:10px">
-      Copie e envie ao fornecedor. Cada bloco é um endereço de entrega.</div>
-      <textarea rows="${Math.min(20, texto.split("\n").length + 2)}"
-        style="width:100%; font-family:monospace">${texto}</textarea>`;
+    const d = await api(`/erp/api/suprimentos/pedidos/${id}/envio`);
+    const e = d.envio;
+    const impedimentos = [];
+    if (!e.autorizado) impedimentos.push(
+      `Este pedido está ${rotulo(e.situacao)} — só sai pedido autorizado.`);
+    if (!e.empresa) impedimentos.push(
+      "A obra deste pedido não está ligada a nenhuma empresa. " +
+      "Administração › Empresas.");
+    else if (!e.conta_pronta) impedimentos.push(e.o_que_falta);
+    if (e.sem_endereco) impedimentos.push(
+      `${e.fornecedor} está sem e-mail no cadastro. Cadastros › Fornecedores.`);
+
+    area.innerHTML = `
+      <div id="env-msg"></div>
+      <div class="cartao-dica" style="margin-top:10px">
+        ${e.empresa ? `Sai de <b>${escapar(e.empresa.remetente)}</b>` : "Sem empresa definida"}
+        ${e.para.length ? ` para <b>${escapar(e.para.join(", "))}</b>` : ""}.
+        ${escapar(e.aviso)}</div>
+      ${impedimentos.length ? `<div class="aviso alerta" style="margin-top:8px">
+        ${impedimentos.map(escapar).join("<br>")}</div>` : ""}
+      ${e.envios.length ? `<div class="aviso info" style="margin-top:8px">
+        Já enviado ${e.envios.length}×. Último: ${momentoBR(e.envios[0].quando)}
+        — ${escapar(e.envios[0].situacao === "ENVIADO"
+                    ? e.envios[0].para.join(", ") : e.envios[0].erro || "falhou")}.
+        </div>` : ""}
+      <div class="campo" style="margin-top:10px"><label>Assunto</label>
+        <input id="env-assunto" value="${escapar(e.assunto)}" readonly></div>
+      <textarea id="env-corpo" rows="${Math.min(24, (e.corpo.split("\n").length + 2))}"
+        style="width:100%; font-family:monospace" readonly>${escapar(e.corpo)}</textarea>
+      <div style="margin-top:10px">
+        <button class="btn" id="env-mandar" ${impedimentos.length ? "disabled" : ""}
+          >✉ Mandar ao fornecedor</button></div>`;
+
+    if (!impedimentos.length) {
+      els("env-mandar").addEventListener("click", () => mandarPedido(id));
+    }
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+async function mandarPedido(id){
+  els("env-mandar").disabled = true;
+  try {
+    const r = await api(`/erp/api/suprimentos/pedidos/${id}/envio`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({})});
+    aviso("env-msg", escapar(r.resumo), r.ok === false ? "erro" : "ok");
+    verRelatorio(id);
+  } catch(e){
+    aviso("env-msg", e.message, "erro");
+    els("env-mandar").disabled = false;
+  }
 }
 
 async function pedirMotivo(id, acao, titulo){

@@ -1173,6 +1173,37 @@ def api_pedido_relatorio(pedido_id: int):
                         "relatorio": svc.relatorio_para_o_fornecedor(s, pedido_id)})
 
 
+@bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/envio",
+          methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("comprar")
+def api_pedido_envio(pedido_id: int):
+    """GET mostra o pedido como o fornecedor vai receber, antes de mandar.
+    POST manda de verdade, pela conta de e-mail da empresa da obra.
+
+    A rota é declarada ANTES da rota genérica de ações do pedido de propósito:
+    "envio" é um segmento fixo e não pode cair no `<acao>` de autorizar/recusar,
+    que exige outra permissão.
+    """
+    from app.apps.erp.core.suprimentos import envio as svc
+    try:
+        with get_session() as s:
+            if request.method == "GET":
+                return jsonify({"ok": True,
+                                "envio": svc.preparar_pedido(s, pedido_id)})
+            d = request.get_json(silent=True) or {}
+            resultado = svc.disparar_pedido(s, pedido_id, d, _usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, **resultado})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao mandar o pedido")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/suprimentos/pedidos/<int:pedido_id>/<acao>", methods=["POST"])
 @login_obrigatorio
 @permissao("autorizar_pedido")
