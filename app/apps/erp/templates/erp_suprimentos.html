@@ -125,7 +125,7 @@ function montarFiltros(){
   els("opcoes-status").innerHTML = BASE.situacoes.map(s => `
     <label class="opcao"><input type="checkbox" data-status="${s.chave}"
       ${F.status.has(s.chave) ? "checked" : ""}>
-      <span class="rotulo">${s.rotulo}</span>
+      <span class="rotulo">${selo(s.chave, s.rotulo)}</span>
       <span class="qtd">${porStatus[s.chave] || 0}</span></label>`).join("")
     || `<div class="cartao-dica">nenhum item ainda</div>`;
   els("badge-status").textContent = F.status.size;
@@ -229,7 +229,7 @@ function desenhar(){
       <td>${ROTULO_PRIORIDADE[i.prioridade] || i.prioridade}</td>
       <td class="dados ${i.previsao_entrega && i.previsao_entrega < hoje ? "atrasado" : ""}"
         >${dataBR(i.previsao_entrega)}</td>
-      <td>${i.status_rotulo}</td>
+      <td>${selo(i.status, i.status_rotulo)}</td>
       <td class="direita" style="white-space:nowrap">
         ${PODE_COTAR && i.corrigivel ? `<button class="btn secundario" data-corrigir="${i.id}"
           title="Corrigir o que a obra pediu — exige motivo e fica registrado"

@@ -305,6 +305,27 @@ as regras; o que só o uso mostra está escrito abaixo.
 | Suprimentos › Pedidos | fechamento do mapa ou direto, fila única de autorização com o mapa embutido, recusa parcial, previsão de pagamento, **o pedido enviado por e-mail ao fornecedor** (com preço, condição de pagamento e endereço de entrega — ver §8.1.2) e recebimento na obra |
 | Suprimentos › Banco de preços | histórico de cotado e comprado, com último, menor, maior, média e o último comprado |
 
+### 8.1.0 As cores das situações
+
+Vêm da **formatação condicional da coluna de status** da planilha "Registro de
+Suprimentos" (aba Insumos, coluna L) — lidas do arquivo, não escolhidas. A
+equipe lê a planilha pela cor antes de ler o texto.
+
+Onde ficam: bloco `.sit-` em `app/apps/erp/static/erp.css`, uma linha por
+situação. **Para trocar uma cor é ali e em lugar nenhum mais** — a lista de
+Solicitações, o filtro da esquerda e o mapa de cotação usam a mesma classe.
+
+Como foram lidas, se precisar repetir: a planilha principal é grande demais
+para o conector exportar; a cópia "Registro de Suprimentos (Natan)" exporta e
+carrega a mesma formatação. Baixada como `.xlsx` e lida com `openpyxl`
+(`ws.conditional_formatting`). O texto puro do Google **não** traz cor de
+célula.
+
+⚠️ **AUTORIZAÇÃO é a única cor inventada** — aquela cópia não tem esse status.
+Duas outras escolhas nossas: letra branca nos quatro fundos escuros (preta ali
+não se lê) e CANCELADO riscado (a planilha deixa a linha inteira branca, o que
+não cabe numa etiqueta).
+
 ### 8.1.1 Duas regras que o dono pediu em 06/09/2026
 
 **A unidade de medida NÃO é do insumo — é do pedido.** O cadastro guarda uma

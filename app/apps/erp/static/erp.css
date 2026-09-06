@@ -175,16 +175,47 @@ a { color: var(--azul-claro); }
 .subaba.ativa { color: var(--azul); border-bottom-color: var(--azul); background: #F2F5FA; }
 
 /* ==================== CORES DAS SITUAÇÕES DE SUPRIMENTOS ====================
-   As mesmas 15 situações da planilha, com cor. A equipe já lê a planilha por
-   cor antes de ler o texto — tirar isso seria fazer todo mundo desaprender.
+   As mesmas 15 situações da planilha, COM AS CORES DA PLANILHA.
+
+   De onde elas vieram: da formatação condicional da coluna de status
+   ("Registro de Suprimentos", aba Insumos, coluna L). Foram lidas do arquivo,
+   não escolhidas aqui — a equipe lê a planilha pela cor antes de ler o texto,
+   e trocar a cor seria fazer todo mundo desaprender.
+
+   ⚠️ AUTORIZAÇÃO é a única inventada: a cópia de onde as cores foram lidas
+   não tem esse status. Está num amarelo entre ANÁL. PROPOSTAS e PEDIDO
+   EMITIDO, que são os vizinhos dela no fluxo. Confirmar com o dono.
 
    PARA TROCAR UMA COR, é aqui e em lugar nenhum mais: cada situação tem um
-   par (fundo, tinta), e todas as telas usam a mesma classe. Se alguma cor
-   ficou diferente da planilha, é só corrigir a linha.
+   par (fundo, tinta), e todas as telas usam a mesma classe.
 
-   A ordem abaixo é a do fluxo: começa cinza (acabou de nascer), passa por
-   azul (andando), âmbar (esperando alguém), e termina verde (chegou). Vermelho
-   é só para o que exige ação: pendência. */
+   A tinta (preta ou branca) não é gosto: é o que se lê em cima daquele fundo.
+   Nos quatro fundos escuros — EM TRÂNSITO, ENTREGUE, PENDÊNCIA e SUSPENSO —
+   a letra é branca porque preta ali não se lê. */
+.sit {
+  display: inline-block; font-size: 11px; font-weight: 700; line-height: 1.4;
+  padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid rgba(0, 0, 0, .14);
+}
+.sit-SOLICITACAO        { background:#E06666; color:#2B0A0A; }  /* da planilha */
+.sit-SALA_TECNICA       { background:#999999; color:#1C1C1C; }  /* da planilha */
+.sit-COTACAO            { background:#F1C232; color:#3A2C00; }  /* da planilha */
+.sit-ANALISE_PROPOSTAS  { background:#FFE599; color:#4A3800; }  /* da planilha */
+.sit-AUTORIZACAO        { background:#FFD966; color:#4A3800; }  /* INVENTADA */
+.sit-PEDIDO_EMITIDO     { background:#FDFD17; color:#3A3A00; }  /* da planilha */
+.sit-ALMOXARIFADO       { background:#F4CCCC; color:#5B1A1A; }  /* da planilha */
+.sit-AGUARDANDO_COLETA  { background:#CFE2F3; color:#0B2C5C; }  /* da planilha */
+.sit-AGUARDANDO_ENTREGA { background:#6FA8DC; color:#08243F; }  /* da planilha */
+.sit-EM_TRANSITO        { background:#0B5394; color:#FFFFFF; }  /* da planilha */
+.sit-ENTREGUE           { background:#073763; color:#FFFFFF; }  /* da planilha */
+.sit-RECEBIDO           { background:#6AA84F; color:#12290A; }  /* da planilha */
+.sit-PENDENCIA          { background:#674EA7; color:#FFFFFF; }  /* da planilha */
+/* CANCELADO não tem cor na planilha: a linha cancelada fica branca. Aqui fica
+   sem fundo e riscado, que diz a mesma coisa numa etiqueta pequena. */
+.sit-CANCELADO          { background:transparent; color:#8A8F98; border-color:#DCE0E7;
+                          text-decoration: line-through; }
+.sit-SUSPENSO           { background:#434343; color:#FFFFFF; }  /* da planilha */
+
 /* A marca de "corrigido" ao lado do material. Não é enfeite: é o que evita a
    discussão de "eu não pedi isso" — clicando, vê-se o que mudou e por quê. */
 .corrigido {
@@ -194,27 +225,6 @@ a { color: var(--azul-claro); }
 }
 .corrigido:hover { background: #fbe4ae; }
 
-.sit {
-  display: inline-block; font-size: 11px; font-weight: 700; line-height: 1.4;
-  padding: 1px 7px; border-radius: 999px; white-space: nowrap;
-  border: 1px solid transparent;
-}
-.sit-SOLICITACAO        { background:#EDEFF3; color:#4A5568; border-color:#DCE0E7; }
-.sit-SALA_TECNICA       { background:#EFE7FA; color:#6B3FA0; border-color:#E0D2F5; }
-.sit-COTACAO            { background:#E7EDF7; color:#0B2C5C; border-color:#D2DDEE; }
-.sit-ANALISE_PROPOSTAS  { background:#E2F1F6; color:#12657F; border-color:#CCE5EE; }
-.sit-AUTORIZACAO        { background:#FDF1DC; color:#8A5A00; border-color:#F5E2BE; }
-.sit-PEDIDO_EMITIDO     { background:#DDE7F8; color:#14418F; border-color:#C7D6F0; }
-.sit-ALMOXARIFADO       { background:#F1E8F7; color:#7A4194; border-color:#E4D5EE; }
-.sit-AGUARDANDO_COLETA  { background:#FDF1DC; color:#8A5A00; border-color:#F5E2BE; }
-.sit-AGUARDANDO_ENTREGA { background:#FDF1DC; color:#8A5A00; border-color:#F5E2BE; }
-.sit-EM_TRANSITO        { background:#E2F1F6; color:#0F6E86; border-color:#CCE5EE; }
-.sit-ENTREGUE           { background:#E9F5EC; color:#1E7A3C; border-color:#D3EBDA; }
-.sit-RECEBIDO           { background:#E3F3E8; color:#166534; border-color:#C9E7D3; }
-.sit-PENDENCIA          { background:#FBE6E4; color:#B3261E; border-color:#F3CFCB; }
-.sit-CANCELADO          { background:#EDEFF3; color:#8A8F98; border-color:#DCE0E7;
-                          text-decoration: line-through; }
-.sit-SUSPENSO           { background:#EDEFF3; color:#8A8F98; border-color:#DCE0E7; }
 
 /* ======================== MAPA DE COTAÇÃO, DENSO ========================
    O mapa é uma planilha, e planilha se lê com a informação junta. Espalhado,

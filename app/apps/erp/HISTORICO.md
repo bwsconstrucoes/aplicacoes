@@ -129,12 +129,8 @@ já chegou e o que ainda está em cotação. Acima da tabela há a contagem por
 situação. As 15 situações são exatamente as da planilha "Registro de
 Suprimentos" — foram conferidas uma a uma.
 
-⚠️ **As cores são uma escolha nossa, não as da planilha dele.** A exportação em
-texto do Google não traz a cor da célula, então não deu para copiar: o que
-está lá segue uma lógica (cinza = parado, azul = andando, âmbar = esperando
-alguém, verde = chegou, vermelho só para pendência, cancelado riscado).
-**Pedir ao dono um print ou os códigos das cores** e trocar — mexe num lugar
-só, o bloco `.sit-` em `erp.css`.
+**As cores são as da planilha** — resolvido em 06/09/2026, ver a seção
+seguinte.
 
 **3. A unidade de medida deixou de ser trava do insumo.** O motivo dele:
 cerâmica normalmente se compra por metro quadrado, mas um dia vem por caixa;
@@ -220,6 +216,49 @@ Decisões, com o motivo:
 A tela de Pedidos deixou de mostrar um texto para copiar e colar: agora mostra
 o documento como ele vai sair, diz de qual e-mail sai e para quem, e manda.
 
+### As cores vieram da planilha — 06/09/2026
+
+Estavam na **formatação condicional da coluna de status**, não numa legenda:
+"Registro de Suprimentos", aba **Insumos**, coluna **L**, uma regra por status.
+Foram lidas do arquivo, não escolhidas.
+
+Como foram lidas, para quem precisar repetir: a planilha principal (1,9 MB) é
+grande demais para o Google exportar pelo conector. A cópia **"Registro de
+Suprimentos (Natan)"** exporta, carrega a mesma formatação, e foi de lá que
+saíram. Baixada como `.xlsx` e lida com `openpyxl`
+(`ws.conditional_formatting`) — o texto puro do Google **não** traz cor de
+célula, e foi por isso que a primeira tentativa falhou.
+
+| Situação | Fundo | Letra |
+|---|---|---|
+| SOLICITAÇÃO | `#E06666` vermelho | preta |
+| SALA TÉCNICA | `#999999` cinza | preta |
+| COTAÇÃO | `#F1C232` ouro | preta |
+| ANÁL. PROPOSTAS | `#FFE599` amarelo claro | preta |
+| **AUTORIZAÇÃO** | `#FFD966` | preta |
+| PEDIDO EMITIDO | `#FDFD17` amarelo forte | preta |
+| ALMOXARIFADO | `#F4CCCC` rosa claro | preta |
+| AGUARD. COLETA | `#CFE2F3` azul claro | preta |
+| AGUARD. ENTREGA | `#6FA8DC` azul médio | preta |
+| EM TRÂNSITO | `#0B5394` azul escuro | branca |
+| ENTREGUE | `#073763` azul marinho | branca |
+| RECEBIDO | `#6AA84F` verde | preta |
+| PENDÊNCIA | `#674EA7` roxo | branca |
+| CANCELADO | sem cor (a linha fica branca) | cinza, riscado |
+| SUSPENSO | `#434343` cinza escuro | branca |
+
+⚠️ **AUTORIZAÇÃO é a única inventada**: a cópia de onde as cores saíram tem 14
+status e não tem esse. Ficou num amarelo entre os dois vizinhos dela no fluxo.
+**Confirmar com o dono.**
+
+Duas escolhas nossas, ditas às claras: a **letra branca** nos quatro fundos
+escuros (preta ali não se lê), e **CANCELADO riscado** — a planilha deixa a
+linha inteira branca, o que não cabe numa etiqueta pequena.
+
+A cor passou a aparecer também na **lista de Solicitações** e no **filtro de
+situação** da esquerda, e não só no mapa: é onde a equipe procura pelo estado
+do item.
+
 ### O que está pendente AGORA
 
 1. **Apertar "Aplicar atualizações do banco"** (Configurações, como ADMIN) para
@@ -256,10 +295,9 @@ o documento como ele vai sair, diz de qual e-mail sai e para quem, e manda.
    "Mandar mensagem de teste". **Continua em aberto**: se um dia a empresa
    quiser saber que o fornecedor RECEBEU (e não só que o servidor aceitou),
    isso exige um serviço de envio com retorno — outro custo, outra decisão.
-9. **Pedir ao dono as cores da planilha** de Registro de Suprimentos (um
-   print basta). As que estão no ERP hoje são escolha nossa — a exportação de
-   texto do Google não traz cor de célula. Trocar mexe só no bloco `.sit-` do
-   `erp.css`.
+9. **Confirmar com o dono a cor de AUTORIZAÇÃO** — é a única das 15 que não
+   veio da planilha (a cópia de onde as cores saíram não tem esse status).
+   Trocar mexe só no bloco `.sit-` do `erp.css`.
 10. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)
