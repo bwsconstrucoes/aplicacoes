@@ -41,7 +41,8 @@
 
 {% block scripts %}
 <script>
-let COTACOES = [], MAPA = null, BASE = {fornecedores: [], condicoes: []};
+let COTACOES = [], MAPA = null,
+    BASE = {fornecedores: [], condicoes: [], insumos: [], unidades: [], obras: []};
 
 const STATUS = new Set();
 
@@ -53,6 +54,11 @@ async function carregarListas(){
     api("/erp/api/suprimentos/cotacoes"), api("/erp/api/suprimentos/cadastros")]);
   COTACOES = cots.cotacoes;
   BASE.condicoes = cadastros.condicoes;
+  // Insumos, unidades e obras vêm junto porque a correção do item acontece
+  // AQUI: é olhando o mapa que o comprador descobre o pedido errado.
+  BASE.insumos = cadastros.insumos || [];
+  BASE.unidades = cadastros.unidades || [];
+  BASE.obras = cadastros.obras || [];
   desenharLista();
 }
 
@@ -104,53 +110,83 @@ function desenharMapa(){
     return;
   }
 
-  const cab = colunas.map(c => `<th style="min-width:150px">
-      ${c.fornecedor}
-      <br><button class="btn secundario" data-proposta="${c.id}"
-          style="padding:3px 8px; font-size:11px">ler proposta</button>
-      <br><small>${c.condicao || "sem condição"} ·
-        ${c.entrega ? (c.entrega === "COLETA" ? "coleta" : "entrega") : "—"}</small>
-      ${Number(c.frete) > 0 ? `<br><small>frete R$ ${numero(c.frete)}</small>` : ""}
-      ${Number(c.desconto) > 0 ? `<br><small>desc. R$ ${numero(c.desconto)}</small>` : ""}
-      <br><small>${c.itens_cotados}/${c.itens_no_mapa} itens</small>
-      <br>${situacaoDoEnvio(c.id)}</th>`).join("");
+  // O cabeçalho de cada fornecedor: tudo o que decide a compra, junto, em
+  // linhas curtas. Espalhado, seis fornecedores não cabem na tela.
+  const cab = colunas.map(c => `<th style="min-width:104px">
+      <div style="font-weight:700; font-size:11px">${escapar(c.fornecedor)}</div>
+      <span class="sub">${escapar(c.condicao || "sem condição")} ·
+        ${c.entrega ? (c.entrega === "COLETA" ? "coleta" : "entrega") : "—"}</span>
+      ${Number(c.frete) > 0 || Number(c.desconto) > 0 ? `<span class="sub">${
+        [Number(c.frete) > 0 ? `frete ${numero(c.frete)}` : "",
+         Number(c.desconto) > 0 ? `desc. ${numero(c.desconto)}` : ""]
+        .filter(Boolean).join(" · ")}</span>` : ""}
+      <span class="sub">${c.itens_cotados}/${c.itens_no_mapa} itens · ${situacaoDoEnvio(c.id)}</span>
+      <button class="link-btn" data-proposta="${c.id}" style="font-size:10.5px">ler proposta</button>
+    </th>`).join("");
 
+  // Uma linha por item, com a SITUAÇÃO ao lado do insumo: quem abre um mapa de
+  // duas semanas atrás vê na hora o que já virou pedido, o que já chegou e o
+  // que ainda está em cotação, sem sair da tela.
   const linhas = MAPA.itens.map(i => `<tr>
-      <td>${i.insumo}${i.especificacao ? `<br><small>${i.especificacao}</small>` : ""}</td>
-      <td class="direita dados">${quantidadeBR(i.quantidade)} ${i.unidade}</td>
+      <td class="insumo"><b>${escapar(i.insumo)}</b>
+        ${i.corrigivel ? `<button class="lapis" data-corrigir="${i.suprimento_item_id}"
+          title="Corrigir o que a obra pediu — exige motivo e fica registrado"
+          aria-label="corrigir">✎</button>` : ""}
+        ${i.especificacao ? `<small>${escapar(i.especificacao)}</small>` : ""}
+        ${i.correcoes ? `<small class="corrigido">corrigido ${i.correcoes}×</small>` : ""}</td>
+      <td>${selo(i.status, i.status_rotulo)}</td>
+      <td class="dados" style="font-size:11px">${escapar(i.obra || "—")}</td>
+      <td class="direita dados" style="white-space:nowrap">${
+        quantidadeBR(i.quantidade)} <small>${escapar(i.unidade)}</small></td>
       ${colunas.map(c => {
         const cel = i.precos[c.id];
         if (!cel) return `<td class="direita"><input class="cel" data-col="${c.id}"
-            data-lin="${i.id}" style="width:90px; text-align:right" placeholder="—"></td>`;
+            data-lin="${i.id}" placeholder="—"></td>`;
         const melhor = i.menor_preco_de === c.id;
         return `<td class="direita ${melhor ? "menor-preco" : ""}">
           <input class="cel" data-col="${c.id}" data-lin="${i.id}"
-                 value="${cel.preco_unitario}" style="width:90px; text-align:right">
-          <br><small>${numero(cel.total)}</small>
-          ${cel.origem === "HERDADO" ? `<br><small title="preço de outra cotação"
-             style="color:var(--ambar)">herdado</small>` : ""}
-          ${cel.origem === "IA" ? `<br><small style="color:var(--ciano)">lido</small>` : ""}
+                 value="${cel.preco_unitario}">
+          <span class="sub">${numero(cel.total)}${
+            cel.origem === "HERDADO" ? ` · <span style="color:var(--ambar)"
+              title="preço de outra cotação">herdado</span>` : ""}${
+            cel.origem === "IA" ? ` · <span style="color:var(--ciano)">lido</span>` : ""}</span>
         </td>`;
       }).join("")}
     </tr>`).join("");
 
   const totais = colunas.map(c => `<td class="direita dados"><b>${numero(c.total)}</b>
       ${c.itens_cotados < c.itens_no_mapa
-        ? `<br><small>não cotou tudo</small>`
+        ? `<span class="sub">não cotou tudo</span>`
         : (MAPA.melhor_fornecedor_unico === c.id
-            ? `<br><small style="color:var(--verde)">melhor no total</small>` : "")}</td>`).join("");
+            ? `<span class="sub" style="color:var(--verde); font-weight:700"
+                 >melhor no total</span>` : "")}</td>`).join("");
+
+  // Quantos itens em cada situação — o resumo que a planilha dá pela cor.
+  const porSituacao = {};
+  MAPA.itens.forEach(i => {
+    if (!i.status) return;
+    porSituacao[i.status] = porSituacao[i.status] || {n: 0, rotulo: i.status_rotulo};
+    porSituacao[i.status].n++;
+  });
+  const resumoSituacoes = Object.entries(porSituacao)
+    .map(([chave, x]) => `${selo(chave, `${x.rotulo}: ${x.n}`)}`).join(" ");
 
   els("painel-mapa").innerHTML = `<div class="cartao">
-    <div class="cartao-cab"><h3>${MAPA.numero} · ${MAPA.titulo}</h3>
+    <div class="cartao-cab"><h3>${escapar(MAPA.numero)} · ${escapar(MAPA.titulo)}</h3>
       <small>o total já inclui frete, desconto e acréscimo — comparar só o
         preço unitário engana</small></div>
+    ${resumoSituacoes ? `<div style="margin:0 0 8px; display:flex; gap:4px;
+      flex-wrap:wrap">${resumoSituacoes}</div>` : ""}
     <div style="overflow-x:auto">
-      <table><thead><tr><th>Insumo</th><th class="direita">Qtd</th>${cab}</tr></thead>
+      <table class="mapa"><thead><tr>
+        <th>Insumo</th><th>Situação</th><th>Obra</th><th class="direita">Qtd</th>${cab}
+      </tr></thead>
         <tbody>${linhas}</tbody>
-        <tfoot><tr><td colspan="2"><b>Total</b></td>${totais}</tr>
-          <tr><td colspan="2"><small>comprando cada item de quem tem o menor preço</small></td>
+        <tfoot><tr><td colspan="4"><b>Total</b></td>${totais}</tr>
+          <tr><td colspan="4"><span class="sub">comprando cada item de quem tem o
+            menor preço</span></td>
             <td colspan="${colunas.length}" class="direita dados">
-              ${numero(MAPA.total_pulverizado)} <small>(sem frete)</small></td></tr>
+              ${numero(MAPA.total_pulverizado)} <span class="sub">(sem frete)</span></td></tr>
         </tfoot></table>
     </div>
     <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
@@ -171,6 +207,54 @@ function desenharMapa(){
   els("btn-disparar").addEventListener("click", abrirDisparo);
   document.querySelectorAll("[data-proposta]").forEach(b =>
     b.addEventListener("click", () => lerProposta(+b.dataset.proposta)));
+  document.querySelectorAll("[data-corrigir]").forEach(b =>
+    b.addEventListener("click", () => corrigirItem(+b.dataset.corrigir)));
+}
+
+// ---------------------------------------------------------------------------
+// Correção do item, sem sair do mapa
+//
+// A obra pede em saco o que só vem em bag, escreve o material errado, confunde
+// um insumo com o vizinho — e é aqui, comparando preços, que o comprador
+// percebe. Corrigir sem assinatura vira "eu não pedi isso": o MOTIVO é
+// obrigatório e tudo fica gravado.
+// ---------------------------------------------------------------------------
+async function corrigirItem(itemId){
+  const i = (MAPA.itens || []).find(x => x.suprimento_item_id === itemId);
+  if (!i) return;
+  const d = await perguntar({
+    titulo: `Corrigir ${i.insumo}`,
+    textoOk: "Corrigir e registrar",
+    aviso: "Fica gravado o que era, o que passou a ser, quem mudou e quando. " +
+           "Mudando o material ou a unidade, os preços já digitados nesta " +
+           "linha são apagados — eram de outra coisa.",
+    campos: [
+      {nome: "insumo_id", rotulo: "Insumo", tipo: "select", largura: 3,
+       valor: String(i.insumo_id),
+       opcoes: BASE.insumos.map(x => ({valor: String(x.id), rotulo: x.descricao}))},
+      {nome: "especificacao", rotulo: "Especificação", largura: 2,
+       valor: i.especificacao || "", exemplo: "ex.: CP-II 50kg, cinza"},
+      {nome: "quantidade", rotulo: "Quantidade", largura: 1,
+       valor: quantidadeBR(i.quantidade)},
+      {nome: "unidade", rotulo: "Unidade", tipo: "select", largura: 1,
+       valor: i.unidade,
+       opcoes: BASE.unidades.map(u => ({valor: u.codigo,
+                                        rotulo: `${u.codigo} · ${u.descricao}`}))},
+      {nome: "obra_id", rotulo: "Obra que recebe", tipo: "select", largura: 2,
+       valor: String(i.obra_id),
+       opcoes: BASE.obras.map(o => ({valor: String(o.id), rotulo: rotuloObra(o)}))},
+      {nome: "motivo", rotulo: "Motivo da correção", tipo: "textarea", linhas: 2,
+       obrigatorio: true, largura: 3,
+       exemplo: "ex.: material solicitado errado — a obra queria CP-V"}]});
+  if (!d) return;
+  try {
+    const r = await api(`/erp/api/suprimentos/itens/${itemId}`, {method: "PATCH",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(d)});
+    aviso("mensagem", `${Object.keys(r.mudancas || {}).length} campo(s) corrigido(s).` +
+      (r.avisos && r.avisos.length ? " " + r.avisos.join(" ") : ""),
+      r.avisos && r.avisos.length ? "alerta" : "ok");
+    abrirMapa(MAPA.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
 // ---------------------------------------------------------------------------

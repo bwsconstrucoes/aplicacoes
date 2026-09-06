@@ -174,6 +174,92 @@ a { color: var(--azul-claro); }
 .subaba:hover { background: #F2F5FA; color: var(--tinta); }
 .subaba.ativa { color: var(--azul); border-bottom-color: var(--azul); background: #F2F5FA; }
 
+/* ==================== CORES DAS SITUAÇÕES DE SUPRIMENTOS ====================
+   As mesmas 15 situações da planilha, com cor. A equipe já lê a planilha por
+   cor antes de ler o texto — tirar isso seria fazer todo mundo desaprender.
+
+   PARA TROCAR UMA COR, é aqui e em lugar nenhum mais: cada situação tem um
+   par (fundo, tinta), e todas as telas usam a mesma classe. Se alguma cor
+   ficou diferente da planilha, é só corrigir a linha.
+
+   A ordem abaixo é a do fluxo: começa cinza (acabou de nascer), passa por
+   azul (andando), âmbar (esperando alguém), e termina verde (chegou). Vermelho
+   é só para o que exige ação: pendência. */
+/* A marca de "corrigido" ao lado do material. Não é enfeite: é o que evita a
+   discussão de "eu não pedi isso" — clicando, vê-se o que mudou e por quê. */
+.corrigido {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; cursor: pointer;
+  color: #7c4a03; background: #fdf0d5; border: 1px solid #f0d6a0;
+}
+.corrigido:hover { background: #fbe4ae; }
+
+.sit {
+  display: inline-block; font-size: 11px; font-weight: 700; line-height: 1.4;
+  padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid transparent;
+}
+.sit-SOLICITACAO        { background:#EDEFF3; color:#4A5568; border-color:#DCE0E7; }
+.sit-SALA_TECNICA       { background:#EFE7FA; color:#6B3FA0; border-color:#E0D2F5; }
+.sit-COTACAO            { background:#E7EDF7; color:#0B2C5C; border-color:#D2DDEE; }
+.sit-ANALISE_PROPOSTAS  { background:#E2F1F6; color:#12657F; border-color:#CCE5EE; }
+.sit-AUTORIZACAO        { background:#FDF1DC; color:#8A5A00; border-color:#F5E2BE; }
+.sit-PEDIDO_EMITIDO     { background:#DDE7F8; color:#14418F; border-color:#C7D6F0; }
+.sit-ALMOXARIFADO       { background:#F1E8F7; color:#7A4194; border-color:#E4D5EE; }
+.sit-AGUARDANDO_COLETA  { background:#FDF1DC; color:#8A5A00; border-color:#F5E2BE; }
+.sit-AGUARDANDO_ENTREGA { background:#FDF1DC; color:#8A5A00; border-color:#F5E2BE; }
+.sit-EM_TRANSITO        { background:#E2F1F6; color:#0F6E86; border-color:#CCE5EE; }
+.sit-ENTREGUE           { background:#E9F5EC; color:#1E7A3C; border-color:#D3EBDA; }
+.sit-RECEBIDO           { background:#E3F3E8; color:#166534; border-color:#C9E7D3; }
+.sit-PENDENCIA          { background:#FBE6E4; color:#B3261E; border-color:#F3CFCB; }
+.sit-CANCELADO          { background:#EDEFF3; color:#8A8F98; border-color:#DCE0E7;
+                          text-decoration: line-through; }
+.sit-SUSPENSO           { background:#EDEFF3; color:#8A8F98; border-color:#DCE0E7; }
+
+/* ======================== MAPA DE COTAÇÃO, DENSO ========================
+   O mapa é uma planilha, e planilha se lê com a informação junta. Espalhado,
+   um mapa de 30 itens × 6 fornecedores não cabe em tela nenhuma e ninguém
+   compara nada. Daqui para baixo é tudo aperto: menos respiro, fonte menor,
+   e a coluna do insumo presa à esquerda para não se perder ao rolar. */
+.mapa { border-collapse: collapse; font-size: 12px; }
+.mapa thead th {
+  padding: 5px 6px; font-size: 10.5px; letter-spacing: .04em; line-height: 1.35;
+  vertical-align: bottom;
+}
+.mapa tbody td { padding: 3px 6px; font-size: 12px; line-height: 1.3; vertical-align: middle; }
+.mapa tbody tr:nth-child(even) { background: #FAFBFD; }   /* zebra: o olho não pula de linha */
+.mapa tbody tr:hover { background: #EEF3FB; }
+/* Largura suficiente para o nome do insumo caber em uma ou duas linhas. Com a
+   coluna estreita, "Caixa Sifonada c/ Três Entradas" ocupava quatro linhas e o
+   mapa inteiro dobrava de altura — que é justamente o que se quis evitar. */
+.mapa td.insumo { min-width: 250px; max-width: 300px; }
+.mapa td.insumo b { font-weight: 600; }
+.mapa td.insumo small { color: var(--tinta-suave); font-size: 10.5px; display: block; }
+/* a marca de corrigido é um selo, não uma linha: `display:block` a esticava
+   pela largura toda da coluna */
+.mapa td.insumo small.corrigido { display: inline-block; }
+/* O lápis de corrigir fica DENTRO da linha do nome, e não embaixo: uma linha a
+   mais por item, vezes trinta itens, é meia tela de rolagem. */
+.mapa .lapis {
+  border: 0; background: none; cursor: pointer; padding: 0 3px; font-size: 12px;
+  color: var(--tinta-suave); opacity: .45;
+}
+.mapa tr:hover .lapis, .mapa .lapis:focus { opacity: 1; color: var(--azul); }
+.mapa .cel {
+  width: 74px; padding: 2px 5px; font-size: 12px; text-align: right;
+  border: 1px solid var(--borda); border-radius: 4px;
+  font-family: var(--fonte-dados); background: var(--branco);
+}
+.mapa .cel:focus { border-color: var(--azul); outline: none; }
+.mapa td.menor-preco .cel { background: #E3F3E8; border-color: #7FC49A; font-weight: 700; }
+.mapa .sub { display: block; font-size: 10px; color: var(--tinta-suave); line-height: 1.25; }
+/* a primeira coluna acompanha a rolagem horizontal */
+.mapa th:first-child, .mapa td:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--branco);
+}
+.mapa tbody tr:nth-child(even) td:first-child { background: #FAFBFD; }
+.mapa tfoot td { padding: 6px; font-size: 12px; border-top: 2px solid var(--borda-forte); }
+
 /* ============================ CHIPS ============================ */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 14px; min-height: 28px; }
 .chip {
@@ -235,6 +321,7 @@ td.dados, th.dados { font-family: var(--fonte-dados); }
 td.direita, th.direita { text-align: right; }
 td.desc { max-width: 330px; }
 td.desc small { display: block; color: var(--tinta-suave); font-size: 11.5px; margin-top: 1px; }
+td.desc small.corrigido { display: inline-block; color: #7c4a03; }
 .atrasado { color: var(--vermelho); font-weight: 700; }
 
 .selo { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }

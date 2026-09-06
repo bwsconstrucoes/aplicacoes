@@ -296,14 +296,40 @@ as regras; o que só o uso mostra está escrito abaixo.
 
 | Tela | O que faz |
 |---|---|
-| Suprimentos › Cadastros › Insumos | gestão tipo planilha: filtro à esquerda por categoria, unidade e grupo do plano, busca, ordenação por coluna, **edição na própria célula**, KPIs do que está incompleto (sem conta, sem unidade, sem preço) e exportação do que está na tela |
+| Suprimentos › Cadastros › Insumos | gestão tipo planilha: filtro à esquerda por categoria, unidade usual e grupo do plano, busca, ordenação por coluna, **edição na própria célula**, KPIs do que está incompleto (sem conta, sem preço) e exportação do que está na tela. **A unidade do cadastro é só sugestão** — ver §8.3 |
 | Suprimentos › Cadastros › Fornecedores | a mesma gestão para fornecedor: porte, região, canal, **o que ele vende** (a marcação que decide quem recebe cada cotação) e os contatos; KPIs de quem NÃO vai receber cotação |
 | Suprimentos › Cadastros › Categorias, unidades e pagamento | cadastra e desativa categoria de insumo e unidade de compra, cadastra condição de pagamento como regra, e decide os pedidos de cadastro de insumo (pedir → decidir → avisar) |
 | Suprimentos › Cadastros › Importações | carga por CSV das planilhas (com prévia) e os **dados de exemplo** para simular |
-| Suprimentos › Solicitações | pedido de material com obra **por item**, prioridade, previsão, as 15 situações com fluxo, filtro à esquerda, e a entrada assistida por IA (colar a lista). **É daqui que a cotação nasce**: filtra-se, marcam-se os itens e o botão abre o mapa já sugerindo quem vende aquelas categorias |
-| Suprimentos › Cotações | mapa com preço por célula, menor preço destacado, total com frete/desconto/acréscimo, leitura da proposta do fornecedor por IA, herança de preço de cotação anterior |
+| Suprimentos › Solicitações | pedido de material com obra **por item**, prioridade, previsão, as 15 situações com fluxo, filtro à esquerda, e a entrada assistida por IA (colar a lista). **É daqui que a cotação nasce**: filtra-se, marcam-se os itens e o botão abre o mapa já sugerindo quem vende aquelas categorias. O comprador **corrige o item** com motivo obrigatório — ver §8.3 |
+| Suprimentos › Cotações | mapa **em formato de planilha** (denso, zebrado, coluna do insumo fixa na rolagem) com preço por célula, **menor preço da linha em verde**, **a situação de cada insumo colorida ao lado dele**, total com frete/desconto/acréscimo, leitura da proposta do fornecedor por IA, herança de preço de cotação anterior, disparo por e-mail e correção do item pelo lápis da linha |
 | Suprimentos › Pedidos | fechamento do mapa ou direto, fila única de autorização com o mapa embutido, recusa parcial, previsão de pagamento, relatório por endereço de entrega e recebimento na obra |
 | Suprimentos › Banco de preços | histórico de cotado e comprado, com último, menor, maior, média e o último comprado |
+
+### 8.1.1 Duas regras que o dono pediu em 06/09/2026
+
+**A unidade de medida NÃO é do insumo — é do pedido.** O cadastro guarda uma
+"unidade usual", que serve só como sugestão preenchida sozinha ao escolher o
+insumo. O motivo, nas palavras dele: cerâmica normalmente se compra por metro
+quadrado, mas um dia vem por caixa; cimento normalmente é saco, mas um dia é
+bag. Travar o insumo numa unidade obrigaria a criar um insumo para cada
+variação. Pelo mesmo motivo o catálogo é **genérico** e o detalhe vai no campo
+de **especificação**, em texto livre.
+
+**O comprador corrige o item da solicitação, com motivo obrigatório.** A obra
+erra a unidade, escreve mal a especificação, confunde um insumo com o vizinho.
+O botão está na lista de Solicitações e no lápis da linha do mapa. Regras:
+
+| Regra | Por quê |
+|---|---|
+| Motivo obrigatório, com o que era → o que passou a ser, quem e quando | correção sem assinatura vira "eu não pedi isso" duas semanas depois |
+| Recusada depois do pedido de compra emitido, com recebimento lançado, ou com o item preso a um pedido em pé | o fornecedor recebeu uma coisa; o sistema não pode passar a dizer outra |
+| Trocar insumo ou unidade **apaga os preços daquela linha** no mapa aberto, avisando | eram preços de outra coisa; deixá-los fecharia a compra pelo preço errado |
+| Mapa já fechado não é tocado | mapa fechado é histórico |
+| A tela não oferece o botão onde a regra vai negar | há teste percorrendo as 15 situações exigindo que as duas concordem |
+
+O registro sai da trilha de auditoria (`eventos`, ação `CORRIGIDO`) — não há
+registro paralelo que possa divergir. Na lista, a linha ganha a marca
+"corrigido N×"; clicando, abre-se o histórico.
 
 ### 8.2 O que falta, e por quê
 

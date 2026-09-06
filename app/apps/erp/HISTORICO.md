@@ -110,6 +110,71 @@ Decisões, com o motivo:
 quebra — e obra é carregada em quase tudo. Juntar este ramo e apertar o botão
 têm de acontecer no mesmo momento, com o dono na frente do computador.
 
+### Mapa em formato de planilha, unidade destravada e correção do pedido — 06/09/2026
+
+No ramo `claude/oi-vjvrn8`, junto com a empresa/CNPJ e a migração 038. **Sem
+migração nova** — nada aqui exige apertar o botão do banco.
+
+O dono viu o mapa de cotação e apontou quatro coisas. As quatro estão feitas:
+
+**1. O mapa ficou parecido com a planilha.** As informações estavam
+"espatifadas" e o mapa crescia demais. Agora é tabela densa: letra menor,
+linhas zebradas, a coluna do insumo acompanha a rolagem lateral e o cabeçalho
+de cada fornecedor cabe em três linhas curtas. Os mesmos 28 itens que ocupavam
+1.900 pixels de altura ocupam 1.120 — cabe numa tela.
+
+**2. A situação de cada insumo aparece ao lado dele, colorida.** Quem abre um
+mapa de duas semanas atrás vê, sem sair da tela, o que já virou pedido, o que
+já chegou e o que ainda está em cotação. Acima da tabela há a contagem por
+situação. As 15 situações são exatamente as da planilha "Registro de
+Suprimentos" — foram conferidas uma a uma.
+
+⚠️ **As cores são uma escolha nossa, não as da planilha dele.** A exportação em
+texto do Google não traz a cor da célula, então não deu para copiar: o que
+está lá segue uma lógica (cinza = parado, azul = andando, âmbar = esperando
+alguém, verde = chegou, vermelho só para pendência, cancelado riscado).
+**Pedir ao dono um print ou os códigos das cores** e trocar — mexe num lugar
+só, o bloco `.sit-` em `erp.css`.
+
+**3. A unidade de medida deixou de ser trava do insumo.** O motivo dele:
+cerâmica normalmente se compra por metro quadrado, mas um dia vem por caixa;
+cimento normalmente é saco, mas um dia é bag. Agora a unidade do cadastro é
+só **sugestão** ("unidade usual") — quem faz o pedido escolhe a unidade
+daquele pedido, e "sem unidade usual" deixou de contar como pendência. Quem
+pede continua vendo a sugestão preenchida sozinha ao escolher o insumo.
+
+Confirmado com ele o modelo: **cadastro genérico + especificação em texto
+livre** ("cimento" no catálogo, "CP-II 50kg cinza" na especificação). Evita
+agigantar a base de insumos com subcategoria para cada variação.
+
+**4. O comprador corrige o pedido da obra — com motivo obrigatório.** A obra
+pede em saco o que só vem em bag, escreve o material errado, confunde um insumo
+com o vizinho. Antes isso voltava por telefone e o pedido ficava parado. Agora
+há um botão "corrigir" na lista de Solicitações e um lápis na linha do próprio
+mapa: dá para trocar insumo, especificação, quantidade, unidade e obra.
+
+Decisões, com o motivo:
+
+- **O motivo é obrigatório.** Correção sem assinatura vira "eu não pedi isso"
+  duas semanas depois. Fica gravado o que era, o que passou a ser, quem mudou
+  e quando — na trilha de auditoria, não num registro paralelo que possa
+  divergir. A linha ganha a marca "corrigido N×"; clicando, vê-se o histórico.
+- **Depois que o pedido de compra sai, corrigir aqui é RECUSADO.** O
+  fornecedor recebeu uma coisa; o sistema não pode passar a dizer outra. Vale
+  também para item com recebimento já lançado e para item preso a um pedido em
+  pé. A tela não oferece o botão nesses casos, e há teste exigindo que a tela e
+  o servidor concordem sempre.
+- **Trocar o material ou a unidade APAGA os preços já digitados naquela linha
+  do mapa aberto**, avisando na tela. Eram preços de outra coisa; deixá-los ali
+  fecharia a compra pelo preço errado. Os valores apagados ficam no registro da
+  correção. Mapa já fechado é histórico e não é tocado.
+- **Corrigir só a especificação não apaga preço** — ajustar a grafia não muda o
+  que está sendo comprado.
+
+**Sobre o menor preço**: já funcionava e continua — a célula do menor preço da
+linha fica verde, e o rodapé diz qual fornecedor sai melhor no total (com
+frete, desconto e acréscimo dentro).
+
 ### O que está pendente AGORA
 
 1. **Apertar "Aplicar atualizações do banco"** (Configurações, como ADMIN) para
@@ -146,7 +211,11 @@ têm de acontecer no mesmo momento, com o dono na frente do computador.
    "Mandar mensagem de teste". **Continua em aberto**: se um dia a empresa
    quiser saber que o fornecedor RECEBEU (e não só que o servidor aceitou),
    isso exige um serviço de envio com retorno — outro custo, outra decisão.
-9. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
+9. **Pedir ao dono as cores da planilha** de Registro de Suprimentos (um
+   print basta). As que estão no ERP hoje são escolha nossa — a exportação de
+   texto do Google não traz cor de célula. Trocar mexe só no bloco `.sit-` do
+   `erp.css`.
+10. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)
 

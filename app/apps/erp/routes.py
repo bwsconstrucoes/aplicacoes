@@ -1355,6 +1355,44 @@ def api_suprimento_situacao(item_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/suprimentos/itens/<int:item_id>", methods=["PATCH"])
+@login_obrigatorio
+@permissao("comprar")
+def api_suprimento_item_corrigir(item_id: int):
+    """Corrige o item da solicitação: insumo, especificação, quantidade,
+    unidade ou obra — com motivo obrigatório e registro de quem mudou."""
+    from app.apps.erp.core.suprimentos import solicitacao as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if item_id not in {i["id"] for i in svc.listar_itens(s, atual)}:
+                raise ErroNaoEncontrado("Item não encontrado.")
+            resultado = svc.editar_item(s, item_id, d, atual)
+            s.commit()
+            return jsonify({"ok": True, **resultado})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/suprimentos: falha ao corrigir item")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/suprimentos/itens/<int:item_id>/historico")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_suprimento_item_historico(item_id: int):
+    """As correções já feitas neste item. Fora do alcance responde 404."""
+    from app.apps.erp.core.suprimentos import solicitacao as svc
+    with get_session() as s:
+        atual = _usuario_logado(s)
+        if item_id not in {i["id"] for i in svc.listar_itens(s, atual)}:
+            raise ErroNaoEncontrado("Item não encontrado.")
+        return jsonify({"ok": True, "historico": svc.historico_do_item(s, item_id)})
+
+
 @bp.route("/erp/api/suprimentos/insumos/solicitacoes", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="ver_suprimentos", POST="solicitar_suprimento")

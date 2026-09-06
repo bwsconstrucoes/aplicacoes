@@ -250,6 +250,11 @@ def montar_mapa(s: Session, cotacao_id: int) -> dict[str, Any]:
     precos = {(p.cotacao_fornecedor_id, p.cotacao_item_id): p
               for p in s.scalars(select(CotacaoPreco)).all()}
 
+    from app.apps.erp.core.suprimentos.solicitacao import (
+        _quantas_correcoes, pode_corrigir,
+    )
+    correcoes = _quantas_correcoes(s)
+
     itens_saida, menores = [], {}
     for linha in linhas:
         item = s.get(SuprimentoItem, linha.suprimento_item_id)
@@ -284,6 +289,17 @@ def montar_mapa(s: Session, cotacao_id: int) -> dict[str, Any]:
             "quantidade": str(getattr(item, "quantidade", "")),
             "unidade": getattr(item, "unidade", ""),
             "obra_id": getattr(item, "obra_id", None),
+            "obra": _codigo_da_obra(s, getattr(item, "obra_id", None)),
+            # A SITUAÇÃO ATUAL do item, ao lado dele. Quem abre um mapa de
+            # duas semanas atrás precisa ver, sem sair da tela, o que já
+            # virou pedido, o que já chegou e o que ainda está em cotação.
+            "status": (item.status.value if item is not None and item.status
+                       else None),
+            "status_rotulo": _rotulo_do_status(item),
+            # O comprador corrige a linha do próprio mapa: é aqui que ele
+            # descobre que a obra pediu em saco o que só vem em bag.
+            "correcoes": correcoes.get(getattr(item, "id", 0), 0),
+            "corrigivel": bool(item is not None and pode_corrigir(s, item)),
             "precos": celulas,
             "menor_preco_de": menores.get(linha.id),
         })
@@ -328,6 +344,19 @@ def montar_mapa(s: Session, cotacao_id: int) -> dict[str, Any]:
         "melhor_fornecedor_unico": fornecedor_unico["id"] if fornecedor_unico else None,
         "total_pulverizado": str(_total_pulverizado(itens_saida)),
     }
+
+
+def _codigo_da_obra(s: Session, obra_id: Optional[int]) -> str:
+    from app.apps.erp.db.models.cadastros import Obra
+    obra = s.get(Obra, obra_id) if obra_id else None
+    return getattr(obra, "codigo", "") or ""
+
+
+def _rotulo_do_status(item: Optional[SuprimentoItem]) -> str:
+    from app.apps.erp.core.suprimentos.solicitacao import ROTULOS_STATUS
+    if item is None or not item.status:
+        return ""
+    return ROTULOS_STATUS.get(item.status, item.status.value)
 
 
 def _total_com_encargos(soma: Decimal, coluna: CotacaoFornecedor) -> Decimal:

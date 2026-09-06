@@ -59,6 +59,16 @@ const moeda = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL
 const numero = v => (v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const rotulo = s => (s||"").replace(/_/g," ").toLowerCase().replace(/^./, c => c.toUpperCase());
 const dataBR = iso => iso ? iso.split("-").reverse().join("/") : "—";
+// Dia E HORA, para o que precisa de carimbo: "corrigido em 06/09/2026 12:11".
+// `dataBR` sozinho embaralharia o "2026-09-06T12:11:00" inteiro.
+const momentoBR = iso => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return dataBR(String(iso).slice(0, 10));
+  return d.toLocaleString("pt-BR", {day: "2-digit", month: "2-digit",
+                                    year: "numeric", hour: "2-digit",
+                                    minute: "2-digit"});
+};
 // Quantidade vem do banco com três casas ("1.000" para UMA unidade). Em
 // português isso se lê como MIL — e o número passa a mentir na tela. Aqui a
 // casa decimal só aparece quando existe de verdade: 1 → "1", 2,5 → "2,5".
@@ -73,6 +83,14 @@ const els = id => document.getElementById(id);
 // <compras@...> como uma marcação e engole o pedaço.
 const escapar = t => String(t ?? "").replace(/[&<>"']/g,
   c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+
+// A situação de um item de suprimento, com a cor que a equipe já lê na
+// planilha. A cor vive no CSS (procure por ".sit-" em erp.css) — aqui só se
+// escolhe a classe.
+const selo = (chave, rotulo) => chave
+  ? `<span class="sit sit-${chave}">${escapar(rotulo || chave)}</span>`
+  : "";
+
 // Rótulo de obra sem repetir: quando código e nome são iguais, mostra um só.
 // Converte texto em número aceitando os DOIS formatos.
 // "30.00" vindo da leitura por IA é trinta reais, não três mil: o ponto só é
