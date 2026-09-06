@@ -1,0 +1,467 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Fornecedores — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="razão social, CNPJ, cidade, contato…"></div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>O que fornece</span>
+      <span class="filtro-badge" id="badge-categoria">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <input id="f-busca-categoria" type="search" placeholder="filtrar categorias…"
+             style="width:100%; margin-bottom:6px; padding:6px 8px;
+                    border:1px solid var(--borda-forte); border-radius:6px; font-size:12.5px">
+      <div class="filtro-opcoes" id="opcoes-categoria"></div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Porte</span>
+      <span class="filtro-badge" id="badge-porte">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-porte"></div></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Região de atuação</span>
+      <span class="filtro-badge" id="badge-regiao">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-regiao"></div></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Como recebe cotação</span>
+      <span class="filtro-badge" id="badge-canal">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-canal"></div></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Situação e pendências</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-inativos">
+        <span class="rotulo">Mostrar também os inativos</span></label>
+      <label class="opcao"><input type="checkbox" id="f-sem-categoria">
+        <span class="rotulo">Sem categoria (não recebe cotação)</span></label>
+      <label class="opcao"><input type="checkbox" id="f-sem-contato">
+        <span class="rotulo">Sem pessoa de contato</span></label>
+      <label class="opcao"><input type="checkbox" id="f-sem-email">
+        <span class="rotulo">Recebe por e-mail e não tem e-mail</span></label>
+    </div>
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+{% include "erp_suprimentos_subnav.html" %}
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo"></span>
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-csv">⤓ Exportar o que está na tela</button>
+    <button class="btn" id="btn-novo">+ Novo fornecedor</button>
+  </div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th data-ordem="razao_social">Fornecedor</th>
+      <th data-ordem="cnpj_cpf">CNPJ/CPF</th>
+      <th data-ordem="municipio">Cidade</th>
+      <th data-ordem="porte_rotulo">Porte</th>
+      <th class="sem-ordem">Atende</th>
+      <th class="sem-ordem">O que fornece</th>
+      <th class="sem-ordem">Fala-se com</th>
+      <th class="sem-ordem">Situação</th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
+  <div id="mais" class="cartao-dica" style="padding:10px 14px"></div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Gestão de fornecedores. Os três números que a tela existe para mostrar são
+// os de pendência: fornecedor sem categoria, sem contato e sem e-mail é
+// fornecedor que NÃO vai receber a próxima cotação — e ninguém percebe até a
+// cotação voltar com três preços em vez de seis.
+let D = {fornecedores: [], categorias: [], regioes: [], portes: [], canais: [], indicadores: {}};
+let F = {categoria: new Set(), porte: new Set(), regiao: new Set(), canal: new Set()};
+let ORDEM = {campo: "razao_social", asc: true};
+let LIMITE = 200;
+const PODE_EDITAR = {{ 'true' if pode.administrar_fornecedores else 'false' }};
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+async function carregar(){
+  try {
+    D = await api("/erp/api/suprimentos/fornecedores");
+    montarFiltros();
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function montarFiltros(){
+  const contarLista = campo => {
+    const c = {};
+    D.fornecedores.forEach(f => (f[campo] || []).forEach(v => c[v] = (c[v] || 0) + 1));
+    return c;
+  };
+
+  const porCategoria = contarLista("categorias_ids");
+  const q = (els("f-busca-categoria").value || "").toLowerCase().trim();
+  els("opcoes-categoria").innerHTML = D.categorias
+    .filter(c => !q || c.nome.toLowerCase().includes(q))
+    .map(c => `<label class="opcao ${porCategoria[c.id] ? "" : "zerada"}">
+      <input type="checkbox" data-categoria="${c.id}" ${F.categoria.has(String(c.id)) ? "checked" : ""}>
+      <span class="rotulo">${c.nome}</span>
+      <span class="qtd">${porCategoria[c.id] || 0}</span></label>`).join("")
+    || `<div class="cartao-dica">nenhuma categoria cadastrada ainda</div>`;
+  els("badge-categoria").textContent = F.categoria.size;
+
+  const porPorte = {};
+  D.fornecedores.forEach(f => { const k = f.porte || ""; if (k) porPorte[k] = (porPorte[k] || 0) + 1; });
+  els("opcoes-porte").innerHTML = D.portes.map(p => `
+    <label class="opcao ${porPorte[p.chave] ? "" : "zerada"}">
+      <input type="checkbox" data-porte="${p.chave}" ${F.porte.has(p.chave) ? "checked" : ""}>
+      <span class="rotulo">${p.rotulo}</span><span class="qtd">${porPorte[p.chave] || 0}</span></label>`).join("");
+  els("badge-porte").textContent = F.porte.size;
+
+  const porRegiao = contarLista("regioes");
+  els("opcoes-regiao").innerHTML = D.regioes.map(r => `
+    <label class="opcao"><input type="checkbox" data-regiao="${r}" ${F.regiao.has(r) ? "checked" : ""}>
+      <span class="rotulo">${r}</span><span class="qtd">${porRegiao[r] || 0}</span></label>`).join("")
+    || `<div class="cartao-dica">nenhuma região informada</div>`;
+  els("badge-regiao").textContent = F.regiao.size;
+
+  const porCanal = contarLista("canais");
+  els("opcoes-canal").innerHTML = D.canais.map(c => `
+    <label class="opcao ${porCanal[c.chave] ? "" : "zerada"}">
+      <input type="checkbox" data-canal="${c.chave}" ${F.canal.has(c.chave) ? "checked" : ""}>
+      <span class="rotulo">${c.rotulo}</span><span class="qtd">${porCanal[c.chave] || 0}</span></label>`).join("");
+  els("badge-canal").textContent = F.canal.size;
+
+  ligar("[data-categoria]", "categoria", "categoria");
+  ligar("[data-porte]", "porte", "porte");
+  ligar("[data-regiao]", "regiao", "regiao");
+  ligar("[data-canal]", "canal", "canal");
+}
+
+function ligar(seletor, atributo, chave){
+  document.querySelectorAll(seletor).forEach(i => i.addEventListener("change", ev => {
+    const v = ev.target.dataset[atributo];
+    ev.target.checked ? F[chave].add(v) : F[chave].delete(v);
+    LIMITE = 200; montarFiltros(); desenhar();
+  }));
+}
+
+function visiveis(){
+  const b = (els("f-busca").value || "").toLowerCase().trim();
+  const l = D.fornecedores.filter(f => {
+    if (!f.ativo && !els("f-inativos").checked) return false;
+    if (els("f-sem-categoria").checked && f.categorias_ids.length) return false;
+    if (els("f-sem-contato").checked && f.contatos.length) return false;
+    if (els("f-sem-email").checked && !(f.canais.includes("EMAIL") && !f.email)) return false;
+    if (F.categoria.size && !f.categorias_ids.some(i => F.categoria.has(String(i)))) return false;
+    if (F.porte.size && !F.porte.has(f.porte)) return false;
+    if (F.regiao.size && !f.regioes.some(r => F.regiao.has(r))) return false;
+    if (F.canal.size && !f.canais.some(c => F.canal.has(c))) return false;
+    if (b) {
+      const alvo = `${f.razao_social} ${f.nome_fantasia} ${f.cnpj_cpf} ${f.municipio} ` +
+                   `${f.categorias.join(" ")} ${f.contatos.map(c => c.nome).join(" ")}`;
+      if (!alvo.toLowerCase().includes(b)) return false;
+    }
+    return true;
+  });
+  const {campo, asc} = ORDEM;
+  return l.sort((x, y) => {
+    const a = x[campo] || "", c = y[campo] || "";
+    return asc ? String(a).localeCompare(String(c), "pt-BR")
+               : String(c).localeCompare(String(a), "pt-BR");
+  });
+}
+
+function desenhar(){
+  const l = visiveis();
+  const k = D.indicadores || {};
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Fornecedores ativos</div>
+      <div class="kpi-valor">${k.ativos || 0}</div>
+      <div class="kpi-sub">${k.inativos || 0} inativo(s)</div></div>
+    <button class="kpi vermelho ${els("f-sem-categoria").checked ? "ativo" : ""}" data-pendencia="f-sem-categoria">
+      <div class="kpi-rotulo">Sem categoria</div>
+      <div class="kpi-valor">${k.sem_categoria || 0}</div>
+      <div class="kpi-sub">não entram em cotação nenhuma</div></button>
+    <button class="kpi ambar ${els("f-sem-contato").checked ? "ativo" : ""}" data-pendencia="f-sem-contato">
+      <div class="kpi-rotulo">Sem pessoa de contato</div>
+      <div class="kpi-valor">${k.sem_contato || 0}</div>
+      <div class="kpi-sub">cotação vai para caixa geral</div></button>
+    <button class="kpi ambar ${els("f-sem-email").checked ? "ativo" : ""}" data-pendencia="f-sem-email">
+      <div class="kpi-rotulo">E-mail faltando</div>
+      <div class="kpi-valor">${k.sem_email || 0}</div>
+      <div class="kpi-sub">recebem por e-mail e não têm</div></button>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Perto da fábrica</div>
+      <div class="kpi-valor">${(k.por_porte || {}).FABRICA || 0} + ${(k.por_porte || {}).REP_FABRICA || 0}</div>
+      <div class="kpi-sub">fábrica + representante</div></div>`;
+  document.querySelectorAll("[data-pendencia]").forEach(b =>
+    b.addEventListener("click", () => {
+      const alvo = els(b.dataset.pendencia);
+      alvo.checked = !alvo.checked;
+      LIMITE = 200; desenhar();
+    }));
+
+  els("vazio").classList.toggle("oculto", l.length > 0);
+  if (!l.length) els("vazio").innerHTML = D.fornecedores.length
+    ? "<b>Nada nestes filtros</b>Limpe os filtros à esquerda."
+    : "<b>Nenhum fornecedor</b>Use “+ Novo fornecedor”, ou traga a planilha em Importações.";
+
+  els("corpo").innerHTML = l.slice(0, LIMITE).map(f => `
+    <tr data-id="${f.id}" style="cursor:pointer" ${f.ativo ? "" : 'style="opacity:.55"'}>
+      <td class="desc"><b>${f.razao_social}</b>
+        ${f.nome_fantasia ? `<small>${f.nome_fantasia}</small>` : ""}</td>
+      <td class="dados">${f.cnpj_cpf}</td>
+      <td>${f.municipio || "—"}${f.uf ? ` / ${f.uf}` : ""}</td>
+      <td>${f.porte_rotulo || "—"}</td>
+      <td class="dados">${f.regioes.join(", ") || "—"}</td>
+      <td class="desc">${f.categorias.length
+        ? f.categorias.slice(0, 3).map(c => `<span class="selo outro" style="margin:1px">${c}</span>`).join("") +
+          (f.categorias.length > 3 ? `<small>+${f.categorias.length - 3}</small>` : "")
+        : `<span class="selo bloqueado">sem categoria</span>`}</td>
+      <td class="desc">${f.contatos.length
+        ? f.contatos.map(c => `${c.nome}${c.funcao ? `<small>${c.funcao}</small>` : ""}`).join("")
+        : `<span class="selo aguardando">ninguém</span>`}</td>
+      <td><span class="selo ${f.ativo ? "aprovado" : "outro"}">${f.ativo ? "Ativo" : "Inativo"}</span></td>
+    </tr>`).join("");
+
+  els("mais").innerHTML = l.length > LIMITE
+    ? `Mostrando ${LIMITE} de ${l.length}. <button class="link-btn" id="btn-mais">mostrar mais 200</button>`
+    : "";
+  if (els("btn-mais")) els("btn-mais").addEventListener("click", () => { LIMITE += 200; desenhar(); });
+
+  document.querySelectorAll("[data-id]").forEach(tr =>
+    tr.addEventListener("click", () => abrir(+tr.dataset.id)));
+  els("resumo").innerHTML = `<b>${l.length}</b> fornecedor(es) na tela · ` +
+    `<b>${D.fornecedores.length}</b> no cadastro`;
+}
+
+document.querySelectorAll("thead th[data-ordem]").forEach(th =>
+  th.addEventListener("click", () => {
+    const campo = th.dataset.ordem;
+    ORDEM = {campo, asc: ORDEM.campo === campo ? !ORDEM.asc : true};
+    desenhar();
+  }));
+
+// ------------------------------------------------------------------- ficha
+function abrir(id){
+  const f = D.fornecedores.find(x => x.id === id);
+  els("dlg-titulo").textContent = f.razao_social;
+  const editavel = PODE_EDITAR ? "" : "disabled";
+  els("dlg-corpo").innerHTML = `
+    <div id="ficha-msg"></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Razão social</label>
+        <input id="fx-razao" value="${f.razao_social}" ${editavel}></div>
+      <div class="campo"><label>Nome fantasia</label>
+        <input id="fx-fantasia" value="${f.nome_fantasia}" ${editavel}></div>
+      <div class="campo"><label>CNPJ/CPF</label>
+        <input value="${f.cnpj_cpf}" disabled></div>
+      <div class="campo"><label>E-mail</label>
+        <input id="fx-email" value="${f.email}" ${editavel}></div>
+      <div class="campo"><label>Telefone</label>
+        <input id="fx-telefone" value="${f.telefone}" ${editavel}></div>
+      <div class="campo"><label>Cidade</label>
+        <input id="fx-municipio" value="${f.municipio}" ${editavel}></div>
+      <div class="campo"><label>UF</label>
+        <input id="fx-uf" value="${f.uf}" maxlength="2" ${editavel}></div>
+      <div class="campo"><label>Porte</label>
+        <select id="fx-porte" ${editavel}>
+          <option value="">—</option>
+          ${D.portes.map(p => `<option value="${p.chave}" ${p.chave === f.porte ? "selected" : ""}>${p.rotulo}</option>`).join("")}
+        </select></div>
+      <div class="campo" style="grid-column:span 2"><label>Regiões de atuação</label>
+        <input id="fx-regioes" value="${f.regioes.join(", ")}" placeholder="ex.: FORTALEZA, RMF, CE" ${editavel}>
+        <div class="dica">Separe por vírgula. Em branco = atende qualquer região.</div></div>
+    </div>
+
+    <div class="cartao" style="margin-top:14px">
+      <div class="cartao-cab"><h3>O que este fornecedor vende</h3>
+        <small>é isto que decide quem recebe cada cotação</small></div>
+      <input id="fx-busca-cat" type="search" placeholder="filtrar categorias…"
+             style="width:100%; margin-bottom:8px; padding:7px 9px;
+                    border:1px solid var(--borda-forte); border-radius:8px; font-size:13px">
+      <div id="fx-categorias" style="max-height:200px; overflow:auto"></div>
+    </div>
+
+    <div class="cartao">
+      <div class="cartao-cab"><h3>Como recebe cotação</h3></div>
+      <div id="fx-canais" style="display:flex; gap:14px; flex-wrap:wrap">
+        ${D.canais.map(c => `<label class="opcao" style="width:auto">
+          <input type="checkbox" data-canal-marca="${c.chave}"
+                 ${f.canais.includes(c.chave) ? "checked" : ""} ${editavel}>
+          <span class="rotulo">${c.rotulo}</span></label>`).join("")}
+      </div>
+    </div>
+
+    <div class="cartao">
+      <div class="cartao-cab"><h3>Quem responde</h3>
+        <small>o cotador — sem nome de gente, a cotação vai para caixa geral</small></div>
+      <table><thead><tr><th>Nome</th><th>Função</th><th>E-mail</th><th>Telefone</th><th></th></tr></thead>
+        <tbody id="fx-contatos"></tbody></table>
+      ${PODE_EDITAR ? `<div style="margin-top:10px">
+        <button class="btn secundario" id="fx-novo-contato">+ Acrescentar contato</button></div>` : ""}
+    </div>
+
+    <label class="opcao"><input type="checkbox" id="fx-ativo" ${f.ativo ? "checked" : ""} ${editavel}>
+      <span class="rotulo">Ativo — aparece nas listas de cotação</span></label>
+
+    ${PODE_EDITAR ? `<div style="margin-top:14px">
+      <button class="btn" id="fx-salvar">Salvar</button></div>` : ""}`;
+
+  const pintarCategorias = () => {
+    const q = (els("fx-busca-cat").value || "").toLowerCase().trim();
+    els("fx-categorias").innerHTML = D.categorias
+      .filter(c => !q || c.nome.toLowerCase().includes(q))
+      .map(c => `<label class="opcao">
+        <input type="checkbox" data-cat-marca="${c.id}"
+               ${f.categorias_ids.includes(c.id) ? "checked" : ""} ${editavel}>
+        <span class="rotulo">${c.nome}</span></label>`).join("")
+      || `<div class="cartao-dica">nenhuma categoria cadastrada</div>`;
+    document.querySelectorAll("[data-cat-marca]").forEach(i =>
+      i.addEventListener("change", ev => {
+        const id = +ev.target.dataset.catMarca;
+        f.categorias_ids = ev.target.checked
+          ? [...new Set([...f.categorias_ids, id])]
+          : f.categorias_ids.filter(x => x !== id);
+      }));
+  };
+  els("fx-busca-cat").addEventListener("input", pintarCategorias);
+  pintarCategorias();
+
+  const pintarContatos = () => {
+    els("fx-contatos").innerHTML = f.contatos.map(c => `
+      <tr><td>${c.nome}</td><td>${c.funcao || "—"}</td><td>${c.email || "—"}</td>
+        <td class="dados">${c.telefone || "—"}</td>
+        <td class="direita">${PODE_EDITAR
+          ? `<button class="link-btn" data-remover="${c.id}">remover</button>` : ""}</td></tr>`).join("")
+      || `<tr><td colspan="5">ninguém cadastrado</td></tr>`;
+    document.querySelectorAll("[data-remover]").forEach(b =>
+      b.addEventListener("click", async () => {
+        try {
+          await api(`/erp/api/suprimentos/fornecedores/contatos/${b.dataset.remover}`,
+                    {method: "DELETE"});
+          f.contatos = f.contatos.filter(c => String(c.id) !== b.dataset.remover);
+          pintarContatos();
+        } catch(e){ aviso("ficha-msg", e.message, "erro"); }
+      }));
+  };
+  pintarContatos();
+
+  if (els("fx-novo-contato")) els("fx-novo-contato").addEventListener("click", async () => {
+    const d = await perguntar({titulo: "Contato do fornecedor", textoOk: "Acrescentar", campos: [
+      {nome: "nome", rotulo: "Nome", obrigatorio: true, largura: 2},
+      {nome: "funcao", rotulo: "Função", exemplo: "vendedor, gerente…"},
+      {nome: "email", rotulo: "E-mail", largura: 2},
+      {nome: "telefone", rotulo: "Telefone"}]});
+    if (!d) return;
+    try {
+      const r = await api(`/erp/api/suprimentos/fornecedores/${id}/contatos`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(d)});
+      f.contatos.push({id: r.id, ...d});
+      pintarContatos();
+    } catch(e){ aviso("ficha-msg", e.message, "erro"); }
+  });
+
+  if (els("fx-salvar")) els("fx-salvar").addEventListener("click", async () => {
+    const canais = [...document.querySelectorAll("[data-canal-marca]")]
+      .filter(i => i.checked).map(i => i.dataset.canalMarca);
+    try {
+      await api(`/erp/api/suprimentos/fornecedores/${id}`, {
+        method: "PATCH", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({
+          razao_social: els("fx-razao").value.trim(),
+          nome_fantasia: els("fx-fantasia").value.trim(),
+          email: els("fx-email").value.trim(),
+          telefone: els("fx-telefone").value.trim(),
+          municipio: els("fx-municipio").value.trim(),
+          uf: els("fx-uf").value.trim().toUpperCase(),
+          porte: els("fx-porte").value,
+          regioes_atuacao: els("fx-regioes").value.split(",").map(x => x.trim()).filter(Boolean),
+          canais_cotacao: canais,
+          categorias: f.categorias_ids,
+          ativo: els("fx-ativo").checked})});
+      els("dlg").close();
+      aviso("mensagem", "Fornecedor atualizado.", "ok");
+      carregar();
+    } catch(e){ aviso("ficha-msg", e.message, "erro"); }
+  });
+
+  els("dlg").showModal();
+}
+
+async function novoFornecedor(){
+  const d = await perguntar({
+    titulo: "Novo fornecedor",
+    textoOk: "Cadastrar",
+    aviso: "O documento não muda depois. Se estiver errado, o jeito é inativar " +
+           "e cadastrar de novo — é o que preserva o histórico de títulos.",
+    campos: [
+      {nome: "cnpj_cpf", rotulo: "CNPJ ou CPF", obrigatorio: true, largura: 2},
+      {nome: "razao_social", rotulo: "Razão social", obrigatorio: true, largura: 3},
+      {nome: "nome_fantasia", rotulo: "Nome fantasia", largura: 2},
+      {nome: "email", rotulo: "E-mail", largura: 2},
+      {nome: "telefone", rotulo: "Telefone"},
+      {nome: "municipio", rotulo: "Cidade", largura: 2},
+      {nome: "uf", rotulo: "UF"},
+      {nome: "contato_nome", rotulo: "Quem responde", largura: 2,
+       dica: "a pessoa que recebe a cotação"}]});
+  if (!d) return;
+  const digitos = (d.cnpj_cpf || "").replace(/\D/g, "");
+  try {
+    const r = await api("/erp/api/suprimentos/fornecedores", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({...d, tipo_pessoa: digitos.length === 14 ? "PJ" : "PF"})});
+    aviso("mensagem", "Fornecedor cadastrado. Marque agora o que ele vende — " +
+                      "sem categoria ele não entra em cotação nenhuma.", "ok");
+    await carregar();
+    abrir(r.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function exportar(){
+  const l = visiveis();
+  const linhas = [["Razão social", "Fantasia", "CNPJ/CPF", "Cidade", "UF", "Porte",
+                   "Regiões", "Categorias", "E-mail", "Telefone", "Ativo"]]
+    .concat(l.map(f => [f.razao_social, f.nome_fantasia, f.cnpj_cpf, f.municipio, f.uf,
+                        f.porte_rotulo, f.regioes.join(" / "), f.categorias.join(" / "),
+                        f.email, f.telefone, f.ativo ? "sim" : "não"]));
+  const csv = linhas.map(l => l.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob(["﻿" + csv], {type: "text/csv;charset=utf-8"}));
+  a.download = "fornecedores.csv";
+  a.click();
+}
+
+["f-busca", "f-inativos", "f-sem-categoria", "f-sem-contato", "f-sem-email"]
+  .forEach(id => els(id).addEventListener("input", () => { LIMITE = 200; desenhar(); }));
+els("f-busca-categoria").addEventListener("input", montarFiltros);
+els("btn-limpar").addEventListener("click", () => {
+  F = {categoria: new Set(), porte: new Set(), regiao: new Set(), canal: new Set()};
+  ["f-busca", "f-busca-categoria"].forEach(id => els(id).value = "");
+  ["f-inativos", "f-sem-categoria", "f-sem-contato", "f-sem-email"]
+    .forEach(id => els(id).checked = false);
+  LIMITE = 200; montarFiltros(); desenhar();
+});
+els("btn-novo").addEventListener("click", novoFornecedor);
+els("btn-csv").addEventListener("click", exportar);
+if (!PODE_EDITAR) els("btn-novo").style.display = "none";
+
+carregar();
+</script>
+{% endblock %}

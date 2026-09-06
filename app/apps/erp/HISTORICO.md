@@ -17,12 +17,47 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
-**Estado em 05/09/2026 (madrugada):** `main` com a autorização padrão-NEGAR, o alcance por
-operador (029), o consumo de IA com teto (030), as travas de concorrência (031)
-e a homologação por perfil rodando sozinha no GitHub, mais a **permissão fina
-por pessoa** (032). No ramo `claude/oi-vjvrn8`, ainda não publicado: o **módulo
-de Suprimentos** inteiro (migrações 033 a 037). Suíte: 1.149 sem banco, mais os
-casos com banco de verdade.
+**Estado em 05/09/2026 (noite):** `main` com a autorização padrão-NEGAR, o
+alcance por operador (029), o consumo de IA com teto (030), as travas de
+concorrência (031), a permissão fina por pessoa (032) e o **módulo de
+Suprimentos** (033 a 037). No ramo `claude/oi-vjvrn8`, ainda não publicado:
+o **botão de zerar o movimento por área** e a **reforma das telas de cadastro
+de Suprimentos** (detalhada abaixo). Suíte: 1.234 sem banco e 1.981 com banco
+de verdade.
+
+### A reforma das telas de cadastro (05/09/2026, noite)
+
+O dono abriu Suprimentos pela primeira vez e a tela de Cadastros não serviu.
+A reclamação principal **não era de gosto, era um defeito**: não havia como
+cadastrar categoria de insumo pelo sistema — e sem categoria não se cadastra
+insumo, sem insumo não se pede material. O módulo inteiro estava intransitável
+e nada acusava isso.
+
+O que mudou:
+
+| Antes | Agora |
+|---|---|
+| uma tela "Cadastros" com carga de CSV, condições, unidades, categorias e pedidos de insumo empilhados | quatro sub-telas: **Insumos**, **Fornecedores**, **Categorias/unidades/pagamento** e **Importações** |
+| categoria de insumo só existia se viesse de importação | cadastra, renomeia e desativa pela tela |
+| insumo só nascia por "pedir → decidir" | quem administra cadastra direto; o pedido continua para quem está na obra |
+| a conta do plano oferecia o plano inteiro, receita incluída | só contas de despesa e material, em lista com busca |
+| listas longas em caixinha de rolagem | busca em toda lista longa (insumo, conta, fornecedor, categoria) |
+| filtros no topo, diferente do resto do ERP | filtros na **barra da esquerda**, como Títulos e Obras |
+| sem visão de gestão | telas de insumos e fornecedores tipo planilha: filtro, busca, ordenação por coluna, edição na própria célula, KPIs e exportação do que está na tela |
+| a cotação só nascia na tela de Cotações | seleciona-se os itens na tela de **Solicitações** e a cotação nasce dali, já sugerindo quem vende aquelas categorias |
+| Configurações com oito blocos empilhados | uma seção por vez, com faixa de navegação (o endereço guarda a seção) |
+
+Também novo: **dados de exemplo** (Importações › Dados de exemplo). Traz seis
+categorias, treze insumos, cinco fornecedores, duas condições e quatro
+solicitações fictícias para simular o fluxo, e remove exatamente o que trouxe.
+Os ids do que foi criado ficam guardados em `parametros` — a remoção não usa
+heurística de nome, que erraria no dia em que alguém cadastrar "Cimento CP-II"
+de verdade. Se algum insumo de exemplo já tiver entrado num pedido de verdade,
+a remoção é recusada **inteira**.
+
+Ação nova de permissão: `administrar_fornecedores` (cadastrar e corrigir
+fornecedor pela tela de Suprimentos). Como toda ação, pode ser dada ou tirada
+pessoa a pessoa no cadastro do operador.
 
 ### O que está pendente AGORA
 
@@ -41,11 +76,15 @@ casos com banco de verdade.
    de concorrência; a 032 é a tabela das permissões por pessoa. Enquanto a 032
    não rodar, o ERP funciona normalmente **pelo cargo** — a tela de cadastro é
    que não consegue mostrar os ajustes.
-6. **Suprimentos**: as fases 1 a 5 estão construídas (migrações 033 a 037) e
-   documentadas em `SUPRIMENTOS.md`, com o que falta em cada uma. Nenhuma tela
-   foi operada contra a base real — é o que o dono precisa fazer primeiro.
-   Para trazer os 111 fornecedores e os 115 insumos, ele exporta a aba da
-   planilha como CSV e usa a prévia antes de gravar.
+6. **Suprimentos**: construído e com as telas de cadastro refeitas, mas
+   **ainda não operado contra a base real** — é o que o dono precisa fazer
+   primeiro. Caminho sugerido: Cadastros › Importações › **Dados de exemplo**
+   para simular o fluxo inteiro sem digitar nada, e depois `Remover os dados
+   de exemplo` antes de trazer os 111 fornecedores e os 115 insumos de
+   verdade (exportar a aba da planilha como CSV e usar a prévia antes de
+   gravar). **A carga não cria categoria de insumo** — cadastre as categorias
+   primeiro, senão os fornecedores entram sem saber o que vendem e não
+   recebem cotação nenhuma.
 7. **Decisão pendente do dono**: por qual conta sai o e-mail de cotação. O
    monorepo tem WhatsApp (Z-API) mas **não tem envio de e-mail** — e 109 dos
    111 fornecedores só recebem cotação por e-mail. Enquanto isso não se
@@ -107,6 +146,13 @@ e escolha sempre explícitos. Ver o topo do `CLAUDE.md`.
 - **02/09/2026 — juntar na `main` matou a carga do painel OMIE.** Publicar
   reinicia o serviço. Regra em `app/apps/painel/HISTORICO.md`: perguntar
   antes de juntar.
+- **05/09/2026 — Suprimentos entregue intransitável.** Não havia tela para
+  criar categoria de insumo, e sem categoria não se cadastra insumo. A suíte
+  passava inteira: ela cobria as regras de cada peça, nenhum teste percorria
+  o caminho de quem chega numa base vazia. Corrigido no mesmo dia, com um
+  teste que faz exatamente esse percurso contra Postgres de verdade
+  (`tests/test_suprimentos_cadastro_banco.py`). Lição: regra testada não é
+  fluxo testado — falta o caso do primeiro dia, com a base vazia.
 - **01/09/2026 — painel de consumo de IA nunca funcionou.** A função de
   registro não existia e o painel não tinha lugar na tela. Lição: entrega que
   ninguém abriu na tela não foi entregue.

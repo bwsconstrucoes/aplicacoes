@@ -1,28 +1,67 @@
 {% extends "erp_base.html" %}
 {% block titulo %}Pedidos de compra — ERP BWS{% endblock %}
 
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="pedido, fornecedor…"></div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Situação</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <select id="f-status">
+        <option value="AGUARDANDO_AUTORIZACAO">aguardando autorização</option>
+        <option value="AUTORIZADO">autorizados</option>
+        <option value="RECUSADO">recusados</option>
+        <option value="CANCELADO">cancelados</option>
+        <option value="">todos</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Fornecedor</span>
+      <span class="filtro-badge" id="badge-fornecedor">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <input id="f-busca-fornecedor" type="search" placeholder="filtrar fornecedores…"
+             style="width:100%; margin-bottom:6px; padding:6px 8px;
+                    border:1px solid var(--borda-forte); border-radius:6px; font-size:12.5px">
+      <div class="filtro-opcoes" id="opcoes-fornecedor"></div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Atenção</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-antecipado">
+        <span class="rotulo">Só pagamento antecipado</span></label>
+      <label class="opcao"><input type="checkbox" id="f-direto">
+        <span class="rotulo">Só pedido direto (sem mapa)</span></label>
+      <div class="cartao-dica">Pedido direto não passou por comparação de
+        preços — é onde vale olhar duas vezes.</div>
+    </div>
+  </div>
+{% endblock %}
+
 {% block conteudo %}
 <h2>Pedidos de compra
   <small>o comprador fecha, alguém autoriza — e só então nasce a previsão de pagamento</small></h2>
 <div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
 
-<div class="barra-acoes">
-  <select id="f-status">
-    <option value="AGUARDANDO_AUTORIZACAO">aguardando autorização</option>
-    <option value="AUTORIZADO">autorizados</option>
-    <option value="RECUSADO">recusados</option>
-    <option value="CANCELADO">cancelados</option>
-    <option value="">todos</option>
-  </select>
+<div class="tabela-wrap">
+  <div class="tabela-barra"><span class="resumo" id="resumo"></span></div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead><tr>
+        <th>Pedido</th><th>Fornecedor</th><th class="direita">Itens</th>
+        <th class="direita">Total</th><th>Situação</th><th></th>
+      </tr></thead>
+      <tbody id="tb-pedidos"></tbody>
+    </table>
+  </div>
 </div>
-
-<table>
-  <thead><tr>
-    <th>Pedido</th><th>Fornecedor</th><th class="direita">Itens</th>
-    <th class="direita">Total</th><th>Situação</th><th></th>
-  </tr></thead>
-  <tbody id="tb-pedidos"></tbody>
-</table>
 
 <dialog id="dlg">
   <div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
@@ -39,11 +78,79 @@ const ROTULO = {AGUARDANDO_AUTORIZACAO: "aguardando autorização",
 function moeda(v){ return Number(v || 0).toLocaleString("pt-BR",
   {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
 
+let PEDIDOS = [];
+const FORNECEDORES = new Set();
+
 async function carregar(){
   try {
     const p = els("f-status").value ? `?status=${els("f-status").value}` : "";
     const d = await api("/erp/api/suprimentos/pedidos" + p);
-    els("tb-pedidos").innerHTML = d.pedidos.map(x => `
+    PEDIDOS = d.pedidos;
+    montarFiltroDeFornecedor();
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// A lista de fornecedores sai dos próprios pedidos que voltaram — assim o
+// filtro nunca oferece um nome que não está na tela.
+function montarFiltroDeFornecedor(){
+  const contagem = {};
+  PEDIDOS.forEach(x => { const n = x.fornecedor || "";
+    if (n) contagem[n] = (contagem[n] || 0) + 1; });
+  const q = (els("f-busca-fornecedor").value || "").toLowerCase().trim();
+  els("opcoes-fornecedor").innerHTML = Object.keys(contagem).sort()
+    .filter(n => !q || n.toLowerCase().includes(q))
+    .map(n => `<label class="opcao"><input type="checkbox" data-fornecedor="${n}"
+        ${FORNECEDORES.has(n) ? "checked" : ""}>
+      <span class="rotulo">${n}</span><span class="qtd">${contagem[n]}</span></label>`).join("")
+    || `<div class="cartao-dica">nenhum fornecedor nesta situação</div>`;
+  els("badge-fornecedor").textContent = FORNECEDORES.size;
+  document.querySelectorAll("[data-fornecedor]").forEach(i =>
+    i.addEventListener("change", ev => {
+      const n = ev.target.dataset.fornecedor;
+      ev.target.checked ? FORNECEDORES.add(n) : FORNECEDORES.delete(n);
+      montarFiltroDeFornecedor(); desenhar();
+    }));
+}
+
+function visiveis(){
+  const b = (els("f-busca").value || "").toLowerCase().trim();
+  return PEDIDOS.filter(x => {
+    if (els("f-antecipado").checked && !x.antecipado) return false;
+    if (els("f-direto").checked && x.cotacao_id) return false;
+    if (FORNECEDORES.size && !FORNECEDORES.has(x.fornecedor || "")) return false;
+    if (b && !`${x.numero} ${x.fornecedor || ""}`.toLowerCase().includes(b)) return false;
+    return true;
+  });
+}
+
+function desenhar(){
+  const l = visiveis();
+  const total = l.reduce((a, x) => a + Number(x.total || 0), 0);
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Pedidos na tela</div>
+      <div class="kpi-valor">${l.length}</div>
+      <div class="kpi-sub">de ${PEDIDOS.length} nesta situação</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Valor somado</div>
+      <div class="kpi-valor" style="font-size:19px">R$ ${moeda(total)}</div></div>
+    <button class="kpi ambar ${els("f-antecipado").checked ? "ativo" : ""}"
+      data-pendencia="f-antecipado">
+      <div class="kpi-rotulo">Pagamento antecipado</div>
+      <div class="kpi-valor">${l.filter(x => x.antecipado).length}</div>
+      <div class="kpi-sub">dinheiro sai antes do material chegar</div></button>
+    <button class="kpi vermelho ${els("f-direto").checked ? "ativo" : ""}"
+      data-pendencia="f-direto">
+      <div class="kpi-rotulo">Pedido direto</div>
+      <div class="kpi-valor">${l.filter(x => !x.cotacao_id).length}</div>
+      <div class="kpi-sub">sem mapa de comparação</div></button>`;
+  document.querySelectorAll("[data-pendencia]").forEach(b =>
+    b.addEventListener("click", () => {
+      const alvo = els(b.dataset.pendencia);
+      alvo.checked = !alvo.checked;
+      desenhar();
+    }));
+
+  els("tb-pedidos").innerHTML = l.map(x => `
       <tr><td><b>${x.numero}</b>${x.cotacao_id ? `<br><small>do mapa</small>`
             : `<br><small>pedido direto</small>`}
           ${x.antecipado ? `<br><small style="color:var(--ambar)">pagamento antecipado</small>` : ""}</td>
@@ -54,9 +161,9 @@ async function carregar(){
         <td class="direita"><button class="btn secundario" data-abrir="${x.id}"
             style="padding:4px 9px; font-size:12px">abrir</button></td></tr>`).join("")
       || `<tr><td colspan="6">nenhum pedido nesta situação</td></tr>`;
-    document.querySelectorAll("[data-abrir]").forEach(b =>
-      b.addEventListener("click", () => abrir(+b.dataset.abrir)));
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  document.querySelectorAll("[data-abrir]").forEach(b =>
+    b.addEventListener("click", () => abrir(+b.dataset.abrir)));
+  els("resumo").innerHTML = `<b>${l.length}</b> pedido(s) · <b>R$ ${moeda(total)}</b>`;
 }
 
 async function abrir(id){
@@ -249,7 +356,21 @@ async function decidir(id, acao, corpo){
   } catch(e){ aviso("dlg-msg", e.message, "erro"); }
 }
 
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
 els("f-status").addEventListener("change", carregar);
+els("f-busca").addEventListener("input", desenhar);
+els("f-busca-fornecedor").addEventListener("input", montarFiltroDeFornecedor);
+["f-antecipado", "f-direto"].forEach(id => els(id).addEventListener("change", desenhar));
+els("btn-limpar").addEventListener("click", () => {
+  FORNECEDORES.clear();
+  els("f-busca").value = ""; els("f-busca-fornecedor").value = "";
+  els("f-status").value = "AGUARDANDO_AUTORIZACAO";
+  ["f-antecipado", "f-direto"].forEach(id => els(id).checked = false);
+  carregar();
+});
+
 carregar();
 </script>
 {% endblock %}

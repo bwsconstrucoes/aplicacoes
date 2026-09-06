@@ -1,13 +1,33 @@
 {% extends "erp_base.html" %}
 {% block titulo %}Cotações — ERP BWS{% endblock %}
 
+{% block filtros %}
+  <div class="filtros-cab"><h2>Cotações</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="número ou título da cotação…"></div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Situação</span>
+      <span class="filtro-badge" id="badge-status">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-status"></div></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Escolha o mapa</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div id="lista-cotacoes"></div></div>
+  </div>
+{% endblock %}
+
 {% block conteudo %}
-<h2>Cotações <small>fornecedores em coluna, insumos em linha, preço na célula</small></h2>
+<h2>Mapa de cotação <small>fornecedores em coluna, insumos em linha, preço na célula</small></h2>
 <div id="mensagem"></div>
 
-<div class="barra-acoes">
+<div class="tabela-barra" style="background:var(--branco); border-radius:var(--raio);
+     box-shadow:var(--sombra); margin-bottom:14px">
+  <span class="resumo" id="resumo-cotacao">nenhum mapa aberto</span>
+  <span class="espaco"></span>
   <button class="btn" id="btn-nova-cot">Nova cotação</button>
-  <select id="sel-cotacao" style="min-width:280px"><option value="">— escolha uma cotação —</option></select>
 </div>
 
 <div id="painel-mapa"></div>
@@ -23,14 +43,52 @@
 <script>
 let COTACOES = [], MAPA = null, BASE = {fornecedores: [], condicoes: []};
 
+const STATUS = new Set();
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
 async function carregarListas(){
   const [cots, cadastros] = await Promise.all([
     api("/erp/api/suprimentos/cotacoes"), api("/erp/api/suprimentos/cadastros")]);
   COTACOES = cots.cotacoes;
   BASE.condicoes = cadastros.condicoes;
-  els("sel-cotacao").innerHTML = `<option value="">— escolha uma cotação —</option>` +
-    COTACOES.map(c => `<option value="${c.id}">${c.numero} · ${c.titulo}${
-      c.status !== "ABERTA" ? ` (${c.status.toLowerCase()})` : ""}</option>`).join("");
+  desenharLista();
+}
+
+// A escolha do mapa vive na barra da esquerda, como o filtro de qualquer
+// outra tela do ERP — e não numa caixinha de cem cotações no topo.
+function desenharLista(){
+  const contagem = {};
+  COTACOES.forEach(c => contagem[c.status] = (contagem[c.status] || 0) + 1);
+  els("opcoes-status").innerHTML = Object.keys(contagem).sort().map(s => `
+    <label class="opcao"><input type="checkbox" data-status="${s}"
+      ${STATUS.has(s) ? "checked" : ""}>
+      <span class="rotulo">${rotulo(s)}</span>
+      <span class="qtd">${contagem[s]}</span></label>`).join("")
+    || `<div class="cartao-dica">nenhuma cotação ainda</div>`;
+  els("badge-status").textContent = STATUS.size;
+  document.querySelectorAll("[data-status]").forEach(i =>
+    i.addEventListener("change", ev => {
+      const s = ev.target.dataset.status;
+      ev.target.checked ? STATUS.add(s) : STATUS.delete(s);
+      desenharLista();
+    }));
+
+  const q = (els("f-busca").value || "").toLowerCase().trim();
+  const lista = COTACOES.filter(c =>
+    (!STATUS.size || STATUS.has(c.status)) &&
+    (!q || `${c.numero} ${c.titulo}`.toLowerCase().includes(q)));
+  els("lista-cotacoes").innerHTML = lista.map(c => `
+    <button class="btn secundario" data-cotacao="${c.id}"
+      style="display:block; width:100%; text-align:left; margin-bottom:4px;
+             ${MAPA && MAPA.id === c.id ? "border-color:var(--azul)" : ""}">
+      <b>${c.numero}</b><br><small>${c.titulo}</small>
+      ${c.status !== "ABERTA" ? `<br><span class="selo outro">${rotulo(c.status)}</span>` : ""}
+    </button>`).join("")
+    || `<div class="cartao-dica">nada com esses filtros</div>`;
+  document.querySelectorAll("[data-cotacao]").forEach(b =>
+    b.addEventListener("click", () => abrirMapa(+b.dataset.cotacao)));
 }
 
 function moeda(v){ return Number(v || 0).toLocaleString("pt-BR",
@@ -160,11 +218,14 @@ function aplicarProposta(colunaId, leitura){
 }
 
 async function abrirMapa(id){
-  if (!id) { MAPA = null; desenharMapa(); return; }
+  if (!id) { MAPA = null; desenharMapa(); desenharLista(); return; }
   try {
     const d = await api(`/erp/api/suprimentos/cotacoes/${id}/mapa`);
     MAPA = d.mapa;
+    els("resumo-cotacao").innerHTML =
+      `<b>${MAPA.numero}</b> · ${MAPA.titulo} · ${MAPA.fornecedores.length} fornecedor(es)`;
     desenharMapa();
+    desenharLista();                 // realça na barra qual mapa está aberto
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
@@ -265,7 +326,6 @@ async function novaCotacao(){
       els("dlg").close();
       aviso("mensagem", `Cotação ${r.numero} aberta.`, "ok");
       await carregarListas();
-      els("sel-cotacao").value = r.id;
       abrirMapa(r.id);
     } catch(e){ aviso("dlg-msg", e.message, "erro"); }
   });
@@ -274,8 +334,16 @@ async function novaCotacao(){
 
 els("btn-nova-cot").addEventListener("click", () => novaCotacao().catch(
   e => aviso("mensagem", e.message, "erro")));
-els("sel-cotacao").addEventListener("change", () => abrirMapa(els("sel-cotacao").value));
+els("f-busca").addEventListener("input", desenharLista);
+els("btn-limpar").addEventListener("click", () => {
+  STATUS.clear(); els("f-busca").value = ""; desenharLista();
+});
 
-carregarListas().catch(e => aviso("mensagem", e.message, "erro"));
+carregarListas().then(() => {
+  // A cotação nasce na tela de Solicitações e manda para cá pelo endereço:
+  // quem acabou de gerar o mapa quer VER o mapa, não procurá-lo numa lista.
+  const pedida = new URLSearchParams(location.search).get("cotacao");
+  if (pedida) abrirMapa(+pedida);
+}).catch(e => aviso("mensagem", e.message, "erro"));
 </script>
 {% endblock %}
