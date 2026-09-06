@@ -447,3 +447,268 @@ def sugerir_preco(s: Session, insumo_id: int) -> Optional[dict[str, Any]]:
     return {"preco_unitario": r["preco_unitario"], "data": r["data"],
             "fornecedor": r["fornecedor"], "fornecedor_id": r["fornecedor_id"],
             "cotacao_id": r["cotacao_id"], "tipo": r["tipo"]}
+
+
+# ============================================================================
+# OS QUATRO RELATÓRIOS DO MAPA
+#
+# São os mesmos quatro que a planilha "Relatório Mapa de Cotação" tem nas abas
+# R2 a R5, e que a equipe já usa para decidir a compra. Cada um responde uma
+# pergunta diferente — e é por isso que são quatro, e não um:
+#
+#   POR ITEM (R2)         "de quem compro cada coisa pelo menor preço?"
+#   POR FORNECEDOR (R3)   "então o que compro de cada um?" — é a lista de compra
+#   UM FORNECEDOR SÓ (R4) "e se eu comprar tudo deste aqui?"
+#   COMPARATIVO (R5)      "quem sai melhor no total, com frete e desconto?"
+#
+# TODOS SAEM DO MESMO MAPA (`montar_mapa`), de propósito. Se cada relatório
+# refizesse a conta por conta própria, um dia dois deles dariam números
+# diferentes para a mesma cotação — e aí nenhum serviria para decidir nada.
+#
+# O QUE OS NÚMEROS SIGNIFICAM, para não enganar quem lê:
+#   - "Melhor preço" é o menor PREÇO UNITÁRIO da linha. Comprar cada item de
+#     quem tem o menor preço (o "pulverizado") ignora que cada fornecedor cobra
+#     o SEU frete — por isso o comparativo existe e mostra o total com encargos.
+#   - O total de um fornecedor já inclui frete, desconto e acréscimo.
+# ============================================================================
+TIPOS_DE_RELATORIO = {
+    "POR_ITEM": "Resumo da cotação por item",
+    "POR_FORNECEDOR": "Resumo da cotação por fornecedor",
+    "UM_FORNECEDOR": "Resumo da cotação — comprando tudo de um fornecedor",
+    "COMPARATIVO": "Resumo da cotação — comparativo de fornecedores",
+}
+
+COLUNAS_DO_ITEM = [
+    {"rotulo": "Item"}, {"rotulo": "Descrição"},
+    {"rotulo": "Quant.", "tipo": "quantidade"}, {"rotulo": "Unid."},
+    {"rotulo": "Obra"}, {"rotulo": "Situação"}, {"rotulo": "Fornecedor"},
+    {"rotulo": "Melhor preço", "tipo": "dinheiro"},
+    {"rotulo": "Total", "tipo": "dinheiro"},
+]
+
+
+def _dinheiro_br(valor: Any) -> str:
+    """4155.68 → "4.155,68". O relatório é lido por gente e vai para o papel:
+    ponto decimal e quatro casas ("35.9000") não se lê em português."""
+    if valor in (None, ""):
+        return ""
+    try:
+        d = Decimal(str(valor))
+    except (InvalidOperation, ValueError):
+        return str(valor)
+    # duas casas por padrão; mantém mais só quando o preço realmente as tem
+    # (item barato cotado a 0,1250 existe e arredondar mentiria)
+    texto = f"{d:.4f}".rstrip("0")
+    casas = max(2, len(texto.split(".")[1]) if "." in texto else 0)
+    d = d.quantize(Decimal("1." + "0" * casas), rounding=ROUND_HALF_UP)
+    inteiro, _, decimais = f"{d:.{casas}f}".partition(".")
+    negativo = inteiro.startswith("-")
+    inteiro = inteiro.lstrip("-")
+    grupos = []
+    while len(inteiro) > 3:
+        grupos.insert(0, inteiro[-3:])
+        inteiro = inteiro[:-3]
+    grupos.insert(0, inteiro)
+    return ("-" if negativo else "") + ".".join(grupos) + "," + decimais
+
+
+def _quantidade_br(valor: Any) -> str:
+    """"14.000" no banco é catorze, não catorze mil — a casa decimal só
+    aparece quando existe de verdade."""
+    if valor in (None, ""):
+        return ""
+    try:
+        d = Decimal(str(valor))
+    except (InvalidOperation, ValueError):
+        return str(valor)
+    if d == d.to_integral_value():
+        return str(int(d))
+    return f"{d.normalize():f}".replace(".", ",")
+
+
+def _linha_do_item(item: dict[str, Any], coluna: Optional[dict[str, Any]],
+                   celula: Optional[dict[str, Any]]) -> list[Any]:
+    return [
+        item["numero"],
+        (f"{item['insumo']} — {item['especificacao']}" if item.get("especificacao")
+         else item["insumo"]),
+        _quantidade_br(item["quantidade"]), item["unidade"],
+        item.get("obra") or "", item.get("status_rotulo") or "",
+        (coluna or {}).get("fornecedor") or "não cotado",
+        _dinheiro_br((celula or {}).get("preco_unitario")),
+        _dinheiro_br((celula or {}).get("total")),
+    ]
+
+
+def _cabecalho(mapa: dict[str, Any], tipo: str) -> dict[str, Any]:
+    """O que identifica o relatório: qual cotação, quais obras e quais itens.
+
+    A planilha do dono imprime isso no alto de cada aba (Obras, Insumos, Nº
+    SS) — e faz sentido: sem os filtros, não se sabe de onde o número veio.
+    """
+    obras = sorted({i["obra"] for i in mapa["itens"] if i.get("obra")})
+    return {
+        "tipo": tipo,
+        "titulo": TIPOS_DE_RELATORIO[tipo],
+        "cotacao": mapa["numero"],
+        "subtitulo": f"{mapa['numero']} · {mapa['titulo']}",
+        "filtros": [
+            f"Obras: {', '.join(obras) or '—'}",
+            f"Itens: {len(mapa['itens'])}",
+            f"Fornecedores no mapa: {len(mapa['fornecedores'])}",
+        ],
+    }
+
+
+def relatorio(s: Session, cotacao_id: int, tipo: str,
+              cotacao_fornecedor_id: Optional[int] = None) -> dict[str, Any]:
+    """Um dos quatro relatórios do mapa, pronto para a tela e para o arquivo."""
+    tipo = (tipo or "POR_ITEM").upper()
+    if tipo not in TIPOS_DE_RELATORIO:
+        raise ErroValidacao(f"Relatório desconhecido: {tipo}")
+
+    mapa = montar_mapa(s, cotacao_id)
+    por_coluna = {c["id"]: c for c in mapa["fornecedores"]}
+    dados = _cabecalho(mapa, tipo)
+
+    if tipo == "COMPARATIVO":
+        dados.update(_comparativo(mapa))
+    elif tipo == "UM_FORNECEDOR":
+        dados.update(_de_um_fornecedor(mapa, por_coluna, cotacao_fornecedor_id))
+    else:
+        dados.update(_por_menor_preco(mapa, por_coluna,
+                                      agrupar=(tipo == "POR_FORNECEDOR")))
+    return dados
+
+
+def _por_menor_preco(mapa: dict[str, Any], por_coluna: dict[int, dict],
+                     *, agrupar: bool) -> dict[str, Any]:
+    """R2 e R3: cada item pelo MENOR preço. A diferença entre os dois é só a
+    ordem — por item, ou agrupado por fornecedor (que é a lista de compra)."""
+    linhas, total = [], Decimal("0")
+    sem_preco = 0
+    for item in mapa["itens"]:
+        melhor_id = item.get("menor_preco_de")
+        coluna = por_coluna.get(melhor_id) if melhor_id else None
+        celula = item["precos"].get(melhor_id) if melhor_id else None
+        if celula is None:
+            sem_preco += 1
+        else:
+            total += Decimal(celula["total"])
+        linhas.append((coluna, _linha_do_item(item, coluna, celula)))
+
+    if agrupar:
+        # ordena por fornecedor, mantendo a ordem do mapa dentro de cada um;
+        # quem não foi cotado por ninguém fica no fim, para não se perder
+        linhas.sort(key=lambda x: ((x[0] or {}).get("fornecedor") or "zzz").lower())
+
+    # A soma sai do MAPA, não da linha já formatada: "4.155,68" com ponto de
+    # milhar não é número, e somar texto formatado é como se erra por 1.000.
+    por_fornecedor: dict[str, dict[str, Any]] = {}
+    for item in mapa["itens"]:
+        melhor_id = item.get("menor_preco_de")
+        coluna = por_coluna.get(melhor_id) if melhor_id else None
+        celula = item["precos"].get(melhor_id) if melhor_id else None
+        nome = (coluna or {}).get("fornecedor") or "não cotado"
+        agr = por_fornecedor.setdefault(nome, {"fornecedor": nome, "itens": 0,
+                                               "total": Decimal("0")})
+        agr["itens"] += 1
+        if celula is not None:
+            agr["total"] += Decimal(celula["total"])
+
+    return {
+        "colunas": COLUNAS_DO_ITEM,
+        "linhas": [l for _c, l in linhas],
+        "total": str(total.quantize(CENTAVO, rounding=ROUND_HALF_UP)),
+        "total_br": _dinheiro_br(total),
+        "sem_preco": sem_preco,
+        "resumo_por_fornecedor": [
+            {"fornecedor": v["fornecedor"], "itens": v["itens"],
+             "total": _dinheiro_br(v["total"])}
+            for v in sorted(por_fornecedor.values(),
+                            key=lambda x: x["fornecedor"].lower())],
+        "aviso": ("Comprando cada item de quem tem o menor preço. O frete de "
+                  "cada fornecedor NÃO está somado aqui — compare com o "
+                  "relatório de fornecedores antes de decidir."),
+    }
+
+
+def _de_um_fornecedor(mapa: dict[str, Any], por_coluna: dict[int, dict],
+                      cotacao_fornecedor_id: Optional[int]) -> dict[str, Any]:
+    """R4: todos os itens de UM fornecedor. Sem escolha, usa o que sai melhor
+    no total entre os que cotaram tudo — que é a pergunta "e se eu comprar
+    tudo de um só?"."""
+    escolhido = cotacao_fornecedor_id or mapa.get("melhor_fornecedor_unico")
+    if not escolhido and mapa["fornecedores"]:
+        # ninguém cotou tudo: fica com quem cotou mais itens
+        escolhido = max(mapa["fornecedores"],
+                        key=lambda c: (c["itens_cotados"], -Decimal(c["total"])))["id"]
+    coluna = por_coluna.get(escolhido)
+    if coluna is None:
+        raise ErroValidacao("Não há fornecedor com preço neste mapa.")
+
+    linhas, soma = [], Decimal("0")
+    faltando = 0
+    for item in mapa["itens"]:
+        celula = item["precos"].get(coluna["id"])
+        if celula is None:
+            faltando += 1
+        else:
+            soma += Decimal(celula["total"])
+        linhas.append(_linha_do_item(item, coluna if celula else None, celula))
+
+    return {
+        "colunas": COLUNAS_DO_ITEM,
+        "linhas": linhas,
+        "fornecedor": coluna["fornecedor"],
+        "cotacao_fornecedor_id": coluna["id"],
+        "condicao": coluna.get("condicao"),
+        "frete": coluna.get("frete"),
+        "desconto": coluna.get("desconto"),
+        "soma_itens": _dinheiro_br(soma),
+        "total": _dinheiro_br(coluna["total"]),
+        "itens_sem_preco": faltando,
+        "escolhas": [{"id": c["id"], "fornecedor": c["fornecedor"],
+                      "itens_cotados": c["itens_cotados"],
+                      "itens_no_mapa": c["itens_no_mapa"],
+                      "total": _dinheiro_br(c["total"])}
+                     for c in mapa["fornecedores"]],
+        "aviso": (f"{faltando} item(ns) sem preço deste fornecedor — comprando "
+                  f"tudo dele, esses ficam de fora." if faltando else
+                  "Este fornecedor cotou todos os itens do mapa."),
+    }
+
+
+def _comparativo(mapa: dict[str, Any]) -> dict[str, Any]:
+    """R5: uma linha por fornecedor. É a conta que decide de verdade, porque
+    inclui frete, desconto e acréscimo — comparar só o unitário engana."""
+    colunas = [
+        {"rotulo": "#"}, {"rotulo": "Fornecedor"}, {"rotulo": "Condição"},
+        {"rotulo": "Entrega"},
+        {"rotulo": "Itens cotados", "tipo": "inteiro"},
+        {"rotulo": "Soma dos itens", "tipo": "dinheiro"},
+        {"rotulo": "Frete", "tipo": "dinheiro"},
+        {"rotulo": "Desconto", "tipo": "dinheiro"},
+        {"rotulo": "Total", "tipo": "dinheiro"},
+    ]
+    linhas = []
+    for n, c in enumerate(sorted(mapa["fornecedores"],
+                                 key=lambda x: Decimal(x["total"]) or 0), start=1):
+        linhas.append([
+            n, c["fornecedor"], c.get("condicao") or "—",
+            ("coleta" if c.get("entrega") == "COLETA"
+             else ("entrega" if c.get("entrega") else "—")),
+            f"{c['itens_cotados']}/{c['itens_no_mapa']}",
+            _dinheiro_br(c["soma_itens"]), _dinheiro_br(c["frete"]),
+            _dinheiro_br(c["desconto"]), _dinheiro_br(c["total"]),
+        ])
+    return {
+        "colunas": colunas,
+        "linhas": linhas,
+        "melhor_fornecedor_unico": mapa.get("melhor_fornecedor_unico"),
+        "total_pulverizado": mapa.get("total_pulverizado"),
+        "total_pulverizado_br": _dinheiro_br(mapa.get("total_pulverizado")),
+        "aviso": ("O total já inclui frete, desconto e acréscimo. Quem cotou "
+                  "menos itens aparece com total menor por isso, e não por ser "
+                  "mais barato — olhe a coluna 'itens cotados'."),
+    }

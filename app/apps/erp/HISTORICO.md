@@ -388,6 +388,57 @@ Financeiro › Solicitações (a que estava quebrada), Suprimentos › Cotaçõe
 cores), Administração › Empresas (cadastrar a BWS) e os botões Excel/PDF em
 qualquer lista.
 
+### Os quatro relatórios do mapa, e o mapa em PDF — 06/09/2026
+
+Ramo `claude/oi-vjvrn8`, sem migração nova. **Publicado? NÃO** — este é o
+primeiro trabalho depois da publicação da noite.
+
+São os mesmos quatro das abas **R2 a R5** da planilha "Relatório Mapa de
+Cotação", que a equipe já usa para decidir a compra. Ficam no botão
+"Relatórios do mapa", dentro da tela de Cotações, em quatro abas:
+
+| Aba | Pergunta que responde |
+|---|---|
+| **Por item** | de quem compro cada coisa pelo menor preço? |
+| **Por fornecedor** | então o que compro de cada um? — é a lista de compra |
+| **Comprando tudo de um** | e se eu fechar tudo com este aqui? |
+| **Comparativo** | quem sai melhor no total, com frete e desconto? |
+
+Decisões, com o motivo:
+
+- **Os quatro saem do MESMO mapa** (`montar_mapa`). Se cada um refizesse a
+  conta, um dia dois deles dariam números diferentes para a mesma cotação — e
+  aí nenhum serviria para decidir. Há teste exigindo que "por item" e "por
+  fornecedor" somem igual.
+- **Cada relatório diz o que NÃO está na conta.** O de menor preço avisa que o
+  frete de cada fornecedor não está somado; o comparativo avisa que quem cotou
+  menos itens aparece com total menor por isso, e não por ser mais barato.
+  Número sem essa ressalva engana quem decide.
+- **Item que ninguém cotou continua aparecendo**, marcado "não cotado".
+  Sumir com ele faria o comprador esquecer de cotá-lo.
+- **"Comprando tudo de um" troca de fornecedor sem sair da tela** — é
+  comparando "tudo do A" com "tudo do B" que se decide — e avisa quantos itens
+  aquele fornecedor deixaria de fora.
+- **O mapa inteiro em PDF sai deitado** quando há mais de dois fornecedores.
+
+Três defeitos corrigidos no caminho, os três de formatação — e os três do tipo
+que ninguém percebe porque não dá erro:
+
+1. **`numero()` recebia texto e devolvia o texto cru.** A API manda valor como
+   string ("38.5000", "945.00"), e `"38.5000".toLocaleString()` devolve a
+   própria string. Agora passa por `paraNumero` antes. **Isso conserta toda
+   tela do ERP que formatava valor vindo da API.**
+2. **No PDF, o cabeçalho não era cortado na largura da coluna** — os nomes dos
+   fornecedores se sobrepunham e ficavam ilegíveis. Passou a usar o mesmo
+   corte do corpo, e o cabeçalho conta pela metade no cálculo da largura, para
+   um nome comprido não roubar espaço de coluna com conteúdo.
+3. **Os relatórios saíam com ponto decimal e quatro casas.** Agora saem em
+   português (`_dinheiro_br`, `_quantidade_br`), porque vão para o papel.
+
+Verificado: 2.286 testes (33 novos), as quatro abas percorridas num navegador,
+o comparativo e o mapa baixados em PDF e abertos, e as 26 telas varridas de
+novo — todas carregam.
+
 ### O que está pendente AGORA
 
 1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra

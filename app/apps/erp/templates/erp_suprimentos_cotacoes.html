@@ -193,6 +193,10 @@ function desenharMapa(){
       <button class="btn" id="btn-salvar-precos">Salvar preços</button>
       <button class="btn secundario" id="btn-add-forn">Acrescentar fornecedor</button>
       <button class="btn secundario" id="btn-herdar">Puxar preços anteriores</button>
+      <button class="btn secundario" id="btn-relatorios">📊 Relatórios do mapa</button>
+      <button class="btn secundario" id="btn-mapa-pdf"
+        title="O mapa inteiro em PDF, deitado quando tem muitos fornecedores"
+        >&#10515; Mapa em PDF</button>
       <span class="espaco" style="flex:1"></span>
       <button class="btn" id="btn-disparar">✉ Disparar a cotação</button>
     </div>
@@ -204,6 +208,8 @@ function desenharMapa(){
   els("btn-salvar-precos").addEventListener("click", salvarPrecos);
   els("btn-add-forn").addEventListener("click", abrirFornecedor);
   els("btn-herdar").addEventListener("click", herdarPrecos);
+  els("btn-relatorios").addEventListener("click", () => abrirRelatorios("POR_ITEM"));
+  els("btn-mapa-pdf").addEventListener("click", exportarMapa);
   els("btn-disparar").addEventListener("click", abrirDisparo);
   document.querySelectorAll("[data-proposta]").forEach(b =>
     b.addEventListener("click", () => lerProposta(+b.dataset.proposta)));
@@ -255,6 +261,146 @@ async function corrigirItem(itemId){
       r.avisos && r.avisos.length ? "alerta" : "ok");
     abrirMapa(MAPA.id);
   } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// OS QUATRO RELATÓRIOS DO MAPA
+//
+// São os mesmos das abas R2 a R5 da planilha que a equipe já usa. Cada um
+// responde uma pergunta diferente, e é por isso que são quatro:
+//
+//   por item        "de quem compro cada coisa pelo menor preço?"
+//   por fornecedor  "então o que compro de cada um?" — é a lista de compra
+//   um fornecedor   "e se eu comprar tudo deste aqui?"
+//   comparativo     "quem sai melhor no total, com frete e desconto?"
+//
+// Os quatro saem do mesmo mapa: não há como dois deles darem números
+// diferentes para a mesma cotação.
+// ---------------------------------------------------------------------------
+const RELATORIOS = [
+  ["POR_ITEM", "Por item"],
+  ["POR_FORNECEDOR", "Por fornecedor"],
+  ["UM_FORNECEDOR", "Comprando tudo de um"],
+  ["COMPARATIVO", "Comparativo"],
+];
+let REL = null;          // o relatório aberto agora
+
+async function abrirRelatorios(tipo, fornecedor){
+  if (!MAPA) return;
+  els("dlg-titulo").textContent = `Relatórios — ${MAPA.numero}`;
+  els("dlg-corpo").innerHTML = `<div id="rel-msg"></div>
+    <div class="subabas" id="rel-abas"></div>
+    <div id="rel-corpo" class="cartao-dica">carregando…</div>`;
+  els("dlg").showModal();
+  desenharAbasDeRelatorio(tipo);
+  await carregarRelatorio(tipo, fornecedor);
+}
+
+function desenharAbasDeRelatorio(ativo){
+  els("rel-abas").innerHTML = RELATORIOS.map(([chave, rotulo]) =>
+    `<button class="subaba ${chave === ativo ? "ativa" : ""}"
+       data-rel="${chave}">${rotulo}</button>`).join("");
+  document.querySelectorAll("[data-rel]").forEach(b =>
+    b.addEventListener("click", () => abrirRelatorios(b.dataset.rel)));
+}
+
+async function carregarRelatorio(tipo, fornecedor){
+  try {
+    const url = `/erp/api/suprimentos/cotacoes/${MAPA.id}/relatorio?tipo=${tipo}`
+      + (fornecedor ? `&fornecedor=${fornecedor}` : "");
+    const d = await api(url);
+    REL = d.relatorio;
+    desenharRelatorio();
+  } catch(e){ els("rel-corpo").innerHTML = ""; aviso("rel-msg", e.message, "erro"); }
+}
+
+function desenharRelatorio(){
+  const r = REL;
+  // No relatório de um fornecedor só, dá para trocar de fornecedor sem sair
+  // da tela — é comparando "tudo do A" com "tudo do B" que se decide.
+  const escolha = r.escolhas ? `
+    <div class="campo" style="max-width:520px; margin-bottom:10px">
+      <label>Comprando tudo de</label>
+      <select id="rel-forn">${r.escolhas.map(e => `
+        <option value="${e.id}" ${e.id === r.cotacao_fornecedor_id ? "selected" : ""}>
+          ${escapar(e.fornecedor)} — ${e.itens_cotados}/${e.itens_no_mapa} itens ·
+          R$ ${escapar(e.total)}</option>`).join("")}</select></div>` : "";
+
+  const rodape = r.total !== undefined ? `
+    <div class="kpis" style="margin-top:12px">
+      ${r.soma_itens !== undefined ? `<div class="kpi estatico">
+        <div class="kpi-rotulo">Soma dos itens</div>
+        <div class="kpi-valor" style="font-size:17px">${escapar(r.soma_itens)}</div></div>` : ""}
+      <div class="kpi estatico verde"><div class="kpi-rotulo">Total</div>
+        <div class="kpi-valor" style="font-size:17px">${escapar(r.total_br || r.total)}</div></div>
+      ${r.sem_preco ? `<div class="kpi estatico vermelho">
+        <div class="kpi-rotulo">Sem preço nenhum</div>
+        <div class="kpi-valor" style="font-size:17px">${r.sem_preco}</div>
+        <div class="kpi-sub">ninguém cotou</div></div>` : ""}
+      ${r.itens_sem_preco ? `<div class="kpi estatico ambar">
+        <div class="kpi-rotulo">Este não cotou</div>
+        <div class="kpi-valor" style="font-size:17px">${r.itens_sem_preco}</div>
+        <div class="kpi-sub">item(ns) ficariam de fora</div></div>` : ""}
+    </div>` : "";
+
+  const resumo = r.resumo_por_fornecedor && r.resumo_por_fornecedor.length > 1 ? `
+    <div class="cartao-dica" style="margin-top:10px"><b>A compra ficaria assim:</b>
+      ${r.resumo_por_fornecedor.map(x =>
+        `<br>${escapar(x.fornecedor)} — ${x.itens} item(ns) · R$ ${escapar(x.total)}`)
+        .join("")}</div>` : "";
+
+  els("rel-corpo").innerHTML = `
+    ${escolha}
+    <div class="aviso info">${escapar(r.aviso || "")}</div>
+    <div class="tabela-rolagem" style="max-height:46vh; margin-top:10px">
+      <table class="mapa"><thead><tr>${r.colunas.map(c =>
+        `<th class="${c.tipo && c.tipo !== "texto" ? "direita" : ""}"
+          >${escapar(c.rotulo)}</th>`).join("")}</tr></thead>
+        <tbody>${r.linhas.map(l => `<tr>${l.map((v, i) =>
+          `<td class="${r.colunas[i].tipo && r.colunas[i].tipo !== "texto"
+            ? "direita dados" : ""}">${escapar(v)}</td>`).join("")}</tr>`).join("")}
+        </tbody></table>
+    </div>
+    ${resumo}
+    ${rodape}
+    <div style="margin-top:12px; display:flex; gap:6px" id="rel-exportar"></div>`;
+
+  if (r.escolhas) {
+    els("rel-forn").addEventListener("change", ev =>
+      abrirRelatorios("UM_FORNECEDOR", ev.target.value));
+  }
+  botoesDeExportar("rel-exportar", () => ({
+    titulo: r.titulo, subtitulo: r.subtitulo, filtros: r.filtros,
+    colunas: r.colunas, linhas: r.linhas,
+  }));
+}
+
+// O MAPA INTEIRO EM PDF. Deitado quando há muitos fornecedores — em pé, as
+// colunas ficam tão estreitas que não se lê nada. Foi o pedido do dono.
+function exportarMapa(){
+  if (!MAPA) return;
+  const colunas = [{rotulo: "Insumo"}, {rotulo: "Situação"}, {rotulo: "Obra"},
+                   {rotulo: "Qtd", tipo: "quantidade"}, {rotulo: "Un."}]
+    .concat(MAPA.fornecedores.map(c => ({rotulo: c.fornecedor, tipo: "dinheiro"})));
+  // Os números vão FORMATADOS: "14.000" no banco é catorze, e "38.5000" não
+  // se lê em português. O papel é lido por gente.
+  const linhas = MAPA.itens.map(i => [
+    i.especificacao ? `${i.insumo} — ${i.especificacao}` : i.insumo,
+    i.status_rotulo || "", i.obra || "", quantidadeBR(i.quantidade), i.unidade,
+    ...MAPA.fornecedores.map(c => {
+      const cel = i.precos[c.id];
+      return cel ? numero(cel.preco_unitario) : "";
+    })]);
+  linhas.push(["TOTAL (com frete, desconto e acréscimo)", "", "", "", "",
+               ...MAPA.fornecedores.map(c => numero(c.total))]);
+  exportarTela({
+    titulo: `Mapa de cotação ${MAPA.numero}`,
+    subtitulo: MAPA.titulo,
+    filtros: [`${MAPA.itens.length} item(ns) · ${MAPA.fornecedores.length} fornecedor(es)`,
+              "A célula do menor preço está destacada na tela, não no papel."],
+    colunas, linhas, formato: "pdf",
+    paisagem: MAPA.fornecedores.length > 2,
+  });
 }
 
 // ---------------------------------------------------------------------------

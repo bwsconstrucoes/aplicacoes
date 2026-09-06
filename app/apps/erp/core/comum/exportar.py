@@ -276,7 +276,10 @@ def para_pdf(titulo: str, colunas: Sequence[Any], linhas: Sequence[Any], *,
     amostra = dados[:200]
     pesos = []
     for i, c in enumerate(cols):
-        maior = max([len(c["rotulo"])] + [len(_texto(l[i])) for l in amostra] or [8])
+        # o cabeçalho conta pela METADE: "MADEIREIRA E COBERTURAS EXEMPLO LTDA"
+        # não pode roubar a largura das colunas que têm conteúdo de verdade.
+        maior = max([len(c["rotulo"]) // 2] +
+                    [len(_texto(l[i])) for l in amostra] or [8])
         pesos.append(min(40, max(7, maior)))
     total = sum(pesos) or 1
     larguras = [max(14.0, largura * p / total) for p in pesos]
@@ -285,12 +288,23 @@ def para_pdf(titulo: str, colunas: Sequence[Any], linhas: Sequence[Any], *,
         for i in range(len(larguras)):
             larguras[i] -= excesso * (larguras[i] / sum(larguras))
 
+    def _cabe(texto: str, largura: float) -> str:
+        """Corta o texto até caber na coluna. Sem isso, um nome comprido
+        invade a coluna vizinha e as duas ficam ilegíveis — foi o que
+        aconteceu com os nomes dos fornecedores no mapa."""
+        texto = _ascii_seguro(texto)
+        if pdf.get_string_width(texto) <= largura - 2:
+            return texto
+        while texto and pdf.get_string_width(texto + ".") > largura - 2:
+            texto = texto[:-1]
+        return (texto + ".") if texto else ""
+
     def cabecalho():
         pdf.set_font("Helvetica", "B", 7.5)
         pdf.set_fill_color(11, 44, 92)
         pdf.set_text_color(255, 255, 255)
         for c, w in zip(cols, larguras):
-            pdf.cell(w, 6, _ascii_seguro(c["rotulo"])[:60], border=0, fill=True,
+            pdf.cell(w, 6, _cabe(c["rotulo"], w), border=0, fill=True,
                      align="R" if c["tipo"] in TIPOS_NUMERICOS else "L")
         pdf.ln(6)
         pdf.set_text_color(30, 30, 30)
@@ -308,15 +322,9 @@ def para_pdf(titulo: str, colunas: Sequence[Any], linhas: Sequence[Any], *,
         else:
             pdf.set_fill_color(255, 255, 255)
         for c, w, v in zip(cols, larguras, valores):
-            texto = _ascii_seguro(v)
             # sem quebra de linha dentro da célula: com muitas colunas a
-            # tabela vira um borrão. Corta e avisa com reticências.
-            largura_util = w - 2
-            while texto and pdf.get_string_width(texto) > largura_util:
-                texto = texto[:-1]
-            if texto != _ascii_seguro(v) and len(texto) > 1:
-                texto = texto[:-1] + "."
-            pdf.cell(w, 4.6, texto, border=0, fill=True,
+            # tabela vira um borrão. Corta e avisa com um ponto.
+            pdf.cell(w, 4.6, _cabe(_texto(v), w), border=0, fill=True,
                      align="R" if c["tipo"] in TIPOS_NUMERICOS else "L")
         pdf.ln(4.6)
 

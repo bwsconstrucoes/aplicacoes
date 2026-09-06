@@ -1016,6 +1016,23 @@ def api_cotacao_mapa(cotacao_id: int):
         return jsonify({"ok": True, "mapa": svc.montar_mapa(s, cotacao_id)})
 
 
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/relatorio")
+@login_obrigatorio
+@permissao("comprar")
+def api_cotacao_relatorio(cotacao_id: int):
+    """Um dos quatro relatórios do mapa — os mesmos das abas R2 a R5 da
+    planilha. `tipo` diz qual; `fornecedor` escolhe a coluna no de um só."""
+    from app.apps.erp.core.suprimentos import cotacao as svc
+    escolhido = request.args.get("fornecedor")
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "relatorio": svc.relatorio(
+                s, cotacao_id, request.args.get("tipo") or "POR_ITEM",
+                int(escolhido) if escolhido else None)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/fornecedores",
           methods=["POST"])
 @login_obrigatorio
