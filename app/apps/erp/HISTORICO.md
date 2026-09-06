@@ -20,10 +20,10 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Estado em 05/09/2026 (noite):** `main` com a autorização padrão-NEGAR, o
 alcance por operador (029), o consumo de IA com teto (030), as travas de
 concorrência (031), a permissão fina por pessoa (032) e o **módulo de
-Suprimentos** (033 a 037). No ramo `claude/oi-vjvrn8`, ainda não publicado:
-o **botão de zerar o movimento por área** e a **reforma das telas de cadastro
-de Suprimentos** (detalhada abaixo). Suíte: 1.234 sem banco e 1.981 com banco
-de verdade.
+Suprimentos** (033 a 037). Publicado também o **botão de zerar o movimento por área** e a **reforma das
+telas de cadastro de Suprimentos** (detalhada abaixo), mais a correção das
+três telas que nunca funcionaram (ver Incidentes). Suíte: 2.097 casos com
+banco de verdade. **Nada pendente no ramo.**
 
 ### A reforma das telas de cadastro (05/09/2026, noite)
 
@@ -46,10 +46,20 @@ O que mudou:
 | sem visão de gestão | telas de insumos e fornecedores tipo planilha: filtro, busca, ordenação por coluna, edição na própria célula, KPIs e exportação do que está na tela |
 | a cotação só nascia na tela de Cotações | seleciona-se os itens na tela de **Solicitações** e a cotação nasce dali, já sugerindo quem vende aquelas categorias |
 | Configurações com oito blocos empilhados | uma seção por vez, com faixa de navegação (o endereço guarda a seção) |
+| caixas de escolha longas em todo o ERP | qualquer `<select>` com mais de 12 opções ganha campo de filtro sozinho, inclusive dentro de janelas — quem não quiser marca `data-sem-busca` |
+| quantidade "1.000" para UMA unidade | `quantidadeBR` mostra a casa decimal só quando ela existe |
 
-Também novo: **dados de exemplo** (Importações › Dados de exemplo). Traz seis
-categorias, treze insumos, cinco fornecedores, duas condições e quatro
-solicitações fictícias para simular o fluxo, e remove exatamente o que trouxe.
+Também novo: **dados de exemplo** (Importações › Dados de exemplo). Traz dez
+categorias, 28 insumos, cinco fornecedores, duas condições e cinco
+solicitações, e remove exatamente o que trouxe. **Os insumos, as categorias e
+as solicitações são os DE VERDADE**, lidos das planilhas "Cadastro de Insumos"
+(aba Cadastrar) e "Solicitação de Suprimentos" (aba Pedidos) — com o material,
+a especificação, a quantidade e a obra como foram pedidos. Só os fornecedores
+são fictícios, com "EXEMPLO" no nome: usar os reais faria a remoção apagar, um
+dia, um cadastro que a importação tornou real. A tradução do plano financeiro
+antigo (nome) para o plano do ERP (código) está em `exemplo.PLANO_DA_PLANILHA`
+e **precisa da conferência do dono** — errar ali joga a compra na conta de
+custo errada.
 Os ids do que foi criado ficam guardados em `parametros` — a remoção não usa
 heurística de nome, que erraria no dia em que alguém cadastrar "Cimento CP-II"
 de verdade. Se algum insumo de exemplo já tiver entrado num pedido de verdade,
@@ -146,6 +156,29 @@ e escolha sempre explícitos. Ver o topo do `CLAUDE.md`.
 - **02/09/2026 — juntar na `main` matou a carga do painel OMIE.** Publicar
   reinicia o serviço. Regra em `app/apps/painel/HISTORICO.md`: perguntar
   antes de juntar.
+- **05/09/2026 — três telas de Suprimentos nunca funcionaram, e ninguém viu.**
+  Cotações, Pedidos e Banco de preços declaravam `function moeda(...)` por
+  cima do `const moeda` da base. Em JavaScript isso é **erro de sintaxe**: o
+  bloco inteiro de script da tela deixa de rodar, e ela abre só com o
+  cabeçalho. O servidor respondia 200 com o HTML certo, então **nenhum dos
+  2.000 testes via nada** — o erro só existe no navegador. Era isso que estava
+  por trás do "não tem nada de mapa de cotação eu acho" do dono. Junto vieram
+  `data(...)` em Pedidos e `adicionarSPsAoLote(...)` em Pagamentos: duas
+  funções chamadas e nunca escritas.
+  **Como se acha isso:** subir a aplicação num banco local e percorrer as
+  telas num navegador de verdade, ouvindo o console. Meia hora. Está descrito
+  em "Olhar as telas num navegador", abaixo.
+- **05/09/2026 — publiquei o Banco de preços com erro 500.** Faltou um
+  `{% endblock %}`. A homologação por perfil percorria só quatro perfis do
+  roteiro e nenhum deles tem "comprar", então para essa tela ela conferia
+  apenas o 403 — a página nunca chegava a ser desenhada. Corrigido no mesmo
+  dia, com um caso por tela (`test_toda_tela_e_desenhada_por_quem_pode_abrir`)
+  que abre cada uma das 27 telas com um perfil que PODE abri-la. Lição: teste
+  que só confere recusa não prova que a tela existe.
+- **05/09/2026 — inventei dados de exemplo em vez de ler as planilhas do
+  dono.** Ele pediu "veja a minha planilha de novo de solicitações, veja os
+  insumos"; eu escrevi cimento, areia e brita de cabeça. Refeito com os dados
+  de verdade. Lição: quando o pedido cita uma fonte, a fonte é para ser lida.
 - **05/09/2026 — Suprimentos entregue intransitável.** Não havia tela para
   criar categoria de insumo, e sem categoria não se cadastra insumo. A suíte
   passava inteira: ela cobria as regras de cada peça, nenhum teste percorria
@@ -169,6 +202,28 @@ e escolha sempre explícitos. Ver o topo do `CLAUDE.md`.
 - Retenção de garantia na empreita; BeeVale/SomaPay; Suprimentos; Agenda —
   ver `ROTEIRO.md`.
 
+## Olhar as telas num navegador
+
+A suíte não abre tela nenhuma no navegador, e foi por aí que três telas mortas
+chegaram à produção. Vale meia hora antes de publicar mudança de tela:
+
+```
+# 1. um Postgres descartável e um banco com o plano, um ADMIN e umas obras
+initdb / pg_ctl start -o '-p 5433'   &&  createdb erp_olhada
+DATABASE_URL=...erp_olhada  python  (schema.sql + aplicar_pendentes + aplicar_plano)
+
+# 2. a aplicação apontada para ele
+DATABASE_URL=...erp_olhada ERP_SECRET_KEY=qualquer PORT=5055 python app/main.py
+
+# 3. o navegador, ouvindo o console
+#    (Chromium já vem instalado em /opt/pw-browsers/chromium)
+playwright: page.on("pageerror") e page.on("console") → qualquer erro é defeito
+```
+
+O que só isso mostra: erro de JavaScript que mata a tela inteira, tela que
+carrega em branco, botão que não responde, número formatado errado. Nenhuma
+dessas coisas aparece num teste que só olha o HTML que o servidor mandou.
+
 ## Coisas pequenas que mordem
 
 - `pip install -r requirements-dev.txt` falha com o pip antigo do sistema
@@ -177,3 +232,9 @@ e escolha sempre explícitos. Ver o topo do `CLAUDE.md`.
   esconde a linha de resumo. Rode sem `-q`.
 - A sessão dublada dos testes ignora `WHERE`: regra de escopo nova ganha um
   caso em `tests/test_escopo_banco.py`, não só no dublê.
+- **Nunca declare na tela um nome que a base já declara** (`moeda`, `numero`,
+  `els`, `api`, `dataBR`…). Não é "a última vence": é erro de sintaxe e a tela
+  inteira morre. `tests/test_telas_javascript.py` recusa isso agora.
+- O encurtador trata `/favicon.ico` como código curto e vai ao Google Sheets a
+  cada pedido do navegador. Não derruba nada, mas é uma ida à rede por aba
+  aberta. Fica anotado — é outra área.
