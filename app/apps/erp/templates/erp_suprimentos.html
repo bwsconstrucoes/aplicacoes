@@ -51,6 +51,7 @@
   <div class="tabela-barra">
     <span class="resumo" id="resumo"></span>
     <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <span id="acoes-lote" class="oculto" style="display:flex; gap:8px; align-items:center">
       <button class="btn" id="btn-cotar">Gerar cotação com os selecionados</button>
     </span>
@@ -656,5 +657,8 @@ els("btn-limpar").addEventListener("click", () => {
 });
 
 carregarBase().then(carregar).catch(e => aviso("mensagem", e.message, "erro"));
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}

@@ -1934,6 +1934,65 @@ def _origem_do_titulo(s, t) -> dict | None:
     }
 
 
+# ---------------------------------------------------------------------------
+# Exportar o que está na tela
+#
+# UMA ROTA SÓ, e não uma por tela. A tela já tem as linhas filtradas na frente
+# do usuário — ela manda de volta o que está mostrando, e aqui isso vira .xlsx
+# ou .pdf. Assim "exportar" passa a existir em toda tela sem escrever código
+# de servidor nenhum para cada uma, e o arquivo é exatamente o que a pessoa
+# estava vendo, com os filtros dela impressos no cabeçalho.
+# ---------------------------------------------------------------------------
+LIMITE_EXPORTACAO = 50000
+
+
+@bp.route("/erp/api/exportar", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_exportar():
+    """Recebe o que está na tela e devolve a planilha ou o PDF."""
+    from app.apps.erp.core.comum import exportar as svc
+
+    d = request.get_json(silent=True) or {}
+    formato = (d.get("formato") or "xlsx").lower()
+    if formato not in ("xlsx", "pdf"):
+        return jsonify({"ok": False, "erro": "Formato deve ser xlsx ou pdf."}), 400
+
+    linhas = d.get("linhas") or []
+    if len(linhas) > LIMITE_EXPORTACAO:
+        return jsonify({"ok": False,
+                        "erro": f"São {len(linhas)} linhas. Filtre um pouco antes "
+                                f"de exportar — o teto é {LIMITE_EXPORTACAO}."}), 400
+    colunas = d.get("colunas") or []
+    if not colunas:
+        return jsonify({"ok": False, "erro": "Nada para exportar."}), 400
+
+    titulo = (d.get("titulo") or "Relatório").strip()[:120]
+    quem = session.get("erp_usuario_nome", "")
+    try:
+        if formato == "xlsx":
+            conteudo = svc.para_excel(
+                titulo, colunas, linhas, subtitulo=(d.get("subtitulo") or "")[:200],
+                filtros=d.get("filtros"), quem=quem)
+            tipo = ("application/vnd.openxmlformats-officedocument"
+                    ".spreadsheetml.sheet")
+        else:
+            conteudo = svc.para_pdf(
+                titulo, colunas, linhas, subtitulo=(d.get("subtitulo") or "")[:200],
+                filtros=d.get("filtros"), quem=quem, paisagem=d.get("paisagem"))
+            tipo = "application/pdf"
+    except Exception as e:
+        logger.exception("ERP: falha ao exportar %s em %s", titulo, formato)
+        return jsonify({"ok": False, "erro": f"Não deu para gerar o arquivo: {e}"}), 500
+
+    from flask import Response
+    nome = svc.nome_de_arquivo(titulo, formato)
+    return Response(conteudo, mimetype=tipo, headers={
+        "Content-Disposition": f'attachment; filename="{nome}"',
+        "Content-Length": str(len(conteudo)),
+    })
+
+
 @bp.route("/erp/api/titulos/<int:titulo_id>")
 @login_obrigatorio
 @permissao("ver_erp")

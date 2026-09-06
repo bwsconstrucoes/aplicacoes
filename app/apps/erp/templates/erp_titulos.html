@@ -53,6 +53,7 @@
   <div class="tabela-barra">
     <span class="resumo" id="resumo-tabela"></span>
     <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <span id="acoes-lote" class="oculto" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
       <input id="motivo" placeholder="Motivo (devolver / cancelar)" style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px; min-width:220px">
       <button class="btn" data-acao="aprovar">✔ Liberar p/ pagamento</button>
@@ -661,5 +662,8 @@ carregar().then(() => {
   const pedido = new URLSearchParams(location.search).get("titulo");
   if (pedido) detalhe(+pedido);
 });
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}

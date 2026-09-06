@@ -51,7 +51,9 @@
 <div class="kpis" id="kpis"></div>
 
 <div class="tabela-wrap">
-  <div class="tabela-barra"><span class="resumo" id="resumo"></span></div>
+  <div class="tabela-barra"><span class="resumo" id="resumo"></span>
+    <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span></div>
   <div class="tabela-rolagem">
     <table>
       <thead><tr>
@@ -406,5 +408,8 @@ els("btn-limpar").addEventListener("click", () => {
 });
 
 carregar();
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}

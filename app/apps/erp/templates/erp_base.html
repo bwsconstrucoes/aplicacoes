@@ -169,6 +169,150 @@ function comBusca(alvo, textoVazio) {
   sel.addEventListener("change", () => { sel.size = 0; });
 }
 
+// EXPORTAR O QUE ESTÁ NA TELA — Excel ou PDF.
+//
+// Um ajudante só, usado por todas as telas. A tela diz o título, as colunas e
+// as linhas que está mostrando (já filtradas), e os filtros ligados. Daqui sai
+// o arquivo. Não há código de exportação por tela: se a próxima tela quiser
+// exportar, chama isto e pronto.
+//
+// Os FILTROS vão no cabeçalho do arquivo de propósito: relatório sem a origem
+// é número sem procedência, e três meses depois ninguém sabe de onde veio.
+//
+// `colunas`: [{rotulo, tipo}] — tipo "dinheiro"/"numero"/"quantidade" faz o
+// valor virar NÚMERO de verdade na planilha, que é o que permite somar e
+// ordenar. Sem isso o Excel recebe texto e quem abre reclama, com razão.
+async function exportarTela({titulo, subtitulo, colunas, linhas, filtros,
+                             formato, paisagem}) {
+  if (!linhas || !linhas.length) {
+    return aviso("mensagem", "Não há nada na tela para exportar.", "alerta");
+  }
+  try {
+    const r = await fetch("/erp/api/exportar", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({formato: formato || "xlsx", titulo, subtitulo,
+                            colunas, linhas, filtros, paisagem})});
+    if (!r.ok) {
+      let motivo = "falha ao gerar o arquivo";
+      try { motivo = (await r.json()).erro || motivo; } catch (e) {}
+      throw new Error(motivo);
+    }
+    const nome = (r.headers.get("Content-Disposition") || "")
+      .split("filename=")[1]?.replace(/"/g, "") || "relatorio";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = nome;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  } catch (e) { aviso("mensagem", e.message, "erro"); }
+}
+
+// LER A PRÓPRIA TABELA DA TELA.
+//
+// Em vez de cada tela montar a lista de novo para exportar — e correr o risco
+// de o arquivo sair diferente do que está na frente da pessoa —, o exportador
+// lê a TABELA JÁ DESENHADA. O que está na tela é o que vai para o arquivo, por
+// construção: mesmo filtro, mesma ordem, mesmas linhas.
+//
+// O que fica de fora, e por quê:
+//   - a coluna da caixinha de seleção (não é informação);
+//   - qualquer coluna marcada com class="sem-exportar" no cabeçalho;
+//   - botões, listas e campos dentro das células — "mover para…" é comando,
+//     não conteúdo.
+// Coluna alinhada à direita é tratada como NÚMERO, que é a convenção que o
+// ERP já usa; assim a planilha recebe número de verdade e permite somar.
+function textoDaCelula(td){
+  const c = td.cloneNode(true);
+  c.querySelectorAll("button, select, input, textarea, .sem-exportar")
+   .forEach(e => e.remove());
+  // A célula costuma ter uma linha de baixo em <small> ("SS-0001" + o título
+  // do pedido). Sem separador, as duas grudam no arquivo — "SS-0001Ferramental"
+  // — e a planilha fica ilegível.
+  c.querySelectorAll("br").forEach(br => br.replaceWith(document.createTextNode(" · ")));
+  c.querySelectorAll("small, div, p, li").forEach(e =>
+    e.parentNode && e.insertAdjacentText("beforebegin", " · "));
+  return (c.textContent || "")
+    .replace(/\s+/g, " ")
+    .replace(/(\s*·\s*)+/g, " · ")
+    .replace(/^\s*·\s*|\s*·\s*$/g, "")
+    .trim();
+}
+
+// Qual tabela é "a" tabela da tela. Algumas telas têm um quadro-resumo antes
+// da lista (Locações mostra "por obra" no topo), e pegar a primeira do HTML
+// exportaria o resumo em vez da lista. Vale a que tem cabeçalho e mais linhas.
+function tabelaDaTela(seletor){
+  const candidatas = [...document.querySelectorAll(
+    seletor || ".tabela-wrap table, .principal table")]
+    .filter(t => t.tHead && t.tBodies.length);
+  if (!candidatas.length) return null;
+  return candidatas.reduce((a, b) =>
+    (b.tBodies[0].rows.length > a.tBodies[0].rows.length ? b : a));
+}
+
+function dadosDaTabela(seletor){
+  const tab = tabelaDaTela(seletor);
+  if (!tab) return {colunas: [], linhas: []};
+  const ths = [...tab.tHead.rows[0].cells];
+  const pular = ths.map(th => th.classList.contains("sem-exportar")
+                           || !!th.querySelector("input[type=checkbox]"));
+  const colunas = ths.filter((_, i) => !pular[i]).map(th => ({
+    rotulo: (th.textContent || "").replace(/[▲▼]/g, "").replace(/\s+/g, " ").trim(),
+    tipo: th.classList.contains("direita") ? "numero" : "texto"}));
+  // Linha com colspan é recado ("nenhum pedido nesta situação"), não é dado.
+  const linhas = [...tab.tBodies[0].rows]
+    .filter(tr => tr.cells.length === ths.length && !tr.querySelector("[colspan]"))
+    .map(tr => [...tr.cells].filter((_, i) => !pular[i]).map(textoDaCelula));
+  return {colunas, linhas};
+}
+
+// Os filtros ligados, lidos da barra da esquerda — para saírem no cabeçalho do
+// arquivo. Sem isso, o relatório é um número sem procedência.
+function filtrosDaTela(){
+  const partes = [];
+  const busca = document.querySelector("aside.filtros input[type=search]");
+  if (busca && busca.value.trim()) partes.push(`Busca: ${busca.value.trim()}`);
+  document.querySelectorAll("aside.filtros .filtro").forEach(bloco => {
+    const nome = (bloco.querySelector(".filtro-cab span")?.textContent || "").trim();
+    const marcados = [...bloco.querySelectorAll('input[type=checkbox]:checked')]
+      .map(i => (i.closest("label")?.querySelector(".rotulo")?.textContent || "").trim())
+      .filter(Boolean);
+    if (marcados.length) partes.push(`${nome}: ${marcados.join(", ")}`);
+  });
+  document.querySelectorAll("aside.filtros select").forEach(s => {
+    if (s.value) partes.push(`${(s.previousElementSibling?.textContent || "Filtro").trim()}: `
+                             + (s.selectedOptions[0]?.textContent || s.value).trim());
+  });
+  return partes.length ? partes : ["Sem filtro: a tela inteira."];
+}
+
+// O par de botões, para a tela só colar onde quiser. `montar` é a função que
+// devolve {titulo, colunas, linhas, filtros} no momento do clique — tem de ser
+// no momento, e não antes, senão exporta o que estava na tela quando a página
+// abriu, e não o que está agora.
+function botoesDeExportar(idDoLugar, montar){
+  const lugar = els(idDoLugar);
+  if (!lugar) return;
+  // Sem `montar`, o padrão é ler a tabela da tela — que é o que quase toda
+  // tela quer, e não pode divergir do que está sendo mostrado.
+  montar = montar || (() => ({
+    titulo: (document.querySelector(".principal h2")?.childNodes[0]?.textContent
+             || (document.title || "Relatório").split(" — ")[0]).trim(),
+    subtitulo: (document.querySelector(".principal h2 small")?.textContent || "").trim(),
+    filtros: filtrosDaTela(),
+    ...dadosDaTabela()}));
+  lugar.innerHTML = `<button class="btn secundario" data-exp="xlsx"
+      title="Baixar em Excel o que está na tela, com os filtros aplicados"
+      >&#10515; Excel</button>
+    <button class="btn secundario" data-exp="pdf"
+      title="Baixar em PDF o que está na tela, com os filtros aplicados"
+      >&#10515; PDF</button>`;
+  lugar.querySelectorAll("[data-exp]").forEach(b => b.addEventListener("click", () => {
+    const dados = montar() || {};
+    exportarTela({...dados, formato: b.dataset.exp});
+  }));
+}
+
 // Toda lista longa do ERP ganha busca sozinha.
 //
 // Isto existe porque a regra "não pode abrir uma caixa com mais de cem itens

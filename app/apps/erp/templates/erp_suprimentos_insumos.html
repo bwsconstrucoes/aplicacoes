@@ -56,7 +56,7 @@
   <div class="tabela-barra">
     <span class="resumo" id="resumo"></span>
     <span class="espaco"></span>
-    <button class="btn secundario" id="btn-csv">⤓ Exportar o que está na tela</button>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn" id="btn-novo">+ Novo insumo</button>
   </div>
   <div class="tabela-rolagem">
@@ -464,17 +464,6 @@ function abrirFicha(id){
   els("dlg").showModal();
 }
 
-function exportar(){
-  const l = visiveis();
-  const linhas = [["Código", "Insumo", "Unidade", "Categoria", "Conta", "Último preço", "Ativo"]]
-    .concat(l.map(i => [i.codigo, i.descricao, i.unidade, i.categoria_insumo, i.conta,
-                        i.ultimo_preco ?? "", i.ativo ? "sim" : "não"]));
-  const csv = linhas.map(l => l.map(c => `"${String(c ?? "").replace(/"/g, '""')}"`).join(";")).join("\n");
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(new Blob(["﻿" + csv], {type: "text/csv;charset=utf-8"}));
-  a.download = "insumos.csv";
-  a.click();
-}
 
 ["f-busca", "f-inativos", "f-locavel", "f-sem-conta", "f-sem-unidade", "f-sem-preco"]
   .forEach(id => els(id).addEventListener("input", () => { LIMITE = 200; desenhar(); }));
@@ -487,7 +476,8 @@ els("btn-limpar").addEventListener("click", () => {
   LIMITE = 200; montarFiltros(); desenhar();
 });
 els("btn-novo").addEventListener("click", novoInsumo);
-els("btn-csv").addEventListener("click", exportar);
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 if (!PODE_EDITAR) els("btn-novo").style.display = "none";
 
 carregar();

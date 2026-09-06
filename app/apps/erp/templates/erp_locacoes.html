@@ -21,6 +21,7 @@
     <label class="opcao" style="margin:0"><input type="checkbox" id="so-ativos" checked>
       <span class="rotulo">Só ativos</span></label>
     <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn secundario" id="btn-insumo">+ Equipamento no cadastro</button>
     <button class="btn secundario" id="btn-ler">📄 Ler contrato da locadora</button>
     <button class="btn amarelo" id="btn-novo">+ Novo contrato</button>
@@ -403,5 +404,8 @@ carregar().then(() => {
   const pedido = new URLSearchParams(location.search).get("contrato");
   if (pedido) abrir(+pedido);
 });
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}

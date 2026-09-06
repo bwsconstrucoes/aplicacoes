@@ -313,6 +313,59 @@ um defeito só de tela passa por todos os testes; esta classe agora tem guarda.
 **Varredura**: as 26 telas do ERP foram abertas num navegador de verdade, uma a
 uma, conferindo aviso de erro e erro de JavaScript. Todas carregam.
 
+### Exportar em Excel e PDF, em toda tela — 06/09/2026
+
+Ramo `claude/oi-vjvrn8`, sem migração nova. Sem dependência nova: `openpyxl` e
+`fpdf2` já estavam no serviço.
+
+Antes: **duas** telas do ERP inteiro exportavam, e só em CSV. Agora **doze**
+telas de lista têm os botões **Excel** e **PDF**, e a próxima tela que alguém
+escrever ganha os dois com uma linha.
+
+**Como funciona, e por que assim:** o exportador **lê a tabela já desenhada na
+tela**, em vez de cada tela montar a lista de novo. Assim o arquivo não pode
+divergir do que a pessoa está vendo — mesmo filtro, mesma ordem, mesmas linhas,
+por construção. Ficam de fora a coluna da caixinha de seleção, as colunas
+marcadas `sem-exportar`, e botões/listas dentro das células ("mover para…" é
+comando, não conteúdo).
+
+Decisões, com o motivo:
+
+- **Os filtros ligados saem impressos no cabeçalho** do arquivo, junto com
+  quem exportou e quando. Relatório sem a origem é número sem procedência:
+  três meses depois ninguém sabe se aquilo era de uma obra ou de todas.
+- **Coluna alinhada à direita vira NÚMERO de verdade** na planilha (é a
+  convenção que o ERP já usa). Texto que parece número não soma, não ordena e
+  não vira tabela dinâmica — é a reclamação nº 1 de quem recebe arquivo de
+  sistema.
+- **"Sem valor" continua vazio, nunca zero.** Em compras, "sem preço" e
+  "preço zero" são coisas diferentes.
+- **O PDF deita sozinho a partir de seis colunas** — pedido do dono olhando o
+  mapa de cotação com muitos fornecedores. Dá para forçar em pé ou deitado.
+- **O PDF corta em 3.000 linhas e DIZ que cortou**, mandando para o Excel.
+  Um PDF de vinte mil linhas ninguém abre, e a instância tem 2 GB dividida com
+  outros treze módulos.
+
+Duas armadilhas que custaram tempo e ficaram registradas no código:
+
+1. **`fpdf2` deixa o cursor à direita depois de `multi_cell`** — o subtítulo
+   saía cortado na margem e o resto do cabeçalho sumia. Resolve com
+   `new_x="LMARGIN", new_y="NEXT"` em toda chamada.
+2. **`"1.000"` virava 1, não mil.** Só-ponto é ambíguo. A regra passou a ser a
+   MESMA da tela (`paraNumero`, em `erp_base.html`): ponto só separa milhar
+   quando sobram exatamente três dígitos depois dele. Tem de ser a mesma regra
+   dos dois lados, senão o arquivo sai diferente da tela.
+
+**Telas com exportação hoje**: Solicitações (suprimentos e financeiro), Banco
+de preços, Pedidos, Locações, Insumos, Fornecedores, Colaboradores, Obras,
+Despesas de colaborador, Empreitas e Receber.
+
+**Ainda não exportam**: o mapa de cotação (vai junto com os quatro relatórios
+do mapa), Conciliação, Pagamentos, Confirmar e Prestação de contas.
+
+Verificado baixando os arquivos de verdade num navegador, tela por tela, e
+abrindo o `.xlsx` e o `.pdf` produzidos. 21 testes novos.
+
 ### O que está pendente AGORA
 
 1. **Apertar "Aplicar atualizações do banco"** (Configurações, como ADMIN) para

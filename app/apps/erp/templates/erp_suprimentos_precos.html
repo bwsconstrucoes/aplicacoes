@@ -60,6 +60,8 @@
 <div class="tabela-wrap">
   <div class="tabela-barra">
     <span class="resumo" id="resumo-tabela"></span>
+    <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
   </div>
   <div class="tabela-rolagem">
     <table>
@@ -194,5 +196,8 @@ els("btn-limpar").addEventListener("click", () => {
 });
 
 carregarInsumos().then(carregar).catch(e => aviso("mensagem", e.message, "erro"));
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}
