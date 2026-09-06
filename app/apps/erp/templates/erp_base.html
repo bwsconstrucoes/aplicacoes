@@ -59,6 +59,14 @@ const moeda = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL
 const numero = v => (v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
 const rotulo = s => (s||"").replace(/_/g," ").toLowerCase().replace(/^./, c => c.toUpperCase());
 const dataBR = iso => iso ? iso.split("-").reverse().join("/") : "—";
+// Quantidade vem do banco com três casas ("1.000" para UMA unidade). Em
+// português isso se lê como MIL — e o número passa a mentir na tela. Aqui a
+// casa decimal só aparece quando existe de verdade: 1 → "1", 2,5 → "2,5".
+const quantidadeBR = v => {
+  const n = Number(v);
+  if (!isFinite(n)) return v ?? "—";
+  return n.toLocaleString("pt-BR", {maximumFractionDigits: 3});
+};
 const els = id => document.getElementById(id);
 // Rótulo de obra sem repetir: quando código e nome são iguais, mostra um só.
 // Converte texto em número aceitando os DOIS formatos.
@@ -93,18 +101,22 @@ function rotuloObra(o) {
 
 // Transforma um <select> longo em campo com busca. Lista de mil credores não
 // se navega rolando; digitar duas letras resolve.
-function comBusca(idSelect, textoVazio) {
-  const sel = els(idSelect);
+//
+// Aceita o id ou o próprio elemento: as listas longas do ERP nascem dentro de
+// caixas de diálogo montadas por JavaScript, e nem todas têm id.
+function comBusca(alvo, textoVazio) {
+  const sel = (alvo && alvo.tagName === "SELECT") ? alvo : els(alvo);
   if (!sel) return;
   // Reaplicável: se a lista foi recarregada, o filtro antigo é descartado e as
   // opções atuais viram a nova base. Sem isso as opções apareciam duplicadas.
   const anterior = sel.previousElementSibling;
-  if (anterior && anterior.dataset && anterior.dataset.buscaDe === idSelect) {
+  if (anterior && anterior.dataset && anterior.dataset.buscaDe !== undefined) {
     anterior.remove();
   }
   const campo = document.createElement("input");
   campo.type = "search";
-  campo.dataset.buscaDe = idSelect;
+  campo.dataset.buscaDe = sel.id || "";
+  sel.dataset.temBusca = "1";
   campo.placeholder = textoVazio || "digite para filtrar…";
   campo.style.cssText = "width:100%; margin-bottom:4px; padding:7px 9px;" +
     "border:1px solid var(--borda-forte); border-radius:8px; font-size:13px";
@@ -133,6 +145,47 @@ function comBusca(idSelect, textoVazio) {
   });
   sel.addEventListener("change", () => { sel.size = 0; });
 }
+
+// Toda lista longa do ERP ganha busca sozinha.
+//
+// Isto existe porque a regra "não pode abrir uma caixa com mais de cem itens
+// para escolher" vale para o sistema inteiro, e sair marcando tela por tela
+// deixaria de fora a próxima que alguém escrever. Em vez de uma lista de
+// telas a manter, o navegador observa: nasceu um <select> com mais opções do
+// que se enxerga de uma vez, ele ganha o campo de filtro.
+//
+// Quem NÃO quer isso numa lista específica marca o select com
+// `data-sem-busca` — a exceção fica escrita no lugar onde ela vale.
+const LIMITE_PARA_BUSCA = 12;
+
+function aplicarBuscaEmListasLongas(raiz) {
+  (raiz || document).querySelectorAll("select:not([data-sem-busca])").forEach(sel => {
+    if (sel.dataset.temBusca) return;             // já tem, não refaz
+    if (sel.multiple || sel.options.length <= LIMITE_PARA_BUSCA) return;
+    comBusca(sel);
+  });
+}
+
+// Observa a página inteira: as listas longas quase sempre nascem dentro de uma
+// caixa de diálogo montada na hora, depois que a tela já carregou.
+new MutationObserver(registros => {
+  for (const r of registros) {
+    for (const no of r.addedNodes) {
+      if (no.nodeType !== 1) continue;
+      if (no.tagName === "SELECT") { aplicarBuscaEmListasLongas(no.parentNode); }
+      // O padrão mais comum do ERP: o <select> já está no HTML e as opções
+      // chegam depois, por innerHTML. Aqui quem nasce é a <option>.
+      else if (no.tagName === "OPTION" && r.target && r.target.tagName === "SELECT") {
+        aplicarBuscaEmListasLongas(r.target.parentNode);
+      }
+      else if (no.querySelector && no.querySelector("select")) {
+        aplicarBuscaEmListasLongas(no);
+      }
+    }
+  }
+}).observe(document.documentElement, {childList: true, subtree: true});
+
+document.addEventListener("DOMContentLoaded", () => aplicarBuscaEmListasLongas());
 
 // Substitui o prompt() do navegador, que tem a cara do sistema operacional e
 // destoa do resto. Devolve os valores preenchidos ou null se cancelar.

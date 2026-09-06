@@ -72,13 +72,18 @@
     </table>
   </div>
 </div>
+{% endblock %}
+
 {% block scripts %}
 <script>
 let REGISTROS = [];
 const FORNECEDORES = new Set();
 
-function moeda(v){ return Number(v || 0).toLocaleString("pt-BR",
-  {minimumFractionDigits: 2, maximumFractionDigits: 4}); }
+// Preço de insumo tem centavo quebrado (R$ 0,8750 o metro de cabo), por isso
+// quatro casas. Nome próprio de propósito: `moeda` já existe na base, e
+// redeclarar derruba TODO o script desta tela.
+const precoBR = v => Number(v || 0).toLocaleString("pt-BR",
+  {minimumFractionDigits: 2, maximumFractionDigits: 4});
 
 async function carregarInsumos(){
   const d = await api("/erp/api/suprimentos/cadastros");
@@ -128,15 +133,15 @@ function desenharResumo(r, temInsumo){
       <div class="kpi-valor">${r.ocorrencias}</div></div>
     ${temInsumo ? `
     <div class="kpi"><div class="kpi-rotulo">Último preço</div>
-      <div class="kpi-valor">${moeda(r.ultimo)}</div></div>
+      <div class="kpi-valor">${precoBR(r.ultimo)}</div></div>
     <div class="kpi verde"><div class="kpi-rotulo">Menor</div>
-      <div class="kpi-valor">${moeda(r.menor)}</div></div>
+      <div class="kpi-valor">${precoBR(r.menor)}</div></div>
     <div class="kpi"><div class="kpi-rotulo">Maior</div>
-      <div class="kpi-valor">${moeda(r.maior)}</div></div>
+      <div class="kpi-valor">${precoBR(r.maior)}</div></div>
     <div class="kpi"><div class="kpi-rotulo">Média</div>
-      <div class="kpi-valor">${moeda(r.media)}</div></div>
+      <div class="kpi-valor">${precoBR(r.media)}</div></div>
     <div class="kpi roxo"><div class="kpi-rotulo">Último comprado</div>
-      <div class="kpi-valor">${r.ultimo_comprado ? moeda(r.ultimo_comprado) : "—"}</div>
+      <div class="kpi-valor">${r.ultimo_comprado ? precoBR(r.ultimo_comprado) : "—"}</div>
       <div class="kpi-nota">o que a empresa aceitou pagar</div></div>` : `
     <div class="kpi"><div class="kpi-rotulo">Escolha um insumo</div>
       <div class="kpi-nota">para ver menor, maior e média — misturar insumos
@@ -161,7 +166,7 @@ async function carregar(){
       <tr><td class="dados">${dataBR(r.data)}</td>
         <td>${r.insumo}${r.especificacao ? `<br><small>${r.especificacao}</small>` : ""}</td>
         <td>${r.fornecedor || "—"}</td>
-        <td class="direita dados">${moeda(r.preco_unitario)}</td>
+        <td class="direita dados">${precoBR(r.preco_unitario)}</td>
         <td class="direita dados">${r.quantidade || "—"} ${r.unidade || ""}</td>
         <td>${r.tipo === "COMPRADO"
               ? `<b style="color:var(--verde)">comprado</b>` : "cotado"}</td>

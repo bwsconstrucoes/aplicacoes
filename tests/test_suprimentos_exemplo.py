@@ -53,19 +53,43 @@ def test_os_documentos_de_exemplo_nao_se_repetem():
 # ---------------------------------------------------------------------------
 # O catálogo em si
 # ---------------------------------------------------------------------------
-def test_todo_insumo_de_exemplo_aponta_para_conta_de_custo_de_obra():
+def test_todo_plano_da_planilha_citado_tem_traducao():
+    """A planilha guarda o plano pelo NOME antigo. Nome sem tradução cairia em
+    "Outros materiais" sem ninguém perceber — e a compra iria para a conta
+    errada."""
     for _categoria, itens in svc.CATALOGO:
-        for descricao, _unidade, conta in itens:
-            assert conta.startswith("3."), \
-                f"{descricao} aponta para {conta}, que não é custo de obra"
+        for descricao, _unidade, plano in itens:
+            assert plano in svc.PLANO_DA_PLANILHA, \
+                f"{descricao} usa o plano {plano!r}, que não tem tradução"
+
+
+def test_toda_traducao_aponta_para_conta_de_custo_ou_despesa():
+    for nome, codigo in svc.PLANO_DA_PLANILHA.items():
+        assert codigo[0] in "3458", \
+            f"{nome} foi traduzido para {codigo}, que não é conta de compra"
 
 
 def test_toda_solicitacao_de_exemplo_cita_insumo_que_o_exemplo_cria():
-    conhecidos = {d for _c, itens in svc.CATALOGO for d, _u, _conta in itens}
-    for titulo, _prioridade, itens in svc.SOLICITACOES:
+    conhecidos = {d for _c, itens in svc.CATALOGO for d, _u, _p in itens}
+    for titulo, _prioridade, _obra, itens in svc.SOLICITACOES:
         for descricao, _q, _e in itens:
             assert descricao in conhecidos, \
                 f"{titulo} pede {descricao!r}, que o exemplo não cadastra"
+
+
+def test_toda_solicitacao_diz_de_qual_obra_veio():
+    """O código da obra vem da planilha. É ele que faz o pedido de exemplo cair
+    na mesma obra em que caiu de verdade."""
+    for titulo, _prioridade, obra, _itens in svc.SOLICITACOES:
+        assert obra and obra == obra.upper(), \
+            f"{titulo} está sem o código da obra"
+
+
+def test_o_fornecedor_de_exemplo_se_identifica_como_exemplo():
+    """Eles são fictícios de propósito, e a tela precisa deixar isso óbvio —
+    senão alguém manda cotação de verdade para um CNPJ que não existe."""
+    for razao, *_resto in svc.FORNECEDORES:
+        assert "EXEMPLO" in razao.upper(), f"{razao} não se identifica"
 
 
 def test_todo_fornecedor_de_exemplo_vende_categoria_que_o_exemplo_cria():

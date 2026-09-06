@@ -39,77 +39,183 @@ logger = logging.getLogger(__name__)
 
 CHAVE = "suprimentos_dados_de_exemplo"
 
-# (nome da categoria, [(insumo, unidade, conta do plano)])
+# ---------------------------------------------------------------------------
+# TUDO ABAIXO SAIU DAS PLANILHAS DA EMPRESA, não foi inventado.
+#
+#   - insumos, categorias, unidades e contas: "Cadastro de Insumos", aba
+#     Cadastrar, e a coluna Plano Financeiro da "Solicitação de Suprimentos";
+#   - as cinco solicitações: "Solicitação de Suprimentos", aba Pedidos, com o
+#     material, a especificação, a quantidade e a obra como foram pedidos de
+#     verdade;
+#   - só os FORNECEDORES são fictícios, e de propósito. Usar os fornecedores
+#     de verdade aqui seria perigoso: no dia em que a carga da planilha
+#     atualizasse um deles, "remover os dados de exemplo" apagaria um
+#     cadastro que virou real. Os 111 de verdade entram pela importação.
+# ---------------------------------------------------------------------------
+
+# O plano financeiro da planilha é o ANTIGO, com nome em vez de código. Aqui
+# está a tradução para o plano do ERP. É a única parte deste arquivo que é
+# opinião minha, e vale o dono conferir: errar aqui joga a compra na conta de
+# custo errada, e o erro só aparece no relatório do mês.
+PLANO_DA_PLANILHA = {
+    "Agregados (Areia, Brita, Arisco)": "3.1.02",
+    "Argamassas": "3.1.01",
+    "Armadura": "3.1.03",
+    "Cimento e Concreto Usinado": "3.1.01",
+    "Elementos de Vedação (Tijolo, Blocos e Paredes PVC)": "3.1.04",
+    "Pré-Moldados de Concreto": "3.1.05",
+    "Estrutura Metálica": "3.1.05",
+    "Telhas e Material p/ Coberturas": "3.1.06",
+    "Madeiramento": "3.1.07",
+    "Material Elétrico": "3.1.08",
+    "Material p/ Cabeamento Estruturado e CFTV": "3.1.08",
+    "Material Hidráulico e Sanitário": "3.1.09",
+    "Material p/ Gás": "3.1.09",
+    "Material p/ Combate à Incêndio": "3.1.10",
+    "Material p/ Climatização": "3.1.11",
+    "Pisos, Cerâmicas e Revestimentos": "3.1.12",
+    "Louças e Metais": "3.1.13",
+    "Bancadas de Granito": "3.1.13",
+    "Esquadrias de Alumínio, Metal e Madeira": "3.1.14",
+    "Vidros e Espelhos": "3.1.14",
+    "Materais p/ Serralheria (Tubos, Metalon, Perfis, etc)": "3.1.14",
+    "Material para Pintura": "3.1.15",
+    "Material p/ Fôrro": "3.1.16",
+    "Impermeabilizantes, Aditivos e Colas": "3.1.17",
+    "Parafusos, Ferragens e Acessórios": "3.1.18",
+    "Ferramentas": "3.1.19",
+    "Jardinagem": "3.1.20",
+    "Outros Materiais": "3.1.99",
+    "EPI (Equipamento de Proteção Individual)": "3.4.03",
+    "Material p/ Limpeza": "3.2.05",
+    "Locação de Máquinas, Veículos e Equipamentos": "3.3.01",
+    "Móveis e Utensílios": "8.1.03",
+}
+
+# (categoria de insumo, [(insumo, unidade, conta do plano da planilha)])
+# São as categorias e os insumos que as cinco solicitações abaixo citam.
 CATALOGO: list[tuple[str, list[tuple[str, str, str]]]] = [
-    ("Cimento, concreto e argamassa", [
-        ("Cimento CP-II-Z 32 saco 50kg", "SC", "3.1.01"),
-        ("Argamassa colante AC-III saco 20kg", "SC", "3.1.01"),
-        ("Concreto usinado FCK 25 MPa", "M3", "3.1.01"),
+    ("Ferramentas Manuais", [
+        ("Torquês 12 pol.", "UN", "Ferramentas"),
+        ("Facão", "UN", "Ferramentas"),
+        ("Espátula 8cm", "UN", "Ferramentas"),
+        ("Aplicador p/ Silicone", "UN", "Ferramentas"),
+        ("Pá de Bico c/ Cabo", "UN", "Ferramentas"),
+        ("Enxada c/ Cabo", "UN", "Ferramentas"),
+        ("Régua de Alumínio", "UN", "Parafusos, Ferragens e Acessórios"),
     ]),
-    ("Agregados", [
-        ("Areia média lavada", "M3", "3.1.02"),
-        ("Brita 1", "M3", "3.1.02"),
+    ("Armadura e Serralheria", [
+        ("Vergalhão CA50 8.0mm", "KG", "Armadura"),
+        ("Vergalhão CA50 12.5mm", "UN", "Armadura"),
     ]),
-    ("Aço e ferragem", [
-        ("Aço CA-50 10mm barra 12m", "VR", "3.1.03"),
-        ("Arame recozido 18 BWG", "KG", "3.1.03"),
+    ("Esquadrias de Madeira", [
+        ("Alisar p/ Porta", "UN", "Esquadrias de Alumínio, Metal e Madeira"),
     ]),
-    ("Material elétrico", [
-        ("Cabo flexível 2,5mm² 750V rolo 100m", "UN", "3.1.08"),
-        ("Eletroduto flexível 3/4\" rolo 50m", "UN", "3.1.08"),
+    ("Pintura", [
+        ("Trincha 3 pol.", "UN", "Material para Pintura"),
+        ("Trincha 4 pol.", "UN", "Material para Pintura"),
     ]),
-    ("Material hidráulico", [
-        ("Tubo PVC soldável 25mm barra 6m", "VR", "3.1.09"),
-        ("Joelho PVC soldável 25mm 90°", "UN", "3.1.09"),
+    ("Impermeabilização", [
+        ("Tela de Fibra Sintética p/ Impermeabilização", "UN",
+         "Impermeabilizantes, Aditivos e Colas"),
     ]),
-    ("Impermeabilizantes e colas", [
-        ("Cola/selante PU sachê 800ml", "UN", "3.1.17"),
-        ("Manta asfáltica 3mm rolo 10m²", "UN", "3.1.17"),
+    ("Suplementos", [
+        ("Tarucel p/ Junta de Dilatação", "M", "Pisos, Cerâmicas e Revestimentos"),
+        ("Cola/Selante PU Sache 800ml", "UN", "Impermeabilizantes, Aditivos e Colas"),
+        ("Câmara de Ar Carrinho de Mão 3,25 x 8 pol.", "UN", "Ferramentas"),
+        ("Pneu p/ Carrinho de Mão", "UN", "Ferramentas"),
+    ]),
+    ("Madeiramento e Fôrma", [
+        ("Barrote em Pinus 5x5cm", "UN", "Madeiramento"),
+        ("Madeirite Resinado (2,20 x 1,10m) E=10mm", "UN", "Madeiramento"),
+        ("Tábua de Pinus L=30cm E=2.5cm", "UN", "Madeiramento"),
+    ]),
+    ("Parafusos", [
+        ("Prego com Cabeça 2.1/2 x 10 (18x27mm)", "KG",
+         "Parafusos, Ferragens e Acessórios"),
+    ]),
+    ("Cobertura em Estrutura Metálica", [
+        ("Telha Metálica Termoacústica", "UN", "Telhas e Material p/ Coberturas"),
+    ]),
+    ("Esgoto", [
+        ("Tubo PVC de Esgoto 75mm", "UN", "Material Hidráulico e Sanitário"),
+        ("Tubo PVC de Esgoto 50mm", "UN", "Material Hidráulico e Sanitário"),
+        ("Tubo PVC de Esgoto 40mm", "UN", "Material Hidráulico e Sanitário"),
+        ("Caixa Sifonada c/ Três Entradas (c/ Tampa Quadrada) 100x150x50mm", "UN",
+         "Material Hidráulico e Sanitário"),
+        ("Joelho PVC de Esgoto Simples 90° 100mm", "UN", "Material Hidráulico e Sanitário"),
+        ("Junção PVC de Esgoto c/ redução 100 x 75mm", "UN",
+         "Material Hidráulico e Sanitário"),
     ]),
 ]
 
 # (razão social, fantasia, base do CNPJ, cidade, UF, porte, regiões,
 #  categorias que atende, contato)
+# Fictícios de propósito — ver a nota no topo. O nome traz "EXEMPLO" para
+# ninguém confundir com fornecedor de verdade na tela.
 FORNECEDORES: list[tuple] = [
-    ("CIMENTOS DO NORDESTE EXEMPLO LTDA", "CimeNorte", "710000010001",
-     "Fortaleza", "CE", "FABRICA", ["CE", "RMF"],
-     ["Cimento, concreto e argamassa"], "Ricardo Alves"),
-    ("AGREGADOS MARACANAU EXEMPLO LTDA", "Agrega Maracanaú", "710000020001",
-     "Maracanaú", "CE", "DISTRIBUIDOR", ["RMF"],
-     ["Agregados", "Cimento, concreto e argamassa"], "Sandra Bezerra"),
-    ("ACOS E FERRAGENS EXEMPLO LTDA", "Aços Exemplo", "710000030001",
-     "Fortaleza", "CE", "REP_FABRICA", ["CE"],
-     ["Aço e ferragem"], "Paulo Menezes"),
-    ("ELETRICA E HIDRAULICA EXEMPLO LTDA", "EletroHidro", "710000040001",
+    ("FERRAGENS E FERRAMENTAS EXEMPLO LTDA", "FerraExemplo", "710000010001",
      "Fortaleza", "CE", "DISTRIBUIDOR", ["CE", "RMF"],
-     ["Material elétrico", "Material hidráulico"], "Camila Rocha"),
-    ("CONSTRUTUDO HOMECENTER EXEMPLO SA", "ConstruTudo", "710000050001",
-     "Fortaleza", "CE", "HOMECENTER", ["RMF"],
-     ["Impermeabilizantes e colas", "Material elétrico", "Material hidráulico",
-      "Aço e ferragem"], "Atendimento Obras"),
+     ["Ferramentas Manuais", "Parafusos", "Suplementos"], "Ricardo Alves"),
+    ("ACOS E ARMADURAS EXEMPLO LTDA", "Aços Exemplo", "710000020001",
+     "Fortaleza", "CE", "REP_FABRICA", ["CE"],
+     ["Armadura e Serralheria"], "Paulo Menezes"),
+    ("MADEIREIRA E COBERTURAS EXEMPLO LTDA", "Madeira Exemplo", "710000030001",
+     "Caucaia", "CE", "DISTRIBUIDOR", ["RMF"],
+     ["Madeiramento e Fôrma", "Cobertura em Estrutura Metálica",
+      "Esquadrias de Madeira"], "Sandra Bezerra"),
+    ("HIDRAULICA E SANEAMENTO EXEMPLO LTDA", "HidroExemplo", "710000040001",
+     "Recife", "PE", "DISTRIBUIDOR", ["PE"],
+     ["Esgoto"], "Camila Rocha"),
+    ("CONSTRUTUDO HOMECENTER EXEMPLO SA", "ConstruTudo Exemplo", "710000050001",
+     "Fortaleza", "CE", "HOMECENTER", ["CE", "RMF", "PE"],
+     ["Ferramentas Manuais", "Pintura", "Impermeabilização", "Suplementos",
+      "Parafusos", "Esgoto"], "Atendimento Obras"),
 ]
 
-# (título da solicitação, prioridade, [(insumo, quantidade, especificação)])
-SOLICITACOES: list[tuple[str, str, list[tuple[str, str, Optional[str]]]]] = [
-    ("Concretagem da fundação — bloco A", "ALTA", [
-        ("Cimento CP-II-Z 32 saco 50kg", "120", None),
-        ("Areia média lavada", "18", None),
-        ("Brita 1", "22", None),
-        ("Aço CA-50 10mm barra 12m", "80", "dobrado conforme projeto"),
+# (título, prioridade, código da obra na planilha,
+#  [(insumo, quantidade, especificação)])
+# Cinco pedidos de verdade da aba Pedidos, com o material, a quantidade e a
+# obra como foram pedidos. O título é meu — a planilha não tem esse campo, e
+# é justamente ele que torna o pedido localizável no ERP depois.
+SOLICITACOES: list[tuple[str, str, str, list[tuple[str, str, Optional[str]]]]] = [
+    ("Ferramental e acabamento — reposição da obra", "NORMAL", "CREPETRIUNFO", [
+        ("Torquês 12 pol.", "1", "torquês 10, armador"),
+        ("Vergalhão CA50 12.5mm", "14", None),
+        ("Alisar p/ Porta", "4", "kit alisagem"),
+        ("Facão", "1", None),
+        ("Trincha 3 pol.", "2", None),
+        ("Trincha 4 pol.", "2", None),
+        ("Espátula 8cm", "2", None),
     ]),
-    ("Alvenaria e contrapiso — 2º pavimento", "NORMAL", [
-        ("Argamassa colante AC-III saco 20kg", "60", None),
-        ("Cimento CP-II-Z 32 saco 50kg", "40", None),
+    ("Ferramental e tela para o reboco", "NORMAL", "MERCADOBARBALHA", [
+        ("Régua de Alumínio", "10", "6 metros"),
+        ("Pá de Bico c/ Cabo", "5", "pá redonda"),
+        ("Enxada c/ Cabo", "2", None),
+        ("Tela de Fibra Sintética p/ Impermeabilização", "3", "tela PVC para reboco, rolo"),
+        ("Câmara de Ar Carrinho de Mão 3,25 x 8 pol.", "15", None),
+        ("Pneu p/ Carrinho de Mão", "10", None),
     ]),
-    ("Infra elétrica e hidráulica — pavimento térreo", "NORMAL", [
-        ("Cabo flexível 2,5mm² 750V rolo 100m", "12", "cor azul e preto"),
-        ("Eletroduto flexível 3/4\" rolo 50m", "8", None),
-        ("Tubo PVC soldável 25mm barra 6m", "30", None),
-        ("Joelho PVC soldável 25mm 90°", "150", None),
+    ("Fôrmas, madeiramento e tapume", "ALTA", "ESCPLANALTO", [
+        ("Barrote em Pinus 5x5cm", "210", None),
+        ("Madeirite Resinado (2,20 x 1,10m) E=10mm", "50", None),
+        ("Tábua de Pinus L=30cm E=2.5cm", "50", None),
+        ("Prego com Cabeça 2.1/2 x 10 (18x27mm)", "20", None),
+        ("Telha Metálica Termoacústica", "120", "para tapume com 6,00 m"),
     ]),
-    ("Impermeabilização das lajes técnicas", "MEDIA", [
-        ("Manta asfáltica 3mm rolo 10m²", "14", None),
-        ("Cola/selante PU sachê 800ml", "24", None),
+    ("Armadura e rede de esgoto", "ALTA", "IFPESANTACRUZ", [
+        ("Vergalhão CA50 8.0mm", "430", None),
+        ("Tubo PVC de Esgoto 75mm", "2", None),
+        ("Tubo PVC de Esgoto 50mm", "4", None),
+        ("Tubo PVC de Esgoto 40mm", "2", "45mm"),
+        ("Caixa Sifonada c/ Três Entradas (c/ Tampa Quadrada) 100x150x50mm", "2", None),
+        ("Joelho PVC de Esgoto Simples 90° 100mm", "9", None),
+        ("Junção PVC de Esgoto c/ redução 100 x 75mm", "8", "junção 100mm x 100mm"),
+    ]),
+    ("Junta de dilatação do piso", "MEDIA", "CREPETERRA", [
+        ("Tarucel p/ Junta de Dilatação", "180", "6mm"),
+        ("Cola/Selante PU Sache 800ml", "12", "cinza"),
+        ("Aplicador p/ Silicone", "1", "800ml"),
     ]),
 ]
 
@@ -221,7 +327,8 @@ def criar(s: Session, usuario: Usuario) -> dict[str, Any]:
         categoria = svc_cad.criar_categoria(s, {"nome": nome}, usuario)
         marcas["insumo_categorias"].append(categoria.id)
         por_nome[nome] = categoria
-        for descricao, unidade, conta_codigo in itens:
+        for descricao, unidade, plano_da_planilha in itens:
+            conta_codigo = PLANO_DA_PLANILHA.get(plano_da_planilha, "3.1.99")
             conta = _conta(s, conta_codigo, reserva)
             if conta.codigo != conta_codigo:
                 avisos.append(f"a conta {conta_codigo} não existe neste plano — "
@@ -285,10 +392,14 @@ def _criar_solicitacoes(s: Session, obras: list[Obra], usuario: Usuario) -> list
     from app.apps.erp.core.suprimentos import solicitacao as svc
 
     por_descricao = {i.descricao: i for i in s.scalars(select(Insumo)).all()}
+    # A planilha diz para qual obra cada pedido foi. Se essa obra existir no
+    # ERP, o pedido cai nela — e a simulação fica igual ao que aconteceu. Se
+    # não existir, cai em qualquer obra ativa, só para o exemplo não morrer.
+    por_codigo = {(o.codigo or "").strip().upper(): o for o in obras}
     criadas = []
     hoje = date.today()
-    for posicao, (titulo, prioridade, itens) in enumerate(SOLICITACOES):
-        obra = obras[posicao % len(obras)]
+    for posicao, (titulo, prioridade, codigo_obra, itens) in enumerate(SOLICITACOES):
+        obra = por_codigo.get(codigo_obra.upper()) or obras[posicao % len(obras)]
         linhas = []
         for descricao, quantidade, especificacao in itens:
             insumo = por_descricao.get(descricao)
