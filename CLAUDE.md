@@ -9,6 +9,9 @@ backlog do ERP, `app/apps/erp/ROTEIRO.md`.
 Quem pede o trabalho é o dono da BWS e cliente do ERP — **não é programador**.
 Isso muda a resposta, não o cuidado com o código.
 
+- **Trate por VOCÊ, nunca por "senhor".** Ele pediu isso com todas as letras em
+  07/09/2026: "não gostei não, fala você mesmo". É conversa entre duas pessoas
+  que trabalham juntas, não atendimento.
 - **Português simples, sem jargão.** Termo técnico inevitável vem com uma linha
   de explicação junto.
 - **Diga o efeito, não a implementação.** O que muda para quem usa o sistema, o

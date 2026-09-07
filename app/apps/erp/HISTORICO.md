@@ -520,16 +520,16 @@ baratas e rodam junto com o resto.
    a senha da conta de e-mail das empresas. Gera-se uma vez com
    `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
    Sem ela tudo funciona, menos guardar senha de e-mail.
-2. **Definir `EL_NFSE_TOKEN` na Environment do Render** — a variável **ainda
-   não existe lá**; sem ela o script de consulta de NFS-e para e explica. Já
-   está fora do código desde `7edd21e`.
-   **Trocar o token na origem está BLOQUEADO** (dito pelo dono em 07/09/2026):
-   o mesmo token é usado por outra aplicação, e trocá-lo derrubaria a outra
-   junto. O token segue legível no histórico do Git, commit `fa985ab` — quem
-   tem acesso ao repositório o alcança, e apagar do histórico não resolve
-   (quem já clonou continua com ele). Enquanto não puder ser trocado, o que
-   reduz o risco é **quem tem acesso ao repositório**. Reabrir quando a outra
-   aplicação puder receber um token próprio.
+2. **`EL_NFSE_TOKEN` SAIU DA URGÊNCIA (07/09/2026).** Ele pertence ao módulo
+   `emissaonf`, que emite nota de serviço e está **em espera** por decisão do
+   dono — ver item 15. Enquanto o módulo não for retomado, a variável não faz
+   falta a ninguém: o único efeito de não defini-la é o script de consulta de
+   NFS-e parar e explicar. **Trocar o token na origem está BLOQUEADO**: o dono
+   informou que outra aplicação usa o mesmo token e trocá-lo derrubaria a
+   outra junto. Ele segue legível no histórico do Git (`fa985ab`) e apagar do
+   histórico não resolveria — quem já clonou continua com ele. Enquanto não
+   puder ser trocado, o que reduz o risco é quem tem acesso ao repositório.
+   Reabrir quando a outra aplicação puder ter um token próprio.
 3. **Definir o teto mensal de IA** em Configurações › Consumo de IA.
 4. **Homologação por perfil**: a parte mecânica (o que abre e o que é
    recusado, tela a tela, perfil a perfil) roda sozinha no GitHub a cada envio
@@ -577,31 +577,53 @@ baratas e rodam junto com o resto.
    tudo fica legível), depois telas próprias para o punhado de coisas que se
    fazem mesmo de pé: responder a conferência, autorizar, consultar. Medição
    de partida: seis telas testadas ocupam 687px numa tela de 390px.
-11. **RESOLVIDO em 07/09/2026 — o Departamento Pessoal enxerga tudo.** O dono
-   decidiu: "a trava de visualização é semelhante ao do financeiro". O motivo é
-   óbvio depois de dito: a despesa que o DP revisa foi lançada PELA OBRA, nunca
-   por ele — filtrar por autoria deixava a tela dele vazia justamente do que
-   ele precisa conferir. **Enxergar não é poder**: ele continua sem `aprovar`,
-   `pagar`, `conciliar` e `ver_dados_pagamento`, e agora há teste com banco de
-   verdade que quebra se alguém ampliar a alçada junto com a visão
-   (`test_o_dp_ve_tudo_mas_continua_sem_aprovar_pagar_nem_ver_dado_bancario`).
-   Descoberto de quebra: **nenhum teste protegia a regra antiga sem banco** — a
-   mudança passou na suíte comum e só foi acusada pelos testes com Postgres.
+11. **RESOLVIDO em 07/09/2026 — o Departamento Pessoal enxerga O MUNDO DELE.**
+   A decisão veio em duas partes, e a segunda corrigiu a primeira. Primeiro:
+   "a trava de visualização é semelhante ao do financeiro" — ou seja, ele não
+   pode ficar preso ao que ele mesmo lançou, porque a despesa que ele revisa
+   foi lançada PELA OBRA, nunca por ele. Eu implementei isso como "vê tudo".
+   Ele então perguntou: "o departamento pessoal me chega no financeiro das
+   coisas relacionadas ao departamento pessoal, é isso?" — que é mais estreito
+   do que eu tinha feito. **Vale o mais estreito**: ele enxerga folha e
+   encargos, RPA, reembolso a colaborador e todo título nascido de uma despesa
+   com colaborador, em TODAS as obras e lançado por QUALQUER pessoa. Compra de
+   material não é assunto dele. Regra geral que ficou: instrução que comporta
+   duas leituras se implementa pela que mostra MENOS — abrir depois é uma
+   linha; fechar depois é conversa constrangedora sobre quem viu o que não
+   devia. **Enxergar não é poder**: continua sem `aprovar`, `pagar`,
+   `conciliar` e `ver_dados_pagamento`, com teste que quebra se alguém ampliar
+   a alçada junto com a visão.
 12. **A migração 039 ainda não foi aplicada em produção** — ela vai junto com
    a conferência de locação, que está em ramo. Ao juntar na `main`, apertar
    "Aplicar atualizações do banco" **no mesmo momento**: sem ela, a tela de
    Locações sobe, mas a conferência não abre.
-13. **DECIDIDO em 07/09/2026 — o agente SÓ AVISA.** A resposta é dada no
-   sistema, completa, não por mensagem. Razão do dono: "responder as perguntas
-   mais completas, até porque, por obra, sei lá, se tiver cinco, dez contratos
-   de locação é algo que dá pra ser feito" — o volume real cabe numa sessão de
-   tela, e a conferência inteira não cabe num diálogo de WhatsApp. Ficam de
-   fora, por consequência: interpretar texto livre de mensagem (uma leitura
-   errada de "acho que dá pra devolver" mexeria no contrato de verdade),
-   depender de número de telefone para saber quem respondeu, e deixar o
-   sistema escutando mensagem de fora. **Falta decidir a escada da cobrança** —
-   proposta: lembrete no dia 5 do mês seguinte, cobrança no dia 10, e no dia
-   15 a lista de quem não respondeu sobe para o dono e para o financeiro.
+13. **DECIDIDO em 07/09/2026 — o agente SÓ AVISA, e a escada está fechada.**
+   A resposta é dada no sistema, completa, não por mensagem. Razão do dono:
+   "responder as perguntas mais completas, até porque, por obra, sei lá, se
+   tiver cinco, dez contratos de locação é algo que dá pra ser feito". **A
+   escada de cobrança foi aprovada como proposta**: lembrete no dia 5 do mês
+   seguinte, cobrança no dia 10, e no dia 15 a lista de quem não respondeu
+   sobe para o dono e para o financeiro. Ficam de fora, por consequência:
+   interpretar texto livre de mensagem (uma leitura errada de "acho que dá pra
+   devolver" mexeria no contrato de verdade), depender de número de telefone
+   para saber quem respondeu, e deixar o sistema escutando mensagem de fora.
+14. **NOVO E GRANDE — o cruzamento de notas fiscais.** Ditado pelo dono em
+   07/09/2026 e escrito inteiro em `NOTAS_FISCAIS.md`, nesta pasta. Em uma
+   frase: capturar todas as notas emitidas contra os CNPJs da empresa e cruzar
+   cada uma com pedido de compra, título financeiro e prestação de fundo fixo,
+   no espírito da conciliação bancária — o sistema casa o que consegue e expõe
+   o duvidoso para uma pessoa confirmar. **O que não pode ser esquecido:** um
+   pedido gera N notas (dez carradas de brita são dez notas e dez boletos), e
+   qualquer desenho que assuma um-para-um nasce errado. Depende de certificado
+   digital por empresa (cifrado, como a senha de e-mail) e traz junto a agenda
+   de alertas. Quatro perguntas ainda esperam o dono — estão no §9 de lá.
+15. **A emissão de NFS-e fica em espera, por decisão do dono (07/09/2026).** É
+   módulo antigo do monorepo (`app/apps/emissaonf/`), que emite nota de
+   SERVIÇO da empresa para o cliente dela — coisa diferente do cruzamento do
+   item 14, que captura nota que o FORNECEDOR emite contra a empresa. Nunca
+   foi trabalhado nestes chats e não foi verificado por mim. O
+   `EL_NFSE_TOKEN` pertence a esse módulo parado, e por isso saiu da lista de
+   urgências. Retomar quando ele pedir.
 
 ---
 

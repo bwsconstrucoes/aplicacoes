@@ -10,9 +10,11 @@
 # ADMINISTRATIVO_OBRA   lança e acompanha o que ELE MESMO lançou — ou tudo das
 #                       obras designadas, se assim estiver configurado no
 #                       cadastro dele (campo escopo_visao, por PESSOA)
-# DEPARTAMENTO_PESSOAL  revisa a despesa com colaborador e ENXERGA a base
-#                       inteira, como o financeiro (decisão do dono, 07/09/2026);
-#                       não aprova, não paga e não vê dado bancário
+# DEPARTAMENTO_PESSOAL  revisa a despesa com colaborador; enxerga TUDO que é
+#                       do mundo dele (despesa com colaborador, RPA, folha,
+#                       reembolso), em TODAS as obras e lançado por qualquer
+#                       pessoa — e nada além disso. Não aprova, não paga e não
+#                       vê dado bancário.
 # APROVADOR / LANCADOR / CONSULTA   perfis herdados, mantidos
 #
 # O escopo não é enfeite de tela: ele entra na consulta, então o que está fora
@@ -28,7 +30,7 @@ from sqlalchemy.sql import Select
 
 from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado, ErroPermissao
 from app.apps.erp.db.models.cadastros import (
-    EscopoVisao, PerfilUsuario, Usuario, UsuarioObra,
+    EscopoVisao, PerfilUsuario, TipoTitulo, Usuario, UsuarioObra,
 )
 from app.apps.erp.db.models.financeiro import Rateio, Titulo
 
@@ -199,19 +201,32 @@ def exigir(usuario: Usuario, acao: str) -> None:
 
 
 # Perfis que enxergam a base inteira: nem escopo de obra, nem de autoria.
-#
-# O DEPARTAMENTO PESSOAL entrou aqui em 07/09/2026, por decisão do dono: "a
-# trava de visualização é semelhante ao do financeiro". Antes ele só via na
-# lista de Títulos o que ele mesmo tinha lançado — o que não faz sentido para
-# quem revisa a despesa com colaborador das obras todas: a despesa que ele
-# precisa conferir foi lançada pela obra, não por ele.
-#
-# ENXERGAR NÃO É PODER. O que o DP pode FAZER continua sendo decidido pela
-# tabela de ações, e lá ele não tem `aprovar`, `pagar`, `conciliar` nem
-# `ver_dados_pagamento`. Ele passa a ver a despesa; continua sem poder
-# autorizar, pagar ou ver dado bancário.
 VE_TUDO = (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-           P.APROVADOR, P.CONSULTA, P.DEPARTAMENTO_PESSOAL)
+           P.APROVADOR, P.CONSULTA)
+
+# ---------------------------------------------------------------------------
+# O DEPARTAMENTO PESSOAL enxerga por ASSUNTO, não por obra nem por autoria.
+#
+# Decisão do dono, 07/09/2026, em duas partes. Primeiro: "a trava de
+# visualização é semelhante ao do financeiro" — ou seja, ele NÃO pode ficar
+# preso ao que ele mesmo lançou, porque a despesa que ele revisa foi lançada
+# PELA OBRA, nunca por ele. Depois, refinando: ele alcança no financeiro "as
+# coisas relacionadas ao departamento pessoal".
+#
+# São duas coisas diferentes, e a segunda é mais estreita. Vale a segunda:
+# quando a instrução comporta duas leituras, a que mostra MENOS é a que se
+# implementa — abrir depois é uma linha, e fechar depois é uma conversa
+# constrangedora sobre quem viu o que não devia.
+#
+# O mundo do DP é, então: todo título que nasceu de uma DESPESA COM
+# COLABORADOR (o lote que ele mesmo aprova em cadeia), mais os títulos cuja
+# natureza é pessoa — RPA, folha e encargos, reembolso a colaborador. Fica de
+# fora T11 (adiantamento a FORNECEDOR), que apesar do nome parecido é compra.
+TIPOS_DO_PESSOAL = (
+    TipoTitulo.T6_SERVICO_PF_RPA,       # serviço de pessoa física (RPA)
+    TipoTitulo.T7_FOLHA_ENCARGOS,       # folha de pagamento e encargos
+    TipoTitulo.T12_REEMBOLSO,           # reembolso a colaborador
+)
 
 # Perfis cujo alcance é configurável por pessoa (campo escopo_visao). O padrão
 # de todos eles é PROPRIOS — ampliar é escolha feita no cadastro do operador.
@@ -267,6 +282,22 @@ def _escopo_por_obras(stmt: Select, usuario: Usuario, obras: list[int]) -> Selec
         Titulo.id.in_(select(Rateio.titulo_id).where(Rateio.obra_id.in_(obras)))))
 
 
+def _escopo_do_pessoal(stmt: Select) -> Select:
+    """Tudo que é do mundo do Departamento Pessoal, em qualquer obra.
+
+    Duas portas para o mesmo assunto, e as duas precisam estar abertas: o
+    título que NASCEU de uma despesa com colaborador (o lote que o DP aprova
+    em cadeia) e o título cuja natureza já é pessoa (RPA, folha, reembolso).
+    Só a primeira deixaria de fora a folha lançada direto; só a segunda
+    deixaria de fora o lote, que pode sair com outro tipo.
+    """
+    from app.apps.erp.db.models.financeiro import DespesaColaborador
+    return stmt.where(or_(
+        Titulo.tipo.in_(TIPOS_DO_PESSOAL),
+        Titulo.id.in_(select(DespesaColaborador.titulo_id)
+                      .where(DespesaColaborador.titulo_id.is_not(None)))))
+
+
 def aplicar_escopo(stmt: Select, s: Session, usuario: Usuario) -> Select:
     """Restringe a consulta de títulos ao que o usuário pode ver.
 
@@ -275,6 +306,8 @@ def aplicar_escopo(stmt: Select, s: Session, usuario: Usuario) -> Select:
     """
     if usuario.perfil in VE_TUDO:
         return stmt
+    if usuario.perfil == P.DEPARTAMENTO_PESSOAL:
+        return _escopo_do_pessoal(stmt)
     if _ve_por_obra(usuario):
         return _escopo_por_obras(stmt, usuario, _obras_designadas(s, usuario))
     return stmt.where(Titulo.solicitante_id == usuario.id)

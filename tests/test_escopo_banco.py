@@ -15,12 +15,19 @@ O que se prova, e que nenhum teste sem banco consegue provar:
   4. Mudar o alcance de UMA pessoa muda lista e detalhe dela juntos, e uma
      lista de obras vazia não vira "vê tudo".
 
-Cenário (2 obras, 7 operadores, 4 títulos):
+Cenário (2 obras, 7 operadores, 6 títulos):
 
-    T1  lançado pelo administrativo "só os meus"   · rateado na obra A
-    T2  lançado pelo gestor                         · rateado na obra A
-    T3  lançado pelo gestor                         · rateado na obra B
-    T4  lançado pelo administrativo "obras designadas" (preso à A) · rateado na B
+    T1     lançado pelo administrativo "só os meus"  · rateado na obra A
+    T2     lançado pelo gestor                        · rateado na obra A
+    T3     lançado pelo gestor                        · rateado na obra B
+    T4     lançado pelo administrativo "obras designadas" (preso à A) · na B
+    FOLHA  folha e encargos, lançada pelo gestor      · rateada na obra A
+    RPA    serviço de pessoa física, lançado pelo administrativo · na obra B
+
+Os dois últimos existem por causa do Departamento Pessoal: ele enxerga por
+ASSUNTO — o mundo dele é pessoa —, e não por obra nem por autoria. Os dois
+foram lançados por OUTRAS pessoas de propósito: é exatamente o caso que a
+regra antiga (só o que ele mesmo lançou) escondia dele.
 """
 from __future__ import annotations
 
@@ -75,8 +82,9 @@ def _usuario(s, chave, perfil, *, escopo=None, obras=()):
     return u
 
 
-def _titulo(s, chave, *, solicitante, obra, fornecedor, categoria):
-    t = Titulo(numero_sp=f"SP-TESTE-{chave}", tipo=TipoTitulo.T1_MATERIAL_NFE,
+def _titulo(s, chave, *, solicitante, obra, fornecedor, categoria,
+            tipo=TipoTitulo.T1_MATERIAL_NFE):
+    t = Titulo(numero_sp=f"SP-TESTE-{chave}", tipo=tipo,
                fornecedor_id=fornecedor.id, descricao=f"Título {chave}",
                valor_bruto=Decimal("100.00"), valor_liquido=Decimal("100.00"),
                competencia=date(2026, 9, 1), categoria_id=categoria.id,
@@ -120,24 +128,30 @@ def cenario(sessao_real) -> Cenario:
     t["T2"] = _titulo(s, "T2", solicitante=u["gestor"], obra=a, fornecedor=forn, categoria=cat)
     t["T3"] = _titulo(s, "T3", solicitante=u["gestor"], obra=b, fornecedor=forn, categoria=cat)
     t["T4"] = _titulo(s, "T4", solicitante=u["adm_obras"], obra=b, fornecedor=forn, categoria=cat)
+    # Do mundo do Departamento Pessoal: lançados pela OBRA, nunca por ele — é
+    # justamente por isso que filtrar por autoria deixava a tela dele vazia.
+    t["FOLHA"] = _titulo(s, "FOLHA", solicitante=u["gestor"], obra=a,
+                         fornecedor=forn, categoria=cat,
+                         tipo=TipoTitulo.T7_FOLHA_ENCARGOS)
+    t["RPA"] = _titulo(s, "RPA", solicitante=u["adm_proprios"], obra=b,
+                       fornecedor=forn, categoria=cat,
+                       tipo=TipoTitulo.T6_SERVICO_PF_RPA)
     s.commit()                      # libera o savepoint; a transação de fora segue aberta
     return c
 
 
 # O que cada um TEM de enxergar. Esta tabela é a especificação do escopo.
 ESPERADO = {
-    "admin":             {"T1", "T2", "T3", "T4"},
-    "gestor":            {"T1", "T2", "T3", "T4"},
-    "supervisor":        {"T1", "T2"},              # tudo da obra A
-    "adm_proprios":      {"T1"},                    # só o que lançou
-    "adm_obras":         {"T1", "T2", "T4"},        # obra A + o que lançou (T4, na B)
+    "admin":             {"T1", "T2", "T3", "T4", "FOLHA", "RPA"},
+    "gestor":            {"T1", "T2", "T3", "T4", "FOLHA", "RPA"},
+    "supervisor":        {"T1", "T2", "FOLHA"},     # tudo da obra A
+    "adm_proprios":      {"T1", "RPA"},             # só o que lançou
+    "adm_obras":         {"T1", "T2", "T4", "FOLHA"},  # obra A + o que lançou
     "lancador_sem_obra": set(),                     # ampliado sem obra = só autoria = nada
-    # Decisão do dono, 07/09/2026: "a trava de visualização é semelhante ao do
-    # financeiro". O DP revisa a despesa com colaborador das obras todas, e
-    # essa despesa foi lançada pela obra — nunca por ele. Enxergar tudo é o
-    # que faz o trabalho dele existir; o que ele PODE FAZER continua estreito,
-    # e é o teste logo abaixo que prova isso.
-    "dp":                {"T1", "T2", "T3", "T4"},
+    # Decisão do dono, 07/09/2026: ele alcança no financeiro "as coisas
+    # relacionadas ao departamento pessoal" — em TODAS as obras e lançadas por
+    # QUALQUER pessoa (T1..T4 são compra de material, e não são dele).
+    "dp":                {"FOLHA", "RPA"},
 }
 
 
@@ -238,20 +252,23 @@ def test_ampliar_o_alcance_muda_lista_e_detalhe_juntos(app_real, sessao_real, ce
     adm = cenario.usuarios["adm_proprios"]
     c = como(app_real, adm.id)
 
-    # antes: só o que lançou
-    assert {t["id"] for t in c.get("/erp/api/titulos").get_json()["titulos"]} == cenario.ids("T1")
+    # antes: só o que lançou (o T1 e o RPA, que também saiu da mão dele)
+    assert {t["id"] for t in c.get("/erp/api/titulos").get_json()["titulos"]} \
+        == cenario.ids("T1", "RPA")
     assert c.get(f"/erp/api/titulos/{cenario.id('T2')}").status_code == 404
 
     # ampliado SEM obra associada: nada muda — lista vazia não vira "vê tudo"
     adm.escopo_visao = EscopoVisao.OBRAS_DESIGNADAS
     sessao_real.commit()
-    assert {t["id"] for t in c.get("/erp/api/titulos").get_json()["titulos"]} == cenario.ids("T1")
+    assert {t["id"] for t in c.get("/erp/api/titulos").get_json()["titulos"]} \
+        == cenario.ids("T1", "RPA")
     assert c.get(f"/erp/api/titulos/{cenario.id('T2')}").status_code == 404
 
     # ampliado COM a obra A: passa a ver o T2 (de outro, rateado na A) — e só ele
     sessao_real.add(UsuarioObra(usuario_id=adm.id, obra_id=cenario.obra_a.id))
     sessao_real.commit()
-    assert {t["id"] for t in c.get("/erp/api/titulos").get_json()["titulos"]} == cenario.ids("T1", "T2")
+    assert {t["id"] for t in c.get("/erp/api/titulos").get_json()["titulos"]} \
+        == cenario.ids("T1", "T2", "RPA", "FOLHA")
     assert c.get(f"/erp/api/titulos/{cenario.id('T2')}").status_code == 200
     assert c.get(f"/erp/api/titulos/{cenario.id('T3')}").status_code == 404
 
@@ -278,7 +295,7 @@ def test_migracoes_todas_aplicadas_no_banco_de_teste(banco):
 # do Departamento Pessoal, a suíte diga isso em voz alta em vez de deixar
 # passar junto.
 # ---------------------------------------------------------------------------
-def test_o_dp_ve_tudo_mas_continua_sem_aprovar_pagar_nem_ver_dado_bancario(cenario):
+def test_o_dp_ve_o_mundo_dele_mas_continua_sem_aprovar_pagar_nem_ver_banco(cenario):
     dp = cenario.usuarios["dp"]
     for acao in ("ver_erp", "ver_pessoal", "lancar_dc", "editar_colaboradores"):
         assert permissoes.pode(dp, acao), f"o DP precisa de '{acao}' para trabalhar"
@@ -287,3 +304,13 @@ def test_o_dp_ve_tudo_mas_continua_sem_aprovar_pagar_nem_ver_dado_bancario(cenar
         assert not permissoes.pode(dp, acao), (
             f"o DP passou a ter '{acao}' — a decisão do dono foi ampliar a "
             f"VISÃO dele, não a alçada")
+
+
+def test_o_dp_nao_ve_compra_de_material_de_obra_nenhuma(cenario, sessao_real):
+    """O mundo dele é pessoa. Compra de material não é assunto do DP, e a
+    tela dele não pode virar a lista inteira do financeiro por tabela."""
+    dp = cenario.usuarios["dp"]
+    visiveis = _visiveis_no_sql(sessao_real, dp)
+    for compra in ("T1", "T2", "T3", "T4"):
+        assert cenario.id(compra) not in visiveis, (
+            f"{compra} é compra de material e apareceu para o DP")
