@@ -520,9 +520,16 @@ baratas e rodam junto com o resto.
    a senha da conta de e-mail das empresas. Gera-se uma vez com
    `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
    Sem ela tudo funciona, menos guardar senha de e-mail.
-2. **Definir `EL_NFSE_TOKEN` na Environment do Render** (token da prefeitura,
-   que estava colado no código) e **trocar o token na origem** — ele continua
-   no histórico do Git, commit `fa985ab`.
+2. **Definir `EL_NFSE_TOKEN` na Environment do Render** — a variável **ainda
+   não existe lá**; sem ela o script de consulta de NFS-e para e explica. Já
+   está fora do código desde `7edd21e`.
+   **Trocar o token na origem está BLOQUEADO** (dito pelo dono em 07/09/2026):
+   o mesmo token é usado por outra aplicação, e trocá-lo derrubaria a outra
+   junto. O token segue legível no histórico do Git, commit `fa985ab` — quem
+   tem acesso ao repositório o alcança, e apagar do histórico não resolve
+   (quem já clonou continua com ele). Enquanto não puder ser trocado, o que
+   reduz o risco é **quem tem acesso ao repositório**. Reabrir quando a outra
+   aplicação puder receber um token próprio.
 3. **Definir o teto mensal de IA** em Configurações › Consumo de IA.
 4. **Homologação por perfil**: a parte mecânica (o que abre e o que é
    recusado, tela a tela, perfil a perfil) roda sozinha no GitHub a cada envio
@@ -547,9 +554,10 @@ baratas e rodam junto com o resto.
    "Mandar mensagem de teste". **Continua em aberto**: se um dia a empresa
    quiser saber que o fornecedor RECEBEU (e não só que o servidor aceitou),
    isso exige um serviço de envio com retorno — outro custo, outra decisão.
-8. **Confirmar com o dono a cor de AUTORIZAÇÃO** — é a única das 15 que não
-   veio da planilha (a cópia de onde as cores saíram não tem esse status).
-   Trocar mexe só no bloco `.sit-` do `erp.css`.
+8. **RESOLVIDO em 07/09/2026 — AUTORIZAÇÃO é BRANCA.** O dono confirmou: "não
+   tinha porque era branco". Era a única das 15 cores inventada por mim. O selo
+   ficou branco com um fio de contorno, senão sumiria no fundo claro da tela.
+   As 15 cores agora vêm todas da planilha dele.
 9. **Fila combinada com o dono**. Entregues: (a) os quatro relatórios do mapa
    — R2 resumo por item, R3 por fornecedor, R4 melhor fornecedor único, R5
    comparativo — mais o mapa em PDF deitado (publicado em 06/09); (b) previsão
@@ -569,9 +577,16 @@ baratas e rodam junto com o resto.
    tudo fica legível), depois telas próprias para o punhado de coisas que se
    fazem mesmo de pé: responder a conferência, autorizar, consultar. Medição
    de partida: seis telas testadas ocupam 687px numa tela de 390px.
-11. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
-   colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
-   ser? (item 4 do roteiro de homologação)
+11. **RESOLVIDO em 07/09/2026 — o Departamento Pessoal enxerga tudo.** O dono
+   decidiu: "a trava de visualização é semelhante ao do financeiro". O motivo é
+   óbvio depois de dito: a despesa que o DP revisa foi lançada PELA OBRA, nunca
+   por ele — filtrar por autoria deixava a tela dele vazia justamente do que
+   ele precisa conferir. **Enxergar não é poder**: ele continua sem `aprovar`,
+   `pagar`, `conciliar` e `ver_dados_pagamento`, e agora há teste com banco de
+   verdade que quebra se alguém ampliar a alçada junto com a visão
+   (`test_o_dp_ve_tudo_mas_continua_sem_aprovar_pagar_nem_ver_dado_bancario`).
+   Descoberto de quebra: **nenhum teste protegia a regra antiga sem banco** — a
+   mudança passou na suíte comum e só foi acusada pelos testes com Postgres.
 12. **A migração 039 ainda não foi aplicada em produção** — ela vai junto com
    a conferência de locação, que está em ramo. Ao juntar na `main`, apertar
    "Aplicar atualizações do banco" **no mesmo momento**: sem ela, a tela de
