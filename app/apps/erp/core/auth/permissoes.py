@@ -10,6 +10,9 @@
 # ADMINISTRATIVO_OBRA   lança e acompanha o que ELE MESMO lançou — ou tudo das
 #                       obras designadas, se assim estiver configurado no
 #                       cadastro dele (campo escopo_visao, por PESSOA)
+# DEPARTAMENTO_PESSOAL  revisa a despesa com colaborador e ENXERGA a base
+#                       inteira, como o financeiro (decisão do dono, 07/09/2026);
+#                       não aprova, não paga e não vê dado bancário
 # APROVADOR / LANCADOR / CONSULTA   perfis herdados, mantidos
 #
 # O escopo não é enfeite de tela: ele entra na consulta, então o que está fora
@@ -196,8 +199,19 @@ def exigir(usuario: Usuario, acao: str) -> None:
 
 
 # Perfis que enxergam a base inteira: nem escopo de obra, nem de autoria.
+#
+# O DEPARTAMENTO PESSOAL entrou aqui em 07/09/2026, por decisão do dono: "a
+# trava de visualização é semelhante ao do financeiro". Antes ele só via na
+# lista de Títulos o que ele mesmo tinha lançado — o que não faz sentido para
+# quem revisa a despesa com colaborador das obras todas: a despesa que ele
+# precisa conferir foi lançada pela obra, não por ele.
+#
+# ENXERGAR NÃO É PODER. O que o DP pode FAZER continua sendo decidido pela
+# tabela de ações, e lá ele não tem `aprovar`, `pagar`, `conciliar` nem
+# `ver_dados_pagamento`. Ele passa a ver a despesa; continua sem poder
+# autorizar, pagar ou ver dado bancário.
 VE_TUDO = (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-           P.APROVADOR, P.CONSULTA)
+           P.APROVADOR, P.CONSULTA, P.DEPARTAMENTO_PESSOAL)
 
 # Perfis cujo alcance é configurável por pessoa (campo escopo_visao). O padrão
 # de todos eles é PROPRIOS — ampliar é escolha feita no cadastro do operador.

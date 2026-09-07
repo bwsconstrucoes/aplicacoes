@@ -113,6 +113,162 @@ function desenhar(){
   document.querySelectorAll("[data-loc]").forEach(tr=>tr.addEventListener("click",()=>abrir(+tr.dataset.loc)));
 }
 
+// ---------------------------------------------------------------------------
+// A CONFERÊNCIA MENSAL DOS EQUIPAMENTOS
+//
+// O alerta sozinho não resolvia: o sistema já dizia "10 meses locado, o
+// aluguel já paga a compra". O que faltava era ALGUÉM SER OBRIGADO A
+// RESPONDER — e é isso, com nome, todo mês.
+//
+// Quem responde é o administrativo da obra. Sem foto: sem etiqueta no
+// equipamento a foto prova pouco, e daria trabalho a todo mundo todo mês.
+// "Devolver" e "remanejar" aqui FAZEM acontecer, chamando as mesmas funções
+// do contrato — conferência que registra intenção e não faz nada é papel.
+// ---------------------------------------------------------------------------
+function blocoDaConferencia(c){
+  if (!c || c.conferido === null) return "";
+  if (c.conferido) {
+    return `<div class="aviso ok" style="margin-top:12px">
+      ✓ Equipamentos conferidos pela obra em ${momentoBR(c.respondida_em)}.</div>`;
+  }
+  const abrir = c.conferencia_id
+    ? `<button class="btn" id="btn-conferir" data-conf="${c.conferencia_id}"
+         style="margin-top:8px">Responder a conferência do mês</button>`
+    : "";
+  return `<div class="aviso alerta" style="margin-top:12px">
+    ${escapar(c.aviso || "")}${abrir}</div>`;
+}
+
+let CONF = null;      // a conferência aberta agora
+
+async function abrirConferencia(id){
+  try {
+    const d = await api(`/erp/api/locacoes/conferencias/${id}`);
+    CONF = d.conferencia;
+    desenharConferencia();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenharConferencia(){
+  const c = CONF;
+  els("dlg-titulo").textContent =
+    `Conferência de ${c.competencia} — ${c.contrato} · obra ${c.obra}`;
+  els("dlg-corpo").innerHTML = `<div id="conf-msg"></div>
+    <div class="cartao-dica">Diga, para cada equipamento, se ele está na obra,
+      se está sendo usado, <b>onde e para quê</b>, e quando volta. Fica gravado
+      quem respondeu. Marcando "devolver" ou "remanejar", o sistema faz a
+      movimentação de verdade no contrato.</div>
+    ${c.atrasados ? `<div class="aviso alerta" style="margin-top:8px">
+      ${c.atrasados} equipamento(s) já passaram da devolução prevista.</div>` : ""}
+    <div class="kpis" style="margin-top:10px">
+      <div class="kpi estatico"><div class="kpi-rotulo">Equipamentos</div>
+        <div class="kpi-valor" style="font-size:17px">${c.itens.length}</div></div>
+      <div class="kpi estatico ambar"><div class="kpi-rotulo">Custo do período</div>
+        <div class="kpi-valor" style="font-size:17px">${numero(c.custo_do_periodo)}</div></div>
+    </div>
+    <div id="conf-itens" style="margin-top:12px"></div>
+    <div class="campo" style="margin-top:10px"><label>Observação geral</label>
+      <textarea id="conf-obs" rows="2"
+        placeholder="opcional — algo que valha registrar sobre o mês"></textarea></div>
+    <div style="margin-top:12px; display:flex; gap:8px">
+      <button class="btn" id="conf-salvar">Confirmar a conferência</button>
+      <button class="btn secundario" onclick="els('dlg').close()">Cancelar</button>
+    </div>`;
+  desenharItensDaConferencia();
+  els("conf-salvar").addEventListener("click", salvarConferencia);
+  els("dlg").showModal();
+}
+
+function desenharItensDaConferencia(){
+  els("conf-itens").innerHTML = CONF.itens.map((i, n) => `
+    <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+         margin-bottom:8px; padding:12px">
+      <div style="display:flex; gap:10px; align-items:baseline; flex-wrap:wrap">
+        <b>${escapar(i.descricao)}</b>
+        <span class="kpi-rotulo">${quantidadeBR(i.em_obra)} em obra ·
+          ${numero(i.valor_periodo)}/período · ${escapar(i.obra)}</span>
+        ${i.atrasado ? `<span class="sit sit-PENDENCIA">devolução venceu há
+          ${i.dias_de_atraso} dia(s)</span>` : ""}
+      </div>
+      <div class="form-grade" style="margin-top:8px">
+        <div class="campo"><label>Está na obra? *</label>
+          <select data-n="${n}" data-c="presente">
+            <option value="">— responda —</option>
+            <option value="SIM" ${i.presente==="SIM"?"selected":""}>Sim, está aqui</option>
+            <option value="NAO" ${i.presente==="NAO"?"selected":""}>Não está mais aqui</option>
+            <option value="NAO_ENCONTRADO" ${i.presente==="NAO_ENCONTRADO"?"selected":""}
+              >Não encontrei</option>
+          </select></div>
+        <div class="campo"><label>Está sendo usado?</label>
+          <select data-n="${n}" data-c="em_uso">
+            <option value="1" ${i.em_uso?"selected":""}>Em uso</option>
+            <option value="" ${i.em_uso?"":"selected"}>Parado</option>
+          </select></div>
+        <div class="campo"><label>Devolve até</label>
+          <input type="date" data-n="${n}" data-c="devolucao_prevista"
+            value="${i.devolucao_prevista||""}"></div>
+        <div class="campo" style="grid-column:span 3"><label>Onde está e para quê *</label>
+          <input data-n="${n}" data-c="onde_esta" value="${escapar(i.onde_esta||"")}"
+            placeholder="ex.: na laje do bloco B, escorando até a desforma"></div>
+        <div class="campo"><label>O que fazer</label>
+          <select data-n="${n}" data-c="decisao">
+            <option value="MANTER" ${i.decisao==="MANTER"?"selected":""}>Manter na obra</option>
+            <option value="DEVOLVER" ${i.decisao==="DEVOLVER"?"selected":""}
+              >Devolver à locadora</option>
+            <option value="REMANEJAR" ${i.decisao==="REMANEJAR"?"selected":""}
+              >Remanejar para outra obra</option>
+          </select></div>
+        <div class="campo" data-destino="${n}" style="display:none"><label>Para qual obra</label>
+          <select data-n="${n}" data-c="obra_destino_id">
+            ${OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("")}
+          </select></div>
+        <div class="campo" style="grid-column:span 2"><label>Motivo / observação</label>
+          <input data-n="${n}" data-c="motivo" value="${escapar(i.motivo||"")}"
+            placeholder="obrigatório se não está na obra, ou se adiar a devolução"></div>
+      </div>
+    </div>`).join("");
+
+  document.querySelectorAll("#conf-itens [data-c]").forEach(el =>
+    el.addEventListener("change", ev => {
+      const n = +ev.target.dataset.n, campo = ev.target.dataset.c;
+      CONF.itens[n][campo] = campo === "em_uso" ? !!ev.target.value : ev.target.value;
+      if (campo === "decisao") mostrarDestino(n);
+    }));
+  CONF.itens.forEach((_i, n) => mostrarDestino(n));
+}
+
+function mostrarDestino(n){
+  const campo = document.querySelector(`[data-destino="${n}"]`);
+  if (campo) campo.style.display = CONF.itens[n].decisao === "REMANEJAR" ? "" : "none";
+}
+
+async function salvarConferencia(){
+  const itens = CONF.itens.map((i, n) => ({
+    item_id: i.item_id,
+    presente: valorDoCampo(n, "presente"),
+    em_uso: valorDoCampo(n, "em_uso") === "1",
+    onde_esta: valorDoCampo(n, "onde_esta"),
+    devolucao_prevista: valorDoCampo(n, "devolucao_prevista"),
+    decisao: valorDoCampo(n, "decisao"),
+    obra_destino_id: valorDoCampo(n, "obra_destino_id") || null,
+    motivo: valorDoCampo(n, "motivo"),
+  }));
+  try {
+    const r = await api(`/erp/api/locacoes/conferencias/${CONF.id}`, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({itens, observacao: els("conf-obs").value})});
+    els("dlg").close();
+    aviso("mensagem", [r.resumo].concat(r.acoes || [], r.avisos || []).join(" · "),
+          (r.avisos && r.avisos.length) ? "alerta" : "ok");
+    carregar();
+  } catch(e){ aviso("conf-msg", e.message, "erro"); }
+}
+
+function valorDoCampo(n, campo){
+  const el = document.querySelector(`#conf-itens [data-n="${n}"][data-c="${campo}"]`);
+  return el ? el.value : "";
+}
+
 async function abrir(id){
   try {
     const {contrato: c} = await api(`/erp/api/locacoes/${id}`);
@@ -135,7 +291,7 @@ async function abrir(id){
       <table><thead><tr><th>Equipamento</th><th class="direita">Locado</th>
         <th class="direita">Devolvido</th><th class="direita">Em obra</th>
         <th class="direita">R$/un</th><th class="direita">Por período</th>
-        <th>Obra</th><th></th></tr></thead>
+        <th>Obra</th><th>Devolve até</th><th></th></tr></thead>
       <tbody>${c.itens.map(i=>`<tr>
         <td>${i.descricao}</td><td class="direita dados">${i.quantidade}</td>
         <td class="direita dados">${i.devolvida||"—"}</td>
@@ -143,9 +299,17 @@ async function abrir(id){
         <td class="direita dados">${numero(i.valor_unitario)}</td>
         <td class="direita dados">${numero(i.valor_periodo)}</td>
         <td class="dados">${i.obra}</td>
+        <td class="dados">${i.devolucao_prevista
+          ? `<span class="${i.atrasado ? "atrasado" : ""}">${dataBR(i.devolucao_prevista)}</span>`
+            + (i.devolucao_original && i.devolucao_original !== i.devolucao_prevista
+               ? `<br><small title="data prometida na contratação">era ${dataBR(i.devolucao_original)}</small>`
+               : "")
+          : "—"}</td>
         <td>${i.em_obra>0?`<button class="btn secundario" data-dev="${i.id}">Devolver</button>
           <button class="btn secundario" data-rem="${i.id}">Remanejar</button>`:""}</td>
       </tr>`).join("")}</tbody></table>
+
+      ${blocoDaConferencia(c.conferencia)}
 
       <h4>Parcelas previstas</h4>
       <table><thead><tr><th>Competência</th><th>Vencimento</th>
@@ -236,6 +400,8 @@ async function abrir(id){
       } catch(e){ aviso("dlg-msg", e.message, "erro"); }
     }));
     els("gerar-prev").addEventListener("click", ()=>acao(id, "previsao", {meses:6}));
+    const btnConf = els("btn-conferir");
+    if (btnConf) btnConf.addEventListener("click", () => abrirConferencia(+btnConf.dataset.conf));
     els("dlg").showModal();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
@@ -291,6 +457,10 @@ els("btn-novo").addEventListener("click", () => {
         </select></div>
         <div class="campo"><input data-i="${i}" data-c="quantidade" value="${it.quantidade||""}" placeholder="qtd"></div>
         <div class="campo"><input data-i="${i}" data-c="valor_unitario" value="${it.valor_unitario||""}" placeholder="R$/un por período"></div>
+        <div class="campo"><label style="font-size:11px">Devolve até</label>
+          <input type="date" data-i="${i}" data-c="devolucao_prevista"
+            value="${it.devolucao_prevista||""}"
+            title="Quando este equipamento volta. É agora que se sabe — seis meses depois ninguém lembra."></div>
         <div class="campo" style="align-self:end">${ITS.length>1?`<button class="btn secundario" type="button" data-del="${i}">✕</button>`:""}</div>
       </div>`).join("");
     document.querySelectorAll("#l-itens [data-c]").forEach(el=>el.addEventListener("change",ev=>{

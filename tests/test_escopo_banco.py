@@ -132,7 +132,12 @@ ESPERADO = {
     "adm_proprios":      {"T1"},                    # só o que lançou
     "adm_obras":         {"T1", "T2", "T4"},        # obra A + o que lançou (T4, na B)
     "lancador_sem_obra": set(),                     # ampliado sem obra = só autoria = nada
-    "dp":                set(),                     # filtra por autoria; não lançou nada
+    # Decisão do dono, 07/09/2026: "a trava de visualização é semelhante ao do
+    # financeiro". O DP revisa a despesa com colaborador das obras todas, e
+    # essa despesa foi lançada pela obra — nunca por ele. Enxergar tudo é o
+    # que faz o trabalho dele existir; o que ele PODE FAZER continua estreito,
+    # e é o teste logo abaixo que prova isso.
+    "dp":                {"T1", "T2", "T3", "T4"},
 }
 
 
@@ -263,3 +268,22 @@ def test_migracoes_todas_aplicadas_no_banco_de_teste(banco):
     estado = listar_estado()
     assert estado["pendentes"] == []
     assert len(estado["aplicadas"]) >= 30
+
+
+# ---------------------------------------------------------------------------
+# Enxergar não é poder
+#
+# Ampliar a visão de um perfil é o tipo de mudança que se faz uma vez e ninguém
+# revisa. Este teste existe para que, se alguém um dia ampliar TAMBÉM a alçada
+# do Departamento Pessoal, a suíte diga isso em voz alta em vez de deixar
+# passar junto.
+# ---------------------------------------------------------------------------
+def test_o_dp_ve_tudo_mas_continua_sem_aprovar_pagar_nem_ver_dado_bancario(cenario):
+    dp = cenario.usuarios["dp"]
+    for acao in ("ver_erp", "ver_pessoal", "lancar_dc", "editar_colaboradores"):
+        assert permissoes.pode(dp, acao), f"o DP precisa de '{acao}' para trabalhar"
+    for acao in ("aprovar", "pagar", "conciliar", "ver_dados_pagamento",
+                 "avalizar", "configurar", "importar", "desfazer"):
+        assert not permissoes.pode(dp, acao), (
+            f"o DP passou a ter '{acao}' — a decisão do dono foi ampliar a "
+            f"VISÃO dele, não a alçada")

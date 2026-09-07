@@ -1016,6 +1016,23 @@ def api_cotacao_mapa(cotacao_id: int):
         return jsonify({"ok": True, "mapa": svc.montar_mapa(s, cotacao_id)})
 
 
+@bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/relatorio")
+@login_obrigatorio
+@permissao("comprar")
+def api_cotacao_relatorio(cotacao_id: int):
+    """Um dos quatro relatórios do mapa — os mesmos das abas R2 a R5 da
+    planilha. `tipo` diz qual; `fornecedor` escolhe a coluna no de um só."""
+    from app.apps.erp.core.suprimentos import cotacao as svc
+    escolhido = request.args.get("fornecedor")
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "relatorio": svc.relatorio(
+                s, cotacao_id, request.args.get("tipo") or "POR_ITEM",
+                int(escolhido) if escolhido else None)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/suprimentos/cotacoes/<int:cotacao_id>/fornecedores",
           methods=["POST"])
 @login_obrigatorio
@@ -3365,6 +3382,31 @@ def api_desfazer(titulo_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/contas")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_contas_bancarias():
+    """As contas bancárias da empresa, para escolher a da obra.
+
+    A tela de Obras pedia esta lista e recebia "não encontrado" — o campo
+    "conta bancária" do cadastro da obra abria SEMPRE vazio, sem erro na tela,
+    porque a chamada morria dentro de um `try`. Quem cadastrava obra não tinha
+    como escolher a conta.
+
+    Lê e só lê, então basta `ver_erp`: quem CRIA conta continua precisando de
+    `configurar`, em /erp/api/config/conta.
+    """
+    from sqlalchemy import select
+    from app.apps.erp.db.models.cadastros import ContaBancaria
+    with get_session() as s:
+        contas = s.scalars(select(ContaBancaria)
+                           .order_by(ContaBancaria.descricao)).all()
+        return jsonify({"ok": True, "contas": [
+            {"id": c.id, "descricao": c.descricao, "banco": c.banco_codigo,
+             "agencia": c.agencia, "conta": c.conta, "ativo": c.ativo}
+            for c in contas if c.ativo]})
+
+
 @bp.route("/erp/api/obras/<int:obra_id>", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="ver_erp", POST="configurar")
@@ -5106,6 +5148,80 @@ def api_locacao_acao(contrato_id: int, acao: str):
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha na ação de locação")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# A conferência mensal dos equipamentos locados
+#
+# O alerta sozinho não resolvia: o ERP já dizia "10 meses locado, o aluguel já
+# paga a compra". O que faltava era ALGUÉM SER OBRIGADO A RESPONDER, e é isso
+# que estas rotas fazem — com nome, todo mês.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/locacoes/conferencias")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_conferencias_pendentes():
+    """O que espera resposta. `todas=1` é a visão de quem cobra."""
+    from app.apps.erp.core import locacoes_conferencia as svc
+    with get_session() as s:
+        atual = _usuario_logado(s)
+        todas = request.args.get("todas") == "1"
+        return jsonify({"ok": True,
+                        "pendentes": svc.pendentes(s, usuario=atual, todas=todas)})
+
+
+@bp.route("/erp/api/locacoes/conferencias/abrir", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_abrir_conferencias():
+    """Abre a conferência do mês para todo contrato ativo. É seguro repetir —
+    a restrição do banco garante uma por contrato por mês."""
+    from app.apps.erp.core import locacoes_conferencia as svc
+    try:
+        with get_session() as s:
+            r = svc.abrir_do_mes(s, usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/locacoes/conferencias/<int:conferencia_id>")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_conferencia(conferencia_id: int):
+    from app.apps.erp.core import locacoes_conferencia as svc
+    with get_session() as s:
+        from app.apps.erp.core.auth.permissoes import exigir_locacao_no_escopo
+        conf = svc.obter(s, conferencia_id)
+        # a conferência é de um contrato: quem não enxerga o contrato não
+        # enxerga a conferência dele
+        exigir_locacao_no_escopo(s, _usuario_logado(s), conf["contrato_id"])
+        return jsonify({"ok": True, "conferencia": conf})
+
+
+@bp.route("/erp/api/locacoes/conferencias/<int:conferencia_id>", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_responder_conferencia(conferencia_id: int):
+    """A obra presta contas. Devolver e remanejar aqui FAZEM acontecer."""
+    from app.apps.erp.core import locacoes_conferencia as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            from app.apps.erp.core.auth.permissoes import exigir_locacao_no_escopo
+            conf = svc.obter(s, conferencia_id)
+            exigir_locacao_no_escopo(s, _usuario_logado(s), conf["contrato_id"])
+            r = svc.responder(s, conferencia_id, d, _usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, **r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP/locação: falha ao responder a conferência")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

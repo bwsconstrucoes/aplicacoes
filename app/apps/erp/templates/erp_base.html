@@ -55,9 +55,34 @@
 </div>
 
 <script>
-const moeda = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const numero = v => (v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
-const rotulo = s => (s||"").replace(/_/g," ").toLowerCase().replace(/^./, c => c.toUpperCase());
+// Dinheiro e número, sempre em português.
+//
+// O `Number(...)` no meio não é enfeite: a API manda valor como TEXTO
+// ("38.5000", "945.00") e `"38.5000".toLocaleString()` devolve a própria
+// string, sem formatar — o número saía cru na tela e no papel, e ninguém
+// percebia porque não dá erro. `paraNumero` entende os dois formatos.
+const moeda = v => paraNumero(v).toLocaleString(
+  "pt-BR", {style: "currency", currency: "BRL"});
+const numero = v => paraNumero(v).toLocaleString(
+  "pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+// Os nomes de situação vêm do banco em MAIÚSCULA e SEM ACENTO ("LANCADA",
+// "PENDENCIA") — é assim que se guarda. Na tela isso vira "Lancada", e o dono
+// lê português errado no próprio sistema dele. Este mapa devolve o acento a
+// quem precisa; o resto passa direto. Tela que já tem tabela própria de
+// rótulos (títulos, pedidos) continua mandando na dela.
+const ACENTOS = {
+  "lancada": "Lançada", "lancado": "Lançado", "pendencia": "Pendência",
+  "autorizacao": "Autorização", "cotacao": "Cotação", "solicitacao": "Solicitação",
+  "analise propostas": "Análise de propostas", "em transito": "Em trânsito",
+  "emissao": "Emissão", "avaliacao": "Avaliação", "conciliacao": "Conciliação",
+  "devolucao": "Devolução", "medicao": "Medição", "previsao": "Previsão",
+  "sala tecnica": "Sala técnica", "em analise": "Em análise",
+  "nao encontrado": "Não encontrado", "servico": "Serviço",
+};
+const rotulo = s => {
+  const limpo = (s||"").replace(/_/g," ").toLowerCase();
+  return ACENTOS[limpo] || limpo.replace(/^./, c => c.toUpperCase());
+};
 const dataBR = iso => iso ? iso.split("-").reverse().join("/") : "—";
 // Dia E HORA, para o que precisa de carimbo: "corrigido em 06/09/2026 12:11".
 // `dataBR` sozinho embaralharia o "2026-09-06T12:11:00" inteiro.

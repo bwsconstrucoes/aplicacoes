@@ -366,28 +366,180 @@ do mapa), Conciliação, Pagamentos, Confirmar e Prestação de contas.
 Verificado baixando os arquivos de verdade num navegador, tela por tela, e
 abrindo o `.xlsx` e o `.pdf` produzidos. 21 testes novos.
 
+### PUBLICADO NA MAIN EM 06/09/2026 — e as migrações foram aplicadas
+
+O dono autorizou, confirmou que não havia carga do painel nem sincronização do
+Análise de SPs rodando, juntou-se na `main`, e ele apertou "Aplicar
+atualizações do banco" logo depois da subida. Ele confirmou: **rodou tudo
+certo**. Então, em produção agora:
+
+- migrações **029 a 038** aplicadas (inclusive a 038, que acrescenta a coluna
+  de empresa em `obras`);
+- empresa por CNPJ, conta de e-mail por empresa, disparo da cotação;
+- os dois documentos do fornecedor (cotação e pedido de compra);
+- mapa em formato de planilha, com as cores da planilha do dono;
+- unidade destravada e a correção do item pelo comprador;
+- Locações dentro de Suprimentos, ligada ao financeiro nos dois sentidos;
+- exportação em Excel e PDF em doze telas;
+- **a tela Financeiro › Solicitações, que estava morta, voltou a funcionar.**
+
+**Ainda não conferido pelo dono na base real** — a lista sugerida a ele foi:
+Financeiro › Solicitações (a que estava quebrada), Suprimentos › Cotações (as
+cores), Administração › Empresas (cadastrar a BWS) e os botões Excel/PDF em
+qualquer lista.
+
+### Os quatro relatórios do mapa, e o mapa em PDF — 06/09/2026
+
+Ramo `claude/oi-vjvrn8`, sem migração nova. **Publicado? NÃO** — este é o
+primeiro trabalho depois da publicação da noite.
+
+São os mesmos quatro das abas **R2 a R5** da planilha "Relatório Mapa de
+Cotação", que a equipe já usa para decidir a compra. Ficam no botão
+"Relatórios do mapa", dentro da tela de Cotações, em quatro abas:
+
+| Aba | Pergunta que responde |
+|---|---|
+| **Por item** | de quem compro cada coisa pelo menor preço? |
+| **Por fornecedor** | então o que compro de cada um? — é a lista de compra |
+| **Comprando tudo de um** | e se eu fechar tudo com este aqui? |
+| **Comparativo** | quem sai melhor no total, com frete e desconto? |
+
+Decisões, com o motivo:
+
+- **Os quatro saem do MESMO mapa** (`montar_mapa`). Se cada um refizesse a
+  conta, um dia dois deles dariam números diferentes para a mesma cotação — e
+  aí nenhum serviria para decidir. Há teste exigindo que "por item" e "por
+  fornecedor" somem igual.
+- **Cada relatório diz o que NÃO está na conta.** O de menor preço avisa que o
+  frete de cada fornecedor não está somado; o comparativo avisa que quem cotou
+  menos itens aparece com total menor por isso, e não por ser mais barato.
+  Número sem essa ressalva engana quem decide.
+- **Item que ninguém cotou continua aparecendo**, marcado "não cotado".
+  Sumir com ele faria o comprador esquecer de cotá-lo.
+- **"Comprando tudo de um" troca de fornecedor sem sair da tela** — é
+  comparando "tudo do A" com "tudo do B" que se decide — e avisa quantos itens
+  aquele fornecedor deixaria de fora.
+- **O mapa inteiro em PDF sai deitado** quando há mais de dois fornecedores.
+
+Três defeitos corrigidos no caminho, os três de formatação — e os três do tipo
+que ninguém percebe porque não dá erro:
+
+1. **`numero()` recebia texto e devolvia o texto cru.** A API manda valor como
+   string ("38.5000", "945.00"), e `"38.5000".toLocaleString()` devolve a
+   própria string. Agora passa por `paraNumero` antes. **Isso conserta toda
+   tela do ERP que formatava valor vindo da API.**
+2. **No PDF, o cabeçalho não era cortado na largura da coluna** — os nomes dos
+   fornecedores se sobrepunham e ficavam ilegíveis. Passou a usar o mesmo
+   corte do corpo, e o cabeçalho conta pela metade no cálculo da largura, para
+   um nome comprido não roubar espaço de coluna com conteúdo.
+3. **Os relatórios saíam com ponto decimal e quatro casas.** Agora saem em
+   português (`_dinheiro_br`, `_quantidade_br`), porque vão para o papel.
+
+Verificado: 2.286 testes (33 novos), as quatro abas percorridas num navegador,
+o comparativo e o mapa baixados em PDF e abertos, e as 26 telas varridas de
+novo — todas carregam.
+
+### Conferência mensal dos equipamentos locados — 07/09/2026
+
+**O problema, nas palavras do dono:** "muitas vezes eles são locados e deixam
+de ser utilizados, não são devolvidos". O aluguel corre, ninguém devolve, e
+meses depois já se pagou mais do que custaria comprar.
+
+O ERP **já gritava isso** — o alerta "10 meses locado, o aluguel já paga a
+compra" existe desde o começo. O que faltava era **alguém ser obrigado a
+responder**. É só isso que esta entrega acrescenta, e é por isso que ela é
+pequena: uma pergunta por mês, com nome de quem responde.
+
+**Como ficou.** Todo mês abre uma conferência por contrato ativo. Quem
+responde é o **administrativo da obra** (se a obra não tiver um, cai no
+responsável do contrato). Para cada equipamento: está na obra? está sendo
+usado? **onde está e para quê?** e **quando volta**. Marcar "devolver" ou
+"remanejar" **faz a movimentação de verdade** no contrato — conferência que
+registra intenção e não faz nada é papel, e papel não devolve equipamento.
+
+**A previsão de devolução nasce na contratação**, por equipamento, não por
+contrato: a betoneira fica a obra toda, as escoras eram para três semanas — e
+é a escora que se esquece na obra. Vencido o prazo, o contrato passa a
+mostrar, com o valor: "devolução prevista para 18/08/2026, 20 dias atrás —
+cerca de R$ 576,00 de aluguel depois do combinado".
+
+**Quatro decisões, todas do dono, escritas para ninguém desfazer sem saber:**
+
+1. **Mensal**, e quem responde é o administrativo da obra.
+2. **Sem foto.** Sem etiqueta no equipamento a foto prova pouco (metadado se
+   falsifica e o WhatsApp apaga o que existe) e daria trabalho a todo mundo
+   todo mês. O dono recusou etiqueta e foto.
+3. **A conferência NÃO bloqueia o pagamento** do aluguel — bloquear trocaria
+   equipamento esquecido por multa e briga com a locadora. Ela vira pendência
+   e **avisa quem vai lançar a parcela**: "a conferência de 09/2026 está
+   aberta com Fulano e ainda não foi respondida", junto do número do título.
+4. Passados **10 dias** do fim do mês, a pendência deixa de ser lembrete e
+   entra na lista de cobrança — é a base do agente de WhatsApp, que ainda não
+   existe.
+
+**Migração 039** — `devolucao_prevista` e `devolucao_prevista_original` por
+item (a original fica para se saber que a data foi adiada, e por quem), mais
+as tabelas da conferência, com uma por contrato por mês garantida pelo banco.
+
+**Percorrido no navegador**, não só testado: a conferência recusa quem não diz
+se o equipamento está na obra, recusa quem não diz onde ele está, mostra o
+campo "para qual obra" só quando se escolhe remanejar, e ao confirmar o
+gerador saiu do contrato de verdade — com o movimento gravado citando a
+conferência. Depois disso a ficha passou a dizer "conferidos pela obra em…".
+
+### Três defeitos achados no caminho, e as varreduras que fecham a classe
+
+Nenhum dos três tem a ver com a conferência; apareceram porque a tela foi
+aberta num navegador de verdade. Os três são do mesmo tipo: **silêncio**.
+
+1. **A tela de Locações abria vazia.** A listagem citava um nome de variável
+   que não existe ali. Python só reclama disso na hora em que a linha roda —
+   e a suíte não rodava aquela linha. Corrigido, e agora
+   `tests/test_nomes_indefinidos.py` lê **todo** o código Python das
+   aplicações e recusa qualquer nome que o Python não vá encontrar. Passou nos
+   266 arquivos; provei que ele pega o defeito reintroduzindo-o.
+2. **O campo "conta bancária" do cadastro da obra abria sempre vazio.** A tela
+   pedia um endereço que nunca existiu no servidor, e a chamada morria dentro
+   de um `try` — sem erro na tela, sem nada vermelho. Criada a rota (leitura
+   só, `ver_erp`; criar conta continua exigindo `configurar`), e agora
+   `tests/test_telas_chamam_rota_que_existe.py` confere **cada endereço que
+   cada tela pede** contra as rotas que o Flask registrou de verdade.
+3. **Dinheiro saía em inglês nos alertas da locação** ("R$ 576.00"). Os
+   formatadores em português que já existiam no relatório de cotação foram
+   para `core/comum/formato.py` e agora servem aos dois — copiar teria feito
+   as duas cópias divergirem. De quebra, "Lancada" e "Pendencia" voltaram a
+   ter acento em toda tela que usa o rótulo genérico.
+
+Essa é a quinta e a sexta tela morta encontradas assim. O padrão já é claro:
+**a suíte prova regra, o navegador prova tela**. As duas varreduras novas são
+baratas e rodam junto com o resto.
+
 ### O que está pendente AGORA
 
-1. **Apertar "Aplicar atualizações do banco"** (Configurações, como ADMIN) para
-   as migrações 029 e 030. Enquanto não apertar, o ERP mostra a tela "O banco
-   está desatualizado". **Pergunte ao dono se já apertou.**
-2. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
+1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
    a senha da conta de e-mail das empresas. Gera-se uma vez com
    `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
    Sem ela tudo funciona, menos guardar senha de e-mail.
-3. **Definir `EL_NFSE_TOKEN` na Environment do Render** (token da prefeitura,
-   que estava colado no código) e **trocar o token na origem** — ele continua
-   no histórico do Git, commit `fa985ab`.
-4. **Definir o teto mensal de IA** em Configurações › Consumo de IA.
-5. **Homologação por perfil**: a parte mecânica (o que abre e o que é
+2. **Definir `EL_NFSE_TOKEN` na Environment do Render** — a variável **ainda
+   não existe lá**; sem ela o script de consulta de NFS-e para e explica. Já
+   está fora do código desde `7edd21e`.
+   **Trocar o token na origem está BLOQUEADO** (dito pelo dono em 07/09/2026):
+   o mesmo token é usado por outra aplicação, e trocá-lo derrubaria a outra
+   junto. O token segue legível no histórico do Git, commit `fa985ab` — quem
+   tem acesso ao repositório o alcança, e apagar do histórico não resolve
+   (quem já clonou continua com ele). Enquanto não puder ser trocado, o que
+   reduz o risco é **quem tem acesso ao repositório**. Reabrir quando a outra
+   aplicação puder receber um token próprio.
+3. **Definir o teto mensal de IA** em Configurações › Consumo de IA.
+4. **Homologação por perfil**: a parte mecânica (o que abre e o que é
    recusado, tela a tela, perfil a perfil) roda sozinha no GitHub a cada envio
    (`tests/test_homologacao_banco.py`). Para o olho humano ficou só o roteiro
    reduzido: visual, leitura de documento por IA, avalizar/pagar com dado real.
-6. **Migrações 031 a 038**: apertar o botão ao juntar. A 031 são as restrições
-   de concorrência; a 032 é a tabela das permissões por pessoa. Enquanto a 032
-   não rodar, o ERP funciona normalmente **pelo cargo** — a tela de cadastro é
-   que não consegue mostrar os ajustes.
-7. **Suprimentos**: construído e com as telas de cadastro refeitas, mas
+5. **A tradução do plano de contas precisa do olho do dono**
+   (`PLANO_DA_PLANILHA`, em `core/suprimentos/exemplo.py`): são os nomes
+   antigos da planilha dele apontados para as contas do ERP. Errar aí joga a
+   compra na conta de custo errada, e ninguém percebe olhando a tela.
+6. **Como começar a operar Suprimentos**: construído e com as telas de cadastro refeitas, mas
    **ainda não operado contra a base real** — é o que o dono precisa fazer
    primeiro. Caminho sugerido: Cadastros › Importações › **Dados de exemplo**
    para simular o fluxo inteiro sem digitar nada, e depois `Remover os dados
@@ -396,18 +548,60 @@ abrindo o `.xlsx` e o `.pdf` produzidos. 21 testes novos.
    gravar). **A carga não cria categoria de insumo** — cadastre as categorias
    primeiro, senão os fornecedores entram sem saber o que vendem e não
    recebem cotação nenhuma.
-8. **Decidido em 06/09/2026**: o e-mail sai por SMTP da própria empresa, e
+7. **Decidido em 06/09/2026**: o e-mail sai por SMTP da própria empresa, e
    cada empresa tem a sua conta. Falta o dono preencher servidor, porta,
    usuário e senha de aplicativo em Administração › Empresas, e apertar
    "Mandar mensagem de teste". **Continua em aberto**: se um dia a empresa
    quiser saber que o fornecedor RECEBEU (e não só que o servidor aceitou),
    isso exige um serviço de envio com retorno — outro custo, outra decisão.
-9. **Confirmar com o dono a cor de AUTORIZAÇÃO** — é a única das 15 que não
-   veio da planilha (a cópia de onde as cores saíram não tem esse status).
-   Trocar mexe só no bloco `.sit-` do `erp.css`.
-10. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
-   colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
-   ser? (item 4 do roteiro de homologação)
+8. **RESOLVIDO em 07/09/2026 — AUTORIZAÇÃO é BRANCA.** O dono confirmou: "não
+   tinha porque era branco". Era a única das 15 cores inventada por mim. O selo
+   ficou branco com um fio de contorno, senão sumiria no fundo claro da tela.
+   As 15 cores agora vêm todas da planilha dele.
+9. **Fila combinada com o dono**. Entregues: (a) os quatro relatórios do mapa
+   — R2 resumo por item, R3 por fornecedor, R4 melhor fornecedor único, R5
+   comparativo — mais o mapa em PDF deitado (publicado em 06/09); (b) previsão
+   de devolução por equipamento e a conferência mensal de locação (07/09,
+   **ainda em ramo, não publicado**). Falta, nesta ordem: (c) **o celular**, que
+   passou à frente em 07/09 porque o agente manda link e o link tem de cair
+   numa tela usável; (d) o agente de cobrança por WhatsApp — ele vai atrás de
+   quem não respondeu a conferência, e depois serve ao sistema todo; (e)
+   relatório de compras por obra, abrindo até o insumo; (f) despesa com
+   colaboradores, testada e mostrada como se fez em Suprimentos.
+10. **DECIDIDO em 07/09/2026 — o sistema vai ser adaptado ao celular.** O dono
+   respondeu "é melhor adaptar o sistema ao uso via celular também". Não é
+   mais um "se": virou dependência do item 13, porque a conferência da locação
+   vai ser respondida NO SISTEMA, a partir de um link que chega por WhatsApp —
+   e quem recebe esse link está no canteiro, com o telefone na mão. Ordem
+   combinada: primeiro fazer as telas atuais caberem no celular (nada quebra,
+   tudo fica legível), depois telas próprias para o punhado de coisas que se
+   fazem mesmo de pé: responder a conferência, autorizar, consultar. Medição
+   de partida: seis telas testadas ocupam 687px numa tela de 390px.
+11. **RESOLVIDO em 07/09/2026 — o Departamento Pessoal enxerga tudo.** O dono
+   decidiu: "a trava de visualização é semelhante ao do financeiro". O motivo é
+   óbvio depois de dito: a despesa que o DP revisa foi lançada PELA OBRA, nunca
+   por ele — filtrar por autoria deixava a tela dele vazia justamente do que
+   ele precisa conferir. **Enxergar não é poder**: ele continua sem `aprovar`,
+   `pagar`, `conciliar` e `ver_dados_pagamento`, e agora há teste com banco de
+   verdade que quebra se alguém ampliar a alçada junto com a visão
+   (`test_o_dp_ve_tudo_mas_continua_sem_aprovar_pagar_nem_ver_dado_bancario`).
+   Descoberto de quebra: **nenhum teste protegia a regra antiga sem banco** — a
+   mudança passou na suíte comum e só foi acusada pelos testes com Postgres.
+12. **A migração 039 ainda não foi aplicada em produção** — ela vai junto com
+   a conferência de locação, que está em ramo. Ao juntar na `main`, apertar
+   "Aplicar atualizações do banco" **no mesmo momento**: sem ela, a tela de
+   Locações sobe, mas a conferência não abre.
+13. **DECIDIDO em 07/09/2026 — o agente SÓ AVISA.** A resposta é dada no
+   sistema, completa, não por mensagem. Razão do dono: "responder as perguntas
+   mais completas, até porque, por obra, sei lá, se tiver cinco, dez contratos
+   de locação é algo que dá pra ser feito" — o volume real cabe numa sessão de
+   tela, e a conferência inteira não cabe num diálogo de WhatsApp. Ficam de
+   fora, por consequência: interpretar texto livre de mensagem (uma leitura
+   errada de "acho que dá pra devolver" mexeria no contrato de verdade),
+   depender de número de telefone para saber quem respondeu, e deixar o
+   sistema escutando mensagem de fora. **Falta decidir a escada da cobrança** —
+   proposta: lembrete no dia 5 do mês seguinte, cobrança no dia 10, e no dia
+   15 a lista de quem não respondeu sobe para o dono e para o financeiro.
 
 ---
 
@@ -538,6 +732,16 @@ dessas coisas aparece num teste que só olha o HTML que o servidor mandou.
   esconde a linha de resumo. Rode sem `-q`.
 - A sessão dublada dos testes ignora `WHERE`: regra de escopo nova ganha um
   caso em `tests/test_escopo_banco.py`, não só no dublê.
+- **Nome que não existe, endereço que não existe.** Duas varreduras rodam
+  junto com a suíte e recusam as duas coisas:
+  `tests/test_nomes_indefinidos.py` (nenhuma função pode citar um nome que o
+  Python não vá achar) e `tests/test_telas_chamam_rota_que_existe.py` (nenhuma
+  tela pode pedir um endereço que o servidor não tem). As duas nasceram de
+  defeito que chegou à produção calado.
+- **Dinheiro e número escritos pelo servidor** saem por
+  `core/comum/formato.py` (`_dinheiro_br`, `_quantidade_br`); na tela, por
+  `moeda` e `numero` do `erp_base.html`. Não escrever `f"R$ {v:.2f}"` — isso é
+  formato americano, e o dono lê o sistema em português.
 - **Nunca declare na tela um nome que a base já declara** (`moeda`, `numero`,
   `els`, `api`, `dataBR`…). Não é "a última vence": é erro de sintaxe e a tela
   inteira morre. `tests/test_telas_javascript.py` recusa isso agora.
