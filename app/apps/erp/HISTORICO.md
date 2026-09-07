@@ -594,6 +594,57 @@ equipamento quando falta resposta, cinco respostas gravadas (quatro ficam, um
 saiu da obra com motivo), e o banco conferido depois — `onde_esta` só nos que
 ficaram, motivo só no que saiu. Sem um erro de JavaScript.
 
+### O agente que vai atrás de quem tem pendência — 07/09/2026
+
+Pedido do dono: *"vamos pensar numa forma de como a gente teria uma espécie de
+agente fazendo esse acompanhamento, cobrando, mandando mensagens… esse agente
+ele vai servir pro sistema como um todo"*.
+
+**Ele SÓ AVISA.** Manda texto e um link; não escuta, não interpreta resposta,
+não decide nada. A resposta é dada no sistema, completa. As razões estão no
+item 13 do pendente.
+
+**A escada, aprovada pelo dono:** dia 5 lembra, dia 10 cobra, dia 15 a lista de
+quem não respondeu **sai das mãos de quem não respondeu** e sobe para o dono e
+o financeiro. Cada degrau vai UMA vez — quem está com 40 dias está em
+ESCALADA, não em LEMBRETE de novo.
+
+**Serve ao sistema todo desde o primeiro dia.** Assunto novo é uma função que
+devolve pendências no formato `Pendencia` e se registra em `ASSUNTOS` — sem
+tocar no agente. Hoje há um assunto: a conferência de locação, escolhida a dedo
+para ser a primeira porque é a única cujo responsável **não fica na frente de
+um computador** — é o administrativo da obra, no canteiro. Se funciona aqui,
+funciona em qualquer lugar.
+
+**Não vira spam, e a trava tem duas camadas.** O código pergunta antes ("já
+mandei este degrau para esta pessoa?") e o banco recusa a repetição por chave
+única — a segunda existe porque a primeira sozinha não segura duas execuções ao
+mesmo tempo. Ambas provadas com Postgres de verdade.
+
+**Como se roda:** `POST /erp/api/agente/rodar`, sem sessão, protegida por
+`ERP_AGENTE_SECRET` no corpo — o mesmo padrão dos outros módulos do monorepo.
+Ela **recusa também quando o segredo não está configurado no ambiente**, em vez
+de liberar; há teste para as duas recusas, e a rota entrou na lista consciente
+de rotas públicas (a suíte acusou quando ela nasceu, como devia).
+
+**`simular: true`** monta tudo e não manda nem grava. É como se confere o que o
+agente FARIA hoje — e foi assim que ele foi verificado antes de existir em
+produção.
+
+**O que a mensagem leva, e o que não leva.** Leva o que falta e o link. **Não
+leva valor de contrato nem dado bancário**, e há teste que quebra se alguém
+puser: mensagem de WhatsApp é lida em ônibus, em obra, e por quem pega o
+telefone emprestado.
+
+**O link abre a conferência sozinho.** `?conferencia=N` na tela de Locações —
+percorrido num telefone de 390px: o endereço da mensagem abre o diálogo certo,
+com os cinco equipamentos prontos para responder. Sem isso o agente mandaria
+gente para uma lista, e quem está no canteiro não procura nada.
+
+**O que ele já falou fica registrado** (migração 040), com nome, hora, canal e
+se saiu mesmo. É a resposta para "o Ruan foi cobrado?" — a pergunta que aparece
+quando a obra diz que não sabia.
+
 ### O que está pendente AGORA
 
 1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
@@ -673,11 +724,22 @@ ficaram, motivo só no que saiu. Sem um erro de JavaScript.
    devia. **Enxergar não é poder**: continua sem `aprovar`, `pagar`,
    `conciliar` e `ver_dados_pagamento`, com teste que quebra se alguém ampliar
    a alçada junto com a visão.
-12. **A migração 039 ainda não foi aplicada em produção** — ela vai junto com
-   a conferência de locação, que está em ramo. Ao juntar na `main`, apertar
-   "Aplicar atualizações do banco" **no mesmo momento**: sem ela, a tela de
-   Locações sobe, mas a conferência não abre.
-13. **DECIDIDO em 07/09/2026 — o agente SÓ AVISA, e a escada está fechada.**
+12. **Duas variáveis novas no Render, para o agente funcionar** (07/09/2026):
+   `ERP_AGENTE_SECRET` (qualquer texto longo e secreto — sem ela a rotina
+   recusa, de propósito) e `ERP_URL_PUBLICA` (o endereço do ERP, ex.
+   `https://erp.bwsconstrucoes.com.br`) — sem esta o link da mensagem sai
+   relativo e não abre no WhatsApp. **E falta agendar a chamada diária** de
+   `POST /erp/api/agente/rodar` com `{"secret": "…"}` no corpo. Antes de soltar,
+   rodar uma vez com `{"simular": true}` e ler o que ele mandaria.
+13. **Telefone no cadastro de quem responde.** O agente pula, dizendo o motivo,
+   quem não tem telefone — e hoje quase ninguém tem. Sem isso ele não cobra
+   ninguém.
+14. **RESOLVIDO — a migração 039 foi aplicada em 07/09/2026.** O dono
+   confirmou. Fica a lição de operação: logo depois de publicar, o botão pode
+   não mostrar migração nenhuma, porque o Render ainda está subindo o código
+   novo. Esperar um ou dois minutos e olhar de novo. **A 040 (o agente) entra
+   junto com esta publicação e precisa do botão de novo.**
+15. **DECIDIDO em 07/09/2026 — o agente SÓ AVISA, e a escada está fechada.**
    A resposta é dada no sistema, completa, não por mensagem. Razão do dono:
    "responder as perguntas mais completas, até porque, por obra, sei lá, se
    tiver cinco, dez contratos de locação é algo que dá pra ser feito". **A
@@ -687,7 +749,7 @@ ficaram, motivo só no que saiu. Sem um erro de JavaScript.
    interpretar texto livre de mensagem (uma leitura errada de "acho que dá pra
    devolver" mexeria no contrato de verdade), depender de número de telefone
    para saber quem respondeu, e deixar o sistema escutando mensagem de fora.
-14. **NOVO E GRANDE — o cruzamento de notas fiscais.** Ditado pelo dono em
+16. **NOVO E GRANDE — o cruzamento de notas fiscais.** Ditado pelo dono em
    07/09/2026 e escrito inteiro em `NOTAS_FISCAIS.md`, nesta pasta. Em uma
    frase: capturar todas as notas emitidas contra os CNPJs da empresa e cruzar
    cada uma com pedido de compra, título financeiro e prestação de fundo fixo,
@@ -697,7 +759,7 @@ ficaram, motivo só no que saiu. Sem um erro de JavaScript.
    qualquer desenho que assuma um-para-um nasce errado. Depende de certificado
    digital por empresa (cifrado, como a senha de e-mail) e traz junto a agenda
    de alertas. Quatro perguntas ainda esperam o dono — estão no §9 de lá.
-15. **A emissão de NFS-e fica em espera, por decisão do dono (07/09/2026).** É
+17. **A emissão de NFS-e fica em espera, por decisão do dono (07/09/2026).** É
    módulo antigo do monorepo (`app/apps/emissaonf/`), que emite nota de
    SERVIÇO da empresa para o cliente dela — coisa diferente do cruzamento do
    item 14, que captura nota que o FORNECEDOR emite contra a empresa. Nunca

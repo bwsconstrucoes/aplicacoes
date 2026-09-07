@@ -875,3 +875,29 @@ class TituloColaborador(Base):
     valor: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     observacao: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AgenteMensagem(Base):
+    """O que o agente falou, com quem, quando — e se saiu mesmo.
+
+    Existe para responder à pergunta que o dono vai fazer quando a obra disser
+    que não sabia: "o Ruan foi cobrado?". E para o agente não virar spam: a
+    rotina roda todo dia, e a chave única (assunto, referência, pessoa, degrau)
+    é o que garante UMA mensagem por degrau — a trava está no banco, não na
+    esperança de o código lembrar.
+    """
+    __tablename__ = "agente_mensagens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    assunto: Mapped[str] = mapped_column(Text, nullable=False)
+    referencia_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    destinatario_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    telefone: Mapped[Optional[str]] = mapped_column(Text)
+    degrau: Mapped[str] = mapped_column(Text, nullable=False)
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    canais: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    entregue: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    erro: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())

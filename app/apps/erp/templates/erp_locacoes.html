@@ -590,12 +590,20 @@ els("btn-ler").addEventListener("click", () => {
 els("busca").addEventListener("input", desenhar);
 els("so-ativos").addEventListener("change", desenhar);
 
-// Vindo do título no financeiro ("abrir o contrato em Suprimentos"), o
-// endereço traz ?contrato=N e a ficha já abre — em vez de largar a pessoa
-// numa lista para procurar de novo o que ela acabou de clicar.
+// Dois caminhos chegam aqui por link direto, e os dois existem pelo mesmo
+// motivo: ninguém deve cair numa lista para procurar de novo o que acabou de
+// clicar — ou o que a mensagem pediu.
+//
+//   ?contrato=N     — do título no financeiro ("abrir o contrato")
+//   ?conferencia=N  — do WhatsApp do agente, direto para a conferência do mês.
+//                     Este é o mais importante: quem recebe está no canteiro,
+//                     com o telefone na mão, e não vai procurar nada.
 carregar().then(() => {
-  const pedido = new URLSearchParams(location.search).get("contrato");
-  if (pedido) abrir(+pedido);
+  const busca = new URLSearchParams(location.search);
+  const contrato = busca.get("contrato");
+  if (contrato) return abrir(+contrato);
+  const conferencia = busca.get("conferencia");
+  if (conferencia) abrirConferencia(+conferencia);
 });
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.

@@ -5158,6 +5158,58 @@ def api_locacao_acao(contrato_id: int, acao: str):
 # paga a compra". O que faltava era ALGUÉM SER OBRIGADO A RESPONDER, e é isso
 # que estas rotas fazem — com nome, todo mês.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# O AGENTE que vai atrás de quem tem pendência
+#
+# Duas portas, e elas são MUITO diferentes:
+#
+#   POST /erp/api/agente/rodar  — sem login, protegida por segredo. É a que a
+#       rotina diária chama de fora. Não tem sessão nem usuário: é máquina
+#       falando com máquina, no mesmo padrão dos outros módulos do monorepo
+#       (`<MODULO>_SECRET` no corpo do pedido).
+#   GET  /erp/api/agente/historico — com login e permissão, é a tela. Responde
+#       "o Ruan foi cobrado?".
+#
+# A rota de rodar aceita `simular`: monta tudo e não manda nada. É como se
+# confere o que o agente FARIA hoje antes de deixá-lo solto — e foi assim que
+# ele foi verificado antes de ir para produção.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/agente/rodar", methods=["POST"])
+@permissao_publica("chamada por rotina externa; a guarda é o ERP_AGENTE_SECRET "
+                   "no corpo do pedido, como nos demais módulos do monorepo")
+def api_agente_rodar():
+    """Roda a varredura do agente. Sem segredo configurado, RECUSA."""
+    import os
+    from app.apps.erp.core import agente as svc
+
+    esperado = os.getenv("ERP_AGENTE_SECRET", "").strip()
+    dados = request.get_json(silent=True) or {}
+    if not esperado:
+        return jsonify({"ok": False, "erro": "ERP_AGENTE_SECRET não configurado "
+                                             "no ambiente. O agente não roda sem ele."}), 503
+    if dados.get("secret") != esperado:
+        logger.warning("ERP/agente: chamada recusada, segredo inválido")
+        return jsonify({"ok": False, "erro": "Segredo inválido."}), 403
+
+    simular = bool(dados.get("simular"))
+    with get_session() as s:
+        r = svc.varrer(s, simular=simular)
+        if not simular:
+            s.commit()
+    return jsonify({"ok": True, **r})
+
+
+@bp.route("/erp/api/agente/historico")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_agente_historico():
+    """O que o agente já falou, com quem e quando."""
+    from app.apps.erp.core import agente as svc
+    with get_session() as s:
+        return jsonify({"ok": True,
+                        "mensagens": svc.historico(s, assunto=request.args.get("assunto"))})
+
+
 @bp.route("/erp/api/locacoes/conferencias")
 @login_obrigatorio
 @permissao("ver_erp")
