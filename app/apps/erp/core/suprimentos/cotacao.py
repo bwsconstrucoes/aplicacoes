@@ -21,6 +21,9 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core.comum.formato import (  # noqa: F401
+    _dinheiro_br, _quantidade_br,
+)
 from app.apps.erp.core.comum.auditoria import (
     ErroNaoEncontrado, ErroValidacao, registrar_evento,
 )
@@ -485,45 +488,6 @@ COLUNAS_DO_ITEM = [
     {"rotulo": "Melhor preço", "tipo": "dinheiro"},
     {"rotulo": "Total", "tipo": "dinheiro"},
 ]
-
-
-def _dinheiro_br(valor: Any) -> str:
-    """4155.68 → "4.155,68". O relatório é lido por gente e vai para o papel:
-    ponto decimal e quatro casas ("35.9000") não se lê em português."""
-    if valor in (None, ""):
-        return ""
-    try:
-        d = Decimal(str(valor))
-    except (InvalidOperation, ValueError):
-        return str(valor)
-    # duas casas por padrão; mantém mais só quando o preço realmente as tem
-    # (item barato cotado a 0,1250 existe e arredondar mentiria)
-    texto = f"{d:.4f}".rstrip("0")
-    casas = max(2, len(texto.split(".")[1]) if "." in texto else 0)
-    d = d.quantize(Decimal("1." + "0" * casas), rounding=ROUND_HALF_UP)
-    inteiro, _, decimais = f"{d:.{casas}f}".partition(".")
-    negativo = inteiro.startswith("-")
-    inteiro = inteiro.lstrip("-")
-    grupos = []
-    while len(inteiro) > 3:
-        grupos.insert(0, inteiro[-3:])
-        inteiro = inteiro[:-3]
-    grupos.insert(0, inteiro)
-    return ("-" if negativo else "") + ".".join(grupos) + "," + decimais
-
-
-def _quantidade_br(valor: Any) -> str:
-    """"14.000" no banco é catorze, não catorze mil — a casa decimal só
-    aparece quando existe de verdade."""
-    if valor in (None, ""):
-        return ""
-    try:
-        d = Decimal(str(valor))
-    except (InvalidOperation, ValueError):
-        return str(valor)
-    if d == d.to_integral_value():
-        return str(int(d))
-    return f"{d.normalize():f}".replace(".", ",")
 
 
 def _linha_do_item(item: dict[str, Any], coluna: Optional[dict[str, Any]],

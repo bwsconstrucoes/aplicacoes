@@ -731,6 +731,20 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-07 — Duas varreduras que valem para o repositório inteiro.**
+  Cinco telas já chegaram à produção mortas, e sempre em silêncio: um nome de
+  variável errado, um `import` faltando, um endereço de API que não existe.
+  Nada disso aparece na suíte, porque ela não roda aquela linha, e nada
+  aparece na tela, porque a chamada morre dentro de um `try`. Foram criadas
+  duas varreduras baratas, sem dependência nova (`symtable` e o próprio
+  casador de rotas do Flask): `tests/test_nomes_indefinidos.py` lê todo o
+  código Python de `app/` e recusa nome que o Python não vá encontrar;
+  `tests/test_telas_chamam_rota_que_existe.py` lê cada endereço que cada tela
+  pede e confere contra as rotas registradas. As duas foram provadas contra os
+  defeitos reais que as motivaram. Elas cobrem os módulos de TODAS as áreas,
+  não só o ERP — quem mexer em painel, análise de SPs ou baixabradesco também
+  passa por elas.
+
 - **2026-09-04 — Permissão fina por pessoa, sem refazer a matriz de perfis.**
   O dono pediu que cada pessoa tenha uma função principal e, além dela,
   permissões marcadas uma a uma no cadastro. Duas saídas eram possíveis:

@@ -439,6 +439,81 @@ Verificado: 2.286 testes (33 novos), as quatro abas percorridas num navegador,
 o comparativo e o mapa baixados em PDF e abertos, e as 26 telas varridas de
 novo — todas carregam.
 
+### Conferência mensal dos equipamentos locados — 07/09/2026
+
+**O problema, nas palavras do dono:** "muitas vezes eles são locados e deixam
+de ser utilizados, não são devolvidos". O aluguel corre, ninguém devolve, e
+meses depois já se pagou mais do que custaria comprar.
+
+O ERP **já gritava isso** — o alerta "10 meses locado, o aluguel já paga a
+compra" existe desde o começo. O que faltava era **alguém ser obrigado a
+responder**. É só isso que esta entrega acrescenta, e é por isso que ela é
+pequena: uma pergunta por mês, com nome de quem responde.
+
+**Como ficou.** Todo mês abre uma conferência por contrato ativo. Quem
+responde é o **administrativo da obra** (se a obra não tiver um, cai no
+responsável do contrato). Para cada equipamento: está na obra? está sendo
+usado? **onde está e para quê?** e **quando volta**. Marcar "devolver" ou
+"remanejar" **faz a movimentação de verdade** no contrato — conferência que
+registra intenção e não faz nada é papel, e papel não devolve equipamento.
+
+**A previsão de devolução nasce na contratação**, por equipamento, não por
+contrato: a betoneira fica a obra toda, as escoras eram para três semanas — e
+é a escora que se esquece na obra. Vencido o prazo, o contrato passa a
+mostrar, com o valor: "devolução prevista para 18/08/2026, 20 dias atrás —
+cerca de R$ 576,00 de aluguel depois do combinado".
+
+**Quatro decisões, todas do dono, escritas para ninguém desfazer sem saber:**
+
+1. **Mensal**, e quem responde é o administrativo da obra.
+2. **Sem foto.** Sem etiqueta no equipamento a foto prova pouco (metadado se
+   falsifica e o WhatsApp apaga o que existe) e daria trabalho a todo mundo
+   todo mês. O dono recusou etiqueta e foto.
+3. **A conferência NÃO bloqueia o pagamento** do aluguel — bloquear trocaria
+   equipamento esquecido por multa e briga com a locadora. Ela vira pendência
+   e **avisa quem vai lançar a parcela**: "a conferência de 09/2026 está
+   aberta com Fulano e ainda não foi respondida", junto do número do título.
+4. Passados **10 dias** do fim do mês, a pendência deixa de ser lembrete e
+   entra na lista de cobrança — é a base do agente de WhatsApp, que ainda não
+   existe.
+
+**Migração 039** — `devolucao_prevista` e `devolucao_prevista_original` por
+item (a original fica para se saber que a data foi adiada, e por quem), mais
+as tabelas da conferência, com uma por contrato por mês garantida pelo banco.
+
+**Percorrido no navegador**, não só testado: a conferência recusa quem não diz
+se o equipamento está na obra, recusa quem não diz onde ele está, mostra o
+campo "para qual obra" só quando se escolhe remanejar, e ao confirmar o
+gerador saiu do contrato de verdade — com o movimento gravado citando a
+conferência. Depois disso a ficha passou a dizer "conferidos pela obra em…".
+
+### Três defeitos achados no caminho, e as varreduras que fecham a classe
+
+Nenhum dos três tem a ver com a conferência; apareceram porque a tela foi
+aberta num navegador de verdade. Os três são do mesmo tipo: **silêncio**.
+
+1. **A tela de Locações abria vazia.** A listagem citava um nome de variável
+   que não existe ali. Python só reclama disso na hora em que a linha roda —
+   e a suíte não rodava aquela linha. Corrigido, e agora
+   `tests/test_nomes_indefinidos.py` lê **todo** o código Python das
+   aplicações e recusa qualquer nome que o Python não vá encontrar. Passou nos
+   266 arquivos; provei que ele pega o defeito reintroduzindo-o.
+2. **O campo "conta bancária" do cadastro da obra abria sempre vazio.** A tela
+   pedia um endereço que nunca existiu no servidor, e a chamada morria dentro
+   de um `try` — sem erro na tela, sem nada vermelho. Criada a rota (leitura
+   só, `ver_erp`; criar conta continua exigindo `configurar`), e agora
+   `tests/test_telas_chamam_rota_que_existe.py` confere **cada endereço que
+   cada tela pede** contra as rotas que o Flask registrou de verdade.
+3. **Dinheiro saía em inglês nos alertas da locação** ("R$ 576.00"). Os
+   formatadores em português que já existiam no relatório de cotação foram
+   para `core/comum/formato.py` e agora servem aos dois — copiar teria feito
+   as duas cópias divergirem. De quebra, "Lancada" e "Pendencia" voltaram a
+   ter acento em toda tela que usa o rótulo genérico.
+
+Essa é a quinta e a sexta tela morta encontradas assim. O padrão já é claro:
+**a suíte prova regra, o navegador prova tela**. As duas varreduras novas são
+baratas e rodam junto com o resto.
+
 ### O que está pendente AGORA
 
 1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
@@ -475,12 +550,15 @@ novo — todas carregam.
 8. **Confirmar com o dono a cor de AUTORIZAÇÃO** — é a única das 15 que não
    veio da planilha (a cópia de onde as cores saíram não tem esse status).
    Trocar mexe só no bloco `.sit-` do `erp.css`.
-9. **Fila combinada com o dono, nesta ordem**: (a) os quatro relatórios do
-   mapa — R2 resumo por item, R3 por fornecedor, R4 melhor fornecedor único,
-   R5 comparativo — mais o mapa em PDF deitado; (b) previsão de devolução por
-   equipamento e a conferência mensal de locação; (c) o agente de cobrança por
-   WhatsApp; (d) relatório de compras por obra, abrindo até o insumo; (e)
-   despesa com colaboradores, testada e mostrada como se fez em Suprimentos.
+9. **Fila combinada com o dono**. Entregues: (a) os quatro relatórios do mapa
+   — R2 resumo por item, R3 por fornecedor, R4 melhor fornecedor único, R5
+   comparativo — mais o mapa em PDF deitado (publicado em 06/09); (b) previsão
+   de devolução por equipamento e a conferência mensal de locação (07/09,
+   **ainda em ramo, não publicado**). Falta: (c) o agente de cobrança por
+   WhatsApp — é ele que vai atrás de quem não respondeu a conferência, e
+   depois serve ao sistema todo; (d) relatório de compras por obra, abrindo
+   até o insumo; (e) despesa com colaboradores, testada e mostrada como se fez
+   em Suprimentos.
 10. **Decisão pendente do dono sobre celular**: fazer o "Caminho 1" (as telas
    atuais caberem no celular, só para consultar — as seis testadas ficam com
    687px numa tela de 390px) ou esperar o "Caminho 2" (telas próprias de
@@ -488,6 +566,15 @@ novo — todas carregam.
 11. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)
+12. **A migração 039 ainda não foi aplicada em produção** — ela vai junto com
+   a conferência de locação, que está em ramo. Ao juntar na `main`, apertar
+   "Aplicar atualizações do banco" **no mesmo momento**: sem ela, a tela de
+   Locações sobe, mas a conferência não abre.
+13. **Decisão para o agente de cobrança (c)**: ele só avisa, ou também aceita
+   resposta pelo WhatsApp? A recomendação é **só avisar**, com um link que
+   abre a conferência no sistema — quem responde por mensagem responde de
+   memória, e a conferência inteira (onde está, o que fazer) não cabe num
+   diálogo de WhatsApp sem virar confusão.
 
 ---
 
@@ -618,6 +705,16 @@ dessas coisas aparece num teste que só olha o HTML que o servidor mandou.
   esconde a linha de resumo. Rode sem `-q`.
 - A sessão dublada dos testes ignora `WHERE`: regra de escopo nova ganha um
   caso em `tests/test_escopo_banco.py`, não só no dublê.
+- **Nome que não existe, endereço que não existe.** Duas varreduras rodam
+  junto com a suíte e recusam as duas coisas:
+  `tests/test_nomes_indefinidos.py` (nenhuma função pode citar um nome que o
+  Python não vá achar) e `tests/test_telas_chamam_rota_que_existe.py` (nenhuma
+  tela pode pedir um endereço que o servidor não tem). As duas nasceram de
+  defeito que chegou à produção calado.
+- **Dinheiro e número escritos pelo servidor** saem por
+  `core/comum/formato.py` (`_dinheiro_br`, `_quantidade_br`); na tela, por
+  `moeda` e `numero` do `erp_base.html`. Não escrever `f"R$ {v:.2f}"` — isso é
+  formato americano, e o dono lê o sistema em português.
 - **Nunca declare na tela um nome que a base já declara** (`moeda`, `numero`,
   `els`, `api`, `dataBR`…). Não é "a última vence": é erro de sintaxe e a tela
   inteira morre. `tests/test_telas_javascript.py` recusa isso agora.
