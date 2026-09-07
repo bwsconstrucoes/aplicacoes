@@ -554,15 +554,21 @@ baratas e rodam junto com o resto.
    — R2 resumo por item, R3 por fornecedor, R4 melhor fornecedor único, R5
    comparativo — mais o mapa em PDF deitado (publicado em 06/09); (b) previsão
    de devolução por equipamento e a conferência mensal de locação (07/09,
-   **ainda em ramo, não publicado**). Falta: (c) o agente de cobrança por
-   WhatsApp — é ele que vai atrás de quem não respondeu a conferência, e
-   depois serve ao sistema todo; (d) relatório de compras por obra, abrindo
-   até o insumo; (e) despesa com colaboradores, testada e mostrada como se fez
-   em Suprimentos.
-10. **Decisão pendente do dono sobre celular**: fazer o "Caminho 1" (as telas
-   atuais caberem no celular, só para consultar — as seis testadas ficam com
-   687px numa tela de 390px) ou esperar o "Caminho 2" (telas próprias de
-   consulta e aprovação). Ele ainda não respondeu.
+   **ainda em ramo, não publicado**). Falta, nesta ordem: (c) **o celular**, que
+   passou à frente em 07/09 porque o agente manda link e o link tem de cair
+   numa tela usável; (d) o agente de cobrança por WhatsApp — ele vai atrás de
+   quem não respondeu a conferência, e depois serve ao sistema todo; (e)
+   relatório de compras por obra, abrindo até o insumo; (f) despesa com
+   colaboradores, testada e mostrada como se fez em Suprimentos.
+10. **DECIDIDO em 07/09/2026 — o sistema vai ser adaptado ao celular.** O dono
+   respondeu "é melhor adaptar o sistema ao uso via celular também". Não é
+   mais um "se": virou dependência do item 13, porque a conferência da locação
+   vai ser respondida NO SISTEMA, a partir de um link que chega por WhatsApp —
+   e quem recebe esse link está no canteiro, com o telefone na mão. Ordem
+   combinada: primeiro fazer as telas atuais caberem no celular (nada quebra,
+   tudo fica legível), depois telas próprias para o punhado de coisas que se
+   fazem mesmo de pé: responder a conferência, autorizar, consultar. Medição
+   de partida: seis telas testadas ocupam 687px numa tela de 390px.
 11. **Decisão do dono**: o Departamento Pessoal vê todas as despesas com
    colaborador, mas na lista de Títulos só o que ele lançou. É assim que deve
    ser? (item 4 do roteiro de homologação)
@@ -570,11 +576,17 @@ baratas e rodam junto com o resto.
    a conferência de locação, que está em ramo. Ao juntar na `main`, apertar
    "Aplicar atualizações do banco" **no mesmo momento**: sem ela, a tela de
    Locações sobe, mas a conferência não abre.
-13. **Decisão para o agente de cobrança (c)**: ele só avisa, ou também aceita
-   resposta pelo WhatsApp? A recomendação é **só avisar**, com um link que
-   abre a conferência no sistema — quem responde por mensagem responde de
-   memória, e a conferência inteira (onde está, o que fazer) não cabe num
-   diálogo de WhatsApp sem virar confusão.
+13. **DECIDIDO em 07/09/2026 — o agente SÓ AVISA.** A resposta é dada no
+   sistema, completa, não por mensagem. Razão do dono: "responder as perguntas
+   mais completas, até porque, por obra, sei lá, se tiver cinco, dez contratos
+   de locação é algo que dá pra ser feito" — o volume real cabe numa sessão de
+   tela, e a conferência inteira não cabe num diálogo de WhatsApp. Ficam de
+   fora, por consequência: interpretar texto livre de mensagem (uma leitura
+   errada de "acho que dá pra devolver" mexeria no contrato de verdade),
+   depender de número de telefone para saber quem respondeu, e deixar o
+   sistema escutando mensagem de fora. **Falta decidir a escada da cobrança** —
+   proposta: lembrete no dia 5 do mês seguinte, cobrança no dia 10, e no dia
+   15 a lista de quem não respondeu sobe para o dono e para o financeiro.
 
 ---
 
