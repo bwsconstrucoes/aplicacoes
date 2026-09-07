@@ -410,6 +410,15 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   td.desc { max-width: 180px; }
 }
 
+/* Conferência de locação: com uma pergunta por vez, sobra largura no
+   computador e o campo esticava de ponta a ponta — um "Sim/Não" com 880px de
+   largura fica estranho de ler. No celular ele volta a ocupar tudo, que é o
+   certo lá. */
+#conf-itens .campo select, #conf-itens .campo input { max-width: 460px; }
+@media (max-width: 720px) {
+  #conf-itens .campo select, #conf-itens .campo input { max-width: none; }
+}
+
 /* O botão da gaveta de filtros só existe no celular. Esta regra é a que
    garante que ele NUNCA apareça no computador, mesmo depois de o código
    tirar o `hidden` dele. */
@@ -514,7 +523,24 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   .kpi-valor { font-size: 19px; margin-top: 2px; }
   .kpi-sub { font-size: 11.5px; }
 
-  /* 7. Célula não vira torre. Um nome de fornecedor longo quebrava em quatro
+  /* 7. Formulário em UMA coluna, e ninguém vaza pela direita.
+     A causa era sutil: a grade usa `auto-fit`, que sozinha já daria uma
+     coluna só numa tela estreita — mas alguns campos trazem no HTML um
+     `grid-column: span 3`, e um item que ocupa três colunas OBRIGA a grade a
+     ter três. Resultado no celular: "Está sendo usado?" espremido em 42px e
+     "Motivo" cortado na borda. Aqui o vão é desfeito, e cada campo ocupa a
+     linha dele. Vale para TODO formulário do ERP, não só o da conferência.
+     O `!important` é o que vence o `style=` escrito no HTML. */
+  .form-grade { grid-template-columns: 1fr !important; }
+  .form-grade > * { grid-column: auto !important; }
+
+  /* 8. A caixa de diálogo ocupa a tela toda e rola por dentro. Antes o corpo
+     era cortado em 74% da altura e o resto ficava inalcançável no telefone. */
+  dialog { height: 100dvh; max-height: 100dvh; display: flex; flex-direction: column; }
+  .dlg-topo { flex: 0 0 auto; }
+  .dlg-corpo { flex: 1 1 auto; max-height: none; padding: 14px 14px 40px; }
+
+  /* 9. Célula não vira torre. Um nome de fornecedor longo quebrava em quatro
      linhas e a linha da tabela ficava com a altura de um parágrafo — com três
      títulos a tela acabava. Como a tabela já rola de lado, o certo é manter
      cada linha em UMA linha e cortar com reticências o que não couber. */

@@ -563,6 +563,37 @@ telefone: dá para consultar, não é confortável para operar. As telas que se
 opera de pé — responder a conferência da locação, autorizar, consultar um
 título — ganham desenho próprio na etapa seguinte.
 
+### O celular, etapa 2: a conferência da locação — 07/09/2026
+
+É a primeira tela desenhada para ser usada de pé, e foi escolhida a dedo: é a
+única que **gente de obra** vai abrir todo mês, a partir de um link que chega
+por WhatsApp. Se ela não funcionar no telefone, o agente de cobrança não tem
+para onde mandar ninguém.
+
+**Dois problemas, e o segundo não era do celular:**
+
+1. **Os campos vazavam pela direita.** A causa era sutil e vale registrar: a
+   grade dos formulários usa `auto-fit`, que sozinha já daria uma coluna numa
+   tela estreita — mas alguns campos trazem `grid-column: span 3` escrito no
+   HTML, e **um item que ocupa três colunas obriga a grade a ter três**. No
+   telefone isso espremia "Está sendo usado?" em 42px e cortava "Motivo" na
+   borda. Corrigido para TODO formulário do ERP, não só este.
+2. **Seis perguntas por equipamento, todas de uma vez** — 3.100px de rolagem
+   para cinco equipamentos. Agora só a primeira pergunta aparece ("está na
+   obra?"), e as outras nascem conforme a resposta: quem diz "não está mais
+   aqui" recebe só o campo de motivo, que é justamente o que a regra exige.
+   Caiu para 1.270px, e **no computador a conferência inteira passou a caber
+   numa tela só** — cinco equipamentos e o botão de confirmar sem rolar.
+
+Nada foi escondido do resultado: o que está visível é exatamente o que
+`responder`, em `core/locacoes_conferencia.py`, vai exigir. Se as duas regras
+divergirem, a pessoa preenche o que a tela pede e leva recusa do servidor.
+
+**Percorrido de ponta a ponta num telefone de 390px:** recusa com o nome do
+equipamento quando falta resposta, cinco respostas gravadas (quatro ficam, um
+saiu da obra com motivo), e o banco conferido depois — `onde_esta` só nos que
+ficaram, motivo só no que saiu. Sem um erro de JavaScript.
+
 ### O que está pendente AGORA
 
 1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra

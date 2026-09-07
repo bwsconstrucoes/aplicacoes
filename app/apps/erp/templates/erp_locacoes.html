@@ -199,18 +199,19 @@ function desenharItensDaConferencia(){
             <option value="NAO_ENCONTRADO" ${i.presente==="NAO_ENCONTRADO"?"selected":""}
               >Não encontrei</option>
           </select></div>
-        <div class="campo"><label>Está sendo usado?</label>
+        <div class="campo" data-quando="SIM" data-n="${n}"><label>Está sendo usado?</label>
           <select data-n="${n}" data-c="em_uso">
             <option value="1" ${i.em_uso?"selected":""}>Em uso</option>
             <option value="" ${i.em_uso?"":"selected"}>Parado</option>
           </select></div>
-        <div class="campo"><label>Devolve até</label>
+        <div class="campo" data-quando="SIM" data-n="${n}"><label>Devolve até</label>
           <input type="date" data-n="${n}" data-c="devolucao_prevista"
             value="${i.devolucao_prevista||""}"></div>
-        <div class="campo" style="grid-column:span 3"><label>Onde está e para quê *</label>
+        <div class="campo" data-quando="SIM" data-n="${n}"
+             style="grid-column:span 3"><label>Onde está e para quê *</label>
           <input data-n="${n}" data-c="onde_esta" value="${escapar(i.onde_esta||"")}"
             placeholder="ex.: na laje do bloco B, escorando até a desforma"></div>
-        <div class="campo"><label>O que fazer</label>
+        <div class="campo" data-quando="SIM" data-n="${n}"><label>O que fazer</label>
           <select data-n="${n}" data-c="decisao">
             <option value="MANTER" ${i.decisao==="MANTER"?"selected":""}>Manter na obra</option>
             <option value="DEVOLVER" ${i.decisao==="DEVOLVER"?"selected":""}
@@ -222,7 +223,8 @@ function desenharItensDaConferencia(){
           <select data-n="${n}" data-c="obra_destino_id">
             ${OBRAS.map(o=>`<option value="${o.id}">${rotuloObra(o)}</option>`).join("")}
           </select></div>
-        <div class="campo" style="grid-column:span 2"><label>Motivo / observação</label>
+        <div class="campo" data-quando="SIM NAO NAO_ENCONTRADO" data-n="${n}"
+             style="grid-column:span 2"><label>Motivo / observação</label>
           <input data-n="${n}" data-c="motivo" value="${escapar(i.motivo||"")}"
             placeholder="obrigatório se não está na obra, ou se adiar a devolução"></div>
       </div>
@@ -233,13 +235,34 @@ function desenharItensDaConferencia(){
       const n = +ev.target.dataset.n, campo = ev.target.dataset.c;
       CONF.itens[n][campo] = campo === "em_uso" ? !!ev.target.value : ev.target.value;
       if (campo === "decisao") mostrarDestino(n);
+      if (campo === "presente") mostrarPerguntas(n);
     }));
-  CONF.itens.forEach((_i, n) => mostrarDestino(n));
+  CONF.itens.forEach((_i, n) => { mostrarDestino(n); mostrarPerguntas(n); });
 }
 
 function mostrarDestino(n){
   const campo = document.querySelector(`[data-destino="${n}"]`);
   if (campo) campo.style.display = CONF.itens[n].decisao === "REMANEJAR" ? "" : "none";
+}
+
+// Cada equipamento tem seis perguntas, e cinco delas só existem DEPOIS da
+// primeira. "Onde está e para quê" não faz sentido para um equipamento que a
+// pessoa acabou de dizer que não está mais na obra; "o que fazer" também não.
+//
+// Isso não é enfeite: com cinco equipamentos, o formulário inteiro tinha 3.100
+// pixels de rolagem no celular. Perguntando uma coisa de cada vez, quem
+// responde vê a lista dos equipamentos e vai abrindo — e não erra preenchendo
+// campo que a regra vai recusar depois.
+//
+// Nada é escondido do resultado: o que estiver visível é exatamente o que a
+// regra do servidor vai exigir. Ver `responder` em core/locacoes_conferencia.
+function mostrarPerguntas(n){
+  const resposta = CONF.itens[n].presente || "";
+  document.querySelectorAll(`[data-quando][data-n="${n}"]`).forEach(campo => {
+    const vale = campo.dataset.quando.split(" ").includes(resposta);
+    campo.style.display = vale ? "" : "none";
+  });
+  if (resposta !== "SIM") mostrarDestino(n);   // some junto com "o que fazer"
 }
 
 async function salvarConferencia(){
