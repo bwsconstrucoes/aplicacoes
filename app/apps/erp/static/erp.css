@@ -409,6 +409,121 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   .topo-titulo, .topo-sub { display: none; }
   td.desc { max-width: 180px; }
 }
+
+/* O botão da gaveta de filtros só existe no celular. Esta regra é a que
+   garante que ele NUNCA apareça no computador, mesmo depois de o código
+   tirar o `hidden` dele. */
+.abrir-filtros { display: none; }
+.abrir-filtros[hidden] { display: none !important; }
+
+/* ======================= CELULAR (até 720px) =======================
+   REGRA DE OURO DESTE BLOCO: nada aqui pode chegar ao computador. Tudo vive
+   dentro do @media, e o dono pediu isso com todas as letras — "eu só não
+   queria mudar o que já está para o computador".
+
+   Três coisas quebravam o uso no celular, medidas numa tela de 390px:
+
+   1. A PÁGINA INTEIRA tinha 687px de largura. A culpa era da barra de cima:
+      os cinco módulos em linha não cabem, e empurravam o documento todo. O
+      efeito para quem usa: a página inteira anda de lado, e a marca "BWS"
+      aparece cortada.
+   2. OS FILTROS OCUPAVAM 857px DE ALTURA ANTES DO CONTEÚDO. Abrir Títulos no
+      celular mostrava uma tela e meia de caixinhas antes da primeira linha da
+      lista. Aqui eles viram uma GAVETA que abre por cima — conteúdo primeiro.
+   3. BOTÃO PEQUENO DEMAIS PARA O DEDO: 13 de 19 tinham menos de 40px de
+      altura. 44px é a medida que a Apple e o Google recomendam, e é o que
+      separa "apertei" de "apertei três vezes".
+
+   A tabela larga NÃO é problema: ela já rola dentro da própria caixa, sem
+   empurrar a página. O que se acrescenta aqui é a primeira coluna FIXA, para
+   a pessoa não perder de vista de qual linha está lendo o número. Transformar
+   tabela em cartão é outra etapa, e só para as telas que se opera de pé.
+   ================================================================== */
+@media (max-width: 720px) {
+
+  /* 1. A barra de cima rola DENTRO DELA, e não empurra mais a página. */
+  .topo {
+    overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none;                 /* a barrinha some; o dedo arrasta */
+    gap: 10px; padding: 0 10px;
+  }
+  .topo::-webkit-scrollbar { display: none; }
+  .topo > * { flex: 0 0 auto; }            /* ninguém encolhe: quem sobra, rola */
+  .topo-meta { display: none; }            /* nome e perfil: cabem em Sair */
+  .topo-abas { border-left: 0; padding-left: 0; }
+  .modulos { margin-left: 0; }
+
+  /* 2. Os filtros viram gaveta. Fechada, não ocupa nada. */
+  .abrir-filtros {
+    position: fixed; right: 14px; bottom: 14px; z-index: 45;
+    display: inline-flex; align-items: center; gap: 8px;
+    min-height: 48px; padding: 0 18px; border: 0; border-radius: 999px;
+    background: var(--azul); color: #fff; font-size: 15px; font-weight: 700;
+    box-shadow: 0 6px 18px rgba(11,44,92,.34); cursor: pointer;
+  }
+  .abrir-filtros .conta {
+    background: var(--amarelo); color: var(--azul); border-radius: 999px;
+    padding: 1px 8px; font-size: 13px;
+  }
+  .filtros {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+    width: min(88vw, 340px); height: 100vh; overflow-y: auto;
+    border-right: 1px solid var(--borda); border-bottom: 0;
+    box-shadow: 4px 0 24px rgba(0,0,0,.28);
+    transform: translateX(-100%); transition: transform .18s ease-out;
+    padding-bottom: 90px;                  /* espaço para o botão de fechar */
+  }
+  body.filtros-abertos .filtros { transform: translateX(0); }
+  body.filtros-abertos::after {            /* o fundo escuro atrás da gaveta */
+    content: ""; position: fixed; inset: 0; z-index: 49;
+    background: rgba(11,26,45,.45);
+  }
+  body.filtros-abertos .abrir-filtros {
+    z-index: 51; background: var(--verde);
+  }
+
+  /* 3. O dedo precisa de alvo. */
+  .btn, .topo-btn, .link-btn, .abrir-filtros,
+  .filtros label, select, input[type=text], input[type=search],
+  input[type=date], input[type=number] {
+    min-height: 44px;
+  }
+  .filtros label { display: flex; align-items: center; }
+  .btn { padding-left: 16px; padding-right: 16px; }
+
+  /* 4. A primeira coluna fica fixa: rolando de lado, não se perde a linha. */
+  .tabela-rolagem { max-height: none; }
+  .tabela-rolagem thead th:first-child,
+  .tabela-rolagem tbody td:first-child {
+    position: sticky; left: 0; z-index: 1;
+    background: var(--branco); box-shadow: 1px 0 0 var(--borda);
+  }
+  .tabela-rolagem thead th:first-child { z-index: 2; background: var(--papel); }
+
+  /* 5. Caixas de diálogo ocupam a tela: não sobra margem para nada. */
+  dialog { width: 100vw; max-width: 100vw; margin: 0; border-radius: 0; }
+  .principal { padding: 14px 12px 90px; }  /* 90px: o botão flutuante não tapa */
+
+  /* 6. Os cartões de número, apertados. Seis deles no tamanho do computador
+     empurravam a primeira linha da lista para 700px abaixo — de novo o
+     conteúdo ficando atrás do enfeite. Dois por linha e menores: continuam
+     legíveis e cabem em uma olhada. */
+  .kpis { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .kpi { padding: 10px 12px; }
+  .kpi-rotulo { font-size: 10.5px; letter-spacing: .04em; }
+  .kpi-valor { font-size: 19px; margin-top: 2px; }
+  .kpi-sub { font-size: 11.5px; }
+
+  /* 7. Célula não vira torre. Um nome de fornecedor longo quebrava em quatro
+     linhas e a linha da tabela ficava com a altura de um parágrafo — com três
+     títulos a tela acabava. Como a tabela já rola de lado, o certo é manter
+     cada linha em UMA linha e cortar com reticências o que não couber. */
+  .tabela-rolagem td, .tabela-rolagem th { white-space: nowrap; }
+  .tabela-rolagem td.desc, .tabela-rolagem td.credor, .tabela-rolagem td.nome {
+    max-width: 230px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tabela-rolagem td small, .tabela-rolagem td div { display: inline; }
+}
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
 /* Mapa de cotação: a célula do menor preço da linha. Cor discreta e com

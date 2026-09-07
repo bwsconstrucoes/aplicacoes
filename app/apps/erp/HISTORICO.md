@@ -514,6 +514,55 @@ Essa é a quinta e a sexta tela morta encontradas assim. O padrão já é claro:
 **a suíte prova regra, o navegador prova tela**. As duas varreduras novas são
 baratas e rodam junto com o resto.
 
+### O celular, etapa 1: tudo cabe, e o computador não mudou — 07/09/2026
+
+O dono decidiu adaptar o sistema ao celular, e pôs uma condição: *"eu só não
+queria mudar o que já está para o computador"*. Esta entrega faz as duas
+coisas, e a segunda foi provada, não prometida.
+
+**O que estava errado, medido numa tela de 390px** (e não era o que eu tinha
+dito antes — a primeira medição pegou a tela de login 14 vezes seguidas,
+porque o Postgres do contêiner tinha caído; a lição está nas "coisas pequenas
+que mordem"):
+
+1. **A página inteira tinha 687px de largura.** A culpa era da barra de cima:
+   os cinco módulos em linha não cabem, e empurravam o documento todo. Quem
+   usava via a página andar de lado e a marca "BWS" cortada.
+2. **Os filtros ocupavam 857px de altura ANTES do conteúdo.** Abrir Títulos no
+   telefone mostrava uma tela e meia de caixinhas antes da primeira linha da
+   lista.
+3. **13 de 19 botões tinham menos de 40px** — abaixo do que o dedo acerta.
+4. Um nome de fornecedor longo quebrava em quatro linhas e a linha da tabela
+   ficava com altura de parágrafo: três títulos e a tela acabava.
+
+**O que ficou.** A barra de cima rola dentro dela mesma. Os filtros viraram
+uma **gaveta** que abre por cima, com um botão flutuante que mostra quantos
+filtros estão ligados ("Filtros 5") — conteúdo primeiro, filtro quando se
+quiser. Alvos de 44px. Cartões de número apertados, dois por linha. Célula em
+uma linha só, cortada com reticências, já que a tabela rola de lado — e a
+**primeira coluna fica fixa**, para não se perder de qual linha é o número.
+
+**A prova de que o computador não mudou.** Fotografei as 14 telas a 1500px
+ANTES e DEPOIS da mudança e comparei os arquivos: **13 são byte a byte
+idênticas**. A décima quarta difere em 6 pixels, na curva do canto do campo de
+busca, cada um com diferença de 1 em 255 num único canal de cor — invisível, e
+nenhum layout se moveu (a imagem tem exatamente a mesma altura). O mesmo
+método serve para a próxima vez: guardar a mudança de lado (`git stash`),
+fotografar, trazer de volta, fotografar e comparar.
+
+Tudo o que este trabalho acrescentou vive dentro de `@media (max-width:720px)`
+no `erp.css`. A única regra fora do `@media` é a que mantém o botão da gaveta
+invisível no computador — e é ela que garante que ele nunca vaze para lá.
+
+**Verificado:** 14 telas percorridas no celular, abrindo e fechando a gaveta em
+cada uma, sem um único erro de JavaScript; nenhuma tela estoura a largura; e
+no computador o botão não aparece em nenhuma delas.
+
+**Ainda NÃO é a etapa 2.** Tabela com 10 colunas continua rolando de lado no
+telefone: dá para consultar, não é confortável para operar. As telas que se
+opera de pé — responder a conferência da locação, autorizar, consultar um
+título — ganham desenho próprio na etapa seguinte.
+
 ### O que está pendente AGORA
 
 1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
@@ -754,6 +803,12 @@ dessas coisas aparece num teste que só olha o HTML que o servidor mandou.
   esconde a linha de resumo. Rode sem `-q`.
 - A sessão dublada dos testes ignora `WHERE`: regra de escopo nova ganha um
   caso em `tests/test_escopo_banco.py`, não só no dublê.
+- **Antes de acreditar numa medição de tela, confira se está logado.** Uma
+  varredura inteira mediu a tela de LOGIN 14 vezes e disse "está tudo certo",
+  porque o Postgres do contêiner tinha caído e o login falhava em silêncio. O
+  que salvou foi abrir a captura de tela e olhar. Medida sem foto engana.
+- **O Postgres do contêiner cai sozinho** (memória). Religar com
+  `pg_ctl -D /var/lib/postgresql/erpteste -o '-p 5433 …' start`.
 - **Nome que não existe, endereço que não existe.** Duas varreduras rodam
   junto com a suíte e recusam as duas coisas:
   `tests/test_nomes_indefinidos.py` (nenhuma função pode citar um nome que o

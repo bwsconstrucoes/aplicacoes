@@ -54,6 +54,14 @@
   <main class="principal">{% block conteudo %}{% endblock %}</main>
 </div>
 
+{# No celular os filtros viram gaveta, e este é o botão que abre. Ele nasce
+   escondido e só aparece se a tela TIVER filtros — quem decide é o código lá
+   embaixo, olhando o que a tela pôs dentro do <aside>. No computador o botão
+   nunca aparece: o estilo só o mostra abaixo de 720px. #}
+<button type="button" class="abrir-filtros" id="abrir-filtros" hidden>
+  Filtros <span class="conta" id="conta-filtros" hidden>0</span>
+</button>
+
 <script>
 // Dinheiro e número, sempre em português.
 //
@@ -447,6 +455,60 @@ async function api(url, opcoes) {
   if (!d.ok) throw new Error(d.erro || "Falha na operação.");
   return d;
 }
+
+// ---------------------------------------------------------------------------
+// A GAVETA DE FILTROS DO CELULAR
+//
+// No computador nada disto acontece: o estilo mantém o botão invisível acima
+// de 720px, e a coluna da esquerda continua exatamente onde sempre esteve.
+//
+// No celular a coluna de filtros ocupava 857px de altura ANTES da primeira
+// linha da lista — abrir Títulos no telefone mostrava uma tela e meia de
+// caixinhas. Aqui ela vira gaveta, e o conteúdo vem primeiro.
+//
+// O botão só aparece se a tela realmente TIVER filtros. Quem responde isso é
+// o próprio <aside>: telas sem filtros o deixam vazio, e aí não há o que abrir.
+// ---------------------------------------------------------------------------
+(function gavetaDeFiltros(){
+  const aside = document.querySelector("aside.filtros");
+  const botao = document.getElementById("abrir-filtros");
+  if (!aside || !botao) return;
+  if (!aside.textContent.trim() && !aside.querySelector("input, select, button")) {
+    return;                       // tela sem filtros: o botão continua escondido
+  }
+  botao.hidden = false;
+
+  const fechar = () => document.body.classList.remove("filtros-abertos");
+  botao.addEventListener("click", () => {
+    document.body.classList.toggle("filtros-abertos");
+    contar();
+  });
+  // tocar no fundo escuro fecha; é o gesto que todo mundo tenta primeiro
+  document.addEventListener("click", ev => {
+    if (!document.body.classList.contains("filtros-abertos")) return;
+    if (aside.contains(ev.target) || botao.contains(ev.target)) return;
+    fechar();
+  });
+  document.addEventListener("keydown", ev => { if (ev.key === "Escape") fechar(); });
+
+  // Quantos filtros estão ligados — o número no botão evita a pergunta
+  // "por que a lista está assim?" com a gaveta fechada.
+  const conta = document.getElementById("conta-filtros");
+  function contar(){
+    if (!conta) return;
+    let n = aside.querySelectorAll("input[type=checkbox]:checked").length;
+    aside.querySelectorAll("input[type=search], input[type=text], input[type=number]")
+         .forEach(i => { if (i.value.trim()) n++; });
+    aside.querySelectorAll("select").forEach(s => { if (s.value) n++; });
+    conta.textContent = n;
+    conta.hidden = n === 0;
+  }
+  aside.addEventListener("change", contar);
+  aside.addEventListener("input", contar);
+  // as telas montam os filtros depois de buscar os dados, então conta-se de novo
+  new MutationObserver(contar).observe(aside, {childList: true, subtree: true});
+  contar();
+})();
 </script>
 {% block scripts %}{% endblock %}
 </body>
