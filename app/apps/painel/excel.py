@@ -85,6 +85,13 @@ def montar(abas, titulo_arquivo: str = "Relatório") -> bytes:
                 if isinstance(valor, dt.datetime):
                     valor = valor.date()
                 celula = folha.cell(row=numero, column=coluna, value=valor)
+                # Texto que comeca com "=" o Excel entende como FORMULA. As
+                # linhas do DRE chamam-se "= RESULTADO", "= Receita Liquida",
+                # "= Total Custos/Despesas" — e chegavam na planilha como
+                # formula invalida, mostrando erro no lugar do rotulo. Forcar o
+                # tipo texto resolve sem mexer no rotulo que o dono conhece.
+                if isinstance(valor, str) and valor.lstrip().startswith(("=", "+", "-", "@")):
+                    celula.data_type = "s"
                 if isinstance(valor, dt.date):
                     celula.number_format = FORMATO_DATA
                 elif isinstance(valor, (int, float)) and not isinstance(valor, bool):

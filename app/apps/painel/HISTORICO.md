@@ -80,6 +80,53 @@ alguém abrir a tela publicada:
 
 </details>
 
+### 08/09/2026 — os juros que sumiam do resultado
+
+O dono comparou duas telas da mesma obra: **Visão Geral R$ 931.718,04** contra
+**DRE R$ 888.419,91**. A diferença, **R$ 43.298,13**, era exatamente a linha
+"Juros e Multas Pagos".
+
+**A causa:** de todo o `consultas.py`, só o **DRE** e o **Analítico** somavam os
+encargos. Visão Geral, Resultado por Obra, Comprometido × Executado, o gráfico
+do DRE, as três telas de caixa e — o mais grave — a **base da Prestação de
+Contas** somavam só o principal. O resultado saía maior do que é, e o que se
+dividia entre os sócios também.
+
+**Não foi defeito da conversão.** O Streamlit original fazia igual: `Encargo`
+aparece em duas linhas do arquivo de referência, as duas dentro do DRE. A
+Visão Geral dele calculava `desp = Comprometido.sum()`, sem encargo. Confirmado
+lendo `referencia_streamlit/telas_streamlit.py` antes de mexer.
+
+**A decisão foi do dono**, com a pergunta posta e o custo dito: *"eu considero
+que seja despesa também"*, *"não pode dar uma visão de resultado de obras sem
+essa informação"*, e **"todas as telas, prestação incluída"** — sabendo que o
+resultado dividido entre os sócios diminui e passa a discordar de acerto feito
+com número antigo.
+
+**Como ficou:** duas medidas novas, `COMPROMETIDO_COM_ENCARGO` e
+`EXECUTADO_COM_ENCARGO`, mais `MOVIMENTO_DE_CAIXA` para as telas de caixa (juros
+pago sai da conta como qualquer pagamento). **Use-as em qualquer soma de
+despesa** — o `COMPROMETIDO` cru só serve para receita.
+
+**O que NÃO mudou, de propósito:**
+- **a aba Despesas por grupo/categoria**: encargo não tem categoria no plano de
+  contas do OMIE, e a decisão de 03/09 (linha própria só na planilha) continua;
+- **o lado da receita**: juros recebido é receita financeira, outra conversa;
+- **o custo de pessoal do rateio**: é peso de proporção, não total.
+
+**A conferência que vale:** há teste com banco de verdade exigindo que Visão
+Geral, DRE, Resultado por Obra, Comprometido × Executado, Top Credores, caixa e
+Prestação de Contas **deem o mesmo número** sobre a mesma base. É a classe do
+problema, não o caso — qualquer tela que volte a somar só o principal quebra a
+suíte.
+
+E os **R$ 999 de juros previstos** num título em aberto continuam fora: encargo
+só entra quando foi pago. Isso já era assim e o teste guarda.
+
+**Custou 15 testes atualizados**, cada um por 25 centavos-de-cenário a mais de
+despesa. Nenhum deles era código quebrado — era a regra mudando, e o número
+antigo virou o número errado.
+
 ### 08/09/2026 — o gráfico que engolia a tela
 
 O dono mandou uma foto da Visão Geral filtrada numa obra: o gráfico ocupava
