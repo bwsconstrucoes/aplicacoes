@@ -1333,3 +1333,160 @@ def hipotese_de_distribuicao(por_socio: list[dict], disponivel: float) -> list[d
     return [{"socio": l["socio"], "saldo": l["saldo"],
              "pct": l["saldo"] / total * 100,
              "valor": l["saldo"] / total * disponivel} for l in base]
+
+
+# ---------------------------------------------------------------------------
+# Explorador de lançamentos
+# ---------------------------------------------------------------------------
+# Todas as outras telas olham só o DRE. Esta olha a BASE INTEIRA — DRE, Fluxo de
+# Caixa e transferências — porque ela existe para achar o que está classificado
+# errado, e o erro quase sempre é o lançamento estar na análise errada.
+#
+# Veio do painel Streamlit (documento de passagem de 08/09/2026): é a tela com
+# que se encontra o título sem apropriação, o aporte lançado como despesa, o
+# empréstimo fora da categoria certa.
+
+# Quantas linhas a tela mostra. A planilha leva tudo: aqui o teto existe para o
+# navegador não morrer com trinta mil linhas de tabela.
+TETO_DO_EXPLORADOR = 3000
+
+# Onde a busca por texto procura. São os três campos que a pessoa lê para
+# reconhecer um lançamento.
+BUSCA_DO_EXPLORADOR = ("razao_social", "numero_documento", "observacao")
+
+
+def opcoes_do_explorador() -> dict:
+    """As listas dos filtros, tiradas do que EXISTE na base.
+
+    Sem filtro de análise: o explorador enxerga tudo, e uma lista que só
+    mostrasse o DRE esconderia justamente o que se procura."""
+    def _distintos(coluna, rotulo_vazio=None):
+        onde = "" if rotulo_vazio else f" WHERE COALESCE(TRIM({coluna}),'') <> ''"
+        sql = (f"SELECT DISTINCT COALESCE(NULLIF(TRIM({coluna}),''), "
+               f"       '{rotulo_vazio}') FROM fato{onde} ORDER BY 1"
+               if rotulo_vazio else
+               f"SELECT DISTINCT TRIM({coluna}) FROM fato{onde} ORDER BY 1")
+        return [v for (v,) in consultar(sql)]
+
+    def calcular():
+        return {
+            "analises": _distintos("analise"),
+            "grupos": _distintos("grupo"),
+            "categorias": _distintos("categoria"),
+            "obras": _distintos("departamento", SEM_OBRA),
+            "projetos": _distintos("projeto"),
+            "contas": _distintos("conta_corrente"),
+            "situacoes": _distintos("situacao"),
+        }
+
+    return _lembrando(("opcoes_do_explorador",), calcular)
+
+
+COLUNAS_DO_EXPLORADOR = (
+    "codigo_lancamento", "data", "tipo", "analise", "grupo", "categoria",
+    "codigo_categoria", "departamento", "projeto", "razao_social",
+    "numero_documento", "conta_corrente", "situacao",
+    "pago_recebido", "a_pagar_receber", "observacao",
+)
+
+
+def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
+    """Monta o WHERE do explorador a partir do que a pessoa escolheu."""
+    condicoes, params = [], []
+
+    tipo = pedido.get("tipo") or ""
+    if tipo in ("pagar", "receber"):
+        condicoes.append("tipo = ?")
+        params.append(PAG if tipo == "pagar" else REC)
+
+    analises = [a for a in pedido.get("analises") or [] if a]
+    if analises:
+        condicoes.append("analise = ANY(?)")
+        params.append(analises)
+    elif not pedido.get("com_trf"):
+        # Transferência é dinheiro trocando de conta da própria empresa: ela
+        # dobra qualquer soma e polui a busca. Fica de fora até alguém pedir.
+        condicoes.append("COALESCE(analise,'') <> 'TRF'")
+
+    for campo, coluna in (("grupos", "grupo"), ("categorias", "categoria"),
+                          ("projetos", "projeto"), ("contas", "conta_corrente"),
+                          ("situacoes", "situacao")):
+        escolhidos = [v for v in pedido.get(campo) or [] if v]
+        if escolhidos:
+            condicoes.append(f"TRIM(COALESCE({coluna},'')) = ANY(?)")
+            params.append(escolhidos)
+
+    obras = [o for o in pedido.get("obras") or [] if o]
+    if obras:
+        condicoes.append(f"{OBRA_OU_SEM} = ANY(?)")
+        params.append(obras)
+
+    busca = (pedido.get("busca") or "").strip()
+    if busca:
+        condicoes.append("(" + " OR ".join(
+            f"{c} ILIKE ?" for c in BUSCA_DO_EXPLORADOR) + ")")
+        params.extend([f"%{busca}%"] * len(BUSCA_DO_EXPLORADOR))
+
+    # A faixa de data DEIXA PASSAR o que não tem data — ao contrário do
+    # Analítico. Aqui a pergunta é "onde está o lançamento errado", e lançamento
+    # sem data é justamente um dos que se procura.
+    if pedido.get("de"):
+        condicoes.append("(data IS NULL OR data >= CAST(? AS DATE))")
+        params.append(pedido["de"])
+    if pedido.get("ate"):
+        condicoes.append("(data IS NULL OR data <= CAST(? AS DATE))")
+        params.append(pedido["ate"])
+
+    where = (" WHERE " + " AND ".join(condicoes)) if condicoes else ""
+    return where, params
+
+
+def explorar(pedido: dict, limite: int = TETO_DO_EXPLORADOR) -> dict:
+    """Os lançamentos que atendem ao pedido, com os totais da seleção INTEIRA.
+
+    `titulos` conta códigos distintos: um título rateado entre três obras vira
+    três linhas aqui, e dizer que são três títulos enganaria quem for alterar."""
+    where, params = _onde_do_explorador(pedido)
+
+    totais = consultar(
+        f"""SELECT COUNT(*), COUNT(DISTINCT codigo_lancamento),
+                   COALESCE(SUM(pago_recebido), 0),
+                   COALESCE(SUM(a_pagar_receber), 0)
+              FROM fato{where}""", params)[0]
+
+    colunas = ", ".join(COLUNAS_DO_EXPLORADOR)
+    linhas = [dict(zip(COLUNAS_DO_EXPLORADOR, bruta)) for bruta in consultar(
+        f"""SELECT {colunas} FROM fato{where}
+             ORDER BY data DESC NULLS LAST, codigo_lancamento DESC
+             LIMIT {int(limite)}""", params)]
+    for linha in linhas:
+        for campo in ("pago_recebido", "a_pagar_receber"):
+            linha[campo] = float(linha[campo] or 0)
+
+    return {
+        "linhas": linhas,
+        "quantos": totais[0] or 0,
+        "titulos": totais[1] or 0,
+        "pago": float(totais[2] or 0),
+        "aberto": float(totais[3] or 0),
+        "cortou": (totais[0] or 0) > len(linhas),
+    }
+
+
+def resumo_do_explorador(pedido: dict, limite: int = 300) -> list[dict]:
+    """Análise × Grupo × Categoria da seleção — para enxergar o padrão antes de
+    sair alterando título a título."""
+    where, params = _onde_do_explorador(pedido)
+    sql = f"""
+        SELECT COALESCE(NULLIF(TRIM(analise),''), '(sem análise)'),
+               COALESCE(NULLIF(TRIM(grupo),''), '(sem grupo)'),
+               COALESCE(NULLIF(TRIM(categoria),''), '(sem categoria)'),
+               COUNT(*), COALESCE(SUM(pago_recebido), 0),
+               COALESCE(SUM(a_pagar_receber), 0)
+          FROM fato{where}
+         GROUP BY 1, 2, 3
+         ORDER BY COUNT(*) DESC LIMIT {int(limite)}"""
+    campos = ("analise", "grupo", "categoria", "linhas", "pago", "aberto")
+    return [dict(zip(campos, (l[0], l[1], l[2], l[3],
+                             float(l[4] or 0), float(l[5] or 0))))
+            for l in consultar(sql, params)]

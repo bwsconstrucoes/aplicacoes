@@ -844,6 +844,59 @@ def _aplicar_mudanca_da_prestacao(dados, form):
                 dados.salvar_config(chave, form[chave])
 
 
+# ---------------------------------------------------------------------------
+# Explorador de lancamentos — saneamento da base
+# ---------------------------------------------------------------------------
+# FORA do menu principal, de proposito: e ferramenta de manutencao, nao
+# relatorio. Chega-se a ela por Configuracoes. O dono pediu assim — "uma tela
+# mais escondida, para nao ser algo tao exposto".
+def _pedido_do_explorador():
+    """Le da URL o que a pessoa escolheu nos filtros."""
+    de, ate = _faixa_de_data()
+    return {
+        "tipo": request.args.get("tipo", ""),
+        "analises": request.args.getlist("analise"),
+        "grupos": request.args.getlist("grupo"),
+        "categorias": request.args.getlist("categoria"),
+        "obras": request.args.getlist("obra"),
+        "projetos": request.args.getlist("projeto"),
+        "contas": request.args.getlist("conta"),
+        "situacoes": request.args.getlist("situacao"),
+        "busca": (request.args.get("busca") or "").strip(),
+        "com_trf": request.args.get("trf") == "1",
+        "de": de, "ate": ate,
+    }
+
+
+@bp.route("/explorador")
+def explorador():
+    """Procura um lancamento em QUALQUER lugar da base — inclusive fora do DRE.
+
+    As outras telas olham so o DRE. Esta olha tudo, porque ela existe para achar
+    o que esta classificado errado, e o erro quase sempre e o lancamento estar
+    na analise errada."""
+    from . import consultas
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+
+    pedido = _pedido_do_explorador()
+    # so busca quando ha algum filtro: abrir a tela e varrer as 185 mil linhas
+    # para mostrar as 3.000 mais recentes nao ajuda ninguem e custa caro
+    escolheu = any(pedido[c] for c in ("tipo", "analises", "grupos", "categorias",
+                                       "obras", "projetos", "contas", "situacoes",
+                                       "busca", "de", "ate"))
+    dados = consultas.explorar(pedido) if escolheu else None
+    return render_template(
+        "painel_explorador.html",
+        aba_ativa="config", abas=ABAS,
+        pedido=pedido, escolheu=escolheu, dados=dados,
+        resumo=consultas.resumo_do_explorador(pedido) if escolheu else [],
+        opcoes=consultas.opcoes_do_explorador(),
+        sem_obra=consultas.SEM_OBRA,
+        teto=consultas.TETO_DO_EXPLORADOR,
+    )
+
+
 @bp.route("/configuracoes")
 def configuracoes():
     from . import migracoes_runner, tarefas
@@ -1012,6 +1065,11 @@ def baixar(assunto):
         "despesas": lambda: [("Despesas", C["despesas"], consultas.despesas_por(
             f, quebra=request.args.get("quebra", "grupo"),
             visao=request.args.get("visao", "comprometido"), limite=1000))],
+        # o explorador leva TUDO que o filtro pegou, nao as 3.000 da tela: e para
+        # isso que se baixa o arquivo
+        "explorador": lambda: [("Lancamentos", C["explorador"],
+                                consultas.explorar(_pedido_do_explorador(),
+                                                   limite=50000)["linhas"])],
         "credores": lambda: [("Top Credores", C["credores"],
                               consultas.top_credores(f, limite=1000))],
         "medicoes": lambda: [("Receita de Obra", C["medicoes"], consultas.medicoes(

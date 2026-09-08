@@ -1,0 +1,208 @@
+{% extends "painel_base.html" %}
+{% block titulo %}Explorador de lançamentos — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% macro caixa_multipla(nome, rotulo, itens, escolhidos, altura=120) %}
+<div class="campo">
+  <label for="{{ nome }}">{{ rotulo }}</label>
+  <select id="{{ nome }}" name="{{ nome }}" multiple size="4"
+          style="height:{{ altura }}px">
+    {% for i in itens %}
+      <option value="{{ i }}" {% if i in escolhidos %}selected{% endif %}>{{ i }}</option>
+    {% endfor %}
+  </select>
+</div>
+{% endmacro %}
+
+{% block conteudo %}
+<h2>Explorador de lançamentos
+  <small>procura em toda a base, não só no DRE</small>
+</h2>
+
+<p class="dica" style="margin-top:-6px">
+  As outras telas mostram só o <b>DRE</b>. Esta mostra <b>tudo</b> — DRE, Fluxo
+  de Caixa e transferências —, porque ela existe para <b>achar o que está
+  classificado errado</b>, e o erro quase sempre é o lançamento estar na
+  análise errada. Procure por <b>{{ sem_obra }}</b> na Obra para achar o que
+  ficou sem apropriação.<br>
+  Aqui nada é alterado: é uma tela de procurar.
+</p>
+
+<div class="cartao">
+  <form method="get">
+    <div class="form-grade">
+      <div class="campo">
+        <label for="busca">Buscar</label>
+        <input id="busca" name="busca" type="search" value="{{ pedido.busca }}"
+               placeholder="cliente/fornecedor, documento ou observação">
+      </div>
+      <div class="campo">
+        <label for="tipo">Tipo</label>
+        <select id="tipo" name="tipo">
+          <option value="">Todos</option>
+          <option value="pagar" {% if pedido.tipo == 'pagar' %}selected{% endif %}>A pagar</option>
+          <option value="receber" {% if pedido.tipo == 'receber' %}selected{% endif %}>A receber</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="de">Data — de</label>
+        <input id="de" name="de" type="date" value="{{ pedido.de }}">
+      </div>
+      <div class="campo">
+        <label for="ate">Data — até</label>
+        <input id="ate" name="ate" type="date" value="{{ pedido.ate }}">
+      </div>
+    </div>
+
+    <div class="form-grade" style="margin-top:10px">
+      {{ caixa_multipla('analise', 'Análise', opcoes.analises, pedido.analises) }}
+      {{ caixa_multipla('grupo', 'Grupo', opcoes.grupos, pedido.grupos) }}
+      {{ caixa_multipla('categoria', 'Categoria', opcoes.categorias, pedido.categorias) }}
+      {{ caixa_multipla('obra', 'Obra', opcoes.obras, pedido.obras) }}
+      {{ caixa_multipla('projeto', 'Projeto', opcoes.projetos, pedido.projetos) }}
+      {{ caixa_multipla('conta', 'Conta corrente', opcoes.contas, pedido.contas) }}
+      {{ caixa_multipla('situacao', 'Situação', opcoes.situacoes, pedido.situacoes) }}
+    </div>
+
+    <div class="tabela-barra" style="border:0; padding-left:0">
+      <label style="display:flex; align-items:center; gap:6px; font-size:13px">
+        <input type="checkbox" name="trf" value="1" {% if pedido.com_trf %}checked{% endif %}>
+        Incluir transferências entre contas
+      </label>
+      <span class="espaco"></span>
+      <a class="btn secundario" style="text-decoration:none"
+         href="{{ url_for('painel.explorador') }}">Limpar</a>
+      <button class="btn">Procurar</button>
+    </div>
+    <p class="cartao-dica">
+      Escolher vários numa lista: segure Ctrl (ou Cmd no Mac) e clique.
+      Nada selecionado numa lista quer dizer "todos".
+    </p>
+  </form>
+</div>
+
+{% if not escolheu %}
+  <div class="aviso info" style="margin-top:14px">
+    <b>Escolha ao menos um filtro e clique em Procurar.</b>
+    Abrir a base inteira para mostrar as mais recentes não ajuda a achar nada —
+    e custa caro.
+  </div>
+{% elif not dados.linhas %}
+  <div class="vazio" style="margin-top:14px">
+    <b>Nada encontrado</b>Nenhum lançamento com esses filtros.
+  </div>
+{% else %}
+
+<div class="kpis" style="margin-top:14px">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Linhas</div>
+    <div class="kpi-valor">{{ '{:,}'.format(dados.quantos).replace(',', '.') }}</div>
+    <div class="kpi-sub">um título rateado em três obras são três linhas</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Títulos</div>
+    <div class="kpi-valor">{{ '{:,}'.format(dados.titulos).replace(',', '.') }}</div>
+    <div class="kpi-sub">códigos distintos no OMIE</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Pago / recebido</div>
+    <div class="kpi-valor {{ classe_valor(dados.pago) }}">{{ brl(dados.pago) }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">A pagar / receber</div>
+    <div class="kpi-valor {{ classe_valor(dados.aberto) }}">{{ brl(dados.aberto) }}</div>
+  </div>
+</div>
+
+{% if resumo %}
+<details class="cartao" style="margin-bottom:14px">
+  <summary style="cursor:pointer; font-weight:600">
+    Resumo por Análise × Grupo × Categoria ({{ resumo | length }} combinações)
+  </summary>
+  <p class="cartao-dica">Enxergar o padrão antes de sair alterando título a título.</p>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Análise</th>
+          <th class="sem-ordem">Grupo</th>
+          <th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem direita">Linhas</th>
+          <th class="sem-ordem direita">Pago/Recebido</th>
+          <th class="sem-ordem direita">A pagar/receber</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for r in resumo %}
+        <tr>
+          <td>{{ r.analise }}</td>
+          <td class="desc">{{ r.grupo }}</td>
+          <td class="desc">{{ r.categoria }}</td>
+          <td class="dados direita">{{ r.linhas }}</td>
+          <td class="dados direita {{ classe_valor(r.pago) }}">{{ brl(r.pago) }}</td>
+          <td class="dados direita {{ classe_valor(r.aberto) }}">{{ brl(r.aberto) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo">
+      {% if dados.cortou %}
+        Mostrando as <b>{{ '{:,}'.format(teto).replace(',', '.') }}</b> mais
+        recentes de {{ '{:,}'.format(dados.quantos).replace(',', '.') }} —
+        a planilha leva todas.
+      {% else %}
+        Todas as <b>{{ '{:,}'.format(dados.quantos).replace(',', '.') }}</b> linhas.
+      {% endif %}
+    </span>
+    <span class="espaco"></span>
+    <a class="btn secundario" style="text-decoration:none"
+       href="{{ link_baixar('explorador') }}">⬇ Baixar Excel</a>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Cód. OMIE</th>
+          <th class="sem-ordem">Data</th>
+          <th class="sem-ordem">Tipo</th>
+          <th class="sem-ordem">Análise</th>
+          <th class="sem-ordem">Categoria</th>
+          <th class="sem-ordem">Obra</th>
+          <th class="sem-ordem">Cliente ou Fornecedor</th>
+          <th class="sem-ordem">Documento</th>
+          <th class="sem-ordem">Situação</th>
+          <th class="sem-ordem direita">Pago/Receb.</th>
+          <th class="sem-ordem direita">A pagar/receb.</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for l in dados.linhas %}
+        <tr>
+          <td class="dados">{{ l.codigo_lancamento }}</td>
+          <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
+          <td><small>{{ 'A pagar' if '2.' in (l.tipo or '') else 'A receber' }}</small></td>
+          <td><small>{{ l.analise or '—' }}</small></td>
+          <td class="desc">{{ l.categoria or '—' }}<small>{{ l.grupo or '' }}</small></td>
+          <td class="desc">{{ l.departamento or '—' }}<small>{{ l.projeto or '' }}</small></td>
+          <td class="desc">{{ l.razao_social or '—' }}
+            {% if l.observacao %}<small>{{ l.observacao[:60] }}</small>{% endif %}</td>
+          <td class="dados">{{ l.numero_documento or '—' }}</td>
+          <td><small>{{ l.situacao or '—' }}</small></td>
+          <td class="dados direita {{ classe_valor(l.pago_recebido) }}">
+            {{ brl(l.pago_recebido) if l.pago_recebido else '—' }}</td>
+          <td class="dados direita {{ classe_valor(l.a_pagar_receber) }}">
+            {{ brl(l.a_pagar_receber) if l.a_pagar_receber else '—' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
