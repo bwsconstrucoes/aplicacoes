@@ -866,12 +866,58 @@ título, precisa confirmar, é tarifa) — assim o mesmo arquivo não é lido du
 vezes nem gasta IA duas vezes, e há onde olhar quando alguém pergunta "o que
 aconteceu com aquele comprovante que mandei?".
 
+### Velocidade: o que cresce e o que não cresce — 08/09/2026
+
+O dono perguntou, e a pergunta é boa: *"e quando essa base de dados for
+crescendo? Como é que é a estratégia de manter isso rápido?"*. Ele estava
+comparando com o Análise de SPs, que anda devagar, e supôs que fosse por ler
+uma planilha de 59 mil linhas.
+
+**Não é a planilha, e não é o volume.** O Análise de SPs já lê Postgres, com
+índice nas colunas por onde as telas filtram; o ERP tem 73 índices nas dele. 59
+mil linhas é POUCO para um banco. A prova de que o gargalo é outro veio dele
+mesmo: *"fui fazer um processamento volumoso numa outra aplicação e ficou bem
+lento o Análise de SPs"*. Se fosse volume de dados, mexer em outra aplicação
+não mudaria nada.
+
+**O gargalo é a máquina compartilhada**: 18 módulos num processo só, 2 GB, e
+`--workers 1` obrigatório por causa do estado em memória do `chatbot`. Um
+trabalho pesado toma a fila e todo mundo espera.
+
+O que NÃO fica lento crescendo (tem índice): abrir tela filtrada, procurar SP,
+abrir título, listar vencimentos, lançar, aprovar, baixar.
+
+O que VAI pesar, em ordem de chegada:
+1. **Os anexos dentro do banco** — o que mais cresce em tamanho. Virou item de
+   fila por decisão do dono (ver `ROTEIRO.md`).
+2. **Os números do topo das telas**, que somam tudo.
+3. **A busca "contém" em texto**, que índice comum não acelera.
+4. **As listas param em 500 registros e não têm próxima página** — hoje isso é
+   o que as mantém rápidas; um dia vira "não alcanço o que é antigo".
+
+**A ordem para resolver, do barato ao caro**, registrada para não se inverter:
+separar o trabalho pesado das telas (custo zero) → aumentar o plano do Render
+(um botão) → tirar a trava do processo único (senão o plano maior rende pouco)
+→ anexos para fora do banco → totais pré-calculados → serviço separado só do
+ERP.
+
+**Notícia que muda o horizonte, dada pelo dono no mesmo dia:** *"todas as
+outras aplicações vão deixar de ser necessárias depois que o ERP estiver 100%"*.
+Ou seja, o problema de vizinhança se resolve sozinho por encolhimento — mas
+**dentro do ERP** continuará havendo trabalho pesado (leitura por IA,
+importação, relatório, e o assistente virtual que ele quer), e esse é o que
+precisa sair da frente das telas.
+
+⚠️ **Não foi medido em produção** — daqui não há acesso a ela. O que foi lido
+foi o código e a estrutura do banco. A tela de saúde do sistema (na fila)
+existe justamente para trocar palpite por número.
+
 ### O que está pendente AGORA
 
-1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
-   a senha da conta de e-mail das empresas. Gera-se uma vez com
-   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
-   Sem ela tudo funciona, menos guardar senha de e-mail.
+1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
+   É ela que cifra a senha da conta de e-mail das empresas. ⚠️ **Nunca trocar
+   essa chave depois que houver senha guardada**: as senhas antigas viram lixo
+   e têm de ser digitadas de novo.
 2. **`EL_NFSE_TOKEN` SAIU DA URGÊNCIA (07/09/2026).** Ele pertence ao módulo
    `emissaonf`, que emite nota de serviço e está **em espera** por decisão do
    dono — ver item 15. Enquanto o módulo não for retomado, a variável não faz
@@ -946,7 +992,8 @@ aconteceu com aquele comprovante que mandei?".
    devia. **Enxergar não é poder**: continua sem `aprovar`, `pagar`,
    `conciliar` e `ver_dados_pagamento`, com teste que quebra se alguém ampliar
    a alçada junto com a visão.
-12. **Duas variáveis novas no Render, para o agente funcionar** (07/09/2026):
+12. **RESOLVIDO em 08/09/2026 — as duas já estão no Render.** Ficam descritas
+   abaixo para quem precisar entender o que cada uma faz (07/09/2026):
    `ERP_AGENTE_SECRET` (qualquer texto longo e secreto — sem ela a rotina
    recusa, de propósito) e `ERP_URL_PUBLICA` (o endereço do ERP, ex.
    `https://erp.bwsconstrucoes.com.br`) — sem esta o link da mensagem sai
@@ -1009,15 +1056,20 @@ aconteceu com aquele comprovante que mandei?".
    `EL_NFSE_TOKEN` pertence a esse módulo parado, e por isso saiu da lista de
    urgências. Retomar quando ele pedir.
 
-20. **APERTAR "Aplicar atualizações do banco" para a migração 042** (a trava
+20. **RESOLVIDO em 08/09/2026 — as quatro variáveis foram criadas no Render
+   pelo dono, e o deploy foi feito.** `ERP_CHAVE_SEGREDOS`,
+   `ERP_AGENTE_SECRET`, `ERP_COMPROVANTE_SECRET` e `ERP_URL_PUBLICA` estão
+   definidas. Falta conferir, quando o agente rodar pela primeira vez, se o
+   link que chega na mensagem abre a tela certa — é o único jeito de saber se
+   a `ERP_URL_PUBLICA` está com o endereço certo.
+
+21. **APERTAR "Aplicar atualizações do banco" para a migração 042** (a trava
    contra baixa em duplicidade), assim que o ramo entrar na `main`. Sem ela o
    ERP sobe, mas anexar comprovante pela tela dá erro — a tabela da trava não
    existe ainda. É o mesmo botão de sempre, em Configurações.
 
-21. **Definir `ERP_COMPROVANTE_SECRET` no Render** e apontar o cenário do Make
-   para o endereço de lote dos comprovantes. Enquanto não for definido, o
-   caminho pela TELA funciona normalmente; só a entrada automática do Make
-   fica fechada — e fica fechada com segurança, recusando qualquer chamada.
+22. **Apontar o cenário do Make** para o endereço de lote dos comprovantes. A
+   senha (`ERP_COMPROVANTE_SECRET`) já está no Render; falta o Make usá-la.
 
 ---
 

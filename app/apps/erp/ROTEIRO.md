@@ -210,6 +210,58 @@
       script de consulta de NFS-e para; (2) apertar "Aplicar atualizações do
       banco" em Configurações — juntar o código NÃO aplica a migração
 
+### Fila de DESEMPENHO — pedida pelo dono em 08/09/2026
+
+Nasceu da pergunta dele: *"e quando essa base de dados for crescendo? Como é
+que é a estratégia de manter isso rápido?"*. A resposta longa está no
+`HISTORICO.md`, seção "Velocidade: o que cresce e o que não cresce". A fila:
+
+- [ ] **ANEXOS SAEM DO BANCO E VÃO PARA O GOOGLE DRIVE.** Decidido pelo dono em
+      08/09/2026, com o motivo dele: o plano de banco é de 2 GB e ele já paga
+      2 TB de Drive por pouco. É a peça que mais cresce em tamanho.
+      Cuidados que NÃO podem ser esquecidos na hora de fazer:
+      1. **O link do Drive nunca vai para a tela.** O arquivo continua sendo
+         servido pelo endereço do ERP, que confere permissão e escopo antes de
+         entregar (hoje `exigir_anexo_no_escopo`). Link direto do Drive é link
+         que qualquer um abre — e ali tem holerite, comprovante e contrato.
+      2. **Pasta de serviço, que ninguém mexe à mão.** Arquivo movido ou
+         apagado por uma pessoa no Drive some do ERP e ninguém fica sabendo.
+      3. **A troca é num arquivo só** (`core/documentos/armazenamento.py`):
+         todo mundo já salva e lê por ele. O modelo `Anexo` até já tem a coluna
+         `dropbox_path` de legado — o caminho novo entra do lado, sem
+         reescrever quem chama.
+      4. **Mudar o jeito de guardar e mover o que já existe são DUAS etapas.**
+         Primeiro o novo passa a ir para o Drive; depois um trabalho em
+         segundo plano leva os antigos, conferindo o hash de cada um antes de
+         apagar do banco. Nada é apagado sem cópia conferida.
+      5. **O que se perde:** o ERP passa a depender do Drive estar no ar para
+         mostrar um comprovante. Hoje não depende de nada externo. É o preço,
+         e o dono aceitou sabendo.
+
+- [ ] **Separar o trabalho pesado das telas.** Carga, sincronização, leitura de
+      lote por IA e relatório grande não podem disputar com quem está usando a
+      tela. É o que mais resolve a lentidão que o dono sentiu, e não custa
+      assinatura nova.
+- [ ] **Tirar a trava do "um processo só"** (o estado em memória do `chatbot`).
+      Enquanto ela existir, aumentar o plano do Render rende menos do que
+      deveria — parte da máquina maior fica sem uso.
+- [ ] **Tela de saúde do sistema**: quanto tempo cada tela leva, quanta memória
+      o serviço usa. Para a decisão de gastar deixar de ser palpite.
+- [ ] Números do topo das telas pré-calculados, quando as somas começarem a
+      pesar. Não antes.
+- [ ] Listas do ERP com "próxima página" — hoje elas param em 500 registros e
+      não há como alcançar o que é mais antigo sem filtrar.
+
+### Assistente virtual para os colaboradores — ideia registrada em 08/09/2026
+
+Palavras do dono: *"eu tenho algumas ideias de utilização de inteligência
+artificial para dialogar com os colaboradores, assistente virtual, coisas desse
+tipo"*. Ainda não foi detalhado e **não está na fila** — está aqui para não se
+perder. Quando ele retomar, o que já existe e serve de base: o `chatbot` e o
+`whatsapp_gateway` (canal), o `notificador` (envio), o controle de consumo de
+IA com teto (migração 030) e o agente de cobrança (migração 040), que já é um
+robô que fala com pessoas por WhatsApp a partir de pendência do banco.
+
 ## Decisões registradas
 
 | Assunto | Decisão |
