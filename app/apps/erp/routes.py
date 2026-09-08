@@ -88,6 +88,7 @@ MODULOS = [
             ("sup_cotacoes", "Cotações", "erp.pagina_suprimentos_cotacoes"),
             ("sup_pedidos", "Pedidos", "erp.pagina_suprimentos_pedidos"),
             ("locacoes", "Locações", "erp.pagina_locacoes"),
+            ("sup_compras", "Compras", "erp.pagina_compras"),
             ("sup_precos", "Banco de preços", "erp.pagina_suprimentos_precos"),
             ("sup_cadastros", "Cadastros", "erp.pagina_suprimentos_insumos"),
         ],
@@ -5174,6 +5175,52 @@ def api_locacao_acao(contrato_id: int, acao: str):
 # confere o que o agente FARIA hoje antes de deixá-lo solto — e foi assim que
 # ele foi verificado antes de ir para produção.
 # ---------------------------------------------------------------------------
+@bp.route("/erp/suprimentos/compras")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def pagina_compras():
+    return render_template("erp_suprimentos_compras.html",
+                           **_contexto("sup_compras"))
+
+
+@bp.route("/erp/api/suprimentos/compras")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_compras():
+    """O que cada obra comprou, aberto até o insumo — e o contrário.
+
+    O escopo da pessoa entra na consulta, não na tela: quem enxerga só as
+    obras dele não descobre o gasto das outras por um relatório.
+    """
+    from datetime import date as _date
+    from app.apps.erp.core.suprimentos import compras as svc
+
+    def _numero(nome):
+        valor = (request.args.get(nome) or "").strip()
+        return int(valor) if valor.isdigit() else None
+
+    def _data(nome):
+        valor = (request.args.get(nome) or "").strip()
+        try:
+            return _date.fromisoformat(valor) if valor else None
+        except ValueError:
+            return None
+
+    filtros = dict(
+        obra_id=_numero("obra_id"), insumo_id=_numero("insumo_id"),
+        categoria_id=_numero("categoria_id"), fornecedor_id=_numero("fornecedor_id"),
+        de=_data("de"), ate=_data("ate"),
+        busca=(request.args.get("busca") or "").strip(),
+        incluir_pendentes=request.args.get("pendentes") == "1",
+    )
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        dados = svc.arvore(s, agrupar=request.args.get("agrupar", "obra"),
+                           usuario=usuario, **filtros)
+        dados["linhas"] = svc.linhas(s, usuario=usuario, **filtros)
+        return jsonify({"ok": True, **dados})
+
+
 @bp.route("/erp/api/agente/rodar", methods=["POST"])
 @permissao_publica("chamada por rotina externa; a guarda é o ERP_AGENTE_SECRET "
                    "no corpo do pedido, como nos demais módulos do monorepo")

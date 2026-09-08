@@ -645,6 +645,52 @@ gente para uma lista, e quem está no canteiro não procura nada.
 se saiu mesmo. É a resposta para "o Ruan foi cobrado?" — a pergunta que aparece
 quando a obra diz que não sabia.
 
+### Compras: o que cada obra comprou, aberto até o insumo — 07/09/2026
+
+O dono pediu duas coisas na mesma frase: *"de pedido a gente vai conseguir ver
+tudo de uma obra"* e *"eu quero ver tudo que foi de cimento, tudo que foi de
+cerâmica"*.
+
+São **a mesma consulta lida dos dois lados**, e por isso é UMA tela, não duas —
+duas divergiriam no primeiro mês. Um seletor troca o agrupamento: por obra
+(abre até o insumo), por insumo (abre até a obra), por categoria ou por
+fornecedor. Cada linha abre e fecha: fechada responde "quanto", aberta responde
+"em quê", que é a pergunta seguinte, sempre.
+
+**Só conta pedido AUTORIZADO.** Pedido esperando autorização ainda pode não
+acontecer, e recusado não aconteceu — somá-los faria o relatório dizer que a
+obra gastou o que não gastou. Quem quiser ver o que está em andamento marca a
+caixa, e a tela explica por que ela existe.
+
+**A obra e o insumo não vêm do pedido**, vêm da SOLICITAÇÃO que originou cada
+linha dele — e a obra é do ITEM, não da solicitação, porque uma mesma
+solicitação pede material para obras diferentes.
+
+**O escopo entra na consulta.** Quem enxerga só as obras dele não descobre o
+gasto das outras por um relatório — há teste com banco de verdade provando que
+nem pelo caminho do insumo ele alcança a obra alheia. Um relatório não pode ser
+a porta dos fundos por onde se vê o que a tela de títulos esconde.
+
+Exporta em Excel e PDF **linha a linha**, não a árvore: planilha com hierarquia
+não se soma nem se filtra.
+
+### O sexto defeito silencioso — e a varredura que fecha a classe
+
+A tela nasceu com `{% block script %}` em vez de `{% block scripts %}`. Uma
+letra. A base não conhece `script`, então o conteúdo foi **jogado fora ao
+montar a página**: nenhum erro, nenhum aviso, a tela abriu bonita e a tabela
+ficaria vazia para sempre.
+
+Agora `tests/test_telas_blocos.py` lê cada tela, vê de qual página ela herda, e
+cobra que todo bloco declarado exista lá — dizendo, quando falha, quais a base
+oferece. Provado contra o defeito real.
+
+**E um erro meu do mesmo tipo, no mesmo dia:** os filtros de obra e fornecedor
+abriam vazios porque eu li `d.obras` quando a API embrulha tudo em
+`d.dados.obras` — e um `try` mudo engoliu a falha. É a terceira vez que um
+`try` silencioso esconde um filtro vazio neste ERP. A tela agora **avisa** se
+não conseguir carregar uma lista, em vez de fingir que está tudo bem.
+
 ### O que está pendente AGORA
 
 1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
