@@ -114,13 +114,51 @@ def test_quem_ainda_esta_no_prazo_nao_recebe_nada():
 
 
 def test_responsavel_sem_telefone_e_pulado_com_o_motivo_dito():
-    """E não derruba a varredura: é cadastro incompleto, não defeito."""
+    """E não derruba a varredura: é cadastro incompleto, não defeito.
+
+    O motivo tem de trazer o NOME. "responsável sem telefone" não diz a quem
+    ir pedir; "Ruan não tem telefone" diz."""
     ruan = novo_usuario(7, P.ADMINISTRATIVO_OBRA, nome="Ruan", ativo=True)
     ruan.telefone = None
     s = _agente_com([_pendencia(dias=12)], ruan)
     r = ag.varrer(s, simular=True)
     assert r["enviadas"] == []
-    assert any("sem telefone" in p["motivo"] for p in r["puladas"])
+    assert any("Ruan não tem telefone" in p["motivo"] for p in r["puladas"])
+
+
+def test_quando_dois_respondem_pela_obra_os_dois_recebem():
+    """Decisão do dono: "se por acaso tiverem dois, os dois recebem"."""
+    um = novo_usuario(7, P.ADMINISTRATIVO_OBRA, nome="Ruan", ativo=True)
+    um.telefone = "5585999990000"
+    outro = novo_usuario(8, P.ADMINISTRATIVO_OBRA, nome="Cleide", ativo=True)
+    outro.telefone = "5585988880000"
+    p = _pendencia(dias=12)
+    p.responsaveis = [7, 8]
+    s = _agente_com([p], um, outro)
+    r = ag.varrer(s, simular=True)
+    assert {e["para"] for e in r["enviadas"]} == {"Ruan", "Cleide"}
+
+
+def test_um_sem_telefone_nao_impede_o_outro_de_receber():
+    """Cadastro incompleto de uma pessoa não pode calar a cobrança da outra."""
+    um = novo_usuario(7, P.ADMINISTRATIVO_OBRA, nome="Ruan", ativo=True)
+    um.telefone = None
+    outro = novo_usuario(8, P.ADMINISTRATIVO_OBRA, nome="Cleide", ativo=True)
+    outro.telefone = "5585988880000"
+    p = _pendencia(dias=12)
+    p.responsaveis = [7, 8]
+    s = _agente_com([p], um, outro)
+    r = ag.varrer(s, simular=True)
+    assert [e["para"] for e in r["enviadas"]] == ["Cleide"]
+    assert any("Ruan não tem telefone" in x["motivo"] for x in r["puladas"])
+
+
+def test_pendencia_sem_ninguem_marcado_diz_isso():
+    """Silêncio aqui é o pior caso: a conferência fica aberta e ninguém sabe."""
+    s = _agente_com([_pendencia(dias=12, responsavel_id=None)])
+    r = ag.varrer(s, simular=True)
+    assert r["enviadas"] == []
+    assert any("ninguém marcado" in p["motivo"] for p in r["puladas"])
 
 
 def test_o_lembrete_vai_para_quem_tem_de_responder():

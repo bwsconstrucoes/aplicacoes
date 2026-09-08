@@ -170,13 +170,26 @@ class UsuarioPermissao(Base):
 
 
 class UsuarioObra(Base):
-    """Obras que o supervisor enxerga. Gestor vê todas; administrativo de obra
-    vê o que ele mesmo lançou."""
+    """Obras que o operador enxerga — e por quais ele RESPONDE.
+
+    Duas coisas diferentes na mesma linha, de propósito:
+
+      - estar ligado à obra é ENXERGAR (é por aqui que o escopo passa);
+      - `responsavel` é RESPONDER: é esta pessoa que a conferência mensal dos
+        equipamentos cobra, e é a ela que o agente manda mensagem.
+
+    Aceita mais de um responsável por obra — decisão do dono: "se por acaso
+    tiverem dois, a gente cadastrar dois, permitir também, os dois recebem".
+
+    Ficam na mesma tabela porque quem responde tem de enxergar. Separar em duas
+    faria as duas divergirem, e alguém responderia por obra que não abre.
+    """
     __tablename__ = "usuario_obras"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     usuario_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("usuarios.id"), nullable=False)
     obra_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("obras.id"), nullable=False)
+    responsavel: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

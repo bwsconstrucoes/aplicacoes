@@ -33,6 +33,7 @@ def listar(s: Session) -> list["ag.Pendencia"]:
             assunto="locacao_conferencia",
             referencia_id=p["id"],
             responsavel_id=p["responsavel_id"],
+            responsaveis=p.get("responsaveis") or [],
             resumo=(f"A conferência dos equipamentos locados de "
                     f"{p['competencia']} da obra {p['obra']} "
                     f"(contrato {p['contrato']}) ainda não foi respondida."),

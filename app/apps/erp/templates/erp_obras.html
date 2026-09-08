@@ -253,7 +253,18 @@ async function painel(i, id){
           filtro nas solicitações.</div></div>
         ${campo("Fiscal do contrato","o-fiscal",d.engenheiro_fiscal)}
       </div>
-      <div class="cartao-dica">O endereço serve de local de entrega nas compras.</div>
+
+      <h4 style="margin-top:16px">Quem responde por esta obra</h4>
+      <div class="cartao-dica" style="margin-bottom:8px">É quem recebe a
+        <b>conferência mensal dos equipamentos locados</b> e a cobrança do
+        sistema. <b>Pode marcar mais de um — todos recebem.</b> Marcar aqui
+        também dá acesso à obra, porque quem responde precisa conseguir abrir.
+        Desmarcar tira a responsabilidade, não o acesso.</div>
+      <div id="o-responsaveis" class="filtro-opcoes"
+           style="max-height:200px; border:1px solid var(--borda);
+                  border-radius:8px; padding:6px">carregando…</div>
+
+      <div class="cartao-dica" style="margin-top:12px">O endereço serve de local de entrega nas compras.</div>
       <div style="margin-top:12px"><button class="btn" id="o-salvar">Salvar cadastro</button></div>`;
       salvarObra(id, {codigo:"o-codigo", nome:"o-nome", cliente:"o-cliente", cnpj_cliente:"o-cnpj",
         objeto:"o-objeto", orgao_resumido:"o-orgao", endereco:"o-endereco",
@@ -261,6 +272,7 @@ async function painel(i, id){
         cep:"o-cep", cno:"o-cno", art_rrt:"o-art", responsavel_tecnico:"o-rt",
         engenheiro_fiscal:"o-fiscal", latitude:"o-lat", longitude:"o-lng",
         conta_bancaria_id:"o-conta"});
+      carregarResponsaveis(id);
       return;
     }
     if (i === 2) {
@@ -440,6 +452,52 @@ async function painel(i, id){
     <table><tbody>${hist.eventos.map(e=>`<tr><td class="dados">${e.quando}</td>
       <td><b>${rotulo(e.acao)}</b></td><td>${e.por}</td>
       <td><small>${JSON.stringify(e.detalhe).slice(0,90)}</small></td></tr>`).join("")}</tbody></table>`;
+}
+
+// ---------------------------------------------------------------------------
+// QUEM RESPONDE PELA OBRA
+//
+// A mesma informação que aparece no cadastro do operador, marcada pelo outro
+// lado — o dono pediu os dois caminhos "porque facilita o manuseio". As duas
+// telas gravam pela MESMA função no servidor, senão um dia discordariam sobre
+// quem responde.
+//
+// Salva sozinho ao marcar: é uma caixinha só, e obrigar a apertar "salvar"
+// depois de marcar uma caixinha é o tipo de passo que a pessoa esquece.
+// ---------------------------------------------------------------------------
+async function carregarResponsaveis(obraId){
+  const lugar = els("o-responsaveis");
+  if (!lugar) return;
+  try {
+    const d = await api(`/erp/api/obras/${obraId}/responsaveis`);
+    const operadores = (await api("/erp/api/usuarios")).usuarios || [];
+    const marcados = new Set(d.operadores.filter(o=>o.responsavel).map(o=>o.usuario_id));
+    lugar.innerHTML = operadores.filter(u=>u.ativo).map(u=>`
+      <label class="opcao"><input type="checkbox" class="o-resp" value="${u.id}"
+        ${marcados.has(u.id)?"checked":""}>
+        <span class="rotulo">${escapar(u.nome)}
+          <small> · ${escapar(u.perfil_rotulo || "")}${u.telefone ? "" :
+            " · sem telefone, não recebe mensagem"}</small></span></label>`).join("")
+      || `<div class="cartao-dica">Nenhum operador ativo cadastrado.</div>`;
+    lugar.querySelectorAll(".o-resp").forEach(c =>
+      c.addEventListener("change", () => salvarResponsaveis(obraId)));
+  } catch(e){
+    lugar.innerHTML = `<div class="aviso erro">Não consegui carregar os
+      operadores: ${escapar(e.message)}</div>`;
+  }
+}
+
+async function salvarResponsaveis(obraId){
+  const ids = [...document.querySelectorAll(".o-resp:checked")].map(c=>+c.value);
+  try {
+    await api(`/erp/api/obras/${obraId}/responsaveis`, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({responsaveis: ids})});
+    aviso("mensagem", ids.length
+      ? `${ids.length} pessoa(s) respondem por esta obra.`
+      : "Ninguém responde por esta obra — a conferência mensal ficará sem dono.",
+      ids.length ? "ok" : "alerta");
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 
 function salvarObra(id, mapa, extras){

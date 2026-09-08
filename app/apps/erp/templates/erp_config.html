@@ -254,12 +254,22 @@ function formOperador(u){
 
     <div id="op-obras-bloco" class="campo" style="margin-top:12px">
       <label>Obras que este operador acompanha</label>
-      <div class="filtro-opcoes" style="max-height:180px; border:1px solid var(--borda); border-radius:8px; padding:6px">
-        ${DADOS.obras.map(o=>`<label class="opcao"><input type="checkbox" class="op-obra" value="${o.id}"
-          ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${o.codigo} · ${o.nome}</span></label>`).join("")}
+      <div class="filtro-opcoes" style="max-height:220px; border:1px solid var(--borda); border-radius:8px; padding:6px">
+        ${DADOS.obras.map(o=>`<div style="display:flex; align-items:center; gap:10px">
+          <label class="opcao" style="flex:1"><input type="checkbox" class="op-obra" value="${o.id}"
+            ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${o.codigo} · ${o.nome}</span></label>
+          <label class="opcao" title="Recebe a conferência mensal dos equipamentos desta obra"
+                 style="white-space:nowrap"><input type="checkbox" class="op-resp" value="${o.id}"
+            ${(u.obras_responsavel||[]).includes(o.id)?"checked":""}
+            ><span class="rotulo" style="font-size:12px">responde</span></label>
+        </div>`).join("")}
       </div>
-      <div class="dica">Vale para o <b>supervisor</b> e para quem estiver como
-        <b>"tudo das obras designadas"</b>. Gestor vê todas as obras.</div>
+      <div class="dica"><b>Acompanha</b> é enxergar — vale para o supervisor e para
+        quem estiver como "tudo das obras designadas"; gestor vê todas.
+        <b>Responde</b> é outra coisa: é quem recebe a conferência mensal dos
+        equipamentos daquela obra e a cobrança do sistema. Pode marcar mais de
+        uma pessoa por obra — todas recebem. A mesma marca aparece no cadastro
+        da obra, e é a mesma informação.</div>
     </div>
     ${novo ? "" : `
     <div class="campo" style="margin-top:12px">
@@ -290,6 +300,14 @@ function formOperador(u){
   }
   els("op-perfil").addEventListener("change", alternarObras);
   els("op-escopo").addEventListener("change", alternarObras);
+  // Marcar "responde" liga a obra junto: responder por obra que a pessoa não
+  // enxerga daria a ela uma cobrança que ela não consegue abrir.
+  document.querySelectorAll(".op-resp").forEach(caixa =>
+    caixa.addEventListener("change", () => {
+      if (!caixa.checked) return;
+      const obra = document.querySelector(`.op-obra[value="${caixa.value}"]`);
+      if (obra && !obra.checked) obra.checked = true;
+    }));
   alternarObras();
   document.querySelectorAll("[data-grupo]").forEach(b => b.addEventListener("click", () => {
     const g = b.dataset.grupo;
@@ -336,7 +354,8 @@ function formOperador(u){
       ff_autorizado: els("op-ff").value === "1",
       ff_teto_item: els("op-ff-item").value, ff_teto_prestacao: els("op-ff-total").value,
       categorias: [...document.querySelectorAll(".op-cat:checked")].map(i=>+i.value),
-      obras: [...document.querySelectorAll(".op-obra:checked")].map(i=>+i.value)};
+      obras: [...document.querySelectorAll(".op-obra:checked")].map(i=>+i.value),
+      obras_responsavel: [...document.querySelectorAll(".op-resp:checked")].map(i=>+i.value)};
     if (els("op-senha").value) corpo.senha = els("op-senha").value;
     if (novo) { corpo.email = els("op-email").value; corpo.cpf = els("op-cpf").value; }
     try {

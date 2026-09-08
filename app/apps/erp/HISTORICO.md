@@ -729,6 +729,41 @@ confirmação por uma caixa do navegador ("Há 1 ponto de atenção. Enviar mesm
 assim?"). Funciona, mas destoa do resto do ERP, que pergunta dentro da própria
 tela. Vale trocar quando se mexer nessa tela de novo.
 
+### Quem responde pela obra passa a ser ESCRITO — 07/09/2026
+
+Decisão do dono: *"no cadastro da obra, a gente vai associar uma das pessoas,
+um dos operadores, pra responder por aquela obra… e se por acaso tiverem dois,
+a gente cadastrar dois, permitir também, os dois recebem"*. E marcável **pelos
+dois lados**, *"porque facilita o manuseio do sistema"*.
+
+**Um defeito antigo que nunca deu erro.** Até aqui o sistema ADIVINHAVA quem
+responde: procurava, na obra, campos chamados `administrativo_id`,
+`responsavel_id` e `encarregado_id` — **que não existem**. Como a busca era
+tolerante, nunca houve erro: caía sempre no responsável do CONTRATO. Ou seja, a
+cobrança ia para a pessoa errada, em silêncio, para sempre. É o tipo de defeito
+que só aparece quando alguém vai conferir de onde veio o nome.
+
+**O que ficou.** A ligação operador↔obra, que já existia para o escopo de
+visão, ganhou uma marca: *esta pessoa responde por esta obra*. Aceita mais de
+uma; todas recebem a cobrança do agente.
+
+**A armadilha que isso destapou, e o que se fez com ela.** A tela do operador
+APAGAVA todos os vínculos dele e recriava a cada salvamento. Marcar o
+responsável na tela da obra e depois salvar o operador **apagaria a marca**, sem
+erro e sem aviso. Por isso as duas telas passam por **uma função só**
+(`core/cadastros/vinculos.py`), pelo mesmo motivo de `aplicar_escopo` ser único:
+regra em dois lugares um dia discorda. Há teste com banco de verdade que
+reproduz exatamente essa sequência.
+
+**Duas regras de bom senso, escritas:** marcar alguém como responsável **dá a
+ele acesso à obra** (quem responde precisa conseguir abrir o que foi cobrado); e
+desmarcar **tira a responsabilidade, não o acesso** — tirar visão é outra
+decisão e não pode acontecer de raspão.
+
+**Percorrido no navegador, dos dois lados:** marquei duas pessoas pela tela da
+obra, a mesma marca apareceu no cadastro do operador, e o agente passou a mandar
+o lembrete **para as duas** — quando antes mandava para quem o contrato dizia.
+
 ### O que está pendente AGORA
 
 1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
@@ -815,9 +850,11 @@ tela. Vale trocar quando se mexer nessa tela de novo.
    relativo e não abre no WhatsApp. **E falta agendar a chamada diária** de
    `POST /erp/api/agente/rodar` com `{"secret": "…"}` no corpo. Antes de soltar,
    rodar uma vez com `{"simular": true}` e ler o que ele mandaria.
-13. **Telefone no cadastro de quem responde.** O agente pula, dizendo o motivo,
-   quem não tem telefone — e hoje quase ninguém tem. Sem isso ele não cobra
-   ninguém.
+13. **Marcar quem responde por cada obra, e pôr o telefone dele.** A tela
+   existe desde 07/09 (no cadastro da obra e no do operador, dá no mesmo). Sem
+   ninguém marcado, a conferência abre sem dono; sem telefone, o agente pula a
+   pessoa dizendo o nome dela. **Precisa da migração 041**, que vai nesta
+   publicação.
 14. **RESOLVIDO — a migração 039 foi aplicada em 07/09/2026.** O dono
    confirmou. Fica a lição de operação: logo depois de publicar, o botão pode
    não mostrar migração nenhuma, porque o Render ainda está subindo o código

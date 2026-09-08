@@ -64,6 +64,10 @@ class Pendencia:
     resumo: str                      # uma linha, em português, do que falta
     link: str                        # onde se resolve, caminho a partir da raiz
     dias_de_atraso: int              # desde o vencimento; negativo = no prazo
+    # Quando mais de uma pessoa responde pela mesma coisa, TODAS recebem —
+    # decisão do dono para a obra com dois administrativos. Vazio significa
+    # "só o responsável".
+    responsaveis: list[int] = field(default_factory=list)
     detalhes: dict[str, Any] = field(default_factory=dict)
 
 
@@ -180,13 +184,26 @@ def varrer(s: Session, *, simular: bool = False,
                             for u in _quem_recebe_a_escalada(s)]
                 nome_do_responsavel = _nome(s, p.responsavel_id)
             else:
-                pessoa = s.get(Usuario, p.responsavel_id) if p.responsavel_id else None
-                if pessoa is None or not (pessoa.telefone or "").strip():
+                # Todos os que respondem pela coisa, não só o primeiro.
+                ids = p.responsaveis or ([p.responsavel_id] if p.responsavel_id else [])
+                destinos, sem_telefone = [], []
+                for pid in ids:
+                    pessoa = s.get(Usuario, pid)
+                    if pessoa is None:
+                        continue
+                    if not (pessoa.telefone or "").strip():
+                        sem_telefone.append(pessoa.nome)
+                        continue
+                    destinos.append((pessoa.id, pessoa.nome, pessoa.telefone))
+                for nome_sem in sem_telefone:
                     puladas.append({"referencia": p.referencia_id,
-                                    "motivo": "responsável sem telefone no cadastro"})
+                                    "motivo": f"{nome_sem} não tem telefone no cadastro"})
+                if not destinos:
+                    if not sem_telefone:
+                        puladas.append({"referencia": p.referencia_id,
+                                        "motivo": "ninguém marcado para responder"})
                     continue
-                destinos = [(pessoa.id, pessoa.nome, pessoa.telefone)]
-                nome_do_responsavel = pessoa.nome
+                nome_do_responsavel = destinos[0][1]
 
             for destinatario_id, nome, telefone in destinos:
                 if _ja_mandou(s, p, destinatario_id, degrau):

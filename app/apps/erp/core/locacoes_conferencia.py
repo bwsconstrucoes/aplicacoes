@@ -120,18 +120,36 @@ def _fim_do_mes(comp: date) -> date:
             else date(comp.year, comp.month + 1, 1))
 
 
-def _quem_responde(s: Session, contrato: ContratoLocacao) -> Optional[int]:
-    """O administrativo da obra — decisão do dono.
+def responsaveis_da_obra(s: Session, obra_id: Optional[int]) -> list[int]:
+    """Quem foi MARCADO no cadastro para responder por esta obra.
 
-    Sem ninguém marcado na obra, cai no responsável do contrato: melhor
-    endereçar a alguém do que abrir uma pendência sem dono, que ninguém lê.
+    Decisão do dono (07/09/2026): deixa de ser adivinhação e passa a ser
+    escrito. Pode haver mais de um — "se por acaso tiverem dois, a gente
+    cadastrar dois, permitir também, os dois recebem".
+
+    Até 07/09 isto era um palpite que NUNCA funcionou: a função procurava
+    campos (`administrativo_id`, `encarregado_id`) que não existem na obra, e
+    portanto caía sempre no responsável do contrato. Fica registrado porque é o
+    tipo de defeito que não dá erro — só endereça a cobrança para a pessoa
+    errada, para sempre.
     """
-    obra = s.get(Obra, contrato.obra_id) if contrato.obra_id else None
-    for campo in ("administrativo_id", "responsavel_id", "encarregado_id"):
-        quem = getattr(obra, campo, None)
-        if quem:
-            return quem
-    return contrato.responsavel_id
+    from app.apps.erp.db.models.cadastros import UsuarioObra
+    if not obra_id:
+        return []
+    return [v.usuario_id for v in s.scalars(select(UsuarioObra).where(
+        UsuarioObra.obra_id == obra_id, UsuarioObra.responsavel.is_(True))).all()]
+
+
+def _quem_responde(s: Session, contrato: ContratoLocacao) -> Optional[int]:
+    """O primeiro responsável marcado na obra.
+
+    Sem ninguém marcado, cai no responsável do contrato: melhor endereçar a
+    alguém do que abrir pendência sem dono, que ninguém lê. Quando há mais de
+    um, todos recebem a cobrança — quem cuida disso é o agente, olhando
+    `responsaveis` na pendência.
+    """
+    marcados = responsaveis_da_obra(s, contrato.obra_id)
+    return marcados[0] if marcados else contrato.responsavel_id
 
 
 # ---------------------------------------------------------------------------
@@ -229,6 +247,9 @@ def pendentes(s: Session, *, usuario: Optional[Usuario] = None,
             "competencia": conf.competencia.strftime("%m/%Y"),
             "responsavel": nomes.get(conf.responsavel_id, "— sem responsável —"),
             "responsavel_id": conf.responsavel_id,
+            # todos os marcados na obra: é para todos eles que o agente manda
+            "responsaveis": (responsaveis_da_obra(s, conf.obra_id)
+                             or ([conf.responsavel_id] if conf.responsavel_id else [])),
             "dias_de_atraso": max(0, dias),
             "cobrar": dias >= DIAS_PARA_COBRAR,
         })

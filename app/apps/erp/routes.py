@@ -3519,6 +3519,29 @@ def api_obra(obra_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/obras/<int:obra_id>/responsaveis", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_erp", POST="configurar")
+def api_obra_responsaveis(obra_id: int):
+    """Quem responde por esta obra — o outro lado da mesma ligação.
+
+    O dono pediu para marcar pelos dois lados, "porque facilita o manuseio do
+    sistema". Aceita mais de uma pessoa: as duas recebem a cobrança.
+    """
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    from app.apps.erp.core.cadastros import vinculos
+    with get_session() as s:
+        exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
+        if request.method == "GET":
+            return jsonify({"ok": True,
+                            "operadores": vinculos.operadores_da_obra(s, obra_id)})
+        d = request.get_json(silent=True) or {}
+        r = vinculos.definir_responsaveis_da_obra(s, obra_id, d.get("responsaveis"))
+        s.commit()
+        return jsonify({"ok": True, **r,
+                        "operadores": vinculos.operadores_da_obra(s, obra_id)})
+
+
 @bp.route("/erp/api/obras/<int:obra_id>/aditivos", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar")
@@ -3760,10 +3783,13 @@ def api_usuarios():
             if request.method == "GET":
                 usuarios = s.scalars(select(Usuario).order_by(Usuario.nome)).all()
                 vinculos: dict[int, list[str]] = {}
+                responde_por: dict[int, list[int]] = {}
                 for v in s.scalars(select(UsuarioObra)).all():
                     obra = s.get(Obra, v.obra_id)
                     vinculos.setdefault(v.usuario_id, []).append(
                         obra.codigo if obra else str(v.obra_id))
+                    if v.responsavel:
+                        responde_por.setdefault(v.usuario_id, []).append(v.obra_id)
                 return jsonify({"ok": True, "usuarios": [{
                     "id": u.id, "nome": u.nome, "email": u.email,
                     "cpf": u.cpf, "telefone": u.telefone,
@@ -3779,6 +3805,10 @@ def api_usuarios():
                     "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
                     "escopo_visao": escopo_visao(u).value,
                     "ativo": u.ativo, "obras": vinculos.get(u.id, []),
+                    # por quais obras esta pessoa RESPONDE (recebe a conferência
+                    # mensal e a cobrança do agente) — é a mesma marca que
+                    # aparece no cadastro da obra
+                    "obras_responsavel": responde_por.get(u.id, []),
                 } for u in usuarios], "perfis": [
                     {"chave": p.value, "rotulo": ROTULOS.get(p, p.value)}
                     for p in PerfilUsuario]})
@@ -3862,12 +3892,13 @@ def api_editar_usuario(usuario_id: int):
                         return jsonify({"ok": False,
                                         "erro": f"Valor inválido em {campo}."}), 400
             if "obras" in d:
-                for v in s.scalars(select(UsuarioObra).where(
-                        UsuarioObra.usuario_id == u.id)).all():
-                    s.delete(v)
-                s.flush()
-                for obra_id in (d.get("obras") or []):
-                    s.add(UsuarioObra(usuario_id=u.id, obra_id=int(obra_id)))
+                # Um caminho só, compartilhado com a tela da OBRA. Antes daqui
+                # esta rota apagava todos os vínculos e recriava — o que
+                # apagava, sem avisar, a marca de quem responde pela obra.
+                from app.apps.erp.core.cadastros import vinculos
+                vinculos.definir_obras_do_operador(
+                    s, u.id, d.get("obras") or [],
+                    d.get("obras_responsavel") if "obras_responsavel" in d else None)
             if "categorias" in d:
                 from app.apps.erp.db.models.cadastros import UsuarioCategoria
                 for v in s.scalars(select(UsuarioCategoria).where(
