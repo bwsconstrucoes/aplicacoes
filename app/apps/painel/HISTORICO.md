@@ -371,6 +371,20 @@ Duas consequências práticas, que valem para qualquer mudança aqui:
 
 Cada uma custou horas. Não são preferências.
 
+### 0. O dono deu autorização permanente para publicar — com duas exceções
+
+Em 04/09/2026, cansado de ser perguntado seis vezes no mesmo dia, o dono
+autorizou: **publicar sozinho sempre que a suíte estiver verde e não houver
+migração de banco.** Continuam exigindo a pergunta:
+
+- **mudança com migração**, porque ela precisa do clique dele no mesmo momento;
+- **qualquer suspeita de carga rodando**, pelo motivo da regra 1 abaixo.
+
+**Isto vale só para a área do painel.** Não foi escrito no `CLAUDE.md`, que as
+três áreas leem: o ERP e o Análise de SPs são outros chats, e o dono não
+autorizou nada para eles. Foi um deles que matou uma carga juntando na main sem
+saber — a regra 1 nasceu disso.
+
 ### 1. Não publique na `main` enquanto uma carga estiver rodando
 
 Publicar reinicia o serviço no Render, e o reinício mata a carga. Isso já
@@ -494,12 +508,14 @@ real**, e ela depende de alguém abrir a tela publicada.
    tela e 316 no arquivo; a causa foi corrigida em 04/09 e a confirmação é do
    dono.
 
-### Decisão do dono, não decidida
+### Decidido e feito
 
-6. **Migração que cria coluna derivada deveria agendar a reconstrução sozinha.**
-   Hoje ela cria a coluna vazia e alguém tem de apertar "Só refazer os números"
-   — o dono passou por isso em 04/09 e reclamou, com razão. **Entrega que exige
-   um clique do dono para valer é entrega pela metade.** Proposto e não decidido.
+6. **Migração que cria coluna derivada agenda a reconstrução sozinha.**
+   ~~Proposto e não decidido~~ — o dono aprovou em 04/09/2026 e está feito. A
+   migração DECLARA isso no próprio arquivo, com a marca `REFAZER-O-FATO`; ao
+   terminar de aplicar, o painel dispara "Só refazer os números" e escreve na
+   tela que o recálculo começou. Ninguém mais precisa descobrir sozinho que
+   tinha um clique faltando.
 
 ### Fora desta área
 
