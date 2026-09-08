@@ -833,7 +833,25 @@ tela. Vale trocar quando se mexer nessa tela de novo.
    interpretar texto livre de mensagem (uma leitura errada de "acho que dá pra
    devolver" mexeria no contrato de verdade), depender de número de telefone
    para saber quem respondeu, e deixar o sistema escutando mensagem de fora.
-16. **NOVO E GRANDE — o cruzamento de notas fiscais.** Ditado pelo dono em
+16. **DECIDIDO em 07/09/2026 — quem responde a conferência sai do CADASTRO DA
+   OBRA.** O dono: "no cadastro da obra, a gente vai associar uma das pessoas,
+   um dos operadores, pra responder por aquela obra… e se por acaso tiverem
+   dois, a gente cadastrar dois, permitir também, os dois recebem". E a
+   associação tem de poder ser feita **pelos dois lados** — pelo cadastro do
+   operador ou pelo cadastro da obra —, "porque facilita o manuseio do
+   sistema". Ainda não construído; é o próximo trabalho.
+17. **NOVO E VITAL — as três conciliações de entrada**, escritas inteiras em
+   `ENTRADAS.md`, nesta pasta: baixa pelo comprovante de pagamento (duas
+   portas: e-mail e tela do ERP), monitoramento das caixas de compras e
+   financeiro (boleto, nota de débito, nota fiscal, cobrança — com o e-mail
+   marcado como tratado na própria caixa e confirmação humana antes de valer),
+   e o cruzamento das notas. As três seguem o mesmo desenho da conciliação
+   bancária: casa o que é certo, expõe o duvidoso, alerta o que não casou com
+   nada. **`app/apps/baixabradesco/` já resolve o casamento do comprovante** —
+   com parsers de Bradesco, Sicredi, BeeVale e SomaPay — mas escreve no mundo
+   antigo (Omie, Pipefy, planilha): o que se aproveita são os parsers e a
+   lógica, não o destino, e ele NÃO pode ser quebrado, está em produção.
+18. **NOVO E GRANDE — o cruzamento de notas fiscais.** Ditado pelo dono em
    07/09/2026 e escrito inteiro em `NOTAS_FISCAIS.md`, nesta pasta. Em uma
    frase: capturar todas as notas emitidas contra os CNPJs da empresa e cruzar
    cada uma com pedido de compra, título financeiro e prestação de fundo fixo,
@@ -843,7 +861,7 @@ tela. Vale trocar quando se mexer nessa tela de novo.
    qualquer desenho que assuma um-para-um nasce errado. Depende de certificado
    digital por empresa (cifrado, como a senha de e-mail) e traz junto a agenda
    de alertas. Quatro perguntas ainda esperam o dono — estão no §9 de lá.
-17. **A emissão de NFS-e fica em espera, por decisão do dono (07/09/2026).** É
+19. **A emissão de NFS-e fica em espera, por decisão do dono (07/09/2026).** É
    módulo antigo do monorepo (`app/apps/emissaonf/`), que emite nota de
    SERVIÇO da empresa para o cliente dela — coisa diferente do cruzamento do
    item 14, que captura nota que o FORNECEDOR emite contra a empresa. Nunca
