@@ -691,6 +691,44 @@ abriam vazios porque eu li `d.obras` quando a API embrulha tudo em
 `try` silencioso esconde um filtro vazio neste ERP. A tela agora **avisa** se
 não conseguir carregar uma lista, em vez de fingir que está tudo bem.
 
+### Despesa com colaborador: percorrida de ponta a ponta — 07/09/2026
+
+O dono pediu o mesmo método que usamos em Suprimentos: **testar com dado de
+verdade e mostrar as telas**. Foi o que se fez — não com teste, com o
+navegador, uma pessoa de cada vez, cada etapa com quem realmente a executa.
+
+**O caminho inteiro, e funciona:**
+
+1. **A obra lança.** Três colaboradores, uma diária e duas produções. A diária
+   é calculada do cadastro: 12 dias × R$ 180 = R$ 2.160,00, sem ninguém
+   digitar o total.
+2. **A conferência antes de enviar** pegou o que devia, com dado real:
+   - *"Diária exige a quantidade de dias"* — bloqueio, quando faltou;
+   - *"Maria do Socorro Alves não tem dados de pagamento no cadastro"* —
+     atenção, e ela **acompanha até a planilha de pagamento**, para quem paga
+     ver o problema antes de tentar pagar;
+   - *"Antônio já recebeu diárias de R$ 2.160,00 na DC00001 — mesmo valor em
+     menos de 10 dias"* — a crítica de repetição, que é a que mais pega erro,
+     disparando sozinha na segunda tentativa.
+3. **Supervisor aprova** → "agora aguarda departamento pessoal".
+4. **Departamento pessoal aprova** → "agora aguarda diretor financeiro". Serviu
+   também para confirmar na prática a mudança de visão do DP feita hoje: a
+   despesa apareceu para ele, lançada por outra pessoa.
+5. **Diretor aprova** → "pronta para faturar".
+6. **Vira título:** "Título 000003 gerado (R$ 3.630,50, 1 obra(s))", com o
+   aviso de atualizar o QR Code do BeeVale.
+
+As aprovações ficam na ficha com **nome e hora de cada um** — supervisor, DP e
+diretor.
+
+**Um defeito de português corrigido:** o meio de pagamento aparecia cru na
+tela, "A_DEFINIR", em dois lugares. Agora lê "A definir".
+
+**O que ficou anotado como incômodo, não como defeito:** o envio pede
+confirmação por uma caixa do navegador ("Há 1 ponto de atenção. Enviar mesmo
+assim?"). Funciona, mas destoa do resto do ERP, que pergunta dentro da própria
+tela. Vale trocar quando se mexer nessa tela de novo.
+
 ### O que está pendente AGORA
 
 1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
