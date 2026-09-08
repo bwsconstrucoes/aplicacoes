@@ -61,7 +61,15 @@ MATRIZ: dict[TipoTitulo, RegrasTipo] = {
         dica="Fatura da unidade consumidora vinculada à obra/sede."),
     TipoTitulo.T10_FUNDO_FIXO: RegrasTipo(
         "Fundo fixo / caixinha", exige_conta_fornecedor=False,
-        dica="Prestação de contas com comprovantes; itens sem comprovante = indedutíveis."),
+        # DECISÃO DO DONO, 07/09/2026, com estas palavras: "fundo fixo é
+        # dedutível, ponto final. Não é só nota que é dedutiva". A orientação
+        # anterior dizia o contrário — "itens sem comprovante = indedutíveis" —
+        # e era regra inventada aqui dentro, não regra da empresa. O
+        # comportamento do sistema já estava certo (o tipo nasce dedutível); só
+        # o texto na tela contradizia, e texto na tela é o que a pessoa lê.
+        dica="Prestação de contas com comprovantes. O fundo fixo É DEDUTÍVEL — "
+             "a falta de comprovante é problema de prestação de contas, não de "
+             "dedutibilidade."),
     TipoTitulo.T11_ADIANTAMENTO: RegrasTipo(
         "Adiantamento a fornecedor", exige_pedido=True,
         dica="Vincular ao pedido; baixa obrigatória com nota de encontro."),

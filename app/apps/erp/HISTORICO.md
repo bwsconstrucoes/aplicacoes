@@ -764,6 +764,53 @@ decisão e não pode acontecer de raspão.
 obra, a mesma marca apareceu no cadastro do operador, e o agente passou a mandar
 o lembrete **para as duas** — quando antes mandava para quem o contrato dizia.
 
+### O plano de contas volta a falar a língua da BWS — 07/09/2026
+
+O dono conferiu o de-para e recusou: *"você misturou algumas contas e renomeou
+sem necessidade… as nomenclaturas estão de acordo com a nossa realidade, as
+pessoas que lançam já estão acostumadas com elas"*.
+
+Ele está certo, e o erro tem nome: eu tratei o plano de contas como problema de
+organização, quando ele é **problema de quem digita**. Quem lança escolhe a
+conta numa lista, sob pressão, dezenas de vezes por dia. Se o nome não é o que
+essa pessoa tem na cabeça, ela erra — e **erro de conta não aparece na tela,
+aparece na contabilidade meses depois**.
+
+**O que estava errado.** As 32 categorias da planilha tinham virado 21 contas:
+argamassa junto com cimento, vidro junto com esquadria, gás junto com
+hidráulica, estrutura metálica junto com pré-moldado, cabeamento junto com
+elétrico, bancada junto com louça. E quase todas renomeadas.
+
+**O que ficou.** As 32 categorias, uma conta cada, **com o nome exato da
+planilha**. Sete contas novas (3.1.21 a 3.1.27) para desfazer as junções,
+numeradas no fim da sequência de propósito: os títulos já lançados apontam para
+os números antigos, e renumerar quebraria o vínculo deles. Nada foi apagado.
+
+**Como se aplica:** botão "Aplicar plano de contas" na tela de Configurações. É
+idempotente — rodei duas vezes, a segunda não mexeu em nada — e **contas que
+alguém renomeou à mão no ERP são preservadas** (só o que ainda era texto da BWS
+foi trocado).
+
+**Regra que fica escrita no código:** nome que existe na planilha da BWS não se
+junta com outro e não se "melhora".
+
+### Fundo fixo é dedutível, ponto final — 07/09/2026
+
+Palavras do dono: *"fundo fixo é dedutível, ponto final. Não é só nota que é
+dedutiva"*.
+
+**O comportamento do sistema já estava certo** — o tipo T10 nasce dedutível, e
+as contas 3.4.08 e 5.3.10 também. O que contradizia era o **texto de orientação
+na tela**: "itens sem comprovante = indedutíveis". Era regra inventada aqui
+dentro, não regra da empresa, e texto na tela é o que a pessoa lê. Corrigido: a
+falta de comprovante é problema de prestação de contas, não de dedutibilidade.
+
+**O que ele ainda quer, e está na fila:** uma tela ou relatório mostrando o que
+está sendo dedutível e o que não. E ele deu o critério de onde: *"vai depender
+de onde eu estou olhando — se estou analisando notas, vejo lá; se estou pelos
+títulos, tenho um título de fundo fixo, vejo por lá também"*. Ou seja, a
+dedutibilidade tem de aparecer **nos dois lugares**, não numa tela separada.
+
 ### O que está pendente AGORA
 
 1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
@@ -785,10 +832,11 @@ o lembrete **para as duas** — quando antes mandava para quem o contrato dizia.
    recusado, tela a tela, perfil a perfil) roda sozinha no GitHub a cada envio
    (`tests/test_homologacao_banco.py`). Para o olho humano ficou só o roteiro
    reduzido: visual, leitura de documento por IA, avalizar/pagar com dado real.
-5. **A tradução do plano de contas precisa do olho do dono**
-   (`PLANO_DA_PLANILHA`, em `core/suprimentos/exemplo.py`): são os nomes
-   antigos da planilha dele apontados para as contas do ERP. Errar aí joga a
-   compra na conta de custo errada, e ninguém percebe olhando a tela.
+5. **RESOLVIDO em 07/09/2026 — o plano de contas fala a língua da BWS.** O
+   dono conferiu o de-para, recusou as junções e os nomes novos, e o plano foi
+   refeito com os 32 nomes da planilha dele, um para um. **Falta ele apertar
+   "Aplicar plano de contas"** em Configurações — o código já está publicado, e
+   sem esse botão as contas em produção continuam com os nomes antigos.
 6. **Como começar a operar Suprimentos**: construído e com as telas de cadastro refeitas, mas
    **ainda não operado contra a base real** — é o que o dono precisa fazer
    primeiro. Caminho sugerido: Cadastros › Importações › **Dados de exemplo**

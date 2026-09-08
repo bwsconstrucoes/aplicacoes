@@ -135,29 +135,59 @@ PLANO: list[tuple[str, str, str, str, list[tuple]]] = [
     ]),
 
     # ------------------------------------------------------- 3 CUSTOS DE OBRA
+    # OS NOMES SÃO OS DA PLANILHA DA BWS, e isso é uma decisão, não um acaso.
+    #
+    # A primeira versão deste plano juntou categorias que a planilha separava
+    # (argamassa com cimento, vidro com esquadria, gás com hidráulica) e
+    # renomeou outras "para ficar melhor". O dono recusou em 07/09/2026, com
+    # razão: "as nomenclaturas estão de acordo com a nossa realidade, as
+    # pessoas que lançam já estão acostumadas com elas".
+    #
+    # Quem lança escolhe a conta numa lista, sob pressão, dezenas de vezes por
+    # dia. Se o nome não é o que ela tem na cabeça, ela erra — e erro de conta
+    # não aparece na tela, aparece na contabilidade meses depois. Elegância de
+    # plano de contas não vale esse preço.
+    #
+    # AO MEXER AQUI: nome que existe na planilha da BWS não se junta com outro
+    # e não se "melhora". Conta nova ganha código novo no fim da sequência —
+    # renumerar quebraria o vínculo dos títulos já lançados.
     ("3", "Custos de obra", "3.1", "Materiais aplicados", [
-        ("3.1.01", "Cimento, concreto usinado e argamassas", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.02", "Agregados (areia, brita, arisco)", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.03", "Aço e armadura", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.04", "Elementos de vedação (tijolo, bloco, parede PVC)", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.05", "Pré-moldados e estrutura metálica", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.06", "Telhas e material de cobertura", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.07", "Madeiramento e fôrmas", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.08", "Material elétrico, cabeamento e CFTV", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.09", "Material hidráulico, sanitário e gás", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.10", "Material de combate a incêndio", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.11", "Material de climatização", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.12", "Pisos, cerâmicas e revestimentos", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.13", "Louças, metais e bancadas", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.14", "Esquadrias, vidros e serralheria", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.15", "Material de pintura", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.16", "Forro e divisórias", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.17", "Impermeabilizantes, aditivos e colas", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.18", "Parafusos, ferragens e acessórios", "RESULTADO", True, [MAT, EXC], ""),
-        ("3.1.19", "Ferramentas e material de consumo", "RESULTADO", True, [MAT, FFX, EXC],
+        ("3.1.01", "Cimento e Concreto Usinado", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.02", "Agregados (Areia, Brita, Arisco)", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.03", "Armadura", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.04", "Elementos de Vedação (Tijolo, Blocos e Paredes PVC)",
+         "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.05", "Pré-Moldados de Concreto", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.06", "Telhas e Material p/ Coberturas", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.07", "Madeiramento", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.08", "Material Elétrico", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.09", "Material Hidráulico e Sanitário", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.10", "Material p/ Combate à Incêndio", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.11", "Material p/ Climatização", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.12", "Pisos, Cerâmicas e Revestimentos", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.13", "Louças e Metais", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.14", "Esquadrias de Alumínio, Metal e Madeira",
+         "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.15", "Material para Pintura", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.16", "Material p/ Fôrro", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.17", "Impermeabilizantes, Aditivos e Colas", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.18", "Parafusos, Ferragens e Acessórios", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.19", "Ferramentas", "RESULTADO", True, [MAT, FFX, EXC],
          "Ferramenta de baixo valor/consumo. Equipamento durável vai em 8.1."),
-        ("3.1.20", "Paisagismo e jardinagem", "RESULTADO", True, [MAT, SRV, EXC], ""),
-        ("3.1.99", "Outros materiais de obra", "RESULTADO", True, [MAT, EXC],
+        ("3.1.20", "Jardinagem", "RESULTADO", True, [MAT, SRV, EXC], ""),
+        # Estas seis nasceram em 07/09/2026, ao desfazer as junções. Códigos no
+        # fim da sequência de propósito: os títulos já lançados apontam para os
+        # números antigos, e renumerar quebraria o vínculo deles.
+        ("3.1.21", "Argamassas", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.22", "Estrutura Metálica", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.23", "Material p/ Cabeamento Estruturado e CFTV",
+         "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.24", "Material p/ Gás", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.25", "Bancadas de Granito", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.26", "Materais p/ Serralheria (Tubos, Metalon, Perfis, etc)",
+         "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.27", "Vidros e Espelhos", "RESULTADO", True, [MAT, EXC], ""),
+        ("3.1.99", "Outros Materiais", "RESULTADO", True, [MAT, EXC],
          "Use só quando nenhuma conta acima servir; revisar periodicamente."),
     ]),
     ("3", "Custos de obra", "3.2", "Serviços de terceiros", [
@@ -168,13 +198,14 @@ PLANO: list[tuple[str, str, str, str, list[tuple]]] = [
         ("3.2.03", "Serviços de pessoa física (RPA)", "RESULTADO", True, [RPA],
          "Autônomo com RPA: gera INSS (2.1.02) e IRRF (2.1.03)."),
         ("3.2.04", "Fretes, carretos e transporte de material", "RESULTADO", True, [FRE, EXC], ""),
-        ("3.2.05", "Limpeza e conservação de obra", "RESULTADO", True, [SRV, MAT, EXC], ""),
+        ("3.2.05", "Material p/ Limpeza", "RESULTADO", True, [SRV, MAT, EXC], ""),
         ("3.2.06", "Alimentação de equipe em obra", "RESULTADO", True, [SRV, FFX, REE],
          "Fornecimento terceirizado de refeições no canteiro."),
         ("3.2.07", "Segurança e vigilância de obra", "RESULTADO", True, [SRV], ""),
     ]),
     ("3", "Custos de obra", "3.3", "Locações", [
-        ("3.3.01", "Locação de equipamentos", "RESULTADO", True, [LOC], "Exige contrato vigente."),
+        ("3.3.01", "Locação de Máquinas, Veículos e Equipamentos", "RESULTADO", True, [LOC],
+         "Exige contrato vigente."),
         ("3.3.02", "Locação de máquinas pesadas", "RESULTADO", True, [LOC], ""),
         ("3.3.03", "Locação de veículos", "RESULTADO", True, [LOC], ""),
         ("3.3.04", "Locação de imóveis para obra (canteiro/alojamento)", "RESULTADO", True, [LOC], ""),
@@ -183,7 +214,7 @@ PLANO: list[tuple[str, str, str, str, list[tuple]]] = [
     ("3", "Custos de obra", "3.4", "Despesas indiretas de obra", [
         ("3.4.01", "Água e energia da obra", "RESULTADO", True, [CON, EXC], ""),
         ("3.4.02", "Combustível de veículos e máquinas em obra", "RESULTADO", True, [MAT, FFX, REE], ""),
-        ("3.4.03", "EPI e segurança do trabalho", "RESULTADO", True, [MAT, SRV], ""),
+        ("3.4.03", "EPI (Equipamento de Proteção Individual)", "RESULTADO", True, [MAT, SRV], ""),
         ("3.4.04", "Exames ocupacionais e medicina do trabalho", "RESULTADO", True, [SRV], ""),
         ("3.4.05", "Mobilização, desmobilização e canteiro", "RESULTADO", True, [MAT, SRV, EXC], ""),
         ("3.4.06", "Taxas, licenças e ART/RRT da obra", "RESULTADO", True, [GUI, EXC], ""),
@@ -274,7 +305,7 @@ PLANO: list[tuple[str, str, str, str, list[tuple]]] = [
         ("8.1.01", "Veículos, máquinas e equipamentos", "FLUXO", True, [MAT, FIN],
          "Bem durável — não entra na DRE; deprecia."),
         ("8.1.02", "Equipamentos de informática", "FLUXO", True, [MAT], ""),
-        ("8.1.03", "Móveis e utensílios", "FLUXO", True, [MAT], ""),
+        ("8.1.03", "Móveis e Utensílios", "FLUXO", True, [MAT], ""),
         ("8.1.04", "Ferramentas e equipamentos duráveis", "FLUXO", True, [MAT], ""),
     ]),
     ("8", "Investimentos (ativo)", "8.2", "Imóveis e benfeitorias", [
