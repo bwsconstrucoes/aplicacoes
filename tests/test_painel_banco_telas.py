@@ -59,11 +59,14 @@ def test_caixa_por_obra_traz_so_o_que_virou_dinheiro(painel_no_banco):
     por_obra = {}
     for _mes, obra, valor in consultas.caixa_mensal_por_obra():
         por_obra[obra] = por_obra.get(obra, 0.0) + valor
-    # CASA recebeu 1.000 e pagou 400 (06/2025) e 100 (03/2024)
-    assert reais(por_obra["CASA"]) == 500.00
+    # CASA recebeu 1.000 e pagou 400 (06/2025) e 100 (03/2024), MAIS 25 de juros
+    # e multa pagos junto com os 400 — juros sai da conta como qualquer
+    # pagamento. Os 999 de juros PREVISTOS num título em aberto não entram: só
+    # conta o que foi pago de fato.
+    assert reais(por_obra["CASA"]) == 475.00
     assert reais(por_obra["PONTE"]) == -900.00
     # a transferência entre contas não é caixa da operação
-    assert reais(sum(por_obra.values())) == -400.00
+    assert reais(sum(por_obra.values())) == -425.00
 
 
 def test_obra_para_projeto_resolve_o_dominante(painel_no_banco):
@@ -90,7 +93,10 @@ def test_a_base_da_prestacao_separa_receita_de_despesa(painel_no_banco):
     casa = [l for l in linhas if l["obra"] == "CASA"]
     assert reais(sum(l["receita_liquida"] for l in casa)) == 1300.00
     assert reais(sum(l["retencoes"] for l in casa)) == 100.00
-    assert reais(sum(l["despesas"] for l in casa)) == -750.00
+    # 400 + 250 + 100 de principal MAIS os 25 de juros e multa pagos: desde
+    # 08/09/2026 os encargos são despesa em todo o painel, e a prestação de
+    # contas divide o resultado DEPOIS deles
+    assert reais(sum(l["despesas"] for l in casa)) == -775.00
 
 
 @pytest.fixture()
@@ -133,12 +139,13 @@ def test_a_prestacao_roda_de_ponta_a_ponta(cadastro_limpo):
     quotas = prestacao.quotas_por_socio(por_projeto,
                                         prestacao_dados.participacoes(), config)
 
-    # ALFA é a obra CASA: receita líquida 1.300, despesas 750 -> resultado 550
-    assert reais(por_projeto["ALFA"]["resultado"]) == 550.00
-    assert reais(sum(q["quota"] for q in quotas)) == 550.00
+    # ALFA é a obra CASA: receita líquida 1.300, despesas 775 (750 de principal
+    # mais 25 de juros e multa pagos) -> resultado 525
+    assert reais(por_projeto["ALFA"]["resultado"]) == 525.00
+    assert reais(sum(q["quota"] for q in quotas)) == 525.00
     por_socio = {q["socio"]: q["quota"] for q in quotas}
-    assert reais(por_socio["ANA"]) == 385.00       # 70%
-    assert reais(por_socio["BENTO"]) == 165.00     # 30%
+    assert reais(por_socio["ANA"]) == 367.50       # 70%
+    assert reais(por_socio["BENTO"]) == 157.50     # 30%
 
 
 def test_socio_desativado_sai_da_divisao(cadastro_limpo):
@@ -490,3 +497,123 @@ def test_a_medicao_nao_repete_o_numero_do_documento(painel_no_banco):
         "medição igual ao documento é eco, não informação")
     # e a medição de verdade continua aparecendo
     assert por_credor["COM MEDICAO"]["medicao"] == "OBRA X | Medição 3"
+
+
+# ---------------------------------------------------------------------------
+# As telas têm de concordar sobre quanto foi gasto
+# ---------------------------------------------------------------------------
+# Defeito achado pelo dono em 08/09/2026: numa obra, a Visão Geral mostrava
+# resultado de R$ 931.718,04 e o DRE, R$ 888.419,91. A diferença era exatamente
+# R$ 43.298,13 — os juros e multas pagos, que só o DRE e o Analítico somavam.
+#
+# Não era defeito da conversão: o Streamlit original fazia igual. O dono decidiu
+# que juros e multa são despesa em TODO o painel.
+#
+# Estes testes vigiam a CLASSE do problema: qualquer tela que volte a somar só o
+# principal passa a discordar do DRE, e aqui isso quebra.
+BASE_COM_JUROS = [
+    # receita de 10.000
+    _linha_de_fato(codigo_lancamento=801, tipo=REC, razao_social="CLIENTE",
+                   pago_recebido=10000, a_pagar_receber=0),
+    # despesa de 4.000 de principal MAIS 300 de juros e 200 de multa
+    _linha_de_fato(codigo_lancamento=802, razao_social="FORNECEDOR",
+                   pago_recebido=-4000, a_pagar_receber=0,
+                   juros=-300, multa=-200),
+]
+
+
+@pytest.fixture()
+def base_com_juros(painel_no_banco):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+
+    colunas = list(BASE_COM_JUROS[0].keys())
+    marcas = ",".join(["?"] * len(colunas))
+    with conexao() as conn:
+        conn.execute("TRUNCATE TABLE fato")
+        conn.executemany(
+            f"INSERT INTO fato ({', '.join(colunas)}) VALUES ({marcas})",
+            [tuple(l[c] for c in colunas) for l in BASE_COM_JUROS])
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+# 10.000 de receita − (4.000 + 300 + 200) = 5.500
+RESULTADO_CERTO = 5500.00
+DESPESA_CERTA = -4500.00
+
+
+def test_a_visao_geral_conta_os_juros_como_despesa(base_com_juros):
+    """O caso exato que o dono reportou."""
+    from app.apps.painel import consultas
+    dre = consultas.resultado_dre(consultas.Filtros())
+    assert reais(dre["despesa"]) == DESPESA_CERTA
+    assert reais(dre["resultado"]) == RESULTADO_CERTO
+    assert reais(dre["resultado_exec"]) == RESULTADO_CERTO
+
+
+def test_a_visao_geral_e_o_dre_dao_o_mesmo_resultado(base_com_juros):
+    """A invariante que o dono cobrou: as duas telas olham a mesma base e não
+    podem responder coisas diferentes."""
+    from app.apps.painel import consultas
+    f = consultas.Filtros()
+    visao = consultas.resultado_dre(f)
+    linhas = {l["linha"]: l for l in consultas.dre_linhas(f)["linhas"]}
+    resultado_do_dre = linhas["= RESULTADO"]["comprometido"]
+    assert reais(visao["resultado"]) == reais(resultado_do_dre)
+
+
+def test_o_grafico_da_visao_geral_bate_com_os_seus_proprios_numeros(base_com_juros):
+    """O gráfico não pode contar uma história diferente do cartão em cima dele."""
+    from app.apps.painel import consultas
+    f = consultas.Filtros()
+    anos = consultas.dre_por_ano(f)
+    assert reais(sum(a["despesa"] for a in anos)) == DESPESA_CERTA
+    assert reais(sum(a["receita"] + a["despesa"] for a in anos)) == RESULTADO_CERTO
+
+
+def test_o_resultado_por_obra_conta_os_juros(base_com_juros):
+    """"Não pode dar uma visão de resultado de obras sem essa informação." """
+    from app.apps.painel import consultas
+    linhas = consultas.resultado_por(consultas.Filtros(), nivel="obra")
+    assert reais(sum(l["resultado"] for l in linhas)) == RESULTADO_CERTO
+
+
+def test_o_comprometido_x_executado_conta_os_juros(base_com_juros):
+    from app.apps.painel import consultas
+    linhas = consultas.comprometido_vs_executado(consultas.Filtros(), tipo="pagar")
+    assert reais(sum(l["executado"] for l in linhas)) == DESPESA_CERTA
+
+
+def test_o_top_credores_mostra_o_que_foi_pago_de_fato(base_com_juros):
+    """Um ranking que subconta o que se pagou ao fornecedor engana quem lê."""
+    from app.apps.painel import consultas
+    credores = {c["nome"]: c for c in consultas.top_credores(consultas.Filtros())}
+    assert reais(credores["FORNECEDOR"]["pago"]) == DESPESA_CERTA
+
+
+def test_o_caixa_conta_o_juros_como_dinheiro_que_saiu(base_com_juros):
+    """Juros pago sai da conta corrente como qualquer outro pagamento."""
+    from app.apps.painel import consultas
+    caixa = consultas.caixa(consultas.Filtros())
+    assert reais(caixa["saidas"]) == DESPESA_CERTA
+    assert reais(caixa["geracao"]) == RESULTADO_CERTO
+
+
+def test_a_prestacao_de_contas_parte_do_resultado_certo(base_com_juros):
+    """A mais sensível: é ela que decide quanto cabe a cada sócio. Com os juros
+    de fora, o resultado dividido seria maior do que o que a obra deu."""
+    from app.apps.painel import consultas
+    apuracao = consultas.apuracao_por_obra_mes("comprometido")
+    despesas = sum(l["despesas"] for l in apuracao)
+    receita = sum(l["receita_liquida"] for l in apuracao)
+    assert reais(despesas) == DESPESA_CERTA
+    assert reais(receita + despesas) == RESULTADO_CERTO
+
+
+def test_o_analitico_ja_contava_e_continua_contando(base_com_juros):
+    """Ele e o DRE já estavam certos — a correção não podia contar duas vezes."""
+    from app.apps.painel import consultas
+    dados = consultas.analitico_despesas(consultas.Filtros())
+    assert reais(dados["total"]) == DESPESA_CERTA

@@ -493,8 +493,13 @@ def _consultar_falso(sql, params=()):
                 (dt.date(2025, 2, 1), 6000.0, -3100.0),
                 (dt.date(2025, 3, 1), 2000.0, -5200.0)]
     if "GROUP BY ano" in sql:
-        return ([(2024, -1000.0), (2025, 2500.0)] if "SUM(pago_recebido)" in sql
-                else [(2024, 5000.0, -4000.0), (2025, 9000.0, -6000.0)])
+        # o caixa por ano soma UMA coluna; o resultado por ano separa receita de
+        # despesa e por isso tem os CASE por tipo. Reconhecer pelo CASE, e não
+        # pelo texto exato da soma: em 08/09/2026 a soma do caixa passou a
+        # incluir os encargos e o dublê parou de reconhecê-la.
+        if "SUM(CASE WHEN tipo" in sql:
+            return [(2024, 5000.0, -4000.0), (2025, 9000.0, -6000.0)]
+        return [(2024, -1000.0), (2025, 2500.0)]
     if "AS retido" in sql:                                      # as linhas do DRE
         # a última coluna é o encargo: juros e multa efetivamente pagos
         return [("1. Contas a Receber", False, "Receita Bruta", 9000.0, 500.0, 0.0),
@@ -515,7 +520,9 @@ def _consultar_falso(sql, params=()):
         return [("PROJ-A", 12000.0, -9000.0), ("PROJ-B", 4000.0, -6000.0)]
     if "GROUP BY 1" in sql:                                     # receita por obra
         return [("Obra Um", 7000.0, 300.0, 500.0)]
-    if "pago_recebido > 0" in sql:                              # caixa: entra e sai
+    # caixa: entra e sai, separados pelo SINAL do movimento. Não se reconhece
+    # mais por "pago_recebido > 0": o movimento passou a somar os encargos.
+    if "> 0" in sql and "< 0" in sql:
         return [(18500.0, -12300.0)]
     if sql.count("SUM(CASE WHEN tipo") == 4:                    # resumo do resultado
         return [(9500.0, -6150.0, 9000.0, -6000.0)]
