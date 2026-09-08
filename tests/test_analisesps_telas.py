@@ -87,6 +87,17 @@ def app(monkeypatch):
     # aplicação; aqui basta que a tela saiba desenhá-los.
     monkeypatch.setattr(consultas, "contagem_agendamento", lambda f: {
         "Agendar": 1, "Agendado": 1, "Falha Agendar": 0, "Pago": 0})
+    # A tela pede os dois JUNTOS desde 05/09 — eram duas varreduras da mesma
+    # tabela filtrada, e numa consulta só custam quase metade.
+    monkeypatch.setattr(consultas, "resumo_e_agendamento", lambda f: (
+        consultas.resumo(f), consultas.contagem_agendamento(f)))
+    # As listas do filtro ficam guardadas até a próxima carga; sem limpar, o
+    # que um teste calculou valeria no seguinte.
+    monkeypatch.setattr(consultas, "opcoes_de_filtro",
+                        lambda carimbo=None: dict(
+                            {a: consultas.opcoes(c, limite=l)
+                             for a, (c, l) in consultas.COLUNAS_DE_FILTRO.items()},
+                            status_agend=consultas.opcoes_agendamento()))
     monkeypatch.setattr(consultas, "soma_por", lambda f, coluna, limite=12: [
         {"nome": "BRADESCO 7011-4", "quantidade": 1, "total": Decimal("6750.00")}])
     # As colunas da tabela saem das preferências, que ficam no banco. Sem
@@ -464,7 +475,11 @@ def test_a_ficha_em_modal_vem_sem_o_resto_da_tela(app_ficha):
         "/analisesps/sp/1234567890?modal=1")
     html = resposta.get_data(as_text=True)
     assert resposta.status_code == 200
-    assert "<nav" not in html and "<!doctype" not in html.lower()
+    # Marcas do gabarito da PÁGINA. Não se procura "<!doctype" aqui porque o
+    # código de barras é um SVG e traz o DOCTYPE dele — o que se quer saber é
+    # se veio o cabeçalho e o menu do módulo.
+    assert "<html" not in html.lower()
+    assert "topo-abas" not in html
     assert "1234567890" in html
 
 
@@ -487,7 +502,10 @@ def test_os_quatro_do_agendamento_sao_os_do_streamlit(app):
         "/analisesps/solicitacoes").get_data(as_text=True)
     for valor in ("Agendar", "Agendado", "Falha Agendar", "Desagendar"):
         assert f'data-valor="{valor}"' in html, f"sumiu o botão {valor}"
-    assert "Remover informação" in html
+    # O rótulo é o do Streamlit. Chegou a ser "Remover informação", que
+    # descrevia o efeito; o dono pediu o nome que ele usa — e agora convive na
+    # mesma barra com "Remover do lote", que é outra coisa.
+    assert ">Desagendar</button>" in html
 
 
 def test_o_lote_nao_tem_marcar_pago(app_lote):
@@ -522,12 +540,80 @@ def test_o_agendamento_exige_validacao_como_no_streamlit(app_ficha, monkeypatch)
     html = como(app_ficha, SENHA_OPERADOR).get(
         "/analisesps/sp/1234567890").get_data(as_text=True)
     assert "Agendamento bloqueado" in html
-    assert "disabled" in html
+    assert 'data-bloqueado="1"' in html
 
     registro["validacao"] = "Sim"
     html = como(app_ficha, SENHA_OPERADOR).get(
         "/analisesps/sp/1234567890").get_data(as_text=True)
     assert "Agendamento bloqueado" not in html
+    assert "data-bloqueado" not in html
+
+
+def test_o_agendamento_travado_nao_vira_botao_morto(app_ficha, monkeypatch):
+    """O dono clicou em "Agendado" no modal e nada aconteceu.
+
+    Não era defeito de ligação: a trava da Validação punha `disabled` nos
+    botões, e botão desabilitado não recebe nem o clique — quem não leu o
+    aviso logo acima via um botão simplesmente quebrado. A trava continua
+    valendo (nada é gravado), mas agora o clique diz por que não foi."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["validacao"] = ""
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+
+    trecho = html[html.index('data-coluna="agendado"'):]
+    trecho = trecho[:trecho.index("</button>")]
+    assert "disabled" not in trecho, (
+        "botão desabilitado não recebe clique — volta a parecer quebrado")
+    assert "bloqueado" in trecho
+
+
+def test_a_descricao_vem_antes_do_codigo_de_pagamento(app_ficha, monkeypatch):
+    """Pedido do dono: a descrição é a primeira coisa que se procura ao abrir
+    a SP, e estava no fim de tudo; o código de pagamento é o último passo."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["descricao"] = "Concreto usinado da obra"
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert html.index("ficha-descricao") < html.index("ficha-codigo")
+
+
+def test_o_link_escrito_na_descricao_fica_clicavel(app_ficha, monkeypatch):
+    """Às vezes a descrição traz o endereço de uma pasta ou de um contrato.
+    Como texto puro, era selecionar na mão e colar no navegador."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro["descricao"] = "Contrato em https://drive.google.com/x/y ok"
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert 'href="https://drive.google.com/x/y"' in html
+
+
+def test_cancelar_sp_nao_e_botao_vermelho(app_ficha):
+    """Ele só ABRE o formulário do Pipefy — não cancela nada por si. Em
+    vermelho puxava o olho para si toda vez que a ficha abria."""
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890").get_data(as_text=True)
+    trecho = html[html.index("Cancelar%20SP") - 400:html.index("Cancelar SP")]
+    assert "perigo" not in trecho
+
+
+def test_a_volta_da_ficha_aberta_pelo_lote_nao_quebra(app_ficha):
+    """O endereço da volta era montado colando "analisesps." com a origem, e
+    dava "analisesps.lote" — que não existe. A tela do Lote se chama
+    "tela_lote", então abrir uma SP a partir do Lote estourava a página."""
+    resposta = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?origem=lote")
+    assert resposta.status_code == 200
+    assert "/analisesps/lote" in resposta.get_data(as_text=True)
 
 
 def test_o_qr_volta_para_de_onde_veio(app, monkeypatch):
@@ -690,11 +776,24 @@ def test_a_tabela_oferece_as_colunas_do_streamlit(app):
     from app.apps.analisesps import tabela
     rotulos = {c.rotulo for c in tabela.DEFINICOES}
     for esperado in ("ID", "Data", "Vencimento", "Credor", "CPF/CNPJ",
-                     "Tipo de Despesa", "Centro de Custo", "Valor",
+                     "Tipo de Despesa", "Valor",
                      "Status Pgt", "Status Agend", "Forma de Pgt",
                      "Conta Corrente", "Validação", "Informação p/ Pgt",
                      "Nº NF", "Data Pgt", "Comprovante", "Responsável"):
         assert esperado in rotulos, f"sumiu a coluna {esperado!r} do Streamlit"
+    # O "Centro de Custo" do Streamlit se chama OBRA aqui: é a palavra que o
+    # dono usa, e cabe no cabeçalho estreito. A barra de filtros diz "Obra
+    # (centro de custo)", que é onde a ponte com o nome da planilha cabe.
+    assert "Obra" in rotulos
+
+
+def test_a_obra_vem_marcada_e_logo_depois_do_valor(app):
+    """Pedido do dono: a obra faltava na lista, e o lugar dela é ao lado do
+    valor — é a pergunta seguinte a "quanto é": "de qual obra?"."""
+    from app.apps.analisesps import tabela
+    escolhidas = [c.chave for c in tabela.escolhidas(None)]
+    assert "centro_custo" in escolhidas, "a obra não vem marcada"
+    assert escolhidas.index("centro_custo") == escolhidas.index("valor_num") + 1
 
 
 def test_a_escolha_de_colunas_nao_deixa_a_tabela_sem_nenhuma(app):
@@ -745,6 +844,8 @@ def test_os_numeros_de_baixo_voltaram(app, monkeypatch):
     from app.apps.analisesps import consultas
     monkeypatch.setattr(consultas, "contagem_agendamento", lambda f: {
         "Agendar": 3, "Agendado": 2, "Falha Agendar": 1, "Pago": 4})
+    monkeypatch.setattr(consultas, "resumo_e_agendamento", lambda f: (
+        consultas.resumo(f), consultas.contagem_agendamento(f)))
     monkeypatch.setattr(consultas, "soma_por", lambda f, c, limite=12: [
         {"nome": "BRADESCO 7011-4", "quantidade": 2, "total": Decimal("9000.00")}])
 
@@ -1225,6 +1326,527 @@ def test_ligado_e_desligado_querem_dizer_a_mesma_coisa_em_todo_lugar(app):
     assert agenda.esta_ativo({})
     for desligado in ("cancelado", "inativo", "Desativado", " ARQUIVADO "):
         assert not agenda.esta_ativo({"status": desligado}), desligado
+
+
+# ---------------------------------------------------------------------------
+# TIRAR DO LOTE, PELA BARRA DO ALTO
+# ---------------------------------------------------------------------------
+def test_o_botao_de_agendamento_chama_desagendar(app):
+    """O dono quer o termo do Streamlit. "Remover informação" descrevia o
+    efeito, mas não era o nome que ele usa — e agora convive na mesma barra
+    com "Remover do lote", que é outra coisa."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert ">Desagendar</button>" in html
+    assert "Remover informação" not in html
+
+
+def test_remover_do_lote_tira_de_grupos_diferentes_de_uma_vez(app_lote,
+                                                              monkeypatch):
+    """Marcar linhas em grupos diferentes e tirar todas de uma vez. Antes só
+    dava editando o texto do lote na mão, achando o número no meio dos outros."""
+    from app.apps.analisesps import lote
+    guardado = {"conteudo": "Pagar amanhã\n1 2\n\nSemana que vem\n3"}
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": guardado["conteudo"], "salvo_por": "Marcelo",
+        "salvo_em": None})
+    monkeypatch.setattr(lote, "salvar",
+                        lambda c, quem="", pessoa="": guardado.update(conteudo=c))
+
+    resposta = como(app_lote, SENHA_OPERADOR).post(
+        "/analisesps/lote", data={"acao": "remover_ids", "ids": "1,3"},
+        follow_redirects=True)
+    assert resposta.status_code == 200
+    assert "1" not in guardado["conteudo"].split()
+    assert "3" not in guardado["conteudo"].split()
+    assert "2" in guardado["conteudo"], "tirou o que não foi marcado"
+    # Os títulos ficam mesmo quando o grupo esvazia: apagá-los faria a remessa
+    # perder a divisão que alguém montou.
+    assert "Pagar amanhã" in guardado["conteudo"]
+    assert "Semana que vem" in guardado["conteudo"]
+
+
+def test_remover_do_lote_nao_mexe_na_sp(app_lote, monkeypatch):
+    """"Remover" numa tela de pagamentos assusta, e com razão. Este mexe SÓ na
+    lista: não altera status, não entra na fila da planilha, não toca no
+    Pipefy."""
+    from app.apps.analisesps import lote, web as tela
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "Grupo\n1", "salvo_por": None, "salvo_em": None})
+    monkeypatch.setattr(lote, "salvar", lambda c, quem="", pessoa="": None)
+
+    gravou = []
+    monkeypatch.setattr(tela, "_gravar_alteracao",
+                        lambda *a, **k: gravou.append(a) or {"ok": True})
+
+    como(app_lote, SENHA_OPERADOR).post(
+        "/analisesps/lote", data={"acao": "remover_ids", "ids": "1"},
+        follow_redirects=True)
+    assert not gravou, "tirar do lote escreveu na planilha"
+
+
+def test_marcar_o_que_nao_esta_no_lote_e_explicado(app_lote, monkeypatch):
+    """O painel por status embaixo mostra SPs que NÃO estão no lote. Marcar
+    uma delas e mandar remover não é erro — simplesmente não há o que tirar,
+    e a tela precisa dizer isso em vez de fingir que fez."""
+    from app.apps.analisesps import lote
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "Grupo\n1", "salvo_por": None, "salvo_em": None})
+    monkeypatch.setattr(lote, "salvar", lambda c, quem="", pessoa="": None)
+
+    cliente = como(app_lote, SENHA_OPERADOR)
+    nenhuma = cliente.post("/analisesps/lote",
+                           data={"acao": "remover_ids", "ids": "99"},
+                           follow_redirects=True).get_data(as_text=True)
+    assert "Nenhuma das SPs marcadas estava no lote" in nenhuma
+
+    metade = cliente.post("/analisesps/lote",
+                          data={"acao": "remover_ids", "ids": "1,99"},
+                          follow_redirects=True).get_data(as_text=True)
+    assert "1 SP(s) saíram do lote" in metade
+    assert "já não estavam nele" in metade
+
+
+def test_o_botao_de_remover_so_existe_na_tela_do_lote(app, app_lote):
+    """Nas Solicitações não há lote de onde tirar — o botão de lá é o de
+    MANDAR para o lote. Dois botões parecidos com efeitos opostos na mesma
+    barra seria pedir para alguém errar."""
+    nas_solicitacoes = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'id="ba-remover-lote"' not in nas_solicitacoes
+    assert 'id="ba-enviar-lote"' in nas_solicitacoes
+
+    no_lote = como(app_lote, SENHA_OPERADOR).get(
+        "/analisesps/lote").get_data(as_text=True)
+    assert 'id="ba-remover-lote"' in no_lote
+    assert 'id="ba-enviar-lote"' not in no_lote
+
+
+def test_a_consulta_nao_tira_do_lote(app_lote):
+    resposta = como(app_lote, SENHA_CONSULTA).post(
+        "/analisesps/lote", data={"acao": "remover_ids", "ids": "1"})
+    assert resposta.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# A BUSCA POR ATUALIZAÇÕES DE 90 EM 90 SEGUNDOS
+#
+# "a busca por atualizacoes a cada 90s acho que nao tá acontecendo" — e não
+# estava. O Streamlit tinha "Auto-atualizar (90s)", ligado por padrão; a
+# conversão deixou de fora, apostando num agendador externo que não dá sinal
+# de ter sido configurado. Sem os dois, a base só se atualizava quando alguém
+# apertasse o botão em Configurações.
+# ---------------------------------------------------------------------------
+def test_a_tela_pergunta_por_atualizacoes(app):
+    """A marca com o carimbo da última sincronização e o endereço de quem
+    responde. É comparando com esse carimbo que a tela sabe se mudou algo."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'id="frescor"' in html
+    assert "/api/frescor" in html
+    assert html.count("analisesps.js") == 1, "o script entrou duas vezes"
+
+
+def test_o_frescor_dispara_a_sincronizacao_quando_ela_esta_velha(app,
+                                                                 monkeypatch):
+    """É isto que substitui o agendador externo: quem estiver com a tela
+    aberta mantém a base viva para todo mundo."""
+    from app.apps.analisesps import tarefas
+    pedidos = []
+    monkeypatch.setattr(tarefas, "estado",
+                        lambda: {"rodando": False, "detalhe": None,
+                                 "interrompida": None})
+    monkeypatch.setattr(tarefas, "_minutos_desde_a_ultima_sincronizacao",
+                        lambda: 20.0)
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="manual":
+                        pedidos.append((modo, disparo)) or {"ok": True})
+
+    resposta = como(app, SENHA_OPERADOR).get("/analisesps/api/frescor")
+    assert resposta.status_code == 200
+    assert resposta.get_json()["disparou"] is True
+    assert pedidos == [("sincronizar", "tela aberta")]
+
+
+def test_o_frescor_nao_dispara_a_toda_hora(app, monkeypatch):
+    """Com quatro pessoas com a tela aberta o dia inteiro, um disparo a cada
+    90 s seriam quarenta sincronizações por hora, todas lendo a planilha."""
+    from app.apps.analisesps import tarefas
+    pedidos = []
+    monkeypatch.setattr(tarefas, "estado",
+                        lambda: {"rodando": False, "detalhe": None,
+                                 "interrompida": None})
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="manual":
+                        pedidos.append(modo) or {"ok": True})
+
+    # Acabou de sincronizar: não dispara.
+    monkeypatch.setattr(tarefas, "_minutos_desde_a_ultima_sincronizacao",
+                        lambda: 1.0)
+    assert como(app, SENHA_OPERADOR).get(
+        "/analisesps/api/frescor").get_json()["disparou"] is False
+    assert not pedidos
+
+    # Já está rodando: também não.
+    monkeypatch.setattr(tarefas, "_minutos_desde_a_ultima_sincronizacao",
+                        lambda: 99.0)
+    monkeypatch.setattr(tarefas, "estado",
+                        lambda: {"rodando": True, "detalhe": {"etapa": "delta"},
+                                 "interrompida": None})
+    assert como(app, SENHA_OPERADOR).get(
+        "/analisesps/api/frescor").get_json()["disparou"] is False
+    assert not pedidos
+
+
+def test_o_frescor_nunca_estoura_na_cara_de_quem_so_olhava(app, monkeypatch):
+    """É chamado de fundo, de 90 em 90 segundos. Uma falha aqui não pode virar
+    erro na tela de quem estava conferindo uma lista."""
+    from app.apps.analisesps import consultas, tarefas
+
+    def explode(*a, **k):
+        raise RuntimeError("banco caiu")
+
+    monkeypatch.setattr(tarefas, "estado", explode)
+    monkeypatch.setattr(consultas, "base_carregada", explode)
+
+    resposta = como(app, SENHA_OPERADOR).get("/analisesps/api/frescor")
+    assert resposta.status_code == 200
+    assert resposta.get_json()["disparou"] is False
+
+
+def test_quem_so_consulta_tambem_mantem_a_base_viva(app, monkeypatch):
+    """A base é de todos. Se só o Operador mantivesse, uma tarde inteira com
+    o Consulta aberto deixaria a base parada."""
+    from app.apps.analisesps import tarefas
+    monkeypatch.setattr(tarefas, "estado",
+                        lambda: {"rodando": False, "detalhe": None,
+                                 "interrompida": None})
+    monkeypatch.setattr(tarefas, "_minutos_desde_a_ultima_sincronizacao",
+                        lambda: 99.0)
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="manual": {"ok": True})
+    assert como(app, SENHA_CONSULTA).get(
+        "/analisesps/api/frescor").status_code == 200
+
+
+def test_a_tela_nao_se_recarrega_por_baixo_de_quem_esta_marcando(app):
+    """Recarregar por baixo de quem acabou de marcar vinte linhas apagaria a
+    seleção — pior do que ver um número com dois minutos de idade. O script
+    confere a seleção antes de recarregar, e senão só avisa."""
+    css_js = (Path(__file__).resolve().parents[1] / "app" / "apps"
+              / "analisesps" / "static" / "analisesps.js").read_text(
+                  encoding="utf-8")
+    assert "temSelecao" in css_js
+    assert "temModalAberto" in css_js
+    assert "avisar()" in css_js
+
+
+def test_a_hora_da_ultima_atualizacao_fica_a_vista(app):
+    """"Está atualizando?" tem de ser respondível de relance, sem abrir
+    Configurações."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "base de" in html
+
+
+# ---------------------------------------------------------------------------
+# O FILTRO DE OBRAS
+# ---------------------------------------------------------------------------
+def test_o_filtro_de_obra_e_pesquisavel_quando_ha_muitas(app, monkeypatch):
+    """Doze obras cabem na tela e se acham com o olho; oitenta, não — e rolar
+    a lista procurando "creche" é coisa que se faz vinte vezes por dia."""
+    from app.apps.analisesps import consultas
+    muitas = [f"OBRA {i:02d}" for i in range(30)]
+    monkeypatch.setattr(consultas, "opcoes",
+                        lambda coluna, limite=400:
+                        muitas if coluna == "centro_custo" else ["Pagar"])
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes?f=1").get_data(as_text=True)
+    assert "procura-opcao" in html, "faltou o campo de procura"
+    assert "Obra (centro de custo)" in html
+
+
+def test_lista_curta_nao_ganha_campo_de_procura(app, monkeypatch):
+    """Campo de procura numa lista de três é ruído."""
+    from app.apps.analisesps import consultas
+    monkeypatch.setattr(consultas, "opcoes",
+                        lambda coluna, limite=400: ["A", "B", "C"])
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes?f=1").get_data(as_text=True)
+    # O script sempre menciona a classe; o que não pode existir é o CAMPO.
+    assert 'class="procura-opcao"' not in html
+
+
+def test_a_procura_nao_esconde_a_opcao_ja_marcada(app):
+    """Esconder uma obra marcada porque ela não casa com o texto digitado
+    faria a pessoa achar que desmarcou sozinha."""
+    js = (Path(__file__).resolve().parents[1] / "app" / "apps" / "analisesps"
+          / "templates" / "analisesps_filtros.html").read_text(encoding="utf-8")
+    assert "marcada" in js and "|| marcada" in js
+
+
+def test_a_procura_ignora_acento_e_maiuscula(app):
+    """Quem procura "sao" tem de achar "SÃO"."""
+    conteudo = (Path(__file__).resolve().parents[1] / "app" / "apps"
+                / "analisesps" / "templates"
+                / "analisesps_filtros.html").read_text(encoding="utf-8")
+    assert "normalize(\"NFD\")" in conteudo
+    assert "toLowerCase()" in conteudo
+
+
+def test_a_procura_nao_aplica_o_filtro_sozinha(app):
+    """O campo procura DENTRO do bloco: filtra as caixas já carregadas, sem ir
+    ao servidor. Digitar nele não pode disparar a consulta nem mandar o
+    formulário — senão cada letra viraria uma ida ao banco."""
+    conteudo = (Path(__file__).resolve().parents[1] / "app" / "apps"
+                / "analisesps" / "templates"
+                / "analisesps_filtros.html").read_text(encoding="utf-8")
+    # O envio automático só olha os campos do filtro, e o de procura tem
+    # classe própria e barra o Enter.
+    assert "stopPropagation()" in conteudo
+    assert 'class="procura-opcao"' in conteudo
+
+
+# ---------------------------------------------------------------------------
+# A TELA DE CÓDIGOS DE PAGAMENTO
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def app_codigos(app, monkeypatch):
+    from app.apps.analisesps import consultas, pagamentos
+    monkeypatch.setattr(consultas, "uma",
+                        lambda i: linha_falsa(i, forma_pagamento="Pix",
+                                              info_pgt="Chave Pix: x@y.com"))
+    monkeypatch.setattr(pagamentos, "gerar_pix",
+                        lambda *a, **k: ("QRFALSO", "carga-pix"))
+    return app
+
+
+def test_a_tela_de_codigos_tem_o_botao_de_agendar(app_codigos):
+    """O caminho normal é: gerar o código, pagar, e marcar. Sem a barra aqui,
+    era voltar para a lista, procurar as mesmas SPs de novo e marcar lá — e no
+    Streamlit os códigos apareciam LOGO ABAIXO da barra, na mesma tela."""
+    html = como(app_codigos, SENHA_OPERADOR).get(
+        "/analisesps/codigos?id=1&id=2").get_data(as_text=True)
+    assert 'id="barra-acoes"' in html
+    for valor in ("Agendar", "Agendado", "Falha Agendar", "Desagendar", "Pago"):
+        assert f'data-valor="{valor}"' in html, f"faltou {valor}"
+
+
+def test_as_sps_ja_chegam_marcadas_na_tela_de_codigos(app_codigos):
+    """Quem chegou aqui foi porque escolheu estas SPs. Obrigar a marcar de
+    novo seria repetir o trabalho que acabou de ser feito."""
+    html = como(app_codigos, SENHA_OPERADOR).get(
+        "/analisesps/codigos?id=1&id=2").get_data(as_text=True)
+    assert html.count('class="marca"') == 2
+    assert html.count("checked") >= 2
+
+
+def test_a_tela_de_codigos_nao_oferece_gerar_codigo_nem_mexer_no_lote(
+        app_codigos):
+    """Botão que não faz sentido onde está é convite a errar."""
+    html = como(app_codigos, SENHA_OPERADOR).get(
+        "/analisesps/codigos?id=1&origem=lote").get_data(as_text=True)
+    assert 'id="ba-codigos"' not in html, "oferece gerar o QR estando nele"
+    assert 'id="ba-remover-lote"' not in html
+    assert 'id="ba-enviar-lote"' not in html
+
+
+def test_o_numero_da_sp_nos_codigos_abre_a_ficha_no_modal(app_codigos):
+    """Abrir em tela cheia fazia sumir os códigos recém-gerados, e voltar
+    obrigava a refazer tudo só para conferir um dado."""
+    html = como(app_codigos, SENHA_OPERADOR).get(
+        "/analisesps/codigos?id=1").get_data(as_text=True)
+    assert "data-ficha=" in html, "o número não sabe qual ficha abrir"
+    assert 'id="ficha-modal"' in html, "não há modal nesta tela"
+    # E continua sendo um link de verdade: abrir em nova aba tem de dar a
+    # página inteira.
+    assert "/analisesps/sp/1" in html
+
+
+def test_o_clique_do_link_da_ficha_respeita_a_nova_aba(app):
+    """Ctrl+clique e botão do meio abrem em nova aba — e aí o certo é a página
+    inteira, não um modal que a outra aba não tem."""
+    conteudo = (Path(__file__).resolve().parents[1] / "app" / "apps"
+                / "analisesps" / "templates"
+                / "analisesps_ficha_modal.html").read_text(encoding="utf-8")
+    assert "a[data-ficha]" in conteudo
+    assert "ctrlKey" in conteudo and "metaKey" in conteudo
+
+
+# ---------------------------------------------------------------------------
+# O CÓDIGO DE PAGAMENTO DENTRO DA FICHA
+# ---------------------------------------------------------------------------
+def test_a_ficha_ja_mostra_o_qr_pix(app_ficha, monkeypatch):
+    """Quem abre a SP para conferir um dado quase sempre está a caminho de
+    pagar. Voltar à lista só para gerar o QR era um caminho a mais em cada
+    pagamento."""
+    from app.apps.analisesps import consultas, pagamentos
+    registro = dict(consultas.uma("1234567890") or {})
+    registro.update(forma_pagamento="Pix", info_pgt="Chave Pix: x@y.com",
+                    status_pgt="Pagar")
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+    monkeypatch.setattr(pagamentos, "gerar_pix",
+                        lambda *a, **k: (b"PNGFALSO", "carga-pix"))
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert "data:image/png;base64," in html
+    assert "carga-pix" in html
+    # O botão "QR / Código" saiu: com o código aqui, ele virou redundante.
+    assert "QR / Código" not in html
+
+
+def test_a_ficha_ja_mostra_o_codigo_de_barras(app_ficha, monkeypatch):
+    from app.apps.analisesps import consultas, pagamentos
+    registro = dict(consultas.uma("1234567890") or {})
+    registro.update(forma_pagamento="Boleto", codigo_barras="23793381286",
+                    status_pgt="Pagar")
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+    monkeypatch.setattr(pagamentos, "barcode_svg",
+                        lambda barras: ("<svg>falso</svg>", "ok"))
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert "<svg>falso</svg>" in html
+    assert "Linha digitável" in html
+    assert "23793381286" in html
+
+
+def test_a_ficha_avisa_antes_de_mostrar_o_codigo_de_uma_sp_que_ja_saiu(
+        app_ficha, monkeypatch):
+    """Mostrar um código de pagamento numa SP já paga é o caminho curto para
+    pagar duas vezes. O código continua aparecendo — às vezes é justamente o
+    que se quer conferir —, mas com o aviso na frente."""
+    from app.apps.analisesps import consultas, pagamentos
+    registro = dict(consultas.uma("1234567890") or {})
+    registro.update(forma_pagamento="Pix", info_pgt="Chave Pix: x@y.com",
+                    status_pgt="Pago")
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+    monkeypatch.setattr(pagamentos, "gerar_pix",
+                        lambda *a, **k: (b"PNGFALSO", "carga-pix"))
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert "data:image/png;base64," in html, "escondeu o código"
+    assert "pagar de novo" in html, "mostrou o código sem avisar"
+
+
+def test_forma_sem_codigo_explica_em_vez_de_ficar_vazio(app_ficha, monkeypatch):
+    """Um espaço em branco faria a pessoa achar que o sistema falhou."""
+    from app.apps.analisesps import consultas
+    registro = dict(consultas.uma("1234567890") or {})
+    registro.update(forma_pagamento="Transferência", status_pgt="Pagar")
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    html = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1").get_data(as_text=True)
+    assert "gera QR nem código de barras" in html
+
+
+def test_uma_sp_com_codigo_ruim_nao_derruba_a_ficha(app_ficha, monkeypatch):
+    """A ficha tem muito mais coisa do que o código. Se a geração falhar, o
+    resto continua servindo."""
+    from app.apps.analisesps import consultas, pagamentos
+    registro = dict(consultas.uma("1234567890") or {})
+    registro.update(forma_pagamento="Pix", info_pgt="lixo", status_pgt="Pagar")
+    monkeypatch.setattr(consultas, "uma", lambda i: registro)
+
+    def explode(*a, **k):
+        raise RuntimeError("chave Pix impossível")
+
+    monkeypatch.setattr(pagamentos, "gerar_pix", explode)
+    resposta = como(app_ficha, SENHA_OPERADOR).get(
+        "/analisesps/sp/1234567890?modal=1")
+    assert resposta.status_code == 200
+    assert "chave Pix impossível" in resposta.get_data(as_text=True)
+
+
+def test_a_montagem_do_codigo_vive_num_lugar_so(app):
+    """Duas telas mostram o código: a de códigos, que monta até cinquenta de
+    uma vez, e a ficha. Duas cópias divergiriam no dia em que uma ganhasse um
+    caso — e a que ficasse para trás mostraria um código errado a quem está
+    pagando."""
+    from app.apps.analisesps import web as tela
+    assert hasattr(tela, "_codigo_de_pagamento")
+    vazio = tela._codigo_de_pagamento("1", None)
+    assert vazio["erro"] and vazio["sp"] is None
+
+
+# ---------------------------------------------------------------------------
+# A HORA NA TELA
+# ---------------------------------------------------------------------------
+def test_o_carimbo_da_base_sai_em_portugues_com_a_hora(app):
+    """O dono viu na tela: "base de 2026-09-04T17:25:31.319885-03:00".
+
+    O carimbo da última sincronização é guardado como TEXTO em
+    `analisesps.meta`, e o formatador só sabia converter data de verdade — o
+    resto passava cru. E aqui a HORA é o ponto: "a base é de quando?"
+    respondido só com o dia diz "hoje", que é o que já se sabia."""
+    from app.apps.analisesps import formatos
+
+    assert formatos.momento_br(
+        "2026-09-04T17:25:31.319885-03:00") == "04/09/2026 às 17:25"
+    # O mesmo instante, escrito em UTC, tem de dar a mesma hora de Brasília.
+    assert formatos.momento_br(
+        "2026-09-04T20:25:31.319885+00:00") == "04/09/2026 às 17:25"
+    # Sem fuso, vale a convenção do módulo: o serviço roda em UTC.
+    assert formatos.momento_br("2026-09-04T20:25:31") == "04/09/2026 às 17:25"
+
+
+def test_o_dia_mostrado_e_o_dia_em_brasilia(app):
+    """Uma sincronização das 22h daqui é 1h do dia seguinte em UTC. Sem
+    converter, a tela mostraria a data de amanhã."""
+    from app.apps.analisesps import formatos
+    assert formatos.data_br("2026-09-05T01:30:00+00:00") == "04/09/2026"
+    assert formatos.momento_br(
+        "2026-09-05T01:30:00+00:00") == "04/09/2026 às 22:30"
+
+
+def test_o_formatador_nunca_estraga_o_que_nao_entende(app):
+    """Vazio continua vazio, e texto que não é data passa inteiro — nunca
+    "None" nem exceção na cara de quem só abriu uma tela."""
+    from app.apps.analisesps import formatos
+    for vazio in (None, "", "   "):
+        assert formatos.momento_br(vazio) == ""
+        assert formatos.data_br(vazio) == ""
+    assert formatos.momento_br("sem data aqui") == "sem data aqui"
+    # E uma data pura (sem hora) não ganha hora inventada.
+    import datetime as dt
+    assert formatos.momento_br(dt.date(2026, 9, 4)) == "04/09/2026"
+
+
+def test_a_tela_mostra_a_hora_da_base(app, monkeypatch):
+    from app.apps.analisesps import consultas
+    monkeypatch.setattr(consultas, "base_carregada", lambda: {
+        "pronta": True, "quantidade": 59055, "desconhecida": False,
+        "ultima": "2026-09-04T17:25:31.319885-03:00"})
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "base de 04/09/2026 às 17:25" in html
+    # O carimbo cru ainda existe na página, num atributo escondido: é o valor
+    # que o script compara para saber se a base mudou. O que não pode é ele
+    # aparecer como TEXTO.
+    import re
+    visivel = re.sub(r"<[^>]+>", " ", html)
+    assert "T17:25:31" not in visivel, "o carimbo cru vazou para a tela"
+
+
+def test_o_registro_de_alteracoes_mostra_a_hora(app, monkeypatch):
+    """Duas mudanças no mesmo dia, sem a hora, ficam indistinguíveis — e a
+    pergunta que se faz num registro de alterações é "quando foi isso?"."""
+    import datetime as dt
+    from app.apps.analisesps import db as banco
+    quando = dt.datetime(2026, 9, 4, 20, 25, tzinfo=dt.timezone.utc)
+    monkeypatch.setattr(banco, "consultar", lambda sql, params=(): (
+        [] if "count(*)" in sql else
+        [(quando, "1", "agendado", "Agendado", "", "Agendar", "operador",
+          "Marcelo", "enviado", quando, None)]))
+    monkeypatch.setattr(banco, "consultar_um", lambda sql, params=(): (0,))
+
+    html = como(app, SENHA_CONSULTA).get(
+        "/analisesps/log").get_data(as_text=True)
+    assert "04/09/2026 às 17:25" in html
 
 
 def test_a_tela_de_entrada_monta_sem_senha_configurada(app, monkeypatch):
@@ -1954,12 +2576,18 @@ def test_consulta_nao_ve_os_botoes_na_ficha(app_ficha):
     assert 'data-coluna="status_pgt"' not in html
 
 
-def test_a_ficha_leva_direto_ao_codigo_de_pagamento(app_ficha):
+def test_a_ficha_traz_o_codigo_de_pagamento_nela_mesma(app_ficha):
     """Quem abriu a ficha para pagar não devia ter de voltar à lista, marcar a
-    mesma SP e clicar em outro lugar."""
+    mesma SP e clicar em outro lugar.
+
+    Era um LINK para a tela de códigos; desde 05/09/2026 o código está na
+    própria ficha, e o link saiu por ter virado redundante. Vale também para
+    o perfil Consulta: ver o código não é alterar nada."""
     html = como(app_ficha, SENHA_CONSULTA).get(
         "/analisesps/sp/1234567890").get_data(as_text=True)
-    assert "codigos?id=1234567890" in html
+    assert "codigos?id=1234567890" not in html, "o link redundante voltou"
+    assert "Linha digitável" in html, "o código não está na ficha"
+    assert "<svg" in html
 
 
 def test_a_ficha_mostra_a_navegacao_e_o_perfil(app_ficha):
@@ -2116,3 +2744,174 @@ def test_o_lote_e_lido_antes_de_a_resposta_comecar(app_sem_banco):
     resposta = como(app_sem_banco, SENHA_OPERADOR).get("/analisesps/lote/exportar")
     assert resposta.status_code == 500
     assert resposta.mimetype == "text/html"
+
+
+# ---------------------------------------------------------------------------
+# BeeVale — as duas telas
+# ---------------------------------------------------------------------------
+def test_o_cadastro_beevale_nao_depende_do_drive(app, monkeypatch):
+    """É o lado inofensivo: cola-se a lista e sai um arquivo. Não escreve em
+    lugar nenhum, e por isso funciona mesmo com a pasta do Drive não
+    configurada — que é o estado de hoje."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("", ""))
+    monkeypatch.setattr(beevale, "buscar_por_cpf", lambda cpfs: (
+        [beevale.registro("Ana Silva", "1990-04-25", "5548999887766", cpfs[0])],
+        []))
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/beevale/cadastro",
+        data={"texto": "01234567890@bwsconstrucoes.com.br"})
+
+    assert resposta.status_code == 200
+    html = resposta.get_data(as_text=True)
+    assert "Ana Silva" in html
+    assert "012.345.678-90" in html
+
+
+def test_o_cadastro_beevale_avisa_quem_ficou_de_fora(app, monkeypatch):
+    """Gerar o arquivo sem notar que faltou gente é o erro que só aparece no
+    portal, depois."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "buscar_por_cpf",
+                        lambda cpfs: ([], list(cpfs)))
+
+    html = como(app, SENHA_OPERADOR).post(
+        "/analisesps/beevale/cadastro",
+        data={"texto": "01234567890"}).get_data(as_text=True)
+
+    assert "não estão na planilha Dados" in html
+    assert "01234567890" in html, "quem faltou tem de aparecer pelo número"
+
+
+def test_baixar_o_cadastro_devolve_um_xlsx(app, monkeypatch):
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "buscar_por_cpf", lambda cpfs: (
+        [beevale.registro("Ana Silva", "", "", cpfs[0])], []))
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/beevale/cadastro",
+        data={"texto": "01234567890", "acao": "baixar"})
+
+    assert resposta.status_code == 200
+    assert "spreadsheetml" in resposta.headers["Content-Type"]
+    assert "Cadastro_BeeVale_" in resposta.headers["Content-Disposition"]
+    assert resposta.get_data()[:2] == b"PK"        # xlsx é um zip
+
+
+def test_gerar_beevale_sem_pasta_do_drive_avisa_e_nao_oferece_o_botao(
+        app, monkeypatch):
+    """O estado de hoje. A tela tem de dizer o que falta — e NÃO pode mostrar
+    um botão que só falharia."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("", ""))
+    monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(i))
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/beevale/gerar?id=1").get_data(as_text=True)
+
+    assert "Falta dizer qual é a pasta do Google Drive" in html
+    assert 'id="btn-gerar"' not in html
+
+
+def test_gerar_beevale_mostra_o_que_vai_acontecer_antes_de_fazer(
+        app, monkeypatch):
+    """A tela é de CONFERÊNCIA: nada acontece até o operador apertar. É a única
+    coisa do módulo que altera o Pipefy, e não tem desfazer."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("pasta", "tela"))
+    monkeypatch.setattr(beevale, "preparar", lambda ids: {
+        "prontos": [{"sp": "1", "cpf": "012.345.678-90", "nome": "Ana Silva",
+                     "valor": 850.5, "cadastro": {}, "descricao_atual": ""}],
+        "erros": [{"sp": "2", "motivo": "Campo vazio."}]})
+    monkeypatch.setattr(consultas, "uma", lambda i: linha_falsa(i))
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/beevale/gerar?id=1&id=2").get_data(as_text=True)
+
+    assert "Não tem desfazer" in html
+    assert "Ana Silva" in html
+    assert "Campo vazio." in html
+    assert 'id="btn-gerar"' in html
+
+
+def test_o_perfil_consulta_nao_gera_beevale(app):
+    """Ele sobe arquivo e reescreve card. Ver e exportar não dá esse direito."""
+    cliente = como(app, SENHA_CONSULTA)
+    for url in ("/analisesps/beevale/cadastro", "/analisesps/beevale/gerar?id=1"):
+        assert cliente.get(url).status_code == 403, url
+    assert cliente.post("/analisesps/api/beevale/gerar",
+                        json={"ids": ["1"]}).status_code == 403
+
+
+def test_a_barra_oferece_o_beevale_para_quem_opera(app):
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert 'id="ba-beevale"' in html
+    assert "Cadastro BeeVale" in html
+
+
+def test_a_linha_diz_a_forma_de_pagamento_para_a_trava_do_beevale(app):
+    """O botão só habilita quando TODAS as marcadas são BeeVale, e é do
+    atributo da linha que o navegador tira isso."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes").get_data(as_text=True)
+    assert "data-forma=" in html
+
+
+def test_configuracoes_diz_se_a_pasta_do_drive_esta_salva(app, monkeypatch):
+    """A pergunta do dono: "ficou salvo?". A tela responde sem ninguém entrar
+    no Render, e diz DE ONDE o valor veio — se um valor do Render vencesse em
+    silêncio, ele colaria a pasta, veria "salvo" e nada mudaria."""
+    from app.apps.analisesps import beevale
+    monkeypatch.setattr(beevale, "pasta_do_drive",
+                        lambda: ("1ycGeXKyABC123", "tela"))
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/configuracoes").get_data(as_text=True)
+
+    assert "Pasta do Google Drive" in html
+    assert "…ABC123" in html
+    # A pasta APARECE no campo, e é de propósito: ela não é segredo (é o
+    # endereço de uma pasta) e ele precisa poder conferir e trocar o que
+    # colou. O que nunca aparece é o token do Pipefy.
+    assert 'value="1ycGeXKyABC123"' in html
+    assert 'id="btn-salvar-pasta"' in html
+
+
+def test_o_token_do_pipefy_nunca_aparece_na_tela(app, monkeypatch):
+    """Esse SIM é segredo: com ele se lê e se escreve nos cards da empresa. A
+    tela diz apenas se está configurado."""
+    from app.apps.analisesps import beevale, credenciais
+    monkeypatch.setattr(beevale, "pasta_do_drive", lambda: ("pasta", "tela"))
+    monkeypatch.setattr(credenciais, "token", lambda nome, padrao="": (
+        "token-secreto-do-pipefy" if nome == "PIPEFY_TOKEN" else padrao))
+
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/configuracoes").get_data(as_text=True)
+
+    assert "token-secreto-do-pipefy" not in html
+    assert "Token do Pipefy" in html
+
+
+def test_a_pasta_colada_como_endereco_inteiro_e_aceita(app, monkeypatch):
+    """É o que se copia sem pensar: a barra do navegador com a pasta aberta.
+    Exigir que ele recorte o pedaço certo de uma URL é pedir para errar."""
+    from app.apps.analisesps import beevale
+    salvas = []
+    monkeypatch.setattr(beevale, "gravar_pasta_do_drive",
+                        lambda p: salvas.append(p) or "1ycGeXKyABC123")
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/api/pasta-drive",
+        json={"pasta": "https://drive.google.com/drive/folders/1ycGeXKyABC123"})
+
+    assert resposta.status_code == 200
+    assert resposta.get_json()["ok"] is True
+    assert resposta.get_json()["pasta"] == "1ycGeXKyABC123"
+
+
+def test_o_perfil_consulta_nao_troca_a_pasta_do_drive(app):
+    assert como(app, SENHA_CONSULTA).post(
+        "/analisesps/api/pasta-drive",
+        json={"pasta": "outra"}).status_code == 403

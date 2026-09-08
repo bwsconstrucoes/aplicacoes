@@ -34,6 +34,11 @@
   </div>
 {% endmacro %}
 
+{# A partir de quantas opções o bloco ganha um campo de procura. Doze cabem
+   na tela e se acham com o olho; oitenta obras, não — e rolar uma lista
+   procurando "creche" é o tipo de coisa que se faz vinte vezes por dia. #}
+{% set PROCURA_A_PARTIR_DE = 12 %}
+
 {% macro bloco(titulo, nome, valores, marcados) %}
   {% if valores %}
     <div class="filtro {% if marcados %}aberto{% endif %}">
@@ -42,7 +47,18 @@
         {% if marcados %}<span class="filtro-badge">{{ marcados|length }}</span>{% endif %}
         <span class="seta">▾</span>
       </div>
-      <div class="filtro-cont">{{ caixas(nome, valores, marcados) }}</div>
+      <div class="filtro-cont">
+        {% if valores|length >= PROCURA_A_PARTIR_DE %}
+          {# Procura DENTRO do bloco: filtra as opções já carregadas, sem ir ao
+             servidor e sem mexer no filtro em si. Digitar aqui não aplica
+             nada — só ajuda a achar a caixa para marcar. #}
+          <input type="search" class="procura-opcao" autocomplete="off"
+                 placeholder="Procurar {{ titulo|lower }}…"
+                 aria-label="Procurar em {{ titulo|lower }}">
+          <p class="procura-nada" hidden>Nenhuma opção com esse texto.</p>
+        {% endif %}
+        {{ caixas(nome, valores, marcados) }}
+      </div>
     </div>
   {% endif %}
 {% endmacro %}
@@ -105,7 +121,7 @@
   {{ bloco('Forma de pagamento', 'forma', opcoes.forma, filtros.forma) }}
   {{ bloco('Conta', 'conta', opcoes.conta, filtros.conta) }}
   {{ bloco('Tipo de despesa', 'tipo_despesa', opcoes.tipo_despesa, filtros.tipo_despesa) }}
-  {{ bloco('Centro de custo', 'centro_custo', opcoes.centro_custo, filtros.centro_custo) }}
+  {{ bloco('Obra (centro de custo)', 'centro_custo', opcoes.centro_custo, filtros.centro_custo) }}
   {{ bloco('Projeto', 'projeto', opcoes.projeto, filtros.projeto) }}
   {{ bloco('Responsável', 'responsavel', opcoes.responsavel, filtros.responsavel) }}
 
@@ -218,6 +234,41 @@
   // Enter no campo de busca aplica na hora, sem esperar.
   form.addEventListener("keydown", e => {
     if (e.key === "Enter") { e.preventDefault(); agendar(0); }
+  });
+
+  // ---- Procurar DENTRO de um bloco de opções --------------------------
+  //
+  // Filtra as caixas já carregadas. Não vai ao servidor e não aplica filtro
+  // nenhum: só ajuda a achar a obra para marcar, numa lista de oitenta.
+  // Ignora acento e maiúscula — quem procura "creche" tem de achar "CRECHE",
+  // e quem procura "sao" tem de achar "SÃO".
+  const semAcento = t => (t || "").normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+  form.querySelectorAll(".procura-opcao").forEach(campo => {
+    const cont = campo.closest(".filtro-cont");
+    const nada = cont.querySelector(".procura-nada");
+    const opcoes = Array.from(cont.querySelectorAll(".opcao"));
+
+    campo.addEventListener("input", () => {
+      const procurado = semAcento(campo.value.trim());
+      let visiveis = 0;
+      opcoes.forEach(o => {
+        const marcada = o.querySelector("input").checked;
+        // Uma opção MARCADA nunca some, mesmo fora da procura: escondê-la
+        // faria a pessoa achar que desmarcou sozinha.
+        const casa = !procurado || marcada
+                     || semAcento(o.textContent).includes(procurado);
+        o.hidden = !casa;
+        if (casa) visiveis++;
+      });
+      if (nada) nada.hidden = visiveis > 0;
+    });
+
+    // Digitar aqui não pode aplicar o filtro nem mandar o formulário.
+    campo.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); }
+    });
   });
 })();
 </script>

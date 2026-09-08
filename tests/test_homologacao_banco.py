@@ -107,6 +107,44 @@ def test_leitura_abre_ou_recusa_conforme_o_perfil(app_real, operadores, perfil, 
 
 
 # ---------------------------------------------------------------------------
+# Toda tela ABRE de verdade para alguém
+#
+# O teste acima percorre quatro perfis do roteiro. Quando NENHUM deles tem a
+# ação da tela, ele só confere o 403 — e a tela nunca chega a ser desenhada.
+# Foi por esse buraco que a tela de Banco de preços foi para produção com um
+# `{% endblock %}` faltando: ela exige "comprar", nenhum dos quatro perfis tem
+# essa ação, e o erro só apareceu quando uma pessoa abriu a página.
+#
+# Aqui cada tela é desenhada por um perfil que PODE abri-la. Se o template não
+# compila, se falta uma variável no contexto, se a consulta quebra com a base
+# vazia — cai aqui, e não na frente do dono.
+# ---------------------------------------------------------------------------
+TELAS = [c for c in LEITURAS if "/api/" not in c[1]]
+
+
+@pytest.mark.parametrize("caso", TELAS, ids=_id)
+def test_toda_tela_e_desenhada_por_quem_pode_abrir(app_real, operadores, caso):
+    _endpoint, caminho, _metodo, acao = caso
+    quem = sorted(PERMISSOES[acao], key=lambda p: p.value)
+    assert quem, f"a ação {acao} não pertence a perfil nenhum"
+
+    c = como(app_real, operadores[quem[0]].id)
+    # Segue o desvio: alguns endereços antigos continuam existindo e levam à
+    # tela nova (é o caso de /erp/suprimentos/cadastros). O que importa é que
+    # no fim uma página seja DESENHADA.
+    r = c.get(caminho, follow_redirects=True)
+
+    assert r.status_code == 200, (
+        f"{caminho} não abriu para {quem[0].value} (HTTP {r.status_code}). "
+        f"Com a base vazia, toda tela do ERP tem de desenhar. "
+        f"{r.get_data(as_text=True)[:300]}")
+    corpo = r.get_data(as_text=True)
+    assert "<body" in corpo.lower(), f"{caminho} respondeu 200 sem página"
+    assert "/erp/entrar" not in r.request.path, (
+        f"{caminho} jogou {quem[0].value} para o login em vez de abrir")
+
+
+# ---------------------------------------------------------------------------
 # Escritas: quem não tem a ação é barrado antes de qualquer outra checagem
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("perfil", PERFIS_DO_ROTEIRO, ids=lambda p: p.value)

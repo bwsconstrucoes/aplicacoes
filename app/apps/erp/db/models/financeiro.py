@@ -655,9 +655,73 @@ class LocacaoItem(Base):
         Numeric(14, 4), nullable=False, default=0)
     valor_unitario: Mapped[Decimal] = mapped_column(Numeric(14, 4), nullable=False)
     obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    # QUANDO ESTE EQUIPAMENTO VOLTA. Por item, e não por contrato: a betoneira
+    # fica os oito meses da obra, as escoras eram para três semanas na
+    # concretagem da laje — e é a escora que se esquece. Perguntada na
+    # contratação, que é quando a pessoa sabe a resposta.
+    devolucao_prevista: Mapped[Optional[date]] = mapped_column(Date)
+    # a PRIMEIRA data prometida. Prorrogar é normal; prorrogar em silêncio não.
+    devolucao_prevista_original: Mapped[Optional[date]] = mapped_column(Date)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     contrato: Mapped[ContratoLocacao] = relationship(back_populates="itens")
+
+
+class LocacaoConferencia(Base):
+    """A prestação de contas mensal dos equipamentos de UM contrato.
+
+    Existe porque o alerta sozinho não resolve: o ERP já sabe dizer "10 meses
+    locado, o aluguel já pagou a compra" — o que faltava era ALGUÉM SER
+    OBRIGADO A RESPONDER. Uma por contrato por mês, endereçada ao
+    administrativo da obra, com nome.
+
+    Ela NÃO bloqueia o pagamento do aluguel: bloquear trocaria equipamento
+    esquecido por multa e briga com a locadora. Ela aparece como pendência e
+    avisa quem vai lançar a parcela.
+    """
+    __tablename__ = "locacao_conferencias"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    contrato_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("contratos_locacao.id", ondelete="CASCADE"),
+        nullable=False)
+    competencia: Mapped[date] = mapped_column(Date, nullable=False)
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    responsavel_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    respondida_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    respondida_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    situacao: Mapped[str] = mapped_column(Text, nullable=False, default="ABERTA")
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class LocacaoConferenciaItem(Base):
+    """O que a obra respondeu sobre UM equipamento, naquele mês.
+
+    `onde_esta` é o campo que mais vale, e foi pedido assim: "na laje do bloco
+    B, escorando até desforma" é uma resposta; "está aí" é outra, e quem lê
+    percebe a diferença na hora.
+    """
+    __tablename__ = "locacao_conferencia_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    conferencia_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("locacao_conferencias.id", ondelete="CASCADE"),
+        nullable=False)
+    item_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("locacao_itens.id", ondelete="CASCADE"), nullable=False)
+    presente: Mapped[Optional[str]] = mapped_column(Text)
+    em_uso: Mapped[Optional[bool]] = mapped_column(Boolean)
+    onde_esta: Mapped[Optional[str]] = mapped_column(Text)
+    devolucao_prevista: Mapped[Optional[date]] = mapped_column(Date)
+    decisao: Mapped[Optional[str]] = mapped_column(Text)
+    obra_destino_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("obras.id"))
+    motivo: Mapped[Optional[str]] = mapped_column(Text)
+    quantidade_conferida: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 4))
+    criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class LocacaoMovimento(Base):
@@ -811,3 +875,29 @@ class TituloColaborador(Base):
     valor: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     observacao: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AgenteMensagem(Base):
+    """O que o agente falou, com quem, quando — e se saiu mesmo.
+
+    Existe para responder à pergunta que o dono vai fazer quando a obra disser
+    que não sabia: "o Ruan foi cobrado?". E para o agente não virar spam: a
+    rotina roda todo dia, e a chave única (assunto, referência, pessoa, degrau)
+    é o que garante UMA mensagem por degrau — a trava está no banco, não na
+    esperança de o código lembrar.
+    """
+    __tablename__ = "agente_mensagens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    assunto: Mapped[str] = mapped_column(Text, nullable=False)
+    referencia_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    destinatario_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    telefone: Mapped[Optional[str]] = mapped_column(Text)
+    degrau: Mapped[str] = mapped_column(Text, nullable=False)
+    texto: Mapped[str] = mapped_column(Text, nullable=False)
+    canais: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    entregue: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    erro: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())

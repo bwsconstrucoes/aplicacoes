@@ -137,7 +137,10 @@
 - [ ] **Cruzamento estilo tela do Bradesco**: conferir conta correta e credor do
       Pix contra o que foi lançado
 - [ ] **Robô Bradesco**: adaptar para dar baixa via core do ERP
-- [ ] **Suprimentos**: pedidos de compra, three-way match (o ERP deixa de ser só financeiro); etapa/serviço da obra
+- [ ] **Suprimentos**: pedidos de compra, three-way match (o ERP deixa de ser só
+  financeiro); etapa/serviço da obra. **Especificação fechada em 04/09/2026 —
+  ver `SUPRIMENTOS.md`**, que confronta o ditado do dono com os dados reais das
+  planilhas em uso e traz o plano em cinco fases. Nada construído ainda.
       entra aqui (dentro do centro de custo), não antes
 - [x] Cadastro completo da obra: endereço (local de entrega), CNO, ART/RRT,
       contrato, vigência, data-base do reajuste, conta de recebimento,

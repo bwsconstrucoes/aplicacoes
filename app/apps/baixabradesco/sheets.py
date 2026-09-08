@@ -420,6 +420,22 @@ def _get_log_sheet(gc):
         return ws
 
 
+def load_fingerprints_processados(gc) -> set:
+    """Lê a coluna de fingerprints da LogBaixaBradesco UMA vez por lote.
+
+    ⚠️ Memória e cota: nunca trocar isto por uma consulta por página. Um lote de
+    dez comprovantes viraria dez leituras da mesma coluna — foi esse padrão que
+    derrubou a instância em julho de 2026 e que estoura a cota do Google.
+    """
+    try:
+        ws = _get_log_sheet(gc)
+        col = ws.col_values(1)
+    except Exception:
+        return set()
+    # A primeira linha é o cabeçalho ('fingerprint').
+    return {as_string(v) for v in col[1:] if as_string(v)}
+
+
 def check_fingerprint_processado(gc, fingerprint: str) -> bool:
     """Retorna True se este fingerprint já foi processado com sucesso."""
     try:

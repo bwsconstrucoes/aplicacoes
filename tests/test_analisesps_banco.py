@@ -174,16 +174,21 @@ def test_busca_trata_sublinhado_como_texto(banco_analisesps):
 
 
 def test_centro_de_custo_casa_dentro_da_celula(banco_analisesps):
-    """Na planilha o centro de custo às vezes vem com mais de um código na
-    mesma célula. Igualdade exata perderia essas linhas."""
+    """Na planilha o centro de custo às vezes vem com mais de uma obra na
+    mesma célula. Igualdade exata perderia essas linhas.
+
+    Este teste, escrito na conversão a partir do dado real, é a razão de a
+    separação aceitar BARRA além da vírgula: o dono citou "CONS, CRECHE SWAP",
+    e a base também tem "OBRA-12 / OBRA-13"."""
     from app.apps.analisesps import consultas
     semear([
         sp("1", centro_custo="OBRA-12"),
         sp("2", centro_custo="OBRA-12 / OBRA-13"),
         sp("3", centro_custo="OBRA-99"),
+        sp("4", centro_custo="OBRA-12, OBRA-14"),
     ])
     achados = {l["id"] for l in consultas.listar({"centro_custo": ["OBRA-12"]})}
-    assert achados == {"1", "2"}
+    assert achados == {"1", "2", "4"}
 
 
 # ---------------------------------------------------------------------------
@@ -1106,3 +1111,95 @@ def test_o_periodo_da_auditoria_recorta_de_verdade(banco_analisesps):
         {}, periodo={"campo": "solicitacao",
                      "de": dt.date(2026, 11, 1), "ate": dt.date(2026, 11, 30)})}
     assert por_solicitacao == {"7000000001", "7000000002"}
+
+
+# ---------------------------------------------------------------------------
+# AS OBRAS (centro de custo) — uma célula pode ter mais de uma
+#
+# Só com Postgres de verdade: a separação vive no SQL (`string_to_array` +
+# `unnest`), e o dublê da suíte ignora GROUP BY e WHERE.
+# ---------------------------------------------------------------------------
+def _sp_obra(conn, sp_id, centro):
+    conn.execute(
+        "INSERT INTO analisesps.sps (id, credor, valor_num, vencimento_d, "
+        "  status_pgt, centro_custo) "
+        "VALUES (?, 'FORNECEDOR', 100, '2026-09-10', 'Pagar', ?)",
+        (sp_id, centro))
+
+
+@pytest.mark.banco
+def test_a_lista_de_obras_vem_separada(banco_analisesps):
+    """A planilha aceita "CONS, CRECHE SWAP" na mesma célula quando a despesa
+    é rateada entre duas obras. A lista do filtro oferecia a combinação
+    inteira como se fosse uma obra — e a obra sozinha, que é o que se procura,
+    não aparecia em lugar nenhum."""
+    from app.apps.analisesps import consultas
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        _sp_obra(conn, "0000000001", "CONS")
+        _sp_obra(conn, "0000000002", "CRECHE SWAP")
+        _sp_obra(conn, "0000000003", "CONS, CRECHE SWAP")
+        _sp_obra(conn, "0000000004", "  CONS ,  ESCOLA SÃO JOSÉ  ")
+        conn.commit()
+
+    obras = consultas.opcoes("centro_custo", limite=200)
+    assert not [o for o in obras if "," in o], f"combinação na lista: {obras}"
+    assert "CONS" in obras
+    assert "CRECHE SWAP" in obras
+    # O espaço em volta da vírgula é comum na planilha e não pode virar uma
+    # obra diferente.
+    assert "ESCOLA SÃO JOSÉ" in obras
+
+
+@pytest.mark.banco
+def test_filtrar_por_obra_alcanca_a_celula_com_varias(banco_analisesps):
+    from app.apps.analisesps import consultas
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        _sp_obra(conn, "0000000001", "CONS")
+        _sp_obra(conn, "0000000002", "CRECHE SWAP")
+        _sp_obra(conn, "0000000003", "CONS, CRECHE SWAP")
+        conn.commit()
+
+    achadas = {l["id"] for l in consultas.listar({"centro_custo": ["CONS"]})}
+    assert achadas == {"0000000001", "0000000003"}
+
+    das_duas = {l["id"] for l in consultas.listar(
+        {"centro_custo": ["CONS", "CRECHE SWAP"]})}
+    assert das_duas == {"0000000001", "0000000002", "0000000003"}, (
+        "marcar duas obras tem de somar as duas")
+
+
+@pytest.mark.banco
+def test_uma_obra_nao_arrasta_a_de_nome_parecido(banco_analisesps):
+    """Era o defeito do casamento por "contém", herdado do Streamlit:
+    procurar a obra "CONS" trazia também "CONSTRUÇÃO DO GALPÃO", porque uma é
+    pedaço da outra. Agora a célula é aberta na vírgula e a comparação é com a
+    obra INTEIRA — a que a pessoa escolheu na lista."""
+    from app.apps.analisesps import consultas
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        _sp_obra(conn, "0000000001", "CONS")
+        _sp_obra(conn, "0000000002", "CONSTRUÇÃO DO GALPÃO")
+        conn.commit()
+
+    achadas = {l["id"] for l in consultas.listar({"centro_custo": ["CONS"]})}
+    assert achadas == {"0000000001"}, "arrastou a obra de nome parecido"
+
+
+@pytest.mark.banco
+def test_a_obra_casa_sem_ligar_para_maiuscula(banco_analisesps):
+    """A pessoa escolhe da lista, mas o filtro guardado pode voltar com outra
+    caixa depois de alguém editar a planilha."""
+    from app.apps.analisesps import consultas
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        _sp_obra(conn, "0000000001", "CONS")
+        conn.commit()
+
+    assert consultas.listar({"centro_custo": ["cons"]})
+    assert consultas.listar({"centro_custo": ["CoNs"]})

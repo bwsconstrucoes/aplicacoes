@@ -311,6 +311,448 @@ Os padrões do Streamlit ficaram: o **dia da repetição sai da primeira data**
 dizer "último dia do mês"**, e **imposto, FGTS e parcelamento antecipam**
 quando caem em dia não útil.
 
+### Sexta leva (05/09) — o Lote
+
+- **"Remover informação" virou "Desagendar"**, o termo do Streamlit e o que o
+  dono usa. O rótulo antigo descrevia o efeito, mas agora convive na mesma
+  barra com "Remover do lote" — e dois "remover" com efeitos diferentes lado
+  a lado é pedir para alguém errar.
+- **"Remover do lote" entrou na barra fixa**, junto dos outros. Tira as SPs
+  marcadas do lote, **em qualquer grupo, de uma vez**. Antes, tirar uma SP
+  era editar o texto do lote na mão e achar o número no meio dos outros.
+
+Três decisões que valem estar escritas:
+
+1. **Não altera a SP.** Mexe só na lista: não escreve na planilha, não entra
+   na fila, não toca no Pipefy. A confirmação diz isso — "remover" numa tela
+   de pagamentos assusta, e com razão.
+2. **Os títulos dos grupos ficam**, mesmo que o grupo esvazie. Apagá-los
+   junto faria a remessa perder a divisão que alguém montou, e remontar custa
+   mais do que uma linha vazia incomoda. Mesma decisão do "Tirar as pagas".
+3. **O painel por status embaixo mostra SPs que NÃO estão no lote.** Marcar
+   uma delas e mandar remover não é erro — não há o que tirar, e a tela diz
+   isso em vez de fingir que fez. Quando a seleção mistura as duas coisas, ela
+   conta quantas saíram e quantas já não estavam lá.
+
+O botão **só existe na tela do Lote**. Nas Solicitações o botão vizinho é o de
+MANDAR para o lote, e os dois na mesma barra seriam a confusão pronta.
+
+### Defeito trazido do painel: senha com acento derrubava o login
+
+Em 05/09 o painel descobriu, no uso real, que `hmac.compare_digest` **com
+texto só aceita ASCII**: uma senha com "ç" ou "ã" fazia a comparação
+ESTOURAR, e o login virava erro 500 em vez de "senha incorreta". Quem digitou
+nunca descobriria que só errou a senha — concluiria que o sistema caiu.
+
+**O código daqui era o mesmo**, nas TRÊS portas que comparam senha: o login,
+o segredo do agendador e a senha de validação. Corrigido no mesmo dia:
+`auth.confere` compara os BYTES, o que aceita acento sem perder o tempo
+constante. Três testes travam isso, e foi conferido que os três falham com o
+código de antes.
+
+A lição, que vale para as outras áreas: **quando um módulo acha um defeito
+num pedaço que foi copiado, os outros têm o mesmo defeito.** Procurar leva
+minutos; descobrir em produção leva um susto.
+
+### Sétima leva (05/09) — a busca por atualizações de 90 em 90 segundos
+
+*"a busca por atualizacoes a cada 90s acho que nao tá acontecendo"* — e não
+estava. Pior: **provavelmente nada estava atualizando a base sozinho.**
+
+O Streamlit tinha "Auto-atualizar (90s)", ligado por padrão. A conversão
+deixou de fora, apostando num **agendador externo** (cron-job.org chamando
+`/api/sincronizar` com o `ANALISESPS_SECRET`) — e **não há sinal de que esse
+agendador tenha sido configurado**. Sem os dois, a base só se atualizava
+quando alguém apertasse o botão em Configurações.
+
+O que foi feito:
+
+- **A tela aberta pergunta a cada 90 s** (`/api/frescor`) e, se a última
+  sincronização tiver mais de **cinco minutos**, **dispara** a sincronização
+  no processo separado. Quem estiver com a tela aberta mantém a base viva
+  para todo mundo — inclusive o perfil Consulta, porque a base é de todos.
+- **Cinco minutos, e não 90 segundos, para o disparo.** Com quatro pessoas
+  com a tela aberta o dia inteiro, disparar a cada 90 s seriam quarenta
+  sincronizações por hora, todas lendo a planilha e gastando cota do Google.
+- **A tela NÃO se recarrega sozinha quando há SPs marcadas** (nem com a ficha
+  aberta). Recarregar por baixo de quem acabou de marcar vinte linhas
+  apagaria a seleção, e isso é pior do que ver um número com dois minutos de
+  idade: aparece um aviso discreto no rodapé e quem decide é a pessoa.
+- **A hora da última sincronização ficou à vista, no alto.** "Está
+  atualizando?" tem de ser respondível de relance.
+
+**O agendador externo continua valendo** e continua sendo melhor: ele atualiza
+a base de madrugada, com todo mundo dormindo. Isto aqui é a rede de segurança
+para quando ele não existe.
+
+### Defeito que esta mudança expôs: a trava não era do banco
+
+"Uma atualização por vez" era conferida pelo **programa**: perguntava "está
+rodando?" e, se não, abria uma execução. **Entre a pergunta e a resposta cabe
+outra requisição.** Com o botão manual isso quase nunca acontecia — uma
+pessoa, um clique. Com quatro telas perguntando quase ao mesmo tempo, passa a
+acontecer: quatro processos de sincronização nascendo juntos, quatro leituras
+da planilha, quatro vezes a cota, para o mesmo trabalho.
+
+**Migração 004** põe um índice único parcial: no máximo UMA linha com
+`fim IS NULL`. Agora quem recusa é o Postgres, e o programa traduz a recusa em
+"já existe uma atualização em andamento". Conferido contra banco de verdade:
+a segunda inserção é recusada pelo banco, e a tela recebe o recado em
+português em vez de um erro.
+
+### Oitava leva (05/09) — o filtro de obras
+
+Uma célula de centro de custo pode trazer **mais de uma obra**: a planilha
+aceita "CONS, CRECHE SWAP" quando a despesa é rateada entre elas. A lista do
+filtro oferecia **a combinação inteira** como se fosse uma obra — e a obra
+sozinha, que é o que se procura, não aparecia em lugar nenhum.
+
+- **A lista agora vem separada**: cada obra uma vez, sem combinações.
+- **O filtro ficou pesquisável.** Blocos com doze opções ou mais ganham um
+  campo de procura. Ele filtra as caixas já carregadas — não vai ao servidor,
+  não aplica nada, só ajuda a achar. Ignora acento e maiúscula ("sao" acha
+  "SÃO"), e **nunca esconde uma opção já marcada**: escondê-la faria a pessoa
+  achar que desmarcou sozinha.
+- O bloco passou a se chamar **"Obra (centro de custo)"** — o nome que o dono
+  usa, com o da planilha entre parênteses.
+
+**Um defeito antigo corrigido junto.** O casamento era por "contém", copiado
+do Streamlit: procurar a obra **CONS** trazia também **CONSTRUÇÃO DO GALPÃO**,
+porque uma é pedaço da outra. Agora a célula é aberta nos separadores e a
+comparação é com a obra INTEIRA. Silencioso do jeito pior: o número na tela
+estava errado e ninguém tinha como notar.
+
+**Os separadores são três, e isso veio de um teste, não de um palpite.** O
+dono citou a vírgula; um teste escrito na conversão, a partir da base real,
+usava **barra** ("OBRA-12 / OBRA-13"). Aceitar vírgula, barra e ponto e
+vírgula custa nada e evita descobrir o terceiro em produção.
+
+**O que NÃO foi mexido, e é decisão sua:** o **Relatório** continua agrupando
+pela célula inteira — "CONS, CRECHE SWAP" aparece como uma linha só. Separar
+ali exigiria dividir o VALOR entre as duas obras, e dividir por quanto é
+pergunta de negócio: meio a meio? pelo rateio do Omie? Somar o valor cheio nas
+duas faria o total do relatório passar do total real. Ficou como está até
+alguém decidir.
+
+### Nona leva (05/09) — a tela dos códigos de pagamento
+
+Dois defeitos que o uso mostrou, e o segundo era caro:
+
+**1. Faltava marcar dali.** O caminho normal é: gerar o código, pagar, marcar.
+Sem a barra de ações na tela dos códigos, era voltar para a lista, procurar as
+mesmas SPs de novo e marcar lá. No Streamlit os códigos apareciam LOGO ABAIXO
+da barra, na mesma tela — a barra sempre esteve ao alcance.
+
+Agora a barra está lá, e **as SPs já chegam marcadas**: quem entrou nesta tela
+foi porque escolheu aquelas. Os botões que não fazem sentido aqui ficam de
+fora — gerar o QR estando nele, e mexer no lote.
+
+**2. Clicar no número da SP destruía o trabalho.** O número abria a ficha em
+tela cheia; voltar trazia a lista, e **os códigos recém-gerados sumiam**. Quem
+só queria conferir um dado tinha de refazer todo o caminho — escolher as SPs,
+gerar de novo — e isso no meio de um pagamento.
+
+Agora abre no **modal**, por cima dos códigos. Continua sendo um link de
+verdade: ctrl+clique e botão do meio abrem a página inteira em outra aba, que
+é o certo — um modal não sobrevive à aba nova.
+
+O modal passou a abrir também **no clique de qualquer link marcado**, não só
+no duplo clique de uma linha de tabela. Nas tabelas o número segue abrindo o
+card no Pipefy, como o dono pediu; fora delas, abre a ficha.
+
+### Décima leva (05/09) — o código de pagamento dentro da ficha
+
+Pedido do dono: ao abrir a SP no modal, mostrar já o QR Pix ou o código de
+barras. Quem abre a ficha para conferir um dado quase sempre está a caminho de
+pagar, e voltar à lista só para gerar o código era um caminho a mais em cada
+pagamento.
+
+- **A montagem do código virou função** (`_codigo_de_pagamento`), usada pela
+  tela de códigos E pela ficha. Duas cópias divergiriam no dia em que uma
+  ganhasse um caso — e a que ficasse para trás mostraria um código errado a
+  quem está pagando.
+- **O botão "QR / Código" saiu da ficha**, por decisão do dono: com o código
+  ali, virou redundante.
+- **SP que já saiu recebe aviso antes do código.** Mostrar um QR de pagamento
+  numa SP marcada como Paga é o caminho curto para pagar duas vezes. O código
+  continua aparecendo — às vezes é justamente o que se quer conferir —, mas
+  com o aviso na frente.
+- **Forma sem código explica**, em vez de deixar um espaço em branco que
+  pareceria falha do sistema.
+- **"Remover do lote" perdeu a cor de alerta**, por decisão do dono: ele não
+  altera nada na planilha, então não merecia se destacar. O aviso continua na
+  confirmação do clique, que é onde importa.
+
+**Um defeito antigo corrigido junto.** O gerador devolve o código de barras
+como um SVG de ARQUIVO, com cabeçalho XML e `<!DOCTYPE>` próprios. Colado
+dentro de uma página HTML isso é inválido, e alguns navegadores param de
+desenhar o resto a partir dali. Agora só o `<svg>` vai para dentro. Estava
+assim desde a conversão, na tela de códigos — foi um teste que apontou.
+
+### Décima primeira leva (05/09) — a hora crua e a coluna Obra
+
+**O carimbo aparecia cru na tela:** *"base de 2026-09-04T17:25:31.319885-03:00"*.
+A última sincronização é guardada como **texto** em `analisesps.meta`, e o
+formatador de data só sabia converter data de verdade — o resto passava
+inteiro. Agora há `momento_br`, que aceita texto, data e data-e-hora, e
+devolve **"04/09/2026 às 17:25"**, na hora de Brasília.
+
+E aqui a **hora é o ponto**: "a base é de quando?" respondido só com o dia diz
+"hoje", que é o que já se sabia. Pelo mesmo motivo, o **registro de
+alterações** passou a mostrar a hora — duas mudanças no mesmo dia, sem ela,
+ficam indistinguíveis.
+
+**Um defeito de fuso corrigido junto:** uma sincronização das 22h daqui é 1h
+do dia seguinte em UTC. Sem converter antes de cortar a hora, a tela mostraria
+**a data de amanhã**. O `data_br` agora normaliza para Brasília antes.
+
+**A coluna Obra entrou nas colunas padrão**, logo depois do Valor — é a
+pergunta seguinte a "quanto é": "de qual obra?". Vale nas duas telas, que leem
+a mesma escolha. O cabeçalho usa **"Obra"**, a palavra do dono, porque cabe na
+coluna estreita; a barra de filtros diz "Obra (centro de custo)", que é onde a
+ponte com o nome da planilha cabe.
+
+### Décima segunda leva (05/09) — o botão que parecia quebrado
+
+**"Clico em Agendado no modal e não acontece nada."** Não era defeito de
+ligação, e vale registrar porque a conclusão é contraintuitiva: a **trava da
+Validação** — restaurada do Streamlit — punha `disabled` nos quatro botões de
+agendamento quando a coluna Validação não estava em "Sim". E **botão
+desabilitado não recebe nem o clique**: para quem não leu o aviso logo acima,
+ele é indistinguível de um botão quebrado.
+
+A trava continua valendo (nada é gravado sem Validação = "Sim"), mas agora ela
+**se explica**: o botão tem cara de cadeado, aceita o clique, e o clique diz
+por que não foi — oferecendo validar ali mesmo. Trocar um bloqueio mudo por um
+bloqueio que fala custa nada e evita o chamado.
+
+> Nota de fidelidade, para quem for mexer nisso: no Streamlit a trava valia no
+> **detalhe** e no **lote** ("Alterar Status" só habilitava com todos os
+> selecionados validados). Na **tela de códigos**, o botão "📅 Agendado" era
+> *sempre clicável*. Aqui a barra de ações de cima **não** exige Validação em
+> nenhuma tela — é mais permissivo que o Streamlit. Está assim de propósito
+> até o dono decidir: apertar a barra tiraria função que ele já usa hoje.
+
+**A ficha foi virada de cabeça para baixo, a pedido do dono:**
+
+- a **Descrição subiu para o topo**, logo abaixo do cabeçalho. É o que diz do
+  que se trata a SP, e é a primeira coisa que se procura ao abrir; estava no
+  fim de tudo, depois de vinte e sete campos.
+- o **código de barras / QR desceu para o fim**. É o passo final de quem já
+  conferiu o resto e vai pagar.
+
+**Link escrito na descrição virou link clicável.** A descrição costuma trazer
+o endereço de uma pasta ou de um contrato, e como texto puro era selecionar na
+mão e colar no navegador.
+
+> O cuidado que isso exige, para não ser desfeito por engano: a descrição vem
+> da **planilha**, que qualquer um edita. O filtro `com_links` **escapa o texto
+> inteiro primeiro** e só depois transforma em link o que sobrou — sem isso,
+> uma célula com `<script>` dentro rodaria na tela de quem abrisse a SP. Por
+> devolver HTML pronto, no template ele vai com `|safe`; quem mexer nele mexe
+> nos dois lados. Há teste para o `<script>`, para a aspa dentro do endereço e
+> para o ponto final da frase não entrar no link. Usa `html.escape` da
+> biblioteca padrão de propósito — nenhuma dependência nova.
+
+**"Cancelar SP" deixou de ser vermelho.** Ele só **abre** o formulário do
+Pipefy; não cancela nada por si. Em vermelho puxava o olho toda vez que a
+ficha abria, como se fosse a ação principal.
+
+**Defeito achado de passagem, e sério:** abrir uma SP em **página inteira**
+vindo do **Lote** estourava a tela. O endereço da volta era montado colando
+`"analisesps."` com a origem, e dava `analisesps.lote` — que não existe; a tela
+do Lote chama-se `tela_lote`. Só não aparecia sempre porque o caminho normal
+hoje é o modal. Corrigido, com teste.
+
+**Verificado:** 1342 testes verdes, agora **com Postgres de verdade** (local e
+descartável — a produção não foi tocada), e os 18 blueprints sobem. O que
+**não** foi verificado: nada disto foi exercitado no navegador com dado real —
+são mudanças de tela, e o teste confere o HTML, não o que o olho vê.
+
+### Décima terceira leva (05/09) — o BeeVale voltou
+
+O dono perguntou pelas três funções do BeeVale ("gerar a planilha, cadastro,
+e o gerar") e não as encontrou. **Estavam mesmo faltando**: na conversão do
+Streamlit elas não vieram, e o `HISTORICO` registrava isso como "não voltou"
+por causa de um erro 403 de cota no Drive. A decisão do dono foi: **criar
+tudo, e ele informa a pasta depois.**
+
+**O que voltou, com os mesmos nomes do Streamlit:**
+
+- **Cadastro BeeVale** — cola-se a lista de e-mails/CPFs que o portal
+  devolveu, e sai a planilha de cadastro para baixar. **Não escreve em lugar
+  nenhum**: lê a planilha "Dados Documentos" e devolve um arquivo. Funciona
+  hoje, sem depender de nada configurado.
+- **Gerar BeeVale** — as SPs marcadas, uma tela de **conferência** primeiro
+  (o que cada card tem, o que está impedido e por quê), e só então o botão que
+  monta as duas planilhas por card, sobe no Drive e escreve os links e a
+  Documentação Fiscal no card do Pipefy.
+
+**Três coisas foram feitas diferente do Streamlit, e cada uma tem motivo:**
+
+1. **A conferência antes.** No Streamlit o diálogo abria e o botão fazia tudo.
+   Aqui a tela lista, ANTES, quem está pronto e quem está impedido — e mostra
+   o valor do card **ao lado** do valor da base. São duas origens diferentes;
+   é aqui que uma divergência aparece antes de virar recarga errada.
+2. **A ordem é sagrada, e há teste para ela:** primeiro tudo o que pode falhar
+   sem estragar (buscar, montar, subir no Drive), e **só no fim** a escrita nos
+   cards. Se o Drive recusar, nenhum card foi tocado. Marcar o card e depois
+   descobrir que o arquivo não subiu deixaria um card dizendo "pronto" quando
+   não está — e ninguém teria como saber.
+3. **Sucesso pela metade não conta como sucesso.** Arquivo no Drive com o card
+   sem atualizar aparece como problema na tela, com os links à mão para colar
+   no card manualmente.
+
+**A resposta à pergunta "a pasta do Drive ficou salva?":** não dava para saber
+de dentro do código — é uma variável do Render/planilha de credenciais, que
+esta máquina não enxerga. Por isso **Configurações ganhou um cartão que
+responde**: diz se `DRIVE_FOLDER_ID` e `PIPEFY_TOKEN` estão configurados
+(sem mostrar o valor — só os **seis últimos caracteres** da pasta, o
+suficiente para reconhecer qual é), e um botão **"Conferir a pasta do Drive"**
+que olha a pasta **sem escrever nada** e diz o nome dela.
+
+> **A ARMADILHA DA COTA, escrita uma vez para não se perder de novo.** A conta
+> de serviço do Google **não tem espaço de armazenamento próprio**. Ela grava
+> numa pasta de **Drive Compartilhado** (Shared Drive) onde seja membro com
+> permissão de gravar. Numa pasta comum do "Meu Drive" — **mesmo
+> compartilhada com ela como Editor** — o Google recusa com
+> `storageQuotaExceeded`, cuja tradução ao pé da letra ("cota estourada") faz
+> pensar em falta de espaço e manda consertar a coisa errada. O conserto é
+> **mover a pasta para um Drive Compartilhado**. O `drive.py` traduz esse erro
+> para essa instrução, e o botão de conferir avisa antes de qualquer geração.
+>
+> Vale notar: o `email_financeiro`, neste mesmo repositório, já sobe arquivo no
+> Drive com a **mesma** conta de serviço, numa pasta que funciona. Ou seja, o
+> caminho é viável — o que falhou em 02/09 foi a pasta, não a conta.
+
+**Trava mantida do Streamlit:** "Gerar BeeVale" só habilita quando **todas** as
+SPs marcadas têm forma de pagamento BeeVale. Não é preciosismo: gerar a
+recarga de uma SP que se paga por boleto põe dinheiro no cartão de quem não
+devia receber, **e** marca o card como resolvido.
+
+**Arquivos novos:** `beevale.py` (as regras e os dois arquivos `.xlsx`),
+`pipefy.py` (o pouco que se lê e escreve lá) e `drive.py` (a subida). O
+`pipefy.py` é o **único lugar do módulo que escreve fora** da planilha SPsBD —
+está dito no alto do arquivo. Nenhuma dependência nova: o `openpyxl` já estava
+no `requirements.txt` por causa do painel, e a autenticação do Drive usa o
+`google-auth` que o gspread já traz. A credencial é a de sempre
+(`GOOGLE_CREDENTIALS_BASE64`).
+
+**O que FALTA para funcionar de verdade** (nesta ordem):
+
+1. o dono informar a pasta do Drive → `DRIVE_FOLDER_ID` no Render, **de um
+   Drive Compartilhado**;
+2. conferir que `PIPEFY_TOKEN` está no Render (Configurações diz);
+3. apertar "Conferir a pasta do Drive" e ver "em Drive Compartilhado";
+4. **gerar UMA SP primeiro**, conferir o card, e só então usar em leva.
+
+**Verificado:** os testes cobrem o layout das duas planilhas (contrato com o
+portal do BeeVale), o CPF saindo como texto (o zero da frente some se virar
+número, e o portal recusa), a descrição do card sendo preservada, os links não
+empilhando a cada geração, a ordem Drive→Pipefy, o Drive falhando sem tocar no
+card, o card sem CPF não parando os outros, e o id de card não numérico sendo
+recusado (ele entra na consulta sem aspas — texto ali seria injeção).
+
+**NÃO verificado, e é a parte que importa:** nenhum teste encosta no Drive ou
+no Pipefy de verdade — os dois são dublados. A primeira geração real **é** o
+teste. Faça com uma SP só.
+
+### Décima quarta leva (05/09) — a lentidão, medida em vez de deduzida
+
+O dono reclamou: *"funcional, mas não é legal — você está toda hora esperando
+a tela carregar"*, e disse que o Streamlit, que ele já achava lento, é **mais
+rápido** que isto. Uma sessão anterior já tinha apontado uma causa; esta
+**mediu**, e o número mudou o plano.
+
+**Como foi medido, para quem quiser repetir:** um Postgres local e descartável
+com **59.055 SPs** sintéticas (a produção não foi tocada), cronometrando cada
+consulta e depois a tela inteira pelo cliente de teste. Vale a ressalva: o
+banco estava na MESMA máquina, sem a latência de rede que existe no Render.
+Os números reais lá são maiores; as proporções, as mesmas.
+
+| | Antes | Depois |
+|---|---|---|
+| Solicitações | 376 ms · 15 idas ao banco | **162 ms · 8 idas** |
+| Solicitações filtrada | 359 ms | **154 ms** |
+| Solicitações pelo menu | 357 ms | **151 ms** |
+| Relatório pelo menu | 404 ms | **219 ms** |
+
+**Correção da análise anterior, para o histórico não guardar número errado:**
+ela dizia "doze idas ao banco". São **quinze**. E a primeira contagem que fiz
+disse vinte — eu tinha instrumentado `consultar` e `consultar_um` ao mesmo
+tempo, e `consultar_um` chama `consultar`, então tudo contou dobrado. Quinze é
+o número certo.
+
+**Causa 1, a maior: as sete listas do filtro, 194 ms por clique.** Cada uma
+varre as 59 mil SPs inteiras para descobrir quais valores existem naquela
+coluna. Os índices não ajudam — a consulta limpa o texto antes de agrupar.
+**Índice de expressão foi tentado** (inclusive um que casa exatamente com a
+expressão da consulta) e o Postgres continuou preferindo a varredura; não é
+caminho, e fica registrado para ninguém tentar de novo.
+
+O desperdício é que essas listas quase nunca mudam: os projetos e as contas da
+empresa são os mesmos hoje e amanhã. Passam a ser calculadas **uma vez por
+carga**, com o carimbo da última sincronização como chave. Isso funciona
+**entre processos** sem combinação nenhuma: a carga roda num processo separado
+e não tem como avisar o da tela, mas o carimbo que ela grava no banco é o
+próprio aviso.
+
+> **O custo, que é do dono e ele aceitou:** um projeto novo cadastrado na
+> planilha só aparece na listinha do filtro depois da próxima sincronização
+> (a tela dispara uma a cada 5 min). A SP nova aparece na LISTA normalmente —
+> é só o menu de filtro que demora a saber do valor novo.
+
+**Causa 2: duas varreduras da mesma tabela filtrada.** O resumo (44 ms) e a
+divisão do agendamento (48 ms) percorriam separadamente exatamente as mesmas
+linhas. Juntos numa consulta só: **59 ms**, porque a varredura é uma e as
+contagens vão de carona. Conferido com dado real em quatro filtros diferentes:
+as contas batem exatamente com as das duas funções antigas.
+
+> **Tentado e DESCARTADO:** juntar também as duas somas (por conta e por forma
+> de pagamento) numa consulta com CTE. Ficou **pior** — 67 ms contra 51 ms —,
+> porque o banco precisa guardar o resultado do meio. Ficam separadas. Está
+> aqui para não ser "otimizado" de novo por intuição.
+
+**Causa 3: quem clica no menu carrega a tela duas vezes.** Chegar sem filtro na
+barra de endereço dispara um redirecionamento para o endereço COM o filtro
+guardado — e a função inteira roda duas vezes por clique. O redirecionamento
+continua (é ele que faz o filtro sobreviver à troca de tela), mas agora é a
+**primeira coisa** que a tela confere: antes ele já tinha perguntado o tamanho
+da base para nada. A perna que só redireciona caiu de 4 idas ao banco para 1.
+
+**O que NÃO foi mexido, e por quê:** as duas somas por conta e por forma
+(51 ms) e o resumo (59 ms) varrem a tabela filtrada e não têm como não varrer —
+somar o que o filtro alcança é a pergunta. O **Relatório** ainda faz 12 idas
+(oito agregações); é o próximo lugar a olhar se ele continuar pesado, e é uma
+mudança maior do que estas.
+
+**Há teste para o ganho não se desfazer sozinho:** que as listas não são
+refeitas sem carga nova, que uma carga nova as refaz, e que o resumo junto
+varre a tabela uma vez só. É o tipo de correção que uma refatoração distraída
+desmancha, e cujo efeito só aparece em produção, como lentidão sem culpado.
+
+### Décima quinta leva (05/09) — a pasta do Drive vira campo na tela
+
+O dono pediu: *"deixa esse campo lá pra poder colar a informação da pasta e
+salvar"*. Feito, em **Configurações**. Guardado na tabela `meta`, que já
+existe — **sem migração nova**, então funciona no dia da publicação.
+
+Três decisões que valem registro:
+
+1. **O que é colado na tela GANHA do Render e da planilha.** É o contrário da
+   regra geral da casa ("ambiente ganha da planilha"), e de propósito: se um
+   valor do Render vencesse em silêncio, o dono colaria a pasta, apertaria
+   salvar, veria "salvo" — e nada mudaria. Um campo que aceita e ignora é pior
+   do que campo nenhum. Para a regra não virar surpresa, a tela **diz de onde**
+   o valor que está valendo veio.
+2. **Aceita o endereço inteiro da pasta**, copiado da barra do navegador, e
+   guarda só o identificador. Exigir que a pessoa recorte o pedaço certo de
+   uma URL é pedir para errar. O campo mostra depois o que FICOU salvo.
+3. **A pasta aparece no campo; o token do Pipefy, nunca.** A pasta não é
+   segredo — é o endereço de uma pasta — e ele precisa poder conferir e trocar
+   o que colou. O token é segredo de verdade: com ele se lê e se escreve nos
+   cards da empresa, e a tela só diz se está configurado. Há teste para os dois.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
@@ -355,15 +797,13 @@ principal para uma coluna a mais, na véspera de uma publicação sem ninguém
 acordado, não vale o risco.
 
 ### O que ainda NÃO voltou
-- **Gerar BeeVale** (depende do Shared Drive — erro 403 de cota) e **cancelar
-  a SP por dentro do Pipefy** (o botão abre o formulário deles, como lá).
+- **Cancelar a SP por dentro do Pipefy** (o botão abre o formulário deles,
+  como lá).
+
+  *(O **BeeVale** saiu desta lista em 05/09 — ver a décima terceira leva. O
+  código está pronto; falta o dono informar a pasta do Drive.)*
 - **A coluna SP Fiscal na lista** (ver acima).
 - **Reenviar comprovante por e-mail** (depende de SMTP no serviço).
-- **Auto-atualizar a cada 90s.** Não foi esquecimento: aqui a carga roda em
-  processo separado e a tela já lê o estado do banco. Recarregar sozinha a
-  cada 90 s custaria uma consulta por pessoa por minuto e meio, o dia inteiro,
-  para mudar quase nada. Se fizer falta, vira uma caixa de "atualizar sozinha"
-  guardada por pessoa — mas melhor esperar sentir a falta.
 
 ---
 

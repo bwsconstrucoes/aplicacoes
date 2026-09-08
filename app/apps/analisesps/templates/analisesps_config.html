@@ -104,6 +104,94 @@
   {% endif %}
 </div>
 
+{# ---------------------------------------------------------------------------
+   O BEEVALE PRECISA DE DUAS COISAS QUE VIVEM FORA DO PROGRAMA. Este cartão
+   responde "ficou salvo?" sem ninguém precisar entrar no Render — e sem
+   mostrar segredo na tela: diz se ESTÁ configurado, não o quê.
+--------------------------------------------------------------------------- #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>BeeVale — Drive e Pipefy</h3></div>
+
+  {% if not integracoes.ok %}
+    <div class="aviso atencao">
+      Não consegui conferir agora: {{ integracoes.erro }}
+      <br><small>Costuma ser internet ou a planilha de credenciais fora de
+      alcance. O resto desta tela continua valendo.</small>
+    </div>
+  {% else %}
+    {% if pode_operar %}
+      {# O CAMPO, para o dono colar a pasta sem entrar no Render. Aceita o
+         endereço inteiro copiado da barra do navegador — exigir que ele
+         recorte o pedaço certo de uma URL é pedir para errar. #}
+      <label class="rotulo-campo" for="pasta-drive">
+        Pasta do Google Drive — cole o endereço da pasta, ou só o
+        identificador</label>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center">
+        <input class="campo-largo" id="pasta-drive" style="flex:1; min-width:280px"
+               placeholder="https://drive.google.com/drive/folders/1ycGeXK…"
+               value="{{ integracoes.pasta or '' }}">
+        <button class="btn" id="btn-salvar-pasta">Salvar</button>
+      </div>
+      <div id="saida-pasta"></div>
+      {% if integracoes.pasta_drive %}
+        <p class="cartao-dica" style="margin:6px 0 0">
+          Valendo agora: a pasta que veio
+          {% if integracoes.origem == 'tela' %}<b>desta tela</b>
+          {% elif integracoes.origem == 'Render' %}<b>do Render</b>
+            — o que você salvar aqui passa a valer no lugar dela
+          {% else %}<b>da planilha de credenciais</b>
+            — o que você salvar aqui passa a valer no lugar dela{% endif %}.
+        </p>
+      {% endif %}
+    {% endif %}
+
+    <table class="sps" style="margin-top:12px">
+      <tbody>
+        <tr>
+          <td><b>Pasta do Google Drive</b><br>
+            <small>onde as planilhas geradas ficam guardadas</small></td>
+          <td>
+            {% if integracoes.pasta_drive %}
+              <b>Configurada</b>
+              <br><small>termina em <code>…{{ integracoes.pasta_fim }}</code>,
+              veio {{ integracoes.origem }}</small>
+            {% else %}
+              <b>Não configurada</b>
+              <br><small>sem ela, "Gerar BeeVale" não sai do lugar</small>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td><b>Token do Pipefy</b><br>
+            <small>para ler o CPF e o valor do card, e escrever os links de
+            volta (<code>PIPEFY_TOKEN</code>)</small></td>
+          <td>
+            {% if integracoes.pipefy %}<b>Configurado</b>
+            {% else %}<b>Não configurado</b>{% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    {% if pode_operar %}
+      <div style="margin-top:10px">
+        <button class="btn secundario" id="btn-conferir-drive"
+                title="Olha a pasta sem escrever nada nela">
+          Conferir a pasta do Drive</button>
+      </div>
+      <div id="saida-drive"></div>
+    {% endif %}
+
+    <p class="cartao-dica" style="margin-top:10px">
+      <b>A pegadinha da pasta, dita uma vez:</b> ela precisa ser de um
+      <b>Drive Compartilhado</b>, não uma pasta do "Meu Drive". A conta de
+      serviço não tem espaço próprio no Google — numa pasta comum o envio é
+      recusado por falta de cota, mesmo que a pasta esteja compartilhada com
+      ela. O botão acima diz qual das duas é a sua.
+    </p>
+  {% endif %}
+</div>
+
 <div class="cartao">
   <div class="cartao-cab"><h3>Onde ficam as coisas</h3></div>
   <p class="cartao-dica" style="margin:0">
@@ -140,6 +228,56 @@ if (botaoMigrar) botaoMigrar.addEventListener("click", async () => {
     botaoMigrar.disabled = false;
     botaoMigrar.textContent = "Aplicar atualizações do banco";
   }
+});
+
+const btnPasta = document.getElementById("btn-salvar-pasta");
+if (btnPasta) btnPasta.addEventListener("click", async () => {
+  const campo = document.getElementById("pasta-drive");
+  const alvo = document.getElementById("saida-pasta");
+  btnPasta.disabled = true;
+  try {
+    const r = await fetch("{{ url_for('analisesps.gravar_pasta_drive') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({pasta: campo.value})
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      alvo.innerHTML = '<div class="aviso erro">' + (d.erro || "não deu certo") + '</div>';
+      return;
+    }
+    // Mostra o que FICOU salvo, e não o que foi digitado: quem colou o
+    // endereço inteiro precisa ver que só o identificador foi guardado.
+    campo.value = d.pasta;
+    alvo.innerHTML = d.pasta
+      ? '<div class="aviso bom">Pasta salva (termina em …' + d.fim +
+        '). Confira com o botão abaixo antes de gerar.</div>'
+      : '<div class="aviso atencao">Pasta apagada.</div>';
+  } catch (e) {
+    alvo.innerHTML = '<div class="aviso erro">Falhou: ' + e + '</div>';
+  } finally { btnPasta.disabled = false; }
+});
+
+const btnDrive = document.getElementById("btn-conferir-drive");
+if (btnDrive) btnDrive.addEventListener("click", async () => {
+  const alvo = document.getElementById("saida-drive");
+  btnDrive.disabled = true;
+  alvo.innerHTML = '<div class="aviso">Perguntando ao Google…</div>';
+  try {
+    const r = await fetch("{{ url_for('analisesps.conferir_drive') }}",
+                          {method: "POST"});
+    const d = await r.json();
+    if (!d.ok) {
+      alvo.innerHTML = '<div class="aviso erro">' + (d.erro || "não deu certo") + '</div>';
+    } else if (d.aviso) {
+      alvo.innerHTML = '<div class="aviso atencao"><b>Achei a pasta "' + d.nome +
+        '", mas ela NÃO é de um Drive Compartilhado.</b><br>' + d.aviso + '</div>';
+    } else {
+      alvo.innerHTML = '<div class="aviso bom"><b>Pasta "' + d.nome +
+        '", em Drive Compartilhado.</b> É o que o BeeVale precisa.</div>';
+    }
+  } catch (e) {
+    alvo.innerHTML = '<div class="aviso erro">Falhou: ' + e + '</div>';
+  } finally { btnDrive.disabled = false; }
 });
 
 document.querySelectorAll("button[data-modo]").forEach(b => {

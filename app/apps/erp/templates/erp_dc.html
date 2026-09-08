@@ -11,6 +11,7 @@
     <input id="busca" placeholder="DC, obra…" style="padding:7px 10px;
       border:1px solid var(--borda-forte); border-radius:8px; min-width:240px">
     <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn amarelo" id="btn-nova">+ Nova despesa</button>
   </div>
 </div>
@@ -64,7 +65,7 @@ function desenhar(){
     <td class="dados">${x.competencia}</td>
     <td class="direita dados">${x.pessoas}</td>
     <td class="direita dados">${numero(x.valor_total)}</td>
-    <td>${x.meio_pagamento}</td>
+    <td>${rotulo(x.meio_pagamento)}</td>
     <td><span class="selo ${x.status==="FATURADA"?"pago":x.status==="APROVADA"?"aprovado":
       x.status==="DEVOLVIDA"?"bloqueado":"aguardando"}">${rotulo(x.status)}</span></td>
     <td><small>${x.proxima_etapa||"—"}</small></td>
@@ -87,7 +88,7 @@ async function abrir(id){
           <div class="kpi-valor" style="font-size:15px">${rotulo(d.status)}</div>
           <div class="kpi-sub">${d.proxima_etapa?`aguarda ${d.proxima_etapa}`:""}</div></div>
         <div class="kpi estatico"><div class="kpi-rotulo">Pagamento</div>
-          <div class="kpi-valor" style="font-size:15px">${d.meio_pagamento}</div>
+          <div class="kpi-valor" style="font-size:15px">${rotulo(d.meio_pagamento)}</div>
           <div class="kpi-sub">${d.competencia}</div></div>
       </div>
       <table><thead><tr><th>Colaborador</th><th>Verba</th><th class="direita">Qtd</th>
@@ -315,5 +316,8 @@ els("btn-nova").addEventListener("click", async () => {
 });
 els("busca").addEventListener("input", desenhar);
 carregar();
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}

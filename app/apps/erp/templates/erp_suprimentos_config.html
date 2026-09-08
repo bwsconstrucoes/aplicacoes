@@ -1,0 +1,309 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Configurações de Suprimentos — ERP BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+{% include "erp_suprimentos_subnav.html" %}
+<h2>Categorias, unidades e condições de pagamento
+  <small>o que se ajusta uma vez e vale para todo o módulo</small></h2>
+<div id="mensagem"></div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Categorias de insumo</h3>
+    <small>é a categoria que decide QUEM recebe cada cotação</small></div>
+  <div class="cartao-dica">O fornecedor recebe só a cotação do que ele vende.
+    Sem categoria, o pedido de cimento vai para quem vende cabo elétrico — e o
+    fornecedor para de responder. Não confunda com a <b>conta do plano
+    financeiro</b>: a categoria organiza a compra, a conta organiza o custo.</div>
+  <div class="form-grade" style="margin-top:12px">
+    <div class="campo" style="grid-column:span 2"><label for="cat-nome">Nova categoria</label>
+      <input id="cat-nome" placeholder="ex.: Cimento e argamassa"></div>
+    <div class="campo" style="align-self:end">
+      <button class="btn" id="btn-cat">Cadastrar categoria</button></div>
+  </div>
+  <input id="cat-busca" type="search" placeholder="filtrar categorias…"
+         style="width:100%; margin:12px 0 8px; padding:7px 9px;
+                border:1px solid var(--borda-forte); border-radius:8px; font-size:13px">
+  <table><thead><tr><th>Categoria</th><th>Código</th>
+    <th class="direita">Insumos</th><th>Situação</th><th></th></tr></thead>
+    <tbody id="tb-categorias"></tbody></table>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Unidades de compra</h3>
+    <small>em que unidade cada insumo é pedido</small></div>
+  <div class="form-grade">
+    <div class="campo"><label for="uni-codigo">Sigla</label>
+      <input id="uni-codigo" placeholder="ex.: SC" maxlength="10"></div>
+    <div class="campo" style="grid-column:span 2"><label for="uni-descricao">Por extenso</label>
+      <input id="uni-descricao" placeholder="ex.: Saco"></div>
+    <div class="campo" style="align-self:end">
+      <button class="btn" id="btn-uni">Cadastrar unidade</button></div>
+  </div>
+  <table style="margin-top:12px"><thead><tr><th>Sigla</th><th>Por extenso</th>
+    <th class="direita">Insumos</th><th>Situação</th><th></th></tr></thead>
+    <tbody id="tb-unidades"></tbody></table>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Condições de pagamento</h3>
+    <small>quanto entra na hora e em quantos dias vencem as demais parcelas</small></div>
+  <div class="cartao-dica">Guardadas como <b>regra</b>, não como texto: é isso que
+    permite o pedido virar previsão de pagamento com as parcelas já certas.
+    Exemplos — <i>à vista</i>: entrada 100, sem prazos · <i>30/60/90</i>: entrada 0,
+    prazos 30, 60 e 90 · <i>30% + 28/56</i>: entrada 30, prazos 28 e 56.
+    A regra de uma condição não se edita depois: pedido antigo aponta para ela,
+    e mudar reescreveria o passado. Desative e crie outra.</div>
+  <div class="form-grade" style="margin-top:10px">
+    <div class="campo"><label for="cond-nome">Nome</label>
+      <input id="cond-nome" placeholder="ex.: 30% + 28/56 dias"></div>
+    <div class="campo"><label for="cond-entrada">Entrada (%)</label>
+      <input id="cond-entrada" value="0" inputmode="decimal"></div>
+    <div class="campo"><label for="cond-dias">Prazos em dias</label>
+      <input id="cond-dias" placeholder="ex.: 28/56 ou 30, 60, 90"></div>
+    <div class="campo" style="align-self:end">
+      <button class="btn" id="btn-cond">Cadastrar condição</button></div>
+  </div>
+  <table style="margin-top:12px"><thead><tr>
+    <th>Condição</th><th>Em palavras</th><th class="direita">Parcelas</th>
+    <th>Situação</th><th></th></tr></thead>
+    <tbody id="tb-condicoes"></tbody></table>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab"><h3>Pedidos de cadastro de insumo</h3>
+    <small>o que a obra pediu e ainda não foi decidido</small></div>
+  <div class="cartao-dica">Quem está na obra pede; quem responde por Suprimentos
+    decide o nome final, a categoria e a conta. É o que evita "Cimento CP-II",
+    "cimento cp 2" e "CIMENTO CPII 50KG" virarem três insumos diferentes.</div>
+  <table style="margin-top:10px"><thead><tr><th>Material</th><th>Quem pediu</th>
+    <th>Para que</th><th>Situação</th><th></th></tr></thead>
+    <tbody id="tb-pedidos"></tbody></table>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let D = {categorias: [], unidades: [], contas: [], insumos: []};
+let PEDIDOS = [];
+
+// Aceita "28/56", "30, 60, 90" ou "30 60" — quem digita não deveria ter de
+// adivinhar o separador.
+function lerDias(texto){
+  return [...new Set((texto || "").split(/[^0-9]+/).filter(Boolean).map(Number))]
+    .sort((a, b) => a - b);
+}
+
+async function carregar(){
+  try {
+    D = await api("/erp/api/suprimentos/insumos");
+    const base = await api("/erp/api/suprimentos/cadastros");
+    D.condicoes = base.condicoes;
+    PEDIDOS = (await api("/erp/api/suprimentos/insumos/solicitacoes")).solicitacoes;
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenhar(){
+  const q = (els("cat-busca").value || "").toLowerCase().trim();
+  els("tb-categorias").innerHTML = D.categorias
+    .filter(c => !q || c.nome.toLowerCase().includes(q))
+    .map(c => `<tr>
+      <td>${c.nome}</td><td class="dados">${c.codigo}</td>
+      <td class="direita dados">${c.insumos}</td>
+      <td><span class="selo ${c.ativo ? "aprovado" : "outro"}">${c.ativo ? "Ativa" : "Inativa"}</span></td>
+      <td class="direita">
+        <button class="link-btn" data-cat-renomear="${c.id}">renomear</button>
+        <button class="link-btn" data-cat-ativo="${c.id}" data-para="${c.ativo ? 0 : 1}"
+          >${c.ativo ? "desativar" : "reativar"}</button></td></tr>`).join("")
+    || `<tr><td colspan="5">nenhuma categoria — cadastre a primeira acima</td></tr>`;
+
+  els("tb-unidades").innerHTML = D.unidades.map(u => `<tr>
+      <td class="dados"><b>${u.codigo}</b></td><td>${u.descricao}</td>
+      <td class="direita dados">${u.insumos}</td>
+      <td><span class="selo ${u.ativo ? "aprovado" : "outro"}">${u.ativo ? "Ativa" : "Inativa"}</span></td>
+      <td class="direita">
+        <button class="link-btn" data-uni-ativo="${u.codigo}" data-para="${u.ativo ? 0 : 1}"
+          >${u.ativo ? "desativar" : "reativar"}</button></td></tr>`).join("")
+    || `<tr><td colspan="5">nenhuma unidade cadastrada</td></tr>`;
+
+  els("tb-condicoes").innerHTML = (D.condicoes || []).map(c => `<tr>
+      <td>${c.nome}</td><td><small>${c.em_palavras}</small></td>
+      <td class="direita dados">${(c.entrada_percentual > 0 ? 1 : 0) + c.dias.length}</td>
+      <td><span class="selo ${c.ativo !== false ? "aprovado" : "outro"}"
+        >${c.ativo !== false ? "Ativa" : "Inativa"}</span></td>
+      <td class="direita">
+        <button class="link-btn" data-cond-ativo="${c.id}" data-para="${c.ativo !== false ? 0 : 1}"
+          >${c.ativo !== false ? "desativar" : "reativar"}</button></td></tr>`).join("")
+    || `<tr><td colspan="5">nenhuma condição cadastrada ainda</td></tr>`;
+
+  els("tb-pedidos").innerHTML = PEDIDOS.map(p => `<tr>
+      <td>${p.descricao}${p.unidade ? ` <small>(${p.unidade})</small>` : ""}</td>
+      <td>${p.solicitante || "—"}</td><td class="desc">${p.justificativa || "—"}</td>
+      <td><span class="selo ${p.status === "PENDENTE" ? "aguardando"
+        : p.status === "CADASTRADO" ? "aprovado" : "bloqueado"}">${rotulo(p.status)}</span>
+        ${p.motivo ? `<br><small>${p.motivo}</small>` : ""}</td>
+      <td class="direita">${p.status === "PENDENTE" ? `
+        <button class="link-btn" data-decidir="${p.id}">decidir</button>` : ""}</td></tr>`).join("")
+    || `<tr><td colspan="5">nenhum pedido de cadastro</td></tr>`;
+
+  ligarBotoes();
+}
+
+function ligarBotoes(){
+  document.querySelectorAll("[data-cat-renomear]").forEach(b =>
+    b.addEventListener("click", async () => {
+      const c = D.categorias.find(x => String(x.id) === b.dataset.catRenomear);
+      const d = await perguntar({titulo: "Renomear categoria", textoOk: "Salvar",
+        campos: [{nome: "nome", rotulo: "Nome", valor: c.nome, obrigatorio: true, largura: 3}]});
+      if (!d) return;
+      mandar(`/erp/api/suprimentos/categorias-insumo/${c.id}`, {nome: d.nome});
+    }));
+
+  document.querySelectorAll("[data-cat-ativo]").forEach(b =>
+    b.addEventListener("click", () =>
+      mandar(`/erp/api/suprimentos/categorias-insumo/${b.dataset.catAtivo}`,
+             {ativo: b.dataset.para === "1"})));
+
+  document.querySelectorAll("[data-uni-ativo]").forEach(b =>
+    b.addEventListener("click", () =>
+      mandar(`/erp/api/suprimentos/unidades/${encodeURIComponent(b.dataset.uniAtivo)}`,
+             {ativo: b.dataset.para === "1"})));
+
+  document.querySelectorAll("[data-cond-ativo]").forEach(b =>
+    b.addEventListener("click", () =>
+      mandar(`/erp/api/suprimentos/condicoes/${b.dataset.condAtivo}`,
+             {ativo: b.dataset.para === "1"})));
+
+  document.querySelectorAll("[data-decidir]").forEach(b =>
+    b.addEventListener("click", () => decidir(+b.dataset.decidir)));
+}
+
+async function mandar(url, corpo){
+  try {
+    await api(url, {method: "PATCH", headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify(corpo)});
+    aviso("mensagem", "Feito.", "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ------------------------------------------------------------ cadastros
+els("btn-cat").addEventListener("click", async () => {
+  const nome = els("cat-nome").value.trim();
+  if (!nome) return aviso("mensagem", "Dê um nome à categoria.", "erro");
+  try {
+    await api("/erp/api/suprimentos/categorias-insumo", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({nome})});
+    els("cat-nome").value = "";
+    aviso("mensagem", "Categoria cadastrada.", "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+});
+
+els("btn-uni").addEventListener("click", async () => {
+  const codigo = els("uni-codigo").value.trim().toUpperCase();
+  const descricao = els("uni-descricao").value.trim();
+  try {
+    await api("/erp/api/suprimentos/unidades", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({codigo, descricao})});
+    els("uni-codigo").value = ""; els("uni-descricao").value = "";
+    aviso("mensagem", "Unidade cadastrada.", "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+});
+
+els("btn-cond").addEventListener("click", async () => {
+  const nome = els("cond-nome").value.trim();
+  const dias = lerDias(els("cond-dias").value);
+  const entrada = paraNumero(els("cond-entrada").value);
+  try {
+    await api("/erp/api/suprimentos/condicoes", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({nome, entrada_percentual: entrada, dias})});
+    ["cond-nome", "cond-dias"].forEach(id => els(id).value = "");
+    els("cond-entrada").value = "0";
+    aviso("mensagem", "Condição cadastrada.", "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+});
+
+// ------------------------------------------------- decidir pedido de insumo
+async function decidir(id){
+  const p = PEDIDOS.find(x => x.id === id);
+  els("dlg-titulo").textContent = `Pedido de cadastro — ${p.descricao}`;
+  els("dlg-corpo").innerHTML = `
+    <div id="dec-msg"></div>
+    <div class="cartao-dica">Pedido por <b>${p.solicitante || "—"}</b>.
+      ${p.justificativa ? `Para: ${p.justificativa}.` : ""}
+      O nome final, a categoria e a conta são de quem decide.</div>
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo" style="grid-column:span 3"><label>Nome final do insumo</label>
+        <input id="dec-descricao" value="${p.descricao}"></div>
+      <div class="campo"><label>Unidade</label>
+        <select id="dec-unidade"><option value="">—</option>
+          ${D.unidades.filter(u => u.ativo).map(u =>
+            `<option value="${u.codigo}" ${u.codigo === p.unidade ? "selected" : ""}
+              >${u.codigo} · ${u.descricao}</option>`).join("")}</select></div>
+      <div class="campo" style="grid-column:span 2"><label>Categoria de insumo</label>
+        <select id="dec-categoria"><option value="">—</option>
+          ${D.categorias.filter(c => c.ativo).map(c =>
+            `<option value="${c.id}">${c.nome}</option>`).join("")}</select></div>
+      <div class="campo" style="grid-column:span 3"><label>Conta do plano financeiro</label>
+        <select id="dec-conta"><option value="">—</option>
+          ${D.contas.map(c => `<option value="${c.id}">${c.codigo} · ${c.descricao}</option>`).join("")}
+        </select>
+        <div class="dica">Só contas de despesa e material — receita e movimentação
+          financeira não entram aqui.</div></div>
+    </div>
+    <div style="margin-top:14px; display:flex; gap:8px">
+      <button class="btn" id="dec-ok">Cadastrar insumo</button>
+      <button class="btn perigo" id="dec-nao">Recusar com motivo</button>
+    </div>`;
+  comBusca("dec-conta", "digite o código ou o nome da conta…");
+  comBusca("dec-categoria", "digite para filtrar…");
+
+  els("dec-ok").addEventListener("click", async () => {
+    try {
+      await api(`/erp/api/suprimentos/insumos/solicitacoes/${id}`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({acao: "cadastrar",
+                              descricao: els("dec-descricao").value.trim(),
+                              unidade: els("dec-unidade").value,
+                              categoria_insumo_id: els("dec-categoria").value,
+                              categoria_id: els("dec-conta").value})});
+      els("dlg").close();
+      aviso("mensagem", "Insumo cadastrado e solicitante avisado.", "ok");
+      carregar();
+    } catch(e){ aviso("dec-msg", e.message, "erro"); }
+  });
+
+  els("dec-nao").addEventListener("click", async () => {
+    const d = await perguntar({titulo: "Recusar o pedido", textoOk: "Recusar",
+      aviso: "Recusa sem motivo faz a pessoa pedir de novo amanhã.",
+      campos: [{nome: "motivo", rotulo: "Motivo", tipo: "textarea",
+                obrigatorio: true, largura: 3}]});
+    if (!d) return;
+    try {
+      await api(`/erp/api/suprimentos/insumos/solicitacoes/${id}`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({acao: "recusar", ...d})});
+      els("dlg").close();
+      aviso("mensagem", "Pedido recusado e solicitante avisado.", "ok");
+      carregar();
+    } catch(e){ aviso("dec-msg", e.message, "erro"); }
+  });
+
+  els("dlg").showModal();
+}
+
+els("cat-busca").addEventListener("input", desenhar);
+carregar();
+</script>
+{% endblock %}

@@ -316,6 +316,29 @@ caem todos em `PROPRIOS`: **a ausência de configuração fecha**. Quem está em
 `OBRAS_DESIGNADAS` sem nenhuma obra associada enxerga só a autoria — uma lista
 vazia não pode virar "vê tudo".
 
+**A alçada também é ajustável por PESSOA** (migração 032). O cargo continua
+sendo a base — é ele que responde por tudo que já está no ar —, e a tabela
+`usuario_permissoes` guarda só as **exceções** marcadas no cadastro de alguém:
+`concedida=TRUE` acrescenta uma ação que o cargo não dá, `concedida=FALSE` tira
+uma que o cargo daria. Sem linha, vale o cargo, e a tabela nascer vazia não muda
+o comportamento de ninguém.
+
+Motivo prático, nas palavras do dono: "de repente o diretor sai de férias e eu
+quero deixar outra pessoa responsável por autorizar alguma coisa" — sem
+inventar um cargo novo para cada arranjo.
+
+Três cuidados que sustentam isso:
+
+- a decisão mora em **um lugar só**: `pode()` (com o objeto `Usuario`) e
+  `decidir()` (com valores soltos, para a guarda) aplicam a mesma regra, e um
+  teste percorre perfil × ação × marcação exigindo que as duas concordem;
+- o **ADMIN não se tranca para fora**: `configurar`, `gerir_usuarios` e
+  `ver_erp` não podem ser desmarcadas dele, senão um clique errado deixaria o
+  sistema sem ninguém que consertasse;
+- as exceções são lidas por **SQL direto**, como o perfil, e se a tabela ainda
+  não existir a leitura falha em silêncio e vale o cargo. Pelo mesmo motivo do
+  §3.8: o botão que aplica as migrações não pode depender da migração.
+
 ### 3.10 Consumo de IA: um ponto de registro, um teto que só avisa
 
 Toda leitura por IA passa por `documentos/leitor._chamar_ia`, e é **ali** que o
@@ -708,6 +731,50 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-07 — Duas varreduras que valem para o repositório inteiro.**
+  Cinco telas já chegaram à produção mortas, e sempre em silêncio: um nome de
+  variável errado, um `import` faltando, um endereço de API que não existe.
+  Nada disso aparece na suíte, porque ela não roda aquela linha, e nada
+  aparece na tela, porque a chamada morre dentro de um `try`. Foram criadas
+  duas varreduras baratas, sem dependência nova (`symtable` e o próprio
+  casador de rotas do Flask): `tests/test_nomes_indefinidos.py` lê todo o
+  código Python de `app/` e recusa nome que o Python não vá encontrar;
+  `tests/test_telas_chamam_rota_que_existe.py` lê cada endereço que cada tela
+  pede e confere contra as rotas registradas. As duas foram provadas contra os
+  defeitos reais que as motivaram. Elas cobrem os módulos de TODAS as áreas,
+  não só o ERP — quem mexer em painel, análise de SPs ou baixabradesco também
+  passa por elas.
+
+- **2026-09-04 — Permissão fina por pessoa, sem refazer a matriz de perfis.**
+  O dono pediu que cada pessoa tenha uma função principal e, além dela,
+  permissões marcadas uma a uma no cadastro. Duas saídas eram possíveis:
+  substituir o perfil global por uma matriz área × nível, ou manter o perfil e
+  acrescentar exceções. Escolhida a segunda (migração 032, tabela
+  `usuario_permissoes`), porque a primeira exigiria refazer a proteção das 125
+  rotas antes de o dono ter homologado a que acabou de ser endurecida — e o
+  ganho prático que ele descreveu ("deixar outra pessoa autorizando enquanto o
+  diretor está de férias") já sai da segunda. Detalhes em §3.9. A dívida está
+  escrita: um dia as áreas viram estrutura, não exceção.
+- **2026-09-05 — Suprimentos construído, das fases 1 a 5.** Migrações 033 a
+  037: cadastros (unidades, condições de pagamento como regra, fornecedor com
+  região/porte/cotador, solicitação de cadastro de insumo), solicitação com
+  obra por item e 15 situações, mapa de cotação com banco de preços, pedido
+  com autorização e previsão de pagamento, e recebimento com pendência como
+  saldo do item. O que NÃO entrou, e por quê: o disparo da cotação por e-mail
+  (o monorepo não tem envio de e-mail, e a conta é decisão do dono) e a
+  conversão da previsão em título (passa pelas regras fiscais do ERP e não
+  deve ser contornada por dentro do suprimento). Detalhes e pendências em
+  `app/apps/erp/SUPRIMENTOS.md`.
+- **2026-09-05 — A ação declarada decide sozinha quem entra.** Uma tela nova
+  declarava uma ação e conferia outra por dentro; a homologação com banco
+  acusou. Regra registrada no CLAUDE.md: quando duas ações precisam abrir a
+  mesma tela, cria-se ação própria com a implicação em `ACOES_IMPLICADAS`.
+- **2026-09-04 — Suprimentos: especificação antes de código.** As seis
+  planilhas em uso foram lidas e confrontadas com o ditado do dono; o resultado
+  está em `app/apps/erp/SUPRIMENTOS.md`, com as decisões dele e o plano em
+  cinco fases. O `tests/conftest.py` ganhou o dublê das exceções de permissão
+  (`permissoes_por_usuario`) — mudança que atravessa áreas.
+
 - **2026-07-10 — WhatsApp: Z-API → Evolution API (self-hosted).** Escolhida a
   Evolution API (open source, multi-instância, envia mídia) em vez do WAHA
   (grátis limita a 1 número e sem mídia). Estratégia de transição: blueprint
@@ -842,6 +909,50 @@ Quando eu pedir nova feature ou adaptação:
   `requirements.txt`, atinge os 18 blueprints: publicar reinicia o serviço
   inteiro, e vale a pergunta de sempre sobre carga do painel ou sincronização
   do Análise de SPs em andamento.
+
+- **2026-09-04 — O `baixabradesco` vira a quarta área com chat próprio, e ganha
+  memória escrita.** Até aqui a aplicação que dá baixa nos comprovantes
+  bancários era a única em produção sem `README.md` nem `HISTORICO.md`: tudo o
+  que se sabia dela vivia em resumos de chat, fora do repositório. Passou a ter
+  os dois, e entrou na tabela do `CLAUDE.md` (por isso o registro aqui — o
+  `CLAUDE.md` atravessa as áreas). O `§5.9` continua sendo o mapa de endpoints;
+  o `README.md` da pasta é o detalhe.
+- **2026-09-04 — Comprovante que o banco NÃO efetivou passava como pagamento
+  feito.** O leitor barrava apenas a frase exata "Operação Não Realizada". Um
+  comprovante real de 16/06/2026 dizia **"Transação Não Realizada"** (saldo
+  insuficiente, pendente de aprovação) e era lido como boleto normal: valor,
+  data, conta de débito e código de barras completos — tudo o que o casador
+  precisa para achar a SP de verdade, baixar o título no Omie e marcar a SP
+  como paga. Um pagamento que nunca saiu do banco viraria baixa.
+  **Correção:** a recusa passou a ser uma lista de frases (`FRASES_RECUSA` em
+  `baixabradesco/parser_bradesco.py`), comparada contra o texto já normalizado,
+  cobrindo "operação/transação/pagamento não realizada/efetivada/efetuada",
+  "não foi efetuada", "pendente de aprovação", "aguardando aprovação" e
+  "cancelada". A checagem passou a rodar **antes** de qualquer extração, então
+  um comprovante recusado não entrega nem valor nem código de barras. O leitor
+  do Sicredi ganhou a mesma trava. E o que era ignorado em silêncio agora
+  aparece no resumo da resposta (`recusados_nao_efetivados`), para o Make e para
+  quem investiga. Coberto por `tests/test_baixabradesco_recusa.py`, com o
+  comprovante real anonimizado como exemplo — inclusive o teste ao contrário,
+  que garante que o rodapé "Cancelamentos, Reclamações" de todo comprovante
+  Bradesco não barre um pagamento bom.
+
+- **2026-09-04 — A trava contra baixa em duplicidade estava solta, e o Sicredi
+  saiu de cena.** A impressão digital de cada página de comprovante era gravada
+  na aba `LogBaixaBradesco` e **nunca conferida**: a função existia, era
+  importada pelo `core.py` e não era chamada. Quem segurava pagamento repetido
+  era o Omie respondendo "título já pago" — proteção de terceiro. Agora a lista
+  é lida **uma vez por lote** (`load_fingerprints_processados`) e conferida em
+  memória, antes de procurar a SP; a página processada entra na lista do próprio
+  lote, cobrindo o PDF repetido dentro do mesmo pedido; o que foi barrado
+  aparece no retorno em `duplicados_ja_baixados`. **A leitura única é
+  obrigatória**: uma consulta por página recriaria o padrão que derrubou a
+  instância em julho de 2026 (§9, item 4b) — há teste segurando isso. Limite
+  aceito: a impressão digital inclui o nome do arquivo, então o mesmo PDF
+  reenviado com outro nome conta como novo; mudar invalidaria o registro
+  histórico. **Na mesma conversa o dono decidiu que a empresa não usa mais o
+  Sicredi**: o `parser_sicredi.py` continua no repositório sem ligação com o
+  fluxo, e ligar o desvio exige cobrir com teste antes.
 
 ---
 

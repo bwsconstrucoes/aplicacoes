@@ -1,0 +1,73 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Cadastro BeeVale — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Cadastro BeeVale</h2>
+
+<p class="cartao-dica" style="margin-bottom:14px">
+  Para quem ainda não tem cartão. Cole a lista que o portal do BeeVale
+  devolveu — os e-mails no formato <code>00000000000@bwsconstrucoes.com.br</code>
+  servem, e CPFs soltos de 11 dígitos também. Os dados saem da planilha
+  <b>Dados Documentos</b>. <b>Nada é alterado em lugar nenhum</b>: sai um
+  arquivo para você subir no portal.
+</p>
+
+<form method="post">
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Cole aqui</h3></div>
+    <textarea class="campo-largo" name="texto" rows="8"
+              placeholder="00000000000@bwsconstrucoes.com.br&#10;11111111111@bwsconstrucoes.com.br">{{ texto }}</textarea>
+    <div style="margin-top:10px">
+      <button class="btn" type="submit">Procurar</button>
+      <a class="btn secundario"
+         href="{{ url_for('analisesps.tela_lote' if origem == 'lote' else 'analisesps.solicitacoes') }}">Voltar</a>
+    </div>
+  </div>
+
+  {% if erro %}
+    <div class="aviso erro">{{ erro }}</div>
+  {% endif %}
+
+  {% if nao_achados %}
+    {# Aparece ANTES da lista boa de propósito: gerar o arquivo sem notar que
+       faltou gente é o erro que só se descobre no portal, depois. #}
+    <div class="aviso atencao">
+      <b>{{ nao_achados|length }} CPF(s) não estão na planilha Dados
+      Documentos</b> — eles <b>não</b> entram no arquivo:
+      <br>{{ nao_achados|join(' · ') }}
+      <br><small>Cadastre estas pessoas lá primeiro, ou siga sem elas.</small>
+    </div>
+  {% endif %}
+
+  {% if encontrados %}
+    <div class="cartao">
+      <div class="cartao-cab">
+        <h3>{{ encontrados|length }} pessoa(s) prontas</h3>
+        <button class="btn" type="submit" name="acao" value="baixar">
+          Baixar a planilha</button>
+      </div>
+      <div class="tabela-rolagem">
+        <table class="sps">
+          <thead>
+            <tr><th>Nome completo</th><th>No cartão</th><th>CPF</th>
+                <th>E-mail</th><th>Nascimento</th><th>Celular</th></tr>
+          </thead>
+          <tbody>
+            {% for r in encontrados %}
+              <tr>
+                <td>{{ r.nome_completo }}</td>
+                <td>{{ r.nome_impresso }}</td>
+                <td>{{ r.cpf }}</td>
+                <td>{{ r.email }}</td>
+                <td>{{ r.nascimento or '—' }}</td>
+                <td>{{ r.celular or '—' }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endif %}
+</form>
+{% endblock %}

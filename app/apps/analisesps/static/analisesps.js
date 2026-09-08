@@ -116,6 +116,31 @@
         + (volta ? "&origem=" + encodeURIComponent(volta) : "");
   });
 
+  // --- BeeVale das marcadas ------------------------------------------------
+  //
+  // So habilita quando TODAS as marcadas sao BeeVale, como no Streamlit. Nao e
+  // preciosismo: gerar a planilha de recarga de uma SP que se paga por boleto
+  // poe dinheiro no cartao de quem nao devia receber, e o card fica marcado
+  // como resolvido.
+  const btnBeeVale = document.getElementById("ba-beevale");
+  if (btnBeeVale) btnBeeVale.addEventListener("click", () => {
+    const sel = marcadas();
+    if (!sel.length) return;
+    const forasteiras = sel.filter(
+      c => !(c.dataset.forma || "").toLowerCase().includes("beevale"));
+    if (forasteiras.length) {
+      alert("O BeeVale so vale para SPs cuja forma de pagamento e BeeVale.\n\n"
+            + forasteiras.length + " das marcadas nao sao ("
+            + forasteiras.slice(0, 5).map(c => c.value).join(", ")
+            + (forasteiras.length > 5 ? "…" : "") + ").");
+      return;
+    }
+    const volta = barra.dataset.origem || "";
+    location.href = btnBeeVale.dataset.url + "?"
+        + sel.map(c => "id=" + encodeURIComponent(c.value)).join("&")
+        + (volta ? "&origem=" + encodeURIComponent(volta) : "");
+  });
+
   // --- Mandar as marcadas para o lote --------------------------------------
   const btnLote = document.getElementById("ba-enviar-lote");
   if (btnLote) btnLote.addEventListener("click", () => {
@@ -150,6 +175,22 @@
       location.reload();
     } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
     finally { btnValidar.disabled = false; }
+  });
+
+  // --- Tirar do lote o que esta marcado ------------------------------------
+  //
+  // Mexe SO na lista do lote: nao altera status, nao vai para a planilha.
+  // A confirmacao diz isso, porque "remover" numa tela de pagamentos assusta.
+  const btnRemover = document.getElementById("ba-remover-lote");
+  if (btnRemover) btnRemover.addEventListener("click", () => {
+    const ids = idsMarcados();
+    if (!ids) return;
+    if (!confirm(`Tirar ${ids.length} SP(s) do lote.\n\nIsto mexe só na sua `
+                 + `lista — não altera nada na planilha nem no Pipefy. `
+                 + `Confirma?`)) return;
+    const form = document.getElementById("form-remover-lote");
+    form.querySelector("input[name=ids]").value = ids.join(",");
+    form.submit();
   });
 
   // --- Abrir no Pipefy os cards das marcadas -------------------------------
@@ -188,6 +229,16 @@
 // funcionar. Sem isso, a ficha no modal abriria bonita e inerte.
 // ---------------------------------------------------------------------------
 window.ligarFicha = function (raiz) {
+  // Um clique no campo do codigo seleciona tudo — quem esta pagando copia e
+  // cola sem mirar. Vale tambem para a ficha aberta no modal, onde estes
+  // campos nascem depois que a pagina ja rodou.
+  (raiz || document).querySelectorAll(".copiavel").forEach(campo => {
+    if (campo.dataset.ligada) return;
+    campo.dataset.ligada = "1";
+    campo.addEventListener("focus", () => campo.select());
+    campo.addEventListener("click", () => campo.select());
+  });
+
   const caixa = (raiz || document).querySelector(".ficha-acoes");
   if (!caixa || caixa.dataset.ligada) return;
   caixa.dataset.ligada = "1";
@@ -212,6 +263,17 @@ window.ligarFicha = function (raiz) {
     botao.addEventListener("click", async () => {
       const rotulo = botao.textContent.trim();
       const valor = botao.dataset.valor;
+      // Trava da Validacao, como no Streamlit. Antes o botao vinha
+      // `disabled`: nao gravava nada, mas tambem nao dizia nada — quem nao
+      // leu o aviso logo acima achava que o botao estava quebrado.
+      if (botao.dataset.bloqueado) {
+        const validarAgora = caixa.querySelector("#ficha-validar");
+        const querValidar = confirm(
+          `Não dá para "${rotulo}" nesta SP: a coluna Validação precisa `
+          + `estar como "Sim".\n\nQuer validar a SP ${sp} agora?`);
+        if (querValidar && validarAgora) validarAgora.click();
+        return;
+      }
       const efeito = botao.dataset.coluna === "agendado" && valor === "Desagendar"
           ? `Apagar o agendamento da SP ${sp}`
           : `${rotulo} na SP ${sp}`;
@@ -282,3 +344,71 @@ window.ligarFicha = function (raiz) {
 
 // A ficha aberta como página inteira liga na hora.
 document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document));
+
+
+// ---------------------------------------------------------------------------
+// A BUSCA POR ATUALIZACOES DE 90 EM 90 SEGUNDOS
+//
+// O Streamlit tinha "Auto-atualizar (90s)", ligado por padrao. A conversao
+// deixou de fora, e com isso a base so se atualizava quando alguem apertava o
+// botao em Configuracoes — o agendador externo que deveria chamar a
+// sincronizacao nao da sinal de ter sido configurado.
+//
+// Aqui a tela aberta faz duas coisas a cada 90 s: pede ao servidor que
+// DISPARE a sincronizacao se ela estiver velha, e pergunta se a base mudou.
+//
+// E NAO RECARREGA SOZINHA COM SPs MARCADAS. Recarregar por baixo de quem
+// acabou de marcar vinte linhas apagaria a selecao — e isso e pior do que ver
+// um numero com dois minutos de idade. Nesse caso aparece um aviso discreto e
+// quem decide e a pessoa.
+// ---------------------------------------------------------------------------
+(function () {
+  const marca = document.getElementById("frescor");
+  if (!marca) return;
+
+  const CADA = 90000;
+  const url = marca.dataset.url;
+  let carimboInicial = marca.dataset.carimbo || "";
+  let avisando = false;
+
+  function temSelecao() {
+    return document.querySelectorAll("input.marca:checked").length > 0;
+  }
+
+  function temModalAberto() {
+    const modal = document.getElementById("ficha-modal");
+    return !!(modal && modal.open);
+  }
+
+  function avisar() {
+    if (avisando) return;
+    avisando = true;
+    const barra = document.createElement("div");
+    barra.className = "aviso-frescor";
+    barra.innerHTML =
+      '<span>A base foi atualizada desde que você abriu esta tela.</span>' +
+      '<button class="btn" type="button">Ver o que mudou</button>';
+    barra.querySelector("button").addEventListener(
+      "click", () => location.reload());
+    document.body.appendChild(barra);
+  }
+
+  async function bater() {
+    try {
+      const r = await fetch(url, {headers: {"Accept": "application/json"}});
+      if (!r.ok) return;                 // sessao caiu, rede oscilou: cala
+      const d = await r.json();
+      if (!d.carimbo) return;
+      if (!carimboInicial) { carimboInicial = d.carimbo; return; }
+      if (d.carimbo === carimboInicial) return;
+
+      // Mudou. Se ninguem esta no meio de nada, recarrega; senao, avisa.
+      if (temSelecao() || temModalAberto()) avisar();
+      else location.reload();
+    } catch (e) {
+      // De fundo: um erro aqui nao pode aparecer na cara de quem so olhava.
+    }
+  }
+
+  setInterval(bater, CADA);
+})();

@@ -1,0 +1,432 @@
+# Módulo SUPRIMENTOS — especificação consolidada
+
+> Base: o ditado do dono (partes 1 e 2, setembro/2026) **confrontado com os dados
+> reais** das planilhas em uso. Este arquivo é a memória da área: quem abrir uma
+> sessão nova sobre Suprimentos lê isto antes de qualquer coisa.
+>
+> Estado em 04/09/2026: **especificação fechada, nada construído ainda.**
+
+---
+
+## 1. O que a varredura das planilhas mostrou
+
+Cinco das seis planilhas foram lidas na íntegra em 04/09/2026.
+
+| Planilha | O que tem hoje |
+|---|---|
+| Cadastro de Insumos | **115 insumos** cadastrados, com sub-categoria, conta do plano financeiro e **prazo de entrega em dias úteis**; tabela de prazos por sub-categoria (50 linhas); **624 municípios** classificados; calendário de feriados por UF; 32 contas marcadas como "bloqueio pedido de compra" |
+| Registro de Suprimentos | **14 situações com cor**, **16 unidades de compra**, **121 formas de pagamento** já classificadas em famílias |
+| Registro de Fornecedores | **111 fornecedores** com região de atuação, porte, categoria de insumo, canal de cotação; tabela separada de **cotadores** (a pessoa que responde pelo fornecedor) |
+| Solicitação de Suprimentos | itens com insumo, **especificação**, quantidade, unidade, obra, situação, título, prazo e previsão; abas separadas para pendências e para recebimento |
+| Mapa de Cotação | cabeçalho por fornecedor com pagamento, condição, entrega, frete, desconto em R$ e acréscimo/desconto em %, responsável e total; preço e seleção **por item** |
+| Registro de Cotações | **não lida** — 39 MB, a conexão do Drive expira antes de terminar. Fica pendente |
+
+### 1.1 As 14 situações (com a cor que usam hoje)
+
+`SOLICITAÇÃO` · `SALA TÉCNICA` · `COTAÇÃO` · `ANÁL. PROPOSTAS` · `PEDIDO EMITIDO` ·
+`ALMOXARIFADO` · `AGUARD. COLETA` · `AGUARD. ENTREGA` · `EM TRÂNSITO` · `ENTREGUE` ·
+`RECEBIDO` · `PENDÊNCIA` · `CANCELADO` · `SUSPENSO`
+
+Nos dados aparece ainda **`AUTORIZAÇÃO`**, que não está na tabela de situações —
+divergência a resolver. E **não existe `FINALIZADO`**: o fluxo termina em `RECEBIDO`.
+
+### 1.2 As 16 unidades
+
+UN, M, VR (vara), KG, L, LT (lata), BD (balde), SC (saco), GL (galão), PCT, CAR
+(carrada), M2, M3, PL (pallet), CX, T.
+
+### 1.3 Porte e região do fornecedor — valores reais
+
+- **Porte:** Fábrica (50), Distribuidor (47), Rep. de Fábrica (4), e na lista de
+  opções ainda Fornecedor Local e Homecenter.
+- **Região de atuação:** RMF (59), BR (23), CE (9), NE (5) — e **combinações**
+  ("CE, RMF", "NE, CE, RMF"). É campo de vários valores, não um só.
+- **Canal de cotação:** e-mail em 109 dos 111. WhatsApp é exceção, não regra.
+
+---
+
+## 2. Onde a planilha **confirma** o ditado
+
+- Acompanhamento **por item**, não pela solicitação inteira.
+- Mapa com fornecedor em coluna, insumo em linha, preço por célula e **seleção
+  por item** para fechar o pedido.
+- Cabeçalho do mapa com forma de pagamento, condição, frete e modo de entrega.
+- Obra por item (a planilha já registra obras diferentes na mesma solicitação).
+- Título livre da solicitação como elemento de busca ("PISO CONCRETO POLIDO").
+- Categoria do insumo e conta do plano financeiro **divergem** de propósito.
+
+---
+
+## 3. O que a planilha mostrou e o ditado não previa
+
+Onze achados. Os cinco primeiros mudam o desenho.
+
+1. **Especificação por item.** Além do insumo do catálogo, cada linha tem um
+   texto livre: "Tarucel p/ Junta de Dilatação" + **"6mm"**; "Cola/Selante PU
+   Sache 800ml" + **"cinza"**. Sem esse campo, o catálogo precisaria de uma
+   entrada para cada variação — e viraria bagunça em um mês.
+
+2. **A previsão de entrega hoje é calculada, não digitada.** A planilha guarda
+   prazo em **dias úteis** por sub-categoria e por insumo, separado para região
+   metropolitana e interior, cruza com 624 municípios e desconta feriados por
+   UF. É informação de valor que se perderia numa migração ingênua.
+
+3. **32 contas do plano bloqueiam pedido de compra.** Regra de negócio em uso,
+   nunca dita: há material que não se compra por este caminho.
+
+4. **121 formas de pagamento**, já organizadas em famílias: à vista; dias
+   simples (7, 10, 30…); dias múltiplos (30/60/90); percentual de entrada mais
+   parcelas (30% + 28/56 dias); e Nx parcelas. Não é uma lista para digitar — é
+   uma **regra de geração de parcelas**, e é ela que liga o pedido ao financeiro.
+
+5. **Cotador é uma entidade própria.** Quem responde a cotação tem nome, função,
+   telefone e e-mail, e um fornecedor pode ter vários. O mapa registra qual
+   deles respondeu cada proposta.
+
+6. **Frete, desconto em R$ e acréscimo/desconto em %** por fornecedor no mapa —
+   o ditado só citava frete.
+
+7. **Coleta × Entrega** é atributo da proposta, e muda a logística depois.
+
+8. **`ALMOXARIFADO` é situação de item** — parte da demanda é atendida do
+   estoque, sem compra.
+
+9. **Assinatura do comprador** (link de imagem) entra nos relatórios enviados ao
+   fornecedor.
+
+10. **O campo "Observações" virou diário.** Hoje ele guarda, em texto corrido,
+    quem encaminhou, quando, para quem e o número do pedido anterior. No ERP
+    isso é trilha de auditoria, que já existe.
+
+11. **Bloco de recebimento separado**, com responsável, data e tipo de
+    recebimento, e uma aba própria de pendências.
+
+---
+
+## 4. Decisões propostas
+
+Recomendação para cada ponto que estava em aberto. Onde o dono não disser o
+contrário, é por aqui que se constrói.
+
+### 4.1 Decidido pelo dono em 04/09/2026
+
+| # | Questão | Decisão | Observação |
+|---|---|---|---|
+| 1 | Aprovar o mapa ou o pedido? | **Sempre o pedido.** Existem dois tipos — pedido com mapa e pedido sem mapa (direto) — e a mesma tela de autorização atende os dois: quando o pedido veio de um mapa, o mapa aparece junto, com as alternativas que o comprador tinha | Uma fila só de autorização, dois modos de exibição |
+| 2 | Previsão de entrega calculada? | **Não.** A data é digitada por quem solicita e, depois, pelo comprador ao fechar com o fornecedor | A tabela de prazos por região e o calendário de feriados **não** serão migrados |
+| 3 | Registro de Cotações (planilha de 39 MB) | **Descartada.** Era só a forma de armazenar os dados, não tem regra a preservar | Não precisa ser lida |
+| 4 | Banco de preços | **Entra no módulo** — ver seção 4.3 | Pedido novo do dono, não estava no ditado |
+
+### 4.2 Recomendações ainda em aberto
+
+| # | Questão | Recomendação | Por quê |
+|---|---|---|---|
+| 5 | Pendência: tabela nova ou saldo do item? | **Saldo do item** | Mesmo padrão da medição de empreita, que já funciona. Preserva o histórico e evita duas verdades sobre o mesmo material |
+| 6 | Perfis por área agora? | **Camada aditiva** (ver seção 6) | Manter o perfil atual como base e acrescentar funções por área. Não mexe nas 125 rotas já protegidas |
+| 7 | Formas de pagamento | **Regra, não lista** | Entrada em %, primeiro vencimento, intervalo e número de parcelas geram as 121 combinações — e geram as parcelas do título sozinhas |
+| 8 | Almoxarifado | **Só a situação, sem controle de estoque** | Registrar que o item foi atendido do estoque é barato; controlar estoque é outro módulo |
+| 9 | Situações | **15, incluindo `AUTORIZAÇÃO`; sem `FINALIZADO`** | É o que os dados mostram em uso |
+
+### 4.3 Banco de preços (pedido do dono, 04/09/2026)
+
+Tela de consulta ao histórico de preços dos insumos — **cotados e comprados**.
+
+**O que fica guardado.** Todo preço que entra num mapa e todo preço que vira
+pedido gera um registro: insumo, especificação, unidade, quantidade, preço
+unitário, fornecedor, data, condição de pagamento, frete, obra e o mapa ou
+pedido de origem. Preço **cotado** e preço **comprado** ficam distinguidos — o
+comprado vale mais, porque alguém aceitou pagar aquilo.
+
+**O que a tela faz.** Busca por insumo, com filtro de período, fornecedor, obra
+e categoria. Para cada insumo: último preço, menor, maior e média no período, e
+a lista de ocorrências com **link para o mapa ou o pedido de origem**.
+
+**Por que importa mais do que parece.** É o que responde "este preço está bom?"
+na hora de fechar, sem depender de memória. E resolve de graça a herança de
+preço de outro mapa (parte 2, item 10.1): o mapa novo puxa o preço do banco,
+marcado como herdado, com a data e o link da origem.
+
+
+---
+
+## 6. Permissão: decidido e construído em 04/09/2026
+
+O dono resolveu a questão com uma frase melhor do que a proposta original:
+"cadastro uma pessoa, ela tem uma função principal e a gente vai agregando
+permissões — pode fazer isso, não pode fazer aquilo, pode ver essa tela".
+
+**Como ficou.** O cargo continua sendo a base. No cadastro do operador há agora
+a lista de tudo o que o ERP sabe fazer, em português, com o que vem do cargo já
+marcado. Marcar acrescenta; desmarcar tira. Só o que difere do cargo é guardado
+(tabela `usuario_permissoes`, migração 032).
+
+**Por que resolve mais do que parece.** Nas palavras dele: "o diretor sai de
+férias e eu quero deixar outra pessoa responsável por autorizar". Sem isso,
+seria preciso inventar um cargo novo para cada arranjo temporário.
+
+**Alçada por valor** (autorizar até tanto) ficou registrada como desejável e
+não é usada hoje. Entra quando o pedido de compra tiver a tela de autorização.
+
+**A trava contra o tiro no pé.** O administrador não consegue desmarcar de si
+mesmo as telas que consertam o sistema — Configurações, cadastro de operadores
+e a entrada no ERP. Sem isso, um clique errado deixaria a empresa sem ninguém
+que pudesse desfazer.
+
+**A dívida, dita com todas as letras.** Por um tempo convivem dois jeitos de
+dizer quem pode o quê: o cargo e as exceções. Enquanto forem poucas, é mais
+simples do que a alternativa. Se um dia metade das pessoas tiver dez exceções,
+é sinal de que os cargos precisam ser redesenhados — e aí vale o trabalho de
+transformar área e nível em estrutura.
+
+---
+
+## 5. Plano de construção
+
+Cinco fases. Cada uma entrega algo que funciona sozinho.
+
+> **Fase 1 entregue em 04/09/2026** (migração 033): unidades, condições de
+> pagamento como regra, fornecedor com região/porte/canal/categorias, cotador,
+> solicitação de cadastro de insumo, a regra que gera as parcelas, a tela
+> Suprimentos › Cadastros, a carga por CSV das duas planilhas e o fluxo de
+> solicitação de cadastro de insumo (pedir → decidir → avisar por Telegram).
+> **Fase 1 completa.**
+
+**Fase 1 — Cadastros e importação.** Unidades, insumos, fornecedores (com região,
+porte, cotadores e dados de pagamento) e formas de pagamento como regra.
+Importar os 111 fornecedores e os 115 insumos das planilhas. Fluxo de
+**solicitação de cadastro de insumo** com aprovação. Sem prazos e sem
+calendário — decisão 2.
+
+> **Fase 2 parcialmente entregue em 05/09/2026** (migração 034): cabeçalho com
+> título, previsão e prioridade; itens com insumo, especificação, quantidade,
+> unidade e **obra por item**; as 15 situações com fluxo que recusa salto sem
+> sentido; a tela Suprimentos › Solicitações com busca e filtros; escopo igual
+> ao do financeiro, e a entrada assistida por IA — cola-se a lista de materiais
+> e a IA monta as linhas, marcando o que não reconheceu. **Fase 2 completa.**
+
+**Fase 2 — Solicitação.** Cabeçalho (título, previsão, prioridade) e itens
+(insumo, especificação, quantidade, unidade, obra). Entrada assistida por IA
+colando planilha. Acompanhamento por item.
+
+> **Fase 3 em andamento desde 05/09/2026** (migração 035): o mapa com preço por
+> item e por fornecedor, o total com frete/desconto/acréscimo, o menor preço
+> destacado, o banco de preços e a herança de preço entre cotações. **Falta** o
+> disparo por e-mail e WhatsApp e a leitura das propostas por IA.
+
+**Fase 3 — Cotação e mapa.** Seleção de itens e fornecedores, disparo por e-mail
+e WhatsApp com registro de envio, mapa com preço por item, leitura das propostas
+por IA com crítica do que não reconheceu, menor preço destacado, anexo da
+proposta na coluna do fornecedor, herança de preço de mapa anterior.
+
+> **Fase 4 em andamento desde 05/09/2026** (migração 036): pedido fechado do
+> mapa ou direto, fila única de autorização com o mapa embutido, recusa
+> parcial, e a previsão de pagamento gerada pela condição de pagamento.
+> Inclui o relatório para o fornecedor, agrupado por endereço de entrega.
+> **Falta** a conversão da previsão em título, que acontece no recebimento
+> (fase 5).
+
+**Fase 4 — Pedido, autorização e financeiro.** Fechamento por fornecedor, pedido
+direto sem mapa, tela de autorização com o mapa embutido, relatório ao fornecedor
+separado por endereço de entrega, geração de previsão de pagamento e de título
+antecipado.
+
+> **Fase 5 em andamento desde 05/09/2026** (migração 037): recebimento na obra,
+> parcial ou total, com a **pendência como saldo do próprio item**; a situação
+> cruzada entre suprimento e financeiro, com avisos que não bloqueiam; e a fila
+> de pendências. **Falta** a conversão da previsão em título — ela passa pelas
+> regras fiscais do ERP (tipo de título, documento fiscal, conta homologada) e
+> não deve ser contornada por dentro do suprimento.
+
+**Fase 5 — Logística, recebimento e banco de preços.** Situações do pedido, cobrança automática de
+atualização, recebimento na obra com nota fiscal lida por IA, boletos, frete,
+pendência por saldo, os alertas cruzados entre suprimento e financeiro e a tela
+do banco de preços (que se alimenta desde a fase 3, mas só ganha valor com
+histórico).
+
+---
+
+## 6. O que ainda não foi verificado
+
+- Os **cinco relatórios do mapa** não foram especificados — dependem dos modelos.
+- Não se sabe quantas solicitações e pedidos existem hoje, nem se há histórico a
+  migrar ou se o sistema começa vazio.
+
+---
+
+## 7. Sugestões (opinião, não decisão)
+
+Coisas que a leitura das planilhas sugeriu e que o dono ainda não pediu.
+
+1. **Alerta de preço fora da curva.** Com o banco de preços funcionando, o mapa
+   pode avisar na hora: "este preço está 40% acima do último comprado deste
+   insumo". Não bloqueia — avisa, como as críticas que já existem no ERP. É o
+   uso mais valioso do banco de preços, e sai quase de graça depois dele.
+
+2. **Medir o ciclo.** Guardando as datas de cada mudança de situação, o sistema
+   responde sozinho: quantos dias entre solicitar e receber, por obra, por
+   comprador, por categoria. Hoje ninguém sabe esse número. Custa pouco, porque
+   a trilha de auditoria já vai existir.
+
+3. **Não migrar o histórico das planilhas.** Trazer os cadastros (insumos,
+   fornecedores) sim; trazer solicitações e pedidos antigos, não. O histórico
+   velho tem o vício da planilha e sujaria o banco de preços logo no começo. A
+   decisão é do dono — mas a recomendação é começar limpo, como já foi feito
+   com o plano de contas do Omie.
+
+4. **As observações viram auditoria.** Hoje um único campo de texto guarda quem
+   encaminhou, quando, para quem e o número do pedido anterior. No ERP isso é
+   evento registrado, pesquisável e impossível de sobrescrever sem deixar
+   rastro. O campo de observação continua existindo, mas para o que é
+   observação de verdade.
+
+5. **Portal do fornecedor, mais adiante.** Em vez de o fornecedor mandar PDF ou
+   foto e a IA ler, ele receberia um link e digitaria os preços na tela. A
+   leitura por IA continua necessária para quem não usar o link — mas cada
+   fornecedor que usar é uma leitura a menos para conferir. Fica para depois de
+   o mapa estar de pé.
+
+---
+
+## 8. Onde o módulo parou em 05/09/2026
+
+Construído das fases 1 a 5, **nunca operado contra a base real**. A suíte cobre
+as regras; o que só o uso mostra está escrito abaixo.
+
+### 8.1 O que existe e funciona (pelos testes)
+
+| Tela | O que faz |
+|---|---|
+| Suprimentos › Cadastros › Insumos | gestão tipo planilha: filtro à esquerda por categoria, unidade usual e grupo do plano, busca, ordenação por coluna, **edição na própria célula**, KPIs do que está incompleto (sem conta, sem preço) e exportação do que está na tela. **A unidade do cadastro é só sugestão** — ver §8.3 |
+| Suprimentos › Cadastros › Fornecedores | a mesma gestão para fornecedor: porte, região, canal, **o que ele vende** (a marcação que decide quem recebe cada cotação) e os contatos; KPIs de quem NÃO vai receber cotação |
+| Suprimentos › Cadastros › Categorias, unidades e pagamento | cadastra e desativa categoria de insumo e unidade de compra, cadastra condição de pagamento como regra, e decide os pedidos de cadastro de insumo (pedir → decidir → avisar) |
+| Suprimentos › Cadastros › Importações | carga por CSV das planilhas (com prévia) e os **dados de exemplo** para simular |
+| Suprimentos › Solicitações | pedido de material com obra **por item**, prioridade, previsão, as 15 situações com fluxo, filtro à esquerda, e a entrada assistida por IA (colar a lista). **É daqui que a cotação nasce**: filtra-se, marcam-se os itens e o botão abre o mapa já sugerindo quem vende aquelas categorias. O comprador **corrige o item** com motivo obrigatório — ver §8.3 |
+| Suprimentos › Cotações | mapa **em formato de planilha** (denso, zebrado, coluna do insumo fixa na rolagem) com preço por célula, **menor preço da linha em verde**, **a situação de cada insumo colorida ao lado dele**, total com frete/desconto/acréscimo, leitura da proposta do fornecedor por IA, herança de preço de cotação anterior, disparo por e-mail e correção do item pelo lápis da linha |
+| Suprimentos › Pedidos | fechamento do mapa ou direto, fila única de autorização com o mapa embutido, recusa parcial, previsão de pagamento, **o pedido enviado por e-mail ao fornecedor** (com preço, condição de pagamento e endereço de entrega — ver §8.1.2) e recebimento na obra |
+| Suprimentos › Banco de preços | histórico de cotado e comprado, com último, menor, maior, média e o último comprado |
+
+### 8.1.0 As cores das situações
+
+Vêm da **formatação condicional da coluna de status** da planilha "Registro de
+Suprimentos" (aba Insumos, coluna L) — lidas do arquivo, não escolhidas. A
+equipe lê a planilha pela cor antes de ler o texto.
+
+Onde ficam: bloco `.sit-` em `app/apps/erp/static/erp.css`, uma linha por
+situação. **Para trocar uma cor é ali e em lugar nenhum mais** — a lista de
+Solicitações, o filtro da esquerda e o mapa de cotação usam a mesma classe.
+
+Como foram lidas, se precisar repetir: a planilha principal é grande demais
+para o conector exportar; a cópia "Registro de Suprimentos (Natan)" exporta e
+carrega a mesma formatação. Baixada como `.xlsx` e lida com `openpyxl`
+(`ws.conditional_formatting`). O texto puro do Google **não** traz cor de
+célula.
+
+⚠️ **AUTORIZAÇÃO é a única cor inventada** — aquela cópia não tem esse status.
+Duas outras escolhas nossas: letra branca nos quatro fundos escuros (preta ali
+não se lê) e CANCELADO riscado (a planilha deixa a linha inteira branca, o que
+não cabe numa etiqueta).
+
+### 8.1.1 Duas regras que o dono pediu em 06/09/2026
+
+**A unidade de medida NÃO é do insumo — é do pedido.** O cadastro guarda uma
+"unidade usual", que serve só como sugestão preenchida sozinha ao escolher o
+insumo. O motivo, nas palavras dele: cerâmica normalmente se compra por metro
+quadrado, mas um dia vem por caixa; cimento normalmente é saco, mas um dia é
+bag. Travar o insumo numa unidade obrigaria a criar um insumo para cada
+variação. Pelo mesmo motivo o catálogo é **genérico** e o detalhe vai no campo
+de **especificação**, em texto livre.
+
+**O comprador corrige o item da solicitação, com motivo obrigatório.** A obra
+erra a unidade, escreve mal a especificação, confunde um insumo com o vizinho.
+O botão está na lista de Solicitações e no lápis da linha do mapa. Regras:
+
+| Regra | Por quê |
+|---|---|
+| Motivo obrigatório, com o que era → o que passou a ser, quem e quando | correção sem assinatura vira "eu não pedi isso" duas semanas depois |
+| Recusada depois do pedido de compra emitido, com recebimento lançado, ou com o item preso a um pedido em pé | o fornecedor recebeu uma coisa; o sistema não pode passar a dizer outra |
+| Trocar insumo ou unidade **apaga os preços daquela linha** no mapa aberto, avisando | eram preços de outra coisa; deixá-los fecharia a compra pelo preço errado |
+| Mapa já fechado não é tocado | mapa fechado é histórico |
+| A tela não oferece o botão onde a regra vai negar | há teste percorrendo as 15 situações exigindo que as duas concordem |
+
+O registro sai da trilha de auditoria (`eventos`, ação `CORRIGIDO`) — não há
+registro paralelo que possa divergir. Na lista, a linha ganha a marca
+"corrigido N×"; clicando, abre-se o histórico.
+
+### 8.1.2 Os dois documentos que o fornecedor recebe (06/09/2026)
+
+A cotação PERGUNTA preço; o pedido FECHA. São documentos diferentes de
+propósito, e os dois saem por e-mail pela conta da empresa da obra
+(`core/suprimentos/envio.montar_mensagem` e `.montar_pedido`).
+
+| | Cotação | Pedido de compra |
+|---|---|---|
+| Item com **especificação** | sim | sim |
+| Quantidade e unidade | sim | sim |
+| **Endereço de entrega**, por obra | sim | sim |
+| Preço unitário, frete, desconto, TOTAL | **nunca** | sim |
+| Condição de pagamento | pede que informem | a acertada, por extenso |
+| Prazo | retorno até | material em obra até |
+| CNPJ e endereço da empresa | sim | sim |
+
+Por que o endereço entra na cotação: o frete depende da distância. Itens de
+obras diferentes saem em blocos separados e a numeração dos itens não
+reinicia, porque o fornecedor cita o número na proposta. Obra sem endereço
+cadastrado diz "Endereço não informado" em vez de sair em branco.
+
+Por que o preço NÃO entra na cotação: seria entregar ao fornecedor A o preço
+do fornecedor B. Por que entra no pedido: é o que impede a discussão de nota
+com valor diferente do combinado.
+
+**Só sai pedido AUTORIZADO** — mandar antes é comprar sem alçada. A tela mostra
+o documento de qualquer jeito, mas o botão fica desligado com o motivo escrito.
+O endereço de entrega das duas telas vem do mesmo lugar
+(`core/suprimentos/entrega.py`): se a obra ganhar um campo de endereço novo,
+os dois documentos mudam juntos.
+
+### 8.2 O que falta, e por quê
+
+1. **Disparo da cotação por e-mail.** O monorepo tem WhatsApp (Z-API) e
+   Telegram, mas **não tem envio de e-mail** — e 109 dos 111 fornecedores só
+   recebem cotação por e-mail. Falta o dono decidir por qual conta sai
+   (Google Workspace da empresa, provavelmente) para então escolher o caminho
+   técnico. Enquanto isso, o relatório da cotação pode ser copiado da tela.
+2. **Previsão de pagamento virando título.** Passa pelas regras fiscais que o
+   ERP já aplica — tipo de título, documento fiscal, conta homologada do
+   fornecedor. Contornar isso por dentro do suprimento criaria um segundo
+   caminho para o dinheiro sair, e é justamente o que o ERP evita. O caminho
+   certo é a nota fiscal do recebimento alimentar o lançamento pelo fluxo do
+   financeiro.
+3. **Os cinco relatórios do mapa** continuam sem especificação (dependem dos
+   modelos que o dono ia mandar). Dois já existem na prática: melhor preço por
+   item (o "pulverizado" no rodapé) e melhor fornecedor único.
+4. **Alertas automáticos** de cobrança (previsão vencida, material não
+   recebido, recebido sem lançamento) **existem como aviso na tela do pedido**,
+   mas ninguém é notificado por Telegram ainda.
+5. **Assinatura do comprador** nos relatórios enviados ao fornecedor.
+
+### 8.2.1 Como a tela ficou depois do primeiro uso (05/09/2026, noite)
+
+O dono abriu o módulo e a tela de Cadastros não serviu. O relato dele, resumido
+sem suavizar: tela grande cheia de informação onde ninguém localiza nada;
+caixinha com mais de cem itens para escolher e sem busca; conta de receita
+oferecida para um insumo; e — o que travava tudo — **não havia como cadastrar
+categoria de insumo**, então não havia como cadastrar insumo, então não havia
+como testar solicitação nem cotação.
+
+O princípio que ele deu, e que vale para o ERP inteiro: *"tudo que pode ter
+muita coisa tem que ter tela de pesquisa e filtragem; não pode abrir uma caixa
+com mais de cem itens para escolher"* e *"a vantagem da planilha é a
+velocidade de gerir: eu filtro, analiso, altero, edito, com facilidade"*.
+
+Daí as quatro sub-telas, os filtros na esquerda (o padrão do resto do ERP), a
+busca em toda lista longa, a edição na célula e os KPIs. E daí também a
+cotação nascer na tela de Solicitações: quem já filtrou o que precisa comprar
+não deveria reescolher os mesmos itens numa segunda tela.
+
+### 8.3 O que só o uso vai mostrar
+
+- Se a IA acerta lendo propostas de fornecedor de verdade (PDF ruim, foto de
+  WhatsApp) — os testes usam respostas controladas.
+- Se a carga das planilhas casa com os 111 fornecedores e 115 insumos reais.
+- Quanto o consumo de IA cresce com o módulo em uso: vale conferir o painel em
+  Configurações › Consumo de IA depois da primeira semana.

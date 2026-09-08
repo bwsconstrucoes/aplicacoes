@@ -666,6 +666,28 @@ els("btn-colar-sp").addEventListener("click", () => {
   els("dlg").showModal();
 });
 
+// Manda para um lote as parcelas marcadas na tabela. É o que o botão dentro
+// da ficha do lote sempre prometeu fazer — a função nunca tinha sido escrita,
+// e o clique morria com "adicionarSPsAoLote is not defined".
+async function adicionarSPsAoLote(loteId){
+  if (!SEL.size) {
+    return aviso("dlg-msg", "Marque as parcelas na tabela de pagamentos antes " +
+                            "de trazer para o lote.", "erro");
+  }
+  try {
+    const d = await api(`/erp/api/lotes/${loteId}/parcelas`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({parcela_ids: [...SEL]})});
+    let m = `${d.relatorio.incluidas.length} adicionada(s) ao lote.`;
+    if (d.relatorio.recusadas.length) m += `<br>Recusadas: ` +
+      d.relatorio.recusadas.map(r => r.motivo).join("; ");
+    aviso("mensagem", m, d.relatorio.recusadas.length ? "info" : "ok");
+    SEL.clear();
+    els("dlg").close();
+    carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
 document.querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", async () => {
   const acao = b.dataset.acao;
   try {

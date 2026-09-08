@@ -12,6 +12,8 @@
 
    Parâmetros esperados de quem inclui:
      origem      'solicitacoes' ou 'lote' — para onde as telas filhas voltam
+     tela        (opcional) 'codigos' esconde os botões que não fazem sentido
+                 lá: gerar o QR estando nele, e mexer no lote
      com_pgt     mostra "Marcar Pago/Pagar" (só Solicitações; no Lote o dono
                  mandou tirar, e o Streamlit nunca teve)
 --------------------------------------------------------------------------- #}
@@ -43,10 +45,19 @@
         <button class="btn secundario" data-coluna="agendado" data-valor="Falha Agendar"
                 data-precisa-selecao>Falha Agendar</button>
         <button class="btn secundario" data-coluna="agendado" data-valor="Desagendar"
-                data-rotulo="Desagendar (remover informação)"
                 data-precisa-selecao
-                title="Apaga o Agendado na planilha">Remover informação</button>
+                title="Apaga o campo Agendado na planilha">Desagendar</button>
       </div>
+      {% if origem == 'lote' and tela != 'codigos' %}
+        {# Tirar do lote o que estiver marcado, em qualquer grupo. Fica aqui,
+           com os outros, porque é a mesma seleção e o mesmo gesto — e porque
+           antes só dava para editar o texto do lote na mão, achando o número
+           no meio dos outros. NÃO altera a SP: mexe só na lista. #}
+        <button class="btn secundario" id="ba-remover-lote"
+                data-precisa-selecao
+                title="Tira as SPs marcadas do lote. Não altera nada na planilha.">
+          Remover do lote</button>
+      {% endif %}
     {% else %}
       <span class="ba-aviso">Perfil <b>Consulta</b> — vê e exporta, não altera.</span>
     {% endif %}
@@ -58,7 +69,7 @@
   </div>
 
   <div class="ba-direita">
-    {% if origem != 'lote' and pode_operar %}
+    {% if origem != 'lote' and pode_operar and tela != 'codigos' %}
       <button class="btn secundario" id="ba-enviar-lote" data-precisa-selecao
               title="Manda as marcadas para o Lote, num grupo novo">Enviar ao Lote</button>
     {% endif %}
@@ -68,18 +79,42 @@
     {% endif %}
     <button class="btn secundario" id="ba-cards" data-precisa-selecao
             title="Abre no Pipefy o card de cada SP marcada">Abrir cards</button>
-    <button class="btn secundario" id="ba-codigos" data-precisa-selecao>QR / Código</button>
-    {% if origem == 'solicitacoes' %}
+    {% if pode_operar %}
+      {# Os dois do Streamlit, com os mesmos nomes. "Gerar" só habilita quando
+         TODAS as marcadas são BeeVale — era assim lá, e é o que impede subir
+         no Drive o arquivo de uma SP que se paga por boleto. "Cadastro" não
+         depende de seleção nenhuma: é uma lista colada na mão. #}
+      <button class="btn secundario" id="ba-beevale" data-precisa-selecao
+              data-url="{{ url_for('analisesps.beevale_gerar') }}"
+              title="Monta as planilhas BeeVale das SPs marcadas">
+        Gerar BeeVale</button>
+      <a class="btn secundario"
+         href="{{ url_for('analisesps.beevale_cadastro', origem=origem) }}"
+         title="Planilha de cadastro para quem ainda não tem cartão">
+        Cadastro BeeVale</a>
+    {% endif %}
+    {% if tela != 'codigos' %}
+      <button class="btn secundario" id="ba-codigos" data-precisa-selecao>QR / Código</button>
+    {% endif %}
+    {% if origem == 'solicitacoes' and tela != 'codigos' %}
       <a class="btn secundario" href="{{ url_for('analisesps.exportar', **args) }}">Exportar CSV</a>
     {% endif %}
   </div>
 </div>
 
-{% if origem != 'lote' and pode_operar %}
-  {# O envio ao Lote é POST: acrescenta um grupo lá e leva a pessoa junto. #}
-  <form method="post" action="{{ url_for('analisesps.tela_lote') }}"
-        id="form-enviar-lote" style="display:none">
-    <input type="hidden" name="acao" value="receber_ids">
-    <input type="hidden" name="ids" value="">
-  </form>
+{% if pode_operar and tela != 'codigos' %}
+  {% if origem != 'lote' %}
+    {# O envio ao Lote é POST: acrescenta um grupo lá e leva a pessoa junto. #}
+    <form method="post" action="{{ url_for('analisesps.tela_lote') }}"
+          id="form-enviar-lote" style="display:none">
+      <input type="hidden" name="acao" value="receber_ids">
+      <input type="hidden" name="ids" value="">
+    </form>
+  {% else %}
+    <form method="post" action="{{ url_for('analisesps.tela_lote') }}"
+          id="form-remover-lote" style="display:none">
+      <input type="hidden" name="acao" value="remover_ids">
+      <input type="hidden" name="ids" value="">
+    </form>
+  {% endif %}
 {% endif %}

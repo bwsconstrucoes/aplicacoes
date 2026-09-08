@@ -25,6 +25,19 @@ logger = logging.getLogger("analisesps.consultas")
 # não tem teto — a navegação alcança qualquer linha.
 POR_PAGINA = 200
 
+# Colunas cuja célula pode trazer MAIS DE UM valor. Hoje só o centro de custo
+# (as obras): a planilha aceita duas na mesma célula quando a despesa é
+# rateada entre elas. Tanto a lista do filtro quanto o casamento abrem a
+# célula antes de comparar.
+MULTIPLAS_NA_CELULA = {"centro_custo"}
+
+# COMO A CÉLULA É ABERTA. A vírgula é o separador que o dono citou
+# ("CONS, CRECHE SWAP"), mas a base real também traz BARRA
+# ("OBRA-12 / OBRA-13") — está num teste escrito na época da conversão, a
+# partir do dado de verdade. Aceitar os dois, e o ponto e vírgula de quebra,
+# custa nada e evita descobrir o terceiro em produção.
+SEPARADOR_DE_OBRAS = "[,;/]"
+
 # Os campos varridos pela busca livre. Iguais aos do Streamlit.
 CAMPOS_BUSCA = ["id", "credor", "documento", "descricao", "tipo_despesa",
                 "centro_custo", "responsavel", "nf", "pedido", "analise_ia"]
@@ -179,14 +192,24 @@ def _condicoes(f: dict) -> tuple[list[str], list]:
             pedacos.append(f"({SQL_STATUS_AGEND}) = ''")
         onde.append("(" + " OR ".join(pedacos) + ")")
 
-    # Centro de custo casa por "contém": na planilha ele às vezes vem com mais
-    # de um código na mesma célula. Mesma regra do original.
-    centros = [v for v in (f.get("centro_custo") or []) if str(v).strip()]
+    # Centro de custo (as OBRAS). A célula às vezes traz mais de uma, separadas
+    # por vírgula: "CONS, CRECHE SWAP".
+    #
+    # Antes o casamento era por "contém", copiado do Streamlit. Funcionava na
+    # maioria dos casos e errava num que aparece: procurar a obra "CONS"
+    # trazia também "CONSTRUÇÃO DO GALPÃO", porque uma é pedaço da outra.
+    # Agora a célula é ABERTA na vírgula e a comparação é com a obra INTEIRA —
+    # que é o que a pessoa escolheu na lista.
+    centros = [str(v).strip() for v in (f.get("centro_custo") or [])
+               if str(v).strip()]
     if centros:
         pedacos = []
         for c in centros:
-            pedacos.append("lower(coalesce(centro_custo,'')) LIKE ?")
-            params.append(f"%{_como_texto_literal(str(c).lower())}%")
+            pedacos.append(
+                "EXISTS (SELECT 1 FROM unnest(regexp_split_to_array("
+                f"          coalesce(centro_custo,''), '{SEPARADOR_DE_OBRAS}')"
+                "        ) AS o WHERE lower(btrim(o)) = ?)")
+            params.append(c.lower())
         onde.append("(" + " OR ".join(pedacos) + ")")
 
     # Situações (as caixas de marcar). Somam-se: marcar duas exige as duas.
@@ -264,6 +287,50 @@ def contagem_agendamento(f: dict) -> dict:
         return {"Pago": 0, "Falha Agendar": 0, "Agendado": 0, "Agendar": 0}
     return {"Pago": linha[0], "Falha Agendar": linha[1],
             "Agendado": linha[2], "Agendar": linha[3]}
+
+
+def resumo_e_agendamento(f: dict) -> tuple[dict, dict]:
+    """Os dois de cima NUMA IDA SÓ ao banco.
+
+    Separados, cada um varria a tabela filtrada por conta própria: medidos aqui
+    com as 59 mil SPs, 44 ms + 48 ms. Juntos, 59 ms — porque a varredura é uma
+    só e as contagens vão de carona. As duas funções acima continuam existindo
+    para quem precisa de um dos dois sozinho (a exportação, por exemplo).
+
+    O SQL é montado a partir das MESMAS peças das duas funções, de propósito:
+    duas cópias do texto divergiriam no dia em que a regra de "pago ganha de
+    tudo" mudasse em uma delas."""
+    from .db import consultar_um
+    where, params = _where(f)
+    # O `lower(...)` vai escrito em cada linha, e não numa variável costurada
+    # depois: há um teste que lê este arquivo linha a linha procurando LIKE
+    # contra texto sem `lower()` — no Postgres o LIKE distingue maiúscula, e
+    # esse já foi um defeito de verdade aqui. Esconder a normalização atrás de
+    # uma variável cega o teste sem consertar nada.
+    pago = "lower(trim(coalesce(status_pgt,'')))"
+    linha = consultar_um(
+        "SELECT count(*), coalesce(sum(valor_num), 0), "
+        f"       count(*) FILTER (WHERE {pago} = 'pagar'), "
+        "       coalesce(sum(valor_num) FILTER "
+        f"                (WHERE {pago} = 'pagar'), 0), "
+        f"       count(*) FILTER (WHERE {pago} = 'pago'), "
+        f"       count(*) FILTER (WHERE {pago} <> 'pago' "
+        "                          AND lower(coalesce(agendado,'')) LIKE '%falha%'), "
+        f"       count(*) FILTER (WHERE {pago} <> 'pago' "
+        "                          AND lower(coalesce(agendado,'')) NOT LIKE '%falha%' "
+        "                          AND lower(trim(coalesce(agendado,''))) = 'agendado'), "
+        f"       count(*) FILTER (WHERE {pago} <> 'pago' "
+        "                          AND lower(coalesce(agendado,'')) NOT LIKE '%falha%' "
+        "                          AND lower(trim(coalesce(agendado,''))) <> 'agendado') "
+        f"  FROM analisesps.sps{where}", tuple(params))
+    if not linha:
+        return ({"quantidade": 0, "total": 0, "quantidade_pagar": 0,
+                 "total_pagar": 0},
+                {"Pago": 0, "Falha Agendar": 0, "Agendado": 0, "Agendar": 0})
+    return ({"quantidade": linha[0], "total": linha[1],
+             "quantidade_pagar": linha[2], "total_pagar": linha[3]},
+            {"Pago": linha[4], "Falha Agendar": linha[5],
+             "Agendado": linha[6], "Agendar": linha[7]})
 
 
 def soma_por(f: dict, coluna: str, limite: int = 12) -> list[dict]:
@@ -348,11 +415,106 @@ def opcoes(coluna: str, limite: int = 400) -> list[str]:
     if coluna not in permitidas:
         raise ValueError(f"Coluna não permitida em filtro: {coluna}")
     from .db import consultar
+
+    if coluna in MULTIPLAS_NA_CELULA:
+        # A célula pode trazer MAIS DE UMA obra, separadas por vírgula
+        # ("CONS, CRECHE SWAP"). Sem separar, a lista do filtro oferecia a
+        # combinação inteira como se fosse uma obra — e a obra sozinha, que é
+        # o que se procura, não aparecia em lugar nenhum.
+        #
+        # `unnest(string_to_array(...))` abre a célula em uma linha por obra;
+        # o resto é o mesmo agrupamento de sempre.
+        linhas = consultar(
+            "SELECT obra, count(*) FROM ("
+            "  SELECT btrim(unnest(regexp_split_to_array("
+            f"           {coluna}, '{SEPARADOR_DE_OBRAS}'))) AS obra "
+            f"    FROM analisesps.sps WHERE trim(coalesce({coluna},'')) <> ''"
+            ") AS abertas WHERE obra <> '' "
+            " GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?", (limite,))
+        return [linha[0] for linha in linhas]
+
     linhas = consultar(
         f"SELECT trim({coluna}), count(*) FROM analisesps.sps "
         f" WHERE trim(coalesce({coluna},'')) <> '' "
         f" GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?", (limite,))
     return [linha[0] for linha in linhas]
+
+
+# ---------------------------------------------------------------------------
+# AS LISTAS DE FILTRO, GUARDADAS ATÉ A PRÓXIMA CARGA
+#
+# Medido nesta máquina, com as 59.055 SPs de verdade: montar as sete listas
+# custa 194 ms, e era isso a CADA clique no filtro. Cada uma varre a tabela
+# inteira para descobrir quais valores existem naquela coluna, e o índice não
+# ajuda — a consulta limpa o texto antes de agrupar, e aí o banco lê tudo.
+# Índice de expressão foi tentado e o Postgres continuou preferindo a varredura;
+# não é caminho.
+#
+# O desperdício é que essas listas quase nunca mudam: os projetos, as contas e
+# os tipos de despesa da empresa são os mesmos hoje e amanhã. Só mudam quando
+# entra SP nova — ou seja, quando a carga da planilha roda.
+#
+# Então a chave do que fica guardado é O CARIMBO DA ÚLTIMA SINCRONIZAÇÃO. Ele
+# muda, as listas são refeitas; não muda, valem as de antes. Funciona ENTRE
+# PROCESSOS sem combinação nenhuma: a carga roda num processo separado e não
+# tem como avisar este, mas o carimbo que ela grava no banco é o próprio aviso.
+#
+# O CUSTO, dito na cara: um projeto novo cadastrado na planilha só aparece na
+# listinha depois da próxima sincronização (a tela dispara uma a cada 5 min).
+# A SP nova aparece na LISTA normalmente — é só o menu de filtro que demora a
+# saber do valor novo.
+# ---------------------------------------------------------------------------
+COLUNAS_DE_FILTRO = {
+    "status_pgt": ("status_pgt", 400),
+    "conta": ("conta", 400),
+    "forma": ("forma_pagamento", 400),
+    "tipo_despesa": ("tipo_despesa", 400),
+    "projeto": ("projeto", 400),
+    "responsavel": ("responsavel", 400),
+    "centro_custo": ("centro_custo", 200),
+}
+
+# Trocado inteiro a cada recálculo, nunca alterado no lugar: com 4 threads no
+# mesmo processo, duas podem recalcular ao mesmo tempo — e trocar a referência
+# de uma vez faz com que a pior consequência disso seja trabalho repetido, e
+# nunca uma lista pela metade na tela.
+_LISTAS_GUARDADAS: dict = {"carimbo": object(), "valores": {}}
+
+
+def opcoes_de_filtro(carimbo=None) -> dict:
+    """As sete listas da barra lateral, de uma vez.
+
+    `carimbo` é o valor de `ultima_sincronizacao` — quem chama normalmente já
+    o tem em mãos (veio do `base_carregada()`), e passá-lo evita uma consulta
+    a mais só para descobrir se o que está guardado ainda serve."""
+    if carimbo is None:
+        from .db import consultar_um
+        try:
+            linha = consultar_um("SELECT valor FROM analisesps.meta "
+                                 "WHERE chave = 'ultima_sincronizacao'")
+            carimbo = linha[0] if linha else ""
+        except Exception:  # noqa: BLE001 — sem carimbo, recalcula; não quebra
+            carimbo = None
+
+    guardado = _LISTAS_GUARDADAS
+    if guardado["carimbo"] == carimbo and guardado["valores"]:
+        return dict(guardado["valores"], status_agend=opcoes_agendamento())
+
+    valores = {apelido: opcoes(coluna, limite=limite)
+               for apelido, (coluna, limite) in COLUNAS_DE_FILTRO.items()}
+    _substituir_listas(carimbo, valores)
+    return dict(valores, status_agend=opcoes_agendamento())
+
+
+def _substituir_listas(carimbo, valores) -> None:
+    global _LISTAS_GUARDADAS
+    _LISTAS_GUARDADAS = {"carimbo": carimbo, "valores": valores}
+
+
+def esquecer_opcoes_de_filtro() -> None:
+    """Joga fora o que está guardado. Para os testes e para quem mexer na
+    estrutura sem passar por uma sincronização."""
+    _substituir_listas(object(), {})
 
 
 def opcoes_agendamento() -> list[str]:

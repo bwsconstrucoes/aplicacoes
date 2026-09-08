@@ -1,0 +1,189 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Gerar BeeVale — Análise de SPs{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Gerar BeeVale <small>{{ ids|length }} SP(s)</small></h2>
+
+{# ---------------------------------------------------------------------------
+   ESTA TELA NÃO FAZ NADA SOZINHA. Ela mostra o que VAI acontecer; a ação só
+   sai quando o operador aperta o botão. É a única coisa neste módulo que
+   altera o Pipefy, e não tem desfazer — por isso a conferência vem primeiro,
+   com o que está impedido em cima e o que está pronto embaixo.
+--------------------------------------------------------------------------- #}
+<div class="aviso atencao">
+  <b>O que este botão faz, na ordem:</b> monta as duas planilhas de cada SP
+  (Pagamento e Cadastro), sobe as duas no Google Drive, e escreve no card do
+  Pipefy os links e a Documentação Fiscal = "BeeVale".
+  <br><small><b>Não tem desfazer.</b> A descrição do card é reescrita — o
+  texto que já estava lá é preservado, só as linhas de link antigas são
+  trocadas.</small>
+</div>
+
+{% if not pasta %}
+  <div class="aviso erro">
+    <b>Falta dizer qual é a pasta do Google Drive.</b> Sem ela a geração não
+    sai do lugar — os arquivos não teriam onde ficar, e o link que vai para o
+    card não existiria.
+    <br><small>Defina <b>DRIVE_FOLDER_ID</b> no Render (ou na aba Credenciais)
+    com o identificador da pasta. Ela precisa ser de um <b>Drive
+    Compartilhado</b>: numa pasta comum do "Meu Drive" o Google recusa, porque
+    a conta de serviço não tem espaço próprio. Em <b>Configurações</b> dá para
+    conferir se ficou certo.</small>
+  </div>
+{% endif %}
+
+{% if erro %}
+  <div class="aviso erro"><b>Não consegui conferir os cards no Pipefy:</b>
+    {{ erro }}</div>
+{% endif %}
+
+{% if preparado.erros %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>{{ preparado.erros|length }} SP(s) impedidas</h3>
+    </div>
+    <p class="cartao-dica" style="margin:0 0 8px">
+      Estas <b>não</b> entram na geração. O conserto é no card ou na database
+      do Pipefy, não aqui.
+    </p>
+    <div class="tabela-rolagem">
+      <table class="sps">
+        <thead><tr><th>SP</th><th>Motivo</th></tr></thead>
+        <tbody>
+          {% for e in preparado.erros %}
+            <tr>
+              <td><a href="https://app.pipefy.com/open-cards/{{ e.sp }}"
+                     target="_blank" rel="noopener">{{ e.sp }}</a></td>
+              <td>{{ e.motivo }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+
+{% if preparado.prontos %}
+  <div class="cartao">
+    <div class="cartao-cab">
+      <h3>{{ preparado.prontos|length }} SP(s) prontas</h3>
+    </div>
+    <div class="tabela-rolagem">
+      <table class="sps">
+        <thead>
+          <tr><th>SP</th><th>Colaborador</th><th>CPF</th>
+              <th class="num">Valor no card</th><th class="num">Valor na base</th>
+              <th>Credor na base</th></tr>
+        </thead>
+        <tbody>
+          {% for p in preparado.prontos %}
+            {% set reg = registros.get(p.sp) %}
+            <tr>
+              <td><a href="https://app.pipefy.com/open-cards/{{ p.sp }}"
+                     target="_blank" rel="noopener">{{ p.sp }}</a></td>
+              <td>{{ p.nome }}</td>
+              <td>{{ p.cpf }}</td>
+              <td class="num">{{ p.valor|moeda }}</td>
+              {# O valor da base ao lado do valor do card, de propósito: são
+                 duas origens diferentes, e é aqui que uma divergência
+                 aparece antes de virar recarga errada. #}
+              <td class="num">{{ reg.valor_num|moeda if reg else '—' }}</td>
+              <td>{{ reg.credor if reg else '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if pasta %}
+      <div style="margin-top:12px">
+        <button class="btn" id="btn-gerar"
+                data-url="{{ url_for('analisesps.beevale_executar') }}"
+                data-ids="{{ preparado.prontos|map(attribute='sp')|join(',') }}">
+          Gerar, subir no Drive e atualizar os cards</button>
+      </div>
+    {% endif %}
+  </div>
+{% elif pasta and not erro %}
+  <div class="aviso">Nenhuma das SPs selecionadas está pronta para gerar.</div>
+{% endif %}
+
+<div id="saida-beevale"></div>
+
+<div style="margin-top:12px">
+  <a class="btn secundario"
+     href="{{ url_for('analisesps.tela_lote' if origem == 'lote' else 'analisesps.solicitacoes') }}">Voltar</a>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const botao = document.getElementById("btn-gerar");
+const saida = document.getElementById("saida-beevale");
+
+function linhaDeLinks(f) {
+  return '<tr><td>' + f.sp + '</td><td>' + f.nome + '</td>' +
+    '<td><a href="' + f.pagamento + '" target="_blank" rel="noopener">Pagamento</a></td>' +
+    '<td><a href="' + f.cadastro + '" target="_blank" rel="noopener">Cadastro</a></td></tr>';
+}
+
+if (botao) botao.addEventListener("click", async () => {
+  const ids = (botao.dataset.ids || "").split(",").filter(Boolean);
+  if (!ids.length) return;
+  if (!confirm("Gerar o BeeVale de " + ids.length + " SP(s).\n\n"
+               + "Isto sobe os arquivos no Drive e ALTERA a descrição e a "
+               + "Documentação Fiscal dos cards no Pipefy.\n\n"
+               + "NÃO TEM DESFAZER. Confirma?")) return;
+
+  botao.disabled = true;
+  botao.textContent = "Gerando… pode demorar";
+  saida.innerHTML = '<div class="aviso">Trabalhando. <b>Não feche esta '
+                  + 'página</b> — cada SP são duas subidas no Drive.</div>';
+  try {
+    const r = await fetch(botao.dataset.url, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({ids: ids})
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      saida.innerHTML = '<div class="aviso erro">' + (d.erro || "erro desconhecido") + '</div>';
+      return;
+    }
+    let html = "";
+    if (d.feitos.length) {
+      html += '<div class="cartao"><div class="cartao-cab"><h3>' + d.feitos.length
+            + ' arquivo(s) no Drive</h3></div>'
+            + '<div class="tabela-rolagem"><table class="sps"><thead><tr>'
+            + '<th>SP</th><th>Colaborador</th><th>Pagamento</th><th>Cadastro</th>'
+            + '</tr></thead><tbody>' + d.feitos.map(linhaDeLinks).join("")
+            + '</tbody></table></div></div>';
+    }
+    if (d.atualizados.length) {
+      html += '<div class="aviso bom"><b>' + d.atualizados.length
+            + ' card(s) atualizados no Pipefy.</b></div>';
+    }
+    if (d.nao_atualizados.length) {
+      // Arquivo no Drive sem o card atualizado NÃO é sucesso pela metade que
+      // se possa ignorar: o card continua dizendo que falta fazer.
+      html += '<div class="aviso atencao"><b>' + d.nao_atualizados.length
+            + ' card(s) ficaram sem atualizar:</b> ' + d.nao_atualizados.join(", ")
+            + '<br><small>Os arquivos existem — os links estão acima, dá para '
+            + 'colar na descrição do card na mão.</small></div>';
+    }
+    if (d.erros.length) {
+      html += '<div class="aviso erro"><b>' + d.erros.length + ' problema(s):</b><ul>'
+            + d.erros.map(e => '<li>SP ' + e.sp + ' — ' + e.motivo + '</li>').join("")
+            + '</ul></div>';
+    }
+    saida.innerHTML = html || '<div class="aviso">Nada foi gerado.</div>';
+    // Sem recarregar: os links acima são o resultado, e recarregar os perderia.
+    botao.textContent = "Gerar de novo";
+  } catch (e) {
+    saida.innerHTML = '<div class="aviso erro">Falhou a comunicação: ' + e + '</div>';
+    botao.textContent = "Gerar, subir no Drive e atualizar os cards";
+  } finally {
+    botao.disabled = false;
+  }
+});
+</script>
+{% endblock %}

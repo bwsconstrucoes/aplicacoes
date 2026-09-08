@@ -116,9 +116,33 @@ def test_rota_publica_tem_motivo_escrito():
 
 
 def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
-    """Se esta lista crescer, alguém abriu uma rota — que apareça na revisão."""
+    """Se esta lista crescer, alguém abriu uma rota — que apareça na revisão.
+
+    `api_agente_rodar` entrou em 07/09/2026 e é a única que aceita ORDEM sem
+    sessão: é a rotina diária, de fora, mandando o agente varrer as pendências.
+    Ela não é aberta de verdade — recusa sem `ERP_AGENTE_SECRET` no corpo, e
+    RECUSA TAMBÉM se o segredo não estiver configurado no ambiente, em vez de
+    liberar. O teste logo abaixo prova as duas recusas.
+    """
     assert set(routes._ENDPOINTS_PUBLICOS) == {
-        "erp.pagina_login", "erp.sair", "erp.health"}
+        "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar"}
+
+
+def test_a_rota_do_agente_recusa_sem_segredo_e_com_segredo_errado(app, monkeypatch):
+    """Rota sem login é rota que qualquer um alcança — então ela tem de se
+    defender sozinha. Duas recusas, e a primeira é a que mais importa:
+    ambiente SEM segredo configurado não pode virar porta aberta."""
+    with app.test_client() as c:
+        monkeypatch.delenv("ERP_AGENTE_SECRET", raising=False)
+        r = c.post("/erp/api/agente/rodar", json={})
+        assert r.status_code == 503, "sem segredo no ambiente tem de recusar"
+        assert "não configurado" in r.get_json()["erro"]
+
+        monkeypatch.setenv("ERP_AGENTE_SECRET", "o-segredo-de-verdade")
+        r = c.post("/erp/api/agente/rodar", json={"secret": "chute"})
+        assert r.status_code == 403
+        r = c.post("/erp/api/agente/rodar", json={})
+        assert r.status_code == 403, "sem segredo no corpo também recusa"
 
 
 # ---------------------------------------------------------------------------

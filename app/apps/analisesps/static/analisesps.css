@@ -688,15 +688,29 @@ a.kpi { display: block; }
   color: var(--azul); white-space: nowrap;
 }
 .ficha-links { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-/* "Cancelar SP" e uma acao seria, mas nao e a acao principal da ficha: em
-   vermelho puro ele puxava o olho para si toda vez que a ficha abria. Fica
-   discreto, e a confirmacao continua sendo o formulario do Pipefy. */
-.ficha-links .btn.perigo { border-color: #E0B4B0; color: #8C3A33; }
+/* "Cancelar SP" ficou igual aos outros botoes da fileira: ele so ABRE o
+   formulario do Pipefy, nao cancela nada por si. Em vermelho puxava o olho
+   para si toda vez que a ficha abria, como se fosse a acao principal. */
+
+/* A DESCRICAO, no alto da ficha. Texto de gente: respeita a quebra de linha
+   digitada e quebra palavra comprida (link colado) em vez de esticar a caixa. */
+.ficha-descricao { margin: 0 0 12px; }
+.texto-livre {
+  margin: 0; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.texto-livre a { color: var(--azul); }
 .ficha-acoes {
   display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
   padding: 12px; margin: 12px 0; background: var(--papel);
   border-radius: var(--raio-p);
 }
+/* Agendamento travado pela Validacao. NAO usa `disabled`: botao desabilitado
+   nao recebe clique, e assim ele parecia apenas quebrado. Aqui ele tem cara
+   de cadeado, aceita o clique e o clique diz por que nao foi. */
+.ficha-acoes .btn.bloqueado {
+  opacity: .55; border-style: dashed; cursor: help;
+}
+.ficha-acoes .btn.bloqueado:hover { background: var(--branco); }
 
 /* O que a barra de filtros mostra enquanto reconsulta */
 .filtros-estado {
@@ -831,3 +845,41 @@ a.kpi { display: block; }
 .form-agenda-acoes { grid-column: 1 / -1; display: flex; gap: 8px; }
 .acoes-linha { white-space: nowrap; }
 .acoes-linha .link-btn + form { margin-left: 8px; }
+
+/* "Remover do lote" ficou igual aos demais, por decisao do dono (05/09/2026):
+   ele nao altera nada na planilha, entao nao merecia cor de alerta. O aviso
+   continua na confirmacao do clique, que e onde importa. */
+
+/* O aviso de que a base mudou. Discreto e no rodape: nao pode tapar a tabela
+   nem competir com o que a pessoa esta fazendo. */
+.aviso-frescor {
+  position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+  z-index: 60; display: flex; align-items: center; gap: 12px;
+  padding: 10px 16px; background: var(--azul); color: var(--branco);
+  border-radius: 999px; box-shadow: var(--sombra-forte); font-size: 13.5px;
+}
+.aviso-frescor .btn {
+  background: var(--amarelo); border-color: var(--amarelo);
+  color: var(--azul-fundo); padding: 5px 12px; font-size: 12.5px;
+}
+
+/* Procurar dentro de um bloco de filtro (obras, projetos, credores...) */
+.procura-opcao {
+  width: 100%; margin: 2px 0 8px; padding: 6px 9px; font-size: 12.5px;
+  border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
+}
+.procura-opcao:focus { outline: 2px solid var(--azul-claro); outline-offset: -1px; }
+.procura-nada {
+  margin: 0 0 8px; font-size: 12px; color: var(--tinta-suave); font-style: italic;
+}
+
+/* A caixa de marcar no cabecalho de cada codigo gerado */
+.marca-codigo { display: inline-flex; align-items: center; margin-right: 8px; }
+.marca-codigo input { width: 16px; height: 16px; cursor: pointer; }
+
+/* O codigo de pagamento dentro da ficha */
+.ficha-codigo {
+  padding: 14px; margin: 12px 0; background: var(--papel);
+  border-radius: var(--raio-p);
+}
+.ficha-codigo .qr { max-width: 190px; }

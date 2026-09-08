@@ -44,6 +44,24 @@ def _filtro_data(valor):
     return data_br(valor)
 
 
+@bp.app_template_filter("momento_br")
+def _filtro_momento(valor):
+    """Data E hora, na hora de Brasília. Para o que só faz sentido com a
+    hora — "a base é de quando?"."""
+    from .formatos import momento_br
+    return momento_br(valor)
+
+
+@bp.app_template_filter("com_links")
+def _filtro_com_links(texto):
+    """Texto livre com os endereços já clicáveis, escapado antes de tudo.
+
+    A descrição da SP costuma trazer o link de uma pasta ou de um contrato.
+    Como texto puro, era preciso selecionar na mão e colar no navegador."""
+    from .formatos import com_links
+    return com_links(texto)
+
+
 # ---------------------------------------------------------------------------
 # Entrada e saída
 # ---------------------------------------------------------------------------
@@ -205,23 +223,19 @@ def escolher_colunas():
     return redirect(url_for("analisesps.solicitacoes"))
 
 
-def _opcoes_dos_filtros() -> dict:
+def _opcoes_dos_filtros(carimbo=None) -> dict:
     """O que cada lista suspensa da barra lateral oferece.
 
     Vive aqui, e não dentro de cada rota, porque Solicitações e Relatório
     mostram a MESMA barra. Duas cópias divergiriam no dia em que alguém
-    acrescentasse um filtro em uma só."""
+    acrescentasse um filtro em uma só.
+
+    As listas ficam guardadas até a próxima carga da planilha — era o pedaço
+    mais caro da tela, 194 ms a cada clique no filtro. O porquê está escrito
+    em `consultas.opcoes_de_filtro`. Passar o `carimbo` que a tela já tem em
+    mãos poupa mais uma consulta."""
     from . import consultas
-    return {
-        "status_pgt": consultas.opcoes("status_pgt"),
-        "conta": consultas.opcoes("conta"),
-        "forma": consultas.opcoes("forma_pagamento"),
-        "tipo_despesa": consultas.opcoes("tipo_despesa"),
-        "projeto": consultas.opcoes("projeto"),
-        "responsavel": consultas.opcoes("responsavel"),
-        "centro_custo": consultas.opcoes("centro_custo", limite=200),
-        "status_agend": consultas.opcoes_agendamento(),
-    }
+    return consultas.opcoes_de_filtro(carimbo)
 
 
 def _lembrar_filtro(endpoint: str):
@@ -308,16 +322,20 @@ def inicio():
 def solicitacoes():
     from . import consultas
 
+    # O FILTRO GUARDADO É CONFERIDO ANTES DE QUALQUER CONSULTA. Quem clica no
+    # menu chega sem filtro na barra de endereço e é redirecionado para o
+    # endereço com ele — ou seja, esta função roda DUAS vezes por clique. Tudo
+    # o que for perguntado ao banco antes daqui é perguntado à toa na primeira.
+    voltar = _lembrar_filtro("analisesps.solicitacoes")
+    if voltar is not None:
+        return voltar
+
     base = consultas.base_carregada()
     if not base["pronta"]:
         # Base vazia não é "nada a pagar" — é base não carregada. Dizer isso
         # evita que alguém conclua que não há contas em aberto.
         return render_template("analisesps_vazio.html", base=base,
                                pode_operar=auth.pode_operar())
-
-    voltar = _lembrar_filtro("analisesps.solicitacoes")
-    if voltar is not None:
-        return voltar
 
     filtros = _filtros_do_pedido()
     ordem = request.args.get("ordem", "vencimento")
@@ -327,14 +345,19 @@ def solicitacoes():
         pagina = 1
 
     linhas = consultas.listar(filtros, ordem=ordem, pagina=pagina)
-    resumo = consultas.resumo(filtros)
-    ultima = (pagina - 1) * consultas.POR_PAGINA + len(linhas)
 
     # Os números que o Streamlit mostrava embaixo da tabela. São SQL, não
     # contas sobre as 200 linhas da página: quem soma é o banco, sobre o
     # filtro inteiro — que é justamente a pergunta ("quanto tem para pagar
     # nisto que estou olhando?").
-    agendamento = consultas.contagem_agendamento(filtros)
+    #
+    # O resumo e a divisão do agendamento saem JUNTOS: eram duas varreduras da
+    # mesma tabela filtrada (44 ms + 48 ms medidos), e numa consulta só custam
+    # 59 ms. As duas somas por conta e por forma continuam separadas — juntá-las
+    # foi tentado e ficou PIOR (66 ms contra 51 ms), porque o banco precisa
+    # guardar o resultado do meio.
+    resumo, agendamento = consultas.resumo_e_agendamento(filtros)
+    ultima = (pagina - 1) * consultas.POR_PAGINA + len(linhas)
     por_conta = consultas.soma_por(filtros, "conta")
     por_forma = consultas.soma_por(filtros, "forma_pagamento")
 
@@ -348,7 +371,7 @@ def solicitacoes():
         ordem=ordem, filtros=filtros,
         agendamento=agendamento, por_conta=por_conta, por_forma=por_forma,
         colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
-        args=request.args, opcoes=_opcoes_dos_filtros(),
+        args=request.args, opcoes=_opcoes_dos_filtros(base.get("ultima")),
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
@@ -404,9 +427,14 @@ def detalhe(sp_id):
     apontadas = [i for i in dict.fromkeys(re.findall(r"\d{9,}", analise))
                  if i != str(sp_id)][:8]
 
+    # O código de pagamento junto da ficha: quem abre a SP para conferir um
+    # dado quase sempre está a caminho de pagar, e voltar à lista só para
+    # gerar o QR era um caminho a mais em cada pagamento.
+    codigo = _codigo_de_pagamento(str(sp_id), registro)
+
     contexto = dict(
         sp=registro, origem=_origem_pedida(),
-        pendencias=faltando, risco_ids=apontadas,
+        pendencias=faltando, risco_ids=apontadas, codigo=codigo,
         hook_omie=os.getenv("ANALISESPS_HOOK_OMIE", "").strip(),
         pode_operar=auth.pode_operar())
 
@@ -661,8 +689,10 @@ def validar():
                         "SENHA_VALIDACAO na Environment do Render ou na aba "
                         "Credenciais da planilha."}, 409
 
-    import hmac
-    if not hmac.compare_digest(str(dados.get("senha") or ""), esperada):
+    # `auth.confere` e não `hmac.compare_digest` direto: com texto, o
+    # compare_digest só aceita ASCII, e uma senha de validação com acento
+    # estouraria aqui em vez de ser recusada. Ver `auth.confere`.
+    if not auth.confere(dados.get("senha") or "", esperada):
         logger.warning("Análise de SPs: %s tentou validar com senha errada.",
                        auth.nome_atual() or "sem nome")
         return {"ok": False, "erro": "Senha de validação incorreta."}, 403
@@ -676,7 +706,7 @@ def validar():
 @bp.route("/configuracoes")
 @exige_consulta
 def configuracoes():
-    from . import consultas, migracoes_runner, tarefas
+    from . import consultas, credenciais, migracoes_runner, tarefas
     try:
         migracoes = migracoes_runner.listar_estado()
         erro_banco = None
@@ -684,15 +714,81 @@ def configuracoes():
         migracoes = {"aplicadas": [], "pendentes": []}
         erro_banco = str(e)
 
+    # O que o BeeVale precisa para funcionar. Só diz se ESTÁ CONFIGURADO —
+    # nunca mostra o valor de um segredo na tela.
+    #
+    # Dentro de um try porque ler um segredo pode ir à planilha, e ESTA tela é
+    # a que conserta o módulo quando algo quebra: ela não pode ser a próxima a
+    # cair. Foi assim que o módulo travou na estreia (03/09).
+    from . import beevale
+    try:
+        pasta, origem = beevale.pasta_do_drive()
+        integracoes = {
+            "ok": True,
+            "pasta_drive": bool(pasta),
+            "pasta": pasta,
+            "origem": origem,
+            # Os últimos seis caracteres bastam para o dono reconhecer QUAL
+            # pasta ele colou, sem publicar o identificador inteiro na tela.
+            "pasta_fim": pasta[-6:] if pasta else "",
+            "pipefy": bool(credenciais.token("PIPEFY_TOKEN")),
+        }
+    except Exception as e:  # noqa: BLE001 — sem internet, a tela ainda abre
+        logger.exception("Análise de SPs: não consegui conferir as integrações")
+        integracoes = {"ok": False, "erro": str(e)}
+
     return render_template(
         "analisesps_config.html",
-        migracoes=migracoes, erro_banco=erro_banco,
+        migracoes=migracoes, erro_banco=erro_banco, integracoes=integracoes,
         base=consultas.base_carregada(),
         andamento=tarefas.estado(),
         ultima=tarefas.ultima_concluida() if not erro_banco else None,
         modos=tarefas.MODOS,
         versao=os.getenv("RENDER_GIT_COMMIT", "")[:8] or "desenvolvimento",
         pode_operar=auth.pode_operar())
+
+
+@bp.route("/api/pasta-drive", methods=["POST"])
+@exige_operador
+def gravar_pasta_drive():
+    """Guarda a pasta do Drive que o dono colou na tela de Configurações.
+
+    Ela não é segredo — é o endereço de uma pasta —, então mora na tabela
+    `meta` do próprio módulo e não na planilha de credenciais. Vantagem
+    prática: dá para trocar sem entrar no Render, e vale na hora."""
+    from . import beevale
+
+    dados = request.get_json(silent=True) or {}
+    try:
+        salva = beevale.gravar_pasta_do_drive(dados.get("pasta", ""))
+    except beevale.ErroDoBeeVale as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou gravar a pasta do Drive")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+
+    logger.info("Análise de SPs: %s %s a pasta do Drive.",
+                auth.nome_atual() or "sem nome",
+                "gravou" if salva else "apagou")
+    return {"ok": True, "pasta": salva,
+            "fim": salva[-6:] if salva else ""}
+
+
+@bp.route("/api/conferir-drive", methods=["POST"])
+@exige_operador
+def conferir_drive():
+    """Olha a pasta do Drive SEM escrever nada.
+
+    Existe para o dono conferir o identificador que acabou de colar sem
+    precisar gerar um BeeVale de verdade — e para dizer, na hora, se a pasta é
+    de Drive Compartilhado, que é a pegadinha que faz a subida falhar."""
+    from . import beevale, drive
+    pasta, _origem = beevale.pasta_do_drive()
+    if not pasta:
+        return {"ok": False,
+                "erro": "Nenhuma pasta configurada. Defina DRIVE_FOLDER_ID no "
+                        "Render (ou na aba Credenciais)."}
+    return drive.conferir_pasta(pasta)
 
 
 @bp.route("/api/migrar", methods=["POST"])
@@ -725,6 +821,44 @@ def andamento():
         "progresso": detalhe.get("progresso"),
         "visto_em": texto(detalhe.get("visto_em")) if detalhe else None,
     }
+
+
+@bp.route("/api/frescor")
+@exige_consulta
+def frescor():
+    """A pergunta que a tela aberta faz de 90 em 90 segundos.
+
+    Faz duas coisas de uma vez, e é de propósito:
+
+      1. DISPARA a sincronização se a última estiver velha. É o que substitui
+         o agendador externo — sem ele, a base só se atualizava quando alguém
+         apertasse o botão em Configurações.
+      2. Devolve o carimbo da última sincronização, para a tela saber se
+         mudou alguma coisa desde que foi aberta.
+
+    A tela NÃO se recarrega sozinha quando há SPs marcadas: recarregar por
+    baixo de quem acabou de marcar vinte linhas apagaria a seleção, e isso é
+    pior do que ver um dado com dois minutos de idade. Ela mostra um aviso e
+    deixa a pessoa decidir."""
+    from . import consultas, tarefas
+
+    acao = tarefas.manter_fresco()
+
+    # TUDO daqui para baixo dentro da proteção, e não só a leitura da base:
+    # esta rota é chamada de fundo de 90 em 90 segundos, e um erro nela
+    # apareceria na tela de quem só estava conferindo uma lista. Um teste
+    # pegou justamente a chamada que tinha ficado de fora.
+    carimbo, quantidade, rodando = "", 0, False
+    try:
+        base = consultas.base_carregada()
+        carimbo = str(base.get("ultima") or "")
+        quantidade = base.get("quantidade") or 0
+        rodando = tarefas.estado()["rodando"]
+    except Exception:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou ler o frescor da base")
+
+    return {"ok": True, "carimbo": carimbo, "quantidade": quantidade,
+            "disparou": acao.get("disparou", False), "rodando": rodando}
 
 
 @bp.route("/api/sincronizar", methods=["POST"])
@@ -764,14 +898,18 @@ def sincronizar():
 def relatorio():
     from . import consultas
 
+    # O FILTRO GUARDADO É CONFERIDO ANTES DE QUALQUER CONSULTA. Quem clica no
+    # menu chega sem filtro na barra de endereço e é redirecionado para o
+    # endereço com ele — ou seja, esta função roda DUAS vezes por clique. Tudo
+    # o que for perguntado ao banco antes daqui é perguntado à toa na primeira.
+    voltar = _lembrar_filtro("analisesps.relatorio")
+    if voltar is not None:
+        return voltar
+
     base = consultas.base_carregada()
     if not base["pronta"]:
         return render_template("analisesps_vazio.html", base=base,
                                pode_operar=auth.pode_operar())
-
-    voltar = _lembrar_filtro("analisesps.relatorio")
-    if voltar is not None:
-        return voltar
 
     filtros = _filtros_do_pedido()
     tipo = request.args.get("tipo", "geral")
@@ -925,6 +1063,26 @@ def tela_lote():
                 aviso = f"{len(crus)} SP(s) entraram no grupo \"{titulo}\"."
             else:
                 aviso = "Nenhuma SP marcada."
+        elif acao == "remover_ids":
+            # Veio da barra do alto: tira do lote o que estiver marcado, em
+            # qualquer grupo. O painel por status embaixo mostra SPs que NÃO
+            # estão no lote — marcar uma delas e mandar remover não é erro,
+            # simplesmente não há o que tirar, e a tela diz isso.
+            pedidos = [i.strip() for i in
+                       (request.form.get("ids") or "").split(",") if i.strip()]
+            conteudo = lote.ler(pessoa)["conteudo"]
+            conteudo, quantos = lote.remover_ids(conteudo, pedidos)
+            se_faltou = len(pedidos) - quantos
+            if quantos:
+                aviso = f"{quantos} SP(s) saíram do lote."
+                if se_faltou:
+                    aviso += (f" Outra(s) {se_faltou} já não estavam nele — "
+                              "provavelmente vieram do painel por status.")
+            elif pedidos:
+                aviso = ("Nenhuma das SPs marcadas estava no lote. As do "
+                         "painel por status embaixo não fazem parte dele.")
+            else:
+                aviso = "Nenhuma SP marcada."
         elif acao == "trazer_antigo":
             antigo_ = lote.lote_de_antes().get("conteudo") or ""
             if antigo_.strip():
@@ -1007,6 +1165,62 @@ def tela_lote():
 # ---------------------------------------------------------------------------
 # CÓDIGOS DE PAGAMENTO — QR Pix e código de barras
 # ---------------------------------------------------------------------------
+def _codigo_de_pagamento(sp_id: str, registro) -> dict:
+    """O QR Pix ou o código de barras de UMA SP.
+
+    Vive fora das rotas porque duas telas o mostram: a de códigos, que monta
+    até cinquenta de uma vez, e a ficha, que mostra o da SP aberta. Duas
+    cópias divergiriam no dia em que uma delas ganhasse um caso — e a que
+    ficasse para trás mostraria um código errado a quem está pagando.
+
+    Nunca levanta: uma SP com dado ruim vira um bloco com o erro escrito, e as
+    outras continuam aparecendo."""
+    from . import pagamentos
+
+    if registro is None:
+        return {"id": sp_id, "sp": None, "tipo": None, "imagem": None,
+                "copia_cola": None, "erro": "SP não encontrada na base."}
+
+    forma = str(registro.get("forma_pagamento") or "").strip().lower()
+    bloco = {"id": sp_id, "sp": registro, "tipo": None,
+             "erro": None, "imagem": None, "copia_cola": None}
+
+    try:
+        if "boleto" in forma:
+            bloco["tipo"] = "boleto"
+            svg, situacao = pagamentos.barcode_svg(
+                registro.get("codigo_barras") or "")
+            if situacao != "ok":
+                bloco["erro"] = f"Código de barras {situacao}."
+            else:
+                # O gerador devolve um SVG de ARQUIVO, com cabeçalho XML e
+                # DOCTYPE próprios. Colado dentro de uma página HTML isso é
+                # inválido — e alguns navegadores param de desenhar o resto a
+                # partir dali. Fica só o `<svg>` para dentro.
+                inicio = svg.find("<svg")
+                bloco["imagem"] = svg[inicio:] if inicio >= 0 else svg
+                bloco["copia_cola"] = str(
+                    registro.get("codigo_barras") or "").strip()
+        elif "pix" in forma or "beevale" in forma:
+            bloco["tipo"] = "pix"
+            chave = str(registro.get("info_pgt") or "")
+            png, carga = pagamentos.gerar_pix(
+                chave, float(registro.get("valor_num") or 0),
+                str(registro.get("credor") or ""),
+                copia_cola=("00020" in chave))
+            import base64
+            bloco["imagem"] = base64.b64encode(png).decode("ascii")
+            bloco["copia_cola"] = carga
+        else:
+            bloco["erro"] = (f"Forma de pagamento \"{forma or '—'}\" não "
+                             "gera QR nem código de barras.")
+    except Exception as e:  # noqa: BLE001 — uma SP ruim não some com as outras
+        logger.exception("Análise de SPs: falhou montar o código da SP %s", sp_id)
+        bloco["erro"] = str(e)
+
+    return bloco
+
+
 @bp.route("/codigos")
 @exige_consulta
 def codigos():
@@ -1026,46 +1240,8 @@ def codigos():
                                mensagem="Marque as SPs na lista e clique em "
                                         "\"QR / Código\"."), 400
 
-    blocos = []
-    for sp_id in pedidos:
-        registro = consultas.uma(sp_id)
-        if registro is None:
-            blocos.append({"id": sp_id, "erro": "SP não encontrada na base."})
-            continue
-
-        forma = str(registro.get("forma_pagamento") or "").strip().lower()
-        bloco = {"id": sp_id, "sp": registro, "tipo": None,
-                 "erro": None, "imagem": None, "copia_cola": None}
-
-        try:
-            if "boleto" in forma:
-                bloco["tipo"] = "boleto"
-                svg, situacao = pagamentos.barcode_svg(
-                    registro.get("codigo_barras") or "")
-                if situacao != "ok":
-                    bloco["erro"] = f"Código de barras {situacao}."
-                else:
-                    bloco["imagem"] = svg
-                    bloco["copia_cola"] = str(
-                        registro.get("codigo_barras") or "").strip()
-            elif "pix" in forma or "beevale" in forma:
-                bloco["tipo"] = "pix"
-                chave = str(registro.get("info_pgt") or "")
-                png, carga = pagamentos.gerar_pix(
-                    chave, float(registro.get("valor_num") or 0),
-                    str(registro.get("credor") or ""),
-                    copia_cola=("00020" in chave))
-                import base64
-                bloco["imagem"] = base64.b64encode(png).decode("ascii")
-                bloco["copia_cola"] = carga
-            else:
-                bloco["erro"] = (f"Forma de pagamento \"{forma or '—'}\" não "
-                                 "gera QR nem código de barras.")
-        except Exception as e:  # noqa: BLE001 — uma SP ruim não some com as outras
-            logger.exception("Análise de SPs: falhou montar o código da SP %s", sp_id)
-            bloco["erro"] = str(e)
-
-        blocos.append(bloco)
+    blocos = [_codigo_de_pagamento(sp_id, consultas.uma(sp_id))
+              for sp_id in pedidos]
 
     origem = _origem_pedida()
     return render_template("analisesps_codigos.html",
@@ -1074,6 +1250,123 @@ def codigos():
                            pode_operar=auth.pode_operar(),
                            perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+# ---------------------------------------------------------------------------
+# BEEVALE — o cartão de benefício dos terceirizados
+#
+# São DUAS telas, e a diferença entre elas é o que decide o cuidado de cada uma:
+#
+#   /beevale/cadastro  cola-se a lista e sai um arquivo para baixar. Não
+#                      escreve em lugar nenhum. Errou, gera de novo.
+#   /beevale/gerar     mostra o que VAI acontecer; o botão dispara a subida no
+#                      Drive e a escrita nos cards do Pipefy. SEM DESFAZER.
+#
+# A segunda é a única coisa neste módulo que altera o Pipefy. Por isso ela é
+# POST separado do GET: recarregar a página não pode refazer a operação.
+# ---------------------------------------------------------------------------
+@bp.route("/beevale/cadastro", methods=["GET", "POST"])
+@exige_operador
+def beevale_cadastro():
+    """Cola-se e-mails ou CPFs; sai a planilha de cadastro para o portal."""
+    from . import beevale
+
+    texto = ""
+    encontrados: list = []
+    nao_achados: list = []
+    erro = None
+
+    if request.method == "POST":
+        texto = request.form.get("texto", "")
+        cpfs = beevale.extrair_cpfs(texto)
+        if not cpfs:
+            erro = ("Não achei nenhum CPF no que você colou. Vale a lista de "
+                    "e-mails que o portal do BeeVale devolve, ou os CPFs "
+                    "soltos com 11 dígitos.")
+        else:
+            try:
+                encontrados, nao_achados = beevale.buscar_por_cpf(cpfs)
+            except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+                logger.exception("Análise de SPs: falhou o cadastro BeeVale")
+                erro = str(e)
+
+    if encontrados and request.form.get("acao") == "baixar":
+        from .horario import agora
+        conteudo = beevale.cadastro_xlsx(encontrados)
+        nome = f"Cadastro_BeeVale_{agora().strftime('%d.%m.%Y_%H.%M.%S')}.xlsx"
+        return Response(
+            conteudo, mimetype=beevale.MIME_XLSX,
+            headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+    return render_template(
+        "analisesps_beevale_cadastro.html", aba="solicitacoes",
+        texto=texto, encontrados=encontrados, nao_achados=nao_achados,
+        erro=erro, origem=_origem_pedida(),
+        pasta_configurada=bool(beevale.pasta_do_drive()[0]),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual(), pode_operar=True)
+
+
+@bp.route("/beevale/gerar")
+@exige_operador
+def beevale_gerar():
+    """A CONFERÊNCIA, antes de qualquer coisa sem volta.
+
+    Só lê: mostra o que cada card tem, o que está impedido, e se a pasta do
+    Drive está configurada. Nada acontece até o operador apertar o botão, que
+    é um POST para a rota abaixo."""
+    from . import beevale, consultas
+
+    ids = [i.strip() for i in request.args.getlist("id") if i.strip()]
+    if not ids:
+        return render_template("analisesps_erro.html",
+                               titulo="Nada selecionado",
+                               mensagem="Marque as SPs BeeVale na lista e "
+                                        "clique em \"Gerar BeeVale\"."), 400
+
+    pasta, _origem = beevale.pasta_do_drive()
+    preparado, erro = {"prontos": [], "erros": []}, None
+    if pasta:
+        try:
+            preparado = beevale.preparar(ids)
+        except Exception as e:  # noqa: BLE001 — Pipefy fora do ar, token errado…
+            logger.exception("Análise de SPs: falhou preparar o BeeVale")
+            erro = str(e)
+
+    # As SPs como a base as conhece — para o operador conferir credor e valor
+    # sem confiar só no que o Pipefy devolveu.
+    registros = {i: consultas.uma(i) for i in ids}
+
+    return render_template(
+        "analisesps_beevale_gerar.html", aba="solicitacoes", ids=ids,
+        pasta=pasta, preparado=preparado, erro=erro, registros=registros,
+        origem=_origem_pedida(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual(), pode_operar=True)
+
+
+@bp.route("/api/beevale/gerar", methods=["POST"])
+@exige_operador
+def beevale_executar():
+    """O passo SEM DESFAZER: sobe no Drive e escreve nos cards do Pipefy."""
+    from . import beevale
+
+    dados = request.get_json(silent=True) or {}
+    ids, erro = _ids_do_pedido(dados)
+    if erro:
+        return erro
+
+    try:
+        resultado = beevale.gerar(ids)
+    except beevale.ErroDoBeeVale as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou gerar o BeeVale")
+        return {"ok": False, "erro": f"Falhou: {e}"}, 500
+
+    logger.info("Análise de SPs: %s gerou BeeVale de %d SP(s).",
+                auth.nome_atual() or "sem nome", len(ids))
+    return {"ok": True, **resultado}
 
 
 # ---------------------------------------------------------------------------

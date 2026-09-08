@@ -264,8 +264,13 @@ def test_o_termo_de_busca_com_por_cento_e_texto_e_nao_curinga():
     _, params = consultas._condicoes({"busca": "nota_1"})
     assert params == ["%nota\\_1%"]
 
-    _, params = consultas._condicoes({"centro_custo": ["OBRA_1"]})
-    assert params == ["%obra\\_1%"]
+    # A obra não passa mais por LIKE: desde 05/09/2026 a célula é aberta nos
+    # separadores e a comparação é de igualdade. Sem curinga, não há o que
+    # escapar — e a proteção que importa continua de pé: o valor vai como
+    # PARÂMETRO, nunca no meio do comando.
+    onde, params = consultas._condicoes({"centro_custo": ["OBRA_1"]})
+    assert params == ["obra_1"]
+    assert "OBRA_1" not in " ".join(onde)
 
 
 def test_a_barra_invertida_digitada_tambem_e_escapada():
@@ -459,10 +464,22 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
 
     proibidas = {"pandas", "streamlit", "numpy", "altair", "st_aggrid",
                  "reportlab", "openpyxl"}
+
+    # A ÚNICA exceção, e ela é estreita de propósito: o `beevale.py` escreve
+    # dois `.xlsx` porque quem recebe é o portal do BeeVale, que não aceita
+    # CSV. São arquivos de POUCAS LINHAS — um colaborador por vez —, então o
+    # motivo da proibição (memória) não se aplica ali. O `openpyxl` já está no
+    # requirements.txt por causa do painel; nada novo entrou no serviço.
+    #
+    # Se alguém quiser exportar as 59 mil SPs em Excel, a resposta continua
+    # sendo NÃO por aqui: é exatamente o caminho que estourava a memória.
+    LIBERADO_EM = {"beevale.py": {"openpyxl"}}
+
     achados = []
     for caminho in _arquivos():
         if caminho.suffix != ".py":
             continue
+        liberadas = LIBERADO_EM.get(caminho.name, set())
         arvore = ast.parse(caminho.read_text(encoding="utf-8"))
         for no in ast.walk(arvore):
             nomes = []
@@ -471,7 +488,7 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
             elif isinstance(no, ast.ImportFrom) and no.module:
                 nomes = [no.module.split(".")[0]]
             for nome in nomes:
-                if nome in proibidas:
+                if nome in proibidas and nome not in liberadas:
                     achados.append(f"{caminho.name}:{no.lineno}  {nome}")
     assert not achados, (
         "o serviço não tem estas bibliotecas — e o pandas, em particular, é o "
@@ -498,6 +515,9 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # `fpdf` ANTIGO (1.7.x) também usa esse nome e NÃO serve — ele tem
         # outra interface. O serviço tem o fpdf2; o PC precisa ter o mesmo.
         "fpdf": "fpdf2",
+        # Só o `beevale.py` importa — ver a exceção explicada no teste acima.
+        # Já estava no requirements por causa do painel.
+        "openpyxl": "openpyxl",
     }
 
     faltando = []

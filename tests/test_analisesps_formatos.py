@@ -120,3 +120,62 @@ def test_ida_e_volta_preserva_o_valor():
     """O que a planilha escreve, o banco guarda, e a tela mostra de novo igual."""
     for texto in ("6.750,00", "1.234.567,89", "0,01", "999,99"):
         assert moeda(para_numero(texto)) == texto
+
+
+# ---------------------------------------------------------------------------
+# Link dentro do texto livre
+#
+# A descrição da SP é digitada por gente e às vezes traz o endereço de uma
+# pasta ou de um contrato. O que importa aqui: o texto é ESCAPADO antes de
+# virar link. Ao contrário, uma descrição com HTML dentro entraria na página
+# como HTML — e a descrição vem da planilha, que qualquer um edita.
+# ---------------------------------------------------------------------------
+def test_o_endereco_na_descricao_vira_link():
+    from app.apps.analisesps.formatos import com_links
+    saida = str(com_links("Contrato em https://drive.google.com/a/b ok"))
+    assert '<a href="https://drive.google.com/a/b"' in saida
+    assert 'target="_blank"' in saida
+
+
+def test_endereco_sem_esquema_ainda_leva_a_algum_lugar():
+    from app.apps.analisesps.formatos import com_links
+    saida = str(com_links("ver www.bws.com.br/contratos"))
+    assert 'href="https://www.bws.com.br/contratos"' in saida
+    assert ">www.bws.com.br/contratos</a>" in saida
+
+
+def test_o_ponto_final_da_frase_nao_entra_no_link():
+    from app.apps.analisesps.formatos import com_links
+    saida = str(com_links("Ver https://exemplo.com/pasta."))
+    assert 'href="https://exemplo.com/pasta"' in saida
+    assert saida.endswith(".")
+
+
+def test_html_escrito_na_descricao_nao_vira_html():
+    """A descrição vem da planilha, que qualquer um edita. Se entrasse como
+    HTML, uma célula com <script> dentro rodaria na tela de quem abrisse."""
+    from app.apps.analisesps.formatos import com_links
+    saida = str(com_links('<script>alert(1)</script> e <b>negrito</b>'))
+    assert "<script>" not in saida
+    assert "<b>" not in saida
+    assert "&lt;script&gt;" in saida
+
+
+def test_link_com_aspas_nao_escapa_do_atributo():
+    """O caso que transformaria um endereço numa tag inteira nova.
+
+    O que importa é não nascer tag nenhuma: `<img ... onerror=...>` fica como
+    texto visível, inofensivo. E a aspa dentro do href vira `&#x27;`/`&quot;`,
+    então não há como fechar o atributo e começar outro."""
+    from app.apps.analisesps.formatos import com_links
+    saida = com_links('http://x.com/"><img src=y onerror=alert(1)>')
+    assert "<img" not in saida
+    assert '"' not in saida.split('href="')[1].split('"')[0]
+    assert saida.count("<a ") == 1
+    assert "&lt;img" in saida
+
+
+def test_descricao_vazia_nao_vira_a_palavra_none():
+    from app.apps.analisesps.formatos import com_links
+    assert str(com_links(None)) == ""
+    assert str(com_links("")) == ""

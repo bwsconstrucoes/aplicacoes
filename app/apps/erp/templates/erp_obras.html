@@ -33,6 +33,7 @@
   <div class="tabela-barra">
     <span class="resumo" id="resumo"></span>
     <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn secundario" id="btn-mapa">🗺 Mapa</button>
     <button class="btn secundario" id="btn-nova">+ Nova obra</button>
   </div>
@@ -571,5 +572,8 @@ document.querySelectorAll("thead th[data-ordem]").forEach(th=>th.addEventListene
   desenhar();
 }));
 carregar();
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}

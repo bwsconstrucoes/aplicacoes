@@ -11,6 +11,7 @@
   <div class="tabela-barra" style="padding:0">
     <input id="busca" placeholder="Buscar medição, cliente, obra…" style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px; min-width:260px">
     <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn amarelo" id="btn-nova">+ Lançar medição</button>
   </div>
 </div>
@@ -167,5 +168,8 @@ els("btn-nova").addEventListener("click", () => {
 
 els("busca").addEventListener("input", desenhar);
 carregar();
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}
