@@ -673,3 +673,26 @@ def test_o_recorte_dos_filtros_esta_na_capa():
         resumo=[("Resultado", "R$ 10,00")]))
     assert "Recorte: CASA" in texto
     assert "Resultado" in texto and "R$ 10,00" in texto
+
+
+def test_rotulo_que_comeca_com_igual_nao_vira_formula():
+    """O Excel entende texto começando com "=" como FÓRMULA. As linhas do DRE
+    chamam-se "= RESULTADO", "= Receita Líquida", "= Total Custos/Despesas" —
+    e chegavam na planilha como fórmula inválida, mostrando erro no lugar do
+    rótulo. Veio da passagem do painel Streamlit, onde o mesmo defeito existia.
+
+    Vale para +, − e @ pelo mesmo motivo."""
+    from openpyxl import load_workbook
+
+    rotulos = ["= RESULTADO", "= Receita Líquida", "+ Aportes", "-R$ ajuste",
+               "@obra", "Custo dos Serviços"]
+    livro = load_workbook(io.BytesIO(excel.montar(
+        [("DRE", [("linha", "Linha"), ("valor", "Valor")],
+          [{"linha": r, "valor": -1.0} for r in rotulos])])))
+    folha = livro["DRE"]
+    for i, rotulo in enumerate(rotulos, start=2):
+        celula = folha.cell(row=i, column=1)
+        assert celula.data_type == "s", f"{rotulo} virou fórmula na planilha"
+        assert celula.value == rotulo, "o rótulo não pode ser reescrito"
+    # e o que é número continua número, senão ninguém soma na planilha
+    assert folha.cell(row=2, column=2).data_type == "n"
