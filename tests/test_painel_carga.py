@@ -372,3 +372,38 @@ def test_as_duas_datas_chegam_do_omie_ate_o_fato(espelho_limpo):
     venc2, pago2 = linhas[2]
     assert venc2 == dt.date(2025, 3, 10)
     assert pago2 is None
+
+
+def test_o_codigo_da_categoria_chega_no_fato(espelho_limpo):
+    """A `categoria` do fato é a DESCRIÇÃO, que a tela mostra. Para ALTERAR a
+    categoria de um título no OMIE é preciso o CÓDIGO, que existia no espelho e
+    parava ali — a tela de saneamento teria de voltar ao espelho a cada linha
+    mostrada, na tela que existe justamente para varrer milhares delas.
+
+    A linha de imposto RETIDO não tem código: ela é sintética, não existe como
+    categoria no OMIE, e portanto não pode ser alterada por lá."""
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato, projetos
+
+    posicao = fato.COLUNAS_FATO.index("codigo_categoria")
+    assert fato.COLUNAS_FATO.index("categoria") == posicao - 1, (
+        "o código anda colado na descrição: quem mexer numa vê a outra")
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [_titulo_do_omie(1, valor=1000.0,
+                                                     natureza="R")], "R")
+        espelho.gravar_movimentos(conn, [_movimento_do_omie(1)])
+        espelho.gravar_categorias(conn, [_categoria_do_omie()])
+        espelho.gravar_clientes(conn, [
+            {"codigo_cliente_omie": 555, "razao_social": "CLIENTE TAL LTDA",
+             "nome_fantasia": "", "cnpj_cpf": ""}])
+        projetos.gravar(conn, {"D1": "ALFA"})
+        fato.reconstruir_fato(conn)
+
+    linhas = consultar("SELECT categoria, codigo_categoria FROM fato")
+    assert linhas, "o cenário do espelho tem de produzir linhas"
+    for categoria, codigo in linhas:
+        if categoria == fato.CATEGORIA_RETIDO:
+            assert codigo is None, "o retido é sintético: não tem código no OMIE"
+        else:
+            assert codigo, f"{categoria} veio sem código de categoria"

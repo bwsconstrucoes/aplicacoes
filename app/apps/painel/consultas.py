@@ -282,6 +282,15 @@ def caixa_por_ano(f: Filtros) -> list[dict]:
 # Juros e multa efetivamente PAGOS sao despesa financeira: entram no DRE, na
 # linha "Juros e Multas Pagos", e somam no total. Ficaram de fora da primeira
 # versao desta tela, e o resultado saia maior do que era.
+# Como se chama o titulo que NAO foi apropriado a nenhuma obra. Ate 08/09/2026
+# eram cinco literais espalhados dizendo "(sem obra)"; o painel Streamlit passou
+# a usar "(nao apropriado)", que e mais honesto — o titulo existe, o que falta e
+# a apropriacao — e e por esse rotulo que se procura o que precisa ser saneado.
+# Um lugar so: o Explorador filtra por ele, e dois nomes diferentes para a mesma
+# coisa fariam a busca nao achar nada.
+SEM_OBRA = "(não apropriado)"
+OBRA_OU_SEM = f"COALESCE(NULLIF(TRIM(departamento),''), '{SEM_OBRA}')"
+
 ENCARGO = f"CASE WHEN {PAGO} THEN (juros + multa) ELSE 0 END"
 
 # O dinheiro que ANDOU numa linha: o principal mais os encargos pagos. Juros
@@ -437,7 +446,7 @@ def receita_por_obra(f: Filtros, limite: int = 25) -> list[dict]:
     """Receita por obra: o que ja entrou, o que o cliente reteve e o que falta."""
     where, params = f.where("analise = 'DRE' AND tipo = ?", [REC])
     sql = f"""
-        SELECT COALESCE(NULLIF(departamento,''), '(sem obra)'),
+        SELECT {OBRA_OU_SEM},
                SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
                SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
                SUM({EM_ABERTO})
@@ -589,7 +598,7 @@ def caixa_mensal_por_obra() -> list[tuple]:
     (início do mês, obra, valor) — algumas milhares de linhas, não a base."""
     sql = f"""
         SELECT date_trunc('month', data)::date,
-               COALESCE(NULLIF(departamento,''), '(sem obra)'),
+               {OBRA_OU_SEM},
                SUM({MOVIMENTO_DE_CAIXA})
           FROM fato
          WHERE {_BASE_CAIXA} AND analise = 'DRE'
@@ -782,7 +791,7 @@ def apuracao_por_obra_mes(medida: str = "comprometido") -> list[dict]:
     valor_desp = _medida_de_despesa(medida)
     sql = f"""
         SELECT COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
-               COALESCE(NULLIF(departamento,''), '(sem obra)'),
+               {OBRA_OU_SEM},
                COALESCE(NULLIF(projeto,''), ''),
                SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {valor} ELSE 0 END),
                SUM(CASE WHEN tipo = ? AND     ({RETIDO}) THEN {valor} ELSE 0 END),
@@ -809,7 +818,7 @@ def custo_de_pessoal_por_obra_mes(grupo_pessoal: str,
     valor = _medida(medida)
     sql = f"""
         SELECT COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
-               COALESCE(NULLIF(departamento,''), '(sem obra)'),
+               {OBRA_OU_SEM},
                ABS(SUM({valor}))
           FROM fato
          WHERE analise = 'DRE' AND tipo = ?
@@ -1170,7 +1179,7 @@ NO_SALDO = _sql_tipos_no_saldo()
 # Nome de quem aportou e obra onde entrou — com o mesmo rótulo de "faltando" que
 # a tela antiga usava, senão o vazio some no meio da tabela.
 _SOCIO = "COALESCE(NULLIF(TRIM(razao_social),''), '(sem contraparte)')"
-_OBRA = "COALESCE(NULLIF(TRIM(departamento),''), '(sem obra)')"
+_OBRA = OBRA_OU_SEM
 
 # Entrada é o que o sócio colocou; saída, o que voltou para ele.
 _APORTADO = "SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END)"
