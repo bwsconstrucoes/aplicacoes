@@ -1456,3 +1456,51 @@ def test_o_rodape_diz_quantas_paginas_existem(painel, monkeypatch):
     depois = html.split("Ir para a página", 1)[1]
     assert "de <b>3</b>" in depois, "o rodapé tem de dizer de quantas páginas"
     assert "481" in depois, "e quantos lançamentos são"
+
+
+def test_o_carimbo_da_base_e_perguntado_uma_vez_por_tela(painel, monkeypatch):
+    """Cada consulta é uma viagem de rede até o banco, que fica em outro
+    serviço. O carimbo da última carga é a chave de tudo que a tela guarda na
+    memória, e era perguntado a cada uso: no Analítico, 3 das 8 consultas eram a
+    mesma pergunta trazendo a mesma resposta."""
+    from app.apps.painel import consultas
+
+    vistas = []
+    real = consultas.consultar
+
+    def _espiao(sql, params=()):
+        vistas.append(" ".join(sql.split()))
+        return real(sql, params)
+
+    monkeypatch.setattr(consultas, "consultar", _espiao)
+    painel.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    consultas.esquecer_listas()
+    painel.get("/painel/analitico")          # 1ª vez: enche o que fica guardado
+    vistas.clear()
+    assert painel.get("/painel/analitico").status_code == 200
+
+    carimbos = [s for s in vistas if "MAX(fim) FROM execucoes" in s]
+    assert len(carimbos) <= 1, (
+        f"o carimbo foi ao banco {len(carimbos)} vezes na mesma tela")
+
+
+def test_carga_nova_ainda_joga_fora_a_lista_velha(painel, monkeypatch):
+    """A trava que o carimbo existe para dar: guardar por requisição não pode
+    fazer uma tela mostrar a lista de antes da carga."""
+    from app.apps.painel import consultas
+
+    carimbo = ["antes"]
+    monkeypatch.setattr(consultas, "_carimbo_da_base", lambda: carimbo[0])
+    consultas.esquecer_listas()
+
+    chamadas = []
+
+    def _calcular():
+        chamadas.append(1)
+        return len(chamadas)
+
+    assert consultas._lembrando(("x",), _calcular) == 1
+    assert consultas._lembrando(("x",), _calcular) == 1, "mesma carga: não recalcula"
+
+    carimbo[0] = "depois da carga"
+    assert consultas._lembrando(("x",), _calcular) == 2, "carga nova: recalcula"
