@@ -80,6 +80,37 @@ alguém abrir a tela publicada:
 
 </details>
 
+### 08/09/2026 — o gráfico que engolia a tela
+
+O dono mandou uma foto da Visão Geral filtrada numa obra: o gráfico ocupava
+**620px de altura** e as barras eram blocos de ~157px de largura. "Veja a
+desproporcionalidade."
+
+**Duas causas, somadas:**
+
+1. **Sem teto de altura.** O desenho é 900×320 e o CSS mandava `width:100%`.
+   Numa tela de 2000px isso vira 1740px de largura — e, como a proporção é
+   mantida, **620px de altura**. Quanto maior o monitor, pior.
+2. **Sem teto de largura da barra.** Com poucos períodos (uma obra filtrada tem
+   3 ou 4 anos), cada barra ficava com um terço da fatia e virava paredão.
+
+**A tentativa que NÃO serviu, e por quê.** A saída óbvia era deitar o desenho
+(1500×320) para ele preencher a largura sem crescer para baixo. Medido antes de
+aceitar: num notebook de 1366px o desenho encolhe para 69% e **o texto do eixo
+cai para 7,6px** — ilegível. **Tudo escala junto, inclusive o texto.** Com
+900×320 e o teto de altura, o texto fica entre 12,6px e 13,1px em qualquer tela,
+do notebook ao ultrawide. O preço é uma folga nas laterais em monitor largo, que
+é só espaço em branco.
+
+**Resultado:** gráfico de 1069×380px, barras de ~52px. Conferido com foto da
+tela de verdade, não só por número.
+
+**A armadilha do teste, que quase passou.** A primeira versão do teste comparava
+a largura da barra com a **própria constante** que ela deveria vigiar — subir a
+constante para o infinito deixava o teste passar. Agora a medida é contra a
+largura do gráfico: uma barra não pode passar de 6% dele. **Teste que se mede
+pela régua que deveria vigiar não vigia nada.**
+
 ### A leva de 04/09/2026 (noite) — quatro defeitos que o uso real mostrou
 
 O dono foi usar o Despesas Analítico de verdade e trouxe quatro coisas. As duas

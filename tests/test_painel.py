@@ -291,6 +291,60 @@ def test_barra_negativa_desce_a_partir_do_zero():
     assert positiva["y"] < g["y_zero"]
 
 
+def test_poucos_periodos_nao_viram_paredoes(painel=None):
+    """Defeito visto pelo dono em 08/09/2026: filtrando UMA obra, o gráfico tinha
+    poucos anos e cada barra virava um bloco largo — a tela parecia quebrada.
+
+    A barra tem teto de largura; o que sobra da fatia do período vira respiro."""
+    campos = [("receita", "b-receita", "Receita"), ("despesa", "b-despesa", "Despesa")]
+    for quantos in (1, 2, 4):
+        itens = [{"ano": 2023 + i, "receita": 100.0, "despesa": -80.0}
+                 for i in range(quantos)]
+        g = graficos.barras_agrupadas(itens, campos)
+        mais_larga = max(b["largura"] for b in g["barras"])
+        # medida contra a LARGURA DO GRÁFICO, não contra a constante do módulo:
+        # comparar com a própria constante deixaria o teste passar mesmo se
+        # alguém a levantasse para o infinito — foi o que aconteceu na primeira
+        # versão deste teste.
+        fatia = mais_larga / g["largura"]
+        assert fatia <= 0.06, (
+            f"{quantos} período(s): a barra ocupa {fatia:.0%} da largura do "
+            f"gráfico ({mais_larga} unidades) — vira um paredão")
+
+
+def test_a_barra_limitada_continua_centrada_no_periodo():
+    """O teto não pode empurrar as barras para o lado: com o grupo recalculado a
+    partir da barra já limitada, elas continuam sob o rótulo do período."""
+    campos = [("receita", "b-receita", "Receita"), ("despesa", "b-despesa", "Despesa")]
+    itens = [{"ano": 2023 + i, "receita": 100.0, "despesa": -80.0} for i in range(4)]
+    g = graficos.barras_agrupadas(itens, campos)
+
+    for i, rotulo in enumerate(g["rotulos_x"]):
+        par = g["barras"][i * 2:i * 2 + 2]
+        centro = (par[0]["x"] + par[-1]["x"] + par[-1]["largura"]) / 2
+        assert centro == pytest.approx(rotulo["x"], abs=2.0)
+
+
+def test_muitos_periodos_continuam_estreitando_a_barra():
+    """O teto é teto, não largura fixa: com 36 meses as barras têm de ficar
+    finas, senão não cabem."""
+    campos = [("receita", "b-receita", "Receita"), ("despesa", "b-despesa", "Despesa")]
+    itens = [{"rotulo": f"{m:02d}", "receita": 100.0, "despesa": -80.0}
+             for m in range(36)]
+    g = graficos.barras_agrupadas(itens, campos, campo_rotulo="rotulo")
+    assert max(b["largura"] for b in g["barras"]) < 10
+
+
+def test_o_grafico_tem_teto_de_altura_na_folha_de_estilo():
+    """O desenho é escalado pela largura da tela: sem teto, `width:100%` numa
+    tela de 2000px esticava o gráfico para ~620px de ALTURA e ele engolia a
+    página. O teto vive no CSS — é lá que a largura da tela é conhecida."""
+    with open("app/apps/painel/static/painel.css", encoding="utf-8") as f:
+        css = f.read()
+    bloco = css.split(".gr svg", 1)[1].split("}", 1)[0]
+    assert "max-height" in bloco, "o gráfico voltou a crescer sem limite"
+
+
 def test_com_muitos_meses_os_rotulos_nao_se_amontoam():
     """Seis anos de história são ~70 meses no eixo. Escrever "06/2025" em todos
     vira uma tarja preta: as datas se sobrepõem e não se lê nenhuma."""
