@@ -230,8 +230,12 @@ if (btnMigrar) {
       const r = await fetch("{{ url_for('painel.aplicar_migracoes') }}", {method: "POST"});
       const d = await r.json();
       if (d.ok) {
-        aviso(saidaMigrar, "ok", "Pronto. Recarregando a página…");
-        setTimeout(() => location.reload(), 900);
+        // quando a migracao cria coluna que nasce vazia, o recalculo comeca
+        // sozinho — a tela diz isso em vez de deixar o dono descobrir depois
+        const extra = (d.reconstrucao && d.reconstrucao.mensagem)
+          ? "<br>" + d.reconstrucao.mensagem : "";
+        aviso(saidaMigrar, "ok", "Pronto." + extra + "<br>Recarregando a página…");
+        setTimeout(() => location.reload(), extra ? 2500 : 900);
       } else {
         aviso(saidaMigrar, "erro",
           "<b>Falhou em " + d.erro.migracao + ".</b><br>" + d.erro.erro +

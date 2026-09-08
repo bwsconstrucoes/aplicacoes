@@ -357,3 +357,93 @@ def test_gravar_cenario_vazio_nao_apaga_regra_nenhuma(com_regras):
 
     assert prestacao_dados.salvar_parametros_das_regras([]) == 0
     assert len(prestacao_dados.regras()) == 2
+
+
+# ---------------------------------------------------------------------------
+# 6. Migração que cria coluna vazia manda recalcular sozinha
+# ---------------------------------------------------------------------------
+# Reclamação justa do dono, em 04/09/2026: a migração 006 criou Vencimento e
+# Pagamento vazias, e ele teve de descobrir sozinho que precisava apertar "Só
+# refazer os números". Entrega que exige um clique do dono para valer é entrega
+# pela metade.
+def test_a_migracao_diz_no_proprio_arquivo_que_precisa_de_recalculo():
+    """A marca fica ao lado do SQL que a justifica, não numa lista aqui dentro
+    que alguém esquece de atualizar."""
+    from app.apps.painel import migracoes_runner
+
+    assert migracoes_runner._pede_reconstrucao("ALTER TABLE x; -- REFAZER-O-FATO")
+    assert not migracoes_runner._pede_reconstrucao("ALTER TABLE x;")
+
+    # a 006 é a que criou as colunas vazias: ela tem de trazer a marca
+    import os
+    caminho = os.path.join(migracoes_runner.PASTA, "006_duas_datas_no_fato.sql")
+    with open(caminho, encoding="utf-8") as f:
+        assert migracoes_runner._pede_reconstrucao(f.read())
+
+
+def test_com_a_base_vazia_nao_dispara_nada(sem_execucoes, monkeypatch):
+    """Sem primeira carga não há o que recalcular — e a carga que vier preenche
+    tudo de qualquer jeito. Disparar aqui só criaria uma execução à toa."""
+    from app.apps.painel import consultas, migracoes_runner, tarefas
+
+    monkeypatch.setattr(consultas, "base_vazia", lambda: True)
+    monkeypatch.setattr(tarefas, "disparar", lambda *a, **k:
+                        pytest.fail("não devia ter disparado com a base vazia"))
+
+    resultado = migracoes_runner._reconstruir_se_preciso(True)
+    assert resultado["disparada"] is False
+    assert "primeira carga" in resultado["mensagem"]
+
+
+def test_com_base_cheia_dispara_so_os_numeros(sem_execucoes, monkeypatch):
+    """`so_numeros` não baixa nada do OMIE: refaz o fato a partir do espelho que
+    já está no banco. É por isso que dá para fazer sozinho."""
+    from app.apps.painel import consultas, migracoes_runner, tarefas
+
+    pedidos = []
+    monkeypatch.setattr(consultas, "base_vazia", lambda: False)
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="manual": pedidos.append((modo, disparo))
+                        or {"ok": True, "execucao": 1})
+
+    resultado = migracoes_runner._reconstruir_se_preciso(True)
+    assert pedidos == [("so_numeros", "migracao")]
+    assert resultado["disparada"] is True
+    assert "preenchidas agora" in resultado["mensagem"]
+
+
+def test_carga_em_andamento_nao_vira_erro_vermelho(sem_execucoes, monkeypatch):
+    """Se já há atualização rodando, o `disparar` recusa a segunda — e recusar
+    é o comportamento certo, não uma falha a mostrar em vermelho."""
+    from app.apps.painel import consultas, migracoes_runner, tarefas
+
+    monkeypatch.setattr(consultas, "base_vazia", lambda: False)
+    monkeypatch.setattr(tarefas, "disparar", lambda *a, **k:
+                        {"ok": False, "erro": "Já existe uma atualização em andamento"})
+
+    resultado = migracoes_runner._reconstruir_se_preciso(True)
+    assert resultado["disparada"] is False
+    assert "andamento" in resultado["mensagem"]
+
+
+def test_falhar_o_recalculo_nao_desfaz_a_migracao(sem_execucoes, monkeypatch):
+    """As migrações já foram aplicadas e gravadas quando isto roda. O pior caso
+    tem de virar uma frase pedindo o clique manual — que é exatamente o que
+    acontecia antes desta função existir."""
+    from app.apps.painel import consultas, migracoes_runner
+
+    def _explodir():
+        raise RuntimeError("banco fora do ar")
+
+    monkeypatch.setattr(consultas, "base_vazia", _explodir)
+
+    resultado = migracoes_runner._reconstruir_se_preciso(True)
+    assert resultado["disparada"] is False
+    assert "Só refazer os números" in resultado["mensagem"]
+
+
+def test_migracao_sem_a_marca_nao_dispara_recalculo(sem_execucoes):
+    """A maioria das migrações não mexe em coluna derivada. Recalcular a base
+    inteira a cada uma seria caro e desnecessário."""
+    from app.apps.painel import migracoes_runner
+    assert migracoes_runner._reconstruir_se_preciso(False) is None
