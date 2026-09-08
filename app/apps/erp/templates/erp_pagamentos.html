@@ -551,18 +551,56 @@ els("btn-comp").addEventListener("click", async () => {
     }
   }
   b.disabled = false; b.textContent = "Processar comprovante";
+  mostrarResumoDoLote();
   carregar();
 });
+
+// O RELATÓRIO DO LOTE — pedido do dono: "a tela, quando ele fizer a leitura,
+// já dá um relatório do que foi resolvido, o que foi detectado e o que não".
+// Com dez comprovantes de uma vez, ler linha por linha para saber quantos
+// entraram é trabalho que a tela devia poupar.
+function mostrarResumoDoLote(){
+  const lugar = els("comp-resultado");
+  if (!lugar) return;
+  const conta = (classe) => lugar.querySelectorAll(classe).length;
+  const baixados = conta(".aviso.ok");
+  const repetidos = conta(".aviso.alerta");
+  const pendentes = conta(".critica");
+  const total = baixados + repetidos + pendentes;
+  if (total < 2) return;              // com um só, o próprio resultado já diz
+  const anterior = document.getElementById("comp-resumo");
+  if (anterior) anterior.remove();
+  lugar.insertAdjacentHTML("afterbegin", `
+    <div id="comp-resumo" class="cartao-dica" style="margin-bottom:10px">
+      <b>${total} comprovante(s) lidos:</b>
+      ${baixados} baixado(s) ·
+      ${repetidos} já processado(s) antes ·
+      ${pendentes} precisa(m) de você.
+    </div>`);
+}
 
 function mostrarComprovante(nome, r, arquivo){
   const l = r.leitura || {};
   const cab = `<b>${nome}</b> · ${l.valor?moeda(l.valor):"valor ilegível"} ·
     ${l.data?dataBR(l.data):"sem data"} · ${l.favorecido||"favorecido não lido"}
-    <small style="color:var(--tinta-suave)"> (leitura ${(l.confianca_leitura||"").toLowerCase()})</small>`;
+    ${l.confianca_leitura ? `<small style="color:var(--tinta-suave)">
+      (leitura ${l.confianca_leitura.toLowerCase()})</small>` : ""}`;
   if (r.situacao === "BAIXADO") {
     els("comp-resultado").insertAdjacentHTML("beforeend",
       `<div class="aviso ok">${cab}<br>✔ <b>${r.baixa.numero_sp}</b> baixado
        (${r.baixa.motivos.join(", ")}) · comprovante guardado.</div>`);
+    return;
+  }
+  // COMPROVANTE REPETIDO. Não é erro nem sucesso: é o sistema barrando uma
+  // segunda baixa. Precisa dizer ONDE ele já baixou, senão a pessoa acha que o
+  // arquivo se perdeu e manda de novo — e o ciclo recomeça.
+  if (r.situacao === "DUPLICADO") {
+    const a = r.anterior || {};
+    els("comp-resultado").insertAdjacentHTML("beforeend",
+      `<div class="aviso alerta">${cab}<br>
+        ⛔ <b>Já processado.</b> ${escapar(r.mensagem)}
+        ${a.titulo_id ? `<br><a class="link-btn" href="/erp/titulos?titulo=${a.titulo_id}"
+          >ver o título ›</a>` : ""}</div>`);
     return;
   }
   const id = "cf" + Math.random().toString(36).slice(2, 8);

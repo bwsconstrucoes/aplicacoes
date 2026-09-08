@@ -3636,7 +3636,7 @@ def api_comprovante():
                 s, conteudo, arquivo.filename or "comprovante.pdf",
                 conta_bancaria_id=request.form.get("conta_id", type=int),
                 baixar_automatico=(request.form.get("automatico", "1") != "0"),
-                usuario=usuario)
+                origem="TELA", usuario=usuario)
             s.commit()
             if rel.get("situacao") == "BAIXADO" and rel.get("baixa"):
                 from app.apps.erp.core.notificacoes import avisar_baixa
@@ -3661,6 +3661,85 @@ def api_comprovante():
     except Exception as e:
         logger.exception("ERP: falha ao processar comprovante")
         return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/pagamentos/comprovantes/lote", methods=["POST"])
+@permissao_publica("chamada pelo cenario do Make, que recebe os comprovantes por "
+                   "e-mail; a guarda e o ERP_COMPROVANTE_SECRET no corpo do pedido, "
+                   "como nos demais modulos do monorepo")
+def api_comprovantes_lote():
+    """A porta do e-mail: um lote de comprovantes, vindo de fora.
+
+    O Make já recebe o e-mail e separa os anexos — ele é o carteiro. Esta rota
+    é o destino. O MIOLO É O MESMO da tela: mesmo leitor, mesmo casamento,
+    MESMA TRAVA contra baixar duas vezes. É isso que garante que o comprovante
+    dê o mesmo resultado venha por onde vier.
+
+    Formato esperado (o mesmo que o Make já monta hoje):
+        {"secret": "...", "attachments": [{"filename": "...", "base64": "..."}]}
+    """
+    import base64 as _b64
+    import os
+    from app.apps.erp.core.pagamentos.comprovante import processar_comprovante
+
+    esperado = os.getenv("ERP_COMPROVANTE_SECRET", "").strip()
+    dados = request.get_json(silent=True) or {}
+    if not esperado:
+        return jsonify({"ok": False, "erro": "ERP_COMPROVANTE_SECRET não "
+                        "configurado no ambiente. A porta do e-mail não abre "
+                        "sem ele."}), 503
+    if dados.get("secret") != esperado:
+        logger.warning("ERP/comprovantes: lote recusado, segredo inválido")
+        return jsonify({"ok": False, "erro": "Segredo inválido."}), 403
+
+    anexos = dados.get("attachments") or dados.get("anexos") or []
+    if not anexos:
+        return jsonify({"ok": False, "erro": "Nenhum comprovante no lote."}), 400
+
+    resultados = []
+    with get_session() as s:
+        for anexo in anexos[:50]:          # teto: lote gigante é engano, não uso
+            nome = (anexo.get("filename") or anexo.get("nome")
+                    or "comprovante.pdf")
+            try:
+                conteudo = _b64.b64decode(anexo.get("base64") or anexo.get("conteudo") or "")
+            except Exception:
+                resultados.append({"arquivo": nome, "situacao": "ILEGIVEL",
+                                   "mensagem": "Anexo não pôde ser decodificado."})
+                continue
+            if not conteudo:
+                resultados.append({"arquivo": nome, "situacao": "ILEGIVEL",
+                                   "mensagem": "Anexo vazio."})
+                continue
+            try:
+                r = processar_comprovante(s, conteudo, nome, origem="MAKE",
+                                          baixar_automatico=True, usuario=None)
+                r["arquivo"] = nome
+                resultados.append(r)
+                s.commit()
+            except ErroValidacao as e:
+                s.rollback()
+                resultados.append({"arquivo": nome, "situacao": "ILEGIVEL",
+                                   "mensagem": str(e)})
+            except Exception as e:                       # pragma: no cover
+                s.rollback()
+                logger.exception("ERP/comprovantes: falha em %s", nome)
+                resultados.append({"arquivo": nome, "situacao": "FALHOU",
+                                   "mensagem": str(e)})
+
+    return jsonify({"ok": True, "total": len(resultados),
+                    "resumo": _resumo_do_lote(resultados),
+                    "resultados": resultados})
+
+
+def _resumo_do_lote(resultados: list) -> dict:
+    """O relatório do lote — pedido do dono: "a tela já dá um relatório do que
+    foi resolvido, o que foi detectado e o que não"."""
+    contagem: dict[str, int] = {}
+    for r in resultados:
+        chave = r.get("situacao") or "?"
+        contagem[chave] = contagem.get(chave, 0) + 1
+    return contagem
 
 
 @bp.route("/erp/api/pagamentos/comprovante/confirmar", methods=["POST"])

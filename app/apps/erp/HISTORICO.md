@@ -811,6 +811,61 @@ de onde eu estou olhando — se estou analisando notas, vejo lá; se estou pelos
 títulos, tenho um título de fundo fixo, vejo por lá também"*. Ou seja, a
 dedutibilidade tem de aparecer **nos dois lugares**, não numa tela separada.
 
+### A trava contra baixar o mesmo pagamento duas vezes — 08/09/2026
+
+Pedido do dono, com estas palavras: *"acho que eu tentei colocar alguma trava
+na aplicação, não sei se funciona, mas o sistema realmente não pode baixar duas
+vezes, precisa barrar"*.
+
+**Ele estava certo em desconfiar.** No ERP não havia trava nenhuma: o mesmo
+comprovante processado de novo dava outra baixa, calado. E no `baixabradesco`,
+onde havia, a trava tinha cinco buracos — o pior deles: qualquer erro ao ler a
+lista de comprovantes já vistos devolvia lista vazia, e o lote inteiro passava
+como novo. **Trava que falha liberando é pior que trava nenhuma**, porque dá
+confiança falsa.
+
+A trava nova (migração **042**) mora **no banco**, em restrição única, e em
+dois níveis:
+
+1. **O arquivo, pelo conteúdo** — e o nome do arquivo NÃO entra na conta.
+   "comprovante.pdf" e "comprovante (1).pdf" são o mesmo documento; renomear
+   acontece o tempo todo, e era assim que a trava antiga era furada.
+2. **O pagamento** — a mesma parcela, com o mesmo valor, no mesmo dia. É o que
+   pega o PDF **regerado** pelo banco: bytes diferentes, pagamento igual.
+
+Três decisões que valem ser lembradas:
+
+- **A conferência vem ANTES da leitura por IA.** Comprovante repetido não
+  chega a gastar inteligência artificial — o resultado seria jogado fora.
+- **O registro é gravado ANTES da baixa**, na mesma transação. Se a restrição
+  recusar, a baixa não chega a ser tentada. A trava é o portão, não o aviso
+  depois do fato.
+- **Falha fechando.** Não conseguiu registrar, não baixa. Baixa que não
+  aconteceu é aborrecimento; baixa em dobro é dinheiro saindo duas vezes.
+
+**Pagamento parcial continua possível**: a mesma parcela aceita outra baixa em
+outro dia, ou com outro valor. O que a trava barra é a repetição idêntica. E
+quando o pagamento foi mesmo em dobro de verdade, a mensagem diz o caminho:
+registrar pela tela de pagamentos, com justificativa.
+
+**Provado de ponta a ponta**, com banco de verdade e o mesmo comprovante
+entrando quatro vezes por portas diferentes (tela, e-mail, Make):
+
+| tentativa | o que era | resultado |
+|---|---|---|
+| 1ª | comprovante.pdf, pela tela | **baixou** |
+| 2ª | o mesmo arquivo, renomeado, por e-mail | **barrado** (trava do arquivo) |
+| 3ª | PDF regerado, pelo Make | sem título: a parcela já estava paga |
+| 4ª | PDF regerado, com a parcela reaberta de propósito | **barrado** (trava do pagamento) |
+
+O título terminou com **uma** baixa. A 4ª existe porque é o único jeito de
+exercitar a segunda trava: com a parcela paga, a primeira defesa já resolve.
+
+Fica registrado também **tudo que foi lido e não virou baixa** (ilegível, sem
+título, precisa confirmar, é tarifa) — assim o mesmo arquivo não é lido duas
+vezes nem gasta IA duas vezes, e há onde olhar quando alguém pergunta "o que
+aconteceu com aquele comprovante que mandei?".
+
 ### O que está pendente AGORA
 
 1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
@@ -953,6 +1008,16 @@ dedutibilidade tem de aparecer **nos dois lugares**, não numa tela separada.
    foi trabalhado nestes chats e não foi verificado por mim. O
    `EL_NFSE_TOKEN` pertence a esse módulo parado, e por isso saiu da lista de
    urgências. Retomar quando ele pedir.
+
+20. **APERTAR "Aplicar atualizações do banco" para a migração 042** (a trava
+   contra baixa em duplicidade), assim que o ramo entrar na `main`. Sem ela o
+   ERP sobe, mas anexar comprovante pela tela dá erro — a tabela da trava não
+   existe ainda. É o mesmo botão de sempre, em Configurações.
+
+21. **Definir `ERP_COMPROVANTE_SECRET` no Render** e apontar o cenário do Make
+   para o endereço de lote dos comprovantes. Enquanto não for definido, o
+   caminho pela TELA funciona normalmente; só a entrada automática do Make
+   fica fechada — e fica fechada com segurança, recusando qualquer chamada.
 
 ---
 

@@ -901,3 +901,43 @@ class AgenteMensagem(Base):
     erro: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+
+
+class ComprovanteLido(Base):
+    """Todo comprovante que o sistema já leu — e a trava contra baixar duas vezes.
+
+    Duas restrições únicas no banco (migração 042) fazem o trabalho, e é de
+    propósito que elas estejam LÁ e não aqui: restrição de banco não depende de
+    o código lembrar de perguntar, e vale mesmo com duas execuções ao mesmo
+    tempo. A trava antiga, no `baixabradesco`, vivia numa lista em memória e
+    falhava LIBERANDO quando a leitura dela dava erro.
+
+      1. `hash_conteudo` único — o mesmo ARQUIVO nunca entra duas vezes. O hash
+         é do conteúdo e NÃO inclui o nome: "comprovante.pdf" e "comprovante
+         (1).pdf" são o mesmo documento.
+      2. (parcela, valor, data) único — o mesmo PAGAMENTO nunca é baixado duas
+         vezes, mesmo vindo de um PDF regerado pelo banco, com outros bytes.
+
+    Pagamento parcial continua possível: a mesma parcela aceita outra baixa em
+    outro dia ou com outro valor. O que se barra é a repetição idêntica.
+    """
+    __tablename__ = "comprovantes_lidos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    hash_conteudo: Mapped[str] = mapped_column(Text, nullable=False)
+    nome_arquivo: Mapped[Optional[str]] = mapped_column(Text)
+    tamanho_bytes: Mapped[Optional[int]] = mapped_column(Integer)
+    origem: Mapped[str] = mapped_column(Text, nullable=False, default="TELA")
+    situacao: Mapped[str] = mapped_column(Text, nullable=False)
+    titulo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulos.id"))
+    parcela_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("parcelas.id"))
+    pagamento_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("pagamentos.id"))
+    valor: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    data_pagamento: Mapped[Optional[date]] = mapped_column(Date)
+    favorecido: Mapped[Optional[str]] = mapped_column(Text)
+    documento: Mapped[Optional[str]] = mapped_column(Text)
+    mensagem: Mapped[Optional[str]] = mapped_column(Text)
+    usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
