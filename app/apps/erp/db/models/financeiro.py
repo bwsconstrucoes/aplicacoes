@@ -128,6 +128,19 @@ class DocumentoFiscal(Base):
     origem: Mapped[str] = mapped_column(Text, nullable=False, default="UPLOAD")
     capturado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    # ----- o cruzamento (migração 044) -----
+    # Contra qual CNPJ NOSSO a nota foi emitida, de que pedido ela é, e — quando
+    # ela entrou por ali — em que linha da prestação de fundo fixo ela está.
+    # A ligação com o pedido mora aqui, do lado da NOTA, porque UM PEDIDO TEM
+    # VÁRIAS NOTAS: dez carradas de brita viram dez notas e dez boletos.
+    empresa_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("empresas.id"))
+    pedido_compra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("pedidos_compra.id"))
+    titulo_item_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulo_itens.id"))
+    conferencia: Mapped[str] = mapped_column(Text, nullable=False, default="PENDENTE")
+    conferencia_motivo: Mapped[Optional[str]] = mapped_column(Text)
+    conferido_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    conferido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
 
 class Pedido(Base):
     __tablename__ = "pedidos"
@@ -156,6 +169,11 @@ class Anexo(Base):
     nome_arquivo: Mapped[str] = mapped_column(Text, nullable=False)
     dropbox_path: Mapped[Optional[str]] = mapped_column(Text)   # legado; conteúdo vive no banco
     conteudo: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
+    # ONDE OS BYTES ESTÃO: 'BANCO' (padrão de sempre) ou 'DRIVE' (migração 043).
+    # O banco garante que um dos dois esteja preenchido — anexo que não está em
+    # lugar nenhum seria descoberto só no dia em que alguém precisasse dele.
+    guardado_em: Mapped[str] = mapped_column(Text, nullable=False, default="BANCO")
+    drive_file_id: Mapped[Optional[str]] = mapped_column(Text)
     mime_type: Mapped[Optional[str]] = mapped_column(Text)
     tamanho_original: Mapped[Optional[int]] = mapped_column(BigInteger)
     comprimido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -193,6 +211,25 @@ class Titulo(Base):
     especie: Mapped[str] = mapped_column(
         pg_enum(EspecieTitulo, "especie_titulo"), nullable=False, default=EspecieTitulo.PAGAR)
     numero_medicao: Mapped[Optional[str]] = mapped_column(Text)
+    # O TIPO da medição vem de catálogo editável, e o número é texto livre:
+    # quem manda na nomenclatura é o ÓRGÃO, não o ERP (migração 049).
+    medicao_tipo: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("medicao_tipos.codigo"))
+    # A medição de reajuste aponta para a que ela reajusta. Opcional de
+    # propósito: há órgão que numera o reajuste em sequência, e mesmo assim a
+    # ligação existe.
+    medicao_de_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("titulos.id"))
+    protocolo_numero: Mapped[Optional[str]] = mapped_column(Text)
+    protocolo_em: Mapped[Optional[date]] = mapped_column(Date)
+    # Como o reajuste foi calculado (migração 050). Um número solto não se
+    # defende: guardando a data-base, o mês de referência e o fator, o sistema
+    # mostra a conta inteira dois anos depois — que é quando a pergunta vem.
+    reajuste_indice: Mapped[Optional[str]] = mapped_column(Text)
+    reajuste_data_base: Mapped[Optional[date]] = mapped_column(Date)
+    reajuste_ate: Mapped[Optional[date]] = mapped_column(Date)
+    reajuste_fator: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 8))
+    reajuste_previsto: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     periodo_inicio: Mapped[Optional[date]] = mapped_column(Date)
     periodo_fim: Mapped[Optional[date]] = mapped_column(Date)
     notas_fiscais: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
@@ -899,5 +936,266 @@ class AgenteMensagem(Base):
     canais: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     entregue: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     erro: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class ComprovanteLido(Base):
+    """Todo comprovante que o sistema já leu — e a trava contra baixar duas vezes.
+
+    Duas restrições únicas no banco (migração 042) fazem o trabalho, e é de
+    propósito que elas estejam LÁ e não aqui: restrição de banco não depende de
+    o código lembrar de perguntar, e vale mesmo com duas execuções ao mesmo
+    tempo. A trava antiga, no `baixabradesco`, vivia numa lista em memória e
+    falhava LIBERANDO quando a leitura dela dava erro.
+
+      1. `hash_conteudo` único — o mesmo ARQUIVO nunca entra duas vezes. O hash
+         é do conteúdo e NÃO inclui o nome: "comprovante.pdf" e "comprovante
+         (1).pdf" são o mesmo documento.
+      2. (parcela, valor, data) único — o mesmo PAGAMENTO nunca é baixado duas
+         vezes, mesmo vindo de um PDF regerado pelo banco, com outros bytes.
+
+    Pagamento parcial continua possível: a mesma parcela aceita outra baixa em
+    outro dia ou com outro valor. O que se barra é a repetição idêntica.
+    """
+    __tablename__ = "comprovantes_lidos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    hash_conteudo: Mapped[str] = mapped_column(Text, nullable=False)
+    nome_arquivo: Mapped[Optional[str]] = mapped_column(Text)
+    tamanho_bytes: Mapped[Optional[int]] = mapped_column(Integer)
+    origem: Mapped[str] = mapped_column(Text, nullable=False, default="TELA")
+    situacao: Mapped[str] = mapped_column(Text, nullable=False)
+    titulo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulos.id"))
+    parcela_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("parcelas.id"))
+    pagamento_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("pagamentos.id"))
+    valor: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    data_pagamento: Mapped[Optional[date]] = mapped_column(Date)
+    favorecido: Mapped[Optional[str]] = mapped_column(Text)
+    documento: Mapped[Optional[str]] = mapped_column(Text)
+    mensagem: Mapped[Optional[str]] = mapped_column(Text)
+    usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# GESTÃO DE DOCUMENTOS DA EMPRESA (migração 045)
+#
+# Os BYTES continuam em `Anexo` — que desde a 043 sabe morar no banco ou no
+# Google Drive. O que estas duas tabelas acrescentam é o que transforma
+# "arquivo guardado" em "documento encontrável": o tipo, o dono, a validade, a
+# competência e o texto de dentro.
+#
+# A especificação inteira está em `GESTAO_DOCUMENTOS.md`.
+# ---------------------------------------------------------------------------
+class DocumentoTipo(Base):
+    """O catálogo de tipos de documento da empresa.
+
+    Editável pela tela de propósito: quem sabe quais documentos a BWS usa toda
+    semana é a BWS, não quem programa. O `codigo` vai literalmente para o nome
+    do arquivo — por isso ele é maiúsculo, sem acento e sem espaço.
+    """
+    __tablename__ = "documento_tipos"
+
+    codigo: Mapped[str] = mapped_column(Text, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    grupo: Mapped[str] = mapped_column(Text, nullable=False)
+    dono: Mapped[str] = mapped_column(Text, nullable=False)
+    vence: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    avisar_dias: Mapped[Optional[int]] = mapped_column(Integer)
+    por_competencia: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sigilo: Mapped[str] = mapped_column(Text, nullable=False, default="ABERTO")
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class Documento(Base):
+    """Um documento arquivado: os bytes (no anexo) mais o que se sabe dele."""
+    __tablename__ = "documentos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    tipo_codigo: Mapped[str] = mapped_column(
+        Text, ForeignKey("documento_tipos.codigo"), nullable=False)
+    anexo_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("anexos.id", ondelete="CASCADE"), nullable=False)
+
+    nome_padronizado: Mapped[str] = mapped_column(Text, nullable=False)
+    nome_original: Mapped[Optional[str]] = mapped_column(Text)
+
+    # O dono — exatamente um, garantido por CHECK no banco.
+    empresa_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("empresas.id"))
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    colaborador_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("colaboradores.id"))
+    fornecedor_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("fornecedores.id"))
+    lancamento_tipo: Mapped[Optional[str]] = mapped_column(Text)
+    lancamento_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+    competencia: Mapped[Optional[date]] = mapped_column(Date)
+    referencia: Mapped[Optional[str]] = mapped_column(Text)
+    emissao: Mapped[Optional[date]] = mapped_column(Date)
+    validade: Mapped[Optional[date]] = mapped_column(Date)
+
+    texto: Mapped[Optional[str]] = mapped_column(Text)
+    resumo: Mapped[Optional[str]] = mapped_column(Text)
+
+    origem: Mapped[str] = mapped_column(Text, nullable=False, default="TELA")
+    confirmado_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    confirmado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    tipo: Mapped[DocumentoTipo] = relationship()
+    anexo: Mapped[Anexo] = relationship()
+
+
+class DocumentoBloco(Base):
+    """Um conjunto de documentos que sempre é pedido junto (migração 046).
+
+    A CHAVE DO DESENHO: o bloco aponta para TIPOS, não para documentos. Assim o
+    bloco fiscal de agosto e o de setembro são o MESMO bloco, com recortes
+    diferentes — e ninguém precisa manter lista nenhuma atualizada.
+    """
+    __tablename__ = "documento_blocos"
+
+    codigo: Mapped[str] = mapped_column(Text, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
+    recorte: Mapped[str] = mapped_column(Text, nullable=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    itens: Mapped[list["DocumentoBlocoItem"]] = relationship(
+        back_populates="bloco", order_by="DocumentoBlocoItem.ordem",
+        cascade="all, delete-orphan")
+
+
+class DocumentoBlocoItem(Base):
+    __tablename__ = "documento_bloco_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    bloco_codigo: Mapped[str] = mapped_column(
+        Text, ForeignKey("documento_blocos.codigo", ondelete="CASCADE"), nullable=False)
+    tipo_codigo: Mapped[str] = mapped_column(
+        Text, ForeignKey("documento_tipos.codigo"), nullable=False)
+    obrigatorio: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+
+    bloco: Mapped[DocumentoBloco] = relationship(back_populates="itens")
+    tipo: Mapped[DocumentoTipo] = relationship()
+
+
+class NotaEmitida(Base):
+    """Uma nota que a BWS emite contra o cliente (migração 048).
+
+    DOIS NÚMEROS, e confundi-los é a origem da bagunça:
+
+      numero_dps    a sequência da EMPRESA, por série. O ERP é dono dela —
+                    no padrão nacional e no ABRASF, quem numera a declaração é
+                    quem emite, não a prefeitura.
+      numero_nota   o que a PREFEITURA devolveu. O ERP só registra.
+
+    O número é RESERVADO antes de emitir, e a linha nasce RESERVADA. Se a
+    emissão falha, o número não some: fica FALHADA, com motivo. Número de nota
+    fiscal não se apaga — se explica.
+    """
+    __tablename__ = "notas_emitidas"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("empresas.id"), nullable=False)
+    ambiente: Mapped[str] = mapped_column(Text, nullable=False, default="HOMOLOGACAO")
+    serie: Mapped[str] = mapped_column(Text, nullable=False, default="1")
+
+    numero_dps: Mapped[int] = mapped_column(Integer, nullable=False)
+    numero_nota: Mapped[Optional[str]] = mapped_column(Text)
+    codigo_verificacao: Mapped[Optional[str]] = mapped_column(Text)
+    chave_acesso: Mapped[Optional[str]] = mapped_column(Text)
+
+    titulo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulos.id"))
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    competencia: Mapped[Optional[date]] = mapped_column(Date)
+
+    modo: Mapped[str] = mapped_column(Text, nullable=False, default="MANUAL")
+    situacao: Mapped[str] = mapped_column(Text, nullable=False, default="RESERVADA")
+    valor_bruto: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    valor_liquido: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    retencoes: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    data_emissao: Mapped[Optional[date]] = mapped_column(Date)
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    motivo: Mapped[Optional[str]] = mapped_column(Text)
+    anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    substituida_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("notas_emitidas.id"))
+
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class MedicaoTipo(Base):
+    """O tipo da medição — catálogo EDITÁVEL, não lista no código (migração 049).
+
+    O motivo, nas palavras do dono: há órgão que numera o reajuste em sequência
+    (virou a medição 3), órgão que numera em paralelo (1 e 1R), e medições
+    subsidiárias por fontes diferentes. **Quem manda na nomenclatura é o
+    órgão** — impor uma lista fixa quebraria no primeiro contrato fora do
+    padrão, e ele já viu isso acontecer.
+    """
+    __tablename__ = "medicao_tipos"
+
+    codigo: Mapped[str] = mapped_column(Text, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    e_reajuste: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class AgendaEvento(Base):
+    """Uma obrigação com data, no calendário do ERP (migração 051).
+
+    O evento GERADO tem uma `chave` estável, e é por ela que a sincronização
+    sabe que aquele aviso já existe. Rodar dez vezes no mesmo dia não cria dez
+    avisos iguais; e o que deixou de valer — certidão renovada, contrato
+    encerrado — some sozinho. Agenda que acumula aviso velho é agenda que
+    ninguém abre.
+
+    `quando` e `avisar_em` são datas diferentes de propósito: certidão que vence
+    em noventa dias não pode ocupar a agenda de hoje, e reajuste avisado no
+    próprio dia já é tarde.
+    """
+    __tablename__ = "agenda_eventos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    chave: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    origem: Mapped[str] = mapped_column(Text, nullable=False)
+    titulo: Mapped[str] = mapped_column(Text, nullable=False)
+    detalhe: Mapped[Optional[str]] = mapped_column(Text)
+    quando: Mapped[date] = mapped_column(Date, nullable=False)
+    avisar_em: Mapped[date] = mapped_column(Date, nullable=False)
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    empresa_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("empresas.id"))
+    link: Mapped[Optional[str]] = mapped_column(Text)
+    situacao: Mapped[str] = mapped_column(Text, nullable=False, default="ABERTO")
+    resolvido_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    resolvido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())

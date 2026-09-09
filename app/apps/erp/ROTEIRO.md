@@ -129,7 +129,12 @@
       cabe na tabela
 - [ ] **Encadeamento**: obra → cadastro da obra; conta → plano; credor →
       cadastro; compra → pedido
-- [ ] **Agenda do ERP**: calendário de obrigações com alerta para não esquecer
+- [x] **Agenda do ERP** — FEITA em 09/09/2026 (migração 051). Obras › "Agenda":
+      aniversário de reajuste, conferência mensal de locação, vencimento de
+      certidão e fim da vigência do contrato, num lugar só, mais a anotação
+      manual. O aviso deduzido é RECALCULADO (some quando deixa de valer);
+      resolvido, dispensado e anotação nunca somem. O número aparece na porta
+      de entrada. Falta ligar o **certificado digital** quando ele existir.
 - [ ] **BeeVale**: geração das informações (existe no spsbd)
 - [ ] **Auditoria**: as checagens do spsbd que ainda não vieram
 - [ ] **Ratear**: rateio por categoria (rateio por obra já funciona no lançamento)
@@ -151,8 +156,10 @@
 - [x] GESTÃO DE OBRAS como área própria (aba Obras): painel com contrato
       vigente, recebido, gasto e saldo; fases com histórico; contrato e
       aditivos; tributação com simulador; documentos; movimento; auditoria
-- [ ] Obra — falta: alerta de reajuste na agenda (o painel já sinaliza)
-- [ ] Integrar com o módulo emissaonf: emitir a nota a partir da medição
+- [x] Obra — alerta de reajuste na agenda: FEITO em 09/09/2026
+- [x] ~~Integrar com o módulo emissaonf~~ — **RETOMADO em 09/09/2026 pelo
+      dono**, com desenho próprio: ver `MEDICOES_E_NOTAS.md` e a fila acima.
+      Deixou de estar "em espera".
 - [ ] **Open Finance / API bancária**: extrato e DDA automáticos (futuro)
 - [x] Aviso quando o título é pago, via TELEGRAM, com o comprovante junto —
       idempotente por pessoa, marcando correção quando valor/data mudam
@@ -209,6 +216,203 @@
       lembrar de: (1) definir `EL_NFSE_TOKEN` na Environment do Render, senão o
       script de consulta de NFS-e para; (2) apertar "Aplicar atualizações do
       banco" em Configurações — juntar o código NÃO aplica a migração
+
+### Medições, contrato e emissão de nota — pedida pelo dono em 09/09/2026
+
+O lado do que a BWS RECEBE. Especificação inteira em `MEDICOES_E_NOTAS.md`.
+Substitui o processo "Protocolos e Medições" do Pipefy, que existe porque o
+Omie não dá conta disso.
+
+- [x] 1. **O cadastro que destrava tudo** — FEITO em 09/09/2026 (migração 047): expor na tela da obra os campos
+      fiscais que JÁ existem no modelo (CNO, alíquota de ISS, ISS retido,
+      regime, conta de recebimento); **chave Pix** na conta bancária; filtro
+      **por conta** nas telas de título — pedido dele: "às vezes é mais fácil
+      do que filtrar por obra"; e **os dados de emissão POR EMPRESA**
+      (município, endereço do serviço, token, alíquota, modo API ou MANUAL).
+      ⚠️ Este último entra aqui e não no passo 6: o dono confirmou em
+      09/09/2026 que são DUAS empresas, em municípios diferentes, uma por API e
+      outra manual — deixar para o fim faria a segunda não emitir.
+- [x] 2. **A medição completa** — FEITO em 09/09/2026 (migração 049). Tipo
+      EDITÁVEL em tabela (normal, reajuste, aditivo, subsidiária, complementar),
+      número em TEXTO LIVRE, correlação entre a medição e a de reajuste dela
+      (funciona nos dois jeitos de numerar: "1R" e "medição 3"), e protocolo com
+      número e data. O sistema recusa reajuste de si mesma, de outro contrato e
+      de reajuste.
+- [x] 3. **O quadro financeiro do contrato** — FEITO em 09/09/2026. Tela nova
+      em Obras › "Contratos e medições": uma linha por medição e os totais
+      (contratado, aditivado, vigente, medido, faturado, recebido, a receber,
+      saldo). MEDIDO ≠ FATURADO ≠ RECEBIDO em três colunas separadas, e o
+      reajuste NÃO consome saldo do contrato. O indicador de dias entre
+      protocolar e receber (item 7) já nasce aqui.
+- [x] 4. **Tela de controle de notas emitidas** — FEITO em 09/09/2026.
+      Financeiro › "Notas emitidas": cada tributo em sua coluna (ISS, IR, INSS,
+      PIS, COFINS, CSLL), líquido, recebido com data e conta, conferência da
+      numeração (buraco ≠ queimado), registro da nota que saiu pelo portal da
+      prefeitura, cancelamento com motivo, e exportação em Excel e PDF.
+- [x] 5. **Emissão a partir da medição, modo MANUAL** — FEITO em 09/09/2026.
+      Botão "Emitir nota" em cada medição do quadro do contrato: o ERP monta o
+      bloco com prestador, tomador, discriminação e as retenções JÁ CALCULADAS
+      pelo cadastro da obra; a pessoa copia, emite no portal, volta e anexa o
+      PDF — a IA lê e preenche número, data, valor e retenções.
+- [ ] 6. **Emissão automática**, com município e endereço virando configuração
+      por empresa. ⚠️ Apontar para o **canal NACIONAL**, não para o ABRASF: a
+      LC 214/2025 tornou o padrão nacional obrigatório e o ABRASF tem data para
+      acabar. O `el_nfse_nacional.py` já fala esse padrão.
+- [~] 7. **Indicadores**: dias entre protocolar e receber. Já pronto POR
+      CONTRATO, dentro do quadro (média, mais rápida, mais lenta, e as que estão
+      esperando há mais tempo). Falta o corte por OBRA e por ÓRGÃO numa tela
+      só — o cálculo já aceita o filtro por obra.
+- [x] 8. **REAJUSTE** — FEITO em 09/09/2026 (migração 050). A data-base é campo
+      do contrato, com a origem escrita (orçamento, proposta, assinatura); o
+      direito nasce depois da periodicidade (12 meses por padrão, configurável);
+      a previsão é calculada pelo índice acumulado e vira título a receber com
+      valor EDITÁVEL, correlacionado à medição de origem. O previsto fica
+      guardado ao lado do aprovado, para a diferença aparecer.
+- [x] 9. **Tabela do INCC dentro do sistema** — FEITA em 09/09/2026. Em
+      Configurações › "Índices (INCC)": busca no Banco Central pelo botão
+      (série **192** do SGS, pública e gratuita — evita o FGVDados, que é
+      licenciado), lançamento à mão pelo boletim da FGV para o mês que ainda
+      não saiu, e a coleta NUNCA sobrescreve o que foi digitado.
+      ⚠️ **A primeira chamada de verdade só acontece no Render**: a saída para
+      a internet do ambiente de desenvolvimento é filtrada e bloqueia o
+      endereço do Banco Central. O caminho de erro foi exercitado (a tabela
+      continua intacta e a tela explica), mas o caminho de sucesso contra o
+      serviço real, não.
+
+**Feito em 09/09/2026, fora da ordem porque ele corrigiu/perguntou:**
+
+- [x] **Por onde a nota sai NÃO se escolhe, se deriva** (medição → obra →
+      empresa). Obra sem empresa recusa em vez de chutar; título rateado entre
+      obras de empresas diferentes manda separar.
+- [x] **Controle da numeração** (migração 048): o ERP é dono da sequência da
+      DPS; a prefeitura devolve o número da nota. Reserva antes de emitir,
+      número queimado não recicla e exige motivo, homologação separada de
+      produção, e a conferência separa BURACO de QUEIMADO.
+- [x] **Título rateado entre obras de contas diferentes: bloqueado** no
+      lançamento, dizendo quais obras, quais contas e qual a saída.
+
+**Sobre Petrolina (pergunta dele, pesquisada em 09/09/2026):** o município tem
+webservice **e usa o MESMO provedor do Eusébio** (E&L), com o endereço no mesmo
+molde. O emissor não precisa ser reescrito — o endereço e o código IBGE, hoje
+fixos no código, viram configuração. O que depende de providência dele:
+Inscrição Municipal em Petrolina, credenciamento, token próprio do canal e os
+códigos de serviço/alíquota de lá.
+
+### Gestão de documentos da empresa — pedida pelo dono em 09/09/2026
+
+Especificação inteira (taxonomia, nomenclatura, blocos, permissão) em
+`GESTAO_DOCUMENTOS.md`. O resumo do pedido, nas palavras dele: *"um ambiente
+onde eu pudesse simplesmente jogar esse documento, ele fosse interpretado,
+lido, e a partir dali categorizado, renomeado e salvo"*.
+
+- [x] 1. **Catálogo e arquivo**: tipos, donos, validade, nome padronizado.
+      FEITO em 09/09/2026 (migração 045), 59 tipos em sete grupos.
+- [x] 2. **Tela de gestão** (Administração › Arquivo): filtros por
+      tipo/grupo/empresa/obra/competência/validade, busca e abertura do
+      arquivo. FEITA em 09/09/2026.
+- [ ] 3. **Leitura por IA** sugerindo tipo, dono, datas e nome — a pessoa
+      confirma. Reusa o leitor que já lê nota e comprovante.
+- [x] 4. **Blocos** (FISCAL, HABILITACAO, CADASTRO-FORNECEDOR, MEDICAO, OBRA)
+      em `.zip`, **com a lista do que está faltando dentro**. FEITO em
+      09/09/2026 (migração 046). O bloco aponta para TIPOS, não para
+      documentos — por isso o de agosto e o de setembro são o mesmo bloco.
+      Conteúdo do bloco FISCAL confirmado pelo dono como "o que o cliente pede
+      na medição".
+- [ ] 5. **Busca dentro do texto** do documento (o texto é extraído na entrada,
+      porque a leitura já acontece — reprocessar depois é que sairia caro).
+- [ ] 6. **Avisos de vencimento** de certidão e documento, na Agenda.
+- [ ] 7. **Botões nos outros lugares**: baixar a documentação fiscal da
+      competência direto do título, o bloco da obra na tela da obra, o bloco
+      cadastral em Suprimentos.
+
+### Notas fiscais — o cruzamento
+
+- [x] **A TELA DO CRUZAMENTO** (nota × pedido × título × fundo fixo) — FEITA em
+      09/09/2026, migração 044, em Financeiro › Notas fiscais. Entrada por
+      importação de XML; casamento automático só pela chave de acesso; trava
+      contra contar a mesma despesa duas vezes; dedutibilidade pelo lado das
+      notas. Detalhe em `HISTORICO.md` e `NOTAS_FISCAIS.md` §8-B.
+**DECIDIDO em 09/09/2026 pelo dono:** o ERP **só avisa**, não manifesta ao
+fisco; e o **FSist sai** — a captura passa a ser própria, direto na SEFAZ. Os
+dois itens abaixo deixaram de depender de decisão e viraram trabalho.
+
+- [ ] Certificado digital por empresa, cifrado, com alerta de validade —
+      pré-requisito da captura. Entra, nunca sai: o ERP usa, ninguém baixa de
+      volta pela tela.
+- [ ] **Estudar o serviço de distribuição da SEFAZ antes de codar**: limites de
+      consulta, o que acontece ao perder o número de sequência, e se o
+      certificado A1 da BWS tem o perfil necessário. Nada disso foi verificado.
+- [ ] Captura das notas direto na SEFAZ, guardando o ponto de onde parou. A
+      importação de XML CONTINUA existindo como rede — desligar o FSist antes
+      da captura própria estar conferida seria trocar o certo pelo duvidoso.
+
+### Fila de DESEMPENHO — pedida pelo dono em 08/09/2026
+
+Nasceu da pergunta dele: *"e quando essa base de dados for crescendo? Como é
+que é a estratégia de manter isso rápido?"*. A resposta longa está no
+`HISTORICO.md`, seção "Velocidade: o que cresce e o que não cresce". A fila:
+
+- [x] **ANEXOS SAEM DO BANCO E VÃO PARA O GOOGLE DRIVE.** FEITO em 09/09/2026 (migração 043), desligado até o dono criar a pasta e colar o endereço. Decidido pelo dono em
+      08/09/2026, com o motivo dele: o plano de banco é de 2 GB e ele já paga
+      2 TB de Drive por pouco. É a peça que mais cresce em tamanho.
+      Cuidados que NÃO podem ser esquecidos na hora de fazer:
+      1. **O link do Drive nunca vai para a tela.** O arquivo continua sendo
+         servido pelo endereço do ERP, que confere permissão e escopo antes de
+         entregar (hoje `exigir_anexo_no_escopo`). Link direto do Drive é link
+         que qualquer um abre — e ali tem holerite, comprovante e contrato.
+      2. **Pasta de serviço, que ninguém mexe à mão.** Arquivo movido ou
+         apagado por uma pessoa no Drive some do ERP e ninguém fica sabendo.
+      3. **A troca é num arquivo só** (`core/documentos/armazenamento.py`):
+         todo mundo já salva e lê por ele. O modelo `Anexo` até já tem a coluna
+         `dropbox_path` de legado — o caminho novo entra do lado, sem
+         reescrever quem chama.
+      4. **Mudar o jeito de guardar e mover o que já existe são DUAS etapas.**
+         Primeiro o novo passa a ir para o Drive; depois um trabalho em
+         segundo plano leva os antigos, conferindo o hash de cada um antes de
+         apagar do banco. Nada é apagado sem cópia conferida.
+      5. **O que se perde:** o ERP passa a depender do Drive estar no ar para
+         mostrar um comprovante. Hoje não depende de nada externo. É o preço,
+         e o dono aceitou sabendo.
+      6. **NÃO copiar o jeito do `emissaonf`.** Aquele módulo sobe os PDFs da
+         nota e marca cada arquivo como "qualquer pessoa com o link pode ver"
+         (`publico=True` em `drive_upload.enviar`). Para anexo do ERP isso
+         seria um vazamento: holerite e comprovante ficariam abertos a quem
+         tivesse o link. O que se reaproveita dali é a MECÂNICA (conta de
+         serviço, personificação, `supportsAllDrives`), não a permissão.
+
+      **Como o acesso será dado** (respondido ao dono em 09/09/2026): não
+      precisa credencial nova — a identidade do Google que o sistema já usa
+      serve. Falta só a pasta e o código dela. Preferência: **Drive
+      compartilhado** (os arquivos pertencem à empresa, não a uma pessoa, e
+      dispensa a personificação). Alternativa que já funciona hoje sem mexer em
+      nada: pasta no Drive de `contato@bwsconstrucoes.com.br`, porque o sistema
+      já sabe agir como essa conta. ⚠️ Conta de serviço NÃO tem espaço próprio
+      no Google — por isso ou é Drive compartilhado, ou é personificação; as
+      duas coisas resolvem o mesmo problema de cota.
+
+- [ ] **Separar o trabalho pesado das telas.** Carga, sincronização, leitura de
+      lote por IA e relatório grande não podem disputar com quem está usando a
+      tela. É o que mais resolve a lentidão que o dono sentiu, e não custa
+      assinatura nova.
+- [ ] **Tirar a trava do "um processo só"** (o estado em memória do `chatbot`).
+      Enquanto ela existir, aumentar o plano do Render rende menos do que
+      deveria — parte da máquina maior fica sem uso.
+- [ ] **Tela de saúde do sistema**: quanto tempo cada tela leva, quanta memória
+      o serviço usa. Para a decisão de gastar deixar de ser palpite.
+- [ ] Números do topo das telas pré-calculados, quando as somas começarem a
+      pesar. Não antes.
+- [ ] Listas do ERP com "próxima página" — hoje elas param em 500 registros e
+      não há como alcançar o que é mais antigo sem filtrar.
+
+### Assistente virtual para os colaboradores — ideia registrada em 08/09/2026
+
+Palavras do dono: *"eu tenho algumas ideias de utilização de inteligência
+artificial para dialogar com os colaboradores, assistente virtual, coisas desse
+tipo"*. Ainda não foi detalhado e **não está na fila** — está aqui para não se
+perder. Quando ele retomar, o que já existe e serve de base: o `chatbot` e o
+`whatsapp_gateway` (canal), o `notificador` (envio), o controle de consumo de
+IA com teto (migração 030) e o agente de cobrança (migração 040), que já é um
+robô que fala com pessoas por WhatsApp a partir de pendência do banco.
 
 ## Decisões registradas
 

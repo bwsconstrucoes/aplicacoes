@@ -427,6 +427,12 @@ class Contrato(Base):
     retencao_contratual_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), default=0)
     arquivo_anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="VIGENTE")
+    # Reajuste (migração 050). A data-base é CAMPO porque muda por contrato:
+    # pode ser a do orçamento ou a da proposta da licitação, e fixar uma das
+    # duas no código erraria metade dos contratos com cara de certo.
+    data_base: Mapped[Optional[date]] = mapped_column(Date)
+    data_base_origem: Mapped[Optional[str]] = mapped_column(Text)
+    reajuste_meses: Mapped[Optional[int]] = mapped_column(Integer)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -441,6 +447,32 @@ class ContaBancaria(Base):
     codigo_omie: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    chaves_pix: Mapped[list["ContaChavePix"]] = relationship(
+        back_populates="conta", cascade="all, delete-orphan",
+        order_by="ContaChavePix.id")
+
+
+class ContaChavePix(Base):
+    """Uma chave Pix da conta (migração 047).
+
+    Existe pelo uso que o dono descreveu: *"eventualmente a gente precisa
+    consultar, e tendo esse cadastro das contas é o local mais fácil"*. Não é
+    para pagar por aqui — é para COPIAR E MANDAR quando pedem os dados da
+    empresa. Por isso são várias por conta: CNPJ, e-mail, telefone, aleatória.
+    """
+    __tablename__ = "conta_chaves_pix"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    conta_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("contas_bancarias.id", ondelete="CASCADE"), nullable=False)
+    tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    chave: Mapped[str] = mapped_column(Text, nullable=False)
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    conta: Mapped[ContaBancaria] = relationship(back_populates="chaves_pix")
 
 
 class ObraAditivo(Base):
@@ -1041,6 +1073,22 @@ class Empresa(Base):
     smtp_porta: Mapped[Optional[int]] = mapped_column(Integer)
     smtp_usuario: Mapped[Optional[str]] = mapped_column(Text)
     smtp_senha_cifrada: Mapped[Optional[str]] = mapped_column(Text)
+    # ----- emissão de nota fiscal (migração 047) -----
+    # POR EMPRESA, e não constante no código, porque são duas empresas em
+    # municípios diferentes: uma emite no Eusébio/CE, outra em Petrolina/PE.
+    # MANUAL e HOMOLOGAÇÃO são os padrões de propósito — emitir nota é ato
+    # irreversível, e empresa recém-cadastrada não sai emitindo sozinha.
+    emissao_modo: Mapped[str] = mapped_column(Text, nullable=False, default="MANUAL")
+    emissao_municipio: Mapped[Optional[str]] = mapped_column(Text)
+    emissao_codigo_ibge: Mapped[Optional[str]] = mapped_column(Text)
+    emissao_url_base: Mapped[Optional[str]] = mapped_column(Text)
+    emissao_canal: Mapped[str] = mapped_column(Text, nullable=False, default="NACIONAL")
+    emissao_token_cifrado: Mapped[Optional[str]] = mapped_column(Text)
+    emissao_serie: Mapped[Optional[str]] = mapped_column(Text)
+    emissao_aliquota_iss: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 4))
+    emissao_codigo_servico: Mapped[Optional[str]] = mapped_column(Text)
+    emissao_ambiente: Mapped[str] = mapped_column(Text, nullable=False, default="HOMOLOGACAO")
+
     smtp_seguranca: Mapped[str] = mapped_column(Text, nullable=False,
                                                 default="STARTTLS")
     smtp_remetente: Mapped[Optional[str]] = mapped_column(Text)
@@ -1098,4 +1146,27 @@ class EnvioEmail(Base):
     enviado_por: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class IndiceEconomico(Base):
+    """Um índice publicado, mês a mês (migração 050).
+
+    Guarda a VARIAÇÃO MENSAL em porcento, que é como o Banco Central publica no
+    SGS — o INCC-DI é a série 192. O número-índice se reconstrói acumulando:
+    quem guarda variação produz o acumulado de qualquer período; quem guarda só
+    o acumulado não consegue voltar.
+
+    A `fonte` distingue o que veio do Banco Central do que alguém digitou. Não
+    é burocracia: o INCC-DI do mês só sai por volta do dia 25, e quando o
+    serviço estiver fora do ar alguém precisa poder lançar o número do boletim
+    da FGV — mas o relatório tem de deixar claro qual linha é qual.
+    """
+    __tablename__ = "indices_economicos"
+
+    codigo: Mapped[str] = mapped_column(Text, primary_key=True)
+    competencia: Mapped[date] = mapped_column(Date, primary_key=True)
+    variacao_pct: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    fonte: Mapped[str] = mapped_column(Text, nullable=False, default="BCB-SGS")
+    coletado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())

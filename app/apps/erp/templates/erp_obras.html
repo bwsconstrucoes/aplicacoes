@@ -347,6 +347,19 @@ async function painel(i, id){
         <div class="campo"><label>INSS retido</label><select id="t-inssret">
           <option value="1" ${d.inss_retido?"selected":""}>Sim</option>
           <option value="0" ${d.inss_retido?"":"selected"}>Não</option></select></div>
+        <div class="campo"><label>Regime de tributação da obra</label>
+          <select id="t-regime">
+            <option value="">— não definido —</option>
+            ${["LUCRO_REAL","LUCRO_PRESUMIDO","SIMPLES","RET","DESONERADA"].map(r=>
+              `<option value="${r}" ${d.regime_obra===r?"selected":""}>${rotulo(r)}</option>`).join("")}
+          </select>
+          <div class="dica">Entra no cálculo e no corpo do texto da nota.</div></div>
+        <div class="campo"><label>Conta que recebe a medição</label>
+          <select id="t-contarec"><option value="">— não definida —</option>
+          ${(CONTAS||[]).map(x=>`<option value="${x.id}" ${String(d.conta_recebimento_id)===String(x.id)?"selected":""}>${x.descricao}</option>`).join("")}
+          </select>
+          <div class="dica">Onde o cliente deposita. É diferente da conta de
+            PAGAMENTO, que fica no Cadastro.</div></div>
       </div>
       <div class="campo" style="margin-top:10px"><label>Federais retidos pelo tomador</label>
         <div class="filtro-opcoes" style="border:1px solid var(--borda); border-radius:8px; padding:6px">
@@ -362,9 +375,10 @@ async function painel(i, id){
       </div>
       <div id="t-resultado"></div>`;
     salvarObra(id, {aliquota_iss_pct:"t-iss", pct_servico_iss:"t-pctiss",
-      pct_servico_inss:"t-pctinss"}, () => ({
+      pct_servico_inss:"t-pctinss", regime_obra:"t-regime"}, () => ({
         iss_retido: els("t-issret").value==="1", inss_retido: els("t-inssret").value==="1",
         aceita_deducao_material: els("t-ded").value==="1",
+        conta_recebimento_id: els("t-contarec").value ? +els("t-contarec").value : null,
         federais_retidos: [...document.querySelectorAll(".t-fed:checked")].map(i=>i.value)}));
     els("t-simular").addEventListener("click", async () => {
       try {
