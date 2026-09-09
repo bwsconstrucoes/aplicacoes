@@ -31,6 +31,11 @@
       <span class="filtro-badge" id="badge-conta">0</span><span class="seta">▾</span></button>
     <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-conta"></div></div>
   </div>
+  <div class="filtro aberto" id="filtro-dedut">
+    <button class="filtro-cab" type="button"><span>Dedutibilidade</span>
+      <span class="filtro-badge" id="badge-dedut">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-dedut"></div></div>
+  </div>
   <div class="filtro aberto">
     <button class="filtro-cab" type="button"><span>Vencimento e valor</span><span class="seta">▾</span></button>
     <div class="filtro-cont">
@@ -98,11 +103,12 @@ const ABERTOS = ["EM_ANALISE","AGUARDANDO_APROVACAO","APROVADO","BLOQUEADO","PAG
 const ROTULOS = {EM_ANALISE:"Em análise", AGUARDANDO_APROVACAO:"Aguardando autorização",
   APROVADO:"Liberado p/ pagamento", BLOQUEADO:"Bloqueado na análise", PAGO_PARCIAL:"Pago parcial",
   PAGO:"Pago", DEVOLVIDO:"Devolvido", CANCELADO:"Cancelado", ESTORNADO:"Estornado", RASCUNHO:"Rascunho"};
+const DEDUTIBILIDADES = ["DEDUTIVEL", "PARCIAL", "INDEDUTIVEL", "PENDENTE"];
 let TITULOS = [], SELECAO = new Set(), ORDEM = {campo:"vencimento", asc:true};
 // `conta` faltava aqui e a tela inteira morria: montarFiltros() lia
 // F.conta.has(...) e estourava antes de desenhar a primeira linha.
 let F = {status: new Set(ABERTOS), obra: new Set(), credor: new Set(),
-         conta: new Set()};
+         conta: new Set(), dedut: new Set()};
 
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
@@ -154,11 +160,19 @@ function montarFiltros(){
     `<label class="opcao"><input type="checkbox" data-f="obra" value="${o}" ${F.obra.has(o)?"checked":""}>
       <span class="rotulo">${o}</span><span class="qtd">${co[o]}</span></label>`).join("")
       || `<div class="cartao-dica">sem obras nos títulos carregados</div>`;
+  // DEDUTIBILIDADE. O dono pediu ver isto "por onde eu estiver olhando" — aqui
+  // é o lado dos títulos. Do universo fixo, para PENDENTE aparecer mesmo
+  // quando nenhum título carregado está pendente: zero é informação.
+  const cd = cont("dedutibilidade");
+  els("opcoes-dedut").innerHTML = DEDUTIBILIDADES.map(d =>
+    `<label class="opcao ${cd[d]?"":"zerada"}"><input type="checkbox" data-f="dedut" value="${d}"
+      ${F.dedut.has(d)?"checked":""}><span class="rotulo">${rotulo(d)}</span>
+      <span class="qtd">${cd[d]||0}</span></label>`).join("");
   const cc = cont("fornecedor");
   els("opcoes-credor").innerHTML = Object.keys(cc).sort().map(c =>
     `<label class="opcao"><input type="checkbox" data-f="credor" value="${c}" ${F.credor.has(c)?"checked":""}>
       <span class="rotulo">${c}</span><span class="qtd">${cc[c]}</span></label>`).join("");
-  ["status","obra","credor"].forEach(k => els("badge-"+k).textContent = F[k].size);
+  ["status","obra","credor","dedut"].forEach(k => els("badge-"+k).textContent = F[k].size);
   document.querySelectorAll('[data-f]').forEach(i => i.addEventListener("change", ev => {
     const {f, value} = {f: ev.target.dataset.f, value: ev.target.value};
     ev.target.checked ? F[f].add(value) : F[f].delete(value);
@@ -175,6 +189,7 @@ function visiveis(){
     if (F.obra.size && !F.obra.has(t.obra)) return false;
     if (F.conta.size && !F.conta.has(t.categoria || "(sem conta)")) return false;
     if (F.credor.size && !F.credor.has(t.fornecedor)) return false;
+    if (F.dedut.size && !F.dedut.has(t.dedutibilidade || "PENDENTE")) return false;
     if (!isNaN(min) && t.valor_liquido < min) return false;
     if (!isNaN(max) && t.valor_liquido > max) return false;
     if (els("f-venc7").checked && !(t.vencimento && t.vencimento <= lim7 && ABERTOS.includes(t.status))) return false;
@@ -211,6 +226,12 @@ function desenhar(){
     <button class="kpi ciano" data-kpi="_venc7"><div class="kpi-rotulo">Vencem em 7 dias</div>
       <div class="kpi-valor">${qtd(t=>t.vencimento&&t.vencimento<=lim7&&ABERTOS.includes(t.status))}</div>
       <div class="kpi-sub">${moeda(soma(t=>t.vencimento&&t.vencimento<=lim7&&ABERTOS.includes(t.status)))}</div></button>
+    <button class="kpi verde" data-kpi="_dedutivel"><div class="kpi-rotulo">Dedutível</div>
+      <div class="kpi-valor">${qtd(t=>t.dedutibilidade==="DEDUTIVEL")}</div>
+      <div class="kpi-sub">${moeda(soma(t=>t.dedutibilidade==="DEDUTIVEL"))}</div></button>
+    <button class="kpi ambar" data-kpi="_dedut_pendente"><div class="kpi-rotulo">Dedutibilidade a decidir</div>
+      <div class="kpi-valor">${qtd(t=>!t.dedutibilidade||t.dedutibilidade==="PENDENTE")}</div>
+      <div class="kpi-sub">${moeda(soma(t=>!t.dedutibilidade||t.dedutibilidade==="PENDENTE"))}</div></button>
     <button class="kpi roxo" data-kpi="_atraso"><div class="kpi-rotulo">Atrasados</div>
       <div class="kpi-valor">${qtd(t=>t.vencido)}</div>
       <div class="kpi-sub">${moeda(soma(t=>t.vencido))}</div></button>`;
@@ -218,6 +239,10 @@ function desenhar(){
     const k = b.dataset.kpi;
     if (k === "_venc7") { els("f-venc7").checked = !els("f-venc7").checked; }
     else if (k === "_atraso") { els("f-atrasados").checked = !els("f-atrasados").checked; }
+    // Clicar no quadrinho da dedutibilidade filtra por ela — o quadrinho é a
+    // pergunta ("quanto é dedutível?") e o clique é a resposta na lista.
+    else if (k === "_dedutivel") { F.dedut = F.dedut.has("DEDUTIVEL") ? new Set() : new Set(["DEDUTIVEL"]); montarFiltros(); }
+    else if (k === "_dedut_pendente") { F.dedut = F.dedut.has("PENDENTE") ? new Set() : new Set(["PENDENTE"]); montarFiltros(); }
     else { F.status = new Set([k]); carregar(); return; }
     desenhar();
   }));
@@ -228,6 +253,7 @@ function desenhar(){
   F.status.forEach(s => chips.push(["status", ROTULOS[s]||s, s]));
   F.obra.forEach(o => chips.push(["obra", o, o]));
   F.credor.forEach(c => chips.push(["credor", c, c]));
+  F.dedut.forEach(d => chips.push(["dedut", rotulo(d), d]));
   if (els("f-venc7").checked) chips.push(["venc7", "vence em 7 dias"]);
   if (els("f-atrasados").checked) chips.push(["atraso", "atrasados"]);
   els("chips").innerHTML = chips.map(([t,r,v]) =>
@@ -235,7 +261,7 @@ function desenhar(){
     + `<span class="resumo">${l.length} de <b>${TITULOS.length}</b> carregados</span>`;
   document.querySelectorAll("[data-chip]").forEach(b => b.addEventListener("click", () => {
     const t = b.dataset.chip, v = b.dataset.valor;
-    if (["status","obra","credor"].includes(t)) { F[t].delete(v); if(t==="status") return carregar(); }
+    if (["status","obra","credor","dedut"].includes(t)) { F[t].delete(v); if(t==="status") return carregar(); }
     if (t === "busca") els("f-busca").value = "";
     if (t === "venc7") els("f-venc7").checked = false;
     if (t === "atraso") els("f-atrasados").checked = false;
@@ -496,7 +522,7 @@ els("f-busca").addEventListener("input", () => { clearTimeout(deb); deb = setTim
 ["f-min","f-max","f-venc7","f-atrasados"].forEach(id => els(id).addEventListener("input", desenhar));
 els("btn-limpar").addEventListener("click", () => {
   F = {status: new Set(ABERTOS), obra: new Set(), credor: new Set(),
-       conta: new Set()};
+       conta: new Set(), dedut: new Set()};
   ["f-busca","f-min","f-max"].forEach(i => els(i).value = "");
   els("f-venc7").checked = els("f-atrasados").checked = false;
   carregar();

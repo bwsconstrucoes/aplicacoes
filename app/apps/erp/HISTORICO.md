@@ -912,6 +912,61 @@ precisa sair da frente das telas.
 foi o código e a estrutura do banco. A tela de saúde do sistema (na fila)
 existe justamente para trocar palpite por número.
 
+### Os documentos podem morar no Google Drive — 09/09/2026
+
+Decisão do dono, com a conta dele: o plano de banco é de 2 GB e a empresa já
+paga 2 TB de Drive no Workspace. Anexo — comprovante, nota, foto de medição —
+é o que mais cresce dentro do banco e o que menos precisa estar lá.
+
+**Nada muda para quem usa.** O documento continua sendo aberto pelo endereço do
+ERP, que confere permissão e escopo antes de entregar. **O link do Drive nunca
+vai para a tela** — se fosse, qualquer um com o endereço abriria holerite e
+comprovante bancário sem passar por login. Foi por isso que o jeito do
+`emissaonf` (que marca os PDFs como "qualquer pessoa com o link pode ver") NÃO
+foi copiado: dali se reaproveita a mecânica, não a permissão.
+
+**Vem desligado.** Em Configurações › "Onde ficam os documentos" o dono cola o
+endereço da pasta (pode ser o endereço inteiro, o sistema extrai o código),
+testa — o botão escreve um arquivo, lê de volta e apaga, que é a única prova
+que vale —, e só então liga. Sem pasta configurada, tudo segue como sempre foi.
+
+**Duas etapas, nunca na mesma transação:** primeiro o documento NOVO passa a ir
+para o Drive; depois o botão "mover documentos antigos" leva os antigos em
+lotes de 25, e **confere cada cópia no Drive antes de apagar do banco**. Cópia
+que não confere não apaga nada e ainda remove o arquivo ruim de lá.
+
+**Falha guardando, não perdendo.** Se o Drive estiver fora do ar na hora de
+anexar, o documento é guardado no banco assim mesmo. Perder o comprovante que a
+pessoa acabou de anexar seria o pior desfecho; ocupar um pouco de banco é o
+menor dos males, e o trabalho de mudança leva esse anexo depois.
+
+**O banco garante que o documento existe em algum lugar** (migração 043): anexo
+marcado como do Drive tem de ter o identificador do arquivo; anexo do banco tem
+de ter os bytes. Sem essa restrição, um defeito de código produziria anexo que
+não está em lugar nenhum — e ninguém descobriria antes de precisar dele.
+
+Provado com banco de verdade e um Drive dublado (13 casos): desligado não toca
+no Drive; ligado tira os bytes do banco; a leitura funciona pelos dois
+caminhos; Drive fora do ar guarda no banco; cópia que não confere não apaga;
+apagar o anexo apaga o arquivo lá; e o endereço colado da barra do navegador
+vira o código certo.
+
+⚠️ **Não foi testado contra o Google de verdade** — depende da pasta que o dono
+está criando. O botão "Testar a pasta" existe exatamente para isso, e é o
+primeiro passo quando a pasta existir.
+
+### A dedutibilidade aparece na tela dos títulos — 09/09/2026
+
+Pedido do dono: *"se estou analisando notas, vejo lá; se estou pelos títulos,
+tenho um título de fundo fixo, vejo por lá também"*. Este é o lado dos títulos:
+filtro próprio na barra da esquerda (Dedutível, Parcial, Indedutível, Pendente,
+com a contagem de cada um) e dois quadrinhos no topo — quanto do que está em
+tela é dedutível, e quanto ainda está por decidir. Clicar no quadrinho filtra a
+lista.
+
+O lado das NOTAS depende da tela de notas, que ainda não existe — ela é a do
+cruzamento, próxima da fila. A dedutibilidade entra nela quando ela nascer.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1063,10 +1118,17 @@ existe justamente para trocar palpite por número.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **APERTAR "Aplicar atualizações do banco" para a migração 042** (a trava
-   contra baixa em duplicidade), assim que o ramo entrar na `main`. Sem ela o
-   ERP sobe, mas anexar comprovante pela tela dá erro — a tabela da trava não
-   existe ainda. É o mesmo botão de sempre, em Configurações.
+21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 e 043**,
+   assim que o ramo entrar na `main`. A 042 é a trava contra baixa em
+   duplicidade; sem ela, anexar comprovante pela tela dá erro. A 043 abre
+   espaço para o documento morar no Drive; sem ela, anexar qualquer documento
+   dá erro. É o mesmo botão de sempre, em Configurações.
+
+23. **Criar a pasta do Drive e colar o endereço** em Configurações › "Onde
+   ficam os documentos", apertar "Testar a pasta" e só então ligar a chave.
+   Pasta num Drive compartilhado da empresa, com a conta de serviço do sistema
+   como editor. Enquanto isso não acontecer, tudo segue guardando no banco,
+   como sempre foi.
 
 22. **Apontar o cenário do Make** para o endereço de lote dos comprovantes. A
    senha (`ERP_COMPROVANTE_SECRET`) já está no Render; falta o Make usá-la.

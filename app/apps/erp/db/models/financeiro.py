@@ -156,6 +156,11 @@ class Anexo(Base):
     nome_arquivo: Mapped[str] = mapped_column(Text, nullable=False)
     dropbox_path: Mapped[Optional[str]] = mapped_column(Text)   # legado; conteúdo vive no banco
     conteudo: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
+    # ONDE OS BYTES ESTÃO: 'BANCO' (padrão de sempre) ou 'DRIVE' (migração 043).
+    # O banco garante que um dos dois esteja preenchido — anexo que não está em
+    # lugar nenhum seria descoberto só no dia em que alguém precisasse dele.
+    guardado_em: Mapped[str] = mapped_column(Text, nullable=False, default="BANCO")
+    drive_file_id: Mapped[Optional[str]] = mapped_column(Text)
     mime_type: Mapped[Optional[str]] = mapped_column(Text)
     tamanho_original: Mapped[Optional[int]] = mapped_column(BigInteger)
     comprimido: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

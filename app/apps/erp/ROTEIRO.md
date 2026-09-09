@@ -216,7 +216,7 @@ Nasceu da pergunta dele: *"e quando essa base de dados for crescendo? Como é
 que é a estratégia de manter isso rápido?"*. A resposta longa está no
 `HISTORICO.md`, seção "Velocidade: o que cresce e o que não cresce". A fila:
 
-- [ ] **ANEXOS SAEM DO BANCO E VÃO PARA O GOOGLE DRIVE.** Decidido pelo dono em
+- [x] **ANEXOS SAEM DO BANCO E VÃO PARA O GOOGLE DRIVE.** FEITO em 09/09/2026 (migração 043), desligado até o dono criar a pasta e colar o endereço. Decidido pelo dono em
       08/09/2026, com o motivo dele: o plano de banco é de 2 GB e ele já paga
       2 TB de Drive por pouco. É a peça que mais cresce em tamanho.
       Cuidados que NÃO podem ser esquecidos na hora de fazer:

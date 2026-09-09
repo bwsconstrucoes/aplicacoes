@@ -3809,18 +3809,24 @@ def api_anexos(entidade: str, entidade_id: int):
 @login_obrigatorio
 @permissao("ver_erp")
 def baixar_anexo(anexo_id: int):
-    """Serve o arquivo direto do banco."""
+    """Serve o arquivo — venha ele do banco ou do Google Drive.
+
+    QUEM ENTREGA O DOCUMENTO É ESTA ROTA, sempre. Mesmo com o arquivo morando
+    no Drive, o link do Drive não vai para a tela: é aqui que a permissão e o
+    escopo são conferidos, e link do Drive não passa por nenhum dos dois.
+    """
     from flask import Response
     from app.apps.erp.core.auth.permissoes import exigir_anexo_no_escopo
-    from app.apps.erp.core.documentos.armazenamento import obter
+    from app.apps.erp.core.documentos.armazenamento import conteudo_de, obter
     try:
         with get_session() as s:
             exigir_anexo_no_escopo(s, _usuario_logado(s), anexo_id)
             a = obter(s, anexo_id)
-            if not a.conteudo:
+            dados = conteudo_de(s, a)
+            if not dados:
                 return jsonify({"ok": False,
                                 "erro": "Anexo antigo sem conteúdo no banco."}), 404
-            return Response(bytes(a.conteudo), mimetype=a.mime_type or "application/octet-stream",
+            return Response(dados, mimetype=a.mime_type or "application/octet-stream",
                             headers={"Content-Disposition":
                                      f'inline; filename="{a.nome_arquivo}"'})
     except ErroValidacao as e:
@@ -3842,6 +3848,71 @@ def api_excluir_anexo(anexo_id: int):
         return jsonify({"ok": True})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+# ---------------------------------------------------------------------------
+# ONDE FICAM OS DOCUMENTOS — banco ou Google Drive
+#
+# É `configurar` porque muda onde o documento da empresa mora; e é `configurar`
+# também para MOVER, porque mover é operação que apaga bytes do banco depois de
+# conferir. Nada disso é coisa de quem só lança.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/anexos/armazenamento", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="configurar", POST="configurar")
+def api_anexos_armazenamento():
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.core.documentos import drive
+    from app.apps.erp.core.documentos.armazenamento import a_mover
+    from app.apps.erp.db.models.cadastros import Parametro
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "POST":
+                d = request.get_json(silent=True) or {}
+                def _guardar(chave, valor):
+                    linha = s.get(Parametro, chave)
+                    if linha is None:
+                        linha = Parametro(chave=chave, valor="")
+                        s.add(linha)
+                    linha.valor = valor
+                    linha.atualizado_por = usuario.id
+                _guardar(drive.CHAVE_PASTA, drive.id_da_pasta(d.get("pasta")))
+                _guardar(drive.CHAVE_IMPERSONAR, (d.get("impersonar") or "").strip())
+                _guardar(drive.CHAVE_LIGADO, "1" if d.get("ligado") else "0")
+                registrar_evento(s, "configuracao", 0, "ANEXO_ARMAZENAMENTO", {
+                    "pasta": drive.id_da_pasta(d.get("pasta")),
+                    "ligado": bool(d.get("ligado"))}, usuario.id)
+                s.commit()
+            return jsonify({"ok": True, "dados": {**drive.configuracao(s), **a_mover(s)}})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/anexos/armazenamento/testar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_anexos_testar():
+    from app.apps.erp.core.documentos import drive
+    with get_session() as s:
+        r = drive.testar(s)
+    if not r.get("ok"):
+        return jsonify({"ok": False, "erro": r.get("erro", "falhou")}), 400
+    return jsonify(r)
+
+
+@bp.route("/erp/api/anexos/armazenamento/mover", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_anexos_mover():
+    from app.apps.erp.core.documentos.armazenamento import mover_para_drive
+    try:
+        with get_session() as s:
+            r = mover_para_drive(s, limite=int(request.args.get("limite", 25)))
+            s.commit()
+        return jsonify({"ok": True, "dados": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/usuarios", methods=["GET", "POST"])

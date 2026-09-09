@@ -15,6 +15,7 @@
   <a class="subaba" href="#contas" data-ir="contas">Contas bancárias</a>
   <a class="subaba" href="#usuarios" data-ir="usuarios">Operadores</a>
   <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
+  <a class="subaba" href="#anexos" data-ir="anexos">Onde ficam os documentos</a>
   <a class="subaba" href="#manutencao" data-ir="manutencao">Banco e limpeza</a>
 </nav>
 
@@ -112,6 +113,43 @@
     <div><button class="btn secundario" id="btn-ia-teto">Salvar teto</button></div>
   </div>
   <div id="ia-painel" class="cartao-dica">carregando…</div>
+</div>
+
+{# ONDE FICAM OS DOCUMENTOS. Comprovante, nota e foto de medição são o que
+   mais cresce dentro do banco — e o plano de banco é pequeno, enquanto o
+   Drive da empresa é grande. Aqui o dono escolhe. O link do Drive nunca
+   aparece na tela: quem entrega o arquivo continua sendo o ERP, que confere
+   a permissão antes. #}
+<div class="cartao" id="bloco-anexos" data-secao="anexos">
+  <div class="cartao-cab"><h3>Onde ficam os documentos</h3>
+    <small>comprovantes, notas e fotos: dentro do banco ou no Google Drive da empresa</small></div>
+  <div id="anexos-estado" class="cartao-dica">carregando…</div>
+
+  <div class="form-grade" style="align-items:end; margin-top:12px">
+    <div class="campo" style="grid-column: span 2"><label>Pasta do Google Drive</label>
+      <input id="dr-pasta" placeholder="cole aqui o endereço da pasta, direto da barra do navegador">
+      <div class="dica">Crie a pasta num <b>Drive compartilhado</b> da empresa e dê acesso
+        de editor à conta de serviço do sistema. Pode colar o endereço inteiro — eu tiro
+        o que interessa.</div></div>
+    <div class="campo"><label>Agir como (opcional)</label>
+      <input id="dr-imp" placeholder="deixe vazio se for Drive compartilhado">
+      <div class="dica">Só preencha se a pasta estiver no Drive de uma pessoa.</div></div>
+  </div>
+  <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap">
+    <button class="btn secundario" id="btn-dr-salvar">Salvar pasta</button>
+    <button class="btn" id="btn-dr-testar">Testar a pasta</button>
+  </div>
+
+  <label class="opcao" style="margin-top:14px"><input type="checkbox" id="dr-ligado">
+    <span class="rotulo"><b>Guardar os documentos NOVOS no Drive</b> — os que já existem
+      continuam onde estão até você mandar mover</span></label>
+
+  <div style="margin-top:12px">
+    <button class="btn amarelo" id="btn-dr-mover">Mover documentos antigos para o Drive</button>
+    <div class="dica">Vai em lotes pequenos, e <b>confere cada arquivo no Drive antes de
+      apagar do banco</b>. Pode apertar várias vezes: ele continua de onde parou.</div>
+  </div>
+  <div id="dr-resultado"></div>
 </div>
 
 <div class="cartao" data-secao="usuarios">
@@ -922,7 +960,71 @@ els("btn-ia-teto") && els("btn-ia-teto").addEventListener("click", async () => {
   } catch(e){ aviso("ia-alerta", e.message, "erro"); }
 });
 
+// ---------------------------------------------------------------------------
+// ONDE FICAM OS DOCUMENTOS
+// ---------------------------------------------------------------------------
+async function carregarAnexos(){
+  const alvo = els("anexos-estado");
+  if (!alvo) return;
+  try {
+    const d = await api("/erp/api/anexos/armazenamento");
+    const c = d.dados;
+    els("dr-pasta").value = c.pasta || "";
+    els("dr-imp").value = c.impersonar || "";
+    els("dr-ligado").checked = !!c.ligado;
+    const linhas = [];
+    linhas.push(c.ligado
+      ? "<b>Documento novo está indo para o Google Drive.</b>"
+      : "<b>Documento novo está sendo guardado dentro do banco</b>, como sempre foi.");
+    linhas.push(`No banco: <b>${c.no_banco}</b> documento(s), ${c.mb_no_banco} MB.
+                 No Drive: <b>${c.no_drive}</b>.`);
+    if (!c.tem_credencial) linhas.push("⚠️ O servidor não tem a credencial do Google.");
+    else if (!c.pasta) linhas.push("Falta colar o endereço da pasta.");
+    alvo.innerHTML = linhas.join("<br>");
+  } catch(e){ alvo.innerHTML = `<div class="critica CRITICA">${e.message}</div>`; }
+}
+
+els("btn-dr-salvar") && els("btn-dr-salvar").addEventListener("click", async () => {
+  try {
+    await api("/erp/api/anexos/armazenamento", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({pasta: els("dr-pasta").value,
+                            impersonar: els("dr-imp").value,
+                            ligado: els("dr-ligado").checked})});
+    aviso("dr-resultado", "Guardado.", "ok");
+    carregarAnexos();
+  } catch(e){ aviso("dr-resultado", e.message, "erro"); }
+});
+
+els("dr-ligado") && els("dr-ligado").addEventListener("change", () =>
+  els("btn-dr-salvar").click());
+
+els("btn-dr-testar") && els("btn-dr-testar").addEventListener("click", async (ev) => {
+  const b = ev.target; b.disabled = true; b.textContent = "Testando…";
+  try {
+    const d = await api("/erp/api/anexos/armazenamento/testar", {method:"POST"});
+    aviso("dr-resultado", d.mensagem, "ok");
+  } catch(e){ aviso("dr-resultado", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Testar a pasta";
+});
+
+els("btn-dr-mover") && els("btn-dr-mover").addEventListener("click", async (ev) => {
+  const b = ev.target; b.disabled = true; b.textContent = "Movendo…";
+  try {
+    const d = await api("/erp/api/anexos/armazenamento/mover", {method:"POST"});
+    const r = d.dados;
+    const falhas = (r.falhas||[]).length
+      ? `<br>Não deu para mover ${r.falhas.length}: ${r.falhas.map(f=>`#${f.id} (${f.erro})`).join("; ")}`
+      : "";
+    aviso("dr-resultado", `${r.movidos} movido(s). Ainda no banco: ${r.no_banco}
+      (${r.mb_no_banco} MB).${falhas}`, r.movidos ? "ok" : "alerta");
+    carregarAnexos();
+  } catch(e){ aviso("dr-resultado", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Mover documentos antigos para o Drive";
+});
+
 carregar();
 carregarIA();
+carregarAnexos();
 </script>
 {% endblock %}
