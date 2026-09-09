@@ -259,16 +259,22 @@ Omie não dá conta disso.
       CONTRATO, dentro do quadro (média, mais rápida, mais lenta, e as que estão
       esperando há mais tempo). Falta o corte por OBRA e por ÓRGÃO numa tela
       só — o cálculo já aceita o filtro por obra.
-- [ ] 8. **REAJUSTE** (pedido em 09/09/2026): data-base no contrato — pode ser
-      a do orçamento OU a da proposta, muda por contrato —, previsão calculada
-      a cada medição pelo índice acumulado, e a previsão virando título a
-      receber quando o órgão autorizar. **O valor tem de ser editável**: o
-      sistema estima, quem fecha é o órgão.
-- [ ] 9. **Tabela do INCC dentro do sistema**, atualizada sozinha. O Banco
-      Central republica a série do INCC-DI no SGS, em API pública e gratuita
-      (série **192**) — evita depender do FGVDados, que é licenciado.
-      ✅ CONFIRMADO por ele em 09/09/2026: os contratos usam **INCC-DI**, que
-      é a série 192. Nenhum ajuste necessário.
+- [x] 8. **REAJUSTE** — FEITO em 09/09/2026 (migração 050). A data-base é campo
+      do contrato, com a origem escrita (orçamento, proposta, assinatura); o
+      direito nasce depois da periodicidade (12 meses por padrão, configurável);
+      a previsão é calculada pelo índice acumulado e vira título a receber com
+      valor EDITÁVEL, correlacionado à medição de origem. O previsto fica
+      guardado ao lado do aprovado, para a diferença aparecer.
+- [x] 9. **Tabela do INCC dentro do sistema** — FEITA em 09/09/2026. Em
+      Configurações › "Índices (INCC)": busca no Banco Central pelo botão
+      (série **192** do SGS, pública e gratuita — evita o FGVDados, que é
+      licenciado), lançamento à mão pelo boletim da FGV para o mês que ainda
+      não saiu, e a coleta NUNCA sobrescreve o que foi digitado.
+      ⚠️ **A primeira chamada de verdade só acontece no Render**: a saída para
+      a internet do ambiente de desenvolvimento é filtrada e bloqueia o
+      endereço do Banco Central. O caminho de erro foi exercitado (a tabela
+      continua intacta e a tela explica), mas o caminho de sucesso contra o
+      serviço real, não.
 
 **Feito em 09/09/2026, fora da ordem porque ele corrigiu/perguntou:**
 

@@ -4642,6 +4642,129 @@ def api_nota_emitida_cancelar(nota_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+# ---------------------------------------------------------------------------
+# REAJUSTE — a data-base do contrato, os índices e a previsão
+#
+# O índice normal é o INCC-DI, e a tabela é mantida pelo próprio sistema pela
+# série 192 do Banco Central. A coleta é pelo BOTÃO, nunca no start.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/indices")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_indices():
+    from app.apps.erp.core.indices import bcb
+    with get_session() as s:
+        return jsonify({"ok": True,
+                        "catalogo": bcb.listar_indices(),
+                        **bcb.listar(s, request.args.get("codigo") or bcb.PADRAO)})
+
+
+@bp.route("/erp/api/indices/atualizar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_indices_atualizar():
+    """Traz do Banco Central o que falta. Nunca sobrescreve linha lançada à mão."""
+    from app.apps.erp.core.indices import bcb
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            r = bcb.atualizar(s, (d.get("codigo") or bcb.PADRAO),
+                              usuario=_usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, "resumo": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/indices/lancar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_indices_lancar():
+    """O número do boletim da FGV, digitado — o INCC-DI do mês só sai lá pelo 25."""
+    from app.apps.erp.core.indices import bcb
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            bcb.lancar_manual(
+                s, codigo=(d.get("codigo") or bcb.PADRAO),
+                competencia=date.fromisoformat((d.get("competencia") or "") + "-01"
+                                               if len(d.get("competencia") or "") == 7
+                                               else (d.get("competencia") or "")),
+                variacao_pct=d.get("variacao_pct"),
+                usuario=_usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/contratos/<int:contrato_id>/reajuste")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_contrato_reajuste(contrato_id: int):
+    """A previsão de reajuste de cada medição do contrato, e a soma."""
+    from app.apps.erp.core.indices import reajuste as svc
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, **svc.previsao_do_contrato(s, contrato_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+@bp.route("/erp/api/contratos/<int:contrato_id>/reajuste", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_contrato_reajuste_config(contrato_id: int):
+    """A data-base do contrato: do orçamento ou da proposta. Muda por contrato."""
+    from app.apps.erp.core.indices import reajuste as svc
+    from app.apps.erp.db.models.cadastros import Contrato
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            c = s.get(Contrato, contrato_id)
+            if c is None:
+                raise ErroValidacao("Contrato não encontrado.")
+            if d.get("data_base"):
+                c.data_base = date.fromisoformat(d["data_base"])
+            elif "data_base" in d:
+                c.data_base = None
+            if "data_base_origem" in d:
+                c.data_base_origem = (d.get("data_base_origem") or "").strip().upper() or None
+            if d.get("indice_reajuste") is not None:
+                c.indice_reajuste = (d.get("indice_reajuste") or "").strip().upper() or None
+            if d.get("reajuste_meses"):
+                c.reajuste_meses = int(d["reajuste_meses"])
+            s.flush()
+            saida = svc.previsao_do_contrato(s, contrato_id)
+            s.commit()
+        return jsonify({"ok": True, **saida})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/medicoes/<int:titulo_id>/reajuste", methods=["POST"])
+@login_obrigatorio
+@permissao("receber")
+def api_medicao_gerar_reajuste(titulo_id: int):
+    """A previsão vira título a receber — com o valor EDITÁVEL, porque quem
+    fecha o número é o órgão, não o sistema."""
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.indices import reajuste as svc
+    from app.apps.erp.core.titulos import medicao as svc_med
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            novo = svc.gerar_titulo(s, titulo_id, valor=d.get("valor"),
+                                    numero_medicao=(d.get("numero_medicao") or ""),
+                                    usuario=_usuario_logado(s))
+            linha = svc_med.ler(s, novo)
+            s.commit()
+        return jsonify({"ok": True, "medicao": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/usuarios", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao("gerir_usuarios")

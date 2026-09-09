@@ -427,6 +427,12 @@ class Contrato(Base):
     retencao_contratual_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), default=0)
     arquivo_anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="VIGENTE")
+    # Reajuste (migração 050). A data-base é CAMPO porque muda por contrato:
+    # pode ser a do orçamento ou a da proposta da licitação, e fixar uma das
+    # duas no código erraria metade dos contratos com cara de certo.
+    data_base: Mapped[Optional[date]] = mapped_column(Date)
+    data_base_origem: Mapped[Optional[str]] = mapped_column(Text)
+    reajuste_meses: Mapped[Optional[int]] = mapped_column(Integer)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -1140,4 +1146,27 @@ class EnvioEmail(Base):
     enviado_por: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class IndiceEconomico(Base):
+    """Um índice publicado, mês a mês (migração 050).
+
+    Guarda a VARIAÇÃO MENSAL em porcento, que é como o Banco Central publica no
+    SGS — o INCC-DI é a série 192. O número-índice se reconstrói acumulando:
+    quem guarda variação produz o acumulado de qualquer período; quem guarda só
+    o acumulado não consegue voltar.
+
+    A `fonte` distingue o que veio do Banco Central do que alguém digitou. Não
+    é burocracia: o INCC-DI do mês só sai por volta do dia 25, e quando o
+    serviço estiver fora do ar alguém precisa poder lançar o número do boletim
+    da FGV — mas o relatório tem de deixar claro qual linha é qual.
+    """
+    __tablename__ = "indices_economicos"
+
+    codigo: Mapped[str] = mapped_column(Text, primary_key=True)
+    competencia: Mapped[date] = mapped_column(Date, primary_key=True)
+    variacao_pct: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    fonte: Mapped[str] = mapped_column(Text, nullable=False, default="BCB-SGS")
+    coletado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())

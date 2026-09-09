@@ -1533,6 +1533,95 @@ sua coluna.
 inscrição municipal, credenciamento, token e códigos de serviço da empresa que
 vai operar em Petrolina. Nada disso trava o manual.
 
+### O reajuste, e a tabela do INCC que o sistema mantém sozinho — 09/09/2026
+
+Migração **050**. Pedido dele: *"dentro do cadastro do contrato a gente precisa
+fazer alguma configuração que permita prever o recebimento de reajustes."*
+
+**A data-base é CAMPO, e não regra — porque muda por contrato.** Ele foi
+explícito: pode ser a do orçamento OU a da proposta da licitação. Fixar uma das
+duas no código erraria metade dos contratos, e erraria num sentido perigoso: o
+valor sairia calculado, com cara de certo, e ninguém confere um número que o
+computador deu. Agora o contrato diz qual data é, e **de onde ela veio** — que
+é a primeira coisa que o órgão pergunta quando contesta.
+
+Contrato sem data-base própria **herda a da obra**, e a tela diz que herdou.
+Sem isso, todo contrato antigo apareceria como "não configurado" mesmo com o
+dado já no sistema.
+
+**O direito nasce depois da periodicidade** (12 meses, como ele descreveu, e
+configurável). Antes disso o sistema recusa dizendo quantos meses faltam, em
+vez de calcular um valor que ainda não é devido.
+
+**A conta acumula mês a mês, e começa no mês SEGUINTE à data-base**: a
+data-base é o ponto zero, o mês dela já está dentro do preço contratado, e
+incluí-lo cobraria um mês a mais. Dá para conferir a diferença: 1% ao mês por
+doze meses é 12,68%, não 12% — e é a diferença entre os dois que aparece na
+conta do contrato.
+
+**Mês faltando na tabela vira RECUSA, não número menor.** Se a série do índice
+não cobre o período inteiro, o sistema diz quais meses faltam e manda buscar ou
+lançar. Calcular com metade da série daria um valor a menos que passaria
+despercebido — que é justamente o erro que ninguém pega.
+
+**A conta sai escrita por extenso**, em português: *"INCC-DI acumulado de
+02/2025 a 01/2026 (12 meses) = 12,6825%. Reajuste = 100.000,00 × 12,6825% =
+12.682,50."* É o que se manda para o órgão quando ele pergunta de onde saiu o
+número.
+
+**O valor é EDITÁVEL na hora de virar título**, porque ele avisou: *"pode ser
+que o órgão tenha algum entendimento e mude algum centavo"*. O sistema estima;
+quem fecha é o órgão. O título guarda o **previsto** ao lado do **lançado**,
+então a diferença fica visível em vez de sumir. E o reajuste **não pode ser
+gerado duas vezes** — dois cliques cobrariam o reajuste em dobro.
+
+### A tabela do INCC, mantida pelo próprio sistema
+
+Ele pediu: *"já coloque aí dentro da programação do sistema ele fazer essa
+busca, atualizar a tabela e permitir todos esses cálculos."*
+
+Está em **Configurações › "Índices (INCC)"**. O INCC é calculado pela FGV, e o
+serviço de dados dela é licenciado — contrato, chave e conta a pagar. O **Banco
+Central republica a série de graça** no SGS, em API pública e sem cadastro: o
+INCC-DI é a série **192**, que é a que ele confirmou como usada nos contratos
+da BWS. (O INCC tem três versões — DI, M e 10 —, com apurações diferentes;
+usar a errada dá valor errado com cara de certo, então a série está escrita no
+código com o nome por extenso.)
+
+Três decisões que valem registro:
+
+- **A busca é pelo BOTÃO, nunca no start do serviço** — mesma regra das
+  migrações, e pelo mesmo motivo: uma chamada externa no boot derrubaria o
+  monorepo inteiro se o Banco Central estivesse fora do ar.
+- **A coleta nunca sobrescreve o que foi lançado à mão.** O INCC-DI do mês só
+  sai por volta do dia 25, e num fechamento apertado alguém vai digitar o
+  número do boletim da FGV. Se a coleta passasse por cima, apagaria a correção
+  sem avisar ninguém. A tabela mostra qual linha é qual.
+- **Guarda a variação do mês, não o acumulado.** Quem guarda variação produz o
+  acumulado de qualquer período; quem guarda acumulado não consegue voltar — e
+  reajuste é discussão com o órgão, então a conta tem de ser reproduzível dois
+  anos depois.
+
+⚠️ **A primeira chamada de verdade ao Banco Central só acontece no Render.** A
+saída para a internet do ambiente onde o código foi escrito é filtrada e
+bloqueia o endereço. O que ficou provado aqui foi o caminho do ERRO — a tabela
+continua intacta e a tela explica em português o que houve — e a gravação, com
+um dublê no lugar da rede. O caminho de sucesso contra o serviço real, não.
+
+**Dois defeitos corrigidos no caminho**, os dois de leitura: o quadro do
+contrato mostrava **"A receber: −R$ 465.000,00"** quando entrava dinheiro sem
+nota emitida. Isso não é dívida ao contrário, é outra coisa — e das que a
+contabilidade precisa ver. Agora "a receber" nunca é negativo e apareceu um
+quadrinho **"Recebido sem nota"**. E o erro do Banco Central despejava dez
+linhas de traçado técnico na tela; agora o detalhe vai para o registro e a
+pessoa lê uma frase.
+
+**Provado:** 25 testes com banco de verdade (`tests/test_reajuste_banco.py`) e
+o caminho inteiro num navegador — informar a data-base, ver a previsão do
+contrato, gerar o reajuste de uma medição com valor editado, ver o título
+nascer correlacionado e o quadro somar certo, lançar um mês do índice à mão, e
+tentar buscar no Banco Central com a rede bloqueada.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1688,7 +1777,7 @@ vai operar em Petrolina. Nada disso trava o manual.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 049**,
+21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 050**,
    assim que o ramo entrar na `main`. A 042 é a trava contra baixa em
    duplicidade; sem ela, anexar comprovante pela tela dá erro. A 043 abre
    espaço para o documento morar no Drive; sem ela, anexar qualquer documento
@@ -1696,8 +1785,9 @@ vai operar em Petrolina. Nada disso trava o manual.
    a 046 os blocos, e a 047 traz a chave Pix e os dados de emissão por
    empresa, a 048 o controle da numeração das notas e a 049 o tipo da medição,
    a correlação do reajuste e o protocolo; sem elas as telas de Notas fiscais,
-   Arquivo, Configurações, Empresas e Contratos e medições não carregam. É o
-   mesmo botão de sempre, em Configurações.
+   Arquivo, Configurações, Empresas e Contratos e medições não carregam. A 050
+   traz a data-base do reajuste e a tabela do INCC. É o mesmo botão de sempre,
+   em Configurações.
 
 23. **Criar a pasta do Drive e colar o endereço** em Configurações › "Onde
    ficam os documentos", apertar "Testar a pasta" e só então ligar a chave.

@@ -133,7 +133,13 @@ def quadro(s: Session, contrato_id: int) -> dict[str, Any]:
             "reajuste": _f(de_reajuste),
             "faturado": _f(faturado),
             "recebido": _f(recebido),
-            "a_receber": _f(faturado - recebido),
+            # "A receber" nunca é negativo: o que passa do faturado NÃO é uma
+            # dívida ao contrário, é dinheiro que entrou sem nota emitida —
+            # outra coisa, e das que a contabilidade precisa ver. Mostrar
+            # "-465.000 a receber" seria uma frase sem sentido no lugar de um
+            # alerta fiscal.
+            "a_receber": _f(max(faturado - recebido, Decimal(0))),
+            "recebido_sem_nota": _f(max(recebido - faturado, Decimal(0))),
             "saldo": _f(vigente - (medido - de_reajuste)),
             "medido_pct": (round(float((medido - de_reajuste) / vigente * 100), 1)
                            if vigente else None),

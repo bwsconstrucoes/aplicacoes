@@ -61,6 +61,7 @@
 
   <div class="kpis kpis-largos" id="kpis"></div>
   <div id="pendencias"></div>
+  <div id="reajuste"></div>
 
   <div class="tabela-wrap">
     <div class="tabela-barra"><span class="resumo" id="resumo-medicoes"></span></div>
@@ -92,7 +93,8 @@
 <script>
 const PODE_MEXER = {{ 'true' if pode.receber else 'false' }};
 const PODE_EMITIR = {{ 'true' if pode.emitir_nota else 'false' }};
-let CONTRATOS = [], QUADRO = null, TIPOS = [];
+const PODE_CONFIGURAR = {{ 'true' if pode.configurar else 'false' }};
+let CONTRATOS = [], QUADRO = null, TIPOS = [], REAJUSTE = null;
 
 // -------------------------------------------------------------------------
 // A lista de contratos
@@ -159,6 +161,8 @@ function desenharLista(){
 async function abrirQuadro(id){
   try {
     QUADRO = await api(`/erp/api/contratos/${id}/quadro`);
+    try { REAJUSTE = await api(`/erp/api/contratos/${id}/reajuste`); }
+    catch(err) { REAJUSTE = null; }
     els("lado-lista").classList.add("oculto");
     els("lado-quadro").classList.remove("oculto");
     desenharQuadro();
@@ -170,6 +174,14 @@ function voltar(){
   QUADRO = null;
   els("lado-quadro").classList.add("oculto");
   els("lado-lista").classList.remove("oculto");
+}
+
+// O botão só aparece na medição que TEM direito e ainda não gerou. Oferecer
+// onde não dá é convidar para um erro que o servidor recusa depois.
+function podeReajustar(linha){
+  if (!REAJUSTE || linha.e_reajuste) return false;
+  const p = REAJUSTE.medicoes.find(m => m.titulo_id === linha.titulo_id);
+  return !!(p && p.pode && !p.ja_gerado);
 }
 
 function desenharQuadro(){
@@ -198,6 +210,10 @@ function desenharQuadro(){
     <div class="kpi estatico vermelho"><div class="kpi-rotulo">A receber</div>
       <div class="kpi-valor">${moeda(t.a_receber)}</div>
       <div class="kpi-sub">faturado e não entrou</div></div>
+    ${t.recebido_sem_nota ? `<div class="kpi estatico roxo">
+      <div class="kpi-rotulo">Recebido sem nota</div>
+      <div class="kpi-valor">${moeda(t.recebido_sem_nota)}</div>
+      <div class="kpi-sub">entrou e ainda não foi faturado</div></div>` : ""}
     <div class="kpi estatico"><div class="kpi-rotulo">Saldo a medir</div>
       <div class="kpi-valor">${moeda(t.saldo)}</div>
       <div class="kpi-sub">${t.medido_pct === null ? "" : t.medido_pct + "% executado"}</div></div>`;
@@ -234,7 +250,9 @@ function desenharQuadro(){
       <td>${PODE_MEXER ? `
         <button class="btn secundario" data-tipo="${l.titulo_id}">Tipo</button>
         <button class="btn secundario" data-protocolo="${l.titulo_id}">Protocolo</button>` : ""}
-        ${PODE_EMITIR ? `<button class="btn" data-emitir="${l.titulo_id}">Emitir nota</button>` : ""}</td>
+        ${PODE_EMITIR ? `<button class="btn" data-emitir="${l.titulo_id}">Emitir nota</button>` : ""}
+        ${PODE_MEXER && podeReajustar(l) ? `<button class="btn amarelo"
+           data-reajuste="${l.titulo_id}">Gerar reajuste</button>` : ""}</td>
     </tr>`).join("");
 
   document.querySelectorAll("[data-tipo]").forEach(b =>
@@ -243,6 +261,10 @@ function desenharQuadro(){
     b.addEventListener("click", () => abrirProtocolo(Number(b.dataset.protocolo))));
   document.querySelectorAll("[data-emitir]").forEach(b =>
     b.addEventListener("click", () => abrirEmissao(Number(b.dataset.emitir))));
+  document.querySelectorAll("[data-reajuste]").forEach(b =>
+    b.addEventListener("click", () => gerarReajuste(Number(b.dataset.reajuste))));
+
+  desenharReajuste();
 
   const tr = QUADRO.tempo_de_recebimento;
   els("tempo").innerHTML = tr.recebidas
@@ -320,6 +342,119 @@ async function abrirProtocolo(id){
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({numero: r.numero, em: r.em})});
     aviso("mensagem", "Protocolo registrado.", "ok");
+    abrirQuadro(QUADRO.contrato.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// -------------------------------------------------------------------------
+// O REAJUSTE
+//
+// A regra, como o dono descreveu: o índice é o INCC, o direito nasce doze
+// meses depois da data-base, e QUAL data-base vale muda por contrato — pode
+// ser a do orçamento, pode ser a da proposta. Por isso é campo, não regra.
+//
+// O sistema ESTIMA; quem fecha o valor é o órgão ("pode ser que o órgão tenha
+// algum entendimento e mude algum centavo"). Daí o valor ser editável na hora
+// de gerar o título, e o previsto ficar guardado do lado.
+// -------------------------------------------------------------------------
+const ORIGENS_DATA_BASE = [
+  {valor: "", rotulo: "— não informada —"},
+  {valor: "ORCAMENTO", rotulo: "Data-base do orçamento"},
+  {valor: "PROPOSTA", rotulo: "Data da proposta da licitação"},
+  {valor: "ASSINATURA", rotulo: "Data da assinatura do contrato"},
+  {valor: "OUTRA", rotulo: "Outra"},
+];
+
+function desenharReajuste(){
+  if (!REAJUSTE) { els("reajuste").innerHTML = ""; return; }
+  const c = REAJUSTE.configuracao;
+  const podeGerar = REAJUSTE.medicoes.filter(m => m.pode && !m.ja_gerado);
+  const travadas = REAJUSTE.medicoes.filter(m => !m.pode);
+
+  els("reajuste").innerHTML = `
+    <div class="aviso ${c.configurado ? (podeGerar.length ? "alerta" : "info") : "info"}"
+         style="margin-bottom:14px">
+      <b>Reajuste</b> —
+      ${c.configurado
+        ? `${escapar(c.indice)}, data-base ${dataBR(c.data_base)}` +
+          `${c.data_base_origem ? " (" + escapar(rotulo(c.data_base_origem)) + ")" : ""}` +
+          `${c.veio_de === "obra" ? " <small>— herdada do cadastro da obra</small>" : ""}` +
+          `, direito a cada ${c.meses} meses.`
+        : "este contrato ainda não tem data-base. Sem ela não dá para calcular nada."}
+      ${podeGerar.length
+        ? `<br><b>${moeda(REAJUSTE.a_gerar)}</b> de reajuste a gerar, nas medições
+           ${REAJUSTE.medicoes_a_gerar.map(escapar).join(", ")}.`
+        : (c.configurado ? "<br>Nada a gerar agora." : "")}
+      ${travadas.length
+        ? `<br><small>${travadas.length} medição(ões) sem previsão:
+           ${escapar(travadas[0].motivo)}</small>` : ""}
+      ${PODE_CONFIGURAR
+        ? `<br><button class="link-btn" id="btn-data-base" style="padding-left:0">
+             ${c.configurado ? "Mudar a data-base" : "Informar a data-base"}</button>`
+        : ""}
+    </div>`;
+  const b = els("btn-data-base");
+  if (b) b.addEventListener("click", configurarDataBase);
+}
+
+function previsaoDe(id){
+  return REAJUSTE ? REAJUSTE.medicoes.find(m => m.titulo_id === id) : null;
+}
+
+async function configurarDataBase(){
+  const c = REAJUSTE.configuracao;
+  const r = await perguntar({
+    titulo: "Data-base do reajuste",
+    aviso: "Qual data vale muda por contrato: pode ser a do orçamento ou a da " +
+           "proposta da licitação. É dela que a conta parte, e é a primeira " +
+           "coisa que o órgão pergunta quando contesta o valor.",
+    campos: [
+      {nome: "data_base", rotulo: "Data-base", tipo: "date",
+       valor: c.data_base || ""},
+      {nome: "data_base_origem", rotulo: "Essa data é de quê?", tipo: "select",
+       valor: c.data_base_origem || "", opcoes: ORIGENS_DATA_BASE},
+      {nome: "indice_reajuste", rotulo: "Índice", valor: c.indice || "INCC-DI",
+       dica: "O usual em obra é o INCC-DI."},
+      {nome: "reajuste_meses", rotulo: "Direito a cada quantos meses",
+       tipo: "number", valor: String(c.meses || 12)},
+    ],
+    textoOk: "Salvar",
+  });
+  if (!r) return;
+  try {
+    REAJUSTE = await api(`/erp/api/contratos/${QUADRO.contrato.id}/reajuste`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(r)});
+    aviso("mensagem", "Data-base registrada.", "ok");
+    desenharReajuste();
+    desenharQuadro();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function gerarReajuste(id){
+  const p = previsaoDe(id);
+  if (!p) return;
+  if (!p.pode) return aviso("mensagem", p.motivo, "alerta");
+  const r = await perguntar({
+    titulo: `Reajuste da medição ${escapar(p.medicao || "")}`,
+    aviso: `${escapar(p.explicacao)}  —  O valor é uma ESTIMATIVA: quem fecha é ` +
+           `o órgão, e o que você digitar aqui é o que vale. O previsto fica ` +
+           `guardado do lado, para a diferença aparecer.`,
+    campos: [
+      {nome: "valor", rotulo: "Valor do reajuste", tipo: "number",
+       valor: String(p.valor), obrigatorio: true},
+      {nome: "numero_medicao", rotulo: "Número desta medição",
+       valor: (p.medicao || "") + "R",
+       dica: "Há órgão que numera o reajuste em sequência — aí é 3, não 1R."},
+    ],
+    textoOk: "Gerar o título",
+  });
+  if (!r) return;
+  try {
+    await api(`/erp/api/medicoes/${id}/reajuste`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(r)});
+    aviso("mensagem", "Título de reajuste gerado.", "ok");
     abrirQuadro(QUADRO.contrato.id);
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }

@@ -222,6 +222,14 @@ class Titulo(Base):
         BigInteger, ForeignKey("titulos.id"))
     protocolo_numero: Mapped[Optional[str]] = mapped_column(Text)
     protocolo_em: Mapped[Optional[date]] = mapped_column(Date)
+    # Como o reajuste foi calculado (migração 050). Um número solto não se
+    # defende: guardando a data-base, o mês de referência e o fator, o sistema
+    # mostra a conta inteira dois anos depois — que é quando a pergunta vem.
+    reajuste_indice: Mapped[Optional[str]] = mapped_column(Text)
+    reajuste_data_base: Mapped[Optional[date]] = mapped_column(Date)
+    reajuste_ate: Mapped[Optional[date]] = mapped_column(Date)
+    reajuste_fator: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 8))
+    reajuste_previsto: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     periodo_inicio: Mapped[Optional[date]] = mapped_column(Date)
     periodo_fim: Mapped[Optional[date]] = mapped_column(Date)
     notas_fiscais: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)

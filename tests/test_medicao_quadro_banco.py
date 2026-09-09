@@ -359,3 +359,18 @@ def test_a_lista_e_o_quadro_contam_a_mesma_coisa(cenario):
     assert daqui["medido"] == tot["medido"] == 321000.00
     assert daqui["reajuste"] == tot["reajuste"] == 21000.00
     assert daqui["vigente"] == tot["vigente"]
+
+
+def test_a_receber_nunca_e_negativo(cenario):
+    """Dinheiro que entrou além do faturado não é dívida ao contrário: é
+    recebimento sem nota emitida — outra coisa, e das que a contabilidade
+    precisa ver. "-R$ 465.000,00 a receber" é frase sem sentido."""
+    s = cenario["s"]
+    t = _medicao(cenario, "1", valor="100000.00")
+    _receber(cenario, t, valor="100000.00")          # recebeu, e nenhuma nota
+
+    tot = svc_quadro.quadro(s, cenario["contrato"].id)["totais"]
+    assert tot["faturado"] == 0.0
+    assert tot["recebido"] == 100000.00
+    assert tot["a_receber"] == 0.0
+    assert tot["recebido_sem_nota"] == 100000.00

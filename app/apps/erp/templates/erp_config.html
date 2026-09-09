@@ -16,6 +16,7 @@
   <a class="subaba" href="#usuarios" data-ir="usuarios">Operadores</a>
   <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
   <a class="subaba" href="#anexos" data-ir="anexos">Onde ficam os documentos</a>
+  <a class="subaba" href="#indices" data-ir="indices">Índices (INCC)</a>
   <a class="subaba" href="#manutencao" data-ir="manutencao">Banco e limpeza</a>
 </nav>
 
@@ -156,6 +157,41 @@
       apagar do banco</b>. Pode apertar várias vezes: ele continua de onde parou.</div>
   </div>
   <div id="dr-resultado"></div>
+</div>
+
+{# A TABELA DOS ÍNDICES. O reajuste dos contratos usa o INCC-DI, e a série é
+   republicada pelo Banco Central de graça (série 192 do SGS). A busca é pelo
+   BOTÃO, nunca no start do serviço — mesma regra das migrações. O lançamento à
+   mão existe porque o INCC-DI do mês só sai por volta do dia 25. #}
+<div class="cartao" id="bloco-indices" data-secao="indices">
+  <div class="cartao-cab"><h3>Índices econômicos</h3>
+    <small>o INCC que reajusta os contratos, buscado no Banco Central</small></div>
+  <div id="ind-estado" class="cartao-dica">carregando…</div>
+
+  <div class="form-grade" style="align-items:end; margin-top:12px">
+    <div class="campo"><label>Índice</label>
+      <select id="ind-codigo" data-sem-busca></select></div>
+    <div><button class="btn" id="btn-ind-atualizar">Buscar no Banco Central</button></div>
+  </div>
+  <div class="dica" style="margin-top:6px">Traz só os meses que faltam, e
+    <b>nunca apaga o que foi lançado à mão</b>.</div>
+
+  <div class="form-grade" style="align-items:end; margin-top:14px">
+    <div class="campo"><label>Mês</label>
+      <input id="ind-mes" type="month"></div>
+    <div class="campo"><label>Variação no mês (%)</label>
+      <input id="ind-valor" inputmode="decimal" placeholder="ex.: 0,42"></div>
+    <div><button class="btn secundario" id="btn-ind-lancar">Lançar à mão</button></div>
+  </div>
+  <div class="dica" style="margin-top:6px">Use o número do boletim da FGV quando o
+    mês ainda não estiver no Banco Central. A linha fica marcada como manual.</div>
+
+  <div id="ind-resultado"></div>
+  <div class="tabela-rolagem" style="margin-top:12px; max-height:340px">
+    <table><thead><tr><th>Mês</th><th class="direita">Variação</th>
+      <th>Fonte</th><th>Coletado em</th></tr></thead>
+      <tbody id="ind-corpo"></tbody></table>
+  </div>
 </div>
 
 <div class="cartao" data-secao="usuarios">
@@ -1086,5 +1122,74 @@ carregar();
 carregarIA();
 carregarAnexos();
 carregarContasPix();
+
+// --------------------------------------------------------------- índices
+// O INCC-DI é a série 192 do SGS do Banco Central — pública, sem chave. A
+// FGV é quem calcula, mas o serviço de dados dela é licenciado.
+async function carregarIndices(){
+  const sel = els("ind-codigo");
+  try {
+    const d = await api("/erp/api/indices?codigo=" + (sel.value || "INCC-DI"));
+    if (!sel.options.length) {
+      sel.innerHTML = d.catalogo.map(i =>
+        `<option value="${i.codigo}">${escapar(i.nome)}</option>`).join("");
+      sel.value = d.codigo;
+    }
+    els("ind-estado").innerHTML = d.meses.length
+      ? `<b>${escapar(d.nome)}</b> — ${d.meses.length} mês(es) guardados,
+         o mais recente é ${escapar(d.ultimo.slice(5, 7) + "/" + d.ultimo.slice(0, 4))}.
+         ${d.em_dia ? "A tabela está em dia."
+                    : "<b>A tabela está atrasada</b> — busque no Banco Central."}`
+      : `<b>${escapar(d.nome)}</b> — nenhum mês guardado ainda.
+         Aperte "Buscar no Banco Central" para trazer a série.`;
+    els("ind-corpo").innerHTML = d.meses.map(m => `
+      <tr><td>${escapar(m.competencia.slice(5, 7) + "/" + m.competencia.slice(0, 4))}</td>
+        <td class="direita mono">${numero(m.variacao_pct)}%</td>
+        <td>${m.fonte === "MANUAL"
+              ? '<span class="selo aguardando">lançado à mão</span>'
+              : '<span class="selo outro">Banco Central</span>'}</td>
+        <td>${momentoBR(m.coletado_em)}</td></tr>`).join("");
+  } catch(e){
+    els("ind-estado").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+}
+
+async function atualizarIndices(){
+  const b = els("btn-ind-atualizar");
+  b.disabled = true; b.textContent = "Buscando…";
+  try {
+    const d = await api("/erp/api/indices/atualizar", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({codigo: els("ind-codigo").value})});
+    const r = d.resumo;
+    aviso("ind-resultado", `Pronto: ${r.novos} mês(es) novo(s),
+      ${r.atualizados} revisado(s) pelo Banco Central${r.preservados_manuais
+        ? `, ${r.preservados_manuais} preservado(s) por terem sido lançados à mão`
+        : ""}.`, "ok");
+    carregarIndices();
+  } catch(e){ aviso("ind-resultado", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Buscar no Banco Central";
+}
+
+async function lancarIndice(){
+  if (!els("ind-mes").value || !els("ind-valor").value.trim()) {
+    return aviso("ind-resultado", "Informe o mês e a variação.", "alerta");
+  }
+  try {
+    await api("/erp/api/indices/lancar", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({codigo: els("ind-codigo").value,
+                            competencia: els("ind-mes").value,
+                            variacao_pct: els("ind-valor").value.replace(",", ".")})});
+    els("ind-valor").value = "";
+    aviso("ind-resultado", "Mês lançado.", "ok");
+    carregarIndices();
+  } catch(e){ aviso("ind-resultado", e.message, "erro"); }
+}
+
+els("btn-ind-atualizar").addEventListener("click", atualizarIndices);
+els("btn-ind-lancar").addEventListener("click", lancarIndice);
+els("ind-codigo").addEventListener("change", carregarIndices);
+carregarIndices();
 </script>
 {% endblock %}

@@ -361,6 +361,7 @@ financeiro por um campo em branco.
 ---
 
 ## 7-C. O REAJUSTE — pedido dele em 09/09/2026
+### ✅ CONSTRUÍDO em 09/09/2026 (migração 050) — ver `HISTORICO.md`
 
 Palavras dele: *"dentro do cadastro do contrato a gente precisa fazer alguma
 configuração que permita prever o recebimento de reajustes."*
