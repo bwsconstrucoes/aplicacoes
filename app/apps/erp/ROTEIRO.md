@@ -130,6 +130,8 @@
 - [ ] **Encadeamento**: obra → cadastro da obra; conta → plano; credor →
       cadastro; compra → pedido
 - [ ] **Agenda do ERP**: calendário de obrigações com alerta para não esquecer
+      — QUATRO coisas já dependem dela: reajuste de obra, conferência mensal de
+      locação, certificado digital vencendo e agora vencimento de certidão
 - [ ] **BeeVale**: geração das informações (existe no spsbd)
 - [ ] **Auditoria**: as checagens do spsbd que ainda não vieram
 - [ ] **Ratear**: rateio por categoria (rateio por obra já funciona no lançamento)
@@ -209,6 +211,27 @@
       lembrar de: (1) definir `EL_NFSE_TOKEN` na Environment do Render, senão o
       script de consulta de NFS-e para; (2) apertar "Aplicar atualizações do
       banco" em Configurações — juntar o código NÃO aplica a migração
+
+### Gestão de documentos da empresa — pedida pelo dono em 09/09/2026
+
+Especificação inteira (taxonomia, nomenclatura, blocos, permissão) em
+`GESTAO_DOCUMENTOS.md`. O resumo do pedido, nas palavras dele: *"um ambiente
+onde eu pudesse simplesmente jogar esse documento, ele fosse interpretado,
+lido, e a partir dali categorizado, renomeado e salvo"*.
+
+- [ ] 1. **Catálogo e arquivo**: tipos, donos, validade, nome padronizado.
+- [ ] 2. **Tela de gestão**: filtros por tipo/dono/obra/competência/validade,
+      busca e download.
+- [ ] 3. **Leitura por IA** sugerindo tipo, dono, datas e nome — a pessoa
+      confirma. Reusa o leitor que já lê nota e comprovante.
+- [ ] 4. **Blocos** (FISCAL, HABILITACAO, CADASTRO-FORNECEDOR, MEDICAO, OBRA)
+      em `.zip`, **com a lista do que está faltando dentro**.
+- [ ] 5. **Busca dentro do texto** do documento (o texto é extraído na entrada,
+      porque a leitura já acontece — reprocessar depois é que sairia caro).
+- [ ] 6. **Avisos de vencimento** de certidão e documento, na Agenda.
+- [ ] 7. **Botões nos outros lugares**: baixar a documentação fiscal da
+      competência direto do título, o bloco da obra na tela da obra, o bloco
+      cadastral em Suprimentos.
 
 ### Notas fiscais — o cruzamento
 
