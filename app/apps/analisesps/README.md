@@ -287,6 +287,34 @@ caractere só. Por isso todo texto passa por `_texto()` antes de ir para a
 página. Um teste confere que "Solicitação" continua com cedilha e que o
 travessão vira hífen, não "?".
 
+## Quem entra, e onde fica o que é de cada um
+
+Na entrada escolhe-se o nome numa **lista** (MARCELO, THIAGO, KARLA, RAFAEL,
+editável em Configurações). Não é cadastro de usuário: as quatro pessoas usam a
+**mesma senha**, e é a senha que decide o que se pode fazer. O nome só diz de
+quem é o lote, de quem são os filtros e quem alterou o quê.
+
+Era campo livre até 09/09/2026, e virou lista por um motivo concreto: digitar
+"Marcelo" hoje e "Marcelo Leitão" amanhã dava duas pessoas, e a segunda abria o
+Lote vazio sem entender por quê.
+
+### O armário de reserva — leia antes de mexer no lote ou nas preferências
+
+A tabela `preferencias` e a coluna `lote.pessoa` nascem na **migração 003**, que
+só entra quando alguém aperta "Aplicar atualizações do banco". Enquanto isso não
+acontecia, o filtro **não era guardado** e o lote voltava a ser um só, de todo
+mundo — em silêncio, por dias.
+
+Por isso há um segundo lugar: `analisesps.meta`, que existe desde a migração
+001. Chave `pref:<pessoa>:<chave>`. É para lá que vai o que ainda não tem tabela
+própria, e é de lá que o conteúdo é **trazido para a tabela boa na primeira
+leitura** depois que ela aparece — sem essa passagem, apertar o botão pareceria
+apagar os filtros e os lotes de todo mundo.
+
+Quem for simplificar isto um dia: os dois caminhos têm teste, inclusive o da
+passagem. A lição que ficou escrita no histórico é que **depender de um botão
+para algo que a pessoa espera que "só funcione" é um jeito de nunca funcionar**.
+
 ## BeeVale — o único caminho que escreve fora daqui
 
 Tudo o mais neste módulo grava na planilha SPsBD e no banco. O BeeVale sobe

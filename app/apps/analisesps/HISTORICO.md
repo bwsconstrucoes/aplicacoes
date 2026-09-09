@@ -753,6 +753,75 @@ Três decisões que valem registro:
    o que colou. O token é segredo de verdade: com ele se lê e se escreve nos
    cards da empresa, e a tela só diz se está configurado. Há teste para os dois.
 
+### Décima sexta leva (09/09) — a lista de quem entra, e o fim da espera pelo botão
+
+Duas coisas, e a segunda é a que importa.
+
+**O dono perguntou:** *"basta colocar o nome idêntico toda vez para acessar os
+meus filtros e o meu lote?"* A resposta era "sim, mas" — e o "mas" era grande
+demais para deixar como está.
+
+**1. A entrada virou LISTA.** MARCELO, THIAGO, KARLA e RAFAEL, escolhidos num
+menu em vez de digitados. O nome é a chave de tudo o que é "seu"; com campo
+livre, digitar "Marcelo" hoje e "Marcelo Leitão" amanhã dava DUAS pessoas, e a
+segunda abria o Lote, via vazio e concluía que o sistema tinha perdido o
+trabalho dela. Não há como digitar diferente aquilo que não se digita.
+
+O que a tela manda é **conferido contra a lista** e volta com a grafia oficial:
+um pedido montado à mão não cria uma quinta pessoa por fora, e o registro de
+alterações para de mostrar o mesmo colega escrito de três jeitos. A lista se
+edita em **Configurações** — a tabela `meta`, sem migração, então funciona no
+dia da publicação.
+
+> **Isto NÃO é cadastro de usuário e não dá acesso a ninguém.** As quatro
+> pessoas usam a MESMA senha, e é a senha que decide o que se pode fazer.
+> Escolher "KARLA" não dá poder nenhum a mais. Quem um dia precisar impedir
+> que alguém se passe por outro tem de usar o cadastro do ERP; aqui o nome é
+> etiqueta honesta entre colegas, não tranca. Há teste para isso.
+
+**2. O ARMÁRIO DE RESERVA — e este era um defeito de verdade, não uma
+melhoria.** O dono pediu: *"faça de alguma forma que os filtros e o lote
+fiquem salvos"*. Fui olhar por quê não estavam:
+
+A tabela `preferencias` e a coluna `lote.pessoa` nascem na **migração 003**, e
+migração só entra quando alguém aperta "Aplicar atualizações do banco". O botão
+não foi apertado — e ficou **dias** sem ser. Nesse período:
+
+- o filtro **não era guardado**. A leitura caía no `except`, e a tela abria sem
+  filtro. Em silêncio.
+- o lote voltava a ser **um só, de todo mundo**: quem salvasse depois apagava o
+  trabalho do outro sem aviso.
+
+O dono digitava o nome todo dia achando que estava separando o trabalho dele, e
+não estava. **Depender de um botão para uma coisa que a pessoa espera que "só
+funcione" é um jeito de nunca funcionar** — a lição desta leva.
+
+Agora há um segundo lugar, `analisesps.meta`, que existe desde a **migração
+001** e portanto está no ar desde o primeiro dia. É (chave, valor), e a chave
+carrega dentro dela a pessoa e a preferência (`pref:<pessoa>:<chave>`). O lote
+de cada um usa o mesmo caminho.
+
+> **E quando o botão finalmente for apertado, nada se perde.** A tabela boa
+> passa a valer, e o que estiver no armário de reserva é **copiado para lá na
+> primeira leitura**. Sem essa passagem, apertar o botão pareceria apagar os
+> filtros e os lotes de todo mundo — o que teria sido um estrago causado
+> justamente pela correção. Há teste para a passagem.
+
+Detalhe que evita perder trabalho em andamento: quem ainda não salvou nada no
+armário **herda uma vez** o lote antigo, o de quando ele era compartilhado.
+Começar do zero seria o mesmo que apagá-lo.
+
+**Verificado, e desta vez do jeito que importa:** 1424 testes verdes com
+Postgres de verdade, e o fluxo inteiro exercitado contra um banco montado no
+**estado exato da produção de hoje** (só as migrações 001 e 002 aplicadas):
+a lista aparece na entrada, nome de fora da lista não entra, o filtro é
+guardado e volta sozinho ao trocar de tela, e os lotes de MARCELO e THIAGO
+ficam separados. Depois, aplicando 003 e 004 no mesmo banco, **os três
+sobreviveram** e continuaram separados.
+
+**O que NÃO foi verificado:** nada disto foi aberto num navegador de verdade —
+são telas, e o teste confere o HTML, não o que o olho vê.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

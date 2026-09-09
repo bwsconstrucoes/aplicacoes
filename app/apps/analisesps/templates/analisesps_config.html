@@ -105,6 +105,33 @@
 </div>
 
 {# ---------------------------------------------------------------------------
+   QUEM ENTRA — a lista que aparece na tela de entrada.
+
+   Não é cadastro de usuário e não dá acesso a ninguém: quem decide o que se
+   pode fazer continua sendo a senha. Serve para a mesma pessoa não se dividir
+   em duas por ter digitado o nome diferente num dia.
+--------------------------------------------------------------------------- #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Quem entra</h3></div>
+  <p class="cartao-dica" style="margin:0 0 10px">
+    Estes são os nomes que aparecem na lista da tela de entrada. É por eles que
+    o sistema sabe de quem é cada lote e cada filtro — <b>não</b> é senha e não
+    dá permissão nenhuma a mais.
+  </p>
+  {% if pode_operar %}
+    <label class="rotulo-campo" for="pessoas">Um nome por linha</label>
+    <textarea class="campo-largo" id="pessoas" rows="{{ [equipe|length + 1, 4]|max }}"
+              >{{ equipe|join('\n') }}</textarea>
+    <div style="margin-top:10px">
+      <button class="btn" id="btn-salvar-pessoas">Salvar a lista</button>
+    </div>
+    <div id="saida-pessoas"></div>
+  {% else %}
+    <p style="margin:0"><b>{{ equipe|join(' · ') }}</b></p>
+  {% endif %}
+</div>
+
+{# ---------------------------------------------------------------------------
    O BEEVALE PRECISA DE DUAS COISAS QUE VIVEM FORA DO PROGRAMA. Este cartão
    responde "ficou salvo?" sem ninguém precisar entrar no Render — e sem
    mostrar segredo na tela: diz se ESTÁ configurado, não o quê.
@@ -228,6 +255,31 @@ if (botaoMigrar) botaoMigrar.addEventListener("click", async () => {
     botaoMigrar.disabled = false;
     botaoMigrar.textContent = "Aplicar atualizações do banco";
   }
+});
+
+const btnPessoas = document.getElementById("btn-salvar-pessoas");
+if (btnPessoas) btnPessoas.addEventListener("click", async () => {
+  const campo = document.getElementById("pessoas");
+  const alvo = document.getElementById("saida-pessoas");
+  btnPessoas.disabled = true;
+  try {
+    const r = await fetch("{{ url_for('analisesps.gravar_pessoas') }}", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({pessoas: campo.value})
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      alvo.innerHTML = '<div class="aviso erro">' + (d.erro || "não deu certo") + '</div>';
+      return;
+    }
+    // Mostra a lista COMO FICOU: repetidos e linhas vazias somem, e quem
+    // digitou o mesmo nome de dois jeitos precisa ver que virou um só.
+    campo.value = d.pessoas.join("\n");
+    alvo.innerHTML = '<div class="aviso bom">Lista salva: ' +
+      d.pessoas.join(" · ") + '.</div>';
+  } catch (e) {
+    alvo.innerHTML = '<div class="aviso erro">Falhou: ' + e + '</div>';
+  } finally { btnPessoas.disabled = false; }
 });
 
 const btnPasta = document.getElementById("btn-salvar-pasta");

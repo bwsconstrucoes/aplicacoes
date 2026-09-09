@@ -178,39 +178,80 @@ def por_pessoa() -> bool:
     return tem_coluna("lote", "pessoa")
 
 
+# A chave do lote no armário de reserva — ver `preferencias.py`. Enquanto a
+# coluna `pessoa` não existir, é aqui que o lote de cada um fica.
+CHAVE_RESERVA = "lote"
+
+
+def _reserva_ler(pessoa: str) -> dict:
+    from . import preferencias
+    return preferencias.ler(pessoa, CHAVE_RESERVA)
+
+
 def ler(pessoa: str = "") -> dict:
     """O lote DESTA pessoa, com quem salvou por último e quando.
 
     Até 04/09/2026 havia um lote só, de todo mundo: quem salvasse depois
     sobrescrevia o trabalho do outro sem aviso. Agora cada um tem o seu — foi
-    decisão do dono, e é como era no Streamlit, que rodava numa máquina só."""
+    decisão do dono, e é como era no Streamlit, que rodava numa máquina só.
+
+    ENQUANTO A COLUNA `pessoa` NÃO EXISTIR (migração 003 não aplicada), o lote
+    de cada um vai para o armário de reserva, em vez de todo mundo voltar a
+    dividir a mesma lista. Antes daqui a separação por pessoa só passava a
+    valer depois do botão — e "depois do botão" durou dias."""
     from .db import consultar_um
-    if por_pessoa():
-        linha = consultar_um(
-            "SELECT conteudo, salvo_por, salvo_em FROM analisesps.lote "
-            " WHERE pessoa = ?", (str(pessoa or ""),))
-    else:
+    if not por_pessoa():
+        guardado = _reserva_ler(pessoa)
+        if guardado:
+            return {"conteudo": guardado.get("conteudo", "") or "",
+                    "salvo_por": guardado.get("salvo_por"),
+                    "salvo_em": guardado.get("salvo_em"),
+                    "compartilhado": False}
+        # Nada guardado ainda: aproveita o lote antigo, o de quando era um só.
+        # É trabalho de verdade que estava em andamento; começar do zero seria
+        # o mesmo que apagá-lo.
         linha = consultar_um(
             "SELECT conteudo, salvo_por, salvo_em FROM analisesps.lote "
             " WHERE id = 1")
+        if not linha:
+            return {"conteudo": "", "salvo_por": None, "salvo_em": None,
+                    "compartilhado": False}
+        return {"conteudo": linha[0] or "", "salvo_por": linha[1],
+                "salvo_em": linha[2], "compartilhado": False}
+
+    linha = consultar_um(
+        "SELECT conteudo, salvo_por, salvo_em FROM analisesps.lote "
+        " WHERE pessoa = ?", (str(pessoa or ""),))
     if not linha:
+        # A tabela boa existe mas esta pessoa não tem linha lá: o que ela
+        # guardou antes do botão está no armário de reserva. Traz para cá.
+        guardado = _reserva_ler(pessoa)
+        if guardado and guardado.get("conteudo"):
+            salvar(guardado["conteudo"], guardado.get("salvo_por") or "", pessoa)
+            logger.info("Análise de SPs: lote de %r trazido do armário de "
+                        "reserva.", pessoa)
+            return {"conteudo": guardado["conteudo"],
+                    "salvo_por": guardado.get("salvo_por"),
+                    "salvo_em": guardado.get("salvo_em"),
+                    "compartilhado": False}
         return {"conteudo": "", "salvo_por": None, "salvo_em": None,
-                "compartilhado": not por_pessoa()}
+                "compartilhado": False}
     return {"conteudo": linha[0] or "", "salvo_por": linha[1],
-            "salvo_em": linha[2], "compartilhado": not por_pessoa()}
+            "salvo_em": linha[2], "compartilhado": False}
 
 
 def salvar(conteudo: str, quem: str = "", pessoa: str = "") -> None:
     """Guarda o lote da pessoa. `quem` é o nome que a tela mostra depois."""
     from .db import conexao
     if not por_pessoa():
-        # Banco ainda atrasado: grava onde ele sabe, sem perder o trabalho.
-        with conexao() as conn:
-            conn.execute(
-                "UPDATE analisesps.lote SET conteudo = ?, salvo_por = ?, "
-                "       salvo_em = now() WHERE id = 1",
-                (str(conteudo or ""), quem))
-            conn.commit()
+        from . import preferencias
+        from .horario import agora
+        # A hora vai em formato de máquina: quem mostra na tela é o
+        # `momento_br`, que sabe converter. Guardar já formatado faria a tela
+        # mostrar a hora duas vezes escrita de jeitos diferentes.
+        preferencias.gravar(pessoa, CHAVE_RESERVA, {
+            "conteudo": str(conteudo or ""), "salvo_por": quem,
+            "salvo_em": agora().isoformat()})
         return
     with conexao() as conn:
         conn.execute(
