@@ -94,6 +94,16 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "ver_notas":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.CONSULTA},
     "cruzar_notas":    {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
+    # Arquivo da empresa. VER é largo — certidão e contrato social são o tipo de
+    # documento que todo mundo precisa e ninguém acha. O que separa quem vê o
+    # quê NÃO é esta ação, é o SIGILO do tipo (aberto, restrito, pessoal) e o
+    # escopo por obra: folha de pagamento e documento de sócio não aparecem
+    # para quem não é do financeiro ou do DP, mesmo com esta ação marcada.
+    "ver_arquivo":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA},
+    "arquivar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                        P.DEPARTAMENTO_PESSOAL, P.GESTOR_OBRA},
 }
 
 # Ações que uma pessoa ganha de graça por já ter outra.
@@ -141,6 +151,8 @@ ACAO_ROTULOS = {
     "ver_pedidos_compra":   "Ver a fila de pedidos de compra",
     "ver_notas":            "Ver as notas emitidas contra a empresa",
     "cruzar_notas":         "Cruzar nota com pedido, título e fundo fixo",
+    "ver_arquivo":          "Ver o arquivo de documentos da empresa",
+    "arquivar":             "Guardar e organizar documento no arquivo",
 }
 
 ROTULOS = {

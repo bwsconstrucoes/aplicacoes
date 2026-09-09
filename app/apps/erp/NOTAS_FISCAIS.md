@@ -207,10 +207,43 @@ FSist pela SEFAZ.
 5. **Fundo fixo e dedutibilidade**, com a trava contra contar duas vezes.
 6. **A agenda**, recolhendo os alertas de todas as áreas.
 
+## 8-C. RESPONDIDO PELO DONO — 09/09/2026
+
+Palavras dele: *"quanto à captura de notas, basta avisar; a ideia é deixar de
+usar o FSist e fazer o trabalho autônomo integrado."*
+
+Duas decisões, e as duas mudam o rumo:
+
+1. **O ERP AVISA, NÃO MANIFESTA.** A manifestação do destinatário (dizer ao
+   fisco "ciente", "confirmo" ou "desconheço") continua sendo ato humano, fora
+   do sistema. O ERP mostra a nota que não cruza com nada e avisa — quem
+   responde ao fisco é gente. É a escolha conservadora e é a certa: manifestação
+   tem consequência fiscal e prazo, e robô que manifesta sozinho erra em nome
+   da empresa.
+
+2. **O FSIST SAI; A CAPTURA PASSA A SER DIRETO NA SEFAZ.** Isso promove dois
+   itens que estavam adiados a pré-requisitos de verdade:
+   - o **certificado digital por empresa**, cifrado, com alerta de validade
+     (§6) — sem ele não há captura;
+   - o **serviço de distribuição de documentos da SEFAZ**, percorrido por
+     número de sequência, guardando o ponto de onde parou.
+
+   ⚠️ **A ordem não muda por causa disso.** A importação de XML que já existe
+   continua sendo o caminho enquanto a captura direta não estiver de pé — e ela
+   serve de rede: se a SEFAZ ficar fora do ar ou o certificado vencer, o
+   caminho manual ainda funciona. Desligar o FSist ANTES da captura própria
+   estar rodando e conferida seria trocar o certo pelo duvidoso.
+
+   ⚠️ **O que ainda não foi verificado por ninguém aqui:** o comportamento real
+   do serviço da SEFAZ (limites de consulta, o que acontece ao perder o número
+   de sequência, e se o certificado A1 da BWS tem o perfil necessário). Isso é
+   estudo antes de código, e será feito antes de prometer data.
+
 ## 9. O que ainda precisa da palavra dele
 
 - A regra de dedutibilidade do fundo fixo (§4) — é o item de maior risco.
-- Manifestação do destinatário: o ERP manifesta, ou só avisa? (§5)
-- Começar pelo FSist ou ir direto à SEFAZ? (§5)
+- ~~Manifestação do destinatário~~ — **RESPONDIDO em 09/09/2026: só avisa.**
+- ~~Começar pelo FSist ou ir direto à SEFAZ?~~ — **RESPONDIDO em 09/09/2026:
+  captura própria, direto na SEFAZ; o FSist sai depois que ela estiver de pé.**
 - Quem confere o cruzamento duvidoso — o financeiro, o comprador, ou os dois
   em telas diferentes?

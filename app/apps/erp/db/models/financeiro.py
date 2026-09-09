@@ -959,3 +959,80 @@ class ComprovanteLido(Base):
     usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+
+
+# ---------------------------------------------------------------------------
+# GESTÃO DE DOCUMENTOS DA EMPRESA (migração 045)
+#
+# Os BYTES continuam em `Anexo` — que desde a 043 sabe morar no banco ou no
+# Google Drive. O que estas duas tabelas acrescentam é o que transforma
+# "arquivo guardado" em "documento encontrável": o tipo, o dono, a validade, a
+# competência e o texto de dentro.
+#
+# A especificação inteira está em `GESTAO_DOCUMENTOS.md`.
+# ---------------------------------------------------------------------------
+class DocumentoTipo(Base):
+    """O catálogo de tipos de documento da empresa.
+
+    Editável pela tela de propósito: quem sabe quais documentos a BWS usa toda
+    semana é a BWS, não quem programa. O `codigo` vai literalmente para o nome
+    do arquivo — por isso ele é maiúsculo, sem acento e sem espaço.
+    """
+    __tablename__ = "documento_tipos"
+
+    codigo: Mapped[str] = mapped_column(Text, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    grupo: Mapped[str] = mapped_column(Text, nullable=False)
+    dono: Mapped[str] = mapped_column(Text, nullable=False)
+    vence: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    avisar_dias: Mapped[Optional[int]] = mapped_column(Integer)
+    por_competencia: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    sigilo: Mapped[str] = mapped_column(Text, nullable=False, default="ABERTO")
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class Documento(Base):
+    """Um documento arquivado: os bytes (no anexo) mais o que se sabe dele."""
+    __tablename__ = "documentos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    tipo_codigo: Mapped[str] = mapped_column(
+        Text, ForeignKey("documento_tipos.codigo"), nullable=False)
+    anexo_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("anexos.id", ondelete="CASCADE"), nullable=False)
+
+    nome_padronizado: Mapped[str] = mapped_column(Text, nullable=False)
+    nome_original: Mapped[Optional[str]] = mapped_column(Text)
+
+    # O dono — exatamente um, garantido por CHECK no banco.
+    empresa_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("empresas.id"))
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    colaborador_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("colaboradores.id"))
+    fornecedor_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("fornecedores.id"))
+    lancamento_tipo: Mapped[Optional[str]] = mapped_column(Text)
+    lancamento_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+    competencia: Mapped[Optional[date]] = mapped_column(Date)
+    referencia: Mapped[Optional[str]] = mapped_column(Text)
+    emissao: Mapped[Optional[date]] = mapped_column(Date)
+    validade: Mapped[Optional[date]] = mapped_column(Date)
+
+    texto: Mapped[Optional[str]] = mapped_column(Text)
+    resumo: Mapped[Optional[str]] = mapped_column(Text)
+
+    origem: Mapped[str] = mapped_column(Text, nullable=False, default="TELA")
+    confirmado_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    confirmado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    tipo: Mapped[DocumentoTipo] = relationship()
+    anexo: Mapped[Anexo] = relationship()

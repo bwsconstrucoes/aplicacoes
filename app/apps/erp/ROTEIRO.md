@@ -219,9 +219,11 @@ Especificação inteira (taxonomia, nomenclatura, blocos, permissão) em
 onde eu pudesse simplesmente jogar esse documento, ele fosse interpretado,
 lido, e a partir dali categorizado, renomeado e salvo"*.
 
-- [ ] 1. **Catálogo e arquivo**: tipos, donos, validade, nome padronizado.
-- [ ] 2. **Tela de gestão**: filtros por tipo/dono/obra/competência/validade,
-      busca e download.
+- [x] 1. **Catálogo e arquivo**: tipos, donos, validade, nome padronizado.
+      FEITO em 09/09/2026 (migração 045), 59 tipos em sete grupos.
+- [x] 2. **Tela de gestão** (Administração › Arquivo): filtros por
+      tipo/grupo/empresa/obra/competência/validade, busca e abertura do
+      arquivo. FEITA em 09/09/2026.
 - [ ] 3. **Leitura por IA** sugerindo tipo, dono, datas e nome — a pessoa
       confirma. Reusa o leitor que já lê nota e comprovante.
 - [ ] 4. **Blocos** (FISCAL, HABILITACAO, CADASTRO-FORNECEDOR, MEDICAO, OBRA)
@@ -240,12 +242,19 @@ lido, e a partir dali categorizado, renomeado e salvo"*.
       importação de XML; casamento automático só pela chave de acesso; trava
       contra contar a mesma despesa duas vezes; dedutibilidade pelo lado das
       notas. Detalhe em `HISTORICO.md` e `NOTAS_FISCAIS.md` §8-B.
+**DECIDIDO em 09/09/2026 pelo dono:** o ERP **só avisa**, não manifesta ao
+fisco; e o **FSist sai** — a captura passa a ser própria, direto na SEFAZ. Os
+dois itens abaixo deixaram de depender de decisão e viraram trabalho.
+
 - [ ] Certificado digital por empresa, cifrado, com alerta de validade —
-      pré-requisito da captura direta na SEFAZ. Depende de decisão do dono.
-- [ ] Captura das notas direto na SEFAZ, trocando a fonte sem refazer o
-      cruzamento. Depende do certificado e da decisão sobre manifestação.
-- [ ] Manifestação do destinatário: o ERP manifesta, ou só avisa? **Pergunta
-      aberta ao dono.**
+      pré-requisito da captura. Entra, nunca sai: o ERP usa, ninguém baixa de
+      volta pela tela.
+- [ ] **Estudar o serviço de distribuição da SEFAZ antes de codar**: limites de
+      consulta, o que acontece ao perder o número de sequência, e se o
+      certificado A1 da BWS tem o perfil necessário. Nada disso foi verificado.
+- [ ] Captura das notas direto na SEFAZ, guardando o ponto de onde parou. A
+      importação de XML CONTINUA existindo como rede — desligar o FSist antes
+      da captura própria estar conferida seria trocar o certo pelo duvidoso.
 
 ### Fila de DESEMPENHO — pedida pelo dono em 08/09/2026
 

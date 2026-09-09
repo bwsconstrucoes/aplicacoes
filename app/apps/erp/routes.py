@@ -101,6 +101,7 @@ MODULOS = [
         "abas": [
             ("config", "Configurações", "erp.pagina_config"),
             ("empresas", "Empresas", "erp.pagina_empresas"),
+            ("arquivo", "Arquivo", "erp.pagina_arquivo"),
         ],
     },
 ]
@@ -109,7 +110,8 @@ MODULOS = [
 # Repetir a lista aqui é de propósito: `_contexto` roda em TODA página, e
 # perguntar por 20 ações a cada carregamento seria desperdício.
 ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
-                 "autorizar_pedido", "solicitar_suprimento", "configurar")
+                 "autorizar_pedido", "solicitar_suprimento", "configurar",
+                 "cruzar_notas", "arquivar")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -466,6 +468,13 @@ def pagina_colaboradores():
 @permissao("conciliar")
 def pagina_conciliacao():
     return render_template("erp_conciliacao.html", **_contexto("conciliacao"))
+
+
+@bp.route("/erp/arquivo")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def pagina_arquivo():
+    return render_template("erp_arquivo.html", **_contexto("arquivo"))
 
 
 @bp.route("/erp/notas")
@@ -4054,6 +4063,132 @@ def api_notas_importar():
         return jsonify({"ok": True, "dados": r})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# O ARQUIVO DE DOCUMENTOS DA EMPRESA
+#
+# Especificação em `GESTAO_DOCUMENTOS.md`. Quem separa o que cada pessoa vê NÃO
+# é a ação declarada — é o SIGILO do tipo de documento e o escopo por obra,
+# aplicados dentro do serviço. Por isso `ver_arquivo` é largo: certidão e
+# contrato social são o que todo mundo precisa e ninguém acha.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/arquivo/tipos")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo_tipos():
+    from app.apps.erp.core.arquivo import catalogo
+    with get_session() as s:
+        return jsonify({"ok": True, "tipos": catalogo.listar(s),
+                        "grupos": catalogo.GRUPOS})
+
+
+@bp.route("/erp/api/arquivo/tipos/aplicar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_arquivo_tipos_aplicar():
+    """Traz o catálogo inicial. Cria o que falta e NUNCA apaga."""
+    from app.apps.erp.core.arquivo import catalogo
+    with get_session() as s:
+        r = catalogo.aplicar(s)
+        s.commit()
+    return jsonify({"ok": True, "dados": r})
+
+
+@bp.route("/erp/api/arquivo")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo():
+    from app.apps.erp.core.arquivo import service as svc_arq
+    def _comp():
+        bruto = (request.args.get("competencia") or "").strip()
+        try:
+            return date.fromisoformat(bruto + "-01") if len(bruto) == 7 else None
+        except ValueError:
+            return None
+    with get_session() as s:
+        dados = svc_arq.listar(
+            s, usuario=_usuario_logado(s),
+            tipo=(request.args.get("tipo") or "").strip(),
+            grupo=(request.args.get("grupo") or "").strip(),
+            empresa_id=(int(request.args["empresa_id"]) if request.args.get("empresa_id") else None),
+            obra_id=(int(request.args["obra_id"]) if request.args.get("obra_id") else None),
+            competencia=_comp(),
+            situacao=(request.args.get("situacao") or "").strip(),
+            busca=(request.args.get("busca") or "").strip())
+    return jsonify({"ok": True, **dados})
+
+
+@bp.route("/erp/api/arquivo/vencendo")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo_vencendo():
+    """O que vence nos próximos dias — a pergunta que dá valor ao arquivo."""
+    from app.apps.erp.core.arquivo import service as svc_arq
+    with get_session() as s:
+        dias = int(request.args.get("dias", 30))
+        return jsonify({"ok": True,
+                        "documentos": svc_arq.vencendo(s, dias=dias,
+                                                       usuario=_usuario_logado(s))})
+
+
+@bp.route("/erp/api/arquivo", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_arquivo_guardar():
+    from app.apps.erp.core.arquivo import service as svc_arq
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+
+    def _data(nome):
+        try:
+            return date.fromisoformat(request.form.get(nome) or "")
+        except ValueError:
+            return None
+
+    def _comp():
+        bruto = (request.form.get("competencia") or "").strip()
+        try:
+            return date.fromisoformat(bruto + "-01") if len(bruto) == 7 else None
+        except ValueError:
+            return None
+
+    def _num(nome):
+        bruto = (request.form.get(nome) or "").strip()
+        return int(bruto) if bruto.isdigit() else None
+
+    try:
+        with get_session() as s:
+            d = svc_arq.arquivar(
+                s, f.read(), f.filename or "arquivo",
+                tipo_codigo=(request.form.get("tipo") or ""),
+                empresa_id=_num("empresa_id"), obra_id=_num("obra_id"),
+                colaborador_id=_num("colaborador_id"),
+                fornecedor_id=_num("fornecedor_id"),
+                competencia=_comp(), referencia=(request.form.get("referencia") or ""),
+                emissao=_data("emissao"), validade=_data("validade"),
+                observacao=(request.form.get("observacao") or ""),
+                usuario=_usuario_logado(s))
+            linha = svc_arq.ler(s, d)
+            s.commit()
+        return jsonify({"ok": True, "documento": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/arquivo/<int:documento_id>", methods=["DELETE"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_arquivo_excluir(documento_id: int):
+    from app.apps.erp.core.arquivo import service as svc_arq
+    try:
+        with get_session() as s:
+            svc_arq.excluir(s, documento_id, _usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
 
 
 @bp.route("/erp/api/usuarios", methods=["GET", "POST"])

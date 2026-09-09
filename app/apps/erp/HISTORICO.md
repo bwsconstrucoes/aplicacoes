@@ -1028,6 +1028,74 @@ abas e a última sumia na borda da tela, sem nada indicando que havia mais.
 Agora a barra mostra sombra nas pontas quando há o que rolar, rola com a roda
 do mouse e traz a aba ativa para um lugar legível. Conferido nas 19 telas.
 
+### O arquivo de documentos da empresa — 09/09/2026
+
+Pedido do dono no mesmo dia, especificado inteiro em `GESTAO_DOCUMENTOS.md`
+antes de qualquer código. Nas palavras dele: *"um ambiente onde eu pudesse
+simplesmente jogar esse documento, ele fosse interpretado, lido, e a partir
+dali categorizado, renomeado e salvo"*.
+
+Entregue nesta rodada: **o catálogo, o arquivamento com nome padronizado e a
+tela** (Administração › Arquivo, migração 045). A leitura por IA, os blocos e
+os avisos de vencimento são os passos seguintes, e cada um entra sem refazer o
+que já existe.
+
+**A taxonomia.** Antes de "que tipo é" vem "a quem pertence": empresa, obra,
+pessoa, parceiro ou lançamento — **exatamente um**, garantido pelo banco.
+Documento pendurado em dois donos não é achado por nenhum dos dois. A
+competência (o mês) não é dono, é recorte — é ela que vai fazer o compilado
+fiscal funcionar.
+
+**59 tipos** no catálogo inicial, em sete grupos: cadastrais, certidões,
+licitação, obra, fiscal/trabalhista, pessoas e financeiro. O catálogo é
+editável pela tela e **nunca apaga tipo** — tipo removido deixaria documento
+órfão, que é o problema que o módulo veio resolver. Tipo que não serve mais é
+desativado.
+
+**A nomenclatura:** `TIPO_DONO[_REFERENCIA]_DATA.ext`, sem acento e sem espaço.
+Não é preciosismo — portal de licitação e sistema de prefeitura ainda engasgam
+com acento, e o arquivo volta corrompido ou é recusado. Documento que vence
+leva a validade no nome (`val-2026-10-02`): bater o olho e saber até quando
+vale é metade do problema. **O nome original nunca se perde** e a tela mostra
+os dois — renomear é conveniência, não amnésia.
+
+**Quem vê o quê não depende da permissão de rota**, e sim do SIGILO do tipo
+(aberto, restrito, pessoal) mais o escopo por obra. Administrativo de obra vê
+certidão e não vê folha de pagamento, mesmo tendo a ação marcada.
+
+**O que o sistema recusa, e por quê:** documento que vence sem validade (senão
+nunca avisa), documento de competência sem o mês, e documento sem dono ou com
+dois. A competência é sempre gravada no dia 1 — sem isso "agosto" viraria
+trinta e um valores diferentes e o compilado nunca fecharia.
+
+**A busca já olha o texto de dentro do documento.** O campo existe e a consulta
+usa; o texto passa a ser preenchido quando a leitura por IA entrar. Foi feito
+nesta ordem de propósito: guardar o texto no momento da leitura é quase de
+graça, e reprocessar dez mil arquivos depois é que sairia caro.
+
+Provado com banco de verdade (27 casos) e com a tela aberta no navegador:
+guardar uma certidão que vence em sete dias, ver o nome sair
+`CRF-FGTS_BWS_val-…`, e o quadrinho "Vencendo" acender.
+
+### O ERP vai capturar as notas sozinho — 09/09/2026
+
+Resposta do dono a duas perguntas que estavam abertas: *"quanto à captura de
+notas, basta avisar; a ideia é deixar de usar o FSist e fazer o trabalho
+autônomo integrado"*.
+
+1. **O ERP avisa, não manifesta.** Dizer ao fisco "ciente" ou "desconheço"
+   continua sendo ato humano. É a escolha certa: manifestação tem consequência
+   e prazo, e robô que manifesta sozinho erra em nome da empresa.
+2. **O FSist sai, e a captura passa a ser direto na SEFAZ.** Isso promove o
+   certificado digital por empresa de "adiado" a pré-requisito.
+
+⚠️ Duas ressalvas que ficam registradas: a importação de XML **continua
+existindo como rede** — desligar o FSist antes da captura própria estar
+conferida seria trocar o certo pelo duvidoso; e **o serviço da SEFAZ ainda não
+foi estudado por ninguém aqui** (limites, o que acontece ao perder o número de
+sequência, se o certificado A1 da BWS tem o perfil necessário). Isso é estudo
+antes de código, e antes de prometer data.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1179,12 +1247,13 @@ do mouse e traz a aba ativa para um lugar legível. Conferido nas 19 telas.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **APERTAR "Aplicar atualizações do banco" para as migrações 042, 043 e 044**,
+21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 045**,
    assim que o ramo entrar na `main`. A 042 é a trava contra baixa em
    duplicidade; sem ela, anexar comprovante pela tela dá erro. A 043 abre
    espaço para o documento morar no Drive; sem ela, anexar qualquer documento
-   dá erro. A 044 abre o cruzamento de notas; sem ela a tela de Notas fiscais
-   não carrega. É o mesmo botão de sempre, em Configurações.
+   dá erro. A 044 abre o cruzamento de notas e a 045 abre o arquivo de
+   documentos; sem elas as telas de Notas fiscais e de Arquivo não carregam.
+   É o mesmo botão de sempre, em Configurações.
 
 23. **Criar a pasta do Drive e colar o endereço** em Configurações › "Onde
    ficam os documentos", apertar "Testar a pasta" e só então ligar a chave.
