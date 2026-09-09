@@ -87,6 +87,46 @@ def proximo_numero_sp(s: Session) -> str:
 # ---------------------------------------------------------------------------
 # Criação (lançamento dirigido)
 # ---------------------------------------------------------------------------
+def _exigir_uma_conta_so(s: Session, rateios: list[Rateio]) -> None:
+    """Um título não pode ser rateado entre obras pagas por CONTAS diferentes.
+
+    Decisão do dono, em 09/09/2026, e o argumento é irrespondível: *"como é que
+    eu vou pagar um boleto de duas contas bancárias? É impossível."*
+
+    O título vira UM boleto, UM Pix, UMA transferência. Se as obras saem de
+    contas diferentes, não existe pagamento único — e o erro só apareceria no
+    dia de pagar, com o boleto na mão e o prazo vencendo.
+
+    A recusa é na hora do LANÇAMENTO de propósito: quem lança ainda pode
+    dividir a compra em dois pedidos, dois boletos, dois títulos. Depois de
+    lançado, dividir dá trabalho e envolve o fornecedor.
+
+    Obra SEM conta definida não bloqueia: o cadastro é que está incompleto, e
+    travar o lançamento por isso pararia o financeiro por um campo em branco.
+    """
+    contas: dict[int, list[str]] = {}
+    for r in rateios:
+        obra = s.get(Obra, r.obra_id)
+        conta_id = getattr(obra, "conta_bancaria_id", None) if obra else None
+        if not conta_id:
+            continue
+        contas.setdefault(conta_id, []).append(getattr(obra, "codigo", "?"))
+    if len(contas) <= 1:
+        return
+
+    from app.apps.erp.db.models.cadastros import ContaBancaria
+    partes = []
+    for conta_id, obras in contas.items():
+        conta = s.get(ContaBancaria, conta_id)
+        partes.append(f"{', '.join(sorted(obras))} → {getattr(conta, 'descricao', conta_id)}")
+    raise ErroValidacao(
+        "Este título está rateado entre obras que são pagas por CONTAS "
+        "DIFERENTES: " + " · ".join(partes) + ". Um título vira um pagamento só "
+        "— não dá para pagar o mesmo boleto de duas contas. Separe em dois "
+        "títulos (peça ao fornecedor dois boletos), ou acerte a conta das obras "
+        "no cadastro.")
+
+
 def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
     from app.apps.erp.core.titulos.enquadramento import exigir_caminho_correto
     exigir_caminho_correto(s, dados, usuario)
@@ -268,6 +308,8 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
     if abs(soma_rat - valor_liquido) > Decimal("0.01"):
         raise ErroValidacao(
             f"Soma dos rateios (R$ {soma_rat}) ≠ valor líquido (R$ {valor_liquido}).")
+
+    _exigir_uma_conta_so(s, rateios_obj)
 
     # ---- C7(d): duplicidade credor + valor + 1º vencimento em janela de 30 dias
     venc1 = parcelas_obj[0].vencimento

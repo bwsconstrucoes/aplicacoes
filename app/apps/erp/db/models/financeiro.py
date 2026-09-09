@@ -1075,3 +1075,53 @@ class DocumentoBlocoItem(Base):
 
     bloco: Mapped[DocumentoBloco] = relationship(back_populates="itens")
     tipo: Mapped[DocumentoTipo] = relationship()
+
+
+class NotaEmitida(Base):
+    """Uma nota que a BWS emite contra o cliente (migração 048).
+
+    DOIS NÚMEROS, e confundi-los é a origem da bagunça:
+
+      numero_dps    a sequência da EMPRESA, por série. O ERP é dono dela —
+                    no padrão nacional e no ABRASF, quem numera a declaração é
+                    quem emite, não a prefeitura.
+      numero_nota   o que a PREFEITURA devolveu. O ERP só registra.
+
+    O número é RESERVADO antes de emitir, e a linha nasce RESERVADA. Se a
+    emissão falha, o número não some: fica FALHADA, com motivo. Número de nota
+    fiscal não se apaga — se explica.
+    """
+    __tablename__ = "notas_emitidas"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("empresas.id"), nullable=False)
+    ambiente: Mapped[str] = mapped_column(Text, nullable=False, default="HOMOLOGACAO")
+    serie: Mapped[str] = mapped_column(Text, nullable=False, default="1")
+
+    numero_dps: Mapped[int] = mapped_column(Integer, nullable=False)
+    numero_nota: Mapped[Optional[str]] = mapped_column(Text)
+    codigo_verificacao: Mapped[Optional[str]] = mapped_column(Text)
+    chave_acesso: Mapped[Optional[str]] = mapped_column(Text)
+
+    titulo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulos.id"))
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    competencia: Mapped[Optional[date]] = mapped_column(Date)
+
+    modo: Mapped[str] = mapped_column(Text, nullable=False, default="MANUAL")
+    situacao: Mapped[str] = mapped_column(Text, nullable=False, default="RESERVADA")
+    valor_bruto: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    valor_liquido: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    retencoes: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    data_emissao: Mapped[Optional[date]] = mapped_column(Date)
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    motivo: Mapped[Optional[str]] = mapped_column(Text)
+    anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    substituida_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("notas_emitidas.id"))
+
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())

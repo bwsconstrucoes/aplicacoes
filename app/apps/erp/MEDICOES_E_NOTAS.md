@@ -281,6 +281,139 @@ confirmam com a prefeitura, não com pesquisa.
 
 ---
 
+## 7-B. TRÊS CORREÇÕES DO DONO — 09/09/2026
+
+### 7-B.1 Por onde a nota sai NÃO se escolhe: se deriva
+
+Correção dele, e eu tinha apresentado errado: *"por onde vamos emitir não é
+algo que a gente seleciona. Quem define é o centro de custo a que aquela
+medição está associada. Se eu vou emitir um título da obra X, que está na
+empresa Y, eu vou usar a solução da empresa Y. Eu não vou selecionar se é
+Eusébio ou Petrolina."*
+
+A cadeia é de mão única, e o sistema desce ela sozinho:
+
+```
+medição → obra → empresa → município, endereço, token, modo
+```
+
+A tela de cadastro da empresa existe para dizer **uma vez** onde aquela empresa
+emite. Na hora de emitir, ninguém escolhe nada.
+
+**E quando a cadeia quebra, o certo é RECUSAR**, não chutar: obra sem empresa
+não emite, e o sistema diz para arrumar o cadastro. Emitir pelo CNPJ errado se
+conserta com cancelamento e carta ao cliente. Idem para título rateado entre
+obras de empresas diferentes: seriam duas notas, de CNPJs diferentes — o
+sistema manda separar o título.
+
+### 7-B.2 O controle da numeração
+
+Pergunta dele: *"você vai conseguir enxergar qual o número da nota que tem que
+ser emitida, para registrar em sistema, e ser tranquilo?"*
+
+**Sim, e por um motivo técnico:** no padrão nacional e no ABRASF, **quem numera
+a DECLARAÇÃO é quem emite**. A prefeitura recebe a DPS já numerada e devolve o
+número da NOTA. São dois números, e confundi-los é a origem da bagunça:
+
+| | Quem manda | O que é |
+|---|---|---|
+| `numero_dps` | **o ERP** | a sequência da empresa, por série |
+| `numero_nota` | a prefeitura | o que ela devolveu |
+
+**Onde isso quebra na vida real**, e como o sistema responde (migração 048):
+
+1. **Dois processos na mesma série** — alguém emite pelo portal da prefeitura
+   enquanto o ERP também emite. O índice único torna o **duplicado
+   impossível**, e o **buraco visível**.
+2. **Teste gastando número de produção** — homologação tem sequência própria.
+3. **Buraco na sequência** — é o que o fisco pergunta. O sistema separa duas
+   coisas que parecem iguais e não são: **buraco** (número que nunca foi
+   reservado; sinal de emissão por fora do ERP) e **queimado** (reservado, não
+   virou nota, **com motivo escrito**).
+
+**O número é reservado ANTES de emitir**, e não volta para a fila se falhar. A
+prefeitura pode ter recebido a declaração e só a resposta ter se perdido;
+reemitir com o mesmo número daria duplicidade do lado dela. Número de nota
+fiscal não se apaga — se explica.
+
+⚠️ **O ponto de atenção que ele levantou é real:** manual e API na MESMA empresa
+e série é onde a numeração se perde. No caso da BWS não acontece — uma empresa
+é API, a outra manual —, mas o sistema guarda o modo em cada linha para que a
+mistura, se um dia ocorrer, seja visível.
+
+### 7-B.3 Título rateado entre obras de contas diferentes: BLOQUEADO
+
+Decisão dele, com o argumento que fecha a questão: *"como é que eu vou pagar um
+boleto de duas contas bancárias? É impossível."*
+
+O título vira UM boleto, UM Pix, UMA transferência. Se as obras saem de contas
+diferentes, não existe pagamento único — e o erro só apareceria no dia de
+pagar, com o boleto na mão e o prazo vencendo.
+
+**A recusa é na hora do LANÇAMENTO, de propósito**: quem lança ainda pode
+dividir a compra em dois pedidos e dois boletos. Depois de lançado, dividir dá
+trabalho e envolve o fornecedor. A mensagem diz **quais obras**, **quais
+contas** e **qual a saída**.
+
+Obra sem conta definida **não** bloqueia: cadastro incompleto não pode parar o
+financeiro por um campo em branco.
+
+---
+
+## 7-C. O REAJUSTE — pedido dele em 09/09/2026
+
+Palavras dele: *"dentro do cadastro do contrato a gente precisa fazer alguma
+configuração que permita prever o recebimento de reajustes."*
+
+### A regra, como ele descreveu
+
+- O índice normal é o **INCC**.
+- O direito nasce **doze meses depois da data-base**.
+- E qual data-base vale **muda por contrato**: pode ser a do orçamento, pode
+  ser a da proposta da licitação. Por isso é **campo**, não regra fixa.
+
+A obra **já tem** `data_base_orcamento` e `indice_reajuste` no modelo — falta a
+tela expor e o cálculo usar.
+
+### O que o sistema passa a fazer
+
+1. A cada medição, calcular a **previsão de reajuste** com o índice acumulado
+   desde a data-base.
+2. Essa previsão pode **virar um título a receber de verdade**, no momento em
+   que o órgão autorizar a emissão daquela nota.
+3. **O valor tem de ser editável**: *"pode ser que o órgão tenha algum
+   entendimento e mude algum centavo"*. O sistema estima; quem fecha é o órgão.
+
+### A tabela do INCC, dentro do sistema
+
+Ele pediu que o ERP mantenha os índices sozinho: *"já coloque aí dentro da
+programação do sistema ele fazer essa busca, atualizar a tabela e permitir
+todos esses cálculos."*
+
+**Dá para fazer, e de graça.** O INCC é calculado pela FGV, mas o **Banco
+Central republica a série no SGS**, numa API pública, sem cadastro e sem
+chave — o INCC-DI é a série **192**:
+
+```
+https://api.bcb.gov.br/dados/serie/bcdata.sgs.192/dados?formato=json
+```
+
+Isso evita depender do FGVDados, que é licenciado.
+
+⚠️ **Não verificado por mim:** a chamada não pôde ser feita deste contêiner (a
+saída para a internet aqui é filtrada e bloqueou o endereço). A existência e o
+formato da série estão documentados pelo Banco Central; a primeira chamada de
+verdade vai acontecer no Render, e o sistema tem de tratar o caso de a série
+vir vazia ou fora do ar.
+
+⚠️ **E uma decisão que precisa dele:** o INCC tem versões (**DI**, **M** e
+**10**), com apurações de períodos diferentes. Contrato público costuma citar
+uma delas explicitamente. A série 192 é o **INCC-DI**. Se os contratos da BWS
+usarem o INCC-M, é outra série — vale conferir num contrato antes de calcular
+qualquer coisa, porque índice errado dá valor errado com cara de certo.
+
+---
+
 ## 8. ORDEM DE CONSTRUÇÃO
 
 1. **O cadastro que destrava tudo**: expor na tela da obra os campos fiscais que

@@ -224,3 +224,63 @@ def test_diz_o_que_falta_para_emitir_por_api(cenario):
     assert pode is False
     assert "o token do canal" in falta
     assert "a inscrição municipal da empresa" in falta
+
+
+# ---------------------------------------------------------------------------
+# A TRAVA DO RATEIO ENTRE CONTAS DIFERENTES
+#
+# Decisão do dono, com o argumento que fecha a questão: *"como é que eu vou
+# pagar um boleto de duas contas bancárias? É impossível."*
+# ---------------------------------------------------------------------------
+def _obra(s, codigo, conta_id=None):
+    from app.apps.erp.db.models.cadastros import Obra
+    o = Obra(codigo=codigo, nome=f"Obra {codigo}", conta_bancaria_id=conta_id)
+    s.add(o)
+    s.flush()
+    return o
+
+
+def _rateios(*obras):
+    from decimal import Decimal
+    from app.apps.erp.db.models.financeiro import Rateio
+    return [Rateio(obra_id=o.id, valor=Decimal("100.00")) for o in obras]
+
+
+def test_rateio_entre_obras_da_mesma_conta_passa(cenario):
+    from app.apps.erp.core.titulos.service import _exigir_uma_conta_so
+    s = cenario["s"]
+    a = _obra(s, "OBRA-A", cenario["conta"].id)
+    b = _obra(s, "OBRA-B", cenario["conta"].id)
+    _exigir_uma_conta_so(s, _rateios(a, b))          # não levanta
+
+
+def test_obra_sem_conta_nao_trava_o_lancamento(cenario):
+    """Cadastro incompleto não pode parar o financeiro por um campo em branco."""
+    from app.apps.erp.core.titulos.service import _exigir_uma_conta_so
+    s = cenario["s"]
+    a = _obra(s, "OBRA-C", cenario["conta"].id)
+    b = _obra(s, "OBRA-D", None)
+    _exigir_uma_conta_so(s, _rateios(a, b))          # não levanta
+
+
+def test_rateio_entre_contas_diferentes_e_recusado_dizendo_quais(cenario):
+    """A mensagem tem de dizer QUAIS obras e QUAIS contas — senão quem lançou
+    fica adivinhando o que separar."""
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+    from app.apps.erp.core.titulos.service import _exigir_uma_conta_so
+    from app.apps.erp.db.models.cadastros import ContaBancaria
+    s = cenario["s"]
+    outra_conta = ContaBancaria(descricao="Banco do Brasil 9876-5", banco_codigo="001",
+                                agencia="9876", conta="54321-0", ativo=True)
+    s.add(outra_conta)
+    s.flush()
+    a = _obra(s, "OBRA-E", cenario["conta"].id)
+    b = _obra(s, "OBRA-F", outra_conta.id)
+
+    with pytest.raises(ErroValidacao) as e:
+        _exigir_uma_conta_so(s, _rateios(a, b))
+    msg = str(e.value)
+    assert "CONTAS DIFERENTES" in msg
+    assert "OBRA-E" in msg and "OBRA-F" in msg
+    assert "Bradesco 1234-5" in msg and "Banco do Brasil 9876-5" in msg
+    assert "Separe em dois títulos" in msg, "a mensagem tem de dizer a saída"

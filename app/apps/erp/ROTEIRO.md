@@ -244,6 +244,28 @@ Omie não dá conta disso.
       LC 214/2025 tornou o padrão nacional obrigatório e o ABRASF tem data para
       acabar. O `el_nfse_nacional.py` já fala esse padrão.
 - [ ] 7. **Indicadores**: dias entre protocolar e receber, por obra e por órgão.
+- [ ] 8. **REAJUSTE** (pedido em 09/09/2026): data-base no contrato — pode ser
+      a do orçamento OU a da proposta, muda por contrato —, previsão calculada
+      a cada medição pelo índice acumulado, e a previsão virando título a
+      receber quando o órgão autorizar. **O valor tem de ser editável**: o
+      sistema estima, quem fecha é o órgão.
+- [ ] 9. **Tabela do INCC dentro do sistema**, atualizada sozinha. O Banco
+      Central republica a série do INCC-DI no SGS, em API pública e gratuita
+      (série **192**) — evita depender do FGVDados, que é licenciado.
+      ⚠️ Confirmar com o dono se os contratos usam INCC-**DI** ou INCC-**M**:
+      são séries diferentes, e índice errado dá valor errado com cara de certo.
+
+**Feito em 09/09/2026, fora da ordem porque ele corrigiu/perguntou:**
+
+- [x] **Por onde a nota sai NÃO se escolhe, se deriva** (medição → obra →
+      empresa). Obra sem empresa recusa em vez de chutar; título rateado entre
+      obras de empresas diferentes manda separar.
+- [x] **Controle da numeração** (migração 048): o ERP é dono da sequência da
+      DPS; a prefeitura devolve o número da nota. Reserva antes de emitir,
+      número queimado não recicla e exige motivo, homologação separada de
+      produção, e a conferência separa BURACO de QUEIMADO.
+- [x] **Título rateado entre obras de contas diferentes: bloqueado** no
+      lançamento, dizendo quais obras, quais contas e qual a saída.
 
 **Sobre Petrolina (pergunta dele, pesquisada em 09/09/2026):** o município tem
 webservice **e usa o MESMO provedor do Eusébio** (E&L), com o endereço no mesmo

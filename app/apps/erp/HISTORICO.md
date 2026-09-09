@@ -1308,6 +1308,71 @@ Provado com banco de verdade (22 casos) e no navegador: guardei uma chave Pix,
 vi a chave torta ser recusada com a mensagem certa, escolhi Petrolina e vi o
 endereço se preencher sozinho, e liguei o filtro por conta nos pagamentos.
 
+### Três correções do dono sobre emissão de nota — 09/09/2026
+
+**1. Por onde a nota sai NÃO se escolhe — se deriva.** Eu tinha apresentado
+errado. Palavras dele: *"por onde vamos emitir não é algo que a gente
+seleciona. Quem define é o centro de custo a que aquela medição está associada.
+Se eu vou emitir um título da obra X, que está na empresa Y, eu vou usar a
+solução da empresa Y."*
+
+A cadeia é de mão única e o sistema desce ela sozinho: **medição → obra →
+empresa → município, endereço, token, modo**. A tela de cadastro da empresa
+existe para dizer UMA VEZ onde ela emite; na hora de emitir, ninguém escolhe.
+
+E quando a cadeia quebra, o certo é **recusar**, não chutar: obra sem empresa
+não emite, e o sistema manda arrumar o cadastro. Título rateado entre obras de
+empresas diferentes também recusa — seriam duas notas, de CNPJs diferentes.
+Emitir pelo CNPJ errado se conserta com cancelamento e carta ao cliente.
+
+**2. O controle da numeração** (migração 048). Ele perguntou se dá para ver o
+número da nota antes de emitir e manter a numeração correta. **Dá, e por um
+motivo técnico:** no padrão nacional e no ABRASF, **quem numera a DECLARAÇÃO é
+quem emite** — a prefeitura devolve o número da NOTA. São dois números:
+
+- `numero_dps` — a sequência da empresa, por série. **O ERP é dono.**
+- `numero_nota` — o que a prefeitura devolveu. O ERP só registra.
+
+Três coisas que o sistema passa a garantir: o **duplicado é impossível**
+(índice único por empresa, ambiente, série e número — vale mesmo com duas
+pessoas emitindo ao mesmo tempo); **teste não queima número de produção**
+(homologação tem sequência própria); e o **buraco fica visível**.
+
+A conferência separa duas coisas que parecem iguais e não são: **buraco**
+(número que nunca foi reservado — sinal de que alguém emitiu pelo portal da
+prefeitura) e **queimado** (reservado, não virou nota, com motivo escrito).
+Buraco é o preocupante; queimado tem resposta pronta.
+
+O número é reservado ANTES de emitir e **não volta para a fila se falhar**: a
+prefeitura pode ter recebido a declaração e só a resposta ter se perdido, e
+reemitir com o mesmo número daria duplicidade do lado dela. Número de nota
+fiscal não se apaga — se explica.
+
+⚠️ O ponto de atenção dele é real: **manual e API na MESMA empresa e série** é
+onde a numeração se perde. Na BWS não acontece (uma empresa é API, a outra
+manual), mas o modo fica guardado em cada linha para a mistura ser visível se
+um dia ocorrer.
+
+**3. Título rateado entre obras de contas diferentes: BLOQUEADO.** Decisão
+dele, com o argumento que fecha a questão: *"como é que eu vou pagar um boleto
+de duas contas bancárias? É impossível."*
+
+A recusa é no LANÇAMENTO de propósito — quem lança ainda pode pedir dois
+boletos ao fornecedor; depois de lançado, dividir dá trabalho. A mensagem diz
+**quais obras**, **quais contas** e **qual a saída**. Obra sem conta definida
+não bloqueia: cadastro incompleto não pode parar o financeiro por um campo em
+branco.
+
+**Sobre o reajuste e o INCC** (pedido no mesmo dia, ainda por construir): a
+especificação foi escrita em `MEDICOES_E_NOTAS.md` §7-C. O achado que importa é
+que **dá para o sistema manter a tabela do INCC sozinho, de graça** — o Banco
+Central republica a série no SGS, em API pública sem cadastro (INCC-DI é a
+série 192), o que evita depender do FGVDados, que é licenciado.
+⚠️ **Não verificado:** a chamada foi bloqueada pela filtragem de saída deste
+contêiner; a primeira de verdade acontece no Render. E fica uma pergunta para
+ele: os contratos usam INCC-**DI** ou INCC-**M**? São séries diferentes, e
+índice errado dá valor errado com cara de certo.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1463,14 +1528,15 @@ endereço se preencher sozinho, e liguei o filtro por conta nos pagamentos.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 047**,
+21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 048**,
    assim que o ramo entrar na `main`. A 042 é a trava contra baixa em
    duplicidade; sem ela, anexar comprovante pela tela dá erro. A 043 abre
    espaço para o documento morar no Drive; sem ela, anexar qualquer documento
    dá erro. A 044 abre o cruzamento de notas, a 045 o arquivo de documentos e
    a 046 os blocos, e a 047 traz a chave Pix e os dados de emissão por
-   empresa; sem elas as telas de Notas fiscais, Arquivo, Configurações e
-   Empresas não carregam. É o mesmo botão de sempre, em Configurações.
+   empresa, e a 048 o controle da numeração das notas; sem elas as telas de
+   Notas fiscais, Arquivo, Configurações e Empresas não carregam. É o mesmo
+   botão de sempre, em Configurações.
 
 23. **Criar a pasta do Drive e colar o endereço** em Configurações › "Onde
    ficam os documentos", apertar "Testar a pasta" e só então ligar a chave.

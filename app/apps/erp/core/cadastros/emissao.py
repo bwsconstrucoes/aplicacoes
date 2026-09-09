@@ -30,6 +30,7 @@ import re
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
@@ -62,6 +63,25 @@ MUNICIPIOS_CONHECIDOS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# POR ONDE A NOTA SAI NÃO SE ESCOLHE — SE DERIVA
+#
+# Correção do dono, em 09/09/2026: *"por onde vamos emitir não é algo que a
+# gente seleciona. Quem define é o centro de custo a que aquela medição está
+# associada. Se eu vou emitir um título da obra X, que está na empresa Y, eu
+# vou usar a solução da empresa Y. Eu não vou selecionar se é Eusébio ou
+# Petrolina."*
+#
+# A cadeia é esta, e ela é de mão única:
+#
+#     medição → obra → empresa → município, endereço, token, modo
+#
+# A tela de cadastro da EMPRESA existe para dizer, uma vez, onde aquela empresa
+# emite. Na hora de emitir, ninguém escolhe nada: o sistema desce a cadeia. Se
+# a obra não tem empresa, o certo é RECUSAR e mandar arrumar o cadastro — não
+# perguntar, e muito menos chutar a empresa padrão. Emitir nota pelo CNPJ
+# errado é erro que se conserta com cancelamento e carta.
+# ---------------------------------------------------------------------------
 def _texto(v: Any) -> str:
     return (str(v).strip() if v is not None else "")
 
@@ -181,6 +201,71 @@ def definir(s: Session, empresa_id: int, dados: dict[str, Any],
     logger.info("ERP/emissão: empresa %s em %s, modo %s, ambiente %s",
                 empresa.cnpj, empresa.emissao_municipio or "?", modo, ambiente)
     return empresa
+
+
+def resolver(s: Session, *, obra_id: Optional[int] = None,
+             titulo_id: Optional[int] = None) -> dict[str, Any]:
+    """Por onde ESTA obra (ou este título) emite. Ninguém escolhe: se desce a
+    cadeia medição → obra → empresa.
+
+    Devolve sempre um dicionário com `pode` e, quando não dá, `motivo` em
+    português dizendo o que arrumar. Não levanta exceção porque a TELA também
+    chama isto, só para mostrar — e tela não deve quebrar por cadastro
+    incompleto.
+    """
+    from app.apps.erp.db.models.cadastros import Obra
+    from app.apps.erp.db.models.financeiro import Rateio, Titulo
+
+    obra = s.get(Obra, obra_id) if obra_id else None
+
+    if obra is None and titulo_id:
+        titulo = s.get(Titulo, titulo_id)
+        if titulo is None:
+            return {"pode": False, "motivo": "Título não encontrado."}
+        obras = sorted({r.obra_id for r in s.scalars(
+            select(Rateio).where(Rateio.titulo_id == titulo.id)).all() if r.obra_id})
+        if not obras:
+            return {"pode": False,
+                    "motivo": "Este título não está ligado a nenhuma obra — "
+                              "sem obra, o sistema não sabe por qual CNPJ emitir."}
+        if len(obras) > 1:
+            # Duas obras podem ser de EMPRESAS diferentes, e aí não existe "a"
+            # nota: seriam duas, de CNPJs diferentes. Melhor recusar do que
+            # emitir pela primeira que apareceu.
+            return {"pode": False,
+                    "motivo": "Este título está rateado entre mais de uma obra. "
+                              "Se elas forem de empresas diferentes, seriam duas "
+                              "notas, de CNPJs diferentes — separe o título."}
+        obra = s.get(Obra, obras[0])
+
+    if obra is None:
+        return {"pode": False, "motivo": "Informe a obra."}
+    if not obra.empresa_id:
+        return {"pode": False,
+                "motivo": f"A obra {obra.codigo} não está ligada a nenhuma "
+                          f"empresa. Escolha o CNPJ dela no cadastro da obra — "
+                          f"é ele que define por onde a nota sai."}
+
+    empresa = s.get(Empresa, obra.empresa_id)
+    if empresa is None:
+        return {"pode": False, "motivo": "A empresa da obra não foi encontrada."}
+
+    pode, falta = pode_emitir(empresa)
+    return {
+        "pode": pode or empresa.emissao_modo == "MANUAL",
+        "obra": obra.codigo, "obra_id": obra.id,
+        "empresa": empresa.nome_fantasia or empresa.razao_social,
+        "empresa_id": empresa.id, "cnpj": empresa.cnpj,
+        "modo": empresa.emissao_modo,
+        "municipio": empresa.emissao_municipio or "",
+        "ambiente": empresa.emissao_ambiente,
+        "canal": empresa.emissao_canal,
+        "o_que_falta": [] if empresa.emissao_modo == "MANUAL" else falta,
+        "motivo": ("" if (pode or empresa.emissao_modo == "MANUAL")
+                   else f"A empresa {empresa.nome_fantasia or empresa.razao_social} "
+                        f"está marcada para emitir pela API, mas falta: "
+                        f"{', '.join(falta)}."),
+    }
 
 
 def token_de(empresa: Empresa) -> Optional[str]:
