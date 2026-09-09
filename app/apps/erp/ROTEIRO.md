@@ -229,12 +229,18 @@ Omie não dá conta disso.
       ⚠️ Este último entra aqui e não no passo 6: o dono confirmou em
       09/09/2026 que são DUAS empresas, em municípios diferentes, uma por API e
       outra manual — deixar para o fim faria a segunda não emitir.
-- [ ] 2. **A medição completa**: tipo EDITÁVEL (normal, reajuste, aditivo,
-      subsidiária, complementar), número em TEXTO LIVRE (quem manda na
-      nomenclatura é o órgão), correlação entre a medição e a de reajuste dela,
-      e protocolo com número e data.
-- [ ] 3. **O quadro financeiro do contrato**: uma linha por medição e os totais
-      — contratado, aditivado, medido, faturado, recebido, a receber, retido.
+- [x] 2. **A medição completa** — FEITO em 09/09/2026 (migração 049). Tipo
+      EDITÁVEL em tabela (normal, reajuste, aditivo, subsidiária, complementar),
+      número em TEXTO LIVRE, correlação entre a medição e a de reajuste dela
+      (funciona nos dois jeitos de numerar: "1R" e "medição 3"), e protocolo com
+      número e data. O sistema recusa reajuste de si mesma, de outro contrato e
+      de reajuste.
+- [x] 3. **O quadro financeiro do contrato** — FEITO em 09/09/2026. Tela nova
+      em Obras › "Contratos e medições": uma linha por medição e os totais
+      (contratado, aditivado, vigente, medido, faturado, recebido, a receber,
+      saldo). MEDIDO ≠ FATURADO ≠ RECEBIDO em três colunas separadas, e o
+      reajuste NÃO consome saldo do contrato. O indicador de dias entre
+      protocolar e receber (item 7) já nasce aqui.
 - [ ] 4. **Tela de controle de notas emitidas**, com exportação para a
       contabilidade.
 - [ ] 5. **Emissão a partir da medição, modo MANUAL** — anexar a nota e a IA
@@ -243,7 +249,10 @@ Omie não dá conta disso.
       por empresa. ⚠️ Apontar para o **canal NACIONAL**, não para o ABRASF: a
       LC 214/2025 tornou o padrão nacional obrigatório e o ABRASF tem data para
       acabar. O `el_nfse_nacional.py` já fala esse padrão.
-- [ ] 7. **Indicadores**: dias entre protocolar e receber, por obra e por órgão.
+- [~] 7. **Indicadores**: dias entre protocolar e receber. Já pronto POR
+      CONTRATO, dentro do quadro (média, mais rápida, mais lenta, e as que estão
+      esperando há mais tempo). Falta o corte por OBRA e por ÓRGÃO numa tela
+      só — o cálculo já aceita o filtro por obra.
 - [ ] 8. **REAJUSTE** (pedido em 09/09/2026): data-base no contrato — pode ser
       a do orçamento OU a da proposta, muda por contrato —, previsão calculada
       a cada medição pelo índice acumulado, e a previsão virando título a
@@ -252,8 +261,8 @@ Omie não dá conta disso.
 - [ ] 9. **Tabela do INCC dentro do sistema**, atualizada sozinha. O Banco
       Central republica a série do INCC-DI no SGS, em API pública e gratuita
       (série **192**) — evita depender do FGVDados, que é licenciado.
-      ⚠️ Confirmar com o dono se os contratos usam INCC-**DI** ou INCC-**M**:
-      são séries diferentes, e índice errado dá valor errado com cara de certo.
+      ✅ CONFIRMADO por ele em 09/09/2026: os contratos usam **INCC-DI**, que
+      é a série 192. Nenhum ajuste necessário.
 
 **Feito em 09/09/2026, fora da ordem porque ele corrigiu/perguntou:**
 

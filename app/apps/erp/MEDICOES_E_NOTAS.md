@@ -406,22 +406,25 @@ formato da série estão documentados pelo Banco Central; a primeira chamada de
 verdade vai acontecer no Render, e o sistema tem de tratar o caso de a série
 vir vazia ou fora do ar.
 
-⚠️ **E uma decisão que precisa dele:** o INCC tem versões (**DI**, **M** e
-**10**), com apurações de períodos diferentes. Contrato público costuma citar
-uma delas explicitamente. A série 192 é o **INCC-DI**. Se os contratos da BWS
-usarem o INCC-M, é outra série — vale conferir num contrato antes de calcular
-qualquer coisa, porque índice errado dá valor errado com cara de certo.
+✅ **RESPONDIDO em 09/09/2026: os contratos da BWS usam o INCC-DI.** É
+exatamente a série 192 do SGS, então o caminho acima serve sem ajuste. Fica
+registrado porque o INCC tem três versões (DI, M e 10) com apurações de
+períodos diferentes — e usar a errada dá valor errado com cara de certo.
 
 ---
 
 ## 8. ORDEM DE CONSTRUÇÃO
 
-1. **O cadastro que destrava tudo**: expor na tela da obra os campos fiscais que
-   já existem no modelo; chave Pix na conta bancária; filtro por conta nas telas
-   de título.
-2. **A medição completa**: tipo editável, número livre, correlação entre
-   medições, protocolo com data.
-3. **O quadro financeiro do contrato**, com as medições e os totais.
+1. ✅ **FEITO (09/09/2026, migração 047) — O cadastro que destrava tudo**:
+   campos fiscais na tela da obra; chave Pix na conta bancária; emissão por
+   empresa; filtro por conta nas telas de título.
+2. ✅ **FEITO (09/09/2026, migração 049) — A medição completa**: tipo editável
+   em tabela, número livre, correlação entre medições nos dois jeitos de
+   numerar, protocolo com data. Recusa reajuste de si mesma, de outro contrato
+   e de reajuste.
+3. ✅ **FEITO (09/09/2026) — O quadro financeiro do contrato**, em Obras ›
+   "Contratos e medições": uma linha por medição, os totais, e MEDIDO ≠
+   FATURADO ≠ RECEBIDO em colunas separadas. O reajuste não consome saldo.
 4. **A tela de controle de notas emitidas**, com exportação.
 5. **A emissão a partir da medição** — primeiro o modo MANUAL (anexar a nota e
    deixar a IA ler), que não depende de credenciamento nenhum e já entrega

@@ -211,6 +211,17 @@ class Titulo(Base):
     especie: Mapped[str] = mapped_column(
         pg_enum(EspecieTitulo, "especie_titulo"), nullable=False, default=EspecieTitulo.PAGAR)
     numero_medicao: Mapped[Optional[str]] = mapped_column(Text)
+    # O TIPO da medição vem de catálogo editável, e o número é texto livre:
+    # quem manda na nomenclatura é o ÓRGÃO, não o ERP (migração 049).
+    medicao_tipo: Mapped[Optional[str]] = mapped_column(
+        Text, ForeignKey("medicao_tipos.codigo"))
+    # A medição de reajuste aponta para a que ela reajusta. Opcional de
+    # propósito: há órgão que numera o reajuste em sequência, e mesmo assim a
+    # ligação existe.
+    medicao_de_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("titulos.id"))
+    protocolo_numero: Mapped[Optional[str]] = mapped_column(Text)
+    protocolo_em: Mapped[Optional[date]] = mapped_column(Date)
     periodo_inicio: Mapped[Optional[date]] = mapped_column(Date)
     periodo_fim: Mapped[Optional[date]] = mapped_column(Date)
     notas_fiscais: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False, default=list)
@@ -1124,4 +1135,24 @@ class NotaEmitida(Base):
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class MedicaoTipo(Base):
+    """O tipo da medição — catálogo EDITÁVEL, não lista no código (migração 049).
+
+    O motivo, nas palavras do dono: há órgão que numera o reajuste em sequência
+    (virou a medição 3), órgão que numera em paralelo (1 e 1R), e medições
+    subsidiárias por fontes diferentes. **Quem manda na nomenclatura é o
+    órgão** — impor uma lista fixa quebraria no primeiro contrato fora do
+    padrão, e ele já viu isso acontecer.
+    """
+    __tablename__ = "medicao_tipos"
+
+    codigo: Mapped[str] = mapped_column(Text, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    e_reajuste: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())

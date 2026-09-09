@@ -69,6 +69,7 @@ MODULOS = [
         "cor": "var(--amarelo)",
         "abas": [
             ("obras", "Painel de obras", "erp.pagina_obras"),
+            ("contratos", "Contratos e medições", "erp.pagina_contratos"),
         ],
     },
     {
@@ -111,7 +112,7 @@ MODULOS = [
 # perguntar por 20 ações a cada carregamento seria desperdício.
 ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  "autorizar_pedido", "solicitar_suprimento", "configurar",
-                 "cruzar_notas", "arquivar")
+                 "cruzar_notas", "arquivar", "receber")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -482,6 +483,14 @@ def pagina_arquivo():
 @permissao("ver_notas")
 def pagina_notas():
     return render_template("erp_notas.html", **_contexto("notas"))
+
+
+@bp.route("/erp/contratos")
+@login_obrigatorio
+@permissao("ver_contratos")
+def pagina_contratos():
+    """O quadro financeiro do contrato — medido, faturado, recebido."""
+    return render_template("erp_contratos.html", **_contexto("contratos"))
 
 
 @bp.route("/erp/receber")
@@ -4357,6 +4366,102 @@ def api_arquivo_excluir(documento_id: int):
             svc_arq.excluir(s, documento_id, _usuario_logado(s))
             s.commit()
         return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+# ---------------------------------------------------------------------------
+# MEDIÇÃO: tipo, correlação, protocolo — e o quadro do contrato
+#
+# O tipo é catálogo EDITÁVEL e o número é texto livre porque quem manda na
+# nomenclatura é o ÓRGÃO, não o ERP.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/medicoes/tipos")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_medicao_tipos():
+    from app.apps.erp.core.titulos import medicao as svc_med
+    with get_session() as s:
+        return jsonify({"ok": True, "tipos": svc_med.listar_tipos(s)})
+
+
+@bp.route("/erp/api/medicoes/tipos/aplicar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_medicao_tipos_aplicar():
+    from app.apps.erp.core.titulos import medicao as svc_med
+    with get_session() as s:
+        r = svc_med.aplicar_tipos(s)
+        s.commit()
+    return jsonify({"ok": True, "dados": r})
+
+
+@bp.route("/erp/api/medicoes/<int:titulo_id>/classificar", methods=["POST"])
+@login_obrigatorio
+@permissao("receber")
+def api_medicao_classificar(titulo_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.titulos import medicao as svc_med
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            t = svc_med.classificar(
+                s, titulo_id, tipo=(d.get("tipo") or ""),
+                medicao_de_id=(int(d["medicao_de_id"]) if d.get("medicao_de_id") else None),
+                usuario=_usuario_logado(s))
+            linha = svc_med.ler(s, t)
+            s.commit()
+        return jsonify({"ok": True, "medicao": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/medicoes/<int:titulo_id>/protocolo", methods=["POST"])
+@login_obrigatorio
+@permissao("receber")
+def api_medicao_protocolo(titulo_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.titulos import medicao as svc_med
+    d = request.get_json(silent=True) or {}
+    def _quando():
+        try:
+            return date.fromisoformat(d.get("em") or "")
+        except ValueError:
+            return None
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            t = svc_med.protocolar(s, titulo_id, numero=(d.get("numero") or ""),
+                                   em=_quando(), usuario=_usuario_logado(s))
+            linha = svc_med.ler(s, t)
+            s.commit()
+        return jsonify({"ok": True, "medicao": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/contratos/quadro")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_contratos_quadro():
+    """A lista de contratos, com o essencial antes de abrir o quadro."""
+    from app.apps.erp.core.titulos import quadro as svc_quadro
+    with get_session() as s:
+        obra_id = (int(request.args["obra_id"]) if request.args.get("obra_id") else None)
+        return jsonify({"ok": True,
+                        "contratos": svc_quadro.listar_contratos(s, obra_id=obra_id)})
+
+
+@bp.route("/erp/api/contratos/<int:contrato_id>/quadro")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_contrato_quadro(contrato_id: int):
+    """O quadro financeiro: as medições e os sete totais."""
+    from app.apps.erp.core.titulos import quadro as svc_quadro
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, **svc_quadro.quadro(s, contrato_id)})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
 

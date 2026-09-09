@@ -1,0 +1,342 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Contratos e medições — ERP BWS{% endblock %}
+
+{# O QUADRO FINANCEIRO DO CONTRATO.
+
+   Por que a entrada é o CONTRATO e não a medição: foi o próprio dono quem
+   corrigiu no meio da fala — "até pensei que seria melhor ir pela obra, pelo
+   contrato, ou pela medição. Aí talvez seja até interessante pelo contrato,
+   que lá vai estar relacionando todas as medições."
+
+   O que esta tela responde, e que hoje só se responde somando planilha:
+
+     medido    ≠  faturado  ≠  recebido
+
+   Medir não é faturar, e faturar não é receber. São três perguntas
+   diferentes, e é por isso que aparecem em três colunas separadas — juntá-las
+   num número só é exatamente o erro que faz alguém achar que o dinheiro
+   entrou. #}
+
+{% block filtros %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="objeto do contrato, obra…">
+  </div>
+  <div class="campo"><label>Obra</label><select id="f-obra"></select></div>
+
+  <div class="dica" style="margin-top:12px">
+    O reajuste entra como medição, mas <b>não consome saldo do contrato</b>:
+    é acréscimo por índice, não obra executada a mais. Por isso o saldo aqui
+    desconta só a medição comum.
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+<style>
+  /* Dinheiro de contrato tem sete dígitos, e no tamanho padrão do quadrinho
+     "R$ 1.850.000,00" transborda a borda do cartão — o número aparece cortado,
+     que é o pior defeito possível numa tela de valor. Aqui o cartão é mais
+     largo e o algarismo um pouco menor. Vale só nesta tela. */
+  #kpis { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+  #kpis .kpi-valor { font-size: 20px; }
+</style>
+<div id="mensagem"></div>
+
+<div id="lado-lista">
+  <div class="tabela-wrap">
+    <div class="tabela-barra"><span class="resumo" id="resumo-lista"></span></div>
+    <div class="tabela-rolagem">
+      <table><thead><tr>
+        <th>Obra</th><th>Objeto</th><th>Situação</th>
+        <th class="direita">Contratado</th><th class="direita">Medido</th>
+        <th class="direita">Saldo</th><th class="direita">Medições</th><th></th>
+      </tr></thead><tbody id="corpo-lista"></tbody></table>
+    </div>
+    <div class="vazio oculto" id="vazio-lista"></div>
+  </div>
+</div>
+
+<div id="lado-quadro" class="oculto">
+  <div class="tabela-barra" style="background:var(--branco); border-radius:var(--raio);
+       box-shadow:var(--sombra); margin-bottom:14px">
+    <button class="btn secundario" id="btn-voltar">← Contratos</button>
+    <span class="resumo" id="cabecalho-contrato"></span>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+  <div id="pendencias"></div>
+
+  <div class="tabela-wrap">
+    <div class="tabela-barra"><span class="resumo" id="resumo-medicoes"></span></div>
+    <div class="tabela-rolagem">
+      <table><thead><tr>
+        <th>Medição</th><th>Solicitação</th><th>Tipo</th><th>Período</th>
+        <th class="direita">Medido</th><th class="direita">Faturado</th>
+        <th class="direita">Recebido</th><th>Protocolo</th><th>Dias</th><th></th>
+      </tr></thead><tbody id="corpo-medicoes"></tbody></table>
+    </div>
+    <div class="vazio oculto" id="vazio-medicoes"></div>
+  </div>
+
+  <div class="tabela-wrap" style="margin-top:14px">
+    <div class="tabela-barra"><span class="resumo">
+      <b>Tempo de recebimento</b> — dias entre protocolar no órgão e o dinheiro
+      entrar. Só entra na média o que já foi recebido: medição protocolada e
+      não paga tem espera, não prazo.</span></div>
+    <div id="tempo" style="padding:12px 14px"></div>
+  </div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" id="dlg-fechar">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PODE_MEXER = {{ 'true' if pode.receber else 'false' }};
+let CONTRATOS = [], QUADRO = null, TIPOS = [];
+
+// -------------------------------------------------------------------------
+// A lista de contratos
+// -------------------------------------------------------------------------
+async function carregarObras(){
+  try {
+    const d = await api("/erp/api/obras");
+    const lista = d.obras || d.dados || [];
+    els("f-obra").innerHTML = `<option value="">Todas</option>` + lista.map(o =>
+      `<option value="${o.id}">${escapar(o.codigo || "")} ${escapar(o.nome || "")}</option>`).join("");
+  } catch(e){
+    // Filtro mudo faz a pessoa achar que não há obra cadastrada. Se não deu,
+    // tem de aparecer que não deu.
+    els("f-obra").innerHTML = `<option value="">(não consegui carregar)</option>`;
+    aviso("mensagem", "Não consegui carregar as obras: " + e.message, "erro");
+  }
+}
+
+async function carregarLista(){
+  const p = new URLSearchParams();
+  if (els("f-obra").value) p.set("obra_id", els("f-obra").value);
+  try {
+    const d = await api("/erp/api/contratos/quadro?" + p.toString());
+    CONTRATOS = d.contratos || [];
+    desenharLista();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function contratosEmTela(){
+  const busca = (els("f-busca").value || "").trim().toLowerCase();
+  if (!busca) return CONTRATOS;
+  return CONTRATOS.filter(c =>
+    `${c.objeto||""} ${c.obra||""}`.toLowerCase().includes(busca));
+}
+
+function desenharLista(){
+  const lista = contratosEmTela();
+  els("resumo-lista").innerHTML = `<b>${lista.length}</b> contrato(s)`;
+  els("vazio-lista").classList.toggle("oculto", lista.length > 0);
+  if (!lista.length){
+    els("vazio-lista").innerHTML = "<b>Nenhum contrato nestes filtros</b>" +
+      "O contrato é cadastrado na tela da obra.";
+  }
+  els("corpo-lista").innerHTML = lista.map(c => `
+    <tr>
+      <td>${escapar(c.obra || "—")}</td>
+      <td>${escapar(c.objeto || "—")}</td>
+      <td><span class="selo outro">${rotulo(c.status)}</span></td>
+      <td class="direita mono">${moeda(c.contratado)}${c.aditivado
+        ? `<br><small>+ ${moeda(c.aditivado)} de aditivo</small>` : ""}</td>
+      <td class="direita mono">${moeda(c.medido)}${c.reajuste
+        ? `<br><small>${moeda(c.reajuste)} é reajuste</small>` : ""}</td>
+      <td class="direita mono">${moeda(c.saldo)}</td>
+      <td class="direita mono">${c.medicoes}</td>
+      <td><button class="btn secundario" data-quadro="${c.id}">Abrir quadro</button></td>
+    </tr>`).join("");
+  document.querySelectorAll("[data-quadro]").forEach(b =>
+    b.addEventListener("click", () => abrirQuadro(Number(b.dataset.quadro))));
+}
+
+// -------------------------------------------------------------------------
+// O quadro de um contrato
+// -------------------------------------------------------------------------
+async function abrirQuadro(id){
+  try {
+    QUADRO = await api(`/erp/api/contratos/${id}/quadro`);
+    els("lado-lista").classList.add("oculto");
+    els("lado-quadro").classList.remove("oculto");
+    desenharQuadro();
+    window.scrollTo(0, 0);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function voltar(){
+  QUADRO = null;
+  els("lado-quadro").classList.add("oculto");
+  els("lado-lista").classList.remove("oculto");
+}
+
+function desenharQuadro(){
+  const c = QUADRO.contrato, t = QUADRO.totais;
+  els("cabecalho-contrato").innerHTML =
+    `<b>${escapar(c.obra || "")}</b> — ${escapar(c.objeto || "sem objeto")}` +
+    (c.vigencia_fim ? ` · vigência até ${dataBR(c.vigencia_fim)}` : "") +
+    (c.indice_reajuste ? ` · reajuste por ${escapar(c.indice_reajuste)}` : "");
+
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Contratado</div>
+      <div class="kpi-valor">${moeda(t.contratado)}</div>
+      <div class="kpi-sub">${t.aditivado ? "+ " + moeda(t.aditivado) + " de aditivo" : "sem aditivo"}</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Vigente</div>
+      <div class="kpi-valor">${moeda(t.vigente)}</div>
+      <div class="kpi-sub">é este o teto de verdade</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Medido</div>
+      <div class="kpi-valor">${moeda(t.medido)}</div>
+      <div class="kpi-sub">${t.reajuste ? moeda(t.reajuste) + " é reajuste" : "sem reajuste"}</div></div>
+    <div class="kpi estatico roxo"><div class="kpi-rotulo">Faturado</div>
+      <div class="kpi-valor">${moeda(t.faturado)}</div>
+      <div class="kpi-sub">virou nota fiscal</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Recebido</div>
+      <div class="kpi-valor">${moeda(t.recebido)}</div>
+      <div class="kpi-sub">entrou na conta</div></div>
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">A receber</div>
+      <div class="kpi-valor">${moeda(t.a_receber)}</div>
+      <div class="kpi-sub">faturado e não entrou</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Saldo a medir</div>
+      <div class="kpi-valor">${moeda(t.saldo)}</div>
+      <div class="kpi-sub">${t.medido_pct === null ? "" : t.medido_pct + "% executado"}</div></div>`;
+
+  const p = QUADRO.pendencias, blocos = [];
+  if (p.medido_sem_nota.length)
+    blocos.push(`<b>Medido e ainda sem nota:</b> ${p.medido_sem_nota.map(escapar).join(", ")}`);
+  if (p.faturado_sem_receber.length)
+    blocos.push(`<b>Faturado e não recebido:</b> ${p.faturado_sem_receber.map(escapar).join(", ")}`);
+  if (p.sem_protocolo.length)
+    blocos.push(`<b>Sem protocolo no órgão:</b> ${p.sem_protocolo.map(escapar).join(", ")}`);
+  els("pendencias").innerHTML = blocos.length
+    ? `<div class="aviso info" style="margin-bottom:14px">${blocos.join("<br>")}</div>` : "";
+
+  const m = QUADRO.medicoes;
+  els("resumo-medicoes").innerHTML = `<b>${m.length}</b> medição(ões)`;
+  els("vazio-medicoes").classList.toggle("oculto", m.length > 0);
+  if (!m.length){
+    els("vazio-medicoes").innerHTML = "<b>Nenhuma medição neste contrato</b>" +
+      "A medição é lançada como título a receber, com número de medição.";
+  }
+  els("corpo-medicoes").innerHTML = m.map(l => `
+    <tr>
+      <td><b>${escapar(l.medicao || "—")}</b>${l.reajuste_de
+        ? `<br><small>reajuste da ${escapar(l.reajuste_de.medicao || "")}</small>` : ""}</td>
+      <td>${escapar(l.numero_sp || "—")}</td>
+      <td>${l.tipo ? escapar(l.tipo_nome || l.tipo) : '<span class="selo aguardando">sem tipo</span>'}</td>
+      <td>${l.periodo.inicio ? dataBR(l.periodo.inicio) + " a " + dataBR(l.periodo.fim) : "—"}</td>
+      <td class="direita mono">${moeda(l.valor)}</td>
+      <td class="direita mono">${l.faturado ? moeda(l.faturado) : "—"}</td>
+      <td class="direita mono">${l.recebido ? moeda(l.recebido) : "—"}</td>
+      <td>${l.protocolo ? escapar(l.protocolo) + "<br><small>" + dataBR(l.protocolado_em) + "</small>" : "—"}</td>
+      <td class="mono">${l.dias_ate_receber === null ? "—" : l.dias_ate_receber}</td>
+      <td>${PODE_MEXER ? `
+        <button class="btn secundario" data-tipo="${l.titulo_id}">Tipo</button>
+        <button class="btn secundario" data-protocolo="${l.titulo_id}">Protocolo</button>` : ""}</td>
+    </tr>`).join("");
+
+  document.querySelectorAll("[data-tipo]").forEach(b =>
+    b.addEventListener("click", () => abrirTipo(Number(b.dataset.tipo))));
+  document.querySelectorAll("[data-protocolo]").forEach(b =>
+    b.addEventListener("click", () => abrirProtocolo(Number(b.dataset.protocolo))));
+
+  const tr = QUADRO.tempo_de_recebimento;
+  els("tempo").innerHTML = tr.recebidas
+    ? `Das <b>${tr.recebidas}</b> medição(ões) já recebidas, a média foi de
+       <b>${tr.media_dias} dias</b> (a mais rápida em ${tr.menor}, a mais lenta em ${tr.maior}).
+       ${tr.aguardando ? `Há <b>${tr.aguardando}</b> protocolada(s) aguardando —
+         a mais antiga há ${tr.mais_antiga.dias_esperando} dias
+         (medição ${escapar(tr.mais_antiga.medicao || "")}).` : ""}`
+    : (tr.aguardando
+        ? `Nada recebido ainda. Há <b>${tr.aguardando}</b> medição(ões) protocolada(s),
+           a mais antiga há ${tr.mais_antiga.dias_esperando} dias.`
+        : `Nenhuma medição protocolada ainda — o indicador só nasce depois que o
+           protocolo é registrado.`);
+}
+
+// -------------------------------------------------------------------------
+// Classificar e protocolar
+// -------------------------------------------------------------------------
+function linhaDe(id){ return (QUADRO.medicoes || []).find(l => l.titulo_id === id); }
+
+async function abrirTipo(id){
+  if (!TIPOS.length){
+    try { TIPOS = (await api("/erp/api/medicoes/tipos")).tipos || []; }
+    catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  }
+  const linha = linhaDe(id);
+  // Só medição do MESMO contrato pode ser origem de reajuste — e o serviço
+  // recusa de novo no servidor. A lista aqui é conveniência, não a trava.
+  const outras = (QUADRO.medicoes || []).filter(l => l.titulo_id !== id && !l.e_reajuste);
+  const r = await perguntar({
+    titulo: `Medição ${linha.medicao || ""} — tipo`,
+    aviso: "Quem manda na nomenclatura é o órgão. O reajuste aponta para a " +
+           "medição que reajusta, mesmo quando o órgão o numerou em sequência.",
+    campos: [
+      {nome: "tipo", rotulo: "Tipo", tipo: "select", valor: linha.tipo || "",
+       opcoes: [{valor: "", rotulo: "— escolha —"}].concat(
+         TIPOS.map(t => ({valor: t.codigo, rotulo: t.nome})))},
+      {nome: "de", rotulo: "Reajuste da medição", tipo: "select",
+       valor: linha.reajuste_de ? String(linha.reajuste_de.titulo_id) : "",
+       dica: "Só para medição de reajuste. Em branco para as demais.",
+       opcoes: [{valor: "", rotulo: "— nenhuma —"}].concat(
+         outras.map(l => ({valor: String(l.titulo_id),
+                           rotulo: `Medição ${l.medicao} (${l.numero_sp})`})))},
+    ],
+    textoOk: "Salvar",
+  });
+  if (!r) return;
+  try {
+    await api(`/erp/api/medicoes/${id}/classificar`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({tipo: r.tipo, medicao_de_id: r.de || null})});
+    aviso("mensagem", "Tipo da medição registrado.", "ok");
+    abrirQuadro(QUADRO.contrato.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function abrirProtocolo(id){
+  const linha = linhaDe(id);
+  const hoje = new Date().toISOString().slice(0, 10);
+  const r = await perguntar({
+    titulo: `Medição ${linha.medicao || ""} — protocolo`,
+    aviso: "É o protocolo que destrava o indicador de tempo de recebimento: " +
+           "quantos dias entre entregar no órgão e o dinheiro entrar.",
+    campos: [
+      {nome: "numero", rotulo: "Número do protocolo", obrigatorio: true,
+       valor: linha.protocolo || ""},
+      {nome: "em", rotulo: "Data", tipo: "date",
+       valor: linha.protocolado_em || hoje},
+    ],
+    textoOk: "Registrar",
+  });
+  if (!r) return;
+  try {
+    await api(`/erp/api/medicoes/${id}/protocolo`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({numero: r.numero, em: r.em})});
+    aviso("mensagem", "Protocolo registrado.", "ok");
+    abrirQuadro(QUADRO.contrato.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// -------------------------------------------------------------------------
+els("btn-voltar").addEventListener("click", voltar);
+els("dlg-fechar").addEventListener("click", () => els("dlg").close());
+els("f-obra").addEventListener("change", carregarLista);
+els("f-busca").addEventListener("input", desenharLista);
+els("btn-limpar").addEventListener("click", () => {
+  els("f-obra").value = ""; els("f-busca").value = ""; carregarLista();
+});
+
+carregarObras().then(carregarLista);
+</script>
+{% endblock %}

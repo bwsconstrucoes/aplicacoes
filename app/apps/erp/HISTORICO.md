@@ -1373,6 +1373,62 @@ contêiner; a primeira de verdade acontece no Render. E fica uma pergunta para
 ele: os contratos usam INCC-**DI** ou INCC-**M**? São séries diferentes, e
 índice errado dá valor errado com cara de certo.
 
+### A medição completa e o quadro do contrato — 09/09/2026
+
+Migração **049** e uma tela nova em **Obras › "Contratos e medições"**.
+
+**O tipo da medição é tabela, não lista no código.** Foi o ponto que o dono
+fez questão de detalhar, e o mais fácil de errar: *"às vezes o nosso sistema
+não se adequa a cem por cento, porque teve uma medição 1 alguma coisa e outra
+medição 1 alguma coisa, por conta de fontes diferentes, e o órgão trata dessa
+forma."* Quem manda na nomenclatura é o ÓRGÃO. Por isso o número da medição
+continua sendo texto livre ("1", "1R", "3", "1-FONTE-A", "02/2026") e os cinco
+tipos que ele confirmou — normal, reajuste, aditivo, subsidiária, complementar
+— vivem numa tabela que se edita sem mexer no sistema.
+
+**A correlação do reajuste funciona nos dois jeitos de numerar.** No órgão que
+numera em paralelo, o reajuste da medição 1 é a "1R". No que numera em
+sequência, o mesmo reajuste é a "medição 3" e entra na fila como se fosse
+normal. Em ambos, o reajuste APONTA para a medição que reajusta — e é essa
+ligação que permite dizer "a medição 1 rendeu X, mais Y de reajuste". Sem ela
+os dois valores ficam soltos e ninguém soma.
+
+O sistema recusa três ligações que dariam valor errado com cara de certo:
+reajuste de si mesma, reajuste de medição de OUTRO contrato, e reajuste de
+reajuste.
+
+**O protocolo destrava o indicador que ele pediu**: dias entre entregar a
+medição no órgão e o dinheiro entrar. Só entra na média o que já foi recebido
+— medição protocolada e não paga tem espera, não prazo, e misturar as duas
+daria uma média que MELHORA sozinha quando o cliente atrasa.
+
+**O quadro do contrato separa três coisas que costumam virar uma só:**
+
+    medido  ≠  faturado  ≠  recebido
+
+Medir não é faturar; faturar não é receber. São três colunas, e a tela ainda
+lista de olho o que foi medido e não virou nota, o que virou nota e não entrou,
+e o que não foi protocolado.
+
+**O reajuste NÃO consome saldo do contrato** — é acréscimo por índice, não obra
+executada a mais. Um contrato de 1,85 milhão com 1,02 milhão medido, dos quais
+28,5 mil de reajuste, tem 855 mil de saldo (e não 826,5 mil).
+
+Um defeito achado ao olhar a tela num navegador: a **lista** de contratos
+descontava o reajuste do saldo e o **quadro** não — dois números diferentes
+sobre o mesmo contrato, na mesma sessão. Quem visse isso perderia a confiança
+nos dois, com razão. Agora a aritmética é a mesma nos dois lugares, e um teste
+guarda isso.
+
+**Quem vê:** ação nova `ver_contratos`, dada a administrador, diretor,
+financeiro, gestor de obras e consulta. Perfil preso a obra ou a autoria fica
+de fora **de propósito** — o quadro mostra o contrato inteiro e não há como
+recortá-lo por obra designada sem mentir no total. Abrir depois é uma linha.
+
+**Provado:** 27 testes com banco de verdade (`tests/test_medicao_quadro_banco.py`)
+e a tela percorrida num navegador de ponta a ponta — abrir, classificar,
+protocolar e voltar, sem um erro de JavaScript.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1528,15 +1584,16 @@ ele: os contratos usam INCC-**DI** ou INCC-**M**? São séries diferentes, e
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 048**,
+21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 049**,
    assim que o ramo entrar na `main`. A 042 é a trava contra baixa em
    duplicidade; sem ela, anexar comprovante pela tela dá erro. A 043 abre
    espaço para o documento morar no Drive; sem ela, anexar qualquer documento
    dá erro. A 044 abre o cruzamento de notas, a 045 o arquivo de documentos e
    a 046 os blocos, e a 047 traz a chave Pix e os dados de emissão por
-   empresa, e a 048 o controle da numeração das notas; sem elas as telas de
-   Notas fiscais, Arquivo, Configurações e Empresas não carregam. É o mesmo
-   botão de sempre, em Configurações.
+   empresa, a 048 o controle da numeração das notas e a 049 o tipo da medição,
+   a correlação do reajuste e o protocolo; sem elas as telas de Notas fiscais,
+   Arquivo, Configurações, Empresas e Contratos e medições não carregam. É o
+   mesmo botão de sempre, em Configurações.
 
 23. **Criar a pasta do Drive e colar o endereço** em Configurações › "Onde
    ficam os documentos", apertar "Testar a pasta" e só então ligar a chave.

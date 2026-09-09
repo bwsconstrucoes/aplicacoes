@@ -104,6 +104,16 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                         P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA},
     "arquivar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
                         P.DEPARTAMENTO_PESSOAL, P.GESTOR_OBRA},
+    # Quadro financeiro do contrato: medições, faturamento e recebimento.
+    #
+    # A lista é DELIBERADAMENTE só de perfis que já enxergam a base inteira
+    # (VE_TUDO). O quadro mostra o contrato de ponta a ponta — todas as
+    # medições, de todas as obras do contrato — e não há como recortá-lo por
+    # obra designada sem mentir no total. Quem é preso a obra ou a autoria
+    # fica de fora até existir um recorte que faça sentido; abrir depois é
+    # uma linha, fechar depois é conversa constrangedora.
+    "ver_contratos":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.CONSULTA},
 }
 
 # Ações que uma pessoa ganha de graça por já ter outra.
@@ -120,6 +130,9 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     # "os dois, na mesma tela", porque a nota tem uma ponta em cada mundo.
     "ver_notas":   ("comprar", "autorizar_pedido", "cruzar_notas"),
     "cruzar_notas": ("comprar",),
+    # Quem lança recebimento precisa do quadro do contrato: é lá que ele
+    # confere o que já foi medido, faturado e recebido antes de baixar.
+    "ver_contratos": ("receber",),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -153,6 +166,7 @@ ACAO_ROTULOS = {
     "cruzar_notas":         "Cruzar nota com pedido, título e fundo fixo",
     "ver_arquivo":          "Ver o arquivo de documentos da empresa",
     "arquivar":             "Guardar e organizar documento no arquivo",
+    "ver_contratos":        "Ver o quadro financeiro dos contratos",
 }
 
 ROTULOS = {
