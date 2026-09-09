@@ -94,8 +94,12 @@
       obrigatória, adiantamento abatido, aditivo e geração do título na
       autorização — núcleo e tela
 - [x] Bloqueio de período (diretor fecha e destrava janela temporária)
-- [ ] Empreita — falta: retenção de garantia (5% por medição, liberada no fim)
-      e alçada por valor de contrato
+- [x] Empreita — retenção de garantia e alçada por valor: FEITO em 09/09/2026
+      (migração 052). A retenção sai de cada medição, fica gravada NELA (mudar
+      o percentual não reescreve o passado) e a devolução vira título a pagar,
+      uma vez só. Quem aprova o contrato depende do valor: até 50 mil o
+      supervisor, até 200 mil o gestor, acima disso só a direção — faixas
+      editáveis em tabela.
 
 - [x] Categorias PERMITIDAS por operador (administrativo de obra não vê o plano
       inteiro) — seleção simples no cadastro do operador

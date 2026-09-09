@@ -115,7 +115,7 @@ MODULOS = [
 ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  "autorizar_pedido", "solicitar_suprimento", "configurar",
                  "cruzar_notas", "arquivar", "receber", "emitir_nota",
-                 "tratar_agenda")
+                 "tratar_agenda", "aprovar")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -6023,6 +6023,42 @@ def api_aprovar_empreita(contrato_id: int):
             c = aprovar_contrato(s, contrato_id, _usuario_logado(s))
             s.commit()
         return jsonify({"ok": True, "status": c.status})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/empreitas/garantias")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_empreita_garantias():
+    """De quem a BWS ainda está com garantia na mão, e há quanto tempo."""
+    from app.apps.erp.core.titulos.empreita import garantias_a_liberar, listar_alcadas
+    with get_session() as s:
+        return jsonify({"ok": True,
+                        "garantias": garantias_a_liberar(s),
+                        "alcadas": listar_alcadas(s)})
+
+
+@bp.route("/erp/api/empreitas/<int:contrato_id>/garantia", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar")
+def api_empreita_liberar_garantia(contrato_id: int):
+    """Devolve a garantia retida — vira TÍTULO A PAGAR, não acerto de planilha."""
+    from app.apps.erp.core.titulos.empreita import liberar_garantia
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            r = liberar_garantia(
+                s, contrato_id, _usuario_logado(s),
+                motivo=(d.get("motivo") or ""),
+                vencimento=d.get("vencimento"),
+                fornecedor_conta_id=(int(d["fornecedor_conta_id"])
+                                     if d.get("fornecedor_conta_id") else None),
+                forma_pagamento=(d.get("forma_pagamento") or "PIX"))
+            s.commit()
+        return jsonify({"ok": True, "resultado": r})
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
     except ErroValidacao as e:

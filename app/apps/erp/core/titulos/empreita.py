@@ -30,8 +30,8 @@ from app.apps.erp.db.models.cadastros import (
     Categoria, Fornecedor, Obra, PerfilUsuario, Usuario,
 )
 from app.apps.erp.db.models.financeiro import (
-    ContratoMedicao, ContratoServico, ContratoServicoItem, MedicaoItem,
-    StatusTitulo, Titulo,
+    ContratoMedicao, ContratoServico, ContratoServicoItem, EmpreitaAlcada,
+    MedicaoItem, StatusTitulo, Titulo,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,6 +57,21 @@ def _data(v: Any) -> Optional[date]:
         return date.fromisoformat(str(v)[:10]) if v else None
     except ValueError:
         return None
+
+
+def _pct_garantia(valor: Any) -> Decimal:
+    """O percentual de retenção, conferido antes de virar dígito errado.
+
+    Acima de 50% não é retenção, é confisco — e quase sempre é vírgula no
+    lugar errado. O banco recusa de novo, mas errar aqui dá uma frase em
+    português em vez de um erro de banco.
+    """
+    pct = _dec(valor, "percentual de retenção de garantia")
+    if pct < 0 or pct > 50:
+        raise ErroValidacao(
+            f"Retenção de garantia de {pct}% não faz sentido. O usual na "
+            f"construção é 5%. Deixe zero para não reter nada.")
+    return pct.quantize(Decimal("0.01"))
 
 
 def proximo_numero(s: Session) -> str:
@@ -115,6 +130,7 @@ def criar_contrato(s: Session, dados: dict[str, Any], usuario: Usuario) -> Contr
         parcelas_previstas=int(dados.get("parcelas_previstas") or 0) or None,
         data_inicio=_data(dados.get("data_inicio")), data_fim=_data(dados.get("data_fim")),
         exige_foto=bool(dados.get("exige_foto", True)),
+        retencao_garantia_pct=_pct_garantia(dados.get("retencao_garantia_pct")),
         observacoes=(dados.get("observacoes") or "").strip() or None,
         status="AGUARDANDO_AVAL", criado_por=usuario.id)
     s.add(contrato)
@@ -137,6 +153,57 @@ def criar_contrato(s: Session, dados: dict[str, Any], usuario: Usuario) -> Contr
     return contrato
 
 
+# ---------------------------------------------------------------------------
+# A ALÇADA POR VALOR DE CONTRATO
+#
+# Antes disto, uma empreita de oitocentos reais e uma de oitocentos mil
+# passavam pela mesma porta — qualquer perfil de obra aprovava as duas. A
+# faixa é TABELA e não número no código porque o teto muda com o tamanho da
+# empresa, e quando mudar quem muda é o dono, na tela.
+# ---------------------------------------------------------------------------
+# Se a migração 052 ainda não rodou, vale o que valia antes. O contrário —
+# recusar tudo — pararia a operação por causa de um botão não apertado.
+FAIXA_ANTIGA = (PerfilUsuario.ADMIN, PerfilUsuario.DIRETOR_FINANCEIRO,
+                PerfilUsuario.GESTOR_OBRA, PerfilUsuario.SUPERVISOR_OBRA,
+                PerfilUsuario.FINANCEIRO)
+
+
+def alcada_de(s: Session, valor: Any) -> dict[str, Any]:
+    """Quem pode aprovar um contrato DESTE tamanho.
+
+    Devolve sempre a faixa mais estreita que ainda comporta o valor — a de
+    menor teto entre as que o alcançam. Sem isso, um contrato de 300 mil
+    entraria na faixa dos 50 mil só porque ela aparece primeiro.
+    """
+    alvo = _dec(valor, "valor do contrato")
+    try:
+        faixas = list(s.scalars(select(EmpreitaAlcada)).all())
+    except Exception:
+        logger.warning("ERP/empreita: empreita_alcadas indisponível "
+                       "(migração 052 pendente?) — valendo a regra antiga")
+        return {"perfis": [p.value for p in FAIXA_ANTIGA], "valor_ate": None,
+                "descricao": "regra anterior à alçada por valor"}
+    if not faixas:
+        return {"perfis": [p.value for p in FAIXA_ANTIGA], "valor_ate": None,
+                "descricao": "nenhuma faixa cadastrada"}
+
+    cabem = [f for f in faixas if f.valor_ate is None or alvo <= Decimal(f.valor_ate)]
+    # A faixa sem teto é a última: ordena as com teto primeiro, da menor para
+    # a maior, e ela fica no fim.
+    cabem.sort(key=lambda f: (f.valor_ate is None, f.valor_ate or 0))
+    escolhida = cabem[0]
+    return {"perfis": list(escolhida.perfis), "descricao": escolhida.descricao or "",
+            "valor_ate": float(escolhida.valor_ate) if escolhida.valor_ate else None}
+
+
+def listar_alcadas(s: Session) -> list[dict[str, Any]]:
+    faixas = list(s.scalars(select(EmpreitaAlcada)).all())
+    faixas.sort(key=lambda f: (f.valor_ate is None, f.valor_ate or 0))
+    return [{"id": f.id, "valor_ate": float(f.valor_ate) if f.valor_ate else None,
+             "perfis": list(f.perfis), "descricao": f.descricao or ""}
+            for f in faixas]
+
+
 def aprovar_contrato(s: Session, contrato_id: int, usuario: Usuario) -> ContratoServico:
     """Aval do contrato — mesma lógica do título: quem cria não aprova."""
     c = s.get(ContratoServico, contrato_id)
@@ -146,10 +213,16 @@ def aprovar_contrato(s: Session, contrato_id: int, usuario: Usuario) -> Contrato
         raise ErroValidacao(f"Contrato está {c.status}.")
     if c.criado_por == usuario.id:
         raise ErroPermissao("Quem cadastra o contrato não é quem o aprova.")
-    if usuario.perfil not in (PerfilUsuario.ADMIN, PerfilUsuario.DIRETOR_FINANCEIRO,
-                              PerfilUsuario.GESTOR_OBRA, PerfilUsuario.SUPERVISOR_OBRA,
-                              PerfilUsuario.FINANCEIRO):
-        raise ErroPermissao("Perfil sem alçada para aprovar contrato de empreita.")
+    faixa = alcada_de(s, _valor_vigente(c))
+    perfil = usuario.perfil.value if hasattr(usuario.perfil, "value") else str(usuario.perfil)
+    if perfil not in faixa["perfis"]:
+        teto = (f"até R$ {faixa['valor_ate']:,.2f}".replace(",", "@")
+                .replace(".", ",").replace("@", ".")
+                if faixa["valor_ate"] else "acima da última faixa")
+        raise ErroPermissao(
+            f"Contrato de R$ {_valor_vigente(c)}: nesta faixa ({teto}) quem "
+            f"aprova é {', '.join(faixa['perfis'])}. "
+            f"{faixa['descricao']}".strip())
     c.status = "VIGENTE"
     c.aprovado_por = usuario.id
     c.aprovado_em = datetime.now(timezone.utc)
@@ -202,6 +275,160 @@ def _adiantado(s: Session, contrato_id: int) -> Decimal:
     return (Decimal(concedido) - Decimal(abatido)).quantize(_CENT)
 
 
+# ---------------------------------------------------------------------------
+# RETENÇÃO DE GARANTIA
+#
+# O costume da construção: guarda-se uma parte de cada medição e devolve-se no
+# fim, quando o serviço passou pelo período de garantia. Serve para o dia em
+# que o empreiteiro some e o reparo fica com a obra.
+#
+# O defeito que isso corrige é sempre o mesmo na planilha: retém-se
+# direitinho por doze medições e, no fim, ninguém sabe quanto ficou retido nem
+# quando devolver. O dinheiro fica parado, o empreiteiro cobra, e alguém refaz
+# a conta de memória.
+# ---------------------------------------------------------------------------
+def _retencao_de(c: ContratoServico, valor_medido: Decimal) -> Decimal:
+    pct = Decimal(str(c.retencao_garantia_pct or 0))
+    if pct <= 0:
+        return Decimal("0.00")
+    return (valor_medido * pct / 100).quantize(_CENT)
+
+
+def _retido(s: Session, contrato_id: int) -> Decimal:
+    """Quanto está retido HOJE. Soma o que cada medição guardou — e é por isso
+    que o valor fica gravado na medição, e não recalculado pelo percentual
+    atual: aditivo que muda o percentual não pode mudar o passado."""
+    total = s.scalar(select(func.coalesce(func.sum(ContratoMedicao.valor_retido), 0))
+                     .where(ContratoMedicao.contrato_id == contrato_id,
+                            ContratoMedicao.status != "CANCELADA")) or 0
+    return Decimal(total).quantize(_CENT)
+
+
+def _conta_para_devolver(s: Session, c: ContratoServico,
+                         conta_id: Optional[int], forma: str) -> Optional[int]:
+    """A conta do prestador que vai receber a devolução.
+
+    Dado bancário vive no CADASTRO, nunca no lançamento — regra do ERP inteiro.
+    Quando o prestador tem uma única conta homologada, o sistema usa essa; com
+    mais de uma, quem escolhe é a pessoa, porque adivinhar aqui é escolher para
+    onde o dinheiro vai.
+    """
+    from app.apps.erp.db.models.cadastros import FornecedorConta, StatusConta
+
+    if conta_id:
+        return int(conta_id)
+    if forma.upper() not in ("PIX", "TED"):
+        return None
+    contas = list(s.scalars(select(FornecedorConta).where(
+        FornecedorConta.fornecedor_id == c.fornecedor_id,
+        FornecedorConta.status == StatusConta.HOMOLOGADA)).all())
+    if len(contas) == 1:
+        return contas[0].id
+    if not contas:
+        raise ErroValidacao(
+            "O prestador não tem conta bancária homologada. Cadastre e homologue "
+            "a conta dele antes de devolver a garantia — dado bancário vive no "
+            "cadastro, nunca no lançamento.")
+    raise ErroValidacao(
+        f"O prestador tem {len(contas)} contas homologadas. Escolha por qual "
+        f"delas a garantia volta.")
+
+
+def liberar_garantia(s: Session, contrato_id: int, usuario: Usuario, *,
+                     motivo: str = "", vencimento: Any = None,
+                     fornecedor_conta_id: Optional[int] = None,
+                     forma_pagamento: str = "PIX") -> dict[str, Any]:
+    """Devolve a garantia retida — como TÍTULO A PAGAR, não como acerto.
+
+    Vira título porque é dinheiro saindo: passa pela mesma aprovação, a mesma
+    baixa e o mesmo comprovante de qualquer pagamento. Um "acerto" fora desse
+    caminho seria dinheiro saindo sem rastro.
+    """
+    from app.apps.erp.core.titulos.service import criar_titulo
+
+    c = s.get(ContratoServico, contrato_id, with_for_update=True,
+              populate_existing=True)
+    if c is None:
+        raise ErroValidacao("Contrato não encontrado.")
+    if c.retencao_liberada_em:
+        raise ErroValidacao(
+            f"A garantia deste contrato já foi liberada em "
+            f"{c.retencao_liberada_em.strftime('%d/%m/%Y')}. Liberar de novo "
+            f"pagaria duas vezes.")
+
+    retido = _retido(s, contrato_id)
+    if retido <= 0:
+        raise ErroValidacao("Não há garantia retida neste contrato.")
+
+    # Liberar antes do fim é possível, mas exige explicação escrita: é
+    # justamente o caso em que alguém vai perguntar por quê, meses depois.
+    if c.status not in ("CONCLUIDO", "ENCERRADO") and len((motivo or "").strip()) < 10:
+        raise ErroValidacao(
+            f"O contrato ainda está {c.status}. Liberar a garantia antes do fim "
+            f"é possível, mas escreva o motivo — é o que responde a pergunta "
+            f"'por que devolvemos antes?' daqui a seis meses.")
+
+    conta_id = _conta_para_devolver(s, c, fornecedor_conta_id, forma_pagamento)
+    titulo = criar_titulo(s, {
+        "tipo": "T5_EMPREITEIRO",
+        "fornecedor_id": c.fornecedor_id, "categoria_id": c.categoria_id,
+        "descricao": f"{c.numero} — devolução da retenção de garantia ({c.objeto[:90]})",
+        "valor_bruto": str(retido),
+        "competencia": date.today().strftime("%Y-%m"),
+        "forma_pagamento": forma_pagamento,
+        "fornecedor_conta_id": conta_id,
+        "contrato_servico_id": c.id,
+        "parcelas": [{"vencimento": (_data(vencimento)
+                                     or (date.today() + timedelta(days=15))).isoformat(),
+                      "valor": str(retido)}],
+        "rateios": [{"obra_id": c.obra_id, "valor": str(retido)}],
+        "justificativa_excecao": (f"Devolução da garantia retida no contrato "
+                                  f"{c.numero}."),
+    }, usuario)
+    titulo.contrato_servico_id = c.id
+
+    c.retencao_liberada_em = date.today()
+    c.retencao_liberada_por = usuario.id
+    c.retencao_titulo_id = titulo.id
+    c.retencao_motivo = (motivo or "").strip() or None
+    s.flush()
+    registrar_evento(s, "contrato_servico", c.id, "GARANTIA_LIBERADA", {
+        "contrato": c.numero, "valor": str(retido), "titulo": titulo.numero_sp,
+        "status_do_contrato": c.status, "motivo": motivo}, usuario.id)
+    logger.info("ERP/empreita: garantia de %s liberada (%s) no título %s",
+                c.numero, retido, titulo.numero_sp)
+    return {"contrato": c.numero, "valor": float(retido),
+            "titulo": titulo.numero_sp, "titulo_id": titulo.id}
+
+
+def garantias_a_liberar(s: Session) -> list[dict[str, Any]]:
+    """Contratos terminados com dinheiro ainda retido.
+
+    É a pergunta que a planilha não responde: de quem a BWS ainda está com
+    garantia na mão, e há quanto tempo.
+    """
+    saida = []
+    for c in s.scalars(select(ContratoServico).where(
+            ContratoServico.retencao_liberada_em.is_(None))).all():
+        retido = _retido(s, c.id)
+        if retido <= 0:
+            continue
+        fornecedor = s.get(Fornecedor, c.fornecedor_id)
+        obra = s.get(Obra, c.obra_id)
+        saida.append({
+            "contrato_id": c.id, "numero": c.numero, "status": c.status,
+            "objeto": c.objeto,
+            "fornecedor": getattr(fornecedor, "razao_social", ""),
+            "obra": getattr(obra, "codigo", ""),
+            "retido": float(retido),
+            "pct": float(c.retencao_garantia_pct or 0),
+            "terminou_em": c.data_fim.isoformat() if c.data_fim else None,
+            "pode_liberar": c.status in ("CONCLUIDO", "ENCERRADO"),
+        })
+    saida.sort(key=lambda x: (not x["pode_liberar"], -x["retido"]))
+    return saida
+
+
 def saldo(s: Session, contrato_id: int) -> dict[str, Any]:
     c = s.get(ContratoServico, contrato_id)
     if c is None:
@@ -215,6 +442,10 @@ def saldo(s: Session, contrato_id: int) -> dict[str, Any]:
         "percentual_medido": float((medido / vigente * 100).quantize(Decimal("0.01")))
                              if vigente else 0.0,
         "adiantamento_em_aberto": float(_adiantado(s, contrato_id)),
+        "retencao_pct": float(c.retencao_garantia_pct or 0),
+        "retido": float(_retido(s, contrato_id)),
+        "retencao_liberada_em": (c.retencao_liberada_em.isoformat()
+                                 if c.retencao_liberada_em else None),
     }
 
 
@@ -339,7 +570,17 @@ def registrar_medicao(s: Session, contrato_id: int, dados: dict[str, Any],
     valor = _dec(dados.get("valor_medido"), "valor medido").quantize(_CENT)
     disponivel = _adiantado(s, contrato_id)
     abate = min(disponivel, valor) if disponivel > 0 else Decimal("0.00")
-    liquido = (valor - abate).quantize(_CENT)
+    # A GARANTIA INCIDE SOBRE O MEDIDO, não sobre o líquido: ela é uma parte do
+    # serviço executado, e o adiantamento é dinheiro que já saiu. Calcular sobre
+    # o líquido faria a retenção encolher justamente na medição que abate
+    # adiantamento — e no fim do contrato faltaria garantia.
+    retido = _retencao_de(c, valor)
+    liquido = (valor - abate - retido).quantize(_CENT)
+    if liquido < 0:
+        raise ErroValidacao(
+            f"Com o abatimento do adiantamento (R$ {abate}) e a retenção de "
+            f"garantia (R$ {retido}), esta medição ficaria negativa. Abata o "
+            f"adiantamento em mais de uma medição.")
 
     ultimo = s.scalar(select(func.coalesce(func.max(ContratoMedicao.numero), 0))
                       .where(ContratoMedicao.contrato_id == contrato_id)) or 0
@@ -350,7 +591,8 @@ def registrar_medicao(s: Session, contrato_id: int, dados: dict[str, Any],
         periodo_fim=_data(dados.get("periodo_fim")),
         quantidade=_dec(dados["quantidade"], "quantidade") if dados.get("quantidade") else None,
         percentual=((valor / vigente * 100).quantize(Decimal("0.0001")) if vigente else None),
-        valor_medido=valor, valor_adiantamento_abatido=abate, valor_liquido=liquido,
+        valor_medido=valor, valor_adiantamento_abatido=abate,
+        valor_retido=retido, valor_liquido=liquido,
         observacao=(dados.get("observacao") or "").strip() or None,
         status="MEDIDA", medido_por=usuario.id)
     s.add(m)
@@ -366,7 +608,7 @@ def registrar_medicao(s: Session, contrato_id: int, dados: dict[str, Any],
     s.flush()
     registrar_evento(s, "contrato_servico", c.id, "MEDICAO_REGISTRADA", {
         "contrato": c.numero, "medicao": m.numero, "valor": str(valor),
-        "abatido": str(abate), "liquido": str(liquido),
+        "abatido": str(abate), "retido": str(retido), "liquido": str(liquido),
         "periodo": f"{m.periodo_inicio} a {m.periodo_fim}",
         "criticas": [x["codigo"] for x in criticas]}, usuario.id)
     return m
@@ -453,6 +695,9 @@ def detalhar(s: Session, contrato_id: int) -> dict[str, Any]:
         "preco_unitario": float(c.preco_unitario) if c.preco_unitario else None,
         "status": c.status, "exige_foto": c.exige_foto,
         "parcelas_previstas": c.parcelas_previstas,
+        "alcada": alcada_de(s, _valor_vigente(c)),
+        "retencao_motivo": c.retencao_motivo or "",
+        "retencao_titulo_id": c.retencao_titulo_id,
         "periodo": (f"{c.data_inicio:%d/%m/%Y} a {c.data_fim:%d/%m/%Y}"
                     if c.data_inicio and c.data_fim else ""),
         **est,
@@ -463,6 +708,7 @@ def detalhar(s: Session, contrato_id: int) -> dict[str, Any]:
             "quantidade": float(m.quantidade) if m.quantidade else None,
             "valor_medido": float(m.valor_medido),
             "abatido": float(m.valor_adiantamento_abatido),
+            "retido": float(m.valor_retido or 0),
             "valor_liquido": float(m.valor_liquido),
             "percentual": float(m.percentual) if m.percentual else None,
             "status": m.status, "titulo_id": m.titulo_id,
