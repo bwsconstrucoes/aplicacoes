@@ -220,7 +220,7 @@ O lado do que a BWS RECEBE. Especificação inteira em `MEDICOES_E_NOTAS.md`.
 Substitui o processo "Protocolos e Medições" do Pipefy, que existe porque o
 Omie não dá conta disso.
 
-- [ ] 1. **O cadastro que destrava tudo**: expor na tela da obra os campos
+- [x] 1. **O cadastro que destrava tudo** — FEITO em 09/09/2026 (migração 047): expor na tela da obra os campos
       fiscais que JÁ existem no modelo (CNO, alíquota de ISS, ISS retido,
       regime, conta de recebimento); **chave Pix** na conta bancária; filtro
       **por conta** nas telas de título — pedido dele: "às vezes é mais fácil

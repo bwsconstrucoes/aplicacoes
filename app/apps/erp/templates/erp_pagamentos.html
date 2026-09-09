@@ -24,6 +24,13 @@
     <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-obra"></div></div>
   </div>
   <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Conta que paga</span>
+      <span class="filtro-badge" id="badge-conta">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-conta"></div>
+      <div class="dica">A conta vem da obra. Título rateado entre obras de contas
+        diferentes aparece nas duas.</div></div>
+  </div>
+  <div class="filtro aberto">
     <button class="filtro-cab" type="button"><span>Lote</span><span class="seta">▾</span></button>
     <div class="filtro-cont">
       <label class="opcao"><input type="checkbox" id="f-sem-lote"><span class="rotulo">Fora de lote</span></label>
@@ -100,7 +107,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 let P = [], CONTAS = [], LOTES = [], SEL = new Set(), ORDEM = {campo:"vencimento", asc:true};
-let F = {forma: new Set(), obra: new Set()};
+let F = {forma: new Set(), obra: new Set(), conta: new Set()};
 
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
@@ -215,7 +222,19 @@ function montarFiltros(){
   els("opcoes-obra").innerHTML = Object.keys(co).sort().map(k=>
     `<label class="opcao"><input type="checkbox" data-f="obra" value="${k}" ${F.obra.has(k)?"checked":""}>
      <span class="rotulo">${k}</span><span class="qtd">${co[k]}</span></label>`).join("");
+  // A CONTA QUE PAGA. Pedido do dono: "às vezes a gente quer filtrar o que tem
+  // pra pagar nessa conta, o que tem pra pagar na outra — às vezes é mais fácil
+  // do que filtrar por obra". Uma parcela pode contar em mais de uma conta
+  // quando o título é rateado entre obras de contas diferentes.
+  const cc = {};
+  P.forEach(p => (p.contas_nomes||[]).forEach(n => { if(n) cc[n] = (cc[n]||0)+1; }));
+  els("opcoes-conta").innerHTML = Object.keys(cc).sort().map(k=>
+    `<label class="opcao"><input type="checkbox" data-f="conta" value="${k}" ${F.conta.has(k)?"checked":""}>
+     <span class="rotulo">${k}</span><span class="qtd">${cc[k]}</span></label>`).join("")
+    || `<div class="cartao-dica">Nenhuma obra com conta definida. A conta se
+        escolhe no cadastro da obra.</div>`;
   els("badge-forma").textContent = F.forma.size; els("badge-obra").textContent = F.obra.size;
+  els("badge-conta").textContent = F.conta.size;
   document.querySelectorAll("[data-f]").forEach(i=>i.addEventListener("change", ev=>{
     const f=ev.target.dataset.f, v=ev.target.value;
     ev.target.checked ? F[f].add(v) : F[f].delete(v);
@@ -243,6 +262,7 @@ function visiveis(){
   let l = P.filter(p => {
     if (F.forma.size && !F.forma.has(p.forma)) return false;
     if (F.obra.size && !F.obra.has(p.obra)) return false;
+    if (F.conta.size && !(p.contas_nomes||[]).some(n => F.conta.has(n))) return false;
     if (els("f-atrasadas").checked && !p.atrasada) return false;
     if (els("f-hoje").checked && p.vencimento !== hoje) return false;
     if (els("f-7").checked && p.vencimento > lim7) return false;
@@ -567,7 +587,7 @@ els("marca-todos").addEventListener("change", ev => {
 let deb; els("f-busca").addEventListener("input", ()=>{ clearTimeout(deb); deb=setTimeout(desenhar,250); });
 ["f-atrasadas","f-hoje","f-7","f-sem-lote"].forEach(id=>els(id).addEventListener("change", desenhar));
 els("btn-limpar").addEventListener("click", ()=>{
-  F={forma:new Set(),obra:new Set()}; els("f-busca").value="";
+  F={forma:new Set(),obra:new Set(),conta:new Set()}; els("f-busca").value="";
   ["f-atrasadas","f-hoje","f-7","f-sem-lote"].forEach(i=>els(i).checked=false);
   montarFiltros(); desenhar();
 });

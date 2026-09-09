@@ -1256,6 +1256,58 @@ JavaScript, enterra.
 Conferido no navegador depois do conserto: a ficha do lote abre com "Incluir
 SPs", "Excluir lote" e os quadrinhos novos, sem erro de JavaScript.
 
+### O cadastro que destrava a emissão de nota — 09/09/2026
+
+Passo 1 do `MEDICOES_E_NOTAS.md`, migração **047**. Três coisas que ele pediu, e
+uma que mudou de prioridade.
+
+**A chave Pix da conta bancária**, com o motivo que ele deu: *"eventualmente a
+gente precisa consultar, e tendo esse cadastro das contas é o local mais fácil"*.
+Não é para pagar por ali — é para **copiar e mandar**. Por isso o botão
+**"Copiar dados"** monta o bloco inteiro (razão social, CNPJ, banco, agência,
+conta e as chaves), pronto para colar num WhatsApp: copiar campo por campo é
+onde se erra um dígito, e dígito errado em dado bancário é dinheiro no lugar
+errado. Várias chaves por conta, e o formato de cada uma é conferido — CPF com
+cinco dígitos é recusado na hora, não meses depois.
+
+**Os dados de emissão POR EMPRESA.** Isto ia ficar para o fim; mudou quando ele
+respondeu que *a BWS não tem inscrição municipal em Petrolina, mas outra empresa
+que vai operar tem*, e que *uma emite por API e a outra manual*. Ou seja: emitir
+em mais de um município virou requisito do primeiro dia. Município, código IBGE,
+endereço do serviço, canal, série, alíquota, código de serviço e token saíram do
+código e viraram cadastro. Eusébio/CE e Petrolina/PE já vêm na lista — escolher
+o município preenche endereço e código sozinho.
+
+**Três defesas, e cada uma tem motivo:**
+
+- **MANUAL é o padrão.** Empresa recém-cadastrada não sai emitindo nota fiscal
+  sozinha porque alguém esqueceu de configurar.
+- **HOMOLOGAÇÃO é o padrão.** Emitir é irreversível: em produção, cada emissão
+  gera documento fiscal de verdade.
+- **O token vai cifrado ou não vai.** Sem a `ERP_CHAVE_SEGREDOS` o sistema
+  RECUSA gravar, em vez de guardar aberto — token de emissão assina em nome da
+  empresa. E ele **nunca volta para a tela**: ela sabe que existe, não recebe o
+  valor.
+
+Ligar a API sem endereço e sem município é recusado duas vezes: no código, com
+mensagem em português, e no banco, para o caso de um código futuro esquecer. E
+quando falta algo, a tela **diz o que falta, item a item** — dizer só "não dá"
+faria a pessoa adivinhar.
+
+**O filtro por conta nos Pagamentos**, o incômodo diário que ele citou: *"às
+vezes é mais fácil do que filtrar por obra"*. A conta vem da obra; título
+rateado entre obras de contas diferentes aparece nos dois filtros, que é o
+certo. Quando nenhuma obra tem conta, o filtro **diz isso** em vez de aparecer
+vazio.
+
+**Na tela da obra** entraram o regime de tributação e a conta que RECEBE a
+medição — diferente da conta que paga, que já existia. Os dois já estavam no
+banco; faltava a tela mostrar.
+
+Provado com banco de verdade (22 casos) e no navegador: guardei uma chave Pix,
+vi a chave torta ser recusada com a mensagem certa, escolhi Petrolina e vi o
+endereço se preencher sozinho, e liguei o filtro por conta nos pagamentos.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1411,13 +1463,14 @@ SPs", "Excluir lote" e os quadrinhos novos, sem erro de JavaScript.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 046**,
+21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 047**,
    assim que o ramo entrar na `main`. A 042 é a trava contra baixa em
    duplicidade; sem ela, anexar comprovante pela tela dá erro. A 043 abre
    espaço para o documento morar no Drive; sem ela, anexar qualquer documento
    dá erro. A 044 abre o cruzamento de notas, a 045 o arquivo de documentos e
-   a 046 os blocos; sem elas as telas de Notas fiscais e de Arquivo não
-   carregam. É o mesmo botão de sempre, em Configurações.
+   a 046 os blocos, e a 047 traz a chave Pix e os dados de emissão por
+   empresa; sem elas as telas de Notas fiscais, Arquivo, Configurações e
+   Empresas não carregam. É o mesmo botão de sempre, em Configurações.
 
 23. **Criar a pasta do Drive e colar o endereço** em Configurações › "Onde
    ficam os documentos", apertar "Testar a pasta" e só então ligar a chave.
