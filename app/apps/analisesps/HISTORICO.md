@@ -938,6 +938,74 @@ banco está noutro lugar e cada ida custa mais — por isso cortar o NÚMERO de
 idas (10→6 na Auditoria, 18→12 no Lote, 13→9 no Relatório) vale ainda mais lá
 do que aqui. E nada foi aberto num navegador de verdade.
 
+### Décima nona leva (09/09) — a tela volta como estava
+
+*"Eu filtro, vou para o Lote, volto para Solicitações — e ele refaz tudo de
+novo. É como se eu tivesse duas abas do navegador e quisesse alternar entre
+elas na hora."* A observação do dono estava certa, e era de concepção: **não
+havia cache nenhum**. Toda troca de aba refazia as consultas e remontava a
+tela inteira, mesmo três segundos depois.
+
+**Agora a tela fica guardada no navegador por cinco minutos.** A volta não vai
+ao servidor: aparece na hora, com o filtro e tudo. Cinco minutos foi escolha do
+dono, com os riscos na frente.
+
+**SÓ AS TELAS DE LEITURA ENTRAM** — Solicitações, Relatório, Auditoria e Log.
+A razão é concreta e não é preciosismo: **Lote, Agenda, Ratear e Bradesco
+recebem alterações NO PRÓPRIO ENDEREÇO** (o formulário manda para elas
+mesmas). Guardá-las mostraria o estado ANTERIOR à mudança que a pessoa acabou
+de fazer — que é pior do que ser lento. A **ficha da SP** também fica de fora:
+ela mostra o status atual e tem botões que agem sobre ele.
+
+As quatro que entraram só são alteradas por `/api/...`, e toda alteração por
+lá termina recarregando a tela — o que substitui o que estava guardado. Há um
+teste que prende a lista, porque entrar nela é uma decisão, não um detalhe.
+
+> **O QUE FICA EM ABERTO, dito com todas as letras:** se OUTRA pessoa alterar
+> algo, você pode ver o estado anterior por até cinco minutos. As redes de
+> proteção já existiam e continuam valendo na tela guardada — o relógio no
+> alto diz de quando é o dado, e a busca de 90 em 90 segundos avisa se a base
+> mudou. Mas o atraso existe, e foi aceito.
+
+**Sair apaga o que ficou guardado** (`Clear-Site-Data`). Sem isso, num
+computador compartilhado, apertar Voltar depois de sair mostraria as telas da
+pessoa anterior pelos minutos que faltassem. Sair tem de sair de verdade.
+
+**A ROLAGEM E AS CAIXINHAS MARCADAS TAMBÉM VOLTAM.** A tela guardada voltava
+no topo e sem as marcações — e quem marcou vinte SPs, foi conferir uma no Lote
+e voltou, remarcava tudo. Ficam na memória da ABA (`sessionStorage`), não no
+computador: fechou a aba, acabou. A chave inclui o endereço inteiro com o
+filtro, então mudar o filtro não ressuscita a marcação de outra lista, e há
+meia hora de validade para não trazer de volta uma seleção esquecida.
+
+> A marcação reposta **nunca é invisível**: a barra do alto mostra quantas são
+> e quanto somam, e nenhum botão age sobre ela sem confirmar.
+
+### Vigésima leva (09/09) — enviar ao lote sem sair da tela
+
+*"Ao enviar registro ao lote, não quero mudar de tela. Mantenha-se em
+Solicitações, apenas avise que foi executada a ação."*
+
+O botão mandava um formulário e levava a pessoa para o Lote — perdendo o
+filtro, a rolagem e a marcação de quem só queria separar um grupo e continuar
+conferindo a lista. Agora ele age no lugar e aparece um recado no canto
+("12 SP(s) entraram no grupo Novo Lote 1"), com um link para quem quiser
+conferir, que some sozinho em seis segundos.
+
+A regra é a MESMA do formulário — grupo novo no topo, o que já estava fica
+abaixo —, e é **chamada, não copiada**: duas cópias divergiriam no dia em que
+uma delas mudasse. Há teste para as duas coisas.
+
+**Verificado:** 2839 testes verdes com Postgres de verdade, e o envio ao lote
+exercitado ponta a ponta contra o banco: as SPs entram, o grupo novo fica no
+topo, o que já estava é preservado, e a resposta é 200 — não um
+redirecionamento.
+
+**NÃO verificado:** nada foi aberto num navegador de verdade. O comportamento
+de guardar a tela depende do navegador respeitar o cabeçalho, e a reposição da
+rolagem e das marcações é JavaScript — as duas coisas os testes não alcançam.
+São as primeiras a conferir na tela.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

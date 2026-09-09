@@ -384,6 +384,27 @@ varredura em vez de várias**, e todas com teste que prende a forma da consulta:
 - **O Relatório** soma as dimensões juntas (`GROUPING SETS`).
 - **A Auditoria** conta as quatro condições numa consulta (`FILTER`).
 
+### A tela fica guardada no navegador por 5 minutos
+
+Trocar de aba não refaz as consultas: a volta a Solicitações aparece na hora,
+com o filtro, a rolagem e as caixinhas marcadas. Foi escolha do dono, com o
+risco na frente — se **outra pessoa** alterar algo, o estado anterior pode
+aparecer por até cinco minutos (o relógio no alto e o aviso de 90 s cobrem,
+com atraso).
+
+**A lista de telas guardadas é fechada e tem teste:** Solicitações, Relatório,
+Auditoria e Log. **Não entram** Lote, Agenda, Ratear, Bradesco nem a ficha da
+SP — as quatro primeiras recebem alterações no PRÓPRIO endereço, e guardá-las
+mostraria o estado anterior à mudança que a pessoa acabou de fazer; a ficha
+mostra o status atual e tem botões que agem sobre ele. Antes de pôr uma tela
+nova nessa lista, confira essas duas coisas.
+
+`Sair` manda `Clear-Site-Data` para apagar o que ficou guardado — num
+computador compartilhado, Voltar mostraria a tela da pessoa anterior.
+
+A rolagem e as marcações ficam no `sessionStorage`, com o endereço inteiro
+(filtro incluído) na chave e meia hora de validade.
+
 ## O que ficou de fora, e por quê
 
 - **Cancelar SP no Pipefy.** O botão abre o formulário deles, como no

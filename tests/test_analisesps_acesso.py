@@ -108,6 +108,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/alterar"),
     ("POST", "/analisesps/api/validar"),
     ("POST", "/analisesps/api/sem-risco"),
+    ("POST", "/analisesps/api/enviar-ao-lote"),
     ("POST", "/analisesps/colunas"),
     ("POST", "/analisesps/agenda"),
     ("POST", "/analisesps/api/migrar"),

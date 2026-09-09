@@ -52,6 +52,60 @@ bp.before_request(auth.exigir_login)
 #     arquivo comprimido só gasta processador e às vezes aumenta;
 #   - o que é pequeno demais para valer o esforço.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# A TELA FICA GUARDADA NO NAVEGADOR POR CINCO MINUTOS
+#
+# Pedido do dono, e a observação dele estava certa: "eu filtro, vou para o
+# Lote, volto para Solicitações — e ele refaz tudo de novo. Se eu tivesse duas
+# abas do navegador eu alternaria na hora." Hoje toda troca de aba refazia as
+# consultas e remontava a tela inteira, mesmo três segundos depois.
+#
+# Guardada, a volta não vai ao servidor: aparece na hora, com o filtro e tudo.
+#
+# SÓ AS TELAS DE LEITURA ENTRAM, e a razão é concreta: Lote, Agenda, Ratear e
+# Bradesco recebem alterações NO PRÓPRIO ENDEREÇO (o formulário manda para
+# elas mesmas). Guardá-las mostraria o estado ANTERIOR à mudança que a pessoa
+# acabou de fazer — que é pior do que ser lento. As quatro daqui só são
+# alteradas por `/api/...`, e toda alteração por lá termina recarregando a
+# tela, o que substitui o que estava guardado.
+#
+# AS REDES DE PROTEÇÃO JÁ EXISTIAM e continuam valendo na tela guardada:
+#   - o relógio no alto diz de quando é o dado ("base de 09/09 às 14:32");
+#   - a busca de 90 em 90 segundos continua rodando e avisa se a base mudou.
+#
+# O QUE FICA EM ABERTO, dito com todas as letras: se OUTRA pessoa alterar algo,
+# você pode ver o estado anterior por até cinco minutos. Foi escolha do dono
+# em 09/09/2026, com o risco na frente — ele considerou viável para o uso de
+# quatro pessoas na mesma empresa.
+# ---------------------------------------------------------------------------
+SEGUNDOS_GUARDADA = 300
+TELAS_QUE_FICAM_GUARDADAS = {
+    "analisesps.solicitacoes",
+    "analisesps.relatorio",
+    "analisesps.auditoria",
+    "analisesps.log",
+}
+
+
+@bp.after_request
+def _guardar_no_navegador(resposta):
+    """Diz ao navegador que pode reusar esta tela por alguns minutos."""
+    try:
+        if request.method != "GET" or resposta.status_code != 200:
+            return resposta
+        if request.endpoint not in TELAS_QUE_FICAM_GUARDADAS:
+            return resposta
+        if not (resposta.mimetype or "").startswith("text/html"):
+            return resposta
+        # `private` porque a tela é de UMA pessoa: nada de cache compartilhado
+        # no caminho guardando a lista de pagamentos da empresa.
+        resposta.headers["Cache-Control"] = (
+            f"private, max-age={SEGUNDOS_GUARDADA}")
+    except Exception:  # noqa: BLE001 — guardar é conforto; a tela é o que importa
+        logger.exception("Análise de SPs: falhou marcar a tela como guardável")
+    return resposta
+
+
 NIVEL_COMPRESSAO = 1        # 6,3% do tamanho por 1,4 ms; o nível 6 chega a
                             # 4,4% mas gasta o dobro, e esta instância tem
                             # 2 GB e histórico de morrer de memória.
@@ -193,7 +247,14 @@ def sair():
     encerrar o acesso, não esquecer quem você é. Quem quiser trocar de pessoa
     apaga o campo e digita outro; é o mesmo campo."""
     auth.sair_da_sessao()
-    return redirect(url_for("analisesps.entrar"))
+    resposta = redirect(url_for("analisesps.entrar"))
+    # APAGA O QUE FICOU GUARDADO NO NAVEGADOR. Sem isto, num computador
+    # compartilhado, apertar Voltar depois de sair mostraria as telas da
+    # pessoa anterior pelos minutos que faltassem. Sair tem de sair de
+    # verdade.
+    resposta.headers["Clear-Site-Data"] = '"cache"'
+    resposta.headers["Cache-Control"] = "no-store"
+    return resposta
 
 
 @bp.route("/saude")
@@ -704,6 +765,40 @@ def alterar():
                 "erro": f"A coluna '{coluna}' não é alterável por aqui."}, 400
 
     return _gravar_alteracao(ids, coluna, valor, acao)
+
+
+@bp.route("/api/enviar-ao-lote", methods=["POST"])
+@exige_operador
+def enviar_ao_lote():
+    """Manda as SPs marcadas para o lote SEM SAIR DA TELA.
+
+    Pedido do dono em 09/09/2026: *"ao enviar registro ao lote, não quero mudar
+    de tela; mantenha-se em Solicitações, apenas avise que foi executada a
+    ação"*. Antes o botão mandava um formulário e a pessoa era levada para o
+    Lote — perdendo o filtro, a rolagem e a marcação de quem só queria separar
+    um grupo e continuar conferindo a lista.
+
+    É a MESMA regra do formulário: um grupo novo no topo, o que já estava fica
+    abaixo. Aqui ela é chamada, não copiada."""
+    from . import lote
+
+    dados = request.get_json(silent=True) or {}
+    ids, erro = _ids_do_pedido(dados)
+    if erro:
+        return erro
+
+    pessoa = auth.pessoa_atual()
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        conteudo, titulo = lote.acrescentar_grupo(lote.ler(pessoa)["conteudo"], ids)
+        lote.salvar(conteudo, quem, pessoa)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou enviar ao lote")
+        return {"ok": False, "erro": f"Não consegui enviar ao lote: {e}"}, 500
+
+    logger.info("Análise de SPs: %s enviou %d SP(s) ao lote (grupo %r).",
+                quem or "sem nome", len(ids), titulo)
+    return {"ok": True, "quantas": len(ids), "titulo": titulo}
 
 
 @bp.route("/api/sem-risco", methods=["POST"])

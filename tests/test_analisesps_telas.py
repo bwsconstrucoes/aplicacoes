@@ -3048,3 +3048,110 @@ def test_resposta_pequena_nao_paga_o_custo_de_comprimir(app):
     resposta = como(app, SENHA_OPERADOR).get(
         "/analisesps/api/andamento", headers={"Accept-Encoding": "gzip"})
     assert not resposta.headers.get("Content-Encoding")
+
+
+# ---------------------------------------------------------------------------
+# A TELA VOLTA COMO ESTAVA
+#
+# "eu filtro, vou para o Lote, volto para Solicitações — e ele refaz tudo de
+# novo. Se eu tivesse duas abas do navegador eu alternaria na hora." O dono
+# escolheu cinco minutos em 09/09/2026, com o risco na frente.
+# ---------------------------------------------------------------------------
+def test_as_telas_de_leitura_ficam_guardadas_no_navegador(app):
+    resposta = como(app, SENHA_OPERADOR).get("/analisesps/solicitacoes",
+                                             follow_redirects=True)
+    guardar = resposta.headers.get("Cache-Control", "")
+    assert "max-age=300" in guardar
+    # `private` porque a tela é de UMA pessoa: nada de cache compartilhado no
+    # caminho guardando a lista de pagamentos da empresa.
+    assert "private" in guardar
+
+
+def test_a_lista_de_telas_guardadas_e_fechada():
+    """É uma lista escrita à mão de propósito: entrar nela é decidir que a
+    tela pode ser mostrada com até cinco minutos de idade. Tela que recebe
+    alteração no próprio endereço não pode entrar."""
+    from app.apps.analisesps import web
+    assert web.TELAS_QUE_FICAM_GUARDADAS == {
+        "analisesps.solicitacoes", "analisesps.relatorio",
+        "analisesps.auditoria", "analisesps.log"}
+    assert "analisesps.tela_lote" not in web.TELAS_QUE_FICAM_GUARDADAS
+    assert "analisesps.tela_agenda" not in web.TELAS_QUE_FICAM_GUARDADAS
+    assert "analisesps.detalhe" not in web.TELAS_QUE_FICAM_GUARDADAS
+
+
+def test_a_tela_que_recebe_alteracao_no_proprio_endereco_nao_e_guardada(app_lote):
+    """O Lote recebe o formulário nele mesmo. Guardá-lo mostraria o estado
+    ANTERIOR à mudança que a pessoa acabou de fazer — pior do que ser lento."""
+    resposta = como(app_lote, SENHA_OPERADOR).get("/analisesps/lote",
+                                                  follow_redirects=True)
+    assert "max-age" not in resposta.headers.get("Cache-Control", "")
+
+
+def test_a_ficha_da_sp_nunca_fica_guardada(app_ficha):
+    """Ela mostra o status atual e tem botões que agem sobre ele. Guardada,
+    alguém agendaria olhando um estado que já mudou."""
+    resposta = como(app_ficha, SENHA_OPERADOR).get("/analisesps/sp/1234567890")
+    assert "max-age" not in resposta.headers.get("Cache-Control", "")
+
+
+def test_sair_apaga_o_que_ficou_guardado(app):
+    """Num computador compartilhado, apertar Voltar depois de sair mostraria as
+    telas da pessoa anterior pelos minutos que faltassem."""
+    resposta = como(app, SENHA_OPERADOR).get("/analisesps/sair")
+    assert resposta.headers.get("Clear-Site-Data") == '"cache"'
+    assert "no-store" in resposta.headers.get("Cache-Control", "")
+
+
+# ---------------------------------------------------------------------------
+# ENVIAR AO LOTE SEM SAIR DA TELA
+# ---------------------------------------------------------------------------
+def test_enviar_ao_lote_nao_troca_de_tela(app, monkeypatch):
+    """Pedido do dono: "mantenha-se em Solicitações, apenas avise que foi
+    executada a ação". Antes o botão mandava um formulário e levava a pessoa
+    para o Lote — perdendo o filtro, a rolagem e a marcação."""
+    from app.apps.analisesps import lote
+    salvos = []
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {"conteudo": ""})
+    monkeypatch.setattr(lote, "salvar",
+                        lambda c, quem="", pessoa="": salvos.append(c))
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/api/enviar-ao-lote", json={"ids": ["1", "2", "3"]})
+
+    assert resposta.status_code == 200, "não podia redirecionar para outra tela"
+    corpo = resposta.get_json()
+    assert corpo["ok"] is True
+    assert corpo["quantas"] == 3
+    assert corpo["titulo"], "o aviso precisa dizer em que grupo entraram"
+    assert salvos and "1" in salvos[0]
+
+
+def test_enviar_ao_lote_usa_a_mesma_regra_do_formulario(app, monkeypatch):
+    """Um grupo NOVO no topo, o que já estava fica abaixo. A regra é chamada,
+    não copiada — duas cópias divergiriam."""
+    from app.apps.analisesps import lote
+    salvos = []
+    monkeypatch.setattr(lote, "ler",
+                        lambda pessoa="": {"conteudo": "Grupo antigo\n999999999"})
+    monkeypatch.setattr(lote, "salvar",
+                        lambda c, quem="", pessoa="": salvos.append(c))
+
+    como(app, SENHA_OPERADOR).post("/analisesps/api/enviar-ao-lote",
+                                   json={"ids": ["111111111"]})
+
+    assert salvos
+    assert "999999999" in salvos[0], "o que já estava no lote sumiu"
+    assert salvos[0].index("111111111") < salvos[0].index("999999999"), (
+        "o grupo novo tem de ficar no topo")
+
+
+def test_o_perfil_consulta_nao_envia_ao_lote(app):
+    assert como(app, SENHA_CONSULTA).post(
+        "/analisesps/api/enviar-ao-lote", json={"ids": ["1"]}).status_code == 403
+
+
+def test_a_barra_sabe_para_onde_enviar_sem_sair_da_tela(app):
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes", follow_redirects=True).get_data(as_text=True)
+    assert "data-url-enviar-lote=" in html
