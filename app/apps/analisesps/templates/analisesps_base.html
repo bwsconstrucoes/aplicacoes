@@ -45,8 +45,18 @@
         {# A hora da última sincronização, à vista. "Está atualizando?" tem de
            ser respondível de relance, sem abrir Configurações. #}
         {% if base is defined and base and base.ultima %}
+          {# O BOTÃO DE ATUALIZAR AO LADO DA HORA. Antes era preciso ir a
+             Configurações só para apertá-lo — e quem olha a hora da base e
+             acha que está velha quer atualizar ALI, não noutra tela. É a
+             mesma "Atualização do dia" de lá; só mudou de lugar. #}
           <br><small title="A tela busca atualizações a cada 90 segundos">
             base de {{ base.ultima|momento_br }}</small>
+          {% if pode_operar %}
+            <button class="btn-atualizar" id="btn-atualizar-base" type="button"
+                    data-url="{{ url_for('analisesps.sincronizar') }}"
+                    title="Atualização do dia — traz o que mudou na planilha">
+              Atualizar</button>
+          {% endif %}
         {% endif %}
       </div>
     {% endif %}

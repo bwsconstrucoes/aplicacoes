@@ -1006,6 +1006,58 @@ de guardar a tela depende do navegador respeitar o cabeçalho, e a reposição d
 rolagem e das marcações é JavaScript — as duas coisas os testes não alcançam.
 São as primeiras a conferir na tela.
 
+### Vigésima primeira leva (09/09) — por que o cache não servia para nada
+
+*"Não senti diferença nenhuma... nem indo nem voltando."* O dono estava certo,
+e o defeito era meu: **o menu passava por fora do cache.**
+
+O link da aba aponta para `/analisesps/solicitacoes`, **sem filtro**. O
+servidor recebe isso, vê que há filtro guardado, e **REDIRECIONA** para
+`/analisesps/solicitacoes?...&f=1`. Redirecionamento não se guarda — então
+toda troca de aba ia ao servidor de qualquer jeito, e a cópia guardada, que
+fica sob o endereço COM filtro, nunca era alcançada.
+
+**A correção reescreve o link do menu no navegador**, apontando para o
+endereço que a pessoa realmente usou. Sem redirecionamento, e a tela guardada
+é servida na hora. Fica no navegador e não no servidor de propósito: montar
+esses links no servidor custaria uma consulta a mais em TODA tela, inclusive
+nas que não têm filtro nenhum — pagar em todas para economizar em duas.
+
+> **A lição, e ela é geral:** eu publiquei o cache e disse "deve ficar
+> instantâneo" sem ter como exercitar um navegador de verdade. O teste
+> conferia o cabeçalho da resposta, que estava certo; o que estava errado era
+> o CAMINHO que o navegador percorria até ela. Ficou um teste fixando o
+> defeito — o endereço sem filtro redireciona e não é guardável — para
+> ninguém "consertar" o link de volta.
+
+**Um suspeito para o "às vezes demora alguns segundos", que cache nenhum
+explica.** Medido nesta máquina: **subir o serviço custa 1,7 s** (importar os
+18 módulos), e numa máquina rápida. O `Procfile` manda o gunicorn **reciclar o
+worker a cada 150 requisições** (`--max-requests 150`), e com `--workers 1`
+isso significa que, a cada ~150 requisições, TODA requisição espera essa
+partida. Na instância do Render, de 2 GB e compartilhada, é razoável supor
+vários segundos.
+
+> **NÃO MEXI NISSO, e é decisão do dono.** O `Procfile` governa os 18 módulos,
+> não só este; e o valor 150 foi posto justamente para conter o estouro de
+> memória de julho de 2026 (`CONTEXTO.md` §9). Aumentar troca segurança de
+> memória por velocidade. Some-se a isso a divergência já anotada no
+> `CLAUDE.md`: há indício de que a produção rode com 8 threads via o campo
+> *Start Command* do Render, que sobrescreve o `Procfile` — ou seja, não se
+> sabe ao certo qual dos dois vale hoje. **Conferir isso é o primeiro passo**
+> antes de qualquer ajuste.
+
+**O botão de atualizar saiu de Configurações e foi para o lado da hora da
+base**, em todas as telas. É a mesma "Atualização do dia"; só mudou de lugar —
+quem olha a hora e acha que está velha quer atualizar ali, não noutra tela. Só
+aparece para quem opera, e a porta já recusava quem só consulta.
+
+**O que continua NÃO sendo medido, e é o limite honesto desta sessão:** o
+proxy desta máquina **bloqueia o domínio da empresa**, então não consigo
+cronometrar a produção. Todos os números aqui são locais, com o banco na mesma
+máquina. A diferença entre eles e o que o dono sente é justamente onde mora o
+que falta descobrir.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
