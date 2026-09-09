@@ -875,7 +875,7 @@ def explorador():
     As outras telas olham so o DRE. Esta olha tudo, porque ela existe para achar
     o que esta classificado errado, e o erro quase sempre e o lancamento estar
     na analise errada."""
-    from . import consultas
+    from . import consultas, saneamento
     if consultas.base_vazia():
         return redirect(url_for("painel.configuracoes", primeira="1"))
 
@@ -894,6 +894,62 @@ def explorador():
         opcoes=consultas.opcoes_do_explorador(),
         sem_obra=consultas.SEM_OBRA,
         teto=consultas.TETO_DO_EXPLORADOR,
+        escrita_ligada=saneamento.escrita_configurada(),
+        categorias_omie=consultas.categorias_para_alterar(),
+        obras_omie=consultas.departamentos_para_alterar(),
+        alteracao=None, erro_alteracao=None, marcados=[],
+    )
+
+
+@bp.route("/explorador/alterar", methods=["POST"])
+def explorador_alterar():
+    """Altera a classificacao de titulos NO OMIE — ou so ensaia.
+
+    A unica rota do painel que escreve num sistema de fora. Quatro protecoes,
+    todas em `saneamento.py`: senha propria, simulacao por padrao, trava contra
+    desfazer rateio e registro de tudo no banco."""
+    from . import saneamento
+
+    codigos = request.form.getlist("codigo")
+    categoria = (request.form.get("categoria_nova") or "").strip()
+    departamento = (request.form.get("departamento_novo") or "").strip()
+    # SIMULAR e o padrao: so sai do ensaio quem marcar E acertar a senha
+    executar = request.form.get("executar") == "1"
+    aceita = request.form.get("aceita_desfazer_rateio") == "1"
+
+    erro = None
+    if executar:
+        if not saneamento.escrita_configurada():
+            erro = ("A alteração no OMIE está desligada neste serviço: falta a "
+                    "senha de execução (PAINEL_SENHA_ESCRITA).")
+        elif not saneamento.senha_de_escrita_confere(request.form.get("senha", "")):
+            logger.warning("Painel: senha de execucao incorreta na alteracao do OMIE.")
+            erro = "Senha de execução incorreta. Nada foi enviado ao OMIE."
+
+    resultado = None
+    if not erro:
+        resultado = saneamento.aplicar(
+            codigos, categoria, departamento,
+            simulacao=not executar, aceita_desfazer_rateio=aceita)
+        if not resultado.get("ok"):
+            erro, resultado = resultado.get("erro"), None
+
+    from . import consultas
+    pedido = _pedido_do_explorador()
+    return render_template(
+        "painel_explorador.html",
+        aba_ativa="config", abas=ABAS,
+        pedido=pedido, escolheu=True,
+        dados=consultas.explorar(pedido),
+        resumo=consultas.resumo_do_explorador(pedido),
+        opcoes=consultas.opcoes_do_explorador(),
+        sem_obra=consultas.SEM_OBRA,
+        teto=consultas.TETO_DO_EXPLORADOR,
+        escrita_ligada=saneamento.escrita_configurada(),
+        categorias_omie=consultas.categorias_para_alterar(),
+        obras_omie=consultas.departamentos_para_alterar(),
+        alteracao=resultado, erro_alteracao=erro,
+        marcados=codigos,
     )
 
 

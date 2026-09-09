@@ -149,6 +149,171 @@
 </details>
 {% endif %}
 
+{% if alteracao or erro_alteracao %}
+<div class="cartao" style="margin-bottom:14px; border-left:4px solid var(--amarelo)">
+  <div class="cartao-cab">
+    <h3>{{ 'Resultado do ensaio' if alteracao and alteracao.simulacao
+           else 'Resultado da alteração no OMIE' }}</h3>
+  </div>
+  {% if erro_alteracao %}
+    <div class="aviso erro">{{ erro_alteracao }}</div>
+  {% else %}
+    <div class="aviso {{ 'info' if alteracao.simulacao else 'ok' }}">
+      {% if alteracao.simulacao %}
+        <b>Ensaio: nada foi enviado ao OMIE.</b>
+        {{ alteracao.quantos }} título(s) conferido(s).
+      {% else %}
+        <b>{{ alteracao.alterados }} título(s) alterado(s) no OMIE.</b>
+        Rode a atualização da base para o painel refletir a mudança.
+      {% endif %}
+      {% if alteracao.recusados %}
+        <br><b>{{ alteracao.recusados }} recusado(s)</b> por terem rateio entre
+        obras — trocar o departamento apagaria esse rateio.
+      {% endif %}
+    </div>
+    <div class="tabela-rolagem">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem">Cód. OMIE</th>
+            <th class="sem-ordem">Documento</th>
+            <th class="sem-ordem">Cliente ou Fornecedor</th>
+            <th class="sem-ordem">O que muda</th>
+            <th class="sem-ordem">Resultado</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for l in alteracao.linhas %}
+          <tr>
+            <td class="dados">{{ l.codigo }}</td>
+            <td class="dados">{{ l.documento or '—' }}</td>
+            <td class="desc">{{ l.razao_social or '—' }}</td>
+            <td class="desc">
+              {% for m in l.mudancas %}<small>{{ m }}</small>{% endfor %}
+              {% if not l.mudancas %}—{% endif %}
+            </td>
+            <td class="desc {{ 'v-neg' if not l.ok else '' }}">{{ l.resultado }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- ============ ALTERAR NO OMIE — a única parte que escreve ============ -->
+<details class="cartao" style="margin-bottom:14px; border-left:4px solid var(--vermelho)"
+         {% if alteracao or erro_alteracao %}open{% endif %}>
+  <summary style="cursor:pointer; font-weight:600">
+    Alterar a classificação no OMIE
+    <small style="font-weight:400"> — escreve no OMIE de verdade</small>
+  </summary>
+
+  <div class="aviso erro" style="margin-top:10px">
+    <b>Isto altera o cadastro no OMIE, não o painel.</b>
+    Só a <b>categoria</b> e o <b>departamento</b> mudam — valor, data e situação
+    nunca. Desfazer é manual, título a título.<br>
+    <b>Trocar o departamento coloca 100% no novo</b> e apaga qualquer rateio
+    anterior. Títulos rateados entre obras são recusados, a menos que você
+    marque que sabe.
+  </div>
+
+  {% if not escrita_ligada %}
+    <div class="aviso info">
+      <b>A execução está desligada neste serviço.</b> O ensaio funciona e mostra
+      o que aconteceria; para enviar de verdade, é preciso configurar a senha de
+      execução (<code>PAINEL_SENHA_ESCRITA</code>) nas variáveis do serviço.
+    </div>
+  {% endif %}
+
+  <form method="post" action="{{ url_for('painel.explorador_alterar', **request.args) }}">
+    <div class="form-grade">
+      <div class="campo">
+        <label for="categoria_nova">Nova categoria</label>
+        <select id="categoria_nova" name="categoria_nova">
+          <option value="">— não mudar —</option>
+          {% for c in categorias_omie %}
+            <option value="{{ c.codigo }}">{{ c.codigo }} · {{ c.descricao }} [{{ c.onde }}]</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="departamento_novo">Novo departamento (100% nele)</label>
+        <select id="departamento_novo" name="departamento_novo">
+          <option value="">— não mudar —</option>
+          {% for o in obras_omie %}
+            <option value="{{ o.codigo }}">{{ o.nome }} ({{ o.codigo }})</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="tabela-rolagem" style="max-height:260px; margin-top:10px">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem">Alterar</th>
+            <th class="sem-ordem">Cód. OMIE</th>
+            <th class="sem-ordem">Data</th>
+            <th class="sem-ordem">Categoria hoje</th>
+            <th class="sem-ordem">Obra hoje</th>
+            <th class="sem-ordem">Cliente ou Fornecedor</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for l in dados.linhas %}
+          <tr>
+            <td><input type="checkbox" name="codigo" value="{{ l.codigo_lancamento }}"
+                       {% if l.codigo_lancamento|string in marcados %}checked{% endif %}></td>
+            <td class="dados">{{ l.codigo_lancamento }}</td>
+            <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
+            <td class="desc">{{ l.categoria or '—' }}</td>
+            <td class="desc">{{ l.departamento or '—' }}</td>
+            <td class="desc">{{ l.razao_social or '—' }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="cartao-dica">
+      Marcar qualquer linha de um título seleciona o título inteiro — um título
+      rateado em três obras aparece em três linhas.
+    </p>
+
+    <div class="tabela-barra" style="border:0; padding-left:0">
+      <button class="btn secundario" name="executar" value="0">
+        Ensaiar (não envia nada)
+      </button>
+    </div>
+
+    <hr style="border:0; border-top:1px solid var(--borda); margin:12px 0">
+    <label style="display:flex; align-items:center; gap:8px; font-size:13px">
+      <input type="checkbox" name="aceita_desfazer_rateio" value="1">
+      Entendo que trocar o departamento <b>apaga o rateio</b> dos títulos
+      divididos entre obras, e quero alterá-los mesmo assim
+    </label>
+    <div class="form-grade" style="margin-top:8px">
+      <div class="campo">
+        <label for="senha">Senha de execução</label>
+        <input id="senha" name="senha" type="password" autocomplete="off"
+               {% if not escrita_ligada %}disabled{% endif %}>
+      </div>
+      <div class="campo" style="align-self:flex-end">
+        <button class="btn amarelo" name="executar" value="1"
+                {% if not escrita_ligada %}disabled{% endif %}>
+          Alterar no OMIE de verdade
+        </button>
+      </div>
+    </div>
+    <p class="cartao-dica">
+      Ensaie primeiro. Depois altere <b>um</b> título, confira no OMIE, e só
+      então faça o lote — é o protocolo que o próprio código da versão anterior
+      pede, porque esta escrita nunca foi testada contra a API de verdade.
+    </p>
+  </form>
+</details>
+
 <div class="tabela-wrap">
   <div class="tabela-barra">
     <span class="resumo">

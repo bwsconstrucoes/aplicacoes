@@ -1490,3 +1490,27 @@ def resumo_do_explorador(pedido: dict, limite: int = 300) -> list[dict]:
     return [dict(zip(campos, (l[0], l[1], l[2], l[3],
                              float(l[4] or 0), float(l[5] or 0))))
             for l in consultar(sql, params)]
+
+
+def categorias_para_alterar() -> list[dict]:
+    """As categorias do OMIE, para escolher a nova numa lista em vez de digitar
+    um código à mão. Fora as TOTALIZADORAS: elas são somatório de outras, e
+    lançar um título numa delas não faz sentido no OMIE."""
+    def calcular():
+        return [{"codigo": c, "descricao": d, "onde": ("DRE" if (dre or "").strip()
+                                                       else "Fluxo de Caixa")}
+                for c, d, dre in consultar(
+                    "SELECT codigo, descricao, codigo_dre FROM cat "
+                    " WHERE COALESCE(UPPER(TRIM(totalizadora)),'N') <> 'S' "
+                    "   AND COALESCE(TRIM(descricao),'') <> '' ORDER BY descricao")]
+    return _lembrando(("categorias_para_alterar",), calcular)
+
+
+def departamentos_para_alterar() -> list[dict]:
+    """As obras do OMIE, pelo espelho do rateio. É de lá que sai o código, que é
+    o que o OMIE quer — o nome sozinho não serve para alterar."""
+    def calcular():
+        return [{"codigo": c, "nome": n} for c, n in consultar(
+            "SELECT DISTINCT ccoddep, cdesdep FROM rateio "
+            " WHERE COALESCE(TRIM(cdesdep),'') <> '' ORDER BY cdesdep")]
+    return _lembrando(("departamentos_para_alterar",), calcular)
