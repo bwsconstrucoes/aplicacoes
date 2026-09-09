@@ -822,6 +822,44 @@ sobreviveram** e continuaram separados.
 **O que NÃO foi verificado:** nada disto foi aberto num navegador de verdade —
 são telas, e o teste confere o HTML, não o que o olho vê.
 
+### Décima sétima leva (09/09) — a Obra sumida, e o defeito maior por trás dela
+
+*"dentre as colunas não está aparecendo a coluna com a obra, muito
+importante"* — e a Obra **estava** nas colunas padrão desde 05/09. O que
+acontecia é mais amplo do que uma coluna:
+
+**Uma coluna criada depois ficava invisível para sempre para quem já tinha
+escolhido suas colunas.** A escolha guardada era lida como a lista COMPLETA do
+que a pessoa quer ver. Uma escolha feita antes de 05/09 simplesmente não
+mencionava a Obra — porque ela ainda não existia —, e o programa lia essa
+ausência como *"ele não quer essa coluna"*. Sem nenhuma pista de que a coluna
+existia, e sem jeito de descobrir a não ser abrindo a lista inteira.
+
+Vale notar que **o botão de esconder a Descrição** (usado dez vezes por dia)
+grava a lista inteira: bastava usá-lo uma vez para congelar as colunas
+daquele dia e nunca mais ver nada criado depois.
+
+**A correção guarda, junto com a escolha, QUAIS COLUNAS EXISTIAM na hora de
+escolher.** O que nasceu depois disso e é padrão entra sozinho; o que a pessoa
+tirou de propósito continua fora, porque estava entre as conhecidas. Assim a
+próxima coluna que alguém criar não repete o problema.
+
+> **A escolha antiga não diz o que conhecia**, e para ela o desempate é: as
+> colunas padrão que estiverem faltando voltam, **uma vez**. Custa um clique a
+> quem tinha escondido alguma de propósito; a alternativa era deixar a Obra
+> invisível justamente para quem mais precisa dela. Da primeira gravação em
+> diante a escolha volta a ser exata.
+
+**Verificado com banco de verdade**, no estado da produção de hoje: com escolha
+antiga guardada (sem a Obra), a Obra volta em **Solicitações e no Lote**, as
+duas telas com o mesmo conjunto; escondendo a Descrição pelo botão em seguida,
+a Descrição sai e a Obra fica; e tirando a Obra de propósito, ela fica fora
+mesmo. 2819 testes verdes.
+
+**Ficou um teste de baixo nível** só para a Obra não sair da lista padrão por
+descuido, e outro para o formato guardado registrar as colunas conhecidas — é
+esse registro que impede o defeito de voltar na próxima coluna criada.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

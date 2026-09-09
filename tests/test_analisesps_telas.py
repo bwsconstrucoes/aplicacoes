@@ -809,8 +809,76 @@ def test_a_ordem_das_colunas_e_sempre_a_mesma(app):
     """A ordem é a da definição, nunca a da escolha: se cada pessoa visse as
     colunas noutra ordem, uma não conseguiria explicar a tela para a outra."""
     from app.apps.analisesps import tabela
-    escolhidas = tabela.escolhidas(["nf", "id", "credor"])
+    guardado = tabela.para_guardar(["nf", "id", "credor"])
+    escolhidas = tabela.escolhidas(guardado)
     assert [c.chave for c in escolhidas] == ["id", "credor", "nf"]
+
+
+# ---------------------------------------------------------------------------
+# COLUNA CRIADA DEPOIS APARECE PARA QUEM JÁ TINHA ESCOLHIDO
+#
+# "dentre as colunas não está aparecendo a coluna com a obra, muito
+# importante" — 09/09/2026. A Obra entrou nas colunas padrão em 05/09, mas
+# quem já tinha uma escolha guardada continuou sem ela: a escolha antiga não
+# mencionava uma coluna que ainda não existia, e o programa lia isso como
+# "ele não quer". Uma coluna acrescentada ficava invisível para sempre.
+# ---------------------------------------------------------------------------
+def test_coluna_criada_depois_aparece_para_quem_ja_tinha_escolhido():
+    """O caso exato da Obra."""
+    from app.apps.analisesps import tabela
+
+    # Como se ele tivesse escolhido quando a Obra ainda não existia.
+    guardado = tabela.para_guardar([c.chave for c in tabela.DEFINICOES
+                                    if c.padrao and c.chave != "centro_custo"])
+    guardado["conhecidas"] = [c for c in guardado["conhecidas"]
+                              if c != "centro_custo"]
+
+    assert "centro_custo" in [c.chave for c in tabela.escolhidas(guardado)]
+
+
+def test_coluna_tirada_de_proposito_continua_fora():
+    """O outro lado: repor tudo o que é padrão em toda leitura tornaria
+    impossível esconder qualquer coluna — inclusive a Descrição, que o dono
+    esconde e mostra dez vezes por dia."""
+    from app.apps.analisesps import tabela
+
+    atuais = [c.chave for c in tabela.escolhidas(None) if c.chave != "descricao"]
+    guardado = tabela.para_guardar(atuais)
+
+    rotulos = [c.chave for c in tabela.escolhidas(guardado)]
+    assert "descricao" not in rotulos
+    assert "centro_custo" in rotulos, "a Obra não podia ter sumido junto"
+
+
+def test_escolha_antiga_recupera_o_padrao_que_falta():
+    """A escolha guardada ANTES desta correção não diz o que conhecia. O
+    desempate é repor o padrão que falta, uma vez: custa um clique a quem tinha
+    escondido alguma de propósito, e a alternativa era deixar a Obra invisível
+    para quem mais precisa dela."""
+    from app.apps.analisesps import tabela
+
+    antiga = {"colunas": ["id", "credor", "valor_num"]}   # sem `conhecidas`
+    rotulos = [c.chave for c in tabela.escolhidas(antiga)]
+    assert "centro_custo" in rotulos
+    # E o que ela tinha escolhido a mais continua lá.
+    assert "credor" in rotulos
+
+
+def test_o_que_e_guardado_registra_as_colunas_que_existiam():
+    """É essa lista que faz a coluna de amanhã aparecer. Sem ela, o defeito da
+    Obra se repete na próxima coluna que alguém criar."""
+    from app.apps.analisesps import tabela
+
+    guardado = tabela.para_guardar(["id", "credor"])
+    assert guardado["colunas"] == ["id", "credor"]
+    assert set(guardado["conhecidas"]) == set(tabela.CHAVES)
+
+
+def test_a_obra_esta_entre_as_colunas_padrao():
+    """Guarda de baixo nível, para a coluna não sair da lista por descuido."""
+    from app.apps.analisesps import tabela
+    assert "centro_custo" in tabela.PADRAO
+    assert tabela.POR_CHAVE["centro_custo"].rotulo == "Obra"
 
 
 def test_escolher_colunas_nao_e_alterar_dado(app):

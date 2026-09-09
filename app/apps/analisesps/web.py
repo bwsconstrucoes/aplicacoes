@@ -225,8 +225,10 @@ def escolher_colunas():
         escolhidas = [c for c in request.form.getlist("coluna")
                       if c in tabela.POR_CHAVE]
 
+    # Guarda a escolha E as colunas que existiam agora: é o que faz uma coluna
+    # criada depois aparecer para quem já tinha escolhido — ver `tabela.py`.
     preferencias.gravar(auth.pessoa_atual(), tabela.PREFERENCIA,
-                        {"colunas": escolhidas})
+                        tabela.para_guardar(escolhidas))
 
     # A volta sai do formulário, então é conferida: destino de fora daqui
     # transformaria esta rota em trampolim.

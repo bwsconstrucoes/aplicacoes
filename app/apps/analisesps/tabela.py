@@ -89,17 +89,55 @@ def escolhidas(guardado) -> list:
     `guardado` é o que veio das preferências — pode ser lixo, de uma versão
     anterior ou de um erro. Nada aqui pode derrubar a tela por causa disso:
     o que não se reconhece é ignorado, e uma escolha vazia volta ao padrão.
-    Tabela sem coluna nenhuma não é uma escolha, é um acidente."""
+    Tabela sem coluna nenhuma não é uma escolha, é um acidente.
+
+    COLUNA NOVA APARECE PARA QUEM JÁ TINHA ESCOLHIDO. Este é o defeito que o
+    dono sentiu: a Obra entrou nas colunas padrão em 05/09, mas quem já tinha
+    uma escolha guardada continuou sem ela — a escolha antiga simplesmente não
+    mencionava uma coluna que ainda não existia, e o programa lia isso como
+    "ele não quer". Uma coluna acrescentada depois ficava invisível para
+    sempre, e sem nenhuma pista de que existia.
+
+    A correção guarda, junto com a escolha, QUAIS COLUNAS EXISTIAM na hora de
+    escolher. O que nasceu depois disso e é padrão entra sozinho; o que a
+    pessoa tirou de propósito continua fora, porque estava entre as conhecidas.
+
+    Para uma escolha antiga, que não diz o que conhecia, o desempate é: as
+    colunas padrão que estiverem faltando voltam, uma vez. Custa um clique a
+    quem tinha escondido alguma de propósito; a alternativa era deixar a Obra
+    invisível para quem mais precisa dela."""
+    conhecidas = None
     if isinstance(guardado, dict):
+        bruto = guardado.get("conhecidas")
+        if isinstance(bruto, list):
+            conhecidas = {str(c) for c in bruto}
         guardado = guardado.get("colunas")
+
     if not isinstance(guardado, list):
         return [POR_CHAVE[c] for c in PADRAO]
     marcadas = {str(c) for c in guardado if str(c) in POR_CHAVE}
     if not marcadas:
         return [POR_CHAVE[c] for c in PADRAO]
+
+    if conhecidas is None:
+        # Escolha antiga: não dá para saber o que ela conhecia. Repõe o padrão
+        # que falta — ver o parágrafo acima.
+        marcadas |= {c for c in PADRAO if c not in marcadas}
+    else:
+        marcadas |= {c for c in PADRAO if c not in conhecidas}
+
     # A ORDEM é a da definição, nunca a da escolha: a tabela tem de ficar
     # sempre com a mesma cara, senão cada pessoa lê num lugar diferente.
     return [c for c in DEFINICOES if c.chave in marcadas]
+
+
+def para_guardar(chaves) -> dict:
+    """O que vai para as preferências: a escolha E o que existia na hora.
+
+    Sem a segunda parte, uma coluna criada amanhã ficaria invisível para todo
+    mundo que já escolheu hoje — ver `escolhidas`."""
+    return {"colunas": [str(c) for c in chaves if str(c) in POR_CHAVE],
+            "conhecidas": list(CHAVES)}
 
 
 # A coluna que mais atrapalha quando não se quer ela: comprida, e no meio da
