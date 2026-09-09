@@ -1165,6 +1165,51 @@ alíquota de ISS de Petrolina.
 data exata em que o município encerra o ABRASF. As duas se confirmam com a
 prefeitura, não com pesquisa.
 
+### Os blocos de documentos — 09/09/2026
+
+Dúvida do dono: *"como é que esses blocos vão se associar a determinados
+documentos? Se isso é fácil de resolver."*
+
+**É fácil, e a resposta é a decisão de desenho:** o bloco **aponta para TIPOS,
+não para documentos**. Um bloco é uma lista de tipos mais um recorte (esta
+obra, esta competência), e o sistema procura. Se apontasse para documentos,
+cada competência nova exigiria remontar o bloco à mão — que é o trabalho que
+este módulo veio eliminar. Apontando para tipos, o bloco fiscal de agosto e o
+de setembro são o **mesmo** bloco.
+
+Cinco blocos nascem prontos (migração 046): **FISCAL** (obra + competência —
+conteúdo confirmado por ele como "o que o cliente pede na medição"),
+**HABILITAÇÃO**, **CADASTRO DE FORNECEDOR**, **DOSSIÊ DA OBRA** e **MEDIÇÃO**.
+Editáveis, e aplicar de novo **não sobrescreve** — o conteúdo de um bloco é
+decisão da BWS, e apagar ajuste de quem sabe seria estrago.
+
+**O detalhe que faz o bloco fiscal funcionar:** dentro dele há documentos da
+OBRA (folha, guia de FGTS) e da EMPRESA (recibo da DCTFWeb, DARF). Pedindo o
+bloco de uma obra, o sistema resolve os itens de empresa **pela empresa daquela
+obra**. Sem isso o bloco viria pela metade e ninguém entenderia por quê — na
+tela, a empresa aparece sozinha, sem ninguém escolher.
+
+**O zip traz um `CONFERENCIA.txt` como primeiro arquivo**, listando o que veio
+e — mais importante — **o que falta**, separando obrigatório de opcional. Bloco
+que entrega oito de dez arquivos calado é pior que bloco nenhum. Quando só
+falta opcional, o texto diz "Nada OBRIGATÓRIO": o bloco está pronto para
+entregar e quem lê precisa saber sem contar linha por linha.
+
+**Vencido não entra**, e vai para a lista de faltas dizendo quando venceu.
+Mandar certidão vencida é pior do que não mandar.
+
+**Uma distinção que um caso de teste encontrou**, e que valeu a pena: certidão
+é UMA (vai a de validade mais longa — duas válidas do mesmo tipo acontecem, e
+mandar as duas confunde), mas aditivo são TODOS (mandar só o último esconderia
+o histórico do contrato). O código tratava os dois igual; agora separa pelo
+grupo do tipo.
+
+**Quem não pode ver um tipo não recebe "está faltando" dele.** Seria mentira, e
+já entregaria que o documento existe.
+
+Provado com banco de verdade (15 casos) e na tela: baixei o bloco fiscal de uma
+obra, abri o arquivo compactado e li a conferência.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1320,13 +1365,13 @@ prefeitura, não com pesquisa.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 045**,
+21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 046**,
    assim que o ramo entrar na `main`. A 042 é a trava contra baixa em
    duplicidade; sem ela, anexar comprovante pela tela dá erro. A 043 abre
    espaço para o documento morar no Drive; sem ela, anexar qualquer documento
-   dá erro. A 044 abre o cruzamento de notas e a 045 abre o arquivo de
-   documentos; sem elas as telas de Notas fiscais e de Arquivo não carregam.
-   É o mesmo botão de sempre, em Configurações.
+   dá erro. A 044 abre o cruzamento de notas, a 045 o arquivo de documentos e
+   a 046 os blocos; sem elas as telas de Notas fiscais e de Arquivo não
+   carregam. É o mesmo botão de sempre, em Configurações.
 
 23. **Criar a pasta do Drive e colar o endereço** em Configurações › "Onde
    ficam os documentos", apertar "Testar a pasta" e só então ligar a chave.

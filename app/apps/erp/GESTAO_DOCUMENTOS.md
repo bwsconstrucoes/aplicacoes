@@ -259,6 +259,35 @@ Bloco é uma **lista de tipos com um recorte**. Baixar um bloco gera um `.zip`.
 | **MEDICAO** | obra + competência | a medição, mais o bloco FISCAL da mesma competência, mais a nota e o recibo quando existirem |
 | **OBRA** | obra | contrato, aditivos, OS, ART, matrícula CNO, licenças, seguro |
 
+### Como o bloco se associa aos documentos — a dúvida dele, respondida
+
+Pergunta do dono em 09/09/2026: *"como é que esses blocos vão se associar a
+determinados documentos? Se isso é fácil de resolver."*
+
+**É fácil, e a razão é a decisão abaixo:**
+
+> **O bloco NÃO aponta para documentos. Ele aponta para TIPOS.**
+
+Um bloco é uma lista de tipos mais um recorte. Na hora de baixar, o sistema
+procura, para cada tipo da lista, o documento que casa com o recorte. Ninguém
+escolhe arquivo a arquivo e ninguém mantém lista nenhuma.
+
+Se o bloco apontasse para documentos, **cada competência nova exigiria remontar
+o bloco à mão** — que é exatamente o trabalho que este módulo veio eliminar.
+Apontando para tipos, o bloco fiscal de agosto e o de setembro são o MESMO
+bloco, com recortes diferentes.
+
+E o detalhe que faz o bloco fiscal funcionar de verdade: dentro dele há
+documentos DA OBRA (folha, guia de FGTS) e DA EMPRESA (recibo da DCTFWeb, DARF
+do INSS). Pedindo o bloco de uma obra, o sistema resolve os itens de empresa
+**pela empresa daquela obra**, que já está no cadastro. Sem isso o bloco viria
+pela metade e ninguém entenderia por quê.
+
+**Uma distinção encontrada por um caso de teste, e que vale registrar:**
+certidão é UMA (vai a de validade mais longa — duas certidões válidas do mesmo
+tipo acontecem, e mandar as duas confunde quem recebe); aditivo são TODOS
+(mandar só o último esconderia o histórico do contrato).
+
 **O zip vem com um `CONFERENCIA.txt` dentro**, e essa é a parte que importa: ele
 lista o que foi encontrado **e o que está faltando**. Bloco que entrega oito de
 dez arquivos calado é pior que bloco nenhum — quem monta o processo descobre a

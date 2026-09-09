@@ -4119,6 +4119,82 @@ def api_arquivo():
     return jsonify({"ok": True, **dados})
 
 
+# ---------------------------------------------------------------------------
+# OS BLOCOS — o que sempre é pedido junto
+#
+# O bloco aponta para TIPOS, não para documentos: é isso que faz o bloco fiscal
+# de agosto e o de setembro serem o MESMO bloco, com recortes diferentes.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/arquivo/blocos")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo_blocos():
+    from app.apps.erp.core.arquivo import blocos
+    with get_session() as s:
+        return jsonify({"ok": True, "blocos": blocos.listar(s)})
+
+
+@bp.route("/erp/api/arquivo/blocos/aplicar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_arquivo_blocos_aplicar():
+    from app.apps.erp.core.arquivo import blocos
+    with get_session() as s:
+        r = blocos.aplicar(s)
+        s.commit()
+    return jsonify({"ok": True, "dados": r})
+
+
+def _recorte_do_pedido():
+    """Empresa, obra e competência vindos da URL — usados pelos dois endereços."""
+    bruto = (request.args.get("competencia") or "").strip()
+    try:
+        comp = date.fromisoformat(bruto + "-01") if len(bruto) == 7 else None
+    except ValueError:
+        comp = None
+    return {
+        "empresa_id": (int(request.args["empresa_id"])
+                       if request.args.get("empresa_id") else None),
+        "obra_id": (int(request.args["obra_id"])
+                    if request.args.get("obra_id") else None),
+        "competencia": comp,
+    }
+
+
+@bp.route("/erp/api/arquivo/blocos/<codigo>/conferir")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo_bloco_conferir(codigo: str):
+    """O que o bloco tem e o que falta — ANTES de baixar.
+
+    Existe separado do download de propósito: ver a falta na tela é melhor que
+    descobri-la abrindo o arquivo compactado.
+    """
+    from app.apps.erp.core.arquivo import blocos
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "resultado": blocos.montar(
+                s, codigo, usuario=_usuario_logado(s), **_recorte_do_pedido())})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/arquivo/blocos/<codigo>/baixar")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo_bloco_baixar(codigo: str):
+    from flask import Response
+    from app.apps.erp.core.arquivo import blocos
+    try:
+        with get_session() as s:
+            nome, dados, _ = blocos.gerar_zip(
+                s, codigo, usuario=_usuario_logado(s), **_recorte_do_pedido())
+        return Response(dados, mimetype="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/arquivo/vencendo")
 @login_obrigatorio
 @permissao("ver_arquivo")

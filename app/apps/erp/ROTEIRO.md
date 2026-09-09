@@ -222,9 +222,13 @@ Omie não dá conta disso.
 
 - [ ] 1. **O cadastro que destrava tudo**: expor na tela da obra os campos
       fiscais que JÁ existem no modelo (CNO, alíquota de ISS, ISS retido,
-      regime, conta de recebimento); **chave Pix** na conta bancária; e filtro
+      regime, conta de recebimento); **chave Pix** na conta bancária; filtro
       **por conta** nas telas de título — pedido dele: "às vezes é mais fácil
-      do que filtrar por obra".
+      do que filtrar por obra"; e **os dados de emissão POR EMPRESA**
+      (município, endereço do serviço, token, alíquota, modo API ou MANUAL).
+      ⚠️ Este último entra aqui e não no passo 6: o dono confirmou em
+      09/09/2026 que são DUAS empresas, em municípios diferentes, uma por API e
+      outra manual — deixar para o fim faria a segunda não emitir.
 - [ ] 2. **A medição completa**: tipo EDITÁVEL (normal, reajuste, aditivo,
       subsidiária, complementar), número em TEXTO LIVRE (quem manda na
       nomenclatura é o órgão), correlação entre a medição e a de reajuste dela,
@@ -262,8 +266,12 @@ lido, e a partir dali categorizado, renomeado e salvo"*.
       arquivo. FEITA em 09/09/2026.
 - [ ] 3. **Leitura por IA** sugerindo tipo, dono, datas e nome — a pessoa
       confirma. Reusa o leitor que já lê nota e comprovante.
-- [ ] 4. **Blocos** (FISCAL, HABILITACAO, CADASTRO-FORNECEDOR, MEDICAO, OBRA)
-      em `.zip`, **com a lista do que está faltando dentro**.
+- [x] 4. **Blocos** (FISCAL, HABILITACAO, CADASTRO-FORNECEDOR, MEDICAO, OBRA)
+      em `.zip`, **com a lista do que está faltando dentro**. FEITO em
+      09/09/2026 (migração 046). O bloco aponta para TIPOS, não para
+      documentos — por isso o de agosto e o de setembro são o mesmo bloco.
+      Conteúdo do bloco FISCAL confirmado pelo dono como "o que o cliente pede
+      na medição".
 - [ ] 5. **Busca dentro do texto** do documento (o texto é extraído na entrada,
       porque a leitura já acontece — reprocessar depois é que sairia caro).
 - [ ] 6. **Avisos de vencimento** de certidão e documento, na Agenda.

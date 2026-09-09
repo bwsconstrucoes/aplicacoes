@@ -293,8 +293,11 @@ confirmam com a prefeitura, não com pesquisa.
 5. **A emissão a partir da medição** — primeiro o modo MANUAL (anexar a nota e
    deixar a IA ler), que não depende de credenciamento nenhum e já entrega
    valor.
-6. **A emissão automática**, com o endereço e o município virando configuração
-   por empresa, apontando para o **canal nacional**.
+6. **A emissão automática**, apontando para o **canal nacional**.
+   ⚠️ O município, o endereço, o token e a alíquota viram **cadastro da
+   empresa já no passo 1**, e não aqui: com duas empresas em municípios
+   diferentes (resposta do dono, §9), deixar isso para o fim faria a segunda
+   empresa não emitir.
 7. **Os indicadores**: dias entre protocolo e recebimento, por obra e por órgão.
 
 Cada passo entrega sozinho, e o passo 5 antes do 6 é de propósito: o caminho
@@ -302,11 +305,35 @@ manual funciona no dia seguinte e serve de rede quando a API falhar.
 
 ---
 
-## 9. O QUE PRECISA DA PALAVRA DO DONO
+## 9. RESPONDIDO PELO DONO — 09/09/2026
 
-- **Os tipos de medição** (§2.1): `NORMAL`, `REAJUSTE`, `ADITIVO`,
-  `SUBSIDIARIA`, `COMPLEMENTAR` cobrem o que acontece? Falta algum?
-- **As retenções** que a tela de notas deve mostrar (§6): ISS, IR, INSS,
-  PIS/Cofins/CSLL — é essa a lista que a contabilidade pede?
-- **A BWS já tem Inscrição Municipal em Petrolina?** (§7)
-- **Quais empresas emitem por API e quais emitem manual?** (§5.2)
+As quatro perguntas foram respondidas no mesmo dia. Duas confirmam o desenho;
+a terceira **muda a prioridade**.
+
+1. **Os tipos de medição cobrem o que acontece.** `NORMAL`, `REAJUSTE`,
+   `ADITIVO`, `SUBSIDIARIA`, `COMPLEMENTAR` nascem no catálogo — e continuam
+   editáveis, porque quem manda na nomenclatura é o órgão.
+
+2. **As retenções da tela de notas são ISS, IR, INSS e PIS/Cofins/CSLL.** É a
+   lista que a contabilidade pede, confirmada por ele.
+
+3. **A BWS NÃO tem Inscrição Municipal em Petrolina — mas OUTRA empresa, que
+   vai operar, tem.** Isso não é detalhe: significa que a emissão em mais de um
+   município **não é planejamento para depois, é requisito do primeiro dia**.
+   Uma empresa emite no Eusébio/CE, outra em Petrolina/PE. O município, o
+   endereço do serviço, o token e a alíquota **deixam de ser constante no
+   código e passam a ser cadastro da empresa** — sem isso, a segunda empresa
+   simplesmente não emite.
+
+4. **Uma empresa emite por API, a outra manual.** Confirma o modo de emissão
+   por empresa (§5.2) — e reforça a ordem escolhida: o caminho MANUAL vem
+   primeiro, porque uma das duas empresas vai viver nele.
+
+### O que passou a depender dele, e não de código
+
+- **Inscrição Municipal e credenciamento** da empresa que vai operar em
+  Petrolina, se ainda não estiverem prontos.
+- **O token do canal** de Petrolina (o `EL_NFSE_TOKEN` atual é do Eusébio).
+- **Os códigos de serviço e a alíquota de ISS** de Petrolina.
+- **Qual empresa é qual**: qual emite por API e qual emite manual, e em qual
+  município cada uma atua.

@@ -51,6 +51,24 @@
 <div id="mensagem"></div>
 <div class="kpis" id="kpis"></div>
 
+{# OS BLOCOS. O que sempre é pedido junto: a documentação fiscal da medição, a
+   habilitação, o cadastro de fornecedor. O bloco aponta para TIPOS, não para
+   documentos — por isso o de agosto e o de setembro são o mesmo bloco. #}
+<div class="cartao" id="cartao-blocos">
+  <div class="cartao-cab"><h3>Baixar um conjunto</h3>
+    <small>o que sempre é pedido junto — vem em pasta compactada, com a lista do que falta dentro</small></div>
+  <div class="form-grade" style="align-items:end">
+    <div class="campo"><label>Conjunto</label><select id="b-bloco"></select></div>
+    <div class="campo" id="campo-b-empresa"><label>Empresa</label><select id="b-empresa"></select></div>
+    <div class="campo" id="campo-b-obra"><label>Obra</label><select id="b-obra"></select></div>
+    <div class="campo" id="campo-b-comp"><label>Competência</label><input id="b-comp" type="month"></div>
+    <div style="display:flex; gap:8px">
+      <button class="btn secundario" id="btn-b-conferir">Conferir</button>
+      <button class="btn amarelo" id="btn-b-baixar">Baixar</button></div>
+  </div>
+  <div id="b-resultado"></div>
+</div>
+
 <div class="tabela-wrap">
   <div class="tabela-barra"><span class="resumo" id="resumo"></span></div>
   <div class="tabela-rolagem">
@@ -93,7 +111,7 @@
 {% block scripts %}
 <script>
 const PODE_ARQUIVAR = {{ 'true' if pode.arquivar else 'false' }};
-let TIPOS = [], GRUPOS = {}, DOCS = [], RESUMO = {}, EMPRESAS = [], OBRAS = [];
+let TIPOS = [], GRUPOS = {}, DOCS = [], RESUMO = {}, EMPRESAS = [], OBRAS = [], BLOCOS = [];
 
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
@@ -306,6 +324,83 @@ els("btn-limpar").addEventListener("click", () => {
   carregar();
 });
 
-(async () => { await carregarListas(); carregar(); })();
+// ---------------------------------------------------------------------------
+// OS BLOCOS
+// ---------------------------------------------------------------------------
+function blocoEscolhido(){
+  return BLOCOS.find(b => b.codigo === els("b-bloco").value) || null;
+}
+
+function ajustarBloco(){
+  const b = blocoEscolhido();
+  els("campo-b-empresa").classList.toggle("oculto", !b || !b.precisa_empresa);
+  els("campo-b-obra").classList.toggle("oculto", !b || !b.precisa_obra);
+  els("campo-b-comp").classList.toggle("oculto", !b || !b.precisa_competencia);
+  els("b-resultado").innerHTML = b
+    ? `<div class="cartao-dica">${b.descricao || ""} Junta ${b.itens.length} tipo(s) de
+       documento — ${b.itens.filter(i=>i.obrigatorio).length} obrigatório(s).</div>`
+    : "";
+}
+
+function recorteDoBloco(){
+  const p = new URLSearchParams();
+  const b = blocoEscolhido();
+  if (!b) return p;
+  if (b.precisa_empresa && els("b-empresa").value) p.set("empresa_id", els("b-empresa").value);
+  if (b.precisa_obra && els("b-obra").value) p.set("obra_id", els("b-obra").value);
+  if (b.precisa_competencia && els("b-comp").value) p.set("competencia", els("b-comp").value);
+  return p;
+}
+
+async function conferirBloco(){
+  const b = blocoEscolhido();
+  if (!b) return;
+  try {
+    const d = await api(`/erp/api/arquivo/blocos/${b.codigo}/conferir?` + recorteDoBloco());
+    const r = d.resultado;
+    const faltas = (r.faltas||[]).map(f =>
+      `<li>${f.obrigatorio ? "<b>" : ""}${f.nome}${f.obrigatorio ? "</b>" : ""}
+        <small>(${f.motivo})</small></li>`).join("");
+    els("b-resultado").innerHTML = `
+      <div class="${r.completo ? "aviso ok" : "critica CRITICA"}">
+        <b>${r.rotulo}</b><br>
+        ${r.documentos.length} documento(s) encontrado(s).
+        ${r.completo
+          ? "Nenhum obrigatório faltando."
+          : `<b>${r.faltas_obrigatorias} obrigatório(s) faltando.</b>`}
+        ${faltas ? `<ul style="margin:8px 0 0 18px">${faltas}</ul>` : ""}
+      </div>`;
+  } catch(e){ aviso("b-resultado", e.message, "erro"); }
+}
+
+if (els("btn-b-conferir")) {
+  els("b-bloco").addEventListener("change", ajustarBloco);
+  els("btn-b-conferir").addEventListener("click", conferirBloco);
+  els("btn-b-baixar").addEventListener("click", () => {
+    const b = blocoEscolhido();
+    if (!b) return;
+    // Conferir junto com o download: a pessoa vê o que falta na tela, não só
+    // dentro do arquivo compactado.
+    conferirBloco();
+    window.location = `/erp/api/arquivo/blocos/${b.codigo}/baixar?` + recorteDoBloco();
+  });
+}
+
+async function carregarBlocos(){
+  try {
+    const d = await api("/erp/api/arquivo/blocos");
+    BLOCOS = d.blocos || [];
+    els("b-bloco").innerHTML = BLOCOS.length
+      ? BLOCOS.map(b => `<option value="${b.codigo}">${b.nome}</option>`).join("")
+      : `<option value="">(nenhum conjunto configurado)</option>`;
+    els("b-empresa").innerHTML = EMPRESAS.map(e =>
+      `<option value="${e.id}">${e.nome_fantasia || e.razao_social}</option>`).join("");
+    els("b-obra").innerHTML = OBRAS.map(o =>
+      `<option value="${o.id}">${rotuloObra(o)}</option>`).join("");
+    ajustarBloco();
+  } catch(e){ aviso("mensagem", "Não consegui carregar os conjuntos: " + e.message, "erro"); }
+}
+
+(async () => { await carregarListas(); await carregarBlocos(); carregar(); })();
 </script>
 {% endblock %}

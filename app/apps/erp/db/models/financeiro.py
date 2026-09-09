@@ -1036,3 +1036,42 @@ class Documento(Base):
 
     tipo: Mapped[DocumentoTipo] = relationship()
     anexo: Mapped[Anexo] = relationship()
+
+
+class DocumentoBloco(Base):
+    """Um conjunto de documentos que sempre é pedido junto (migração 046).
+
+    A CHAVE DO DESENHO: o bloco aponta para TIPOS, não para documentos. Assim o
+    bloco fiscal de agosto e o de setembro são o MESMO bloco, com recortes
+    diferentes — e ninguém precisa manter lista nenhuma atualizada.
+    """
+    __tablename__ = "documento_blocos"
+
+    codigo: Mapped[str] = mapped_column(Text, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
+    recorte: Mapped[str] = mapped_column(Text, nullable=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+    itens: Mapped[list["DocumentoBlocoItem"]] = relationship(
+        back_populates="bloco", order_by="DocumentoBlocoItem.ordem",
+        cascade="all, delete-orphan")
+
+
+class DocumentoBlocoItem(Base):
+    __tablename__ = "documento_bloco_itens"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    bloco_codigo: Mapped[str] = mapped_column(
+        Text, ForeignKey("documento_blocos.codigo", ondelete="CASCADE"), nullable=False)
+    tipo_codigo: Mapped[str] = mapped_column(
+        Text, ForeignKey("documento_tipos.codigo"), nullable=False)
+    obrigatorio: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+
+    bloco: Mapped[DocumentoBloco] = relationship(back_populates="itens")
+    tipo: Mapped[DocumentoTipo] = relationship()
