@@ -14,30 +14,29 @@ O painel financeiro do OMIE rodava em Streamlit, no computador do dono, lendo
 arquivos de uma pasta de 153 MB. Virou módulo Flask do monorepo, em `/painel`,
 com login próprio e os dados no Postgres do ERP (schema `painel`).
 
-**Nove telas convertidas**, todas conferidas contra a versão original com dados
+**Dez telas convertidas**, todas conferidas contra a versão original com dados
 reais: Visão Geral, DRE, Despesas Analítico, Receita de Obra, Fluxo de Caixa,
-Resultado por Obra, Comprometido × Executado, Necessidade de Caixa e Prestação
-de Contas.
+Resultado por Obra, Comprometido × Executado, Necessidade de Caixa, Prestação de
+Contas e os Cenários de rateio — mais o relatório em PDF, o **Explorador** e o
+**Rateio da Administração**.
 
-**Estado em 04/09/2026 (fim do dia):** duas levas foram publicadas — o
-`painel-filtro-e-velocidade` (junção `a0dcfef`) e o `painel-duas-datas`
-(junção `0bfa75b`, com a migração `006` aplicada pelo dono). No ramo de trabalho,
-**prontos e não publicados**: a correção da mensagem duplicada em Configurações e
-a tela nova de **Cenários de rateio**.
-
-Com isso a **conversão do painel terminou**: dez telas e o relatório em
-PDF, tudo o que o Streamlit fazia.
+**Estado em 09/09/2026:** a conversão terminou e o painel já passou do que o
+Streamlit fazia. Publicado neste dia (`07b026a`): o Explorador dos lançamentos,
+a **alteração de classificação no OMIE** (categoria e obra, escondida numa aba
+de Configurações, com senha própria) e o **Rateio da Administração**. Antes
+dele, em 08/09, os juros e multas passaram a contar como despesa em todas as
+telas — inclusive a Prestação de Contas — e os gráficos deixaram de sair
+desproporcionais.
 
 ### O que está pendente AGORA
 
-**Nada de código.** Tudo o que foi feito em 04/09/2026 está publicado: as duas
-datas (`0bfa75b`), os cenários de rateio e a mensagem duplicada (`376fe72`), o
-relatório em PDF (`3132e72`) e as correções do Analítico mais a senha com acento
-(`b1ae033`).
+**Nada de código.** O que falta são três coisas, e nenhuma é escrever tela:
 
-O que está pendente é **conferência com dado real** — ver "O que falta" no fim
-deste arquivo. Nenhum teste alcança isso: depende de abrir a tela publicada e
-comparar com o Streamlit.
+1. **O dono apertar "Aplicar atualizações do banco"** — as migrações 007 e 008
+   subiram em 09/09 e o Explorador não funciona sem elas.
+2. **A variável `PAINEL_SENHA_ESCRITA` no Render** — sem ela a aba de alteração
+   no OMIE nem aparece, de propósito.
+3. **Conferência com dado real** — ver "O que falta" no fim deste arquivo.
 
 <details>
 <summary>O que já foi publicado nesta leva (04/09/2026)</summary>
@@ -644,11 +643,51 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## O empréstimo que devolveu mais do que entrou — 09/09/2026
+
+A base diz que a empresa pagou **R$ 9,25 milhões** de principal contra
+**R$ 9,08 milhões** tomados. Isso não fecha sozinho: ninguém paga principal de
+dinheiro que não tomou. Só há duas explicações — parte dos empréstimos é
+anterior ao período que a base cobre, ou há título de empréstimo classificado em
+outra categoria no OMIE.
+
+A segunda explicação é a cara: um empréstimo classificado como despesa comum
+**vira custo de obra em todas as telas**, não só na Necessidade de Caixa. O
+resultado da obra fica pior do que é, e ninguém desconfia, porque o número
+sai limpo.
+
+**O que foi feito:** a leitura em português da Necessidade de Caixa passou a
+dizer isso quando acontece, com os dois valores e a conclusão, e a apontar o
+Explorador como o lugar de corrigir. O que **não** foi feito — porque não é
+código — é sanear a base: isso é olhar os lançamentos das categorias de
+empréstimo no Explorador e reclassificar o que estiver errado.
+
+A escolha foi deliberada: o painel não deve adivinhar nem "consertar" o número
+por dentro. Um ajuste automático esconderia o erro de classificação em vez de
+mostrá-lo, e o erro continuaria contaminando as outras telas em silêncio.
+
 ## O que falta
 
-**A conversão do painel terminou** — dez telas e o relatório em PDF, tudo o que
-o Streamlit fazia. O que resta não é código a escrever; é **conferência com dado
-real**, e ela depende de alguém abrir a tela publicada.
+Atualizado em **09/09/2026**, depois de publicar o Explorador, a alteração de
+classificação no OMIE e o Rateio da Administração (`07b026a`).
+
+**Não há tela por escrever.** O painel faz tudo o que o Streamlit fazia, mais o
+que o Streamlit ganhou depois e voltou para cá no documento de repasse. O que
+resta é de dois tipos: **conferência com dado real** — que só o dono consegue
+fazer, porque exige abrir a tela publicada — e **saneamento da base no OMIE**,
+que agora tem ferramenta própria.
+
+### Apertar o botão do banco (imediato)
+
+O pacote de 09/09 subiu com as migrações **007** (código da categoria no fato) e
+**008** (registro das alterações no OMIE). Enquanto o botão "Aplicar
+atualizações do banco" não for apertado, o Explorador e a tela de alteração não
+funcionam. A 007 se declara `REFAZER-O-FATO`: ao terminar, o painel dispara o
+recálculo sozinho e avisa na tela.
+
+Para a alteração no OMIE funcionar falta também a variável
+**`PAINEL_SENHA_ESCRITA`** no Render. Sem ela a aba nem aparece — é de
+propósito: sem senha configurada, ninguém escreve no OMIE por engano.
 
 ### Conferir com a base da empresa (só o dono consegue)
 
@@ -661,34 +700,50 @@ real**, e ela depende de alguém abrir a tela publicada.
 4. **O PDF contra a planilha** do mesmo recorte. Por construção os dois saem das
    mesmas abas — o teste é confirmar isso com dado real.
 5. **Se o arquivo do Analítico agora traz o mesmo número da tela.** Era 481 na
-   tela e 316 no arquivo; a causa foi corrigida em 04/09 e a confirmação é do
-   dono.
+   tela e 316 no arquivo; a causa foi corrigida em 04/09.
+6. **Se a Visão Geral agora bate com o DRE.** Eram R$ 888 mil contra R$ 931 mil,
+   diferença de R$ 43.298,13 de juros e multa que a Visão Geral não descontava.
+   Corrigido em 08/09 em todas as telas, prestação incluída.
+7. **A primeira escrita no OMIE nunca aconteceu.** O caminho de escrita foi
+   testado só contra dublê — a API real nunca recebeu um `AlterarContaPagar`
+   deste código. O protocolo é: **ensaio** (não grava nada, mostra o que
+   mudaria) → **um único título**, conferido dentro do OMIE com os olhos → só
+   então lote. Não pular o passo do meio.
 
-### Decidido e feito
+### O que a base ainda tem de errado
 
-6. **Migração que cria coluna derivada agenda a reconstrução sozinha.**
-   ~~Proposto e não decidido~~ — o dono aprovou em 04/09/2026 e está feito. A
-   migração DECLARA isso no próprio arquivo, com a marca `REFAZER-O-FATO`; ao
-   terminar de aplicar, o painel dispara "Só refazer os números" e escreve na
-   tela que o recálculo começou. Ninguém mais precisa descobrir sozinho que
-   tinha um clique faltando.
+8. **Mais principal de empréstimo pago do que tomado:** R$ 9,25 milhões contra
+   R$ 9,08 milhões. Isso não se sustenta — ninguém paga principal de dinheiro
+   que não tomou. Ou o empréstimo é anterior ao período que a base cobre, ou há
+   título de empréstimo classificado em outra categoria no OMIE; no segundo caso
+   ele está sendo contado como despesa de obra em **todas** as telas. Desde
+   09/09 a Necessidade de Caixa **diz isso na leitura em português** em vez de
+   deixar o número passar calado, e aponta o Explorador como o lugar de
+   corrigir. A correção em si é trabalho de base, não de código.
 
 ### Fora desta área
 
-7. **O mesmo defeito da senha com acento existe no Análise de SPs**
+9. **O mesmo defeito da senha com acento existe no Análise de SPs**
    (`analisesps/auth.py` linhas 120 e 271, `analisesps/web.py` 628). Não foi
    mexido daqui — outra área, outro chat. **Avisado ao dono em 04/09.** O ERP
    não tem o problema: lá a comparação é entre hashes, sempre ASCII.
-8. **Converter `app/apps/spsbd_app`.** Já está em andamento pelo chat da área,
-   que publicou várias vezes em 04/09.
+10. **Converter `app/apps/spsbd_app`.** Já está em andamento pelo chat da área,
+    que publicou várias vezes em 04/09.
 
 ### Melhorias possíveis, nenhuma urgente
 
-9. **O que sobrou de lentidão está no banco, não no código.** Medido pelo dono
-   em 04/09: 478 ms de tela, 443 deles no banco — 93%. Otimizar Python daqui
-   não move o ponteiro; o que resta é SQL e índice.
+11. **O que sobrou de lentidão está no banco, não no código.** Medido pelo dono
+    em 04/09: 478 ms de tela, 443 deles no banco — 93%. Otimizar Python daqui
+    não move o ponteiro; o que resta é SQL e índice.
 
----
+### Encerrado — não reabrir sem motivo novo
+
+- **Migração que cria coluna derivada agenda a reconstrução sozinha.** Aprovado
+  pelo dono em 04/09 e feito: a migração declara a marca `REFAZER-O-FATO` no
+  próprio arquivo e o painel dispara o recálculo ao terminar de aplicar.
+- **Os quatro itens do documento de repasse do Streamlit** (código e rótulo da
+  categoria, o Explorador, a edição no OMIE, o Rateio da Administração) e as
+  pendências 4.1 e 4.2 dele. Tudo publicado em 09/09.
 
 ## Coisas pequenas que mordem
 
