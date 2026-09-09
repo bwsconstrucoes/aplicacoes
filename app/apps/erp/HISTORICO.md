@@ -1481,6 +1481,58 @@ registrar e cancelar, só administrador, diretor e financeiro).
 listar, conferir a numeração, registrar do portal, tentar registrar a mesma
 nota de novo (recusada com a frase certa) e cancelar com motivo.
 
+### A emissão da nota a partir da medição — modo MANUAL — 09/09/2026
+
+Botão **"Emitir nota"** em cada medição do quadro do contrato. O manual vem
+antes do automático de propósito: funciona no dia seguinte, sem credenciamento,
+sem certificado e sem token — e continua servindo de rede quando a API falhar
+ou a prefeitura estiver fora do ar. A segunda empresa, que vai operar em
+Petrolina e ainda nem tem inscrição municipal, emite por aqui desde já.
+
+**O que o ERP faz e o que ele NÃO faz.** Ele monta num bloco só tudo que o
+portal pergunta — prestador, CNPJ, inscrição municipal, tomador, discriminação
+do serviço e as retenções já calculadas — e a pessoa copia. Quem emite é ela,
+no site da prefeitura. O ERP **não reserva número antes**: no manual quem
+numera a nota é o portal, e reservar aqui criaria uma sequência paralela que
+não existe lá.
+
+**As retenções saem calculadas do cadastro da obra**, pelo mesmo cálculo que o
+módulo de emissão já usa: INSS 11% sobre a parcela de serviço, ISS pela
+alíquota do município (com dedução de material quando o município aceita), e as
+federais conforme o contrato. Numa medição de 265 mil da Escola do Planalto
+isso dá ISS 3.975, INSS 14.575, IRRF 3.180 e PCC 12.322,50 — líquido de
+230.947,50, sem ninguém abrir calculadora.
+
+**A discriminação vai montada** com medição, período, contrato, objeto e CNO.
+É o campo que mais volta corrigido: sem o número da medição e o período, o
+setor de empenho do órgão não sabe a que competência a nota se refere e devolve.
+
+**A volta é com o PDF.** A IA lê a nota que a prefeitura devolveu e preenche
+número, data, valor e retenções — e a tela diz a confiança da leitura e manda
+conferir. É o MESMO leitor do comprovante e da nota de fornecedor: caminho de
+leitura novo seria caminho novo para manter.
+
+**Registrar sem informar retenção não grava zero** — usa o cálculo. Zero é uma
+afirmação, não uma ausência, e o relatório da contabilidade sairia dizendo que
+nada foi retido.
+
+**Um defeito que enganava de verdade**, achado ao ler o bloco na tela: a
+alíquota do IRRF saía escrita **"1.200%"**. Em português isso se lê como mil e
+duzentos por cento — e a frase ia dentro do texto que a pessoa copia para o
+portal. Agora sai "1,2%", e o dinheiro das explicações também saiu do formato
+americano ("132500.00" virou "132.500,00").
+
+**Provado:** 16 testes com banco de verdade
+(`tests/test_emissao_manual_banco.py`) e o caminho inteiro percorrido num
+navegador — abrir a medição, ver o bloco, tentar registrar sem número
+(recusado), registrar com número e código de verificação, e ver a nota
+aparecer no quadro do contrato e na tela de notas emitidas com cada tributo em
+sua coluna.
+
+⚠️ **O que continua faltando para a emissão AUTOMÁTICA** (item 6 do roteiro):
+inscrição municipal, credenciamento, token e códigos de serviço da empresa que
+vai operar em Petrolina. Nada disso trava o manual.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**

@@ -226,6 +226,7 @@ def registrar_manual(s: Session, *, empresa_id: int, titulo_id: Optional[int],
                      numero_nota: str, emissao: Optional[date] = None,
                      valor_bruto: Optional[Decimal] = None,
                      retencoes: Optional[dict[str, Any]] = None,
+                     codigo_verificacao: str = "", chave_acesso: str = "",
                      observacao: str = "", usuario=None) -> NotaEmitida:
     """A nota que saiu PELO PORTAL da prefeitura, registrada aqui.
 
@@ -275,4 +276,6 @@ def registrar_manual(s: Session, *, empresa_id: int, titulo_id: Optional[int],
     # sobrescreve o campo, e escrever nos dois lugares perderia o valor calado.
     return numeracao.confirmar(s, nota.id, numero_nota=numero_nota,
                                data_emissao=quando,
+                               codigo_verificacao=codigo_verificacao,
+                               chave_acesso=chave_acesso,
                                retencoes=retido_por_tributo, usuario=usuario)

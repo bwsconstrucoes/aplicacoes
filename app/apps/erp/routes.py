@@ -4559,6 +4559,70 @@ def api_nota_emitida_registrar():
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/api/medicoes/<int:titulo_id>/emitir")
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_medicao_preparar_emissao(titulo_id: int):
+    """Tudo que o portal da prefeitura pergunta, num bloco só. NÃO emite."""
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.notas_emitidas import manual as svc
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            return jsonify({"ok": True, "emissao": svc.preparar(s, titulo_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/medicoes/<int:titulo_id>/emitir", methods=["POST"])
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_medicao_registrar_emissao(titulo_id: int):
+    """A nota voltou do portal: registra com as retenções calculadas."""
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.notas_emitidas import listagem as svc_lista
+    from app.apps.erp.core.notas_emitidas import manual as svc
+    d = request.get_json(silent=True) or {}
+    def _quando():
+        try:
+            return date.fromisoformat(d.get("emissao") or "")
+        except ValueError:
+            return None
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            nota = svc.registrar(
+                s, titulo_id, numero_nota=(d.get("numero_nota") or ""),
+                emissao=_quando(), valor_bruto=d.get("valor_bruto"),
+                retencoes=d.get("retencoes"),
+                codigo_verificacao=(d.get("codigo_verificacao") or ""),
+                chave_acesso=(d.get("chave_acesso") or ""),
+                observacao=(d.get("observacao") or ""),
+                usuario=_usuario_logado(s))
+            linha = svc_lista.ler(s, nota)
+            s.commit()
+        return jsonify({"ok": True, "nota": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/notas-emitidas/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_nota_emitida_ler():
+    """A IA lê o PDF da nota que o portal devolveu e sugere os campos."""
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    from app.apps.erp.core.notas_emitidas import manual as svc
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Anexe o PDF da nota."}), 400
+    try:
+        lido = svc.ler_nota_emitida(arquivo.read(), arquivo.filename or "nota.pdf")
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    return jsonify({"ok": True, "lido": lido})
+
+
 @bp.route("/erp/api/notas-emitidas/<int:nota_id>/cancelar", methods=["POST"])
 @login_obrigatorio
 @permissao("emitir_nota")

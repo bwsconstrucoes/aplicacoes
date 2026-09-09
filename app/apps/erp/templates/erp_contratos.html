@@ -91,6 +91,7 @@
 {% block scripts %}
 <script>
 const PODE_MEXER = {{ 'true' if pode.receber else 'false' }};
+const PODE_EMITIR = {{ 'true' if pode.emitir_nota else 'false' }};
 let CONTRATOS = [], QUADRO = null, TIPOS = [];
 
 // -------------------------------------------------------------------------
@@ -232,13 +233,16 @@ function desenharQuadro(){
       <td class="mono">${l.dias_ate_receber === null ? "—" : l.dias_ate_receber}</td>
       <td>${PODE_MEXER ? `
         <button class="btn secundario" data-tipo="${l.titulo_id}">Tipo</button>
-        <button class="btn secundario" data-protocolo="${l.titulo_id}">Protocolo</button>` : ""}</td>
+        <button class="btn secundario" data-protocolo="${l.titulo_id}">Protocolo</button>` : ""}
+        ${PODE_EMITIR ? `<button class="btn" data-emitir="${l.titulo_id}">Emitir nota</button>` : ""}</td>
     </tr>`).join("");
 
   document.querySelectorAll("[data-tipo]").forEach(b =>
     b.addEventListener("click", () => abrirTipo(Number(b.dataset.tipo))));
   document.querySelectorAll("[data-protocolo]").forEach(b =>
     b.addEventListener("click", () => abrirProtocolo(Number(b.dataset.protocolo))));
+  document.querySelectorAll("[data-emitir]").forEach(b =>
+    b.addEventListener("click", () => abrirEmissao(Number(b.dataset.emitir))));
 
   const tr = QUADRO.tempo_de_recebimento;
   els("tempo").innerHTML = tr.recebidas
@@ -318,6 +322,137 @@ async function abrirProtocolo(id){
     aviso("mensagem", "Protocolo registrado.", "ok");
     abrirQuadro(QUADRO.contrato.id);
   } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// -------------------------------------------------------------------------
+// EMITIR A NOTA — modo MANUAL
+//
+// O ERP prepara e registra; quem emite é a pessoa, no site da prefeitura. O
+// bloco sai pronto para copiar porque juntar prestador, tomador,
+// discriminação e retenções de três telas diferentes é onde se erra um
+// dígito — e nota com dígito errado se conserta com cancelamento e carta ao
+// cliente.
+// -------------------------------------------------------------------------
+const TRIBUTOS_NOTA = [["iss","ISS"],["ir","IRRF"],["inss","INSS"],
+                       ["pis","PIS"],["cofins","COFINS"],["csll","CSLL"]];
+let EMISSAO = null;
+
+async function abrirEmissao(id){
+  try {
+    EMISSAO = (await api(`/erp/api/medicoes/${id}/emitir`)).emissao;
+  } catch(e){ return aviso("mensagem", e.message, "erro"); }
+  const e = EMISSAO, hoje = new Date().toISOString().slice(0, 10);
+  els("dlg-titulo").textContent = `Emitir a nota da medição ${e.medicao}`;
+  els("dlg-corpo").innerHTML = `
+    ${e.destino.pode ? "" : `<div class="aviso erro">${escapar(e.destino.motivo || "")}</div>`}
+    <div class="aviso info">
+      A nota sai por <b>${escapar(e.destino.empresa || "—")}</b>
+      (${escapar(e.destino.cnpj || "")})${e.destino.municipio
+        ? ", em " + escapar(e.destino.municipio) : ""}.
+      Isso não se escolhe: vem da obra ${escapar(e.obra || "")}.
+      ${e.destino.ambiente === "HOMOLOGACAO"
+        ? "<br><b>Esta empresa está em homologação</b> — nota de teste não vale como nota."
+        : ""}
+    </div>
+    ${e.avisos.length ? `<div class="aviso alerta">${e.avisos.map(escapar).join("<br>")}</div>` : ""}
+    ${e.ja_emitidas.length ? `<div class="aviso alerta">Esta medição já tem nota:
+      ${e.ja_emitidas.map(n => `${escapar(n.numero_nota || "sem número")}
+        (${escapar(n.situacao)}, ${moeda(n.valor)})`).join("; ")}.
+      Emitir de novo só se for faturamento parcial.</div>` : ""}
+
+    <h4 style="margin:14px 0 6px">1. Copie e emita no portal</h4>
+    <textarea id="em-bloco" rows="12" readonly
+      style="width:100%; font-family:var(--fonte-dados); font-size:12px"
+      >${escapar(e.texto_para_copiar)}</textarea>
+    <button class="btn secundario" id="em-copiar" style="margin-top:6px">Copiar</button>
+
+    <h4 style="margin:16px 0 6px">2. Volte com a nota</h4>
+    <div class="dica" style="margin-bottom:8px">Anexe o PDF que a prefeitura
+      devolveu e a IA preenche os campos — depois confira.</div>
+    <input type="file" id="em-arquivo" accept=".pdf,.png,.jpg,.jpeg">
+    <div id="em-lido"></div>
+
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo" style="grid-column:span 2"><label>Número da nota *</label>
+        <input id="em-numero" type="text"></div>
+      <div class="campo" style="grid-column:span 2"><label>Data de emissão</label>
+        <input id="em-data" type="date" value="${hoje}"></div>
+      <div class="campo" style="grid-column:span 2"><label>Valor bruto</label>
+        <input id="em-valor" type="number" step="0.01" value="${e.valor_bruto}"></div>
+      ${TRIBUTOS_NOTA.map(([c, nome]) => `
+        <div class="campo" style="grid-column:span 2"><label>${nome} retido</label>
+          <input id="em-${c}" type="number" step="0.01"
+                 value="${e.retencoes[c] || 0}"></div>`).join("")}
+      <div class="campo" style="grid-column:span 3"><label>Código de verificação</label>
+        <input id="em-codigo" type="text"></div>
+      <div class="campo" style="grid-column:span 3"><label>Chave de acesso</label>
+        <input id="em-chave" type="text"></div>
+    </div>
+    <div id="em-erro"></div>
+    <div style="margin-top:14px; display:flex; gap:8px">
+      <button class="btn" id="em-registrar">Registrar a nota</button>
+      <button class="btn secundario" id="em-cancelar">Fechar</button>
+    </div>`;
+
+  els("em-copiar").addEventListener("click", async () => {
+    els("em-bloco").select();
+    try { await navigator.clipboard.writeText(EMISSAO.texto_para_copiar); }
+    catch(err) { document.execCommand("copy"); }
+    els("em-copiar").textContent = "Copiado";
+  });
+  els("em-cancelar").addEventListener("click", () => els("dlg").close());
+  els("em-arquivo").addEventListener("change", lerNotaAnexada);
+  els("em-registrar").addEventListener("click", registrarEmissao);
+  els("dlg").showModal();
+}
+
+async function lerNotaAnexada(ev){
+  const f = ev.target.files[0];
+  if (!f) return;
+  els("em-lido").innerHTML = `<div class="aviso info">Lendo a nota…</div>`;
+  const fd = new FormData();
+  fd.append("arquivo", f);
+  try {
+    const d = await (async () => {
+      const r = await fetch("/erp/api/notas-emitidas/ler", {method: "POST", body: fd});
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.erro || "Não consegui ler a nota.");
+      return j.lido;
+    })();
+    if (d.numero_nota) els("em-numero").value = d.numero_nota;
+    if (d.emissao) els("em-data").value = d.emissao;
+    if (d.valor_bruto) els("em-valor").value = d.valor_bruto;
+    if (d.chave_acesso) els("em-chave").value = d.chave_acesso;
+    TRIBUTOS_NOTA.forEach(([c]) => { if (d.retencoes[c]) els("em-" + c).value = d.retencoes[c]; });
+    els("em-lido").innerHTML = `<div class="aviso ${
+      d.confianca === "ALTA" ? "ok" : "alerta"}">Li a nota (confiança
+      ${escapar(d.confianca || "?")}). <b>Confira os campos abaixo antes de
+      registrar.</b>${d.campos_ilegiveis.length
+        ? " Não consegui ler: " + d.campos_ilegiveis.map(escapar).join(", ") + "." : ""}</div>`;
+  } catch(err){
+    els("em-lido").innerHTML = `<div class="aviso erro">${escapar(err.message)}
+      — preencha à mão.</div>`;
+  }
+}
+
+async function registrarEmissao(){
+  els("em-erro").innerHTML = "";      // erro velho não pode sobreviver à correção
+  const numero = els("em-numero").value.trim();
+  if (!numero) return aviso("em-erro", "Informe o número da nota.", "erro");
+  const retencoes = {};
+  TRIBUTOS_NOTA.forEach(([c]) => retencoes[c] = els("em-" + c).value || 0);
+  try {
+    await api(`/erp/api/medicoes/${EMISSAO.titulo_id}/emitir`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        numero_nota: numero, emissao: els("em-data").value,
+        valor_bruto: els("em-valor").value, retencoes,
+        codigo_verificacao: els("em-codigo").value,
+        chave_acesso: els("em-chave").value})});
+    els("dlg").close();
+    aviso("mensagem", `Nota ${numero} registrada.`, "ok");
+    abrirQuadro(QUADRO.contrato.id);
+  } catch(e){ aviso("em-erro", e.message, "erro"); }
 }
 
 // -------------------------------------------------------------------------

@@ -246,8 +246,11 @@ Omie não dá conta disso.
       PIS, COFINS, CSLL), líquido, recebido com data e conta, conferência da
       numeração (buraco ≠ queimado), registro da nota que saiu pelo portal da
       prefeitura, cancelamento com motivo, e exportação em Excel e PDF.
-- [ ] 5. **Emissão a partir da medição, modo MANUAL** — anexar a nota e a IA
-      lê. Não depende de credenciamento nenhum e já entrega valor.
+- [x] 5. **Emissão a partir da medição, modo MANUAL** — FEITO em 09/09/2026.
+      Botão "Emitir nota" em cada medição do quadro do contrato: o ERP monta o
+      bloco com prestador, tomador, discriminação e as retenções JÁ CALCULADAS
+      pelo cadastro da obra; a pessoa copia, emite no portal, volta e anexa o
+      PDF — a IA lê e preenche número, data, valor e retenções.
 - [ ] 6. **Emissão automática**, com município e endereço virando configuração
       por empresa. ⚠️ Apontar para o **canal NACIONAL**, não para o ABRASF: a
       LC 214/2025 tornou o padrão nacional obrigatório e o ABRASF tem data para

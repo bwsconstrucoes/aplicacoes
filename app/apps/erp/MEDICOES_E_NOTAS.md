@@ -428,9 +428,9 @@ períodos diferentes — e usar a errada dá valor errado com cara de certo.
 4. ✅ **FEITO (09/09/2026) — A tela de controle de notas emitidas**, em
    Financeiro › "Notas emitidas", com exportação em Excel e PDF, conferência da
    numeração e registro da nota emitida pelo portal.
-5. **A emissão a partir da medição** — primeiro o modo MANUAL (anexar a nota e
-   deixar a IA ler), que não depende de credenciamento nenhum e já entrega
-   valor.
+5. ✅ **FEITO (09/09/2026) — A emissão a partir da medição, modo MANUAL**: o
+   bloco pronto para copiar no portal, com as retenções calculadas pelo cadastro
+   da obra, e a volta com o PDF lido pela IA.
 6. **A emissão automática**, apontando para o **canal nacional**.
    ⚠️ O município, o endereço, o token e a alíquota viram **cadastro da
    empresa já no passo 1**, e não aqui: com duas empresas em municípios
