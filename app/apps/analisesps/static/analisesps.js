@@ -10,6 +10,63 @@
 // Sem biblioteca: são cem linhas. Cada biblioteca nova é peso que a instância
 // de 2 GB divide com quinze outros módulos.
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// A TELA VOLTA COMO ESTAVA: rolagem e caixinhas marcadas
+//
+// Pedido do dono: "e como se eu tivesse duas abas do navegador, alternando
+// entre Solicitacoes e o Lote". A tela guardada ja volta na hora (ver o
+// `Cache-Control` no `web.py`), mas voltava no TOPO e sem as marcacoes — e
+// quem marcou vinte SPs, foi conferir uma no Lote e voltou, remarcava tudo.
+//
+// Fica na memoria da ABA (`sessionStorage`), nao no computador: fechou a aba,
+// acabou. E a chave inclui o ENDERECO INTEIRO, com o filtro — mudou o filtro,
+// as marcacoes de antes nao voltam, porque sao de outra lista.
+//
+// Meia hora de validade para nao ressuscitar uma selecao esquecida.
+// ---------------------------------------------------------------------------
+const LEMBRAR = {
+  minutos: 30,
+  chave(que) { return "analisesps:" + que + ":" + location.pathname + location.search; },
+  ler(que) {
+    try {
+      const cru = sessionStorage.getItem(this.chave(que));
+      if (!cru) return null;
+      const guardado = JSON.parse(cru);
+      if (Date.now() - (guardado.quando || 0) > this.minutos * 60000) return null;
+      return guardado.valor;
+    } catch (e) { return null; }
+  },
+  gravar(que, valor) {
+    try {
+      sessionStorage.setItem(this.chave(que),
+                             JSON.stringify({valor: valor, quando: Date.now()}));
+    } catch (e) { /* aba anonima, ou memoria cheia: seguir sem lembrar */ }
+  },
+  esquecer(que) {
+    try { sessionStorage.removeItem(this.chave(que)); } catch (e) {}
+  },
+};
+
+// A ROLAGEM. Guardada enquanto se rola, e nao so ao sair: sair da tela pode
+// ser fechar a aba, e ai nao ha momento de despedida.
+(function () {
+  let relogio = null;
+  window.addEventListener("scroll", () => {
+    clearTimeout(relogio);
+    relogio = setTimeout(() => LEMBRAR.gravar("rolagem", window.scrollY), 150);
+  }, {passive: true});
+
+  window.addEventListener("DOMContentLoaded", () => {
+    const onde = LEMBRAR.ler("rolagem");
+    // Só repõe se houver para onde rolar — numa tela que encolheu, rolar para
+    // um ponto que não existe mais deixa a pessoa olhando o vazio.
+    if (onde && document.body.scrollHeight > onde + window.innerHeight / 2) {
+      window.scrollTo(0, onde);
+    }
+  });
+})();
+
+
 (function () {
   const barra = document.getElementById("barra-acoes");
   if (!barra) return;
@@ -50,6 +107,25 @@
     barra.querySelectorAll("[data-precisa-selecao]").forEach(b => {
       b.disabled = sel.length === 0;
     });
+
+    // E guarda o que está marcado, para a volta a esta tela trazer tudo de
+    // novo. Vazio é apagado em vez de guardado: uma lista vazia guardada
+    // sobrescreveria a marcação de uma volta anterior.
+    if (sel.length) LEMBRAR.gravar("marcadas", sel.map(c => c.value));
+    else LEMBRAR.esquecer("marcadas");
+  }
+
+  function reporMarcacao() {
+    const guardadas = LEMBRAR.ler("marcadas");
+    if (!guardadas || !guardadas.length) return;
+    const querem = new Set(guardadas);
+    let repostas = 0;
+    marcas().forEach(c => {
+      if (querem.has(c.value)) { c.checked = true; repostas += 1; }
+    });
+    // A barra do alto mostra quantas e quanto somam — então a marcação
+    // reposta nunca é invisível, e nenhum botão age sobre ela sem confirmar.
+    if (repostas) atualizar();
   }
 
   document.querySelectorAll("input.marcar-todas").forEach(t => {
@@ -142,14 +218,46 @@
   });
 
   // --- Mandar as marcadas para o lote --------------------------------------
+  // NAO SAI DA TELA. Antes o botao mandava um formulario e a pessoa era
+  // levada para o Lote — perdendo o filtro, a rolagem e a marcacao de quem so
+  // queria separar um grupo e continuar conferindo a lista. Pedido do dono em
+  // 09/09/2026: "mantenha-se em Solicitacoes, apenas avise que foi executada
+  // a acao".
   const btnLote = document.getElementById("ba-enviar-lote");
-  if (btnLote) btnLote.addEventListener("click", () => {
+  if (btnLote) btnLote.addEventListener("click", async () => {
     const ids = idsMarcados();
     if (!ids) return;
-    const form = document.getElementById("form-enviar-lote");
-    form.querySelector("input[name=ids]").value = ids.join(",");
-    form.submit();
+    btnLote.disabled = true;
+    try {
+      const r = await fetch(barra.dataset.urlEnviarLote, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids: ids})
+      });
+      const d = await r.json();
+      if (!d.ok) { alert("Não deu certo: " + (d.erro || "erro desconhecido")); return; }
+      recado(d.quantas + " SP(s) entraram no grupo \"" + d.titulo + "\" do lote.",
+             barra.dataset.urlLote, "Ver o lote");
+    } catch (e) { alert("Falhou a comunicação com o servidor: " + e); }
+    finally { btnLote.disabled = false; }
   });
+
+  // O aviso de que a acao saiu. Discreto, some sozinho, e leva um link para
+  // quem quiser conferir — mas sem arrastar ninguem para outra tela.
+  function recado(texto, endereco, rotulo) {
+    document.querySelectorAll(".recado-acao").forEach(v => v.remove());
+    const caixa = document.createElement("div");
+    caixa.className = "recado-acao";
+    caixa.textContent = texto + " ";
+    if (endereco) {
+      const link = document.createElement("a");
+      link.href = endereco;
+      link.textContent = rotulo || "Ver";
+      caixa.appendChild(link);
+    }
+    document.body.appendChild(caixa);
+    setTimeout(() => caixa.classList.add("saindo"), 6000);
+    setTimeout(() => caixa.remove(), 6600);
+  }
 
   // --- Validar as marcadas -------------------------------------------------
   //
@@ -217,6 +325,9 @@
     }
   });
 
+  // A ORDEM importa: repor primeiro, e `reporMarcacao` chama `atualizar` só
+  // quando repôs alguma coisa. Sem marcação guardada, a tela abre limpa.
+  reporMarcacao();
   atualizar();
 })();
 

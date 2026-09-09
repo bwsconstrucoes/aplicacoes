@@ -673,3 +673,51 @@ def test_o_recorte_dos_filtros_esta_na_capa():
         resumo=[("Resultado", "R$ 10,00")]))
     assert "Recorte: CASA" in texto
     assert "Resultado" in texto and "R$ 10,00" in texto
+
+
+def test_rotulo_que_comeca_com_igual_nao_vira_formula():
+    """O Excel entende texto começando com "=" como FÓRMULA. As linhas do DRE
+    chamam-se "= RESULTADO", "= Receita Líquida", "= Total Custos/Despesas" —
+    e chegavam na planilha como fórmula inválida, mostrando erro no lugar do
+    rótulo. Veio da passagem do painel Streamlit, onde o mesmo defeito existia.
+
+    Vale para +, − e @ pelo mesmo motivo."""
+    from openpyxl import load_workbook
+
+    rotulos = ["= RESULTADO", "= Receita Líquida", "+ Aportes", "-R$ ajuste",
+               "@obra", "Custo dos Serviços"]
+    livro = load_workbook(io.BytesIO(excel.montar(
+        [("DRE", [("linha", "Linha"), ("valor", "Valor")],
+          [{"linha": r, "valor": -1.0} for r in rotulos])])))
+    folha = livro["DRE"]
+    for i, rotulo in enumerate(rotulos, start=2):
+        celula = folha.cell(row=i, column=1)
+        assert celula.data_type == "s", f"{rotulo} virou fórmula na planilha"
+        assert celula.value == rotulo, "o rótulo não pode ser reescrito"
+    # e o que é número continua número, senão ninguém soma na planilha
+    assert folha.cell(row=2, column=2).data_type == "n"
+
+
+def test_a_leitura_denuncia_principal_pago_maior_que_o_tomado():
+    """9,25 milhões de principal pago contra 9,08 tomados: o dado real da
+    empresa. Ninguém paga principal de dinheiro que não tomou — ou o empréstimo
+    é anterior à base, ou há título classificado errado no OMIE. A tela tem de
+    dizer isso; calada, o erro vira despesa de obra sem ninguém perceber."""
+    linhas = [(dt.date(2025, 1, 1), "CASA", -1000.0)]
+    financeiro = [{"mes": dt.date(2025, 1, 1), "emprestimo_tomado": 9_080_000.0,
+                   "emprestimo_pago": -9_250_000.0, "aporte_recebido": 0.0,
+                   "dividendo_pago": 0.0, "outros": 0.0}]
+    r = simulacao.simular(linhas, financeiro, [("obra:CASA", 100)], {"CASA": "ALFA"})
+    texto = " ".join(r["leitura"])
+    assert "mais principal de empréstimo do que entrou" in texto
+    assert "Explorador" in texto
+
+
+def test_emprestimo_equilibrado_nao_gera_aviso():
+    """O aviso só vale se for raro. Empréstimo em dia não pode virar ruído."""
+    linhas = [(dt.date(2025, 1, 1), "CASA", -1000.0)]
+    financeiro = [{"mes": dt.date(2025, 1, 1), "emprestimo_tomado": 9_250_000.0,
+                   "emprestimo_pago": -9_080_000.0, "aporte_recebido": 0.0,
+                   "dividendo_pago": 0.0, "outros": 0.0}]
+    r = simulacao.simular(linhas, financeiro, [("obra:CASA", 100)], {"CASA": "ALFA"})
+    assert "mais principal de empréstimo" not in " ".join(r["leitura"])

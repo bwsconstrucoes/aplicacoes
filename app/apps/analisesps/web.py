@@ -32,6 +32,121 @@ bp = Blueprint("analisesps", __name__,
 bp.before_request(auth.exigir_login)
 
 
+# ---------------------------------------------------------------------------
+# A PÁGINA VAI COMPRIMIDA
+#
+# Medido com as 59.055 SPs: a tela de Solicitações são 430 KB de HTML — 200
+# linhas com vinte colunas cada. O servidor mandava isso CRU, e nada no
+# caminho comprimia. Comprimido dá 27 KB, dezesseis vezes menos, e custa
+# 1,4 ms de processamento.
+#
+# É a maior diferença de todas para quem está do outro lado: o banco pode
+# responder em 100 ms, mas meio megabyte ainda leva segundos numa internet
+# ruim ou no celular na obra. Nenhuma otimização de consulta compensa isso.
+#
+# TRÊS COISAS FICAM DE FORA, e cada uma por um motivo:
+#   - o que sai em fluxo (a exportação CSV, que é escrita em blocos para não
+#     abrir a base inteira na memória): comprimir obrigaria a juntar tudo
+#     antes, que é exatamente o que aquele caminho evita;
+#   - o que já vem comprimido (PDF, PNG, o xlsx do BeeVale) — reapertar um
+#     arquivo comprimido só gasta processador e às vezes aumenta;
+#   - o que é pequeno demais para valer o esforço.
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# A TELA FICA GUARDADA NO NAVEGADOR POR CINCO MINUTOS
+#
+# Pedido do dono, e a observação dele estava certa: "eu filtro, vou para o
+# Lote, volto para Solicitações — e ele refaz tudo de novo. Se eu tivesse duas
+# abas do navegador eu alternaria na hora." Hoje toda troca de aba refazia as
+# consultas e remontava a tela inteira, mesmo três segundos depois.
+#
+# Guardada, a volta não vai ao servidor: aparece na hora, com o filtro e tudo.
+#
+# SÓ AS TELAS DE LEITURA ENTRAM, e a razão é concreta: Lote, Agenda, Ratear e
+# Bradesco recebem alterações NO PRÓPRIO ENDEREÇO (o formulário manda para
+# elas mesmas). Guardá-las mostraria o estado ANTERIOR à mudança que a pessoa
+# acabou de fazer — que é pior do que ser lento. As quatro daqui só são
+# alteradas por `/api/...`, e toda alteração por lá termina recarregando a
+# tela, o que substitui o que estava guardado.
+#
+# AS REDES DE PROTEÇÃO JÁ EXISTIAM e continuam valendo na tela guardada:
+#   - o relógio no alto diz de quando é o dado ("base de 09/09 às 14:32");
+#   - a busca de 90 em 90 segundos continua rodando e avisa se a base mudou.
+#
+# O QUE FICA EM ABERTO, dito com todas as letras: se OUTRA pessoa alterar algo,
+# você pode ver o estado anterior por até cinco minutos. Foi escolha do dono
+# em 09/09/2026, com o risco na frente — ele considerou viável para o uso de
+# quatro pessoas na mesma empresa.
+# ---------------------------------------------------------------------------
+SEGUNDOS_GUARDADA = 300
+TELAS_QUE_FICAM_GUARDADAS = {
+    "analisesps.solicitacoes",
+    "analisesps.relatorio",
+    "analisesps.auditoria",
+    "analisesps.log",
+}
+
+
+@bp.after_request
+def _guardar_no_navegador(resposta):
+    """Diz ao navegador que pode reusar esta tela por alguns minutos."""
+    try:
+        if request.method != "GET" or resposta.status_code != 200:
+            return resposta
+        if request.endpoint not in TELAS_QUE_FICAM_GUARDADAS:
+            return resposta
+        if not (resposta.mimetype or "").startswith("text/html"):
+            return resposta
+        # `private` porque a tela é de UMA pessoa: nada de cache compartilhado
+        # no caminho guardando a lista de pagamentos da empresa.
+        resposta.headers["Cache-Control"] = (
+            f"private, max-age={SEGUNDOS_GUARDADA}")
+    except Exception:  # noqa: BLE001 — guardar é conforto; a tela é o que importa
+        logger.exception("Análise de SPs: falhou marcar a tela como guardável")
+    return resposta
+
+
+NIVEL_COMPRESSAO = 1        # 6,3% do tamanho por 1,4 ms; o nível 6 chega a
+                            # 4,4% mas gasta o dobro, e esta instância tem
+                            # 2 GB e histórico de morrer de memória.
+MINIMO_PARA_COMPRIMIR = 1024
+TIPOS_QUE_COMPRIMEM = ("text/html", "text/css", "text/plain",
+                       "application/javascript", "application/json",
+                       "image/svg+xml")
+
+
+@bp.after_request
+def _comprimir(resposta):
+    """Manda a página comprimida quando o navegador aceita. Ver o bloco acima."""
+    try:
+        if resposta.direct_passthrough or resposta.is_streamed:
+            return resposta
+        if resposta.headers.get("Content-Encoding"):
+            return resposta
+        if resposta.status_code < 200 or resposta.status_code >= 300:
+            return resposta
+        if "gzip" not in (request.headers.get("Accept-Encoding") or "").lower():
+            return resposta
+        tipo = (resposta.mimetype or "").lower()
+        if not any(tipo.startswith(t) for t in TIPOS_QUE_COMPRIMEM):
+            return resposta
+
+        conteudo = resposta.get_data()
+        if len(conteudo) < MINIMO_PARA_COMPRIMIR:
+            return resposta
+
+        import gzip
+        resposta.set_data(gzip.compress(conteudo, NIVEL_COMPRESSAO))
+        resposta.headers["Content-Encoding"] = "gzip"
+        resposta.headers["Content-Length"] = str(len(resposta.get_data()))
+        # Sem isto, um cache no caminho poderia entregar a versão comprimida a
+        # um navegador que não pediu — e ele mostraria lixo na tela.
+        resposta.headers.add("Vary", "Accept-Encoding")
+    except Exception:  # noqa: BLE001 — comprimir é conforto; a página é o que importa
+        logger.exception("Análise de SPs: falhou comprimir a resposta")
+    return resposta
+
+
 @bp.app_template_filter("moeda")
 def _filtro_moeda(valor):
     from .formatos import moeda
@@ -68,15 +183,27 @@ def _filtro_com_links(texto):
 @bp.route("/entrar", methods=["GET", "POST"])
 @publica("é a própria tela de login; sem ela ninguém consegue entrar")
 def entrar():
+    from . import pessoas
+
     configurados = auth.perfis_configurados()
     erro = None
 
-    nome = auth.limpar_nome(request.form.get("nome", ""))
+    # A entrada é uma LISTA, não um campo livre: o nome é a chave do lote e
+    # dos filtros, e digitar "Marcelo" hoje e "Marcelo Leitão" amanhã dava duas
+    # pessoas — a segunda encontrando o lote vazio sem entender por quê.
+    #
+    # O que a tela manda é conferido contra a lista, e volta com a grafia
+    # oficial: assim um pedido montado à mão não cria uma quinta pessoa por
+    # fora, e a mesma pessoa não se divide em duas por causa de um acento.
+    equipe = pessoas.listar()
+    escolhido = auth.limpar_nome(request.form.get("nome", ""))
+    nome = pessoas.da_lista(escolhido)
 
     if request.method == "POST" and configurados:
         perfil = auth.identificar(request.form.get("senha", ""))
         if not nome:
-            erro = "Diga o seu nome — é ele que separa o seu lote do dos outros."
+            erro = ("Escolha o seu nome na lista — é ele que separa o seu lote "
+                    "e os seus filtros dos das outras pessoas.")
         elif perfil:
             auth.entrar_na_sessao(perfil, nome)
             destino = request.args.get("proximo") or ""
@@ -90,10 +217,11 @@ def entrar():
             logger.warning("Análise de SPs: tentativa de entrada com senha "
                            "errada (nome informado: %r).", nome)
 
-    # Na tela, o nome já vem preenchido com o da última vez NESTE navegador.
+    # Na tela, já vem escolhido o nome da última vez NESTE navegador.
+    lembrado = pessoas.da_lista(request.cookies.get(auth.COOKIE_NOME, ""))
     return render_template(
         "analisesps_login.html", sem_senha=not configurados, erro=erro,
-        nome=nome or request.cookies.get(auth.COOKIE_NOME, ""))
+        equipe=equipe, nome=nome or lembrado)
 
 
 def _lembrar_o_nome(resposta, nome: str):
@@ -119,7 +247,14 @@ def sair():
     encerrar o acesso, não esquecer quem você é. Quem quiser trocar de pessoa
     apaga o campo e digita outro; é o mesmo campo."""
     auth.sair_da_sessao()
-    return redirect(url_for("analisesps.entrar"))
+    resposta = redirect(url_for("analisesps.entrar"))
+    # APAGA O QUE FICOU GUARDADO NO NAVEGADOR. Sem isto, num computador
+    # compartilhado, apertar Voltar depois de sair mostraria as telas da
+    # pessoa anterior pelos minutos que faltassem. Sair tem de sair de
+    # verdade.
+    resposta.headers["Clear-Site-Data"] = '"cache"'
+    resposta.headers["Cache-Control"] = "no-store"
+    return resposta
 
 
 @bp.route("/saude")
@@ -212,8 +347,10 @@ def escolher_colunas():
         escolhidas = [c for c in request.form.getlist("coluna")
                       if c in tabela.POR_CHAVE]
 
+    # Guarda a escolha E as colunas que existiam agora: é o que faz uma coluna
+    # criada depois aparecer para quem já tinha escolhido — ver `tabela.py`.
     preferencias.gravar(auth.pessoa_atual(), tabela.PREFERENCIA,
-                        {"colunas": escolhidas})
+                        tabela.para_guardar(escolhidas))
 
     # A volta sai do formulário, então é conferida: destino de fora daqui
     # transformaria esta rota em trampolim.
@@ -630,6 +767,40 @@ def alterar():
     return _gravar_alteracao(ids, coluna, valor, acao)
 
 
+@bp.route("/api/enviar-ao-lote", methods=["POST"])
+@exige_operador
+def enviar_ao_lote():
+    """Manda as SPs marcadas para o lote SEM SAIR DA TELA.
+
+    Pedido do dono em 09/09/2026: *"ao enviar registro ao lote, não quero mudar
+    de tela; mantenha-se em Solicitações, apenas avise que foi executada a
+    ação"*. Antes o botão mandava um formulário e a pessoa era levada para o
+    Lote — perdendo o filtro, a rolagem e a marcação de quem só queria separar
+    um grupo e continuar conferindo a lista.
+
+    É a MESMA regra do formulário: um grupo novo no topo, o que já estava fica
+    abaixo. Aqui ela é chamada, não copiada."""
+    from . import lote
+
+    dados = request.get_json(silent=True) or {}
+    ids, erro = _ids_do_pedido(dados)
+    if erro:
+        return erro
+
+    pessoa = auth.pessoa_atual()
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        conteudo, titulo = lote.acrescentar_grupo(lote.ler(pessoa)["conteudo"], ids)
+        lote.salvar(conteudo, quem, pessoa)
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou enviar ao lote")
+        return {"ok": False, "erro": f"Não consegui enviar ao lote: {e}"}, 500
+
+    logger.info("Análise de SPs: %s enviou %d SP(s) ao lote (grupo %r).",
+                quem or "sem nome", len(ids), titulo)
+    return {"ok": True, "quantas": len(ids), "titulo": titulo}
+
+
 @bp.route("/api/sem-risco", methods=["POST"])
 @exige_operador
 def sem_risco():
@@ -720,7 +891,12 @@ def configuracoes():
     # Dentro de um try porque ler um segredo pode ir à planilha, e ESTA tela é
     # a que conserta o módulo quando algo quebra: ela não pode ser a próxima a
     # cair. Foi assim que o módulo travou na estreia (03/09).
-    from . import beevale
+    from . import beevale, pessoas
+    try:
+        equipe = pessoas.listar()
+    except Exception:  # noqa: BLE001 — a tela abre mesmo sem isto
+        logger.exception("Análise de SPs: não consegui ler a lista de pessoas")
+        equipe = list(pessoas.PADRAO)
     try:
         pasta, origem = beevale.pasta_do_drive()
         integracoes = {
@@ -740,12 +916,42 @@ def configuracoes():
     return render_template(
         "analisesps_config.html",
         migracoes=migracoes, erro_banco=erro_banco, integracoes=integracoes,
+        equipe=equipe,
         base=consultas.base_carregada(),
         andamento=tarefas.estado(),
         ultima=tarefas.ultima_concluida() if not erro_banco else None,
         modos=tarefas.MODOS,
         versao=os.getenv("RENDER_GIT_COMMIT", "")[:8] or "desenvolvimento",
         pode_operar=auth.pode_operar())
+
+
+@bp.route("/api/pessoas", methods=["POST"])
+@exige_operador
+def gravar_pessoas():
+    """Guarda quem aparece na lista da tela de entrada.
+
+    Não é cadastro de usuário e não dá acesso a ninguém: quem decide o que se
+    pode fazer continua sendo a senha. Isto só evita que a mesma pessoa se
+    divida em duas por ter digitado o nome diferente."""
+    from . import pessoas
+
+    dados = request.get_json(silent=True) or {}
+    bruto = dados.get("pessoas")
+    if isinstance(bruto, str):
+        # A tela manda um nome por linha — é como se escreve uma lista à mão.
+        bruto = bruto.replace(",", "\n").splitlines()
+
+    try:
+        lista = pessoas.gravar(bruto or [])
+    except ValueError as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou gravar a lista de pessoas")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+
+    logger.info("Análise de SPs: %s gravou a lista de pessoas (%d).",
+                auth.nome_atual() or "sem nome", len(lista))
+    return {"ok": True, "pessoas": lista}
 
 
 @bp.route("/api/pasta-drive", methods=["POST"])
@@ -922,15 +1128,22 @@ def relatorio():
     if dimensao not in consultas.DIMENSOES:
         dimensao = "centro_custo"
 
+    # AS CINCO SOMAS SAEM DE UMA VARREDURA SÓ. Eram cinco perguntas sobre
+    # exatamente as mesmas linhas, cada uma percorrendo as 59 mil SPs: medido,
+    # 183 dos 331 ms desta tela. Ver `consultas.agregar_varias`.
+    somas = consultas.agregar_varias(
+        filtros, ["projeto", "centro_custo", "tipo_despesa", "conta", dimensao],
+        tipo, periodo, 100)
+
     return render_template(
         "analisesps_relatorio.html",
         aba="relatorio", base=base,
         numeros=consultas.numeros_do_relatorio(filtros, tipo, periodo),
-        por_projeto=consultas.agregar(filtros, "projeto", tipo, periodo, 15),
-        por_centro=consultas.agregar(filtros, "centro_custo", tipo, periodo, 15),
-        por_tipo=consultas.agregar(filtros, "tipo_despesa", tipo, periodo, 15),
-        por_conta=consultas.agregar(filtros, "conta", tipo, periodo, 15),
-        quebra=consultas.agregar(filtros, dimensao, tipo, periodo, 100),
+        por_projeto=somas.get("projeto", [])[:15],
+        por_centro=somas.get("centro_custo", [])[:15],
+        por_tipo=somas.get("tipo_despesa", [])[:15],
+        por_conta=somas.get("conta", [])[:15],
+        quebra=somas.get(dimensao, []),
         credores=consultas.top_credores(filtros, tipo, periodo, 30),
         aging=consultas.aging_vencidos(filtros, periodo),
         tipo=tipo, periodo=periodo, dimensao=dimensao,
@@ -1119,20 +1332,18 @@ def tela_lote():
     # "o que está prestes a vencer e ainda não foi tratado" — que é a pergunta
     # que o painel existe para responder. O resto está a um clique, nas
     # Solicitações já filtradas.
+    #
+    # AS QUATRO LISTAS SAEM DE UMA VARREDURA SÓ. Eram oito consultas — uma
+    # lista e um resumo por status —, e cada uma percorria as 59 mil SPs
+    # inteiras: 185 dos 200 ms desta tela eram isto, medido. O porquê e o como
+    # estão em `consultas.painel_por_agendamento`.
     NO_PAINEL = 20
-    painel = []
-    for rotulo in ("Agendar", "Agendado", "Falha Agendar", "Verificar"):
-        try:
-            linhas = consultas.listar({"status_agend": [rotulo]},
-                                      ordem="vencimento", pagina=1)[:NO_PAINEL]
-            numeros = consultas.resumo({"status_agend": [rotulo]})
-        except Exception:  # noqa: BLE001 — o painel é um extra; o lote é o principal
-            logger.exception("Análise de SPs: falhou montar o painel de %r", rotulo)
-            continue
-        painel.append({"rotulo": rotulo, "linhas": linhas,
-                       "quantidade": numeros["quantidade"],
-                       "total": numeros["total"],
-                       "tem_mais": numeros["quantidade"] > len(linhas)})
+    try:
+        painel = consultas.painel_por_agendamento(
+            ["Agendar", "Agendado", "Falha Agendar", "Verificar"], NO_PAINEL)
+    except Exception:  # noqa: BLE001 — o painel é um extra; o lote é o principal
+        logger.exception("Análise de SPs: falhou montar o painel por status")
+        painel = []
 
     # O lote de quando ele era de todo mundo. Só aparece para quem ainda não
     # tem lote próprio — depois de começar o seu, ninguém quer ser lembrado.

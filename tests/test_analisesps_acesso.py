@@ -40,7 +40,7 @@ def app(monkeypatch):
 
 def entrar(cliente, senha):
     resposta = cliente.post("/analisesps/entrar",
-                            data={"senha": senha, "nome": "Marcelo"})
+                            data={"senha": senha, "nome": "MARCELO"})
     assert resposta.status_code in (301, 302), "o login deveria ter funcionado"
 
 
@@ -108,6 +108,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/alterar"),
     ("POST", "/analisesps/api/validar"),
     ("POST", "/analisesps/api/sem-risco"),
+    ("POST", "/analisesps/api/enviar-ao-lote"),
     ("POST", "/analisesps/colunas"),
     ("POST", "/analisesps/agenda"),
     ("POST", "/analisesps/api/migrar"),
@@ -117,6 +118,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/api/beevale/gerar"),
     ("POST", "/analisesps/api/conferir-drive"),
     ("POST", "/analisesps/api/pasta-drive"),
+    ("POST", "/analisesps/api/pessoas"),
     ("GET", "/analisesps/sair"),
 ]
 
@@ -254,7 +256,7 @@ def test_login_nao_redireciona_para_fora_do_modulo(app, destino):
     with app.test_client() as cliente:
         resposta = cliente.post(f"/analisesps/entrar?proximo={destino}",
                                 data={"senha": SENHA_OPERADOR,
-                                      "nome": "Marcelo"})
+                                      "nome": "MARCELO"})
     assert resposta.status_code in (301, 302)
     assert resposta.headers["Location"].endswith("/analisesps/solicitacoes")
 
@@ -270,7 +272,7 @@ def test_sem_nome_ninguem_entra(app):
         resposta = cliente.post("/analisesps/entrar",
                                 data={"senha": SENHA_OPERADOR, "nome": "   "})
     assert resposta.status_code == 200, "não podia ter entrado"
-    assert "Diga o seu nome" in resposta.get_data(as_text=True)
+    assert "Escolha o seu nome na lista" in resposta.get_data(as_text=True)
 
     with app.test_client() as cliente:
         cliente.post("/analisesps/entrar",
@@ -281,14 +283,41 @@ def test_sem_nome_ninguem_entra(app):
     assert "/analisesps/entrar" in seguinte.headers["Location"]
 
 
-def test_o_nome_nao_da_poder_nenhum(app):
-    """Quem digita um nome bonito com a senha de Consulta continua Consulta.
+def test_nome_de_fora_da_lista_nao_entra(app):
+    """Desde 09/09/2026 o nome é escolhido numa LISTA, não digitado.
 
-    Está escrito porque é o mal-entendido óbvio: o campo parece login e não é.
-    Quem autentica é a senha — o nome só etiqueta o trabalho."""
+    Um pedido montado à mão poderia mandar qualquer texto no lugar da escolha
+    — e cada texto novo criaria uma pessoa a mais, com lote e filtros
+    próprios, sem ninguém pedir. O que vem da tela é conferido contra a lista;
+    o que não está nela não entra."""
+    with app.test_client() as cliente:
+        resposta = cliente.post(
+            "/analisesps/entrar",
+            data={"senha": SENHA_OPERADOR, "nome": "Fulano de Tal"})
+    assert resposta.status_code == 200, "entrou com nome que não existe"
+    assert "Escolha o seu nome na lista" in resposta.get_data(as_text=True)
+
+
+def test_o_nome_escolhido_volta_com_a_grafia_da_lista(app):
+    """"marcelo" e "MARCELO" são a mesma pessoa, e o que fica registrado é a
+    grafia oficial. Sem isso, o registro de alterações mostraria o mesmo
+    colega escrito de três jeitos."""
+    from app.apps.analisesps import pessoas
+    assert pessoas.da_lista("marcelo") == "MARCELO"
+    assert pessoas.da_lista("  Marcelo  ") == "MARCELO"
+    assert pessoas.da_lista("Fulano") == ""
+
+
+def test_o_nome_nao_da_poder_nenhum(app):
+    """Quem escolhe qualquer nome da lista com a senha de Consulta continua
+    Consulta.
+
+    Está escrito porque é o mal-entendido óbvio: a lista parece login e não é.
+    Quem autentica é a senha — o nome só etiqueta o trabalho, e as quatro
+    pessoas dividem a mesma senha."""
     with app.test_client() as cliente:
         cliente.post("/analisesps/entrar",
-                     data={"senha": SENHA_CONSULTA, "nome": "Diretor"})
+                     data={"senha": SENHA_CONSULTA, "nome": "RAFAEL"})
         resposta = cliente.post("/analisesps/api/alterar",
                                 json={"ids": ["1"], "coluna": "status_pgt",
                                       "valor": "Pago"})
@@ -307,7 +336,7 @@ def test_senha_com_acento_e_recusada_e_nao_derruba_a_tela(app):
     with app.test_client() as cliente:
         resposta = cliente.post("/analisesps/entrar",
                                 data={"senha": "não-é-a-senha-çãô",
-                                      "nome": "Marcelo"})
+                                      "nome": "MARCELO"})
     assert resposta.status_code == 200, "estourou em vez de recusar"
     assert "Senha incorreta" in resposta.get_data(as_text=True)
 
@@ -320,7 +349,7 @@ def test_a_senha_certa_com_acento_entra(app, monkeypatch):
     with app.test_client() as cliente:
         resposta = cliente.post("/analisesps/entrar",
                                 data={"senha": "operação-2026",
-                                      "nome": "Marcelo"})
+                                      "nome": "MARCELO"})
     assert resposta.status_code in (301, 302), "a senha certa foi recusada"
 
 

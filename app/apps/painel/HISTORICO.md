@@ -14,30 +14,29 @@ O painel financeiro do OMIE rodava em Streamlit, no computador do dono, lendo
 arquivos de uma pasta de 153 MB. Virou módulo Flask do monorepo, em `/painel`,
 com login próprio e os dados no Postgres do ERP (schema `painel`).
 
-**Nove telas convertidas**, todas conferidas contra a versão original com dados
+**Dez telas convertidas**, todas conferidas contra a versão original com dados
 reais: Visão Geral, DRE, Despesas Analítico, Receita de Obra, Fluxo de Caixa,
-Resultado por Obra, Comprometido × Executado, Necessidade de Caixa e Prestação
-de Contas.
+Resultado por Obra, Comprometido × Executado, Necessidade de Caixa, Prestação de
+Contas e os Cenários de rateio — mais o relatório em PDF, o **Explorador** e o
+**Rateio da Administração**.
 
-**Estado em 04/09/2026 (fim do dia):** duas levas foram publicadas — o
-`painel-filtro-e-velocidade` (junção `a0dcfef`) e o `painel-duas-datas`
-(junção `0bfa75b`, com a migração `006` aplicada pelo dono). No ramo de trabalho,
-**prontos e não publicados**: a correção da mensagem duplicada em Configurações e
-a tela nova de **Cenários de rateio**.
-
-Com isso a **conversão do painel terminou**: dez telas e o relatório em
-PDF, tudo o que o Streamlit fazia.
+**Estado em 09/09/2026:** a conversão terminou e o painel já passou do que o
+Streamlit fazia. Publicado neste dia (`07b026a`): o Explorador dos lançamentos,
+a **alteração de classificação no OMIE** (categoria e obra, escondida numa aba
+de Configurações, com senha própria) e o **Rateio da Administração**. Antes
+dele, em 08/09, os juros e multas passaram a contar como despesa em todas as
+telas — inclusive a Prestação de Contas — e os gráficos deixaram de sair
+desproporcionais.
 
 ### O que está pendente AGORA
 
-**Nada de código.** Tudo o que foi feito em 04/09/2026 está publicado: as duas
-datas (`0bfa75b`), os cenários de rateio e a mensagem duplicada (`376fe72`), o
-relatório em PDF (`3132e72`) e as correções do Analítico mais a senha com acento
-(`b1ae033`).
+**Nada de código.** O que falta são três coisas, e nenhuma é escrever tela:
 
-O que está pendente é **conferência com dado real** — ver "O que falta" no fim
-deste arquivo. Nenhum teste alcança isso: depende de abrir a tela publicada e
-comparar com o Streamlit.
+1. **O dono apertar "Aplicar atualizações do banco"** — as migrações 007 e 008
+   subiram em 09/09 e o Explorador não funciona sem elas.
+2. **A variável `PAINEL_SENHA_ESCRITA` no Render** — sem ela a aba de alteração
+   no OMIE nem aparece, de propósito.
+3. **Conferência com dado real** — ver "O que falta" no fim deste arquivo.
 
 <details>
 <summary>O que já foi publicado nesta leva (04/09/2026)</summary>
@@ -79,6 +78,162 @@ alguém abrir a tela publicada:
 3. as **duas datas e o atraso**, depois de refeito o fato.
 
 </details>
+
+### 08–09/09/2026 — a passagem do painel Streamlit
+
+O dono continuou evoluindo o painel Streamlit depois que a conversão começou, e
+trouxe um documento de passagem com o que foi feito lá de 04 a 08/09. Ele pediu
+para consolidar tudo aqui, seguindo os quatro itens sem parar.
+
+**O que já estava pronto aqui** (conferido antes de refazer): a seção 5 inteira
+do documento — a Necessidade de Caixa, com caixa reconstruído, saldo inicial,
+leitura automática, composição dos conjuntos e empréstimo tomado no mês.
+
+**A pendência 4.1 dele existia aqui também.** Rótulo começando com "=" vira
+FÓRMULA no Excel: "= RESULTADO", "= Receita Líquida" e "= Total
+Custos/Despesas" chegavam na planilha do DRE como fórmula inválida, mostrando
+erro no lugar do rótulo — justamente nas três linhas que se procura primeiro.
+Corrigido, e vale para +, − e @ pelo mesmo motivo.
+
+**Item 1 — o código da categoria e um rótulo só.** A `categoria` do fato é a
+descrição; para ALTERAR no OMIE é preciso o código, que existia no espelho e
+parava ali. Migração 007, com a marca `REFAZER-O-FATO`. E os cinco literais
+"(sem obra)" viraram uma constante `SEM_OBRA = "(não apropriado)"` — é por esse
+rótulo que se procura o que precisa ser saneado, e dois nomes para a mesma
+coisa fariam a busca não achar nada.
+
+**Item 2 — o Explorador.** A diferença dele para todas as outras telas: olha a
+base INTEIRA, não só o DRE. É assim que se acha o lançamento na análise errada,
+o aporte lançado como despesa e o título sem apropriação. **Fora do menu
+principal**, a pedido do dono: *"uma tela mais escondida, para não ser algo tão
+exposto"*. Chega-se a ela por Configurações, e há teste exigindo as duas coisas
+— que não esteja no menu e que o link exista.
+
+**Item 3 — alterar no OMIE. A única parte do painel que escreve num sistema de
+fora.** O dono: *"é realmente algo sério, eu não posso falhar nem errar"*.
+Quatro proteções, cada uma com teste que acusa se for desfeita:
+
+1. **Senha própria** (`PAINEL_SENHA_ESCRITA`), diferente da de entrar. Sem ela
+   no ambiente, alterar fica **desligado** — o ensaio continua funcionando.
+2. **Simulação por padrão.** Só sai do ensaio quem marca E acerta a senha.
+3. **Trava do rateio.** Trocar o departamento põe 100% no novo e apaga o rateio
+   anterior. Título dividido entre obras é **recusado antes mesmo de ser
+   consultado no OMIE**, a menos que quem altera diga explicitamente que sabe.
+4. **Registro de tudo no banco** — inclusive dos envios que deram errado, que é
+   quando o registro importa. Migração 008. **Em tabela e não em arquivo**: o
+   painel Streamlit gravava num `.jsonl`, e aqui o disco do Render é apagado a
+   cada reinício.
+
+Mais um teto de 200 títulos por vez: não é limite técnico, é para um engano de
+seleção não virar um estrago de mil títulos antes de alguém perceber.
+
+**O que continua NÃO verificado, e é do documento original:** a escrita nunca
+foi testada contra a API real do OMIE. O protocolo é **ensaio → UM título
+conferido no OMIE → lote**, e está escrito na própria tela.
+
+**Item 4 — Rateio da Administração.** Simulação: como o custo da matriz se
+divide entre dois lados da empresa, mês a mês. **Duas repartições diferentes**,
+e confundi-las seria o erro caro:
+
+- o **custo da matriz** vai pelo CRITÉRIO (faturamento ou pessoal, numa janela
+  de meses): quem produziu mais carrega mais estrutura;
+- os **juros do banco** vão pelo DÉFICIT: quem estava com o caixa negativo
+  naquele mês. Juros não é estrutura, é o preço de faltar dinheiro.
+
+Sem circularidade: o déficit que decide quem paga os juros é medido **antes**
+dos juros. Há teste exigindo isso.
+
+A matriz fica fora dos dois lados — ela é o bolo, não um pedaço dele — e o bolo
+nunca vira positivo: matriz que num mês recebeu mais do que gastou não
+distribui lucro, e uma sobra dessas viraria caixa fantasma nas obras.
+
+Reusa `pesos_do_conjunto` e `meses_do_periodo` da Necessidade de Caixa, como o
+próprio documento sugere. Também fora do menu, em Configurações.
+
+**Conferido com dado montado, na tela:** matriz de −20.000/mês por 12 meses,
+CASA faturando 90.000 e PONTE 30.000. O critério manda 75% do bolo para A
+(−180.000) e 25% para B (−60.000). Mas A nunca ficou negativa e B ficou nos 12
+meses — então **100% dos juros foram para B**, contra os 75% que o critério
+mandaria. É exatamente a distinção que a tela existe para mostrar, e ela
+apareceu certa na imagem.
+
+### 08/09/2026 — os juros que sumiam do resultado
+
+O dono comparou duas telas da mesma obra: **Visão Geral R$ 931.718,04** contra
+**DRE R$ 888.419,91**. A diferença, **R$ 43.298,13**, era exatamente a linha
+"Juros e Multas Pagos".
+
+**A causa:** de todo o `consultas.py`, só o **DRE** e o **Analítico** somavam os
+encargos. Visão Geral, Resultado por Obra, Comprometido × Executado, o gráfico
+do DRE, as três telas de caixa e — o mais grave — a **base da Prestação de
+Contas** somavam só o principal. O resultado saía maior do que é, e o que se
+dividia entre os sócios também.
+
+**Não foi defeito da conversão.** O Streamlit original fazia igual: `Encargo`
+aparece em duas linhas do arquivo de referência, as duas dentro do DRE. A
+Visão Geral dele calculava `desp = Comprometido.sum()`, sem encargo. Confirmado
+lendo `referencia_streamlit/telas_streamlit.py` antes de mexer.
+
+**A decisão foi do dono**, com a pergunta posta e o custo dito: *"eu considero
+que seja despesa também"*, *"não pode dar uma visão de resultado de obras sem
+essa informação"*, e **"todas as telas, prestação incluída"** — sabendo que o
+resultado dividido entre os sócios diminui e passa a discordar de acerto feito
+com número antigo.
+
+**Como ficou:** duas medidas novas, `COMPROMETIDO_COM_ENCARGO` e
+`EXECUTADO_COM_ENCARGO`, mais `MOVIMENTO_DE_CAIXA` para as telas de caixa (juros
+pago sai da conta como qualquer pagamento). **Use-as em qualquer soma de
+despesa** — o `COMPROMETIDO` cru só serve para receita.
+
+**O que NÃO mudou, de propósito:**
+- **a aba Despesas por grupo/categoria**: encargo não tem categoria no plano de
+  contas do OMIE, e a decisão de 03/09 (linha própria só na planilha) continua;
+- **o lado da receita**: juros recebido é receita financeira, outra conversa;
+- **o custo de pessoal do rateio**: é peso de proporção, não total.
+
+**A conferência que vale:** há teste com banco de verdade exigindo que Visão
+Geral, DRE, Resultado por Obra, Comprometido × Executado, Top Credores, caixa e
+Prestação de Contas **deem o mesmo número** sobre a mesma base. É a classe do
+problema, não o caso — qualquer tela que volte a somar só o principal quebra a
+suíte.
+
+E os **R$ 999 de juros previstos** num título em aberto continuam fora: encargo
+só entra quando foi pago. Isso já era assim e o teste guarda.
+
+**Custou 15 testes atualizados**, cada um por 25 centavos-de-cenário a mais de
+despesa. Nenhum deles era código quebrado — era a regra mudando, e o número
+antigo virou o número errado.
+
+### 08/09/2026 — o gráfico que engolia a tela
+
+O dono mandou uma foto da Visão Geral filtrada numa obra: o gráfico ocupava
+**620px de altura** e as barras eram blocos de ~157px de largura. "Veja a
+desproporcionalidade."
+
+**Duas causas, somadas:**
+
+1. **Sem teto de altura.** O desenho é 900×320 e o CSS mandava `width:100%`.
+   Numa tela de 2000px isso vira 1740px de largura — e, como a proporção é
+   mantida, **620px de altura**. Quanto maior o monitor, pior.
+2. **Sem teto de largura da barra.** Com poucos períodos (uma obra filtrada tem
+   3 ou 4 anos), cada barra ficava com um terço da fatia e virava paredão.
+
+**A tentativa que NÃO serviu, e por quê.** A saída óbvia era deitar o desenho
+(1500×320) para ele preencher a largura sem crescer para baixo. Medido antes de
+aceitar: num notebook de 1366px o desenho encolhe para 69% e **o texto do eixo
+cai para 7,6px** — ilegível. **Tudo escala junto, inclusive o texto.** Com
+900×320 e o teto de altura, o texto fica entre 12,6px e 13,1px em qualquer tela,
+do notebook ao ultrawide. O preço é uma folga nas laterais em monitor largo, que
+é só espaço em branco.
+
+**Resultado:** gráfico de 1069×380px, barras de ~52px. Conferido com foto da
+tela de verdade, não só por número.
+
+**A armadilha do teste, que quase passou.** A primeira versão do teste comparava
+a largura da barra com a **própria constante** que ela deveria vigiar — subir a
+constante para o infinito deixava o teste passar. Agora a medida é contra a
+largura do gráfico: uma barra não pode passar de 6% dele. **Teste que se mede
+pela régua que deveria vigiar não vigia nada.**
 
 ### A leva de 04/09/2026 (noite) — quatro defeitos que o uso real mostrou
 
@@ -488,11 +643,51 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## O empréstimo que devolveu mais do que entrou — 09/09/2026
+
+A base diz que a empresa pagou **R$ 9,25 milhões** de principal contra
+**R$ 9,08 milhões** tomados. Isso não fecha sozinho: ninguém paga principal de
+dinheiro que não tomou. Só há duas explicações — parte dos empréstimos é
+anterior ao período que a base cobre, ou há título de empréstimo classificado em
+outra categoria no OMIE.
+
+A segunda explicação é a cara: um empréstimo classificado como despesa comum
+**vira custo de obra em todas as telas**, não só na Necessidade de Caixa. O
+resultado da obra fica pior do que é, e ninguém desconfia, porque o número
+sai limpo.
+
+**O que foi feito:** a leitura em português da Necessidade de Caixa passou a
+dizer isso quando acontece, com os dois valores e a conclusão, e a apontar o
+Explorador como o lugar de corrigir. O que **não** foi feito — porque não é
+código — é sanear a base: isso é olhar os lançamentos das categorias de
+empréstimo no Explorador e reclassificar o que estiver errado.
+
+A escolha foi deliberada: o painel não deve adivinhar nem "consertar" o número
+por dentro. Um ajuste automático esconderia o erro de classificação em vez de
+mostrá-lo, e o erro continuaria contaminando as outras telas em silêncio.
+
 ## O que falta
 
-**A conversão do painel terminou** — dez telas e o relatório em PDF, tudo o que
-o Streamlit fazia. O que resta não é código a escrever; é **conferência com dado
-real**, e ela depende de alguém abrir a tela publicada.
+Atualizado em **09/09/2026**, depois de publicar o Explorador, a alteração de
+classificação no OMIE e o Rateio da Administração (`07b026a`).
+
+**Não há tela por escrever.** O painel faz tudo o que o Streamlit fazia, mais o
+que o Streamlit ganhou depois e voltou para cá no documento de repasse. O que
+resta é de dois tipos: **conferência com dado real** — que só o dono consegue
+fazer, porque exige abrir a tela publicada — e **saneamento da base no OMIE**,
+que agora tem ferramenta própria.
+
+### Apertar o botão do banco (imediato)
+
+O pacote de 09/09 subiu com as migrações **007** (código da categoria no fato) e
+**008** (registro das alterações no OMIE). Enquanto o botão "Aplicar
+atualizações do banco" não for apertado, o Explorador e a tela de alteração não
+funcionam. A 007 se declara `REFAZER-O-FATO`: ao terminar, o painel dispara o
+recálculo sozinho e avisa na tela.
+
+Para a alteração no OMIE funcionar falta também a variável
+**`PAINEL_SENHA_ESCRITA`** no Render. Sem ela a aba nem aparece — é de
+propósito: sem senha configurada, ninguém escreve no OMIE por engano.
 
 ### Conferir com a base da empresa (só o dono consegue)
 
@@ -505,34 +700,50 @@ real**, e ela depende de alguém abrir a tela publicada.
 4. **O PDF contra a planilha** do mesmo recorte. Por construção os dois saem das
    mesmas abas — o teste é confirmar isso com dado real.
 5. **Se o arquivo do Analítico agora traz o mesmo número da tela.** Era 481 na
-   tela e 316 no arquivo; a causa foi corrigida em 04/09 e a confirmação é do
-   dono.
+   tela e 316 no arquivo; a causa foi corrigida em 04/09.
+6. **Se a Visão Geral agora bate com o DRE.** Eram R$ 888 mil contra R$ 931 mil,
+   diferença de R$ 43.298,13 de juros e multa que a Visão Geral não descontava.
+   Corrigido em 08/09 em todas as telas, prestação incluída.
+7. **A primeira escrita no OMIE nunca aconteceu.** O caminho de escrita foi
+   testado só contra dublê — a API real nunca recebeu um `AlterarContaPagar`
+   deste código. O protocolo é: **ensaio** (não grava nada, mostra o que
+   mudaria) → **um único título**, conferido dentro do OMIE com os olhos → só
+   então lote. Não pular o passo do meio.
 
-### Decidido e feito
+### O que a base ainda tem de errado
 
-6. **Migração que cria coluna derivada agenda a reconstrução sozinha.**
-   ~~Proposto e não decidido~~ — o dono aprovou em 04/09/2026 e está feito. A
-   migração DECLARA isso no próprio arquivo, com a marca `REFAZER-O-FATO`; ao
-   terminar de aplicar, o painel dispara "Só refazer os números" e escreve na
-   tela que o recálculo começou. Ninguém mais precisa descobrir sozinho que
-   tinha um clique faltando.
+8. **Mais principal de empréstimo pago do que tomado:** R$ 9,25 milhões contra
+   R$ 9,08 milhões. Isso não se sustenta — ninguém paga principal de dinheiro
+   que não tomou. Ou o empréstimo é anterior ao período que a base cobre, ou há
+   título de empréstimo classificado em outra categoria no OMIE; no segundo caso
+   ele está sendo contado como despesa de obra em **todas** as telas. Desde
+   09/09 a Necessidade de Caixa **diz isso na leitura em português** em vez de
+   deixar o número passar calado, e aponta o Explorador como o lugar de
+   corrigir. A correção em si é trabalho de base, não de código.
 
 ### Fora desta área
 
-7. **O mesmo defeito da senha com acento existe no Análise de SPs**
+9. **O mesmo defeito da senha com acento existe no Análise de SPs**
    (`analisesps/auth.py` linhas 120 e 271, `analisesps/web.py` 628). Não foi
    mexido daqui — outra área, outro chat. **Avisado ao dono em 04/09.** O ERP
    não tem o problema: lá a comparação é entre hashes, sempre ASCII.
-8. **Converter `app/apps/spsbd_app`.** Já está em andamento pelo chat da área,
-   que publicou várias vezes em 04/09.
+10. **Converter `app/apps/spsbd_app`.** Já está em andamento pelo chat da área,
+    que publicou várias vezes em 04/09.
 
 ### Melhorias possíveis, nenhuma urgente
 
-9. **O que sobrou de lentidão está no banco, não no código.** Medido pelo dono
-   em 04/09: 478 ms de tela, 443 deles no banco — 93%. Otimizar Python daqui
-   não move o ponteiro; o que resta é SQL e índice.
+11. **O que sobrou de lentidão está no banco, não no código.** Medido pelo dono
+    em 04/09: 478 ms de tela, 443 deles no banco — 93%. Otimizar Python daqui
+    não move o ponteiro; o que resta é SQL e índice.
 
----
+### Encerrado — não reabrir sem motivo novo
+
+- **Migração que cria coluna derivada agenda a reconstrução sozinha.** Aprovado
+  pelo dono em 04/09 e feito: a migração declara a marca `REFAZER-O-FATO` no
+  próprio arquivo e o painel dispara o recálculo ao terminar de aplicar.
+- **Os quatro itens do documento de repasse do Streamlit** (código e rótulo da
+  categoria, o Explorador, a edição no OMIE, o Rateio da Administração) e as
+  pendências 4.1 e 4.2 dele. Tudo publicado em 09/09.
 
 ## Coisas pequenas que mordem
 

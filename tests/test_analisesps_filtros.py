@@ -259,3 +259,63 @@ def test_a_tela_pede_o_resumo_e_o_agendamento_numa_ida_so(monkeypatch):
         "voltou a varrer a tabela mais de uma vez")
     # Os oito números que a tela precisa, todos na mesma consulta.
     assert fonte.count("count(*)") + fonte.count("sum(valor_num)") >= 8
+
+
+# ---------------------------------------------------------------------------
+# UMA VARREDURA EM VEZ DE VÁRIAS
+#
+# "continuo achando lento quando mudamos de aba, ou quando vai carregar os
+# dados após o filtro" — 09/09/2026. Medido com as 59.055 SPs: o Lote fazia
+# OITO varreduras da base para montar o painel por status, e o Relatório
+# CINCO para somar por quatro dimensões. Cada varredura são ~40 ms.
+#
+# Estes testes prendem a correção pela forma da consulta, porque o efeito
+# (a lentidão) só aparece com a base cheia — e aí é tarde.
+# ---------------------------------------------------------------------------
+def test_o_painel_do_lote_sai_de_uma_varredura_so():
+    import inspect
+    from app.apps.analisesps import consultas
+
+    fonte = inspect.getsource(consultas.painel_por_agendamento)
+    # Duas consultas: as linhas (com `row_number`) e os totais (com `GROUP BY`).
+    assert fonte.count("consultar(") == 2, (
+        "o painel voltou a fazer uma consulta por status")
+    assert "row_number" in fonte, (
+        "sem a numeração por status, o banco precisa de uma varredura por lista")
+
+
+def test_o_relatorio_soma_as_dimensoes_juntas():
+    import inspect
+    from app.apps.analisesps import consultas
+
+    fonte = inspect.getsource(consultas.agregar_varias)
+    assert "GROUPING SETS" in fonte, (
+        "sem GROUPING SETS o banco varre a tabela uma vez por dimensão")
+    assert fonte.count("FROM analisesps.sps") == 1
+
+
+def test_a_auditoria_conta_tudo_numa_consulta():
+    import inspect
+    from app.apps.analisesps import auditoria
+
+    fonte = inspect.getsource(auditoria.resumo)
+    assert "FILTER (WHERE" in fonte, "voltou a contar uma condição por consulta"
+
+
+def test_uma_dimensao_so_nao_paga_o_preco_do_agrupamento(monkeypatch):
+    """Agrupar junto compensa a partir de duas; com uma, o caminho simples é
+    mais barato — e é o que a exportação usa."""
+    from app.apps.analisesps import consultas
+
+    chamou = []
+    monkeypatch.setattr(consultas, "agregar",
+                        lambda f, d, t="geral", p="tudo", l=30: chamou.append(d) or [])
+    consultas.agregar_varias({}, ["projeto"], "geral", "tudo", 15)
+    assert chamou == ["projeto"]
+
+
+def test_dimensao_desconhecida_nao_entra_no_sql():
+    """O nome da dimensão entra no TEXTO do SQL, então não pode vir de fora
+    sem conferência — é a porta aberta clássica."""
+    from app.apps.analisesps import consultas
+    assert consultas.agregar_varias({}, ["nao_existe; DROP TABLE"]) == {}

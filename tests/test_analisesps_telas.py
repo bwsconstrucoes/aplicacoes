@@ -113,7 +113,7 @@ def app(monkeypatch):
     return a
 
 
-def como(app, senha, nome="Marcelo"):
+def como(app, senha, nome="MARCELO"):
     """Entra no módulo. O NOME é obrigatório desde 04/09/2026 — ele separa o
     lote e os filtros de cada pessoa, e assina o registro de alterações."""
     cliente = app.test_client()
@@ -643,6 +643,8 @@ def test_a_barra_de_filtros_e_a_mesma_nas_duas_telas(app, monkeypatch):
         "quantidade": 0, "total": Decimal("0"), "media": Decimal("0"),
         "vencidas": 0, "total_vencidas": Decimal("0")})
     monkeypatch.setattr(consultas, "agregar", lambda *a, **k: [])
+    # Desde 09/09 o Relatório pede as dimensões JUNTAS, numa varredura só.
+    monkeypatch.setattr(consultas, "agregar_varias", lambda *a, **k: {})
     monkeypatch.setattr(consultas, "top_credores", lambda *a, **k: [])
     monkeypatch.setattr(consultas, "aging_vencidos", lambda *a, **k: [])
     cliente = como(app, SENHA_OPERADOR)
@@ -809,8 +811,76 @@ def test_a_ordem_das_colunas_e_sempre_a_mesma(app):
     """A ordem é a da definição, nunca a da escolha: se cada pessoa visse as
     colunas noutra ordem, uma não conseguiria explicar a tela para a outra."""
     from app.apps.analisesps import tabela
-    escolhidas = tabela.escolhidas(["nf", "id", "credor"])
+    guardado = tabela.para_guardar(["nf", "id", "credor"])
+    escolhidas = tabela.escolhidas(guardado)
     assert [c.chave for c in escolhidas] == ["id", "credor", "nf"]
+
+
+# ---------------------------------------------------------------------------
+# COLUNA CRIADA DEPOIS APARECE PARA QUEM JÁ TINHA ESCOLHIDO
+#
+# "dentre as colunas não está aparecendo a coluna com a obra, muito
+# importante" — 09/09/2026. A Obra entrou nas colunas padrão em 05/09, mas
+# quem já tinha uma escolha guardada continuou sem ela: a escolha antiga não
+# mencionava uma coluna que ainda não existia, e o programa lia isso como
+# "ele não quer". Uma coluna acrescentada ficava invisível para sempre.
+# ---------------------------------------------------------------------------
+def test_coluna_criada_depois_aparece_para_quem_ja_tinha_escolhido():
+    """O caso exato da Obra."""
+    from app.apps.analisesps import tabela
+
+    # Como se ele tivesse escolhido quando a Obra ainda não existia.
+    guardado = tabela.para_guardar([c.chave for c in tabela.DEFINICOES
+                                    if c.padrao and c.chave != "centro_custo"])
+    guardado["conhecidas"] = [c for c in guardado["conhecidas"]
+                              if c != "centro_custo"]
+
+    assert "centro_custo" in [c.chave for c in tabela.escolhidas(guardado)]
+
+
+def test_coluna_tirada_de_proposito_continua_fora():
+    """O outro lado: repor tudo o que é padrão em toda leitura tornaria
+    impossível esconder qualquer coluna — inclusive a Descrição, que o dono
+    esconde e mostra dez vezes por dia."""
+    from app.apps.analisesps import tabela
+
+    atuais = [c.chave for c in tabela.escolhidas(None) if c.chave != "descricao"]
+    guardado = tabela.para_guardar(atuais)
+
+    rotulos = [c.chave for c in tabela.escolhidas(guardado)]
+    assert "descricao" not in rotulos
+    assert "centro_custo" in rotulos, "a Obra não podia ter sumido junto"
+
+
+def test_escolha_antiga_recupera_o_padrao_que_falta():
+    """A escolha guardada ANTES desta correção não diz o que conhecia. O
+    desempate é repor o padrão que falta, uma vez: custa um clique a quem tinha
+    escondido alguma de propósito, e a alternativa era deixar a Obra invisível
+    para quem mais precisa dela."""
+    from app.apps.analisesps import tabela
+
+    antiga = {"colunas": ["id", "credor", "valor_num"]}   # sem `conhecidas`
+    rotulos = [c.chave for c in tabela.escolhidas(antiga)]
+    assert "centro_custo" in rotulos
+    # E o que ela tinha escolhido a mais continua lá.
+    assert "credor" in rotulos
+
+
+def test_o_que_e_guardado_registra_as_colunas_que_existiam():
+    """É essa lista que faz a coluna de amanhã aparecer. Sem ela, o defeito da
+    Obra se repete na próxima coluna que alguém criar."""
+    from app.apps.analisesps import tabela
+
+    guardado = tabela.para_guardar(["id", "credor"])
+    assert guardado["colunas"] == ["id", "credor"]
+    assert set(guardado["conhecidas"]) == set(tabela.CHAVES)
+
+
+def test_a_obra_esta_entre_as_colunas_padrao():
+    """Guarda de baixo nível, para a coluna não sair da lista por descuido."""
+    from app.apps.analisesps import tabela
+    assert "centro_custo" in tabela.PADRAO
+    assert tabela.POR_CHAVE["centro_custo"].rotulo == "Obra"
 
 
 def test_escolher_colunas_nao_e_alterar_dado(app):
@@ -872,12 +942,12 @@ def test_remover_risco_grava_a_revisao_com_o_nome_de_quem_revisou(app,
                             ids=ids, coluna=coluna, valor=valor, acao=acao)
                         or {"ok": True, "alteradas": len(ids)})
 
-    resposta = como(app, SENHA_OPERADOR, nome="Marcelo").post(
+    resposta = como(app, SENHA_OPERADOR, nome="MARCELO").post(
         "/analisesps/api/sem-risco", json={"ids": ["1"]})
     assert resposta.status_code == 200
     assert gravado["coluna"] == "analise_ia"
     assert gravado["valor"].startswith("SEM RISCO")
-    assert "Marcelo" in gravado["valor"], "não diz quem revisou"
+    assert "MARCELO" in gravado["valor"], "não diz quem revisou"
     assert "COM RISCO" not in gravado["valor"], (
         "o texto novo ainda casa com a regra que marca risco")
 
@@ -1141,14 +1211,17 @@ def test_o_navegador_lembra_o_nome_mas_nunca_a_senha(app):
 
     cliente = app.test_client()
     resposta = cliente.post("/analisesps/entrar",
-                            data={"senha": SENHA_OPERADOR, "nome": "Marcelo"})
+                            data={"senha": SENHA_OPERADOR, "nome": "MARCELO"})
     biscoitos = "; ".join(str(v) for _, v in resposta.headers)
     assert guarda.COOKIE_NOME in biscoitos, "o nome não ficou lembrado"
     assert SENHA_OPERADOR not in biscoitos, "a SENHA foi parar num cookie"
 
     cliente.get("/analisesps/sair")
     login = cliente.get("/analisesps/entrar").get_data(as_text=True)
-    assert 'value="Marcelo"' in login, "o campo não veio preenchido"
+    # Desde 09/09 o nome é escolhido numa LISTA, não digitado: o que o
+    # navegador lembra é qual opção já vem marcada.
+    assert '<option value="MARCELO"' in login, "o nome sumiu da lista"
+    assert "selected" in login, "a opção lembrada não veio marcada"
     assert 'type="password"' in login, "parou de pedir a senha"
 
 
@@ -1168,9 +1241,9 @@ def test_o_mesmo_nome_escrito_diferente_e_a_mesma_pessoa(app):
 def test_o_nome_aparece_no_alto_da_tela(app):
     """É por ele que o sistema sabe de quem é o lote. Fora da vista, um nome
     digitado diferente por engano daria outro lote sem ninguém notar."""
-    html = como(app, SENHA_OPERADOR, nome="Marcelo").get(
+    html = como(app, SENHA_OPERADOR, nome="MARCELO").get(
         "/analisesps/solicitacoes").get_data(as_text=True)
-    assert "<b>Marcelo</b>" in html
+    assert "<b>MARCELO</b>" in html
 
 
 def test_nome_novo_com_lote_vazio_avisa_em_vez_de_deixar_a_pessoa_no_escuro(
@@ -1185,12 +1258,14 @@ def test_nome_novo_com_lote_vazio_avisa_em_vez_de_deixar_a_pessoa_no_escuro(
         "conteudo": "", "salvo_por": None, "salvo_em": None})
     monkeypatch.setattr(lote, "por_pessoa", lambda: True)
     monkeypatch.setattr(preferencias, "pessoas_conhecidas",
-                        lambda: [{"chave": "marcelo", "nome": "Marcelo"}])
+                        lambda: [{"chave": "marcelo", "nome": "MARCELO"}])
 
-    html = como(app_lote, SENHA_OPERADOR, nome="Marcelo Leitao").get(
+    # THIAGO está na lista e ainda não tem lote; o aviso continua valendo
+    # para quem entra pela primeira vez.
+    html = como(app_lote, SENHA_OPERADOR, nome="THIAGO").get(
         "/analisesps/lote").get_data(as_text=True)
     assert "ainda não tem lote aqui" in html
-    assert "Marcelo</b>" in html
+    assert "MARCELO</b>" in html
     assert "Maiúscula e acento não fazem diferença" in html
 
 
@@ -1231,7 +1306,7 @@ def test_a_agenda_aceita_um_lembrete_novo(agenda_gravavel):
     """E o lembrete vai para a PLANILHA, não só para o banco: a aba Agenda é
     a dona. Se fosse só aqui, a próxima sincronização traria de volta um mundo
     sem ele."""
-    cliente = como(agenda_gravavel, SENHA_OPERADOR, nome="Marcelo")
+    cliente = como(agenda_gravavel, SENHA_OPERADOR, nome="MARCELO")
     resposta = cliente.post("/analisesps/agenda", data={
         "acao": "salvar", "titulo": "FGTS da obra", "categoria": "FGTS",
         "data_base": "2026-01-07", "recorrencia": "mensal",
@@ -1242,7 +1317,7 @@ def test_a_agenda_aceita_um_lembrete_novo(agenda_gravavel):
     assert len(agenda_gravavel.escrito) == 1, "não foi para a planilha"
     guardado = agenda_gravavel.escrito[0]
     assert guardado["titulo"] == "FGTS da obra"
-    assert guardado["criado_por"] == "Marcelo", "não diz quem cadastrou"
+    assert guardado["criado_por"] == "MARCELO", "não diz quem cadastrou"
     # O padrão de FGTS é ANTECIPAR: imposto pago depois do vencimento tem multa.
     assert guardado["ajuste_dia_util"] == "antecipa"
     # O dia da repetição sai da data, como no Streamlit — não há campo à parte
@@ -1867,12 +1942,16 @@ def app_relatorio(app, monkeypatch):
         "quantidade": 120, "total": Decimal("845300.55"),
         "ticket": Decimal("7044.17"), "vencidos_qtd": 9,
         "vencidos_total": Decimal("61200.00")})
+    _somas = [{"rotulo": "OBRA-12", "quantidade": 40,
+               "total": Decimal("500000.00")},
+              {"rotulo": "(vazio)", "quantidade": 3,
+               "total": Decimal("1200.00")}]
     monkeypatch.setattr(consultas, "agregar",
-                        lambda f, d, t="geral", p="tudo", limite=30: [
-                            {"rotulo": "OBRA-12", "quantidade": 40,
-                             "total": Decimal("500000.00")},
-                            {"rotulo": "(vazio)", "quantidade": 3,
-                             "total": Decimal("1200.00")}])
+                        lambda f, d, t="geral", p="tudo", limite=30: _somas)
+    # A tela pede as dimensões juntas — uma varredura só do banco.
+    monkeypatch.setattr(consultas, "agregar_varias",
+                        lambda f, dims, t="geral", p="tudo", limite=100: {
+                            d: _somas for d in dims})
     monkeypatch.setattr(consultas, "top_credores",
                         lambda f, t="geral", p="tudo", limite=30: [
                             {"documento": "01.637.895/0001-32",
@@ -2915,3 +2994,164 @@ def test_o_perfil_consulta_nao_troca_a_pasta_do_drive(app):
     assert como(app, SENHA_CONSULTA).post(
         "/analisesps/api/pasta-drive",
         json={"pasta": "outra"}).status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# A PÁGINA VAI COMPRIMIDA
+#
+# Medido: a tela de Solicitações são 430 KB de HTML cru, e nada no caminho
+# comprimia. Comprimida dá 27 KB. É a maior diferença de todas para quem está
+# do outro lado — o banco pode responder em 100 ms, mas meio megabyte ainda
+# leva segundos numa internet ruim.
+# ---------------------------------------------------------------------------
+def test_a_pagina_vai_comprimida_para_quem_aceita(app):
+    resposta = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes", headers={"Accept-Encoding": "gzip"},
+        follow_redirects=True)
+    assert resposta.headers.get("Content-Encoding") == "gzip"
+    assert "Accept-Encoding" in resposta.headers.get("Vary", "")
+
+
+def test_quem_nao_aceita_comprimido_recebe_a_pagina_normal(app):
+    """Um navegador antigo, ou uma ferramenta de linha de comando, não pode
+    receber lixo binário no lugar da tela."""
+    resposta = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes", headers={"Accept-Encoding": ""},
+        follow_redirects=True)
+    assert not resposta.headers.get("Content-Encoding")
+    assert "<html" in resposta.get_data(as_text=True)
+
+
+def test_o_conteudo_comprimido_e_a_mesma_pagina(app):
+    import gzip
+    cliente = como(app, SENHA_OPERADOR)
+    comprimida = cliente.get("/analisesps/solicitacoes",
+                             headers={"Accept-Encoding": "gzip"},
+                             follow_redirects=True).get_data()
+    crua = cliente.get("/analisesps/solicitacoes",
+                       headers={"Accept-Encoding": ""},
+                       follow_redirects=True).get_data()
+    assert gzip.decompress(comprimida) == crua
+
+
+def test_a_exportacao_em_fluxo_nao_e_comprimida(app):
+    """A exportação é escrita em blocos justamente para não abrir a base
+    inteira na memória. Comprimir obrigaria a juntar tudo antes — que é o que
+    aquele caminho existe para evitar."""
+    resposta = como(app, SENHA_OPERADOR).get(
+        "/analisesps/exportar", headers={"Accept-Encoding": "gzip"})
+    assert not resposta.headers.get("Content-Encoding")
+
+
+def test_resposta_pequena_nao_paga_o_custo_de_comprimir(app):
+    """Comprimir meia dúzia de bytes gasta processador e não economiza nada."""
+    resposta = como(app, SENHA_OPERADOR).get(
+        "/analisesps/api/andamento", headers={"Accept-Encoding": "gzip"})
+    assert not resposta.headers.get("Content-Encoding")
+
+
+# ---------------------------------------------------------------------------
+# A TELA VOLTA COMO ESTAVA
+#
+# "eu filtro, vou para o Lote, volto para Solicitações — e ele refaz tudo de
+# novo. Se eu tivesse duas abas do navegador eu alternaria na hora." O dono
+# escolheu cinco minutos em 09/09/2026, com o risco na frente.
+# ---------------------------------------------------------------------------
+def test_as_telas_de_leitura_ficam_guardadas_no_navegador(app):
+    resposta = como(app, SENHA_OPERADOR).get("/analisesps/solicitacoes",
+                                             follow_redirects=True)
+    guardar = resposta.headers.get("Cache-Control", "")
+    assert "max-age=300" in guardar
+    # `private` porque a tela é de UMA pessoa: nada de cache compartilhado no
+    # caminho guardando a lista de pagamentos da empresa.
+    assert "private" in guardar
+
+
+def test_a_lista_de_telas_guardadas_e_fechada():
+    """É uma lista escrita à mão de propósito: entrar nela é decidir que a
+    tela pode ser mostrada com até cinco minutos de idade. Tela que recebe
+    alteração no próprio endereço não pode entrar."""
+    from app.apps.analisesps import web
+    assert web.TELAS_QUE_FICAM_GUARDADAS == {
+        "analisesps.solicitacoes", "analisesps.relatorio",
+        "analisesps.auditoria", "analisesps.log"}
+    assert "analisesps.tela_lote" not in web.TELAS_QUE_FICAM_GUARDADAS
+    assert "analisesps.tela_agenda" not in web.TELAS_QUE_FICAM_GUARDADAS
+    assert "analisesps.detalhe" not in web.TELAS_QUE_FICAM_GUARDADAS
+
+
+def test_a_tela_que_recebe_alteracao_no_proprio_endereco_nao_e_guardada(app_lote):
+    """O Lote recebe o formulário nele mesmo. Guardá-lo mostraria o estado
+    ANTERIOR à mudança que a pessoa acabou de fazer — pior do que ser lento."""
+    resposta = como(app_lote, SENHA_OPERADOR).get("/analisesps/lote",
+                                                  follow_redirects=True)
+    assert "max-age" not in resposta.headers.get("Cache-Control", "")
+
+
+def test_a_ficha_da_sp_nunca_fica_guardada(app_ficha):
+    """Ela mostra o status atual e tem botões que agem sobre ele. Guardada,
+    alguém agendaria olhando um estado que já mudou."""
+    resposta = como(app_ficha, SENHA_OPERADOR).get("/analisesps/sp/1234567890")
+    assert "max-age" not in resposta.headers.get("Cache-Control", "")
+
+
+def test_sair_apaga_o_que_ficou_guardado(app):
+    """Num computador compartilhado, apertar Voltar depois de sair mostraria as
+    telas da pessoa anterior pelos minutos que faltassem."""
+    resposta = como(app, SENHA_OPERADOR).get("/analisesps/sair")
+    assert resposta.headers.get("Clear-Site-Data") == '"cache"'
+    assert "no-store" in resposta.headers.get("Cache-Control", "")
+
+
+# ---------------------------------------------------------------------------
+# ENVIAR AO LOTE SEM SAIR DA TELA
+# ---------------------------------------------------------------------------
+def test_enviar_ao_lote_nao_troca_de_tela(app, monkeypatch):
+    """Pedido do dono: "mantenha-se em Solicitações, apenas avise que foi
+    executada a ação". Antes o botão mandava um formulário e levava a pessoa
+    para o Lote — perdendo o filtro, a rolagem e a marcação."""
+    from app.apps.analisesps import lote
+    salvos = []
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {"conteudo": ""})
+    monkeypatch.setattr(lote, "salvar",
+                        lambda c, quem="", pessoa="": salvos.append(c))
+
+    resposta = como(app, SENHA_OPERADOR).post(
+        "/analisesps/api/enviar-ao-lote", json={"ids": ["1", "2", "3"]})
+
+    assert resposta.status_code == 200, "não podia redirecionar para outra tela"
+    corpo = resposta.get_json()
+    assert corpo["ok"] is True
+    assert corpo["quantas"] == 3
+    assert corpo["titulo"], "o aviso precisa dizer em que grupo entraram"
+    assert salvos and "1" in salvos[0]
+
+
+def test_enviar_ao_lote_usa_a_mesma_regra_do_formulario(app, monkeypatch):
+    """Um grupo NOVO no topo, o que já estava fica abaixo. A regra é chamada,
+    não copiada — duas cópias divergiriam."""
+    from app.apps.analisesps import lote
+    salvos = []
+    monkeypatch.setattr(lote, "ler",
+                        lambda pessoa="": {"conteudo": "Grupo antigo\n999999999"})
+    monkeypatch.setattr(lote, "salvar",
+                        lambda c, quem="", pessoa="": salvos.append(c))
+
+    como(app, SENHA_OPERADOR).post("/analisesps/api/enviar-ao-lote",
+                                   json={"ids": ["111111111"]})
+
+    assert salvos
+    assert "999999999" in salvos[0], "o que já estava no lote sumiu"
+    assert salvos[0].index("111111111") < salvos[0].index("999999999"), (
+        "o grupo novo tem de ficar no topo")
+
+
+def test_o_perfil_consulta_nao_envia_ao_lote(app):
+    assert como(app, SENHA_CONSULTA).post(
+        "/analisesps/api/enviar-ao-lote", json={"ids": ["1"]}).status_code == 403
+
+
+def test_a_barra_sabe_para_onde_enviar_sem_sair_da_tela(app):
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes", follow_redirects=True).get_data(as_text=True)
+    assert "data-url-enviar-lote=" in html

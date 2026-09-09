@@ -85,6 +85,13 @@ def montar(abas, titulo_arquivo: str = "Relatório") -> bytes:
                 if isinstance(valor, dt.datetime):
                     valor = valor.date()
                 celula = folha.cell(row=numero, column=coluna, value=valor)
+                # Texto que comeca com "=" o Excel entende como FORMULA. As
+                # linhas do DRE chamam-se "= RESULTADO", "= Receita Liquida",
+                # "= Total Custos/Despesas" — e chegavam na planilha como
+                # formula invalida, mostrando erro no lugar do rotulo. Forcar o
+                # tipo texto resolve sem mexer no rotulo que o dono conhece.
+                if isinstance(valor, str) and valor.lstrip().startswith(("=", "+", "-", "@")):
+                    celula.data_type = "s"
                 if isinstance(valor, dt.date):
                     celula.number_format = FORMATO_DATA
                 elif isinstance(valor, (int, float)) and not isinstance(valor, bool):
@@ -121,6 +128,38 @@ COLUNAS = {
             ("aberto", "Em aberto"), ("comprometido", "Comprometido")],
     "despesas": [("nome", "Grupo ou categoria"), ("valor", "Valor"),
                  ("pct_total", "% do total")],
+    # o explorador leva a base crua: e com ela que se confere o saneamento fora
+    # do painel, e por isso vai o codigo do OMIE e o da categoria
+    "explorador": [("codigo_lancamento", "Código Omie"), ("data", "Data"),
+                   ("tipo", "Tipo"), ("analise", "Análise"),
+                   ("grupo", "Grupo"), ("categoria", "Categoria"),
+                   ("codigo_categoria", "Cód. categoria"),
+                   ("departamento", "Obra"), ("projeto", "Projeto"),
+                   ("razao_social", "Cliente ou Fornecedor"),
+                   ("numero_documento", "Documento"),
+                   ("conta_corrente", "Conta corrente"),
+                   ("situacao", "Situação"),
+                   ("pago_recebido", "Pago/Recebido"),
+                   ("a_pagar_receber", "A pagar/receber"),
+                   ("observacao", "Observação")],
+    # a memoria de calculo do rateio da administracao, mes a mes
+    "rateio_admin": [("rotulo", "Mês"),
+                     ("receita_a", "Receita A"), ("receita_b", "Receita B"),
+                     ("pessoal_a", "Pessoal A"), ("pessoal_b", "Pessoal B"),
+                     ("pct_matriz_a", "% matriz para A"),
+                     ("pool", "Bolo da matriz no mês"),
+                     ("matriz_a", "Matriz para A"), ("matriz_b", "Matriz para B"),
+                     ("operacional_a", "Operacional A"),
+                     ("operacional_b", "Operacional B"),
+                     ("ajuste_a", "Ajuste A"), ("ajuste_b", "Ajuste B"),
+                     ("caixa_a", "Caixa A acumulado"),
+                     ("caixa_b", "Caixa B acumulado"),
+                     ("deficit_a", "Déficit A"), ("deficit_b", "Déficit B"),
+                     ("juros_mes", "Juros do mês"),
+                     ("pct_juros_a", "% juros para A"),
+                     ("juros_a", "Juros para A"), ("juros_b", "Juros para B"),
+                     ("final_a", "Posição final A"),
+                     ("final_b", "Posição final B")],
     "credores": [("nome", "Credor"), ("pago", "Já pago"),
                  ("aberto", "A pagar"), ("titulos", "Títulos")],
     "analitico": [("data", "Data (pagto ou vencto)"),

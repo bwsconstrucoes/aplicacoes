@@ -753,6 +753,259 @@ Três decisões que valem registro:
    o que colou. O token é segredo de verdade: com ele se lê e se escreve nos
    cards da empresa, e a tela só diz se está configurado. Há teste para os dois.
 
+### Décima sexta leva (09/09) — a lista de quem entra, e o fim da espera pelo botão
+
+Duas coisas, e a segunda é a que importa.
+
+**O dono perguntou:** *"basta colocar o nome idêntico toda vez para acessar os
+meus filtros e o meu lote?"* A resposta era "sim, mas" — e o "mas" era grande
+demais para deixar como está.
+
+**1. A entrada virou LISTA.** MARCELO, THIAGO, KARLA e RAFAEL, escolhidos num
+menu em vez de digitados. O nome é a chave de tudo o que é "seu"; com campo
+livre, digitar "Marcelo" hoje e "Marcelo Leitão" amanhã dava DUAS pessoas, e a
+segunda abria o Lote, via vazio e concluía que o sistema tinha perdido o
+trabalho dela. Não há como digitar diferente aquilo que não se digita.
+
+O que a tela manda é **conferido contra a lista** e volta com a grafia oficial:
+um pedido montado à mão não cria uma quinta pessoa por fora, e o registro de
+alterações para de mostrar o mesmo colega escrito de três jeitos. A lista se
+edita em **Configurações** — a tabela `meta`, sem migração, então funciona no
+dia da publicação.
+
+> **Isto NÃO é cadastro de usuário e não dá acesso a ninguém.** As quatro
+> pessoas usam a MESMA senha, e é a senha que decide o que se pode fazer.
+> Escolher "KARLA" não dá poder nenhum a mais. Quem um dia precisar impedir
+> que alguém se passe por outro tem de usar o cadastro do ERP; aqui o nome é
+> etiqueta honesta entre colegas, não tranca. Há teste para isso.
+
+**2. O ARMÁRIO DE RESERVA — e este era um defeito de verdade, não uma
+melhoria.** O dono pediu: *"faça de alguma forma que os filtros e o lote
+fiquem salvos"*. Fui olhar por quê não estavam:
+
+A tabela `preferencias` e a coluna `lote.pessoa` nascem na **migração 003**, e
+migração só entra quando alguém aperta "Aplicar atualizações do banco". O botão
+não foi apertado — e ficou **dias** sem ser. Nesse período:
+
+- o filtro **não era guardado**. A leitura caía no `except`, e a tela abria sem
+  filtro. Em silêncio.
+- o lote voltava a ser **um só, de todo mundo**: quem salvasse depois apagava o
+  trabalho do outro sem aviso.
+
+O dono digitava o nome todo dia achando que estava separando o trabalho dele, e
+não estava. **Depender de um botão para uma coisa que a pessoa espera que "só
+funcione" é um jeito de nunca funcionar** — a lição desta leva.
+
+Agora há um segundo lugar, `analisesps.meta`, que existe desde a **migração
+001** e portanto está no ar desde o primeiro dia. É (chave, valor), e a chave
+carrega dentro dela a pessoa e a preferência (`pref:<pessoa>:<chave>`). O lote
+de cada um usa o mesmo caminho.
+
+> **E quando o botão finalmente for apertado, nada se perde.** A tabela boa
+> passa a valer, e o que estiver no armário de reserva é **copiado para lá na
+> primeira leitura**. Sem essa passagem, apertar o botão pareceria apagar os
+> filtros e os lotes de todo mundo — o que teria sido um estrago causado
+> justamente pela correção. Há teste para a passagem.
+
+Detalhe que evita perder trabalho em andamento: quem ainda não salvou nada no
+armário **herda uma vez** o lote antigo, o de quando ele era compartilhado.
+Começar do zero seria o mesmo que apagá-lo.
+
+**Verificado, e desta vez do jeito que importa:** 1424 testes verdes com
+Postgres de verdade, e o fluxo inteiro exercitado contra um banco montado no
+**estado exato da produção de hoje** (só as migrações 001 e 002 aplicadas):
+a lista aparece na entrada, nome de fora da lista não entra, o filtro é
+guardado e volta sozinho ao trocar de tela, e os lotes de MARCELO e THIAGO
+ficam separados. Depois, aplicando 003 e 004 no mesmo banco, **os três
+sobreviveram** e continuaram separados.
+
+**O que NÃO foi verificado:** nada disto foi aberto num navegador de verdade —
+são telas, e o teste confere o HTML, não o que o olho vê.
+
+### Décima sétima leva (09/09) — a Obra sumida, e o defeito maior por trás dela
+
+*"dentre as colunas não está aparecendo a coluna com a obra, muito
+importante"* — e a Obra **estava** nas colunas padrão desde 05/09. O que
+acontecia é mais amplo do que uma coluna:
+
+**Uma coluna criada depois ficava invisível para sempre para quem já tinha
+escolhido suas colunas.** A escolha guardada era lida como a lista COMPLETA do
+que a pessoa quer ver. Uma escolha feita antes de 05/09 simplesmente não
+mencionava a Obra — porque ela ainda não existia —, e o programa lia essa
+ausência como *"ele não quer essa coluna"*. Sem nenhuma pista de que a coluna
+existia, e sem jeito de descobrir a não ser abrindo a lista inteira.
+
+Vale notar que **o botão de esconder a Descrição** (usado dez vezes por dia)
+grava a lista inteira: bastava usá-lo uma vez para congelar as colunas
+daquele dia e nunca mais ver nada criado depois.
+
+**A correção guarda, junto com a escolha, QUAIS COLUNAS EXISTIAM na hora de
+escolher.** O que nasceu depois disso e é padrão entra sozinho; o que a pessoa
+tirou de propósito continua fora, porque estava entre as conhecidas. Assim a
+próxima coluna que alguém criar não repete o problema.
+
+> **A escolha antiga não diz o que conhecia**, e para ela o desempate é: as
+> colunas padrão que estiverem faltando voltam, **uma vez**. Custa um clique a
+> quem tinha escondido alguma de propósito; a alternativa era deixar a Obra
+> invisível justamente para quem mais precisa dela. Da primeira gravação em
+> diante a escolha volta a ser exata.
+
+**Verificado com banco de verdade**, no estado da produção de hoje: com escolha
+antiga guardada (sem a Obra), a Obra volta em **Solicitações e no Lote**, as
+duas telas com o mesmo conjunto; escondendo a Descrição pelo botão em seguida,
+a Descrição sai e a Obra fica; e tirando a Obra de propósito, ela fica fora
+mesmo. 2819 testes verdes.
+
+**Ficou um teste de baixo nível** só para a Obra não sair da lista padrão por
+descuido, e outro para o formato guardado registrar as colunas conhecidas — é
+esse registro que impede o defeito de voltar na próxima coluna criada.
+
+### Décima oitava leva (09/09) — a segunda revisão de velocidade
+
+*"continuo achando lento quando mudamos de aba, ou quando vai carregar os
+dados após o filtro"*. A primeira revisão (décima quarta leva) tinha mexido só
+em Solicitações. Desta vez a medição foi mais larga — e o maior achado não
+estava no banco.
+
+**Medido com as 59.055 SPs, num Postgres local; a produção não foi tocada:**
+
+| Tela | Antes | Depois |
+|---|---|---|
+| Solicitações | 171 ms · 10 idas · **430 KB** | 177 ms · 10 idas · **27 KB** |
+| Lote | 321 ms · 18 idas · 171 KB | **135 ms · 12 idas · 13 KB** |
+| Relatório | 388 ms · 13 idas · 72 KB | **245 ms · 9 idas · 8,7 KB** |
+| Auditoria | 228 ms · 9 idas · 6,6 KB | **149 ms · 6 idas · 1,6 KB** |
+
+**1. O ACHADO PRINCIPAL: a página ia CRUA pela internet.** A tela de
+Solicitações são **430 KB** de HTML — 200 linhas com vinte colunas —, e nada
+no caminho comprimia. Comprimida dá **27 KB**: dezesseis vezes menos, por
+1,4 ms de processamento.
+
+> É a maior diferença de todas para quem está do outro lado, e explica por que
+> ele continuava sentindo lentidão mesmo depois da primeira revisão: o banco
+> podia responder em 100 ms, mas meio megabyte ainda leva segundos numa
+> internet ruim ou no celular na obra. **Nenhuma otimização de consulta
+> compensa isso** — e é o tipo de coisa que não aparece medindo o servidor.
+>
+> Feito com a biblioteca padrão, num `after_request` do próprio módulo: nada
+> de dependência nova, e nada que atravesse para as outras áreas. Nível 1 de
+> compressão de propósito — 6,3% do tamanho por 1,4 ms; o nível 6 chega a 4,4%
+> gastando o dobro, e esta instância tem 2 GB e histórico de morrer de
+> memória.
+>
+> **Três coisas ficam de fora, cada uma por um motivo:** o que sai em fluxo (a
+> exportação CSV, escrita em blocos justamente para não abrir a base na
+> memória — comprimir obrigaria a juntar tudo antes); o que já vem comprimido
+> (PDF, xlsx); e o que é pequeno demais para valer. Há teste para os três, e
+> para o navegador que não aceita comprimido continuar recebendo a página
+> normal.
+
+**2. O painel do Lote fazia OITO varreduras da base.** Uma lista e um resumo
+para cada um dos quatro status de agendamento, cada um percorrendo as 59 mil
+SPs: 185 dos 200 ms da tela. Agora são **duas** — `row_number` separa os
+quatro grupos numa passada e devolve só as vinte de cada, em vez de mandar
+oitocentas linhas para serem jogadas fora no Python.
+
+**3. O Relatório somava quatro dimensões em quatro varreduras.** Projeto,
+obra, tipo de despesa e conta são quatro perguntas sobre EXATAMENTE as mesmas
+linhas. `GROUPING SETS` é a resposta que o Postgres já tem: uma varredura,
+todos os agrupamentos juntos. Medido isolado: **183 ms → 96 ms**, com
+resultado idêntico.
+
+**4. A Auditoria contava quatro condições em quatro consultas.** Viraram uma,
+com `FILTER` — o banco lê a tabela uma vez e incrementa quatro contadores.
+Conferido: as quatro contagens batem exatamente com as de antes.
+
+**Tentado e DESCARTADO nesta leva** (para não ser retentado por intuição):
+- **Solicitações não melhorou em tempo de servidor**, e está certo assim: os
+  177 ms restantes são somar 59 mil linhas para o rodapé (74 ms numa consulta
+  só) e trazer a página. Somar o que o filtro alcança exige percorrer o que o
+  filtro alcança. O ganho dela veio todo da compressão — 430 KB para 27 KB.
+- **Índice de expressão** para as listas de filtro já tinha sido tentado e
+  descartado na décima quarta leva; continua valendo.
+
+**O que ficou de fora:** o `top_credores` do Relatório (59 ms, agrupa por
+CPF/CNPJ) e o `numeros_do_relatorio` ainda são varreduras próprias. Dariam
+para entrar no mesmo `GROUPING SETS`, mas agrupam por outra coisa e com outro
+recorte — é mais risco do que os ~60 ms valem hoje.
+
+**Verificado:** 2829 testes verdes com Postgres de verdade. Os testes novos
+prendem a FORMA das consultas (`GROUPING SETS`, `row_number`, `FILTER`),
+porque o efeito — a lentidão — só aparece com a base cheia, e aí é tarde.
+
+**NÃO verificado:** os tempos são com o banco na mesma máquina. Na produção o
+banco está noutro lugar e cada ida custa mais — por isso cortar o NÚMERO de
+idas (10→6 na Auditoria, 18→12 no Lote, 13→9 no Relatório) vale ainda mais lá
+do que aqui. E nada foi aberto num navegador de verdade.
+
+### Décima nona leva (09/09) — a tela volta como estava
+
+*"Eu filtro, vou para o Lote, volto para Solicitações — e ele refaz tudo de
+novo. É como se eu tivesse duas abas do navegador e quisesse alternar entre
+elas na hora."* A observação do dono estava certa, e era de concepção: **não
+havia cache nenhum**. Toda troca de aba refazia as consultas e remontava a
+tela inteira, mesmo três segundos depois.
+
+**Agora a tela fica guardada no navegador por cinco minutos.** A volta não vai
+ao servidor: aparece na hora, com o filtro e tudo. Cinco minutos foi escolha do
+dono, com os riscos na frente.
+
+**SÓ AS TELAS DE LEITURA ENTRAM** — Solicitações, Relatório, Auditoria e Log.
+A razão é concreta e não é preciosismo: **Lote, Agenda, Ratear e Bradesco
+recebem alterações NO PRÓPRIO ENDEREÇO** (o formulário manda para elas
+mesmas). Guardá-las mostraria o estado ANTERIOR à mudança que a pessoa acabou
+de fazer — que é pior do que ser lento. A **ficha da SP** também fica de fora:
+ela mostra o status atual e tem botões que agem sobre ele.
+
+As quatro que entraram só são alteradas por `/api/...`, e toda alteração por
+lá termina recarregando a tela — o que substitui o que estava guardado. Há um
+teste que prende a lista, porque entrar nela é uma decisão, não um detalhe.
+
+> **O QUE FICA EM ABERTO, dito com todas as letras:** se OUTRA pessoa alterar
+> algo, você pode ver o estado anterior por até cinco minutos. As redes de
+> proteção já existiam e continuam valendo na tela guardada — o relógio no
+> alto diz de quando é o dado, e a busca de 90 em 90 segundos avisa se a base
+> mudou. Mas o atraso existe, e foi aceito.
+
+**Sair apaga o que ficou guardado** (`Clear-Site-Data`). Sem isso, num
+computador compartilhado, apertar Voltar depois de sair mostraria as telas da
+pessoa anterior pelos minutos que faltassem. Sair tem de sair de verdade.
+
+**A ROLAGEM E AS CAIXINHAS MARCADAS TAMBÉM VOLTAM.** A tela guardada voltava
+no topo e sem as marcações — e quem marcou vinte SPs, foi conferir uma no Lote
+e voltou, remarcava tudo. Ficam na memória da ABA (`sessionStorage`), não no
+computador: fechou a aba, acabou. A chave inclui o endereço inteiro com o
+filtro, então mudar o filtro não ressuscita a marcação de outra lista, e há
+meia hora de validade para não trazer de volta uma seleção esquecida.
+
+> A marcação reposta **nunca é invisível**: a barra do alto mostra quantas são
+> e quanto somam, e nenhum botão age sobre ela sem confirmar.
+
+### Vigésima leva (09/09) — enviar ao lote sem sair da tela
+
+*"Ao enviar registro ao lote, não quero mudar de tela. Mantenha-se em
+Solicitações, apenas avise que foi executada a ação."*
+
+O botão mandava um formulário e levava a pessoa para o Lote — perdendo o
+filtro, a rolagem e a marcação de quem só queria separar um grupo e continuar
+conferindo a lista. Agora ele age no lugar e aparece um recado no canto
+("12 SP(s) entraram no grupo Novo Lote 1"), com um link para quem quiser
+conferir, que some sozinho em seis segundos.
+
+A regra é a MESMA do formulário — grupo novo no topo, o que já estava fica
+abaixo —, e é **chamada, não copiada**: duas cópias divergiriam no dia em que
+uma delas mudasse. Há teste para as duas coisas.
+
+**Verificado:** 2839 testes verdes com Postgres de verdade, e o envio ao lote
+exercitado ponta a ponta contra o banco: as SPs entram, o grupo novo fica no
+topo, o que já estava é preservado, e a resposta é 200 — não um
+redirecionamento.
+
+**NÃO verificado:** nada foi aberto num navegador de verdade. O comportamento
+de guardar a tela depende do navegador respeitar o cabeçalho, e a reposição da
+rolagem e das marcações é JavaScript — as duas coisas os testes não alcançam.
+São as primeiras a conferir na tela.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
