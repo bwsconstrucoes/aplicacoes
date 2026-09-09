@@ -404,6 +404,67 @@ def uma(sp_id: str) -> dict | None:
     return dict(zip(nomes, linhas[0]))
 
 
+def painel_por_agendamento(rotulos: list, quantos: int = 20) -> list[dict]:
+    """As listas do painel do Lote, TODAS numa varredura só.
+
+    Antes eram OITO consultas — uma lista e um resumo para cada um dos quatro
+    status —, e cada uma percorria as 59 mil SPs inteiras. Medido: 185 dos
+    200 ms da tela do Lote eram isto. Agora são duas: uma traz as primeiras
+    linhas de cada status, outra traz quantidade e total de cada um.
+
+    A primeira usa `row_number`, que numera as linhas DENTRO de cada status já
+    ordenadas por vencimento — assim o banco separa os quatro grupos numa
+    passada e devolve só as vinte de cada, em vez de mandar oitocentas para
+    serem jogadas fora aqui."""
+    from .db import consultar
+
+    if not rotulos:
+        return []
+    marcadores = ",".join(["?"] * len(rotulos))
+    campos = ", ".join(CAMPOS_LISTA)
+
+    linhas = consultar(
+        f"WITH classificadas AS ("
+        f"  SELECT {campos}, ({SQL_STATUS_AGEND}) AS status_agend, "
+        f"         ({SQL_RISCO}) AS risco, "
+        f"         {SQL_CADASTRO_INCOMPLETO} AS cadastro_incompleto, "
+        f"         (vencimento_d IS NOT NULL AND vencimento_d < {SQL_HOJE} "
+        "           AND lower(trim(coalesce(status_pgt,''))) = 'pagar') AS vencido, "
+        f"         (vencimento_d = {SQL_HOJE} "
+        "           AND lower(trim(coalesce(status_pgt,''))) = 'pagar') AS vence_hoje "
+        "    FROM analisesps.sps), "
+        "numeradas AS ("
+        "  SELECT *, row_number() OVER (PARTITION BY status_agend "
+        "                               ORDER BY vencimento_d ASC NULLS LAST, id) AS posicao "
+        f"    FROM classificadas WHERE status_agend IN ({marcadores})) "
+        f"SELECT * FROM numeradas WHERE posicao <= ? "
+        " ORDER BY status_agend, posicao",
+        tuple(rotulos) + (quantos,))
+
+    totais = consultar(
+        f"SELECT ({SQL_STATUS_AGEND}) AS status_agend, count(*), "
+        "       coalesce(sum(valor_num), 0) "
+        "  FROM analisesps.sps GROUP BY 1",
+        ())
+    por_status = {t[0]: (t[1], t[2]) for t in totais}
+
+    nomes = CAMPOS_LISTA + ["status_agend", "risco", "cadastro_incompleto",
+                            "vencido", "vence_hoje", "posicao"]
+    agrupadas: dict = {r: [] for r in rotulos}
+    for linha in linhas:
+        registro = dict(zip(nomes, linha))
+        agrupadas.setdefault(registro["status_agend"], []).append(registro)
+
+    saida = []
+    for rotulo in rotulos:
+        quantidade, total = por_status.get(rotulo, (0, 0))
+        minhas = agrupadas.get(rotulo, [])
+        saida.append({"rotulo": rotulo, "linhas": minhas,
+                      "quantidade": quantidade, "total": total,
+                      "tem_mais": quantidade > len(minhas)})
+    return saida
+
+
 def opcoes(coluna: str, limite: int = 400) -> list[str]:
     """Os valores distintos de uma coluna, para montar as listas de filtro.
 
@@ -675,6 +736,73 @@ def agregar(f: dict, dimensao: str, tipo: str = "geral", periodo: str = "tudo",
         "  GROUP BY 1 ORDER BY 3 DESC, 1 LIMIT ?",
         (VAZIO,) + tuple(params) + (limite,))
     return [{"rotulo": r[0], "quantidade": r[1], "total": r[2]} for r in linhas]
+
+
+def agregar_varias(f: dict, dimensoes: list, tipo: str = "geral",
+                   periodo: str = "tudo", limite: int = 100) -> dict:
+    """Várias dimensões de uma vez, NUMA VARREDURA SÓ do banco.
+
+    O Relatório soma por projeto, por obra, por tipo de despesa e por conta —
+    quatro perguntas sobre EXATAMENTE as mesmas linhas. Separadas, eram quatro
+    varreduras das 59 mil SPs, ~41 ms cada; medido, elas eram a maior parte dos
+    331 ms da tela.
+
+    `GROUPING SETS` é a resposta que o Postgres já tem para isto: ele percorre
+    a tabela uma vez e devolve os quatro agrupamentos juntos, marcando a qual
+    deles cada linha pertence. A ordenação e o corte de cada lista continuam
+    sendo feitos aqui, sobre poucas dezenas de linhas.
+
+    Devolve {dimensao: [{rotulo, quantidade, total}, ...]}, cada lista já
+    ordenada do maior total para o menor — igual ao que `agregar` devolvia."""
+    from .db import consultar
+
+    pedidas = [d for d in dict.fromkeys(dimensoes) if d in DIMENSOES]
+    if not pedidas:
+        return {}
+    if len(pedidas) == 1:
+        # Uma só não tem o que agrupar junto; o caminho simples é mais barato.
+        return {pedidas[0]: agregar(f, pedidas[0], tipo, periodo, limite)}
+
+    where, params = _where_relatorio(f, tipo)
+    recorte = _periodo(tipo, periodo)
+
+    # O rótulo de cada dimensão, na ordem pedida. O "(vazio)" entra como
+    # parâmetro, como em `agregar`.
+    rotulos = [f"CASE WHEN trim(coalesce({d},'')) = '' THEN ? "
+               f"     ELSE trim({d}) END" for d in pedidas]
+    # Os conjuntos de agrupamento: um por dimensão, pela posição no SELECT.
+    conjuntos = ", ".join(f"({i + 1})" for i in range(len(pedidas)))
+    # `GROUPING` diz, em cada linha do resultado, quais dimensões estão
+    # agregadas — é como se sabe de qual das listas aquela linha é.
+    marcas = ", ".join(f"GROUPING({r})" for r in rotulos)
+
+    linhas = consultar(
+        "SELECT " + ", ".join(rotulos) + ", " + marcas
+        + ", count(*), coalesce(sum(valor_num),0) "
+        f"  FROM analisesps.sps{where}{recorte} "
+        f" GROUP BY GROUPING SETS ({conjuntos})",
+        tuple([VAZIO] * len(pedidas))          # os CASE do SELECT
+        + tuple(params)                        # o WHERE
+        + tuple([VAZIO] * len(pedidas)))       # os CASE repetidos no GROUPING
+
+    quantas = len(pedidas)
+    saida: dict = {d: [] for d in pedidas}
+    for linha in linhas:
+        valores = linha[:quantas]
+        agregadas = linha[quantas:quantas * 2]
+        quantidade, total = linha[-2], linha[-1]
+        # A dimensão desta linha é a única que NÃO está agregada (marca 0).
+        for i, marca in enumerate(agregadas):
+            if marca == 0:
+                saida[pedidas[i]].append({"rotulo": valores[i],
+                                          "quantidade": quantidade,
+                                          "total": total})
+                break
+
+    for dimensao, lista in saida.items():
+        lista.sort(key=lambda x: (-x["total"], x["rotulo"]))
+        saida[dimensao] = lista[:limite]
+    return saida
 
 
 def top_credores(f: dict, tipo: str = "geral", periodo: str = "tudo",

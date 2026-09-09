@@ -372,6 +372,18 @@ as duas são fáceis de desfazer sem perceber:
 
 Há testes que falham se qualquer uma das duas for desfeita.
 
+E, desde 09/09, mais quatro coisas — todas com o mesmo princípio, **uma
+varredura em vez de várias**, e todas com teste que prende a forma da consulta:
+
+- **A página vai comprimida** (`after_request` do módulo, biblioteca padrão).
+  A tela de Solicitações são 430 KB de HTML cru e viram 27 KB. Foi a maior
+  diferença de todas: o banco pode responder em 100 ms, mas meio megabyte
+  ainda leva segundos numa internet ruim. Ficam de fora o que sai em fluxo
+  (a exportação CSV), o que já vem comprimido e o que é pequeno demais.
+- **O painel do Lote** sai de duas consultas, não oito (`row_number`).
+- **O Relatório** soma as dimensões juntas (`GROUPING SETS`).
+- **A Auditoria** conta as quatro condições numa consulta (`FILTER`).
+
 ## O que ficou de fora, e por quê
 
 - **Cancelar SP no Pipefy.** O botão abre o formulário deles, como no

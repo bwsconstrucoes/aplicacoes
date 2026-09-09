@@ -643,6 +643,8 @@ def test_a_barra_de_filtros_e_a_mesma_nas_duas_telas(app, monkeypatch):
         "quantidade": 0, "total": Decimal("0"), "media": Decimal("0"),
         "vencidas": 0, "total_vencidas": Decimal("0")})
     monkeypatch.setattr(consultas, "agregar", lambda *a, **k: [])
+    # Desde 09/09 o Relatório pede as dimensões JUNTAS, numa varredura só.
+    monkeypatch.setattr(consultas, "agregar_varias", lambda *a, **k: {})
     monkeypatch.setattr(consultas, "top_credores", lambda *a, **k: [])
     monkeypatch.setattr(consultas, "aging_vencidos", lambda *a, **k: [])
     cliente = como(app, SENHA_OPERADOR)
@@ -1940,12 +1942,16 @@ def app_relatorio(app, monkeypatch):
         "quantidade": 120, "total": Decimal("845300.55"),
         "ticket": Decimal("7044.17"), "vencidos_qtd": 9,
         "vencidos_total": Decimal("61200.00")})
+    _somas = [{"rotulo": "OBRA-12", "quantidade": 40,
+               "total": Decimal("500000.00")},
+              {"rotulo": "(vazio)", "quantidade": 3,
+               "total": Decimal("1200.00")}]
     monkeypatch.setattr(consultas, "agregar",
-                        lambda f, d, t="geral", p="tudo", limite=30: [
-                            {"rotulo": "OBRA-12", "quantidade": 40,
-                             "total": Decimal("500000.00")},
-                            {"rotulo": "(vazio)", "quantidade": 3,
-                             "total": Decimal("1200.00")}])
+                        lambda f, d, t="geral", p="tudo", limite=30: _somas)
+    # A tela pede as dimensões juntas — uma varredura só do banco.
+    monkeypatch.setattr(consultas, "agregar_varias",
+                        lambda f, dims, t="geral", p="tudo", limite=100: {
+                            d: _somas for d in dims})
     monkeypatch.setattr(consultas, "top_credores",
                         lambda f, t="geral", p="tudo", limite=30: [
                             {"documento": "01.637.895/0001-32",
@@ -2988,3 +2994,57 @@ def test_o_perfil_consulta_nao_troca_a_pasta_do_drive(app):
     assert como(app, SENHA_CONSULTA).post(
         "/analisesps/api/pasta-drive",
         json={"pasta": "outra"}).status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# A PÁGINA VAI COMPRIMIDA
+#
+# Medido: a tela de Solicitações são 430 KB de HTML cru, e nada no caminho
+# comprimia. Comprimida dá 27 KB. É a maior diferença de todas para quem está
+# do outro lado — o banco pode responder em 100 ms, mas meio megabyte ainda
+# leva segundos numa internet ruim.
+# ---------------------------------------------------------------------------
+def test_a_pagina_vai_comprimida_para_quem_aceita(app):
+    resposta = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes", headers={"Accept-Encoding": "gzip"},
+        follow_redirects=True)
+    assert resposta.headers.get("Content-Encoding") == "gzip"
+    assert "Accept-Encoding" in resposta.headers.get("Vary", "")
+
+
+def test_quem_nao_aceita_comprimido_recebe_a_pagina_normal(app):
+    """Um navegador antigo, ou uma ferramenta de linha de comando, não pode
+    receber lixo binário no lugar da tela."""
+    resposta = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes", headers={"Accept-Encoding": ""},
+        follow_redirects=True)
+    assert not resposta.headers.get("Content-Encoding")
+    assert "<html" in resposta.get_data(as_text=True)
+
+
+def test_o_conteudo_comprimido_e_a_mesma_pagina(app):
+    import gzip
+    cliente = como(app, SENHA_OPERADOR)
+    comprimida = cliente.get("/analisesps/solicitacoes",
+                             headers={"Accept-Encoding": "gzip"},
+                             follow_redirects=True).get_data()
+    crua = cliente.get("/analisesps/solicitacoes",
+                       headers={"Accept-Encoding": ""},
+                       follow_redirects=True).get_data()
+    assert gzip.decompress(comprimida) == crua
+
+
+def test_a_exportacao_em_fluxo_nao_e_comprimida(app):
+    """A exportação é escrita em blocos justamente para não abrir a base
+    inteira na memória. Comprimir obrigaria a juntar tudo antes — que é o que
+    aquele caminho existe para evitar."""
+    resposta = como(app, SENHA_OPERADOR).get(
+        "/analisesps/exportar", headers={"Accept-Encoding": "gzip"})
+    assert not resposta.headers.get("Content-Encoding")
+
+
+def test_resposta_pequena_nao_paga_o_custo_de_comprimir(app):
+    """Comprimir meia dúzia de bytes gasta processador e não economiza nada."""
+    resposta = como(app, SENHA_OPERADOR).get(
+        "/analisesps/api/andamento", headers={"Accept-Encoding": "gzip"})
+    assert not resposta.headers.get("Content-Encoding")

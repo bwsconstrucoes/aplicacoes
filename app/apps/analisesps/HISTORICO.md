@@ -860,6 +860,84 @@ mesmo. 2819 testes verdes.
 descuido, e outro para o formato guardado registrar as colunas conhecidas — é
 esse registro que impede o defeito de voltar na próxima coluna criada.
 
+### Décima oitava leva (09/09) — a segunda revisão de velocidade
+
+*"continuo achando lento quando mudamos de aba, ou quando vai carregar os
+dados após o filtro"*. A primeira revisão (décima quarta leva) tinha mexido só
+em Solicitações. Desta vez a medição foi mais larga — e o maior achado não
+estava no banco.
+
+**Medido com as 59.055 SPs, num Postgres local; a produção não foi tocada:**
+
+| Tela | Antes | Depois |
+|---|---|---|
+| Solicitações | 171 ms · 10 idas · **430 KB** | 177 ms · 10 idas · **27 KB** |
+| Lote | 321 ms · 18 idas · 171 KB | **135 ms · 12 idas · 13 KB** |
+| Relatório | 388 ms · 13 idas · 72 KB | **245 ms · 9 idas · 8,7 KB** |
+| Auditoria | 228 ms · 9 idas · 6,6 KB | **149 ms · 6 idas · 1,6 KB** |
+
+**1. O ACHADO PRINCIPAL: a página ia CRUA pela internet.** A tela de
+Solicitações são **430 KB** de HTML — 200 linhas com vinte colunas —, e nada
+no caminho comprimia. Comprimida dá **27 KB**: dezesseis vezes menos, por
+1,4 ms de processamento.
+
+> É a maior diferença de todas para quem está do outro lado, e explica por que
+> ele continuava sentindo lentidão mesmo depois da primeira revisão: o banco
+> podia responder em 100 ms, mas meio megabyte ainda leva segundos numa
+> internet ruim ou no celular na obra. **Nenhuma otimização de consulta
+> compensa isso** — e é o tipo de coisa que não aparece medindo o servidor.
+>
+> Feito com a biblioteca padrão, num `after_request` do próprio módulo: nada
+> de dependência nova, e nada que atravesse para as outras áreas. Nível 1 de
+> compressão de propósito — 6,3% do tamanho por 1,4 ms; o nível 6 chega a 4,4%
+> gastando o dobro, e esta instância tem 2 GB e histórico de morrer de
+> memória.
+>
+> **Três coisas ficam de fora, cada uma por um motivo:** o que sai em fluxo (a
+> exportação CSV, escrita em blocos justamente para não abrir a base na
+> memória — comprimir obrigaria a juntar tudo antes); o que já vem comprimido
+> (PDF, xlsx); e o que é pequeno demais para valer. Há teste para os três, e
+> para o navegador que não aceita comprimido continuar recebendo a página
+> normal.
+
+**2. O painel do Lote fazia OITO varreduras da base.** Uma lista e um resumo
+para cada um dos quatro status de agendamento, cada um percorrendo as 59 mil
+SPs: 185 dos 200 ms da tela. Agora são **duas** — `row_number` separa os
+quatro grupos numa passada e devolve só as vinte de cada, em vez de mandar
+oitocentas linhas para serem jogadas fora no Python.
+
+**3. O Relatório somava quatro dimensões em quatro varreduras.** Projeto,
+obra, tipo de despesa e conta são quatro perguntas sobre EXATAMENTE as mesmas
+linhas. `GROUPING SETS` é a resposta que o Postgres já tem: uma varredura,
+todos os agrupamentos juntos. Medido isolado: **183 ms → 96 ms**, com
+resultado idêntico.
+
+**4. A Auditoria contava quatro condições em quatro consultas.** Viraram uma,
+com `FILTER` — o banco lê a tabela uma vez e incrementa quatro contadores.
+Conferido: as quatro contagens batem exatamente com as de antes.
+
+**Tentado e DESCARTADO nesta leva** (para não ser retentado por intuição):
+- **Solicitações não melhorou em tempo de servidor**, e está certo assim: os
+  177 ms restantes são somar 59 mil linhas para o rodapé (74 ms numa consulta
+  só) e trazer a página. Somar o que o filtro alcança exige percorrer o que o
+  filtro alcança. O ganho dela veio todo da compressão — 430 KB para 27 KB.
+- **Índice de expressão** para as listas de filtro já tinha sido tentado e
+  descartado na décima quarta leva; continua valendo.
+
+**O que ficou de fora:** o `top_credores` do Relatório (59 ms, agrupa por
+CPF/CNPJ) e o `numeros_do_relatorio` ainda são varreduras próprias. Dariam
+para entrar no mesmo `GROUPING SETS`, mas agrupam por outra coisa e com outro
+recorte — é mais risco do que os ~60 ms valem hoje.
+
+**Verificado:** 2829 testes verdes com Postgres de verdade. Os testes novos
+prendem a FORMA das consultas (`GROUPING SETS`, `row_number`, `FILTER`),
+porque o efeito — a lentidão — só aparece com a base cheia, e aí é tarde.
+
+**NÃO verificado:** os tempos são com o banco na mesma máquina. Na produção o
+banco está noutro lugar e cada ida custa mais — por isso cortar o NÚMERO de
+idas (10→6 na Auditoria, 18→12 no Lote, 13→9 no Relatório) vale ainda mais lá
+do que aqui. E nada foi aberto num navegador de verdade.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

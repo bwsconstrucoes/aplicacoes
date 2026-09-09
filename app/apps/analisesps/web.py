@@ -32,6 +32,67 @@ bp = Blueprint("analisesps", __name__,
 bp.before_request(auth.exigir_login)
 
 
+# ---------------------------------------------------------------------------
+# A PÁGINA VAI COMPRIMIDA
+#
+# Medido com as 59.055 SPs: a tela de Solicitações são 430 KB de HTML — 200
+# linhas com vinte colunas cada. O servidor mandava isso CRU, e nada no
+# caminho comprimia. Comprimido dá 27 KB, dezesseis vezes menos, e custa
+# 1,4 ms de processamento.
+#
+# É a maior diferença de todas para quem está do outro lado: o banco pode
+# responder em 100 ms, mas meio megabyte ainda leva segundos numa internet
+# ruim ou no celular na obra. Nenhuma otimização de consulta compensa isso.
+#
+# TRÊS COISAS FICAM DE FORA, e cada uma por um motivo:
+#   - o que sai em fluxo (a exportação CSV, que é escrita em blocos para não
+#     abrir a base inteira na memória): comprimir obrigaria a juntar tudo
+#     antes, que é exatamente o que aquele caminho evita;
+#   - o que já vem comprimido (PDF, PNG, o xlsx do BeeVale) — reapertar um
+#     arquivo comprimido só gasta processador e às vezes aumenta;
+#   - o que é pequeno demais para valer o esforço.
+# ---------------------------------------------------------------------------
+NIVEL_COMPRESSAO = 1        # 6,3% do tamanho por 1,4 ms; o nível 6 chega a
+                            # 4,4% mas gasta o dobro, e esta instância tem
+                            # 2 GB e histórico de morrer de memória.
+MINIMO_PARA_COMPRIMIR = 1024
+TIPOS_QUE_COMPRIMEM = ("text/html", "text/css", "text/plain",
+                       "application/javascript", "application/json",
+                       "image/svg+xml")
+
+
+@bp.after_request
+def _comprimir(resposta):
+    """Manda a página comprimida quando o navegador aceita. Ver o bloco acima."""
+    try:
+        if resposta.direct_passthrough or resposta.is_streamed:
+            return resposta
+        if resposta.headers.get("Content-Encoding"):
+            return resposta
+        if resposta.status_code < 200 or resposta.status_code >= 300:
+            return resposta
+        if "gzip" not in (request.headers.get("Accept-Encoding") or "").lower():
+            return resposta
+        tipo = (resposta.mimetype or "").lower()
+        if not any(tipo.startswith(t) for t in TIPOS_QUE_COMPRIMEM):
+            return resposta
+
+        conteudo = resposta.get_data()
+        if len(conteudo) < MINIMO_PARA_COMPRIMIR:
+            return resposta
+
+        import gzip
+        resposta.set_data(gzip.compress(conteudo, NIVEL_COMPRESSAO))
+        resposta.headers["Content-Encoding"] = "gzip"
+        resposta.headers["Content-Length"] = str(len(resposta.get_data()))
+        # Sem isto, um cache no caminho poderia entregar a versão comprimida a
+        # um navegador que não pediu — e ele mostraria lixo na tela.
+        resposta.headers.add("Vary", "Accept-Encoding")
+    except Exception:  # noqa: BLE001 — comprimir é conforto; a página é o que importa
+        logger.exception("Análise de SPs: falhou comprimir a resposta")
+    return resposta
+
+
 @bp.app_template_filter("moeda")
 def _filtro_moeda(valor):
     from .formatos import moeda
@@ -972,15 +1033,22 @@ def relatorio():
     if dimensao not in consultas.DIMENSOES:
         dimensao = "centro_custo"
 
+    # AS CINCO SOMAS SAEM DE UMA VARREDURA SÓ. Eram cinco perguntas sobre
+    # exatamente as mesmas linhas, cada uma percorrendo as 59 mil SPs: medido,
+    # 183 dos 331 ms desta tela. Ver `consultas.agregar_varias`.
+    somas = consultas.agregar_varias(
+        filtros, ["projeto", "centro_custo", "tipo_despesa", "conta", dimensao],
+        tipo, periodo, 100)
+
     return render_template(
         "analisesps_relatorio.html",
         aba="relatorio", base=base,
         numeros=consultas.numeros_do_relatorio(filtros, tipo, periodo),
-        por_projeto=consultas.agregar(filtros, "projeto", tipo, periodo, 15),
-        por_centro=consultas.agregar(filtros, "centro_custo", tipo, periodo, 15),
-        por_tipo=consultas.agregar(filtros, "tipo_despesa", tipo, periodo, 15),
-        por_conta=consultas.agregar(filtros, "conta", tipo, periodo, 15),
-        quebra=consultas.agregar(filtros, dimensao, tipo, periodo, 100),
+        por_projeto=somas.get("projeto", [])[:15],
+        por_centro=somas.get("centro_custo", [])[:15],
+        por_tipo=somas.get("tipo_despesa", [])[:15],
+        por_conta=somas.get("conta", [])[:15],
+        quebra=somas.get(dimensao, []),
         credores=consultas.top_credores(filtros, tipo, periodo, 30),
         aging=consultas.aging_vencidos(filtros, periodo),
         tipo=tipo, periodo=periodo, dimensao=dimensao,
@@ -1169,20 +1237,18 @@ def tela_lote():
     # "o que está prestes a vencer e ainda não foi tratado" — que é a pergunta
     # que o painel existe para responder. O resto está a um clique, nas
     # Solicitações já filtradas.
+    #
+    # AS QUATRO LISTAS SAEM DE UMA VARREDURA SÓ. Eram oito consultas — uma
+    # lista e um resumo por status —, e cada uma percorria as 59 mil SPs
+    # inteiras: 185 dos 200 ms desta tela eram isto, medido. O porquê e o como
+    # estão em `consultas.painel_por_agendamento`.
     NO_PAINEL = 20
-    painel = []
-    for rotulo in ("Agendar", "Agendado", "Falha Agendar", "Verificar"):
-        try:
-            linhas = consultas.listar({"status_agend": [rotulo]},
-                                      ordem="vencimento", pagina=1)[:NO_PAINEL]
-            numeros = consultas.resumo({"status_agend": [rotulo]})
-        except Exception:  # noqa: BLE001 — o painel é um extra; o lote é o principal
-            logger.exception("Análise de SPs: falhou montar o painel de %r", rotulo)
-            continue
-        painel.append({"rotulo": rotulo, "linhas": linhas,
-                       "quantidade": numeros["quantidade"],
-                       "total": numeros["total"],
-                       "tem_mais": numeros["quantidade"] > len(linhas)})
+    try:
+        painel = consultas.painel_por_agendamento(
+            ["Agendar", "Agendado", "Falha Agendar", "Verificar"], NO_PAINEL)
+    except Exception:  # noqa: BLE001 — o painel é um extra; o lote é o principal
+        logger.exception("Análise de SPs: falhou montar o painel por status")
+        painel = []
 
     # O lote de quando ele era de todo mundo. Só aparece para quem ainda não
     # tem lote próprio — depois de começar o seu, ninguém quer ser lembrado.
