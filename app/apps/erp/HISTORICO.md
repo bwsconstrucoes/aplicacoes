@@ -1756,6 +1756,62 @@ adivinhar aqui é escolher para onde o dinheiro vai.
 contra uma empreita de 180 mil com três medições: ver a garantia acumulada,
 devolver, e o título nascer com o valor certo.
 
+### O certificado digital da empresa — 09/09/2026
+
+Migração **053**, em Administração › Empresas › "Emissão de nota".
+
+**O problema, do jeito que ele acontece:** o arquivo .pfx vive no computador
+de alguém, com a senha num papel ou numa conversa antiga. Aí ele vence num
+sábado, ninguém sabe, e a obra para de faturar na segunda-feira.
+
+Duas coisas já construídas dependiam dele. A **emissão automática** da nota —
+no padrão nacional a declaração vai ASSINADA, e sem certificado não há
+assinatura. E a **agenda**, onde ele era o quarto aviso prometido que ficou de
+fora justamente porque o certificado não tinha onde morar. Agora estão os
+cinco.
+
+**Três decisões que valem registro:**
+
+1. **O arquivo e a senha vão CIFRADOS**, com a mesma chave que já protege a
+   senha de e-mail — a que mora na Environment do Render e nunca no banco.
+   Certificado digital é a **assinatura da empresa**: quem o tem, assina no
+   nome dela. Uma cópia do banco não pode bastar. E **sem a chave o sistema
+   recusa guardar**: a alternativa — guardar em claro "só desta vez" — é como
+   uma assinatura de empresa vaza sem ninguém perceber.
+
+2. **A validade é lida de dentro do arquivo, nunca digitada.** Campo de data
+   que a pessoa preenche é campo que ela erra ou esquece de atualizar — e aqui
+   o erro só apareceria no dia em que a nota não sai. De quebra, abrir o
+   arquivo **prova que a senha está certa**: certificado que não abre não
+   entra, e a mensagem diz o que quase sempre é ("confira a senha").
+
+3. **O arquivo nunca volta pela tela.** A tela mostra titular, CNPJ, validade e
+   emissor; os bytes só saem por dentro, para quem vai assinar. Não existe rota
+   de download — o que não tem porta não é arrombado.
+
+**Duas recusas que evitam erro caro:** certificado de outro CNPJ é recusado
+(trocar os arquivos de duas empresas faria a nota sair assinada pelo CNPJ
+errado — difícil de descobrir, caro de desfazer), e certificado já vencido não
+entra (guardá-lo criaria a impressão de que a empresa está em dia).
+
+**O anterior não é apagado**, vira histórico: a nota assinada em março foi
+assinada com AQUELE certificado, e um dia alguém vai perguntar com qual.
+
+**O aviso na agenda sai 45 dias antes**, porque certificado se renova com a
+contadora e isso leva dias. Quando o certificado é substituído, o aviso
+**fecha sozinho** — não fica um velho ao lado do novo.
+
+**Provado:** 15 testes com banco de verdade
+(`tests/test_certificado_banco.py`, que fabrica um A1 de verdade em memória
+em vez de versionar um .pfx no repositório — certificado versionado é
+certificado vazado, mesmo de teste) e o caminho inteiro num navegador: senha
+errada recusada com a frase certa, senha certa guardando, a validade lida do
+arquivo aparecendo na tela, e o aviso nascendo na agenda.
+
+**Um defeito corrigido no caminho:** a confirmação "certificado guardado"
+aparecia no painel que era redesenhado logo em seguida — a frase morria antes
+de ser lida, que é o mesmo que não ter avisado.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1913,8 +1969,9 @@ devolver, e o título nascer com o valor certo.
 
 21. **RESOLVIDO em 09/09/2026 — as migrações 042 a 051 foram aplicadas.** O
    dono publicou e apertou o botão no mesmo momento. ⚠️ **Fica pendente a
-   052** (retenção de garantia da empreita e alçada por valor), pelo mesmo
-   caminho, na próxima publicação.
+   052 e a 053** (retenção de garantia da empreita e alçada por valor; o
+   certificado digital por empresa), pelo mesmo caminho, na próxima
+   publicação.
 
    Do que cada uma trouxe, para consulta: 042 a trava contra baixa em
    duplicidade; 043 o documento morando no Drive; 044 o cruzamento de notas;

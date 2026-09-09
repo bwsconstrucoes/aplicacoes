@@ -1170,3 +1170,41 @@ class IndiceEconomico(Base):
     fonte: Mapped[str] = mapped_column(Text, nullable=False, default="BCB-SGS")
     coletado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+
+
+class EmpresaCertificado(Base):
+    """O certificado digital A1 da empresa (migração 053).
+
+    Duas coisas dependem dele: a emissão automática da nota de serviço — no
+    padrão nacional a DPS vai ASSINADA — e o aviso de vencimento na agenda.
+
+    O ARQUIVO E A SENHA VÃO CIFRADOS, com a mesma chave que já protege a senha
+    de e-mail. Certificado digital é a assinatura da empresa: quem o tem,
+    assina no nome dela. Uma cópia do banco não pode bastar.
+
+    A VALIDADE É LIDA DE DENTRO DO ARQUIVO, nunca digitada. Campo de data que a
+    pessoa preenche é campo que ela erra — e aqui o erro só apareceria no dia
+    em que a nota não sai.
+    """
+    __tablename__ = "empresa_certificados"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("empresas.id", ondelete="CASCADE"), nullable=False)
+    arquivo_cifrado: Mapped[str] = mapped_column(Text, nullable=False)
+    senha_cifrada: Mapped[str] = mapped_column(Text, nullable=False)
+    nome_arquivo: Mapped[Optional[str]] = mapped_column(Text)
+
+    titular: Mapped[Optional[str]] = mapped_column(Text)
+    documento: Mapped[Optional[str]] = mapped_column(Text)
+    emissor: Mapped[Optional[str]] = mapped_column(Text)
+    numero_serie: Mapped[Optional[str]] = mapped_column(Text)
+    valido_de: Mapped[Optional[date]] = mapped_column(Date)
+    valido_ate: Mapped[date] = mapped_column(Date, nullable=False)
+
+    situacao: Mapped[str] = mapped_column(Text, nullable=False, default="ATIVO")
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    enviado_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())

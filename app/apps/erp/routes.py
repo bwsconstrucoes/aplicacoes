@@ -1694,6 +1694,47 @@ def api_empresa_conta_email(empresa_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+# ---------------------------------------------------------------------------
+# CERTIFICADO DIGITAL (A1) da empresa
+#
+# O arquivo e a senha vão CIFRADOS. Não existe rota de download de propósito:
+# certificado digital é a assinatura da empresa, e o que não tem porta não é
+# arrombado. A tela mostra titular, validade e emissor — nunca os bytes.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/empresas/<int:empresa_id>/certificado")
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_certificado(empresa_id: int):
+    from app.apps.erp.core.cadastros import certificado as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "certificado": svc.ler(s, empresa_id),
+                        "historico": svc.historico(s, empresa_id)})
+
+
+@bp.route("/erp/api/empresas/<int:empresa_id>/certificado", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_certificado_guardar(empresa_id: int):
+    """Guarda o A1. Abrir o arquivo é o que PROVA que a senha está certa."""
+    from app.apps.erp.core.cadastros import certificado as svc
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False,
+                        "erro": "Anexe o arquivo do certificado (.pfx ou .p12)."}), 400
+    try:
+        with get_session() as s:
+            svc.guardar(s, empresa_id, arquivo.read(),
+                        (request.form.get("senha") or ""),
+                        nome_arquivo=(arquivo.filename or ""),
+                        observacao=(request.form.get("observacao") or ""),
+                        usuario=_usuario_logado(s))
+            lido = svc.ler(s, empresa_id)
+            s.commit()
+        return jsonify({"ok": True, "certificado": lido})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/empresas/<int:empresa_id>/testar-email", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar")
