@@ -114,6 +114,13 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # uma linha, fechar depois é conversa constrangedora.
     "ver_contratos":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.CONSULTA},
+    # Notas que a BWS EMITE contra o cliente. VER é largo dentro do escritório
+    # — é dessa tela que sai o relatório da contabilidade. EMITIR (registrar a
+    # nota, cancelar) é estreito: número de nota fiscal não se apaga, se
+    # explica, e cada linha aqui é documento perante o fisco.
+    "ver_notas_emitidas": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                           P.GESTOR_OBRA, P.CONSULTA},
+    "emitir_nota":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
 }
 
 # Ações que uma pessoa ganha de graça por já ter outra.
@@ -133,6 +140,9 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     # Quem lança recebimento precisa do quadro do contrato: é lá que ele
     # confere o que já foi medido, faturado e recebido antes de baixar.
     "ver_contratos": ("receber",),
+    # Quem emite enxerga a própria tela — do contrário marcar alguém como
+    # emissor e ele não conseguir abrir a lista seria uma armadilha.
+    "ver_notas_emitidas": ("emitir_nota", "ver_contratos"),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -167,6 +177,8 @@ ACAO_ROTULOS = {
     "ver_arquivo":          "Ver o arquivo de documentos da empresa",
     "arquivar":             "Guardar e organizar documento no arquivo",
     "ver_contratos":        "Ver o quadro financeiro dos contratos",
+    "ver_notas_emitidas":   "Ver as notas emitidas contra o cliente",
+    "emitir_nota":          "Registrar e cancelar nota emitida",
 }
 
 ROTULOS = {

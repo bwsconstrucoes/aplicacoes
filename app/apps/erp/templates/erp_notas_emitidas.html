@@ -1,0 +1,333 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Notas emitidas — ERP BWS{% endblock %}
+
+{# AS NOTAS QUE A BWS EMITE CONTRA O CLIENTE.
+
+   É tela IRMÃ da de títulos a receber, não a mesma — e a diferença foi o
+   próprio dono quem mandou criticar. Ela existe porque:
+
+     - uma medição pode virar DUAS notas (faturamento parcial);
+     - uma nota pode ser cancelada e substituída sem o título mudar nada;
+     - o título a receber inclui coisa que não é medição e não tem nota.
+
+   O propósito, nas palavras dele: "às vezes a contabilidade precisa gerar um
+   relatório das informações — valor da nota, tributos e tal." Por isso cada
+   tributo tem sua coluna, e não vai tudo somado: a contabilidade lança ISS
+   numa conta e INSS em outra, e do total ninguém volta atrás. #}
+
+{% block filtros %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="nota, medição, cliente, obra…">
+  </div>
+  <div class="campo"><label>Empresa</label><select id="f-empresa"></select></div>
+  <div class="campo"><label>Obra</label><select id="f-obra"></select></div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Situação</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="radio" name="sit" value="" checked>
+        <span class="rotulo">Todas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="EMITIDA">
+        <span class="rotulo">Emitidas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="RESERVADA">
+        <span class="rotulo">Reservadas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="CANCELADA">
+        <span class="rotulo">Canceladas</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="FALHADA">
+        <span class="rotulo">Falharam</span></label>
+    </div>
+  </div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Emissão</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label><input id="f-desde" type="date"></div>
+        <div><label>Até</label><input id="f-ate" type="date"></div>
+      </div>
+    </div>
+  </div>
+  <div class="campo"><label>Ambiente</label>
+    <select id="f-ambiente" data-sem-busca>
+      <option value="">Todos</option>
+      <option value="PRODUCAO">Produção</option>
+      <option value="HOMOLOGACAO">Homologação (teste)</option>
+    </select></div>
+
+  <button class="btn secundario" id="btn-conferir" style="width:100%; margin-top:12px">
+    Conferir a numeração</button>
+  <div class="dica" style="margin-top:6px">Buraco na sequência é a pergunta
+    clássica da fiscalização. Escolha a empresa primeiro.</div>
+
+  {% if pode.emitir_nota %}
+  <button class="btn amarelo" id="btn-registrar" style="width:100%; margin-top:12px">
+    Registrar nota do portal</button>
+  <div class="dica" style="margin-top:6px">Nota emitida por fora do ERP, no site
+    da prefeitura. Registrar aqui é o que mantém a numeração fechando.</div>
+  {% endif %}
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+<div class="kpis kpis-largos" id="kpis"></div>
+<div id="conferencia"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo"></span>
+    <span class="espaco"></span>
+    <span id="exportar"></span>
+  </div>
+  <div class="tabela-rolagem">
+    <table><thead><tr id="cabecalho"></tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" id="dlg-fechar">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PODE_EMITIR = {{ 'true' if pode.emitir_nota else 'false' }};
+let NOTAS = [], RESUMO = {}, TRIBUTOS = [];
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+const SELO = {EMITIDA: "aprovado", RESERVADA: "aguardando", FALHADA: "bloqueado",
+              CANCELADA: "bloqueado", SUBSTITUIDA: "outro"};
+
+function situacaoAtual(){
+  const m = document.querySelector('input[name="sit"]:checked');
+  return m ? m.value : "";
+}
+
+async function carregarListas(){
+  try {
+    const d = await api("/erp/api/empresas");
+    const lista = d.empresas || d.dados || [];
+    els("f-empresa").innerHTML = `<option value="">Todas</option>` + lista.map(e =>
+      `<option value="${e.id}">${escapar(e.nome_fantasia || e.razao_social)}</option>`).join("");
+  } catch(e){
+    els("f-empresa").innerHTML = `<option value="">(não consegui carregar)</option>`;
+    aviso("mensagem", "Não consegui carregar as empresas: " + e.message, "erro");
+  }
+  try {
+    const d = await api("/erp/api/obras");
+    els("f-obra").innerHTML = `<option value="">Todas</option>` +
+      (d.obras || []).map(o =>
+        `<option value="${o.id}">${escapar(o.codigo || "")} ${escapar(o.nome || "")}</option>`).join("");
+  } catch(e){
+    els("f-obra").innerHTML = `<option value="">(não consegui carregar)</option>`;
+  }
+}
+
+async function carregar(){
+  const p = new URLSearchParams();
+  const s = situacaoAtual(); if (s) p.set("situacao", s);
+  if (els("f-empresa").value) p.set("empresa_id", els("f-empresa").value);
+  if (els("f-obra").value) p.set("obra_id", els("f-obra").value);
+  if (els("f-ambiente").value) p.set("ambiente", els("f-ambiente").value);
+  if (els("f-desde").value) p.set("desde", els("f-desde").value);
+  if (els("f-ate").value) p.set("ate", els("f-ate").value);
+  if (els("f-busca").value.trim()) p.set("busca", els("f-busca").value.trim());
+  try {
+    const d = await api("/erp/api/notas-emitidas?" + p.toString());
+    NOTAS = d.notas || []; RESUMO = d.resumo || {}; TRIBUTOS = d.tributos || [];
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenhar(){
+  const r = RESUMO;
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Notas em tela</div>
+      <div class="kpi-valor">${r.quantidade || 0}</div>
+      <div class="kpi-sub">${r.emitidas || 0} emitida(s)</div></div>
+    <div class="kpi estatico roxo"><div class="kpi-rotulo">Valor bruto</div>
+      <div class="kpi-valor">${moeda(r.bruto || 0)}</div>
+      <div class="kpi-sub">só o que está emitido</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Retido na fonte</div>
+      <div class="kpi-valor">${moeda(r.retido || 0)}</div>
+      <div class="kpi-sub">${TRIBUTOS.map(t =>
+        (r.por_tributo && r.por_tributo[t.chave]) ? t.nome + " " + moeda(r.por_tributo[t.chave]) : "")
+        .filter(Boolean).join(" · ") || "nenhuma retenção"}</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Líquido</div>
+      <div class="kpi-valor">${moeda(r.liquido || 0)}</div>
+      <div class="kpi-sub">bruto menos retido</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Recebido</div>
+      <div class="kpi-valor">${moeda(r.recebido || 0)}</div>
+      <div class="kpi-sub">do título ligado à nota</div></div>
+    ${r.canceladas ? `<div class="kpi estatico vermelho"><div class="kpi-rotulo">Canceladas</div>
+      <div class="kpi-valor">${r.canceladas}</div>
+      <div class="kpi-sub">fora dos totais acima</div></div>` : ""}
+    ${r.em_homologacao ? `<div class="kpi estatico"><div class="kpi-rotulo">Em teste</div>
+      <div class="kpi-valor">${r.em_homologacao}</div>
+      <div class="kpi-sub">homologação, não vale como nota</div></div>` : ""}`;
+
+  els("cabecalho").innerHTML =
+    `<th>Nota</th><th>Empresa</th><th>Obra</th><th>Medição</th><th>Emissão</th>
+     <th class="direita">Bruto</th>` +
+    TRIBUTOS.map(t => `<th class="direita">${t.nome}</th>`).join("") +
+    `<th class="direita">Líquido</th><th class="direita">Recebido</th>
+     <th>Conta</th><th>Situação</th>` +
+    (PODE_EMITIR ? `<th class="sem-exportar"></th>` : "");
+
+  els("resumo").innerHTML = `<b>${NOTAS.length}</b> nota(s), da mais recente para a mais antiga`;
+  els("vazio").classList.toggle("oculto", NOTAS.length > 0);
+  if (!NOTAS.length){
+    els("vazio").innerHTML = "<b>Nenhuma nota nestes filtros</b>" +
+      "A nota nasce ao emitir a partir da medição, ou é registrada aqui quando " +
+      "sai pelo site da prefeitura.";
+  }
+  els("corpo").innerHTML = NOTAS.map(n => `
+    <tr>
+      <td><b>${escapar(n.numero_nota || "—")}</b>
+        <br><small>DPS ${n.numero_dps}/${escapar(n.serie)}${
+          n.ambiente === "HOMOLOGACAO" ? " · teste" : ""}</small></td>
+      <td>${escapar(n.empresa || "—")}</td>
+      <td>${escapar(n.obra || "—")}</td>
+      <td>${escapar(n.medicao || "—")}${n.numero_sp
+        ? `<br><small>${escapar(n.numero_sp)}</small>` : ""}</td>
+      <td>${dataBR(n.emissao)}</td>
+      <td class="direita mono">${moeda(n.valor_bruto)}</td>
+      ${TRIBUTOS.map(t => `<td class="direita mono">${
+        n.retencoes[t.chave] ? moeda(n.retencoes[t.chave]) : "—"}</td>`).join("")}
+      <td class="direita mono">${moeda(n.valor_liquido)}</td>
+      <td class="direita mono">${n.recebimento.valor ? moeda(n.recebimento.valor) : "—"}
+        ${n.recebimento.em ? `<br><small>${dataBR(n.recebimento.em)}</small>` : ""}</td>
+      <td>${escapar(n.recebimento.conta || "—")}</td>
+      <td><span class="selo ${SELO[n.situacao] || ""}">${escapar(n.situacao_nome)}</span>
+        ${n.motivo ? `<br><small>${escapar(n.motivo)}</small>` : ""}</td>
+      ${PODE_EMITIR ? `<td class="sem-exportar">${
+        n.situacao === "EMITIDA"
+          ? `<button class="btn secundario" data-cancelar="${n.id}">Cancelar</button>`
+          : ""}</td>` : ""}
+    </tr>`).join("");
+
+  document.querySelectorAll("[data-cancelar]").forEach(b =>
+    b.addEventListener("click", () => cancelar(Number(b.dataset.cancelar))));
+  botoesDeExportar("exportar");
+}
+
+// -------------------------------------------------------------------------
+// A conferência da numeração
+// -------------------------------------------------------------------------
+async function conferir(){
+  if (!els("f-empresa").value){
+    return aviso("mensagem", "Escolha a empresa: a numeração é por empresa e " +
+                 "série, e conferir 'todas' juntas não quer dizer nada.", "alerta");
+  }
+  const p = new URLSearchParams({empresa_id: els("f-empresa").value});
+  if (els("f-ambiente").value) p.set("ambiente", els("f-ambiente").value);
+  try {
+    const c = (await api("/erp/api/notas-emitidas/conferencia?" + p.toString())).conferencia;
+    els("conferencia").innerHTML = `
+      <div class="aviso ${c.integra ? "ok" : "alerta"}">
+        <b>${escapar(c.empresa)}</b> — série ${escapar(c.serie)},
+        ${c.ambiente === "HOMOLOGACAO" ? "homologação" : "produção"}:
+        ${c.emitidas} emitida(s), maior número ${c.maior_numero},
+        <b>o próximo será o ${c.proximo}</b>.
+        ${c.integra ? "A sequência está inteira." : escapar(c.aviso)}
+        ${c.queimados.length ? `<br><small>Queimados (com motivo): ${
+          c.queimados.map(q => q.numero_dps + " — " + escapar(q.motivo || q.situacao)).join("; ")
+        }</small>` : ""}
+      </div>`;
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// -------------------------------------------------------------------------
+// Registrar a nota que saiu pelo portal, e cancelar
+// -------------------------------------------------------------------------
+async function registrarDoPortal(){
+  const empresas = Array.from(els("f-empresa").options)
+    .filter(o => o.value).map(o => ({valor: o.value, rotulo: o.textContent}));
+  if (!empresas.length){
+    return aviso("mensagem", "Cadastre a empresa antes — a numeração é dela.", "alerta");
+  }
+  const r = await perguntar({
+    titulo: "Registrar nota emitida pelo portal",
+    aviso: "Use isto para a nota que saiu no site da prefeitura. Sem registrar, " +
+           "a conferência acusa buraco na numeração e ninguém sabe por quê.",
+    campos: [
+      {nome: "empresa_id", rotulo: "Empresa", tipo: "select",
+       valor: els("f-empresa").value, opcoes: empresas},
+      {nome: "numero_nota", rotulo: "Número da nota", obrigatorio: true,
+       dica: "O que a prefeitura devolveu, não o da declaração."},
+      {nome: "emissao", rotulo: "Data de emissão", tipo: "date",
+       valor: new Date().toISOString().slice(0, 10)},
+      {nome: "titulo_id", rotulo: "Nº do título (opcional)",
+       dica: "O número interno do título a receber, se já existir."},
+      {nome: "valor_bruto", rotulo: "Valor bruto", tipo: "number"},
+      {nome: "iss", rotulo: "ISS retido", tipo: "number"},
+      {nome: "ir", rotulo: "IR retido", tipo: "number"},
+      {nome: "inss", rotulo: "INSS retido", tipo: "number"},
+      {nome: "pis", rotulo: "PIS retido", tipo: "number"},
+      {nome: "cofins", rotulo: "COFINS retido", tipo: "number"},
+      {nome: "csll", rotulo: "CSLL retido", tipo: "number"},
+      {nome: "observacao", rotulo: "Observação", tipo: "textarea", linhas: 2},
+    ],
+    textoOk: "Registrar",
+  });
+  if (!r) return;
+  try {
+    await api("/erp/api/notas-emitidas/registrar", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        empresa_id: r.empresa_id, numero_nota: r.numero_nota, emissao: r.emissao,
+        titulo_id: r.titulo_id || null, valor_bruto: r.valor_bruto || null,
+        observacao: r.observacao,
+        retencoes: {iss: r.iss, ir: r.ir, inss: r.inss, pis: r.pis,
+                    cofins: r.cofins, csll: r.csll}})});
+    aviso("mensagem", "Nota registrada.", "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function cancelar(id){
+  const nota = NOTAS.find(n => n.id === id);
+  const r = await perguntar({
+    titulo: `Cancelar a nota ${nota ? nota.numero_nota : ""}`,
+    aviso: "O número NÃO volta para a fila. Número de nota fiscal não se apaga — " +
+           "se explica, e é o motivo abaixo que responde ao fisco. O cancelamento " +
+           "no site da prefeitura é à parte: aqui só se registra.",
+    campos: [{nome: "motivo", rotulo: "Motivo do cancelamento", obrigatorio: true,
+              tipo: "textarea", linhas: 3}],
+    textoOk: "Registrar o cancelamento",
+  });
+  if (!r) return;
+  try {
+    await api(`/erp/api/notas-emitidas/${id}/cancelar`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({motivo: r.motivo})});
+    aviso("mensagem", "Cancelamento registrado.", "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// -------------------------------------------------------------------------
+els("dlg-fechar").addEventListener("click", () => els("dlg").close());
+els("btn-conferir").addEventListener("click", conferir);
+if (els("btn-registrar")) els("btn-registrar").addEventListener("click", registrarDoPortal);
+["f-empresa", "f-obra", "f-ambiente", "f-desde", "f-ate"].forEach(id =>
+  els(id).addEventListener("change", carregar));
+document.querySelectorAll('input[name="sit"]').forEach(r =>
+  r.addEventListener("change", carregar));
+els("f-busca").addEventListener("input", carregar);
+els("btn-limpar").addEventListener("click", () => {
+  ["f-empresa", "f-obra", "f-ambiente", "f-desde", "f-ate", "f-busca"]
+    .forEach(id => els(id).value = "");
+  document.querySelector('input[name="sit"][value=""]').checked = true;
+  els("conferencia").innerHTML = "";
+  carregar();
+});
+
+carregarListas().then(carregar);
+</script>
+{% endblock %}

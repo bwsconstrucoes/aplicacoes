@@ -425,7 +425,9 @@ períodos diferentes — e usar a errada dá valor errado com cara de certo.
 3. ✅ **FEITO (09/09/2026) — O quadro financeiro do contrato**, em Obras ›
    "Contratos e medições": uma linha por medição, os totais, e MEDIDO ≠
    FATURADO ≠ RECEBIDO em colunas separadas. O reajuste não consome saldo.
-4. **A tela de controle de notas emitidas**, com exportação.
+4. ✅ **FEITO (09/09/2026) — A tela de controle de notas emitidas**, em
+   Financeiro › "Notas emitidas", com exportação em Excel e PDF, conferência da
+   numeração e registro da nota emitida pelo portal.
 5. **A emissão a partir da medição** — primeiro o modo MANUAL (anexar a nota e
    deixar a IA ler), que não depende de credenciamento nenhum e já entrega
    valor.

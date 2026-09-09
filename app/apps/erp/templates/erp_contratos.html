@@ -36,14 +36,6 @@
 {% endblock %}
 
 {% block conteudo %}
-<style>
-  /* Dinheiro de contrato tem sete dígitos, e no tamanho padrão do quadrinho
-     "R$ 1.850.000,00" transborda a borda do cartão — o número aparece cortado,
-     que é o pior defeito possível numa tela de valor. Aqui o cartão é mais
-     largo e o algarismo um pouco menor. Vale só nesta tela. */
-  #kpis { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
-  #kpis .kpi-valor { font-size: 20px; }
-</style>
 <div id="mensagem"></div>
 
 <div id="lado-lista">
@@ -67,7 +59,7 @@
     <span class="resumo" id="cabecalho-contrato"></span>
   </div>
 
-  <div class="kpis" id="kpis"></div>
+  <div class="kpis kpis-largos" id="kpis"></div>
   <div id="pendencias"></div>
 
   <div class="tabela-wrap">

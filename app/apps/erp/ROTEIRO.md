@@ -241,8 +241,11 @@ Omie não dá conta disso.
       saldo). MEDIDO ≠ FATURADO ≠ RECEBIDO em três colunas separadas, e o
       reajuste NÃO consome saldo do contrato. O indicador de dias entre
       protocolar e receber (item 7) já nasce aqui.
-- [ ] 4. **Tela de controle de notas emitidas**, com exportação para a
-      contabilidade.
+- [x] 4. **Tela de controle de notas emitidas** — FEITO em 09/09/2026.
+      Financeiro › "Notas emitidas": cada tributo em sua coluna (ISS, IR, INSS,
+      PIS, COFINS, CSLL), líquido, recebido com data e conta, conferência da
+      numeração (buraco ≠ queimado), registro da nota que saiu pelo portal da
+      prefeitura, cancelamento com motivo, e exportação em Excel e PDF.
 - [ ] 5. **Emissão a partir da medição, modo MANUAL** — anexar a nota e a IA
       lê. Não depende de credenciamento nenhum e já entrega valor.
 - [ ] 6. **Emissão automática**, com município e endereço virando configuração

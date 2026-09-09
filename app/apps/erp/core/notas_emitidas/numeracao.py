@@ -133,6 +133,11 @@ def confirmar(s: Session, nota_id: int, *, numero_nota: str,
     if not numero:
         raise ErroValidacao("Informe o número que a prefeitura devolveu.")
 
+    # O ponto de salvamento existe para que a recusa desfaça SÓ esta gravação.
+    # Um `rollback()` inteiro levaria junto o que mais estivesse pendente na
+    # mesma transação — a reserva do número, por exemplo — e a tela devolveria
+    # um erro tendo apagado trabalho que a pessoa não pediu para apagar.
+    ponto = s.begin_nested()
     nota.numero_nota = numero
     nota.codigo_verificacao = (codigo_verificacao or "").strip() or None
     nota.chave_acesso = (chave_acesso or "").strip() or None
@@ -145,10 +150,11 @@ def confirmar(s: Session, nota_id: int, *, numero_nota: str,
     except IntegrityError:
         # O índice único pegou: este número já foi registrado antes. É
         # exatamente o erro do modo MANUAL — digitar duas vezes a mesma nota.
-        s.rollback()
+        ponto.rollback()
         raise ErroValidacao(
             f"A nota {numero} já está registrada nesta empresa e série. "
             f"Confira se ela não foi lançada duas vezes.")
+    ponto.commit()
     registrar_evento(s, "nota_emitida", nota.id, "EMITIDA", {
         "numero_dps": nota.numero_dps, "numero_nota": numero,
         "modo": nota.modo}, usuario.id if usuario else None)

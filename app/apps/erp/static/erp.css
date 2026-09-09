@@ -322,6 +322,12 @@ a { color: var(--azul-claro); }
 .kpi.ciano { border-left-color: var(--ciano); }
 .kpi.estatico { cursor: default; }
 .kpi.estatico:hover { transform: none; box-shadow: var(--sombra); }
+/* Quadrinho de tela que mostra dinheiro de CONTRATO (sete dígitos): no
+   tamanho padrão "R$ 1.850.000,00" transborda a borda e o número aparece
+   cortado — o pior defeito possível numa tela de valor. A tela adere pondo
+   `kpis-largos` na div dos quadrinhos; quem não põe continua igual. */
+.kpis.kpis-largos { grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+.kpis-largos .kpi-valor { font-size: 20px; }
 
 /* ============================ CARTÕES ============================ */
 .grade { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }

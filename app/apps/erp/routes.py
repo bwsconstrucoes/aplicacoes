@@ -58,6 +58,7 @@ MODULOS = [
             ("empreitas", "Empreitas", "erp.pagina_empreitas"),
             ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
             ("notas", "Notas fiscais", "erp.pagina_notas"),
+            ("notas_emitidas", "Notas emitidas", "erp.pagina_notas_emitidas"),
             ("receber", "Receber", "erp.pagina_receber"),
             ("relatorios", "Relatórios", "erp.pagina_relatorios"),
             ("importar", "Importar", "erp.pagina_importar"),
@@ -112,7 +113,7 @@ MODULOS = [
 # perguntar por 20 ações a cada carregamento seria desperdício.
 ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  "autorizar_pedido", "solicitar_suprimento", "configurar",
-                 "cruzar_notas", "arquivar", "receber")
+                 "cruzar_notas", "arquivar", "receber", "emitir_nota")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -491,6 +492,14 @@ def pagina_notas():
 def pagina_contratos():
     """O quadro financeiro do contrato — medido, faturado, recebido."""
     return render_template("erp_contratos.html", **_contexto("contratos"))
+
+
+@bp.route("/erp/notas-emitidas")
+@login_obrigatorio
+@permissao("ver_notas_emitidas")
+def pagina_notas_emitidas():
+    """As notas que a BWS emitiu — e o relatório que a contabilidade pede."""
+    return render_template("erp_notas_emitidas.html", **_contexto("notas_emitidas"))
 
 
 @bp.route("/erp/receber")
@@ -4464,6 +4473,109 @@ def api_contrato_quadro(contrato_id: int):
             return jsonify({"ok": True, **svc_quadro.quadro(s, contrato_id)})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+# ---------------------------------------------------------------------------
+# NOTAS EMITIDAS — o controle da numeração e o relatório da contabilidade
+#
+# Tela IRMÃ da de títulos a receber, não a mesma: uma medição pode virar duas
+# notas, e uma nota pode ser cancelada e substituída sem o título mudar.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/notas-emitidas")
+@login_obrigatorio
+@permissao("ver_notas_emitidas")
+def api_notas_emitidas():
+    from app.apps.erp.core.notas_emitidas import listagem as svc
+    def _data(chave):
+        try:
+            return date.fromisoformat(request.args.get(chave) or "")
+        except ValueError:
+            return None
+    with get_session() as s:
+        return jsonify({"ok": True, **svc.listar(
+            s,
+            empresa_id=(int(request.args["empresa_id"])
+                        if request.args.get("empresa_id") else None),
+            obra_id=(int(request.args["obra_id"])
+                     if request.args.get("obra_id") else None),
+            situacao=(request.args.get("situacao") or "").strip().upper(),
+            ambiente=(request.args.get("ambiente") or "").strip().upper(),
+            serie=(request.args.get("serie") or "").strip(),
+            desde=_data("desde"), ate=_data("ate"),
+            busca=(request.args.get("busca") or ""))})
+
+
+@bp.route("/erp/api/notas-emitidas/conferencia")
+@login_obrigatorio
+@permissao("ver_notas_emitidas")
+def api_notas_emitidas_conferencia():
+    """A sequência está inteira? Buraco é diferente de queimado."""
+    from app.apps.erp.core.notas_emitidas import numeracao as svc
+    from app.apps.erp.db.models.cadastros import Empresa
+    try:
+        with get_session() as s:
+            empresa = s.get(Empresa, int(request.args.get("empresa_id") or 0))
+            if empresa is None:
+                raise ErroValidacao("Escolha a empresa para conferir a numeração.")
+            return jsonify({"ok": True, "conferencia": svc.conferir(
+                s, empresa,
+                serie=(request.args.get("serie") or "").strip() or None,
+                ambiente=(request.args.get("ambiente") or "").strip().upper() or None)})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/notas-emitidas/registrar", methods=["POST"])
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_nota_emitida_registrar():
+    """A nota que saiu pelo PORTAL da prefeitura, registrada aqui.
+
+    Sem isto a conferência acusa buraco na numeração e ninguém sabe por quê.
+    """
+    from decimal import Decimal as _Dec
+    from app.apps.erp.core.notas_emitidas import listagem as svc
+    d = request.get_json(silent=True) or {}
+    def _quando():
+        try:
+            return date.fromisoformat(d.get("emissao") or "")
+        except ValueError:
+            return None
+    try:
+        with get_session() as s:
+            nota = svc.registrar_manual(
+                s, empresa_id=int(d.get("empresa_id") or 0),
+                titulo_id=(int(d["titulo_id"]) if d.get("titulo_id") else None),
+                numero_nota=(d.get("numero_nota") or ""),
+                emissao=_quando(),
+                valor_bruto=(_Dec(str(d["valor_bruto"])) if d.get("valor_bruto") else None),
+                retencoes=(d.get("retencoes") or {}),
+                observacao=(d.get("observacao") or ""),
+                usuario=_usuario_logado(s))
+            linha = svc.ler(s, nota)
+            s.commit()
+        return jsonify({"ok": True, "nota": linha})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/notas-emitidas/<int:nota_id>/cancelar", methods=["POST"])
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_nota_emitida_cancelar(nota_id: int):
+    """Cancelar exige MOTIVO — número de nota fiscal não se apaga, se explica."""
+    from app.apps.erp.core.notas_emitidas import listagem as svc
+    from app.apps.erp.core.notas_emitidas import numeracao
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            nota = numeracao.cancelar(s, nota_id, motivo=(d.get("motivo") or ""),
+                                      usuario=_usuario_logado(s))
+            linha = svc.ler(s, nota)
+            s.commit()
+        return jsonify({"ok": True, "nota": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/usuarios", methods=["GET", "POST"])

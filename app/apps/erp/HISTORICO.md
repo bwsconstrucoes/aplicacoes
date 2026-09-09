@@ -1429,6 +1429,58 @@ recortá-lo por obra designada sem mentir no total. Abrir depois é uma linha.
 e a tela percorrida num navegador de ponta a ponta — abrir, classificar,
 protocolar e voltar, sem um erro de JavaScript.
 
+### A tela de controle das notas emitidas — 09/09/2026
+
+Financeiro › **"Notas emitidas"**. É a tela IRMÃ da de títulos a receber, e a
+crítica sobre isso foi o próprio dono quem pediu: *"talvez isso seja a mesma
+coisa que o título a receber, ou não, não sei. Aí você vai fazer essa
+crítica."*
+
+**Não é a mesma coisa, e a diferença é justamente onde dá trabalho:** uma
+medição pode virar DUAS notas (faturamento parcial), e uma nota pode ser
+cancelada e substituída sem o título mudar uma vírgula. Título a receber ainda
+inclui coisa que não é medição e não tem nota nenhuma. Forçar os dois na mesma
+tela esconderia exatamente os casos que precisam aparecer.
+
+**Cada tributo tem SUA coluna** — ISS, IR, INSS, PIS, COFINS, CSLL —, e não vai
+tudo somado num "retido". O motivo é prático: a contabilidade lança ISS numa
+conta e INSS em outra, e do total ninguém volta atrás. É o relatório que ele
+descreveu: *"às vezes a contabilidade precisa gerar um relatório das
+informações — valor da nota, tributos e tal."* A tela exporta em Excel e PDF
+como todas as outras.
+
+**Nota cancelada fica FORA dos totais, mas continua na lista.** Somar cancelada
+com válida é como um relatório fiscal começa a mentir; sumir com ela é como se
+perde o rastro de por que faltou um número na sequência.
+
+**A conferência da numeração** responde à pergunta clássica da fiscalização, e
+separa duas coisas que parecem iguais: **buraco** (número que nunca foi
+reservado — alguém emitiu por fora do ERP) e **queimado** (reservado, não virou
+nota, com o motivo escrito). Buraco é o preocupante.
+
+**Registrar a nota que saiu pelo PORTAL** existe por causa disso: enquanto a
+emissão automática não estiver de pé para as duas empresas, alguém vai emitir
+no site da prefeitura — e se ninguém registrar, a conferência acusa buraco e
+não se sabe por quê.
+
+**Cancelar exige motivo, e o número não volta para a fila.** A prefeitura pode
+ter recebido a declaração e só a resposta ter se perdido; reusar o número daria
+duplicidade do lado dela. Número de nota fiscal não se apaga — se explica.
+
+Um defeito corrigido no caminho: quando o sistema recusava a nota repetida, ele
+desfazia a transação INTEIRA, levando junto o que mais estivesse pendente. Uma
+recusa não pode apagar trabalho que ninguém mandou apagar. Agora desfaz só a
+gravação recusada, e há teste guardando isso.
+
+**Quem vê:** duas ações novas — `ver_notas_emitidas` (larga dentro do
+escritório: é dessa tela que sai o relatório) e `emitir_nota` (estreita:
+registrar e cancelar, só administrador, diretor e financeiro).
+
+**Provado:** 18 testes com banco de verdade
+(`tests/test_notas_emitidas_banco.py`) e a tela percorrida num navegador —
+listar, conferir a numeração, registrar do portal, tentar registrar a mesma
+nota de novo (recusada com a frase certa) e cancelar com motivo.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
