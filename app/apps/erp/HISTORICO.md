@@ -1812,6 +1812,61 @@ arquivo aparecendo na tela, e o aviso nascendo na agenda.
 aparecia no painel que era redesenhado logo em seguida — a frase morria antes
 de ser lida, que é o mesmo que não ter avisado.
 
+### As solicitações passam de 500 — e os números do topo pararam de mentir — 09/09/2026
+
+A tela de Solicitações trazia os **500 títulos mais novos e não dizia**. O
+corte em si era o menor dos três problemas.
+
+**O primeiro: o filtro de situação não alcançava o que era antigo.** Ele era
+aplicado depois, sobre os 500 já trazidos. Filtrar por "bloqueado" não achava
+nada se os 500 mais novos não tivessem nenhum — mesmo havendo um bloqueado
+desde o começo do ano. A pessoa concluía que não havia nenhum. Agora o filtro
+entra na consulta, que é onde filtro mora.
+
+**O segundo, e o mais grave: os quadrinhos do topo somavam só esses 500 e se
+apresentavam como "total".** Uma lista cortada é um incômodo; um total que
+soma metade da base e se chama total é um **número que mente** — e ninguém
+confere um número que o sistema deu. Hoje os oito quadrinhos somam o filtro
+inteiro, e o rótulo diz "no filtro inteiro". Quando você liga um filtro que
+acontece na tela (obra, credor, dedutibilidade), eles voltam a contar o que
+está visível e o rótulo muda para "no que está na tela" — porque a alternativa
+seria mostrar um número que não corresponde à lista embaixo dele.
+
+**O terceiro: as caixinhas do filtro contavam só o carregado.** Uma situação
+sem nenhum registro na página aparecia "zerada", em cinza — o que desencoraja
+o clique justamente quando existem registros mais antigos. Agora a contagem
+vem da base inteira.
+
+**Como a lista cresce agora:** um botão "Carregar mais" que **acrescenta** em
+vez de trocar de página. Acrescentar e não paginar foi escolha: os filtros de
+obra, credor e dedutibilidade acontecem no navegador, sobre o que está
+carregado — trocar de página faria eles enxergarem só a página nova, e o
+resultado seria pior que o corte que estamos consertando.
+
+E a tela **diz sempre onde está**: "Mostrando 200 de 240" quando falta, "todas
+as 240 estão na tela" quando não falta. O pior de uma lista cortada não é o
+corte — é a pessoa não saber que houve corte e decidir achando que viu tudo.
+
+**A regra que ficou escrita** (`core/comum/paginacao.py`): a consulta filtrada
+é montada UMA VEZ e serve às três perguntas — a página, a contagem e as somas.
+Elas não podem divergir porque não existem separadas. É o mesmo princípio do
+escopo de obra: um caminho só. O escopo, aliás, continua valendo nas três — se
+valesse só na lista, o total do topo entregaria o valor de obras que a pessoa
+não pode ver.
+
+⚠️ **Só a tela de Solicitações foi convertida.** As outras listas continuam
+com corte silencioso (Notas fiscais, Notas emitidas, Arquivo, Agenda,
+Conciliação e Extratos em 500; Empreitas, Locações, Despesa com colaborador e
+Movimentações em 300). Nenhuma incomoda no volume de hoje — a de solicitações
+incomodava. Estão listadas no `ROTEIRO.md`, e todas usam o mesmo ajudante
+quando chegar a vez.
+
+**Provado:** 15 testes com banco de verdade (`tests/test_paginacao_banco.py`),
+incluindo os dois defeitos antigos, o escopo por obra valendo nas três
+perguntas e a conferência de que nenhuma página repete ou pula registro. E a
+tela percorrida num navegador com 240 solicitações: carregar mais, chegar ao
+fim, e filtrar por "bloqueado" achando o mais antigo de todos.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1967,11 +2022,10 @@ de ser lida, que é o mesmo que não ter avisado.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **RESOLVIDO em 09/09/2026 — as migrações 042 a 051 foram aplicadas.** O
-   dono publicou e apertou o botão no mesmo momento. ⚠️ **Fica pendente a
-   052 e a 053** (retenção de garantia da empreita e alçada por valor; o
-   certificado digital por empresa), pelo mesmo caminho, na próxima
-   publicação.
+21. **RESOLVIDO em 09/09/2026 — as migrações 042 a 053 foram aplicadas**, em
+   duas publicações no mesmo dia: a 042–051 primeiro, a 052 e a 053 em
+   seguida. O dono publicou e apertou o botão no mesmo momento das duas
+   vezes.
 
    Do que cada uma trouxe, para consulta: 042 a trava contra baixa em
    duplicidade; 043 o documento morando no Drive; 044 o cruzamento de notas;

@@ -1985,35 +1985,28 @@ def api_titulos():
             usuario = _usuario_logado(s)
             from app.apps.erp.core.titulos.aval import pode_ver_dados_pagamento
             ver_pg = pode_ver_dados_pagamento(usuario)
-            itens = svc_titulos.listar(s, busca=busca, limite=_LIMITE_GRADE, usuario=usuario)
+            filtros = {"busca": busca, "status": status, "usuario": usuario}
+            # A PÁGINA e as SOMAS saem da MESMA consulta filtrada. Antes o
+            # filtro de situação era aplicado em Python DEPOIS de trazer os 500
+            # títulos mais novos — filtrar por "bloqueado" não achava nada se
+            # os 500 mais novos não tivessem nenhum —, e as somas do topo
+            # somavam só esses 500 e se apresentavam como "total".
+            pag = svc_titulos.pagina_de_titulos(
+                s, pagina=request.args.get("pagina"),
+                tamanho=request.args.get("tamanho"), **filtros)
+            resumo = svc_titulos.somar_titulos(s, **filtros)
             hoje = date.today()
-            linhas = [_serializar(t, hoje, ver_pg) for t in itens
-                      if not status or t.status.value in status]
+            linhas = [_serializar(t, hoje, ver_pg) for t in pag["itens"]]
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao listar títulos")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
-    limite7 = date.today() + timedelta(days=7)
-    def _soma(f):
-        return round(sum(l["valor_liquido"] for l in linhas if f(l)), 2)
-    resumo = {
-        "quantidade": len(linhas),
-        "total": _soma(lambda l: True),
-        "aguardando": _soma(lambda l: l["status"] == "AGUARDANDO_APROVACAO"),
-        "qtd_aguardando": sum(1 for l in linhas if l["status"] == "AGUARDANDO_APROVACAO"),
-        "bloqueado": _soma(lambda l: l["status"] == "BLOQUEADO"),
-        "qtd_bloqueado": sum(1 for l in linhas if l["status"] == "BLOQUEADO"),
-        "vencendo": _soma(lambda l: l["vencimento"] and
-                          date.fromisoformat(l["vencimento"]) <= limite7 and
-                          l["status"] in _ABERTOS),
-        "qtd_vencendo": sum(1 for l in linhas if l["vencimento"] and
-                            date.fromisoformat(l["vencimento"]) <= limite7 and
-                            l["status"] in _ABERTOS),
-    }
     return jsonify({"ok": True, "titulos": linhas, "resumo": resumo,
-                    "limite_atingido": len(itens) >= _LIMITE_GRADE})
+                    "pagina": {k: pag[k] for k in
+                               ("pagina", "tamanho", "total", "paginas",
+                                "tem_mais", "de", "ate", "resumo")}})
 
 
 def _origem_do_titulo(s, t) -> dict | None:

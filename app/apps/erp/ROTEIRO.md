@@ -408,8 +408,18 @@ que é a estratégia de manter isso rápido?"*. A resposta longa está no
       o serviço usa. Para a decisão de gastar deixar de ser palpite.
 - [ ] Números do topo das telas pré-calculados, quando as somas começarem a
       pesar. Não antes.
-- [ ] Listas do ERP com "próxima página" — hoje elas param em 500 registros e
-      não há como alcançar o que é mais antigo sem filtrar.
+- [~] Listas do ERP com "próxima página". **Solicitações: FEITO em 09/09/2026**
+      — "carregar mais" que acrescenta, a linha dizendo "200 de 1.340", e os
+      quadrinhos do topo somando o FILTRO INTEIRO em vez da página. Dois
+      defeitos foram achados aí e corrigidos: o filtro de situação era aplicado
+      depois do corte (não achava o registro antigo) e as somas do topo
+      mentiam.
+      **Falta nas demais**, todas ainda com corte silencioso: Notas fiscais,
+      Notas emitidas, Arquivo, Agenda, Conciliação e Extratos (500);
+      Empreitas, Locações, Despesa com colaborador, Movimentações e o painel
+      "por pedido" (300). Nenhuma delas incomoda no volume de hoje — a de
+      solicitações incomodava — e todas usam o mesmo `core/comum/paginacao.py`
+      quando chegar a vez.
 
 ### Assistente virtual para os colaboradores — ideia registrada em 08/09/2026
 
