@@ -434,6 +434,11 @@ def _consultar_falso(sql, params=()):
                     ("Obra Um", "SÓCIO B", 2000.0, 0.0, 1)]
         return [("SÓCIO A", 5000.0, 1000.0, 3),                 # por sócio
                 ("SÓCIO B", 2000.0, 0.0, 1)]
+    # os departamentos que parecem administracao, para a tela do rateio ja
+    # sugerir a matriz. Uma coluna so.
+    if "ILIKE '%BWS%'" in sql:
+        return [("BWS Construções",), ("BWSNE",)]
+
     # o resultado por obra do quadro "Resultado x dividendos". Duas colunas: a
     # obra e a soma. Reconhecer só pelo TRIM não serve mais — desde 08/09/2026 o
     # rótulo "(não apropriado)" é uma constante usada em várias consultas, e

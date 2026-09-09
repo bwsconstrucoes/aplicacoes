@@ -117,6 +117,7 @@ Uma de cada vez: a segunda chamada é recusada em vez de duplicar o trabalho.
 | Necessidade de Caixa | um conjunto de obras se paga sozinho, ou alguém segurou |
 | Prestação de Contas | quanto do resultado cabe a cada sócio |
 | Explorador *(em Configurações)* | procura em **toda** a base — inclusive fora do DRE — e altera a classificação no OMIE |
+| Rateio da Administração *(em Configurações)* | simula como o custo da matriz se divide entre dois lados, e aloca os juros do banco a quem ficou negativo |
 | Cenários de rateio | e se a regra fosse outra? o efeito obra a obra, antes de gravar |
 
 Todas exportam para **Excel de verdade** (`.xlsx`), com cabeçalho fixo, filtro

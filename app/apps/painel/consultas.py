@@ -1514,3 +1514,98 @@ def departamentos_para_alterar() -> list[dict]:
             "SELECT DISTINCT ccoddep, cdesdep FROM rateio "
             " WHERE COALESCE(TRIM(cdesdep),'') <> '' ORDER BY cdesdep")]
     return _lembrando(("departamentos_para_alterar",), calcular)
+
+
+# ---------------------------------------------------------------------------
+# Rateio da Administração — as séries mensais que a simulação consome
+# ---------------------------------------------------------------------------
+# Tudo aqui é REGIME DE CAIXA (só o que foi pago ou recebido), porque a pergunta
+# da tela é sobre necessidade de caixa: quem ficou negativo, quando, e quanto
+# disso o banco cobriu em juros.
+
+def receita_mensal_por_obra() -> list[tuple]:
+    """Receita recebida por mês × obra, sem o imposto retido na fonte.
+
+    É um dos dois critérios de rateio: quem faturou mais no período carrega
+    mais da administração."""
+    sql = f"""
+        SELECT date_trunc('month', data)::date, {OBRA_OU_SEM},
+               SUM({EXECUTADO})
+          FROM fato
+         WHERE {_BASE_CAIXA} AND analise = 'DRE'
+           AND tipo = ? AND NOT ({RETIDO})
+         GROUP BY 1, 2 ORDER BY 1, 2"""
+    return [(m, o, float(v or 0)) for m, o, v in consultar(sql, [REC])]
+
+
+def pessoal_mensal_por_obra(grupo_pessoal: str) -> list[tuple]:
+    """Despesa com pessoal paga por mês × obra, em módulo.
+
+    O outro critério: obra com mais gente consome mais estrutura."""
+    sql = f"""
+        SELECT date_trunc('month', data)::date, {OBRA_OU_SEM},
+               ABS(SUM({EXECUTADO_COM_ENCARGO}))
+          FROM fato
+         WHERE {_BASE_CAIXA} AND analise = 'DRE' AND tipo = ?
+           AND TRIM(COALESCE(grupo,'')) = ?
+         GROUP BY 1, 2 ORDER BY 1, 2"""
+    return [(m, o, float(v or 0)) for m, o, v in consultar(sql, [PAG, grupo_pessoal])]
+
+
+def custo_da_matriz_por_categoria(depto_matriz: str) -> list[dict]:
+    """O que a matriz gastou, por categoria — para escolher o que suprimir do
+    bolo antes de ratear."""
+    sql = f"""
+        SELECT COALESCE(NULLIF(TRIM(categoria),''), '(sem categoria)'),
+               SUM({EXECUTADO_COM_ENCARGO})
+          FROM fato
+         WHERE {_BASE_CAIXA} AND analise = 'DRE' AND tipo = ?
+           AND {OBRA_OU_SEM} = ?
+         GROUP BY 1 HAVING ABS(SUM({EXECUTADO_COM_ENCARGO})) > 0.005
+         ORDER BY SUM({EXECUTADO_COM_ENCARGO}) ASC"""
+    return [{"categoria": c, "valor": float(v or 0)}
+            for c, v in consultar(sql, [PAG, depto_matriz])]
+
+
+def matriz_mensal(depto_matriz: str, categoria_juros: str,
+                  suprimidas=()) -> list[tuple]:
+    """Despesa e receita da matriz, mês a mês, já sem os juros de empréstimo e
+    sem as categorias suprimidas.
+
+    Os juros saem daqui porque eles NÃO são rateados pelo critério: são
+    alocados a quem estava com o caixa negativo, que é outra conta."""
+    fora = [categoria_juros] + [c for c in suprimidas if c]
+    sql = f"""
+        SELECT date_trunc('month', data)::date,
+               SUM(CASE WHEN tipo = ? AND NOT (TRIM(COALESCE(categoria,'')) = ANY(?))
+                        THEN {EXECUTADO_COM_ENCARGO} ELSE 0 END),
+               SUM(CASE WHEN tipo = ? THEN {EXECUTADO} ELSE 0 END)
+          FROM fato
+         WHERE {_BASE_CAIXA} AND analise = 'DRE'
+           AND {OBRA_OU_SEM} = ?
+         GROUP BY 1 ORDER BY 1"""
+    return [(m, float(d or 0), float(r or 0))
+            for m, d, r in consultar(sql, [PAG, fora, REC, depto_matriz])]
+
+
+def juros_de_emprestimo_mensal(categoria_juros: str) -> list[tuple]:
+    """Os juros de empréstimo pagos por mês, em QUALQUER departamento.
+
+    Eles não pertencem a uma obra: são o preço de o caixa da empresa ter ficado
+    negativo, e a tela os aloca a quem cavou o buraco."""
+    sql = f"""
+        SELECT date_trunc('month', data)::date, SUM({EXECUTADO_COM_ENCARGO})
+          FROM fato
+         WHERE {_BASE_CAIXA} AND tipo = ?
+           AND TRIM(COALESCE(categoria,'')) = ?
+         GROUP BY 1 ORDER BY 1"""
+    return [(m, float(v or 0)) for m, v in consultar(sql, [PAG, categoria_juros])]
+
+
+def departamentos_administrativos() -> list[str]:
+    """As obras cujo nome parece de administração — para a tela já sugerir a
+    matriz em vez de fazer procurar numa lista de 174."""
+    return [d for (d,) in consultar(
+        f"SELECT DISTINCT {OBRA_OU_SEM} FROM fato "
+        " WHERE departamento ILIKE '%BWS%' OR departamento ILIKE '%CONS%' "
+        "    OR departamento ILIKE '%ADM%' ORDER BY 1")]

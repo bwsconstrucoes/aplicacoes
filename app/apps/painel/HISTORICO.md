@@ -132,6 +132,32 @@ seleção não virar um estrago de mil títulos antes de alguém perceber.
 foi testada contra a API real do OMIE. O protocolo é **ensaio → UM título
 conferido no OMIE → lote**, e está escrito na própria tela.
 
+**Item 4 — Rateio da Administração.** Simulação: como o custo da matriz se
+divide entre dois lados da empresa, mês a mês. **Duas repartições diferentes**,
+e confundi-las seria o erro caro:
+
+- o **custo da matriz** vai pelo CRITÉRIO (faturamento ou pessoal, numa janela
+  de meses): quem produziu mais carrega mais estrutura;
+- os **juros do banco** vão pelo DÉFICIT: quem estava com o caixa negativo
+  naquele mês. Juros não é estrutura, é o preço de faltar dinheiro.
+
+Sem circularidade: o déficit que decide quem paga os juros é medido **antes**
+dos juros. Há teste exigindo isso.
+
+A matriz fica fora dos dois lados — ela é o bolo, não um pedaço dele — e o bolo
+nunca vira positivo: matriz que num mês recebeu mais do que gastou não
+distribui lucro, e uma sobra dessas viraria caixa fantasma nas obras.
+
+Reusa `pesos_do_conjunto` e `meses_do_periodo` da Necessidade de Caixa, como o
+próprio documento sugere. Também fora do menu, em Configurações.
+
+**Conferido com dado montado, na tela:** matriz de −20.000/mês por 12 meses,
+CASA faturando 90.000 e PONTE 30.000. O critério manda 75% do bolo para A
+(−180.000) e 25% para B (−60.000). Mas A nunca ficou negativa e B ficou nos 12
+meses — então **100% dos juros foram para B**, contra os 75% que o critério
+mandaria. É exatamente a distinção que a tela existe para mostrar, e ela
+apareceu certa na imagem.
+
 ### 08/09/2026 — os juros que sumiam do resultado
 
 O dono comparou duas telas da mesma obra: **Visão Geral R$ 931.718,04** contra

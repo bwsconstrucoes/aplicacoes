@@ -747,6 +747,8 @@ def test_o_explorador_nao_esta_no_menu_principal(base_para_explorar, monkeypatch
     cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
     config = cliente.get("/painel/configuracoes").get_data(as_text=True)
     assert "/painel/explorador" in config, "mas tem de dar para chegar nela"
+    # o mesmo vale para o Rateio da Administracao, pelo mesmo motivo
+    assert "/painel/rateio-administracao" in config
 
 
 def test_o_explorador_exige_login(base_para_explorar, monkeypatch):
