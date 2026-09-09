@@ -1622,6 +1622,72 @@ contrato, gerar o reajuste de uma medição com valor editado, ver o título
 nascer correlacionado e o quadro somar certo, lançar um mês do índice à mão, e
 tentar buscar no Banco Central com a rede bloqueada.
 
+### A Agenda do ERP — 09/09/2026
+
+Migração **051**. Está em **Obras › "Agenda"**, e o número aparece na porta de
+entrada do ERP.
+
+**Por que ela existe.** Quatro coisas construídas antes dela sabiam calcular a
+própria data e não tinham onde AVISAR: o aniversário do reajuste da obra, a
+conferência mensal dos equipamentos locados, o vencimento das certidões e o fim
+da vigência do contrato. Um alerta que mora dentro da tela que a pessoa só abre
+quando já lembrou do assunto não é alerta, é enfeite. O que faltava era um
+lugar que se abre de manhã.
+
+**Cada aviso tem prazo próprio, e cada prazo tem motivo:**
+
+| Assunto | Avisa antes | Por quê |
+|---|---|---|
+| Aniversário de reajuste | 45 dias | dá tempo de juntar índice, calcular e protocolar |
+| Fim da vigência | 60 dias | aditivo de prazo não se pede na véspera |
+| Certidão | o que o tipo mandar | federal se tira no dia; alvará leva semanas |
+| Conferência de locação | no mês | a resposta é sobre aquele mês |
+
+**O aviso deduzido é RECALCULADO, não acumulado.** Cada um tem uma chave
+estável, então sincronizar dez vezes no mesmo dia não empilha dez avisos — e o
+que deixou de valer (certidão renovada, contrato encerrado) **some sozinho**.
+Isso não é detalhe: agenda que acumula aviso velho é agenda que ninguém abre, e
+uma agenda em que não se confia é pior que nenhuma, porque dá a sensação de que
+alguém está olhando.
+
+**Três coisas nunca somem, cada uma por um motivo diferente:** o RESOLVIDO é
+histórico (quem tratou, quando, e o que escreveu); o DISPENSADO é decisão — se
+voltasse, a pessoa dispensaria de novo, para sempre; e a ANOTAÇÃO manual
+ninguém deduziu, então ninguém pode deduzir que sumiu.
+
+**Dispensar exige motivo.** Três meses depois, "não se aplica" sem explicação é
+indistinguível de esquecimento — e é justamente o que alguém vai querer
+entender quando o problema aparecer.
+
+**Só a certidão MAIS NOVA de cada tipo conta.** A anterior vencida é histórico;
+avisar sobre ela seria avisar sobre um problema já resolvido.
+
+**Um gerador com defeito não derruba a agenda inteira** — o resto dos avisos
+continua valendo e a falha fica dita.
+
+**Dois defeitos achados enquanto eu olhava a tela**, e os dois valem a pena
+registrar porque a classe se repete:
+
+1. **A opção "ver também o que vem depois" não mostrava nada.** Os geradores
+   filtravam pela janela de aviso, então o que ainda não era hora nem chegava
+   a existir. Corrigido invertendo a responsabilidade: os geradores descrevem o
+   calendário INTEIRO e a leitura decide o que aparece. É o que transforma isto
+   num calendário em vez de uma caixa de alarmes.
+2. **A recusa do servidor custava o que a pessoa tinha digitado.** Dispensar
+   sem motivo era recusado (certo) com a janela já fechada (errado): a mensagem
+   aparecia atrás e quem escreveu meia frase começava do zero. Agora a janela
+   volta preenchida, com o erro escrito em cima.
+
+**Provado:** 26 testes com banco de verdade (`tests/test_agenda_banco.py`) e a
+tela percorrida num navegador contra os dados de demonstração — que já trouxe
+três conferências de locação em atraso e um certificado de FGTS vencendo em
+sete dias, sem ninguém cadastrar nada para o teste.
+
+⚠️ **A sincronização roda ao abrir a tela da agenda.** Hoje são quatro
+consultas curtas e o custo não aparece; se um dia pesar, ela vira tarefa
+separada — está no roteiro, junto com o resto do trabalho pesado que precisa
+sair das telas.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1777,7 +1843,7 @@ tentar buscar no Banco Central com a rede bloqueada.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 050**,
+21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 051**,
    assim que o ramo entrar na `main`. A 042 é a trava contra baixa em
    duplicidade; sem ela, anexar comprovante pela tela dá erro. A 043 abre
    espaço para o documento morar no Drive; sem ela, anexar qualquer documento
@@ -1786,8 +1852,8 @@ tentar buscar no Banco Central com a rede bloqueada.
    empresa, a 048 o controle da numeração das notas e a 049 o tipo da medição,
    a correlação do reajuste e o protocolo; sem elas as telas de Notas fiscais,
    Arquivo, Configurações, Empresas e Contratos e medições não carregam. A 050
-   traz a data-base do reajuste e a tabela do INCC. É o mesmo botão de sempre,
-   em Configurações.
+   traz a data-base do reajuste e a tabela do INCC, e a 051 a agenda de
+   obrigações. É o mesmo botão de sempre, em Configurações.
 
 23. **Criar a pasta do Drive e colar o endereço** em Configurações › "Onde
    ficam os documentos", apertar "Testar a pasta" e só então ligar a chave.

@@ -121,6 +121,19 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "ver_notas_emitidas": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
                            P.GESTOR_OBRA, P.CONSULTA},
     "emitir_nota":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
+    # A agenda é LARGA de propósito: quase todo perfil tem alguma obrigação com
+    # data (o administrativo da obra responde a conferência de equipamento, o
+    # DP tem documento vencendo, o financeiro tem o reajuste). Uma agenda que
+    # só o administrador enxerga não avisa ninguém — e o que cada um VÊ dentro
+    # dela continua limitado pelo escopo de obra, não por esta ação.
+    "ver_agenda":      {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA},
+    # Marcar como resolvido é afirmação com nome e data. Fica fora de CONSULTA
+    # — quem só olha não resolve.
+    "tratar_agenda":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                        P.DEPARTAMENTO_PESSOAL},
 }
 
 # Ações que uma pessoa ganha de graça por já ter outra.
@@ -143,6 +156,7 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     # Quem emite enxerga a própria tela — do contrário marcar alguém como
     # emissor e ele não conseguir abrir a lista seria uma armadilha.
     "ver_notas_emitidas": ("emitir_nota", "ver_contratos"),
+    "ver_agenda": ("tratar_agenda",),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -179,6 +193,8 @@ ACAO_ROTULOS = {
     "ver_contratos":        "Ver o quadro financeiro dos contratos",
     "ver_notas_emitidas":   "Ver as notas emitidas contra o cliente",
     "emitir_nota":          "Registrar e cancelar nota emitida",
+    "ver_agenda":           "Ver a agenda de obrigações",
+    "tratar_agenda":        "Resolver, dispensar e anotar na agenda",
 }
 
 ROTULOS = {

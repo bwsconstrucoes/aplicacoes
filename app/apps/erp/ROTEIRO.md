@@ -129,9 +129,12 @@
       cabe na tabela
 - [ ] **Encadeamento**: obra → cadastro da obra; conta → plano; credor →
       cadastro; compra → pedido
-- [ ] **Agenda do ERP**: calendário de obrigações com alerta para não esquecer
-      — QUATRO coisas já dependem dela: reajuste de obra, conferência mensal de
-      locação, certificado digital vencendo e agora vencimento de certidão
+- [x] **Agenda do ERP** — FEITA em 09/09/2026 (migração 051). Obras › "Agenda":
+      aniversário de reajuste, conferência mensal de locação, vencimento de
+      certidão e fim da vigência do contrato, num lugar só, mais a anotação
+      manual. O aviso deduzido é RECALCULADO (some quando deixa de valer);
+      resolvido, dispensado e anotação nunca somem. O número aparece na porta
+      de entrada. Falta ligar o **certificado digital** quando ele existir.
 - [ ] **BeeVale**: geração das informações (existe no spsbd)
 - [ ] **Auditoria**: as checagens do spsbd que ainda não vieram
 - [ ] **Ratear**: rateio por categoria (rateio por obra já funciona no lançamento)
@@ -153,7 +156,7 @@
 - [x] GESTÃO DE OBRAS como área própria (aba Obras): painel com contrato
       vigente, recebido, gasto e saldo; fases com histórico; contrato e
       aditivos; tributação com simulador; documentos; movimento; auditoria
-- [ ] Obra — falta: alerta de reajuste na agenda (o painel já sinaliza)
+- [x] Obra — alerta de reajuste na agenda: FEITO em 09/09/2026
 - [x] ~~Integrar com o módulo emissaonf~~ — **RETOMADO em 09/09/2026 pelo
       dono**, com desenho próprio: ver `MEDICOES_E_NOTAS.md` e a fila acima.
       Deixou de estar "em espera".

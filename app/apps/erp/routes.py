@@ -71,6 +71,7 @@ MODULOS = [
         "abas": [
             ("obras", "Painel de obras", "erp.pagina_obras"),
             ("contratos", "Contratos e medições", "erp.pagina_contratos"),
+            ("agenda", "Agenda", "erp.pagina_agenda"),
         ],
     },
     {
@@ -113,7 +114,8 @@ MODULOS = [
 # perguntar por 20 ações a cada carregamento seria desperdício.
 ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  "autorizar_pedido", "solicitar_suprimento", "configurar",
-                 "cruzar_notas", "arquivar", "receber", "emitir_nota")
+                 "cruzar_notas", "arquivar", "receber", "emitir_nota",
+                 "tratar_agenda")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -392,9 +394,22 @@ def pagina_titulos():
 @login_obrigatorio
 @permissao("ver_erp")
 def pagina_inicio():
-    """Porta de entrada: escolha do módulo."""
+    """Porta de entrada: escolha do módulo, e o que tem prazo."""
+    # A contagem da agenda é consulta curta e NÃO sincroniza: a porta de
+    # entrada é a tela mais visitada do ERP, e recalcular tudo aqui pagaria o
+    # preço em toda visita. Quem sincroniza é a própria tela da agenda.
+    # Se a migração 051 ainda não rodou, a porta de entrada abre do mesmo
+    # jeito — ela não pode depender do que veio depois dela.
+    agenda = {}
+    try:
+        from app.apps.erp.core.agenda import service as svc_agenda
+        with get_session() as s:
+            agenda = svc_agenda.contagem(s)
+    except Exception:
+        logger.warning("ERP/agenda: contagem indisponível na tela de início "
+                       "(migração 051 pendente?)")
     return render_template("erp_inicio.html", modulos=MODULOS, modulo=None,
-                           abas=[], aba_ativa="",
+                           abas=[], aba_ativa="", agenda=agenda,
                            usuario_nome=session.get("erp_usuario_nome", ""),
                            usuario_perfil=session.get("erp_usuario_perfil", ""),
                            migracoes_pendentes=_migracoes_pendentes())
@@ -492,6 +507,14 @@ def pagina_notas():
 def pagina_contratos():
     """O quadro financeiro do contrato — medido, faturado, recebido."""
     return render_template("erp_contratos.html", **_contexto("contratos"))
+
+
+@bp.route("/erp/agenda")
+@login_obrigatorio
+@permissao("ver_agenda")
+def pagina_agenda():
+    """O calendário de obrigações — reajuste, certidão, locação e contrato."""
+    return render_template("erp_agenda.html", **_contexto("agenda"))
 
 
 @bp.route("/erp/notas-emitidas")
@@ -4762,6 +4785,80 @@ def api_medicao_gerar_reajuste(titulo_id: int):
             s.commit()
         return jsonify({"ok": True, "medicao": linha})
     except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# AGENDA — o calendário de obrigações
+#
+# Quatro coisas construídas antes dela esperavam um lugar para avisar:
+# aniversário de reajuste, conferência de locação, certidão vencendo e fim da
+# vigência do contrato. A sincronização é recalculada, não acumulada.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/agenda")
+@login_obrigatorio
+@permissao("ver_agenda")
+def api_agenda_obrigacoes():
+    from app.apps.erp.core.agenda import service as svc
+    with get_session() as s:
+        # Sincroniza ao abrir: agenda que só atualiza no botão é agenda
+        # desatualizada, e o botão é justamente o que ninguém aperta.
+        if request.args.get("sincronizar", "1") != "0":
+            svc.sincronizar(s)
+            s.commit()
+        return jsonify({"ok": True, **svc.listar(
+            s,
+            situacao=(request.args.get("situacao") or "ABERTO").strip().upper(),
+            origem=(request.args.get("origem") or "").strip().upper(),
+            obra_id=(int(request.args["obra_id"]) if request.args.get("obra_id") else None),
+            incluir_futuros=request.args.get("futuros") == "1")})
+
+
+@bp.route("/erp/api/agenda/<int:evento_id>", methods=["POST", "DELETE"])
+@login_obrigatorio
+@permissao("tratar_agenda")
+def api_agenda_evento(evento_id: int):
+    """Resolver, dispensar (com motivo), reabrir — ou apagar a anotação."""
+    from app.apps.erp.core.agenda import service as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "DELETE":
+                svc.apagar_manual(s, evento_id, usuario=usuario)
+                s.commit()
+                return jsonify({"ok": True})
+            acao = (d.get("acao") or "resolver").strip().lower()
+            if acao == "reabrir":
+                svc.reabrir(s, evento_id, usuario=usuario)
+            else:
+                svc.resolver(s, evento_id, observacao=(d.get("observacao") or ""),
+                             dispensar=(acao == "dispensar"), usuario=usuario)
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/agenda/anotar", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_agenda")
+def api_agenda_anotar():
+    """A anotação que ninguém deduz: 'entregar a declaração no dia 20'."""
+    from app.apps.erp.core.agenda import service as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            svc.criar_manual(
+                s, titulo=(d.get("titulo") or ""),
+                quando=date.fromisoformat(d.get("quando") or ""),
+                detalhe=(d.get("detalhe") or ""),
+                avisar_dias=int(d.get("avisar_dias") or 7),
+                obra_id=(int(d["obra_id"]) if d.get("obra_id") else None),
+                usuario=_usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True})
+    except (ErroValidacao, ValueError) as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 

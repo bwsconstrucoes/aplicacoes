@@ -1164,3 +1164,38 @@ class MedicaoTipo(Base):
     ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+
+
+class AgendaEvento(Base):
+    """Uma obrigação com data, no calendário do ERP (migração 051).
+
+    O evento GERADO tem uma `chave` estável, e é por ela que a sincronização
+    sabe que aquele aviso já existe. Rodar dez vezes no mesmo dia não cria dez
+    avisos iguais; e o que deixou de valer — certidão renovada, contrato
+    encerrado — some sozinho. Agenda que acumula aviso velho é agenda que
+    ninguém abre.
+
+    `quando` e `avisar_em` são datas diferentes de propósito: certidão que vence
+    em noventa dias não pode ocupar a agenda de hoje, e reajuste avisado no
+    próprio dia já é tarde.
+    """
+    __tablename__ = "agenda_eventos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    chave: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    origem: Mapped[str] = mapped_column(Text, nullable=False)
+    titulo: Mapped[str] = mapped_column(Text, nullable=False)
+    detalhe: Mapped[Optional[str]] = mapped_column(Text)
+    quando: Mapped[date] = mapped_column(Date, nullable=False)
+    avisar_em: Mapped[date] = mapped_column(Date, nullable=False)
+    obra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("obras.id"))
+    empresa_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("empresas.id"))
+    link: Mapped[Optional[str]] = mapped_column(Text)
+    situacao: Mapped[str] = mapped_column(Text, nullable=False, default="ABERTO")
+    resolvido_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    resolvido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
