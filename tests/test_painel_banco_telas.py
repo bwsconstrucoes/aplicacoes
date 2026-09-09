@@ -617,3 +617,143 @@ def test_o_analitico_ja_contava_e_continua_contando(base_com_juros):
     from app.apps.painel import consultas
     dados = consultas.analitico_despesas(consultas.Filtros())
     assert reais(dados["total"]) == DESPESA_CERTA
+
+
+# ---------------------------------------------------------------------------
+# Explorador de lançamentos
+# ---------------------------------------------------------------------------
+# Vindo do painel Streamlit. É a tela de SANEAMENTO: ela olha a base inteira,
+# não só o DRE, porque o erro que se procura quase sempre é o lançamento estar
+# na análise errada.
+BASE_PARA_EXPLORAR = [
+    _linha_de_fato(codigo_lancamento=701, analise="DRE", categoria="Serviços",
+                   codigo_categoria="1.01.01", departamento="CASA",
+                   razao_social="FORNECEDOR X", pago_recebido=-100),
+    # aporte lançado fora do DRE — é o tipo de coisa que se procura aqui
+    _linha_de_fato(codigo_lancamento=702, analise="Fluxo de Caixa",
+                   categoria="Aporte de Sócio", codigo_categoria="2.02.02",
+                   departamento="", projeto="", razao_social="SOCIO A",
+                   pago_recebido=5000),
+    # transferência entre contas: fica de fora até alguém pedir
+    _linha_de_fato(codigo_lancamento=703, analise="TRF",
+                   categoria="Transferência", codigo_categoria="9.99",
+                   razao_social="BANCO", pago_recebido=-7000),
+]
+
+
+@pytest.fixture()
+def base_para_explorar(painel_no_banco):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    colunas = list(BASE_PARA_EXPLORAR[0].keys())
+    marcas = ",".join(["?"] * len(colunas))
+    with conexao() as conn:
+        conn.execute("TRUNCATE TABLE fato")
+        conn.executemany(
+            f"INSERT INTO fato ({', '.join(colunas)}) VALUES ({marcas})",
+            [tuple(l[c] for c in colunas) for l in BASE_PARA_EXPLORAR])
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+def _codigos(pedido):
+    from app.apps.painel import consultas
+    base = {"tipo": "", "analises": [], "grupos": [], "categorias": [],
+            "obras": [], "projetos": [], "contas": [], "situacoes": [],
+            "busca": "", "com_trf": False, "de": "", "ate": ""}
+    base.update(pedido)
+    return {l["codigo_lancamento"] for l in consultas.explorar(base)["linhas"]}
+
+
+def test_o_explorador_enxerga_fora_do_dre(base_para_explorar):
+    """É a diferença desta tela para todas as outras: ela vê o Fluxo de Caixa.
+    Sem isso não há como achar o aporte lançado no lugar errado."""
+    assert _codigos({"busca": "SOCIO"}) == {702}
+
+
+def test_a_transferencia_so_aparece_quando_alguem_pede(base_para_explorar):
+    """Transferência é dinheiro trocando de conta da própria empresa: ela dobra
+    qualquer soma e polui a busca."""
+    assert 703 not in _codigos({"busca": "BANCO"})
+    assert _codigos({"busca": "BANCO", "com_trf": True}) == {703}
+
+
+def test_procurar_pelo_titulo_sem_apropriacao(base_para_explorar):
+    """O caso de uso que a tela existe para resolver: achar o que ficou sem
+    obra. É por isso que o rótulo tem de ser um só em todo o painel."""
+    from app.apps.painel import consultas
+    achados = _codigos({"obras": [consultas.SEM_OBRA], "com_trf": True})
+    assert achados == {702}
+
+
+def test_a_faixa_de_data_deixa_passar_quem_nao_tem_data(base_para_explorar):
+    """Ao contrário do Analítico: aqui lançamento sem data é justamente um dos
+    que se procura, e escondê-lo esconderia o problema."""
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET data = NULL WHERE codigo_lancamento = 701")
+        conn.commit()
+    assert 701 in _codigos({"de": "2025-01-01", "ate": "2025-12-31"})
+
+
+def test_os_totais_separam_linha_de_titulo(base_para_explorar):
+    """Um título rateado em três obras vira três linhas: dizer que são três
+    títulos enganaria quem for alterar."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("INSERT INTO fato (codigo_lancamento, tipo, analise,"
+                     " situacao, departamento, pago_recebido, a_pagar_receber,"
+                     " juros, multa) VALUES (701,'2. Contas a Pagar','DRE',"
+                     " 'Pago','PREDIO',-50,0,0,0)")
+        conn.commit()
+    consultas.esquecer_listas()
+    dados = consultas.explorar({"busca": "", "analises": ["DRE"], "tipo": "",
+                                "grupos": [], "categorias": [], "obras": [],
+                                "projetos": [], "contas": [], "situacoes": [],
+                                "com_trf": False, "de": "", "ate": ""})
+    assert dados["quantos"] == 2 and dados["titulos"] == 1
+
+
+def test_a_tela_do_explorador_abre_e_procura(base_para_explorar, monkeypatch):
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+
+    # sem filtro nenhum, ela não varre a base: pede um filtro
+    vazia = cliente.get("/painel/explorador").get_data(as_text=True)
+    assert "Escolha ao menos um filtro" in vazia
+
+    html = cliente.get("/painel/explorador?busca=SOCIO").get_data(as_text=True)
+    assert "SOCIO A" in html
+    assert "Fluxo de Caixa" in html
+
+
+def test_o_explorador_nao_esta_no_menu_principal(base_para_explorar, monkeypatch):
+    """O dono pediu explicitamente: tela de manutenção não fica exposta ao lado
+    dos relatórios. Chega-se a ela por Configurações."""
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.apps.painel.web import ABAS
+    assert not any("explorador" in rota for _, _, rota in ABAS)
+
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    cliente = app.test_client()
+    cliente.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    config = cliente.get("/painel/configuracoes").get_data(as_text=True)
+    assert "/painel/explorador" in config, "mas tem de dar para chegar nela"
+    # o mesmo vale para o Rateio da Administracao, pelo mesmo motivo
+    assert "/painel/rateio-administracao" in config
+
+
+def test_o_explorador_exige_login(base_para_explorar, monkeypatch):
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    assert app.test_client().get("/painel/explorador").status_code == 302

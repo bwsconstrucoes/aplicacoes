@@ -80,6 +80,84 @@ alguém abrir a tela publicada:
 
 </details>
 
+### 08–09/09/2026 — a passagem do painel Streamlit
+
+O dono continuou evoluindo o painel Streamlit depois que a conversão começou, e
+trouxe um documento de passagem com o que foi feito lá de 04 a 08/09. Ele pediu
+para consolidar tudo aqui, seguindo os quatro itens sem parar.
+
+**O que já estava pronto aqui** (conferido antes de refazer): a seção 5 inteira
+do documento — a Necessidade de Caixa, com caixa reconstruído, saldo inicial,
+leitura automática, composição dos conjuntos e empréstimo tomado no mês.
+
+**A pendência 4.1 dele existia aqui também.** Rótulo começando com "=" vira
+FÓRMULA no Excel: "= RESULTADO", "= Receita Líquida" e "= Total
+Custos/Despesas" chegavam na planilha do DRE como fórmula inválida, mostrando
+erro no lugar do rótulo — justamente nas três linhas que se procura primeiro.
+Corrigido, e vale para +, − e @ pelo mesmo motivo.
+
+**Item 1 — o código da categoria e um rótulo só.** A `categoria` do fato é a
+descrição; para ALTERAR no OMIE é preciso o código, que existia no espelho e
+parava ali. Migração 007, com a marca `REFAZER-O-FATO`. E os cinco literais
+"(sem obra)" viraram uma constante `SEM_OBRA = "(não apropriado)"` — é por esse
+rótulo que se procura o que precisa ser saneado, e dois nomes para a mesma
+coisa fariam a busca não achar nada.
+
+**Item 2 — o Explorador.** A diferença dele para todas as outras telas: olha a
+base INTEIRA, não só o DRE. É assim que se acha o lançamento na análise errada,
+o aporte lançado como despesa e o título sem apropriação. **Fora do menu
+principal**, a pedido do dono: *"uma tela mais escondida, para não ser algo tão
+exposto"*. Chega-se a ela por Configurações, e há teste exigindo as duas coisas
+— que não esteja no menu e que o link exista.
+
+**Item 3 — alterar no OMIE. A única parte do painel que escreve num sistema de
+fora.** O dono: *"é realmente algo sério, eu não posso falhar nem errar"*.
+Quatro proteções, cada uma com teste que acusa se for desfeita:
+
+1. **Senha própria** (`PAINEL_SENHA_ESCRITA`), diferente da de entrar. Sem ela
+   no ambiente, alterar fica **desligado** — o ensaio continua funcionando.
+2. **Simulação por padrão.** Só sai do ensaio quem marca E acerta a senha.
+3. **Trava do rateio.** Trocar o departamento põe 100% no novo e apaga o rateio
+   anterior. Título dividido entre obras é **recusado antes mesmo de ser
+   consultado no OMIE**, a menos que quem altera diga explicitamente que sabe.
+4. **Registro de tudo no banco** — inclusive dos envios que deram errado, que é
+   quando o registro importa. Migração 008. **Em tabela e não em arquivo**: o
+   painel Streamlit gravava num `.jsonl`, e aqui o disco do Render é apagado a
+   cada reinício.
+
+Mais um teto de 200 títulos por vez: não é limite técnico, é para um engano de
+seleção não virar um estrago de mil títulos antes de alguém perceber.
+
+**O que continua NÃO verificado, e é do documento original:** a escrita nunca
+foi testada contra a API real do OMIE. O protocolo é **ensaio → UM título
+conferido no OMIE → lote**, e está escrito na própria tela.
+
+**Item 4 — Rateio da Administração.** Simulação: como o custo da matriz se
+divide entre dois lados da empresa, mês a mês. **Duas repartições diferentes**,
+e confundi-las seria o erro caro:
+
+- o **custo da matriz** vai pelo CRITÉRIO (faturamento ou pessoal, numa janela
+  de meses): quem produziu mais carrega mais estrutura;
+- os **juros do banco** vão pelo DÉFICIT: quem estava com o caixa negativo
+  naquele mês. Juros não é estrutura, é o preço de faltar dinheiro.
+
+Sem circularidade: o déficit que decide quem paga os juros é medido **antes**
+dos juros. Há teste exigindo isso.
+
+A matriz fica fora dos dois lados — ela é o bolo, não um pedaço dele — e o bolo
+nunca vira positivo: matriz que num mês recebeu mais do que gastou não
+distribui lucro, e uma sobra dessas viraria caixa fantasma nas obras.
+
+Reusa `pesos_do_conjunto` e `meses_do_periodo` da Necessidade de Caixa, como o
+próprio documento sugere. Também fora do menu, em Configurações.
+
+**Conferido com dado montado, na tela:** matriz de −20.000/mês por 12 meses,
+CASA faturando 90.000 e PONTE 30.000. O critério manda 75% do bolo para A
+(−180.000) e 25% para B (−60.000). Mas A nunca ficou negativa e B ficou nos 12
+meses — então **100% dos juros foram para B**, contra os 75% que o critério
+mandaria. É exatamente a distinção que a tela existe para mostrar, e ela
+apareceu certa na imagem.
+
 ### 08/09/2026 — os juros que sumiam do resultado
 
 O dono comparou duas telas da mesma obra: **Visão Geral R$ 931.718,04** contra

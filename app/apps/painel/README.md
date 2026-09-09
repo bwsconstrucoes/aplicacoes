@@ -96,6 +96,7 @@ Uma de cada vez: a segunda chamada é recusada em vez de duplicar o trabalho.
 | Variável | Para quê |
 |---|---|
 | `PAINEL_SENHA` | senha de entrada. **Sem ela ninguém entra** — falha fechado |
+| `PAINEL_SENHA_ESCRITA` | segunda senha, só para **alterar títulos no OMIE**. Sem ela, alterar fica desligado e o ensaio continua funcionando |
 | `PAINEL_SECRET` | autoriza a chamada do agendador |
 | `PAINEL_SHEET_PROJETOS` | id da planilha "Bases de Dados Pipefy" |
 | `OMIE_KEY` / `OMIE_SECRET` | acesso ao OMIE — já existem. Apelidos aceitos: `OMIE_BWS_APP_KEY`/`_SECRET` |
@@ -115,6 +116,8 @@ Uma de cada vez: a segunda chamada é recusada em vez de duplicar o trabalho.
 | Comprometido × Executado | quanto de cada obra já andou, de cada lado |
 | Necessidade de Caixa | um conjunto de obras se paga sozinho, ou alguém segurou |
 | Prestação de Contas | quanto do resultado cabe a cada sócio |
+| Explorador *(em Configurações)* | procura em **toda** a base — inclusive fora do DRE — e altera a classificação no OMIE |
+| Rateio da Administração *(em Configurações)* | simula como o custo da matriz se divide entre dois lados, e aloca os juros do banco a quem ficou negativo |
 | Cenários de rateio | e se a regra fosse outra? o efeito obra a obra, antes de gravar |
 
 Todas exportam para **Excel de verdade** (`.xlsx`), com cabeçalho fixo, filtro
