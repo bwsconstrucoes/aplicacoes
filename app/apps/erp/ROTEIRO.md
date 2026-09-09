@@ -210,6 +210,20 @@
       script de consulta de NFS-e para; (2) apertar "Aplicar atualizações do
       banco" em Configurações — juntar o código NÃO aplica a migração
 
+### Notas fiscais — o cruzamento
+
+- [x] **A TELA DO CRUZAMENTO** (nota × pedido × título × fundo fixo) — FEITA em
+      09/09/2026, migração 044, em Financeiro › Notas fiscais. Entrada por
+      importação de XML; casamento automático só pela chave de acesso; trava
+      contra contar a mesma despesa duas vezes; dedutibilidade pelo lado das
+      notas. Detalhe em `HISTORICO.md` e `NOTAS_FISCAIS.md` §8-B.
+- [ ] Certificado digital por empresa, cifrado, com alerta de validade —
+      pré-requisito da captura direta na SEFAZ. Depende de decisão do dono.
+- [ ] Captura das notas direto na SEFAZ, trocando a fonte sem refazer o
+      cruzamento. Depende do certificado e da decisão sobre manifestação.
+- [ ] Manifestação do destinatário: o ERP manifesta, ou só avisa? **Pergunta
+      aberta ao dono.**
+
 ### Fila de DESEMPENHO — pedida pelo dono em 08/09/2026
 
 Nasceu da pergunta dele: *"e quando essa base de dados for crescendo? Como é

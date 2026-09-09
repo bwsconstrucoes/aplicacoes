@@ -967,6 +967,67 @@ lista.
 O lado das NOTAS depende da tela de notas, que ainda não existe — ela é a do
 cruzamento, próxima da fila. A dedutibilidade entra nela quando ela nascer.
 
+### A tela do cruzamento de notas fiscais — 09/09/2026
+
+A peça que o dono chamou de vital, ditada por ele em 07/09/2026 e especificada
+em `NOTAS_FISCAIS.md`. Está em Financeiro › **Notas fiscais**.
+
+**O que ela responde.** Para cada nota emitida contra um CNPJ da BWS: de que
+pedido ela é, qual título paga ela, se ela está dentro de uma prestação de
+fundo fixo — ou se não cruza com nada. E o caminho inverso: quanto de cada
+pedido já veio em nota e quanto falta.
+
+**Um pedido tem VÁRIAS notas, e isso está no desenho, não no remendo.**
+Palavras dele: *"comprei dez carradas de brita e o fornecedor emite a nota por
+carrada; aquele pedido não se fecha instantaneamente"*. Por isso a ligação com
+o pedido mora do lado da NOTA, e o pedido só aparece como fechado quando as
+notas somam o valor dele. Nada aqui casa por valor exato com o pedido — casar
+assim perderia justamente esse caso.
+
+**O sistema propõe, a pessoa decide** — o modelo é o da conciliação bancária,
+que ele mesmo citou. O botão "cruzar o que der sozinho" casa **só o que é
+prova**: a chave de acesso da nota. Mesmo credor e mesmo valor é pista, e pista
+vira proposta na tela, nunca casamento automático — casar por indício é errar
+igual à conferência manual, só que mais rápido e em silêncio.
+
+**A trava contra contar a mesma despesa duas vezes.** É o ponto mais perigoso
+do desenho todo, porque o erro não aparece na tela: aparece na contabilidade,
+meses depois. Uma nota não pode ter título próprio E estar dentro de uma
+prestação de fundo fixo. O sistema recusa a segunda ligação explicando o
+porquê, a tela mostra um alerta vermelho se isso existir por outro caminho, e a
+mesma linha de prestação não recebe duas notas (índice único no banco).
+
+**Fundo fixo é dedutível, ponto final** — a tela diz por qual porta cada
+despesa entrou (nota ou fundo fixo) e soma quanto do que está em tela é
+dedutível. É o lado das NOTAS do pedido dele de ver dedutibilidade "por onde eu
+estiver olhando"; o lado dos títulos foi entregue no mesmo dia.
+
+**As notas entram por importação de XML** — soltos ou num .zip, que é o que o
+serviço de monitoramento já baixa. A recomendação registrada era essa: o valor
+está no cruzamento, não no download, e trocar a fonte depois (SEFAZ direto) não
+refaz o cruzamento — vai desembocar no mesmo lugar. Certificado digital,
+sequência da SEFAZ e manifestação do destinatário continuam sem decisão dele e
+não bloqueiam nada.
+
+**Quem confere:** ficou em aberto na especificação; a resposta prática adotada
+foi "os dois, na mesma tela" — o financeiro por cargo, e quem compra pela
+implicação de permissão, porque é o comprador que sabe de que pedido a nota é.
+Ver é largo (inclui gestor e supervisor); cruzar é estreito.
+
+**Ignorar uma nota exige motivo escrito**, e o banco recusa sem ele. Seis meses
+depois ninguém lembra por que aquela nota foi posta de lado — e é exatamente o
+que o fisco pergunta.
+
+Provado com banco de verdade (21 casos) e com a tela aberta no navegador: as
+três carradas somando até o pedido fechar, a recusa da dupla contagem nos dois
+sentidos, a chave casando sozinha, o indício NÃO casando sozinho, e as
+restrições do banco recusando situação inventada e "ignorada" sem motivo.
+
+**Efeito colateral consertado no mesmo dia:** o Financeiro passou a ter onze
+abas e a última sumia na borda da tela, sem nada indicando que havia mais.
+Agora a barra mostra sombra nas pontas quando há o que rolar, rola com a roda
+do mouse e traz a aba ativa para um lugar legível. Conferido nas 19 telas.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1118,11 +1179,12 @@ cruzamento, próxima da fila. A dedutibilidade entra nela quando ela nascer.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 e 043**,
+21. **APERTAR "Aplicar atualizações do banco" para as migrações 042, 043 e 044**,
    assim que o ramo entrar na `main`. A 042 é a trava contra baixa em
    duplicidade; sem ela, anexar comprovante pela tela dá erro. A 043 abre
    espaço para o documento morar no Drive; sem ela, anexar qualquer documento
-   dá erro. É o mesmo botão de sempre, em Configurações.
+   dá erro. A 044 abre o cruzamento de notas; sem ela a tela de Notas fiscais
+   não carrega. É o mesmo botão de sempre, em Configurações.
 
 23. **Criar a pasta do Drive e colar o endereço** em Configurações › "Onde
    ficam os documentos", apertar "Testar a pasta" e só então ligar a chave.

@@ -57,6 +57,7 @@ MODULOS = [
             ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
             ("empreitas", "Empreitas", "erp.pagina_empreitas"),
             ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
+            ("notas", "Notas fiscais", "erp.pagina_notas"),
             ("receber", "Receber", "erp.pagina_receber"),
             ("relatorios", "Relatórios", "erp.pagina_relatorios"),
             ("importar", "Importar", "erp.pagina_importar"),
@@ -465,6 +466,13 @@ def pagina_colaboradores():
 @permissao("conciliar")
 def pagina_conciliacao():
     return render_template("erp_conciliacao.html", **_contexto("conciliacao"))
+
+
+@bp.route("/erp/notas")
+@login_obrigatorio
+@permissao("ver_notas")
+def pagina_notas():
+    return render_template("erp_notas.html", **_contexto("notas"))
 
 
 @bp.route("/erp/receber")
@@ -3909,6 +3917,139 @@ def api_anexos_mover():
     try:
         with get_session() as s:
             r = mover_para_drive(s, limite=int(request.args.get("limite", 25)))
+            s.commit()
+        return jsonify({"ok": True, "dados": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# O CRUZAMENTO DE NOTAS FISCAIS
+#
+# Nota × pedido × título × prestação de fundo fixo. A especificação inteira,
+# ditada pelo dono, está em `NOTAS_FISCAIS.md`. O espírito é o da conciliação
+# bancária: o sistema cruza o que consegue e expõe o duvidoso para uma pessoa.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/notas")
+@login_obrigatorio
+@permissao("ver_notas")
+def api_notas():
+    from app.apps.erp.core.notas import cruzamento
+    def _data(nome):
+        try:
+            return date.fromisoformat(request.args.get(nome) or "")
+        except ValueError:
+            return None
+    with get_session() as s:
+        dados = cruzamento.listar(
+            s, conferencia=(request.args.get("conferencia") or "").strip(),
+            empresa_id=(int(request.args["empresa_id"])
+                        if request.args.get("empresa_id") else None),
+            desde=_data("desde"), ate=_data("ate"),
+            busca=(request.args.get("busca") or "").strip())
+    return jsonify({"ok": True, **dados})
+
+
+@bp.route("/erp/api/notas/<int:nota_id>")
+@login_obrigatorio
+@permissao("ver_notas")
+def api_nota(nota_id: int):
+    """A nota com os CANDIDATOS de cada ponta — é o que a pessoa olha para decidir."""
+    from app.apps.erp.core.notas import cruzamento
+    from app.apps.erp.db.models.financeiro import DocumentoFiscal
+    with get_session() as s:
+        nota = s.get(DocumentoFiscal, nota_id)
+        if nota is None:
+            raise ErroNaoEncontrado("Nota não encontrada.")
+        return jsonify({"ok": True, "nota": cruzamento.ler(s, nota, com_candidatos=True)})
+
+
+@bp.route("/erp/api/notas/<int:nota_id>/ligar", methods=["POST"])
+@login_obrigatorio
+@permissao("cruzar_notas")
+def api_nota_ligar(nota_id: int):
+    from app.apps.erp.core.notas import cruzamento
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            nota = cruzamento.ligar(
+                s, nota_id, usuario=_usuario_logado(s),
+                titulo_id=(int(d["titulo_id"]) if d.get("titulo_id") else None),
+                pedido_id=(int(d["pedido_id"]) if d.get("pedido_id") else None),
+                item_id=(int(d["item_id"]) if d.get("item_id") else None))
+            s.commit()
+        return jsonify({"ok": True, "nota": nota})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/notas/<int:nota_id>/desligar", methods=["POST"])
+@login_obrigatorio
+@permissao("cruzar_notas")
+def api_nota_desligar(nota_id: int):
+    from app.apps.erp.core.notas import cruzamento
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            nota = cruzamento.desligar(s, nota_id, o_que=(d.get("o_que") or ""),
+                                       usuario=_usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, "nota": nota})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/notas/<int:nota_id>/marcar", methods=["POST"])
+@login_obrigatorio
+@permissao("cruzar_notas")
+def api_nota_marcar(nota_id: int):
+    from app.apps.erp.core.notas import cruzamento
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            nota = cruzamento.marcar(s, nota_id,
+                                     conferencia=(d.get("conferencia") or "").strip(),
+                                     motivo=(d.get("motivo") or ""),
+                                     usuario=_usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, "nota": nota})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/notas/sugerir", methods=["POST"])
+@login_obrigatorio
+@permissao("cruzar_notas")
+def api_notas_sugerir():
+    """Casa sozinho só o que é prova (a chave de acesso). O resto fica para gente."""
+    from app.apps.erp.core.notas import cruzamento
+    with get_session() as s:
+        r = cruzamento.sugerir(s)
+        s.commit()
+    return jsonify({"ok": True, "dados": r})
+
+
+@bp.route("/erp/api/notas/pedidos")
+@login_obrigatorio
+@permissao("ver_notas")
+def api_notas_por_pedido():
+    """O outro lado: quanto de cada pedido já veio em nota, e quanto falta."""
+    from app.apps.erp.core.notas import cruzamento
+    with get_session() as s:
+        return jsonify({"ok": True, "pedidos": cruzamento.por_pedido(s)})
+
+
+@bp.route("/erp/api/notas/importar", methods=["POST"])
+@login_obrigatorio
+@permissao("cruzar_notas")
+def api_notas_importar():
+    """Os XMLs que o serviço de monitoramento já baixa — soltos ou num .zip."""
+    from app.apps.erp.core.notas.importar import importar_lote
+    arquivos = [(f.filename or "arquivo.xml", f.read())
+                for f in request.files.getlist("arquivos")]
+    try:
+        with get_session() as s:
+            r = importar_lote(s, arquivos, usuario=_usuario_logado(s))
             s.commit()
         return jsonify({"ok": True, "dados": r})
     except ErroValidacao as e:

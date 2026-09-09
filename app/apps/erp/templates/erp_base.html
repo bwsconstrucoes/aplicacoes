@@ -26,12 +26,14 @@
   </div>
   {% endif %}
 
-  <nav class="topo-abas">
-    {% for chave, rotulo, rota in abas %}
-      <a class="topo-aba {% if chave == aba_ativa %}ativa{% endif %}"
-         href="{{ url_for(rota) }}">{{ rotulo }}</a>
-    {% endfor %}
-  </nav>
+  <div class="topo-abas-caixa" id="abas-caixa">
+    <nav class="topo-abas" id="abas">
+      {% for chave, rotulo, rota in abas %}
+        <a class="topo-aba {% if chave == aba_ativa %}ativa{% endif %}"
+           href="{{ url_for(rota) }}">{{ rotulo }}</a>
+      {% endfor %}
+    </nav>
+  </div>
 
   <div class="topo-direita">
     <div class="topo-meta">{{ usuario_nome }}<br>{{ usuario_perfil }}</div>
@@ -470,6 +472,39 @@ async function api(url, opcoes) {
 // O botão só aparece se a tela realmente TIVER filtros. Quem responde isso é
 // o próprio <aside>: telas sem filtros o deixam vazio, e aí não há o que abrir.
 // ---------------------------------------------------------------------------
+// AS ABAS QUE NÃO CABEM. O Financeiro tem onze; em tela estreita a última
+// sumia na borda sem nada indicando que havia mais — quem não sabia que a tela
+// existia, não a encontrava. Aqui a sombra aparece só quando há o que rolar, a
+// aba ativa é trazida para a vista, e a roda do mouse rola na horizontal (do
+// contrário, num computador sem tela sensível ao toque, não há como rolar).
+(function abasQueRolam(){
+  const caixa = document.getElementById("abas-caixa");
+  const abas = document.getElementById("abas");
+  if (!caixa || !abas) return;
+  const marcar = () => {
+    const folga = abas.scrollWidth - abas.clientWidth;
+    caixa.classList.toggle("tem-mais", folga - abas.scrollLeft > 4);
+    caixa.classList.toggle("tem-antes", abas.scrollLeft > 4);
+  };
+  abas.addEventListener("scroll", marcar, {passive: true});
+  window.addEventListener("resize", marcar);
+  abas.addEventListener("wheel", ev => {
+    if (Math.abs(ev.deltaY) <= Math.abs(ev.deltaX)) return;
+    abas.scrollLeft += ev.deltaY;
+    ev.preventDefault();
+  }, {passive: false});
+  // A aba ativa tem de ficar LEGÍVEL, não só dentro da caixa: a sombra da
+  // borda cobre 42px, e "tecnicamente visível" embaixo do degradê é ilegível.
+  const SOMBRA = 46;
+  const ativa = abas.querySelector(".topo-aba.ativa");
+  if (ativa) {
+    const c = abas.getBoundingClientRect(), r = ativa.getBoundingClientRect();
+    if (r.right > c.right - SOMBRA) abas.scrollLeft += (r.right - c.right) + SOMBRA;
+    else if (r.left < c.left + SOMBRA) abas.scrollLeft -= (c.left - r.left) + SOMBRA;
+  }
+  marcar();
+})();
+
 (function gavetaDeFiltros(){
   const aside = document.querySelector("aside.filtros");
   const botao = document.getElementById("abrir-filtros");

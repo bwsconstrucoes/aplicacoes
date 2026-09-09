@@ -63,7 +63,26 @@ a { color: var(--azul-claro); }
 }
 .topo-titulo { font-weight: 700; font-size: 16px; line-height: 1.1; white-space: nowrap; }
 .topo-sub { font-size: 11.5px; opacity: .8; white-space: nowrap; }
-.topo-abas { display: flex; gap: 4px; margin-left: 12px; overflow-x: auto; }
+/* As abas rolam quando não cabem — e a rolagem PRECISA aparecer. Com onze
+   abas no Financeiro, a última sumia na borda sem nada indicando que havia
+   mais: quem não sabia que existia, não achava. A sombra à direita é o aviso;
+   `.tem-mais` é posta pelo `erp_base.html` só quando sobra conteúdo. */
+.topo-abas {
+  display: flex; gap: 4px; margin-left: 12px; overflow-x: auto;
+  scrollbar-width: none; min-width: 0; scroll-behavior: smooth;
+}
+.topo-abas::-webkit-scrollbar { display: none; }
+.topo-abas-caixa { position: relative; display: flex; min-width: 0; flex: 1 1 auto; }
+.topo-abas-caixa.tem-mais::after {
+  content: ""; position: absolute; right: 0; top: 0; bottom: 0; width: 42px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--azul) 78%);
+}
+.topo-abas-caixa.tem-antes::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 28px;
+  z-index: 1; pointer-events: none;
+  background: linear-gradient(to left, transparent, var(--azul) 78%);
+}
 .topo-aba {
   background: transparent; border: 0; color: rgba(255,255,255,.75); padding: 8px 12px;
   border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;

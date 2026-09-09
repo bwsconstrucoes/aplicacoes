@@ -128,6 +128,19 @@ class DocumentoFiscal(Base):
     origem: Mapped[str] = mapped_column(Text, nullable=False, default="UPLOAD")
     capturado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+    # ----- o cruzamento (migração 044) -----
+    # Contra qual CNPJ NOSSO a nota foi emitida, de que pedido ela é, e — quando
+    # ela entrou por ali — em que linha da prestação de fundo fixo ela está.
+    # A ligação com o pedido mora aqui, do lado da NOTA, porque UM PEDIDO TEM
+    # VÁRIAS NOTAS: dez carradas de brita viram dez notas e dez boletos.
+    empresa_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("empresas.id"))
+    pedido_compra_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("pedidos_compra.id"))
+    titulo_item_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("titulo_itens.id"))
+    conferencia: Mapped[str] = mapped_column(Text, nullable=False, default="PENDENTE")
+    conferencia_motivo: Mapped[Optional[str]] = mapped_column(Text)
+    conferido_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    conferido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
 
 class Pedido(Base):
     __tablename__ = "pedidos"

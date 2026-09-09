@@ -86,6 +86,14 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # A fila de pedidos serve a DOIS papéis: quem compra acompanha o que fechou,
     # quem autoriza libera. Ver a seção de ações implicadas abaixo.
     "ver_pedidos_compra":  {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    # Notas fiscais emitidas contra os CNPJs da empresa. VER é largo de
+    # propósito — nota emitida contra a empresa sem ninguém saber é problema
+    # fiscal, e mais olhos ajudam. CRUZAR é decisão que muda a contabilidade:
+    # fica com o financeiro por cargo, e chega a quem compra pela implicação
+    # abaixo, porque é o comprador que sabe de que pedido a nota é.
+    "ver_notas":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.CONSULTA},
+    "cruzar_notas":    {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
 }
 
 # Ações que uma pessoa ganha de graça por já ter outra.
@@ -97,6 +105,11 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
 # verdade sobre quem entra.
 ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     "ver_pedidos_compra": ("comprar", "autorizar_pedido"),
+    # Quem compra enxerga as notas e cruza: é ele que sabe de que pedido cada
+    # nota é, e o dono deixou em aberto quem confere — a resposta prática é
+    # "os dois, na mesma tela", porque a nota tem uma ponta em cada mundo.
+    "ver_notas":   ("comprar", "autorizar_pedido", "cruzar_notas"),
+    "cruzar_notas": ("comprar",),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -126,6 +139,8 @@ ACAO_ROTULOS = {
     "administrar_insumos":  "Cadastrar e corrigir insumos",
     "administrar_fornecedores": "Cadastrar e corrigir fornecedores",
     "ver_pedidos_compra":   "Ver a fila de pedidos de compra",
+    "ver_notas":            "Ver as notas emitidas contra a empresa",
+    "cruzar_notas":         "Cruzar nota com pedido, título e fundo fixo",
 }
 
 ROTULOS = {
