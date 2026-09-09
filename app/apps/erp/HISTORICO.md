@@ -1096,6 +1096,75 @@ foi estudado por ninguém aqui** (limites, o que acontece ao perder o número de
 sequência, se o certificado A1 da BWS tem o perfil necessário). Isso é estudo
 antes de código, e antes de prometer data.
 
+### Medições e emissão de nota: o desenho, e a resposta sobre Petrolina — 09/09/2026
+
+Ditado pelo dono. Especificação inteira em `MEDICOES_E_NOTAS.md`; aqui ficam as
+decisões que mudam o rumo e a pesquisa que ele pediu.
+
+**O "Protocolos e Medições" do Pipefy vem para o ERP**, como o lado a RECEBER.
+Com a ressalva que ele mesmo fez: nem toda coisa a receber é medição — título a
+receber é o gênero, medição é a espécie.
+
+**O tipo da medição não pode ser lista fechada.** Foi o ponto mais fácil de
+errar. O caso simples é medição 1 e medição 1R (o reajuste dela). Mas ele
+descreveu três desvios reais: órgão que numera o reajuste em sequência (virou a
+medição 3), órgão que numera em paralelo (1 e 1R correlacionadas), e medições
+subsidiárias por fontes diferentes. **Quem manda na nomenclatura é o órgão, não
+o ERP** — então o tipo é categoria editável e o número é texto livre. Impor
+"1, 2, 3" quebraria no primeiro contrato fora do padrão, e ele já viu isso.
+
+**Entrar pelo CONTRATO, não pela medição.** Ele mudou de ideia no meio da fala e
+a segunda ideia é a certa: contrato tem começo, meio e fim; medição é evento
+dentro dele. O quadro financeiro do contrato mostra as medições e os totais —
+contratado, aditivado, medido, faturado, recebido, a receber, retido.
+
+**Protocolo com número e data** destrava um indicador que hoje não existe:
+quantos dias entre protocolar e receber, por obra e por órgão.
+
+**A emissão é por empresa: API ou MANUAL.** Decisão dele. Os dois caminhos
+terminam no mesmo lugar. No manual, quem lê o PDF é a mesma IA que já lê nota
+de entrada. **O manual vem primeiro de propósito** — não depende de
+credenciamento nenhum, funciona no dia seguinte e serve de rede quando a API
+falhar.
+
+**Controle de notas emitidas é tela SEPARADA do título a receber**, e a crítica
+que ele pediu é esta: uma medição pode virar duas notas (parcial), e uma nota
+pode ser cancelada e substituída sem o título mudar. São dois eixos; juntá-los
+esconderia justamente os casos que dão trabalho. Ficam duas telas irmãs,
+ligadas nos dois sentidos.
+
+**Boa notícia no cadastro:** a obra JÁ tem no modelo CNO, alíquota de ISS, ISS
+retido, regime e conta de recebimento. O que falta é a TELA expor. Falta mesmo
+só a **chave Pix** na conta bancária — e o uso que ele deu é copiar e mandar
+quando alguém pede os dados da empresa.
+
+#### A resposta sobre Petrolina
+
+Ele perguntou se Petrolina/PE tem API como a que ele fez para Eusébio/CE.
+**Tem, e é o MESMO fornecedor (E&L).** O endereço segue o mesmo molde
+(`{uf}-{municipio}-pm-nfs-backend.cloud.el.com.br`), com padrão ABRASF 2.04 e
+autenticação por certificado A1 — igual ao Eusébio.
+
+Portanto **o emissor não precisa ser reescrito**. Hoje o endereço e o código
+IBGE estão fixos no código (`el_nfse_abrasf.py`, `el_nfse_nacional.py`,
+`job_nacional.py`); o trabalho é torná-los configuração por empresa — o que já
+seria necessário de qualquer jeito, porque a BWS opera com mais de um CNPJ.
+
+**E um prazo que muda o planejamento:** a LC 214/2025 tornou o **padrão
+nacional obrigatório**, e a convivência com o ABRASF 2.04 está acabando ao
+longo de 2026. O sistema já fala o padrão nacional (`el_nfse_nacional.py`).
+**A aposta certa é o canal nacional** — investir agora em ABRASF por município
+é construir sobre algo com data para acabar.
+
+⚠️ **Depende de providência dele, não de código:** Inscrição Municipal em
+Petrolina e credenciamento na Secretaria de Finanças, o token próprio do canal
+de lá (o `EL_NFSE_TOKEN` atual é do Eusébio), e os códigos de serviço e a
+alíquota de ISS de Petrolina.
+
+⚠️ **Não verificado:** se a BWS já tem Inscrição Municipal em Petrolina, e a
+data exata em que o município encerra o ABRASF. As duas se confirmam com a
+prefeitura, não com pesquisa.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1232,7 +1301,11 @@ antes de código, e antes de prometer data.
    qualquer desenho que assuma um-para-um nasce errado. Depende de certificado
    digital por empresa (cifrado, como a senha de e-mail) e traz junto a agenda
    de alertas. Quatro perguntas ainda esperam o dono — estão no §9 de lá.
-19. **A emissão de NFS-e fica em espera, por decisão do dono (07/09/2026).** É
+19. **RETOMADA em 09/09/2026 — a emissão de NFS-e saiu da espera**, com
+   desenho próprio ditado pelo dono e escrito em `MEDICOES_E_NOTAS.md`. Ela
+   deixa de ser "o módulo antigo" e passa a nascer do lado a RECEBER: a
+   medição do contrato emite a nota. O texto abaixo é de 07/09/2026 e fica
+   como registro do que era antes. É
    módulo antigo do monorepo (`app/apps/emissaonf/`), que emite nota de
    SERVIÇO da empresa para o cliente dela — coisa diferente do cruzamento do
    item 14, que captura nota que o FORNECEDOR emite contra a empresa. Nunca

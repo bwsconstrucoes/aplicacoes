@@ -154,7 +154,9 @@
       vigente, recebido, gasto e saldo; fases com histórico; contrato e
       aditivos; tributação com simulador; documentos; movimento; auditoria
 - [ ] Obra — falta: alerta de reajuste na agenda (o painel já sinaliza)
-- [ ] Integrar com o módulo emissaonf: emitir a nota a partir da medição
+- [x] ~~Integrar com o módulo emissaonf~~ — **RETOMADO em 09/09/2026 pelo
+      dono**, com desenho próprio: ver `MEDICOES_E_NOTAS.md` e a fila acima.
+      Deixou de estar "em espera".
 - [ ] **Open Finance / API bancária**: extrato e DDA automáticos (futuro)
 - [x] Aviso quando o título é pago, via TELEGRAM, com o comprovante junto —
       idempotente por pessoa, marcando correção quando valor/data mudam
@@ -211,6 +213,40 @@
       lembrar de: (1) definir `EL_NFSE_TOKEN` na Environment do Render, senão o
       script de consulta de NFS-e para; (2) apertar "Aplicar atualizações do
       banco" em Configurações — juntar o código NÃO aplica a migração
+
+### Medições, contrato e emissão de nota — pedida pelo dono em 09/09/2026
+
+O lado do que a BWS RECEBE. Especificação inteira em `MEDICOES_E_NOTAS.md`.
+Substitui o processo "Protocolos e Medições" do Pipefy, que existe porque o
+Omie não dá conta disso.
+
+- [ ] 1. **O cadastro que destrava tudo**: expor na tela da obra os campos
+      fiscais que JÁ existem no modelo (CNO, alíquota de ISS, ISS retido,
+      regime, conta de recebimento); **chave Pix** na conta bancária; e filtro
+      **por conta** nas telas de título — pedido dele: "às vezes é mais fácil
+      do que filtrar por obra".
+- [ ] 2. **A medição completa**: tipo EDITÁVEL (normal, reajuste, aditivo,
+      subsidiária, complementar), número em TEXTO LIVRE (quem manda na
+      nomenclatura é o órgão), correlação entre a medição e a de reajuste dela,
+      e protocolo com número e data.
+- [ ] 3. **O quadro financeiro do contrato**: uma linha por medição e os totais
+      — contratado, aditivado, medido, faturado, recebido, a receber, retido.
+- [ ] 4. **Tela de controle de notas emitidas**, com exportação para a
+      contabilidade.
+- [ ] 5. **Emissão a partir da medição, modo MANUAL** — anexar a nota e a IA
+      lê. Não depende de credenciamento nenhum e já entrega valor.
+- [ ] 6. **Emissão automática**, com município e endereço virando configuração
+      por empresa. ⚠️ Apontar para o **canal NACIONAL**, não para o ABRASF: a
+      LC 214/2025 tornou o padrão nacional obrigatório e o ABRASF tem data para
+      acabar. O `el_nfse_nacional.py` já fala esse padrão.
+- [ ] 7. **Indicadores**: dias entre protocolar e receber, por obra e por órgão.
+
+**Sobre Petrolina (pergunta dele, pesquisada em 09/09/2026):** o município tem
+webservice **e usa o MESMO provedor do Eusébio** (E&L), com o endereço no mesmo
+molde. O emissor não precisa ser reescrito — o endereço e o código IBGE, hoje
+fixos no código, viram configuração. O que depende de providência dele:
+Inscrição Municipal em Petrolina, credenciamento, token próprio do canal e os
+códigos de serviço/alíquota de lá.
 
 ### Gestão de documentos da empresa — pedida pelo dono em 09/09/2026
 
