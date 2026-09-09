@@ -47,6 +47,86 @@ const LEMBRAR = {
   },
 };
 
+// ---------------------------------------------------------------------------
+// O LINK DA ABA APONTA PARA A TELA COMO ELA ESTAVA
+//
+// ERA ISTO QUE FAZIA O CACHE NAO SERVIR PARA NADA, e so apareceu quando o
+// dono disse "nao senti diferenca nenhuma". O link do menu aponta para
+// `/analisesps/solicitacoes`, SEM filtro. O servidor recebe isso, ve que ha
+// filtro guardado, e REDIRECIONA para `/analisesps/solicitacoes?...&f=1`.
+//
+// Ou seja: toda troca de aba ia ao servidor de qualquer jeito, e a copia
+// guardada — que fica sob o endereco COM filtro — nunca era alcancada. O
+// cache existia; o menu passava por fora dele.
+//
+// Aqui o link do menu e reescrito para o endereco que a pessoa realmente
+// usou. Sem redirecionamento, e o navegador serve a tela guardada na hora.
+//
+// Fica no navegador, e nao no servidor, de proposito: montar esses links no
+// servidor custaria uma consulta a mais em TODA tela, inclusive nas que nao
+// tem filtro nenhum — pagar em todas para economizar em duas.
+// ---------------------------------------------------------------------------
+(function () {
+  const TELAS_COM_FILTRO = ["/analisesps/solicitacoes", "/analisesps/relatorio"];
+  const chave = caminho => "analisesps:endereco:" + caminho;
+
+  try {
+    // 1. Se esta tela tem filtro na barra de enderecos, guarda o endereco.
+    if (TELAS_COM_FILTRO.includes(location.pathname)
+        && location.search.includes("f=1")) {
+      sessionStorage.setItem(chave(location.pathname),
+                             location.pathname + location.search);
+    }
+    // 2. E aponta os links do menu para o endereco guardado de cada tela.
+    document.querySelectorAll("a.topo-aba").forEach(link => {
+      const caminho = new URL(link.href, location.origin).pathname;
+      if (!TELAS_COM_FILTRO.includes(caminho)) return;
+      const guardado = sessionStorage.getItem(chave(caminho));
+      if (guardado) link.href = guardado;
+    });
+  } catch (e) { /* aba anonima: segue com os links normais */ }
+})();
+
+
+// ---------------------------------------------------------------------------
+// O BOTAO DE ATUALIZAR, ao lado da hora da base
+//
+// Era preciso ir a Configuracoes so para aperta-lo. Quem olha a hora da base e
+// acha que esta velha quer atualizar ALI, nao noutra tela.
+// ---------------------------------------------------------------------------
+(function () {
+  const botao = document.getElementById("btn-atualizar-base");
+  if (!botao) return;
+  botao.addEventListener("click", async () => {
+    botao.disabled = true;
+    const rotulo = botao.textContent;
+    botao.textContent = "Atualizando…";
+    try {
+      const r = await fetch(botao.dataset.url, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({modo: "sincronizar"})
+      });
+      const d = await r.json();
+      if (!d.ok) {
+        alert(d.erro || "Não consegui iniciar a atualização.");
+        return;
+      }
+      // A atualizacao roda num processo separado: nao adianta esperar aqui.
+      // A busca de 90 em 90 segundos avisa quando a base mudar.
+      botao.textContent = "Atualizando…";
+      alert("Atualização iniciada. Ela roda no servidor — pode continuar "
+            + "trabalhando. Quando a base mudar, aparece o aviso para "
+            + "recarregar.");
+    } catch (e) {
+      alert("Falhou a comunicação com o servidor: " + e);
+    } finally {
+      botao.disabled = false;
+      botao.textContent = rotulo;
+    }
+  });
+})();
+
+
 // A ROLAGEM. Guardada enquanto se rola, e nao so ao sair: sair da tela pode
 // ser fechar a aba, e ai nao ha momento de despedida.
 (function () {

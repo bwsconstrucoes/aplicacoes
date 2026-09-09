@@ -3155,3 +3155,72 @@ def test_a_barra_sabe_para_onde_enviar_sem_sair_da_tela(app):
     html = como(app, SENHA_OPERADOR).get(
         "/analisesps/solicitacoes", follow_redirects=True).get_data(as_text=True)
     assert "data-url-enviar-lote=" in html
+
+
+# ---------------------------------------------------------------------------
+# O LINK DA ABA APONTA PARA A TELA COMO ELA ESTAVA
+#
+# "não senti diferença nenhuma... nem indo nem voltando" — 09/09/2026, depois
+# de a tela guardada ter sido publicada. E ele estava certo: o link do menu
+# aponta para o endereço SEM filtro, o servidor vê que há filtro guardado e
+# REDIRECIONA. Toda troca de aba ia ao servidor de qualquer jeito, e a cópia
+# guardada — que fica sob o endereço COM filtro — nunca era alcançada.
+# ---------------------------------------------------------------------------
+def test_o_endereco_sem_filtro_redireciona_e_por_isso_nao_serve_a_copia(
+        app, monkeypatch):
+    """Este é o defeito, fixado como teste: quem chega sem o filtro na barra
+    de endereços é mandado para outro endereço — e redirecionamento não se
+    guarda. É por isso que o link do menu precisa ser reescrito."""
+    from app.apps.analisesps import preferencias
+    monkeypatch.setattr(preferencias, "ler", lambda pessoa, chave: (
+        {"status_pgt": ["Pagar"]} if chave == preferencias.FILTRO else {}))
+
+    resposta = como(app, SENHA_OPERADOR).get("/analisesps/solicitacoes")
+    assert resposta.status_code in (301, 302)
+    assert "f=1" in resposta.headers["Location"]
+    assert "max-age" not in resposta.headers.get("Cache-Control", "")
+
+
+def test_o_endereco_com_filtro_responde_direto_e_fica_guardado(app):
+    """O endereço para onde o link reescrito aponta: sem redirecionamento, e
+    guardável. É esse o caminho que torna a volta instantânea."""
+    resposta = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes?f=1&status_pgt=Pagar")
+    assert resposta.status_code == 200, "não podia redirecionar"
+    assert "max-age=300" in resposta.headers.get("Cache-Control", "")
+
+
+def test_o_navegador_reescreve_os_links_do_menu():
+    """A reescrita é no navegador, e não no servidor, de propósito: montar
+    esses links no servidor custaria uma consulta a mais em TODA tela,
+    inclusive nas que não têm filtro nenhum."""
+    from pathlib import Path
+    js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
+    assert "analisesps:endereco:" in js
+    assert "a.topo-aba" in js, "sem isto os links do menu não são tocados"
+
+
+# ---------------------------------------------------------------------------
+# O BOTÃO DE ATUALIZAR, ao lado da hora da base
+# ---------------------------------------------------------------------------
+def test_o_botao_de_atualizar_fica_ao_lado_da_hora_da_base(app):
+    """Era preciso ir a Configurações só para apertá-lo. Quem olha a hora da
+    base e acha que está velha quer atualizar ALI."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes", follow_redirects=True).get_data(as_text=True)
+    assert 'id="btn-atualizar-base"' in html
+    assert "base de" in html
+
+
+def test_quem_so_consulta_nao_ve_o_botao_de_atualizar(app):
+    """Atualizar é escrever: traz a planilha para o banco. Ver e exportar não
+    dá esse direito — e a porta já recusa, então o botão só confundiria."""
+    html = como(app, SENHA_CONSULTA).get(
+        "/analisesps/solicitacoes", follow_redirects=True).get_data(as_text=True)
+    assert 'id="btn-atualizar-base"' not in html
+
+
+def test_quem_so_consulta_nao_dispara_atualizacao(app):
+    resposta = como(app, SENHA_CONSULTA).post(
+        "/analisesps/api/sincronizar", json={"modo": "sincronizar"})
+    assert resposta.status_code == 403
