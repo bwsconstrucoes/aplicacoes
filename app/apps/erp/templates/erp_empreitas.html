@@ -13,6 +13,7 @@
     <input id="busca" placeholder="contrato, prestador, obra, serviço…"
            style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; min-width:280px">
     <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn amarelo" id="btn-novo">+ Novo contrato</button>
   </div>
 </div>
@@ -346,5 +347,8 @@ els("btn-novo").addEventListener("click", () => {
 
 els("busca").addEventListener("input", desenhar);
 carregar();
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}

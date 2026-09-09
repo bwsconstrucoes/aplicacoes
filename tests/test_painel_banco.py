@@ -194,11 +194,11 @@ def test_resultado_sem_filtro(consultas):
     Despesas 400 + 250 + 900 + 100. A transferência fica de fora."""
     r = consultas.resultado_dre(consultas.Filtros())
     assert reais(r["receita"]) == 3300.00
-    assert reais(r["despesa"]) == -1650.00
-    assert reais(r["resultado"]) == 1650.00
+    assert reais(r["despesa"]) == -1675.00     # 1.650 de principal + 25 de encargo
+    assert reais(r["resultado"]) == 1625.00    # o encargo derruba o resultado
     # executado = só o que já circulou: recebeu 1.000, pagou 400+900+100
     assert reais(r["receita_exec"]) == 1000.00
-    assert reais(r["despesa_exec"]) == -1400.00
+    assert reais(r["despesa_exec"]) == -1425.00
 
 
 def test_transferencia_entra_quando_pedida(consultas):
@@ -213,8 +213,8 @@ def test_caixa_ignora_o_imposto_retido(consultas):
     """Entrou 1.000 na conta, não 1.100: os 100 o cliente reteve."""
     c = consultas.caixa(consultas.Filtros())
     assert reais(c["entradas"]) == 1000.00
-    assert reais(c["saidas"]) == -1400.00
-    assert reais(c["geracao"]) == -400.00
+    assert reais(c["saidas"]) == -1425.00      # juros pago tambem sai da conta
+    assert reais(c["geracao"]) == -425.00
 
 
 def test_filtro_de_ano_nao_descarta_o_que_esta_em_aberto(consultas):
@@ -225,7 +225,7 @@ def test_filtro_de_ano_nao_descarta_o_que_esta_em_aberto(consultas):
     SQL executado prova que ela funciona."""
     de_2025 = consultas.resultado_dre(consultas.Filtros(anos=[2025]))
     assert reais(de_2025["receita"]) == 3300.00     # 1.000 + 2.000 + os 300 sem data
-    assert reais(de_2025["despesa"]) == -1550.00    # a despesa de 2024 fica de fora
+    assert reais(de_2025["despesa"]) == -1575.00    # a despesa de 2024 fica de fora
 
 
 def test_filtro_de_ano_sozinho(consultas):
@@ -243,7 +243,7 @@ def test_dre_por_ano_separa_os_exercicios(consultas):
     assert set(anos) == {2024, 2025}                  # nada de barra "sem ano"
     assert reais(anos[2024]["despesa"]) == -100.00
     assert reais(anos[2025]["receita"]) == 3000.00    # os 300 sem ano não entram
-    assert reais(anos[2025]["despesa"]) == -1550.00
+    assert reais(anos[2025]["despesa"]) == -1575.00
 
 
 # ---------------------------------------------------------------------------
@@ -258,13 +258,13 @@ def test_filtro_de_projeto(consultas):
 def test_filtro_de_obra(consultas):
     r = consultas.resultado_dre(consultas.Filtros(departamentos=["CASA"]))
     assert reais(r["receita"]) == 1300.00      # 1.000 recebidos + 300 sem data
-    assert reais(r["despesa"]) == -750.00      # 400 + 250 + 100
+    assert reais(r["despesa"]) == -775.00      # 400 + 250 + 100 + 25 de encargo
 
 
 def test_filtros_combinados_se_somam(consultas):
     """Projeto ALFA E ano 2025: fica de fora a despesa de 2024."""
     r = consultas.resultado_dre(consultas.Filtros(projetos=["ALFA"], anos=[2025]))
-    assert reais(r["despesa"]) == -650.00       # 400 + 250
+    assert reais(r["despesa"]) == -675.00       # 400 + 250 + 25 de encargo
     assert reais(r["receita"]) == 1300.00       # 1.000 + os 300 sem data
 
 
@@ -386,7 +386,7 @@ def test_receita_por_obra_abre_o_bruto(consultas):
 def test_maiores_credores_vem_do_maior_para_o_menor(consultas):
     credores = consultas.top_credores(consultas.Filtros())
     assert credores[0]["nome"] == "FORNECEDOR X"
-    assert reais(credores[0]["pago"]) == -1400.00
+    assert reais(credores[0]["pago"]) == -1425.00
     assert reais(credores[0]["aberto"]) == -250.00
 
 
@@ -398,9 +398,9 @@ def test_fluxo_mensal_acumula_na_ordem(consultas):
     rotulos = [m["rotulo"] for m in meses]
     assert rotulos == ["03/2024", "06/2025", "07/2025"]
     assert reais(meses[0]["liquido"]) == -100.00
-    assert reais(meses[1]["liquido"]) == 600.00     # +1.000 −400
+    assert reais(meses[1]["liquido"]) == 575.00     # +1.000 −400 −25 de encargo
     assert reais(meses[2]["liquido"]) == -900.00
-    assert reais(meses[-1]["acumulado"]) == -400.00
+    assert reais(meses[-1]["acumulado"]) == -425.00
     # o acumulado do último mês é a geração de caixa total
     assert reais(meses[-1]["acumulado"]) == reais(consultas.caixa(consultas.Filtros())["geracao"])
 
@@ -414,25 +414,27 @@ def test_resultado_por_projeto_ordena_do_melhor_para_o_pior(consultas):
     itens = consultas.resultado_por(consultas.Filtros(), nivel="projeto")
     assert [i["nome"] for i in itens] == ["BETA", "ALFA"]
     assert reais(itens[0]["resultado"]) == 1100.00    # BETA: 2.000 − 900
-    assert reais(itens[1]["resultado"]) == 550.00     # ALFA: 1.300 − 750
+    assert reais(itens[1]["resultado"]) == 525.00     # ALFA: 1.300 − 775
 
 
 def test_resultado_por_obra_usa_o_departamento(consultas):
     itens = {i["nome"]: i for i in
              consultas.resultado_por(consultas.Filtros(), nivel="obra")}
     assert set(itens) == {"CASA", "PONTE"}
-    assert reais(itens["CASA"]["despesa"]) == -750.00
+    assert reais(itens["CASA"]["despesa"]) == -775.00
 
 
 def test_comprometido_vs_executado_calcula_a_fracao(consultas):
-    """CASA deve 750 no total e já pagou 500 -> 66,7% andado."""
+    """CASA deve 775 no total (750 de principal + 25 de encargo pago) e já pagou
+    525 -> 67,7% andado. O encargo entra dos dois lados: ele já foi pago, então
+    sobe o executado E o total."""
     itens = {i["nome"]: i for i in
              consultas.comprometido_vs_executado(consultas.Filtros(),
                                                  nivel="obra", tipo="pagar")}
     casa = itens["CASA"]
-    assert reais(casa["executado"]) == -500.00
+    assert reais(casa["executado"]) == -525.00
     assert reais(casa["a_executar"]) == -250.00
-    assert round(casa["pct"], 1) == 66.7
+    assert round(casa["pct"], 1) == 67.7
 
 
 def test_lado_a_receber_olha_a_medicao(consultas):

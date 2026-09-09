@@ -4,18 +4,32 @@
 
 {% block conteudo %}
 <h2>Configurações <small>plano financeiro, obras, contas da empresa e usuários</small></h2>
+
+{# Uma coisa de cada vez. Empilhar oito blocos numa página só faz quem está
+   configurando perder a noção de onde está — foi a reclamação, e é a razão
+   desta faixa. A seção escolhida fica no endereço, então o F5 não perde o
+   lugar e o link pode ser mandado para alguém. #}
+<nav class="subabas" id="subabas-config">
+  <a class="subaba" href="#plano" data-ir="plano">Plano financeiro</a>
+  <a class="subaba" href="#obras" data-ir="obras">Obras</a>
+  <a class="subaba" href="#contas" data-ir="contas">Contas bancárias</a>
+  <a class="subaba" href="#usuarios" data-ir="usuarios">Operadores</a>
+  <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
+  <a class="subaba" href="#manutencao" data-ir="manutencao">Banco e limpeza</a>
+</nav>
+
 <div id="mensagem"></div>
 
 <div class="kpis" id="kpis-config"></div>
 
-<div class="cartao" id="bloco-banco">
+<div class="cartao" id="bloco-banco" data-secao="manutencao">
   <div class="cartao-cab"><h3>Manutenção do banco</h3>
     <small>estrutura de dados do ERP</small></div>
   <div id="estado-banco" class="cartao-dica">verificando…</div>
   <div style="margin-top:10px"><button class="btn amarelo oculto" id="btn-migrar">Aplicar atualizações do banco</button></div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao="plano">
   <div class="cartao-cab"><h3>Plano financeiro</h3>
     <small>categorias que dirigem o lançamento — natureza <b>resultado</b> (DRE) ou <b>fluxo</b> (caixa)</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
@@ -32,7 +46,7 @@
     Importe a proposta pela aba <a href="/erp/importar">Importar</a> ou cadastre categoria por categoria.</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao="plano">
   <div class="cartao-cab"><h3>Tradução do plano antigo</h3>
     <small>como o "Tipo de Despesa" que vem dos cards do Pipefy vira conta no plano novo</small></div>
   <div id="resumo-depara" class="cartao-dica">carregando…</div>
@@ -43,7 +57,7 @@
   <div id="lista-depara"></div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao="obras">
   <div class="cartao-cab"><h3>Obras (centros de custo)</h3>
     <small>o rateio dos títulos aponta para estas obras</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
@@ -60,7 +74,7 @@
     Importe o CSV das obras na aba <a href="/erp/importar">Importar</a>.</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao="contas">
   <div class="cartao-cab"><h3>Contas bancárias da empresa</h3>
     <small>de onde o dinheiro sai — usadas na baixa e na conciliação</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
@@ -71,7 +85,21 @@
     <tbody id="tb-contas"></tbody></table>
 </div>
 
-<div class="cartao" id="bloco-ia">
+<div class="cartao" id="bloco-zerar" data-secao="manutencao">
+  <div class="cartao-cab"><h3>Zerar movimento do ERP</h3>
+    <small>para limpar o que foi lançado testando e começar o uso de verdade</small></div>
+  <div class="cartao-dica">
+    <b>Cadastro nunca sai por aqui.</b> Obras, fornecedores, plano de contas,
+    colaboradores, contas bancárias, operadores, insumos, unidades e condições
+    de pagamento ficam sempre — refazer isso custa horas e não é lançamento.
+  </div>
+  <div id="zer-areas" style="margin-top:10px">carregando…</div>
+  <div style="margin-top:10px"><button class="btn secundario" id="btn-zer-previa">
+    Ver o que sairia</button></div>
+  <div id="zer-resultado"></div>
+</div>
+
+<div class="cartao" id="bloco-ia" data-secao="ia">
   <div class="cartao-cab"><h3>Consumo de IA</h3>
     <small>leitura de documentos, faturas, contratos e sugestão de conta</small></div>
   <div id="ia-alerta"></div>
@@ -86,7 +114,7 @@
   <div id="ia-painel" class="cartao-dica">carregando…</div>
 </div>
 
-<div class="cartao">
+<div class="cartao" data-secao="usuarios">
   <div class="cartao-cab"><h3>Usuários</h3><small>quem lança, quem autoriza, quem paga</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
     <span class="espaco"></span>
@@ -111,6 +139,31 @@
 
 {% block scripts %}
 <script>
+// ------------------------------------------------------------------ seções
+// Mostra uma seção de cada vez. Nada é removido da página — só escondido —
+// então todo o resto do script continua achando os elementos que precisa.
+const SECAO_PADRAO = "plano";
+
+function mostrarSecao(chave){
+  const alvo = [...document.querySelectorAll("#subabas-config [data-ir]")]
+    .some(a => a.dataset.ir === chave) ? chave : SECAO_PADRAO;
+  document.querySelectorAll("[data-secao]").forEach(bloco =>
+    bloco.hidden = bloco.dataset.secao !== alvo);
+  document.querySelectorAll("#subabas-config [data-ir]").forEach(a =>
+    a.classList.toggle("ativa", a.dataset.ir === alvo));
+  // O aviso de banco desatualizado é o único que aparece em qualquer seção:
+  // se o banco está atrás do código, a pessoa precisa ver isso agora.
+  const banco = els("bloco-banco");
+  if (banco && alvo !== "manutencao" && !els("btn-migrar").classList.contains("oculto")) {
+    banco.hidden = false;
+  }
+}
+
+window.addEventListener("hashchange", () =>
+  mostrarSecao((location.hash || "").replace("#", "")));
+document.addEventListener("DOMContentLoaded", () =>
+  mostrarSecao((location.hash || "").replace("#", "") || SECAO_PADRAO));
+
 let DADOS = {categorias: [], obras: [], contas: [], usuarios: []};
 let OPCOES_CAT = "";
 let OPERADORES = [], PERFIS = [];
@@ -201,12 +254,22 @@ function formOperador(u){
 
     <div id="op-obras-bloco" class="campo" style="margin-top:12px">
       <label>Obras que este operador acompanha</label>
-      <div class="filtro-opcoes" style="max-height:180px; border:1px solid var(--borda); border-radius:8px; padding:6px">
-        ${DADOS.obras.map(o=>`<label class="opcao"><input type="checkbox" class="op-obra" value="${o.id}"
-          ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${o.codigo} · ${o.nome}</span></label>`).join("")}
+      <div class="filtro-opcoes" style="max-height:220px; border:1px solid var(--borda); border-radius:8px; padding:6px">
+        ${DADOS.obras.map(o=>`<div style="display:flex; align-items:center; gap:10px">
+          <label class="opcao" style="flex:1"><input type="checkbox" class="op-obra" value="${o.id}"
+            ${u.obras.includes(o.codigo)?"checked":""}><span class="rotulo">${o.codigo} · ${o.nome}</span></label>
+          <label class="opcao" title="Recebe a conferência mensal dos equipamentos desta obra"
+                 style="white-space:nowrap"><input type="checkbox" class="op-resp" value="${o.id}"
+            ${(u.obras_responsavel||[]).includes(o.id)?"checked":""}
+            ><span class="rotulo" style="font-size:12px">responde</span></label>
+        </div>`).join("")}
       </div>
-      <div class="dica">Vale para o <b>supervisor</b> e para quem estiver como
-        <b>"tudo das obras designadas"</b>. Gestor vê todas as obras.</div>
+      <div class="dica"><b>Acompanha</b> é enxergar — vale para o supervisor e para
+        quem estiver como "tudo das obras designadas"; gestor vê todas.
+        <b>Responde</b> é outra coisa: é quem recebe a conferência mensal dos
+        equipamentos daquela obra e a cobrança do sistema. Pode marcar mais de
+        uma pessoa por obra — todas recebem. A mesma marca aparece no cadastro
+        da obra, e é a mesma informação.</div>
     </div>
     ${novo ? "" : `
     <div class="campo" style="margin-top:12px">
@@ -237,6 +300,14 @@ function formOperador(u){
   }
   els("op-perfil").addEventListener("change", alternarObras);
   els("op-escopo").addEventListener("change", alternarObras);
+  // Marcar "responde" liga a obra junto: responder por obra que a pessoa não
+  // enxerga daria a ela uma cobrança que ela não consegue abrir.
+  document.querySelectorAll(".op-resp").forEach(caixa =>
+    caixa.addEventListener("change", () => {
+      if (!caixa.checked) return;
+      const obra = document.querySelector(`.op-obra[value="${caixa.value}"]`);
+      if (obra && !obra.checked) obra.checked = true;
+    }));
   alternarObras();
   document.querySelectorAll("[data-grupo]").forEach(b => b.addEventListener("click", () => {
     const g = b.dataset.grupo;
@@ -283,7 +354,8 @@ function formOperador(u){
       ff_autorizado: els("op-ff").value === "1",
       ff_teto_item: els("op-ff-item").value, ff_teto_prestacao: els("op-ff-total").value,
       categorias: [...document.querySelectorAll(".op-cat:checked")].map(i=>+i.value),
-      obras: [...document.querySelectorAll(".op-obra:checked")].map(i=>+i.value)};
+      obras: [...document.querySelectorAll(".op-obra:checked")].map(i=>+i.value),
+      obras_responsavel: [...document.querySelectorAll(".op-resp:checked")].map(i=>+i.value)};
     if (els("op-senha").value) corpo.senha = els("op-senha").value;
     if (novo) { corpo.email = els("op-email").value; corpo.cpf = els("op-cpf").value; }
     try {
@@ -305,6 +377,78 @@ function formOperador(u){
   els("dlg").showModal();
 }
 
+// Botão que APAGA. Três etapas de propósito: escolher as áreas, ver a contagem
+// e só então digitar a frase. E ele RECUSA em vez de apagar em cascata: se algo
+// de fora aponta para o que sairia, diz qual área falta marcar.
+let AREAS_LIMPEZA = [];
+
+async function carregarAreasDeLimpeza(){
+  try {
+    const d = await api("/erp/api/manutencao/limpeza/areas");
+    AREAS_LIMPEZA = d.areas;
+    els("zer-areas").innerHTML = `<div class="filtro-opcoes"
+        style="border:1px solid var(--borda); border-radius:8px; padding:6px">
+      ${d.areas.map(a => `<label class="opcao">
+        <input type="checkbox" class="zer-area" value="${a.chave}">
+        <span class="rotulo"><b>${a.rotulo}</b> — ${a.descricao}</span></label>`).join("")}
+    </div>`;
+  } catch(e){ els("zer-areas").innerHTML =
+    `<div class="aviso erro">${e.message}</div>`; }
+}
+
+function areasMarcadas(){
+  return [...document.querySelectorAll(".zer-area:checked")].map(i => i.value);
+}
+
+async function previaDeZerar(){
+  const areas = areasMarcadas();
+  if (!areas.length) { aviso("mensagem", "Marque ao menos uma área.", "erro"); return; }
+  try {
+    const d = await api(`/erp/api/manutencao/limpeza?areas=${areas.join(",")}`);
+    const r = d.resumo;
+    if (r.impedimentos.length) {
+      const faltam = [...new Set(r.impedimentos.map(x => x.area || x.tabela))];
+      els("zer-resultado").innerHTML = `<div class="aviso alerta" style="margin-top:10px">
+        Falta marcar: <b>${faltam.join(", ")}</b>.<br>
+        ${r.impedimentos.map(x => `${x.linhas} registro(s) em ${x.tabela} ainda
+          apontam para ${x.aponta_para}`).join(" · ")}.<br>
+        <small>O sistema recusa em vez de apagar em cascata — assim nada sai sem
+        você ter marcado.</small></div>`;
+      return;
+    }
+    if (!r.total) {
+      els("zer-resultado").innerHTML = `<div class="cartao-dica" style="margin-top:10px">
+        Não há nada para apagar nessas áreas.</div>`;
+      return;
+    }
+    els("zer-resultado").innerHTML = `
+      <div class="aviso alerta" style="margin-top:10px">
+        Sairiam <b>${r.total}</b> registro(s):
+        ${r.detalhe.map(x => `${x.linhas} em ${x.tabela}`).join(" · ")}.</div>
+      <div class="form-grade" style="align-items:end; margin-top:10px">
+        <div class="campo"><label>Digite <b>${r.frase}</b> para confirmar</label>
+          <input id="zer-frase" placeholder="${r.frase}" style="max-width:220px"></div>
+      </div>
+      <div style="margin-top:10px"><button class="btn" id="btn-zer-fazer">
+        Apagar os ${r.total} registros</button></div>`;
+    els("btn-zer-fazer").addEventListener("click", () => executarZerar(areas));
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function executarZerar(areas){
+  try {
+    const d = await api("/erp/api/manutencao/limpeza", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({areas, confirmacao: els("zer-frase").value})});
+    els("zer-resultado").innerHTML = `<div class="aviso ok" style="margin-top:10px">
+      ${d.relatorio.total} registro(s) apagados. Os cadastros continuam no lugar.</div>`;
+    aviso("mensagem", "Movimento zerado.", "ok");
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+els("btn-zer-previa").addEventListener("click", previaDeZerar);
+carregarAreasDeLimpeza();
+
 async function checarBanco(){
   try {
     const d = await api("/erp/api/manutencao/banco");
@@ -314,6 +458,9 @@ async function checarBanco(){
         atualização(ões) pendente(s):</b> ${e.pendentes.join(", ")}.</span><br>
         Enquanto não forem aplicadas, telas que dependem delas mostram erro.`;
       els("btn-migrar").classList.remove("oculto");
+      // Banco atrasado é assunto de agora: o bloco aparece esteja a pessoa em
+      // que seção estiver.
+      els("bloco-banco").hidden = false;
     } else {
       els("estado-banco").innerHTML = `Banco em dia — ${e.aplicadas.length} atualização(ões) aplicada(s).
         Última: ${e.aplicadas.length ? e.aplicadas[e.aplicadas.length-1].nome + " em " +

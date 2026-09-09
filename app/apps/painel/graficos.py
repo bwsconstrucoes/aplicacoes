@@ -12,12 +12,32 @@ Assim a matemática do desenho fica testável, fora do HTML.
 """
 from __future__ import annotations
 
+# O desenho e feito nestas unidades e depois escalado para a largura da tela.
+# TUDO escala junto, inclusive o TEXTO — e e por isso que estas medidas nao sao
+# arbitrarias.
+#
+# Numa tela de 2000px, `width:100%` sem teto esticava o grafico para 620px de
+# ALTURA: ele engolia a pagina, e foi o que o dono viu em 08/09/2026. A saida
+# obvia seria deitar o desenho (1500x320), para ele preencher a largura sem
+# crescer para baixo. NAO SERVE: num notebook de 1366px o mesmo desenho encolhe
+# para 69% e o texto do eixo cai para 7,6px — ilegivel.
+#
+# Com 900x320 e o teto de altura do CSS, o texto fica entre 12,6px e 13,1px em
+# QUALQUER tela, do notebook ao ultrawide. O preco e uma folga nas laterais em
+# monitores largos, que e so espaco em branco.
 LARGURA = 900
 ALTURA = 320
 MARGEM_ESQ = 78
 MARGEM_DIR = 12
 MARGEM_TOPO = 14
 MARGEM_BASE = 30
+
+# Teto da largura de UMA barra, em unidades do desenho (o desenho tem 900 de
+# largura por 320 de altura). Sem teto, poucos periodos viravam paredoes: com um
+# ano so no filtro, cada barra ocupava um terco da largura do grafico e a tela
+# parecia quebrada. Com o teto, o grupo continua centrado no periodo e sobra
+# respiro dos dois lados.
+LARGURA_MAX_BARRA = 46
 
 
 def _passo_bonito(bruto: float) -> float:
@@ -121,8 +141,10 @@ def barras_agrupadas(itens, campos, campo_rotulo="ano", campo_linha=None,
     largura_util = LARGURA - MARGEM_ESQ - MARGEM_DIR
     passo_x = largura_util / len(itens)
     # 72% da fatia vira barra; o resto é respiro entre os períodos
-    largura_grupo = passo_x * 0.72
-    largura_barra = largura_grupo / max(len(campos), 1)
+    largura_barra = min(passo_x * 0.72 / max(len(campos), 1), LARGURA_MAX_BARRA)
+    # o grupo é recalculado a partir da barra já limitada, senão o teto
+    # deslocaria as barras para a esquerda em vez de estreitá-las no lugar
+    largura_grupo = largura_barra * max(len(campos), 1)
 
     # Quantos rotulos cabem sem um encostar no outro. Com 6 anos de historia
     # sao 70 meses no eixo, e "06/2025" ocupa uns 48px: escrever todos vira uma
@@ -227,7 +249,7 @@ def linhas_com_barras(itens, series, barras=None, campo_rotulo="rotulo",
     retangulos = []
     if barras:
         chave, classe, _nome = barras
-        largura_barra = max(passo_x * 0.55, 1.5)
+        largura_barra = min(max(passo_x * 0.55, 1.5), LARGURA_MAX_BARRA)
         for i, item in enumerate(itens):
             valor = float(item.get(chave) or 0)
             if abs(valor) < 0.005:

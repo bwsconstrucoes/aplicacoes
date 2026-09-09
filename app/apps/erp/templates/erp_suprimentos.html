@@ -1,0 +1,664 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Solicitações de Suprimentos — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="pedido, insumo, especificação…"></div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Situação do item</span>
+      <span class="filtro-badge" id="badge-status">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-status"></div></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Obra</span>
+      <span class="filtro-badge" id="badge-obra">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-obra"></div></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Categoria de insumo</span>
+      <span class="filtro-badge" id="badge-categoria">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <input id="f-busca-categoria" type="search" placeholder="filtrar categorias…"
+             style="width:100%; margin-bottom:6px; padding:6px 8px;
+                    border:1px solid var(--borda-forte); border-radius:6px; font-size:12.5px">
+      <div class="filtro-opcoes" id="opcoes-categoria"></div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Prioridade e prazo</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-alta">
+        <span class="rotulo">Só prioridade alta</span></label>
+      <label class="opcao"><input type="checkbox" id="f-atrasado">
+        <span class="rotulo">Previsão de entrega já passou</span></label>
+      <label class="opcao"><input type="checkbox" id="f-a-cotar">
+        <span class="rotulo">Ainda não cotados</span></label>
+    </div>
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo"></span>
+    <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
+    <span id="acoes-lote" class="oculto" style="display:flex; gap:8px; align-items:center">
+      <button class="btn" id="btn-cotar">Gerar cotação com os selecionados</button>
+    </span>
+    <button class="btn secundario" id="btn-pedir-insumo">Pedir cadastro de insumo</button>
+    <button class="btn" id="btn-nova">+ Novo pedido de material</button>
+  </div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th class="sem-ordem" style="width:34px"><input type="checkbox" id="marca-todos"></th>
+      <th>Pedido</th><th>Material</th><th class="direita">Qtd</th><th>Obra</th>
+      <th>Prioridade</th><th>Precisa até</th><th>Situação</th><th></th>
+    </tr></thead><tbody id="tb-itens"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
+
+<dialog id="dlg">
+  <div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+    <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let BASE = {obras: [], insumos: [], unidades: [], situacoes: [], categorias: []};
+let ITENS = [];
+let F = {status: new Set(), obra: new Set(), categoria: new Set()};
+let MARCADOS = new Set();
+const PODE_COTAR = {{ 'true' if pode.comprar else 'false' }};
+const PODE_PEDIR_INSUMO = {{ 'true' if pode.solicitar_suprimento else 'false' }};
+
+const ROTULO_PRIORIDADE = {ALTA: "Alta", MEDIA: "Média", NORMAL: "Normal"};
+// Situação a partir da qual o item já saiu da fila de cotar.
+const JA_COTADOS = new Set(["COTACAO", "MAPA", "PEDIDO", "AGUARDANDO_AUTORIZACAO",
+                            "AUTORIZADO", "PEDIDO_ENVIADO", "EM_TRANSITO",
+                            "RECEBIDO_PARCIAL", "RECEBIDO", "CANCELADO"]);
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+async function carregarBase(){
+  const sup = await api("/erp/api/suprimentos/cadastros");
+  BASE.obras = sup.obras;
+  BASE.unidades = sup.unidades;
+  BASE.insumos = sup.insumos;
+  BASE.categorias = sup.categorias_insumo;
+}
+
+async function carregar(){
+  try {
+    // Sem filtro no servidor: a filtragem é toda na tela, como numa planilha.
+    // Uma volta ao servidor por caixinha marcada é o que tornava lento.
+    const d = await api("/erp/api/suprimentos/solicitacoes");
+    ITENS = d.itens;
+    const vistas = new Map();
+    ITENS.forEach(i => vistas.set(i.status, i.status_rotulo));
+    BASE.situacoes = [...vistas].map(([chave, rotulo]) => ({chave, rotulo}));
+    montarFiltros();
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function montarFiltros(){
+  const contar = f => {
+    const c = {};
+    ITENS.forEach(i => { const k = f(i); if (k) c[k] = (c[k] || 0) + 1; });
+    return c;
+  };
+
+  const porStatus = contar(i => i.status);
+  els("opcoes-status").innerHTML = BASE.situacoes.map(s => `
+    <label class="opcao"><input type="checkbox" data-status="${s.chave}"
+      ${F.status.has(s.chave) ? "checked" : ""}>
+      <span class="rotulo">${selo(s.chave, s.rotulo)}</span>
+      <span class="qtd">${porStatus[s.chave] || 0}</span></label>`).join("")
+    || `<div class="cartao-dica">nenhum item ainda</div>`;
+  els("badge-status").textContent = F.status.size;
+
+  const porObra = contar(i => i.obra_id);
+  els("opcoes-obra").innerHTML = BASE.obras.map(o => `
+    <label class="opcao ${porObra[o.id] ? "" : "zerada"}">
+      <input type="checkbox" data-obra="${o.id}" ${F.obra.has(String(o.id)) ? "checked" : ""}>
+      <span class="rotulo">${rotuloObra(o)}</span>
+      <span class="qtd">${porObra[o.id] || 0}</span></label>`).join("");
+  els("badge-obra").textContent = F.obra.size;
+
+  const porCategoria = contar(i => i.categoria_insumo_id);
+  const q = (els("f-busca-categoria").value || "").toLowerCase().trim();
+  els("opcoes-categoria").innerHTML = (BASE.categorias || [])
+    .filter(c => !q || c.nome.toLowerCase().includes(q))
+    .map(c => `<label class="opcao ${porCategoria[c.id] ? "" : "zerada"}">
+      <input type="checkbox" data-categoria="${c.id}" ${F.categoria.has(String(c.id)) ? "checked" : ""}>
+      <span class="rotulo">${c.nome}</span>
+      <span class="qtd">${porCategoria[c.id] || 0}</span></label>`).join("")
+    || `<div class="cartao-dica">nenhuma categoria cadastrada</div>`;
+  els("badge-categoria").textContent = F.categoria.size;
+
+  ligar("[data-status]", "status", "status");
+  ligar("[data-obra]", "obra", "obra");
+  ligar("[data-categoria]", "categoria", "categoria");
+}
+
+function ligar(seletor, atributo, chave){
+  document.querySelectorAll(seletor).forEach(i => i.addEventListener("change", ev => {
+    const v = ev.target.dataset[atributo];
+    ev.target.checked ? F[chave].add(v) : F[chave].delete(v);
+    montarFiltros(); desenhar();
+  }));
+}
+
+function visiveis(){
+  const b = (els("f-busca").value || "").toLowerCase().trim();
+  const hoje = new Date().toISOString().slice(0, 10);
+  return ITENS.filter(i => {
+    if (F.status.size && !F.status.has(i.status)) return false;
+    if (F.obra.size && !F.obra.has(String(i.obra_id))) return false;
+    if (F.categoria.size && !F.categoria.has(String(i.categoria_insumo_id))) return false;
+    if (els("f-alta").checked && i.prioridade !== "ALTA") return false;
+    if (els("f-atrasado").checked &&
+        !(i.previsao_entrega && i.previsao_entrega < hoje)) return false;
+    if (els("f-a-cotar").checked && JA_COTADOS.has(i.status)) return false;
+    if (b && !`${i.solicitacao} ${i.titulo} ${i.insumo} ${i.especificacao || ""}`
+              .toLowerCase().includes(b)) return false;
+    return true;
+  });
+}
+
+function desenhar(){
+  const l = visiveis();
+  const hoje = new Date().toISOString().slice(0, 10);
+  const aCotar = l.filter(i => !JA_COTADOS.has(i.status)).length;
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Itens na tela</div>
+      <div class="kpi-valor">${l.length}</div>
+      <div class="kpi-sub">de ${ITENS.length} no total</div></div>
+    <button class="kpi ambar ${els("f-a-cotar").checked ? "ativo" : ""}" data-pendencia="f-a-cotar">
+      <div class="kpi-rotulo">Esperando cotação</div>
+      <div class="kpi-valor">${aCotar}</div>
+      <div class="kpi-sub">selecione e gere a cotação</div></button>
+    <button class="kpi vermelho ${els("f-alta").checked ? "ativo" : ""}" data-pendencia="f-alta">
+      <div class="kpi-rotulo">Prioridade alta</div>
+      <div class="kpi-valor">${l.filter(i => i.prioridade === "ALTA").length}</div>
+      <div class="kpi-sub">se atrasar, para a obra</div></button>
+    <button class="kpi vermelho ${els("f-atrasado").checked ? "ativo" : ""}" data-pendencia="f-atrasado">
+      <div class="kpi-rotulo">Prazo estourado</div>
+      <div class="kpi-valor">${l.filter(i => i.previsao_entrega && i.previsao_entrega < hoje).length}</div>
+      <div class="kpi-sub">previsão de entrega já passou</div></button>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Selecionados</div>
+      <div class="kpi-valor">${MARCADOS.size}</div>
+      <div class="kpi-sub">entram na próxima cotação</div></div>`;
+  document.querySelectorAll("[data-pendencia]").forEach(b =>
+    b.addEventListener("click", () => {
+      const alvo = els(b.dataset.pendencia);
+      alvo.checked = !alvo.checked;
+      desenhar();
+    }));
+
+  els("vazio").classList.toggle("oculto", l.length > 0);
+  if (!l.length) els("vazio").innerHTML = ITENS.length
+    ? "<b>Nada nestes filtros</b>Limpe os filtros à esquerda."
+    : "<b>Nenhum pedido de material</b>Use “+ Novo pedido de material”.";
+
+  els("tb-itens").innerHTML = l.map(i => `
+    <tr class="${MARCADOS.has(i.id) ? "marcada" : ""}">
+      <td>${JA_COTADOS.has(i.status) ? "" :
+        `<input type="checkbox" data-marca="${i.id}" ${MARCADOS.has(i.id) ? "checked" : ""}>`}</td>
+      <td><b>${i.solicitacao}</b><br><small>${i.titulo}</small></td>
+      <td class="desc">${i.insumo}${i.especificacao ? `<small>${i.especificacao}</small>` : ""}
+        ${i.correcoes ? `<small class="corrigido" data-hist="${i.id}"
+          title="Clique para ver o que mudou, por quem e por quê">corrigido ${i.correcoes}×</small>` : ""}</td>
+      <td class="direita dados">${quantidadeBR(i.quantidade)} ${i.unidade}
+        ${Number(i.quantidade_recebida) > 0
+          ? `<br><small>recebido ${quantidadeBR(i.quantidade_recebida)}</small>` : ""}</td>
+      <td class="dados">${i.obra}</td>
+      <td>${ROTULO_PRIORIDADE[i.prioridade] || i.prioridade}</td>
+      <td class="dados ${i.previsao_entrega && i.previsao_entrega < hoje ? "atrasado" : ""}"
+        >${dataBR(i.previsao_entrega)}</td>
+      <td>${selo(i.status, i.status_rotulo)}</td>
+      <td class="direita" style="white-space:nowrap">
+        ${PODE_COTAR && i.corrigivel ? `<button class="btn secundario" data-corrigir="${i.id}"
+          title="Corrigir o que a obra pediu — exige motivo e fica registrado"
+          style="padding:4px 8px; font-size:12px">corrigir</button>` : ""}
+        ${i.proximas.length ? `
+        <select data-mover="${i.id}" style="min-width:150px">
+          <option value="">mover para…</option>
+          ${i.proximas.map(p => `<option value="${p}">${rotuloSituacao(p)}</option>`).join("")}
+        </select>` : ""}</td>
+    </tr>`).join("");
+
+  document.querySelectorAll("[data-marca]").forEach(c =>
+    c.addEventListener("change", ev => {
+      const id = +ev.target.dataset.marca;
+      ev.target.checked ? MARCADOS.add(id) : MARCADOS.delete(id);
+      desenhar();
+    }));
+
+  document.querySelectorAll("[data-mover]").forEach(sel =>
+    sel.addEventListener("change", async () => {
+      if (!sel.value) return;
+      try {
+        await api(`/erp/api/suprimentos/itens/${sel.dataset.mover}/situacao`,
+          {method: "POST", headers: {"Content-Type": "application/json"},
+           body: JSON.stringify({status: sel.value})});
+        aviso("mensagem", "Situação atualizada.", "ok");
+        carregar();
+      } catch(e){ aviso("mensagem", e.message, "erro"); sel.value = ""; }
+    }));
+
+  document.querySelectorAll("[data-corrigir]").forEach(b =>
+    b.addEventListener("click", () => corrigirItem(+b.dataset.corrigir)));
+  document.querySelectorAll("[data-hist]").forEach(m =>
+    m.addEventListener("click", () => verHistorico(+m.dataset.hist)));
+
+  els("acoes-lote").classList.toggle("oculto", !(PODE_COTAR && MARCADOS.size));
+  els("resumo").innerHTML = `<b>${l.length}</b> item(ns) · ` +
+    `<b>${MARCADOS.size}</b> selecionado(s)`;
+}
+
+function rotuloSituacao(chave){
+  const achou = BASE.situacoes.find(s => s.chave === chave);
+  return achou ? achou.rotulo : rotulo(chave);
+}
+
+els("marca-todos").addEventListener("change", ev => {
+  const l = visiveis().filter(i => !JA_COTADOS.has(i.status));
+  ev.target.checked ? l.forEach(i => MARCADOS.add(i.id)) : MARCADOS.clear();
+  desenhar();
+});
+
+// ---------------------------------------------------------------------------
+// Correção do pedido pelo comprador
+//
+// A obra erra: pede em saco o que vem em bag, escreve o material errado,
+// confunde um insumo com o vizinho. Hoje isso volta por telefone e o pedido
+// fica parado. Quem recebe corrige — mas correção sem assinatura vira "eu não
+// pedi isso": o MOTIVO é obrigatório e tudo fica gravado.
+// ---------------------------------------------------------------------------
+async function corrigirItem(id){
+  const i = ITENS.find(x => x.id === id);
+  if (!i) return;
+  const d = await perguntar({
+    titulo: `Corrigir ${i.solicitacao} · item ${i.numero}`,
+    textoOk: "Corrigir e registrar",
+    aviso: "Fica gravado o que era, o que passou a ser, quem mudou e quando. " +
+           "Se o material ou a unidade mudar, os preços já digitados no mapa " +
+           "desta linha são apagados — eram de outra coisa.",
+    campos: [
+      {nome: "insumo_id", rotulo: "Insumo", tipo: "select", largura: 3,
+       valor: String(i.insumo_id),
+       opcoes: BASE.insumos.map(x => ({valor: String(x.id), rotulo: x.descricao}))},
+      {nome: "especificacao", rotulo: "Especificação", largura: 2,
+       valor: i.especificacao || "", exemplo: "ex.: CP-II 50kg, cinza"},
+      {nome: "quantidade", rotulo: "Quantidade", largura: 1,
+       valor: quantidadeBR(i.quantidade)},
+      {nome: "unidade", rotulo: "Unidade", tipo: "select", largura: 1,
+       valor: i.unidade,
+       opcoes: BASE.unidades.map(u => ({valor: u.codigo,
+                                        rotulo: `${u.codigo} · ${u.descricao}`}))},
+      {nome: "obra_id", rotulo: "Obra que recebe", tipo: "select", largura: 2,
+       valor: String(i.obra_id),
+       opcoes: BASE.obras.map(o => ({valor: String(o.id), rotulo: rotuloObra(o)}))},
+      {nome: "motivo", rotulo: "Motivo da correção", tipo: "textarea", linhas: 2,
+       obrigatorio: true, largura: 3,
+       exemplo: "ex.: material solicitado errado — a obra queria CP-V"}]});
+  if (!d) return;
+  try {
+    const r = await api(`/erp/api/suprimentos/itens/${id}`, {method: "PATCH",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(d)});
+    const quantos = Object.keys(r.mudancas || {}).length;
+    aviso("mensagem", `${quantos} campo(s) corrigido(s) e registrado(s).` +
+      (r.avisos && r.avisos.length ? " " + r.avisos.join(" ") : ""),
+      r.avisos && r.avisos.length ? "alerta" : "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function verHistorico(id){
+  const i = ITENS.find(x => x.id === id) || {};
+  try {
+    const r = await api(`/erp/api/suprimentos/itens/${id}/historico`);
+    els("dlg-titulo").textContent = `Correções de ${i.solicitacao || ""} · ${i.insumo || ""}`;
+    els("dlg-corpo").innerHTML = r.historico.length ? r.historico.map(h => `
+      <div class="cartao-dica" style="margin-bottom:8px">
+        <b>${momentoBR(h.quando)}</b> — ${escapar(h.quem)}<br>
+        <i>${escapar(h.motivo)}</i>
+        <ul style="margin:6px 0 0 16px">
+          ${h.mudancas.map(m => `<li>${escapar(m)}</li>`).join("")}
+        </ul>
+      </div>`).join("")
+      : `<div class="cartao-dica">Nenhuma correção registrada.</div>`;
+    els("dlg").showModal();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// Cotação a partir daqui
+//
+// É onde a cotação realmente nasce: filtra-se o que precisa comprar, marca-se,
+// e daqui sai o mapa. Abrir a tela de Cotações e reescolher os itens de novo
+// era refazer à mão um trabalho que a filtragem já tinha feito.
+// ---------------------------------------------------------------------------
+async function gerarCotacao(){
+  const escolhidos = ITENS.filter(i => MARCADOS.has(i.id));
+  if (!escolhidos.length) return;
+  const categorias = [...new Set(escolhidos.map(i => i.categoria_insumo_id).filter(Boolean))];
+
+  let fornecedores = [];
+  try {
+    const d = await api("/erp/api/suprimentos/fornecedores");
+    fornecedores = d.fornecedores.filter(f => f.ativo);
+  } catch(e){ return aviso("mensagem", e.message, "erro"); }
+
+  const sugeridos = new Set(fornecedores
+    .filter(f => f.categorias_ids.some(c => categorias.includes(c)))
+    .map(f => f.id));
+  const escolhidosForn = new Set(sugeridos);
+
+  els("dlg-titulo").textContent = `Nova cotação — ${escolhidos.length} item(ns)`;
+  els("dlg-corpo").innerHTML = `
+    <div id="cot-msg"></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 3"><label>Título da cotação *</label>
+        <input id="cot-titulo" value="${escolhidos[0].titulo}">
+        <div class="dica">É por ele que se procura o mapa depois.</div></div>
+    </div>
+
+    <div class="cartao" style="margin-top:12px">
+      <div class="cartao-cab"><h3>Itens que entram</h3>
+        <small>${escolhidos.length} selecionado(s)</small></div>
+      <div style="max-height:180px; overflow:auto">
+        <table><tbody>${escolhidos.map(i => `<tr>
+          <td>${i.insumo}${i.especificacao ? `<small> — ${i.especificacao}</small>` : ""}</td>
+          <td class="direita dados">${quantidadeBR(i.quantidade)} ${i.unidade}</td>
+          <td class="dados">${i.obra}</td></tr>`).join("")}</tbody></table>
+      </div>
+    </div>
+
+    <div class="cartao">
+      <div class="cartao-cab"><h3>Quem vai cotar</h3>
+        <small>já marcados os que vendem estas categorias</small></div>
+      <input id="cot-busca" type="search" placeholder="filtrar fornecedores…"
+             style="width:100%; margin-bottom:8px; padding:7px 9px;
+                    border:1px solid var(--borda-forte); border-radius:8px; font-size:13px">
+      <div id="cot-fornecedores" style="max-height:220px; overflow:auto"></div>
+      <div class="cartao-dica">Fornecedor sem categoria marcada não aparece
+        sugerido — corrija em Cadastros › Fornecedores.</div>
+    </div>
+
+    <div style="margin-top:14px; display:flex; gap:8px">
+      <button class="btn" id="cot-ok">Abrir o mapa de cotação</button>
+      <button class="btn secundario" onclick="els('dlg').close()">Cancelar</button>
+    </div>`;
+
+  const pintar = () => {
+    const q = (els("cot-busca").value || "").toLowerCase().trim();
+    const lista = fornecedores.filter(f => !q ||
+      `${f.razao_social} ${f.nome_fantasia} ${f.categorias.join(" ")}`.toLowerCase().includes(q));
+    const ordenada = [...lista].sort((a, b) =>
+      (sugeridos.has(b.id) - sugeridos.has(a.id)) ||
+      a.razao_social.localeCompare(b.razao_social, "pt-BR"));
+    els("cot-fornecedores").innerHTML = ordenada.map(f => `
+      <label class="opcao"><input type="checkbox" data-forn="${f.id}"
+        ${escolhidosForn.has(f.id) ? "checked" : ""}>
+        <span class="rotulo">${f.razao_social}
+          ${sugeridos.has(f.id) ? `<span class="selo aprovado">vende isto</span>` : ""}
+          <small style="display:block; color:var(--tinta-suave)"
+            >${f.porte_rotulo || "porte não informado"} ·
+             ${f.categorias.join(", ") || "sem categoria"}</small></span></label>`).join("")
+      || `<div class="cartao-dica">nenhum fornecedor encontrado</div>`;
+    document.querySelectorAll("[data-forn]").forEach(c =>
+      c.addEventListener("change", ev => {
+        const id = +ev.target.dataset.forn;
+        ev.target.checked ? escolhidosForn.add(id) : escolhidosForn.delete(id);
+      }));
+  };
+  els("cot-busca").addEventListener("input", pintar);
+  pintar();
+
+  els("cot-ok").addEventListener("click", async () => {
+    const titulo = els("cot-titulo").value.trim();
+    if (titulo.length < 3) return aviso("cot-msg", "Dê um título à cotação.", "erro");
+    if (!escolhidosForn.size)
+      return aviso("cot-msg", "Marque ao menos um fornecedor para cotar.", "erro");
+    try {
+      const c = await api("/erp/api/suprimentos/cotacoes", {method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({titulo, itens: [...MARCADOS]})});
+      // As colunas do mapa entram uma a uma: se uma falhar, as outras ficam,
+      // e o mapa já está criado — nada se perde.
+      const falhas = [];
+      for (const fornecedor_id of escolhidosForn) {
+        try {
+          await api(`/erp/api/suprimentos/cotacoes/${c.id}/fornecedores`, {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({fornecedor_id})});
+        } catch(e){ falhas.push(e.message); }
+      }
+      els("dlg").close();
+      MARCADOS.clear();
+      if (falhas.length) aviso("mensagem",
+        `Cotação ${c.numero} criada, mas ${falhas.length} fornecedor(es) não entraram: ` +
+        falhas.join(" · "), "alerta");
+      location.href = `/erp/suprimentos/cotacoes?cotacao=${c.id}`;
+    } catch(e){ aviso("cot-msg", e.message, "erro"); }
+  });
+
+  els("dlg").showModal();
+}
+
+// ---------------------------------------------------------------------------
+// Novo pedido
+// ---------------------------------------------------------------------------
+function linhaDeItem(n){
+  return `<tr data-item>
+    <td class="dados">${n}</td>
+    <td><select class="it-insumo" style="min-width:200px">
+      <option value="">— escolha —</option>
+      ${BASE.insumos.map(i => `<option value="${i.id}" data-unidade="${i.unidade || ""}">${i.descricao}</option>`).join("")}
+    </select></td>
+    <td><input class="it-espec" placeholder="ex.: 6mm, cinza" style="min-width:130px"></td>
+    <td><input class="it-qtd" inputmode="decimal" style="width:80px"></td>
+    <td><select class="it-un" style="width:90px">
+      <option value="">— un. —</option>
+      ${BASE.unidades.map(u => `<option value="${u.codigo}">${u.codigo}</option>`).join("")}
+    </select></td>
+    <td><select class="it-obra" style="min-width:170px">
+      ${BASE.obras.map(o => `<option value="${o.id}">${o.codigo}</option>`).join("")}
+    </select></td>
+    <td><button type="button" class="btn secundario" data-tirar
+        style="padding:4px 9px; font-size:12px">tirar</button></td></tr>`;
+}
+
+function abrirNovo(){
+  if (!BASE.insumos.length) {
+    return aviso("mensagem",
+      "Não há insumo cadastrado ainda. Cadastre em Cadastros › Insumos, ou use " +
+      "“Pedir cadastro de insumo”.", "erro");
+  }
+  els("dlg-titulo").textContent = "Novo pedido de material";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Título do pedido *</label>
+        <input id="ns-titulo" placeholder="ex.: armadura da fundação">
+        <div class="dica">É por ele que você vai achar este pedido depois.</div></div>
+      <div class="campo"><label>Precisa em obra até</label>
+        <input id="ns-previsao" type="date"></div>
+      <div class="campo"><label>Prioridade</label>
+        <select id="ns-prioridade">
+          <option value="NORMAL">Normal</option>
+          <option value="MEDIA">Média</option>
+          <option value="ALTA">Alta — se atrasar, para a obra</option>
+        </select></div>
+    </div>
+    <div class="cartao-dica" style="margin-top:10px">Uma mesma solicitação pode
+      pedir material para <b>obras diferentes</b> — a obra é de cada item.</div>
+    <table style="margin-top:10px"><thead><tr>
+      <th>#</th><th>Insumo</th><th>Especificação</th><th>Qtd</th>
+      <th title="A unidade é deste pedido. O cadastro só sugere.">Un.</th>
+      <th>Obra</th><th></th></tr></thead>
+      <tbody id="ns-itens">${linhaDeItem(1)}</tbody></table>
+    <div style="margin-top:10px; display:flex; gap:8px">
+      <button class="btn secundario" id="ns-mais">Mais um item</button>
+      <button class="btn secundario" id="ns-colar">Colar lista da planilha</button>
+      <button class="btn" id="ns-salvar">Registrar pedido</button>
+    </div>`;
+  ligarLinhas();
+  els("ns-mais").addEventListener("click", () => {
+    const corpo = els("ns-itens");
+    corpo.insertAdjacentHTML("beforeend", linhaDeItem(corpo.children.length + 1));
+    ligarLinhas();
+  });
+  els("ns-colar").addEventListener("click", colarLista);
+  els("ns-salvar").addEventListener("click", salvarNovo);
+  els("dlg").showModal();
+}
+
+function ligarLinhas(){
+  document.querySelectorAll("[data-tirar]").forEach(b => b.onclick = () => {
+    const corpo = els("ns-itens");
+    if (corpo.children.length === 1) return;   // pedido sem item não existe
+    b.closest("tr").remove();
+    [...corpo.children].forEach((tr, i) => tr.firstElementChild.textContent = i + 1);
+  });
+  // Escolher o insumo SUGERE a unidade usual do cadastro — mas não trava:
+  // cimento costuma vir em saco e um dia vem em bag, cerâmica costuma ir por
+  // metro quadrado e um dia vai por caixa. Quem pede troca na hora.
+  document.querySelectorAll(".it-insumo").forEach(sel => {
+    sel.onchange = () => {
+      const un = sel.selectedOptions[0]?.dataset.unidade;
+      const alvo = sel.closest("tr").querySelector(".it-un");
+      if (un && [...alvo.options].some(o => o.value === un)) alvo.value = un;
+    };
+  });
+}
+
+// A quantidade de material já está tabulada em algum lugar quando o cronograma
+// é montado. Redigitar 40 linhas é onde se perde tempo e entra erro de
+// digitação — então cola-se o texto e a IA monta as linhas para CONFERIR.
+async function colarLista(){
+  const r = await perguntar({
+    titulo: "Colar lista de materiais",
+    aviso: "A IA lê e monta as linhas para você conferir. Ela sugere e aponta o " +
+           "que não reconheceu — nada é gravado sem você revisar.",
+    campos: [{nome: "texto", rotulo: "Cole aqui", tipo: "textarea", linhas: 10,
+              obrigatorio: true,
+              exemplo: "Vergalhão CA50 12.5mm\t180\tM\nCola PU 800ml\t12\tUN"}],
+    textoOk: "Ler lista"});
+  if (!r) return;
+  aviso("dlg-msg", "Lendo…", "info");
+  try {
+    const d = await api("/erp/api/suprimentos/ler-lista", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({texto: r.texto})});
+    aplicarLeitura(d.leitura);
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+function aplicarLeitura(leitura){
+  const corpo = els("ns-itens");
+  const vazias = [...corpo.children].filter(tr => !tr.querySelector(".it-insumo").value);
+  vazias.forEach(tr => tr.remove());
+  leitura.itens.forEach((linha, i) => {
+    corpo.insertAdjacentHTML("beforeend", linhaDeItem(corpo.children.length + 1));
+    const tr = corpo.lastElementChild;
+    if (linha.insumo_id) tr.querySelector(".it-insumo").value = linha.insumo_id;
+    if (linha.quantidade) tr.querySelector(".it-qtd").value = linha.quantidade;
+    if (linha.unidade) tr.querySelector(".it-un").value = linha.unidade;
+    if (linha.obra_id) tr.querySelector(".it-obra").value = linha.obra_id;
+    if (linha.especificacao) tr.querySelector(".it-espec").value = linha.especificacao;
+    // O que a IA não reconheceu fica marcado na tela, com o texto original ao
+    // lado — quem pediu escolhe o insumo certo em vez de a máquina chutar.
+    if (!linha.insumo_id) {
+      tr.style.background = "var(--fundo-aviso, #fff8e1)";
+      tr.querySelector(".it-espec").placeholder = `lido: ${linha.descricao_lida}`;
+      tr.querySelector(".it-insumo").title = `não reconhecido: ${linha.descricao_lida}`;
+    }
+  });
+  if (!corpo.children.length) corpo.insertAdjacentHTML("beforeend", linhaDeItem(1));
+  ligarLinhas();
+  aviso("dlg-msg", leitura.resumo +
+    (leitura.nao_reconhecidos.length
+      ? " Escolha o insumo nas linhas destacadas." : ""),
+    leitura.nao_reconhecidos.length ? "alerta" : "ok");
+}
+
+async function salvarNovo(){
+  const itens = [...document.querySelectorAll("[data-item]")].map(tr => ({
+    insumo_id: tr.querySelector(".it-insumo").value,
+    especificacao: tr.querySelector(".it-espec").value,
+    quantidade: tr.querySelector(".it-qtd").value,
+    unidade: tr.querySelector(".it-un").value,
+    obra_id: tr.querySelector(".it-obra").value,
+  })).filter(i => i.insumo_id);
+  try {
+    const d = await api("/erp/api/suprimentos/solicitacoes", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({titulo: els("ns-titulo").value,
+                            previsao_entrega: els("ns-previsao").value,
+                            prioridade: els("ns-prioridade").value, itens})});
+    els("dlg").close();
+    aviso("mensagem", `Pedido ${d.numero} registrado.`, "ok");
+    carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
+// Quem está na obra não abre a tela de Cadastros — mas é quem descobre que
+// falta um insumo. O pedido de cadastro nasce aqui.
+async function pedirCadastroDeInsumo(){
+  const d = await perguntar({
+    titulo: "Pedir cadastro de insumo",
+    textoOk: "Pedir",
+    aviso: "Quem responde por Suprimentos decide o nome final, a categoria e a " +
+           "conta. Você é avisado quando sair.",
+    campos: [
+      {nome: "descricao", rotulo: "Qual material", obrigatorio: true, largura: 3,
+       exemplo: "ex.: Cola/Selante PU sachê 800ml"},
+      {nome: "unidade", rotulo: "Unidade", tipo: "select", largura: 1,
+       opcoes: [{valor: "", rotulo: "—"}].concat(
+         BASE.unidades.map(u => ({valor: u.codigo, rotulo: `${u.codigo} · ${u.descricao}`})))},
+      {nome: "justificativa", rotulo: "Para que precisa", largura: 3,
+       exemplo: "ex.: junta do piso da CREPETERRA"}]});
+  if (!d) return;
+  try {
+    await api("/erp/api/suprimentos/insumos/solicitacoes", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(d)});
+    aviso("mensagem", "Pedido de cadastro registrado.", "ok");
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+els("btn-nova").addEventListener("click", abrirNovo);
+els("btn-cotar").addEventListener("click", gerarCotacao);
+els("btn-pedir-insumo").addEventListener("click", pedirCadastroDeInsumo);
+if (!PODE_PEDIR_INSUMO) els("btn-pedir-insumo").style.display = "none";
+["f-busca", "f-alta", "f-atrasado", "f-a-cotar"].forEach(id =>
+  els(id).addEventListener("input", desenhar));
+els("f-busca-categoria").addEventListener("input", montarFiltros);
+els("btn-limpar").addEventListener("click", () => {
+  F = {status: new Set(), obra: new Set(), categoria: new Set()};
+  ["f-busca", "f-busca-categoria"].forEach(id => els(id).value = "");
+  ["f-alta", "f-atrasado", "f-a-cotar"].forEach(id => els(id).checked = false);
+  montarFiltros(); desenhar();
+});
+
+carregarBase().then(carregar).catch(e => aviso("mensagem", e.message, "erro"));
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
+</script>
+{% endblock %}

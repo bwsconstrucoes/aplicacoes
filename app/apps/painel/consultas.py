@@ -103,9 +103,31 @@ _CARIMBO_LEMBRADO = [""]
 
 
 def _carimbo_da_base() -> str:
-    """Muda quando uma atualizacao termina. E a chave de tudo que fica guardado."""
-    linhas = consultar("SELECT MAX(fim) FROM execucoes WHERE fim IS NOT NULL")
-    return str(linhas[0][0]) if linhas else "sem-carga"
+    """Muda quando uma atualizacao termina. E a chave de tudo que fica guardado.
+
+    Perguntado UMA VEZ POR REQUISICAO. Antes ia ao banco a cada `_lembrando`, e
+    no Analitico eram tres idas para trazer a mesma resposta — 3 das 8 consultas
+    da tela eram a mesma pergunta. A consulta e barata, mas cada uma e uma
+    viagem de rede ate o banco, que fica em outro servico.
+
+    Guardado no `g` do Flask, que morre junto com a requisicao: nao ha risco de
+    carimbo velho sobrevivendo a uma carga nova. FORA de requisicao — na carga,
+    que roda em processo separado — nao guarda nada e pergunta sempre, porque um
+    processo que vive horas nao pode carregar uma resposta congelada."""
+    def _consultar():
+        linhas = consultar("SELECT MAX(fim) FROM execucoes WHERE fim IS NOT NULL")
+        return str(linhas[0][0]) if linhas else "sem-carga"
+
+    try:
+        from flask import g, has_request_context
+        if not has_request_context():
+            return _consultar()
+    except Exception:                 # sem Flask por perto: pergunta e pronto
+        return _consultar()
+
+    if not hasattr(g, "_painel_carimbo"):
+        g._painel_carimbo = _consultar()
+    return g._painel_carimbo
 
 
 def esquecer_listas() -> None:
@@ -194,9 +216,9 @@ def resultado_dre(f: Filtros) -> dict:
     sql = f"""
         SELECT
           SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {COMPROMETIDO} ELSE 0 END),
-          SUM(CASE WHEN tipo = ?                    THEN {COMPROMETIDO} ELSE 0 END),
+          SUM(CASE WHEN tipo = ? THEN {COMPROMETIDO_COM_ENCARGO} ELSE 0 END),
           SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {EXECUTADO}    ELSE 0 END),
-          SUM(CASE WHEN tipo = ?                    THEN {EXECUTADO}    ELSE 0 END)
+          SUM(CASE WHEN tipo = ? THEN {EXECUTADO_COM_ENCARGO} ELSE 0 END)
         FROM fato{where}"""
     rec_c, desp_c, rec_e, desp_e = consultar(sql, [REC, PAG, REC, PAG] + params)[0]
     rec_c, desp_c = float(rec_c or 0), float(desp_c or 0)
@@ -212,7 +234,7 @@ def dre_por_ano(f: Filtros) -> list[dict]:
     sql = f"""
         SELECT ano,
           SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {COMPROMETIDO} ELSE 0 END),
-          SUM(CASE WHEN tipo = ?                    THEN {COMPROMETIDO} ELSE 0 END)
+          SUM(CASE WHEN tipo = ? THEN {COMPROMETIDO_COM_ENCARGO} ELSE 0 END)
         FROM fato{where} GROUP BY ano ORDER BY ano"""
     saida = []
     for ano, receita, despesa in consultar(sql, [REC, PAG] + params):
@@ -230,8 +252,10 @@ def caixa(f: Filtros) -> dict:
     nunca passaram pela conta da BWS."""
     where, params = f.where(f"{PAGO} AND NOT (tipo = ? AND {RETIDO})", [REC])
     sql = f"""
-        SELECT SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END),
-               SUM(CASE WHEN pago_recebido < 0 THEN pago_recebido ELSE 0 END)
+        SELECT SUM(CASE WHEN {MOVIMENTO_DE_CAIXA} > 0
+                        THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END),
+               SUM(CASE WHEN {MOVIMENTO_DE_CAIXA} < 0
+                        THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END)
           FROM fato{where}"""
     entradas, saidas = consultar(sql, params)[0]
     entradas, saidas = float(entradas or 0), float(saidas or 0)
@@ -242,7 +266,8 @@ def caixa_por_ano(f: Filtros) -> list[dict]:
     """Geracao de caixa por ano, com o acumulado."""
     where, params = f.where(
         f"{PAGO} AND NOT (tipo = ? AND {RETIDO}) AND ano BETWEEN 2015 AND 2100", [REC])
-    sql = f"SELECT ano, SUM(pago_recebido) FROM fato{where} GROUP BY ano ORDER BY ano"
+    sql = (f"SELECT ano, SUM({MOVIMENTO_DE_CAIXA}) FROM fato{where} "
+           f"GROUP BY ano ORDER BY ano")
     saida, acumulado = [], 0.0
     for ano, valor in consultar(sql, params):
         valor = float(valor or 0)
@@ -257,7 +282,36 @@ def caixa_por_ano(f: Filtros) -> list[dict]:
 # Juros e multa efetivamente PAGOS sao despesa financeira: entram no DRE, na
 # linha "Juros e Multas Pagos", e somam no total. Ficaram de fora da primeira
 # versao desta tela, e o resultado saia maior do que era.
+# Como se chama o titulo que NAO foi apropriado a nenhuma obra. Ate 08/09/2026
+# eram cinco literais espalhados dizendo "(sem obra)"; o painel Streamlit passou
+# a usar "(nao apropriado)", que e mais honesto — o titulo existe, o que falta e
+# a apropriacao — e e por esse rotulo que se procura o que precisa ser saneado.
+# Um lugar so: o Explorador filtra por ele, e dois nomes diferentes para a mesma
+# coisa fariam a busca nao achar nada.
+SEM_OBRA = "(não apropriado)"
+OBRA_OU_SEM = f"COALESCE(NULLIF(TRIM(departamento),''), '{SEM_OBRA}')"
+
 ENCARGO = f"CASE WHEN {PAGO} THEN (juros + multa) ELSE 0 END"
+
+# O dinheiro que ANDOU numa linha: o principal mais os encargos pagos. Juros
+# pago sai da conta corrente como qualquer outro pagamento.
+MOVIMENTO_DE_CAIXA = f"(pago_recebido + {ENCARGO})"
+
+# O VALOR DE FATO DE UMA DESPESA inclui os encargos. Use estes dois, e nao o
+# COMPROMETIDO/EXECUTADO crus, em qualquer soma de DESPESA.
+#
+# Por que existem: ate 08/09/2026 so o DRE e o Analitico somavam juros e multa.
+# O resto do painel — Visao Geral, Resultado por Obra, Comprometido x Executado,
+# as telas de caixa e a Prestacao de Contas — somava so o principal, e o
+# resultado saia MAIOR do que e. O dono viu numa obra: R$ 931.718,04 na Visao
+# Geral contra R$ 888.419,91 no DRE, diferenca de R$ 43.298,13 — os juros, ao
+# centavo. Nao era defeito da conversao: o Streamlit original fazia igual, e ele
+# decidiu que juros e multa sao despesa em todo lugar.
+#
+# So valem para tipo = PAG. Do lado da RECEITA, juros recebido e receita
+# financeira — outra conversa, e o dono nao pediu.
+COMPROMETIDO_COM_ENCARGO = f"({COMPROMETIDO} + {ENCARGO})"
+EXECUTADO_COM_ENCARGO = f"({EXECUTADO} + {ENCARGO})"
 
 
 def dre_linhas(f: Filtros) -> dict:
@@ -392,7 +446,7 @@ def receita_por_obra(f: Filtros, limite: int = 25) -> list[dict]:
     """Receita por obra: o que ja entrou, o que o cliente reteve e o que falta."""
     where, params = f.where("analise = 'DRE' AND tipo = ?", [REC])
     sql = f"""
-        SELECT COALESCE(NULLIF(departamento,''), '(sem obra)'),
+        SELECT {OBRA_OU_SEM},
                SUM(CASE WHEN NOT ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
                SUM(CASE WHEN     ({RETIDO}) THEN {EXECUTADO} ELSE 0 END),
                SUM({EM_ABERTO})
@@ -412,9 +466,9 @@ def top_credores(f: Filtros, limite: int = 20) -> list[dict]:
     where, params = f.where("analise = 'DRE' AND tipo = ?", [PAG])
     sql = f"""
         SELECT COALESCE(NULLIF(razao_social,''), '(sem fornecedor)'),
-               SUM({EXECUTADO}), SUM({EM_ABERTO}), COUNT(*)
+               SUM({EXECUTADO_COM_ENCARGO}), SUM({EM_ABERTO}), COUNT(*)
           FROM fato{where} GROUP BY 1
-         ORDER BY SUM({COMPROMETIDO}) ASC LIMIT {int(limite)}"""
+         ORDER BY SUM({COMPROMETIDO_COM_ENCARGO}) ASC LIMIT {int(limite)}"""
     return [{"nome": nome, "pago": float(pago or 0), "aberto": float(aberto or 0),
              "titulos": qtd}
             for nome, pago, aberto, qtd in consultar(sql, params)]
@@ -435,8 +489,10 @@ def caixa_por_mes(f: Filtros) -> list[dict]:
     # apelido — agrupando pelo mes do ano, sem separar 2024 de 2025.
     sql = f"""
         SELECT date_trunc('month', data)::date AS inicio_do_mes,
-               SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END),
-               SUM(CASE WHEN pago_recebido < 0 THEN pago_recebido ELSE 0 END)
+               SUM(CASE WHEN {MOVIMENTO_DE_CAIXA} > 0
+                        THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END),
+               SUM(CASE WHEN {MOVIMENTO_DE_CAIXA} < 0
+                        THEN {MOVIMENTO_DE_CAIXA} ELSE 0 END)
           FROM fato{where}
          GROUP BY 1 ORDER BY 1"""
     saida, acumulado = [], 0.0
@@ -464,12 +520,13 @@ def resultado_por(f: Filtros, nivel: str = "projeto", medida: str = "comprometid
     # O resultado (receita + despesa) e repetido no ORDER BY em vez de `2 + 3`:
     # no Postgres um numero solto no ORDER BY e a posicao da coluna, mas dentro
     # de uma conta ele vira a constante — `2 + 3` ordenaria por 5, sempre igual.
+    valor_desp = _medida_de_despesa(medida)
     resultado = (f"SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {valor} ELSE 0 END) "
-                 f"+ SUM(CASE WHEN tipo = ? THEN {valor} ELSE 0 END)")
+                 f"+ SUM(CASE WHEN tipo = ? THEN {valor_desp} ELSE 0 END)")
     sql = f"""
         SELECT COALESCE(NULLIF({coluna},''), '(sem {coluna})'),
                SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {valor} ELSE 0 END),
-               SUM(CASE WHEN tipo = ?                    THEN {valor} ELSE 0 END)
+               SUM(CASE WHEN tipo = ? THEN {valor_desp} ELSE 0 END)
           FROM fato{where} GROUP BY 1
          ORDER BY {resultado} DESC LIMIT {int(limite)}"""
     saida = []
@@ -493,12 +550,17 @@ def comprometido_vs_executado(f: Filtros, nivel: str = "projeto",
     ela vai render já entrou."""
     coluna = "departamento" if nivel == "obra" else "projeto"
     alvo = PAG if tipo == "pagar" else REC
+    # do lado de PAGAR, o executado inclui os encargos: juros pago e dinheiro
+    # que ja saiu da obra. Do lado de RECEBER nao — juros recebido e receita
+    # financeira, outra conversa.
+    executado = EXECUTADO_COM_ENCARGO if alvo == PAG else EXECUTADO
+    comprometido = COMPROMETIDO_COM_ENCARGO if alvo == PAG else COMPROMETIDO
     where, params = f.where("tipo = ?", [alvo])
     sql = f"""
         SELECT COALESCE(NULLIF({coluna},''), '(sem {coluna})'),
-               SUM({EXECUTADO}), SUM({EM_ABERTO})
+               SUM({executado}), SUM({EM_ABERTO})
           FROM fato{where} GROUP BY 1
-         ORDER BY ABS(SUM({COMPROMETIDO})) DESC LIMIT {int(limite)}"""
+         ORDER BY ABS(SUM({comprometido})) DESC LIMIT {int(limite)}"""
     saida = []
     for nome, executado, a_executar in consultar(sql, params):
         executado, a_executar = float(executado or 0), float(a_executar or 0)
@@ -536,8 +598,8 @@ def caixa_mensal_por_obra() -> list[tuple]:
     (início do mês, obra, valor) — algumas milhares de linhas, não a base."""
     sql = f"""
         SELECT date_trunc('month', data)::date,
-               COALESCE(NULLIF(departamento,''), '(sem obra)'),
-               SUM(pago_recebido)
+               {OBRA_OU_SEM},
+               SUM({MOVIMENTO_DE_CAIXA})
           FROM fato
          WHERE {_BASE_CAIXA} AND analise = 'DRE'
            AND NOT (tipo = ? AND {RETIDO})
@@ -714,23 +776,30 @@ def _medida(medida: str) -> str:
     return EXECUTADO if medida == "executado" else COMPROMETIDO
 
 
+def _medida_de_despesa(medida: str) -> str:
+    """A mesma medida, com os encargos dentro. Use nas somas de tipo = PAG."""
+    return (EXECUTADO_COM_ENCARGO if medida == "executado"
+            else COMPROMETIDO_COM_ENCARGO)
+
+
 def apuracao_por_obra_mes(medida: str = "comprometido") -> list[dict]:
     """Receita líquida, retenções e despesas de cada obra, mês a mês.
 
     É a base de tudo na prestação de contas. Umas poucas milhares de linhas
     (obras × meses), não a base inteira."""
     valor = _medida(medida)
+    valor_desp = _medida_de_despesa(medida)
     sql = f"""
         SELECT COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
-               COALESCE(NULLIF(departamento,''), '(sem obra)'),
+               {OBRA_OU_SEM},
                COALESCE(NULLIF(projeto,''), ''),
                SUM(CASE WHEN tipo = ? AND NOT ({RETIDO}) THEN {valor} ELSE 0 END),
                SUM(CASE WHEN tipo = ? AND     ({RETIDO}) THEN {valor} ELSE 0 END),
-               SUM(CASE WHEN tipo = ?                    THEN {valor} ELSE 0 END)
+               SUM(CASE WHEN tipo = ? THEN {valor_desp} ELSE 0 END)
           FROM fato
          WHERE analise = 'DRE'
          GROUP BY 1, 2, 3
-        HAVING ABS(SUM({valor})) > 0.005
+        HAVING ABS(SUM({valor})) + ABS(SUM({ENCARGO})) > 0.005
          ORDER BY 1, 2"""
     campos = ("mes", "obra", "projeto", "receita_liquida", "retencoes", "despesas")
     return [dict(zip(campos, (linha[0], linha[1], linha[2],
@@ -749,7 +818,7 @@ def custo_de_pessoal_por_obra_mes(grupo_pessoal: str,
     valor = _medida(medida)
     sql = f"""
         SELECT COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'),
-               COALESCE(NULLIF(departamento,''), '(sem obra)'),
+               {OBRA_OU_SEM},
                ABS(SUM({valor}))
           FROM fato
          WHERE analise = 'DRE' AND tipo = ?
@@ -765,10 +834,11 @@ def despesa_administrativa(deptos_admin, medida: str = "comprometido") -> list[d
     if not deptos_admin:
         return []
     valor = _medida(medida)
+    valor_desp = _medida_de_despesa(medida)
     sql = f"""
         SELECT COALESCE(to_char(data, 'YYYY-MM'), '{SEM_DATA}'), departamento,
                TRIM(COALESCE(grupo,'')), TRIM(COALESCE(categoria,'')),
-               SUM({valor})
+               SUM({valor_desp})
           FROM fato
          WHERE analise = 'DRE' AND tipo = ?
            AND departamento = ANY(?)
@@ -851,9 +921,11 @@ def resultado_mensal(f: Filtros, medida: str = "executado") -> list[dict]:
     """
     if medida == "comprometido":
         valor = COMPROMETIDO
+        valor_desp = COMPROMETIDO_COM_ENCARGO
         extra = "data IS NOT NULL"
     else:
         valor = "pago_recebido"
+        valor_desp = MOVIMENTO_DE_CAIXA
         extra = f"{PAGO} AND data IS NOT NULL"
 
     where, params = f.where(f"analise = 'DRE' AND {extra} AND NOT (tipo = ? AND {RETIDO})",
@@ -861,7 +933,7 @@ def resultado_mensal(f: Filtros, medida: str = "executado") -> list[dict]:
     sql = f"""
         SELECT to_char(data, 'YYYY-MM'),
                SUM(CASE WHEN tipo = ? THEN {valor} ELSE 0 END),
-               SUM(CASE WHEN tipo = ? THEN {valor} ELSE 0 END)
+               SUM(CASE WHEN tipo = ? THEN {valor_desp} ELSE 0 END)
           FROM fato{where}
          GROUP BY 1 ORDER BY 1"""
     saida, acumulado = [], 0.0
@@ -1107,7 +1179,7 @@ NO_SALDO = _sql_tipos_no_saldo()
 # Nome de quem aportou e obra onde entrou — com o mesmo rótulo de "faltando" que
 # a tela antiga usava, senão o vazio some no meio da tabela.
 _SOCIO = "COALESCE(NULLIF(TRIM(razao_social),''), '(sem contraparte)')"
-_OBRA = "COALESCE(NULLIF(TRIM(departamento),''), '(sem obra)')"
+_OBRA = OBRA_OU_SEM
 
 # Entrada é o que o sócio colocou; saída, o que voltou para ele.
 _APORTADO = "SUM(CASE WHEN pago_recebido > 0 THEN pago_recebido ELSE 0 END)"
@@ -1224,7 +1296,7 @@ def resultado_dividendos(f: Filtros) -> dict:
     """
     where_r, params_r = f.where(f"analise = 'DRE' AND {PAGO}")
     resultado = {obra: float(valor or 0) for obra, valor in consultar(
-        f"SELECT {_OBRA}, SUM(pago_recebido) FROM fato{where_r} GROUP BY 1",
+        f"SELECT {_OBRA}, SUM({MOVIMENTO_DE_CAIXA}) FROM fato{where_r} GROUP BY 1",
         params_r)}
 
     where_d, params_d = f.where(
@@ -1261,3 +1333,279 @@ def hipotese_de_distribuicao(por_socio: list[dict], disponivel: float) -> list[d
     return [{"socio": l["socio"], "saldo": l["saldo"],
              "pct": l["saldo"] / total * 100,
              "valor": l["saldo"] / total * disponivel} for l in base]
+
+
+# ---------------------------------------------------------------------------
+# Explorador de lançamentos
+# ---------------------------------------------------------------------------
+# Todas as outras telas olham só o DRE. Esta olha a BASE INTEIRA — DRE, Fluxo de
+# Caixa e transferências — porque ela existe para achar o que está classificado
+# errado, e o erro quase sempre é o lançamento estar na análise errada.
+#
+# Veio do painel Streamlit (documento de passagem de 08/09/2026): é a tela com
+# que se encontra o título sem apropriação, o aporte lançado como despesa, o
+# empréstimo fora da categoria certa.
+
+# Quantas linhas a tela mostra. A planilha leva tudo: aqui o teto existe para o
+# navegador não morrer com trinta mil linhas de tabela.
+TETO_DO_EXPLORADOR = 3000
+
+# Onde a busca por texto procura. São os três campos que a pessoa lê para
+# reconhecer um lançamento.
+BUSCA_DO_EXPLORADOR = ("razao_social", "numero_documento", "observacao")
+
+
+def opcoes_do_explorador() -> dict:
+    """As listas dos filtros, tiradas do que EXISTE na base.
+
+    Sem filtro de análise: o explorador enxerga tudo, e uma lista que só
+    mostrasse o DRE esconderia justamente o que se procura."""
+    def _distintos(coluna, rotulo_vazio=None):
+        onde = "" if rotulo_vazio else f" WHERE COALESCE(TRIM({coluna}),'') <> ''"
+        sql = (f"SELECT DISTINCT COALESCE(NULLIF(TRIM({coluna}),''), "
+               f"       '{rotulo_vazio}') FROM fato{onde} ORDER BY 1"
+               if rotulo_vazio else
+               f"SELECT DISTINCT TRIM({coluna}) FROM fato{onde} ORDER BY 1")
+        return [v for (v,) in consultar(sql)]
+
+    def calcular():
+        return {
+            "analises": _distintos("analise"),
+            "grupos": _distintos("grupo"),
+            "categorias": _distintos("categoria"),
+            "obras": _distintos("departamento", SEM_OBRA),
+            "projetos": _distintos("projeto"),
+            "contas": _distintos("conta_corrente"),
+            "situacoes": _distintos("situacao"),
+        }
+
+    return _lembrando(("opcoes_do_explorador",), calcular)
+
+
+COLUNAS_DO_EXPLORADOR = (
+    "codigo_lancamento", "data", "tipo", "analise", "grupo", "categoria",
+    "codigo_categoria", "departamento", "projeto", "razao_social",
+    "numero_documento", "conta_corrente", "situacao",
+    "pago_recebido", "a_pagar_receber", "observacao",
+)
+
+
+def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
+    """Monta o WHERE do explorador a partir do que a pessoa escolheu."""
+    condicoes, params = [], []
+
+    tipo = pedido.get("tipo") or ""
+    if tipo in ("pagar", "receber"):
+        condicoes.append("tipo = ?")
+        params.append(PAG if tipo == "pagar" else REC)
+
+    analises = [a for a in pedido.get("analises") or [] if a]
+    if analises:
+        condicoes.append("analise = ANY(?)")
+        params.append(analises)
+    elif not pedido.get("com_trf"):
+        # Transferência é dinheiro trocando de conta da própria empresa: ela
+        # dobra qualquer soma e polui a busca. Fica de fora até alguém pedir.
+        condicoes.append("COALESCE(analise,'') <> 'TRF'")
+
+    for campo, coluna in (("grupos", "grupo"), ("categorias", "categoria"),
+                          ("projetos", "projeto"), ("contas", "conta_corrente"),
+                          ("situacoes", "situacao")):
+        escolhidos = [v for v in pedido.get(campo) or [] if v]
+        if escolhidos:
+            condicoes.append(f"TRIM(COALESCE({coluna},'')) = ANY(?)")
+            params.append(escolhidos)
+
+    obras = [o for o in pedido.get("obras") or [] if o]
+    if obras:
+        condicoes.append(f"{OBRA_OU_SEM} = ANY(?)")
+        params.append(obras)
+
+    busca = (pedido.get("busca") or "").strip()
+    if busca:
+        condicoes.append("(" + " OR ".join(
+            f"{c} ILIKE ?" for c in BUSCA_DO_EXPLORADOR) + ")")
+        params.extend([f"%{busca}%"] * len(BUSCA_DO_EXPLORADOR))
+
+    # A faixa de data DEIXA PASSAR o que não tem data — ao contrário do
+    # Analítico. Aqui a pergunta é "onde está o lançamento errado", e lançamento
+    # sem data é justamente um dos que se procura.
+    if pedido.get("de"):
+        condicoes.append("(data IS NULL OR data >= CAST(? AS DATE))")
+        params.append(pedido["de"])
+    if pedido.get("ate"):
+        condicoes.append("(data IS NULL OR data <= CAST(? AS DATE))")
+        params.append(pedido["ate"])
+
+    where = (" WHERE " + " AND ".join(condicoes)) if condicoes else ""
+    return where, params
+
+
+def explorar(pedido: dict, limite: int = TETO_DO_EXPLORADOR) -> dict:
+    """Os lançamentos que atendem ao pedido, com os totais da seleção INTEIRA.
+
+    `titulos` conta códigos distintos: um título rateado entre três obras vira
+    três linhas aqui, e dizer que são três títulos enganaria quem for alterar."""
+    where, params = _onde_do_explorador(pedido)
+
+    totais = consultar(
+        f"""SELECT COUNT(*), COUNT(DISTINCT codigo_lancamento),
+                   COALESCE(SUM(pago_recebido), 0),
+                   COALESCE(SUM(a_pagar_receber), 0)
+              FROM fato{where}""", params)[0]
+
+    colunas = ", ".join(COLUNAS_DO_EXPLORADOR)
+    linhas = [dict(zip(COLUNAS_DO_EXPLORADOR, bruta)) for bruta in consultar(
+        f"""SELECT {colunas} FROM fato{where}
+             ORDER BY data DESC NULLS LAST, codigo_lancamento DESC
+             LIMIT {int(limite)}""", params)]
+    for linha in linhas:
+        for campo in ("pago_recebido", "a_pagar_receber"):
+            linha[campo] = float(linha[campo] or 0)
+
+    return {
+        "linhas": linhas,
+        "quantos": totais[0] or 0,
+        "titulos": totais[1] or 0,
+        "pago": float(totais[2] or 0),
+        "aberto": float(totais[3] or 0),
+        "cortou": (totais[0] or 0) > len(linhas),
+    }
+
+
+def resumo_do_explorador(pedido: dict, limite: int = 300) -> list[dict]:
+    """Análise × Grupo × Categoria da seleção — para enxergar o padrão antes de
+    sair alterando título a título."""
+    where, params = _onde_do_explorador(pedido)
+    sql = f"""
+        SELECT COALESCE(NULLIF(TRIM(analise),''), '(sem análise)'),
+               COALESCE(NULLIF(TRIM(grupo),''), '(sem grupo)'),
+               COALESCE(NULLIF(TRIM(categoria),''), '(sem categoria)'),
+               COUNT(*), COALESCE(SUM(pago_recebido), 0),
+               COALESCE(SUM(a_pagar_receber), 0)
+          FROM fato{where}
+         GROUP BY 1, 2, 3
+         ORDER BY COUNT(*) DESC LIMIT {int(limite)}"""
+    campos = ("analise", "grupo", "categoria", "linhas", "pago", "aberto")
+    return [dict(zip(campos, (l[0], l[1], l[2], l[3],
+                             float(l[4] or 0), float(l[5] or 0))))
+            for l in consultar(sql, params)]
+
+
+def categorias_para_alterar() -> list[dict]:
+    """As categorias do OMIE, para escolher a nova numa lista em vez de digitar
+    um código à mão. Fora as TOTALIZADORAS: elas são somatório de outras, e
+    lançar um título numa delas não faz sentido no OMIE."""
+    def calcular():
+        return [{"codigo": c, "descricao": d, "onde": ("DRE" if (dre or "").strip()
+                                                       else "Fluxo de Caixa")}
+                for c, d, dre in consultar(
+                    "SELECT codigo, descricao, codigo_dre FROM cat "
+                    " WHERE COALESCE(UPPER(TRIM(totalizadora)),'N') <> 'S' "
+                    "   AND COALESCE(TRIM(descricao),'') <> '' ORDER BY descricao")]
+    return _lembrando(("categorias_para_alterar",), calcular)
+
+
+def departamentos_para_alterar() -> list[dict]:
+    """As obras do OMIE, pelo espelho do rateio. É de lá que sai o código, que é
+    o que o OMIE quer — o nome sozinho não serve para alterar."""
+    def calcular():
+        return [{"codigo": c, "nome": n} for c, n in consultar(
+            "SELECT DISTINCT ccoddep, cdesdep FROM rateio "
+            " WHERE COALESCE(TRIM(cdesdep),'') <> '' ORDER BY cdesdep")]
+    return _lembrando(("departamentos_para_alterar",), calcular)
+
+
+# ---------------------------------------------------------------------------
+# Rateio da Administração — as séries mensais que a simulação consome
+# ---------------------------------------------------------------------------
+# Tudo aqui é REGIME DE CAIXA (só o que foi pago ou recebido), porque a pergunta
+# da tela é sobre necessidade de caixa: quem ficou negativo, quando, e quanto
+# disso o banco cobriu em juros.
+
+def receita_mensal_por_obra() -> list[tuple]:
+    """Receita recebida por mês × obra, sem o imposto retido na fonte.
+
+    É um dos dois critérios de rateio: quem faturou mais no período carrega
+    mais da administração."""
+    sql = f"""
+        SELECT date_trunc('month', data)::date, {OBRA_OU_SEM},
+               SUM({EXECUTADO})
+          FROM fato
+         WHERE {_BASE_CAIXA} AND analise = 'DRE'
+           AND tipo = ? AND NOT ({RETIDO})
+         GROUP BY 1, 2 ORDER BY 1, 2"""
+    return [(m, o, float(v or 0)) for m, o, v in consultar(sql, [REC])]
+
+
+def pessoal_mensal_por_obra(grupo_pessoal: str) -> list[tuple]:
+    """Despesa com pessoal paga por mês × obra, em módulo.
+
+    O outro critério: obra com mais gente consome mais estrutura."""
+    sql = f"""
+        SELECT date_trunc('month', data)::date, {OBRA_OU_SEM},
+               ABS(SUM({EXECUTADO_COM_ENCARGO}))
+          FROM fato
+         WHERE {_BASE_CAIXA} AND analise = 'DRE' AND tipo = ?
+           AND TRIM(COALESCE(grupo,'')) = ?
+         GROUP BY 1, 2 ORDER BY 1, 2"""
+    return [(m, o, float(v or 0)) for m, o, v in consultar(sql, [PAG, grupo_pessoal])]
+
+
+def custo_da_matriz_por_categoria(depto_matriz: str) -> list[dict]:
+    """O que a matriz gastou, por categoria — para escolher o que suprimir do
+    bolo antes de ratear."""
+    sql = f"""
+        SELECT COALESCE(NULLIF(TRIM(categoria),''), '(sem categoria)'),
+               SUM({EXECUTADO_COM_ENCARGO})
+          FROM fato
+         WHERE {_BASE_CAIXA} AND analise = 'DRE' AND tipo = ?
+           AND {OBRA_OU_SEM} = ?
+         GROUP BY 1 HAVING ABS(SUM({EXECUTADO_COM_ENCARGO})) > 0.005
+         ORDER BY SUM({EXECUTADO_COM_ENCARGO}) ASC"""
+    return [{"categoria": c, "valor": float(v or 0)}
+            for c, v in consultar(sql, [PAG, depto_matriz])]
+
+
+def matriz_mensal(depto_matriz: str, categoria_juros: str,
+                  suprimidas=()) -> list[tuple]:
+    """Despesa e receita da matriz, mês a mês, já sem os juros de empréstimo e
+    sem as categorias suprimidas.
+
+    Os juros saem daqui porque eles NÃO são rateados pelo critério: são
+    alocados a quem estava com o caixa negativo, que é outra conta."""
+    fora = [categoria_juros] + [c for c in suprimidas if c]
+    sql = f"""
+        SELECT date_trunc('month', data)::date,
+               SUM(CASE WHEN tipo = ? AND NOT (TRIM(COALESCE(categoria,'')) = ANY(?))
+                        THEN {EXECUTADO_COM_ENCARGO} ELSE 0 END),
+               SUM(CASE WHEN tipo = ? THEN {EXECUTADO} ELSE 0 END)
+          FROM fato
+         WHERE {_BASE_CAIXA} AND analise = 'DRE'
+           AND {OBRA_OU_SEM} = ?
+         GROUP BY 1 ORDER BY 1"""
+    return [(m, float(d or 0), float(r or 0))
+            for m, d, r in consultar(sql, [PAG, fora, REC, depto_matriz])]
+
+
+def juros_de_emprestimo_mensal(categoria_juros: str) -> list[tuple]:
+    """Os juros de empréstimo pagos por mês, em QUALQUER departamento.
+
+    Eles não pertencem a uma obra: são o preço de o caixa da empresa ter ficado
+    negativo, e a tela os aloca a quem cavou o buraco."""
+    sql = f"""
+        SELECT date_trunc('month', data)::date, SUM({EXECUTADO_COM_ENCARGO})
+          FROM fato
+         WHERE {_BASE_CAIXA} AND tipo = ?
+           AND TRIM(COALESCE(categoria,'')) = ?
+         GROUP BY 1 ORDER BY 1"""
+    return [(m, float(v or 0)) for m, v in consultar(sql, [PAG, categoria_juros])]
+
+
+def departamentos_administrativos() -> list[str]:
+    """As obras cujo nome parece de administração — para a tela já sugerir a
+    matriz em vez de fazer procurar numa lista de 174."""
+    return [d for (d,) in consultar(
+        f"SELECT DISTINCT {OBRA_OU_SEM} FROM fato "
+        " WHERE departamento ILIKE '%BWS%' OR departamento ILIKE '%CONS%' "
+        "    OR departamento ILIKE '%ADM%' ORDER BY 1")]

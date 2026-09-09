@@ -304,7 +304,12 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
    varios pontos. Barras e linha em SVG resolvem o que estas telas precisam.
    ========================================================================== */
 .gr { width: 100%; overflow-x: auto; }
-.gr svg { display: block; min-width: 520px; width: 100%; height: auto; }
+/* O desenho e 900x320. Sem teto de altura, `width:100%` numa tela larga
+   esticava o grafico junto: 1740px de largura viravam 620px de ALTURA, e o
+   grafico engolia a tela inteira. Com o teto, ele para de crescer aos 380px e
+   se centraliza sozinho (o viewBox cuida disso), em vez de virar um paredao. */
+.gr svg { display: block; min-width: 520px; width: 100%; height: auto;
+          max-height: 380px; }
 .gr .eixo { stroke: var(--borda); stroke-width: 1; }
 .gr .grade { stroke: var(--borda); stroke-width: 1; stroke-dasharray: 3 4; opacity: .7; }
 .gr .rot { font-size: 11px; fill: var(--tinta-suave); font-family: var(--fonte-dados); }

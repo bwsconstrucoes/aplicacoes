@@ -12,6 +12,7 @@
     <label class="opcao" style="margin:0"><input type="checkbox" id="f-todos">
       <span class="rotulo">Incluir desligados</span></label>
     <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn secundario" id="btn-funcao">+ Função</button>
     <button class="btn amarelo" id="btn-novo">+ Colaborador</button>
   </div>
@@ -163,5 +164,8 @@ els("btn-funcao").addEventListener("click", async () => {
 els("busca").addEventListener("input", desenhar);
 ["f-obra","f-todos"].forEach(i=>els(i).addEventListener("change", carregar));
 carregar();
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}

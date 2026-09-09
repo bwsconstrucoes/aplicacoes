@@ -40,7 +40,7 @@ ALVO_PDF_BYTES = 900 * 1024              # acima disso, tenta rasterizar
 DPI_RASTER = 150
 
 CATEGORIAS = ("COMPROVANTE", "NOTA", "CONTRATO", "ART", "SEGURO", "OS",
-              "PRESTACAO_CONTAS", "MEDICAO", "OUTRO")
+              "PRESTACAO_CONTAS", "MEDICAO", "PROPOSTA", "OUTRO")
 
 _MIMES = {
     ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",

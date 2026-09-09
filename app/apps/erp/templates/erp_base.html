@@ -46,7 +46,7 @@
   <span>{{ migracoes_pendentes|length }} atualização(ões) pendente(s)
     ({{ migracoes_pendentes|join(', ') }}). Algumas telas vão falhar até aplicar.</span>
   <a class="btn amarelo" style="margin-left:auto; text-decoration:none"
-     href="{{ url_for('erp.pagina_config') }}">Aplicar agora</a>
+     href="{{ url_for('erp.pagina_config') }}#manutencao">Aplicar agora</a>
 </div>
 {% endif %}
 <div class="corpo {% block classe_corpo %}{% endblock %}">
@@ -54,12 +54,76 @@
   <main class="principal">{% block conteudo %}{% endblock %}</main>
 </div>
 
+{# No celular os filtros viram gaveta, e este é o botão que abre. Ele nasce
+   escondido e só aparece se a tela TIVER filtros — quem decide é o código lá
+   embaixo, olhando o que a tela pôs dentro do <aside>. No computador o botão
+   nunca aparece: o estilo só o mostra abaixo de 720px. #}
+<button type="button" class="abrir-filtros" id="abrir-filtros" hidden>
+  Filtros <span class="conta" id="conta-filtros" hidden>0</span>
+</button>
+
 <script>
-const moeda = v => (v||0).toLocaleString("pt-BR",{style:"currency",currency:"BRL"});
-const numero = v => (v||0).toLocaleString("pt-BR",{minimumFractionDigits:2,maximumFractionDigits:2});
-const rotulo = s => (s||"").replace(/_/g," ").toLowerCase().replace(/^./, c => c.toUpperCase());
+// Dinheiro e número, sempre em português.
+//
+// O `Number(...)` no meio não é enfeite: a API manda valor como TEXTO
+// ("38.5000", "945.00") e `"38.5000".toLocaleString()` devolve a própria
+// string, sem formatar — o número saía cru na tela e no papel, e ninguém
+// percebia porque não dá erro. `paraNumero` entende os dois formatos.
+const moeda = v => paraNumero(v).toLocaleString(
+  "pt-BR", {style: "currency", currency: "BRL"});
+const numero = v => paraNumero(v).toLocaleString(
+  "pt-BR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+// Os nomes de situação vêm do banco em MAIÚSCULA e SEM ACENTO ("LANCADA",
+// "PENDENCIA") — é assim que se guarda. Na tela isso vira "Lancada", e o dono
+// lê português errado no próprio sistema dele. Este mapa devolve o acento a
+// quem precisa; o resto passa direto. Tela que já tem tabela própria de
+// rótulos (títulos, pedidos) continua mandando na dela.
+const ACENTOS = {
+  "lancada": "Lançada", "lancado": "Lançado", "pendencia": "Pendência",
+  "autorizacao": "Autorização", "cotacao": "Cotação", "solicitacao": "Solicitação",
+  "analise propostas": "Análise de propostas", "em transito": "Em trânsito",
+  "emissao": "Emissão", "avaliacao": "Avaliação", "conciliacao": "Conciliação",
+  "devolucao": "Devolução", "medicao": "Medição", "previsao": "Previsão",
+  "sala tecnica": "Sala técnica", "em analise": "Em análise",
+  "nao encontrado": "Não encontrado", "servico": "Serviço",
+};
+const rotulo = s => {
+  const limpo = (s||"").replace(/_/g," ").toLowerCase();
+  return ACENTOS[limpo] || limpo.replace(/^./, c => c.toUpperCase());
+};
 const dataBR = iso => iso ? iso.split("-").reverse().join("/") : "—";
+// Dia E HORA, para o que precisa de carimbo: "corrigido em 06/09/2026 12:11".
+// `dataBR` sozinho embaralharia o "2026-09-06T12:11:00" inteiro.
+const momentoBR = iso => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return dataBR(String(iso).slice(0, 10));
+  return d.toLocaleString("pt-BR", {day: "2-digit", month: "2-digit",
+                                    year: "numeric", hour: "2-digit",
+                                    minute: "2-digit"});
+};
+// Quantidade vem do banco com três casas ("1.000" para UMA unidade). Em
+// português isso se lê como MIL — e o número passa a mentir na tela. Aqui a
+// casa decimal só aparece quando existe de verdade: 1 → "1", 2,5 → "2,5".
+const quantidadeBR = v => {
+  const n = Number(v);
+  if (!isFinite(n)) return v ?? "—";
+  return n.toLocaleString("pt-BR", {maximumFractionDigits: 3});
+};
 const els = id => document.getElementById(id);
+// Texto que veio do banco e vai para dentro de innerHTML.
+// "Alfa <compras@alfa.exemplo>" sem isto some da tela: o navegador lê o
+// <compras@...> como uma marcação e engole o pedaço.
+const escapar = t => String(t ?? "").replace(/[&<>"']/g,
+  c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+
+// A situação de um item de suprimento, com a cor que a equipe já lê na
+// planilha. A cor vive no CSS (procure por ".sit-" em erp.css) — aqui só se
+// escolhe a classe.
+const selo = (chave, rotulo) => chave
+  ? `<span class="sit sit-${chave}">${escapar(rotulo || chave)}</span>`
+  : "";
+
 // Rótulo de obra sem repetir: quando código e nome são iguais, mostra um só.
 // Converte texto em número aceitando os DOIS formatos.
 // "30.00" vindo da leitura por IA é trinta reais, não três mil: o ponto só é
@@ -93,18 +157,22 @@ function rotuloObra(o) {
 
 // Transforma um <select> longo em campo com busca. Lista de mil credores não
 // se navega rolando; digitar duas letras resolve.
-function comBusca(idSelect, textoVazio) {
-  const sel = els(idSelect);
+//
+// Aceita o id ou o próprio elemento: as listas longas do ERP nascem dentro de
+// caixas de diálogo montadas por JavaScript, e nem todas têm id.
+function comBusca(alvo, textoVazio) {
+  const sel = (alvo && alvo.tagName === "SELECT") ? alvo : els(alvo);
   if (!sel) return;
   // Reaplicável: se a lista foi recarregada, o filtro antigo é descartado e as
   // opções atuais viram a nova base. Sem isso as opções apareciam duplicadas.
   const anterior = sel.previousElementSibling;
-  if (anterior && anterior.dataset && anterior.dataset.buscaDe === idSelect) {
+  if (anterior && anterior.dataset && anterior.dataset.buscaDe !== undefined) {
     anterior.remove();
   }
   const campo = document.createElement("input");
   campo.type = "search";
-  campo.dataset.buscaDe = idSelect;
+  campo.dataset.buscaDe = sel.id || "";
+  sel.dataset.temBusca = "1";
   campo.placeholder = textoVazio || "digite para filtrar…";
   campo.style.cssText = "width:100%; margin-bottom:4px; padding:7px 9px;" +
     "border:1px solid var(--borda-forte); border-radius:8px; font-size:13px";
@@ -133,6 +201,191 @@ function comBusca(idSelect, textoVazio) {
   });
   sel.addEventListener("change", () => { sel.size = 0; });
 }
+
+// EXPORTAR O QUE ESTÁ NA TELA — Excel ou PDF.
+//
+// Um ajudante só, usado por todas as telas. A tela diz o título, as colunas e
+// as linhas que está mostrando (já filtradas), e os filtros ligados. Daqui sai
+// o arquivo. Não há código de exportação por tela: se a próxima tela quiser
+// exportar, chama isto e pronto.
+//
+// Os FILTROS vão no cabeçalho do arquivo de propósito: relatório sem a origem
+// é número sem procedência, e três meses depois ninguém sabe de onde veio.
+//
+// `colunas`: [{rotulo, tipo}] — tipo "dinheiro"/"numero"/"quantidade" faz o
+// valor virar NÚMERO de verdade na planilha, que é o que permite somar e
+// ordenar. Sem isso o Excel recebe texto e quem abre reclama, com razão.
+async function exportarTela({titulo, subtitulo, colunas, linhas, filtros,
+                             formato, paisagem}) {
+  if (!linhas || !linhas.length) {
+    return aviso("mensagem", "Não há nada na tela para exportar.", "alerta");
+  }
+  try {
+    const r = await fetch("/erp/api/exportar", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({formato: formato || "xlsx", titulo, subtitulo,
+                            colunas, linhas, filtros, paisagem})});
+    if (!r.ok) {
+      let motivo = "falha ao gerar o arquivo";
+      try { motivo = (await r.json()).erro || motivo; } catch (e) {}
+      throw new Error(motivo);
+    }
+    const nome = (r.headers.get("Content-Disposition") || "")
+      .split("filename=")[1]?.replace(/"/g, "") || "relatorio";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = nome;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+  } catch (e) { aviso("mensagem", e.message, "erro"); }
+}
+
+// LER A PRÓPRIA TABELA DA TELA.
+//
+// Em vez de cada tela montar a lista de novo para exportar — e correr o risco
+// de o arquivo sair diferente do que está na frente da pessoa —, o exportador
+// lê a TABELA JÁ DESENHADA. O que está na tela é o que vai para o arquivo, por
+// construção: mesmo filtro, mesma ordem, mesmas linhas.
+//
+// O que fica de fora, e por quê:
+//   - a coluna da caixinha de seleção (não é informação);
+//   - qualquer coluna marcada com class="sem-exportar" no cabeçalho;
+//   - botões, listas e campos dentro das células — "mover para…" é comando,
+//     não conteúdo.
+// Coluna alinhada à direita é tratada como NÚMERO, que é a convenção que o
+// ERP já usa; assim a planilha recebe número de verdade e permite somar.
+function textoDaCelula(td){
+  const c = td.cloneNode(true);
+  c.querySelectorAll("button, select, input, textarea, .sem-exportar")
+   .forEach(e => e.remove());
+  // A célula costuma ter uma linha de baixo em <small> ("SS-0001" + o título
+  // do pedido). Sem separador, as duas grudam no arquivo — "SS-0001Ferramental"
+  // — e a planilha fica ilegível.
+  c.querySelectorAll("br").forEach(br => br.replaceWith(document.createTextNode(" · ")));
+  c.querySelectorAll("small, div, p, li").forEach(e =>
+    e.parentNode && e.insertAdjacentText("beforebegin", " · "));
+  return (c.textContent || "")
+    .replace(/\s+/g, " ")
+    .replace(/(\s*·\s*)+/g, " · ")
+    .replace(/^\s*·\s*|\s*·\s*$/g, "")
+    .trim();
+}
+
+// Qual tabela é "a" tabela da tela. Algumas telas têm um quadro-resumo antes
+// da lista (Locações mostra "por obra" no topo), e pegar a primeira do HTML
+// exportaria o resumo em vez da lista. Vale a que tem cabeçalho e mais linhas.
+function tabelaDaTela(seletor){
+  const candidatas = [...document.querySelectorAll(
+    seletor || ".tabela-wrap table, .principal table")]
+    .filter(t => t.tHead && t.tBodies.length);
+  if (!candidatas.length) return null;
+  return candidatas.reduce((a, b) =>
+    (b.tBodies[0].rows.length > a.tBodies[0].rows.length ? b : a));
+}
+
+function dadosDaTabela(seletor){
+  const tab = tabelaDaTela(seletor);
+  if (!tab) return {colunas: [], linhas: []};
+  const ths = [...tab.tHead.rows[0].cells];
+  const pular = ths.map(th => th.classList.contains("sem-exportar")
+                           || !!th.querySelector("input[type=checkbox]"));
+  const colunas = ths.filter((_, i) => !pular[i]).map(th => ({
+    rotulo: (th.textContent || "").replace(/[▲▼]/g, "").replace(/\s+/g, " ").trim(),
+    tipo: th.classList.contains("direita") ? "numero" : "texto"}));
+  // Linha com colspan é recado ("nenhum pedido nesta situação"), não é dado.
+  const linhas = [...tab.tBodies[0].rows]
+    .filter(tr => tr.cells.length === ths.length && !tr.querySelector("[colspan]"))
+    .map(tr => [...tr.cells].filter((_, i) => !pular[i]).map(textoDaCelula));
+  return {colunas, linhas};
+}
+
+// Os filtros ligados, lidos da barra da esquerda — para saírem no cabeçalho do
+// arquivo. Sem isso, o relatório é um número sem procedência.
+function filtrosDaTela(){
+  const partes = [];
+  const busca = document.querySelector("aside.filtros input[type=search]");
+  if (busca && busca.value.trim()) partes.push(`Busca: ${busca.value.trim()}`);
+  document.querySelectorAll("aside.filtros .filtro").forEach(bloco => {
+    const nome = (bloco.querySelector(".filtro-cab span")?.textContent || "").trim();
+    const marcados = [...bloco.querySelectorAll('input[type=checkbox]:checked')]
+      .map(i => (i.closest("label")?.querySelector(".rotulo")?.textContent || "").trim())
+      .filter(Boolean);
+    if (marcados.length) partes.push(`${nome}: ${marcados.join(", ")}`);
+  });
+  document.querySelectorAll("aside.filtros select").forEach(s => {
+    if (s.value) partes.push(`${(s.previousElementSibling?.textContent || "Filtro").trim()}: `
+                             + (s.selectedOptions[0]?.textContent || s.value).trim());
+  });
+  return partes.length ? partes : ["Sem filtro: a tela inteira."];
+}
+
+// O par de botões, para a tela só colar onde quiser. `montar` é a função que
+// devolve {titulo, colunas, linhas, filtros} no momento do clique — tem de ser
+// no momento, e não antes, senão exporta o que estava na tela quando a página
+// abriu, e não o que está agora.
+function botoesDeExportar(idDoLugar, montar){
+  const lugar = els(idDoLugar);
+  if (!lugar) return;
+  // Sem `montar`, o padrão é ler a tabela da tela — que é o que quase toda
+  // tela quer, e não pode divergir do que está sendo mostrado.
+  montar = montar || (() => ({
+    titulo: (document.querySelector(".principal h2")?.childNodes[0]?.textContent
+             || (document.title || "Relatório").split(" — ")[0]).trim(),
+    subtitulo: (document.querySelector(".principal h2 small")?.textContent || "").trim(),
+    filtros: filtrosDaTela(),
+    ...dadosDaTabela()}));
+  lugar.innerHTML = `<button class="btn secundario" data-exp="xlsx"
+      title="Baixar em Excel o que está na tela, com os filtros aplicados"
+      >&#10515; Excel</button>
+    <button class="btn secundario" data-exp="pdf"
+      title="Baixar em PDF o que está na tela, com os filtros aplicados"
+      >&#10515; PDF</button>`;
+  lugar.querySelectorAll("[data-exp]").forEach(b => b.addEventListener("click", () => {
+    const dados = montar() || {};
+    exportarTela({...dados, formato: b.dataset.exp});
+  }));
+}
+
+// Toda lista longa do ERP ganha busca sozinha.
+//
+// Isto existe porque a regra "não pode abrir uma caixa com mais de cem itens
+// para escolher" vale para o sistema inteiro, e sair marcando tela por tela
+// deixaria de fora a próxima que alguém escrever. Em vez de uma lista de
+// telas a manter, o navegador observa: nasceu um <select> com mais opções do
+// que se enxerga de uma vez, ele ganha o campo de filtro.
+//
+// Quem NÃO quer isso numa lista específica marca o select com
+// `data-sem-busca` — a exceção fica escrita no lugar onde ela vale.
+const LIMITE_PARA_BUSCA = 12;
+
+function aplicarBuscaEmListasLongas(raiz) {
+  (raiz || document).querySelectorAll("select:not([data-sem-busca])").forEach(sel => {
+    if (sel.dataset.temBusca) return;             // já tem, não refaz
+    if (sel.multiple || sel.options.length <= LIMITE_PARA_BUSCA) return;
+    comBusca(sel);
+  });
+}
+
+// Observa a página inteira: as listas longas quase sempre nascem dentro de uma
+// caixa de diálogo montada na hora, depois que a tela já carregou.
+new MutationObserver(registros => {
+  for (const r of registros) {
+    for (const no of r.addedNodes) {
+      if (no.nodeType !== 1) continue;
+      if (no.tagName === "SELECT") { aplicarBuscaEmListasLongas(no.parentNode); }
+      // O padrão mais comum do ERP: o <select> já está no HTML e as opções
+      // chegam depois, por innerHTML. Aqui quem nasce é a <option>.
+      else if (no.tagName === "OPTION" && r.target && r.target.tagName === "SELECT") {
+        aplicarBuscaEmListasLongas(r.target.parentNode);
+      }
+      else if (no.querySelector && no.querySelector("select")) {
+        aplicarBuscaEmListasLongas(no);
+      }
+    }
+  }
+}).observe(document.documentElement, {childList: true, subtree: true});
+
+document.addEventListener("DOMContentLoaded", () => aplicarBuscaEmListasLongas());
 
 // Substitui o prompt() do navegador, que tem a cara do sistema operacional e
 // destoa do resto. Devolve os valores preenchidos ou null se cancelar.
@@ -202,6 +455,60 @@ async function api(url, opcoes) {
   if (!d.ok) throw new Error(d.erro || "Falha na operação.");
   return d;
 }
+
+// ---------------------------------------------------------------------------
+// A GAVETA DE FILTROS DO CELULAR
+//
+// No computador nada disto acontece: o estilo mantém o botão invisível acima
+// de 720px, e a coluna da esquerda continua exatamente onde sempre esteve.
+//
+// No celular a coluna de filtros ocupava 857px de altura ANTES da primeira
+// linha da lista — abrir Títulos no telefone mostrava uma tela e meia de
+// caixinhas. Aqui ela vira gaveta, e o conteúdo vem primeiro.
+//
+// O botão só aparece se a tela realmente TIVER filtros. Quem responde isso é
+// o próprio <aside>: telas sem filtros o deixam vazio, e aí não há o que abrir.
+// ---------------------------------------------------------------------------
+(function gavetaDeFiltros(){
+  const aside = document.querySelector("aside.filtros");
+  const botao = document.getElementById("abrir-filtros");
+  if (!aside || !botao) return;
+  if (!aside.textContent.trim() && !aside.querySelector("input, select, button")) {
+    return;                       // tela sem filtros: o botão continua escondido
+  }
+  botao.hidden = false;
+
+  const fechar = () => document.body.classList.remove("filtros-abertos");
+  botao.addEventListener("click", () => {
+    document.body.classList.toggle("filtros-abertos");
+    contar();
+  });
+  // tocar no fundo escuro fecha; é o gesto que todo mundo tenta primeiro
+  document.addEventListener("click", ev => {
+    if (!document.body.classList.contains("filtros-abertos")) return;
+    if (aside.contains(ev.target) || botao.contains(ev.target)) return;
+    fechar();
+  });
+  document.addEventListener("keydown", ev => { if (ev.key === "Escape") fechar(); });
+
+  // Quantos filtros estão ligados — o número no botão evita a pergunta
+  // "por que a lista está assim?" com a gaveta fechada.
+  const conta = document.getElementById("conta-filtros");
+  function contar(){
+    if (!conta) return;
+    let n = aside.querySelectorAll("input[type=checkbox]:checked").length;
+    aside.querySelectorAll("input[type=search], input[type=text], input[type=number]")
+         .forEach(i => { if (i.value.trim()) n++; });
+    aside.querySelectorAll("select").forEach(s => { if (s.value) n++; });
+    conta.textContent = n;
+    conta.hidden = n === 0;
+  }
+  aside.addEventListener("change", contar);
+  aside.addEventListener("input", contar);
+  // as telas montam os filtros depois de buscar os dados, então conta-se de novo
+  new MutationObserver(contar).observe(aside, {childList: true, subtree: true});
+  contar();
+})();
 </script>
 {% block scripts %}{% endblock %}
 </body>

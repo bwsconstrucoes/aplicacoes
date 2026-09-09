@@ -1,0 +1,292 @@
+{% extends "painel_base.html" %}
+{% import "painel_grafico_linhas.html" as grl %}
+{% block titulo %}Rateio da Administração — Painel Financeiro BWS{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{% block conteudo %}
+<h2>Rateio da Administração
+  <small>como o custo da matriz se divide, e quem pagou os juros</small>
+</h2>
+
+<p class="dica" style="margin-top:-6px">
+  Duas repartições acontecem aqui, e a diferença é o ponto da tela.
+  O <b>custo da matriz</b> vai pelo critério que você escolher — quem produziu
+  mais carrega mais estrutura. Os <b>juros do banco</b> vão pelo
+  <b>déficit</b>: quem estava com o caixa negativo naquele mês. Juros não é
+  estrutura, é o preço de faltar dinheiro.<br>
+  Esta tela <b>ignora os filtros da barra lateral</b> e <b>não grava nada</b>:
+  é simulação.
+</p>
+
+<div class="cartao">
+  <form method="get">
+    <div class="form-grade">
+      <div class="campo">
+        <label for="matriz">Departamento da matriz</label>
+        <select id="matriz" name="matriz">
+          {% for d in administrativos %}
+            <option value="{{ d }}" {% if d == matriz %}selected{% endif %}>{{ d }}</option>
+          {% endfor %}
+        </select>
+        <p class="cartao-dica">Fica fora dos dois lados: é o bolo a repartir.</p>
+      </div>
+      <div class="campo">
+        <label for="criterio">Critério do rateio</label>
+        <select id="criterio" name="criterio">
+          {% for chave, texto in criterios.items() %}
+            <option value="{{ chave }}" {% if chave == criterio %}selected{% endif %}>{{ texto }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="campo">
+        <label for="janela">Janela do critério</label>
+        <select id="janela" name="janela">
+          {% for chave, texto in janelas.items() %}
+            <option value="{{ chave }}" {% if chave == janela %}selected{% endif %}>{{ texto }}</option>
+          {% endfor %}
+        </select>
+        <p class="cartao-dica">Janela curta reage rápido e balança; longa é estável.</p>
+      </div>
+      <div class="campo">
+        <label for="pct_fixo">% fixo para o Lado A</label>
+        <input id="pct_fixo" name="pct_fixo" type="number" step="1" min="0" max="100"
+               value="{{ '%.0f' | format(pct_fixo) }}">
+        <p class="cartao-dica">Só vale com o critério "percentual fixo".</p>
+      </div>
+    </div>
+
+    <div class="form-grade" style="margin-top:10px">
+      <div class="campo">
+        <label for="valor_fixo">Tirar do bolo, por mês (R$)</label>
+        <input id="valor_fixo" name="valor_fixo" type="number" step="100"
+               value="{{ '%.0f' | format(valor_fixo) }}">
+        <p class="cartao-dica">A parte que <b>não</b> deve ser rateada.</p>
+      </div>
+      <div class="campo">
+        <label for="categoria_juros">Categoria dos juros de empréstimo</label>
+        <input id="categoria_juros" name="categoria_juros" value="{{ categoria_juros }}">
+      </div>
+      <div class="campo">
+        <label for="sem_deficit">Quando ninguém está negativo, os juros do mês</label>
+        <select id="sem_deficit" name="sem_deficit">
+          <option value="criterio" {% if sem_deficit == 'criterio' %}selected{% endif %}>vão pelo critério do rateio</option>
+          <option value="nao_alocar" {% if sem_deficit == 'nao_alocar' %}selected{% endif %}>não são alocados a ninguém</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label style="display:flex; align-items:center; gap:6px; margin-top:22px">
+          <input type="checkbox" name="abater" value="1" {% if abater %}checked{% endif %}>
+          Abater a receita da própria matriz do bolo
+        </label>
+      </div>
+    </div>
+
+    <!-- ============== O LADO A ============== -->
+    <h3 style="margin:16px 0 6px; font-size:15px">Lado A — o que entra, e quanto</h3>
+    <p class="cartao-dica" style="margin-top:0">
+      Escolha obras ou projetos. Projeto se abre em todas as obras dele. O
+      <b>Lado B é o complemento</b>: meia obra em A significa a outra meia em B.
+    </p>
+    <div class="tabela-rolagem" style="max-height:220px">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem">Item</th>
+            <th class="sem-ordem">% que entra em A</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for i in range(6) %}
+          {% set atual = escolhas_a[i] if i < escolhas_a | length else None %}
+          <tr>
+            <td>
+              <select name="a_item" style="min-width:280px">
+                <option value="">— vazio —</option>
+                <optgroup label="Projetos">
+                  {% for p in opcoes.projetos %}
+                    <option value="projeto:{{ p }}"
+                      {% if atual and atual[0] == 'projeto:' ~ p %}selected{% endif %}>{{ p }}</option>
+                  {% endfor %}
+                </optgroup>
+                <optgroup label="Obras">
+                  {% for o in opcoes.obras %}
+                    <option value="obra:{{ o }}"
+                      {% if atual and atual[0] == 'obra:' ~ o %}selected{% endif %}>{{ o }}</option>
+                  {% endfor %}
+                </optgroup>
+              </select>
+            </td>
+            <td>
+              <input name="a_pct" type="number" step="5" min="0" max="100"
+                     style="width:100px"
+                     value="{{ '%.0f' | format(atual[1]) if atual else 100 }}">
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <!-- ============== AJUSTES DE CAIXA ============== -->
+    <h3 style="margin:16px 0 6px; font-size:15px">Ajustes de caixa</h3>
+    <p class="cartao-dica" style="margin-top:0">
+      Dinheiro que existe mas não está na base — caixa gerado antes do início da
+      série, por exemplo. Entra no mês informado e fica no acumulado.
+    </p>
+    <div class="form-grade">
+      {% for i in range(3) %}
+        {% set aj = ajustes[i] if i < ajustes | length else None %}
+        <div class="campo">
+          <label>Lado / mês / valor</label>
+          <div style="display:flex; gap:6px">
+            <select name="ajuste_lado" style="width:70px">
+              <option value="">—</option>
+              <option value="A" {% if aj and aj[0] == 'A' %}selected{% endif %}>A</option>
+              <option value="B" {% if aj and aj[0] == 'B' %}selected{% endif %}>B</option>
+            </select>
+            <input name="ajuste_mes" type="month" style="width:150px"
+                   value="{{ aj[1].strftime('%Y-%m') if aj else '' }}">
+            <input name="ajuste_valor" type="number" step="1000" style="width:130px"
+                   value="{{ '%.0f' | format(aj[2]) if aj else '' }}">
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+
+    {% if categorias_da_matriz %}
+    <details style="margin-top:12px">
+      <summary style="cursor:pointer; font-weight:600">
+        Suprimir categorias do bolo ({{ categorias_da_matriz | length }} na matriz)
+      </summary>
+      <p class="cartao-dica">O que estiver marcado sai do custo a ratear.</p>
+      <div class="form-grade">
+        {% for c in categorias_da_matriz %}
+          <label style="display:flex; align-items:center; gap:6px; font-size:12.5px">
+            <input type="checkbox" name="suprimir" value="{{ c.categoria }}"
+                   {% if c.categoria in suprimidas %}checked{% endif %}>
+            {{ c.categoria }} <small>({{ brl(c.valor) }})</small>
+          </label>
+        {% endfor %}
+      </div>
+    </details>
+    {% endif %}
+
+    <div class="tabela-barra" style="border:0; padding-left:0; margin-top:12px">
+      <a class="btn secundario" style="text-decoration:none"
+         href="{{ url_for('painel.rateio_administracao') }}">Limpar</a>
+      <span class="espaco"></span>
+      <button class="btn">Calcular</button>
+    </div>
+  </form>
+</div>
+
+{% if not escolhas_a %}
+  <div class="aviso info" style="margin-top:14px">
+    <b>Monte o Lado A e clique em Calcular.</b>
+    Sem escolher o que entra em A não há dois lados para comparar.
+  </div>
+{% elif not resultado or resultado.vazio %}
+  <div class="vazio" style="margin-top:14px">
+    <b>Sem dados</b>Não há movimento de caixa para simular.
+  </div>
+{% else %}
+
+<div class="kpis" style="margin-top:14px">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Matriz → A</div>
+    <div class="kpi-valor">{{ brl(resultado.resumo.matriz_a) }}</div>
+    <div class="kpi-sub">{{ resultado.resumo.pct_matriz_a }}% do bolo</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Matriz → B</div>
+    <div class="kpi-valor">{{ brl(resultado.resumo.matriz_b) }}</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Juros → A</div>
+    <div class="kpi-valor">{{ brl(resultado.resumo.juros_a) }}</div>
+    <div class="kpi-sub">{{ resultado.resumo.pct_juros_a }}% dos juros</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Juros → B</div>
+    <div class="kpi-valor">{{ brl(resultado.resumo.juros_b) }}</div>
+  </div>
+</div>
+
+<div class="cartao" style="margin-bottom:14px">
+  <p style="font-size:13.5px; margin-top:0">
+    Ao fim de <b>{{ resultado.resumo.meses }}</b> meses, o Lado A fecha em
+    <b class="{{ classe_valor(resultado.resumo.final_a) }}">{{ brl(resultado.resumo.final_a) }}</b>
+    e o Lado B em
+    <b class="{{ classe_valor(resultado.resumo.final_b) }}">{{ brl(resultado.resumo.final_b) }}</b>.
+    A ficou negativo em <b>{{ resultado.resumo.meses_negativos_a }}</b> meses e
+    B em <b>{{ resultado.resumo.meses_negativos_b }}</b>.
+  </p>
+  <p class="cartao-dica">
+    O acumulado parte de zero no primeiro mês com dado. Se a empresa tinha caixa
+    antes disso, use os ajustes acima — senão as duas linhas nascem no lugar
+    errado.
+  </p>
+</div>
+
+{% if grafico %}
+<div class="cartao" style="margin-bottom:14px">
+  <div class="cartao-cab">
+    <h3>Caixa de cada lado, mês a mês</h3>
+    <small>as barras são os juros pagos no mês</small>
+  </div>
+  {{ grl.grafico(grafico) }}
+</div>
+{% endif %}
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo">
+      Memória de cálculo — <b>{{ resultado.linhas | length }}</b> meses
+    </span>
+    <span class="espaco"></span>
+    <a class="btn secundario" style="text-decoration:none"
+       href="{{ link_baixar('rateio_admin') }}">⬇ Baixar Excel</a>
+  </div>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Mês</th>
+          <th class="sem-ordem direita">Operacional A</th>
+          <th class="sem-ordem direita">Operacional B</th>
+          <th class="sem-ordem direita">Bolo da matriz</th>
+          <th class="sem-ordem direita">% → A</th>
+          <th class="sem-ordem direita">Matriz → A</th>
+          <th class="sem-ordem direita">Matriz → B</th>
+          <th class="sem-ordem direita">Caixa A</th>
+          <th class="sem-ordem direita">Caixa B</th>
+          <th class="sem-ordem direita">Juros do mês</th>
+          <th class="sem-ordem direita">% juros → A</th>
+          <th class="sem-ordem direita">Posição final A</th>
+          <th class="sem-ordem direita">Posição final B</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for l in resultado.linhas %}
+        <tr>
+          <td class="dados">{{ l.rotulo }}</td>
+          <td class="dados direita {{ classe_valor(l.operacional_a) }}">{{ brl(l.operacional_a) }}</td>
+          <td class="dados direita {{ classe_valor(l.operacional_b) }}">{{ brl(l.operacional_b) }}</td>
+          <td class="dados direita">{{ brl(l.pool) }}</td>
+          <td class="dados direita">{{ l.pct_matriz_a }}%</td>
+          <td class="dados direita">{{ brl(l.matriz_a) }}</td>
+          <td class="dados direita">{{ brl(l.matriz_b) }}</td>
+          <td class="dados direita {{ classe_valor(l.caixa_a) }}">{{ brl(l.caixa_a) }}</td>
+          <td class="dados direita {{ classe_valor(l.caixa_b) }}">{{ brl(l.caixa_b) }}</td>
+          <td class="dados direita">{{ brl(l.juros_mes) if l.juros_mes else '—' }}</td>
+          <td class="dados direita">{{ l.pct_juros_a }}%</td>
+          <td class="dados direita {{ classe_valor(l.final_a) }}"><b>{{ brl(l.final_a) }}</b></td>
+          <td class="dados direita {{ classe_valor(l.final_b) }}"><b>{{ brl(l.final_b) }}</b></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

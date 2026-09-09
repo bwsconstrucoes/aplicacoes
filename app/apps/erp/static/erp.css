@@ -159,6 +159,120 @@ a { color: var(--azul-claro); }
 .faixa label { font-size: 11.5px; color: var(--tinta-suave); display: block; margin-bottom: 3px; }
 .faixa input { width: 100%; padding: 7px 8px; border: 1px solid var(--borda-forte); border-radius: 6px; font-size: 13px; font-family: var(--fonte-dados); }
 
+/* ======================== SUB-ABAS DE CADASTRO ========================
+   Uma área grande (Cadastros de Suprimentos, Administração) tem telas
+   diferentes por dentro. Sem esta faixa, tudo vira um rolo só e quem está
+   configurando perde a noção de onde está. */
+.subabas {
+  display: flex; gap: 4px; flex-wrap: wrap; margin: 0 0 16px;
+  border-bottom: 1px solid var(--borda); padding-bottom: 0;
+}
+.subaba {
+  padding: 8px 14px; font-size: 13px; font-weight: 600; color: var(--tinta-suave);
+  text-decoration: none; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0;
+}
+.subaba:hover { background: #F2F5FA; color: var(--tinta); }
+.subaba.ativa { color: var(--azul); border-bottom-color: var(--azul); background: #F2F5FA; }
+
+/* ==================== CORES DAS SITUAÇÕES DE SUPRIMENTOS ====================
+   As mesmas 15 situações da planilha, COM AS CORES DA PLANILHA.
+
+   De onde elas vieram: da formatação condicional da coluna de status
+   ("Registro de Suprimentos", aba Insumos, coluna L). Foram lidas do arquivo,
+   não escolhidas aqui — a equipe lê a planilha pela cor antes de ler o texto,
+   e trocar a cor seria fazer todo mundo desaprender.
+
+   ⚠️ AUTORIZAÇÃO é a única inventada: a cópia de onde as cores foram lidas
+   não tem esse status. Está num amarelo entre ANÁL. PROPOSTAS e PEDIDO
+   EMITIDO, que são os vizinhos dela no fluxo. Confirmar com o dono.
+
+   PARA TROCAR UMA COR, é aqui e em lugar nenhum mais: cada situação tem um
+   par (fundo, tinta), e todas as telas usam a mesma classe.
+
+   A tinta (preta ou branca) não é gosto: é o que se lê em cima daquele fundo.
+   Nos quatro fundos escuros — EM TRÂNSITO, ENTREGUE, PENDÊNCIA e SUSPENSO —
+   a letra é branca porque preta ali não se lê. */
+.sit {
+  display: inline-block; font-size: 11px; font-weight: 700; line-height: 1.4;
+  padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid rgba(0, 0, 0, .14);
+}
+.sit-SOLICITACAO        { background:#E06666; color:#2B0A0A; }  /* da planilha */
+.sit-SALA_TECNICA       { background:#999999; color:#1C1C1C; }  /* da planilha */
+.sit-COTACAO            { background:#F1C232; color:#3A2C00; }  /* da planilha */
+.sit-ANALISE_PROPOSTAS  { background:#FFE599; color:#4A3800; }  /* da planilha */
+.sit-AUTORIZACAO        { background:#FFFFFF; color:#3A3A3A;
+                          box-shadow:inset 0 0 0 1px var(--borda); }  /* branca:
+   confirmado pelo dono em 07/09/2026 — na planilha dele este status não tinha
+   cor mesmo. Só ganha um fio de contorno, senão o selo some no fundo claro. */
+.sit-PEDIDO_EMITIDO     { background:#FDFD17; color:#3A3A00; }  /* da planilha */
+.sit-ALMOXARIFADO       { background:#F4CCCC; color:#5B1A1A; }  /* da planilha */
+.sit-AGUARDANDO_COLETA  { background:#CFE2F3; color:#0B2C5C; }  /* da planilha */
+.sit-AGUARDANDO_ENTREGA { background:#6FA8DC; color:#08243F; }  /* da planilha */
+.sit-EM_TRANSITO        { background:#0B5394; color:#FFFFFF; }  /* da planilha */
+.sit-ENTREGUE           { background:#073763; color:#FFFFFF; }  /* da planilha */
+.sit-RECEBIDO           { background:#6AA84F; color:#12290A; }  /* da planilha */
+.sit-PENDENCIA          { background:#674EA7; color:#FFFFFF; }  /* da planilha */
+/* CANCELADO não tem cor na planilha: a linha cancelada fica branca. Aqui fica
+   sem fundo e riscado, que diz a mesma coisa numa etiqueta pequena. */
+.sit-CANCELADO          { background:transparent; color:#8A8F98; border-color:#DCE0E7;
+                          text-decoration: line-through; }
+.sit-SUSPENSO           { background:#434343; color:#FFFFFF; }  /* da planilha */
+
+/* A marca de "corrigido" ao lado do material. Não é enfeite: é o que evita a
+   discussão de "eu não pedi isso" — clicando, vê-se o que mudou e por quê. */
+.corrigido {
+  display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; cursor: pointer;
+  color: #7c4a03; background: #fdf0d5; border: 1px solid #f0d6a0;
+}
+.corrigido:hover { background: #fbe4ae; }
+
+
+/* ======================== MAPA DE COTAÇÃO, DENSO ========================
+   O mapa é uma planilha, e planilha se lê com a informação junta. Espalhado,
+   um mapa de 30 itens × 6 fornecedores não cabe em tela nenhuma e ninguém
+   compara nada. Daqui para baixo é tudo aperto: menos respiro, fonte menor,
+   e a coluna do insumo presa à esquerda para não se perder ao rolar. */
+.mapa { border-collapse: collapse; font-size: 12px; }
+.mapa thead th {
+  padding: 5px 6px; font-size: 10.5px; letter-spacing: .04em; line-height: 1.35;
+  vertical-align: bottom;
+}
+.mapa tbody td { padding: 3px 6px; font-size: 12px; line-height: 1.3; vertical-align: middle; }
+.mapa tbody tr:nth-child(even) { background: #FAFBFD; }   /* zebra: o olho não pula de linha */
+.mapa tbody tr:hover { background: #EEF3FB; }
+/* Largura suficiente para o nome do insumo caber em uma ou duas linhas. Com a
+   coluna estreita, "Caixa Sifonada c/ Três Entradas" ocupava quatro linhas e o
+   mapa inteiro dobrava de altura — que é justamente o que se quis evitar. */
+.mapa td.insumo { min-width: 250px; max-width: 300px; }
+.mapa td.insumo b { font-weight: 600; }
+.mapa td.insumo small { color: var(--tinta-suave); font-size: 10.5px; display: block; }
+/* a marca de corrigido é um selo, não uma linha: `display:block` a esticava
+   pela largura toda da coluna */
+.mapa td.insumo small.corrigido { display: inline-block; }
+/* O lápis de corrigir fica DENTRO da linha do nome, e não embaixo: uma linha a
+   mais por item, vezes trinta itens, é meia tela de rolagem. */
+.mapa .lapis {
+  border: 0; background: none; cursor: pointer; padding: 0 3px; font-size: 12px;
+  color: var(--tinta-suave); opacity: .45;
+}
+.mapa tr:hover .lapis, .mapa .lapis:focus { opacity: 1; color: var(--azul); }
+.mapa .cel {
+  width: 74px; padding: 2px 5px; font-size: 12px; text-align: right;
+  border: 1px solid var(--borda); border-radius: 4px;
+  font-family: var(--fonte-dados); background: var(--branco);
+}
+.mapa .cel:focus { border-color: var(--azul); outline: none; }
+.mapa td.menor-preco .cel { background: #E3F3E8; border-color: #7FC49A; font-weight: 700; }
+.mapa .sub { display: block; font-size: 10px; color: var(--tinta-suave); line-height: 1.25; }
+/* a primeira coluna acompanha a rolagem horizontal */
+.mapa th:first-child, .mapa td:first-child {
+  position: sticky; left: 0; z-index: 1; background: var(--branco);
+}
+.mapa tbody tr:nth-child(even) td:first-child { background: #FAFBFD; }
+.mapa tfoot td { padding: 6px; font-size: 12px; border-top: 2px solid var(--borda-forte); }
+
 /* ============================ CHIPS ============================ */
 .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 14px; min-height: 28px; }
 .chip {
@@ -220,6 +334,7 @@ td.dados, th.dados { font-family: var(--fonte-dados); }
 td.direita, th.direita { text-align: right; }
 td.desc { max-width: 330px; }
 td.desc small { display: block; color: var(--tinta-suave); font-size: 11.5px; margin-top: 1px; }
+td.desc small.corrigido { display: inline-block; color: #7c4a03; }
 .atrasado { color: var(--vermelho); font-weight: 700; }
 
 .selo { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
@@ -294,4 +409,154 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
   .topo-titulo, .topo-sub { display: none; }
   td.desc { max-width: 180px; }
 }
+
+/* Conferência de locação: com uma pergunta por vez, sobra largura no
+   computador e o campo esticava de ponta a ponta — um "Sim/Não" com 880px de
+   largura fica estranho de ler. No celular ele volta a ocupar tudo, que é o
+   certo lá. */
+#conf-itens .campo select, #conf-itens .campo input { max-width: 460px; }
+@media (max-width: 720px) {
+  #conf-itens .campo select, #conf-itens .campo input { max-width: none; }
+}
+
+/* O botão da gaveta de filtros só existe no celular. Esta regra é a que
+   garante que ele NUNCA apareça no computador, mesmo depois de o código
+   tirar o `hidden` dele. */
+.abrir-filtros { display: none; }
+.abrir-filtros[hidden] { display: none !important; }
+
+/* ======================= CELULAR (até 720px) =======================
+   REGRA DE OURO DESTE BLOCO: nada aqui pode chegar ao computador. Tudo vive
+   dentro do @media, e o dono pediu isso com todas as letras — "eu só não
+   queria mudar o que já está para o computador".
+
+   Três coisas quebravam o uso no celular, medidas numa tela de 390px:
+
+   1. A PÁGINA INTEIRA tinha 687px de largura. A culpa era da barra de cima:
+      os cinco módulos em linha não cabem, e empurravam o documento todo. O
+      efeito para quem usa: a página inteira anda de lado, e a marca "BWS"
+      aparece cortada.
+   2. OS FILTROS OCUPAVAM 857px DE ALTURA ANTES DO CONTEÚDO. Abrir Títulos no
+      celular mostrava uma tela e meia de caixinhas antes da primeira linha da
+      lista. Aqui eles viram uma GAVETA que abre por cima — conteúdo primeiro.
+   3. BOTÃO PEQUENO DEMAIS PARA O DEDO: 13 de 19 tinham menos de 40px de
+      altura. 44px é a medida que a Apple e o Google recomendam, e é o que
+      separa "apertei" de "apertei três vezes".
+
+   A tabela larga NÃO é problema: ela já rola dentro da própria caixa, sem
+   empurrar a página. O que se acrescenta aqui é a primeira coluna FIXA, para
+   a pessoa não perder de vista de qual linha está lendo o número. Transformar
+   tabela em cartão é outra etapa, e só para as telas que se opera de pé.
+   ================================================================== */
+@media (max-width: 720px) {
+
+  /* 1. A barra de cima rola DENTRO DELA, e não empurra mais a página. */
+  .topo {
+    overflow-x: auto; overflow-y: hidden;
+    scrollbar-width: none;                 /* a barrinha some; o dedo arrasta */
+    gap: 10px; padding: 0 10px;
+  }
+  .topo::-webkit-scrollbar { display: none; }
+  .topo > * { flex: 0 0 auto; }            /* ninguém encolhe: quem sobra, rola */
+  .topo-meta { display: none; }            /* nome e perfil: cabem em Sair */
+  .topo-abas { border-left: 0; padding-left: 0; }
+  .modulos { margin-left: 0; }
+
+  /* 2. Os filtros viram gaveta. Fechada, não ocupa nada. */
+  .abrir-filtros {
+    position: fixed; right: 14px; bottom: 14px; z-index: 45;
+    display: inline-flex; align-items: center; gap: 8px;
+    min-height: 48px; padding: 0 18px; border: 0; border-radius: 999px;
+    background: var(--azul); color: #fff; font-size: 15px; font-weight: 700;
+    box-shadow: 0 6px 18px rgba(11,44,92,.34); cursor: pointer;
+  }
+  .abrir-filtros .conta {
+    background: var(--amarelo); color: var(--azul); border-radius: 999px;
+    padding: 1px 8px; font-size: 13px;
+  }
+  .filtros {
+    position: fixed; top: 0; left: 0; bottom: 0; z-index: 50;
+    width: min(88vw, 340px); height: 100vh; overflow-y: auto;
+    border-right: 1px solid var(--borda); border-bottom: 0;
+    box-shadow: 4px 0 24px rgba(0,0,0,.28);
+    transform: translateX(-100%); transition: transform .18s ease-out;
+    padding-bottom: 90px;                  /* espaço para o botão de fechar */
+  }
+  body.filtros-abertos .filtros { transform: translateX(0); }
+  body.filtros-abertos::after {            /* o fundo escuro atrás da gaveta */
+    content: ""; position: fixed; inset: 0; z-index: 49;
+    background: rgba(11,26,45,.45);
+  }
+  body.filtros-abertos .abrir-filtros {
+    z-index: 51; background: var(--verde);
+  }
+
+  /* 3. O dedo precisa de alvo. */
+  .btn, .topo-btn, .link-btn, .abrir-filtros,
+  .filtros label, select, input[type=text], input[type=search],
+  input[type=date], input[type=number] {
+    min-height: 44px;
+  }
+  .filtros label { display: flex; align-items: center; }
+  .btn { padding-left: 16px; padding-right: 16px; }
+
+  /* 4. A primeira coluna fica fixa: rolando de lado, não se perde a linha. */
+  .tabela-rolagem { max-height: none; }
+  .tabela-rolagem thead th:first-child,
+  .tabela-rolagem tbody td:first-child {
+    position: sticky; left: 0; z-index: 1;
+    background: var(--branco); box-shadow: 1px 0 0 var(--borda);
+  }
+  .tabela-rolagem thead th:first-child { z-index: 2; background: var(--papel); }
+
+  /* 5. Caixas de diálogo ocupam a tela: não sobra margem para nada. */
+  dialog { width: 100vw; max-width: 100vw; margin: 0; border-radius: 0; }
+  .principal { padding: 14px 12px 90px; }  /* 90px: o botão flutuante não tapa */
+
+  /* 6. Os cartões de número, apertados. Seis deles no tamanho do computador
+     empurravam a primeira linha da lista para 700px abaixo — de novo o
+     conteúdo ficando atrás do enfeite. Dois por linha e menores: continuam
+     legíveis e cabem em uma olhada. */
+  .kpis { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
+  .kpi { padding: 10px 12px; }
+  .kpi-rotulo { font-size: 10.5px; letter-spacing: .04em; }
+  .kpi-valor { font-size: 19px; margin-top: 2px; }
+  .kpi-sub { font-size: 11.5px; }
+
+  /* 7. Formulário em UMA coluna, e ninguém vaza pela direita.
+     A causa era sutil: a grade usa `auto-fit`, que sozinha já daria uma
+     coluna só numa tela estreita — mas alguns campos trazem no HTML um
+     `grid-column: span 3`, e um item que ocupa três colunas OBRIGA a grade a
+     ter três. Resultado no celular: "Está sendo usado?" espremido em 42px e
+     "Motivo" cortado na borda. Aqui o vão é desfeito, e cada campo ocupa a
+     linha dele. Vale para TODO formulário do ERP, não só o da conferência.
+     O `!important` é o que vence o `style=` escrito no HTML. */
+  .form-grade { grid-template-columns: 1fr !important; }
+  .form-grade > * { grid-column: auto !important; }
+
+  /* 8. A caixa de diálogo ocupa a tela toda e rola por dentro. Antes o corpo
+     era cortado em 74% da altura e o resto ficava inalcançável no telefone. */
+  dialog { height: 100dvh; max-height: 100dvh; display: flex; flex-direction: column; }
+  .dlg-topo { flex: 0 0 auto; }
+  .dlg-corpo { flex: 1 1 auto; max-height: none; padding: 14px 14px 40px; }
+
+  /* 9. Célula não vira torre. Um nome de fornecedor longo quebrava em quatro
+     linhas e a linha da tabela ficava com a altura de um parágrafo — com três
+     títulos a tela acabava. Como a tabela já rola de lado, o certo é manter
+     cada linha em UMA linha e cortar com reticências o que não couber. */
+  .tabela-rolagem td, .tabela-rolagem th { white-space: nowrap; }
+  .tabela-rolagem td.desc, .tabela-rolagem td.credor, .tabela-rolagem td.nome {
+    max-width: 230px; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tabela-rolagem td small, .tabela-rolagem td div { display: inline; }
+}
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* Mapa de cotação: a célula do menor preço da linha. Cor discreta e com
+   contorno, porque a decisão de compra se toma olhando o mapa inteiro — não
+   pode virar um festival de destaque. */
+.menor-preco {
+  background: color-mix(in srgb, var(--verde) 12%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--verde) 45%, transparent);
+  border-radius: var(--raio-p);
+}

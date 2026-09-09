@@ -731,6 +731,20 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-07 — Duas varreduras que valem para o repositório inteiro.**
+  Cinco telas já chegaram à produção mortas, e sempre em silêncio: um nome de
+  variável errado, um `import` faltando, um endereço de API que não existe.
+  Nada disso aparece na suíte, porque ela não roda aquela linha, e nada
+  aparece na tela, porque a chamada morre dentro de um `try`. Foram criadas
+  duas varreduras baratas, sem dependência nova (`symtable` e o próprio
+  casador de rotas do Flask): `tests/test_nomes_indefinidos.py` lê todo o
+  código Python de `app/` e recusa nome que o Python não vá encontrar;
+  `tests/test_telas_chamam_rota_que_existe.py` lê cada endereço que cada tela
+  pede e confere contra as rotas registradas. As duas foram provadas contra os
+  defeitos reais que as motivaram. Elas cobrem os módulos de TODAS as áreas,
+  não só o ERP — quem mexer em painel, análise de SPs ou baixabradesco também
+  passa por elas.
+
 - **2026-09-04 — Permissão fina por pessoa, sem refazer a matriz de perfis.**
   O dono pediu que cada pessoa tenha uma função principal e, além dela,
   permissões marcadas uma a uma no cadastro. Duas saídas eram possíveis:
@@ -741,6 +755,20 @@ Quando eu pedir nova feature ou adaptação:
   ganho prático que ele descreveu ("deixar outra pessoa autorizando enquanto o
   diretor está de férias") já sai da segunda. Detalhes em §3.9. A dívida está
   escrita: um dia as áreas viram estrutura, não exceção.
+- **2026-09-05 — Suprimentos construído, das fases 1 a 5.** Migrações 033 a
+  037: cadastros (unidades, condições de pagamento como regra, fornecedor com
+  região/porte/cotador, solicitação de cadastro de insumo), solicitação com
+  obra por item e 15 situações, mapa de cotação com banco de preços, pedido
+  com autorização e previsão de pagamento, e recebimento com pendência como
+  saldo do item. O que NÃO entrou, e por quê: o disparo da cotação por e-mail
+  (o monorepo não tem envio de e-mail, e a conta é decisão do dono) e a
+  conversão da previsão em título (passa pelas regras fiscais do ERP e não
+  deve ser contornada por dentro do suprimento). Detalhes e pendências em
+  `app/apps/erp/SUPRIMENTOS.md`.
+- **2026-09-05 — A ação declarada decide sozinha quem entra.** Uma tela nova
+  declarava uma ação e conferia outra por dentro; a homologação com banco
+  acusou. Regra registrada no CLAUDE.md: quando duas ações precisam abrir a
+  mesma tela, cria-se ação própria com a implicação em `ACOES_IMPLICADAS`.
 - **2026-09-04 — Suprimentos: especificação antes de código.** As seis
   planilhas em uso foram lidas e confrontadas com o ditado do dono; o resultado
   está em `app/apps/erp/SUPRIMENTOS.md`, com as decisões dele e o plano em
