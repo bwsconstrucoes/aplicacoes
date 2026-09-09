@@ -113,7 +113,7 @@ def app(monkeypatch):
     return a
 
 
-def como(app, senha, nome="Marcelo"):
+def como(app, senha, nome="MARCELO"):
     """Entra no módulo. O NOME é obrigatório desde 04/09/2026 — ele separa o
     lote e os filtros de cada pessoa, e assina o registro de alterações."""
     cliente = app.test_client()
@@ -872,12 +872,12 @@ def test_remover_risco_grava_a_revisao_com_o_nome_de_quem_revisou(app,
                             ids=ids, coluna=coluna, valor=valor, acao=acao)
                         or {"ok": True, "alteradas": len(ids)})
 
-    resposta = como(app, SENHA_OPERADOR, nome="Marcelo").post(
+    resposta = como(app, SENHA_OPERADOR, nome="MARCELO").post(
         "/analisesps/api/sem-risco", json={"ids": ["1"]})
     assert resposta.status_code == 200
     assert gravado["coluna"] == "analise_ia"
     assert gravado["valor"].startswith("SEM RISCO")
-    assert "Marcelo" in gravado["valor"], "não diz quem revisou"
+    assert "MARCELO" in gravado["valor"], "não diz quem revisou"
     assert "COM RISCO" not in gravado["valor"], (
         "o texto novo ainda casa com a regra que marca risco")
 
@@ -1141,14 +1141,17 @@ def test_o_navegador_lembra_o_nome_mas_nunca_a_senha(app):
 
     cliente = app.test_client()
     resposta = cliente.post("/analisesps/entrar",
-                            data={"senha": SENHA_OPERADOR, "nome": "Marcelo"})
+                            data={"senha": SENHA_OPERADOR, "nome": "MARCELO"})
     biscoitos = "; ".join(str(v) for _, v in resposta.headers)
     assert guarda.COOKIE_NOME in biscoitos, "o nome não ficou lembrado"
     assert SENHA_OPERADOR not in biscoitos, "a SENHA foi parar num cookie"
 
     cliente.get("/analisesps/sair")
     login = cliente.get("/analisesps/entrar").get_data(as_text=True)
-    assert 'value="Marcelo"' in login, "o campo não veio preenchido"
+    # Desde 09/09 o nome é escolhido numa LISTA, não digitado: o que o
+    # navegador lembra é qual opção já vem marcada.
+    assert '<option value="MARCELO"' in login, "o nome sumiu da lista"
+    assert "selected" in login, "a opção lembrada não veio marcada"
     assert 'type="password"' in login, "parou de pedir a senha"
 
 
@@ -1168,9 +1171,9 @@ def test_o_mesmo_nome_escrito_diferente_e_a_mesma_pessoa(app):
 def test_o_nome_aparece_no_alto_da_tela(app):
     """É por ele que o sistema sabe de quem é o lote. Fora da vista, um nome
     digitado diferente por engano daria outro lote sem ninguém notar."""
-    html = como(app, SENHA_OPERADOR, nome="Marcelo").get(
+    html = como(app, SENHA_OPERADOR, nome="MARCELO").get(
         "/analisesps/solicitacoes").get_data(as_text=True)
-    assert "<b>Marcelo</b>" in html
+    assert "<b>MARCELO</b>" in html
 
 
 def test_nome_novo_com_lote_vazio_avisa_em_vez_de_deixar_a_pessoa_no_escuro(
@@ -1185,12 +1188,14 @@ def test_nome_novo_com_lote_vazio_avisa_em_vez_de_deixar_a_pessoa_no_escuro(
         "conteudo": "", "salvo_por": None, "salvo_em": None})
     monkeypatch.setattr(lote, "por_pessoa", lambda: True)
     monkeypatch.setattr(preferencias, "pessoas_conhecidas",
-                        lambda: [{"chave": "marcelo", "nome": "Marcelo"}])
+                        lambda: [{"chave": "marcelo", "nome": "MARCELO"}])
 
-    html = como(app_lote, SENHA_OPERADOR, nome="Marcelo Leitao").get(
+    # THIAGO está na lista e ainda não tem lote; o aviso continua valendo
+    # para quem entra pela primeira vez.
+    html = como(app_lote, SENHA_OPERADOR, nome="THIAGO").get(
         "/analisesps/lote").get_data(as_text=True)
     assert "ainda não tem lote aqui" in html
-    assert "Marcelo</b>" in html
+    assert "MARCELO</b>" in html
     assert "Maiúscula e acento não fazem diferença" in html
 
 
@@ -1231,7 +1236,7 @@ def test_a_agenda_aceita_um_lembrete_novo(agenda_gravavel):
     """E o lembrete vai para a PLANILHA, não só para o banco: a aba Agenda é
     a dona. Se fosse só aqui, a próxima sincronização traria de volta um mundo
     sem ele."""
-    cliente = como(agenda_gravavel, SENHA_OPERADOR, nome="Marcelo")
+    cliente = como(agenda_gravavel, SENHA_OPERADOR, nome="MARCELO")
     resposta = cliente.post("/analisesps/agenda", data={
         "acao": "salvar", "titulo": "FGTS da obra", "categoria": "FGTS",
         "data_base": "2026-01-07", "recorrencia": "mensal",
@@ -1242,7 +1247,7 @@ def test_a_agenda_aceita_um_lembrete_novo(agenda_gravavel):
     assert len(agenda_gravavel.escrito) == 1, "não foi para a planilha"
     guardado = agenda_gravavel.escrito[0]
     assert guardado["titulo"] == "FGTS da obra"
-    assert guardado["criado_por"] == "Marcelo", "não diz quem cadastrou"
+    assert guardado["criado_por"] == "MARCELO", "não diz quem cadastrou"
     # O padrão de FGTS é ANTECIPAR: imposto pago depois do vencimento tem multa.
     assert guardado["ajuste_dia_util"] == "antecipa"
     # O dia da repetição sai da data, como no Streamlit — não há campo à parte

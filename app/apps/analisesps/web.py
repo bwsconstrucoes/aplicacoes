@@ -68,15 +68,27 @@ def _filtro_com_links(texto):
 @bp.route("/entrar", methods=["GET", "POST"])
 @publica("é a própria tela de login; sem ela ninguém consegue entrar")
 def entrar():
+    from . import pessoas
+
     configurados = auth.perfis_configurados()
     erro = None
 
-    nome = auth.limpar_nome(request.form.get("nome", ""))
+    # A entrada é uma LISTA, não um campo livre: o nome é a chave do lote e
+    # dos filtros, e digitar "Marcelo" hoje e "Marcelo Leitão" amanhã dava duas
+    # pessoas — a segunda encontrando o lote vazio sem entender por quê.
+    #
+    # O que a tela manda é conferido contra a lista, e volta com a grafia
+    # oficial: assim um pedido montado à mão não cria uma quinta pessoa por
+    # fora, e a mesma pessoa não se divide em duas por causa de um acento.
+    equipe = pessoas.listar()
+    escolhido = auth.limpar_nome(request.form.get("nome", ""))
+    nome = pessoas.da_lista(escolhido)
 
     if request.method == "POST" and configurados:
         perfil = auth.identificar(request.form.get("senha", ""))
         if not nome:
-            erro = "Diga o seu nome — é ele que separa o seu lote do dos outros."
+            erro = ("Escolha o seu nome na lista — é ele que separa o seu lote "
+                    "e os seus filtros dos das outras pessoas.")
         elif perfil:
             auth.entrar_na_sessao(perfil, nome)
             destino = request.args.get("proximo") or ""
@@ -90,10 +102,11 @@ def entrar():
             logger.warning("Análise de SPs: tentativa de entrada com senha "
                            "errada (nome informado: %r).", nome)
 
-    # Na tela, o nome já vem preenchido com o da última vez NESTE navegador.
+    # Na tela, já vem escolhido o nome da última vez NESTE navegador.
+    lembrado = pessoas.da_lista(request.cookies.get(auth.COOKIE_NOME, ""))
     return render_template(
         "analisesps_login.html", sem_senha=not configurados, erro=erro,
-        nome=nome or request.cookies.get(auth.COOKIE_NOME, ""))
+        equipe=equipe, nome=nome or lembrado)
 
 
 def _lembrar_o_nome(resposta, nome: str):
@@ -720,7 +733,12 @@ def configuracoes():
     # Dentro de um try porque ler um segredo pode ir à planilha, e ESTA tela é
     # a que conserta o módulo quando algo quebra: ela não pode ser a próxima a
     # cair. Foi assim que o módulo travou na estreia (03/09).
-    from . import beevale
+    from . import beevale, pessoas
+    try:
+        equipe = pessoas.listar()
+    except Exception:  # noqa: BLE001 — a tela abre mesmo sem isto
+        logger.exception("Análise de SPs: não consegui ler a lista de pessoas")
+        equipe = list(pessoas.PADRAO)
     try:
         pasta, origem = beevale.pasta_do_drive()
         integracoes = {
@@ -740,12 +758,42 @@ def configuracoes():
     return render_template(
         "analisesps_config.html",
         migracoes=migracoes, erro_banco=erro_banco, integracoes=integracoes,
+        equipe=equipe,
         base=consultas.base_carregada(),
         andamento=tarefas.estado(),
         ultima=tarefas.ultima_concluida() if not erro_banco else None,
         modos=tarefas.MODOS,
         versao=os.getenv("RENDER_GIT_COMMIT", "")[:8] or "desenvolvimento",
         pode_operar=auth.pode_operar())
+
+
+@bp.route("/api/pessoas", methods=["POST"])
+@exige_operador
+def gravar_pessoas():
+    """Guarda quem aparece na lista da tela de entrada.
+
+    Não é cadastro de usuário e não dá acesso a ninguém: quem decide o que se
+    pode fazer continua sendo a senha. Isto só evita que a mesma pessoa se
+    divida em duas por ter digitado o nome diferente."""
+    from . import pessoas
+
+    dados = request.get_json(silent=True) or {}
+    bruto = dados.get("pessoas")
+    if isinstance(bruto, str):
+        # A tela manda um nome por linha — é como se escreve uma lista à mão.
+        bruto = bruto.replace(",", "\n").splitlines()
+
+    try:
+        lista = pessoas.gravar(bruto or [])
+    except ValueError as e:
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001 — a tela tem de dizer o que houve
+        logger.exception("Análise de SPs: falhou gravar a lista de pessoas")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+
+    logger.info("Análise de SPs: %s gravou a lista de pessoas (%d).",
+                auth.nome_atual() or "sem nome", len(lista))
+    return {"ok": True, "pessoas": lista}
 
 
 @bp.route("/api/pasta-drive", methods=["POST"])

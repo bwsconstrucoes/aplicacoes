@@ -466,6 +466,16 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .entrada input[type=password]:focus {
   outline: 2px solid var(--azul-claro); border-color: var(--azul-claro);
 }
+/* A lista de quem entra. Mesmo tamanho e mesma caixa do campo de senha: os
+   dois são o mesmo gesto, um embaixo do outro. */
+.entrada select {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--borda-forte);
+  border-radius: var(--raio-p); font-size: 15px; margin-bottom: 14px;
+  background: var(--branco); color: inherit;
+}
+.entrada select:focus {
+  outline: 2px solid var(--azul-claro); border-color: var(--azul-claro);
+}
 .entrada .btn { width: 100%; padding: 11px; font-size: 15px; }
 
 .aviso {
