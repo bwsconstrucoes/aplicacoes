@@ -2866,6 +2866,22 @@ def api_agenda():
                 .order_by(Parcela.vencimento)).all()
             em_lote = {i.parcela_id for i in s.scalars(select(LoteItem)).all()}
             hoje = date.today()
+
+            # DE QUE CONTA SAI CADA PAGAMENTO. Pedido do dono: "às vezes a gente
+            # quer filtrar o que tem pra pagar nessa conta, o que tem pra pagar
+            # na outra — às vezes é mais fácil do que filtrar por obra". A conta
+            # vem da OBRA do rateio; título rateado entre obras de contas
+            # diferentes aparece nos dois filtros, que é o certo.
+            from app.apps.erp.db.models.cadastros import Obra as _Obra
+            conta_da_obra = {o.id: o.conta_bancaria_id
+                             for o in s.scalars(select(_Obra)).all()}
+            nome_da_conta = {c.id: c.descricao for c in s.scalars(
+                select(ContaBancaria)).all()}
+
+            def _contas_da_parcela(p):
+                ids = {conta_da_obra.get(r.obra_id) for r in p.titulo.rateios}
+                return sorted({i for i in ids if i})
+
             itens = [{
                 "parcela_id": p.id, "titulo_id": p.titulo.id,
                 "numero_sp": p.titulo.numero_sp, "parcela": p.numero,
@@ -2877,6 +2893,8 @@ def api_agenda():
                 "forma": p.titulo.forma_pagamento.value,
                 "tem_boleto": bool(p.linha_digitavel),
                 "em_lote": p.id in em_lote,
+                "contas_da_obra": _contas_da_parcela(p),
+                "contas_nomes": [nome_da_conta.get(i, "") for i in _contas_da_parcela(p)],
             } for p in parcelas]
             contas = [{"id": c.id, "descricao": c.descricao}
                       for c in s.scalars(select(ContaBancaria)
@@ -3398,6 +3416,82 @@ def api_desfazer(titulo_id: int):
     except Exception as e:
         logger.exception("ERP: falha ao desfazer")
         return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# CHAVES PIX DA CONTA — e o bloco pronto para copiar
+#
+# O uso é o que o dono descreveu: não é pagar por aqui, é COPIAR E MANDAR
+# quando alguém pede os dados da empresa. Por isso a listagem já vem com o
+# texto montado — copiar campo por campo é onde se erra um dígito.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/contas/detalhe")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_contas_detalhe():
+    from app.apps.erp.core.cadastros import contas as svc_contas
+    with get_session() as s:
+        return jsonify({"ok": True, "contas": svc_contas.listar(s),
+                        "tipos_pix": svc_contas.TIPOS_PIX})
+
+
+@bp.route("/erp/api/contas/<int:conta_id>/pix", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_conta_pix(conta_id: int):
+    from app.apps.erp.core.cadastros import contas as svc_contas
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            svc_contas.acrescentar_pix(
+                s, conta_id, tipo=(d.get("tipo") or ""), chave=(d.get("chave") or ""),
+                descricao=(d.get("descricao") or ""), usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, "contas": svc_contas.listar(s)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/contas/pix/<int:chave_id>", methods=["DELETE"])
+@login_obrigatorio
+@permissao("configurar")
+def api_conta_pix_remover(chave_id: int):
+    from app.apps.erp.core.cadastros import contas as svc_contas
+    try:
+        with get_session() as s:
+            svc_contas.remover_pix(s, chave_id, usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, "contas": svc_contas.listar(s)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# EMISSÃO DE NOTA POR EMPRESA
+#
+# São duas empresas, em municípios diferentes, uma por API e outra manual — por
+# isso município, endereço e token são CADASTRO, não constante no código.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/empresas/<int:empresa_id>/emissao", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_emissao(empresa_id: int):
+    from app.apps.erp.core.cadastros import emissao as svc_emissao
+    from app.apps.erp.db.models.cadastros import Empresa
+    try:
+        with get_session() as s:
+            if request.method == "POST":
+                empresa = svc_emissao.definir(s, empresa_id,
+                                              request.get_json(silent=True) or {},
+                                              usuario=_usuario_logado(s))
+                s.commit()
+            else:
+                empresa = s.get(Empresa, empresa_id)
+                if empresa is None:
+                    raise ErroNaoEncontrado("Empresa não encontrada.")
+            return jsonify({"ok": True, "emissao": svc_emissao.ler(s, empresa)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/contas")

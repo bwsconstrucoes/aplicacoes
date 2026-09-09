@@ -1210,6 +1210,52 @@ já entregaria que o documento existe.
 Provado com banco de verdade (15 casos) e na tela: baixei o bloco fiscal de uma
 obra, abri o arquivo compactado e li a conferência.
 
+### A melhoria dos lotes estava morta havia oito dias — 09/09/2026
+
+**Incidente, e dos bons de aprender.**
+
+Em 01/09 a ficha do lote foi melhorada: as fases (Aberto/Enviado/Pago/Cancelado)
+saíram porque não existiam no processo real, e entraram os botões **Incluir
+SPs** e **Excluir lote**, mais os quadrinhos "Já pagas" e "Em aberto".
+
+O código foi escrito, revisado, publicado — e **nunca apareceu na tela**.
+
+**Por quê:** a versão nova foi acrescentada NO TOPO do bloco de JavaScript, e a
+versão antiga das mesmas funções ficou embaixo, sem ser removida. Em
+JavaScript, quando duas funções com o mesmo nome são declaradas no mesmo
+escopo, **a de baixo vence** — em silêncio, sem erro, sem aviso no navegador.
+
+Oito funções estavam duplicadas na tela de Pagamentos; seis eram cópias
+idênticas, e a `abrirLote` tinha duas versões diferentes rodando a errada. Em
+06/09 uma sessão chegou a escrever a função `adicionarSPsAoLote` "que nunca
+tinha sido escrita" — quando na verdade a chamada morta era da versão VELHA,
+que ninguém sabia que estava no comando. Ou seja: o defeito custou trabalho
+duas vezes.
+
+A tela de Configurações tinha o mesmo problema, mais brando: `carregarDepara`
+duplicada em cópia idêntica.
+
+**A defesa, que é o que fica:** `tests/test_telas_sem_funcao_repetida.py` recusa
+qualquer tela que declare a mesma função — ou a mesma constante de primeiro
+nível — duas vezes. Roda junto com a suíte, em milésimos, sem navegador.
+
+É a quarta varredura desta família, e todas nasceram do mesmo jeito: defeito
+silencioso que só apareceu quando alguém foi usar.
+
+| Varredura | Recusa |
+|---|---|
+| `test_nomes_indefinidos.py` | função que cita nome que o Python não acha |
+| `test_telas_chamam_rota_que_existe.py` | tela que pede endereço que o servidor não tem |
+| `test_telas_blocos.py` | `{% block %}` que a base não declara |
+| `test_telas_sem_funcao_repetida.py` | função declarada duas vezes na mesma tela |
+
+**A lição, escrita para a próxima sessão:** ao melhorar uma tela, PROCURAR a
+versão antiga antes de escrever a nova. Acrescentar por cima não substitui — em
+JavaScript, enterra.
+
+Conferido no navegador depois do conserto: a ficha do lote abre com "Incluir
+SPs", "Excluir lote" e os quadrinhos novos, sem erro de JavaScript.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1527,6 +1573,11 @@ dessas coisas aparece num teste que só olha o HTML que o servidor mandou.
   `core/comum/formato.py` (`_dinheiro_br`, `_quantidade_br`); na tela, por
   `moeda` e `numero` do `erp_base.html`. Não escrever `f"R$ {v:.2f}"` — isso é
   formato americano, e o dono lê o sistema em português.
+- **Ao melhorar uma tela, PROCURE a versão antiga antes de escrever a nova.**
+  Acrescentar a função nova por cima não substitui a velha: em JavaScript a
+  declaração DE BAIXO vence, calada, e a melhoria vira código morto. Foi assim
+  que a ficha do lote ficou oito dias com o comportamento antigo. Agora
+  `tests/test_telas_sem_funcao_repetida.py` recusa isso.
 - **Nunca declare na tela um nome que a base já declara** (`moeda`, `numero`,
   `els`, `api`, `dataBR`…). Não é "a última vence": é erro de sintaxe e a tela
   inteira morre. `tests/test_telas_javascript.py` recusa isso agora.

@@ -82,8 +82,14 @@
     <span class="espaco"></span>
     <button class="btn secundario" id="btn-nova-conta">+ Nova conta</button>
   </div>
-  <table><thead><tr><th>Descrição</th><th>Banco</th><th>Agência</th><th>Conta</th><th>Situação</th></tr></thead>
+  <table><thead><tr><th>Descrição</th><th>Banco</th><th>Agência</th><th>Conta</th>
+    <th>Chaves Pix</th><th>Situação</th><th></th></tr></thead>
     <tbody id="tb-contas"></tbody></table>
+  <div class="dica" style="margin-top:8px">O botão <b>Copiar dados</b> monta o bloco
+    inteiro — razão social, CNPJ, banco, agência, conta e as chaves Pix — pronto
+    para colar num WhatsApp ou num e-mail. Copiar campo por campo é onde se erra
+    um dígito.</div>
+  <div id="pix-msg"></div>
 </div>
 
 <div class="cartao" id="bloco-zerar" data-secao="manutencao">
@@ -173,6 +179,23 @@
     <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
   <div class="dlg-corpo" id="dlg-corpo"></div>
 </dialog>
+<dialog id="dlg-pix"><div class="dlg-topo"><h3>Nova chave Pix</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg-pix').close()">Fechar</button></div>
+  <div class="dlg-corpo">
+    <input type="hidden" id="pix-conta">
+    <div class="form-grade">
+      <div class="campo"><label>Tipo</label><select id="pix-tipo">
+        <option value="CNPJ">CNPJ</option><option value="CPF">CPF</option>
+        <option value="EMAIL">E-mail</option><option value="TELEFONE">Telefone</option>
+        <option value="ALEATORIA">Chave aleatória</option></select></div>
+      <div class="campo"><label>Chave</label><input id="pix-chave"></div>
+      <div class="campo" style="grid-column: span 2"><label>Observação</label>
+        <input id="pix-desc" placeholder="ex.: usada para recebimento de medição"></div>
+    </div>
+    <div style="margin-top:10px"><button class="btn amarelo" id="btn-pix-salvar">Guardar</button></div>
+    <div id="pix-dlg-msg"></div>
+  </div></dialog>
+
 {% endblock %}
 
 {% block scripts %}
@@ -530,44 +553,6 @@ carregarDepara();
 carregarOperadores();
 els("btn-novo-op").addEventListener("click", () => formOperador(null));
 
-async function carregarDepara(){
-  try {
-    const d = await api("/erp/api/config/depara");
-    const p = d.depara.pendentes, ac = d.depara.a_confirmar, ok = d.depara.confirmadas;
-    els("resumo-depara").innerHTML =
-      `<b>${ok.length}</b> tradução(ões) ativas · ` +
-      (ac.length ? `<span style="color:var(--ambar)"><b>${ac.length}</b> sugeridas a confirmar</span> · ` : "") +
-      (p.length ? `<span style="color:var(--vermelho)"><b>${p.length}</b> sem destino</span>`
-                : "nenhuma pendência") +
-      `<br><small>Para ver de onde vem cada conta, clique nela na lista do plano acima.</small>`;
-    const linhas = [...p, ...ac];
-    els("lista-depara").innerHTML = linhas.length ? `
-      <div class="tabela-rolagem" style="max-height:340px; margin-top:10px"><table>
-        <thead><tr><th>Vem do Pipefy como</th><th>Vezes</th><th>Vai para</th><th></th></tr></thead>
-        <tbody>${linhas.map(l => `
-          <tr><td>${l.origem}</td><td class="dados">${l.ocorrencias}</td>
-            <td><select data-dep="${l.id}" style="padding:5px; border:1px solid var(--borda-forte); border-radius:6px; font-size:12.5px; max-width:320px">
-              <option value="">— escolher conta —</option>${OPCOES_CAT}</select></td>
-            <td><button class="btn secundario" data-salvar="${l.id}">Salvar</button></td></tr>`).join("")}
-        </tbody></table></div>` : "";
-    linhas.forEach(l => {
-      if (l.categoria_id) { const s = document.querySelector(`[data-dep="${l.id}"]`); if (s) s.value = l.categoria_id; }
-    });
-    document.querySelectorAll("[data-salvar]").forEach(b => b.addEventListener("click", async () => {
-      const id = b.dataset.salvar;
-      const sel = document.querySelector(`[data-dep="${id}"]`);
-      if (!sel.value) { aviso("mensagem", "Escolha a conta de destino.", "erro"); return; }
-      try {
-        await api("/erp/api/config/depara/definir", {method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({depara_id: id, categoria_id: sel.value})});
-        aviso("mensagem", "Tradução salva.", "ok");
-        carregarDepara();
-      } catch(e){ aviso("mensagem", e.message, "erro"); }
-    }));
-  } catch(e){ els("resumo-depara").innerHTML = `<span style="color:var(--vermelho)">${e.message}</span>`; }
-}
-
 els("btn-instalar-depara").addEventListener("click", async () => {
   const b = els("btn-instalar-depara"); b.disabled = true; b.textContent = "Instalando…";
   try {
@@ -659,11 +644,7 @@ function desenhar(){
       <td class="dados">${o.contrato||"—"}</td>
       <td><span class="selo ${o.status==="ATIVA"?"aprovado":"outro"}">${rotulo(o.status)}</span></td></tr>`).join("");
 
-  els("tb-contas").innerHTML = DADOS.contas.map(c => `
-    <tr><td>${c.descricao}</td><td class="dados">${c.banco}</td><td class="dados">${c.agencia}</td>
-      <td class="dados">${c.conta}</td>
-      <td><span class="selo ${c.ativo?"aprovado":"outro"}">${c.ativo?"Ativa":"Inativa"}</span></td></tr>`).join("")
-      || `<tr><td colspan="5" class="cartao-dica">Nenhuma conta cadastrada — necessária para registrar pagamentos.</td></tr>`;
+  desenharContas();
 
   els("tb-usuarios").innerHTML = OPERADORES.map(u => `
     <tr style="cursor:pointer" data-op="${u.id}" title="Clique para editar">
@@ -1023,8 +1004,87 @@ els("btn-dr-mover") && els("btn-dr-mover").addEventListener("click", async (ev) 
   b.disabled = false; b.textContent = "Mover documentos antigos para o Drive";
 });
 
+// ---------------------------------------------------------------------------
+// CONTAS E CHAVES PIX
+// ---------------------------------------------------------------------------
+let CONTAS_PIX = [];
+
+async function carregarContasPix(){
+  try {
+    const d = await api("/erp/api/contas/detalhe");
+    CONTAS_PIX = d.contas || [];
+    desenharContas();
+  } catch(e){ aviso("pix-msg", "Não consegui carregar as contas: " + e.message, "erro"); }
+}
+
+function desenharContas(){
+  const alvo = els("tb-contas");
+  if (!alvo) return;
+  const lista = CONTAS_PIX.length ? CONTAS_PIX : (DADOS.contas || []).map(c => ({
+    ...c, banco_codigo: c.banco, chaves_pix: [], texto_para_copiar: ""}));
+  alvo.innerHTML = lista.map(c => `
+    <tr data-conta="${c.id}">
+      <td>${c.descricao}</td>
+      <td class="dados">${c.banco_codigo || c.banco || ""}</td>
+      <td class="dados">${c.agencia}</td>
+      <td class="dados">${c.conta}</td>
+      <td>${(c.chaves_pix||[]).map(k => `<div class="dados" style="white-space:nowrap">
+            <small>${k.tipo_nome}</small> ${k.chave}
+            <button class="link-btn" data-pix-remover="${k.id}" title="remover">×</button>
+          </div>`).join("") || `<span style="color:var(--tinta-suave)">—</span>`}</td>
+      <td><span class="selo ${c.ativo?"aprovado":"outro"}">${c.ativo?"Ativa":"Inativa"}</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn secundario" data-pix-novo="${c.id}">+ Pix</button>
+        <button class="btn secundario" data-copiar="${c.id}">Copiar dados</button></td>
+    </tr>`).join("")
+    || `<tr><td colspan="7" class="cartao-dica">Nenhuma conta cadastrada — necessária para registrar pagamentos.</td></tr>`;
+
+  document.querySelectorAll("[data-copiar]").forEach(b => b.addEventListener("click", async () => {
+    const c = CONTAS_PIX.find(x => String(x.id) === b.dataset.copiar);
+    if (!c || !c.texto_para_copiar) return;
+    try {
+      await navigator.clipboard.writeText(c.texto_para_copiar);
+      aviso("pix-msg", "Dados copiados. É só colar.", "ok");
+    } catch(e){
+      // Sem permissão da área de transferência, mostrar o texto ainda resolve:
+      // dá para selecionar e copiar à mão.
+      aviso("pix-msg", `<b>Copie daqui:</b><pre style="white-space:pre-wrap; margin:6px 0 0">${
+        escapar(c.texto_para_copiar)}</pre>`, "alerta");
+    }
+  }));
+
+  document.querySelectorAll("[data-pix-novo]").forEach(b => b.addEventListener("click", () => {
+    els("pix-conta").value = b.dataset.pixNovo;
+    els("dlg-pix").showModal();
+  }));
+
+  document.querySelectorAll("[data-pix-remover]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("Remover esta chave Pix?")) return;
+    try {
+      const d = await api(`/erp/api/contas/pix/${b.dataset.pixRemover}`, {method:"DELETE"});
+      CONTAS_PIX = d.contas || CONTAS_PIX;
+      desenharContas();
+    } catch(e){ aviso("pix-msg", e.message, "erro"); }
+  }));
+}
+
+els("btn-pix-salvar") && els("btn-pix-salvar").addEventListener("click", async () => {
+  try {
+    const d = await api(`/erp/api/contas/${els("pix-conta").value}/pix`, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({tipo: els("pix-tipo").value, chave: els("pix-chave").value,
+                            descricao: els("pix-desc").value})});
+    CONTAS_PIX = d.contas || CONTAS_PIX;
+    els("dlg-pix").close();
+    els("pix-chave").value = ""; els("pix-desc").value = "";
+    desenharContas();
+    aviso("pix-msg", "Chave guardada.", "ok");
+  } catch(e){ aviso("pix-dlg-msg", e.message, "erro"); }
+});
+
 carregar();
 carregarIA();
 carregarAnexos();
+carregarContasPix();
 </script>
 {% endblock %}
