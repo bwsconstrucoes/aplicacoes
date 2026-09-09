@@ -1688,6 +1688,130 @@ consultas curtas e o custo não aparece; se um dia pesar, ela vira tarefa
 separada — está no roteiro, junto com o resto do trabalho pesado que precisa
 sair das telas.
 
+### Empreita: retenção de garantia e alçada por valor — 09/09/2026
+
+Migração **052**. Duas coisas que estavam no roteiro desde o começo.
+
+**A RETENÇÃO DE GARANTIA** é o costume da construção: guarda-se uma parte de
+cada medição — na BWS, 5% — e devolve-se no fim, quando o serviço passou pelo
+período de garantia. Serve para o dia em que o empreiteiro some e o reparo
+fica com a obra.
+
+O defeito que ela corrige é sempre o mesmo na planilha: retém-se direitinho
+por doze medições e, no fim, **ninguém sabe quanto ficou retido nem quando
+devolver**. O dinheiro fica parado, o empreiteiro cobra, e alguém refaz a conta
+de memória.
+
+Agora o contrato diz o percentual, cada medição desconta sozinha, e o valor a
+pagar já sai líquido. Numa empreita de 180 mil com três medições, os 6.750
+retidos aparecem num quadrinho próprio, e quando o contrato termina a tela diz
+**"o serviço terminou — é hora de devolver"**.
+
+**Três decisões que valem registro:**
+
+1. **A garantia incide sobre o MEDIDO, não sobre o líquido.** Ela é uma parte
+   do serviço executado; o adiantamento é dinheiro que já saiu. Calcular sobre
+   o líquido faria a retenção encolher justamente na medição que abate
+   adiantamento — e no fim do contrato faltaria garantia.
+2. **O valor retido fica GRAVADO na medição**, não recalculado pelo percentual
+   atual. O percentual pode mudar por aditivo, e a medição de março tem de
+   continuar dizendo quanto foi retido em março. Guardar só o percentual faria
+   a conta do passado mudar sozinha — que é como se perde uma discussão com o
+   empreiteiro.
+3. **A devolução vira TÍTULO A PAGAR**, não acerto de planilha: passa pela
+   mesma aprovação, a mesma baixa e o mesmo comprovante de qualquer pagamento,
+   porque é dinheiro saindo. Não pode ser feita duas vezes, e antes do fim do
+   contrato exige motivo escrito — é o caso em que alguém vai perguntar por
+   quê, meses depois.
+
+Uma lista nova responde a pergunta que a planilha não responde: **de quem a BWS
+ainda está com garantia na mão**, e quais contratos já terminaram.
+
+**A ALÇADA POR VALOR** fecha um buraco: antes dela, uma empreita de oitocentos
+reais e uma de oitocentos mil passavam pela mesma porta — qualquer perfil de
+obra aprovava as duas. As faixas nascem assim:
+
+| Até | Quem aprova |
+|---|---|
+| R$ 50.000 | supervisor, gestor, financeiro e direção |
+| R$ 200.000 | gestor, financeiro e direção |
+| acima | só a direção |
+
+**Elas são TABELA, não número no código**, porque o teto muda com o tamanho da
+empresa — e quando mudar, quem muda é o dono. As faixas iniciais reproduzem o
+que já valia para o contrato pequeno e só estreitam o de cima: migração que
+muda quem pode o quê sem avisar é migração que quebra a operação na segunda de
+manhã.
+
+**O aditivo entra na conta**: contrato de 40 mil aditivado para 60 mil sai da
+faixa do supervisor. Senão bastaria cadastrar pequeno e aditivar depois.
+
+**Uma coisa que a devolução respeita, e é regra do ERP inteiro:** dado bancário
+vive no CADASTRO, nunca no lançamento. Quando o prestador tem uma única conta
+homologada, o sistema usa essa; com mais de uma, quem escolhe é a pessoa —
+adivinhar aqui é escolher para onde o dinheiro vai.
+
+**Provado:** 19 testes com banco de verdade
+(`tests/test_empreita_garantia_banco.py`) e o caminho inteiro num navegador,
+contra uma empreita de 180 mil com três medições: ver a garantia acumulada,
+devolver, e o título nascer com o valor certo.
+
+### O certificado digital da empresa — 09/09/2026
+
+Migração **053**, em Administração › Empresas › "Emissão de nota".
+
+**O problema, do jeito que ele acontece:** o arquivo .pfx vive no computador
+de alguém, com a senha num papel ou numa conversa antiga. Aí ele vence num
+sábado, ninguém sabe, e a obra para de faturar na segunda-feira.
+
+Duas coisas já construídas dependiam dele. A **emissão automática** da nota —
+no padrão nacional a declaração vai ASSINADA, e sem certificado não há
+assinatura. E a **agenda**, onde ele era o quarto aviso prometido que ficou de
+fora justamente porque o certificado não tinha onde morar. Agora estão os
+cinco.
+
+**Três decisões que valem registro:**
+
+1. **O arquivo e a senha vão CIFRADOS**, com a mesma chave que já protege a
+   senha de e-mail — a que mora na Environment do Render e nunca no banco.
+   Certificado digital é a **assinatura da empresa**: quem o tem, assina no
+   nome dela. Uma cópia do banco não pode bastar. E **sem a chave o sistema
+   recusa guardar**: a alternativa — guardar em claro "só desta vez" — é como
+   uma assinatura de empresa vaza sem ninguém perceber.
+
+2. **A validade é lida de dentro do arquivo, nunca digitada.** Campo de data
+   que a pessoa preenche é campo que ela erra ou esquece de atualizar — e aqui
+   o erro só apareceria no dia em que a nota não sai. De quebra, abrir o
+   arquivo **prova que a senha está certa**: certificado que não abre não
+   entra, e a mensagem diz o que quase sempre é ("confira a senha").
+
+3. **O arquivo nunca volta pela tela.** A tela mostra titular, CNPJ, validade e
+   emissor; os bytes só saem por dentro, para quem vai assinar. Não existe rota
+   de download — o que não tem porta não é arrombado.
+
+**Duas recusas que evitam erro caro:** certificado de outro CNPJ é recusado
+(trocar os arquivos de duas empresas faria a nota sair assinada pelo CNPJ
+errado — difícil de descobrir, caro de desfazer), e certificado já vencido não
+entra (guardá-lo criaria a impressão de que a empresa está em dia).
+
+**O anterior não é apagado**, vira histórico: a nota assinada em março foi
+assinada com AQUELE certificado, e um dia alguém vai perguntar com qual.
+
+**O aviso na agenda sai 45 dias antes**, porque certificado se renova com a
+contadora e isso leva dias. Quando o certificado é substituído, o aviso
+**fecha sozinho** — não fica um velho ao lado do novo.
+
+**Provado:** 15 testes com banco de verdade
+(`tests/test_certificado_banco.py`, que fabrica um A1 de verdade em memória
+em vez de versionar um .pfx no repositório — certificado versionado é
+certificado vazado, mesmo de teste) e o caminho inteiro num navegador: senha
+errada recusada com a frase certa, senha certa guardando, a validade lida do
+arquivo aparecendo na tela, e o aviso nascendo na agenda.
+
+**Um defeito corrigido no caminho:** a confirmação "certificado guardado"
+aparecia no painel que era redesenhado logo em seguida — a frase morria antes
+de ser lida, que é o mesmo que não ter avisado.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1843,17 +1967,18 @@ sair das telas.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **APERTAR "Aplicar atualizações do banco" para as migrações 042 a 051**,
-   assim que o ramo entrar na `main`. A 042 é a trava contra baixa em
-   duplicidade; sem ela, anexar comprovante pela tela dá erro. A 043 abre
-   espaço para o documento morar no Drive; sem ela, anexar qualquer documento
-   dá erro. A 044 abre o cruzamento de notas, a 045 o arquivo de documentos e
-   a 046 os blocos, e a 047 traz a chave Pix e os dados de emissão por
-   empresa, a 048 o controle da numeração das notas e a 049 o tipo da medição,
-   a correlação do reajuste e o protocolo; sem elas as telas de Notas fiscais,
-   Arquivo, Configurações, Empresas e Contratos e medições não carregam. A 050
-   traz a data-base do reajuste e a tabela do INCC, e a 051 a agenda de
-   obrigações. É o mesmo botão de sempre, em Configurações.
+21. **RESOLVIDO em 09/09/2026 — as migrações 042 a 051 foram aplicadas.** O
+   dono publicou e apertou o botão no mesmo momento. ⚠️ **Fica pendente a
+   052 e a 053** (retenção de garantia da empreita e alçada por valor; o
+   certificado digital por empresa), pelo mesmo caminho, na próxima
+   publicação.
+
+   Do que cada uma trouxe, para consulta: 042 a trava contra baixa em
+   duplicidade; 043 o documento morando no Drive; 044 o cruzamento de notas;
+   045 o arquivo de documentos; 046 os blocos; 047 a chave Pix e os dados de
+   emissão por empresa; 048 o controle da numeração das notas; 049 o tipo da
+   medição, a correlação do reajuste e o protocolo; 050 a data-base do
+   reajuste e a tabela do INCC; 051 a agenda de obrigações.
 
 23. **Criar a pasta do Drive e colar o endereço** em Configurações › "Onde
    ficam os documentos", apertar "Testar a pasta" e só então ligar a chave.

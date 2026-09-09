@@ -115,7 +115,7 @@ MODULOS = [
 ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  "autorizar_pedido", "solicitar_suprimento", "configurar",
                  "cruzar_notas", "arquivar", "receber", "emitir_nota",
-                 "tratar_agenda")
+                 "tratar_agenda", "aprovar")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -1692,6 +1692,47 @@ def api_empresa_conta_email(empresa_id: int):
     except Exception as e:
         logger.exception("ERP: falha ao definir a conta de e-mail da empresa")
         return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# CERTIFICADO DIGITAL (A1) da empresa
+#
+# O arquivo e a senha vão CIFRADOS. Não existe rota de download de propósito:
+# certificado digital é a assinatura da empresa, e o que não tem porta não é
+# arrombado. A tela mostra titular, validade e emissor — nunca os bytes.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/empresas/<int:empresa_id>/certificado")
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_certificado(empresa_id: int):
+    from app.apps.erp.core.cadastros import certificado as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "certificado": svc.ler(s, empresa_id),
+                        "historico": svc.historico(s, empresa_id)})
+
+
+@bp.route("/erp/api/empresas/<int:empresa_id>/certificado", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_certificado_guardar(empresa_id: int):
+    """Guarda o A1. Abrir o arquivo é o que PROVA que a senha está certa."""
+    from app.apps.erp.core.cadastros import certificado as svc
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False,
+                        "erro": "Anexe o arquivo do certificado (.pfx ou .p12)."}), 400
+    try:
+        with get_session() as s:
+            svc.guardar(s, empresa_id, arquivo.read(),
+                        (request.form.get("senha") or ""),
+                        nome_arquivo=(arquivo.filename or ""),
+                        observacao=(request.form.get("observacao") or ""),
+                        usuario=_usuario_logado(s))
+            lido = svc.ler(s, empresa_id)
+            s.commit()
+        return jsonify({"ok": True, "certificado": lido})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/empresas/<int:empresa_id>/testar-email", methods=["POST"])
@@ -6023,6 +6064,42 @@ def api_aprovar_empreita(contrato_id: int):
             c = aprovar_contrato(s, contrato_id, _usuario_logado(s))
             s.commit()
         return jsonify({"ok": True, "status": c.status})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/empreitas/garantias")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_empreita_garantias():
+    """De quem a BWS ainda está com garantia na mão, e há quanto tempo."""
+    from app.apps.erp.core.titulos.empreita import garantias_a_liberar, listar_alcadas
+    with get_session() as s:
+        return jsonify({"ok": True,
+                        "garantias": garantias_a_liberar(s),
+                        "alcadas": listar_alcadas(s)})
+
+
+@bp.route("/erp/api/empreitas/<int:contrato_id>/garantia", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar")
+def api_empreita_liberar_garantia(contrato_id: int):
+    """Devolve a garantia retida — vira TÍTULO A PAGAR, não acerto de planilha."""
+    from app.apps.erp.core.titulos.empreita import liberar_garantia
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            r = liberar_garantia(
+                s, contrato_id, _usuario_logado(s),
+                motivo=(d.get("motivo") or ""),
+                vencimento=d.get("vencimento"),
+                fornecedor_conta_id=(int(d["fornecedor_conta_id"])
+                                     if d.get("fornecedor_conta_id") else None),
+                forma_pagamento=(d.get("forma_pagamento") or "PIX"))
+            s.commit()
+        return jsonify({"ok": True, "resultado": r})
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
     except ErroValidacao as e:

@@ -262,4 +262,40 @@ def contratos(s: Session, hoje: Optional[date] = None) -> list[dict[str, Any]]:
     return saida
 
 
-TODOS = (reajustes, certidoes, locacoes, contratos)
+# ---------------------------------------------------------------------------
+# 5. Certificado digital vencendo
+# ---------------------------------------------------------------------------
+def certificados(s: Session, hoje: Optional[date] = None) -> list[dict[str, Any]]:
+    """O A1 da empresa perto de vencer.
+
+    Era o quarto aviso que a agenda prometia e não tinha de onde tirar: o
+    certificado não morava no sistema. Agora mora, cifrado, e a validade vem
+    lida de dentro do arquivo — então o aviso não depende de ninguém ter
+    digitado a data certa.
+
+    Sem certificado válido a nota de serviço não é assinada, e a obra para de
+    faturar. Por isso o prazo é largo: certificado se renova com a contadora,
+    e isso leva dias.
+    """
+    from app.apps.erp.core.cadastros import certificado as svc
+
+    hoje = hoje or date.today()
+    saida = []
+    for c in svc.vencendo(s, dias=svc.AVISO_DIAS, hoje=hoje):
+        vencido = c["dias"] < 0
+        saida.append(_evento(
+            chave=f"CERTIFICADO:empresa={c['empresa_id']}:{c['valido_ate'].isoformat()}",
+            origem="CERTIFICADO",
+            titulo=(f"{'VENCIDO' if vencido else 'Vence'}: certificado digital — "
+                    f"{c['empresa']}"),
+            detalhe=(f"Válido até {c['valido_ate'].strftime('%d/%m/%Y')}"
+                     + (". Sem certificado válido a nota de serviço não é "
+                        "assinada — a emissão para." if vencido else
+                        ". Peça a renovação à contadora: leva dias, e sem ele "
+                        "a emissão para.")),
+            quando=c["valido_ate"], avisar_dias=svc.AVISO_DIAS,
+            empresa_id=c["empresa_id"], link="/erp/empresas"))
+    return saida
+
+
+TODOS = (reajustes, certidoes, locacoes, contratos, certificados)

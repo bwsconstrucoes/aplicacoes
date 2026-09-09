@@ -94,8 +94,12 @@
       obrigatória, adiantamento abatido, aditivo e geração do título na
       autorização — núcleo e tela
 - [x] Bloqueio de período (diretor fecha e destrava janela temporária)
-- [ ] Empreita — falta: retenção de garantia (5% por medição, liberada no fim)
-      e alçada por valor de contrato
+- [x] Empreita — retenção de garantia e alçada por valor: FEITO em 09/09/2026
+      (migração 052). A retenção sai de cada medição, fica gravada NELA (mudar
+      o percentual não reescreve o passado) e a devolução vira título a pagar,
+      uma vez só. Quem aprova o contrato depende do valor: até 50 mil o
+      supervisor, até 200 mil o gestor, acima disso só a direção — faixas
+      editáveis em tabela.
 
 - [x] Categorias PERMITIDAS por operador (administrativo de obra não vê o plano
       inteiro) — seleção simples no cadastro do operador
@@ -134,7 +138,8 @@
       certidão e fim da vigência do contrato, num lugar só, mais a anotação
       manual. O aviso deduzido é RECALCULADO (some quando deixa de valer);
       resolvido, dispensado e anotação nunca somem. O número aparece na porta
-      de entrada. Falta ligar o **certificado digital** quando ele existir.
+      de entrada. **Os cinco avisos estão ligados** — o certificado digital
+      entrou em 09/09/2026 com a migração 053.
 - [ ] **BeeVale**: geração das informações (existe no spsbd)
 - [ ] **Auditoria**: as checagens do spsbd que ainda não vieram
 - [ ] **Ratear**: rateio por categoria (rateio por obra já funciona no lançamento)
@@ -336,9 +341,11 @@ lido, e a partir dali categorizado, renomeado e salvo"*.
 fisco; e o **FSist sai** — a captura passa a ser própria, direto na SEFAZ. Os
 dois itens abaixo deixaram de depender de decisão e viraram trabalho.
 
-- [ ] Certificado digital por empresa, cifrado, com alerta de validade —
-      pré-requisito da captura. Entra, nunca sai: o ERP usa, ninguém baixa de
-      volta pela tela.
+- [x] Certificado digital por empresa — FEITO em 09/09/2026 (migração 053). O
+      arquivo .pfx e a senha vão CIFRADOS, a validade é lida de dentro do
+      próprio arquivo, o CNPJ tem de bater com o da empresa, o anterior vira
+      histórico, e o vencimento avisa na agenda 45 dias antes. Destrava a
+      assinatura da DPS na emissão automática.
 - [ ] **Estudar o serviço de distribuição da SEFAZ antes de codar**: limites de
       consulta, o que acontece ao perder o número de sequência, e se o
       certificado A1 da BWS tem o perfil necessário. Nada disso foi verificado.

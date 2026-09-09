@@ -596,6 +596,16 @@ class ContratoServico(Base):
     data_fim: Mapped[Optional[date]] = mapped_column(Date)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="RASCUNHO")
     exige_foto: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # RETENÇÃO DE GARANTIA (migração 052): a parte de cada medição que fica
+    # guardada até o serviço passar pelo período de garantia. Zero desliga.
+    retencao_garantia_pct: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), nullable=False, default=0)
+    retencao_liberada_em: Mapped[Optional[date]] = mapped_column(Date)
+    retencao_liberada_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+    retencao_titulo_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("titulos.id"))
+    retencao_motivo: Mapped[Optional[str]] = mapped_column(Text)
     observacoes: Mapped[Optional[str]] = mapped_column(Text)
     criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
     aprovado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
@@ -623,6 +633,11 @@ class ContratoMedicao(Base):
     percentual: Mapped[Optional[Decimal]] = mapped_column(Numeric(7, 4))
     valor_medido: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     valor_adiantamento_abatido: Mapped[Decimal] = mapped_column(
+        Numeric(14, 2), nullable=False, default=0)
+    # O quanto ficou retido NESTA medição (migração 052). Gravado, não
+    # recalculado: o percentual do contrato pode mudar, e a medição de março
+    # tem de continuar dizendo quanto foi retido em março.
+    valor_retido: Mapped[Decimal] = mapped_column(
         Numeric(14, 2), nullable=False, default=0)
     valor_liquido: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
     observacao: Mapped[Optional[str]] = mapped_column(Text)
@@ -1197,5 +1212,23 @@ class AgendaEvento(Base):
     resolvido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     observacao: Mapped[Optional[str]] = mapped_column(Text)
     criado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+
+
+class EmpreitaAlcada(Base):
+    """Quem aprova empreita de cada tamanho (migração 052).
+
+    É tabela e não número no código porque o teto muda com o tamanho da
+    empresa — e quando mudar, quem muda é o dono, na tela, sem esperar
+    publicação. `valor_ate` nulo é a faixa "daqui para cima", e existe
+    exatamente uma: senão haveria contrato grande que ninguém pode aprovar.
+    """
+    __tablename__ = "empreita_alcadas"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    valor_ate: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
+    perfis: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())

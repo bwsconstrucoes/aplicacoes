@@ -258,7 +258,12 @@ async function carregarEmissao(id){
           placeholder="${em.tem_token ? "guardado — digite para trocar" : "cole o token"}">
         <div class="dica">Vai <b>cifrado</b>, e não volta para a tela.</div></div>
     </div>
-    <div style="margin-top:12px"><button class="btn amarelo" id="em-salvar">Salvar</button></div>`;
+    <div style="margin-top:12px"><button class="btn amarelo" id="em-salvar">Salvar</button></div>
+
+    <h4 style="margin-top:20px">Certificado digital (A1)</h4>
+    <div id="cert-painel" class="cartao-dica">carregando…</div>`;
+
+  carregarCertificado(id);
 
   els("em-conhecido").addEventListener("change", ev => {
     const o = ev.target.selectedOptions[0];
@@ -281,6 +286,91 @@ async function carregarEmissao(id){
       aviso("ficha-msg", "Guardado.", "ok");
       carregarEmissao(id);
     } catch(e){ aviso("ficha-msg", e.message, "erro"); }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// O CERTIFICADO DIGITAL (A1)
+//
+// Hoje o arquivo vive no computador de alguém, com a senha num papel. Aí ele
+// vence num sábado, ninguém sabe, e a obra para de faturar na segunda.
+//
+// A tela NUNCA recebe o arquivo nem a senha de volta: mostra titular,
+// validade e emissor. Não existe botão de baixar, de propósito — certificado
+// digital é a assinatura da empresa, e o que não tem porta não é arrombado.
+// ---------------------------------------------------------------------------
+async function carregarCertificado(id){
+  const alvo = els("cert-painel");
+  if (!alvo) return;
+  let d;
+  try { d = await api(`/erp/api/empresas/${id}/certificado`); }
+  catch(e){ alvo.innerHTML = `<div class="critica CRITICA">${escapar(e.message)}</div>`; return; }
+  const c = d.certificado;
+
+  alvo.innerHTML = `
+    ${!c.ha_chave ? `<div class="aviso alerta">A chave de segredos do ERP não
+      está configurada, então o certificado não pode ser guardado com segurança.
+      Defina <b>ERP_CHAVE_SEGREDOS</b> na Environment do Render.</div>` : ""}
+
+    ${c.tem
+      ? `<div class="aviso ${c.vencido ? "erro" : c.vencendo ? "alerta" : "ok"}">
+           <b>${escapar(c.titular)}</b>${c.documento ? " · " + escapar(c.documento) : ""}
+           <br>Válido até <b>${dataBR(c.valido_ate)}</b> — ${escapar(c.situacao_texto)}.
+           ${c.emissor ? "<br><small>Emitido por " + escapar(c.emissor) + "</small>" : ""}
+           ${c.vencido
+             ? "<br><b>Sem certificado válido a nota de serviço não é assinada.</b>"
+             : c.vencendo
+               ? "<br>Peça a renovação à contadora: leva dias."
+               : ""}
+         </div>`
+      : `<div class="cartao-dica">Nenhum certificado guardado. Sem ele a emissão
+           automática da nota não funciona — no padrão nacional a declaração vai
+           assinada.</div>`}
+
+    <div class="form-grade" style="align-items:end; margin-top:10px">
+      <div class="campo" style="grid-column:span 2"><label>Arquivo do certificado</label>
+        <input type="file" id="cert-arquivo" accept=".pfx,.p12">
+        <div class="dica">O arquivo <b>.pfx</b> (ou .p12) do A1. Vai
+          <b>cifrado</b> e nunca volta pela tela.</div></div>
+      <div class="campo"><label>Senha do certificado</label>
+        <input type="password" id="cert-senha" placeholder="a senha do arquivo">
+        <div class="dica">Confiro abrindo o arquivo — se abrir, está certa.</div></div>
+      <div><button class="btn" id="cert-salvar" ${c.ha_chave ? "" : "disabled"}
+        >${c.tem ? "Substituir" : "Guardar"}</button></div>
+    </div>
+    <div id="cert-msg"></div>
+
+    ${d.historico.length > 1 ? `<div class="cartao-dica" style="margin-top:10px">
+      <b>Anteriores:</b> ${d.historico.filter(h => h.situacao !== "ATIVO").map(h =>
+        `${escapar(h.titular)} (até ${dataBR(h.valido_ate)})`).join("; ")}.
+      <br><small>Guardados porque a nota assinada naquela época foi assinada com
+      eles.</small></div>` : ""}`;
+
+  els("cert-salvar").addEventListener("click", async () => {
+    const f = els("cert-arquivo").files[0];
+    if (!f) return aviso("cert-msg", "Escolha o arquivo do certificado.", "alerta");
+    if (!els("cert-senha").value) return aviso("cert-msg", "Informe a senha.", "alerta");
+    const fd = new FormData();
+    fd.append("arquivo", f);
+    fd.append("senha", els("cert-senha").value);
+    const b = els("cert-salvar");
+    b.disabled = true; b.textContent = "Conferindo…";
+    try {
+      const r = await fetch(`/erp/api/empresas/${id}/certificado`,
+                            {method: "POST", body: fd});
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.erro || "Não consegui guardar.");
+      // A confirmação vai para a mensagem da FICHA, não para a do painel: o
+      // painel é redesenhado logo abaixo, e a frase morreria antes de ser
+      // lida — que é o mesmo que não ter avisado.
+      const ate = j.certificado && j.certificado.valido_ate;
+      aviso("ficha-msg", "Certificado guardado" +
+            (ate ? `, válido até ${dataBR(ate)}.` : "."), "ok");
+      carregarCertificado(id);
+    } catch(e){
+      aviso("cert-msg", e.message, "erro");
+      b.disabled = false; b.textContent = c.tem ? "Substituir" : "Guardar";
+    }
   });
 }
 
