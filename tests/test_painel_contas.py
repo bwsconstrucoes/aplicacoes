@@ -696,3 +696,28 @@ def test_rotulo_que_comeca_com_igual_nao_vira_formula():
         assert celula.value == rotulo, "o rótulo não pode ser reescrito"
     # e o que é número continua número, senão ninguém soma na planilha
     assert folha.cell(row=2, column=2).data_type == "n"
+
+
+def test_a_leitura_denuncia_principal_pago_maior_que_o_tomado():
+    """9,25 milhões de principal pago contra 9,08 tomados: o dado real da
+    empresa. Ninguém paga principal de dinheiro que não tomou — ou o empréstimo
+    é anterior à base, ou há título classificado errado no OMIE. A tela tem de
+    dizer isso; calada, o erro vira despesa de obra sem ninguém perceber."""
+    linhas = [(dt.date(2025, 1, 1), "CASA", -1000.0)]
+    financeiro = [{"mes": dt.date(2025, 1, 1), "emprestimo_tomado": 9_080_000.0,
+                   "emprestimo_pago": -9_250_000.0, "aporte_recebido": 0.0,
+                   "dividendo_pago": 0.0, "outros": 0.0}]
+    r = simulacao.simular(linhas, financeiro, [("obra:CASA", 100)], {"CASA": "ALFA"})
+    texto = " ".join(r["leitura"])
+    assert "mais principal de empréstimo do que entrou" in texto
+    assert "Explorador" in texto
+
+
+def test_emprestimo_equilibrado_nao_gera_aviso():
+    """O aviso só vale se for raro. Empréstimo em dia não pode virar ruído."""
+    linhas = [(dt.date(2025, 1, 1), "CASA", -1000.0)]
+    financeiro = [{"mes": dt.date(2025, 1, 1), "emprestimo_tomado": 9_250_000.0,
+                   "emprestimo_pago": -9_080_000.0, "aporte_recebido": 0.0,
+                   "dividendo_pago": 0.0, "outros": 0.0}]
+    r = simulacao.simular(linhas, financeiro, [("obra:CASA", 100)], {"CASA": "ALFA"})
+    assert "mais principal de empréstimo" not in " ".join(r["leitura"])
