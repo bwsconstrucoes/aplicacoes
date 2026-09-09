@@ -237,6 +237,22 @@ que é a estratégia de manter isso rápido?"*. A resposta longa está no
       5. **O que se perde:** o ERP passa a depender do Drive estar no ar para
          mostrar um comprovante. Hoje não depende de nada externo. É o preço,
          e o dono aceitou sabendo.
+      6. **NÃO copiar o jeito do `emissaonf`.** Aquele módulo sobe os PDFs da
+         nota e marca cada arquivo como "qualquer pessoa com o link pode ver"
+         (`publico=True` em `drive_upload.enviar`). Para anexo do ERP isso
+         seria um vazamento: holerite e comprovante ficariam abertos a quem
+         tivesse o link. O que se reaproveita dali é a MECÂNICA (conta de
+         serviço, personificação, `supportsAllDrives`), não a permissão.
+
+      **Como o acesso será dado** (respondido ao dono em 09/09/2026): não
+      precisa credencial nova — a identidade do Google que o sistema já usa
+      serve. Falta só a pasta e o código dela. Preferência: **Drive
+      compartilhado** (os arquivos pertencem à empresa, não a uma pessoa, e
+      dispensa a personificação). Alternativa que já funciona hoje sem mexer em
+      nada: pasta no Drive de `contato@bwsconstrucoes.com.br`, porque o sistema
+      já sabe agir como essa conta. ⚠️ Conta de serviço NÃO tem espaço próprio
+      no Google — por isso ou é Drive compartilhado, ou é personificação; as
+      duas coisas resolvem o mesmo problema de cota.
 
 - [ ] **Separar o trabalho pesado das telas.** Carga, sincronização, leitura de
       lote por IA e relatório grande não podem disputar com quem está usando a
