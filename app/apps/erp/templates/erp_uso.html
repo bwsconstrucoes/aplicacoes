@@ -1,0 +1,220 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Trabalho no sistema — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Período</h2>
+    <button class="link-btn" id="btn-semana">Esta semana</button></div>
+  <div class="campo"><label for="f-de">De</label><input type="date" id="f-de"></div>
+  <div class="campo"><label for="f-ate">Até</label><input type="date" id="f-ate"></div>
+  <button class="btn" id="btn-gerar" style="width:100%; margin-top:14px">Ver</button>
+
+  <div class="cartao-dica" style="margin-top:16px">
+    <b>O que este número é, e o que ele não é.</b><br>
+    Ele conta o que foi feito <b>dentro do sistema</b>. Ler contrato, falar com
+    fornecedor e ir à obra são trabalho e <b>não aparecem aqui</b>.
+    Serve para ver a entrega e o andamento — <b>não é controle de ponto</b>.
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+
+{% if pode.ver_uso_da_equipe %}
+<div class="tabela-barra" style="padding:0 0 12px">
+  <div class="campo" style="margin:0"><label for="quem">Ver</label>
+    <select id="quem" style="min-width:220px">
+      <option value="minha">A minha semana</option>
+      <option value="equipe">A equipe toda</option>
+    </select></div>
+</div>
+{% endif %}
+
+<!-- A EQUIPE -->
+<div id="bloco-equipe" hidden>
+  <div class="cartao">
+    <div class="cartao-cab"><h3>Trabalho da equipe</h3>
+      <small id="periodo-equipe"></small></div>
+    <div id="tabela-equipe"></div>
+  </div>
+  <div class="cartao" id="cartao-sistema" hidden>
+    <div class="cartao-cab"><h3>O que o sistema fez sozinho</h3>
+      <small>fila de segundo plano — não é trabalho de ninguém</small></div>
+    <div id="linha-sistema"></div>
+  </div>
+</div>
+
+<!-- UMA PESSOA -->
+<div id="bloco-pessoa">
+  <div class="cartao">
+    <div class="cartao-cab"><h3 id="titulo-pessoa">A minha semana</h3>
+      <small id="periodo-pessoa"></small></div>
+    <div id="resumo-pessoa"></div>
+    <div id="dias-pessoa"></div>
+  </div>
+  <div class="cartao" id="cartao-detalhe" hidden>
+    <div class="cartao-cab"><h3 id="titulo-detalhe">Passo a passo do dia</h3>
+      <button class="link-btn" id="btn-fechar-detalhe">fechar</button></div>
+    <div id="detalhe-dia"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// A tela de Trabalho no sistema.
+//
+// Ela é aberta a TODO operador — cada um vê a própria semana. Quem tem a ação
+// de ver a equipe ganha o seletor no alto. As duas coisas vêm de rotas
+// diferentes de propósito: a própria semana nem aceita o número de outra
+// pessoa, então não há como uma virar a outra.
+const PODE_EQUIPE = {{ 'true' if pode.ver_uso_da_equipe else 'false' }};
+let PESSOA_ABERTA = null;
+
+function periodo() {
+  const de = els("f-de").value, ate = els("f-ate").value;
+  const p = new URLSearchParams();
+  if (de) p.set("de", de);
+  if (ate) p.set("ate", ate);
+  return p.toString() ? "?" + p.toString() : "";
+}
+
+function estaSemana() {
+  const hoje = new Date();
+  const inicio = new Date(hoje); inicio.setDate(hoje.getDate() - 6);
+  const iso = d => d.toISOString().slice(0, 10);
+  els("f-de").value = iso(inicio);
+  els("f-ate").value = iso(hoje);
+}
+
+function selos(categorias) {
+  if (!categorias || !categorias.length) return `<span style="color:var(--tinta-suave)">—</span>`;
+  return categorias.map(c =>
+    `<span class="selo" style="margin:0 3px 3px 0" title="${escapar(c.rotulo)}">
+       ${escapar(c.rotulo)} <b>${c.quantas}</b></span>`).join("");
+}
+
+// ------------------------------------------------------------------ equipe
+async function verEquipe() {
+  const d = await api("/erp/api/uso/equipe" + periodo());
+  const e = d.equipe;
+  els("periodo-equipe").textContent =
+    `${dataBR(e.de)} a ${dataBR(e.ate)} · ${e.acoes} ação(ões) da equipe`;
+  els("tabela-equipe").innerHTML = e.pessoas.length ? `
+    <table><thead><tr>
+      <th>Pessoa</th><th class="dados">Dias com trabalho</th>
+      <th class="dados">Ações</th><th>O que fez</th><th></th>
+    </tr></thead><tbody>
+      ${e.pessoas.map(p => `<tr>
+        <td><b>${escapar(p.nome)}</b></td>
+        <td class="dados">${p.dias_com_trabalho}</td>
+        <td class="dados">${p.acoes}</td>
+        <td>${selos(p.categorias)}</td>
+        <td><button class="link-btn" data-pessoa="${p.usuario_id}">ver os dias</button></td>
+      </tr>`).join("")}
+    </tbody></table>`
+    : `<div class="cartao-dica">Ninguém registrou trabalho no sistema neste período.</div>`;
+  els("tabela-equipe").querySelectorAll("[data-pessoa]").forEach(b =>
+    b.addEventListener("click", () => verPessoa(Number(b.dataset.pessoa))));
+
+  const s = e.do_sistema;
+  els("cartao-sistema").hidden = !s;
+  if (s) els("linha-sistema").innerHTML =
+    `<div><b>${s.acoes}</b> ação(ões) em ${s.dias_com_trabalho} dia(s) · ${selos(s.categorias)}</div>`;
+}
+
+// ------------------------------------------------------------------ pessoa
+async function verPessoa(usuarioId) {
+  PESSOA_ABERTA = usuarioId;
+  const url = usuarioId === null
+    ? "/erp/api/uso/minha-semana" + periodo()
+    : `/erp/api/uso/pessoa/${usuarioId}` + periodo();
+  const d = await api(url);
+  desenharPessoa(d.semana, usuarioId);
+  els("bloco-equipe").hidden = true;
+  els("bloco-pessoa").hidden = false;
+  els("cartao-detalhe").hidden = true;
+}
+
+function desenharPessoa(s, usuarioId) {
+  els("titulo-pessoa").textContent =
+    usuarioId === null ? "A minha semana" : `Trabalho de ${s.nome || ""}`;
+  els("periodo-pessoa").textContent = `${dataBR(s.de)} a ${dataBR(s.ate)}`;
+  els("resumo-pessoa").innerHTML = `
+    <div class="kpis" style="margin-bottom:12px">
+      <div class="kpi estatico"><div class="kpi-rotulo">Dias com trabalho</div>
+        <div class="kpi-valor">${s.dias_com_trabalho}</div>
+        <div class="kpi-sub">dias em que algo foi feito no sistema</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Ações no período</div>
+        <div class="kpi-valor">${s.acoes}</div>
+        <div class="kpi-sub">cada lançamento, aprovação, baixa ou cadastro</div></div>
+    </div>`;
+  els("dias-pessoa").innerHTML = s.dias.length ? `
+    <table><thead><tr>
+      <th>Dia</th><th class="dados">Primeira ação</th><th class="dados">Última</th>
+      <th class="dados">Ações</th><th>O que fez</th><th></th>
+    </tr></thead><tbody>
+      ${s.dias.map(d => `<tr>
+        <td><b>${dataBR(d.dia)}</b></td>
+        <td class="dados">${d.primeira || "—"}</td>
+        <td class="dados">${d.ultima || "—"}</td>
+        <td class="dados">${d.acoes}</td>
+        <td>${selos(d.categorias)}</td>
+        <td><button class="link-btn" data-dia="${d.dia}">passo a passo</button></td>
+      </tr>`).join("")}
+    </tbody></table>`
+    : `<div class="cartao-dica">Nenhum trabalho registrado no sistema neste período.
+       Isso não quer dizer que não houve trabalho — só que ele não passou por aqui.</div>`;
+  els("dias-pessoa").querySelectorAll("[data-dia]").forEach(b =>
+    b.addEventListener("click", () => verDia(usuarioId, b.dataset.dia)));
+}
+
+async function verDia(usuarioId, dia) {
+  // A própria semana e a de outra pessoa vêm de rotas diferentes — a primeira
+  // é de todo operador, a segunda exige a ação de ver a equipe.
+  const d = await api(usuarioId === null
+    ? `/erp/api/uso/minha-semana?dia=${dia}`
+    : `/erp/api/uso/pessoa/${usuarioId}?dia=${dia}`);
+  els("titulo-detalhe").textContent = `Passo a passo de ${dataBR(dia)}`;
+  els("detalhe-dia").innerHTML = d.detalhe.length ? `
+    <table><thead><tr><th class="dados">Hora</th><th>Tipo de trabalho</th>
+      <th>O que fez</th><th class="dados">Quantas</th></tr></thead><tbody>
+      ${d.detalhe.map(l => `<tr>
+        <td class="dados">${escapar(l.hora)}${
+          l.quantas > 1 && l.ate !== l.hora ? ` às ${escapar(l.ate)}` : ""}</td>
+        <td>${escapar(l.rotulo)}</td>
+        <td>${escapar(l.o_que)}</td>
+        <td class="dados">${l.quantas > 1 ? l.quantas + "×" : ""}</td>
+      </tr>`).join("")}
+    </tbody></table>
+    <div class="cartao-dica" style="margin-top:8px">Ação repetida em seguida
+      aparece numa linha só, com quantas vezes — senão uma carga de planilha
+      enche o dia com milhares de linhas iguais.</div>`
+    : `<div class="cartao-dica">Nada registrado neste dia.</div>`;
+  els("cartao-detalhe").hidden = false;
+  els("cartao-detalhe").scrollIntoView({behavior: "smooth", block: "nearest"});
+}
+
+// ------------------------------------------------------------------ tela
+async function carregar() {
+  try {
+    const modo = PODE_EQUIPE ? els("quem").value : "minha";
+    if (modo === "equipe") {
+      await verEquipe();
+      els("bloco-equipe").hidden = false;
+      els("bloco-pessoa").hidden = true;
+    } else {
+      await verPessoa(null);
+    }
+  } catch (e) { aviso("mensagem", e.message, "erro"); }
+}
+
+els("btn-gerar").addEventListener("click", carregar);
+els("btn-semana").addEventListener("click", () => { estaSemana(); carregar(); });
+els("btn-fechar-detalhe").addEventListener("click",
+  () => { els("cartao-detalhe").hidden = true; });
+if (PODE_EQUIPE) els("quem").addEventListener("change", carregar);
+
+estaSemana();
+carregar();
+</script>
+{% endblock %}

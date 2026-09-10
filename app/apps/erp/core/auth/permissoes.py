@@ -61,6 +61,11 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                             P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.APROVADOR},
     "configurar":      {P.ADMIN},
     "gerir_usuarios":  {P.ADMIN},
+    # Uso do sistema por pessoa. DELIBERADAMENTE estreita: ver o que os OUTROS
+    # fizeram é informação de gestão de gente, não de operação. Ver a PRÓPRIA
+    # semana não passa por aqui — é `ver_erp`, e a rota nem aceita o número de
+    # outra pessoa, então não há como uma virar a outra.
+    "ver_uso_da_equipe": {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "ver_relatorios":  {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA},
     # Pessoal: o DP revisa a despesa com colaborador depois do supervisor,
@@ -175,6 +180,7 @@ ACAO_ROTULOS = {
     "ver_dados_pagamento":  "Ver dados bancários e chave Pix",
     "configurar":           "Abrir Configurações",
     "gerir_usuarios":       "Cadastrar e editar operadores",
+    "ver_uso_da_equipe":    "Ver o trabalho da equipe no sistema",
     "ver_relatorios":       "Ver relatórios",
     "ver_pessoal":          "Ver despesas de colaborador",
     "lancar_dc":            "Lançar despesa de colaborador",

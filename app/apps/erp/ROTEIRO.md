@@ -125,24 +125,28 @@ obra agora; quantos títulos não estão conciliados; a lista de insumos de uma
 categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudio** e
 **anexo**, e sempre **dentro da permissão da pessoa**.
 
-- [ ] **1. Relatório de uso e trabalho por pessoa.** É o mais barato e já dá
-      para fazer: a tabela `eventos` é append-only (ninguém apaga nem edita) e
-      já registra **117 tipos de ação**, com quem, quando, em qual registro e o
-      detalhe. Falta ler isso por pessoa e por dia: primeira e última ação,
-      o que foi feito, volume por tipo, e onde a fila está parada.
-      ⚠️ **Ressalva que precisa estar na tela:** log de atividade **não é
-      jornada de trabalho**. Quem está lendo contrato, no telefone com
-      fornecedor ou na obra trabalha sem gerar evento. Serve para medir
-      ENTREGA (quantos títulos, conciliações, medições) e para saber se o
-      trabalho está acontecendo no dia de home office — não para bater ponto.
-      Se um dia virar controle de jornada, isso tem exigência legal própria e
-      não se improvisa. A equipe precisa ser avisada de que o sistema registra.
-      Fazer também a tela **"minha semana"** para cada pessoa: mesmo dado,
-      vira retorno em vez de vigilância.
+- [x] **1. Relatório de uso e trabalho por pessoa** — FEITO em 10/09/2026,
+      em Administração › **Trabalho no sistema**. Sem migração: o dado já
+      estava na trilha. Cada pessoa vê a própria semana (primeira e última
+      ação do dia, quantas ações, o que fez por tipo de trabalho) e pode abrir
+      o passo a passo de qualquer dia seu. Quem tem a ação nova
+      `ver_uso_da_equipe` (ADMIN e diretor) vê a equipe toda numa linha por
+      pessoa. O que a fila de segundo plano fez sozinha sai numa linha
+      separada, para não virar produção de ninguém. O aviso de que isto não é
+      controle de ponto está na tela E viaja junto com o dado.
+      **Ainda em aberto deste item:** "onde a fila está parada" (quem tem mais
+      coisa esperando decisão) — é outra fonte de dados, vem depois.
+      ⚠️ **A RESSALVA QUE NÃO PODE SUMIR NUMA REFORMA DE TELA:** log de
+      atividade **não é jornada de trabalho**. Quem está lendo contrato, no
+      telefone com fornecedor ou na obra trabalha sem gerar evento. Isto mede
+      ENTREGA (quantos títulos, conciliações, medições) e se houve movimento no
+      dia — não bate ponto. Se um dia virar controle de jornada, isso tem
+      exigência legal própria e não se improvisa. **A equipe precisa ser
+      avisada de que o sistema registra.**
       ✔ **DECIDIDO pelo dono em 10/09/2026:** *"na verdade não é pra controlar
       a jornada não, é só pra entender"*, e **pode ficar à vista dos outros
       também** — *"pra cada um entender o que é que ela está produzindo dentro
-      do sistema"*. Então a tela nasce aberta à equipe, não só ao dono.
+      do sistema"*. Foi por isso que a tela nasceu aberta à equipe.
 - [ ] **1b. O catálogo de perguntas** — `app/apps/erp/PERGUNTAS.md`, criado
       em 10/09/2026 a pedido do dono, e agora regra do `CLAUDE.md`:
       funcionalidade nova só está pronta quando as perguntas que ela responde

@@ -33,8 +33,10 @@ As duas seções logo abaixo explicam o que mudou de significado.
 3. **Suprimentos › Importações** — trazer o `Insumoss.xlsx`, marcando "criar as
    categorias de insumo".
 
-**Ficou no ramo, para a próxima publicação:** o catálogo de perguntas do
-assistente (`PERGUNTAS.md`) e a regra do `CLAUDE.md` que o mantém vivo.
+**Ficou no ramo, para a próxima publicação (SEM migração):** o catálogo de
+perguntas do assistente (`PERGUNTAS.md`) com a regra do `CLAUDE.md` que o
+mantém vivo, e a tela **Trabalho no sistema** — primeira entrega do plano do
+assistente de IA. Ver as duas seções logo abaixo.
 
 **Estado em 10/09/2026 (noite):** `main` publicada em `fd55bd9`, com quatro
 entregas: o **endereço no cadastro de obra**, o **lançamento visto de perto**
@@ -86,6 +88,49 @@ Suprimentos** (033 a 037). Publicado também o **botão de zerar o movimento por
 telas de cadastro de Suprimentos** (detalhada abaixo), mais a correção das
 três telas que nunca funcionaram (ver Incidentes). Suíte: 2.097 casos com
 banco de verdade. **Nada pendente no ramo.**
+
+### Trabalho no sistema: a trilha de auditoria virou relatório — 10/09/2026
+
+Primeira entrega do plano do assistente, e a mais barata: **não foi preciso
+coletar nada**. A tabela `eventos` é append-only (um gatilho no banco recusa
+UPDATE e DELETE) e já registrava mais de 140 tipos de ação, com quem, quando,
+em qual registro e o detalhe. Faltava só ler.
+
+Em **Administração › Trabalho no sistema**:
+
+- **Cada pessoa vê a própria semana** — primeira e última ação de cada dia,
+  quantas ações, e o que fez separado por tipo de trabalho — e pode abrir o
+  **passo a passo** de qualquer dia seu. É de todo operador de propósito: quem
+  não consegue conferir o que a tela diz sobre ele não tem defesa.
+- **Quem tem a ação nova `ver_uso_da_equipe`** (ADMIN e diretor financeiro) vê
+  a equipe toda, uma linha por pessoa, e entra nos dias de cada um.
+
+Três decisões que precisam sobreviver a uma reforma de tela:
+
+1. **O dia é o do Ceará, não o do servidor.** O Render roda em UTC. Sem o fuso
+   escrito na consulta (`America/Fortaleza`), trabalho das 22h cairia no dia
+   seguinte e "começou às 8h" apareceria como 11h. Há teste com banco de
+   verdade exigindo isso.
+2. **Evento sem dono é do sistema.** `usuario_id` nulo é a fila de segundo
+   plano trabalhando sozinha. Sai numa linha à parte — se entrasse na conta de
+   alguém, a pessoa apareceria produzindo de madrugada.
+3. **Repetição seguida vira uma linha só.** A primeira versão devolveu 76
+   linhas de "criou insumo" por causa de um minuto de carga de planilha, e o
+   dia inteiro ficava ilegível. Agora sai "insumo criado · 5×, das 10:00 às
+   10:04".
+
+⚠️ **E a ressalva, que está na tela E viaja junto com o dado (não só no HTML):**
+isto **não é controle de jornada**. Quem passou a manhã lendo contrato, no
+telefone com fornecedor ou na obra trabalhou e não gerou evento nenhum. Mede
+ENTREGA e se houve movimento no dia. O dono confirmou que é para isso —
+*"na verdade não é pra controlar a jornada não, é só pra entender"* — e decidiu
+que a tela fica **à vista da equipe**, cada um vendo a própria produção.
+**A equipe precisa ser avisada de que o sistema registra.**
+
+Sem migração. O mapa de "entidade + ação → tipo de trabalho" vive em
+`core/comum/uso.py`, e há teste que **varre o código atrás de toda ação
+registrada** e falha se alguma não estiver classificada — assim funcionalidade
+nova não nasce caindo em "Outros".
 
 ### Por que o assistente não nasce no WhatsApp — 10/09/2026
 

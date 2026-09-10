@@ -166,6 +166,11 @@ MODULOS = [
         "abas": [
             ("config", "Configurações", "erp.pagina_config"),
             ("arquivo", "Arquivo", "erp.pagina_arquivo"),
+            # Aberta a TODO operador de propósito: cada um vê a própria semana.
+            # Foi decisão do dono em 10/09/2026 — mesmo dado, e deixa de ser
+            # vigilância para virar retorno. Quem vê a EQUIPE precisa da ação
+            # `ver_uso_da_equipe`, que mora numa rota separada.
+            ("uso", "Trabalho no sistema", "erp.pagina_uso"),
         ],
     },
 ]
@@ -179,7 +184,10 @@ ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  "tratar_agenda", "aprovar",
                  # Encadeamento: a tela só transforma obra/conta/credor/pedido
                  # em link para quem consegue abrir o destino.
-                 "ver_suprimentos", "ver_pedidos_compra")
+                 "ver_suprimentos", "ver_pedidos_compra",
+                 # Decide se a tela de Trabalho no sistema mostra a equipe ou
+                 # só a própria semana de quem abriu.
+                 "ver_uso_da_equipe")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -1962,6 +1970,99 @@ def api_cotacao_envios(cotacao_id: int):
 @permissao("ver_relatorios")
 def pagina_relatorios():
     return render_template("erp_relatorios.html", **_contexto("relatorios"))
+
+
+def _data_ou_nada(bruto: str | None):
+    """Data vinda da tela, aceitando vazio e lixo sem estourar."""
+    try:
+        return date.fromisoformat((bruto or "").strip())
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Trabalho no sistema — a trilha de auditoria lida como entrega
+#
+# São TRÊS rotas e não uma, e isso é de propósito. A própria semana é aberta a
+# todo operador; a semana dos OUTROS exige `ver_uso_da_equipe`. Juntar as duas
+# numa rota só obrigaria a conferir por dentro qual é o caso — e rota que
+# declara uma ação e confere outra faz a declaração mentir.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/uso")
+@login_obrigatorio
+@permissao("ver_erp")
+def pagina_uso():
+    return render_template("erp_uso.html", **_contexto("uso"))
+
+
+@bp.route("/erp/api/uso/minha-semana")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_minha_semana():
+    """A semana de QUEM PEDIU. Não aceita o número de outra pessoa — é o que
+    permite esta rota ser aberta a todo operador sem abrir a dos outros."""
+    from app.apps.erp.core.comum import uso as svc_uso
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            dados = svc_uso.semana_da_pessoa(
+                s, atual.id, de=_data_ou_nada(request.args.get("de")),
+                ate=_data_ou_nada(request.args.get("ate")))
+            dados["nome"] = atual.nome
+            # O passo a passo do PRÓPRIO dia também é de todo operador: quem
+            # não pode ver o próprio trabalho em detalhe não consegue conferir
+            # o que a tela diz sobre ele.
+            dia = _data_ou_nada(request.args.get("dia"))
+            detalhe = svc_uso.detalhe_do_dia(s, atual.id, dia) if dia else []
+        return jsonify({"ok": True, "semana": dados, "detalhe": detalhe})
+    except Exception as e:
+        logger.exception("ERP: falha ao ler a própria semana")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/uso/equipe")
+@login_obrigatorio
+@permissao("ver_uso_da_equipe")
+def api_uso_da_equipe():
+    """Uma linha por pessoa no período, mais o que o sistema fez sozinho."""
+    from app.apps.erp.core.comum import uso as svc_uso
+    try:
+        with get_session() as s:
+            dados = svc_uso.semana_da_equipe(
+                s, de=_data_ou_nada(request.args.get("de")),
+                ate=_data_ou_nada(request.args.get("ate")))
+        return jsonify({"ok": True, "equipe": dados})
+    except Exception as e:
+        logger.exception("ERP: falha ao ler o trabalho da equipe")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/uso/pessoa/<int:usuario_id>")
+@login_obrigatorio
+@permissao("ver_uso_da_equipe")
+def api_uso_da_pessoa(usuario_id: int):
+    """A semana de uma pessoa, e o passo a passo de um dia dela."""
+    from app.apps.erp.core.comum import uso as svc_uso
+    from app.apps.erp.db.models.cadastros import Usuario as U
+    try:
+        with get_session() as s:
+            pessoa = s.get(U, usuario_id)
+            if pessoa is None:
+                raise ErroNaoEncontrado("Operador não encontrado.")
+            semana = svc_uso.semana_da_pessoa(
+                s, usuario_id, de=_data_ou_nada(request.args.get("de")),
+                ate=_data_ou_nada(request.args.get("ate")))
+            semana["nome"] = pessoa.nome
+            dia = _data_ou_nada(request.args.get("dia"))
+            detalhe = svc_uso.detalhe_do_dia(s, usuario_id, dia) if dia else []
+        return jsonify({"ok": True, "semana": semana, "detalhe": detalhe})
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao ler o trabalho da pessoa")
+        return jsonify({"ok": False, "erro": str(e)}), 500
 
 
 @bp.route("/erp/prestacao")
