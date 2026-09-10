@@ -29,7 +29,10 @@
     <small id="de-onde-veio"></small></div>
   <div class="aviso info" id="frase-resposta"></div>
   <div id="observacao-resposta"></div>
-  <div id="tabela-resposta" style="margin-top:10px"></div>
+  <!-- A régua do recebimento tem nove colunas e não cabe na largura da tela;
+       sem rolagem a última leitura ficava cortada, que é justamente a que
+       responde à pergunta de quem perguntou. -->
+  <div class="tabela-rolagem" id="tabela-resposta" style="margin-top:10px"></div>
 </div>
 
 <div class="vazio" id="nada-ainda">
@@ -45,14 +48,39 @@
 // Ela é o primeiro degrau do assistente: as perguntas PREVISTAS respondidas
 // por código escrito e testado. O degrau seguinte é a IA escolher qual delas
 // a pessoa fez — a conta continua sendo do sistema.
+// Os grupos existem porque cada um tem a SUA permissão e a SUA rota. A tela
+// pede os dois e mostra só os que responderam — quem não pode ver contratos
+// simplesmente não vê aquelas perguntas, em vez de vê-las e levar recusa.
+// Os endereços vão ESCRITOS POR EXTENSO, e não montados na hora. A suíte tem
+// uma guarda que confere se toda rota que uma tela chama existe no servidor, e
+// endereço montado em pedaços escapa dela — foi assim que este trecho falhou
+// na primeira versão. Escrito assim, um erro de digitação quebra o teste antes
+// de virar botão que não faz nada.
+const GRUPOS = [
+  {chave: "financeiro", nome: "Contas a pagar",
+   lista: "/erp/api/perguntas/financeiro",
+   responder: "/erp/api/perguntar/financeiro"},
+  {chave: "contratos", nome: "Contratos, medições e recebimento",
+   lista: "/erp/api/perguntas/contratos",
+   responder: "/erp/api/perguntar/contratos"},
+];
+const GRUPO_POR_CHAVE = Object.fromEntries(GRUPOS.map(g => [g.chave, g]));
 let PERGUNTAS = [], ESCOLHIDA = null;
 
 function desenharLista() {
-  els("lista-perguntas").innerHTML = PERGUNTAS.map(p => `
-    <button class="link-btn" data-chave="${escapar(p.chave)}"
-            style="display:block; text-align:left; padding:8px 0; width:100%">
-      ${escapar(p.pergunta)}
-    </button>`).join("");
+  els("lista-perguntas").innerHTML = GRUPOS.map(g => {
+    const doGrupo = PERGUNTAS.filter(p => p.grupo === g.chave);
+    if (!doGrupo.length) return "";
+    return `<div style="margin-bottom:14px">
+      <div style="font-size:12px; text-transform:uppercase; letter-spacing:.12em;
+                  color:var(--tinta-suave); margin:0 0 4px">${escapar(g.nome)}</div>
+      ${doGrupo.map(p => `
+        <button class="link-btn" data-chave="${escapar(p.chave)}"
+                style="display:block; text-align:left; padding:8px 0; width:100%">
+          ${escapar(p.pergunta)}
+        </button>`).join("")}
+    </div>`;
+  }).join("");
   els("lista-perguntas").querySelectorAll("[data-chave]").forEach(b =>
     b.addEventListener("click", () => escolher(b.dataset.chave)));
 }
@@ -87,7 +115,7 @@ async function responder() {
   });
   const b = els("btn-responder"); b.disabled = true; b.textContent = "Somando…";
   try {
-    const d = await api("/erp/api/perguntar/financeiro", {
+    const d = await api(GRUPO_POR_CHAVE[ESCOLHIDA.grupo].responder, {
       method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({chave: ESCOLHIDA.chave, parametros})});
     desenharResposta(d.resposta);
@@ -95,10 +123,18 @@ async function responder() {
   b.disabled = false; b.textContent = "Responder";
 }
 
+const COLUNAS_DE_NUMERO = ["valor","parcelas","atraso","parado_ha","vigente",
+  "medido","faturado","recebido","falta_receber_do_contrato",
+  "falta_receber_do_medido","falta_faturar_do_medido","a_receber",
+  "medido_sem_nota","faturado_sem_receber"];
+const COLUNAS_DE_DINHEIRO = ["valor","vigente","medido","faturado","recebido",
+  "falta_receber_do_contrato","falta_receber_do_medido",
+  "falta_faturar_do_medido","a_receber"];
+
 function celula(coluna, linha) {
   const v = linha[coluna.chave];
   if (v === null || v === undefined || v === "") return "—";
-  if (coluna.chave === "valor") return moeda(v);
+  if (COLUNAS_DE_DINHEIRO.includes(coluna.chave)) return moeda(v);
   if (coluna.chave === "vencimento") return dataBR(v);
   return escapar(v);
 }
@@ -113,10 +149,10 @@ function desenharResposta(r) {
     ? `<div class="cartao-dica" style="margin-top:8px">${escapar(r.observacao)}</div>` : "";
   els("tabela-resposta").innerHTML = (r.linhas || []).length ? `
     <table><thead><tr>${r.colunas.map(c =>
-      `<th class="${["valor","parcelas","atraso","parado_ha"].includes(c.chave) ? "dados" : ""}">${escapar(c.rotulo)}</th>`).join("")}
+      `<th class="${COLUNAS_DE_NUMERO.includes(c.chave) ? "dados" : ""}">${escapar(c.rotulo)}</th>`).join("")}
     </tr></thead><tbody>
       ${r.linhas.map(l => `<tr>${r.colunas.map(c =>
-        `<td class="${["valor","parcelas","atraso","parado_ha"].includes(c.chave) ? "dados" : ""}">${celula(c, l)}</td>`).join("")}</tr>`).join("")}
+        `<td class="${COLUNAS_DE_NUMERO.includes(c.chave) ? "dados" : ""}">${celula(c, l)}</td>`).join("")}</tr>`).join("")}
     </tbody></table>` : "";
   els("cartao-resposta").hidden = false;
   els("cartao-resposta").scrollIntoView({behavior: "smooth", block: "nearest"});
@@ -125,10 +161,20 @@ function desenharResposta(r) {
 els("btn-responder").addEventListener("click", responder);
 
 (async () => {
-  try {
-    PERGUNTAS = (await api("/erp/api/perguntas/financeiro")).perguntas;
-    desenharLista();
-  } catch (e) { aviso("mensagem", e.message, "erro"); }
+  // Grupo que a pessoa não pode ver responde 403; isso não é erro de tela, é
+  // a resposta certa — a pergunta some da lista e pronto.
+  for (const g of GRUPOS) {
+    try {
+      const d = await api(g.lista);
+      PERGUNTAS = PERGUNTAS.concat(d.perguntas.map(p => ({...p, grupo: g.chave})));
+    } catch (e) { /* sem permissão neste grupo */ }
+  }
+  if (!PERGUNTAS.length) {
+    els("lista-perguntas").innerHTML =
+      `<div class="cartao-dica">Seu acesso não alcança nenhuma pergunta ainda.</div>`;
+    return;
+  }
+  desenharLista();
 })();
 </script>
 {% endblock %}

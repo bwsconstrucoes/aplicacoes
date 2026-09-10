@@ -83,6 +83,40 @@ CATALOGO: list[dict[str, Any]] = [
     },
 ]
 
+# ---------------------------------------------------------------------------
+# CONTRATOS — grupo próprio porque a permissão é outra (`ver_contratos`).
+#
+# Ela é deliberadamente estreita: o quadro mostra o contrato de ponta a ponta,
+# e não há como recortá-lo por obra designada sem mentir no total.
+# ---------------------------------------------------------------------------
+CATALOGO += [
+    {
+        "chave": "falta_receber",
+        "grupo": "contratos",
+        "pergunta": "Quanto falta receber?",
+        "exemplos": ["quanto falta receber da obra tal",
+                     "quanto ainda tenho a receber"],
+        "parametros": [_p("obra", "Obra", TEXTO, "em branco = todas")],
+        "funcao": respostas.falta_receber,
+    },
+    {
+        "chave": "medido_sem_nota",
+        "grupo": "contratos",
+        "pergunta": "O que já foi medido e ainda não virou nota?",
+        "exemplos": ["o que falta faturar", "tem medição sem nota?"],
+        "parametros": [_p("obra", "Obra", TEXTO, "em branco = todas")],
+        "funcao": respostas.medido_sem_nota,
+    },
+    {
+        "chave": "faturado_sem_receber",
+        "grupo": "contratos",
+        "pergunta": "O que já tem nota emitida e ainda não entrou?",
+        "exemplos": ["quais notas não foram pagas ainda"],
+        "parametros": [_p("obra", "Obra", TEXTO, "em branco = todas")],
+        "funcao": respostas.faturado_sem_receber,
+    },
+]
+
 POR_CHAVE: dict[str, dict[str, Any]] = {p["chave"]: p for p in CATALOGO}
 
 

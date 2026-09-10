@@ -17,7 +17,24 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
-**Estado em 10/09/2026 (madrugada):** `main` publicada em **`668f8ae`**, com as
+**Estado em 10/09/2026 (madrugada):** `main` publicada em **`76068fb`**, com a
+tela **Perguntar** (as primeiras perguntas respondidas por código), o
+**Trabalho no sistema** e o catálogo de perguntas. **Nenhuma delas tem
+migração.** No ramo, ainda não publicada: a **régua do recebimento** — "quanto
+falta receber" nas três leituras, com o grupo de contratos ganhando rota e
+ação próprias.
+
+⚠️ **Incidente de processo, 10/09/2026:** depois de uma publicação eu não
+voltei para o ramo, e dois commits foram feitos direto na `main` local. O
+`git push` do ramo respondeu sucesso porque empurrou o ramo — que não tinha
+mudado —, então os commits ficaram parados, sem chegar a lugar nenhum. **Nada
+foi publicado sem autorização** (o erro caiu para o lado seguro) e nada se
+perdeu: os commits foram movidos para o ramo e a `main` local voltou a ser
+exatamente a publicada. **A lição, para a próxima sessão: depois de juntar na
+`main`, VOLTE PARA O RAMO antes de continuar** — e confira em qual ramo o
+commit caiu, porque o push do ramo não acusa o erro.
+
+**Estado anterior em 10/09/2026:** `main` publicada em **`668f8ae`**, com as
 **oito alterações do plano de contas** e a **importação da base de 3.279
 insumos** em Excel, com a marca de locável. **TRAZ A MIGRAÇÃO 058** (coluna
 `redutora` em `categorias`) — o dono foi avisado para apertar "Aplicar
@@ -88,6 +105,42 @@ Suprimentos** (033 a 037). Publicado também o **botão de zerar o movimento por
 telas de cadastro de Suprimentos** (detalhada abaixo), mais a correção das
 três telas que nunca funcionaram (ver Incidentes). Suíte: 2.097 casos com
 banco de verdade. **Nada pendente no ramo.**
+
+### A régua do recebimento — 10/09/2026
+
+O dono desfez ele mesmo a ambiguidade do "quanto falta receber", e mostrou que
+ela tem quatro leituras, todas legítimas, todas etapas de uma mesma esteira:
+
+```
+CONTRATO (+aditivos)  →  MEDIDO  →  FATURADO (nota)  →  RECEBIDO
+```
+
+**A decisão que virou código:** em vez de escolher uma leitura e responder um
+número — que estaria certo para uma e errado para as outras três —, a pergunta
+mostra **a régua inteira**. Assim a leitura que ele queria já está na tela, e
+ele não precisou ter acertado a pergunta. Vale como padrão: **mostrar as
+leituras juntas costuma ser melhor que perguntar de volta**; perguntar fica
+para quando a escolha mudar o trabalho, não só o número.
+
+Três perguntas novas, no grupo `contratos`: *Quanto falta receber?*, *O que já
+foi medido e ainda não virou nota?* e *O que já tem nota emitida e ainda não
+entrou?*.
+
+O quadro do contrato ganhou as **duas subtrações que faltavam**
+(`vigente − recebido` e `medido − recebido`); as outras duas leituras já
+existiam. E a pergunta **reusa o `quadro`** em vez de somar de novo — há teste
+exigindo que o número da pergunta e o da tela batam **campo a campo**. Isso não
+é zelo: já aconteceu neste mesmo arquivo, com o reajuste, de a lista e o quadro
+mostrarem números diferentes sobre o mesmo contrato na mesma sessão.
+
+**Grupo novo, rota e ação próprias.** `ver_contratos` é deliberadamente
+estreita — o quadro mostra o contrato de ponta a ponta e não se recorta por
+obra designada sem mentir no total. Por isso a rota é `/erp/api/perguntar/
+contratos`, separada da do financeiro, e há teste provando que a rota larga do
+financeiro **não** responde pergunta de contrato (senão a ação estreita seria
+contornada).
+
+Sem migração.
 
 ### O assistente começou a responder — sem IA nenhuma — 10/09/2026
 
