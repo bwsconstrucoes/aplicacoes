@@ -17,7 +17,23 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
-**Estado em 10/09/2026 (fim da tarde):** `main` publicada em `da2b1b0`, com
+**Estado em 10/09/2026 (noite):** `main` publicada em `fd55bd9`, com quatro
+entregas: o **endereço no cadastro de obra**, o **lançamento visto de perto**
+(seis pontos, dois deles defeito — a descrição que nunca virou multilinha e o
+documento que não ficava guardado), o **catálogo de tipos que não tinha como
+ser instalado**, e a **conta do plano que nascia sem grupo**. Trouxe junto a
+`main` com as correções do Análise de SPs. **Sem migração nova** — a última
+continua sendo a 057. Suíte: **3.712 casos** com banco de verdade. Nada
+pendente no ramo.
+
+⚠️ **Duas coisas para o dono apertar em produção, nesta ordem:**
+1. **Arquivo › "Instalar o catálogo de tipos"** (cartão amarelo no topo) — sem
+   isso o Arquivo continua travado.
+2. **Configurações › Plano financeiro › "Pôr no grupo certo"** — para a conta
+   que ele criou antes da correção voltar para Custos de obra.
+3. E confirmar se as migrações **055, 056 e 057** já foram aplicadas.
+
+**Estado anterior, em 10/09/2026 (fim da tarde):** `main` publicada em `da2b1b0`, com
 três entregas: a denúncia de campo de anexo desconhecido na importação do
 Pipefy, a **obra que nasce do documento** (com um lugar só para cadastrar obra)
 e as **seis correções do primeiro uso de verdade** (filtro de obras, conta
