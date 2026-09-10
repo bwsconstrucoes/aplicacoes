@@ -878,8 +878,22 @@ Quando eu pedir nova feature ou adaptação:
   **A recomendação, e a decisão é do dono:** subir o plano do banco é o que tem
   maior efeito por real gasto neste sistema hoje — mais do que qualquer
   mudança de código pendente. Um plano com ~1 GB de memória faria os 430 MB
-  caberem inteiros, e mais CPU tira a fila. **Vigiar também o disco**: 430 MB
-  de 1 GB, com crescimento visível ao longo do dia.
+  caberem inteiros, e mais CPU tira a fila.
+
+  **A ordem importa, e foi combinada com o dono em 10/09:** publicar a
+  correção das gravações inúteis (item abaixo) → faxina no banco num horário
+  sem ninguém usando (ela TRANCA as tabelas, e com 0,1 CPU demora) → medir o
+  tamanho de verdade → só então escolher o plano. Parte dos 430 MB é lixo
+  gerado pelo próprio defeito corrigido; dimensionar o plano pela sujeira é
+  pagar por ela todo mês.
+
+  **O DISCO é uma pressão separada da memória, e vem do ERP:** a migração 010
+  do ERP guarda os anexos DENTRO do banco (`anexos.conteudo`, BYTEA) —
+  comprovante, nota, contrato, ART, seguro. Com 1 GB de limite e 430 MB já
+  ocupados, o ERP em uso de verdade encheria isso em poucos meses.
+  **DECIDIDO pelo dono em 10/09/2026: os anexos do ERP vão para o Google
+  Drive**, e não para o banco. Quem for implementar isso no ERP precisa saber
+  que a coluna `conteudo` existe e é o caminho atual.
 
   **Não verificado:** os números vieram da tela do Render, lida por mim numa
   imagem. Não há acesso ao banco de produção a partir dos testes (§ regra),
