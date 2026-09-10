@@ -2228,6 +2228,50 @@ CNPJ e contrato social preenchendo o cadastro do parceiro). Menos urgente — a
 consulta à Receita, que entrou junto com a emissão automática, já resolve a
 maior parte.
 
+### A importação do Pipefy, antes de o dono migrar de verdade — 10/09/2026
+
+Ele avisou que vai começar a usar: revisar cadastros, cadastrar empresa, contas
+e obras, e **importar entre 50 e 70 títulos** das obras deste ano — com os
+ANEXOS, que é o que ele pediu desde o começo. E perguntou se está tudo certo.
+
+Fui ler o código em vez de responder de memória. O que achei:
+
+**A busca dos anexos EXISTE e está ligada por padrão.** Ela lê o campo de
+anexo do card, baixa cada arquivo e guarda preso ao título, com categoria (a
+DANFE vira NOTA, o comprovante vira COMPROVANTE). Falha de um arquivo não
+interrompe a importação — fica relatada com o motivo.
+
+**Mas ela não tinha teste nenhum.** Um caminho que ninguém prova é um caminho
+em que ninguém confia, e este ia ser exercitado pela primeira vez numa
+migração de verdade. Agora tem: `tests/test_importacao_anexos_banco.py`, 21
+casos, com o download dublado (não se baixa da internet numa suíte).
+
+**O risco de verdade, e o que foi feito com ele.** A lista de campos de anexo
+(`CAMPOS_ANEXO`) é FIXA: "anexos", "danfe", "comprovante"… Se o pipe tiver um
+campo de anexo com outro identificador, os arquivos daquele campo simplesmente
+não viriam — e o relatório diria "0 anexos" sem nada parecer errado. Silêncio
+é o pior resultado possível numa migração: a SP entra parecendo completa e a
+nota fiscal dela ficou para trás.
+
+Agora o importador DENUNCIA campo de anexo desconhecido: o relatório mostra o
+card, o rótulo do campo, quantos arquivos e o identificador técnico — que é o
+que se precisa para incluí-lo. A denúncia só aparece se a pessoa pediu para
+trazer anexos; quem desmarcou escolheu não trazer.
+
+**O que ficou provado de comportamento, e vale saber:**
+
+- O mesmo arquivo em dois campos do card vira UM anexo só: o armazenamento
+  guarda por hash e não duplica dentro da mesma entidade.
+- Arquivo acima de 20 MB é recusado com motivo, sem derrubar nada.
+- Nome com "%20" na URL chega limpo; espaço vira sublinhado ao guardar.
+- PDF e imagem são comprimidos antes de ir para o banco.
+
+⚠️ **O que continua sem prova, e é honesto dizer:** nada aqui encostou no
+Pipefy de verdade. `PIPEFY_API_TOKEN` precisa estar no Render, e a primeira
+importação real é o teste. Recomendado a ele: começar com **três a cinco
+cards** de uma obra, conferir os anexos na ficha do título, e só então soltar
+os 70.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**

@@ -91,6 +91,14 @@ function tabelaRelatorio(rel){
       <td>${x.credor}</td><td class="dados">${x.chave}</td></tr>`).join("")}</tbody></table>`);
   if (rel.ja_existiam?.length) linhas.push(`<h4>Já existiam (${rel.ja_existiam.length})</h4>
     <div class="cartao-dica">${rel.ja_existiam.map(i=>`card ${i.card} → ${i.sp}`).join(" · ")}</div>`);
+  if (rel.anexos_ignorados?.length) linhas.push(`<div class="aviso alerta">
+    <b>Atenção: ${rel.anexos_ignorados.length} campo(s) de anexo ficaram para trás.</b>
+    O card tem arquivo num campo que o importador não conhece — e arquivo que
+    fica para trás em silêncio é o pior resultado de uma migração.
+    <ul style="margin:8px 0 0 18px">${rel.anexos_ignorados.map(a =>
+      `<li>card ${escapar(a.card)}: <b>${escapar(a.rotulo)}</b>
+        (${a.quantos} arquivo(s)) — identificador <code>${escapar(a.campo)}</code></li>`).join("")}</ul>
+    <div style="margin-top:6px">Me mande esta lista que eu incluo os campos.</div></div>`);
   if (rel.pendencias?.length) linhas.push(`<h4>Precisam de decisão (${rel.pendencias.length})</h4>
     <table><thead><tr><th>Card</th><th>Título no Pipefy</th><th>Motivo</th></tr></thead>
     <tbody>${rel.pendencias.map(p=>`<tr><td class="dados">${p.card}</td><td>${p.titulo||"—"}</td>
