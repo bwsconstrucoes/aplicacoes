@@ -470,7 +470,117 @@ def test_a_aba_certa_e_vazia_tambem_e_dita(monkeypatch):
     saida = sincronizacao.sincronizar_referencias_rateio()
 
     assert saida["obras"] == 0 and saida["categorias"] == 1
-    assert "nenhuma linha preenchida" in " ".join(saida["avisos"])
+    assert "nenhuma linha com" in " ".join(saida["avisos"])
+
+
+def test_o_cabecalho_de_verdade_das_planilhas_carrega_o_rateio():
+    """ESTE É O CABEÇALHO REAL, informado pelo dono em 10/09/2026 depois que a
+    tela passou a dizer o que encontrava:
+
+        C. Diários       -> Código Primário | Conta de Pagamento | Projeto | Código Omie
+        Plano Financeiro -> Plano Financeiro | Código Omie
+
+    A conversão do Streamlit tinha PERDIDO a lista de nomes aceitos: o
+    original procurava "Código Primário" e, só se não achasse, "Obra"; ficou
+    só a segunda — justamente a que a planilha não tem. Por isso a lista do
+    rateio nunca carregou, desde a estreia."""
+    import pytest as _pytest
+    from app.apps.analisesps import db, sincronizacao
+
+    abas = {
+        "C. Diários": [
+            ["Código Primário", "Conta de Pagamento", "Projeto", "Código Omie"],
+            ["OBRA-1", "ITAU", "PROJ A", "5001"],
+            ["OBRA-2", "BB", "PROJ B", "5002"]],
+        "Plano Financeiro": [
+            ["Plano Financeiro", "Código Omie"],
+            ["Material de construção", "2001"]]}
+
+    gravados = []
+
+    class ConexaoFalsa:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, *a, **k): pass
+        def executemany(self, sql, seq): gravados.extend(seq)
+        def commit(self): pass
+
+    mp = _pytest.MonkeyPatch()
+    try:
+        _sem_rede(mp, abas)
+        mp.setattr(db, "conexao", lambda: ConexaoFalsa())
+        saida = sincronizacao.sincronizar_referencias_rateio()
+    finally:
+        mp.undo()
+
+    assert saida["obras"] == 2 and saida["categorias"] == 1
+    assert not saida["avisos"], saida["avisos"]
+    # O nome é o que a pessoa escolhe na tela; o código é o que vai no JSON
+    # do Omie. Trocar os dois geraria um JSON que o Omie aceita e lança no
+    # lugar errado — por isso a ordem está presa aqui.
+    assert ("obra", "OBRA-1", "5001") in gravados
+    assert ("categoria", "Material de construção", "2001") in gravados
+
+
+def test_os_nomes_antigos_de_coluna_continuam_valendo():
+    """O Streamlit aceitava mais de um nome por coluna, em ordem de
+    preferência. Manter isso é o que impede a planilha de uma obra antiga
+    parar de carregar sem ninguém entender por quê."""
+    import pytest as _pytest
+    from app.apps.analisesps import db, sincronizacao
+
+    abas = {"C. Diários": [["Obra", "Código"], ["OBRA-9", "9001"]],
+            "Plano Financeiro": [["Categoria", "Código"], ["Aluguel", "3001"]]}
+
+    class ConexaoFalsa:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, *a, **k): pass
+        def executemany(self, *a, **k): pass
+        def commit(self): pass
+
+    mp = _pytest.MonkeyPatch()
+    try:
+        _sem_rede(mp, abas)
+        mp.setattr(db, "conexao", lambda: ConexaoFalsa())
+        saida = sincronizacao.sincronizar_referencias_rateio()
+    finally:
+        mp.undo()
+
+    assert saida["obras"] == 1 and saida["categorias"] == 1
+    assert not saida["avisos"]
+
+
+def test_a_linha_sem_codigo_do_omie_fica_de_fora():
+    """Como no Streamlit. Sem o código, a linha não serve para gerar o JSON —
+    oferecê-la na lista levaria a pessoa a montar um rateio que o Omie
+    recusa, e ela só descobriria na hora de lançar."""
+    import pytest as _pytest
+    from app.apps.analisesps import db, sincronizacao
+
+    abas = {"C. Diários": [["Código Primário", "Código Omie"],
+                           ["OBRA-1", "5001"], ["OBRA-SEM-CODIGO", ""]],
+            "Plano Financeiro": [["Plano Financeiro", "Código Omie"],
+                                 ["Material", "2001"]]}
+    gravados = []
+
+    class ConexaoFalsa:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, *a, **k): pass
+        def executemany(self, sql, seq): gravados.extend(seq)
+        def commit(self): pass
+
+    mp = _pytest.MonkeyPatch()
+    try:
+        _sem_rede(mp, abas)
+        mp.setattr(db, "conexao", lambda: ConexaoFalsa())
+        saida = sincronizacao.sincronizar_referencias_rateio()
+    finally:
+        mp.undo()
+
+    assert saida["obras"] == 1
+    assert not any(n == "OBRA-SEM-CODIGO" for _, n, _ in gravados)
 
 
 def test_o_modo_apoios_nao_termina_dizendo_zero_sps():

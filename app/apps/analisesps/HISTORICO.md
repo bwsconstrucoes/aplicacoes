@@ -1366,10 +1366,41 @@ diz onde está a explicação se a pessoa já tiver rodado.
 cenários — tudo certo, aba com outro nome, coluna com outro nome, aba vazia —
 lendo a mensagem que ficou gravada na execução. É o texto da tabela acima.
 
-> **O que continua NÃO sabido:** qual dos três casos é o da produção. O
-> proxy desta máquina não alcança as planilhas da empresa, então **não dá para
-> ver os nomes das abas de lá daqui**. O que a correção garante é que o
-> próximo clique no botão diz qual é.
+**E o recado respondeu na primeira tentativa.** O dono publicou, apertou o
+botão, e a tela disse:
+
+> documentação fiscal: 13.695 · contas: 182 · obras: 0 · categorias: 0 — a aba
+> "C. Diários" não tem a(s) coluna(s) "Obra", "Código". O cabeçalho dela é:
+> **Código Primário, Conta de Pagamento, Projeto, Código Omie**. A aba "Plano
+> Financeiro" não tem a(s) coluna(s) "Categoria", "Código". O cabeçalho dela
+> é: **Plano Financeiro, Código Omie**.
+
+**A causa raiz, e ela é mais velha do que parecia: a conversão do Streamlit
+PERDEU a lista de nomes aceitos por coluna.** O original procurava
+`"Código Primário"` e, **só se não achasse**, `"Obra"`; e `"Código Omie"`
+antes de `"Código"`. A conversão ficou com a segunda opção de cada par —
+justamente a que a planilha não tem.
+
+Ou seja: **a lista do rateio nunca carregou, desde a estreia do módulo.**
+Ninguém tinha percebido porque a tela só dizia "ainda não foram carregadas",
+que soa como "falta rodar a sincronização", e não como "está quebrado".
+
+> **A regra da casa resolveu isto, e vale registrar que resolveu:** *em
+> dúvida, faça como o Streamlit fazia*. O código original está recuperável no
+> histórico do git (`git show dab6ee2^:app/apps/analisesps/app/gsheets.py`), e
+> foi ele quem deu a resposta — não a adivinhação. Os nomes voltaram na mesma
+> ordem de preferência que ele usava.
+
+Voltou junto uma segunda coisa que a conversão tinha perdido: **linha sem o
+Código Omie fica de fora**. Sem o código a linha não serve para gerar o JSON,
+e oferecê-la na lista levaria a pessoa a montar um rateio que o Omie recusa —
+e ela só descobriria na hora de lançar.
+
+**Verificado contra o banco, com o cabeçalho REAL das duas abas:** as obras e
+as categorias entram com o Código Omie certo, o nome vai para a lista e o
+código para o JSON (trocar os dois geraria um lançamento no lugar errado, e há
+teste prendendo a ordem), e a linha sem código não entra. Os nomes antigos
+também continuam funcionando, com teste.
 
 ### A janela entre publicar e apertar o botão
 
