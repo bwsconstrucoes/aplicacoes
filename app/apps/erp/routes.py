@@ -119,6 +119,10 @@ MODULOS = [
             ("receber", "Receber", "erp.pagina_receber"),
             ("relatorios", "Relatórios", "erp.pagina_relatorios"),
             ("importar", "Importar", "erp.pagina_importar"),
+            # As perguntas que o sistema sabe responder por CÓDIGO — a base do
+            # assistente. Fica no Financeiro porque é lá que estão as
+            # perguntas de hoje; grupo novo entra com rota e ação próprias.
+            ("perguntar", "Perguntar", "erp.pagina_perguntar"),
         ],
     },
     {
@@ -1978,6 +1982,62 @@ def _data_ou_nada(bruto: str | None):
         return date.fromisoformat((bruto or "").strip())
     except ValueError:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Perguntar — o catálogo de perguntas respondido por CÓDIGO
+#
+# A rota é POR GRUPO de pergunta, e não uma só que despacha tudo. É o que
+# permite cada grupo declarar a SUA ação e a declaração continuar verdadeira:
+# uma rota única teria de conferir permissão por dentro, pergunta a pergunta,
+# e aí a ação declarada mentiria.
+#
+# O grupo "financeiro" vive sob `ver_erp` + ESCOPO — todo operador pode
+# perguntar, e cada um recebe a conta feita apenas sobre o que já poderia ver
+# na tela de Títulos. Grupo novo (suprimentos, contratos) ganha rota própria.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/perguntar")
+@login_obrigatorio
+@permissao("ver_erp")
+def pagina_perguntar():
+    return render_template("erp_perguntar.html", **_contexto("perguntar"))
+
+
+@bp.route("/erp/api/perguntas/financeiro")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_perguntas_financeiro():
+    """A lista do que dá para perguntar — sem tocar no banco."""
+    from app.apps.erp.core.perguntas import catalogo
+    return jsonify({"ok": True, "perguntas": catalogo.para_a_tela("financeiro")})
+
+
+@bp.route("/erp/api/perguntar/financeiro", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_perguntar_financeiro():
+    """Responde uma pergunta do grupo financeiro, no escopo de quem perguntou."""
+    from app.apps.erp.core.perguntas import catalogo
+    d = request.get_json(silent=True) or {}
+    chave = (d.get("chave") or "").strip()
+    if chave not in {p["chave"] for p in catalogo.do_grupo("financeiro")}:
+        # Pergunta de outro grupo respondida aqui passaria por cima da ação
+        # daquele grupo. Fora do alcance responde "não encontrado".
+        raise ErroNaoEncontrado("Pergunta desconhecida neste grupo.")
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = catalogo.responder(chave, s, atual, d.get("parametros") or {})
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao responder a pergunta %s", chave)
+        return jsonify({"ok": False, "erro": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------

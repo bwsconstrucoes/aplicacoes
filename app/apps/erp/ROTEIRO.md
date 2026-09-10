@@ -154,6 +154,18 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       a lista das PALAVRAS que precisam de uma definição só ("a pagar", "este
       mês", "custo da obra", "quanto falta receber"). Enquanto uma dessas não
       estiver decidida, o assistente pergunta de volta em vez de escolher.
+- [x] **1c. As primeiras perguntas respondidas por CÓDIGO** — FEITO em
+      10/09/2026, em Financeiro › **Perguntar**. Cinco perguntas do grupo
+      financeiro, todas passando pelo mesmo escopo por obra e por autoria das
+      telas, e cada uma devolvendo o caminho de volta para os lançamentos:
+      o panorama de vencimentos (vencido / hoje / próximos 7 dias), o que tem
+      a pagar num período, o que está vencido e não foi pago, **o que está
+      parado esperando decisão e de quem é a vez** (o pedaço que faltava do
+      relatório de trabalho) e os títulos sem documento anexado.
+      **Sem IA nenhuma** — é a fundação: quando a IA entrar, ela só escolhe
+      QUAL destas funções chamar, e a conta continua sendo do sistema.
+      A rota é por GRUPO de pergunta (`/erp/api/perguntar/financeiro`), para
+      cada grupo declarar a sua própria ação sem mentir.
 - [ ] **2. Assistente SÓ DE LEITURA, dentro do ERP.** Painel lateral (não
       caixinha), com o catálogo de perguntas conhecidas respondido por CÓDIGO —
       exato, rápido e sem custo de IA — e a pergunta imprevista caindo numa

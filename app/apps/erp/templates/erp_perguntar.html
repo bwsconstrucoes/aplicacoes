@@ -1,0 +1,134 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Perguntar — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Perguntas</h2></div>
+  <div id="lista-perguntas"></div>
+
+  <div class="cartao-dica" style="margin-top:16px">
+    <b>Por que a lista, e não um campo de escrever.</b><br>
+    Cada pergunta daqui é <b>calculada pelo sistema</b>, não escrita na hora —
+    é exata e não custa nada. Toda resposta mostra <b>de onde veio</b>, para
+    você conferir na tela.
+    <br><br>Falta alguma pergunta? Me diga qual, que ela entra na lista.
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+
+<div class="cartao" id="cartao-pergunta" hidden>
+  <div class="cartao-cab"><h3 id="titulo-pergunta"></h3>
+    <small id="exemplos-pergunta"></small></div>
+  <div class="form-grade" id="parametros"></div>
+  <div style="margin-top:12px"><button class="btn" id="btn-responder">Responder</button></div>
+</div>
+
+<div class="cartao" id="cartao-resposta" hidden>
+  <div class="cartao-cab"><h3 id="titulo-resposta"></h3>
+    <small id="de-onde-veio"></small></div>
+  <div class="aviso info" id="frase-resposta"></div>
+  <div id="observacao-resposta"></div>
+  <div id="tabela-resposta" style="margin-top:10px"></div>
+</div>
+
+<div class="vazio" id="nada-ainda">
+  <b>Escolha uma pergunta à esquerda</b>
+  O sistema responde com o número e com a lista por trás dele.
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// A tela de Perguntar.
+//
+// Ela é o primeiro degrau do assistente: as perguntas PREVISTAS respondidas
+// por código escrito e testado. O degrau seguinte é a IA escolher qual delas
+// a pessoa fez — a conta continua sendo do sistema.
+let PERGUNTAS = [], ESCOLHIDA = null;
+
+function desenharLista() {
+  els("lista-perguntas").innerHTML = PERGUNTAS.map(p => `
+    <button class="link-btn" data-chave="${escapar(p.chave)}"
+            style="display:block; text-align:left; padding:8px 0; width:100%">
+      ${escapar(p.pergunta)}
+    </button>`).join("");
+  els("lista-perguntas").querySelectorAll("[data-chave]").forEach(b =>
+    b.addEventListener("click", () => escolher(b.dataset.chave)));
+}
+
+function escolher(chave) {
+  ESCOLHIDA = PERGUNTAS.find(p => p.chave === chave);
+  if (!ESCOLHIDA) return;
+  els("nada-ainda").hidden = true;
+  els("cartao-resposta").hidden = true;
+  els("titulo-pergunta").textContent = ESCOLHIDA.pergunta;
+  els("exemplos-pergunta").textContent =
+    (ESCOLHIDA.exemplos || []).map(e => `"${e}"`).join(" · ");
+  els("parametros").innerHTML = (ESCOLHIDA.parametros || []).map(p => `
+    <div class="campo">
+      <label for="par-${escapar(p.nome)}">${escapar(p.rotulo)}</label>
+      <input id="par-${escapar(p.nome)}" type="${p.tipo === "data" ? "date" : "text"}">
+      ${p.dica ? `<small>${escapar(p.dica)}</small>` : ""}
+    </div>`).join("");
+  els("cartao-pergunta").hidden = false;
+  // Responde JÁ, sem esperar o botão. Todo filtro aqui é opcional, então
+  // pedir um clique a mais só para ver o número geral era atrito à toa — o
+  // filtro fica ali para refinar depois de ver a resposta.
+  responder();
+}
+
+async function responder() {
+  if (!ESCOLHIDA) return;
+  const parametros = {};
+  (ESCOLHIDA.parametros || []).forEach(p => {
+    const v = els("par-" + p.nome);
+    if (v && v.value) parametros[p.nome] = v.value;
+  });
+  const b = els("btn-responder"); b.disabled = true; b.textContent = "Somando…";
+  try {
+    const d = await api("/erp/api/perguntar/financeiro", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({chave: ESCOLHIDA.chave, parametros})});
+    desenharResposta(d.resposta);
+  } catch (e) { aviso("mensagem", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Responder";
+}
+
+function celula(coluna, linha) {
+  const v = linha[coluna.chave];
+  if (v === null || v === undefined || v === "") return "—";
+  if (coluna.chave === "valor") return moeda(v);
+  if (coluna.chave === "vencimento") return dataBR(v);
+  return escapar(v);
+}
+
+function desenharResposta(r) {
+  els("titulo-resposta").textContent = r.titulo;
+  els("de-onde-veio").innerHTML = r.de_onde_veio
+    ? `de onde veio: <a href="${escapar(r.de_onde_veio.tela)}">${escapar(r.de_onde_veio.explicacao)}</a>`
+    : "";
+  els("frase-resposta").textContent = r.frase;
+  els("observacao-resposta").innerHTML = r.observacao
+    ? `<div class="cartao-dica" style="margin-top:8px">${escapar(r.observacao)}</div>` : "";
+  els("tabela-resposta").innerHTML = (r.linhas || []).length ? `
+    <table><thead><tr>${r.colunas.map(c =>
+      `<th class="${["valor","parcelas","atraso","parado_ha"].includes(c.chave) ? "dados" : ""}">${escapar(c.rotulo)}</th>`).join("")}
+    </tr></thead><tbody>
+      ${r.linhas.map(l => `<tr>${r.colunas.map(c =>
+        `<td class="${["valor","parcelas","atraso","parado_ha"].includes(c.chave) ? "dados" : ""}">${celula(c, l)}</td>`).join("")}</tr>`).join("")}
+    </tbody></table>` : "";
+  els("cartao-resposta").hidden = false;
+  els("cartao-resposta").scrollIntoView({behavior: "smooth", block: "nearest"});
+}
+
+els("btn-responder").addEventListener("click", responder);
+
+(async () => {
+  try {
+    PERGUNTAS = (await api("/erp/api/perguntas/financeiro")).perguntas;
+    desenharLista();
+  } catch (e) { aviso("mensagem", e.message, "erro"); }
+})();
+</script>
+{% endblock %}
