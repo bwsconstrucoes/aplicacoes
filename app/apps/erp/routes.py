@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from flask import (
-    Blueprint, jsonify, redirect, render_template, request, session, url_for,
+    Blueprint, g, jsonify, redirect, render_template, request, session, url_for,
 )
 
 from sqlalchemy.exc import IntegrityError, ProgrammingError
@@ -38,6 +38,45 @@ bp = Blueprint("erp", __name__, template_folder="templates", static_folder="stat
                static_url_path="/erp/static")
 
 _LIMITE_GRADE = 500
+
+
+# ---------------------------------------------------------------------------
+# O TERMÔMETRO: quanto tempo cada tela leva
+#
+# Mede toda requisição do ERP e acumula na memória do processo; a gravação
+# desce ao banco de tempos em tempos, agregada por dia e por rota. Medir não
+# pode custar mais que o que se mede.
+#
+# NADA AQUI PODE DERRUBAR UMA TELA. Os dois ganchos estão embrulhados: se a
+# medição falhar, o número se perde e a vida segue. Sistema que cai por causa
+# do próprio termômetro é pior que sistema sem termômetro.
+# ---------------------------------------------------------------------------
+@bp.before_request
+def _saude_comecou():
+    try:
+        from time import perf_counter
+        g._saude_inicio = perf_counter()
+    except Exception:
+        pass
+
+
+@bp.after_request
+def _saude_terminou(resposta):
+    try:
+        from time import perf_counter
+        from app.apps.erp.core.comum import saude
+        inicio = getattr(g, "_saude_inicio", None)
+        if inicio is not None and request.endpoint:
+            ms = int((perf_counter() - inicio) * 1000)
+            saude.registrar(request.endpoint, ms,
+                            erro=(resposta.status_code >= 500))
+        # A gravação acontece DEPOIS de a resposta estar pronta, e só de
+        # minuto em minuto — a pessoa não espera por ela.
+        if saude.hora_de_gravar():
+            saude.gravar()
+    except Exception:
+        pass
+    return resposta
 
 # ---------------------------------------------------------------------------
 # Navegação em MÓDULOS
@@ -115,7 +154,10 @@ MODULOS = [
 ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  "autorizar_pedido", "solicitar_suprimento", "configurar",
                  "cruzar_notas", "arquivar", "receber", "emitir_nota",
-                 "tratar_agenda", "aprovar")
+                 "tratar_agenda", "aprovar",
+                 # Encadeamento: a tela só transforma obra/conta/credor/pedido
+                 # em link para quem consegue abrir o destino.
+                 "ver_suprimentos", "ver_pedidos_compra")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -412,6 +454,10 @@ def pagina_inicio():
                            abas=[], aba_ativa="", agenda=agenda,
                            usuario_nome=session.get("erp_usuario_nome", ""),
                            usuario_perfil=session.get("erp_usuario_perfil", ""),
+                           # `pode` é do molde comum a todas as telas: o
+                           # encadeamento lê daqui para não oferecer link que
+                           # a pessoa não consegue abrir.
+                           pode=_pode_agora(*ACOES_NA_TELA),
                            migracoes_pendentes=_migracoes_pendentes())
 
 
@@ -1971,6 +2017,12 @@ def _serializar(t, hoje: date, ver_pagamento: bool = True) -> dict:
         "exige_aval": bool(getattr(t, "exige_aval", False)),
         "avalizado": bool(getattr(t, "avalizado_em", None)),
         "ver_pagamento": ver_pagamento,
+        # ENCADEAMENTO: os números que ligam este título aos cadastros. São
+        # inteiros que já estão carregados — não custam consulta nenhuma.
+        "fornecedor_id": t.fornecedor_id,
+        "categoria_id": t.categoria_id,
+        "obra_ids": sorted({r.obra_id for r in t.rateios if r.obra_id}),
+        "pedido_id": getattr(t, "pedido_id", None),
     }
 
 
@@ -1985,35 +2037,41 @@ def api_titulos():
             usuario = _usuario_logado(s)
             from app.apps.erp.core.titulos.aval import pode_ver_dados_pagamento
             ver_pg = pode_ver_dados_pagamento(usuario)
-            itens = svc_titulos.listar(s, busca=busca, limite=_LIMITE_GRADE, usuario=usuario)
+            filtros = {"busca": busca, "status": status, "usuario": usuario}
+            # A PÁGINA e as SOMAS saem da MESMA consulta filtrada. Antes o
+            # filtro de situação era aplicado em Python DEPOIS de trazer os 500
+            # títulos mais novos — filtrar por "bloqueado" não achava nada se
+            # os 500 mais novos não tivessem nenhum —, e as somas do topo
+            # somavam só esses 500 e se apresentavam como "total".
+            pag = svc_titulos.pagina_de_titulos(
+                s, pagina=request.args.get("pagina"),
+                tamanho=request.args.get("tamanho"), **filtros)
+            resumo = svc_titulos.somar_titulos(s, **filtros)
             hoje = date.today()
-            linhas = [_serializar(t, hoje, ver_pg) for t in itens
-                      if not status or t.status.value in status]
+            linhas = [_serializar(t, hoje, ver_pg) for t in pag["itens"]]
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao listar títulos")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
-    limite7 = date.today() + timedelta(days=7)
-    def _soma(f):
-        return round(sum(l["valor_liquido"] for l in linhas if f(l)), 2)
-    resumo = {
-        "quantidade": len(linhas),
-        "total": _soma(lambda l: True),
-        "aguardando": _soma(lambda l: l["status"] == "AGUARDANDO_APROVACAO"),
-        "qtd_aguardando": sum(1 for l in linhas if l["status"] == "AGUARDANDO_APROVACAO"),
-        "bloqueado": _soma(lambda l: l["status"] == "BLOQUEADO"),
-        "qtd_bloqueado": sum(1 for l in linhas if l["status"] == "BLOQUEADO"),
-        "vencendo": _soma(lambda l: l["vencimento"] and
-                          date.fromisoformat(l["vencimento"]) <= limite7 and
-                          l["status"] in _ABERTOS),
-        "qtd_vencendo": sum(1 for l in linhas if l["vencimento"] and
-                            date.fromisoformat(l["vencimento"]) <= limite7 and
-                            l["status"] in _ABERTOS),
-    }
     return jsonify({"ok": True, "titulos": linhas, "resumo": resumo,
-                    "limite_atingido": len(itens) >= _LIMITE_GRADE})
+                    "pagina": {k: pag[k] for k in
+                               ("pagina", "tamanho", "total", "paginas",
+                                "tem_mais", "de", "ate", "resumo")}})
+
+
+def _pedido_do_titulo(s, t) -> dict | None:
+    """O pedido de compra que originou o título, para virar link na ficha.
+
+    Só o número e o id — a ficha do pedido inteiro mora em Suprimentos, e é
+    para lá que o elo leva.
+    """
+    if not getattr(t, "pedido_id", None):
+        return None
+    from app.apps.erp.db.models.financeiro import Pedido
+    p = s.get(Pedido, t.pedido_id)
+    return {"id": p.id, "numero": p.numero} if p else None
 
 
 def _origem_do_titulo(s, t) -> dict | None:
@@ -2152,6 +2210,8 @@ def api_titulo_detalhe(titulo_id: int):
                 "solicitante": solicitante.nome if solicitante else "—",
                 "modalidade": getattr(t, "modalidade", "NORMAL"),
                 "porque_status": _explicar_status(s, t),
+                # ENCADEAMENTO: o pedido de compra que originou este título.
+                "pedido": _pedido_do_titulo(s, t),
                 "anexos": listar_anexos(s, "titulo", t.id),
                 "colaboradores": _colaboradores_do_titulo(s, t),
                 "pagamentos": [{
@@ -2173,6 +2233,8 @@ def api_titulo_detalhe(titulo_id: int):
                                          else ("informado" if p.linha_digitavel else ""))}
                              for p in t.parcelas],
                 "rateios": [{"obra": f"{r.obra.codigo} · {r.obra.nome}",
+                             "obra_id": r.obra_id,
+                             "categoria_id": getattr(r, "categoria_id", None),
                              "categoria": (f"{r.categoria.codigo} · {r.categoria.descricao}"
                                            if getattr(r, "categoria", None) else None),
                              "descricao": r.descricao,
@@ -4421,12 +4483,92 @@ def api_arquivo_guardar():
                 competencia=_comp(), referencia=(request.form.get("referencia") or ""),
                 emissao=_data("emissao"), validade=_data("validade"),
                 observacao=(request.form.get("observacao") or ""),
+                # Vindos da leitura automática, quando houve. Guardar o texto
+                # aqui é o que torna possível buscar DENTRO do documento
+                # depois, sem reprocessar o arquivo.
+                texto=(request.form.get("texto") or ""),
+                resumo=(request.form.get("resumo") or ""),
+                origem=("IA" if request.form.get("texto") or request.form.get("resumo")
+                        else "TELA"),
                 usuario=_usuario_logado(s))
             linha = svc_arq.ler(s, d)
             s.commit()
         return jsonify({"ok": True, "documento": linha})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/arquivo/donos")
+@login_obrigatorio
+@permissao("arquivar")
+def api_arquivo_donos():
+    """As listas de donos que a tela do Arquivo precisa oferecer.
+
+    Existe separada das telas de Pessoal e de Suprimentos porque quem arquiva
+    não necessariamente pode abrir aquelas telas — e sem estas listas os tipos
+    de documento de PESSOA e de PARCEIRO ficavam sem onde pendurar.
+
+    A lista de colaboradores só sai para quem enxerga documento PESSOAL (a
+    mesma faixa de sigilo do módulo): nome de empregado é dado de pessoa.
+    """
+    from app.apps.erp.core.arquivo.service import sigilos_visiveis
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.db.models.cadastros import Colaborador, Empresa, Fornecedor, Obra
+    from sqlalchemy import select as _sel
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            empresas = [{"id": e.id, "nome": e.nome_fantasia or e.razao_social}
+                        for e in s.scalars(_sel(Empresa).order_by(Empresa.razao_social)).all()]
+            minhas = obras_do_usuario(s, u) if u is not None else None
+            stmt = _sel(Obra).order_by(Obra.codigo)
+            if minhas is not None:
+                stmt = stmt.where(Obra.id.in_(minhas or [-1]))
+            obras = [{"id": o.id, "nome": f"{o.codigo} · {o.nome}"}
+                     for o in s.scalars(stmt).all()]
+            fornecedores = [{"id": f.id, "nome": f.nome_fantasia or f.razao_social}
+                            for f in s.scalars(_sel(Fornecedor)
+                                               .order_by(Fornecedor.razao_social)).all()]
+            colaboradores = []
+            if "PESSOAL" in sigilos_visiveis(u):
+                colaboradores = [{"id": c.id, "nome": c.nome}
+                                 for c in s.scalars(_sel(Colaborador)
+                                                    .order_by(Colaborador.nome)).all()]
+        return jsonify({"ok": True, "empresas": empresas, "obras": obras,
+                        "fornecedores": fornecedores, "colaboradores": colaboradores})
+    except Exception as e:
+        logger.exception("ERP/arquivo: falha ao listar donos")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/arquivo/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_arquivo_ler():
+    """A IA lê o documento e devolve o formulário preenchido — sem guardar.
+
+    Guardar continua sendo um ato da pessoa: documento arquivado no tipo
+    errado some do conjunto que o cliente pede na medição, e ninguém percebe
+    até o dia da entrega.
+    """
+    from app.apps.erp.core.arquivo import leitura
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    try:
+        conteudo = f.read()
+        with get_session() as s:
+            sugestao = leitura.sugerir(s, conteudo, f.filename or "arquivo",
+                                       dica=(request.form.get("dica") or ""))
+        return jsonify({"ok": True, "sugestao": sugestao})
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/arquivo: falha na leitura automática")
+        return jsonify({"ok": False, "erro": f"Não deu para ler o documento: {e}"}), 500
 
 
 @bp.route("/erp/api/arquivo/<int:documento_id>", methods=["DELETE"])
@@ -4901,6 +5043,29 @@ def api_agenda_anotar():
         return jsonify({"ok": True})
     except (ErroValidacao, ValueError) as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/saude")
+@login_obrigatorio
+@permissao("configurar")
+def api_saude():
+    """O termômetro: tempo por tela, memória, e o que ocupa o banco.
+
+    Fica com o ADMIN porque é a tela que embasa decisão de GASTAR — trocar de
+    plano, subir o banco —, e porque mostra o tamanho de cada tabela.
+    """
+    from app.apps.erp.core.comum import saude
+    # Desce o que ainda está na memória antes de ler: sem isto a tela mostraria
+    # tudo menos o minuto que acabou de passar, que é justamente o que a pessoa
+    # foi conferir depois de achar o sistema lento.
+    saude.gravar()
+    with get_session() as s:
+        dias = 7
+        try:
+            dias = max(1, min(int(request.args.get("dias") or 7), 90))
+        except ValueError:
+            pass
+        return jsonify({"ok": True, **saude.panorama(s, dias=dias)})
 
 
 @bp.route("/erp/api/usuarios", methods=["GET", "POST"])

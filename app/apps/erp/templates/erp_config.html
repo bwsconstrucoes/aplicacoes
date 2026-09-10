@@ -17,6 +17,7 @@
   <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
   <a class="subaba" href="#anexos" data-ir="anexos">Onde ficam os documentos</a>
   <a class="subaba" href="#indices" data-ir="indices">Índices (INCC)</a>
+  <a class="subaba" href="#saude" data-ir="saude">Saúde do sistema</a>
   <a class="subaba" href="#manutencao" data-ir="manutencao">Banco e limpeza</a>
 </nav>
 
@@ -191,6 +192,45 @@
     <table><thead><tr><th>Mês</th><th class="direita">Variação</th>
       <th>Fonte</th><th>Coletado em</th></tr></thead>
       <tbody id="ind-corpo"></tbody></table>
+  </div>
+</div>
+
+{# SAÚDE DO SISTEMA. Existe porque a pergunta "o sistema aguenta crescer?" foi
+   respondida com raciocínio, e a próxima — "vale a pena gastar mais?" — não
+   pode ser respondida com palpite. Aqui ficam os números. #}
+<div class="cartao" id="bloco-saude" data-secao="saude">
+  <div class="cartao-cab"><h3>Saúde do sistema</h3>
+    <small>quanto tempo cada tela leva, quanta memória, o que ocupa o banco</small></div>
+  <div id="sa-avisos"></div>
+  <div class="kpis kpis-largos" id="sa-kpis"></div>
+
+  <div class="form-grade" style="align-items:end">
+    <div class="campo"><label>Período</label>
+      <select id="sa-dias" data-sem-busca>
+        <option value="1">Hoje</option>
+        <option value="7" selected>Últimos 7 dias</option>
+        <option value="30">Últimos 30 dias</option>
+      </select></div>
+    <div><button class="btn secundario" id="btn-sa-atualizar">Atualizar</button></div>
+  </div>
+
+  <h4 style="margin-top:16px">Onde a equipe mais espera</h4>
+  <div class="cartao-dica">Ordenado pelo <b>tempo total</b>, não pela média: uma
+    tela de três segundos aberta uma vez por mês incomoda menos que uma de meio
+    segundo aberta duzentas vezes por dia.</div>
+  <div class="tabela-rolagem" style="margin-top:8px; max-height:340px">
+    <table><thead><tr><th>Tela</th><th class="direita">Aberturas</th>
+      <th class="direita">Média</th><th class="direita">Pior</th>
+      <th class="direita">Lentas</th><th class="direita">Erros</th>
+      <th class="direita">Tempo total</th></tr></thead>
+      <tbody id="sa-rotas"></tbody></table>
+  </div>
+
+  <h4 style="margin-top:18px">O que ocupa o banco</h4>
+  <div class="tabela-rolagem" style="margin-top:8px; max-height:280px">
+    <table><thead><tr><th>Tabela</th><th class="direita">Tamanho</th>
+      <th class="direita">Linhas (estimativa)</th></tr></thead>
+      <tbody id="sa-tabelas"></tbody></table>
   </div>
 </div>
 
@@ -1118,7 +1158,15 @@ els("btn-pix-salvar") && els("btn-pix-salvar").addEventListener("click", async (
   } catch(e){ aviso("pix-dlg-msg", e.message, "erro"); }
 });
 
-carregar();
+// ENCADEAMENTO: ?conta=N#plano abre a conta do plano direto, vinda do
+// título que a usa. Quem chega aqui já sabe qual conta quer ver.
+carregar().then(() => {
+  const pedida = new URLSearchParams(location.search).get("conta");
+  if (!pedida) return;
+  const id = +pedida;
+  if (DADOS.categorias.some(c => c.id === id)) editarCategoria(id);
+  else aviso("mensagem", "Esta conta do plano não existe mais.", "erro");
+});
 carregarIA();
 carregarAnexos();
 carregarContasPix();
@@ -1191,5 +1239,68 @@ els("btn-ind-atualizar").addEventListener("click", atualizarIndices);
 els("btn-ind-lancar").addEventListener("click", lancarIndice);
 els("ind-codigo").addEventListener("change", carregarIndices);
 carregarIndices();
+
+// ----------------------------------------------------------------- saúde
+// O termômetro do sistema. A tela existe para a decisão de gastar — trocar de
+// plano, subir o banco — deixar de ser palpite.
+async function carregarSaude(){
+  const alvo = els("sa-kpis");
+  if (!alvo) return;
+  try {
+    const d = await api("/erp/api/saude?dias=" + (els("sa-dias").value || 7));
+    const m = d.memoria, t = d.telas, b = d.banco, a = d.anexos;
+
+    els("sa-avisos").innerHTML = (d.avisos || []).map(x =>
+      `<div class="aviso alerta">${escapar(x)}</div>`).join("")
+      || `<div class="aviso ok">Nada pedindo atenção agora.</div>`;
+
+    alvo.innerHTML = `
+      <div class="kpi estatico ${m.pct >= 80 ? "vermelho" : "verde"}">
+        <div class="kpi-rotulo">Memória em uso</div>
+        <div class="kpi-valor">${m.rss_mb === null ? "—" : m.rss_mb + " MB"}</div>
+        <div class="kpi-sub">de ${m.teto_mb} MB do plano${
+          m.pico_mb ? " · pico " + m.pico_mb + " MB" : ""}</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Aberturas de tela</div>
+        <div class="kpi-valor">${t.chamadas}</div>
+        <div class="kpi-sub">no período escolhido</div></div>
+      <div class="kpi estatico ${t.media_ms > 800 ? "ambar" : "ciano"}">
+        <div class="kpi-rotulo">Tempo médio</div>
+        <div class="kpi-valor">${t.media_ms} ms</div>
+        <div class="kpi-sub">${t.lentas} passaram de ${
+          (t.limite_lenta_ms/1000).toFixed(1)}s</div></div>
+      <div class="kpi estatico ${t.erros ? "vermelho" : "verde"}">
+        <div class="kpi-rotulo">Erros</div>
+        <div class="kpi-valor">${t.erros}</div>
+        <div class="kpi-sub">telas que falharam</div></div>
+      <div class="kpi estatico roxo"><div class="kpi-rotulo">Banco</div>
+        <div class="kpi-valor">${numero(b.total_mb)} MB</div>
+        <div class="kpi-sub">${a.mb_no_banco} MB são documentos</div></div>
+      <div class="kpi estatico"><div class="kpi-rotulo">Documentos</div>
+        <div class="kpi-valor">${a.no_banco + a.no_drive}</div>
+        <div class="kpi-sub">${a.no_drive} no Drive, ${a.no_banco} no banco</div></div>`;
+
+    els("sa-rotas").innerHTML = t.rotas.length
+      ? t.rotas.map(r => `<tr>
+          <td>${escapar(r.rota)}</td>
+          <td class="direita mono">${r.chamadas}</td>
+          <td class="direita mono">${r.media_ms} ms</td>
+          <td class="direita mono">${r.pior_ms} ms</td>
+          <td class="direita mono">${r.lentas || "—"}</td>
+          <td class="direita mono">${r.erros || "—"}</td>
+          <td class="direita mono">${numero(r.segundos_no_periodo)} s</td></tr>`).join("")
+      : `<tr><td colspan="7" class="vazio">Nenhuma medição no período.</td></tr>`;
+
+    els("sa-tabelas").innerHTML = b.tabelas.map(x => `<tr>
+      <td>${escapar(x.nome)}</td>
+      <td class="direita mono">${numero(x.mb)} MB</td>
+      <td class="direita mono">${x.linhas === null ? "—" : x.linhas}</td></tr>`).join("");
+  } catch(e){
+    els("sa-avisos").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+}
+
+els("btn-sa-atualizar").addEventListener("click", carregarSaude);
+els("sa-dias").addEventListener("change", carregarSaude);
+carregarSaude();
 </script>
 {% endblock %}

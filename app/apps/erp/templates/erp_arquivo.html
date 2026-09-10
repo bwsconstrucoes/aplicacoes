@@ -86,6 +86,22 @@
     <div class="form-grade">
       <div class="campo" style="grid-column: span 2"><label>Arquivo</label>
         <input type="file" id="d-arquivo"></div>
+      {# JOGAR O DOCUMENTO E DEIXAR O SISTEMA ENTENDER. A leitura preenche o
+         formulário; quem grava continua sendo a pessoa, depois de conferir —
+         documento arquivado no tipo errado some do conjunto que o cliente
+         pede na medição, e ninguém descobre até o dia da entrega. #}
+      <div class="campo" style="grid-column: span 2">
+        <label>Deixe o sistema ler</label>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <button class="btn secundario" id="btn-ler" type="button">Ler o documento</button>
+          <input id="d-dica" placeholder="ajuda (opcional): 'é a CND federal da BWS'"
+                 style="flex:1; min-width:200px; padding:7px 10px;
+                        border:1px solid var(--borda-forte); border-radius:8px; font-size:13px">
+        </div>
+        <div class="dica">Escolha o arquivo acima e clique em ler: o sistema sugere
+          tipo, dono, datas e o nome. Você confere antes de guardar.</div>
+      </div>
+      <div id="d-leitura" style="grid-column: 1 / -1"></div>
       <div class="campo" style="grid-column: span 2"><label>Tipo de documento</label>
         <select id="d-tipo"></select></div>
       <div class="campo" style="grid-column: span 2"><label id="rot-dono">De quem é</label>
@@ -112,6 +128,14 @@
 <script>
 const PODE_ARQUIVAR = {{ 'true' if pode.arquivar else 'false' }};
 let TIPOS = [], GRUPOS = {}, DOCS = [], RESUMO = {}, EMPRESAS = [], OBRAS = [], BLOCOS = [];
+// Donos que só existem por causa do arquivo: colaborador e fornecedor. Vêm de
+// um endereço próprio porque quem arquiva não necessariamente pode abrir as
+// telas de Pessoal e de Suprimentos.
+let COLABORADORES = [], FORNECEDORES = [];
+// O que a última leitura devolveu. O TEXTO extraído viaja junto no momento de
+// guardar: é o que torna possível, depois, buscar DENTRO do documento sem
+// reprocessar o arquivo.
+let LEITURA = null;
 
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
@@ -139,6 +163,14 @@ async function carregarListas(){
     els("f-empresa").innerHTML = `<option value="">Todas</option>` + EMPRESAS.map(e =>
       `<option value="${e.id}">${e.nome_fantasia || e.razao_social}</option>`).join("");
   } catch(e){ els("f-empresa").innerHTML = `<option value="">(não carregou)</option>`; }
+
+  if (PODE_ARQUIVAR) {
+    try {
+      const d = await api("/erp/api/arquivo/donos");
+      COLABORADORES = d.colaboradores || [];
+      FORNECEDORES = d.fornecedores || [];
+    } catch(e){ COLABORADORES = []; FORNECEDORES = []; }
+  }
 
   try {
     const d = await api("/erp/api/obras");
@@ -242,8 +274,8 @@ function ajustarFormulario(){
   const mapa = {
     EMPRESA: ["Empresa", EMPRESAS.map(e => [e.id, e.nome_fantasia || e.razao_social])],
     OBRA:    ["Obra", OBRAS.map(o => [o.id, rotuloObra(o)])],
-    PESSOA:  ["Colaborador", []],
-    PARCEIRO:["Fornecedor", []],
+    PESSOA:  ["Colaborador", COLABORADORES.map(c => [c.id, c.nome])],
+    PARCEIRO:["Fornecedor", FORNECEDORES.map(f => [f.id, f.nome])],
     LANCAMENTO: ["Lançamento", []],
   };
   const [rotulo, itens] = mapa[t.dono] || ["De quem é", []];
@@ -279,11 +311,96 @@ function previa(){
   els("d-previa").textContent = campos.filter(Boolean).join("_") + ext;
 }
 
+// ---------------------------------------------------------------------------
+// A LEITURA AUTOMÁTICA
+//
+// Preenche o formulário e diz o que ela mesma NÃO conseguiu resolver. A parte
+// mais importante da tela é essa última: uma sugestão que se apresenta como
+// certeza é pior do que campo em branco, porque ninguém confere.
+// ---------------------------------------------------------------------------
+const CONFIANCA = {ALTA: ["ok", "leitura confiável"],
+                   MEDIA: ["alerta", "confira com atenção"],
+                   BAIXA: ["erro", "confira campo por campo"]};
+
+function mostrarLeitura(g){
+  const [classe, recado] = CONFIANCA[g.confianca] || CONFIANCA.MEDIA;
+  const linha = (rot, val) => val
+    ? `<div><span class="kpi-rotulo">${rot}</span> ${escapar(val)}</div>` : "";
+  els("d-leitura").innerHTML = `
+    <div class="aviso ${classe}">
+      <b>Lido ${escapar(g.lido_em)} — ${recado}.</b>
+      ${g.faltando.length
+        ? `<br>Falta você preencher: <b>${g.faltando.map(escapar).join(", ")}</b>.`
+        : ""}
+      ${g.dono_lido && !g.dono_encontrado
+        ? `<br>O documento diz ser de <b>${escapar(g.dono_lido)}</b>, que não achei no
+           cadastro — escolha na lista ou cadastre antes.` : ""}
+      ${g.campos_ilegiveis.length
+        ? `<br>Não consegui ler: ${g.campos_ilegiveis.map(escapar).join(", ")}.` : ""}
+      ${g.observacoes ? `<br><i>${escapar(g.observacoes)}</i>` : ""}
+    </div>
+    <div class="cartao" style="box-shadow:none; border:1px solid var(--borda); margin-bottom:0">
+      ${linha("Tipo", g.tipo_nome)}
+      ${linha("Por quê", g.tipo_motivo)}
+      ${linha("De quem", g.dono_encontrado || g.dono_lido)}
+      ${linha("Resumo", g.resumo)}
+      ${g.nome_sugerido
+        ? `<div><span class="kpi-rotulo">Nome</span>
+           <b class="mono">${escapar(g.nome_sugerido)}</b></div>` : ""}
+    </div>`;
+}
+
+async function lerDocumento(ev){
+  const arq = els("d-arquivo").files[0];
+  if (!arq) { aviso("dlg-aviso", "Escolha o arquivo antes de mandar ler.", "erro"); return; }
+  const b = ev.target;
+  b.disabled = true; b.textContent = "Lendo…";
+  els("d-leitura").innerHTML = `<div class="cartao-dica">Lendo o documento…</div>`;
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    if (els("d-dica").value.trim()) fd.append("dica", els("d-dica").value.trim());
+    const d = await api("/erp/api/arquivo/ler", {method:"POST", body: fd});
+    const g = d.sugestao;
+    g.arquivo_lido = arq.name;      // para não colar o texto de um arquivo em outro
+    LEITURA = g;
+
+    // Ordem importa: o tipo decide QUAL lista de donos aparece, então ele vem
+    // primeiro e o dono só depois de o formulário se ajustar.
+    if (g.tipo_codigo) els("d-tipo").value = g.tipo_codigo;
+    ajustarFormulario();
+    const idDono = g.empresa_id || g.obra_id || g.colaborador_id || g.fornecedor_id;
+    if (idDono && [...els("d-dono").options].some(o => o.value === String(idDono))) {
+      els("d-dono").value = String(idDono);
+    }
+    if (g.competencia) els("d-comp").value = g.competencia;
+    if (g.referencia) els("d-ref").value = g.referencia;
+    if (g.emissao) els("d-emissao").value = g.emissao;
+    if (g.validade) els("d-validade").value = g.validade;
+    previa();
+    mostrarLeitura(g);
+    aviso("dlg-aviso", "", "ok");
+  } catch(e){
+    LEITURA = null;
+    els("d-leitura").innerHTML = "";
+    aviso("dlg-aviso", e.message, "erro");
+  }
+  b.disabled = false; b.textContent = "Ler o documento";
+}
+
 if (PODE_ARQUIVAR) {
-  els("btn-novo").addEventListener("click", () => { ajustarFormulario(); els("dlg").showModal(); });
+  els("btn-ler").addEventListener("click", lerDocumento);
+  els("btn-novo").addEventListener("click", () => {
+    LEITURA = null; els("d-leitura").innerHTML = "";
+    ajustarFormulario(); els("dlg").showModal();
+  });
   els("d-tipo").addEventListener("change", ajustarFormulario);
   ["d-dono","d-ref","d-comp","d-emissao","d-validade","d-arquivo"].forEach(id =>
     els(id).addEventListener("change", previa));
+  // Trocou o arquivo: a leitura anterior era de outro documento e não vale mais.
+  els("d-arquivo").addEventListener("change", () => {
+    LEITURA = null; els("d-leitura").innerHTML = "";
+  });
   els("btn-guardar").addEventListener("click", async (ev) => {
     const arq = els("d-arquivo").files[0];
     if (!arq) { aviso("dlg-aviso", "Escolha o arquivo.", "erro"); return; }
@@ -300,12 +417,20 @@ if (PODE_ARQUIVAR) {
         const [id, nome] = par.split(":");
         if (els("d-" + id).value) fd.append(nome, els("d-" + id).value);
       });
+    // Só vale se a leitura foi DESTE arquivo: trocar o arquivo depois de ler
+    // guardaria o texto de outro documento, e a busca passaria a mentir.
+    if (LEITURA && LEITURA.arquivo_lido === arq.name) {
+      if (LEITURA.texto) fd.append("texto", LEITURA.texto);
+      if (LEITURA.resumo) fd.append("resumo", LEITURA.resumo);
+    }
     const b = ev.target; b.disabled = true; b.textContent = "Guardando…";
     try {
       const d = await api("/erp/api/arquivo", {method:"POST", body: fd});
       els("dlg").close();
       aviso("mensagem", `Guardado como <b class="mono">${d.documento.nome}</b>.`, "ok");
-      ["d-arquivo","d-ref","d-comp","d-emissao","d-validade","d-obs"].forEach(i => els(i).value = "");
+      ["d-arquivo","d-ref","d-comp","d-emissao","d-validade","d-obs","d-dica"]
+        .forEach(i => els(i).value = "");
+      LEITURA = null; els("d-leitura").innerHTML = "";
       carregar();
     } catch(e){ aviso("dlg-aviso", e.message, "erro"); }
     b.disabled = false; b.textContent = "Guardar";

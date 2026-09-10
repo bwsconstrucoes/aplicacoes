@@ -129,10 +129,15 @@
 - [ ] Pessoal — falta: formato exato do arquivo BeeVale/SomaPay (aguarda
       instrução) e anexo da planilha ao título
 
-- [ ] Detalhe do título que **expande como card**, com anexos e tudo que não
-      cabe na tabela
-- [ ] **Encadeamento**: obra → cadastro da obra; conta → plano; credor →
-      cadastro; compra → pedido
+- [x] Detalhe do título que **expande como card** — FEITO em 10/09/2026. Um
+      clique na linha abre a ficha embaixo dela, com apontamentos, parcelas,
+      pagamentos, rateio, retenções, anexos, assinaturas e histórico. A janela
+      ficou com os formulários e com o endereço direto (`?titulo=N`) que cai
+      num título fora dos filtros de hoje.
+- [x] **Encadeamento** — FEITO em 10/09/2026. Obra, conta do plano, credor e
+      compra viram link, na lista e na ficha, e as quatro telas de destino
+      abrem já no registro. O elo só aparece para quem pode abrir o destino —
+      link que responde "sem permissão" promete porta que não abre.
 - [x] **Agenda do ERP** — FEITA em 09/09/2026 (migração 051). Obras › "Agenda":
       aniversário de reajuste, conferência mensal de locação, vencimento de
       certidão e fim da vigência do contrato, num lugar só, mais a anotação
@@ -259,8 +264,12 @@ Omie não dá conta disso.
       bloco com prestador, tomador, discriminação e as retenções JÁ CALCULADAS
       pelo cadastro da obra; a pessoa copia, emite no portal, volta e anexa o
       PDF — a IA lê e preenche número, data, valor e retenções.
-- [ ] 6. **Emissão automática**, com município e endereço virando configuração
-      por empresa. ⚠️ Apontar para o **canal NACIONAL**, não para o ABRASF: a
+- [ ] 6. **Emissão automática**. ⚠️ **Petrolina saiu da conta em 10/09/2026**:
+      o dono avisou que é empresa FUTURA. O que sobra é a emissão automática da
+      BWS no Eusébio, que já tem inscrição, token e certificado — e cuja
+      primeira chamada real só acontece no Render, porque a saída de internet
+      do ambiente de desenvolvimento é filtrada.
+      Com município e endereço virando configuração por empresa. ⚠️ Apontar para o **canal NACIONAL**, não para o ABRASF: a
       LC 214/2025 tornou o padrão nacional obrigatório e o ABRASF tem data para
       acabar. O `el_nfse_nacional.py` já fala esse padrão.
 - [~] 7. **Indicadores**: dias entre protocolar e receber. Já pronto POR
@@ -315,16 +324,24 @@ lido, e a partir dali categorizado, renomeado e salvo"*.
 - [x] 2. **Tela de gestão** (Administração › Arquivo): filtros por
       tipo/grupo/empresa/obra/competência/validade, busca e abertura do
       arquivo. FEITA em 09/09/2026.
-- [ ] 3. **Leitura por IA** sugerindo tipo, dono, datas e nome — a pessoa
-      confirma. Reusa o leitor que já lê nota e comprovante.
+- [x] 3. **Leitura por IA** sugerindo tipo, dono, datas e nome — FEITA em
+      10/09/2026. A pergunta é montada a partir do catálogo QUE ESTÁ NO BANCO,
+      então tipo criado pela empresa entra sozinho. Não achar o dono é
+      resposta válida (a tela mostra o nome lido e manda escolher); validade
+      anterior à emissão é descartada; a leitura DIZ o que não resolveu; e o
+      texto extraído é guardado junto, o que já resolve o item 5.
+      ⚠️ **A chamada real ao serviço de IA só acontece no Render** — aqui não
+      há chave. O fluxo inteiro foi provado com a IA dublada e o caminho de
+      erro, no navegador.
 - [x] 4. **Blocos** (FISCAL, HABILITACAO, CADASTRO-FORNECEDOR, MEDICAO, OBRA)
       em `.zip`, **com a lista do que está faltando dentro**. FEITO em
       09/09/2026 (migração 046). O bloco aponta para TIPOS, não para
       documentos — por isso o de agosto e o de setembro são o mesmo bloco.
       Conteúdo do bloco FISCAL confirmado pelo dono como "o que o cliente pede
       na medição".
-- [ ] 5. **Busca dentro do texto** do documento (o texto é extraído na entrada,
-      porque a leitura já acontece — reprocessar depois é que sairia caro).
+- [x] 5. **Busca dentro do texto** do documento — FEITA junto com o item 3 em
+      10/09/2026: a busca do Arquivo já olhava o campo de texto; o que faltava
+      era alguém preenchê-lo, e agora a leitura preenche.
 - [ ] 6. **Avisos de vencimento** de certidão e documento, na Agenda.
 - [ ] 7. **Botões nos outros lugares**: baixar a documentação fiscal da
       competência direto do título, o bloco da obra na tela da obra, o bloco
@@ -404,12 +421,25 @@ que é a estratégia de manter isso rápido?"*. A resposta longa está no
 - [ ] **Tirar a trava do "um processo só"** (o estado em memória do `chatbot`).
       Enquanto ela existir, aumentar o plano do Render rende menos do que
       deveria — parte da máquina maior fica sem uso.
-- [ ] **Tela de saúde do sistema**: quanto tempo cada tela leva, quanta memória
-      o serviço usa. Para a decisão de gastar deixar de ser palpite.
+- [x] **Tela de saúde do sistema** — FEITA em 10/09/2026 (migração 054). Em
+      Configurações › "Saúde do sistema": tempo por tela (ordenado pelo tempo
+      TOTAL, não pela média), memória em uso contra o teto do plano, tamanho do
+      banco e o que mais ocupa, e avisos que dizem o que fazer. A medição é
+      agregada por dia e rota, gravada em lote, e nunca derruba uma tela.
 - [ ] Números do topo das telas pré-calculados, quando as somas começarem a
       pesar. Não antes.
-- [ ] Listas do ERP com "próxima página" — hoje elas param em 500 registros e
-      não há como alcançar o que é mais antigo sem filtrar.
+- [~] Listas do ERP com "próxima página". **Solicitações: FEITO em 09/09/2026**
+      — "carregar mais" que acrescenta, a linha dizendo "200 de 1.340", e os
+      quadrinhos do topo somando o FILTRO INTEIRO em vez da página. Dois
+      defeitos foram achados aí e corrigidos: o filtro de situação era aplicado
+      depois do corte (não achava o registro antigo) e as somas do topo
+      mentiam.
+      **Falta nas demais**, todas ainda com corte silencioso: Notas fiscais,
+      Notas emitidas, Arquivo, Agenda, Conciliação e Extratos (500);
+      Empreitas, Locações, Despesa com colaborador, Movimentações e o painel
+      "por pedido" (300). Nenhuma delas incomoda no volume de hoje — a de
+      solicitações incomodava — e todas usam o mesmo `core/comum/paginacao.py`
+      quando chegar a vez.
 
 ### Assistente virtual para os colaboradores — ideia registrada em 08/09/2026
 

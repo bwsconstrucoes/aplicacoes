@@ -450,6 +450,13 @@ els("btn-novo").addEventListener("click", novoFornecedor);
 botoesDeExportar("exportar");
 if (!PODE_EDITAR) els("btn-novo").style.display = "none";
 
-carregar();
+// ENCADEAMENTO: ?fornecedor=N abre a ficha do credor direto, vindo do título.
+carregar().then(() => {
+  const pedido = new URLSearchParams(location.search).get("fornecedor");
+  if (!pedido) return;
+  const id = +pedido;
+  if (D.fornecedores.some(f => f.id === id)) abrir(id);
+  else aviso("mensagem", "Este fornecedor não está mais no cadastro.", "erro");
+});
 </script>
 {% endblock %}

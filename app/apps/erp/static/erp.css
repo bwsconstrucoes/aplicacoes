@@ -362,6 +362,32 @@ td.desc small { display: block; color: var(--tinta-suave); font-size: 11.5px; ma
 td.desc small.corrigido { display: inline-block; color: #7c4a03; }
 .atrasado { color: var(--vermelho); font-weight: 700; }
 
+/* ---- ENCADEAMENTO -------------------------------------------------------
+   O nome da obra, da conta, do credor ou da compra leva ao cadastro dele.
+   Sublinhado pontilhado: dá para ver que é clicável sem virar um mar de azul
+   dentro de uma tabela densa. */
+a.elo { color: inherit; text-decoration: none; border-bottom: 1px dashed var(--azul-claro); }
+a.elo:hover { color: var(--azul); border-bottom-style: solid; }
+
+/* ---- A LINHA QUE EXPANDE COMO CARD ---------------------------------------
+   O detalhe do registro nasce embaixo da própria linha, em vez de abrir uma
+   janela por cima da tela. Quem está conferindo não perde o lugar da lista.
+   Serve para qualquer tela: a de títulos foi a primeira. */
+tbody tr.abre { cursor: pointer; }
+tbody tr.abre .seta-ficha { display: inline-block; width: 11px; color: var(--azul-claro); font-size: 11px; }
+tbody tr.aberta, tbody tr.aberta:hover { background: #E8EEFA; }
+tr.linha-detalhe > td { padding: 0; background: #F4F7FC; border-bottom: 2px solid var(--borda-forte); }
+tr.linha-detalhe:hover > td { background: #F4F7FC; }
+.ficha { padding: 14px 16px 18px; }
+.ficha h4 { margin: 16px 0 8px; font-size: 13px; }
+.ficha .cartao { margin-bottom: 12px; }
+/* Cabeçalho sticky faz sentido na tabela de fora; nas tabelinhas de dentro
+   da ficha ele flutuaria por cima do conteúdo. */
+.ficha thead th { position: static; }
+.ficha-topo { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.ficha-topo h3 { margin: 0; font-size: 15px; }
+.ficha-topo .link-btn { margin-left: auto; }
+
 .selo { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
 .selo.aguardando { background: #FDF1DC; color: var(--ambar); }
 .selo.aprovado   { background: #E3F3E8; color: var(--verde); }

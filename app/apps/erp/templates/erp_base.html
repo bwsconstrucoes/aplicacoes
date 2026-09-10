@@ -122,6 +122,36 @@ const els = id => document.getElementById(id);
 const escapar = t => String(t ?? "").replace(/[&<>"']/g,
   c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 
+// ---------------------------------------------------------------------------
+// ENCADEAMENTO — o registro citado numa tela leva ao cadastro dele.
+//
+// A obra que aparece no título é a mesma obra que tem contrato, vigência e
+// tributação em Obras; a conta é a mesma do plano; o credor é o mesmo cadastro
+// de Suprimentos. Sem isto, quem está conferindo abre outra aba, procura de
+// novo e perde o lugar.
+//
+// O elo só vira link para quem PODE abrir o destino — link que responde 403
+// é pior do que texto puro. Isto NÃO é a trava: a trava é o @permissao da
+// rota de destino. Aqui é só para a tela não oferecer porta fechada.
+const PODE_ABRIR = {
+  obra:   true,                                                  // Obras exige só ver_erp
+  conta:  {{ 'true' if pode.configurar else 'false' }},
+  credor: {{ 'true' if pode.ver_suprimentos else 'false' }},
+  pedido: {{ 'true' if pode.ver_pedidos_compra else 'false' }},
+};
+const DESTINO_DO_ELO = {
+  obra:   id => `/erp/obras?obra=${id}`,
+  conta:  id => `/erp/configuracoes?conta=${id}#plano`,
+  credor: id => `/erp/suprimentos/fornecedores?fornecedor=${id}`,
+  pedido: id => `/erp/suprimentos/pedidos?pedido=${id}`,
+};
+// Devolve o texto como link, ou o texto puro quando não há para onde ir.
+function elo(tipo, id, texto){
+  const t = escapar(texto ?? "—");
+  if (!id || !PODE_ABRIR[tipo] || !DESTINO_DO_ELO[tipo]) return t;
+  return `<a class="elo" href="${DESTINO_DO_ELO[tipo](id)}" title="Abrir o cadastro">${t}</a>`;
+}
+
 // A situação de um item de suprimento, com a cor que a equipe já lê na
 // planilha. A cor vive no CSS (procure por ".sit-" em erp.css) — aqui só se
 // escolhe a classe.

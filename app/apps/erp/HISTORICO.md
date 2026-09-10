@@ -1812,6 +1812,218 @@ arquivo aparecendo na tela, e o aviso nascendo na agenda.
 aparecia no painel que era redesenhado logo em seguida — a frase morria antes
 de ser lida, que é o mesmo que não ter avisado.
 
+### As solicitações passam de 500 — e os números do topo pararam de mentir — 09/09/2026
+
+A tela de Solicitações trazia os **500 títulos mais novos e não dizia**. O
+corte em si era o menor dos três problemas.
+
+**O primeiro: o filtro de situação não alcançava o que era antigo.** Ele era
+aplicado depois, sobre os 500 já trazidos. Filtrar por "bloqueado" não achava
+nada se os 500 mais novos não tivessem nenhum — mesmo havendo um bloqueado
+desde o começo do ano. A pessoa concluía que não havia nenhum. Agora o filtro
+entra na consulta, que é onde filtro mora.
+
+**O segundo, e o mais grave: os quadrinhos do topo somavam só esses 500 e se
+apresentavam como "total".** Uma lista cortada é um incômodo; um total que
+soma metade da base e se chama total é um **número que mente** — e ninguém
+confere um número que o sistema deu. Hoje os oito quadrinhos somam o filtro
+inteiro, e o rótulo diz "no filtro inteiro". Quando você liga um filtro que
+acontece na tela (obra, credor, dedutibilidade), eles voltam a contar o que
+está visível e o rótulo muda para "no que está na tela" — porque a alternativa
+seria mostrar um número que não corresponde à lista embaixo dele.
+
+**O terceiro: as caixinhas do filtro contavam só o carregado.** Uma situação
+sem nenhum registro na página aparecia "zerada", em cinza — o que desencoraja
+o clique justamente quando existem registros mais antigos. Agora a contagem
+vem da base inteira.
+
+**Como a lista cresce agora:** um botão "Carregar mais" que **acrescenta** em
+vez de trocar de página. Acrescentar e não paginar foi escolha: os filtros de
+obra, credor e dedutibilidade acontecem no navegador, sobre o que está
+carregado — trocar de página faria eles enxergarem só a página nova, e o
+resultado seria pior que o corte que estamos consertando.
+
+E a tela **diz sempre onde está**: "Mostrando 200 de 240" quando falta, "todas
+as 240 estão na tela" quando não falta. O pior de uma lista cortada não é o
+corte — é a pessoa não saber que houve corte e decidir achando que viu tudo.
+
+**A regra que ficou escrita** (`core/comum/paginacao.py`): a consulta filtrada
+é montada UMA VEZ e serve às três perguntas — a página, a contagem e as somas.
+Elas não podem divergir porque não existem separadas. É o mesmo princípio do
+escopo de obra: um caminho só. O escopo, aliás, continua valendo nas três — se
+valesse só na lista, o total do topo entregaria o valor de obras que a pessoa
+não pode ver.
+
+⚠️ **Só a tela de Solicitações foi convertida.** As outras listas continuam
+com corte silencioso (Notas fiscais, Notas emitidas, Arquivo, Agenda,
+Conciliação e Extratos em 500; Empreitas, Locações, Despesa com colaborador e
+Movimentações em 300). Nenhuma incomoda no volume de hoje — a de solicitações
+incomodava. Estão listadas no `ROTEIRO.md`, e todas usam o mesmo ajudante
+quando chegar a vez.
+
+**Provado:** 15 testes com banco de verdade (`tests/test_paginacao_banco.py`),
+incluindo os dois defeitos antigos, o escopo por obra valendo nas três
+perguntas e a conferência de que nenhuma página repete ou pula registro. E a
+tela percorrida num navegador com 240 solicitações: carregar mais, chegar ao
+fim, e filtrar por "bloqueado" achando o mais antigo de todos.
+
+### A tela de saúde do sistema — 10/09/2026
+
+Migração **054**, em Configurações › **"Saúde do sistema"**.
+
+**Por que ela existe.** Em 08/09 o dono perguntou se o sistema aguenta crescer,
+e a resposta que dei foi de raciocínio: "o gargalo é a máquina compartilhada,
+não o tamanho da base". Era provavelmente certa, mas era um argumento, não uma
+medição. E a próxima pergunta dele vai ser sobre **gastar** — trocar de plano
+no Render, subir o banco. Decisão de gastar não pode ser palpite.
+
+**O que a tela mostra:** memória em uso contra o teto do plano (com o pico), o
+tempo médio de abertura das telas, quantas passaram do limite em que a pessoa
+percebe que esperou, quantas falharam, o tamanho do banco e quanto dele é
+documento.
+
+**As telas lentas saem ordenadas pelo TEMPO TOTAL, não pela média.** Uma tela
+de três segundos aberta uma vez por mês incomoda menos que uma de meio segundo
+aberta duzentas vezes por dia. O que se quer consertar é onde a equipe espera
+mais no fim das contas — e a média sozinha aponta para o lugar errado.
+
+**Como a medição é feita, e os três cuidados:**
+
+1. **Medir não pode custar mais que o que se mede.** Os tempos se acumulam na
+   memória do processo e descem ao banco de minuto em minuto, **agregados por
+   dia e por rota**. Uma linha por requisição faria a tabela de medição virar,
+   ela mesma, o problema que veio medir.
+2. **A gravação SOMA em cima do que já existe**, porque o processo reinicia a
+   cada 150 requisições (`--max-requests`) e o dia é montado em pedaços.
+3. **A medição nunca derruba uma tela.** Os dois ganchos estão embrulhados: se
+   a gravação falhar, o número se perde e a vida segue. Sistema que cai por
+   causa do próprio termômetro é pior que sistema sem termômetro.
+
+**Dois defeitos achados enquanto eu olhava a tela:**
+
+- Uma consulta do painel que falhasse **apagava o painel inteiro**: no
+  Postgres, uma consulta com erro aborta a transação e todas as seguintes
+  falham junto. Uma tabela ainda não criada deixaria a tela em branco — e
+  painel vazio faz a pessoa achar que o sistema parou. Agora cada leitura vive
+  no seu ponto de salvamento e falta só o pedaço que falhou.
+- A contagem de linhas por tabela mostrava **"0 linhas"** para tabelas que o
+  Postgres ainda não analisou. Ao lado de uma tabela de 300 KB, "0 linhas" é
+  uma afirmação falsa. Agora, quando não se sabe, a tela mostra um traço.
+
+**Nenhuma dependência nova.** A memória é lida de `/proc/self/status`;
+acrescentar biblioteca para ler um arquivo de texto seria caro pelo que
+entrega.
+
+**Provado:** 17 testes com banco de verdade (`tests/test_saude_banco.py`),
+incluindo mil chamadas virando uma linha, o banco fora do ar sendo engolido, e
+a ordenação por tempo total. E a tela aberta num navegador **depois de passear
+por oito telas de verdade** — os números que apareceram nasceram de uso, não de
+dado inventado: 93 aberturas, 35 ms de média, 186 MB de memória de 2 GB.
+
+### Petrolina sai da conta — 10/09/2026
+
+Palavras dele: *"esqueça por enquanto credenciamento Petrolina. É uma empresa
+futura."*
+
+O que isso muda, na prática: **a emissão automática de nota deixa de estar
+bloqueada.** Ela estava esperando inscrição municipal, credenciamento, token e
+códigos de serviço de Petrolina — e nada disso é necessário para a **BWS no
+Eusébio**, que já tem os três primeiros e agora tem também o certificado
+digital (migração 053).
+
+Fica registrado para não se perder: o desenho de duas empresas em municípios
+diferentes, uma por API e outra manual, **continua valendo** e está construído
+(migração 047). Ele simplesmente não tem urgência enquanto a segunda empresa
+não existir.
+
+⚠️ **O que continua sem verificação:** a primeira chamada real ao serviço do
+município só acontece no Render. A saída de internet do ambiente onde escrevo
+é filtrada — foi assim com o Banco Central, e será assim com a prefeitura.
+
+### A ficha do título vira card, e as telas passam a se ligar — 10/09/2026
+
+Duas coisas que estavam no ROTEIRO desde o começo e nunca tinham vindo.
+
+**1. O detalhe do título deixou de ser janela.** Ele existia, mas abria numa
+janela por cima da tela e **só com clique duplo** — que ninguém adivinha.
+Agora um clique na linha expande o card ali mesmo, embaixo dela: quem está
+conferindo não perde o lugar da lista, fecha e continua de onde estava. Tudo
+que já havia continua: apontamentos, parcelas, pagamentos, rateio, retenções,
+anexos, assinaturas e o histórico completo.
+
+A janela **não morreu** — ficou com duas funções que são dela: os formulários
+(reclassificar, alterar parcelas, desfazer baixa) e o caso do endereço direto
+(`?titulo=N`, que vem da parcela de locação) cair num título que os filtros de
+hoje não mostram: aí não existe linha para expandir.
+
+**2. Encadeamento.** O que o dono pediu como *"conexão database do Pipefy"*:
+clicar na obra, na conta, no credor ou na compra e ir para o cadastro. Vale na
+lista de solicitações (obra e credor) e dentro da ficha (credor, conta, obra,
+cada obra do rateio, e o pedido de compra que originou o título). As quatro
+telas de destino passaram a aceitar o registro pelo endereço e já abrem nele:
+`/erp/obras?obra=N`, `/erp/configuracoes?conta=N#plano`,
+`/erp/suprimentos/fornecedores?fornecedor=N`,
+`/erp/suprimentos/pedidos?pedido=N`.
+
+**O elo respeita a permissão do destino.** Um financeiro não vê o link para o
+pedido de compra, porque a tela de pedidos é de ADMIN e diretoria — link que
+responde "sem permissão" é pior que texto puro, promete uma porta que não
+abre. A trava continua sendo o `@permissao` da rota; isto é só a tela não
+oferecer. O helper é `elo(tipo, id, texto)` no `erp_base.html`, e serve
+qualquer tela daqui para frente.
+
+⚠️ **O que isso quebrou e foi consertado na hora:** a tela de INÍCIO não
+recebia `pode` no molde dela. Como o `erp_base.html` passou a ler
+`pode.ver_suprimentos`, a porta de entrada do ERP inteiro respondeu 500. Quem
+pegou foi a homologação com banco de verdade, antes de sair daqui. Está com
+teste próprio agora (`test_a_porta_de_entrada_tambem_conhece_as_permissoes`).
+
+### O Arquivo passou a ler o documento — 10/09/2026
+
+Item 3 da gestão de documentos, o que o dono descreveu como *"um ambiente onde
+eu pudesse simplesmente jogar esse documento, ele fosse interpretado, lido, e
+a partir dali categorizado, renomeado e salvo"*.
+
+Em Administração › Arquivo › Guardar documento: escolhe o arquivo, aperta
+**"Ler o documento"** (com uma dica opcional, tipo "é a CND do FGTS da BWS") e
+o formulário volta preenchido — tipo, dono, emissão, validade, competência,
+referência e o nome padronizado. A pessoa confere e grava.
+
+Decisões que estão no código e não se mudam sem motivo:
+
+- **Ler não é guardar.** A leitura não grava nada. Documento arquivado no tipo
+  errado some do conjunto que o cliente pede na medição, e ninguém descobre
+  até o dia da entrega.
+- **A pergunta sai do catálogo QUE ESTÁ NO BANCO**, não de uma lista fixa no
+  código. Tipo novo criado pela empresa hoje entra na leitura de amanhã.
+- **Não achar o dono é resposta válida.** A comparação exige CNPJ/CPF igual ou
+  nome que se contenha — nunca "o mais parecido". Quando não acha, a tela diz
+  qual nome o documento traz e manda escolher. Pendurar no parecido faria o
+  documento sumir da busca de quem procura.
+- **Validade anterior à emissão é leitura trocada**: descartada, com a
+  confiança rebaixada. Gravá-la faria o aviso de vencimento nascer errado.
+- **A leitura diz o que ela mesma não resolveu** ("falta você preencher: até
+  quando vale"). Sugestão que se apresenta como certeza é pior do que campo em
+  branco, porque ninguém confere.
+- **O texto do documento é guardado junto.** Extrair na entrada é barato;
+  reprocessar depois, para poder buscar dentro do documento, seria caro. A
+  busca do Arquivo já olhava esse campo — agora ele vem preenchido.
+
+Dois buracos que apareceram no caminho e foram fechados: os tipos de documento
+de **PESSOA** e de **PARCEIRO** não tinham lista de dono na tela (dizia "este
+tipo ainda não tem lista aqui"), então metade do catálogo não tinha onde ser
+pendurada. Agora têm, por um endereço próprio do Arquivo — e a **lista de
+colaboradores só sai para quem enxerga documento PESSOAL**, a mesma faixa de
+sigilo do módulo.
+
+⚠️ **O que NÃO foi verificado:** a chamada real ao serviço de IA. Não há chave
+da OpenAI neste ambiente. O caminho de erro foi exercitado no navegador (a
+tela diz "leitura automática indisponível — preencha os campos manualmente" e
+nada quebra), e o caminho de sucesso foi exercitado ponta a ponta com a IA
+dublada: ler → preencher → guardar com o nome padronizado → achar o documento
+buscando por uma palavra de DENTRO dele. O que falta provar é o acerto do
+modelo contra documento de verdade, e isso só acontece no Render.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1967,11 +2179,10 @@ de ser lida, que é o mesmo que não ter avisado.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **RESOLVIDO em 09/09/2026 — as migrações 042 a 051 foram aplicadas.** O
-   dono publicou e apertou o botão no mesmo momento. ⚠️ **Fica pendente a
-   052 e a 053** (retenção de garantia da empreita e alçada por valor; o
-   certificado digital por empresa), pelo mesmo caminho, na próxima
-   publicação.
+21. **RESOLVIDO em 09/09/2026 — as migrações 042 a 053 foram aplicadas**, em
+   duas publicações no mesmo dia: a 042–051 primeiro, a 052 e a 053 em
+   seguida. O dono publicou e apertou o botão no mesmo momento das duas
+   vezes.
 
    Do que cada uma trouxe, para consulta: 042 a trava contra baixa em
    duplicidade; 043 o documento morando no Drive; 044 o cruzamento de notas;
