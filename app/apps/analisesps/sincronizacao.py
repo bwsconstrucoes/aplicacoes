@@ -111,6 +111,34 @@ def _meta_gravar(conn, chave: str, valor: str) -> None:
     conn.commit()
 
 
+def _anotar_a_base_em_dia(conn) -> None:
+    """Anota a hora e QUANTAS SPs ficaram na base, no fim de uma carga ou de
+    uma sincronização.
+
+    A contagem fica guardada porque `count(*)` percorre a tabela inteira, e a
+    tela pergunta "quantas SPs há na base" em TODA visita. Contando aqui, no
+    processo separado onde um segundo a mais não incomoda ninguém, nenhuma
+    tela precisa contar. Ver `consultas.base_carregada`, onde está o porquê
+    inteiro.
+
+    A HORA também é gravada pela carga inicial, e não só pela sincronização do
+    dia. Uma carga acabada de rodar É a base em dia: sem isto, a tela dizia
+    "base de —" até a primeira sincronização passar, e o relógio do alto — que
+    é como se sabe de quando é o dado — ficava mudo justamente no dia da
+    estreia."""
+    from .horario import agora
+    quando = agora().isoformat()
+    _meta_gravar(conn, "ultima_sincronizacao", quando)
+    try:
+        cur = conn.execute("SELECT count(*) FROM analisesps.sps")
+        linha = cur.fetchone()
+        cur.close()
+        _meta_gravar(conn, "quantidade", str(linha[0] if linha else 0))
+        _meta_gravar(conn, "quantidade_em", quando)
+    except Exception:  # noqa: BLE001 — sem a contagem a tela conta sozinha
+        logger.exception("Análise de SPs: falhou contar a base no fim da carga")
+
+
 def _maior_carimbo(registros: list[dict]) -> str:
     marcas = [str(r.get(colunas.CHAVE_CARIMBO) or "") for r in registros]
     marcas = [m for m in marcas if m]
@@ -168,6 +196,7 @@ def carga_inicial(anotar=None, retomar_de: int = 0) -> int:
 
     with conexao() as conn:
         _meta_gravar(conn, "carga_ate_linha", "")      # terminou: nada a retomar
+        _anotar_a_base_em_dia(conn)
     logger.info("Análise de SPs: carga inicial concluída — %d SPs.", gravadas)
     return gravadas
 
@@ -241,8 +270,7 @@ def sincronizar_delta(anotar=None) -> dict:
     with conexao() as conn:
         if maior and maior != ultimo:
             _meta_gravar(conn, "ultimo_carimbo", maior)
-        from .horario import agora
-        _meta_gravar(conn, "ultima_sincronizacao", agora().isoformat())
+        _anotar_a_base_em_dia(conn)
 
     logger.info("Análise de SPs: sincronização — %d alteradas, %d removidas.",
                 novas, removidas)

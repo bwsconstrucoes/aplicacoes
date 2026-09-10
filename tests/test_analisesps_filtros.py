@@ -234,6 +234,107 @@ def test_uma_carga_nova_refaz_as_listas(monkeypatch):
     assert len(idas) == 2 * len(consultas.COLUNAS_DE_FILTRO)
 
 
+# ---------------------------------------------------------------------------
+# CONTAR AS SPs UMA VEZ POR CARGA, E NÃO UMA VEZ POR TELA
+#
+# `count(*)` no Postgres percorre a tabela inteira, e `base_carregada()` é
+# chamada em TODA tela. Na produção, medido pelo dono em 09/09/2026, a rotina
+# que só pergunta a hora da base levou 1,4 segundo — e ela não fazia nada além
+# desta contagem. Mesmo tipo de correção das listas de filtro acima, e pelo
+# mesmo motivo: o efeito só aparece com a base cheia, e aí é tarde.
+# ---------------------------------------------------------------------------
+def test_a_base_nao_e_contada_de_novo_enquanto_a_carga_for_a_mesma(monkeypatch):
+    from app.apps.analisesps import consultas
+
+    contagens = []
+
+    def falso_consultar(sql, params=()):
+        if "count(*)" in sql:
+            contagens.append(sql)
+            return [(59055,)]
+        return [("ultima_sincronizacao", "2026-09-09T10:00:00"),
+                ("quantidade", "59055"),
+                ("quantidade_em", "2026-09-09T10:00:00")]
+
+    from app.apps.analisesps import db
+    monkeypatch.setattr(db, "consultar", falso_consultar)
+
+    resposta = consultas.base_carregada()
+
+    assert resposta["quantidade"] == 59055
+    assert resposta["pronta"] is True
+    assert not contagens, "percorreu a tabela tendo a contagem guardada"
+
+
+def test_uma_carga_nova_manda_contar_de_novo(monkeypatch):
+    """A contagem vale para a carga em que foi feita. Carga nova, número novo
+    — senão a tela mostraria para sempre o total do dia em que foi contado."""
+    from app.apps.analisesps import consultas
+
+    contagens = []
+    gravados = []
+
+    def falso_consultar(sql, params=()):
+        if "count(*)" in sql:
+            contagens.append(sql)
+            return [(59100,)]
+        return [("ultima_sincronizacao", "2026-09-09T11:00:00"),
+                ("quantidade", "59055"),
+                ("quantidade_em", "2026-09-09T10:00:00")]   # carga anterior
+
+    class ConexaoFalsa:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, sql, params=()): gravados.append(params)
+        def commit(self): pass
+
+    from app.apps.analisesps import db
+    monkeypatch.setattr(db, "consultar", falso_consultar)
+    monkeypatch.setattr(db, "conexao", lambda: ConexaoFalsa())
+
+    resposta = consultas.base_carregada()
+
+    assert resposta["quantidade"] == 59100
+    assert len(contagens) == 1
+    # E guarda o número novo, para a próxima tela não contar outra vez.
+    assert ("quantidade", "59100") in gravados
+    assert ("quantidade_em", "2026-09-09T11:00:00") in gravados
+
+
+def test_a_carga_anota_quantas_sps_ficaram_na_base():
+    """Quem conta é o processo separado, onde um segundo a mais não incomoda
+    ninguém. Assim nem a PRIMEIRA tela depois de uma carga precisa contar."""
+    from app.apps.analisesps import sincronizacao
+
+    gravados = {}
+
+    class CursorFalso:
+        def fetchone(self): return (59055,)
+        def close(self): pass
+
+    class ConexaoFalsa:
+        def execute(self, sql, params=()):
+            if params:
+                gravados[params[0]] = params[1]
+            return CursorFalso()
+        def commit(self): pass
+
+    sincronizacao._anotar_a_base_em_dia(ConexaoFalsa())
+
+    assert gravados["quantidade"] == "59055"
+    assert gravados["quantidade_em"] == gravados["ultima_sincronizacao"]
+
+
+def test_a_carga_inicial_tambem_anota_a_hora_da_base():
+    """Antes só a sincronização do dia anotava. Uma carga acabada de rodar É a
+    base em dia — sem isto o relógio do alto ficava mudo justamente no dia da
+    estreia, que é quando ninguém sabe se deu certo."""
+    from pathlib import Path
+    fonte = Path("app/apps/analisesps/sincronizacao.py").read_text(encoding="utf-8")
+    depois_da_carga = fonte.split("carga inicial concluída")[0]
+    assert "_anotar_a_base_em_dia" in depois_da_carga
+
+
 def test_a_barra_de_filtros_traz_as_sete_listas_mais_o_agendamento(monkeypatch):
     """Guardar não pode significar entregar menos do que a tela desenha."""
     from app.apps.analisesps import consultas

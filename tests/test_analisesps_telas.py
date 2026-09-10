@@ -3069,23 +3069,46 @@ def test_as_telas_de_leitura_ficam_guardadas_no_navegador(app):
 
 def test_a_lista_de_telas_guardadas_e_fechada():
     """É uma lista escrita à mão de propósito: entrar nela é decidir que a
-    tela pode ser mostrada com até cinco minutos de idade. Tela que recebe
-    alteração no próprio endereço não pode entrar."""
+    tela pode ser mostrada com até cinco minutos de idade."""
     from app.apps.analisesps import web
     assert web.TELAS_QUE_FICAM_GUARDADAS == {
         "analisesps.solicitacoes", "analisesps.relatorio",
-        "analisesps.auditoria", "analisesps.log"}
-    assert "analisesps.tela_lote" not in web.TELAS_QUE_FICAM_GUARDADAS
+        "analisesps.auditoria", "analisesps.log", "analisesps.tela_lote"}
+    # A Agenda e a ficha da SP continuam fora: as duas recebem alteração e
+    # NÃO têm a hora de salvamento na tela, que é o que torna o Lote seguro.
     assert "analisesps.tela_agenda" not in web.TELAS_QUE_FICAM_GUARDADAS
     assert "analisesps.detalhe" not in web.TELAS_QUE_FICAM_GUARDADAS
 
 
-def test_a_tela_que_recebe_alteracao_no_proprio_endereco_nao_e_guardada(app_lote):
-    """O Lote recebe o formulário nele mesmo. Guardá-lo mostraria o estado
-    ANTERIOR à mudança que a pessoa acabou de fazer — pior do que ser lento."""
+def test_o_lote_fica_guardado_porque_e_a_ida_e_volta_que_incomoda(app_lote):
+    """"Permaneceu a demora entre o Lote e as Solicitações." As Solicitações
+    já ficavam guardadas; o Lote não, e por isso metade do caminho continuava
+    lenta."""
     resposta = como(app_lote, SENHA_OPERADOR).get("/analisesps/lote",
                                                   follow_redirects=True)
+    guardar = resposta.headers.get("Cache-Control", "")
+    assert "max-age=300" in guardar and "private" in guardar
+
+
+def test_o_lote_que_volta_de_uma_alteracao_nao_fica_guardado(app_lote):
+    """Depois de salvar, o Lote redireciona para ele mesmo com `?aviso=`.
+    Guardar ESSA tela faria o recado de "salvo" reaparecer minutos depois,
+    dizendo que algo acabou de acontecer quando não aconteceu."""
+    resposta = como(app_lote, SENHA_OPERADOR).get("/analisesps/lote?aviso=")
     assert "max-age" not in resposta.headers.get("Cache-Control", "")
+
+
+def test_o_lote_carrega_a_hora_em_que_foi_salvo(app_lote):
+    """É a rede de segurança contra a cópia guardada ficar atrasada: o
+    navegador compara essa hora com a última que viu e recarrega sozinho se a
+    tela em frente for anterior à última salvada. Sem ela, guardar o Lote
+    dependeria de o navegador cumprir a regra do HTTP de apagar a cópia
+    depois de um POST — e o preço de não cumprir é a pessoa salvar por cima
+    do próprio trabalho."""
+    resposta = como(app_lote, SENHA_OPERADOR).get("/analisesps/lote",
+                                                  follow_redirects=True)
+    assert b'id="cartao-lote"' in resposta.data
+    assert b'data-lote-em=' in resposta.data
 
 
 def test_a_ficha_da_sp_nunca_fica_guardada(app_ficha):
@@ -3198,6 +3221,17 @@ def test_o_navegador_reescreve_os_links_do_menu():
     js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
     assert "analisesps:endereco:" in js
     assert "a.topo-aba" in js, "sem isto os links do menu não são tocados"
+
+
+def test_o_navegador_recarrega_o_lote_guardado_que_estiver_atrasado():
+    """A rede de segurança do Lote guardado. Ela só age quando a tela veio
+    DO CACHE — sem essa condição, a tela que volta de uma salvada, que é nova
+    e traz hora nova, se recarregaria à toa a cada salvamento."""
+    from pathlib import Path
+    js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
+    assert "cartao-lote" in js, "sem isto a hora do lote não é lida"
+    assert "transferSize" in js, "sem isto a recarga dispara fora do cache"
+    assert "location.reload()" in js
 
 
 # ---------------------------------------------------------------------------

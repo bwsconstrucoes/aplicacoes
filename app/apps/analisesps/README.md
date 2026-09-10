@@ -384,6 +384,36 @@ varredura em vez de várias**, e todas com teste que prende a forma da consulta:
 - **O Relatório** soma as dimensões juntas (`GROUPING SETS`).
 - **A Auditoria** conta as quatro condições numa consulta (`FILTER`).
 
+E, desde 10/09, três achados que vieram da tela de rede do navegador do dono
+— a primeira medição de PRODUÇÃO que esta área teve:
+
+- **A folha de estilo e o javascript eram reconferidos a cada tela**: dois
+  "não mudou nada" de ~400 ms cada, quase um segundo por navegação. Agora
+  valem um ano e `immutable` (o navegador nem pergunta), e o endereço deles
+  carrega a versão publicada — publicação nova, endereço novo, busca sozinho.
+  Sem a versão no endereço, guardar por um ano seria armadilha: uma correção
+  de tela levaria um ano para chegar.
+- **O ícone da aba dava 404 em toda página.** Uma linha no cabeçalho resolve.
+- **A rotina que pergunta a hora da base levava 1,4 s** — ela chamava a
+  contagem da base inteira sem precisar. Hoje lê só o carimbo: 6 ms.
+
+E a maior de todas para quem está do outro lado:
+
+- **A base é contada uma vez por carga, e não uma vez por tela.** "Quantas SPs
+  há na base" é `count(*)`, e no Postgres isso percorre a tabela inteira — em
+  TODA visita a qualquer tela. Na produção o dono mediu, em 09/09, a rotina
+  que só pergunta a hora da base: **1,4 segundo**, e ela não fazia nada além
+  desta contagem. Aqui, com a mesma quantidade de SPs, custa 5 ms; a diferença
+  é o banco de lá, que recebe a base reescrita a cada carga e acumula linhas
+  mortas.
+
+  Agora quem conta é a carga (e a sincronização), no processo separado onde um
+  segundo a mais não incomoda ninguém, e o número fica guardado em
+  `analisesps.meta` junto da hora a que se refere. Nenhuma tela percorre a
+  tabela para isso — há teste conferindo. O limite: linha acrescentada ou
+  apagada POR FORA da carga deixa o número velho até a próxima. Hoje ninguém
+  faz isso — a fila de volta altera SPs que já existem, não cria nem remove.
+
 ### A tela fica guardada no navegador por 5 minutos
 
 Trocar de aba não refaz as consultas: a volta a Solicitações aparece na hora,
@@ -393,11 +423,27 @@ aparecer por até cinco minutos (o relógio no alto e o aviso de 90 s cobrem,
 com atraso).
 
 **A lista de telas guardadas é fechada e tem teste:** Solicitações, Relatório,
-Auditoria e Log. **Não entram** Lote, Agenda, Ratear, Bradesco nem a ficha da
-SP — as quatro primeiras recebem alterações no PRÓPRIO endereço, e guardá-las
-mostraria o estado anterior à mudança que a pessoa acabou de fazer; a ficha
-mostra o status atual e tem botões que agem sobre ele. Antes de pôr uma tela
-nova nessa lista, confira essas duas coisas.
+Auditoria, Log **e o Lote**. **Não entram** Agenda, Ratear, Bradesco nem a
+ficha da SP — as três primeiras recebem alterações no PRÓPRIO endereço, e
+guardá-las mostraria o estado anterior à mudança que a pessoa acabou de fazer;
+a ficha mostra o status atual e tem botões que agem sobre ele. Antes de pôr
+uma tela nova nessa lista, confira essas duas coisas.
+
+**O Lote entrou depois, com uma ressalva própria**, porque ele também recebe
+alteração no próprio endereço — e era metade da ida e volta que o dono
+reclamava. O que o torna seguro são duas coisas:
+
+1. A tela que volta de uma salvada traz `?aviso=` e **não** é guardada; senão
+   o recado de "salvo" reapareceria minutos depois.
+2. A tela carrega a **hora em que o lote foi salvo**, e o navegador compara
+   com a última que viu: se a cópia guardada for anterior à última salvada,
+   ela se recarrega sozinha. A regra do HTTP já manda o navegador apagar a
+   cópia depois de um POST — mas o preço de ele não cumprir seria a pessoa
+   salvar por cima do próprio trabalho, e isso não se aposta.
+
+A recarga só dispara quando a tela veio DO CACHE (conferido pelo tamanho
+transferido). Sem essa condição, a tela que volta de uma salvada — que é nova
+e traz hora nova — se recarregaria à toa a cada salvamento.
 
 `Sair` manda `Clear-Site-Data` para apagar o que ficou guardado — num
 computador compartilhado, Voltar mostraria a tela da pessoa anterior.

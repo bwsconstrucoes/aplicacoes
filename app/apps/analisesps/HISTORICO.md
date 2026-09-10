@@ -1058,6 +1058,123 @@ cronometrar a produção. Todos os números aqui são locais, com o banco na mes
 máquina. A diferença entre eles e o que o dono sente é justamente onde mora o
 que falta descobrir.
 
+### Vigésima segunda leva (10/09) — a primeira medição da PRODUÇÃO
+
+O dono mandou **a tela de rede do navegador dele**, aberta na produção. É a
+primeira vez que esta área tem número de lá em vez de número desta máquina — e
+ela mudou o diagnóstico em três pontos.
+
+**O que a tela dele provou que estava CERTO:**
+
+- **Solicitações vem do cache, "0 ms".** A correção do menu da leva anterior
+  funcionou. A dúvida dele era legítima e a resposta é: funcionou, sim.
+- **A compressão funciona.** O Lote aparece com 41 kB trafegados para 403 kB
+  de página.
+
+**O que a tela dele mostrou de errado, e foi corrigido:**
+
+| O que aparecia | Custo | Correção |
+|---|---|---|
+| `analisesps.css` e `analisesps.js` respondendo "não mudou nada" | 402 ms + 423 ms **em toda tela** | valem um ano e `immutable`; o endereço carrega a versão publicada |
+| `favicon.ico` dando 404 | uma ida perdida por tela | uma linha no cabeçalho |
+| a rotina que pergunta a hora da base | **1.463 ms** | lê só o carimbo — 6 ms medidos |
+| o Lote | 2.828, 2.936 e 4.055 ms | ver abaixo |
+
+**A CONTAGEM DA BASE, que era o custo escondido em TODA tela.** Aqueles
+1.463 ms da rotina da hora não tinham como vir de outro lugar: ela só fazia
+duas coisas, e uma delas era `SELECT count(*) FROM analisesps.sps`. No
+Postgres isso **percorre a tabela inteira** — e `base_carregada()` é chamada
+por toda tela do módulo, para saber se a base foi carregada e para escrever
+"de 59.055 na base" embaixo do total.
+
+Nesta máquina a mesma contagem custa **5 ms**. A diferença é o banco de lá: a
+base é reescrita a cada carga, e as linhas mortas ficam ocupando espaço até o
+faxineiro automático do Postgres passar — a tabela que ele percorre é muito
+maior do que as 59 mil linhas vivas.
+
+A correção é a mesma ideia das listas de filtro, e pelo mesmo motivo:
+**contar uma vez por carga, não uma vez por tela**. Quem conta agora é a carga
+e a sincronização, no processo separado onde um segundo a mais não incomoda
+ninguém; o número fica em `analisesps.meta` junto da hora a que se refere.
+Conferido: **nenhuma das seis telas percorre a tabela para contar**, e há
+teste que falha se voltar a percorrer.
+
+> **De brinde, um defeito pequeno que ninguém tinha reportado:** a carga
+> inicial não anotava a hora — só a sincronização do dia anotava. Quem fizesse
+> a primeira carga via "base de —" no alto até a primeira sincronização
+> passar, justamente no dia em que ninguém sabe se deu certo. Agora as duas
+> anotam.
+
+> **O limite, dito sem rodeio:** se alguém acrescentar ou apagar linhas POR
+> FORA da carga e da sincronização, o número mostrado fica velho até a
+> próxima. Hoje ninguém faz isso — a fila de volta altera SPs que já existem,
+> não cria nem remove.
+
+**O LOTE PASSOU A FICAR GUARDADO NO NAVEGADOR.** Era metade da ida e volta que
+o dono reclamava (*"permaneceu a demora entre o Lote e as Solicitações"*): as
+Solicitações já ficavam guardadas, o Lote não, então o caminho continuava
+lento numa das direções.
+
+Ele tinha ficado de fora **de propósito**, e a razão continua válida: é tela
+que recebe alteração no próprio endereço. O que mudou é que agora há duas
+travas, e só com as duas isso deixa de ser aposta:
+
+1. A tela que volta de uma salvada traz `?aviso=` e **não** é guardada. Senão
+   o recado de "salvo" reapareceria minutos depois, dizendo que algo acabou de
+   acontecer quando não aconteceu.
+2. A tela carrega **a hora em que o lote foi salvo**, e o navegador compara
+   com a última que viu. Se a cópia guardada for anterior à última salvada,
+   ela se recarrega sozinha, uma vez.
+
+> **Por que a trava 2 existe, se a regra do HTTP já cobre isso.** A regra diz
+> que um POST apaga a cópia guardada daquele endereço, e todo salvamento do
+> Lote é um POST para o próprio endereço. Mas o preço de o navegador não
+> cumprir seria a pessoa ver o lote SEM o que acabou de fazer e salvar por
+> cima do próprio trabalho. Isso não se aposta em regra alheia. A recarga só
+> dispara quando a tela veio DO CACHE (conferido pelo tamanho trafegado) —
+> sem essa condição, a tela que volta de uma salvada se recarregaria à toa a
+> cada salvamento.
+
+**Medido aqui, com as 59.055 SPs e um lote de 150 SPs** (o banco na mesma
+máquina, então os números absolutos não são os de lá):
+
+| Tela | Tempo | Idas ao banco | Página |
+|---|---|---|---|
+| Solicitações | 208 ms | 7 (era 10) | 429 KB → ~27 KB comprimida |
+| Lote | 176 ms | 7 (era 8) | 471 KB → ~45 KB comprimida |
+| Relatório | 317 ms | 7 (era 9) | 72 KB |
+| Auditoria | 194 ms | 5 (era 6) | 7 KB |
+
+Uma ida a menos por tela é a contagem que saiu. **Aqui isso quase não aparece
+no relógio — são 5 ms.** É lá que vale 1,4 segundo, e é honesto dizer que
+essa parte NÃO foi medida na produção.
+
+**O QUE CONTINUA EM ABERTO, e é onde eu apostaria o próximo olhar.** Os 2,8 a
+4,0 segundos do Lote na produção **não são explicados** pelo que consigo ver:
+41 kB comprimidos não levam três segundos, e sete consultas num banco na mesma
+região também não. Sobram três suspeitos, nenhum deles verificável daqui:
+
+1. **A partida do serviço.** Já anotada na leva anterior: `--max-requests 150`
+   com `--workers 1` faz o worker reiniciar a cada ~150 requisições, e subir
+   custa 1,7 s nesta máquina. É decisão do dono, e o primeiro passo é
+   conferir se a produção roda com o `Procfile` ou com o *Start Command* do
+   Render.
+2. **O banco de lá**, pelo mesmo motivo que fazia a contagem custar 1,4 s. Se
+   for isso, a contagem que saiu já ajuda, e o resto some com uma faxina
+   (`VACUUM FULL` / `REINDEX`) — que não é coisa para fazer sem combinar,
+   porque tranca a tabela enquanto roda.
+3. **O tamanho da página do Lote**: 471 KB crus com 150 SPs no lote mais os 80
+   do painel por status. Comprimida é pouco na rede, mas o navegador ainda
+   monta ~230 linhas de vinte colunas. Dá para carregar o painel só depois da
+   tela aparecer — **não foi feito**, porque muda o que a pessoa vê ao abrir e
+   a regra da casa é fazer como o Streamlit fazia.
+
+**NÃO VERIFICADO, e é o mesmo limite de sempre:** o proxy desta máquina
+bloqueia o domínio da empresa. Todos os tempos são locais. E as duas travas do
+Lote guardado são JavaScript — os testes conferem que o código está lá, não
+que o navegador obedece. **É a primeira coisa a conferir na tela:** salvar o
+lote, ir às Solicitações, voltar, e ver se o que foi salvo está lá.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

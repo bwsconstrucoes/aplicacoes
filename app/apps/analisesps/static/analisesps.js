@@ -89,6 +89,58 @@ const LEMBRAR = {
 
 
 // ---------------------------------------------------------------------------
+// O LOTE GUARDADO NAO PODE FICAR ATRASADO
+//
+// O Lote agora fica guardado no navegador por cinco minutos, como as telas de
+// leitura — e por isso ir e voltar entre ele e as Solicitacoes e imediato.
+//
+// So que o Lote e a tela onde se ALTERA coisa. Se a copia guardada aparecesse
+// DEPOIS de uma salvada, ela mostraria o lote sem o que a pessoa acabou de
+// fazer — e ela poderia salvar por cima do proprio trabalho. Seria pior do
+// que a lentidao que estamos consertando.
+//
+// A regra do HTTP diz que um POST apaga a copia guardada do endereco, e todo
+// salvamento do Lote e um POST para o proprio endereco. Mas depender de o
+// navegador cumprir isso, quando o preco de nao cumprir e perder trabalho, e
+// aposta que nao vale.
+//
+// Entao: a tela carrega a HORA em que o lote foi salvo. Guardamos aqui a
+// ultima hora vista. Se a tela em frente veio DO CACHE e traz hora diferente
+// da ultima vista, ela esta atrasada e se recarrega sozinha, uma vez.
+//
+// "Veio do cache" e conferido pelo tamanho transferido: zero bytes na rede
+// significa que o navegador serviu a copia guardada. Sem essa condicao, a
+// tela que volta de uma salvada — que e nova e traz hora nova — se
+// recarregaria a toa a cada salvamento.
+// ---------------------------------------------------------------------------
+(function () {
+  const cartao = document.getElementById("cartao-lote");
+  if (!cartao) return;
+
+  const CHAVE = "analisesps:lote:salvo-em";
+  const JA_RECARREGOU = "analisesps:lote:recarregou";
+  const agora = cartao.dataset.loteEm || "";
+
+  try {
+    const nav = performance.getEntriesByType("navigation")[0];
+    const doCache = !!nav && nav.transferSize === 0 && nav.decodedBodySize > 0;
+    const ultima = sessionStorage.getItem(CHAVE);
+
+    if (doCache && ultima && agora !== ultima
+        && sessionStorage.getItem(JA_RECARREGOU) !== ultima) {
+      // Marca ANTES de recarregar: se a recarga trouxer a mesma hora velha
+      // (servidor fora do ar, por exemplo), nao entra em ciclo.
+      sessionStorage.setItem(JA_RECARREGOU, ultima);
+      location.reload();
+      return;
+    }
+    sessionStorage.setItem(CHAVE, agora);
+    sessionStorage.removeItem(JA_RECARREGOU);
+  } catch (e) { /* aba anonima: segue com a tela como veio */ }
+})();
+
+
+// ---------------------------------------------------------------------------
 // O BOTAO DE ATUALIZAR, ao lado da hora da base
 //
 // Era preciso ir a Configuracoes so para aperta-lo. Quem olha a hora da base e

@@ -596,19 +596,70 @@ def base_carregada() -> dict:
     "vazia" no segundo caso é afirmar o que não se sabe — e foi assim que a
     tela de Configurações chegou a informar "o banco está em dia" justamente
     quando não conseguia falar com ele."""
-    from .db import consultar_um
+    from .db import consultar, conexao
+
+    # CONTAR AS SPs UMA VEZ POR SINCRONIZAÇÃO, E NÃO UMA VEZ POR TELA.
+    #
+    # `count(*)` no Postgres percorre a tabela inteira — e esta função é
+    # chamada em TODA tela, só para saber se a base foi carregada e para
+    # escrever "de 59.055 na base" embaixo do total.
+    #
+    # Na produção isso apareceu medido pelo dono em 09/09/2026: a rotina que
+    # só pergunta a hora da base levou 1,4 segundo, e ela não fazia nada além
+    # desta contagem. Aqui, com a mesma quantidade de SPs, custa 5 ms — a
+    # diferença é o banco de lá, que recebe a base inteira reescrita a cada
+    # carga e acumula linhas mortas até o faxineiro do Postgres passar.
+    #
+    # O número só muda quando a base é carregada ou sincronizada, e as duas
+    # coisas deixam a HORA registrada. Então guardamos a contagem junto da
+    # hora a que ela se refere: enquanto a hora for a mesma, o número vale, e
+    # nenhuma tela precisa percorrer a tabela. Quando a hora muda, conta-se de
+    # novo, uma vez, e guarda-se outra vez.
+    #
+    # O LIMITE, e é honesto dizê-lo: se alguém acrescentar ou apagar linhas
+    # POR FORA da carga e da sincronização, o número fica velho até a próxima.
+    # Hoje ninguém faz isso — a fila de volta altera SPs que já existem, não
+    # cria nem remove.
     try:
-        linha = consultar_um("SELECT count(*) FROM analisesps.sps")
-        quantas = linha[0] if linha else 0
-    except Exception:  # noqa: BLE001 — tabela ainda não criada
+        guardado = {c: v for c, v in consultar(
+            "SELECT chave, valor FROM analisesps.meta "
+            " WHERE chave IN ('ultima_sincronizacao', 'quantidade', "
+            "                 'quantidade_em')")}
+    except Exception:  # noqa: BLE001 — estrutura ainda não criada
         return {"pronta": False, "quantidade": 0, "ultima": None,
                 "desconhecida": True}
+
+    ultima = guardado.get("ultima_sincronizacao") or None
+
+    if ultima and guardado.get("quantidade_em") == ultima:
+        try:
+            quantas = int(guardado.get("quantidade") or 0)
+        except (TypeError, ValueError):
+            quantas = -1
+        if quantas >= 0:
+            return {"pronta": quantas > 0, "quantidade": quantas,
+                    "ultima": ultima, "desconhecida": False}
+
     try:
-        linha = consultar_um(
-            "SELECT valor FROM analisesps.meta WHERE chave = 'ultima_sincronizacao'")
-        ultima = linha[0] if linha else None
-    except Exception:  # noqa: BLE001 — não saber a data não justifica derrubar a tela
-        ultima = None
+        linha = consultar("SELECT count(*) FROM analisesps.sps")
+        quantas = linha[0][0] if linha else 0
+    except Exception:  # noqa: BLE001 — tabela ainda não criada
+        return {"pronta": False, "quantidade": 0, "ultima": ultima,
+                "desconhecida": True}
+
+    if ultima:
+        try:
+            with conexao() as conn:
+                for chave, valor in (("quantidade", str(quantas)),
+                                     ("quantidade_em", ultima)):
+                    conn.execute(
+                        "INSERT INTO analisesps.meta (chave, valor) "
+                        "VALUES (?, ?) ON CONFLICT (chave) DO UPDATE "
+                        "SET valor = EXCLUDED.valor", (chave, valor))
+                conn.commit()
+        except Exception:  # noqa: BLE001 — não conseguir guardar só custa lentidão
+            logger.exception("Análise de SPs: falhou guardar a contagem da base")
+
     return {"pronta": quantas > 0, "quantidade": quantas, "ultima": ultima,
             "desconhecida": False}
 
