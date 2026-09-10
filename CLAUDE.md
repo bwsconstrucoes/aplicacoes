@@ -242,6 +242,32 @@ Nunca escreva escopo novo à mão: `pode_ver_titulo` passa pelo mesmo
 `aplicar_escopo` da listagem, e é isso que garante que detalhe e lista não
 divirjam. Se a regra de escopo mudar, muda num lugar só.
 
+## Funcionalidade nova traz as perguntas que ela responde
+
+O ERP vai ganhar um assistente que responde perguntas em português. O desenho
+dele depende de uma coisa: pergunta PREVISTA é respondida por código escrito e
+testado — exata e sem custo de IA; pergunta imprevista cai numa consulta
+inventada na hora, que acerta quase sempre e **erra em silêncio** no resto. Um
+número errado com cara de certo é pior que resposta nenhuma, e o dono não tem
+como conferir.
+
+Por isso, **desde 10/09/2026, funcionalidade nova só está pronta quando as
+perguntas que ela torna possíveis entram em `app/apps/erp/PERGUNTAS.md`** —
+pedido do dono, com todas as letras: *"a cada nova funcionalidade que nós
+temos, você já gera uma lista de possíveis perguntas (…) pra que a gente
+minimize a possibilidade de alguma falha."*
+
+Ao acrescentar perguntas ali:
+
+- Escreva **como o dono perguntaria**, não como o banco guarda.
+- Marque a pergunta que depende de uma palavra ambígua ("a pagar", "este mês",
+  "custo da obra") — a lista dessas palavras está no topo do arquivo e é a
+  parte que mais evita número errado.
+- Marque a pergunta cuja resposta **muda conforme quem pergunta** (escopo por
+  obra ou por autoria).
+- Registre também a pergunta que o sistema **ainda não consegue** responder, e
+  o que falta. O assistente deve dizer "não sei, falta X" — nunca chutar.
+
 ## Padrões que já existem — reusar, não recriar
 
 - Resposta JSON: `{'ok': True, ...}` / `{'ok': False, 'erro': '...'}`.

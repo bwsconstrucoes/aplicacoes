@@ -736,6 +736,17 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-10 — Funcionalidade nova passa a trazer as perguntas que ela
+  responde.** Regra acrescentada ao `CLAUDE.md`, a pedido do dono, por causa do
+  assistente de IA que o ERP vai ganhar: pergunta prevista é respondida por
+  código escrito e testado, e pergunta imprevista cai numa consulta inventada
+  pela IA, que acerta quase sempre e erra EM SILÊNCIO no resto. Como o dono não
+  tem como conferir a consulta, cada pergunta antecipada é um erro que deixa de
+  acontecer. O catálogo vive em `app/apps/erp/PERGUNTAS.md`, e a parte mais
+  importante dele não são as perguntas: é a lista das PALAVRAS ambíguas ("a
+  pagar", "este mês", "custo da obra") que precisam de uma definição só, senão
+  dois relatórios sobre a mesma coisa discordam e ninguém sabe qual está certo.
+
 - **2026-09-10 — Devolução e estorno deixaram de ser receita e viraram CUSTO
   NEGATIVO.** Devolução de material, estorno de despesa e reembolso de custas
   estavam no grupo 1 do plano financeiro do ERP. O efeito era o pior possível
