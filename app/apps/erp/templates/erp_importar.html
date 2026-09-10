@@ -98,9 +98,18 @@ function tabelaRelatorio(rel){
   return linhas.join("");
 }
 
+// A IMPORTAÇÃO NÃO ACONTECE MAIS ENQUANTO VOCÊ ESPERA.
+//
+// Cem cards, cada um com consulta ao Pipefy e anexos para baixar, levavam
+// minutos — e nesses minutos o sistema inteiro ficava pesado para todo mundo,
+// porque a importação segurava uma das quatro linhas de atendimento.
+//
+// Agora o botão só põe na fila. A tela mostra o andamento e, quando termina,
+// desenha o mesmo relatório de sempre. Fechar a tela não cancela nada: o
+// trabalho continua, e o resultado fica em Configurações › Trabalhos.
 els("btn-importar-cards").addEventListener("click", async () => {
   const b = els("btn-importar-cards");
-  b.disabled = true; b.textContent = "Lendo os cards…";
+  b.disabled = true; b.textContent = "Pondo na fila…";
   try {
     const d = await api("/erp/api/importar/pipefy", {method:"POST",
       headers:{"Content-Type":"application/json"},
@@ -109,10 +118,24 @@ els("btn-importar-cards").addEventListener("click", async () => {
         obra_padrao_id: els("obra-padrao").value || null,
         criar_fornecedor: els("criar-forn").checked,
         baixar_anexos: els("trazer-anexos").checked})});
-    els("resultado-cards").innerHTML = tabelaRelatorio(d.relatorio);
-    aviso("mensagem", `${d.relatorio.analisados} card(s) analisado(s): `
-      + `${d.relatorio.importados.length} importado(s), ${d.relatorio.pendencias.length} pendente(s).`,
-      d.relatorio.pendencias.length ? "info" : "ok");
+    aviso("mensagem", "A importação entrou na fila. Você pode continuar "
+      + "trabalhando — o andamento aparece aqui embaixo.", "info");
+    els("resultado-cards").innerHTML = `<div id="andamento-cards"></div>`;
+    b.textContent = "Importando…";
+    await acompanharTarefa(d.tarefa.id, {
+      alvo: "andamento-cards",
+      aoTerminar: t => {
+        if (t.situacao !== "CONCLUIDA") {
+          aviso("mensagem", "A importação não terminou: " + (t.erro || "motivo não informado"), "erro");
+          return;
+        }
+        const rel = (t.resultado || {}).relatorio || {};
+        els("resultado-cards").innerHTML = cartaoDaTarefa(t) + tabelaRelatorio(rel);
+        aviso("mensagem", `${rel.analisados || 0} card(s) analisado(s): `
+          + `${(rel.importados||[]).length} importado(s), `
+          + `${(rel.pendencias||[]).length} pendente(s).`,
+          (rel.pendencias||[]).length ? "info" : "ok");
+      }});
   } catch(e){ aviso("mensagem", e.message, "erro"); }
   b.disabled = false; b.textContent = "Importar SPs";
 });

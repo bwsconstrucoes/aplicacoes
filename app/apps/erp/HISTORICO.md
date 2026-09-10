@@ -2038,6 +2038,112 @@ dublada: ler → preencher → guardar com o nome padronizado → achar o docume
 buscando por uma palavra de DENTRO dele. O que falta provar é o acerto do
 modelo contra documento de verdade, e isso só acontece no Render.
 
+### A fila de trabalho pesado — 10/09/2026 (migração 055)
+
+Nasceu da pergunta do dono em 08/09/2026 sobre o sistema aguentar crescer. A
+resposta que rende mais não é máquina maior: é **parar de fazer trabalho
+pesado enquanto alguém espera a tela**.
+
+O que era trabalho pesado no clique: importar cem cards do Pipefy (cada um com
+consulta e anexos para baixar) e recalcular a agenda inteira ao abri-la. Cada
+um desses segurava UMA das quatro linhas de atendimento do serviço — que é o
+mesmo serviço dos outros treze módulos. O sistema ficava pesado para todo
+mundo e ninguém entendia por quê.
+
+Agora o clique enfileira e volta na hora. Decisões que estão no código:
+
+- **A fila vive no BANCO.** O serviço se reinicia sozinho de tempos em tempos
+  (a faxina de memória do gunicorn). Fila na memória perderia o trabalho no
+  meio, calada.
+- **Uma linha de trabalho só.** Duas fariam duas importações grandes disputar a
+  mesma máquina de 2 GB — o problema que viemos resolver, com outro nome.
+- **Quem morre no meio volta para a fila.** O sinal de vida (`batida_em`) é o
+  que separa "está trabalhando" de "morreu". Sem ele um trabalho ficaria
+  "executando" para sempre.
+- **Tentativa tem teto** (três), e há trabalho que **não repete nenhuma vez**:
+  emitir nota. Repetir criaria duas notas de verdade na prefeitura.
+- **A agenda abre com o que já está calculado** e manda recalcular por trás;
+  quando termina, a lista se refaz sozinha. E dez pessoas abrindo a agenda não
+  criam dez recálculos iguais.
+
+Acompanhamento em Configurações › "Trabalhos em segundo plano": o que está na
+fila, o que terminou, o que falhou, e o botão de tentar de novo.
+
+⚠️ **A linha de fundo fica DESLIGADA na suíte** (`ERP_TAREFAS=0` no
+`tests/conftest.py`): ela atravessaria os testes mexendo no banco por fora da
+transação que cada teste desfaz. A fila continua sendo provada — os testes
+enfileiram e mandam executar na hora.
+
+### A nota fiscal sai sozinha — 10/09/2026 (migração 056)
+
+Item 6 de `MEDICOES_E_NOTAS.md`, destravado quando Petrolina saiu da conta.
+Botão **"Emitir agora"** na medição, dentro do quadro do contrato.
+
+A ordem importa e está no código:
+
+1. **Confere o cadastro ANTES de tocar em número.** Descobrir no meio que falta
+   o CNO obrigaria a queimar um número por erro de cadastro. A tela mostra a
+   lista do que falta, em português, com onde resolver.
+2. **Reserva o número da declaração**, que é NOSSO — no padrão nacional quem
+   numera a DPS é quem emite; a prefeitura devolve o número da NOTA.
+3. **Assina com o certificado A1 da empresa, em memória.** O `.pfx` nunca vira
+   arquivo em disco: arquivo escrito para "só assinar uma nota" sobrevive ao
+   processo, entra em backup e vaza a assinatura da empresa.
+4. **Envia pelo canal NACIONAL** (o ABRASF tem data para acabar) e guarda o
+   número da nota, a chave de acesso, o identificador de processamento e o
+   **XML anexado ao título**.
+5. **Falhando, o número fica QUEIMADO com o motivo** e não volta para a fila. A
+   prefeitura pode ter recebido a declaração e só a resposta ter se perdido.
+
+Duas mensagens de erro, de propósito: o motivo GRAVADO guarda o texto técnico
+inteiro (é o que se manda para o suporte da prefeitura); a frase que vai para a
+TELA é em português. Despejar "ProxyError: Max retries exceeded" na cara de
+quem está faturando não ajuda ninguém a decidir o que fazer.
+
+**O que entrou junto, porque a declaração exigia:** o endereço do tomador. O
+cadastro do cliente só tinha município e UF — bastava para pagar, não para
+emitir. Agora tem CEP, logradouro, número, bairro e código IBGE, e a **consulta
+de CNPJ na Receita preenche sozinha** ("Buscar na Receita" no cadastro do
+fornecedor). Ela completa o que está em branco e **não sobrescreve** o que
+alguém corrigiu à mão.
+
+⚠️ **A primeira conversa real com a prefeitura só acontece no Render.** Aqui o
+serviço do município é dublado nos testes, e no navegador o caminho de erro foi
+exercitado de ponta a ponta: número reservado, emissão recusada pela rede
+bloqueada, número queimado com motivo, e a tela de notas emitidas mostrando
+"Falhou". O caminho de sucesso contra o serviço de verdade, não.
+
+### O documento que nunca foi arquivado — 10/09/2026 (migração 057)
+
+Itens 6 e 7 de `GESTAO_DOCUMENTOS.md`. O aviso que existia olhava para
+documento que VAI VENCER. Faltava o outro lado, e é o que faz perder licitação
+e atrasar medição: o documento que **nunca entrou**.
+
+A diferença importa. Certidão vencida pelo menos existe e o sistema sabe de
+quando é. A ausência é silêncio — ninguém repara até o dia em que o cliente
+pede a pasta da medição e ela sai pela metade.
+
+Agora o recálculo da agenda percorre obra por obra e empresa por empresa,
+conferindo o bloco FISCAL das duas últimas competências e a HABILITAÇÃO de cada
+empresa ativa, e avisa dizendo QUAIS documentos faltam. Só é viável porque o
+recálculo passou a rodar em segundo plano (migração 055).
+
+Detalhe que quase passou batido: a conferência do sistema roda **com todas as
+faixas de sigilo**. Sem isso ela enxergaria só a faixa aberta e diria que a
+pasta fiscal está completa quando está vazia — quase tudo nela é restrito. O
+que sai daí é o NOME DO TIPO que falta ("folha de pagamento"), que é entrada de
+catálogo, não conteúdo; nenhum documento, nome de pessoa ou valor atravessa.
+
+**Os botões saíram da tela do Arquivo e foram para onde a pessoa está:** na
+ficha do título (documentação fiscal daquela obra e competência, medição,
+dossiê da obra), na aba Documentos da obra, e na ficha da empresa (habilitação
+e cadastro como fornecedor).
+
+⚠️ **Um defeito antigo apareceu no caminho e foi consertado:** quando o
+certificado digital virou aviso (migração 053), a lista de origens do filtro da
+agenda ficou para trás e o aviso novo não tinha como ser filtrado. Nada
+quebrou, então ninguém viu. Agora a lista sai do servidor, de um lugar só.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**

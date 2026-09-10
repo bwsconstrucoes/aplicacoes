@@ -1151,6 +1151,12 @@ class NotaEmitida(Base):
     observacao: Mapped[Optional[str]] = mapped_column(Text)
     motivo: Mapped[Optional[str]] = mapped_column(Text)
     anexo_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("anexos.id"))
+    # O que a prefeitura devolveu (migração 056). `id_dps` é o identificador de
+    # processamento, que é o que ela pede quando a resposta se perde; `retorno`
+    # guarda a resposta inteira — quando a recusa vem em código, é dali que
+    # sai o que se manda para o suporte deles.
+    id_dps: Mapped[Optional[str]] = mapped_column(Text)
+    retorno: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)
     substituida_por: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("notas_emitidas.id"))
 
@@ -1232,3 +1238,37 @@ class EmpreitaAlcada(Base):
     descricao: Mapped[Optional[str]] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())
+
+
+class Tarefa(Base):
+    """Um trabalho pesado esperando a vez, ou em andamento (migração 055).
+
+    Existe para tirar carga, sincronização, leitura em lote por IA e emissão de
+    nota de cima da tela: nada disso cabe no tempo de um clique, e enquanto
+    roda segura uma das quatro linhas de atendimento do serviço — que é o mesmo
+    serviço dos outros treze módulos.
+
+    Vive no BANCO e não na memória porque o serviço se reinicia sozinho de
+    tempos em tempos: fila na memória perderia o trabalho no meio, calada.
+    `batida_em` é o sinal de vida — quem para de dar sinal foi interrompido e
+    volta para a fila.
+    """
+    __tablename__ = "tarefas"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    tipo: Mapped[str] = mapped_column(Text, nullable=False)
+    rotulo: Mapped[str] = mapped_column(Text, nullable=False)
+    parametros: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    situacao: Mapped[str] = mapped_column(Text, nullable=False, default="PENDENTE")
+    tentativas: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    passo: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total: Mapped[Optional[int]] = mapped_column(Integer)
+    mensagem: Mapped[Optional[str]] = mapped_column(Text)
+    resultado: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB)
+    erro: Mapped[Optional[str]] = mapped_column(Text)
+    usuario_id: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    iniciado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    batida_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    concluido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))

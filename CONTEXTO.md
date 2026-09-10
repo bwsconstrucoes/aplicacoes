@@ -736,6 +736,29 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-10 — A suíte roda com a fila de trabalho em segundo plano
+  DESLIGADA.** O ERP ganhou uma fila para o que não cabe no tempo de um clique
+  (migração 055): importar cards, recalcular a agenda, emitir nota. Ela tem
+  uma linha de trabalho de fundo que anda sozinha. Nos testes essa linha
+  atravessaria tudo, mexendo no banco por FORA da transação que cada teste
+  desfaz no fim — e o resultado seria falha intermitente, do tipo que se culpa
+  o acaso. Por isso `tests/conftest.py` define `ERP_TAREFAS=0` antes de
+  qualquer import do ERP. A fila continua sendo provada: os testes enfileiram e
+  mandam executar na hora (`tarefas.executar_agora`). **Em produção a variável
+  não existe, e o padrão é LIGADO** — se um dia alguém a definir como `0` no
+  Render, os trabalhos entram na fila e não andam; a tela de Configurações ›
+  Trabalhos avisa isso em letras grandes.
+
+- **2026-09-10 — O ERP passou a reusar o emissor de NFS-e do `emissaonf`.**
+  A emissão automática (migração 056) importa `el_nfse_nacional` e a tabela
+  `municipios_ibge` daquele módulo, em vez de recriar os dois. É reuso, não
+  acoplamento novo: os dois vivem no mesmo serviço e o padrão nacional é um só.
+  O cuidado que ficou: os imports são LOCAIS, dentro das funções, para que um
+  defeito no `emissaonf` não derrube o ERP no boot — e com ele os catorze
+  blueprints. O que o ERP NÃO reusa é o jeito de carregar o certificado: lá ele
+  é lido de um ARQUIVO em disco; aqui vem cifrado do banco e é aberto em
+  memória (`core/cadastros/certificado.chave_e_certificado_pem`).
+
 - **2026-09-07 — Duas varreduras que valem para o repositório inteiro.**
   Cinco telas já chegaram à produção mortas, e sempre em silêncio: um nome de
   variável errado, um `import` faltando, um endereço de API que não existe.

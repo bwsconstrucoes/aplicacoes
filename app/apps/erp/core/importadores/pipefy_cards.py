@@ -512,13 +512,21 @@ def _achar_categoria(s: Session, tipo_despesa: str) -> tuple[Optional[Categoria]
 def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
                    categoria_padrao_id: Optional[int] = None,
                    obra_padrao_id: Optional[int] = None,
-                   criar_fornecedor: bool = True, baixar_anexos: bool = True) -> dict[str, Any]:
+                   criar_fornecedor: bool = True, baixar_anexos: bool = True,
+                   andamento=None) -> dict[str, Any]:
     """Cria títulos a partir dos cards. Devolve relatório detalhado —
-    o que entrou, o que já existia e o que precisa de decisão humana."""
+    o que entrou, o que já existia e o que precisa de decisão humana.
+
+    `andamento(passo, total, mensagem)` é opcional e existe para quando a
+    importação roda em segundo plano: cem cards, cada um com consulta e anexos
+    para baixar, levam minutos, e a pessoa precisa ver que está andando.
+    """
     importados, ja_existiam, pendencias = [], [], []
     contas_criadas: list[dict[str, Any]] = []
 
-    for card in cards:
+    for indice, card in enumerate(cards, start=1):
+        if andamento is not None:
+            andamento(indice, len(cards), f"Card {indice} de {len(cards)}")
         d = extrair_dados(card)
         cid = d["card_id"]
         try:

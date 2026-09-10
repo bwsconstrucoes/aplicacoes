@@ -159,6 +159,15 @@ function desenhar(){
   els("resumo").innerHTML = `<b>${l.length}</b> obra(s) · contrato vigente <b>${moeda(soma(o=>o.valor_vigente))}</b>`;
 }
 
+// A competência que a documentação fiscal costuma ter fechada: o mês passado.
+// O mês corrente quase nunca está completo — oferecê-lo como padrão faria o
+// conjunto sair vazio e parecer defeito.
+function mesPassado(){
+  const d = new Date();
+  d.setDate(1); d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 // ------------------------------------------------------------------ detalhe
 async function abrir(id){
   const o = OBRAS.find(x=>x.id===id);
@@ -415,6 +424,21 @@ async function painel(i, id){
       </div>
       <div class="cartao-dica">Contrato, ART/CREA, seguro-garantia, ordem de serviço, medições —
         tudo fica guardado no banco do sistema, comprimido.</div>
+
+      {# OS CONJUNTOS PRONTOS. Quem está na obra precisa do dossiê dela e da
+         pasta fiscal do mês — ir até a tela do Arquivo e escolher a obra de
+         novo é o tipo de trabalho que faz a pessoa montar a pasta à mão. #}
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda); margin:12px 0">
+        <b>Baixar um conjunto pronto</b>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+          ${botaoDeBloco("OBRA", "Dossiê da obra", {obra_id: id})}
+          ${botaoDeBloco("FISCAL", "Documentação fiscal do mês passado",
+            {obra_id: id, competencia: mesPassado(),
+             dica: "O que o cliente pede junto com a medição"})}
+        </div>
+        <div class="cartao-dica">Vem em pasta compactada, com a lista do que falta
+          dentro — e o que falta também aparece na Agenda.</div>
+      </div>
       <table><thead><tr><th>Documento</th><th>Tipo</th><th class="direita">Tamanho</th>
         <th>Enviado</th><th></th></tr></thead><tbody>
         ${d.anexos.map(a=>`<tr><td>${a.nome}${a.descricao?`<small>${a.descricao}</small>`:""}</td>

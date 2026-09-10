@@ -58,6 +58,23 @@ def _saude_comecou():
         g._saude_inicio = perf_counter()
     except Exception:
         pass
+    # A LINHA DE TRABALHO EM SEGUNDO PLANO acorda na primeira requisição depois
+    # de o serviço subir. Tem de ser aqui, e não no import: se um trabalho
+    # ficou pendente antes do reinício, ninguém mais o notaria — e no import o
+    # banco pode nem existir ainda, o que derrubaria os catorze módulos juntos.
+    # Depois da primeira vez isto é a checagem de uma variável.
+    global _FILA_ACORDADA
+    if not _FILA_ACORDADA:
+        _FILA_ACORDADA = True
+        try:
+            from app.apps.erp.core.comum import tarefas, trabalhos
+            trabalhos.registrar_todos()
+            tarefas.acordar()
+        except Exception:
+            logger.warning("ERP/tarefas: não deu para iniciar a fila", exc_info=True)
+
+
+_FILA_ACORDADA = False
 
 
 @bp.after_request
@@ -2023,6 +2040,10 @@ def _serializar(t, hoje: date, ver_pagamento: bool = True) -> dict:
         "categoria_id": t.categoria_id,
         "obra_ids": sorted({r.obra_id for r in t.rateios if r.obra_id}),
         "pedido_id": getattr(t, "pedido_id", None),
+        # A competência em AAAA-MM: é o que o bloco de documentos precisa para
+        # montar a pasta que o cliente pede junto com a medição.
+        "competencia_iso": t.competencia.strftime("%Y-%m"),
+        "numero_medicao": getattr(t, "numero_medicao", None),
     }
 
 
@@ -2424,36 +2445,107 @@ def api_nova_conta():
 @login_obrigatorio
 @permissao("importar")
 def api_importar_pipefy():
-    from app.apps.erp.core.importadores.pipefy_cards import (
-        ErroPipefy, buscar_cards, extrair_ids, importar_cards,
-    )
+    """Enfileira a importação e volta na hora.
+
+    Antes, cem cards — cada um com consulta ao Pipefy e anexos para baixar —
+    rodavam enquanto a pessoa esperava, segurando uma das quatro linhas de
+    atendimento do serviço. Todo mundo sentia o sistema pesado e ninguém sabia
+    por quê. Agora o clique só põe na fila; a tela acompanha o andamento.
+    """
+    from app.apps.erp.core.comum import tarefas, trabalhos
+    from app.apps.erp.core.importadores.pipefy_cards import extrair_ids
+
     d = request.get_json(silent=True) or {}
     ids = extrair_ids(d.get("texto") or "")
     if not ids:
         return jsonify({"ok": False, "erro": "Nenhum ID de card reconhecido no texto colado."}), 400
-    if len(ids) > 100:
-        return jsonify({"ok": False, "erro": f"{len(ids)} cards de uma vez — importe em blocos de até 100."}), 400
+    if len(ids) > trabalhos.MAX_CARDS:
+        return jsonify({"ok": False, "erro": f"{len(ids)} cards de uma vez — "
+                        f"importe em blocos de até {trabalhos.MAX_CARDS}."}), 400
     try:
-        cards = buscar_cards(ids)
-        if not cards:
-            return jsonify({"ok": False, "erro": "Nenhum card encontrado com esses IDs."}), 404
+        trabalhos.registrar_todos()
         with get_session() as s:
             usuario = _usuario_logado(s)
-            rel = importar_cards(
-                s, cards, usuario,
-                categoria_padrao_id=int(d["categoria_padrao_id"]) if d.get("categoria_padrao_id") else None,
-                obra_padrao_id=int(d["obra_padrao_id"]) if d.get("obra_padrao_id") else None,
-                criar_fornecedor=bool(d.get("criar_fornecedor", True)),
-                baixar_anexos=bool(d.get("baixar_anexos", True)))
+            t = tarefas.enfileirar(
+                s, "importar_pipefy",
+                {"ids": ids,
+                 "usuario_id": usuario.id if usuario else None,
+                 "categoria_padrao_id": (int(d["categoria_padrao_id"])
+                                         if d.get("categoria_padrao_id") else None),
+                 "obra_padrao_id": (int(d["obra_padrao_id"])
+                                    if d.get("obra_padrao_id") else None),
+                 "criar_fornecedor": bool(d.get("criar_fornecedor", True)),
+                 "baixar_anexos": bool(d.get("baixar_anexos", True))},
+                rotulo=f"Importar {len(ids)} card(s) do Pipefy", usuario=usuario)
+            linha = tarefas.ler(s, t.id)
             s.commit()
-        return jsonify({"ok": True, "relatorio": rel})
-    except ErroPipefy as e:
-        return jsonify({"ok": False, "erro": str(e)}), 502
+        return jsonify({"ok": True, "tarefa": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao enfileirar a importação do Pipefy")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# TRABALHO EM SEGUNDO PLANO (migração 055)
+#
+# O que não cabe no tempo de um clique. A fila é do ERP inteiro; estas rotas
+# só a mostram e deixam cancelar ou repetir.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/tarefas")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_tarefas():
+    from app.apps.erp.core.comum import tarefas
+    todas = request.args.get("todas") == "1"
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        # Ver a fila INTEIRA é ver o que os outros pediram: exige a mesma ação
+        # de quem administra o sistema. Sem isso, cada um vê o que enfileirou.
+        if todas and not _pode_agora("configurar").get("configurar"):
+            todas = False
+        return jsonify({"ok": True, **tarefas.listar(
+            s, usuario=(None if todas else usuario),
+            situacao=(request.args.get("situacao") or "").strip().upper(),
+            limite=request.args.get("limite", type=int) or 40)})
+
+
+@bp.route("/erp/api/tarefas/<int:tarefa_id>")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_tarefa(tarefa_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_tarefa_no_escopo
+    from app.apps.erp.core.comum import tarefas
+    with get_session() as s:
+        exigir_tarefa_no_escopo(s, _usuario_logado(s), tarefa_id)
+        return jsonify({"ok": True, "tarefa": tarefas.ler(s, tarefa_id)})
+
+
+@bp.route("/erp/api/tarefas/<int:tarefa_id>/<acao>", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_tarefa_acao(tarefa_id: int, acao: str):
+    from app.apps.erp.core.auth.permissoes import exigir_tarefa_no_escopo
+    from app.apps.erp.core.comum import tarefas, trabalhos
+    if acao not in ("cancelar", "repetir"):
+        return jsonify({"ok": False, "erro": f"Ação inválida: {acao!r}"}), 400
+    try:
+        trabalhos.registrar_todos()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_tarefa_no_escopo(s, usuario, tarefa_id)
+            if acao == "cancelar":
+                tarefas.cancelar(s, tarefa_id, usuario=usuario)
+            else:
+                tarefas.tentar_de_novo(s, tarefa_id, usuario=usuario)
+            linha = tarefas.ler(s, tarefa_id)
+            s.commit()
+        return jsonify({"ok": True, "tarefa": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
-    except Exception as e:
-        logger.exception("ERP: falha na importação do Pipefy")
-        return jsonify({"ok": False, "erro": str(e)}), 500
 
 
 @bp.route("/erp/api/importar/csv", methods=["POST"])
@@ -4812,6 +4904,86 @@ def api_medicao_registrar_emissao(titulo_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/api/medicoes/<int:titulo_id>/emitir-automatico")
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_medicao_conferir_emissao(titulo_id: int):
+    """O que falta para esta medição virar nota sozinha. NÃO emite nada.
+
+    Roda antes de qualquer número ser tomado: cadastro incompleto vira lista de
+    pendências na tela, e não um número de nota queimado por engano.
+    """
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.notas_emitidas import automatica as svc
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            return jsonify({"ok": True, "conferencia": svc.conferir(s, titulo_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+
+
+@bp.route("/erp/api/medicoes/<int:titulo_id>/emitir-automatico", methods=["POST"])
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_medicao_emitir_automatico(titulo_id: int):
+    """Põe a emissão na fila. Entre enviar e a prefeitura responder passam-se
+    de segundos a dois minutos — tempo demais para segurar uma tela."""
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.comum import tarefas, trabalhos
+    from app.apps.erp.core.notas_emitidas import automatica as svc
+    from app.apps.erp.db.models.financeiro import Titulo
+    d = request.get_json(silent=True) or {}
+    try:
+        trabalhos.registrar_todos()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_titulo_no_escopo(s, usuario, titulo_id)
+            # Confere ANTES de enfileirar: assim a pessoa vê o que falta na
+            # hora, em vez de descobrir minutos depois num trabalho falhado.
+            check = svc.conferir(s, titulo_id)
+            if not check["pode"]:
+                return jsonify({"ok": False, "erro": "A nota não pode sair ainda.",
+                                "faltas": check["faltas"]}), 400
+            titulo = s.get(Titulo, titulo_id)
+            t = tarefas.enfileirar(
+                s, "emitir_nota",
+                {"titulo_id": titulo_id, "valor": d.get("valor"),
+                 "observacao": (d.get("observacao") or ""),
+                 "usuario_id": usuario.id if usuario else None},
+                rotulo=f"Emitir a nota da medição {titulo.numero_medicao or titulo.numero_sp}",
+                usuario=usuario)
+            linha = tarefas.ler(s, t.id)
+            s.commit()
+        return jsonify({"ok": True, "tarefa": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+
+
+@bp.route("/erp/api/fornecedores/<int:fornecedor_id>/receita", methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_fornecedor_receita(fornecedor_id: int):
+    """Consulta o CNPJ e completa o que estiver em branco no cadastro.
+
+    Completa, não sobrescreve: correção feita à mão vale mais do que dado de
+    terceiro. É o que destrava a emissão de nota — a declaração exige o
+    endereço de quem recebe o serviço.
+    """
+    from app.apps.erp.core.cadastros import fornecedores as svc
+    try:
+        with get_session() as s:
+            r = svc.preencher_pela_receita(s, fornecedor_id, _usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except svc.ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/notas-emitidas/ler", methods=["POST"])
 @login_obrigatorio
 @permissao("emitir_nota")
@@ -4983,13 +5155,33 @@ def api_medicao_gerar_reajuste(titulo_id: int):
 @permissao("ver_agenda")
 def api_agenda_obrigacoes():
     from app.apps.erp.core.agenda import service as svc
+    from app.apps.erp.core.comum import tarefas, trabalhos
     with get_session() as s:
-        # Sincroniza ao abrir: agenda que só atualiza no botão é agenda
-        # desatualizada, e o botão é justamente o que ninguém aperta.
+        # A agenda ABRE com o que já está calculado, e manda recalcular por
+        # trás. Antes ela recalculava tudo — obras, contratos, certidões,
+        # locações, certificados — com a pessoa olhando a tela em branco, e
+        # isso cresce junto com a empresa. Agenda que só atualiza no botão é
+        # agenda desatualizada, então o recálculo continua acontecendo sozinho:
+        # só deixou de ser na frente de quem abriu.
+        tarefa = None
         if request.args.get("sincronizar", "1") != "0":
-            svc.sincronizar(s)
-            s.commit()
-        return jsonify({"ok": True, **svc.listar(
+            try:
+                trabalhos.registrar_todos()
+                usuario = _usuario_logado(s)
+                # `enfileirar_unico`: dez pessoas abrindo a agenda não criam
+                # dez recálculos iguais na fila.
+                nova = tarefas.enfileirar_unico(
+                    s, "sincronizar_agenda",
+                    {"usuario_id": usuario.id if usuario else None},
+                    rotulo="Atualizar os avisos da agenda", usuario=usuario,
+                    frescor_minutos=10)
+                tarefa = tarefas.ler(s, nova.id) if nova is not None else None
+                s.commit()
+            except Exception:
+                logger.warning("ERP/agenda: não deu para enfileirar o recálculo",
+                               exc_info=True)
+                s.rollback()
+        return jsonify({"ok": True, "tarefa": tarefa, **svc.listar(
             s,
             situacao=(request.args.get("situacao") or "ABERTO").strip().upper(),
             origem=(request.args.get("origem") or "").strip().upper(),

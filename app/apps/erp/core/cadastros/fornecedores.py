@@ -139,6 +139,14 @@ def criar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Fornecedor:
         telefone=(dados.get("telefone") or "").strip() or None,
         municipio=(dados.get("municipio") or "").strip() or None,
         uf=(dados.get("uf") or "").strip().upper() or None,
+        # Endereço (migração 056): a declaração que vai para a prefeitura exige
+        # o endereço de quem recebe o serviço.
+        cep=somente_digitos(dados.get("cep") or "") or None,
+        logradouro=(dados.get("logradouro") or "").strip() or None,
+        numero=(dados.get("numero") or "").strip() or None,
+        complemento=(dados.get("complemento") or "").strip() or None,
+        bairro=(dados.get("bairro") or "").strip() or None,
+        codigo_ibge=somente_digitos(dados.get("codigo_ibge") or "") or None,
         codigo_omie=dados.get("codigo_omie") or None,
         observacoes=(dados.get("observacoes") or "").strip() or None,
     )
@@ -153,7 +161,56 @@ def criar(s: Session, dados: dict[str, Any], usuario: Usuario) -> Fornecedor:
 _CAMPOS_EDITAVEIS = {
     "razao_social", "nome_fantasia", "regime_tributario", "cnae_principal",
     "email", "telefone", "municipio", "uf", "observacoes", "ativo", "codigo_omie",
+    # Endereço (migração 056). Editável porque a Receita nem sempre traz tudo,
+    # e a obra às vezes é entregue num endereço diferente do cadastral.
+    "cep", "logradouro", "numero", "complemento", "bairro", "codigo_ibge",
 }
+
+
+def preencher_pela_receita(s: Session, fornecedor_id: int,
+                           usuario: Optional[Usuario] = None) -> dict[str, Any]:
+    """Consulta o CNPJ e completa o que estiver EM BRANCO no cadastro.
+
+    Completa, não sobrescreve: se alguém corrigiu o endereço à mão — porque a
+    obra é entregue noutro lugar, porque a base da Receita está velha —, a
+    correção é que vale. Sobrescrever desfaria trabalho humano com dado de
+    terceiro, calado.
+    """
+    from app.apps.erp.core.cadastros.receita import ErroConsultaCNPJ, consultar_cnpj
+
+    forn = obter(s, fornecedor_id)
+    if len(somente_digitos(forn.cnpj_cpf or "")) != 14:
+        raise ErroValidacao("A consulta da Receita só existe para CNPJ.")
+    try:
+        d = consultar_cnpj(forn.cnpj_cpf)
+    except ErroConsultaCNPJ as e:
+        raise ErroValidacao(str(e))
+
+    completados: list[str] = []
+    for campo, valor in (("cep", d.cep), ("logradouro", d.logradouro),
+                         ("numero", d.numero), ("complemento", d.complemento),
+                         ("bairro", d.bairro), ("codigo_ibge", d.codigo_ibge),
+                         ("municipio", d.municipio), ("uf", d.uf),
+                         ("nome_fantasia", d.nome_fantasia),
+                         ("email", d.email), ("telefone", d.telefone),
+                         ("cnae_principal", d.cnae_principal)):
+        if valor and not getattr(forn, campo, None):
+            setattr(forn, campo, valor)
+            completados.append(campo)
+
+    # A situação na Receita é informação de RISCO, e essa sim se atualiza
+    # sempre: um credor que foi baixado desde o cadastro precisa aparecer.
+    if d.situacao:
+        forn.situacao_rfb = d.situacao
+        forn.situacao_rfb_em = datetime.now(timezone.utc)
+
+    s.flush()
+    _registrar_evento(s, "fornecedor", forn.id, "RECEITA_CONSULTADA",
+                      {"fonte": d.fonte, "situacao": d.situacao,
+                       "completados": completados},
+                      usuario.id if usuario else None)
+    return {"completados": completados, "situacao": d.situacao,
+            "fonte": d.fonte, "bloqueante": d.bloqueante, "alerta": d.alerta}
 
 
 def atualizar(s: Session, fornecedor_id: int, alteracoes: dict[str, Any], usuario: Usuario) -> Fornecedor:

@@ -18,10 +18,18 @@ do que existe aqui:
 """
 from __future__ import annotations
 
+import os
 import sys
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+
+# A LINHA DE TRABALHO EM SEGUNDO PLANO FICA DESLIGADA NA SUÍTE (migração 055).
+# A fila continua funcionando — os testes enfileiram e mandam executar na hora,
+# por `tarefas.executar_agora`. O que se desliga é a thread que anda sozinha:
+# ela atravessaria os testes, mexendo no banco por fora da transação que cada
+# teste desfaz no fim. Precisa vir ANTES de qualquer import do ERP.
+os.environ.setdefault("ERP_TAREFAS", "0")
 
 RAIZ = Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:

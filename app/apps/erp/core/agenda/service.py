@@ -46,6 +46,7 @@ ROTULO_ORIGEM = {
     "LOCACAO": "Equipamento locado",
     "CONTRATO": "Contrato",
     "CERTIFICADO": "Certificado digital",
+    "DOCUMENTO": "Documento faltando",
     "MANUAL": "Anotação",
 }
 
@@ -137,6 +138,12 @@ def listar(s: Session, *, situacao: str = "ABERTO", origem: str = "",
             "por_origem": {o: sum(1 for l in linhas if l["origem"] == o)
                            for o in ROTULO_ORIGEM},
         },
+        # A LISTA DE ORIGENS VEM DAQUI, e não escrita de novo na tela.
+        # Quando o certificado digital virou aviso (migração 053), o filtro da
+        # tela continuou com a lista antiga e o aviso novo não tinha como ser
+        # filtrado — ninguém percebeu porque nada quebrou. Com a lista saindo
+        # de um lugar só, isso não se repete.
+        "origens": [[codigo, rotulo] for codigo, rotulo in ROTULO_ORIGEM.items()],
     }
 
 

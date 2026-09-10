@@ -232,6 +232,16 @@ class Fornecedor(Base):
     telefone: Mapped[Optional[str]] = mapped_column(Text)
     municipio: Mapped[Optional[str]] = mapped_column(Text)
     uf: Mapped[Optional[str]] = mapped_column(Text)
+    # Endereço completo (migração 056). Entrou porque a declaração que vai para
+    # a prefeitura exige o endereço de QUEM RECEBE o serviço — município e UF
+    # bastavam para pagar, não para emitir. Serve também de local de entrega
+    # em Suprimentos. A consulta de CNPJ preenche sozinha.
+    cep: Mapped[Optional[str]] = mapped_column(Text)
+    logradouro: Mapped[Optional[str]] = mapped_column(Text)
+    numero: Mapped[Optional[str]] = mapped_column(Text)
+    complemento: Mapped[Optional[str]] = mapped_column(Text)
+    bairro: Mapped[Optional[str]] = mapped_column(Text)
+    codigo_ibge: Mapped[Optional[str]] = mapped_column(Text)
     situacao_rfb: Mapped[Optional[str]] = mapped_column(Text)
     situacao_rfb_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     data_abertura: Mapped[Optional[date]] = mapped_column(Date)

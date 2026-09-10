@@ -18,6 +18,7 @@
   <a class="subaba" href="#anexos" data-ir="anexos">Onde ficam os documentos</a>
   <a class="subaba" href="#indices" data-ir="indices">Índices (INCC)</a>
   <a class="subaba" href="#saude" data-ir="saude">Saúde do sistema</a>
+  <a class="subaba" href="#trabalhos" data-ir="trabalhos">Trabalhos em segundo plano</a>
   <a class="subaba" href="#manutencao" data-ir="manutencao">Banco e limpeza</a>
 </nav>
 
@@ -198,6 +199,24 @@
 {# SAÚDE DO SISTEMA. Existe porque a pergunta "o sistema aguenta crescer?" foi
    respondida com raciocínio, e a próxima — "vale a pena gastar mais?" — não
    pode ser respondida com palpite. Aqui ficam os números. #}
+{# TRABALHO PESADO NÃO ACONTECE MAIS ENQUANTO ALGUÉM ESPERA A TELA.
+   Importar cards, recalcular a agenda, emitir nota: entram numa fila e
+   acontecem por trás. Aqui é onde se vê o que está na fila, o que terminou e
+   o que falhou — e de onde se manda tentar de novo. #}
+<div class="cartao" id="bloco-trabalhos" data-secao="trabalhos">
+  <div class="cartao-cab"><h3>Trabalhos em segundo plano</h3>
+    <small>o que não cabe no tempo de um clique — importação, recálculo da agenda, emissão de nota</small></div>
+  <div class="kpis" id="tr-kpis"></div>
+  <div class="tabela-barra" style="padding:0 0 10px">
+    <label class="opcao" style="margin:0"><input type="checkbox" id="tr-todas">
+      <span class="rotulo">Ver os de todo mundo</span></label>
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-tr-atualizar">Atualizar</button>
+  </div>
+  <div id="tr-aviso"></div>
+  <div id="tr-lista"></div>
+</div>
+
 <div class="cartao" id="bloco-saude" data-secao="saude">
   <div class="cartao-cab"><h3>Saúde do sistema</h3>
     <small>quanto tempo cada tela leva, quanta memória, o que ocupa o banco</small></div>
@@ -1302,5 +1321,58 @@ async function carregarSaude(){
 els("btn-sa-atualizar").addEventListener("click", carregarSaude);
 els("sa-dias").addEventListener("change", carregarSaude);
 carregarSaude();
+
+// --------------------------------------------------- trabalhos em segundo plano
+async function carregarTrabalhos(){
+  try {
+    const p = new URLSearchParams({limite: "40"});
+    if (els("tr-todas").checked) p.set("todas", "1");
+    const d = await api("/erp/api/tarefas?" + p.toString());
+    els("tr-kpis").innerHTML = `
+      <div class="kpi estatico"><div class="kpi-rotulo">Na fila</div>
+        <div class="kpi-valor">${d.na_fila}</div></div>
+      <div class="kpi estatico ciano"><div class="kpi-rotulo">Em andamento</div>
+        <div class="kpi-valor">${d.executando}</div></div>
+      <div class="kpi estatico ${d.falhadas ? "vermelho" : "verde"}">
+        <div class="kpi-rotulo">Falharam</div>
+        <div class="kpi-valor">${d.falhadas}</div>
+        <div class="kpi-sub">${d.falhadas ? "dá para mandar tentar de novo" : "nenhum"}</div></div>`;
+
+    els("tr-aviso").innerHTML = d.ligado ? "" : `<div class="aviso alerta">
+      <b>A linha de trabalho em segundo plano está desligada neste serviço.</b>
+      Os trabalhos ficam na fila e não andam sozinhos. É assim de propósito
+      durante os testes; em produção deve estar ligada.</div>`;
+
+    els("tr-lista").innerHTML = (d.tarefas || []).length
+      ? d.tarefas.map(t => `<div style="margin-bottom:10px">${cartaoDaTarefa(t)}
+          <div style="margin:-6px 0 0 2px; display:flex; gap:8px; align-items:center">
+            <small style="color:var(--tinta-suave)">pedido ${escapar(t.criado_em||"—")}</small>
+            ${t.situacao === "PENDENTE"
+              ? `<button class="link-btn" data-tr-cancelar="${t.id}">cancelar</button>` : ""}
+            ${(t.situacao === "FALHADA" || t.situacao === "CANCELADA")
+              ? `<button class="link-btn" data-tr-repetir="${t.id}">tentar de novo</button>` : ""}
+          </div></div>`).join("")
+      : `<div class="cartao-dica">Nenhum trabalho pesado por aqui — nem na fila, nem no histórico.</div>`;
+
+    document.querySelectorAll("[data-tr-cancelar]").forEach(b =>
+      b.addEventListener("click", () => agirNoTrabalho(b.dataset.trCancelar, "cancelar")));
+    document.querySelectorAll("[data-tr-repetir]").forEach(b =>
+      b.addEventListener("click", () => agirNoTrabalho(b.dataset.trRepetir, "repetir")));
+  } catch(e){
+    els("tr-lista").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+}
+
+async function agirNoTrabalho(id, acao){
+  try {
+    await api(`/erp/api/tarefas/${id}/${acao}`, {method: "POST"});
+    aviso("mensagem", acao === "cancelar" ? "Trabalho cancelado." : "Recolocado na fila.", "ok");
+    carregarTrabalhos();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+els("btn-tr-atualizar").addEventListener("click", carregarTrabalhos);
+els("tr-todas").addEventListener("change", carregarTrabalhos);
+carregarTrabalhos();
 </script>
 {% endblock %}
