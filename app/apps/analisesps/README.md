@@ -434,6 +434,15 @@ engorda a tabela até ela não caber na memória do banco. Todo
 `WHERE <tabela>.coluna IS DISTINCT FROM EXCLUDED.coluna`. Há teste prendendo
 isso nas duas gravações de apoio.
 
+**E quando uma planilha de apoio não vem, a tela DIZ POR QUÊ.** As listas do
+rateio dependem de abas e colunas com nomes exatos ("C. Diários" com "Obra" e
+"Código"; "Plano Financeiro" com "Categoria" e "Código"). Antes, nome trocado
+ou aba vazia viravam lista vazia e um aviso no log do serviço — e o botão
+dizia "concluída". Agora o motivo vai para a mensagem da execução, que
+Configurações mostra: qual aba, qual coluna, e **quais existem de verdade** na
+planilha. Regra que fica: **botão que a tela manda apertar não pode falhar
+calado.**
+
 E as planilhas de apoio (documentação fiscal, contas, agenda, rateio) passam a
 ser relidas **no máximo de hora em hora** no disparo automático — antes eram a
 cada cinco minutos, e cada passagem baixa a planilha inteira do Google. **O
