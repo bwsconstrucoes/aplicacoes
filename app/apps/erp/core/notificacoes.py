@@ -162,10 +162,20 @@ def avisar_baixa(s: Session, pagamento_id: int, *, forcar: bool = False,
     arquivo_b64 = nome_arquivo = tipo = None
     if enviar_comprovante and pg.comprovante_anexo_id:
         anexo = s.get(Anexo, pg.comprovante_anexo_id)
-        if anexo is not None and anexo.conteudo and len(anexo.conteudo) <= MAX_ANEXO_ENVIO:
-            arquivo_b64 = base64.b64encode(bytes(anexo.conteudo)).decode()
-            nome_arquivo = anexo.nome_arquivo
-            tipo = "image" if (anexo.mime_type or "").startswith("image/") else "document"
+        # O comprovante pode estar no banco ou no Drive: `conteudo_de` sabe de
+        # onde tirar. Se o Drive não responder, a mensagem vai sem o anexo —
+        # avisar é mais importante que anexar.
+        if anexo is not None and (anexo.tamanho_bytes or 0) <= MAX_ANEXO_ENVIO:
+            from app.apps.erp.core.documentos.armazenamento import conteudo_de
+            try:
+                dados = conteudo_de(s, anexo)
+            except Exception as e:
+                logger.warning("ERP: comprovante não pôde ser lido para a mensagem — %s", e)
+                dados = b""
+            if dados:
+                arquivo_b64 = base64.b64encode(dados).decode()
+                nome_arquivo = anexo.nome_arquivo
+                tipo = "image" if (anexo.mime_type or "").startswith("image/") else "document"
 
     enviados, falhas, sem_destino = [], [], []
     for pessoa in pessoas:

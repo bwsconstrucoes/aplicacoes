@@ -39,6 +39,25 @@ ALIQ_CSLL = Decimal("0.01")
 FEDERAIS = {"IR": ALIQ_IR, "PIS": ALIQ_PIS, "COFINS": ALIQ_COFINS, "CSLL": ALIQ_CSLL}
 
 
+def _pct(v: Any) -> str:
+    """A alíquota como se lê em português.
+
+    Existe por um erro que enganava de verdade: `Decimal("0.012") * 100` vira
+    `1.200`, e "1.200%" em português se lê como MIL E DUZENTOS POR CENTO. O
+    número certo é 1,2%.
+    """
+    d = Decimal(str(v or 0)).normalize()
+    texto = format(d, "f")
+    if "." in texto:
+        texto = texto.rstrip("0").rstrip(".")
+    return (texto or "0").replace(".", ",") + "%"
+
+
+def _reais(v: Any) -> str:
+    from app.apps.erp.core.comum.formato import _dinheiro_br
+    return _dinheiro_br(v)
+
+
 def _q(v: Any) -> Decimal:
     return Decimal(str(v)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
@@ -125,15 +144,15 @@ def calcular(obra: Obra, valor_bruto: Any, *,
     if base_inss > 0:
         retencoes.append(Retencao(
             "INSS", base_inss, ALIQ_INSS * 100, _q(base_inss * ALIQ_INSS),
-            f"11% sobre {base_inss} (base de serviço)"
+            f"11% sobre {_reais(base_inss)} (base de serviço)"
             + (f" — {(base_inss / bruto * 100):.0f}% do valor" if bruto else "")))
     if aliq_iss > 0 and obra.iss_retido:
         retencoes.append(Retencao(
             "ISS", base_iss, aliq_iss, _q(base_iss * aliq_iss / 100),
-            f"{aliq_iss}% sobre {base_iss}"
+            f"{_pct(aliq_iss)} sobre {_reais(base_iss)}"
             + (" (com dedução de material)" if base_iss < bruto else " (sem dedução)")))
     elif aliq_iss > 0 and not obra.iss_retido:
-        avisos.append(f"ISS de {aliq_iss}% NÃO é retido pelo tomador — a BWS recolhe "
+        avisos.append(f"ISS de {_pct(aliq_iss)} NÃO é retido pelo tomador — a BWS recolhe "
                       f"em guia própria (conta 2.1.01).")
 
     federais = [f.upper() for f in (obra.federais_retidos or [])]
@@ -149,7 +168,7 @@ def calcular(obra: Obra, valor_bruto: Any, *,
             tipo = "IRRF" if f == "IR" else f
             retencoes.append(Retencao(
                 tipo, bruto, aliq * 100, _q(bruto * aliq),
-                f"{aliq * 100}% sobre o valor da nota"))
+                f"{_pct(aliq * 100)} sobre o valor da nota"))
 
     total = _q(sum((r.valor for r in retencoes), Decimal("0")))
     return CalculoMedicao(valor_bruto=bruto, base_servico_inss=base_inss, base_iss=base_iss,

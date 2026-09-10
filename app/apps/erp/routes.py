@@ -57,6 +57,8 @@ MODULOS = [
             ("pagamentos", "Pagamentos", "erp.pagina_pagamentos"),
             ("empreitas", "Empreitas", "erp.pagina_empreitas"),
             ("conciliacao", "Conciliação", "erp.pagina_conciliacao"),
+            ("notas", "Notas fiscais", "erp.pagina_notas"),
+            ("notas_emitidas", "Notas emitidas", "erp.pagina_notas_emitidas"),
             ("receber", "Receber", "erp.pagina_receber"),
             ("relatorios", "Relatórios", "erp.pagina_relatorios"),
             ("importar", "Importar", "erp.pagina_importar"),
@@ -68,6 +70,8 @@ MODULOS = [
         "cor": "var(--amarelo)",
         "abas": [
             ("obras", "Painel de obras", "erp.pagina_obras"),
+            ("contratos", "Contratos e medições", "erp.pagina_contratos"),
+            ("agenda", "Agenda", "erp.pagina_agenda"),
         ],
     },
     {
@@ -100,6 +104,7 @@ MODULOS = [
         "abas": [
             ("config", "Configurações", "erp.pagina_config"),
             ("empresas", "Empresas", "erp.pagina_empresas"),
+            ("arquivo", "Arquivo", "erp.pagina_arquivo"),
         ],
     },
 ]
@@ -108,7 +113,9 @@ MODULOS = [
 # Repetir a lista aqui é de propósito: `_contexto` roda em TODA página, e
 # perguntar por 20 ações a cada carregamento seria desperdício.
 ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
-                 "autorizar_pedido", "solicitar_suprimento", "configurar")
+                 "autorizar_pedido", "solicitar_suprimento", "configurar",
+                 "cruzar_notas", "arquivar", "receber", "emitir_nota",
+                 "tratar_agenda", "aprovar")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -387,9 +394,22 @@ def pagina_titulos():
 @login_obrigatorio
 @permissao("ver_erp")
 def pagina_inicio():
-    """Porta de entrada: escolha do módulo."""
+    """Porta de entrada: escolha do módulo, e o que tem prazo."""
+    # A contagem da agenda é consulta curta e NÃO sincroniza: a porta de
+    # entrada é a tela mais visitada do ERP, e recalcular tudo aqui pagaria o
+    # preço em toda visita. Quem sincroniza é a própria tela da agenda.
+    # Se a migração 051 ainda não rodou, a porta de entrada abre do mesmo
+    # jeito — ela não pode depender do que veio depois dela.
+    agenda = {}
+    try:
+        from app.apps.erp.core.agenda import service as svc_agenda
+        with get_session() as s:
+            agenda = svc_agenda.contagem(s)
+    except Exception:
+        logger.warning("ERP/agenda: contagem indisponível na tela de início "
+                       "(migração 051 pendente?)")
     return render_template("erp_inicio.html", modulos=MODULOS, modulo=None,
-                           abas=[], aba_ativa="",
+                           abas=[], aba_ativa="", agenda=agenda,
                            usuario_nome=session.get("erp_usuario_nome", ""),
                            usuario_perfil=session.get("erp_usuario_perfil", ""),
                            migracoes_pendentes=_migracoes_pendentes())
@@ -465,6 +485,44 @@ def pagina_colaboradores():
 @permissao("conciliar")
 def pagina_conciliacao():
     return render_template("erp_conciliacao.html", **_contexto("conciliacao"))
+
+
+@bp.route("/erp/arquivo")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def pagina_arquivo():
+    return render_template("erp_arquivo.html", **_contexto("arquivo"))
+
+
+@bp.route("/erp/notas")
+@login_obrigatorio
+@permissao("ver_notas")
+def pagina_notas():
+    return render_template("erp_notas.html", **_contexto("notas"))
+
+
+@bp.route("/erp/contratos")
+@login_obrigatorio
+@permissao("ver_contratos")
+def pagina_contratos():
+    """O quadro financeiro do contrato — medido, faturado, recebido."""
+    return render_template("erp_contratos.html", **_contexto("contratos"))
+
+
+@bp.route("/erp/agenda")
+@login_obrigatorio
+@permissao("ver_agenda")
+def pagina_agenda():
+    """O calendário de obrigações — reajuste, certidão, locação e contrato."""
+    return render_template("erp_agenda.html", **_contexto("agenda"))
+
+
+@bp.route("/erp/notas-emitidas")
+@login_obrigatorio
+@permissao("ver_notas_emitidas")
+def pagina_notas_emitidas():
+    """As notas que a BWS emitiu — e o relatório que a contabilidade pede."""
+    return render_template("erp_notas_emitidas.html", **_contexto("notas_emitidas"))
 
 
 @bp.route("/erp/receber")
@@ -1634,6 +1692,47 @@ def api_empresa_conta_email(empresa_id: int):
     except Exception as e:
         logger.exception("ERP: falha ao definir a conta de e-mail da empresa")
         return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# CERTIFICADO DIGITAL (A1) da empresa
+#
+# O arquivo e a senha vão CIFRADOS. Não existe rota de download de propósito:
+# certificado digital é a assinatura da empresa, e o que não tem porta não é
+# arrombado. A tela mostra titular, validade e emissor — nunca os bytes.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/empresas/<int:empresa_id>/certificado")
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_certificado(empresa_id: int):
+    from app.apps.erp.core.cadastros import certificado as svc
+    with get_session() as s:
+        return jsonify({"ok": True, "certificado": svc.ler(s, empresa_id),
+                        "historico": svc.historico(s, empresa_id)})
+
+
+@bp.route("/erp/api/empresas/<int:empresa_id>/certificado", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_certificado_guardar(empresa_id: int):
+    """Guarda o A1. Abrir o arquivo é o que PROVA que a senha está certa."""
+    from app.apps.erp.core.cadastros import certificado as svc
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False,
+                        "erro": "Anexe o arquivo do certificado (.pfx ou .p12)."}), 400
+    try:
+        with get_session() as s:
+            svc.guardar(s, empresa_id, arquivo.read(),
+                        (request.form.get("senha") or ""),
+                        nome_arquivo=(arquivo.filename or ""),
+                        observacao=(request.form.get("observacao") or ""),
+                        usuario=_usuario_logado(s))
+            lido = svc.ler(s, empresa_id)
+            s.commit()
+        return jsonify({"ok": True, "certificado": lido})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/empresas/<int:empresa_id>/testar-email", methods=["POST"])
@@ -2849,6 +2948,22 @@ def api_agenda():
                 .order_by(Parcela.vencimento)).all()
             em_lote = {i.parcela_id for i in s.scalars(select(LoteItem)).all()}
             hoje = date.today()
+
+            # DE QUE CONTA SAI CADA PAGAMENTO. Pedido do dono: "às vezes a gente
+            # quer filtrar o que tem pra pagar nessa conta, o que tem pra pagar
+            # na outra — às vezes é mais fácil do que filtrar por obra". A conta
+            # vem da OBRA do rateio; título rateado entre obras de contas
+            # diferentes aparece nos dois filtros, que é o certo.
+            from app.apps.erp.db.models.cadastros import Obra as _Obra
+            conta_da_obra = {o.id: o.conta_bancaria_id
+                             for o in s.scalars(select(_Obra)).all()}
+            nome_da_conta = {c.id: c.descricao for c in s.scalars(
+                select(ContaBancaria)).all()}
+
+            def _contas_da_parcela(p):
+                ids = {conta_da_obra.get(r.obra_id) for r in p.titulo.rateios}
+                return sorted({i for i in ids if i})
+
             itens = [{
                 "parcela_id": p.id, "titulo_id": p.titulo.id,
                 "numero_sp": p.titulo.numero_sp, "parcela": p.numero,
@@ -2860,6 +2975,8 @@ def api_agenda():
                 "forma": p.titulo.forma_pagamento.value,
                 "tem_boleto": bool(p.linha_digitavel),
                 "em_lote": p.id in em_lote,
+                "contas_da_obra": _contas_da_parcela(p),
+                "contas_nomes": [nome_da_conta.get(i, "") for i in _contas_da_parcela(p)],
             } for p in parcelas]
             contas = [{"id": c.id, "descricao": c.descricao}
                       for c in s.scalars(select(ContaBancaria)
@@ -3383,6 +3500,82 @@ def api_desfazer(titulo_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+# ---------------------------------------------------------------------------
+# CHAVES PIX DA CONTA — e o bloco pronto para copiar
+#
+# O uso é o que o dono descreveu: não é pagar por aqui, é COPIAR E MANDAR
+# quando alguém pede os dados da empresa. Por isso a listagem já vem com o
+# texto montado — copiar campo por campo é onde se erra um dígito.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/contas/detalhe")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_contas_detalhe():
+    from app.apps.erp.core.cadastros import contas as svc_contas
+    with get_session() as s:
+        return jsonify({"ok": True, "contas": svc_contas.listar(s),
+                        "tipos_pix": svc_contas.TIPOS_PIX})
+
+
+@bp.route("/erp/api/contas/<int:conta_id>/pix", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_conta_pix(conta_id: int):
+    from app.apps.erp.core.cadastros import contas as svc_contas
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            svc_contas.acrescentar_pix(
+                s, conta_id, tipo=(d.get("tipo") or ""), chave=(d.get("chave") or ""),
+                descricao=(d.get("descricao") or ""), usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, "contas": svc_contas.listar(s)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/contas/pix/<int:chave_id>", methods=["DELETE"])
+@login_obrigatorio
+@permissao("configurar")
+def api_conta_pix_remover(chave_id: int):
+    from app.apps.erp.core.cadastros import contas as svc_contas
+    try:
+        with get_session() as s:
+            svc_contas.remover_pix(s, chave_id, usuario=_usuario_logado(s))
+            s.commit()
+            return jsonify({"ok": True, "contas": svc_contas.listar(s)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# EMISSÃO DE NOTA POR EMPRESA
+#
+# São duas empresas, em municípios diferentes, uma por API e outra manual — por
+# isso município, endereço e token são CADASTRO, não constante no código.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/empresas/<int:empresa_id>/emissao", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_empresa_emissao(empresa_id: int):
+    from app.apps.erp.core.cadastros import emissao as svc_emissao
+    from app.apps.erp.db.models.cadastros import Empresa
+    try:
+        with get_session() as s:
+            if request.method == "POST":
+                empresa = svc_emissao.definir(s, empresa_id,
+                                              request.get_json(silent=True) or {},
+                                              usuario=_usuario_logado(s))
+                s.commit()
+            else:
+                empresa = s.get(Empresa, empresa_id)
+                if empresa is None:
+                    raise ErroNaoEncontrado("Empresa não encontrada.")
+            return jsonify({"ok": True, "emissao": svc_emissao.ler(s, empresa)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/contas")
 @login_obrigatorio
 @permissao("ver_erp")
@@ -3636,7 +3829,7 @@ def api_comprovante():
                 s, conteudo, arquivo.filename or "comprovante.pdf",
                 conta_bancaria_id=request.form.get("conta_id", type=int),
                 baixar_automatico=(request.form.get("automatico", "1") != "0"),
-                usuario=usuario)
+                origem="TELA", usuario=usuario)
             s.commit()
             if rel.get("situacao") == "BAIXADO" and rel.get("baixa"):
                 from app.apps.erp.core.notificacoes import avisar_baixa
@@ -3661,6 +3854,85 @@ def api_comprovante():
     except Exception as e:
         logger.exception("ERP: falha ao processar comprovante")
         return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/pagamentos/comprovantes/lote", methods=["POST"])
+@permissao_publica("chamada pelo cenario do Make, que recebe os comprovantes por "
+                   "e-mail; a guarda e o ERP_COMPROVANTE_SECRET no corpo do pedido, "
+                   "como nos demais modulos do monorepo")
+def api_comprovantes_lote():
+    """A porta do e-mail: um lote de comprovantes, vindo de fora.
+
+    O Make já recebe o e-mail e separa os anexos — ele é o carteiro. Esta rota
+    é o destino. O MIOLO É O MESMO da tela: mesmo leitor, mesmo casamento,
+    MESMA TRAVA contra baixar duas vezes. É isso que garante que o comprovante
+    dê o mesmo resultado venha por onde vier.
+
+    Formato esperado (o mesmo que o Make já monta hoje):
+        {"secret": "...", "attachments": [{"filename": "...", "base64": "..."}]}
+    """
+    import base64 as _b64
+    import os
+    from app.apps.erp.core.pagamentos.comprovante import processar_comprovante
+
+    esperado = os.getenv("ERP_COMPROVANTE_SECRET", "").strip()
+    dados = request.get_json(silent=True) or {}
+    if not esperado:
+        return jsonify({"ok": False, "erro": "ERP_COMPROVANTE_SECRET não "
+                        "configurado no ambiente. A porta do e-mail não abre "
+                        "sem ele."}), 503
+    if dados.get("secret") != esperado:
+        logger.warning("ERP/comprovantes: lote recusado, segredo inválido")
+        return jsonify({"ok": False, "erro": "Segredo inválido."}), 403
+
+    anexos = dados.get("attachments") or dados.get("anexos") or []
+    if not anexos:
+        return jsonify({"ok": False, "erro": "Nenhum comprovante no lote."}), 400
+
+    resultados = []
+    with get_session() as s:
+        for anexo in anexos[:50]:          # teto: lote gigante é engano, não uso
+            nome = (anexo.get("filename") or anexo.get("nome")
+                    or "comprovante.pdf")
+            try:
+                conteudo = _b64.b64decode(anexo.get("base64") or anexo.get("conteudo") or "")
+            except Exception:
+                resultados.append({"arquivo": nome, "situacao": "ILEGIVEL",
+                                   "mensagem": "Anexo não pôde ser decodificado."})
+                continue
+            if not conteudo:
+                resultados.append({"arquivo": nome, "situacao": "ILEGIVEL",
+                                   "mensagem": "Anexo vazio."})
+                continue
+            try:
+                r = processar_comprovante(s, conteudo, nome, origem="MAKE",
+                                          baixar_automatico=True, usuario=None)
+                r["arquivo"] = nome
+                resultados.append(r)
+                s.commit()
+            except ErroValidacao as e:
+                s.rollback()
+                resultados.append({"arquivo": nome, "situacao": "ILEGIVEL",
+                                   "mensagem": str(e)})
+            except Exception as e:                       # pragma: no cover
+                s.rollback()
+                logger.exception("ERP/comprovantes: falha em %s", nome)
+                resultados.append({"arquivo": nome, "situacao": "FALHOU",
+                                   "mensagem": str(e)})
+
+    return jsonify({"ok": True, "total": len(resultados),
+                    "resumo": _resumo_do_lote(resultados),
+                    "resultados": resultados})
+
+
+def _resumo_do_lote(resultados: list) -> dict:
+    """O relatório do lote — pedido do dono: "a tela já dá um relatório do que
+    foi resolvido, o que foi detectado e o que não"."""
+    contagem: dict[str, int] = {}
+    for r in resultados:
+        chave = r.get("situacao") or "?"
+        contagem[chave] = contagem.get(chave, 0) + 1
+    return contagem
 
 
 @bp.route("/erp/api/pagamentos/comprovante/confirmar", methods=["POST"])
@@ -3730,18 +4002,24 @@ def api_anexos(entidade: str, entidade_id: int):
 @login_obrigatorio
 @permissao("ver_erp")
 def baixar_anexo(anexo_id: int):
-    """Serve o arquivo direto do banco."""
+    """Serve o arquivo — venha ele do banco ou do Google Drive.
+
+    QUEM ENTREGA O DOCUMENTO É ESTA ROTA, sempre. Mesmo com o arquivo morando
+    no Drive, o link do Drive não vai para a tela: é aqui que a permissão e o
+    escopo são conferidos, e link do Drive não passa por nenhum dos dois.
+    """
     from flask import Response
     from app.apps.erp.core.auth.permissoes import exigir_anexo_no_escopo
-    from app.apps.erp.core.documentos.armazenamento import obter
+    from app.apps.erp.core.documentos.armazenamento import conteudo_de, obter
     try:
         with get_session() as s:
             exigir_anexo_no_escopo(s, _usuario_logado(s), anexo_id)
             a = obter(s, anexo_id)
-            if not a.conteudo:
+            dados = conteudo_de(s, a)
+            if not dados:
                 return jsonify({"ok": False,
                                 "erro": "Anexo antigo sem conteúdo no banco."}), 404
-            return Response(bytes(a.conteudo), mimetype=a.mime_type or "application/octet-stream",
+            return Response(dados, mimetype=a.mime_type or "application/octet-stream",
                             headers={"Content-Disposition":
                                      f'inline; filename="{a.nome_arquivo}"'})
     except ErroValidacao as e:
@@ -3763,6 +4041,866 @@ def api_excluir_anexo(anexo_id: int):
         return jsonify({"ok": True})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+# ---------------------------------------------------------------------------
+# ONDE FICAM OS DOCUMENTOS — banco ou Google Drive
+#
+# É `configurar` porque muda onde o documento da empresa mora; e é `configurar`
+# também para MOVER, porque mover é operação que apaga bytes do banco depois de
+# conferir. Nada disso é coisa de quem só lança.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/anexos/armazenamento", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="configurar", POST="configurar")
+def api_anexos_armazenamento():
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.core.documentos import drive
+    from app.apps.erp.core.documentos.armazenamento import a_mover
+    from app.apps.erp.db.models.cadastros import Parametro
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "POST":
+                d = request.get_json(silent=True) or {}
+                def _guardar(chave, valor):
+                    linha = s.get(Parametro, chave)
+                    if linha is None:
+                        linha = Parametro(chave=chave, valor="")
+                        s.add(linha)
+                    linha.valor = valor
+                    linha.atualizado_por = usuario.id
+                _guardar(drive.CHAVE_PASTA, drive.id_da_pasta(d.get("pasta")))
+                _guardar(drive.CHAVE_IMPERSONAR, (d.get("impersonar") or "").strip())
+                _guardar(drive.CHAVE_LIGADO, "1" if d.get("ligado") else "0")
+                registrar_evento(s, "configuracao", 0, "ANEXO_ARMAZENAMENTO", {
+                    "pasta": drive.id_da_pasta(d.get("pasta")),
+                    "ligado": bool(d.get("ligado"))}, usuario.id)
+                s.commit()
+            return jsonify({"ok": True, "dados": {**drive.configuracao(s), **a_mover(s)}})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/anexos/armazenamento/testar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_anexos_testar():
+    from app.apps.erp.core.documentos import drive
+    with get_session() as s:
+        r = drive.testar(s)
+    if not r.get("ok"):
+        return jsonify({"ok": False, "erro": r.get("erro", "falhou")}), 400
+    return jsonify(r)
+
+
+@bp.route("/erp/api/anexos/armazenamento/mover", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_anexos_mover():
+    from app.apps.erp.core.documentos.armazenamento import mover_para_drive
+    try:
+        with get_session() as s:
+            r = mover_para_drive(s, limite=int(request.args.get("limite", 25)))
+            s.commit()
+        return jsonify({"ok": True, "dados": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# O CRUZAMENTO DE NOTAS FISCAIS
+#
+# Nota × pedido × título × prestação de fundo fixo. A especificação inteira,
+# ditada pelo dono, está em `NOTAS_FISCAIS.md`. O espírito é o da conciliação
+# bancária: o sistema cruza o que consegue e expõe o duvidoso para uma pessoa.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/notas")
+@login_obrigatorio
+@permissao("ver_notas")
+def api_notas():
+    from app.apps.erp.core.notas import cruzamento
+    def _data(nome):
+        try:
+            return date.fromisoformat(request.args.get(nome) or "")
+        except ValueError:
+            return None
+    with get_session() as s:
+        dados = cruzamento.listar(
+            s, conferencia=(request.args.get("conferencia") or "").strip(),
+            empresa_id=(int(request.args["empresa_id"])
+                        if request.args.get("empresa_id") else None),
+            desde=_data("desde"), ate=_data("ate"),
+            busca=(request.args.get("busca") or "").strip())
+    return jsonify({"ok": True, **dados})
+
+
+@bp.route("/erp/api/notas/<int:nota_id>")
+@login_obrigatorio
+@permissao("ver_notas")
+def api_nota(nota_id: int):
+    """A nota com os CANDIDATOS de cada ponta — é o que a pessoa olha para decidir."""
+    from app.apps.erp.core.notas import cruzamento
+    from app.apps.erp.db.models.financeiro import DocumentoFiscal
+    with get_session() as s:
+        nota = s.get(DocumentoFiscal, nota_id)
+        if nota is None:
+            raise ErroNaoEncontrado("Nota não encontrada.")
+        return jsonify({"ok": True, "nota": cruzamento.ler(s, nota, com_candidatos=True)})
+
+
+@bp.route("/erp/api/notas/<int:nota_id>/ligar", methods=["POST"])
+@login_obrigatorio
+@permissao("cruzar_notas")
+def api_nota_ligar(nota_id: int):
+    from app.apps.erp.core.notas import cruzamento
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            nota = cruzamento.ligar(
+                s, nota_id, usuario=_usuario_logado(s),
+                titulo_id=(int(d["titulo_id"]) if d.get("titulo_id") else None),
+                pedido_id=(int(d["pedido_id"]) if d.get("pedido_id") else None),
+                item_id=(int(d["item_id"]) if d.get("item_id") else None))
+            s.commit()
+        return jsonify({"ok": True, "nota": nota})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/notas/<int:nota_id>/desligar", methods=["POST"])
+@login_obrigatorio
+@permissao("cruzar_notas")
+def api_nota_desligar(nota_id: int):
+    from app.apps.erp.core.notas import cruzamento
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            nota = cruzamento.desligar(s, nota_id, o_que=(d.get("o_que") or ""),
+                                       usuario=_usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, "nota": nota})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/notas/<int:nota_id>/marcar", methods=["POST"])
+@login_obrigatorio
+@permissao("cruzar_notas")
+def api_nota_marcar(nota_id: int):
+    from app.apps.erp.core.notas import cruzamento
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            nota = cruzamento.marcar(s, nota_id,
+                                     conferencia=(d.get("conferencia") or "").strip(),
+                                     motivo=(d.get("motivo") or ""),
+                                     usuario=_usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, "nota": nota})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/notas/sugerir", methods=["POST"])
+@login_obrigatorio
+@permissao("cruzar_notas")
+def api_notas_sugerir():
+    """Casa sozinho só o que é prova (a chave de acesso). O resto fica para gente."""
+    from app.apps.erp.core.notas import cruzamento
+    with get_session() as s:
+        r = cruzamento.sugerir(s)
+        s.commit()
+    return jsonify({"ok": True, "dados": r})
+
+
+@bp.route("/erp/api/notas/pedidos")
+@login_obrigatorio
+@permissao("ver_notas")
+def api_notas_por_pedido():
+    """O outro lado: quanto de cada pedido já veio em nota, e quanto falta."""
+    from app.apps.erp.core.notas import cruzamento
+    with get_session() as s:
+        return jsonify({"ok": True, "pedidos": cruzamento.por_pedido(s)})
+
+
+@bp.route("/erp/api/notas/importar", methods=["POST"])
+@login_obrigatorio
+@permissao("cruzar_notas")
+def api_notas_importar():
+    """Os XMLs que o serviço de monitoramento já baixa — soltos ou num .zip."""
+    from app.apps.erp.core.notas.importar import importar_lote
+    arquivos = [(f.filename or "arquivo.xml", f.read())
+                for f in request.files.getlist("arquivos")]
+    try:
+        with get_session() as s:
+            r = importar_lote(s, arquivos, usuario=_usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, "dados": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# O ARQUIVO DE DOCUMENTOS DA EMPRESA
+#
+# Especificação em `GESTAO_DOCUMENTOS.md`. Quem separa o que cada pessoa vê NÃO
+# é a ação declarada — é o SIGILO do tipo de documento e o escopo por obra,
+# aplicados dentro do serviço. Por isso `ver_arquivo` é largo: certidão e
+# contrato social são o que todo mundo precisa e ninguém acha.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/arquivo/tipos")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo_tipos():
+    from app.apps.erp.core.arquivo import catalogo
+    with get_session() as s:
+        return jsonify({"ok": True, "tipos": catalogo.listar(s),
+                        "grupos": catalogo.GRUPOS})
+
+
+@bp.route("/erp/api/arquivo/tipos/aplicar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_arquivo_tipos_aplicar():
+    """Traz o catálogo inicial. Cria o que falta e NUNCA apaga."""
+    from app.apps.erp.core.arquivo import catalogo
+    with get_session() as s:
+        r = catalogo.aplicar(s)
+        s.commit()
+    return jsonify({"ok": True, "dados": r})
+
+
+@bp.route("/erp/api/arquivo")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo():
+    from app.apps.erp.core.arquivo import service as svc_arq
+    def _comp():
+        bruto = (request.args.get("competencia") or "").strip()
+        try:
+            return date.fromisoformat(bruto + "-01") if len(bruto) == 7 else None
+        except ValueError:
+            return None
+    with get_session() as s:
+        dados = svc_arq.listar(
+            s, usuario=_usuario_logado(s),
+            tipo=(request.args.get("tipo") or "").strip(),
+            grupo=(request.args.get("grupo") or "").strip(),
+            empresa_id=(int(request.args["empresa_id"]) if request.args.get("empresa_id") else None),
+            obra_id=(int(request.args["obra_id"]) if request.args.get("obra_id") else None),
+            competencia=_comp(),
+            situacao=(request.args.get("situacao") or "").strip(),
+            busca=(request.args.get("busca") or "").strip())
+    return jsonify({"ok": True, **dados})
+
+
+# ---------------------------------------------------------------------------
+# OS BLOCOS — o que sempre é pedido junto
+#
+# O bloco aponta para TIPOS, não para documentos: é isso que faz o bloco fiscal
+# de agosto e o de setembro serem o MESMO bloco, com recortes diferentes.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/arquivo/blocos")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo_blocos():
+    from app.apps.erp.core.arquivo import blocos
+    with get_session() as s:
+        return jsonify({"ok": True, "blocos": blocos.listar(s)})
+
+
+@bp.route("/erp/api/arquivo/blocos/aplicar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_arquivo_blocos_aplicar():
+    from app.apps.erp.core.arquivo import blocos
+    with get_session() as s:
+        r = blocos.aplicar(s)
+        s.commit()
+    return jsonify({"ok": True, "dados": r})
+
+
+def _recorte_do_pedido():
+    """Empresa, obra e competência vindos da URL — usados pelos dois endereços."""
+    bruto = (request.args.get("competencia") or "").strip()
+    try:
+        comp = date.fromisoformat(bruto + "-01") if len(bruto) == 7 else None
+    except ValueError:
+        comp = None
+    return {
+        "empresa_id": (int(request.args["empresa_id"])
+                       if request.args.get("empresa_id") else None),
+        "obra_id": (int(request.args["obra_id"])
+                    if request.args.get("obra_id") else None),
+        "competencia": comp,
+    }
+
+
+@bp.route("/erp/api/arquivo/blocos/<codigo>/conferir")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo_bloco_conferir(codigo: str):
+    """O que o bloco tem e o que falta — ANTES de baixar.
+
+    Existe separado do download de propósito: ver a falta na tela é melhor que
+    descobri-la abrindo o arquivo compactado.
+    """
+    from app.apps.erp.core.arquivo import blocos
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, "resultado": blocos.montar(
+                s, codigo, usuario=_usuario_logado(s), **_recorte_do_pedido())})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/arquivo/blocos/<codigo>/baixar")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo_bloco_baixar(codigo: str):
+    from flask import Response
+    from app.apps.erp.core.arquivo import blocos
+    try:
+        with get_session() as s:
+            nome, dados, _ = blocos.gerar_zip(
+                s, codigo, usuario=_usuario_logado(s), **_recorte_do_pedido())
+        return Response(dados, mimetype="application/zip",
+                        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/arquivo/vencendo")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_arquivo_vencendo():
+    """O que vence nos próximos dias — a pergunta que dá valor ao arquivo."""
+    from app.apps.erp.core.arquivo import service as svc_arq
+    with get_session() as s:
+        dias = int(request.args.get("dias", 30))
+        return jsonify({"ok": True,
+                        "documentos": svc_arq.vencendo(s, dias=dias,
+                                                       usuario=_usuario_logado(s))})
+
+
+@bp.route("/erp/api/arquivo", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_arquivo_guardar():
+    from app.apps.erp.core.arquivo import service as svc_arq
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+
+    def _data(nome):
+        try:
+            return date.fromisoformat(request.form.get(nome) or "")
+        except ValueError:
+            return None
+
+    def _comp():
+        bruto = (request.form.get("competencia") or "").strip()
+        try:
+            return date.fromisoformat(bruto + "-01") if len(bruto) == 7 else None
+        except ValueError:
+            return None
+
+    def _num(nome):
+        bruto = (request.form.get(nome) or "").strip()
+        return int(bruto) if bruto.isdigit() else None
+
+    try:
+        with get_session() as s:
+            d = svc_arq.arquivar(
+                s, f.read(), f.filename or "arquivo",
+                tipo_codigo=(request.form.get("tipo") or ""),
+                empresa_id=_num("empresa_id"), obra_id=_num("obra_id"),
+                colaborador_id=_num("colaborador_id"),
+                fornecedor_id=_num("fornecedor_id"),
+                competencia=_comp(), referencia=(request.form.get("referencia") or ""),
+                emissao=_data("emissao"), validade=_data("validade"),
+                observacao=(request.form.get("observacao") or ""),
+                usuario=_usuario_logado(s))
+            linha = svc_arq.ler(s, d)
+            s.commit()
+        return jsonify({"ok": True, "documento": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/arquivo/<int:documento_id>", methods=["DELETE"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_arquivo_excluir(documento_id: int):
+    from app.apps.erp.core.arquivo import service as svc_arq
+    try:
+        with get_session() as s:
+            svc_arq.excluir(s, documento_id, _usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+# ---------------------------------------------------------------------------
+# MEDIÇÃO: tipo, correlação, protocolo — e o quadro do contrato
+#
+# O tipo é catálogo EDITÁVEL e o número é texto livre porque quem manda na
+# nomenclatura é o ÓRGÃO, não o ERP.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/medicoes/tipos")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_medicao_tipos():
+    from app.apps.erp.core.titulos import medicao as svc_med
+    with get_session() as s:
+        return jsonify({"ok": True, "tipos": svc_med.listar_tipos(s)})
+
+
+@bp.route("/erp/api/medicoes/tipos/aplicar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_medicao_tipos_aplicar():
+    from app.apps.erp.core.titulos import medicao as svc_med
+    with get_session() as s:
+        r = svc_med.aplicar_tipos(s)
+        s.commit()
+    return jsonify({"ok": True, "dados": r})
+
+
+@bp.route("/erp/api/medicoes/<int:titulo_id>/classificar", methods=["POST"])
+@login_obrigatorio
+@permissao("receber")
+def api_medicao_classificar(titulo_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.titulos import medicao as svc_med
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            t = svc_med.classificar(
+                s, titulo_id, tipo=(d.get("tipo") or ""),
+                medicao_de_id=(int(d["medicao_de_id"]) if d.get("medicao_de_id") else None),
+                usuario=_usuario_logado(s))
+            linha = svc_med.ler(s, t)
+            s.commit()
+        return jsonify({"ok": True, "medicao": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/medicoes/<int:titulo_id>/protocolo", methods=["POST"])
+@login_obrigatorio
+@permissao("receber")
+def api_medicao_protocolo(titulo_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.titulos import medicao as svc_med
+    d = request.get_json(silent=True) or {}
+    def _quando():
+        try:
+            return date.fromisoformat(d.get("em") or "")
+        except ValueError:
+            return None
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            t = svc_med.protocolar(s, titulo_id, numero=(d.get("numero") or ""),
+                                   em=_quando(), usuario=_usuario_logado(s))
+            linha = svc_med.ler(s, t)
+            s.commit()
+        return jsonify({"ok": True, "medicao": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/contratos/quadro")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_contratos_quadro():
+    """A lista de contratos, com o essencial antes de abrir o quadro."""
+    from app.apps.erp.core.titulos import quadro as svc_quadro
+    with get_session() as s:
+        obra_id = (int(request.args["obra_id"]) if request.args.get("obra_id") else None)
+        return jsonify({"ok": True,
+                        "contratos": svc_quadro.listar_contratos(s, obra_id=obra_id)})
+
+
+@bp.route("/erp/api/contratos/<int:contrato_id>/quadro")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_contrato_quadro(contrato_id: int):
+    """O quadro financeiro: as medições e os sete totais."""
+    from app.apps.erp.core.titulos import quadro as svc_quadro
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, **svc_quadro.quadro(s, contrato_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+# ---------------------------------------------------------------------------
+# NOTAS EMITIDAS — o controle da numeração e o relatório da contabilidade
+#
+# Tela IRMÃ da de títulos a receber, não a mesma: uma medição pode virar duas
+# notas, e uma nota pode ser cancelada e substituída sem o título mudar.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/notas-emitidas")
+@login_obrigatorio
+@permissao("ver_notas_emitidas")
+def api_notas_emitidas():
+    from app.apps.erp.core.notas_emitidas import listagem as svc
+    def _data(chave):
+        try:
+            return date.fromisoformat(request.args.get(chave) or "")
+        except ValueError:
+            return None
+    with get_session() as s:
+        return jsonify({"ok": True, **svc.listar(
+            s,
+            empresa_id=(int(request.args["empresa_id"])
+                        if request.args.get("empresa_id") else None),
+            obra_id=(int(request.args["obra_id"])
+                     if request.args.get("obra_id") else None),
+            situacao=(request.args.get("situacao") or "").strip().upper(),
+            ambiente=(request.args.get("ambiente") or "").strip().upper(),
+            serie=(request.args.get("serie") or "").strip(),
+            desde=_data("desde"), ate=_data("ate"),
+            busca=(request.args.get("busca") or ""))})
+
+
+@bp.route("/erp/api/notas-emitidas/conferencia")
+@login_obrigatorio
+@permissao("ver_notas_emitidas")
+def api_notas_emitidas_conferencia():
+    """A sequência está inteira? Buraco é diferente de queimado."""
+    from app.apps.erp.core.notas_emitidas import numeracao as svc
+    from app.apps.erp.db.models.cadastros import Empresa
+    try:
+        with get_session() as s:
+            empresa = s.get(Empresa, int(request.args.get("empresa_id") or 0))
+            if empresa is None:
+                raise ErroValidacao("Escolha a empresa para conferir a numeração.")
+            return jsonify({"ok": True, "conferencia": svc.conferir(
+                s, empresa,
+                serie=(request.args.get("serie") or "").strip() or None,
+                ambiente=(request.args.get("ambiente") or "").strip().upper() or None)})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/notas-emitidas/registrar", methods=["POST"])
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_nota_emitida_registrar():
+    """A nota que saiu pelo PORTAL da prefeitura, registrada aqui.
+
+    Sem isto a conferência acusa buraco na numeração e ninguém sabe por quê.
+    """
+    from decimal import Decimal as _Dec
+    from app.apps.erp.core.notas_emitidas import listagem as svc
+    d = request.get_json(silent=True) or {}
+    def _quando():
+        try:
+            return date.fromisoformat(d.get("emissao") or "")
+        except ValueError:
+            return None
+    try:
+        with get_session() as s:
+            nota = svc.registrar_manual(
+                s, empresa_id=int(d.get("empresa_id") or 0),
+                titulo_id=(int(d["titulo_id"]) if d.get("titulo_id") else None),
+                numero_nota=(d.get("numero_nota") or ""),
+                emissao=_quando(),
+                valor_bruto=(_Dec(str(d["valor_bruto"])) if d.get("valor_bruto") else None),
+                retencoes=(d.get("retencoes") or {}),
+                observacao=(d.get("observacao") or ""),
+                usuario=_usuario_logado(s))
+            linha = svc.ler(s, nota)
+            s.commit()
+        return jsonify({"ok": True, "nota": linha})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/medicoes/<int:titulo_id>/emitir")
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_medicao_preparar_emissao(titulo_id: int):
+    """Tudo que o portal da prefeitura pergunta, num bloco só. NÃO emite."""
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.notas_emitidas import manual as svc
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            return jsonify({"ok": True, "emissao": svc.preparar(s, titulo_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/medicoes/<int:titulo_id>/emitir", methods=["POST"])
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_medicao_registrar_emissao(titulo_id: int):
+    """A nota voltou do portal: registra com as retenções calculadas."""
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.notas_emitidas import listagem as svc_lista
+    from app.apps.erp.core.notas_emitidas import manual as svc
+    d = request.get_json(silent=True) or {}
+    def _quando():
+        try:
+            return date.fromisoformat(d.get("emissao") or "")
+        except ValueError:
+            return None
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            nota = svc.registrar(
+                s, titulo_id, numero_nota=(d.get("numero_nota") or ""),
+                emissao=_quando(), valor_bruto=d.get("valor_bruto"),
+                retencoes=d.get("retencoes"),
+                codigo_verificacao=(d.get("codigo_verificacao") or ""),
+                chave_acesso=(d.get("chave_acesso") or ""),
+                observacao=(d.get("observacao") or ""),
+                usuario=_usuario_logado(s))
+            linha = svc_lista.ler(s, nota)
+            s.commit()
+        return jsonify({"ok": True, "nota": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/notas-emitidas/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_nota_emitida_ler():
+    """A IA lê o PDF da nota que o portal devolveu e sugere os campos."""
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    from app.apps.erp.core.notas_emitidas import manual as svc
+    arquivo = request.files.get("arquivo")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Anexe o PDF da nota."}), 400
+    try:
+        lido = svc.ler_nota_emitida(arquivo.read(), arquivo.filename or "nota.pdf")
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    return jsonify({"ok": True, "lido": lido})
+
+
+@bp.route("/erp/api/notas-emitidas/<int:nota_id>/cancelar", methods=["POST"])
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_nota_emitida_cancelar(nota_id: int):
+    """Cancelar exige MOTIVO — número de nota fiscal não se apaga, se explica."""
+    from app.apps.erp.core.notas_emitidas import listagem as svc
+    from app.apps.erp.core.notas_emitidas import numeracao
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            nota = numeracao.cancelar(s, nota_id, motivo=(d.get("motivo") or ""),
+                                      usuario=_usuario_logado(s))
+            linha = svc.ler(s, nota)
+            s.commit()
+        return jsonify({"ok": True, "nota": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# REAJUSTE — a data-base do contrato, os índices e a previsão
+#
+# O índice normal é o INCC-DI, e a tabela é mantida pelo próprio sistema pela
+# série 192 do Banco Central. A coleta é pelo BOTÃO, nunca no start.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/indices")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_indices():
+    from app.apps.erp.core.indices import bcb
+    with get_session() as s:
+        return jsonify({"ok": True,
+                        "catalogo": bcb.listar_indices(),
+                        **bcb.listar(s, request.args.get("codigo") or bcb.PADRAO)})
+
+
+@bp.route("/erp/api/indices/atualizar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_indices_atualizar():
+    """Traz do Banco Central o que falta. Nunca sobrescreve linha lançada à mão."""
+    from app.apps.erp.core.indices import bcb
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            r = bcb.atualizar(s, (d.get("codigo") or bcb.PADRAO),
+                              usuario=_usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, "resumo": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/indices/lancar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_indices_lancar():
+    """O número do boletim da FGV, digitado — o INCC-DI do mês só sai lá pelo 25."""
+    from app.apps.erp.core.indices import bcb
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            bcb.lancar_manual(
+                s, codigo=(d.get("codigo") or bcb.PADRAO),
+                competencia=date.fromisoformat((d.get("competencia") or "") + "-01"
+                                               if len(d.get("competencia") or "") == 7
+                                               else (d.get("competencia") or "")),
+                variacao_pct=d.get("variacao_pct"),
+                usuario=_usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/contratos/<int:contrato_id>/reajuste")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_contrato_reajuste(contrato_id: int):
+    """A previsão de reajuste de cada medição do contrato, e a soma."""
+    from app.apps.erp.core.indices import reajuste as svc
+    try:
+        with get_session() as s:
+            return jsonify({"ok": True, **svc.previsao_do_contrato(s, contrato_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 404
+
+
+@bp.route("/erp/api/contratos/<int:contrato_id>/reajuste", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_contrato_reajuste_config(contrato_id: int):
+    """A data-base do contrato: do orçamento ou da proposta. Muda por contrato."""
+    from app.apps.erp.core.indices import reajuste as svc
+    from app.apps.erp.db.models.cadastros import Contrato
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            c = s.get(Contrato, contrato_id)
+            if c is None:
+                raise ErroValidacao("Contrato não encontrado.")
+            if d.get("data_base"):
+                c.data_base = date.fromisoformat(d["data_base"])
+            elif "data_base" in d:
+                c.data_base = None
+            if "data_base_origem" in d:
+                c.data_base_origem = (d.get("data_base_origem") or "").strip().upper() or None
+            if d.get("indice_reajuste") is not None:
+                c.indice_reajuste = (d.get("indice_reajuste") or "").strip().upper() or None
+            if d.get("reajuste_meses"):
+                c.reajuste_meses = int(d["reajuste_meses"])
+            s.flush()
+            saida = svc.previsao_do_contrato(s, contrato_id)
+            s.commit()
+        return jsonify({"ok": True, **saida})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/medicoes/<int:titulo_id>/reajuste", methods=["POST"])
+@login_obrigatorio
+@permissao("receber")
+def api_medicao_gerar_reajuste(titulo_id: int):
+    """A previsão vira título a receber — com o valor EDITÁVEL, porque quem
+    fecha o número é o órgão, não o sistema."""
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.indices import reajuste as svc
+    from app.apps.erp.core.titulos import medicao as svc_med
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            novo = svc.gerar_titulo(s, titulo_id, valor=d.get("valor"),
+                                    numero_medicao=(d.get("numero_medicao") or ""),
+                                    usuario=_usuario_logado(s))
+            linha = svc_med.ler(s, novo)
+            s.commit()
+        return jsonify({"ok": True, "medicao": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+# ---------------------------------------------------------------------------
+# AGENDA — o calendário de obrigações
+#
+# Quatro coisas construídas antes dela esperavam um lugar para avisar:
+# aniversário de reajuste, conferência de locação, certidão vencendo e fim da
+# vigência do contrato. A sincronização é recalculada, não acumulada.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/agenda")
+@login_obrigatorio
+@permissao("ver_agenda")
+def api_agenda_obrigacoes():
+    from app.apps.erp.core.agenda import service as svc
+    with get_session() as s:
+        # Sincroniza ao abrir: agenda que só atualiza no botão é agenda
+        # desatualizada, e o botão é justamente o que ninguém aperta.
+        if request.args.get("sincronizar", "1") != "0":
+            svc.sincronizar(s)
+            s.commit()
+        return jsonify({"ok": True, **svc.listar(
+            s,
+            situacao=(request.args.get("situacao") or "ABERTO").strip().upper(),
+            origem=(request.args.get("origem") or "").strip().upper(),
+            obra_id=(int(request.args["obra_id"]) if request.args.get("obra_id") else None),
+            incluir_futuros=request.args.get("futuros") == "1")})
+
+
+@bp.route("/erp/api/agenda/<int:evento_id>", methods=["POST", "DELETE"])
+@login_obrigatorio
+@permissao("tratar_agenda")
+def api_agenda_evento(evento_id: int):
+    """Resolver, dispensar (com motivo), reabrir — ou apagar a anotação."""
+    from app.apps.erp.core.agenda import service as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if request.method == "DELETE":
+                svc.apagar_manual(s, evento_id, usuario=usuario)
+                s.commit()
+                return jsonify({"ok": True})
+            acao = (d.get("acao") or "resolver").strip().lower()
+            if acao == "reabrir":
+                svc.reabrir(s, evento_id, usuario=usuario)
+            else:
+                svc.resolver(s, evento_id, observacao=(d.get("observacao") or ""),
+                             dispensar=(acao == "dispensar"), usuario=usuario)
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/agenda/anotar", methods=["POST"])
+@login_obrigatorio
+@permissao("tratar_agenda")
+def api_agenda_anotar():
+    """A anotação que ninguém deduz: 'entregar a declaração no dia 20'."""
+    from app.apps.erp.core.agenda import service as svc
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            svc.criar_manual(
+                s, titulo=(d.get("titulo") or ""),
+                quando=date.fromisoformat(d.get("quando") or ""),
+                detalhe=(d.get("detalhe") or ""),
+                avisar_dias=int(d.get("avisar_dias") or 7),
+                obra_id=(int(d["obra_id"]) if d.get("obra_id") else None),
+                usuario=_usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
 
 
 @bp.route("/erp/api/usuarios", methods=["GET", "POST"])
@@ -4926,6 +6064,42 @@ def api_aprovar_empreita(contrato_id: int):
             c = aprovar_contrato(s, contrato_id, _usuario_logado(s))
             s.commit()
         return jsonify({"ok": True, "status": c.status})
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/empreitas/garantias")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_empreita_garantias():
+    """De quem a BWS ainda está com garantia na mão, e há quanto tempo."""
+    from app.apps.erp.core.titulos.empreita import garantias_a_liberar, listar_alcadas
+    with get_session() as s:
+        return jsonify({"ok": True,
+                        "garantias": garantias_a_liberar(s),
+                        "alcadas": listar_alcadas(s)})
+
+
+@bp.route("/erp/api/empreitas/<int:contrato_id>/garantia", methods=["POST"])
+@login_obrigatorio
+@permissao("aprovar")
+def api_empreita_liberar_garantia(contrato_id: int):
+    """Devolve a garantia retida — vira TÍTULO A PAGAR, não acerto de planilha."""
+    from app.apps.erp.core.titulos.empreita import liberar_garantia
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            r = liberar_garantia(
+                s, contrato_id, _usuario_logado(s),
+                motivo=(d.get("motivo") or ""),
+                vencimento=d.get("vencimento"),
+                fornecedor_conta_id=(int(d["fornecedor_conta_id"])
+                                     if d.get("fornecedor_conta_id") else None),
+                forma_pagamento=(d.get("forma_pagamento") or "PIX"))
+            s.commit()
+        return jsonify({"ok": True, "resultado": r})
     except ErroPermissao as e:
         return jsonify({"ok": False, "erro": str(e)}), 403
     except ErroValidacao as e:

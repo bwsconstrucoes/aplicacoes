@@ -15,6 +15,8 @@
   <a class="subaba" href="#contas" data-ir="contas">Contas bancárias</a>
   <a class="subaba" href="#usuarios" data-ir="usuarios">Operadores</a>
   <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
+  <a class="subaba" href="#anexos" data-ir="anexos">Onde ficam os documentos</a>
+  <a class="subaba" href="#indices" data-ir="indices">Índices (INCC)</a>
   <a class="subaba" href="#manutencao" data-ir="manutencao">Banco e limpeza</a>
 </nav>
 
@@ -81,8 +83,14 @@
     <span class="espaco"></span>
     <button class="btn secundario" id="btn-nova-conta">+ Nova conta</button>
   </div>
-  <table><thead><tr><th>Descrição</th><th>Banco</th><th>Agência</th><th>Conta</th><th>Situação</th></tr></thead>
+  <table><thead><tr><th>Descrição</th><th>Banco</th><th>Agência</th><th>Conta</th>
+    <th>Chaves Pix</th><th>Situação</th><th></th></tr></thead>
     <tbody id="tb-contas"></tbody></table>
+  <div class="dica" style="margin-top:8px">O botão <b>Copiar dados</b> monta o bloco
+    inteiro — razão social, CNPJ, banco, agência, conta e as chaves Pix — pronto
+    para colar num WhatsApp ou num e-mail. Copiar campo por campo é onde se erra
+    um dígito.</div>
+  <div id="pix-msg"></div>
 </div>
 
 <div class="cartao" id="bloco-zerar" data-secao="manutencao">
@@ -114,6 +122,78 @@
   <div id="ia-painel" class="cartao-dica">carregando…</div>
 </div>
 
+{# ONDE FICAM OS DOCUMENTOS. Comprovante, nota e foto de medição são o que
+   mais cresce dentro do banco — e o plano de banco é pequeno, enquanto o
+   Drive da empresa é grande. Aqui o dono escolhe. O link do Drive nunca
+   aparece na tela: quem entrega o arquivo continua sendo o ERP, que confere
+   a permissão antes. #}
+<div class="cartao" id="bloco-anexos" data-secao="anexos">
+  <div class="cartao-cab"><h3>Onde ficam os documentos</h3>
+    <small>comprovantes, notas e fotos: dentro do banco ou no Google Drive da empresa</small></div>
+  <div id="anexos-estado" class="cartao-dica">carregando…</div>
+
+  <div class="form-grade" style="align-items:end; margin-top:12px">
+    <div class="campo" style="grid-column: span 2"><label>Pasta do Google Drive</label>
+      <input id="dr-pasta" placeholder="cole aqui o endereço da pasta, direto da barra do navegador">
+      <div class="dica">Crie a pasta num <b>Drive compartilhado</b> da empresa e dê acesso
+        de editor à conta de serviço do sistema. Pode colar o endereço inteiro — eu tiro
+        o que interessa.</div></div>
+    <div class="campo"><label>Agir como (opcional)</label>
+      <input id="dr-imp" placeholder="deixe vazio se for Drive compartilhado">
+      <div class="dica">Só preencha se a pasta estiver no Drive de uma pessoa.</div></div>
+  </div>
+  <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap">
+    <button class="btn secundario" id="btn-dr-salvar">Salvar pasta</button>
+    <button class="btn" id="btn-dr-testar">Testar a pasta</button>
+  </div>
+
+  <label class="opcao" style="margin-top:14px"><input type="checkbox" id="dr-ligado">
+    <span class="rotulo"><b>Guardar os documentos NOVOS no Drive</b> — os que já existem
+      continuam onde estão até você mandar mover</span></label>
+
+  <div style="margin-top:12px">
+    <button class="btn amarelo" id="btn-dr-mover">Mover documentos antigos para o Drive</button>
+    <div class="dica">Vai em lotes pequenos, e <b>confere cada arquivo no Drive antes de
+      apagar do banco</b>. Pode apertar várias vezes: ele continua de onde parou.</div>
+  </div>
+  <div id="dr-resultado"></div>
+</div>
+
+{# A TABELA DOS ÍNDICES. O reajuste dos contratos usa o INCC-DI, e a série é
+   republicada pelo Banco Central de graça (série 192 do SGS). A busca é pelo
+   BOTÃO, nunca no start do serviço — mesma regra das migrações. O lançamento à
+   mão existe porque o INCC-DI do mês só sai por volta do dia 25. #}
+<div class="cartao" id="bloco-indices" data-secao="indices">
+  <div class="cartao-cab"><h3>Índices econômicos</h3>
+    <small>o INCC que reajusta os contratos, buscado no Banco Central</small></div>
+  <div id="ind-estado" class="cartao-dica">carregando…</div>
+
+  <div class="form-grade" style="align-items:end; margin-top:12px">
+    <div class="campo"><label>Índice</label>
+      <select id="ind-codigo" data-sem-busca></select></div>
+    <div><button class="btn" id="btn-ind-atualizar">Buscar no Banco Central</button></div>
+  </div>
+  <div class="dica" style="margin-top:6px">Traz só os meses que faltam, e
+    <b>nunca apaga o que foi lançado à mão</b>.</div>
+
+  <div class="form-grade" style="align-items:end; margin-top:14px">
+    <div class="campo"><label>Mês</label>
+      <input id="ind-mes" type="month"></div>
+    <div class="campo"><label>Variação no mês (%)</label>
+      <input id="ind-valor" inputmode="decimal" placeholder="ex.: 0,42"></div>
+    <div><button class="btn secundario" id="btn-ind-lancar">Lançar à mão</button></div>
+  </div>
+  <div class="dica" style="margin-top:6px">Use o número do boletim da FGV quando o
+    mês ainda não estiver no Banco Central. A linha fica marcada como manual.</div>
+
+  <div id="ind-resultado"></div>
+  <div class="tabela-rolagem" style="margin-top:12px; max-height:340px">
+    <table><thead><tr><th>Mês</th><th class="direita">Variação</th>
+      <th>Fonte</th><th>Coletado em</th></tr></thead>
+      <tbody id="ind-corpo"></tbody></table>
+  </div>
+</div>
+
 <div class="cartao" data-secao="usuarios">
   <div class="cartao-cab"><h3>Usuários</h3><small>quem lança, quem autoriza, quem paga</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
@@ -135,6 +215,23 @@
     <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
   <div class="dlg-corpo" id="dlg-corpo"></div>
 </dialog>
+<dialog id="dlg-pix"><div class="dlg-topo"><h3>Nova chave Pix</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg-pix').close()">Fechar</button></div>
+  <div class="dlg-corpo">
+    <input type="hidden" id="pix-conta">
+    <div class="form-grade">
+      <div class="campo"><label>Tipo</label><select id="pix-tipo">
+        <option value="CNPJ">CNPJ</option><option value="CPF">CPF</option>
+        <option value="EMAIL">E-mail</option><option value="TELEFONE">Telefone</option>
+        <option value="ALEATORIA">Chave aleatória</option></select></div>
+      <div class="campo"><label>Chave</label><input id="pix-chave"></div>
+      <div class="campo" style="grid-column: span 2"><label>Observação</label>
+        <input id="pix-desc" placeholder="ex.: usada para recebimento de medição"></div>
+    </div>
+    <div style="margin-top:10px"><button class="btn amarelo" id="btn-pix-salvar">Guardar</button></div>
+    <div id="pix-dlg-msg"></div>
+  </div></dialog>
+
 {% endblock %}
 
 {% block scripts %}
@@ -492,44 +589,6 @@ carregarDepara();
 carregarOperadores();
 els("btn-novo-op").addEventListener("click", () => formOperador(null));
 
-async function carregarDepara(){
-  try {
-    const d = await api("/erp/api/config/depara");
-    const p = d.depara.pendentes, ac = d.depara.a_confirmar, ok = d.depara.confirmadas;
-    els("resumo-depara").innerHTML =
-      `<b>${ok.length}</b> tradução(ões) ativas · ` +
-      (ac.length ? `<span style="color:var(--ambar)"><b>${ac.length}</b> sugeridas a confirmar</span> · ` : "") +
-      (p.length ? `<span style="color:var(--vermelho)"><b>${p.length}</b> sem destino</span>`
-                : "nenhuma pendência") +
-      `<br><small>Para ver de onde vem cada conta, clique nela na lista do plano acima.</small>`;
-    const linhas = [...p, ...ac];
-    els("lista-depara").innerHTML = linhas.length ? `
-      <div class="tabela-rolagem" style="max-height:340px; margin-top:10px"><table>
-        <thead><tr><th>Vem do Pipefy como</th><th>Vezes</th><th>Vai para</th><th></th></tr></thead>
-        <tbody>${linhas.map(l => `
-          <tr><td>${l.origem}</td><td class="dados">${l.ocorrencias}</td>
-            <td><select data-dep="${l.id}" style="padding:5px; border:1px solid var(--borda-forte); border-radius:6px; font-size:12.5px; max-width:320px">
-              <option value="">— escolher conta —</option>${OPCOES_CAT}</select></td>
-            <td><button class="btn secundario" data-salvar="${l.id}">Salvar</button></td></tr>`).join("")}
-        </tbody></table></div>` : "";
-    linhas.forEach(l => {
-      if (l.categoria_id) { const s = document.querySelector(`[data-dep="${l.id}"]`); if (s) s.value = l.categoria_id; }
-    });
-    document.querySelectorAll("[data-salvar]").forEach(b => b.addEventListener("click", async () => {
-      const id = b.dataset.salvar;
-      const sel = document.querySelector(`[data-dep="${id}"]`);
-      if (!sel.value) { aviso("mensagem", "Escolha a conta de destino.", "erro"); return; }
-      try {
-        await api("/erp/api/config/depara/definir", {method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({depara_id: id, categoria_id: sel.value})});
-        aviso("mensagem", "Tradução salva.", "ok");
-        carregarDepara();
-      } catch(e){ aviso("mensagem", e.message, "erro"); }
-    }));
-  } catch(e){ els("resumo-depara").innerHTML = `<span style="color:var(--vermelho)">${e.message}</span>`; }
-}
-
 els("btn-instalar-depara").addEventListener("click", async () => {
   const b = els("btn-instalar-depara"); b.disabled = true; b.textContent = "Instalando…";
   try {
@@ -621,11 +680,7 @@ function desenhar(){
       <td class="dados">${o.contrato||"—"}</td>
       <td><span class="selo ${o.status==="ATIVA"?"aprovado":"outro"}">${rotulo(o.status)}</span></td></tr>`).join("");
 
-  els("tb-contas").innerHTML = DADOS.contas.map(c => `
-    <tr><td>${c.descricao}</td><td class="dados">${c.banco}</td><td class="dados">${c.agencia}</td>
-      <td class="dados">${c.conta}</td>
-      <td><span class="selo ${c.ativo?"aprovado":"outro"}">${c.ativo?"Ativa":"Inativa"}</span></td></tr>`).join("")
-      || `<tr><td colspan="5" class="cartao-dica">Nenhuma conta cadastrada — necessária para registrar pagamentos.</td></tr>`;
+  desenharContas();
 
   els("tb-usuarios").innerHTML = OPERADORES.map(u => `
     <tr style="cursor:pointer" data-op="${u.id}" title="Clique para editar">
@@ -922,7 +977,219 @@ els("btn-ia-teto") && els("btn-ia-teto").addEventListener("click", async () => {
   } catch(e){ aviso("ia-alerta", e.message, "erro"); }
 });
 
+// ---------------------------------------------------------------------------
+// ONDE FICAM OS DOCUMENTOS
+// ---------------------------------------------------------------------------
+async function carregarAnexos(){
+  const alvo = els("anexos-estado");
+  if (!alvo) return;
+  try {
+    const d = await api("/erp/api/anexos/armazenamento");
+    const c = d.dados;
+    els("dr-pasta").value = c.pasta || "";
+    els("dr-imp").value = c.impersonar || "";
+    els("dr-ligado").checked = !!c.ligado;
+    const linhas = [];
+    linhas.push(c.ligado
+      ? "<b>Documento novo está indo para o Google Drive.</b>"
+      : "<b>Documento novo está sendo guardado dentro do banco</b>, como sempre foi.");
+    linhas.push(`No banco: <b>${c.no_banco}</b> documento(s), ${c.mb_no_banco} MB.
+                 No Drive: <b>${c.no_drive}</b>.`);
+    if (!c.tem_credencial) linhas.push("⚠️ O servidor não tem a credencial do Google.");
+    else if (!c.pasta) linhas.push("Falta colar o endereço da pasta.");
+    alvo.innerHTML = linhas.join("<br>");
+  } catch(e){ alvo.innerHTML = `<div class="critica CRITICA">${e.message}</div>`; }
+}
+
+els("btn-dr-salvar") && els("btn-dr-salvar").addEventListener("click", async () => {
+  try {
+    await api("/erp/api/anexos/armazenamento", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({pasta: els("dr-pasta").value,
+                            impersonar: els("dr-imp").value,
+                            ligado: els("dr-ligado").checked})});
+    aviso("dr-resultado", "Guardado.", "ok");
+    carregarAnexos();
+  } catch(e){ aviso("dr-resultado", e.message, "erro"); }
+});
+
+els("dr-ligado") && els("dr-ligado").addEventListener("change", () =>
+  els("btn-dr-salvar").click());
+
+els("btn-dr-testar") && els("btn-dr-testar").addEventListener("click", async (ev) => {
+  const b = ev.target; b.disabled = true; b.textContent = "Testando…";
+  try {
+    const d = await api("/erp/api/anexos/armazenamento/testar", {method:"POST"});
+    aviso("dr-resultado", d.mensagem, "ok");
+  } catch(e){ aviso("dr-resultado", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Testar a pasta";
+});
+
+els("btn-dr-mover") && els("btn-dr-mover").addEventListener("click", async (ev) => {
+  const b = ev.target; b.disabled = true; b.textContent = "Movendo…";
+  try {
+    const d = await api("/erp/api/anexos/armazenamento/mover", {method:"POST"});
+    const r = d.dados;
+    const falhas = (r.falhas||[]).length
+      ? `<br>Não deu para mover ${r.falhas.length}: ${r.falhas.map(f=>`#${f.id} (${f.erro})`).join("; ")}`
+      : "";
+    aviso("dr-resultado", `${r.movidos} movido(s). Ainda no banco: ${r.no_banco}
+      (${r.mb_no_banco} MB).${falhas}`, r.movidos ? "ok" : "alerta");
+    carregarAnexos();
+  } catch(e){ aviso("dr-resultado", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Mover documentos antigos para o Drive";
+});
+
+// ---------------------------------------------------------------------------
+// CONTAS E CHAVES PIX
+// ---------------------------------------------------------------------------
+let CONTAS_PIX = [];
+
+async function carregarContasPix(){
+  try {
+    const d = await api("/erp/api/contas/detalhe");
+    CONTAS_PIX = d.contas || [];
+    desenharContas();
+  } catch(e){ aviso("pix-msg", "Não consegui carregar as contas: " + e.message, "erro"); }
+}
+
+function desenharContas(){
+  const alvo = els("tb-contas");
+  if (!alvo) return;
+  const lista = CONTAS_PIX.length ? CONTAS_PIX : (DADOS.contas || []).map(c => ({
+    ...c, banco_codigo: c.banco, chaves_pix: [], texto_para_copiar: ""}));
+  alvo.innerHTML = lista.map(c => `
+    <tr data-conta="${c.id}">
+      <td>${c.descricao}</td>
+      <td class="dados">${c.banco_codigo || c.banco || ""}</td>
+      <td class="dados">${c.agencia}</td>
+      <td class="dados">${c.conta}</td>
+      <td>${(c.chaves_pix||[]).map(k => `<div class="dados" style="white-space:nowrap">
+            <small>${k.tipo_nome}</small> ${k.chave}
+            <button class="link-btn" data-pix-remover="${k.id}" title="remover">×</button>
+          </div>`).join("") || `<span style="color:var(--tinta-suave)">—</span>`}</td>
+      <td><span class="selo ${c.ativo?"aprovado":"outro"}">${c.ativo?"Ativa":"Inativa"}</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn secundario" data-pix-novo="${c.id}">+ Pix</button>
+        <button class="btn secundario" data-copiar="${c.id}">Copiar dados</button></td>
+    </tr>`).join("")
+    || `<tr><td colspan="7" class="cartao-dica">Nenhuma conta cadastrada — necessária para registrar pagamentos.</td></tr>`;
+
+  document.querySelectorAll("[data-copiar]").forEach(b => b.addEventListener("click", async () => {
+    const c = CONTAS_PIX.find(x => String(x.id) === b.dataset.copiar);
+    if (!c || !c.texto_para_copiar) return;
+    try {
+      await navigator.clipboard.writeText(c.texto_para_copiar);
+      aviso("pix-msg", "Dados copiados. É só colar.", "ok");
+    } catch(e){
+      // Sem permissão da área de transferência, mostrar o texto ainda resolve:
+      // dá para selecionar e copiar à mão.
+      aviso("pix-msg", `<b>Copie daqui:</b><pre style="white-space:pre-wrap; margin:6px 0 0">${
+        escapar(c.texto_para_copiar)}</pre>`, "alerta");
+    }
+  }));
+
+  document.querySelectorAll("[data-pix-novo]").forEach(b => b.addEventListener("click", () => {
+    els("pix-conta").value = b.dataset.pixNovo;
+    els("dlg-pix").showModal();
+  }));
+
+  document.querySelectorAll("[data-pix-remover]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("Remover esta chave Pix?")) return;
+    try {
+      const d = await api(`/erp/api/contas/pix/${b.dataset.pixRemover}`, {method:"DELETE"});
+      CONTAS_PIX = d.contas || CONTAS_PIX;
+      desenharContas();
+    } catch(e){ aviso("pix-msg", e.message, "erro"); }
+  }));
+}
+
+els("btn-pix-salvar") && els("btn-pix-salvar").addEventListener("click", async () => {
+  try {
+    const d = await api(`/erp/api/contas/${els("pix-conta").value}/pix`, {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({tipo: els("pix-tipo").value, chave: els("pix-chave").value,
+                            descricao: els("pix-desc").value})});
+    CONTAS_PIX = d.contas || CONTAS_PIX;
+    els("dlg-pix").close();
+    els("pix-chave").value = ""; els("pix-desc").value = "";
+    desenharContas();
+    aviso("pix-msg", "Chave guardada.", "ok");
+  } catch(e){ aviso("pix-dlg-msg", e.message, "erro"); }
+});
+
 carregar();
 carregarIA();
+carregarAnexos();
+carregarContasPix();
+
+// --------------------------------------------------------------- índices
+// O INCC-DI é a série 192 do SGS do Banco Central — pública, sem chave. A
+// FGV é quem calcula, mas o serviço de dados dela é licenciado.
+async function carregarIndices(){
+  const sel = els("ind-codigo");
+  try {
+    const d = await api("/erp/api/indices?codigo=" + (sel.value || "INCC-DI"));
+    if (!sel.options.length) {
+      sel.innerHTML = d.catalogo.map(i =>
+        `<option value="${i.codigo}">${escapar(i.nome)}</option>`).join("");
+      sel.value = d.codigo;
+    }
+    els("ind-estado").innerHTML = d.meses.length
+      ? `<b>${escapar(d.nome)}</b> — ${d.meses.length} mês(es) guardados,
+         o mais recente é ${escapar(d.ultimo.slice(5, 7) + "/" + d.ultimo.slice(0, 4))}.
+         ${d.em_dia ? "A tabela está em dia."
+                    : "<b>A tabela está atrasada</b> — busque no Banco Central."}`
+      : `<b>${escapar(d.nome)}</b> — nenhum mês guardado ainda.
+         Aperte "Buscar no Banco Central" para trazer a série.`;
+    els("ind-corpo").innerHTML = d.meses.map(m => `
+      <tr><td>${escapar(m.competencia.slice(5, 7) + "/" + m.competencia.slice(0, 4))}</td>
+        <td class="direita mono">${numero(m.variacao_pct)}%</td>
+        <td>${m.fonte === "MANUAL"
+              ? '<span class="selo aguardando">lançado à mão</span>'
+              : '<span class="selo outro">Banco Central</span>'}</td>
+        <td>${momentoBR(m.coletado_em)}</td></tr>`).join("");
+  } catch(e){
+    els("ind-estado").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+}
+
+async function atualizarIndices(){
+  const b = els("btn-ind-atualizar");
+  b.disabled = true; b.textContent = "Buscando…";
+  try {
+    const d = await api("/erp/api/indices/atualizar", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({codigo: els("ind-codigo").value})});
+    const r = d.resumo;
+    aviso("ind-resultado", `Pronto: ${r.novos} mês(es) novo(s),
+      ${r.atualizados} revisado(s) pelo Banco Central${r.preservados_manuais
+        ? `, ${r.preservados_manuais} preservado(s) por terem sido lançados à mão`
+        : ""}.`, "ok");
+    carregarIndices();
+  } catch(e){ aviso("ind-resultado", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Buscar no Banco Central";
+}
+
+async function lancarIndice(){
+  if (!els("ind-mes").value || !els("ind-valor").value.trim()) {
+    return aviso("ind-resultado", "Informe o mês e a variação.", "alerta");
+  }
+  try {
+    await api("/erp/api/indices/lancar", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({codigo: els("ind-codigo").value,
+                            competencia: els("ind-mes").value,
+                            variacao_pct: els("ind-valor").value.replace(",", ".")})});
+    els("ind-valor").value = "";
+    aviso("ind-resultado", "Mês lançado.", "ok");
+    carregarIndices();
+  } catch(e){ aviso("ind-resultado", e.message, "erro"); }
+}
+
+els("btn-ind-atualizar").addEventListener("click", atualizarIndices);
+els("btn-ind-lancar").addEventListener("click", lancarIndice);
+els("ind-codigo").addEventListener("change", carregarIndices);
+carregarIndices();
 </script>
 {% endblock %}

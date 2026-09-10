@@ -1,0 +1,604 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Contratos e medições — ERP BWS{% endblock %}
+
+{# O QUADRO FINANCEIRO DO CONTRATO.
+
+   Por que a entrada é o CONTRATO e não a medição: foi o próprio dono quem
+   corrigiu no meio da fala — "até pensei que seria melhor ir pela obra, pelo
+   contrato, ou pela medição. Aí talvez seja até interessante pelo contrato,
+   que lá vai estar relacionando todas as medições."
+
+   O que esta tela responde, e que hoje só se responde somando planilha:
+
+     medido    ≠  faturado  ≠  recebido
+
+   Medir não é faturar, e faturar não é receber. São três perguntas
+   diferentes, e é por isso que aparecem em três colunas separadas — juntá-las
+   num número só é exatamente o erro que faz alguém achar que o dinheiro
+   entrou. #}
+
+{% block filtros %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="objeto do contrato, obra…">
+  </div>
+  <div class="campo"><label>Obra</label><select id="f-obra"></select></div>
+
+  <div class="dica" style="margin-top:12px">
+    O reajuste entra como medição, mas <b>não consome saldo do contrato</b>:
+    é acréscimo por índice, não obra executada a mais. Por isso o saldo aqui
+    desconta só a medição comum.
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+
+<div id="lado-lista">
+  <div class="tabela-wrap">
+    <div class="tabela-barra"><span class="resumo" id="resumo-lista"></span></div>
+    <div class="tabela-rolagem">
+      <table><thead><tr>
+        <th>Obra</th><th>Objeto</th><th>Situação</th>
+        <th class="direita">Contratado</th><th class="direita">Medido</th>
+        <th class="direita">Saldo</th><th class="direita">Medições</th><th></th>
+      </tr></thead><tbody id="corpo-lista"></tbody></table>
+    </div>
+    <div class="vazio oculto" id="vazio-lista"></div>
+  </div>
+</div>
+
+<div id="lado-quadro" class="oculto">
+  <div class="tabela-barra" style="background:var(--branco); border-radius:var(--raio);
+       box-shadow:var(--sombra); margin-bottom:14px">
+    <button class="btn secundario" id="btn-voltar">← Contratos</button>
+    <span class="resumo" id="cabecalho-contrato"></span>
+  </div>
+
+  <div class="kpis kpis-largos" id="kpis"></div>
+  <div id="pendencias"></div>
+  <div id="reajuste"></div>
+
+  <div class="tabela-wrap">
+    <div class="tabela-barra"><span class="resumo" id="resumo-medicoes"></span></div>
+    <div class="tabela-rolagem">
+      <table><thead><tr>
+        <th>Medição</th><th>Solicitação</th><th>Tipo</th><th>Período</th>
+        <th class="direita">Medido</th><th class="direita">Faturado</th>
+        <th class="direita">Recebido</th><th>Protocolo</th><th>Dias</th><th></th>
+      </tr></thead><tbody id="corpo-medicoes"></tbody></table>
+    </div>
+    <div class="vazio oculto" id="vazio-medicoes"></div>
+  </div>
+
+  <div class="tabela-wrap" style="margin-top:14px">
+    <div class="tabela-barra"><span class="resumo">
+      <b>Tempo de recebimento</b> — dias entre protocolar no órgão e o dinheiro
+      entrar. Só entra na média o que já foi recebido: medição protocolada e
+      não paga tem espera, não prazo.</span></div>
+    <div id="tempo" style="padding:12px 14px"></div>
+  </div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" id="dlg-fechar">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PODE_MEXER = {{ 'true' if pode.receber else 'false' }};
+const PODE_EMITIR = {{ 'true' if pode.emitir_nota else 'false' }};
+const PODE_CONFIGURAR = {{ 'true' if pode.configurar else 'false' }};
+let CONTRATOS = [], QUADRO = null, TIPOS = [], REAJUSTE = null;
+
+// -------------------------------------------------------------------------
+// A lista de contratos
+// -------------------------------------------------------------------------
+async function carregarObras(){
+  try {
+    const d = await api("/erp/api/obras");
+    const lista = d.obras || d.dados || [];
+    els("f-obra").innerHTML = `<option value="">Todas</option>` + lista.map(o =>
+      `<option value="${o.id}">${escapar(o.codigo || "")} ${escapar(o.nome || "")}</option>`).join("");
+  } catch(e){
+    // Filtro mudo faz a pessoa achar que não há obra cadastrada. Se não deu,
+    // tem de aparecer que não deu.
+    els("f-obra").innerHTML = `<option value="">(não consegui carregar)</option>`;
+    aviso("mensagem", "Não consegui carregar as obras: " + e.message, "erro");
+  }
+}
+
+async function carregarLista(){
+  const p = new URLSearchParams();
+  if (els("f-obra").value) p.set("obra_id", els("f-obra").value);
+  try {
+    const d = await api("/erp/api/contratos/quadro?" + p.toString());
+    CONTRATOS = d.contratos || [];
+    desenharLista();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function contratosEmTela(){
+  const busca = (els("f-busca").value || "").trim().toLowerCase();
+  if (!busca) return CONTRATOS;
+  return CONTRATOS.filter(c =>
+    `${c.objeto||""} ${c.obra||""}`.toLowerCase().includes(busca));
+}
+
+function desenharLista(){
+  const lista = contratosEmTela();
+  els("resumo-lista").innerHTML = `<b>${lista.length}</b> contrato(s)`;
+  els("vazio-lista").classList.toggle("oculto", lista.length > 0);
+  if (!lista.length){
+    els("vazio-lista").innerHTML = "<b>Nenhum contrato nestes filtros</b>" +
+      "O contrato é cadastrado na tela da obra.";
+  }
+  els("corpo-lista").innerHTML = lista.map(c => `
+    <tr>
+      <td>${escapar(c.obra || "—")}</td>
+      <td>${escapar(c.objeto || "—")}</td>
+      <td><span class="selo outro">${rotulo(c.status)}</span></td>
+      <td class="direita mono">${moeda(c.contratado)}${c.aditivado
+        ? `<br><small>+ ${moeda(c.aditivado)} de aditivo</small>` : ""}</td>
+      <td class="direita mono">${moeda(c.medido)}${c.reajuste
+        ? `<br><small>${moeda(c.reajuste)} é reajuste</small>` : ""}</td>
+      <td class="direita mono">${moeda(c.saldo)}</td>
+      <td class="direita mono">${c.medicoes}</td>
+      <td><button class="btn secundario" data-quadro="${c.id}">Abrir quadro</button></td>
+    </tr>`).join("");
+  document.querySelectorAll("[data-quadro]").forEach(b =>
+    b.addEventListener("click", () => abrirQuadro(Number(b.dataset.quadro))));
+}
+
+// -------------------------------------------------------------------------
+// O quadro de um contrato
+// -------------------------------------------------------------------------
+async function abrirQuadro(id){
+  try {
+    QUADRO = await api(`/erp/api/contratos/${id}/quadro`);
+    try { REAJUSTE = await api(`/erp/api/contratos/${id}/reajuste`); }
+    catch(err) { REAJUSTE = null; }
+    els("lado-lista").classList.add("oculto");
+    els("lado-quadro").classList.remove("oculto");
+    desenharQuadro();
+    window.scrollTo(0, 0);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function voltar(){
+  QUADRO = null;
+  els("lado-quadro").classList.add("oculto");
+  els("lado-lista").classList.remove("oculto");
+}
+
+// O botão só aparece na medição que TEM direito e ainda não gerou. Oferecer
+// onde não dá é convidar para um erro que o servidor recusa depois.
+function podeReajustar(linha){
+  if (!REAJUSTE || linha.e_reajuste) return false;
+  const p = REAJUSTE.medicoes.find(m => m.titulo_id === linha.titulo_id);
+  return !!(p && p.pode && !p.ja_gerado);
+}
+
+function desenharQuadro(){
+  const c = QUADRO.contrato, t = QUADRO.totais;
+  els("cabecalho-contrato").innerHTML =
+    `<b>${escapar(c.obra || "")}</b> — ${escapar(c.objeto || "sem objeto")}` +
+    (c.vigencia_fim ? ` · vigência até ${dataBR(c.vigencia_fim)}` : "") +
+    (c.indice_reajuste ? ` · reajuste por ${escapar(c.indice_reajuste)}` : "");
+
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Contratado</div>
+      <div class="kpi-valor">${moeda(t.contratado)}</div>
+      <div class="kpi-sub">${t.aditivado ? "+ " + moeda(t.aditivado) + " de aditivo" : "sem aditivo"}</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Vigente</div>
+      <div class="kpi-valor">${moeda(t.vigente)}</div>
+      <div class="kpi-sub">é este o teto de verdade</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Medido</div>
+      <div class="kpi-valor">${moeda(t.medido)}</div>
+      <div class="kpi-sub">${t.reajuste ? moeda(t.reajuste) + " é reajuste" : "sem reajuste"}</div></div>
+    <div class="kpi estatico roxo"><div class="kpi-rotulo">Faturado</div>
+      <div class="kpi-valor">${moeda(t.faturado)}</div>
+      <div class="kpi-sub">virou nota fiscal</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">Recebido</div>
+      <div class="kpi-valor">${moeda(t.recebido)}</div>
+      <div class="kpi-sub">entrou na conta</div></div>
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">A receber</div>
+      <div class="kpi-valor">${moeda(t.a_receber)}</div>
+      <div class="kpi-sub">faturado e não entrou</div></div>
+    ${t.recebido_sem_nota ? `<div class="kpi estatico roxo">
+      <div class="kpi-rotulo">Recebido sem nota</div>
+      <div class="kpi-valor">${moeda(t.recebido_sem_nota)}</div>
+      <div class="kpi-sub">entrou e ainda não foi faturado</div></div>` : ""}
+    <div class="kpi estatico"><div class="kpi-rotulo">Saldo a medir</div>
+      <div class="kpi-valor">${moeda(t.saldo)}</div>
+      <div class="kpi-sub">${t.medido_pct === null ? "" : t.medido_pct + "% executado"}</div></div>`;
+
+  const p = QUADRO.pendencias, blocos = [];
+  if (p.medido_sem_nota.length)
+    blocos.push(`<b>Medido e ainda sem nota:</b> ${p.medido_sem_nota.map(escapar).join(", ")}`);
+  if (p.faturado_sem_receber.length)
+    blocos.push(`<b>Faturado e não recebido:</b> ${p.faturado_sem_receber.map(escapar).join(", ")}`);
+  if (p.sem_protocolo.length)
+    blocos.push(`<b>Sem protocolo no órgão:</b> ${p.sem_protocolo.map(escapar).join(", ")}`);
+  els("pendencias").innerHTML = blocos.length
+    ? `<div class="aviso info" style="margin-bottom:14px">${blocos.join("<br>")}</div>` : "";
+
+  const m = QUADRO.medicoes;
+  els("resumo-medicoes").innerHTML = `<b>${m.length}</b> medição(ões)`;
+  els("vazio-medicoes").classList.toggle("oculto", m.length > 0);
+  if (!m.length){
+    els("vazio-medicoes").innerHTML = "<b>Nenhuma medição neste contrato</b>" +
+      "A medição é lançada como título a receber, com número de medição.";
+  }
+  els("corpo-medicoes").innerHTML = m.map(l => `
+    <tr>
+      <td><b>${escapar(l.medicao || "—")}</b>${l.reajuste_de
+        ? `<br><small>reajuste da ${escapar(l.reajuste_de.medicao || "")}</small>` : ""}</td>
+      <td>${escapar(l.numero_sp || "—")}</td>
+      <td>${l.tipo ? escapar(l.tipo_nome || l.tipo) : '<span class="selo aguardando">sem tipo</span>'}</td>
+      <td>${l.periodo.inicio ? dataBR(l.periodo.inicio) + " a " + dataBR(l.periodo.fim) : "—"}</td>
+      <td class="direita mono">${moeda(l.valor)}</td>
+      <td class="direita mono">${l.faturado ? moeda(l.faturado) : "—"}</td>
+      <td class="direita mono">${l.recebido ? moeda(l.recebido) : "—"}</td>
+      <td>${l.protocolo ? escapar(l.protocolo) + "<br><small>" + dataBR(l.protocolado_em) + "</small>" : "—"}</td>
+      <td class="mono">${l.dias_ate_receber === null ? "—" : l.dias_ate_receber}</td>
+      <td>${PODE_MEXER ? `
+        <button class="btn secundario" data-tipo="${l.titulo_id}">Tipo</button>
+        <button class="btn secundario" data-protocolo="${l.titulo_id}">Protocolo</button>` : ""}
+        ${PODE_EMITIR ? `<button class="btn" data-emitir="${l.titulo_id}">Emitir nota</button>` : ""}
+        ${PODE_MEXER && podeReajustar(l) ? `<button class="btn amarelo"
+           data-reajuste="${l.titulo_id}">Gerar reajuste</button>` : ""}</td>
+    </tr>`).join("");
+
+  document.querySelectorAll("[data-tipo]").forEach(b =>
+    b.addEventListener("click", () => abrirTipo(Number(b.dataset.tipo))));
+  document.querySelectorAll("[data-protocolo]").forEach(b =>
+    b.addEventListener("click", () => abrirProtocolo(Number(b.dataset.protocolo))));
+  document.querySelectorAll("[data-emitir]").forEach(b =>
+    b.addEventListener("click", () => abrirEmissao(Number(b.dataset.emitir))));
+  document.querySelectorAll("[data-reajuste]").forEach(b =>
+    b.addEventListener("click", () => gerarReajuste(Number(b.dataset.reajuste))));
+
+  desenharReajuste();
+
+  const tr = QUADRO.tempo_de_recebimento;
+  els("tempo").innerHTML = tr.recebidas
+    ? `Das <b>${tr.recebidas}</b> medição(ões) já recebidas, a média foi de
+       <b>${tr.media_dias} dias</b> (a mais rápida em ${tr.menor}, a mais lenta em ${tr.maior}).
+       ${tr.aguardando ? `Há <b>${tr.aguardando}</b> protocolada(s) aguardando —
+         a mais antiga há ${tr.mais_antiga.dias_esperando} dias
+         (medição ${escapar(tr.mais_antiga.medicao || "")}).` : ""}`
+    : (tr.aguardando
+        ? `Nada recebido ainda. Há <b>${tr.aguardando}</b> medição(ões) protocolada(s),
+           a mais antiga há ${tr.mais_antiga.dias_esperando} dias.`
+        : `Nenhuma medição protocolada ainda — o indicador só nasce depois que o
+           protocolo é registrado.`);
+}
+
+// -------------------------------------------------------------------------
+// Classificar e protocolar
+// -------------------------------------------------------------------------
+function linhaDe(id){ return (QUADRO.medicoes || []).find(l => l.titulo_id === id); }
+
+async function abrirTipo(id){
+  if (!TIPOS.length){
+    try { TIPOS = (await api("/erp/api/medicoes/tipos")).tipos || []; }
+    catch(e){ aviso("mensagem", e.message, "erro"); return; }
+  }
+  const linha = linhaDe(id);
+  // Só medição do MESMO contrato pode ser origem de reajuste — e o serviço
+  // recusa de novo no servidor. A lista aqui é conveniência, não a trava.
+  const outras = (QUADRO.medicoes || []).filter(l => l.titulo_id !== id && !l.e_reajuste);
+  const r = await perguntar({
+    titulo: `Medição ${linha.medicao || ""} — tipo`,
+    aviso: "Quem manda na nomenclatura é o órgão. O reajuste aponta para a " +
+           "medição que reajusta, mesmo quando o órgão o numerou em sequência.",
+    campos: [
+      {nome: "tipo", rotulo: "Tipo", tipo: "select", valor: linha.tipo || "",
+       opcoes: [{valor: "", rotulo: "— escolha —"}].concat(
+         TIPOS.map(t => ({valor: t.codigo, rotulo: t.nome})))},
+      {nome: "de", rotulo: "Reajuste da medição", tipo: "select",
+       valor: linha.reajuste_de ? String(linha.reajuste_de.titulo_id) : "",
+       dica: "Só para medição de reajuste. Em branco para as demais.",
+       opcoes: [{valor: "", rotulo: "— nenhuma —"}].concat(
+         outras.map(l => ({valor: String(l.titulo_id),
+                           rotulo: `Medição ${l.medicao} (${l.numero_sp})`})))},
+    ],
+    textoOk: "Salvar",
+  });
+  if (!r) return;
+  try {
+    await api(`/erp/api/medicoes/${id}/classificar`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({tipo: r.tipo, medicao_de_id: r.de || null})});
+    aviso("mensagem", "Tipo da medição registrado.", "ok");
+    abrirQuadro(QUADRO.contrato.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function abrirProtocolo(id){
+  const linha = linhaDe(id);
+  const hoje = new Date().toISOString().slice(0, 10);
+  const r = await perguntar({
+    titulo: `Medição ${linha.medicao || ""} — protocolo`,
+    aviso: "É o protocolo que destrava o indicador de tempo de recebimento: " +
+           "quantos dias entre entregar no órgão e o dinheiro entrar.",
+    campos: [
+      {nome: "numero", rotulo: "Número do protocolo", obrigatorio: true,
+       valor: linha.protocolo || ""},
+      {nome: "em", rotulo: "Data", tipo: "date",
+       valor: linha.protocolado_em || hoje},
+    ],
+    textoOk: "Registrar",
+  });
+  if (!r) return;
+  try {
+    await api(`/erp/api/medicoes/${id}/protocolo`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({numero: r.numero, em: r.em})});
+    aviso("mensagem", "Protocolo registrado.", "ok");
+    abrirQuadro(QUADRO.contrato.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// -------------------------------------------------------------------------
+// O REAJUSTE
+//
+// A regra, como o dono descreveu: o índice é o INCC, o direito nasce doze
+// meses depois da data-base, e QUAL data-base vale muda por contrato — pode
+// ser a do orçamento, pode ser a da proposta. Por isso é campo, não regra.
+//
+// O sistema ESTIMA; quem fecha o valor é o órgão ("pode ser que o órgão tenha
+// algum entendimento e mude algum centavo"). Daí o valor ser editável na hora
+// de gerar o título, e o previsto ficar guardado do lado.
+// -------------------------------------------------------------------------
+const ORIGENS_DATA_BASE = [
+  {valor: "", rotulo: "— não informada —"},
+  {valor: "ORCAMENTO", rotulo: "Data-base do orçamento"},
+  {valor: "PROPOSTA", rotulo: "Data da proposta da licitação"},
+  {valor: "ASSINATURA", rotulo: "Data da assinatura do contrato"},
+  {valor: "OUTRA", rotulo: "Outra"},
+];
+
+function desenharReajuste(){
+  if (!REAJUSTE) { els("reajuste").innerHTML = ""; return; }
+  const c = REAJUSTE.configuracao;
+  const podeGerar = REAJUSTE.medicoes.filter(m => m.pode && !m.ja_gerado);
+  const travadas = REAJUSTE.medicoes.filter(m => !m.pode);
+
+  els("reajuste").innerHTML = `
+    <div class="aviso ${c.configurado ? (podeGerar.length ? "alerta" : "info") : "info"}"
+         style="margin-bottom:14px">
+      <b>Reajuste</b> —
+      ${c.configurado
+        ? `${escapar(c.indice)}, data-base ${dataBR(c.data_base)}` +
+          `${c.data_base_origem ? " (" + escapar(rotulo(c.data_base_origem)) + ")" : ""}` +
+          `${c.veio_de === "obra" ? " <small>— herdada do cadastro da obra</small>" : ""}` +
+          `, direito a cada ${c.meses} meses.`
+        : "este contrato ainda não tem data-base. Sem ela não dá para calcular nada."}
+      ${podeGerar.length
+        ? `<br><b>${moeda(REAJUSTE.a_gerar)}</b> de reajuste a gerar, nas medições
+           ${REAJUSTE.medicoes_a_gerar.map(escapar).join(", ")}.`
+        : (c.configurado ? "<br>Nada a gerar agora." : "")}
+      ${travadas.length
+        ? `<br><small>${travadas.length} medição(ões) sem previsão:
+           ${escapar(travadas[0].motivo)}</small>` : ""}
+      ${PODE_CONFIGURAR
+        ? `<br><button class="link-btn" id="btn-data-base" style="padding-left:0">
+             ${c.configurado ? "Mudar a data-base" : "Informar a data-base"}</button>`
+        : ""}
+    </div>`;
+  const b = els("btn-data-base");
+  if (b) b.addEventListener("click", configurarDataBase);
+}
+
+function previsaoDe(id){
+  return REAJUSTE ? REAJUSTE.medicoes.find(m => m.titulo_id === id) : null;
+}
+
+async function configurarDataBase(){
+  const c = REAJUSTE.configuracao;
+  const r = await perguntar({
+    titulo: "Data-base do reajuste",
+    aviso: "Qual data vale muda por contrato: pode ser a do orçamento ou a da " +
+           "proposta da licitação. É dela que a conta parte, e é a primeira " +
+           "coisa que o órgão pergunta quando contesta o valor.",
+    campos: [
+      {nome: "data_base", rotulo: "Data-base", tipo: "date",
+       valor: c.data_base || ""},
+      {nome: "data_base_origem", rotulo: "Essa data é de quê?", tipo: "select",
+       valor: c.data_base_origem || "", opcoes: ORIGENS_DATA_BASE},
+      {nome: "indice_reajuste", rotulo: "Índice", valor: c.indice || "INCC-DI",
+       dica: "O usual em obra é o INCC-DI."},
+      {nome: "reajuste_meses", rotulo: "Direito a cada quantos meses",
+       tipo: "number", valor: String(c.meses || 12)},
+    ],
+    textoOk: "Salvar",
+  });
+  if (!r) return;
+  try {
+    REAJUSTE = await api(`/erp/api/contratos/${QUADRO.contrato.id}/reajuste`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(r)});
+    aviso("mensagem", "Data-base registrada.", "ok");
+    desenharReajuste();
+    desenharQuadro();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function gerarReajuste(id){
+  const p = previsaoDe(id);
+  if (!p) return;
+  if (!p.pode) return aviso("mensagem", p.motivo, "alerta");
+  const r = await perguntar({
+    titulo: `Reajuste da medição ${escapar(p.medicao || "")}`,
+    aviso: `${escapar(p.explicacao)}  —  O valor é uma ESTIMATIVA: quem fecha é ` +
+           `o órgão, e o que você digitar aqui é o que vale. O previsto fica ` +
+           `guardado do lado, para a diferença aparecer.`,
+    campos: [
+      {nome: "valor", rotulo: "Valor do reajuste", tipo: "number",
+       valor: String(p.valor), obrigatorio: true},
+      {nome: "numero_medicao", rotulo: "Número desta medição",
+       valor: (p.medicao || "") + "R",
+       dica: "Há órgão que numera o reajuste em sequência — aí é 3, não 1R."},
+    ],
+    textoOk: "Gerar o título",
+  });
+  if (!r) return;
+  try {
+    await api(`/erp/api/medicoes/${id}/reajuste`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(r)});
+    aviso("mensagem", "Título de reajuste gerado.", "ok");
+    abrirQuadro(QUADRO.contrato.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// -------------------------------------------------------------------------
+// EMITIR A NOTA — modo MANUAL
+//
+// O ERP prepara e registra; quem emite é a pessoa, no site da prefeitura. O
+// bloco sai pronto para copiar porque juntar prestador, tomador,
+// discriminação e retenções de três telas diferentes é onde se erra um
+// dígito — e nota com dígito errado se conserta com cancelamento e carta ao
+// cliente.
+// -------------------------------------------------------------------------
+const TRIBUTOS_NOTA = [["iss","ISS"],["ir","IRRF"],["inss","INSS"],
+                       ["pis","PIS"],["cofins","COFINS"],["csll","CSLL"]];
+let EMISSAO = null;
+
+async function abrirEmissao(id){
+  try {
+    EMISSAO = (await api(`/erp/api/medicoes/${id}/emitir`)).emissao;
+  } catch(e){ return aviso("mensagem", e.message, "erro"); }
+  const e = EMISSAO, hoje = new Date().toISOString().slice(0, 10);
+  els("dlg-titulo").textContent = `Emitir a nota da medição ${e.medicao}`;
+  els("dlg-corpo").innerHTML = `
+    ${e.destino.pode ? "" : `<div class="aviso erro">${escapar(e.destino.motivo || "")}</div>`}
+    <div class="aviso info">
+      A nota sai por <b>${escapar(e.destino.empresa || "—")}</b>
+      (${escapar(e.destino.cnpj || "")})${e.destino.municipio
+        ? ", em " + escapar(e.destino.municipio) : ""}.
+      Isso não se escolhe: vem da obra ${escapar(e.obra || "")}.
+      ${e.destino.ambiente === "HOMOLOGACAO"
+        ? "<br><b>Esta empresa está em homologação</b> — nota de teste não vale como nota."
+        : ""}
+    </div>
+    ${e.avisos.length ? `<div class="aviso alerta">${e.avisos.map(escapar).join("<br>")}</div>` : ""}
+    ${e.ja_emitidas.length ? `<div class="aviso alerta">Esta medição já tem nota:
+      ${e.ja_emitidas.map(n => `${escapar(n.numero_nota || "sem número")}
+        (${escapar(n.situacao)}, ${moeda(n.valor)})`).join("; ")}.
+      Emitir de novo só se for faturamento parcial.</div>` : ""}
+
+    <h4 style="margin:14px 0 6px">1. Copie e emita no portal</h4>
+    <textarea id="em-bloco" rows="12" readonly
+      style="width:100%; font-family:var(--fonte-dados); font-size:12px"
+      >${escapar(e.texto_para_copiar)}</textarea>
+    <button class="btn secundario" id="em-copiar" style="margin-top:6px">Copiar</button>
+
+    <h4 style="margin:16px 0 6px">2. Volte com a nota</h4>
+    <div class="dica" style="margin-bottom:8px">Anexe o PDF que a prefeitura
+      devolveu e a IA preenche os campos — depois confira.</div>
+    <input type="file" id="em-arquivo" accept=".pdf,.png,.jpg,.jpeg">
+    <div id="em-lido"></div>
+
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo" style="grid-column:span 2"><label>Número da nota *</label>
+        <input id="em-numero" type="text"></div>
+      <div class="campo" style="grid-column:span 2"><label>Data de emissão</label>
+        <input id="em-data" type="date" value="${hoje}"></div>
+      <div class="campo" style="grid-column:span 2"><label>Valor bruto</label>
+        <input id="em-valor" type="number" step="0.01" value="${e.valor_bruto}"></div>
+      ${TRIBUTOS_NOTA.map(([c, nome]) => `
+        <div class="campo" style="grid-column:span 2"><label>${nome} retido</label>
+          <input id="em-${c}" type="number" step="0.01"
+                 value="${e.retencoes[c] || 0}"></div>`).join("")}
+      <div class="campo" style="grid-column:span 3"><label>Código de verificação</label>
+        <input id="em-codigo" type="text"></div>
+      <div class="campo" style="grid-column:span 3"><label>Chave de acesso</label>
+        <input id="em-chave" type="text"></div>
+    </div>
+    <div id="em-erro"></div>
+    <div style="margin-top:14px; display:flex; gap:8px">
+      <button class="btn" id="em-registrar">Registrar a nota</button>
+      <button class="btn secundario" id="em-cancelar">Fechar</button>
+    </div>`;
+
+  els("em-copiar").addEventListener("click", async () => {
+    els("em-bloco").select();
+    try { await navigator.clipboard.writeText(EMISSAO.texto_para_copiar); }
+    catch(err) { document.execCommand("copy"); }
+    els("em-copiar").textContent = "Copiado";
+  });
+  els("em-cancelar").addEventListener("click", () => els("dlg").close());
+  els("em-arquivo").addEventListener("change", lerNotaAnexada);
+  els("em-registrar").addEventListener("click", registrarEmissao);
+  els("dlg").showModal();
+}
+
+async function lerNotaAnexada(ev){
+  const f = ev.target.files[0];
+  if (!f) return;
+  els("em-lido").innerHTML = `<div class="aviso info">Lendo a nota…</div>`;
+  const fd = new FormData();
+  fd.append("arquivo", f);
+  try {
+    const d = await (async () => {
+      const r = await fetch("/erp/api/notas-emitidas/ler", {method: "POST", body: fd});
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.erro || "Não consegui ler a nota.");
+      return j.lido;
+    })();
+    if (d.numero_nota) els("em-numero").value = d.numero_nota;
+    if (d.emissao) els("em-data").value = d.emissao;
+    if (d.valor_bruto) els("em-valor").value = d.valor_bruto;
+    if (d.chave_acesso) els("em-chave").value = d.chave_acesso;
+    TRIBUTOS_NOTA.forEach(([c]) => { if (d.retencoes[c]) els("em-" + c).value = d.retencoes[c]; });
+    els("em-lido").innerHTML = `<div class="aviso ${
+      d.confianca === "ALTA" ? "ok" : "alerta"}">Li a nota (confiança
+      ${escapar(d.confianca || "?")}). <b>Confira os campos abaixo antes de
+      registrar.</b>${d.campos_ilegiveis.length
+        ? " Não consegui ler: " + d.campos_ilegiveis.map(escapar).join(", ") + "." : ""}</div>`;
+  } catch(err){
+    els("em-lido").innerHTML = `<div class="aviso erro">${escapar(err.message)}
+      — preencha à mão.</div>`;
+  }
+}
+
+async function registrarEmissao(){
+  els("em-erro").innerHTML = "";      // erro velho não pode sobreviver à correção
+  const numero = els("em-numero").value.trim();
+  if (!numero) return aviso("em-erro", "Informe o número da nota.", "erro");
+  const retencoes = {};
+  TRIBUTOS_NOTA.forEach(([c]) => retencoes[c] = els("em-" + c).value || 0);
+  try {
+    await api(`/erp/api/medicoes/${EMISSAO.titulo_id}/emitir`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        numero_nota: numero, emissao: els("em-data").value,
+        valor_bruto: els("em-valor").value, retencoes,
+        codigo_verificacao: els("em-codigo").value,
+        chave_acesso: els("em-chave").value})});
+    els("dlg").close();
+    aviso("mensagem", `Nota ${numero} registrada.`, "ok");
+    abrirQuadro(QUADRO.contrato.id);
+  } catch(e){ aviso("em-erro", e.message, "erro"); }
+}
+
+// -------------------------------------------------------------------------
+els("btn-voltar").addEventListener("click", voltar);
+els("dlg-fechar").addEventListener("click", () => els("dlg").close());
+els("f-obra").addEventListener("change", carregarLista);
+els("f-busca").addEventListener("input", desenharLista);
+els("btn-limpar").addEventListener("click", () => {
+  els("f-obra").value = ""; els("f-busca").value = ""; carregarLista();
+});
+
+carregarObras().then(carregarLista);
+</script>
+{% endblock %}

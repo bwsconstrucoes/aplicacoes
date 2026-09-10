@@ -811,12 +811,1013 @@ de onde eu estou olhando — se estou analisando notas, vejo lá; se estou pelos
 títulos, tenho um título de fundo fixo, vejo por lá também"*. Ou seja, a
 dedutibilidade tem de aparecer **nos dois lugares**, não numa tela separada.
 
+### A trava contra baixar o mesmo pagamento duas vezes — 08/09/2026
+
+Pedido do dono, com estas palavras: *"acho que eu tentei colocar alguma trava
+na aplicação, não sei se funciona, mas o sistema realmente não pode baixar duas
+vezes, precisa barrar"*.
+
+**Ele estava certo em desconfiar.** No ERP não havia trava nenhuma: o mesmo
+comprovante processado de novo dava outra baixa, calado. E no `baixabradesco`,
+onde havia, a trava tinha cinco buracos — o pior deles: qualquer erro ao ler a
+lista de comprovantes já vistos devolvia lista vazia, e o lote inteiro passava
+como novo. **Trava que falha liberando é pior que trava nenhuma**, porque dá
+confiança falsa.
+
+A trava nova (migração **042**) mora **no banco**, em restrição única, e em
+dois níveis:
+
+1. **O arquivo, pelo conteúdo** — e o nome do arquivo NÃO entra na conta.
+   "comprovante.pdf" e "comprovante (1).pdf" são o mesmo documento; renomear
+   acontece o tempo todo, e era assim que a trava antiga era furada.
+2. **O pagamento** — a mesma parcela, com o mesmo valor, no mesmo dia. É o que
+   pega o PDF **regerado** pelo banco: bytes diferentes, pagamento igual.
+
+Três decisões que valem ser lembradas:
+
+- **A conferência vem ANTES da leitura por IA.** Comprovante repetido não
+  chega a gastar inteligência artificial — o resultado seria jogado fora.
+- **O registro é gravado ANTES da baixa**, na mesma transação. Se a restrição
+  recusar, a baixa não chega a ser tentada. A trava é o portão, não o aviso
+  depois do fato.
+- **Falha fechando.** Não conseguiu registrar, não baixa. Baixa que não
+  aconteceu é aborrecimento; baixa em dobro é dinheiro saindo duas vezes.
+
+**Pagamento parcial continua possível**: a mesma parcela aceita outra baixa em
+outro dia, ou com outro valor. O que a trava barra é a repetição idêntica. E
+quando o pagamento foi mesmo em dobro de verdade, a mensagem diz o caminho:
+registrar pela tela de pagamentos, com justificativa.
+
+**Provado de ponta a ponta**, com banco de verdade e o mesmo comprovante
+entrando quatro vezes por portas diferentes (tela, e-mail, Make):
+
+| tentativa | o que era | resultado |
+|---|---|---|
+| 1ª | comprovante.pdf, pela tela | **baixou** |
+| 2ª | o mesmo arquivo, renomeado, por e-mail | **barrado** (trava do arquivo) |
+| 3ª | PDF regerado, pelo Make | sem título: a parcela já estava paga |
+| 4ª | PDF regerado, com a parcela reaberta de propósito | **barrado** (trava do pagamento) |
+
+O título terminou com **uma** baixa. A 4ª existe porque é o único jeito de
+exercitar a segunda trava: com a parcela paga, a primeira defesa já resolve.
+
+Fica registrado também **tudo que foi lido e não virou baixa** (ilegível, sem
+título, precisa confirmar, é tarifa) — assim o mesmo arquivo não é lido duas
+vezes nem gasta IA duas vezes, e há onde olhar quando alguém pergunta "o que
+aconteceu com aquele comprovante que mandei?".
+
+### Velocidade: o que cresce e o que não cresce — 08/09/2026
+
+O dono perguntou, e a pergunta é boa: *"e quando essa base de dados for
+crescendo? Como é que é a estratégia de manter isso rápido?"*. Ele estava
+comparando com o Análise de SPs, que anda devagar, e supôs que fosse por ler
+uma planilha de 59 mil linhas.
+
+**Não é a planilha, e não é o volume.** O Análise de SPs já lê Postgres, com
+índice nas colunas por onde as telas filtram; o ERP tem 73 índices nas dele. 59
+mil linhas é POUCO para um banco. A prova de que o gargalo é outro veio dele
+mesmo: *"fui fazer um processamento volumoso numa outra aplicação e ficou bem
+lento o Análise de SPs"*. Se fosse volume de dados, mexer em outra aplicação
+não mudaria nada.
+
+**O gargalo é a máquina compartilhada**: 18 módulos num processo só, 2 GB, e
+`--workers 1` obrigatório por causa do estado em memória do `chatbot`. Um
+trabalho pesado toma a fila e todo mundo espera.
+
+O que NÃO fica lento crescendo (tem índice): abrir tela filtrada, procurar SP,
+abrir título, listar vencimentos, lançar, aprovar, baixar.
+
+O que VAI pesar, em ordem de chegada:
+1. **Os anexos dentro do banco** — o que mais cresce em tamanho. Virou item de
+   fila por decisão do dono (ver `ROTEIRO.md`).
+2. **Os números do topo das telas**, que somam tudo.
+3. **A busca "contém" em texto**, que índice comum não acelera.
+4. **As listas param em 500 registros e não têm próxima página** — hoje isso é
+   o que as mantém rápidas; um dia vira "não alcanço o que é antigo".
+
+**A ordem para resolver, do barato ao caro**, registrada para não se inverter:
+separar o trabalho pesado das telas (custo zero) → aumentar o plano do Render
+(um botão) → tirar a trava do processo único (senão o plano maior rende pouco)
+→ anexos para fora do banco → totais pré-calculados → serviço separado só do
+ERP.
+
+**Notícia que muda o horizonte, dada pelo dono no mesmo dia:** *"todas as
+outras aplicações vão deixar de ser necessárias depois que o ERP estiver 100%"*.
+Ou seja, o problema de vizinhança se resolve sozinho por encolhimento — mas
+**dentro do ERP** continuará havendo trabalho pesado (leitura por IA,
+importação, relatório, e o assistente virtual que ele quer), e esse é o que
+precisa sair da frente das telas.
+
+⚠️ **Não foi medido em produção** — daqui não há acesso a ela. O que foi lido
+foi o código e a estrutura do banco. A tela de saúde do sistema (na fila)
+existe justamente para trocar palpite por número.
+
+### Os documentos podem morar no Google Drive — 09/09/2026
+
+Decisão do dono, com a conta dele: o plano de banco é de 2 GB e a empresa já
+paga 2 TB de Drive no Workspace. Anexo — comprovante, nota, foto de medição —
+é o que mais cresce dentro do banco e o que menos precisa estar lá.
+
+**Nada muda para quem usa.** O documento continua sendo aberto pelo endereço do
+ERP, que confere permissão e escopo antes de entregar. **O link do Drive nunca
+vai para a tela** — se fosse, qualquer um com o endereço abriria holerite e
+comprovante bancário sem passar por login. Foi por isso que o jeito do
+`emissaonf` (que marca os PDFs como "qualquer pessoa com o link pode ver") NÃO
+foi copiado: dali se reaproveita a mecânica, não a permissão.
+
+**Vem desligado.** Em Configurações › "Onde ficam os documentos" o dono cola o
+endereço da pasta (pode ser o endereço inteiro, o sistema extrai o código),
+testa — o botão escreve um arquivo, lê de volta e apaga, que é a única prova
+que vale —, e só então liga. Sem pasta configurada, tudo segue como sempre foi.
+
+**Duas etapas, nunca na mesma transação:** primeiro o documento NOVO passa a ir
+para o Drive; depois o botão "mover documentos antigos" leva os antigos em
+lotes de 25, e **confere cada cópia no Drive antes de apagar do banco**. Cópia
+que não confere não apaga nada e ainda remove o arquivo ruim de lá.
+
+**Falha guardando, não perdendo.** Se o Drive estiver fora do ar na hora de
+anexar, o documento é guardado no banco assim mesmo. Perder o comprovante que a
+pessoa acabou de anexar seria o pior desfecho; ocupar um pouco de banco é o
+menor dos males, e o trabalho de mudança leva esse anexo depois.
+
+**O banco garante que o documento existe em algum lugar** (migração 043): anexo
+marcado como do Drive tem de ter o identificador do arquivo; anexo do banco tem
+de ter os bytes. Sem essa restrição, um defeito de código produziria anexo que
+não está em lugar nenhum — e ninguém descobriria antes de precisar dele.
+
+Provado com banco de verdade e um Drive dublado (13 casos): desligado não toca
+no Drive; ligado tira os bytes do banco; a leitura funciona pelos dois
+caminhos; Drive fora do ar guarda no banco; cópia que não confere não apaga;
+apagar o anexo apaga o arquivo lá; e o endereço colado da barra do navegador
+vira o código certo.
+
+⚠️ **Não foi testado contra o Google de verdade** — depende da pasta que o dono
+está criando. O botão "Testar a pasta" existe exatamente para isso, e é o
+primeiro passo quando a pasta existir.
+
+### A dedutibilidade aparece na tela dos títulos — 09/09/2026
+
+Pedido do dono: *"se estou analisando notas, vejo lá; se estou pelos títulos,
+tenho um título de fundo fixo, vejo por lá também"*. Este é o lado dos títulos:
+filtro próprio na barra da esquerda (Dedutível, Parcial, Indedutível, Pendente,
+com a contagem de cada um) e dois quadrinhos no topo — quanto do que está em
+tela é dedutível, e quanto ainda está por decidir. Clicar no quadrinho filtra a
+lista.
+
+O lado das NOTAS depende da tela de notas, que ainda não existe — ela é a do
+cruzamento, próxima da fila. A dedutibilidade entra nela quando ela nascer.
+
+### A tela do cruzamento de notas fiscais — 09/09/2026
+
+A peça que o dono chamou de vital, ditada por ele em 07/09/2026 e especificada
+em `NOTAS_FISCAIS.md`. Está em Financeiro › **Notas fiscais**.
+
+**O que ela responde.** Para cada nota emitida contra um CNPJ da BWS: de que
+pedido ela é, qual título paga ela, se ela está dentro de uma prestação de
+fundo fixo — ou se não cruza com nada. E o caminho inverso: quanto de cada
+pedido já veio em nota e quanto falta.
+
+**Um pedido tem VÁRIAS notas, e isso está no desenho, não no remendo.**
+Palavras dele: *"comprei dez carradas de brita e o fornecedor emite a nota por
+carrada; aquele pedido não se fecha instantaneamente"*. Por isso a ligação com
+o pedido mora do lado da NOTA, e o pedido só aparece como fechado quando as
+notas somam o valor dele. Nada aqui casa por valor exato com o pedido — casar
+assim perderia justamente esse caso.
+
+**O sistema propõe, a pessoa decide** — o modelo é o da conciliação bancária,
+que ele mesmo citou. O botão "cruzar o que der sozinho" casa **só o que é
+prova**: a chave de acesso da nota. Mesmo credor e mesmo valor é pista, e pista
+vira proposta na tela, nunca casamento automático — casar por indício é errar
+igual à conferência manual, só que mais rápido e em silêncio.
+
+**A trava contra contar a mesma despesa duas vezes.** É o ponto mais perigoso
+do desenho todo, porque o erro não aparece na tela: aparece na contabilidade,
+meses depois. Uma nota não pode ter título próprio E estar dentro de uma
+prestação de fundo fixo. O sistema recusa a segunda ligação explicando o
+porquê, a tela mostra um alerta vermelho se isso existir por outro caminho, e a
+mesma linha de prestação não recebe duas notas (índice único no banco).
+
+**Fundo fixo é dedutível, ponto final** — a tela diz por qual porta cada
+despesa entrou (nota ou fundo fixo) e soma quanto do que está em tela é
+dedutível. É o lado das NOTAS do pedido dele de ver dedutibilidade "por onde eu
+estiver olhando"; o lado dos títulos foi entregue no mesmo dia.
+
+**As notas entram por importação de XML** — soltos ou num .zip, que é o que o
+serviço de monitoramento já baixa. A recomendação registrada era essa: o valor
+está no cruzamento, não no download, e trocar a fonte depois (SEFAZ direto) não
+refaz o cruzamento — vai desembocar no mesmo lugar. Certificado digital,
+sequência da SEFAZ e manifestação do destinatário continuam sem decisão dele e
+não bloqueiam nada.
+
+**Quem confere:** ficou em aberto na especificação; a resposta prática adotada
+foi "os dois, na mesma tela" — o financeiro por cargo, e quem compra pela
+implicação de permissão, porque é o comprador que sabe de que pedido a nota é.
+Ver é largo (inclui gestor e supervisor); cruzar é estreito.
+
+**Ignorar uma nota exige motivo escrito**, e o banco recusa sem ele. Seis meses
+depois ninguém lembra por que aquela nota foi posta de lado — e é exatamente o
+que o fisco pergunta.
+
+Provado com banco de verdade (21 casos) e com a tela aberta no navegador: as
+três carradas somando até o pedido fechar, a recusa da dupla contagem nos dois
+sentidos, a chave casando sozinha, o indício NÃO casando sozinho, e as
+restrições do banco recusando situação inventada e "ignorada" sem motivo.
+
+**Efeito colateral consertado no mesmo dia:** o Financeiro passou a ter onze
+abas e a última sumia na borda da tela, sem nada indicando que havia mais.
+Agora a barra mostra sombra nas pontas quando há o que rolar, rola com a roda
+do mouse e traz a aba ativa para um lugar legível. Conferido nas 19 telas.
+
+### O arquivo de documentos da empresa — 09/09/2026
+
+Pedido do dono no mesmo dia, especificado inteiro em `GESTAO_DOCUMENTOS.md`
+antes de qualquer código. Nas palavras dele: *"um ambiente onde eu pudesse
+simplesmente jogar esse documento, ele fosse interpretado, lido, e a partir
+dali categorizado, renomeado e salvo"*.
+
+Entregue nesta rodada: **o catálogo, o arquivamento com nome padronizado e a
+tela** (Administração › Arquivo, migração 045). A leitura por IA, os blocos e
+os avisos de vencimento são os passos seguintes, e cada um entra sem refazer o
+que já existe.
+
+**A taxonomia.** Antes de "que tipo é" vem "a quem pertence": empresa, obra,
+pessoa, parceiro ou lançamento — **exatamente um**, garantido pelo banco.
+Documento pendurado em dois donos não é achado por nenhum dos dois. A
+competência (o mês) não é dono, é recorte — é ela que vai fazer o compilado
+fiscal funcionar.
+
+**59 tipos** no catálogo inicial, em sete grupos: cadastrais, certidões,
+licitação, obra, fiscal/trabalhista, pessoas e financeiro. O catálogo é
+editável pela tela e **nunca apaga tipo** — tipo removido deixaria documento
+órfão, que é o problema que o módulo veio resolver. Tipo que não serve mais é
+desativado.
+
+**A nomenclatura:** `TIPO_DONO[_REFERENCIA]_DATA.ext`, sem acento e sem espaço.
+Não é preciosismo — portal de licitação e sistema de prefeitura ainda engasgam
+com acento, e o arquivo volta corrompido ou é recusado. Documento que vence
+leva a validade no nome (`val-2026-10-02`): bater o olho e saber até quando
+vale é metade do problema. **O nome original nunca se perde** e a tela mostra
+os dois — renomear é conveniência, não amnésia.
+
+**Quem vê o quê não depende da permissão de rota**, e sim do SIGILO do tipo
+(aberto, restrito, pessoal) mais o escopo por obra. Administrativo de obra vê
+certidão e não vê folha de pagamento, mesmo tendo a ação marcada.
+
+**O que o sistema recusa, e por quê:** documento que vence sem validade (senão
+nunca avisa), documento de competência sem o mês, e documento sem dono ou com
+dois. A competência é sempre gravada no dia 1 — sem isso "agosto" viraria
+trinta e um valores diferentes e o compilado nunca fecharia.
+
+**A busca já olha o texto de dentro do documento.** O campo existe e a consulta
+usa; o texto passa a ser preenchido quando a leitura por IA entrar. Foi feito
+nesta ordem de propósito: guardar o texto no momento da leitura é quase de
+graça, e reprocessar dez mil arquivos depois é que sairia caro.
+
+Provado com banco de verdade (27 casos) e com a tela aberta no navegador:
+guardar uma certidão que vence em sete dias, ver o nome sair
+`CRF-FGTS_BWS_val-…`, e o quadrinho "Vencendo" acender.
+
+### O ERP vai capturar as notas sozinho — 09/09/2026
+
+Resposta do dono a duas perguntas que estavam abertas: *"quanto à captura de
+notas, basta avisar; a ideia é deixar de usar o FSist e fazer o trabalho
+autônomo integrado"*.
+
+1. **O ERP avisa, não manifesta.** Dizer ao fisco "ciente" ou "desconheço"
+   continua sendo ato humano. É a escolha certa: manifestação tem consequência
+   e prazo, e robô que manifesta sozinho erra em nome da empresa.
+2. **O FSist sai, e a captura passa a ser direto na SEFAZ.** Isso promove o
+   certificado digital por empresa de "adiado" a pré-requisito.
+
+⚠️ Duas ressalvas que ficam registradas: a importação de XML **continua
+existindo como rede** — desligar o FSist antes da captura própria estar
+conferida seria trocar o certo pelo duvidoso; e **o serviço da SEFAZ ainda não
+foi estudado por ninguém aqui** (limites, o que acontece ao perder o número de
+sequência, se o certificado A1 da BWS tem o perfil necessário). Isso é estudo
+antes de código, e antes de prometer data.
+
+### Medições e emissão de nota: o desenho, e a resposta sobre Petrolina — 09/09/2026
+
+Ditado pelo dono. Especificação inteira em `MEDICOES_E_NOTAS.md`; aqui ficam as
+decisões que mudam o rumo e a pesquisa que ele pediu.
+
+**O "Protocolos e Medições" do Pipefy vem para o ERP**, como o lado a RECEBER.
+Com a ressalva que ele mesmo fez: nem toda coisa a receber é medição — título a
+receber é o gênero, medição é a espécie.
+
+**O tipo da medição não pode ser lista fechada.** Foi o ponto mais fácil de
+errar. O caso simples é medição 1 e medição 1R (o reajuste dela). Mas ele
+descreveu três desvios reais: órgão que numera o reajuste em sequência (virou a
+medição 3), órgão que numera em paralelo (1 e 1R correlacionadas), e medições
+subsidiárias por fontes diferentes. **Quem manda na nomenclatura é o órgão, não
+o ERP** — então o tipo é categoria editável e o número é texto livre. Impor
+"1, 2, 3" quebraria no primeiro contrato fora do padrão, e ele já viu isso.
+
+**Entrar pelo CONTRATO, não pela medição.** Ele mudou de ideia no meio da fala e
+a segunda ideia é a certa: contrato tem começo, meio e fim; medição é evento
+dentro dele. O quadro financeiro do contrato mostra as medições e os totais —
+contratado, aditivado, medido, faturado, recebido, a receber, retido.
+
+**Protocolo com número e data** destrava um indicador que hoje não existe:
+quantos dias entre protocolar e receber, por obra e por órgão.
+
+**A emissão é por empresa: API ou MANUAL.** Decisão dele. Os dois caminhos
+terminam no mesmo lugar. No manual, quem lê o PDF é a mesma IA que já lê nota
+de entrada. **O manual vem primeiro de propósito** — não depende de
+credenciamento nenhum, funciona no dia seguinte e serve de rede quando a API
+falhar.
+
+**Controle de notas emitidas é tela SEPARADA do título a receber**, e a crítica
+que ele pediu é esta: uma medição pode virar duas notas (parcial), e uma nota
+pode ser cancelada e substituída sem o título mudar. São dois eixos; juntá-los
+esconderia justamente os casos que dão trabalho. Ficam duas telas irmãs,
+ligadas nos dois sentidos.
+
+**Boa notícia no cadastro:** a obra JÁ tem no modelo CNO, alíquota de ISS, ISS
+retido, regime e conta de recebimento. O que falta é a TELA expor. Falta mesmo
+só a **chave Pix** na conta bancária — e o uso que ele deu é copiar e mandar
+quando alguém pede os dados da empresa.
+
+#### A resposta sobre Petrolina
+
+Ele perguntou se Petrolina/PE tem API como a que ele fez para Eusébio/CE.
+**Tem, e é o MESMO fornecedor (E&L).** O endereço segue o mesmo molde
+(`{uf}-{municipio}-pm-nfs-backend.cloud.el.com.br`), com padrão ABRASF 2.04 e
+autenticação por certificado A1 — igual ao Eusébio.
+
+Portanto **o emissor não precisa ser reescrito**. Hoje o endereço e o código
+IBGE estão fixos no código (`el_nfse_abrasf.py`, `el_nfse_nacional.py`,
+`job_nacional.py`); o trabalho é torná-los configuração por empresa — o que já
+seria necessário de qualquer jeito, porque a BWS opera com mais de um CNPJ.
+
+**E um prazo que muda o planejamento:** a LC 214/2025 tornou o **padrão
+nacional obrigatório**, e a convivência com o ABRASF 2.04 está acabando ao
+longo de 2026. O sistema já fala o padrão nacional (`el_nfse_nacional.py`).
+**A aposta certa é o canal nacional** — investir agora em ABRASF por município
+é construir sobre algo com data para acabar.
+
+⚠️ **Depende de providência dele, não de código:** Inscrição Municipal em
+Petrolina e credenciamento na Secretaria de Finanças, o token próprio do canal
+de lá (o `EL_NFSE_TOKEN` atual é do Eusébio), e os códigos de serviço e a
+alíquota de ISS de Petrolina.
+
+⚠️ **Não verificado:** se a BWS já tem Inscrição Municipal em Petrolina, e a
+data exata em que o município encerra o ABRASF. As duas se confirmam com a
+prefeitura, não com pesquisa.
+
+### Os blocos de documentos — 09/09/2026
+
+Dúvida do dono: *"como é que esses blocos vão se associar a determinados
+documentos? Se isso é fácil de resolver."*
+
+**É fácil, e a resposta é a decisão de desenho:** o bloco **aponta para TIPOS,
+não para documentos**. Um bloco é uma lista de tipos mais um recorte (esta
+obra, esta competência), e o sistema procura. Se apontasse para documentos,
+cada competência nova exigiria remontar o bloco à mão — que é o trabalho que
+este módulo veio eliminar. Apontando para tipos, o bloco fiscal de agosto e o
+de setembro são o **mesmo** bloco.
+
+Cinco blocos nascem prontos (migração 046): **FISCAL** (obra + competência —
+conteúdo confirmado por ele como "o que o cliente pede na medição"),
+**HABILITAÇÃO**, **CADASTRO DE FORNECEDOR**, **DOSSIÊ DA OBRA** e **MEDIÇÃO**.
+Editáveis, e aplicar de novo **não sobrescreve** — o conteúdo de um bloco é
+decisão da BWS, e apagar ajuste de quem sabe seria estrago.
+
+**O detalhe que faz o bloco fiscal funcionar:** dentro dele há documentos da
+OBRA (folha, guia de FGTS) e da EMPRESA (recibo da DCTFWeb, DARF). Pedindo o
+bloco de uma obra, o sistema resolve os itens de empresa **pela empresa daquela
+obra**. Sem isso o bloco viria pela metade e ninguém entenderia por quê — na
+tela, a empresa aparece sozinha, sem ninguém escolher.
+
+**O zip traz um `CONFERENCIA.txt` como primeiro arquivo**, listando o que veio
+e — mais importante — **o que falta**, separando obrigatório de opcional. Bloco
+que entrega oito de dez arquivos calado é pior que bloco nenhum. Quando só
+falta opcional, o texto diz "Nada OBRIGATÓRIO": o bloco está pronto para
+entregar e quem lê precisa saber sem contar linha por linha.
+
+**Vencido não entra**, e vai para a lista de faltas dizendo quando venceu.
+Mandar certidão vencida é pior do que não mandar.
+
+**Uma distinção que um caso de teste encontrou**, e que valeu a pena: certidão
+é UMA (vai a de validade mais longa — duas válidas do mesmo tipo acontecem, e
+mandar as duas confunde), mas aditivo são TODOS (mandar só o último esconderia
+o histórico do contrato). O código tratava os dois igual; agora separa pelo
+grupo do tipo.
+
+**Quem não pode ver um tipo não recebe "está faltando" dele.** Seria mentira, e
+já entregaria que o documento existe.
+
+Provado com banco de verdade (15 casos) e na tela: baixei o bloco fiscal de uma
+obra, abri o arquivo compactado e li a conferência.
+
+### A melhoria dos lotes estava morta havia oito dias — 09/09/2026
+
+**Incidente, e dos bons de aprender.**
+
+Em 01/09 a ficha do lote foi melhorada: as fases (Aberto/Enviado/Pago/Cancelado)
+saíram porque não existiam no processo real, e entraram os botões **Incluir
+SPs** e **Excluir lote**, mais os quadrinhos "Já pagas" e "Em aberto".
+
+O código foi escrito, revisado, publicado — e **nunca apareceu na tela**.
+
+**Por quê:** a versão nova foi acrescentada NO TOPO do bloco de JavaScript, e a
+versão antiga das mesmas funções ficou embaixo, sem ser removida. Em
+JavaScript, quando duas funções com o mesmo nome são declaradas no mesmo
+escopo, **a de baixo vence** — em silêncio, sem erro, sem aviso no navegador.
+
+Oito funções estavam duplicadas na tela de Pagamentos; seis eram cópias
+idênticas, e a `abrirLote` tinha duas versões diferentes rodando a errada. Em
+06/09 uma sessão chegou a escrever a função `adicionarSPsAoLote` "que nunca
+tinha sido escrita" — quando na verdade a chamada morta era da versão VELHA,
+que ninguém sabia que estava no comando. Ou seja: o defeito custou trabalho
+duas vezes.
+
+A tela de Configurações tinha o mesmo problema, mais brando: `carregarDepara`
+duplicada em cópia idêntica.
+
+**A defesa, que é o que fica:** `tests/test_telas_sem_funcao_repetida.py` recusa
+qualquer tela que declare a mesma função — ou a mesma constante de primeiro
+nível — duas vezes. Roda junto com a suíte, em milésimos, sem navegador.
+
+É a quarta varredura desta família, e todas nasceram do mesmo jeito: defeito
+silencioso que só apareceu quando alguém foi usar.
+
+| Varredura | Recusa |
+|---|---|
+| `test_nomes_indefinidos.py` | função que cita nome que o Python não acha |
+| `test_telas_chamam_rota_que_existe.py` | tela que pede endereço que o servidor não tem |
+| `test_telas_blocos.py` | `{% block %}` que a base não declara |
+| `test_telas_sem_funcao_repetida.py` | função declarada duas vezes na mesma tela |
+
+**A lição, escrita para a próxima sessão:** ao melhorar uma tela, PROCURAR a
+versão antiga antes de escrever a nova. Acrescentar por cima não substitui — em
+JavaScript, enterra.
+
+Conferido no navegador depois do conserto: a ficha do lote abre com "Incluir
+SPs", "Excluir lote" e os quadrinhos novos, sem erro de JavaScript.
+
+### O cadastro que destrava a emissão de nota — 09/09/2026
+
+Passo 1 do `MEDICOES_E_NOTAS.md`, migração **047**. Três coisas que ele pediu, e
+uma que mudou de prioridade.
+
+**A chave Pix da conta bancária**, com o motivo que ele deu: *"eventualmente a
+gente precisa consultar, e tendo esse cadastro das contas é o local mais fácil"*.
+Não é para pagar por ali — é para **copiar e mandar**. Por isso o botão
+**"Copiar dados"** monta o bloco inteiro (razão social, CNPJ, banco, agência,
+conta e as chaves), pronto para colar num WhatsApp: copiar campo por campo é
+onde se erra um dígito, e dígito errado em dado bancário é dinheiro no lugar
+errado. Várias chaves por conta, e o formato de cada uma é conferido — CPF com
+cinco dígitos é recusado na hora, não meses depois.
+
+**Os dados de emissão POR EMPRESA.** Isto ia ficar para o fim; mudou quando ele
+respondeu que *a BWS não tem inscrição municipal em Petrolina, mas outra empresa
+que vai operar tem*, e que *uma emite por API e a outra manual*. Ou seja: emitir
+em mais de um município virou requisito do primeiro dia. Município, código IBGE,
+endereço do serviço, canal, série, alíquota, código de serviço e token saíram do
+código e viraram cadastro. Eusébio/CE e Petrolina/PE já vêm na lista — escolher
+o município preenche endereço e código sozinho.
+
+**Três defesas, e cada uma tem motivo:**
+
+- **MANUAL é o padrão.** Empresa recém-cadastrada não sai emitindo nota fiscal
+  sozinha porque alguém esqueceu de configurar.
+- **HOMOLOGAÇÃO é o padrão.** Emitir é irreversível: em produção, cada emissão
+  gera documento fiscal de verdade.
+- **O token vai cifrado ou não vai.** Sem a `ERP_CHAVE_SEGREDOS` o sistema
+  RECUSA gravar, em vez de guardar aberto — token de emissão assina em nome da
+  empresa. E ele **nunca volta para a tela**: ela sabe que existe, não recebe o
+  valor.
+
+Ligar a API sem endereço e sem município é recusado duas vezes: no código, com
+mensagem em português, e no banco, para o caso de um código futuro esquecer. E
+quando falta algo, a tela **diz o que falta, item a item** — dizer só "não dá"
+faria a pessoa adivinhar.
+
+**O filtro por conta nos Pagamentos**, o incômodo diário que ele citou: *"às
+vezes é mais fácil do que filtrar por obra"*. A conta vem da obra; título
+rateado entre obras de contas diferentes aparece nos dois filtros, que é o
+certo. Quando nenhuma obra tem conta, o filtro **diz isso** em vez de aparecer
+vazio.
+
+**Na tela da obra** entraram o regime de tributação e a conta que RECEBE a
+medição — diferente da conta que paga, que já existia. Os dois já estavam no
+banco; faltava a tela mostrar.
+
+Provado com banco de verdade (22 casos) e no navegador: guardei uma chave Pix,
+vi a chave torta ser recusada com a mensagem certa, escolhi Petrolina e vi o
+endereço se preencher sozinho, e liguei o filtro por conta nos pagamentos.
+
+### Três correções do dono sobre emissão de nota — 09/09/2026
+
+**1. Por onde a nota sai NÃO se escolhe — se deriva.** Eu tinha apresentado
+errado. Palavras dele: *"por onde vamos emitir não é algo que a gente
+seleciona. Quem define é o centro de custo a que aquela medição está associada.
+Se eu vou emitir um título da obra X, que está na empresa Y, eu vou usar a
+solução da empresa Y."*
+
+A cadeia é de mão única e o sistema desce ela sozinho: **medição → obra →
+empresa → município, endereço, token, modo**. A tela de cadastro da empresa
+existe para dizer UMA VEZ onde ela emite; na hora de emitir, ninguém escolhe.
+
+E quando a cadeia quebra, o certo é **recusar**, não chutar: obra sem empresa
+não emite, e o sistema manda arrumar o cadastro. Título rateado entre obras de
+empresas diferentes também recusa — seriam duas notas, de CNPJs diferentes.
+Emitir pelo CNPJ errado se conserta com cancelamento e carta ao cliente.
+
+**2. O controle da numeração** (migração 048). Ele perguntou se dá para ver o
+número da nota antes de emitir e manter a numeração correta. **Dá, e por um
+motivo técnico:** no padrão nacional e no ABRASF, **quem numera a DECLARAÇÃO é
+quem emite** — a prefeitura devolve o número da NOTA. São dois números:
+
+- `numero_dps` — a sequência da empresa, por série. **O ERP é dono.**
+- `numero_nota` — o que a prefeitura devolveu. O ERP só registra.
+
+Três coisas que o sistema passa a garantir: o **duplicado é impossível**
+(índice único por empresa, ambiente, série e número — vale mesmo com duas
+pessoas emitindo ao mesmo tempo); **teste não queima número de produção**
+(homologação tem sequência própria); e o **buraco fica visível**.
+
+A conferência separa duas coisas que parecem iguais e não são: **buraco**
+(número que nunca foi reservado — sinal de que alguém emitiu pelo portal da
+prefeitura) e **queimado** (reservado, não virou nota, com motivo escrito).
+Buraco é o preocupante; queimado tem resposta pronta.
+
+O número é reservado ANTES de emitir e **não volta para a fila se falhar**: a
+prefeitura pode ter recebido a declaração e só a resposta ter se perdido, e
+reemitir com o mesmo número daria duplicidade do lado dela. Número de nota
+fiscal não se apaga — se explica.
+
+⚠️ O ponto de atenção dele é real: **manual e API na MESMA empresa e série** é
+onde a numeração se perde. Na BWS não acontece (uma empresa é API, a outra
+manual), mas o modo fica guardado em cada linha para a mistura ser visível se
+um dia ocorrer.
+
+**3. Título rateado entre obras de contas diferentes: BLOQUEADO.** Decisão
+dele, com o argumento que fecha a questão: *"como é que eu vou pagar um boleto
+de duas contas bancárias? É impossível."*
+
+A recusa é no LANÇAMENTO de propósito — quem lança ainda pode pedir dois
+boletos ao fornecedor; depois de lançado, dividir dá trabalho. A mensagem diz
+**quais obras**, **quais contas** e **qual a saída**. Obra sem conta definida
+não bloqueia: cadastro incompleto não pode parar o financeiro por um campo em
+branco.
+
+**Sobre o reajuste e o INCC** (pedido no mesmo dia, ainda por construir): a
+especificação foi escrita em `MEDICOES_E_NOTAS.md` §7-C. O achado que importa é
+que **dá para o sistema manter a tabela do INCC sozinho, de graça** — o Banco
+Central republica a série no SGS, em API pública sem cadastro (INCC-DI é a
+série 192), o que evita depender do FGVDados, que é licenciado.
+⚠️ **Não verificado:** a chamada foi bloqueada pela filtragem de saída deste
+contêiner; a primeira de verdade acontece no Render. E fica uma pergunta para
+ele: os contratos usam INCC-**DI** ou INCC-**M**? São séries diferentes, e
+índice errado dá valor errado com cara de certo.
+
+### A medição completa e o quadro do contrato — 09/09/2026
+
+Migração **049** e uma tela nova em **Obras › "Contratos e medições"**.
+
+**O tipo da medição é tabela, não lista no código.** Foi o ponto que o dono
+fez questão de detalhar, e o mais fácil de errar: *"às vezes o nosso sistema
+não se adequa a cem por cento, porque teve uma medição 1 alguma coisa e outra
+medição 1 alguma coisa, por conta de fontes diferentes, e o órgão trata dessa
+forma."* Quem manda na nomenclatura é o ÓRGÃO. Por isso o número da medição
+continua sendo texto livre ("1", "1R", "3", "1-FONTE-A", "02/2026") e os cinco
+tipos que ele confirmou — normal, reajuste, aditivo, subsidiária, complementar
+— vivem numa tabela que se edita sem mexer no sistema.
+
+**A correlação do reajuste funciona nos dois jeitos de numerar.** No órgão que
+numera em paralelo, o reajuste da medição 1 é a "1R". No que numera em
+sequência, o mesmo reajuste é a "medição 3" e entra na fila como se fosse
+normal. Em ambos, o reajuste APONTA para a medição que reajusta — e é essa
+ligação que permite dizer "a medição 1 rendeu X, mais Y de reajuste". Sem ela
+os dois valores ficam soltos e ninguém soma.
+
+O sistema recusa três ligações que dariam valor errado com cara de certo:
+reajuste de si mesma, reajuste de medição de OUTRO contrato, e reajuste de
+reajuste.
+
+**O protocolo destrava o indicador que ele pediu**: dias entre entregar a
+medição no órgão e o dinheiro entrar. Só entra na média o que já foi recebido
+— medição protocolada e não paga tem espera, não prazo, e misturar as duas
+daria uma média que MELHORA sozinha quando o cliente atrasa.
+
+**O quadro do contrato separa três coisas que costumam virar uma só:**
+
+    medido  ≠  faturado  ≠  recebido
+
+Medir não é faturar; faturar não é receber. São três colunas, e a tela ainda
+lista de olho o que foi medido e não virou nota, o que virou nota e não entrou,
+e o que não foi protocolado.
+
+**O reajuste NÃO consome saldo do contrato** — é acréscimo por índice, não obra
+executada a mais. Um contrato de 1,85 milhão com 1,02 milhão medido, dos quais
+28,5 mil de reajuste, tem 855 mil de saldo (e não 826,5 mil).
+
+Um defeito achado ao olhar a tela num navegador: a **lista** de contratos
+descontava o reajuste do saldo e o **quadro** não — dois números diferentes
+sobre o mesmo contrato, na mesma sessão. Quem visse isso perderia a confiança
+nos dois, com razão. Agora a aritmética é a mesma nos dois lugares, e um teste
+guarda isso.
+
+**Quem vê:** ação nova `ver_contratos`, dada a administrador, diretor,
+financeiro, gestor de obras e consulta. Perfil preso a obra ou a autoria fica
+de fora **de propósito** — o quadro mostra o contrato inteiro e não há como
+recortá-lo por obra designada sem mentir no total. Abrir depois é uma linha.
+
+**Provado:** 27 testes com banco de verdade (`tests/test_medicao_quadro_banco.py`)
+e a tela percorrida num navegador de ponta a ponta — abrir, classificar,
+protocolar e voltar, sem um erro de JavaScript.
+
+### A tela de controle das notas emitidas — 09/09/2026
+
+Financeiro › **"Notas emitidas"**. É a tela IRMÃ da de títulos a receber, e a
+crítica sobre isso foi o próprio dono quem pediu: *"talvez isso seja a mesma
+coisa que o título a receber, ou não, não sei. Aí você vai fazer essa
+crítica."*
+
+**Não é a mesma coisa, e a diferença é justamente onde dá trabalho:** uma
+medição pode virar DUAS notas (faturamento parcial), e uma nota pode ser
+cancelada e substituída sem o título mudar uma vírgula. Título a receber ainda
+inclui coisa que não é medição e não tem nota nenhuma. Forçar os dois na mesma
+tela esconderia exatamente os casos que precisam aparecer.
+
+**Cada tributo tem SUA coluna** — ISS, IR, INSS, PIS, COFINS, CSLL —, e não vai
+tudo somado num "retido". O motivo é prático: a contabilidade lança ISS numa
+conta e INSS em outra, e do total ninguém volta atrás. É o relatório que ele
+descreveu: *"às vezes a contabilidade precisa gerar um relatório das
+informações — valor da nota, tributos e tal."* A tela exporta em Excel e PDF
+como todas as outras.
+
+**Nota cancelada fica FORA dos totais, mas continua na lista.** Somar cancelada
+com válida é como um relatório fiscal começa a mentir; sumir com ela é como se
+perde o rastro de por que faltou um número na sequência.
+
+**A conferência da numeração** responde à pergunta clássica da fiscalização, e
+separa duas coisas que parecem iguais: **buraco** (número que nunca foi
+reservado — alguém emitiu por fora do ERP) e **queimado** (reservado, não virou
+nota, com o motivo escrito). Buraco é o preocupante.
+
+**Registrar a nota que saiu pelo PORTAL** existe por causa disso: enquanto a
+emissão automática não estiver de pé para as duas empresas, alguém vai emitir
+no site da prefeitura — e se ninguém registrar, a conferência acusa buraco e
+não se sabe por quê.
+
+**Cancelar exige motivo, e o número não volta para a fila.** A prefeitura pode
+ter recebido a declaração e só a resposta ter se perdido; reusar o número daria
+duplicidade do lado dela. Número de nota fiscal não se apaga — se explica.
+
+Um defeito corrigido no caminho: quando o sistema recusava a nota repetida, ele
+desfazia a transação INTEIRA, levando junto o que mais estivesse pendente. Uma
+recusa não pode apagar trabalho que ninguém mandou apagar. Agora desfaz só a
+gravação recusada, e há teste guardando isso.
+
+**Quem vê:** duas ações novas — `ver_notas_emitidas` (larga dentro do
+escritório: é dessa tela que sai o relatório) e `emitir_nota` (estreita:
+registrar e cancelar, só administrador, diretor e financeiro).
+
+**Provado:** 18 testes com banco de verdade
+(`tests/test_notas_emitidas_banco.py`) e a tela percorrida num navegador —
+listar, conferir a numeração, registrar do portal, tentar registrar a mesma
+nota de novo (recusada com a frase certa) e cancelar com motivo.
+
+### A emissão da nota a partir da medição — modo MANUAL — 09/09/2026
+
+Botão **"Emitir nota"** em cada medição do quadro do contrato. O manual vem
+antes do automático de propósito: funciona no dia seguinte, sem credenciamento,
+sem certificado e sem token — e continua servindo de rede quando a API falhar
+ou a prefeitura estiver fora do ar. A segunda empresa, que vai operar em
+Petrolina e ainda nem tem inscrição municipal, emite por aqui desde já.
+
+**O que o ERP faz e o que ele NÃO faz.** Ele monta num bloco só tudo que o
+portal pergunta — prestador, CNPJ, inscrição municipal, tomador, discriminação
+do serviço e as retenções já calculadas — e a pessoa copia. Quem emite é ela,
+no site da prefeitura. O ERP **não reserva número antes**: no manual quem
+numera a nota é o portal, e reservar aqui criaria uma sequência paralela que
+não existe lá.
+
+**As retenções saem calculadas do cadastro da obra**, pelo mesmo cálculo que o
+módulo de emissão já usa: INSS 11% sobre a parcela de serviço, ISS pela
+alíquota do município (com dedução de material quando o município aceita), e as
+federais conforme o contrato. Numa medição de 265 mil da Escola do Planalto
+isso dá ISS 3.975, INSS 14.575, IRRF 3.180 e PCC 12.322,50 — líquido de
+230.947,50, sem ninguém abrir calculadora.
+
+**A discriminação vai montada** com medição, período, contrato, objeto e CNO.
+É o campo que mais volta corrigido: sem o número da medição e o período, o
+setor de empenho do órgão não sabe a que competência a nota se refere e devolve.
+
+**A volta é com o PDF.** A IA lê a nota que a prefeitura devolveu e preenche
+número, data, valor e retenções — e a tela diz a confiança da leitura e manda
+conferir. É o MESMO leitor do comprovante e da nota de fornecedor: caminho de
+leitura novo seria caminho novo para manter.
+
+**Registrar sem informar retenção não grava zero** — usa o cálculo. Zero é uma
+afirmação, não uma ausência, e o relatório da contabilidade sairia dizendo que
+nada foi retido.
+
+**Um defeito que enganava de verdade**, achado ao ler o bloco na tela: a
+alíquota do IRRF saía escrita **"1.200%"**. Em português isso se lê como mil e
+duzentos por cento — e a frase ia dentro do texto que a pessoa copia para o
+portal. Agora sai "1,2%", e o dinheiro das explicações também saiu do formato
+americano ("132500.00" virou "132.500,00").
+
+**Provado:** 16 testes com banco de verdade
+(`tests/test_emissao_manual_banco.py`) e o caminho inteiro percorrido num
+navegador — abrir a medição, ver o bloco, tentar registrar sem número
+(recusado), registrar com número e código de verificação, e ver a nota
+aparecer no quadro do contrato e na tela de notas emitidas com cada tributo em
+sua coluna.
+
+⚠️ **O que continua faltando para a emissão AUTOMÁTICA** (item 6 do roteiro):
+inscrição municipal, credenciamento, token e códigos de serviço da empresa que
+vai operar em Petrolina. Nada disso trava o manual.
+
+### O reajuste, e a tabela do INCC que o sistema mantém sozinho — 09/09/2026
+
+Migração **050**. Pedido dele: *"dentro do cadastro do contrato a gente precisa
+fazer alguma configuração que permita prever o recebimento de reajustes."*
+
+**A data-base é CAMPO, e não regra — porque muda por contrato.** Ele foi
+explícito: pode ser a do orçamento OU a da proposta da licitação. Fixar uma das
+duas no código erraria metade dos contratos, e erraria num sentido perigoso: o
+valor sairia calculado, com cara de certo, e ninguém confere um número que o
+computador deu. Agora o contrato diz qual data é, e **de onde ela veio** — que
+é a primeira coisa que o órgão pergunta quando contesta.
+
+Contrato sem data-base própria **herda a da obra**, e a tela diz que herdou.
+Sem isso, todo contrato antigo apareceria como "não configurado" mesmo com o
+dado já no sistema.
+
+**O direito nasce depois da periodicidade** (12 meses, como ele descreveu, e
+configurável). Antes disso o sistema recusa dizendo quantos meses faltam, em
+vez de calcular um valor que ainda não é devido.
+
+**A conta acumula mês a mês, e começa no mês SEGUINTE à data-base**: a
+data-base é o ponto zero, o mês dela já está dentro do preço contratado, e
+incluí-lo cobraria um mês a mais. Dá para conferir a diferença: 1% ao mês por
+doze meses é 12,68%, não 12% — e é a diferença entre os dois que aparece na
+conta do contrato.
+
+**Mês faltando na tabela vira RECUSA, não número menor.** Se a série do índice
+não cobre o período inteiro, o sistema diz quais meses faltam e manda buscar ou
+lançar. Calcular com metade da série daria um valor a menos que passaria
+despercebido — que é justamente o erro que ninguém pega.
+
+**A conta sai escrita por extenso**, em português: *"INCC-DI acumulado de
+02/2025 a 01/2026 (12 meses) = 12,6825%. Reajuste = 100.000,00 × 12,6825% =
+12.682,50."* É o que se manda para o órgão quando ele pergunta de onde saiu o
+número.
+
+**O valor é EDITÁVEL na hora de virar título**, porque ele avisou: *"pode ser
+que o órgão tenha algum entendimento e mude algum centavo"*. O sistema estima;
+quem fecha é o órgão. O título guarda o **previsto** ao lado do **lançado**,
+então a diferença fica visível em vez de sumir. E o reajuste **não pode ser
+gerado duas vezes** — dois cliques cobrariam o reajuste em dobro.
+
+### A tabela do INCC, mantida pelo próprio sistema
+
+Ele pediu: *"já coloque aí dentro da programação do sistema ele fazer essa
+busca, atualizar a tabela e permitir todos esses cálculos."*
+
+Está em **Configurações › "Índices (INCC)"**. O INCC é calculado pela FGV, e o
+serviço de dados dela é licenciado — contrato, chave e conta a pagar. O **Banco
+Central republica a série de graça** no SGS, em API pública e sem cadastro: o
+INCC-DI é a série **192**, que é a que ele confirmou como usada nos contratos
+da BWS. (O INCC tem três versões — DI, M e 10 —, com apurações diferentes;
+usar a errada dá valor errado com cara de certo, então a série está escrita no
+código com o nome por extenso.)
+
+Três decisões que valem registro:
+
+- **A busca é pelo BOTÃO, nunca no start do serviço** — mesma regra das
+  migrações, e pelo mesmo motivo: uma chamada externa no boot derrubaria o
+  monorepo inteiro se o Banco Central estivesse fora do ar.
+- **A coleta nunca sobrescreve o que foi lançado à mão.** O INCC-DI do mês só
+  sai por volta do dia 25, e num fechamento apertado alguém vai digitar o
+  número do boletim da FGV. Se a coleta passasse por cima, apagaria a correção
+  sem avisar ninguém. A tabela mostra qual linha é qual.
+- **Guarda a variação do mês, não o acumulado.** Quem guarda variação produz o
+  acumulado de qualquer período; quem guarda acumulado não consegue voltar — e
+  reajuste é discussão com o órgão, então a conta tem de ser reproduzível dois
+  anos depois.
+
+⚠️ **A primeira chamada de verdade ao Banco Central só acontece no Render.** A
+saída para a internet do ambiente onde o código foi escrito é filtrada e
+bloqueia o endereço. O que ficou provado aqui foi o caminho do ERRO — a tabela
+continua intacta e a tela explica em português o que houve — e a gravação, com
+um dublê no lugar da rede. O caminho de sucesso contra o serviço real, não.
+
+**Dois defeitos corrigidos no caminho**, os dois de leitura: o quadro do
+contrato mostrava **"A receber: −R$ 465.000,00"** quando entrava dinheiro sem
+nota emitida. Isso não é dívida ao contrário, é outra coisa — e das que a
+contabilidade precisa ver. Agora "a receber" nunca é negativo e apareceu um
+quadrinho **"Recebido sem nota"**. E o erro do Banco Central despejava dez
+linhas de traçado técnico na tela; agora o detalhe vai para o registro e a
+pessoa lê uma frase.
+
+**Provado:** 25 testes com banco de verdade (`tests/test_reajuste_banco.py`) e
+o caminho inteiro num navegador — informar a data-base, ver a previsão do
+contrato, gerar o reajuste de uma medição com valor editado, ver o título
+nascer correlacionado e o quadro somar certo, lançar um mês do índice à mão, e
+tentar buscar no Banco Central com a rede bloqueada.
+
+### A Agenda do ERP — 09/09/2026
+
+Migração **051**. Está em **Obras › "Agenda"**, e o número aparece na porta de
+entrada do ERP.
+
+**Por que ela existe.** Quatro coisas construídas antes dela sabiam calcular a
+própria data e não tinham onde AVISAR: o aniversário do reajuste da obra, a
+conferência mensal dos equipamentos locados, o vencimento das certidões e o fim
+da vigência do contrato. Um alerta que mora dentro da tela que a pessoa só abre
+quando já lembrou do assunto não é alerta, é enfeite. O que faltava era um
+lugar que se abre de manhã.
+
+**Cada aviso tem prazo próprio, e cada prazo tem motivo:**
+
+| Assunto | Avisa antes | Por quê |
+|---|---|---|
+| Aniversário de reajuste | 45 dias | dá tempo de juntar índice, calcular e protocolar |
+| Fim da vigência | 60 dias | aditivo de prazo não se pede na véspera |
+| Certidão | o que o tipo mandar | federal se tira no dia; alvará leva semanas |
+| Conferência de locação | no mês | a resposta é sobre aquele mês |
+
+**O aviso deduzido é RECALCULADO, não acumulado.** Cada um tem uma chave
+estável, então sincronizar dez vezes no mesmo dia não empilha dez avisos — e o
+que deixou de valer (certidão renovada, contrato encerrado) **some sozinho**.
+Isso não é detalhe: agenda que acumula aviso velho é agenda que ninguém abre, e
+uma agenda em que não se confia é pior que nenhuma, porque dá a sensação de que
+alguém está olhando.
+
+**Três coisas nunca somem, cada uma por um motivo diferente:** o RESOLVIDO é
+histórico (quem tratou, quando, e o que escreveu); o DISPENSADO é decisão — se
+voltasse, a pessoa dispensaria de novo, para sempre; e a ANOTAÇÃO manual
+ninguém deduziu, então ninguém pode deduzir que sumiu.
+
+**Dispensar exige motivo.** Três meses depois, "não se aplica" sem explicação é
+indistinguível de esquecimento — e é justamente o que alguém vai querer
+entender quando o problema aparecer.
+
+**Só a certidão MAIS NOVA de cada tipo conta.** A anterior vencida é histórico;
+avisar sobre ela seria avisar sobre um problema já resolvido.
+
+**Um gerador com defeito não derruba a agenda inteira** — o resto dos avisos
+continua valendo e a falha fica dita.
+
+**Dois defeitos achados enquanto eu olhava a tela**, e os dois valem a pena
+registrar porque a classe se repete:
+
+1. **A opção "ver também o que vem depois" não mostrava nada.** Os geradores
+   filtravam pela janela de aviso, então o que ainda não era hora nem chegava
+   a existir. Corrigido invertendo a responsabilidade: os geradores descrevem o
+   calendário INTEIRO e a leitura decide o que aparece. É o que transforma isto
+   num calendário em vez de uma caixa de alarmes.
+2. **A recusa do servidor custava o que a pessoa tinha digitado.** Dispensar
+   sem motivo era recusado (certo) com a janela já fechada (errado): a mensagem
+   aparecia atrás e quem escreveu meia frase começava do zero. Agora a janela
+   volta preenchida, com o erro escrito em cima.
+
+**Provado:** 26 testes com banco de verdade (`tests/test_agenda_banco.py`) e a
+tela percorrida num navegador contra os dados de demonstração — que já trouxe
+três conferências de locação em atraso e um certificado de FGTS vencendo em
+sete dias, sem ninguém cadastrar nada para o teste.
+
+⚠️ **A sincronização roda ao abrir a tela da agenda.** Hoje são quatro
+consultas curtas e o custo não aparece; se um dia pesar, ela vira tarefa
+separada — está no roteiro, junto com o resto do trabalho pesado que precisa
+sair das telas.
+
+### Empreita: retenção de garantia e alçada por valor — 09/09/2026
+
+Migração **052**. Duas coisas que estavam no roteiro desde o começo.
+
+**A RETENÇÃO DE GARANTIA** é o costume da construção: guarda-se uma parte de
+cada medição — na BWS, 5% — e devolve-se no fim, quando o serviço passou pelo
+período de garantia. Serve para o dia em que o empreiteiro some e o reparo
+fica com a obra.
+
+O defeito que ela corrige é sempre o mesmo na planilha: retém-se direitinho
+por doze medições e, no fim, **ninguém sabe quanto ficou retido nem quando
+devolver**. O dinheiro fica parado, o empreiteiro cobra, e alguém refaz a conta
+de memória.
+
+Agora o contrato diz o percentual, cada medição desconta sozinha, e o valor a
+pagar já sai líquido. Numa empreita de 180 mil com três medições, os 6.750
+retidos aparecem num quadrinho próprio, e quando o contrato termina a tela diz
+**"o serviço terminou — é hora de devolver"**.
+
+**Três decisões que valem registro:**
+
+1. **A garantia incide sobre o MEDIDO, não sobre o líquido.** Ela é uma parte
+   do serviço executado; o adiantamento é dinheiro que já saiu. Calcular sobre
+   o líquido faria a retenção encolher justamente na medição que abate
+   adiantamento — e no fim do contrato faltaria garantia.
+2. **O valor retido fica GRAVADO na medição**, não recalculado pelo percentual
+   atual. O percentual pode mudar por aditivo, e a medição de março tem de
+   continuar dizendo quanto foi retido em março. Guardar só o percentual faria
+   a conta do passado mudar sozinha — que é como se perde uma discussão com o
+   empreiteiro.
+3. **A devolução vira TÍTULO A PAGAR**, não acerto de planilha: passa pela
+   mesma aprovação, a mesma baixa e o mesmo comprovante de qualquer pagamento,
+   porque é dinheiro saindo. Não pode ser feita duas vezes, e antes do fim do
+   contrato exige motivo escrito — é o caso em que alguém vai perguntar por
+   quê, meses depois.
+
+Uma lista nova responde a pergunta que a planilha não responde: **de quem a BWS
+ainda está com garantia na mão**, e quais contratos já terminaram.
+
+**A ALÇADA POR VALOR** fecha um buraco: antes dela, uma empreita de oitocentos
+reais e uma de oitocentos mil passavam pela mesma porta — qualquer perfil de
+obra aprovava as duas. As faixas nascem assim:
+
+| Até | Quem aprova |
+|---|---|
+| R$ 50.000 | supervisor, gestor, financeiro e direção |
+| R$ 200.000 | gestor, financeiro e direção |
+| acima | só a direção |
+
+**Elas são TABELA, não número no código**, porque o teto muda com o tamanho da
+empresa — e quando mudar, quem muda é o dono. As faixas iniciais reproduzem o
+que já valia para o contrato pequeno e só estreitam o de cima: migração que
+muda quem pode o quê sem avisar é migração que quebra a operação na segunda de
+manhã.
+
+**O aditivo entra na conta**: contrato de 40 mil aditivado para 60 mil sai da
+faixa do supervisor. Senão bastaria cadastrar pequeno e aditivar depois.
+
+**Uma coisa que a devolução respeita, e é regra do ERP inteiro:** dado bancário
+vive no CADASTRO, nunca no lançamento. Quando o prestador tem uma única conta
+homologada, o sistema usa essa; com mais de uma, quem escolhe é a pessoa —
+adivinhar aqui é escolher para onde o dinheiro vai.
+
+**Provado:** 19 testes com banco de verdade
+(`tests/test_empreita_garantia_banco.py`) e o caminho inteiro num navegador,
+contra uma empreita de 180 mil com três medições: ver a garantia acumulada,
+devolver, e o título nascer com o valor certo.
+
+### O certificado digital da empresa — 09/09/2026
+
+Migração **053**, em Administração › Empresas › "Emissão de nota".
+
+**O problema, do jeito que ele acontece:** o arquivo .pfx vive no computador
+de alguém, com a senha num papel ou numa conversa antiga. Aí ele vence num
+sábado, ninguém sabe, e a obra para de faturar na segunda-feira.
+
+Duas coisas já construídas dependiam dele. A **emissão automática** da nota —
+no padrão nacional a declaração vai ASSINADA, e sem certificado não há
+assinatura. E a **agenda**, onde ele era o quarto aviso prometido que ficou de
+fora justamente porque o certificado não tinha onde morar. Agora estão os
+cinco.
+
+**Três decisões que valem registro:**
+
+1. **O arquivo e a senha vão CIFRADOS**, com a mesma chave que já protege a
+   senha de e-mail — a que mora na Environment do Render e nunca no banco.
+   Certificado digital é a **assinatura da empresa**: quem o tem, assina no
+   nome dela. Uma cópia do banco não pode bastar. E **sem a chave o sistema
+   recusa guardar**: a alternativa — guardar em claro "só desta vez" — é como
+   uma assinatura de empresa vaza sem ninguém perceber.
+
+2. **A validade é lida de dentro do arquivo, nunca digitada.** Campo de data
+   que a pessoa preenche é campo que ela erra ou esquece de atualizar — e aqui
+   o erro só apareceria no dia em que a nota não sai. De quebra, abrir o
+   arquivo **prova que a senha está certa**: certificado que não abre não
+   entra, e a mensagem diz o que quase sempre é ("confira a senha").
+
+3. **O arquivo nunca volta pela tela.** A tela mostra titular, CNPJ, validade e
+   emissor; os bytes só saem por dentro, para quem vai assinar. Não existe rota
+   de download — o que não tem porta não é arrombado.
+
+**Duas recusas que evitam erro caro:** certificado de outro CNPJ é recusado
+(trocar os arquivos de duas empresas faria a nota sair assinada pelo CNPJ
+errado — difícil de descobrir, caro de desfazer), e certificado já vencido não
+entra (guardá-lo criaria a impressão de que a empresa está em dia).
+
+**O anterior não é apagado**, vira histórico: a nota assinada em março foi
+assinada com AQUELE certificado, e um dia alguém vai perguntar com qual.
+
+**O aviso na agenda sai 45 dias antes**, porque certificado se renova com a
+contadora e isso leva dias. Quando o certificado é substituído, o aviso
+**fecha sozinho** — não fica um velho ao lado do novo.
+
+**Provado:** 15 testes com banco de verdade
+(`tests/test_certificado_banco.py`, que fabrica um A1 de verdade em memória
+em vez de versionar um .pfx no repositório — certificado versionado é
+certificado vazado, mesmo de teste) e o caminho inteiro num navegador: senha
+errada recusada com a frase certa, senha certa guardando, a validade lida do
+arquivo aparecendo na tela, e o aviso nascendo na agenda.
+
+**Um defeito corrigido no caminho:** a confirmação "certificado guardado"
+aparecia no painel que era redesenhado logo em seguida — a frase morria antes
+de ser lida, que é o mesmo que não ter avisado.
+
 ### O que está pendente AGORA
 
-1. **Definir `ERP_CHAVE_SEGREDOS` na Environment do Render** — é ela que cifra
-   a senha da conta de e-mail das empresas. Gera-se uma vez com
-   `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
-   Sem ela tudo funciona, menos guardar senha de e-mail.
+1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
+   É ela que cifra a senha da conta de e-mail das empresas. ⚠️ **Nunca trocar
+   essa chave depois que houver senha guardada**: as senhas antigas viram lixo
+   e têm de ser digitadas de novo.
 2. **`EL_NFSE_TOKEN` SAIU DA URGÊNCIA (07/09/2026).** Ele pertence ao módulo
    `emissaonf`, que emite nota de serviço e está **em espera** por decisão do
    dono — ver item 15. Enquanto o módulo não for retomado, a variável não faz
@@ -891,7 +1892,8 @@ dedutibilidade tem de aparecer **nos dois lugares**, não numa tela separada.
    devia. **Enxergar não é poder**: continua sem `aprovar`, `pagar`,
    `conciliar` e `ver_dados_pagamento`, com teste que quebra se alguém ampliar
    a alçada junto com a visão.
-12. **Duas variáveis novas no Render, para o agente funcionar** (07/09/2026):
+12. **RESOLVIDO em 08/09/2026 — as duas já estão no Render.** Ficam descritas
+   abaixo para quem precisar entender o que cada uma faz (07/09/2026):
    `ERP_AGENTE_SECRET` (qualquer texto longo e secreto — sem ela a rotina
    recusa, de propósito) e `ERP_URL_PUBLICA` (o endereço do ERP, ex.
    `https://erp.bwsconstrucoes.com.br`) — sem esta o link da mensagem sai
@@ -946,13 +1948,46 @@ dedutibilidade tem de aparecer **nos dois lugares**, não numa tela separada.
    qualquer desenho que assuma um-para-um nasce errado. Depende de certificado
    digital por empresa (cifrado, como a senha de e-mail) e traz junto a agenda
    de alertas. Quatro perguntas ainda esperam o dono — estão no §9 de lá.
-19. **A emissão de NFS-e fica em espera, por decisão do dono (07/09/2026).** É
+19. **RETOMADA em 09/09/2026 — a emissão de NFS-e saiu da espera**, com
+   desenho próprio ditado pelo dono e escrito em `MEDICOES_E_NOTAS.md`. Ela
+   deixa de ser "o módulo antigo" e passa a nascer do lado a RECEBER: a
+   medição do contrato emite a nota. O texto abaixo é de 07/09/2026 e fica
+   como registro do que era antes. É
    módulo antigo do monorepo (`app/apps/emissaonf/`), que emite nota de
    SERVIÇO da empresa para o cliente dela — coisa diferente do cruzamento do
    item 14, que captura nota que o FORNECEDOR emite contra a empresa. Nunca
    foi trabalhado nestes chats e não foi verificado por mim. O
    `EL_NFSE_TOKEN` pertence a esse módulo parado, e por isso saiu da lista de
    urgências. Retomar quando ele pedir.
+
+20. **RESOLVIDO em 08/09/2026 — as quatro variáveis foram criadas no Render
+   pelo dono, e o deploy foi feito.** `ERP_CHAVE_SEGREDOS`,
+   `ERP_AGENTE_SECRET`, `ERP_COMPROVANTE_SECRET` e `ERP_URL_PUBLICA` estão
+   definidas. Falta conferir, quando o agente rodar pela primeira vez, se o
+   link que chega na mensagem abre a tela certa — é o único jeito de saber se
+   a `ERP_URL_PUBLICA` está com o endereço certo.
+
+21. **RESOLVIDO em 09/09/2026 — as migrações 042 a 051 foram aplicadas.** O
+   dono publicou e apertou o botão no mesmo momento. ⚠️ **Fica pendente a
+   052 e a 053** (retenção de garantia da empreita e alçada por valor; o
+   certificado digital por empresa), pelo mesmo caminho, na próxima
+   publicação.
+
+   Do que cada uma trouxe, para consulta: 042 a trava contra baixa em
+   duplicidade; 043 o documento morando no Drive; 044 o cruzamento de notas;
+   045 o arquivo de documentos; 046 os blocos; 047 a chave Pix e os dados de
+   emissão por empresa; 048 o controle da numeração das notas; 049 o tipo da
+   medição, a correlação do reajuste e o protocolo; 050 a data-base do
+   reajuste e a tabela do INCC; 051 a agenda de obrigações.
+
+23. **Criar a pasta do Drive e colar o endereço** em Configurações › "Onde
+   ficam os documentos", apertar "Testar a pasta" e só então ligar a chave.
+   Pasta num Drive compartilhado da empresa, com a conta de serviço do sistema
+   como editor. Enquanto isso não acontecer, tudo segue guardando no banco,
+   como sempre foi.
+
+22. **Apontar o cenário do Make** para o endereço de lote dos comprovantes. A
+   senha (`ERP_COMPROVANTE_SECRET`) já está no Render; falta o Make usá-la.
 
 ---
 
@@ -1099,6 +2134,11 @@ dessas coisas aparece num teste que só olha o HTML que o servidor mandou.
   `core/comum/formato.py` (`_dinheiro_br`, `_quantidade_br`); na tela, por
   `moeda` e `numero` do `erp_base.html`. Não escrever `f"R$ {v:.2f}"` — isso é
   formato americano, e o dono lê o sistema em português.
+- **Ao melhorar uma tela, PROCURE a versão antiga antes de escrever a nova.**
+  Acrescentar a função nova por cima não substitui a velha: em JavaScript a
+  declaração DE BAIXO vence, calada, e a melhoria vira código morto. Foi assim
+  que a ficha do lote ficou oito dias com o comportamento antigo. Agora
+  `tests/test_telas_sem_funcao_repetida.py` recusa isso.
 - **Nunca declare na tela um nome que a base já declara** (`moeda`, `numero`,
   `els`, `api`, `dataBR`…). Não é "a última vence": é erro de sintaxe e a tela
   inteira morre. `tests/test_telas_javascript.py` recusa isso agora.

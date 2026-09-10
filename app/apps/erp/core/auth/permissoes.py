@@ -86,6 +86,54 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # A fila de pedidos serve a DOIS papéis: quem compra acompanha o que fechou,
     # quem autoriza libera. Ver a seção de ações implicadas abaixo.
     "ver_pedidos_compra":  {P.ADMIN, P.DIRETOR_FINANCEIRO},
+    # Notas fiscais emitidas contra os CNPJs da empresa. VER é largo de
+    # propósito — nota emitida contra a empresa sem ninguém saber é problema
+    # fiscal, e mais olhos ajudam. CRUZAR é decisão que muda a contabilidade:
+    # fica com o financeiro por cargo, e chega a quem compra pela implicação
+    # abaixo, porque é o comprador que sabe de que pedido a nota é.
+    "ver_notas":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.CONSULTA},
+    "cruzar_notas":    {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
+    # Arquivo da empresa. VER é largo — certidão e contrato social são o tipo de
+    # documento que todo mundo precisa e ninguém acha. O que separa quem vê o
+    # quê NÃO é esta ação, é o SIGILO do tipo (aberto, restrito, pessoal) e o
+    # escopo por obra: folha de pagamento e documento de sócio não aparecem
+    # para quem não é do financeiro ou do DP, mesmo com esta ação marcada.
+    "ver_arquivo":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA},
+    "arquivar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                        P.DEPARTAMENTO_PESSOAL, P.GESTOR_OBRA},
+    # Quadro financeiro do contrato: medições, faturamento e recebimento.
+    #
+    # A lista é DELIBERADAMENTE só de perfis que já enxergam a base inteira
+    # (VE_TUDO). O quadro mostra o contrato de ponta a ponta — todas as
+    # medições, de todas as obras do contrato — e não há como recortá-lo por
+    # obra designada sem mentir no total. Quem é preso a obra ou a autoria
+    # fica de fora até existir um recorte que faça sentido; abrir depois é
+    # uma linha, fechar depois é conversa constrangedora.
+    "ver_contratos":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.CONSULTA},
+    # Notas que a BWS EMITE contra o cliente. VER é largo dentro do escritório
+    # — é dessa tela que sai o relatório da contabilidade. EMITIR (registrar a
+    # nota, cancelar) é estreito: número de nota fiscal não se apaga, se
+    # explica, e cada linha aqui é documento perante o fisco.
+    "ver_notas_emitidas": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                           P.GESTOR_OBRA, P.CONSULTA},
+    "emitir_nota":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
+    # A agenda é LARGA de propósito: quase todo perfil tem alguma obrigação com
+    # data (o administrativo da obra responde a conferência de equipamento, o
+    # DP tem documento vencendo, o financeiro tem o reajuste). Uma agenda que
+    # só o administrador enxerga não avisa ninguém — e o que cada um VÊ dentro
+    # dela continua limitado pelo escopo de obra, não por esta ação.
+    "ver_agenda":      {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA},
+    # Marcar como resolvido é afirmação com nome e data. Fica fora de CONSULTA
+    # — quem só olha não resolve.
+    "tratar_agenda":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                        P.DEPARTAMENTO_PESSOAL},
 }
 
 # Ações que uma pessoa ganha de graça por já ter outra.
@@ -97,6 +145,18 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
 # verdade sobre quem entra.
 ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     "ver_pedidos_compra": ("comprar", "autorizar_pedido"),
+    # Quem compra enxerga as notas e cruza: é ele que sabe de que pedido cada
+    # nota é, e o dono deixou em aberto quem confere — a resposta prática é
+    # "os dois, na mesma tela", porque a nota tem uma ponta em cada mundo.
+    "ver_notas":   ("comprar", "autorizar_pedido", "cruzar_notas"),
+    "cruzar_notas": ("comprar",),
+    # Quem lança recebimento precisa do quadro do contrato: é lá que ele
+    # confere o que já foi medido, faturado e recebido antes de baixar.
+    "ver_contratos": ("receber",),
+    # Quem emite enxerga a própria tela — do contrário marcar alguém como
+    # emissor e ele não conseguir abrir a lista seria uma armadilha.
+    "ver_notas_emitidas": ("emitir_nota", "ver_contratos"),
+    "ver_agenda": ("tratar_agenda",),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -126,6 +186,15 @@ ACAO_ROTULOS = {
     "administrar_insumos":  "Cadastrar e corrigir insumos",
     "administrar_fornecedores": "Cadastrar e corrigir fornecedores",
     "ver_pedidos_compra":   "Ver a fila de pedidos de compra",
+    "ver_notas":            "Ver as notas emitidas contra a empresa",
+    "cruzar_notas":         "Cruzar nota com pedido, título e fundo fixo",
+    "ver_arquivo":          "Ver o arquivo de documentos da empresa",
+    "arquivar":             "Guardar e organizar documento no arquivo",
+    "ver_contratos":        "Ver o quadro financeiro dos contratos",
+    "ver_notas_emitidas":   "Ver as notas emitidas contra o cliente",
+    "emitir_nota":          "Registrar e cancelar nota emitida",
+    "ver_agenda":           "Ver a agenda de obrigações",
+    "tratar_agenda":        "Resolver, dispensar e anotar na agenda",
 }
 
 ROTULOS = {
