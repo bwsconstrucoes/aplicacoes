@@ -158,9 +158,13 @@ MODULOS = [
         "chave": "admin", "nome": "Administração", "sigla": "ADM",
         "descricao": "Plano financeiro, operadores, banco de dados e auditoria",
         "cor": "var(--roxo)",
+        # EMPRESAS NÃO É ABA, é configuração. São três ou quatro empresas,
+        # cadastradas uma vez — o dono viu isso em 10/09/2026: *"não tem
+        # sentido ficar uma aba lá na parte superior do aplicativo só pra
+        # isso"*. A tela continua a mesma; ela só passou a morar dentro de
+        # Configurações, e é de lá que se chega nela.
         "abas": [
             ("config", "Configurações", "erp.pagina_config"),
-            ("empresas", "Empresas", "erp.pagina_empresas"),
             ("arquivo", "Arquivo", "erp.pagina_arquivo"),
         ],
     },
@@ -1667,9 +1671,15 @@ def api_suprimentos_importar(tipo: str):
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
-            funcao = (imp.importar_fornecedores_csv if tipo == "fornecedores"
-                      else imp.importar_insumos_csv)
-            rel = funcao(s, conteudo, atual, simular=simular)
+            if tipo == "fornecedores":
+                rel = imp.importar_fornecedores_csv(s, conteudo, atual, simular=simular)
+            else:
+                # Criar categoria de insumo na carga é decisão do dono, marcada
+                # na tela — nunca o padrão. Ver o porquê em `importar_insumos_csv`.
+                criar_cats = str(request.args.get("criar_categorias") or "").strip() \
+                    in ("1", "true", "sim")
+                rel = imp.importar_insumos_csv(s, conteudo, atual, simular=simular,
+                                               criar_categorias=criar_cats)
             if simular:
                 s.rollback()
             else:
@@ -1696,7 +1706,10 @@ def api_suprimentos_importar(tipo: str):
 @login_obrigatorio
 @permissao("configurar")
 def pagina_empresas():
-    return render_template("erp_empresas.html", **_contexto("empresas"))
+    # `_contexto("config")`: a tela de Empresas pertence a Configurações, e é
+    # a aba de Configurações que tem de ficar acesa lá em cima.
+    return render_template("erp_empresas.html", sub_aba="empresas",
+                           **_contexto("config"))
 
 
 @bp.route("/erp/api/empresas", methods=["GET", "POST"])
@@ -2399,6 +2412,27 @@ def api_nova_categoria():
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao criar categoria")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/config/categorias/ajeitar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_ajeitar_categorias():
+    """Põe no grupo certo as contas que nasceram sem grupo. Deduz pelo código."""
+    from app.apps.erp.core.cadastros import categorias as svc_cat
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = svc_cat.ajeitar_sem_grupo(s, usuario)
+            s.commit()
+        return jsonify({"ok": True, "resultado": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao ajeitar as contas sem grupo")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

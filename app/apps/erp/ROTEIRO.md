@@ -567,6 +567,30 @@ campo virava bloco — quadradinho em cima, texto embaixo, duas linhas por opç�
 contas, a de obras designadas e a de permissões do operador. Corrigido no
 estilo, num lugar só.
 
+### O lançamento visto de perto — 10/09/2026 (noite)
+
+O dono lançou um título de verdade pela primeira vez e mandou uma lista.
+
+- [x] **Empresas saiu da aba do topo** e passou a morar dentro de
+      Configurações: *"a gente vai cadastrar três, quatro empresas, é uma
+      coisa de configuração"*. A tela é a mesma.
+- [x] **Descrição do título virou campo de várias linhas.** Estava pela
+      metade no HTML — um `input` fechado com `</textarea>` —, então o pedido
+      anterior nunca tinha funcionado. A quebra de linha é guardada e aparece
+      igual na ficha do título.
+- [x] **Parcelas que se preenchem sozinhas**: a primeira nasce com o líquido
+      inteiro, acrescentar parcela divide o valor, e o vencimento seguinte cai
+      um mês à frente do anterior.
+- [x] **Vários documentos no mesmo lançamento** — e, o que era pior, **os
+      documentos passaram a ficar guardados**: antes o arquivo servia para a
+      leitura e ia embora. Agora nota, boleto e comprovante ficam anexados ao
+      título, e cada um pode ser lido ou só arquivado.
+- [x] **Rateio por conta do plano**: dava para usar duas contas no mesmo
+      título, mas a tela só falava em obra. Rótulos corrigidos, linha nova já
+      repete a obra anterior, e um botão divide igualmente.
+- [x] **Importar as categorias de insumo** junto com os insumos, por uma
+      marcação na tela — a carga continua sem inventar categoria por padrão.
+
 ## Decisões registradas
 
 | Assunto | Decisão |

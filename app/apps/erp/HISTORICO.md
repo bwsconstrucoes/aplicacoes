@@ -2469,6 +2469,202 @@ dizendo o que falta, o véu do arrastar e a leitura disparando sozinha.
 **Esta entrega não tem migração.** A lista de bancos mora numa linha da tabela
 de parâmetros, que já existe.
 
+### O endereço no formulário de nova obra — 10/09/2026 (noite)
+
+*"Eu estou achando tão pouco campo ainda. Não tem, por exemplo, endereço, ou é
+porque aparece no campo posterior? Porque é um campo importantíssimo."*
+
+Ele estava certo nas duas pontas: o endereço **existia** (na ficha da obra, aba
+Cadastro, com logradouro, número, bairro, CEP, município, UF e até
+latitude/longitude), mas **não estava** no formulário de criação — e é o campo
+que ele mais precisa na hora de abrir a obra, porque vira local de entrega nas
+compras e endereço da prestação na nota.
+
+O formulário à mão passou a ter três blocos: **Identificação**, **Onde é a
+obra** (CEP, logradouro, número, bairro, município, UF) e **Obra e fiscal**.
+Quinze campos numa grade lisa viram parede; em bloco, lê-se. Só código e nome
+continuam obrigatórios.
+
+O CEP é guardado **só com dígitos**: digitado de três jeitos, viraria três CEPs
+diferentes na hora de comparar ou de mandar para a prefeitura.
+
+Pelo caminho do **documento** o endereço já vinha desde a entrega anterior —
+contrato, matrícula CNO, ART e licença todos preenchem endereço.
+
+⚠️ **Ficou uma pergunta em aberto, do lado do dono:** ele mencionou que o pipe
+de obras do Pipefy tem mais informação que o ERP. **Essa estrutura não está no
+repositório** e nenhum chat lembra dela — se houver campo que falta, ele
+precisa mandar a lista de novo. O que o ERP guarda hoje sobre uma obra são 34
+campos, listados na resposta a ele.
+
+### O lançamento visto de perto — 10/09/2026 (noite)
+
+O dono lançou um título de verdade e mandou uma lista. Duas das coisas que ele
+encontrou eram defeito, não gosto.
+
+**1. Empresas saiu da aba do topo.** *"A gente vai cadastrar três empresas,
+quatro empresas, é uma coisa de configuração e são poucas. Não tem sentido
+ficar uma aba lá na parte superior do aplicativo só pra isso."* A tela é a
+mesma e os dados também; ela só passou a pertencer a Configurações, com uma
+faixa para ir e voltar. O menu de Administração ficou com dois itens em vez de
+três.
+
+**2. ⚠️ A descrição do título nunca tinha virado campo de várias linhas.** Ele
+já havia pedido isso antes, e o HTML tinha ficado **pela metade**: um `<input>`
+fechado com `</textarea>`. O navegador engole essa mistura sem reclamar, então
+o campo continuou de uma linha só e ninguém percebeu. Agora é caixa de texto de
+verdade, a quebra de linha é guardada e a ficha do título mostra a descrição
+inteira com as quebras — `white-space: pre-wrap`, senão o HTML junta tudo numa
+linha e a organização se perde.
+
+**3. ⚠️ O documento do lançamento NÃO FICAVA GUARDADO.** Este é o achado
+grande. A tela dizia "Anexo", a pessoa escolhia a nota, o sistema lia e
+preenchia — e o arquivo ia embora. Nada era anexado ao título. Ninguém tinha
+percebido porque a leitura funciona bem e o formulário fica certo; o que
+faltava só apareceria no dia em que alguém procurasse a nota no título e não
+achasse.
+
+Agora o cartão é **1 · Documentos**, no plural:
+
+- dá para escolher vários de uma vez ou ir acrescentando (*"eu botei a nota,
+  pô, esqueci o boleto"*);
+- cada um pode ser **lido** ou **só arquivado** — comprovante não precisa de
+  leitura, boleto vale muito a pena (traz vencimento, valor e linha digitável);
+- **todos sobem como anexo** depois que o título nasce. Se um anexo falhar, o
+  título NÃO é desfeito: ele já foi analisado e numerado. A tela diz quais
+  ficaram de fora e manda anexar pela ficha.
+
+**O segundo documento só preenche o que está vazio.** Se o boleto traz um valor
+diferente do da nota, quem vale é a nota — trocar calado um valor já conferido
+é como se perde a confiança na leitura. Parcela que veio de documento entra
+**travada**, para o "dividir" não passar por cima do que o boleto diz.
+
+Entraram também as categorias de anexo **BOLETO** e **GUIA**: sem elas o par
+nota + boleto ficava como "outro, outro", apagando justamente a diferença que
+interessa na hora de procurar.
+
+**4. Parcelas que se preenchem sozinhas.** *"Se eu adicionar mais parcelas, ele
+já dividisse. E os vencimentos: se eu já coloquei o primeiro, jogar o próximo
+pra trinta dias."* A primeira nasce com o líquido inteiro; acrescentar divide;
+cada vencimento novo cai um mês depois do anterior (dia 31 em mês de 30 vai
+para o último dia, que é o que o boleto faz).
+
+A regra que evita o pior defeito possível aqui — apagar o que a pessoa digitou
+— é a **marca**: campo preenchido pelo sistema fica marcado como automático, e
+digitar nele derruba a marca. Recálculo por mudança de valor só mexe no que
+continua automático. A exceção é o botão **acrescentar parcela**: ali a pessoa
+está pedindo para dividir, então a divisão vale para todas.
+
+**5. O rateio por conta do plano já existia — a tela é que não dizia.** *"E se
+tiver mais de uma categoria eu não consigo adicionar mais uma."* Conseguia: é
+só acrescentar uma linha com a mesma obra e outra conta. Mas o cartão se
+chamava "Rateio por obra e conta", o botão dizia "+ Adicionar obra" e a conta
+parecia acessório. Agora o botão é "+ Adicionar linha", a linha nova **já vem
+com a obra da anterior** (o caso comum é partir a mesma obra em duas contas),
+há um "dividir igualmente", e a dica explica em uma frase.
+
+**6. Importar as categorias de insumo.** A carga de insumos nunca criou
+categoria, de propósito — inventar categoria na importação é como a base começa
+a apodrecer. O dono quer trazer as dele de uma planilha, então virou uma
+**marcação na tela**, desligada por padrão: ligada, cria as que faltam e o
+relatório diz quais nasceram; a prévia mostra tudo sem gravar. Nome escrito de
+dois jeitos ("Areia" e "AREIA") vira UMA categoria — mas "Areia" e "Areia
+lavada" viram duas, e a tela avisa disso antes.
+
+**O que ficou provado:** os 5 casos novos de
+`tests/test_suprimentos_importacao.py`, e o caminho inteiro no navegador com
+banco de verdade e a leitura dublada — dois documentos na lista, a nota
+preenchendo o cabeçalho, o boleto completando só o vencimento e a linha
+digitável sem mexer na descrição, 1000 virando 500+500 e depois
+333,33+333,33+333,34 com vencimentos mensais, o rateio repetindo a obra e
+dividindo, e o título nascendo com **os dois anexos**, um como NOTA e o outro
+como BOLETO.
+
+**Esta entrega não tem migração.**
+
+### O catálogo que não tinha como ser instalado — 10/09/2026 (noite)
+
+O dono abriu o Arquivo em produção pela primeira vez e leu:
+
+> *"O catálogo de tipos de documento está vazio — instale o catálogo antes de
+> usar a leitura automática."*
+
+A mensagem estava certa. **O problema é que não havia como instalar.** A rota
+`POST /erp/api/arquivo/tipos/aplicar` existia desde que o Arquivo foi feito, e
+**nenhuma tela a chamava**. O Arquivo inteiro ficava inútil, pedindo uma coisa
+que ninguém tinha como fazer sem mexer no banco por fora.
+
+A varredura achou mais duas do mesmo tipo:
+
+- `/erp/api/arquivo/blocos/aplicar` — os conjuntos prontos (documentação fiscal
+  da medição, habilitação, dossiê da obra). Sem eles, "Baixar um conjunto" fica
+  vazio.
+- `/erp/api/medicoes/tipos/aplicar` — os tipos que classificam a medição do
+  contrato. Sem eles, a tela de Contratos e medições fica sem a lista.
+
+**O que passou a existir:**
+
+1. **Na tela do Arquivo**, um cartão em cima de tudo quando o catálogo está
+   vazio, com o botão junto — e, para quem não pode instalar, a frase que diz a
+   quem pedir. Instalar traz o catálogo E os conjuntos prontos: um sem o outro
+   deixaria a tela pela metade, porque o conjunto aponta para os tipos.
+2. **Em Configurações**, uma seção "Catálogos que se instalam uma vez", com os
+   dois catálogos, o estado de cada um e os botões. Fica achável depois — é
+   também por onde se atualiza quando uma versão nova traz tipo novo.
+
+⚠️ **E um teste que impede a volta:** `tests/test_botao_de_instalacao_existe.py`
+percorre as rotas `*/aplicar` do ERP e exige que cada uma apareça em alguma
+tela. É a mesma família do teste que já existia pelo outro lado (a tela pedir
+endereço que o servidor tem); faltava este sentido. Ele foi verificado
+falhando: com o botão dos tipos de medição escondido, acusa o nome da rota.
+
+**Provado no navegador, com o catálogo apagado de propósito num banco
+descartável:** o aviso aparece, o botão instala 59 tipos e 5 conjuntos, o aviso
+some, o filtro de tipos e a lista de conjuntos se enchem, e Configurações passa
+a dizer "59 tipos e 5 conjuntos prontos".
+
+**Para o dono, em produção: é apertar o botão uma vez.** Arquivo › o cartão
+amarelo em cima, ou Administração › Configurações › Tipos de documento.
+
+### A conta do plano que nascia sem grupo — 10/09/2026 (noite)
+
+*"Cadastrei a categoria do plano financeiro dentro de custo de obra e ela não
+aparece. Mas ele cadastrou, porque acusa que aquela numeração está sendo
+utilizada. Então é erro de visualização."*
+
+O diagnóstico dele estava certo, e a causa é esta: o plano da BWS tem **três
+níveis** — "3.1.01" é a conta 01 do subgrupo 3.1 (Materiais aplicados), dentro
+do grupo 3 (Custos de obra) —, e o cadastro pela tela **não preenchia grupo nem
+subgrupo**. A conta ficava gravada com grupo vazio.
+
+Efeito: a tela mostra por grupo, e a API traduz grupo vazio para "Sem grupo".
+A conta ia parar num bloco "Sem grupo" no ALTO da lista — longe de "Custos de
+obra", que é onde quem a criou foi procurar. E nos relatórios ela ficava fora
+dos totais por grupo, que é o estrago silencioso.
+
+**O conserto tem três partes:**
+
+1. **A conta nova deduz o lugar pelo próprio código.** "3.1.97" entra no grupo
+   3 e no subgrupo 3.1. Os NOMES saem de uma conta irmã — senão a conta nova
+   entraria com rótulo diferente do das vizinhas, que é outro jeito de parecer
+   sumida. Sem irmã, fica o código como nome: feio, mas visível e corrigível.
+2. **Código sem ponto não deduz nada.** Chutar o código inteiro como grupo
+   criaria um grupo de uma conta só — pior que deixar em branco, porque parece
+   certo.
+3. **As que já nasceram tortas têm conserto.** A tela agora DIZ quantas contas
+   estão sem grupo e oferece o botão "Pôr no grupo certo", que deduz pelo
+   código e relata uma a uma. Não encosta em conta que já está no lugar.
+
+Junto veio uma correção pequena e importante: conta feita à mão nasce
+**personalizada**, então "Instalar plano padrão" não reescreve a descrição que
+o dono escolheu.
+
+**Provado:** `tests/test_categoria_no_grupo.py`, 9 casos com banco de verdade
+(precisa ser banco: tudo aqui depende de `WHERE` — achar a irmã, achar a maior
+ordem do subgrupo, recusar código repetido). E no navegador: o aviso apareceu
+com a conta órfã, o botão a pôs em "3 · Custos de obra", e uma conta nova
+cadastrada em seguida já nasceu no grupo certo, na ordem certa.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**

@@ -35,6 +35,10 @@ def criar(s: Session, dados: dict[str, Any], usuario: Optional[Usuario]) -> Obra
                 municipio=(dados.get("municipio") or "").strip() or None,
                 uf=(dados.get("uf") or "").strip().upper() or None,
                 endereco=(dados.get("endereco") or "").strip() or None,
+                numero_endereco=(dados.get("numero_endereco") or "").strip() or None,
+                bairro=(dados.get("bairro") or "").strip() or None,
+                cep=_digitos(dados.get("cep")),
+                codigo_ibge=_digitos(dados.get("codigo_ibge")),
                 codigo_omie_depto=(str(dados.get("codigo_omie_depto") or "").strip() or None),
                 ref_sheets=(dados.get("ref_sheets") or "").strip() or None,
                 objeto=(dados.get("objeto") or "").strip() or None,
@@ -77,6 +81,14 @@ def _iss(dados: dict[str, Any]):
     diz que falta".
     """
     return _num(dados.get("aliquota_iss_pct") or dados.get("aliquota_iss"))
+
+
+def _digitos(v):
+    """Só os dígitos. CEP com ponto e traço, digitado de três jeitos, viraria
+    três CEPs diferentes na hora de comparar ou de mandar para a prefeitura."""
+    import re
+    d = re.sub(r"\D", "", str(v or ""))
+    return d or None
 
 
 def _num(v):

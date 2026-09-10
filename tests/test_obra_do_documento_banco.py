@@ -109,6 +109,23 @@ def test_criar_obra_pelo_painel_com_o_cadastro_inteiro(app_real, cenario):
     assert obra.valor_contrato == Decimal("1250000.00")
 
 
+def test_o_endereco_entra_no_cadastro_direto(app_real, cenario):
+    """O dono estranhou não achar o endereço no formulário: *"é um campo
+    importantíssimo"*. Ele existia só na ficha; agora entra na criação."""
+    r = como(app_real, cenario["admin"].id).post("/erp/api/obras/nova", json={
+        "codigo": "ESCPE18", "nome": "Escola do Eusébio",
+        "cep": "61760-000", "endereco": "AVENIDA CENTRAL",
+        "numero_endereco": "1500", "bairro": "CENTRO",
+        "municipio": "EUSEBIO", "uf": "CE"})
+
+    assert r.status_code == 200, r.get_data(as_text=True)
+    obra = cenario["s"].query(Obra).one()
+    assert obra.endereco == "AVENIDA CENTRAL"
+    assert obra.numero_endereco == "1500"
+    assert obra.bairro == "CENTRO"
+    assert obra.cep == "61760000", "o CEP é guardado só com dígitos"
+
+
 def test_quem_nao_configura_nao_cria_obra(app_real, cenario):
     r = como(app_real, cenario["obreiro"].id).post(
         "/erp/api/obras/nova", json={"codigo": "X1", "nome": "Obra X"})
