@@ -408,6 +408,33 @@ function blocoDaOrigem(o){
   </div>`;
 }
 
+// A DOCUMENTAÇÃO QUE VAI JUNTO COM ESTE TÍTULO.
+//
+// Ideia do dono: quem está olhando um título de medição precisa da pasta
+// fiscal daquela obra e daquele mês — e ia até a tela do Arquivo escolher
+// obra e competência de novo. Aqui é um clique, com os dois já preenchidos.
+//
+// Só aparece quando faz sentido: título de UMA obra (rateado entre duas, não
+// existe "a" documentação) e com competência.
+function blocoDeDocumentos(c){
+  const obras = c.obra_ids || [];
+  if (obras.length !== 1 || !c.competencia_iso) return "";
+  const medicao = c.numero_medicao;
+  return `<h4>Documentação deste título</h4>
+    <div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        ${botaoDeBloco("FISCAL", `Documentação fiscal de ${escapar(c.competencia)}`,
+          {obra_id: obras[0], competencia: c.competencia_iso,
+           dica: "O que o cliente pede junto com a medição"})}
+        ${medicao ? botaoDeBloco("MEDICAO", "Medição e documentação do mês",
+          {obra_id: obras[0], competencia: c.competencia_iso}) : ""}
+        ${botaoDeBloco("OBRA", "Dossiê da obra", {obra_id: obras[0]})}
+      </div>
+      <div class="cartao-dica">Vem em pasta compactada, com a lista do que
+        falta dentro — e o que falta também aparece na Agenda.</div>
+    </div>`;
+}
+
 // A FICHA DO TÍTULO NASCE EMBAIXO DA PRÓPRIA LINHA.
 //
 // Antes ela abria numa janela por cima da tela, e só com clique DUPLO — que
@@ -496,6 +523,8 @@ function montarFicha(t){
           <td><small>${c.observacao||""}</small></td>
           <td><a class="btn secundario" href="/erp/colaboradores">Ver ficha</a></td>
         </tr>`).join("")}</tbody></table></div>`:""}
+
+      ${blocoDeDocumentos(c)}
 
       <h4>Anexos</h4>
       <div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">

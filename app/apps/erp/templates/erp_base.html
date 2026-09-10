@@ -123,6 +123,92 @@ const escapar = t => String(t ?? "").replace(/[&<>"']/g,
   c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
 
 // ---------------------------------------------------------------------------
+// TRABALHO EM SEGUNDO PLANO (migração 055)
+//
+// Importar cem cards, recalcular a agenda, emitir nota e esperar a prefeitura:
+// nada disso cabe no tempo de um clique. O clique põe na fila e volta na hora;
+// isto aqui é o que mostra o andamento e avisa quando terminou.
+//
+// A tela PERGUNTA de tempos em tempos em vez de ficar ligada esperando: uma
+// conexão aberta por aba seguraria uma das quatro linhas de atendimento do
+// serviço — que é justamente o que a fila veio evitar.
+const _TAREFAS_SITUACAO = {
+  PENDENTE: ["aguardando", "na fila"], EXECUTANDO: ["aprovado", "em andamento"],
+  CONCLUIDA: ["pago", "terminado"], FALHADA: ["bloqueado", "falhou"],
+  CANCELADA: ["outro", "cancelado"],
+};
+
+function cartaoDaTarefa(t){
+  const [classe, texto] = _TAREFAS_SITUACAO[t.situacao] || ["outro", t.situacao];
+  const pct = (t.total && t.total > 0)
+    ? Math.min(100, Math.round((t.passo / t.total) * 100)) : null;
+  return `<div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+       border-left:4px solid var(--azul-claro)">
+    <div style="display:flex; gap:10px; align-items:baseline; flex-wrap:wrap">
+      <b>${escapar(t.rotulo)}</b>
+      <span class="selo ${classe}">${texto}</span>
+      ${t.segundos !== null && t.segundos !== undefined
+        ? `<small>${t.segundos}s</small>` : ""}
+      ${t.tentativas > 1 ? `<small>tentativa ${t.tentativas}</small>` : ""}
+    </div>
+    ${pct !== null ? `<div class="risco" style="margin-top:8px">
+      <span class="trilha" style="flex:1; min-width:0; height:10px">
+        <span class="preench ${t.situacao==="FALHADA"?"":"zero"}" style="width:${pct}%"></span>
+      </span><span style="white-space:nowrap; font-family:var(--fonte-dados)"
+        >${t.passo}${t.total?` de ${t.total}`:""}</span></div>` : ""}
+    ${t.mensagem ? `<div class="cartao-dica">${escapar(t.mensagem)}</div>` : ""}
+    ${t.erro ? `<div class="aviso erro" style="margin:8px 0 0">${escapar(t.erro)}</div>` : ""}
+  </div>`;
+}
+
+// Acompanha um trabalho até ele terminar. Devolve o trabalho no estado final.
+// `alvo` é o id do lugar onde desenhar o andamento; `aoTerminar` recebe o
+// trabalho pronto — é onde a tela mostra o resultado.
+async function acompanharTarefa(id, {alvo = "", aoTerminar = null,
+                                     intervalo = 1500, teto = 1200} = {}) {
+  const desenhar = t => { if (alvo && els(alvo)) els(alvo).innerHTML = cartaoDaTarefa(t); };
+  const limite = Date.now() + teto * 1000;
+  while (Date.now() < limite) {
+    let t;
+    try {
+      t = (await api(`/erp/api/tarefas/${id}`)).tarefa;
+    } catch(e) {
+      // Rede oscilando não é motivo para desistir do acompanhamento: o
+      // trabalho continua rodando do lado de lá.
+      await new Promise(r => setTimeout(r, intervalo * 2));
+      continue;
+    }
+    desenhar(t);
+    if (t.terminou) { if (aoTerminar) aoTerminar(t); return t; }
+    await new Promise(r => setTimeout(r, intervalo));
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// OS BLOCOS DE DOCUMENTO, A UM CLIQUE DE ONDE A PESSOA JÁ ESTÁ
+//
+// O conjunto que o cliente pede junto com a medição, o dossiê da obra, a
+// habilitação para licitação: tudo isso já existia na tela do Arquivo. Mas
+// quem precisa está OLHANDO O TÍTULO, ou a obra — e ir até outra tela, achar
+// o bloco, escolher obra e competência de novo é o tipo de trabalho que faz
+// a pessoa desistir e montar a pasta à mão, como sempre fez.
+//
+// O botão baixa o .zip COM A LISTA DO QUE FALTA dentro. Baixar um conjunto
+// incompleto sem dizer que está incompleto seria pior do que não baixar.
+function botaoDeBloco(codigo, rotulo, {obra_id = null, empresa_id = null,
+                                       competencia = "", dica = ""} = {}) {
+  const p = new URLSearchParams();
+  if (obra_id) p.set("obra_id", obra_id);
+  if (empresa_id) p.set("empresa_id", empresa_id);
+  if (competencia) p.set("competencia", competencia);
+  return `<a class="btn secundario" style="text-decoration:none"
+     href="/erp/api/arquivo/blocos/${encodeURIComponent(codigo)}/baixar?${p}"
+     title="${escapar(dica || "Vem em pasta compactada, com a lista do que falta dentro")}"
+     >⤓ ${escapar(rotulo)}</a>`;
+}
+
+// ---------------------------------------------------------------------------
 // ENCADEAMENTO — o registro citado numa tela leva ao cadastro dele.
 //
 // A obra que aparece no título é a mesma obra que tem contrato, vigência e
@@ -487,7 +573,13 @@ async function api(url, opcoes) {
   const r = await fetch(url, opcoes);
   if (r.status === 401) { location.href = "/erp/entrar"; throw new Error("Sessão expirada."); }
   const d = await r.json();
-  if (!d.ok) throw new Error(d.erro || "Falha na operação.");
+  if (!d.ok) {
+    const erro = new Error(d.erro || "Falha na operação.");
+    // A resposta inteira viaja junto: há recusa que vem com uma LISTA do que
+    // falta (a emissão de nota, por exemplo), e uma frase só não dá conta.
+    erro.dados = d;
+    throw erro;
+  }
   return d;
 }
 

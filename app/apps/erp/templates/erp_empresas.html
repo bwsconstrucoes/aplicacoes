@@ -383,7 +383,20 @@ function abrir(id){
       ${["Dados da empresa", "Conta de e-mail", "Emissão de nota", "Logo"].map((t, i) =>
         `<button class="topo-aba ${i === 0 ? "ativa" : ""}" data-painel="${i}">${t}</button>`).join("")}
     </div>
-    <div id="painel"></div>`;
+    <div id="painel"></div>
+
+    {# OS CONJUNTOS DA EMPRESA. Habilitação é o que o edital exige; cadastro de
+       fornecedor é o que o cliente pede para registrar a BWS. Estavam só na
+       tela do Arquivo — e quem precisa deles está aqui, olhando a empresa. #}
+    <div class="cartao" style="box-shadow:none; border:1px solid var(--borda); margin-top:14px">
+      <b>Documentação desta empresa</b>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+        ${botaoDeBloco("HABILITACAO", "Habilitação para licitação", {empresa_id: id})}
+        ${botaoDeBloco("CADASTRO-FORNECEDOR", "Cadastro como fornecedor", {empresa_id: id})}
+      </div>
+      <div class="cartao-dica">Vem em pasta compactada, com a lista do que falta
+        dentro — e o que falta também aparece na Agenda.</div>
+    </div>`;
   document.querySelectorAll("[data-painel]").forEach(b =>
     b.addEventListener("click", () => {
       document.querySelectorAll("[data-painel]").forEach(x => x.classList.remove("ativa"));

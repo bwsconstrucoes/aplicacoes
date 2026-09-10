@@ -159,6 +159,160 @@ function desenhar(){
   els("resumo").innerHTML = `<b>${l.length}</b> obra(s) · contrato vigente <b>${moeda(soma(o=>o.valor_vigente))}</b>`;
 }
 
+// ---------------------------------------------------------------------------
+// O DOCUMENTO QUE ARQUIVA E PREENCHE
+//
+// Duas ações viraram uma. A leitura mostra: o que vai ser arquivado (tipo,
+// nome padronizado, datas) e o que vai ser preenchido no cadastro — campo a
+// campo, com o valor de hoje ao lado quando houver conflito.
+//
+// Campo em branco entra MARCADO; campo que já tem valor diferente entra
+// DESMARCADO. O que a pessoa digitou vale mais do que o que a IA leu, até ela
+// dizer o contrário.
+// ---------------------------------------------------------------------------
+let DOC_LIDO = null;
+
+function desenharLeituraDoDocumento(obraId){
+  const g = DOC_LIDO.sugestao, c = DOC_LIDO.cadastro;
+  const cor = {ALTA:"ok", MEDIA:"alerta", BAIXA:"erro"}[g.confianca] || "alerta";
+  const linhas = (c.campos || []).map((x, i) => `
+    <tr class="${x.conflito ? "" : ""}">
+      <td style="width:34px"><input type="checkbox" data-campo="${escapar(x.campo)}"
+          ${x.marcar ? "checked" : ""}></td>
+      <td>${escapar(x.rotulo)}</td>
+      <td><input data-valor="${escapar(x.campo)}" value="${escapar(x.valor)}"
+           style="width:100%; padding:5px 8px; border:1px solid var(--borda-forte);
+                  border-radius:6px; font-size:13px"></td>
+      <td>${x.conflito
+        ? `<small style="color:var(--ambar)"><b>hoje está:</b> ${escapar(x.valor_atual)}
+            — marque só se quiser trocar</small>`
+        : `<small style="color:var(--tinta-suave)">campo vazio hoje</small>`}</td>
+    </tr>`).join("");
+
+  const a = c.aditivo;
+  els("doc-leitura").innerHTML = `
+    <div class="aviso ${cor}" style="margin-top:12px">
+      <b>${escapar(g.tipo_nome || "Tipo não reconhecido")}</b>
+      ${g.tipo_motivo ? ` — ${escapar(g.tipo_motivo)}` : ""}
+      ${g.nome_sugerido ? `<br>Vai ser guardado como
+        <b class="mono">${escapar(g.nome_sugerido)}</b>` : ""}
+      ${(g.faltando || []).length
+        ? `<br>Falta você preencher: <b>${g.faltando.map(escapar).join(", ")}</b>.` : ""}
+      ${g.observacoes ? `<br><i>${escapar(g.observacoes)}</i>` : ""}
+    </div>
+
+    ${c.tipo_nao_preenche
+      ? `<div class="cartao-dica">Este tipo de documento não alimenta o cadastro
+          da obra — vai ser só arquivado, e está certo assim.</div>`
+      : linhas
+        ? `<div class="cartao" style="box-shadow:none; border:1px solid var(--borda); padding:0">
+            <div style="padding:10px 12px"><b>O que vai para o cadastro</b>
+              <small style="color:var(--tinta-suave)"> — desmarque o que não quiser</small></div>
+            <table><tbody>${linhas}</tbody></table></div>`
+        : `<div class="cartao-dica">Não achei nada novo para o cadastro:
+            ou o documento não diz, ou já está tudo preenchido igual.</div>`}
+
+    ${a ? `<div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+         border-left:4px solid var(--roxo)">
+      <label class="opcao" style="margin:0"><input type="checkbox" id="doc-aditivo" checked>
+        <span class="rotulo"><b>Registrar o aditivo ${escapar(a.numero || "sem número")}</b></span></label>
+      <div class="cartao-dica">${escapar(a.tipo)} ·
+        ${a.valor ? `R$ ${escapar(a.valor)}` : "sem valor"} ·
+        ${a.dias ? `${a.dias} dia(s)` : "sem prazo"}
+        ${a.nova_vigencia_fim ? ` · nova vigência até ${escapar(dataBR(a.nova_vigencia_fim))}` : ""}
+        <br>O aditivo entra como registro à parte: o valor vigente do contrato é o
+        original mais os aditivos, e o original não é sobrescrito.</div>
+    </div>` : ""}
+
+    <div style="margin-top:10px; display:flex; gap:8px; align-items:center">
+      <button class="btn amarelo" id="btn-doc-guardar" type="button">Arquivar e preencher</button>
+      <button class="link-btn" id="btn-doc-cancelar" type="button">Descartar leitura</button>
+    </div>
+    <div id="doc-msg"></div>`;
+
+  els("btn-doc-guardar").addEventListener("click", () => guardarDocumentoDaObra(obraId));
+  els("btn-doc-cancelar").addEventListener("click", () => {
+    DOC_LIDO = null; els("doc-leitura").innerHTML = "";
+  });
+}
+
+async function lerDocumentoDaObra(obraId){
+  const arq = els("doc-arq").files[0];
+  if (!arq) { aviso("dlg-msg", "Escolha o arquivo antes de mandar ler.", "erro"); return; }
+  const b = els("btn-doc-ler");
+  b.disabled = true; b.textContent = "Lendo…";
+  els("doc-leitura").innerHTML = `<div class="cartao-dica">Lendo o documento…</div>`;
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    if (els("doc-dica").value.trim()) fd.append("dica", els("doc-dica").value.trim());
+    DOC_LIDO = await api(`/erp/api/obras/${obraId}/documento/ler`, {method:"POST", body: fd});
+    DOC_LIDO.arquivo_lido = arq.name;
+    desenharLeituraDoDocumento(obraId);
+  } catch(e){
+    DOC_LIDO = null;
+    els("doc-leitura").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+  b.disabled = false; b.textContent = "Ler o documento";
+}
+
+async function guardarDocumentoDaObra(obraId){
+  const arq = els("doc-arq").files[0];
+  if (!arq || !DOC_LIDO) { aviso("doc-msg", "Leia o documento antes.", "erro"); return; }
+  if (DOC_LIDO.arquivo_lido !== arq.name) {
+    aviso("doc-msg", "O arquivo mudou depois da leitura. Leia de novo.", "erro"); return;
+  }
+  const g = DOC_LIDO.sugestao;
+  if (!g.tipo_codigo) {
+    aviso("doc-msg", "A leitura não reconheceu o tipo do documento. "
+      + "Use “Guardar documento” na tela do Arquivo para escolher o tipo à mão.", "erro");
+    return;
+  }
+  const campos = {};
+  document.querySelectorAll("[data-campo]:checked").forEach(c => {
+    const campo = c.dataset.campo;
+    const entrada = document.querySelector(`[data-valor="${campo}"]`);
+    if (entrada && entrada.value.trim()) campos[campo] = entrada.value.trim();
+  });
+
+  const b = els("btn-doc-guardar");
+  b.disabled = true; b.textContent = "Guardando…";
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    fd.append("tipo", g.tipo_codigo);
+    ["referencia","emissao","validade","competencia","texto","resumo"].forEach(k => {
+      if (g[k]) fd.append(k, g[k]);
+    });
+    fd.append("campos", JSON.stringify(campos));
+    const quer = els("doc-aditivo");
+    if (DOC_LIDO.cadastro.aditivo && quer && quer.checked) {
+      const a = {...DOC_LIDO.cadastro.aditivo, valor: DOC_LIDO.cadastro.aditivo.valor_bruto};
+      fd.append("aditivo", JSON.stringify(a));
+    }
+    const d = await api(`/erp/api/obras/${obraId}/documento`, {method:"POST", body: fd});
+    let recado = `Guardado como <b class="mono">${escapar(d.documento.nome)}</b>.`;
+    if (d.preenchido.quantidade)
+      recado += ` ${d.preenchido.quantidade} campo(s) do cadastro preenchido(s): `
+        + d.preenchido.mudancas.map(escapar).join("; ") + ".";
+    if (d.aditivo) recado += ` Aditivo ${escapar(d.aditivo.numero)} registrado.`;
+    aviso("dlg-msg", recado, "ok");
+    DOC_LIDO = null;
+    await carregar();          // o cadastro mudou: a lista de obras se refaz
+    painel(4, obraId);         // e a aba de documentos, também
+  } catch(e){ aviso("doc-msg", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Arquivar e preencher";
+}
+
+// A competência que a documentação fiscal costuma ter fechada: o mês passado.
+// O mês corrente quase nunca está completo — oferecê-lo como padrão faria o
+// conjunto sair vazio e parecer defeito.
+function mesPassado(){
+  const d = new Date();
+  d.setDate(1); d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
 // ------------------------------------------------------------------ detalhe
 async function abrir(id){
   const o = OBRAS.find(x=>x.id===id);
@@ -406,6 +560,25 @@ async function painel(i, id){
   if (i === 4) {   // documentos
     const d = await api(`/erp/api/anexos/obra/${id}`);
     alvo.innerHTML = `
+      {# JOGAR O DOCUMENTO E DEIXAR O SISTEMA FAZER AS DUAS COISAS.
+         Pedido do dono: arquivar o documento E preencher o cadastro da obra
+         no mesmo gesto, em vez de cadastrar num lugar e arquivar noutro. #}
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+           border-left:4px solid var(--verde); margin-bottom:14px">
+        <b>Jogue o documento aqui — ele arquiva e preenche o cadastro</b>
+        <div class="cartao-dica">Matrícula CNO, ART, contrato, ordem de serviço,
+          aditivo, apólice. O sistema lê, guarda com nome padronizado e mostra
+          o que ele preencheria no cadastro — você confere antes de gravar.</div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px">
+          <input type="file" id="doc-arq" accept=".pdf,.png,.jpg,.jpeg,.webp">
+          <input id="doc-dica" placeholder="ajuda (opcional): 'é a ART do responsável'"
+                 style="flex:1; min-width:200px; padding:7px 10px;
+                        border:1px solid var(--borda-forte); border-radius:8px; font-size:13px">
+          <button class="btn" id="btn-doc-ler" type="button">Ler o documento</button>
+        </div>
+        <div id="doc-leitura"></div>
+      </div>
+
       <div class="form-grade">
         <div class="campo"><label>Documento</label><input type="file" id="an-arq"></div>
         <div class="campo"><label>Tipo</label><select id="an-cat">
@@ -415,6 +588,21 @@ async function painel(i, id){
       </div>
       <div class="cartao-dica">Contrato, ART/CREA, seguro-garantia, ordem de serviço, medições —
         tudo fica guardado no banco do sistema, comprimido.</div>
+
+      {# OS CONJUNTOS PRONTOS. Quem está na obra precisa do dossiê dela e da
+         pasta fiscal do mês — ir até a tela do Arquivo e escolher a obra de
+         novo é o tipo de trabalho que faz a pessoa montar a pasta à mão. #}
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda); margin:12px 0">
+        <b>Baixar um conjunto pronto</b>
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+          ${botaoDeBloco("OBRA", "Dossiê da obra", {obra_id: id})}
+          ${botaoDeBloco("FISCAL", "Documentação fiscal do mês passado",
+            {obra_id: id, competencia: mesPassado(),
+             dica: "O que o cliente pede junto com a medição"})}
+        </div>
+        <div class="cartao-dica">Vem em pasta compactada, com a lista do que falta
+          dentro — e o que falta também aparece na Agenda.</div>
+      </div>
       <table><thead><tr><th>Documento</th><th>Tipo</th><th class="direita">Tamanho</th>
         <th>Enviado</th><th></th></tr></thead><tbody>
         ${d.anexos.map(a=>`<tr><td>${a.nome}${a.descricao?`<small>${a.descricao}</small>`:""}</td>
@@ -424,6 +612,11 @@ async function painel(i, id){
           <td><a class="btn secundario" href="/erp/anexo/${a.id}" target="_blank">Abrir</a></td></tr>`).join("")
           || `<tr><td colspan="5" class="cartao-dica">Nenhum documento anexado.</td></tr>`}
       </tbody></table>`;
+    els("btn-doc-ler").addEventListener("click", () => lerDocumentoDaObra(id));
+    els("doc-arq").addEventListener("change", () => {
+      DOC_LIDO = null; els("doc-leitura").innerHTML = "";
+    });
+
     els("an-enviar").addEventListener("click", async () => {
       const arq = els("an-arq").files[0];
       if (!arq) { aviso("dlg-msg","Escolha o arquivo.","erro"); return; }

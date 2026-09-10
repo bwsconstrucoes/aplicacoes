@@ -96,7 +96,7 @@ def _competencia(v: Any) -> Optional[date]:
 # ---------------------------------------------------------------------------
 # A pergunta
 # ---------------------------------------------------------------------------
-def montar_instrucao(s: Session) -> str:
+def montar_instrucao(s: Session, *, extracao: str = "") -> str:
     tipos = s.scalars(select(DocumentoTipo)
                       .where(DocumentoTipo.ativo.is_(True))
                       .order_by(DocumentoTipo.grupo, DocumentoTipo.codigo)).all()
@@ -139,6 +139,7 @@ Responda SOMENTE com JSON válido, sem markdown e sem comentários:
  "campos_ilegiveis": ["nome dos campos que você não conseguiu ler"],
  "observacoes": "o que precisa de conferência humana"
 }}
+{extracao}
 
 Regras:
 - Campo ausente = string vazia. Lista ausente = [].
@@ -279,16 +280,22 @@ def _pendencias(tipo: Optional[DocumentoTipo], dono: dict[str, Any],
 # Entrada
 # ---------------------------------------------------------------------------
 def sugerir(s: Session, conteudo: bytes, nome_arquivo: str, *,
-            dica: str = "") -> dict[str, Any]:
+            dica: str = "", extracao: str = "") -> dict[str, Any]:
     """Lê o documento e devolve o formulário preenchido — para conferir.
 
     Nada é gravado aqui. O texto extraído volta junto para ser guardado com o
     documento na hora do arquivamento: extrair na entrada é barato, e
     reprocessar depois, para poder buscar dentro do documento, seria caro.
+
+    `extracao` acrescenta uma segunda pergunta à MESMA leitura — os campos do
+    cadastro que aquele documento preenche. Vai junto e não numa chamada à
+    parte porque o modelo já está com o documento na mão: perguntar duas vezes
+    custaria duas leituras para responder o que cabe numa.
     """
     from app.apps.erp.core.documentos.leitor import ler_com_instrucao
 
-    bruto = ler_com_instrucao(conteudo, nome_arquivo, montar_instrucao(s), dica)
+    bruto = ler_com_instrucao(conteudo, nome_arquivo,
+                              montar_instrucao(s, extracao=extracao), dica)
 
     codigo = (bruto.get("tipo_codigo") or "").strip().upper()
     tipo = s.scalars(select(DocumentoTipo)
@@ -351,6 +358,11 @@ def sugerir(s: Session, conteudo: bytes, nome_arquivo: str, *,
         "observacoes": (bruto.get("observacoes") or "").strip()[:600],
         "faltando": faltando,
         "origem_leitura": bruto.get("origem_leitura") or "",
+        # O que a segunda pergunta trouxe, cru. Quem traduz para campo de
+        # cadastro é o `preenchimento.py`, que sabe o que cada tipo pode
+        # preencher — a leitura não decide isso.
+        "dados_extraidos": bruto.get("dados_extraidos") or {},
+        "aditivo": bruto.get("aditivo") or {},
         "texto": (bruto.get("texto_extraido") or "")[:200000],
         "lido_em": datetime.now().strftime("%d/%m/%Y %H:%M"),
     }

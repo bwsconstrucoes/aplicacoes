@@ -85,19 +85,32 @@
 {% block scripts %}
 <script>
 const PODE_TRATAR = {{ 'true' if pode.tratar_agenda else 'false' }};
-const ORIGENS = [["REAJUSTE","Reajuste"], ["CERTIDAO","Documento vencendo"],
-                 ["LOCACAO","Equipamento locado"], ["CONTRATO","Contrato"],
-                 ["MANUAL","Anotação"]];
+// A lista de origens vem do SERVIDOR, não escrita aqui. Quando o certificado
+// digital virou aviso, esta lista ficou para trás e o aviso novo não tinha
+// como ser filtrado — e nada quebrou, então ninguém viu. Fica só um começo
+// para a tela ter o que desenhar antes da primeira resposta.
+let ORIGENS = [["REAJUSTE","Reajuste"], ["CERTIDAO","Documento vencendo"],
+               ["LOCACAO","Equipamento locado"], ["CONTRATO","Contrato"],
+               ["MANUAL","Anotação"]];
 let EVENTOS = [], RESUMO = {};
 
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
 
-els("f-origens").innerHTML =
-  `<label class="opcao"><input type="radio" name="orig" value="" checked>
-     <span class="rotulo">Todos</span></label>` +
-  ORIGENS.map(([v, r]) => `<label class="opcao"><input type="radio" name="orig" value="${v}">
-     <span class="rotulo">${r}</span></label>`).join("");
+// Redesenhável: quando a lista chega do servidor, o filtro se refaz sem
+// perder o que estava marcado.
+function montarOrigens(){
+  const antes = marcado("orig");
+  els("f-origens").innerHTML =
+    `<label class="opcao"><input type="radio" name="orig" value="" ${antes?"":"checked"}>
+       <span class="rotulo">Todos</span></label>` +
+    ORIGENS.map(([v, r]) => `<label class="opcao">
+       <input type="radio" name="orig" value="${escapar(v)}" ${antes===v?"checked":""}>
+       <span class="rotulo">${escapar(r)}</span></label>`).join("");
+  document.querySelectorAll('#f-origens input[name="orig"]').forEach(r =>
+    r.addEventListener("change", carregar));
+}
+montarOrigens();
 
 function marcado(nome){
   const m = document.querySelector(`input[name="${nome}"]:checked`);
@@ -115,16 +128,35 @@ async function carregarObras(){
   }
 }
 
-async function carregar(){
+// A AGENDA ABRE COM O QUE JÁ ESTÁ CALCULADO, e o recálculo acontece por trás.
+//
+// Antes ela recalculava tudo — obras, contratos, certidões, locações,
+// certificados — com a pessoa olhando a tela em branco, e isso cresce junto
+// com a empresa. O recálculo continua acontecendo sozinho (agenda que só
+// atualiza no botão é agenda desatualizada): só deixou de ser na frente de
+// quem abriu. Quando termina, a lista se refaz sozinha.
+let JA_RECARREGOU = false;
+
+async function carregar(recalculando = true){
   const p = new URLSearchParams();
   p.set("situacao", marcado("sit"));
   if (marcado("orig")) p.set("origem", marcado("orig"));
   if (els("f-obra").value) p.set("obra_id", els("f-obra").value);
   if (els("f-futuros").checked) p.set("futuros", "1");
+  if (!recalculando) p.set("sincronizar", "0");
   try {
     const d = await api("/erp/api/agenda?" + p.toString());
     EVENTOS = d.eventos || []; RESUMO = d.resumo || {};
+    if (d.origens && d.origens.length) { ORIGENS = d.origens; montarOrigens(); }
     desenhar();
+    // Só uma vez por visita: senão cada filtro clicado dispararia outro
+    // acompanhamento, e a tela ficaria se refazendo sozinha sem parar.
+    if (d.tarefa && !JA_RECARREGOU) {
+      JA_RECARREGOU = true;
+      acompanharTarefa(d.tarefa.id, {intervalo: 2000, teto: 300}).then(t => {
+        if (t && t.situacao === "CONCLUIDA") carregar(false);
+      });
+    }
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
 

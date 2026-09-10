@@ -264,7 +264,16 @@ Omie não dá conta disso.
       bloco com prestador, tomador, discriminação e as retenções JÁ CALCULADAS
       pelo cadastro da obra; a pessoa copia, emite no portal, volta e anexa o
       PDF — a IA lê e preenche número, data, valor e retenções.
-- [ ] 6. **Emissão automática**. ⚠️ **Petrolina saiu da conta em 10/09/2026**:
+- [x] 6. **Emissão automática** — FEITA em 10/09/2026 (migração 056). Botão
+      "Emitir agora" na medição: o ERP confere o cadastro, reserva o número da
+      declaração (que é NOSSO), assina com o certificado A1 da empresa **em
+      memória** — o .pfx nunca vira arquivo em disco —, manda pelo canal
+      NACIONAL e guarda o número da nota, a chave de acesso e o XML.
+      Falhando, o número fica QUEIMADO com o motivo e não se recicla. Roda na
+      fila (migração 055) porque a prefeitura leva até dois minutos, e **não
+      se repete sozinha**: emitir duas vezes criaria duas notas de verdade.
+      ⚠️ **A primeira conversa real com a prefeitura só acontece no Render.**
+      O que sobrou do texto antigo, para contexto: **Petrolina saiu da conta em 10/09/2026**:
       o dono avisou que é empresa FUTURA. O que sobra é a emissão automática da
       BWS no Eusébio, que já tem inscrição, token e certificado — e cuja
       primeira chamada real só acontece no Render, porque a saída de internet
@@ -342,10 +351,17 @@ lido, e a partir dali categorizado, renomeado e salvo"*.
 - [x] 5. **Busca dentro do texto** do documento — FEITA junto com o item 3 em
       10/09/2026: a busca do Arquivo já olhava o campo de texto; o que faltava
       era alguém preenchê-lo, e agora a leitura preenche.
-- [ ] 6. **Avisos de vencimento** de certidão e documento, na Agenda.
-- [ ] 7. **Botões nos outros lugares**: baixar a documentação fiscal da
-      competência direto do título, o bloco da obra na tela da obra, o bloco
-      cadastral em Suprimentos.
+- [x] 6. **Avisos de vencimento** de certidão e documento, na Agenda — o que
+      vence já avisava desde a migração 051; em 10/09/2026 entrou o outro lado
+      (migração 057): o documento que **nunca foi arquivado**. A pasta fiscal
+      incompleta de uma obra em execução e a habilitação incompleta da empresa
+      viram aviso, dizendo quais documentos faltam. É a conferência do bloco
+      rodando sozinha, no recálculo em segundo plano.
+- [x] 7. **Botões nos outros lugares** — FEITO em 10/09/2026. Na ficha do
+      título (documentação fiscal daquela obra e competência, medição e
+      dossiê da obra), na aba Documentos da obra, e na ficha da empresa
+      (habilitação e cadastro como fornecedor). Sempre com a lista do que
+      falta dentro do .zip.
 
 ### Notas fiscais — o cruzamento
 
@@ -414,10 +430,14 @@ que é a estratégia de manter isso rápido?"*. A resposta longa está no
       no Google — por isso ou é Drive compartilhado, ou é personificação; as
       duas coisas resolvem o mesmo problema de cota.
 
-- [ ] **Separar o trabalho pesado das telas.** Carga, sincronização, leitura de
-      lote por IA e relatório grande não podem disputar com quem está usando a
-      tela. É o que mais resolve a lentidão que o dono sentiu, e não custa
-      assinatura nova.
+- [x] **Separar o trabalho pesado das telas** — FEITO em 10/09/2026 (migração
+      055). Fila em segundo plano guardada no BANCO, porque o serviço se
+      reinicia sozinho e fila na memória perderia trabalho calada. Uma linha
+      de trabalho só, de propósito. Quem morre no meio volta para a fila —
+      menos o que não pode repetir (emitir nota), que para e explica.
+      Já usam a fila: **importação de cards do Pipefy**, **recálculo da
+      agenda** (que abre na hora, com o cálculo por trás) e **emissão de nota**.
+      Acompanhamento em Configurações › "Trabalhos em segundo plano".
 - [ ] **Tirar a trava do "um processo só"** (o estado em memória do `chatbot`).
       Enquanto ela existir, aumentar o plano do Render rende menos do que
       deveria — parte da máquina maior fica sem uso.
@@ -450,6 +470,37 @@ perder. Quando ele retomar, o que já existe e serve de base: o `chatbot` e o
 `whatsapp_gateway` (canal), o `notificador` (envio), o controle de consumo de
 IA com teto (migração 030) e o agente de cobrança (migração 040), que já é um
 robô que fala com pessoas por WhatsApp a partir de pendência do banco.
+
+### Cadastro e arquivo juntos — princípio dado pelo dono em 10/09/2026
+
+Palavras dele: *"gostaria que o sistema já preenchesse os campos de cadastro de
+obra e ainda arquivasse o arquivo. Dessa forma não perco tempo"* — e a
+generalização, que é o que importa: *"matariamos duas ações... Esse é um
+princípio inclusive que deveríamos ampliar para o sistema como um todo. E já
+estamos adotando, por exemplo na parte do financeiro essa leitura e deveremos
+seguir pra parte de colaboradores. Cadastros e arquivo estarem associados
+quando fizer sentido."*
+
+- [x] **OBRA** — FEITO em 10/09/2026. Na aba Documentos da obra: joga o
+      arquivo, o sistema lê, arquiva com nome padronizado E mostra o que
+      preencheria no cadastro, campo a campo. Cada tipo de documento só
+      preenche o que ele PROVA (matrícula → CNO; ART → responsável técnico;
+      contrato → valor, vigência, data-base, índice; OS → ordem de serviço;
+      apólice → seguro). Termo aditivo vira REGISTRO de aditivo, não
+      sobrescreve o contrato. Campo em branco entra marcado; campo com valor
+      diferente entra desmarcado, com os dois lados à vista.
+- [x] **COLABORADORES** — FEITO em 10/09/2026, logo depois da obra. Na ficha
+      da pessoa: joga o RG, a carteira, a ficha de registro, o contrato ou o
+      termo de rescisão e o cadastro se preenche junto com o arquivamento.
+      Duas regras próprias daqui: o **CPF é conferido e nunca gravado** (é a
+      identidade da pessoa — trocá-lo repontaria pagamento e histórico), e
+      **função só entra se já estiver cadastrada**, senão "PEDREIRO",
+      "Pedreiro" e "Pedreiro(a)" virariam três diárias diferentes. Com o CPF
+      divergindo, o preenchimento fica TRANCADO até alguém confirmar que o
+      documento é daquela pessoa.
+- [ ] **FORNECEDOR** — o cartão CNPJ e o contrato social preencheriam o
+      cadastro do parceiro. Menos urgente: a consulta à Receita já resolve a
+      maior parte disso desde 10/09/2026.
 
 ## Decisões registradas
 

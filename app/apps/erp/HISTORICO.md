@@ -17,7 +17,21 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
-**Estado em 05/09/2026 (noite):** `main` com a autorização padrão-NEGAR, o
+**Estado em 10/09/2026:** `main` publicada e **banco atualizado até a migração
+054** — o dono apertou "Aplicar atualizações do banco" no mesmo momento da
+junção. Nesta publicação foram quatro entregas: as listas com "carregar mais"
+(solicitações), a **tela de saúde do sistema** (054), a **ficha do título em
+card** com o encadeamento entre telas, e a **leitura do documento por IA no
+Arquivo**. Suíte: 2.170 casos sem banco e 1.330 com banco de verdade. **Nada
+pendente no ramo `claude/oi-vjvrn8`.**
+
+⚠️ **Duas coisas só se provam em produção e ainda não foram provadas:** a
+leitura de documento pela IA no Arquivo (não há chave da OpenAI no ambiente de
+desenvolvimento) e a busca do INCC no Banco Central (a saída de internet de lá
+é filtrada). Se qualquer uma falhar, é configuração no Render, não código —
+mas ninguém confirmou ainda que funcionam.
+
+**Estado anterior, em 05/09/2026 (noite):** `main` com a autorização padrão-NEGAR, o
 alcance por operador (029), o consumo de IA com teto (030), as travas de
 concorrência (031), a permissão fina por pessoa (032) e o **módulo de
 Suprimentos** (033 a 037). Publicado também o **botão de zerar o movimento por área** e a **reforma das
@@ -2023,6 +2037,196 @@ nada quebra), e o caminho de sucesso foi exercitado ponta a ponta com a IA
 dublada: ler → preencher → guardar com o nome padronizado → achar o documento
 buscando por uma palavra de DENTRO dele. O que falta provar é o acerto do
 modelo contra documento de verdade, e isso só acontece no Render.
+
+### A fila de trabalho pesado — 10/09/2026 (migração 055)
+
+Nasceu da pergunta do dono em 08/09/2026 sobre o sistema aguentar crescer. A
+resposta que rende mais não é máquina maior: é **parar de fazer trabalho
+pesado enquanto alguém espera a tela**.
+
+O que era trabalho pesado no clique: importar cem cards do Pipefy (cada um com
+consulta e anexos para baixar) e recalcular a agenda inteira ao abri-la. Cada
+um desses segurava UMA das quatro linhas de atendimento do serviço — que é o
+mesmo serviço dos outros treze módulos. O sistema ficava pesado para todo
+mundo e ninguém entendia por quê.
+
+Agora o clique enfileira e volta na hora. Decisões que estão no código:
+
+- **A fila vive no BANCO.** O serviço se reinicia sozinho de tempos em tempos
+  (a faxina de memória do gunicorn). Fila na memória perderia o trabalho no
+  meio, calada.
+- **Uma linha de trabalho só.** Duas fariam duas importações grandes disputar a
+  mesma máquina de 2 GB — o problema que viemos resolver, com outro nome.
+- **Quem morre no meio volta para a fila.** O sinal de vida (`batida_em`) é o
+  que separa "está trabalhando" de "morreu". Sem ele um trabalho ficaria
+  "executando" para sempre.
+- **Tentativa tem teto** (três), e há trabalho que **não repete nenhuma vez**:
+  emitir nota. Repetir criaria duas notas de verdade na prefeitura.
+- **A agenda abre com o que já está calculado** e manda recalcular por trás;
+  quando termina, a lista se refaz sozinha. E dez pessoas abrindo a agenda não
+  criam dez recálculos iguais.
+
+Acompanhamento em Configurações › "Trabalhos em segundo plano": o que está na
+fila, o que terminou, o que falhou, e o botão de tentar de novo.
+
+⚠️ **A linha de fundo fica DESLIGADA na suíte** (`ERP_TAREFAS=0` no
+`tests/conftest.py`): ela atravessaria os testes mexendo no banco por fora da
+transação que cada teste desfaz. A fila continua sendo provada — os testes
+enfileiram e mandam executar na hora.
+
+### A nota fiscal sai sozinha — 10/09/2026 (migração 056)
+
+Item 6 de `MEDICOES_E_NOTAS.md`, destravado quando Petrolina saiu da conta.
+Botão **"Emitir agora"** na medição, dentro do quadro do contrato.
+
+A ordem importa e está no código:
+
+1. **Confere o cadastro ANTES de tocar em número.** Descobrir no meio que falta
+   o CNO obrigaria a queimar um número por erro de cadastro. A tela mostra a
+   lista do que falta, em português, com onde resolver.
+2. **Reserva o número da declaração**, que é NOSSO — no padrão nacional quem
+   numera a DPS é quem emite; a prefeitura devolve o número da NOTA.
+3. **Assina com o certificado A1 da empresa, em memória.** O `.pfx` nunca vira
+   arquivo em disco: arquivo escrito para "só assinar uma nota" sobrevive ao
+   processo, entra em backup e vaza a assinatura da empresa.
+4. **Envia pelo canal NACIONAL** (o ABRASF tem data para acabar) e guarda o
+   número da nota, a chave de acesso, o identificador de processamento e o
+   **XML anexado ao título**.
+5. **Falhando, o número fica QUEIMADO com o motivo** e não volta para a fila. A
+   prefeitura pode ter recebido a declaração e só a resposta ter se perdido.
+
+Duas mensagens de erro, de propósito: o motivo GRAVADO guarda o texto técnico
+inteiro (é o que se manda para o suporte da prefeitura); a frase que vai para a
+TELA é em português. Despejar "ProxyError: Max retries exceeded" na cara de
+quem está faturando não ajuda ninguém a decidir o que fazer.
+
+**O que entrou junto, porque a declaração exigia:** o endereço do tomador. O
+cadastro do cliente só tinha município e UF — bastava para pagar, não para
+emitir. Agora tem CEP, logradouro, número, bairro e código IBGE, e a **consulta
+de CNPJ na Receita preenche sozinha** ("Buscar na Receita" no cadastro do
+fornecedor). Ela completa o que está em branco e **não sobrescreve** o que
+alguém corrigiu à mão.
+
+⚠️ **A primeira conversa real com a prefeitura só acontece no Render.** Aqui o
+serviço do município é dublado nos testes, e no navegador o caminho de erro foi
+exercitado de ponta a ponta: número reservado, emissão recusada pela rede
+bloqueada, número queimado com motivo, e a tela de notas emitidas mostrando
+"Falhou". O caminho de sucesso contra o serviço de verdade, não.
+
+### O documento que nunca foi arquivado — 10/09/2026 (migração 057)
+
+Itens 6 e 7 de `GESTAO_DOCUMENTOS.md`. O aviso que existia olhava para
+documento que VAI VENCER. Faltava o outro lado, e é o que faz perder licitação
+e atrasar medição: o documento que **nunca entrou**.
+
+A diferença importa. Certidão vencida pelo menos existe e o sistema sabe de
+quando é. A ausência é silêncio — ninguém repara até o dia em que o cliente
+pede a pasta da medição e ela sai pela metade.
+
+Agora o recálculo da agenda percorre obra por obra e empresa por empresa,
+conferindo o bloco FISCAL das duas últimas competências e a HABILITAÇÃO de cada
+empresa ativa, e avisa dizendo QUAIS documentos faltam. Só é viável porque o
+recálculo passou a rodar em segundo plano (migração 055).
+
+Detalhe que quase passou batido: a conferência do sistema roda **com todas as
+faixas de sigilo**. Sem isso ela enxergaria só a faixa aberta e diria que a
+pasta fiscal está completa quando está vazia — quase tudo nela é restrito. O
+que sai daí é o NOME DO TIPO que falta ("folha de pagamento"), que é entrada de
+catálogo, não conteúdo; nenhum documento, nome de pessoa ou valor atravessa.
+
+**Os botões saíram da tela do Arquivo e foram para onde a pessoa está:** na
+ficha do título (documentação fiscal daquela obra e competência, medição,
+dossiê da obra), na aba Documentos da obra, e na ficha da empresa (habilitação
+e cadastro como fornecedor).
+
+⚠️ **Um defeito antigo apareceu no caminho e foi consertado:** quando o
+certificado digital virou aviso (migração 053), a lista de origens do filtro da
+agenda ficou para trás e o aviso novo não tinha como ser filtrado. Nada
+quebrou, então ninguém viu. Agora a lista sai do servidor, de um lugar só.
+
+### Cadastro e arquivo, num gesto só — 10/09/2026
+
+Pedido do dono, e mais do que um pedido: um princípio para o sistema inteiro.
+*"Matariamos duas ações. Assim não precisaria cadastrar dados e noutra
+circunstância arquivar documentos. (…) Cadastros e arquivo estarem associados
+quando fizer sentido."*
+
+A obra é o primeiro caso. Na aba Documentos da obra existe agora uma área de
+**jogar o documento**: o sistema lê, arquiva com nome padronizado e mostra, na
+mesma tela, o que ele preencheria no cadastro — campo a campo, com um botão só
+no fim ("Arquivar e preencher").
+
+Três regras estão no código e não se mudam sem motivo:
+
+1. **Cada tipo de documento só preenche o que ele PROVA.** Uma licença
+   ambiental não define valor de contrato, por mais que a IA leia um número lá
+   dentro. A lista por tipo é uma TRAVA: o que não está nela não é gravado nem
+   que a tela mande. Matrícula → CNO e endereço; ART → ART, responsável
+   técnico e CREA; contrato → número, valor, objeto, contratante, vigência,
+   prazo, data-base, índice, retenção; OS → ordem de serviço e início; apólice
+   → seguro e vigência. Diário de obra e projeto não preenchem nada, e a tela
+   diz isso em vez de ficar calada.
+2. **O que já está preenchido não é sobrescrito sozinho.** Campo em branco
+   entra marcado; campo com valor diferente vira CONFLITO, entra desmarcado e
+   mostra os dois lados. Trocar calado o que a pessoa digitou é a maneira mais
+   rápida de o sistema perder a confiança dela. Valor igual escrito de outro
+   jeito ("AV. BRASIL, 100" e "Av Brasil 100") nem aparece para decidir.
+3. **Quem grava é a pessoa**, e com o valor que ELA confirmou — ela pode ter
+   corrigido a caixinha antes de gravar.
+
+**O termo aditivo é caso à parte:** vira REGISTRO de aditivo, não sobrescreve o
+contrato. O valor vigente é o original mais os aditivos, e é essa história que
+o órgão pergunta quando questiona a medição. A vigência, sim, se atualiza —
+porque é ela que manda nos alertas. Aditivo sem número é recusado, e o mesmo
+número duas vezes também.
+
+**Arquivar e preencher acontecem na MESMA transação.** Guardar o arquivo e
+deixar o cadastro pela metade seria o pior dos dois mundos: a pessoa acharia
+que fez e não teria feito.
+
+Detalhe pequeno que foi consertado no caminho: a prévia do nome do arquivo
+prometia um nome e o arquivamento entregava outro (a leitura resolvia o dono
+pelo NOME da obra, e o padrão usa o CÓDIGO). Agora a prévia sai da obra em que
+a pessoa está.
+
+⚠️ **A chamada real à IA continua sem prova aqui** — não há chave neste
+ambiente. O caminho inteiro foi exercitado no navegador com a leitura dublada:
+ler um contrato, ver treze campos propostos (oito marcados, cinco em conflito),
+gravar, e conferir no banco que só os oito entraram e que o documento ficou
+arquivado com texto e trilha.
+
+**Colaboradores entrou logo depois, no mesmo dia**, pelo mesmo caminho. Na
+ficha da pessoa há a mesma área de jogar o documento: RG, carteira de trabalho,
+ficha de registro, contrato de trabalho, termo de rescisão.
+
+Duas regras são próprias do lado das pessoas, e existem porque aqui o erro caro
+não é preencher campo errado — é preencher o cadastro da PESSOA ERRADA:
+
+- **O CPF é CONFERIDO e nunca gravado.** Ele é a identidade: trocá-lo
+  repontaria pagamento, despesa e histórico para outra pessoa. Quando o CPF do
+  documento não bate com o do cadastro, a tela grita, nada entra marcado e o
+  preenchimento fica **trancado** até alguém confirmar, numa caixinha, que
+  aquele documento é daquela pessoa. O arquivo, esse, pode ser guardado assim
+  mesmo — guardar não afirma nada sobre o cadastro.
+- **Função só entra se já estiver cadastrada.** Criar função a partir de uma
+  leitura multiplicaria "PEDREIRO", "Pedreiro" e "Pedreiro(a)" em um mês — e a
+  diária de referência, que mora na função, viraria três diárias diferentes.
+  Quando a função lida não existe, a tela diz o nome e manda cadastrar antes.
+
+Duas coisas a mais que ficaram no comportamento: **ASO, certificado de NR e
+ficha de EPI não alimentam cadastro nenhum** — eles valem pela VALIDADE, que já
+vira aviso na agenda —, e o **termo de rescisão que traz a demissão fecha a
+situação junto**, porque cadastro com data de demissão e situação ATIVO mente
+para quem monta a folha do mês seguinte.
+
+A área só aparece para quem pode arquivar **e** enxerga documento de sigilo
+PESSOAL. O financeiro arquiva, mas não vê holerite: oferecer a ele "arquive o
+ASO" seria oferecer o que ele não conseguiria abrir depois.
+
+**O que ainda não foi feito, do mesmo princípio:** o lado do FORNECEDOR (cartão
+CNPJ e contrato social preenchendo o cadastro do parceiro). Menos urgente — a
+consulta à Receita, que entrou junto com a emissão automática, já resolve a
+maior parte.
 
 ### O que está pendente AGORA
 

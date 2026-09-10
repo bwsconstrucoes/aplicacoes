@@ -9,6 +9,7 @@
 # ============================================================================
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import date, timedelta
@@ -58,6 +59,23 @@ def _saude_comecou():
         g._saude_inicio = perf_counter()
     except Exception:
         pass
+    # A LINHA DE TRABALHO EM SEGUNDO PLANO acorda na primeira requisição depois
+    # de o serviço subir. Tem de ser aqui, e não no import: se um trabalho
+    # ficou pendente antes do reinício, ninguém mais o notaria — e no import o
+    # banco pode nem existir ainda, o que derrubaria os catorze módulos juntos.
+    # Depois da primeira vez isto é a checagem de uma variável.
+    global _FILA_ACORDADA
+    if not _FILA_ACORDADA:
+        _FILA_ACORDADA = True
+        try:
+            from app.apps.erp.core.comum import tarefas, trabalhos
+            trabalhos.registrar_todos()
+            tarefas.acordar()
+        except Exception:
+            logger.warning("ERP/tarefas: não deu para iniciar a fila", exc_info=True)
+
+
+_FILA_ACORDADA = False
 
 
 @bp.after_request
@@ -523,7 +541,14 @@ def pagina_dc():
 @login_obrigatorio
 @permissao("ver_pessoal")
 def pagina_colaboradores():
-    return render_template("erp_colaboradores.html", **_contexto("colaboradores"))
+    # `ve_pessoal` decide se a área de jogar documento aparece. Não basta poder
+    # arquivar: documento de pessoa tem sigilo PESSOAL, e oferecer "arquive o
+    # ASO" a quem não vai conseguir abri-lo depois é convite à confusão.
+    from app.apps.erp.core.arquivo.service import sigilos_visiveis
+    with get_session() as _s:
+        ve_pessoal = "PESSOAL" in sigilos_visiveis(_usuario_logado(_s))
+    return render_template("erp_colaboradores.html", ve_pessoal=ve_pessoal,
+                           **_contexto("colaboradores"))
 
 
 @bp.route("/erp/conciliacao")
@@ -2023,6 +2048,10 @@ def _serializar(t, hoje: date, ver_pagamento: bool = True) -> dict:
         "categoria_id": t.categoria_id,
         "obra_ids": sorted({r.obra_id for r in t.rateios if r.obra_id}),
         "pedido_id": getattr(t, "pedido_id", None),
+        # A competência em AAAA-MM: é o que o bloco de documentos precisa para
+        # montar a pasta que o cliente pede junto com a medição.
+        "competencia_iso": t.competencia.strftime("%Y-%m"),
+        "numero_medicao": getattr(t, "numero_medicao", None),
     }
 
 
@@ -2424,36 +2453,107 @@ def api_nova_conta():
 @login_obrigatorio
 @permissao("importar")
 def api_importar_pipefy():
-    from app.apps.erp.core.importadores.pipefy_cards import (
-        ErroPipefy, buscar_cards, extrair_ids, importar_cards,
-    )
+    """Enfileira a importação e volta na hora.
+
+    Antes, cem cards — cada um com consulta ao Pipefy e anexos para baixar —
+    rodavam enquanto a pessoa esperava, segurando uma das quatro linhas de
+    atendimento do serviço. Todo mundo sentia o sistema pesado e ninguém sabia
+    por quê. Agora o clique só põe na fila; a tela acompanha o andamento.
+    """
+    from app.apps.erp.core.comum import tarefas, trabalhos
+    from app.apps.erp.core.importadores.pipefy_cards import extrair_ids
+
     d = request.get_json(silent=True) or {}
     ids = extrair_ids(d.get("texto") or "")
     if not ids:
         return jsonify({"ok": False, "erro": "Nenhum ID de card reconhecido no texto colado."}), 400
-    if len(ids) > 100:
-        return jsonify({"ok": False, "erro": f"{len(ids)} cards de uma vez — importe em blocos de até 100."}), 400
+    if len(ids) > trabalhos.MAX_CARDS:
+        return jsonify({"ok": False, "erro": f"{len(ids)} cards de uma vez — "
+                        f"importe em blocos de até {trabalhos.MAX_CARDS}."}), 400
     try:
-        cards = buscar_cards(ids)
-        if not cards:
-            return jsonify({"ok": False, "erro": "Nenhum card encontrado com esses IDs."}), 404
+        trabalhos.registrar_todos()
         with get_session() as s:
             usuario = _usuario_logado(s)
-            rel = importar_cards(
-                s, cards, usuario,
-                categoria_padrao_id=int(d["categoria_padrao_id"]) if d.get("categoria_padrao_id") else None,
-                obra_padrao_id=int(d["obra_padrao_id"]) if d.get("obra_padrao_id") else None,
-                criar_fornecedor=bool(d.get("criar_fornecedor", True)),
-                baixar_anexos=bool(d.get("baixar_anexos", True)))
+            t = tarefas.enfileirar(
+                s, "importar_pipefy",
+                {"ids": ids,
+                 "usuario_id": usuario.id if usuario else None,
+                 "categoria_padrao_id": (int(d["categoria_padrao_id"])
+                                         if d.get("categoria_padrao_id") else None),
+                 "obra_padrao_id": (int(d["obra_padrao_id"])
+                                    if d.get("obra_padrao_id") else None),
+                 "criar_fornecedor": bool(d.get("criar_fornecedor", True)),
+                 "baixar_anexos": bool(d.get("baixar_anexos", True))},
+                rotulo=f"Importar {len(ids)} card(s) do Pipefy", usuario=usuario)
+            linha = tarefas.ler(s, t.id)
             s.commit()
-        return jsonify({"ok": True, "relatorio": rel})
-    except ErroPipefy as e:
-        return jsonify({"ok": False, "erro": str(e)}), 502
+        return jsonify({"ok": True, "tarefa": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao enfileirar a importação do Pipefy")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# TRABALHO EM SEGUNDO PLANO (migração 055)
+#
+# O que não cabe no tempo de um clique. A fila é do ERP inteiro; estas rotas
+# só a mostram e deixam cancelar ou repetir.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/tarefas")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_tarefas():
+    from app.apps.erp.core.comum import tarefas
+    todas = request.args.get("todas") == "1"
+    with get_session() as s:
+        usuario = _usuario_logado(s)
+        # Ver a fila INTEIRA é ver o que os outros pediram: exige a mesma ação
+        # de quem administra o sistema. Sem isso, cada um vê o que enfileirou.
+        if todas and not _pode_agora("configurar").get("configurar"):
+            todas = False
+        return jsonify({"ok": True, **tarefas.listar(
+            s, usuario=(None if todas else usuario),
+            situacao=(request.args.get("situacao") or "").strip().upper(),
+            limite=request.args.get("limite", type=int) or 40)})
+
+
+@bp.route("/erp/api/tarefas/<int:tarefa_id>")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_tarefa(tarefa_id: int):
+    from app.apps.erp.core.auth.permissoes import exigir_tarefa_no_escopo
+    from app.apps.erp.core.comum import tarefas
+    with get_session() as s:
+        exigir_tarefa_no_escopo(s, _usuario_logado(s), tarefa_id)
+        return jsonify({"ok": True, "tarefa": tarefas.ler(s, tarefa_id)})
+
+
+@bp.route("/erp/api/tarefas/<int:tarefa_id>/<acao>", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_tarefa_acao(tarefa_id: int, acao: str):
+    from app.apps.erp.core.auth.permissoes import exigir_tarefa_no_escopo
+    from app.apps.erp.core.comum import tarefas, trabalhos
+    if acao not in ("cancelar", "repetir"):
+        return jsonify({"ok": False, "erro": f"Ação inválida: {acao!r}"}), 400
+    try:
+        trabalhos.registrar_todos()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_tarefa_no_escopo(s, usuario, tarefa_id)
+            if acao == "cancelar":
+                tarefas.cancelar(s, tarefa_id, usuario=usuario)
+            else:
+                tarefas.tentar_de_novo(s, tarefa_id, usuario=usuario)
+            linha = tarefas.ler(s, tarefa_id)
+            s.commit()
+        return jsonify({"ok": True, "tarefa": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
-    except Exception as e:
-        logger.exception("ERP: falha na importação do Pipefy")
-        return jsonify({"ok": False, "erro": str(e)}), 500
 
 
 @bp.route("/erp/api/importar/csv", methods=["POST"])
@@ -4571,6 +4671,211 @@ def api_arquivo_ler():
         return jsonify({"ok": False, "erro": f"Não deu para ler o documento: {e}"}), 500
 
 
+# ---------------------------------------------------------------------------
+# DOCUMENTO DA OBRA: arquivar e preencher o cadastro num gesto só
+#
+# Pedido do dono em 10/09/2026, e o princípio que ele tirou dele: *"matariamos
+# duas ações... cadastros e arquivo estarem associados quando fizer sentido"*.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/obras/<int:obra_id>/documento/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_obra_documento_ler(obra_id: int):
+    """Lê o documento e diz o que ele arquivaria E o que preencheria. Não grava."""
+    from app.apps.erp.core.arquivo import leitura, preenchimento
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    try:
+        conteudo = f.read()
+        with get_session() as s:
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
+            sugestao = leitura.sugerir(
+                s, conteudo, f.filename or "arquivo",
+                dica=(request.form.get("dica") or ""),
+                extracao=preenchimento.instrucao_de_extracao())
+            # O dono é a obra em que a pessoa está — não se deduz de novo. E o
+            # nome do arquivo sai DELA, senão a prévia promete um nome e o
+            # arquivamento entrega outro.
+            sugestao["obra_id"] = obra_id
+            sugestao["nome_original"] = f.filename or "arquivo"
+            sugestao["nome_sugerido"] = preenchimento.nome_para_obra(
+                s, obra_id, sugestao)
+            cadastro = preenchimento.sugerir_para_obra(
+                s, obra_id, sugestao.get("tipo_codigo") or "", sugestao)
+        return jsonify({"ok": True, "sugestao": sugestao, "cadastro": cadastro})
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP/obras: falha ao ler o documento da obra %s", obra_id)
+        return jsonify({"ok": False, "erro": f"Não deu para ler o documento: {e}"}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>/documento", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_obra_documento_guardar(obra_id: int):
+    """Arquiva o documento E preenche os campos confirmados, numa transação só.
+
+    Se o preenchimento falhar, o arquivamento vai junto: guardar o arquivo e
+    deixar o cadastro pela metade seria o pior dos dois mundos — a pessoa
+    acharia que tinha feito e não teria.
+    """
+    from app.apps.erp.core.arquivo import preenchimento
+    from app.apps.erp.core.arquivo import service as svc_arq
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    tipo = (request.form.get("tipo") or "").strip().upper()
+    if not tipo:
+        return jsonify({"ok": False, "erro": "Escolha o tipo do documento."}), 400
+
+    def _data(nome):
+        try:
+            return date.fromisoformat(request.form.get(nome) or "")
+        except ValueError:
+            return None
+
+    def _comp():
+        bruto = (request.form.get("competencia") or "").strip()
+        try:
+            return date.fromisoformat(bruto + "-01") if len(bruto) == 7 else None
+        except ValueError:
+            return None
+
+    campos = json.loads(request.form.get("campos") or "{}")
+    aditivo = json.loads(request.form.get("aditivo") or "null")
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            d = svc_arq.arquivar(
+                s, f.read(), f.filename or "arquivo", tipo_codigo=tipo,
+                obra_id=obra_id, competencia=_comp(),
+                referencia=(request.form.get("referencia") or ""),
+                emissao=_data("emissao"), validade=_data("validade"),
+                observacao=(request.form.get("observacao") or ""),
+                texto=(request.form.get("texto") or ""),
+                resumo=(request.form.get("resumo") or ""),
+                origem="IA", usuario=usuario)
+            preenchido = preenchimento.aplicar_na_obra(
+                s, obra_id, campos, tipo_codigo=tipo, documento_id=d.id,
+                usuario=usuario)
+            novo_aditivo = None
+            if aditivo:
+                a = preenchimento.criar_aditivo(
+                    s, obra_id, aditivo, anexo_id=d.anexo_id, usuario=usuario)
+                novo_aditivo = {"id": a.id, "numero": a.numero, "tipo": a.tipo,
+                                "valor": float(a.valor), "dias": a.dias}
+            linha = svc_arq.ler(s, d)
+            s.commit()
+        return jsonify({"ok": True, "documento": linha,
+                        "preenchido": preenchido, "aditivo": novo_aditivo})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/documento/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_colaborador_documento_ler(colaborador_id: int):
+    """Lê o documento da pessoa: o que arquivaria e o que preencheria."""
+    from app.apps.erp.core.arquivo import leitura, preenchimento
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    try:
+        conteudo = f.read()
+        with get_session() as s:
+            exigir_colaborador_no_escopo(s, _usuario_logado(s), colaborador_id)
+            sugestao = leitura.sugerir(
+                s, conteudo, f.filename or "arquivo",
+                dica=(request.form.get("dica") or ""),
+                extracao=preenchimento.instrucao_de_extracao_pessoa())
+            sugestao["colaborador_id"] = colaborador_id
+            sugestao["nome_original"] = f.filename or "arquivo"
+            sugestao["nome_sugerido"] = preenchimento.nome_para_colaborador(
+                s, colaborador_id, sugestao)
+            cadastro = preenchimento.sugerir_para_colaborador(
+                s, colaborador_id, sugestao.get("tipo_codigo") or "", sugestao)
+        return jsonify({"ok": True, "sugestao": sugestao, "cadastro": cadastro})
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP/pessoal: falha ao ler o documento do colaborador %s",
+                         colaborador_id)
+        return jsonify({"ok": False, "erro": f"Não deu para ler o documento: {e}"}), 500
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/documento", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_colaborador_documento_guardar(colaborador_id: int):
+    """Arquiva o documento E preenche o cadastro da pessoa, numa transação só."""
+    from app.apps.erp.core.arquivo import preenchimento
+    from app.apps.erp.core.arquivo import service as svc_arq
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    tipo = (request.form.get("tipo") or "").strip().upper()
+    if not tipo:
+        return jsonify({"ok": False, "erro": "Escolha o tipo do documento."}), 400
+
+    def _data(nome):
+        try:
+            return date.fromisoformat(request.form.get(nome) or "")
+        except ValueError:
+            return None
+
+    def _comp():
+        bruto = (request.form.get("competencia") or "").strip()
+        try:
+            return date.fromisoformat(bruto + "-01") if len(bruto) == 7 else None
+        except ValueError:
+            return None
+
+    campos = json.loads(request.form.get("campos") or "{}")
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_colaborador_no_escopo(s, usuario, colaborador_id)
+            d = svc_arq.arquivar(
+                s, f.read(), f.filename or "arquivo", tipo_codigo=tipo,
+                colaborador_id=colaborador_id, competencia=_comp(),
+                referencia=(request.form.get("referencia") or ""),
+                emissao=_data("emissao"), validade=_data("validade"),
+                observacao=(request.form.get("observacao") or ""),
+                texto=(request.form.get("texto") or ""),
+                resumo=(request.form.get("resumo") or ""),
+                origem="IA", usuario=usuario)
+            preenchido = preenchimento.aplicar_no_colaborador(
+                s, colaborador_id, campos, tipo_codigo=tipo, documento_id=d.id,
+                usuario=usuario)
+            linha = svc_arq.ler(s, d)
+            s.commit()
+        return jsonify({"ok": True, "documento": linha, "preenchido": preenchido})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+
+
 @bp.route("/erp/api/arquivo/<int:documento_id>", methods=["DELETE"])
 @login_obrigatorio
 @permissao("arquivar")
@@ -4812,6 +5117,86 @@ def api_medicao_registrar_emissao(titulo_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/api/medicoes/<int:titulo_id>/emitir-automatico")
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_medicao_conferir_emissao(titulo_id: int):
+    """O que falta para esta medição virar nota sozinha. NÃO emite nada.
+
+    Roda antes de qualquer número ser tomado: cadastro incompleto vira lista de
+    pendências na tela, e não um número de nota queimado por engano.
+    """
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.notas_emitidas import automatica as svc
+    try:
+        with get_session() as s:
+            exigir_titulo_no_escopo(s, _usuario_logado(s), titulo_id)
+            return jsonify({"ok": True, "conferencia": svc.conferir(s, titulo_id)})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+
+
+@bp.route("/erp/api/medicoes/<int:titulo_id>/emitir-automatico", methods=["POST"])
+@login_obrigatorio
+@permissao("emitir_nota")
+def api_medicao_emitir_automatico(titulo_id: int):
+    """Põe a emissão na fila. Entre enviar e a prefeitura responder passam-se
+    de segundos a dois minutos — tempo demais para segurar uma tela."""
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    from app.apps.erp.core.comum import tarefas, trabalhos
+    from app.apps.erp.core.notas_emitidas import automatica as svc
+    from app.apps.erp.db.models.financeiro import Titulo
+    d = request.get_json(silent=True) or {}
+    try:
+        trabalhos.registrar_todos()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_titulo_no_escopo(s, usuario, titulo_id)
+            # Confere ANTES de enfileirar: assim a pessoa vê o que falta na
+            # hora, em vez de descobrir minutos depois num trabalho falhado.
+            check = svc.conferir(s, titulo_id)
+            if not check["pode"]:
+                return jsonify({"ok": False, "erro": "A nota não pode sair ainda.",
+                                "faltas": check["faltas"]}), 400
+            titulo = s.get(Titulo, titulo_id)
+            t = tarefas.enfileirar(
+                s, "emitir_nota",
+                {"titulo_id": titulo_id, "valor": d.get("valor"),
+                 "observacao": (d.get("observacao") or ""),
+                 "usuario_id": usuario.id if usuario else None},
+                rotulo=f"Emitir a nota da medição {titulo.numero_medicao or titulo.numero_sp}",
+                usuario=usuario)
+            linha = tarefas.ler(s, t.id)
+            s.commit()
+        return jsonify({"ok": True, "tarefa": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+
+
+@bp.route("/erp/api/fornecedores/<int:fornecedor_id>/receita", methods=["POST"])
+@login_obrigatorio
+@permissao("administrar_fornecedores")
+def api_fornecedor_receita(fornecedor_id: int):
+    """Consulta o CNPJ e completa o que estiver em branco no cadastro.
+
+    Completa, não sobrescreve: correção feita à mão vale mais do que dado de
+    terceiro. É o que destrava a emissão de nota — a declaração exige o
+    endereço de quem recebe o serviço.
+    """
+    from app.apps.erp.core.cadastros import fornecedores as svc
+    try:
+        with get_session() as s:
+            r = svc.preencher_pela_receita(s, fornecedor_id, _usuario_logado(s))
+            s.commit()
+        return jsonify({"ok": True, **r})
+    except svc.ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/notas-emitidas/ler", methods=["POST"])
 @login_obrigatorio
 @permissao("emitir_nota")
@@ -4983,13 +5368,33 @@ def api_medicao_gerar_reajuste(titulo_id: int):
 @permissao("ver_agenda")
 def api_agenda_obrigacoes():
     from app.apps.erp.core.agenda import service as svc
+    from app.apps.erp.core.comum import tarefas, trabalhos
     with get_session() as s:
-        # Sincroniza ao abrir: agenda que só atualiza no botão é agenda
-        # desatualizada, e o botão é justamente o que ninguém aperta.
+        # A agenda ABRE com o que já está calculado, e manda recalcular por
+        # trás. Antes ela recalculava tudo — obras, contratos, certidões,
+        # locações, certificados — com a pessoa olhando a tela em branco, e
+        # isso cresce junto com a empresa. Agenda que só atualiza no botão é
+        # agenda desatualizada, então o recálculo continua acontecendo sozinho:
+        # só deixou de ser na frente de quem abriu.
+        tarefa = None
         if request.args.get("sincronizar", "1") != "0":
-            svc.sincronizar(s)
-            s.commit()
-        return jsonify({"ok": True, **svc.listar(
+            try:
+                trabalhos.registrar_todos()
+                usuario = _usuario_logado(s)
+                # `enfileirar_unico`: dez pessoas abrindo a agenda não criam
+                # dez recálculos iguais na fila.
+                nova = tarefas.enfileirar_unico(
+                    s, "sincronizar_agenda",
+                    {"usuario_id": usuario.id if usuario else None},
+                    rotulo="Atualizar os avisos da agenda", usuario=usuario,
+                    frescor_minutos=10)
+                tarefa = tarefas.ler(s, nova.id) if nova is not None else None
+                s.commit()
+            except Exception:
+                logger.warning("ERP/agenda: não deu para enfileirar o recálculo",
+                               exc_info=True)
+                s.rollback()
+        return jsonify({"ok": True, "tarefa": tarefa, **svc.listar(
             s,
             situacao=(request.args.get("situacao") or "ABERTO").strip().upper(),
             origem=(request.args.get("origem") or "").strip().upper(),
