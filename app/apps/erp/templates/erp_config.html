@@ -14,6 +14,10 @@
   <a class="subaba" href="#obras" data-ir="obras">Obras</a>
   <a class="subaba" href="#contas" data-ir="contas">Contas bancárias</a>
   <a class="subaba" href="#usuarios" data-ir="usuarios">Operadores</a>
+  {# Empresas é uma TELA à parte, não uma seção desta página — por isso link de
+     verdade, sem `data-ir`: o alternador de seções só mexe no que tem essa
+     marca. #}
+  <a class="subaba" href="{{ url_for('erp.pagina_empresas') }}">Empresas</a>
   <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
   <a class="subaba" href="#anexos" data-ir="anexos">Onde ficam os documentos</a>
   <a class="subaba" href="#indices" data-ir="indices">Índices (INCC)</a>

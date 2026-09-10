@@ -348,7 +348,7 @@ function desenhar(){
       <td class="dados" style="white-space:nowrap"><span class="seta-ficha">${
         t.id===EXPANDIDO?"▾":"▸"}</span> ${t.numero_sp}</td>
       <td>${elo("credor", t.fornecedor_id, t.fornecedor)}</td>
-      <td class="desc">${t.descricao}</td>
+      <td class="desc" title="${escapar(t.descricao||"")}">${escapar(t.descricao||"")}</td>
       <td class="desc"><b>${(t.categoria||"").split(" · ")[0]}</b>
         <small>${(t.categoria||"").split(" · ")[1]||""}</small></td>
       <td>${(t.obra_ids||[]).length === 1
@@ -480,8 +480,16 @@ function montarFicha(t){
           <span style="flex:1"></span>
           <button class="btn secundario" id="btn-reclass-detalhe">↔ Alterar conta/obra</button>
         </div>
-        <div class="cartao-dica">${t.forma_pagamento} · solicitado por ${t.solicitante||"—"}</div>
+        <div class="cartao-dica">${t.forma_pagamento} · solicitado por ${escapar(t.solicitante||"—")}</div>
       </div>
+
+      {# A DESCRIÇÃO INTEIRA, com as quebras de linha que quem lançou escreveu.
+         `pre-wrap` é o que faz a quebra sobreviver: sem ele o HTML junta tudo
+         numa linha só e a organização que a pessoa deu se perde. #}
+      ${c.descricao ? `<div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">
+        <div class="kpi-rotulo">Descrição</div>
+        <div style="white-space:pre-wrap; font-size:14px; margin-top:4px">${
+          escapar(c.descricao)}</div></div>` : ""}
 
       ${t.criticas.length ? `<h4>Análise automática</h4>` + t.criticas.map(k =>
         `<div class="critica ${k.severidade}"><code>${k.codigo}</code>${k.msg}</div>`).join("") : ""}

@@ -2497,6 +2497,91 @@ repositório** e nenhum chat lembra dela — se houver campo que falta, ele
 precisa mandar a lista de novo. O que o ERP guarda hoje sobre uma obra são 34
 campos, listados na resposta a ele.
 
+### O lançamento visto de perto — 10/09/2026 (noite)
+
+O dono lançou um título de verdade e mandou uma lista. Duas das coisas que ele
+encontrou eram defeito, não gosto.
+
+**1. Empresas saiu da aba do topo.** *"A gente vai cadastrar três empresas,
+quatro empresas, é uma coisa de configuração e são poucas. Não tem sentido
+ficar uma aba lá na parte superior do aplicativo só pra isso."* A tela é a
+mesma e os dados também; ela só passou a pertencer a Configurações, com uma
+faixa para ir e voltar. O menu de Administração ficou com dois itens em vez de
+três.
+
+**2. ⚠️ A descrição do título nunca tinha virado campo de várias linhas.** Ele
+já havia pedido isso antes, e o HTML tinha ficado **pela metade**: um `<input>`
+fechado com `</textarea>`. O navegador engole essa mistura sem reclamar, então
+o campo continuou de uma linha só e ninguém percebeu. Agora é caixa de texto de
+verdade, a quebra de linha é guardada e a ficha do título mostra a descrição
+inteira com as quebras — `white-space: pre-wrap`, senão o HTML junta tudo numa
+linha e a organização se perde.
+
+**3. ⚠️ O documento do lançamento NÃO FICAVA GUARDADO.** Este é o achado
+grande. A tela dizia "Anexo", a pessoa escolhia a nota, o sistema lia e
+preenchia — e o arquivo ia embora. Nada era anexado ao título. Ninguém tinha
+percebido porque a leitura funciona bem e o formulário fica certo; o que
+faltava só apareceria no dia em que alguém procurasse a nota no título e não
+achasse.
+
+Agora o cartão é **1 · Documentos**, no plural:
+
+- dá para escolher vários de uma vez ou ir acrescentando (*"eu botei a nota,
+  pô, esqueci o boleto"*);
+- cada um pode ser **lido** ou **só arquivado** — comprovante não precisa de
+  leitura, boleto vale muito a pena (traz vencimento, valor e linha digitável);
+- **todos sobem como anexo** depois que o título nasce. Se um anexo falhar, o
+  título NÃO é desfeito: ele já foi analisado e numerado. A tela diz quais
+  ficaram de fora e manda anexar pela ficha.
+
+**O segundo documento só preenche o que está vazio.** Se o boleto traz um valor
+diferente do da nota, quem vale é a nota — trocar calado um valor já conferido
+é como se perde a confiança na leitura. Parcela que veio de documento entra
+**travada**, para o "dividir" não passar por cima do que o boleto diz.
+
+Entraram também as categorias de anexo **BOLETO** e **GUIA**: sem elas o par
+nota + boleto ficava como "outro, outro", apagando justamente a diferença que
+interessa na hora de procurar.
+
+**4. Parcelas que se preenchem sozinhas.** *"Se eu adicionar mais parcelas, ele
+já dividisse. E os vencimentos: se eu já coloquei o primeiro, jogar o próximo
+pra trinta dias."* A primeira nasce com o líquido inteiro; acrescentar divide;
+cada vencimento novo cai um mês depois do anterior (dia 31 em mês de 30 vai
+para o último dia, que é o que o boleto faz).
+
+A regra que evita o pior defeito possível aqui — apagar o que a pessoa digitou
+— é a **marca**: campo preenchido pelo sistema fica marcado como automático, e
+digitar nele derruba a marca. Recálculo por mudança de valor só mexe no que
+continua automático. A exceção é o botão **acrescentar parcela**: ali a pessoa
+está pedindo para dividir, então a divisão vale para todas.
+
+**5. O rateio por conta do plano já existia — a tela é que não dizia.** *"E se
+tiver mais de uma categoria eu não consigo adicionar mais uma."* Conseguia: é
+só acrescentar uma linha com a mesma obra e outra conta. Mas o cartão se
+chamava "Rateio por obra e conta", o botão dizia "+ Adicionar obra" e a conta
+parecia acessório. Agora o botão é "+ Adicionar linha", a linha nova **já vem
+com a obra da anterior** (o caso comum é partir a mesma obra em duas contas),
+há um "dividir igualmente", e a dica explica em uma frase.
+
+**6. Importar as categorias de insumo.** A carga de insumos nunca criou
+categoria, de propósito — inventar categoria na importação é como a base começa
+a apodrecer. O dono quer trazer as dele de uma planilha, então virou uma
+**marcação na tela**, desligada por padrão: ligada, cria as que faltam e o
+relatório diz quais nasceram; a prévia mostra tudo sem gravar. Nome escrito de
+dois jeitos ("Areia" e "AREIA") vira UMA categoria — mas "Areia" e "Areia
+lavada" viram duas, e a tela avisa disso antes.
+
+**O que ficou provado:** os 5 casos novos de
+`tests/test_suprimentos_importacao.py`, e o caminho inteiro no navegador com
+banco de verdade e a leitura dublada — dois documentos na lista, a nota
+preenchendo o cabeçalho, o boleto completando só o vencimento e a linha
+digitável sem mexer na descrição, 1000 virando 500+500 e depois
+333,33+333,33+333,34 com vencimentos mensais, o rateio repetindo a obra e
+dividindo, e o título nascendo com **os dois anexos**, um como NOTA e o outro
+como BOLETO.
+
+**Esta entrega não tem migração.**
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**

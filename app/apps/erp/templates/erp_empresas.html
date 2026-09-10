@@ -31,6 +31,12 @@
 {% endblock %}
 
 {% block conteudo %}
+{# Empresas mora dentro de Configurações desde 10/09/2026. Esta faixa existe
+   para a pessoa saber onde está e conseguir voltar sem passar pelo menu. #}
+<nav class="subabas">
+  <a class="subaba" href="{{ url_for('erp.pagina_config') }}">◀ Configurações</a>
+  <a class="subaba ativa" href="{{ url_for('erp.pagina_empresas') }}">Empresas</a>
+</nav>
 <h2>Empresas
   <small>o CNPJ que executa a obra, compra e assina — mais de um, a partir de agora</small></h2>
 <div id="mensagem"></div>
