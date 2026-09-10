@@ -2469,6 +2469,34 @@ dizendo o que falta, o véu do arrastar e a leitura disparando sozinha.
 **Esta entrega não tem migração.** A lista de bancos mora numa linha da tabela
 de parâmetros, que já existe.
 
+### O endereço no formulário de nova obra — 10/09/2026 (noite)
+
+*"Eu estou achando tão pouco campo ainda. Não tem, por exemplo, endereço, ou é
+porque aparece no campo posterior? Porque é um campo importantíssimo."*
+
+Ele estava certo nas duas pontas: o endereço **existia** (na ficha da obra, aba
+Cadastro, com logradouro, número, bairro, CEP, município, UF e até
+latitude/longitude), mas **não estava** no formulário de criação — e é o campo
+que ele mais precisa na hora de abrir a obra, porque vira local de entrega nas
+compras e endereço da prestação na nota.
+
+O formulário à mão passou a ter três blocos: **Identificação**, **Onde é a
+obra** (CEP, logradouro, número, bairro, município, UF) e **Obra e fiscal**.
+Quinze campos numa grade lisa viram parede; em bloco, lê-se. Só código e nome
+continuam obrigatórios.
+
+O CEP é guardado **só com dígitos**: digitado de três jeitos, viraria três CEPs
+diferentes na hora de comparar ou de mandar para a prefeitura.
+
+Pelo caminho do **documento** o endereço já vinha desde a entrega anterior —
+contrato, matrícula CNO, ART e licença todos preenchem endereço.
+
+⚠️ **Ficou uma pergunta em aberto, do lado do dono:** ele mencionou que o pipe
+de obras do Pipefy tem mais informação que o ERP. **Essa estrutura não está no
+repositório** e nenhum chat lembra dela — se houver campo que falta, ele
+precisa mandar a lista de novo. O que o ERP guarda hoje sobre uma obra são 34
+campos, listados na resposta a ele.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
