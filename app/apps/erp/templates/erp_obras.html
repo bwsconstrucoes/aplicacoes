@@ -797,31 +797,288 @@ gasto ${moeda(p.gasto)}${p.locado_periodo?` · locado ${moeda(p.locado_periodo)}
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 });
 
+// ---------------------------------------------------------------------------
+// NOVA OBRA — de dois formulários para um, e um deles é o documento
+//
+// Havia "nova obra" em Configurações (oito campos) e aqui (cinco). A mesma
+// obra nascia diferente conforme a porta de entrada, e quem entrava pela porta
+// curta nem sabia que a outra existia. O dono decidiu em 10/09/2026: um lugar
+// só, que é este — Configurações agora aponta para cá.
+//
+// E a segunda porta, que ele pediu na mesma conversa: criar a obra A PARTIR do
+// documento. Manda o contrato (ou a CNO, a ART, a ordem de serviço), o sistema
+// lê, propõe os campos, cria a obra e guarda o documento nela. Duas ações
+// viram uma, que é o princípio que ele quer no sistema inteiro.
+// ---------------------------------------------------------------------------
+let NOVA_DOC = null;          // a leitura conferida, esperando confirmação
+
+const CAMPOS_NOVA_OBRA = [
+  {id:"codigo", rot:"Código *", dica:"ESCPE18"},
+  {id:"nome", rot:"Nome *", largo:true},
+  {id:"cliente", rot:"Contratante"},
+  {id:"cnpj_cliente", rot:"CNPJ do contratante"},
+  {id:"contrato", rot:"Nº do contrato"},
+  {id:"objeto", rot:"Objeto", largo:true},
+  {id:"municipio", rot:"Município"},
+  {id:"uf", rot:"UF", tam:2},
+  {id:"cno", rot:"Matrícula CNO"},
+  {id:"valor_contrato", rot:"Valor do contrato"},
+  {id:"aliquota_iss_pct", rot:"Alíquota de ISS (%)"},
+];
+
+function codigosRecentes(){
+  return OBRAS.slice().sort((a,b)=>b.id-a.id).slice(0,4).map(o=>o.codigo);
+}
+
 els("btn-nova").addEventListener("click", () => {
+  NOVA_DOC = null;
   els("dlg-titulo").textContent = "Nova obra";
   els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
-    <div class="form-grade">
-      <div class="campo"><label>Código *</label><input id="n-codigo" placeholder="ESCPE18"></div>
-      <div class="campo" style="grid-column:span 2"><label>Nome *</label><input id="n-nome"></div>
-      <div class="campo"><label>Cliente</label><input id="n-cliente"></div>
-      <div class="campo"><label>Município</label><input id="n-municipio"></div>
-      <div class="campo"><label>UF</label><input id="n-uf" maxlength="2"></div>
+    <div class="topo-abas" style="background:var(--azul); border-radius:8px; padding:4px; margin-bottom:14px">
+      <button class="topo-aba ativa" data-modo="doc" type="button">A partir de um documento</button>
+      <button class="topo-aba" data-modo="mao" type="button">Digitando</button>
     </div>
-    <div class="cartao-dica">Depois de criar, abra a obra para completar contrato,
-      tributação e documentos.</div>
-    <div style="margin-top:14px"><button class="btn" id="n-salvar">Criar obra</button></div>`;
-  els("n-salvar").addEventListener("click", async () => {
-    try {
-      await api("/erp/api/config/obra", {method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({codigo: els("n-codigo").value, nome: els("n-nome").value,
-          cliente: els("n-cliente").value, municipio: els("n-municipio").value,
-          uf: els("n-uf").value})});
-      els("dlg").close(); aviso("mensagem","Obra criada.","ok"); carregar();
-    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
-  });
+    <div id="nova-corpo"></div>`;
+  document.querySelectorAll("[data-modo]").forEach(b => b.addEventListener("click", () => {
+    document.querySelectorAll("[data-modo]").forEach(x=>x.classList.remove("ativa"));
+    b.classList.add("ativa");
+    NOVA_DOC = null;
+    modoNovaObra(b.dataset.modo);
+  }));
+  modoNovaObra("doc");
   els("dlg").showModal();
 });
+
+function modoNovaObra(modo){
+  const alvo = els("nova-corpo");
+  if (modo === "mao") {
+    alvo.innerHTML = `
+      <div class="form-grade">
+        ${CAMPOS_NOVA_OBRA.map(c=>`
+          <div class="campo" ${c.largo?'style="grid-column:span 2"':""}>
+            <label>${c.rot}</label>
+            <input id="n-${c.id}" ${c.dica?`placeholder="${c.dica}"`:""}
+              ${c.tam?`maxlength="${c.tam}"`:""}></div>`).join("")}
+      </div>
+      <div class="cartao-dica">Código e nome bastam para criar. O resto — vigência,
+        tributação, ART, aditivos — se completa abrindo a obra depois.
+        ${codigosRecentes().length
+          ? `<br>Últimos códigos usados: <b class="mono">${escapar(codigosRecentes().join(", "))}</b>.` : ""}</div>
+      <div style="margin-top:14px"><button class="btn" id="n-salvar" type="button">Criar obra</button></div>`;
+    els("n-salvar").addEventListener("click", criarObraNaMao);
+    return;
+  }
+
+  alvo.innerHTML = `
+    <div class="cartao-dica">Mande o <b>contrato</b>, a <b>matrícula CNO</b>, a
+      <b>ART</b> ou a <b>ordem de serviço</b>. O sistema lê, mostra o que
+      entendeu, cria a obra e guarda o documento dentro dela — as duas coisas
+      de uma vez.</div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-top:10px">
+      <input type="file" id="nd-arq" accept=".pdf,.png,.jpg,.jpeg,.webp">
+      <input id="nd-dica" placeholder="ajuda (opcional): 'é o contrato da creche'"
+        style="flex:1; min-width:200px; padding:7px 10px;
+               border:1px solid var(--borda-forte); border-radius:8px; font-size:13px">
+      <button class="btn" id="nd-ler" type="button">Ler o documento</button>
+    </div>
+    <div id="nd-leitura"></div>`;
+  els("nd-ler").addEventListener("click", lerDocumentoDeObraNova);
+  els("nd-arq").addEventListener("change", () => {
+    NOVA_DOC = null; els("nd-leitura").innerHTML = "";
+  });
+}
+
+async function criarObraNaMao(){
+  const corpo = {};
+  CAMPOS_NOVA_OBRA.forEach(c => { corpo[c.id] = (els("n-"+c.id).value || "").trim(); });
+  const b = els("n-salvar");
+  b.disabled = true;
+  try {
+    const d = await api("/erp/api/obras/nova", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body: JSON.stringify(corpo)});
+    await carregar();
+    await mostrarObraNova(d.obra.id, `Obra <b>${escapar(d.obra.codigo)}</b> criada. `
+      + `Complete aqui contrato, vigência e tributação.`);
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  b.disabled = false;
+}
+
+// Abre a ficha da obra recém-criada com o recado DENTRO dela. Esperar o
+// `abrir` importa: ele refaz o corpo do diálogo, e um aviso escrito antes
+// sumiria sem a pessoa ler.
+//
+// A obra pode não estar na lista: quem enxerga por obra designada cria uma
+// obra que ainda não foi designada a ele. Nesse caso não há ficha para abrir
+// — e dizer isso é melhor que a tela travar sem explicação.
+async function mostrarObraNova(id, recado){
+  if (OBRAS.some(o => o.id === id)) {
+    await abrir(id);
+    aviso("dlg-msg", recado, "ok");
+  } else {
+    els("dlg").close();
+    aviso("mensagem", recado + " Ela não aparece na sua lista porque o seu "
+      + "acesso é por obra designada — peça para incluírem esta obra.", "ok");
+  }
+}
+
+async function lerDocumentoDeObraNova(){
+  const arq = els("nd-arq").files[0];
+  if (!arq) { aviso("dlg-msg", "Escolha o arquivo antes de mandar ler.", "erro"); return; }
+  const b = els("nd-ler");
+  b.disabled = true; b.textContent = "Lendo…";
+  els("nd-leitura").innerHTML = `<div class="cartao-dica">Lendo o documento…</div>`;
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    if (els("nd-dica").value.trim()) fd.append("dica", els("nd-dica").value.trim());
+    NOVA_DOC = await api("/erp/api/obras/documento/ler", {method:"POST", body: fd});
+    NOVA_DOC.arquivo_lido = arq.name;
+    desenharLeituraDeObraNova();
+  } catch(e){
+    NOVA_DOC = null;
+    els("nd-leitura").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+  b.disabled = false; b.textContent = "Ler o documento";
+}
+
+function desenharLeituraDeObraNova(){
+  const g = NOVA_DOC.sugestao, c = NOVA_DOC.cadastro;
+  const cor = {ALTA:"ok", MEDIA:"alerta", BAIXA:"erro"}[g.confianca] || "alerta";
+  const linhas = (c.campos || []).map(x => `
+    <tr>
+      <td style="width:34px"><input type="checkbox" data-ncampo="${escapar(x.campo)}"
+          ${x.marcar ? "checked" : ""}></td>
+      <td>${escapar(x.rotulo)}</td>
+      <td><input data-nvalor="${escapar(x.campo)}" value="${escapar(x.valor)}"
+           style="width:100%; padding:5px 8px; border:1px solid var(--borda-forte);
+                  border-radius:6px; font-size:13px"></td>
+    </tr>`).join("");
+
+  const p = c.parecidas || [], a = c.aditivo;
+  els("nd-leitura").innerHTML = `
+    <div class="aviso ${cor}" style="margin-top:12px">
+      <b>${escapar(g.tipo_nome || "Tipo não reconhecido")}</b>
+      ${g.tipo_motivo ? ` — ${escapar(g.tipo_motivo)}` : ""}
+      ${g.observacoes ? `<br><i>${escapar(g.observacoes)}</i>` : ""}
+    </div>
+
+    ${p.length ? `<div class="aviso erro">
+      <b>Atenção: isto pode já estar cadastrado.</b>
+      <ul style="margin:6px 0 0 18px">${p.map(o=>`<li><b class="mono">${escapar(o.codigo)}</b>
+        — ${escapar(o.nome)} <small>(${o.motivos.map(escapar).join("; ")})</small></li>`).join("")}</ul>
+      Duas obras para o mesmo contrato partem o histórico em dois: metade dos
+      títulos numa, metade na outra, e nenhum relatório fecha. Se for a mesma
+      obra, feche aqui e mande o documento pela ficha dela.
+      <label class="opcao" style="margin-top:8px"><input type="checkbox" id="nd-confirmar">
+        <span class="rotulo">Sei que é outra obra — pode criar assim mesmo</span></label>
+    </div>` : ""}
+
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo"><label>Código da obra *</label>
+        <input id="nd-codigo" placeholder="ESCPE18">
+        ${codigosRecentes().length
+          ? `<small style="color:var(--tinta-suave)">últimos usados:
+              ${escapar(codigosRecentes().join(", "))}</small>` : ""}</div>
+      <div class="campo" style="grid-column:span 2"><label>Nome da obra *</label>
+        <input id="nd-nome" value="${escapar(c.nome_sugerido || "")}"></div>
+    </div>
+    <div class="cartao-dica">O código é convenção da casa — não sai de documento
+      nenhum, e é por isso que o sistema pergunta em vez de inventar.</div>
+
+    ${c.tipo_nao_preenche
+      ? `<div class="cartao-dica">Este tipo de documento não alimenta o cadastro
+          da obra — vai ser só arquivado nela, e está certo assim.</div>`
+      : linhas
+        ? `<div class="cartao" style="box-shadow:none; border:1px solid var(--borda); padding:0">
+            <div style="padding:10px 12px"><b>O que vai para o cadastro</b>
+              <small style="color:var(--tinta-suave)"> — desmarque o que não quiser</small></div>
+            <table><tbody>${linhas}</tbody></table></div>`
+        : `<div class="cartao-dica">O documento não trouxe nada para o cadastro:
+            a obra nasce só com código e nome.</div>`}
+
+    ${a ? `<div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+         border-left:4px solid var(--roxo)">
+      <label class="opcao" style="margin:0"><input type="checkbox" id="nd-aditivo" checked>
+        <span class="rotulo"><b>Registrar o aditivo ${escapar(a.numero || "sem número")}</b></span></label>
+      <div class="cartao-dica">${escapar(a.tipo)} ·
+        ${a.valor ? `R$ ${escapar(a.valor)}` : "sem valor"} ·
+        ${a.dias ? `${a.dias} dia(s)` : "sem prazo"}</div>
+    </div>` : ""}
+
+    <div style="margin-top:10px; display:flex; gap:8px; align-items:center">
+      <button class="btn amarelo" id="nd-criar" type="button">Criar a obra e arquivar</button>
+      <button class="link-btn" id="nd-cancelar" type="button">Descartar leitura</button>
+    </div>
+    <div id="nd-msg"></div>`;
+
+  els("nd-criar").addEventListener("click", criarObraDoDocumento);
+  els("nd-cancelar").addEventListener("click", () => {
+    NOVA_DOC = null; els("nd-leitura").innerHTML = "";
+  });
+}
+
+async function criarObraDoDocumento(){
+  const arq = els("nd-arq").files[0];
+  if (!arq || !NOVA_DOC) { aviso("nd-msg", "Leia o documento antes.", "erro"); return; }
+  if (NOVA_DOC.arquivo_lido !== arq.name) {
+    aviso("nd-msg", "O arquivo mudou depois da leitura. Leia de novo.", "erro"); return;
+  }
+  const g = NOVA_DOC.sugestao;
+  if (!g.tipo_codigo) {
+    aviso("nd-msg", "A leitura não reconheceu o tipo do documento. "
+      + "Crie a obra digitando e mande o documento pela ficha dela.", "erro");
+    return;
+  }
+  const codigo = (els("nd-codigo").value || "").trim();
+  const nome = (els("nd-nome").value || "").trim();
+  if (!codigo || !nome) {
+    aviso("nd-msg", "Preencha o código e o nome da obra.", "erro"); return;
+  }
+  const campos = {};
+  document.querySelectorAll("[data-ncampo]:checked").forEach(cx => {
+    const campo = cx.dataset.ncampo;
+    const entrada = document.querySelector(`[data-nvalor="${campo}"]`);
+    if (entrada && entrada.value.trim()) campos[campo] = entrada.value.trim();
+  });
+
+  const b = els("nd-criar");
+  b.disabled = true; b.textContent = "Criando…";
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    fd.append("tipo", g.tipo_codigo);
+    fd.append("codigo", codigo); fd.append("nome", nome);
+    ["referencia","emissao","validade","competencia","texto","resumo"].forEach(k => {
+      if (g[k]) fd.append(k, g[k]);
+    });
+    fd.append("campos", JSON.stringify(campos));
+    const conf = els("nd-confirmar");
+    if (conf && conf.checked) fd.append("confirmar_duplicada", "1");
+    const quer = els("nd-aditivo");
+    if (NOVA_DOC.cadastro.aditivo && quer && quer.checked) {
+      const ad = {...NOVA_DOC.cadastro.aditivo, valor: NOVA_DOC.cadastro.aditivo.valor_bruto};
+      fd.append("aditivo", JSON.stringify(ad));
+    }
+    const d = await api("/erp/api/obras/documento", {method:"POST", body: fd});
+    let recado = `Obra <b>${escapar(d.obra.codigo)}</b> criada. `
+      + `Documento guardado como <b class="mono">${escapar(d.documento.nome)}</b>.`;
+    if (d.preenchido.quantidade)
+      recado += ` ${d.preenchido.quantidade} campo(s) preenchido(s): `
+        + d.preenchido.mudancas.map(escapar).join("; ") + ".";
+    if (d.aditivo) recado += ` Aditivo ${escapar(d.aditivo.numero)} registrado.`;
+    NOVA_DOC = null;
+    await carregar();
+    await mostrarObraNova(d.obra.id, recado);
+  } catch(e){
+    // O 400 da guarda de duplicidade vem com a lista junto: melhor mostrar as
+    // obras parecidas do que só dizer "já existe".
+    const p = (e.dados && e.dados.parecidas) || [];
+    aviso("nd-msg", escapar(e.message) + (p.length
+      ? " — " + p.map(o=>`${escapar(o.codigo)} (${o.motivos.map(escapar).join("; ")})`).join(", ")
+      : ""), "erro");
+  }
+  b.disabled = false; b.textContent = "Criar a obra e arquivar";
+}
 
 let deb; els("f-busca").addEventListener("input", ()=>{clearTimeout(deb); deb=setTimeout(desenhar,250);});
 ["f-vigencia","f-reajuste","f-fiscal","f-margem"].forEach(i=>els(i).addEventListener("change", desenhar));

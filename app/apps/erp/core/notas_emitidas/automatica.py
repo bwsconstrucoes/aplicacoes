@@ -73,6 +73,23 @@ def _valor(v: Any) -> str:
     return f"{_dec(v):.2f}"
 
 
+def _aliquota_iss(obra: Optional[Obra]) -> Any:
+    """A alíquota de ISS da obra, da coluna que vale.
+
+    A tabela carrega duas: `aliquota_iss_pct` — que a tributação, a tela de
+    tributação e o cálculo da medição leem — e `aliquota_iss`, mais antiga.
+    Esta emissão lia SÓ a antiga: obra cadastrada pela tela de tributação
+    (onde todas são cadastradas hoje) era recusada por "sem alíquota de ISS",
+    e obra com as duas preenchidas diferentes mandaria à prefeitura um
+    percentual que a tela nunca mostrou. Vale a nova; a antiga só socorre obra
+    que ainda não passou pela tela de tributação.
+    """
+    if obra is None:
+        return None
+    return (obra.aliquota_iss_pct
+            if obra.aliquota_iss_pct not in (None, "") else obra.aliquota_iss)
+
+
 def _obra_do_titulo(s: Session, titulo: Titulo) -> Optional[Obra]:
     obras = [r.obra_id for r in s.scalars(
         select(Rateio).where(Rateio.titulo_id == titulo.id)).all() if r.obra_id]
@@ -147,7 +164,7 @@ def conferir(s: Session, titulo_id: int) -> dict[str, Any]:
         if not obra.cno:
             faltas.append(f"A obra {obra.codigo} está sem CNO. A nota de obra "
                           f"exige a matrícula.")
-        if obra.aliquota_iss in (None, ""):
+        if _aliquota_iss(obra) in (None, ""):
             faltas.append(f"A obra {obra.codigo} está sem alíquota de ISS.")
 
     # ---- tomador
@@ -254,7 +271,7 @@ def montar_declaracao(s: Session, titulo_id: int, *, numero_dps: int,
         x_desc_serv=_discriminacao(titulo, obra, observacao),
         # ---- valores e retenções, do mesmo cálculo que a tela mostra
         v_serv=_valor(bruto),
-        p_aliq=_valor(obra.aliquota_iss if obra else 0),
+        p_aliq=_valor(_aliquota_iss(obra) if obra else 0),
         tp_ret_issqn=(1 if (obra and obra.iss_retido) else 2),
         v_ret_inss=_retido("INSS"),
         v_ret_irrf=_retido("IRRF"),

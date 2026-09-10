@@ -498,9 +498,74 @@ quando fizer sentido."*
       "Pedreiro" e "Pedreiro(a)" virariam três diárias diferentes. Com o CPF
       divergindo, o preenchimento fica TRANCADO até alguém confirmar que o
       documento é daquela pessoa.
+- [x] **OBRA QUE AINDA NÃO EXISTE** — FEITO em 10/09/2026, pedido do dono na
+      mesma conversa: *"nós havíamos conversado sobre a criação de obras a
+      partir de um documento, da leitura de um documento. Então isso ficaria
+      associado a obras."* No painel de Obras, "+ Nova obra" abre em **A partir
+      de um documento**: manda o contrato (ou a CNO, a ART, a ordem de
+      serviço), o sistema lê, propõe os campos, e num clique cria a obra e
+      guarda o documento dentro dela. O **código** é a única coisa que ele
+      pergunta e não adivinha — é convenção da casa, não sai de documento
+      nenhum, e código errado contamina rateio, medição e nota.
+      Guarda contra duplicar: mesma matrícula CNO ou mesmo número de contrato
+      **param** a criação até alguém marcar "sei que é outra obra".
 - [ ] **FORNECEDOR** — o cartão CNPJ e o contrato social preencheriam o
       cadastro do parceiro. Menos urgente: a consulta à Receita já resolve a
       maior parte disso desde 10/09/2026.
+
+### Um lugar só para cadastrar obra — pedido do dono em 10/09/2026
+
+Ele foi cadastrar obra e viu dois formulários diferentes: *"eu posso criar a
+obra tanto pela administração como posso criar a obra por obras, e lá aparecem
+menos campos. Então acho que tem que unificar isso aí: se a gente tem o painel
+de obras, não tem mais que ter obras em administração."*
+
+- [x] **FEITO em 10/09/2026.** Configurações não cria mais obra — o cartão
+      "Obras" de lá virou um ponteiro para o painel. O formulário do painel
+      passou a ter o cadastro de identificação inteiro (código, nome,
+      contratante, CNPJ, contrato, objeto, município, UF, CNO, valor e ISS), e
+      depois de criar já abre a ficha para completar vigência e tributação.
+- [x] **Efeito colateral que era defeito de verdade:** o formulário antigo de
+      Configurações gravava a alíquota de ISS numa coluna que a tributação e a
+      tela **não leem** — e a emissão automática da nota lia justamente essa.
+      Obra cadastrada pela tela de tributação era recusada por "sem alíquota de
+      ISS"; obra com as duas preenchidas diferentes mandaria à prefeitura um
+      percentual que ninguém viu na tela. Unificado.
+
+### O primeiro contato de verdade com os cadastros — 10/09/2026 (tarde)
+
+O dono começou a usar o sistema para valer e mandou seis coisas de uma vez.
+Todas feitas no mesmo dia.
+
+- [x] **Filtro de obras repetindo o nome** (Contratos e medições, Agenda, Notas
+      emitidas). O código da casa costuma SER o nome abreviado, e escrever os
+      dois colados fazia parecer duplicado. Agora, quando um já contém o outro,
+      aparece só o mais completo.
+- [x] **Cadastro de conta bancária** — o formulário mostrava menos campos que a
+      tabela ao lado. Agora a **chave Pix entra junto** e o **banco se escolhe
+      pelo nome**, de uma lista de 118 bancos que veio embutida no sistema (não
+      depende de internet). Um botão troca essa lista pela oficial do Banco
+      Central.
+- [x] **Zerar as obras** em Banco e limpeza. É CADASTRO, então ganhou um bloco
+      vermelho separado do movimento, e o colaborador **não sai junto**: só
+      deixa de estar ligado à obra.
+- [x] **Contas do plano no cadastro do operador** — o grupo marcado agora fica
+      **verde**, e **âmbar** quando está pela metade, com a contagem ao lado.
+      A lista passou a ser em colunas, agrupada.
+- [x] **Perfis de obra pré-configurados** — administrativo de obra, supervisor
+      e gestor já nascem podendo lançar custos de obra, pessoal e despesas
+      administrativas, com o fundo fixo liberado. É sugestão: aparece marcado
+      e desmarcar é um clique.
+- [x] **Arrastar o documento para dentro da tela do Arquivo** — soltar o
+      arquivo em qualquer lugar da tela já dispara a leitura e abre o
+      formulário preenchido.
+
+⚠️ **Um defeito de estilo antigo apareceu no caminho**, e era a causa real do
+"muito espaçada, ruim de visualizar": toda caixinha de marcar dentro de um
+campo virava bloco — quadradinho em cima, texto embaixo, duas linhas por opção
+—, e o quadradinho esticava para a largura inteira. Valia para a lista de
+contas, a de obras designadas e a de permissões do operador. Corrigido no
+estilo, num lugar só.
 
 ## Decisões registradas
 

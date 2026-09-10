@@ -262,12 +262,13 @@ def _resolver_dono(s: Session, especie: str, nome: str, documento: str) -> dict[
 # O que ainda falta a pessoa preencher
 # ---------------------------------------------------------------------------
 def _pendencias(tipo: Optional[DocumentoTipo], dono: dict[str, Any],
-                validade: Optional[date], competencia: Optional[date]) -> list[str]:
+                validade: Optional[date], competencia: Optional[date],
+                dono_e_novo: bool = False) -> list[str]:
     faltando: list[str] = []
     if tipo is None:
         faltando.append("o tipo do documento")
-    if not any(dono.get(c) for c in ("empresa_id", "obra_id",
-                                     "colaborador_id", "fornecedor_id")):
+    if not dono_e_novo and not any(dono.get(c) for c in ("empresa_id", "obra_id",
+                                                         "colaborador_id", "fornecedor_id")):
         faltando.append("de quem é o documento")
     if tipo is not None and tipo.vence and validade is None:
         faltando.append("até quando vale")
@@ -280,7 +281,8 @@ def _pendencias(tipo: Optional[DocumentoTipo], dono: dict[str, Any],
 # Entrada
 # ---------------------------------------------------------------------------
 def sugerir(s: Session, conteudo: bytes, nome_arquivo: str, *,
-            dica: str = "", extracao: str = "") -> dict[str, Any]:
+            dica: str = "", extracao: str = "",
+            dono_e_novo: bool = False) -> dict[str, Any]:
     """Lê o documento e devolve o formulário preenchido — para conferir.
 
     Nada é gravado aqui. O texto extraído volta junto para ser guardado com o
@@ -334,7 +336,13 @@ def sugerir(s: Session, conteudo: bytes, nome_arquivo: str, *,
     if len(ilegiveis) > 2:
         confianca = "BAIXA"
 
-    faltando = _pendencias(tipo, dono, validade, competencia)
+    # `dono_e_novo`: o cadastro do dono ainda VAI nascer deste documento (obra
+    # criada a partir do contrato). Cobrar "de quem é o documento" aí seria
+    # cobrar o que a própria operação está resolvendo — e, pior, rebaixaria a
+    # confiança da leitura por um motivo que não é defeito nenhum. Confiança
+    # que pisca vermelho sem razão ensina a pessoa a ignorar a cor.
+    faltando = _pendencias(tipo, dono, validade, competencia,
+                           dono_e_novo=dono_e_novo)
     if faltando:
         confianca = "BAIXA" if confianca == "ALTA" else confianca
 

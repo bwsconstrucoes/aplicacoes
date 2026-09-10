@@ -122,7 +122,7 @@ async function carregarListas(){
     const d = await api("/erp/api/obras");
     els("f-obra").innerHTML = `<option value="">Todas</option>` +
       (d.obras || []).map(o =>
-        `<option value="${o.id}">${escapar(o.codigo || "")} ${escapar(o.nome || "")}</option>`).join("");
+        `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
   } catch(e){
     els("f-obra").innerHTML = `<option value="">(não consegui carregar)</option>`;
   }

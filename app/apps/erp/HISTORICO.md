@@ -2228,6 +2228,234 @@ CNPJ e contrato social preenchendo o cadastro do parceiro). Menos urgente — a
 consulta à Receita, que entrou junto com a emissão automática, já resolve a
 maior parte.
 
+### A importação do Pipefy, antes de o dono migrar de verdade — 10/09/2026
+
+Ele avisou que vai começar a usar: revisar cadastros, cadastrar empresa, contas
+e obras, e **importar entre 50 e 70 títulos** das obras deste ano — com os
+ANEXOS, que é o que ele pediu desde o começo. E perguntou se está tudo certo.
+
+Fui ler o código em vez de responder de memória. O que achei:
+
+**A busca dos anexos EXISTE e está ligada por padrão.** Ela lê o campo de
+anexo do card, baixa cada arquivo e guarda preso ao título, com categoria (a
+DANFE vira NOTA, o comprovante vira COMPROVANTE). Falha de um arquivo não
+interrompe a importação — fica relatada com o motivo.
+
+**Mas ela não tinha teste nenhum.** Um caminho que ninguém prova é um caminho
+em que ninguém confia, e este ia ser exercitado pela primeira vez numa
+migração de verdade. Agora tem: `tests/test_importacao_anexos_banco.py`, 21
+casos, com o download dublado (não se baixa da internet numa suíte).
+
+**O risco de verdade, e o que foi feito com ele.** A lista de campos de anexo
+(`CAMPOS_ANEXO`) é FIXA: "anexos", "danfe", "comprovante"… Se o pipe tiver um
+campo de anexo com outro identificador, os arquivos daquele campo simplesmente
+não viriam — e o relatório diria "0 anexos" sem nada parecer errado. Silêncio
+é o pior resultado possível numa migração: a SP entra parecendo completa e a
+nota fiscal dela ficou para trás.
+
+Agora o importador DENUNCIA campo de anexo desconhecido: o relatório mostra o
+card, o rótulo do campo, quantos arquivos e o identificador técnico — que é o
+que se precisa para incluí-lo. A denúncia só aparece se a pessoa pediu para
+trazer anexos; quem desmarcou escolheu não trazer.
+
+**O que ficou provado de comportamento, e vale saber:**
+
+- O mesmo arquivo em dois campos do card vira UM anexo só: o armazenamento
+  guarda por hash e não duplica dentro da mesma entidade.
+- Arquivo acima de 20 MB é recusado com motivo, sem derrubar nada.
+- Nome com "%20" na URL chega limpo; espaço vira sublinhado ao guardar.
+- PDF e imagem são comprimidos antes de ir para o banco.
+
+⚠️ **O que continua sem prova, e é honesto dizer:** nada aqui encostou no
+Pipefy de verdade. `PIPEFY_API_TOKEN` precisa estar no Render, e a primeira
+importação real é o teste. Recomendado a ele: começar com **três a cinco
+cards** de uma obra, conferir os anexos na ficha do título, e só então soltar
+os 70.
+
+### Um lugar só para cadastrar obra, e a obra que nasce do documento — 10/09/2026
+
+Ele foi cadastrar a primeira obra e esbarrou em duas coisas ao mesmo tempo.
+
+**A primeira era um defeito de organização.** Havia DOIS formulários de "nova
+obra": um em Configurações, com oito campos, e outro no painel de Obras, com
+cinco. A mesma obra nascia completa ou pela metade conforme a porta de
+entrada, e quem entrava pela porta curta nem sabia que a outra existia. Ele
+resolveu na hora: *"se a gente tem o painel de obras, não tem mais que ter
+obras em administração."*
+
+Agora **só o painel de Obras cria obra**. O cartão "Obras" de Configurações
+virou um ponteiro para lá — a âncora `#obras` continua existindo para não
+quebrar link antigo. O formulário do painel ganhou o cadastro de identificação
+inteiro (código, nome, contratante, CNPJ, contrato, objeto, município, UF,
+CNO, valor e ISS) e, depois de criar, **abre a ficha da obra** para completar
+vigência e tributação em vez de deixar a pessoa procurá-la na lista.
+
+**A segunda era um pedido antigo, que ele lembrou aqui:** *"nós havíamos
+conversado sobre a criação de obras a partir de um documento, da leitura de um
+documento. Então isso ficaria associado a obras."* É o mesmo princípio de
+"cadastro e arquivo juntos", só que sem cadastro para completar: com cadastro
+para NASCER.
+
+"+ Nova obra" abre em **A partir de um documento**. Manda o contrato (ou a
+matrícula CNO, a ART, a ordem de serviço), o sistema lê, mostra o que entendeu
+e, num clique, cria a obra e guarda o documento dentro dela. A aba
+**Digitando** continua ali para quem não tem documento à mão.
+
+Três decisões que sustentam isso:
+
+1. **O CÓDIGO NÃO SE INVENTA.** "ESCPE18" é convenção da casa e não sai de
+   documento nenhum. O sistema pergunta, mostrando os últimos códigos usados
+   para a pessoa seguir o próprio padrão. Adivinhar geraria código plausível e
+   errado — e código de obra entra em rateio, medição e nota fiscal; trocar
+   depois é caro. O **nome**, sim, vem sugerido: sai do objeto do contrato
+   (primeira oração) ou do contratante, e dá para editar antes de criar.
+2. **OBRA DUPLICADA É PIOR QUE OBRA FALTANDO.** Duas obras para o mesmo
+   contrato partem o histórico em dois: metade dos títulos numa, metade na
+   outra, e nenhum relatório fecha. A criação **para** quando encontra obra com
+   a mesma matrícula CNO (comparando só os dígitos, porque cada documento
+   pontua de um jeito) ou o mesmo número de contrato. Para, mas não decide pela
+   pessoa: contrato guarda-chuva com duas obras existe, e há uma caixinha "sei
+   que é outra obra". A guarda confere o que VAI ser gravado, não o que a IA
+   sugeriu — a pessoa pode ter corrigido o CNO na tela.
+3. **A trava por tipo continua valendo**, igual à do preenchimento: documento
+   que não prova um campo não grava esse campo, nem que a tela mande. E tudo
+   acontece na MESMA transação — obra sem o contrato que a criou, ou contrato
+   guardado numa obra que não chegou a existir, seriam os dois piores
+   resultados possíveis.
+
+⚠️ **Um defeito de verdade apareceu no caminho, e não era o assunto.** A tabela
+de obras carrega DUAS colunas de alíquota de ISS: `aliquota_iss_pct`, que a
+tributação, a tela de tributação e o cálculo da medição leem, e `aliquota_iss`,
+mais antiga. O formulário de Configurações escrevia na **antiga**; a tela de
+tributação escreve na **nova**; e a **emissão automática da nota lia justamente
+a antiga**. Consequências, que ainda não chegaram a acontecer porque a BWS
+segue em emissão MANUAL: obra cadastrada pela tela de tributação seria recusada
+por "sem alíquota de ISS", e obra com as duas preenchidas diferentes mandaria à
+prefeitura um percentual que ninguém viu na tela. Agora a emissão lê a nova e
+só cai na antiga para obra que nunca passou pela tela de tributação, e obra
+criada pelo painel nasce com as duas iguais. Sem migração: é código.
+
+**O que ficou provado:** `tests/test_obra_do_documento_banco.py`, 21 casos com
+banco de verdade e a leitura dublada — a rota antiga de Configurações não
+existe mais, quem não configura não cria obra, código repetido é recusado, ler
+não grava nada, criar e arquivar acontecem juntos, campo recusado não deixa
+obra nem documento para trás, CNO pontuado de outro jeito é reconhecido como a
+mesma obra, e a confirmação destrava.
+
+⚠️ **A chamada real à IA continua sem prova aqui** — não há chave neste
+ambiente, então a leitura é dublada em toda a suíte e no navegador.
+
+**No navegador, com banco de verdade e a leitura dublada**, o caminho inteiro
+foi percorrido: Configurações sem botão de nova obra e com o ponteiro; o painel
+abrindo em "A partir de um documento"; onze campos na aba "Digitando"; o
+documento lido propondo dezessete campos; a recusa por falta de código; a obra
+criada com o documento guardado como
+`CONTRATO-OBRA_CRECHEEUS26_268-2025_val-2027-01-15.pdf`; o mesmo documento de
+novo travando por "mesmo número de contrato"; e a confirmação destravando.
+Nenhum erro de JavaScript. Suíte inteira: **3.627 casos** com banco de verdade.
+
+**Esta entrega NÃO tem migração** — as duas colunas de ISS já existiam. Nada a
+apertar no botão do banco por causa dela.
+
+### O primeiro contato de verdade com os cadastros — 10/09/2026 (tarde)
+
+O dono foi usar o sistema e mandou seis coisas de uma vez. Ficam aqui porque
+cada uma tem uma decisão dentro.
+
+**1. O filtro de obras parecia repetir o nome.** *"Creche Swap, Espaço Creche
+Swap."* Três telas escreviam código e nome colados, sem separador — e o código
+da casa costuma SER o nome abreviado. Agora, quando um já contém o outro,
+aparece só o mais completo; quando dizem coisas diferentes, os dois aparecem
+com um "·" no meio. Vale para Contratos e medições, Agenda e Notas emitidas
+(as outras telas já usavam o mesmo rótulo).
+
+**2. O cadastro de conta bancária mostrava menos do que a tabela ao lado.** A
+chave Pix aparecia na listagem e não no formulário — ficava para um segundo
+momento que quase nunca chega. Agora entra junto. E o **banco deixou de ser
+digitado de cabeça**: escolhe-se pelo nome numa lista de 118 instituições.
+
+A lista **mora dentro do código** e funciona sem internet nenhuma — banco não
+pode depender de o Banco Central estar no ar. Um botão em Configurações troca
+essa base pela relação oficial de participantes do STR, e o que vier de lá fica
+guardado no banco de dados. A lista embutida continua por baixo: se a relação
+oficial de um dia não trouxer um código que já está numa conta cadastrada, o
+nome não some da tela. Falha na busca não estraga nada: a lista que existe
+continua valendo e a mensagem diz isso em português.
+
+⚠️ **A lista embutida não é a relação oficial completa** — são os bancos e
+instituições de pagamento que aparecem em conta e comprovante no Brasil. Banco
+que faltar: aperta o botão, ou digita o código de três dígitos à mão, que
+continua permitido. E o código é normalizado para três dígitos ("1" vira
+"001"), senão a mesma conta apareceria com dois códigos conforme quem cadastrou.
+
+⚠️ **O botão só se prova em produção** — este ambiente não alcança o
+`bcb.gov.br`, exatamente como no INCC.
+
+**3. Zerar as obras em Banco e limpeza.** *"Na parte de banco e limpeza eu vou
+precisar zerar essas obras."* Isso apaga CADASTRO, e o botão até então
+prometia o contrário. O desenho:
+
+- As obras saíram da lista de "nunca sai" e ganharam **área própria**, que só
+  ela as alcança. Nenhuma área de movimento leva obra junto, nem por engano de
+  quem editar o arquivo amanhã — há teste para isso.
+- A tela ficou com **dois blocos**: movimento em cima, e um bloco **vermelho**
+  embaixo com o cadastro, dizendo com todas as letras que refazer custa horas.
+- **O colaborador não sai junto.** Ele não é da obra: está numa obra hoje. A
+  limpeza DESFAZ a ligação (colaborador → obra) e mantém a pessoa. A prévia
+  mostra quantas pessoas serão soltas, antes de qualquer coisa.
+- A recusa continua valendo: com título, medição ou documento apontando para a
+  obra, a limpeza para e diz quais áreas faltam marcar.
+- Entraram também as áreas que faltavam para isso ser alcançável: agenda,
+  notas emitidas, contratos de obra, e as conferências de locação; a área de
+  anexos passou a levar o catálogo de documentos junto.
+
+**4 e 5. O cadastro do operador.** Duas reclamações, e a segunda escondia um
+defeito antigo.
+
+A primeira: marcar um grupo de contas funcionava, mas *"se eu tiver lá em cima,
+não tem nada que me confirme que aquelas despesas estão marcadas"*. Agora o
+cabeçalho do grupo É a caixinha, fica **verde** quando o grupo está todo
+marcado e **âmbar** quando está pela metade, com a contagem ("47/48") ao lado,
+e um resumo no alto ("83 de 140 marcadas"). Marcar o grupo com um filtro
+digitado marca só o que está visível — do contrário incluiria conta que a
+pessoa nem viu.
+
+A segunda: *"dá uma melhoradazinha nessa listagem, elas estão muito espaçadas,
+está ruim de visualizar"*. **Não era espaçamento: era um defeito de estilo.**
+Toda caixinha de marcar dentro de um campo virava BLOCO — o quadradinho em cima
+e o texto embaixo, duas linhas por opção — e o quadradinho ainda esticava para
+a largura inteira do diálogo (860 pixels de "input"). Valia para a lista de
+contas, a de obras designadas e a de permissões. Corrigido no estilo, num lugar
+só. Com isso as contas passaram a caber em três colunas.
+
+**6. Perfis de obra pré-configurados.** *"Toda a vida que eu selecionar o
+administrativo de obra, que é o que mais tem rotatividade, já aparece isso."*
+Administrativo de obra, supervisor de obra e gestor de obras já nascem com
+custos de obra, pessoal e despesas administrativas marcados e o fundo fixo
+liberado.
+
+A receita mora **na tela**, não no servidor, e isso é decisão: assim tudo fica
+à vista antes de salvar, desmarcar é um clique, e mudar a exceção de uma pessoa
+não exige mexer no código. Ao EDITAR alguém, o que está marcado é o dela e só
+muda se trocarem o perfil — e, quando troca, a tela diz o que pré-configurou.
+
+**7. Arrastar o documento para dentro da tela do Arquivo.** *"Arrasto o
+documento pra dentro daquele local e é feita a leitura do arquivo já, e aberta
+a tela com as informações que você detectou."* Soltar o arquivo em **qualquer
+lugar** da tela do Arquivo abre o formulário e dispara a leitura. A zona é a
+tela inteira de propósito: com o arquivo no ar, procurar o retângulo certo é o
+que faz a pessoa desistir e voltar para o botão. Um arquivo por vez — se
+soltarem cinco, o primeiro entra e a tela DIZ que os outros ficaram de fora.
+
+**Provado:** `tests/test_bancos.py` (27 casos) e os casos novos de
+`tests/test_manutencao_limpeza_banco.py`, mais o caminho inteiro no navegador
+com banco de verdade: filtro, cadastro de conta com Pix, pré-configuração por
+perfil, grupo virando verde e âmbar, a prévia da limpeza de obras recusando e
+dizendo o que falta, o véu do arrastar e a leitura disparando sozinha.
+
+**Esta entrega não tem migração.** A lista de bancos mora numa linha da tabela
+de parâmetros, que já existe.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**

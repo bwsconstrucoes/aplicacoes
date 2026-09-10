@@ -38,6 +38,7 @@ from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
@@ -93,8 +94,11 @@ CAMPOS: dict[str, tuple[str, str, str]] = {
     "cep": ("CEP", "texto", "CEP da obra, só dígitos"),
     "municipio": ("Município", "texto", "município da obra"),
     "uf": ("UF", "texto", "sigla do estado da obra"),
-    "aliquota_iss": ("Alíquota de ISS (%)", "percentual",
-                     "alíquota de ISS do município da obra, se o documento disser"),
+    # A alíquota mora em `aliquota_iss_pct`. Existe uma coluna antiga chamada
+    # `aliquota_iss`, que a tributação e a tela de tributação NÃO leem — usar o
+    # nome antigo aqui gravaria num campo que ninguém consulta.
+    "aliquota_iss_pct": ("Alíquota de ISS (%)", "percentual",
+                         "alíquota de ISS do município da obra, se o documento disser"),
 }
 
 # ---------------------------------------------------------------------------
@@ -481,6 +485,128 @@ def aplicar_na_obra(s: Session, obra_id: int, escolhas: dict[str, Any], *,
         logger.info("ERP/arquivo: obra %s preenchida por documento %s (%d campo(s))",
                     obra.codigo, tipo_codigo, len(mudancas))
     return {"mudancas": mudancas, "quantidade": len(mudancas)}
+
+
+# ---------------------------------------------------------------------------
+# A OBRA QUE AINDA NÃO EXISTE
+#
+# Pedido do dono em 10/09/2026: *"nós havíamos conversado sobre a criação de
+# obras a partir de um documento, da leitura de um documento. Então isso
+# ficaria associado a obras."*
+#
+# É o mesmo princípio de antes — o documento arquiva E preenche —, só que aqui
+# não há cadastro para completar: há cadastro para NASCER. Três diferenças que
+# mudam o comportamento:
+#
+#   1. NÃO HÁ CONFLITO POSSÍVEL. Obra nova tem todos os campos vazios, então
+#      tudo que a leitura achou entra marcado. A regra de não sobrescrever
+#      continua valendo — só não tem o que sobrescrever ainda.
+#
+#   2. O CÓDIGO NÃO SE INVENTA. "ESCPE18" é convenção da casa, não sai de
+#      documento nenhum. O sistema pede; adivinhar geraria código plausível e
+#      errado, e código de obra entra em rateio, medição e nota — trocar
+#      depois é caro.
+#
+#   3. OBRA DUPLICADA É PIOR QUE OBRA FALTANDO. Duas obras para o mesmo
+#      contrato partem o histórico em dois: metade dos títulos numa, metade na
+#      outra, e nenhum relatório fecha. Por isso a procura por obra parecida
+#      abaixo, e por isso ela ATRAVANCA a criação até alguém dizer que sabe o
+#      que está fazendo.
+# ---------------------------------------------------------------------------
+def sugerir_para_nova_obra(s: Session, tipo_codigo: str,
+                           dados: dict[str, Any]) -> dict[str, Any]:
+    """O que este documento preencheria numa obra que ainda vai ser criada."""
+    tipo = (tipo_codigo or "").strip().upper()
+    permitidos = POR_TIPO.get(tipo, ())
+    extraidos = dados.get("dados_extraidos") or {}
+
+    campos: list[dict[str, Any]] = []
+    for campo in permitidos:
+        rotulo, feitio, _ = CAMPOS[campo]
+        novo = _converter(feitio, extraidos.get(campo))
+        if novo in (None, ""):
+            continue
+        campos.append({
+            "campo": campo, "rotulo": rotulo, "feitio": feitio,
+            "valor": _mostrar(feitio, novo), "valor_atual": "",
+            "conflito": False, "marcar": True,
+        })
+
+    aditivo = _aditivo_sugerido(tipo_codigo, dados)
+    return {
+        "obra_id": None, "obra": "",
+        "tipo": tipo,
+        "campos": campos,
+        "aditivo": aditivo,
+        "nome_sugerido": nome_de_obra_sugerido(extraidos),
+        "parecidas": obras_parecidas(
+            s, cno=extraidos.get("cno") or extraidos.get("cei_obra"),
+            contrato=extraidos.get("contrato"),
+            obra_id=dados.get("obra_id")),
+        "nada_a_preencher": not campos and aditivo is None,
+        "tipo_nao_preenche": tipo not in POR_TIPO,
+    }
+
+
+def nome_de_obra_sugerido(extraidos: dict[str, Any]) -> str:
+    """Um nome de partida para a obra, tirado do que o documento diz.
+
+    O objeto do contrato costuma ser a melhor descrição ("CONSTRUÇÃO DE CRECHE
+    TIPO B NO BAIRRO X"); na falta dele, o contratante já diz mais do que um
+    campo vazio. É sugestão: a tela deixa editar antes de criar.
+    """
+    objeto = _texto(extraidos.get("objeto")) or ""
+    if objeto:
+        # Primeira oração, para não virar um nome de três linhas na listagem.
+        curto = re.split(r"[.;\n]", objeto)[0].strip()
+        return (curto or objeto)[:120]
+    cliente = _texto(extraidos.get("cliente")) or ""
+    municipio = _texto(extraidos.get("municipio")) or ""
+    if cliente and municipio:
+        return f"{cliente} — {municipio}"[:120]
+    return cliente[:120]
+
+
+def obras_parecidas(s: Session, *, cno: Any = None, contrato: Any = None,
+                    obra_id: Any = None) -> list[dict[str, Any]]:
+    """Obras já cadastradas que podem ser ESTA — a guarda contra duplicar.
+
+    Compara pelos dois documentos que identificam obra de verdade: a matrícula
+    CNO (só os dígitos, porque cada um pontua de um jeito) e o número do
+    contrato. E aceita de graça o palpite da própria leitura, que já procura
+    o dono do documento entre os cadastros.
+
+    As obras são carregadas todas e comparadas aqui, e não por WHERE: são
+    dezenas, e a comparação por dígitos não se escreve em SQL sem sujar o
+    banco com função de normalização. Se um dia forem milhares, aí sim.
+    """
+    achadas: dict[int, dict[str, Any]] = {}
+
+    def _marcar(obra: Optional[Obra], motivo: str) -> None:
+        if obra is None:
+            return
+        linha = achadas.setdefault(obra.id, {
+            "id": obra.id, "codigo": obra.codigo, "nome": obra.nome, "motivos": []})
+        if motivo not in linha["motivos"]:
+            linha["motivos"].append(motivo)
+
+    if obra_id:
+        try:
+            _marcar(s.get(Obra, int(obra_id)), "a leitura reconheceu esta obra no documento")
+        except (TypeError, ValueError):
+            pass
+
+    cno_novo = _digitos(cno)
+    contrato_novo = _limpo_para_comparar(_texto(contrato))
+    if cno_novo or contrato_novo:
+        for obra in s.scalars(select(Obra)).all():
+            if cno_novo and _digitos(obra.cno) == cno_novo:
+                _marcar(obra, f"mesma matrícula CNO ({obra.cno})")
+            if cno_novo and _digitos(obra.cei_obra) == cno_novo:
+                _marcar(obra, f"mesmo CEI ({obra.cei_obra})")
+            if contrato_novo and _limpo_para_comparar(obra.contrato) == contrato_novo:
+                _marcar(obra, f"mesmo número de contrato ({obra.contrato})")
+    return list(achadas.values())
 
 
 # ---------------------------------------------------------------------------

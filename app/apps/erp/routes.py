@@ -2402,47 +2402,65 @@ def api_nova_categoria():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
-@bp.route("/erp/api/config/obra", methods=["POST"])
+@bp.route("/erp/api/config/conta", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar")
-def api_nova_obra():
-    from app.apps.erp.core.cadastros import obras as svc_obra
-    dados = request.get_json(silent=True) or {}
+def api_nova_conta():
+    """Cadastra a conta da empresa — com a chave Pix, se ela já estiver à mão."""
+    from app.apps.erp.core.cadastros import contas as svc_contas
+    d = request.get_json(silent=True) or {}
     try:
         with get_session() as s:
             usuario = _usuario_logado(s)
-            svc_obra.criar(s, dados, usuario)
+            conta = svc_contas.criar(s, d, usuario)
+            criada = {"id": conta.id, "descricao": conta.descricao}
             s.commit()
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, "conta": criada})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
-        logger.exception("ERP: falha ao criar obra")
+        logger.exception("ERP: falha ao criar conta bancária")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
-@bp.route("/erp/api/config/conta", methods=["POST"])
+# ---------------------------------------------------------------------------
+# A LISTA DE BANCOS (código FEBRABAN/COMPE)
+#
+# Pedido do dono em 10/09/2026: em vez de digitar "237" de cabeça, escolher o
+# banco pelo nome. A lista embutida funciona sozinha e sem internet; o botão
+# troca pela oficial do Banco Central.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/bancos")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_bancos():
+    from app.apps.erp.core.cadastros import bancos
+    with get_session() as s:
+        return jsonify({"ok": True, "bancos": bancos.listar(s),
+                        "estado": bancos.estado(s)})
+
+
+@bp.route("/erp/api/bancos/atualizar", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar")
-def api_nova_conta():
-    from app.apps.erp.db.models.cadastros import ContaBancaria
-    d = request.get_json(silent=True) or {}
-    faltando = [c for c in ("descricao", "banco_codigo", "agencia", "conta") if not (d.get(c) or "").strip()]
-    if faltando:
-        return jsonify({"ok": False, "erro": f"Preencha: {', '.join(faltando)}."}), 400
+def api_bancos_atualizar():
+    """Troca a lista pela oficial do Banco Central. Pelo botão, nunca sozinha."""
+    from app.apps.erp.core.cadastros import bancos
     try:
         with get_session() as s:
-            s.add(ContaBancaria(descricao=d["descricao"].strip(),
-                                banco_codigo=d["banco_codigo"].strip(),
-                                agencia=d["agencia"].strip(), conta=d["conta"].strip()))
+            usuario = _usuario_logado(s)
+            r = bancos.atualizar(s, usuario)
+            estado = bancos.estado(s)
             s.commit()
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, "resultado": r, "estado": estado})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
-        logger.exception("ERP: falha ao criar conta bancária")
+        logger.exception("ERP: falha ao atualizar a lista de bancos")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
@@ -3763,6 +3781,37 @@ def api_contas_bancarias():
             for c in contas if c.ativo]})
 
 
+@bp.route("/erp/api/obras/nova", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_criar_obra():
+    """Cria a obra. É o ÚNICO lugar que cria obra à mão.
+
+    Existiam dois formulários — um em Configurações, com oito campos, e outro
+    no painel de Obras, com cinco. A mesma obra nascia diferente conforme a
+    porta de entrada, e quem entrava pela porta curta não sabia que a outra
+    existia. O dono viu isso em 10/09/2026 e resolveu: *"se a gente tem o
+    painel de obras, não tem mais que ter obras em administração"*. Ficou um
+    formulário só, no painel — e Configurações passa a apontar para lá.
+    """
+    from app.apps.erp.core.cadastros import obras as svc_obra
+    dados = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            obra = svc_obra.criar(s, dados, usuario)
+            criada = {"id": obra.id, "codigo": obra.codigo, "nome": obra.nome}
+            s.commit()
+        return jsonify({"ok": True, "obra": criada})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao criar obra")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/obras/<int:obra_id>", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao(GET="ver_erp", POST="configurar")
@@ -4782,6 +4831,144 @@ def api_obra_documento_guardar(obra_id: int):
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
+
+
+# ---------------------------------------------------------------------------
+# CRIAR A OBRA A PARTIR DO DOCUMENTO
+#
+# Pedido do dono em 10/09/2026: *"nós havíamos conversado sobre a criação de
+# obras a partir de um documento, da leitura de um documento. Então isso
+# ficaria associado a obras."*
+#
+# A ação declarada é `configurar`, e é a certa: o que estas rotas fazem de
+# irreversível é CRIAR obra — arquivar o documento é consequência, não o
+# assunto. Quem pode criar obra pode guardar o contrato que a criou.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/obras/documento/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_nova_obra_documento_ler():
+    """Lê o documento e diz que obra ele criaria. Não grava nada."""
+    from app.apps.erp.core.arquivo import leitura, preenchimento
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    try:
+        conteudo = f.read()
+        with get_session() as s:
+            sugestao = leitura.sugerir(
+                s, conteudo, f.filename or "arquivo",
+                dica=(request.form.get("dica") or ""),
+                extracao=preenchimento.instrucao_de_extracao(),
+                dono_e_novo=True)
+            sugestao["nome_original"] = f.filename or "arquivo"
+            # O nome do arquivo só se sabe depois que a obra existe (ele usa o
+            # código dela). Prometer um nome agora seria prometer errado.
+            sugestao["nome_sugerido"] = ""
+            cadastro = preenchimento.sugerir_para_nova_obra(
+                s, sugestao.get("tipo_codigo") or "", sugestao)
+        return jsonify({"ok": True, "sugestao": sugestao, "cadastro": cadastro})
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP/obras: falha ao ler documento de obra nova")
+        return jsonify({"ok": False, "erro": f"Não deu para ler o documento: {e}"}), 500
+
+
+@bp.route("/erp/api/obras/documento", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_nova_obra_documento():
+    """Cria a obra, arquiva o documento nela e preenche o que foi confirmado.
+
+    Tudo na mesma transação. Obra criada com o documento perdido, ou documento
+    guardado numa obra que não chegou a existir, seriam os dois piores
+    resultados possíveis — e sem transação única os dois são possíveis.
+    """
+    from app.apps.erp.core.arquivo import preenchimento
+    from app.apps.erp.core.arquivo import service as svc_arq
+    from app.apps.erp.core.cadastros import obras as svc_obra
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    tipo = (request.form.get("tipo") or "").strip().upper()
+    if not tipo:
+        return jsonify({"ok": False, "erro": "Escolha o tipo do documento."}), 400
+    codigo = (request.form.get("codigo") or "").strip().upper()
+    nome = (request.form.get("nome") or "").strip()
+    if not codigo or not nome:
+        return jsonify({"ok": False,
+                        "erro": "Código e nome da obra são obrigatórios."}), 400
+
+    def _data(campo):
+        try:
+            return date.fromisoformat(request.form.get(campo) or "")
+        except ValueError:
+            return None
+
+    def _comp():
+        bruto = (request.form.get("competencia") or "").strip()
+        try:
+            return date.fromisoformat(bruto + "-01") if len(bruto) == 7 else None
+        except ValueError:
+            return None
+
+    campos = json.loads(request.form.get("campos") or "{}")
+    aditivo = json.loads(request.form.get("aditivo") or "null")
+    confirmada = (request.form.get("confirmar_duplicada") or "") == "1"
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            # A guarda contra duplicar olha o que VAI ser gravado, não o que a
+            # leitura sugeriu: a pessoa pode ter corrigido o CNO na tela.
+            parecidas = preenchimento.obras_parecidas(
+                s, cno=campos.get("cno") or campos.get("cei_obra"),
+                contrato=campos.get("contrato"))
+            if parecidas and not confirmada:
+                return jsonify({
+                    "ok": False, "parecidas": parecidas,
+                    "erro": "Já existe obra cadastrada com esses mesmos dados. "
+                            "Duas obras para o mesmo contrato partem o histórico "
+                            "em dois e nenhum relatório fecha."}), 400
+
+            obra = svc_obra.criar(s, {"codigo": codigo, "nome": nome,
+                                      "origem": "DOCUMENTO"}, usuario)
+            s.flush()
+            d = svc_arq.arquivar(
+                s, f.read(), f.filename or "arquivo", tipo_codigo=tipo,
+                obra_id=obra.id, competencia=_comp(),
+                referencia=(request.form.get("referencia") or ""),
+                emissao=_data("emissao"), validade=_data("validade"),
+                observacao=(request.form.get("observacao") or ""),
+                texto=(request.form.get("texto") or ""),
+                resumo=(request.form.get("resumo") or ""),
+                origem="IA", usuario=usuario)
+            preenchido = preenchimento.aplicar_na_obra(
+                s, obra.id, campos, tipo_codigo=tipo, documento_id=d.id,
+                usuario=usuario)
+            novo_aditivo = None
+            if aditivo:
+                a = preenchimento.criar_aditivo(
+                    s, obra.id, aditivo, anexo_id=d.anexo_id, usuario=usuario)
+                novo_aditivo = {"id": a.id, "numero": a.numero, "tipo": a.tipo,
+                                "valor": float(a.valor), "dias": a.dias}
+            linha = svc_arq.ler(s, d)
+            criada = {"id": obra.id, "codigo": obra.codigo, "nome": obra.nome}
+            s.commit()
+        return jsonify({"ok": True, "obra": criada, "documento": linha,
+                        "preenchido": preenchido, "aditivo": novo_aditivo})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP/obras: falha ao criar obra a partir de documento")
+        return jsonify({"ok": False, "erro": str(e)}), 500
 
 
 @bp.route("/erp/api/colaboradores/<int:colaborador_id>/documento/ler", methods=["POST"])

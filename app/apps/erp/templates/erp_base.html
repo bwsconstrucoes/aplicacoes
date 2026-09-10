@@ -270,9 +270,24 @@ function paraNumero(v) {
   return isNaN(n) ? 0 : n;
 }
 
+// O rótulo da obra em lista e filtro.
+//
+// O código da casa costuma SER o nome abreviado ("CRECHESWAP" para "Espaço
+// Creche Swap"), e escrever os dois lado a lado faz a linha parecer repetida —
+// foi a reclamação do dono em 10/09/2026: "está aparecendo duplicado o nome da
+// obra". Quando um já contém o outro, o mais completo basta; só quando dizem
+// coisas diferentes é que os dois aparecem.
 function rotuloObra(o) {
   const cod = (o.codigo || "").trim(), nome = (o.nome || "").trim();
-  if (!nome || nome.toLowerCase() === cod.toLowerCase()) return cod;
+  if (!nome) return cod;
+  if (!cod) return nome;
+  const limpo = t => t.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+  const c = limpo(cod), n = limpo(nome);
+  if (!c || !n) return nome || cod;
+  if (n.includes(c)) return nome;      // "Espaço Creche Swap" já diz CRECHESWAP
+  if (c.includes(n)) return cod;
   return `${cod} · ${nome}`;
 }
 
