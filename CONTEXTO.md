@@ -37,6 +37,11 @@
   estava preenchido com o comando antigo e o Procfile era ignorado (descoberto
   2026-07-14). Ao mudar o comando do gunicorn, alterar nos DOIS lugares — ou
   deixar o Start Command em branco pra valer o Procfile (preferido, versionado).
+- ✔ **Conferido em 2026-09-10** (o dono mostrou o campo): o Start Command é
+  **idêntico** ao `Procfile` acima, palavra por palavra. A suspeita anotada no
+  `CLAUDE.md` de que a produção rodasse com **8 threads** era infundada — são
+  4. A armadilha do "mexer só no Procfile não tem efeito" continua valendo,
+  porque o campo continua preenchido.
 - **Entry-point real:** `app/main.py` (NÃO é `app.py` na raiz — esse é legado do
   pdf-processor que ainda existe no monorepo).
 
@@ -820,6 +825,29 @@ Quando eu pedir nova feature ou adaptação:
   Itens 3-4 atacam o pico residual. Se AINDA ocorrer OOM após isso, próximos
   suspeitos: `processarnovasp` (não auditado), `validasp` (não auditado), ou
   subir instância pra 4 GB.
+- **2026-09-10 — Métricas do Render lidas pela primeira vez, e o Start Command
+  conferido.** Origem: a caça à lentidão do Análise de SPs. Três achados que
+  valem para o monorepo inteiro, não só para aquela área:
+  1. **O Start Command das Settings é idêntico ao `Procfile`** (o dono mostrou
+     o campo). A suspeita de 8 threads em produção era infundada — são 4,
+     como no arquivo. Ver §2.
+  2. **Memória em 48 h: 15% a 45% dos 2 GB**, sem encostar no limite, e CPU
+     quase sempre abaixo de 5%. As causas de verdade do OOM de julho foram
+     atacadas na origem (itens 3-4 do incidente abaixo), e o efeito aparece
+     aqui: a folga é grande. Com isso, o `--max-requests 150` — que, com
+     `--workers 1`, faz TODA requisição esperar a partida do serviço a cada
+     ~150 acessos (1,7 s só para importar os 18 módulos, medido) — passa a
+     custar mais do que protege. **Não foi mexido**: é decisão do dono, e o
+     caminho seguro é subir o valor e vigiar a memória, não remover a rede.
+  3. **O gargalo do Análise de SPs não é a instância web.** Com CPU perto de
+     zero e memória sobrando, o tempo é ESPERA — e o suspeito é o banco:
+     `SELECT count(*)` sobre 59 mil SPs levou **1.463 ms** em produção
+     (medido pelo dono na tela de rede do navegador) contra 5 ms num Postgres
+     local. Percorrer a tabela lá custa segundos, o que aponta para a tabela
+     não caber na memória do banco, bloat, ou os dois. A contagem foi tirada
+     de todas as telas (`analisesps/HISTORICO.md`, 22ª leva), mas **as outras
+     varreduras continuam**, e a próxima investigação é no banco, não na
+     aplicação.
 - **2026-08-30 — Nasce o ERP como blueprint do monorepo** (`0976b8f`, primeiro
   de 50 commits até 2026-09-01). Decisões que vieram junto:
   1. **Hospedar dentro do serviço `aplicacoes`**, não em serviço novo — sem
