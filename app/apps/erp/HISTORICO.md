@@ -76,6 +76,50 @@ telas de cadastro de Suprimentos** (detalhada abaixo), mais a correção das
 três telas que nunca funcionaram (ver Incidentes). Suíte: 2.097 casos com
 banco de verdade. **Nada pendente no ramo.**
 
+### Por que o assistente não nasce no WhatsApp — 10/09/2026
+
+O dono desenhou o futuro do sistema numa conversa: *"eu poder fazer qualquer
+pergunta ao sistema e, se houver dado daquela pergunta, que ele me retorne"* —
+com áudio, com anexo, e podendo também AGIR (cadastrar insumo, lançar título),
+sempre dentro da permissão da pessoa. E perguntou qual canal usar.
+
+Ele mesmo desconfiou do WhatsApp, e a desconfiança está certa. Ficando
+registrado o porquê, para não se discutir de novo:
+
+- **Passa por terceiro.** Toda mensagem, todo documento e todo áudio passam
+  pelos servidores da Meta. Aqui isso significa nota fiscal, folha e título —
+  não é um detalhe.
+- **A janela de 24 horas.** Fora de uma conversa que a PESSOA começou, só se
+  pode mandar modelo de mensagem aprovado previamente. Serve para aviso; não
+  serve para conversa livre iniciada pelo sistema.
+- **Não tem tela.** Relatório em WhatsApp vira parede de texto ou PDF anexado.
+  Sem tabela, sem linha clicável, sem card que expande, sem "ver de onde veio
+  este número" — que é justamente a parte que faz o assistente ser confiável.
+- **Identifica telefone, não pessoa.** Ligar telefone a operador dá para fazer,
+  mas quem estiver com o aparelho está dentro do ERP. É superfície de ataque
+  nova para resolver um problema que o login já resolve.
+
+**Onde o WhatsApp ganha de verdade:** o pessoal da obra, que não abre o ERP, e
+o AVISO (a metade que falta do `core/notificacoes.py` — o Telegram está pronto).
+Por isso ele fica como porta secundária, para aviso e pergunta curta com link,
+e não como canal principal.
+
+**A decisão:** o assistente nasce DENTRO do ERP, em painel lateral, e o celular
+é resolvido transformando o próprio ERP em PWA — o ícone na tela do telefone
+que abre no navegador. Aplicativo nativo seria uma segunda base de código e uma
+loja para não ganhar nada que o PWA não dê aqui.
+
+**O risco que manda no desenho, e que precisa ser dito ao dono sempre:**
+consulta gerada por IA sobre um banco grande acerta a maior parte das vezes e
+erra **em silêncio** no resto. Um número errado com cara de certo é pior que
+resposta nenhuma — e o dono não tem como conferir SQL. Daí as três regras:
+catálogo de perguntas conhecidas respondido por código primeiro; "não sei"
+explícito em vez de chute; e toda resposta com o caminho de volta para os
+lançamentos que a formaram.
+
+O plano em nove passos está em `ROTEIRO.md` › "O ASSISTENTE DE IA E O RELATÓRIO
+DE TRABALHO".
+
 ### O plano de contas depois das oito alterações — 10/09/2026
 
 O dono mandou um documento (`PLANO_CONTAS_alteracoes.md`) com oito assuntos, e

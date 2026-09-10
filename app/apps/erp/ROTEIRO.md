@@ -109,6 +109,73 @@
 
 ## Fila (pedidos registrados, ainda não iniciados)
 
+### O ASSISTENTE DE IA E O RELATÓRIO DE TRABALHO — pedidos de 10/09/2026
+
+Dois pedidos grandes que o dono fez na mesma conversa, e que valem juntos
+porque o segundo é o primeiro ensaio do primeiro: os dois vivem da trilha de
+auditoria.
+
+**O que ele pediu, nas palavras dele:** *"eu poder fazer qualquer pergunta ao
+sistema e, se houver dado daquela pergunta, que ele me retorne. E não só os
+dados exibidos em tela, porque às vezes a gente pode ter em algum momento que é
+necessário alguma informação que a gente não tenha pensado na construção do
+sistema."* Exemplos que ele deu: o que tem a pagar hoje na obra X; quais obras
+estão em andamento; quanto foi medido e quanto falta receber; o resultado da
+obra agora; quantos títulos não estão conciliados; a lista de insumos de uma
+categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudio** e
+**anexo**, e sempre **dentro da permissão da pessoa**.
+
+- [ ] **1. Relatório de uso e trabalho por pessoa.** É o mais barato e já dá
+      para fazer: a tabela `eventos` é append-only (ninguém apaga nem edita) e
+      já registra **117 tipos de ação**, com quem, quando, em qual registro e o
+      detalhe. Falta ler isso por pessoa e por dia: primeira e última ação,
+      o que foi feito, volume por tipo, e onde a fila está parada.
+      ⚠️ **Ressalva que precisa estar na tela:** log de atividade **não é
+      jornada de trabalho**. Quem está lendo contrato, no telefone com
+      fornecedor ou na obra trabalha sem gerar evento. Serve para medir
+      ENTREGA (quantos títulos, conciliações, medições) e para saber se o
+      trabalho está acontecendo no dia de home office — não para bater ponto.
+      Se um dia virar controle de jornada, isso tem exigência legal própria e
+      não se improvisa. A equipe precisa ser avisada de que o sistema registra.
+      Fazer também a tela **"minha semana"** para cada pessoa: mesmo dado,
+      vira retorno em vez de vigilância.
+- [ ] **2. Assistente SÓ DE LEITURA, dentro do ERP.** Painel lateral (não
+      caixinha), com o catálogo de perguntas conhecidas respondido por CÓDIGO —
+      exato, rápido e sem custo de IA — e a pergunta imprevista caindo numa
+      consulta gerada pela IA, **marcada como tal na tela**. Toda resposta com
+      "ver de onde veio", abrindo a lista por trás do número.
+      ⚠️ **O risco que manda no desenho:** consulta gerada por IA sobre um
+      banco grande acerta a maior parte das vezes e erra em silêncio no resto.
+      Número errado com cara de certo é pior que resposta nenhuma. Por isso o
+      catálogo primeiro, o "não sei" explícito, e a origem sempre visível.
+- [ ] **3. Áudio e anexo na conversa**, e o ERP virando **PWA** (ícone no
+      celular que abre no navegador, com aviso por notificação). É o mesmo
+      sistema, não um segundo aplicativo — app nativo aqui seria duas bases de
+      código e loja para nada.
+- [ ] **4. As AÇÕES pelo assistente** (cadastrar insumo, lançar título) —
+      sempre **preparar e confirmar**: o assistente preenche e mostra, a pessoa
+      aperta. Nunca "já lancei". E passando pelas MESMAS funções do core que a
+      tela usa, para herdar permissão, escopo por obra e regra de negócio — não
+      um caminho paralelo até o banco.
+- [ ] **5. WhatsApp/Telegram como porta secundária**: aviso e pergunta curta,
+      com link para abrir no ERP. Não como canal principal — ver o porquê em
+      `HISTORICO.md` › "Por que o assistente não nasce no WhatsApp".
+- [ ] **6. Assistente PROATIVO** (ideia trazida na conversa, não pedida): o
+      valor maior não é responder, é falar primeiro. "Estas 3 medições estão
+      liberadas para faturar", "a CND deste fornecedor venceu e há título para
+      pagar amanhã", "este material está 40% acima do que esta obra costuma
+      pagar". A Agenda já existe; o assistente é a voz dela.
+- [ ] **7. Pergunta boa vira relatório salvo**, que roda toda semana e chega
+      pronto. É assim que o assistente deixa de ser brinquedo e vira o jeito de
+      construir relatório sem esperar tela nova.
+- [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
+      ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
+      come o mês inteiro.
+- [ ] **9. Guardar toda pergunta e toda resposta.** Serve para controlar custo,
+      para auditar e — o mais útil — porque a lista do que perguntam repetido é
+      a lista das telas que faltam.
+
+
 - [x] Painel de consumo de IA (tokens, custo, por operação/modelo/pessoa)
 - [x] Conversão de valores decimais corrigida (30.00 vs 1.234)
 
