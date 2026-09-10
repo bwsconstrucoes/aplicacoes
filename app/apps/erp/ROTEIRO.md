@@ -129,10 +129,15 @@
 - [ ] Pessoal — falta: formato exato do arquivo BeeVale/SomaPay (aguarda
       instrução) e anexo da planilha ao título
 
-- [ ] Detalhe do título que **expande como card**, com anexos e tudo que não
-      cabe na tabela
-- [ ] **Encadeamento**: obra → cadastro da obra; conta → plano; credor →
-      cadastro; compra → pedido
+- [x] Detalhe do título que **expande como card** — FEITO em 10/09/2026. Um
+      clique na linha abre a ficha embaixo dela, com apontamentos, parcelas,
+      pagamentos, rateio, retenções, anexos, assinaturas e histórico. A janela
+      ficou com os formulários e com o endereço direto (`?titulo=N`) que cai
+      num título fora dos filtros de hoje.
+- [x] **Encadeamento** — FEITO em 10/09/2026. Obra, conta do plano, credor e
+      compra viram link, na lista e na ficha, e as quatro telas de destino
+      abrem já no registro. O elo só aparece para quem pode abrir o destino —
+      link que responde "sem permissão" promete porta que não abre.
 - [x] **Agenda do ERP** — FEITA em 09/09/2026 (migração 051). Obras › "Agenda":
       aniversário de reajuste, conferência mensal de locação, vencimento de
       certidão e fim da vigência do contrato, num lugar só, mais a anotação
@@ -319,16 +324,24 @@ lido, e a partir dali categorizado, renomeado e salvo"*.
 - [x] 2. **Tela de gestão** (Administração › Arquivo): filtros por
       tipo/grupo/empresa/obra/competência/validade, busca e abertura do
       arquivo. FEITA em 09/09/2026.
-- [ ] 3. **Leitura por IA** sugerindo tipo, dono, datas e nome — a pessoa
-      confirma. Reusa o leitor que já lê nota e comprovante.
+- [x] 3. **Leitura por IA** sugerindo tipo, dono, datas e nome — FEITA em
+      10/09/2026. A pergunta é montada a partir do catálogo QUE ESTÁ NO BANCO,
+      então tipo criado pela empresa entra sozinho. Não achar o dono é
+      resposta válida (a tela mostra o nome lido e manda escolher); validade
+      anterior à emissão é descartada; a leitura DIZ o que não resolveu; e o
+      texto extraído é guardado junto, o que já resolve o item 5.
+      ⚠️ **A chamada real ao serviço de IA só acontece no Render** — aqui não
+      há chave. O fluxo inteiro foi provado com a IA dublada e o caminho de
+      erro, no navegador.
 - [x] 4. **Blocos** (FISCAL, HABILITACAO, CADASTRO-FORNECEDOR, MEDICAO, OBRA)
       em `.zip`, **com a lista do que está faltando dentro**. FEITO em
       09/09/2026 (migração 046). O bloco aponta para TIPOS, não para
       documentos — por isso o de agosto e o de setembro são o mesmo bloco.
       Conteúdo do bloco FISCAL confirmado pelo dono como "o que o cliente pede
       na medição".
-- [ ] 5. **Busca dentro do texto** do documento (o texto é extraído na entrada,
-      porque a leitura já acontece — reprocessar depois é que sairia caro).
+- [x] 5. **Busca dentro do texto** do documento — FEITA junto com o item 3 em
+      10/09/2026: a busca do Arquivo já olhava o campo de texto; o que faltava
+      era alguém preenchê-lo, e agora a leitura preenche.
 - [ ] 6. **Avisos de vencimento** de certidão e documento, na Agenda.
 - [ ] 7. **Botões nos outros lugares**: baixar a documentação fiscal da
       competência direto do título, o bloco da obra na tela da obra, o bloco

@@ -1940,6 +1940,90 @@ não existir.
 município só acontece no Render. A saída de internet do ambiente onde escrevo
 é filtrada — foi assim com o Banco Central, e será assim com a prefeitura.
 
+### A ficha do título vira card, e as telas passam a se ligar — 10/09/2026
+
+Duas coisas que estavam no ROTEIRO desde o começo e nunca tinham vindo.
+
+**1. O detalhe do título deixou de ser janela.** Ele existia, mas abria numa
+janela por cima da tela e **só com clique duplo** — que ninguém adivinha.
+Agora um clique na linha expande o card ali mesmo, embaixo dela: quem está
+conferindo não perde o lugar da lista, fecha e continua de onde estava. Tudo
+que já havia continua: apontamentos, parcelas, pagamentos, rateio, retenções,
+anexos, assinaturas e o histórico completo.
+
+A janela **não morreu** — ficou com duas funções que são dela: os formulários
+(reclassificar, alterar parcelas, desfazer baixa) e o caso do endereço direto
+(`?titulo=N`, que vem da parcela de locação) cair num título que os filtros de
+hoje não mostram: aí não existe linha para expandir.
+
+**2. Encadeamento.** O que o dono pediu como *"conexão database do Pipefy"*:
+clicar na obra, na conta, no credor ou na compra e ir para o cadastro. Vale na
+lista de solicitações (obra e credor) e dentro da ficha (credor, conta, obra,
+cada obra do rateio, e o pedido de compra que originou o título). As quatro
+telas de destino passaram a aceitar o registro pelo endereço e já abrem nele:
+`/erp/obras?obra=N`, `/erp/configuracoes?conta=N#plano`,
+`/erp/suprimentos/fornecedores?fornecedor=N`,
+`/erp/suprimentos/pedidos?pedido=N`.
+
+**O elo respeita a permissão do destino.** Um financeiro não vê o link para o
+pedido de compra, porque a tela de pedidos é de ADMIN e diretoria — link que
+responde "sem permissão" é pior que texto puro, promete uma porta que não
+abre. A trava continua sendo o `@permissao` da rota; isto é só a tela não
+oferecer. O helper é `elo(tipo, id, texto)` no `erp_base.html`, e serve
+qualquer tela daqui para frente.
+
+⚠️ **O que isso quebrou e foi consertado na hora:** a tela de INÍCIO não
+recebia `pode` no molde dela. Como o `erp_base.html` passou a ler
+`pode.ver_suprimentos`, a porta de entrada do ERP inteiro respondeu 500. Quem
+pegou foi a homologação com banco de verdade, antes de sair daqui. Está com
+teste próprio agora (`test_a_porta_de_entrada_tambem_conhece_as_permissoes`).
+
+### O Arquivo passou a ler o documento — 10/09/2026
+
+Item 3 da gestão de documentos, o que o dono descreveu como *"um ambiente onde
+eu pudesse simplesmente jogar esse documento, ele fosse interpretado, lido, e
+a partir dali categorizado, renomeado e salvo"*.
+
+Em Administração › Arquivo › Guardar documento: escolhe o arquivo, aperta
+**"Ler o documento"** (com uma dica opcional, tipo "é a CND do FGTS da BWS") e
+o formulário volta preenchido — tipo, dono, emissão, validade, competência,
+referência e o nome padronizado. A pessoa confere e grava.
+
+Decisões que estão no código e não se mudam sem motivo:
+
+- **Ler não é guardar.** A leitura não grava nada. Documento arquivado no tipo
+  errado some do conjunto que o cliente pede na medição, e ninguém descobre
+  até o dia da entrega.
+- **A pergunta sai do catálogo QUE ESTÁ NO BANCO**, não de uma lista fixa no
+  código. Tipo novo criado pela empresa hoje entra na leitura de amanhã.
+- **Não achar o dono é resposta válida.** A comparação exige CNPJ/CPF igual ou
+  nome que se contenha — nunca "o mais parecido". Quando não acha, a tela diz
+  qual nome o documento traz e manda escolher. Pendurar no parecido faria o
+  documento sumir da busca de quem procura.
+- **Validade anterior à emissão é leitura trocada**: descartada, com a
+  confiança rebaixada. Gravá-la faria o aviso de vencimento nascer errado.
+- **A leitura diz o que ela mesma não resolveu** ("falta você preencher: até
+  quando vale"). Sugestão que se apresenta como certeza é pior do que campo em
+  branco, porque ninguém confere.
+- **O texto do documento é guardado junto.** Extrair na entrada é barato;
+  reprocessar depois, para poder buscar dentro do documento, seria caro. A
+  busca do Arquivo já olhava esse campo — agora ele vem preenchido.
+
+Dois buracos que apareceram no caminho e foram fechados: os tipos de documento
+de **PESSOA** e de **PARCEIRO** não tinham lista de dono na tela (dizia "este
+tipo ainda não tem lista aqui"), então metade do catálogo não tinha onde ser
+pendurada. Agora têm, por um endereço próprio do Arquivo — e a **lista de
+colaboradores só sai para quem enxerga documento PESSOAL**, a mesma faixa de
+sigilo do módulo.
+
+⚠️ **O que NÃO foi verificado:** a chamada real ao serviço de IA. Não há chave
+da OpenAI neste ambiente. O caminho de erro foi exercitado no navegador (a
+tela diz "leitura automática indisponível — preencha os campos manualmente" e
+nada quebra), e o caminho de sucesso foi exercitado ponta a ponta com a IA
+dublada: ler → preencher → guardar com o nome padronizado → achar o documento
+buscando por uma palavra de DENTRO dele. O que falta provar é o acerto do
+modelo contra documento de verdade, e isso só acontece no Render.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**

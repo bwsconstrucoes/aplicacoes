@@ -407,7 +407,14 @@ els("btn-limpar").addEventListener("click", () => {
   carregar();
 });
 
-carregar();
+// ENCADEAMENTO: ?pedido=N abre a compra que originou o título.
+carregar().then(() => {
+  const pedido = new URLSearchParams(location.search).get("pedido");
+  if (!pedido) return;
+  const id = +pedido;
+  if (PEDIDOS.some(x => x.id === id)) abrir(id);
+  else aviso("mensagem", "Este pedido de compra não está na lista de agora.", "erro");
+});
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.
 botoesDeExportar("exportar");

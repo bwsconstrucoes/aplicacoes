@@ -154,7 +154,10 @@ MODULOS = [
 ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  "autorizar_pedido", "solicitar_suprimento", "configurar",
                  "cruzar_notas", "arquivar", "receber", "emitir_nota",
-                 "tratar_agenda", "aprovar")
+                 "tratar_agenda", "aprovar",
+                 # Encadeamento: a tela só transforma obra/conta/credor/pedido
+                 # em link para quem consegue abrir o destino.
+                 "ver_suprimentos", "ver_pedidos_compra")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -451,6 +454,10 @@ def pagina_inicio():
                            abas=[], aba_ativa="", agenda=agenda,
                            usuario_nome=session.get("erp_usuario_nome", ""),
                            usuario_perfil=session.get("erp_usuario_perfil", ""),
+                           # `pode` é do molde comum a todas as telas: o
+                           # encadeamento lê daqui para não oferecer link que
+                           # a pessoa não consegue abrir.
+                           pode=_pode_agora(*ACOES_NA_TELA),
                            migracoes_pendentes=_migracoes_pendentes())
 
 
@@ -2010,6 +2017,12 @@ def _serializar(t, hoje: date, ver_pagamento: bool = True) -> dict:
         "exige_aval": bool(getattr(t, "exige_aval", False)),
         "avalizado": bool(getattr(t, "avalizado_em", None)),
         "ver_pagamento": ver_pagamento,
+        # ENCADEAMENTO: os números que ligam este título aos cadastros. São
+        # inteiros que já estão carregados — não custam consulta nenhuma.
+        "fornecedor_id": t.fornecedor_id,
+        "categoria_id": t.categoria_id,
+        "obra_ids": sorted({r.obra_id for r in t.rateios if r.obra_id}),
+        "pedido_id": getattr(t, "pedido_id", None),
     }
 
 
@@ -2046,6 +2059,19 @@ def api_titulos():
                     "pagina": {k: pag[k] for k in
                                ("pagina", "tamanho", "total", "paginas",
                                 "tem_mais", "de", "ate", "resumo")}})
+
+
+def _pedido_do_titulo(s, t) -> dict | None:
+    """O pedido de compra que originou o título, para virar link na ficha.
+
+    Só o número e o id — a ficha do pedido inteiro mora em Suprimentos, e é
+    para lá que o elo leva.
+    """
+    if not getattr(t, "pedido_id", None):
+        return None
+    from app.apps.erp.db.models.financeiro import Pedido
+    p = s.get(Pedido, t.pedido_id)
+    return {"id": p.id, "numero": p.numero} if p else None
 
 
 def _origem_do_titulo(s, t) -> dict | None:
@@ -2184,6 +2210,8 @@ def api_titulo_detalhe(titulo_id: int):
                 "solicitante": solicitante.nome if solicitante else "—",
                 "modalidade": getattr(t, "modalidade", "NORMAL"),
                 "porque_status": _explicar_status(s, t),
+                # ENCADEAMENTO: o pedido de compra que originou este título.
+                "pedido": _pedido_do_titulo(s, t),
                 "anexos": listar_anexos(s, "titulo", t.id),
                 "colaboradores": _colaboradores_do_titulo(s, t),
                 "pagamentos": [{
@@ -2205,6 +2233,8 @@ def api_titulo_detalhe(titulo_id: int):
                                          else ("informado" if p.linha_digitavel else ""))}
                              for p in t.parcelas],
                 "rateios": [{"obra": f"{r.obra.codigo} · {r.obra.nome}",
+                             "obra_id": r.obra_id,
+                             "categoria_id": getattr(r, "categoria_id", None),
                              "categoria": (f"{r.categoria.codigo} · {r.categoria.descricao}"
                                            if getattr(r, "categoria", None) else None),
                              "descricao": r.descricao,
@@ -4453,12 +4483,92 @@ def api_arquivo_guardar():
                 competencia=_comp(), referencia=(request.form.get("referencia") or ""),
                 emissao=_data("emissao"), validade=_data("validade"),
                 observacao=(request.form.get("observacao") or ""),
+                # Vindos da leitura automática, quando houve. Guardar o texto
+                # aqui é o que torna possível buscar DENTRO do documento
+                # depois, sem reprocessar o arquivo.
+                texto=(request.form.get("texto") or ""),
+                resumo=(request.form.get("resumo") or ""),
+                origem=("IA" if request.form.get("texto") or request.form.get("resumo")
+                        else "TELA"),
                 usuario=_usuario_logado(s))
             linha = svc_arq.ler(s, d)
             s.commit()
         return jsonify({"ok": True, "documento": linha})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/arquivo/donos")
+@login_obrigatorio
+@permissao("arquivar")
+def api_arquivo_donos():
+    """As listas de donos que a tela do Arquivo precisa oferecer.
+
+    Existe separada das telas de Pessoal e de Suprimentos porque quem arquiva
+    não necessariamente pode abrir aquelas telas — e sem estas listas os tipos
+    de documento de PESSOA e de PARCEIRO ficavam sem onde pendurar.
+
+    A lista de colaboradores só sai para quem enxerga documento PESSOAL (a
+    mesma faixa de sigilo do módulo): nome de empregado é dado de pessoa.
+    """
+    from app.apps.erp.core.arquivo.service import sigilos_visiveis
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.db.models.cadastros import Colaborador, Empresa, Fornecedor, Obra
+    from sqlalchemy import select as _sel
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            empresas = [{"id": e.id, "nome": e.nome_fantasia or e.razao_social}
+                        for e in s.scalars(_sel(Empresa).order_by(Empresa.razao_social)).all()]
+            minhas = obras_do_usuario(s, u) if u is not None else None
+            stmt = _sel(Obra).order_by(Obra.codigo)
+            if minhas is not None:
+                stmt = stmt.where(Obra.id.in_(minhas or [-1]))
+            obras = [{"id": o.id, "nome": f"{o.codigo} · {o.nome}"}
+                     for o in s.scalars(stmt).all()]
+            fornecedores = [{"id": f.id, "nome": f.nome_fantasia or f.razao_social}
+                            for f in s.scalars(_sel(Fornecedor)
+                                               .order_by(Fornecedor.razao_social)).all()]
+            colaboradores = []
+            if "PESSOAL" in sigilos_visiveis(u):
+                colaboradores = [{"id": c.id, "nome": c.nome}
+                                 for c in s.scalars(_sel(Colaborador)
+                                                    .order_by(Colaborador.nome)).all()]
+        return jsonify({"ok": True, "empresas": empresas, "obras": obras,
+                        "fornecedores": fornecedores, "colaboradores": colaboradores})
+    except Exception as e:
+        logger.exception("ERP/arquivo: falha ao listar donos")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/arquivo/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_arquivo_ler():
+    """A IA lê o documento e devolve o formulário preenchido — sem guardar.
+
+    Guardar continua sendo um ato da pessoa: documento arquivado no tipo
+    errado some do conjunto que o cliente pede na medição, e ninguém percebe
+    até o dia da entrega.
+    """
+    from app.apps.erp.core.arquivo import leitura
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    try:
+        conteudo = f.read()
+        with get_session() as s:
+            sugestao = leitura.sugerir(s, conteudo, f.filename or "arquivo",
+                                       dica=(request.form.get("dica") or ""))
+        return jsonify({"ok": True, "sugestao": sugestao})
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP/arquivo: falha na leitura automática")
+        return jsonify({"ok": False, "erro": f"Não deu para ler o documento: {e}"}), 500
 
 
 @bp.route("/erp/api/arquivo/<int:documento_id>", methods=["DELETE"])

@@ -1158,7 +1158,15 @@ els("btn-pix-salvar") && els("btn-pix-salvar").addEventListener("click", async (
   } catch(e){ aviso("pix-dlg-msg", e.message, "erro"); }
 });
 
-carregar();
+// ENCADEAMENTO: ?conta=N#plano abre a conta do plano direto, vinda do
+// título que a usa. Quem chega aqui já sabe qual conta quer ver.
+carregar().then(() => {
+  const pedida = new URLSearchParams(location.search).get("conta");
+  if (!pedida) return;
+  const id = +pedida;
+  if (DADOS.categorias.some(c => c.id === id)) editarCategoria(id);
+  else aviso("mensagem", "Esta conta do plano não existe mais.", "erro");
+});
 carregarIA();
 carregarAnexos();
 carregarContasPix();

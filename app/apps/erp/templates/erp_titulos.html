@@ -106,6 +106,8 @@ const ROTULOS = {EM_ANALISE:"Em análise", AGUARDANDO_APROVACAO:"Aguardando auto
   PAGO:"Pago", DEVOLVIDO:"Devolvido", CANCELADO:"Cancelado", ESTORNADO:"Estornado", RASCUNHO:"Rascunho"};
 const DEDUTIBILIDADES = ["DEDUTIVEL", "PARCIAL", "INDEDUTIVEL", "PENDENTE"];
 let TITULOS = [], SELECAO = new Set(), ORDEM = {campo:"vencimento", asc:true};
+// Qual linha está com a ficha aberta, e o que já veio dela do servidor.
+let EXPANDIDO = null, FICHA = null;
 // A LISTA VEM POR PÁGINAS, e o que já veio FICA. Antes ela parava nos 500 mais
 // novos e não dizia: o que era mais antigo ficava inalcançável sem filtrar, e
 // a tela não avisava que estava escondendo alguma coisa.
@@ -341,26 +343,33 @@ function desenhar(){
     ? "<b>Nenhum título nestes filtros</b>Ajuste a situação ou o período à esquerda."
     : "<b>Nada lançado ainda</b>Importe as SPs do Pipefy na aba Importar, ou lance uma solicitação.";
   els("corpo-tabela").innerHTML = l.map(t => `
-    <tr class="${SELECAO.has(t.id)?"marcada":""}" data-id="${t.id}">
+    <tr class="abre ${SELECAO.has(t.id)?"marcada":""} ${t.id===EXPANDIDO?"aberta":""}" data-id="${t.id}">
       <td><input type="checkbox" data-sel="${t.id}" ${SELECAO.has(t.id)?"checked":""}></td>
-      <td class="dados">${t.numero_sp}</td>
-      <td>${t.fornecedor}</td>
+      <td class="dados" style="white-space:nowrap"><span class="seta-ficha">${
+        t.id===EXPANDIDO?"▾":"▸"}</span> ${t.numero_sp}</td>
+      <td>${elo("credor", t.fornecedor_id, t.fornecedor)}</td>
       <td class="desc">${t.descricao}</td>
       <td class="desc"><b>${(t.categoria||"").split(" · ")[0]}</b>
         <small>${(t.categoria||"").split(" · ")[1]||""}</small></td>
-      <td>${t.obra||"—"}</td>
+      <td>${(t.obra_ids||[]).length === 1
+        ? elo("obra", t.obra_ids[0], t.obra) : escapar(t.obra || "—")}</td>
       <td class="dados ${t.vencido?"atrasado":""}">${dataBR(t.vencimento)}${t.parcelas>1?` <small>(${t.parcelas}x)</small>`:""}</td>
       <td class="direita dados">${numero(t.valor_liquido)}</td>
       <td><span class="risco"><span class="trilha"><span class="preench ${t.risco?"":"zero"}"
         style="width:${Math.min(t.risco,60)/60*100}%"></span></span><span>${t.risco}</span></span></td>
       <td><span class="selo ${classeSelo(t.status)}">${ROTULOS[t.status]||t.status}</span></td>
-    </tr>`).join("");
+    </tr>` + (t.id===EXPANDIDO ? linhaDaFicha() : "")).join("");
   document.querySelectorAll("[data-sel]").forEach(c => c.addEventListener("change", ev => {
     const id = +ev.target.dataset.sel;
     ev.target.checked ? SELECAO.add(id) : SELECAO.delete(id);
     desenhar();
   }));
-  document.querySelectorAll("tbody tr").forEach(tr => tr.addEventListener("dblclick", () => detalhe(+tr.dataset.id)));
+  document.querySelectorAll("tbody tr.abre").forEach(tr => tr.addEventListener("click", ev => {
+    // O clique na caixinha de seleção, num botão ou num link é dele, não da ficha.
+    if (ev.target.closest("input, button, a, label, select, textarea")) return;
+    alternarFicha(+tr.dataset.id);
+  }));
+  if (EXPANDIDO !== null) pintarFicha();
 
   const sel = TITULOS.filter(t => SELECAO.has(t.id));
   els("acoes-lote").classList.toggle("oculto", sel.length === 0);
@@ -399,12 +408,20 @@ function blocoDaOrigem(o){
   </div>`;
 }
 
-async function detalhe(id){
-  try {
-    const {titulo: t} = await api(`/erp/api/titulos/${id}`);
-    const c = t.cabecalho;
-    els("dlg-titulo").textContent = `${c.numero_sp} — ${c.fornecedor}`;
-    els("dlg-corpo").innerHTML = `
+// A FICHA DO TÍTULO NASCE EMBAIXO DA PRÓPRIA LINHA.
+//
+// Antes ela abria numa janela por cima da tela, e só com clique DUPLO — que
+// ninguém adivinha. Agora um clique na linha expande o card ali mesmo: quem
+// está conferindo não perde o lugar da lista, fecha e continua de onde estava.
+// A janela sobrou para os formulários (reclassificar, parcelas, desfazer) e
+// para o caso do endereço direto (?titulo=N) cair num título que os filtros
+// de hoje não mostram — aí não há linha para expandir.
+function montarFicha(t){
+  const c = t.cabecalho;
+  return `
+      <div class="ficha-topo"><h3>${escapar(c.numero_sp)} — ${elo("credor", c.fornecedor_id, c.fornecedor)}</h3>
+        ${t.pedido ? `<span class="kpi-rotulo">compra ${elo("pedido", t.pedido.id, t.pedido.numero)}</span>` : ""}
+        <button class="link-btn" id="btn-fechar-ficha">Fechar ✕</button></div>
       ${t.porque_status ? `<div class="aviso info"><b>${ROTULOS[c.status]||c.status}.</b>
         ${t.porque_status}</div>` : ""}
       ${t.origem ? blocoDaOrigem(t.origem) : ""}
@@ -424,9 +441,11 @@ async function detalhe(id){
       <div class="cartao" style="box-shadow:none; border:1px solid var(--borda); border-left:4px solid var(--azul-claro)">
         <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:baseline">
           <div><div class="kpi-rotulo">Categoria de despesa</div>
-            <div style="font-size:15px"><b>${c.categoria}</b></div></div>
+            <div style="font-size:15px"><b>${elo("conta", c.categoria_id, c.categoria)}</b></div></div>
           <div><div class="kpi-rotulo">Obra</div>
-            <div style="font-size:15px"><b>${c.obra || "—"}</b></div></div>
+            <div style="font-size:15px"><b>${
+              (c.obra_ids||[]).length === 1 ? elo("obra", c.obra_ids[0], c.obra)
+                                            : escapar(c.obra || "—")}</b></div></div>
           <div><div class="kpi-rotulo">Competência</div>
             <div style="font-size:15px">${c.competencia}</div></div>
           <div><div class="kpi-rotulo">Dedutibilidade</div>
@@ -460,7 +479,7 @@ async function detalhe(id){
 
       <h4>Rateio por obra</h4><div class="cartao" style="padding:0"><table><thead><tr><th>Obra</th>
         <th class="direita">Valor</th><th class="direita">%</th></tr></thead><tbody>
-        ${t.rateios.map(r=>`<tr><td>${r.obra}</td><td class="direita dados">${numero(r.valor)}</td>
+        ${t.rateios.map(r=>`<tr><td>${elo("obra", r.obra_id, r.obra)}</td><td class="direita dados">${numero(r.valor)}</td>
         <td class="direita dados">${r.percentual.toFixed(2)}%</td></tr>`).join("")}</tbody></table></div>
 
       ${t.retencoes.length?`<h4>Retenções</h4><div class="cartao" style="padding:0"><table><thead><tr><th>Tipo</th>
@@ -504,28 +523,91 @@ async function detalhe(id){
 
       <h4>Histórico — tudo que mudou, quando e por quem</h4>
       <div id="historico" class="cartao-dica">carregando…</div>`;
-    carregarHistorico(id);
+}
 
-    const bAn = els("an-enviar");
+// Liga os botões da ficha. `raiz` é onde ela foi desenhada: a linha que
+// expandiu, ou a janela no caminho do endereço direto.
+function ligarFicha(id, t, raiz){
+    const bFec = raiz.querySelector("#btn-fechar-ficha");
+    if (bFec) bFec.addEventListener("click", () => {
+      const j = els("dlg");
+      if (j && j.open) j.close(); else alternarFicha(id);
+    });
+
+    const bAn = raiz.querySelector("#an-enviar");
     if (bAn) bAn.addEventListener("click", async () => {
-      const arq = els("an-arq").files[0];
+      const arq = raiz.querySelector("#an-arq").files[0];
       if (!arq) { aviso("mensagem","Escolha o arquivo.","erro"); return; }
       const fd = new FormData();
-      fd.append("arquivo", arq); fd.append("categoria", els("an-cat").value);
+      fd.append("arquivo", arq); fd.append("categoria", raiz.querySelector("#an-cat").value);
       try {
         await api(`/erp/api/anexos/titulo/${id}`, {method:"POST", body: fd});
-        aviso("mensagem","Anexo guardado.","ok"); detalhe(id);
+        aviso("mensagem","Anexo guardado.","ok"); recarregarFicha(id);
       } catch(e){ aviso("mensagem", e.message, "erro"); }
     });
 
-    const bRe = els("btn-reclass-detalhe");
+    const bRe = raiz.querySelector("#btn-reclass-detalhe");
     if (bRe) bRe.addEventListener("click", () => {
-      SELECAO.clear(); SELECAO.add(id); els("dlg").close(); reclassificar();
+      const j = els("dlg");
+      if (j && j.open) j.close();
+      SELECAO.clear(); SELECAO.add(id); reclassificar();
     });
 
-    const bParc = els("btn-editar-parc");
+    const bParc = raiz.querySelector("#btn-editar-parc");
     if (bParc) bParc.addEventListener("click", () => editarParcelas(id, t.parcelas));
-    els("dlg").showModal();
+}
+
+function linhaDaFicha(){
+  return `<tr class="linha-detalhe"><td colspan="10"><div class="ficha" id="ficha">
+    <div class="cartao-dica">Abrindo a ficha…</div></div></td></tr>`;
+}
+
+function alternarFicha(id){
+  EXPANDIDO = (EXPANDIDO === id) ? null : id;
+  desenhar();
+  const tr = document.querySelector(`tbody tr[data-id="${id}"]`);
+  if (EXPANDIDO !== null && tr) tr.scrollIntoView({block:"nearest", behavior:"smooth"});
+}
+
+// Desenha o conteúdo da ficha na linha aberta. Guarda o que veio do servidor
+// para não rebuscar a cada redesenho da tabela — marcar uma caixinha de
+// seleção redesenha tudo, e não é motivo para uma consulta nova.
+async function pintarFicha(){
+  const id = EXPANDIDO;
+  if (id === null || !els("ficha")) return;
+  try {
+    if (!FICHA || FICHA.id !== id) {
+      const {titulo} = await api(`/erp/api/titulos/${id}`);
+      FICHA = {id, t: titulo};
+    }
+    if (EXPANDIDO !== id) return;   // trocou de linha enquanto o servidor respondia
+    const raiz = els("ficha");
+    if (!raiz) return;
+    raiz.innerHTML = montarFicha(FICHA.t);
+    ligarFicha(id, FICHA.t, raiz);
+    carregarHistorico(id);
+  } catch(e) {
+    const raiz = els("ficha");
+    if (raiz) raiz.innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+}
+
+function recarregarFicha(id){
+  FICHA = null;
+  if (els("dlg") && els("dlg").open) return fichaNaJanela(id);
+  pintarFicha();
+}
+
+// Endereço direto para um título que os filtros de hoje não mostram: não há
+// linha para expandir, então a ficha abre na janela mesmo.
+async function fichaNaJanela(id){
+  try {
+    const {titulo: t} = await api(`/erp/api/titulos/${id}`);
+    els("dlg-titulo").textContent = `${t.cabecalho.numero_sp} — ${t.cabecalho.fornecedor}`;
+    els("dlg-corpo").innerHTML = montarFicha(t);
+    ligarFicha(id, t, els("dlg-corpo"));
+    carregarHistorico(id);
+    if (!els("dlg").open) els("dlg").showModal();
   } catch(e) { aviso("mensagem", e.message, "erro"); }
 }
 
@@ -753,7 +835,13 @@ document.querySelectorAll("thead th[data-ordem]").forEach(th => th.addEventListe
 // ficha já abre. Mesmo caminho de volta que o financeiro tem para o contrato.
 carregar().then(() => {
   const pedido = new URLSearchParams(location.search).get("titulo");
-  if (pedido) detalhe(+pedido);
+  if (!pedido) return;
+  const id = +pedido;
+  EXPANDIDO = id; desenhar();
+  if (els("ficha")) {
+    const tr = document.querySelector(`tbody tr[data-id="${id}"]`);
+    if (tr) tr.scrollIntoView({block:"center"});
+  } else { EXPANDIDO = null; fichaNaJanela(id); }   // não está na lista de agora
 });
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.

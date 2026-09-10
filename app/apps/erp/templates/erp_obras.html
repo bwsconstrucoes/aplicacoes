@@ -643,7 +643,17 @@ document.querySelectorAll("thead th[data-ordem]").forEach(th=>th.addEventListene
   th.insertAdjacentHTML("beforeend",`<span class="seta"> ${ORDEM.asc?"▲":"▼"}</span>`);
   desenhar();
 }));
-carregar();
+// ENCADEAMENTO: veio de um título, de um contrato ou de um relatório com
+// ?obra=N no endereço — a ficha da obra abre sozinha, sem obrigar a procurar
+// de novo numa lista de dezenas.
+carregar().then(() => {
+  const pedida = new URLSearchParams(location.search).get("obra");
+  if (!pedida) return;
+  const id = +pedida;
+  if (OBRAS.some(o => o.id === id)) abrir(id);
+  else aviso("mensagem", "Esta obra não aparece na sua lista — ou foi apagada, "
+    + "ou está fora das obras que você acompanha.", "erro");
+});
 
 // Excel e PDF do que está na tela, com os filtros no cabeçalho.
 botoesDeExportar("exportar");
