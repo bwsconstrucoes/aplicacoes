@@ -54,6 +54,28 @@ def _aba(planilha_id: str, nome: str):
     return com_retry(lambda: cliente().open_by_key(planilha_id).worksheet(nome))
 
 
+def _abas_existentes(planilha_id: str) -> list[str]:
+    """Os nomes das abas que a planilha REALMENTE tem.
+
+    Serve para o recado: dizer "não achei a aba 'C. Diários'" sem dizer quais
+    existem obriga a pessoa a adivinhar. Se nem isso der para descobrir,
+    devolve lista vazia — o recado fica mais pobre, não vira erro."""
+    try:
+        return [a.title for a in com_retry(
+            lambda: cliente().open_by_key(planilha_id).worksheets())]
+    except Exception:  # noqa: BLE001 — é enfeite do recado, não a resposta
+        return []
+
+
+def _explicar_aba(planilha_id: str, nome: str, erro: Exception) -> str:
+    """Por que não deu para ler esta aba, em português e com o que ajuda."""
+    existentes = _abas_existentes(planilha_id)
+    if existentes and nome not in existentes:
+        return (f'a aba "{nome}" não existe nesta planilha. '
+                f'As que existem são: {", ".join(existentes)}.')
+    return f'não deu para ler a aba "{nome}": {erro}'.strip()
+
+
 def _aba_sps():
     return _aba(PLANILHA_SPS, ABA_SPS)
 
@@ -382,6 +404,7 @@ def sincronizar_apoios(anotar=None) -> dict:
 
     anotar = anotar or (lambda *a, **k: None)
     contas = fiscais = 0
+    avisos: list[str] = []
 
     anotar("trazendo as contas de pagamento")
     try:
@@ -398,8 +421,11 @@ def sincronizar_apoios(anotar=None) -> dict:
                     "       IS DISTINCT FROM EXCLUDED.conta_pagamento", linhas)
                 conn.commit()
             contas = len(linhas)
-    except Exception:  # noqa: BLE001 — apoio que falta não derruba a carga
+        else:
+            avisos.append('a aba "C. Diários" não trouxe nenhuma conta.')
+    except Exception as e:  # noqa: BLE001 — apoio que falta não derruba a carga
         logger.exception("Análise de SPs: falhou ler 'C. Diários'")
+        avisos.append(_explicar_aba(PLANILHA_SPS, "C. Diários", e))
 
     anotar("trazendo a documentação fiscal")
     try:
@@ -416,10 +442,13 @@ def sincronizar_apoios(anotar=None) -> dict:
                     "       IS DISTINCT FROM EXCLUDED.doc_fiscal", linhas)
                 conn.commit()
             fiscais = len(linhas)
-    except Exception:  # noqa: BLE001
+        else:
+            avisos.append(f'a aba "{ABA_FISCAL}" não trouxe nenhum documento.')
+    except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou ler a planilha fiscal")
+        avisos.append(_explicar_aba(PLANILHA_FISCAL, ABA_FISCAL, e))
 
-    return {"contas": contas, "fiscais": fiscais}
+    return {"contas": contas, "fiscais": fiscais, "avisos": avisos}
 
 
 # ---------------------------------------------------------------------------
@@ -561,33 +590,56 @@ def sincronizar_referencias_rateio(anotar=None) -> dict:
     anotar = anotar or (lambda *a, **k: None)
     anotar("trazendo as listas do rateio")
     obras = categorias = 0
+    avisos: list[str] = []
 
+    # POR QUE ESTA FUNÇÃO DEVOLVE O MOTIVO, E NÃO SÓ A LISTA. Em 10/09/2026 o
+    # dono encontrou a tela de Ratear dizendo "as listas ainda não foram
+    # carregadas", apertou o botão que a própria tela mandava apertar, o botão
+    # disse "concluída", e nada mudou. As três causas possíveis — aba com outro
+    # nome, coluna com outro nome, aba vazia — eram engolidas por um `continue`
+    # e por um aviso no log do serviço, que ele não tem como ler.
+    #
+    # Falha silenciosa em botão que a tela manda apertar é armadilha: a pessoa
+    # aperta de novo, e de novo, e conclui que o sistema está quebrado. Agora
+    # cada motivo volta escrito, chega à mensagem da execução e aparece em
+    # Configurações — com os nomes que a planilha REALMENTE tem.
     def _ler(aba_nome, coluna_nome, coluna_codigo):
-        valores = com_retry(_aba(PLANILHA_SPS, aba_nome).get_all_values)
-        if not valores:
-            return []
-        cabecalho = [str(x).strip().lower() for x in valores[0]]
+        """Devolve (linhas, motivo). `motivo` é None quando deu certo."""
         try:
-            i_nome = cabecalho.index(coluna_nome.lower())
-            i_codigo = cabecalho.index(coluna_codigo.lower())
-        except ValueError:
-            logger.warning("Análise de SPs: a aba '%s' não tem as colunas "
-                           "'%s' e '%s'.", aba_nome, coluna_nome, coluna_codigo)
-            return []
+            valores = com_retry(_aba(PLANILHA_SPS, aba_nome).get_all_values)
+        except Exception as e:  # noqa: BLE001
+            return [], _explicar_aba(PLANILHA_SPS, aba_nome, e)
+        if not valores:
+            return [], f'a aba "{aba_nome}" está vazia.'
+        cabecalho = [str(x).strip() for x in valores[0]]
+        minusculas = [c.lower() for c in cabecalho]
+        faltando = [c for c in (coluna_nome, coluna_codigo)
+                    if c.lower() not in minusculas]
+        if faltando:
+            return [], (f'a aba "{aba_nome}" não tem a(s) coluna(s) '
+                        f'{", ".join(chr(34) + c + chr(34) for c in faltando)}. '
+                        f'O cabeçalho dela é: {", ".join(cabecalho) or "(vazio)"}.')
+        i_nome = minusculas.index(coluna_nome.lower())
+        i_codigo = minusculas.index(coluna_codigo.lower())
         saida = []
         for linha in valores[1:]:
             nome = str(linha[i_nome]).strip() if i_nome < len(linha) else ""
             codigo = str(linha[i_codigo]).strip() if i_codigo < len(linha) else ""
             if nome:
                 saida.append((nome, codigo))
-        return saida
+        if not saida:
+            return [], (f'a aba "{aba_nome}" tem as colunas certas, mas nenhuma '
+                        f'linha preenchida em "{coluna_nome}".')
+        return saida, None
 
     for tipo, aba_nome, coluna_nome, coluna_codigo in (
             ("obra", "C. Diários", "Obra", "Código"),
             ("categoria", "Plano Financeiro", "Categoria", "Código")):
         try:
-            linhas = _ler(aba_nome, coluna_nome, coluna_codigo)
-            if not linhas:
+            linhas, motivo = _ler(aba_nome, coluna_nome, coluna_codigo)
+            if motivo:
+                logger.warning("Análise de SPs: rateio — %s", motivo)
+                avisos.append(motivo)
                 continue
             with conexao() as conn:
                 conn.execute(
@@ -604,10 +656,11 @@ def sincronizar_referencias_rateio(anotar=None) -> dict:
                 obras = len(linhas)
             else:
                 categorias = len(linhas)
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             logger.exception("Análise de SPs: falhou ler a aba '%s'", aba_nome)
+            avisos.append(f'falhou gravar o que veio da aba "{aba_nome}": {e}')
 
-    return {"obras": obras, "categorias": categorias}
+    return {"obras": obras, "categorias": categorias, "avisos": avisos}
 
 
 def referencias_rateio() -> dict:

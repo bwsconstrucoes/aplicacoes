@@ -381,6 +381,117 @@ def test_o_botao_continua_trazendo_as_planilhas_de_apoio_na_hora():
     assert tarefas.ETAPAS["carga_inicial"] == ["carga", "apoios", "fila"]
 
 
+# ---------------------------------------------------------------------------
+# O BOTÃO QUE FALHAVA EM SILÊNCIO
+#
+# 10/09/2026: o dono encontrou a tela de Ratear dizendo "as listas ainda não
+# foram carregadas", apertou o botão que a própria tela mandava apertar, o
+# botão disse "concluída", e nada mudou. As três causas possíveis — aba com
+# outro nome, coluna com outro nome, aba vazia — eram engolidas por um
+# `continue` e um aviso no log do serviço, que ele não tem como ler.
+#
+# Botão que a tela manda apertar não pode falhar calado: a pessoa aperta de
+# novo, e de novo, e conclui que o sistema está quebrado.
+# ---------------------------------------------------------------------------
+class AbaFalsa:
+    def __init__(self, valores):
+        self._valores = valores
+
+    def get_all_values(self):
+        return self._valores
+
+
+def _sem_rede(monkeypatch, abas):
+    """Troca a leitura da planilha por um dicionário {nome da aba: linhas}."""
+    from app.apps.analisesps import sincronizacao
+
+    def abrir(planilha_id, nome):
+        if nome not in abas:
+            raise RuntimeError(f"WorksheetNotFound: {nome}")
+        return AbaFalsa(abas[nome])
+
+    monkeypatch.setattr(sincronizacao, "_aba", abrir)
+    monkeypatch.setattr(sincronizacao, "com_retry", lambda f: f())
+    monkeypatch.setattr(sincronizacao, "_abas_existentes",
+                        lambda _id: sorted(abas))
+
+
+def test_a_coluna_com_outro_nome_diz_qual_e_o_cabecalho(monkeypatch):
+    """Sem isto, "não carregou" é tudo o que a pessoa sabe. Com isto, ela vê
+    qual coluna faltou E quais existem — e resolve sozinha na planilha."""
+    from app.apps.analisesps import sincronizacao
+    _sem_rede(monkeypatch, {
+        "C. Diários": [["Centro de Custo", "Cod"], ["OBRA-1", "1"]],
+        "Plano Financeiro": [["Categoria", "Código"], ["Material", "10"]]})
+    from app.apps.analisesps import db
+    monkeypatch.setattr(db, "conexao", lambda: (_ for _ in ()).throw(
+        AssertionError("não devia gravar nada quando a coluna falta")))
+
+    saida = sincronizacao.sincronizar_referencias_rateio()
+
+    assert saida["obras"] == 0
+    aviso = " ".join(saida["avisos"])
+    assert "C. Diários" in aviso
+    assert '"Obra"' in aviso, "tem de dizer QUAL coluna faltou"
+    assert "Centro de Custo" in aviso, "tem de dizer o que a aba TEM"
+
+
+def test_a_aba_com_outro_nome_lista_as_abas_que_existem(monkeypatch):
+    """"Não achei a aba X" sem dizer quais existem obriga a adivinhar."""
+    from app.apps.analisesps import sincronizacao
+    _sem_rede(monkeypatch, {"Diários": [["Obra", "Código"]],
+                            "Plano Financeiro": [["Categoria", "Código"]]})
+
+    saida = sincronizacao.sincronizar_referencias_rateio()
+
+    aviso = " ".join(saida["avisos"])
+    assert "não existe" in aviso
+    assert "Diários" in aviso, "tem de listar as abas que existem"
+
+
+def test_a_aba_certa_e_vazia_tambem_e_dita(monkeypatch):
+    """Colunas certas e nenhuma linha é um caso diferente de coluna errada, e
+    a pessoa vai procurar em lugar diferente."""
+    from app.apps.analisesps import sincronizacao
+    _sem_rede(monkeypatch, {
+        "C. Diários": [["Obra", "Código"]],
+        "Plano Financeiro": [["Categoria", "Código"], ["Material", "10"]]})
+
+    class ConexaoFalsa:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, *a, **k): pass
+        def executemany(self, *a, **k): pass
+        def commit(self): pass
+
+    from app.apps.analisesps import db
+    monkeypatch.setattr(db, "conexao", lambda: ConexaoFalsa())
+
+    saida = sincronizacao.sincronizar_referencias_rateio()
+
+    assert saida["obras"] == 0 and saida["categorias"] == 1
+    assert "nenhuma linha preenchida" in " ".join(saida["avisos"])
+
+
+def test_o_modo_apoios_nao_termina_dizendo_zero_sps():
+    """Este modo não traz SP nenhuma. Terminar com "0 SPs" fazia a tela
+    parecer que nada aconteceu justamente quando algo aconteceu."""
+    from pathlib import Path
+    fonte = Path("app/apps/analisesps/tarefas.py").read_text(encoding="utf-8")
+    assert 'if modo == "apoios"' in fonte
+    assert "recado_apoios" in fonte
+
+
+def test_o_que_veio_e_o_que_nao_veio_chega_a_mensagem_da_execucao():
+    """É a mensagem da execução que a tela de Configurações mostra. O motivo
+    tem de chegar ALI, e não só no log do serviço."""
+    from pathlib import Path
+    fonte = Path("app/apps/analisesps/tarefas.py").read_text(encoding="utf-8")
+    etapa = fonte.split('elif etapa == "apoios"')[1].split("_marcar_etapa_feita")[0]
+    assert "documentação fiscal:" in etapa and "categorias:" in etapa
+    assert 'a.get("avisos")' in etapa and 'r.get("avisos")' in etapa
+
+
 def test_a_barra_de_filtros_traz_as_sete_listas_mais_o_agendamento(monkeypatch):
     """Guardar não pode significar entregar menos do que a tela desenha."""
     from app.apps.analisesps import consultas

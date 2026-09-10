@@ -248,6 +248,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
     inicio = agora()
     ultimo_batimento = [0.0]
     total_linhas = [0]
+    recado_apoios = [""]
 
     # Quem pediu: "tela aberta" é o disparo automático de 5 em 5 minutos;
     # qualquer outra coisa é gente apertando botão. A diferença decide se as
@@ -311,16 +312,42 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                                 "recentes — pulando nesta automática.")
                 else:
                     mudar_etapa("trazendo as planilhas de apoio")
-                    sincronizacao.sincronizar_apoios(anotar)
+                    a = sincronizacao.sincronizar_apoios(anotar)
                     sincronizacao.sincronizar_agenda(anotar)
-                    sincronizacao.sincronizar_referencias_rateio(anotar)
+                    r = sincronizacao.sincronizar_referencias_rateio(anotar)
                     _marcar_apoios_feitos()
+                    # O QUE VEIO, E O QUE NÃO VEIO, VAI PARA A MENSAGEM DA
+                    # EXECUÇÃO — que é o que a tela de Configurações mostra.
+                    # Antes esta etapa terminava dizendo "0 SPs", e um motivo
+                    # que só existia no log do serviço; quem aperta o botão não
+                    # tem como ler log. Ver `sincronizar_referencias_rateio`.
+                    recado_apoios[0] = (
+                        f"documentação fiscal: {a.get('fiscais', 0)} · "
+                        f"contas: {a.get('contas', 0)} · "
+                        f"obras: {r.get('obras', 0)} · "
+                        f"categorias: {r.get('categorias', 0)}")
+                    # SEM REPETIR: a aba "C. Diários" é lida por dois
+                    # caminhos (as contas e as obras). Quando ela falta, as
+                    # duas leituras reclamam a mesma coisa, e o recado saía
+                    # com a frase duplicada.
+                    problemas = list(dict.fromkeys(
+                        (a.get("avisos") or []) + (r.get("avisos") or [])))
+                    if problemas:
+                        recado_apoios[0] += " — " + " ".join(problemas)
 
             _marcar_etapa_feita(execucao_id, etapa)
 
         duracao = (agora() - inicio).total_seconds()
-        mensagem = (f"{total_linhas[0]:,} SPs em {duracao / 60:.1f} min."
-                    .replace(",", "."))
+        if modo == "apoios":
+            # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
+            # parecer que nada aconteceu justamente quando algo aconteceu.
+            mensagem = (recado_apoios[0]
+                        or "planilhas de apoio ainda recentes — nada a refazer.")
+        else:
+            mensagem = (f"{total_linhas[0]:,} SPs em {duracao / 60:.1f} min."
+                        .replace(",", "."))
+            if recado_apoios[0]:
+                mensagem += " Apoio — " + recado_apoios[0]
         logger.info("Análise de SPs: %s concluída — %s", modo, mensagem)
         with conexao() as conn:
             _fechar_execucao(conn, execucao_id, True, mensagem, total_linhas[0])

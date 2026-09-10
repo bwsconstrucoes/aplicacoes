@@ -381,7 +381,12 @@ varredura em vez de várias**, e todas com teste que prende a forma da consulta:
   ainda leva segundos numa internet ruim. Ficam de fora o que sai em fluxo
   (a exportação CSV), o que já vem comprimido e o que é pequeno demais.
 - **O painel do Lote** sai de duas consultas, não oito (`row_number`).
-- **O Relatório** soma as dimensões juntas (`GROUPING SETS`).
+- **O Relatório** soma as dimensões juntas (`GROUPING SETS`). **Cuidado ao
+  mexer nessa consulta:** os parâmetros seguem a ordem do TEXTO do SQL, e o
+  mesmo `CASE` aparece duas vezes (no `SELECT` e dentro do `GROUPING`), com o
+  `WHERE` só depois. Trocar essa ordem faz a tela abrir sem filtro e estourar
+  com filtro — foi o incidente de 10/09/2026. Há onze testes com banco de
+  verdade prendendo isso.
 - **A Auditoria** conta as quatro condições numa consulta (`FILTER`).
 
 E, desde 10/09, três achados que vieram da tela de rede do navegador do dono
@@ -428,6 +433,15 @@ engorda a tabela até ela não caber na memória do banco. Todo
 `ON CONFLICT DO UPDATE` daqui precisa de
 `WHERE <tabela>.coluna IS DISTINCT FROM EXCLUDED.coluna`. Há teste prendendo
 isso nas duas gravações de apoio.
+
+**E quando uma planilha de apoio não vem, a tela DIZ POR QUÊ.** As listas do
+rateio dependem de abas e colunas com nomes exatos ("C. Diários" com "Obra" e
+"Código"; "Plano Financeiro" com "Categoria" e "Código"). Antes, nome trocado
+ou aba vazia viravam lista vazia e um aviso no log do serviço — e o botão
+dizia "concluída". Agora o motivo vai para a mensagem da execução, que
+Configurações mostra: qual aba, qual coluna, e **quais existem de verdade** na
+planilha. Regra que fica: **botão que a tela manda apertar não pode falhar
+calado.**
 
 E as planilhas de apoio (documentação fiscal, contas, agenda, rateio) passam a
 ser relidas **no máximo de hora em hora** no disparo automático — antes eram a
