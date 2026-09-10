@@ -9,6 +9,7 @@
 # ============================================================================
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import date, timedelta
@@ -4661,6 +4662,119 @@ def api_arquivo_ler():
     except Exception as e:
         logger.exception("ERP/arquivo: falha na leitura automática")
         return jsonify({"ok": False, "erro": f"Não deu para ler o documento: {e}"}), 500
+
+
+# ---------------------------------------------------------------------------
+# DOCUMENTO DA OBRA: arquivar e preencher o cadastro num gesto só
+#
+# Pedido do dono em 10/09/2026, e o princípio que ele tirou dele: *"matariamos
+# duas ações... cadastros e arquivo estarem associados quando fizer sentido"*.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/obras/<int:obra_id>/documento/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_obra_documento_ler(obra_id: int):
+    """Lê o documento e diz o que ele arquivaria E o que preencheria. Não grava."""
+    from app.apps.erp.core.arquivo import leitura, preenchimento
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    try:
+        conteudo = f.read()
+        with get_session() as s:
+            exigir_obra_no_escopo(s, _usuario_logado(s), obra_id)
+            sugestao = leitura.sugerir(
+                s, conteudo, f.filename or "arquivo",
+                dica=(request.form.get("dica") or ""),
+                extracao=preenchimento.instrucao_de_extracao())
+            # O dono é a obra em que a pessoa está — não se deduz de novo. E o
+            # nome do arquivo sai DELA, senão a prévia promete um nome e o
+            # arquivamento entrega outro.
+            sugestao["obra_id"] = obra_id
+            sugestao["nome_original"] = f.filename or "arquivo"
+            sugestao["nome_sugerido"] = preenchimento.nome_para_obra(
+                s, obra_id, sugestao)
+            cadastro = preenchimento.sugerir_para_obra(
+                s, obra_id, sugestao.get("tipo_codigo") or "", sugestao)
+        return jsonify({"ok": True, "sugestao": sugestao, "cadastro": cadastro})
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP/obras: falha ao ler o documento da obra %s", obra_id)
+        return jsonify({"ok": False, "erro": f"Não deu para ler o documento: {e}"}), 500
+
+
+@bp.route("/erp/api/obras/<int:obra_id>/documento", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_obra_documento_guardar(obra_id: int):
+    """Arquiva o documento E preenche os campos confirmados, numa transação só.
+
+    Se o preenchimento falhar, o arquivamento vai junto: guardar o arquivo e
+    deixar o cadastro pela metade seria o pior dos dois mundos — a pessoa
+    acharia que tinha feito e não teria.
+    """
+    from app.apps.erp.core.arquivo import preenchimento
+    from app.apps.erp.core.arquivo import service as svc_arq
+    from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    tipo = (request.form.get("tipo") or "").strip().upper()
+    if not tipo:
+        return jsonify({"ok": False, "erro": "Escolha o tipo do documento."}), 400
+
+    def _data(nome):
+        try:
+            return date.fromisoformat(request.form.get(nome) or "")
+        except ValueError:
+            return None
+
+    def _comp():
+        bruto = (request.form.get("competencia") or "").strip()
+        try:
+            return date.fromisoformat(bruto + "-01") if len(bruto) == 7 else None
+        except ValueError:
+            return None
+
+    campos = json.loads(request.form.get("campos") or "{}")
+    aditivo = json.loads(request.form.get("aditivo") or "null")
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_obra_no_escopo(s, usuario, obra_id)
+            d = svc_arq.arquivar(
+                s, f.read(), f.filename or "arquivo", tipo_codigo=tipo,
+                obra_id=obra_id, competencia=_comp(),
+                referencia=(request.form.get("referencia") or ""),
+                emissao=_data("emissao"), validade=_data("validade"),
+                observacao=(request.form.get("observacao") or ""),
+                texto=(request.form.get("texto") or ""),
+                resumo=(request.form.get("resumo") or ""),
+                origem="IA", usuario=usuario)
+            preenchido = preenchimento.aplicar_na_obra(
+                s, obra_id, campos, tipo_codigo=tipo, documento_id=d.id,
+                usuario=usuario)
+            novo_aditivo = None
+            if aditivo:
+                a = preenchimento.criar_aditivo(
+                    s, obra_id, aditivo, anexo_id=d.anexo_id, usuario=usuario)
+                novo_aditivo = {"id": a.id, "numero": a.numero, "tipo": a.tipo,
+                                "valor": float(a.valor), "dias": a.dias}
+            linha = svc_arq.ler(s, d)
+            s.commit()
+        return jsonify({"ok": True, "documento": linha,
+                        "preenchido": preenchido, "aditivo": novo_aditivo})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
 
 
 @bp.route("/erp/api/arquivo/<int:documento_id>", methods=["DELETE"])

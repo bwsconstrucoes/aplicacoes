@@ -471,6 +471,33 @@ perder. Quando ele retomar, o que já existe e serve de base: o `chatbot` e o
 IA com teto (migração 030) e o agente de cobrança (migração 040), que já é um
 robô que fala com pessoas por WhatsApp a partir de pendência do banco.
 
+### Cadastro e arquivo juntos — princípio dado pelo dono em 10/09/2026
+
+Palavras dele: *"gostaria que o sistema já preenchesse os campos de cadastro de
+obra e ainda arquivasse o arquivo. Dessa forma não perco tempo"* — e a
+generalização, que é o que importa: *"matariamos duas ações... Esse é um
+princípio inclusive que deveríamos ampliar para o sistema como um todo. E já
+estamos adotando, por exemplo na parte do financeiro essa leitura e deveremos
+seguir pra parte de colaboradores. Cadastros e arquivo estarem associados
+quando fizer sentido."*
+
+- [x] **OBRA** — FEITO em 10/09/2026. Na aba Documentos da obra: joga o
+      arquivo, o sistema lê, arquiva com nome padronizado E mostra o que
+      preencheria no cadastro, campo a campo. Cada tipo de documento só
+      preenche o que ele PROVA (matrícula → CNO; ART → responsável técnico;
+      contrato → valor, vigência, data-base, índice; OS → ordem de serviço;
+      apólice → seguro). Termo aditivo vira REGISTRO de aditivo, não
+      sobrescreve o contrato. Campo em branco entra marcado; campo com valor
+      diferente entra desmarcado, com os dois lados à vista.
+- [ ] **COLABORADORES** — o próximo, pedido por ele na mesma mensagem. Mesma
+      mecânica: jogar o RG/CPF, a ficha de registro, o ASO ou o certificado de
+      NR e ter cadastro e arquivo resolvidos juntos. A peça genérica já existe
+      (`core/arquivo/preenchimento.py`): falta a lista de campos por tipo do
+      lado de pessoas e a área na tela.
+- [ ] **FORNECEDOR** — o cartão CNPJ e o contrato social preencheriam o
+      cadastro do parceiro. Menos urgente: a consulta à Receita já resolve a
+      maior parte disso desde 10/09/2026.
+
 ## Decisões registradas
 
 | Assunto | Decisão |

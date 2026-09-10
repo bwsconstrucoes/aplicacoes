@@ -2144,6 +2144,61 @@ certificado digital virou aviso (migração 053), a lista de origens do filtro d
 agenda ficou para trás e o aviso novo não tinha como ser filtrado. Nada
 quebrou, então ninguém viu. Agora a lista sai do servidor, de um lugar só.
 
+### Cadastro e arquivo, num gesto só — 10/09/2026
+
+Pedido do dono, e mais do que um pedido: um princípio para o sistema inteiro.
+*"Matariamos duas ações. Assim não precisaria cadastrar dados e noutra
+circunstância arquivar documentos. (…) Cadastros e arquivo estarem associados
+quando fizer sentido."*
+
+A obra é o primeiro caso. Na aba Documentos da obra existe agora uma área de
+**jogar o documento**: o sistema lê, arquiva com nome padronizado e mostra, na
+mesma tela, o que ele preencheria no cadastro — campo a campo, com um botão só
+no fim ("Arquivar e preencher").
+
+Três regras estão no código e não se mudam sem motivo:
+
+1. **Cada tipo de documento só preenche o que ele PROVA.** Uma licença
+   ambiental não define valor de contrato, por mais que a IA leia um número lá
+   dentro. A lista por tipo é uma TRAVA: o que não está nela não é gravado nem
+   que a tela mande. Matrícula → CNO e endereço; ART → ART, responsável
+   técnico e CREA; contrato → número, valor, objeto, contratante, vigência,
+   prazo, data-base, índice, retenção; OS → ordem de serviço e início; apólice
+   → seguro e vigência. Diário de obra e projeto não preenchem nada, e a tela
+   diz isso em vez de ficar calada.
+2. **O que já está preenchido não é sobrescrito sozinho.** Campo em branco
+   entra marcado; campo com valor diferente vira CONFLITO, entra desmarcado e
+   mostra os dois lados. Trocar calado o que a pessoa digitou é a maneira mais
+   rápida de o sistema perder a confiança dela. Valor igual escrito de outro
+   jeito ("AV. BRASIL, 100" e "Av Brasil 100") nem aparece para decidir.
+3. **Quem grava é a pessoa**, e com o valor que ELA confirmou — ela pode ter
+   corrigido a caixinha antes de gravar.
+
+**O termo aditivo é caso à parte:** vira REGISTRO de aditivo, não sobrescreve o
+contrato. O valor vigente é o original mais os aditivos, e é essa história que
+o órgão pergunta quando questiona a medição. A vigência, sim, se atualiza —
+porque é ela que manda nos alertas. Aditivo sem número é recusado, e o mesmo
+número duas vezes também.
+
+**Arquivar e preencher acontecem na MESMA transação.** Guardar o arquivo e
+deixar o cadastro pela metade seria o pior dos dois mundos: a pessoa acharia
+que fez e não teria feito.
+
+Detalhe pequeno que foi consertado no caminho: a prévia do nome do arquivo
+prometia um nome e o arquivamento entregava outro (a leitura resolvia o dono
+pelo NOME da obra, e o padrão usa o CÓDIGO). Agora a prévia sai da obra em que
+a pessoa está.
+
+⚠️ **A chamada real à IA continua sem prova aqui** — não há chave neste
+ambiente. O caminho inteiro foi exercitado no navegador com a leitura dublada:
+ler um contrato, ver treze campos propostos (oito marcados, cinco em conflito),
+gravar, e conferir no banco que só os oito entraram e que o documento ficou
+arquivado com texto e trilha.
+
+**O próximo da lista é colaboradores**, que ele pediu na mesma mensagem. A peça
+genérica já está pronta em `core/arquivo/preenchimento.py`: falta a lista de
+campos por tipo do lado de pessoas e a área na tela.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
