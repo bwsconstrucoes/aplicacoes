@@ -234,6 +234,153 @@ def test_uma_carga_nova_refaz_as_listas(monkeypatch):
     assert len(idas) == 2 * len(consultas.COLUNAS_DE_FILTRO)
 
 
+# ---------------------------------------------------------------------------
+# CONTAR AS SPs UMA VEZ POR CARGA, E NÃO UMA VEZ POR TELA
+#
+# `count(*)` no Postgres percorre a tabela inteira, e `base_carregada()` é
+# chamada em TODA tela. Na produção, medido pelo dono em 09/09/2026, a rotina
+# que só pergunta a hora da base levou 1,4 segundo — e ela não fazia nada além
+# desta contagem. Mesmo tipo de correção das listas de filtro acima, e pelo
+# mesmo motivo: o efeito só aparece com a base cheia, e aí é tarde.
+# ---------------------------------------------------------------------------
+def test_a_base_nao_e_contada_de_novo_enquanto_a_carga_for_a_mesma(monkeypatch):
+    from app.apps.analisesps import consultas
+
+    contagens = []
+
+    def falso_consultar(sql, params=()):
+        if "count(*)" in sql:
+            contagens.append(sql)
+            return [(59055,)]
+        return [("ultima_sincronizacao", "2026-09-09T10:00:00"),
+                ("quantidade", "59055"),
+                ("quantidade_em", "2026-09-09T10:00:00")]
+
+    from app.apps.analisesps import db
+    monkeypatch.setattr(db, "consultar", falso_consultar)
+
+    resposta = consultas.base_carregada()
+
+    assert resposta["quantidade"] == 59055
+    assert resposta["pronta"] is True
+    assert not contagens, "percorreu a tabela tendo a contagem guardada"
+
+
+def test_uma_carga_nova_manda_contar_de_novo(monkeypatch):
+    """A contagem vale para a carga em que foi feita. Carga nova, número novo
+    — senão a tela mostraria para sempre o total do dia em que foi contado."""
+    from app.apps.analisesps import consultas
+
+    contagens = []
+    gravados = []
+
+    def falso_consultar(sql, params=()):
+        if "count(*)" in sql:
+            contagens.append(sql)
+            return [(59100,)]
+        return [("ultima_sincronizacao", "2026-09-09T11:00:00"),
+                ("quantidade", "59055"),
+                ("quantidade_em", "2026-09-09T10:00:00")]   # carga anterior
+
+    class ConexaoFalsa:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, sql, params=()): gravados.append(params)
+        def commit(self): pass
+
+    from app.apps.analisesps import db
+    monkeypatch.setattr(db, "consultar", falso_consultar)
+    monkeypatch.setattr(db, "conexao", lambda: ConexaoFalsa())
+
+    resposta = consultas.base_carregada()
+
+    assert resposta["quantidade"] == 59100
+    assert len(contagens) == 1
+    # E guarda o número novo, para a próxima tela não contar outra vez.
+    assert ("quantidade", "59100") in gravados
+    assert ("quantidade_em", "2026-09-09T11:00:00") in gravados
+
+
+def test_a_carga_anota_quantas_sps_ficaram_na_base():
+    """Quem conta é o processo separado, onde um segundo a mais não incomoda
+    ninguém. Assim nem a PRIMEIRA tela depois de uma carga precisa contar."""
+    from app.apps.analisesps import sincronizacao
+
+    gravados = {}
+
+    class CursorFalso:
+        def fetchone(self): return (59055,)
+        def close(self): pass
+
+    class ConexaoFalsa:
+        def execute(self, sql, params=()):
+            if params:
+                gravados[params[0]] = params[1]
+            return CursorFalso()
+        def commit(self): pass
+
+    sincronizacao._anotar_a_base_em_dia(ConexaoFalsa())
+
+    assert gravados["quantidade"] == "59055"
+    assert gravados["quantidade_em"] == gravados["ultima_sincronizacao"]
+
+
+def test_a_carga_inicial_tambem_anota_a_hora_da_base():
+    """Antes só a sincronização do dia anotava. Uma carga acabada de rodar É a
+    base em dia — sem isto o relógio do alto ficava mudo justamente no dia da
+    estreia, que é quando ninguém sabe se deu certo."""
+    from pathlib import Path
+    fonte = Path("app/apps/analisesps/sincronizacao.py").read_text(encoding="utf-8")
+    depois_da_carga = fonte.split("carga inicial concluída")[0]
+    assert "_anotar_a_base_em_dia" in depois_da_carga
+
+
+# ---------------------------------------------------------------------------
+# AS PLANILHAS DE APOIO NÃO SÃO REESCRITAS À TOA
+#
+# Descoberto em 10/09/2026 na tela do banco de produção: a gravação da
+# documentação fiscal era a consulta MAIS CHAMADA de todo o banco — 14,3
+# milhões de vezes, 34 minutos de processador num banco que tem um décimo de
+# um núcleo. Ela reescrevia todas as linhas a cada sincronização, mesmo sem
+# nada ter mudado, e cada reescrita deixa lixo que engorda a tabela.
+# ---------------------------------------------------------------------------
+def test_a_documentacao_fiscal_so_e_gravada_quando_muda():
+    """No Postgres, reescrever uma linha com o mesmo valor não é de graça:
+    deixa a versão antiga como lixo. `IS DISTINCT FROM` faz o banco pular a
+    gravação quando o valor é o mesmo, com resultado final idêntico."""
+    from pathlib import Path
+    fonte = Path("app/apps/analisesps/sincronizacao.py").read_text(encoding="utf-8")
+    trecho = fonte.split("def sincronizar_apoios")[1].split("\ndef ")[0]
+    assert "sp_fiscal.doc_fiscal" in trecho and "IS DISTINCT FROM" in trecho
+    assert "contas_diarios.conta_pagamento" in trecho
+
+
+def test_a_automatica_nao_rele_as_planilhas_de_apoio_a_cada_5_minutos(monkeypatch):
+    """Elas mudam raramente, e cada passagem baixa a planilha inteira do
+    Google. A trava vale SÓ para o disparo automático — botão continua
+    imediato."""
+    from app.apps.analisesps import tarefas
+
+    monkeypatch.setattr(tarefas, "_apoios_recentes", lambda: True)
+    assert tarefas.MINUTOS_ENTRE_APOIOS_AUTOMATICOS >= 60
+
+    from pathlib import Path
+    fonte = Path("app/apps/analisesps/tarefas.py").read_text(encoding="utf-8")
+    etapa = fonte.split('elif etapa == "apoios"')[1].split("_marcar_etapa_feita")[0]
+    assert "automatica and _apoios_recentes()" in etapa, (
+        "a trava tem de valer só para o disparo automático")
+
+
+def test_o_botao_continua_trazendo_as_planilhas_de_apoio_na_hora():
+    """Quem aperta o botão quer o dado AGORA. Se a trava valesse para ele
+    também, não haveria como forçar a releitura — e o modo 'Só as planilhas de
+    apoio' viraria mentira."""
+    from app.apps.analisesps import tarefas
+    assert "apoios" in tarefas.MODOS
+    assert tarefas.ETAPAS["apoios"] == ["apoios"]
+    assert tarefas.ETAPAS["carga_inicial"] == ["carga", "apoios", "fila"]
+
+
 def test_a_barra_de_filtros_traz_as_sete_listas_mais_o_agendamento(monkeypatch):
     """Guardar não pode significar entregar menos do que a tela desenha."""
     from app.apps.analisesps import consultas

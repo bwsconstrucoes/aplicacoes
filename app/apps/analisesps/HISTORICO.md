@@ -1058,6 +1058,220 @@ cronometrar a produção. Todos os números aqui são locais, com o banco na mes
 máquina. A diferença entre eles e o que o dono sente é justamente onde mora o
 que falta descobrir.
 
+### Vigésima segunda leva (10/09) — a primeira medição da PRODUÇÃO
+
+O dono mandou **a tela de rede do navegador dele**, aberta na produção. É a
+primeira vez que esta área tem número de lá em vez de número desta máquina — e
+ela mudou o diagnóstico em três pontos.
+
+**O que a tela dele provou que estava CERTO:**
+
+- **Solicitações vem do cache, "0 ms".** A correção do menu da leva anterior
+  funcionou. A dúvida dele era legítima e a resposta é: funcionou, sim.
+- **A compressão funciona.** O Lote aparece com 41 kB trafegados para 403 kB
+  de página.
+
+**O que a tela dele mostrou de errado, e foi corrigido:**
+
+| O que aparecia | Custo | Correção |
+|---|---|---|
+| `analisesps.css` e `analisesps.js` respondendo "não mudou nada" | 402 ms + 423 ms **em toda tela** | valem um ano e `immutable`; o endereço carrega a versão publicada |
+| `favicon.ico` dando 404 | uma ida perdida por tela | uma linha no cabeçalho |
+| a rotina que pergunta a hora da base | **1.463 ms** | lê só o carimbo — 6 ms medidos |
+| o Lote | 2.828, 2.936 e 4.055 ms | ver abaixo |
+
+**A CONTAGEM DA BASE, que era o custo escondido em TODA tela.** Aqueles
+1.463 ms da rotina da hora não tinham como vir de outro lugar: ela só fazia
+duas coisas, e uma delas era `SELECT count(*) FROM analisesps.sps`. No
+Postgres isso **percorre a tabela inteira** — e `base_carregada()` é chamada
+por toda tela do módulo, para saber se a base foi carregada e para escrever
+"de 59.055 na base" embaixo do total.
+
+Nesta máquina a mesma contagem custa **5 ms**. A diferença é o banco de lá: a
+base é reescrita a cada carga, e as linhas mortas ficam ocupando espaço até o
+faxineiro automático do Postgres passar — a tabela que ele percorre é muito
+maior do que as 59 mil linhas vivas.
+
+A correção é a mesma ideia das listas de filtro, e pelo mesmo motivo:
+**contar uma vez por carga, não uma vez por tela**. Quem conta agora é a carga
+e a sincronização, no processo separado onde um segundo a mais não incomoda
+ninguém; o número fica em `analisesps.meta` junto da hora a que se refere.
+Conferido: **nenhuma das seis telas percorre a tabela para contar**, e há
+teste que falha se voltar a percorrer.
+
+> **De brinde, um defeito pequeno que ninguém tinha reportado:** a carga
+> inicial não anotava a hora — só a sincronização do dia anotava. Quem fizesse
+> a primeira carga via "base de —" no alto até a primeira sincronização
+> passar, justamente no dia em que ninguém sabe se deu certo. Agora as duas
+> anotam.
+
+> **O limite, dito sem rodeio:** se alguém acrescentar ou apagar linhas POR
+> FORA da carga e da sincronização, o número mostrado fica velho até a
+> próxima. Hoje ninguém faz isso — a fila de volta altera SPs que já existem,
+> não cria nem remove.
+
+**O LOTE PASSOU A FICAR GUARDADO NO NAVEGADOR.** Era metade da ida e volta que
+o dono reclamava (*"permaneceu a demora entre o Lote e as Solicitações"*): as
+Solicitações já ficavam guardadas, o Lote não, então o caminho continuava
+lento numa das direções.
+
+Ele tinha ficado de fora **de propósito**, e a razão continua válida: é tela
+que recebe alteração no próprio endereço. O que mudou é que agora há duas
+travas, e só com as duas isso deixa de ser aposta:
+
+1. A tela que volta de uma salvada traz `?aviso=` e **não** é guardada. Senão
+   o recado de "salvo" reapareceria minutos depois, dizendo que algo acabou de
+   acontecer quando não aconteceu.
+2. A tela carrega **a hora em que o lote foi salvo**, e o navegador compara
+   com a última que viu. Se a cópia guardada for anterior à última salvada,
+   ela se recarrega sozinha, uma vez.
+
+> **Por que a trava 2 existe, se a regra do HTTP já cobre isso.** A regra diz
+> que um POST apaga a cópia guardada daquele endereço, e todo salvamento do
+> Lote é um POST para o próprio endereço. Mas o preço de o navegador não
+> cumprir seria a pessoa ver o lote SEM o que acabou de fazer e salvar por
+> cima do próprio trabalho. Isso não se aposta em regra alheia. A recarga só
+> dispara quando a tela veio DO CACHE (conferido pelo tamanho trafegado) —
+> sem essa condição, a tela que volta de uma salvada se recarregaria à toa a
+> cada salvamento.
+
+**Medido aqui, com as 59.055 SPs e um lote de 150 SPs** (o banco na mesma
+máquina, então os números absolutos não são os de lá):
+
+| Tela | Tempo | Idas ao banco | Página |
+|---|---|---|---|
+| Solicitações | 208 ms | 7 (era 10) | 429 KB → ~27 KB comprimida |
+| Lote | 176 ms | 7 (era 8) | 471 KB → ~45 KB comprimida |
+| Relatório | 317 ms | 7 (era 9) | 72 KB |
+| Auditoria | 194 ms | 5 (era 6) | 7 KB |
+
+Uma ida a menos por tela é a contagem que saiu. **Aqui isso quase não aparece
+no relógio — são 5 ms.** É lá que vale 1,4 segundo, e é honesto dizer que
+essa parte NÃO foi medida na produção.
+
+**O QUE CONTINUA EM ABERTO, e é onde eu apostaria o próximo olhar.** Os 2,8 a
+4,0 segundos do Lote na produção **não são explicados** pelo que consigo ver:
+41 kB comprimidos não levam três segundos, e sete consultas num banco na mesma
+região também não. Sobram três suspeitos, nenhum deles verificável daqui:
+
+1. **A partida do serviço.** Já anotada na leva anterior: `--max-requests 150`
+   com `--workers 1` faz o worker reiniciar a cada ~150 requisições, e subir
+   custa 1,7 s nesta máquina. É decisão do dono, e o primeiro passo é
+   conferir se a produção roda com o `Procfile` ou com o *Start Command* do
+   Render.
+2. **O banco de lá**, pelo mesmo motivo que fazia a contagem custar 1,4 s. Se
+   for isso, a contagem que saiu já ajuda, e o resto some com uma faxina
+   (`VACUUM FULL` / `REINDEX`) — que não é coisa para fazer sem combinar,
+   porque tranca a tabela enquanto roda.
+3. **O tamanho da página do Lote**: 471 KB crus com 150 SPs no lote mais os 80
+   do painel por status. Comprimida é pouco na rede, mas o navegador ainda
+   monta ~230 linhas de vinte colunas. Dá para carregar o painel só depois da
+   tela aparecer — **não foi feito**, porque muda o que a pessoa vê ao abrir e
+   a regra da casa é fazer como o Streamlit fazia.
+
+**NÃO VERIFICADO, e é o mesmo limite de sempre:** o proxy desta máquina
+bloqueia o domínio da empresa. Todos os tempos são locais. E as duas travas do
+Lote guardado são JavaScript — os testes conferem que o código está lá, não
+que o navegador obedece. **É a primeira coisa a conferir na tela:** salvar o
+lote, ir às Solicitações, voltar, e ver se o que foi salvo está lá.
+
+### E a resposta apareceu no mesmo dia: o banco tem um décimo de um núcleo
+
+Ainda em 10/09, o dono mandou as métricas do serviço de banco (`erp-db`). Elas
+fecham a investigação, e o achado é maior do que esta área:
+
+| | Limite do plano | Uso observado |
+|---|---|---|
+| CPU | **0,1 CPU** — um décimo de um núcleo | picos de 0,06 a 0,08: **60% a 80% do limite** |
+| Memória | **0,25 GB** | 100 a 230 MB — **encostando no teto** |
+| Disco | 1 GB | ~430 MB |
+
+**São 430 MB de dados para 250 MB de memória.** Os dados não cabem, e o
+Postgres ainda precisa de parte dela para outras coisas. Toda varredura da
+tabela de SPs vai ao **disco** — sempre, não há cache que a segure. E vai ao
+disco com um décimo de um núcleo, com o banco já estrangulado nos picos.
+
+Isso explica os 1.463 ms da contagem sem sobrar nada: aqui, com 4 núcleos e o
+dado quente na memória, a mesma consulta custa 5 ms. E explica os 2,8 a 4,0
+segundos do Lote, que faz várias varreduras.
+
+> **A conclusão que muda a estratégia desta área:** o trabalho de tirar
+> varreduras — feito nas levas 14, 18 e 22 — **valeu, e vale ainda mais neste
+> banco do que valeria num banco folgado**. Mas há um teto: nenhuma
+> otimização de consulta torna rápida uma leitura de disco com 0,1 CPU. Dá
+> para diminuir o NÚMERO de varreduras, não para torná-las rápidas.
+>
+> **Antes de gastar mais esforço aqui, subir o plano do banco tem efeito
+> maior.** É decisão do dono, e o banco serve ERP, painel e esta área juntos —
+> está registrado em `CONTEXTO.md` › "Histórico de decisões".
+
+**Se o plano NÃO subir, o que ainda dá para fazer daqui**, em ordem de
+proveito: (1) o painel por status do Lote sai numa varredura da tabela inteira
+— um índice sob medida a transformaria em leitura de índice; (2) carregar esse
+painel só depois da tela aparecer, para o lote em si abrir na hora; (3) as
+contagens do topo das Solicitações, que também varrem. Nenhuma das três foi
+feita, e as três são mais arriscadas do que o que já está aqui.
+
+**Não verificado:** os números vieram da tela do Render, lida numa imagem. Os
+testes não alcançam o banco de produção, então o tamanho de cada tabela lá
+dentro não foi conferido.
+
+### E aí a tela do banco entregou o culpado: 14,3 MILHÕES de gravações
+
+Na mesma leva o dono mandou a aba de consultas do banco. A lista de "quem mais
+chama" é a coisa mais reveladora que esta área já teve:
+
+| Consulta | Chamadas | Tempo total |
+|---|---|---|
+| `INSERT ... analisesps.sp_fiscal` | **14.328.805** | 34 min 30 s |
+| `INSERT ... analisesps.sps` | 662.556 | 11 min 27 s |
+| `INSERT ... rateio` (painel) | 388.029 | 44 s |
+
+**A documentação fiscal é, disparada, a consulta mais chamada de todo o
+banco** — vinte e uma vezes mais que a gravação das próprias SPs. E são só uns
+15 a 20 mil registros.
+
+**A causa, e ela é uma linha de SQL.** `sincronizar_apoios()` lia a planilha
+fiscal inteira e gravava TODAS as linhas, sempre — com `ON CONFLICT DO UPDATE`
+sem condição nenhuma. Como essa etapa roda em toda sincronização, e a
+sincronização é disparada de 5 em 5 minutos por quem estiver com a tela
+aberta, o resultado é dezenas de milhares de gravações a cada cinco minutos
+para reescrever exatamente os mesmos valores.
+
+> **E no Postgres reescrever com o mesmo valor NÃO é de graça.** Cada
+> reescrita deixa a versão antiga como lixo, para o faxineiro automático
+> recolher depois. Dezenas de milhares de linhas de lixo a cada cinco minutos
+> é o que engorda a tabela até ela não caber mais na memória do banco —
+> **exatamente a lentidão que se estava caçando**. O sintoma e a causa se
+> alimentavam.
+
+**Duas correções:**
+
+1. **`WHERE ... IS DISTINCT FROM`** nas duas gravações de apoio (documentação
+   fiscal e contas por centro de custo): o banco só grava quando o valor mudou
+   de verdade. Resultado final idêntico; o que some é o trabalho inútil.
+   **Conferido contra um Postgres de verdade** olhando a versão interna de
+   cada linha: a que não mudou continua com a versão original — não foi
+   tocada; a que mudou ganhou versão nova. E o contador de atualizações do
+   banco marca **uma**, não duas.
+
+2. **A sincronização automática relê as planilhas de apoio no máximo de hora
+   em hora**, e não a cada cinco minutos. Elas são dado de apoio — mudam
+   raramente — e cada passagem ainda baixa a planilha inteira do Google, na
+   instância de 2 GB que já morreu de memória uma vez. **A trava vale só para
+   o disparo automático:** o botão de atualizar e o modo "Só as planilhas de
+   apoio" continuam imediatos, e há teste prendendo isso.
+
+> **O que fica em aberto por escolha:** um documento fiscal cadastrado na
+> planilha pode levar até uma hora para aparecer, se ninguém apertar o botão.
+> Antes eram cinco minutos. É dado de apoio, e o caminho imediato continua
+> existindo — mas está escrito aqui para não ser descoberto por susto.
+
+**A ordem de grandeza do que isso devolve:** eram 14,3 milhões de gravações e
+34 minutos de processador num banco que tem **um décimo de um núcleo**. Some
+quase tudo. É, de longe, a maior economia desta sessão — e não veio de medir a
+tela, veio de olhar o que o banco estava fazendo.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
