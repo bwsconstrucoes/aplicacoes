@@ -394,3 +394,152 @@ def test_a_previa_diz_o_que_criaria_sem_criar(sessao_insumos, admin):
     assert rel["simulacao"] is True
     assert not [o for o in sessao_insumos.adicionados
                 if isinstance(o, InsumoCategoria)], "prévia não grava"
+
+
+# ---------------------------------------------------------------------------
+# A planilha de 3.279 insumos (10/09/2026): Excel direto, e a marca de locável
+#
+# O dono mandou a base completa de insumos em .xlsx, com uma coluna
+# "Subcategoria" que diz LOCAÇÃO nos itens que se alugam: *"são insumos
+# locáveis, que eu quero que eles sejam exibidos lá na parte de locação, pra
+# não ter que aparecer por exemplo cimento, que não se loca cimento"*.
+#
+# São duas coisas diferentes e as duas precisam funcionar: ler o Excel sem o
+# passo do "salvar como CSV" (que ninguém lembra de fazer) e transformar a
+# palavra "Locação" na marca que a tela de Locações lê.
+# ---------------------------------------------------------------------------
+def _xlsx_insumos(*linhas: tuple) -> bytes:
+    """Uma planilha Excel de verdade, montada em memória."""
+    import io
+
+    from openpyxl import Workbook
+
+    pasta = Workbook()
+    aba = pasta.active
+    aba.append(("Linha origem", "Insumo", "Categoria do Insumo",
+                "Subcategoria", "Plano Financeiro"))
+    for i, linha in enumerate(linhas, start=1):
+        aba.append((i, *linha))
+    buf = io.BytesIO()
+    pasta.save(buf)
+    return buf.getvalue()
+
+
+def test_le_a_planilha_em_excel_sem_precisar_converter_para_csv(sessao_insumos, admin):
+    conteudo = _xlsx_insumos(
+        ("Pó de Pedra", "Agregados", "", "Agregados (Areia, Brita, Arisco)"))
+
+    rel = importar_insumos_csv(sessao_insumos, conteudo, admin)
+
+    assert rel["no_arquivo"] == 1
+    assert rel["criados"] == 1
+    insumo = next(o for o in sessao_insumos.adicionados if isinstance(o, Insumo))
+    assert insumo.descricao == "Pó de Pedra"
+    assert insumo.categoria_id == 50, "a conta do plano tem de ter sido casada"
+
+
+def test_linha_em_branco_no_fim_da_planilha_nao_vira_insumo(sessao_insumos, admin):
+    """Planilha de Excel quase sempre tem linhas vazias sobrando embaixo."""
+    import io
+
+    from openpyxl import Workbook
+
+    pasta = Workbook()
+    aba = pasta.active
+    aba.append(("Insumo", "Categoria do Insumo", "Subcategoria", "Plano Financeiro"))
+    aba.append(("Pó de Pedra", "Agregados", "", "Agregados (Areia, Brita, Arisco)"))
+    aba.append((None, None, None, None))
+    aba.append((None, None, None, None))
+    buf = io.BytesIO()
+    pasta.save(buf)
+
+    rel = importar_insumos_csv(sessao_insumos, buf.getvalue(), admin)
+
+    assert rel["no_arquivo"] == 1
+
+
+def test_subcategoria_locacao_marca_o_insumo_como_locavel(sessao_insumos, admin):
+    """É esta marca que decide o que aparece na tela de Locações."""
+    conteudo = _xlsx_insumos(
+        ("Andaime fachadeiro", "Andaimes e Escoramentos", "Locação",
+         "Agregados (Areia, Brita, Arisco)"),
+        ("Cimento CP-II", "Agregados", "", "Agregados (Areia, Brita, Arisco)"))
+
+    rel = importar_insumos_csv(sessao_insumos, conteudo, admin)
+
+    insumos = {o.descricao: o for o in sessao_insumos.adicionados
+               if isinstance(o, Insumo)}
+    assert insumos["Andaime fachadeiro"].locavel is True
+    # `is False` não serve: o padrão da coluna só é aplicado ao gravar, então
+    # em memória o insumo que a planilha não marcou fica com `None`.
+    assert not insumos["Cimento CP-II"].locavel, "não se aluga cimento"
+    assert rel["marcados_locaveis"] == 1
+
+
+def test_a_previa_ja_diz_quantos_iriam_para_a_tela_de_locacoes(sessao_insumos, admin):
+    """É o número que o dono confere antes de deixar gravar."""
+    conteudo = _xlsx_insumos(
+        ("Andaime fachadeiro", "Agregados", "Locação", ""),
+        ("Betoneira 400L", "Agregados", "LOCAÇÃO", ""),
+        ("Cimento CP-II", "Agregados", "", ""))
+
+    rel = importar_insumos_csv(sessao_insumos, conteudo, admin, simular=True)
+
+    assert rel["marcados_locaveis"] == 2
+    assert not sessao_insumos.adicionados, "prévia não grava"
+
+
+def test_a_planilha_sem_a_coluna_nao_desmarca_quem_ja_era_locavel(sessao_insumos, admin):
+    """Quem marcou um item à mão na tela de Insumos não pode perder a marcação
+    porque a planilha veio sem ela."""
+    ja_locavel = Insumo(id=9, codigo="INS-0009", descricao="Betoneira 400L",
+                        locavel=True)
+    sessao_insumos.objetos.append(ja_locavel)
+    conteudo = _csv_insumos("Betoneira 400L,Agregados,,UN")
+
+    importar_insumos_csv(sessao_insumos, conteudo, admin)
+
+    assert ja_locavel.locavel is True
+
+
+def test_conta_do_plano_renomeada_continua_sendo_encontrada(sessao_insumos, admin):
+    """A planilha escreve "Manutenção (Veículos e Máquinas)"; o plano já
+    escreveu "Manutenção de veículos e máquinas". Sem os apelidos, o insumo
+    entraria sem conta do plano — e em silêncio."""
+    sessao_insumos.objetos.append(
+        Categoria(id=60, codigo="5.3.03",
+                  descricao="Manutenção (Veículos e Máquinas)"))
+    conteudo = _csv_insumos("Filtro de óleo,Agregados,"
+                            "Manutenção de veículos e máquinas,UN")
+
+    rel = importar_insumos_csv(sessao_insumos, conteudo, admin)
+
+    insumo = next(o for o in sessao_insumos.adicionados if isinstance(o, Insumo))
+    assert insumo.categoria_id == 60
+    assert rel["sem_conta_do_plano"] == 0
+
+
+def test_conta_do_plano_que_nao_existe_e_dita_pelo_nome(sessao_insumos, admin):
+    """"2 insumos sem conta" não diz o que fazer; o NOME da conta que falta,
+    sim."""
+    conteudo = _csv_insumos("Cimento CP-II,Agregados,Conta Que Nao Existe,SC")
+
+    rel = importar_insumos_csv(sessao_insumos, conteudo, admin)
+
+    assert rel["contas_do_plano_nao_encontradas"] == ["Conta Que Nao Existe"]
+    assert rel["sem_conta_do_plano"] == 1
+
+
+def test_categoria_criada_na_carga_nasce_com_codigo(sessao_insumos, admin):
+    """O código é obrigatório no banco. Sem gerar um aqui, a carga morreria na
+    primeira categoria nova — e o dublê, que não checa restrição de banco, não
+    acusaria."""
+    conteudo = _csv_insumos("Cimento CP-II,Aglomerantes,,SC",
+                            "Manta asfáltica,Impermeabilização,,M2")
+
+    importar_insumos_csv(sessao_insumos, conteudo, admin, criar_categorias=True)
+
+    novas = [o for o in sessao_insumos.adicionados if isinstance(o, InsumoCategoria)]
+    assert len(novas) == 2
+    assert all(c.codigo for c in novas), "categoria sem código não entra no banco"
+    assert len({c.codigo for c in novas}) == 2, "dois códigos iguais violam o único"

@@ -76,6 +76,37 @@
 - [x] **Relatórios**: totais por 8 dimensões, DRE gerencial, analítico, CSV
 - [ ] Relatórios — falta: exportação em PDF e gráficos
 
+- [x] **As oito alterações do plano de contas** — FEITAS em 10/09/2026
+      (migração 058), a partir do documento `PLANO_CONTAS_alteracoes.md` do
+      dono. Devolução/estorno/reembolso saíram das receitas e viraram contas
+      REDUTORAS de custo (3.5.01 a 3.5.03, com sinal negativo no relatório); a
+      retenção conjunta CSRF/PCC (2.1.06) foi desfeita e a guia é rateada entre
+      PIS, COFINS e CSLL; a CSLL virou conta única; o parcelamento tributário
+      (9.4.03) deixou de ser fluxo; o grupo 8 virou RESULTADO (e por isso o
+      relatório de desembolso por obra **deixou de ser necessário**);
+      nomenclatura e descrições de "quando usar / com o que não confundir" em
+      todo o plano. Detalhe em `HISTORICO.md`.
+- [x] **Aposentar conta sem apagar histórico** — FEITO em 10/09/2026.
+      Instalar o plano padrão desativa só o que nunca foi usado; conta com
+      lançamento continua ativa e é relatada numa janela, com a contagem e o
+      motivo, para o dono remanejar.
+- [x] **Importar a base de 3.279 insumos em Excel** — FEITO em 10/09/2026. O
+      importador lê .xlsx direto (primeira aba), casa a conta do plano por
+      apelido e usa a coluna "Subcategoria = Locação" para marcar o insumo como
+      locável — que é o que decide quem aparece na tela de Locações.
+- [ ] **Decisão do dono: o critério de valor da ferramenta.** Ficou R$ 1.200,00
+      por unidade (ou vida útil menor que um ano) separando 3.1.19 Ferramentas
+      de 8.1.04 Ferramentas e equipamentos duráveis. Trocar o número em
+      `LIMITE_FERRAMENTA` muda os dois textos de uma vez.
+- [ ] **Decisão do dono: o que fazer com 2.1.06 e 9.4.03** se elas tiverem
+      lançamento em produção. As duas não têm destino único (a primeira se
+      reparte em três contas; a segunda depende de qual tributo foi parcelado),
+      então o remanejamento é caso a caso, pela tela.
+- [ ] **Decisão do dono: o nome do grupo 8.** Ele continua "Investimentos
+      (ativo)", mas as contas agora são de RESULTADO — o "(ativo)" entre
+      parênteses pode confundir. Trocar é barato; não foi feito porque mudar
+      nome de grupo mexe em como todo mundo lê o relatório.
+
 ## Fila (pedidos registrados, ainda não iniciados)
 
 - [x] Painel de consumo de IA (tokens, custo, por operação/modelo/pessoa)

@@ -1120,12 +1120,33 @@ els("ver-inativas").addEventListener("change", desenhar);
 
 els("btn-instalar-plano").addEventListener("click", async () => {
   if (!confirm("Grava o plano financeiro padrão da BWS no banco.\n\n" +
-               "Contas que já existem são atualizadas; nada é apagado e nenhum título muda de conta.\n\nContinuar?")) return;
+               "Contas que já existem são atualizadas e nenhum título muda de conta.\n" +
+               "Conta que saiu do plano só é desativada se NUNCA tiver sido usada — " +
+               "a que tem lançamento continua funcionando e aparece na lista do que " +
+               "falta remanejar.\n\nContinuar?")) return;
   const b = els("btn-instalar-plano"); b.disabled = true; b.textContent = "Instalando…";
   try {
     const d = await api("/erp/api/config/plano/instalar", {method:"POST"});
-    aviso("mensagem", `Plano aplicado: ${d.relatorio.criadas.length} conta(s) criada(s), ` +
-      `${d.relatorio.atualizadas.length} atualizada(s) — ${d.relatorio.total_no_plano} no plano.`, "ok");
+    const r = d.relatorio;
+    const apo = r.aposentadas || [], pend = r.pendentes_de_migracao || [];
+    let msg = `Plano aplicado: ${r.criadas.length} conta(s) criada(s), ` +
+      `${r.atualizadas.length} atualizada(s) — ${r.total_no_plano} no plano.`;
+    if (apo.length) msg += ` ${apo.length} conta(s) sem uso foram desativadas.`;
+    if (pend.length) msg += ` ${pend.length} conta(s) com lançamento precisam ser remanejadas.`;
+    aviso("mensagem", msg, pend.length ? "erro" : "ok");
+    // A pendência é mostrada em janela própria de propósito: é a única coisa
+    // desta tela que exige DECISÃO do dono, e um aviso na faixa passa batido.
+    if (pend.length) {
+      alert("Estas contas saíram do plano e NÃO foram desativadas — continuam " +
+        "funcionando até você decidir. Remaneje cada uma pelo botão 'Aposentar " +
+        "conta', que leva o histórico junto:\n\n" +
+        pend.map(x => `${x.codigo} · ${x.descricao}` +
+          (x.lancamentos
+            ? `\n   Tem ${x.lancamentos} lançamento(s) — por isso continua ativa.`
+            : "\n   Sem lançamento, mas o destino depende do caso.") +
+          (x.destino ? `\n   Destino: ${x.destino}` : "\n   Destino: você decide.") +
+          `\n   ${x.motivo}`).join("\n\n"));
+    }
     carregar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
   b.disabled = false; b.textContent = "Instalar plano padrão BWS";

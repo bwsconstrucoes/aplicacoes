@@ -30,6 +30,12 @@ DIMENSOES = {
 
 _ATIVOS = "('EM_ANALISE','AGUARDANDO_APROVACAO','APROVADO','BLOQUEADO','PAGO_PARCIAL','PAGO')"
 
+# Conta REDUTORA abate o custo em vez de somar (devolução de material, estorno,
+# reembolso de custas). Ela entra nos totais com sinal negativo: R$ 10.000 de
+# compra e R$ 500 de devolução fecham em R$ 9.500 de custo, com as duas linhas
+# visíveis no analítico. Ver migração 058 e o princípio 7 do plano padrão.
+_VALOR = "(CASE WHEN c.redutora THEN -r.valor ELSE r.valor END)"
+
 
 def _filtros(f: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     """Monta o WHERE. Sempre por parâmetro — nunca interpolando valor."""
@@ -69,9 +75,9 @@ def resumo(s: Session, dimensao: str, filtros: dict[str, Any]) -> dict[str, Any]
     sql = text(f"""
         SELECT {expr} AS chave,
                COUNT(DISTINCT t.id) AS titulos,
-               SUM(r.valor)         AS total,
-               SUM(CASE WHEN t.status = 'PAGO' THEN r.valor ELSE 0 END) AS pago,
-               SUM(CASE WHEN t.status <> 'PAGO' THEN r.valor ELSE 0 END) AS aberto
+               SUM({_VALOR})       AS total,
+               SUM(CASE WHEN t.status = 'PAGO' THEN {_VALOR} ELSE 0 END) AS pago,
+               SUM(CASE WHEN t.status <> 'PAGO' THEN {_VALOR} ELSE 0 END) AS aberto
           FROM titulos t
           JOIN rateios r     ON r.titulo_id = t.id
           JOIN categorias c  ON c.id = COALESCE(r.categoria_id, t.categoria_id)
@@ -102,7 +108,8 @@ def analitico(s: Session, filtros: dict[str, Any], limite: int = 2000) -> list[d
         SELECT t.numero_sp, t.descricao, f.razao_social,
                c.codigo || ' · ' || c.descricao AS conta,
                c.grupo_codigo || ' · ' || COALESCE(c.grupo_nome,'') AS grupo,
-               o.codigo AS obra, r.valor, to_char(t.competencia,'MM/YYYY') AS competencia,
+               o.codigo AS obra, {_VALOR} AS valor,
+               to_char(t.competencia,'MM/YYYY') AS competencia,
                t.status::text, t.dedutibilidade::text, c.natureza,
                (SELECT MIN(p.vencimento) FROM parcelas p WHERE p.titulo_id = t.id) AS vencimento,
                (SELECT MAX(pg.data_pagamento) FROM pagamentos pg
@@ -135,7 +142,7 @@ def dre_gerencial(s: Session, filtros: dict[str, Any]) -> dict[str, Any]:
                COALESCE(c.grupo_nome,'Sem grupo') AS grupo_nome,
                COALESCE(c.subgrupo_codigo,'') AS sub_cod,
                COALESCE(c.subgrupo_nome,'') AS sub_nome,
-               SUM(r.valor) AS total
+               SUM({_VALOR}) AS total
           FROM titulos t
           JOIN rateios r    ON r.titulo_id = t.id
           JOIN categorias c ON c.id = COALESCE(r.categoria_id, t.categoria_id)
@@ -160,7 +167,11 @@ def dre_gerencial(s: Session, filtros: dict[str, Any]) -> dict[str, Any]:
     grupos_result = _ordenar(resultado)
     receitas = sum(g["total"] for g in grupos_result if (g["codigo"] or "").startswith("1"))
     custos = sum(g["total"] for g in grupos_result if (g["codigo"] or "") in ("2", "3"))
-    despesas = sum(g["total"] for g in grupos_result if (g["codigo"] or "") in ("4", "5", "6", "7"))
+    # O grupo 8 (aquisição de bens) virou RESULTADO em 10/09/2026 — o bem
+    # comprado para uma obra precisa aparecer no custo dela. Sem entrar aqui,
+    # ele apareceria na lista de grupos e sumiria do resultado do período.
+    despesas = sum(g["total"] for g in grupos_result
+                   if (g["codigo"] or "") in ("4", "5", "6", "7", "8"))
     return {
         "resultado": grupos_result, "fluxo": _ordenar(fluxo),
         "receitas": round(receitas, 2), "custos": round(custos, 2),

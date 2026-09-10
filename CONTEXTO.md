@@ -736,6 +736,38 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-10 — Devolução e estorno deixaram de ser receita e viraram CUSTO
+  NEGATIVO.** Devolução de material, estorno de despesa e reembolso de custas
+  estavam no grupo 1 do plano financeiro do ERP. O efeito era o pior possível
+  para quem lê o relatório: a obra aparecia com receita a mais e o custo
+  intacto, e a margem saía errada dos dois lados. Foram para o grupo 3 como
+  contas REDUTORAS — a migração 058 acrescentou a coluna `categorias.redutora`,
+  e `core/relatorios.py` soma essas contas com sinal negativo. **O lançamento
+  original nunca é estornado:** as duas linhas continuam visíveis no analítico,
+  e é só o total que fecha certo. Isto muda o significado de todo relatório do
+  ERP e por isso está aqui, não só no histórico da área. Junto veio a decisão
+  de que o **grupo 8 (aquisição de bens) passa a ser RESULTADO**: um bem
+  comprado para uma obra em parceria precisa aparecer no custo dela, senão não
+  há como cobrar a parte do parceiro. A depreciação fica com a contabilidade
+  externa, no balanço.
+
+- **2026-09-10 — Instalar o plano padrão não apaga conta com movimento.** O
+  botão "Instalar plano padrão BWS" ganhou uma rotina de aposentadoria, e ela
+  desativa APENAS a conta que nunca foi usada, apontando a sucessora. Conta com
+  lançamento continua ativa e sai num relatório para o dono remanejar pela
+  tela, que leva o histórico junto. A regra existe porque a alternativa —
+  desativar tudo que saiu do plano — esconderia lançamento do relatório sem
+  ninguém ter pedido, e o ERP não tem como saber o que a produção já lançou:
+  o ambiente de desenvolvimento não tem (nem deve ter) `DATABASE_URL` de
+  produção.
+
+- **2026-09-10 — Os importadores de planilha passaram a ler Excel (.xlsx).**
+  `core/importadores/planilhas.ler_tabela` reconhece o formato pelo CONTEÚDO
+  (assinatura "PK"), não pela extensão, e vale a primeira aba. O passo do
+  "salvar como CSV" era o que ninguém lembrava de fazer, e quando fazia
+  estragava acento e separador. **Sem dependência nova:** `openpyxl` já estava
+  no `requirements.txt` por causa do relatório do painel em Excel.
+
 - **2026-09-10 — A suíte roda com a fila de trabalho em segundo plano
   DESLIGADA.** O ERP ganhou uma fila para o que não cabe no tempo de um clique
   (migração 055): importar cards, recalcular a agenda, emitir nota. Ela tem
