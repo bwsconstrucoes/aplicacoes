@@ -335,6 +335,52 @@ def test_a_carga_inicial_tambem_anota_a_hora_da_base():
     assert "_anotar_a_base_em_dia" in depois_da_carga
 
 
+# ---------------------------------------------------------------------------
+# AS PLANILHAS DE APOIO NÃO SÃO REESCRITAS À TOA
+#
+# Descoberto em 10/09/2026 na tela do banco de produção: a gravação da
+# documentação fiscal era a consulta MAIS CHAMADA de todo o banco — 14,3
+# milhões de vezes, 34 minutos de processador num banco que tem um décimo de
+# um núcleo. Ela reescrevia todas as linhas a cada sincronização, mesmo sem
+# nada ter mudado, e cada reescrita deixa lixo que engorda a tabela.
+# ---------------------------------------------------------------------------
+def test_a_documentacao_fiscal_so_e_gravada_quando_muda():
+    """No Postgres, reescrever uma linha com o mesmo valor não é de graça:
+    deixa a versão antiga como lixo. `IS DISTINCT FROM` faz o banco pular a
+    gravação quando o valor é o mesmo, com resultado final idêntico."""
+    from pathlib import Path
+    fonte = Path("app/apps/analisesps/sincronizacao.py").read_text(encoding="utf-8")
+    trecho = fonte.split("def sincronizar_apoios")[1].split("\ndef ")[0]
+    assert "sp_fiscal.doc_fiscal" in trecho and "IS DISTINCT FROM" in trecho
+    assert "contas_diarios.conta_pagamento" in trecho
+
+
+def test_a_automatica_nao_rele_as_planilhas_de_apoio_a_cada_5_minutos(monkeypatch):
+    """Elas mudam raramente, e cada passagem baixa a planilha inteira do
+    Google. A trava vale SÓ para o disparo automático — botão continua
+    imediato."""
+    from app.apps.analisesps import tarefas
+
+    monkeypatch.setattr(tarefas, "_apoios_recentes", lambda: True)
+    assert tarefas.MINUTOS_ENTRE_APOIOS_AUTOMATICOS >= 60
+
+    from pathlib import Path
+    fonte = Path("app/apps/analisesps/tarefas.py").read_text(encoding="utf-8")
+    etapa = fonte.split('elif etapa == "apoios"')[1].split("_marcar_etapa_feita")[0]
+    assert "automatica and _apoios_recentes()" in etapa, (
+        "a trava tem de valer só para o disparo automático")
+
+
+def test_o_botao_continua_trazendo_as_planilhas_de_apoio_na_hora():
+    """Quem aperta o botão quer o dado AGORA. Se a trava valesse para ele
+    também, não haveria como forçar a releitura — e o modo 'Só as planilhas de
+    apoio' viraria mentira."""
+    from app.apps.analisesps import tarefas
+    assert "apoios" in tarefas.MODOS
+    assert tarefas.ETAPAS["apoios"] == ["apoios"]
+    assert tarefas.ETAPAS["carga_inicial"] == ["carga", "apoios", "fila"]
+
+
 def test_a_barra_de_filtros_traz_as_sete_listas_mais_o_agendamento(monkeypatch):
     """Guardar não pode significar entregar menos do que a tela desenha."""
     from app.apps.analisesps import consultas

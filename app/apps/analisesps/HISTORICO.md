@@ -1175,6 +1175,103 @@ Lote guardado são JavaScript — os testes conferem que o código está lá, n�
 que o navegador obedece. **É a primeira coisa a conferir na tela:** salvar o
 lote, ir às Solicitações, voltar, e ver se o que foi salvo está lá.
 
+### E a resposta apareceu no mesmo dia: o banco tem um décimo de um núcleo
+
+Ainda em 10/09, o dono mandou as métricas do serviço de banco (`erp-db`). Elas
+fecham a investigação, e o achado é maior do que esta área:
+
+| | Limite do plano | Uso observado |
+|---|---|---|
+| CPU | **0,1 CPU** — um décimo de um núcleo | picos de 0,06 a 0,08: **60% a 80% do limite** |
+| Memória | **0,25 GB** | 100 a 230 MB — **encostando no teto** |
+| Disco | 1 GB | ~430 MB |
+
+**São 430 MB de dados para 250 MB de memória.** Os dados não cabem, e o
+Postgres ainda precisa de parte dela para outras coisas. Toda varredura da
+tabela de SPs vai ao **disco** — sempre, não há cache que a segure. E vai ao
+disco com um décimo de um núcleo, com o banco já estrangulado nos picos.
+
+Isso explica os 1.463 ms da contagem sem sobrar nada: aqui, com 4 núcleos e o
+dado quente na memória, a mesma consulta custa 5 ms. E explica os 2,8 a 4,0
+segundos do Lote, que faz várias varreduras.
+
+> **A conclusão que muda a estratégia desta área:** o trabalho de tirar
+> varreduras — feito nas levas 14, 18 e 22 — **valeu, e vale ainda mais neste
+> banco do que valeria num banco folgado**. Mas há um teto: nenhuma
+> otimização de consulta torna rápida uma leitura de disco com 0,1 CPU. Dá
+> para diminuir o NÚMERO de varreduras, não para torná-las rápidas.
+>
+> **Antes de gastar mais esforço aqui, subir o plano do banco tem efeito
+> maior.** É decisão do dono, e o banco serve ERP, painel e esta área juntos —
+> está registrado em `CONTEXTO.md` › "Histórico de decisões".
+
+**Se o plano NÃO subir, o que ainda dá para fazer daqui**, em ordem de
+proveito: (1) o painel por status do Lote sai numa varredura da tabela inteira
+— um índice sob medida a transformaria em leitura de índice; (2) carregar esse
+painel só depois da tela aparecer, para o lote em si abrir na hora; (3) as
+contagens do topo das Solicitações, que também varrem. Nenhuma das três foi
+feita, e as três são mais arriscadas do que o que já está aqui.
+
+**Não verificado:** os números vieram da tela do Render, lida numa imagem. Os
+testes não alcançam o banco de produção, então o tamanho de cada tabela lá
+dentro não foi conferido.
+
+### E aí a tela do banco entregou o culpado: 14,3 MILHÕES de gravações
+
+Na mesma leva o dono mandou a aba de consultas do banco. A lista de "quem mais
+chama" é a coisa mais reveladora que esta área já teve:
+
+| Consulta | Chamadas | Tempo total |
+|---|---|---|
+| `INSERT ... analisesps.sp_fiscal` | **14.328.805** | 34 min 30 s |
+| `INSERT ... analisesps.sps` | 662.556 | 11 min 27 s |
+| `INSERT ... rateio` (painel) | 388.029 | 44 s |
+
+**A documentação fiscal é, disparada, a consulta mais chamada de todo o
+banco** — vinte e uma vezes mais que a gravação das próprias SPs. E são só uns
+15 a 20 mil registros.
+
+**A causa, e ela é uma linha de SQL.** `sincronizar_apoios()` lia a planilha
+fiscal inteira e gravava TODAS as linhas, sempre — com `ON CONFLICT DO UPDATE`
+sem condição nenhuma. Como essa etapa roda em toda sincronização, e a
+sincronização é disparada de 5 em 5 minutos por quem estiver com a tela
+aberta, o resultado é dezenas de milhares de gravações a cada cinco minutos
+para reescrever exatamente os mesmos valores.
+
+> **E no Postgres reescrever com o mesmo valor NÃO é de graça.** Cada
+> reescrita deixa a versão antiga como lixo, para o faxineiro automático
+> recolher depois. Dezenas de milhares de linhas de lixo a cada cinco minutos
+> é o que engorda a tabela até ela não caber mais na memória do banco —
+> **exatamente a lentidão que se estava caçando**. O sintoma e a causa se
+> alimentavam.
+
+**Duas correções:**
+
+1. **`WHERE ... IS DISTINCT FROM`** nas duas gravações de apoio (documentação
+   fiscal e contas por centro de custo): o banco só grava quando o valor mudou
+   de verdade. Resultado final idêntico; o que some é o trabalho inútil.
+   **Conferido contra um Postgres de verdade** olhando a versão interna de
+   cada linha: a que não mudou continua com a versão original — não foi
+   tocada; a que mudou ganhou versão nova. E o contador de atualizações do
+   banco marca **uma**, não duas.
+
+2. **A sincronização automática relê as planilhas de apoio no máximo de hora
+   em hora**, e não a cada cinco minutos. Elas são dado de apoio — mudam
+   raramente — e cada passagem ainda baixa a planilha inteira do Google, na
+   instância de 2 GB que já morreu de memória uma vez. **A trava vale só para
+   o disparo automático:** o botão de atualizar e o modo "Só as planilhas de
+   apoio" continuam imediatos, e há teste prendendo isso.
+
+> **O que fica em aberto por escolha:** um documento fiscal cadastrado na
+> planilha pode levar até uma hora para aparecer, se ninguém apertar o botão.
+> Antes eram cinco minutos. É dado de apoio, e o caminho imediato continua
+> existindo — mas está escrito aqui para não ser descoberto por susto.
+
+**A ordem de grandeza do que isso devolve:** eram 14,3 milhões de gravações e
+34 minutos de processador num banco que tem **um décimo de um núcleo**. Some
+quase tudo. É, de longe, a maior economia desta sessão — e não veio de medir a
+tela, veio de olhar o que o banco estava fazendo.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

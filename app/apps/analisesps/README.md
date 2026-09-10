@@ -414,6 +414,41 @@ E a maior de todas para quem está do outro lado:
   apagada POR FORA da carga deixa o número velho até a próxima. Hoje ninguém
   faz isso — a fila de volta altera SPs que já existem, não cria nem remove.
 
+### O banco não é reescrito à toa
+
+Achado em 10/09/2026 na aba de consultas do banco de produção, e é a maior
+economia que esta área já teve: `INSERT INTO analisesps.sp_fiscal` era **a
+consulta mais chamada de todo o banco — 14,3 milhões de vezes**, para uma
+tabela de uns 15 a 20 mil registros. A etapa de apoio regravava todas as
+linhas a cada sincronização, e a sincronização é disparada de 5 em 5 minutos.
+
+**A regra que fica, e vale para qualquer gravação em laço:** no Postgres,
+regravar uma linha com o mesmo valor deixa a versão antiga como lixo, que
+engorda a tabela até ela não caber na memória do banco. Todo
+`ON CONFLICT DO UPDATE` daqui precisa de
+`WHERE <tabela>.coluna IS DISTINCT FROM EXCLUDED.coluna`. Há teste prendendo
+isso nas duas gravações de apoio.
+
+E as planilhas de apoio (documentação fiscal, contas, agenda, rateio) passam a
+ser relidas **no máximo de hora em hora** no disparo automático — antes eram a
+cada cinco minutos, e cada passagem baixa a planilha inteira do Google. **O
+botão e o modo "Só as planilhas de apoio" continuam imediatos**, e há teste
+para isso. O custo aceito: um documento fiscal novo pode levar até uma hora
+para aparecer sozinho.
+
+### O teto que o código não vence
+
+O banco de produção tem **0,1 CPU e 0,25 GB de memória** para ~430 MB de
+dados (métricas de 10/09/2026). Os dados não cabem na memória, então toda
+varredura vai ao disco, com um décimo de um núcleo. É por isso que
+`SELECT count(*)` custa 1,4 s lá e 5 ms aqui.
+
+**Isso muda a estratégia:** tirar varreduras vale muito mais neste banco do
+que valeria num banco folgado — mas nenhuma otimização de consulta torna
+rápida uma leitura de disco com 0,1 CPU. Antes de gastar mais esforço em
+consulta, subir o plano do banco tem efeito maior. Está registrado em
+`CONTEXTO.md` › "Histórico de decisões".
+
 ### A tela fica guardada no navegador por 5 minutos
 
 Trocar de aba não refaz as consultas: a volta a Solicitações aparece na hora,

@@ -360,7 +360,24 @@ def drenar_fila(anotar=None) -> dict:
 # ---------------------------------------------------------------------------
 def sincronizar_apoios(anotar=None) -> dict:
     """Traz as duas planilhas de apoio: contas por centro de custo e a
-    documentação fiscal por SP."""
+    documentação fiscal por SP.
+
+    O `WHERE ... IS DISTINCT FROM` no fim de cada gravação não é detalhe.
+    Sem ele, esta função REESCREVIA todas as linhas das duas tabelas a cada
+    passagem, mesmo quando nada havia mudado — e ela passa a cada
+    sincronização. Na produção isso apareceu em 10/09/2026, na tela do banco:
+    **14,3 MILHÕES** de gravações em `sp_fiscal`, o campeão disparado de todo
+    o banco, 34 minutos de tempo de processador num banco que tem um DÉCIMO
+    de um núcleo.
+
+    E o custo não é só o tempo: no Postgres, reescrever uma linha com o mesmo
+    valor deixa a versão antiga como lixo para o faxineiro recolher depois.
+    Dezenas de milhares de linhas de lixo a cada cinco minutos é o que engorda
+    a tabela até ela não caber mais na memória do banco — que é exatamente a
+    lentidão que se estava caçando.
+
+    Com a condição, a gravação só acontece quando o valor MUDOU de verdade.
+    O resultado final é idêntico; o que some é o trabalho inútil."""
     from .db import conexao
 
     anotar = anotar or (lambda *a, **k: None)
@@ -376,7 +393,9 @@ def sincronizar_apoios(anotar=None) -> dict:
                 conn.executemany(
                     "INSERT INTO analisesps.contas_diarios (codigo, conta_pagamento) "
                     "VALUES (?, ?) ON CONFLICT (codigo) DO UPDATE SET "
-                    "conta_pagamento = EXCLUDED.conta_pagamento", linhas)
+                    "conta_pagamento = EXCLUDED.conta_pagamento "
+                    " WHERE contas_diarios.conta_pagamento "
+                    "       IS DISTINCT FROM EXCLUDED.conta_pagamento", linhas)
                 conn.commit()
             contas = len(linhas)
     except Exception:  # noqa: BLE001 — apoio que falta não derruba a carga
@@ -392,7 +411,9 @@ def sincronizar_apoios(anotar=None) -> dict:
                 conn.executemany(
                     "INSERT INTO analisesps.sp_fiscal (sp_id, doc_fiscal) "
                     "VALUES (?, ?) ON CONFLICT (sp_id) DO UPDATE SET "
-                    "doc_fiscal = EXCLUDED.doc_fiscal", linhas)
+                    "doc_fiscal = EXCLUDED.doc_fiscal "
+                    " WHERE sp_fiscal.doc_fiscal "
+                    "       IS DISTINCT FROM EXCLUDED.doc_fiscal", linhas)
                 conn.commit()
             fiscais = len(linhas)
     except Exception:  # noqa: BLE001

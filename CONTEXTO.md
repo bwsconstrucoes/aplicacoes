@@ -843,11 +843,73 @@ Quando eu pedir nova feature ou adaptação:
      zero e memória sobrando, o tempo é ESPERA — e o suspeito é o banco:
      `SELECT count(*)` sobre 59 mil SPs levou **1.463 ms** em produção
      (medido pelo dono na tela de rede do navegador) contra 5 ms num Postgres
-     local. Percorrer a tabela lá custa segundos, o que aponta para a tabela
-     não caber na memória do banco, bloat, ou os dois. A contagem foi tirada
-     de todas as telas (`analisesps/HISTORICO.md`, 22ª leva), mas **as outras
-     varreduras continuam**, e a próxima investigação é no banco, não na
-     aplicação.
+     local. A contagem foi tirada de todas as telas
+     (`analisesps/HISTORICO.md`, 22ª leva), mas as outras varreduras
+     continuam — e o item seguinte diz por que elas doem.
+- **2026-09-10 — O BANCO `erp-db` É O GARGALO, e o motivo é o plano dele.**
+  O dono mostrou as métricas do serviço de banco. Os limites do plano
+  atual são:
+
+  | | Limite | Uso observado |
+  |---|---|---|
+  | CPU | **0,1 CPU** (um décimo de um núcleo) | picos de 0,06 a 0,08 — **60% a 80% do limite** |
+  | Memória | **0,25 GB** | 100 a 230 MB — **encostando no teto** |
+  | Disco | 1 GB | ~430 MB |
+
+  **Os três números juntos explicam a lentidão inteira, sem sobrar nada:**
+
+  - Há **430 MB de dados** para uma memória de **250 MB**. Os dados NÃO cabem
+    na memória do banco, e o Postgres ainda precisa de parte dela para
+    conexões e ordenações. Ou seja: toda varredura da tabela de SPs vai ao
+    **disco**, sempre — não há cache que a segure.
+  - E vai ao disco com **um décimo de um núcleo**. Para comparar: a mesma
+    contagem custa 5 ms numa máquina de 4 núcleos a 2,8 GHz com o dado quente
+    na memória. 1.463 ms em produção é exatamente a ordem de grandeza que se
+    espera de "ler do disco com 0,1 CPU".
+  - Os picos de CPU chegando a 80% do limite significam que o banco está sendo
+    **estrangulado** (throttled) nos momentos de uso: as consultas entram em
+    fila.
+
+  **A consequência atravessa as áreas:** este banco serve o **ERP**, o
+  **Análise de SPs** e o **painel**. Nenhuma otimização de consulta compensa um
+  décimo de núcleo com os dados fora da memória — dá para diminuir o número de
+  varreduras (e foi feito), não para torná-las rápidas.
+
+  **A recomendação, e a decisão é do dono:** subir o plano do banco é o que tem
+  maior efeito por real gasto neste sistema hoje — mais do que qualquer
+  mudança de código pendente. Um plano com ~1 GB de memória faria os 430 MB
+  caberem inteiros, e mais CPU tira a fila. **Vigiar também o disco**: 430 MB
+  de 1 GB, com crescimento visível ao longo do dia.
+
+  **Não verificado:** os números vieram da tela do Render, lida por mim numa
+  imagem. Não há acesso ao banco de produção a partir dos testes (§ regra),
+  então o tamanho de cada tabela lá dentro não foi conferido.
+- **2026-09-10 — 14,3 MILHÕES de gravações inúteis, achadas na aba de
+  consultas do banco.** A lista de "quem mais chama" mostrou
+  `INSERT INTO analisesps.sp_fiscal` com **14.328.805 chamadas** e 34 min 30 s
+  de processador — vinte e uma vezes mais que a gravação das próprias SPs, e
+  para uma tabela de uns 15 a 20 mil registros.
+
+  **Causa:** a etapa que traz as planilhas de apoio regravava TODAS as linhas
+  a cada passagem (`ON CONFLICT DO UPDATE` sem condição), e essa etapa roda em
+  toda sincronização — disparada de 5 em 5 minutos por quem estiver com a tela
+  aberta.
+
+  **A lição que vale para o monorepo inteiro, e não só para esta área:**
+  no Postgres, **regravar uma linha com o mesmo valor não é de graça** — deixa
+  a versão antiga como lixo, que engorda a tabela até ela não caber mais na
+  memória do banco. Num banco com 0,25 GB e 0,1 CPU (item acima), isso é a
+  diferença entre rápido e inutilizável, e o sintoma se alimenta da causa.
+  **Todo `ON CONFLICT DO UPDATE` que roda em laço deve ter
+  `WHERE <tabela>.col IS DISTINCT FROM EXCLUDED.col`.** Os outros módulos que
+  gravam em laço (`painel`, com `rateio`, `titulos`, `fato` e `movimentos` na
+  lista das mais chamadas) **não foram auditados** — é o próximo lugar a
+  olhar, e é área de outro chat.
+
+  **Corrigido no Análise de SPs** (`analisesps/HISTORICO.md`, 22ª leva): a
+  condição nas duas gravações de apoio, e a releitura das planilhas de apoio
+  passa a ser de hora em hora no disparo automático — o botão continua
+  imediato.
 - **2026-08-30 — Nasce o ERP como blueprint do monorepo** (`0976b8f`, primeiro
   de 50 commits até 2026-09-01). Decisões que vieram junto:
   1. **Hospedar dentro do serviço `aplicacoes`**, não em serviço novo — sem
