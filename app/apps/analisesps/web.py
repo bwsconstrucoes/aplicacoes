@@ -84,7 +84,48 @@ TELAS_QUE_FICAM_GUARDADAS = {
     "analisesps.relatorio",
     "analisesps.auditoria",
     "analisesps.log",
+    "analisesps.tela_lote",
 }
+
+# O LOTE entrou nesta lista depois das outras, e por isso tem uma ressalva
+# própria. Ele é a tela onde se ALTERA coisa — e mostrar o estado anterior a
+# uma alteração que a pessoa acabou de fazer seria pior do que ser lento.
+#
+# O que torna seguro guardá-lo: toda alteração é um POST para o próprio
+# endereço, que depois redireciona (o formulário nunca responde direto). A
+# tela que volta do POST traz `?aviso=` e NÃO é guardada — senão o recado de
+# "salvo" reapareceria minutos depois, dizendo que algo acabou de acontecer
+# quando não aconteceu.
+#
+# E a rede de segurança que não depende de o navegador se comportar: a tela
+# carrega a HORA em que o lote foi salvo, e o navegador compara essa hora com
+# a última que viu. Se a tela guardada for anterior à última salvada, ela se
+# recarrega sozinha. Está em `analisesps.js`, junto do porquê.
+def _tela_que_veio_de_alteracao() -> bool:
+    """A tela do Lote logo depois de salvar. Não pode ficar guardada."""
+    return request.args.get("aviso") is not None
+
+
+# A folha de estilo e o javascript NÃO MUDAM entre uma publicação e outra, e
+# estavam sendo reconferidos com o servidor a CADA tela: dois 304 de ~400 ms
+# cada, medidos na produção pelo dono em 09/09/2026. Quase um segundo por
+# navegação, gasto para o servidor responder "não mudou nada".
+#
+# Agora valem um ano, e o endereço deles carrega a VERSÃO publicada — quando
+# sai uma publicação nova, o endereço muda e o navegador busca sozinho. Sem a
+# versão no endereço, guardar por um ano seria uma armadilha: uma correção de
+# tela levaria um ano para chegar em quem já tinha aberto o sistema.
+UM_ANO = 365 * 24 * 3600
+
+
+def versao_publicada() -> str:
+    """A publicação em que este código está. Entra no endereço dos arquivos."""
+    return os.getenv("RENDER_GIT_COMMIT", "")[:8] or "dev"
+
+
+@bp.app_context_processor
+def _versao_para_os_templates():
+    return {"versao_estatica": versao_publicada()}
 
 
 @bp.after_request
@@ -93,7 +134,16 @@ def _guardar_no_navegador(resposta):
     try:
         if request.method != "GET" or resposta.status_code != 200:
             return resposta
+        if request.endpoint == "analisesps.static":
+            # `immutable` é o que faz o navegador NEM PERGUNTAR. O endereço
+            # carrega a versão publicada, então o arquivo sob aquele endereço
+            # realmente nunca muda.
+            resposta.headers["Cache-Control"] = (
+                f"public, max-age={UM_ANO}, immutable")
+            return resposta
         if request.endpoint not in TELAS_QUE_FICAM_GUARDADAS:
+            return resposta
+        if _tela_que_veio_de_alteracao():
             return resposta
         if not (resposta.mimetype or "").startswith("text/html"):
             return resposta
@@ -1046,7 +1096,7 @@ def frescor():
     baixo de quem acabou de marcar vinte linhas apagaria a seleção, e isso é
     pior do que ver um dado com dois minutos de idade. Ela mostra um aviso e
     deixa a pessoa decidir."""
-    from . import consultas, tarefas
+    from . import tarefas
 
     acao = tarefas.manter_fresco()
 
@@ -1054,16 +1104,21 @@ def frescor():
     # esta rota é chamada de fundo de 90 em 90 segundos, e um erro nela
     # apareceria na tela de quem só estava conferindo uma lista. Um teste
     # pegou justamente a chamada que tinha ficado de fora.
-    carimbo, quantidade, rodando = "", 0, False
+    # SÓ O CARIMBO. Antes esta rota chamava `base_carregada()`, que faz um
+    # `count(*)` nas 59 mil SPs — uma varredura da tabela inteira, de 90 em 90
+    # segundos, por aba aberta, para responder um número que a tela nem usa.
+    # O carimbo é uma linha da tabela `meta`, achada pela chave.
+    carimbo, rodando = "", False
     try:
-        base = consultas.base_carregada()
-        carimbo = str(base.get("ultima") or "")
-        quantidade = base.get("quantidade") or 0
+        from .db import consultar_um
+        linha = consultar_um("SELECT valor FROM analisesps.meta "
+                             " WHERE chave = 'ultima_sincronizacao'")
+        carimbo = str(linha[0]) if linha and linha[0] else ""
         rodando = tarefas.estado()["rodando"]
     except Exception:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou ler o frescor da base")
 
-    return {"ok": True, "carimbo": carimbo, "quantidade": quantidade,
+    return {"ok": True, "carimbo": carimbo,
             "disparou": acao.get("disparou", False), "rodando": rodando}
 
 

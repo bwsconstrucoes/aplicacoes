@@ -109,8 +109,9 @@ def load_spsbd_values(sheet_id: str) -> list[list[str]]:
 
 ## Gunicorn
 
-⚠️ **Há uma divergência a confirmar.** O `Procfile` versionado está com
-**1 worker e 4 threads**:
+✔ **Divergência RESOLVIDA em 10/09/2026.** O dono mostrou o campo *Start
+Command* das Settings do Render, e ele é **idêntico**, palavra por palavra, ao
+`Procfile` versionado:
 
 ```
 web: gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 120 \
@@ -118,15 +119,24 @@ web: gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 12
      --max-requests 150 --max-requests-jitter 40 --log-level info
 ```
 
-As `4` threads vieram do commit `352782d` ("reduz threads e adiciona
-max-requests p/ conter OOM"): a instância tem 2 GB e, com 8 threads, morria de
-OOM em julho de 2026 (`CONTEXTO.md` §9). Há indicação de que a produção esteja
-rodando com **8 threads** — o que é possível porque **o campo Start Command nas
-Settings do Render sobrescreve o Procfile**.
+Ou seja: a produção roda com **1 worker e 4 threads**, e não com 8 — a suspeita
+anotada aqui desde julho era infundada. As `4` threads vieram do commit
+`352782d`, que conteve o OOM de julho de 2026 (`CONTEXTO.md` §9).
 
-Antes de mexer nesse comando: conferir qual dos dois vale hoje e alinhar os
-dois lugares. Se 8 for mesmo o valor em produção, vigiar memória — foi essa a
-configuração associada ao OOM.
+**A armadilha continua de pé, e é por isso que a nota fica:** o Start Command
+**sobrescreve o Procfile**. Como hoje os dois são iguais, mexer só no Procfile
+não teria efeito nenhum em produção, e ninguém perceberia. Ao mudar o comando,
+mudar nos DOIS lugares — ou esvaziar o Start Command, para valer o Procfile,
+que é o versionado.
+
+**O que as métricas do Render mostraram** (48 h, 08 a 10/09/2026): memória
+entre **15% e 45%** dos 2 GB, sem chegar perto do limite nenhuma vez, e CPU
+quase sempre abaixo de 5%. As causas de verdade do OOM foram corrigidas na
+origem em julho (`pdf_processor` e `baixabradesco`, §9). Com essa folga, o
+`--max-requests 150` — que com `--workers 1` faz TODA requisição esperar a
+partida do serviço a cada ~150 acessos — tem espaço para ser afrouxado. É
+decisão do dono, e o jeito seguro é subir o valor (1000, por exemplo) e vigiar
+a memória, não remover a rede de proteção.
 
 - `--workers 1` é obrigatório e não está em discussão: há estado em memória por
   processo (sessão do `chatbot`), que quebra com mais de um worker.

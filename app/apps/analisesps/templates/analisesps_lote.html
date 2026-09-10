@@ -23,7 +23,10 @@
   </p>
 {% endif %}
 
-<div class="cartao">
+{# A hora em que este lote foi salvo viaja com a tela. O navegador compara com
+   a última que viu: se a tela guardada for mais antiga do que a última
+   salvada, ela se recarrega sozinha. O porquê está em `analisesps.js`. #}
+<div class="cartao" id="cartao-lote" data-lote-em="{{ lote.salvo_em or '' }}">
   <div class="cartao-cab">
     <h3>O lote</h3>
     <small>

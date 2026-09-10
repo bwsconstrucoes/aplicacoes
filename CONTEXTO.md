@@ -37,6 +37,11 @@
   estava preenchido com o comando antigo e o Procfile era ignorado (descoberto
   2026-07-14). Ao mudar o comando do gunicorn, alterar nos DOIS lugares — ou
   deixar o Start Command em branco pra valer o Procfile (preferido, versionado).
+- ✔ **Conferido em 2026-09-10** (o dono mostrou o campo): o Start Command é
+  **idêntico** ao `Procfile` acima, palavra por palavra. A suspeita anotada no
+  `CLAUDE.md` de que a produção rodasse com **8 threads** era infundada — são
+  4. A armadilha do "mexer só no Procfile não tem efeito" continua valendo,
+  porque o campo continua preenchido.
 - **Entry-point real:** `app/main.py` (NÃO é `app.py` na raiz — esse é legado do
   pdf-processor que ainda existe no monorepo).
 
@@ -820,6 +825,105 @@ Quando eu pedir nova feature ou adaptação:
   Itens 3-4 atacam o pico residual. Se AINDA ocorrer OOM após isso, próximos
   suspeitos: `processarnovasp` (não auditado), `validasp` (não auditado), ou
   subir instância pra 4 GB.
+- **2026-09-10 — Métricas do Render lidas pela primeira vez, e o Start Command
+  conferido.** Origem: a caça à lentidão do Análise de SPs. Três achados que
+  valem para o monorepo inteiro, não só para aquela área:
+  1. **O Start Command das Settings é idêntico ao `Procfile`** (o dono mostrou
+     o campo). A suspeita de 8 threads em produção era infundada — são 4,
+     como no arquivo. Ver §2.
+  2. **Memória em 48 h: 15% a 45% dos 2 GB**, sem encostar no limite, e CPU
+     quase sempre abaixo de 5%. As causas de verdade do OOM de julho foram
+     atacadas na origem (itens 3-4 do incidente abaixo), e o efeito aparece
+     aqui: a folga é grande. Com isso, o `--max-requests 150` — que, com
+     `--workers 1`, faz TODA requisição esperar a partida do serviço a cada
+     ~150 acessos (1,7 s só para importar os 18 módulos, medido) — passa a
+     custar mais do que protege. **Não foi mexido**: é decisão do dono, e o
+     caminho seguro é subir o valor e vigiar a memória, não remover a rede.
+  3. **O gargalo do Análise de SPs não é a instância web.** Com CPU perto de
+     zero e memória sobrando, o tempo é ESPERA — e o suspeito é o banco:
+     `SELECT count(*)` sobre 59 mil SPs levou **1.463 ms** em produção
+     (medido pelo dono na tela de rede do navegador) contra 5 ms num Postgres
+     local. A contagem foi tirada de todas as telas
+     (`analisesps/HISTORICO.md`, 22ª leva), mas as outras varreduras
+     continuam — e o item seguinte diz por que elas doem.
+- **2026-09-10 — O BANCO `erp-db` É O GARGALO, e o motivo é o plano dele.**
+  O dono mostrou as métricas do serviço de banco. Os limites do plano
+  atual são:
+
+  | | Limite | Uso observado |
+  |---|---|---|
+  | CPU | **0,1 CPU** (um décimo de um núcleo) | picos de 0,06 a 0,08 — **60% a 80% do limite** |
+  | Memória | **0,25 GB** | 100 a 230 MB — **encostando no teto** |
+  | Disco | 1 GB | ~430 MB |
+
+  **Os três números juntos explicam a lentidão inteira, sem sobrar nada:**
+
+  - Há **430 MB de dados** para uma memória de **250 MB**. Os dados NÃO cabem
+    na memória do banco, e o Postgres ainda precisa de parte dela para
+    conexões e ordenações. Ou seja: toda varredura da tabela de SPs vai ao
+    **disco**, sempre — não há cache que a segure.
+  - E vai ao disco com **um décimo de um núcleo**. Para comparar: a mesma
+    contagem custa 5 ms numa máquina de 4 núcleos a 2,8 GHz com o dado quente
+    na memória. 1.463 ms em produção é exatamente a ordem de grandeza que se
+    espera de "ler do disco com 0,1 CPU".
+  - Os picos de CPU chegando a 80% do limite significam que o banco está sendo
+    **estrangulado** (throttled) nos momentos de uso: as consultas entram em
+    fila.
+
+  **A consequência atravessa as áreas:** este banco serve o **ERP**, o
+  **Análise de SPs** e o **painel**. Nenhuma otimização de consulta compensa um
+  décimo de núcleo com os dados fora da memória — dá para diminuir o número de
+  varreduras (e foi feito), não para torná-las rápidas.
+
+  **A recomendação, e a decisão é do dono:** subir o plano do banco é o que tem
+  maior efeito por real gasto neste sistema hoje — mais do que qualquer
+  mudança de código pendente. Um plano com ~1 GB de memória faria os 430 MB
+  caberem inteiros, e mais CPU tira a fila.
+
+  **A ordem importa, e foi combinada com o dono em 10/09:** publicar a
+  correção das gravações inúteis (item abaixo) → faxina no banco num horário
+  sem ninguém usando (ela TRANCA as tabelas, e com 0,1 CPU demora) → medir o
+  tamanho de verdade → só então escolher o plano. Parte dos 430 MB é lixo
+  gerado pelo próprio defeito corrigido; dimensionar o plano pela sujeira é
+  pagar por ela todo mês.
+
+  **O DISCO é uma pressão separada da memória, e vem do ERP:** a migração 010
+  do ERP guarda os anexos DENTRO do banco (`anexos.conteudo`, BYTEA) —
+  comprovante, nota, contrato, ART, seguro. Com 1 GB de limite e 430 MB já
+  ocupados, o ERP em uso de verdade encheria isso em poucos meses.
+  **DECIDIDO pelo dono em 10/09/2026: os anexos do ERP vão para o Google
+  Drive**, e não para o banco. Quem for implementar isso no ERP precisa saber
+  que a coluna `conteudo` existe e é o caminho atual.
+
+  **Não verificado:** os números vieram da tela do Render, lida por mim numa
+  imagem. Não há acesso ao banco de produção a partir dos testes (§ regra),
+  então o tamanho de cada tabela lá dentro não foi conferido.
+- **2026-09-10 — 14,3 MILHÕES de gravações inúteis, achadas na aba de
+  consultas do banco.** A lista de "quem mais chama" mostrou
+  `INSERT INTO analisesps.sp_fiscal` com **14.328.805 chamadas** e 34 min 30 s
+  de processador — vinte e uma vezes mais que a gravação das próprias SPs, e
+  para uma tabela de uns 15 a 20 mil registros.
+
+  **Causa:** a etapa que traz as planilhas de apoio regravava TODAS as linhas
+  a cada passagem (`ON CONFLICT DO UPDATE` sem condição), e essa etapa roda em
+  toda sincronização — disparada de 5 em 5 minutos por quem estiver com a tela
+  aberta.
+
+  **A lição que vale para o monorepo inteiro, e não só para esta área:**
+  no Postgres, **regravar uma linha com o mesmo valor não é de graça** — deixa
+  a versão antiga como lixo, que engorda a tabela até ela não caber mais na
+  memória do banco. Num banco com 0,25 GB e 0,1 CPU (item acima), isso é a
+  diferença entre rápido e inutilizável, e o sintoma se alimenta da causa.
+  **Todo `ON CONFLICT DO UPDATE` que roda em laço deve ter
+  `WHERE <tabela>.col IS DISTINCT FROM EXCLUDED.col`.** Os outros módulos que
+  gravam em laço (`painel`, com `rateio`, `titulos`, `fato` e `movimentos` na
+  lista das mais chamadas) **não foram auditados** — é o próximo lugar a
+  olhar, e é área de outro chat.
+
+  **Corrigido no Análise de SPs** (`analisesps/HISTORICO.md`, 22ª leva): a
+  condição nas duas gravações de apoio, e a releitura das planilhas de apoio
+  passa a ser de hora em hora no disparo automático — o botão continua
+  imediato.
 - **2026-08-30 — Nasce o ERP como blueprint do monorepo** (`0976b8f`, primeiro
   de 50 commits até 2026-09-01). Decisões que vieram junto:
   1. **Hospedar dentro do serviço `aplicacoes`**, não em serviço novo — sem
