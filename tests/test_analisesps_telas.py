@@ -3258,3 +3258,173 @@ def test_quem_so_consulta_nao_dispara_atualizacao(app):
     resposta = como(app, SENHA_CONSULTA).post(
         "/analisesps/api/sincronizar", json={"modo": "sincronizar"})
     assert resposta.status_code == 403
+
+
+@pytest.fixture
+def app_rateio(app, monkeypatch):
+    """A tela de Ratear com as listas já carregadas, sem tocar no banco."""
+    from app.apps.analisesps import sincronizacao
+    monkeypatch.setattr(sincronizacao, "referencias_rateio", lambda: {
+        "obras": [{"nome": "OBRA-1", "codigo": "5001"},
+                  {"nome": "OBRA-2", "codigo": "5002"}],
+        "categorias": [{"nome": "Mão de obra", "codigo": "2002"}]})
+    return app
+
+
+# ---------------------------------------------------------------------------
+# COLAR UMA TABELA NO RATEAR
+#
+# "Imagina que eu tenho trinta obras para ratear. Se eu for colocar uma a uma
+# é trabalhoso, e essa informação normalmente vem de uma planilha do Excel."
+# Pedido do dono em 10/09/2026.
+#
+# A interpretação é no SERVIDOR, e não no navegador, de propósito: um rateio
+# na obra errada o Omie aceita sem reclamar, e o que roda no navegador esta
+# suíte não alcança. Por isso estes testes existem e são detalhados.
+# ---------------------------------------------------------------------------
+OBRAS = [{"nome": "OBRA-1", "codigo": "5001"},
+         {"nome": "OBRA-12 - CRECHE SWAP", "codigo": "5012"},
+         {"nome": "CONS", "codigo": "5003"}]
+
+
+def _colar(texto, referencias=None):
+    from app.apps.analisesps import rateio
+    return rateio.interpretar_colagem(texto, referencias or OBRAS)
+
+
+@pytest.mark.parametrize("colado,como", [
+    ("OBRA-1\t1.234,56\nCONS\t2.000,00", "tabulação, que é o que o Excel cola"),
+    ("Centro de custo\tValor\nOBRA-1\t1.234,56\nCONS\t2.000,00", "com cabeçalho junto"),
+    ("OBRA-1;1.234,56\nCONS;2.000,00", "ponto e vírgula"),
+    ("OBRA-1   1.234,56\nCONS   2.000,00", "colunas separadas por espaços"),
+    ("OBRA-1 1.234,56\nCONS 2.000,00", "um espaço só"),
+    ("OBRA-1\tR$ 1.234,56\nCONS\tR$ 2.000,00", "com R$ na frente"),
+    ("\nOBRA-1\t1.234,56\n\nCONS\t2.000,00\n", "com linhas em branco no meio"),
+])
+def test_a_colagem_entende_o_que_a_pessoa_realmente_cola(colado, como):
+    """Cada um destes é um jeito real de copiar uma tabela. O valor é sempre o
+    ÚLTIMO pedaço que parece número, e o nome é tudo o que vem antes — é isso
+    que faz funcionar com qualquer separador e com nome que tem espaço."""
+    lido = _colar(colado)
+    assert [(l["nome"], l["valor"]) for l in lido["linhas"]] == [
+        ("OBRA-1", "1234,56"), ("CONS", "2000,00")], como
+    assert not lido["avisos"], f"{como}: {lido['avisos']}"
+
+
+def test_o_nome_que_nao_existe_na_lista_nao_entra_e_e_apontado():
+    """NUNCA adivinhar. Uma obra que não existe entrar como outra qualquer
+    viraria lançamento no lugar errado, e o Omie aceita sem reclamar."""
+    lido = _colar("OBRA-1\t100,00\nOBRA-99\t200,00")
+    assert [l["nome"] for l in lido["linhas"]] == ["OBRA-1"]
+    assert any("OBRA-99" in a and "não entrou" in a for a in lido["avisos"])
+
+
+def test_o_nome_pela_metade_casa_quando_nao_ha_duvida():
+    """Quem monta a tabela à mão escreve "OBRA-12", e a lista tem
+    "OBRA-12 - CRECHE SWAP"."""
+    lido = _colar("OBRA-12\t100,00")
+    assert [l["nome"] for l in lido["linhas"]] == ["OBRA-12 - CRECHE SWAP"]
+    assert any("confira" in a for a in lido["avisos"]), (
+        "interpretação que não é o nome exato TEM de aparecer na tela")
+
+
+def test_o_nome_pela_metade_nao_pode_arrastar_a_obra_de_nome_parecido():
+    """ESTE É O TESTE QUE IMPORTA. O primeiro jeito que escrevi comparava "um
+    contém o outro", e "OBRA-1" casava com "OBRA-12". Com duas obras cujo nome
+    começa igual, a colagem tem de RECLAMAR, não escolher."""
+    lido = _colar("OBRA-1\t100,00", [{"nome": "OBRA-1 - ALA A", "codigo": "1"},
+                                     {"nome": "OBRA-1 - ALA B", "codigo": "2"}])
+    assert lido["linhas"] == []
+    assert any("mais de uma" in a for a in lido["avisos"])
+
+
+def test_o_nome_exato_ganha_de_qualquer_parecido():
+    """Com "OBRA-1" na lista, colar "OBRA-1" é o nome exato — não pode virar
+    uma escolha "parecida" nem gerar recado."""
+    lido = _colar("OBRA-1\t100,00")
+    assert [l["nome"] for l in lido["linhas"]] == ["OBRA-1"]
+    assert not lido["avisos"]
+
+
+def test_o_codigo_do_omie_no_lugar_do_nome_tambem_serve():
+    """Acontece com quem monta a tabela a partir do relatório do Omie."""
+    lido = _colar("5003\t100,00")
+    assert [l["nome"] for l in lido["linhas"]] == ["CONS"]
+    assert any("código" in a for a in lido["avisos"])
+
+
+def test_valor_que_nao_e_numero_positivo_e_apontado_e_nao_entra():
+    lido = _colar("OBRA-1\tabc\nCONS\t(500,00)\nOBRA-1\t0")
+    assert lido["linhas"] == []
+    assert len(lido["avisos"]) == 3
+
+
+def test_a_obra_repetida_fica_mas_e_apontada():
+    """Duas linhas da mesma obra pode ser engano de quem colou, ou pode ser
+    de propósito. Quem decide é a pessoa — mas ela precisa ver."""
+    lido = _colar("OBRA-1\t100,00\nOBRA-1\t200,00")
+    assert len(lido["linhas"]) == 2
+    assert any("mais de uma vez" in a for a in lido["avisos"])
+
+
+def test_colar_na_tela_preenche_um_lado_sem_apagar_o_outro(app_rateio):
+    """Apertar "Interpretar" do lado das obras não pode apagar as categorias
+    que a pessoa já tinha digitado, nem a base."""
+    cliente = como(app_rateio, SENHA_OPERADOR)
+    resposta = cliente.post("/analisesps/ratear", data={
+        "acao": "colar_cc",
+        "colagem_cc": "OBRA-2\t2.000,00",
+        "cat_nome": ["Mão de obra"], "cat_valor": ["999,00"],
+        "base_categoria": "5.000,00"})
+    html = resposta.get_data(as_text=True)
+
+    assert resposta.status_code == 200
+    assert 'value="2000,00"' in html, "a linha colada não entrou"
+    assert 'value="999,00"' in html, "apagou o outro lado"
+    assert 'value="5.000,00"' in html, "apagou a base da categoria"
+
+
+def test_o_texto_colado_volta_para_a_caixa(app_rateio):
+    """Quem precisa corrigir uma linha não pode ter de colar tudo de novo — e
+    a caixa fica aberta, ao lado do recado, para ele conferir e tentar."""
+    html = como(app_rateio, SENHA_OPERADOR).post("/analisesps/ratear", data={
+        "acao": "colar_cc",
+        "colagem_cc": "OBRA-9\t100,00"}).get_data(as_text=True)
+    assert "OBRA-9" in html
+    assert "<details" in html and "open" in html
+
+
+def test_apertar_enter_num_campo_gera_e_nao_interpreta(app_rateio):
+    """O navegador usa o PRIMEIRO botão de envio do formulário quando a pessoa
+    aperta Enter. Com as caixas de colar, esse passou a ser "Interpretar" —
+    então há um botão escondido de "gerar" antes de todos."""
+    import re as _re
+    html = como(app_rateio, SENHA_OPERADOR).get(
+        "/analisesps/ratear").get_data(as_text=True)
+    envios = _re.findall(r'<button[^>]*type="submit"[^>]*value="([^"]*)"', html)
+    assert envios and envios[0] == "gerar", (
+        f"o primeiro botão de envio tem de ser o de gerar, e é {envios[:2]}")
+
+
+def test_colar_nao_gera_o_json_ainda(app_rateio):
+    """Colar é preparar, não executar. A pessoa confere e só então gera."""
+    html = como(app_rateio, SENHA_OPERADOR).post("/analisesps/ratear", data={
+        "acao": "colar_cc", "colagem_cc": "OBRA-1\t100,00"}).get_data(as_text=True)
+    assert "copie e cole no Omie" not in html
+
+
+def test_quem_so_consulta_nao_cola_nem_gera(app_rateio):
+    resposta = como(app_rateio, SENHA_CONSULTA).post("/analisesps/ratear", data={
+        "acao": "colar_cc", "colagem_cc": "OBRA-1\t100,00"})
+    assert resposta.status_code == 403
+
+
+def test_a_tela_nao_mostra_mais_uma_caixa_de_erro_escrita_None(app_rateio):
+    """O `gerar_jsons` devolve três chaves, e a terceira é "erro". A tela
+    mostrava as três, então abria uma caixa chamada "erro" com "None" dentro
+    sempre que dava tudo certo."""
+    html = como(app_rateio, SENHA_OPERADOR).post("/analisesps/ratear", data={
+        "acao": "gerar",
+        "cc_nome": ["OBRA-1"], "cc_valor": ["100,00"]}).get_data(as_text=True)
+    assert "copie e cole no Omie" in html
+    assert ">None<" not in html and ">erro<" not in html

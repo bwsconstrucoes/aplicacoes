@@ -1,0 +1,27 @@
+{# A caixa de colar, igual dos dois lados. `lado` é "cc" (obras) ou "cat"
+   (categorias); `titulo` é o que aparece no rótulo.
+
+   Fica FECHADA por padrão: quem monta um rateio de duas linhas não precisa
+   dela, e uma caixa grande aberta atrapalharia o caso comum. #}
+{% set lado = lado|default("cc") %}
+{% if pode_operar %}
+{# Fica ABERTA quando acabou de interpretar: a pessoa precisa ver o recado ao
+   lado do texto que colou, para corrigir e tentar de novo sem redigitar. #}
+<details class="cartao-dica" style="margin:-4px 0 12px"
+         {% if avisos %}open{% endif %}>
+  <summary style="cursor:pointer"><b>Colar uma tabela da planilha</b></summary>
+  <p style="margin:8px 0 6px">
+    Copie do Excel as duas colunas — <b>{{ "a obra" if lado == "cc" else "a categoria" }}</b>
+    numa e <b>o valor</b> na outra — e cole aqui. Pode vir com o cabeçalho
+    junto. Cada linha vira uma linha da tabela abaixo.
+  </p>
+  <textarea name="colagem_{{ lado }}" class="campo-largo" rows="5"
+            placeholder="{{ 'OBRA-1&#9;1.234,56' if lado == 'cc' else 'Material de construção&#9;1.234,56' }}&#10;{{ 'OBRA-2&#9;2.000,00' if lado == 'cc' else 'Mão de obra&#9;2.000,00' }}">{{ colagem or '' }}</textarea>
+  <button class="btn secundario" type="submit" name="acao" value="colar_{{ lado }}"
+          style="margin-top:8px">Interpretar o que colei</button>
+  <small style="display:block;margin-top:6px">
+    Isto <b>substitui</b> as linhas deste lado. O outro lado não é tocado, e
+    nada é gerado ainda — você confere antes.
+  </small>
+</details>
+{% endif %}

@@ -1654,36 +1654,79 @@ def ratear():
         referencias = {"obras": [], "categorias": []}
         erro = (f"Não consegui ler as listas de obras e categorias: {e}")
 
+    # O QUE ESTÁ NOS CAMPOS AGORA. Sai do formulário e volta para a tela, para
+    # que apertar "Interpretar" de um lado não apague o que a pessoa já tinha
+    # digitado do outro — e para que um erro na geração não zere tudo.
+    def _do_formulario(prefixo):
+        nomes = request.form.getlist(f"{prefixo}_nome")
+        valores = request.form.getlist(f"{prefixo}_valor")
+        return [{"nome": (n or "").strip(), "valor": (v or "").strip()}
+                for n, v in zip(nomes, valores)]
+
+    linhas_cc = _do_formulario("cc")
+    linhas_cat = _do_formulario("cat")
+    base_categoria = request.form.get("base_categoria", "")
+    avisos_cc: list = []
+    avisos_cat: list = []
+    # O texto colado volta para a caixa: quem precisa corrigir uma linha não
+    # deve ter de colar tudo de novo.
+    colagem_cc = colagem_cat = ""
+
     if request.method == "POST":
         if not auth.pode_operar():
             return auth._sem_permissao()
-        mapa_obra = {o["nome"]: o["codigo"] for o in referencias["obras"]}
-        mapa_categoria = {c["nome"]: c["codigo"] for c in referencias["categorias"]}
+        acao = request.form.get("acao", "gerar")
 
-        def _linhas(prefixo, mapa, campo):
-            saida = []
-            nomes = request.form.getlist(f"{prefixo}_nome")
-            valores = request.form.getlist(f"{prefixo}_valor")
-            for nome, valor in zip(nomes, valores):
-                nome = (nome or "").strip()
-                if not nome:
-                    continue
-                saida.append({campo: nome, "codigo": mapa.get(nome, ""),
-                              "valor": rateio._to_float(valor)})
-            return saida
+        # COLAR UMA TABELA DA PLANILHA, em vez de escolher trinta obras uma a
+        # uma. Quem interpreta é o `rateio`, no servidor, onde há teste — e não
+        # o navegador, que esta máquina não consegue exercitar. O porquê inteiro
+        # está em `rateio.interpretar_colagem`.
+        if acao in ("colar_cc", "colar_cat"):
+            qual = "obras" if acao == "colar_cc" else "categorias"
+            colado = request.form.get(f"colagem_{acao[6:]}", "")
+            lido = rateio.interpretar_colagem(colado, referencias[qual])
+            if acao == "colar_cc":
+                linhas_cc, avisos_cc, colagem_cc = (
+                    lido["linhas"], lido["avisos"], colado)
+            else:
+                linhas_cat, avisos_cat, colagem_cat = (
+                    lido["linhas"], lido["avisos"], colado)
+            if not lido["linhas"]:
+                (avisos_cc if acao == "colar_cc" else avisos_cat).insert(
+                    0, "Não reconheci nenhuma linha. Cole duas colunas: o nome "
+                       "na primeira e o valor na segunda.")
 
-        try:
-            resultado = rateio.gerar_jsons(
-                _linhas("cc", mapa_obra, "obra"),
-                _linhas("cat", mapa_categoria, "categoria"),
-                base_cat=rateio._to_float(request.form.get("base_categoria", "")) or None)
-        except Exception as e:  # noqa: BLE001 — o motivo tem de aparecer na tela
-            logger.exception("Análise de SPs: falhou gerar o rateio")
-            erro = str(e)
+        else:
+            mapa_obra = {o["nome"]: o["codigo"] for o in referencias["obras"]}
+            mapa_categoria = {c["nome"]: c["codigo"]
+                              for c in referencias["categorias"]}
+
+            def _para_o_json(linhas, mapa, campo):
+                return [{campo: l["nome"], "codigo": mapa.get(l["nome"], ""),
+                         "valor": rateio._to_float(l["valor"])}
+                        for l in linhas if l["nome"]]
+
+            try:
+                resultado = rateio.gerar_jsons(
+                    _para_o_json(linhas_cc, mapa_obra, "obra"),
+                    _para_o_json(linhas_cat, mapa_categoria, "categoria"),
+                    base_cat=rateio._to_float(base_categoria) or None)
+            except Exception as e:  # noqa: BLE001 — o motivo tem de aparecer na tela
+                logger.exception("Análise de SPs: falhou gerar o rateio")
+                erro = str(e)
+
+    # Sempre sobram linhas vazias para continuar digitando à mão.
+    VAZIAS = 3
+    linhas_cc = linhas_cc + [{"nome": "", "valor": ""}] * VAZIAS
+    linhas_cat = linhas_cat + [{"nome": "", "valor": ""}] * VAZIAS
 
     return render_template(
         "analisesps_ratear.html", aba="ratear",
         referencias=referencias, resultado=resultado, erro=erro,
+        linhas_cc=linhas_cc, linhas_cat=linhas_cat,
+        avisos_cc=avisos_cc, avisos_cat=avisos_cat,
+        colagem_cc=colagem_cc, colagem_cat=colagem_cat,
+        base_categoria=base_categoria,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())

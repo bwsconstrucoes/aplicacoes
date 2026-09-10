@@ -419,6 +419,27 @@ E a maior de todas para quem está do outro lado:
   apagada POR FORA da carga deixa o número velho até a próxima. Hoje ninguém
   faz isso — a fila de volta altera SPs que já existem, não cria nem remove.
 
+### Ratear: colar uma tabela em vez de escolher trinta obras
+
+Pedido do dono em 10/09/2026. Uma caixa fechada em cada cartão aceita duas
+colunas coladas do Excel — o nome numa, o valor na outra — e vira as linhas da
+tabela.
+
+**A interpretação é no servidor** (`rateio.interpretar_colagem`), e não no
+navegador, de propósito: um rateio na obra errada o Omie aceita sem reclamar,
+e o que roda no navegador esta suíte não alcança. Aqui tem teste.
+
+**A regra que governa tudo: nunca adivinhar.** Nome que não bate não entra, e
+toda interpretação que não seja o nome exato aparece no recado. A comparação
+por nome parcial é **por começo**, com desempate pelo mais longo — nunca "um
+contém o outro", que casava "OBRA-1" com "OBRA-12". Há teste com duas obras de
+nome parecido conferindo que a colagem RECLAMA em vez de escolher.
+
+Detalhes que se desfazem fácil e têm teste: interpretar um lado não apaga o
+outro; apertar Enter num campo continua **gerando** (há um botão escondido de
+"gerar" antes de todos, porque o navegador usa o primeiro botão de envio do
+formulário); o texto colado volta para a caixa.
+
 ### O banco não é reescrito à toa
 
 Achado em 10/09/2026 na aba de consultas do banco de produção, e é a maior
