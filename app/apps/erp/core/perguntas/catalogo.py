@@ -117,6 +117,47 @@ CATALOGO += [
     },
 ]
 
+# ---------------------------------------------------------------------------
+# SUPRIMENTOS — grupo próprio, sob a ação `ver_suprimentos`.
+# ---------------------------------------------------------------------------
+CATALOGO += [
+    {
+        "chave": "insumos_da_categoria",
+        "grupo": "suprimentos",
+        "pergunta": "Quais insumos estão cadastrados numa categoria?",
+        "exemplos": ["me manda a lista dos insumos da categoria hidráulico",
+                     "quantos insumos temos cadastrados"],
+        "parametros": [_p("categoria", "Categoria de insumo", TEXTO,
+                          "em branco = o catálogo inteiro")],
+        "funcao": respostas.insumos_da_categoria,
+    },
+    {
+        "chave": "preco_do_insumo",
+        "grupo": "suprimentos",
+        "pergunta": "Quanto já pagamos por um insumo?",
+        "exemplos": ["qual o preço do cimento", "esse preço está caro?"],
+        "parametros": [_p("insumo", "Insumo", TEXTO, "nome ou parte dele")],
+        "funcao": respostas.preco_do_insumo,
+    },
+    {
+        "chave": "pedidos_de_material_pendentes",
+        "grupo": "suprimentos",
+        "pergunta": "O que a obra pediu e ainda não foi resolvido?",
+        "exemplos": ["quais pedidos de material estão em aberto",
+                     "o que a obra tal está esperando"],
+        "parametros": [_p("obra", "Obra", TEXTO, "em branco = todas")],
+        "funcao": respostas.pedidos_de_material_pendentes,
+    },
+    {
+        "chave": "insumos_sem_conta_do_plano",
+        "grupo": "suprimentos",
+        "pergunta": "Quais insumos estão sem conta do plano financeiro?",
+        "exemplos": ["que insumo falta acertar a conta"],
+        "parametros": [],
+        "funcao": respostas.insumos_sem_conta_do_plano,
+    },
+]
+
 POR_CHAVE: dict[str, dict[str, Any]] = {p["chave"]: p for p in CATALOGO}
 
 

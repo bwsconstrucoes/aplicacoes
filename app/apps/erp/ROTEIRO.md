@@ -177,6 +177,17 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       Grupo próprio (`contratos`), com rota e ação próprias: `ver_contratos` é
       estreita porque o quadro mostra o contrato de ponta a ponta e não se
       recorta por obra designada sem mentir no total.
+- [x] **1e. As perguntas de Suprimentos** — FEITAS em 10/09/2026, sob a ação
+      `ver_suprimentos`: os insumos de uma categoria (pedida pelo dono com
+      estas palavras), quanto já se pagou por um insumo, o que a obra pediu e
+      ainda não foi resolvido, e os insumos sem conta do plano.
+      Duas naturezas convivem no grupo: o CATÁLOGO é cadastro da empresa e não
+      se recorta por obra; a FILA DE PEDIDOS passa pelo filtro por pessoa da
+      tela de Solicitações.
+      Vieram junto duas regras que valem para TODA resposta: o **teto de
+      linhas** (a conta é sobre tudo, o corte é só do que aparece na tela — a
+      base tem 3.285 insumos) e a **busca sem acento** (quem procura
+      "Hidráulico" digita "hidra").
 - [ ] **2. Assistente SÓ DE LEITURA, dentro do ERP.** Painel lateral (não
       caixinha), com o catálogo de perguntas conhecidas respondido por CÓDIGO —
       exato, rápido e sem custo de IA — e a pergunta imprevista caindo numa

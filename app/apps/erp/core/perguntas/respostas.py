@@ -61,6 +61,25 @@ def _dec(v: Any) -> Decimal:
     return Decimal(str(v or 0))
 
 
+def _casa(procurado: str, texto: Any) -> bool:
+    """Procura um pedaço de texto dentro de outro, SEM ligar para acento nem
+    para maiúscula.
+
+    Existe porque ninguém digita acento numa busca: quem procura a categoria
+    "Hidráulico" escreve "hidra". A primeira versão comparava direto e não
+    achava nada — e "nenhum insumo nessa categoria" sobre uma categoria cheia
+    é o pior tipo de resposta errada, porque parece certa.
+    """
+    import unicodedata
+
+    def limpo(v: Any) -> str:
+        bruto = unicodedata.normalize("NFKD", str(v or "").strip().lower())
+        return "".join(c for c in bruto if not unicodedata.combining(c))
+
+    alvo = limpo(procurado)
+    return bool(alvo) and alvo in limpo(texto)
+
+
 def _reais(v: Any) -> str:
     """R$ 1.234,50 — e SÓ o número.
 
@@ -113,17 +132,32 @@ def _linha(t: Titulo, **extra: Any) -> dict[str, Any]:
     return linha
 
 
+# Quantas linhas a resposta mostra. A conta é sempre feita sobre TUDO — o que
+# o teto corta é só o que viaja para a tela. A base de insumos tem 3.285 itens:
+# devolver todos travaria o navegador, e ninguém lê 3.285 linhas de qualquer
+# jeito. A resposta sempre diz quantas existem de verdade.
+TETO_DE_LINHAS = 300
+
+
 def _resposta(*, titulo: str, frase: str, linhas: list[dict[str, Any]],
               colunas: list[tuple[str, str]], de_onde_veio: dict[str, Any],
               total: Optional[Decimal] = None,
               observacao: str = "") -> dict[str, Any]:
+    quantas = len(linhas)
+    mostradas = linhas[:TETO_DE_LINHAS]
+    if quantas > TETO_DE_LINHAS:
+        corte = (f"Mostrando as primeiras {TETO_DE_LINHAS} de {quantas} linhas. "
+                 f"O número acima é sobre TODAS — o corte é só do que aparece "
+                 f"na tela. Use a tela de origem para ver a lista inteira.")
+        observacao = f"{observacao} {corte}".strip()
     return {
         "titulo": titulo,
         "frase": frase,
-        "quantas": len(linhas),
+        "quantas": quantas,
+        "mostradas": len(mostradas),
         "total": float(total) if total is not None else None,
         "colunas": [{"chave": c, "rotulo": r} for c, r in colunas],
-        "linhas": linhas,
+        "linhas": mostradas,
         "de_onde_veio": de_onde_veio,
         "observacao": observacao,
     }
@@ -157,7 +191,7 @@ def a_pagar_no_periodo(s: Session, usuario: Usuario, *,
     linhas, total = [], Decimal(0)
     for t in s.scalars(stmt).all():
         obras = _obras_do_titulo(t)
-        if obra and obra.lower() not in obras.lower():
+        if obra and not _casa(obra, obras):
             continue
         for p in _abertas_do_titulo(t):
             if p.vencimento is None or not (inicio <= p.vencimento <= fim):
@@ -199,7 +233,7 @@ def vencidos_sem_pagar(s: Session, usuario: Usuario, *,
     linhas, total = [], Decimal(0)
     for t in s.scalars(stmt).all():
         obras = _obras_do_titulo(t)
-        if obra and obra.lower() not in obras.lower():
+        if obra and not _casa(obra, obras):
             continue
         for p in _abertas_do_titulo(t):
             if p.vencimento is None or p.vencimento >= hoje:
@@ -394,7 +428,7 @@ def _reguas_dos_contratos(s: Session, obra: str = "") -> list[dict[str, Any]]:
 
     reguas = []
     for resumo in svc_quadro.listar_contratos(s):
-        if obra and obra.lower() not in (resumo.get("obra") or "").lower():
+        if obra and not _casa(obra, resumo.get("obra")):
             continue
         q = svc_quadro.quadro(s, resumo["id"])
         t = q["totais"]
@@ -515,3 +549,194 @@ def faturado_sem_receber(s: Session, usuario: Usuario, *,
         observacao=("Dinheiro recebido A MAIS do que foi faturado não aparece "
                     "aqui como negativo: é outra coisa (entrada sem nota) e a "
                     "tela do contrato mostra em linha própria."))
+
+
+# ===========================================================================
+# SUPRIMENTOS — o catálogo de insumos e a fila de pedidos de material
+#
+# Grupo próprio, sob a ação `ver_suprimentos`. Duas naturezas convivem aqui, e
+# vale saber a diferença: o CATÁLOGO (insumos, categorias, preços) é cadastro
+# da empresa e não se recorta por obra — quem pode ver Suprimentos vê o
+# catálogo inteiro. Já a FILA DE PEDIDOS é da obra, e passa pelo mesmo filtro
+# por pessoa que a tela de Solicitações usa (`solicitacao.listar_itens`).
+# ===========================================================================
+def insumos_da_categoria(s: Session, usuario: Usuario, *,
+                         categoria: str = "") -> dict[str, Any]:
+    """A lista de insumos de uma categoria de suprimento.
+
+    Foi pedida com estas palavras: *"me manda uma lista dos insumos cadastrados
+    na categoria tal"*. Sem categoria dita, responde o catálogo inteiro com a
+    contagem por categoria — que é o que serve para escolher qual pedir.
+    """
+    from app.apps.erp.core.suprimentos import cadastro as svc_cadastro
+
+    dados = svc_cadastro.gerenciar_insumos(s)
+    ativos = [i for i in dados["insumos"] if i["ativo"]]
+    alvo = (categoria or "").strip()
+    if alvo:
+        escolhidos = [i for i in ativos if _casa(alvo, i["categoria_insumo"])]
+    else:
+        escolhidos = ativos
+
+    linhas = [{
+        "codigo": i["codigo"], "descricao": i["descricao"],
+        "categoria_insumo": i["categoria_insumo"] or "—",
+        "unidade": i["unidade"] or "—",
+        "conta": i["conta"] or "—",
+        "locavel": "sim" if i["locavel"] else "",
+        "ultimo_preco": i["ultimo_preco"],
+    } for i in escolhidos]
+
+    if alvo and not linhas:
+        nomes = sorted({i["categoria_insumo"] for i in ativos if i["categoria_insumo"]})
+        parecidas = [n for n in nomes if _casa(alvo[:4], n)][:6]
+        dica = (f" Categorias parecidas: {', '.join(parecidas)}." if parecidas
+                else f" São {len(nomes)} categorias cadastradas.")
+        frase = f"Nenhum insumo na categoria '{alvo}'.{dica}"
+    elif alvo:
+        frase = f"{len(linhas)} insumo(s) na categoria '{alvo}'."
+    else:
+        quantas_cat = len({i["categoria_insumo"] for i in ativos if i["categoria_insumo"]})
+        frase = (f"{len(linhas)} insumo(s) ativo(s) no catálogo, em "
+                 f"{quantas_cat} categoria(s).")
+    return _resposta(
+        titulo=(f"Insumos da categoria {alvo}" if alvo else "Catálogo de insumos"),
+        frase=frase, linhas=linhas,
+        colunas=[("codigo", "Código"), ("descricao", "Insumo"),
+                 ("categoria_insumo", "Categoria"), ("unidade", "Unidade"),
+                 ("conta", "Conta do plano"), ("locavel", "Locável"),
+                 ("ultimo_preco", "Último preço")],
+        de_onde_veio={"tela": "/erp/suprimentos/insumos",
+                      "explicacao": "Suprimentos › Cadastros › Insumos."},
+        observacao=("O catálogo é cadastro da empresa e não se divide por obra: "
+                    "quem enxerga Suprimentos enxerga o catálogo inteiro."))
+
+
+def insumos_sem_conta_do_plano(s: Session, usuario: Usuario) -> dict[str, Any]:
+    """Insumos que não apontam para uma conta do plano financeiro.
+
+    Importa porque é a conta do plano que faz o pedido de compra virar previsão
+    de pagamento já apropriada. Sem ela, a compra chega no financeiro sem saber
+    em que custo entra.
+    """
+    from app.apps.erp.core.suprimentos import cadastro as svc_cadastro
+
+    dados = svc_cadastro.gerenciar_insumos(s)
+    linhas = [{
+        "codigo": i["codigo"], "descricao": i["descricao"],
+        "categoria_insumo": i["categoria_insumo"] or "—",
+        "unidade": i["unidade"] or "—",
+    } for i in dados["insumos"] if i["ativo"] and not i["categoria_id"]]
+
+    frase = ("Todo insumo ativo tem conta do plano." if not linhas else
+             f"{len(linhas)} insumo(s) ativo(s) sem conta do plano financeiro.")
+    return _resposta(
+        titulo="Insumos sem conta do plano", frase=frase, linhas=linhas,
+        colunas=[("codigo", "Código"), ("descricao", "Insumo"),
+                 ("categoria_insumo", "Categoria"), ("unidade", "Unidade")],
+        de_onde_veio={"tela": "/erp/suprimentos/insumos",
+                      "explicacao": "Suprimentos › Insumos, filtro 'sem conta do plano'."},
+        observacao=("É a conta do plano que faz o pedido virar previsão de "
+                    "pagamento já apropriada. Sem ela, a compra chega no "
+                    "financeiro sem saber em que custo entra."))
+
+
+def pedidos_de_material_pendentes(s: Session, usuario: Usuario, *,
+                                  obra: str = "") -> dict[str, Any]:
+    """O que a obra pediu e ainda não foi resolvido.
+
+    Passa pelo `listar_itens` da tela de Solicitações, que já filtra por
+    pessoa: quem é preso a uma obra vê os pedidos daquela obra, e mais nada.
+    """
+    from app.apps.erp.core.suprimentos import solicitacao as svc_sol
+
+    itens = svc_sol.listar_itens(s, usuario)
+    abertos = [i for i in itens
+               if (i.get("status") or "").upper() not in
+               ("ATENDIDO", "CANCELADO", "RECUSADO", "COMPRADO", "RECEBIDO")]
+    alvo = (obra or "").strip()
+    if alvo:
+        abertos = [i for i in abertos
+                   if _casa(alvo, i.get("obra_codigo") or i.get("obra"))]
+
+    linhas = [{
+        "solicitacao": i.get("solicitacao") or "",
+        "insumo": i.get("insumo") or "",
+        "especificacao": (i.get("especificacao") or "")[:80],
+        "quantidade": i.get("quantidade"),
+        "obra": i.get("obra_codigo") or i.get("obra") or "—",
+        "prioridade": i.get("prioridade") or "",
+        "situacao": (i.get("status") or "").replace("_", " ").lower(),
+        "previsao": i.get("previsao_entrega") or "",
+    } for i in abertos]
+    linhas.sort(key=lambda l: (l["obra"], l["solicitacao"]))
+
+    onde = f" na obra {alvo}" if alvo else ""
+    frase = (f"Nenhum pedido de material em aberto{onde}." if not linhas else
+             f"{len(linhas)} item(ns) de material pedido(s) e ainda em "
+             f"aberto{onde}.")
+    return _resposta(
+        titulo=f"Pedidos de material em aberto{onde}", frase=frase, linhas=linhas,
+        colunas=[("solicitacao", "Solicitação"), ("insumo", "Insumo"),
+                 ("especificacao", "Especificação"), ("quantidade", "Quantidade"),
+                 ("obra", "Obra"), ("prioridade", "Prioridade"),
+                 ("situacao", "Situação"), ("previsao", "Previsão")],
+        de_onde_veio={"tela": "/erp/suprimentos",
+                      "explicacao": "Suprimentos › Solicitações."},
+        observacao=("Mostra o que ainda não foi atendido, comprado, recebido, "
+                    "recusado nem cancelado. A lista respeita o alcance de quem "
+                    "perguntou: quem é preso a uma obra vê só a dela."))
+
+
+def preco_do_insumo(s: Session, usuario: Usuario, *,
+                    insumo: str = "") -> dict[str, Any]:
+    """O que já se pagou por um insumo, e quando.
+
+    A pergunta prática é sempre a mesma: *"este preço que estão me cobrando
+    está caro?"* — e ela só se responde olhando o que a própria empresa já
+    pagou.
+    """
+    from app.apps.erp.core.suprimentos import cadastro as svc_cadastro
+
+    alvo = (insumo or "").strip()
+    if not alvo:
+        return _resposta(
+            titulo="Preço de um insumo",
+            frase="Diga o nome do insumo (ou parte dele) para eu procurar.",
+            linhas=[], colunas=[],
+            de_onde_veio={"tela": "/erp/suprimentos/precos",
+                          "explicacao": "Suprimentos › Banco de preços."})
+
+    dados = svc_cadastro.gerenciar_insumos(s)
+    achados = [i for i in dados["insumos"]
+               if i["ativo"] and _casa(alvo, i["descricao"])]
+    com_preco = [i for i in achados if i["ultimo_preco"] is not None]
+    linhas = [{
+        "codigo": i["codigo"], "descricao": i["descricao"],
+        "unidade": i["unidade"] or "—",
+        "ultimo_preco": i["ultimo_preco"],
+        "ultimo_preco_em": i["ultimo_preco_em"] or "",
+        "origem": i["ultimo_preco_origem"] or "",
+        "categoria_insumo": i["categoria_insumo"] or "—",
+    } for i in sorted(achados, key=lambda x: (x["ultimo_preco"] is None,
+                                              x["descricao"]))]
+
+    if not achados:
+        frase = f"Nenhum insumo com '{alvo}' no nome."
+    elif not com_preco:
+        frase = (f"{len(achados)} insumo(s) com '{alvo}' no nome, mas nenhum "
+                 f"tem preço registrado ainda.")
+    else:
+        frase = (f"{len(achados)} insumo(s) com '{alvo}' no nome; "
+                 f"{len(com_preco)} com preço já registrado.")
+    return _resposta(
+        titulo=f"Preço de '{alvo}'", frase=frase, linhas=linhas,
+        colunas=[("codigo", "Código"), ("descricao", "Insumo"),
+                 ("unidade", "Unidade"), ("ultimo_preco", "Último preço"),
+                 ("ultimo_preco_em", "Quando"), ("origem", "De onde veio"),
+                 ("categoria_insumo", "Categoria")],
+        de_onde_veio={"tela": "/erp/suprimentos/precos",
+                      "explicacao": "Suprimentos › Banco de preços."},
+        observacao=("É o ÚLTIMO preço registrado de cada insumo, não a média "
+                    "nem o menor. Insumo sem preço nunca foi comprado pelo "
+                    "sistema — ou a compra não passou pelo banco de preços."))

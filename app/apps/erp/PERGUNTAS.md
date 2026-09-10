@@ -139,9 +139,11 @@ obra e por autoria das telas, e cada resposta mostra de onde veio.
 
 ### Suprimentos
 
-- Quais insumos estão cadastrados na categoria X?
-- Quais insumos estão sem conta do plano financeiro?
-- Quais solicitações de material estão pendentes, e de qual obra? 🔒
+- ✅ **Quais insumos estão cadastrados numa categoria?** — sem categoria dita,
+  o catálogo inteiro com a contagem por categoria. A busca **ignora acento**
+- ✅ **Quanto já pagamos por um insumo?** — o último preço, quando e de onde veio
+- ✅ **O que a obra pediu e ainda não foi resolvido?** 🔒
+- ✅ **Quais insumos estão sem conta do plano financeiro?**
 - Quais cotações estão abertas e quais fornecedores ainda não responderam?
 - Qual o melhor preço já pago pelo insumo X, e quando, e de quem?
 - Este preço que estão me cobrando está acima do que costumamos pagar?
@@ -213,6 +215,17 @@ conta feita apenas sobre o que já veria na tela de Títulos. Grupo novo
 (suprimentos, contratos) ganha **rota própria com a ação própria dele** — uma
 rota só, respondendo perguntas de pesos diferentes, obrigaria a conferir
 permissão por dentro, e aí a ação declarada na rota mentiria.
+
+**A resposta tem TETO de linhas** (`TETO_DE_LINHAS`, hoje 300), e isto tem uma
+sutileza que não pode se perder: **a conta é sempre feita sobre TUDO** — o teto
+corta só o que viaja para a tela, e a resposta continua dizendo quantas linhas
+existem de verdade. Se um dia o número passar a ser o do corte, a resposta
+mentirá. Há teste exigindo isso.
+
+**A busca por texto ignora acento e maiúscula** (`_casa`). Ninguém digita
+"Hidráulico" com acento: escreve "hidra". A primeira versão comparava direto e
+respondia "nenhum insumo nessa categoria" sobre uma categoria com 305 itens —
+o pior tipo de resposta errada, porque parece certa.
 
 **Toda resposta devolve `de_onde_veio`** (a tela que reproduz o número) e, quando
 a pergunta tem mais de uma leitura possível, uma `observacao` dizendo qual foi

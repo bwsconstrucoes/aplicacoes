@@ -2040,6 +2040,45 @@ def api_perguntar_financeiro():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/perguntas/suprimentos")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_perguntas_suprimentos():
+    from app.apps.erp.core.perguntas import catalogo
+    return jsonify({"ok": True, "perguntas": catalogo.para_a_tela("suprimentos")})
+
+
+@bp.route("/erp/api/perguntar/suprimentos", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_perguntar_suprimentos():
+    """Grupo de suprimentos: catálogo de insumos, preços e fila de pedidos.
+
+    O CATÁLOGO é cadastro da empresa e não se recorta por obra. Já a fila de
+    pedidos passa pelo mesmo filtro por pessoa da tela de Solicitações — quem
+    é preso a uma obra vê só a dela.
+    """
+    from app.apps.erp.core.perguntas import catalogo
+    d = request.get_json(silent=True) or {}
+    chave = (d.get("chave") or "").strip()
+    if chave not in {p["chave"] for p in catalogo.do_grupo("suprimentos")}:
+        raise ErroNaoEncontrado("Pergunta desconhecida neste grupo.")
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = catalogo.responder(chave, s, atual, d.get("parametros") or {})
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao responder a pergunta %s", chave)
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/perguntas/contratos")
 @login_obrigatorio
 @permissao("ver_contratos")

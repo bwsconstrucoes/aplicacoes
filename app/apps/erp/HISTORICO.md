@@ -106,6 +106,38 @@ telas de cadastro de Suprimentos** (detalhada abaixo), mais a correção das
 três telas que nunca funcionaram (ver Incidentes). Suíte: 2.097 casos com
 banco de verdade. **Nada pendente no ramo.**
 
+### As perguntas de Suprimentos, e duas regras que valem para todas — 10/09/2026
+
+Quatro perguntas novas sob `ver_suprimentos`: os insumos de uma categoria (o
+dono pediu esta com estas palavras — *"me manda uma lista dos insumos
+cadastrados na categoria tal"*), quanto já se pagou por um insumo, o que a
+obra pediu e ainda não foi resolvido, e os insumos sem conta do plano.
+
+**Duas naturezas convivem neste grupo, e confundi-las é o erro caro:** o
+CATÁLOGO (insumos, categorias, preços) é cadastro da empresa e **não** se
+recorta por obra — recortá-lo esconderia insumo de quem precisa cadastrar. Já
+a FILA DE PEDIDOS é da obra, e passa pelo mesmo filtro por pessoa da tela de
+Solicitações — não filtrá-la mostraria o pedido de uma obra ao administrativo
+de outra.
+
+Vieram junto **duas regras que agora valem para toda resposta do assistente**:
+
+1. **Teto de linhas, com o número continuando verdadeiro.** A base tem 3.285
+   insumos; devolver todos travaria o navegador. A resposta mostra 300 e diz
+   quantas existem — **a conta é sempre feita sobre tudo**. O perigo seria o
+   número passar a ser o do corte: aí a resposta mentiria, e há teste
+   exigindo que não.
+2. **A busca por texto ignora acento e maiúscula.** Ninguém digita
+   "Hidráulico" com acento: escreve "hidra". A primeira versão comparava
+   direto e respondia *"nenhum insumo nessa categoria"* sobre uma categoria
+   com 305 itens — o pior tipo de resposta errada, porque **parece certa**.
+
+Ensaio na base de demonstração: 3.285 insumos em 57 categorias, 8 sem conta do
+plano, 55 itens de material pedidos e em aberto, e "hidraul" (sem acento)
+achando 305 insumos.
+
+Sem migração.
+
 ### A régua do recebimento — 10/09/2026
 
 O dono desfez ele mesmo a ambiguidade do "quanto falta receber", e mostrou que
