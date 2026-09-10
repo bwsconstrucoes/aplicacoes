@@ -63,6 +63,9 @@ const GRUPOS = [
   {chave: "contratos", nome: "Contratos, medições e recebimento",
    lista: "/erp/api/perguntas/contratos",
    responder: "/erp/api/perguntar/contratos"},
+  {chave: "suprimentos", nome: "Insumos, preços e pedidos de material",
+   lista: "/erp/api/perguntas/suprimentos",
+   responder: "/erp/api/perguntar/suprimentos"},
 ];
 const GRUPO_POR_CHAVE = Object.fromEntries(GRUPOS.map(g => [g.chave, g]));
 let PERGUNTAS = [], ESCOLHIDA = null;
