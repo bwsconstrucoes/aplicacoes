@@ -2040,6 +2040,45 @@ def api_perguntar_financeiro():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/perguntas/contratos")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_perguntas_contratos():
+    from app.apps.erp.core.perguntas import catalogo
+    return jsonify({"ok": True, "perguntas": catalogo.para_a_tela("contratos")})
+
+
+@bp.route("/erp/api/perguntar/contratos", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_perguntar_contratos():
+    """Grupo de contratos: medição, faturamento e recebimento.
+
+    Rota separada da do financeiro porque a AÇÃO é outra — e mais estreita. O
+    quadro mostra o contrato de ponta a ponta e não se recorta por obra
+    designada sem mentir no total.
+    """
+    from app.apps.erp.core.perguntas import catalogo
+    d = request.get_json(silent=True) or {}
+    chave = (d.get("chave") or "").strip()
+    if chave not in {p["chave"] for p in catalogo.do_grupo("contratos")}:
+        raise ErroNaoEncontrado("Pergunta desconhecida neste grupo.")
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = catalogo.responder(chave, s, atual, d.get("parametros") or {})
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao responder a pergunta %s", chave)
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # Trabalho no sistema — a trilha de auditoria lida como entrega
 #

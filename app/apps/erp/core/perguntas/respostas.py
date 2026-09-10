@@ -372,3 +372,146 @@ def panorama_de_vencimentos(s: Session, usuario: Usuario) -> dict[str, Any]:
                       "explicacao": "Agenda de pagamentos."},
         observacao=("As três faixas não se sobrepõem, e o total é a soma "
                     "delas. Inclui o que está bloqueado."))
+
+
+# ===========================================================================
+# CONTRATOS — "quanto falta receber", nas quatro leituras que o dono definiu
+#
+# Estas respostas vivem sob a ação `ver_contratos`, e por isso ficam numa ROTA
+# SEPARADA da do financeiro. A ação é deliberadamente estreita: o quadro mostra
+# o contrato de ponta a ponta, e não há como recortá-lo por obra designada sem
+# mentir no total — quem é preso a obra ou a autoria fica de fora.
+# ===========================================================================
+def _reguas_dos_contratos(s: Session, obra: str = "") -> list[dict[str, Any]]:
+    """A régua de cada contrato, usando a MESMA aritmética do quadro da tela.
+
+    Reusar `quadro()` em vez de somar de novo é o que impede o número da
+    pergunta e o da tela divergirem — já aconteceu antes neste arquivo do
+    contrato, com o reajuste, e quem vê dois números diferentes sobre a mesma
+    coisa perde a confiança nos dois.
+    """
+    from app.apps.erp.core.titulos import quadro as svc_quadro
+
+    reguas = []
+    for resumo in svc_quadro.listar_contratos(s):
+        if obra and obra.lower() not in (resumo.get("obra") or "").lower():
+            continue
+        q = svc_quadro.quadro(s, resumo["id"])
+        t = q["totais"]
+        reguas.append({
+            "contrato_id": resumo["id"],
+            "obra": q["contrato"]["obra"] or "—",
+            "objeto": (q["contrato"]["objeto"] or "")[:80],
+            "vigente": t["vigente"],
+            "medido": t["medido"],
+            "faturado": t["faturado"],
+            "recebido": t["recebido"],
+            "falta_receber_do_contrato": t["falta_receber_do_contrato"],
+            "falta_receber_do_medido": t["falta_receber_do_medido"],
+            "falta_faturar_do_medido": t["falta_faturar_do_medido"],
+            "a_receber": t["a_receber"],
+            "medido_sem_nota": len(q["pendencias"]["medido_sem_nota"]),
+            "faturado_sem_receber": len(q["pendencias"]["faturado_sem_receber"]),
+        })
+    return reguas
+
+
+def falta_receber(s: Session, usuario: Usuario, *, obra: str = "") -> dict[str, Any]:
+    """A RÉGUA INTEIRA, e não um número solto.
+
+    O dono desfez esta pergunta ele mesmo, em 10/09/2026, e mostrou que ela tem
+    quatro leituras — todas legítimas, e todas etapas de uma mesma esteira:
+
+        CONTRATO (+aditivos) → MEDIDO → FATURADO (nota emitida) → RECEBIDO
+
+    Em vez de escolher uma e responder um número (que estaria certo para uma
+    leitura e errado para as outras três), a resposta mostra as quatro juntas.
+    Assim a leitura que ele queria já está na tela, e ele não precisou ter
+    acertado a pergunta.
+    """
+    reguas = _reguas_dos_contratos(s, obra)
+    if not reguas:
+        onde = f" na obra {obra}" if obra else ""
+        return _resposta(
+            titulo=f"Quanto falta receber{onde}",
+            frase=f"Nenhum contrato encontrado{onde}.", linhas=[], colunas=[],
+            de_onde_veio={"tela": "/erp/contratos",
+                          "explicacao": "Quadro financeiro dos contratos."})
+
+    somas = {c: sum(r[c] for r in reguas) for c in
+             ("vigente", "medido", "faturado", "recebido",
+              "falta_receber_do_contrato", "falta_receber_do_medido",
+              "falta_faturar_do_medido", "a_receber")}
+    onde = f" na obra {obra}" if obra else f" ({len(reguas)} contrato(s))"
+    frase = (
+        f"Falta receber{onde}: {_reais(somas['falta_receber_do_contrato'])} "
+        f"olhando o CONTRATO inteiro · "
+        f"{_reais(somas['falta_receber_do_medido'])} olhando só o que já foi "
+        f"MEDIDO · {_reais(somas['a_receber'])} olhando só o que já tem NOTA.")
+    return _resposta(
+        titulo=f"Quanto falta receber{onde}", frase=frase, linhas=reguas,
+        total=somas["falta_receber_do_contrato"],
+        colunas=[("obra", "Obra"), ("objeto", "Objeto"),
+                 ("vigente", "Contrato vigente"), ("medido", "Medido"),
+                 ("faturado", "Faturado"), ("recebido", "Recebido"),
+                 ("falta_receber_do_contrato", "Falta receber (do contrato)"),
+                 ("falta_receber_do_medido", "Falta receber (do medido)"),
+                 ("a_receber", "Falta receber (do faturado)")],
+        de_onde_veio={"tela": "/erp/contratos",
+                      "explicacao": "Quadro financeiro do contrato, contrato a contrato."},
+        observacao=(
+            "São TRÊS leituras da mesma esteira — contrato → medido → faturado "
+            "→ recebido — e as três estão certas: elas respondem a perguntas "
+            "diferentes. A do CONTRATO inclui o que ainda nem foi executado; a "
+            "do MEDIDO, só o que já foi feito; a do FATURADO, só o que já tem "
+            "nota emitida e virou cobrança."))
+
+
+def medido_sem_nota(s: Session, usuario: Usuario, *,
+                    obra: str = "") -> dict[str, Any]:
+    """O que já foi medido e ainda não virou nota — dinheiro parado na porta.
+
+    É a etapa da esteira que mais custa caro quando fica esquecida: o serviço
+    foi feito, o custo já saiu, e a cobrança nem começou.
+    """
+    reguas = [r for r in _reguas_dos_contratos(s, obra)
+              if r["falta_faturar_do_medido"] > 0.01 or r["medido_sem_nota"]]
+    total = sum(r["falta_faturar_do_medido"] for r in reguas)
+    onde = f" na obra {obra}" if obra else ""
+    frase = (f"Tudo que foi medido{onde} já virou nota." if not reguas else
+             f"{_reais(total)} medido{onde} e ainda sem nota emitida, em "
+             f"{len(reguas)} contrato(s).")
+    return _resposta(
+        titulo=f"Medido e ainda sem nota{onde}", frase=frase, linhas=reguas,
+        total=total,
+        colunas=[("obra", "Obra"), ("objeto", "Objeto"), ("medido", "Medido"),
+                 ("faturado", "Faturado"),
+                 ("falta_faturar_do_medido", "Falta faturar"),
+                 ("medido_sem_nota", "Medições sem nota")],
+        de_onde_veio={"tela": "/erp/contratos",
+                      "explicacao": "Quadro do contrato, quadro 'pendências'."},
+        observacao=("O serviço já foi executado e o custo já saiu; o que falta "
+                    "é emitir a nota para poder cobrar."))
+
+
+def faturado_sem_receber(s: Session, usuario: Usuario, *,
+                         obra: str = "") -> dict[str, Any]:
+    """O que já tem nota emitida e ainda não entrou na conta."""
+    reguas = [r for r in _reguas_dos_contratos(s, obra) if r["a_receber"] > 0.01]
+    total = sum(r["a_receber"] for r in reguas)
+    onde = f" na obra {obra}" if obra else ""
+    frase = (f"Toda nota emitida{onde} já foi recebida." if not reguas else
+             f"{_reais(total)} faturado{onde} e ainda não recebido, em "
+             f"{len(reguas)} contrato(s).")
+    return _resposta(
+        titulo=f"Faturado e ainda não recebido{onde}", frase=frase,
+        linhas=reguas, total=total,
+        colunas=[("obra", "Obra"), ("objeto", "Objeto"),
+                 ("faturado", "Faturado"), ("recebido", "Recebido"),
+                 ("a_receber", "Falta receber"),
+                 ("faturado_sem_receber", "Medições em aberto")],
+        de_onde_veio={"tela": "/erp/contratos",
+                      "explicacao": "Quadro do contrato, quadro 'pendências'."},
+        observacao=("Dinheiro recebido A MAIS do que foi faturado não aparece "
+                    "aqui como negativo: é outra coisa (entrada sem nota) e a "
+                    "tela do contrato mostra em linha própria."))

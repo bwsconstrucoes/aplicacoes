@@ -61,11 +61,12 @@ CONTRATO (+aditivos)  →  MEDIDO  →  FATURADO (nota emitida)  →  RECEBIDO
 | "quanto falta receber do que já foi emitido nota" | faturado − recebido |
 | "do que está medido, com nota ou sem nota" | medido sem nota, e faturado sem receber, separados |
 
-**O quadro financeiro do contrato já calcula quase tudo isto** — contratado,
-aditivado, vigente, medido, reajuste, faturado, recebido, o que falta faturar,
-o que falta receber do faturado, e as listas de "medido sem nota" e "faturado
-sem receber", com o tempo médio de recebimento. Faltam **duas subtrações**:
-`vigente − recebido` e `medido − recebido`.
+✔ **FEITO em 10/09/2026.** As duas subtrações que faltavam
+(`vigente − recebido` e `medido − recebido`) entraram no quadro do contrato, e
+a pergunta **Quanto falta receber?** mostra a régua inteira, contrato a
+contrato. Ela reusa o `quadro` da tela em vez de somar de novo — é o que
+impede o número da pergunta e o da tela divergirem, e há teste exigindo que os
+dois batam campo a campo.
 
 **Como o assistente responde:** mostra **a régua inteira de uma vez**, com as
 quatro linhas, em vez de um número solto. Assim a leitura que o dono queria já
@@ -124,7 +125,11 @@ obra e por autoria das telas, e cada resposta mostra de onde veio.
 - Quanto já foi medido na obra X, e quanto falta do contrato? 🔒 ⚠️
 - Quais medições estão aprovadas e ainda não foram faturadas?
   (candidata a virar aviso proativo, não pergunta)
-- Quanto falta receber da obra X? 🔒 — responder com a RÉGUA inteira (§1)
+- ✅ **Quanto falta receber?** — responde com a RÉGUA inteira: do contrato, do
+  medido e do faturado, lado a lado (§1)
+- ✅ **O que já foi medido e ainda não virou nota?** — o serviço foi feito, o
+  custo já saiu, e a cobrança nem começou
+- ✅ **O que já tem nota emitida e ainda não entrou?**
 - Quais notas emitidas ainda não foram recebidas, e há quantos dias?
 - Quanto de reajuste a obra X tem a receber? Quais medições entram na conta?
 - Quais contratos vencem nos próximos 60 dias?

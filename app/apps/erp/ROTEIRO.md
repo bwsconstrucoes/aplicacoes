@@ -166,6 +166,17 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       QUAL destas funções chamar, e a conta continua sendo do sistema.
       A rota é por GRUPO de pergunta (`/erp/api/perguntar/financeiro`), para
       cada grupo declarar a sua própria ação sem mentir.
+- [x] **1d. A régua do recebimento** — FEITA em 10/09/2026. "Quanto falta
+      receber" responde com as TRÊS leituras lado a lado (do contrato, do
+      medido, do faturado), porque o dono mostrou que todas são legítimas e
+      escolher uma seria responder certo para uma e errado para as outras
+      duas. Vieram junto "o que foi medido e não virou nota" e "o que tem nota
+      e não entrou". O quadro do contrato ganhou as duas subtrações que
+      faltavam, e a pergunta REUSA esse quadro — há teste exigindo que o número
+      da pergunta e o da tela batam campo a campo.
+      Grupo próprio (`contratos`), com rota e ação próprias: `ver_contratos` é
+      estreita porque o quadro mostra o contrato de ponta a ponta e não se
+      recorta por obra designada sem mentir no total.
 - [ ] **2. Assistente SÓ DE LEITURA, dentro do ERP.** Painel lateral (não
       caixinha), com o catálogo de perguntas conhecidas respondido por CÓDIGO —
       exato, rápido e sem custo de IA — e a pergunta imprevista caindo numa
