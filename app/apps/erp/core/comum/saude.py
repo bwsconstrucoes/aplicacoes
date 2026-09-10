@@ -41,6 +41,10 @@ logger = logging.getLogger(__name__)
 
 # Acima disto a chamada é contada como LENTA. Não é um erro — é o limite acima
 # do qual a pessoa percebe que esperou.
+# Quando ESTE processo começou. Toda publicação reinicia o serviço, então isto
+# é, na prática, "no ar desde".
+_INICIO = datetime.now()
+
 LIMITE_LENTA_MS = 1500
 
 # De quanto em quanto tempo os números descem ao banco.
@@ -283,6 +287,34 @@ def por_dia(s, *, dias: int = 14) -> list[dict[str, Any]]:
             """, desde=desde)]
 
 
+def versao() -> dict[str, Any]:
+    """Qual versão do código está no ar, agora.
+
+    Nasceu em 10/09/2026 de uma confusão que custou uma volta inteira: o dono
+    disse que um botão novo "não aparece" e não havia como saber se ele estava
+    olhando a versão nova ou a de antes — o Render leva alguns minutos para
+    trocar, e nada na tela dizia isso. Com o carimbo, a pergunta "já subiu?"
+    tem resposta em dois segundos.
+
+    O Render publica o commit e o horário do deploy em variáveis próprias. Sem
+    elas (rodando no PC), diz isso em vez de inventar.
+    """
+    import os
+    from datetime import datetime
+
+    commit = (os.getenv("RENDER_GIT_COMMIT") or "").strip()
+    return {
+        "commit": commit[:7] if commit else "",
+        "commit_inteiro": commit,
+        "ramo": (os.getenv("RENDER_GIT_BRANCH") or "").strip(),
+        "servico": (os.getenv("RENDER_SERVICE_NAME") or "").strip(),
+        # Quando ESTE processo começou. É o melhor sinal de "subiu agora":
+        # toda publicação reinicia o serviço.
+        "no_ar_desde": _INICIO.strftime("%d/%m/%Y %H:%M"),
+        "minutos_no_ar": int((datetime.now() - _INICIO).total_seconds() // 60),
+    }
+
+
 def panorama(s, *, dias: int = 7) -> dict[str, Any]:
     """Tudo junto, do jeito que a tela mostra."""
     m = memoria()
@@ -310,4 +342,5 @@ def panorama(s, *, dias: int = 7) -> dict[str, Any]:
         avisos.append("Ainda não há medições — elas começam a aparecer conforme "
                       "as telas forem usadas.")
     return {"memoria": m, "banco": b, "telas": t, "anexos": a,
+            "versao": versao(),
             "por_dia": por_dia(s), "avisos": avisos}

@@ -272,6 +272,10 @@
 <div class="cartao" id="bloco-saude" data-secao="saude">
   <div class="cartao-cab"><h3>Saúde do sistema</h3>
     <small>quanto tempo cada tela leva, quanta memória, o que ocupa o banco</small></div>
+  {# QUAL VERSÃO ESTÁ NO AR. Nasceu de uma volta perdida em 10/09/2026: um
+     botão novo "não aparecia", e não havia como saber se a tela era a nova ou
+     a de antes — o Render leva alguns minutos para trocar e nada dizia isso. #}
+  <div id="sa-versao" class="cartao-dica" style="margin-bottom:10px">carregando…</div>
   <div id="sa-avisos"></div>
   <div class="kpis kpis-largos" id="sa-kpis"></div>
 
@@ -1596,6 +1600,17 @@ async function carregarSaude(){
   try {
     const d = await api("/erp/api/saude?dias=" + (els("sa-dias").value || 7));
     const m = d.memoria, t = d.telas, b = d.banco, a = d.anexos;
+
+    const v = d.versao || {};
+    els("sa-versao").innerHTML =
+      `<b>No ar desde ${escapar(v.no_ar_desde || "?")}</b>`
+      + (v.minutos_no_ar !== undefined
+          ? ` (${v.minutos_no_ar} minuto(s) atrás)` : "")
+      + (v.commit ? ` · versão <b class="mono">${escapar(v.commit)}</b>` : "")
+      + (v.ramo ? ` do ramo <b>${escapar(v.ramo)}</b>` : "")
+      + `<br>Toda publicação reinicia o serviço — se a hora acima for anterior
+         à publicação, a versão nova <b>ainda não chegou</b>: espere um ou dois
+         minutos e recarregue a tela.`;
 
     els("sa-avisos").innerHTML = (d.avisos || []).map(x =>
       `<div class="aviso alerta">${escapar(x)}</div>`).join("")
