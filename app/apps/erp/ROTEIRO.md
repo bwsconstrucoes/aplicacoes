@@ -165,9 +165,36 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       liberadas para faturar", "a CND deste fornecedor venceu e há título para
       pagar amanhã", "este material está 40% acima do que esta obra costuma
       pagar". A Agenda já existe; o assistente é a voz dela.
-- [ ] **7. Pergunta boa vira relatório salvo**, que roda toda semana e chega
-      pronto. É assim que o assistente deixa de ser brinquedo e vira o jeito de
-      construir relatório sem esperar tela nova.
+- [ ] **7. Pergunta boa vira relatório salvo E AGENDADO PELA PRÓPRIA
+      CONVERSA.** O dono voltou nisto em 10/09/2026, e com razão — é a peça que
+      faz o resto valer: *"toda segunda-feira me manda determinado tipo de
+      informação. Aí a própria [IA] agendar essa necessidade minha e fazer
+      aquela ação executar e me mandar."* Ou seja: ele PEDE em português, e o
+      agendamento nasce da frase; ele não vai configurar nada em tela.
+      **Está mais perto do que parece** — as quatro peças já existem: a fila de
+      trabalho em segundo plano (migração 055, com recuperação de tarefa órfã),
+      o envio por Telegram (`core/notificacoes.py`), o e-mail pela conta da
+      empresa (`core/comum/email.py`) e a exportação em Excel e PDF
+      (`core/comum/exportar.py`). Falta o relógio, a pergunta guardada e a cola.
+      O que decide se funciona ou vira lixo:
+      - **Guardar a CONSULTA, não a frase.** Se toda segunda a IA reinterpretar
+        o texto, o relatório muda de forma e de critério sozinho, e não dá para
+        comparar uma segunda com a outra. Guarda-se a consulta que gerou o
+        resultado que ele aprovou.
+      - **Comparar com a semana passada.** Número solto é ruído; "R$ 340 mil a
+        pagar (era R$ 280 mil)" é gestão. Exige guardar o resultado de cada
+        rodada — barato, e é o que dá valor.
+      - **O "só me avise se".** Relatório que chega igual todo mês vira spam e
+        para de ser lido — acontece em toda empresa que faz isso. Além do fixo,
+        o condicional: manda só quando cruzar uma linha.
+      - **Relatório para OUTRA pessoa roda com a permissão DE QUEM RECEBE**, não
+        de quem criou. Senão o gestor de uma obra recebe, sem querer, o número
+        da empresa inteira.
+      - **Relatório que quebrou tem de RECLAMAR.** Se a obra acabou ou a conta
+        foi aposentada, ele não pode mandar zero em silêncio — zero silencioso
+        é pior que erro, porque parece resposta.
+      - **Agendado pode LER sozinho; para AGIR, prepara e espera o dono
+        apertar.** Mesma regra do item 4.
 - [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
       ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
       come o mês inteiro.
