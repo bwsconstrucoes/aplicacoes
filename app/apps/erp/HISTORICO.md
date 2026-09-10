@@ -17,7 +17,21 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
-**Estado em 05/09/2026 (noite):** `main` com a autorização padrão-NEGAR, o
+**Estado em 10/09/2026:** `main` publicada e **banco atualizado até a migração
+054** — o dono apertou "Aplicar atualizações do banco" no mesmo momento da
+junção. Nesta publicação foram quatro entregas: as listas com "carregar mais"
+(solicitações), a **tela de saúde do sistema** (054), a **ficha do título em
+card** com o encadeamento entre telas, e a **leitura do documento por IA no
+Arquivo**. Suíte: 2.170 casos sem banco e 1.330 com banco de verdade. **Nada
+pendente no ramo `claude/oi-vjvrn8`.**
+
+⚠️ **Duas coisas só se provam em produção e ainda não foram provadas:** a
+leitura de documento pela IA no Arquivo (não há chave da OpenAI no ambiente de
+desenvolvimento) e a busca do INCC no Banco Central (a saída de internet de lá
+é filtrada). Se qualquer uma falhar, é configuração no Render, não código —
+mas ninguém confirmou ainda que funcionam.
+
+**Estado anterior, em 05/09/2026 (noite):** `main` com a autorização padrão-NEGAR, o
 alcance por operador (029), o consumo de IA com teto (030), as travas de
 concorrência (031), a permissão fina por pessoa (032) e o **módulo de
 Suprimentos** (033 a 037). Publicado também o **botão de zerar o movimento por área** e a **reforma das
