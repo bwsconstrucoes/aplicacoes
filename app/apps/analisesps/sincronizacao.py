@@ -603,7 +603,21 @@ def sincronizar_referencias_rateio(anotar=None) -> dict:
     # aperta de novo, e de novo, e conclui que o sistema está quebrado. Agora
     # cada motivo volta escrito, chega à mensagem da execução e aparece em
     # Configurações — com os nomes que a planilha REALMENTE tem.
-    def _ler(aba_nome, coluna_nome, coluna_codigo):
+    def _achar(cabecalho_normalizado, aceitos):
+        """A posição da primeira coluna aceita que existir, ou None.
+
+        ACEITA MAIS DE UM NOME de propósito, e essa era a peça perdida na
+        conversão. O Streamlit procurava "Código Primário" e, se não achasse,
+        "Obra"; a conversão ficou só com a segunda — que é justamente a que a
+        planilha NÃO tem. Resultado: a lista do rateio nunca carregava, e desde
+        a estreia."""
+        for nome in aceitos:
+            arrumado = " ".join(str(nome).split()).strip().lower()
+            if arrumado in cabecalho_normalizado:
+                return cabecalho_normalizado.index(arrumado)
+        return None
+
+    def _ler(aba_nome, aceitos_nome, aceitos_codigo):
         """Devolve (linhas, motivo). `motivo` é None quando deu certo."""
         try:
             valores = com_retry(_aba(PLANILHA_SPS, aba_nome).get_all_values)
@@ -612,31 +626,45 @@ def sincronizar_referencias_rateio(anotar=None) -> dict:
         if not valores:
             return [], f'a aba "{aba_nome}" está vazia.'
         cabecalho = [str(x).strip() for x in valores[0]]
-        minusculas = [c.lower() for c in cabecalho]
-        faltando = [c for c in (coluna_nome, coluna_codigo)
-                    if c.lower() not in minusculas]
+        normalizado = [" ".join(c.split()).lower() for c in cabecalho]
+
+        i_nome = _achar(normalizado, aceitos_nome)
+        i_codigo = _achar(normalizado, aceitos_codigo)
+        faltando = ([aceitos_nome] if i_nome is None else []) + \
+                   ([aceitos_codigo] if i_codigo is None else [])
         if faltando:
-            return [], (f'a aba "{aba_nome}" não tem a(s) coluna(s) '
-                        f'{", ".join(chr(34) + c + chr(34) for c in faltando)}. '
+            quais = "; ".join(" ou ".join(f'"{n}"' for n in g) for g in faltando)
+            return [], (f'a aba "{aba_nome}" não tem a(s) coluna(s) {quais}. '
                         f'O cabeçalho dela é: {", ".join(cabecalho) or "(vazio)"}.')
-        i_nome = minusculas.index(coluna_nome.lower())
-        i_codigo = minusculas.index(coluna_codigo.lower())
+
         saida = []
         for linha in valores[1:]:
             nome = str(linha[i_nome]).strip() if i_nome < len(linha) else ""
             codigo = str(linha[i_codigo]).strip() if i_codigo < len(linha) else ""
-            if nome:
+            # AS DUAS COISAS SÃO OBRIGATÓRIAS, como no Streamlit: sem o código
+            # do Omie a linha não serve para gerar o JSON, e oferecê-la na
+            # lista só levaria a pessoa a montar um rateio que o Omie recusa.
+            if nome and codigo:
                 saida.append((nome, codigo))
         if not saida:
             return [], (f'a aba "{aba_nome}" tem as colunas certas, mas nenhuma '
-                        f'linha preenchida em "{coluna_nome}".')
+                        f'linha com "{aceitos_nome[0]}" e "{aceitos_codigo[0]}" '
+                        "preenchidos.")
         return saida, None
 
-    for tipo, aba_nome, coluna_nome, coluna_codigo in (
-            ("obra", "C. Diários", "Obra", "Código"),
-            ("categoria", "Plano Financeiro", "Categoria", "Código")):
+    # OS NOMES DE COLUNA SÃO OS DO STREAMLIT, na mesma ordem de preferência —
+    # recuperados do código original em 10/09/2026, depois que o dono confirmou
+    # o cabeçalho de verdade das duas abas. O primeiro de cada par é o que a
+    # planilha realmente usa hoje; o segundo ficou por compatibilidade, que era
+    # como o original fazia.
+    for tipo, aba_nome, aceitos_nome, aceitos_codigo in (
+            ("obra", "C. Diários",
+             ["Código Primário", "Obra"], ["Código Omie", "Codigo Omie", "Código"]),
+            ("categoria", "Plano Financeiro",
+             ["Plano Financeiro", "Categoria"],
+             ["Código Omie", "Codigo Omie", "Código"])):
         try:
-            linhas, motivo = _ler(aba_nome, coluna_nome, coluna_codigo)
+            linhas, motivo = _ler(aba_nome, aceitos_nome, aceitos_codigo)
             if motivo:
                 logger.warning("Análise de SPs: rateio — %s", motivo)
                 avisos.append(motivo)
