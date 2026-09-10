@@ -2406,22 +2406,61 @@ def api_nova_categoria():
 @login_obrigatorio
 @permissao("configurar")
 def api_nova_conta():
-    from app.apps.erp.db.models.cadastros import ContaBancaria
+    """Cadastra a conta da empresa — com a chave Pix, se ela já estiver à mão."""
+    from app.apps.erp.core.cadastros import contas as svc_contas
     d = request.get_json(silent=True) or {}
-    faltando = [c for c in ("descricao", "banco_codigo", "agencia", "conta") if not (d.get(c) or "").strip()]
-    if faltando:
-        return jsonify({"ok": False, "erro": f"Preencha: {', '.join(faltando)}."}), 400
     try:
         with get_session() as s:
-            s.add(ContaBancaria(descricao=d["descricao"].strip(),
-                                banco_codigo=d["banco_codigo"].strip(),
-                                agencia=d["agencia"].strip(), conta=d["conta"].strip()))
+            usuario = _usuario_logado(s)
+            conta = svc_contas.criar(s, d, usuario)
+            criada = {"id": conta.id, "descricao": conta.descricao}
             s.commit()
-        return jsonify({"ok": True})
+        return jsonify({"ok": True, "conta": criada})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
         logger.exception("ERP: falha ao criar conta bancária")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# A LISTA DE BANCOS (código FEBRABAN/COMPE)
+#
+# Pedido do dono em 10/09/2026: em vez de digitar "237" de cabeça, escolher o
+# banco pelo nome. A lista embutida funciona sozinha e sem internet; o botão
+# troca pela oficial do Banco Central.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/bancos")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_bancos():
+    from app.apps.erp.core.cadastros import bancos
+    with get_session() as s:
+        return jsonify({"ok": True, "bancos": bancos.listar(s),
+                        "estado": bancos.estado(s)})
+
+
+@bp.route("/erp/api/bancos/atualizar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_bancos_atualizar():
+    """Troca a lista pela oficial do Banco Central. Pelo botão, nunca sozinha."""
+    from app.apps.erp.core.cadastros import bancos
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = bancos.atualizar(s, usuario)
+            estado = bancos.estado(s)
+            s.commit()
+        return jsonify({"ok": True, "resultado": r, "estado": estado})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao atualizar a lista de bancos")
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 

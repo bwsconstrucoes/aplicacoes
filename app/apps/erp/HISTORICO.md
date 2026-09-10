@@ -2357,6 +2357,105 @@ Nenhum erro de JavaScript. Suíte inteira: **3.627 casos** com banco de verdade.
 **Esta entrega NÃO tem migração** — as duas colunas de ISS já existiam. Nada a
 apertar no botão do banco por causa dela.
 
+### O primeiro contato de verdade com os cadastros — 10/09/2026 (tarde)
+
+O dono foi usar o sistema e mandou seis coisas de uma vez. Ficam aqui porque
+cada uma tem uma decisão dentro.
+
+**1. O filtro de obras parecia repetir o nome.** *"Creche Swap, Espaço Creche
+Swap."* Três telas escreviam código e nome colados, sem separador — e o código
+da casa costuma SER o nome abreviado. Agora, quando um já contém o outro,
+aparece só o mais completo; quando dizem coisas diferentes, os dois aparecem
+com um "·" no meio. Vale para Contratos e medições, Agenda e Notas emitidas
+(as outras telas já usavam o mesmo rótulo).
+
+**2. O cadastro de conta bancária mostrava menos do que a tabela ao lado.** A
+chave Pix aparecia na listagem e não no formulário — ficava para um segundo
+momento que quase nunca chega. Agora entra junto. E o **banco deixou de ser
+digitado de cabeça**: escolhe-se pelo nome numa lista de 118 instituições.
+
+A lista **mora dentro do código** e funciona sem internet nenhuma — banco não
+pode depender de o Banco Central estar no ar. Um botão em Configurações troca
+essa base pela relação oficial de participantes do STR, e o que vier de lá fica
+guardado no banco de dados. A lista embutida continua por baixo: se a relação
+oficial de um dia não trouxer um código que já está numa conta cadastrada, o
+nome não some da tela. Falha na busca não estraga nada: a lista que existe
+continua valendo e a mensagem diz isso em português.
+
+⚠️ **A lista embutida não é a relação oficial completa** — são os bancos e
+instituições de pagamento que aparecem em conta e comprovante no Brasil. Banco
+que faltar: aperta o botão, ou digita o código de três dígitos à mão, que
+continua permitido. E o código é normalizado para três dígitos ("1" vira
+"001"), senão a mesma conta apareceria com dois códigos conforme quem cadastrou.
+
+⚠️ **O botão só se prova em produção** — este ambiente não alcança o
+`bcb.gov.br`, exatamente como no INCC.
+
+**3. Zerar as obras em Banco e limpeza.** *"Na parte de banco e limpeza eu vou
+precisar zerar essas obras."* Isso apaga CADASTRO, e o botão até então
+prometia o contrário. O desenho:
+
+- As obras saíram da lista de "nunca sai" e ganharam **área própria**, que só
+  ela as alcança. Nenhuma área de movimento leva obra junto, nem por engano de
+  quem editar o arquivo amanhã — há teste para isso.
+- A tela ficou com **dois blocos**: movimento em cima, e um bloco **vermelho**
+  embaixo com o cadastro, dizendo com todas as letras que refazer custa horas.
+- **O colaborador não sai junto.** Ele não é da obra: está numa obra hoje. A
+  limpeza DESFAZ a ligação (colaborador → obra) e mantém a pessoa. A prévia
+  mostra quantas pessoas serão soltas, antes de qualquer coisa.
+- A recusa continua valendo: com título, medição ou documento apontando para a
+  obra, a limpeza para e diz quais áreas faltam marcar.
+- Entraram também as áreas que faltavam para isso ser alcançável: agenda,
+  notas emitidas, contratos de obra, e as conferências de locação; a área de
+  anexos passou a levar o catálogo de documentos junto.
+
+**4 e 5. O cadastro do operador.** Duas reclamações, e a segunda escondia um
+defeito antigo.
+
+A primeira: marcar um grupo de contas funcionava, mas *"se eu tiver lá em cima,
+não tem nada que me confirme que aquelas despesas estão marcadas"*. Agora o
+cabeçalho do grupo É a caixinha, fica **verde** quando o grupo está todo
+marcado e **âmbar** quando está pela metade, com a contagem ("47/48") ao lado,
+e um resumo no alto ("83 de 140 marcadas"). Marcar o grupo com um filtro
+digitado marca só o que está visível — do contrário incluiria conta que a
+pessoa nem viu.
+
+A segunda: *"dá uma melhoradazinha nessa listagem, elas estão muito espaçadas,
+está ruim de visualizar"*. **Não era espaçamento: era um defeito de estilo.**
+Toda caixinha de marcar dentro de um campo virava BLOCO — o quadradinho em cima
+e o texto embaixo, duas linhas por opção — e o quadradinho ainda esticava para
+a largura inteira do diálogo (860 pixels de "input"). Valia para a lista de
+contas, a de obras designadas e a de permissões. Corrigido no estilo, num lugar
+só. Com isso as contas passaram a caber em três colunas.
+
+**6. Perfis de obra pré-configurados.** *"Toda a vida que eu selecionar o
+administrativo de obra, que é o que mais tem rotatividade, já aparece isso."*
+Administrativo de obra, supervisor de obra e gestor de obras já nascem com
+custos de obra, pessoal e despesas administrativas marcados e o fundo fixo
+liberado.
+
+A receita mora **na tela**, não no servidor, e isso é decisão: assim tudo fica
+à vista antes de salvar, desmarcar é um clique, e mudar a exceção de uma pessoa
+não exige mexer no código. Ao EDITAR alguém, o que está marcado é o dela e só
+muda se trocarem o perfil — e, quando troca, a tela diz o que pré-configurou.
+
+**7. Arrastar o documento para dentro da tela do Arquivo.** *"Arrasto o
+documento pra dentro daquele local e é feita a leitura do arquivo já, e aberta
+a tela com as informações que você detectou."* Soltar o arquivo em **qualquer
+lugar** da tela do Arquivo abre o formulário e dispara a leitura. A zona é a
+tela inteira de propósito: com o arquivo no ar, procurar o retângulo certo é o
+que faz a pessoa desistir e voltar para o botão. Um arquivo por vez — se
+soltarem cinco, o primeiro entra e a tela DIZ que os outros ficaram de fora.
+
+**Provado:** `tests/test_bancos.py` (27 casos) e os casos novos de
+`tests/test_manutencao_limpeza_banco.py`, mais o caminho inteiro no navegador
+com banco de verdade: filtro, cadastro de conta com Pix, pré-configuração por
+perfil, grupo virando verde e âmbar, a prévia da limpeza de obras recusando e
+dizendo o que falta, o véu do arrastar e a leitura disparando sozinha.
+
+**Esta entrega não tem migração.** A lista de bancos mora numa linha da tabela
+de parâmetros, que já existe.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**

@@ -80,7 +80,10 @@
   <div class="cartao-cab"><h3>Contas bancárias da empresa</h3>
     <small>de onde o dinheiro sai — usadas na baixa e na conciliação</small></div>
   <div class="tabela-barra" style="padding:0 0 10px">
+    <small id="bancos-estado" style="color:var(--tinta-suave)"></small>
     <span class="espaco"></span>
+    <button class="btn secundario" id="btn-bancos-atualizar"
+      title="Troca a lista de bancos pela oficial do Banco Central">Atualizar lista de bancos</button>
     <button class="btn secundario" id="btn-nova-conta">+ Nova conta</button>
   </div>
   <table><thead><tr><th>Descrição</th><th>Banco</th><th>Agência</th><th>Conta</th>
@@ -97,9 +100,12 @@
   <div class="cartao-cab"><h3>Zerar movimento do ERP</h3>
     <small>para limpar o que foi lançado testando e começar o uso de verdade</small></div>
   <div class="cartao-dica">
-    <b>Cadastro nunca sai por aqui.</b> Obras, fornecedores, plano de contas,
-    colaboradores, contas bancárias, operadores, insumos, unidades e condições
-    de pagamento ficam sempre — refazer isso custa horas e não é lançamento.
+    <b>O que está em cima é MOVIMENTO</b> — lançamento, e some sem dó.
+    Fornecedores, plano de contas, colaboradores, contas bancárias, operadores,
+    insumos, unidades e condições de pagamento <b>ficam sempre</b>: refazer
+    isso custa horas e não é lançamento.
+    <br><b>O bloco vermelho, embaixo, é CADASTRO.</b> Só sai se você marcar lá,
+    e cada um diz exatamente o que leva junto.
   </div>
   <div id="zer-areas" style="margin-top:10px">carregando…</div>
   <div style="margin-top:10px"><button class="btn secundario" id="btn-zer-previa">
@@ -386,24 +392,18 @@ function formOperador(u){
     </div>
 
     <div class="campo" style="margin-top:12px">
-      <label>Contas do plano liberadas para lançar</label>
-      <input id="op-filtro-cat" placeholder="filtrar…" style="margin-bottom:6px">
-      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px">
-        ${[...new Set(DADOS.categorias.filter(x=>x.ativo).map(x=>x.grupo_codigo))].sort()
-          .map(g=>`<button type="button" class="btn secundario" data-grupo="${g}"
-            style="padding:4px 9px; font-size:12px">${g} · ${
-            (DADOS.categorias.find(x=>x.grupo_codigo===g)||{}).grupo_nome||""}</button>`).join("")}
-        <button type="button" class="btn secundario" data-grupo="__nenhum"
-          style="padding:4px 9px; font-size:12px">limpar tudo</button>
+      <label>Contas do plano liberadas para lançar
+        <span id="op-cat-resumo" class="qtd" style="float:right; font-weight:700"></span></label>
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:6px">
+        <input id="op-filtro-cat" placeholder="filtrar…" style="flex:1; margin:0">
+        <button type="button" class="link-btn" id="op-cat-limpar">limpar tudo</button>
       </div>
-      <div class="filtro-opcoes" id="op-cats"
-           style="max-height:200px; border:1px solid var(--borda); border-radius:8px; padding:6px">
-        ${DADOS.categorias.filter(x=>x.ativo).map(x=>`<label class="opcao" data-cat-rot="${(x.codigo+' '+x.descricao).toLowerCase()}">
-          <input type="checkbox" class="op-cat" value="${x.id}" ${(u.categorias||[]).includes(x.id)?"checked":""}>
-          <span class="rotulo">${x.codigo} · ${x.descricao}</span></label>`).join("")}
-      </div>
-      <div class="dica">Nada marcado = todas liberadas. Marque só o que o
-        administrativo de obra costuma lançar, para ele não se perder no plano inteiro.</div>
+      <div id="op-cats" style="max-height:300px; overflow:auto;
+           border:1px solid var(--borda); border-radius:8px; padding:6px"></div>
+      <div class="dica">Nada marcado = todas liberadas. Marque só o que a pessoa
+        costuma lançar, para ela não se perder no plano inteiro. Clicar no
+        <b>grupo</b> marca o grupo inteiro — e ele fica <b>verde</b> quando está
+        todo marcado, <b>âmbar</b> quando está pela metade.</div>
     </div>
 
     <div id="op-obras-bloco" class="campo" style="margin-top:12px">
@@ -463,26 +463,132 @@ function formOperador(u){
       if (obra && !obra.checked) obra.checked = true;
     }));
   alternarObras();
-  document.querySelectorAll("[data-grupo]").forEach(b => b.addEventListener("click", () => {
-    const g = b.dataset.grupo;
-    if (g === "__nenhum") {
-      document.querySelectorAll(".op-cat").forEach(i => i.checked = false);
-      return;
-    }
-    // marca o grupo inteiro de uma vez; depois é só desmarcar as exceções
-    const doGrupo = DADOS.categorias.filter(x => x.grupo_codigo === g).map(x => String(x.id));
-    const todosMarcados = doGrupo.every(id =>
-      document.querySelector(`.op-cat[value="${id}"]`)?.checked);
-    doGrupo.forEach(id => {
-      const el = document.querySelector(`.op-cat[value="${id}"]`);
-      if (el) el.checked = !todosMarcados;
+
+  // ---- Contas do plano: agrupadas, em colunas, e com a marcação à vista
+  //
+  // Antes era uma coluna só com oitenta linhas e uma fileira de botões de
+  // grupo acima. Marcar um grupo funcionava, mas quem estava rolando lá
+  // embaixo não tinha como confirmar o que ficou marcado sem subir e conferir
+  // linha a linha — reclamação do dono em 10/09/2026. Agora o cabeçalho do
+  // grupo é a própria caixinha e muda de cor: verde inteiro, âmbar pela
+  // metade.
+  const CATS_ATIVAS = DADOS.categorias.filter(x => x.ativo);
+  const GRUPOS_DO_PLANO = [...new Set(CATS_ATIVAS.map(x => x.grupo_codigo))].sort();
+
+  function montarContasDoPlano(marcadas){
+    const escolhidas = new Set((marcadas || []).map(String));
+    els("op-cats").innerHTML = GRUPOS_DO_PLANO.map(g => {
+      const doGrupo = CATS_ATIVAS.filter(x => x.grupo_codigo === g);
+      const nome = (doGrupo[0] || {}).grupo_nome || "";
+      return `<div class="grupo-contas" data-g="${escapar(g)}">
+        <label class="opcao grupo-cab">
+          <input type="checkbox" class="op-grupo" value="${escapar(g)}">
+          <span class="rotulo"><b>${escapar(g)} · ${escapar(nome)}</b></span>
+          <span class="qtd" data-cont="${escapar(g)}"></span>
+        </label>
+        <div class="grade-contas">
+          ${doGrupo.map(x => `<label class="opcao"
+              data-cat-rot="${escapar((x.codigo + " " + x.descricao).toLowerCase())}"
+              title="${escapar(x.codigo + " · " + x.descricao)}">
+            <input type="checkbox" class="op-cat" value="${x.id}"
+              data-grupo-de="${escapar(g)}" ${escolhidas.has(String(x.id)) ? "checked" : ""}>
+            <span class="rotulo">${escapar(x.codigo)} · ${escapar(x.descricao)}</span>
+          </label>`).join("")}
+        </div>
+      </div>`;
+    }).join("");
+
+    document.querySelectorAll(".op-cat").forEach(i =>
+      i.addEventListener("change", pintarContasDoPlano));
+    document.querySelectorAll(".op-grupo").forEach(cx =>
+      cx.addEventListener("change", () => {
+        // Marcar o grupo marca só o que está VISÍVEL: com um filtro digitado,
+        // marcar o grupo inteiro incluiria contas que a pessoa nem viu.
+        document.querySelectorAll(`.op-cat[data-grupo-de="${cx.value}"]`).forEach(i => {
+          if (i.closest(".opcao").style.display !== "none") i.checked = cx.checked;
+        });
+        pintarContasDoPlano();
+      }));
+    pintarContasDoPlano();
+  }
+
+  function pintarContasDoPlano(){
+    let total = 0, marcadas = 0;
+    GRUPOS_DO_PLANO.forEach(g => {
+      const caixas = [...document.querySelectorAll(`.op-cat[data-grupo-de="${g}"]`)];
+      const quantas = caixas.filter(i => i.checked).length;
+      total += caixas.length; marcadas += quantas;
+      const cab = document.querySelector(`.grupo-contas[data-g="${g}"] .grupo-cab`);
+      const cx = cab.querySelector(".op-grupo");
+      cx.checked = quantas > 0 && quantas === caixas.length;
+      cx.indeterminate = quantas > 0 && quantas < caixas.length;
+      cab.classList.toggle("cheio", quantas === caixas.length && quantas > 0);
+      cab.classList.toggle("parcial", quantas > 0 && quantas < caixas.length);
+      cab.querySelector(`[data-cont="${g}"]`).textContent =
+        quantas ? `${quantas}/${caixas.length}` : "";
     });
-  }));
+    els("op-cat-resumo").textContent = marcadas
+      ? `${marcadas} de ${total} marcadas`
+      : `nenhuma marcada — todas liberadas`;
+  }
+
+  els("op-cat-limpar").addEventListener("click", () => {
+    document.querySelectorAll(".op-cat").forEach(i => i.checked = false);
+    pintarContasDoPlano();
+  });
   els("op-filtro-cat").addEventListener("input", ev => {
     const q = ev.target.value.toLowerCase();
     document.querySelectorAll("[data-cat-rot]").forEach(el =>
       el.style.display = el.dataset.catRot.includes(q) ? "" : "none");
+    // Grupo que ficou sem nenhuma conta visível some junto — cabeçalho de
+    // grupo vazio só atrapalha quem está procurando.
+    document.querySelectorAll(".grupo-contas").forEach(bloco => {
+      const algum = [...bloco.querySelectorAll("[data-cat-rot]")]
+        .some(el => el.style.display !== "none");
+      bloco.style.display = algum ? "" : "none";
+    });
   });
+  // ---- O QUE CADA PERFIL DE OBRA JÁ LANÇA, sem ninguém ter de marcar
+  //
+  // Pedido do dono em 10/09/2026: *"vamos deixar já pré-configurado o
+  // administrativo de obra... podendo lançar custos de obra, pessoal e
+  // despesas administrativas. Toda a vida que eu selecionar o administrativo
+  // de obra, que é o que mais tem rotatividade, já aparece isso."* Vale para
+  // os três perfis de obra.
+  //
+  // O preenchimento é SUGESTÃO, e é por isso que ele acontece na tela e não no
+  // servidor: fica tudo à vista antes de salvar, e desmarcar é um clique. Se
+  // fosse regra fixa no servidor, mudar a exceção de uma pessoa exigiria
+  // mexer no código.
+  const PRESET_DE_PERFIL = {
+    ADMINISTRATIVO_OBRA: {grupos: ["3", "4", "5"], fundo_fixo: true},
+    SUPERVISOR_OBRA:     {grupos: ["3", "4", "5"], fundo_fixo: true},
+    GESTOR_OBRA:         {grupos: ["3", "4", "5"], fundo_fixo: true},
+  };
+
+  function aplicarPresetDoPerfil(){
+    const chave = els("op-perfil").value;
+    const preset = PRESET_DE_PERFIL[chave];
+    if (!preset) return;                   // perfil sem receita: não mexe em nada
+    const ids = CATS_ATIVAS
+      .filter(x => preset.grupos.includes(String(x.grupo_codigo)))
+      .map(x => x.id);
+    montarContasDoPlano(ids);
+    if (preset.fundo_fixo) els("op-ff").value = "1";
+    const nomes = preset.grupos
+      .map(g => (CATS_ATIVAS.find(x => String(x.grupo_codigo) === g) || {}).grupo_nome)
+      .filter(Boolean).join(", ");
+    const rot = (PERFIS.find(p => p.chave === chave) || {}).rotulo || chave;
+    aviso("dlg-msg", `Já deixei pré-configurado para <b>${escapar(rot)}</b>: `
+      + `${escapar(nomes)}${preset.fundo_fixo ? ", e o fundo fixo liberado" : ""}. `
+      + `É sugestão — desmarque o que não quiser antes de salvar.`, "ok");
+  }
+  els("op-perfil").addEventListener("change", aplicarPresetDoPerfil);
+
+  montarContasDoPlano(u.categorias || []);
+  // Cadastro novo já nasce com a receita do perfil escolhido; ao EDITAR
+  // alguém, o que está marcado é o dela e só muda se trocarem o perfil.
+  if (novo) aplicarPresetDoPerfil();
 
   // As permissões da pessoa só existem depois que ela existe: no cadastro novo
   // o bloco nem aparece, e o ajuste fino se faz ao editar.
@@ -540,12 +646,28 @@ async function carregarAreasDeLimpeza(){
   try {
     const d = await api("/erp/api/manutencao/limpeza/areas");
     AREAS_LIMPEZA = d.areas;
+    const caixa = a => `<label class="opcao" style="align-items:flex-start">
+        <input type="checkbox" class="zer-area" value="${escapar(a.chave)}"
+          style="margin-top:3px">
+        <span class="rotulo" style="white-space:normal"><b>${escapar(a.rotulo)}</b>
+          — ${escapar(a.descricao)}${(a.desliga||[]).length
+            ? `<br><small style="color:var(--ambar)">Desfaz também a ligação
+                ${a.desliga.map(x => escapar(x.tabela)).join(", ")} → obra,
+                sem apagar essas pessoas.</small>` : ""}</span></label>`;
+    const movimento = d.areas.filter(a => !a.cadastro);
+    const cadastro = d.areas.filter(a => a.cadastro);
     els("zer-areas").innerHTML = `<div class="filtro-opcoes"
         style="border:1px solid var(--borda); border-radius:8px; padding:6px">
-      ${d.areas.map(a => `<label class="opcao">
-        <input type="checkbox" class="zer-area" value="${a.chave}">
-        <span class="rotulo"><b>${a.rotulo}</b> — ${a.descricao}</span></label>`).join("")}
-    </div>`;
+      ${movimento.map(caixa).join("")}
+    </div>
+    ${cadastro.length ? `<div class="filtro-opcoes" style="margin-top:10px;
+        border:1px solid var(--vermelho); border-left:4px solid var(--vermelho);
+        border-radius:8px; padding:6px">
+      <div style="padding:4px 6px; color:var(--vermelho)"><b>Isto é CADASTRO,
+        não movimento.</b> Refazer custa horas de digitação. Marque com o dedo
+        no lugar certo.</div>
+      ${cadastro.map(caixa).join("")}
+    </div>` : ""}`;
   } catch(e){ els("zer-areas").innerHTML =
     `<div class="aviso erro">${e.message}</div>`; }
 }
@@ -578,7 +700,10 @@ async function previaDeZerar(){
     els("zer-resultado").innerHTML = `
       <div class="aviso alerta" style="margin-top:10px">
         Sairiam <b>${r.total}</b> registro(s):
-        ${r.detalhe.map(x => `${x.linhas} em ${x.tabela}`).join(" · ")}.</div>
+        ${r.detalhe.map(x => `${x.linhas} em ${x.tabela}`).join(" · ")}.
+        ${(r.desligamentos||[]).length ? `<br>E ${r.desligamentos
+          .map(x => `${x.linhas} ${escapar(x.tabela)}`).join(", ")} deixam de
+          apontar para uma obra — <b>sem serem apagados</b>.` : ""}</div>
       <div class="form-grade" style="align-items:end; margin-top:10px">
         <div class="campo"><label>Digite <b>${r.frase}</b> para confirmar</label>
           <input id="zer-frase" placeholder="${r.frase}" style="max-width:220px"></div>
@@ -594,8 +719,12 @@ async function executarZerar(areas){
     const d = await api("/erp/api/manutencao/limpeza", {method: "POST",
       headers: {"Content-Type": "application/json"},
       body: JSON.stringify({areas, confirmacao: els("zer-frase").value})});
+    const soltos = (d.relatorio.desligamentos || [])
+      .map(x => `${x.linhas} ${escapar(x.tabela)}`).join(", ");
     els("zer-resultado").innerHTML = `<div class="aviso ok" style="margin-top:10px">
-      ${d.relatorio.total} registro(s) apagados. Os cadastros continuam no lugar.</div>`;
+      ${d.relatorio.total} registro(s) apagados.${soltos
+        ? ` ${soltos} deixaram de apontar para uma obra, sem serem apagados.` : ""}</div>`;
+    carregar();          // as listas da tela mudaram junto
     aviso("mensagem", "Movimento zerado.", "ok");
   } catch(e){ aviso("mensagem", e.message, "erro"); }
 }
@@ -771,11 +900,97 @@ els("btn-nova-cat").addEventListener("click", () => formulario("Nova categoria",
   {id:"natureza", rotulo:"Natureza", opcoes:[["RESULTADO","Resultado (DRE)"],["FLUXO","Fluxo de caixa"]]},
 ], "/erp/api/config/categoria"));
 
-els("btn-nova-conta").addEventListener("click", () => formulario("Nova conta da empresa", [
-  {id:"descricao", rotulo:"Descrição", obrig:true, dica:"Bradesco BWS principal"},
-  {id:"banco_codigo", rotulo:"Banco (COMPE)", obrig:true, dica:"237"},
-  {id:"agencia", rotulo:"Agência", obrig:true}, {id:"conta", rotulo:"Conta", obrig:true},
-], "/erp/api/config/conta"));
+// ---------------------------------------------------------------------------
+// NOVA CONTA DA EMPRESA
+//
+// O formulário mostrava quatro campos e a tabela ao lado mostrava cinco — o
+// dono estranhou, com razão: a chave Pix ficava para um segundo momento que
+// quase nunca chega. E o banco era digitado de cabeça ("237"), o que erra.
+// Agora o banco se escolhe pelo NOME, de uma lista, e a chave Pix entra junto
+// se estiver à mão.
+// ---------------------------------------------------------------------------
+els("btn-nova-conta").addEventListener("click", () => {
+  els("dlg-titulo").textContent = "Nova conta da empresa";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Descrição *</label>
+        <input id="cb-descricao" placeholder="Bradesco BWS principal"></div>
+      <div class="campo" style="grid-column:span 2"><label>Banco *</label>
+        <select id="cb-banco">
+          <option value="">escolha o banco…</option>
+          ${BANCOS.map(b=>`<option value="${escapar(b.codigo)}">${
+            escapar(b.codigo)} · ${escapar(b.nome)}</option>`).join("")}
+        </select>
+        <div class="dica">Não achou? Digite o código de três dígitos em
+          <b>Outro banco</b>, logo abaixo.</div></div>
+      <div class="campo"><label>Outro banco (código)</label>
+        <input id="cb-banco-livre" placeholder="ex.: 707" maxlength="3" inputmode="numeric"></div>
+      <div class="campo"><label>Agência *</label><input id="cb-agencia" placeholder="1234"></div>
+      <div class="campo"><label>Conta *</label><input id="cb-conta" placeholder="12345-6"></div>
+    </div>
+    <h4>Chave Pix (opcional)</h4>
+    <div class="form-grade">
+      <div class="campo"><label>Tipo</label><select id="cb-pix-tipo">
+        ${(TIPOS_PIX.length ? TIPOS_PIX : ["CNPJ","CPF","EMAIL","TELEFONE","ALEATORIA"])
+          .map(x=>`<option value="${x}">${ROTULO_PIX[x]||x}</option>`).join("")}
+      </select></div>
+      <div class="campo"><label>Chave</label><input id="cb-pix-chave"></div>
+      <div class="campo"><label>Para que serve</label>
+        <input id="cb-pix-desc" placeholder="ex.: recebimento de medição"></div>
+    </div>
+    <div class="cartao-dica">A chave é para <b>copiar e mandar</b> quando pedem os
+      dados da empresa — não se paga por aqui. Pode deixar vazia e acrescentar
+      depois pelo botão <b>+ Pix</b>.</div>
+    <div style="margin-top:14px"><button class="btn" id="cb-salvar">Criar conta</button></div>`;
+  comBusca("cb-banco", "escolha o banco…");
+  els("cb-salvar").addEventListener("click", async () => {
+    const b = els("cb-salvar");
+    b.disabled = true;
+    try {
+      await api("/erp/api/config/conta", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          descricao: els("cb-descricao").value,
+          banco_codigo: els("cb-banco-livre").value.trim() || els("cb-banco").value,
+          agencia: els("cb-agencia").value, conta: els("cb-conta").value,
+          pix_tipo: els("cb-pix-tipo").value, pix_chave: els("cb-pix-chave").value,
+          pix_descricao: els("cb-pix-desc").value})});
+      els("dlg").close();
+      aviso("mensagem", "Conta cadastrada.", "ok");
+      await carregar();
+      carregarContasPix();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    b.disabled = false;
+  });
+  els("dlg").showModal();
+});
+
+// ---- A lista de bancos, e o botão que a troca pela oficial
+let BANCOS = [], TIPOS_PIX = [];
+const ROTULO_PIX = {CNPJ:"CNPJ", CPF:"CPF", EMAIL:"E-mail",
+                    TELEFONE:"Telefone", ALEATORIA:"Chave aleatória"};
+
+async function carregarBancos(){
+  try {
+    const d = await api("/erp/api/bancos");
+    BANCOS = d.bancos || [];
+    const e = d.estado || {};
+    els("bancos-estado").innerHTML = `${e.quantidade || 0} bancos na lista` +
+      (e.oficial ? ` — do Banco Central${e.atualizada_em ? ", em " + escapar(e.atualizada_em) : ""}`
+                 : " (lista que veio com o sistema)");
+  } catch(e){ /* a tela funciona sem: dá para digitar o código */ }
+}
+
+els("btn-bancos-atualizar").addEventListener("click", async () => {
+  const b = els("btn-bancos-atualizar");
+  b.disabled = true; b.textContent = "Buscando…";
+  try {
+    const d = await api("/erp/api/bancos/atualizar", {method:"POST"});
+    await carregarBancos();
+    aviso("pix-msg", `Lista atualizada no Banco Central: ${d.resultado.quantidade} bancos.`, "ok");
+  } catch(e){ aviso("pix-msg", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Atualizar lista de bancos";
+});
 
 checarBanco();
 carregarDepara();
@@ -1089,6 +1304,7 @@ async function carregarContasPix(){
   try {
     const d = await api("/erp/api/contas/detalhe");
     CONTAS_PIX = d.contas || [];
+    TIPOS_PIX = d.tipos_pix || TIPOS_PIX;
     desenharContas();
   } catch(e){ aviso("pix-msg", "Não consegui carregar as contas: " + e.message, "erro"); }
 }
@@ -1101,7 +1317,8 @@ function desenharContas(){
   alvo.innerHTML = lista.map(c => `
     <tr data-conta="${c.id}">
       <td>${c.descricao}</td>
-      <td class="dados">${c.banco_codigo || c.banco || ""}</td>
+      <td class="desc"><span class="dados">${escapar(c.banco_codigo || c.banco || "")}</span>${
+        c.banco_nome ? `<small>${escapar(c.banco_nome)}</small>` : ""}</td>
       <td class="dados">${c.agencia}</td>
       <td class="dados">${c.conta}</td>
       <td>${(c.chaves_pix||[]).map(k => `<div class="dados" style="white-space:nowrap">
@@ -1170,6 +1387,7 @@ carregar().then(() => {
 carregarIA();
 carregarAnexos();
 carregarContasPix();
+carregarBancos();
 
 // --------------------------------------------------------------- índices
 // O INCC-DI é a série 192 do SGS do Banco Central — pública, sem chave. A

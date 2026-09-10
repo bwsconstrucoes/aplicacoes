@@ -104,7 +104,7 @@ async function carregarObras(){
     const d = await api("/erp/api/obras");
     const lista = d.obras || d.dados || [];
     els("f-obra").innerHTML = `<option value="">Todas</option>` + lista.map(o =>
-      `<option value="${o.id}">${escapar(o.codigo || "")} ${escapar(o.nome || "")}</option>`).join("");
+      `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
   } catch(e){
     // Filtro mudo faz a pessoa achar que não há obra cadastrada. Se não deu,
     // tem de aparecer que não deu.
