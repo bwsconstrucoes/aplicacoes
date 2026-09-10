@@ -1272,6 +1272,105 @@ para reescrever exatamente os mesmos valores.
 quase tudo. É, de longe, a maior economia desta sessão — e não veio de medir a
 tela, veio de olhar o que o banco estava fazendo.
 
+### INCIDENTE (10/09) — o Relatório estourava sempre que havia filtro
+
+*"Veja quando clico em relatório: Deu erro."* Reportado pelo dono minutos
+depois da publicação da 22ª leva. **O defeito era meu, e estava no ar desde a
+18ª leva (09/09)** — não veio da publicação de hoje.
+
+**O que acontecia:** o Relatório abria normalmente **sem filtro** e estourava
+**com qualquer filtro que tivesse valor** (uma lista suspensa, a busca, uma
+faixa de valor, um período). Só os filtros de "situação" escapavam.
+
+**A causa, em uma frase:** as somas das quatro dimensões saem de uma varredura
+só (`GROUPING SETS`, 18ª leva), e os parâmetros estavam sendo passados **fora
+da ordem em que aparecem no texto do SQL** — o WHERE antes dos `CASE`
+repetidos dentro do `GROUPING(...)`.
+
+Sem filtro, as duas ordens coincidiam por acaso e tudo funcionava. Com filtro,
+os `CASE` do `GROUPING` recebiam o valor do filtro, deixavam de ser idênticos
+aos do `SELECT`, e o banco recusava a consulta inteira.
+
+> **POR QUE PASSOU POR TODA A SUÍTE, e é a lição que fica.** A sessão dublada
+> **ignora WHERE** — lá o filtro nunca vira parâmetro de verdade. E os testes
+> com banco de verdade que existiam somavam **sem filtro nenhum**, que era
+> exatamente o único caso que funcionava. O buraco é o que este arquivo de
+> testes existe para tapar, e ele estava aberto bem no meio.
+>
+> Mais fundo ainda: eu escrevi na 18ª leva que os testes "prendem a FORMA das
+> consultas". Prender a forma **não é o mesmo que exercitar a consulta**. Uma
+> consulta pode ter a forma certa e a ordem dos parâmetros errada.
+
+**Ficaram onze testes com banco de verdade**, cobrindo sete filtros diferentes
+em duas frentes: que o banco ACEITA a consulta, e que o número que ela devolve
+**bate com a soma feita uma dimensão por vez** — porque uma ordem errada pode
+não estourar e ainda assim somar a coisa errada, e aí ninguém percebe.
+**Conferido que os onze falham sem a correção e passam com ela.**
+
+**E foi feita uma varredura de todas as telas contra todos os filtros** —
+285 endereços, cada tela do módulo contra 19 filtros diferentes. Fora o
+Relatório, nada mais estourou. Os dois casos que respondem 400 respondem de
+propósito, com recado ("Nada para exportar", "Lote vazio").
+
+### INCIDENTE (10/09) — o botão que a tela mandava apertar falhava calado
+
+*"Ratear... 'As listas de obras e categorias ainda não foram carregadas'.
+Pelo que entendi essa mensagem é corrigida no botão 'Só as planilhas de
+apoio', mas já cliquei e não atualizou."*
+
+**Primeiro, o que NÃO era:** a trava de uma hora que entrou na 22ª leva vale
+**só para o disparo automático**. O botão manda `disparo="manual"` e nunca é
+travado. Conferido no código e com teste.
+
+**O que era:** as listas do rateio vêm das abas "C. Diários" (colunas "Obra" e
+"Código") e "Plano Financeiro" (colunas "Categoria" e "Código"). Se a aba tem
+outro nome, se a coluna tem outro nome, ou se a aba está vazia, a leitura
+devolvia lista vazia, um `continue` pulava, e o único registro do motivo ia
+para o **log do serviço** — que o dono não tem como ler.
+
+Resultado: a tela mandava apertar o botão, o botão dizia "concluída", e nada
+mudava. Sem nenhuma pista. **Botão que a tela manda apertar não pode falhar
+calado** — a pessoa aperta de novo, e de novo, e conclui que o sistema está
+quebrado.
+
+**Piorava porque a mensagem final do modo "apoios" era "0 SPs em 0.1 min."** —
+este modo não traz SP nenhuma, então ele SEMPRE terminava dizendo zero. A tela
+parecia dizer "não aconteceu nada" justamente quando algo tinha acontecido.
+
+**A correção: o motivo passa a chegar à tela, com o que resolve.** A mensagem
+da execução — que Configurações mostra logo abaixo do botão — passa a dizer o
+que veio e o que não veio:
+
+```
+documentação fiscal: 1 · contas: 1 · obras: 0 · categorias: 1 —
+a aba "C. Diários" não tem a(s) coluna(s) "Obra", "Código".
+O cabeçalho dela é: Centro de Custo, Cod.
+```
+
+Os três casos ficam distintos, e cada um manda a pessoa para um lugar
+diferente da planilha:
+
+| O que aconteceu | O que a tela diz |
+|---|---|
+| aba com outro nome | `a aba "C. Diários" não existe nesta planilha. As que existem são: …` |
+| coluna com outro nome | `não tem a(s) coluna(s) "Obra". O cabeçalho dela é: …` |
+| aba certa e vazia | `tem as colunas certas, mas nenhuma linha preenchida em "Obra"` |
+
+Listar o que a planilha REALMENTE tem é o que transforma "não carregou" em
+algo que se resolve sozinho, sem precisar de outra sessão.
+
+A tela de Ratear também mudou: em vez de só mandar rodar a sincronização, ela
+diz onde está a explicação se a pessoa já tiver rodado.
+
+**Verificado ponta a ponta contra o banco**, com a planilha dublada, nos quatro
+cenários — tudo certo, aba com outro nome, coluna com outro nome, aba vazia —
+lendo a mensagem que ficou gravada na execução. É o texto da tabela acima.
+
+> **O que continua NÃO sabido:** qual dos três casos é o da produção. O
+> proxy desta máquina não alcança as planilhas da empresa, então **não dá para
+> ver os nomes das abas de lá daqui**. O que a correção garante é que o
+> próximo clique no botão diz qual é.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

@@ -10,8 +10,14 @@
 {% if not referencias.obras %}
   <div class="aviso atencao">
     <b>As listas de obras e categorias ainda não foram carregadas.</b><br>
-    Elas vêm das abas "C. Diários" e "Plano Financeiro". Rode a sincronização
-    das planilhas de apoio, na tela de Configurações.
+    Elas vêm das abas "C. Diários" e "Plano Financeiro" das planilhas. Em
+    <a href="{{ url_for('analisesps.configuracoes') }}">Configurações</a>,
+    rode <b>"Só as planilhas de apoio"</b>.<br>
+    <small>
+      Se você já rodou e continua assim, a mesma tela de Configurações mostra,
+      logo abaixo do botão, <b>o que foi trazido e o que não deu</b> — com o
+      nome da aba ou da coluna que faltou. Não é preciso adivinhar.
+    </small>
   </div>
 {% else %}
 
