@@ -381,7 +381,12 @@ varredura em vez de várias**, e todas com teste que prende a forma da consulta:
   ainda leva segundos numa internet ruim. Ficam de fora o que sai em fluxo
   (a exportação CSV), o que já vem comprimido e o que é pequeno demais.
 - **O painel do Lote** sai de duas consultas, não oito (`row_number`).
-- **O Relatório** soma as dimensões juntas (`GROUPING SETS`).
+- **O Relatório** soma as dimensões juntas (`GROUPING SETS`). **Cuidado ao
+  mexer nessa consulta:** os parâmetros seguem a ordem do TEXTO do SQL, e o
+  mesmo `CASE` aparece duas vezes (no `SELECT` e dentro do `GROUPING`), com o
+  `WHERE` só depois. Trocar essa ordem faz a tela abrir sem filtro e estourar
+  com filtro — foi o incidente de 10/09/2026. Há onze testes com banco de
+  verdade prendendo isso.
 - **A Auditoria** conta as quatro condições numa consulta (`FILTER`).
 
 E, desde 10/09, três achados que vieram da tela de rede do navegador do dono

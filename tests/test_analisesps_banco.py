@@ -104,6 +104,100 @@ def test_gravar_a_mesma_sp_duas_vezes_atualiza_em_vez_de_duplicar(banco_analises
 
 
 # ---------------------------------------------------------------------------
+# O RELATÓRIO COM FILTRO — o defeito que chegou à produção em 09/09/2026
+#
+# "Vê quando clico em relatório: Deu erro." A tela estourava SEMPRE que havia
+# filtro com valor, e abria normalmente quando não havia. A causa: as somas
+# das quatro dimensões saem de uma varredura só (GROUPING SETS), e os
+# parâmetros estavam sendo passados FORA DA ORDEM DO TEXTO do SQL — o WHERE
+# antes dos CASE repetidos dentro do GROUPING.
+#
+# Sem filtro, as duas ordens coincidiam e tudo passava. Bastava filtrar por
+# qualquer coisa para os CASE do GROUPING receberem o valor do filtro,
+# deixarem de ser idênticos aos do SELECT, e o banco recusar a consulta.
+#
+# POR QUE PASSOU PELA SUÍTE: a sessão dublada ignora WHERE, então lá o filtro
+# nunca vira parâmetro de verdade; e os testes de banco que existiam somavam
+# sem filtro nenhum. É exatamente o buraco que este arquivo existe para tapar,
+# e ele estava aberto.
+# ---------------------------------------------------------------------------
+FILTROS_DO_RELATORIO = [
+    ({}, "sem filtro nenhum — era o único caso que passava"),
+    ({"status_pgt": ["Pagar"]}, "uma lista suspensa"),
+    ({"busca": "acme"}, "a busca livre"),
+    ({"centro_custo": ["OBRA-1"]}, "a obra, que abre a célula antes de comparar"),
+    ({"valor_ini": "100", "valor_fim": "5000"}, "faixa de valor"),
+    ({"situacoes": ["risco"]}, "situação, que não vira parâmetro"),
+    ({"status_pgt": ["Pagar"], "busca": "acme", "conta": ["ITAU"]},
+     "três ao mesmo tempo"),
+]
+
+
+@pytest.mark.parametrize("filtro,porque", FILTROS_DO_RELATORIO,
+                         ids=[p for _, p in FILTROS_DO_RELATORIO])
+def test_o_relatorio_soma_com_filtro_sem_o_banco_recusar(banco_analisesps,
+                                                         filtro, porque):
+    """O banco tem de ACEITAR a consulta com filtro. Antes da correção, cinco
+    destes sete estouravam."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", credor="ACME", valor="1.000,00", status_pgt="Pagar",
+               centro_custo="OBRA-1", conta="ITAU", projeto="P1",
+               tipo_despesa="Material"),
+            sp("2", credor="OUTRO", valor="2.000,00", status_pgt="Pago",
+               centro_custo="OBRA-2", conta="BB", projeto="P2",
+               tipo_despesa="Serviço")])
+
+    somas = consultas.agregar_varias(
+        filtro, ["projeto", "centro_custo", "tipo_despesa", "conta"],
+        "geral", "tudo", 100)
+
+    assert set(somas) == {"projeto", "centro_custo", "tipo_despesa", "conta"}
+
+
+@pytest.mark.parametrize("filtro,porque", FILTROS_DO_RELATORIO,
+                         ids=[p for _, p in FILTROS_DO_RELATORIO])
+def test_a_soma_junta_bate_com_a_soma_separada(banco_analisesps, filtro, porque):
+    """Não basta o banco aceitar: o número tem de ser o MESMO da soma feita
+    uma dimensão por vez, que é a conta que o Streamlit fazia. Uma ordem de
+    parâmetros errada pode não estourar e ainda assim somar a coisa errada —
+    e aí ninguém percebe."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", credor="ACME", valor="1.000,00", status_pgt="Pagar",
+               centro_custo="OBRA-1", conta="ITAU", projeto="P1",
+               tipo_despesa="Material"),
+            sp("2", credor="OUTRO", valor="2.000,00", status_pgt="Pagar",
+               centro_custo="OBRA-2", conta="BB", projeto="P2",
+               tipo_despesa="Serviço"),
+            sp("3", credor="ACME", valor="500,00", status_pgt="Pago",
+               centro_custo="", conta="ITAU", projeto="P1",
+               tipo_despesa="Material")])
+
+    dimensoes = ["projeto", "centro_custo", "tipo_despesa", "conta"]
+    juntas = consultas.agregar_varias(filtro, dimensoes, "geral", "tudo", 100)
+
+    for d in dimensoes:
+        sozinha = consultas.agregar(filtro, d, "geral", "tudo", 100)
+        arruma = lambda linhas: sorted(  # noqa: E731
+            (r["rotulo"], r["quantidade"], r["total"]) for r in linhas)
+        assert arruma(juntas[d]) == arruma(sozinha), d
+
+
+def test_o_relatorio_aceita_a_mesma_dimensao_repetida(banco_analisesps):
+    """A tela pede as quatro dimensões fixas MAIS a que a pessoa escolheu — e
+    a escolhida quase sempre é uma das quatro. Repetida, ela não pode virar
+    dois agrupamentos iguais: o banco recusaria."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", centro_custo="OBRA-1", valor="10,00", status_pgt="Pagar")])
+
+    somas = consultas.agregar_varias(
+        {"status_pgt": ["Pagar"]},
+        ["projeto", "centro_custo", "tipo_despesa", "conta", "centro_custo"],
+        "geral", "tudo", 100)
+
+    assert [r["rotulo"] for r in somas["centro_custo"]] == ["OBRA-1"]
+
+
+# ---------------------------------------------------------------------------
 # O que só o banco sabe responder
 # ---------------------------------------------------------------------------
 def test_soma_e_contagem_saem_do_banco(banco_analisesps):

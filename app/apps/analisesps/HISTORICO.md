@@ -1272,6 +1272,46 @@ para reescrever exatamente os mesmos valores.
 quase tudo. É, de longe, a maior economia desta sessão — e não veio de medir a
 tela, veio de olhar o que o banco estava fazendo.
 
+### INCIDENTE (10/09) — o Relatório estourava sempre que havia filtro
+
+*"Veja quando clico em relatório: Deu erro."* Reportado pelo dono minutos
+depois da publicação da 22ª leva. **O defeito era meu, e estava no ar desde a
+18ª leva (09/09)** — não veio da publicação de hoje.
+
+**O que acontecia:** o Relatório abria normalmente **sem filtro** e estourava
+**com qualquer filtro que tivesse valor** (uma lista suspensa, a busca, uma
+faixa de valor, um período). Só os filtros de "situação" escapavam.
+
+**A causa, em uma frase:** as somas das quatro dimensões saem de uma varredura
+só (`GROUPING SETS`, 18ª leva), e os parâmetros estavam sendo passados **fora
+da ordem em que aparecem no texto do SQL** — o WHERE antes dos `CASE`
+repetidos dentro do `GROUPING(...)`.
+
+Sem filtro, as duas ordens coincidiam por acaso e tudo funcionava. Com filtro,
+os `CASE` do `GROUPING` recebiam o valor do filtro, deixavam de ser idênticos
+aos do `SELECT`, e o banco recusava a consulta inteira.
+
+> **POR QUE PASSOU POR TODA A SUÍTE, e é a lição que fica.** A sessão dublada
+> **ignora WHERE** — lá o filtro nunca vira parâmetro de verdade. E os testes
+> com banco de verdade que existiam somavam **sem filtro nenhum**, que era
+> exatamente o único caso que funcionava. O buraco é o que este arquivo de
+> testes existe para tapar, e ele estava aberto bem no meio.
+>
+> Mais fundo ainda: eu escrevi na 18ª leva que os testes "prendem a FORMA das
+> consultas". Prender a forma **não é o mesmo que exercitar a consulta**. Uma
+> consulta pode ter a forma certa e a ordem dos parâmetros errada.
+
+**Ficaram onze testes com banco de verdade**, cobrindo sete filtros diferentes
+em duas frentes: que o banco ACEITA a consulta, e que o número que ela devolve
+**bate com a soma feita uma dimensão por vez** — porque uma ordem errada pode
+não estourar e ainda assim somar a coisa errada, e aí ninguém percebe.
+**Conferido que os onze falham sem a correção e passam com ela.**
+
+**E foi feita uma varredura de todas as telas contra todos os filtros** —
+285 endereços, cada tela do módulo contra 19 filtros diferentes. Fora o
+Relatório, nada mais estourou. Os dois casos que respondem 400 respondem de
+propósito, com recado ("Nada para exportar", "Lote vazio").
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

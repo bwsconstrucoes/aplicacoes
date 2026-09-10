@@ -827,14 +827,21 @@ def agregar_varias(f: dict, dimensoes: list, tipo: str = "geral",
     # agregadas — é como se sabe de qual das listas aquela linha é.
     marcas = ", ".join(f"GROUPING({r})" for r in rotulos)
 
+    # A ORDEM DOS PARÂMETROS SEGUE A ORDEM DO TEXTO DO SQL, e não a ordem em
+    # que a gente pensa nas partes. No texto vêm primeiro os CASE do SELECT,
+    # LOGO EM SEGUIDA os mesmos CASE dentro de GROUPING(...), e só então o
+    # WHERE. Trocar as duas últimas foi o defeito de 09/09: com filtro sem
+    # valor nenhum as duas ordens coincidiam e a tela abria; bastava filtrar
+    # por qualquer coisa para os CASE do GROUPING receberem o valor do filtro,
+    # deixarem de ser idênticos aos do SELECT, e o banco recusar a consulta.
     linhas = consultar(
         "SELECT " + ", ".join(rotulos) + ", " + marcas
         + ", count(*), coalesce(sum(valor_num),0) "
         f"  FROM analisesps.sps{where}{recorte} "
         f" GROUP BY GROUPING SETS ({conjuntos})",
         tuple([VAZIO] * len(pedidas))          # os CASE do SELECT
-        + tuple(params)                        # o WHERE
-        + tuple([VAZIO] * len(pedidas)))       # os CASE repetidos no GROUPING
+        + tuple([VAZIO] * len(pedidas))        # os mesmos CASE no GROUPING
+        + tuple(params))                       # o WHERE, que vem depois
 
     quantas = len(pedidas)
     saida: dict = {d: [] for d in pedidas}
