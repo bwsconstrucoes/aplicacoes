@@ -2195,9 +2195,38 @@ ler um contrato, ver treze campos propostos (oito marcados, cinco em conflito),
 gravar, e conferir no banco que só os oito entraram e que o documento ficou
 arquivado com texto e trilha.
 
-**O próximo da lista é colaboradores**, que ele pediu na mesma mensagem. A peça
-genérica já está pronta em `core/arquivo/preenchimento.py`: falta a lista de
-campos por tipo do lado de pessoas e a área na tela.
+**Colaboradores entrou logo depois, no mesmo dia**, pelo mesmo caminho. Na
+ficha da pessoa há a mesma área de jogar o documento: RG, carteira de trabalho,
+ficha de registro, contrato de trabalho, termo de rescisão.
+
+Duas regras são próprias do lado das pessoas, e existem porque aqui o erro caro
+não é preencher campo errado — é preencher o cadastro da PESSOA ERRADA:
+
+- **O CPF é CONFERIDO e nunca gravado.** Ele é a identidade: trocá-lo
+  repontaria pagamento, despesa e histórico para outra pessoa. Quando o CPF do
+  documento não bate com o do cadastro, a tela grita, nada entra marcado e o
+  preenchimento fica **trancado** até alguém confirmar, numa caixinha, que
+  aquele documento é daquela pessoa. O arquivo, esse, pode ser guardado assim
+  mesmo — guardar não afirma nada sobre o cadastro.
+- **Função só entra se já estiver cadastrada.** Criar função a partir de uma
+  leitura multiplicaria "PEDREIRO", "Pedreiro" e "Pedreiro(a)" em um mês — e a
+  diária de referência, que mora na função, viraria três diárias diferentes.
+  Quando a função lida não existe, a tela diz o nome e manda cadastrar antes.
+
+Duas coisas a mais que ficaram no comportamento: **ASO, certificado de NR e
+ficha de EPI não alimentam cadastro nenhum** — eles valem pela VALIDADE, que já
+vira aviso na agenda —, e o **termo de rescisão que traz a demissão fecha a
+situação junto**, porque cadastro com data de demissão e situação ATIVO mente
+para quem monta a folha do mês seguinte.
+
+A área só aparece para quem pode arquivar **e** enxerga documento de sigilo
+PESSOAL. O financeiro arquiva, mas não vê holerite: oferecer a ele "arquive o
+ASO" seria oferecer o que ele não conseguiria abrir depois.
+
+**O que ainda não foi feito, do mesmo princípio:** o lado do FORNECEDOR (cartão
+CNPJ e contrato social preenchendo o cadastro do parceiro). Menos urgente — a
+consulta à Receita, que entrou junto com a emissão automática, já resolve a
+maior parte.
 
 ### O que está pendente AGORA
 

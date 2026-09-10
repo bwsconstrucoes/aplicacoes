@@ -489,11 +489,15 @@ quando fizer sentido."*
       apólice → seguro). Termo aditivo vira REGISTRO de aditivo, não
       sobrescreve o contrato. Campo em branco entra marcado; campo com valor
       diferente entra desmarcado, com os dois lados à vista.
-- [ ] **COLABORADORES** — o próximo, pedido por ele na mesma mensagem. Mesma
-      mecânica: jogar o RG/CPF, a ficha de registro, o ASO ou o certificado de
-      NR e ter cadastro e arquivo resolvidos juntos. A peça genérica já existe
-      (`core/arquivo/preenchimento.py`): falta a lista de campos por tipo do
-      lado de pessoas e a área na tela.
+- [x] **COLABORADORES** — FEITO em 10/09/2026, logo depois da obra. Na ficha
+      da pessoa: joga o RG, a carteira, a ficha de registro, o contrato ou o
+      termo de rescisão e o cadastro se preenche junto com o arquivamento.
+      Duas regras próprias daqui: o **CPF é conferido e nunca gravado** (é a
+      identidade da pessoa — trocá-lo repontaria pagamento e histórico), e
+      **função só entra se já estiver cadastrada**, senão "PEDREIRO",
+      "Pedreiro" e "Pedreiro(a)" virariam três diárias diferentes. Com o CPF
+      divergindo, o preenchimento fica TRANCADO até alguém confirmar que o
+      documento é daquela pessoa.
 - [ ] **FORNECEDOR** — o cartão CNPJ e o contrato social preencheriam o
       cadastro do parceiro. Menos urgente: a consulta à Receita já resolve a
       maior parte disso desde 10/09/2026.

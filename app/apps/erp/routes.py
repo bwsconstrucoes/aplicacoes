@@ -541,7 +541,14 @@ def pagina_dc():
 @login_obrigatorio
 @permissao("ver_pessoal")
 def pagina_colaboradores():
-    return render_template("erp_colaboradores.html", **_contexto("colaboradores"))
+    # `ve_pessoal` decide se a área de jogar documento aparece. Não basta poder
+    # arquivar: documento de pessoa tem sigilo PESSOAL, e oferecer "arquive o
+    # ASO" a quem não vai conseguir abri-lo depois é convite à confusão.
+    from app.apps.erp.core.arquivo.service import sigilos_visiveis
+    with get_session() as _s:
+        ve_pessoal = "PESSOAL" in sigilos_visiveis(_usuario_logado(_s))
+    return render_template("erp_colaboradores.html", ve_pessoal=ve_pessoal,
+                           **_contexto("colaboradores"))
 
 
 @bp.route("/erp/conciliacao")
@@ -4771,6 +4778,98 @@ def api_obra_documento_guardar(obra_id: int):
             s.commit()
         return jsonify({"ok": True, "documento": linha,
                         "preenchido": preenchido, "aditivo": novo_aditivo})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/documento/ler", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_colaborador_documento_ler(colaborador_id: int):
+    """Lê o documento da pessoa: o que arquivaria e o que preencheria."""
+    from app.apps.erp.core.arquivo import leitura, preenchimento
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    from app.apps.erp.core.documentos.leitor import ErroLeitura
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    try:
+        conteudo = f.read()
+        with get_session() as s:
+            exigir_colaborador_no_escopo(s, _usuario_logado(s), colaborador_id)
+            sugestao = leitura.sugerir(
+                s, conteudo, f.filename or "arquivo",
+                dica=(request.form.get("dica") or ""),
+                extracao=preenchimento.instrucao_de_extracao_pessoa())
+            sugestao["colaborador_id"] = colaborador_id
+            sugestao["nome_original"] = f.filename or "arquivo"
+            sugestao["nome_sugerido"] = preenchimento.nome_para_colaborador(
+                s, colaborador_id, sugestao)
+            cadastro = preenchimento.sugerir_para_colaborador(
+                s, colaborador_id, sugestao.get("tipo_codigo") or "", sugestao)
+        return jsonify({"ok": True, "sugestao": sugestao, "cadastro": cadastro})
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP/pessoal: falha ao ler o documento do colaborador %s",
+                         colaborador_id)
+        return jsonify({"ok": False, "erro": f"Não deu para ler o documento: {e}"}), 500
+
+
+@bp.route("/erp/api/colaboradores/<int:colaborador_id>/documento", methods=["POST"])
+@login_obrigatorio
+@permissao("arquivar")
+def api_colaborador_documento_guardar(colaborador_id: int):
+    """Arquiva o documento E preenche o cadastro da pessoa, numa transação só."""
+    from app.apps.erp.core.arquivo import preenchimento
+    from app.apps.erp.core.arquivo import service as svc_arq
+    from app.apps.erp.core.auth.permissoes import exigir_colaborador_no_escopo
+    f = request.files.get("arquivo")
+    if f is None:
+        return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    tipo = (request.form.get("tipo") or "").strip().upper()
+    if not tipo:
+        return jsonify({"ok": False, "erro": "Escolha o tipo do documento."}), 400
+
+    def _data(nome):
+        try:
+            return date.fromisoformat(request.form.get(nome) or "")
+        except ValueError:
+            return None
+
+    def _comp():
+        bruto = (request.form.get("competencia") or "").strip()
+        try:
+            return date.fromisoformat(bruto + "-01") if len(bruto) == 7 else None
+        except ValueError:
+            return None
+
+    campos = json.loads(request.form.get("campos") or "{}")
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            exigir_colaborador_no_escopo(s, usuario, colaborador_id)
+            d = svc_arq.arquivar(
+                s, f.read(), f.filename or "arquivo", tipo_codigo=tipo,
+                colaborador_id=colaborador_id, competencia=_comp(),
+                referencia=(request.form.get("referencia") or ""),
+                emissao=_data("emissao"), validade=_data("validade"),
+                observacao=(request.form.get("observacao") or ""),
+                texto=(request.form.get("texto") or ""),
+                resumo=(request.form.get("resumo") or ""),
+                origem="IA", usuario=usuario)
+            preenchido = preenchimento.aplicar_no_colaborador(
+                s, colaborador_id, campos, tipo_codigo=tipo, documento_id=d.id,
+                usuario=usuario)
+            linha = svc_arq.ler(s, d)
+            s.commit()
+        return jsonify({"ok": True, "documento": linha, "preenchido": preenchido})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:

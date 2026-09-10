@@ -41,7 +41,8 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
-from app.apps.erp.db.models.cadastros import Obra, ObraAditivo, Usuario
+from app.apps.erp.db.models.cadastros import (Colaborador, Funcao, Obra,
+                                              ObraAditivo, Usuario)
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,49 @@ TIPOS_QUE_VIRAM_ADITIVO = ("ADITIVO",)
 
 
 # ---------------------------------------------------------------------------
+# O MESMO PRINCÍPIO, DO LADO DAS PESSOAS
+#
+# Pedido do dono na mesma mensagem de 10/09/2026: *"deveremos seguir pra parte
+# de colaboradores"*. Muda a lista de campos e a lista por tipo; a mecânica —
+# trava por tipo, conflito desmarcado, quem grava é a pessoa — é a mesma.
+#
+# O CPF NÃO ESTÁ AQUI, e é decisão, não esquecimento. Ele é a identidade do
+# colaborador: trocá-lo repontaria pagamento, histórico e despesa para outra
+# pessoa. O documento serve para CONFERIR o CPF, não para mudá-lo — e quando
+# não bate, a tela grita em vez de preencher.
+# ---------------------------------------------------------------------------
+CAMPOS_PESSOA: dict[str, tuple[str, str, str]] = {
+    "nome": ("Nome", "texto", "nome completo da pessoa, como está no documento"),
+    "matricula": ("Matrícula", "texto", "matrícula ou registro do empregado"),
+    "admissao": ("Admissão", "data", "data de admissão"),
+    "demissao": ("Demissão", "data", "data de desligamento"),
+    "funcao_nome": ("Função", "texto", "cargo ou função exercida"),
+    "telefone": ("Telefone", "documento", "telefone de contato, só dígitos"),
+    "regime": ("Regime", "texto", "regime de contratação: CLT, DIARISTA ou PJ"),
+    "banco": ("Banco", "texto", "nome ou código do banco"),
+    "agencia": ("Agência", "texto", "agência bancária"),
+    "conta": ("Conta", "texto", "conta bancária, com dígito"),
+    "pix_chave": ("Chave Pix", "texto", "chave Pix, quando o documento trouxer"),
+}
+
+POR_TIPO_PESSOA: dict[str, tuple[str, ...]] = {
+    "DOC-IDENTIDADE": ("nome",),
+    "CTPS": ("nome", "matricula", "admissao", "funcao_nome"),
+    "FICHA-REGISTRO": ("nome", "matricula", "admissao", "funcao_nome", "telefone",
+                       "regime", "banco", "agencia", "conta", "pix_chave"),
+    "CONTRATO-TRABALHO": ("nome", "admissao", "funcao_nome", "regime"),
+    "RESCISAO": ("demissao",),
+    # ASO, certificado de NR e ficha de EPI não alimentam o cadastro: eles
+    # valem pela VALIDADE, que já vira aviso na agenda desde a migração 051.
+    "ASO": (),
+    "CERTIFICADO-NR": (),
+    "EPI-FICHA": (),
+}
+
+REGIMES = ("CLT", "DIARISTA", "PJ")
+
+
+# ---------------------------------------------------------------------------
 # A pergunta que se acrescenta à leitura
 # ---------------------------------------------------------------------------
 def instrucao_de_extracao() -> str:
@@ -160,6 +204,26 @@ Regras da extração:
 - "aditivo" só quando o documento FOR um termo aditivo; nos outros, deixe vazio.
 - Prazo em meses: converta para dias (1 mês = 30 dias) e diga isso em observacoes.""" % (
         ",\n".join(linhas))
+
+
+def instrucao_de_extracao_pessoa() -> str:
+    """O pedaço da pergunta à IA que trata do cadastro do colaborador."""
+    linhas = [f' "{campo}": "{pedido}"'
+              for campo, (_, _, pedido) in CAMPOS_PESSOA.items()]
+    return """
+Além disso, quando o documento for de uma PESSOA, extraia o que der para o
+cadastro dela, dentro de "dados_extraidos". Campo que o documento não disser
+fica vazio — NUNCA deduza nem invente:
+
+ "dados_extraidos": {
+%s,
+  "cpf": "CPF da pessoa de quem é o documento, só dígitos"
+ }
+
+Regras da extração:
+- "cpf" é só para CONFERIR de quem é o documento; não é para mudar cadastro.
+- "regime": CLT, DIARISTA ou PJ. Na dúvida, deixe vazio.
+- Datas sempre AAAA-MM-DD.""" % (",\n".join(linhas))
 
 
 # ---------------------------------------------------------------------------
@@ -258,11 +322,14 @@ def _mesmo(a: Any, b: Any) -> bool:
             return Decimal(str(a)) == Decimal(str(b))
         except InvalidOperation:
             pass
-    def _limpo(x):
-        s = unicodedata.normalize("NFKD", str(x))
-        s = "".join(c for c in s if not unicodedata.combining(c))
-        return re.sub(r"[^a-z0-9]+", "", s.lower())
-    return _limpo(a) == _limpo(b)
+    return _limpo_para_comparar(a) == _limpo_para_comparar(b)
+
+
+def _limpo_para_comparar(x: Any) -> str:
+    """Sem acento, sem pontuação, sem caixa — para comparar texto de gente."""
+    t = unicodedata.normalize("NFKD", str(x or ""))
+    t = "".join(c for c in t if not unicodedata.combining(c))
+    return re.sub(r"[^a-z0-9]+", "", t.lower())
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +481,197 @@ def aplicar_na_obra(s: Session, obra_id: int, escolhas: dict[str, Any], *,
         logger.info("ERP/arquivo: obra %s preenchida por documento %s (%d campo(s))",
                     obra.codigo, tipo_codigo, len(mudancas))
     return {"mudancas": mudancas, "quantidade": len(mudancas)}
+
+
+# ---------------------------------------------------------------------------
+# O lado das pessoas
+# ---------------------------------------------------------------------------
+def _funcao_por_nome(s: Session, nome: str) -> Optional[Funcao]:
+    """A função pelo nome, sem acento e sem caixa. NÃO cria a que não existe.
+
+    Criar função a partir de uma leitura multiplicaria "PEDREIRO", "Pedreiro"
+    e "Pedreiro(a)" no cadastro em um mês — e a diária de referência, que mora
+    na função, viraria três diárias diferentes.
+    """
+    alvo = _limpo_para_comparar(nome)
+    if not alvo:
+        return None
+    for f in s.query(Funcao).all():
+        if _limpo_para_comparar(f.nome) == alvo:
+            return f
+    return None
+
+
+def sugerir_para_colaborador(s: Session, colaborador_id: int, tipo_codigo: str,
+                             dados: dict[str, Any]) -> dict[str, Any]:
+    """O que este documento preencheria no cadastro do colaborador.
+
+    Além dos campos, devolve a CONFERÊNCIA DE IDENTIDADE: o CPF que o documento
+    traz contra o do cadastro. Documento da pessoa errada preenchendo cadastro
+    é o pior erro possível aqui — vai parar em holerite e em pagamento.
+    """
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+
+    codigo = (tipo_codigo or "").strip().upper()
+    permitidos = POR_TIPO_PESSOA.get(codigo, ())
+    extraidos = dados.get("dados_extraidos") or {}
+    campos: list[dict[str, Any]] = []
+    avisos: list[str] = []
+
+    cpf_lido = _digitos(extraidos.get("cpf"))
+    cpf_bate = None
+    if cpf_lido:
+        cpf_bate = _digitos(c.cpf) == cpf_lido
+        if not cpf_bate:
+            avisos.append(
+                f"O CPF do documento ({cpf_lido}) não é o de {c.nome} "
+                f"({c.cpf}). Confira se o documento é desta pessoa antes de "
+                f"gravar qualquer coisa — o CPF do cadastro não é alterado por "
+                f"aqui, justamente para não repontar pagamento e histórico.")
+
+    for campo in permitidos:
+        rotulo, feitio, _ = CAMPOS_PESSOA[campo]
+        novo = _converter(feitio, extraidos.get(campo))
+        if novo in (None, ""):
+            continue
+
+        if campo == "funcao_nome":
+            f = _funcao_por_nome(s, novo)
+            if f is None:
+                avisos.append(
+                    f"A função “{novo}” não está cadastrada. Cadastre-a em "
+                    f"Pessoal antes, para a diária de referência valer.")
+                continue
+            atual = s.get(Funcao, c.funcao_id) if c.funcao_id else None
+            vazio = atual is None
+            if not vazio and atual.id == f.id:
+                continue
+            campos.append({"campo": "funcao_id", "rotulo": rotulo, "feitio": "texto",
+                           "valor": f.nome, "valor_id": f.id,
+                           "valor_atual": (atual.nome if atual else ""),
+                           "conflito": not vazio, "marcar": vazio})
+            continue
+
+        if campo == "regime":
+            novo = str(novo).strip().upper()
+            if novo not in REGIMES:
+                continue
+
+        atual = getattr(c, campo, None)
+        vazio = atual in (None, "")
+        if (not vazio) and _mesmo(atual, novo):
+            continue
+        campos.append({
+            "campo": campo, "rotulo": rotulo, "feitio": feitio,
+            "valor": _mostrar(feitio, novo),
+            "valor_atual": _mostrar(feitio, atual),
+            "conflito": not vazio,
+            # Com o CPF divergindo, NADA entra marcado: a dúvida é sobre de
+            # quem é o documento, não sobre um campo.
+            "marcar": vazio and (cpf_bate is not False),
+        })
+
+    return {
+        "colaborador_id": c.id, "colaborador": c.nome, "tipo": codigo,
+        "campos": campos, "avisos": avisos,
+        "cpf_lido": cpf_lido or "", "cpf_confere": cpf_bate,
+        "nada_a_preencher": not campos,
+        "tipo_nao_preenche": codigo not in POR_TIPO_PESSOA,
+    }
+
+
+def aplicar_no_colaborador(s: Session, colaborador_id: int, escolhas: dict[str, Any], *,
+                           tipo_codigo: str = "", documento_id: Optional[int] = None,
+                           usuario: Optional[Usuario] = None) -> dict[str, Any]:
+    """Grava no cadastro da pessoa o que ela confirmou. O CPF nunca."""
+    c = s.get(Colaborador, colaborador_id)
+    if c is None:
+        raise ErroValidacao("Colaborador não encontrado.")
+    codigo = (tipo_codigo or "").strip().upper()
+    permitidos = set(POR_TIPO_PESSOA.get(codigo, ()))
+    # `funcao_nome` vira `funcao_id` na hora de gravar.
+    if "funcao_nome" in permitidos:
+        permitidos.add("funcao_id")
+
+    mudancas: list[str] = []
+    for campo, bruto in (escolhas or {}).items():
+        if campo == "cpf":
+            raise ErroValidacao(
+                "O CPF não é alterado por documento. Ele é a identidade do "
+                "colaborador: trocá-lo repontaria pagamento e histórico para "
+                "outra pessoa. Corrija no cadastro, com a conferência devida.")
+        if campo not in permitidos:
+            raise ErroValidacao(
+                f"O documento do tipo {codigo} não preenche “{campo}”.")
+
+        if campo == "funcao_id":
+            f = s.get(Funcao, int(bruto)) if str(bruto).isdigit() else None
+            if f is None:
+                raise ErroValidacao("Função não encontrada.")
+            if c.funcao_id == f.id:
+                continue
+            antiga = s.get(Funcao, c.funcao_id) if c.funcao_id else None
+            c.funcao_id = f.id
+            mudancas.append(f"Função: {getattr(antiga, 'nome', '(vazio)')} → {f.nome}")
+            continue
+
+        rotulo, feitio, _ = CAMPOS_PESSOA[campo]
+        novo = _converter(feitio, bruto)
+        if campo == "regime":
+            novo = str(novo or "").strip().upper()
+            if novo not in REGIMES:
+                raise ErroValidacao(f"Regime desconhecido: {novo!r}.")
+        if novo in (None, ""):
+            continue
+        antigo = getattr(c, campo, None)
+        if _mesmo(antigo, novo):
+            continue
+        setattr(c, campo, novo)
+        mudancas.append(f"{rotulo}: {_mostrar(feitio, antigo) or '(vazio)'} → "
+                        f"{_mostrar(feitio, novo)}")
+
+    # Desligamento lido do termo de rescisão fecha a situação junto: cadastro
+    # com data de demissão e situação ATIVO mente para quem monta a folha.
+    if c.demissao and c.situacao == "ATIVO":
+        c.situacao = "DESLIGADO"
+        mudancas.append("Situação: Ativo → Desligado (tem data de demissão)")
+
+    if mudancas:
+        c.atualizado_em = datetime.now()
+        s.flush()
+        registrar_evento(s, "colaborador", c.id, "PREENCHIDO_POR_DOCUMENTO",
+                         {"tipo": codigo, "documento_id": documento_id,
+                          "mudancas": mudancas},
+                         usuario.id if usuario else None)
+        logger.info("ERP/arquivo: colaborador %s preenchido por documento %s "
+                    "(%d campo(s))", c.nome, codigo, len(mudancas))
+    return {"mudancas": mudancas, "quantidade": len(mudancas)}
+
+
+def nome_para_colaborador(s: Session, colaborador_id: int,
+                          sugestao: dict[str, Any]) -> str:
+    """O nome do arquivo, com o dono sendo ESTA pessoa. Mesmo motivo da obra."""
+    from app.apps.erp.core.arquivo import catalogo, nomes
+
+    c = s.get(Colaborador, colaborador_id)
+    codigo = (sugestao.get("tipo_codigo") or "").strip().upper()
+    if c is None or not codigo:
+        return sugestao.get("nome_sugerido") or ""
+    try:
+        tipo = catalogo.obter(s, codigo)
+    except Exception:
+        return sugestao.get("nome_sugerido") or ""
+    return nomes.montar(
+        tipo_codigo=tipo.codigo, dono=nomes.apelido_da_pessoa(c),
+        referencia=(sugestao.get("referencia") or ""),
+        competencia=_data((sugestao.get("competencia") or "") + "-01"
+                          if len(sugestao.get("competencia") or "") == 7 else ""),
+        emissao=_data(sugestao.get("emissao")),
+        validade=_data(sugestao.get("validade")),
+        nome_original=sugestao.get("nome_original") or "",
+        por_competencia=bool(tipo.por_competencia), vence=bool(tipo.vence))
 
 
 def criar_aditivo(s: Session, obra_id: int, dados: dict[str, Any], *,
