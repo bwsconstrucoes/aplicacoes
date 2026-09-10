@@ -136,8 +136,48 @@ def texto_para_copiar(conta: ContaBancaria, empresa: Optional[Empresa] = None) -
     return "\n".join(linhas)
 
 
+def criar(s: Session, dados: dict[str, Any],
+          usuario: Optional[Usuario] = None) -> ContaBancaria:
+    """Cadastra a conta da empresa. Uma chave Pix pode vir junto.
+
+    A chave Pix vinha depois, por um botão à parte, e o formulário mostrava
+    menos campos do que a tabela ao lado — foi o que o dono estranhou em
+    10/09/2026. Quem cadastra a conta tem a chave na mão naquele momento; pedir
+    para voltar depois é o jeito mais fácil de a conta ficar sem chave.
+    """
+    from app.apps.erp.core.cadastros import bancos
+
+    descricao = _texto(dados.get("descricao"))
+    banco = bancos.normalizar_codigo(dados.get("banco_codigo"))
+    agencia = _texto(dados.get("agencia"))
+    conta = _texto(dados.get("conta"))
+    faltando = [rot for valor, rot in (
+        (descricao, "a descrição"), (banco, "o banco"),
+        (agencia, "a agência"), (conta, "a conta")) if not valor]
+    if faltando:
+        raise ErroValidacao(f"Preencha {', '.join(faltando)}.")
+
+    linha = ContaBancaria(descricao=descricao, banco_codigo=banco,
+                          agencia=agencia, conta=conta)
+    s.add(linha)
+    s.flush()
+    registrar_evento(s, "conta_bancaria", linha.id, "CRIADA",
+                     {"descricao": descricao, "banco": bancos.rotulo(banco, s),
+                      "agencia": agencia, "conta": conta},
+                     usuario.id if usuario else None)
+
+    if _texto(dados.get("pix_chave")):
+        acrescentar_pix(s, linha.id, tipo=_texto(dados.get("pix_tipo")),
+                        chave=_texto(dados.get("pix_chave")),
+                        descricao=_texto(dados.get("pix_descricao")),
+                        usuario=usuario)
+    return linha
+
+
 def listar(s: Session, *, empresa_id: Optional[int] = None,
            incluir_inativas: bool = False) -> list[dict[str, Any]]:
+    from app.apps.erp.core.cadastros import bancos
+
     stmt = (select(ContaBancaria).options(selectinload(ContaBancaria.chaves_pix))
             .order_by(ContaBancaria.descricao))
     if not incluir_inativas:
@@ -150,7 +190,9 @@ def listar(s: Session, *, empresa_id: Optional[int] = None,
     for c in s.scalars(stmt).all():
         saida.append({
             "id": c.id, "descricao": c.descricao,
-            "banco_codigo": c.banco_codigo, "agencia": c.agencia, "conta": c.conta,
+            "banco_codigo": c.banco_codigo,
+            "banco_nome": bancos.nome(c.banco_codigo, s),
+            "agencia": c.agencia, "conta": c.conta,
             "ativo": c.ativo is not False,
             "chaves_pix": [{"id": k.id, "tipo": k.tipo,
                             "tipo_nome": ROTULO_PIX.get(k.tipo, k.tipo),

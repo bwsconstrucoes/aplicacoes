@@ -17,7 +17,34 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
-**Estado em 05/09/2026 (noite):** `main` com a autorização padrão-NEGAR, o
+**Estado em 10/09/2026 (fim da tarde):** `main` publicada em `da2b1b0`, com
+três entregas: a denúncia de campo de anexo desconhecido na importação do
+Pipefy, a **obra que nasce do documento** (com um lugar só para cadastrar obra)
+e as **seis correções do primeiro uso de verdade** (filtro de obras, conta
+bancária com Pix e lista de bancos, zerar obras, contas do operador, perfis
+pré-configurados, arrastar documento no Arquivo). **Esta publicação NÃO tem
+migração** — a última continua sendo a 057. Suíte: **3.671 casos** com banco de
+verdade. Nada pendente no ramo `claude/oi-vjvrn8`.
+
+⚠️ **Confirmar com o dono se as migrações 055, 056 e 057 já foram aplicadas**
+pelo botão "Aplicar atualizações do banco" — foram pedidas na publicação
+anterior e não houve confirmação.
+
+**Estado anterior, em 10/09/2026 (manhã):** `main` publicada e **banco
+atualizado até a migração 054** — o dono apertou "Aplicar atualizações do banco" no mesmo momento da
+junção. Nesta publicação foram quatro entregas: as listas com "carregar mais"
+(solicitações), a **tela de saúde do sistema** (054), a **ficha do título em
+card** com o encadeamento entre telas, e a **leitura do documento por IA no
+Arquivo**. Suíte: 2.170 casos sem banco e 1.330 com banco de verdade. **Nada
+pendente no ramo `claude/oi-vjvrn8`.**
+
+⚠️ **Duas coisas só se provam em produção e ainda não foram provadas:** a
+leitura de documento pela IA no Arquivo (não há chave da OpenAI no ambiente de
+desenvolvimento) e a busca do INCC no Banco Central (a saída de internet de lá
+é filtrada). Se qualquer uma falhar, é configuração no Render, não código —
+mas ninguém confirmou ainda que funcionam.
+
+**Estado anterior, em 05/09/2026 (noite):** `main` com a autorização padrão-NEGAR, o
 alcance por operador (029), o consumo de IA com teto (030), as travas de
 concorrência (031), a permissão fina por pessoa (032) e o **módulo de
 Suprimentos** (033 a 037). Publicado também o **botão de zerar o movimento por área** e a **reforma das
@@ -1812,6 +1839,636 @@ arquivo aparecendo na tela, e o aviso nascendo na agenda.
 aparecia no painel que era redesenhado logo em seguida — a frase morria antes
 de ser lida, que é o mesmo que não ter avisado.
 
+### As solicitações passam de 500 — e os números do topo pararam de mentir — 09/09/2026
+
+A tela de Solicitações trazia os **500 títulos mais novos e não dizia**. O
+corte em si era o menor dos três problemas.
+
+**O primeiro: o filtro de situação não alcançava o que era antigo.** Ele era
+aplicado depois, sobre os 500 já trazidos. Filtrar por "bloqueado" não achava
+nada se os 500 mais novos não tivessem nenhum — mesmo havendo um bloqueado
+desde o começo do ano. A pessoa concluía que não havia nenhum. Agora o filtro
+entra na consulta, que é onde filtro mora.
+
+**O segundo, e o mais grave: os quadrinhos do topo somavam só esses 500 e se
+apresentavam como "total".** Uma lista cortada é um incômodo; um total que
+soma metade da base e se chama total é um **número que mente** — e ninguém
+confere um número que o sistema deu. Hoje os oito quadrinhos somam o filtro
+inteiro, e o rótulo diz "no filtro inteiro". Quando você liga um filtro que
+acontece na tela (obra, credor, dedutibilidade), eles voltam a contar o que
+está visível e o rótulo muda para "no que está na tela" — porque a alternativa
+seria mostrar um número que não corresponde à lista embaixo dele.
+
+**O terceiro: as caixinhas do filtro contavam só o carregado.** Uma situação
+sem nenhum registro na página aparecia "zerada", em cinza — o que desencoraja
+o clique justamente quando existem registros mais antigos. Agora a contagem
+vem da base inteira.
+
+**Como a lista cresce agora:** um botão "Carregar mais" que **acrescenta** em
+vez de trocar de página. Acrescentar e não paginar foi escolha: os filtros de
+obra, credor e dedutibilidade acontecem no navegador, sobre o que está
+carregado — trocar de página faria eles enxergarem só a página nova, e o
+resultado seria pior que o corte que estamos consertando.
+
+E a tela **diz sempre onde está**: "Mostrando 200 de 240" quando falta, "todas
+as 240 estão na tela" quando não falta. O pior de uma lista cortada não é o
+corte — é a pessoa não saber que houve corte e decidir achando que viu tudo.
+
+**A regra que ficou escrita** (`core/comum/paginacao.py`): a consulta filtrada
+é montada UMA VEZ e serve às três perguntas — a página, a contagem e as somas.
+Elas não podem divergir porque não existem separadas. É o mesmo princípio do
+escopo de obra: um caminho só. O escopo, aliás, continua valendo nas três — se
+valesse só na lista, o total do topo entregaria o valor de obras que a pessoa
+não pode ver.
+
+⚠️ **Só a tela de Solicitações foi convertida.** As outras listas continuam
+com corte silencioso (Notas fiscais, Notas emitidas, Arquivo, Agenda,
+Conciliação e Extratos em 500; Empreitas, Locações, Despesa com colaborador e
+Movimentações em 300). Nenhuma incomoda no volume de hoje — a de solicitações
+incomodava. Estão listadas no `ROTEIRO.md`, e todas usam o mesmo ajudante
+quando chegar a vez.
+
+**Provado:** 15 testes com banco de verdade (`tests/test_paginacao_banco.py`),
+incluindo os dois defeitos antigos, o escopo por obra valendo nas três
+perguntas e a conferência de que nenhuma página repete ou pula registro. E a
+tela percorrida num navegador com 240 solicitações: carregar mais, chegar ao
+fim, e filtrar por "bloqueado" achando o mais antigo de todos.
+
+### A tela de saúde do sistema — 10/09/2026
+
+Migração **054**, em Configurações › **"Saúde do sistema"**.
+
+**Por que ela existe.** Em 08/09 o dono perguntou se o sistema aguenta crescer,
+e a resposta que dei foi de raciocínio: "o gargalo é a máquina compartilhada,
+não o tamanho da base". Era provavelmente certa, mas era um argumento, não uma
+medição. E a próxima pergunta dele vai ser sobre **gastar** — trocar de plano
+no Render, subir o banco. Decisão de gastar não pode ser palpite.
+
+**O que a tela mostra:** memória em uso contra o teto do plano (com o pico), o
+tempo médio de abertura das telas, quantas passaram do limite em que a pessoa
+percebe que esperou, quantas falharam, o tamanho do banco e quanto dele é
+documento.
+
+**As telas lentas saem ordenadas pelo TEMPO TOTAL, não pela média.** Uma tela
+de três segundos aberta uma vez por mês incomoda menos que uma de meio segundo
+aberta duzentas vezes por dia. O que se quer consertar é onde a equipe espera
+mais no fim das contas — e a média sozinha aponta para o lugar errado.
+
+**Como a medição é feita, e os três cuidados:**
+
+1. **Medir não pode custar mais que o que se mede.** Os tempos se acumulam na
+   memória do processo e descem ao banco de minuto em minuto, **agregados por
+   dia e por rota**. Uma linha por requisição faria a tabela de medição virar,
+   ela mesma, o problema que veio medir.
+2. **A gravação SOMA em cima do que já existe**, porque o processo reinicia a
+   cada 150 requisições (`--max-requests`) e o dia é montado em pedaços.
+3. **A medição nunca derruba uma tela.** Os dois ganchos estão embrulhados: se
+   a gravação falhar, o número se perde e a vida segue. Sistema que cai por
+   causa do próprio termômetro é pior que sistema sem termômetro.
+
+**Dois defeitos achados enquanto eu olhava a tela:**
+
+- Uma consulta do painel que falhasse **apagava o painel inteiro**: no
+  Postgres, uma consulta com erro aborta a transação e todas as seguintes
+  falham junto. Uma tabela ainda não criada deixaria a tela em branco — e
+  painel vazio faz a pessoa achar que o sistema parou. Agora cada leitura vive
+  no seu ponto de salvamento e falta só o pedaço que falhou.
+- A contagem de linhas por tabela mostrava **"0 linhas"** para tabelas que o
+  Postgres ainda não analisou. Ao lado de uma tabela de 300 KB, "0 linhas" é
+  uma afirmação falsa. Agora, quando não se sabe, a tela mostra um traço.
+
+**Nenhuma dependência nova.** A memória é lida de `/proc/self/status`;
+acrescentar biblioteca para ler um arquivo de texto seria caro pelo que
+entrega.
+
+**Provado:** 17 testes com banco de verdade (`tests/test_saude_banco.py`),
+incluindo mil chamadas virando uma linha, o banco fora do ar sendo engolido, e
+a ordenação por tempo total. E a tela aberta num navegador **depois de passear
+por oito telas de verdade** — os números que apareceram nasceram de uso, não de
+dado inventado: 93 aberturas, 35 ms de média, 186 MB de memória de 2 GB.
+
+### Petrolina sai da conta — 10/09/2026
+
+Palavras dele: *"esqueça por enquanto credenciamento Petrolina. É uma empresa
+futura."*
+
+O que isso muda, na prática: **a emissão automática de nota deixa de estar
+bloqueada.** Ela estava esperando inscrição municipal, credenciamento, token e
+códigos de serviço de Petrolina — e nada disso é necessário para a **BWS no
+Eusébio**, que já tem os três primeiros e agora tem também o certificado
+digital (migração 053).
+
+Fica registrado para não se perder: o desenho de duas empresas em municípios
+diferentes, uma por API e outra manual, **continua valendo** e está construído
+(migração 047). Ele simplesmente não tem urgência enquanto a segunda empresa
+não existir.
+
+⚠️ **O que continua sem verificação:** a primeira chamada real ao serviço do
+município só acontece no Render. A saída de internet do ambiente onde escrevo
+é filtrada — foi assim com o Banco Central, e será assim com a prefeitura.
+
+### A ficha do título vira card, e as telas passam a se ligar — 10/09/2026
+
+Duas coisas que estavam no ROTEIRO desde o começo e nunca tinham vindo.
+
+**1. O detalhe do título deixou de ser janela.** Ele existia, mas abria numa
+janela por cima da tela e **só com clique duplo** — que ninguém adivinha.
+Agora um clique na linha expande o card ali mesmo, embaixo dela: quem está
+conferindo não perde o lugar da lista, fecha e continua de onde estava. Tudo
+que já havia continua: apontamentos, parcelas, pagamentos, rateio, retenções,
+anexos, assinaturas e o histórico completo.
+
+A janela **não morreu** — ficou com duas funções que são dela: os formulários
+(reclassificar, alterar parcelas, desfazer baixa) e o caso do endereço direto
+(`?titulo=N`, que vem da parcela de locação) cair num título que os filtros de
+hoje não mostram: aí não existe linha para expandir.
+
+**2. Encadeamento.** O que o dono pediu como *"conexão database do Pipefy"*:
+clicar na obra, na conta, no credor ou na compra e ir para o cadastro. Vale na
+lista de solicitações (obra e credor) e dentro da ficha (credor, conta, obra,
+cada obra do rateio, e o pedido de compra que originou o título). As quatro
+telas de destino passaram a aceitar o registro pelo endereço e já abrem nele:
+`/erp/obras?obra=N`, `/erp/configuracoes?conta=N#plano`,
+`/erp/suprimentos/fornecedores?fornecedor=N`,
+`/erp/suprimentos/pedidos?pedido=N`.
+
+**O elo respeita a permissão do destino.** Um financeiro não vê o link para o
+pedido de compra, porque a tela de pedidos é de ADMIN e diretoria — link que
+responde "sem permissão" é pior que texto puro, promete uma porta que não
+abre. A trava continua sendo o `@permissao` da rota; isto é só a tela não
+oferecer. O helper é `elo(tipo, id, texto)` no `erp_base.html`, e serve
+qualquer tela daqui para frente.
+
+⚠️ **O que isso quebrou e foi consertado na hora:** a tela de INÍCIO não
+recebia `pode` no molde dela. Como o `erp_base.html` passou a ler
+`pode.ver_suprimentos`, a porta de entrada do ERP inteiro respondeu 500. Quem
+pegou foi a homologação com banco de verdade, antes de sair daqui. Está com
+teste próprio agora (`test_a_porta_de_entrada_tambem_conhece_as_permissoes`).
+
+### O Arquivo passou a ler o documento — 10/09/2026
+
+Item 3 da gestão de documentos, o que o dono descreveu como *"um ambiente onde
+eu pudesse simplesmente jogar esse documento, ele fosse interpretado, lido, e
+a partir dali categorizado, renomeado e salvo"*.
+
+Em Administração › Arquivo › Guardar documento: escolhe o arquivo, aperta
+**"Ler o documento"** (com uma dica opcional, tipo "é a CND do FGTS da BWS") e
+o formulário volta preenchido — tipo, dono, emissão, validade, competência,
+referência e o nome padronizado. A pessoa confere e grava.
+
+Decisões que estão no código e não se mudam sem motivo:
+
+- **Ler não é guardar.** A leitura não grava nada. Documento arquivado no tipo
+  errado some do conjunto que o cliente pede na medição, e ninguém descobre
+  até o dia da entrega.
+- **A pergunta sai do catálogo QUE ESTÁ NO BANCO**, não de uma lista fixa no
+  código. Tipo novo criado pela empresa hoje entra na leitura de amanhã.
+- **Não achar o dono é resposta válida.** A comparação exige CNPJ/CPF igual ou
+  nome que se contenha — nunca "o mais parecido". Quando não acha, a tela diz
+  qual nome o documento traz e manda escolher. Pendurar no parecido faria o
+  documento sumir da busca de quem procura.
+- **Validade anterior à emissão é leitura trocada**: descartada, com a
+  confiança rebaixada. Gravá-la faria o aviso de vencimento nascer errado.
+- **A leitura diz o que ela mesma não resolveu** ("falta você preencher: até
+  quando vale"). Sugestão que se apresenta como certeza é pior do que campo em
+  branco, porque ninguém confere.
+- **O texto do documento é guardado junto.** Extrair na entrada é barato;
+  reprocessar depois, para poder buscar dentro do documento, seria caro. A
+  busca do Arquivo já olhava esse campo — agora ele vem preenchido.
+
+Dois buracos que apareceram no caminho e foram fechados: os tipos de documento
+de **PESSOA** e de **PARCEIRO** não tinham lista de dono na tela (dizia "este
+tipo ainda não tem lista aqui"), então metade do catálogo não tinha onde ser
+pendurada. Agora têm, por um endereço próprio do Arquivo — e a **lista de
+colaboradores só sai para quem enxerga documento PESSOAL**, a mesma faixa de
+sigilo do módulo.
+
+⚠️ **O que NÃO foi verificado:** a chamada real ao serviço de IA. Não há chave
+da OpenAI neste ambiente. O caminho de erro foi exercitado no navegador (a
+tela diz "leitura automática indisponível — preencha os campos manualmente" e
+nada quebra), e o caminho de sucesso foi exercitado ponta a ponta com a IA
+dublada: ler → preencher → guardar com o nome padronizado → achar o documento
+buscando por uma palavra de DENTRO dele. O que falta provar é o acerto do
+modelo contra documento de verdade, e isso só acontece no Render.
+
+### A fila de trabalho pesado — 10/09/2026 (migração 055)
+
+Nasceu da pergunta do dono em 08/09/2026 sobre o sistema aguentar crescer. A
+resposta que rende mais não é máquina maior: é **parar de fazer trabalho
+pesado enquanto alguém espera a tela**.
+
+O que era trabalho pesado no clique: importar cem cards do Pipefy (cada um com
+consulta e anexos para baixar) e recalcular a agenda inteira ao abri-la. Cada
+um desses segurava UMA das quatro linhas de atendimento do serviço — que é o
+mesmo serviço dos outros treze módulos. O sistema ficava pesado para todo
+mundo e ninguém entendia por quê.
+
+Agora o clique enfileira e volta na hora. Decisões que estão no código:
+
+- **A fila vive no BANCO.** O serviço se reinicia sozinho de tempos em tempos
+  (a faxina de memória do gunicorn). Fila na memória perderia o trabalho no
+  meio, calada.
+- **Uma linha de trabalho só.** Duas fariam duas importações grandes disputar a
+  mesma máquina de 2 GB — o problema que viemos resolver, com outro nome.
+- **Quem morre no meio volta para a fila.** O sinal de vida (`batida_em`) é o
+  que separa "está trabalhando" de "morreu". Sem ele um trabalho ficaria
+  "executando" para sempre.
+- **Tentativa tem teto** (três), e há trabalho que **não repete nenhuma vez**:
+  emitir nota. Repetir criaria duas notas de verdade na prefeitura.
+- **A agenda abre com o que já está calculado** e manda recalcular por trás;
+  quando termina, a lista se refaz sozinha. E dez pessoas abrindo a agenda não
+  criam dez recálculos iguais.
+
+Acompanhamento em Configurações › "Trabalhos em segundo plano": o que está na
+fila, o que terminou, o que falhou, e o botão de tentar de novo.
+
+⚠️ **A linha de fundo fica DESLIGADA na suíte** (`ERP_TAREFAS=0` no
+`tests/conftest.py`): ela atravessaria os testes mexendo no banco por fora da
+transação que cada teste desfaz. A fila continua sendo provada — os testes
+enfileiram e mandam executar na hora.
+
+### A nota fiscal sai sozinha — 10/09/2026 (migração 056)
+
+Item 6 de `MEDICOES_E_NOTAS.md`, destravado quando Petrolina saiu da conta.
+Botão **"Emitir agora"** na medição, dentro do quadro do contrato.
+
+A ordem importa e está no código:
+
+1. **Confere o cadastro ANTES de tocar em número.** Descobrir no meio que falta
+   o CNO obrigaria a queimar um número por erro de cadastro. A tela mostra a
+   lista do que falta, em português, com onde resolver.
+2. **Reserva o número da declaração**, que é NOSSO — no padrão nacional quem
+   numera a DPS é quem emite; a prefeitura devolve o número da NOTA.
+3. **Assina com o certificado A1 da empresa, em memória.** O `.pfx` nunca vira
+   arquivo em disco: arquivo escrito para "só assinar uma nota" sobrevive ao
+   processo, entra em backup e vaza a assinatura da empresa.
+4. **Envia pelo canal NACIONAL** (o ABRASF tem data para acabar) e guarda o
+   número da nota, a chave de acesso, o identificador de processamento e o
+   **XML anexado ao título**.
+5. **Falhando, o número fica QUEIMADO com o motivo** e não volta para a fila. A
+   prefeitura pode ter recebido a declaração e só a resposta ter se perdido.
+
+Duas mensagens de erro, de propósito: o motivo GRAVADO guarda o texto técnico
+inteiro (é o que se manda para o suporte da prefeitura); a frase que vai para a
+TELA é em português. Despejar "ProxyError: Max retries exceeded" na cara de
+quem está faturando não ajuda ninguém a decidir o que fazer.
+
+**O que entrou junto, porque a declaração exigia:** o endereço do tomador. O
+cadastro do cliente só tinha município e UF — bastava para pagar, não para
+emitir. Agora tem CEP, logradouro, número, bairro e código IBGE, e a **consulta
+de CNPJ na Receita preenche sozinha** ("Buscar na Receita" no cadastro do
+fornecedor). Ela completa o que está em branco e **não sobrescreve** o que
+alguém corrigiu à mão.
+
+⚠️ **A primeira conversa real com a prefeitura só acontece no Render.** Aqui o
+serviço do município é dublado nos testes, e no navegador o caminho de erro foi
+exercitado de ponta a ponta: número reservado, emissão recusada pela rede
+bloqueada, número queimado com motivo, e a tela de notas emitidas mostrando
+"Falhou". O caminho de sucesso contra o serviço de verdade, não.
+
+### O documento que nunca foi arquivado — 10/09/2026 (migração 057)
+
+Itens 6 e 7 de `GESTAO_DOCUMENTOS.md`. O aviso que existia olhava para
+documento que VAI VENCER. Faltava o outro lado, e é o que faz perder licitação
+e atrasar medição: o documento que **nunca entrou**.
+
+A diferença importa. Certidão vencida pelo menos existe e o sistema sabe de
+quando é. A ausência é silêncio — ninguém repara até o dia em que o cliente
+pede a pasta da medição e ela sai pela metade.
+
+Agora o recálculo da agenda percorre obra por obra e empresa por empresa,
+conferindo o bloco FISCAL das duas últimas competências e a HABILITAÇÃO de cada
+empresa ativa, e avisa dizendo QUAIS documentos faltam. Só é viável porque o
+recálculo passou a rodar em segundo plano (migração 055).
+
+Detalhe que quase passou batido: a conferência do sistema roda **com todas as
+faixas de sigilo**. Sem isso ela enxergaria só a faixa aberta e diria que a
+pasta fiscal está completa quando está vazia — quase tudo nela é restrito. O
+que sai daí é o NOME DO TIPO que falta ("folha de pagamento"), que é entrada de
+catálogo, não conteúdo; nenhum documento, nome de pessoa ou valor atravessa.
+
+**Os botões saíram da tela do Arquivo e foram para onde a pessoa está:** na
+ficha do título (documentação fiscal daquela obra e competência, medição,
+dossiê da obra), na aba Documentos da obra, e na ficha da empresa (habilitação
+e cadastro como fornecedor).
+
+⚠️ **Um defeito antigo apareceu no caminho e foi consertado:** quando o
+certificado digital virou aviso (migração 053), a lista de origens do filtro da
+agenda ficou para trás e o aviso novo não tinha como ser filtrado. Nada
+quebrou, então ninguém viu. Agora a lista sai do servidor, de um lugar só.
+
+### Cadastro e arquivo, num gesto só — 10/09/2026
+
+Pedido do dono, e mais do que um pedido: um princípio para o sistema inteiro.
+*"Matariamos duas ações. Assim não precisaria cadastrar dados e noutra
+circunstância arquivar documentos. (…) Cadastros e arquivo estarem associados
+quando fizer sentido."*
+
+A obra é o primeiro caso. Na aba Documentos da obra existe agora uma área de
+**jogar o documento**: o sistema lê, arquiva com nome padronizado e mostra, na
+mesma tela, o que ele preencheria no cadastro — campo a campo, com um botão só
+no fim ("Arquivar e preencher").
+
+Três regras estão no código e não se mudam sem motivo:
+
+1. **Cada tipo de documento só preenche o que ele PROVA.** Uma licença
+   ambiental não define valor de contrato, por mais que a IA leia um número lá
+   dentro. A lista por tipo é uma TRAVA: o que não está nela não é gravado nem
+   que a tela mande. Matrícula → CNO e endereço; ART → ART, responsável
+   técnico e CREA; contrato → número, valor, objeto, contratante, vigência,
+   prazo, data-base, índice, retenção; OS → ordem de serviço e início; apólice
+   → seguro e vigência. Diário de obra e projeto não preenchem nada, e a tela
+   diz isso em vez de ficar calada.
+2. **O que já está preenchido não é sobrescrito sozinho.** Campo em branco
+   entra marcado; campo com valor diferente vira CONFLITO, entra desmarcado e
+   mostra os dois lados. Trocar calado o que a pessoa digitou é a maneira mais
+   rápida de o sistema perder a confiança dela. Valor igual escrito de outro
+   jeito ("AV. BRASIL, 100" e "Av Brasil 100") nem aparece para decidir.
+3. **Quem grava é a pessoa**, e com o valor que ELA confirmou — ela pode ter
+   corrigido a caixinha antes de gravar.
+
+**O termo aditivo é caso à parte:** vira REGISTRO de aditivo, não sobrescreve o
+contrato. O valor vigente é o original mais os aditivos, e é essa história que
+o órgão pergunta quando questiona a medição. A vigência, sim, se atualiza —
+porque é ela que manda nos alertas. Aditivo sem número é recusado, e o mesmo
+número duas vezes também.
+
+**Arquivar e preencher acontecem na MESMA transação.** Guardar o arquivo e
+deixar o cadastro pela metade seria o pior dos dois mundos: a pessoa acharia
+que fez e não teria feito.
+
+Detalhe pequeno que foi consertado no caminho: a prévia do nome do arquivo
+prometia um nome e o arquivamento entregava outro (a leitura resolvia o dono
+pelo NOME da obra, e o padrão usa o CÓDIGO). Agora a prévia sai da obra em que
+a pessoa está.
+
+⚠️ **A chamada real à IA continua sem prova aqui** — não há chave neste
+ambiente. O caminho inteiro foi exercitado no navegador com a leitura dublada:
+ler um contrato, ver treze campos propostos (oito marcados, cinco em conflito),
+gravar, e conferir no banco que só os oito entraram e que o documento ficou
+arquivado com texto e trilha.
+
+**Colaboradores entrou logo depois, no mesmo dia**, pelo mesmo caminho. Na
+ficha da pessoa há a mesma área de jogar o documento: RG, carteira de trabalho,
+ficha de registro, contrato de trabalho, termo de rescisão.
+
+Duas regras são próprias do lado das pessoas, e existem porque aqui o erro caro
+não é preencher campo errado — é preencher o cadastro da PESSOA ERRADA:
+
+- **O CPF é CONFERIDO e nunca gravado.** Ele é a identidade: trocá-lo
+  repontaria pagamento, despesa e histórico para outra pessoa. Quando o CPF do
+  documento não bate com o do cadastro, a tela grita, nada entra marcado e o
+  preenchimento fica **trancado** até alguém confirmar, numa caixinha, que
+  aquele documento é daquela pessoa. O arquivo, esse, pode ser guardado assim
+  mesmo — guardar não afirma nada sobre o cadastro.
+- **Função só entra se já estiver cadastrada.** Criar função a partir de uma
+  leitura multiplicaria "PEDREIRO", "Pedreiro" e "Pedreiro(a)" em um mês — e a
+  diária de referência, que mora na função, viraria três diárias diferentes.
+  Quando a função lida não existe, a tela diz o nome e manda cadastrar antes.
+
+Duas coisas a mais que ficaram no comportamento: **ASO, certificado de NR e
+ficha de EPI não alimentam cadastro nenhum** — eles valem pela VALIDADE, que já
+vira aviso na agenda —, e o **termo de rescisão que traz a demissão fecha a
+situação junto**, porque cadastro com data de demissão e situação ATIVO mente
+para quem monta a folha do mês seguinte.
+
+A área só aparece para quem pode arquivar **e** enxerga documento de sigilo
+PESSOAL. O financeiro arquiva, mas não vê holerite: oferecer a ele "arquive o
+ASO" seria oferecer o que ele não conseguiria abrir depois.
+
+**O que ainda não foi feito, do mesmo princípio:** o lado do FORNECEDOR (cartão
+CNPJ e contrato social preenchendo o cadastro do parceiro). Menos urgente — a
+consulta à Receita, que entrou junto com a emissão automática, já resolve a
+maior parte.
+
+### A importação do Pipefy, antes de o dono migrar de verdade — 10/09/2026
+
+Ele avisou que vai começar a usar: revisar cadastros, cadastrar empresa, contas
+e obras, e **importar entre 50 e 70 títulos** das obras deste ano — com os
+ANEXOS, que é o que ele pediu desde o começo. E perguntou se está tudo certo.
+
+Fui ler o código em vez de responder de memória. O que achei:
+
+**A busca dos anexos EXISTE e está ligada por padrão.** Ela lê o campo de
+anexo do card, baixa cada arquivo e guarda preso ao título, com categoria (a
+DANFE vira NOTA, o comprovante vira COMPROVANTE). Falha de um arquivo não
+interrompe a importação — fica relatada com o motivo.
+
+**Mas ela não tinha teste nenhum.** Um caminho que ninguém prova é um caminho
+em que ninguém confia, e este ia ser exercitado pela primeira vez numa
+migração de verdade. Agora tem: `tests/test_importacao_anexos_banco.py`, 21
+casos, com o download dublado (não se baixa da internet numa suíte).
+
+**O risco de verdade, e o que foi feito com ele.** A lista de campos de anexo
+(`CAMPOS_ANEXO`) é FIXA: "anexos", "danfe", "comprovante"… Se o pipe tiver um
+campo de anexo com outro identificador, os arquivos daquele campo simplesmente
+não viriam — e o relatório diria "0 anexos" sem nada parecer errado. Silêncio
+é o pior resultado possível numa migração: a SP entra parecendo completa e a
+nota fiscal dela ficou para trás.
+
+Agora o importador DENUNCIA campo de anexo desconhecido: o relatório mostra o
+card, o rótulo do campo, quantos arquivos e o identificador técnico — que é o
+que se precisa para incluí-lo. A denúncia só aparece se a pessoa pediu para
+trazer anexos; quem desmarcou escolheu não trazer.
+
+**O que ficou provado de comportamento, e vale saber:**
+
+- O mesmo arquivo em dois campos do card vira UM anexo só: o armazenamento
+  guarda por hash e não duplica dentro da mesma entidade.
+- Arquivo acima de 20 MB é recusado com motivo, sem derrubar nada.
+- Nome com "%20" na URL chega limpo; espaço vira sublinhado ao guardar.
+- PDF e imagem são comprimidos antes de ir para o banco.
+
+⚠️ **O que continua sem prova, e é honesto dizer:** nada aqui encostou no
+Pipefy de verdade. `PIPEFY_API_TOKEN` precisa estar no Render, e a primeira
+importação real é o teste. Recomendado a ele: começar com **três a cinco
+cards** de uma obra, conferir os anexos na ficha do título, e só então soltar
+os 70.
+
+### Um lugar só para cadastrar obra, e a obra que nasce do documento — 10/09/2026
+
+Ele foi cadastrar a primeira obra e esbarrou em duas coisas ao mesmo tempo.
+
+**A primeira era um defeito de organização.** Havia DOIS formulários de "nova
+obra": um em Configurações, com oito campos, e outro no painel de Obras, com
+cinco. A mesma obra nascia completa ou pela metade conforme a porta de
+entrada, e quem entrava pela porta curta nem sabia que a outra existia. Ele
+resolveu na hora: *"se a gente tem o painel de obras, não tem mais que ter
+obras em administração."*
+
+Agora **só o painel de Obras cria obra**. O cartão "Obras" de Configurações
+virou um ponteiro para lá — a âncora `#obras` continua existindo para não
+quebrar link antigo. O formulário do painel ganhou o cadastro de identificação
+inteiro (código, nome, contratante, CNPJ, contrato, objeto, município, UF,
+CNO, valor e ISS) e, depois de criar, **abre a ficha da obra** para completar
+vigência e tributação em vez de deixar a pessoa procurá-la na lista.
+
+**A segunda era um pedido antigo, que ele lembrou aqui:** *"nós havíamos
+conversado sobre a criação de obras a partir de um documento, da leitura de um
+documento. Então isso ficaria associado a obras."* É o mesmo princípio de
+"cadastro e arquivo juntos", só que sem cadastro para completar: com cadastro
+para NASCER.
+
+"+ Nova obra" abre em **A partir de um documento**. Manda o contrato (ou a
+matrícula CNO, a ART, a ordem de serviço), o sistema lê, mostra o que entendeu
+e, num clique, cria a obra e guarda o documento dentro dela. A aba
+**Digitando** continua ali para quem não tem documento à mão.
+
+Três decisões que sustentam isso:
+
+1. **O CÓDIGO NÃO SE INVENTA.** "ESCPE18" é convenção da casa e não sai de
+   documento nenhum. O sistema pergunta, mostrando os últimos códigos usados
+   para a pessoa seguir o próprio padrão. Adivinhar geraria código plausível e
+   errado — e código de obra entra em rateio, medição e nota fiscal; trocar
+   depois é caro. O **nome**, sim, vem sugerido: sai do objeto do contrato
+   (primeira oração) ou do contratante, e dá para editar antes de criar.
+2. **OBRA DUPLICADA É PIOR QUE OBRA FALTANDO.** Duas obras para o mesmo
+   contrato partem o histórico em dois: metade dos títulos numa, metade na
+   outra, e nenhum relatório fecha. A criação **para** quando encontra obra com
+   a mesma matrícula CNO (comparando só os dígitos, porque cada documento
+   pontua de um jeito) ou o mesmo número de contrato. Para, mas não decide pela
+   pessoa: contrato guarda-chuva com duas obras existe, e há uma caixinha "sei
+   que é outra obra". A guarda confere o que VAI ser gravado, não o que a IA
+   sugeriu — a pessoa pode ter corrigido o CNO na tela.
+3. **A trava por tipo continua valendo**, igual à do preenchimento: documento
+   que não prova um campo não grava esse campo, nem que a tela mande. E tudo
+   acontece na MESMA transação — obra sem o contrato que a criou, ou contrato
+   guardado numa obra que não chegou a existir, seriam os dois piores
+   resultados possíveis.
+
+⚠️ **Um defeito de verdade apareceu no caminho, e não era o assunto.** A tabela
+de obras carrega DUAS colunas de alíquota de ISS: `aliquota_iss_pct`, que a
+tributação, a tela de tributação e o cálculo da medição leem, e `aliquota_iss`,
+mais antiga. O formulário de Configurações escrevia na **antiga**; a tela de
+tributação escreve na **nova**; e a **emissão automática da nota lia justamente
+a antiga**. Consequências, que ainda não chegaram a acontecer porque a BWS
+segue em emissão MANUAL: obra cadastrada pela tela de tributação seria recusada
+por "sem alíquota de ISS", e obra com as duas preenchidas diferentes mandaria à
+prefeitura um percentual que ninguém viu na tela. Agora a emissão lê a nova e
+só cai na antiga para obra que nunca passou pela tela de tributação, e obra
+criada pelo painel nasce com as duas iguais. Sem migração: é código.
+
+**O que ficou provado:** `tests/test_obra_do_documento_banco.py`, 21 casos com
+banco de verdade e a leitura dublada — a rota antiga de Configurações não
+existe mais, quem não configura não cria obra, código repetido é recusado, ler
+não grava nada, criar e arquivar acontecem juntos, campo recusado não deixa
+obra nem documento para trás, CNO pontuado de outro jeito é reconhecido como a
+mesma obra, e a confirmação destrava.
+
+⚠️ **A chamada real à IA continua sem prova aqui** — não há chave neste
+ambiente, então a leitura é dublada em toda a suíte e no navegador.
+
+**No navegador, com banco de verdade e a leitura dublada**, o caminho inteiro
+foi percorrido: Configurações sem botão de nova obra e com o ponteiro; o painel
+abrindo em "A partir de um documento"; onze campos na aba "Digitando"; o
+documento lido propondo dezessete campos; a recusa por falta de código; a obra
+criada com o documento guardado como
+`CONTRATO-OBRA_CRECHEEUS26_268-2025_val-2027-01-15.pdf`; o mesmo documento de
+novo travando por "mesmo número de contrato"; e a confirmação destravando.
+Nenhum erro de JavaScript. Suíte inteira: **3.627 casos** com banco de verdade.
+
+**Esta entrega NÃO tem migração** — as duas colunas de ISS já existiam. Nada a
+apertar no botão do banco por causa dela.
+
+### O primeiro contato de verdade com os cadastros — 10/09/2026 (tarde)
+
+O dono foi usar o sistema e mandou seis coisas de uma vez. Ficam aqui porque
+cada uma tem uma decisão dentro.
+
+**1. O filtro de obras parecia repetir o nome.** *"Creche Swap, Espaço Creche
+Swap."* Três telas escreviam código e nome colados, sem separador — e o código
+da casa costuma SER o nome abreviado. Agora, quando um já contém o outro,
+aparece só o mais completo; quando dizem coisas diferentes, os dois aparecem
+com um "·" no meio. Vale para Contratos e medições, Agenda e Notas emitidas
+(as outras telas já usavam o mesmo rótulo).
+
+**2. O cadastro de conta bancária mostrava menos do que a tabela ao lado.** A
+chave Pix aparecia na listagem e não no formulário — ficava para um segundo
+momento que quase nunca chega. Agora entra junto. E o **banco deixou de ser
+digitado de cabeça**: escolhe-se pelo nome numa lista de 118 instituições.
+
+A lista **mora dentro do código** e funciona sem internet nenhuma — banco não
+pode depender de o Banco Central estar no ar. Um botão em Configurações troca
+essa base pela relação oficial de participantes do STR, e o que vier de lá fica
+guardado no banco de dados. A lista embutida continua por baixo: se a relação
+oficial de um dia não trouxer um código que já está numa conta cadastrada, o
+nome não some da tela. Falha na busca não estraga nada: a lista que existe
+continua valendo e a mensagem diz isso em português.
+
+⚠️ **A lista embutida não é a relação oficial completa** — são os bancos e
+instituições de pagamento que aparecem em conta e comprovante no Brasil. Banco
+que faltar: aperta o botão, ou digita o código de três dígitos à mão, que
+continua permitido. E o código é normalizado para três dígitos ("1" vira
+"001"), senão a mesma conta apareceria com dois códigos conforme quem cadastrou.
+
+⚠️ **O botão só se prova em produção** — este ambiente não alcança o
+`bcb.gov.br`, exatamente como no INCC.
+
+**3. Zerar as obras em Banco e limpeza.** *"Na parte de banco e limpeza eu vou
+precisar zerar essas obras."* Isso apaga CADASTRO, e o botão até então
+prometia o contrário. O desenho:
+
+- As obras saíram da lista de "nunca sai" e ganharam **área própria**, que só
+  ela as alcança. Nenhuma área de movimento leva obra junto, nem por engano de
+  quem editar o arquivo amanhã — há teste para isso.
+- A tela ficou com **dois blocos**: movimento em cima, e um bloco **vermelho**
+  embaixo com o cadastro, dizendo com todas as letras que refazer custa horas.
+- **O colaborador não sai junto.** Ele não é da obra: está numa obra hoje. A
+  limpeza DESFAZ a ligação (colaborador → obra) e mantém a pessoa. A prévia
+  mostra quantas pessoas serão soltas, antes de qualquer coisa.
+- A recusa continua valendo: com título, medição ou documento apontando para a
+  obra, a limpeza para e diz quais áreas faltam marcar.
+- Entraram também as áreas que faltavam para isso ser alcançável: agenda,
+  notas emitidas, contratos de obra, e as conferências de locação; a área de
+  anexos passou a levar o catálogo de documentos junto.
+
+**4 e 5. O cadastro do operador.** Duas reclamações, e a segunda escondia um
+defeito antigo.
+
+A primeira: marcar um grupo de contas funcionava, mas *"se eu tiver lá em cima,
+não tem nada que me confirme que aquelas despesas estão marcadas"*. Agora o
+cabeçalho do grupo É a caixinha, fica **verde** quando o grupo está todo
+marcado e **âmbar** quando está pela metade, com a contagem ("47/48") ao lado,
+e um resumo no alto ("83 de 140 marcadas"). Marcar o grupo com um filtro
+digitado marca só o que está visível — do contrário incluiria conta que a
+pessoa nem viu.
+
+A segunda: *"dá uma melhoradazinha nessa listagem, elas estão muito espaçadas,
+está ruim de visualizar"*. **Não era espaçamento: era um defeito de estilo.**
+Toda caixinha de marcar dentro de um campo virava BLOCO — o quadradinho em cima
+e o texto embaixo, duas linhas por opção — e o quadradinho ainda esticava para
+a largura inteira do diálogo (860 pixels de "input"). Valia para a lista de
+contas, a de obras designadas e a de permissões. Corrigido no estilo, num lugar
+só. Com isso as contas passaram a caber em três colunas.
+
+**6. Perfis de obra pré-configurados.** *"Toda a vida que eu selecionar o
+administrativo de obra, que é o que mais tem rotatividade, já aparece isso."*
+Administrativo de obra, supervisor de obra e gestor de obras já nascem com
+custos de obra, pessoal e despesas administrativas marcados e o fundo fixo
+liberado.
+
+A receita mora **na tela**, não no servidor, e isso é decisão: assim tudo fica
+à vista antes de salvar, desmarcar é um clique, e mudar a exceção de uma pessoa
+não exige mexer no código. Ao EDITAR alguém, o que está marcado é o dela e só
+muda se trocarem o perfil — e, quando troca, a tela diz o que pré-configurou.
+
+**7. Arrastar o documento para dentro da tela do Arquivo.** *"Arrasto o
+documento pra dentro daquele local e é feita a leitura do arquivo já, e aberta
+a tela com as informações que você detectou."* Soltar o arquivo em **qualquer
+lugar** da tela do Arquivo abre o formulário e dispara a leitura. A zona é a
+tela inteira de propósito: com o arquivo no ar, procurar o retângulo certo é o
+que faz a pessoa desistir e voltar para o botão. Um arquivo por vez — se
+soltarem cinco, o primeiro entra e a tela DIZ que os outros ficaram de fora.
+
+**Provado:** `tests/test_bancos.py` (27 casos) e os casos novos de
+`tests/test_manutencao_limpeza_banco.py`, mais o caminho inteiro no navegador
+com banco de verdade: filtro, cadastro de conta com Pix, pré-configuração por
+perfil, grupo virando verde e âmbar, a prévia da limpeza de obras recusando e
+dizendo o que falta, o véu do arrastar e a leitura disparando sozinha.
+
+**Esta entrega não tem migração.** A lista de bancos mora numa linha da tabela
+de parâmetros, que já existe.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
@@ -1967,11 +2624,10 @@ de ser lida, que é o mesmo que não ter avisado.
    link que chega na mensagem abre a tela certa — é o único jeito de saber se
    a `ERP_URL_PUBLICA` está com o endereço certo.
 
-21. **RESOLVIDO em 09/09/2026 — as migrações 042 a 051 foram aplicadas.** O
-   dono publicou e apertou o botão no mesmo momento. ⚠️ **Fica pendente a
-   052 e a 053** (retenção de garantia da empreita e alçada por valor; o
-   certificado digital por empresa), pelo mesmo caminho, na próxima
-   publicação.
+21. **RESOLVIDO em 09/09/2026 — as migrações 042 a 053 foram aplicadas**, em
+   duas publicações no mesmo dia: a 042–051 primeiro, a 052 e a 053 em
+   seguida. O dono publicou e apertou o botão no mesmo momento das duas
+   vezes.
 
    Do que cada uma trouxe, para consulta: 042 a trava contra baixa em
    duplicidade; 043 o documento morando no Drive; 044 o cruzamento de notas;

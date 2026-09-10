@@ -196,8 +196,21 @@ def _achar(s: Session, tipo: DocumentoTipo, *, empresa_id: Optional[int],
 
 def montar(s: Session, codigo: str, *, empresa_id: Optional[int] = None,
            obra_id: Optional[int] = None, competencia: Optional[date] = None,
-           usuario: Optional[Usuario] = None) -> dict[str, Any]:
-    """O que o bloco encontrou e o que faltou. Sem gerar arquivo ainda."""
+           usuario: Optional[Usuario] = None,
+           ver_tudo: bool = False) -> dict[str, Any]:
+    """O que o bloco encontrou e o que faltou. Sem gerar arquivo ainda.
+
+    `ver_tudo` é para a conferência QUE O SISTEMA faz sozinho — o aviso da
+    agenda sobre pasta incompleta (migração 057). Sem ele, a conferência
+    rodaria sem usuário nenhum, enxergaria só a faixa ABERTA e concluiria que
+    a pasta fiscal está completa quando ela está vazia: quase tudo ali é
+    RESTRITO. É o oposto do que o aviso existe para fazer.
+
+    Não é um furo de sigilo: o que sai daqui com `ver_tudo` é o NOME DO TIPO
+    de documento que falta ("folha de pagamento"), que é entrada de catálogo,
+    não conteúdo. Nenhum documento, nome de pessoa ou valor atravessa.
+    Para baixar o .zip, quem manda continua sendo `sigilos_visiveis`.
+    """
     bloco = s.get(DocumentoBloco, (codigo or "").strip().upper())
     if bloco is None:
         raise ErroValidacao(f"Bloco desconhecido: {codigo}.")
@@ -218,7 +231,8 @@ def montar(s: Session, codigo: str, *, empresa_id: Optional[int] = None,
 
     competencia = competencia.replace(day=1) if competencia else None
     hoje = date.today()
-    faixas = svc_arq.sigilos_visiveis(usuario)
+    faixas = (svc_arq.SIGILOS_TODOS if ver_tudo
+              else svc_arq.sigilos_visiveis(usuario))
 
     encontrados, faltas = [], []
     for item in bloco.itens:

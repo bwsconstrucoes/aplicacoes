@@ -153,3 +153,121 @@ def test_marcando_as_duas_areas_a_limpeza_passa(sessao_real):
     assert _conta(s, "titulos") == 0
     assert _conta(s, "pedidos_compra") == 0
     assert s.get(Fornecedor, f.id) is not None
+
+
+# ---------------------------------------------------------------------------
+# ZERAR O CADASTRO DE OBRAS — pedido do dono em 10/09/2026
+#
+# *"Na parte de banco e limpeza eu vou precisar zerar essas obras. Coloca
+# também aqui, pra poder limpar as obras."*
+#
+# Isto apaga CADASTRO, e o desenho todo é para o estrago ser difícil:
+#   - nenhuma área de movimento alcança as obras;
+#   - o colaborador NÃO é apagado junto: ele só deixa de estar ligado à obra;
+#   - e continua recusando em vez de apagar em cascata.
+# ---------------------------------------------------------------------------
+def test_zerar_obras_apaga_a_obra_e_solta_o_colaborador(sessao_real):
+    from app.apps.erp.db.models.cadastros import Colaborador
+
+    s = sessao_real
+    u = Usuario(nome="Admin obras", email="limpobra@teste.bws.local",
+                senha_hash=gerar_hash("senha-de-teste-1234"), perfil=P.ADMIN)
+    o = Obra(codigo="LIMP-OBRA", nome="Obra que vai sair", status="ATIVA")
+    s.add_all([u, o])
+    s.flush()
+    pedro = Colaborador(nome="Pedro Pedreiro", cpf="39053344705",
+                        regime="CLT", obra_id=o.id)
+    s.add(pedro)
+    s.flush()
+
+    previa = limpeza.resumo(s, ["cadastro_obras"])
+    assert previa["impedimentos"] == [], previa["impedimentos"]
+    assert {"tabela": "colaboradores", "coluna": "obra_id", "linhas": 1} \
+        in previa["desligamentos"]
+
+    r = limpeza.zerar(s, ["cadastro_obras"], limpeza.FRASE_DE_CONFIRMACAO, u)
+    s.flush()
+    s.expire_all()
+
+    assert _conta(s, "obras") == 0
+    viva = s.get(Colaborador, pedro.id)
+    assert viva is not None, "o colaborador NÃO pode sair junto com a obra"
+    assert viva.obra_id is None
+    assert any(x["tabela"] == "colaboradores" for x in r["desligamentos"])
+
+
+def test_zerar_obras_recusa_enquanto_houver_titulo_apontando(sessao_real):
+    """O rateio do título aponta para a obra. Zerar a obra sem zerar o
+    financeiro apagaria a referência de um lançamento vivo."""
+    from app.apps.erp.db.models.financeiro import Rateio
+
+    s = sessao_real
+    u, o, f, c, t = _cenario(s)
+    s.add(Rateio(titulo_id=t.id, obra_id=o.id, categoria_id=c.id,
+                 valor=Decimal("100")))
+    s.flush()
+
+    with pytest.raises(ErroValidacao) as e:
+        limpeza.zerar(s, ["cadastro_obras"], limpeza.FRASE_DE_CONFIRMACAO, u)
+
+    assert "financeiro" in str(e.value)
+    assert _conta(s, "obras") >= 1, "nada pode ter saído"
+
+
+def test_zerar_obras_junto_com_o_financeiro_funciona(sessao_real):
+    from app.apps.erp.db.models.financeiro import Rateio
+
+    s = sessao_real
+    u, o, f, c, t = _cenario(s)
+    s.add(Rateio(titulo_id=t.id, obra_id=o.id, categoria_id=c.id,
+                 valor=Decimal("100")))
+    s.flush()
+
+    limpeza.zerar(s, ["financeiro", "cadastro_obras"],
+                  limpeza.FRASE_DE_CONFIRMACAO, u)
+    s.flush()
+
+    assert _conta(s, "obras") == 0
+    assert _conta(s, "titulos") == 0
+    # e os cadastros que não foram marcados continuam
+    assert s.get(Fornecedor, f.id) is not None
+    assert s.get(Categoria, c.id) is not None
+    assert s.get(Usuario, u.id) is not None
+
+
+def test_a_designacao_de_obra_do_operador_sai_junto(sessao_real):
+    """Deixar o operador apontando para uma obra que não existe mais o banco
+    nem permitiria — e a designação sozinha não significa nada."""
+    from app.apps.erp.db.models.cadastros import UsuarioObra
+
+    s = sessao_real
+    u = Usuario(nome="Supervisor", email="sup.limp@teste.bws.local",
+                senha_hash=gerar_hash("senha-de-teste-1234"), perfil=P.ADMIN)
+    o = Obra(codigo="LIMP-DESIG", nome="Obra designada", status="ATIVA")
+    s.add_all([u, o])
+    s.flush()
+    s.add(UsuarioObra(usuario_id=u.id, obra_id=o.id))
+    s.flush()
+
+    limpeza.zerar(s, ["cadastro_obras"], limpeza.FRASE_DE_CONFIRMACAO, u)
+    s.flush()
+
+    assert _conta(s, "usuario_obras") == 0
+    assert s.get(Usuario, u.id) is not None, "o operador continua existindo"
+
+
+def test_nenhuma_area_de_movimento_leva_obra_junto(sessao_real):
+    """Marcar tudo que é movimento não pode fazer uma obra sumir."""
+    s = sessao_real
+    u = Usuario(nome="Admin", email="mov.limp@teste.bws.local",
+                senha_hash=gerar_hash("senha-de-teste-1234"), perfil=P.ADMIN)
+    o = Obra(codigo="LIMP-FICA", nome="Obra que fica", status="ATIVA")
+    s.add_all([u, o])
+    s.flush()
+
+    movimento = [chave for chave in limpeza.AREAS
+                 if chave not in limpeza.AREAS_DE_CADASTRO]
+    limpeza.zerar(s, movimento, limpeza.FRASE_DE_CONFIRMACAO, u)
+    s.flush()
+
+    assert s.get(Obra, o.id) is not None

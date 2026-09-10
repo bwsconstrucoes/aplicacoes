@@ -37,6 +37,13 @@ VE_RESTRITO = (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
 VE_PESSOAL = (P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL)
 
 
+# Todas as faixas. Serve só à conferência que o SISTEMA faz sozinho (o aviso
+# da agenda sobre pasta incompleta): sem ela, a conferência sem usuário
+# enxergaria só a faixa aberta e diria que a pasta fiscal está completa quando
+# está vazia — quase tudo nela é restrito.
+SIGILOS_TODOS = ("ABERTO", "RESTRITO", "PESSOAL")
+
+
 def sigilos_visiveis(usuario: Optional[Usuario]) -> tuple[str, ...]:
     if usuario is None:
         return ("ABERTO",)

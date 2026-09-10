@@ -31,10 +31,18 @@ ADMIN = novo_usuario(1, P.ADMIN, nome="Marcelo")
 # alguém acrescentar uma delas a uma área.
 CADASTROS = {
     "usuarios", "usuario_permissoes", "alcadas", "parametros", "_migracoes",
-    "obras", "fornecedores", "fornecedor_contas", "categorias",
+    "fornecedores", "fornecedor_contas", "categorias",
     "contas_bancarias", "colaboradores", "funcoes", "insumos",
     "unidades_compra", "condicoes_pagamento",
 }
+
+# As OBRAS são caso à parte desde 10/09/2026, e a diferença é deliberada: o
+# dono vai cadastrar as obras de verdade e precisa que as de teste saiam —
+# *"na parte de banco e limpeza eu vou precisar zerar essas obras"*. Elas
+# deixaram de ser intocáveis e passaram a sair SÓ pela área que tem o nome
+# delas, que a tela mostra em vermelho e separada do movimento.
+CADASTRO_COM_AREA_PROPRIA = {"obras", "obra_aditivos", "obra_fases",
+                             "obra_interessados", "usuario_obras", "contratos"}
 
 
 # ---------------------------------------------------------------------------
@@ -51,6 +59,35 @@ def test_nenhuma_area_inclui_cadastro():
 def test_a_lista_do_que_jamais_sai_cobre_o_essencial():
     for tabela in CADASTROS:
         assert tabela in limpeza.JAMAIS, f"{tabela} tinha de estar protegida"
+
+
+def test_o_cadastro_de_obra_so_sai_pela_area_que_diz_o_nome_dele():
+    """Nenhuma área de MOVIMENTO pode levar obra junto — nem por engano de
+    quem editar este arquivo amanhã."""
+    for chave, (_rot, _desc, tabelas) in limpeza.AREAS.items():
+        if chave in ("cadastro_obras", "contratos_obra"):
+            continue
+        invasoras = set(tabelas) & CADASTRO_COM_AREA_PROPRIA
+        assert not invasoras, (
+            f"a área de movimento {chave} apagaria {sorted(invasoras)}")
+
+
+def test_a_area_de_cadastro_de_obras_se_declara_como_cadastro():
+    """A tela separa e pinta de vermelho pelo que vem daqui. Se este sinal se
+    perder, o cadastro aparece no meio do movimento e alguém marca sem ver."""
+    por_chave = {a["chave"]: a for a in limpeza.catalogo()}
+
+    assert por_chave["cadastro_obras"]["cadastro"] is True
+    assert por_chave["financeiro"]["cadastro"] is False
+    assert por_chave["cadastro_obras"]["desliga"] == [
+        {"tabela": "colaboradores", "coluna": "obra_id"}]
+
+
+def test_area_de_movimento_que_pedisse_obra_e_recusada(monkeypatch):
+    monkeypatch.setitem(limpeza.AREAS, "espertinha",
+                        ("Espertinha", "teste", ("obras",)))
+    with pytest.raises(ErroValidacao, match="só sai pela área própria"):
+        limpeza._tabelas_de(["espertinha"])
 
 
 def test_pedir_para_apagar_um_cadastro_e_recusado(monkeypatch):
@@ -106,7 +143,7 @@ def test_recusa_quando_algo_de_fora_aponta_para_o_que_sairia(monkeypatch):
                         lambda s: [("previsoes_pagamento", "titulos",
                                     "titulo_id", False)])
     monkeypatch.setattr(limpeza, "bloqueios",
-                        lambda s, t, d: [{"tabela": "previsoes_pagamento",
+                        lambda s, t, d, **_: [{"tabela": "previsoes_pagamento",
                                           "aponta_para": "titulos",
                                           "coluna": "titulo_id", "linhas": 3,
                                           "area": "suprimentos"}])
@@ -123,7 +160,7 @@ def test_a_recusa_diz_quantas_linhas_prendem(monkeypatch):
     monkeypatch.setattr(limpeza, "_existentes", lambda s, t: list(t))
     monkeypatch.setattr(limpeza, "_dependencias", lambda s: [])
     monkeypatch.setattr(limpeza, "bloqueios",
-                        lambda s, t, d: [{"tabela": "previsoes_pagamento",
+                        lambda s, t, d, **_: [{"tabela": "previsoes_pagamento",
                                           "aponta_para": "titulos",
                                           "coluna": "titulo_id", "linhas": 7,
                                           "area": "suprimentos"}])
@@ -151,7 +188,7 @@ def test_sem_area_escolhida_nao_apaga():
 def test_apagar_deixa_registro(monkeypatch):
     monkeypatch.setattr(limpeza, "_existentes", lambda s, t: ["ia_uso"])
     monkeypatch.setattr(limpeza, "_dependencias", lambda s: [])
-    monkeypatch.setattr(limpeza, "bloqueios", lambda s, t, d: [])
+    monkeypatch.setattr(limpeza, "bloqueios", lambda s, t, d, **_: [])
     s = SessaoFalsa(ADMIN, linhas_sql=[[(1,), (2,)]])
 
     limpeza.zerar(s, ["ia"], limpeza.FRASE_DE_CONFIRMACAO, ADMIN)
@@ -163,7 +200,7 @@ def test_apagar_deixa_registro(monkeypatch):
 def test_zerar_a_auditoria_nao_tenta_gravar_evento_no_que_acabou_de_apagar(monkeypatch):
     monkeypatch.setattr(limpeza, "_existentes", lambda s, t: ["eventos"])
     monkeypatch.setattr(limpeza, "_dependencias", lambda s: [])
-    monkeypatch.setattr(limpeza, "bloqueios", lambda s, t, d: [])
+    monkeypatch.setattr(limpeza, "bloqueios", lambda s, t, d, **_: [])
     s = SessaoFalsa(ADMIN, linhas_sql=[[]])
 
     limpeza.zerar(s, ["auditoria"], limpeza.FRASE_DE_CONFIRMACAO, ADMIN)
@@ -219,7 +256,7 @@ def test_so_o_administrador_chega_no_botao(perfil, monkeypatch):
 def test_a_previa_nao_apaga(monkeypatch):
     monkeypatch.setattr(limpeza, "_existentes", lambda s, t: ["ia_uso"])
     monkeypatch.setattr(limpeza, "_dependencias", lambda s: [])
-    monkeypatch.setattr(limpeza, "bloqueios", lambda s, t, d: [])
+    monkeypatch.setattr(limpeza, "bloqueios", lambda s, t, d, **_: [])
     s = SessaoFalsa(ADMIN, linhas_sql=[[(5,)]])
     c = _cliente(s, monkeypatch, 1)
 

@@ -242,6 +242,34 @@ def material_para_assinar(s: Session, empresa_id: int) -> tuple[bytes, str]:
     return conteudo, (segredos.decifrar(c.senha_cifrada) or "")
 
 
+def chave_e_certificado_pem(s: Session, empresa_id: int) -> tuple[bytes, bytes]:
+    """A chave privada e o certificado, prontos para ASSINAR — em memória.
+
+    O .pfx NUNCA vira arquivo em disco. Um arquivo escrito para "só assinar
+    uma nota" sobrevive ao processo, entra em backup e vaza a assinatura da
+    empresa — que é exatamente o que a migração 053 veio impedir ao guardá-lo
+    cifrado no banco.
+
+    Fica aqui, junto do resto do certificado, para haver UM lugar a auditar
+    quando alguém perguntar quem consegue assinar em nome da empresa.
+    """
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.serialization import pkcs12
+
+    conteudo, senha = material_para_assinar(s, empresa_id)
+    chave, cert, _ = pkcs12.load_key_and_certificates(
+        conteudo, (senha or "").encode("utf-8"))
+    if chave is None or cert is None:
+        raise ErroCertificado(
+            "Não foi possível abrir o certificado para assinar — a senha "
+            "guardada não confere com o arquivo.")
+    chave_pem = chave.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption())
+    return chave_pem, cert.public_bytes(serialization.Encoding.PEM)
+
+
 def vencendo(s: Session, *, dias: int = AVISO_DIAS,
              hoje: Optional[date] = None) -> list[dict[str, Any]]:
     """Os certificados perto de vencer — é daqui que a agenda avisa."""

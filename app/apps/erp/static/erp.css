@@ -174,6 +174,61 @@ a { color: var(--azul-claro); }
 .opcao .rotulo { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .opcao .qtd { font-family: var(--fonte-dados); font-size: 11.5px; color: var(--tinta-suave); }
 .opcao.zerada { opacity: .45; }
+/* ==================== ARRASTAR O DOCUMENTO PARA DENTRO ====================
+   Pedido do dono em 10/09/2026: *"arrasto o documento pra dentro daquele
+   local e é feita a leitura do arquivo já, e aberta a tela com as informações
+   que você detectou."* Duas ações — escolher e mandar ler — viram uma.
+
+   O véu cobre a tela inteira enquanto o arquivo está no ar, para não existir
+   "onde é que eu solto": qualquer lugar serve. */
+.veu-arrastar {
+  position: fixed; inset: 0; z-index: 9000; display: none;
+  align-items: center; justify-content: center;
+  background: rgba(10, 27, 46, .72);
+}
+.veu-arrastar.ativo { display: flex; }
+.veu-arrastar .caixa {
+  border: 3px dashed var(--amarelo-forte); border-radius: 16px;
+  padding: 40px 56px; text-align: center; color: #fff;
+  font-size: 20px; font-weight: 700; background: rgba(10, 27, 46, .55);
+}
+.veu-arrastar .caixa small {
+  display: block; margin-top: 8px; font-size: 13px; font-weight: 500;
+  color: #D6E2F2;
+}
+/* A mesma ideia dentro do diálogo, onde o véu de tela cheia não aparece
+   (o diálogo modal fica numa camada acima de tudo). */
+.solta-aqui {
+  border: 2px dashed var(--borda-forte); border-radius: 10px; padding: 10px;
+  transition: background .12s, border-color .12s;
+}
+.solta-aqui.sobre { border-color: var(--amarelo); background: #FFF7E6; }
+
+/* ============= LISTA DE CONTAS DO PLANO (cadastro do operador) =============
+   Oitenta contas numa coluna só, cada uma ocupando a largura inteira do
+   diálogo, é o que o dono descreveu como "muito espaçada, ruim de visualizar"
+   — e, pior, marcar um grupo lá embaixo não dava sinal nenhum de que tinha
+   marcado. Aqui as contas vêm em colunas, sob o cabeçalho do grupo, e o
+   cabeçalho MUDA DE COR conforme o grupo esteja todo marcado ou pela metade.
+   A confirmação tem de ser visível de longe, sem rolar atrás dela. */
+.grupo-contas + .grupo-contas { border-top: 1px solid var(--borda); margin-top: 4px; }
+.grupo-cab {
+  position: sticky; top: -6px; z-index: 1; background: var(--branco);
+  border-radius: 6px; font-size: 13px;
+}
+.grupo-cab .qtd { font-family: var(--fonte-dados); font-size: 11.5px; }
+.grupo-cab.parcial { background: #FFF4DE; }
+.grupo-cab.parcial .qtd { color: var(--ambar); font-weight: 700; }
+.grupo-cab.cheio { background: #E4F1E9; }
+.grupo-cab.cheio .rotulo { color: var(--verde); }
+.grupo-cab.cheio .qtd { color: var(--verde); font-weight: 700; }
+.grade-contas {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 0 10px; padding: 2px 0 6px 18px;
+}
+.grade-contas .opcao { padding: 3px 6px; font-size: 12.5px; }
+.grade-contas .opcao input { width: 14px; height: 14px; }
+
 .faixa { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .faixa label { font-size: 11.5px; color: var(--tinta-suave); display: block; margin-bottom: 3px; }
 .faixa input { width: 100%; padding: 7px 8px; border: 1px solid var(--borda-forte); border-radius: 6px; font-size: 13px; font-family: var(--fonte-dados); }
@@ -362,6 +417,32 @@ td.desc small { display: block; color: var(--tinta-suave); font-size: 11.5px; ma
 td.desc small.corrigido { display: inline-block; color: #7c4a03; }
 .atrasado { color: var(--vermelho); font-weight: 700; }
 
+/* ---- ENCADEAMENTO -------------------------------------------------------
+   O nome da obra, da conta, do credor ou da compra leva ao cadastro dele.
+   Sublinhado pontilhado: dá para ver que é clicável sem virar um mar de azul
+   dentro de uma tabela densa. */
+a.elo { color: inherit; text-decoration: none; border-bottom: 1px dashed var(--azul-claro); }
+a.elo:hover { color: var(--azul); border-bottom-style: solid; }
+
+/* ---- A LINHA QUE EXPANDE COMO CARD ---------------------------------------
+   O detalhe do registro nasce embaixo da própria linha, em vez de abrir uma
+   janela por cima da tela. Quem está conferindo não perde o lugar da lista.
+   Serve para qualquer tela: a de títulos foi a primeira. */
+tbody tr.abre { cursor: pointer; }
+tbody tr.abre .seta-ficha { display: inline-block; width: 11px; color: var(--azul-claro); font-size: 11px; }
+tbody tr.aberta, tbody tr.aberta:hover { background: #E8EEFA; }
+tr.linha-detalhe > td { padding: 0; background: #F4F7FC; border-bottom: 2px solid var(--borda-forte); }
+tr.linha-detalhe:hover > td { background: #F4F7FC; }
+.ficha { padding: 14px 16px 18px; }
+.ficha h4 { margin: 16px 0 8px; font-size: 13px; }
+.ficha .cartao { margin-bottom: 12px; }
+/* Cabeçalho sticky faz sentido na tabela de fora; nas tabelinhas de dentro
+   da ficha ele flutuaria por cima do conteúdo. */
+.ficha thead th { position: static; }
+.ficha-topo { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+.ficha-topo h3 { margin: 0; font-size: 15px; }
+.ficha-topo .link-btn { margin-left: auto; }
+
 .selo { display: inline-block; font-size: 11.5px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
 .selo.aguardando { background: #FDF1DC; color: var(--ambar); }
 .selo.aprovado   { background: #E3F3E8; color: var(--verde); }
@@ -388,6 +469,24 @@ td.desc small.corrigido { display: inline-block; color: #7c4a03; }
 
 .form-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
 .campo label { display: block; font-size: 12px; color: var(--tinta-suave); font-weight: 600; margin-bottom: 4px; }
+/* ⚠️ EXCEÇÃO NECESSÁRIA, e ela explica um defeito que durou meses.
+   O rótulo de um campo é bloco; a CAIXINHA de marcar (`.opcao`) é uma linha —
+   quadradinho à esquerda, texto ao lado. Só que `.campo label` é mais
+   específico que `.opcao` e vem depois, então toda caixinha dentro de um campo
+   virava bloco: o quadradinho em cima e o texto embaixo, cada opção ocupando
+   duas linhas. Era isso que o dono via como "muito espaçada, ruim de
+   visualizar" na lista de contas do operador (10/09/2026) — e valia também
+   para a lista de obras e a de permissões. */
+.campo label.opcao { display: flex; align-items: center; font-size: 13px;
+  color: var(--tinta); font-weight: 400; margin-bottom: 0; }
+.campo label.opcao .rotulo { font-weight: 400; }
+/* Pelo mesmo motivo: `.campo input` estica o campo para 100% da largura, e o
+   quadradinho de marcar ia junto — um "input" de 860px de largura, empurrando
+   o texto para fora da tela. */
+.campo label.opcao input[type="checkbox"],
+.campo label.opcao input[type="radio"] {
+  width: 15px; height: 15px; flex: none; padding: 0; margin: 0;
+}
 .campo input, .campo select, .campo textarea {
   width: 100%; padding: 8px 10px; border: 1px solid var(--borda-forte); border-radius: var(--raio-p);
   font-size: 14px; background: #fff;

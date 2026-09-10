@@ -32,6 +32,8 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core.comum.auditoria import ErroValidacao
+
 logger = logging.getLogger(__name__)
 
 # Antecedências, em dias. Cada uma tem um motivo diferente:
@@ -298,4 +300,97 @@ def certificados(s: Session, hoje: Optional[date] = None) -> list[dict[str, Any]
     return saida
 
 
-TODOS = (reajustes, certidoes, locacoes, contratos, certificados)
+# ---------------------------------------------------------------------------
+# 6. O bloco que vai sair incompleto (migração 057)
+# ---------------------------------------------------------------------------
+# Quantas competências para trás olhar. Duas: o mês que fechou e o anterior —
+# a documentação fiscal de um mês costuma ficar pronta no seguinte, e cobrar
+# no dia 1º só ensinaria a equipe a ignorar o aviso.
+COMPETENCIAS_ATRAS = 2
+# Quantos dias antes avisar. Bloco incompleto não tem "data de vencimento":
+# a data é a próxima medição, que ninguém sabe. Trinta dias é o prazo em que
+# ainda dá para tirar certidão e emitir guia.
+AVISO_BLOCO = 30
+
+
+def documentos(s: Session, hoje: Optional[date] = None) -> list[dict[str, Any]]:
+    """O bloco obrigatório que sairia incompleto se pedissem hoje.
+
+    O gerador das certidões avisa sobre documento que VAI VENCER. Este avisa
+    sobre o outro lado, que é o que faz perder licitação e atrasar medição: o
+    documento que NUNCA FOI ARQUIVADO.
+
+    A diferença importa. Certidão vencida pelo menos existe. O documento que
+    nunca entrou é silêncio — ninguém repara na ausência até o dia em que o
+    cliente pede a pasta da medição e ela sai pela metade.
+
+    Percorre obra por obra e empresa por empresa, o que não seria aceitável na
+    frente de quem abre a tela. Desde a migração 055 o recálculo da agenda
+    roda em segundo plano, e por isso este gerador pode existir.
+    """
+    from app.apps.erp.core.arquivo import blocos
+    from app.apps.erp.db.models.cadastros import Empresa, Obra
+
+    hoje = hoje or date.today()
+    saida: list[dict[str, Any]] = []
+
+    # ---- o que o cliente pede junto com a medição, por obra em execução
+    obras = [o for o in s.scalars(select(Obra)).all()
+             if (getattr(o, "fase", "") or "").upper() == "EM_EXECUCAO"]
+    for obra in obras:
+        for atras in range(1, COMPETENCIAS_ATRAS + 1):
+            competencia = _somar_meses(_mes(hoje), -atras)
+            try:
+                # `ver_tudo`: quem confere aqui é o sistema, não uma pessoa.
+                # Sem isso a pasta fiscal — quase toda restrita — pareceria
+                # completa mesmo vazia.
+                r = blocos.montar(s, "FISCAL", obra_id=obra.id,
+                                  competencia=competencia, ver_tudo=True)
+            except ErroValidacao:
+                continue        # obra sem empresa, por exemplo — outro aviso cobra isso
+            if r["completo"]:
+                continue
+            faltando = [f["nome"] for f in r["faltas"] if f["obrigatorio"]]
+            saida.append(_evento(
+                chave=f"DOCUMENTO:fiscal={obra.id}:{competencia.strftime('%Y-%m')}",
+                origem="DOCUMENTO",
+                titulo=(f"Documentação fiscal incompleta: {obra.codigo} — "
+                        f"{competencia.strftime('%m/%Y')}"),
+                detalhe=(f"{r['faltas_obrigatorias']} documento(s) obrigatório(s) "
+                         f"faltando: {', '.join(faltando[:6])}"
+                         + ("…" if len(faltando) > 6 else "")
+                         + ". É o que o cliente pede junto com a medição — sem "
+                           "isso a medição volta ou o pagamento atrasa."),
+                # A data é o fim do mês seguinte à competência: é quando, na
+                # prática, a medição daquele mês já foi protocolada.
+                quando=_somar_meses(competencia, 2) - timedelta(days=1),
+                avisar_dias=AVISO_BLOCO,
+                obra_id=obra.id, empresa_id=obra.empresa_id,
+                link="/erp/arquivo"))
+
+    # ---- a habilitação da empresa, que é o que o edital exige
+    for empresa in s.scalars(select(Empresa).where(Empresa.ativo.is_(True))).all():
+        try:
+            r = blocos.montar(s, "HABILITACAO", empresa_id=empresa.id, ver_tudo=True)
+        except ErroValidacao:
+            continue
+        if r["completo"]:
+            continue
+        faltando = [f["nome"] for f in r["faltas"] if f["obrigatorio"]]
+        nome = empresa.nome_fantasia or empresa.razao_social
+        saida.append(_evento(
+            chave=f"DOCUMENTO:habilitacao={empresa.id}",
+            origem="DOCUMENTO",
+            titulo=f"Habilitação incompleta: {nome}",
+            detalhe=(f"{r['faltas_obrigatorias']} documento(s) obrigatório(s) "
+                     f"faltando: {', '.join(faltando[:6])}"
+                     + ("…" if len(faltando) > 6 else "")
+                     + ". Sem eles a empresa não entrega envelope de licitação."),
+            # Sem data própria: hoje, porque a próxima licitação pode ser amanhã.
+            quando=hoje, avisar_dias=AVISO_BLOCO,
+            empresa_id=empresa.id, link="/erp/arquivo"))
+
+    return saida
+
+
+TODOS = (reajustes, certidoes, locacoes, contratos, certificados, documentos)

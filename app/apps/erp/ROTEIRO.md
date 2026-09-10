@@ -129,10 +129,15 @@
 - [ ] Pessoal — falta: formato exato do arquivo BeeVale/SomaPay (aguarda
       instrução) e anexo da planilha ao título
 
-- [ ] Detalhe do título que **expande como card**, com anexos e tudo que não
-      cabe na tabela
-- [ ] **Encadeamento**: obra → cadastro da obra; conta → plano; credor →
-      cadastro; compra → pedido
+- [x] Detalhe do título que **expande como card** — FEITO em 10/09/2026. Um
+      clique na linha abre a ficha embaixo dela, com apontamentos, parcelas,
+      pagamentos, rateio, retenções, anexos, assinaturas e histórico. A janela
+      ficou com os formulários e com o endereço direto (`?titulo=N`) que cai
+      num título fora dos filtros de hoje.
+- [x] **Encadeamento** — FEITO em 10/09/2026. Obra, conta do plano, credor e
+      compra viram link, na lista e na ficha, e as quatro telas de destino
+      abrem já no registro. O elo só aparece para quem pode abrir o destino —
+      link que responde "sem permissão" promete porta que não abre.
 - [x] **Agenda do ERP** — FEITA em 09/09/2026 (migração 051). Obras › "Agenda":
       aniversário de reajuste, conferência mensal de locação, vencimento de
       certidão e fim da vigência do contrato, num lugar só, mais a anotação
@@ -259,8 +264,21 @@ Omie não dá conta disso.
       bloco com prestador, tomador, discriminação e as retenções JÁ CALCULADAS
       pelo cadastro da obra; a pessoa copia, emite no portal, volta e anexa o
       PDF — a IA lê e preenche número, data, valor e retenções.
-- [ ] 6. **Emissão automática**, com município e endereço virando configuração
-      por empresa. ⚠️ Apontar para o **canal NACIONAL**, não para o ABRASF: a
+- [x] 6. **Emissão automática** — FEITA em 10/09/2026 (migração 056). Botão
+      "Emitir agora" na medição: o ERP confere o cadastro, reserva o número da
+      declaração (que é NOSSO), assina com o certificado A1 da empresa **em
+      memória** — o .pfx nunca vira arquivo em disco —, manda pelo canal
+      NACIONAL e guarda o número da nota, a chave de acesso e o XML.
+      Falhando, o número fica QUEIMADO com o motivo e não se recicla. Roda na
+      fila (migração 055) porque a prefeitura leva até dois minutos, e **não
+      se repete sozinha**: emitir duas vezes criaria duas notas de verdade.
+      ⚠️ **A primeira conversa real com a prefeitura só acontece no Render.**
+      O que sobrou do texto antigo, para contexto: **Petrolina saiu da conta em 10/09/2026**:
+      o dono avisou que é empresa FUTURA. O que sobra é a emissão automática da
+      BWS no Eusébio, que já tem inscrição, token e certificado — e cuja
+      primeira chamada real só acontece no Render, porque a saída de internet
+      do ambiente de desenvolvimento é filtrada.
+      Com município e endereço virando configuração por empresa. ⚠️ Apontar para o **canal NACIONAL**, não para o ABRASF: a
       LC 214/2025 tornou o padrão nacional obrigatório e o ABRASF tem data para
       acabar. O `el_nfse_nacional.py` já fala esse padrão.
 - [~] 7. **Indicadores**: dias entre protocolar e receber. Já pronto POR
@@ -315,20 +333,35 @@ lido, e a partir dali categorizado, renomeado e salvo"*.
 - [x] 2. **Tela de gestão** (Administração › Arquivo): filtros por
       tipo/grupo/empresa/obra/competência/validade, busca e abertura do
       arquivo. FEITA em 09/09/2026.
-- [ ] 3. **Leitura por IA** sugerindo tipo, dono, datas e nome — a pessoa
-      confirma. Reusa o leitor que já lê nota e comprovante.
+- [x] 3. **Leitura por IA** sugerindo tipo, dono, datas e nome — FEITA em
+      10/09/2026. A pergunta é montada a partir do catálogo QUE ESTÁ NO BANCO,
+      então tipo criado pela empresa entra sozinho. Não achar o dono é
+      resposta válida (a tela mostra o nome lido e manda escolher); validade
+      anterior à emissão é descartada; a leitura DIZ o que não resolveu; e o
+      texto extraído é guardado junto, o que já resolve o item 5.
+      ⚠️ **A chamada real ao serviço de IA só acontece no Render** — aqui não
+      há chave. O fluxo inteiro foi provado com a IA dublada e o caminho de
+      erro, no navegador.
 - [x] 4. **Blocos** (FISCAL, HABILITACAO, CADASTRO-FORNECEDOR, MEDICAO, OBRA)
       em `.zip`, **com a lista do que está faltando dentro**. FEITO em
       09/09/2026 (migração 046). O bloco aponta para TIPOS, não para
       documentos — por isso o de agosto e o de setembro são o mesmo bloco.
       Conteúdo do bloco FISCAL confirmado pelo dono como "o que o cliente pede
       na medição".
-- [ ] 5. **Busca dentro do texto** do documento (o texto é extraído na entrada,
-      porque a leitura já acontece — reprocessar depois é que sairia caro).
-- [ ] 6. **Avisos de vencimento** de certidão e documento, na Agenda.
-- [ ] 7. **Botões nos outros lugares**: baixar a documentação fiscal da
-      competência direto do título, o bloco da obra na tela da obra, o bloco
-      cadastral em Suprimentos.
+- [x] 5. **Busca dentro do texto** do documento — FEITA junto com o item 3 em
+      10/09/2026: a busca do Arquivo já olhava o campo de texto; o que faltava
+      era alguém preenchê-lo, e agora a leitura preenche.
+- [x] 6. **Avisos de vencimento** de certidão e documento, na Agenda — o que
+      vence já avisava desde a migração 051; em 10/09/2026 entrou o outro lado
+      (migração 057): o documento que **nunca foi arquivado**. A pasta fiscal
+      incompleta de uma obra em execução e a habilitação incompleta da empresa
+      viram aviso, dizendo quais documentos faltam. É a conferência do bloco
+      rodando sozinha, no recálculo em segundo plano.
+- [x] 7. **Botões nos outros lugares** — FEITO em 10/09/2026. Na ficha do
+      título (documentação fiscal daquela obra e competência, medição e
+      dossiê da obra), na aba Documentos da obra, e na ficha da empresa
+      (habilitação e cadastro como fornecedor). Sempre com a lista do que
+      falta dentro do .zip.
 
 ### Notas fiscais — o cruzamento
 
@@ -397,19 +430,36 @@ que é a estratégia de manter isso rápido?"*. A resposta longa está no
       no Google — por isso ou é Drive compartilhado, ou é personificação; as
       duas coisas resolvem o mesmo problema de cota.
 
-- [ ] **Separar o trabalho pesado das telas.** Carga, sincronização, leitura de
-      lote por IA e relatório grande não podem disputar com quem está usando a
-      tela. É o que mais resolve a lentidão que o dono sentiu, e não custa
-      assinatura nova.
+- [x] **Separar o trabalho pesado das telas** — FEITO em 10/09/2026 (migração
+      055). Fila em segundo plano guardada no BANCO, porque o serviço se
+      reinicia sozinho e fila na memória perderia trabalho calada. Uma linha
+      de trabalho só, de propósito. Quem morre no meio volta para a fila —
+      menos o que não pode repetir (emitir nota), que para e explica.
+      Já usam a fila: **importação de cards do Pipefy**, **recálculo da
+      agenda** (que abre na hora, com o cálculo por trás) e **emissão de nota**.
+      Acompanhamento em Configurações › "Trabalhos em segundo plano".
 - [ ] **Tirar a trava do "um processo só"** (o estado em memória do `chatbot`).
       Enquanto ela existir, aumentar o plano do Render rende menos do que
       deveria — parte da máquina maior fica sem uso.
-- [ ] **Tela de saúde do sistema**: quanto tempo cada tela leva, quanta memória
-      o serviço usa. Para a decisão de gastar deixar de ser palpite.
+- [x] **Tela de saúde do sistema** — FEITA em 10/09/2026 (migração 054). Em
+      Configurações › "Saúde do sistema": tempo por tela (ordenado pelo tempo
+      TOTAL, não pela média), memória em uso contra o teto do plano, tamanho do
+      banco e o que mais ocupa, e avisos que dizem o que fazer. A medição é
+      agregada por dia e rota, gravada em lote, e nunca derruba uma tela.
 - [ ] Números do topo das telas pré-calculados, quando as somas começarem a
       pesar. Não antes.
-- [ ] Listas do ERP com "próxima página" — hoje elas param em 500 registros e
-      não há como alcançar o que é mais antigo sem filtrar.
+- [~] Listas do ERP com "próxima página". **Solicitações: FEITO em 09/09/2026**
+      — "carregar mais" que acrescenta, a linha dizendo "200 de 1.340", e os
+      quadrinhos do topo somando o FILTRO INTEIRO em vez da página. Dois
+      defeitos foram achados aí e corrigidos: o filtro de situação era aplicado
+      depois do corte (não achava o registro antigo) e as somas do topo
+      mentiam.
+      **Falta nas demais**, todas ainda com corte silencioso: Notas fiscais,
+      Notas emitidas, Arquivo, Agenda, Conciliação e Extratos (500);
+      Empreitas, Locações, Despesa com colaborador, Movimentações e o painel
+      "por pedido" (300). Nenhuma delas incomoda no volume de hoje — a de
+      solicitações incomodava — e todas usam o mesmo `core/comum/paginacao.py`
+      quando chegar a vez.
 
 ### Assistente virtual para os colaboradores — ideia registrada em 08/09/2026
 
@@ -420,6 +470,102 @@ perder. Quando ele retomar, o que já existe e serve de base: o `chatbot` e o
 `whatsapp_gateway` (canal), o `notificador` (envio), o controle de consumo de
 IA com teto (migração 030) e o agente de cobrança (migração 040), que já é um
 robô que fala com pessoas por WhatsApp a partir de pendência do banco.
+
+### Cadastro e arquivo juntos — princípio dado pelo dono em 10/09/2026
+
+Palavras dele: *"gostaria que o sistema já preenchesse os campos de cadastro de
+obra e ainda arquivasse o arquivo. Dessa forma não perco tempo"* — e a
+generalização, que é o que importa: *"matariamos duas ações... Esse é um
+princípio inclusive que deveríamos ampliar para o sistema como um todo. E já
+estamos adotando, por exemplo na parte do financeiro essa leitura e deveremos
+seguir pra parte de colaboradores. Cadastros e arquivo estarem associados
+quando fizer sentido."*
+
+- [x] **OBRA** — FEITO em 10/09/2026. Na aba Documentos da obra: joga o
+      arquivo, o sistema lê, arquiva com nome padronizado E mostra o que
+      preencheria no cadastro, campo a campo. Cada tipo de documento só
+      preenche o que ele PROVA (matrícula → CNO; ART → responsável técnico;
+      contrato → valor, vigência, data-base, índice; OS → ordem de serviço;
+      apólice → seguro). Termo aditivo vira REGISTRO de aditivo, não
+      sobrescreve o contrato. Campo em branco entra marcado; campo com valor
+      diferente entra desmarcado, com os dois lados à vista.
+- [x] **COLABORADORES** — FEITO em 10/09/2026, logo depois da obra. Na ficha
+      da pessoa: joga o RG, a carteira, a ficha de registro, o contrato ou o
+      termo de rescisão e o cadastro se preenche junto com o arquivamento.
+      Duas regras próprias daqui: o **CPF é conferido e nunca gravado** (é a
+      identidade da pessoa — trocá-lo repontaria pagamento e histórico), e
+      **função só entra se já estiver cadastrada**, senão "PEDREIRO",
+      "Pedreiro" e "Pedreiro(a)" virariam três diárias diferentes. Com o CPF
+      divergindo, o preenchimento fica TRANCADO até alguém confirmar que o
+      documento é daquela pessoa.
+- [x] **OBRA QUE AINDA NÃO EXISTE** — FEITO em 10/09/2026, pedido do dono na
+      mesma conversa: *"nós havíamos conversado sobre a criação de obras a
+      partir de um documento, da leitura de um documento. Então isso ficaria
+      associado a obras."* No painel de Obras, "+ Nova obra" abre em **A partir
+      de um documento**: manda o contrato (ou a CNO, a ART, a ordem de
+      serviço), o sistema lê, propõe os campos, e num clique cria a obra e
+      guarda o documento dentro dela. O **código** é a única coisa que ele
+      pergunta e não adivinha — é convenção da casa, não sai de documento
+      nenhum, e código errado contamina rateio, medição e nota.
+      Guarda contra duplicar: mesma matrícula CNO ou mesmo número de contrato
+      **param** a criação até alguém marcar "sei que é outra obra".
+- [ ] **FORNECEDOR** — o cartão CNPJ e o contrato social preencheriam o
+      cadastro do parceiro. Menos urgente: a consulta à Receita já resolve a
+      maior parte disso desde 10/09/2026.
+
+### Um lugar só para cadastrar obra — pedido do dono em 10/09/2026
+
+Ele foi cadastrar obra e viu dois formulários diferentes: *"eu posso criar a
+obra tanto pela administração como posso criar a obra por obras, e lá aparecem
+menos campos. Então acho que tem que unificar isso aí: se a gente tem o painel
+de obras, não tem mais que ter obras em administração."*
+
+- [x] **FEITO em 10/09/2026.** Configurações não cria mais obra — o cartão
+      "Obras" de lá virou um ponteiro para o painel. O formulário do painel
+      passou a ter o cadastro de identificação inteiro (código, nome,
+      contratante, CNPJ, contrato, objeto, município, UF, CNO, valor e ISS), e
+      depois de criar já abre a ficha para completar vigência e tributação.
+- [x] **Efeito colateral que era defeito de verdade:** o formulário antigo de
+      Configurações gravava a alíquota de ISS numa coluna que a tributação e a
+      tela **não leem** — e a emissão automática da nota lia justamente essa.
+      Obra cadastrada pela tela de tributação era recusada por "sem alíquota de
+      ISS"; obra com as duas preenchidas diferentes mandaria à prefeitura um
+      percentual que ninguém viu na tela. Unificado.
+
+### O primeiro contato de verdade com os cadastros — 10/09/2026 (tarde)
+
+O dono começou a usar o sistema para valer e mandou seis coisas de uma vez.
+Todas feitas no mesmo dia.
+
+- [x] **Filtro de obras repetindo o nome** (Contratos e medições, Agenda, Notas
+      emitidas). O código da casa costuma SER o nome abreviado, e escrever os
+      dois colados fazia parecer duplicado. Agora, quando um já contém o outro,
+      aparece só o mais completo.
+- [x] **Cadastro de conta bancária** — o formulário mostrava menos campos que a
+      tabela ao lado. Agora a **chave Pix entra junto** e o **banco se escolhe
+      pelo nome**, de uma lista de 118 bancos que veio embutida no sistema (não
+      depende de internet). Um botão troca essa lista pela oficial do Banco
+      Central.
+- [x] **Zerar as obras** em Banco e limpeza. É CADASTRO, então ganhou um bloco
+      vermelho separado do movimento, e o colaborador **não sai junto**: só
+      deixa de estar ligado à obra.
+- [x] **Contas do plano no cadastro do operador** — o grupo marcado agora fica
+      **verde**, e **âmbar** quando está pela metade, com a contagem ao lado.
+      A lista passou a ser em colunas, agrupada.
+- [x] **Perfis de obra pré-configurados** — administrativo de obra, supervisor
+      e gestor já nascem podendo lançar custos de obra, pessoal e despesas
+      administrativas, com o fundo fixo liberado. É sugestão: aparece marcado
+      e desmarcar é um clique.
+- [x] **Arrastar o documento para dentro da tela do Arquivo** — soltar o
+      arquivo em qualquer lugar da tela já dispara a leitura e abre o
+      formulário preenchido.
+
+⚠️ **Um defeito de estilo antigo apareceu no caminho**, e era a causa real do
+"muito espaçada, ruim de visualizar": toda caixinha de marcar dentro de um
+campo virava bloco — quadradinho em cima, texto embaixo, duas linhas por opção
+—, e o quadradinho esticava para a largura inteira. Valia para a lista de
+contas, a de obras designadas e a de permissões do operador. Corrigido no
+estilo, num lugar só.
 
 ## Decisões registradas
 

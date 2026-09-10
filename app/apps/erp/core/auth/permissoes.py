@@ -549,6 +549,26 @@ def exigir_anexo_no_escopo(s: Session, usuario: Usuario, anexo_id: int):
     return a
 
 
+def exigir_tarefa_no_escopo(s: Session, usuario: Usuario, tarefa_id: int):
+    """Trabalho em segundo plano é de quem pediu (migração 055).
+
+    Regra curta de propósito: quem enfileirou vê e mexe no que enfileirou; quem
+    já enxerga o sistema inteiro (o mesmo `VE_TUDO` das outras listagens) vê a
+    fila inteira, porque é a essas pessoas que se pergunta quando o sistema
+    está lento. O que aparece aqui é rótulo e andamento — "importar 37 cards",
+    "emitir a nota 412" —, não o conteúdo dos registros; o escopo por obra
+    continua valendo lá dentro, quando o trabalho toca em título ou obra.
+    """
+    from app.apps.erp.db.models.financeiro import Tarefa
+
+    t = s.get(Tarefa, tarefa_id)
+    if t is None:
+        raise ErroNaoEncontrado("Trabalho não encontrado.")
+    if usuario.perfil in VE_TUDO or t.usuario_id == usuario.id:
+        return t
+    raise ErroNaoEncontrado("Trabalho não encontrado.")
+
+
 def contexto_permissoes(s: Session, usuario: Usuario) -> dict[str, Any]:
     """O que a tela precisa saber para esconder o que o usuário não pode."""
     obras = obras_do_usuario(s, usuario)

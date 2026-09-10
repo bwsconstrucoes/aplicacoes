@@ -104,7 +104,7 @@ async function carregarObras(){
     const d = await api("/erp/api/obras");
     const lista = d.obras || d.dados || [];
     els("f-obra").innerHTML = `<option value="">Todas</option>` + lista.map(o =>
-      `<option value="${o.id}">${escapar(o.codigo || "")} ${escapar(o.nome || "")}</option>`).join("");
+      `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
   } catch(e){
     // Filtro mudo faz a pessoa achar que não há obra cadastrada. Se não deu,
     // tem de aparecer que não deu.
@@ -470,12 +470,83 @@ async function gerarReajuste(id){
 // -------------------------------------------------------------------------
 const TRIBUTOS_NOTA = [["iss","ISS"],["ir","IRRF"],["inss","INSS"],
                        ["pis","PIS"],["cofins","COFINS"],["csll","CSLL"]];
-let EMISSAO = null;
+let EMISSAO = null, CONFERENCIA = null;
+
+// O BLOCO DA EMISSÃO AUTOMÁTICA.
+//
+// Só aparece para empresa marcada como API. Quando aparece com pendências, é
+// de propósito: melhor ver "falta o CNO da obra" ANTES de emitir do que
+// queimar um número de nota por causa de um cadastro incompleto — número de
+// nota não se apaga, se explica.
+function blocoAutomatico(){
+  const c = CONFERENCIA;
+  if (!c) return "";
+  if (c.pode) {
+    return `<div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+         border-left:4px solid var(--verde)">
+      <b>Esta empresa emite pelo sistema.</b>
+      <div class="cartao-dica">O ERP assina a declaração com o certificado digital da
+        empresa e manda para a prefeitura. A declaração vai com o número
+        <b class="mono">${c.proximo_numero}</b> (série ${escapar(c.serie)}), que é nosso;
+        o número da NOTA quem devolve é a prefeitura.
+        ${c.ambiente === "HOMOLOGACAO"
+          ? "<br><b>Ambiente de homologação</b> — a nota que sair é de teste e não vale."
+          : ""}</div>
+      <div class="form-grade" style="margin-top:10px">
+        <div class="campo" style="grid-column:span 3"><label>Valor a faturar</label>
+          <input id="au-valor" type="number" step="0.01" value="${EMISSAO.valor_bruto}">
+          <div class="dica">Deixe como está para faturar a medição inteira.</div></div>
+        <div class="campo" style="grid-column:span 3"><label>Observação na nota</label>
+          <input id="au-obs" placeholder="nº do empenho, ou o que precisar sair na nota"></div>
+      </div>
+      <div style="margin-top:10px"><button class="btn" id="au-emitir">Emitir agora</button></div>
+      <div id="au-andamento" style="margin-top:10px"></div>
+    </div>`;
+  }
+  return `<div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+       border-left:4px solid var(--ambar)">
+    <b>Esta empresa emitiria pelo sistema, mas falta cadastro:</b>
+    <ul style="margin:8px 0 0 18px">${c.faltas.map(f => `<li>${escapar(f)}</li>`).join("")}</ul>
+    <div class="cartao-dica">Enquanto isso, dá para emitir pelo portal, abaixo.</div>
+  </div>`;
+}
+
+async function emitirAutomatico(){
+  const b = els("au-emitir");
+  b.disabled = true; b.textContent = "Pondo na fila…";
+  try {
+    const corpo = {valor: els("au-valor").value || null,
+                   observacao: els("au-obs").value || ""};
+    const d = await api(`/erp/api/medicoes/${EMISSAO.titulo_id}/emitir-automatico`,
+      {method:"POST", headers:{"Content-Type":"application/json"},
+       body: JSON.stringify(corpo)});
+    b.textContent = "Emitindo…";
+    const t = await acompanharTarefa(d.tarefa.id, {alvo: "au-andamento", intervalo: 2000});
+    if (t && t.situacao === "CONCLUIDA") {
+      aviso("mensagem", (t.resultado || {}).resumo || "Nota emitida.", "ok");
+      els("dlg").close();
+      abrirQuadro(QUADRO.contrato.id);
+    } else {
+      aviso("em-erro", (t && t.erro) || "A emissão não terminou.", "erro");
+    }
+  } catch(e){
+    // As pendências vêm listadas quando o cadastro barra a emissão.
+    const faltas = (e.dados && e.dados.faltas) || [];
+    aviso("em-erro", faltas.length ? faltas.join("<br>") : e.message, "erro");
+  }
+  b.disabled = false; b.textContent = "Emitir agora";
+}
 
 async function abrirEmissao(id){
   try {
     EMISSAO = (await api(`/erp/api/medicoes/${id}/emitir`)).emissao;
   } catch(e){ return aviso("mensagem", e.message, "erro"); }
+  CONFERENCIA = null;
+  if (EMISSAO.destino && EMISSAO.destino.modo === "API") {
+    try {
+      CONFERENCIA = (await api(`/erp/api/medicoes/${id}/emitir-automatico`)).conferencia;
+    } catch(e){ CONFERENCIA = null; }
+  }
   const e = EMISSAO, hoje = new Date().toISOString().slice(0, 10);
   els("dlg-titulo").textContent = `Emitir a nota da medição ${e.medicao}`;
   els("dlg-corpo").innerHTML = `
@@ -490,6 +561,7 @@ async function abrirEmissao(id){
         : ""}
     </div>
     ${e.avisos.length ? `<div class="aviso alerta">${e.avisos.map(escapar).join("<br>")}</div>` : ""}
+    ${blocoAutomatico()}
     ${e.ja_emitidas.length ? `<div class="aviso alerta">Esta medição já tem nota:
       ${e.ja_emitidas.map(n => `${escapar(n.numero_nota || "sem número")}
         (${escapar(n.situacao)}, ${moeda(n.valor)})`).join("; ")}.
@@ -528,6 +600,9 @@ async function abrirEmissao(id){
       <button class="btn" id="em-registrar">Registrar a nota</button>
       <button class="btn secundario" id="em-cancelar">Fechar</button>
     </div>`;
+
+  const bAuto = els("au-emitir");
+  if (bAuto) bAuto.addEventListener("click", emitirAutomatico);
 
   els("em-copiar").addEventListener("click", async () => {
     els("em-bloco").select();
