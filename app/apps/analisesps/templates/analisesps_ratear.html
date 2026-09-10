@@ -22,27 +22,40 @@
 {% else %}
 
 <form method="post">
+  {# APERTAR ENTER NUM CAMPO TEM DE GERAR, e não interpretar uma colagem.
+     O navegador, quando a pessoa aperta Enter, usa o PRIMEIRO botão de envio
+     do formulário — que passou a ser o "Interpretar o que colei" da caixa de
+     cima. Este botão escondido é o primeiro de todos, então é ele que o Enter
+     encontra, e o comportamento de sempre fica de pé. #}
+  <button type="submit" name="acao" value="gerar" aria-hidden="true" tabindex="-1"
+          style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+                 overflow:hidden;clip:rect(0 0 0 0);border:0"></button>
   <div class="duas-colunas">
     <div class="cartao">
       <div class="cartao-cab">
         <h3>Por centro de custo</h3>
         <small>obrigatório · {{ referencias.obras|length }} obras</small>
       </div>
+      {% set lado = "cc" %}{% set avisos = avisos_cc %}{% set colagem = colagem_cc %}
+      {% include "analisesps_ratear_colar.html" with context %}
+      {% include "analisesps_ratear_recado.html" with context %}
+
       <table class="sps" id="tabela-cc">
         <thead><tr><th>Obra</th><th style="width:160px">Valor</th><th style="width:40px"></th></tr></thead>
         <tbody>
-          {% for i in range(3) %}
+          {% for linha in linhas_cc %}
             <tr>
               <td>
                 <select name="cc_nome" class="campo-largo">
                   <option value="">—</option>
                   {% for o in referencias.obras %}
-                    <option value="{{ o.nome }}">{{ o.nome }}</option>
+                    <option value="{{ o.nome }}"
+                            {% if o.nome == linha.nome %}selected{% endif %}>{{ o.nome }}</option>
                   {% endfor %}
                 </select>
               </td>
               <td><input name="cc_valor" class="campo-largo" inputmode="decimal"
-                         placeholder="1.234,56"></td>
+                         value="{{ linha.valor }}" placeholder="1.234,56"></td>
               <td><button type="button" class="link-btn remover">×</button></td>
             </tr>
           {% endfor %}
@@ -56,21 +69,26 @@
         <h3>Por categoria de despesa</h3>
         <small>opcional · {{ referencias.categorias|length }} categorias</small>
       </div>
+      {% set lado = "cat" %}{% set avisos = avisos_cat %}{% set colagem = colagem_cat %}
+      {% include "analisesps_ratear_colar.html" with context %}
+      {% include "analisesps_ratear_recado.html" with context %}
+
       <table class="sps" id="tabela-cat">
         <thead><tr><th>Categoria</th><th style="width:160px">Valor</th><th style="width:40px"></th></tr></thead>
         <tbody>
-          {% for i in range(3) %}
+          {% for linha in linhas_cat %}
             <tr>
               <td>
                 <select name="cat_nome" class="campo-largo">
                   <option value="">—</option>
                   {% for c in referencias.categorias %}
-                    <option value="{{ c.nome }}">{{ c.nome }}</option>
+                    <option value="{{ c.nome }}"
+                            {% if c.nome == linha.nome %}selected{% endif %}>{{ c.nome }}</option>
                   {% endfor %}
                 </select>
               </td>
               <td><input name="cat_valor" class="campo-largo" inputmode="decimal"
-                         placeholder="1.234,56"></td>
+                         value="{{ linha.valor }}" placeholder="1.234,56"></td>
               <td><button type="button" class="link-btn remover">×</button></td>
             </tr>
           {% endfor %}
@@ -81,6 +99,7 @@
       <div style="margin-top:12px">
         <label class="rotulo-campo">Valor a ratear na categoria</label>
         <input name="base_categoria" class="campo-largo" inputmode="decimal"
+               value="{{ base_categoria or '' }}"
                placeholder="deixe vazio para usar a soma acima">
       </div>
     </div>
@@ -93,22 +112,35 @@
   </p>
 
   {% if pode_operar %}
-    <button class="btn" type="submit">Gerar os JSONs</button>
+    <button class="btn" type="submit" name="acao" value="gerar">Gerar os JSONs</button>
   {% else %}
     <p class="cartao-dica">O perfil Consulta não gera rateio.</p>
   {% endif %}
 </form>
 
 {% if resultado %}
+  {# O `gerar_jsons` devolve três chaves: os dois JSONs e um "erro". Antes o
+     laço mostrava as três, então a tela abria uma caixa chamada "erro" com a
+     palavra "None" dentro sempre que dava tudo certo — e, quando dava errado
+     de verdade, o motivo aparecia dentro de uma caixa de copiar, como se
+     fosse para colar no Omie. #}
+  {% if resultado.erro %}
+    <div class="aviso erro">{{ resultado.erro }}</div>
+  {% endif %}
+  {% set prontos = resultado.items()|selectattr('1')|list %}
+  {% if prontos %}
   <div class="cartao">
     <div class="cartao-cab">
       <h3>Pronto — copie e cole no Omie</h3>
     </div>
-    {% for nome, conteudo in resultado.items() %}
-      <label class="rotulo-campo">{{ nome }}</label>
-      <textarea class="campo-largo copiavel" rows="8" readonly>{{ conteudo }}</textarea>
+    {% for nome, conteudo in prontos %}
+      {% if nome != 'erro' %}
+        <label class="rotulo-campo">{{ nome }}</label>
+        <textarea class="campo-largo copiavel" rows="8" readonly>{{ conteudo }}</textarea>
+      {% endif %}
     {% endfor %}
   </div>
+  {% endif %}
 {% endif %}
 {% endif %}
 {% endblock %}

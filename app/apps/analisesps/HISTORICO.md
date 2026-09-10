@@ -1402,6 +1402,79 @@ código para o JSON (trocar os dois geraria um lançamento no lugar errado, e h�
 teste prendendo a ordem), e a linha sem código não entra. Os nomes antigos
 também continuam funcionando, com teste.
 
+### Vigésima terceira leva (10/09) — colar uma tabela no Ratear
+
+*"Imagina que eu tenho trinta obras para ratear. Se eu for colocar uma a uma é
+trabalhoso, e essa informação normalmente vem de uma planilha do Excel. Queria
+poder copiar e colar uma tabelinha e o sistema já interpretar."*
+
+Feito, nos dois lados — centro de custo e categoria de despesa. Uma caixa
+**fechada por padrão** em cada cartão (quem rateia duas obras não precisa
+dela), com um botão "Interpretar o que colei".
+
+**A interpretação é no SERVIDOR, e essa foi a decisão de projeto.** O caminho
+óbvio era fazer no navegador — instantâneo, sem recarregar. Mas esta sessão
+inteira ensinou que **o que roda no navegador esta máquina não consegue
+exercitar**, e um rateio na obra errada não avisa: o Omie aceita e lança. No
+servidor, a interpretação tem teste de verdade e reusa o `_to_float`, que já
+sabia ler "1.234,56", "R$ 994,12" e até colagem em padrão americano.
+
+**O que ela entende**, cada um testado porque cada um é um jeito real de
+copiar: a tabulação do Excel, o ponto e vírgula do CSV, duas colunas separadas
+por espaços, um espaço só, com "R$" na frente, com o cabeçalho colado junto e
+com linhas em branco no meio. **O valor é o último pedaço que parece número, e
+o nome é tudo o que vem antes** — é isso que faz funcionar com qualquer
+separador e com nome que tem espaço no meio ("CRECHE SWAP 3").
+
+**A REGRA QUE GOVERNA O RESTO: nunca adivinhar.** Nome que não bate NÃO entra
+— volta escrito na tela. E toda interpretação que não seja o nome exato
+aparece no recado, porque acertar a obra errada é pior do que não achar
+nenhuma.
+
+| O que foi colado | O que acontece |
+|---|---|
+| o nome exato | entra, sem recado |
+| o código do Omie | entra, e o recado diz que foi pelo código |
+| o nome pela metade, sem dúvida | entra, e o recado pede para conferir |
+| o nome pela metade, com dúvida | **não entra**, e o recado diz com quais combinou |
+| nome que não existe | **não entra**, e o recado diz qual |
+| valor que não é número positivo | **não entra**, e o recado diz qual linha |
+| a mesma obra duas vezes | entram as duas, com recado |
+
+> **O erro que eu mesmo cometi e o teste pegou:** a primeira versão comparava
+> "um contém o outro", e **"OBRA-1" casava com "OBRA-12"**. É exatamente o
+> erro que não pode acontecer. A comparação passou a ser por COMEÇO, com
+> desempate pelo nome mais longo, e só quando não sobra dúvida. Há teste com
+> duas obras de nome parecido conferindo que ela RECLAMA em vez de escolher —
+> e conferido que ele falha na versão errada.
+
+**Três detalhes que só aparecem usando:**
+
+1. **Interpretar um lado não apaga o outro.** O que já estava digitado nas
+   categorias, e a base, voltam intactos. Tem teste.
+2. **Apertar Enter num campo continua GERANDO, e não interpretando.** O
+   navegador usa o primeiro botão de envio do formulário, que passou a ser o
+   "Interpretar" da caixa de cima; um botão escondido de "gerar" ficou antes
+   de todos. Tem teste prendendo a ordem.
+3. **O texto colado volta para a caixa, e ela fica aberta** ao lado do recado
+   — quem precisa corrigir uma linha não cola tudo de novo.
+
+**De brinde, uma feiura antiga:** a tela mostrava uma caixa chamada **"erro"
+com a palavra "None" dentro** sempre que dava tudo certo — o laço percorria as
+três chaves que o gerador devolve. E, quando dava erro de verdade, o motivo
+aparecia dentro de uma caixa de copiar, como se fosse para colar no Omie.
+Agora o erro é um aviso vermelho e as caixas mostram só os JSONs.
+
+**Verificado contra o banco, ponta a ponta pela tela:** colar preenche as
+linhas com a obra certa selecionada e o valor no campo, o outro lado e a base
+sobrevivem, o recado aparece, e o JSON gerado em seguida sai com os códigos do
+Omie certos e os percentuais fechando 100%.
+
+**NÃO verificado:** nada foi aberto num navegador de verdade. A caixa que abre
+e fecha é `<details>`, do próprio HTML, sem JavaScript — mas o efeito de colar
+com Ctrl+V uma seleção do Excel de verdade não foi visto. **É a primeira coisa
+a conferir na tela.**
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
