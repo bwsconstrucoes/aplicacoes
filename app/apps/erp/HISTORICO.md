@@ -139,7 +139,7 @@ contratos) ganha rota própria com a ação dele.
   somando" saía como "31/12. somando". Virou uma função só (`_reais`), com
   teste que procura o caractere intermediário da troca em toda frase.
 
-Sem migração.
+Sem migração. Suíte: **3.996 casos** com banco de verdade.
 
 ### Trabalho no sistema: a trilha de auditoria virou relatório — 10/09/2026
 
