@@ -32,10 +32,49 @@ não estiver decidida, o assistente **pergunta de volta** em vez de escolher.
 | **"a pagar"** | por vencimento da parcela, ou por competência do título? Inclui BLOQUEADO? Inclui o que ainda não foi aprovado? | ⬜ a decidir |
 | **"custo da obra"** | regime de COMPETÊNCIA (quando aconteceu) ou de CAIXA (quando saiu o dinheiro)? | ⬜ a decidir |
 | **"obra em andamento"** | pela situação no cadastro, pela data de término, ou por ter tido movimento nos últimos N dias? | ⬜ a decidir |
-| **"quanto falta receber"** | contrato menos medido, medido menos faturado, ou faturado menos recebido? São três números diferentes e todos legítimos | ⬜ a decidir |
+| **"quanto falta receber"** | são QUATRO leituras, todas legítimas — ver a régua abaixo | ✔ **decidido: o assistente PERGUNTA de volta** |
 | **"resultado da obra"** | inclui rateio da administração? inclui os tributos? | ⬜ a decidir |
 | **"gastei com fulano"** | pelo título lançado ou pelo pagamento feito? | ⬜ a decidir |
 | **"este mês"** | mês da competência, do vencimento ou do pagamento? | ⬜ a decidir |
+
+### A regra geral, decidida pelo dono em 10/09/2026
+
+Diante de uma palavra ambígua, o assistente **não escolhe: pergunta de volta**.
+Palavras dele: *"talvez valesse a pena questionar, se não tivesse sido bem
+específica"*. Ou seja, a pergunta vaga é devolvida com as opções; a pergunta já
+específica ("quanto falta receber do que já foi faturado") é respondida direto,
+sem enrolação.
+
+### A régua do recebimento — o caso que ensinou a regra
+
+O dono desfez o "quanto falta receber" em quatro leituras, e todas as quatro
+existem de verdade. Elas são etapas de uma mesma esteira:
+
+```
+CONTRATO (+aditivos)  →  MEDIDO  →  FATURADO (nota emitida)  →  RECEBIDO
+```
+
+| A pergunta, do jeito dele | A conta |
+|---|---|
+| "quanto falta receber do contrato inteiro, tendo sido medido ou não" | vigente − recebido |
+| "quanto falta receber do que já está medido" | medido − recebido |
+| "quanto falta receber do que já foi emitido nota" | faturado − recebido |
+| "do que está medido, com nota ou sem nota" | medido sem nota, e faturado sem receber, separados |
+
+**O quadro financeiro do contrato já calcula quase tudo isto** — contratado,
+aditivado, vigente, medido, reajuste, faturado, recebido, o que falta faturar,
+o que falta receber do faturado, e as listas de "medido sem nota" e "faturado
+sem receber", com o tempo médio de recebimento. Faltam **duas subtrações**:
+`vigente − recebido` e `medido − recebido`.
+
+**Como o assistente responde:** mostra **a régua inteira de uma vez**, com as
+quatro linhas, em vez de um número solto. Assim a leitura que o dono queria já
+está na tela, e ele não precisa ter acertado a pergunta. Só pergunta de volta
+quando ele pedir explicitamente UM número.
+
+Esse formato vale para toda pergunta com mais de uma leitura legítima:
+**mostrar as leituras juntas costuma ser melhor que perguntar** — perguntar
+fica para quando as opções mudarem o trabalho, não só o número.
 
 **Três definições já estão fechadas** e o assistente pode usar sem perguntar:
 
@@ -80,7 +119,7 @@ quem pergunta (escopo por obra ou por autoria).
 - Quanto já foi medido na obra X, e quanto falta do contrato? 🔒 ⚠️
 - Quais medições estão aprovadas e ainda não foram faturadas?
   (candidata a virar aviso proativo, não pergunta)
-- Quanto falta receber da obra X? 🔒 ⚠️
+- Quanto falta receber da obra X? 🔒 — responder com a RÉGUA inteira (§1)
 - Quais notas emitidas ainda não foram recebidas, e há quantos dias?
 - Quanto de reajuste a obra X tem a receber? Quais medições entram na conta?
 - Quais contratos vencem nos próximos 60 dias?
