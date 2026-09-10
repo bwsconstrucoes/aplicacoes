@@ -16,7 +16,7 @@ from decimal import Decimal, InvalidOperation
 from functools import wraps
 
 from flask import (
-    Blueprint, jsonify, redirect, render_template, request, session, url_for,
+    Blueprint, g, jsonify, redirect, render_template, request, session, url_for,
 )
 
 from sqlalchemy.exc import IntegrityError, ProgrammingError
@@ -38,6 +38,45 @@ bp = Blueprint("erp", __name__, template_folder="templates", static_folder="stat
                static_url_path="/erp/static")
 
 _LIMITE_GRADE = 500
+
+
+# ---------------------------------------------------------------------------
+# O TERMÔMETRO: quanto tempo cada tela leva
+#
+# Mede toda requisição do ERP e acumula na memória do processo; a gravação
+# desce ao banco de tempos em tempos, agregada por dia e por rota. Medir não
+# pode custar mais que o que se mede.
+#
+# NADA AQUI PODE DERRUBAR UMA TELA. Os dois ganchos estão embrulhados: se a
+# medição falhar, o número se perde e a vida segue. Sistema que cai por causa
+# do próprio termômetro é pior que sistema sem termômetro.
+# ---------------------------------------------------------------------------
+@bp.before_request
+def _saude_comecou():
+    try:
+        from time import perf_counter
+        g._saude_inicio = perf_counter()
+    except Exception:
+        pass
+
+
+@bp.after_request
+def _saude_terminou(resposta):
+    try:
+        from time import perf_counter
+        from app.apps.erp.core.comum import saude
+        inicio = getattr(g, "_saude_inicio", None)
+        if inicio is not None and request.endpoint:
+            ms = int((perf_counter() - inicio) * 1000)
+            saude.registrar(request.endpoint, ms,
+                            erro=(resposta.status_code >= 500))
+        # A gravação acontece DEPOIS de a resposta estar pronta, e só de
+        # minuto em minuto — a pessoa não espera por ela.
+        if saude.hora_de_gravar():
+            saude.gravar()
+    except Exception:
+        pass
+    return resposta
 
 # ---------------------------------------------------------------------------
 # Navegação em MÓDULOS
@@ -4894,6 +4933,29 @@ def api_agenda_anotar():
         return jsonify({"ok": True})
     except (ErroValidacao, ValueError) as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+
+
+@bp.route("/erp/api/saude")
+@login_obrigatorio
+@permissao("configurar")
+def api_saude():
+    """O termômetro: tempo por tela, memória, e o que ocupa o banco.
+
+    Fica com o ADMIN porque é a tela que embasa decisão de GASTAR — trocar de
+    plano, subir o banco —, e porque mostra o tamanho de cada tabela.
+    """
+    from app.apps.erp.core.comum import saude
+    # Desce o que ainda está na memória antes de ler: sem isto a tela mostraria
+    # tudo menos o minuto que acabou de passar, que é justamente o que a pessoa
+    # foi conferir depois de achar o sistema lento.
+    saude.gravar()
+    with get_session() as s:
+        dias = 7
+        try:
+            dias = max(1, min(int(request.args.get("dias") or 7), 90))
+        except ValueError:
+            pass
+        return jsonify({"ok": True, **saude.panorama(s, dias=dias)})
 
 
 @bp.route("/erp/api/usuarios", methods=["GET", "POST"])

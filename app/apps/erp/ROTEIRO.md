@@ -259,8 +259,12 @@ Omie não dá conta disso.
       bloco com prestador, tomador, discriminação e as retenções JÁ CALCULADAS
       pelo cadastro da obra; a pessoa copia, emite no portal, volta e anexa o
       PDF — a IA lê e preenche número, data, valor e retenções.
-- [ ] 6. **Emissão automática**, com município e endereço virando configuração
-      por empresa. ⚠️ Apontar para o **canal NACIONAL**, não para o ABRASF: a
+- [ ] 6. **Emissão automática**. ⚠️ **Petrolina saiu da conta em 10/09/2026**:
+      o dono avisou que é empresa FUTURA. O que sobra é a emissão automática da
+      BWS no Eusébio, que já tem inscrição, token e certificado — e cuja
+      primeira chamada real só acontece no Render, porque a saída de internet
+      do ambiente de desenvolvimento é filtrada.
+      Com município e endereço virando configuração por empresa. ⚠️ Apontar para o **canal NACIONAL**, não para o ABRASF: a
       LC 214/2025 tornou o padrão nacional obrigatório e o ABRASF tem data para
       acabar. O `el_nfse_nacional.py` já fala esse padrão.
 - [~] 7. **Indicadores**: dias entre protocolar e receber. Já pronto POR
@@ -404,8 +408,11 @@ que é a estratégia de manter isso rápido?"*. A resposta longa está no
 - [ ] **Tirar a trava do "um processo só"** (o estado em memória do `chatbot`).
       Enquanto ela existir, aumentar o plano do Render rende menos do que
       deveria — parte da máquina maior fica sem uso.
-- [ ] **Tela de saúde do sistema**: quanto tempo cada tela leva, quanta memória
-      o serviço usa. Para a decisão de gastar deixar de ser palpite.
+- [x] **Tela de saúde do sistema** — FEITA em 10/09/2026 (migração 054). Em
+      Configurações › "Saúde do sistema": tempo por tela (ordenado pelo tempo
+      TOTAL, não pela média), memória em uso contra o teto do plano, tamanho do
+      banco e o que mais ocupa, e avisos que dizem o que fazer. A medição é
+      agregada por dia e rota, gravada em lote, e nunca derruba uma tela.
 - [ ] Números do topo das telas pré-calculados, quando as somas começarem a
       pesar. Não antes.
 - [~] Listas do ERP com "próxima página". **Solicitações: FEITO em 09/09/2026**

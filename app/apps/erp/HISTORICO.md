@@ -1867,6 +1867,79 @@ perguntas e a conferência de que nenhuma página repete ou pula registro. E a
 tela percorrida num navegador com 240 solicitações: carregar mais, chegar ao
 fim, e filtrar por "bloqueado" achando o mais antigo de todos.
 
+### A tela de saúde do sistema — 10/09/2026
+
+Migração **054**, em Configurações › **"Saúde do sistema"**.
+
+**Por que ela existe.** Em 08/09 o dono perguntou se o sistema aguenta crescer,
+e a resposta que dei foi de raciocínio: "o gargalo é a máquina compartilhada,
+não o tamanho da base". Era provavelmente certa, mas era um argumento, não uma
+medição. E a próxima pergunta dele vai ser sobre **gastar** — trocar de plano
+no Render, subir o banco. Decisão de gastar não pode ser palpite.
+
+**O que a tela mostra:** memória em uso contra o teto do plano (com o pico), o
+tempo médio de abertura das telas, quantas passaram do limite em que a pessoa
+percebe que esperou, quantas falharam, o tamanho do banco e quanto dele é
+documento.
+
+**As telas lentas saem ordenadas pelo TEMPO TOTAL, não pela média.** Uma tela
+de três segundos aberta uma vez por mês incomoda menos que uma de meio segundo
+aberta duzentas vezes por dia. O que se quer consertar é onde a equipe espera
+mais no fim das contas — e a média sozinha aponta para o lugar errado.
+
+**Como a medição é feita, e os três cuidados:**
+
+1. **Medir não pode custar mais que o que se mede.** Os tempos se acumulam na
+   memória do processo e descem ao banco de minuto em minuto, **agregados por
+   dia e por rota**. Uma linha por requisição faria a tabela de medição virar,
+   ela mesma, o problema que veio medir.
+2. **A gravação SOMA em cima do que já existe**, porque o processo reinicia a
+   cada 150 requisições (`--max-requests`) e o dia é montado em pedaços.
+3. **A medição nunca derruba uma tela.** Os dois ganchos estão embrulhados: se
+   a gravação falhar, o número se perde e a vida segue. Sistema que cai por
+   causa do próprio termômetro é pior que sistema sem termômetro.
+
+**Dois defeitos achados enquanto eu olhava a tela:**
+
+- Uma consulta do painel que falhasse **apagava o painel inteiro**: no
+  Postgres, uma consulta com erro aborta a transação e todas as seguintes
+  falham junto. Uma tabela ainda não criada deixaria a tela em branco — e
+  painel vazio faz a pessoa achar que o sistema parou. Agora cada leitura vive
+  no seu ponto de salvamento e falta só o pedaço que falhou.
+- A contagem de linhas por tabela mostrava **"0 linhas"** para tabelas que o
+  Postgres ainda não analisou. Ao lado de uma tabela de 300 KB, "0 linhas" é
+  uma afirmação falsa. Agora, quando não se sabe, a tela mostra um traço.
+
+**Nenhuma dependência nova.** A memória é lida de `/proc/self/status`;
+acrescentar biblioteca para ler um arquivo de texto seria caro pelo que
+entrega.
+
+**Provado:** 17 testes com banco de verdade (`tests/test_saude_banco.py`),
+incluindo mil chamadas virando uma linha, o banco fora do ar sendo engolido, e
+a ordenação por tempo total. E a tela aberta num navegador **depois de passear
+por oito telas de verdade** — os números que apareceram nasceram de uso, não de
+dado inventado: 93 aberturas, 35 ms de média, 186 MB de memória de 2 GB.
+
+### Petrolina sai da conta — 10/09/2026
+
+Palavras dele: *"esqueça por enquanto credenciamento Petrolina. É uma empresa
+futura."*
+
+O que isso muda, na prática: **a emissão automática de nota deixa de estar
+bloqueada.** Ela estava esperando inscrição municipal, credenciamento, token e
+códigos de serviço de Petrolina — e nada disso é necessário para a **BWS no
+Eusébio**, que já tem os três primeiros e agora tem também o certificado
+digital (migração 053).
+
+Fica registrado para não se perder: o desenho de duas empresas em municípios
+diferentes, uma por API e outra manual, **continua valendo** e está construído
+(migração 047). Ele simplesmente não tem urgência enquanto a segunda empresa
+não existir.
+
+⚠️ **O que continua sem verificação:** a primeira chamada real ao serviço do
+município só acontece no Render. A saída de internet do ambiente onde escrevo
+é filtrada — foi assim com o Banco Central, e será assim com a prefeitura.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
