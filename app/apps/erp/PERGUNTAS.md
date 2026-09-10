@@ -96,15 +96,20 @@ quem pergunta (escopo por obra ou por autoria).
 
 ### Financeiro — títulos e pagamentos
 
-- O que tem a pagar hoje? E esta semana? 🔒 ⚠️
-- O que tem a pagar na obra X? 🔒 ⚠️
+✅ = **já responde**, em Financeiro › **Perguntar**. São funções escritas e
+testadas, não consulta inventada na hora: todas passam pelo mesmo escopo por
+obra e por autoria das telas, e cada resposta mostra de onde veio.
+
+- ✅ **Como está o caixa dos próximos dias?** (vencido, hoje e os próximos 7,
+  nas três faixas de uma vez) 🔒
+- ✅ **O que tem a pagar num período?** — com obra opcional. Conta pelo
+  VENCIMENTO da parcela, e a resposta diz isso 🔒
+- ✅ **O que está vencido e não foi pago?** — com os dias de atraso 🔒
+- ✅ **O que está parado esperando decisão, e de quem é a vez?** 🔒
+- ✅ **Quais títulos estão sem documento anexado?** 🔒
 - Quanto vou pagar para o fornecedor Y este mês? ⚠️
-- Quais títulos estão vencidos e não pagos? Há quantos dias? 🔒
-- Quais títulos estão parados esperando aprovação, e com quem? 🔒
-- Quais títulos estão bloqueados, e por quê? 🔒
 - Quanto já paguei este mês? E no mês passado?
 - Quais títulos foram pagos duas vezes, ou têm risco de duplicidade?
-- Quais títulos não têm nota fiscal anexada? 🔒
 - Quais títulos estão marcados como indedutíveis, e quanto somam?
 - Qual o total por conta do plano, no período? ⚠️
 - Quais lançamentos caíram em "Outros materiais" ou "Outras despesas"?
@@ -190,11 +195,24 @@ nunca chutar.
 
 ---
 
-## 4. Como esta lista vira código (para a próxima sessão)
+## 4. Como esta lista vira código
 
-Cada pergunta daqui vira uma função no `core/` com nome, parâmetros e teste —
-não uma consulta escrita pela IA. O assistente só escolhe QUAL função chamar e
-com quais parâmetros; a conta é sempre do sistema.
+Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,
+parâmetros e teste — não uma consulta escrita pela IA. O assistente, quando
+existir, só escolhe QUAL função chamar e com quais parâmetros; a conta é sempre
+do sistema. O registro fica em `core/perguntas/catalogo.py`.
+
+**A rota é POR GRUPO de pergunta.** Hoje só existe o grupo `financeiro`, que
+vive sob `ver_erp` + escopo: todo operador pode perguntar, e cada um recebe a
+conta feita apenas sobre o que já veria na tela de Títulos. Grupo novo
+(suprimentos, contratos) ganha **rota própria com a ação própria dele** — uma
+rota só, respondendo perguntas de pesos diferentes, obrigaria a conferir
+permissão por dentro, e aí a ação declarada na rota mentiria.
+
+**Toda resposta devolve `de_onde_veio`** (a tela que reproduz o número) e, quando
+a pergunta tem mais de uma leitura possível, uma `observacao` dizendo qual foi
+usada. Isso não é enfeite: número sem caminho de volta não dá para auditar, e a
+primeira resposta errada derruba a confiança em todas as outras.
 
 Quando uma pergunta imprevista aparecer e for boa, ela entra neste arquivo e
 vira função na sessão seguinte. É assim que a cobertura cresce e o caminho da

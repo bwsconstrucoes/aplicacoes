@@ -89,6 +89,58 @@ telas de cadastro de Suprimentos** (detalhada abaixo), mais a correção das
 três telas que nunca funcionaram (ver Incidentes). Suíte: 2.097 casos com
 banco de verdade. **Nada pendente no ramo.**
 
+### O assistente começou a responder — sem IA nenhuma — 10/09/2026
+
+Em Financeiro › **Perguntar**: uma lista de perguntas e, para cada uma, a
+resposta calculada pelo sistema. **Nenhuma IA envolvida**, e isso é o desenho,
+não uma etapa provisória.
+
+O raciocínio, para não se perder: pergunta PREVISTA é respondida por função
+escrita e testada — exata, instantânea e sem custar centavo; pergunta
+imprevista é que precisaria de consulta inventada na hora, que acerta quase
+sempre e **erra em silêncio** no resto. Quando a IA entrar, ela só vai escolher
+QUAL destas funções chamar. **A conta é sempre do sistema.**
+
+As cinco primeiras, todas do grupo financeiro:
+
+| Pergunta | O que ela resolve |
+|---|---|
+| Como está o caixa dos próximos dias? | vencido, hoje e próximos 7 dias, nas três faixas de uma vez — número solto não diz se está sob controle |
+| O que tem a pagar num período? | com obra opcional; conta pelo VENCIMENTO e diz isso na resposta |
+| O que está vencido e não foi pago? | com os dias de atraso, o mais antigo primeiro |
+| O que está parado esperando decisão, e de quem é a vez? | era o pedaço que faltava do relatório de trabalho: ele mostra o que fizeram, esta mostra o que está parado esperando |
+| Quais títulos estão sem documento anexado? | o que trava a conferência do contador |
+
+**Três regras valem para toda resposta**, e estão escritas no topo de
+`core/perguntas/respostas.py`:
+
+1. **Passa pelo mesmo escopo das telas.** Nenhuma consulta é escrita à mão:
+   todas partem de `consulta_de_titulos(..., usuario=...)`, que aplica
+   `aplicar_escopo`. Sem isso o assistente seria porta dos fundos para a base
+   inteira. Há teste com banco de verdade provando que a SOMA, e não só a
+   lista, fica dentro do escopo.
+2. **Toda resposta diz de onde veio**, com a tela que reproduz o número.
+3. **Pergunta com mais de uma leitura mostra qual foi usada** ("conta pelo
+   vencimento e inclui o bloqueado"), em vez de escolher em silêncio.
+
+**A rota é por GRUPO de pergunta**, não uma só que despacha tudo — é o que
+permite cada grupo declarar a sua ação e a declaração continuar verdadeira. O
+grupo `financeiro` vive sob `ver_erp` + escopo. Grupo novo (suprimentos,
+contratos) ganha rota própria com a ação dele.
+
+**Dois defeitos que só a tela mostrou**, e que os testes agora seguram:
+
+- **A data chegava como TEXTO** ("2026-09-10") e a função comparava com
+  `date` — estourava na primeira vez que alguém escolhesse um período. A
+  conversão passou a ser do catálogo, que é quem conhece o tipo declarado, e
+  assim protege todas as perguntas de uma vez.
+- **A formatação do dinheiro corrompia a frase.** A troca de ponto por vírgula
+  estava sendo aplicada à sentença inteira, e "a pagar de 01/09 a 31/12,
+  somando" saía como "31/12. somando". Virou uma função só (`_reais`), com
+  teste que procura o caractere intermediário da troca em toda frase.
+
+Sem migração.
+
 ### Trabalho no sistema: a trilha de auditoria virou relatório — 10/09/2026
 
 Primeira entrega do plano do assistente, e a mais barata: **não foi preciso
