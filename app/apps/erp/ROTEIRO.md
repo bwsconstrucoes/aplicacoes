@@ -139,6 +139,17 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       não se improvisa. A equipe precisa ser avisada de que o sistema registra.
       Fazer também a tela **"minha semana"** para cada pessoa: mesmo dado,
       vira retorno em vez de vigilância.
+      ✔ **DECIDIDO pelo dono em 10/09/2026:** *"na verdade não é pra controlar
+      a jornada não, é só pra entender"*, e **pode ficar à vista dos outros
+      também** — *"pra cada um entender o que é que ela está produzindo dentro
+      do sistema"*. Então a tela nasce aberta à equipe, não só ao dono.
+- [ ] **1b. O catálogo de perguntas** — `app/apps/erp/PERGUNTAS.md`, criado
+      em 10/09/2026 a pedido do dono, e agora regra do `CLAUDE.md`:
+      funcionalidade nova só está pronta quando as perguntas que ela responde
+      entram lá. O arquivo já começa com a parte que mais evita número errado:
+      a lista das PALAVRAS que precisam de uma definição só ("a pagar", "este
+      mês", "custo da obra", "quanto falta receber"). Enquanto uma dessas não
+      estiver decidida, o assistente pergunta de volta em vez de escolher.
 - [ ] **2. Assistente SÓ DE LEITURA, dentro do ERP.** Painel lateral (não
       caixinha), com o catálogo de perguntas conhecidas respondido por CÓDIGO —
       exato, rápido e sem custo de IA — e a pergunta imprevista caindo numa
@@ -198,6 +209,12 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
 - [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
       ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
       come o mês inteiro.
+      ✔ **DECIDIDO em 10/09/2026:** o assistente é para **qualquer pessoa,
+      dentro das atribuições e permissões dela** — não só o dono. E por isso
+      mesmo o teto por pessoa é requisito, não enfeite: *"a gente pode ter
+      muitas pessoas aí utilizando, a brincar às vezes, e a gente não pode
+      estourar os limites"*. O VALOR mensal por colaborador fica para o dono
+      definir depois.
 - [ ] **9. Guardar toda pergunta e toda resposta.** Serve para controlar custo,
       para auditar e — o mais útil — porque a lista do que perguntam repetido é
       a lista das telas que faltam.

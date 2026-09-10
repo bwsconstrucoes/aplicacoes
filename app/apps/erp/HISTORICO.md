@@ -17,13 +17,24 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
-**Estado em 10/09/2026 (madrugada):** ramo `claude/oi-vjvrn8`, **ainda não
-publicado**, com duas entregas grandes: as **oito alterações do plano de
-contas** que o dono mandou por documento e a **importação da base de 3.279
-insumos** em Excel, com a marca de locável. **Traz migração nova — a 058**
-(coluna `redutora` em `categorias`), que precisa do botão "Aplicar atualizações
-do banco" no mesmo momento da junção. As duas seções logo abaixo explicam o que
-mudou de significado.
+**Estado em 10/09/2026 (madrugada):** `main` publicada em **`668f8ae`**, com as
+**oito alterações do plano de contas** e a **importação da base de 3.279
+insumos** em Excel, com a marca de locável. **TRAZ A MIGRAÇÃO 058** (coluna
+`redutora` em `categorias`) — o dono foi avisado para apertar "Aplicar
+atualizações do banco" no mesmo momento. Suíte: **3.891 casos** com banco de
+verdade, depois de trazer a `main` (que tinha andado com o Análise de SPs).
+As duas seções logo abaixo explicam o que mudou de significado.
+
+⚠️ **Depois desta publicação, na ordem, o dono precisa:**
+1. **Aplicar atualizações do banco** (migração 058).
+2. **Configurações › Plano financeiro › "Instalar plano padrão BWS"** — e LER a
+   janela de pendências que aparece: ela diz quais contas saíram do plano mas
+   têm lançamento e continuam ativas até ele remanejar.
+3. **Suprimentos › Importações** — trazer o `Insumoss.xlsx`, marcando "criar as
+   categorias de insumo".
+
+**Ficou no ramo, para a próxima publicação:** o catálogo de perguntas do
+assistente (`PERGUNTAS.md`) e a regra do `CLAUDE.md` que o mantém vivo.
 
 **Estado em 10/09/2026 (noite):** `main` publicada em `fd55bd9`, com quatro
 entregas: o **endereço no cadastro de obra**, o **lançamento visto de perto**
