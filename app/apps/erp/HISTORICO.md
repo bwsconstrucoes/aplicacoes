@@ -136,7 +136,7 @@ Ensaio na base de demonstração: 3.285 insumos em 57 categorias, 8 sem conta do
 plano, 55 itens de material pedidos e em aberto, e "hidraul" (sem acento)
 achando 305 insumos.
 
-Sem migração.
+Sem migração. Suíte: **4.036 casos** com banco de verdade.
 
 ### A régua do recebimento — 10/09/2026
 
