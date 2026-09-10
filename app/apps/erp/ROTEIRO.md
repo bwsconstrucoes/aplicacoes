@@ -76,7 +76,132 @@
 - [x] **Relatórios**: totais por 8 dimensões, DRE gerencial, analítico, CSV
 - [ ] Relatórios — falta: exportação em PDF e gráficos
 
+- [x] **As oito alterações do plano de contas** — FEITAS em 10/09/2026
+      (migração 058), a partir do documento `PLANO_CONTAS_alteracoes.md` do
+      dono. Devolução/estorno/reembolso saíram das receitas e viraram contas
+      REDUTORAS de custo (3.5.01 a 3.5.03, com sinal negativo no relatório); a
+      retenção conjunta CSRF/PCC (2.1.06) foi desfeita e a guia é rateada entre
+      PIS, COFINS e CSLL; a CSLL virou conta única; o parcelamento tributário
+      (9.4.03) deixou de ser fluxo; o grupo 8 virou RESULTADO (e por isso o
+      relatório de desembolso por obra **deixou de ser necessário**);
+      nomenclatura e descrições de "quando usar / com o que não confundir" em
+      todo o plano. Detalhe em `HISTORICO.md`.
+- [x] **Aposentar conta sem apagar histórico** — FEITO em 10/09/2026.
+      Instalar o plano padrão desativa só o que nunca foi usado; conta com
+      lançamento continua ativa e é relatada numa janela, com a contagem e o
+      motivo, para o dono remanejar.
+- [x] **Importar a base de 3.279 insumos em Excel** — FEITO em 10/09/2026. O
+      importador lê .xlsx direto (primeira aba), casa a conta do plano por
+      apelido e usa a coluna "Subcategoria = Locação" para marcar o insumo como
+      locável — que é o que decide quem aparece na tela de Locações.
+- [ ] **Decisão do dono: o critério de valor da ferramenta.** Ficou R$ 1.200,00
+      por unidade (ou vida útil menor que um ano) separando 3.1.19 Ferramentas
+      de 8.1.04 Ferramentas e equipamentos duráveis. Trocar o número em
+      `LIMITE_FERRAMENTA` muda os dois textos de uma vez.
+- [ ] **Decisão do dono: o que fazer com 2.1.06 e 9.4.03** se elas tiverem
+      lançamento em produção. As duas não têm destino único (a primeira se
+      reparte em três contas; a segunda depende de qual tributo foi parcelado),
+      então o remanejamento é caso a caso, pela tela.
+- [ ] **Decisão do dono: o nome do grupo 8.** Ele continua "Investimentos
+      (ativo)", mas as contas agora são de RESULTADO — o "(ativo)" entre
+      parênteses pode confundir. Trocar é barato; não foi feito porque mudar
+      nome de grupo mexe em como todo mundo lê o relatório.
+
 ## Fila (pedidos registrados, ainda não iniciados)
+
+### O ASSISTENTE DE IA E O RELATÓRIO DE TRABALHO — pedidos de 10/09/2026
+
+Dois pedidos grandes que o dono fez na mesma conversa, e que valem juntos
+porque o segundo é o primeiro ensaio do primeiro: os dois vivem da trilha de
+auditoria.
+
+**O que ele pediu, nas palavras dele:** *"eu poder fazer qualquer pergunta ao
+sistema e, se houver dado daquela pergunta, que ele me retorne. E não só os
+dados exibidos em tela, porque às vezes a gente pode ter em algum momento que é
+necessário alguma informação que a gente não tenha pensado na construção do
+sistema."* Exemplos que ele deu: o que tem a pagar hoje na obra X; quais obras
+estão em andamento; quanto foi medido e quanto falta receber; o resultado da
+obra agora; quantos títulos não estão conciliados; a lista de insumos de uma
+categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudio** e
+**anexo**, e sempre **dentro da permissão da pessoa**.
+
+- [ ] **1. Relatório de uso e trabalho por pessoa.** É o mais barato e já dá
+      para fazer: a tabela `eventos` é append-only (ninguém apaga nem edita) e
+      já registra **117 tipos de ação**, com quem, quando, em qual registro e o
+      detalhe. Falta ler isso por pessoa e por dia: primeira e última ação,
+      o que foi feito, volume por tipo, e onde a fila está parada.
+      ⚠️ **Ressalva que precisa estar na tela:** log de atividade **não é
+      jornada de trabalho**. Quem está lendo contrato, no telefone com
+      fornecedor ou na obra trabalha sem gerar evento. Serve para medir
+      ENTREGA (quantos títulos, conciliações, medições) e para saber se o
+      trabalho está acontecendo no dia de home office — não para bater ponto.
+      Se um dia virar controle de jornada, isso tem exigência legal própria e
+      não se improvisa. A equipe precisa ser avisada de que o sistema registra.
+      Fazer também a tela **"minha semana"** para cada pessoa: mesmo dado,
+      vira retorno em vez de vigilância.
+- [ ] **2. Assistente SÓ DE LEITURA, dentro do ERP.** Painel lateral (não
+      caixinha), com o catálogo de perguntas conhecidas respondido por CÓDIGO —
+      exato, rápido e sem custo de IA — e a pergunta imprevista caindo numa
+      consulta gerada pela IA, **marcada como tal na tela**. Toda resposta com
+      "ver de onde veio", abrindo a lista por trás do número.
+      ⚠️ **O risco que manda no desenho:** consulta gerada por IA sobre um
+      banco grande acerta a maior parte das vezes e erra em silêncio no resto.
+      Número errado com cara de certo é pior que resposta nenhuma. Por isso o
+      catálogo primeiro, o "não sei" explícito, e a origem sempre visível.
+- [ ] **3. Áudio e anexo na conversa**, e o ERP virando **PWA** (ícone no
+      celular que abre no navegador, com aviso por notificação). É o mesmo
+      sistema, não um segundo aplicativo — app nativo aqui seria duas bases de
+      código e loja para nada.
+- [ ] **4. As AÇÕES pelo assistente** (cadastrar insumo, lançar título) —
+      sempre **preparar e confirmar**: o assistente preenche e mostra, a pessoa
+      aperta. Nunca "já lancei". E passando pelas MESMAS funções do core que a
+      tela usa, para herdar permissão, escopo por obra e regra de negócio — não
+      um caminho paralelo até o banco.
+- [ ] **5. WhatsApp/Telegram como porta secundária**: aviso e pergunta curta,
+      com link para abrir no ERP. Não como canal principal — ver o porquê em
+      `HISTORICO.md` › "Por que o assistente não nasce no WhatsApp".
+- [ ] **6. Assistente PROATIVO** (ideia trazida na conversa, não pedida): o
+      valor maior não é responder, é falar primeiro. "Estas 3 medições estão
+      liberadas para faturar", "a CND deste fornecedor venceu e há título para
+      pagar amanhã", "este material está 40% acima do que esta obra costuma
+      pagar". A Agenda já existe; o assistente é a voz dela.
+- [ ] **7. Pergunta boa vira relatório salvo E AGENDADO PELA PRÓPRIA
+      CONVERSA.** O dono voltou nisto em 10/09/2026, e com razão — é a peça que
+      faz o resto valer: *"toda segunda-feira me manda determinado tipo de
+      informação. Aí a própria [IA] agendar essa necessidade minha e fazer
+      aquela ação executar e me mandar."* Ou seja: ele PEDE em português, e o
+      agendamento nasce da frase; ele não vai configurar nada em tela.
+      **Está mais perto do que parece** — as quatro peças já existem: a fila de
+      trabalho em segundo plano (migração 055, com recuperação de tarefa órfã),
+      o envio por Telegram (`core/notificacoes.py`), o e-mail pela conta da
+      empresa (`core/comum/email.py`) e a exportação em Excel e PDF
+      (`core/comum/exportar.py`). Falta o relógio, a pergunta guardada e a cola.
+      O que decide se funciona ou vira lixo:
+      - **Guardar a CONSULTA, não a frase.** Se toda segunda a IA reinterpretar
+        o texto, o relatório muda de forma e de critério sozinho, e não dá para
+        comparar uma segunda com a outra. Guarda-se a consulta que gerou o
+        resultado que ele aprovou.
+      - **Comparar com a semana passada.** Número solto é ruído; "R$ 340 mil a
+        pagar (era R$ 280 mil)" é gestão. Exige guardar o resultado de cada
+        rodada — barato, e é o que dá valor.
+      - **O "só me avise se".** Relatório que chega igual todo mês vira spam e
+        para de ser lido — acontece em toda empresa que faz isso. Além do fixo,
+        o condicional: manda só quando cruzar uma linha.
+      - **Relatório para OUTRA pessoa roda com a permissão DE QUEM RECEBE**, não
+        de quem criou. Senão o gestor de uma obra recebe, sem querer, o número
+        da empresa inteira.
+      - **Relatório que quebrou tem de RECLAMAR.** Se a obra acabou ou a conta
+        foi aposentada, ele não pode mandar zero em silêncio — zero silencioso
+        é pior que erro, porque parece resposta.
+      - **Agendado pode LER sozinho; para AGIR, prepara e espera o dono
+        apertar.** Mesma regra do item 4.
+- [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
+      ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
+      come o mês inteiro.
+- [ ] **9. Guardar toda pergunta e toda resposta.** Serve para controlar custo,
+      para auditar e — o mais útil — porque a lista do que perguntam repetido é
+      a lista das telas que faltam.
+
 
 - [x] Painel de consumo de IA (tokens, custo, por operação/modelo/pessoa)
 - [x] Conversão de valores decimais corrigida (30.00 vs 1.234)

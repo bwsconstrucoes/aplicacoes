@@ -11,6 +11,10 @@
 # Cadastro de Insumos › aba "Cadastrar". Os cabeçalhos são aceitos como estão
 # lá, com acento e maiúscula — quem exporta não deveria ter de editar arquivo.
 #
+# Desde 10/09/2026 o arquivo pode vir em Excel (.xlsx) direto, sem passar pelo
+# "salvar como CSV" — que era o passo que ninguém lembrava de fazer e o que
+# estragava acento e ponto e vírgula. A primeira aba da pasta é a que vale.
+#
 # Rodar duas vezes NÃO duplica: fornecedor casa por CNPJ/CPF, insumo casa pela
 # descrição. O que já existe é atualizado, e o relatório diz quantos foram.
 # ============================================================================
@@ -26,7 +30,7 @@ from sqlalchemy.orm import Session
 from app.apps.erp.core.cadastros import fornecedores as svc_forn
 from app.apps.erp.core.cadastros.validadores import somente_digitos
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
-from app.apps.erp.core.importadores.planilhas import _ler_csv
+from app.apps.erp.core.importadores.planilhas import ler_tabela
 from app.apps.erp.db.models.cadastros import (
     Categoria, Fornecedor, FornecedorCategoria, FornecedorContato,
     FornecedorPorte, Insumo, InsumoCategoria, Usuario,
@@ -84,7 +88,7 @@ def importar_fornecedores_csv(s: Session, conteudo: bytes, usuario: Optional[Usu
     `simular=True` só relata o que aconteceria — é a prévia que o dono confere
     antes de deixar gravar.
     """
-    linhas = _ler_csv(conteudo)
+    linhas = ler_tabela(conteudo)
     categorias = {_chave(c.nome): c for c in s.scalars(select(InsumoCategoria)).all()}
 
     criados, atualizados, rejeitados, sem_categoria = 0, 0, [], set()
@@ -191,8 +195,17 @@ def importar_insumos_csv(s: Session, conteudo: bytes, usuario: Optional[Usuario]
                          criar_categorias: bool = False) -> dict[str, Any]:
     """Insumos da planilha, com a categoria de suprimento e a conta do plano.
 
+    Aceita CSV e Excel (.xlsx) — o formato é reconhecido pelo conteúdo, não
+    pela extensão.
+
     A conta do plano é o que permite o pedido virar previsão de pagamento já
     apropriada — por isso insumo sem conta é aceito, mas contado e relatado.
+    Quando o nome da conta na planilha não bate com o do plano por causa de uma
+    renomeação, os APELIDOS do plano padrão resolvem.
+
+    A coluna "Subcategoria" com o valor LOCAÇÃO marca o insumo como locável, e
+    é isso que decide quais itens aparecem na tela de Locações — cimento não se
+    aluga, andaime sim. A marca é só LIGADA pela planilha, nunca desligada.
 
     `criar_categorias` liga a criação das categorias de insumo que a planilha
     trouxer e o ERP ainda não tiver. Nasceu DESLIGADO de propósito: inventar
@@ -206,15 +219,18 @@ def importar_insumos_csv(s: Session, conteudo: bytes, usuario: Optional[Usuario]
     planilha com "Areia" e "AREIA" na mesma coluna cria UMA categoria, não
     duas.
     """
-    linhas = _ler_csv(conteudo)
+    linhas = ler_tabela(conteudo)
     categorias = {_chave(c.nome): c for c in s.scalars(select(InsumoCategoria)).all()}
-    contas = {_chave(c.descricao): c for c in s.scalars(select(Categoria)).all()}
+    contas = _contas_por_nome(s)
     existentes = {_chave(i.descricao): i for i in s.scalars(select(Insumo)).all()}
 
     proximo = _proximo_codigo(s)
+    proxima_cat = _proximo_codigo_categoria(s)
     criados, atualizados, rejeitados = 0, 0, []
     sem_categoria, sem_conta = set(), 0
     categorias_criadas: set[str] = set()
+    contas_nao_encontradas: set[str] = set()
+    locaveis = 0
     for i, ln in enumerate(linhas, start=2):
         descricao = _campo(ln, "insumos", "descrição do insumo", "descricao do insumo",
                            "insumo", "descrição", "descricao")
@@ -223,10 +239,26 @@ def importar_insumos_csv(s: Session, conteudo: bytes, usuario: Optional[Usuario]
         nome_cat = _campo(ln, "categoria do insumo", "sub-categoria", "categoria")
         nome_conta = _campo(ln, "plano financeiro", "categoria (plano financeiro)",
                             "conta do plano")
+        # A coluna "Subcategoria" da planilha da BWS diz LOCAÇÃO nos itens que
+        # se alugam. É ela que faz o insumo aparecer na tela de Locações — por
+        # isso cimento não aparece lá, e andaime aparece.
+        locavel = _chave(_campo(ln, "subcategoria", "sub categoria",
+                                "subcategoria de locação",
+                                "subcategoria de locacao")) == "locacao"
+        if locavel:
+            # Contado aqui, e não na hora de gravar, para a PRÉVIA já dizer
+            # quantos itens vão para a tela de Locações — é o número que o dono
+            # confere antes de deixar gravar.
+            locaveis += 1
         cat = categorias.get(_chave(nome_cat)) if nome_cat else None
         if nome_cat and cat is None:
             if criar_categorias:
-                nova = InsumoCategoria(nome=nome_cat.strip())
+                # O código é NOT NULL no banco. Sem gerar um aqui, a carga
+                # morreria na primeira categoria nova — e o dublê dos testes,
+                # que não checa restrição de banco, não acusaria.
+                nova = InsumoCategoria(codigo=f"CAT-{proxima_cat:04d}",
+                                       nome=nome_cat.strip(), ativo=True)
+                proxima_cat += 1
                 if not simular:
                     s.add(nova)
                     s.flush()
@@ -238,6 +270,8 @@ def importar_insumos_csv(s: Session, conteudo: bytes, usuario: Optional[Usuario]
         conta = contas.get(_chave(nome_conta)) if nome_conta else None
         if conta is None:
             sem_conta += 1
+            if nome_conta:
+                contas_nao_encontradas.add(nome_conta)
 
         insumo = existentes.get(_chave(descricao))
         if insumo is None:
@@ -256,6 +290,11 @@ def importar_insumos_csv(s: Session, conteudo: bytes, usuario: Optional[Usuario]
             insumo.categoria_insumo_id = cat.id
         if conta is not None:
             insumo.categoria_id = conta.id
+        # A marca de locável só é LIGADA pela planilha, nunca desligada: quem
+        # marcou um item à mão na tela de Insumos não perde a marcação porque
+        # a planilha veio sem ela.
+        if locavel and not insumo.locavel:
+            insumo.locavel = True
         unidade = _campo(ln, "und", "unidade")
         if unidade:
             insumo.unidade = unidade.upper()
@@ -268,7 +307,40 @@ def importar_insumos_csv(s: Session, conteudo: bytes, usuario: Optional[Usuario]
     return {"no_arquivo": len(linhas), "criados": criados, "atualizados": atualizados,
             "rejeitados": rejeitados, "sem_conta_do_plano": sem_conta,
             "categorias_nao_encontradas": sorted(sem_categoria),
-            "categorias_criadas": sorted(categorias_criadas), "simulacao": simular}
+            "categorias_criadas": sorted(categorias_criadas),
+            "contas_do_plano_nao_encontradas": sorted(contas_nao_encontradas),
+            "marcados_locaveis": locaveis, "simulacao": simular}
+
+
+def _contas_por_nome(s: Session) -> dict[str, Categoria]:
+    """Conta do plano indexada pelo nome, aceitando os APELIDOS.
+
+    A planilha escreve "Manutenção (Veículos e Máquinas)"; o plano já escreveu
+    "Manutenção de veículos e máquinas". Sem os apelidos, o insumo entraria sem
+    conta do plano por causa de um parêntese — e em silêncio, porque insumo sem
+    conta é aceito de propósito.
+    """
+    from app.apps.erp.core.cadastros.plano_padrao import APELIDOS
+
+    todas = s.scalars(select(Categoria)).all()
+    por_nome = {_chave(c.descricao): c for c in todas}
+    por_codigo = {c.codigo: c for c in todas}
+    for apelido, codigo in APELIDOS.items():
+        conta = por_codigo.get(codigo)
+        if conta is not None:
+            por_nome.setdefault(_chave(apelido), conta)
+    return por_nome
+
+
+def _proximo_codigo_categoria(s: Session) -> int:
+    """Continua a numeração CAT-0001 das categorias de insumo."""
+    numeros = []
+    for c in s.scalars(select(InsumoCategoria)).all():
+        codigo = (getattr(c, "codigo", "") or "")
+        sufixo = codigo.split("-", 1)[1] if codigo.upper().startswith("CAT-") else ""
+        if sufixo.isdigit():
+            numeros.append(int(sufixo))
+    return (max(numeros) + 1) if numeros else 1
 
 
 def _proximo_codigo(s: Session) -> int:

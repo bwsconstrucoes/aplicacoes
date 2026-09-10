@@ -1663,7 +1663,7 @@ def api_suprimentos_importar(tipo: str):
         return jsonify({"ok": False, "erro": "Tipo de carga desconhecido."}), 400
     arquivo = request.files.get("arquivo")
     if arquivo is None:
-        return jsonify({"ok": False, "erro": "Anexe o arquivo CSV."}), 400
+        return jsonify({"ok": False, "erro": "Anexe o arquivo (CSV ou Excel)."}), 400
     conteudo = arquivo.read()
     if not conteudo:
         return jsonify({"ok": False, "erro": "Arquivo vazio."}), 400

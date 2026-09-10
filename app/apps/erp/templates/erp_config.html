@@ -272,6 +272,10 @@
 <div class="cartao" id="bloco-saude" data-secao="saude">
   <div class="cartao-cab"><h3>Saúde do sistema</h3>
     <small>quanto tempo cada tela leva, quanta memória, o que ocupa o banco</small></div>
+  {# QUAL VERSÃO ESTÁ NO AR. Nasceu de uma volta perdida em 10/09/2026: um
+     botão novo "não aparecia", e não havia como saber se a tela era a nova ou
+     a de antes — o Render leva alguns minutos para trocar e nada dizia isso. #}
+  <div id="sa-versao" class="cartao-dica" style="margin-bottom:10px">carregando…</div>
   <div id="sa-avisos"></div>
   <div class="kpis kpis-largos" id="sa-kpis"></div>
 
@@ -1116,12 +1120,33 @@ els("ver-inativas").addEventListener("change", desenhar);
 
 els("btn-instalar-plano").addEventListener("click", async () => {
   if (!confirm("Grava o plano financeiro padrão da BWS no banco.\n\n" +
-               "Contas que já existem são atualizadas; nada é apagado e nenhum título muda de conta.\n\nContinuar?")) return;
+               "Contas que já existem são atualizadas e nenhum título muda de conta.\n" +
+               "Conta que saiu do plano só é desativada se NUNCA tiver sido usada — " +
+               "a que tem lançamento continua funcionando e aparece na lista do que " +
+               "falta remanejar.\n\nContinuar?")) return;
   const b = els("btn-instalar-plano"); b.disabled = true; b.textContent = "Instalando…";
   try {
     const d = await api("/erp/api/config/plano/instalar", {method:"POST"});
-    aviso("mensagem", `Plano aplicado: ${d.relatorio.criadas.length} conta(s) criada(s), ` +
-      `${d.relatorio.atualizadas.length} atualizada(s) — ${d.relatorio.total_no_plano} no plano.`, "ok");
+    const r = d.relatorio;
+    const apo = r.aposentadas || [], pend = r.pendentes_de_migracao || [];
+    let msg = `Plano aplicado: ${r.criadas.length} conta(s) criada(s), ` +
+      `${r.atualizadas.length} atualizada(s) — ${r.total_no_plano} no plano.`;
+    if (apo.length) msg += ` ${apo.length} conta(s) sem uso foram desativadas.`;
+    if (pend.length) msg += ` ${pend.length} conta(s) com lançamento precisam ser remanejadas.`;
+    aviso("mensagem", msg, pend.length ? "erro" : "ok");
+    // A pendência é mostrada em janela própria de propósito: é a única coisa
+    // desta tela que exige DECISÃO do dono, e um aviso na faixa passa batido.
+    if (pend.length) {
+      alert("Estas contas saíram do plano e NÃO foram desativadas — continuam " +
+        "funcionando até você decidir. Remaneje cada uma pelo botão 'Aposentar " +
+        "conta', que leva o histórico junto:\n\n" +
+        pend.map(x => `${x.codigo} · ${x.descricao}` +
+          (x.lancamentos
+            ? `\n   Tem ${x.lancamentos} lançamento(s) — por isso continua ativa.`
+            : "\n   Sem lançamento, mas o destino depende do caso.") +
+          (x.destino ? `\n   Destino: ${x.destino}` : "\n   Destino: você decide.") +
+          `\n   ${x.motivo}`).join("\n\n"));
+    }
     carregar();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
   b.disabled = false; b.textContent = "Instalar plano padrão BWS";
@@ -1596,6 +1621,17 @@ async function carregarSaude(){
   try {
     const d = await api("/erp/api/saude?dias=" + (els("sa-dias").value || 7));
     const m = d.memoria, t = d.telas, b = d.banco, a = d.anexos;
+
+    const v = d.versao || {};
+    els("sa-versao").innerHTML =
+      `<b>No ar desde ${escapar(v.no_ar_desde || "?")}</b>`
+      + (v.minutos_no_ar !== undefined
+          ? ` (${v.minutos_no_ar} minuto(s) atrás)` : "")
+      + (v.commit ? ` · versão <b class="mono">${escapar(v.commit)}</b>` : "")
+      + (v.ramo ? ` do ramo <b>${escapar(v.ramo)}</b>` : "")
+      + `<br>Toda publicação reinicia o serviço — se a hora acima for anterior
+         à publicação, a versão nova <b>ainda não chegou</b>: espere um ou dois
+         minutos e recarregue a tela.`;
 
     els("sa-avisos").innerHTML = (d.avisos || []).map(x =>
       `<div class="aviso alerta">${escapar(x)}</div>`).join("")

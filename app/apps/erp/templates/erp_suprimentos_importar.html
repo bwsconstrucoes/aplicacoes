@@ -9,12 +9,14 @@
 <div id="mensagem"></div>
 
 <div class="cartao">
-  <div class="cartao-cab"><h3>Carga por arquivo CSV</h3>
+  <div class="cartao-cab"><h3>Carga por arquivo</h3>
     <small>rodar de novo não duplica</small></div>
-  <div class="cartao-dica">Na planilha do Google, <b>Arquivo › Fazer download ›
-    CSV</b> da aba que interessa, e traga o arquivo aqui. O fornecedor casa pelo
-    CNPJ e o insumo pela descrição, então a carga pode ser refeita quantas vezes
-    for preciso — o que já existe é atualizado, não duplicado.</div>
+  <div class="cartao-dica">Traga a planilha aqui — serve o arquivo <b>Excel
+    (.xlsx)</b> direto, ou o <b>CSV</b> (na planilha do Google, <b>Arquivo ›
+    Fazer download</b>). No Excel vale a <b>primeira aba</b> da pasta.
+    O fornecedor casa pelo CNPJ e o insumo pela descrição, então a carga pode
+    ser refeita quantas vezes for preciso — o que já existe é atualizado, não
+    duplicado.</div>
 
   <div class="form-grade" style="margin-top:12px">
     <div class="campo"><label for="tipo-carga">O que trazer</label>
@@ -22,15 +24,18 @@
         <option value="fornecedores">Fornecedores (aba Registro)</option>
         <option value="insumos">Insumos (aba Cadastrar)</option>
       </select></div>
-    <div class="campo" style="grid-column:span 2"><label for="arq-carga">Arquivo CSV</label>
-      <input type="file" id="arq-carga" accept=".csv"></div>
+    <div class="campo" style="grid-column:span 2"><label for="arq-carga">Arquivo (Excel ou CSV)</label>
+      <input type="file" id="arq-carga" accept=".csv,.xlsx"></div>
   </div>
 
   <div class="cartao-dica" style="margin-top:10px">Colunas aceitas —
     <b>fornecedores</b>: Razão Social, Nome do Fornecedor, CNPJ/CPF, Contato, Email,
     Telefone, Categoria de Insumo, Cidade, Região de Atuação, Envio de Cotações,
     Porte do Fornecedor ·
-    <b>insumos</b>: Insumos, Categoria do Insumo, Plano Financeiro, UND.</div>
+    <b>insumos</b>: Insumos, Categoria do Insumo, Subcategoria, Plano Financeiro, UND.
+    <br>A coluna <b>Subcategoria</b> com o valor <b>Locação</b> marca o insumo como
+    locável — é o que faz ele aparecer na tela de Locações. Sem isso, cimento
+    apareceria lá junto com o andaime.</div>
 
   {# A categoria de insumo nasce DESLIGADA na carga, e continua sendo decisão
      de quem importa. O dono pediu a chave em 10/09/2026 — ele tem o cadastro
@@ -85,7 +90,7 @@ alternarBlocoDeCategorias();
 async function enviar(simular){
   const tipo = els("tipo-carga").value;
   const arquivo = els("arq-carga").files[0];
-  if (!arquivo) return aviso("mensagem", "Escolha o arquivo CSV.", "erro");
+  if (!arquivo) return aviso("mensagem", "Escolha o arquivo (CSV ou Excel).", "erro");
   const fd = new FormData();
   fd.append("arquivo", arquivo);
   els("resultado-carga").innerHTML = `<div class="cartao-dica">lendo o arquivo…</div>`;
@@ -107,6 +112,15 @@ async function enviar(simular){
           ${rel.categorias_criadas.length} categoria(s) de insumo
           ${simular ? "seriam criadas" : "criadas"}:
           <b>${escapar(rel.categorias_criadas.join(", "))}</b>.</div>` : ""}
+      ${rel.marcados_locaveis ? `
+        <div class="aviso ${simular ? "info" : "ok"}">
+          <b>${rel.marcados_locaveis}</b> insumo(s) marcado(s) como <b>locáveis</b>
+          pela coluna Subcategoria — são estes que aparecem na tela de Locações.</div>` : ""}
+      ${rel.contas_do_plano_nao_encontradas && rel.contas_do_plano_nao_encontradas.length ? `
+        <div class="aviso info">Contas do plano citadas na planilha e não
+          encontradas: <b>${escapar(rel.contas_do_plano_nao_encontradas.join(", "))}</b>.
+          Estes insumos entram <b>sem conta do plano</b> — cadastre a conta em
+          Configurações › Plano financeiro e rode a carga de novo.</div>` : ""}
       ${rel.categorias_nao_encontradas && rel.categorias_nao_encontradas.length ? `
         <div class="aviso info">Categorias citadas na planilha e ainda não
           cadastradas no ERP: <b>${escapar(rel.categorias_nao_encontradas.join(", "))}</b>.

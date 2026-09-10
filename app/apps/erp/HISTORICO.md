@@ -17,6 +17,14 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
+**Estado em 10/09/2026 (madrugada):** ramo `claude/oi-vjvrn8`, **ainda não
+publicado**, com duas entregas grandes: as **oito alterações do plano de
+contas** que o dono mandou por documento e a **importação da base de 3.279
+insumos** em Excel, com a marca de locável. **Traz migração nova — a 058**
+(coluna `redutora` em `categorias`), que precisa do botão "Aplicar atualizações
+do banco" no mesmo momento da junção. As duas seções logo abaixo explicam o que
+mudou de significado.
+
 **Estado em 10/09/2026 (noite):** `main` publicada em `fd55bd9`, com quatro
 entregas: o **endereço no cadastro de obra**, o **lançamento visto de perto**
 (seis pontos, dois deles defeito — a descrição que nunca virou multilinha e o
@@ -67,6 +75,172 @@ Suprimentos** (033 a 037). Publicado também o **botão de zerar o movimento por
 telas de cadastro de Suprimentos** (detalhada abaixo), mais a correção das
 três telas que nunca funcionaram (ver Incidentes). Suíte: 2.097 casos com
 banco de verdade. **Nada pendente no ramo.**
+
+### Por que o assistente não nasce no WhatsApp — 10/09/2026
+
+O dono desenhou o futuro do sistema numa conversa: *"eu poder fazer qualquer
+pergunta ao sistema e, se houver dado daquela pergunta, que ele me retorne"* —
+com áudio, com anexo, e podendo também AGIR (cadastrar insumo, lançar título),
+sempre dentro da permissão da pessoa. E perguntou qual canal usar.
+
+Ele mesmo desconfiou do WhatsApp, e a desconfiança está certa. Ficando
+registrado o porquê, para não se discutir de novo:
+
+- **Passa por terceiro.** Toda mensagem, todo documento e todo áudio passam
+  pelos servidores da Meta. Aqui isso significa nota fiscal, folha e título —
+  não é um detalhe.
+- **A janela de 24 horas.** Fora de uma conversa que a PESSOA começou, só se
+  pode mandar modelo de mensagem aprovado previamente. Serve para aviso; não
+  serve para conversa livre iniciada pelo sistema.
+- **Não tem tela.** Relatório em WhatsApp vira parede de texto ou PDF anexado.
+  Sem tabela, sem linha clicável, sem card que expande, sem "ver de onde veio
+  este número" — que é justamente a parte que faz o assistente ser confiável.
+- **Identifica telefone, não pessoa.** Ligar telefone a operador dá para fazer,
+  mas quem estiver com o aparelho está dentro do ERP. É superfície de ataque
+  nova para resolver um problema que o login já resolve.
+
+**Onde o WhatsApp ganha de verdade:** o pessoal da obra, que não abre o ERP, e
+o AVISO (a metade que falta do `core/notificacoes.py` — o Telegram está pronto).
+Por isso ele fica como porta secundária, para aviso e pergunta curta com link,
+e não como canal principal.
+
+**A decisão:** o assistente nasce DENTRO do ERP, em painel lateral, e o celular
+é resolvido transformando o próprio ERP em PWA — o ícone na tela do telefone
+que abre no navegador. Aplicativo nativo seria uma segunda base de código e uma
+loja para não ganhar nada que o PWA não dê aqui.
+
+**O risco que manda no desenho, e que precisa ser dito ao dono sempre:**
+consulta gerada por IA sobre um banco grande acerta a maior parte das vezes e
+erra **em silêncio** no resto. Um número errado com cara de certo é pior que
+resposta nenhuma — e o dono não tem como conferir SQL. Daí as três regras:
+catálogo de perguntas conhecidas respondido por código primeiro; "não sei"
+explícito em vez de chute; e toda resposta com o caminho de volta para os
+lançamentos que a formaram.
+
+O plano em nove passos está em `ROTEIRO.md` › "O ASSISTENTE DE IA E O RELATÓRIO
+DE TRABALHO".
+
+### O plano de contas depois das oito alterações — 10/09/2026
+
+O dono mandou um documento (`PLANO_CONTAS_alteracoes.md`) com oito assuntos, e
+todos foram aplicados em `core/cadastros/plano_padrao.py`. Cada um mudou o
+significado de alguma coisa, e é isso que precisa atravessar sessões:
+
+1. **Devolução, estorno e reembolso saíram das receitas.** Estavam em 1.2 e
+   inflavam a receita deixando o custo intacto — a margem saía errada dos dois
+   lados. Viraram **3.5.01, 3.5.02 e 3.5.03**, no grupo de custos, marcadas
+   como **REDUTORAS**: entram no relatório com **sinal negativo**. R$ 10.000 de
+   compra e R$ 500 de devolução fecham R$ 9.500 de custo, com as duas linhas
+   visíveis no analítico. O lançamento original NÃO é estornado. A **1.2.04
+   (multas e indenizações recebidas) continua receita** — ali não houve gasto
+   nosso.
+2. **A retenção conjunta CSRF/PCC (2.1.06) deixou de existir.** Juntava PIS,
+   COFINS e CSLL, com alíquotas e bases diferentes. A guia (DARF 5952) agora é
+   **rateada** entre 2.1.04 (PIS), 2.1.05 (COFINS) e 2.2.02 (CSLL), e as três
+   descrições dizem isso.
+3. **Um tributo, uma conta, aplicado até o fim.** A CSLL retida virou a mesma
+   2.2.02 da CSLL apurada — é o mesmo tributo em dois momentos. Idem IRPJ.
+4. **A 9.4.03 (principal de parcelamento tributário) foi eliminada.** O
+   principal vai para a conta do próprio tributo, no grupo 2; os juros, em
+   2.3.02.
+5. **O grupo 8 (aquisição de bens) virou RESULTADO.** Razão operacional que
+   prevalece sobre a contábil: uma betoneira comprada para obra em parceria
+   precisa aparecer no custo daquela obra, senão não há como cobrar a parte do
+   parceiro. O rateio obrigatório resolve. A depreciação fica com a
+   contabilidade externa. **Com isso o relatório de desembolso por obra deixou
+   de ser necessário** — foi o próprio dono quem disse. No relatório, o grupo 8
+   passou a entrar na soma das despesas (`relatorios.dre_gerencial`); sem isso
+   ele apareceria na lista e sumiria do resultado do período.
+6. **Nomenclatura:** 5.1.03 virou "Internet, telefonia e **sistemas**"; 5.1.05
+   perdeu o "copa" e virou "Limpeza da sede".
+7. **Descrições em toda conta com risco de confusão**, dizendo *quando usar* e
+   *com o que não confundir*. Elas aparecem na hora de lançar e são o que
+   impede o plano de apodrecer. Todo o grupo 3.1 ganhou descrição, e 3.1.99 e
+   5.3.99 dizem, com todas as letras, que são último recurso.
+8. **Renomeadas para os nomes da planilha da BWS:** 5.3.01 "Material de
+   Escritório", 5.3.03 "Manutenção (Veículos e Máquinas)", 5.3.04 "Manutenção
+   (Ferramentas e Equipamentos)", 8.1.01 "Aquisição de Veículos, Máquinas e
+   Equipamentos", 3.3.02 e 3.3.03 com as maiúsculas da planilha.
+   **Conta nova: 3.3.06 "Locação de Equipamentos"** — a única que a planilha de
+   insumos trouxe e o plano não tinha. Ela absorveu a antiga 3.3.05 ("Locação
+   de andaimes, escoramentos e formas"), que era um subconjunto dela.
+
+O plano ficou com **138 contas**.
+
+#### O CRITÉRIO DE VALOR que virou decisão nossa, e pode ser mudado
+
+O documento mandou escrever um critério que separe **3.1.19 Ferramentas**
+(custo da obra) de **8.1.04 Ferramentas e equipamentos duráveis**
+(patrimônio), mas não disse qual. Ficou **R$ 1.200,00 por unidade OU vida útil
+menor que um ano** — o critério fiscal de bem de pequeno valor. **É decisão do
+dono e ele pode mudar:** o número está em `LIMITE_FERRAMENTA`, no topo do
+`plano_padrao.py`, e muda os dois textos de uma vez.
+
+#### A regra que protege o histórico
+
+Instalar o plano padrão **não apaga conta com movimento**. A rotina de
+aposentadoria (`_aposentar`) desativa só o que nunca foi usado — e aponta a
+sucessora em `substituida_por_id`. Conta com lançamento **continua ativa** e sai
+no relatório em `pendentes_de_migracao`, com a contagem e o motivo; a tela de
+Configurações mostra isso numa janela própria, porque é a única coisa daquela
+tela que exige decisão do dono. O remanejamento é feito pelo botão "Substituir"
+da própria conta, que leva os títulos junto.
+
+Duas contas **nunca** são aposentadas sozinhas, porque não têm destino único: a
+**2.1.06** (o valor se reparte entre três tributos) e a **9.4.03** (o destino
+depende de qual tributo foi parcelado).
+
+⚠️ **Não foi possível conferir os lançamentos da produção**: não há
+`DATABASE_URL` no ambiente de desenvolvimento, e não deveria haver. A
+conferência acontece sozinha no momento em que o dono apertar "Instalar plano
+padrão BWS" — a janela de pendências é que vai dizer o que tem movimento.
+
+#### O que o de-para do Omie ganhou junto
+
+O de-para (`core/cadastros/depara.py`) traduz o plano velho, que chega nos
+cards do Pipefy. Além de acompanhar as contas que mudaram de código, sete
+traduções **erradas desde 07/09** foram corrigidas: argamassa, estrutura
+metálica, cabeamento, gás, granito, serralheria e vidro ainda apontavam para as
+contas de antes de as seis contas novas nascerem. Há teste exigindo que nenhuma
+tradução aponte para conta extinta.
+
+### A base de 3.279 insumos — 10/09/2026
+
+O dono mandou `Insumoss.xlsx` com a base completa: **3.279 insumos**, **57
+categorias de suprimento**, **42 contas do plano** e uma coluna
+**Subcategoria** que diz "Locação" em 54 itens.
+
+- **O importador passou a ler Excel (.xlsx) direto** (`planilhas.ler_tabela`).
+  O formato é reconhecido pelo **conteúdo**, não pela extensão, e vale a
+  primeira aba. Nenhuma biblioteca nova: `openpyxl` já era dependência do
+  serviço. Vale para insumos e para fornecedores.
+- **"Subcategoria = Locação" liga a marca `locavel`**, que é o que decide quais
+  insumos aparecem na tela de Locações — *"pra não ter que aparecer por exemplo
+  cimento, que não se loca cimento"*. A marca só é **ligada** pela planilha,
+  **nunca desligada**: quem marcou um item à mão na tela não perde a marcação
+  porque a planilha veio sem ela.
+- **Apelidos de conta** (`APELIDOS`, em `plano_padrao.py`): a planilha escreve
+  "Manutenção (Veículos e Máquinas)" e o plano já escreveu "Manutenção de
+  veículos e máquinas". Sem isso o insumo entraria sem conta do plano, em
+  silêncio. **Nome antigo de conta renomeada entra ali e não se apaga** —
+  planilha velha continua sendo importada anos depois.
+- O relatório da carga passou a dizer **quantos foram marcados como locáveis** e
+  **o nome das contas do plano que não existem** ("2 insumos sem conta" não diz
+  o que fazer; o nome, sim).
+- **Defeito corrigido de passagem:** a criação de categoria de insumo na carga
+  (entregue horas antes, no mesmo dia) nascia **sem código**, e
+  `insumo_categorias.codigo` é `NOT NULL`. A carga teria morrido na primeira
+  categoria nova em produção — o dublê dos testes não checa restrição de banco
+  e não acusou.
+
+**Ensaio com banco de verdade** (cópia do banco de demonstração, com todas as
+migrações aplicadas): 3.279 linhas lidas em 2,9 s, **3.251 insumos novos**, 28
+atualizados, **51 categorias de insumo criadas**, **54 marcados como locáveis**,
+**0 recusados**. Todas as 42 contas do plano foram encontradas.
+
+⚠️ **Duas linhas da planilha vêm sem conta do plano** e entram assim: "Barra
+Tirante Roscado Galvanizado 1/4 x 3m" e "Espaçador BE 8". Basta preencher a
+coluna na planilha e rodar a carga de novo — rodar duas vezes não duplica.
 
 ### A reforma das telas de cadastro (05/09/2026, noite)
 
