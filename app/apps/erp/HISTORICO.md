@@ -2272,6 +2272,91 @@ importação real é o teste. Recomendado a ele: começar com **três a cinco
 cards** de uma obra, conferir os anexos na ficha do título, e só então soltar
 os 70.
 
+### Um lugar só para cadastrar obra, e a obra que nasce do documento — 10/09/2026
+
+Ele foi cadastrar a primeira obra e esbarrou em duas coisas ao mesmo tempo.
+
+**A primeira era um defeito de organização.** Havia DOIS formulários de "nova
+obra": um em Configurações, com oito campos, e outro no painel de Obras, com
+cinco. A mesma obra nascia completa ou pela metade conforme a porta de
+entrada, e quem entrava pela porta curta nem sabia que a outra existia. Ele
+resolveu na hora: *"se a gente tem o painel de obras, não tem mais que ter
+obras em administração."*
+
+Agora **só o painel de Obras cria obra**. O cartão "Obras" de Configurações
+virou um ponteiro para lá — a âncora `#obras` continua existindo para não
+quebrar link antigo. O formulário do painel ganhou o cadastro de identificação
+inteiro (código, nome, contratante, CNPJ, contrato, objeto, município, UF,
+CNO, valor e ISS) e, depois de criar, **abre a ficha da obra** para completar
+vigência e tributação em vez de deixar a pessoa procurá-la na lista.
+
+**A segunda era um pedido antigo, que ele lembrou aqui:** *"nós havíamos
+conversado sobre a criação de obras a partir de um documento, da leitura de um
+documento. Então isso ficaria associado a obras."* É o mesmo princípio de
+"cadastro e arquivo juntos", só que sem cadastro para completar: com cadastro
+para NASCER.
+
+"+ Nova obra" abre em **A partir de um documento**. Manda o contrato (ou a
+matrícula CNO, a ART, a ordem de serviço), o sistema lê, mostra o que entendeu
+e, num clique, cria a obra e guarda o documento dentro dela. A aba
+**Digitando** continua ali para quem não tem documento à mão.
+
+Três decisões que sustentam isso:
+
+1. **O CÓDIGO NÃO SE INVENTA.** "ESCPE18" é convenção da casa e não sai de
+   documento nenhum. O sistema pergunta, mostrando os últimos códigos usados
+   para a pessoa seguir o próprio padrão. Adivinhar geraria código plausível e
+   errado — e código de obra entra em rateio, medição e nota fiscal; trocar
+   depois é caro. O **nome**, sim, vem sugerido: sai do objeto do contrato
+   (primeira oração) ou do contratante, e dá para editar antes de criar.
+2. **OBRA DUPLICADA É PIOR QUE OBRA FALTANDO.** Duas obras para o mesmo
+   contrato partem o histórico em dois: metade dos títulos numa, metade na
+   outra, e nenhum relatório fecha. A criação **para** quando encontra obra com
+   a mesma matrícula CNO (comparando só os dígitos, porque cada documento
+   pontua de um jeito) ou o mesmo número de contrato. Para, mas não decide pela
+   pessoa: contrato guarda-chuva com duas obras existe, e há uma caixinha "sei
+   que é outra obra". A guarda confere o que VAI ser gravado, não o que a IA
+   sugeriu — a pessoa pode ter corrigido o CNO na tela.
+3. **A trava por tipo continua valendo**, igual à do preenchimento: documento
+   que não prova um campo não grava esse campo, nem que a tela mande. E tudo
+   acontece na MESMA transação — obra sem o contrato que a criou, ou contrato
+   guardado numa obra que não chegou a existir, seriam os dois piores
+   resultados possíveis.
+
+⚠️ **Um defeito de verdade apareceu no caminho, e não era o assunto.** A tabela
+de obras carrega DUAS colunas de alíquota de ISS: `aliquota_iss_pct`, que a
+tributação, a tela de tributação e o cálculo da medição leem, e `aliquota_iss`,
+mais antiga. O formulário de Configurações escrevia na **antiga**; a tela de
+tributação escreve na **nova**; e a **emissão automática da nota lia justamente
+a antiga**. Consequências, que ainda não chegaram a acontecer porque a BWS
+segue em emissão MANUAL: obra cadastrada pela tela de tributação seria recusada
+por "sem alíquota de ISS", e obra com as duas preenchidas diferentes mandaria à
+prefeitura um percentual que ninguém viu na tela. Agora a emissão lê a nova e
+só cai na antiga para obra que nunca passou pela tela de tributação, e obra
+criada pelo painel nasce com as duas iguais. Sem migração: é código.
+
+**O que ficou provado:** `tests/test_obra_do_documento_banco.py`, 21 casos com
+banco de verdade e a leitura dublada — a rota antiga de Configurações não
+existe mais, quem não configura não cria obra, código repetido é recusado, ler
+não grava nada, criar e arquivar acontecem juntos, campo recusado não deixa
+obra nem documento para trás, CNO pontuado de outro jeito é reconhecido como a
+mesma obra, e a confirmação destrava.
+
+⚠️ **A chamada real à IA continua sem prova aqui** — não há chave neste
+ambiente, então a leitura é dublada em toda a suíte e no navegador.
+
+**No navegador, com banco de verdade e a leitura dublada**, o caminho inteiro
+foi percorrido: Configurações sem botão de nova obra e com o ponteiro; o painel
+abrindo em "A partir de um documento"; onze campos na aba "Digitando"; o
+documento lido propondo dezessete campos; a recusa por falta de código; a obra
+criada com o documento guardado como
+`CONTRATO-OBRA_CRECHEEUS26_268-2025_val-2027-01-15.pdf`; o mesmo documento de
+novo travando por "mesmo número de contrato"; e a confirmação destravando.
+Nenhum erro de JavaScript. Suíte inteira: **3.627 casos** com banco de verdade.
+
+**Esta entrega NÃO tem migração** — as duas colunas de ISS já existiam. Nada a
+apertar no botão do banco por causa dela.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**

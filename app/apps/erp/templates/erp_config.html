@@ -62,20 +62,18 @@
 </div>
 
 <div class="cartao" data-secao="obras">
-  <div class="cartao-cab"><h3>Obras (centros de custo)</h3>
-    <small>o rateio dos títulos aponta para estas obras</small></div>
-  <div class="tabela-barra" style="padding:0 0 10px">
-    <input id="busca-obra" placeholder="Filtrar obra…" style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px; min-width:240px">
-    <span class="espaco"></span>
-    <button class="btn secundario" id="btn-nova-obra">+ Nova obra</button>
-  </div>
-  <div class="tabela-rolagem" style="max-height:420px">
-    <table><thead><tr><th>Código</th><th>Nome / objeto</th><th>Cliente</th>
-      <th>Município</th><th>Contrato</th><th>Situação</th></tr></thead>
-      <tbody id="tb-obras"></tbody></table>
-  </div>
-  <div class="vazio oculto" id="vazio-obra"><b>Nenhuma obra cadastrada</b>
-    Importe o CSV das obras na aba <a href="/erp/importar">Importar</a>.</div>
+  <div class="cartao-cab"><h3>Obras</h3>
+    <small>mudaram de lugar — agora vivem no painel de Obras</small></div>
+  <div class="cartao-dica">Obra se cadastra, se consulta e se completa no
+    <a href="/erp/obras">painel de Obras</a>. Lá o cadastro é o inteiro —
+    contrato, vigência, tributação, aditivos e documentos — e dá para criar a
+    obra a partir do contrato, da matrícula CNO, da ART ou da ordem de serviço,
+    com o sistema lendo o documento e preenchendo o que achar.
+    <br><br>Existiam dois formulários de "nova obra", com campos diferentes:
+    a mesma obra nascia completa ou pela metade conforme a porta de entrada.
+    Ficou um só.</div>
+  <div style="margin-top:12px">
+    <a class="btn secundario" href="/erp/obras">Ir para o painel de Obras</a></div>
 </div>
 
 <div class="cartao" data-secao="contas">
@@ -730,15 +728,6 @@ function desenhar(){
   document.querySelectorAll("[data-cat]").forEach(tr =>
     tr.addEventListener("click", () => editarCategoria(+tr.dataset.cat)));
 
-  const fo = (els("busca-obra").value||"").toLowerCase();
-  const obras = DADOS.obras.filter(o => `${o.codigo} ${o.nome} ${o.cliente||""}`.toLowerCase().includes(fo));
-  els("vazio-obra").classList.toggle("oculto", obras.length>0);
-  els("tb-obras").innerHTML = obras.map(o => `
-    <tr><td class="dados">${o.codigo}</td><td class="desc">${o.nome}${o.objeto?`<small>${o.objeto}</small>`:""}</td>
-      <td>${o.cliente||"—"}</td><td>${o.municipio||"—"}${o.uf?"/"+o.uf:""}</td>
-      <td class="dados">${o.contrato||"—"}</td>
-      <td><span class="selo ${o.status==="ATIVA"?"aprovado":"outro"}">${rotulo(o.status)}</span></td></tr>`).join("");
-
   desenharContas();
 
   els("tb-usuarios").innerHTML = OPERADORES.map(u => `
@@ -781,14 +770,6 @@ els("btn-nova-cat").addEventListener("click", () => formulario("Nova categoria",
   {id:"descricao", rotulo:"Descrição", obrig:true, dica:"Materiais básicos"},
   {id:"natureza", rotulo:"Natureza", opcoes:[["RESULTADO","Resultado (DRE)"],["FLUXO","Fluxo de caixa"]]},
 ], "/erp/api/config/categoria"));
-
-els("btn-nova-obra").addEventListener("click", () => formulario("Nova obra", [
-  {id:"codigo", rotulo:"Código", obrig:true, dica:"ESCPE18"},
-  {id:"nome", rotulo:"Nome", obrig:true},
-  {id:"cliente", rotulo:"Cliente"}, {id:"contrato", rotulo:"Nº do contrato"},
-  {id:"municipio", rotulo:"Município"}, {id:"uf", rotulo:"UF"},
-  {id:"cno", rotulo:"CNO"}, {id:"aliquota_iss", rotulo:"Alíquota ISS (%)"},
-], "/erp/api/config/obra"));
 
 els("btn-nova-conta").addEventListener("click", () => formulario("Nova conta da empresa", [
   {id:"descricao", rotulo:"Descrição", obrig:true, dica:"Bradesco BWS principal"},
@@ -849,7 +830,7 @@ els("btn-instalar-depara").addEventListener("click", async () => {
   } catch(e){ aviso("mensagem", e.message, "erro"); }
   b.disabled = false; b.textContent = "Instalar traduções padrão";
 });
-["busca-cat","busca-obra"].forEach(id => els(id).addEventListener("input", desenhar));
+els("busca-cat").addEventListener("input", desenhar);
 els("ver-inativas").addEventListener("change", desenhar);
 
 els("btn-instalar-plano").addEventListener("click", async () => {

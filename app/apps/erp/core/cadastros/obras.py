@@ -42,7 +42,8 @@ def criar(s: Session, dados: dict[str, Any], usuario: Optional[Usuario]) -> Obra
                 cnpj_cliente=(dados.get("cnpj_cliente") or "").strip() or None,
                 contrato=(dados.get("contrato") or "").strip() or None,
                 valor_contrato=_num(dados.get("valor_contrato")),
-                aliquota_iss=_num(dados.get("aliquota_iss")),
+                aliquota_iss=_iss(dados),
+                aliquota_iss_pct=_iss(dados),
                 tributacao=(dados.get("tributacao") or "").strip() or None,
                 data_inicio=_dt(dados.get("data_inicio")),
                 data_termino=_dt(dados.get("data_termino")),
@@ -64,6 +65,19 @@ def encerrar(s: Session, obra_id: int, usuario: Usuario) -> Obra:
     obra.status = "ENCERRADA"
     registrar_evento(s, "obra", obra.id, "ENCERRADA", {}, usuario.id)
     return obra
+
+
+def _iss(dados: dict[str, Any]):
+    """A alíquota de ISS, gravada nas DUAS colunas de propósito.
+
+    A tabela tem `aliquota_iss` (antiga) e `aliquota_iss_pct` (a que a
+    tributação, a tela e o cálculo da medição leem). Enquanto as duas
+    existirem, obra nascida aqui tem de nascer com as duas iguais — obra com
+    uma preenchida e outra vazia é a origem de "está no cadastro mas a nota
+    diz que falta".
+    """
+    return _num(dados.get("aliquota_iss_pct") or dados.get("aliquota_iss"))
+
 
 def _num(v):
     from decimal import Decimal, InvalidOperation

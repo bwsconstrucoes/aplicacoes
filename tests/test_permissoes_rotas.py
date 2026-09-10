@@ -262,7 +262,9 @@ def test_quem_tem_alcada_passa_pelo_guard(app, monkeypatch):
     ("/erp/api/conciliacao/manual", "post"),
     ("/erp/api/obras/1/fase", "post"),
     ("/erp/api/config/categoria", "post"),
-    ("/erp/api/config/obra", "post"),
+    ("/erp/api/obras/nova", "post"),
+    ("/erp/api/obras/documento", "post"),
+    ("/erp/api/obras/documento/ler", "post"),
     ("/erp/api/config/depara/definir", "post"),
 ])
 def test_administrativo_de_obra_nao_executa_acao_de_alcada(app, monkeypatch,

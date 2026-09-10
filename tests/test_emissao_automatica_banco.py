@@ -99,7 +99,7 @@ def cenario(sessao_real, monkeypatch):
     obra = Obra(codigo="CRECHE02", nome="Creche Bloco 02",
                 objeto="CONSTRUCAO DE CRECHES", contrato="268/2025",
                 cno="90.025.25410/76", codigo_ibge="2601607",
-                aliquota_iss=Decimal("5.00"), iss_retido=True,
+                aliquota_iss_pct=Decimal("5.0000"), iss_retido=True,
                 inss_retido=True, pct_servico_inss=Decimal("50"))
     cat = Categoria(codigo="1.1.01", descricao="Receita de obra")
     s.add_all([admin, empresa, cliente, obra, cat])
