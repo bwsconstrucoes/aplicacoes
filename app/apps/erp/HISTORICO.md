@@ -17,8 +17,21 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
-**Estado em 10/09/2026:** `main` publicada e **banco atualizado até a migração
-054** — o dono apertou "Aplicar atualizações do banco" no mesmo momento da
+**Estado em 10/09/2026 (fim da tarde):** `main` publicada em `da2b1b0`, com
+três entregas: a denúncia de campo de anexo desconhecido na importação do
+Pipefy, a **obra que nasce do documento** (com um lugar só para cadastrar obra)
+e as **seis correções do primeiro uso de verdade** (filtro de obras, conta
+bancária com Pix e lista de bancos, zerar obras, contas do operador, perfis
+pré-configurados, arrastar documento no Arquivo). **Esta publicação NÃO tem
+migração** — a última continua sendo a 057. Suíte: **3.671 casos** com banco de
+verdade. Nada pendente no ramo `claude/oi-vjvrn8`.
+
+⚠️ **Confirmar com o dono se as migrações 055, 056 e 057 já foram aplicadas**
+pelo botão "Aplicar atualizações do banco" — foram pedidas na publicação
+anterior e não houve confirmação.
+
+**Estado anterior, em 10/09/2026 (manhã):** `main` publicada e **banco
+atualizado até a migração 054** — o dono apertou "Aplicar atualizações do banco" no mesmo momento da
 junção. Nesta publicação foram quatro entregas: as listas com "carregar mais"
 (solicitações), a **tela de saúde do sistema** (054), a **ficha do título em
 card** com o encadeamento entre telas, e a **leitura do documento por IA no
