@@ -18,6 +18,7 @@
      verdade, sem `data-ir`: o alternador de seções só mexe no que tem essa
      marca. #}
   <a class="subaba" href="{{ url_for('erp.pagina_empresas') }}">Empresas</a>
+  <a class="subaba" href="#documentos" data-ir="documentos">Tipos de documento</a>
   <a class="subaba" href="#ia" data-ir="ia">Consumo de IA</a>
   <a class="subaba" href="#anexos" data-ir="anexos">Onde ficam os documentos</a>
   <a class="subaba" href="#indices" data-ir="indices">Índices (INCC)</a>
@@ -49,6 +50,18 @@
     <button class="btn secundario" id="btn-nova-cat">+ Nova categoria</button>
     <button class="btn amarelo" id="btn-instalar-plano">Instalar plano padrão BWS</button>
   </div>
+  {# Conta sem grupo aparecia calada num "Sem grupo" no alto da lista — o dono
+     cadastrou uma dentro de Custos de obra e foi procurá-la lá dentro. Agora a
+     tela DIZ que tem conta fora de lugar, e oferece o conserto. #}
+  <div class="aviso alerta oculto" id="aviso-sem-grupo" style="margin-bottom:10px">
+    <b><span id="qtd-sem-grupo">0</span> conta(s) sem grupo.</b> Elas aparecem
+    aqui em cima, em "Sem grupo", e ficam de fora dos totais por grupo no
+    relatório. Foram criadas antes da correção — dá para pôr cada uma no lugar
+    pelo código dela (3.1.97 vai para <b>3 · Custos de obra</b>).
+    <div style="margin-top:8px">
+      <button class="btn secundario" id="btn-ajeitar-grupo">Pôr no grupo certo</button>
+    </div>
+  </div>
   <div id="lista-grupos"></div>
   <div class="vazio oculto" id="vazio-cat"><b>Plano financeiro vazio</b>
     Importe a proposta pela aba <a href="/erp/importar">Importar</a> ou cadastre categoria por categoria.</div>
@@ -78,6 +91,37 @@
     Ficou um só.</div>
   <div style="margin-top:12px">
     <a class="btn secundario" href="/erp/obras">Ir para o painel de Obras</a></div>
+</div>
+
+{# O CATÁLOGO DE TIPOS DE DOCUMENTO. Fica aqui porque é instalação de uma vez
+   só, como o plano de contas — e porque, quando falta, quem vê o aviso é quem
+   está no Arquivo, que pode não ser quem tem permissão de instalar. #}
+<div class="cartao" data-secao="documentos">
+  <div class="cartao-cab"><h3>Catálogos que se instalam uma vez</h3>
+    <small>os tipos de documento do Arquivo e os tipos de medição do contrato</small></div>
+  <h4 style="margin-top:0">Tipos de documento</h4>
+  <div id="cat-doc-estado" class="cartao-dica">carregando…</div>
+  <div style="margin-top:12px">
+    <button class="btn amarelo" id="btn-instalar-tipos">Instalar / atualizar o catálogo</button>
+  </div>
+  <div class="cartao-dica">Instala junto os <b>conjuntos prontos</b> — a
+    documentação fiscal da medição, a habilitação da empresa, o dossiê da obra —
+    que são o que a tela do Arquivo baixa em pasta compactada.</div>
+  <div class="cartao-dica">Cria os tipos que faltam e ajeita o nome dos que
+    ninguém personalizou. <b>Nunca apaga</b>: tipo que sai deixaria documento
+    órfão. Tipo que não serve mais se <b>desativa</b> na tela do Arquivo — some
+    das listas e continua explicando o que já foi guardado.</div>
+  <div id="cat-doc-msg"></div>
+
+  <h4 style="margin-top:18px">Tipos de medição</h4>
+  <div id="cat-med-estado" class="cartao-dica">carregando…</div>
+  <div style="margin-top:10px">
+    <button class="btn secundario" id="btn-instalar-medicoes">Instalar / atualizar os tipos de medição</button>
+  </div>
+  <div class="cartao-dica">São os tipos que classificam a medição do contrato
+    (medição normal, reajuste, aditivo, reequilíbrio). Sem eles a tela de
+    Contratos e medições fica sem a lista.</div>
+  <div id="cat-med-msg"></div>
 </div>
 
 <div class="cartao" data-secao="contas">
@@ -822,6 +866,10 @@ async function carregar(){
 }
 
 function desenhar(){
+  const semGrupo = DADOS.categorias.filter(c => !c.grupo_codigo || c.grupo_codigo === "0");
+  els("aviso-sem-grupo").classList.toggle("oculto", !semGrupo.length);
+  els("qtd-sem-grupo").textContent = semGrupo.length;
+
   const fc = (els("busca-cat").value||"").toLowerCase();
   const verInativas = els("ver-inativas").checked;
   const cats = DADOS.categorias.filter(c =>
@@ -1048,6 +1096,20 @@ els("btn-instalar-depara").addEventListener("click", async () => {
     carregarDepara();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
   b.disabled = false; b.textContent = "Instalar traduções padrão";
+});
+els("btn-ajeitar-grupo").addEventListener("click", async () => {
+  const b = els("btn-ajeitar-grupo");
+  b.disabled = true; b.textContent = "Ajeitando…";
+  try {
+    const d = await api("/erp/api/config/categorias/ajeitar", {method: "POST"});
+    const r = d.resultado;
+    aviso("mensagem", r.quantidade
+      ? `${r.quantidade} conta(s) posta(s) no lugar: `
+        + r.ajeitadas.map(x => `${escapar(x.codigo)} → ${escapar(x.grupo)}`).join("; ") + "."
+      : "Nenhuma conta precisava de ajeite.", "ok");
+    await carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Pôr no grupo certo";
 });
 els("busca-cat").addEventListener("input", desenhar);
 els("ver-inativas").addEventListener("change", desenhar);
@@ -1392,6 +1454,69 @@ carregarIA();
 carregarAnexos();
 carregarContasPix();
 carregarBancos();
+
+// ---- O catálogo de tipos de documento
+async function carregarTiposDeDocumento(){
+  try {
+    const [d, b] = await Promise.all([
+      api("/erp/api/arquivo/tipos"),
+      api("/erp/api/arquivo/blocos").catch(() => ({blocos: []}))]);
+    const tipos = d.tipos || [], conjuntos = b.blocos || [];
+    els("cat-doc-estado").innerHTML = tipos.length
+      ? `<b>${tipos.length} tipo(s)</b> no catálogo e
+         <b>${conjuntos.length} conjunto(s)</b> prontos — o Arquivo está pronto para uso.`
+      : `<b style="color:var(--vermelho)">O catálogo está vazio.</b> Enquanto
+         estiver assim, ninguém consegue arquivar documento nem usar a leitura
+         automática: instale abaixo.`;
+  } catch(e){ els("cat-doc-estado").textContent = "não consegui conferir: " + e.message; }
+}
+
+els("btn-instalar-tipos").addEventListener("click", async () => {
+  const b = els("btn-instalar-tipos");
+  b.disabled = true; b.textContent = "Instalando…";
+  try {
+    const d = await api("/erp/api/arquivo/tipos/aplicar", {method: "POST"});
+    // Os conjuntos prontos apontam para TIPOS: instalar um sem o outro deixa a
+    // tela do Arquivo pela metade, então os dois andam juntos.
+    let conj = "";
+    try {
+      const c = await api("/erp/api/arquivo/blocos/aplicar", {method: "POST"});
+      conj = ` E ${c.dados.criados} conjunto(s) pronto(s) instalado(s).`;
+    } catch(err){ conj = ` (não consegui instalar os conjuntos: ${err.message})`; }
+    aviso("cat-doc-msg", `${d.dados.criados} tipo(s) criado(s) e `
+      + `${d.dados.atualizados} ajustado(s). Catálogo com ${d.dados.total} tipos.`
+      + escapar(conj), "ok");
+    carregarTiposDeDocumento();
+  } catch(e){ aviso("cat-doc-msg", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Instalar / atualizar o catálogo";
+});
+carregarTiposDeDocumento();
+
+// ---- Tipos de medição: mesma história, outro catálogo. A rota existia desde
+// que a medição foi feita e NENHUMA tela a chamava — foi o mesmo defeito que
+// deixou o Arquivo travado, achado na mesma varredura de 10/09/2026.
+async function carregarTiposDeMedicao(){
+  try {
+    const d = await api("/erp/api/medicoes/tipos");
+    const tipos = d.tipos || [];
+    els("cat-med-estado").innerHTML = tipos.length
+      ? `<b>${tipos.length} tipo(s)</b> de medição cadastrados.`
+      : `<b style="color:var(--vermelho)">Nenhum tipo de medição.</b> A tela de
+         Contratos e medições fica sem a lista até instalar.`;
+  } catch(e){ els("cat-med-estado").textContent = "não consegui conferir: " + e.message; }
+}
+
+els("btn-instalar-medicoes").addEventListener("click", async () => {
+  const b = els("btn-instalar-medicoes");
+  b.disabled = true; b.textContent = "Instalando…";
+  try {
+    const d = await api("/erp/api/medicoes/tipos/aplicar", {method: "POST"});
+    aviso("cat-med-msg", `${d.dados.criados || 0} tipo(s) de medição instalado(s).`, "ok");
+    carregarTiposDeMedicao();
+  } catch(e){ aviso("cat-med-msg", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Instalar / atualizar os tipos de medição";
+});
+carregarTiposDeMedicao();
 
 // --------------------------------------------------------------- índices
 // O INCC-DI é a série 192 do SGS do Banco Central — pública, sem chave. A

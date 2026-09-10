@@ -2415,6 +2415,27 @@ def api_nova_categoria():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/config/categorias/ajeitar", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_ajeitar_categorias():
+    """Põe no grupo certo as contas que nasceram sem grupo. Deduz pelo código."""
+    from app.apps.erp.core.cadastros import categorias as svc_cat
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            r = svc_cat.ajeitar_sem_grupo(s, usuario)
+            s.commit()
+        return jsonify({"ok": True, "resultado": r})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except Exception as e:
+        logger.exception("ERP: falha ao ajeitar as contas sem grupo")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/config/conta", methods=["POST"])
 @login_obrigatorio
 @permissao("configurar")

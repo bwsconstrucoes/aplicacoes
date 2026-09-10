@@ -2582,6 +2582,89 @@ como BOLETO.
 
 **Esta entrega não tem migração.**
 
+### O catálogo que não tinha como ser instalado — 10/09/2026 (noite)
+
+O dono abriu o Arquivo em produção pela primeira vez e leu:
+
+> *"O catálogo de tipos de documento está vazio — instale o catálogo antes de
+> usar a leitura automática."*
+
+A mensagem estava certa. **O problema é que não havia como instalar.** A rota
+`POST /erp/api/arquivo/tipos/aplicar` existia desde que o Arquivo foi feito, e
+**nenhuma tela a chamava**. O Arquivo inteiro ficava inútil, pedindo uma coisa
+que ninguém tinha como fazer sem mexer no banco por fora.
+
+A varredura achou mais duas do mesmo tipo:
+
+- `/erp/api/arquivo/blocos/aplicar` — os conjuntos prontos (documentação fiscal
+  da medição, habilitação, dossiê da obra). Sem eles, "Baixar um conjunto" fica
+  vazio.
+- `/erp/api/medicoes/tipos/aplicar` — os tipos que classificam a medição do
+  contrato. Sem eles, a tela de Contratos e medições fica sem a lista.
+
+**O que passou a existir:**
+
+1. **Na tela do Arquivo**, um cartão em cima de tudo quando o catálogo está
+   vazio, com o botão junto — e, para quem não pode instalar, a frase que diz a
+   quem pedir. Instalar traz o catálogo E os conjuntos prontos: um sem o outro
+   deixaria a tela pela metade, porque o conjunto aponta para os tipos.
+2. **Em Configurações**, uma seção "Catálogos que se instalam uma vez", com os
+   dois catálogos, o estado de cada um e os botões. Fica achável depois — é
+   também por onde se atualiza quando uma versão nova traz tipo novo.
+
+⚠️ **E um teste que impede a volta:** `tests/test_botao_de_instalacao_existe.py`
+percorre as rotas `*/aplicar` do ERP e exige que cada uma apareça em alguma
+tela. É a mesma família do teste que já existia pelo outro lado (a tela pedir
+endereço que o servidor tem); faltava este sentido. Ele foi verificado
+falhando: com o botão dos tipos de medição escondido, acusa o nome da rota.
+
+**Provado no navegador, com o catálogo apagado de propósito num banco
+descartável:** o aviso aparece, o botão instala 59 tipos e 5 conjuntos, o aviso
+some, o filtro de tipos e a lista de conjuntos se enchem, e Configurações passa
+a dizer "59 tipos e 5 conjuntos prontos".
+
+**Para o dono, em produção: é apertar o botão uma vez.** Arquivo › o cartão
+amarelo em cima, ou Administração › Configurações › Tipos de documento.
+
+### A conta do plano que nascia sem grupo — 10/09/2026 (noite)
+
+*"Cadastrei a categoria do plano financeiro dentro de custo de obra e ela não
+aparece. Mas ele cadastrou, porque acusa que aquela numeração está sendo
+utilizada. Então é erro de visualização."*
+
+O diagnóstico dele estava certo, e a causa é esta: o plano da BWS tem **três
+níveis** — "3.1.01" é a conta 01 do subgrupo 3.1 (Materiais aplicados), dentro
+do grupo 3 (Custos de obra) —, e o cadastro pela tela **não preenchia grupo nem
+subgrupo**. A conta ficava gravada com grupo vazio.
+
+Efeito: a tela mostra por grupo, e a API traduz grupo vazio para "Sem grupo".
+A conta ia parar num bloco "Sem grupo" no ALTO da lista — longe de "Custos de
+obra", que é onde quem a criou foi procurar. E nos relatórios ela ficava fora
+dos totais por grupo, que é o estrago silencioso.
+
+**O conserto tem três partes:**
+
+1. **A conta nova deduz o lugar pelo próprio código.** "3.1.97" entra no grupo
+   3 e no subgrupo 3.1. Os NOMES saem de uma conta irmã — senão a conta nova
+   entraria com rótulo diferente do das vizinhas, que é outro jeito de parecer
+   sumida. Sem irmã, fica o código como nome: feio, mas visível e corrigível.
+2. **Código sem ponto não deduz nada.** Chutar o código inteiro como grupo
+   criaria um grupo de uma conta só — pior que deixar em branco, porque parece
+   certo.
+3. **As que já nasceram tortas têm conserto.** A tela agora DIZ quantas contas
+   estão sem grupo e oferece o botão "Pôr no grupo certo", que deduz pelo
+   código e relata uma a uma. Não encosta em conta que já está no lugar.
+
+Junto veio uma correção pequena e importante: conta feita à mão nasce
+**personalizada**, então "Instalar plano padrão" não reescreve a descrição que
+o dono escolheu.
+
+**Provado:** `tests/test_categoria_no_grupo.py`, 9 casos com banco de verdade
+(precisa ser banco: tudo aqui depende de `WHERE` — achar a irmã, achar a maior
+ordem do subgrupo, recusar código repetido). E no navegador: o aviso apareceu
+com a conta órfã, o botão a pôs em "3 · Custos de obra", e uma conta nova
+cadastrada em seguida já nasceu no grupo certo, na ordem certa.
+
 ### O que está pendente AGORA
 
 1. **RESOLVIDO em 08/09/2026 — `ERP_CHAVE_SEGREDOS` está definida no Render.**
