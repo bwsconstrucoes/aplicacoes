@@ -812,19 +812,35 @@ gasto ${moeda(p.gasto)}${p.locado_periodo?` · locado ${moeda(p.locado_periodo)}
 // ---------------------------------------------------------------------------
 let NOVA_DOC = null;          // a leitura conferida, esperando confirmação
 
-const CAMPOS_NOVA_OBRA = [
-  {id:"codigo", rot:"Código *", dica:"ESCPE18"},
-  {id:"nome", rot:"Nome *", largo:true},
-  {id:"cliente", rot:"Contratante"},
-  {id:"cnpj_cliente", rot:"CNPJ do contratante"},
-  {id:"contrato", rot:"Nº do contrato"},
-  {id:"objeto", rot:"Objeto", largo:true},
-  {id:"municipio", rot:"Município"},
-  {id:"uf", rot:"UF", tam:2},
-  {id:"cno", rot:"Matrícula CNO"},
-  {id:"valor_contrato", rot:"Valor do contrato"},
-  {id:"aliquota_iss_pct", rot:"Alíquota de ISS (%)"},
+// O formulário à mão, em três blocos. Em bloco porque quinze campos numa
+// grade lisa viram parede — e porque o dono estranhou, com razão, não achar o
+// ENDEREÇO: *"é um campo importantíssimo"*. Ele não estava faltando, estava
+// só na ficha da obra; agora está nos dois lugares.
+const BLOCOS_NOVA_OBRA = [
+  ["Identificação", [
+    {id:"codigo", rot:"Código *", dica:"ESCPE18"},
+    {id:"nome", rot:"Nome *", largo:true},
+    {id:"cliente", rot:"Contratante"},
+    {id:"cnpj_cliente", rot:"CNPJ do contratante"},
+    {id:"contrato", rot:"Nº do contrato"},
+    {id:"objeto", rot:"Objeto", largo:true},
+  ]],
+  ["Onde é a obra", [
+    {id:"cep", rot:"CEP", dica:"60000-000"},
+    {id:"endereco", rot:"Logradouro", largo:true},
+    {id:"numero_endereco", rot:"Número"},
+    {id:"bairro", rot:"Bairro"},
+    {id:"municipio", rot:"Município"},
+    {id:"uf", rot:"UF", tam:2},
+  ]],
+  ["Obra e fiscal", [
+    {id:"cno", rot:"Matrícula CNO"},
+    {id:"valor_contrato", rot:"Valor do contrato"},
+    {id:"aliquota_iss_pct", rot:"Alíquota de ISS (%)"},
+  ]],
 ];
+
+const CAMPOS_NOVA_OBRA = BLOCOS_NOVA_OBRA.flatMap(([, campos]) => campos);
 
 function codigosRecentes(){
   return OBRAS.slice().sort((a,b)=>b.id-a.id).slice(0,4).map(o=>o.codigo);
@@ -853,15 +869,20 @@ function modoNovaObra(modo){
   const alvo = els("nova-corpo");
   if (modo === "mao") {
     alvo.innerHTML = `
-      <div class="form-grade">
-        ${CAMPOS_NOVA_OBRA.map(c=>`
-          <div class="campo" ${c.largo?'style="grid-column:span 2"':""}>
-            <label>${c.rot}</label>
-            <input id="n-${c.id}" ${c.dica?`placeholder="${c.dica}"`:""}
-              ${c.tam?`maxlength="${c.tam}"`:""}></div>`).join("")}
-      </div>
-      <div class="cartao-dica">Código e nome bastam para criar. O resto — vigência,
-        tributação, ART, aditivos — se completa abrindo a obra depois.
+      ${BLOCOS_NOVA_OBRA.map(([titulo, campos], i) => `
+        <h4 ${i ? 'style="margin-top:14px"' : 'style="margin-top:0"'}>${titulo}</h4>
+        <div class="form-grade">
+          ${campos.map(c=>`
+            <div class="campo" ${c.largo?'style="grid-column:span 2"':""}>
+              <label>${c.rot}</label>
+              <input id="n-${c.id}" ${c.dica?`placeholder="${c.dica}"`:""}
+                ${c.tam?`maxlength="${c.tam}"`:""}></div>`).join("")}
+        </div>`).join("")}
+      <div class="cartao-dica">Só o <b>código</b> e o <b>nome</b> são obrigatórios;
+        o resto pode entrar agora ou depois. O que não cabe aqui — vigência,
+        data-base, índice de reajuste, ART, responsável técnico, seguro,
+        retenção, aditivos e a tributação inteira — fica na ficha da obra, que
+        abre logo depois de criar.
         ${codigosRecentes().length
           ? `<br>Últimos códigos usados: <b class="mono">${escapar(codigosRecentes().join(", "))}</b>.` : ""}</div>
       <div style="margin-top:14px"><button class="btn" id="n-salvar" type="button">Criar obra</button></div>`;

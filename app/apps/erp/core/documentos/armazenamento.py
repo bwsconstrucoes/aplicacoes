@@ -39,8 +39,12 @@ QUALIDADE = 82
 ALVO_PDF_BYTES = 900 * 1024              # acima disso, tenta rasterizar
 DPI_RASTER = 150
 
-CATEGORIAS = ("COMPROVANTE", "NOTA", "CONTRATO", "ART", "SEGURO", "OS",
-              "PRESTACAO_CONTAS", "MEDICAO", "PROPOSTA", "OUTRO")
+# BOLETO e GUIA entraram em 10/09/2026, quando o lançamento passou a aceitar
+# vários documentos: o par nota + boleto é o caso mais comum de todos, e sem a
+# categoria os dois ficavam como "outro" — o que apaga justamente a diferença
+# que interessa na hora de procurar.
+CATEGORIAS = ("COMPROVANTE", "NOTA", "BOLETO", "GUIA", "CONTRATO", "ART",
+              "SEGURO", "OS", "PRESTACAO_CONTAS", "MEDICAO", "PROPOSTA", "OUTRO")
 
 _MIMES = {
     ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",

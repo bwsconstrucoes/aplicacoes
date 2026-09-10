@@ -49,6 +49,24 @@
 
 {% block conteudo %}
 <div id="mensagem"></div>
+
+{# O CATÁLOGO VAZIO TRAVA A TELA INTEIRA, e até 10/09/2026 não havia como
+   destravá-la: a mensagem mandava "instale o catálogo" e não existia botão
+   nenhum em lugar nenhum — a rota existia, mas nenhuma tela a chamava. O dono
+   esbarrou nisso na primeira vez que abriu o Arquivo em produção. #}
+<div class="cartao oculto" id="cartao-catalogo"
+     style="border-left:4px solid var(--amarelo)">
+  <div class="cartao-cab"><h3>O catálogo de tipos ainda não foi instalado</h3>
+    <small>sem ele não dá para arquivar nem para o sistema ler documento</small></div>
+  <div class="cartao-dica">O catálogo é a lista dos tipos de documento que a BWS
+    usa — certidões, contrato, ART, folha, ASO, apólice — com o que cada um
+    significa: se vence, com quantos dias avisar, de quem costuma ser e quem
+    pode ver. É <b>uma instalação só</b>, e ela <b>nunca apaga nada</b>: cria o
+    que falta e deixa como está o que você já tiver personalizado.</div>
+  <div id="cat-acao" style="margin-top:12px"></div>
+  <div id="cat-msg"></div>
+</div>
+
 <div class="kpis" id="kpis"></div>
 
 {# OS BLOCOS. O que sempre é pedido junto: a documentação fiscal da medição, a
@@ -141,6 +159,7 @@
 {% block scripts %}
 <script>
 const PODE_ARQUIVAR = {{ 'true' if pode.arquivar else 'false' }};
+const PODE_CONFIGURAR = {{ 'true' if pode.configurar else 'false' }};
 let TIPOS = [], GRUPOS = {}, DOCS = [], RESUMO = {}, EMPRESAS = [], OBRAS = [], BLOCOS = [];
 // Donos que só existem por causa do arquivo: colaborador e fornecedor. Vêm de
 // um endereço próprio porque quem arquiva não necessariamente pode abrir as
@@ -169,6 +188,7 @@ async function carregarListas(){
     els("f-grupo").innerHTML = `<option value="">Todos</option>` +
       Object.entries(GRUPOS).map(([k,v]) => `<option value="${k}">${v}</option>`).join("");
     montarTipos();
+    mostrarAvisoDoCatalogo();
   } catch(e){ aviso("mensagem", "Não consegui carregar os tipos: " + e.message, "erro"); }
 
   try {
@@ -192,6 +212,35 @@ async function carregarListas(){
     els("f-obra").innerHTML = `<option value="">Todas</option>` + OBRAS.map(o =>
       `<option value="${o.id}">${rotuloObra(o)}</option>`).join("");
   } catch(e){ els("f-obra").innerHTML = `<option value="">(não carregou)</option>`; }
+}
+
+// Sem catálogo, a tela não serve para nada — então o aviso vem por cima de
+// tudo, e com o botão junto para quem pode apertar.
+function mostrarAvisoDoCatalogo(){
+  const vazio = !TIPOS.length;
+  els("cartao-catalogo").classList.toggle("oculto", !vazio);
+  if (!vazio) return;
+  els("cat-acao").innerHTML = PODE_CONFIGURAR
+    ? `<button class="btn amarelo" id="btn-instalar-catalogo">Instalar o catálogo de tipos</button>`
+    : `<div class="aviso info" style="margin:0">Quem instala é um administrador,
+        em <b>Administração › Configurações</b>. Peça a ele.</div>`;
+  const b = els("btn-instalar-catalogo");
+  if (b) b.addEventListener("click", async () => {
+    b.disabled = true; b.textContent = "Instalando…";
+    try {
+      const d = await api("/erp/api/arquivo/tipos/aplicar", {method: "POST"});
+      // Os conjuntos prontos apontam para os tipos: instalar um sem o outro
+      // deixaria "Baixar um conjunto" vazio logo em seguida.
+      try { await api("/erp/api/arquivo/blocos/aplicar", {method: "POST"}); }
+      catch(err){ /* o catálogo já entrou; o conjunto se instala nas Configurações */ }
+      aviso("cat-msg", `${d.dados.criados} tipo(s) instalado(s). `
+        + `Agora dá para arquivar e para o sistema ler documento.`, "ok");
+      await carregarListas();
+      await carregarBlocos();     // os conjuntos prontos entraram agora também
+      carregar();
+    } catch(e){ aviso("cat-msg", e.message, "erro"); }
+    b.disabled = false; b.textContent = "Instalar o catálogo de tipos";
+  });
 }
 
 function montarTipos(){

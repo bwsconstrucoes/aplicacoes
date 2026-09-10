@@ -322,3 +322,75 @@ def test_quem_nao_administra_insumos_nao_carrega_nem_cadastra(monkeypatch):
     assert c.post("/erp/api/suprimentos/condicoes", json={}).status_code == 403
     assert c.get("/erp/api/suprimentos/cadastros").status_code != 403, (
         "ver os cadastros é de quem pede material também")
+
+
+# ---------------------------------------------------------------------------
+# CRIAR AS CATEGORIAS DE INSUMO NA CARGA — pedido do dono em 10/09/2026
+#
+# *"Tanto insumos quanto a categoria de insumo eu quero importar do cadastro
+# que a gente já tem."*
+#
+# A chave nasce DESLIGADA e continua sendo decisão de quem importa: inventar
+# categoria na carga é como a base começa a apodrecer. O que se prova aqui é
+# que o padrão não mudou, que a chave faz o que promete, e que a prévia não
+# grava.
+# ---------------------------------------------------------------------------
+def test_por_padrao_a_categoria_nova_continua_so_sendo_relatada(sessao_insumos, admin):
+    conteudo = _csv_insumos("Cimento CP-II,Aglomerantes,,SC")
+
+    rel = importar_insumos_csv(sessao_insumos, conteudo, admin)
+
+    assert rel["categorias_nao_encontradas"] == ["Aglomerantes"]
+    assert rel["categorias_criadas"] == []
+    assert not [o for o in sessao_insumos.adicionados
+                if isinstance(o, InsumoCategoria)]
+    insumo = next(o for o in sessao_insumos.adicionados if isinstance(o, Insumo))
+    assert insumo.categoria_insumo_id is None, "insumo entra, mas sem categoria"
+
+
+def test_com_a_chave_ligada_a_categoria_nasce_e_e_relatada(sessao_insumos, admin):
+    conteudo = _csv_insumos("Cimento CP-II,Aglomerantes,,SC")
+
+    rel = importar_insumos_csv(sessao_insumos, conteudo, admin, criar_categorias=True)
+
+    assert rel["categorias_criadas"] == ["Aglomerantes"]
+    assert rel["categorias_nao_encontradas"] == []
+    nova = next(o for o in sessao_insumos.adicionados
+                if isinstance(o, InsumoCategoria))
+    assert nova.nome == "Aglomerantes"
+
+
+def test_o_mesmo_nome_escrito_de_dois_jeitos_vira_uma_categoria_so(sessao_insumos, admin):
+    """"Aglomerantes" e "AGLOMERANTES" na mesma planilha não podem virar duas —
+    separar depois é trabalho manual."""
+    conteudo = _csv_insumos("Cimento CP-II,Aglomerantes,,SC",
+                            "Cal hidratada,AGLOMERANTES,,SC",
+                            "Argamassa,aglomerantes ,,SC")
+
+    rel = importar_insumos_csv(sessao_insumos, conteudo, admin, criar_categorias=True)
+
+    assert len(rel["categorias_criadas"]) == 1
+    assert len([o for o in sessao_insumos.adicionados
+                if isinstance(o, InsumoCategoria)]) == 1
+
+
+def test_categoria_que_ja_existe_nao_e_recriada(sessao_insumos, admin):
+    conteudo = _csv_insumos("Pó de Pedra,Agregados,,M3")
+
+    rel = importar_insumos_csv(sessao_insumos, conteudo, admin, criar_categorias=True)
+
+    assert rel["categorias_criadas"] == []
+    assert not [o for o in sessao_insumos.adicionados
+                if isinstance(o, InsumoCategoria)]
+
+
+def test_a_previa_diz_o_que_criaria_sem_criar(sessao_insumos, admin):
+    conteudo = _csv_insumos("Cimento CP-II,Aglomerantes,,SC")
+
+    rel = importar_insumos_csv(sessao_insumos, conteudo, admin,
+                               simular=True, criar_categorias=True)
+
+    assert rel["categorias_criadas"] == ["Aglomerantes"]
+    assert rel["simulacao"] is True
+    assert not [o for o in sessao_insumos.adicionados
+                if isinstance(o, InsumoCategoria)], "prévia não grava"

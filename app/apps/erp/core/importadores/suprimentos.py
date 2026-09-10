@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 
 from app.apps.erp.core.cadastros import fornecedores as svc_forn
 from app.apps.erp.core.cadastros.validadores import somente_digitos
-from app.apps.erp.core.comum.auditoria import ErroValidacao
+from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
 from app.apps.erp.core.importadores.planilhas import _ler_csv
 from app.apps.erp.db.models.cadastros import (
     Categoria, Fornecedor, FornecedorCategoria, FornecedorContato,
@@ -187,11 +187,24 @@ def _garantir_contato(s: Session, forn: Fornecedor, nome: str,
 # Insumos
 # ---------------------------------------------------------------------------
 def importar_insumos_csv(s: Session, conteudo: bytes, usuario: Optional[Usuario],
-                         simular: bool = False) -> dict[str, Any]:
+                         simular: bool = False,
+                         criar_categorias: bool = False) -> dict[str, Any]:
     """Insumos da planilha, com a categoria de suprimento e a conta do plano.
 
     A conta do plano é o que permite o pedido virar previsão de pagamento já
     apropriada — por isso insumo sem conta é aceito, mas contado e relatado.
+
+    `criar_categorias` liga a criação das categorias de insumo que a planilha
+    trouxer e o ERP ainda não tiver. Nasceu DESLIGADO de propósito: inventar
+    categoria na carga é como a base começa a apodrecer, e "AREIA", "Areia" e
+    "areia " viram três. O dono pediu a chave em 10/09/2026 — *"tanto insumos
+    quanto a categoria de insumo eu quero importar do cadastro que a gente já
+    tem"* —, e ela continua sendo uma DECISÃO dele, tomada na tela, marcação a
+    marcação: o relatório diz exatamente quais categorias nasceram.
+
+    Mesmo ligada, a comparação é sem acento e sem caixa (`_chave`), então a
+    planilha com "Areia" e "AREIA" na mesma coluna cria UMA categoria, não
+    duas.
     """
     linhas = _ler_csv(conteudo)
     categorias = {_chave(c.nome): c for c in s.scalars(select(InsumoCategoria)).all()}
@@ -201,6 +214,7 @@ def importar_insumos_csv(s: Session, conteudo: bytes, usuario: Optional[Usuario]
     proximo = _proximo_codigo(s)
     criados, atualizados, rejeitados = 0, 0, []
     sem_categoria, sem_conta = set(), 0
+    categorias_criadas: set[str] = set()
     for i, ln in enumerate(linhas, start=2):
         descricao = _campo(ln, "insumos", "descrição do insumo", "descricao do insumo",
                            "insumo", "descrição", "descricao")
@@ -211,7 +225,16 @@ def importar_insumos_csv(s: Session, conteudo: bytes, usuario: Optional[Usuario]
                             "conta do plano")
         cat = categorias.get(_chave(nome_cat)) if nome_cat else None
         if nome_cat and cat is None:
-            sem_categoria.add(nome_cat)
+            if criar_categorias:
+                nova = InsumoCategoria(nome=nome_cat.strip())
+                if not simular:
+                    s.add(nova)
+                    s.flush()
+                    categorias[_chave(nome_cat)] = nova
+                    cat = nova
+                categorias_criadas.add(nome_cat.strip())
+            else:
+                sem_categoria.add(nome_cat)
         conta = contas.get(_chave(nome_conta)) if nome_conta else None
         if conta is None:
             sem_conta += 1
@@ -238,9 +261,14 @@ def importar_insumos_csv(s: Session, conteudo: bytes, usuario: Optional[Usuario]
             insumo.unidade = unidade.upper()
         s.flush()
 
+    if categorias_criadas and not simular:
+        registrar_evento(s, "insumo_categoria", 0, "CRIADAS_POR_IMPORTACAO",
+                         {"nomes": sorted(categorias_criadas)},
+                         usuario.id if usuario else None)
     return {"no_arquivo": len(linhas), "criados": criados, "atualizados": atualizados,
             "rejeitados": rejeitados, "sem_conta_do_plano": sem_conta,
-            "categorias_nao_encontradas": sorted(sem_categoria), "simulacao": simular}
+            "categorias_nao_encontradas": sorted(sem_categoria),
+            "categorias_criadas": sorted(categorias_criadas), "simulacao": simular}
 
 
 def _proximo_codigo(s: Session) -> int:
