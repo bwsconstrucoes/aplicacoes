@@ -456,10 +456,15 @@ por obra/autoria é um `WHERE`. Por isso há uma segunda camada, marcada
 - `ERP_SECRET_KEY` — assinatura da sessão do login. Lida em `app/main.py`, com
   cascata `ERP_SECRET_KEY` → `SECRET_KEY` → literal de desenvolvimento
   (ver a pendência em §10).
-- `OPENAI_API_KEY` — leitura de documento por IA, sugestão de categoria e
-  leitura de contrato de locação.
+- `OPENAI_API_KEY` — leitura de documento por IA, sugestão de categoria,
+  leitura de contrato de locação e **a pergunta por voz** (11/09/2026).
+  **Está configurada em produção com esse nome** — confirmado em 11/09/2026
+  pelo painel de Consumo de IA, com chamadas reais cobradas.
 - `ERP_MODELO_IA` — modelo de texto (padrão `gpt-4o-mini`).
 - `ERP_MODELO_IA_VISAO` — modelo de visão, para foto e PDF ruim (padrão `gpt-4o`).
+- `ERP_MODELO_IA_AUDIO` — modelo de transcrição da pergunta falada (padrão
+  `gpt-4o-mini-transcribe`). Existe como variável justamente para poder ser
+  trocado sem publicar, caso a conta não alcance esse modelo.
 - `ERP_MODO_TRANSICAO` — **padrão ligado** ("1"). Desligar com "0"/"false".
 - `PIPEFY_API_TOKEN` / `PIPEFY_TOKEN` — importador de cards do Pipefy (o módulo
   aceita os dois nomes; o restante do monorepo usa `PIPEFY_API_TOKEN`).
@@ -735,6 +740,17 @@ Quando eu pedir nova feature ou adaptação:
 ## 9. Histórico de decisões arquiteturais
 
 > Lista para manter contexto de decisões já tomadas.
+
+- **2026-09-11 — Deste contêiner NÃO se enxerga a produção.** Eu afirmei, aqui
+  e ao dono, que a `OPENAI_API_KEY` não estava configurada em produção. O que
+  eu tinha verificado era outra coisa: que **ela não existe neste contêiner de
+  desenvolvimento**. Não há chave nenhuma nem `DATABASE_URL` de produção aqui —
+  é assim de propósito. **Ausência local não é prova de ausência no Render.**
+  Quando a pergunta for "isto está ligado em produção?", pergunte ao dono ou
+  olhe uma tela que leia o ambiente de lá (hoje: Configurações › Saúde do
+  sistema › "O que está ligado"); nunca conclua do que falta aqui. O mesmo vale
+  para qualquer afirmação sobre o estado do mundo lá fora — quanto tem no
+  banco, o que já foi aplicado, quem está cadastrado.
 
 - **2026-09-11 — Credencial com o nome trocado não dá erro, e por isso o ERP
   passou a MOSTRAR o nome que procura.** Configurações › Saúde do sistema ganhou

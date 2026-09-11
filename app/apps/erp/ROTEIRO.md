@@ -265,9 +265,10 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
         amarelo. Vale porque o documento está na mão de quem perguntou: dá
         para conferir olhando o papel. Nada é gravado; para arquivar, o
         caminho continua sendo o Arquivo.
-      ⚠️ **Falta a chave `OPENAI_API_KEY` em produção** para áudio e anexo
-      funcionarem. Sem ela os dois recusam com uma frase honesta e o resto da
-      tela continua igual.
+      ✔ A chave `OPENAI_API_KEY` **está configurada em produção** — áudio e
+      anexo funcionam assim que a publicação chega ao Render. (Eu tinha
+      afirmado o contrário, por confundir este contêiner de desenvolvimento
+      com o Render; ver `HISTORICO.md`.)
       ⚠️ **Aviso por notificação no celular ficou de fora** — exige chaves de
       push e um serviço a mais, e é decisão do dono. Hoje o aviso continua por
       e-mail e Telegram.

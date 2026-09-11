@@ -295,12 +295,16 @@ Duas coisas que a tela deixa explícitas, de propósito:
 - **O que a IA não conseguiu ler, ela declara** — e isso aparece, em vez de
   ficar escondido atrás de uma tabela com cara de completa.
 
-### O que ainda falta para os dois funcionarem
+### Os dois dependem da chave de IA — e ela está ligada
 
-A chave do serviço de IA (`OPENAI_API_KEY`) **não está configurada em
-produção**. Sem ela, falar e anexar recusam com uma frase que diz isso, e todo
-o resto da tela continua funcionando igual — as perguntas sobre o que já está
-no ERP não usam IA nenhuma.
+Falar e anexar são as duas únicas coisas desta tela que usam IA, e portanto as
+duas únicas que dependem da chave do serviço (`OPENAI_API_KEY`). **Ela está
+configurada em produção**, com esse nome, e aparece em Configurações › Saúde do
+sistema › "O que está ligado".
+
+Se um dia ela sair do ar, os dois botões recusam com uma frase dizendo isso, e
+**todo o resto da tela continua igual** — as perguntas sobre o que já está no
+ERP são respondidas por código escrito e testado, sem IA nenhuma e sem custo.
 
 ## 4. Como esta lista vira código
 

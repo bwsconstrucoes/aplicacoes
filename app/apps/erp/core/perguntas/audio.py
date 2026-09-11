@@ -127,7 +127,7 @@ def transcrever(conteudo: bytes, nome_arquivo: str, *,
     except Exception as e:
         logger.exception("ERP/áudio: falha ao transcrever")
         _registrar(duracao, _ms(inicio), usuario_id, sucesso=False, erro=str(e))
-        raise ErroAudio(f"Não consegui transcrever o áudio agora: {e}")
+        raise ErroAudio(_recado_da_falha(e))
 
     _registrar(duracao, _ms(inicio), usuario_id)
 
@@ -137,6 +137,34 @@ def transcrever(conteudo: bytes, nome_arquivo: str, *,
             "Não consegui entender o áudio. Fale um pouco mais perto do "
             "aparelho, ou escreva a pergunta.")
     return {"texto": texto, "modelo": MODELO, "segundos": duracao}
+
+
+def _recado_da_falha(e: Exception) -> str:
+    """Erro de serviço vira frase que diz O QUE FAZER.
+
+    Existe por um motivo concreto: **transcrever usa um modelo DIFERENTE** dos
+    que o resto do ERP usa para ler documento. A mesma chave pode alcançar o
+    `gpt-4o` e não alcançar o de áudio — e aí o recado cru ("model not found")
+    não diz a ninguém que a saída é trocar uma variável de ambiente.
+    """
+    bruto = str(e)
+    seco = bruto.lower()
+    if any(p in seco for p in ("model", "modelo", "not found", "does not exist",
+                               "404", "unsupported")):
+        return (f"O serviço não reconheceu o modelo de transcrição "
+                f"“{MODELO}”. A mesma chave que lê documento pode não alcançar "
+                f"o modelo de áudio. Troque a variável ERP_MODELO_IA_AUDIO no "
+                f"Render para “whisper-1”, que é o mais antigo e o mais aceito. "
+                f"(Recado do serviço: {bruto})")
+    if any(p in seco for p in ("quota", "insufficient", "billing", "429")):
+        return (f"O serviço recusou por limite da conta (saldo ou cota). "
+                f"Escreva a pergunta que eu respondo igual. "
+                f"(Recado do serviço: {bruto})")
+    if any(p in seco for p in ("api key", "unauthorized", "401", "invalid_api")):
+        return (f"A chave do serviço foi recusada. Confira em Configurações › "
+                f"Saúde do sistema › “O que está ligado”. "
+                f"(Recado do serviço: {bruto})")
+    return f"Não consegui transcrever o áudio agora: {bruto}"
 
 
 def _ms(inicio: float) -> int:
