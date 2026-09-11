@@ -139,9 +139,28 @@ obra e por autoria das telas, e cada resposta mostra de onde veio.
 - Quais notas emitidas ainda não foram recebidas, e há quantos dias?
 - Quanto de reajuste a obra X tem a receber? Quais medições entram na conta?
 - Quais contratos vencem nos próximos 60 dias?
-- Quais obras estão sem CNO, sem alíquota de ISS ou sem empresa ligada?
-  (a pergunta que acha cadastro pela metade antes de ele travar a emissão)
+- ✅ **Quais obras não emitem nota hoje por falta de cadastro?** — confere os
+  MESMOS quatro campos que a emissão exige (CNO, código IBGE, alíquota de ISS
+  e empresa) e diz, obra por obra, o que falta em cada uma. Acha o cadastro
+  pela metade antes de ele travar a emissão 🔒
+- ✅ **Qual seguro garantia está vencido ou perto de vencer?** — o prazo em
+  dias é seu (60 por padrão). Dias negativos são apólices que JÁ venceram.
+  Obra sem data preenchida **não aparece**, e a resposta avisa: não aparecer
+  não é o mesmo que estar em dia 🔒
+- ✅ **Qual obra aberta está com a vigência do contrato vencida?** — as que
+  precisam de aditivo de prazo ou de encerramento. "Aberta" aqui é a FASE
+  gravada no cadastro, e a resposta diz isso com todas as letras 🔒
 - Qual a margem da obra X? Como ela mudou nos últimos 3 meses? ⚠️
+
+> **Por que "quanto custou a obra tal" não está com ✅.** É a pergunta mais
+> óbvia deste assunto, e é justamente a que falta. "Custo da obra" ainda não
+> tem uma definição escolhida (§1): o que foi lançado? o que foi pago? entra o
+> que está em análise? entra rateio de administração? Cada leitura dá um
+> número diferente, **todos com cara de certo**. Responder hoje seria escolher
+> uma delas por você, em silêncio. A suíte tem um teste que recusa qualquer
+> pergunta do grupo de Obras que use as palavras "custo", "resultado",
+> "lucro", "margem" ou "gastou" — quem for construir esbarra nele e vem
+> combinar a palavra primeiro.
 
 ### Suprimentos
 

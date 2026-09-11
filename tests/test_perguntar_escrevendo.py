@@ -173,10 +173,36 @@ def test_a_frase_generica_demais_pergunta_de_volta():
 
 
 def test_uma_palavra_distintiva_ja_resolve():
-    """"vencido" só aparece numa pergunta — não há o que perguntar de volta."""
-    leitura = entender("o que está vencido", CATALOGO)
+    """Uma palavra que só aparece numa pergunta não deixa dúvida."""
+    leitura = entender("o que está sem documento anexado", CATALOGO)
     assert leitura["entendi"] is True
-    assert leitura["chave"] == "vencidos_sem_pagar"
+    assert leitura["chave"] == "sem_documento"
+
+
+def test_palavra_que_DEIXOU_de_ser_distintiva_passa_a_perguntar_de_volta():
+    """"vencido" era de uma pergunta só. Hoje é de três.
+
+    Até 11/09/2026 só o título vencia. Depois o grupo de Obras trouxe o seguro
+    garantia vencido e a vigência de contrato vencida — e "o que está vencido"
+    deixou de ter uma resposta só. O sistema NÃO foi ajustado para isso: ele
+    percebe o empate sozinho e devolve a pergunta.
+
+    É esse o comportamento que interessa guardar. O catálogo vai crescer, e
+    cada pergunta nova pode roubar a exclusividade de uma palavra de outra. Se
+    em vez de perguntar ele escolhesse a primeira, o dono receberia a lista de
+    apólices quando queria a de contas atrasadas — sem nada na tela avisando.
+    """
+    leitura = entender("o que está vencido", CATALOGO)
+    assert leitura["ambigua"] is True
+    oferecidas = {p["chave"] for p in leitura["parecidas"]}
+    assert "vencidos_sem_pagar" in oferecidas
+    assert "garantia_vencendo" in oferecidas
+
+    # E quem disser mais uma palavra é atendido na hora.
+    assert entender("o que está vencido e não foi pago",
+                    CATALOGO)["chave"] == "vencidos_sem_pagar"
+    assert entender("tem seguro garantia vencendo",
+                    CATALOGO)["chave"] == "garantia_vencendo"
 
 
 # ---------------------------------------------------------------------------

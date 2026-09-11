@@ -2148,6 +2148,48 @@ def api_perguntar_suprimentos():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/perguntas/obras")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_perguntas_obras():
+    from app.apps.erp.core.perguntas import catalogo
+    return jsonify({"ok": True, "perguntas": catalogo.para_a_tela("obras")})
+
+
+@bp.route("/erp/api/perguntar/obras", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_perguntar_obras():
+    """Grupo de obras: as conferências de cadastro, prazo e garantia.
+
+    Mesma ação do grupo financeiro (`ver_erp`) e mesmo recorte por obra
+    designada. O que separa os dois é o ASSUNTO, não a permissão.
+
+    Este grupo NÃO responde custo nem resultado de obra — essas palavras ainda
+    não têm uma definição combinada com o dono, e responder seria escolher uma
+    leitura por ele em silêncio.
+    """
+    from app.apps.erp.core.perguntas import catalogo
+    d = request.get_json(silent=True) or {}
+    chave = (d.get("chave") or "").strip()
+    if chave not in {p["chave"] for p in catalogo.do_grupo("obras")}:
+        raise ErroNaoEncontrado("Pergunta desconhecida neste grupo.")
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = catalogo.responder(chave, s, atual, d.get("parametros") or {})
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao responder a pergunta %s", chave)
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/perguntas/contratos")
 @login_obrigatorio
 @permissao("ver_contratos")
@@ -6554,18 +6596,9 @@ def api_operadores_contato():
 # ---------------------------------------------------------------------------
 # Gestão de obras
 # ---------------------------------------------------------------------------
-FASES_OBRA = [
-    ("CRIACAO", "Criação / cadastro"),
-    ("AGUARDANDO_OS", "Aguardando ordem de serviço"),
-    ("EM_EXECUCAO", "Em execução"),
-    ("PARALISADA", "Paralisada"),
-    ("CONCLUIDA", "Concluída"),
-    ("CONCLUIDA_COM_DIVIDA", "Concluída com dívida"),
-    ("RECEBIMENTO_PROVISORIO", "Recebimento provisório"),
-    ("RECEBIMENTO_DEFINITIVO", "Recebimento definitivo"),
-    ("ACERVO_TECNICO", "Acervo técnico"),
-    ("DISTRATADA", "Distratada"),
-]
+# A lista das fases mora em `core/cadastros/obras.py` — é vocabulário do
+# negócio, e tela, agenda e assistente têm de dizer a mesma coisa.
+from app.apps.erp.core.cadastros.obras import FASES_OBRA  # noqa: E402
 
 
 @bp.route("/erp/api/obras")
@@ -6574,7 +6607,9 @@ FASES_OBRA = [
 def api_listar_obras():
     """Painel de obras: situação, contrato, medições e o que foi gasto."""
     from sqlalchemy import func, select
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import (
+        obras_de_registro_sem_autor, obras_do_usuario,
+    )
     from app.apps.erp.db.models.cadastros import Obra, ObraAditivo
     from app.apps.erp.db.models.financeiro import EspecieTitulo, Rateio, Titulo
     try:
@@ -6585,6 +6620,26 @@ def api_listar_obras():
             if permitidas is not None:
                 stmt = stmt.where(Obra.id.in_(permitidas or [0]))
             obras = s.scalars(stmt).all()
+
+            # DUAS PERGUNTAS DIFERENTES, E ERA UMA SÓ ATÉ 11/09/2026.
+            #
+            # "Quais obras esta pessoa pode ESCOLHER?" e "de quais ela pode
+            # ver o DINHEIRO?" não são a mesma coisa. Esta rota alimenta cinco
+            # telas — Obras, Arquivo, Agenda, Contratos e Notas emitidas —, e
+            # em quatro delas ela é a lista de onde se escolhe a obra. Fechar
+            # a lista inteira deixaria o lançador sem conseguir arquivar um
+            # documento numa obra.
+            #
+            # Mas obra é registro SEM AUTOR: quem enxerga "só o que eu lancei"
+            # não tinha recorte nenhum aqui, e via valor de contrato, gasto,
+            # recebido e margem de TODAS as obras da empresa. É a mesma brecha
+            # das Locações, achada no mesmo dia.
+            #
+            # A separação que fica: a IDENTIFICAÇÃO da obra continua aberta a
+            # quem já podia escolher entre elas; os NÚMEROS vêm em branco para
+            # quem não alcança aquela obra. Em branco, e não zero — zero seria
+            # o sistema afirmando que a obra não gastou nada.
+            com_numeros = obras_de_registro_sem_autor(s, usuario)
             ids = [o.id for o in obras] or [0]
 
             aditivos: dict[int, float] = {}
@@ -6609,6 +6664,7 @@ def api_listar_obras():
             hoje = date.today()
             linhas = []
             for o in obras:
+                ve_numeros = com_numeros is None or o.id in com_numeros
                 contrato = float(o.valor_contrato or 0)
                 vigente = contrato + aditivos.get(o.id, 0.0)
                 gasto = gastos.get(o.id, 0.0)
@@ -6618,10 +6674,14 @@ def api_listar_obras():
                     "municipio": o.municipio, "uf": o.uf, "contrato": o.contrato,
                     "fase": o.fase, "fase_rotulo": fases.get(o.fase, o.fase),
                     "status": o.status,
-                    "valor_contrato": contrato, "aditivos": aditivos.get(o.id, 0.0),
-                    "valor_vigente": vigente,
-                    "gasto": gasto, "recebido": recebidos.get(o.id, 0.0),
-                    "margem": round(recebidos.get(o.id, 0.0) - gasto, 2),
+                    "numeros": ve_numeros,
+                    "valor_contrato": contrato if ve_numeros else None,
+                    "aditivos": aditivos.get(o.id, 0.0) if ve_numeros else None,
+                    "valor_vigente": vigente if ve_numeros else None,
+                    "gasto": gasto if ve_numeros else None,
+                    "recebido": (recebidos.get(o.id, 0.0) if ve_numeros else None),
+                    "margem": (round(recebidos.get(o.id, 0.0) - gasto, 2)
+                               if ve_numeros else None),
                     "vigencia_fim": o.vigencia_fim.isoformat() if o.vigencia_fim else None,
                     "vence_em_dias": ((o.vigencia_fim - hoje).days
                                       if o.vigencia_fim else None),

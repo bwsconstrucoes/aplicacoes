@@ -85,6 +85,9 @@ const GRUPOS = [
   {chave: "suprimentos", nome: "Insumos, preços e pedidos de material",
    lista: "/erp/api/perguntas/suprimentos",
    responder: "/erp/api/perguntar/suprimentos"},
+  {chave: "obras", nome: "Obras: cadastro, prazo e garantia",
+   lista: "/erp/api/perguntas/obras",
+   responder: "/erp/api/perguntar/obras"},
 ];
 const GRUPO_POR_CHAVE = Object.fromEntries(GRUPOS.map(g => [g.chave, g]));
 let PERGUNTAS = [], ESCOLHIDA = null;
@@ -146,19 +149,20 @@ async function responder() {
   b.disabled = false; b.textContent = "Responder";
 }
 
-const COLUNAS_DE_NUMERO = ["valor","parcelas","atraso","parado_ha","vigente",
-  "medido","faturado","recebido","falta_receber_do_contrato",
-  "falta_receber_do_medido","falta_faturar_do_medido","a_receber",
-  "medido_sem_nota","faturado_sem_receber"];
-const COLUNAS_DE_DINHEIRO = ["valor","vigente","medido","faturado","recebido",
-  "falta_receber_do_contrato","falta_receber_do_medido",
-  "falta_faturar_do_medido","a_receber"];
+// QUEM DIZ O TIPO DA COLUNA É O SERVIDOR.
+//
+// Esta lista já morou aqui, escrita à mão, e era a fonte do defeito: pergunta
+// nova trazia coluna nova, ninguém lembrava de vir aqui acrescentar o nome, e
+// o dinheiro saía "4500" e a data saía "2026-08-30". Ficava bonito e errado.
+// Agora cada resposta manda o tipo junto, e esta tela só obedece.
+const ALINHA_A_DIREITA = ["dinheiro", "numero"];
 
 function celula(coluna, linha) {
   const v = linha[coluna.chave];
   if (v === null || v === undefined || v === "") return "—";
-  if (COLUNAS_DE_DINHEIRO.includes(coluna.chave)) return moeda(v);
-  if (coluna.chave === "vencimento") return dataBR(v);
+  if (coluna.tipo === "dinheiro") return moeda(v);
+  if (coluna.tipo === "data") return dataBR(v);
+  if (coluna.tipo === "numero") return escapar(v);
   return escapar(v);
 }
 
@@ -172,10 +176,10 @@ function desenharResposta(r) {
     ? `<div class="cartao-dica" style="margin-top:8px">${escapar(r.observacao)}</div>` : "";
   els("tabela-resposta").innerHTML = (r.linhas || []).length ? `
     <table><thead><tr>${r.colunas.map(c =>
-      `<th class="${COLUNAS_DE_NUMERO.includes(c.chave) ? "dados" : ""}">${escapar(c.rotulo)}</th>`).join("")}
+      `<th class="${ALINHA_A_DIREITA.includes(c.tipo) ? "dados" : ""}">${escapar(c.rotulo)}</th>`).join("")}
     </tr></thead><tbody>
       ${r.linhas.map(l => `<tr>${r.colunas.map(c =>
-        `<td class="${COLUNAS_DE_NUMERO.includes(c.chave) ? "dados" : ""}">${celula(c, l)}</td>`).join("")}</tr>`).join("")}
+        `<td class="${ALINHA_A_DIREITA.includes(c.tipo) ? "dados" : ""}">${celula(c, l)}</td>`).join("")}</tr>`).join("")}
     </tbody></table>` : "";
   els("cartao-resposta").hidden = false;
   els("cartao-resposta").scrollIntoView({behavior: "smooth", block: "nearest"});

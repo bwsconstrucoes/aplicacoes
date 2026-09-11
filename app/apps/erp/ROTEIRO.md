@@ -217,6 +217,25 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       é a lista do que construir em seguida, escrita por quem usa o ERP.
       ⚠️ Ainda é casamento por PALAVRAS, não IA. A IA entra exatamente aí
       quando a chave existir em produção, e o resto não muda.
+- [x] **1h. O GRUPO DE OBRAS** — FEITO em 11/09/2026. Três perguntas de
+      conferência: **o que falta no cadastro para emitir nota** (os mesmos
+      quatro campos que a emissão exige), **seguro garantia vencido ou
+      vencendo** e **obra aberta com a vigência do contrato vencida**.
+      ⚠️ **Nasceu pequeno de propósito.** "Quanto custou a obra tal" — a
+      pergunta mais óbvia do assunto — NÃO entrou: "custo da obra" ainda não
+      tem uma definição escolhida, e cada leitura dá um número diferente com
+      cara de certo. Um teste da suíte recusa qualquer pergunta deste grupo que
+      use "custo", "resultado", "lucro", "margem" ou "gastou", para que
+      ninguém a acrescente sem combinar a palavra antes.
+      **Falta o dono decidir**, e aí o grupo cresce de uma vez: "custo da
+      obra", "obra em andamento", "este mês", "gastei com fulano" e "resultado
+      da obra" (ver `PERGUNTAS.md` §1).
+      Junto vieram duas correções que a construção fez aparecer: o **tipo de
+      cada coluna passou a ser dito pelo servidor** (a tela vinha escrevendo
+      data como 2026-08-30 e dinheiro sem R$, e pergunta nova nascia com o
+      defeito calado), e o **painel de Obras parou de mostrar contrato, gasto
+      e margem de todas as obras para quem enxerga só o que lança** — ver
+      `HISTORICO.md`.
 - [ ] **2. Assistente SÓ DE LEITURA, dentro do ERP.** Painel lateral (não
       caixinha), com o catálogo de perguntas conhecidas respondido por CÓDIGO —
       exato, rápido e sem custo de IA — e a pergunta imprevista caindo numa

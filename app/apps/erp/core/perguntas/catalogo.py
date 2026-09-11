@@ -185,6 +185,47 @@ CATALOGO += [
     },
 ]
 
+# ---------------------------------------------------------------------------
+# OBRAS — sob `ver_erp` + escopo, como o painel de Obras.
+#
+# Grupo separado do financeiro embora a ação seja a mesma: o que muda é o
+# ASSUNTO, e é por assunto que a tela agrupa. Rota própria mantém a regra de
+# que a ação declarada decide sozinha quem entra.
+#
+# O grupo nasceu SEM as perguntas de custo e de resultado de propósito — ver
+# a explicação no alto da seção de Obras em `respostas.py`.
+# ---------------------------------------------------------------------------
+CATALOGO += [
+    {
+        "chave": "cadastro_incompleto",
+        "grupo": "obras",
+        "pergunta": "Quais obras não emitem nota hoje por falta de cadastro?",
+        "exemplos": ["quais obras estão sem CNO",
+                     "que obra está sem alíquota de ISS",
+                     "o que falta no cadastro das obras"],
+        "parametros": [_p("obra", "Obra", TEXTO, "em branco = todas")],
+        "funcao": respostas.cadastro_incompleto,
+    },
+    {
+        "chave": "garantia_vencendo",
+        "grupo": "obras",
+        "pergunta": "Qual seguro garantia está vencido ou perto de vencer?",
+        "exemplos": ["tem seguro garantia vencendo?",
+                     "quais apólices vencem nos próximos 30 dias"],
+        "parametros": [_p("dias", "Dias à frente", TEXTO, "em branco = 60")],
+        "funcao": respostas.garantia_vencendo,
+    },
+    {
+        "chave": "vigencia_vencida",
+        "grupo": "obras",
+        "pergunta": "Qual obra aberta está com a vigência do contrato vencida?",
+        "exemplos": ["que obra passou do prazo do contrato",
+                     "quais contratos de obra precisam de aditivo de prazo"],
+        "parametros": [],
+        "funcao": respostas.vigencia_vencida,
+    },
+]
+
 POR_CHAVE: dict[str, dict[str, Any]] = {p["chave"]: p for p in CATALOGO}
 
 

@@ -13,6 +13,36 @@ from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
 from app.apps.erp.db.models.cadastros import Obra, Usuario
 
 
+# As fases por que uma obra passa, e como cada uma se chama para uma pessoa.
+#
+# Mora aqui, e não na tela, porque é vocabulário do negócio: a tela de Obras, a
+# agenda e as respostas do assistente têm de dizer a MESMA coisa. Quando esta
+# lista morava dentro de `routes.py`, a resposta do assistente saía
+# "EM_EXECUCAO" — o banco falando, em maiúscula e sem acento.
+FASES_OBRA: list[tuple[str, str]] = [
+    ("CRIACAO", "Criação / cadastro"),
+    ("AGUARDANDO_OS", "Aguardando ordem de serviço"),
+    ("EM_EXECUCAO", "Em execução"),
+    ("PARALISADA", "Paralisada"),
+    ("CONCLUIDA", "Concluída"),
+    ("CONCLUIDA_COM_DIVIDA", "Concluída com dívida"),
+    ("RECEBIMENTO_PROVISORIO", "Recebimento provisório"),
+    ("RECEBIMENTO_DEFINITIVO", "Recebimento definitivo"),
+    ("ACERVO_TECNICO", "Acervo técnico"),
+    ("DISTRATADA", "Distratada"),
+]
+
+# Fases em que a obra já ENCERROU — não são pendência de ninguém.
+FASES_ENCERRADAS = ("CONCLUIDA", "CONCLUIDA_COM_DIVIDA",
+                    "RECEBIMENTO_PROVISORIO", "RECEBIMENTO_DEFINITIVO",
+                    "ACERVO_TECNICO", "DISTRATADA")
+
+
+def fase_em_portugues(fase: str) -> str:
+    """EM_EXECUCAO vira "Em execução"."""
+    return dict(FASES_OBRA).get(fase, fase)
+
+
 def listar(s: Session, *, apenas_ativas: bool = True, busca: str = "") -> list[Obra]:
     stmt = select(Obra).order_by(Obra.codigo)
     if apenas_ativas:
