@@ -99,13 +99,24 @@ def remover_por_status(texto: str, status_alvo: set[str],
                        status_por_id: dict) -> tuple[str, int]:
     """Tira do lote as SPs que já estão num determinado status.
 
-    Serve para limpar o que já foi pago ou cancelado sem desmontar os grupos: os
-    títulos ficam, mesmo que o grupo esvazie. Devolve o texto novo e quantas
-    saíram."""
+    Serve para limpar o que já foi pago ou cancelado. Devolve o texto novo e
+    quantas saíram.
+
+    O TÍTULO DE UM GRUPO QUE ESVAZIOU NA LIMPEZA VAI JUNTO. Antes ele ficava, e
+    o lote terminava cheio de cabeçalhos sem nada embaixo — "Pagar amanhã" sem
+    uma SP sequer. Pedido do dono em 11/09/2026.
+
+    MAS SÓ QUEM ESVAZIOU AGORA. Um grupo que já estava vazio antes da limpeza
+    continua: alguém escreveu aquele título de propósito, para encher depois, e
+    apagar o que a pessoa acabou de digitar seria pior do que o cabeçalho
+    sobrando."""
     alvos = {s.strip().lower() for s in status_alvo}
-    linhas_novas: list[str] = []
     removidos = 0
 
+    # Primeiro quebra em blocos: cada um é um título (ou nenhum, no começo) e
+    # as linhas de SPs que vêm debaixo dele. Só assim dá para saber se um
+    # título ficou órfão POR CAUSA desta limpeza.
+    blocos: list = [{"titulo": None, "linhas": [], "tinha": 0}]
     for bruta in str(texto or "").split("\n"):
         linha = bruta.strip()
         if not linha:
@@ -115,10 +126,18 @@ def remover_por_status(texto: str, status_alvo: set[str],
             mantidos = [p for p in pedacos
                         if str(status_por_id.get(p, "")).strip().lower() not in alvos]
             removidos += len(pedacos) - len(mantidos)
+            blocos[-1]["tinha"] += len(pedacos)
             if mantidos:
-                linhas_novas.append(" ".join(mantidos))
+                blocos[-1]["linhas"].append(" ".join(mantidos))
         else:
-            linhas_novas.append(linha)      # título de grupo: sempre fica
+            blocos.append({"titulo": linha, "linhas": [], "tinha": 0})
+
+    linhas_novas: list = []
+    for bloco in blocos:
+        esvaziou_agora = bloco["tinha"] > 0 and not bloco["linhas"]
+        if bloco["titulo"] is not None and not esvaziou_agora:
+            linhas_novas.append(bloco["titulo"])
+        linhas_novas.extend(bloco["linhas"])
 
     return "\n".join(linhas_novas).strip("\n"), removidos
 
@@ -188,8 +207,15 @@ def _reserva_ler(pessoa: str) -> dict:
     return preferencias.ler(pessoa, CHAVE_RESERVA)
 
 
-def ler(pessoa: str = "") -> dict:
+def ler(pessoa: str) -> dict:
     """O lote DESTA pessoa, com quem salvou por último e quando.
+
+    A PESSOA NÃO TEM VALOR PADRÃO, e isso é de propósito. Ela tinha, e o padrão
+    era `""` — que significa o LOTE ANTIGO, de quando ele era compartilhado.
+    Duas rotas (a exportação e o PDF) ficaram chamando `ler()` sem argumento
+    quando o lote passou a ser de cada um, e por meses entregaram um lote
+    congelado sem reclamar de nada. Quem quiser mesmo o lote antigo chama
+    `lote_de_antes()`, que diz isso no nome.
 
     Até 04/09/2026 havia um lote só, de todo mundo: quem salvasse depois
     sobrescrevia o trabalho do outro sem aviso. Agora cada um tem o seu — foi
@@ -240,8 +266,11 @@ def ler(pessoa: str = "") -> dict:
             "salvo_em": linha[2], "compartilhado": False}
 
 
-def salvar(conteudo: str, quem: str = "", pessoa: str = "") -> None:
-    """Guarda o lote da pessoa. `quem` é o nome que a tela mostra depois."""
+def salvar(conteudo: str, quem: str, pessoa: str) -> None:
+    """Guarda o lote da pessoa. `quem` é o nome que a tela mostra depois.
+
+    Sem valor padrão pelo mesmo motivo de `ler`: salvar no lote errado é pior
+    do que não salvar, porque ninguém percebe."""
     from .db import conexao
     if not por_pessoa():
         from . import preferencias

@@ -1475,6 +1475,121 @@ e fecha é `<details>`, do próprio HTML, sem JavaScript — mas o efeito de col
 com Ctrl+V uma seleção do Excel de verdade não foi visto. **É a primeira coisa
 a conferir na tela.**
 
+### Vigésima quarta leva (11/09) — seis defeitos que o dono achou usando
+
+**1. A procura dentro do filtro não filtrava nada.** *"No filtro tipo de
+despesa existe o campo, mas se eu escrever, ele não está filtrando as
+possibilidades."*
+
+O javascript estava certo e funcionando. **O ESTILO é que anulava.** O
+navegador esconde `[hidden]` com `display: none`, mas isso vem da folha DELE —
+e qualquer regra nossa ganha, por mais fraca que seja. Como `.opcao` tem
+`display: flex`, a opção era marcada como escondida e continuava na tela,
+parada, enquanto a pessoa digitava.
+
+A correção é uma linha (`[hidden] { display: none !important; }`) e vale para
+a folha inteira de propósito: **o mesmo tropeço aconteceria em qualquer
+elemento com `display` próprio** que alguém mandasse esconder — e já havia
+outros. Há teste, e conferido que ele falha sem a correção.
+
+> **A lição, e ela é do mesmo tipo das outras desta semana:** o código estava
+> lá, o teste do código passaria, e mesmo assim a função não existia para quem
+> usa. Conferir que o código está escrito não é conferir que ele funciona.
+
+**2. Faltava o total POR CONTA do que está marcado.** *"Aparece o total dos
+selecionados; era só o total por conta que estava faltando."*
+
+O total geral diz se a remessa é **grande**; o total por conta diz se ela
+**cabe** — é por conta que o dinheiro sai. Agora aparece embaixo do total, na
+barra do alto, ordenado do maior para o menor (com seis contas, a que importa é
+a que concentra), e **some quando há uma conta só**, porque aí repetiria o
+número que está logo acima.
+
+**3. A exportação e o PDF do lote entregavam um lote CONGELADO.** *"Eu
+atualizei o lote, e o relatório permanece desatualizado."*
+
+As duas rotas chamavam `lote.ler()` **sem a pessoa**. O argumento tinha valor
+padrão `""` — e `""` é o **lote antigo**, de quando ele era um só e
+compartilhado, parado no tempo desde que o lote passou a ser de cada um
+(migração 003). Ou seja: a pessoa salvava o lote dela, e o arquivo saía com
+outra coisa. **Sem erro nenhum**, porque um lote congelado não estoura: ele só
+fica errado.
+
+> **Como isso sobreviveu à suíte, e é a parte que incomoda:** havia teste do
+> PDF do lote. Ele dublava `lote.ler` com uma função **sem argumento** — ou
+> seja, **imitava exatamente a chamada errada**, e por isso passava. O teste
+> não estava conferindo o comportamento; estava congelando o defeito.
+
+**A correção fecha a armadilha, e não só o buraco:** `ler` e `salvar`
+perderam o valor padrão da pessoa. Quem esquecer de passar agora quebra alto,
+na hora. Quem quiser mesmo o lote antigo chama `lote_de_antes()`, que diz isso
+no nome. Há teste prendendo a ausência do padrão, e outro conferindo que as
+duas rotas leem o lote da pessoa logada — conferido que ele falha com o
+defeito de volta.
+
+**4. A tela do Bradesco ficava em branco.** *"Cliquei conferir e ficou tudo em
+branco"*, com o texto colado junto.
+
+O interpretador estava **certo**. Reproduzido com o texto dele: o **mesmo
+texto com tabulação dá duas operações; com espaços, nenhuma**. Copiar a tabela
+do Bradesco traz tabulação na maioria das vezes — não sempre, e depende do
+navegador e de como a seleção é feita. Quando vinham espaços, o texto inteiro
+era ignorado **em silêncio**.
+
+Duas correções, e a segunda vale mais do que a primeira:
+
+- a linha da operação passa a ser separada por tabulação **ou por dois ou mais
+  espaços**. É seguro porque uma linha só vira operação se tiver, ao mesmo
+  tempo, data, agência|conta e valor — e nome com espaço simples ("JOSE THIAGO
+  DA SILVA") continua inteiro. Há teste com o texto real do dono, nas duas
+  formas, e conferido que ele falha com o defeito de volta.
+- **a tela deixa de ficar muda.** Quando não reconhece nada, ela diz o que
+  precisa haver na linha e quantas linhas foram coladas. Ficar em branco é o
+  pior resultado possível: quem colou não sabe se o sistema leu, se travou, ou
+  se não havia o que conferir.
+
+**De brinde, um defeito que ninguém tinha reportado:** a caixinha "focar nos
+agendados" **não desligava**. Caixinha desmarcada não chega no formulário, e o
+valor padrão entrava justamente aí — então marcar ou desmarcar dava no mesmo.
+
+**5. O título do grupo que esvazia na limpeza vai junto.** *"Quando limparmos
+um lote tirando pagas e canceladas e ele estiver vazio, apagar o cabeçalho."*
+
+**Mas só quem esvaziou AGORA.** Um grupo que já estava vazio antes continua:
+alguém escreveu aquele título de propósito, para encher depois, e apagar o que
+a pessoa acabou de digitar seria pior do que o cabeçalho sobrando.
+
+**6. A marcação voltava depois de a pessoa agir — e esse defeito é meu.**
+*"Para toda ação que faço no lote, tipo marcar agendado, agendar... são
+reaplicadas seleções que talvez estejam salvas. Está errado. Eu já desmarquei.
+Não pode retroagir."*
+
+A memória da marcação (19ª leva) existe para quem **sai da tela e volta**. Mas
+depois de uma ação a tela recarrega, e a marcação era reposta — fazendo as SPs
+voltarem marcadas **depois de já terem sido tratadas**.
+
+> **E não é só incômodo:** uma marcação que reaparece sozinha convida a agir
+> duas vezes sobre a mesma SP — agendar de novo, mandar ao lote de novo. O
+> incômodo era o sintoma; o risco era o problema.
+
+Agora **agir sobre a seleção apaga a memória dela**. As quatro ações que
+alteram alguma coisa chamam isso; a tela de QR **não**, de propósito — ela não
+altera nada, só abre outra tela, e quem volta de lá quer a seleção inteira de
+volta. Há teste para as duas coisas.
+
+### Pedido na fila, ainda NÃO feito
+
+**Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a
+mesma estrutura do PDF que já existe. *"Coloca isso na fila de produção
+também."*
+
+> **Uma coisa mudou e vale para quem pegar esta tarefa:** o README diz que
+> exportação é CSV "porque gerar Excel de verdade exigiria uma biblioteca
+> nova". **Isso não é mais verdade desde 05/09**: o `openpyxl` entrou por causa
+> do BeeVale e está no `requirements.txt`. Excel de verdade agora é possível
+> sem dependência nova — e a exceção de importação para ele já está declarada
+> em `LIBERADO_EM`.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

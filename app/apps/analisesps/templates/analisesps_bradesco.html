@@ -63,6 +63,26 @@
   </form>
 </div>
 
+{% if resultado is not none and not resultado.boletos and not resultado.pix %}
+  {# NÃO RECONHECI NADA. Antes a tela simplesmente não desenhava nada, e quem
+     colava ficava olhando para o vazio sem saber se o sistema tinha lido, se
+     tinha travado, ou se não havia mesmo o que conferir. Reportado pelo dono
+     em 11/09/2026: "cliquei conferir e ficou tudo em branco". #}
+  <div class="aviso atencao">
+    <b>Não reconheci nenhuma operação no texto colado.</b><br>
+    Cada operação precisa ter, na mesma linha, três coisas: a <b>data</b>, a
+    <b>agência | conta</b> (por exemplo <code>1251 | 0002541-0</code>) e o
+    <b>valor</b>. Elas costumam vir juntas quando se copia a tabela inteira de
+    <i>Detalhes das Operações</i>, com o cabeçalho.
+    <br><br>
+    <small>
+      Colei {{ colado.strip().splitlines()|length }} linha(s). Se você copiou
+      só um pedaço da tela, tente selecionar a tabela inteira — inclusive a
+      linha de títulos.
+    </small>
+  </div>
+{% endif %}
+
 {% if resultado %}
   {{ tabela('Boletos', resultado.boletos, [
       ('Alertas','alertas'), ('Empresa','empresa'), ('Conta','conta_debito'),
