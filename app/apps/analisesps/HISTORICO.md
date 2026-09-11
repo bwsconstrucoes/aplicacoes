@@ -1750,6 +1750,68 @@ da fila só vai ser conhecido quando a tela rodar uma vez contra a base inteira
 > sobraria só para o que não é nota eletrônica. **Não foi verificado se é
 > viável.**
 
+### Vigésima sexta leva (11/09) — a SP repetida no lote
+
+Três coisas, todas pedidas pelo dono no mesmo minuto.
+
+**1. A marcação voltava na linha ERRADA quando a SP estava repetida.** *"Quando
+eu marco alguma coisa no lote, e esse registro está repetido, ele marca também
+o outro. Está bagunçando."*
+
+A memória da marcação (19ª leva) guardava o **número da SP**. No Lote a mesma SP
+pode estar em dois grupos — e aí repor pelo número marcava **as duas cópias**: a
+que a pessoa marcou e a que ela não marcou. Não era a marcação retroagindo (isso
+foi a 24ª leva); era ela pegando a linha errada.
+
+Agora guarda a **chave da linha** — grupo mais posição mais número —, então volta
+marcada só a linha que a pessoa marcou.
+
+> **Nas Solicitações continua valendo o número, de propósito.** Lá cada SP
+> aparece uma vez só, então o número já identifica a linha; usar a posição faria
+> a marcação se perder toda vez que a base sincronizasse e empurrasse as linhas
+> — que é justamente a memória que a 19ª leva criou. Há teste travando isso.
+
+> **Trade-off escrito:** no Lote, mexer no conteúdo (remover pagos, por exemplo)
+> muda as posições e a marcação guardada não volta. É o lado certo de errar —
+> deixar de repor não faz nada; repor na linha errada faz agir sobre o pagamento
+> errado.
+
+**2. "Tirar" virou "Remover".** *"Esse termo tirar não é legal, é melhor remover
+pagos e remover cancelados."* Numa tela de pagamentos "tirar as pagas" chega a
+soar como desfazer o pagamento — e o botão só mexe na lista do lote.
+
+**3. Botão "Remover duplicados", novo.** *"Mantém o registro mais superior, e os
+que estão mais para baixo no lote remove."*
+
+Fica a **primeira** aparição, e não a última, porque o lote é lido de cima para
+baixo e o grupo mais recente entra no topo — guardar a de baixo mudaria a SP de
+grupo sem ninguém ter pedido.
+
+> **Por que a repetição atrapalha, e não é só feiúra:** o mesmo número em dois
+> grupos aparece duas vezes na tela, **é somado duas vezes no total do lote**, e
+> convida a agir duas vezes sobre o mesmo pagamento. Era também o que fazia a
+> marcação pegar a linha errada, no item 1.
+
+O botão **só aparece quando há o que remover**, e diz quantas são ("Remover
+duplicados (3)"). Botão que não faz nada quando apertado é pior do que botão
+nenhum: a pessoa aperta, nada muda, e passa a desconfiar dos outros botões.
+
+**O cabeçalho do grupo que esvaziou sai junto**, como ele lembrou no mesmo
+pedido — a mesma regra das outras duas limpezas. Para as três não divergirem, a
+lógica do cabeçalho órfão virou **um lugar só** (`_limpar`), e cada limpeza só
+diz quem sai. Em três cópias, a terceira nasceria sem a regra e ninguém notaria
+até o lote encher de título solto.
+
+**Verificação:** 4.304 testes verdes com Postgres de verdade, 129 pulados. 16
+testes novos. Os que guardam as decisões do dono foram conferidos **quebrando o
+código de propósito** — trocar "fica a primeira" por "fica a última" derruba
+três deles; tirar a guarda que prende a chave de linha ao Lote derruba outro. A
+aplicação sobe com os 18 blueprints.
+
+**O que NÃO foi verificado:** nada disto foi aberto num navegador. A marcação
+reposta em particular é comportamento de tela — os testes conferem o código que
+a governa, não o clique.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a
