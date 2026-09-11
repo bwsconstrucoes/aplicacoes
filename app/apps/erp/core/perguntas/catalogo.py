@@ -28,8 +28,19 @@ from app.apps.erp.core.perguntas import respostas
 DATA, TEXTO = "data", "texto"
 
 
-def _p(nome: str, rotulo: str, tipo: str = TEXTO, dica: str = "") -> dict[str, Any]:
-    return {"nome": nome, "rotulo": rotulo, "tipo": tipo, "dica": dica}
+def _p(nome: str, rotulo: str, tipo: str = TEXTO, dica: str = "",
+       a_frase_toda: bool = False) -> dict[str, Any]:
+    """Um filtro da pergunta.
+
+    `a_frase_toda` diz que este parâmetro pode valer a frase inteira quando a
+    pessoa não anunciar o filtro pelo nome. Serve para a busca nos documentos:
+    ninguém escreve "procure o ASSUNTO reajuste", escreve "o que o contrato diz
+    sobre reajuste". Fica DECLARADO aqui, e não valendo para todo mundo, porque
+    aplicar isso a qualquer parâmetro faria toda pergunta virar busca por si
+    mesma.
+    """
+    return {"nome": nome, "rotulo": rotulo, "tipo": tipo, "dica": dica,
+            "a_frase_toda": a_frase_toda}
 
 
 # A ORDEM É A DA TELA, e ela não é alfabética de propósito: começa pelo que se
@@ -223,6 +234,35 @@ CATALOGO += [
                      "quais contratos de obra precisam de aditivo de prazo"],
         "parametros": [],
         "funcao": respostas.vigencia_vencida,
+    },
+]
+
+# ---------------------------------------------------------------------------
+# DOCUMENTOS — sob a ação `ver_arquivo`, que é a do acervo.
+#
+# A ação não é `ver_erp` como as outras: quem não pode abrir o Arquivo também
+# não pode perguntar o que está escrito dentro dele. Pedido do dono, com todas
+# as letras: *"quem vê o quê tem que estar associado às suas permissões"*.
+#
+# E por dentro a busca passa pelo MESMO `aplicar_escopo` da tela do Arquivo —
+# faixa de sigilo mais obra designada. Duas regras iguais escritas em dois
+# lugares divergem, e aqui divergir quer dizer alguém ler documento que não
+# devia.
+# ---------------------------------------------------------------------------
+CATALOGO += [
+    {
+        "chave": "o_que_os_documentos_dizem",
+        "grupo": "documentos",
+        "pergunta": "O que os documentos dizem sobre um assunto?",
+        "exemplos": ["o que o contrato diz sobre reajuste",
+                     "qual o prazo de garantia combinado",
+                     "procure multa por atraso nos documentos"],
+        "parametros": [
+            _p("assunto", "Assunto", TEXTO, "ex.: reajuste, garantia, multa",
+               a_frase_toda=True),
+            _p("obra", "Obra", TEXTO, "em branco = todas"),
+        ],
+        "funcao": respostas.o_que_os_documentos_dizem,
     },
 ]
 

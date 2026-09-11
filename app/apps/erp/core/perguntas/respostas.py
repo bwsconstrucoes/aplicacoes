@@ -165,6 +165,8 @@ TIPO_DA_COLUNA: dict[str, str] = {
     "vence_em": "data", "venceu_em": "data", "vencimento": "data",
     # texto (declarado de propósito: o silêncio é que esconde defeito)
     "_": "texto", "apolice": "texto", "aviso": "texto",
+    "documento": "texto", "de_quem": "texto", "trecho": "texto",
+    "tipo": "texto",
     "categoria_insumo": "texto", "cliente": "texto", "codigo": "texto",
     "conta": "texto", "contrato": "texto", "credor": "texto",
     "de_quem": "texto", "descricao": "texto", "especificacao": "texto",
@@ -1098,3 +1100,74 @@ def vigencia_vencida(s: Session, usuario: Usuario) -> dict[str, Any]:
                     "o que está concluído, recebido, em acervo técnico ou "
                     "distratado. Não é uma opinião do sistema sobre a obra "
                     "estar ou não tocando — é o que alguém marcou na tela."))
+
+
+# ===========================================================================
+# DOCUMENTOS — o que está ESCRITO, não o que está somado
+#
+# Esta é a única família de respostas deste arquivo que não faz conta nenhuma.
+# Ela devolve pedaços de texto que já estavam num contrato, num edital, numa
+# norma — e o que o sistema garante não é o número, é a PROCEDÊNCIA: de qual
+# documento saiu e em que trecho.
+#
+# Por isso o trecho vem sempre junto, e é ele a resposta. A frase de cima,
+# quando existe, é a IA juntando os trechos — nunca a IA lembrando de alguma
+# coisa. Ver o porquê inteiro em `core/perguntas/documentos.py`.
+# ===========================================================================
+def o_que_os_documentos_dizem(s: Session, usuario: Usuario, *,
+                              assunto: str = "",
+                              obra: str = "") -> dict[str, Any]:
+    """Procura o assunto nos documentos que esta pessoa alcança."""
+    from app.apps.erp.core.perguntas import documentos as svc_doc
+
+    assunto = (assunto or "").strip()
+    if not assunto:
+        return _resposta(
+            titulo="Procurar nos documentos",
+            frase=("Diga o que você quer procurar — por exemplo “reajuste”, "
+                   "“prazo de garantia” ou “multa por atraso”."),
+            linhas=[], colunas=[],
+            de_onde_veio={"tela": "/erp/arquivo",
+                          "explicacao": "Arquivo, o acervo de documentos."})
+
+    achados = svc_doc.procurar(s, usuario, pergunta=assunto, obra=obra)
+    onde = f" (na obra {obra})" if obra else ""
+
+    if not achados:
+        return _resposta(
+            titulo=f"“{assunto}” nos documentos", frase=(
+                f"Não achei “{assunto}” em nenhum documento que você alcança"
+                f"{onde}."),
+            linhas=[], colunas=[],
+            de_onde_veio={"tela": "/erp/arquivo",
+                          "explicacao": "Arquivo, o acervo de documentos."},
+            observacao=(
+                "Duas razões possíveis, e elas pedem coisas diferentes: o "
+                "documento não está no Arquivo, ou ele está mas usa outras "
+                "palavras. A busca de hoje acha pela palavra escrita, não pelo "
+                "sentido — “reajuste” acha “reajustar”, mas não acha "
+                "“correção monetária”."))
+
+    linhas = [{"documento": a["nome"], "tipo": a["tipo"],
+               "de_quem": a["de_quem"], "trecho": a["trecho"]}
+              for a in achados]
+    frase = (f"Achei em {len(achados)} documento(s){onde}. "
+             f"O que está escrito, na íntegra, está abaixo.")
+
+    # A frase da IA é um ACRÉSCIMO, e some sem quebrar nada. Os trechos são a
+    # resposta; ela é só a leitura em voz alta.
+    resumo = svc_doc.resumir(achados, assunto,
+                             usuario_id=getattr(usuario, "id", None))
+    return _resposta(
+        titulo=f"“{assunto}” nos documentos", frase=(resumo or frase),
+        linhas=linhas,
+        colunas=[("documento", "Documento"), ("tipo", "Tipo"),
+                 ("de_quem", "De quem é"), ("trecho", "O que está escrito")],
+        de_onde_veio={"tela": "/erp/arquivo",
+                      "explicacao": "Arquivo, o acervo de documentos."},
+        observacao=(
+            ("A frase acima foi escrita pela IA LENDO SÓ os trechos abaixo — "
+             "ela não consulta o banco nem lembra de nada por fora. Confira "
+             "nos trechos, que são o documento falando. " if resumo else "") +
+            "As « » marcam onde as suas palavras aparecem. Abra o documento no "
+            "Arquivo para ler o resto."))

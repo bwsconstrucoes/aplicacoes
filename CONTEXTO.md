@@ -741,6 +741,24 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-11 — O assistente passa a ler os DOCUMENTOS, e o escopo do acervo
+  vira função única.** Migração 059: coluna `busca` em `documentos`, gerada
+  pelo próprio banco (`GENERATED ALWAYS`) com o dicionário de português, mais
+  índice GIN. A busca do assistente e a listagem da tela do Arquivo passam
+  pelo MESMO `arquivo/service.aplicar_escopo` (faixa de sigilo + obra
+  designada) — decisão do dono: *"quem vê o quê tem que estar associado às
+  suas permissões"*. A pergunta exige `ver_arquivo`, não `ver_erp`.
+  **Escolha do índice:** busca por palavra do Postgres, e não índice por
+  significado (vetor) — *"começar do simples, depois a gente decide se parte
+  pro caro"*. O limite (não acha sinônimo) está escrito na resposta.
+  **Regra que fica:** resposta vinda de documento traz SEMPRE o trecho; a
+  frase da IA lê só os trechos achados e é acréscimo, nunca a resposta.
+
+- **2026-09-11 — Coluna gerada pelo banco NÃO entra no modelo.** A `busca` é
+  `GENERATED ALWAYS`; mapeá-la no SQLAlchemy fazia todo INSERT tentar escrever
+  nela, e o Postgres recusa — o arquivamento inteiro morria junto. Quem precisa
+  dela cita a coluna direto na consulta (`literal_column`).
+
 - **2026-09-11 — O assistente é uma PORTA a mais, nunca um caminho novo.**
   Ele saiu da aba do Financeiro e virou botão no canto de toda tela
   (`erp_base.html`), como se faz lá fora — o padrão se chama *ambient

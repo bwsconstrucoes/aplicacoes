@@ -17,6 +17,62 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
+**Estado em 11/09/2026 (sexta entrega):** no ramo, **o assistente responde
+sobre o que está ESCRITO nos documentos** da empresa. **TRAZ A MIGRAÇÃO 059** —
+o dono precisa apertar "Aplicar atualizações do banco" no mesmo momento da
+publicação.
+
+### A pergunta que ele passa a responder
+
+*"o que o contrato diz sobre reajuste"*, *"qual o prazo de garantia"*,
+*"procure multa por atraso"*. A resposta traz o **trecho do documento**, com as
+palavras marcadas entre « », o nome do documento e **de quem ele é** ("obra
+CREPETRIUNFO") — porque "o contrato" não quer dizer nada se não se sabe de qual
+obra.
+
+É a única família de respostas do assistente que **não faz conta nenhuma**. O
+que o sistema garante aqui não é o número: é a PROCEDÊNCIA.
+
+### As três decisões do dono, e o que cada uma virou
+
+**1. "Quem vê o quê tem que estar associado às suas permissões."** A busca
+passa pelo MESMO recorte da tela do Arquivo — faixa de sigilo mais obra
+designada. Para isso a regra foi extraída para uma função só
+(`arquivo/service.aplicar_escopo`), usada pela tela e pela busca: duas cópias
+divergem, e aqui divergir quer dizer alguém ler documento que não devia. A
+pergunta ainda exige a ação `ver_arquivo`, e não `ver_erp` — quem não abre o
+acervo também não pergunta o que está escrito nele.
+
+Há teste com banco de verdade para os dois vazamentos possíveis: o contrato da
+outra obra, e o documento de faixa PESSOAL que fala do assunto procurado.
+
+**2. "Começar do simples, depois a gente decide se parte pro caro."** Busca de
+texto do próprio Postgres, com dicionário de PORTUGUÊS — ele entende que
+"reajuste", "reajustar" e "reajustados" são a mesma palavra. A coluna de índice
+é **gerada pelo banco** (`GENERATED ALWAYS`, migração 059): não existe o passo
+de "atualizar o índice", então não há como esquecê-lo. Documento novo já nasce
+procurável.
+
+⚠️ O limite, e ele está escrito na tela onde a pessoa lê: **acha por palavra,
+não por sentido**. "Reajuste" não acha "correção monetária". Quando não acha, a
+resposta diz as DUAS causas possíveis — o documento não está no Arquivo, ou usa
+outras palavras —, porque elas pedem coisas diferentes.
+
+**3. Citação sempre.** O trecho vem junto, e é ele a resposta. A frase de
+resumo da IA é acréscimo: ela lê **só os trechos achados**, nunca o banco, e
+some sem quebrar nada quando a chave falta ou o serviço cai.
+
+### Uma coisa que o banco ensinou no caminho
+
+A coluna `busca` **não está no modelo de propósito**. Ela é `GENERATED ALWAYS`,
+e mapeá-la fazia o SQLAlchemy tentar escrever nela em todo arquivamento — o
+Postgres recusa, e o arquivamento inteiro morria junto. Ela é citada direto na
+consulta que precisa dela. Fica anotado: **coluna gerada pelo banco não entra
+no modelo.**
+
+⚠️ **Falta o dono arquivar os contratos de verdade no Arquivo.** Sem documento
+arquivado não há o que procurar — a base de teste aqui foi montada à mão.
+
 **Estado em 11/09/2026 (quinta entrega):** no ramo, o **assistente no canto de
 toda tela**, a **continuação de conversa** e a correção do **áudio no iPhone**.
 **Sem migração.**

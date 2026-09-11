@@ -1059,6 +1059,13 @@ class Documento(Base):
     texto: Mapped[Optional[str]] = mapped_column(Text)
     resumo: Mapped[Optional[str]] = mapped_column(Text)
 
+    # A COLUNA `busca` (migração 059) EXISTE NO BANCO E NÃO ESTÁ AQUI DE
+    # PROPÓSITO. Ela é `GENERATED ALWAYS`: quem preenche é o próprio Postgres,
+    # a cada gravação, a partir do nome, da referência, do resumo e do texto.
+    # Mapeá-la faria o SQLAlchemy tentar escrever nela em todo INSERT — e o
+    # banco recusa, derrubando o arquivamento inteiro. Quem precisa dela para
+    # procurar a referencia direto, em `core/perguntas/documentos.py`.
+
     origem: Mapped[str] = mapped_column(Text, nullable=False, default="TELA")
     confirmado_por: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("usuarios.id"))
