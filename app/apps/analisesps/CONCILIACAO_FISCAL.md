@@ -91,8 +91,9 @@ Serve para **propor**, nunca para decidir sozinho.
 
 E a tabela de dedutibilidade é do próprio dono, na aba de apoio da planilha:
 são "Não Dedutível" apenas **Ausente, Nota Cancelada, Reanalisar, Emissão
-Futura e Não Dedutível**; todo o resto é "Documentação OK". **Duas opções do
-Pipefy não estão nessa tabela: BeeVale e Férias ou PL.**
+Futura e Não Dedutível**; todo o resto é "Documentação OK". Duas opções do Pipefy não
+estavam nessa tabela — **BeeVale e Férias ou PL** —, e o dono respondeu em
+11/09: as duas são **dedutíveis**, assim como Rescisões.
 
 ## O ERP, e por que isto não pode ser feito duas vezes
 
@@ -122,14 +123,61 @@ sequência (NSU) e manifestação do destinatário**.
 **Baixar a nota só com a chave de acesso não existe** por caminho confiável e
 legal. O FSist continua necessário.
 
-## Decisões pendentes, todas do dono
+## Decisões TOMADAS pelo dono em 11/09/2026
 
-1. O cadastro das notas fica aqui ou no ERP?
-2. **BeeVale** e **Férias ou PL** são dedutíveis?
-3. Etiqueta "Antecipação de Pagamento" → categoria "Emissão Futura"?
-4. Pode-se usar a base que já existe aqui em vez da aba Lançamentos, trazendo
-   só os quatro campos que faltam?
-5. A leitura de anexo por IA fica para a 2ª etapa? (é dependência e custo novos)
+**1. Não existe cadastro de notas, e não vai existir aqui.** Resposta dele:
+*"não existe. A gente usa o Pipefy para armazenar essas notas, e grava a
+informação chave de acesso."* O **card do Pipefy continua sendo o lugar da
+nota**. O que este módulo guarda é um **registro paralelo do que ELE mandou
+para o card** — para cada SP: a documentação fiscal, a chave de acesso, e
+quando/quem decidiu.
+
+Isso resolve sozinho o risco de dois cadastros divergirem: não há segundo
+cadastro. Há um diário do que foi escrito.
+
+**2. BeeVale, Férias ou PL e Rescisões são DEDUTÍVEIS.** Fecha a tabela de
+dedutibilidade, que agora cobre as 22 opções do Pipefy.
+
+**3. "Emissão Futura" não é um fim de linha — é uma FILA.** Nas palavras dele:
+*"na maioria das vezes são situações que a gente está pagando antecipado, não
+tem a nota emitida e vai ser emitida posteriormente. Então vai ter que fazer à
+medida que as informações do FSist vão sendo baixadas. São candidatos a esse
+cruzamento futuro."*
+
+Ou seja: o que fica como Emissão Futura **volta a ser conciliado toda vez que
+chega relatório novo**, sozinho. É o oposto de arquivar.
+
+**4. A base que já existe é a fonte, e o que falta grava-se AQUI.** A ideia é
+dele, e é melhor do que a pergunta que foi feita:
+
+> *"você vai utilizar a base de informações, e gravar em paralelo tudo que a
+> gente enviar pro card. Tem que ver algum canto para gravar a informação de
+> que aquela solicitação tem a dedutibilidade assim e a chave de acesso assim.
+> E fazer dentro do Análise de SPs esse vínculo. Sem necessidade de baixar
+> relatório, e mantendo a base de dados com o SPsBD da mesma forma, sem
+> precisar adicionar nela."*
+
+Três consequências, e as três são boas: a planilha SPsBD **não muda**; o
+relatório do Pipefy **deixa de ser baixado toda vez**; e o módulo passa a saber
+o que escreveu, sem perguntar a ninguém.
+
+**5. A IA entra AGORA, não numa etapa futura.** *"Senão o trabalho não
+funciona, tem que ser completo."* — decisão dele, com o custo e a dependência
+ditos na frente.
+
+## Requisito novo, dado junto com as respostas
+
+A tela precisa ter **a mesma força de filtro e de números das Solicitações**:
+*"a gente precisa também visualizar essa informação do que já foi e do que não
+foi, fazer as filtragens, o que está resolvido, o que é dedutível, o que não
+é, por que está pendente."* Não é uma lista de pendências — é uma tela de
+gestão fiscal.
+
+## O que ainda precisa de resposta
+
+- **O histórico já preenchido no Pipefy** (39 dos 116 lançamentos já têm chave)
+  só existe no relatório do Pipefy. Para o registro paralelo nascer sabendo
+  disso, é preciso importar esse relatório **UMA VEZ**. Depois nunca mais.
 
 ## O caminho proposto, em três etapas
 
