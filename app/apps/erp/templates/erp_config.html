@@ -289,6 +289,21 @@
     <div><button class="btn secundario" id="btn-sa-atualizar">Atualizar</button></div>
   </div>
 
+  {# O QUE ESTÁ LIGADO. Credencial cadastrada com o nome trocado não dá erro:
+     a função simplesmente não acontece, e todo mundo acha que é assim mesmo.
+     Este quadro diz o NOME EXATO que o sistema procura — e, quando falta,
+     mostra se existe no ambiente alguma variável de nome parecido. #}
+  <h4 style="margin-top:18px">O que está ligado</h4>
+  <div class="cartao-dica">O sistema procura cada credencial por um nome
+    exato. Nome diferente é o mesmo que não existir — e não dá erro nenhum, a
+    função só não acontece. <b>O valor nunca aparece aqui</b>, só se está
+    preenchido e os quatro últimos caracteres.</div>
+  <div class="tabela-rolagem" style="margin-top:8px">
+    <table><thead><tr><th>Está ligado?</th><th>O que liga</th>
+      <th>Nome da variável</th><th>Sem ela</th></tr></thead>
+      <tbody id="sa-integracoes"></tbody></table>
+  </div>
+
   <h4 style="margin-top:16px">Onde a equipe mais espera</h4>
   <div class="cartao-dica">Ordenado pelo <b>tempo total</b>, não pela média: uma
     tela de três segundos aberta uma vez por mês incomoda menos que uma de meio
@@ -1672,6 +1687,18 @@ async function carregarSaude(){
           <td class="direita mono">${r.erros || "—"}</td>
           <td class="direita mono">${numero(r.segundos_no_periodo)} s</td></tr>`).join("")
       : `<tr><td colspan="7" class="vazio">Nenhuma medição no período.</td></tr>`;
+
+    els("sa-integracoes").innerHTML = (d.integracoes || []).map(i => `<tr>
+      <td><span class="selo ${i.configurada ? "aprovado" : "outro"}">${
+        i.configurada ? "ligado" : "falta"}</span></td>
+      <td>${escapar(i.para_que)}</td>
+      <td class="mono">${escapar(i.nome)}${
+        i.final ? ` <small>${escapar(i.final)}</small>` : ""}${
+        i.parecidas && i.parecidas.length
+          ? `<br><small style="color:var(--vermelho)">o ambiente tem
+             <b>${i.parecidas.map(escapar).join(", ")}</b> — parece a mesma
+             credencial com o nome trocado</small>` : ""}</td>
+      <td><small>${escapar(i.sem_ela)}</small></td></tr>`).join("");
 
     els("sa-tabelas").innerHTML = b.tabelas.map(x => `<tr>
       <td>${escapar(x.nome)}</td>

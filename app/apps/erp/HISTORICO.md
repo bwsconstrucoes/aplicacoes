@@ -17,6 +17,37 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
+**Estado em 11/09/2026 (quarta entrega):** no ramo, o quadro **"O que está
+ligado"**, em Configurações › Saúde do sistema. **Sem migração.**
+
+**Por que ele nasceu.** O dono disse que a chave da OpenAI *"já existe, talvez
+com um nome um pouquinho diferente"*. Aí está o problema inteiro: **credencial
+cadastrada com o nome errado não dá erro nenhum.** A função simplesmente não
+acontece, recusa com uma frase educada, e todo mundo acha que é assim mesmo. O
+Arquivo pode ter passado semanas sem ler documento nenhum por causa de um
+sublinhado a mais — e ninguém teria como desconfiar.
+
+O quadro responde três coisas sem ninguém entrar no painel do Render: o que
+está ligado, **o nome exato** que o sistema procura, e — quando falta — se
+existe no ambiente alguma variável de nome PARECIDO. Esse último é o achado:
+*"falta OPENAI_API_KEY, mas o ambiente TEM OPENAI_KEY"* sobe como aviso
+amarelo no topo da tela, não como uma linha perdida numa tabela de oito.
+
+**O valor nunca aparece.** Só se está preenchida e os quatro últimos
+caracteres — e só em credencial (KEY, TOKEN, SECRET), porque aí serve para
+conferir se a chave no ar é a que você tem na mão. Em `DATABASE_URL` o final
+seriam as últimas letras do nome do banco: não ajuda a conferir nada e mostra
+um pedaço do endereço à toa.
+
+Há varredura recusando que o valor vaze, e outra exigindo que **todo nome
+listado seja realmente lido por algum código** — listar variável que ninguém lê
+faria o dono configurar à toa.
+
+⚠️ **O que isso revela sobre o passado:** se o nome no Render for mesmo outro,
+então a leitura de documento do Arquivo e a sugestão de cadastro **também nunca
+funcionaram em produção**. As três coisas usam a mesma chave. Vale o dono abrir
+o quadro e conferir.
+
 **Estado em 11/09/2026 (terceira entrega):** no ramo, o **item 3 do assistente
 inteiro** — o ERP vira ícone no celular, a pergunta pode ser FALADA, e dá para
 ANEXAR um documento. **Sem migração.**
