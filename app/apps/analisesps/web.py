@@ -1747,6 +1747,126 @@ def ratear():
 # ---------------------------------------------------------------------------
 # BRADESCO
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# COMPROVANTES — arrastar o PDF e a baixa acontece
+#
+# O trabalho pesado NÃO É DAQUI: o robô que dá baixa é o `baixabradesco`, que
+# roda em produção há meses. Estas rotas são a porta de entrada que o dono
+# pediu em 11/09/2026 — *"eu arrasto esses comprovantes pra dentro e dispara a
+# automação, sem nem precisar passar pelo Make"* — e a memória do que
+# aconteceu, que hoje volta para o Make.com e morre lá.
+# ---------------------------------------------------------------------------
+@bp.route("/comprovantes")
+@exige_consulta
+def tela_comprovantes():
+    from . import comprovantes, consultas, tarefas
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+
+    try:
+        historico = comprovantes.historico()
+        for lote in historico:
+            lote["itens"] = comprovantes.itens_do_lote(lote["id"])
+    except Exception as e:  # noqa: BLE001 — migração 006 ainda não aplicada
+        logger.exception("Análise de SPs: falhou ler o histórico de comprovantes")
+        historico = []
+        return render_template(
+            "analisesps_comprovantes.html", aba="comprovantes", base=base,
+            historico=[], andamento={"rodando": False},
+            por_leva=comprovantes.POR_LEVA,
+            maximo_mb=comprovantes.MAXIMO_POR_ARQUIVO // (1024 * 1024),
+            maximo_arquivos=comprovantes.MAXIMO_DE_ARQUIVOS,
+            aviso="Esta tela precisa da atualização do banco. Vá em "
+                  "Configurações e aperte \"Aplicar atualizações do banco\". "
+                  f"(detalhe: {e})",
+            pode_operar=auth.pode_operar(),
+            perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+            nome=auth.nome_atual())
+
+    return render_template(
+        "analisesps_comprovantes.html", aba="comprovantes", base=base,
+        historico=historico, andamento=tarefas.estado(),
+        por_leva=comprovantes.POR_LEVA,
+        maximo_mb=comprovantes.MAXIMO_POR_ARQUIVO // (1024 * 1024),
+        maximo_arquivos=comprovantes.MAXIMO_DE_ARQUIVOS,
+        aviso=request.args.get("aviso") or None,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/comprovantes/enviar", methods=["POST"])
+@exige_operador
+def enviar_comprovantes():
+    """Recebe os arquivos soltos e põe na fila. NÃO dá baixa aqui.
+
+    A baixa fala com Omie, Pipefy, Sheets e Dropbox e leva minutos; dentro do
+    worker ela seria morta pelo reinício do gunicorn, como já aconteceu três
+    vezes com a carga da planilha. Aqui só se guarda e se dispara o processo
+    separado — quem responde à pessoa é a tela, lendo o banco."""
+    from . import comprovantes, tarefas
+
+    arquivos = [a for a in request.files.getlist("arquivos")
+                if a and a.filename]
+    if not arquivos:
+        return redirect(url_for("analisesps.tela_comprovantes",
+                                aviso="Nenhum arquivo foi escolhido."))
+    if len(arquivos) > comprovantes.MAXIMO_DE_ARQUIVOS:
+        return redirect(url_for(
+            "analisesps.tela_comprovantes",
+            aviso=f"São no máximo {comprovantes.MAXIMO_DE_ARQUIVOS} arquivos "
+                  "por vez. Mande em duas levas."))
+
+    pessoa = auth.pessoa_atual()
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    aceitos, recusados = 0, []
+    for arquivo in arquivos:
+        try:
+            comprovantes.guardar(arquivo.read(), arquivo.filename, pessoa, quem)
+            aceitos += 1
+        except comprovantes.ErroDeComprovante as e:
+            recusados.append(str(e))
+        except Exception as e:  # noqa: BLE001 — um arquivo ruim não derruba os outros
+            logger.exception("Análise de SPs: falhou guardar %r",
+                             arquivo.filename)
+            recusados.append(f"{arquivo.filename}: {e}")
+
+    if aceitos:
+        # Se já houver uma atualização rodando, o disparo é recusado — e tudo
+        # bem: o lote fica ESPERANDO e entra na próxima. Dizer isso é melhor
+        # do que fingir que já está processando.
+        tarefas.disparar("comprovantes", disparo=quem or "comprovantes")
+
+    aviso = (f"{aceitos} arquivo(s) na fila. O resultado aparece aqui embaixo; "
+             "pode fechar a tela." if aceitos else "")
+    if recusados:
+        aviso = (aviso + " " if aviso else "") + " ".join(recusados)
+    return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
+
+
+@bp.route("/api/comprovantes/estado")
+@exige_consulta
+def estado_comprovantes():
+    """O andamento, para a tela se atualizar sozinha sem recarregar tudo."""
+    from . import comprovantes, tarefas
+    try:
+        lotes = comprovantes.historico(quantos=5)
+    except Exception:  # noqa: BLE001 — migração ainda não aplicada
+        return {"ok": False, "rodando": False, "lotes": []}
+    andamento = tarefas.estado()
+    return {
+        "ok": True,
+        "rodando": bool(andamento.get("rodando")),
+        "lotes": [{"id": l["id"], "situacao": l["situacao"],
+                   "levas": l["levas"], "levas_feitas": l["levas_feitas"],
+                   "pendencias": l["pendencias"], "resolvidos": l["resolvidos"]}
+                  for l in lotes],
+    }
+
+
 @bp.route("/bradesco", methods=["GET", "POST"])
 @exige_consulta
 def tela_bradesco():

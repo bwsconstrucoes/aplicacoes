@@ -705,3 +705,102 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
 
   setInterval(bater, CADA);
 })();
+
+
+/* ---------------------------------------------------------------------------
+   COMPROVANTES — arrastar e soltar, e a tela se atualizando sozinha.
+
+   O dono pediu em 11/09/2026: "eu arrasto esses comprovantes pra dentro da
+   tela e dispara a automacao". E logo depois: "se eu sair da tela e voltar, a
+   informacao vai ser me dada ainda?".
+
+   VAI. O resultado NAO mora aqui: mora no banco. Este arquivo so mostra. Se a
+   pessoa fechar a aba no meio, o processo separado continua, e ao voltar ela
+   ve tudo. Por isso aqui nao se guarda nada em memoria de pagina.
+--------------------------------------------------------------------------- */
+(function () {
+  const area = document.getElementById("area-solta");
+  const campo = document.getElementById("campo-comprovantes");
+  const lista = document.getElementById("escolhidos");
+  const botao = document.getElementById("btn-enviar");
+  if (!area || !campo) return;
+
+  function descrever() {
+    const arquivos = Array.from(campo.files || []);
+    botao.disabled = arquivos.length === 0;
+    if (!arquivos.length) { lista.hidden = true; lista.textContent = ""; return; }
+    const mb = t => (t / (1024 * 1024)).toFixed(1).replace(".", ",");
+    lista.hidden = false;
+    lista.textContent = arquivos.length + " arquivo(s): "
+        + arquivos.map(a => `${a.name} (${mb(a.size)} MB)`).join(" · ");
+  }
+
+  // `dragover` PRECISA do preventDefault, senao o navegador abre o PDF numa
+  // aba nova em vez de deixar soltar aqui — e a pessoa perde o que arrastou.
+  ["dragenter", "dragover"].forEach(evento => {
+    area.addEventListener(evento, e => {
+      e.preventDefault();
+      area.classList.add("por-cima");
+    });
+  });
+  ["dragleave", "drop"].forEach(evento => {
+    area.addEventListener(evento, e => {
+      e.preventDefault();
+      area.classList.remove("por-cima");
+    });
+  });
+
+  area.addEventListener("drop", e => {
+    const soltos = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+    const pdfs = soltos.filter(a => /\.pdf$/i.test(a.name));
+    if (!pdfs.length) {
+      alert("Solte arquivos PDF. Comprovante em foto ou print ainda nao e "
+            + "aceito por aqui.");
+      return;
+    }
+    if (pdfs.length < soltos.length) {
+      alert((soltos.length - pdfs.length) + " arquivo(s) que nao sao PDF "
+            + "ficaram de fora.");
+    }
+    // DataTransfer e o unico jeito de por arquivos soltos dentro do <input>,
+    // que e quem o formulario envia. Sem isto o arrastar nao manda nada.
+    const saco = new DataTransfer();
+    pdfs.forEach(a => saco.items.add(a));
+    campo.files = saco.files;
+    descrever();
+  });
+
+  campo.addEventListener("change", descrever);
+
+  // O botao so pode ser apertado uma vez: dois envios do mesmo arquivo criariam
+  // dois lotes. A baixa duplicada e barrada pelo robo, mas a tela ficaria com
+  // duas linhas dizendo a mesma coisa, e isso confunde na hora de conferir.
+  const form = document.getElementById("form-comprovantes");
+  if (form) form.addEventListener("submit", () => {
+    botao.disabled = true;
+    botao.textContent = "Mandando…";
+  });
+
+  // Enquanto houver lote na fila ou processando, a tela se atualiza sozinha.
+  // Quem diz se HA trabalho e o servidor, num atributo — nao o texto da
+  // pagina. E perguntar so o andamento (consulta curta) em vez de recarregar
+  // tudo: o banco tem um decimo de um nucleo.
+  const estado = document.getElementById("comprovantes-estado");
+  if (estado && estado.dataset.trabalhando) {
+    let tentativas = 0;
+    const relogio = setInterval(async () => {
+      // Para de perguntar depois de ~10 minutos. Uma tela esquecida aberta a
+      // noite inteira nao pode ficar batendo no banco para sempre.
+      if (++tentativas > 120) { clearInterval(relogio); return; }
+      try {
+        const r = await fetch(estado.dataset.urlEstado, {
+          headers: {"Accept": "application/json"}});
+        const dados = await r.json();
+        const parado = !dados.rodando && !(dados.lotes || []).some(
+            l => l.situacao === "ESPERANDO" || l.situacao === "RODANDO");
+        // Recarrega UMA vez quando tudo terminou, para mostrar as linhas.
+        if (parado) { clearInterval(relogio); location.reload(); }
+      } catch (e) { /* rede caiu: a proxima tentativa resolve */ }
+    }, 5000);
+  }
+})();

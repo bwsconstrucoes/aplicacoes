@@ -53,6 +53,7 @@ MODOS = {
     "carga_inicial": "Primeira carga — traz a planilha inteira (demorado)",
     "apoios": "Só as planilhas de apoio (contas e documentação fiscal)",
     "fila": "Só devolver para a planilha as alterações pendentes",
+    "comprovantes": "Dar baixa nos comprovantes arrastados para a tela",
 }
 
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
@@ -62,6 +63,7 @@ ETAPAS = {
     "sincronizar": ["fila", "delta", "apoios"],
     "apoios": ["apoios"],
     "fila": ["fila"],
+    "comprovantes": ["comprovantes"],
 }
 
 
@@ -306,6 +308,19 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 resultado = sincronizacao.sincronizar_delta(anotar)
                 total_linhas[0] = resultado.get("alteradas", 0)
 
+            elif etapa == "comprovantes":
+                # A BAIXA NÃO PODE RODAR DENTRO DO WORKER, e é o mesmo motivo
+                # da carga: ela fala com Omie, Pipefy, Sheets e Dropbox e leva
+                # minutos, enquanto o gunicorn recicla o processo a cada ~150
+                # requisições. Por isso ela mora aqui, no processo separado.
+                mudar_etapa("dando baixa nos comprovantes")
+                from . import comprovantes as _comprovantes
+                c = _comprovantes.processar_pendentes(anotar)
+                total_linhas[0] = c.get("lotes", 0)
+                recado_apoios[0] = (
+                    f"{c.get('lotes', 0)} arquivo(s) processado(s)"
+                    + (f", {c['falhas']} com falha" if c.get("falhas") else ""))
+
             elif etapa == "apoios":
                 if automatica and _apoios_recentes():
                     logger.info("Análise de SPs: planilhas de apoio ainda "
@@ -338,7 +353,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             _marcar_etapa_feita(execucao_id, etapa)
 
         duracao = (agora() - inicio).total_seconds()
-        if modo == "apoios":
+        if modo in ("apoios", "comprovantes"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
             mensagem = (recado_apoios[0]

@@ -588,7 +588,10 @@ def test_o_modo_apoios_nao_termina_dizendo_zero_sps():
     parecer que nada aconteceu justamente quando algo aconteceu."""
     from pathlib import Path
     fonte = Path("app/apps/analisesps/tarefas.py").read_text(encoding="utf-8")
-    assert 'if modo == "apoios"' in fonte
+    assert 'if modo in ("apoios", "comprovantes")' in fonte, (
+        'o modo "apoios" voltou a cair na mensagem que conta SPs — e ele não '
+        "traz nenhuma. O modo dos comprovantes divide a mesma regra: os dois "
+        "fazem trabalho que não se mede em SPs.")
     assert "recado_apoios" in fonte
 
 

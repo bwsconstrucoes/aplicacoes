@@ -518,6 +518,14 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # Só o `beevale.py` importa — ver a exceção explicada no teste acima.
         # Já estava no requirements por causa do painel.
         "openpyxl": "openpyxl",
+        # Partir o PDF de comprovantes em levas de dez páginas. Já estava no
+        # requirements (o BaixaBradesco usa), então nada novo entrou.
+        "pypdf": "pypdf",
+        # `app` é o PRÓPRIO repositório, não uma biblioteca — o
+        # `comprovantes.py` chama o robô do `baixabradesco` por
+        # `from app.apps.baixabradesco...`. Não tem o que conferir no
+        # requirements.
+        "app": "",
     }
 
     faltando = []
@@ -537,6 +545,8 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
                 if nome in {c.stem for c in MODULO.glob("*.py")}:
                     continue
                 pacote = INSTALADO_COMO.get(nome)
+                if pacote == "":
+                    continue      # é código deste repositório, não biblioteca
                 if pacote is None:
                     faltando.append(f"{caminho.name}:{no.lineno}  '{nome}' "
                                     "não está na lista de nomes conhecidos")

@@ -1872,6 +1872,96 @@ correção**: com o código que estava no ar, a SP com carimbo vazio continua
 > na planilha à mão: edição de gente dispara o gatilho, o carimbo é escrito, e
 > a sincronização seguinte traz a linha.
 
+### Vigésima sétima leva (11/09) — os comprovantes arrastados para a tela
+
+*"Eu arrasto esses comprovantes pra dentro e dispara a automação, sem nem
+precisar passar pelo Make."* E, logo depois: *"se eu sair da tela e voltar, a
+informação vai ser me dada ainda ou eu vou perder se eu mudar de tela?"*
+
+**A descoberta que poupou um módulo inteiro: o robô já existe.** O
+`baixabradesco` roda em produção há meses — recebe o PDF, descobre a SP, dá
+baixa no Omie, marca paga na SPsBD, move o card no Pipefy e guarda o
+comprovante. E já aceita o PDF dentro do próprio pedido. **O que faltava não era
+a baixa: era a porta de entrada.** Nada foi mudado naquela área.
+
+**A aba nova é "Comprovantes"**, e ela é própria de propósito: nas Solicitações
+a tela já está cheia de linhas, e arrastar arquivo por cima de uma lista de
+pagamentos é convite a soltar no lugar errado.
+
+**As levas de dez não são invenção daqui.** O dono descreveu o que o script
+dele já faz: *"ele divide o PDF em dez páginas; se eu mandar cinquenta num
+único PDF, ele quebra em cinco e manda um por um"*. Manter o mesmo tamanho tem
+uma razão a mais do que a simetria — é o tamanho de lote que o robô já recebe
+há meses, então não se estreia carga nova nele.
+
+> **E a conta é por PÁGINA, não por arquivo.** O robô trata cada página como um
+> comprovante separado. Cortar por quantidade de arquivos deixaria um PDF de
+> cinquenta páginas passar inteiro numa chamada só — o caso que as levas
+> existem para evitar. A numeração mostrada é a do arquivo original: a página 1
+> da terceira leva aparece como "página 21", que é onde ela está no PDF que a
+> pessoa soltou.
+
+#### A resposta à pergunta dele: a informação FICA
+
+O resultado mora no **banco**, não na tela. Sair da aba, fechar o navegador,
+voltar no dia seguinte — está tudo lá. Se morasse na tela, trocar de aba
+perderia tudo, e o serviço ainda reinicia sozinho a cada ~150 requisições.
+
+**E essa informação hoje é jogada fora.** O robô já devolve, a cada leva,
+exatamente o que o dono pediu para ver — *"esse deu certo, esse deu errado,
+esse tem duplicidade, esse faltou aquilo"*:
+
+| O que a tela mostra | De onde vem |
+|---|---|
+| **Baixado** | o robô localizou a SP e executou |
+| **Já tinha sido baixado** | a trava de duplicidade fez o trabalho dela |
+| **Não achei a SP** | com o motivo escrito pelo robô |
+| **Falta liberar antes de baixar** | achou a SP, mas ela não está liberada |
+| **Pagamento não efetivado** | o comprovante não confirma o pagamento |
+
+Isso tudo voltava para o Make.com e morria lá. **O que pede ação aparece em
+cima**, e o que baixou fica por último: quem abre a tela quer saber o que ficou
+de fora — o que baixou é o esperado, e esperado não é notícia.
+
+#### Decisões de construção que não são óbvias
+
+- **A baixa roda no processo separado**, como a carga da planilha. Ela fala com
+  Omie, Pipefy, Sheets e Dropbox e leva minutos; dentro do worker seria morta
+  pelo reinício do gunicorn — foi o que matou a carga três vezes na conversão
+  do painel.
+- **Cada leva é gravada na hora, não no fim.** Se o serviço reiniciar no meio
+  de um PDF de cinquenta páginas, as levas já feitas estão no banco. Há teste
+  olhando o banco de dentro do processamento para provar isso.
+- **O PDF não entra no banco.** Ele espera em disco e é apagado quando o lote
+  termina. O banco tem 1 GB e já usa 430 MB, e o comprovante já é guardado pelo
+  robô no destino definitivo.
+- **Se o contêiner reiniciar antes de processar**, o arquivo some do disco e o
+  lote vira "falhou" com um recado que diz para arrastar de novo — e que fazer
+  isso é seguro, porque a trava do robô barra a baixa repetida.
+- **Teto de 25 MB por arquivo e 20 arquivos por vez.** A instância tem 2 GB
+  divididos com 17 módulos e já morreu de memória em julho de 2026.
+- **A chamada ao robô é direta, não por HTTP.** Falar com a própria rota
+  ocuparia uma das QUATRO threads do gunicorn por vários minutos. O pedido
+  montado é o MESMO que aquela rota passa adiante, então o contrato é o
+  documentado.
+
+**Verificação:** 4.421 testes verdes com Postgres de verdade, 129 pulados; 22
+testes novos, 10 deles com banco. **E a tela foi exercitada de verdade**, contra
+um Postgres descartável: soltar um PDF de 12 páginas cria o lote com 2 levas,
+grava o arquivo, dispara o processo e mostra o recado; a tela do histórico
+mostra a linha baixada e a que não achou a SP, com o motivo; arquivo que não é
+PDF vira recado em português; e o perfil Consulta recebe 403 ao tentar enviar.
+
+> **PRECISA DO BOTÃO.** A migração **006** cria as duas tabelas. Ao publicar,
+> apertar **"Aplicar atualizações do banco"** em Configurações no mesmo
+> momento. Sem ela a tela abre, mas avisa que falta a atualização em vez de
+> estourar.
+
+**O que NÃO foi verificado:** nenhuma baixa de verdade foi feita — o robô foi
+dublado em todos os testes. Omie, Pipefy, Dropbox e a planilha não foram
+tocados. O primeiro comprovante de verdade é o teste que falta, e o certo é
+começar com UM.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Normalizar o nome do credor na SPsBD** (pedido em 11/09/2026). *"O Pipefy é
@@ -1904,17 +1994,6 @@ CNPJ**, e a escolha fica gravada. Rodar sob botão e uma vez por dia, **nunca**
 na sincronização de 5 em 5 minutos — é varredura da base inteira e o banco tem
 um décimo de um núcleo.
 
-**Comprovantes por arrastar e soltar** (pedido em 11/09/2026). *"Eu arrasto o
-comprovante pra dentro da tela e dispara a automação, sem passar pelo Make."*
-
-**Levantamento: o robô JÁ EXISTE e está em produção.** O `baixabradesco` recebe
-o PDF, descobre a SP, dá baixa no Omie, marca paga na SPsBD, move o card no
-Pipefy e guarda o comprovante — e já aceita o PDF **dentro do próprio pedido**,
-em base64. O que falta não é a baixa: é a **porta de entrada**. Hoje quem chama
-é um cenário do Make.com; a tela nova chamaria a mesma rota, e o Make sai do
-caminho. **Nenhuma mudança no `baixabradesco`** — que é outra área e não se
-mexe daqui.
-
 **A IA da conciliação fiscal — o dono decidiu o desenho em 11/09/2026.** Não é
 automática: os pendentes aparecem com a opção *"analisar com IA"*, e ele
 **escolhe quais**, para ir medindo se compensa. Volume estimado por ele: *"mil
@@ -1925,6 +2004,14 @@ quero ter trabalho nenhum em baixar no FSist"), mantendo o FSist E a importaçã
 manual de relatório — porque pode ter relatório de outra empresa para jogar
 ali. A importação **não pode duplicar**: nota que já existe é ignorada, e no fim
 diz quantas entraram, quantas já tinha e quantas não tinha.
+
+**O relatório do lote em PDF precisa caber mais** (pedido em 11/09/2026).
+*"Está bacaninha, só que reduz a fonte consideravelmente pra caber mais
+informação. Quero que tenha a descrição. Quero que tenha obra. E pode usar a
+quebra de linha."* Ou seja: fonte menor, duas colunas novas (Descrição e Obra)
+e texto quebrando em mais de uma linha dentro da célula — o que hoje não
+acontece, o texto é cortado. Ele fechou dizendo que com essas duas colunas já
+fica suficiente.
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a
 mesma estrutura do PDF que já existe. *"Coloca isso na fila de produção

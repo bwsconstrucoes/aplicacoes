@@ -1495,3 +1495,240 @@ def test_a_sincronizacao_registra_QUANTAS_linhas_desceram(
     assert consultar_um("SELECT valor FROM analisesps.meta "
                         "WHERE chave = 'ultima_sincronizacao'")[0], (
         "a hora foi gravada mesmo sem nada ter mudado — é isso que despista")
+
+
+# ---------------------------------------------------------------------------
+# OS COMPROVANTES ARRASTADOS — a memória que o dono pediu
+#
+# "Se eu sair da tela e voltar, a informação vai ser me dada ainda ou eu vou
+# perder se eu mudar de tela?" — o dono, em 11/09/2026.
+#
+# Vai ser dada. É por isso que o resultado mora no banco e não na tela, e é
+# isso que estes testes travam.
+# ---------------------------------------------------------------------------
+def _pdf(paginas: int) -> bytes:
+    import io as _io
+    from pypdf import PdfWriter
+    escritor = PdfWriter()
+    for _ in range(paginas):
+        escritor.add_blank_page(width=200, height=200)
+    saco = _io.BytesIO()
+    escritor.write(saco)
+    return saco.getvalue()
+
+
+def _robo_falso(por_leva):
+    """Um `baixabradesco` de mentira: devolve o que o de verdade devolveria.
+
+    O robô verdadeiro fala com Omie, Pipefy, Sheets e Dropbox — nenhum teste
+    encosta neles."""
+    def responder(pedaco, nome):
+        return {"planos": [
+            {"match": {"status": "localizado"}, "pode_executar": True,
+             "receipt": {"page": n + 1, "id_pipefy": f"sp{n}",
+                         "valor_pago": "10,00", "nome_recebedor": "FORNECEDOR"}}
+            for n in range(por_leva)]}
+    return responder
+
+
+@pytest.mark.banco
+def test_o_resultado_do_comprovante_fica_GUARDADO(banco_analisesps, monkeypatch,
+                                                  tmp_path):
+    """O teste que responde à pergunta do dono: sair da tela e voltar não
+    perde nada, porque nada mora na tela."""
+    from app.apps.analisesps import comprovantes
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", _robo_falso(10))
+
+    lote_id = comprovantes.guardar(_pdf(25), "comprovantes.pdf", "marcelo", "Marcelo")
+    assert comprovantes.processar_um(lote_id)["ok"]
+
+    # Aqui é a "volta à tela": tudo relido do banco, sem nenhum estado em pé.
+    itens = comprovantes.itens_do_lote(lote_id)
+    assert len(itens) == 30, "cada leva devolveu 10; três levas são 30 linhas"
+    assert all(i["situacao"] == comprovantes.BAIXADO for i in itens)
+    assert comprovantes.historico()[0]["situacao"] == "PRONTO"
+
+
+@pytest.mark.banco
+def test_cada_leva_e_gravada_NA_HORA_e_nao_no_fim(banco_analisesps, monkeypatch,
+                                                  tmp_path):
+    """Se o serviço reiniciar no meio de um PDF de cinquenta páginas, as levas
+    já processadas têm de estar no banco. Guardar tudo para o fim perderia
+    todas — e o gunicorn recicla o processo a cada ~150 requisições."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    vistos = []
+
+    def responder(pedaco, nome):
+        # No meio da segunda leva, olha o banco: a primeira já tem de estar lá.
+        vistos.append(consultar_um(
+            "SELECT count(*) FROM analisesps.comprovantes_item "
+            " WHERE lote_id = (SELECT max(id) FROM analisesps.comprovantes_lote)")[0])
+        return {"planos": [{"match": {"status": "localizado"},
+                            "pode_executar": True, "receipt": {"page": 1}}]}
+
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", responder)
+    lote_id = comprovantes.guardar(_pdf(25), "x.pdf", "p", "P")
+    comprovantes.processar_um(lote_id)
+
+    assert vistos == [0, 1, 2], (
+        f"as levas não foram gravadas uma a uma: {vistos}")
+
+
+@pytest.mark.banco
+def test_o_PDF_sai_do_disco_quando_o_lote_termina(banco_analisesps, monkeypatch,
+                                                  tmp_path):
+    """O comprovante já é guardado pelo robô no destino definitivo. O que fica
+    aqui é cópia de passagem — e cópia de passagem que não é apagada vira
+    disco cheio sem ninguém perceber."""
+    import os
+
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", _robo_falso(1))
+    lote_id = comprovantes.guardar(_pdf(2), "x.pdf", "p", "P")
+    caminho = consultar_um(
+        "SELECT caminho FROM analisesps.comprovantes_lote WHERE id = ?",
+        (lote_id,))[0]
+    assert os.path.exists(caminho)
+
+    comprovantes.processar_um(lote_id)
+    assert not os.path.exists(caminho), "o PDF ficou no disco depois de pronto"
+
+
+@pytest.mark.banco
+def test_falha_no_meio_marca_o_lote_e_guarda_o_que_ja_tinha_saido(
+        banco_analisesps, monkeypatch, tmp_path):
+    """Metade processada é melhor do que nada, DESDE QUE a tela diga que
+    falhou. O pior seria ficar "processando" para sempre."""
+    from app.apps.analisesps import comprovantes
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    chamadas = [0]
+
+    def responder(pedaco, nome):
+        chamadas[0] += 1
+        if chamadas[0] == 2:
+            raise RuntimeError("o Omie não respondeu")
+        return {"planos": [{"match": {"status": "localizado"},
+                            "pode_executar": True, "receipt": {"page": 1}}]}
+
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", responder)
+    lote_id = comprovantes.guardar(_pdf(25), "x.pdf", "p", "P")
+    assert comprovantes.processar_um(lote_id)["ok"] is False
+
+    lote = comprovantes.historico()[0]
+    assert lote["situacao"] == "FALHOU"
+    assert "Omie" in lote["erro"]
+    assert len(comprovantes.itens_do_lote(lote_id)) == 1, (
+        "a leva que deu certo antes da falha se perdeu")
+
+
+@pytest.mark.banco
+def test_arquivo_que_sumiu_do_disco_vira_recado_e_nao_lote_eterno(
+        banco_analisesps, monkeypatch, tmp_path):
+    """O contêiner reinicia e leva o disco junto. Dizer isso é melhor do que
+    deixar o lote "na fila" para sempre — e o recado precisa dizer que mandar
+    de novo é seguro, porque a trava do robô barra a baixa repetida."""
+    import os
+
+    from app.apps.analisesps import comprovantes
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(2), "x.pdf", "p", "P")
+    os.remove(os.path.join(str(tmp_path), f"lote-{lote_id}.pdf"))
+
+    comprovantes.processar_um(lote_id)
+    lote = comprovantes.historico()[0]
+    assert lote["situacao"] == "FALHOU"
+    assert "de novo" in lote["erro"] and "duas vezes" in lote["erro"]
+
+
+@pytest.mark.banco
+def test_o_historico_conta_em_UMA_consulta_por_situacao(banco_analisesps,
+                                                        monkeypatch, tmp_path):
+    """Com quinze lotes na tela, uma consulta por lote seriam dezesseis idas
+    ao banco — e o banco tem um décimo de um núcleo."""
+    from app.apps.analisesps import comprovantes
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", _robo_falso(1))
+    for n in range(3):
+        comprovantes.processar_um(
+            comprovantes.guardar(_pdf(1), f"{n}.pdf", "p", "P"))
+
+    historico = comprovantes.historico()
+    assert len(historico) == 3
+    assert all(l["contagem"] for l in historico)
+    assert historico[0]["resolvidos"] == 1 and historico[0]["pendencias"] == 0
+
+
+@pytest.mark.banco
+def test_arquivo_grande_demais_e_recusado_ANTES_de_ir_para_o_disco(
+        banco_analisesps, monkeypatch, tmp_path):
+    """A instância tem 2 GB divididos com 17 módulos e já morreu de falta de
+    memória em julho de 2026."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "MAXIMO_POR_ARQUIVO", 100)
+    with pytest.raises(comprovantes.ErroDeComprovante) as erro:
+        comprovantes.guardar(_pdf(5), "gigante.pdf", "p", "P")
+    assert "MB" in str(erro.value)
+    assert consultar_um(
+        "SELECT count(*) FROM analisesps.comprovantes_lote")[0] == 0
+
+
+@pytest.mark.banco
+def test_arquivo_que_nao_e_pdf_e_recusado_com_recado_de_gente(
+        banco_analisesps, monkeypatch, tmp_path):
+    from app.apps.analisesps import comprovantes
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    with pytest.raises(comprovantes.ErroDeComprovante) as erro:
+        comprovantes.guardar(b"isto nao e um pdf", "foto.pdf", "p", "P")
+    assert "senha" in str(erro.value) or "corrompido" in str(erro.value)
+
+
+@pytest.mark.banco
+def test_a_fila_pega_todos_os_lotes_esperando(banco_analisesps, monkeypatch,
+                                              tmp_path):
+    """Duas levas soltas antes de a primeira terminar não podem ficar para
+    trás."""
+    from app.apps.analisesps import comprovantes
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", _robo_falso(1))
+    comprovantes.guardar(_pdf(1), "a.pdf", "p", "P")
+    comprovantes.guardar(_pdf(1), "b.pdf", "p", "P")
+
+    assert comprovantes.processar_pendentes() == {"lotes": 2, "falhas": 0}
+    assert all(l["situacao"] == "PRONTO" for l in comprovantes.historico())
+
+
+@pytest.mark.banco
+def test_o_que_pede_acao_aparece_no_topo_da_lista(banco_analisesps, monkeypatch,
+                                                  tmp_path):
+    """A ordem NÃO é a das páginas de propósito: quem abre isto quer saber o
+    que ficou de fora."""
+    from app.apps.analisesps import comprovantes
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo", lambda p, n: {
+        "planos": [
+            {"match": {"status": "localizado"}, "pode_executar": True,
+             "receipt": {"page": 1}},
+            {"match": {"status": "nao_localizado", "motivo": "sem par"},
+             "pode_executar": False, "receipt": {"page": 2}}]})
+    lote_id = comprovantes.guardar(_pdf(2), "x.pdf", "p", "P")
+    comprovantes.processar_um(lote_id)
+
+    itens = comprovantes.itens_do_lote(lote_id)
+    assert itens[0]["situacao"] == comprovantes.NAO_LOCALIZADO, (
+        "o que baixou veio na frente do que precisa de atenção")
