@@ -138,25 +138,93 @@ para o Nº NF, não entrada na lista geral**. Se `nf` entrasse em `EDITAVEIS`,
 qualquer operador passaria a poder reescrever o número da nota de qualquer SP
 pela tela comum — e o número da nota é prova fiscal, não campo de trabalho.
 
-### A pergunta que falta responder, e ela muda o desenho
+### RESPONDIDO em 11/09: quem alimenta a SPsBD são SCRIPTS
 
-**Quem escreve o Nº NF na SPsBD hoje?** Se um script leva o dado do Pipefy para
-a planilha, escrever no card basta — o valor desce sozinho, e escrever nos dois
-lados seria só risco de corrida. Se é pessoa digitando na planilha, então os
-dois lados precisam mesmo ser escritos, e a planilha é a que manda.
+O dono: *"em relação à planilha, quem alimenta a planilha são scripts."*
 
-Enquanto isso não estiver respondido, **o desenho seguro é escrever nos dois** e
-só quando os dois já concordam ou a planilha está vazia — nunca sobrescrever um
-número que já estava lá diferente. Um número de nota trocado em silêncio é o
-mesmo tipo de erro que este arquivo inteiro existe para não cometer.
+Isso resolve o desenho, e simplifica: **o card do Pipefy é a fonte; a planilha
+é o destino.** Escrever o Nº da nota no card BASTA — o script leva o valor para
+a coluna AA sozinho. Escrever nos dois lados criaria duas verdades para a mesma
+informação, e o dia em que elas discordassem ninguém saberia qual vale.
 
-### O que NÃO se sabe ainda
+**Portanto: a conciliação escreve NO CARD, e não toca na planilha.** A coluna
+AA continua somente leitura, como está hoje.
 
-O identificador do campo **Nº da nota** e do campo **Chave de acesso** no
-Pipefy. O da Documentação Fiscal já é conhecido e está provado em produção
-(`documenta_o_fiscal`, usado pelo BeeVale desde 05/09); os outros dois nunca
-foram escritos por este módulo. Sem eles a gravação de volta não sai do papel.
+**O efeito colateral, dito para não assustar:** entre a gravação no card e a
+próxima rodada do script, a coluna Nº NF das telas de Solicitações e Lote ainda
+mostra o número velho. A **tela de Documentação Fiscal não sofre disso**, porque
+ela lê o registro paralelo (`sp_fiscal_analise`), que sabe o que foi decidido e
+o que já foi escrito no card. Quem faz a conciliação vê o valor novo na hora.
 
+## OS CAMPOS DO CARD — identificadores conferidos em 11/09/2026
+
+Tirados da estrutura do pipe que o dono colou, conferidos um a um. Estão no
+código em `pipefy.py`, com o UUID ao lado de cada um e um teste que os trava.
+
+| Campo no card | Identificador | UUID |
+|---|---|---|
+| A despesa gerou emissão de Nota Fiscal? | `a_despesa_gerou_emiss_o_de_nota_fiscal` | `f2453ccf-…` |
+| Nº da Nota Fiscal | `n_da_nota_fiscal` | `d19d97ad-…` |
+| Documentação Fiscal | `documenta_o_fiscal` | `40c54379-…` |
+| Chave de Acesso | `chave_de_acesso` | `fa6f8252-…` |
+| Análise Dedutibilidade | `an_lise_dedutibilidade` | `969cf0da-…` |
+| Etiquetas | `etiquetas` | `88ba0d09-…` |
+
+**Por que isso está travado em teste.** Errar um identificador do Pipefy **não
+dá erro**: a chamada é aceita e nada é gravado. Não haveria como perceber
+olhando a tela do Análise de SPs — só abrindo o card e vendo que continua
+vazio. O identificador muda se alguém renomear o campo na tela do Pipefy; o
+UUID, não, e é por isso que ele fica anotado ao lado.
+
+**As 22 opções de Documentação Fiscal batem exatamente** com a lista do pipe, na
+mesma ordem — conferido por teste. Isso não é preciosismo: o Pipefy **recusa o
+card inteiro** quando o texto não é uma das opções, então um acento diferente
+não erraria uma SP, derrubaria a gravação do lote todo.
+
+**Ainda não se sabe o TIPO de dois campos.** O JSON que o dono colou traz
+identificador, rótulo e UUID, mas não o tipo. Para "Análise Dedutibilidade" —
+onde ele quer o link da nota baixada — isso importa: se for campo de seleção e
+não de texto, o link não cabe ali. Descobrir é uma consulta à API, e fica para
+quando a gravação for construída.
+
+## A LEITURA DOS ANEXOS POR IA — o degrau seguinte, e AINDA NÃO EXISTE
+
+Pergunta do dono, em 11/09/2026: *"está entrando aí a análise dos anexos?
+quando a gente não conseguir cruzar de forma fácil os dados?"*
+
+**Resposta honesta: não, ainda não.** O que está construído hoje cruza só
+TEXTO — credor, CNPJ, valor, número da nota, data. Quando esse cruzamento não
+fecha, a SP cai em "procurei e não achei" e para ali. O anexo não é aberto.
+
+**E é exatamente aí que a IA entra**, porque é aí que o cruzamento textual
+acabou. A ordem importa e é esta:
+
+1. **Primeiro o cruzamento textual**, que é de graça, instantâneo e resolve a
+   maioria. Mandar todo anexo para a IA seria pagar caro para responder o que
+   já se sabia.
+2. **Só o que sobrar** vai para a leitura do anexo — e o volume disso é o que
+   decide o custo. Hoje esse número não é conhecido; ele aparece assim que a
+   tela rodar uma vez contra a base inteira.
+3. **A IA lê e PROPÕE**, nunca decide. Uma nota lida errado de um PDF torto é
+   dedução indevida com cara de decisão tomada, e é o erro que este arquivo
+   inteiro existe para não cometer.
+
+**O que o dono quer que ela responda** (das mensagens de 11/09): se o anexo é
+mesmo uma nota fiscal; qual a chave de acesso quando ela não veio no relatório
+do FSist; e, quando não for nota, que documento é — para escolher a categoria
+certa entre as 22.
+
+**A decisão que está tomada:** a IA está no escopo, e não foi adiada. O que
+falta é ela ser construída.
+
+**O que ela custa, e é decisão do dono:** é dependência nova e é cobrada por
+documento lido. Vale a pena medir o volume da fila antes de ligar — a conta
+muda muito se forem 50 anexos por mês ou 5.000.
+
+**Um atalho que pode dispensar boa parte disso**, e que o dono levantou: se os
+certificados digitais da empresa entrarem no Análise de SPs, as notas podem ser
+baixadas direto da Receita, com a chave, sem IA e sem FSist. Aí a IA sobraria
+só para o que não é nota eletrônica. Não foi verificado ainda se isso é viável.
 
 ## A CORREÇÃO DE 11/09 QUE MUDOU O MIOLO: a nota é o balizador
 

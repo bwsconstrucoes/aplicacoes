@@ -744,3 +744,62 @@ def test_sem_nenhuma_chave_usada_todas_as_notas_sao_orfas():
     """O estado do primeiro dia, antes de qualquer conciliação."""
     assert len(fiscal.notas_sem_lancamento([nota(), nota(
         chave=chave("11222333000181"))], set())) == 2
+
+
+# ---------------------------------------------------------------------------
+# OS CAMPOS DO CARD — travados aqui porque erram em SILÊNCIO
+#
+# Errar um identificador do Pipefy não dá erro: a chamada é aceita e nada é
+# gravado. Não há como descobrir isso olhando a tela do Análise de SPs — só
+# abrindo o card no Pipefy e vendo que ele continua vazio. Por isso os valores
+# ficam presos aqui, conferidos contra a estrutura do pipe que o dono colou em
+# 11/09/2026.
+# ---------------------------------------------------------------------------
+def test_os_identificadores_dos_campos_da_conciliacao():
+    """Se alguém renomear o campo na tela do Pipefy, o identificador muda e a
+    gravação passa a não fazer nada. O UUID ao lado de cada um, no código, é o
+    que permite reencontrar o campo quando isso acontecer."""
+    from app.apps.analisesps import pipefy
+    assert pipefy.CAMPO_GEROU_NOTA == "a_despesa_gerou_emiss_o_de_nota_fiscal"
+    assert pipefy.CAMPO_NUMERO_NOTA == "n_da_nota_fiscal"
+    assert pipefy.CAMPO_CHAVE_ACESSO == "chave_de_acesso"
+    assert pipefy.CAMPO_ANALISE_DEDUT == "an_lise_dedutibilidade"
+    assert pipefy.CAMPO_DOC_FISCAL == "documenta_o_fiscal"
+
+
+def test_as_categorias_sao_exatamente_as_opcoes_do_campo_do_pipefy():
+    """O Pipefy RECUSA o card inteiro quando o texto não é uma das opções do
+    campo. Uma categoria escrita com acento diferente aqui não erraria só
+    aquela SP — derrubaria a gravação do lote todo.
+
+    A lista é a do JSON do pipe, na ordem dele."""
+    from app.apps.analisesps import fiscal
+    assert fiscal.CATEGORIAS == [
+        "NF-e (Mercadoria)", "NFS-e (Serviço)", "CT-e (Frete)",
+        "NFC-e (Cupom Fiscal eletrônico)", "Guia de Tributo", "Seguros",
+        "Taxas Diversas", "Contrato", "Contrato (Alterar Titularidade)",
+        "BeeVale", "Nota de Débito/Fatura", "Ausente",
+        "Aguardando Nota (Ilegível)", "Aguardando Nota (Não Anexada)",
+        "Nota Cancelada", "Reanalisar", "Fundo Fixo", "Emissão Futura",
+        "Rescisões (TRCT e Multa)", "Férias ou PL", "Presente",
+        "Não Dedutível",
+    ]
+
+
+def test_tudo_que_o_sistema_propoe_cabe_no_campo_do_pipefy():
+    """A ponta solta que este teste fecha: `avaliar` propõe uma categoria, e
+    ela vai direto para o card. Se algum caminho do código produzisse um texto
+    fora da lista, o Pipefy recusaria — e só se descobriria em produção."""
+    from app.apps.analisesps import fiscal
+    permitidas = set(fiscal.CATEGORIAS)
+    for modelo in fiscal.MODELOS.values():
+        assert modelo in permitidas, modelo
+    for sugerida in fiscal.CATEGORIA_SEM_NOTA_ELETRONICA.values():
+        assert sugerida in permitidas, sugerida
+
+
+def test_gerou_nota_so_aceita_sim_ou_nao():
+    """O campo é de duas opções. "SIM" ou "sim" seriam recusados."""
+    from app.apps.analisesps import pipefy
+    assert pipefy.GEROU_NOTA_SIM == "Sim"
+    assert pipefy.GEROU_NOTA_NAO == "Não"

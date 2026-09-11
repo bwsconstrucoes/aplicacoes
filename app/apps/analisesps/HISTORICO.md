@@ -1690,17 +1690,65 @@ entrada na lista geral.** Pôr `nf` na lista comum daria a qualquer operador o
 poder de reescrever o número da nota de qualquer SP pela tela de sempre, e
 número de nota é prova fiscal, não campo de trabalho.
 
-**A pergunta que ficou para o dono:** quem escreve o Nº NF na SPsBD hoje? Se é
-um script que traz do Pipefy, escrever no card basta e escrever nos dois lados
-seria só criar corrida. Se é pessoa digitando na planilha, os dois lados
-precisam ser escritos. Até a resposta, o desenho seguro é **nunca sobrescrever
-um número que já esteja lá diferente** — preencher o vazio, sim; trocar em
-silêncio, não.
+**RESPONDIDO pelo dono no mesmo dia:** *"quem alimenta a planilha são
+scripts."* Isso resolve e simplifica: **o card é a fonte, a planilha é o
+destino**. Escrever o Nº da nota no card BASTA — o script leva o valor para a
+coluna AA sozinho. Escrever nos dois lados criaria duas verdades para a mesma
+informação, e no dia em que discordassem ninguém saberia qual vale.
 
-**O que falta saber para isso sair do papel:** os identificadores dos campos
-Nº da nota e Chave de acesso no Pipefy. O da Documentação Fiscal já é conhecido
-e está provado em produção desde o BeeVale; os outros dois nunca foram escritos
-por este módulo.
+**Decidido, então: a conciliação escreve no card e NÃO toca na planilha.** A
+coluna AA continua somente leitura. O efeito colateral, dito sem esconder:
+entre a gravação no card e a próxima rodada do script, a coluna Nº NF de
+Solicitações e do Lote ainda mostra o número velho. A tela de Documentação
+Fiscal não sofre disso — ela lê o registro paralelo, que sabe o que foi
+decidido e o que já foi escrito.
+
+**Os identificadores dos campos do Pipefy também já estavam dados**, na
+estrutura do pipe que o dono colou mais cedo em 11/09 — eu tinha dito que
+faltavam, e estava errado. Conferidos um a um e presos no código, com o UUID
+de cada um ao lado: "A despesa gerou emissão de Nota Fiscal?", "Nº da Nota
+Fiscal", "Documentação Fiscal", "Chave de Acesso", "Análise Dedutibilidade" e
+"Etiquetas".
+
+> **Por que isso virou teste.** Errar um identificador do Pipefy **não dá
+> erro**: a chamada é aceita e nada é gravado. Não haveria como perceber pela
+> tela do Análise de SPs — só abrindo o card e vendo que continua vazio. E as
+> 22 opções de Documentação Fiscal batem exatamente com as do pipe, na mesma
+> ordem: o Pipefy **recusa o card inteiro** quando o texto não é uma das
+> opções, então um acento diferente não erraria uma SP, derrubaria a gravação
+> do lote todo.
+
+**O que ainda não se sabe:** o TIPO de dois campos. O JSON traz identificador,
+rótulo e UUID, mas não o tipo. Para "Análise Dedutibilidade" — onde o dono quer
+o link da nota baixada — isso importa: se for campo de seleção e não de texto,
+o link não cabe ali. É uma consulta à API, e fica para quando a gravação for
+construída.
+
+### A leitura dos anexos por IA — perguntado em 11/09, e a resposta é NÃO AINDA
+
+Pergunta do dono: *"está entrando aí a análise dos anexos? quando a gente não
+conseguir cruzar de forma fácil os dados?"*
+
+**Não, ainda não.** O que está construído cruza só TEXTO — credor, CNPJ, valor,
+número da nota, data. Quando isso não fecha, a SP cai em "procurei e não achei"
+e para ali. O anexo não é aberto.
+
+E é exatamente aí que a IA entra, porque é aí que o cruzamento textual acabou.
+A ordem importa: primeiro o texto, que é de graça e resolve a maioria; só o que
+sobrar vai para a leitura do anexo. Mandar todo anexo para a IA seria pagar
+caro para responder o que já se sabia. E a IA **propõe, nunca decide** — nota
+lida errado de um PDF torto é dedução indevida com cara de decisão tomada.
+
+**A decisão está tomada: a IA não foi adiada, está no escopo.** Falta ser
+construída. O custo é dependência nova, cobrada por documento lido, e o volume
+da fila só vai ser conhecido quando a tela rodar uma vez contra a base inteira
+— a conta muda muito se forem 50 anexos por mês ou 5.000.
+
+> **Um atalho que o dono levantou e que pode dispensar boa parte disso:** se os
+> certificados digitais da empresa entrarem no Análise de SPs, as notas poderiam
+> ser baixadas direto da Receita pela chave, sem IA e sem FSist — e a IA
+> sobraria só para o que não é nota eletrônica. **Não foi verificado se é
+> viável.**
 
 ### Pedido na fila, ainda NÃO feito
 

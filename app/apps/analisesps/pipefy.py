@@ -34,12 +34,39 @@ API = "https://api.pipefy.com/graphql"
 # A "database" do Pipefy com o cadastro dos colaboradores BeeVale.
 BASE_BEEVALE = "307056545"
 
-# Os campos do card, pelos identificadores que o Pipefy usa. São os mesmos do
-# Apps Script que fazia isto antes — mudar um aqui quebra silenciosamente.
-CAMPO_DESCRICAO = "descri_o"
+# ---------------------------------------------------------------------------
+# OS CAMPOS DO CARD, pelos identificadores que o Pipefy usa.
+#
+# Mudar um destes quebra em SILÊNCIO: o Pipefy aceita a chamada e não grava
+# nada. Por isso a origem fica escrita e o UUID vai ao lado — o identificador
+# muda se alguém renomear o campo na tela do Pipefy; o UUID, não.
+#
+# Os quatro primeiros já rodam em produção desde o BeeVale (05/09/2026). Os
+# cinco da conciliação fiscal saíram da estrutura do pipe que o dono colou em
+# 11/09/2026, conferidos um a um contra aquele JSON.
+# ---------------------------------------------------------------------------
+CAMPO_DESCRICAO = "descri_o"                    # f59b3fa0-8365-472d-b61e-73b5b538ad5b
 CAMPO_CADASTRO = "cadastro_bee_vale"
 CAMPO_VALOR = "valor"
-CAMPO_DOC_FISCAL = "documenta_o_fiscal"
+CAMPO_DOC_FISCAL = "documenta_o_fiscal"         # 40c54379-ca2b-4410-a2a4-6aeab3ca6401
+
+# Os campos que a conciliação fiscal preenche. A ORDEM ABAIXO É A DA ESCRITA,
+# e ela não é arbitrária: "gerou nota" é o que destrava o resto no fluxo do
+# Pipefy, e a chave é o que permite baixar o documento depois.
+CAMPO_GEROU_NOTA = "a_despesa_gerou_emiss_o_de_nota_fiscal"   # f2453ccf-fb3c-4ba6-8667-d36a1133cc18
+CAMPO_NUMERO_NOTA = "n_da_nota_fiscal"          # d19d97ad-6fac-4301-a18f-bbf4745600ac
+CAMPO_CHAVE_ACESSO = "chave_de_acesso"          # fa6f8252-7634-468e-87ce-68dfb9eba167
+CAMPO_ANALISE_DEDUT = "an_lise_dedutibilidade"  # 969cf0da-4a66-4e63-9072-54d31c66b90e
+CAMPO_ETIQUETAS = "etiquetas"                   # 88ba0d09-06fa-41ce-9e7b-42c03fe040c5
+
+# "A despesa gerou emissão de Nota Fiscal?" é Sim/Não — as duas únicas opções.
+GEROU_NOTA_SIM = "Sim"
+GEROU_NOTA_NAO = "Não"
+
+# As 22 opções do campo Documentação Fiscal vivem em `fiscal.CATEGORIAS`, e são
+# as MESMAS do JSON do pipe, na mesma ordem — conferido em 11/09/2026. Escrever
+# ali um texto que não seja uma delas faz o Pipefy recusar o card inteiro, e é
+# por isso que a lista tem um dono só.
 
 # Quantos cards por ida à API. O Pipefy aceita várias consultas numa só
 # requisição; vinte é o que o Apps Script usava e nunca deu problema.
