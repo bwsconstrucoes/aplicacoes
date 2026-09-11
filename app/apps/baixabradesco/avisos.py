@@ -21,12 +21,13 @@ from typing import Any, Dict, List
 
 from .utils import as_string
 
-LIMITE_ITENS = 10
+LIMITE_ITENS = 10   # comprovantes listados por aviso
+LIMITE_SPS = 12     # números de SP listados por comprovante
 
 # Destino do aviso: o WhatsApp do financeiro, não o celular do dono — foi o que
 # ele pediu em 11/09/2026, para o recado chegar a quem resolve. Trocável pela
 # variável BAIXABRADESCO_AVISO_TELEFONE, sem mexer no código.
-TELEFONE_FINANCEIRO = '5585996992197'   # acima disso o aviso vira parede de texto e ninguém lê
+TELEFONE_FINANCEIRO = '5585996992197'
 
 
 def _motivo_do_plano(plano: Dict[str, Any]) -> str:
@@ -45,16 +46,46 @@ def _falhou_no_omie(plano: Dict[str, Any]) -> bool:
     return any(p.get('step') in ruins for p in passos if isinstance(p, dict))
 
 
+def _sps_candidatas(plano: Dict[str, Any]) -> str:
+    """Os números das SPs que o robô considerou.
+
+    Sem eles a mensagem diz que havia doze candidatas e não diz quais — e quem
+    lê não tem por onde começar. Com os números, é abrir a planilha e olhar.
+    """
+    match = plano.get('match') or {}
+    ids = [as_string((c or {}).get('id')) for c in (match.get('candidatos') or [])]
+    ids = [i for i in ids if i]
+    if not ids:
+        return ''
+    mostradas = ids[:LIMITE_SPS]
+    texto = ', '.join(mostradas)
+    if len(ids) > LIMITE_SPS:
+        texto += f' (+{len(ids) - LIMITE_SPS})'
+    return f'SPs possíveis: {texto}'
+
+
 def _descrever(plano: Dict[str, Any], motivo: str) -> str:
     rec = plano.get('receipt') or {}
+    match = plano.get('match') or {}
+
     partes = [f"pág. {rec.get('page') or '?'}"]
     if rec.get('valor_pago'):
         partes.append(f"R$ {rec['valor_pago']}")
     if rec.get('nome_recebedor'):
         partes.append(as_string(rec['nome_recebedor'])[:40])
-    elif rec.get('id_pipefy'):
-        partes.append(f"SP {rec['id_pipefy']}")
-    return f"- {' | '.join(partes)}\n  {motivo}"
+
+    # O número da SP, quando já se sabe qual é — é por ele que se procura na
+    # planilha e no Omie.
+    sp_id = as_string(match.get('id')) or as_string(rec.get('id_pipefy'))
+    if sp_id:
+        partes.append(f'SP {sp_id}')
+
+    linhas = [f"- {' | '.join(partes)}"]
+    candidatas = _sps_candidatas(plano) if not sp_id else ''
+    if candidatas:
+        linhas.append(f'  {candidatas}')
+    linhas.append(f'  {motivo}')
+    return '\n'.join(linhas)
 
 
 def coletar_falhas(resultado: Dict[str, Any]) -> List[str]:

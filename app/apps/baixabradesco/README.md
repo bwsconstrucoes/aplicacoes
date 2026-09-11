@@ -221,6 +221,11 @@ Comprovante que baixa normalmente não gera aviso nenhum — é o esperado. O qu
 **não** baixa gera: no fim de cada lote, o robô manda **uma** mensagem pelo
 Telegram com a lista do que ficou de fora e o motivo de cada um.
 
+Cada linha traz a página, o valor, o nome de quem recebeu (quando o comprovante
+tem), e **o número da SP** — o escolhido, quando já se sabe qual é, ou a lista
+das candidatas, quando o robô parou justamente por não saber. É por esse número
+que se procura na planilha e no Omie.
+
 Entram no aviso:
 
 - comprovante que não achou SP, ou achou mais de uma e parou;

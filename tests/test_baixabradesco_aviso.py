@@ -255,3 +255,50 @@ def test_o_aviso_nunca_vai_para_o_responsavel_pela_sp(monkeypatch):
 
     assert destinos == ['5585900000000']
     assert '5511888888888' not in destinos
+
+
+# ── Os números das SPs na mensagem ────────────────────────────────────────────
+#
+# Pedido do dono em 11/09/2026: "você identificou que tinha doze SPs mas não
+# colocou qual é o número delas. Coloca também o número do registro, porque isso
+# facilita muito a identificação do problema."
+
+def com_candidatas(*ids, **kwargs):
+    p = plano(pode_executar=False, motivos=['Retornou vários candidatos.'], **kwargs)
+    p['match'] = {'id': '', 'candidatos': [{'id': i} for i in ids]}
+    return p
+
+
+def test_a_mensagem_lista_os_numeros_das_sps_candidatas():
+    texto = montar_aviso(resultado([com_candidatas('1442670864', '1442703969')]))
+    assert 'SPs possíveis: 1442670864, 1442703969' in texto
+
+
+def test_a_mensagem_traz_o_numero_da_sp_quando_ja_se_sabe_qual_e():
+    """Falha no Omie: a SP é conhecida, e é por ela que se procura no Omie."""
+    p = plano(responses={'fila_omie': {'ok': True}})
+    p['match'] = {'id': '1442630306', 'candidatos': []}
+    texto = montar_aviso(resultado([p]))
+    assert 'SP 1442630306' in texto
+
+
+def test_nao_repete_candidatas_quando_a_sp_ja_foi_escolhida():
+    p = plano(responses={'fila_omie': {'ok': True}})
+    p['match'] = {'id': '1442630306', 'candidatos': [{'id': '1442630306'}, {'id': '9'}]}
+    texto = montar_aviso(resultado([p]))
+    assert 'SP 1442630306' in texto
+    assert 'SPs possíveis' not in texto
+
+
+def test_muitas_candidatas_sao_cortadas_mas_o_total_aparece():
+    ids = [str(1442600000 + i) for i in range(14)]
+    texto = montar_aviso(resultado([com_candidatas(*ids)]))
+    assert '1442600000' in texto
+    assert '1442600011' in texto
+    assert '(+2)' in texto
+
+
+def test_sem_candidata_nenhuma_a_linha_nao_aparece():
+    texto = montar_aviso(resultado([plano(pode_executar=False,
+                                          motivos=['Nenhum candidato encontrado.'])]))
+    assert 'SPs possíveis' not in texto

@@ -511,6 +511,12 @@ Estender exigiria guardar a página isolada de cada pendente até o fim do lote 
 financeiro, para o recado chegar a quem resolve. Continua sendo **um destino
 só**, e `BAIXABRADESCO_AVISO_TELEFONE` troca sem mexer no código.
 
+**O aviso passou a trazer os números das SPs.** *"Você identificou que tinha
+doze SPs mas não colocou qual é o número delas."* Sem os números, a mensagem
+dizia que havia candidatas e não dizia quais — e quem lê não tinha por onde
+começar. Agora cada linha traz o número da SP escolhida, ou a lista das
+candidatas (até doze, e o total quando passa disso).
+
 **O aviso passou a explicar o empate.** Quando o desempate por lote não acontece,
 o motivo que ia na mensagem era o do casador — técnico ("retornou 2
 candidatos"), e não dizia o que fazer. Agora o próprio desempate escreve a
