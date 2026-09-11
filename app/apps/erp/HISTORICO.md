@@ -17,6 +17,80 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
+**Estado em 11/09/2026 (sétima entrega):** no ramo, **a pergunta vira relatório
+que chega sozinho**. **TRAZ A MIGRAÇÃO 060** — apertar "Aplicar atualizações do
+banco" no mesmo momento da publicação.
+
+### O pedido, e onde o botão ficou
+
+*"Toda segunda-feira me manda determinado tipo de informação. Aí a própria [IA]
+agendar essa necessidade minha e fazer aquela ação executar e me mandar. Isso é
+muito poderoso."*
+
+O botão **"Me manda isso toda segunda"** fica **embaixo da resposta** que a
+pessoa acabou de ver — não numa tela de configuração. Isso é o pedido inteiro:
+ele quer PEDIR, não configurar. E o que fica agendado é exatamente a consulta
+que ele aprovou olhando.
+
+### As seis regras, e por que cada uma existe
+
+**1. Guarda a CONSULTA, não a frase.** Se o sistema reinterpretasse o texto
+toda segunda, o relatório mudaria de critério sozinho — e comparar uma segunda
+com a outra, que é para o que ele serve, perderia o sentido.
+
+**2. RODA COM A PERMISSÃO DE QUEM RECEBE.** A regra mais importante daqui.
+Sem ela, agendar um relatório para o gestor de uma obra mandaria a ele o número
+da empresa inteira. E agendar para OUTRA pessoa exige `gerir_usuarios` — senão
+qualquer um agendaria no nome do diretor, e o relatório rodaria com a permissão
+DELE. Há teste com banco de verdade espiando com qual usuário a resposta é
+calculada.
+
+**3. Compara com a rodada anterior.** "R$ 340 mil a pagar (era R$ 280 mil)" é
+gestão; "R$ 340 mil" sozinho é ruído. O total de cada rodada fica guardado.
+
+**4. "Só me avise se houver."** Relatório que chega igual todo mês vira spam e
+para de ser lido — e aí o dia em que ele traz algo importante também não é.
+
+**5. Relatório quebrado RECLAMA.** Se a obra acabou ou a conta foi aposentada,
+ele manda um aviso dizendo que não conseguiu montar. Zero calado é pior que
+erro, porque parece resposta.
+
+**6. Só LÊ.** Nada ali lança, aprova ou paga. Há varredura na suíte recusando
+essas chamadas de dentro do agendado. Agendado que AGE sem ninguém olhando é,
+segundo o que se vê no mercado, o motivo número um de empresa desligar
+assistente — para agir, o caminho continua sendo preparar e esperar a pessoa.
+
+### Onde mora o relógio
+
+**No que já existe**: a rotina diária do agente (`/erp/api/agente/rodar`). Os
+relatórios pegam carona nela. Um segundo relógio seria uma segunda coisa para
+quebrar e outra para lembrar de configurar. Falha nos relatórios não derruba a
+cobrança do agente, que é o que aquela rotina veio fazer.
+
+Rodar duas vezes no mesmo dia não manda duas vezes — a data da última rodada
+segura.
+
+### O que ficou de fora, e por quê
+
+⚠️ **Só por Telegram.** O e-mail do ERP sai pela conta de uma EMPRESA (as
+credenciais são por CNPJ), e a BWS tem mais de uma. Escolher uma por conta
+própria faria o relatório sair pelo remetente errado — é decisão do dono. O
+banco já aceita os dois canais; falta só ligar.
+
+⚠️ **Precisa do telefone no cadastro de quem recebe.** Sem telefone nem
+e-mail, não há por onde mandar — e isso fica REGISTRADO no relatório, em vez
+de sumir.
+
+**Falta ainda:** o "só me avise se passar de X" (hoje é só "se houver algo") e
+escolher o dia pela tela (hoje toda combinação é segunda-feira).
+
+### Uma coisa pequena que morde
+
+`desligar` precisa de `flush` explícito. A sessão do ERP não descarrega sozinha
+(`autoflush=False`), e sem isso quem desligasse um relatório e tentasse
+combiná-lo de novo na mesma tela ouviria "já está combinado" — porque a
+consulta ainda enxergaria a linha ligada.
+
 **Estado em 11/09/2026 (sexta entrega):** no ramo, **o assistente responde
 sobre o que está ESCRITO nos documentos** da empresa. **TRAZ A MIGRAÇÃO 059** —
 o dono precisa apertar "Aplicar atualizações do banco" no mesmo momento da

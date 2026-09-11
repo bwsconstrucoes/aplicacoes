@@ -741,6 +741,17 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-11 — Relatório agendado roda com a permissão de QUEM RECEBE.**
+  Migração 060 (`perguntas_agendadas`): a pergunta que o dono aprovou vira
+  relatório que chega sozinho, pendurado no relógio que já existe (a rotina
+  diária do agente — um segundo relógio seria outra coisa para quebrar).
+  **A regra de arquitetura:** a resposta é calculada com o usuário
+  DESTINATÁRIO, nunca com quem criou; e agendar para outra pessoa exige
+  `gerir_usuarios`. Sem isso o agendamento vira um furo no escopo por obra.
+  Guarda-se a CONSULTA (chave + filtros), não a frase — reinterpretar o texto
+  a cada rodada faria o critério mudar sozinho. O agendado **só lê**: há
+  varredura recusando lançar, aprovar, pagar ou emitir de dentro dele.
+
 - **2026-09-11 — O assistente passa a ler os DOCUMENTOS, e o escopo do acervo
   vira função única.** Migração 059: coluna `busca` em `documentos`, gerada
   pelo próprio banco (`GENERATED ALWAYS`) com o dicionário de português, mais

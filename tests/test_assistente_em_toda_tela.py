@@ -86,6 +86,9 @@ def test_nao_inventou_rota_propria_que_responde_tudo():
         "/erp/api/perguntar/documento", "/erp/api/perguntar/financeiro",
         "/erp/api/perguntar/contratos", "/erp/api/perguntar/suprimentos",
         "/erp/api/perguntar/obras", "/erp/api/perguntar/documentos",
+        # Agendar não responde pergunta nenhuma: guarda a consulta que a
+        # pessoa acabou de aprovar, para ela chegar sozinha depois.
+        "/erp/api/perguntar/agendar",
     }
     assert set(endereco) <= permitidos, (
         f"endereço novo no assistente: {set(endereco) - permitidos}")

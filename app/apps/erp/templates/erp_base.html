@@ -868,6 +868,8 @@ async function api(url, opcoes) {
       b.addEventListener("click", () => responder(
         b.dataset.iaChave, b.dataset.iaGrupo, {},
         b.textContent.trim())));
+    alvo.querySelectorAll("[data-ia-agendar]").forEach(b =>
+      b.addEventListener("click", () => agendar(JSON.parse(b.dataset.iaAgendar), b)));
     alvo.scrollTop = alvo.scrollHeight;
   }
 
@@ -938,14 +940,40 @@ async function api(url, opcoes) {
       const r = d.resposta;
       ultima = chave;
       conversa.pop();                       // tira o "calculando…"
+      // "ME MANDA ISSO TODA SEGUNDA" fica AQUI, embaixo da resposta que a
+      // pessoa acabou de aprovar — e não numa tela de configuração. É o que o
+      // dono pediu: ele quer PEDIR, não configurar. O que fica agendado é
+      // exatamente esta consulta, com estes filtros.
+      const combinado = JSON.stringify({chave, grupo, parametros: parametros || {},
+                                        titulo: r.titulo || rotulo || chave});
       dizer(`${aviso ? `<div class="ia-aviso">${esc(aviso)}</div>` : ""}
         <div class="ia-frase">${esc(r.frase)}</div>
         ${tabela(r)}
         <div class="ia-nota">${esc(r.titulo)}${r.de_onde_veio
           ? ` · <a href="${esc(r.de_onde_veio.tela)}">${esc(r.de_onde_veio.explicacao)}</a>`
-          : ""}</div>`);
+          : ""}</div>
+        <button class="ia-opcao" data-ia-agendar='${esc(combinado)}'>
+          📅 Me manda isso toda segunda</button>`);
     } catch (e) {
       conversa.pop();
+      dizer(`<div class="ia-frase">${esc(curto(e.message))}</div>`);
+    }
+  }
+
+  // ------------------------------------------------- me manda isso toda segunda
+  async function agendar(combinado, botao){
+    botao.disabled = true; botao.textContent = "combinando…";
+    try {
+      const d = await api("/erp/api/perguntar/agendar", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({...combinado, frequencia: "SEMANAL", dia: 0,
+                              canal: "TELEGRAM"})});
+      botao.textContent = "📅 combinado: " + d.quando;
+      dizer(`<div class="ia-frase">Combinado — ${esc(d.quando)}.</div>
+        <div class="ia-nota">${esc(d.aviso || "")} Vou comparar com a vez
+        anterior, e só falo quando houver o que falar.</div>`);
+    } catch (e) {
+      botao.disabled = false; botao.textContent = "📅 Me manda isso toda segunda";
       dizer(`<div class="ia-frase">${esc(curto(e.message))}</div>`);
     }
   }

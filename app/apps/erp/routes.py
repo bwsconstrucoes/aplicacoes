@@ -2292,6 +2292,88 @@ def _resumo_do_documento(lido: dict, nome: str) -> dict:
     }
 
 
+@bp.route("/erp/api/perguntar/agendar", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_agendar_pergunta():
+    """"Me manda isso toda segunda."
+
+    A ação é `ver_erp` porque agendar para SI MESMO não dá acesso a nada novo:
+    o relatório roda com a permissão de quem recebe, que é a mesma pessoa.
+    Agendar para OUTRA pessoa é outra história, e o core exige `gerir_usuarios`
+    para isso — senão qualquer um mandaria um relatório no nome do diretor, que
+    rodaria com a permissão dele.
+    """
+    from app.apps.erp.core.perguntas import agendadas as svc
+
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            a = svc.agendar(
+                s, atual, chave=(d.get("chave") or "").strip(),
+                titulo=(d.get("titulo") or "").strip(),
+                parametros=d.get("parametros") or {},
+                frequencia=(d.get("frequencia") or "SEMANAL"),
+                dia=d.get("dia"), canal=(d.get("canal") or "TELEGRAM"),
+                so_se_houver=bool(d.get("so_se_houver")),
+                para_usuario_id=d.get("para_usuario_id"))
+            quando = svc.quando_por_extenso(a.frequencia, a.dia)
+            s.commit()
+        return jsonify({"ok": True, "quando": quando,
+                        "aviso": ("Combinado. Vou mandar pelo Telegram — "
+                                  "confira se o seu telefone está no cadastro, "
+                                  "senão não tenho por onde mandar.")})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao agendar a pergunta")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/perguntar/agendados")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_perguntas_agendadas():
+    from app.apps.erp.core.perguntas import agendadas as svc
+    with get_session() as s:
+        atual = _usuario_logado(s)
+        if atual is None:
+            return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+        return jsonify({"ok": True, "agendados": svc.listar(s, atual)})
+
+
+@bp.route("/erp/api/perguntar/agendados/<int:agendada_id>/desligar",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_desligar_agendada(agendada_id: int):
+    """Desliga um relatório automático SEU.
+
+    O escopo é conferido no core: relatório de outra pessoa responde "não
+    encontrado", nunca "sem permissão" — dizer "sem permissão" para um número
+    que existe confirma que ele existe.
+    """
+    from app.apps.erp.core.auth.permissoes import exigir_agendada_no_escopo
+    from app.apps.erp.core.perguntas import agendadas as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            exigir_agendada_no_escopo(s, atual, agendada_id)
+            svc.desligar(s, atual, agendada_id)
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao desligar o relatório automático")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/perguntas/nao-entendidas")
 @login_obrigatorio
 @permissao("ver_uso_da_equipe")
@@ -7862,6 +7944,16 @@ def api_agente_rodar():
     simular = bool(dados.get("simular"))
     with get_session() as s:
         r = svc.varrer(s, simular=simular)
+        # OS RELATÓRIOS AGENDADOS PEGAM CARONA NESTE RELÓGIO, de propósito: um
+        # segundo relógio seria uma segunda coisa para quebrar, e outra para
+        # lembrar de configurar. Falha aqui não derruba a cobrança do agente,
+        # que é o que essa rotina veio fazer.
+        from app.apps.erp.core.perguntas import agendadas as svc_agendadas
+        try:
+            r["agendados"] = svc_agendadas.rodar_do_dia(s, simular=simular)
+        except Exception as e:
+            logger.exception("ERP/agente: relatórios agendados falharam")
+            r["agendados"] = {"erro": str(e)}
         if not simular:
             s.commit()
     return jsonify({"ok": True, **r})
