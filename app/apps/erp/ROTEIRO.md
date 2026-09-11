@@ -188,6 +188,22 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       linhas** (a conta é sobre tudo, o corte é só do que aparece na tela — a
       base tem 3.285 insumos) e a **busca sem acento** (quem procura
       "Hidráulico" digita "hidra").
+- [x] **1f. As perguntas de Locações** — FEITAS em 11/09/2026, dentro do grupo
+      de Suprimentos: o que está locado e em qual obra, qual locação já pedia
+      decisão (aluguel que já pagou a compra, devolução vencida, prazo
+      estourado) e que aluguel venceu sem virar título. Reusam
+      `locacoes.listar`, que já calculava tudo isso — refazer a conta seria
+      inventar um segundo número sobre a mesma coisa.
+- [x] **BRECHA DE ESCOPO NAS LOCAÇÕES, fechada em 11/09/2026** — achada por um
+      teste ao escrever as perguntas acima, e **anterior a este trabalho**.
+      Contrato de locação NÃO TEM AUTOR, e a listagem usava `obras_do_usuario`,
+      que devolve "sem filtro" para quem enxerga por autoria: o administrativo
+      que só deveria ver o que ele lançou via TODOS os contratos da empresa.
+      Pior: `painel_por_obra` não recebia usuário nenhum, e a rota que o serve
+      é aberta a todo operador — qualquer pessoa via quanto CADA obra tem de
+      aluguel. A regra virou `obras_de_registro_sem_autor`, em
+      `permissoes.py`: para registro sem autor o único recorte é a obra, e sem
+      obra designada não se vê nenhum.
 - [ ] **2. Assistente SÓ DE LEITURA, dentro do ERP.** Painel lateral (não
       caixinha), com o catálogo de perguntas conhecidas respondido por CÓDIGO —
       exato, rápido e sem custo de IA — e a pergunta imprevista caindo numa

@@ -106,6 +106,46 @@ telas de cadastro de Suprimentos** (detalhada abaixo), mais a correção das
 três telas que nunca funcionaram (ver Incidentes). Suíte: 2.097 casos com
 banco de verdade. **Nada pendente no ramo.**
 
+### Locações viram pergunta — e uma BRECHA DE ESCOPO aparece — 11/09/2026
+
+Três perguntas novas dentro do grupo de Suprimentos: o que está locado e em
+qual obra, qual locação já pedia decisão (aluguel que já pagou a compra,
+devolução vencida, prazo estourado) e que aluguel venceu sem virar título.
+Elas reusam `locacoes.listar`, que já calculava tudo isso — refazer a conta
+seria inventar um segundo número sobre a mesma coisa.
+
+#### ⚠️ A brecha, que é ANTERIOR a este trabalho
+
+Ao escrever o teste de "quem não tem a obra não vê o contrato dela", ele
+falhou. Investigando, apareceram **duas brechas na tela de Locações**:
+
+1. **Contrato de locação não tem autor.** A listagem usava `obras_do_usuario`,
+   que devolve `None` para quem enxerga por AUTORIA — e `None` ali significa
+   "sem filtro de obra". Efeito: o **administrativo que só deveria ver o que
+   ele mesmo lançou via TODOS os contratos de locação da empresa**.
+2. **`painel_por_obra` não recebia usuário nenhum**, e a rota que o serve é
+   aberta a todo operador (`ver_erp`). Efeito: **qualquer pessoa via quanto
+   CADA obra da empresa tem de aluguel**, inclusive obras fora do alcance dela.
+
+**O conserto ficou em `permissoes.py`, com nome próprio:**
+`obras_de_registro_sem_autor`. A regra: *para registro sem autor, o único
+recorte possível é a OBRA; quem não enxerga a base inteira vê só as obras
+designadas a ele, e sem obra designada não vê nenhum* — que é o padrão NEGAR
+do ERP, e não um efeito colateral de lista vazia.
+
+Isso vale para a TELA e para a pergunta, porque as duas passam pela mesma
+função. **Quem enxerga tudo continua enxergando tudo** — há teste para os dois
+lados.
+
+**A lição que fica:** `obras_do_usuario` devolve `None` com DOIS significados
+("vê tudo" e "filtra por autoria, não por obra"). Isso é seguro em título, que
+tem autor, e perigoso em qualquer registro que não tenha. Ao escrever escopo
+para entidade nova, perguntar antes: **esta tabela tem autor?** Se não tem, é
+`obras_de_registro_sem_autor` que se usa. Registrado também em `CONTEXTO.md` ›
+Histórico de decisões, porque atravessa áreas.
+
+Sem migração. Suíte: **4.044 casos** com banco de verdade.
+
 ### As perguntas de Suprimentos, e duas regras que valem para todas — 10/09/2026
 
 Quatro perguntas novas sob `ver_suprimentos`: os insumos de uma categoria (o

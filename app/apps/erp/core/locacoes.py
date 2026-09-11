@@ -387,7 +387,7 @@ def _alertas(s: Session, c: ContratoLocacao, pago: Decimal,
 
 def listar(s: Session, usuario: Optional[Usuario] = None,
            apenas_ativos: bool = False) -> list[dict[str, Any]]:
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
     stmt = (select(ContratoLocacao)
             .options(selectinload(ContratoLocacao.fornecedor),
                      selectinload(ContratoLocacao.obra),
@@ -396,7 +396,12 @@ def listar(s: Session, usuario: Optional[Usuario] = None,
     if apenas_ativos:
         stmt = stmt.where(ContratoLocacao.status == "ATIVO")
     if usuario is not None:
-        permitidas = obras_do_usuario(s, usuario)
+        # Contrato de locação NÃO TEM AUTOR: o único recorte possível é a obra.
+        # Antes isto usava `obras_do_usuario`, que devolve None para quem
+        # enxerga por autoria — e None ali quer dizer "sem filtro". Efeito: o
+        # administrativo que só deveria ver o que ele lançou via TODOS os
+        # contratos da empresa. Ver a regra em `obras_de_registro_sem_autor`.
+        permitidas = obras_de_registro_sem_autor(s, usuario)
         if permitidas is not None:
             stmt = stmt.where(ContratoLocacao.obra_id.in_(permitidas or [0]))
     saida = []
@@ -746,8 +751,22 @@ def identificar_contrato(s: Session, documento: dict[str, Any],
     }
 
 
-def painel_por_obra(s: Session) -> list[dict[str, Any]]:
-    """Quanto cada obra tem locado por período — a visão macro que falta hoje."""
+def painel_por_obra(s: Session,
+                    usuario: Optional[Usuario] = None) -> list[dict[str, Any]]:
+    """Quanto cada obra tem locado por período — a visão macro que falta hoje.
+
+    ⚠️ ANTES ELE NÃO RECEBIA USUÁRIO NENHUM, e a rota que o serve é aberta a
+    todo operador (`ver_erp`): qualquer pessoa via quanto CADA obra da empresa
+    tem de aluguel, inclusive obras que ela não alcança. Achado por um teste em
+    11/09/2026, junto com a brecha do `listar`. Agora ele recorta pelas mesmas
+    obras — e quem enxerga tudo continua vendo tudo.
+    """
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+
+    permitidas = (obras_de_registro_sem_autor(s, usuario)
+                  if usuario is not None else None)
+    if permitidas is not None and not permitidas:
+        return []
     linhas = s.execute(
         select(LocacaoItem.obra_id,
                func.sum((LocacaoItem.quantidade - LocacaoItem.quantidade_devolvida)
@@ -755,7 +774,8 @@ def painel_por_obra(s: Session) -> list[dict[str, Any]]:
                func.count(LocacaoItem.id))
         .join(ContratoLocacao, ContratoLocacao.id == LocacaoItem.contrato_id)
         .where(ContratoLocacao.status == "ATIVO",
-               LocacaoItem.quantidade > LocacaoItem.quantidade_devolvida)
+               LocacaoItem.quantidade > LocacaoItem.quantidade_devolvida,
+               *( [LocacaoItem.obra_id.in_(permitidas)] if permitidas else [] ))
         .group_by(LocacaoItem.obra_id)).all()
     obras = {o.id: o for o in s.scalars(select(Obra)).all()}
     saida = []

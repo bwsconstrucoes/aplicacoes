@@ -151,13 +151,12 @@ obra e por autoria das telas, e cada resposta mostra de onde veio.
 - Quais pedidos de compra foram feitos e não foram recebidos?
 - Quais fornecedores atendem a categoria X e na região Y?
 
-### Locações
+### Locações (dentro do grupo de Suprimentos)
 
-- Quais equipamentos estão locados agora, e em qual obra?
-- Quanto estou pagando de aluguel por mês, por obra?
-- Há quanto tempo este equipamento está locado, e já valeria comprar?
-- Quais parcelas de locação venceram e não foram lançadas?
-- Quais equipamentos deveriam ter sido devolvidos e não foram?
+- ✅ **O que está locado agora, e em qual obra?** — com o custo por período 🔒
+- ✅ **Qual locação já pedia decisão (comprar ou devolver)?** — junta os três
+  avisos: aluguel que já pagou a compra, devolução vencida e prazo estourado 🔒
+- ✅ **Que aluguel já venceu e ainda não virou título?** 🔒
 
 ### Pessoal
 

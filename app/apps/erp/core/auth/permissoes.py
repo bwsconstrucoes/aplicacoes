@@ -344,6 +344,27 @@ def obras_do_usuario(s: Session, usuario: Usuario) -> Optional[list[int]]:
     return None          # filtra por autoria, não por obra
 
 
+def obras_de_registro_sem_autor(s: Session, usuario: Usuario) -> Optional[list[int]]:
+    """Obras que a pessoa alcança num registro que NÃO TEM AUTOR.
+
+    Título tem `solicitante_id`, então quem enxerga "só o que eu lancei" tem
+    por onde ser filtrado. **Contrato de locação não tem autor nenhum** — e aí
+    `obras_do_usuario` devolvia None, que significa "sem filtro de obra", e
+    quem enxergava por autoria passava a ver TODOS os contratos da empresa.
+    Achado por um teste em 11/09/2026.
+
+    A regra que fica: para registro sem autor, o único recorte possível é a
+    OBRA. Quem não enxerga a base inteira vê apenas as obras designadas a ele —
+    e **sem obra designada não vê nenhum**, que é o padrão NEGAR do ERP e não
+    um efeito colateral de lista vazia.
+
+    Devolve None só para quem enxerga tudo.
+    """
+    if usuario.perfil in VE_TUDO:
+        return None
+    return _obras_designadas(s, usuario)
+
+
 def _escopo_por_obras(stmt: Select, usuario: Usuario, obras: list[int]) -> Select:
     """O que a pessoa lançou MAIS o que estiver rateado nas obras dela.
 
