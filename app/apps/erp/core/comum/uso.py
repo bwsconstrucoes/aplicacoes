@@ -53,6 +53,7 @@ CATEGORIAS: list[tuple[str, str]] = [
     ("cadastro",     "Cadastrou"),
     ("documento",    "Arquivou documento"),
     ("agenda",       "Agenda"),
+    ("pergunta",     "Perguntou ao sistema"),
     ("configuracao", "Configurou o sistema"),
     ("outro",        "Outros"),
 ]
@@ -89,6 +90,10 @@ POR_ENTIDADE: dict[str, str] = {
     "unidade_compra": "cadastro",
     "condicao_pagamento": "cadastro",
     "agenda": "agenda",
+    # Perguntar não é entrega — é consulta. Fica em categoria própria para
+    # não inflar a produção de ninguém, e porque saber QUEM pergunta muito é
+    # informação útil por si só.
+    "pergunta": "pergunta",
     "categoria": "configuracao",
     "categoria_depara": "configuracao",
     "parametro": "configuracao",
@@ -144,7 +149,7 @@ NOME_DA_ENTIDADE: dict[str, str] = {
     "obra": "obra", "insumo": "insumo", "insumo_categoria": "categoria de insumo",
     "empresa": "empresa", "conta_bancaria": "conta bancária",
     "unidade_compra": "unidade de compra", "condicao_pagamento": "condição de pagamento",
-    "agenda": "agenda", "categoria": "conta do plano",
+    "agenda": "agenda", "pergunta": "pergunta escrita", "categoria": "conta do plano",
     "categoria_depara": "tradução do plano antigo", "parametro": "parâmetro",
     "usuario": "operador", "periodo": "período", "indice": "índice",
     "configuracao": "configuração", "erp": "sistema", "suprimentos": "suprimentos",

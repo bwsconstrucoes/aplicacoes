@@ -6,16 +6,35 @@
   <div id="lista-perguntas"></div>
 
   <div class="cartao-dica" style="margin-top:16px">
-    <b>Por que a lista, e não um campo de escrever.</b><br>
-    Cada pergunta daqui é <b>calculada pelo sistema</b>, não escrita na hora —
-    é exata e não custa nada. Toda resposta mostra <b>de onde veio</b>, para
-    você conferir na tela.
-    <br><br>Falta alguma pergunta? Me diga qual, que ela entra na lista.
+    <b>Esta lista é um norte, não um limite.</b><br>
+    Cada pergunta daqui é <b>calculada pelo sistema</b> — exata, na hora, e sem
+    custo. Toda resposta mostra <b>de onde veio</b>, para você conferir.
+    <br><br>Escreva do seu jeito no campo acima. O que eu ainda não souber
+    responder fica <b>anotado</b>, e é essa lista que decide o que entra aqui
+    em seguida.
   </div>
 {% endblock %}
 
 {% block conteudo %}
 <div id="mensagem"></div>
+
+<!-- ESCREVER A PERGUNTA vem ANTES da lista, e não depois, porque é assim que
+     o dono quer usar: "eu poder fazer qualquer pergunta ao sistema". A lista
+     ao lado é o que ele chamou de norte — mostra o que já dá para perguntar,
+     não o limite do que se pode escrever. -->
+<div class="cartao">
+  <div class="cartao-cab"><h3>Pergunte com suas palavras</h3>
+    <small>ou escolha na lista ao lado</small></div>
+  <div style="display:flex; gap:8px; align-items:flex-end">
+    <div class="campo" style="flex:1; margin:0">
+      <label for="texto-livre">Sua pergunta</label>
+      <input id="texto-livre" type="search" autocomplete="off"
+             placeholder="o que tem a pagar hoje · quanto falta receber da obra X · tem equipamento alugado tempo demais">
+    </div>
+    <button class="btn" id="btn-perguntar">Perguntar</button>
+  </div>
+  <div id="leitura"></div>
+</div>
 
 <div class="cartao" id="cartao-pergunta" hidden>
   <div class="cartao-cab"><h3 id="titulo-pergunta"></h3>
@@ -88,7 +107,7 @@ function desenharLista() {
     b.addEventListener("click", () => escolher(b.dataset.chave)));
 }
 
-function escolher(chave) {
+function escolher(chave, jaDitos) {
   ESCOLHIDA = PERGUNTAS.find(p => p.chave === chave);
   if (!ESCOLHIDA) return;
   els("nada-ainda").hidden = true;
@@ -99,7 +118,8 @@ function escolher(chave) {
   els("parametros").innerHTML = (ESCOLHIDA.parametros || []).map(p => `
     <div class="campo">
       <label for="par-${escapar(p.nome)}">${escapar(p.rotulo)}</label>
-      <input id="par-${escapar(p.nome)}" type="${p.tipo === "data" ? "date" : "text"}">
+      <input id="par-${escapar(p.nome)}" type="${p.tipo === "data" ? "date" : "text"}"
+             value="${escapar((jaDitos || {})[p.nome] || "")}">
       ${p.dica ? `<small>${escapar(p.dica)}</small>` : ""}
     </div>`).join("");
   els("cartao-pergunta").hidden = false;
@@ -160,6 +180,64 @@ function desenharResposta(r) {
   els("cartao-resposta").hidden = false;
   els("cartao-resposta").scrollIntoView({behavior: "smooth", block: "nearest"});
 }
+
+// ------------------------------------------------------- pergunta escrita
+async function perguntarEscrevendo() {
+  const texto = els("texto-livre").value.trim();
+  if (!texto) return;
+  const b = els("btn-perguntar"); b.disabled = true; b.textContent = "Lendo…";
+  els("leitura").innerHTML = "";
+  try {
+    const d = await api("/erp/api/perguntar/entender", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({texto})});
+    const l = d.leitura;
+    if (!l.entendi) {
+      // Deixar a resposta ANTERIOR na tela enquanto se diz "não entendi" é o
+      // pior dos dois mundos: a pessoa lê a recusa e vê um número embaixo, e
+      // acha que o número é a resposta da pergunta que ela acabou de fazer.
+      els("cartao-resposta").hidden = true;
+      els("cartao-pergunta").hidden = true;
+      els("nada-ainda").hidden = true;
+      const opcoes = (l.parecidas || []).map(p =>
+        `<button class="link-btn" data-sugestao="${escapar(p.chave)}"
+           style="display:block; text-align:left; padding:4px 0">${escapar(p.pergunta)}</button>`).join("");
+      // AMBÍGUO e NÃO SEI são conversas diferentes: numa a pessoa escolhe
+      // entre opções, na outra ela descobre que o sistema ainda não sabe.
+      els("leitura").innerHTML = l.ambigua ? `
+        <div class="aviso info" style="margin-top:10px">
+          <b>Isso pode ser mais de uma coisa.</b> Qual delas você quis dizer?
+        </div>
+        <div class="cartao-dica" style="margin-top:8px">${opcoes}</div>`
+      : `
+        <div class="aviso erro" style="margin-top:10px">
+          <b>Isto eu ainda não sei responder.</b> ${escapar(l.motivo)}
+          Anotei a sua pergunta — é essa lista que decide o que eu aprendo em seguida.
+        </div>
+        ${opcoes ? `<div class="cartao-dica" style="margin-top:8px">
+            Talvez fosse uma destas:${opcoes}</div>` : ""}`;
+      els("leitura").querySelectorAll("[data-sugestao]").forEach(x =>
+        x.addEventListener("click", () => escolher(x.dataset.sugestao)));
+    } else {
+      els("leitura").innerHTML = `
+        <div class="cartao-dica" style="margin-top:10px">Entendi como
+          <b>${escapar(l.pergunta)}</b>.
+          ${(l.parecidas || []).length ? ` Não era isso? ` +
+            l.parecidas.map(p => `<button class="link-btn" data-sugestao="${escapar(p.chave)}"
+              style="margin-right:10px">${escapar(p.pergunta)}</button>`).join("") : ""}
+        </div>`;
+      els("leitura").querySelectorAll("[data-sugestao]").forEach(x =>
+        x.addEventListener("click", () => escolher(x.dataset.sugestao)));
+      escolher(l.chave, l.parametros);
+    }
+  } catch (e) { aviso("mensagem", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Perguntar";
+}
+
+els("btn-perguntar").addEventListener("click", perguntarEscrevendo);
+els("texto-livre").addEventListener("keydown", e => {
+  if (e.key === "Enter") perguntarEscrevendo();
+});
 
 els("btn-responder").addEventListener("click", responder);
 

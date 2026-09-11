@@ -1,5 +1,11 @@
 # Perguntas que o assistente precisa saber responder
 
+> ⚠️ **ESTA LISTA É UM NORTE, NÃO UM LIMITE.** O dono corrigiu o rumo em
+> 11/09/2026: *"o assistant não pode ficar somente focado nessas perguntas,
+> né? Isso é só um norte"*. Desde então a tela tem um **campo de escrever**, e
+> o que ela não entende é **guardado** — é essa lista de perguntas sem resposta
+> que decide o que entra aqui em seguida. O catálogo é o chão, não o teto.
+>
 > **Para que serve este arquivo.** O dono pediu em 10/09/2026: *"a cada nova
 > funcionalidade que nós temos, você já gera uma lista de possíveis perguntas,
 > coisas mais óbvias, (…) pra que a gente minimize a possibilidade de alguma
@@ -200,6 +206,38 @@ nunca chutar.
 | "Quanto vou precisar de caixa nos próximos 90 dias?" | previsão existe por título; falta juntar com o previsto a receber |
 
 ---
+
+## 3b. Perguntar escrevendo — e os três finais possíveis
+
+A tela tem um campo de texto. O que a pessoa escreve passa por
+`core/perguntas/entender.py`, que **não toca no banco** — só diz QUAL pergunta
+a frase é. Ser uma operação de texto pura é o que permite essa rota ser aberta
+a todo operador sem mentir: quem responde continua sendo a rota do grupo, com
+a ação dela.
+
+Três finais, e os três são honestos:
+
+| Final | Quando | O que a tela faz |
+|---|---|---|
+| **Entendi** | uma pergunta ganha das outras com folga | responde, já com os filtros que a frase disse |
+| **Qual delas?** | duas ou mais empatam no topo | mostra as empatadas e deixa escolher |
+| **Ainda não sei** | nada casa | diz isso, guarda a pergunta e sugere as parecidas |
+
+**O empate vira pergunta de volta, não escolha.** É a regra que o próprio dono
+deu: *"talvez valesse a pena questionar, se não tivesse sido bem específica"*.
+Sem ela, "o que está sem nota" — que empata entre três perguntas, porque
+**"nota" quer dizer duas coisas no ERP** (a que recebemos, anexada ao título, e
+a que emitimos ao cliente) — seria respondida com uma delas, com ar de certeza.
+
+**A frase também diz os filtros.** "Me manda a lista dos insumos da categoria
+hidráulico" tem a categoria escrita ali; respondê-la com o catálogo inteiro
+seria ignorar metade do que a pessoa falou. (Aconteceu na primeira versão:
+3.285 insumos em vez de 305.)
+
+**Ainda é casamento por PALAVRAS, não IA** — e isso é escada, não teto. Quando
+a chave da OpenAI existir em produção, a IA entra exatamente aí, escolhendo a
+mesma chave com mais jeito, e o resto não muda uma linha. O que nem ela
+entender continua caindo no mesmo lugar honesto: "isto eu não sei".
 
 ## 4. Como esta lista vira código
 

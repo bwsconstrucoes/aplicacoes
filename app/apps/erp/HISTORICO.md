@@ -17,6 +17,34 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
+**Estado em 11/09/2026:** `main` publicada em **`f2d93c8`**. Depois disso, no
+ramo e agora publicado: **perguntar escrevendo**. A tela **Perguntar** ganhou
+uma caixa de texto livre em cima da lista — a lista continua ali, mas virou
+sugestão, não limite. Pedido do dono, com estas palavras: *"o assistant não
+pode ficar somente focado nessas perguntas, isso é só um norte"*. **Sem
+migração.**
+
+**Como ele responde — e por que são três finais, não dois.** A frase escrita é
+comparada com as perguntas que o ERP sabe responder por código. Daí sai uma de
+três coisas, e a diferença entre elas é o que evita número errado:
+
+1. **Entendi** — responde, já com os filtros que deu para ler da frase. "insumos
+   da categoria hidráulico" traz os 305 daquela categoria, não os 3.279 do
+   catálogo inteiro.
+2. **Qual delas?** — quando duas perguntas empatam no topo, ele devolve a
+   pergunta em vez de escolher. Foi o dono quem ensinou isso, ao explicar que
+   "quanto falta receber" tem quatro leituras diferentes e todas legítimas.
+3. **Ainda não sei** — diz que não sabe, **guarda a pergunta** e sugere o que
+   chegou perto. Nunca inventa consulta.
+
+**A pergunta que ele não soube responder fica registrada** e aparece em
+`/erp/api/perguntas/nao-entendidas` (ação `ver_uso_da_equipe`). É a lista do que
+construir em seguida, escrita por quem usa o ERP — não por quem adivinha.
+
+Essa camada **não encosta no banco**: ela só compara palavras. É isso que
+permite que a rota dela peça apenas `ver_erp` sem mentir — quem responde de
+fato é a rota do grupo, que exige a ação daquele grupo.
+
 **Estado em 10/09/2026 (madrugada):** `main` publicada em **`76068fb`**, com a
 tela **Perguntar** (as primeiras perguntas respondidas por código), o
 **Trabalho no sistema** e o catálogo de perguntas. **Nenhuma delas tem

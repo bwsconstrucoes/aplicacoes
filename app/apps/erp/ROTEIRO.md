@@ -204,6 +204,19 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       aluguel. A regra virou `obras_de_registro_sem_autor`, em
       `permissoes.py`: para registro sem autor o único recorte é a obra, e sem
       obra designada não se vê nenhum.
+- [x] **1g. PERGUNTAR ESCREVENDO** — FEITO em 11/09/2026, depois de o dono
+      corrigir o rumo: *"o assistant não pode ficar somente focado nessas
+      perguntas, né? Isso é só um norte"*. A tela ganhou um campo de texto.
+      `core/perguntas/entender.py` lê a frase e diz QUAL pergunta ela é — **sem
+      tocar no banco**, que é o que permite a rota ser aberta a todo operador
+      sem mentir na declaração: quem responde continua sendo a rota do grupo.
+      Três finais honestos: **entendi** (responde, já com os filtros que a
+      frase disse), **qual delas?** (empate no topo vira pergunta de volta) e
+      **ainda não sei** (guarda a pergunta e sugere as parecidas).
+      **O que ele não entende fica registrado**, e há uma rota que lista isso —
+      é a lista do que construir em seguida, escrita por quem usa o ERP.
+      ⚠️ Ainda é casamento por PALAVRAS, não IA. A IA entra exatamente aí
+      quando a chave existir em produção, e o resto não muda.
 - [ ] **2. Assistente SÓ DE LEITURA, dentro do ERP.** Painel lateral (não
       caixinha), com o catálogo de perguntas conhecidas respondido por CÓDIGO —
       exato, rápido e sem custo de IA — e a pergunta imprevista caindo numa
