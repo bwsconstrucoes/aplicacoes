@@ -332,12 +332,26 @@ function pararDeGravar() {
   estadoAudio("Ouvindo…");
 }
 
+// Cada navegador grava num formato: o Chrome do Android em WebM, o Safari do
+// iPhone em MP4. O nome do arquivo TEM de bater com o que ele é — o serviço de
+// transcrição decide o formato pelo nome, e um MP4 chamado .webm é lido como
+// lixo ("Audio file might be corrupted"). Foi exatamente o que aconteceu com o
+// dono, no iPhone, em 11/09/2026.
+function extensaoDoTipo(tipo) {
+  const t = (tipo || "").toLowerCase();
+  if (t.includes("webm")) return "webm";
+  if (t.includes("mp4") || t.includes("m4a") || t.includes("aac")) return "mp4";
+  if (t.includes("ogg")) return "ogg";
+  if (t.includes("wav")) return "wav";
+  if (t.includes("mpeg") || t.includes("mp3")) return "mp3";
+  return "webm";
+}
+
 async function enviarAudio(blob, segundos) {
   if (!blob.size) { estadoAudio("A gravação saiu vazia.", "erro"); return; }
   estadoAudio("Ouvindo…");
   const dados = new FormData();
-  // O nome importa: é por ele que o serviço decide o formato do arquivo.
-  dados.append("audio", blob, "pergunta.webm");
+  dados.append("audio", blob, "pergunta." + extensaoDoTipo(blob.type));
   dados.append("segundos", String(Math.round(segundos)));
   try {
     const d = await api("/erp/api/perguntar/ouvir", {method: "POST", body: dados});

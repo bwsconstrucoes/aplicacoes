@@ -741,6 +741,23 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-11 — O assistente é uma PORTA a mais, nunca um caminho novo.**
+  Ele saiu da aba do Financeiro e virou botão no canto de toda tela
+  (`erp_base.html`), como se faz lá fora — o padrão se chama *ambient
+  copilot*. A regra de arquitetura: ele fala com as MESMAS rotas de resposta,
+  que carregam a permissão e o escopo por obra de cada grupo. **Uma rota só,
+  respondendo tudo, teria de conferir permissão por dentro — e a ação
+  declarada nela mentiria.** Há varredura recusando endereço novo dentro do
+  bloco dele. Tudo o que ele declara começa com `ia` e vive numa função
+  fechada: a base é carregada junto com as 20 telas, e nome repetido ou apaga
+  a função da tela em silêncio, ou mata a tela com erro de sintaxe.
+
+- **2026-09-11 — Formato de arquivo se descobre olhando o CONTEÚDO.** O áudio
+  gravado no iPhone (MP4) ia com nome `.webm`, e o serviço de transcrição, que
+  decide pelo nome, recusava como "corrompido". A correção que fica é conferir
+  a assinatura dos primeiros bytes: nome vem do navegador e navegador varia; o
+  conteúdo não mente. **Vale para todo arquivo que chega de fora.**
+
 - **2026-09-11 — Deste contêiner NÃO se enxerga a produção.** Eu afirmei, aqui
   e ao dono, que a `OPENAI_API_KEY` não estava configurada em produção. O que
   eu tinha verificado era outra coisa: que **ela não existe neste contêiner de

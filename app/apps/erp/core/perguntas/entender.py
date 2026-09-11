@@ -163,12 +163,124 @@ def extrair_parametros(texto: str, pergunta: dict[str, Any]) -> dict[str, str]:
     return achados
 
 
-def entender(texto: str, catalogo: list[dict[str, Any]]) -> dict[str, Any]:
+# ---------------------------------------------------------------------------
+# CONTINUAR A CONVERSA — "e da obra Triunfo?"
+#
+# O dono pediu poder **interagir**, não só perguntar solto. A forma mais comum
+# disso, e a que aparece em toda conversa de verdade, é a frase curta que só
+# troca um filtro da pergunta anterior: *"e da obra tal?"*, *"e a hidráulica?"*.
+#
+# Sozinha, essa frase não quer dizer nada — e é por isso que ela só é aceita
+# quando há uma pergunta anterior de quem oferecer o resto.
+#
+# A REGRA QUE MANTÉM ISSO HONESTO: **a tela DIZ que repetiu.** Nada de
+# responder outra pergunta em silêncio só porque a frase era curta. A pessoa lê
+# "repeti a pergunta anterior, agora com obra = Triunfo" e confere na hora.
+#
+# E continua sem IA: é substituição de parâmetro numa pergunta que já existe,
+# não uma pergunta nova inventada.
+# ---------------------------------------------------------------------------
+# O "e" que começa a frase é o marcador de continuação em português falado:
+# "e a elétrica?", "e da Triunfo?". Sem ele, a frase curta é pergunta nova
+# malfeita — e aí o certo é dizer que não entendeu, não chutar.
+_COMECO_DE_CONTINUACAO = re.compile(r"^e\s+", re.I)
+
+
+def _so_o_valor(texto: str, anterior: dict[str, Any]) -> dict[str, str]:
+    """"e a elétrica?" — a frase é o VALOR do filtro, sem dizer o nome dele.
+
+    É assim que se fala: ninguém repete "categoria" na segunda pergunta. Só
+    vale quando não há dúvida de qual filtro é — ou seja, quando a pergunta
+    anterior tem **um único** filtro de texto. Com dois, adivinhar qual deles
+    a pessoa quis dizer seria chutar, e aí é melhor ela escrever.
+    """
+    if not _COMECO_DE_CONTINUACAO.match(_limpo(texto)):
+        return {}
+    # Um único filtro, e NENHUM outro. Duas razões:
+    #
+    #  · com dois filtros de texto, adivinhar qual a pessoa quis dizer é chute;
+    #  · com um filtro de texto MAIS um de data, "e amanhã" viraria
+    #    obra = "amanhã" — que foi o que aconteceu na primeira versão.
+    #
+    # Quando há mais de um filtro, a continuação ainda funciona: basta a frase
+    # dizer o nome dele ("e da OBRA Triunfo"), que é o outro caminho.
+    todos = anterior.get("parametros") or []
+    de_texto = [p for p in todos if p.get("tipo") == "texto"]
+    if len(todos) != 1 or len(de_texto) != 1:
+        return {}
+    resto = _COMECO_DE_CONTINUACAO.sub("", _limpo(texto))
+    uteis = [p for p in re.findall(r"[a-z0-9\-]+", resto)
+             if len(p) > 1 and p not in VAZIAS]
+    if not 1 <= len(uteis) <= 3:
+        return {}
+    return {de_texto[0]["nome"]: " ".join(uteis)}
+
+
+def _continuacao(texto: str, anterior: dict[str, Any], *,
+                 so_o_valor: bool = True) -> Optional[dict[str, Any]]:
+    """A frase é SÓ um filtro novo para a pergunta anterior?
+
+    O "só" é a trava, e ela existe para a continuação não sequestrar pergunta
+    nova. "e da obra Triunfo?" não sobra nada depois de tirar o filtro — é
+    continuação. Já "o que está sem nota da obra Triunfo?" sobra a palavra
+    "nota", que é o assunto de uma pergunta diferente: aí a frase vale por si,
+    e responder a anterior seria trocar a pergunta em silêncio.
+    """
+    if not anterior:
+        return None
+    novos = extrair_parametros(texto, anterior)
+    if not novos and so_o_valor:
+        novos = _so_o_valor(texto, anterior)
+    if not novos:
+        return None
+
+    # O que sobra da frase depois de tirar o filtro e a palavra que o anuncia?
+    gastas: set[str] = set()
+    for nome, valor in novos.items():
+        gastas |= palavras(valor)
+        for anuncio in ANUNCIAM.get(nome, (nome,)):
+            gastas |= palavras(anuncio)
+    if palavras(texto) - gastas:
+        return None
+
+    return {
+        "entendi": True, "ambigua": False, "continuacao": True,
+        "texto": texto,
+        "chave": anterior["chave"],
+        "grupo": anterior["grupo"],
+        "pergunta": anterior["pergunta"],
+        "confianca": 1.0,
+        "parametros": novos,
+        "parecidas": [],
+        # A tela mostra isto em cima da resposta. Sem a frase, a pessoa acha
+        # que o sistema entendeu a pergunta nova — e não entendeu: ele repetiu
+        # a anterior.
+        "aviso": ("Repeti a pergunta anterior — “{pergunta}” — trocando "
+                  "{filtros}.").format(
+                      pergunta=anterior["pergunta"],
+                      filtros=", ".join(f"{k} = {v}" for k, v in novos.items())),
+    }
+
+
+def entender(texto: str, catalogo: list[dict[str, Any]],
+             chave_anterior: str = "") -> dict[str, Any]:
     """Qual pergunta do catálogo é esta frase — ou a admissão de que não sei.
 
     Devolve sempre o mesmo formato, e `entendi=False` é uma resposta legítima,
     não um erro: é ela que evita responder com segurança a pergunta errada.
+
+    `chave_anterior` é a última pergunta respondida nesta conversa. Recebe a
+    CHAVE, e não a pergunta inteira, de propósito: na primeira versão ela
+    recebia um dicionário, e passar o resultado de `entender` em vez da entrada
+    do catálogo fazia a continuação falhar **em silêncio** — os dois têm o
+    campo "parametros", com significados diferentes. Com a chave não há como
+    passar a coisa errada.
+
+    Ela só entra em cena se a frase sozinha não for entendida — nunca atropela
+    uma pergunta que deu para reconhecer por si mesma.
     """
+    anterior = next((p for p in catalogo
+                     if p.get("chave") == (chave_anterior or "")), None)
     da_pessoa = palavras(texto)
     notas = []
     for pergunta in catalogo:
@@ -183,6 +295,10 @@ def entender(texto: str, catalogo: list[dict[str, Any]]) -> dict[str, Any]:
               for n, p in notas[1:4]]
 
     if melhor is None or melhor[0] < CONFIANCA_MINIMA:
+        # Antes de dizer "não sei": era só um filtro novo para a anterior?
+        seguindo = _continuacao(texto, anterior)
+        if seguindo is not None:
+            return seguindo
         return {
             "entendi": False, "ambigua": False,
             "texto": texto,
@@ -198,6 +314,20 @@ def entender(texto: str, catalogo: list[dict[str, Any]]) -> dict[str, Any]:
     # certo, só que de outra pergunta.
     empatadas = [(n, p) for n, p in notas if melhor[0] - n <= MARGEM_MINIMA]
     if len(empatadas) > 1:
+        # Empate + frase que só troca um filtro da anterior = era continuação,
+        # e aí não há empate nenhum: a pergunta já estava escolhida antes.
+        # A frase empatou entre duas perguntas, mas ela é SÓ um filtro (a trava
+        # em `_continuacao` garante isso). Então não há empate: a pergunta já
+        # tinha sido escolhida na rodada anterior.
+        #
+        # `so_o_valor=False` aqui: no empate, só continua a frase que DIZ o
+        # nome do filtro. "e o que está vencido" começa com "e" e empata entre
+        # duas perguntas — tratá-la como o valor de um filtro a transformaria
+        # em "categoria = vencido", que é chute puro. Empate legítimo tem de
+        # virar pergunta de volta.
+        seguindo = _continuacao(texto, anterior, so_o_valor=False)
+        if seguindo is not None:
+            return seguindo
         return {
             "entendi": False, "ambigua": True,
             "texto": texto,

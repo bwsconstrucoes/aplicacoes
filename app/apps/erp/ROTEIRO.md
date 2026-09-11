@@ -272,6 +272,52 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       ⚠️ **Aviso por notificação no celular ficou de fora** — exige chaves de
       push e um serviço a mais, e é decisão do dono. Hoje o aviso continua por
       e-mail e Telegram.
+- [x] **3b. O ASSISTENTE SAI DA ABA E VAI PARA O CANTO DE TODA TELA** — FEITO
+      em 11/09/2026, a pedido do dono: *"o perguntar que está na barra lá em
+      cima é ser acessado de forma geral, e não por exemplo dentro do
+      financeiro. O ideal é que abra um modal que fique sobre a tela no
+      cantinho, como uma assistente virtual mesmo."*
+      Botão redondo no canto de toda tela; o painel abre por cima, sem tirar
+      ninguém do que estava fazendo. **Por dentro não é nada novo:** fala com
+      as MESMAS rotas, com as mesmas permissões e o mesmo escopo por obra.
+      A conversa continua ao trocar de tela (fica no navegador, não no banco)
+      e some ao fechar a aba.
+      **Continuar a conversa:** "e da obra Triunfo?" repete a pergunta
+      anterior trocando o filtro — e a tela DIZ que repetiu. Sem IA: é
+      substituição de parâmetro numa pergunta que já existe.
+      A tela cheia continua em `/erp/perguntar`, alcançada pelo ⤢, para
+      resposta com tabela grande.
+
+- [ ] **3c. A DOCUMENTAÇÃO DA EMPRESA ORIENTANDO O ASSISTENTE** — pedido do
+      dono em 11/09/2026: *"atrelar depois documentação da empresa para
+      orientar o assistente/agente… temos que pensar grande"*.
+      **O que é:** hoje o assistente responde sobre o que está no BANCO
+      (números). Isto acrescenta responder sobre o que está nos DOCUMENTOS da
+      empresa — contrato, edital, procedimento interno, norma: *"o que o
+      contrato da Creche diz sobre reajuste?"*, *"qual o prazo de garantia
+      combinado?"*.
+      **Como se faz isso lá fora** (o nome é RAG): o documento é quebrado em
+      pedaços, cada pedaço vira um índice, a pergunta busca os pedaços que
+      falam daquilo, e **só esses pedaços** vão para a IA responder — com a
+      citação de onde saiu. Dois terços das grandes empresas já rodam algo
+      assim em produção; o ganho é que a resposta sai com fonte, e se atualiza
+      trocando o documento, sem retreinar nada.
+      ⚠️ **As três decisões que precisam ser tomadas ANTES de construir:**
+      1. **Quem vê o quê.** O acervo tem contrato e documento de pessoal. A
+         busca TEM de respeitar o mesmo escopo das telas — senão o assistente
+         vira a porta dos fundos do controle de acesso que já existe.
+      2. **Onde fica o índice.** Postgres já tem busca de texto embutida e
+         resolve bem documento em português; índice por significado (vetor)
+         responde melhor pergunta feita com outras palavras, e custa mais.
+         Começar pelo primeiro e medir.
+      3. **Resposta com citação, sempre.** Sem o trecho do documento ao lado,
+         é a IA falando — e aí vale a mesma regra de hoje: só se pode
+         confiar no que dá para conferir na fonte.
+      **Base que já existe e não precisa ser refeita:** o Arquivo já guarda os
+      documentos, já extrai o texto deles e já grava esse texto (é o que
+      permite buscar DENTRO do documento hoje). O que falta é o índice, a
+      busca e a resposta com citação.
+
 - [ ] **4. As AÇÕES pelo assistente** (cadastrar insumo, lançar título) —
       sempre **preparar e confirmar**: o assistente preenche e mostra, a pessoa
       aperta. Nunca "já lancei". E passando pelas MESMAS funções do core que a

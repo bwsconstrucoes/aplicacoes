@@ -306,6 +306,32 @@ Se um dia ela sair do ar, os dois botões recusam com uma frase dizendo isso, e
 **todo o resto da tela continua igual** — as perguntas sobre o que já está no
 ERP são respondidas por código escrito e testado, sem IA nenhuma e sem custo.
 
+## 3d. Onde se pergunta, e como se continua
+
+Desde 11/09/2026 o assistente está no **canto de toda tela** — botão redondo,
+painel que abre por cima. Não é mais uma aba do Financeiro: as perguntas já
+alcançam obras, contratos e suprimentos, e ficar lá dava a entender que era
+coisa de um módulo só.
+
+A tela cheia continua em `/erp/perguntar` (o ⤢ do painel leva até ela), para
+resposta com tabela grande.
+
+### Dá para continuar a conversa
+
+| Você escreve | O que acontece |
+|---|---|
+| "o que tem a pagar hoje" | responde |
+| "e da obra Triunfo?" | **repete a anterior** trocando a obra — e diz isso |
+| "e a elétrica?" | idem, quando a pergunta anterior tem um filtro só |
+| "o que está sem nota da obra X" | **não** é continuação: tem assunto próprio |
+
+A frase *"Repeti a pergunta anterior — X — trocando obra = Triunfo"* aparece
+em cima da resposta, sempre. Sem ela, você acharia que ele entendeu a pergunta
+nova — e não entendeu: ele repetiu a anterior.
+
+Quando a frase curta empata entre duas perguntas, ele continua perguntando de
+volta em vez de escolher.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

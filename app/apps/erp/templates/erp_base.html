@@ -72,6 +72,57 @@
    escondido e só aparece se a tela TIVER filtros — quem decide é o código lá
    embaixo, olhando o que a tela pôs dentro do <aside>. No computador o botão
    nunca aparece: o estilo só o mostra abaixo de 720px. #}
+{# ===================================================================
+   O ASSISTENTE, EM TODA TELA
+
+   O dono corrigiu o rumo em 11/09/2026: *"o perguntar que está na barra lá em
+   cima é ser acessado de forma geral, e não por exemplo dentro do financeiro.
+   O ideal é que abra um modal que fique sobre a tela no cantinho, como uma
+   assistente virtual mesmo."*
+
+   É também o que se faz lá fora hoje — o padrão tem nome, "ambient copilot":
+   presente em toda tela, sempre opcional, sem tirar ninguém do que estava
+   fazendo. E o que mais derruba assistente de ERP em produção é justamente o
+   contrário: agir sem um ponto de conferência humano.
+
+   POR DENTRO ELE NÃO É NADA NOVO. Usa as MESMAS rotas da tela Perguntar, com
+   as mesmas permissões e o mesmo escopo por obra. Não existe um segundo
+   caminho até o número — existe uma porta a mais para o mesmo caminho.
+   =================================================================== #}
+<button type="button" class="ia-botao" id="ia-botao" title="Perguntar ao sistema"
+        aria-label="Perguntar ao sistema">💬</button>
+
+<div class="ia-painel" id="ia-painel" hidden role="dialog"
+     aria-label="Assistente do ERP">
+  <div class="ia-cab">
+    <div>
+      <b>Pergunte ao sistema</b>
+      <small id="ia-onde"></small>
+    </div>
+    <div class="ia-cab-acoes">
+      <a class="ia-link" href="/erp/perguntar" title="Abrir em tela cheia">⤢</a>
+      <button type="button" class="ia-link" id="ia-limpar"
+              title="Limpar a conversa">🗑</button>
+      <button type="button" class="ia-link" id="ia-fechar"
+              title="Fechar">✕</button>
+    </div>
+  </div>
+
+  <div class="ia-conversa" id="ia-conversa"></div>
+
+  <div class="ia-pe">
+    <input id="ia-texto" type="text" autocomplete="off"
+           placeholder="o que tem a pagar hoje">
+    <button type="button" class="ia-acao" id="ia-gravar" hidden
+            title="Falar a pergunta">🎤</button>
+    <button type="button" class="ia-acao" id="ia-anexar"
+            title="Anexar um documento">📎</button>
+    <input id="ia-arquivo" type="file" hidden
+           accept=".pdf,.xml,.jpg,.jpeg,.png,.webp,.heic">
+    <button type="button" class="ia-enviar" id="ia-enviar">➤</button>
+  </div>
+</div>
+
 <button type="button" class="abrir-filtros" id="abrir-filtros" hidden>
   {# O rótulo é da tela: na maioria a gaveta tem filtros, mas na de Perguntar
      ela tem a lista de perguntas, e "Filtros" ali não quer dizer nada. #}
@@ -701,6 +752,323 @@ async function api(url, opcoes) {
 })();
 </script>
 {% block scripts %}{% endblock %}
+
+<script>
+// ===========================================================================
+// O ASSISTENTE, EM TODA TELA
+//
+// TUDO AQUI COMEÇA COM "ia". Este arquivo é carregado junto com as 20 telas
+// do ERP, e um nome repetido entre a base e uma tela ou apaga a função de lá,
+// em silêncio, ou mata a tela inteira com erro de sintaxe. As duas coisas já
+// aconteceram neste projeto, e há varredura na suíte recusando as duas.
+//
+// ELE NÃO INVENTA CAMINHO NENHUM. Fala com as MESMAS rotas da tela Perguntar,
+// que carregam a permissão e o escopo por obra de cada grupo. O que ele
+// acrescenta é a porta: dá para perguntar de dentro de qualquer tela, sem
+// largar o que se estava fazendo.
+//
+// A CONVERSA FICA NO NAVEGADOR, não no servidor. Guardar pergunta e resposta
+// no banco seria guardar número calculado — que envelhece — e ainda por cima
+// dado que pode ser de obra que a próxima pessoa não enxerga. Aqui ela dura a
+// aba aberta e some ao fechar; o que o sistema registra, e continua
+// registrando, é só que a pergunta foi feita (para o relatório de uso).
+// ===========================================================================
+(function assistenteDoErp(){
+  const painel = document.getElementById("ia-painel");
+  const botao = document.getElementById("ia-botao");
+  if (!painel || !botao) return;          // tela que não usa a base
+
+  // Os endereços vão ESCRITOS POR EXTENSO: a suíte confere se toda rota que
+  // uma tela chama existe no servidor, e endereço montado em pedaços escapa
+  // dessa varredura.
+  const GRUPOS = {
+    financeiro: "/erp/api/perguntar/financeiro",
+    contratos: "/erp/api/perguntar/contratos",
+    suprimentos: "/erp/api/perguntar/suprimentos",
+    obras: "/erp/api/perguntar/obras",
+  };
+  const EXEMPLOS = [
+    "o que tem a pagar hoje",
+    "onde a fila está parada",
+    "quais obras estão sem CNO",
+    "insumos da categoria hidráulico",
+  ];
+  const MEMORIA = "erp-assistente";
+  let conversa = [];
+  let ultima = "";        // chave da última pergunta respondida
+  let gravador = null, pedacos = [], comecou = 0;
+
+  const tela = () => document.getElementById("ia-conversa");
+
+  // NINGUÉM PRECISA VER SQL.
+  //
+  // Quando alguma coisa quebra no servidor, a resposta traz o recado técnico
+  // inteiro — e ele apareceu aqui, no cantinho, com o nome de todas as colunas
+  // de uma tabela. Para quem usa o sistema isso não é informação, é susto. E
+  // some com a pergunta no meio do despejo.
+  //
+  // Então o painel mostra a PRIMEIRA LINHA e nada mais. O recado completo
+  // continua no log do servidor, que é onde ele serve para alguma coisa.
+  function curto(mensagem){
+    const bruto = String(mensagem || "").trim();
+    const primeira = bruto.split("\n")[0].split(" [SQL:")[0].trim();
+    if (!primeira) return "Não consegui responder agora.";
+    return primeira.length > 180 ? primeira.slice(0, 180) + "…" : primeira;
+  }
+  const esc = t => String(t === null || t === undefined ? "" : t)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+
+  // ------------------------------------------------------------- memória
+  function lembrar(){
+    try {
+      const bruto = sessionStorage.getItem(MEMORIA);
+      if (!bruto) return;
+      const d = JSON.parse(bruto);
+      conversa = Array.isArray(d.conversa) ? d.conversa.slice(-12) : [];
+      ultima = d.ultima || "";
+    } catch (e) { conversa = []; ultima = ""; }
+  }
+  function guardar(){
+    // sessionStorage pode estar bloqueado (aba anônima, política do
+    // aparelho). Isso não pode derrubar o assistente — só faz a conversa
+    // não atravessar a troca de tela.
+    try {
+      sessionStorage.setItem(MEMORIA, JSON.stringify(
+        {conversa: conversa.slice(-12), ultima}));
+    } catch (e) { /* segue sem memória */ }
+  }
+
+  // ------------------------------------------------------------- desenho
+  function desenhar(){
+    const alvo = tela();
+    if (!conversa.length) {
+      alvo.innerHTML = `<div class="ia-vazio">
+        <b>Pergunte com suas palavras.</b>
+        As respostas são calculadas pelo sistema — exatas, na hora — e cada
+        uma mostra de onde veio, para você conferir. O que eu ainda não souber,
+        eu digo que não sei.
+        ${EXEMPLOS.map(x =>
+          `<button class="ia-exemplo" data-ia-exemplo="${esc(x)}">${esc(x)}</button>`
+        ).join("")}
+      </div>`;
+      alvo.querySelectorAll("[data-ia-exemplo]").forEach(b =>
+        b.addEventListener("click", () => {
+          document.getElementById("ia-texto").value = b.dataset.iaExemplo;
+          enviar();
+        }));
+      return;
+    }
+    alvo.innerHTML = conversa.map((t, i) => t.de === "eu"
+      ? `<div class="ia-minha">${esc(t.texto)}</div>`
+      : `<div class="ia-dele">${t.html}</div>`).join("");
+    alvo.querySelectorAll("[data-ia-chave]").forEach(b =>
+      b.addEventListener("click", () => responder(
+        b.dataset.iaChave, b.dataset.iaGrupo, {},
+        b.textContent.trim())));
+    alvo.scrollTop = alvo.scrollHeight;
+  }
+
+  function dizer(html){
+    conversa.push({de: "ele", html});
+    guardar(); desenhar();
+  }
+  function euDisse(texto){
+    conversa.push({de: "eu", texto});
+    guardar(); desenhar();
+  }
+
+  function tabela(r){
+    if (!(r.linhas || []).length) return "";
+    const cel = (c, l) => {
+      const v = l[c.chave];
+      if (v === null || v === undefined || v === "") return "—";
+      if (c.tipo === "dinheiro") return moeda(v);
+      if (c.tipo === "data") return dataBR(v);
+      return esc(v);
+    };
+    const linhas = r.linhas.slice(0, 12);
+    return `<div class="ia-rolagem"><table><thead><tr>${
+      r.colunas.map(c => `<th>${esc(c.rotulo)}</th>`).join("")}</tr></thead>
+      <tbody>${linhas.map(l => `<tr>${
+        r.colunas.map(c => `<td>${cel(c, l)}</td>`).join("")}</tr>`).join("")}
+      </tbody></table></div>${
+      r.linhas.length > linhas.length
+        ? `<div class="ia-nota">Mostrando ${linhas.length} de ${r.quantas}.
+           <a href="/erp/perguntar">Ver a lista inteira</a>.</div>` : ""}`;
+  }
+
+  // ------------------------------------------------------------- perguntar
+  async function enviar(){
+    const campo = document.getElementById("ia-texto");
+    const texto = (campo.value || "").trim();
+    if (!texto) return;
+    campo.value = "";
+    euDisse(texto);
+    try {
+      const d = await api("/erp/api/perguntar/entender", {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({texto, anterior: ultima})});
+      const l = d.leitura;
+      if (!l.entendi) {
+        const opcoes = (l.parecidas || []).map(o =>
+          `<button class="ia-opcao" data-ia-chave="${esc(o.chave)}"
+             data-ia-grupo="${esc(o.grupo)}">${esc(o.pergunta)}</button>`).join("");
+        dizer(`<div class="ia-frase">${esc(l.motivo)}</div>${opcoes}${
+          opcoes ? "" : `<div class="ia-nota">Anotei a sua pergunta — é essa
+            lista que decide o que eu aprendo a responder em seguida.</div>`}`);
+        return;
+      }
+      await responder(l.chave, l.grupo, l.parametros || {}, l.pergunta, l.aviso);
+    } catch (e) {
+      dizer(`<div class="ia-frase">${esc(curto(e.message))}</div>`);
+    }
+  }
+
+  async function responder(chave, grupo, parametros, rotulo, aviso){
+    const endereco = GRUPOS[grupo];
+    if (!endereco) { dizer(`<div class="ia-frase">Não sei responder isso aqui.</div>`); return; }
+    dizer(`<div class="ia-nota">calculando…</div>`);
+    try {
+      const d = await api(endereco, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({chave, parametros})});
+      const r = d.resposta;
+      ultima = chave;
+      conversa.pop();                       // tira o "calculando…"
+      dizer(`${aviso ? `<div class="ia-aviso">${esc(aviso)}</div>` : ""}
+        <div class="ia-frase">${esc(r.frase)}</div>
+        ${tabela(r)}
+        <div class="ia-nota">${esc(r.titulo)}${r.de_onde_veio
+          ? ` · <a href="${esc(r.de_onde_veio.tela)}">${esc(r.de_onde_veio.explicacao)}</a>`
+          : ""}</div>`);
+    } catch (e) {
+      conversa.pop();
+      dizer(`<div class="ia-frase">${esc(curto(e.message))}</div>`);
+    }
+  }
+
+  // ------------------------------------------------------------- voz
+  function podeGravarIa(){
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+              && window.MediaRecorder);
+  }
+  function extensaoIa(tipo){
+    const t = (tipo || "").toLowerCase();
+    if (t.includes("webm")) return "webm";
+    if (t.includes("mp4") || t.includes("m4a") || t.includes("aac")) return "mp4";
+    if (t.includes("ogg")) return "ogg";
+    if (t.includes("wav")) return "wav";
+    if (t.includes("mpeg") || t.includes("mp3")) return "mp3";
+    return "webm";
+  }
+  async function gravar(){
+    const b = document.getElementById("ia-gravar");
+    if (gravador) {
+      if (gravador.state !== "inactive") gravador.stop();
+      gravador = null; b.classList.remove("gravando"); b.textContent = "🎤";
+      return;
+    }
+    try {
+      const fluxo = await navigator.mediaDevices.getUserMedia({audio: true});
+      const g = new MediaRecorder(fluxo);
+      pedacos = []; comecou = Date.now();
+      g.ondataavailable = ev => { if (ev.data.size) pedacos.push(ev.data); };
+      // A referência usada aqui é a LOCAL: quando o `onstop` roda, a variável
+      // de fora já foi zerada. Foi assim que a gravação quebrou na primeira
+      // versão da tela Perguntar.
+      g.onstop = () => {
+        fluxo.getTracks().forEach(t => t.stop());
+        mandarAudio(new Blob(pedacos, {type: g.mimeType || "audio/webm"}),
+                    (Date.now() - comecou) / 1000);
+      };
+      g.start(); gravador = g;
+      b.classList.add("gravando"); b.textContent = "⏹";
+    } catch (e) {
+      dizer(`<div class="ia-frase">Não consegui usar o microfone. Escreva a
+        pergunta que eu respondo igual.</div>`);
+    }
+  }
+  async function mandarAudio(blob, segundos){
+    if (!blob.size) return;
+    const dados = new FormData();
+    // O nome tem de bater com o formato: o Safari grava em MP4 e o Chrome em
+    // WebM, e o serviço decide pelo nome.
+    dados.append("audio", blob, "pergunta." + extensaoIa(blob.type));
+    dados.append("segundos", String(Math.round(segundos)));
+    try {
+      const d = await api("/erp/api/perguntar/ouvir", {method: "POST", body: dados});
+      // Vai para o CAMPO, não direto para a resposta: transcrição erra, e
+      // pergunta mal ouvida respondida em silêncio é o pior defeito possível.
+      document.getElementById("ia-texto").value = d.texto;
+      document.getElementById("ia-texto").focus();
+    } catch (e) {
+      dizer(`<div class="ia-frase">${esc(curto(e.message))}</div>`);
+    }
+  }
+
+  // ------------------------------------------------------------- anexo
+  async function lerDocumento(arquivo){
+    euDisse("📎 " + arquivo.name);
+    dizer(`<div class="ia-nota">lendo o documento…</div>`);
+    try {
+      const dados = new FormData();
+      dados.append("documento", arquivo, arquivo.name);
+      const d = await api("/erp/api/perguntar/documento", {method: "POST", body: dados});
+      const doc = d.documento;
+      conversa.pop();
+      dizer(`<div class="ia-aviso">Isto eu <b>li do arquivo</b>, não calculei.
+          Confira no documento. Nada foi gravado — para guardar, use o
+          <a href="/erp/arquivo">Arquivo</a>.</div>
+        <table><tbody>${(doc.linhas || []).map(l =>
+          `<tr><td>${esc(l.rotulo)}</td><td>${esc(l.valor)}</td></tr>`).join("")}
+        </tbody></table>${doc.observacoes
+          ? `<div class="ia-nota"><b>Ficou em dúvida:</b> ${esc(doc.observacoes)}</div>`
+          : ""}`);
+    } catch (e) {
+      conversa.pop();
+      dizer(`<div class="ia-frase">${esc(curto(e.message))}</div>`);
+    }
+  }
+
+  // ------------------------------------------------------------- abrir/fechar
+  function abrir(sim){
+    painel.hidden = !sim;
+    botao.classList.toggle("aberto", sim);
+    botao.textContent = sim ? "✕" : "💬";
+    if (sim) { desenhar(); document.getElementById("ia-texto").focus(); }
+  }
+
+  lembrar();
+  const onde = document.querySelector(".topo-sub");
+  document.getElementById("ia-onde").textContent =
+    onde ? "você está em " + onde.textContent.trim() : "";
+
+  botao.addEventListener("click", () => abrir(painel.hidden));
+  document.getElementById("ia-fechar").addEventListener("click", () => abrir(false));
+  document.getElementById("ia-limpar").addEventListener("click", () => {
+    conversa = []; ultima = ""; guardar(); desenhar();
+  });
+  document.getElementById("ia-enviar").addEventListener("click", enviar);
+  document.getElementById("ia-texto").addEventListener("keydown", ev => {
+    if (ev.key === "Enter") enviar();
+  });
+  document.getElementById("ia-anexar").addEventListener("click", () =>
+    document.getElementById("ia-arquivo").click());
+  document.getElementById("ia-arquivo").addEventListener("change", ev => {
+    const f = ev.target.files && ev.target.files[0];
+    if (f) lerDocumento(f);
+    ev.target.value = "";
+  });
+  if (podeGravarIa()) {
+    document.getElementById("ia-gravar").hidden = false;
+    document.getElementById("ia-gravar").addEventListener("click", gravar);
+  }
+  document.addEventListener("keydown", ev => {
+    if (ev.key === "Escape" && !painel.hidden) abrir(false);
+  });
+})();
+</script>
 
 <script>
 // O registro do service worker — é ele que torna o ERP instalável no celular.
