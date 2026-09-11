@@ -421,3 +421,29 @@ ser baixável.
 apenas "nenhum candidato encontrado". Se dissesse *"existe SP com este valor e
 este nome, mas ela não está agendada"*, esta investigação inteira teria sido
 uma linha. Vale a pena, e é barato — depende do dono pedir.
+
+### 11/09/2026 — o robô passou a avisar o que NÃO baixou
+
+Consequência direta do caso acima: a explicação de por que um comprovante não
+baixou existia, mas morria dentro da resposta devolvida ao Make. O dono pediu o
+aviso, com o recorte dele: *"o que baixou normal, não preciso saber. Só o que
+deu alguma falha, que de repente merece uma atenção ou uma melhoria na regra."*
+
+**Como ficou:** no fim de cada lote, **uma** mensagem pelo Telegram com o que
+ficou de fora e o motivo de cada um — sem SP encontrada, mais de uma candidata,
+recusado pelo banco, ou falha ao baixar no Omie. Fora do aviso, de propósito: o
+que baixou e o que foi barrado por duplicidade (o dono disse que não precisa
+saber, e a trava já resolve).
+
+**Decisões de desenho:**
+- **Um aviso por lote, no máximo dez itens.** Comprovante chega em leva; um
+  aviso por comprovante viraria barulho, e barulho faz parar de ler.
+- **Reusa `CHATBOT_MASTER_PHONE`**, a convenção que o chatbot e o
+  processarnovasp já usam, em vez de escrever o número num terceiro lugar.
+  `BAIXABRADESCO_AVISO_TELEFONE` troca o destino se um dia for outra pessoa.
+- **Avisar nunca derruba a baixa.** O envio é protegido: se o Telegram cair, a
+  baixa já aconteceu e a resposta sai normal.
+
+**Limite conhecido:** o Telegram entrega pelo número, e o número precisa estar
+na aba `TelegramID` — quem nunca abriu conversa com o bot não recebe. É a
+primeira coisa a conferir se o aviso não chegar.
