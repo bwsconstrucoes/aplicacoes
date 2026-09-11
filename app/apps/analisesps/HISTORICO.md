@@ -1657,6 +1657,51 @@ regra sem interface — nada disso aparece para ninguém. Faltam também a grava
 em lote de volta no Pipefy e a leitura dos anexos por IA, que o dono decidiu
 manter no escopo.
 
+### Levantamento (11/09) — o Nº da nota vive em DOIS lugares, e só ele
+
+Pergunta do dono: quando a conciliação atualizar o card no Pipefy, a planilha
+SPsBD precisa ser atualizada junto? *"Pelo menos o número de nota, porque os
+outros dados não têm na planilha."*
+
+**Conferido no código.** Ele está certo, e o levantamento é curto:
+
+| O que a conciliação decide | Na SPsBD? | No card? |
+|---|---|---|
+| **Nº da nota** | **sim — coluna AA** | sim |
+| Documentação Fiscal (a categoria) | não existe | sim |
+| Chave de acesso | não existe | sim |
+| Gerou nota | não existe | sim |
+
+**O Nº da nota é o único campo que pode divergir**, porque é o único que existe
+dos dois lados. Os outros três não têm onde divergir — a planilha não os
+conhece. Isso simplifica o problema bastante: é uma coluna, não quatro.
+
+**O caminho de volta já existe.** Não é mecanismo novo: toda alteração feita
+pela tela já percorre banco → fila → log → planilha, grava no banco na hora,
+enfileira a célula e escreve no Sheets pelo processo separado. Se a internet
+cair, a célula fica na fila e sobe sozinha. É assim que Status Pgt e Agendado
+funcionam desde a estreia.
+
+**A trava que existe hoje, e ela é boa:** a coluna AA está marcada como somente
+leitura, e a rota de alteração recusa qualquer coluna fora da lista. Duas
+colunas escapam disso por porta própria — Validação (senha própria) e Análise
+("Remover risco"). **A conciliação deve seguir esse desenho: porta própria, não
+entrada na lista geral.** Pôr `nf` na lista comum daria a qualquer operador o
+poder de reescrever o número da nota de qualquer SP pela tela de sempre, e
+número de nota é prova fiscal, não campo de trabalho.
+
+**A pergunta que ficou para o dono:** quem escreve o Nº NF na SPsBD hoje? Se é
+um script que traz do Pipefy, escrever no card basta e escrever nos dois lados
+seria só criar corrida. Se é pessoa digitando na planilha, os dois lados
+precisam ser escritos. Até a resposta, o desenho seguro é **nunca sobrescrever
+um número que já esteja lá diferente** — preencher o vazio, sim; trocar em
+silêncio, não.
+
+**O que falta saber para isso sair do papel:** os identificadores dos campos
+Nº da nota e Chave de acesso no Pipefy. O da Documentação Fiscal já é conhecido
+e está provado em produção desde o BeeVale; os outros dois nunca foram escritos
+por este módulo.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a

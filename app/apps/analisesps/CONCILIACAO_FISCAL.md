@@ -82,18 +82,81 @@ a categoria escolhida foi sempre a mesma:
 |---|---|
 | Veículos (Taxas, Impostos, Multas) | Seguros |
 | Locação de Equipamentos · Água e Energia · Internet e Telefonia | Nota de Débito/Fatura |
-| Material Elétrico, Hidráulico, Pintura, Telhas, Ferragens, Ferramentas… | NF-e (Mercadoria) |
+| ~~Material Elétrico, Hidráulico, Pintura, Telhas, Ferragens, Ferramentas…~~ | ~~NF-e (Mercadoria)~~ **← DERRUBADA em 11/09, ver a correção abaixo** |
 | Aluguéis e Condomínios | Contrato |
 | Multas e Processos Trabalhistas | Rescisões (TRCT e Multa) |
 | Cartórios, Crea, Taxas | Taxas Diversas |
 
-Serve para **propor**, nunca para decidir sozinho.
+Serve para **propor**, nunca para decidir sozinho — e a linha de mercadoria saiu de vez. **Leia a correção de 11/09 antes de usar esta tabela**: hoje só valem as despesas que NUNCA têm nota eletrônica.
 
 E a tabela de dedutibilidade é do próprio dono, na aba de apoio da planilha:
 são "Não Dedutível" apenas **Ausente, Nota Cancelada, Reanalisar, Emissão
 Futura e Não Dedutível**; todo o resto é "Documentação OK". Duas opções do Pipefy não
 estavam nessa tabela — **BeeVale e Férias ou PL** —, e o dono respondeu em
 11/09: as duas são **dedutíveis**, assim como Rescisões.
+
+## ONDE CADA INFORMAÇÃO MORA — e o que precisa ser atualizado em DOIS lugares
+
+Pergunta do dono, em 11/09/2026: *"quando formos atualizar algum dado no
+Pipefy, que seria um número de nota e a categoria — essa informação nem tem na
+planilha SPsBD. O número da nota tem lá. A gente precisaria atualizar isso na
+planilha também. Pelo menos o número de nota, porque os outros dados não têm na
+planilha."*
+
+**Conferido no código, não deduzido.** Ele está certo, e o levantamento é este:
+
+| O que a conciliação decide | Está na SPsBD? | Está no card do Pipefy? | Onde escrever |
+|---|---|---|---|
+| **Nº da nota** | **SIM — coluna AA** (`nf`) | sim | **nos DOIS** |
+| Documentação Fiscal (a categoria) | **não existe** | sim | só no card |
+| Chave de acesso | **não existe** | sim | só no card |
+| Gerou nota (Sim/Não) | **não existe** | sim | só no card |
+
+Ou seja: **o número da nota é o único campo que vive nos dois lugares**, e é
+exatamente por isso que ele é o único que pode ficar divergente. Os outros três
+não têm onde divergir — a planilha não os conhece.
+
+### A boa notícia: o caminho de volta para a planilha já existe e é o mesmo
+
+Não é mecanismo novo. Toda alteração feita por aqui já percorre
+**banco → fila → log → planilha** (`_gravar_alteracao` em `web.py`, `drenar_fila`
+em `sincronizacao.py`): grava no banco na hora, enfileira a célula, registra
+quem mexeu e qual era o valor anterior, e o processo separado escreve no Sheets
+depois. Se a internet cair no meio, a célula continua na fila e sobe sozinha —
+nada se perde. É assim que Status Pgt (coluna O) e Agendado (AB) já funcionam.
+
+### A trava que existe hoje, e por que ela é boa
+
+A coluna **AA (`Nº NF`) está marcada como SOMENTE LEITURA** (`EDITAVEIS`, em
+`colunas.py`, tem só `status_pgt` e `agendado`). A rota de alteração recusa
+qualquer outra coluna. Duas colunas escapam disso **por porta própria e de
+propósito**: Validação (AH), que exige senha própria, e Análise (AL), escrita
+pelo "Remover risco".
+
+Esse é o desenho certo, e a conciliação fiscal deve segui-lo: **porta própria
+para o Nº NF, não entrada na lista geral**. Se `nf` entrasse em `EDITAVEIS`,
+qualquer operador passaria a poder reescrever o número da nota de qualquer SP
+pela tela comum — e o número da nota é prova fiscal, não campo de trabalho.
+
+### A pergunta que falta responder, e ela muda o desenho
+
+**Quem escreve o Nº NF na SPsBD hoje?** Se um script leva o dado do Pipefy para
+a planilha, escrever no card basta — o valor desce sozinho, e escrever nos dois
+lados seria só risco de corrida. Se é pessoa digitando na planilha, então os
+dois lados precisam mesmo ser escritos, e a planilha é a que manda.
+
+Enquanto isso não estiver respondido, **o desenho seguro é escrever nos dois** e
+só quando os dois já concordam ou a planilha está vazia — nunca sobrescrever um
+número que já estava lá diferente. Um número de nota trocado em silêncio é o
+mesmo tipo de erro que este arquivo inteiro existe para não cometer.
+
+### O que NÃO se sabe ainda
+
+O identificador do campo **Nº da nota** e do campo **Chave de acesso** no
+Pipefy. O da Documentação Fiscal já é conhecido e está provado em produção
+(`documenta_o_fiscal`, usado pelo BeeVale desde 05/09); os outros dois nunca
+foram escritos por este módulo. Sem eles a gravação de volta não sai do papel.
+
 
 ## A CORREÇÃO DE 11/09 QUE MUDOU O MIOLO: a nota é o balizador
 
