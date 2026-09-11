@@ -345,3 +345,43 @@ a transferência com uma SP — e com isso some o risco do valor repetido.
 regra antiga de "se a conta de débito contém 2541": cada uma das três contas
 Somapay tem sua própria chave na BaseBancos, e a chave vem impressa no
 comprovante.
+
+### 11/09/2026 (noite) — o caminho da transferência ligado, com a chave PIX no lugar da regra velha
+
+**Decisão do dono, perguntado explicitamente:** os dois comprovantes dão baixa.
+O do Bradesco lança a transferência **e** baixa o título na conta Somapay,
+anexando ele mesmo como comprovante; o da Somapay baixa o título na conta
+Somapay. O dono sabe que o comprovante que fica anexado na SP costuma ser o do
+Bradesco, e não o "real final" da Somapay, e pediu para manter assim. Minha
+recomendação havia sido dividir (transferência só lança movimentação, baixa só
+pelo comprovante da Somapay) — ele preferiu o desenho original, que era o que
+tinha pedido desde o começo.
+
+**O que passou a funcionar:**
+- O comprovante do Bradesco de transferência é reconhecido pela instituição de
+  destino (`Instituição destino: SOMAPAY`), e não pela palavra "somapay" solta —
+  ela também aparece no comprovante emitido pela Somapay.
+- A conta Somapay que recebeu vem da **chave PIX impressa no comprovante**,
+  casada com a coluna Chave PIX da BaseBancos. Cada uma das três contas tem a
+  sua. Sem chave cadastrada, não executa.
+- A sequência no Omie é transferência → consultar → alterar → baixar, com os
+  três últimos na conta Somapay.
+
+**O que foi aposentado:** a regra `se a conta de débito contém 2541 então
+IFPESANTACRUZ, senão BWS`, e os dois códigos de conta Omie escritos dentro do
+código. Só conheciam duas das três contas, e dependiam da conta de débito em vez
+de um identificador do destino. Agora tudo vem da planilha: cadastrar uma quarta
+conta Somapay é mexer na BaseBancos, não no sistema.
+
+**O risco que fica, e é conhecido:** o comprovante da transferência não traz o
+nome do funcionário. Duas rescisões pendentes de mesmo valor na mesma conta não
+têm como ser distinguidas e ficam paradas para conferência humana. Há teste
+cobrindo, e o desempate por conta de débito ajuda quando as contas diferem.
+
+**Verificado:** suíte inteira passando (2610 testes, 20 novos deste caminho) e a
+aplicação subindo. Os dois comprovantes reais foram exercitados, anonimizados
+como exemplo.
+**Não verificado:** nada passou por produção. Em especial, a sequência de
+transferência no Omie não foi executada contra o Omie de verdade desde a
+mudança — a semântica invertida dos campos continua como estava, validada em
+produção em 2026 e coberta por teste para não ser "corrigida" sem querer.

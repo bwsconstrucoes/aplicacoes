@@ -297,6 +297,23 @@ def find_bank_account(accounts: List[BankAccount], agencia: str, conta: str) -> 
     return None
 
 
+def find_account_by_pix_key(accounts: List[BankAccount], chave: str) -> Optional[BankAccount]:
+    """Acha a conta pela chave PIX impressa no comprovante.
+
+    É o identificador EXATO: cada conta da BaseBancos tem a sua chave própria,
+    e ela vem escrita no comprovante de quem recebeu. Não depende de nome, de
+    número de conta nem de regra escrita no código.
+    """
+    alvo = normalize_compact(chave)
+    if not alvo:
+        return None
+    achados = [
+        a for a in accounts
+        if normalize_compact(as_string((a.raw or {}).get('Chave PIX', ''))) == alvo
+    ]
+    return achados[0] if len(achados) == 1 else None
+
+
 def apelido_somapay(banco: str) -> str:
     """Devolve o que diferencia uma conta Somapay das outras.
 

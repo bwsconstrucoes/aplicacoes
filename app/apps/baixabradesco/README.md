@@ -91,8 +91,11 @@ resolver ganha:
    rescisões de R$ 452,40, de quatro pessoas diferentes.
 3. **Somapay via transferência** (o dinheiro sai do Bradesco para a Somapay):
    por valor, entre as SPs a pagar e agendadas, e só para despesas de rescisão,
-   férias, gratificação ou participação nos lucros. ⚠️ **Este caminho está
-   desligado hoje** — ver as ressalvas no fim.
+   férias, gratificação ou participação nos lucros. Empatando, desempata pela
+   conta que foi debitada. ⚠️ O comprovante **não traz o nome do funcionário**,
+   então duas rescisões pendentes de mesmo valor na mesma conta ficam paradas
+   para conferência — e isso acontece de verdade (quatro de R$ 452,40 em
+   09/09/2026).
 4. **BeeVale** (vale-alimentação): por valor, aceitando o valor da SP com 1,5%
    de acréscimo (é a taxa da BeeVale) ou o valor exato.
 5. **FGTS/Caixa**: por valor, entre as SPs a pagar e agendadas; se não achar,
@@ -119,6 +122,17 @@ diferente no Omie:
 |---|---|
 | O dinheiro **sai do Bradesco** para a Somapay | a transferência entre as contas **e depois** a baixa do título na conta Somapay |
 | O pagamento **já saiu da conta Somapay** (este é o comprovante que a Somapay emite) | **só a baixa** na conta Somapay — não há transferência que tenha acontecido |
+
+**Qual conta Somapay recebeu** vem da **chave PIX impressa no comprovante**,
+casada com a coluna Chave PIX da BaseBancos. Cada uma das três contas tem a sua,
+então não há o que adivinhar. Se a chave não estiver cadastrada, o robô não
+escolhe: deixa pendente e diz o motivo.
+
+Os dois comprovantes podem chegar para a mesma rescisão, e **os dois dão baixa**.
+Quem chegar primeiro baixa; o segundo encontra o título já pago no Omie e para
+sozinho. O comprovante que fica anexado na SP é o do primeiro que chegou —
+decisão do dono em 11/09/2026, ciente de que costuma ser o do Bradesco e não o
+da Somapay.
 
 Lançar a transferência no segundo caso criaria no Omie um dinheiro que não
 andou. Por isso os dois são tipos separados no código.
@@ -224,14 +238,6 @@ conta corrente), **Pipefy** (cards), **Dropbox** (arquivo do comprovante),
   contando células de uma linha copiada.
 
 ## Ressalvas do código de hoje (conferidas em 04/09/2026, na `main`)
-
-**O caminho Somapay com transferência nunca é acionado.** Toda a máquina existe
-— lançar a transferência Bradesco → Somapay e depois baixar o título na conta
-Somapay — mas o leitor nunca marca um comprovante como sendo desse tipo, então
-ela está desligada. Não foi ligada em 11/09/2026 porque não havia exemplo desse
-comprovante em mãos; o que foi entregue é o outro caminho, o do depósito pago
-direto na Somapay. Ligar exige um comprovante de transferência de verdade e
-teste antes.
 
 **O leitor do Sicredi nunca é chamado.** O `core.py` manda toda página para o
 leitor do Bradesco; o `parser_sicredi.py` existe, está completo e ninguém o usa.

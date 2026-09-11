@@ -342,4 +342,17 @@ def match_somapay(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[Sp
         if tipo_despesa not in {normalize_compact(t) for t in SOMAPAY_TIPOS_DESPESA}:
             continue
         out.append(r)
+
+    # Desempate: a SP cuja conta de pagamento é a mesma que o comprovante
+    # debitou. Não entra como filtro duro porque a coluna pode vir vazia.
+    if len(out) > 1:
+        conta_rec = normalize_compact(clean_account(receipt.conta_origem or ''))
+        if conta_rec:
+            filtrados = [
+                r for r in out
+                if normalize_compact(clean_account(r.conta_pagamento or '')) == conta_rec
+            ]
+            if len(filtrados) == 1:
+                out = filtrados
+
     return out

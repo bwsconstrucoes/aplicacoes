@@ -14,6 +14,12 @@ BEEVALE_TEXT = 'beevale pagamentos e beneficios'
 # exige lançar a transferência antes da baixa.
 SOMAPAY_INSTITUICAO = 'somapay sociedade de credito direto'
 
+# Comprovante do BRADESCO de transferência para a Somapay. Outro fluxo: aqui o
+# dinheiro apenas mudou de conta, e o Omie precisa receber a transferência ANTES
+# da baixa. Reconhecido pela instituição de destino, não pela palavra 'somapay'
+# solta — ela também aparece no comprovante emitido pela própria Somapay.
+RE_DESTINO_SOMAPAY = re.compile(r'institui[cç][aã]o\s+destino\s*:?\s*somapay', re.I)
+
 # Frases que provam que o pagamento NÃO aconteceu. Comparadas contra o texto já
 # normalizado (minúsculas, sem acento). O Bradesco usa redações diferentes para
 # a mesma coisa — "Operação Não Realizada" no Pix, "Transação Não Realizada" no
@@ -72,10 +78,13 @@ def parse_bradesco_text(filename: str, page: int, text: str, drive_link: str = '
     r.documento_pagador = extract_documento_pagador(text)
     r.agencia_origem, r.conta_origem, r.conta_origem_raw = extract_conta_origem(text)
     r.conta_destino_raw = extract_conta_destino(text)
+    r.chave_pix_destino = extract_chave_pix(text)
     r.codigo_barras = extract_codigo_barras(text)
 
     if SOMAPAY_INSTITUICAO in norm:
         r.tipo_comprovante = 'somapay_deposito'
+    elif RE_DESTINO_SOMAPAY.search(normalize_text(text)):
+        r.tipo_comprovante = 'somapay'
     elif (('cef matriz' in norm or 'caixa economica federal' in norm) and FGTS_CNPJ in digits):
         r.tipo_comprovante = 'fgts_rescisorio'
     elif BEEVALE_TEXT in norm:
@@ -210,6 +219,17 @@ def extract_nome_recebedor(text: str) -> str:
         if m:
             return as_string(m.group(1))[:120]
     return ''
+
+
+def extract_chave_pix(text: str) -> str:
+    """Chave PIX de quem recebeu.
+
+    É o identificador exato da conta de destino: cada conta cadastrada na
+    BaseBancos tem a sua. Vale mais que qualquer regra por nome ou por número
+    de conta.
+    """
+    m = re.search(r'Chave\s*:?\s*([^\n\r]+)', text or '', flags=re.I)
+    return as_string(m.group(1))[:120] if m else ''
 
 
 def extract_nome_pagador(text: str) -> str:
