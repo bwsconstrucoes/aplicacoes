@@ -392,3 +392,32 @@ produção em 2026 e coberta por teste para não ser "corrigida" sem querer.
 que a transferência aparece no Omie entre as contas certas, que a baixa caiu na
 conta Somapay (e não na do Bradesco), e o campo `duplicados_ja_baixados` no
 retorno quando os dois comprovantes da mesma rescisão chegarem.
+
+### 11/09/2026 — primeira baixa real: o robô recusou, e estava certo
+
+O dono enviou em produção o comprovante Somapay de uma rescisão (EDUARDO,
+R$ 452,40) e recebeu `nao_localizado` — "Nenhum candidato encontrado" —, mesmo
+com as quatro SPs de R$ 452,40 existindo na planilha.
+
+**A causa, confirmada pelo dono olhando o registro:** a SP estava com a coluna
+**Agendado vazia**. A lista de SPs candidatas (`load_spsbd_operacional`) só
+carrega quem tem `agendar`, `agendado` ou `falhaagendar` ali. Sem isso a SP nem
+chega a ser comparada — valor e nome estavam certos, mas ninguém olhou para
+eles. Reproduzido em teste local: dá exatamente a mesma mensagem.
+
+**A decisão do dono, perguntado diretamente: o robô agiu certo, o esquecimento
+foi dele.** A coluna Agendado é controle de verdade — só o que foi agendado pode
+ser baixado. O caminho é marcar a SP e reenviar o comprovante.
+
+**O que foi feito e desfeito:** chegou a ser escrita uma lista nova
+(`load_spsbd_folha`) que carregava despesas de folha com `O=Pagar` **sem** olhar
+a coluna Agendado, com 9 testes. **Foi revertida** depois da decisão acima, e
+nunca foi publicada. Fica registrado aqui porque a ideia vai reaparecer: se um
+dia a rescisão pela Somapay deixar de passar pelo agendador, é esse o caminho —
+e o filtro de `Status Pgt = Pagar` tem de continuar, senão SP já paga volta a
+ser baixável.
+
+**Melhoria sugerida, não feita:** quando o robô não acha candidato, ele diz
+apenas "nenhum candidato encontrado". Se dissesse *"existe SP com este valor e
+este nome, mas ela não está agendada"*, esta investigação inteira teria sido
+uma linha. Vale a pena, e é barato — depende do dono pedir.
