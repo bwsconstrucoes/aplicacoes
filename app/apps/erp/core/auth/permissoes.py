@@ -61,6 +61,11 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                             P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.APROVADOR},
     "configurar":      {P.ADMIN},
     "gerir_usuarios":  {P.ADMIN},
+    # Uso do sistema por pessoa. DELIBERADAMENTE estreita: ver o que os OUTROS
+    # fizeram é informação de gestão de gente, não de operação. Ver a PRÓPRIA
+    # semana não passa por aqui — é `ver_erp`, e a rota nem aceita o número de
+    # outra pessoa, então não há como uma virar a outra.
+    "ver_uso_da_equipe": {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "ver_relatorios":  {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA},
     # Pessoal: o DP revisa a despesa com colaborador depois do supervisor,
@@ -175,6 +180,7 @@ ACAO_ROTULOS = {
     "ver_dados_pagamento":  "Ver dados bancários e chave Pix",
     "configurar":           "Abrir Configurações",
     "gerir_usuarios":       "Cadastrar e editar operadores",
+    "ver_uso_da_equipe":    "Ver o trabalho da equipe no sistema",
     "ver_relatorios":       "Ver relatórios",
     "ver_pessoal":          "Ver despesas de colaborador",
     "lancar_dc":            "Lançar despesa de colaborador",
@@ -338,6 +344,27 @@ def obras_do_usuario(s: Session, usuario: Usuario) -> Optional[list[int]]:
     return None          # filtra por autoria, não por obra
 
 
+def obras_de_registro_sem_autor(s: Session, usuario: Usuario) -> Optional[list[int]]:
+    """Obras que a pessoa alcança num registro que NÃO TEM AUTOR.
+
+    Título tem `solicitante_id`, então quem enxerga "só o que eu lancei" tem
+    por onde ser filtrado. **Contrato de locação não tem autor nenhum** — e aí
+    `obras_do_usuario` devolvia None, que significa "sem filtro de obra", e
+    quem enxergava por autoria passava a ver TODOS os contratos da empresa.
+    Achado por um teste em 11/09/2026.
+
+    A regra que fica: para registro sem autor, o único recorte possível é a
+    OBRA. Quem não enxerga a base inteira vê apenas as obras designadas a ele —
+    e **sem obra designada não vê nenhum**, que é o padrão NEGAR do ERP e não
+    um efeito colateral de lista vazia.
+
+    Devolve None só para quem enxerga tudo.
+    """
+    if usuario.perfil in VE_TUDO:
+        return None
+    return _obras_designadas(s, usuario)
+
+
 def _escopo_por_obras(stmt: Select, usuario: Usuario, obras: list[int]) -> Select:
     """O que a pessoa lançou MAIS o que estiver rateado nas obras dela.
 
@@ -414,6 +441,22 @@ def pode_ver_obra(s: Session, usuario: Usuario, obra_id: int) -> bool:
 def exigir_obra_no_escopo(s: Session, usuario: Usuario, obra_id: int) -> None:
     if not pode_ver_obra(s, usuario, obra_id):
         raise ErroNaoEncontrado("Obra não encontrada.")
+
+
+def exigir_agendada_no_escopo(s: Session, usuario: Usuario,
+                              agendada_id: int) -> None:
+    """O relatório automático é DE QUEM O RECEBE, e de mais ninguém.
+
+    Ele roda com a permissão do destinatário, então mexer no de outra pessoa
+    seria mexer num recorte que não é seu. Fora do escopo responde "não
+    encontrado": dizer "sem permissão" para um número que existe confirma que
+    ele existe, e varrer os números mapearia quem recebe o quê.
+    """
+    from app.apps.erp.db.models.financeiro import PerguntaAgendada
+
+    a = s.get(PerguntaAgendada, agendada_id)
+    if a is None or a.usuario_id != usuario.id:
+        raise ErroNaoEncontrado("Relatório automático não encontrado.")
 
 
 def exigir_parcela_no_escopo(s: Session, usuario: Usuario, parcela_id: int) -> None:

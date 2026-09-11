@@ -456,10 +456,15 @@ por obra/autoria é um `WHERE`. Por isso há uma segunda camada, marcada
 - `ERP_SECRET_KEY` — assinatura da sessão do login. Lida em `app/main.py`, com
   cascata `ERP_SECRET_KEY` → `SECRET_KEY` → literal de desenvolvimento
   (ver a pendência em §10).
-- `OPENAI_API_KEY` — leitura de documento por IA, sugestão de categoria e
-  leitura de contrato de locação.
+- `OPENAI_API_KEY` — leitura de documento por IA, sugestão de categoria,
+  leitura de contrato de locação e **a pergunta por voz** (11/09/2026).
+  **Está configurada em produção com esse nome** — confirmado em 11/09/2026
+  pelo painel de Consumo de IA, com chamadas reais cobradas.
 - `ERP_MODELO_IA` — modelo de texto (padrão `gpt-4o-mini`).
 - `ERP_MODELO_IA_VISAO` — modelo de visão, para foto e PDF ruim (padrão `gpt-4o`).
+- `ERP_MODELO_IA_AUDIO` — modelo de transcrição da pergunta falada (padrão
+  `gpt-4o-mini-transcribe`). Existe como variável justamente para poder ser
+  trocado sem publicar, caso a conta não alcance esse modelo.
 - `ERP_MODO_TRANSICAO` — **padrão ligado** ("1"). Desligar com "0"/"false".
 - `PIPEFY_API_TOKEN` / `PIPEFY_TOKEN` — importador de cards do Pipefy (o módulo
   aceita os dois nomes; o restante do monorepo usa `PIPEFY_API_TOKEN`).
@@ -735,6 +740,168 @@ Quando eu pedir nova feature ou adaptação:
 ## 9. Histórico de decisões arquiteturais
 
 > Lista para manter contexto de decisões já tomadas.
+
+- **2026-09-11 — Relatório agendado roda com a permissão de QUEM RECEBE.**
+  Migração 060 (`perguntas_agendadas`): a pergunta que o dono aprovou vira
+  relatório que chega sozinho, pendurado no relógio que já existe (a rotina
+  diária do agente — um segundo relógio seria outra coisa para quebrar).
+  **A regra de arquitetura:** a resposta é calculada com o usuário
+  DESTINATÁRIO, nunca com quem criou; e agendar para outra pessoa exige
+  `gerir_usuarios`. Sem isso o agendamento vira um furo no escopo por obra.
+  Guarda-se a CONSULTA (chave + filtros), não a frase — reinterpretar o texto
+  a cada rodada faria o critério mudar sozinho. O agendado **só lê**: há
+  varredura recusando lançar, aprovar, pagar ou emitir de dentro dele.
+
+- **2026-09-11 — O assistente passa a ler os DOCUMENTOS, e o escopo do acervo
+  vira função única.** Migração 059: coluna `busca` em `documentos`, gerada
+  pelo próprio banco (`GENERATED ALWAYS`) com o dicionário de português, mais
+  índice GIN. A busca do assistente e a listagem da tela do Arquivo passam
+  pelo MESMO `arquivo/service.aplicar_escopo` (faixa de sigilo + obra
+  designada) — decisão do dono: *"quem vê o quê tem que estar associado às
+  suas permissões"*. A pergunta exige `ver_arquivo`, não `ver_erp`.
+  **Escolha do índice:** busca por palavra do Postgres, e não índice por
+  significado (vetor) — *"começar do simples, depois a gente decide se parte
+  pro caro"*. O limite (não acha sinônimo) está escrito na resposta.
+  **Regra que fica:** resposta vinda de documento traz SEMPRE o trecho; a
+  frase da IA lê só os trechos achados e é acréscimo, nunca a resposta.
+
+- **2026-09-11 — Coluna gerada pelo banco NÃO entra no modelo.** A `busca` é
+  `GENERATED ALWAYS`; mapeá-la no SQLAlchemy fazia todo INSERT tentar escrever
+  nela, e o Postgres recusa — o arquivamento inteiro morria junto. Quem precisa
+  dela cita a coluna direto na consulta (`literal_column`).
+
+- **2026-09-11 — O assistente é uma PORTA a mais, nunca um caminho novo.**
+  Ele saiu da aba do Financeiro e virou botão no canto de toda tela
+  (`erp_base.html`), como se faz lá fora — o padrão se chama *ambient
+  copilot*. A regra de arquitetura: ele fala com as MESMAS rotas de resposta,
+  que carregam a permissão e o escopo por obra de cada grupo. **Uma rota só,
+  respondendo tudo, teria de conferir permissão por dentro — e a ação
+  declarada nela mentiria.** Há varredura recusando endereço novo dentro do
+  bloco dele. Tudo o que ele declara começa com `ia` e vive numa função
+  fechada: a base é carregada junto com as 20 telas, e nome repetido ou apaga
+  a função da tela em silêncio, ou mata a tela com erro de sintaxe.
+
+- **2026-09-11 — Formato de arquivo se descobre olhando o CONTEÚDO.** O áudio
+  gravado no iPhone (MP4) ia com nome `.webm`, e o serviço de transcrição, que
+  decide pelo nome, recusava como "corrompido". A correção que fica é conferir
+  a assinatura dos primeiros bytes: nome vem do navegador e navegador varia; o
+  conteúdo não mente. **Vale para todo arquivo que chega de fora.**
+
+- **2026-09-11 — Deste contêiner NÃO se enxerga a produção.** Eu afirmei, aqui
+  e ao dono, que a `OPENAI_API_KEY` não estava configurada em produção. O que
+  eu tinha verificado era outra coisa: que **ela não existe neste contêiner de
+  desenvolvimento**. Não há chave nenhuma nem `DATABASE_URL` de produção aqui —
+  é assim de propósito. **Ausência local não é prova de ausência no Render.**
+  Quando a pergunta for "isto está ligado em produção?", pergunte ao dono ou
+  olhe uma tela que leia o ambiente de lá (hoje: Configurações › Saúde do
+  sistema › "O que está ligado"); nunca conclua do que falta aqui. O mesmo vale
+  para qualquer afirmação sobre o estado do mundo lá fora — quanto tem no
+  banco, o que já foi aplicado, quem está cadastrado.
+
+- **2026-09-11 — Credencial com o nome trocado não dá erro, e por isso o ERP
+  passou a MOSTRAR o nome que procura.** Configurações › Saúde do sistema ganhou
+  o quadro "O que está ligado": o que está configurado, **sob qual nome exato**,
+  e — quando falta — se o ambiente tem alguma variável de nome parecido (o caso
+  de "está lá, com outro nome"), que vira aviso no topo. O valor nunca aparece;
+  só os quatro últimos caracteres, e só em KEY/TOKEN/SECRET. **Ao criar
+  integração nova, acrescente a variável em `saude.INTEGRACOES`** — há
+  varredura exigindo que todo nome listado seja lido por algum código, e a
+  regra do repositório continua sendo UM nome por credencial (nada de aceitar
+  apelidos, que é como se perde o controle de qual está valendo).
+
+- **2026-09-11 — O ERP instalável no celular, e o cache que NÃO pode existir.**
+  O ERP passou a poder ser instalado como ícone no celular (manifesto +
+  service worker em `/erp/`, servidos por rotas públicas porque o navegador os
+  busca antes do login). **A decisão que importa não é essa, é a de não
+  guardar dado no aparelho:** o caminho normal de um service worker é cachear
+  as respostas, e num ERP isso faria a pessoa ver o "a pagar" de ontem sem
+  nada avisando. Só a folha de estilo e os ícones entram no cache; sem
+  internet, a tela diz que está sem internet. `tests/test_pwa.py` recusa
+  qualquer outro endereço no cache. **Aplicativo nativo foi descartado**: duas
+  bases de código e duas lojas para mostrar as telas que já existem.
+
+- **2026-09-11 — IA que se cobra por MINUTO não cabe na conta de tokens.**
+  A transcrição de áudio (pergunta falada) é cobrada por tempo, não por
+  token. `ia_custo` ganhou `PRECOS_POR_MINUTO` e `custo_de_audio`, e
+  `registrar` passou a aceitar um `custo_usd` já calculado. Sem isso a
+  pergunta falada apareceria custando ZERO no painel de consumo, e o teto
+  mensal deixaria de valer justamente na função nova. **Serviço de IA novo
+  que não cobre por token precisa entrar por aqui** — não basta chamá-lo.
+
+- **2026-09-11 — Onde a IA pode responder, e onde não pode.** Regra que passa
+  a valer para o assistente inteiro: a IA responde quando **quem perguntou tem
+  como conferir a resposta na fonte**. Documento anexado, sim (o papel está na
+  mão dele, e a tela avisa em amarelo que aquilo foi LIDO e não calculado).
+  Total somado sobre o banco, não — ninguém recalcula dez mil lançamentos de
+  olho, e um número errado com cara de certo é pior que resposta nenhuma.
+
+- **2026-09-11 — Escolher o registro e ver os números dele são duas
+  permissões diferentes.** Segunda brecha da mesma família, no **painel de
+  Obras**: quem enxerga "só o que eu lancei" via valor de contrato, gasto,
+  recebido e margem de todas as obras da empresa. A correção das Locações —
+  fechar a lista — **não servia aqui**: a mesma rota alimenta cinco telas, e em
+  quatro delas ela é a lista de onde se ESCOLHE a obra (arquivar documento,
+  marcar compromisso, filtrar contrato e nota). Fechá-la deixaria o lançador
+  sem conseguir arquivar nada. O que ficou: **identificação aberta, números em
+  branco** — em branco e não zero, porque zero seria o sistema afirmando que a
+  obra não gastou nada; pelo mesmo motivo os totalizadores mostram traço.
+  **Ao dar escopo a uma tela de lista, pergunte as duas coisas separadamente:**
+  quem pode escolher este registro, e quem pode ver os números dele.
+
+- **2026-09-11 — Escopo de registro que NÃO TEM AUTOR.** `obras_do_usuario`
+  devolve `None` com dois significados diferentes: "enxerga tudo" e "filtra por
+  autoria, não por obra". Em título isso é seguro, porque ele tem
+  `solicitante_id` e o filtro de autoria entra depois. Em **contrato de
+  locação, que não tem autor nenhum**, o `None` virava "sem filtro" e vazava a
+  base inteira para quem só deveria ver o que lançou — e o painel por obra, que
+  nem recebia usuário, mostrava o aluguel de todas as obras a qualquer
+  operador. Ambas as brechas foram fechadas em `core/auth/permissoes.py`, com
+  regra de nome próprio: `obras_de_registro_sem_autor`. **Ao escrever escopo
+  para entidade nova, a pergunta é: esta tabela tem autor?** Se não tem, é essa
+  função que se usa — nunca `obras_do_usuario`.
+
+- **2026-09-10 — Funcionalidade nova passa a trazer as perguntas que ela
+  responde.** Regra acrescentada ao `CLAUDE.md`, a pedido do dono, por causa do
+  assistente de IA que o ERP vai ganhar: pergunta prevista é respondida por
+  código escrito e testado, e pergunta imprevista cai numa consulta inventada
+  pela IA, que acerta quase sempre e erra EM SILÊNCIO no resto. Como o dono não
+  tem como conferir a consulta, cada pergunta antecipada é um erro que deixa de
+  acontecer. O catálogo vive em `app/apps/erp/PERGUNTAS.md`, e a parte mais
+  importante dele não são as perguntas: é a lista das PALAVRAS ambíguas ("a
+  pagar", "este mês", "custo da obra") que precisam de uma definição só, senão
+  dois relatórios sobre a mesma coisa discordam e ninguém sabe qual está certo.
+
+- **2026-09-10 — Devolução e estorno deixaram de ser receita e viraram CUSTO
+  NEGATIVO.** Devolução de material, estorno de despesa e reembolso de custas
+  estavam no grupo 1 do plano financeiro do ERP. O efeito era o pior possível
+  para quem lê o relatório: a obra aparecia com receita a mais e o custo
+  intacto, e a margem saía errada dos dois lados. Foram para o grupo 3 como
+  contas REDUTORAS — a migração 058 acrescentou a coluna `categorias.redutora`,
+  e `core/relatorios.py` soma essas contas com sinal negativo. **O lançamento
+  original nunca é estornado:** as duas linhas continuam visíveis no analítico,
+  e é só o total que fecha certo. Isto muda o significado de todo relatório do
+  ERP e por isso está aqui, não só no histórico da área. Junto veio a decisão
+  de que o **grupo 8 (aquisição de bens) passa a ser RESULTADO**: um bem
+  comprado para uma obra em parceria precisa aparecer no custo dela, senão não
+  há como cobrar a parte do parceiro. A depreciação fica com a contabilidade
+  externa, no balanço.
+
+- **2026-09-10 — Instalar o plano padrão não apaga conta com movimento.** O
+  botão "Instalar plano padrão BWS" ganhou uma rotina de aposentadoria, e ela
+  desativa APENAS a conta que nunca foi usada, apontando a sucessora. Conta com
+  lançamento continua ativa e sai num relatório para o dono remanejar pela
+  tela, que leva o histórico junto. A regra existe porque a alternativa —
+  desativar tudo que saiu do plano — esconderia lançamento do relatório sem
+  ninguém ter pedido, e o ERP não tem como saber o que a produção já lançou:
+  o ambiente de desenvolvimento não tem (nem deve ter) `DATABASE_URL` de
+  produção.
+
+- **2026-09-10 — Os importadores de planilha passaram a ler Excel (.xlsx).**
+  `core/importadores/planilhas.ler_tabela` reconhece o formato pelo CONTEÚDO
+  (assinatura "PK"), não pela extensão, e vale a primeira aba. O passo do
+  "salvar como CSV" era o que ninguém lembrava de fazer, e quando fazia
+  estragava acento e separador. **Sem dependência nova:** `openpyxl` já estava
+  no `requirements.txt` por causa do relatório do painel em Excel.
 
 - **2026-09-10 — A suíte roda com a fila de trabalho em segundo plano
   DESLIGADA.** O ERP ganhou uma fila para o que não cabe no tempo de um clique

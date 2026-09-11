@@ -41,6 +41,10 @@ logger = logging.getLogger(__name__)
 
 # Acima disto a chamada é contada como LENTA. Não é um erro — é o limite acima
 # do qual a pessoa percebe que esperou.
+# Quando ESTE processo começou. Toda publicação reinicia o serviço, então isto
+# é, na prática, "no ar desde".
+_INICIO = datetime.now()
+
 LIMITE_LENTA_MS = 1500
 
 # De quanto em quanto tempo os números descem ao banco.
@@ -283,6 +287,34 @@ def por_dia(s, *, dias: int = 14) -> list[dict[str, Any]]:
             """, desde=desde)]
 
 
+def versao() -> dict[str, Any]:
+    """Qual versão do código está no ar, agora.
+
+    Nasceu em 10/09/2026 de uma confusão que custou uma volta inteira: o dono
+    disse que um botão novo "não aparece" e não havia como saber se ele estava
+    olhando a versão nova ou a de antes — o Render leva alguns minutos para
+    trocar, e nada na tela dizia isso. Com o carimbo, a pergunta "já subiu?"
+    tem resposta em dois segundos.
+
+    O Render publica o commit e o horário do deploy em variáveis próprias. Sem
+    elas (rodando no PC), diz isso em vez de inventar.
+    """
+    import os
+    from datetime import datetime
+
+    commit = (os.getenv("RENDER_GIT_COMMIT") or "").strip()
+    return {
+        "commit": commit[:7] if commit else "",
+        "commit_inteiro": commit,
+        "ramo": (os.getenv("RENDER_GIT_BRANCH") or "").strip(),
+        "servico": (os.getenv("RENDER_SERVICE_NAME") or "").strip(),
+        # Quando ESTE processo começou. É o melhor sinal de "subiu agora":
+        # toda publicação reinicia o serviço.
+        "no_ar_desde": _INICIO.strftime("%d/%m/%Y %H:%M"),
+        "minutos_no_ar": int((datetime.now() - _INICIO).total_seconds() // 60),
+    }
+
+
 def panorama(s, *, dias: int = 7) -> dict[str, Any]:
     """Tudo junto, do jeito que a tela mostra."""
     m = memoria()
@@ -309,5 +341,121 @@ def panorama(s, *, dias: int = 7) -> dict[str, Any]:
     if not t["chamadas"]:
         avisos.append("Ainda não há medições — elas começam a aparecer conforme "
                       "as telas forem usadas.")
+    ligadas = integracoes()
+    # Credencial faltando com uma parecida no ambiente é o aviso mais útil
+    # desta tela: quer dizer "está lá, com o nome trocado".
+    for i in ligadas:
+        if not i["configurada"] and i["parecidas"]:
+            avisos.append(
+                f"{i['para_que']} está desligada porque falta {i['nome']} — "
+                f"mas o ambiente TEM {', '.join(i['parecidas'])}. Parece "
+                f"credencial cadastrada com o nome trocado: renomeie no Render "
+                f"para {i['nome']}.")
+
     return {"memoria": m, "banco": b, "telas": t, "anexos": a,
+            "versao": versao(), "integracoes": ligadas,
             "por_dia": por_dia(s), "avisos": avisos}
+
+
+# ===========================================================================
+# O QUE ESTÁ LIGADO — e sob QUAL NOME o sistema procura
+#
+# POR QUE ISTO EXISTE. Em 11/09/2026 o dono disse que a chave da OpenAI "já
+# existe, talvez com um nome um pouquinho diferente". E aí está o problema:
+# uma credencial cadastrada com o nome errado **não dá erro nenhum**. A função
+# simplesmente não acontece, recusa com uma frase educada, e todo mundo acha
+# que é assim mesmo. O Arquivo pode ter passado semanas sem ler documento
+# nenhum por causa de um sublinhado a mais.
+#
+# Então este quadro responde três coisas, sem ninguém precisar entrar no
+# painel do Render:
+#
+#   1. o que está ligado e o que não está;
+#   2. **o nome exato** que o sistema procura;
+#   3. se existe no ambiente alguma variável com nome PARECIDO — que é
+#      exatamente o caso de "está lá, com outro nome".
+#
+# NUNCA MOSTRA O VALOR. Só se está preenchida, o tamanho, e os últimos quatro
+# caracteres quando faz sentido conferir se é a chave certa. Nome de variável
+# não é segredo; o conteúdo é.
+# ===========================================================================
+
+# (nome da variável, o que ela liga, o que para de funcionar sem ela)
+INTEGRACOES = [
+    ("DATABASE_URL", "O banco de dados",
+     "sem ela o ERP não sobe"),
+    ("ERP_SECRET_KEY", "A sessão de quem entra",
+     "sem ela todo mundo é deslogado a cada publicação"),
+    ("OPENAI_API_KEY", "A leitura de documento pela IA, a sugestão de "
+     "cadastro e a pergunta por voz",
+     "o Arquivo não lê nota nem PDF, e os botões Falar e Anexar recusam"),
+    ("GOOGLE_CREDENTIALS_BASE64", "Google Drive e planilhas",
+     "os anexos ficam guardados dentro do banco, que é mais caro"),
+    ("TELEGRAM_BOT_TOKEN", "Os avisos por Telegram",
+     "os alertas do agente não chegam"),
+    ("ERP_AGENTE_SECRET", "A rotina diária que varre as pendências",
+     "o agente de cobrança não roda sozinho"),
+    ("ERP_COMPROVANTE_SECRET", "A entrada automática de comprovantes",
+     "a baixa em lote recusa tudo"),
+    ("EMISSAO_NF_TOKEN", "A emissão automática de nota fiscal",
+     "a nota tem de ser emitida à mão"),
+]
+
+# Pedaços que denunciam uma credencial cadastrada com o nome trocado.
+_PARECIDAS = {
+    "OPENAI_API_KEY": ("OPENAI", "OPEN_AI", "CHATGPT", "GPT"),
+    "GOOGLE_CREDENTIALS_BASE64": ("GOOGLE", "GCP", "CREDENCIA"),
+    "TELEGRAM_BOT_TOKEN": ("TELEGRAM",),
+    "EMISSAO_NF_TOKEN": ("EMISSAO", "NFSE", "NFE"),
+}
+
+
+def _final(nome: str, valor: str) -> str:
+    """Os quatro últimos caracteres, para conferir SE É a chave certa sem
+    mostrar a chave.
+
+    Só para credencial (KEY, TOKEN, SECRET), que é onde isso serve: você tem a
+    chave na mão e quer saber se a que está no ar é a mesma. Numa
+    `DATABASE_URL` o final são as últimas letras do nome do banco — não ajuda
+    a conferir nada e mostra um pedaço do endereço à toa.
+
+    Valor curto não mostra nada: quatro de oito já é meio segredo.
+    """
+    if not any(p in nome.upper() for p in ("KEY", "TOKEN", "SECRET")):
+        return ""
+    return f"…{valor[-4:]}" if len(valor) >= 16 else ""
+
+
+def _semelhantes(nome: str) -> list[str]:
+    """Variáveis do ambiente cujo nome parece com esta, mas não é ela.
+
+    É o achado que importa: "OPENAI_KEY está configurada, mas o sistema
+    procura OPENAI_API_KEY". Devolve só NOMES, nunca valores.
+    """
+    import os as _os
+    pedacos = _PARECIDAS.get(nome, ())
+    if not pedacos:
+        return []
+    return sorted(
+        chave for chave in _os.environ
+        if chave != nome and any(p in chave.upper() for p in pedacos))
+
+
+def integracoes() -> list[dict[str, Any]]:
+    """O quadro do que está ligado. Só lê o ambiente — não toca em nada."""
+    import os as _os
+    quadro = []
+    for nome, para_que, sem_ela in INTEGRACOES:
+        valor = (_os.getenv(nome, "") or "").strip()
+        parecidas = _semelhantes(nome) if not valor else []
+        quadro.append({
+            "nome": nome,
+            "para_que": para_que,
+            "sem_ela": sem_ela,
+            "configurada": bool(valor),
+            "tamanho": len(valor),
+            "final": _final(nome, valor) if valor else "",
+            # Só quando ESTÁ FALTANDO: aí o nome parecido é a pista.
+            "parecidas": parecidas,
+        })
+    return quadro

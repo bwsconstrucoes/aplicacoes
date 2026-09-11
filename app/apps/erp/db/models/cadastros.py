@@ -410,6 +410,9 @@ class Categoria(Base):
     ordem: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     personalizada: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     dedutivel_padrao: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Conta que ABATE o custo em vez de somar (devolução, estorno, reembolso).
+    # Entra nos relatórios com sinal negativo — ver migração 058.
+    redutora: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     credito_pis_cofins: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     conta_contabil: Mapped[Optional[str]] = mapped_column(Text)
     ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

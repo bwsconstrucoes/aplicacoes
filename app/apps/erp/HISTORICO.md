@@ -17,6 +17,464 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
+**Estado em 11/09/2026 (sétima entrega):** no ramo, **a pergunta vira relatório
+que chega sozinho**. **TRAZ A MIGRAÇÃO 060** — apertar "Aplicar atualizações do
+banco" no mesmo momento da publicação.
+
+### O pedido, e onde o botão ficou
+
+*"Toda segunda-feira me manda determinado tipo de informação. Aí a própria [IA]
+agendar essa necessidade minha e fazer aquela ação executar e me mandar. Isso é
+muito poderoso."*
+
+O botão **"Me manda isso toda segunda"** fica **embaixo da resposta** que a
+pessoa acabou de ver — não numa tela de configuração. Isso é o pedido inteiro:
+ele quer PEDIR, não configurar. E o que fica agendado é exatamente a consulta
+que ele aprovou olhando.
+
+### As seis regras, e por que cada uma existe
+
+**1. Guarda a CONSULTA, não a frase.** Se o sistema reinterpretasse o texto
+toda segunda, o relatório mudaria de critério sozinho — e comparar uma segunda
+com a outra, que é para o que ele serve, perderia o sentido.
+
+**2. RODA COM A PERMISSÃO DE QUEM RECEBE.** A regra mais importante daqui.
+Sem ela, agendar um relatório para o gestor de uma obra mandaria a ele o número
+da empresa inteira. E agendar para OUTRA pessoa exige `gerir_usuarios` — senão
+qualquer um agendaria no nome do diretor, e o relatório rodaria com a permissão
+DELE. Há teste com banco de verdade espiando com qual usuário a resposta é
+calculada.
+
+**3. Compara com a rodada anterior.** "R$ 340 mil a pagar (era R$ 280 mil)" é
+gestão; "R$ 340 mil" sozinho é ruído. O total de cada rodada fica guardado.
+
+**4. "Só me avise se houver."** Relatório que chega igual todo mês vira spam e
+para de ser lido — e aí o dia em que ele traz algo importante também não é.
+
+**5. Relatório quebrado RECLAMA.** Se a obra acabou ou a conta foi aposentada,
+ele manda um aviso dizendo que não conseguiu montar. Zero calado é pior que
+erro, porque parece resposta.
+
+**6. Só LÊ.** Nada ali lança, aprova ou paga. Há varredura na suíte recusando
+essas chamadas de dentro do agendado. Agendado que AGE sem ninguém olhando é,
+segundo o que se vê no mercado, o motivo número um de empresa desligar
+assistente — para agir, o caminho continua sendo preparar e esperar a pessoa.
+
+### Onde mora o relógio
+
+**No que já existe**: a rotina diária do agente (`/erp/api/agente/rodar`). Os
+relatórios pegam carona nela. Um segundo relógio seria uma segunda coisa para
+quebrar e outra para lembrar de configurar. Falha nos relatórios não derruba a
+cobrança do agente, que é o que aquela rotina veio fazer.
+
+Rodar duas vezes no mesmo dia não manda duas vezes — a data da última rodada
+segura.
+
+### O que ficou de fora, e por quê
+
+⚠️ **Só por Telegram.** O e-mail do ERP sai pela conta de uma EMPRESA (as
+credenciais são por CNPJ), e a BWS tem mais de uma. Escolher uma por conta
+própria faria o relatório sair pelo remetente errado — é decisão do dono. O
+banco já aceita os dois canais; falta só ligar.
+
+⚠️ **Precisa do telefone no cadastro de quem recebe.** Sem telefone nem
+e-mail, não há por onde mandar — e isso fica REGISTRADO no relatório, em vez
+de sumir.
+
+**Falta ainda:** o "só me avise se passar de X" (hoje é só "se houver algo") e
+escolher o dia pela tela (hoje toda combinação é segunda-feira).
+
+### Uma coisa pequena que morde
+
+`desligar` precisa de `flush` explícito. A sessão do ERP não descarrega sozinha
+(`autoflush=False`), e sem isso quem desligasse um relatório e tentasse
+combiná-lo de novo na mesma tela ouviria "já está combinado" — porque a
+consulta ainda enxergaria a linha ligada.
+
+**Estado em 11/09/2026 (sexta entrega):** no ramo, **o assistente responde
+sobre o que está ESCRITO nos documentos** da empresa. **TRAZ A MIGRAÇÃO 059** —
+o dono precisa apertar "Aplicar atualizações do banco" no mesmo momento da
+publicação.
+
+### A pergunta que ele passa a responder
+
+*"o que o contrato diz sobre reajuste"*, *"qual o prazo de garantia"*,
+*"procure multa por atraso"*. A resposta traz o **trecho do documento**, com as
+palavras marcadas entre « », o nome do documento e **de quem ele é** ("obra
+CREPETRIUNFO") — porque "o contrato" não quer dizer nada se não se sabe de qual
+obra.
+
+É a única família de respostas do assistente que **não faz conta nenhuma**. O
+que o sistema garante aqui não é o número: é a PROCEDÊNCIA.
+
+### As três decisões do dono, e o que cada uma virou
+
+**1. "Quem vê o quê tem que estar associado às suas permissões."** A busca
+passa pelo MESMO recorte da tela do Arquivo — faixa de sigilo mais obra
+designada. Para isso a regra foi extraída para uma função só
+(`arquivo/service.aplicar_escopo`), usada pela tela e pela busca: duas cópias
+divergem, e aqui divergir quer dizer alguém ler documento que não devia. A
+pergunta ainda exige a ação `ver_arquivo`, e não `ver_erp` — quem não abre o
+acervo também não pergunta o que está escrito nele.
+
+Há teste com banco de verdade para os dois vazamentos possíveis: o contrato da
+outra obra, e o documento de faixa PESSOAL que fala do assunto procurado.
+
+**2. "Começar do simples, depois a gente decide se parte pro caro."** Busca de
+texto do próprio Postgres, com dicionário de PORTUGUÊS — ele entende que
+"reajuste", "reajustar" e "reajustados" são a mesma palavra. A coluna de índice
+é **gerada pelo banco** (`GENERATED ALWAYS`, migração 059): não existe o passo
+de "atualizar o índice", então não há como esquecê-lo. Documento novo já nasce
+procurável.
+
+⚠️ O limite, e ele está escrito na tela onde a pessoa lê: **acha por palavra,
+não por sentido**. "Reajuste" não acha "correção monetária". Quando não acha, a
+resposta diz as DUAS causas possíveis — o documento não está no Arquivo, ou usa
+outras palavras —, porque elas pedem coisas diferentes.
+
+**3. Citação sempre.** O trecho vem junto, e é ele a resposta. A frase de
+resumo da IA é acréscimo: ela lê **só os trechos achados**, nunca o banco, e
+some sem quebrar nada quando a chave falta ou o serviço cai.
+
+### Uma coisa que o banco ensinou no caminho
+
+A coluna `busca` **não está no modelo de propósito**. Ela é `GENERATED ALWAYS`,
+e mapeá-la fazia o SQLAlchemy tentar escrever nela em todo arquivamento — o
+Postgres recusa, e o arquivamento inteiro morria junto. Ela é citada direto na
+consulta que precisa dela. Fica anotado: **coluna gerada pelo banco não entra
+no modelo.**
+
+⚠️ **Falta o dono arquivar os contratos de verdade no Arquivo.** Sem documento
+arquivado não há o que procurar — a base de teste aqui foi montada à mão.
+
+**Estado em 11/09/2026 (quinta entrega):** no ramo, o **assistente no canto de
+toda tela**, a **continuação de conversa** e a correção do **áudio no iPhone**.
+**Sem migração.**
+
+### O áudio quebrava no iPhone — e o arquivo não estava corrompido
+
+O dono gravou pelo celular e recebeu *"Audio file might be corrupted or
+unsupported"*. A causa: **o Safari do iPhone grava em MP4 e o Chrome do Android
+em WebM**, e a tela mandava os dois com o nome `pergunta.webm`. O serviço de
+transcrição decide o formato PELO NOME — um MP4 apresentado como WebM é lido
+como lixo.
+
+A tela passou a nomear pelo que o navegador realmente gravou. Mas **a correção
+que fica é do servidor**: ele confere a assinatura dos primeiros bytes e usa o
+formato que o CONTEÚDO diz ser. Nome vem do navegador, e navegador varia; o
+conteúdo não mente. Assim o áudio chega certo mesmo que a tela erre de novo ou
+que um navegador novo invente outro formato.
+
+### O assistente saiu da aba do Financeiro
+
+Pedido do dono, com estas palavras: *"o perguntar que está na barra lá em cima
+é ser acessado de forma geral, e não por exemplo dentro do financeiro. O ideal
+é que abra um modal que fique sobre a tela no cantinho, como uma assistente
+virtual mesmo."* Ele tem razão — as perguntas já alcançam obras, contratos e
+suprimentos.
+
+Agora é um botão redondo no canto de **toda** tela, com um painel que abre por
+cima. É também o que se faz lá fora: o padrão tem nome, *ambient copilot* —
+presente em toda tela, sempre opcional, sem tirar ninguém do que estava
+fazendo.
+
+**Por dentro não é nada novo, e isso é o ponto.** Ele fala com as MESMAS rotas
+da tela Perguntar, com as mesmas permissões e o mesmo escopo por obra. Não
+existe um segundo caminho até o número — existe uma porta a mais para o mesmo
+caminho. Há varredura na suíte recusando endereço novo dentro do assistente.
+
+**Tudo dele começa com `ia` e vive dentro de uma função fechada.** Ele é
+carregado junto com as 20 telas: um nome repetido ou apaga a função da tela em
+silêncio, ou mata a tela inteira com erro de sintaxe — as duas coisas já
+aconteceram neste projeto.
+
+**A conversa fica no navegador (`sessionStorage`), não no banco.** Guardar
+pergunta e resposta seria guardar número calculado, que envelhece, e ainda por
+cima dado que pode ser de obra que a próxima pessoa não enxerga. Ela atravessa
+a troca de tela e some ao fechar a aba. O que o sistema registra, e continua
+registrando, é só que a pergunta foi feita — para o relatório de uso.
+
+A tela cheia continua existindo em `/erp/perguntar`, alcançada pelo ⤢ do
+painel, para quando a resposta tem tabela grande demais para o cantinho. A aba
+"Perguntar" saiu da barra do Financeiro.
+
+### Continuar a conversa: "e da obra Triunfo?"
+
+O dono pediu poder **interagir**, não só disparar perguntas soltas. A forma
+mais comum disso é a frase curta que só troca um filtro da anterior. Duas
+formas funcionam: dizendo o nome do filtro (*"e da obra Triunfo"*) ou só o
+valor (*"e a elétrica?"*, quando a pergunta anterior tem um filtro só).
+
+**A regra que mantém isso honesto: a tela DIZ que repetiu** — *"Repeti a
+pergunta anterior — 'Quais insumos estão cadastrados numa categoria?' —
+trocando categoria = elétrica"*. Responder outra pergunta em silêncio só porque
+a frase era curta seria o pior tipo de erro: o número sai certo, só que de
+outra pergunta.
+
+Três travas, todas com teste: pergunta que se reconhece sozinha nunca é
+sequestrada; frase com assunto próprio ("o que está sem NOTA da obra X") não é
+continuação; e empate continua virando pergunta de volta. Continua **sem IA** —
+é trocar um parâmetro numa pergunta que já existe.
+
+⚠️ **Ninguém pode ver SQL.** O recado técnico do servidor apareceu no cantinho
+com o nome de todas as colunas de uma tabela. O painel passou a mostrar só a
+primeira linha; o recado inteiro continua no log, que é onde serve. **Vale
+olhar isso nas outras telas também** — a API devolve `str(e)` em falha
+inesperada, e o que apareceu aqui pode aparecer em qualquer lugar.
+
+**Estado em 11/09/2026 (quarta entrega):** no ramo, o quadro **"O que está
+ligado"**, em Configurações › Saúde do sistema. **Sem migração.**
+
+**Por que ele nasceu.** O dono disse que a chave da OpenAI *"já existe, talvez
+com um nome um pouquinho diferente"*. Aí está o problema inteiro: **credencial
+cadastrada com o nome errado não dá erro nenhum.** A função simplesmente não
+acontece, recusa com uma frase educada, e todo mundo acha que é assim mesmo. O
+Arquivo pode ter passado semanas sem ler documento nenhum por causa de um
+sublinhado a mais — e ninguém teria como desconfiar.
+
+O quadro responde três coisas sem ninguém entrar no painel do Render: o que
+está ligado, **o nome exato** que o sistema procura, e — quando falta — se
+existe no ambiente alguma variável de nome PARECIDO. Esse último é o achado:
+*"falta OPENAI_API_KEY, mas o ambiente TEM OPENAI_KEY"* sobe como aviso
+amarelo no topo da tela, não como uma linha perdida numa tabela de oito.
+
+**O valor nunca aparece.** Só se está preenchida e os quatro últimos
+caracteres — e só em credencial (KEY, TOKEN, SECRET), porque aí serve para
+conferir se a chave no ar é a que você tem na mão. Em `DATABASE_URL` o final
+seriam as últimas letras do nome do banco: não ajuda a conferir nada e mostra
+um pedaço do endereço à toa.
+
+Há varredura recusando que o valor vaze, e outra exigindo que **todo nome
+listado seja realmente lido por algum código** — listar variável que ninguém lê
+faria o dono configurar à toa.
+
+⚠️ **O que isso revela sobre o passado:** se o nome no Render for mesmo outro,
+então a leitura de documento do Arquivo e a sugestão de cadastro **também nunca
+funcionaram em produção**. As três coisas usam a mesma chave. Vale o dono abrir
+o quadro e conferir.
+
+**Estado em 11/09/2026 (terceira entrega):** no ramo, o **item 3 do assistente
+inteiro** — o ERP vira ícone no celular, a pergunta pode ser FALADA, e dá para
+ANEXAR um documento. **Sem migração.**
+
+✔ **A chave `OPENAI_API_KEY` ESTÁ configurada em produção**, com esse nome
+mesmo. O dono provou mostrando o painel de Consumo de IA com duas chamadas
+reais cobradas (gpt-4o e gpt-4o-mini, US$ 0,0153 em 09/2026). Falar e anexar
+funcionam assim que a publicação chegar ao Render.
+
+⚠️ **ERRO MEU, registrado para não se repetir:** eu escrevi aqui, e disse ao
+dono, que a chave não estava configurada em produção. Eu tinha verificado
+apenas que **ela não existe neste contêiner de desenvolvimento** — e concluí
+que não existia em produção. São ambientes diferentes. **Deste contêiner não se
+enxerga o Render**: não há `DATABASE_URL` de produção nem chave nenhuma aqui,
+e ausência local não é prova de ausência lá. Quando a pergunta for "isto está
+ligado em produção?", o caminho é PERGUNTAR ao dono ou olhar uma tela que leia
+o ambiente de lá — nunca inferir do que falta aqui.
+
+### O ERP no celular, sem loja de aplicativo
+
+O dono perguntou "poderíamos ter um aplicativo?". A resposta honesta é que
+aplicativo nativo seriam duas bases de código, duas lojas e revisão da Apple a
+cada correção — para mostrar as telas que já existem. O que resolve é o
+navegador do celular poder INSTALAR o ERP: vira ícone na tela inicial, abre em
+tela cheia sem barra de endereço, e é o mesmo sistema (publicou aqui, chegou no
+celular na hora).
+
+⚠️ **A regra que não pode ser afrouxada, e tem varredura guardando.** O jeito
+comum de escrever um service worker é guardar as respostas para ficar rápido.
+Aqui isso seria perigoso: a pessoa abriria o ERP no celular, veria o "a pagar"
+de ontem e decidiria em cima disso, sem nada na tela avisando que o número é
+velho. Então o `sw.js` **só guarda a folha de estilo e os ícones**. Sem
+internet, a navegação cai numa página que DIZ que está sem internet.
+`tests/test_pwa.py` recusa qualquer endereço no cache que não seja
+`/erp/static/` — é o tipo de regra que alguém afrouxa de boa-fé.
+
+Duas rotas são públicas por obrigação do navegador (`/erp/manifest.webmanifest`
+e `/erp/sw.js`): ele as busca ANTES do login, e um 302 faria a instalação nem
+ser oferecida. Nenhuma das duas devolve dado — o teste monta o app SEM banco
+nenhum, justamente para provar isso.
+
+O `sw.js` é servido de `/erp/sw.js`, e não de dentro de `/erp/static/`, porque
+o alcance de um service worker é a pasta de onde ele vem. De dentro de static
+ele só alcançaria os arquivos estáticos, e não funcionaria — sem erro nenhum
+na tela.
+
+### Falar a pergunta
+
+O áudio **não responde nada**: vira texto, o texto cai na MESMA caixa de
+escrita, e a pessoa lê antes de mandar responder. "A pagar" e "apagar" soam
+igual — pergunta mal ouvida respondida em silêncio seria o pior defeito
+possível. O botão só aparece onde o navegador deixa gravar.
+
+**O gasto entra no painel de consumo pelo preço por MINUTO**, não por token:
+`ia_custo.custo_de_audio`. Sem isso a pergunta falada custaria ZERO no painel,
+e o teto mensal que o dono definiu deixaria de valer justamente na função nova.
+Modelo fora da tabela de preços custa o dobro do mais caro conhecido — na
+dúvida o gasto aparece maior do que é, porque subestimar só se descobre na
+fatura.
+
+### Anexar um documento
+
+É o **único** lugar da área de Perguntar em que a resposta vem da IA e não de
+código testado, e a tela diz isso num aviso amarelo. Vale porque **o documento
+está na mão de quem perguntou**: dá para conferir olhando o papel — diferente
+de um total somado sobre dez mil lançamentos. Reusa o mesmo leitor do Arquivo,
+não grava nada, e mostra o que a IA declarou não ter conseguido ler.
+
+### Defeito achado no navegador (e que a suíte não pegaria)
+
+A gravação quebrava ao parar: `onstop` roda DEPOIS de `stop()` retornar, e a
+primeira versão lia ali a variável global do gravador — que `pararDeGravar` já
+tinha zerado. Morria com "Cannot read mimeType of null", calada, com a tela
+presa em "Gravando…" para sempre. Corrigido usando a referência local, com
+teste que recusa a variável global dentro do `onstop`.
+
+### Duas arrumações de vocabulário
+
+A tela escrevia "NFSE", "2026-09-02", "12480.00" e "11222333000144" — tudo
+certo e tudo ilegível. Agora quem formata é o servidor, por
+`core/comum/formato.py`, que ganhou `documento_por_extenso` (que morava dentro
+do envio de cotação) e `data_br`. O leitor ganhou `ROTULOS_DE_TIPO`, para
+"FATURA_CONCESSIONARIA" virar "Fatura de concessionária". E só número e código
+saem em fonte de largura fixa — frase em fonte de máquina de escrever fica com
+cara de código de sistema.
+
+Junto: textos que diziam "à esquerda" e "ao lado" foram trocados em cinco
+telas. No celular a coluna da esquerda é uma gaveta, e mandar a pessoa olhar
+para um lado que não existe é pior que não dizer nada. A gaveta também passou
+a poder ter nome próprio por tela — na de Perguntar ela se chama "Perguntas",
+não "Filtros".
+
+**Estado em 11/09/2026 (segunda entrega):** no ramo, o **grupo de Obras** das
+perguntas e duas correções que a construção dele fez aparecer. **Sem migração.**
+
+**As três perguntas de Obras.** "Quais obras não emitem nota hoje por falta de
+cadastro" (confere os MESMOS quatro campos que a emissão exige — CNO, código
+IBGE, alíquota de ISS e empresa — e diz, obra por obra, o que falta); "qual
+seguro garantia está vencido ou perto de vencer" (prazo em dias configurável,
+60 por padrão); e "qual obra aberta está com a vigência do contrato vencida".
+
+⚠️ **O grupo nasceu pequeno DE PROPÓSITO, e isto é o mais importante daqui.**
+A pergunta mais óbvia do assunto — *"quanto custou a obra tal"* — **não
+entrou**. "Custo da obra" ainda não tem uma definição combinada: o que foi
+lançado? o que foi pago? entra o que está em análise? entra rateio de
+administração? Cada leitura dá um número diferente, **todos com cara de
+certo**, e responder hoje seria escolher uma delas pelo dono em silêncio. Um
+teste da suíte recusa qualquer pergunta deste grupo que use as palavras
+"custo", "resultado", "lucro", "margem" ou "gastou" — quem for construir
+esbarra nele e vem combinar a palavra primeiro. **O que falta o dono decidir**
+está em `PERGUNTAS.md` §1: "custo da obra", "obra em andamento", "este mês",
+"gastei com fulano" e "resultado da obra".
+
+**Efeito colateral bom: "vencido" deixou de ser palavra de uma pergunta só.**
+Até aqui só o título vencia. Agora o seguro garantia e a vigência também — e
+quem escreve "o que está vencido" recebe a pergunta de volta, com as três
+opções. O sistema **não foi ajustado para isso**: ele percebe o empate
+sozinho. Tem teste guardando, porque o catálogo vai crescer e cada pergunta
+nova pode roubar a exclusividade de uma palavra de outra.
+
+### Duas correções que só apareceram no navegador
+
+**1. A tela decidia sozinha o que era dinheiro e o que era data — e errava.**
+A lista das colunas de dinheiro estava escrita DENTRO da tela. Resultado: "Já
+pago" saía `4500`, "Último preço" saía `33.9`, e a data de vencimento da
+apólice saía `2026-08-30` — formato de banco, não de gente. E o defeito era
+reincidente por construção: pergunta nova trazia coluna nova, ninguém lembrava
+de ir na tela acrescentar o nome dela, e a tabela ficava bonita mostrando
+número americano. **Agora a resposta já diz o tipo de cada coluna** e a tela só
+obedece; uma varredura da suíte recusa coluna sem tipo declarado — inclusive as
+de texto, porque é o silêncio que esconde defeito.
+
+Junto veio outra: a FASE da obra saía `EM_EXECUCAO`. A lista de fases morava
+dentro de `routes.py`; passou para `core/cadastros/obras.py`, que é onde
+vocabulário do negócio deve morar — tela, agenda e assistente agora dizem a
+mesma coisa, porque leem a mesma lista.
+
+**2. Segunda brecha de escopo, irmã da das Locações.** O painel de Obras
+mostrava valor de contrato, gasto, recebido e margem de **todas as obras da
+empresa** para quem enxerga "só o que eu lancei". Mesma causa: obra é registro
+**sem autor**, e `obras_do_usuario` devolve "sem filtro" para quem é recortado
+por autoria.
+
+Só que aqui a correção das Locações **não servia**. A mesma rota alimenta cinco
+telas, e em quatro delas ela é a lista de onde se ESCOLHE a obra — fechá-la
+deixaria o lançador sem conseguir arquivar um documento. **A separação que
+ficou: identificação aberta, números fechados.** E em branco, nunca zero: zero
+seria o sistema afirmando que a obra não gastou nada. Pelo mesmo motivo os
+totalizadores do topo mostram traço, e não "R$ 0,00", para quem não alcança
+obra nenhuma.
+
+**A lição que vale para as próximas telas:** "quem pode ESCOLHER este
+registro?" e "quem pode ver os NÚMEROS dele?" são duas perguntas diferentes.
+Tratá-las como uma só fecha demais (e quebra o trabalho de alguém) ou abre
+demais (e vaza). Vale conferir as outras telas que listam obra com valor.
+
+**Estado em 11/09/2026:** `main` publicada em **`f2d93c8`**. Depois disso, no
+ramo e agora publicado: **perguntar escrevendo**. A tela **Perguntar** ganhou
+uma caixa de texto livre em cima da lista — a lista continua ali, mas virou
+sugestão, não limite. Pedido do dono, com estas palavras: *"o assistant não
+pode ficar somente focado nessas perguntas, isso é só um norte"*. **Sem
+migração.**
+
+**Como ele responde — e por que são três finais, não dois.** A frase escrita é
+comparada com as perguntas que o ERP sabe responder por código. Daí sai uma de
+três coisas, e a diferença entre elas é o que evita número errado:
+
+1. **Entendi** — responde, já com os filtros que deu para ler da frase. "insumos
+   da categoria hidráulico" traz os 305 daquela categoria, não os 3.279 do
+   catálogo inteiro.
+2. **Qual delas?** — quando duas perguntas empatam no topo, ele devolve a
+   pergunta em vez de escolher. Foi o dono quem ensinou isso, ao explicar que
+   "quanto falta receber" tem quatro leituras diferentes e todas legítimas.
+3. **Ainda não sei** — diz que não sabe, **guarda a pergunta** e sugere o que
+   chegou perto. Nunca inventa consulta.
+
+**A pergunta que ele não soube responder fica registrada** e aparece em
+`/erp/api/perguntas/nao-entendidas` (ação `ver_uso_da_equipe`). É a lista do que
+construir em seguida, escrita por quem usa o ERP — não por quem adivinha.
+
+Essa camada **não encosta no banco**: ela só compara palavras. É isso que
+permite que a rota dela peça apenas `ver_erp` sem mentir — quem responde de
+fato é a rota do grupo, que exige a ação daquele grupo.
+
+**Estado em 10/09/2026 (madrugada):** `main` publicada em **`76068fb`**, com a
+tela **Perguntar** (as primeiras perguntas respondidas por código), o
+**Trabalho no sistema** e o catálogo de perguntas. **Nenhuma delas tem
+migração.** No ramo, ainda não publicada: a **régua do recebimento** — "quanto
+falta receber" nas três leituras, com o grupo de contratos ganhando rota e
+ação próprias.
+
+⚠️ **Incidente de processo, 10/09/2026:** depois de uma publicação eu não
+voltei para o ramo, e dois commits foram feitos direto na `main` local. O
+`git push` do ramo respondeu sucesso porque empurrou o ramo — que não tinha
+mudado —, então os commits ficaram parados, sem chegar a lugar nenhum. **Nada
+foi publicado sem autorização** (o erro caiu para o lado seguro) e nada se
+perdeu: os commits foram movidos para o ramo e a `main` local voltou a ser
+exatamente a publicada. **A lição, para a próxima sessão: depois de juntar na
+`main`, VOLTE PARA O RAMO antes de continuar** — e confira em qual ramo o
+commit caiu, porque o push do ramo não acusa o erro.
+
+**Estado anterior em 10/09/2026:** `main` publicada em **`668f8ae`**, com as
+**oito alterações do plano de contas** e a **importação da base de 3.279
+insumos** em Excel, com a marca de locável. **TRAZ A MIGRAÇÃO 058** (coluna
+`redutora` em `categorias`) — o dono foi avisado para apertar "Aplicar
+atualizações do banco" no mesmo momento. Suíte: **3.891 casos** com banco de
+verdade, depois de trazer a `main` (que tinha andado com o Análise de SPs).
+As duas seções logo abaixo explicam o que mudou de significado.
+
+⚠️ **Depois desta publicação, na ordem, o dono precisa:**
+1. **Aplicar atualizações do banco** (migração 058).
+2. **Configurações › Plano financeiro › "Instalar plano padrão BWS"** — e LER a
+   janela de pendências que aparece: ela diz quais contas saíram do plano mas
+   têm lançamento e continuam ativas até ele remanejar.
+3. **Suprimentos › Importações** — trazer o `Insumoss.xlsx`, marcando "criar as
+   categorias de insumo".
+
+**Ficou no ramo, para a próxima publicação (SEM migração):** o catálogo de
+perguntas do assistente (`PERGUNTAS.md`) com a regra do `CLAUDE.md` que o
+mantém vivo, e a tela **Trabalho no sistema** — primeira entrega do plano do
+assistente de IA. Ver as duas seções logo abaixo.
+
 **Estado em 10/09/2026 (noite):** `main` publicada em `fd55bd9`, com quatro
 entregas: o **endereço no cadastro de obra**, o **lançamento visto de perto**
 (seis pontos, dois deles defeito — a descrição que nunca virou multilinha e o
@@ -67,6 +525,375 @@ Suprimentos** (033 a 037). Publicado também o **botão de zerar o movimento por
 telas de cadastro de Suprimentos** (detalhada abaixo), mais a correção das
 três telas que nunca funcionaram (ver Incidentes). Suíte: 2.097 casos com
 banco de verdade. **Nada pendente no ramo.**
+
+### Locações viram pergunta — e uma BRECHA DE ESCOPO aparece — 11/09/2026
+
+Três perguntas novas dentro do grupo de Suprimentos: o que está locado e em
+qual obra, qual locação já pedia decisão (aluguel que já pagou a compra,
+devolução vencida, prazo estourado) e que aluguel venceu sem virar título.
+Elas reusam `locacoes.listar`, que já calculava tudo isso — refazer a conta
+seria inventar um segundo número sobre a mesma coisa.
+
+#### ⚠️ A brecha, que é ANTERIOR a este trabalho
+
+Ao escrever o teste de "quem não tem a obra não vê o contrato dela", ele
+falhou. Investigando, apareceram **duas brechas na tela de Locações**:
+
+1. **Contrato de locação não tem autor.** A listagem usava `obras_do_usuario`,
+   que devolve `None` para quem enxerga por AUTORIA — e `None` ali significa
+   "sem filtro de obra". Efeito: o **administrativo que só deveria ver o que
+   ele mesmo lançou via TODOS os contratos de locação da empresa**.
+2. **`painel_por_obra` não recebia usuário nenhum**, e a rota que o serve é
+   aberta a todo operador (`ver_erp`). Efeito: **qualquer pessoa via quanto
+   CADA obra da empresa tem de aluguel**, inclusive obras fora do alcance dela.
+
+**O conserto ficou em `permissoes.py`, com nome próprio:**
+`obras_de_registro_sem_autor`. A regra: *para registro sem autor, o único
+recorte possível é a OBRA; quem não enxerga a base inteira vê só as obras
+designadas a ele, e sem obra designada não vê nenhum* — que é o padrão NEGAR
+do ERP, e não um efeito colateral de lista vazia.
+
+Isso vale para a TELA e para a pergunta, porque as duas passam pela mesma
+função. **Quem enxerga tudo continua enxergando tudo** — há teste para os dois
+lados.
+
+**A lição que fica:** `obras_do_usuario` devolve `None` com DOIS significados
+("vê tudo" e "filtra por autoria, não por obra"). Isso é seguro em título, que
+tem autor, e perigoso em qualquer registro que não tenha. Ao escrever escopo
+para entidade nova, perguntar antes: **esta tabela tem autor?** Se não tem, é
+`obras_de_registro_sem_autor` que se usa. Registrado também em `CONTEXTO.md` ›
+Histórico de decisões, porque atravessa áreas.
+
+Sem migração. Suíte: **4.044 casos** com banco de verdade.
+
+### As perguntas de Suprimentos, e duas regras que valem para todas — 10/09/2026
+
+Quatro perguntas novas sob `ver_suprimentos`: os insumos de uma categoria (o
+dono pediu esta com estas palavras — *"me manda uma lista dos insumos
+cadastrados na categoria tal"*), quanto já se pagou por um insumo, o que a
+obra pediu e ainda não foi resolvido, e os insumos sem conta do plano.
+
+**Duas naturezas convivem neste grupo, e confundi-las é o erro caro:** o
+CATÁLOGO (insumos, categorias, preços) é cadastro da empresa e **não** se
+recorta por obra — recortá-lo esconderia insumo de quem precisa cadastrar. Já
+a FILA DE PEDIDOS é da obra, e passa pelo mesmo filtro por pessoa da tela de
+Solicitações — não filtrá-la mostraria o pedido de uma obra ao administrativo
+de outra.
+
+Vieram junto **duas regras que agora valem para toda resposta do assistente**:
+
+1. **Teto de linhas, com o número continuando verdadeiro.** A base tem 3.285
+   insumos; devolver todos travaria o navegador. A resposta mostra 300 e diz
+   quantas existem — **a conta é sempre feita sobre tudo**. O perigo seria o
+   número passar a ser o do corte: aí a resposta mentiria, e há teste
+   exigindo que não.
+2. **A busca por texto ignora acento e maiúscula.** Ninguém digita
+   "Hidráulico" com acento: escreve "hidra". A primeira versão comparava
+   direto e respondia *"nenhum insumo nessa categoria"* sobre uma categoria
+   com 305 itens — o pior tipo de resposta errada, porque **parece certa**.
+
+Ensaio na base de demonstração: 3.285 insumos em 57 categorias, 8 sem conta do
+plano, 55 itens de material pedidos e em aberto, e "hidraul" (sem acento)
+achando 305 insumos.
+
+Sem migração. Suíte: **4.036 casos** com banco de verdade.
+
+### A régua do recebimento — 10/09/2026
+
+O dono desfez ele mesmo a ambiguidade do "quanto falta receber", e mostrou que
+ela tem quatro leituras, todas legítimas, todas etapas de uma mesma esteira:
+
+```
+CONTRATO (+aditivos)  →  MEDIDO  →  FATURADO (nota)  →  RECEBIDO
+```
+
+**A decisão que virou código:** em vez de escolher uma leitura e responder um
+número — que estaria certo para uma e errado para as outras três —, a pergunta
+mostra **a régua inteira**. Assim a leitura que ele queria já está na tela, e
+ele não precisou ter acertado a pergunta. Vale como padrão: **mostrar as
+leituras juntas costuma ser melhor que perguntar de volta**; perguntar fica
+para quando a escolha mudar o trabalho, não só o número.
+
+Três perguntas novas, no grupo `contratos`: *Quanto falta receber?*, *O que já
+foi medido e ainda não virou nota?* e *O que já tem nota emitida e ainda não
+entrou?*.
+
+O quadro do contrato ganhou as **duas subtrações que faltavam**
+(`vigente − recebido` e `medido − recebido`); as outras duas leituras já
+existiam. E a pergunta **reusa o `quadro`** em vez de somar de novo — há teste
+exigindo que o número da pergunta e o da tela batam **campo a campo**. Isso não
+é zelo: já aconteceu neste mesmo arquivo, com o reajuste, de a lista e o quadro
+mostrarem números diferentes sobre o mesmo contrato na mesma sessão.
+
+**Grupo novo, rota e ação próprias.** `ver_contratos` é deliberadamente
+estreita — o quadro mostra o contrato de ponta a ponta e não se recorta por
+obra designada sem mentir no total. Por isso a rota é `/erp/api/perguntar/
+contratos`, separada da do financeiro, e há teste provando que a rota larga do
+financeiro **não** responde pergunta de contrato (senão a ação estreita seria
+contornada).
+
+Sem migração.
+
+### O assistente começou a responder — sem IA nenhuma — 10/09/2026
+
+Em Financeiro › **Perguntar**: uma lista de perguntas e, para cada uma, a
+resposta calculada pelo sistema. **Nenhuma IA envolvida**, e isso é o desenho,
+não uma etapa provisória.
+
+O raciocínio, para não se perder: pergunta PREVISTA é respondida por função
+escrita e testada — exata, instantânea e sem custar centavo; pergunta
+imprevista é que precisaria de consulta inventada na hora, que acerta quase
+sempre e **erra em silêncio** no resto. Quando a IA entrar, ela só vai escolher
+QUAL destas funções chamar. **A conta é sempre do sistema.**
+
+As cinco primeiras, todas do grupo financeiro:
+
+| Pergunta | O que ela resolve |
+|---|---|
+| Como está o caixa dos próximos dias? | vencido, hoje e próximos 7 dias, nas três faixas de uma vez — número solto não diz se está sob controle |
+| O que tem a pagar num período? | com obra opcional; conta pelo VENCIMENTO e diz isso na resposta |
+| O que está vencido e não foi pago? | com os dias de atraso, o mais antigo primeiro |
+| O que está parado esperando decisão, e de quem é a vez? | era o pedaço que faltava do relatório de trabalho: ele mostra o que fizeram, esta mostra o que está parado esperando |
+| Quais títulos estão sem documento anexado? | o que trava a conferência do contador |
+
+**Três regras valem para toda resposta**, e estão escritas no topo de
+`core/perguntas/respostas.py`:
+
+1. **Passa pelo mesmo escopo das telas.** Nenhuma consulta é escrita à mão:
+   todas partem de `consulta_de_titulos(..., usuario=...)`, que aplica
+   `aplicar_escopo`. Sem isso o assistente seria porta dos fundos para a base
+   inteira. Há teste com banco de verdade provando que a SOMA, e não só a
+   lista, fica dentro do escopo.
+2. **Toda resposta diz de onde veio**, com a tela que reproduz o número.
+3. **Pergunta com mais de uma leitura mostra qual foi usada** ("conta pelo
+   vencimento e inclui o bloqueado"), em vez de escolher em silêncio.
+
+**A rota é por GRUPO de pergunta**, não uma só que despacha tudo — é o que
+permite cada grupo declarar a sua ação e a declaração continuar verdadeira. O
+grupo `financeiro` vive sob `ver_erp` + escopo. Grupo novo (suprimentos,
+contratos) ganha rota própria com a ação dele.
+
+**Dois defeitos que só a tela mostrou**, e que os testes agora seguram:
+
+- **A data chegava como TEXTO** ("2026-09-10") e a função comparava com
+  `date` — estourava na primeira vez que alguém escolhesse um período. A
+  conversão passou a ser do catálogo, que é quem conhece o tipo declarado, e
+  assim protege todas as perguntas de uma vez.
+- **A formatação do dinheiro corrompia a frase.** A troca de ponto por vírgula
+  estava sendo aplicada à sentença inteira, e "a pagar de 01/09 a 31/12,
+  somando" saía como "31/12. somando". Virou uma função só (`_reais`), com
+  teste que procura o caractere intermediário da troca em toda frase.
+
+Sem migração. Suíte: **3.996 casos** com banco de verdade.
+
+### Trabalho no sistema: a trilha de auditoria virou relatório — 10/09/2026
+
+Primeira entrega do plano do assistente, e a mais barata: **não foi preciso
+coletar nada**. A tabela `eventos` é append-only (um gatilho no banco recusa
+UPDATE e DELETE) e já registrava mais de 140 tipos de ação, com quem, quando,
+em qual registro e o detalhe. Faltava só ler.
+
+Em **Administração › Trabalho no sistema**:
+
+- **Cada pessoa vê a própria semana** — primeira e última ação de cada dia,
+  quantas ações, e o que fez separado por tipo de trabalho — e pode abrir o
+  **passo a passo** de qualquer dia seu. É de todo operador de propósito: quem
+  não consegue conferir o que a tela diz sobre ele não tem defesa.
+- **Quem tem a ação nova `ver_uso_da_equipe`** (ADMIN e diretor financeiro) vê
+  a equipe toda, uma linha por pessoa, e entra nos dias de cada um.
+
+Três decisões que precisam sobreviver a uma reforma de tela:
+
+1. **O dia é o do Ceará, não o do servidor.** O Render roda em UTC. Sem o fuso
+   escrito na consulta (`America/Fortaleza`), trabalho das 22h cairia no dia
+   seguinte e "começou às 8h" apareceria como 11h. Há teste com banco de
+   verdade exigindo isso.
+2. **Evento sem dono é do sistema.** `usuario_id` nulo é a fila de segundo
+   plano trabalhando sozinha. Sai numa linha à parte — se entrasse na conta de
+   alguém, a pessoa apareceria produzindo de madrugada.
+3. **Repetição seguida vira uma linha só.** A primeira versão devolveu 76
+   linhas de "criou insumo" por causa de um minuto de carga de planilha, e o
+   dia inteiro ficava ilegível. Agora sai "insumo criado · 5×, das 10:00 às
+   10:04".
+
+⚠️ **E a ressalva, que está na tela E viaja junto com o dado (não só no HTML):**
+isto **não é controle de jornada**. Quem passou a manhã lendo contrato, no
+telefone com fornecedor ou na obra trabalhou e não gerou evento nenhum. Mede
+ENTREGA e se houve movimento no dia. O dono confirmou que é para isso —
+*"na verdade não é pra controlar a jornada não, é só pra entender"* — e decidiu
+que a tela fica **à vista da equipe**, cada um vendo a própria produção.
+**A equipe precisa ser avisada de que o sistema registra.**
+
+Sem migração. O mapa de "entidade + ação → tipo de trabalho" vive em
+`core/comum/uso.py`, e há teste que **varre o código atrás de toda ação
+registrada** e falha se alguma não estiver classificada — assim funcionalidade
+nova não nasce caindo em "Outros".
+
+### Por que o assistente não nasce no WhatsApp — 10/09/2026
+
+O dono desenhou o futuro do sistema numa conversa: *"eu poder fazer qualquer
+pergunta ao sistema e, se houver dado daquela pergunta, que ele me retorne"* —
+com áudio, com anexo, e podendo também AGIR (cadastrar insumo, lançar título),
+sempre dentro da permissão da pessoa. E perguntou qual canal usar.
+
+Ele mesmo desconfiou do WhatsApp, e a desconfiança está certa. Ficando
+registrado o porquê, para não se discutir de novo:
+
+- **Passa por terceiro.** Toda mensagem, todo documento e todo áudio passam
+  pelos servidores da Meta. Aqui isso significa nota fiscal, folha e título —
+  não é um detalhe.
+- **A janela de 24 horas.** Fora de uma conversa que a PESSOA começou, só se
+  pode mandar modelo de mensagem aprovado previamente. Serve para aviso; não
+  serve para conversa livre iniciada pelo sistema.
+- **Não tem tela.** Relatório em WhatsApp vira parede de texto ou PDF anexado.
+  Sem tabela, sem linha clicável, sem card que expande, sem "ver de onde veio
+  este número" — que é justamente a parte que faz o assistente ser confiável.
+- **Identifica telefone, não pessoa.** Ligar telefone a operador dá para fazer,
+  mas quem estiver com o aparelho está dentro do ERP. É superfície de ataque
+  nova para resolver um problema que o login já resolve.
+
+**Onde o WhatsApp ganha de verdade:** o pessoal da obra, que não abre o ERP, e
+o AVISO (a metade que falta do `core/notificacoes.py` — o Telegram está pronto).
+Por isso ele fica como porta secundária, para aviso e pergunta curta com link,
+e não como canal principal.
+
+**A decisão:** o assistente nasce DENTRO do ERP, em painel lateral, e o celular
+é resolvido transformando o próprio ERP em PWA — o ícone na tela do telefone
+que abre no navegador. Aplicativo nativo seria uma segunda base de código e uma
+loja para não ganhar nada que o PWA não dê aqui.
+
+**O risco que manda no desenho, e que precisa ser dito ao dono sempre:**
+consulta gerada por IA sobre um banco grande acerta a maior parte das vezes e
+erra **em silêncio** no resto. Um número errado com cara de certo é pior que
+resposta nenhuma — e o dono não tem como conferir SQL. Daí as três regras:
+catálogo de perguntas conhecidas respondido por código primeiro; "não sei"
+explícito em vez de chute; e toda resposta com o caminho de volta para os
+lançamentos que a formaram.
+
+O plano em nove passos está em `ROTEIRO.md` › "O ASSISTENTE DE IA E O RELATÓRIO
+DE TRABALHO".
+
+### O plano de contas depois das oito alterações — 10/09/2026
+
+O dono mandou um documento (`PLANO_CONTAS_alteracoes.md`) com oito assuntos, e
+todos foram aplicados em `core/cadastros/plano_padrao.py`. Cada um mudou o
+significado de alguma coisa, e é isso que precisa atravessar sessões:
+
+1. **Devolução, estorno e reembolso saíram das receitas.** Estavam em 1.2 e
+   inflavam a receita deixando o custo intacto — a margem saía errada dos dois
+   lados. Viraram **3.5.01, 3.5.02 e 3.5.03**, no grupo de custos, marcadas
+   como **REDUTORAS**: entram no relatório com **sinal negativo**. R$ 10.000 de
+   compra e R$ 500 de devolução fecham R$ 9.500 de custo, com as duas linhas
+   visíveis no analítico. O lançamento original NÃO é estornado. A **1.2.04
+   (multas e indenizações recebidas) continua receita** — ali não houve gasto
+   nosso.
+2. **A retenção conjunta CSRF/PCC (2.1.06) deixou de existir.** Juntava PIS,
+   COFINS e CSLL, com alíquotas e bases diferentes. A guia (DARF 5952) agora é
+   **rateada** entre 2.1.04 (PIS), 2.1.05 (COFINS) e 2.2.02 (CSLL), e as três
+   descrições dizem isso.
+3. **Um tributo, uma conta, aplicado até o fim.** A CSLL retida virou a mesma
+   2.2.02 da CSLL apurada — é o mesmo tributo em dois momentos. Idem IRPJ.
+4. **A 9.4.03 (principal de parcelamento tributário) foi eliminada.** O
+   principal vai para a conta do próprio tributo, no grupo 2; os juros, em
+   2.3.02.
+5. **O grupo 8 (aquisição de bens) virou RESULTADO.** Razão operacional que
+   prevalece sobre a contábil: uma betoneira comprada para obra em parceria
+   precisa aparecer no custo daquela obra, senão não há como cobrar a parte do
+   parceiro. O rateio obrigatório resolve. A depreciação fica com a
+   contabilidade externa. **Com isso o relatório de desembolso por obra deixou
+   de ser necessário** — foi o próprio dono quem disse. No relatório, o grupo 8
+   passou a entrar na soma das despesas (`relatorios.dre_gerencial`); sem isso
+   ele apareceria na lista e sumiria do resultado do período.
+6. **Nomenclatura:** 5.1.03 virou "Internet, telefonia e **sistemas**"; 5.1.05
+   perdeu o "copa" e virou "Limpeza da sede".
+7. **Descrições em toda conta com risco de confusão**, dizendo *quando usar* e
+   *com o que não confundir*. Elas aparecem na hora de lançar e são o que
+   impede o plano de apodrecer. Todo o grupo 3.1 ganhou descrição, e 3.1.99 e
+   5.3.99 dizem, com todas as letras, que são último recurso.
+8. **Renomeadas para os nomes da planilha da BWS:** 5.3.01 "Material de
+   Escritório", 5.3.03 "Manutenção (Veículos e Máquinas)", 5.3.04 "Manutenção
+   (Ferramentas e Equipamentos)", 8.1.01 "Aquisição de Veículos, Máquinas e
+   Equipamentos", 3.3.02 e 3.3.03 com as maiúsculas da planilha.
+   **Conta nova: 3.3.06 "Locação de Equipamentos"** — a única que a planilha de
+   insumos trouxe e o plano não tinha. Ela absorveu a antiga 3.3.05 ("Locação
+   de andaimes, escoramentos e formas"), que era um subconjunto dela.
+
+O plano ficou com **138 contas**.
+
+#### O CRITÉRIO DE VALOR que virou decisão nossa, e pode ser mudado
+
+O documento mandou escrever um critério que separe **3.1.19 Ferramentas**
+(custo da obra) de **8.1.04 Ferramentas e equipamentos duráveis**
+(patrimônio), mas não disse qual. Ficou **R$ 1.200,00 por unidade OU vida útil
+menor que um ano** — o critério fiscal de bem de pequeno valor. **É decisão do
+dono e ele pode mudar:** o número está em `LIMITE_FERRAMENTA`, no topo do
+`plano_padrao.py`, e muda os dois textos de uma vez.
+
+#### A regra que protege o histórico
+
+Instalar o plano padrão **não apaga conta com movimento**. A rotina de
+aposentadoria (`_aposentar`) desativa só o que nunca foi usado — e aponta a
+sucessora em `substituida_por_id`. Conta com lançamento **continua ativa** e sai
+no relatório em `pendentes_de_migracao`, com a contagem e o motivo; a tela de
+Configurações mostra isso numa janela própria, porque é a única coisa daquela
+tela que exige decisão do dono. O remanejamento é feito pelo botão "Substituir"
+da própria conta, que leva os títulos junto.
+
+Duas contas **nunca** são aposentadas sozinhas, porque não têm destino único: a
+**2.1.06** (o valor se reparte entre três tributos) e a **9.4.03** (o destino
+depende de qual tributo foi parcelado).
+
+⚠️ **Não foi possível conferir os lançamentos da produção**: não há
+`DATABASE_URL` no ambiente de desenvolvimento, e não deveria haver. A
+conferência acontece sozinha no momento em que o dono apertar "Instalar plano
+padrão BWS" — a janela de pendências é que vai dizer o que tem movimento.
+
+#### O que o de-para do Omie ganhou junto
+
+O de-para (`core/cadastros/depara.py`) traduz o plano velho, que chega nos
+cards do Pipefy. Além de acompanhar as contas que mudaram de código, sete
+traduções **erradas desde 07/09** foram corrigidas: argamassa, estrutura
+metálica, cabeamento, gás, granito, serralheria e vidro ainda apontavam para as
+contas de antes de as seis contas novas nascerem. Há teste exigindo que nenhuma
+tradução aponte para conta extinta.
+
+### A base de 3.279 insumos — 10/09/2026
+
+O dono mandou `Insumoss.xlsx` com a base completa: **3.279 insumos**, **57
+categorias de suprimento**, **42 contas do plano** e uma coluna
+**Subcategoria** que diz "Locação" em 54 itens.
+
+- **O importador passou a ler Excel (.xlsx) direto** (`planilhas.ler_tabela`).
+  O formato é reconhecido pelo **conteúdo**, não pela extensão, e vale a
+  primeira aba. Nenhuma biblioteca nova: `openpyxl` já era dependência do
+  serviço. Vale para insumos e para fornecedores.
+- **"Subcategoria = Locação" liga a marca `locavel`**, que é o que decide quais
+  insumos aparecem na tela de Locações — *"pra não ter que aparecer por exemplo
+  cimento, que não se loca cimento"*. A marca só é **ligada** pela planilha,
+  **nunca desligada**: quem marcou um item à mão na tela não perde a marcação
+  porque a planilha veio sem ela.
+- **Apelidos de conta** (`APELIDOS`, em `plano_padrao.py`): a planilha escreve
+  "Manutenção (Veículos e Máquinas)" e o plano já escreveu "Manutenção de
+  veículos e máquinas". Sem isso o insumo entraria sem conta do plano, em
+  silêncio. **Nome antigo de conta renomeada entra ali e não se apaga** —
+  planilha velha continua sendo importada anos depois.
+- O relatório da carga passou a dizer **quantos foram marcados como locáveis** e
+  **o nome das contas do plano que não existem** ("2 insumos sem conta" não diz
+  o que fazer; o nome, sim).
+- **Defeito corrigido de passagem:** a criação de categoria de insumo na carga
+  (entregue horas antes, no mesmo dia) nascia **sem código**, e
+  `insumo_categorias.codigo` é `NOT NULL`. A carga teria morrido na primeira
+  categoria nova em produção — o dublê dos testes não checa restrição de banco
+  e não acusou.
+
+**Ensaio com banco de verdade** (cópia do banco de demonstração, com todas as
+migrações aplicadas): 3.279 linhas lidas em 2,9 s, **3.251 insumos novos**, 28
+atualizados, **51 categorias de insumo criadas**, **54 marcados como locáveis**,
+**0 recusados**. Todas as 42 contas do plano foram encontradas.
+
+⚠️ **Duas linhas da planilha vêm sem conta do plano** e entram assim: "Barra
+Tirante Roscado Galvanizado 1/4 x 3m" e "Espaçador BE 8". Basta preencher a
+coluna na planilha e rodar a carga de novo — rodar duas vezes não duplica.
 
 ### A reforma das telas de cadastro (05/09/2026, noite)
 

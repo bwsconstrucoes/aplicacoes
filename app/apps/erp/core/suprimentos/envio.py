@@ -213,12 +213,14 @@ def montar_mensagem(s: Session, cotacao_id: int, empresa: Empresa,
 
 def _cnpj_por_extenso(cnpj: Any) -> str:
     """71000001000184 → 71.000.001/0001-84. O fornecedor confere este número
-    contra o cadastro dele; sem pontuação, ninguém lê catorze dígitos seguidos."""
-    numeros = "".join(c for c in str(cnpj or "") if c.isdigit())
-    if len(numeros) != 14:
-        return _texto(cnpj)
-    return (f"{numeros[:2]}.{numeros[2:5]}.{numeros[5:8]}/"
-            f"{numeros[8:12]}-{numeros[12:]}")
+    contra o cadastro dele; sem pontuação, ninguém lê catorze dígitos seguidos.
+
+    A conta em si mora em `core/comum/formato.py` desde 11/09/2026 — a leitura
+    de documento anexado precisou da mesma, e duas cópias divergem.
+    """
+    from app.apps.erp.core.comum.formato import documento_por_extenso
+    formatado = documento_por_extenso(cnpj)
+    return formatado if formatado else _texto(cnpj)
 
 
 def _assinatura(empresa: Empresa) -> list[str]:

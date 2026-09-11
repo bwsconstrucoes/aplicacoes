@@ -119,6 +119,16 @@ MODULOS = [
             ("receber", "Receber", "erp.pagina_receber"),
             ("relatorios", "Relatórios", "erp.pagina_relatorios"),
             ("importar", "Importar", "erp.pagina_importar"),
+            # PERGUNTAR SAIU DAQUI EM 11/09/2026, a pedido do dono: *"o
+            # perguntar que está na barra lá em cima é ser acessado de forma
+            # geral, e não por exemplo dentro do financeiro"*. Ele tem razão —
+            # as perguntas já alcançam obras, contratos e suprimentos, e ficar
+            # numa aba do Financeiro dava a entender que era coisa de lá.
+            #
+            # Agora o assistente mora no CANTO DE TODA TELA (o botão redondo,
+            # em `erp_base.html`), e a tela cheia continua existindo em
+            # /erp/perguntar — alcançada pelo ⤢ do painel, para quando a
+            # resposta tem tabela grande demais para o cantinho.
         ],
     },
     {
@@ -166,6 +176,11 @@ MODULOS = [
         "abas": [
             ("config", "Configurações", "erp.pagina_config"),
             ("arquivo", "Arquivo", "erp.pagina_arquivo"),
+            # Aberta a TODO operador de propósito: cada um vê a própria semana.
+            # Foi decisão do dono em 10/09/2026 — mesmo dado, e deixa de ser
+            # vigilância para virar retorno. Quem vê a EQUIPE precisa da ação
+            # `ver_uso_da_equipe`, que mora numa rota separada.
+            ("uso", "Trabalho no sistema", "erp.pagina_uso"),
         ],
     },
 ]
@@ -179,7 +194,10 @@ ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  "tratar_agenda", "aprovar",
                  # Encadeamento: a tela só transforma obra/conta/credor/pedido
                  # em link para quem consegue abrir o destino.
-                 "ver_suprimentos", "ver_pedidos_compra")
+                 "ver_suprimentos", "ver_pedidos_compra",
+                 # Decide se a tela de Trabalho no sistema mostra a equipe ou
+                 # só a própria semana de quem abriu.
+                 "ver_uso_da_equipe")
 
 # aba → módulo a que pertence
 _MODULO_DA_ABA = {aba[0]: m["chave"] for m in MODULOS for aba in m["abas"]}
@@ -432,6 +450,72 @@ def pagina_login():
         logger.exception("ERP: falha no login")
         return render_template("erp_login.html",
                                erro=f"Não foi possível conectar ao banco: {e}"), 500
+
+
+# ---------------------------------------------------------------------------
+# O ERP NO CELULAR — ícone na tela inicial, sem loja de aplicativo
+#
+# O dono pediu "poderíamos ter um aplicativo?". A resposta honesta: aplicativo
+# nativo seriam DUAS bases de código (Android e iPhone), duas lojas, e revisão
+# da Apple a cada correção — para mostrar as mesmas telas que já existem.
+#
+# O que resolve de verdade é isto: o navegador do celular passa a poder
+# INSTALAR o ERP. Vira ícone na tela inicial, abre em tela cheia sem a barra de
+# endereço, e é o mesmo sistema — publicou aqui, chegou no celular na hora.
+#
+# As duas rotas abaixo são PÚBLICAS por obrigação do navegador: ele busca o
+# manifesto e o service worker ANTES de qualquer login, e se levar 302 para a
+# tela de entrar, a instalação simplesmente não é oferecida. Nenhuma das duas
+# devolve dado de negócio — uma é a ficha do ícone, a outra é código.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/manifest.webmanifest")
+@permissao_publica("o navegador busca o manifesto antes do login; sem ele o "
+                   "celular não oferece instalar. Não devolve dado nenhum.")
+def manifesto_pwa():
+    icone = lambda nome: url_for("erp.static", filename=nome)
+    return jsonify({
+        "name": "ERP BWS Construções",
+        "short_name": "ERP BWS",
+        "description": "Financeiro, obras, suprimentos e contratos da BWS.",
+        "lang": "pt-BR",
+        "start_url": "/erp/inicio",
+        "scope": "/erp/",
+        "display": "standalone",
+        "orientation": "portrait-primary",
+        "background_color": "#0A1B2E",
+        "theme_color": "#0A1B2E",
+        "icons": [
+            {"src": icone("icone-192.png"), "sizes": "192x192",
+             "type": "image/png", "purpose": "any"},
+            {"src": icone("icone-512.png"), "sizes": "512x512",
+             "type": "image/png", "purpose": "any"},
+            {"src": icone("icone-512-recortavel.png"), "sizes": "512x512",
+             "type": "image/png", "purpose": "maskable"},
+        ],
+        "shortcuts": [
+            {"name": "Perguntar", "url": "/erp/perguntar"},
+            {"name": "Títulos", "url": "/erp/titulos"},
+            {"name": "Obras", "url": "/erp/obras"},
+        ],
+    })
+
+
+@bp.route("/erp/sw.js")
+@permissao_publica("service worker: é código, não dado, e o navegador o busca "
+                   "sem sessão. Servido daqui, e não de /erp/static, para o "
+                   "alcance dele ser /erp/ — de dentro de static ele só "
+                   "alcançaria os arquivos estáticos e a instalação falharia.")
+def service_worker():
+    from flask import send_from_directory
+    resp = send_from_directory(bp.static_folder, "sw.js",
+                               mimetype="application/javascript")
+    # Sem isto o navegador recusa o alcance /erp/ para um arquivo servido
+    # deste endereço, e nada funciona — sem mensagem de erro nenhuma.
+    resp.headers["Service-Worker-Allowed"] = "/erp/"
+    # O service worker não pode ser o próprio a envelhecer no cache: é ele que
+    # decide o que fica guardado.
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @bp.route("/erp/sair")
@@ -1663,7 +1747,7 @@ def api_suprimentos_importar(tipo: str):
         return jsonify({"ok": False, "erro": "Tipo de carga desconhecido."}), 400
     arquivo = request.files.get("arquivo")
     if arquivo is None:
-        return jsonify({"ok": False, "erro": "Anexe o arquivo CSV."}), 400
+        return jsonify({"ok": False, "erro": "Anexe o arquivo (CSV ou Excel)."}), 400
     conteudo = arquivo.read()
     if not conteudo:
         return jsonify({"ok": False, "erro": "Arquivo vazio."}), 400
@@ -1962,6 +2046,611 @@ def api_cotacao_envios(cotacao_id: int):
 @permissao("ver_relatorios")
 def pagina_relatorios():
     return render_template("erp_relatorios.html", **_contexto("relatorios"))
+
+
+def _data_ou_nada(bruto: str | None):
+    """Data vinda da tela, aceitando vazio e lixo sem estourar."""
+    try:
+        return date.fromisoformat((bruto or "").strip())
+    except ValueError:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Perguntar — o catálogo de perguntas respondido por CÓDIGO
+#
+# A rota é POR GRUPO de pergunta, e não uma só que despacha tudo. É o que
+# permite cada grupo declarar a SUA ação e a declaração continuar verdadeira:
+# uma rota única teria de conferir permissão por dentro, pergunta a pergunta,
+# e aí a ação declarada mentiria.
+#
+# O grupo "financeiro" vive sob `ver_erp` + ESCOPO — todo operador pode
+# perguntar, e cada um recebe a conta feita apenas sobre o que já poderia ver
+# na tela de Títulos. Grupo novo (suprimentos, contratos) ganha rota própria.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/perguntar")
+@login_obrigatorio
+@permissao("ver_erp")
+def pagina_perguntar():
+    return render_template("erp_perguntar.html", **_contexto("perguntar"))
+
+
+@bp.route("/erp/api/perguntas/financeiro")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_perguntas_financeiro():
+    """A lista do que dá para perguntar — sem tocar no banco."""
+    from app.apps.erp.core.perguntas import catalogo
+    return jsonify({"ok": True, "perguntas": catalogo.para_a_tela("financeiro")})
+
+
+@bp.route("/erp/api/perguntar/financeiro", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_perguntar_financeiro():
+    """Responde uma pergunta do grupo financeiro, no escopo de quem perguntou."""
+    from app.apps.erp.core.perguntas import catalogo
+    d = request.get_json(silent=True) or {}
+    chave = (d.get("chave") or "").strip()
+    if chave not in {p["chave"] for p in catalogo.do_grupo("financeiro")}:
+        # Pergunta de outro grupo respondida aqui passaria por cima da ação
+        # daquele grupo. Fora do alcance responde "não encontrado".
+        raise ErroNaoEncontrado("Pergunta desconhecida neste grupo.")
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = catalogo.responder(chave, s, atual, d.get("parametros") or {})
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao responder a pergunta %s", chave)
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/perguntar/entender", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_entender_pergunta():
+    """Da frase escrita para a pergunta que o sistema sabe responder.
+
+    ELA NÃO RESPONDE NADA e não toca em dado nenhum — só diz QUAL pergunta é,
+    e de que grupo. É por isso que ela pode ser aberta a todo operador sem
+    mentir na declaração: quem responde continua sendo a rota do grupo, com a
+    ação dela. Uma rota que recebesse a frase e já devolvesse o número teria
+    de conferir permissão por dentro, pergunta a pergunta.
+
+    O QUE ELA NÃO ENTENDE É GUARDADO. Essa lista é a coisa mais útil que sai
+    daqui: é o que as pessoas querem saber e o sistema ainda não sabe
+    responder — ou seja, o que construir em seguida.
+    """
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.core.perguntas import catalogo, entender as svc_entender
+
+    d = request.get_json(silent=True) or {}
+    texto = (d.get("texto") or "").strip()
+    if not texto:
+        return jsonify({"ok": False, "erro": "Escreva a pergunta."}), 400
+    # A última pergunta respondida nesta conversa, quando houver. É o que
+    # permite "e da obra Triunfo?" — e a tela AVISA quando repete a anterior.
+    leitura = svc_entender.entender(texto, catalogo.para_a_tela(),
+                                    chave_anterior=(d.get("anterior") or "").strip())
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            registrar_evento(
+                s, "pergunta", 0,
+                "ENTENDIDA" if leitura["entendi"] else "NAO_ENTENDIDA",
+                {"texto": texto[:500], "chave": leitura.get("chave"),
+                 "confianca": leitura.get("confianca")},
+                atual.id if atual else None)
+            s.commit()
+    except Exception:                       # pragma: no cover - log não trava
+        logger.exception("ERP: falha ao registrar a pergunta escrita")
+    return jsonify({"ok": True, "leitura": leitura})
+
+
+@bp.route("/erp/api/perguntar/ouvir", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_pergunta_por_audio():
+    """O áudio vira TEXTO. Só isso.
+
+    A rota não responde pergunta nenhuma e não consulta dado de negócio — ela
+    devolve a frase transcrita, que a tela põe na caixa de escrita para a
+    pessoa LER antes de mandar responder. É esse passo que protege do erro de
+    transcrição: "a pagar" e "apagar" soam igual, e uma pergunta mal ouvida
+    respondida em silêncio seria o pior defeito possível aqui.
+
+    Por não tocar em dado, ela pode exigir `ver_erp` sem mentir: quem responde
+    continua sendo a rota do grupo, com a ação do grupo.
+    """
+    from app.apps.erp.core.perguntas.audio import ErroAudio, transcrever
+
+    arquivo = request.files.get("audio")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Não chegou áudio nenhum."}), 400
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            usuario_id = atual.id if atual else None
+        lido = transcrever(arquivo.read(), arquivo.filename or "pergunta.webm",
+                           segundos=request.form.get("segundos"),
+                           usuario_id=usuario_id)
+        return jsonify({"ok": True, **lido})
+    except ErroAudio as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao ouvir a pergunta")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/perguntar/documento", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_pergunta_com_documento():
+    """Leitura de um documento ANEXADO à pergunta.
+
+    ATENÇÃO À DIFERENÇA, que a tela também precisa deixar clara: tudo o mais
+    nesta área é calculado pelo sistema sobre o banco, por código testado.
+    AQUI a resposta vem da IA lendo o arquivo — e a IA lê errado às vezes.
+    A diferença é aceitável porque **o documento está na mão de quem
+    perguntou**: dá para conferir olhando o papel, o que não acontece com um
+    total somado sobre dez mil lançamentos.
+
+    Reusa o mesmo leitor do Arquivo (`core/documentos/leitor.py`), com os
+    mesmos tetos de tamanho e o mesmo registro de consumo. Não grava nada: se
+    a pessoa quiser guardar o documento, o caminho continua sendo o Arquivo.
+    """
+    from app.apps.erp.core.documentos.leitor import ErroLeitura, ler_documento
+
+    arquivo = request.files.get("documento")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Não chegou arquivo nenhum."}), 400
+    nome = arquivo.filename or "documento"
+    # A recusa do leitor é escrita para a tela do Arquivo ("preencha os campos
+    # manualmente") e não quer dizer nada aqui, onde não há campo nenhum. Esta
+    # tela tem o seu próprio jeito de dizer a mesma coisa.
+    if not os.getenv("OPENAI_API_KEY", "").strip():
+        return jsonify({"ok": False, "erro":
+                        "A leitura de documento não está ligada neste sistema "
+                        "(falta a chave do serviço). As perguntas sobre o que "
+                        "já está no ERP continuam funcionando normalmente."}), 400
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            usuario_id = atual.id if atual else None
+        from app.apps.erp.core.comum import ia_custo
+        with ia_custo.contexto(operacao="pergunta_com_documento",
+                               usuario_id=usuario_id, referencia=nome[:120]):
+            lido = ler_documento(arquivo.read(), nome)
+        return jsonify({"ok": True, "documento": _resumo_do_documento(lido, nome)})
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao ler o documento anexado")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+def _resumo_do_documento(lido: dict, nome: str) -> dict:
+    """O que interessa numa resposta de tela, sem despejar o retorno inteiro.
+
+    DUAS REGRAS AQUI, e as duas já custaram defeito neste repositório:
+
+    1. **Campo vazio vira AUSENTE, não "0" nem "—".** Preencher buraco com
+       valor padrão é o jeito mais fácil de o sistema afirmar o que não sabe.
+    2. **Nada sai no formato do banco.** "NFSE", "2026-09-02", "12480.00" e
+       "11222333000144" são o computador falando. Quem formata é o servidor,
+       por `core/comum/formato.py`, que é o mesmo lugar de onde saem o
+       relatório e o PDF — assim o mesmo valor não aparece de dois jeitos em
+       duas telas.
+    """
+    from app.apps.erp.core.comum.formato import (
+        _dinheiro_br, data_br, documento_por_extenso,
+    )
+    from app.apps.erp.core.documentos.leitor import rotulo_do_tipo
+
+    def dinheiro(v):
+        formatado = _dinheiro_br(v)
+        return f"R$ {formatado}" if formatado else ""
+
+    # O terceiro item diz como formatar; o quarto, se é NÚMERO OU CÓDIGO — que
+    # a tela escreve em fonte de largura fixa, para os dígitos alinharem e
+    # dar para conferir de olho. Frase em fonte de máquina de escrever fica
+    # difícil de ler, então nome e descrição ficam de fora.
+    campos = [
+        ("tipo_documento", "Tipo", rotulo_do_tipo, False),
+        ("emitente_nome", "Quem emitiu", None, False),
+        ("emitente_documento", "CNPJ/CPF de quem emitiu",
+         documento_por_extenso, True),
+        ("numero_documento", "Número", None, True),
+        ("data_emissao", "Emissão", data_br, True),
+        ("vencimento", "Vencimento", data_br, True),
+        ("competencia", "Competência", data_br, True),
+        ("valor_total", "Valor total", dinheiro, True),
+        ("valor_liquido", "Valor líquido", dinheiro, True),
+        ("descricao", "Descrição", None, False),
+        ("obra_mencionada", "Obra citada", None, True),
+        ("municipio_emissao", "Município", None, False),
+    ]
+    linhas = []
+    for chave, rotulo, formatar, e_dado in campos:
+        bruto = str(lido.get(chave) or "").strip()
+        if bruto in ("", "None"):
+            continue
+        linhas.append({"rotulo": rotulo, "dados": e_dado,
+                       "valor": (formatar(bruto) if formatar else bruto)})
+    return {
+        "arquivo": nome,
+        "linhas": linhas,
+        "observacoes": (lido.get("observacoes") or "").strip(),
+        "modelo": lido.get("modelo") or "",
+    }
+
+
+@bp.route("/erp/api/perguntar/agendar", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_agendar_pergunta():
+    """"Me manda isso toda segunda."
+
+    A ação é `ver_erp` porque agendar para SI MESMO não dá acesso a nada novo:
+    o relatório roda com a permissão de quem recebe, que é a mesma pessoa.
+    Agendar para OUTRA pessoa é outra história, e o core exige `gerir_usuarios`
+    para isso — senão qualquer um mandaria um relatório no nome do diretor, que
+    rodaria com a permissão dele.
+    """
+    from app.apps.erp.core.perguntas import agendadas as svc
+
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            a = svc.agendar(
+                s, atual, chave=(d.get("chave") or "").strip(),
+                titulo=(d.get("titulo") or "").strip(),
+                parametros=d.get("parametros") or {},
+                frequencia=(d.get("frequencia") or "SEMANAL"),
+                dia=d.get("dia"), canal=(d.get("canal") or "TELEGRAM"),
+                so_se_houver=bool(d.get("so_se_houver")),
+                para_usuario_id=d.get("para_usuario_id"))
+            quando = svc.quando_por_extenso(a.frequencia, a.dia)
+            s.commit()
+        return jsonify({"ok": True, "quando": quando,
+                        "aviso": ("Combinado. Vou mandar pelo Telegram — "
+                                  "confira se o seu telefone está no cadastro, "
+                                  "senão não tenho por onde mandar.")})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao agendar a pergunta")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/perguntar/agendados")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_perguntas_agendadas():
+    from app.apps.erp.core.perguntas import agendadas as svc
+    with get_session() as s:
+        atual = _usuario_logado(s)
+        if atual is None:
+            return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+        return jsonify({"ok": True, "agendados": svc.listar(s, atual)})
+
+
+@bp.route("/erp/api/perguntar/agendados/<int:agendada_id>/desligar",
+          methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_desligar_agendada(agendada_id: int):
+    """Desliga um relatório automático SEU.
+
+    O escopo é conferido no core: relatório de outra pessoa responde "não
+    encontrado", nunca "sem permissão" — dizer "sem permissão" para um número
+    que existe confirma que ele existe.
+    """
+    from app.apps.erp.core.auth.permissoes import exigir_agendada_no_escopo
+    from app.apps.erp.core.perguntas import agendadas as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            exigir_agendada_no_escopo(s, atual, agendada_id)
+            svc.desligar(s, atual, agendada_id)
+            s.commit()
+        return jsonify({"ok": True})
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao desligar o relatório automático")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/perguntas/nao-entendidas")
+@login_obrigatorio
+@permissao("ver_uso_da_equipe")
+def api_perguntas_nao_entendidas():
+    """O que perguntaram e o sistema não soube responder.
+
+    É a lista do que falta construir, escrita pelas próprias pessoas que usam
+    o ERP — vale mais que qualquer suposição minha sobre o que elas precisam.
+    """
+    from sqlalchemy import text as _sql
+    try:
+        with get_session() as s:
+            linhas = s.execute(_sql("""
+                SELECT e.detalhe->>'texto' AS texto,
+                       COUNT(*)            AS vezes,
+                       MAX(e.criado_em)    AS ultima
+                  FROM eventos e
+                 WHERE e.entidade_tipo = 'pergunta'
+                   AND e.acao = 'NAO_ENTENDIDA'
+                 GROUP BY e.detalhe->>'texto'
+                 ORDER BY vezes DESC, ultima DESC
+                 LIMIT 100""")).all()
+        return jsonify({"ok": True, "perguntas": [
+            {"texto": t, "vezes": v,
+             "ultima": u.astimezone().strftime("%d/%m/%Y") if u else None}
+            for t, v, u in linhas]})
+    except Exception as e:
+        logger.exception("ERP: falha ao ler as perguntas não entendidas")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/perguntas/suprimentos")
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_perguntas_suprimentos():
+    from app.apps.erp.core.perguntas import catalogo
+    return jsonify({"ok": True, "perguntas": catalogo.para_a_tela("suprimentos")})
+
+
+@bp.route("/erp/api/perguntar/suprimentos", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_suprimentos")
+def api_perguntar_suprimentos():
+    """Grupo de suprimentos: catálogo de insumos, preços e fila de pedidos.
+
+    O CATÁLOGO é cadastro da empresa e não se recorta por obra. Já a fila de
+    pedidos passa pelo mesmo filtro por pessoa da tela de Solicitações — quem
+    é preso a uma obra vê só a dela.
+    """
+    from app.apps.erp.core.perguntas import catalogo
+    d = request.get_json(silent=True) or {}
+    chave = (d.get("chave") or "").strip()
+    if chave not in {p["chave"] for p in catalogo.do_grupo("suprimentos")}:
+        raise ErroNaoEncontrado("Pergunta desconhecida neste grupo.")
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = catalogo.responder(chave, s, atual, d.get("parametros") or {})
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao responder a pergunta %s", chave)
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/perguntas/obras")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_perguntas_obras():
+    from app.apps.erp.core.perguntas import catalogo
+    return jsonify({"ok": True, "perguntas": catalogo.para_a_tela("obras")})
+
+
+@bp.route("/erp/api/perguntar/obras", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_perguntar_obras():
+    """Grupo de obras: as conferências de cadastro, prazo e garantia.
+
+    Mesma ação do grupo financeiro (`ver_erp`) e mesmo recorte por obra
+    designada. O que separa os dois é o ASSUNTO, não a permissão.
+
+    Este grupo NÃO responde custo nem resultado de obra — essas palavras ainda
+    não têm uma definição combinada com o dono, e responder seria escolher uma
+    leitura por ele em silêncio.
+    """
+    from app.apps.erp.core.perguntas import catalogo
+    d = request.get_json(silent=True) or {}
+    chave = (d.get("chave") or "").strip()
+    if chave not in {p["chave"] for p in catalogo.do_grupo("obras")}:
+        raise ErroNaoEncontrado("Pergunta desconhecida neste grupo.")
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = catalogo.responder(chave, s, atual, d.get("parametros") or {})
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao responder a pergunta %s", chave)
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/perguntas/documentos")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_perguntas_documentos():
+    from app.apps.erp.core.perguntas import catalogo
+    return jsonify({"ok": True, "perguntas": catalogo.para_a_tela("documentos")})
+
+
+@bp.route("/erp/api/perguntar/documentos", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_perguntar_documentos():
+    """O que está ESCRITO nos documentos da empresa.
+
+    A ação é `ver_arquivo`, e não `ver_erp` como os outros grupos: quem não
+    pode abrir o acervo também não pode perguntar o que está escrito dentro
+    dele. Por dentro, a busca passa pelo MESMO recorte da tela do Arquivo —
+    faixa de sigilo mais obra designada.
+
+    Esta é a única família de perguntas que não calcula nada: ela devolve
+    trechos, com o documento de onde saíram.
+    """
+    from app.apps.erp.core.perguntas import catalogo
+    d = request.get_json(silent=True) or {}
+    chave = (d.get("chave") or "").strip()
+    if chave not in {p["chave"] for p in catalogo.do_grupo("documentos")}:
+        raise ErroNaoEncontrado("Pergunta desconhecida neste grupo.")
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = catalogo.responder(chave, s, atual, d.get("parametros") or {})
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao procurar nos documentos")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/perguntas/contratos")
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_perguntas_contratos():
+    from app.apps.erp.core.perguntas import catalogo
+    return jsonify({"ok": True, "perguntas": catalogo.para_a_tela("contratos")})
+
+
+@bp.route("/erp/api/perguntar/contratos", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_contratos")
+def api_perguntar_contratos():
+    """Grupo de contratos: medição, faturamento e recebimento.
+
+    Rota separada da do financeiro porque a AÇÃO é outra — e mais estreita. O
+    quadro mostra o contrato de ponta a ponta e não se recorta por obra
+    designada sem mentir no total.
+    """
+    from app.apps.erp.core.perguntas import catalogo
+    d = request.get_json(silent=True) or {}
+    chave = (d.get("chave") or "").strip()
+    if chave not in {p["chave"] for p in catalogo.do_grupo("contratos")}:
+        raise ErroNaoEncontrado("Pergunta desconhecida neste grupo.")
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = catalogo.responder(chave, s, atual, d.get("parametros") or {})
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao responder a pergunta %s", chave)
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Trabalho no sistema — a trilha de auditoria lida como entrega
+#
+# São TRÊS rotas e não uma, e isso é de propósito. A própria semana é aberta a
+# todo operador; a semana dos OUTROS exige `ver_uso_da_equipe`. Juntar as duas
+# numa rota só obrigaria a conferir por dentro qual é o caso — e rota que
+# declara uma ação e confere outra faz a declaração mentir.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/uso")
+@login_obrigatorio
+@permissao("ver_erp")
+def pagina_uso():
+    return render_template("erp_uso.html", **_contexto("uso"))
+
+
+@bp.route("/erp/api/uso/minha-semana")
+@login_obrigatorio
+@permissao("ver_erp")
+def api_minha_semana():
+    """A semana de QUEM PEDIU. Não aceita o número de outra pessoa — é o que
+    permite esta rota ser aberta a todo operador sem abrir a dos outros."""
+    from app.apps.erp.core.comum import uso as svc_uso
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            dados = svc_uso.semana_da_pessoa(
+                s, atual.id, de=_data_ou_nada(request.args.get("de")),
+                ate=_data_ou_nada(request.args.get("ate")))
+            dados["nome"] = atual.nome
+            # O passo a passo do PRÓPRIO dia também é de todo operador: quem
+            # não pode ver o próprio trabalho em detalhe não consegue conferir
+            # o que a tela diz sobre ele.
+            dia = _data_ou_nada(request.args.get("dia"))
+            detalhe = svc_uso.detalhe_do_dia(s, atual.id, dia) if dia else []
+        return jsonify({"ok": True, "semana": dados, "detalhe": detalhe})
+    except Exception as e:
+        logger.exception("ERP: falha ao ler a própria semana")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/uso/equipe")
+@login_obrigatorio
+@permissao("ver_uso_da_equipe")
+def api_uso_da_equipe():
+    """Uma linha por pessoa no período, mais o que o sistema fez sozinho."""
+    from app.apps.erp.core.comum import uso as svc_uso
+    try:
+        with get_session() as s:
+            dados = svc_uso.semana_da_equipe(
+                s, de=_data_ou_nada(request.args.get("de")),
+                ate=_data_ou_nada(request.args.get("ate")))
+        return jsonify({"ok": True, "equipe": dados})
+    except Exception as e:
+        logger.exception("ERP: falha ao ler o trabalho da equipe")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/uso/pessoa/<int:usuario_id>")
+@login_obrigatorio
+@permissao("ver_uso_da_equipe")
+def api_uso_da_pessoa(usuario_id: int):
+    """A semana de uma pessoa, e o passo a passo de um dia dela."""
+    from app.apps.erp.core.comum import uso as svc_uso
+    from app.apps.erp.db.models.cadastros import Usuario as U
+    try:
+        with get_session() as s:
+            pessoa = s.get(U, usuario_id)
+            if pessoa is None:
+                raise ErroNaoEncontrado("Operador não encontrado.")
+            semana = svc_uso.semana_da_pessoa(
+                s, usuario_id, de=_data_ou_nada(request.args.get("de")),
+                ate=_data_ou_nada(request.args.get("ate")))
+            semana["nome"] = pessoa.nome
+            dia = _data_ou_nada(request.args.get("dia"))
+            detalhe = svc_uso.detalhe_do_dia(s, usuario_id, dia) if dia else []
+        return jsonify({"ok": True, "semana": semana, "detalhe": detalhe})
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao ler o trabalho da pessoa")
+        return jsonify({"ok": False, "erro": str(e)}), 500
 
 
 @bp.route("/erp/prestacao")
@@ -6246,18 +6935,9 @@ def api_operadores_contato():
 # ---------------------------------------------------------------------------
 # Gestão de obras
 # ---------------------------------------------------------------------------
-FASES_OBRA = [
-    ("CRIACAO", "Criação / cadastro"),
-    ("AGUARDANDO_OS", "Aguardando ordem de serviço"),
-    ("EM_EXECUCAO", "Em execução"),
-    ("PARALISADA", "Paralisada"),
-    ("CONCLUIDA", "Concluída"),
-    ("CONCLUIDA_COM_DIVIDA", "Concluída com dívida"),
-    ("RECEBIMENTO_PROVISORIO", "Recebimento provisório"),
-    ("RECEBIMENTO_DEFINITIVO", "Recebimento definitivo"),
-    ("ACERVO_TECNICO", "Acervo técnico"),
-    ("DISTRATADA", "Distratada"),
-]
+# A lista das fases mora em `core/cadastros/obras.py` — é vocabulário do
+# negócio, e tela, agenda e assistente têm de dizer a mesma coisa.
+from app.apps.erp.core.cadastros.obras import FASES_OBRA  # noqa: E402
 
 
 @bp.route("/erp/api/obras")
@@ -6266,7 +6946,9 @@ FASES_OBRA = [
 def api_listar_obras():
     """Painel de obras: situação, contrato, medições e o que foi gasto."""
     from sqlalchemy import func, select
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import (
+        obras_de_registro_sem_autor, obras_do_usuario,
+    )
     from app.apps.erp.db.models.cadastros import Obra, ObraAditivo
     from app.apps.erp.db.models.financeiro import EspecieTitulo, Rateio, Titulo
     try:
@@ -6277,6 +6959,26 @@ def api_listar_obras():
             if permitidas is not None:
                 stmt = stmt.where(Obra.id.in_(permitidas or [0]))
             obras = s.scalars(stmt).all()
+
+            # DUAS PERGUNTAS DIFERENTES, E ERA UMA SÓ ATÉ 11/09/2026.
+            #
+            # "Quais obras esta pessoa pode ESCOLHER?" e "de quais ela pode
+            # ver o DINHEIRO?" não são a mesma coisa. Esta rota alimenta cinco
+            # telas — Obras, Arquivo, Agenda, Contratos e Notas emitidas —, e
+            # em quatro delas ela é a lista de onde se escolhe a obra. Fechar
+            # a lista inteira deixaria o lançador sem conseguir arquivar um
+            # documento numa obra.
+            #
+            # Mas obra é registro SEM AUTOR: quem enxerga "só o que eu lancei"
+            # não tinha recorte nenhum aqui, e via valor de contrato, gasto,
+            # recebido e margem de TODAS as obras da empresa. É a mesma brecha
+            # das Locações, achada no mesmo dia.
+            #
+            # A separação que fica: a IDENTIFICAÇÃO da obra continua aberta a
+            # quem já podia escolher entre elas; os NÚMEROS vêm em branco para
+            # quem não alcança aquela obra. Em branco, e não zero — zero seria
+            # o sistema afirmando que a obra não gastou nada.
+            com_numeros = obras_de_registro_sem_autor(s, usuario)
             ids = [o.id for o in obras] or [0]
 
             aditivos: dict[int, float] = {}
@@ -6301,6 +7003,7 @@ def api_listar_obras():
             hoje = date.today()
             linhas = []
             for o in obras:
+                ve_numeros = com_numeros is None or o.id in com_numeros
                 contrato = float(o.valor_contrato or 0)
                 vigente = contrato + aditivos.get(o.id, 0.0)
                 gasto = gastos.get(o.id, 0.0)
@@ -6310,10 +7013,14 @@ def api_listar_obras():
                     "municipio": o.municipio, "uf": o.uf, "contrato": o.contrato,
                     "fase": o.fase, "fase_rotulo": fases.get(o.fase, o.fase),
                     "status": o.status,
-                    "valor_contrato": contrato, "aditivos": aditivos.get(o.id, 0.0),
-                    "valor_vigente": vigente,
-                    "gasto": gasto, "recebido": recebidos.get(o.id, 0.0),
-                    "margem": round(recebidos.get(o.id, 0.0) - gasto, 2),
+                    "numeros": ve_numeros,
+                    "valor_contrato": contrato if ve_numeros else None,
+                    "aditivos": aditivos.get(o.id, 0.0) if ve_numeros else None,
+                    "valor_vigente": vigente if ve_numeros else None,
+                    "gasto": gasto if ve_numeros else None,
+                    "recebido": (recebidos.get(o.id, 0.0) if ve_numeros else None),
+                    "margem": (round(recebidos.get(o.id, 0.0) - gasto, 2)
+                               if ve_numeros else None),
                     "vigencia_fim": o.vigencia_fim.isoformat() if o.vigencia_fim else None,
                     "vence_em_dias": ((o.vigencia_fim - hoje).days
                                       if o.vigencia_fim else None),
@@ -7089,7 +7796,7 @@ def api_locacoes():
             usuario = _usuario_logado(s)
             if request.method == "GET":
                 return jsonify({"ok": True, "contratos": listar(s, usuario),
-                                "por_obra": painel_por_obra(s)})
+                                "por_obra": painel_por_obra(s, usuario)})
             c = criar(s, request.get_json(silent=True) or {}, usuario)
             s.commit()
             return jsonify({"ok": True, "contrato": {"id": c.id, "numero": c.numero}})
@@ -7237,6 +7944,16 @@ def api_agente_rodar():
     simular = bool(dados.get("simular"))
     with get_session() as s:
         r = svc.varrer(s, simular=simular)
+        # OS RELATÓRIOS AGENDADOS PEGAM CARONA NESTE RELÓGIO, de propósito: um
+        # segundo relógio seria uma segunda coisa para quebrar, e outra para
+        # lembrar de configurar. Falha aqui não derruba a cobrança do agente,
+        # que é o que essa rotina veio fazer.
+        from app.apps.erp.core.perguntas import agendadas as svc_agendadas
+        try:
+            r["agendados"] = svc_agendadas.rodar_do_dia(s, simular=simular)
+        except Exception as e:
+            logger.exception("ERP/agente: relatórios agendados falharam")
+            r["agendados"] = {"erro": str(e)}
         if not simular:
             s.commit()
     return jsonify({"ok": True, **r})

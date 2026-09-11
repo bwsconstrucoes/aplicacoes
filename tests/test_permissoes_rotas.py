@@ -123,10 +123,19 @@ def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
     Ela não é aberta de verdade — recusa sem `ERP_AGENTE_SECRET` no corpo, e
     RECUSA TAMBÉM se o segredo não estiver configurado no ambiente, em vez de
     liberar. O teste logo abaixo prova as duas recusas.
+
+    `manifesto_pwa` e `service_worker` entraram em 11/09/2026, quando o ERP
+    passou a poder ser instalado como ícone no celular. São públicas por
+    OBRIGAÇÃO DO NAVEGADOR: ele busca as duas antes de qualquer login, e um
+    302 para a tela de entrar faria a instalação simplesmente não ser
+    oferecida — sem erro nenhum aparecendo. **Nem uma nem outra consulta o
+    banco**: uma é a ficha do ícone, a outra é código de navegador. O teste
+    `tests/test_pwa.py` monta o ERP SEM banco configurado só para provar isso
+    — se alguém puser uma consulta ali dentro, aquele arquivo quebra.
     """
     assert set(routes._ENDPOINTS_PUBLICOS) == {
         "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar",
-        "erp.api_comprovantes_lote"}
+        "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker"}
 
 
 def test_a_porta_dos_comprovantes_recusa_sem_segredo_e_com_segredo_errado(app, monkeypatch):

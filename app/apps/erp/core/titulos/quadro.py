@@ -141,6 +141,23 @@ def quadro(s: Session, contrato_id: int) -> dict[str, Any]:
             "a_receber": _f(max(faturado - recebido, Decimal(0))),
             "recebido_sem_nota": _f(max(recebido - faturado, Decimal(0))),
             "saldo": _f(vigente - (medido - de_reajuste)),
+            # A RÉGUA DO RECEBIMENTO. O dono desfez a pergunta "quanto falta
+            # receber" em quatro leituras, em 10/09/2026, e todas as quatro são
+            # legítimas — elas são etapas de uma mesma esteira:
+            #
+            #   CONTRATO (+aditivos) → MEDIDO → FATURADO → RECEBIDO
+            #
+            # Duas já estavam aqui ("a_receber", que é faturado − recebido, e
+            # "saldo", que é o que falta medir). Faltavam estas: o que falta
+            # receber do CONTRATO INTEIRO, tenha sido medido ou não, e o que
+            # falta receber DO QUE JÁ ESTÁ MEDIDO.
+            #
+            # Elas existem para a resposta mostrar a régua toda em vez de um
+            # número solto: assim a leitura que a pessoa queria já está na
+            # tela, e ela não precisa ter acertado a pergunta.
+            "falta_receber_do_contrato": _f(max(vigente - recebido, Decimal(0))),
+            "falta_receber_do_medido": _f(max(medido - recebido, Decimal(0))),
+            "falta_faturar_do_medido": _f(max(medido - faturado, Decimal(0))),
             "medido_pct": (round(float((medido - de_reajuste) / vigente * 100), 1)
                            if vigente else None),
         },

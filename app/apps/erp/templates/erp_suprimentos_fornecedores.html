@@ -218,7 +218,7 @@ function desenhar(){
 
   els("vazio").classList.toggle("oculto", l.length > 0);
   if (!l.length) els("vazio").innerHTML = D.fornecedores.length
-    ? "<b>Nada nestes filtros</b>Limpe os filtros à esquerda."
+    ? "<b>Nada nestes filtros</b>Limpe os filtros."
     : "<b>Nenhum fornecedor</b>Use “+ Novo fornecedor”, ou traga a planilha em Importações.";
 
   els("corpo").innerHTML = l.slice(0, LIMITE).map(f => `

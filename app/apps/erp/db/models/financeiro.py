@@ -1059,6 +1059,13 @@ class Documento(Base):
     texto: Mapped[Optional[str]] = mapped_column(Text)
     resumo: Mapped[Optional[str]] = mapped_column(Text)
 
+    # A COLUNA `busca` (migração 059) EXISTE NO BANCO E NÃO ESTÁ AQUI DE
+    # PROPÓSITO. Ela é `GENERATED ALWAYS`: quem preenche é o próprio Postgres,
+    # a cada gravação, a partir do nome, da referência, do resumo e do texto.
+    # Mapeá-la faria o SQLAlchemy tentar escrever nela em todo INSERT — e o
+    # banco recusa, derrubando o arquivamento inteiro. Quem precisa dela para
+    # procurar a referencia direto, em `core/perguntas/documentos.py`.
+
     origem: Mapped[str] = mapped_column(Text, nullable=False, default="TELA")
     confirmado_por: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("usuarios.id"))
@@ -1272,3 +1279,48 @@ class Tarefa(Base):
     iniciado_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     batida_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     concluido_em: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+
+class PerguntaAgendada(Base):
+    """Uma pergunta que o sistema responde sozinho e manda para quem pediu.
+
+    Pedido do dono: *"toda segunda-feira me manda determinado tipo de
+    informação… agendar essa necessidade minha"*.
+
+    GUARDA A CONSULTA, NÃO A FRASE. Se o sistema reinterpretasse a frase toda
+    segunda, o relatório mudaria de critério sozinho — e comparar uma segunda
+    com a outra, que é para o que ele serve, deixaria de fazer sentido.
+
+    `usuario_id` é de QUEM RECEBE, e é com a permissão dela que o relatório
+    roda. Sem isso, agendar algo para o gestor de uma obra mandaria a ele o
+    número da empresa inteira.
+    """
+    __tablename__ = "perguntas_agendadas"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id", ondelete="CASCADE"), nullable=False)
+    criado_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+
+    chave: Mapped[str] = mapped_column(Text, nullable=False)
+    parametros: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    titulo: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # `dia` é o dia da semana (0 = segunda) na SEMANAL e o dia do mês na
+    # MENSAL. Na DIARIA não é usado.
+    frequencia: Mapped[str] = mapped_column(Text, nullable=False)
+    dia: Mapped[Optional[int]] = mapped_column(SmallInteger)
+
+    canal: Mapped[str] = mapped_column(Text, nullable=False, default="TELEGRAM")
+    so_se_houver: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ativa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+    # A memória da rodada anterior — é ela que permite o "(era R$ 280 mil)".
+    ultima_rodada: Mapped[Optional[date]] = mapped_column(Date)
+    ultimo_total: Mapped[Optional[Decimal]] = mapped_column(Numeric(16, 2))
+    ultimas_linhas: Mapped[Optional[int]] = mapped_column(Integer)
+    ultimo_erro: Mapped[Optional[str]] = mapped_column(Text)
+
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())

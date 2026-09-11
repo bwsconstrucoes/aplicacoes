@@ -76,7 +76,305 @@
 - [x] **Relatórios**: totais por 8 dimensões, DRE gerencial, analítico, CSV
 - [ ] Relatórios — falta: exportação em PDF e gráficos
 
+- [x] **As oito alterações do plano de contas** — FEITAS em 10/09/2026
+      (migração 058), a partir do documento `PLANO_CONTAS_alteracoes.md` do
+      dono. Devolução/estorno/reembolso saíram das receitas e viraram contas
+      REDUTORAS de custo (3.5.01 a 3.5.03, com sinal negativo no relatório); a
+      retenção conjunta CSRF/PCC (2.1.06) foi desfeita e a guia é rateada entre
+      PIS, COFINS e CSLL; a CSLL virou conta única; o parcelamento tributário
+      (9.4.03) deixou de ser fluxo; o grupo 8 virou RESULTADO (e por isso o
+      relatório de desembolso por obra **deixou de ser necessário**);
+      nomenclatura e descrições de "quando usar / com o que não confundir" em
+      todo o plano. Detalhe em `HISTORICO.md`.
+- [x] **Aposentar conta sem apagar histórico** — FEITO em 10/09/2026.
+      Instalar o plano padrão desativa só o que nunca foi usado; conta com
+      lançamento continua ativa e é relatada numa janela, com a contagem e o
+      motivo, para o dono remanejar.
+- [x] **Importar a base de 3.279 insumos em Excel** — FEITO em 10/09/2026. O
+      importador lê .xlsx direto (primeira aba), casa a conta do plano por
+      apelido e usa a coluna "Subcategoria = Locação" para marcar o insumo como
+      locável — que é o que decide quem aparece na tela de Locações.
+- [ ] **Decisão do dono: o critério de valor da ferramenta.** Ficou R$ 1.200,00
+      por unidade (ou vida útil menor que um ano) separando 3.1.19 Ferramentas
+      de 8.1.04 Ferramentas e equipamentos duráveis. Trocar o número em
+      `LIMITE_FERRAMENTA` muda os dois textos de uma vez.
+- [ ] **Decisão do dono: o que fazer com 2.1.06 e 9.4.03** se elas tiverem
+      lançamento em produção. As duas não têm destino único (a primeira se
+      reparte em três contas; a segunda depende de qual tributo foi parcelado),
+      então o remanejamento é caso a caso, pela tela.
+- [ ] **Decisão do dono: o nome do grupo 8.** Ele continua "Investimentos
+      (ativo)", mas as contas agora são de RESULTADO — o "(ativo)" entre
+      parênteses pode confundir. Trocar é barato; não foi feito porque mudar
+      nome de grupo mexe em como todo mundo lê o relatório.
+
 ## Fila (pedidos registrados, ainda não iniciados)
+
+### O ASSISTENTE DE IA E O RELATÓRIO DE TRABALHO — pedidos de 10/09/2026
+
+Dois pedidos grandes que o dono fez na mesma conversa, e que valem juntos
+porque o segundo é o primeiro ensaio do primeiro: os dois vivem da trilha de
+auditoria.
+
+**O que ele pediu, nas palavras dele:** *"eu poder fazer qualquer pergunta ao
+sistema e, se houver dado daquela pergunta, que ele me retorne. E não só os
+dados exibidos em tela, porque às vezes a gente pode ter em algum momento que é
+necessário alguma informação que a gente não tenha pensado na construção do
+sistema."* Exemplos que ele deu: o que tem a pagar hoje na obra X; quais obras
+estão em andamento; quanto foi medido e quanto falta receber; o resultado da
+obra agora; quantos títulos não estão conciliados; a lista de insumos de uma
+categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudio** e
+**anexo**, e sempre **dentro da permissão da pessoa**.
+
+- [x] **1. Relatório de uso e trabalho por pessoa** — FEITO em 10/09/2026,
+      em Administração › **Trabalho no sistema**. Sem migração: o dado já
+      estava na trilha. Cada pessoa vê a própria semana (primeira e última
+      ação do dia, quantas ações, o que fez por tipo de trabalho) e pode abrir
+      o passo a passo de qualquer dia seu. Quem tem a ação nova
+      `ver_uso_da_equipe` (ADMIN e diretor) vê a equipe toda numa linha por
+      pessoa. O que a fila de segundo plano fez sozinha sai numa linha
+      separada, para não virar produção de ninguém. O aviso de que isto não é
+      controle de ponto está na tela E viaja junto com o dado.
+      **Ainda em aberto deste item:** "onde a fila está parada" (quem tem mais
+      coisa esperando decisão) — é outra fonte de dados, vem depois.
+      ⚠️ **A RESSALVA QUE NÃO PODE SUMIR NUMA REFORMA DE TELA:** log de
+      atividade **não é jornada de trabalho**. Quem está lendo contrato, no
+      telefone com fornecedor ou na obra trabalha sem gerar evento. Isto mede
+      ENTREGA (quantos títulos, conciliações, medições) e se houve movimento no
+      dia — não bate ponto. Se um dia virar controle de jornada, isso tem
+      exigência legal própria e não se improvisa. **A equipe precisa ser
+      avisada de que o sistema registra.**
+      ✔ **DECIDIDO pelo dono em 10/09/2026:** *"na verdade não é pra controlar
+      a jornada não, é só pra entender"*, e **pode ficar à vista dos outros
+      também** — *"pra cada um entender o que é que ela está produzindo dentro
+      do sistema"*. Foi por isso que a tela nasceu aberta à equipe.
+- [ ] **1b. O catálogo de perguntas** — `app/apps/erp/PERGUNTAS.md`, criado
+      em 10/09/2026 a pedido do dono, e agora regra do `CLAUDE.md`:
+      funcionalidade nova só está pronta quando as perguntas que ela responde
+      entram lá. O arquivo já começa com a parte que mais evita número errado:
+      a lista das PALAVRAS que precisam de uma definição só ("a pagar", "este
+      mês", "custo da obra", "quanto falta receber"). Enquanto uma dessas não
+      estiver decidida, o assistente pergunta de volta em vez de escolher.
+- [x] **1c. As primeiras perguntas respondidas por CÓDIGO** — FEITO em
+      10/09/2026, em Financeiro › **Perguntar**. Cinco perguntas do grupo
+      financeiro, todas passando pelo mesmo escopo por obra e por autoria das
+      telas, e cada uma devolvendo o caminho de volta para os lançamentos:
+      o panorama de vencimentos (vencido / hoje / próximos 7 dias), o que tem
+      a pagar num período, o que está vencido e não foi pago, **o que está
+      parado esperando decisão e de quem é a vez** (o pedaço que faltava do
+      relatório de trabalho) e os títulos sem documento anexado.
+      **Sem IA nenhuma** — é a fundação: quando a IA entrar, ela só escolhe
+      QUAL destas funções chamar, e a conta continua sendo do sistema.
+      A rota é por GRUPO de pergunta (`/erp/api/perguntar/financeiro`), para
+      cada grupo declarar a sua própria ação sem mentir.
+- [x] **1d. A régua do recebimento** — FEITA em 10/09/2026. "Quanto falta
+      receber" responde com as TRÊS leituras lado a lado (do contrato, do
+      medido, do faturado), porque o dono mostrou que todas são legítimas e
+      escolher uma seria responder certo para uma e errado para as outras
+      duas. Vieram junto "o que foi medido e não virou nota" e "o que tem nota
+      e não entrou". O quadro do contrato ganhou as duas subtrações que
+      faltavam, e a pergunta REUSA esse quadro — há teste exigindo que o número
+      da pergunta e o da tela batam campo a campo.
+      Grupo próprio (`contratos`), com rota e ação próprias: `ver_contratos` é
+      estreita porque o quadro mostra o contrato de ponta a ponta e não se
+      recorta por obra designada sem mentir no total.
+- [x] **1e. As perguntas de Suprimentos** — FEITAS em 10/09/2026, sob a ação
+      `ver_suprimentos`: os insumos de uma categoria (pedida pelo dono com
+      estas palavras), quanto já se pagou por um insumo, o que a obra pediu e
+      ainda não foi resolvido, e os insumos sem conta do plano.
+      Duas naturezas convivem no grupo: o CATÁLOGO é cadastro da empresa e não
+      se recorta por obra; a FILA DE PEDIDOS passa pelo filtro por pessoa da
+      tela de Solicitações.
+      Vieram junto duas regras que valem para TODA resposta: o **teto de
+      linhas** (a conta é sobre tudo, o corte é só do que aparece na tela — a
+      base tem 3.285 insumos) e a **busca sem acento** (quem procura
+      "Hidráulico" digita "hidra").
+- [x] **1f. As perguntas de Locações** — FEITAS em 11/09/2026, dentro do grupo
+      de Suprimentos: o que está locado e em qual obra, qual locação já pedia
+      decisão (aluguel que já pagou a compra, devolução vencida, prazo
+      estourado) e que aluguel venceu sem virar título. Reusam
+      `locacoes.listar`, que já calculava tudo isso — refazer a conta seria
+      inventar um segundo número sobre a mesma coisa.
+- [x] **BRECHA DE ESCOPO NAS LOCAÇÕES, fechada em 11/09/2026** — achada por um
+      teste ao escrever as perguntas acima, e **anterior a este trabalho**.
+      Contrato de locação NÃO TEM AUTOR, e a listagem usava `obras_do_usuario`,
+      que devolve "sem filtro" para quem enxerga por autoria: o administrativo
+      que só deveria ver o que ele lançou via TODOS os contratos da empresa.
+      Pior: `painel_por_obra` não recebia usuário nenhum, e a rota que o serve
+      é aberta a todo operador — qualquer pessoa via quanto CADA obra tem de
+      aluguel. A regra virou `obras_de_registro_sem_autor`, em
+      `permissoes.py`: para registro sem autor o único recorte é a obra, e sem
+      obra designada não se vê nenhum.
+- [x] **1g. PERGUNTAR ESCREVENDO** — FEITO em 11/09/2026, depois de o dono
+      corrigir o rumo: *"o assistant não pode ficar somente focado nessas
+      perguntas, né? Isso é só um norte"*. A tela ganhou um campo de texto.
+      `core/perguntas/entender.py` lê a frase e diz QUAL pergunta ela é — **sem
+      tocar no banco**, que é o que permite a rota ser aberta a todo operador
+      sem mentir na declaração: quem responde continua sendo a rota do grupo.
+      Três finais honestos: **entendi** (responde, já com os filtros que a
+      frase disse), **qual delas?** (empate no topo vira pergunta de volta) e
+      **ainda não sei** (guarda a pergunta e sugere as parecidas).
+      **O que ele não entende fica registrado**, e há uma rota que lista isso —
+      é a lista do que construir em seguida, escrita por quem usa o ERP.
+      ⚠️ Ainda é casamento por PALAVRAS, não IA. A IA entra exatamente aí
+      quando a chave existir em produção, e o resto não muda.
+- [x] **1h. O GRUPO DE OBRAS** — FEITO em 11/09/2026. Três perguntas de
+      conferência: **o que falta no cadastro para emitir nota** (os mesmos
+      quatro campos que a emissão exige), **seguro garantia vencido ou
+      vencendo** e **obra aberta com a vigência do contrato vencida**.
+      ⚠️ **Nasceu pequeno de propósito.** "Quanto custou a obra tal" — a
+      pergunta mais óbvia do assunto — NÃO entrou: "custo da obra" ainda não
+      tem uma definição escolhida, e cada leitura dá um número diferente com
+      cara de certo. Um teste da suíte recusa qualquer pergunta deste grupo que
+      use "custo", "resultado", "lucro", "margem" ou "gastou", para que
+      ninguém a acrescente sem combinar a palavra antes.
+      **Falta o dono decidir**, e aí o grupo cresce de uma vez: "custo da
+      obra", "obra em andamento", "este mês", "gastei com fulano" e "resultado
+      da obra" (ver `PERGUNTAS.md` §1).
+      Junto vieram duas correções que a construção fez aparecer: o **tipo de
+      cada coluna passou a ser dito pelo servidor** (a tela vinha escrevendo
+      data como 2026-08-30 e dinheiro sem R$, e pergunta nova nascia com o
+      defeito calado), e o **painel de Obras parou de mostrar contrato, gasto
+      e margem de todas as obras para quem enxerga só o que lança** — ver
+      `HISTORICO.md`.
+- [ ] **2. Assistente SÓ DE LEITURA, dentro do ERP.** Painel lateral (não
+      caixinha), com o catálogo de perguntas conhecidas respondido por CÓDIGO —
+      exato, rápido e sem custo de IA — e a pergunta imprevista caindo numa
+      consulta gerada pela IA, **marcada como tal na tela**. Toda resposta com
+      "ver de onde veio", abrindo a lista por trás do número.
+      ⚠️ **O risco que manda no desenho:** consulta gerada por IA sobre um
+      banco grande acerta a maior parte das vezes e erra em silêncio no resto.
+      Número errado com cara de certo é pior que resposta nenhuma. Por isso o
+      catálogo primeiro, o "não sei" explícito, e a origem sempre visível.
+- [x] **3. ÁUDIO, ANEXO E O ÍCONE NO CELULAR** — FEITO em 11/09/2026. As três
+      coisas, dentro da tela de Perguntar, e nenhuma delas é um caminho novo
+      até o número.
+      · **Ícone no celular (PWA).** O navegador do celular passa a poder
+        instalar o ERP: vira ícone na tela inicial e abre em tela cheia, sem
+        barra de endereço. Mesmo sistema, mesma publicação. ⚠️ O guardião
+        disso é o `sw.js`: ele **não guarda dado nenhum** no aparelho, só a
+        folha de estilo e os ícones. Sem internet, a tela DIZ que está sem
+        internet em vez de mostrar o número de ontem. Há varredura na suíte
+        recusando cache que não seja de arquivo estático.
+      · **Falar a pergunta.** O áudio vira texto, o texto cai na MESMA caixa
+        de escrita e a pessoa lê antes de mandar responder — "a pagar" e
+        "apagar" soam igual. O gasto entra no painel de consumo pelo preço por
+        MINUTO, senão a pergunta falada custaria zero e o teto mensal deixaria
+        de valer justamente aqui.
+      · **Anexar um documento.** É o **único** lugar desta área em que a
+        resposta vem da IA e não de código testado — e a tela diz isso em
+        amarelo. Vale porque o documento está na mão de quem perguntou: dá
+        para conferir olhando o papel. Nada é gravado; para arquivar, o
+        caminho continua sendo o Arquivo.
+      ✔ A chave `OPENAI_API_KEY` **está configurada em produção** — áudio e
+      anexo funcionam assim que a publicação chega ao Render. (Eu tinha
+      afirmado o contrário, por confundir este contêiner de desenvolvimento
+      com o Render; ver `HISTORICO.md`.)
+      ⚠️ **Aviso por notificação no celular ficou de fora** — exige chaves de
+      push e um serviço a mais, e é decisão do dono. Hoje o aviso continua por
+      e-mail e Telegram.
+- [x] **3b. O ASSISTENTE SAI DA ABA E VAI PARA O CANTO DE TODA TELA** — FEITO
+      em 11/09/2026, a pedido do dono: *"o perguntar que está na barra lá em
+      cima é ser acessado de forma geral, e não por exemplo dentro do
+      financeiro. O ideal é que abra um modal que fique sobre a tela no
+      cantinho, como uma assistente virtual mesmo."*
+      Botão redondo no canto de toda tela; o painel abre por cima, sem tirar
+      ninguém do que estava fazendo. **Por dentro não é nada novo:** fala com
+      as MESMAS rotas, com as mesmas permissões e o mesmo escopo por obra.
+      A conversa continua ao trocar de tela (fica no navegador, não no banco)
+      e some ao fechar a aba.
+      **Continuar a conversa:** "e da obra Triunfo?" repete a pergunta
+      anterior trocando o filtro — e a tela DIZ que repetiu. Sem IA: é
+      substituição de parâmetro numa pergunta que já existe.
+      A tela cheia continua em `/erp/perguntar`, alcançada pelo ⤢, para
+      resposta com tabela grande.
+
+- [x] **3c. A DOCUMENTAÇÃO DA EMPRESA ORIENTANDO O ASSISTENTE** — PRIMEIRA
+      VOLTA FEITA em 11/09/2026, com as três decisões tomadas pelo dono.
+      O assistente passa a responder sobre o que está ESCRITO nos documentos
+      arquivados, sempre com o trecho e o documento de onde saiu.
+      · **Escopo:** o mesmo recorte da tela do Arquivo (faixa de sigilo + obra
+        designada), extraído para uma função só (`aplicar_escopo`) que as duas
+        usam — decisão do dono: *"quem vê o quê tem que estar associado às
+        suas permissões"*. Testado com banco de verdade, inclusive o caso do
+        documento de pessoal que fala do assunto e não pode aparecer.
+      · **Índice:** busca de texto do Postgres, com dicionário de português
+        (migração 059, coluna gerada pelo próprio banco). Decisão do dono:
+        *"começar do simples, depois a gente decide se parte pro caro"*.
+      · **Citação:** o trecho vem sempre, com as palavras marcadas. A frase de
+        resumo da IA é acréscimo e lê SÓ os trechos achados.
+      ⚠️ **O limite, escrito onde a pessoa lê:** acha por palavra, não por
+      sentido — "reajuste" acha "reajustar", não acha "correção monetária". O
+      índice por significado é o passo seguinte, e a hora de comprá-lo é quando
+      a lista de perguntas sem resposta mostrar que faz falta.
+      **Falta ainda:** o dono arquivar os contratos de verdade no Arquivo. Sem
+      documento arquivado, não há o que procurar.
+
+- [ ] **3c-2. O ÍNDICE POR SIGNIFICADO** — o passo seguinte da busca nos
+      documentos, e a hora de fazê-lo é quando a lista de perguntas sem
+      resposta mostrar que faz falta. Decisão do dono em 11/09/2026: *"vamos
+      começar do simples, depois a gente decide se parte pro caro"*.
+      **O que muda:** a busca de hoje acha pela PALAVRA ("reajuste" acha
+      "reajustar"); o índice por significado acha também quando a pergunta usa
+      outras palavras ("correção monetária", "quando o preço sobe"). Custa por
+      documento indexado, e reindexar a cada documento novo.
+      **O que NÃO muda, e é o que segura a qualidade:** o escopo (mesmo
+      `aplicar_escopo`), a citação obrigatória, e a IA lendo só os trechos
+      achados. Só a forma de escolher os trechos é que troca.
+
+- [ ] **4. As AÇÕES pelo assistente** (cadastrar insumo, lançar título) —
+      sempre **preparar e confirmar**: o assistente preenche e mostra, a pessoa
+      aperta. Nunca "já lancei". E passando pelas MESMAS funções do core que a
+      tela usa, para herdar permissão, escopo por obra e regra de negócio — não
+      um caminho paralelo até o banco.
+- [ ] **5. WhatsApp/Telegram como porta secundária**: aviso e pergunta curta,
+      com link para abrir no ERP. Não como canal principal — ver o porquê em
+      `HISTORICO.md` › "Por que o assistente não nasce no WhatsApp".
+- [ ] **6. Assistente PROATIVO** (ideia trazida na conversa, não pedida): o
+      valor maior não é responder, é falar primeiro. "Estas 3 medições estão
+      liberadas para faturar", "a CND deste fornecedor venceu e há título para
+      pagar amanhã", "este material está 40% acima do que esta obra costuma
+      pagar". A Agenda já existe; o assistente é a voz dela.
+- [x] **7. PERGUNTA VIRA RELATÓRIO QUE CHEGA SOZINHO** — FEITO em 11/09/2026.
+      Pedido do dono: *"toda segunda-feira me manda determinado tipo de
+      informação. Aí a própria [IA] agendar essa necessidade minha e fazer
+      aquela ação executar e me mandar. Isso é muito poderoso."*
+      Embaixo de toda resposta do assistente há um botão **"Me manda isso toda
+      segunda"** — e é ali, e não numa tela de configuração, porque o dono quer
+      PEDIR, não configurar. O que fica agendado é a consulta que ele acabou
+      de aprovar.
+      **As seis regras, todas com teste de banco:**
+      1. Guarda a CONSULTA, não a frase — senão o critério muda sozinho e
+         comparar uma segunda com a outra perde o sentido.
+      2. **Roda com a permissão de QUEM RECEBE**, nunca de quem criou. E
+         agendar para outra pessoa exige `gerir_usuarios`.
+      3. Compara com a rodada anterior: "(era R$ 280 mil)".
+      4. "Só me avise se houver": relatório que chega igual todo mês vira spam
+         e para de ser lido.
+      5. Relatório quebrado RECLAMA — zero calado parece resposta.
+      6. Só LÊ. Varredura na suíte recusa lançar, aprovar, pagar ou emitir de
+         dentro do agendado.
+      **Pendurado no relógio que já existe** (a rotina diária do agente). Um
+      segundo relógio seria outra coisa para quebrar e outra para configurar.
+      ⚠️ **Só por Telegram por enquanto** — o e-mail do ERP sai pela conta de
+      uma empresa, e a BWS tem mais de uma; falta o dono dizer por qual.
+      ⚠️ **Precisa do telefone no cadastro de quem recebe**, senão não há por
+      onde mandar (e o sistema registra isso em vez de sumir).
+      **Falta:** o "só me avise se passar de X" (hoje é só "se houver algo"),
+      e escolher o dia da semana pela tela (hoje toda combinação é segunda).
+
+- [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
+      ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
+      come o mês inteiro.
+      ✔ **DECIDIDO em 10/09/2026:** o assistente é para **qualquer pessoa,
+      dentro das atribuições e permissões dela** — não só o dono. E por isso
+      mesmo o teto por pessoa é requisito, não enfeite: *"a gente pode ter
+      muitas pessoas aí utilizando, a brincar às vezes, e a gente não pode
+      estourar os limites"*. O VALOR mensal por colaborador fica para o dono
+      definir depois.
+- [ ] **9. Guardar toda pergunta e toda resposta.** Serve para controlar custo,
+      para auditar e — o mais útil — porque a lista do que perguntam repetido é
+      a lista das telas que faltam.
+
 
 - [x] Painel de consumo de IA (tokens, custo, por operação/modelo/pessoa)
 - [x] Conversão de valores decimais corrigida (30.00 vs 1.234)

@@ -54,6 +54,33 @@ TIPOS = ("NFE", "NFSE", "CTE", "NFCE", "RECIBO", "RPA", "GUIA", "BOLETO",
          "FATURA_CONCESSIONARIA", "CONTRATO", "TERMO_RESCISAO", "COMPROVANTE",
          "PRESTACAO_CONTAS", "NOTA_DEVOLUCAO", "ORCAMENTO", "OUTRO")
 
+# Como cada tipo se chama para uma pessoa. As chaves acima são do sistema —
+# "FATURA_CONCESSIONARIA" em maiúscula e sem acento é o banco falando, e o
+# dono não lê o sistema dele assim.
+ROTULOS_DE_TIPO = {
+    "NFE": "Nota fiscal eletrônica (NFe)",
+    "NFSE": "Nota fiscal de serviço (NFS-e)",
+    "CTE": "Conhecimento de transporte (CT-e)",
+    "NFCE": "Nota fiscal ao consumidor (NFC-e)",
+    "RECIBO": "Recibo",
+    "RPA": "Recibo de pagamento a autônomo (RPA)",
+    "GUIA": "Guia de imposto",
+    "BOLETO": "Boleto",
+    "FATURA_CONCESSIONARIA": "Fatura de concessionária",
+    "CONTRATO": "Contrato",
+    "TERMO_RESCISAO": "Termo de rescisão",
+    "COMPROVANTE": "Comprovante bancário",
+    "PRESTACAO_CONTAS": "Prestação de contas",
+    "NOTA_DEVOLUCAO": "Nota de devolução",
+    "ORCAMENTO": "Orçamento",
+    "OUTRO": "Não identificado",
+}
+
+
+def rotulo_do_tipo(tipo: Any) -> str:
+    chave = str(tipo or "").strip().upper()
+    return ROTULOS_DE_TIPO.get(chave, chave or "Não identificado")
+
 _INSTRUCAO = f"""Você lê documentos financeiros brasileiros para o ERP de uma construtora (BWS Construções).
 Os documentos chegam como foto de celular, digitalização torta, PDF gerado por sistema ou impressão.
 Leia com paciência: o que estiver ilegível você declara em "observacoes", nunca inventa.

@@ -123,17 +123,23 @@ function visiveis(){
 function desenhar(){
   const l = visiveis();
   const soma = f => l.reduce((a,o)=>a+(f(o)||0),0);
+  // Quem não alcança obra nenhuma recebe os números em branco. Somar isso dá
+  // zero — e "R$ 0,00" no totalizador SE PARECE com "a empresa não tem
+  // contrato nenhum", que é uma afirmação, e uma afirmação falsa. Traço.
+  const veNumeros = l.some(o => o.numeros !== false);
+  const dinheiro = f => veNumeros ? moeda(soma(f)) : "—";
   els("kpis").innerHTML = `
     <div class="kpi estatico"><div class="kpi-rotulo">Obras</div>
       <div class="kpi-valor">${l.length}</div>
       <div class="kpi-sub">${l.filter(o=>o.fase==="EM_EXECUCAO").length} em execução</div></div>
     <div class="kpi estatico ciano"><div class="kpi-rotulo">Contratos vigentes</div>
-      <div class="kpi-valor" style="font-size:19px">${moeda(soma(o=>o.valor_vigente))}</div>
-      <div class="kpi-sub">${moeda(soma(o=>o.aditivos))} em aditivos</div></div>
+      <div class="kpi-valor" style="font-size:19px">${dinheiro(o=>o.valor_vigente)}</div>
+      <div class="kpi-sub">${veNumeros ? `${moeda(soma(o=>o.aditivos))} em aditivos`
+        : "os valores são das obras designadas a você"}</div></div>
     <div class="kpi estatico verde"><div class="kpi-rotulo">Recebido</div>
-      <div class="kpi-valor" style="font-size:19px">${moeda(soma(o=>o.recebido))}</div></div>
+      <div class="kpi-valor" style="font-size:19px">${dinheiro(o=>o.recebido)}</div></div>
     <div class="kpi estatico ambar"><div class="kpi-rotulo">Gasto</div>
-      <div class="kpi-valor" style="font-size:19px">${moeda(soma(o=>o.gasto))}</div></div>
+      <div class="kpi-valor" style="font-size:19px">${dinheiro(o=>o.gasto)}</div></div>
     <div class="kpi estatico vermelho"><div class="kpi-rotulo">Precisam de atenção</div>
       <div class="kpi-valor">${l.filter(o=>alertas(o).length).length}</div>
       <div class="kpi-sub">vigência, reajuste, fiscal</div></div>`;
@@ -147,16 +153,16 @@ function desenhar(){
       <td class="desc">${o.nome}${o.objeto?`<small>${o.objeto}</small>`:""}</td>
       <td>${o.cliente||"—"}</td>
       <td><span class="selo ${o.fase==="EM_EXECUCAO"?"aprovado":o.fase.startsWith("CONCLUIDA")?"pago":"outro"}">${o.fase_rotulo}</span></td>
-      <td class="direita dados">${numero(o.valor_vigente)}${o.aditivos?`<small>+${numero(o.aditivos)}</small>`:""}</td>
-      <td class="direita dados">${numero(o.recebido)}</td>
-      <td class="direita dados">${numero(o.gasto)}</td>
-      <td class="direita dados" style="color:${o.margem<0?"var(--vermelho)":"var(--verde)"}">${numero(o.margem)}</td>
+      <td class="direita dados">${o.numeros===false?"—":`${numero(o.valor_vigente)}${o.aditivos?`<small>+${numero(o.aditivos)}</small>`:""}`}</td>
+      <td class="direita dados">${o.numeros===false?"—":numero(o.recebido)}</td>
+      <td class="direita dados">${o.numeros===false?"—":numero(o.gasto)}</td>
+      <td class="direita dados" style="color:${o.margem<0?"var(--vermelho)":"var(--verde)"}">${o.numeros===false?"—":numero(o.margem)}</td>
       <td class="dados ${o.vence_em_dias!==null && o.vence_em_dias<0?"atrasado":""}">${dataBR(o.vigencia_fim)}</td>
       <td>${alertas(o).map(a=>`<span class="selo ${a.c}" style="margin-right:3px">${a.t}</span>`).join("")||"—"}</td>
     </tr>`).join("");
   document.querySelectorAll("[data-obra]").forEach(tr =>
     tr.addEventListener("click", ()=>abrir(+tr.dataset.obra)));
-  els("resumo").innerHTML = `<b>${l.length}</b> obra(s) · contrato vigente <b>${moeda(soma(o=>o.valor_vigente))}</b>`;
+  els("resumo").innerHTML = `<b>${l.length}</b> obra(s) · contrato vigente <b>${dinheiro(o=>o.valor_vigente)}</b>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -343,14 +349,14 @@ async function painel(i, id){
         <div class="kpi estatico"><div class="kpi-rotulo">Fase</div>
           <div class="kpi-valor" style="font-size:15px">${o.fase_rotulo}</div></div>
         <div class="kpi estatico ciano"><div class="kpi-rotulo">Contrato vigente</div>
-          <div class="kpi-valor" style="font-size:17px">${numero(o.valor_vigente)}</div>
-          <div class="kpi-sub">original ${numero(o.valor_contrato)}</div></div>
+          <div class="kpi-valor" style="font-size:17px">${o.numeros===false?"—":numero(o.valor_vigente)}</div>
+          <div class="kpi-sub">${o.numeros===false?"você não alcança esta obra":`original ${numero(o.valor_contrato)}`}</div></div>
         <div class="kpi estatico verde"><div class="kpi-rotulo">Recebido</div>
-          <div class="kpi-valor" style="font-size:17px">${numero(o.recebido)}</div></div>
+          <div class="kpi-valor" style="font-size:17px">${o.numeros===false?"—":numero(o.recebido)}</div></div>
         <div class="kpi estatico ambar"><div class="kpi-rotulo">Gasto</div>
-          <div class="kpi-valor" style="font-size:17px">${numero(o.gasto)}</div></div>
+          <div class="kpi-valor" style="font-size:17px">${o.numeros===false?"—":numero(o.gasto)}</div></div>
         <div class="kpi estatico ${o.margem<0?"vermelho":"verde"}"><div class="kpi-rotulo">Saldo</div>
-          <div class="kpi-valor" style="font-size:17px">${numero(o.margem)}</div></div>
+          <div class="kpi-valor" style="font-size:17px">${o.numeros===false?"—":numero(o.margem)}</div></div>
       </div>
       ${alertas(o).length?`<div class="aviso info">Atenção: ${alertas(o).map(a=>a.t).join(" · ")}</div>`:""}
       <div class="cartao" style="box-shadow:none; border:1px solid var(--borda)">
