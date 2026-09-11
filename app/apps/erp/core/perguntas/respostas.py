@@ -740,3 +740,138 @@ def preco_do_insumo(s: Session, usuario: Usuario, *,
         observacao=("É o ÚLTIMO preço registrado de cada insumo, não a média "
                     "nem o menor. Insumo sem preço nunca foi comprado pelo "
                     "sistema — ou a compra não passou pelo banco de preços."))
+
+
+# ===========================================================================
+# LOCAÇÕES — o que está em obra, quanto custa por mês, e o que já passou da hora
+#
+# Vive no grupo de suprimentos (a tela de Locações mora lá), e reusa
+# `locacoes.listar(s, usuario, ...)`, que já filtra por obra designada. Todo o
+# cálculo pesado — quanto se pagou, há quantos meses está locado, quais
+# alertas — já existe ali e NÃO é refeito aqui: refazer seria inventar um
+# segundo número sobre a mesma coisa.
+# ===========================================================================
+def equipamentos_locados(s: Session, usuario: Usuario, *,
+                         obra: str = "") -> dict[str, Any]:
+    """O que está locado agora, em qual obra e quanto custa por período."""
+    from app.apps.erp.core import locacoes as svc_loc
+
+    contratos = svc_loc.listar(s, usuario, apenas_ativos=True)
+    if obra:
+        contratos = [c for c in contratos if _casa(obra, c.get("obra"))]
+
+    linhas = [{
+        "contrato": c.get("numero") or "",
+        "locadora": c.get("locadora") or "",
+        "obra": c.get("obra") or "—",
+        "itens": c.get("itens") or 0,
+        "valor_periodo": c.get("valor_periodo") or 0,
+        "periodicidade": c.get("periodicidade") or "",
+        "meses": c.get("meses") or 0,
+        "pago_ate_agora": c.get("pago_ate_agora") or 0,
+        "alertas": len(c.get("alertas") or []),
+    } for c in contratos]
+    linhas.sort(key=lambda l: (l["obra"], l["contrato"]))
+    total = sum(Decimal(str(l["valor_periodo"])) for l in linhas)
+    itens = sum(l["itens"] for l in linhas)
+
+    onde = f" na obra {obra}" if obra else ""
+    frase = (f"Nenhum equipamento locado{onde}." if not linhas else
+             f"{itens} equipamento(s) em {len(linhas)} contrato(s) ativo(s)"
+             f"{onde}, custando {_reais(total)} por período.")
+    return _resposta(
+        titulo=f"Equipamentos locados{onde}", frase=frase, linhas=linhas,
+        total=total,
+        colunas=[("obra", "Obra"), ("contrato", "Contrato"),
+                 ("locadora", "Locadora"), ("itens", "Equipamentos"),
+                 ("valor_periodo", "Por período"),
+                 ("periodicidade", "Periodicidade"),
+                 ("meses", "Meses locado"), ("pago_ate_agora", "Já pago"),
+                 ("alertas", "Alertas")],
+        de_onde_veio={"tela": "/erp/suprimentos/locacoes",
+                      "explicacao": "Suprimentos › Locações."},
+        observacao=("Só contratos ATIVOS. O valor é por PERÍODO do contrato — "
+                    "quase sempre mensal, mas a coluna de periodicidade diz. "
+                    "A lista respeita as obras que você alcança."))
+
+
+def locacao_que_ja_pagou_a_compra(s: Session, usuario: Usuario) -> dict[str, Any]:
+    """Locação cujo aluguel acumulado já passou do preço de comprar.
+
+    É a pergunta que economiza dinheiro de verdade: equipamento esquecido em
+    obra continua faturando todo mês, e ninguém percebe porque cada parcela,
+    sozinha, é pequena.
+    """
+    from app.apps.erp.core import locacoes as svc_loc
+
+    contratos = [c for c in svc_loc.listar(s, usuario, apenas_ativos=True)
+                 if c.get("alertas")]
+    linhas = []
+    for c in contratos:
+        for alerta in c.get("alertas") or []:
+            linhas.append({
+                "obra": c.get("obra") or "—",
+                "contrato": c.get("numero") or "",
+                "locadora": c.get("locadora") or "",
+                "gravidade": (alerta.get("gravidade") or "").capitalize(),
+                "aviso": alerta.get("msg") or "",
+                "valor_periodo": c.get("valor_periodo") or 0,
+            })
+    criticas = [l for l in linhas if l["gravidade"].upper().startswith("CRITIC")]
+    linhas.sort(key=lambda l: (0 if l in criticas else 1, l["obra"]))
+
+    if not linhas:
+        frase = "Nenhuma locação pedindo decisão."
+    elif criticas:
+        frase = (f"{len(linhas)} aviso(s) em {len(contratos)} contrato(s), "
+                 f"{len(criticas)} deles CRÍTICOS — aluguel que já pagou a "
+                 f"compra, devolução vencida ou prazo estourado.")
+    else:
+        frase = (f"{len(linhas)} aviso(s) em {len(contratos)} contrato(s), "
+                 f"nenhum crítico ainda.")
+    return _resposta(
+        titulo="Locações que pedem decisão", frase=frase, linhas=linhas,
+        colunas=[("gravidade", "Gravidade"), ("obra", "Obra"),
+                 ("contrato", "Contrato"), ("locadora", "Locadora"),
+                 ("aviso", "O que houve"), ("valor_periodo", "Por período")],
+        de_onde_veio={"tela": "/erp/suprimentos/locacoes",
+                      "explicacao": "Suprimentos › Locações, coluna de pendências."},
+        observacao=("Cada parcela de aluguel, sozinha, é pequena — por isso "
+                    "equipamento esquecido em obra passa despercebido. É aqui "
+                    "que ele aparece."))
+
+
+def parcelas_de_locacao_sem_lancar(s: Session, usuario: Usuario) -> dict[str, Any]:
+    """Aluguel que já venceu e ainda não virou título a pagar.
+
+    Enquanto não é lançado, ele não aparece em nenhuma previsão de caixa — e
+    chega como surpresa quando a locadora cobra.
+    """
+    from app.apps.erp.core import locacoes as svc_loc
+
+    contratos = [c for c in svc_loc.listar(s, usuario)
+                 if (c.get("parcelas_vencidas_sem_lancar") or 0) > 0]
+    linhas = [{
+        "obra": c.get("obra") or "—",
+        "contrato": c.get("numero") or "",
+        "locadora": c.get("locadora") or "",
+        "parcelas": c.get("parcelas_vencidas_sem_lancar") or 0,
+        "valor_periodo": c.get("valor_periodo") or 0,
+        "situacao": c.get("status") or "",
+    } for c in contratos]
+    linhas.sort(key=lambda l: -l["parcelas"])
+    quantas = sum(l["parcelas"] for l in linhas)
+
+    frase = ("Nenhuma parcela de locação vencida sem lançar." if not linhas else
+             f"{quantas} parcela(s) de aluguel já venceram e ainda não viraram "
+             f"título, em {len(linhas)} contrato(s).")
+    return _resposta(
+        titulo="Aluguel vencido e ainda não lançado", frase=frase, linhas=linhas,
+        colunas=[("parcelas", "Parcelas"), ("obra", "Obra"),
+                 ("contrato", "Contrato"), ("locadora", "Locadora"),
+                 ("valor_periodo", "Por período"), ("situacao", "Situação")],
+        de_onde_veio={"tela": "/erp/suprimentos/locacoes",
+                      "explicacao": "Suprimentos › Locações, coluna 'vencidas sem lançar'."},
+        observacao=("Enquanto não é lançada, a parcela não entra em previsão "
+                    "de caixa nenhuma — e chega como surpresa quando a "
+                    "locadora cobra."))

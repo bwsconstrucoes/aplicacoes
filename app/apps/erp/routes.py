@@ -7328,7 +7328,7 @@ def api_locacoes():
             usuario = _usuario_logado(s)
             if request.method == "GET":
                 return jsonify({"ok": True, "contratos": listar(s, usuario),
-                                "por_obra": painel_por_obra(s)})
+                                "por_obra": painel_por_obra(s, usuario)})
             c = criar(s, request.get_json(silent=True) or {}, usuario)
             s.commit()
             return jsonify({"ok": True, "contrato": {"id": c.id, "numero": c.numero}})

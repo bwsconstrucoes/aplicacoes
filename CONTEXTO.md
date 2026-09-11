@@ -736,6 +736,18 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-11 — Escopo de registro que NÃO TEM AUTOR.** `obras_do_usuario`
+  devolve `None` com dois significados diferentes: "enxerga tudo" e "filtra por
+  autoria, não por obra". Em título isso é seguro, porque ele tem
+  `solicitante_id` e o filtro de autoria entra depois. Em **contrato de
+  locação, que não tem autor nenhum**, o `None` virava "sem filtro" e vazava a
+  base inteira para quem só deveria ver o que lançou — e o painel por obra, que
+  nem recebia usuário, mostrava o aluguel de todas as obras a qualquer
+  operador. Ambas as brechas foram fechadas em `core/auth/permissoes.py`, com
+  regra de nome próprio: `obras_de_registro_sem_autor`. **Ao escrever escopo
+  para entidade nova, a pergunta é: esta tabela tem autor?** Se não tem, é essa
+  função que se usa — nunca `obras_do_usuario`.
+
 - **2026-09-10 — Funcionalidade nova passa a trazer as perguntas que ela
   responde.** Regra acrescentada ao `CLAUDE.md`, a pedido do dono, por causa do
   assistente de IA que o ERP vai ganhar: pergunta prevista é respondida por

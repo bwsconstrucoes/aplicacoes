@@ -182,7 +182,7 @@ def test_quem_ve_suprimentos_pergunta_e_recebe(app_real, base):
                                   "parametros": {"categoria": "Agregados"}})
 
     assert lista.status_code == 200
-    assert len(lista.get_json()["perguntas"]) == 4
+    assert len(lista.get_json()["perguntas"]) == 7
     assert resposta.status_code == 200
     assert resposta.get_json()["resposta"]["quantas"] == 2
 
@@ -208,3 +208,155 @@ def test_lista_grande_e_cortada_mas_o_numero_continua_verdadeiro(base):
     assert r["mostradas"] == TETO_DE_LINHAS
     assert len(r["linhas"]) == TETO_DE_LINHAS
     assert "o corte é só do que aparece" in r["observacao"]
+
+
+# ---------------------------------------------------------------------------
+# LOCAÇÕES — o que está em obra, e o que já passou da hora
+#
+# Estas três reusam `locacoes.listar(s, usuario, ...)`, que já filtra por obra
+# designada e já calcula quanto se pagou, há quantos meses está locado e quais
+# alertas existem. Refazer a conta aqui seria inventar um segundo número sobre
+# a mesma coisa — e é exatamente assim que dois números discordam na mesma
+# tela.
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def locacao(base):
+    """Um contrato ativo há muitos meses, com uma parcela vencida sem lançar.
+
+    Os meses são muitos de propósito: é assim que o alerta de "o aluguel já
+    paga a compra" acende, que é a pergunta que economiza dinheiro.
+    """
+    from datetime import timedelta
+
+    s = base["sessao"]
+    s.execute(text("""
+        INSERT INTO fornecedores (tipo_pessoa, cnpj_cpf, razao_social)
+             VALUES ('PJ', '34028316000103', 'LOCADORA TESTE')"""))
+    s.flush()
+    locadora = s.execute(text(
+        "SELECT id FROM fornecedores WHERE razao_social = 'LOCADORA TESTE'")).scalar()
+    inicio = date.today() - timedelta(days=400)          # mais de 13 meses
+    s.execute(text("""
+        INSERT INTO contratos_locacao (numero, fornecedor_id, obra_id,
+                                       periodicidade, data_inicio, status)
+             VALUES ('LOC0001', :f, :o, 'MENSAL', :d, 'ATIVO')"""),
+        {"f": locadora, "o": base["obra"].id, "d": inicio})
+    s.flush()
+    contrato = s.execute(text("SELECT id FROM contratos_locacao LIMIT 1")).scalar()
+    s.execute(text("""
+        INSERT INTO locacao_itens (contrato_id, obra_id, descricao, quantidade,
+                                   quantidade_devolvida, valor_unitario)
+             VALUES (:c, :o, 'Andaime fachadeiro', 10, 0, 150)"""),
+        {"c": contrato, "o": base["obra"].id})
+    s.execute(text("""
+        INSERT INTO locacao_parcelas (contrato_id, competencia, vencimento,
+                                      valor_previsto, status)
+             VALUES (:c, :comp, :v, 1500, 'PREVISTA')"""),
+        {"c": contrato, "comp": date.today().replace(day=1),
+         "v": date.today() - timedelta(days=15)})
+    s.flush()
+    return base
+
+
+def test_diz_o_que_esta_locado_e_em_qual_obra(locacao):
+    r = _responder(locacao, "chefe", "equipamentos_locados")
+
+    assert r["quantas"] == 1
+    assert r["linhas"][0]["obra"] == "OBRA-A"
+    assert r["linhas"][0]["itens"] == 1
+    assert r["total"] == pytest.approx(1500.0), "10 andaimes a R$ 150 por mês"
+    assert "por período" in r["frase"]
+
+
+def test_o_filtro_de_obra_da_locacao_ignora_acento_tambem(locacao):
+    assert _responder(locacao, "chefe", "equipamentos_locados",
+                      obra="obra-a")["quantas"] == 1
+    assert _responder(locacao, "chefe", "equipamentos_locados",
+                      obra="OBRA-Z")["quantas"] == 0
+
+
+def test_acende_o_alerta_de_que_o_aluguel_ja_pagou_a_compra(locacao):
+    """Cada parcela, sozinha, é pequena — por isso equipamento esquecido em
+    obra passa despercebido. É esta pergunta que o mostra."""
+    r = _responder(locacao, "chefe", "locacao_que_ja_pagou_a_compra")
+
+    assert r["quantas"] >= 1
+    assert any("meses locado" in l["aviso"] for l in r["linhas"])
+    assert "CRÍTICOS" in r["frase"], "13 meses locado tem de acender o crítico"
+
+
+def test_a_frase_nao_explica_o_critico_quando_nao_ha_nenhum(locacao):
+    """"0 deles críticos (aluguel já pagou a compra…)" explica uma coisa que
+    não aconteceu — lê mal e assusta à toa."""
+    from app.apps.erp.core.perguntas import respostas
+
+    vazio = respostas.locacao_que_ja_pagou_a_compra.__doc__
+    assert vazio  # a função existe; o caso sem crítico é coberto abaixo
+    s = locacao["sessao"]
+    s.execute(text("UPDATE contratos_locacao SET data_inicio = :d"),
+              {"d": date.today()})
+    s.flush()
+
+    r = _responder(locacao, "chefe", "locacao_que_ja_pagou_a_compra")
+
+    assert "CRÍTICOS" not in r["frase"]
+    assert "nenhum crítico" in r["frase"] or r["quantas"] == 0
+
+
+def test_acha_o_aluguel_vencido_que_nao_virou_titulo(locacao):
+    """Enquanto não é lançada, a parcela não entra em previsão de caixa
+    nenhuma — e chega como surpresa quando a locadora cobra."""
+    r = _responder(locacao, "chefe", "parcelas_de_locacao_sem_lancar")
+
+    assert r["quantas"] == 1
+    assert r["linhas"][0]["parcelas"] == 1
+    assert "não viraram título" in r["frase"] or "não viraram" in r["frase"]
+
+
+def test_as_perguntas_de_locacao_respeitam_as_obras_de_quem_pergunta(locacao):
+    """BRECHA DE ESCOPO ACHADA POR ESTE TESTE, em 11/09/2026.
+
+    Contrato de locação NÃO TEM AUTOR. A listagem usava `obras_do_usuario`,
+    que devolve None para quem enxerga por autoria — e None ali quer dizer
+    "sem filtro de obra". Efeito: o administrativo que só deveria ver o que
+    ele mesmo lançou via TODOS os contratos de locação da empresa, na tela de
+    Locações. A regra virou `obras_de_registro_sem_autor`: para registro sem
+    autor o único recorte é a obra, e sem obra designada não se vê nenhum."""
+    s = locacao["sessao"]
+    de_fora = Usuario(nome="Outro", email="outro@bws.test",
+                      senha_hash=gerar_hash("senha-de-teste"),
+                      perfil=P.ADMINISTRATIVO_OBRA)
+    s.add(de_fora)
+    s.flush()
+    locacao["de_fora"] = de_fora
+
+    r = _responder(locacao, "de_fora", "equipamentos_locados")
+
+    assert r["quantas"] == 0, "quem não tem a obra não vê o contrato dela"
+    assert r["total"] in (None, 0, 0.0)
+
+
+def test_o_painel_por_obra_tambem_respeita_o_alcance(locacao):
+    """A MESMA brecha, e maior: `painel_por_obra` não recebia usuário nenhum, e
+    a rota que o serve é aberta a todo operador. Qualquer pessoa via quanto
+    CADA obra da empresa tem de aluguel."""
+    from app.apps.erp.core import locacoes as svc_loc
+
+    s = locacao["sessao"]
+    de_fora = Usuario(nome="Outro2", email="outro2@bws.test",
+                      senha_hash=gerar_hash("senha-de-teste"),
+                      perfil=P.ADMINISTRATIVO_OBRA)
+    s.add(de_fora)
+    s.flush()
+
+    do_chefe = svc_loc.painel_por_obra(s, locacao["chefe"])
+    do_de_fora = svc_loc.painel_por_obra(s, de_fora)
+
+    assert len(do_chefe) == 1, "quem enxerga tudo continua enxergando"
+    assert do_de_fora == [], "quem não alcança a obra não vê o aluguel dela"
+
+
+def test_quem_enxerga_tudo_continua_enxergando_as_locacoes(locacao):
+    """O conserto do escopo não pode fechar a porta de quem já podia entrar."""
+    r = _responder(locacao, "chefe", "equipamentos_locados")
+    assert r["quantas"] == 1
