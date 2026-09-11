@@ -26,27 +26,25 @@ sinal: os dois leitores de comprovante e o casador de pagamentos.
 
 ### O que está pendente AGORA
 
-**Publicado em 04/09/2026** (junção `16039ac`, com o dono confirmando que não
-havia carga do painel nem sincronização do Análise de SPs rodando): as duas
-correções — comprovante recusado pelo banco e trava de duplicidade — mais o
-`README.md`, este arquivo, a linha da área no `CLAUDE.md` e o registro no
-`CONTEXTO.md`. **Sem migração de banco**: não foi preciso apertar "Aplicar
-atualizações do banco".
+**No ramo, pronto e NÃO publicado (11/09/2026):** a baixa de rescisão paga
+direto na conta Somapay. Falta o "pode" do dono e a pergunta de sempre sobre
+carga do painel ou sincronização do Análise de SPs.
 
-Falta a segunda metade da rede de proteção: **testes dos leitores de comprovante
-e do casador de pagamentos** cobrindo Pix, boleto, transferência, FGTS e
-BeeVale. Hoje existem 23 testes, todos em volta das duas travas corrigidas —
-nenhum sobre a leitura dos campos de um comprovante bom nem sobre a escolha da
-SP certa.
+**Publicado em 04/09/2026** (junção `16039ac`): as duas correções — comprovante
+recusado pelo banco e trava de duplicidade — mais o `README.md`, este arquivo, a
+linha da área no `CLAUDE.md` e o registro no `CONTEXTO.md`. Sem migração de
+banco.
 
-Para escrever esses casos são necessários **comprovantes de exemplo de cada
-tipo**, que só o dono tem. Antes de qualquer um entrar no Git, número de conta,
-CNPJ, CPF, nome e código de barras viram fictícios, mantendo o formato do texto —
-foi assim com o único exemplo que já está guardado.
+Falta ainda a rede de proteção dos **outros** tipos de comprovante: Pix, boleto,
+transferência, FGTS e BeeVale não têm nenhum teste sobre a leitura dos campos
+nem sobre a escolha da SP. Para escrever esses casos são necessários
+**comprovantes de exemplo de cada tipo**, que só o dono tem. Antes de qualquer um
+entrar no Git, nome, CPF, CNPJ, conta e código de barras viram fictícios,
+mantendo o formato do texto.
 
-**Conferir na primeira baixa real depois da publicação:** no retorno do Make, os
-campos `recusados_nao_efetivados` e `duplicados_ja_baixados`; e que nenhum
-comprovante legítimo está sendo barrado por engano.
+**Conferir na primeira baixa real:** no retorno do Make, os campos
+`recusados_nao_efetivados` e `duplicados_ja_baixados`; e, na primeira rescição
+Somapay, que a baixa caiu na conta Somapay certa no Omie.
 
 ### As três divergências achadas na leitura do código — todas resolvidas
 
@@ -154,6 +152,31 @@ três foram tratadas em 04/09/2026:
   nome dele**. O mesmo PDF reenviado com outro nome conta como novo. Mudar isso
   invalidaria todo o registro histórico, então ficou como está.
 
+- **11/09/2026 — rescisão paga direto na Somapay passou a ser baixada.** O dono
+  mandou um comprovante de verbas rescisórias emitido pela **própria Somapay** —
+  não pelo Bradesco. O robô lia esse papel como comprovante genérico: pegava
+  valor e data certos, mas lia o **número do depósito no lugar do CPF** (o número
+  tem 14 dígitos, o tamanho de um CNPJ) e não achava SP nenhuma. Resultado: ficava
+  parado, sem baixa.
+  **O que passou a existir:** o leitor reconhece o comprovante da Somapay, lê o
+  CPF de quem recebeu e o CNPJ de quem depositou, e o casamento é por **CPF +
+  valor exato** — o papel não tem número de SP nem conta da empresa. Entre duas
+  SPs da mesma pessoa e mesmo valor, desempata a de verba rescisória; empatando,
+  não executa.
+  **A decisão que importa:** são **dois caminhos Somapay diferentes**. Quando o
+  dinheiro sai do Bradesco para a Somapay, o Omie recebe a transferência e
+  depois a baixa. Quando o pagamento já saiu da conta Somapay — este caso — o
+  Omie recebe **só a baixa**: lançar a transferência criaria um dinheiro que não
+  andou. Por isso viraram tipos separados, e há teste garantindo que este não
+  entra no caminho da transferência.
+  **A conta em que a baixa cai** vem da BaseBancos, casando o CNPJ do depositante
+  com a coluna CNPJ da planilha. Havendo mais de uma conta Somapay com aquele
+  CNPJ, ou nenhuma cadastrada, o robô **não escolhe** — deixa pendente e diz o
+  motivo. Errar a conta jogaria o dinheiro na contabilidade errada.
+  **O que continua desligado:** o caminho Somapay **com** transferência. A
+  máquina toda existe, mas o leitor nunca marca comprovante como sendo desse
+  tipo. Não foi ligado porque não havia exemplo desse comprovante em mãos.
+
 ## O que ficou de fora, e é bom saber
 
 - **Comprovante sem número de SP e sem casamento fica parado** como
@@ -207,3 +230,26 @@ de julho.
 `duplicados_ja_baixados` no retorno, e que um comprovante legítimo **não** está
 sendo barrado por engano. Se aparecer barrado à toa, o suspeito é um comprovante
 que já havia sido processado e depois teve o título reaberto no Omie.
+
+### 11/09/2026 — a rescisão da Somapay
+
+O dono perguntou duas coisas e trouxe um comprovante.
+
+**Sobre `falhaagendar`:** foi conferido no código e respondido. A lista de SPs
+que o robô carrega já inclui `falhaagendar`, então quase todos os caminhos
+encontram a SP normalmente. A exceção é o casamento por **valor + conta** de Pix
+e transferência sem número de SP, que exige o status exatamente `agendado`. Está
+anotado no `README.md`. **Igualar isso continua em aberto** — é mudança de regra
+de negócio, e o dono ainda não decidiu.
+
+**Sobre o comprovante:** entregue a baixa do depósito Somapay, descrita no
+incidente acima, com 23 testes (`tests/test_baixabradesco_somapay_deposito.py`)
+e o comprovante real guardado anonimizado em `tests/exemplos_baixabradesco/`.
+
+**Verificado:** suíte inteira passando (2579 testes) e a aplicação subindo com
+todos os blueprints.
+**Não verificado:** nada disso passou por um comprovante de verdade em produção,
+e **a BaseBancos não foi lida** nesta sessão — não há credencial do Google aqui.
+Se a conta Somapay não estiver cadastrada lá com o CNPJ da empresa, o
+comprovante vai ficar pendente com a mensagem dizendo exatamente isso. É a
+primeira coisa a conferir quando publicar.

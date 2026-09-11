@@ -297,6 +297,39 @@ def find_bank_account(accounts: List[BankAccount], agencia: str, conta: str) -> 
     return None
 
 
+def find_somapay_account(accounts: List[BankAccount], cnpj_pagador: str) -> Optional[BankAccount]:
+    """Acha a conta Somapay da empresa que pagou, na BaseBancos.
+
+    O comprovante emitido pela Somapay não traz a conta da EMPRESA — só a do
+    funcionário que recebeu. A única pista do papel é o CNPJ do depositante,
+    que é casado com a coluna CNPJ da BaseBancos.
+
+    Devolve None quando não dá para ter certeza (nenhuma conta Somapay
+    cadastrada, ou mais de uma com o mesmo CNPJ). **Não adivinha**: sem conta
+    resolvida o comprovante fica pendente de validação, que é muito melhor do
+    que baixar na conta errada.
+    """
+    somapays = [a for a in accounts if 'somapay' in normalize_compact(a.banco)]
+    if not somapays:
+        return None
+
+    doc = only_digits(cnpj_pagador)
+    if doc:
+        por_cnpj = [
+            a for a in somapays
+            if only_digits(as_string((a.raw or {}).get('CNPJ', ''))) == doc
+        ]
+        if len(por_cnpj) == 1:
+            return por_cnpj[0]
+        if len(por_cnpj) > 1:
+            return None  # ambíguo — não escolher no palpite
+
+    # Sem CNPJ utilizável: só resolve se houver UMA conta Somapay cadastrada.
+    if len(somapays) == 1:
+        return somapays[0]
+    return None
+
+
 def build_spsbd_updates(plan) -> List[dict]:
     """Monta updates para a SPsBD com colunas validadas pelo usuário:
       O  = Status Pgt       → 'Pago'

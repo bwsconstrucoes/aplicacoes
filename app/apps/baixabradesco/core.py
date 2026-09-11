@@ -10,7 +10,7 @@ from .models import AttachmentInput, ExecutionPlan
 from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
-from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, load_fingerprints_processados, registrar_fingerprint
+from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, find_somapay_account, build_spsbd_updates, execute_spsbd_updates, load_fingerprints_processados, registrar_fingerprint
 from .matcher import match_receipt
 from .omie import build_omie_plan, build_incluir_lanc_cc, build_somapay_plan, execute_omie, execute_omie_lanccc, codigo_integracao
 from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
@@ -128,6 +128,12 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                 if match_pendente.status == 'localizado':
                     match = match_pendente
             banco = find_bank_account(base_bancos, rec.agencia_origem, rec.conta_origem) if base_bancos else None
+
+            # O comprovante emitido pela Somapay não traz a conta da empresa —
+            # só a do funcionário. A conta de baixa vem da BaseBancos, pelo CNPJ
+            # de quem depositou.
+            if banco is None and rec.tipo_comprovante == 'somapay_deposito' and base_bancos:
+                banco = find_somapay_account(base_bancos, rec.documento_pagador)
 
             storage_info = {
                 'storage': 'dropbox',
@@ -372,6 +378,13 @@ def _decidir_execucao(plan: ExecutionPlan, executar_omie: bool, atualizar_pipefy
     if not rec.data_pagamento:
         faltas.append('data_pagamento')
     if executar_omie and not (plan.banco and plan.banco.codigo_omie):
+        if rec.tipo_comprovante == 'somapay_deposito':
+            plan.acao = 'pendente_validacao'
+            plan.motivos_bloqueio.append(
+                'Conta Somapay não identificada na BaseBancos pelo CNPJ do depositante. '
+                'Cadastre a conta Somapay com o CNPJ correto antes de reenviar.'
+            )
+            return
         faltas.append('codigo_conta_omie')
 
     if faltas:

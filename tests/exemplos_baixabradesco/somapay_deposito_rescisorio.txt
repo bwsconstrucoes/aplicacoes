@@ -1,0 +1,23 @@
+Comprovante de Depósito de Pagamentos
+Emitido em: 11/09/2026 13:57:58
+Comprovante de Depósito nº: 00000099887766
+Depositante: EMPRESA EXEMPLO
+CNPJ/CPF: 11.222.333/0001-44
+Beneficiário: JOAO DA SILVA EXEMPLO
+CPF: 123.456.789-09
+Valor Depositado: R$ 452,40
+(QUATROCENTOS E CINQUENTA E DOIS REAIS E
+QUARENTA CENTAVOS)
+Data do Depósito: 11/09/2026
+Histórico: Depósito no valor acima destacado, relativo ao pagamento de
+VERBAS RESCISÓRIAS pagas a JOAO DA SILVA EXEMPLO, por conta e ordem da Empregadora EMPRESA EXEMPLO.
+RECIBO DE PAGAMENTO DE VERBAS RESCISÓRIAS
+Beneficiário: JOAO DA SILVA EXEMPLO
+CPF: 123.456.789-09
+Declaro, para fins de prova junto ao Sindicato responsável pela homologação da RESCISÃO DO CONTRATO DE
+TRABALHO, que recebi, através da CONTA Nº 0009999999-9 DE MINHA EXCLUSIVA TITULARIDADE, mantida na
+SOMAPAY SOCIEDADE DE CREDITO DIRETO, o valor acima destacado no comprovante de depósito nº
+00000099887766, referente a VERBAS RESCISÓRIAS pagas pela empregadora: EMPRESA EXEMPLO.
+Número de Autenticação: 00000099887766
+SOMAPAY SOCIEDADE DE CREDITO DIRETO - 55.666.777/0001-88
+Rua Exemplo, 100 - Centro, Cidade/UF - CEP: 00000-000

@@ -19,6 +19,17 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
         if not receipt.id_pipefy.startswith('000201'):
             return MatchResult(status='localizado', metodo='id_comprovante_sem_spsbd', id=receipt.id_pipefy, sp=None, motivo='ID localizado no comprovante, mas não encontrado no índice local da SPsBD.')
 
+    if receipt.tipo_comprovante == 'somapay_deposito':
+        # Pagamento feito direto da conta Somapay (rescisão depositada na conta
+        # do funcionário). O papel não traz o número da SP, então o casamento é
+        # por CPF do beneficiário + valor.
+        cands = match_cpf_valor(receipt, list(sps_index.values()))
+        if not cands:
+            cands = match_cpf_valor(receipt, sps_agendar)
+        return _result_from_candidates(
+            cands, 'somapay_deposito_cpf_valor',
+            'Depósito Somapay localizado por CPF do beneficiário + valor.')
+
     if receipt.tipo_comprovante == 'beevale':
         # BeeVale deve procurar na SPsBD completa, pois quando o comprovante chega
         # o registro normalmente já saiu da SPsAgendar e está como 'agendado'.
@@ -233,6 +244,52 @@ def match_valor_conta_agendado(receipt: ExtractedReceipt, records: List[SpRecord
                 out = filtrados
 
     return out
+
+def match_cpf_valor(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
+    """Casa pelo CPF/CNPJ de quem recebeu + valor exato.
+
+    Usado quando o comprovante não traz o número da SP e nem a conta de débito
+    da empresa — caso do depósito emitido pela própria Somapay. O CPF é a
+    informação forte: sozinho ele já restringe a uma pessoa, e com o valor
+    exato a chance de casar com a SP errada é remota.
+
+    Filtros de status são aplicados só quando a coluna vem preenchida: a
+    SPsAgendar não carrega Status Pgt, e exigi-lo ali descartaria tudo.
+    """
+    valor = money_to_decimal(receipt.valor_pago)
+    if valor is None:
+        return []
+
+    doc = only_digits(receipt.documento_recebedor or '')
+    if len(doc) not in (11, 14):
+        return []
+
+    out = []
+    for r in records:
+        if only_digits(r.cpf_cnpj or '') != doc:
+            continue
+        if money_to_decimal(r.valor_total) != valor:
+            continue
+        if r.status_pgt and normalize_compact(r.status_pgt) != 'pagar':
+            continue
+        if (r.status_agendamento and normalize_compact(r.status_agendamento)
+                not in {'agendar', 'agendado', 'falhaagendar'}):
+            continue
+        out.append(r)
+
+    # Desempate: entre SPs da mesma pessoa e mesmo valor, fica a que é de
+    # verba rescisória — que é o que este comprovante prova.
+    if len(out) > 1:
+        tipos_ok = {normalize_compact(t) for t in SOMAPAY_TIPOS_DESPESA}
+        filtrados = [
+            r for r in out
+            if normalize_compact((r.raw or {}).get('Tipo de Despesa', '') or '') in tipos_ok
+        ]
+        if len(filtrados) == 1:
+            out = filtrados
+
+    return out
+
 
 SOMAPAY_TIPOS_DESPESA = {
     'rescisoes e indenizacoes trabalhistas',

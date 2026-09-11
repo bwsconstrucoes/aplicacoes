@@ -33,6 +33,7 @@ class ExtractedReceipt:
     conta_destino_raw: str = ''
     nome_recebedor: str = ''
     documento_recebedor: str = ''
+    documento_pagador: str = ''
     descricao: str = ''
     codigo_barras: str = ''
     confianca: Dict[str, float] = field(default_factory=dict)

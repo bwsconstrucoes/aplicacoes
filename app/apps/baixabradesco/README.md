@@ -81,23 +81,51 @@ resolver ganha:
 1. **O número da SP escrito no comprovante** (o campo "Descrição"). É o caminho
    mais confiável. Um cuidado: o QR Code do Pix começa com `000201` e já foi
    confundido com número de SP — números assim são ignorados de propósito.
-2. **Somapay** (folha de pagamento): por valor, entre as SPs a pagar e
-   agendadas, e só para despesas de rescisão, férias, gratificação ou
-   participação nos lucros. Não usa a conta, porque o dinheiro sai do Bradesco
-   mas a baixa acontece na conta Somapay.
-3. **BeeVale** (vale-alimentação): por valor, aceitando o valor da SP com 1,5%
+2. **Depósito da Somapay** (rescisão paga direto da conta Somapay): pelo **CPF
+   de quem recebeu + valor exato**. Esse comprovante é emitido pela própria
+   Somapay e não traz o número da SP nem a conta da empresa. Havendo duas SPs da
+   mesma pessoa com o mesmo valor, desempata a que é verba rescisória; se ainda
+   assim empatar, não executa.
+3. **Somapay via transferência** (o dinheiro sai do Bradesco para a Somapay):
+   por valor, entre as SPs a pagar e agendadas, e só para despesas de rescisão,
+   férias, gratificação ou participação nos lucros. ⚠️ **Este caminho está
+   desligado hoje** — ver as ressalvas no fim.
+4. **BeeVale** (vale-alimentação): por valor, aceitando o valor da SP com 1,5%
    de acréscimo (é a taxa da BeeVale) ou o valor exato.
-4. **FGTS/Caixa**: por valor, entre as SPs a pagar e agendadas; se não achar,
+5. **FGTS/Caixa**: por valor, entre as SPs a pagar e agendadas; se não achar,
    tenta por palavra-chave no nome do credor.
-5. **Boleto**: pelo código de barras, comparado só pelos números, mais o valor.
-6. **Valor + conta + tipo de pagamento**, entre as SPs a agendar.
-7. **Valor + conta + status agendado**, na SPsBD. Se sobrar mais de uma
+6. **Boleto**: pelo código de barras, comparado só pelos números, mais o valor.
+7. **Valor + conta + tipo de pagamento**, entre as SPs a agendar.
+8. **Valor + conta + status agendado**, na SPsBD. Se sobrar mais de uma
    candidata, o desempate procura o nome do credor **no texto bruto do PDF**.
-8. **Última tentativa**: as SPs que a planilha já marcou como pagas e que o Omie
+   ⚠️ Este é o **único** caminho que exige o status exatamente `agendado`: uma
+   SP em `falhaagendar` não é encontrada por aqui. Todos os outros aceitam
+   `agendar`, `agendado` e `falhaagendar`.
+9. **Última tentativa**: as SPs que a planilha já marcou como pagas e que o Omie
    não baixou. Aqui ele executa **só o Omie** e não mexe em mais nada.
 
 **Se sobrar mais de uma candidata e o desempate não resolver, ele não executa
 nada** — marca como `pendente_validacao` e alguém precisa olhar.
+
+### Os dois caminhos da Somapay, que não podem ser confundidos
+
+A folha de pagamento passa pela Somapay de duas formas, e cada uma lança coisa
+diferente no Omie:
+
+| Situação | O que o Omie recebe |
+|---|---|
+| O dinheiro **sai do Bradesco** para a Somapay | a transferência entre as contas **e depois** a baixa do título na conta Somapay |
+| O pagamento **já saiu da conta Somapay** (este é o comprovante que a Somapay emite) | **só a baixa** na conta Somapay — não há transferência que tenha acontecido |
+
+Lançar a transferência no segundo caso criaria no Omie um dinheiro que não
+andou. Por isso os dois são tipos separados no código.
+
+**O comprovante emitido pela Somapay não traz a conta da empresa**, só a do
+funcionário que recebeu. A conta em que a baixa é lançada vem da **BaseBancos**,
+casando o **CNPJ do depositante** com a coluna CNPJ da planilha. Se houver mais
+de uma conta Somapay com aquele CNPJ, ou nenhuma cadastrada, o robô **não
+escolhe**: deixa o comprovante pendente de validação e diz o motivo. Errar a
+conta jogaria o dinheiro na contabilidade errada.
 
 ## O que ele escreve quando casa
 
@@ -185,6 +213,14 @@ conta corrente), **Pipefy** (cards), **Dropbox** (arquivo do comprovante),
   contando células de uma linha copiada.
 
 ## Ressalvas do código de hoje (conferidas em 04/09/2026, na `main`)
+
+**O caminho Somapay com transferência nunca é acionado.** Toda a máquina existe
+— lançar a transferência Bradesco → Somapay e depois baixar o título na conta
+Somapay — mas o leitor nunca marca um comprovante como sendo desse tipo, então
+ela está desligada. Não foi ligada em 11/09/2026 porque não havia exemplo desse
+comprovante em mãos; o que foi entregue é o outro caminho, o do depósito pago
+direto na Somapay. Ligar exige um comprovante de transferência de verdade e
+teste antes.
 
 **O leitor do Sicredi nunca é chamado.** O `core.py` manda toda página para o
 leitor do Bradesco; o `parser_sicredi.py` existe, está completo e ninguém o usa.
