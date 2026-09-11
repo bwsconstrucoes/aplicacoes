@@ -3916,6 +3916,7 @@ def api_detalhe_pagamento(parcela_id: int):
 @permissao("pagar")
 def api_baixar():
     """Registra o pagamento de uma ou várias parcelas."""
+    from app.apps.erp.core.auth.permissoes import exigir_parcela_no_escopo
     from app.apps.erp.core.pagamentos import service as svc_pag
     d = request.get_json(silent=True) or {}
     itens = d.get("itens") or []
@@ -3929,6 +3930,10 @@ def api_baixar():
             usuario = _usuario_logado(s)
             for it in itens:
                 try:
+                    # escopo do OBJETO: ter alçada para pagar não autoriza a
+                    # pagar a parcela da obra de outro. Fora do escopo responde
+                    # "não encontrado", nunca "sem permissão".
+                    exigir_parcela_no_escopo(s, usuario, int(it["parcela_id"]))
                     pg = svc_pag.registrar_pagamento(
                         s, parcela_id=int(it["parcela_id"]),
                         conta_bancaria_id=int(conta_id),
@@ -4146,6 +4151,12 @@ def api_conciliar_manual():
         return jsonify({"ok": True})
     except ErroValidacao as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
+    except IntegrityError:
+        # duas pessoas casando a mesma linha no mesmo instante: a restrição
+        # única do banco barrou a segunda. Nada gravado.
+        return jsonify({"ok": False, "erro": "Alguém acabou de conciliar esta "
+                        "linha. Atualize a tela para ver o casamento que "
+                        "ficou."}), 409
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500
     except Exception as e:
@@ -4166,12 +4177,15 @@ def api_relatorios():
     filtros = d.get("filtros") or {}
     try:
         with get_session() as s:
+            usuario = _usuario_logado(s)
             if tipo == "dre":
-                return jsonify({"ok": True, "dre": dre_gerencial(s, filtros)})
+                return jsonify({"ok": True, "dre": dre_gerencial(s, filtros, usuario)})
             if tipo == "analitico":
-                return jsonify({"ok": True, "linhas": analitico(s, filtros)})
+                return jsonify({"ok": True,
+                                "linhas": analitico(s, filtros, usuario)})
             return jsonify({"ok": True,
-                            "resumo": resumo(s, d.get("dimensao") or "grupo", filtros)})
+                            "resumo": resumo(s, d.get("dimensao") or "grupo", filtros,
+                                             usuario)})
     except ValueError as e:
         return jsonify({"ok": False, "erro": str(e)}), 400
     except ErroNaoEncontrado:
@@ -4191,8 +4205,9 @@ def api_relatorios_csv():
     filtros = d.get("filtros") or {}
     try:
         with get_session() as s:
+            usuario = _usuario_logado(s)
             if (d.get("tipo") or "") == "analitico":
-                linhas = analitico(s, filtros)
+                linhas = analitico(s, filtros, usuario)
                 colunas = [("numero_sp", "SP"), ("competencia", "Competência"),
                            ("credor", "Credor"), ("descricao", "Descrição"),
                            ("grupo", "Grupo"), ("conta", "Conta"), ("obra", "Obra"),
@@ -4201,7 +4216,7 @@ def api_relatorios_csv():
                            ("dedutibilidade", "Dedutibilidade")]
                 nome = "erp_analitico.csv"
             else:
-                r = resumo(s, d.get("dimensao") or "grupo", filtros)
+                r = resumo(s, d.get("dimensao") or "grupo", filtros, usuario)
                 linhas = r["linhas"]
                 colunas = [("chave", r["rotulo"]), ("titulos", "Títulos"),
                            ("total", "Total"), ("pago", "Pago"), ("aberto", "Em aberto"),

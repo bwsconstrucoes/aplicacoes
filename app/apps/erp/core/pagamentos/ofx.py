@@ -79,6 +79,9 @@ def parsear_ofx(conteudo: bytes, conta_bancaria_id: int) -> list[LancamentoOFX]:
 
     lancamentos: list[LancamentoOFX] = []
     vistos: set[str] = set()
+    # Quantas vezes a MESMA combinação (data, valor, histórico, documento) já
+    # apareceu neste arquivo. Só é usada quando o banco não manda FITID.
+    ocorrencias: dict[str, int] = {}
     for m in _RE_TRN.finditer(texto):
         bloco = m.group(1)
         dt_raw = _campo(bloco, "DTPOSTED")
@@ -93,7 +96,23 @@ def parsear_ofx(conteudo: bytes, conta_bancaria_id: int) -> list[LancamentoOFX]:
         doc = _campo(bloco, "CHECKNUM") or _campo(bloco, "REFNUM")
         tipo = (_campo(bloco, "TRNTYPE") or "").upper() or ("DEBIT" if valor < 0 else "CREDIT")
 
-        base = fitid if fitid else f"{data.isoformat()}|{valor}|{memo}|{doc or ''}"
+        if fitid:
+            base = fitid
+        else:
+            # Sem FITID, a identidade da linha era só data+valor+histórico — e
+            # aí DOIS pagamentos de verdade, iguais no mesmo dia para o mesmo
+            # favorecido (dois PIX de R$ 1.500), viravam UM só: o segundo era
+            # descartado como "duplicado" e o extrato passava a divergir do
+            # banco em silêncio. Achado em 11/09/2026.
+            #
+            # Agora entra também a ORDEM da repetição dentro do arquivo: a 1ª e
+            # a 2ª linha iguais recebem identidades diferentes. Continua
+            # idempotente — reimportar o mesmo período reproduz a 1ª e a 2ª nas
+            # mesmas posições, então nada duplica.
+            chave = f"{data.isoformat()}|{valor}|{memo}|{doc or ''}"
+            ocorrencias[chave] = ocorrencias.get(chave, 0) + 1
+            n = ocorrencias[chave]
+            base = chave if n == 1 else f"{chave}|#{n}"
         h = hashlib.sha256(f"cta{conta_bancaria_id}|{base}".encode("utf-8")).hexdigest()
         if h in vistos:            # FITID repetido dentro do mesmo arquivo
             continue

@@ -394,6 +394,43 @@ def _escopo_do_pessoal(stmt: Select) -> Select:
                       .where(DespesaColaborador.titulo_id.is_not(None)))))
 
 
+def condicao_escopo_sql(s: Session, usuario: Usuario,
+                        t: str = "t") -> tuple[str, dict[str, Any]]:
+    """O MESMO recorte de `aplicar_escopo`, escrito como pedaço de WHERE.
+
+    Existe porque os relatórios somam no banco com SQL escrito à mão (agregar
+    milhares de títulos em memória não cabe nos 2 GB da instância) e, por isso,
+    não tinham como passar pelo `aplicar_escopo`, que só monta consulta do
+    SQLAlchemy. O resultado era grave e silencioso: quem enxerga uma obra via
+    o resultado da empresa inteira na tela de Relatórios. Achado em 11/09/2026.
+
+    As duas formas do recorte precisam concordar SEMPRE, e é isso que o teste
+    `test_escopo_sql_igual_ao_orm` (em `tests/test_auditoria_financeira_banco.py`)
+    prova, perfil a perfil, com banco de verdade. Mudou a regra aqui, muda lá
+    em cima — e o teste acusa se só um dos dois mudou.
+
+    `t` é o apelido da tabela de títulos na consulta que vai receber o pedaço.
+    """
+    if usuario.perfil in VE_TUDO:
+        return "TRUE", {}
+
+    if usuario.perfil == P.DEPARTAMENTO_PESSOAL:
+        tipos = ", ".join(f"'{x.value}'" for x in TIPOS_DO_PESSOAL)
+        return (f"({t}.tipo::text IN ({tipos}) OR {t}.id IN "
+                f"(SELECT titulo_id FROM despesas_colaborador "
+                f"WHERE titulo_id IS NOT NULL))"), {}
+
+    if _ve_por_obra(usuario):
+        obras = _obras_designadas(s, usuario)
+        if not obras:
+            return f"{t}.solicitante_id = :escopo_usuario", {"escopo_usuario": usuario.id}
+        return (f"({t}.solicitante_id = :escopo_usuario OR {t}.id IN "
+                f"(SELECT titulo_id FROM rateios WHERE obra_id = ANY(:escopo_obras)))"
+                ), {"escopo_usuario": usuario.id, "escopo_obras": list(obras)}
+
+    return f"{t}.solicitante_id = :escopo_usuario", {"escopo_usuario": usuario.id}
+
+
 def aplicar_escopo(stmt: Select, s: Session, usuario: Usuario) -> Select:
     """Restringe a consulta de títulos ao que o usuário pode ver.
 

@@ -16,6 +16,9 @@ from typing import Any, Optional
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.apps.erp.core.auth.permissoes import condicao_escopo_sql
+from app.apps.erp.db.models.cadastros import Usuario
+
 DIMENSOES = {
     "grupo": ("c.grupo_codigo || ' · ' || COALESCE(c.grupo_nome,'Sem grupo')", "Grupo"),
     "subgrupo": ("COALESCE(c.subgrupo_codigo,'') || ' ' || COALESCE(c.subgrupo_nome,'')", "Subgrupo"),
@@ -36,11 +39,41 @@ _ATIVOS = "('EM_ANALISE','AGUARDANDO_APROVACAO','APROVADO','BLOQUEADO','PAGO_PAR
 # visíveis no analítico. Ver migração 058 e o princípio 7 do plano padrão.
 _VALOR = "(CASE WHEN c.redutora THEN -r.valor ELSE r.valor END)"
 
+# Quanto do título já saiu do caixa, rateado pela linha. Antes o relatório
+# dizia "pago" ou "em aberto" olhando a SITUAÇÃO do título — e um título com
+# duas parcelas, uma paga, aparecia com o valor INTEIRO em aberto e zero pago.
+# Agora a conta é a soma dos pagamentos de verdade, distribuída na mesma
+# proporção do rateio. Corrigido em 11/09/2026.
+# O COALESCE de fora é para o caso improvável de líquido zero: sem ele a
+# divisão daria nulo, e a linha sumiria CALADA da coluna "em aberto" também.
+_PAGO = ("COALESCE({valor} * COALESCE(pgs.pago, 0) / NULLIF(t.valor_liquido, 0), 0)"
+         .format(valor=_VALOR))
+_ABERTO = f"({_VALOR} - {_PAGO})"
+_JOIN_PAGO = """
+          LEFT JOIN LATERAL (
+              SELECT SUM(pg.valor_pago) AS pago
+                FROM pagamentos pg
+                JOIN parcelas p2 ON p2.id = pg.parcela_id
+               WHERE p2.titulo_id = t.id
+          ) pgs ON TRUE"""
 
-def _filtros(f: dict[str, Any]) -> tuple[str, dict[str, Any]]:
-    """Monta o WHERE. Sempre por parâmetro — nunca interpolando valor."""
+
+def _filtros(f: dict[str, Any], s: Session,
+             usuario: Usuario) -> tuple[str, dict[str, Any]]:
+    """Monta o WHERE. Sempre por parâmetro — nunca interpolando valor.
+
+    `usuario` é OBRIGATÓRIO de propósito: com valor padrão, esquecer de passar
+    devolveria a empresa inteira em silêncio — que foi exatamente a falha
+    corrigida em 11/09/2026. Sem usuário, o relatório nem roda.
+    """
+    if usuario is None:
+        raise ValueError("Relatório exige o usuário — o recorte por obra "
+                         "depende de quem está perguntando.")
     cond = [f"t.status IN {_ATIVOS}"]
     p: dict[str, Any] = {}
+    onde, params = condicao_escopo_sql(s, usuario)
+    cond.append(onde)
+    p.update(params)
     if f.get("competencia_de"):
         cond.append("t.competencia >= :comp_de")
         p["comp_de"] = date.fromisoformat(f["competencia_de"] + "-01")
@@ -64,25 +97,26 @@ def _filtros(f: dict[str, Any]) -> tuple[str, dict[str, Any]]:
     return " AND ".join(cond), p
 
 
-def resumo(s: Session, dimensao: str, filtros: dict[str, Any]) -> dict[str, Any]:
+def resumo(s: Session, dimensao: str, filtros: dict[str, Any],
+           usuario: Usuario) -> dict[str, Any]:
     """Total por dimensão, rateado por obra (o valor de cada título é
     distribuído pelos rateios — é assim que 'custo por obra' fecha)."""
     if dimensao not in DIMENSOES:
         raise ValueError(f"Dimensão inválida: {dimensao}")
     expr, rotulo = DIMENSOES[dimensao]
-    where, params = _filtros(filtros)
+    where, params = _filtros(filtros, s, usuario)
 
     sql = text(f"""
         SELECT {expr} AS chave,
                COUNT(DISTINCT t.id) AS titulos,
                SUM({_VALOR})       AS total,
-               SUM(CASE WHEN t.status = 'PAGO' THEN {_VALOR} ELSE 0 END) AS pago,
-               SUM(CASE WHEN t.status <> 'PAGO' THEN {_VALOR} ELSE 0 END) AS aberto
+               SUM({_PAGO})        AS pago,
+               SUM({_ABERTO})      AS aberto
           FROM titulos t
           JOIN rateios r     ON r.titulo_id = t.id
           JOIN categorias c  ON c.id = COALESCE(r.categoria_id, t.categoria_id)
           JOIN obras o       ON o.id = r.obra_id
-          JOIN fornecedores f ON f.id = t.fornecedor_id
+          JOIN fornecedores f ON f.id = t.fornecedor_id{_JOIN_PAGO}
          WHERE {where}
          GROUP BY chave
          ORDER BY total DESC
@@ -99,10 +133,11 @@ def resumo(s: Session, dimensao: str, filtros: dict[str, Any]) -> dict[str, Any]
             "total_aberto": round(sum(l["aberto"] for l in linhas), 2)}
 
 
-def analitico(s: Session, filtros: dict[str, Any], limite: int = 2000) -> list[dict[str, Any]]:
+def analitico(s: Session, filtros: dict[str, Any], usuario: Usuario,
+              limite: int = 2000) -> list[dict[str, Any]]:
     """Lista os títulos por trás dos números — o detalhamento que o contador
     e a auditoria pedem."""
-    where, params = _filtros(filtros)
+    where, params = _filtros(filtros, s, usuario)
     params["limite"] = limite
     sql = text(f"""
         SELECT t.numero_sp, t.descricao, f.razao_social,
@@ -133,10 +168,11 @@ def analitico(s: Session, filtros: dict[str, Any], limite: int = 2000) -> list[d
             for r in s.execute(sql, params)]
 
 
-def dre_gerencial(s: Session, filtros: dict[str, Any]) -> dict[str, Any]:
+def dre_gerencial(s: Session, filtros: dict[str, Any],
+                  usuario: Usuario) -> dict[str, Any]:
     """Resultado do período: só contas de natureza RESULTADO, na ordem do
     plano. Contas de FLUXO aparecem à parte, porque não são resultado."""
-    where, params = _filtros(filtros)
+    where, params = _filtros(filtros, s, usuario)
     sql = text(f"""
         SELECT c.natureza, c.grupo_codigo,
                COALESCE(c.grupo_nome,'Sem grupo') AS grupo_nome,

@@ -741,6 +741,71 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-11 — O recorte por obra tem DUAS escritas, e um teste que as
+  obriga a concordar.** A varredura adversarial do financeiro achou que os
+  relatórios (`core/relatorios.py`) somavam a empresa inteira para quem
+  enxerga uma obra só: eles agregam com SQL escrito à mão — de propósito,
+  porque carregar milhares de títulos na memória não cabe nos 2 GB da
+  instância — e por isso nunca passaram pelo `aplicar_escopo`, que só monta
+  consulta do SQLAlchemy. **Escrever a regra de novo garantiria divergência
+  com o tempo**, então ela ganhou uma segunda forma (`condicao_escopo_sql`)
+  colada à primeira, no mesmo módulo, e um teste com banco de verdade percorre
+  perfil por perfil conferindo que as duas devolvem exatamente os mesmos
+  títulos. **Quem mudar o escopo e esquecer uma das duas, o teste acusa.**
+  Consulta agregada nova segue a mesma regra: pega o pedaço de WHERE dali,
+  nunca escreve o recorte à mão.
+
+- **2026-09-11 — "Pago" é soma de pagamento, não situação do título.** O
+  relatório dizia pago/em aberto olhando `status = 'PAGO'`, e título de duas
+  parcelas com uma paga aparecia com o valor INTEIRO em aberto. Agora a conta
+  soma os pagamentos de verdade e distribui na proporção do rateio. **A regra
+  que fica: situação é rótulo, dinheiro é soma — número de relatório sai da
+  soma.**
+
+- **2026-09-11 — Dinheiro tem trava em dois lugares: no código e no banco.**
+  Migração 062. Nada impedia dois pagamentos na mesma parcela: a conferência
+  existia em Python, mas lê antes de gravar, e dois cliques simultâneos
+  passavam os dois. Agora há trava de linha (`FOR UPDATE`) na baixa E restrição
+  única no banco. **Cinto e suspensório de propósito**, porque dinheiro pago
+  duas vezes não tem desfazer bonito e porque um caminho novo sempre pode
+  esquecer a trava. A migração 061, separada de propósito, removeu as
+  restrições antigas de `conciliacoes`, que desmentiam a promessa escrita da
+  migração 031 ("desfeita, a linha volta a ficar livre") e faziam o banco
+  recusar o que o sistema oferecia como possível. **São dois arquivos porque a
+  062 é a única que pode falhar por causa do dado que já existe** (parcela
+  paga duas vezes no passado) — e um problema de dado não pode impedir a
+  correção da conciliação de entrar. **Regra que fica: migração que depende do
+  dado antigo vai sozinha no arquivo, e recusa com mensagem em português em
+  vez de erro de restrição.**
+
+- **2026-09-11 — A identidade da linha do extrato inclui a ORDEM da repetição
+  quando o banco não manda FITID.** Dois PIX iguais, no mesmo dia, para o
+  mesmo favorecido viravam UMA linha só: o segundo era descartado como
+  "duplicado" e o extrato divergia do banco em silêncio — justamente o caso
+  que a conciliação por atribuição ótima existe para resolver. Com FITID, ele
+  continua mandando a verdade. Sem FITID, a 1ª e a 2ª ocorrência idênticas
+  recebem identidades diferentes, o que mantém a reimportação idempotente
+  (mesmo período → mesmas linhas). **Regra que fica: "parece repetido" não é
+  "é repetido" — descartar dado do banco em silêncio é pior que importar
+  demais.**
+
+- **2026-09-11 — Uma regra sensível existe num lugar só; cópia morta se
+  apaga.** Havia duas implementações de "conciliar" no código: a viva, em
+  `pagamentos/conciliacao.py`, e uma antiga em `pagamentos/service.py` que
+  nenhuma tela chamava — e que **já divergia** (não conferia se o extrato era
+  da mesma conta bancária do pagamento). Código morto que faz a mesma coisa de
+  um jeito diferente não é inofensivo: é a versão errada esperando ser ligada
+  num botão. Foi apagada. **A regra que fica: ao encontrar duas escritas para
+  a mesma coisa, uma das duas some — não se "mantém as duas em dia".**
+
+- **2026-09-11 — Listagem não é trava.** A tela de conciliação só oferecia
+  candidatos da mesma conta bancária, mas a função que GRAVA aceitava
+  qualquer par com o valor batendo — a linha do Bradesco podia comprovar
+  pagamento saído do Itaú. Vale para o ERP inteiro: **a regra mora em quem
+  escreve, não em quem lista**; o que a tela mostra é conveniência, não
+  autorização. Mesmo motivo pelo qual a rota de baixa passou a conferir o
+  escopo da parcela, e não só a alçada de "pagar".
+
 - **2026-09-11 — Relatório agendado roda com a permissão de QUEM RECEBE.**
   Migração 060 (`perguntas_agendadas`): a pergunta que o dono aprovou vira
   relatório que chega sozinho, pendurado no relógio que já existe (a rotina

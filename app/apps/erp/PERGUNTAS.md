@@ -36,12 +36,38 @@ não estiver decidida, o assistente **pergunta de volta** em vez de escolher.
 | A palavra | Os significados possíveis | Decisão |
 |---|---|---|
 | **"a pagar"** | por vencimento da parcela, ou por competência do título? Inclui BLOQUEADO? Inclui o que ainda não foi aprovado? | ⬜ a decidir |
-| **"custo da obra"** | regime de COMPETÊNCIA (quando aconteceu) ou de CAIXA (quando saiu o dinheiro)? | ⬜ a decidir |
+| **"custo da obra"** | o que entra na conta? | ✔ **decidido 11/09/2026: são as DESPESAS DIRETAS da obra** — ver abaixo |
 | **"obra em andamento"** | pela situação no cadastro, pela data de término, ou por ter tido movimento nos últimos N dias? | ⬜ a decidir |
 | **"quanto falta receber"** | são QUATRO leituras, todas legítimas — ver a régua abaixo | ✔ **decidido: o assistente PERGUNTA de volta** |
-| **"resultado da obra"** | inclui rateio da administração? inclui os tributos? | ⬜ a decidir |
+| **"resultado da obra"** | inclui rateio da administração? inclui os tributos? | ✔ **decidido 11/09/2026: receita − custo direto** — ver abaixo |
 | **"gastei com fulano"** | pelo título lançado ou pelo pagamento feito? | ⬜ a decidir |
 | **"este mês"** | mês da competência, do vencimento ou do pagamento? | ⬜ a decidir |
+
+### Custo e resultado da obra — decidido em 11/09/2026
+
+Palavras do dono: *"quando eu pergunto o que é o custo da obra são as despesas
+diretas da obra. Esse é o custo da obra. O resultado, eu abato a receita."*
+
+Então:
+
+- **Custo da obra = despesas DIRETAS da obra.** O que foi rateado naquela obra.
+  **Fica de fora** o rateio da administração da empresa — despesa de escritório
+  não vira custo de obra.
+- **Resultado da obra = receita da obra − custo direto da obra.**
+
+**O que a decisão dele ainda NÃO resolve, e não pode ser inventado:** o regime.
+"Despesa direta" pode ser o que foi LANÇADO (competência — a obra já consumiu)
+ou o que foi PAGO (caixa — o dinheiro já saiu). Os dois números são legítimos e
+diferentes, e a diferença é justamente o que está em aberto para pagar.
+
+**Como isso é resolvido aqui, sem inventar e sem travar:** o mesmo caminho da
+régua do recebimento — a resposta mostra **os dois lado a lado**. "Custo da
+obra X: R$ 1,2 mi lançado, R$ 900 mil pago." Quem lê escolhe qual usar, e
+ninguém escolhe por ele em silêncio.
+
+Falta ainda combinar, quando aparecer: se o título **em análise** (ainda não
+aprovado) entra no lançado. Enquanto não estiver combinado, a resposta diz
+quanto do número está nessa situação.
 
 ### A regra geral, decidida pelo dono em 10/09/2026
 
@@ -197,6 +223,22 @@ obra e por autoria das telas, e cada resposta mostra de onde veio.
 - Qual o saldo de cada conta bancária?
 - Quais pagamentos foram feitos pela conta errada e ainda não foram
   ressarcidos? (é a conta 9.1.03 com saldo diferente de zero)
+
+**Perguntas que a varredura de 11/09/2026 tornou possíveis — e que valem como
+conferência do próprio sistema:**
+
+- O extrato importado bate com o saldo do banco naquele mês?
+  ⚠️ **Se der diferença em mês ANTIGO, provavelmente é linha perdida na
+  importação** — dois pagamentos iguais no mesmo dia viravam um só até
+  11/09/2026. Reimportar o OFX do período resolve.
+- Alguma parcela tem mais de um pagamento registrado? (a partir da migração
+  061 o banco não deixa mais entrar; a pergunta serve para o que entrou antes)
+- Quais linhas do extrato foram conciliadas e depois desfeitas, e por quê?
+- Quanto já foi PAGO e quanto ainda está em aberto, por obra?
+  ⚠️ **Depende de quem pergunta** — cada pessoa vê só as obras dela.
+  📌 Desde 11/09/2026 "pago" é a soma dos pagamentos de verdade, rateada pela
+  obra; antes o relatório olhava a situação do título e mostrava título pago
+  pela metade como inteiramente em aberto.
 
 ### Uso do sistema (o relatório de trabalho)
 

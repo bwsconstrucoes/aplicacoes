@@ -291,6 +291,32 @@ def conciliar_manual(s: Session, pagamento_id: int, extrato_id: int,
         raise ErroValidacao(
             f"Valores não conferem: extrato R$ {abs(Decimal(ex.valor))} × "
             f"pagamento R$ {pg.valor_pago}. Ajuste o título antes de conciliar.")
+
+    # A linha do banco X só comprova pagamento SAÍDO do banco X. A tela já só
+    # oferece candidatos da mesma conta, mas a regra tem de estar aqui — quem
+    # grava é esta função, e listagem não é trava. Achado em 11/09/2026.
+    if ex.conta_bancaria_id != pg.conta_bancaria_id:
+        raise ErroValidacao(
+            "A linha do extrato é de outra conta bancária, não da conta de onde "
+            "este pagamento saiu. Conciliação entre contas diferentes não prova "
+            "nada — confira a conta antes de casar.")
+
+    # Já casados: dizer o que aconteceu, em vez de deixar o banco recusar com
+    # texto de programador na tela.
+    ja_ex = s.scalar(select(Conciliacao.id).where(
+        Conciliacao.extrato_id == ex.id, Conciliacao.desfeita_em.is_(None)))
+    if ja_ex:
+        raise ErroValidacao(
+            "Esta linha do extrato já está conciliada com um pagamento. "
+            "Atualize a tela; se o casamento anterior está errado, desfaça a "
+            "baixa do título antes de conciliar de novo.")
+    ja_pg = s.scalar(select(Conciliacao.id).where(
+        Conciliacao.pagamento_id == pg.id, Conciliacao.desfeita_em.is_(None)))
+    if ja_pg:
+        raise ErroValidacao(
+            "Este pagamento já está conciliado com uma linha do extrato. "
+            "Atualize a tela para ver o casamento que já existe.")
+
     c = Conciliacao(pagamento_id=pg.id, extrato_id=ex.id, metodo="MANUAL",
                     conciliado_por=usuario.id)
     s.add(c)

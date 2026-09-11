@@ -21,6 +21,21 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
+### TRAZ AS MIGRAÇÕES 061 E 062 — o botão tem de ser apertado junto com a publicação
+
+A varredura adversarial do núcleo financeiro (11/09/2026) achou **nove falhas
+reais**, oito delas reproduzidas com teste antes de corrigidas. Três delas são travas no
+próprio banco, e vêm nas migrações **061** e **062**. Enquanto não forem
+aplicadas, o código novo já está no ar mas a rede de proteção do banco não.
+
+**A 062 é a única que pode falhar por causa do dado que já existe.** Se
+falhar, a mensagem diz quantas parcelas têm mais de um pagamento registrado —
+isso não é defeito da migração, é dinheiro pago em dobro que já está no banco
+e precisa ser conferido no financeiro. Ela está separada da 061 justamente
+para que um problema assim não impeça a correção da conciliação de entrar.
+
+---
+
 **Fechamento do dia 11/09/2026.** O dono disse, com estas palavras: *"Por aqui
 nós estamos atualizados de implementações. Tudo que foi solicitado foi feito."*
 Tudo do ERP está publicado na `main` (último merge do ERP: `e5892ee`), e as
@@ -48,14 +63,122 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
   arquivo), mas quem tem iPhone é o dono.
 - **Suprimentos continua construído e nunca operado.**
 
-### 3. Duas coisas que EU deixei anotadas para olhar
+### 3. O que EU deixei anotado para olhar
 
-- **Recado técnico cru chegando à tela.** O painel do assistente já foi
-  corrigido, mas a API devolve `str(e)` em falha inesperada — o mesmo pode
-  aparecer em qualquer outra tela. Vale uma varredura.
+- **Recado técnico cru chegando à tela.** O painel do assistente e a
+  conciliação manual já foram corrigidos, mas a API ainda devolve `str(e)` em
+  falha inesperada de várias rotas — o mesmo pode aparecer em qualquer outra
+  tela. Vale uma varredura própria.
 - **Telas que listam obra com valor.** A brecha "quem pode escolher o registro
-  ≠ quem pode ver os números dele" foi fechada no painel de Obras e nas
-  Locações. Não varri as outras.
+  ≠ quem pode ver os números dele" foi fechada no painel de Obras, nas
+  Locações e agora nos Relatórios. Não varri as outras.
+- **Desfazer conciliação sozinha não tem botão.** A função existe e agora
+  funciona (a migração 061 destravou), mas nenhuma tela chama: só dá para
+  desfazer a conciliação junto com a baixa, pelo "Desfazer baixa" do título.
+  Se o dono quiser separar as duas coisas, é uma tela a mais, não uma
+  reescrita.
+- **O extrato importado antes de 11/09/2026 pode ter linha faltando.** A
+  correção da identidade da linha vale para importação NOVA; o que já entrou
+  ficou como estava. Se o saldo do extrato dentro do ERP divergir do banco em
+  algum mês antigo, é quase certo que seja isto: dois pagamentos iguais no
+  mesmo dia viraram um. Reimportar o OFX daquele período resolve, porque a
+  linha que falta passa a ter identidade própria.
+
+---
+
+**Estado em 11/09/2026 (oitava entrega):** **varredura adversarial do núcleo
+financeiro**. **TRAZ AS MIGRAÇÕES 061 E 062** — apertar "Aplicar atualizações
+do banco" no mesmo momento da publicação.
+
+### Por que esta varredura existiu
+
+Pedido do dono, nestas palavras: *"tudo que é muito sensível, né? que é
+exatamente a parte financeira, não pode ter falha em hipótese alguma nesse
+registro financeiro, nesse somatório, nesses relatórios de resultado. O
+casamento das informações bancárias de conciliação, de extratos, com a
+informação de baixa, isso aí é extremamente sensível. Tem que ter garantia de
+cem por cento que está tudo funcionando."*
+
+**A resposta honesta sobre "cem por cento":** não existe. O que existe é
+provar PROPRIEDADE ESPECÍFICA com teste contra banco de verdade. Foi o que foi
+feito: cada um dos oito primeiros achados tem um teste que **falha sem a
+correção** — isso foi conferido um por um, desligando a correção e vendo o
+teste cair. (O nono é código apagado; para isso não há teste, há a conferência
+de que nada chamava.) O que os testes não cobrem continua sem garantia, e está
+dito no fim desta seção.
+
+### Os nove achados, e o que cada um custava
+
+| # | O que estava errado | O que acontecia na prática |
+|---|---|---|
+| 1 | **Relatórios não tinham recorte por obra** | O supervisor de UMA obra abria Relatórios e via o custo, os credores e o resultado da empresa inteira. Silencioso: número certo, obra errada. |
+| 2 | **"Pago" e "em aberto" olhavam a SITUAÇÃO do título** | Título de duas parcelas com uma paga aparecia com o valor INTEIRO em aberto e zero pago. Quem lia o relatório achava que devia mais do que devia. |
+| 3 | **Nada impedia dois pagamentos na mesma parcela** | Dois cliques em "baixar" no mesmo instante — ou o mesmo clique repetido em conexão ruim — registravam a saída duas vezes. A conferência existia, mas em Python, sem trava: as duas liam "em aberto" antes de qualquer uma gravar. |
+| 4 | **A baixa não conferia o escopo da parcela** | Quem recebeu a permissão de pagar marcada no cadastro (e é preso a uma obra) podia pagar título de obra alheia. |
+| 5 | **Extrato sem FITID perdia linha de verdade** | Dois PIX iguais, no mesmo dia, para o mesmo favorecido viravam UM só no ERP. O segundo era descartado como "duplicado" e a tela dizia "1 duplicada", com ar de tudo certo. O extrato passava a divergir do banco em silêncio — e é justamente o caso que a conciliação foi feita para resolver. |
+| 6 | **Conciliação manual aceitava contas diferentes** | A linha do Bradesco podia comprovar um pagamento saído do Itaú, bastando o valor bater. A tela só oferecia candidatos da mesma conta — mas listagem não é trava, e quem grava é a função. |
+| 7 | **Linha já conciliada voltava erro de programador** | Duas pessoas casando a mesma linha no mesmo instante: a segunda via `duplicate key value violates unique constraint` na tela. |
+| 8 | **"Desfazer conciliação" não funcionava** | A migração 031 prometeu por escrito: *"desfeita, a linha volta a ficar livre"*. As restrições antigas da tabela nunca foram removidas e desmentiam a promessa — o sistema oferecia a linha como livre e o banco recusava. |
+| 9 | **Existiam DUAS conciliações no código** | Uma segunda versão, mais antiga, que nenhuma tela chamava — e que já divergia da de verdade (não conferia a conta bancária). Duas versões da escrita mais sensível do sistema é como a errada acaba ligada num botão algum dia. Apagada. |
+
+### O que mudou, por assunto
+
+**O recorte por obra agora vale nos relatórios.** Os relatórios somam com SQL
+escrito à mão (agregar milhares de títulos na memória não cabe nos 2 GB da
+instância), e por isso nunca passaram pelo recorte que as listagens usam. Em
+vez de escrever a regra de novo — o que garantiria divergência com o tempo —
+ela ganhou uma segunda escrita ao lado da primeira, em
+`core/auth/permissoes.py`, e **um teste percorre perfil por perfil conferindo
+que as duas devolvem exatamente os mesmos títulos**. Mudou uma e esqueceu a
+outra: o teste acusa.
+
+**"Pago" virou soma de pagamento de verdade**, rateada na mesma proporção do
+rateio da obra. Título pago pela metade agora mostra metade paga e metade em
+aberto, em vez de tudo em aberto.
+
+**Uma parcela, um pagamento — em dois lugares.** A trava de linha no código
+(a segunda pessoa espera a primeira e aí encontra a parcela PAGA) e a restrição
+única no banco (migração 062), para o caso de um caminho novo esquecer a
+trava. Cinto e suspensório de propósito: dinheiro pago duas vezes não tem
+desfazer bonito.
+
+**A identidade da linha do extrato ficou mais fina.** Quando o banco manda o
+identificador da transação (FITID), ele continua mandando a verdade. Quando não
+manda, entra também a ORDEM da repetição dentro do arquivo: a 1ª e a 2ª linha
+iguais recebem identidades diferentes. Continua idempotente — reimportar o
+mesmo período reconhece as mesmas linhas e não duplica nada; há teste para os
+dois casos, inclusive para extrato de período maior contendo o mês já
+importado.
+
+**A conciliação manual ganhou as travas que a tela já tinha:** mesma conta
+bancária, e recusa em português quando a linha (ou o pagamento) já está casada.
+
+**O relatório agora EXIGE saber quem pergunta.** O argumento não tem valor
+padrão de propósito: com padrão, esquecer de passar devolveria a empresa
+inteira em silêncio — que é exatamente a falha nº 1. Sem usuário, o relatório
+não roda. A mudança já pegou dois pontos do próprio sistema que chamavam sem
+dizer quem era; os dois foram acertados.
+
+**A conciliação passou a existir num lugar só.** A cópia antiga, morta e
+divergente, foi apagada de `pagamentos/service.py`, que ficou com a baixa e a
+importação de extrato. Não há teste para "código apagado" — o que há é a
+conferência de que nenhuma tela, rota ou teste chamava a cópia.
+
+### O que esta varredura NÃO garante
+
+Dito sem enfeite, porque é o que evita confiança demais:
+
+- **Extrato importado ANTES desta correção pode ter linha faltando.** A
+  correção vale para importação nova. Ver "PENDENTE AGORA" — reimportar o OFX
+  do período resolve.
+- **Só o núcleo financeiro foi varrido**: conciliação, baixa, extrato,
+  relatórios e o recorte por obra deles. Suprimentos, Empreitas, Locações,
+  Pessoal e Contratos não passaram por esta varredura.
+- **Somatório de tela não é o mesmo que somatório de relatório.** As telas que
+  mostram total próprio (quadro do contrato, painel de obras, medições) não
+  foram conferidas contra o relatório correspondente.
+- **Simultaneidade só está provada onde há trava ou restrição.** Onde não há,
+  continua valendo o que o código lê antes de gravar.
 
 ---
 

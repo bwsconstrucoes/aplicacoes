@@ -362,6 +362,37 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       **Falta:** o "só me avise se passar de X" (hoje é só "se houver algo"),
       e escolher o dia da semana pela tela (hoje toda combinação é segunda).
 
+- [x] **VARREDURA ADVERSARIAL DO NÚCLEO FINANCEIRO** — FEITA em 11/09/2026, a
+      pedido do dono: *"tudo que é muito sensível, que é exatamente a parte
+      financeira, não pode ter falha em hipótese alguma. O casamento das
+      informações bancárias de conciliação, de extratos, com a informação de
+      baixa, isso aí é extremamente sensível."*
+      **Nove falhas reais**; as oito primeiras foram reproduzidas com teste
+      antes de corrigidas, e cada teste foi conferido caindo sem a correção:
+      1. Relatórios somavam a empresa inteira para quem enxerga uma obra só.
+      2. "Pago"/"em aberto" olhavam a situação do título, não os pagamentos —
+         título pago pela metade aparecia inteiramente em aberto.
+      3. Nada impedia dois pagamentos na mesma parcela (dois cliques no mesmo
+         instante registravam a saída duas vezes).
+      4. A rota de baixa não conferia o escopo da parcela.
+      5. Extrato sem FITID perdia linha de verdade: dois PIX iguais no mesmo
+         dia viravam um só, e a tela dizia "1 duplicada".
+      6. Conciliação manual aceitava linha de OUTRA conta bancária.
+      7. Linha já conciliada devolvia erro de programador na tela.
+      8. "Desfazer conciliação" não funcionava — as restrições antigas da
+         tabela desmentiam a promessa escrita da migração 031.
+      9. Existiam DUAS conciliações no código, e a morta já divergia da viva
+         (não conferia a conta bancária). A cópia foi apagada.
+      **TRAZ AS MIGRAÇÕES 061 E 062.** A 062 é a única que pode falhar por
+      causa do dado que já existe: se falhar, a mensagem diz quantas parcelas
+      têm mais de um pagamento — dinheiro para conferir, não defeito da
+      migração. Está separada da 061 para não impedir a correção da
+      conciliação de entrar.
+      **O que NÃO foi varrido** (e portanto não tem garantia nenhuma):
+      Suprimentos, Empreitas, Locações, Pessoal e Contratos; os totais das
+      telas próprias contra o relatório equivalente; e o extrato importado
+      ANTES da correção, que pode ter linha faltando.
+
 - [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
       ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
       come o mês inteiro.
