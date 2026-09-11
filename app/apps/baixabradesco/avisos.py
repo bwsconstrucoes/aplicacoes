@@ -19,15 +19,20 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List
 
-from .utils import as_string
+import re
+
+from .utils import as_string, only_digits
 
 LIMITE_ITENS = 10   # comprovantes listados por aviso
 LIMITE_SPS = 12     # números de SP listados por comprovante
 
-# Destino do aviso: o WhatsApp do financeiro, não o celular do dono — foi o que
-# ele pediu em 11/09/2026, para o recado chegar a quem resolve. Trocável pela
-# variável BAIXABRADESCO_AVISO_TELEFONE, sem mexer no código.
+# Destinos do aviso: o WhatsApp do financeiro (quem resolve) e o do dono (quem
+# decide se a regra muda). Os dois recebem a mesma mensagem — decisão dele em
+# 11/09/2026. Trocável pela variável BAIXABRADESCO_AVISO_TELEFONE, que aceita
+# vários números separados por vírgula ou ponto e vírgula.
 TELEFONE_FINANCEIRO = '5585996992197'
+TELEFONE_DONO = '5585987846225'
+TELEFONES_AVISO = (TELEFONE_FINANCEIRO, TELEFONE_DONO)
 
 
 def _motivo_do_plano(plano: Dict[str, Any]) -> str:
@@ -135,17 +140,28 @@ def montar_aviso(resultado: Dict[str, Any]) -> str:
     return f"{cabecalho}\n\n{corpo}{rodape}"
 
 
-def resolver_telefone() -> str:
+def resolver_telefones() -> List[str]:
     """Para quem vai o aviso.
 
-    Um destino só. Por padrão o número do financeiro — decisão do dono em
-    11/09/2026: *"ele é o número do financeiro e fica mais geral"*, em vez do
-    celular dele. `BAIXABRADESCO_AVISO_TELEFONE` troca sem mexer no código.
+    Por padrão dois números: o do **financeiro**, que é quem resolve, e o do
+    **dono**, que é quem decide se a regra muda. Os dois recebem a mesma
+    mensagem — ele pediu assim em 11/09/2026.
+
+    `BAIXABRADESCO_AVISO_TELEFONE` substitui a lista inteira e aceita vários
+    números separados por vírgula ou ponto e vírgula.
     """
-    telefone = as_string(os.getenv('BAIXABRADESCO_AVISO_TELEFONE', ''))
-    if telefone:
-        return telefone
-    return TELEFONE_FINANCEIRO
+    configurado = as_string(os.getenv('BAIXABRADESCO_AVISO_TELEFONE', ''))
+    if configurado:
+        brutos = re.split(r'[;,]', configurado)
+    else:
+        brutos = list(TELEFONES_AVISO)
+
+    telefones: List[str] = []
+    for bruto in brutos:
+        numero = only_digits(bruto)
+        if numero and numero not in telefones:   # nunca mandar duas vezes ao mesmo
+            telefones.append(numero)
+    return telefones
 
 
 def enviar_aviso(resultado: Dict[str, Any], payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -158,14 +174,20 @@ def enviar_aviso(resultado: Dict[str, Any], payload: Dict[str, Any] | None = Non
 
     Nunca levanta erro: avisar não pode derrubar a baixa, que já aconteceu.
     """
-    telefone = resolver_telefone()
-    if not telefone:
+    telefones = resolver_telefones()
+    if not telefones:
         return {'ok': None, 'skipped': True, 'motivo': 'nenhum telefone de aviso configurado'}
 
     texto = montar_aviso(resultado)
     if not texto:
         return {'ok': None, 'skipped': True, 'motivo': 'nada a avisar'}
 
+    envios = {t: _enviar_para(t, texto, payload) for t in telefones}
+    return {'ok': any(bool(r.get('ok')) for r in envios.values()), 'envios': envios}
+
+
+def _enviar_para(telefone: str, texto: str, payload: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Um destinatário. Falha de um não impede o outro, nem derruba a baixa."""
     try:
         from .zapi import resolve_zapi_auth, send_text, validate_zapi_auth
         auth = resolve_zapi_auth(payload or {})

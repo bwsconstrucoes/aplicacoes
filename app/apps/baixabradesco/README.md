@@ -245,12 +245,12 @@ vindas dentro do próprio pedido do Make, que é como elas chegam hoje. O
 Telegram vai junto, de espelho. Se as credenciais não vierem nem no pedido nem
 no ambiente, cai no notificador comum, que tem as suas próprias.
 
-**Para quem vai:** um destino só — por padrão o **número do financeiro**
-(decisão do dono em 11/09/2026: o recado deve chegar a quem resolve, não ao
-celular dele). `BAIXABRADESCO_AVISO_TELEFONE` troca o destino sem mexer no
-código.
+**Para quem vai:** **dois números** — o do financeiro, que é quem resolve, e o
+do dono, que é quem decide se a regra muda. Os dois recebem a mesma mensagem, e
+falha em um não impede o outro. `BAIXABRADESCO_AVISO_TELEFONE` substitui a lista
+inteira e aceita vários números separados por vírgula ou ponto e vírgula.
 
-**Um número só.** Não confundir com o WhatsApp que o
+**Só esses dois.** Não confundir com o WhatsApp que o
 robô manda ao **responsável pela SP** quando a baixa dá certo — aquele é outra
 coisa, existe desde antes, vai para quem pediu o pagamento e não tem relação com
 este aviso. Há teste travando os dois destinos separados.

@@ -438,9 +438,10 @@ saber, e a trava já resolve).
 **Decisões de desenho:**
 - **Um aviso por lote, no máximo dez itens.** Comprovante chega em leva; um
   aviso por comprovante viraria barulho, e barulho faz parar de ler.
-- **Destinatário único.** Começou no celular do dono e, ainda em 11/09/2026,
-  ele trocou para o **número do financeiro**: *"ele é o número do financeiro e
-  fica mais geral"* — o recado deve chegar a quem resolve. Não confundir com o WhatsApp que vai
+- **Dois destinatários.** Começou no celular do dono, passou para o número do
+  financeiro (*"fica mais geral"*) e terminou nos **dois**, ainda em 11/09/2026:
+  o financeiro resolve, o dono decide se a regra muda. Falha em um não impede o
+  outro, e um número repetido na configuração não gera duas mensagens. Não confundir com o WhatsApp que vai
   ao responsável pela SP quando a baixa dá certo — aquele é anterior, tem outro
   propósito e continua indo para quem pediu o pagamento. Há teste travando que o
   aviso de falhas nunca alcança o telefone do solicitante, que circula no lote
@@ -543,7 +544,7 @@ blueprints subindo com os dois trabalhos juntos.
 
 **O que conferir nos próximos lotes reais**, nesta ordem:
 
-1. O aviso chega no WhatsApp **do financeiro** (`5585996992197`). Se não chegar:
+1. O aviso chega nos **dois** WhatsApp (financeiro e dono). Se não chegar:
    toggle `NOTIFICAR_WHATSAPP` ligado, credencial Z-API chegando no pedido do
    Make, número certo.
 2. Dois comprovantes de mesmo valor no mesmo PDF, com duas SPs de mesmo valor,

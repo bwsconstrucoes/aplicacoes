@@ -128,18 +128,25 @@ def test_o_aviso_nao_usa_marcacao_que_o_telegram_quebra():
 
 # ── O envio nunca pode derrubar a baixa ───────────────────────────────────────
 
-def test_o_aviso_vai_para_o_financeiro_sem_precisar_configurar_nada(monkeypatch):
-    """Decisão do dono: o recado vai para o número do financeiro, que é mais
-    geral, e não para o celular dele."""
-    from app.apps.baixabradesco.avisos import TELEFONE_FINANCEIRO, resolver_telefone
+def test_o_aviso_vai_para_os_dois_numeros_sem_precisar_configurar_nada(monkeypatch):
+    """O financeiro resolve; o dono decide se a regra muda. Os dois recebem."""
+    from app.apps.baixabradesco.avisos import (TELEFONE_DONO, TELEFONE_FINANCEIRO,
+                                               resolver_telefones)
     monkeypatch.delenv('BAIXABRADESCO_AVISO_TELEFONE', raising=False)
-    assert resolver_telefone() == TELEFONE_FINANCEIRO
+    assert resolver_telefones() == [TELEFONE_FINANCEIRO, TELEFONE_DONO]
 
 
-def test_o_destino_pode_ser_trocado_por_configuracao(monkeypatch):
-    from app.apps.baixabradesco.avisos import resolver_telefone
-    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5511999999999')
-    assert resolver_telefone() == '5511999999999'
+def test_os_destinos_podem_ser_trocados_por_configuracao(monkeypatch):
+    from app.apps.baixabradesco.avisos import resolver_telefones
+    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5511999999999; 5511888888888')
+    assert resolver_telefones() == ['5511999999999', '5511888888888']
+
+
+def test_numero_repetido_na_configuracao_nao_manda_duas_vezes(monkeypatch):
+    from app.apps.baixabradesco.avisos import resolver_telefones
+    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE',
+                       '5511999999999, (55) 11 99999-9999')
+    assert resolver_telefones() == ['5511999999999']
 
 
 def test_lote_sem_falha_nao_manda_mensagem(monkeypatch):
@@ -163,7 +170,7 @@ def test_falha_no_envio_nao_levanta_erro(monkeypatch):
 
     r = enviar_aviso(resultado([plano(pode_executar=False, motivos=['x'])]), AUTH)
     assert r['ok'] is False
-    assert 'Z-API fora do ar' in r['erro']
+    assert all('Z-API fora do ar' in e['erro'] for e in r['envios'].values())
 
 
 def test_envia_pelo_whatsapp_para_o_telefone_configurado(monkeypatch):
@@ -221,8 +228,9 @@ def test_sem_credenciais_zapi_cai_no_notificador(monkeypatch):
 # responsável pela SP quando a baixa dá certo — aquele é outra coisa, existe
 # desde antes, e continua indo para quem pediu o pagamento.
 
-def test_o_aviso_vai_para_um_unico_numero(monkeypatch):
-    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5585900000000')
+def test_o_aviso_vai_uma_vez_para_cada_destino(monkeypatch):
+    """Três falhas no lote continuam sendo UMA mensagem — só que para os dois."""
+    monkeypatch.delenv('BAIXABRADESCO_AVISO_TELEFONE', raising=False)
     chamadas = []
 
     import app.apps.baixabradesco.zapi as zapi
@@ -233,7 +241,25 @@ def test_o_aviso_vai_para_um_unico_numero(monkeypatch):
                             plano(pode_executar=False, motivos=['b'], pagina=2),
                             plano(pode_executar=False, motivos=['c'], pagina=3)]), AUTH)
 
-    assert chamadas == ['5585900000000'], 'um envio só, para um número só'
+    from app.apps.baixabradesco.avisos import TELEFONE_DONO, TELEFONE_FINANCEIRO
+    assert chamadas == [TELEFONE_FINANCEIRO, TELEFONE_DONO]
+
+
+def test_falha_em_um_destino_nao_impede_o_outro(monkeypatch):
+    monkeypatch.delenv('BAIXABRADESCO_AVISO_TELEFONE', raising=False)
+    from app.apps.baixabradesco.avisos import TELEFONE_DONO, TELEFONE_FINANCEIRO
+
+    import app.apps.baixabradesco.zapi as zapi
+    def instavel(auth, phone, message):
+        if phone == TELEFONE_FINANCEIRO:
+            raise RuntimeError('Z-API recusou este número')
+        return {'ok': True}
+    monkeypatch.setattr(zapi, 'send_text', instavel)
+
+    r = enviar_aviso(resultado([plano(pode_executar=False, motivos=['x'])]), AUTH)
+    assert r['envios'][TELEFONE_FINANCEIRO]['ok'] is False
+    assert r['envios'][TELEFONE_DONO]['ok'] is True
+    assert r['ok'] is True
 
 
 def test_o_aviso_nunca_vai_para_o_responsavel_pela_sp(monkeypatch):
