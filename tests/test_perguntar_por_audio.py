@@ -209,3 +209,38 @@ def test_o_parar_nao_le_o_gravador_ja_zerado():
         "o onstop voltou a ler a variável global — ela já está zerada "
         "quando ele roda")
     assert "gravador.mimeType" in corpo
+
+
+# ---------------------------------------------------------------------------
+# Quando o serviço recusa, a frase diz O QUE FAZER
+#
+# Transcrever usa um modelo DIFERENTE dos que o resto do ERP usa para ler
+# documento. A mesma chave pode alcançar o gpt-4o e não alcançar o de áudio —
+# e "model not found" não diz a ninguém que a saída é trocar uma variável.
+# ---------------------------------------------------------------------------
+def test_modelo_nao_reconhecido_ensina_a_trocar_a_variavel():
+    recado = audio._recado_da_falha(
+        RuntimeError("Error code: 404 - The model `x` does not exist"))
+    assert "ERP_MODELO_IA_AUDIO" in recado
+    assert "whisper-1" in recado
+
+
+def test_limite_da_conta_nao_manda_mexer_em_configuracao():
+    """Mandar trocar o modelo quando o problema é saldo faz a pessoa perder
+    tempo mexendo no que estava certo."""
+    recado = audio._recado_da_falha(
+        RuntimeError("insufficient_quota: You exceeded your current quota"))
+    assert "ERP_MODELO_IA_AUDIO" not in recado
+    assert "limite da conta" in recado
+
+
+def test_chave_recusada_aponta_a_tela_que_mostra_isso():
+    recado = audio._recado_da_falha(RuntimeError("401 Invalid API key"))
+    assert "O que está ligado" in recado
+
+
+def test_o_recado_do_servico_vem_junto_sempre():
+    """Resumir é bom; esconder o original não — sem ele ninguém investiga."""
+    for erro in ("404 model not found", "insufficient_quota", "401 api key",
+                 "qualquer outra coisa"):
+        assert erro.split()[0] in audio._recado_da_falha(RuntimeError(erro))

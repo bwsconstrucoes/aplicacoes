@@ -52,11 +52,19 @@ o quadro e conferir.
 inteiro** — o ERP vira ícone no celular, a pergunta pode ser FALADA, e dá para
 ANEXAR um documento. **Sem migração.**
 
-⚠️ **Falta uma coisa do lado do dono:** a chave `OPENAI_API_KEY` **não está
-configurada em produção**. Sem ela, falar e anexar recusam com uma frase
-honesta ("não está ligada neste sistema, escreva que eu respondo igual") e todo
-o resto continua funcionando — as perguntas sobre o que já está no ERP não usam
-IA nenhuma.
+✔ **A chave `OPENAI_API_KEY` ESTÁ configurada em produção**, com esse nome
+mesmo. O dono provou mostrando o painel de Consumo de IA com duas chamadas
+reais cobradas (gpt-4o e gpt-4o-mini, US$ 0,0153 em 09/2026). Falar e anexar
+funcionam assim que a publicação chegar ao Render.
+
+⚠️ **ERRO MEU, registrado para não se repetir:** eu escrevi aqui, e disse ao
+dono, que a chave não estava configurada em produção. Eu tinha verificado
+apenas que **ela não existe neste contêiner de desenvolvimento** — e concluí
+que não existia em produção. São ambientes diferentes. **Deste contêiner não se
+enxerga o Render**: não há `DATABASE_URL` de produção nem chave nenhuma aqui,
+e ausência local não é prova de ausência lá. Quando a pergunta for "isto está
+ligado em produção?", o caminho é PERGUNTAR ao dono ou olhar uma tela que leia
+o ambiente de lá — nunca inferir do que falta aqui.
 
 ### O ERP no celular, sem loja de aplicativo
 
