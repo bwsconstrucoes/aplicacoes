@@ -188,8 +188,15 @@ def _reserva_ler(pessoa: str) -> dict:
     return preferencias.ler(pessoa, CHAVE_RESERVA)
 
 
-def ler(pessoa: str = "") -> dict:
+def ler(pessoa: str) -> dict:
     """O lote DESTA pessoa, com quem salvou por último e quando.
+
+    A PESSOA NÃO TEM VALOR PADRÃO, e isso é de propósito. Ela tinha, e o padrão
+    era `""` — que significa o LOTE ANTIGO, de quando ele era compartilhado.
+    Duas rotas (a exportação e o PDF) ficaram chamando `ler()` sem argumento
+    quando o lote passou a ser de cada um, e por meses entregaram um lote
+    congelado sem reclamar de nada. Quem quiser mesmo o lote antigo chama
+    `lote_de_antes()`, que diz isso no nome.
 
     Até 04/09/2026 havia um lote só, de todo mundo: quem salvasse depois
     sobrescrevia o trabalho do outro sem aviso. Agora cada um tem o seu — foi
@@ -240,8 +247,11 @@ def ler(pessoa: str = "") -> dict:
             "salvo_em": linha[2], "compartilhado": False}
 
 
-def salvar(conteudo: str, quem: str = "", pessoa: str = "") -> None:
-    """Guarda o lote da pessoa. `quem` é o nome que a tela mostra depois."""
+def salvar(conteudo: str, quem: str, pessoa: str) -> None:
+    """Guarda o lote da pessoa. `quem` é o nome que a tela mostra depois.
+
+    Sem valor padrão pelo mesmo motivo de `ler`: salvar no lote errado é pior
+    do que não salvar, porque ninguém percebe."""
     from .db import conexao
     if not por_pessoa():
         from . import preferencias

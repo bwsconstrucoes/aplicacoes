@@ -1475,7 +1475,7 @@ e fecha é `<details>`, do próprio HTML, sem JavaScript — mas o efeito de col
 com Ctrl+V uma seleção do Excel de verdade não foi visto. **É a primeira coisa
 a conferir na tela.**
 
-### Vigésima quarta leva (11/09) — dois defeitos de tela que o dono achou
+### Vigésima quarta leva (11/09) — três defeitos que o dono achou usando
 
 **1. A procura dentro do filtro não filtrava nada.** *"No filtro tipo de
 despesa existe o campo, mas se eu escrever, ele não está filtrando as
@@ -1504,6 +1504,28 @@ O total geral diz se a remessa é **grande**; o total por conta diz se ela
 barra do alto, ordenado do maior para o menor (com seis contas, a que importa é
 a que concentra), e **some quando há uma conta só**, porque aí repetiria o
 número que está logo acima.
+
+**3. A exportação e o PDF do lote entregavam um lote CONGELADO.** *"Eu
+atualizei o lote, e o relatório permanece desatualizado."*
+
+As duas rotas chamavam `lote.ler()` **sem a pessoa**. O argumento tinha valor
+padrão `""` — e `""` é o **lote antigo**, de quando ele era um só e
+compartilhado, parado no tempo desde que o lote passou a ser de cada um
+(migração 003). Ou seja: a pessoa salvava o lote dela, e o arquivo saía com
+outra coisa. **Sem erro nenhum**, porque um lote congelado não estoura: ele só
+fica errado.
+
+> **Como isso sobreviveu à suíte, e é a parte que incomoda:** havia teste do
+> PDF do lote. Ele dublava `lote.ler` com uma função **sem argumento** — ou
+> seja, **imitava exatamente a chamada errada**, e por isso passava. O teste
+> não estava conferindo o comportamento; estava congelando o defeito.
+
+**A correção fecha a armadilha, e não só o buraco:** `ler` e `salvar`
+perderam o valor padrão da pessoa. Quem esquecer de passar agora quebra alto,
+na hora. Quem quiser mesmo o lote antigo chama `lote_de_antes()`, que diz isso
+no nome. Há teste prendendo a ausência do padrão, e outro conferindo que as
+duas rotas leem o lote da pessoa logada — conferido que ele falha com o
+defeito de volta.
 
 ### Pedido na fila, ainda NÃO feito
 

@@ -974,21 +974,39 @@ def test_lote_vazio_nao_consulta_o_banco(banco_analisesps):
 
 def test_o_lote_e_guardado_e_relido(banco_analisesps):
     from app.apps.analisesps import lote
-    lote.salvar("Pagar amanhã\n111", "operador")
-    guardado = lote.ler()
+    lote.salvar("Pagar amanhã\n111", "operador", "marcelo")
+    guardado = lote.ler("marcelo")
     assert guardado["conteudo"] == "Pagar amanhã\n111"
     assert guardado["salvo_por"] == "operador"
     assert guardado["salvo_em"] is not None
 
 
 def test_salvar_o_lote_de_novo_substitui_e_nao_acumula(banco_analisesps):
-    """A tabela tem uma linha só, e é de propósito — o lote é um só."""
+    """Uma linha POR PESSOA. Salvar de novo substitui a dela, e não empilha."""
     from app.apps.analisesps import lote
     from app.apps.analisesps.db import consultar_um
-    lote.salvar("primeiro", "a")
-    lote.salvar("segundo", "b")
-    assert consultar_um("SELECT count(*) FROM analisesps.lote")[0] == 1
-    assert lote.ler()["conteudo"] == "segundo"
+    lote.salvar("primeiro", "a", "marcelo")
+    lote.salvar("segundo", "b", "marcelo")
+    assert consultar_um(
+        "SELECT count(*) FROM analisesps.lote WHERE pessoa = 'marcelo'")[0] == 1
+    assert lote.ler("marcelo")["conteudo"] == "segundo"
+
+
+def test_o_lote_de_uma_pessoa_nao_encosta_no_da_outra(banco_analisesps):
+    """Era um lote só até a migração 003, e a segunda pessoa a salvar
+    sobrescrevia o trabalho da primeira — sem aviso nenhum.
+
+    ESTE TESTE TAMBÉM COBRE O DEFEITO DE 11/09/2026: a exportação e o PDF
+    liam o lote de `pessoa = ""`, que é o antigo compartilhado, e entregavam
+    um lote congelado por mais que a pessoa salvasse o dela."""
+    from app.apps.analisesps import lote
+    lote.salvar("o do marcelo", "MARCELO", "marcelo")
+    lote.salvar("o da karla", "KARLA", "karla")
+
+    assert lote.ler("marcelo")["conteudo"] == "o do marcelo"
+    assert lote.ler("karla")["conteudo"] == "o da karla"
+    # E o lote antigo, o de pessoa vazia, continua sendo outra coisa.
+    assert lote.ler("")["conteudo"] != "o do marcelo"
 
 
 # ---------------------------------------------------------------------------

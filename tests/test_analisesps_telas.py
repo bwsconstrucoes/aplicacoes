@@ -2743,8 +2743,13 @@ def test_o_pdf_do_lote_vazio_avisa_em_vez_de_sair_em_branco(app, monkeypatch):
     """Um PDF de uma página em branco é pior do que um recado: quem imprime
     acha que o lote está vazio quando na verdade não foi montado."""
     from app.apps.analisesps import lote
-    monkeypatch.setattr(lote, "ler", lambda: {"conteudo": "", "salvo_por": None,
-                                              "salvo_em": None})
+    # O DUBLÊ RECEBE A PESSOA. Ele não recebia, e era assim que o defeito de
+    # 11/09/2026 se escondia: o PDF e a exportação chamavam `ler()` sem
+    # argumento — lendo o lote ANTIGO, compartilhado e congelado — e o teste
+    # imitava exatamente a chamada errada, então passava.
+    monkeypatch.setattr(lote, "ler", lambda pessoa: {"conteudo": "",
+                                                     "salvo_por": None,
+                                                     "salvo_em": None})
     monkeypatch.setattr(lote, "montar", lambda t: {
         "grupos": [], "linhas": {}, "nao_encontrados": [],
         "total_geral": 0, "quantidade": 0})
@@ -3478,3 +3483,48 @@ def test_a_linha_por_conta_some_quando_ha_uma_conta_so(app):
     html = como(app, SENHA_OPERADOR).get(
         "/analisesps/solicitacoes", follow_redirects=True).get_data(as_text=True)
     assert 'id="ba-contas"' in html and "hidden" in html
+
+
+# ---------------------------------------------------------------------------
+# O LOTE DA PESSOA CERTA
+#
+# "Eu atualizei o lote, e o relatório permanece desatualizado." Reportado pelo
+# dono em 11/09/2026. A exportação e o PDF chamavam `lote.ler()` sem a pessoa,
+# e o padrão do argumento era `""` — que é o LOTE ANTIGO, de quando ele era um
+# só e compartilhado, congelado desde que o lote passou a ser de cada um.
+# ---------------------------------------------------------------------------
+def test_a_exportacao_e_o_pdf_leem_o_lote_DA_PESSOA(app, monkeypatch):
+    """O que sai no arquivo tem de ser o que está na tela. Enquanto não era,
+    a pessoa mandava para o banco uma remessa que ela não montou."""
+    from app.apps.analisesps import lote
+    pedidos = []
+
+    def falso_ler(pessoa):
+        pedidos.append(pessoa)
+        return {"conteudo": "Grupo\n1234567890", "salvo_por": "x",
+                "salvo_em": None}
+
+    monkeypatch.setattr(lote, "ler", falso_ler)
+    monkeypatch.setattr(lote, "montar", lambda t: {
+        "grupos": [], "linhas": {}, "nao_encontrados": [],
+        "total_geral": 0, "quantidade": 0})
+
+    cliente = como(app, SENHA_OPERADOR, nome="MARCELO")
+    cliente.get("/analisesps/lote/exportar")
+    cliente.get("/analisesps/lote/pdf")
+
+    assert pedidos, "nenhuma das duas rotas leu o lote"
+    assert all(p == "marcelo" for p in pedidos), (
+        f"leram o lote de {pedidos} em vez do da pessoa logada")
+
+
+def test_ler_e_salvar_o_lote_exigem_a_pessoa():
+    """SEM VALOR PADRÃO, de propósito. O padrão era `""`, que significa o lote
+    antigo — e duas rotas caíram nele por meses sem ninguém perceber, porque
+    um lote congelado não dá erro: ele só fica errado."""
+    import inspect
+    from app.apps.analisesps import lote
+    for funcao in (lote.ler, lote.salvar):
+        parametro = inspect.signature(funcao).parameters["pessoa"]
+        assert parametro.default is inspect.Parameter.empty, (
+            f"{funcao.__name__} voltou a ter padrão para a pessoa")

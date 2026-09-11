@@ -2128,8 +2128,13 @@ def exportar_lote():
     # lido lá dentro do gerador, o cabeçalho já teria saído com HTTP 200 e a
     # pessoa receberia um arquivo pela metade, sem erro nenhum — pior do que
     # uma mensagem.
+    # A PESSOA TEM DE SER PASSADA. Sem ela, `ler` devolvia o lote de
+    # `pessoa = ''` — que é o LOTE ANTIGO, de quando ele era um só e
+    # compartilhado, congelado desde a migração 003. Era isso que fazia a
+    # exportação e o PDF saírem desatualizados por mais que a pessoa salvasse
+    # o lote dela. Reportado pelo dono em 11/09/2026.
     try:
-        montado = lote.montar(lote.ler()["conteudo"])
+        montado = lote.montar(lote.ler(auth.pessoa_atual())["conteudo"])
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou montar o lote para exportar")
         return render_template(
@@ -2197,8 +2202,9 @@ def lote_pdf():
     from . import lote, pdf
     from .horario import agora
 
+    # Ver o comentário em `exportar_lote`: sem a pessoa, sai o lote antigo.
     try:
-        montado = lote.montar(lote.ler()["conteudo"])
+        montado = lote.montar(lote.ler(auth.pessoa_atual())["conteudo"])
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou montar o lote para o PDF")
         return render_template(
