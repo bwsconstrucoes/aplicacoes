@@ -95,22 +95,25 @@ def acrescentar_grupo(texto_atual: str, ids: list[str]) -> tuple[str, str]:
     return novo, titulo
 
 
-def remover_por_status(texto: str, status_alvo: set[str],
-                       status_por_id: dict) -> tuple[str, int]:
-    """Tira do lote as SPs que já estão num determinado status.
+def _limpar(texto: str, sai) -> tuple[str, int]:
+    """A limpeza do lote, com a regra de quem sai vindo de fora.
 
-    Serve para limpar o que já foi pago ou cancelado. Devolve o texto novo e
-    quantas saíram.
+    `sai(sp_id)` responde se aquela SP deve deixar o lote. É chamada NA ORDEM
+    do texto, de cima para baixo, e pode guardar estado entre as chamadas —
+    é assim que a remoção de duplicados sabe qual ocorrência é a primeira.
 
-    O TÍTULO DE UM GRUPO QUE ESVAZIOU NA LIMPEZA VAI JUNTO. Antes ele ficava, e
-    o lote terminava cheio de cabeçalhos sem nada embaixo — "Pagar amanhã" sem
-    uma SP sequer. Pedido do dono em 11/09/2026.
+    O TÍTULO DE UM GRUPO QUE ESVAZIOU NESTA LIMPEZA VAI JUNTO. Antes ele
+    ficava, e o lote terminava cheio de cabeçalhos sem nada embaixo — "Pagar
+    amanhã" sem uma SP sequer. Pedido do dono em 11/09/2026.
 
-    MAS SÓ QUEM ESVAZIOU AGORA. Um grupo que já estava vazio antes da limpeza
-    continua: alguém escreveu aquele título de propósito, para encher depois, e
-    apagar o que a pessoa acabou de digitar seria pior do que o cabeçalho
-    sobrando."""
-    alvos = {s.strip().lower() for s in status_alvo}
+    MAS SÓ QUEM ESVAZIOU AGORA. Um grupo que já estava vazio antes continua:
+    alguém escreveu aquele título de propósito, para encher depois, e apagar o
+    que a pessoa acabou de digitar seria pior do que o cabeçalho sobrando.
+
+    Vive separado porque as três limpezas (pagas, canceladas, duplicadas) têm
+    de tratar o cabeçalho órfão do MESMO jeito. Em três cópias, a terceira
+    nasceria sem a regra — e ninguém notaria até o lote encher de título
+    solto."""
     removidos = 0
 
     # Primeiro quebra em blocos: cada um é um título (ou nenhum, no começo) e
@@ -123,8 +126,7 @@ def remover_por_status(texto: str, status_alvo: set[str],
             continue
         pedacos = [p for p in SEPARADORES.split(linha) if p]
         if pedacos and all(SO_DIGITOS.fullmatch(p) for p in pedacos):
-            mantidos = [p for p in pedacos
-                        if str(status_por_id.get(p, "")).strip().lower() not in alvos]
+            mantidos = [p for p in pedacos if not sai(p)]
             removidos += len(pedacos) - len(mantidos)
             blocos[-1]["tinha"] += len(pedacos)
             if mantidos:
@@ -140,6 +142,63 @@ def remover_por_status(texto: str, status_alvo: set[str],
         linhas_novas.extend(bloco["linhas"])
 
     return "\n".join(linhas_novas).strip("\n"), removidos
+
+
+def remover_por_status(texto: str, status_alvo: set[str],
+                       status_por_id: dict) -> tuple[str, int]:
+    """Tira do lote as SPs que já estão num determinado status.
+
+    Serve para limpar o que já foi pago ou cancelado. Devolve o texto novo e
+    quantas saíram. O cabeçalho de grupo que esvaziou sai junto — ver
+    `_limpar`."""
+    alvos = {s.strip().lower() for s in status_alvo}
+    return _limpar(
+        texto,
+        lambda sp: str(status_por_id.get(sp, "")).strip().lower() in alvos)
+
+
+def remover_duplicados(texto: str) -> tuple[str, int]:
+    """Tira do lote a SP repetida, guardando a PRIMEIRA aparição.
+
+    Pedido do dono em 11/09/2026, e ele disse qual das cópias fica: *"mantém o
+    registro mais superior, e os que estão mais para baixo no lote remove"*.
+
+    A primeira, e não a última, porque o lote é lido de cima para baixo e o que
+    está em cima é o grupo mais recente — `acrescentar_grupo` põe o novo no
+    topo. Guardar a de baixo mudaria a SP de grupo sem ninguém ter pedido.
+
+    POR QUE A REPETIÇÃO ATRAPALHA, e não é só feiúra: o mesmo número em dois
+    grupos aparece duas vezes na tela, é somado duas vezes no total do lote, e
+    convida a agir duas vezes sobre o mesmo pagamento. Era também o que fazia a
+    marcação reposta pegar a linha errada.
+
+    Devolve o texto novo e quantas cópias saíram — cópias, não SPs: três
+    aparições do mesmo número contam duas."""
+    vistos: set = set()
+
+    def sai(sp: str) -> bool:
+        if sp in vistos:
+            return True
+        vistos.add(sp)
+        return False
+
+    return _limpar(texto, sai)
+
+
+def contar_duplicados(texto: str) -> int:
+    """Quantas cópias sobrando existem no lote, sem mexer em nada.
+
+    A tela usa isto para só oferecer o botão quando há o que remover — um botão
+    que não faz nada quando apertado é pior do que botão nenhum."""
+    vistos: set = set()
+    sobrando = 0
+    for grupo in separar_grupos(texto):
+        for sp in grupo["ids"]:
+            if sp in vistos:
+                sobrando += 1
+            else:
+                vistos.add(sp)
+    return sobrando
 
 
 def remover_ids(texto: str, ids) -> tuple[str, int]:

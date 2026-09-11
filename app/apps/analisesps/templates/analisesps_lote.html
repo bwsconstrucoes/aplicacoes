@@ -99,8 +99,19 @@
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px">
         <button class="btn" type="submit" name="acao" value="salvar">Salvar lote</button>
         <button class="btn secundario" type="submit" name="acao" value="extrair">Extrair SPs do texto</button>
-        <button class="btn secundario" type="submit" name="acao" value="remover_pagos">Tirar as pagas</button>
-        <button class="btn secundario" type="submit" name="acao" value="remover_cancelados">Tirar as canceladas</button>
+        {# "Tirar" virou "Remover", a pedido do dono em 11/09/2026. Numa tela de
+           pagamentos "tirar as pagas" chega a soar como desfazer o pagamento —
+           e o botão só mexe na lista do lote. #}
+        <button class="btn secundario" type="submit" name="acao" value="remover_pagos">Remover pagos</button>
+        <button class="btn secundario" type="submit" name="acao" value="remover_cancelados">Remover cancelados</button>
+        {% if duplicados %}
+          {# Só aparece quando há o que remover. Fica a PRIMEIRA aparição de
+             cada SP — "mantém o registro mais superior". #}
+          <button class="btn secundario" type="submit" name="acao"
+                  value="remover_duplicados"
+                  title="Fica a primeira aparição de cada SP; as de baixo saem">
+            Remover duplicados ({{ duplicados }})</button>
+        {% endif %}
       </div>
     </form>
   {% else %}

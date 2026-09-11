@@ -21,6 +21,7 @@ não importa o tamanho da base.
 """
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import os
 
@@ -234,7 +235,11 @@ def carga_inicial(anotar=None, retomar_de: int = 0) -> int:
                 carimbo = _maior_carimbo(registros)
                 if carimbo > maior_carimbo:
                     maior_carimbo = carimbo
-                    _meta_gravar(conn, "ultimo_carimbo", maior_carimbo)
+                    # Um segundo atrás, pelo mesmo motivo do delta: a planilha
+                    # pode estar sendo escrita enquanto a carga lê, e o que
+                    # empatar no segundo da borda seria perdido.
+                    _meta_gravar(conn, "ultimo_carimbo",
+                                 _marca_dagua(maior_carimbo))
                 # A retomada aponta para a PRÓXIMA linha ainda não lida.
                 _meta_gravar(conn, "carga_ate_linha", str(fim + 1))
 
@@ -254,8 +259,54 @@ def carga_inicial(anotar=None, retomar_de: int = 0) -> int:
 # ---------------------------------------------------------------------------
 # 2. Sincronização do dia — só o que mudou
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# AS COLUNAS QUE SÃO CONFERIDAS UMA A UMA, ALÉM DO CARIMBO
+#
+# POR QUE ISTO EXISTE, e custou uma SP errada na tela do dono em 11/09/2026:
+# ele viu a SP 1443253428 como "Pagar" no lote enquanto a planilha já dizia
+# "Pago", e a base estava recém-sincronizada.
+#
+# A causa é o carimbo. Ele é escrito pelo gatilho `onEdit` da planilha, e esse
+# gatilho **não dispara quando quem escreve é um script** — e quem alimenta a
+# SPsBD são scripts, como o dono confirmou em 11/09. Resultado: a célula muda,
+# o carimbo não, e a sincronização do dia nunca reexamina aquela linha.
+# Conferido na planilha de verdade: entre as primeiras 63 linhas visíveis, 5
+# estão com o carimbo VAZIO.
+#
+# Linha com carimbo vazio nunca era relida. Nunca mesmo — não era atraso, era
+# permanente, até alguém editar a célula na mão.
+#
+# A CONFERÊNCIA custa uma leitura de coluna a mais por sincronização. É barato
+# perto do estrago: status errado na tela de pagamentos faz pagar de novo o que
+# já foi pago. Cada coluna acrescentada aqui é mais uma leitura — por isso a
+# lista tem só o que decide dinheiro, e não a planilha inteira.
+COLUNAS_CONFERIDAS = ["status_pgt"]
+
+# O carimbo se repete: um script que grava 800 linhas de uma vez carimba todas
+# com O MESMO SEGUNDO (visto na planilha: 58 linhas com "2026-09-04 16:05:23").
+# Se a varredura pegar metade dessas linhas, a marca d'água sobe para aquele
+# segundo e a outra metade — carimbada igual — nunca mais satisfaz "maior que".
+# Some para sempre.
+#
+# Por isso a marca d'água fica UM SEGUNDO ATRÁS do maior carimbo visto: o
+# segundo da borda é reexaminado na rodada seguinte. Custa reler um punhado de
+# linhas; evita perder as que empataram.
+def _marca_dagua(maior_carimbo: str) -> str:
+    """O carimbo guardado, um segundo atrás do maior visto. Ver acima."""
+    try:
+        quando = dt.datetime.strptime(maior_carimbo[:19], "%Y-%m-%d %H:%M:%S")
+    except (ValueError, TypeError):
+        # Formato diferente do esperado: guarda como veio. Recuar às cegas
+        # numa string que não é data faria a marca d'água virar lixo.
+        return maior_carimbo
+    return (quando - dt.timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def sincronizar_delta(anotar=None) -> dict:
-    """Lê ID e carimbo, busca só as linhas que mudaram, remove as excluídas."""
+    """Lê ID e carimbo, busca só as linhas que mudaram, remove as excluídas.
+
+    Lê TAMBÉM as colunas de `COLUNAS_CONFERIDAS` e compara com o que está no
+    banco: é isso que alcança a linha cujo carimbo não foi escrito."""
     from .db import conexao
 
     anotar = anotar or (lambda *a, **k: None)
@@ -265,24 +316,56 @@ def sincronizar_delta(anotar=None) -> dict:
     coluna_ids = com_retry(lambda: aba.col_values(colunas.COLS["id"].idx + 1))
     coluna_marcas = com_retry(
         lambda: aba.col_values(colunas.COLS[colunas.CHAVE_CARIMBO].idx + 1))
+    conferidas = {
+        chave: com_retry(lambda c=chave: aba.col_values(colunas.COLS[c].idx + 1))
+        for chave in COLUNAS_CONFERIDAS if chave in colunas.COLS}
 
     with conexao() as conn:
         ultimo = _meta_ler(conn, "ultimo_carimbo", "")
-        cur = conn.execute("SELECT id FROM analisesps.sps")
-        ids_no_banco = {str(r[0]) for r in cur.fetchall()}
+        campos = ", ".join(f'"{c}"' for c in conferidas)
+        cur = conn.execute(
+            f"SELECT id{', ' + campos if campos else ''} FROM analisesps.sps")
+        no_banco = {str(r[0]): r[1:] for r in cur.fetchall()}
         cur.close()
+    ids_no_banco = set(no_banco)
+
+    def _celula(coluna: list, numero: int) -> str:
+        return str(coluna[numero - 1] or "").strip() \
+            if numero - 1 < len(coluna) else ""
 
     linhas_mudadas: list[int] = []
     ids_na_planilha: set[str] = set()
+    pelo_conteudo = 0
     for numero in range(colunas.PRIMEIRA_LINHA_DADOS, len(coluna_ids) + 1):
         sp_id = str(coluna_ids[numero - 1] or "").strip()
         if not sp_id:
             continue
         ids_na_planilha.add(sp_id)
-        marca = str(coluna_marcas[numero - 1] or "").strip() \
-            if numero - 1 < len(coluna_marcas) else ""
+        marca = _celula(coluna_marcas, numero)
         if sp_id not in ids_no_banco or (marca and marca > ultimo):
             linhas_mudadas.append(numero)
+            continue
+        # O carimbo não acusou. Confere o conteúdo das colunas que decidem
+        # dinheiro: é aqui que entra a linha que um script mudou sem carimbar.
+        guardado = no_banco.get(sp_id) or ()
+        for posicao, chave in enumerate(conferidas):
+            na_planilha = _celula(conferidas[chave], numero)
+            bruto = guardado[posicao] if posicao < len(guardado) else None
+            atual = str(bruto if bruto is not None else "").strip()
+            if na_planilha != atual:
+                linhas_mudadas.append(numero)
+                pelo_conteudo += 1
+                break
+
+    if pelo_conteudo:
+        # Vai para o log do Render de propósito: é o número que diz quanto o
+        # carimbo está deixando passar. Se ele for alto todo dia, o gatilho da
+        # planilha não está carimbando o que os scripts escrevem.
+        logger.warning(
+            "Análise de SPs: %d linha(s) mudaram SEM carimbo novo — achadas "
+            "conferindo %s.", pelo_conteudo, ", ".join(conferidas))
+        anotar("conferindo o que mudou na planilha",
+               f"{pelo_conteudo} sem carimbo novo")
 
     # Busca em lote apenas as linhas mudadas, fatiado para não estourar o
     # tamanho do pedido quando muitas mudam de uma vez.
@@ -319,12 +402,19 @@ def sincronizar_delta(anotar=None) -> dict:
 
     with conexao() as conn:
         if maior and maior != ultimo:
-            _meta_gravar(conn, "ultimo_carimbo", maior)
+            # Um segundo atrás do maior visto — ver `_marca_dagua`.
+            _meta_gravar(conn, "ultimo_carimbo", _marca_dagua(maior))
         _anotar_a_base_em_dia(conn)
+        # Quantas linhas realmente desceram. A tela mostra a HORA da última
+        # sincronização, e a hora é gravada mesmo quando nada mudou — então o
+        # relógio batendo NÃO prova que o dado veio. Este número prova.
+        _meta_gravar(conn, "ultima_sincronizacao_alteradas", str(novas))
+        _meta_gravar(conn, "ultima_sincronizacao_sem_carimbo", str(pelo_conteudo))
 
-    logger.info("Análise de SPs: sincronização — %d alteradas, %d removidas.",
-                novas, removidas)
+    logger.info("Análise de SPs: sincronização — %d alteradas (%d sem carimbo "
+                "novo), %d removidas.", novas, pelo_conteudo, removidas)
     return {"alteradas": novas, "removidas": removidas,
+            "sem_carimbo": pelo_conteudo,
             "conferidas": len(ids_na_planilha)}
 
 

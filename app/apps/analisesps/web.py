@@ -1369,6 +1369,14 @@ def tela_lote():
             conteudo, quantos = lote.remover_por_status(conteudo, alvo, status)
             rotulo = "paga(s)" if acao == "remover_pagos" else "cancelada(s)"
             aviso = f"{quantos} SP(s) {rotulo} saíram do lote."
+        elif acao == "remover_duplicados":
+            # O mesmo número em dois grupos aparece duas vezes na tela e é
+            # somado duas vezes no total. Fica a PRIMEIRA aparição, como o dono
+            # pediu: "mantém o registro mais superior".
+            conteudo, quantos = lote.remover_duplicados(conteudo)
+            aviso = (f"{quantos} repetição(ões) saíram do lote — ficou a "
+                     "primeira aparição de cada SP."
+                     if quantos else "Não havia nenhuma SP repetida no lote.")
 
         lote.salvar(conteudo, quem, pessoa)
         return redirect(url_for("analisesps.tela_lote", aviso=aviso or ""))
@@ -1421,6 +1429,10 @@ def tela_lote():
         "analisesps_lote.html",
         aba="lote", base=base, lote=guardado, montado=montado, antes=antes,
         outras_pessoas=outras,
+        # Quantas cópias sobrando há. O botão de remover duplicados só aparece
+        # quando existe o que remover — botão que não faz nada quando apertado
+        # é pior do que botão nenhum.
+        duplicados=lote.contar_duplicados(guardado["conteudo"]),
         colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
         painel=painel,
         aviso=request.args.get("aviso") or None,

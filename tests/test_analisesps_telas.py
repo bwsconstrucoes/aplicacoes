@@ -1482,6 +1482,73 @@ def test_marcar_o_que_nao_esta_no_lote_e_explicado(app_lote, monkeypatch):
     assert "já não estavam nele" in metade
 
 
+def test_o_botao_de_remover_duplicados_so_aparece_quando_ha_duplicado(app_lote, monkeypatch):
+    """Botão que não faz nada quando apertado é pior do que botão nenhum: a
+    pessoa aperta, nada muda, e ela passa a desconfiar dos outros botões."""
+    from app.apps.analisesps import lote
+    monkeypatch.setattr(lote, "salvar", lambda c, quem="", pessoa="": None)
+    cliente = como(app_lote, SENHA_OPERADOR)
+
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "Grupo\n1", "salvo_por": None, "salvo_em": None})
+    sem = cliente.get("/analisesps/lote").get_data(as_text=True)
+    assert "remover_duplicados" not in sem
+
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "Grupo A\n1\n\nGrupo B\n1", "salvo_por": None,
+        "salvo_em": None})
+    com = cliente.get("/analisesps/lote").get_data(as_text=True)
+    assert "remover_duplicados" in com
+    assert "Remover duplicados (1)" in com, "o botão precisa dizer quantas são"
+
+
+def test_remover_duplicados_pela_tela_guarda_a_primeira(app_lote, monkeypatch):
+    """O caminho inteiro, da tela até o que fica salvo."""
+    from app.apps.analisesps import lote
+    salvos = []
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "", "salvo_por": None, "salvo_em": None})
+    monkeypatch.setattr(lote, "salvar",
+                        lambda c, quem="", pessoa="": salvos.append(c))
+
+    resposta = como(app_lote, SENHA_OPERADOR).post(
+        "/analisesps/lote",
+        data={"acao": "remover_duplicados",
+              "conteudo": "Primeiro\n1 2\n\nRepetido\n1"},
+        follow_redirects=True).get_data(as_text=True)
+
+    assert salvos and salvos[-1] == "Primeiro\n1 2"
+    assert "Repetido" not in salvos[-1], "o cabeçalho do grupo esvaziado ficou"
+    assert "1 repetição(ões) saíram do lote" in resposta
+
+
+def test_remover_duplicados_sem_duplicado_diz_que_nao_havia(app_lote, monkeypatch):
+    """Silêncio depois de apertar um botão faz a pessoa apertar de novo."""
+    from app.apps.analisesps import lote
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "", "salvo_por": None, "salvo_em": None})
+    monkeypatch.setattr(lote, "salvar", lambda c, quem="", pessoa="": None)
+    resposta = como(app_lote, SENHA_OPERADOR).post(
+        "/analisesps/lote",
+        data={"acao": "remover_duplicados", "conteudo": "Grupo\n1 2"},
+        follow_redirects=True).get_data(as_text=True)
+    assert "Não havia nenhuma SP repetida" in resposta
+
+
+def test_os_botoes_de_limpeza_dizem_REMOVER_e_nao_TIRAR(app_lote, monkeypatch):
+    """Pedido do dono em 11/09/2026: *"esse termo tirar não é legal, é melhor
+    remover pagos e remover cancelados"*. Numa tela de pagamentos "tirar as
+    pagas" chega a soar como desfazer o pagamento — e o botão só mexe na lista
+    do lote."""
+    from app.apps.analisesps import lote
+    monkeypatch.setattr(lote, "ler", lambda pessoa="": {
+        "conteudo": "Grupo\n1", "salvo_por": None, "salvo_em": None})
+    html = como(app_lote, SENHA_OPERADOR).get(
+        "/analisesps/lote").get_data(as_text=True)
+    assert "Remover pagos" in html and "Remover cancelados" in html
+    assert "Tirar as pagas" not in html and "Tirar as canceladas" not in html
+
+
 def test_o_botao_de_remover_so_existe_na_tela_do_lote(app, app_lote):
     """Nas Solicitações não há lote de onde tirar — o botão de lá é o de
     MANDAR para o lote. Dois botões parecidos com efeitos opostos na mesma
@@ -3675,6 +3742,35 @@ def test_agir_sobre_a_selecao_apaga_a_memoria_dela():
     # As quatro ações que ALTERAM alguma coisa têm de chamar.
     assert js.count("selecaoConsumida();") == 4, (
         "cada ação que altera precisa apagar a memória da seleção")
+
+
+def test_a_marcacao_reposta_nao_pega_a_COPIA_da_SP_no_lote():
+    """"Quando eu marco alguma coisa no lote, e esse registro está repetido,
+    ele marca também o outro — está bagunçando." — o dono, em 11/09/2026.
+
+    A memória guardava o NÚMERO da SP. No Lote a mesma SP pode estar em dois
+    grupos, então repor pelo número marcava as duas cópias: a que a pessoa
+    marcou e a que ela não marcou. Agora guarda a CHAVE DA LINHA."""
+    from pathlib import Path
+    js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
+    assert "chaveDaLinha" in js
+    assert 'LEMBRAR.gravar("marcadas", sel.map(chaveDaLinha))' in js, (
+        "voltou a guardar o número da SP — a cópia volta a ser marcada junto")
+    assert "querem.has(chaveDaLinha(c))" in js, (
+        "a reposição voltou a comparar pelo número")
+
+
+def test_so_o_lote_usa_chave_de_linha_as_solicitacoes_usam_o_numero():
+    """Nas Solicitações cada SP aparece UMA vez, então o número já identifica
+    a linha. Usar a posição lá faria a marcação se perder toda vez que a base
+    sincronizasse e empurrasse as linhas — que é justamente a memória que a
+    19ª leva criou."""
+    from pathlib import Path
+    html = Path("app/apps/analisesps/templates/analisesps_tabela.html").read_text(
+        encoding="utf-8")
+    assert '{% if grupo is defined %}data-chave=' in html, (
+        "a chave da linha tem de estar presa ao Lote (onde há grupo), e não "
+        "valer também para as Solicitações")
 
 
 def test_a_tela_de_QR_nao_apaga_a_memoria_da_selecao():

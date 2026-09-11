@@ -117,6 +117,86 @@ def test_sp_desconhecida_nao_e_removida():
 
 
 # ---------------------------------------------------------------------------
+# O lote: tirar a SP repetida
+#
+# Pedido do dono em 11/09/2026, e ele disse qual das cópias fica: "mantém o
+# registro mais superior, e os que estão mais para baixo no lote remove".
+#
+# POR QUE A REPETIÇÃO ATRAPALHA, e não é só feiúra: o mesmo número em dois
+# grupos aparece duas vezes na tela, é somado duas vezes no total do lote, e
+# convida a agir duas vezes sobre o mesmo pagamento.
+# ---------------------------------------------------------------------------
+def test_remover_duplicados_guarda_a_primeira_aparicao():
+    """A primeira, e não a última, porque o lote é lido de cima para baixo e o
+    grupo mais recente entra no topo. Guardar a de baixo mudaria a SP de grupo
+    sem ninguém ter pedido."""
+    texto = "Pagar amanhã\n111 222\n\nDepois\n111 333"
+    novo, quantos = lote.remover_duplicados(texto)
+    assert quantos == 1
+    assert novo.count("111") == 1
+    # A que fica é a do PRIMEIRO grupo — não basta o 111 continuar existindo,
+    # tem de continuar ONDE ESTAVA. Guardar a de baixo mudaria a SP de grupo.
+    grupos = {g["titulo"]: g["ids"] for g in lote.separar_grupos(novo)}
+    assert grupos["Pagar amanhã"] == ["111", "222"]
+    assert grupos["Depois"] == ["333"]
+
+
+def test_remover_duplicados_apaga_o_cabecalho_do_grupo_que_esvaziou():
+    """A mesma regra das outras limpezas: título sem nada embaixo some. E o
+    dono repetiu isto no mesmo pedido — "se ficar um lote sem nenhum registro,
+    apaga o cabeçalho e some com esse lote"."""
+    texto = "Primeiro\n111 222\n\nRepetido\n111 222"
+    novo, quantos = lote.remover_duplicados(texto)
+    assert quantos == 2
+    assert "Repetido" not in novo, "o cabeçalho do grupo esvaziado ficou"
+    assert "Primeiro" in novo and "111" in novo and "222" in novo
+
+
+def test_remover_duplicados_nao_apaga_titulo_que_ja_estava_vazio():
+    """Alguém escreveu aquele título de propósito, para encher depois. Apagar o
+    que a pessoa acabou de digitar seria pior do que o cabeçalho sobrando."""
+    texto = "Cheio\n111\n\nVou encher depois\n\nOutro\n111"
+    novo, _ = lote.remover_duplicados(texto)
+    assert "Vou encher depois" in novo
+    assert "Outro" not in novo, "esse esvaziou AGORA, tinha de sair"
+
+
+def test_remover_duplicados_conta_copias_e_nao_numeros():
+    """Três aparições do mesmo número são duas cópias sobrando. A tela mostra
+    esse número no botão, então contar SPs em vez de cópias diria "1" para um
+    lote onde três linhas vão sair."""
+    novo, quantos = lote.remover_duplicados("111 111 111")
+    assert quantos == 2 and novo == "111"
+
+
+def test_remover_duplicados_em_lote_sem_repeticao_nao_mexe_em_nada():
+    texto = "Pagar amanhã\n111 222\n\nDepois\n333"
+    novo, quantos = lote.remover_duplicados(texto)
+    assert quantos == 0
+    assert lote.extrair_ids(novo) == lote.extrair_ids(texto)
+
+
+def test_remover_duplicados_aguenta_lote_vazio():
+    assert lote.remover_duplicados("") == ("", 0)
+
+
+def test_contar_duplicados_nao_altera_o_lote():
+    """A tela chama isto a cada carga, só para decidir se mostra o botão. Se
+    ele mexesse no lote, abrir a tela apagaria linhas sem ninguém pedir."""
+    texto = "Primeiro\n111\n\nOutro\n111 222"
+    assert lote.contar_duplicados(texto) == 1
+    assert lote.contar_duplicados(texto) == 1, "chamar duas vezes deu diferente"
+    assert lote.contar_duplicados("111 222") == 0
+    assert lote.contar_duplicados("") == 0
+
+
+def test_duplicado_dentro_da_mesma_linha_tambem_sai():
+    """"111 111" numa linha só é o caso mais fácil de colar sem perceber."""
+    novo, quantos = lote.remover_duplicados("Grupo\n111 111 222")
+    assert quantos == 1 and novo == "Grupo\n111 222"
+
+
+# ---------------------------------------------------------------------------
 # Rateio: os percentuais têm de fechar
 # ---------------------------------------------------------------------------
 def test_o_rateio_fecha_cem_por_cento():

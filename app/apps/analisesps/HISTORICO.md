@@ -1577,6 +1577,301 @@ alteram alguma coisa chamam isso; a tela de QR **não**, de propósito — ela n
 altera nada, só abre outra tela, e quem volta de lá quer a seleção inteira de
 volta. Há teste para as duas coisas.
 
+### Vigésima quinta leva (11/09) — as críticas da conciliação fiscal
+
+A conciliação já sabia **casar** nota com lançamento (24ª leva). Esta leva é a
+outra metade: decidido o par, **o que se faz com ele**. É a regra de negócio da
+tela nova de Documentação Fiscal, escrita e travada em teste antes de existir
+tela — porque é aqui que mora o risco, não no desenho.
+
+**A correção do dono que reescreveu o miolo.** Foi proposto apontar como
+divergência o caso "o tipo de despesa é Material Elétrico, mas o card está como
+Não Dedutível". Ele recusou:
+
+> *"Categoria de despesa não vai ser regra para dedutibilidade ou não, porque
+> você pode comprar um material elétrico sem nota fiscal. Então nesse caso vai
+> ser não dedutível. O fato de ter a nota fiscal é que vai ser o balizador.
+> A simples divergência de material elétrico nem adianta mostrar."*
+
+Ele está certo, e isso derrubou uma regra inteira que já estava escrita aqui: a
+que sugeria categoria **por palavra** no tipo de despesa ("material" → NF-e).
+Sugerir NF-e para uma compra feita sem nota é propor dedução de despesa que não
+dá dedução — o erro exato que ele apontou. **A regra foi removida, e um teste
+guarda a remoção**: se alguém a reintroduzir, a suíte quebra citando a frase
+dele. Conferido que o teste falha quando a regra volta.
+
+**O que sobrou para o tipo de despesa, e só isso:** as sete despesas que
+**nunca** têm nota eletrônica — aluguel tem contrato, veículo tem apólice, água
+e energia têm fatura, cartório tem taxa. Nessas, e apenas quando nenhuma nota
+foi encontrada, ele diz qual documento procurar. Fora delas, sem nota o sistema
+**cala**.
+
+**E a categoria não precisa mais ser adivinhada: ela está DENTRO da chave.** Os
+dígitos 21 e 22 da chave de acesso são o modelo do documento, por definição da
+Receita — 55 é NF-e, 57 é CT-e, 65 é NFC-e. Conferido nas chaves reais da
+planilha do dono, e bate exatamente com o que ele classificou à mão. **Achada a
+nota, a categoria é certeza, não palpite.** É essa diferença que autoriza o
+sistema a propor em lote.
+
+**O que a tela vai apontar, em ordem de urgência:**
+
+| O que | O que o sistema faz |
+|---|---|
+| A nota que está no card está **cancelada** | Aponta como crítico. **Nunca propõe** — pagar contra documento cancelado é decisão de gente |
+| A chave do card **não é desta SP** | Levanta a suspeita de notas trocadas entre dois lançamentos |
+| O card diz "não há nota" e **a nota foi encontrada** | **Propõe a correção**, com a categoria lida da chave |
+| O card afirma NF-e e **não há chave nem nota** | Levanta dúvida — pode ser classificação sem documento, pode ser nota que ainda não veio |
+| Nada encontrado, nada afirmado | Diz que **procurou e não achou** — que é diferente de não ter procurado |
+
+**Duas pilhas, e elas existem por causa de um risco real.** Propor cria fadiga
+de aprovação: se vinte e oito de trinta estão sempre certas, na terceira semana
+ninguém confere mais — é o mesmo olho cansado, só que mais rápido. Por isso o
+que tem dúvida **não vem marcado** e é decidido um a um; só o que não tem dúvida
+nenhuma vai marcado para aprovação em lote.
+
+**Um achado que nasceu escrevendo os testes.** Quando o card tem chave mas a
+nota não veio no relatório do FSist, ainda dá para conferir alguma coisa **sem
+o relatório**: o CNPJ de quem emitiu está dentro da própria chave. Se ele não é
+o do credor da SP, a chave veio de outro lançamento — a troca de anexo
+detectada sem depender de achar a nota certa. Antes disso, esse caso caía num
+"nada a apontar" silencioso.
+
+**A revarredura que o dono pediu está travada em teste:** "Emissão Futura" e
+"Não Dedutível" — e mais cinco categorias de ausência — voltam a ser
+examinadas a cada relatório novo do FSist. A nota que faltava em julho pode
+estar no relatório de setembro, e era justamente esse o caso que ele descreveu.
+
+**A segunda visão também entrou:** as notas emitidas contra a BWS que não estão
+em lançamento nenhum. É ela que fecha com a contabilidade — *"se tem uma nota
+emitida, tem uma despesa para estar associada"*. As canceladas ficam de fora de
+propósito: nota cancelada sem despesa é o esperado, não um achado.
+
+**Verificação.** 4.286 testes verdes com Postgres de verdade (descartável,
+nesta máquina — a produção não é alcançável), 129 pulados. 26 testes novos,
+um por caso. Os dois que guardam decisões do dono foram conferidos **quebrando
+o código de propósito** para provar que mordem. A aplicação sobe com os 18
+blueprints.
+
+**O que NÃO foi feito ainda, e é o próximo passo:** a tela em si. Hoje isto é
+regra sem interface — nada disso aparece para ninguém. Faltam também a gravação
+em lote de volta no Pipefy e a leitura dos anexos por IA, que o dono decidiu
+manter no escopo.
+
+### Levantamento (11/09) — o Nº da nota vive em DOIS lugares, e só ele
+
+Pergunta do dono: quando a conciliação atualizar o card no Pipefy, a planilha
+SPsBD precisa ser atualizada junto? *"Pelo menos o número de nota, porque os
+outros dados não têm na planilha."*
+
+**Conferido no código.** Ele está certo, e o levantamento é curto:
+
+| O que a conciliação decide | Na SPsBD? | No card? |
+|---|---|---|
+| **Nº da nota** | **sim — coluna AA** | sim |
+| Documentação Fiscal (a categoria) | não existe | sim |
+| Chave de acesso | não existe | sim |
+| Gerou nota | não existe | sim |
+
+**O Nº da nota é o único campo que pode divergir**, porque é o único que existe
+dos dois lados. Os outros três não têm onde divergir — a planilha não os
+conhece. Isso simplifica o problema bastante: é uma coluna, não quatro.
+
+**O caminho de volta já existe.** Não é mecanismo novo: toda alteração feita
+pela tela já percorre banco → fila → log → planilha, grava no banco na hora,
+enfileira a célula e escreve no Sheets pelo processo separado. Se a internet
+cair, a célula fica na fila e sobe sozinha. É assim que Status Pgt e Agendado
+funcionam desde a estreia.
+
+**A trava que existe hoje, e ela é boa:** a coluna AA está marcada como somente
+leitura, e a rota de alteração recusa qualquer coluna fora da lista. Duas
+colunas escapam disso por porta própria — Validação (senha própria) e Análise
+("Remover risco"). **A conciliação deve seguir esse desenho: porta própria, não
+entrada na lista geral.** Pôr `nf` na lista comum daria a qualquer operador o
+poder de reescrever o número da nota de qualquer SP pela tela de sempre, e
+número de nota é prova fiscal, não campo de trabalho.
+
+**RESPONDIDO pelo dono no mesmo dia:** *"quem alimenta a planilha são
+scripts."* Isso resolve e simplifica: **o card é a fonte, a planilha é o
+destino**. Escrever o Nº da nota no card BASTA — o script leva o valor para a
+coluna AA sozinho. Escrever nos dois lados criaria duas verdades para a mesma
+informação, e no dia em que discordassem ninguém saberia qual vale.
+
+**Decidido, então: a conciliação escreve no card e NÃO toca na planilha.** A
+coluna AA continua somente leitura. O efeito colateral, dito sem esconder:
+entre a gravação no card e a próxima rodada do script, a coluna Nº NF de
+Solicitações e do Lote ainda mostra o número velho. A tela de Documentação
+Fiscal não sofre disso — ela lê o registro paralelo, que sabe o que foi
+decidido e o que já foi escrito.
+
+**Os identificadores dos campos do Pipefy também já estavam dados**, na
+estrutura do pipe que o dono colou mais cedo em 11/09 — eu tinha dito que
+faltavam, e estava errado. Conferidos um a um e presos no código, com o UUID
+de cada um ao lado: "A despesa gerou emissão de Nota Fiscal?", "Nº da Nota
+Fiscal", "Documentação Fiscal", "Chave de Acesso", "Análise Dedutibilidade" e
+"Etiquetas".
+
+> **Por que isso virou teste.** Errar um identificador do Pipefy **não dá
+> erro**: a chamada é aceita e nada é gravado. Não haveria como perceber pela
+> tela do Análise de SPs — só abrindo o card e vendo que continua vazio. E as
+> 22 opções de Documentação Fiscal batem exatamente com as do pipe, na mesma
+> ordem: o Pipefy **recusa o card inteiro** quando o texto não é uma das
+> opções, então um acento diferente não erraria uma SP, derrubaria a gravação
+> do lote todo.
+
+**O que ainda não se sabe:** o TIPO de dois campos. O JSON traz identificador,
+rótulo e UUID, mas não o tipo. Para "Análise Dedutibilidade" — onde o dono quer
+o link da nota baixada — isso importa: se for campo de seleção e não de texto,
+o link não cabe ali. É uma consulta à API, e fica para quando a gravação for
+construída.
+
+### A leitura dos anexos por IA — perguntado em 11/09, e a resposta é NÃO AINDA
+
+Pergunta do dono: *"está entrando aí a análise dos anexos? quando a gente não
+conseguir cruzar de forma fácil os dados?"*
+
+**Não, ainda não.** O que está construído cruza só TEXTO — credor, CNPJ, valor,
+número da nota, data. Quando isso não fecha, a SP cai em "procurei e não achei"
+e para ali. O anexo não é aberto.
+
+E é exatamente aí que a IA entra, porque é aí que o cruzamento textual acabou.
+A ordem importa: primeiro o texto, que é de graça e resolve a maioria; só o que
+sobrar vai para a leitura do anexo. Mandar todo anexo para a IA seria pagar
+caro para responder o que já se sabia. E a IA **propõe, nunca decide** — nota
+lida errado de um PDF torto é dedução indevida com cara de decisão tomada.
+
+**A decisão está tomada: a IA não foi adiada, está no escopo.** Falta ser
+construída. O custo é dependência nova, cobrada por documento lido, e o volume
+da fila só vai ser conhecido quando a tela rodar uma vez contra a base inteira
+— a conta muda muito se forem 50 anexos por mês ou 5.000.
+
+> **Um atalho que o dono levantou e que pode dispensar boa parte disso:** se os
+> certificados digitais da empresa entrarem no Análise de SPs, as notas poderiam
+> ser baixadas direto da Receita pela chave, sem IA e sem FSist — e a IA
+> sobraria só para o que não é nota eletrônica. **Não foi verificado se é
+> viável.**
+
+### Vigésima sexta leva (11/09) — a SP repetida no lote
+
+Três coisas, todas pedidas pelo dono no mesmo minuto.
+
+**1. A marcação voltava na linha ERRADA quando a SP estava repetida.** *"Quando
+eu marco alguma coisa no lote, e esse registro está repetido, ele marca também
+o outro. Está bagunçando."*
+
+A memória da marcação (19ª leva) guardava o **número da SP**. No Lote a mesma SP
+pode estar em dois grupos — e aí repor pelo número marcava **as duas cópias**: a
+que a pessoa marcou e a que ela não marcou. Não era a marcação retroagindo (isso
+foi a 24ª leva); era ela pegando a linha errada.
+
+Agora guarda a **chave da linha** — grupo mais posição mais número —, então volta
+marcada só a linha que a pessoa marcou.
+
+> **Nas Solicitações continua valendo o número, de propósito.** Lá cada SP
+> aparece uma vez só, então o número já identifica a linha; usar a posição faria
+> a marcação se perder toda vez que a base sincronizasse e empurrasse as linhas
+> — que é justamente a memória que a 19ª leva criou. Há teste travando isso.
+
+> **Trade-off escrito:** no Lote, mexer no conteúdo (remover pagos, por exemplo)
+> muda as posições e a marcação guardada não volta. É o lado certo de errar —
+> deixar de repor não faz nada; repor na linha errada faz agir sobre o pagamento
+> errado.
+
+**2. "Tirar" virou "Remover".** *"Esse termo tirar não é legal, é melhor remover
+pagos e remover cancelados."* Numa tela de pagamentos "tirar as pagas" chega a
+soar como desfazer o pagamento — e o botão só mexe na lista do lote.
+
+**3. Botão "Remover duplicados", novo.** *"Mantém o registro mais superior, e os
+que estão mais para baixo no lote remove."*
+
+Fica a **primeira** aparição, e não a última, porque o lote é lido de cima para
+baixo e o grupo mais recente entra no topo — guardar a de baixo mudaria a SP de
+grupo sem ninguém ter pedido.
+
+> **Por que a repetição atrapalha, e não é só feiúra:** o mesmo número em dois
+> grupos aparece duas vezes na tela, **é somado duas vezes no total do lote**, e
+> convida a agir duas vezes sobre o mesmo pagamento. Era também o que fazia a
+> marcação pegar a linha errada, no item 1.
+
+O botão **só aparece quando há o que remover**, e diz quantas são ("Remover
+duplicados (3)"). Botão que não faz nada quando apertado é pior do que botão
+nenhum: a pessoa aperta, nada muda, e passa a desconfiar dos outros botões.
+
+**O cabeçalho do grupo que esvaziou sai junto**, como ele lembrou no mesmo
+pedido — a mesma regra das outras duas limpezas. Para as três não divergirem, a
+lógica do cabeçalho órfão virou **um lugar só** (`_limpar`), e cada limpeza só
+diz quem sai. Em três cópias, a terceira nasceria sem a regra e ninguém notaria
+até o lote encher de título solto.
+
+**Verificação:** 4.304 testes verdes com Postgres de verdade, 129 pulados. 16
+testes novos. Os que guardam as decisões do dono foram conferidos **quebrando o
+código de propósito** — trocar "fica a primeira" por "fica a última" derruba
+três deles; tirar a guarda que prende a chave de linha ao Lote derruba outro. A
+aplicação sobe com os 18 blueprints.
+
+**O que NÃO foi verificado:** nada disto foi aberto num navegador. A marcação
+reposta em particular é comportamento de tela — os testes conferem o código que
+a governa, não o clique.
+
+### INCIDENTE (11/09) — a SP paga que a base insistia em mostrar como "Pagar"
+
+O dono, olhando a **SP 1443253428** no lote: *"na planilha, consulta BD, esse
+registro está pago. E ele está aparecendo no lote como PAGAR. A base está
+atualizada, eu acabei de atualizar, o relógio está batendo."*
+
+**Não era atraso. Era permanente.** Aquela linha nunca mais seria relida.
+
+**A causa.** A sincronização do dia lê só as colunas A (ID) e V (carimbo) e
+traz apenas as linhas cujo carimbo é mais novo que o da última rodada. É isso
+que faz a atualização custar segundos em vez de minutos. Só que **o carimbo é
+escrito pelo gatilho `onEdit` da própria planilha — e esse gatilho NÃO DISPARA
+quando quem escreve é um script.** E quem alimenta a SPsBD são scripts, como o
+dono confirmou no mesmo dia.
+
+Ou seja: o script grava "Pago" na coluna O, o carimbo da coluna V fica como
+estava, e a sincronização conclui que nada mudou naquela linha. Para sempre —
+até alguém editar a célula na mão.
+
+> **Conferido na planilha de verdade**, não deduzido: entre as 63 primeiras
+> linhas legíveis da SPsBD, **5 estão com o carimbo VAZIO** e as outras 58 têm
+> todas **exatamente o mesmo carimbo** (`2026-09-04 16:05:23`) — a assinatura
+> de uma gravação em massa feita por script.
+
+**E o relógio da tela não acusava nada**, o que foi o que despistou: a hora da
+última sincronização é gravada no fim de TODA rodada, tenha vindo linha ou não.
+"O relógio está batendo" prova que a rotina rodou, **não** que algum dado desceu.
+
+#### As três correções
+
+**1. A sincronização passou a CONFERIR o conteúdo das colunas que decidem
+dinheiro** (hoje: Status Pgt), além do carimbo. Se o que está na planilha
+difere do que está na base, a linha é trazida — com carimbo ou sem. Custa **uma
+leitura de coluna a mais** por rodada; é barato perto do estrago de mostrar como
+"a pagar" o que já foi pago. A lista de colunas conferidas é uma linha só de
+código, para crescer quando for preciso: cada uma acrescentada é mais uma
+leitura, e por isso não entra a planilha inteira.
+
+**2. A marca d'água agora fica UM SEGUNDO ATRÁS do maior carimbo visto.** Um
+script que grava 800 linhas carimba todas com o mesmo segundo. Se a varredura
+pegasse metade delas, a marca d'água subiria para aquele segundo e a outra
+metade — carimbada igual — nunca mais satisfaria "maior que": sumiria para
+sempre. Recuando um segundo, a borda é reexaminada na rodada seguinte. Custa
+reler um punhado de linhas.
+
+**3. A sincronização passou a registrar QUANTAS linhas desceram** e quantas
+foram achadas sem carimbo novo. Vai para o log do Render: se o número de "sem
+carimbo novo" for alto todo dia, é sinal de que o gatilho da planilha não está
+carimbando o que os scripts escrevem, e a conferência é o que está segurando a
+base de pé.
+
+**Verificação:** 4.310 testes verdes com Postgres de verdade. Seis testes novos
+reproduzem o caso com banco de verdade, e foram conferidos **desligando a
+correção**: com o código que estava no ar, a SP com carimbo vazio continua
+"Pagar" depois da sincronização — o defeito exato que o dono viu.
+
+> **Enquanto a correção não estava publicada**, o contorno era editar a célula
+> na planilha à mão: edição de gente dispara o gatilho, o carimbo é escrito, e
+> a sincronização seguinte traz a linha.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a

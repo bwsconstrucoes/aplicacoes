@@ -204,6 +204,11 @@ const LEMBRAR = {
   if (!barra) return;
 
   const marcas = () => Array.from(document.querySelectorAll("input.marca"));
+
+  // O que identifica a linha para a memoria da marcacao. No Lote e a chave da
+  // linha (grupo + posicao + SP), porque la a mesma SP pode aparecer duas
+  // vezes; nas Solicitacoes nao ha chave e vale o numero, que ja e unico.
+  const chaveDaLinha = c => c.dataset.chave || c.value;
   const marcadas = () => marcas().filter(c => c.checked);
 
   const moeda = v => v.toLocaleString("pt-BR",
@@ -263,7 +268,11 @@ const LEMBRAR = {
     // E guarda o que está marcado, para a volta a esta tela trazer tudo de
     // novo. Vazio é apagado em vez de guardado: uma lista vazia guardada
     // sobrescreveria a marcação de uma volta anterior.
-    if (sel.length) LEMBRAR.gravar("marcadas", sel.map(c => c.value));
+    //
+    // GUARDA A CHAVE DA LINHA, NAO O NUMERO DA SP. No Lote a mesma SP pode
+    // estar em dois grupos, e guardar o numero fazia a volta marcar as duas -
+    // o dono relatou em 11/09/2026: "esta bagunçando".
+    if (sel.length) LEMBRAR.gravar("marcadas", sel.map(chaveDaLinha));
     else LEMBRAR.esquecer("marcadas");
   }
 
@@ -273,7 +282,7 @@ const LEMBRAR = {
     const querem = new Set(guardadas);
     let repostas = 0;
     marcas().forEach(c => {
-      if (querem.has(c.value)) { c.checked = true; repostas += 1; }
+      if (querem.has(chaveDaLinha(c))) { c.checked = true; repostas += 1; }
     });
     // A barra do alto mostra quantas e quanto somam — então a marcação
     // reposta nunca é invisível, e nenhum botão age sobre ela sem confirmar.
