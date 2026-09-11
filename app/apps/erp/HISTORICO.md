@@ -17,6 +17,81 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
+**Estado em 11/09/2026 (quinta entrega):** no ramo, o **assistente no canto de
+toda tela**, a **continuação de conversa** e a correção do **áudio no iPhone**.
+**Sem migração.**
+
+### O áudio quebrava no iPhone — e o arquivo não estava corrompido
+
+O dono gravou pelo celular e recebeu *"Audio file might be corrupted or
+unsupported"*. A causa: **o Safari do iPhone grava em MP4 e o Chrome do Android
+em WebM**, e a tela mandava os dois com o nome `pergunta.webm`. O serviço de
+transcrição decide o formato PELO NOME — um MP4 apresentado como WebM é lido
+como lixo.
+
+A tela passou a nomear pelo que o navegador realmente gravou. Mas **a correção
+que fica é do servidor**: ele confere a assinatura dos primeiros bytes e usa o
+formato que o CONTEÚDO diz ser. Nome vem do navegador, e navegador varia; o
+conteúdo não mente. Assim o áudio chega certo mesmo que a tela erre de novo ou
+que um navegador novo invente outro formato.
+
+### O assistente saiu da aba do Financeiro
+
+Pedido do dono, com estas palavras: *"o perguntar que está na barra lá em cima
+é ser acessado de forma geral, e não por exemplo dentro do financeiro. O ideal
+é que abra um modal que fique sobre a tela no cantinho, como uma assistente
+virtual mesmo."* Ele tem razão — as perguntas já alcançam obras, contratos e
+suprimentos.
+
+Agora é um botão redondo no canto de **toda** tela, com um painel que abre por
+cima. É também o que se faz lá fora: o padrão tem nome, *ambient copilot* —
+presente em toda tela, sempre opcional, sem tirar ninguém do que estava
+fazendo.
+
+**Por dentro não é nada novo, e isso é o ponto.** Ele fala com as MESMAS rotas
+da tela Perguntar, com as mesmas permissões e o mesmo escopo por obra. Não
+existe um segundo caminho até o número — existe uma porta a mais para o mesmo
+caminho. Há varredura na suíte recusando endereço novo dentro do assistente.
+
+**Tudo dele começa com `ia` e vive dentro de uma função fechada.** Ele é
+carregado junto com as 20 telas: um nome repetido ou apaga a função da tela em
+silêncio, ou mata a tela inteira com erro de sintaxe — as duas coisas já
+aconteceram neste projeto.
+
+**A conversa fica no navegador (`sessionStorage`), não no banco.** Guardar
+pergunta e resposta seria guardar número calculado, que envelhece, e ainda por
+cima dado que pode ser de obra que a próxima pessoa não enxerga. Ela atravessa
+a troca de tela e some ao fechar a aba. O que o sistema registra, e continua
+registrando, é só que a pergunta foi feita — para o relatório de uso.
+
+A tela cheia continua existindo em `/erp/perguntar`, alcançada pelo ⤢ do
+painel, para quando a resposta tem tabela grande demais para o cantinho. A aba
+"Perguntar" saiu da barra do Financeiro.
+
+### Continuar a conversa: "e da obra Triunfo?"
+
+O dono pediu poder **interagir**, não só disparar perguntas soltas. A forma
+mais comum disso é a frase curta que só troca um filtro da anterior. Duas
+formas funcionam: dizendo o nome do filtro (*"e da obra Triunfo"*) ou só o
+valor (*"e a elétrica?"*, quando a pergunta anterior tem um filtro só).
+
+**A regra que mantém isso honesto: a tela DIZ que repetiu** — *"Repeti a
+pergunta anterior — 'Quais insumos estão cadastrados numa categoria?' —
+trocando categoria = elétrica"*. Responder outra pergunta em silêncio só porque
+a frase era curta seria o pior tipo de erro: o número sai certo, só que de
+outra pergunta.
+
+Três travas, todas com teste: pergunta que se reconhece sozinha nunca é
+sequestrada; frase com assunto próprio ("o que está sem NOTA da obra X") não é
+continuação; e empate continua virando pergunta de volta. Continua **sem IA** —
+é trocar um parâmetro numa pergunta que já existe.
+
+⚠️ **Ninguém pode ver SQL.** O recado técnico do servidor apareceu no cantinho
+com o nome de todas as colunas de uma tabela. O painel passou a mostrar só a
+primeira linha; o recado inteiro continua no log, que é onde serve. **Vale
+olhar isso nas outras telas também** — a API devolve `str(e)` em falha
+inesperada, e o que apareceu aqui pode aparecer em qualquer lugar.
+
 **Estado em 11/09/2026 (quarta entrega):** no ramo, o quadro **"O que está
 ligado"**, em Configurações › Saúde do sistema. **Sem migração.**
 

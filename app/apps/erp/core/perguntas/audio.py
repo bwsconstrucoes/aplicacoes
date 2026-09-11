@@ -57,6 +57,46 @@ def _extensao(nome: str) -> str:
     return (nome or "").rsplit(".", 1)[-1].strip().lower() if "." in (nome or "") else ""
 
 
+# ---------------------------------------------------------------------------
+# O FORMATO SE DESCOBRE OLHANDO O ARQUIVO, NÃO O NOME DELE
+#
+# Defeito real, relatado pelo dono em 11/09/2026, gravando pelo iPhone:
+#
+#     "Audio file might be corrupted or unsupported"
+#
+# O arquivo não estava corrompido. O Safari do iPhone grava em **MP4**; o
+# Chrome do Android, em **WebM**. A tela mandava os dois com o nome
+# "pergunta.webm", e o serviço de transcrição decide o formato PELO NOME. Um
+# MP4 apresentado como WebM é lido como lixo.
+#
+# A tela foi corrigida para nomear certo. Mas a correção que fica é esta:
+# **conferir a assinatura dos primeiros bytes**. Nome vem do navegador, e
+# navegador varia — o conteúdo não mente. Assim o áudio chega certo mesmo que
+# a tela erre o nome de novo, ou que um navegador novo invente outro formato.
+# ---------------------------------------------------------------------------
+ASSINATURAS = (
+    # (posição, bytes que têm de estar ali, extensão)
+    (0, b"\x1aE\xdf\xa3", "webm"),   # WebM/Matroska — Chrome, Android
+    (4, b"ftyp", "mp4"),              # MP4/M4A — Safari, iPhone
+    (0, b"OggS", "ogg"),
+    (0, b"RIFF", "wav"),
+    (0, b"fLaC", "flac"),
+    (0, b"ID3", "mp3"),
+    (0, b"\xff\xfb", "mp3"),
+    (0, b"\xff\xf3", "mp3"),
+    (0, b"\xff\xf2", "mp3"),
+)
+
+
+def formato_do_conteudo(conteudo: bytes) -> str:
+    """A extensão que os primeiros bytes dizem ser. Vazio = não reconheci."""
+    cabeca = conteudo[:16]
+    for posicao, marca, extensao in ASSINATURAS:
+        if cabeca[posicao:posicao + len(marca)] == marca:
+            return extensao
+    return ""
+
+
 def _segundos(bruto: Any, tamanho: int) -> float:
     """Quanto tempo durou a gravação.
 
@@ -101,9 +141,17 @@ def transcrever(conteudo: bytes, nome_arquivo: str, *,
             f"{MAX_BYTES // (1024 * 1024)} MB. Uma pergunta cabe em poucos "
             f"segundos de fala.")
 
-    extensao = _extensao(nome_arquivo) or "webm"
+    # O conteúdo manda sobre o nome. Ver a explicação em ASSINATURAS.
+    pelo_conteudo = formato_do_conteudo(conteudo)
+    pelo_nome = _extensao(nome_arquivo)
+    extensao = pelo_conteudo or pelo_nome or "webm"
+    if pelo_conteudo and pelo_nome and pelo_conteudo != pelo_nome:
+        logger.info("ERP/áudio: arquivo veio como .%s mas é %s — usando %s",
+                    pelo_nome, pelo_conteudo, pelo_conteudo)
     if extensao not in FORMATOS:
-        raise ErroAudio(f"Formato de áudio não suportado (.{extensao}).")
+        raise ErroAudio(
+            f"Não reconheci o formato deste áudio (.{extensao}). Grave pelo "
+            f"botão do microfone, ou mande um arquivo comum de som.")
 
     duracao = _segundos(segundos, len(conteudo))
     if duracao > MAX_SEGUNDOS:

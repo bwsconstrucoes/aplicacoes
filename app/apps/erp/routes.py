@@ -119,10 +119,16 @@ MODULOS = [
             ("receber", "Receber", "erp.pagina_receber"),
             ("relatorios", "Relatórios", "erp.pagina_relatorios"),
             ("importar", "Importar", "erp.pagina_importar"),
-            # As perguntas que o sistema sabe responder por CÓDIGO — a base do
-            # assistente. Fica no Financeiro porque é lá que estão as
-            # perguntas de hoje; grupo novo entra com rota e ação próprias.
-            ("perguntar", "Perguntar", "erp.pagina_perguntar"),
+            # PERGUNTAR SAIU DAQUI EM 11/09/2026, a pedido do dono: *"o
+            # perguntar que está na barra lá em cima é ser acessado de forma
+            # geral, e não por exemplo dentro do financeiro"*. Ele tem razão —
+            # as perguntas já alcançam obras, contratos e suprimentos, e ficar
+            # numa aba do Financeiro dava a entender que era coisa de lá.
+            #
+            # Agora o assistente mora no CANTO DE TODA TELA (o botão redondo,
+            # em `erp_base.html`), e a tela cheia continua existindo em
+            # /erp/perguntar — alcançada pelo ⤢ do painel, para quando a
+            # resposta tem tabela grande demais para o cantinho.
         ],
     },
     {
@@ -2125,10 +2131,14 @@ def api_entender_pergunta():
     from app.apps.erp.core.comum.auditoria import registrar_evento
     from app.apps.erp.core.perguntas import catalogo, entender as svc_entender
 
-    texto = ((request.get_json(silent=True) or {}).get("texto") or "").strip()
+    d = request.get_json(silent=True) or {}
+    texto = (d.get("texto") or "").strip()
     if not texto:
         return jsonify({"ok": False, "erro": "Escreva a pergunta."}), 400
-    leitura = svc_entender.entender(texto, catalogo.para_a_tela())
+    # A última pergunta respondida nesta conversa, quando houver. É o que
+    # permite "e da obra Triunfo?" — e a tela AVISA quando repete a anterior.
+    leitura = svc_entender.entender(texto, catalogo.para_a_tela(),
+                                    chave_anterior=(d.get("anterior") or "").strip())
     try:
         with get_session() as s:
             atual = _usuario_logado(s)

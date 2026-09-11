@@ -78,7 +78,66 @@ def test_audio_grande_demais_e_recusado_antes_de_gastar():
 def test_formato_estranho_e_recusado():
     with pytest.raises(audio.ErroAudio) as e:
         audio.transcrever(b"x" * 100, "pergunta.exe")
-    assert "não suportado" in str(e.value)
+    assert "Não reconheci o formato" in str(e.value)
+
+
+# ---------------------------------------------------------------------------
+# O FORMATO SE DESCOBRE OLHANDO O ARQUIVO, NÃO O NOME
+#
+# Defeito real, no iPhone do dono, em 11/09/2026: "Audio file might be
+# corrupted or unsupported". O arquivo não estava corrompido — o Safari grava
+# em MP4, a tela mandava tudo chamado ".webm", e o serviço decide o formato
+# pelo nome. Um MP4 apresentado como WebM é lido como lixo.
+# ---------------------------------------------------------------------------
+WEBM = b"\x1aE\xdf\xa3" + b"0" * 200        # Chrome, Android
+MP4 = b"\x00\x00\x00\x20ftypisom" + b"0" * 200   # Safari, iPhone
+
+
+def test_reconhece_o_que_cada_celular_grava():
+    assert audio.formato_do_conteudo(WEBM) == "webm"
+    assert audio.formato_do_conteudo(MP4) == "mp4"
+
+
+def test_o_conteudo_vence_o_nome_errado(monkeypatch):
+    """O caso do iPhone: chega MP4 chamado .webm. Tem de virar mp4."""
+    class Resp:
+        text = "o que tem a pagar hoje"
+    cliente = _Cliente(Resp())
+    monkeypatch.setattr(audio, "_cliente", lambda: cliente)
+    monkeypatch.setattr(audio, "_registrar", lambda *a, **k: None)
+    audio.transcrever(MP4, "pergunta.webm", segundos=3)
+    assert cliente.recebido["file"].name.endswith(".mp4"), (
+        "o arquivo foi apresentado ao serviço com o formato errado — é este "
+        "o defeito que o dono viu no iPhone")
+
+
+def test_o_nome_certo_continua_valendo_quando_o_conteudo_confere(monkeypatch):
+    class Resp:
+        text = "tudo certo"
+    cliente = _Cliente(Resp())
+    monkeypatch.setattr(audio, "_cliente", lambda: cliente)
+    monkeypatch.setattr(audio, "_registrar", lambda *a, **k: None)
+    audio.transcrever(WEBM, "pergunta.webm", segundos=3)
+    assert cliente.recebido["file"].name.endswith(".webm")
+
+
+def test_conteudo_irreconhecivel_cai_no_nome(monkeypatch):
+    """Nem todo formato tem assinatura conhecida. Quando não dá para olhar o
+    conteúdo, o nome ainda é a melhor pista — não se recusa por precaução."""
+    class Resp:
+        text = "ok"
+    cliente = _Cliente(Resp())
+    monkeypatch.setattr(audio, "_cliente", lambda: cliente)
+    monkeypatch.setattr(audio, "_registrar", lambda *a, **k: None)
+    audio.transcrever(b"sem assinatura nenhuma" * 10, "gravacao.m4a", segundos=3)
+    assert cliente.recebido["file"].name.endswith(".m4a")
+
+
+def test_a_tela_nomeia_pelo_tipo_que_o_navegador_gravou():
+    """De nada adianta o servidor consertar se a tela insiste no nome fixo."""
+    assert "extensaoDoTipo(blob.type)" in TELA
+    assert '"pergunta.webm"' not in TELA, (
+        "a tela voltou a mandar todo áudio como .webm — o iPhone quebra de novo")
 
 
 def test_gravacao_longa_demais_e_recusada(monkeypatch):
