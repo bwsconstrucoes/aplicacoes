@@ -1874,6 +1874,58 @@ correção**: com o código que estava no ar, a SP com carimbo vazio continua
 
 ### Pedido na fila, ainda NÃO feito
 
+**Normalizar o nome do credor na SPsBD** (pedido em 11/09/2026). *"O Pipefy é
+frouxo no campo credor. Um lança 'Aço Cearense Limitada', outro bota só 'Aço
+Cearense', o outro escreve errado. Queria que a planilha fosse analisada
+comparando credor e CPF/CNPJ, e equalizasse para o melhor nome."*
+
+**MEDIDO em dado de verdade** (aba Lançamentos, 116 lançamentos, 41 CNPJs):
+**8 CNPJs — 20% — aparecem com mais de um nome**. E os casos NÃO são todos do
+mesmo tipo, o que derruba a regra simples de "fica o nome mais completo":
+
+| CNPJ | Nomes encontrados | Que tipo de caso é |
+|---|---|---|
+| 28566933001727 | MBP ISOBLOCK · MBP ISO BLOCK · METALURGICA BARRA DO PIRAI S/A | espaço a mais **e** nome de fantasia vs. razão social |
+| 03666136000123 | ESPERANÇA · ESPERAÇA · ESPERANCA NORDESTE LTDA | acento e **erro de digitação** |
+| 01519852000829 | MAGNA LOCAÇÕES · MAGNA LOCAÇÃOES LTDA | erro de digitação — e **o errado é o MAIS LONGO** |
+| 09444530000101 | TRIBUNAL DE JUSTIÇA DO CEARÁ · TRI | abreviação |
+| 10835932000108 | CELPE CIA ENERGETICA · NEOENERGIA | **a empresa mudou de nome** |
+| 24091522000104 | MAFEMA MATERIAIS ELÉTRICOS · MAFEMA LIMITADA | fantasia vs. razão social |
+
+**O que esses dados provam:** "o nome mais completo" não serve como regra
+sozinha — em MAGNA, o mais longo é o errado. E CELPE/NEOENERGIA e
+MAFEMA não são erro nenhum: são decisões que só uma pessoa toma.
+
+**Proposta levada ao dono, ainda sem resposta:** normalizar sozinho **só quando
+é literalmente o mesmo nome** (tirando acento, pontuação, espaço e maiúscula —
+"MBP ISOBLOCK" = "MBP ISO BLOCK") ou quando um é começo do outro ("TRI" →
+"TRIBUNAL…"); tudo o mais vai para uma lista onde ele decide **uma vez por
+CNPJ**, e a escolha fica gravada. Rodar sob botão e uma vez por dia, **nunca**
+na sincronização de 5 em 5 minutos — é varredura da base inteira e o banco tem
+um décimo de um núcleo.
+
+**Comprovantes por arrastar e soltar** (pedido em 11/09/2026). *"Eu arrasto o
+comprovante pra dentro da tela e dispara a automação, sem passar pelo Make."*
+
+**Levantamento: o robô JÁ EXISTE e está em produção.** O `baixabradesco` recebe
+o PDF, descobre a SP, dá baixa no Omie, marca paga na SPsBD, move o card no
+Pipefy e guarda o comprovante — e já aceita o PDF **dentro do próprio pedido**,
+em base64. O que falta não é a baixa: é a **porta de entrada**. Hoje quem chama
+é um cenário do Make.com; a tela nova chamaria a mesma rota, e o Make sai do
+caminho. **Nenhuma mudança no `baixabradesco`** — que é outra área e não se
+mexe daqui.
+
+**A IA da conciliação fiscal — o dono decidiu o desenho em 11/09/2026.** Não é
+automática: os pendentes aparecem com a opção *"analisar com IA"*, e ele
+**escolhe quais**, para ir medindo se compensa. Volume estimado por ele: *"mil
+por mês no total"*, e desses só uma parte precisaria de IA. A decisão dele, com
+as palavras dele: *"eu prefiro gastar um pouco com a IA do que ter um
+funcionário fazendo isso"*. Quer também o **download autônomo das notas** ("não
+quero ter trabalho nenhum em baixar no FSist"), mantendo o FSist E a importação
+manual de relatório — porque pode ter relatório de outra empresa para jogar
+ali. A importação **não pode duplicar**: nota que já existe é ignorada, e no fim
+diz quantas entraram, quantas já tinha e quantas não tinha.
+
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a
 mesma estrutura do PDF que já existe. *"Coloca isso na fila de produção
 também."*
