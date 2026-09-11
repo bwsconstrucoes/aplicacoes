@@ -173,6 +173,59 @@ foi, fazer as filtragens, o que está resolvido, o que é dedutível, o que não
 é, por que está pendente."* Não é uma lista de pendências — é uma tela de
 gestão fiscal.
 
+## O que o dono explicou em 11/09 sobre POR QUE isto existe
+
+*"Eu quero minimizar a interação do humano. Primeiro que é muito trabalhoso; o
+humano às vezes esquece de visualizar... ele erra na categorização, em coisas
+até meio óbvias, de regras que a gente já definiu. É muito falho o olho humano.
+E se eu colocar uma pessoa mais cara e que tenha mais capacidade, isso vai
+custar muito tempo — e nós não temos esse tempo."*
+
+**O alvo não é uma lista de pendências: é entregar a análise pronta**, "de mão
+beijada", para quem só vai executar a atualização dos cards.
+
+### Os quatro erros humanos que ele nomeou, e que o sistema tem de pegar
+
+1. **Categoria errada em caso óbvio** — contra a regra que ele mesmo definiu.
+   O sistema conhece a regra (a tabela por tipo de despesa) e pode apontar
+   quando a categoria gravada no card discorda dela.
+2. **"Não dedutível" posto cedo demais.** *"Colocado algo não dedutível de uma
+   coisa que não foi localizada naquele momento, mas que depois ela surge."* Ou
+   seja: **o que foi marcado como não dedutível tem de ser reavaliado** a cada
+   relatório novo — a nota pode ter aparecido depois.
+3. **A mesma nota em dois lançamentos** — o mesmo registro financeiro
+   recebendo a nota que é de outro.
+4. **Notas trocadas entre si** — a nota do lançamento A anexada no B e
+   vice-versa, dentro dos anexos. *"A pessoa que analisa pode não perceber."*
+
+E a contrapartida, que ele também disse: **o que está marcado como certo
+também pode estar errado.** A reanálise vale nos dois sentidos.
+
+### AS DUAS VISÕES — e a segunda é a que fecha com a contabilidade
+
+Repetido duas vezes por ele, e é requisito, não enfeite:
+
+- **do lançamento para a nota** — a que já está construída;
+- **da NOTA para o lançamento** — *"a gente precisa também identificar as notas
+  para poder associar ao registro financeiro, porque a gente precisa passar
+  para a contabilidade essas informações... tentar zerar. Afinal, se tem uma
+  nota emitida, tem uma despesa para estar associada."*
+
+**"Zerar" é o objetivo real:** toda nota emitida contra o CNPJ da BWS tem de
+estar ligada a uma despesa. Nota sem par é problema fiscal, e hoje ninguém a
+enxerga.
+
+### O que MUDOU de prioridade
+
+- **Atualizar o card continua valendo, e em LOTE.** *"Tem a questão de
+  requisições de API; a gente monta um lote e atualiza tudo de uma vez, então
+  não teria problema."*
+- **Anexar o PDF da nota ao card CAIU de prioridade.** *"Tendo a chave de
+  acesso, a gente baixa a qualquer momento a nota se precisar. E a
+  probabilidade de precisar é pequena."* — o Drive sai da frente da fila.
+- **O volume é pequeno e recente:** a BWS entrou no lucro real este ano, então
+  o histórico a reanalisar não é antigo.
+
 ## O que ainda precisa de resposta
 
 - **O histórico já preenchido no Pipefy** (39 dos 116 lançamentos já têm chave)

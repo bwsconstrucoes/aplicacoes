@@ -241,3 +241,124 @@ def test_seguros_e_contrato_nao_entram_na_conciliacao():
     for c in ("NF-e (Mercadoria)", "NFS-e (Serviço)", "CT-e (Frete)",
               "Emissão Futura", "Ausente", "Reanalisar"):
         assert c not in fiscal.NAO_CONCILIA
+
+
+# ---------------------------------------------------------------------------
+# A IMPORTAÇÃO DO RELATÓRIO DO FSIST
+#
+# O relatório muda de layout entre NF-e e CT-e (num é "Destinatário", noutro é
+# "Tomador"), tem uma linha de título acima do cabeçalho e um totalizador no
+# rodapé. Cada um destes testes é um desses fatos.
+# ---------------------------------------------------------------------------
+class _Aba:
+    def __init__(self, valores):
+        self._v = valores
+
+    def get_all_values(self):
+        return self._v
+
+
+CABECALHO_NFE = ["Emissão", "Chave", "Número", "Série", "Tipo", "Valor",
+                 "Status", "Emitente CNPJ", "Emitente", "Emitente IE",
+                 "Emitente UF", "Destinatário CNPJ/CPF", "Destinatário",
+                 "Destinatário IE", "Destinatário UF", "Chaves NFE Tranporte"]
+
+CABECALHO_CTE = ["Emissão", "Chave", "Número", "Série", "Tipo", "Valor",
+                 "Status", "Emitente CNPJ", "Emitente", "Emitente IE",
+                 "Emitente UF", "Tomador CNPJ/CPF", "Tomador",
+                 "Tomador IE", "Tomador UF", "NFe Chaves"]
+
+
+def _linha_de_nota(chave_, numero="1430", emitente_doc="29.066.773/0001-52",
+                   valor="R$ 269,00", status="Autorizada"):
+    return ["18/06/2026", chave_, numero, "1", "Normal", valor, status,
+            emitente_doc, "SERTAO CASA E CONSTRUCAO", "", "PE",
+            "10.656.452/0078-69", "BWS CONSTRUCOES LTDA", "", "PE", ""]
+
+
+def _importar(monkeypatch, linhas, gravou=None):
+    from app.apps.analisesps import db, sincronizacao
+    monkeypatch.setattr(sincronizacao, "com_retry", lambda f: f())
+    monkeypatch.setattr(sincronizacao, "_aba",
+                        lambda pid, nome: _Aba(linhas))
+    monkeypatch.setattr(sincronizacao, "_abas_existentes", lambda pid: ["Relatório FSIST"])
+
+    guardadas = [] if gravou is None else gravou
+
+    class ConexaoFalsa:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, sql, params=()):
+            class Cur:
+                def fetchone(self_): return (len(guardadas),)
+                def close(self_): pass
+            return Cur()
+        def executemany(self, sql, seq): guardadas.extend(seq)
+        def commit(self): pass
+
+    monkeypatch.setattr(db, "conexao", lambda: ConexaoFalsa())
+    return sincronizacao.sincronizar_notas_fiscais(), guardadas
+
+
+def test_o_cabecalho_nao_esta_na_primeira_linha(monkeypatch):
+    """Na planilha do dono a linha 1 é o título "Relatório de Notas de
+    Compras" e a 2 é o cabeçalho. Procurar a linha que TEM a coluna "Chave" é
+    mais robusto do que fixar o número — o dia em que alguém inserir uma linha
+    acima, nada quebra."""
+    titulo = ["", "", "Relatório de Notas de Compras"] + [""] * 13
+    _, gravadas = _importar(monkeypatch, [
+        titulo, CABECALHO_NFE, _linha_de_nota(chave(CREDOR))])
+    assert len(gravadas) == 1
+
+
+def test_o_relatorio_de_frete_chama_a_BWS_de_TOMADOR(monkeypatch):
+    """No CT-e quem paga o frete é o "Tomador"; na NF-e é o "Destinatário".
+    São a mesma coisa para nós, e o layout muda entre os dois relatórios."""
+    resposta, gravadas = _importar(monkeypatch, [
+        CABECALHO_CTE, _linha_de_nota(chave(CREDOR))])
+    assert len(gravadas) == 1
+    assert not resposta["avisos"], resposta["avisos"]
+
+
+def test_o_totalizador_do_rodape_nao_vira_nota(monkeypatch):
+    """Linha sem chave não é nota — é rodapé, linha em branco ou soma."""
+    resposta, gravadas = _importar(monkeypatch, [
+        CABECALHO_NFE, _linha_de_nota(chave(CREDOR)),
+        ["", "", "", "", "", "TOTAL", "", "", "", "", "", "", "", "", "", ""]])
+    assert len(gravadas) == 1 and resposta["ignoradas"] == 1
+
+
+def test_o_cnpj_do_emitente_e_lido_da_chave_quando_a_coluna_vem_vazia(monkeypatch):
+    """Acontece no relatório de verdade. Sem isto a nota entraria sem o
+    emitente, e o emitente é o sinal mais forte da conciliação."""
+    linha = _linha_de_nota(chave(CREDOR), emitente_doc="")
+    _, gravadas = _importar(monkeypatch, [CABECALHO_NFE, linha])
+    assert gravadas[0][7] == CREDOR, "não leu o CNPJ de dentro da chave"
+
+
+def test_chave_com_tamanho_errado_e_ignorada(monkeypatch):
+    """44 dígitos ou não é chave. Deixar entrar meia chave envenenaria a
+    conciliação inteira."""
+    linha = _linha_de_nota("123456")
+    resposta, gravadas = _importar(monkeypatch, [CABECALHO_NFE, linha])
+    assert gravadas == [] and resposta["ignoradas"] == 1
+
+
+def test_aba_sem_a_coluna_chave_diz_o_que_encontrou(monkeypatch):
+    """Mesma regra do botão das planilhas de apoio: falhar calado numa
+    importação é o que faz a pessoa apertar o botão de novo sem entender."""
+    resposta, _ = _importar(monkeypatch, [
+        ["Data", "Documento", "Valor"], ["01/01/2026", "x", "1"]])
+    assert resposta["novas"] == 0
+    aviso = " ".join(resposta["avisos"])
+    assert "Chave" in aviso and "Documento" in aviso
+
+
+def test_so_grava_a_nota_que_mudou():
+    """Mesmo motivo que valeu 14,3 milhões de gravações inúteis em 10/09:
+    regravar com o mesmo valor deixa lixo que engorda a tabela."""
+    from pathlib import Path
+    fonte = Path("app/apps/analisesps/sincronizacao.py").read_text(encoding="utf-8")
+    trecho = fonte.split("def sincronizar_notas_fiscais")[1].split("\ndef ")[0]
+    assert "IS DISTINCT FROM" in trecho
+    assert "notas_fiscais.status IS DISTINCT FROM" in trecho

@@ -38,6 +38,34 @@ PLANILHA_FISCAL = os.getenv(
     "ANALISESPS_SHEET_FISCAL", "1xMu76lEiiJFlCgNNXldraW2enIuHdZL0D5QTuhZAc0w")
 ABA_FISCAL = "Lançamentos"
 
+# Relatório do FSist: as notas emitidas CONTRA os CNPJs da BWS. Mesma planilha
+# da aba Lançamentos — é para lá que o script do dono já despeja o relatório.
+ABA_NOTAS = "Relatório FSIST"
+
+
+def _normalizar_cabecalho(cabecalho) -> list:
+    """O cabeçalho pronto para comparar: sem espaço sobrando, sem caixa."""
+    return [" ".join(str(c).split()).strip().lower() for c in cabecalho]
+
+
+def achar_coluna(cabecalho_normalizado, aceitos):
+    """A posição da primeira coluna aceita que existir, ou None.
+
+    ACEITA MAIS DE UM NOME de propósito, e essa peça já se perdeu uma vez: o
+    Streamlit procurava "Código Primário" e, se não achasse, "Obra"; a
+    conversão ficou só com a segunda — justamente a que a planilha NÃO tem, e
+    a lista do rateio nunca carregou desde a estreia (10/09/2026).
+
+    Procurar PELO NOME, e não pela posição, é também o único acerto do script
+    que roda na planilha do dono hoje que valia a pena copiar inteiro: uma
+    coluna que muda de lugar no relatório deixa de quebrar a importação."""
+    for nome in aceitos:
+        arrumado = " ".join(str(nome).split()).strip().lower()
+        if arrumado in cabecalho_normalizado:
+            return cabecalho_normalizado.index(arrumado)
+    return None
+
+
 # Quantas linhas por ida à planilha na carga inicial.
 #
 # Cinco mil é o meio-termo medido: blocos menores multiplicam as idas ao Google
@@ -452,6 +480,169 @@ def sincronizar_apoios(anotar=None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# AS NOTAS EMITIDAS CONTRA O CNPJ DA BWS (relatório do FSist)
+#
+# O FSist monitora os CNPJs da empresa e entrega o que foi emitido contra eles.
+# O dono despeja esse relatório numa aba, e é de lá que se lê — assim o fluxo
+# dele não muda e ninguém precisa aprender a subir arquivo.
+#
+# OS NOMES DE COLUNA E OS APELIDOS SÃO OS DO SCRIPT DELE, copiados de
+# propósito: é a parte que aquele script acerta, e o relatório do FSist muda de
+# layout entre NF-e e CT-e (num é "Destinatário", noutro é "Tomador").
+#
+# A CHAVE É A IDENTIDADE, então reimportar o mesmo relatório não duplica nada.
+# E só se grava o que MUDOU — `IS DISTINCT FROM` —, pelo mesmo motivo que valeu
+# 14,3 milhões de gravações inúteis em 10/09: regravar com o mesmo valor deixa
+# lixo que engorda a tabela até ela não caber na memória do banco.
+# ---------------------------------------------------------------------------
+COLUNAS_DAS_NOTAS = {
+    "emissao":     ["Emissão", "Data Emissão", "Data de Emissão"],
+    "chave":       ["Chave", "Chave de Acesso"],
+    "numero":      ["Número", "Nº", "Num"],
+    "serie":       ["Série"],
+    "tipo":        ["Tipo"],
+    "valor":       ["Valor", "Valor Total"],
+    "status":      ["Status", "Situação"],
+    "emitente_doc": ["Emitente CNPJ", "Emitente CNPJ/CPF", "CNPJ Emitente"],
+    "emitente":    ["Emitente", "Emitente Nome", "Nome Emitente",
+                    "Emitente Razão Social"],
+    "emitente_uf": ["Emitente UF", "UF Emitente"],
+    # No CT-e quem paga o frete é o TOMADOR; na NF-e é o DESTINATÁRIO. Os dois
+    # são a BWS, e por isso ocupam a mesma coluna aqui.
+    "destinatario_doc": ["Destinatário CNPJ/CPF", "Destinatário CPF/CNPJ",
+                         "Destinatário CNPJ", "CNPJ/CPF Destinatário",
+                         "Tomador CNPJ/CPF", "Tomador CPF/CNPJ", "Tomador CNPJ"],
+    "destinatario": ["Destinatário", "Destinatário Nome", "Nome Destinatário",
+                     "Destinatário Razão Social", "Tomador", "Tomador Nome"],
+    "chaves_nfe":  ["Chaves NFE Tranporte", "Chaves NFe Transporte",
+                    "NFe Chaves", "NFe Chaves (com vírgula)"],
+}
+
+# Sem estas duas não há nota: uma linha sem chave não é identificável, e sem
+# emitente não há como casar com credor nenhum.
+COLUNAS_OBRIGATORIAS_DAS_NOTAS = ["chave"]
+
+
+def sincronizar_notas_fiscais(anotar=None) -> dict:
+    """Traz as notas do relatório do FSist para o banco.
+
+    Devolve {novas, atualizadas, ignoradas, avisos}. `ignoradas` são as linhas
+    sem chave — lixo de rodapé, totalizador, linha em branco no meio."""
+    from . import fiscal
+    from .db import conexao
+
+    anotar = anotar or (lambda *a, **k: None)
+    anotar("trazendo as notas emitidas contra a empresa")
+    avisos: list = []
+
+    try:
+        valores = com_retry(_aba(PLANILHA_FISCAL, ABA_NOTAS).get_all_values)
+    except Exception as e:  # noqa: BLE001
+        motivo = _explicar_aba(PLANILHA_FISCAL, ABA_NOTAS, e)
+        logger.warning("Análise de SPs: notas — %s", motivo)
+        return {"novas": 0, "atualizadas": 0, "ignoradas": 0, "avisos": [motivo]}
+
+    # O CABEÇALHO NÃO ESTÁ NA PRIMEIRA LINHA. Na planilha do dono a linha 1 é
+    # o título ("Relatório de Notas de Compras") e a 2 é o cabeçalho de verdade.
+    # Procurar a linha que TEM a coluna "Chave" é mais robusto do que fixar o
+    # número: o dia em que alguém inserir uma linha acima, nada quebra.
+    linha_cab = -1
+    indices: dict = {}
+    for i, linha in enumerate(valores[:10]):
+        normalizado = _normalizar_cabecalho(linha)
+        achados = {campo: achar_coluna(normalizado, nomes)
+                   for campo, nomes in COLUNAS_DAS_NOTAS.items()}
+        if all(achados.get(c) is not None for c in COLUNAS_OBRIGATORIAS_DAS_NOTAS):
+            linha_cab, indices = i, achados
+            break
+
+    if linha_cab < 0:
+        # MOSTRA AS PRIMEIRAS LINHAS QUE FORAM OLHADAS, e não uma linha fixa: o
+        # cabeçalho pode estar em qualquer uma delas, e apontar a errada manda
+        # a pessoa conferir o lugar errado da planilha.
+        olhadas = []
+        for linha in valores[:3]:
+            texto = ", ".join(str(x).strip() for x in linha if str(x).strip())
+            if texto:
+                olhadas.append(texto[:160])
+        motivo = (f'a aba "{ABA_NOTAS}" não tem a coluna "Chave" nas primeiras '
+                  "linhas. O que encontrei foi: "
+                  + (" | ".join(olhadas) or "(nada)") + ".")
+        logger.warning("Análise de SPs: notas — %s", motivo)
+        return {"novas": 0, "atualizadas": 0, "ignoradas": 0, "avisos": [motivo]}
+
+    faltando = [c for c, i in indices.items() if i is None]
+    if faltando:
+        avisos.append("colunas não encontradas (seguindo sem elas): "
+                      + ", ".join(sorted(faltando)))
+
+    def pegar(linha, campo):
+        i = indices.get(campo)
+        return str(linha[i]).strip() if i is not None and i < len(linha) else ""
+
+    registros = []
+    ignoradas = 0
+    for linha in valores[linha_cab + 1:]:
+        chave = fiscal.so_digitos(pegar(linha, "chave"))
+        if len(chave) != 44:
+            ignoradas += 1
+            continue
+        # O CNPJ DE QUEM EMITIU SAI DE DENTRO DA CHAVE quando a coluna não
+        # veio. São os dígitos 7 a 20, por definição da Receita — mais
+        # confiável do que a coluna, que vem com formatação variada.
+        emitente_doc = (fiscal.so_digitos(pegar(linha, "emitente_doc"))
+                        or fiscal.emitente_da_chave(chave))
+        registros.append((
+            chave, formatos.para_data(pegar(linha, "emissao")),
+            pegar(linha, "numero"), pegar(linha, "serie"), pegar(linha, "tipo"),
+            formatos.para_numero(pegar(linha, "valor")),
+            pegar(linha, "status"), emitente_doc, pegar(linha, "emitente"),
+            pegar(linha, "emitente_uf"),
+            fiscal.so_digitos(pegar(linha, "destinatario_doc")),
+            pegar(linha, "destinatario"), pegar(linha, "chaves_nfe")))
+
+    if not registros:
+        avisos.append(f'a aba "{ABA_NOTAS}" não trouxe nenhuma nota com chave.')
+        return {"novas": 0, "atualizadas": 0, "ignoradas": ignoradas,
+                "avisos": avisos}
+
+    with conexao() as conn:
+        cur = conn.execute("SELECT count(*) FROM analisesps.notas_fiscais")
+        antes = (cur.fetchone() or [0])[0]
+        cur.close()
+        conn.executemany(
+            "INSERT INTO analisesps.notas_fiscais "
+            "  (chave, emissao, numero, serie, tipo, valor, status, "
+            "   emitente_doc, emitente, emitente_uf, destinatario_doc, "
+            "   destinatario, chaves_nfe) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (chave) DO UPDATE SET "
+            "  emissao = EXCLUDED.emissao, numero = EXCLUDED.numero, "
+            "  serie = EXCLUDED.serie, tipo = EXCLUDED.tipo, "
+            "  valor = EXCLUDED.valor, status = EXCLUDED.status, "
+            "  emitente_doc = EXCLUDED.emitente_doc, "
+            "  emitente = EXCLUDED.emitente, emitente_uf = EXCLUDED.emitente_uf, "
+            "  destinatario_doc = EXCLUDED.destinatario_doc, "
+            "  destinatario = EXCLUDED.destinatario, "
+            "  chaves_nfe = EXCLUDED.chaves_nfe, importada_em = now() "
+            " WHERE notas_fiscais.status IS DISTINCT FROM EXCLUDED.status "
+            "    OR notas_fiscais.valor IS DISTINCT FROM EXCLUDED.valor "
+            "    OR notas_fiscais.numero IS DISTINCT FROM EXCLUDED.numero "
+            "    OR notas_fiscais.emitente_doc IS DISTINCT FROM EXCLUDED.emitente_doc",
+            registros)
+        conn.commit()
+        cur = conn.execute("SELECT count(*) FROM analisesps.notas_fiscais")
+        depois = (cur.fetchone() or [0])[0]
+        cur.close()
+
+    novas = depois - antes
+    logger.info("Análise de SPs: notas do FSist — %d lidas, %d novas.",
+                len(registros), novas)
+    return {"novas": novas, "atualizadas": len(registros) - novas,
+            "ignoradas": ignoradas, "avisos": avisos}
+
+
+# ---------------------------------------------------------------------------
 # Agenda, feriados e as listas do rateio
 #
 # Três abas curtas, na mesma planilha de credenciais. São dezenas de linhas
@@ -603,20 +794,6 @@ def sincronizar_referencias_rateio(anotar=None) -> dict:
     # aperta de novo, e de novo, e conclui que o sistema está quebrado. Agora
     # cada motivo volta escrito, chega à mensagem da execução e aparece em
     # Configurações — com os nomes que a planilha REALMENTE tem.
-    def _achar(cabecalho_normalizado, aceitos):
-        """A posição da primeira coluna aceita que existir, ou None.
-
-        ACEITA MAIS DE UM NOME de propósito, e essa era a peça perdida na
-        conversão. O Streamlit procurava "Código Primário" e, se não achasse,
-        "Obra"; a conversão ficou só com a segunda — que é justamente a que a
-        planilha NÃO tem. Resultado: a lista do rateio nunca carregava, e desde
-        a estreia."""
-        for nome in aceitos:
-            arrumado = " ".join(str(nome).split()).strip().lower()
-            if arrumado in cabecalho_normalizado:
-                return cabecalho_normalizado.index(arrumado)
-        return None
-
     def _ler(aba_nome, aceitos_nome, aceitos_codigo):
         """Devolve (linhas, motivo). `motivo` é None quando deu certo."""
         try:
@@ -626,10 +803,10 @@ def sincronizar_referencias_rateio(anotar=None) -> dict:
         if not valores:
             return [], f'a aba "{aba_nome}" está vazia.'
         cabecalho = [str(x).strip() for x in valores[0]]
-        normalizado = [" ".join(c.split()).lower() for c in cabecalho]
+        normalizado = _normalizar_cabecalho(cabecalho)
 
-        i_nome = _achar(normalizado, aceitos_nome)
-        i_codigo = _achar(normalizado, aceitos_codigo)
+        i_nome = achar_coluna(normalizado, aceitos_nome)
+        i_codigo = achar_coluna(normalizado, aceitos_codigo)
         faltando = ([aceitos_nome] if i_nome is None else []) + \
                    ([aceitos_codigo] if i_codigo is None else [])
         if faltando:
