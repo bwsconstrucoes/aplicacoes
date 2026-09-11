@@ -438,6 +438,12 @@ saber, e a trava já resolve).
 **Decisões de desenho:**
 - **Um aviso por lote, no máximo dez itens.** Comprovante chega em leva; um
   aviso por comprovante viraria barulho, e barulho faz parar de ler.
+- **Destinatário único: o dono.** Ele confirmou que o número passado é para
+  receber este aviso e só ele deve receber. Não confundir com o WhatsApp que vai
+  ao responsável pela SP quando a baixa dá certo — aquele é anterior, tem outro
+  propósito e continua indo para quem pediu o pagamento. Há teste travando que o
+  aviso de falhas nunca alcança o telefone do solicitante, que circula no lote
+  dentro dos dados do card do Pipefy.
 - **WhatsApp, a pedido do dono** — e é mesmo o canal melhor aqui: chega direto
   pelo número, enquanto o Telegram só alcança quem já conversou com o bot. O
   Telegram vai de espelho, sem custo.

@@ -213,6 +213,11 @@ no ambiente, cai no notificador comum, que tem as suas próprias.
 `CHATBOT_MASTER_PHONE`, a mesma convenção que o chatbot e o processarnovasp já
 usam para falar com o dono.
 
+**O aviso vai só para o dono, um número só.** Não confundir com o WhatsApp que o
+robô manda ao **responsável pela SP** quando a baixa dá certo — aquele é outra
+coisa, existe desde antes, vai para quem pediu o pagamento e não tem relação com
+este aviso. Há teste travando os dois destinos separados.
+
 Falha de aviso nunca derruba a baixa: ela já aconteceu.
 
 ## Variáveis de ambiente

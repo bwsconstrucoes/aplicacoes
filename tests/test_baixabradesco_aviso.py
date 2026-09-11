@@ -213,3 +213,46 @@ def test_sem_credenciais_zapi_cai_no_notificador(monkeypatch):
     enviar_aviso(resultado([plano(pode_executar=False, motivos=['x'])]), {})
     assert chamou['canais'][0] == 'whatsapp'
     assert chamou['politica'] == 'fallback'
+
+
+# ── O aviso é só do dono ──────────────────────────────────────────────────────
+#
+# Confirmado por ele em 11/09/2026: o número que passou é para receber ESTE
+# aviso, e só ele deve receber. Não confundir com o WhatsApp que o robô manda ao
+# responsável pela SP quando a baixa dá certo — aquele é outra coisa, existe
+# desde antes, e continua indo para quem pediu o pagamento.
+
+def test_o_aviso_vai_para_um_unico_numero(monkeypatch):
+    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5585900000000')
+    chamadas = []
+
+    import app.apps.baixabradesco.zapi as zapi
+    monkeypatch.setattr(zapi, 'send_text',
+                        lambda auth, phone, message: chamadas.append(phone) or {'ok': True})
+
+    enviar_aviso(resultado([plano(pode_executar=False, motivos=['a'], pagina=1),
+                            plano(pode_executar=False, motivos=['b'], pagina=2),
+                            plano(pode_executar=False, motivos=['c'], pagina=3)]), AUTH)
+
+    assert chamadas == ['5585900000000'], 'um envio só, para um número só'
+
+
+def test_o_aviso_nunca_vai_para_o_responsavel_pela_sp(monkeypatch):
+    """O telefone do solicitante está no card do Pipefy e circula pelo lote.
+    Ele não pode virar destino do aviso de falhas."""
+    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5585900000000')
+    destinos = []
+
+    import app.apps.baixabradesco.zapi as zapi
+    monkeypatch.setattr(zapi, 'send_text',
+                        lambda auth, phone, message: destinos.append(phone) or {'ok': True})
+
+    com_responsavel = plano(pode_executar=False, motivos=['x'])
+    com_responsavel['responses'] = {'pipefy_card_info': {
+        'fields': [{'name': 'Responsável pela Solicitação',
+                    'value': '["OUTRA PESSOA - 5511888888888"]'}]}}
+
+    enviar_aviso(resultado([com_responsavel]), AUTH)
+
+    assert destinos == ['5585900000000']
+    assert '5511888888888' not in destinos
