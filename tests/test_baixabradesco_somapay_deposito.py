@@ -274,3 +274,40 @@ def test_a_planilha_registra_a_conta_somapay_como_conta_de_pagamento(comprovante
     assert atualizacoes[0]['updates']['AK'] == '22005-1'
     assert atualizacoes[0]['updates']['O'] == 'Pago'
     assert atualizacoes[0]['updates']['X'] == '11/09/2026'
+
+
+# ── O outro caminho da Somapay não pode ser capturado por engano ──────────────
+
+TRANSFERENCIA_BRADESCO_PARA_SOMAPAY = (
+    'Comprovante de Transferência\n'
+    'Data da operação: 11/09/2026\n'
+    'Conta de débito: Agência: 0624 | Conta: 0050024-0\n'
+    'Instituição destino: SOMAPAY SCD S.A.\n'
+    'Valor total: R$ 1.000,00\n'
+    'Descrição: 1234567\n'
+)
+
+
+def test_o_comprovante_bradesco_de_transferencia_nao_vira_deposito_somapay():
+    """São dois papéis diferentes e não podem se confundir.
+
+    O comprovante do Bradesco prova que o dinheiro SAIU do Bradesco para a
+    Somapay — ali o Omie precisa receber a transferência antes da baixa. Se ele
+    caísse na regra do depósito, o robô baixaria na conta Somapay sem lançar a
+    transferência, e o dinheiro apareceria na Somapay sem ter saído de lugar
+    nenhum.
+
+    O que separa os dois é o emissor: o depósito traz "SOMAPAY SOCIEDADE DE
+    CREDITO DIRETO" (é a Somapay quem emite); a transferência traz
+    "Instituição destino: SOMAPAY SCD S.A." (é o Bradesco quem emite).
+    """
+    r = parse_bradesco_text('bradesco.pdf', 1, TRANSFERENCIA_BRADESCO_PARA_SOMAPAY)
+    assert r.tipo_comprovante != 'somapay_deposito'
+    assert r.conta_origem == '50024-0'
+    assert r.id_pipefy == '1234567'
+
+
+def test_o_deposito_somapay_nao_depende_da_conta_de_debito(comprovante):
+    """O papel emitido pela Somapay não tem conta do Bradesco — e não precisa."""
+    assert comprovante.conta_origem == ''
+    assert comprovante.tipo_comprovante == 'somapay_deposito'
