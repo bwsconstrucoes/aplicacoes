@@ -122,10 +122,18 @@ andou. Por isso os dois são tipos separados no código.
 
 **O comprovante emitido pela Somapay não traz a conta da empresa**, só a do
 funcionário que recebeu. A conta em que a baixa é lançada vem da **BaseBancos**,
-casando o **CNPJ do depositante** com a coluna CNPJ da planilha. Se houver mais
-de uma conta Somapay com aquele CNPJ, ou nenhuma cadastrada, o robô **não
-escolhe**: deixa o comprovante pendente de validação e diz o motivo. Errar a
-conta jogaria o dinheiro na contabilidade errada.
+pelo **nome do depositante**: "BWS CONSTRUÇÕES" casa com a conta "Somapay BWS".
+A comparação ignora espaços e acentos, então "IFPE SANTA CRUZ" acha
+"Somapay IFPESANTACRUZ".
+
+⚠️ **Não dá para usar o CNPJ aqui.** As três contas Somapay da BaseBancos
+(BWS, INFRADENDE e IFPESANTACRUZ) têm o **mesmo CNPJ** — o da própria Somapay,
+não o da empresa do grupo. Conferido com a planilha real em 11/09/2026.
+
+Se nenhum nome bater, ou mais de um bater, o robô **não escolhe**: deixa o
+comprovante pendente de validação e diz o motivo. Errar entre as três contas
+jogaria o dinheiro na contabilidade errada, e isso ninguém percebe olhando a
+tela.
 
 ## O que ele escreve quando casa
 

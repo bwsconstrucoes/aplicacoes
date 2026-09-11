@@ -32,6 +32,7 @@ class ExtractedReceipt:
     conta_origem: str = ''
     conta_destino_raw: str = ''
     nome_recebedor: str = ''
+    nome_pagador: str = ''
     documento_recebedor: str = ''
     documento_pagador: str = ''
     descricao: str = ''

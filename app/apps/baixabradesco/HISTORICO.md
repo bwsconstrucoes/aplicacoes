@@ -169,10 +169,14 @@ três foram tratadas em 04/09/2026:
   Omie recebe **só a baixa**: lançar a transferência criaria um dinheiro que não
   andou. Por isso viraram tipos separados, e há teste garantindo que este não
   entra no caminho da transferência.
-  **A conta em que a baixa cai** vem da BaseBancos, casando o CNPJ do depositante
-  com a coluna CNPJ da planilha. Havendo mais de uma conta Somapay com aquele
-  CNPJ, ou nenhuma cadastrada, o robô **não escolhe** — deixa pendente e diz o
-  motivo. Errar a conta jogaria o dinheiro na contabilidade errada.
+  **A conta em que a baixa cai** vem da BaseBancos, pelo **nome do depositante**:
+  "BWS CONSTRUÇÕES" casa com a conta "Somapay BWS". A primeira versão usava o
+  CNPJ e estava errada — o dono colou a planilha real e as **três** contas
+  Somapay (BWS, INFRADENDE, IFPESANTACRUZ) têm o mesmo CNPJ, o da própria
+  Somapay. O CNPJ não distingue nada; o nome distingue. Não batendo nenhum nome,
+  ou batendo mais de um, o robô **não escolhe** — deixa pendente e diz o motivo.
+  Hoje só a conta BWS é usada; as outras duas resolvem sozinhas se um dia
+  chegar comprovante delas.
   **O que continua desligado:** o caminho Somapay **com** transferência. A
   máquina toda existe, mas o leitor nunca marca comprovante como sendo desse
   tipo. Não foi ligado porque não havia exemplo desse comprovante em mãos.
@@ -248,8 +252,11 @@ e o comprovante real guardado anonimizado em `tests/exemplos_baixabradesco/`.
 
 **Verificado:** suíte inteira passando (2579 testes) e a aplicação subindo com
 todos os blueprints.
-**Não verificado:** nada disso passou por um comprovante de verdade em produção,
-e **a BaseBancos não foi lida** nesta sessão — não há credencial do Google aqui.
-Se a conta Somapay não estiver cadastrada lá com o CNPJ da empresa, o
-comprovante vai ficar pendente com a mensagem dizendo exatamente isso. É a
-primeira coisa a conferir quando publicar.
+**Verificado também contra a BaseBancos real**, colada pelo dono na conversa: o
+depositante "BWS CONSTRUÇÕES" do comprovante resolve para a conta
+"Somapay BWS - 22005-1". A planilha não foi lida pelo sistema (não há credencial
+do Google nesta sessão) — o que foi conferido é a regra contra o conteúdo que o
+dono mostrou.
+
+**Não verificado:** nada disso passou por um comprovante de verdade em
+produção.

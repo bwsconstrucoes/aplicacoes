@@ -130,48 +130,72 @@ def test_desempate_pela_verba_rescisoria(comprovante):
 
 
 # ── A conta em que a baixa é lançada ──────────────────────────────────────────
+#
+# As três contas Somapay da BaseBancos têm o MESMO CNPJ — o da própria Somapay,
+# não o da empresa do grupo (conferido com a planilha real em 11/09/2026). Quem
+# distingue é o NOME do depositante: "BWS CONSTRUÇÕES" casa com "Somapay BWS".
 
-def conta(banco, cnpj, codigo_omie):
-    return BankAccount(row_number=2, banco=banco, conta='22005-1',
-                       codigo_omie=codigo_omie, raw={'CNPJ': cnpj})
+def conta(banco, codigo_omie, numero='22005-1'):
+    return BankAccount(row_number=2, banco=banco, conta=numero,
+                       codigo_omie=codigo_omie, raw={'CNPJ': '99.888.777/0001-66'})
 
 
-def test_acha_a_conta_somapay_pelo_cnpj_de_quem_depositou():
-    contas = [
-        conta('Somapay BWS', '11.222.333/0001-44', '586876091'),
-        conta('Somapay IFPESANTACRUZ', '99.888.777/0001-66', '11119266982'),
-        conta('Bradesco', '11.222.333/0001-44', '583772104'),
+def base_bancos_real():
+    """As três contas Somapay como estão na planilha, com códigos fictícios."""
+    return [
+        conta('Bradesco', '900000001', '7011-4'),
+        conta('Somapay BWS', '900000002', '22005-1'),
+        conta('Somapay INFRADENDE', '900000003', '9452-8'),
+        conta('Somapay IFPESANTACRUZ', '900000004', '908146-1'),
     ]
-    achada = find_somapay_account(contas, CNPJ_EMPRESA)
+
+
+def test_o_depositante_bws_resolve_a_conta_somapay_bws(comprovante):
+    achada = find_somapay_account(base_bancos_real(), comprovante.nome_pagador)
     assert achada is not None
-    assert achada.codigo_omie == '586876091'
+    assert achada.banco == 'Somapay BWS'
+    assert achada.codigo_omie == '900000002'
 
 
-def test_uma_unica_conta_somapay_dispensa_o_cnpj():
-    contas = [conta('Somapay BWS', '', '586876091')]
-    assert find_somapay_account(contas, '').codigo_omie == '586876091'
+@pytest.mark.parametrize('depositante,esperado', [
+    ('BWS CONSTRUÇÕES', 'Somapay BWS'),
+    ('BWS CONSTRUCOES LTDA', 'Somapay BWS'),
+    ('INFRADENDE ENGENHARIA', 'Somapay INFRADENDE'),
+    ('IFPE SANTA CRUZ', 'Somapay IFPESANTACRUZ'),
+])
+def test_cada_depositante_cai_na_sua_conta(depositante, esperado):
+    """O nome da conta é escrito junto ('IFPESANTACRUZ') e o depositante pode vir
+    separado ('IFPE SANTA CRUZ') — a comparação ignora espaços e acentos."""
+    achada = find_somapay_account(base_bancos_real(), depositante)
+    assert achada is not None and achada.banco == esperado
 
 
-def test_duas_contas_somapay_com_o_mesmo_cnpj_nao_sao_adivinhadas():
+def test_o_cnpj_nao_e_usado_porque_nao_distingue():
+    """As três contas Somapay compartilham o CNPJ. Passar o CNPJ no lugar do
+    nome não pode resolver conta nenhuma."""
+    assert find_somapay_account(base_bancos_real(), '99.888.777/0001-66') is None
+
+
+def test_depositante_desconhecido_nao_e_adivinhado():
     """Errar a conta joga o dinheiro na contabilidade errada. Melhor parar."""
-    contas = [
-        conta('Somapay BWS', '11.222.333/0001-44', '586876091'),
-        conta('Somapay IFPESANTACRUZ', '11.222.333/0001-44', '11119266982'),
-    ]
-    assert find_somapay_account(contas, CNPJ_EMPRESA) is None
+    assert find_somapay_account(base_bancos_real(), 'OUTRA EMPRESA QUALQUER') is None
+
+
+def test_sem_nome_de_depositante_com_varias_contas_nao_escolhe():
+    assert find_somapay_account(base_bancos_real(), '') is None
+
+
+def test_uma_unica_conta_somapay_dispensa_o_nome():
+    contas = [conta('Bradesco', '900000001', '7011-4'), conta('Somapay BWS', '900000002')]
+    assert find_somapay_account(contas, '').codigo_omie == '900000002'
 
 
 def test_sem_conta_somapay_cadastrada_nao_inventa():
-    contas = [conta('Bradesco', '11.222.333/0001-44', '583772104')]
-    assert find_somapay_account(contas, CNPJ_EMPRESA) is None
+    assert find_somapay_account([conta('Bradesco', '900000001', '7011-4')], 'BWS CONSTRUÇÕES') is None
 
 
-def test_cnpj_desconhecido_com_duas_contas_nao_escolhe():
-    contas = [
-        conta('Somapay BWS', '11.222.333/0001-44', '586876091'),
-        conta('Somapay IFPESANTACRUZ', '99.888.777/0001-66', '11119266982'),
-    ]
-    assert find_somapay_account(contas, '00000000000000') is None
+def test_le_o_nome_de_quem_depositou(comprovante):
+    assert comprovante.nome_pagador == 'BWS CONSTRUÇÕES'
 
 
 # ── A baixa é direta, sem transferência ───────────────────────────────────────
@@ -195,13 +219,13 @@ def plano_para(comprovante, banco):
 def test_a_baixa_e_lancada_na_conta_somapay(comprovante):
     from app.apps.baixabradesco.omie import build_omie_plan
 
-    somapay = conta('Somapay BWS', '11.222.333/0001-44', '586876091')
+    somapay = conta('Somapay BWS', '900000002')
     passos = build_omie_plan(plano_para(comprovante, somapay), {})
 
     baixa = [p for p in passos if p['step'] == 'baixar']
     assert len(baixa) == 1
     param = baixa[0]['request']['param'][0]
-    assert param['codigo_conta_corrente'] == '586876091'
+    assert param['codigo_conta_corrente'] == '900000002'
     assert param['valor'] == '452.40'
     assert param['data'] == '11/09/2026'
 
@@ -209,7 +233,7 @@ def test_a_baixa_e_lancada_na_conta_somapay(comprovante):
 def test_nao_ha_transferencia_no_caminho(comprovante):
     from app.apps.baixabradesco.omie import build_omie_plan
 
-    somapay = conta('Somapay BWS', '11.222.333/0001-44', '586876091')
+    somapay = conta('Somapay BWS', '900000002')
     passos = build_omie_plan(plano_para(comprovante, somapay), {})
 
     assert [p['step'] for p in passos] == ['consultar', 'alterar_se_necessario', 'baixar']
@@ -244,7 +268,7 @@ def test_a_planilha_registra_a_conta_somapay_como_conta_de_pagamento(comprovante
     """Coluna AK da SPsBD: quem pagou foi a Somapay, e é isso que deve constar."""
     from app.apps.baixabradesco.sheets import build_spsbd_updates
 
-    somapay = conta('Somapay BWS', '11.222.333/0001-44', '586876091')
+    somapay = conta('Somapay BWS', '900000002')
     atualizacoes = build_spsbd_updates(plano_para(comprovante, somapay))
 
     assert atualizacoes[0]['updates']['AK'] == '22005-1'

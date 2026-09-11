@@ -130,10 +130,10 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             banco = find_bank_account(base_bancos, rec.agencia_origem, rec.conta_origem) if base_bancos else None
 
             # O comprovante emitido pela Somapay não traz a conta da empresa —
-            # só a do funcionário. A conta de baixa vem da BaseBancos, pelo CNPJ
-            # de quem depositou.
+            # só a do funcionário. A conta de baixa vem da BaseBancos, pelo NOME
+            # de quem depositou ('BWS CONSTRUÇÕES' → conta 'Somapay BWS').
             if banco is None and rec.tipo_comprovante == 'somapay_deposito' and base_bancos:
-                banco = find_somapay_account(base_bancos, rec.documento_pagador)
+                banco = find_somapay_account(base_bancos, rec.nome_pagador)
 
             storage_info = {
                 'storage': 'dropbox',
@@ -381,8 +381,8 @@ def _decidir_execucao(plan: ExecutionPlan, executar_omie: bool, atualizar_pipefy
         if rec.tipo_comprovante == 'somapay_deposito':
             plan.acao = 'pendente_validacao'
             plan.motivos_bloqueio.append(
-                'Conta Somapay não identificada na BaseBancos pelo CNPJ do depositante. '
-                'Cadastre a conta Somapay com o CNPJ correto antes de reenviar.'
+                'Conta Somapay não identificada na BaseBancos pelo nome do depositante. '
+                'Confira se existe a linha da conta Somapay correspondente.'
             )
             return
         faltas.append('codigo_conta_omie')

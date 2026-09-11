@@ -67,6 +67,7 @@ def parse_bradesco_text(filename: str, page: int, text: str, drive_link: str = '
     r.data_pagamento = extract_data_pagamento(text)
     r.forma_pagamento = classify_payment_type(text)
     r.nome_recebedor = extract_nome_recebedor(text)
+    r.nome_pagador = extract_nome_pagador(text)
     r.documento_recebedor = extract_documento_recebedor(text)
     r.documento_pagador = extract_documento_pagador(text)
     r.agencia_origem, r.conta_origem, r.conta_origem_raw = extract_conta_origem(text)
@@ -203,6 +204,23 @@ def extract_nome_recebedor(text: str) -> str:
     patterns = [
         r'(?:Favorecido|Recebedor|Benefici[aá]rio|Destino)\s*:?\s*([^\n\r]+)',
         r'Nome\s*do\s*recebedor\s*:?\s*([^\n\r]+)',
+    ]
+    for p in patterns:
+        m = re.search(p, text or '', flags=re.I)
+        if m:
+            return as_string(m.group(1))[:120]
+    return ''
+
+
+def extract_nome_pagador(text: str) -> str:
+    """Nome de quem PAGOU.
+
+    No comprovante da Somapay é o "Depositante", e é ele que diz de qual conta
+    Somapay o dinheiro saiu — o papel não traz a conta da empresa.
+    """
+    patterns = [
+        r'(?:Depositante|Pagador|Empregadora)\s*:?\s*([^\n\r]+)',
+        r'Nome\s+do\s+Pagador\s*:?\s*([^\n\r]+)',
     ]
     for p in patterns:
         m = re.search(p, text or '', flags=re.I)

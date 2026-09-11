@@ -297,34 +297,49 @@ def find_bank_account(accounts: List[BankAccount], agencia: str, conta: str) -> 
     return None
 
 
-def find_somapay_account(accounts: List[BankAccount], cnpj_pagador: str) -> Optional[BankAccount]:
-    """Acha a conta Somapay da empresa que pagou, na BaseBancos.
+def apelido_somapay(banco: str) -> str:
+    """Devolve o que diferencia uma conta Somapay das outras.
 
-    O comprovante emitido pela Somapay não traz a conta da EMPRESA — só a do
-    funcionário que recebeu. A única pista do papel é o CNPJ do depositante,
-    que é casado com a coluna CNPJ da BaseBancos.
+    'Somapay BWS' → 'bws'; 'Somapay IFPESANTACRUZ' → 'ifpesantacruz'.
+    """
+    n = normalize_compact(banco)
+    if not n.startswith('somapay'):
+        return ''
+    return n[len('somapay'):]
+
+
+def find_somapay_account(accounts: List[BankAccount], nome_depositante: str) -> Optional[BankAccount]:
+    """Acha a conta Somapay de onde saiu o pagamento, na BaseBancos.
+
+    O comprovante emitido pela Somapay não traz a conta da empresa — só a do
+    funcionário que recebeu. A pista é o NOME do depositante: 'BWS CONSTRUÇÕES'
+    casa com a conta 'Somapay BWS'.
+
+    ⚠️ Por que não pelo CNPJ: as três contas Somapay da BaseBancos têm o MESMO
+    CNPJ (o da própria Somapay, não o da empresa do grupo). O CNPJ não
+    distingue nada aqui — conferido com a planilha real em 11/09/2026.
 
     Devolve None quando não dá para ter certeza (nenhuma conta Somapay
-    cadastrada, ou mais de uma com o mesmo CNPJ). **Não adivinha**: sem conta
-    resolvida o comprovante fica pendente de validação, que é muito melhor do
-    que baixar na conta errada.
+    cadastrada, nenhum apelido batendo, ou mais de um batendo). **Não
+    adivinha**: sem conta resolvida o comprovante fica pendente de validação,
+    que é muito melhor do que baixar na conta errada.
     """
     somapays = [a for a in accounts if 'somapay' in normalize_compact(a.banco)]
     if not somapays:
         return None
 
-    doc = only_digits(cnpj_pagador)
-    if doc:
-        por_cnpj = [
+    alvo = normalize_compact(nome_depositante)
+    if alvo:
+        achados = [
             a for a in somapays
-            if only_digits(as_string((a.raw or {}).get('CNPJ', ''))) == doc
+            if apelido_somapay(a.banco) and apelido_somapay(a.banco) in alvo
         ]
-        if len(por_cnpj) == 1:
-            return por_cnpj[0]
-        if len(por_cnpj) > 1:
+        if len(achados) == 1:
+            return achados[0]
+        if len(achados) > 1:
             return None  # ambíguo — não escolher no palpite
 
-    # Sem CNPJ utilizável: só resolve se houver UMA conta Somapay cadastrada.
+    # Nome não resolveu: só segue se houver UMA conta Somapay cadastrada.
     if len(somapays) == 1:
         return somapays[0]
     return None
