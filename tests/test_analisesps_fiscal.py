@@ -362,3 +362,117 @@ def test_so_grava_a_nota_que_mudou():
     trecho = fonte.split("def sincronizar_notas_fiscais")[1].split("\ndef ")[0]
     assert "IS DISTINCT FROM" in trecho
     assert "notas_fiscais.status IS DISTINCT FROM" in trecho
+
+
+# ---------------------------------------------------------------------------
+# O PASSADO: semear o diário com o que já está nos cards
+#
+# Um terço dos lançamentos já tem chave e categoria, preenchidos à mão ao longo
+# dos meses, e isso SÓ existe no card. O relatório do Pipefy é lido UMA VEZ
+# para o diário nascer sabendo — decisão do dono em 11/09/2026.
+# ---------------------------------------------------------------------------
+CABECALHO_LANCAMENTOS = [
+    "ID SP", "Documentação Fiscal", "Fase atual", "Nome do Credor",
+    "Tipo de Despesa", "Valor Total da Despesa", "Data de Vencimento",
+    "Data do Pagamento", "Banco do Pagamento", "Nº da Nota Fiscal",
+    "Chave de Acesso", "Responsável pela Solicitação", "Tipo de Pagamento",
+    "Etiquetas", "Centro de Custo", "CPF/CNPJ Credor", "Dt Emissão", "Link"]
+
+
+def _lancamento(sp_id, documentacao="", numero="", chave_=""):
+    linha = [""] * 18
+    linha[0], linha[1], linha[9], linha[10] = sp_id, documentacao, numero, chave_
+    return linha
+
+
+def _semear(monkeypatch, linhas, ja_semeado="", forcar=False):
+    from app.apps.analisesps import db, sincronizacao
+    monkeypatch.setattr(sincronizacao, "com_retry", lambda f: f())
+    monkeypatch.setattr(sincronizacao, "_aba", lambda pid, nome: _Aba(linhas))
+    monkeypatch.setattr(sincronizacao, "_abas_existentes", lambda pid: [])
+    monkeypatch.setattr(sincronizacao, "_meta_ler",
+                        lambda conn, chave_, padrao="": ja_semeado)
+    monkeypatch.setattr(sincronizacao, "_meta_gravar",
+                        lambda conn, chave_, valor: None)
+
+    guardadas: list = []
+
+    class ConexaoFalsa:
+        def __enter__(self): return self
+        def __exit__(self, *a): return False
+        def execute(self, sql, params=()):
+            class Cur:
+                def fetchone(self_): return (len(guardadas),)
+                def close(self_): pass
+            return Cur()
+        def executemany(self, sql, seq):
+            assert "DO NOTHING" in sql, (
+                "a semeadura NUNCA pode sobrescrever decisão desta tela")
+            guardadas.extend(seq)
+        def commit(self): pass
+
+    monkeypatch.setattr(db, "conexao", lambda: ConexaoFalsa())
+    return sincronizacao.semear_analise_do_pipefy(forcar=forcar), guardadas
+
+
+def test_a_semeadura_roda_uma_vez_so(monkeypatch):
+    """"Não precisa ficar toda hora baixando, já que está gravando a
+    informação complementar no outro canto." — o dono, em 11/09/2026."""
+    resposta, gravadas = _semear(monkeypatch, [
+        CABECALHO_LANCAMENTOS, _lancamento("123", "Seguros")],
+        ja_semeado="2026-09-11T10:00:00")
+    assert resposta["pulada"] is True and gravadas == []
+
+
+def test_a_semeadura_traz_categoria_chave_e_dedutibilidade(monkeypatch):
+    _, gravadas = _semear(monkeypatch, [
+        CABECALHO_LANCAMENTOS,
+        _lancamento("1435291289", "NF-e (Mercadoria)", "121", chave(CREDOR))])
+    assert len(gravadas) == 1
+    sp_id, situacao, documentacao, chave_gravada = gravadas[0][:4]
+    assert sp_id == "1435291289"
+    assert situacao == "ESCRITA", "o valor ESTÁ no card; não é pendência"
+    assert documentacao == "NF-e (Mercadoria)"
+    assert chave_gravada == chave(CREDOR)
+    assert gravadas[0][6] is True, "NF-e é dedutível"
+
+
+def test_a_semeadura_calcula_a_dedutibilidade_pela_tabela_do_dono(monkeypatch):
+    _, gravadas = _semear(monkeypatch, [
+        CABECALHO_LANCAMENTOS, _lancamento("1", "Não Dedutível"),
+        _lancamento("2", "Seguros")])
+    por_sp = {g[0]: g[6] for g in gravadas}
+    assert por_sp["1"] is False and por_sp["2"] is True
+
+
+def test_lancamento_sem_categoria_e_sem_chave_nao_e_semeado(monkeypatch):
+    """Essa SP entra na fila normal. Semeá-la como "pendente" só encheria a
+    tabela com o que já se sabe pela ausência."""
+    _, gravadas = _semear(monkeypatch, [
+        CABECALHO_LANCAMENTOS, _lancamento("1"), _lancamento("2", "Seguros")])
+    assert [g[0] for g in gravadas] == ["2"]
+
+
+def test_chave_pela_metade_nao_e_semeada_como_chave(monkeypatch):
+    """44 dígitos ou não é chave. Uma meia chave no diário envenenaria a
+    conciliação e ainda pareceria decidida."""
+    _, gravadas = _semear(monkeypatch, [
+        CABECALHO_LANCAMENTOS, _lancamento("1", "NF-e (Mercadoria)", "9", "12345")])
+    assert gravadas[0][3] == ""
+
+
+def test_a_semeadura_nunca_sobrescreve_o_que_esta_tela_decidiu(monkeypatch):
+    """A verificação está dentro do dublê: o comando TEM de ser
+    `ON CONFLICT DO NOTHING`. História velha não manda em decisão nova, e
+    confiar em quem lembra da regra é como a regra se perde."""
+    _, gravadas = _semear(monkeypatch, [
+        CABECALHO_LANCAMENTOS, _lancamento("1", "Seguros")], forcar=True)
+    assert len(gravadas) == 1
+
+
+def test_aba_de_lancamentos_sem_as_colunas_diz_o_que_encontrou(monkeypatch):
+    resposta, gravadas = _semear(monkeypatch, [
+        ["Data", "Documento"], ["01/01/2026", "x"]])
+    assert gravadas == []
+    aviso = " ".join(resposta["avisos"])
+    assert "ID SP" in aviso and "Documento" in aviso

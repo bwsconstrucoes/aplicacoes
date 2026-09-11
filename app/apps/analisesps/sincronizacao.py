@@ -643,6 +643,129 @@ def sincronizar_notas_fiscais(anotar=None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# O PASSADO: o que já está preenchido nos cards
+#
+# Dos lançamentos da planilha do dono, um terço já tem chave de acesso e
+# categoria — preenchidos à mão, ao longo dos meses. Essa informação **só
+# existe no card**, porque a base SPsBD não tem esses campos, e o dono decidiu
+# NÃO mexer nela.
+#
+# Por isso o relatório do Pipefy é lido UMA VEZ, para o diário nascer sabendo
+# o que já foi feito. Decisão dele, em 11/09/2026: *"à medida que forem
+# lançados novos registros, eles vão aparecer. Então não precisa ficar toda
+# hora baixando, já que está gravando a informação complementar no outro
+# canto."*
+#
+# A REGRA QUE PROTEGE O TRABALHO: a semeadura NUNCA sobrescreve uma linha que
+# já existe aqui. Se este módulo já decidiu alguma coisa sobre uma SP, o que
+# veio do relatório é história velha — e história velha não manda em decisão
+# nova. `ON CONFLICT DO NOTHING` diz isso ao banco, em vez de confiar em quem
+# lembra da regra.
+# ---------------------------------------------------------------------------
+CHAVE_SEMEADURA = "analise_fiscal_semeada_em"
+
+COLUNAS_DOS_LANCAMENTOS = {
+    "sp_id":        ["ID SP", "Código", "ID do Card"],
+    "documentacao": ["Documentação Fiscal"],
+    "chave":        ["Chave de Acesso", "Chave"],
+    "numero_nota":  ["Nº da Nota Fiscal", "N da Nota Fiscal",
+                     "Número da Nota Fiscal", "Nº Nota Fiscal"],
+}
+
+
+def semear_analise_do_pipefy(anotar=None, forcar: bool = False) -> dict:
+    """Traz para o diário o que já está preenchido nos cards. Roda UMA vez.
+
+    `forcar` existe para o dia em que alguém precisar refazer — e mesmo assim
+    não sobrescreve nada que já tenha sido decidido aqui."""
+    from . import fiscal
+    from .db import conexao
+    from .horario import agora
+
+    anotar = anotar or (lambda *a, **k: None)
+
+    with conexao() as conn:
+        if not forcar and _meta_ler(conn, CHAVE_SEMEADURA, ""):
+            return {"semeadas": 0, "ja_existiam": 0, "pulada": True, "avisos": []}
+
+    anotar("trazendo o que já está preenchido nos cards")
+    try:
+        valores = com_retry(_aba(PLANILHA_FISCAL, ABA_FISCAL).get_all_values)
+    except Exception as e:  # noqa: BLE001
+        motivo = _explicar_aba(PLANILHA_FISCAL, ABA_FISCAL, e)
+        return {"semeadas": 0, "ja_existiam": 0, "pulada": False,
+                "avisos": [motivo]}
+
+    linha_cab, indices = -1, {}
+    for i, linha in enumerate(valores[:10]):
+        normalizado = _normalizar_cabecalho(linha)
+        achados = {campo: achar_coluna(normalizado, nomes)
+                   for campo, nomes in COLUNAS_DOS_LANCAMENTOS.items()}
+        if achados.get("sp_id") is not None and achados.get("documentacao") is not None:
+            linha_cab, indices = i, achados
+            break
+
+    if linha_cab < 0:
+        olhadas = [", ".join(str(x).strip() for x in l if str(x).strip())[:160]
+                   for l in valores[:3]]
+        return {"semeadas": 0, "ja_existiam": 0, "pulada": False, "avisos": [
+            f'a aba "{ABA_FISCAL}" não tem as colunas "ID SP" e "Documentação '
+            f'Fiscal". O que encontrei foi: {" | ".join(x for x in olhadas if x)}.']}
+
+    def pegar(linha, campo):
+        i = indices.get(campo)
+        return str(linha[i]).strip() if i is not None and i < len(linha) else ""
+
+    registros = []
+    for linha in valores[linha_cab + 1:]:
+        sp_id = fiscal.so_digitos(pegar(linha, "sp_id"))
+        if not sp_id:
+            continue
+        documentacao = pegar(linha, "documentacao")
+        chave = fiscal.so_digitos(pegar(linha, "chave"))
+        if len(chave) != 44:
+            chave = ""
+        # SEM CATEGORIA E SEM CHAVE NÃO HÁ O QUE SEMEAR: essa SP entra na fila
+        # normal, e semeá-la como "pendente" só encheria a tabela.
+        if not documentacao and not chave:
+            continue
+        registros.append((
+            sp_id,
+            "ESCRITA" if documentacao else "PENDENTE",
+            documentacao, chave, pegar(linha, "numero_nota"),
+            "Sim" if chave else "",
+            fiscal.dedutivel(documentacao) if documentacao else None,
+            "PIPEFY",
+            "veio preenchido no card, antes de esta tela existir"))
+
+    if not registros:
+        return {"semeadas": 0, "ja_existiam": 0, "pulada": False, "avisos": [
+            f'a aba "{ABA_FISCAL}" não trouxe nenhum lançamento já analisado.']}
+
+    with conexao() as conn:
+        cur = conn.execute("SELECT count(*) FROM analisesps.sp_fiscal_analise")
+        antes = (cur.fetchone() or [0])[0]
+        cur.close()
+        conn.executemany(
+            "INSERT INTO analisesps.sp_fiscal_analise "
+            "  (sp_id, situacao, documentacao, chave, numero_nota, gerou_nota, "
+            "   dedutivel, origem, motivo) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (sp_id) DO NOTHING", registros)
+        cur = conn.execute("SELECT count(*) FROM analisesps.sp_fiscal_analise")
+        depois = (cur.fetchone() or [0])[0]
+        cur.close()
+        _meta_gravar(conn, CHAVE_SEMEADURA, agora().isoformat())
+        conn.commit()
+
+    semeadas = depois - antes
+    logger.info("Análise de SPs: semeadura fiscal — %d lidas, %d novas.",
+                len(registros), semeadas)
+    return {"semeadas": semeadas, "ja_existiam": len(registros) - semeadas,
+            "pulada": False, "avisos": []}
+
+
+# ---------------------------------------------------------------------------
 # Agenda, feriados e as listas do rateio
 #
 # Três abas curtas, na mesma planilha de credenciais. São dezenas de linhas
