@@ -1812,6 +1812,66 @@ aplicação sobe com os 18 blueprints.
 reposta em particular é comportamento de tela — os testes conferem o código que
 a governa, não o clique.
 
+### INCIDENTE (11/09) — a SP paga que a base insistia em mostrar como "Pagar"
+
+O dono, olhando a **SP 1443253428** no lote: *"na planilha, consulta BD, esse
+registro está pago. E ele está aparecendo no lote como PAGAR. A base está
+atualizada, eu acabei de atualizar, o relógio está batendo."*
+
+**Não era atraso. Era permanente.** Aquela linha nunca mais seria relida.
+
+**A causa.** A sincronização do dia lê só as colunas A (ID) e V (carimbo) e
+traz apenas as linhas cujo carimbo é mais novo que o da última rodada. É isso
+que faz a atualização custar segundos em vez de minutos. Só que **o carimbo é
+escrito pelo gatilho `onEdit` da própria planilha — e esse gatilho NÃO DISPARA
+quando quem escreve é um script.** E quem alimenta a SPsBD são scripts, como o
+dono confirmou no mesmo dia.
+
+Ou seja: o script grava "Pago" na coluna O, o carimbo da coluna V fica como
+estava, e a sincronização conclui que nada mudou naquela linha. Para sempre —
+até alguém editar a célula na mão.
+
+> **Conferido na planilha de verdade**, não deduzido: entre as 63 primeiras
+> linhas legíveis da SPsBD, **5 estão com o carimbo VAZIO** e as outras 58 têm
+> todas **exatamente o mesmo carimbo** (`2026-09-04 16:05:23`) — a assinatura
+> de uma gravação em massa feita por script.
+
+**E o relógio da tela não acusava nada**, o que foi o que despistou: a hora da
+última sincronização é gravada no fim de TODA rodada, tenha vindo linha ou não.
+"O relógio está batendo" prova que a rotina rodou, **não** que algum dado desceu.
+
+#### As três correções
+
+**1. A sincronização passou a CONFERIR o conteúdo das colunas que decidem
+dinheiro** (hoje: Status Pgt), além do carimbo. Se o que está na planilha
+difere do que está na base, a linha é trazida — com carimbo ou sem. Custa **uma
+leitura de coluna a mais** por rodada; é barato perto do estrago de mostrar como
+"a pagar" o que já foi pago. A lista de colunas conferidas é uma linha só de
+código, para crescer quando for preciso: cada uma acrescentada é mais uma
+leitura, e por isso não entra a planilha inteira.
+
+**2. A marca d'água agora fica UM SEGUNDO ATRÁS do maior carimbo visto.** Um
+script que grava 800 linhas carimba todas com o mesmo segundo. Se a varredura
+pegasse metade delas, a marca d'água subiria para aquele segundo e a outra
+metade — carimbada igual — nunca mais satisfaria "maior que": sumiria para
+sempre. Recuando um segundo, a borda é reexaminada na rodada seguinte. Custa
+reler um punhado de linhas.
+
+**3. A sincronização passou a registrar QUANTAS linhas desceram** e quantas
+foram achadas sem carimbo novo. Vai para o log do Render: se o número de "sem
+carimbo novo" for alto todo dia, é sinal de que o gatilho da planilha não está
+carimbando o que os scripts escrevem, e a conferência é o que está segurando a
+base de pé.
+
+**Verificação:** 4.310 testes verdes com Postgres de verdade. Seis testes novos
+reproduzem o caso com banco de verdade, e foram conferidos **desligando a
+correção**: com o código que estava no ar, a SP com carimbo vazio continua
+"Pagar" depois da sincronização — o defeito exato que o dono viu.
+
+> **Enquanto a correção não estava publicada**, o contorno era editar a célula
+> na planilha à mão: edição de gente dispara o gatilho, o carimbo é escrito, e
+> a sincronização seguinte traz a linha.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a
