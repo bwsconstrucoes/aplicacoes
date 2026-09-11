@@ -736,6 +736,17 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-11 — Credencial com o nome trocado não dá erro, e por isso o ERP
+  passou a MOSTRAR o nome que procura.** Configurações › Saúde do sistema ganhou
+  o quadro "O que está ligado": o que está configurado, **sob qual nome exato**,
+  e — quando falta — se o ambiente tem alguma variável de nome parecido (o caso
+  de "está lá, com outro nome"), que vira aviso no topo. O valor nunca aparece;
+  só os quatro últimos caracteres, e só em KEY/TOKEN/SECRET. **Ao criar
+  integração nova, acrescente a variável em `saude.INTEGRACOES`** — há
+  varredura exigindo que todo nome listado seja lido por algum código, e a
+  regra do repositório continua sendo UM nome por credencial (nada de aceitar
+  apelidos, que é como se perde o controle de qual está valendo).
+
 - **2026-09-11 — O ERP instalável no celular, e o cache que NÃO pode existir.**
   O ERP passou a poder ser instalado como ícone no celular (manifesto +
   service worker em `/erp/`, servidos por rotas públicas porque o navegador os
