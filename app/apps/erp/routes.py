@@ -2040,6 +2040,75 @@ def api_perguntar_financeiro():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/perguntar/entender", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_entender_pergunta():
+    """Da frase escrita para a pergunta que o sistema sabe responder.
+
+    ELA NÃO RESPONDE NADA e não toca em dado nenhum — só diz QUAL pergunta é,
+    e de que grupo. É por isso que ela pode ser aberta a todo operador sem
+    mentir na declaração: quem responde continua sendo a rota do grupo, com a
+    ação dela. Uma rota que recebesse a frase e já devolvesse o número teria
+    de conferir permissão por dentro, pergunta a pergunta.
+
+    O QUE ELA NÃO ENTENDE É GUARDADO. Essa lista é a coisa mais útil que sai
+    daqui: é o que as pessoas querem saber e o sistema ainda não sabe
+    responder — ou seja, o que construir em seguida.
+    """
+    from app.apps.erp.core.comum.auditoria import registrar_evento
+    from app.apps.erp.core.perguntas import catalogo, entender as svc_entender
+
+    texto = ((request.get_json(silent=True) or {}).get("texto") or "").strip()
+    if not texto:
+        return jsonify({"ok": False, "erro": "Escreva a pergunta."}), 400
+    leitura = svc_entender.entender(texto, catalogo.para_a_tela())
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            registrar_evento(
+                s, "pergunta", 0,
+                "ENTENDIDA" if leitura["entendi"] else "NAO_ENTENDIDA",
+                {"texto": texto[:500], "chave": leitura.get("chave"),
+                 "confianca": leitura.get("confianca")},
+                atual.id if atual else None)
+            s.commit()
+    except Exception:                       # pragma: no cover - log não trava
+        logger.exception("ERP: falha ao registrar a pergunta escrita")
+    return jsonify({"ok": True, "leitura": leitura})
+
+
+@bp.route("/erp/api/perguntas/nao-entendidas")
+@login_obrigatorio
+@permissao("ver_uso_da_equipe")
+def api_perguntas_nao_entendidas():
+    """O que perguntaram e o sistema não soube responder.
+
+    É a lista do que falta construir, escrita pelas próprias pessoas que usam
+    o ERP — vale mais que qualquer suposição minha sobre o que elas precisam.
+    """
+    from sqlalchemy import text as _sql
+    try:
+        with get_session() as s:
+            linhas = s.execute(_sql("""
+                SELECT e.detalhe->>'texto' AS texto,
+                       COUNT(*)            AS vezes,
+                       MAX(e.criado_em)    AS ultima
+                  FROM eventos e
+                 WHERE e.entidade_tipo = 'pergunta'
+                   AND e.acao = 'NAO_ENTENDIDA'
+                 GROUP BY e.detalhe->>'texto'
+                 ORDER BY vezes DESC, ultima DESC
+                 LIMIT 100""")).all()
+        return jsonify({"ok": True, "perguntas": [
+            {"texto": t, "vezes": v,
+             "ultima": u.astimezone().strftime("%d/%m/%Y") if u else None}
+            for t, v, u in linhas]})
+    except Exception as e:
+        logger.exception("ERP: falha ao ler as perguntas não entendidas")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/perguntas/suprimentos")
 @login_obrigatorio
 @permissao("ver_suprimentos")
