@@ -293,7 +293,7 @@ function desenhar(){
       <div class="kpi-sub">${moeda(soma(p=>!p.em_lote))}</div></div>`;
   els("vazio").classList.toggle("oculto", l.length>0);
   if (!l.length) els("vazio").innerHTML = P.length
-    ? "<b>Nada nestes filtros</b>Ajuste à esquerda."
+    ? "<b>Nada nestes filtros</b>Ajuste os filtros."
     : "<b>Nenhuma parcela liberada</b>Títulos precisam ser liberados para pagamento na aba Títulos.";
   els("corpo").innerHTML = l.map(p => `
     <tr class="${SEL.has(p.parcela_id)?"marcada":""}">

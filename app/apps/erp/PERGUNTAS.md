@@ -258,6 +258,50 @@ a chave da OpenAI existir em produção, a IA entra exatamente aí, escolhendo a
 mesma chave com mais jeito, e o resto não muda uma linha. O que nem ela
 entender continua caindo no mesmo lugar honesto: "isto eu não sei".
 
+## 3c. Perguntar FALANDO, e perguntar sobre um DOCUMENTO
+
+Desde 11/09/2026 a pergunta pode entrar de três jeitos. Os três terminam no
+mesmo lugar — **menos um**, e a diferença é o que esta seção existe para
+deixar clara.
+
+| Como você pergunta | Quem responde | Dá para conferir? |
+|---|---|---|
+| Escrevendo | código escrito e testado | sim, a resposta diz de onde veio |
+| **Falando** | código escrito e testado | sim — idem |
+| **Anexando um documento** | **a IA lendo o arquivo** | sim, olhando o papel |
+
+### Falar
+
+O áudio **não responde nada**: ele vira texto, o texto cai na mesma caixa de
+escrita, e **você lê antes de mandar responder**. Isso não é burocracia: "a
+pagar" e "apagar" soam igual, e uma pergunta mal ouvida respondida em silêncio
+seria o pior defeito que essa tela poderia ter.
+
+O botão do microfone só aparece onde o navegador deixa gravar. Recusar o
+microfone não quebra nada — a caixa de escrita continua ali.
+
+### Anexar
+
+Este é o **único** ponto da área de Perguntar em que a resposta vem da IA, e a
+tela avisa em amarelo. Por que é aceitável aqui e não no resto: **o documento
+está na sua mão.** Se a IA ler R$ 1.248,00 onde está R$ 12.480,00, você vê no
+papel. Um total somado sobre dez mil lançamentos, não — e é por isso que aquele
+é código e este pode ser IA.
+
+Duas coisas que a tela deixa explícitas, de propósito:
+
+- **Nada é gravado.** Ler não é arquivar. Para guardar o documento, o caminho
+  continua sendo o Arquivo.
+- **O que a IA não conseguiu ler, ela declara** — e isso aparece, em vez de
+  ficar escondido atrás de uma tabela com cara de completa.
+
+### O que ainda falta para os dois funcionarem
+
+A chave do serviço de IA (`OPENAI_API_KEY`) **não está configurada em
+produção**. Sem ela, falar e anexar recusam com uma frase que diz isso, e todo
+o resto da tela continua funcionando igual — as perguntas sobre o que já está
+no ERP não usam IA nenhuma.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

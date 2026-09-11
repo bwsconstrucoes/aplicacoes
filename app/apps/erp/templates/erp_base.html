@@ -5,6 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block titulo %}ERP BWS{% endblock %}</title>
 <link rel="stylesheet" href="{{ url_for('erp.static', filename='erp.css') }}">
+
+{# O ERP instalável no celular: vira ícone na tela inicial e abre em tela
+   cheia, sem barra de endereço. É o mesmo sistema — não há segundo aplicativo
+   nem loja no meio. Ver a explicação inteira em `routes.py` › manifesto_pwa. #}
+<link rel="manifest" href="{{ url_for('erp.manifesto_pwa') }}">
+<meta name="theme-color" content="#0A1B2E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="ERP BWS">
+<link rel="apple-touch-icon" href="{{ url_for('erp.static', filename='icone-apple.png') }}">
+<link rel="icon" href="{{ url_for('erp.static', filename='icone-192.png') }}">
 </head>
 <body>
 <header class="topo">
@@ -61,7 +73,10 @@
    embaixo, olhando o que a tela pôs dentro do <aside>. No computador o botão
    nunca aparece: o estilo só o mostra abaixo de 720px. #}
 <button type="button" class="abrir-filtros" id="abrir-filtros" hidden>
-  Filtros <span class="conta" id="conta-filtros" hidden>0</span>
+  {# O rótulo é da tela: na maioria a gaveta tem filtros, mas na de Perguntar
+     ela tem a lista de perguntas, e "Filtros" ali não quer dizer nada. #}
+  {% block rotulo_gaveta %}Filtros{% endblock %}
+  <span class="conta" id="conta-filtros" hidden>0</span>
 </button>
 
 <script>
@@ -686,5 +701,20 @@ async function api(url, opcoes) {
 })();
 </script>
 {% block scripts %}{% endblock %}
+
+<script>
+// O registro do service worker — é ele que torna o ERP instalável no celular.
+//
+// Fica no FIM da página e dentro de um try: se falhar (navegador antigo,
+// acesso por http em vez de https, política do aparelho), o ERP continua
+// funcionando exatamente como antes. Instalar é um ganho, nunca um requisito.
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("{{ url_for('erp.service_worker') }}",
+                                     {scope: "/erp/"})
+      .catch(e => console.warn("ERP: service worker não registrado —", e));
+  });
+}
+</script>
 </body>
 </html>

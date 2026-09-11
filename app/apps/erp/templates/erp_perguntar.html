@@ -1,6 +1,8 @@
 {% extends "erp_base.html" %}
 {% block titulo %}Perguntar — ERP BWS{% endblock %}
 
+{% block rotulo_gaveta %}Perguntas{% endblock %}
+
 {% block filtros %}
   <div class="filtros-cab"><h2>Perguntas</h2></div>
   <div id="lista-perguntas"></div>
@@ -24,16 +26,44 @@
      não o limite do que se pode escrever. -->
 <div class="cartao">
   <div class="cartao-cab"><h3>Pergunte com suas palavras</h3>
-    <small>ou escolha na lista ao lado</small></div>
-  <div style="display:flex; gap:8px; align-items:flex-end">
-    <div class="campo" style="flex:1; margin:0">
+    <small>ou escolha uma das perguntas prontas</small></div>
+  <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap">
+    <div class="campo" style="flex:1 1 260px; margin:0">
       <label for="texto-livre">Sua pergunta</label>
       <input id="texto-livre" type="search" autocomplete="off"
              placeholder="o que tem a pagar hoje · quanto falta receber da obra X · tem equipamento alugado tempo demais">
     </div>
+    <!-- FALAR e ANEXAR ficam do lado de escrever, não numa tela à parte: são
+         três jeitos de fazer a MESMA pergunta. O microfone nasce escondido e
+         só aparece onde o navegador deixa gravar — botão que não funciona é
+         pior que botão que não existe. -->
+    <button class="btn secundario" id="btn-gravar" type="button" hidden
+            title="Falar a pergunta">🎤 Falar</button>
+    <button class="btn secundario" id="btn-anexar" type="button"
+            title="Anexar um documento para eu ler">📎 Anexar</button>
+    <input id="arquivo-documento" type="file" hidden
+           accept=".pdf,.xml,.jpg,.jpeg,.png,.webp,.heic">
     <button class="btn" id="btn-perguntar">Perguntar</button>
   </div>
+  <div id="estado-audio"></div>
   <div id="leitura"></div>
+</div>
+
+<!-- O QUE A IA LEU NO DOCUMENTO — e por que este cartão é diferente dos
+     outros. Todo o resto desta tela é número calculado pelo sistema, por
+     código testado. Aqui é a IA lendo o arquivo, e a IA lê errado às vezes.
+     Vale a pena mesmo assim porque o documento está na mão de quem perguntou:
+     dá para conferir olhando o papel. O aviso amarelo diz isso. -->
+<div class="cartao" id="cartao-documento" hidden>
+  <div class="cartao-cab"><h3>O que eu li no documento</h3>
+    <small id="nome-documento"></small></div>
+  <div class="aviso alerta">
+    <b>Isto foi lido do arquivo pela IA, não calculado pelo sistema.</b>
+    Confira no próprio documento antes de usar. Nada foi gravado — para
+    guardar o arquivo, use o <a href="/erp/arquivo">Arquivo</a>.
+  </div>
+  <div id="campos-documento"></div>
+  <div id="observacoes-documento"></div>
 </div>
 
 <div class="cartao" id="cartao-pergunta" hidden>
@@ -55,7 +85,7 @@
 </div>
 
 <div class="vazio" id="nada-ainda">
-  <b>Escolha uma pergunta à esquerda</b>
+  <b>Escreva a sua pergunta acima</b>
   O sistema responde com o número e com a lista por trás dele.
 </div>
 {% endblock %}
@@ -244,6 +274,129 @@ els("texto-livre").addEventListener("keydown", e => {
 });
 
 els("btn-responder").addEventListener("click", responder);
+
+// ------------------------------------------------------- falar a pergunta
+//
+// O áudio NÃO responde nada: vira texto, o texto cai na mesma caixa acima, e
+// a pessoa LÊ antes de mandar responder. Transcrição erra — "a pagar" e
+// "apagar" soam igual — e pergunta mal ouvida respondida em silêncio seria o
+// pior defeito que esta tela poderia ter.
+let GRAVADOR = null, PEDACOS = [], COMECOU = 0;
+
+function podeGravar() {
+  return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia
+            && window.MediaRecorder);
+}
+
+function estadoAudio(texto, classe) {
+  els("estado-audio").innerHTML = texto
+    ? `<div class="aviso ${classe || "info"}" style="margin:10px 0 0">${escapar(texto)}</div>`
+    : "";
+}
+
+async function comecarAGravar() {
+  try {
+    const fluxo = await navigator.mediaDevices.getUserMedia({audio: true});
+    const gravador = new MediaRecorder(fluxo);
+    PEDACOS = []; COMECOU = Date.now();
+    gravador.ondataavailable = ev => { if (ev.data.size) PEDACOS.push(ev.data); };
+    // O `onstop` roda DEPOIS de `stop()` retornar. Ler a variável global aqui
+    // dentro não funciona: quando este trecho executa, ela já foi zerada por
+    // `pararDeGravar` e o áudio morria com "Cannot read mimeType of null".
+    // Por isso a referência usada aqui é a LOCAL, presa pelo fechamento.
+    gravador.onstop = () => {
+      fluxo.getTracks().forEach(t => t.stop());
+      enviarAudio(new Blob(PEDACOS, {type: gravador.mimeType || "audio/webm"}),
+                  (Date.now() - COMECOU) / 1000);
+    };
+    gravador.start();
+    GRAVADOR = gravador;
+    els("btn-gravar").textContent = "⏹ Parar";
+    els("btn-gravar").classList.remove("secundario");
+    estadoAudio("Gravando… fale a sua pergunta e aperte Parar.", "alerta");
+  } catch (e) {
+    // Recusar o microfone é uma escolha legítima; a tela não insiste.
+    estadoAudio("Não consegui usar o microfone. Escreva a pergunta que eu "
+                + "respondo igual.", "erro");
+    GRAVADOR = null;
+    els("btn-gravar").textContent = "🎤 Falar";
+    els("btn-gravar").classList.add("secundario");
+  }
+}
+
+function pararDeGravar() {
+  if (GRAVADOR && GRAVADOR.state !== "inactive") GRAVADOR.stop();
+  GRAVADOR = null;
+  els("btn-gravar").textContent = "🎤 Falar";
+  els("btn-gravar").classList.add("secundario");
+  estadoAudio("Ouvindo…");
+}
+
+async function enviarAudio(blob, segundos) {
+  if (!blob.size) { estadoAudio("A gravação saiu vazia.", "erro"); return; }
+  estadoAudio("Ouvindo…");
+  const dados = new FormData();
+  // O nome importa: é por ele que o serviço decide o formato do arquivo.
+  dados.append("audio", blob, "pergunta.webm");
+  dados.append("segundos", String(Math.round(segundos)));
+  try {
+    const d = await api("/erp/api/perguntar/ouvir", {method: "POST", body: dados});
+    els("texto-livre").value = d.texto;
+    estadoAudio("Ouvi isto. Confira a frase antes de responder — se eu "
+                + "entendi errado, corrija e aperte Perguntar.", "ok");
+    perguntarEscrevendo();
+  } catch (e) {
+    estadoAudio(e.message, "erro");
+  }
+}
+
+if (podeGravar()) {
+  els("btn-gravar").hidden = false;
+  els("btn-gravar").addEventListener("click", () =>
+    GRAVADOR ? pararDeGravar() : comecarAGravar());
+}
+
+// ------------------------------------------------------- anexar documento
+//
+// Este é o ÚNICO lugar desta tela onde a resposta vem da IA e não de código
+// testado. Vale porque o documento está na mão de quem perguntou: dá para
+// conferir olhando o papel. O cartão diz isso em amarelo, e nada é gravado.
+els("btn-anexar").addEventListener("click", () => els("arquivo-documento").click());
+
+els("arquivo-documento").addEventListener("change", async ev => {
+  const f = ev.target.files && ev.target.files[0];
+  if (!f) return;
+  const b = els("btn-anexar"); b.disabled = true; b.textContent = "Lendo…";
+  els("cartao-documento").hidden = true;
+  try {
+    const dados = new FormData();
+    dados.append("documento", f, f.name);
+    const d = await api("/erp/api/perguntar/documento", {method: "POST", body: dados});
+    desenharDocumento(d.documento);
+  } catch (e) {
+    aviso("mensagem", e.message, "erro");
+  }
+  b.disabled = false; b.textContent = "📎 Anexar";
+  ev.target.value = "";        // deixa reanexar o MESMO arquivo depois
+});
+
+function desenharDocumento(doc) {
+  els("nome-documento").textContent = doc.arquivo || "";
+  els("campos-documento").innerHTML = (doc.linhas || []).length
+    ? `<table><tbody>${doc.linhas.map(l =>
+        `<tr><td style="width:38%">${escapar(l.rotulo)}</td>
+             <td class="${l.dados ? "dados" : ""}">${escapar(l.valor)}</td></tr>`)
+        .join("")}</tbody></table>`
+    : `<div class="cartao-dica">Não consegui ler nada deste arquivo.</div>`;
+  // O que a IA não conseguiu ler ela declara — e isso aparece, em vez de
+  // ficar escondido atrás de uma tabela que parece completa.
+  els("observacoes-documento").innerHTML = doc.observacoes
+    ? `<div class="cartao-dica" style="margin-top:8px"><b>O que ficou em
+       dúvida:</b> ${escapar(doc.observacoes)}</div>` : "";
+  els("cartao-documento").hidden = false;
+  els("nada-ainda").hidden = true;
+  els("cartao-documento").scrollIntoView({behavior: "smooth", block: "nearest"});
+}
 
 (async () => {
   // Grupo que a pessoa não pode ver responde 403; isso não é erro de tela, é
