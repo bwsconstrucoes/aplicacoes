@@ -422,7 +422,7 @@ apenas "nenhum candidato encontrado". Se dissesse *"existe SP com este valor e
 este nome, mas ela não está agendada"*, esta investigação inteira teria sido
 uma linha. Vale a pena, e é barato — depende do dono pedir.
 
-### 11/09/2026 — o robô passou a avisar o que NÃO baixou
+### 11/09/2026 — o robô passou a avisar o que NÃO baixou (publicado, `3b5165c`)
 
 Consequência direta do caso acima: a explicação de por que um comprovante não
 baixou existia, mas morria dentro da resposta devolvida ao Make. O dono pediu o
@@ -464,3 +464,33 @@ saber, e a trava já resolve).
 credenciais Z-API. O espelho no Telegram só alcança quem está na aba
 `TelegramID`. Se o aviso não chegar, conferir nessa ordem: toggle ligado,
 credenciais presentes, número certo.
+
+---
+
+## Estado no fim de 11/09/2026
+
+Tudo publicado. A área fechou o dia com:
+
+- os **dois caminhos da Somapay** funcionando (depósito direto e transferência
+  Bradesco → Somapay), com a conta de destino vindo da BaseBancos pela chave PIX;
+- comprovante recusado pelo banco barrado antes de virar baixa;
+- a trava contra baixar duas vezes ligada de fato;
+- **aviso por WhatsApp, só para o dono, do que não foi baixado.**
+
+**O que conferir nos próximos lotes reais**, nesta ordem:
+
+1. O aviso chega no WhatsApp. Se não chegar: toggle `NOTIFICAR_WHATSAPP` ligado,
+   credencial Z-API chegando no pedido do Make, número certo.
+2. A transferência aparece no Omie entre as contas certas, e a baixa cai na
+   conta Somapay — não na do Bradesco.
+3. Nenhum comprovante bom sendo barrado por engano.
+
+**O que continua em aberto:**
+
+- Rescisão sem a coluna Agendado preenchida continua não sendo encontrada — é
+  decisão do dono, a marcação é controle de verdade. O aviso agora conta quando
+  isso acontecer, que era a peça que faltava para ele perceber.
+- Pix, boleto, transferência comum, FGTS e BeeVale continuam **sem teste** sobre
+  a leitura dos campos e a escolha da SP. Faltam comprovantes de exemplo de cada
+  tipo.
+- O leitor do Sicredi segue desligado (a empresa não usa mais).
