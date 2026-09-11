@@ -305,3 +305,43 @@ exatamente com uma rescisão (TRCT DIOGENES DAVID DA SILVA); R$ 7.350,48 **não
 bate com nenhuma** das que deu para ler, nem com soma de rescisões daquele dia.
 Pode ser truncamento da leitura, pode ser lote. Sem essa resposta, casar
 transferência por valor é chute.
+
+### 11/09/2026 (fim da tarde) — a transferência é UMA por rescisão, e há um erro vivo em produção
+
+**Respondida a pergunta que travava o caminho da transferência: é um para um.**
+As duas transferências PIX do comprovante batem cada uma com uma rescisão:
+
+| Valor | SP | Funcionário |
+|---|---|---|
+| R$ 8.128,17 | 1442630306 | DIOGENES DAVID DA SILVA |
+| R$ 7.350,48 | 1443274610 | ALEXANDRE DA CUNHA CABRAL |
+
+O segundo foi localizado pelo dono e confirmado na planilha *Documentação
+Fiscal* — ele não estava na parte da SPsBD que o conector entregou. **Não é
+lote**: cada transferência corresponde a uma rescisão.
+
+**O erro vivo, que não foi introduzido agora — está na `main` hoje:** o
+comprovante Bradesco de transferência para a Somapay é lido como um Pix comum e
+**casa** com a SP de rescisão por valor + conta + agendado. O robô então mandaria
+**baixar o título na conta do Bradesco**, sem lançar a transferência. O dinheiro
+saiu do Bradesco para a Somapay e só depois foi ao funcionário — baixar no
+Bradesco faz o saldo da Somapay no Omie nunca receber nada. Exercitado com a SP
+1442630306 no formato real: casa por `valor_conta_agendado`.
+
+**O risco que sobra, mesmo acertando a regra:** o comprovante da transferência
+não traz o nome do funcionário — só valor, data e conta. Quando duas rescisões
+pendentes tiverem o mesmo valor (aconteceu: quatro de R$ 452,40 em 09/09/2026),
+não há como distinguir e o comprovante para como pendente de validação. É o
+comportamento certo, mas é bom saber que vai acontecer.
+
+**Decisão em aberto, esperando o dono:** o que cada papel deve fazer quando os
+dois chegam para a mesma rescisão. A recomendação registrada é **cada papel faz
+o que ele prova**: o comprovante do Bradesco lança **só a transferência** entre
+contas (a máquina para isso já existe, `lancar_movimentacao_omie_sem_sp`), e o
+comprovante da Somapay **baixa** o título na conta Somapay. Isso dispensa casar
+a transferência com uma SP — e com isso some o risco do valor repetido.
+
+**A chave PIX é o identificador exato da conta Somapay**, e deve substituir a
+regra antiga de "se a conta de débito contém 2541": cada uma das três contas
+Somapay tem sua própria chave na BaseBancos, e a chave vem impressa no
+comprovante.
