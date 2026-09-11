@@ -17,6 +17,70 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
+**Estado em 11/09/2026 (segunda entrega):** no ramo, o **grupo de Obras** das
+perguntas e duas correções que a construção dele fez aparecer. **Sem migração.**
+
+**As três perguntas de Obras.** "Quais obras não emitem nota hoje por falta de
+cadastro" (confere os MESMOS quatro campos que a emissão exige — CNO, código
+IBGE, alíquota de ISS e empresa — e diz, obra por obra, o que falta); "qual
+seguro garantia está vencido ou perto de vencer" (prazo em dias configurável,
+60 por padrão); e "qual obra aberta está com a vigência do contrato vencida".
+
+⚠️ **O grupo nasceu pequeno DE PROPÓSITO, e isto é o mais importante daqui.**
+A pergunta mais óbvia do assunto — *"quanto custou a obra tal"* — **não
+entrou**. "Custo da obra" ainda não tem uma definição combinada: o que foi
+lançado? o que foi pago? entra o que está em análise? entra rateio de
+administração? Cada leitura dá um número diferente, **todos com cara de
+certo**, e responder hoje seria escolher uma delas pelo dono em silêncio. Um
+teste da suíte recusa qualquer pergunta deste grupo que use as palavras
+"custo", "resultado", "lucro", "margem" ou "gastou" — quem for construir
+esbarra nele e vem combinar a palavra primeiro. **O que falta o dono decidir**
+está em `PERGUNTAS.md` §1: "custo da obra", "obra em andamento", "este mês",
+"gastei com fulano" e "resultado da obra".
+
+**Efeito colateral bom: "vencido" deixou de ser palavra de uma pergunta só.**
+Até aqui só o título vencia. Agora o seguro garantia e a vigência também — e
+quem escreve "o que está vencido" recebe a pergunta de volta, com as três
+opções. O sistema **não foi ajustado para isso**: ele percebe o empate
+sozinho. Tem teste guardando, porque o catálogo vai crescer e cada pergunta
+nova pode roubar a exclusividade de uma palavra de outra.
+
+### Duas correções que só apareceram no navegador
+
+**1. A tela decidia sozinha o que era dinheiro e o que era data — e errava.**
+A lista das colunas de dinheiro estava escrita DENTRO da tela. Resultado: "Já
+pago" saía `4500`, "Último preço" saía `33.9`, e a data de vencimento da
+apólice saía `2026-08-30` — formato de banco, não de gente. E o defeito era
+reincidente por construção: pergunta nova trazia coluna nova, ninguém lembrava
+de ir na tela acrescentar o nome dela, e a tabela ficava bonita mostrando
+número americano. **Agora a resposta já diz o tipo de cada coluna** e a tela só
+obedece; uma varredura da suíte recusa coluna sem tipo declarado — inclusive as
+de texto, porque é o silêncio que esconde defeito.
+
+Junto veio outra: a FASE da obra saía `EM_EXECUCAO`. A lista de fases morava
+dentro de `routes.py`; passou para `core/cadastros/obras.py`, que é onde
+vocabulário do negócio deve morar — tela, agenda e assistente agora dizem a
+mesma coisa, porque leem a mesma lista.
+
+**2. Segunda brecha de escopo, irmã da das Locações.** O painel de Obras
+mostrava valor de contrato, gasto, recebido e margem de **todas as obras da
+empresa** para quem enxerga "só o que eu lancei". Mesma causa: obra é registro
+**sem autor**, e `obras_do_usuario` devolve "sem filtro" para quem é recortado
+por autoria.
+
+Só que aqui a correção das Locações **não servia**. A mesma rota alimenta cinco
+telas, e em quatro delas ela é a lista de onde se ESCOLHE a obra — fechá-la
+deixaria o lançador sem conseguir arquivar um documento. **A separação que
+ficou: identificação aberta, números fechados.** E em branco, nunca zero: zero
+seria o sistema afirmando que a obra não gastou nada. Pelo mesmo motivo os
+totalizadores do topo mostram traço, e não "R$ 0,00", para quem não alcança
+obra nenhuma.
+
+**A lição que vale para as próximas telas:** "quem pode ESCOLHER este
+registro?" e "quem pode ver os NÚMEROS dele?" são duas perguntas diferentes.
+Tratá-las como uma só fecha demais (e quebra o trabalho de alguém) ou abre
+demais (e vaza). Vale conferir as outras telas que listam obra com valor.
+
 **Estado em 11/09/2026:** `main` publicada em **`f2d93c8`**. Depois disso, no
 ramo e agora publicado: **perguntar escrevendo**. A tela **Perguntar** ganhou
 uma caixa de texto livre em cima da lista — a lista continua ali, mas virou

@@ -736,6 +736,19 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-11 — Escolher o registro e ver os números dele são duas
+  permissões diferentes.** Segunda brecha da mesma família, no **painel de
+  Obras**: quem enxerga "só o que eu lancei" via valor de contrato, gasto,
+  recebido e margem de todas as obras da empresa. A correção das Locações —
+  fechar a lista — **não servia aqui**: a mesma rota alimenta cinco telas, e em
+  quatro delas ela é a lista de onde se ESCOLHE a obra (arquivar documento,
+  marcar compromisso, filtrar contrato e nota). Fechá-la deixaria o lançador
+  sem conseguir arquivar nada. O que ficou: **identificação aberta, números em
+  branco** — em branco e não zero, porque zero seria o sistema afirmando que a
+  obra não gastou nada; pelo mesmo motivo os totalizadores mostram traço.
+  **Ao dar escopo a uma tela de lista, pergunte as duas coisas separadamente:**
+  quem pode escolher este registro, e quem pode ver os números dele.
+
 - **2026-09-11 — Escopo de registro que NÃO TEM AUTOR.** `obras_do_usuario`
   devolve `None` com dois significados diferentes: "enxerga tudo" e "filtra por
   autoria, não por obra". Em título isso é seguro, porque ele tem

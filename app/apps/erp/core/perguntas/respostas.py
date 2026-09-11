@@ -132,6 +132,51 @@ def _linha(t: Titulo, **extra: Any) -> dict[str, Any]:
     return linha
 
 
+# ---------------------------------------------------------------------------
+# O QUE CADA COLUNA É — dito pelo SERVIDOR, não adivinhado pela tela.
+#
+# Na primeira versão a tela tinha a lista das colunas de dinheiro escrita
+# dentro dela. Deu no que tinha de dar: "Já pago" e "Último preço" saíam como
+# 4500.0, e a data de vencimento do seguro saía 2026-08-30 — formato de banco,
+# não de gente. E o pior: pergunta NOVA nascia com o defeito calado, porque
+# ninguém lembrava de ir na tela acrescentar o nome da coluna.
+#
+# Agora a resposta já diz o tipo de cada coluna, e a tela só obedece. Coluna
+# nova sem tipo declarado é recusada por uma varredura da suíte — não dá para
+# esquecer em silêncio.
+#
+# "numero" é contagem (dias, meses, parcelas): alinha à direita, sem R$.
+# ---------------------------------------------------------------------------
+TIPO_DA_COLUNA: dict[str, str] = {
+    # dinheiro
+    "a_receber": "dinheiro", "falta_faturar_do_medido": "dinheiro",
+    "falta_receber_do_contrato": "dinheiro",
+    "falta_receber_do_medido": "dinheiro", "faturado": "dinheiro",
+    "faturado_sem_receber": "dinheiro", "medido": "dinheiro",
+    "medido_sem_nota": "dinheiro", "pago_ate_agora": "dinheiro",
+    "recebido": "dinheiro", "ultimo_preco": "dinheiro", "valor": "dinheiro",
+    "valor_periodo": "dinheiro", "vigente": "dinheiro",
+    # contagem
+    "alertas": "numero", "atraso": "numero", "dias": "numero",
+    "itens": "numero", "meses": "numero", "parado_ha": "numero",
+    "parcelas": "numero", "quantidade": "numero", "quantos": "numero",
+    # data
+    "competencia": "data", "previsao": "data", "ultimo_preco_em": "data",
+    "vence_em": "data", "venceu_em": "data", "vencimento": "data",
+    # texto (declarado de propósito: o silêncio é que esconde defeito)
+    "_": "texto", "apolice": "texto", "aviso": "texto",
+    "categoria_insumo": "texto", "cliente": "texto", "codigo": "texto",
+    "conta": "texto", "contrato": "texto", "credor": "texto",
+    "de_quem": "texto", "descricao": "texto", "especificacao": "texto",
+    "faixa": "texto", "falta": "texto", "fase": "texto",
+    "gravidade": "texto", "insumo": "texto", "locadora": "texto",
+    "locavel": "texto", "nome": "texto", "numero_sp": "texto",
+    "objeto": "texto", "obra": "texto", "origem": "texto",
+    "parcela": "texto", "periodicidade": "texto", "prioridade": "texto",
+    "situacao": "texto", "solicitacao": "texto", "unidade": "texto",
+}
+
+
 # Quantas linhas a resposta mostra. A conta é sempre feita sobre TUDO — o que
 # o teto corta é só o que viaja para a tela. A base de insumos tem 3.285 itens:
 # devolver todos travaria o navegador, e ninguém lê 3.285 linhas de qualquer
@@ -156,7 +201,9 @@ def _resposta(*, titulo: str, frase: str, linhas: list[dict[str, Any]],
         "quantas": quantas,
         "mostradas": len(mostradas),
         "total": float(total) if total is not None else None,
-        "colunas": [{"chave": c, "rotulo": r} for c, r in colunas],
+        "colunas": [{"chave": c, "rotulo": r,
+                     "tipo": TIPO_DA_COLUNA.get(c, "texto")}
+                    for c, r in colunas],
         "linhas": mostradas,
         "de_onde_veio": de_onde_veio,
         "observacao": observacao,
@@ -875,3 +922,179 @@ def parcelas_de_locacao_sem_lancar(s: Session, usuario: Usuario) -> dict[str, An
         observacao=("Enquanto não é lançada, a parcela não entra em previsão "
                     "de caixa nenhuma — e chega como surpresa quando a "
                     "locadora cobra."))
+
+
+# ===========================================================================
+# OBRAS — o cadastro que trava (ou destrava) o resto do sistema
+#
+# POR QUE ESTE GRUPO NASCEU PEQUENO, E DE PROPÓSITO.
+# A pergunta que o dono mais faria aqui é "quanto custou a obra tal" — e essa
+# NÃO está neste arquivo. Motivo: "custo da obra" ainda não tem UMA definição
+# combinada (o que foi lançado? o que foi pago? inclui o que está em análise?
+# inclui rateio de administração?), e cada leitura dá um número diferente,
+# todos com cara de certo. Enquanto a palavra não estiver decidida, responder
+# seria escolher por ele em silêncio — exatamente o que este módulo existe
+# para não fazer. O mesmo vale para "obra em andamento" e "resultado da obra".
+#
+# O que entrou é o que NÃO depende de palavra ambígua: o cadastro. São
+# perguntas de conferência — as que evitam descobrir que falta um campo no dia
+# em que a nota precisa sair.
+#
+# ESCOPO: obra é registro SEM AUTOR, igual a contrato de locação. Por isso
+# passa por `obras_de_registro_sem_autor`, e não por `obras_do_usuario` — a
+# diferença entre as duas foi o que abriu a brecha das Locações em 11/09/2026.
+# ===========================================================================
+
+# Os campos que, faltando, IMPEDEM alguma coisa de acontecer — e o que cada um
+# impede. A lista não é opinião: é a mesma conferência que
+# `notas_emitidas/automatica.py` faz na hora de emitir. Se ela mudar lá, muda
+# aqui, senão a resposta promete uma emissão que vai falhar.
+TRAVAS_DO_CADASTRO = [
+    ("cno", "CNO", "a nota de obra exige a matrícula"),
+    ("codigo_ibge", "código IBGE", "diz à prefeitura ONDE o serviço foi prestado"),
+    ("aliquota_iss_pct", "alíquota de ISS", "sem ela a nota não calcula o imposto"),
+    ("empresa_id", "empresa", "é o CNPJ que emite a nota e dispara a cotação"),
+]
+
+
+def _obras_que_alcanco(s: Session, usuario: Usuario) -> list[Any]:
+    """As obras que esta pessoa enxerga, já ordenadas por código."""
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+    from app.apps.erp.db.models.cadastros import Obra
+
+    permitidas = obras_de_registro_sem_autor(s, usuario)
+    stmt = select(Obra).order_by(Obra.codigo)
+    if permitidas is not None:
+        stmt = stmt.where(Obra.id.in_(permitidas or [0]))
+    return list(s.scalars(stmt).all())
+
+
+def _iss_da_obra(obra: Any) -> Any:
+    """A alíquota que vale. São dois campos por herança do cadastro antigo."""
+    return getattr(obra, "aliquota_iss_pct", None) or getattr(obra, "aliquota_iss", None)
+
+
+def cadastro_incompleto(s: Session, usuario: Usuario, *,
+                        obra: str = "") -> dict[str, Any]:
+    """Quais obras não emitem nota hoje por falta de cadastro."""
+    faltantes = []
+    for o in _obras_que_alcanco(s, usuario):
+        if obra and not (_casa(obra, o.codigo) or _casa(obra, o.nome)):
+            continue
+        faltando = []
+        for campo, rotulo, _ in TRAVAS_DO_CADASTRO:
+            valor = _iss_da_obra(o) if campo == "aliquota_iss_pct" else getattr(o, campo, None)
+            if not valor:
+                faltando.append(rotulo)
+        if faltando:
+            faltantes.append({
+                "obra": o.codigo, "nome": (o.nome or "")[:80],
+                "cliente": (o.cliente or "")[:60],
+                "falta": ", ".join(faltando),
+                "quantos": len(faltando),
+            })
+
+    onde = f" (procurando por “{obra}”)" if obra else ""
+    frase = (f"Todas as obras que você alcança estão com o cadastro completo "
+             f"para emitir nota{onde}." if not faltantes else
+             f"{len(faltantes)} obra(s) não emitem nota hoje por falta de "
+             f"cadastro{onde}.")
+    return _resposta(
+        titulo="Obras com cadastro incompleto", frase=frase, linhas=faltantes,
+        colunas=[("obra", "Obra"), ("nome", "Nome"), ("cliente", "Cliente"),
+                 ("falta", "O que falta"), ("quantos", "Campos faltando")],
+        de_onde_veio={"tela": "/erp/obras",
+                      "explicacao": "Obras › abrir a obra › aba Fiscal."},
+        observacao=("Confere os mesmos quatro campos que a emissão da nota "
+                    "exige: " + "; ".join(f"{r} ({p})"
+                                          for _, r, p in TRAVAS_DO_CADASTRO) +
+                    ". Só a obra; o cliente e o certificado da empresa são "
+                    "conferidos na hora de emitir."))
+
+
+def garantia_vencendo(s: Session, usuario: Usuario, *,
+                      dias: Any = 60) -> dict[str, Any]:
+    """Seguro garantia vencido ou perto de vencer."""
+    try:
+        prazo = int(dias)
+    except (TypeError, ValueError):
+        prazo = 60
+    hoje = date.today()
+    limite = hoje + timedelta(days=prazo)
+
+    linhas = []
+    for o in _obras_que_alcanco(s, usuario):
+        fim = getattr(o, "seguro_vigencia_fim", None)
+        if fim is None or fim > limite:
+            continue
+        restam = (fim - hoje).days
+        linhas.append({
+            "obra": o.codigo, "nome": (o.nome or "")[:80],
+            "apolice": getattr(o, "seguro_garantia", None) or "—",
+            "vence_em": fim.isoformat(),
+            "dias": restam,
+            "situacao": "VENCIDO" if restam < 0 else "a vencer",
+        })
+    linhas.sort(key=lambda l: l["dias"])
+    vencidos = [l for l in linhas if l["dias"] < 0]
+
+    frase = (f"Nenhum seguro garantia vence nos próximos {prazo} dias."
+             if not linhas else
+             f"{len(linhas)} obra(s) com seguro garantia vencido ou vencendo "
+             f"em até {prazo} dias" +
+             (f" — {len(vencidos)} já vencido(s)." if vencidos else "."))
+    return _resposta(
+        titulo=f"Seguro garantia — vencido ou vencendo em {prazo} dias",
+        frase=frase, linhas=linhas,
+        colunas=[("obra", "Obra"), ("nome", "Nome"), ("apolice", "Apólice"),
+                 ("vence_em", "Vence em"), ("dias", "Dias"),
+                 ("situacao", "Situação")],
+        de_onde_veio={"tela": "/erp/obras",
+                      "explicacao": "Obras › abrir a obra › Seguro garantia."},
+        observacao=("Dias negativos são obras que JÁ venceram. Obra sem data "
+                    "de vigência preenchida não aparece aqui — e não aparecer "
+                    "não quer dizer que esteja em dia: quer dizer que o "
+                    "sistema não sabe."))
+
+
+def vigencia_vencida(s: Session, usuario: Usuario) -> dict[str, Any]:
+    """Obras ainda abertas cuja vigência de contrato já passou."""
+    from app.apps.erp.core.cadastros.obras import (
+        FASES_ENCERRADAS, fase_em_portugues,
+    )
+
+    hoje = date.today()
+    linhas = []
+    for o in _obras_que_alcanco(s, usuario):
+        fim = getattr(o, "vigencia_fim", None)
+        if fim is None or fim >= hoje:
+            continue
+        if (getattr(o, "fase", "") or "").upper() in FASES_ENCERRADAS:
+            continue
+        linhas.append({
+            "obra": o.codigo, "nome": (o.nome or "")[:80],
+            "contrato": getattr(o, "contrato", None) or "—",
+            # A fase vem do banco como EM_EXECUCAO. O dono não lê o sistema
+            # dele em maiúscula e sem acento — o rótulo é o mesmo que a tela
+            # de Obras usa, e vem de lá para não haver duas listas.
+            "fase": fase_em_portugues(getattr(o, "fase", "") or ""),
+            "venceu_em": fim.isoformat(),
+            "dias": (hoje - fim).days,
+        })
+    linhas.sort(key=lambda l: -l["dias"])
+
+    frase = ("Nenhuma obra aberta está com a vigência do contrato vencida."
+             if not linhas else
+             f"{len(linhas)} obra(s) ainda abertas com a vigência do contrato "
+             f"vencida — precisam de aditivo de prazo ou de encerramento.")
+    return _resposta(
+        titulo="Vigência de contrato vencida", frase=frase, linhas=linhas,
+        colunas=[("obra", "Obra"), ("nome", "Nome"), ("contrato", "Contrato"),
+                 ("fase", "Fase"), ("venceu_em", "Venceu em"),
+                 ("dias", "Dias atrás")],
+        de_onde_veio={"tela": "/erp/obras",
+                      "explicacao": "Obras › coluna Vigência."},
+        observacao=("“Aberta” aqui é a FASE gravada no cadastro: fica de fora "
+                    "o que está concluído, recebido, em acervo técnico ou "
+                    "distratado. Não é uma opinião do sistema sobre a obra "
+                    "estar ou não tocando — é o que alguém marcou na tela."))
