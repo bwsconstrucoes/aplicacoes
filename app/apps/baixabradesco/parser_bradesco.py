@@ -80,6 +80,7 @@ def parse_bradesco_text(filename: str, page: int, text: str, drive_link: str = '
     r.conta_destino_raw = extract_conta_destino(text)
     r.chave_pix_destino = extract_chave_pix(text)
     r.codigo_barras = extract_codigo_barras(text)
+    r.identificador = extract_identificador(text)
 
     if SOMAPAY_INSTITUICAO in norm:
         r.tipo_comprovante = 'somapay_deposito'
@@ -218,6 +219,32 @@ def extract_nome_recebedor(text: str) -> str:
         m = re.search(p, text or '', flags=re.I)
         if m:
             return as_string(m.group(1))[:120]
+    return ''
+
+
+def extract_identificador(text: str) -> str:
+    """O que diz que DOIS comprovantes são dois pagamentos, e não o mesmo duas vezes.
+
+    Serve ao desempate por lote: só dá para distribuir N comprovantes entre N
+    SPs de mesmo valor se os N forem mesmo pagamentos diferentes.
+
+    A ordem importa. O "Identificador" e o "Documento" são por pagamento; o
+    "N° de controle" é do lote inteiro e se repete entre as páginas — por isso
+    vem por último. Comprovante que só tenha o número de controle acaba com
+    identificador repetido, o desempate não acontece e ele fica pendente. É o
+    resultado seguro.
+    """
+    patterns = [
+        r'Identificador\s*:?\s*([A-Za-z0-9]{8,})',
+        r'N[úu]mero\s+de\s+Autentica[cç][aã]o\s*:?\s*([A-Za-z0-9]{6,})',
+        r'Comprovante\s+de\s+Dep[óo]sito\s+n[ºo°]\s*:?\s*(\d{6,})',
+        r'Documento\s*:?\s*(\d{4,})',
+        r'N[°º]\s*de\s*controle\s*:?\s*([\d\.]{6,})',
+    ]
+    for p in patterns:
+        m = re.search(p, text or '', flags=re.I)
+        if m:
+            return as_string(m.group(1))
     return ''
 
 

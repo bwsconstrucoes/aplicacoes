@@ -465,6 +465,45 @@ credenciais Z-API. O espelho no Telegram só alcança quem está na aba
 `TelegramID`. Se o aviso não chegar, conferir nessa ordem: toggle ligado,
 credenciais presentes, número certo.
 
+### 11/09/2026 (noite) — o empate que travava duas baixas virou distribuição
+
+Caso real: duas rescisões de R$ 5.532,57 (CAIO e ALEXSANDRO), as duas agendadas,
+e um PDF com dois comprovantes de transferência de R$ 5.532,57. Um a um, cada
+comprovante via duas SPs possíveis e parava como `pendente_validacao`. As duas
+baixas ficavam esperando conferência humana por uma ambiguidade que, olhando o
+PDF inteiro, não existe: são dois pagamentos para duas SPs.
+
+**Decisão do dono:** distribuir. *"Não importa saber exatamente quem é quem, o
+que importa é que a gente consiga baixar."* Os papéis são intercambiáveis —
+mesmo valor, mesma data, mesma conta, e o da transferência nem traz o nome do
+funcionário. Vale para dois, três, quantos forem.
+
+**Como ficou:** o processamento de cada anexo virou duas passadas. A primeira lê
+e localiza a SP de cada página sem executar nada; entre as duas entra o
+desempate por lote; a segunda salva o comprovante e monta os planos. A segunda
+passada continua dentro do laço do anexo **de propósito**: é ali que os bytes do
+PDF ainda existem, e tirá-los de lá significaria segurar todos os PDFs do lote
+na memória — exatamente o que derrubou a instância em julho.
+
+**As três travas, e por que cada uma existe:**
+
+1. **Mesma quantidade dos dois lados.** Dois comprovantes para três SPs deixaria
+   uma SP paga sem ter sido.
+2. **Pagamentos comprovadamente diferentes.** Esta é a que segura dinheiro: se
+   o mesmo comprovante for mandado duas vezes no mesmo PDF, distribuir baixaria
+   **duas** SPs para **um** pagamento. O identificador de cada pagamento
+   (`Identificador`, ou o número do documento) resolve. ⚠️ O `N° de controle`
+   **não serve**: ele é do lote inteiro e se repete entre as páginas — conferido
+   no comprovante real, onde as três páginas tinham o mesmo número de controle e
+   identificadores diferentes. Por isso ele entra por último na extração.
+3. **Emparelhamento estável.** Página na ordem, SP na ordem, para o mesmo lote
+   reenviado não trocar as atribuições.
+
+**Limite conhecido:** o desempate só enxerga o anexo atual. Dois comprovantes de
+mesmo valor em PDFs separados, ainda que no mesmo envio, continuam pendentes.
+Estender exigiria guardar a página isolada de cada pendente até o fim do lote —
+é possível e barato (pendentes são poucos), mas não foi feito.
+
 ---
 
 ## Estado no fim de 11/09/2026

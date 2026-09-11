@@ -111,7 +111,34 @@ resolver ganha:
    não baixou. Aqui ele executa **só o Omie** e não mexe em mais nada.
 
 **Se sobrar mais de uma candidata e o desempate não resolver, ele não executa
-nada** — marca como `pendente_validacao` e alguém precisa olhar.
+nada** — marca como `pendente_validacao` e alguém precisa olhar. Com uma exceção,
+abaixo.
+
+### Comprovantes iguais para SPs iguais: ele distribui
+
+Duas rescisões do mesmo valor, das duas pessoas, ambas agendadas — e dois
+comprovantes daquele valor no mesmo PDF. Um a um, cada comprovante vê duas SPs
+possíveis e para. Olhando o PDF inteiro, são **dois pagamentos para duas SPs**:
+dá para baixar as duas.
+
+Qual comprovante fica com qual SP **não importa**: são do mesmo valor, do mesmo
+dia, da mesma conta, e o comprovante de transferência nem traz o nome do
+funcionário. O que importa é baixar. Vale para dois, três, quantos forem.
+
+Três travas, e as três são necessárias:
+
+1. **Mesma quantidade dos dois lados.** Dois comprovantes para três SPs não
+   distribui — sobraria uma SP paga sem ter sido.
+2. **Pagamentos comprovadamente diferentes.** Cada comprovante traz um
+   identificador próprio (o campo `Identificador` do Bradesco, ou o número do
+   documento). Se eles se repetem, é o mesmo comprovante mandado duas vezes, e
+   distribuir baixaria duas SPs para um pagamento só. Sem identificador, também
+   não distribui.
+3. **Emparelhamento estável.** Página na ordem, SP na ordem — o mesmo lote
+   reprocessado dá sempre o mesmo resultado.
+
+⚠️ **Só enxerga o PDF atual.** Dois comprovantes do mesmo valor em arquivos
+separados, ainda que no mesmo envio, não se encontram e continuam pendentes.
 
 ### Os dois caminhos da Somapay, que não podem ser confundidos
 
