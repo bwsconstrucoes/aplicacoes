@@ -245,10 +245,32 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       banco grande acerta a maior parte das vezes e erra em silêncio no resto.
       Número errado com cara de certo é pior que resposta nenhuma. Por isso o
       catálogo primeiro, o "não sei" explícito, e a origem sempre visível.
-- [ ] **3. Áudio e anexo na conversa**, e o ERP virando **PWA** (ícone no
-      celular que abre no navegador, com aviso por notificação). É o mesmo
-      sistema, não um segundo aplicativo — app nativo aqui seria duas bases de
-      código e loja para nada.
+- [x] **3. ÁUDIO, ANEXO E O ÍCONE NO CELULAR** — FEITO em 11/09/2026. As três
+      coisas, dentro da tela de Perguntar, e nenhuma delas é um caminho novo
+      até o número.
+      · **Ícone no celular (PWA).** O navegador do celular passa a poder
+        instalar o ERP: vira ícone na tela inicial e abre em tela cheia, sem
+        barra de endereço. Mesmo sistema, mesma publicação. ⚠️ O guardião
+        disso é o `sw.js`: ele **não guarda dado nenhum** no aparelho, só a
+        folha de estilo e os ícones. Sem internet, a tela DIZ que está sem
+        internet em vez de mostrar o número de ontem. Há varredura na suíte
+        recusando cache que não seja de arquivo estático.
+      · **Falar a pergunta.** O áudio vira texto, o texto cai na MESMA caixa
+        de escrita e a pessoa lê antes de mandar responder — "a pagar" e
+        "apagar" soam igual. O gasto entra no painel de consumo pelo preço por
+        MINUTO, senão a pergunta falada custaria zero e o teto mensal deixaria
+        de valer justamente aqui.
+      · **Anexar um documento.** É o **único** lugar desta área em que a
+        resposta vem da IA e não de código testado — e a tela diz isso em
+        amarelo. Vale porque o documento está na mão de quem perguntou: dá
+        para conferir olhando o papel. Nada é gravado; para arquivar, o
+        caminho continua sendo o Arquivo.
+      ⚠️ **Falta a chave `OPENAI_API_KEY` em produção** para áudio e anexo
+      funcionarem. Sem ela os dois recusam com uma frase honesta e o resto da
+      tela continua igual.
+      ⚠️ **Aviso por notificação no celular ficou de fora** — exige chaves de
+      push e um serviço a mais, e é decisão do dono. Hoje o aviso continua por
+      e-mail e Telegram.
 - [ ] **4. As AÇÕES pelo assistente** (cadastrar insumo, lançar título) —
       sempre **preparar e confirmar**: o assistente preenche e mostra, a pessoa
       aperta. Nunca "já lancei". E passando pelas MESMAS funções do core que a

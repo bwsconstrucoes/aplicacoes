@@ -17,6 +17,90 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
+**Estado em 11/09/2026 (terceira entrega):** no ramo, o **item 3 do assistente
+inteiro** — o ERP vira ícone no celular, a pergunta pode ser FALADA, e dá para
+ANEXAR um documento. **Sem migração.**
+
+⚠️ **Falta uma coisa do lado do dono:** a chave `OPENAI_API_KEY` **não está
+configurada em produção**. Sem ela, falar e anexar recusam com uma frase
+honesta ("não está ligada neste sistema, escreva que eu respondo igual") e todo
+o resto continua funcionando — as perguntas sobre o que já está no ERP não usam
+IA nenhuma.
+
+### O ERP no celular, sem loja de aplicativo
+
+O dono perguntou "poderíamos ter um aplicativo?". A resposta honesta é que
+aplicativo nativo seriam duas bases de código, duas lojas e revisão da Apple a
+cada correção — para mostrar as telas que já existem. O que resolve é o
+navegador do celular poder INSTALAR o ERP: vira ícone na tela inicial, abre em
+tela cheia sem barra de endereço, e é o mesmo sistema (publicou aqui, chegou no
+celular na hora).
+
+⚠️ **A regra que não pode ser afrouxada, e tem varredura guardando.** O jeito
+comum de escrever um service worker é guardar as respostas para ficar rápido.
+Aqui isso seria perigoso: a pessoa abriria o ERP no celular, veria o "a pagar"
+de ontem e decidiria em cima disso, sem nada na tela avisando que o número é
+velho. Então o `sw.js` **só guarda a folha de estilo e os ícones**. Sem
+internet, a navegação cai numa página que DIZ que está sem internet.
+`tests/test_pwa.py` recusa qualquer endereço no cache que não seja
+`/erp/static/` — é o tipo de regra que alguém afrouxa de boa-fé.
+
+Duas rotas são públicas por obrigação do navegador (`/erp/manifest.webmanifest`
+e `/erp/sw.js`): ele as busca ANTES do login, e um 302 faria a instalação nem
+ser oferecida. Nenhuma das duas devolve dado — o teste monta o app SEM banco
+nenhum, justamente para provar isso.
+
+O `sw.js` é servido de `/erp/sw.js`, e não de dentro de `/erp/static/`, porque
+o alcance de um service worker é a pasta de onde ele vem. De dentro de static
+ele só alcançaria os arquivos estáticos, e não funcionaria — sem erro nenhum
+na tela.
+
+### Falar a pergunta
+
+O áudio **não responde nada**: vira texto, o texto cai na MESMA caixa de
+escrita, e a pessoa lê antes de mandar responder. "A pagar" e "apagar" soam
+igual — pergunta mal ouvida respondida em silêncio seria o pior defeito
+possível. O botão só aparece onde o navegador deixa gravar.
+
+**O gasto entra no painel de consumo pelo preço por MINUTO**, não por token:
+`ia_custo.custo_de_audio`. Sem isso a pergunta falada custaria ZERO no painel,
+e o teto mensal que o dono definiu deixaria de valer justamente na função nova.
+Modelo fora da tabela de preços custa o dobro do mais caro conhecido — na
+dúvida o gasto aparece maior do que é, porque subestimar só se descobre na
+fatura.
+
+### Anexar um documento
+
+É o **único** lugar da área de Perguntar em que a resposta vem da IA e não de
+código testado, e a tela diz isso num aviso amarelo. Vale porque **o documento
+está na mão de quem perguntou**: dá para conferir olhando o papel — diferente
+de um total somado sobre dez mil lançamentos. Reusa o mesmo leitor do Arquivo,
+não grava nada, e mostra o que a IA declarou não ter conseguido ler.
+
+### Defeito achado no navegador (e que a suíte não pegaria)
+
+A gravação quebrava ao parar: `onstop` roda DEPOIS de `stop()` retornar, e a
+primeira versão lia ali a variável global do gravador — que `pararDeGravar` já
+tinha zerado. Morria com "Cannot read mimeType of null", calada, com a tela
+presa em "Gravando…" para sempre. Corrigido usando a referência local, com
+teste que recusa a variável global dentro do `onstop`.
+
+### Duas arrumações de vocabulário
+
+A tela escrevia "NFSE", "2026-09-02", "12480.00" e "11222333000144" — tudo
+certo e tudo ilegível. Agora quem formata é o servidor, por
+`core/comum/formato.py`, que ganhou `documento_por_extenso` (que morava dentro
+do envio de cotação) e `data_br`. O leitor ganhou `ROTULOS_DE_TIPO`, para
+"FATURA_CONCESSIONARIA" virar "Fatura de concessionária". E só número e código
+saem em fonte de largura fixa — frase em fonte de máquina de escrever fica com
+cara de código de sistema.
+
+Junto: textos que diziam "à esquerda" e "ao lado" foram trocados em cinco
+telas. No celular a coluna da esquerda é uma gaveta, e mandar a pessoa olhar
+para um lado que não existe é pior que não dizer nada. A gaveta também passou
+a poder ter nome próprio por tela — na de Perguntar ela se chama "Perguntas",
+não "Filtros".
+
 **Estado em 11/09/2026 (segunda entrega):** no ramo, o **grupo de Obras** das
 perguntas e duas correções que a construção dele fez aparecer. **Sem migração.**
 

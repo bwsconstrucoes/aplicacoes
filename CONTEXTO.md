@@ -736,6 +736,32 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-11 — O ERP instalável no celular, e o cache que NÃO pode existir.**
+  O ERP passou a poder ser instalado como ícone no celular (manifesto +
+  service worker em `/erp/`, servidos por rotas públicas porque o navegador os
+  busca antes do login). **A decisão que importa não é essa, é a de não
+  guardar dado no aparelho:** o caminho normal de um service worker é cachear
+  as respostas, e num ERP isso faria a pessoa ver o "a pagar" de ontem sem
+  nada avisando. Só a folha de estilo e os ícones entram no cache; sem
+  internet, a tela diz que está sem internet. `tests/test_pwa.py` recusa
+  qualquer outro endereço no cache. **Aplicativo nativo foi descartado**: duas
+  bases de código e duas lojas para mostrar as telas que já existem.
+
+- **2026-09-11 — IA que se cobra por MINUTO não cabe na conta de tokens.**
+  A transcrição de áudio (pergunta falada) é cobrada por tempo, não por
+  token. `ia_custo` ganhou `PRECOS_POR_MINUTO` e `custo_de_audio`, e
+  `registrar` passou a aceitar um `custo_usd` já calculado. Sem isso a
+  pergunta falada apareceria custando ZERO no painel de consumo, e o teto
+  mensal deixaria de valer justamente na função nova. **Serviço de IA novo
+  que não cobre por token precisa entrar por aqui** — não basta chamá-lo.
+
+- **2026-09-11 — Onde a IA pode responder, e onde não pode.** Regra que passa
+  a valer para o assistente inteiro: a IA responde quando **quem perguntou tem
+  como conferir a resposta na fonte**. Documento anexado, sim (o papel está na
+  mão dele, e a tela avisa em amarelo que aquilo foi LIDO e não calculado).
+  Total somado sobre o banco, não — ninguém recalcula dez mil lançamentos de
+  olho, e um número errado com cara de certo é pior que resposta nenhuma.
+
 - **2026-09-11 — Escolher o registro e ver os números dele são duas
   permissões diferentes.** Segunda brecha da mesma família, no **painel de
   Obras**: quem enxerga "só o que eu lancei" via valor de contrato, gasto,

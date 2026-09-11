@@ -446,6 +446,72 @@ def pagina_login():
                                erro=f"Não foi possível conectar ao banco: {e}"), 500
 
 
+# ---------------------------------------------------------------------------
+# O ERP NO CELULAR — ícone na tela inicial, sem loja de aplicativo
+#
+# O dono pediu "poderíamos ter um aplicativo?". A resposta honesta: aplicativo
+# nativo seriam DUAS bases de código (Android e iPhone), duas lojas, e revisão
+# da Apple a cada correção — para mostrar as mesmas telas que já existem.
+#
+# O que resolve de verdade é isto: o navegador do celular passa a poder
+# INSTALAR o ERP. Vira ícone na tela inicial, abre em tela cheia sem a barra de
+# endereço, e é o mesmo sistema — publicou aqui, chegou no celular na hora.
+#
+# As duas rotas abaixo são PÚBLICAS por obrigação do navegador: ele busca o
+# manifesto e o service worker ANTES de qualquer login, e se levar 302 para a
+# tela de entrar, a instalação simplesmente não é oferecida. Nenhuma das duas
+# devolve dado de negócio — uma é a ficha do ícone, a outra é código.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/manifest.webmanifest")
+@permissao_publica("o navegador busca o manifesto antes do login; sem ele o "
+                   "celular não oferece instalar. Não devolve dado nenhum.")
+def manifesto_pwa():
+    icone = lambda nome: url_for("erp.static", filename=nome)
+    return jsonify({
+        "name": "ERP BWS Construções",
+        "short_name": "ERP BWS",
+        "description": "Financeiro, obras, suprimentos e contratos da BWS.",
+        "lang": "pt-BR",
+        "start_url": "/erp/inicio",
+        "scope": "/erp/",
+        "display": "standalone",
+        "orientation": "portrait-primary",
+        "background_color": "#0A1B2E",
+        "theme_color": "#0A1B2E",
+        "icons": [
+            {"src": icone("icone-192.png"), "sizes": "192x192",
+             "type": "image/png", "purpose": "any"},
+            {"src": icone("icone-512.png"), "sizes": "512x512",
+             "type": "image/png", "purpose": "any"},
+            {"src": icone("icone-512-recortavel.png"), "sizes": "512x512",
+             "type": "image/png", "purpose": "maskable"},
+        ],
+        "shortcuts": [
+            {"name": "Perguntar", "url": "/erp/perguntar"},
+            {"name": "Títulos", "url": "/erp/titulos"},
+            {"name": "Obras", "url": "/erp/obras"},
+        ],
+    })
+
+
+@bp.route("/erp/sw.js")
+@permissao_publica("service worker: é código, não dado, e o navegador o busca "
+                   "sem sessão. Servido daqui, e não de /erp/static, para o "
+                   "alcance dele ser /erp/ — de dentro de static ele só "
+                   "alcançaria os arquivos estáticos e a instalação falharia.")
+def service_worker():
+    from flask import send_from_directory
+    resp = send_from_directory(bp.static_folder, "sw.js",
+                               mimetype="application/javascript")
+    # Sem isto o navegador recusa o alcance /erp/ para um arquivo servido
+    # deste endereço, e nada funciona — sem mensagem de erro nenhuma.
+    resp.headers["Service-Worker-Allowed"] = "/erp/"
+    # O service worker não pode ser o próprio a envelhecer no cache: é ele que
+    # decide o que fica guardado.
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 @bp.route("/erp/sair")
 @permissao_publica("encerrar sessao nao pode exigir sessao valida")
 def sair():
@@ -2076,6 +2142,144 @@ def api_entender_pergunta():
     except Exception:                       # pragma: no cover - log não trava
         logger.exception("ERP: falha ao registrar a pergunta escrita")
     return jsonify({"ok": True, "leitura": leitura})
+
+
+@bp.route("/erp/api/perguntar/ouvir", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_pergunta_por_audio():
+    """O áudio vira TEXTO. Só isso.
+
+    A rota não responde pergunta nenhuma e não consulta dado de negócio — ela
+    devolve a frase transcrita, que a tela põe na caixa de escrita para a
+    pessoa LER antes de mandar responder. É esse passo que protege do erro de
+    transcrição: "a pagar" e "apagar" soam igual, e uma pergunta mal ouvida
+    respondida em silêncio seria o pior defeito possível aqui.
+
+    Por não tocar em dado, ela pode exigir `ver_erp` sem mentir: quem responde
+    continua sendo a rota do grupo, com a ação do grupo.
+    """
+    from app.apps.erp.core.perguntas.audio import ErroAudio, transcrever
+
+    arquivo = request.files.get("audio")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Não chegou áudio nenhum."}), 400
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            usuario_id = atual.id if atual else None
+        lido = transcrever(arquivo.read(), arquivo.filename or "pergunta.webm",
+                           segundos=request.form.get("segundos"),
+                           usuario_id=usuario_id)
+        return jsonify({"ok": True, **lido})
+    except ErroAudio as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao ouvir a pergunta")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+@bp.route("/erp/api/perguntar/documento", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_erp")
+def api_pergunta_com_documento():
+    """Leitura de um documento ANEXADO à pergunta.
+
+    ATENÇÃO À DIFERENÇA, que a tela também precisa deixar clara: tudo o mais
+    nesta área é calculado pelo sistema sobre o banco, por código testado.
+    AQUI a resposta vem da IA lendo o arquivo — e a IA lê errado às vezes.
+    A diferença é aceitável porque **o documento está na mão de quem
+    perguntou**: dá para conferir olhando o papel, o que não acontece com um
+    total somado sobre dez mil lançamentos.
+
+    Reusa o mesmo leitor do Arquivo (`core/documentos/leitor.py`), com os
+    mesmos tetos de tamanho e o mesmo registro de consumo. Não grava nada: se
+    a pessoa quiser guardar o documento, o caminho continua sendo o Arquivo.
+    """
+    from app.apps.erp.core.documentos.leitor import ErroLeitura, ler_documento
+
+    arquivo = request.files.get("documento")
+    if arquivo is None:
+        return jsonify({"ok": False, "erro": "Não chegou arquivo nenhum."}), 400
+    nome = arquivo.filename or "documento"
+    # A recusa do leitor é escrita para a tela do Arquivo ("preencha os campos
+    # manualmente") e não quer dizer nada aqui, onde não há campo nenhum. Esta
+    # tela tem o seu próprio jeito de dizer a mesma coisa.
+    if not os.getenv("OPENAI_API_KEY", "").strip():
+        return jsonify({"ok": False, "erro":
+                        "A leitura de documento não está ligada neste sistema "
+                        "(falta a chave do serviço). As perguntas sobre o que "
+                        "já está no ERP continuam funcionando normalmente."}), 400
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            usuario_id = atual.id if atual else None
+        from app.apps.erp.core.comum import ia_custo
+        with ia_custo.contexto(operacao="pergunta_com_documento",
+                               usuario_id=usuario_id, referencia=nome[:120]):
+            lido = ler_documento(arquivo.read(), nome)
+        return jsonify({"ok": True, "documento": _resumo_do_documento(lido, nome)})
+    except ErroLeitura as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao ler o documento anexado")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
+def _resumo_do_documento(lido: dict, nome: str) -> dict:
+    """O que interessa numa resposta de tela, sem despejar o retorno inteiro.
+
+    DUAS REGRAS AQUI, e as duas já custaram defeito neste repositório:
+
+    1. **Campo vazio vira AUSENTE, não "0" nem "—".** Preencher buraco com
+       valor padrão é o jeito mais fácil de o sistema afirmar o que não sabe.
+    2. **Nada sai no formato do banco.** "NFSE", "2026-09-02", "12480.00" e
+       "11222333000144" são o computador falando. Quem formata é o servidor,
+       por `core/comum/formato.py`, que é o mesmo lugar de onde saem o
+       relatório e o PDF — assim o mesmo valor não aparece de dois jeitos em
+       duas telas.
+    """
+    from app.apps.erp.core.comum.formato import (
+        _dinheiro_br, data_br, documento_por_extenso,
+    )
+    from app.apps.erp.core.documentos.leitor import rotulo_do_tipo
+
+    def dinheiro(v):
+        formatado = _dinheiro_br(v)
+        return f"R$ {formatado}" if formatado else ""
+
+    # O terceiro item diz como formatar; o quarto, se é NÚMERO OU CÓDIGO — que
+    # a tela escreve em fonte de largura fixa, para os dígitos alinharem e
+    # dar para conferir de olho. Frase em fonte de máquina de escrever fica
+    # difícil de ler, então nome e descrição ficam de fora.
+    campos = [
+        ("tipo_documento", "Tipo", rotulo_do_tipo, False),
+        ("emitente_nome", "Quem emitiu", None, False),
+        ("emitente_documento", "CNPJ/CPF de quem emitiu",
+         documento_por_extenso, True),
+        ("numero_documento", "Número", None, True),
+        ("data_emissao", "Emissão", data_br, True),
+        ("vencimento", "Vencimento", data_br, True),
+        ("competencia", "Competência", data_br, True),
+        ("valor_total", "Valor total", dinheiro, True),
+        ("valor_liquido", "Valor líquido", dinheiro, True),
+        ("descricao", "Descrição", None, False),
+        ("obra_mencionada", "Obra citada", None, True),
+        ("municipio_emissao", "Município", None, False),
+    ]
+    linhas = []
+    for chave, rotulo, formatar, e_dado in campos:
+        bruto = str(lido.get(chave) or "").strip()
+        if bruto in ("", "None"):
+            continue
+        linhas.append({"rotulo": rotulo, "dados": e_dado,
+                       "valor": (formatar(bruto) if formatar else bruto)})
+    return {
+        "arquivo": nome,
+        "linhas": linhas,
+        "observacoes": (lido.get("observacoes") or "").strip(),
+        "modelo": lido.get("modelo") or "",
+    }
 
 
 @bp.route("/erp/api/perguntas/nao-entendidas")

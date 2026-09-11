@@ -55,3 +55,37 @@ def _quantidade_br(valor: Any) -> str:
     if d == d.to_integral_value():
         return str(int(d))
     return f"{d.normalize():f}".replace(".", ",")
+
+
+def documento_por_extenso(valor: Any) -> str:
+    """71000001000184 → 71.000.001/0001-84; 12345678901 → 123.456.789-01.
+
+    Morava dentro do envio de cotação, onde nasceu. Subiu para cá quando a
+    leitura de documento anexado precisou da mesma coisa: catorze dígitos
+    seguidos ninguém confere de olho, e duas cópias da mesma função divergem
+    no dia em que alguém corrige só uma.
+    """
+    numeros = "".join(c for c in str(valor or "") if c.isdigit())
+    if len(numeros) == 14:
+        return (f"{numeros[:2]}.{numeros[2:5]}.{numeros[5:8]}/"
+                f"{numeros[8:12]}-{numeros[12:]}")
+    if len(numeros) == 11:
+        return f"{numeros[:3]}.{numeros[3:6]}.{numeros[6:9]}-{numeros[9:]}"
+    return str(valor or "").strip()
+
+
+def data_br(valor: Any) -> str:
+    """2026-09-02 → 02/09/2026. E 2026-09 → 09/2026, que é como se escreve
+    competência. O que não for data reconhecível volta como veio — inventar
+    uma data a partir de texto estranho seria pior que mostrar o texto."""
+    bruto = str(valor or "").strip()
+    if not bruto:
+        return ""
+    partes = bruto.split("T")[0].split("-")
+    if len(partes) == 3 and all(x.isdigit() for x in partes):
+        a, m, d = partes
+        if len(a) == 4:
+            return f"{d.zfill(2)}/{m.zfill(2)}/{a}"
+    if len(partes) == 2 and all(x.isdigit() for x in partes) and len(partes[0]) == 4:
+        return f"{partes[1].zfill(2)}/{partes[0]}"
+    return bruto
