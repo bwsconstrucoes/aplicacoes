@@ -466,7 +466,7 @@ credenciais Z-API. O espelho no Telegram só alcança quem está na aba
 `TelegramID`. Se o aviso não chegar, conferir nessa ordem: toggle ligado,
 credenciais presentes, número certo.
 
-### 11/09/2026 (noite) — o empate que travava duas baixas virou distribuição
+### 11/09/2026 (noite) — o empate que travava duas baixas virou distribuição (publicado, `546b45a`)
 
 Caso real: duas rescisões de R$ 5.532,57 (CAIO e ALEXSANDRO), as duas agendadas,
 e um PDF com dois comprovantes de transferência de R$ 5.532,57. Um a um, cada
@@ -505,7 +505,7 @@ mesmo valor em PDFs separados, ainda que no mesmo envio, continuam pendentes.
 Estender exigiria guardar a página isolada de cada pendente até o fim do lote —
 é possível e barato (pendentes são poucos), mas não foi feito.
 
-### 11/09/2026 — dois acertos no aviso
+### 11/09/2026 — três acertos no aviso (publicado, `546b45a`)
 
 **O destino virou o financeiro.** O dono trocou o próprio celular pelo número do
 financeiro, para o recado chegar a quem resolve. Continua sendo **um destino
@@ -537,10 +537,17 @@ Tudo publicado. A área fechou o dia com:
 - a trava contra baixar duas vezes ligada de fato;
 - **aviso por WhatsApp, só para o dono, do que não foi baixado.**
 
+**Publicado até `546b45a`**, com a `main` de outro chat (Análise de SPs) trazida
+para o ramo antes da junção, como manda o `CLAUDE.md`: 2706 testes verdes e os
+blueprints subindo com os dois trabalhos juntos.
+
 **O que conferir nos próximos lotes reais**, nesta ordem:
 
-1. O aviso chega no WhatsApp. Se não chegar: toggle `NOTIFICAR_WHATSAPP` ligado,
-   credencial Z-API chegando no pedido do Make, número certo.
+1. O aviso chega no WhatsApp **do financeiro** (`5585996992197`). Se não chegar:
+   toggle `NOTIFICAR_WHATSAPP` ligado, credencial Z-API chegando no pedido do
+   Make, número certo.
+2. Dois comprovantes de mesmo valor no mesmo PDF, com duas SPs de mesmo valor,
+   baixam os dois — e o aviso não menciona nenhum deles.
 2. A transferência aparece no Omie entre as contas certas, e a baixa cai na
    conta Somapay — não na do Bradesco.
 3. Nenhum comprovante bom sendo barrado por engano.
