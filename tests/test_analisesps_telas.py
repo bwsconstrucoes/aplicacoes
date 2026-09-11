@@ -3428,3 +3428,53 @@ def test_a_tela_nao_mostra_mais_uma_caixa_de_erro_escrita_None(app_rateio):
         "cc_nome": ["OBRA-1"], "cc_valor": ["100,00"]}).get_data(as_text=True)
     assert "copie e cole no Omie" in html
     assert ">None<" not in html and ">erro<" not in html
+
+
+# ---------------------------------------------------------------------------
+# DOIS DEFEITOS DE TELA REPORTADOS PELO DONO EM 11/09/2026
+# ---------------------------------------------------------------------------
+def test_esconder_tem_de_esconder():
+    """"No filtro tipo de despesa, se eu escrever, ele não está filtrando as
+    possibilidades."
+
+    O javascript da procura funcionava; o ESTILO é que anulava. O navegador
+    esconde `[hidden]` com `display: none`, mas isso vem da folha DELE — e
+    qualquer regra nossa ganha. `.opcao` tem `display: flex`, então a opção era
+    marcada como escondida e continuava na tela.
+
+    A regra vale para a folha inteira de propósito: o mesmo tropeço aconteceria
+    em qualquer elemento com `display` próprio."""
+    from pathlib import Path
+    css = Path("app/apps/analisesps/static/analisesps.css").read_text(encoding="utf-8")
+    assert "[hidden] { display: none !important; }" in css
+    # E a regra tem de vir DEPOIS de `.opcao`, senão perde por ordem.
+    assert css.index("[hidden] { display: none") > css.index(".opcao { display: flex")
+
+
+def test_a_conta_de_cada_sp_viaja_para_a_barra_de_acoes(app):
+    """Sem isto a barra não tem como somar por conta: ela só enxerga as
+    caixinhas marcadas, não a tabela."""
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes", follow_redirects=True).get_data(as_text=True)
+    assert 'data-conta=' in html
+
+
+def test_a_barra_soma_o_marcado_por_conta():
+    """"Só aparece o total dos selecionados; faltava o total POR CONTA." É por
+    conta que o dinheiro sai — o total geral diz se a remessa é grande, este
+    diz se ela cabe."""
+    from pathlib import Path
+    js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
+    trecho = js.split("function atualizar()")[1].split("\n  }")[0]
+    assert "dataset.conta" in trecho, "a barra não lê a conta"
+    assert "sort" in trecho, "sem ordenar, a conta que concentra se perde no meio"
+
+
+def test_a_linha_por_conta_some_quando_ha_uma_conta_so(app):
+    """Repetir o total que já está logo acima é ruído."""
+    from pathlib import Path
+    js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
+    assert "partes.length < 2" in js
+    html = como(app, SENHA_OPERADOR).get(
+        "/analisesps/solicitacoes", follow_redirects=True).get_data(as_text=True)
+    assert 'id="ba-contas"' in html and "hidden" in html

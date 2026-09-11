@@ -37,7 +37,11 @@
                    {% if grupo is defined %}data-grupo="{{ grupo }}"{% endif %}
                    data-valor="{{ l.valor_num or 0 }}"
                    data-card="{{ l.card_link or '' }}"
-                   data-forma="{{ l.forma_pagamento or '' }}">
+                   data-forma="{{ l.forma_pagamento or '' }}"
+                   {# A conta viaja junto para a barra do alto poder somar o
+                      marcado POR CONTA — que é o número que decide se a
+                      remessa cabe no banco. Pedido do dono em 11/09/2026. #}
+                   data-conta="{{ l.conta or '' }}">
           </td>
 
           {% for c in colunas %}

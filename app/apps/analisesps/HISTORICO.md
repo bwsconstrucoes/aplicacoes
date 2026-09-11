@@ -1475,6 +1475,49 @@ e fecha é `<details>`, do próprio HTML, sem JavaScript — mas o efeito de col
 com Ctrl+V uma seleção do Excel de verdade não foi visto. **É a primeira coisa
 a conferir na tela.**
 
+### Vigésima quarta leva (11/09) — dois defeitos de tela que o dono achou
+
+**1. A procura dentro do filtro não filtrava nada.** *"No filtro tipo de
+despesa existe o campo, mas se eu escrever, ele não está filtrando as
+possibilidades."*
+
+O javascript estava certo e funcionando. **O ESTILO é que anulava.** O
+navegador esconde `[hidden]` com `display: none`, mas isso vem da folha DELE —
+e qualquer regra nossa ganha, por mais fraca que seja. Como `.opcao` tem
+`display: flex`, a opção era marcada como escondida e continuava na tela,
+parada, enquanto a pessoa digitava.
+
+A correção é uma linha (`[hidden] { display: none !important; }`) e vale para
+a folha inteira de propósito: **o mesmo tropeço aconteceria em qualquer
+elemento com `display` próprio** que alguém mandasse esconder — e já havia
+outros. Há teste, e conferido que ele falha sem a correção.
+
+> **A lição, e ela é do mesmo tipo das outras desta semana:** o código estava
+> lá, o teste do código passaria, e mesmo assim a função não existia para quem
+> usa. Conferir que o código está escrito não é conferir que ele funciona.
+
+**2. Faltava o total POR CONTA do que está marcado.** *"Aparece o total dos
+selecionados; era só o total por conta que estava faltando."*
+
+O total geral diz se a remessa é **grande**; o total por conta diz se ela
+**cabe** — é por conta que o dinheiro sai. Agora aparece embaixo do total, na
+barra do alto, ordenado do maior para o menor (com seis contas, a que importa é
+a que concentra), e **some quando há uma conta só**, porque aí repetiria o
+número que está logo acima.
+
+### Pedido na fila, ainda NÃO feito
+
+**Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a
+mesma estrutura do PDF que já existe. *"Coloca isso na fila de produção
+também."*
+
+> **Uma coisa mudou e vale para quem pegar esta tarefa:** o README diz que
+> exportação é CSV "porque gerar Excel de verdade exigiria uma biblioteca
+> nova". **Isso não é mais verdade desde 05/09**: o `openpyxl` entrou por causa
+> do BeeVale e está no `requirements.txt`. Excel de verdade agora é possível
+> sem dependência nova — e a exceção de importação para ele já está declarada
+> em `LIBERADO_EM`.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver

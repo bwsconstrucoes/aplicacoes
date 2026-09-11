@@ -221,6 +221,26 @@ const LEMBRAR = {
           : sel.length + (sel.length === 1 ? " SP marcada" : " SPs marcadas");
     }
     if (valor) valor.textContent = moeda(total);
+
+    // O TOTAL POR CONTA do que está marcado. É por conta que o dinheiro sai,
+    // então é este número que diz se a remessa cabe — o total geral só diz se
+    // ela é grande. Ordenado do maior para o menor: com seis contas, a que
+    // importa é a que concentra.
+    const contas = document.getElementById("ba-contas");
+    if (contas) {
+      const soma = new Map();
+      sel.forEach(c => {
+        const nome = (c.dataset.conta || "").trim() || "(sem conta)";
+        soma.set(nome, (soma.get(nome) || 0)
+                 + (parseFloat(c.dataset.valor || "0") || 0));
+      });
+      const partes = Array.from(soma.entries()).sort((a, b) => b[1] - a[1]);
+      contas.textContent = partes
+          .map(([nome, v]) => nome + ": " + moeda(v)).join("  ·  ");
+      // Uma conta só não acrescenta nada ao total que já está acima.
+      contas.hidden = partes.length < 2;
+    }
+
     barra.classList.toggle("tem-selecao", sel.length > 0);
 
     marcas().forEach(c => c.closest("tr").classList.toggle("marcada", c.checked));
