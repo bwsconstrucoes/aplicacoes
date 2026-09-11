@@ -26,9 +26,11 @@ sinal: os dois leitores de comprovante e o casador de pagamentos.
 
 ### O que está pendente AGORA
 
-**No ramo, pronto e NÃO publicado (11/09/2026):** a baixa de rescisão paga
-direto na conta Somapay. Falta o "pode" do dono e a pergunta de sempre sobre
-carga do painel ou sincronização do Análise de SPs.
+**Publicado em 11/09/2026** (junção `1a21605`), com o "pode" do dono: os **dois
+caminhos da Somapay** funcionando — o depósito pago direto na Somapay e a
+transferência Bradesco → Somapay —, a conta de destino vindo da BaseBancos pela
+chave PIX, e a correção do erro que mandava baixar na conta do Bradesco. Sem
+migração de banco.
 
 **Publicado em 04/09/2026** (junção `16039ac`): as duas correções — comprovante
 recusado pelo banco e trava de duplicidade — mais o `README.md`, este arquivo, a
@@ -385,3 +387,8 @@ como exemplo.
 transferência no Omie não foi executada contra o Omie de verdade desde a
 mudança — a semântica invertida dos campos continua como estava, validada em
 produção em 2026 e coberta por teste para não ser "corrigida" sem querer.
+
+**Publicado em 11/09/2026, junção `1a21605`.** Conferir na primeira baixa real:
+que a transferência aparece no Omie entre as contas certas, que a baixa caiu na
+conta Somapay (e não na do Bradesco), e o campo `duplicados_ja_baixados` no
+retorno quando os dois comprovantes da mesma rescisão chegarem.
