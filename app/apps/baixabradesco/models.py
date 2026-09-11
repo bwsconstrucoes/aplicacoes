@@ -31,8 +31,11 @@ class ExtractedReceipt:
     agencia_origem: str = ''
     conta_origem: str = ''
     conta_destino_raw: str = ''
+    chave_pix_destino: str = ''
     nome_recebedor: str = ''
+    nome_pagador: str = ''
     documento_recebedor: str = ''
+    documento_pagador: str = ''
     descricao: str = ''
     codigo_barras: str = ''
     confianca: Dict[str, float] = field(default_factory=dict)
@@ -90,6 +93,7 @@ class ExecutionPlan:
     receipt: ExtractedReceipt
     match: MatchResult
     banco: Optional[BankAccount] = None
+    banco_destino: Optional[BankAccount] = None   # conta Somapay que recebeu
     acao: str = 'pendente_validacao'
     pode_executar: bool = False
     motivos_bloqueio: List[str] = field(default_factory=list)

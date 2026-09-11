@@ -19,6 +19,17 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
         if not receipt.id_pipefy.startswith('000201'):
             return MatchResult(status='localizado', metodo='id_comprovante_sem_spsbd', id=receipt.id_pipefy, sp=None, motivo='ID localizado no comprovante, mas não encontrado no índice local da SPsBD.')
 
+    if receipt.tipo_comprovante == 'somapay_deposito':
+        # Pagamento feito direto da conta Somapay (rescisão depositada na conta
+        # do funcionário). O papel não traz o número da SP, então o casamento é
+        # por CPF do beneficiário + valor.
+        cands = match_nome_valor(receipt, list(sps_index.values()))
+        if not cands:
+            cands = match_nome_valor(receipt, sps_agendar)
+        return _result_from_candidates(
+            cands, 'somapay_deposito_nome_valor',
+            'Depósito Somapay localizado pelo nome do beneficiário + valor.')
+
     if receipt.tipo_comprovante == 'beevale':
         # BeeVale deve procurar na SPsBD completa, pois quando o comprovante chega
         # o registro normalmente já saiu da SPsAgendar e está como 'agendado'.
@@ -234,6 +245,72 @@ def match_valor_conta_agendado(receipt: ExtractedReceipt, records: List[SpRecord
 
     return out
 
+def _cpf_normalizado(valor: str) -> str:
+    """CPF/CNPJ só com números e com os zeros da frente de volta.
+
+    A planilha guarda o CPF como NÚMERO, então 008.115.554-96 vira 811555496 e
+    perde os dois zeros. Comparar sem devolver os zeros nunca casa.
+    """
+    doc = only_digits(valor or '')
+    if not doc:
+        return ''
+    if len(doc) <= 11:
+        return doc.zfill(11)
+    return doc.zfill(14)
+
+
+def match_nome_valor(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
+    """Casa pelo NOME de quem recebeu + valor exato.
+
+    Numa SP de rescisão, o credor é a EMPRESA e a coluna CPF/CNPJ traz o CNPJ
+    dela — não o do funcionário. Quem identifica a pessoa é o nome escrito na
+    descrição da despesa, no formato "TRCT <NOME>". Conferido contra a SPsBD
+    real em 11/09/2026.
+
+    O valor sozinho não serve: no mesmo dia havia QUATRO rescisões de R$ 452,40,
+    de quatro pessoas diferentes. É o nome que decide.
+
+    O CPF ainda é aceito quando a planilha o traz — algumas abas trazem —, mas
+    não é exigido.
+    """
+    valor = money_to_decimal(receipt.valor_pago)
+    if valor is None:
+        return []
+
+    nome = normalize_text(receipt.nome_recebedor or '')
+    doc = _cpf_normalizado(receipt.documento_recebedor)
+    if not nome and not doc:
+        return []
+
+    out = []
+    for r in records:
+        if money_to_decimal(r.valor_total) != valor:
+            continue
+        if r.status_pgt and normalize_compact(r.status_pgt) != 'pagar':
+            continue
+        if (r.status_agendamento and normalize_compact(r.status_agendamento)
+                not in {'agendar', 'agendado', 'falhaagendar'}):
+            continue
+
+        por_cpf = bool(doc) and _cpf_normalizado(r.cpf_cnpj) == doc
+        texto_sp = normalize_text(f'{r.descricao} {r.nome_credor} {r.info_pgt}')
+        por_nome = bool(nome) and nome in texto_sp
+        if por_cpf or por_nome:
+            out.append(r)
+
+    # Desempate: entre candidatas iguais, fica a que é de verba rescisória.
+    if len(out) > 1:
+        tipos_ok = {normalize_compact(t) for t in SOMAPAY_TIPOS_DESPESA}
+        filtrados = [
+            r for r in out
+            if normalize_compact((r.raw or {}).get('Tipo de Despesa', '') or '') in tipos_ok
+        ]
+        if len(filtrados) == 1:
+            out = filtrados
+
+    return out
+
+
 SOMAPAY_TIPOS_DESPESA = {
     'rescisoes e indenizacoes trabalhistas',
     'gratificacoes e extras',
@@ -265,4 +342,17 @@ def match_somapay(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[Sp
         if tipo_despesa not in {normalize_compact(t) for t in SOMAPAY_TIPOS_DESPESA}:
             continue
         out.append(r)
+
+    # Desempate: a SP cuja conta de pagamento é a mesma que o comprovante
+    # debitou. Não entra como filtro duro porque a coluna pode vir vazia.
+    if len(out) > 1:
+        conta_rec = normalize_compact(clean_account(receipt.conta_origem or ''))
+        if conta_rec:
+            filtrados = [
+                r for r in out
+                if normalize_compact(clean_account(r.conta_pagamento or '')) == conta_rec
+            ]
+            if len(filtrados) == 1:
+                out = filtrados
+
     return out
