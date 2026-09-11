@@ -184,6 +184,42 @@ módulos do monorepo. Quando o Google recusa por excesso de pedidos, o robô
 ⚠️ O que está em `/tmp` **se perde quando o serviço reinicia** (ou seja, a cada
 publicação). Foi aceito assim: o Make pode reenviar.
 
+## O aviso do que NÃO foi baixado
+
+Comprovante que baixa normalmente não gera aviso nenhum — é o esperado. O que
+**não** baixa gera: no fim de cada lote, o robô manda **uma** mensagem pelo
+Telegram com a lista do que ficou de fora e o motivo de cada um.
+
+Entram no aviso:
+
+- comprovante que não achou SP, ou achou mais de uma e parou;
+- comprovante que o banco não efetivou;
+- baixa que falhou no Omie (foi para a fila de nova tentativa).
+
+**Não** entram, de propósito: o que baixou (é o esperado) e o que foi barrado por
+já ter sido baixado (a trava fez o trabalho dela). Aviso demais faz a pessoa
+parar de ler, e aí o que importava se perde.
+
+É **um aviso por lote**, não um por comprovante, com no máximo dez itens
+listados — acima disso ele diz quantos ficaram de fora.
+
+**Por onde vai:** WhatsApp, pelo mesmo envio que o robô já usa para avisar o
+responsável pela SP — aquele funciona em produção e aceita as credenciais Z-API
+vindas dentro do próprio pedido do Make, que é como elas chegam hoje. O
+Telegram vai junto, de espelho. Se as credenciais não vierem nem no pedido nem
+no ambiente, cai no notificador comum, que tem as suas próprias.
+
+**Para quem vai:** `BAIXABRADESCO_AVISO_TELEFONE` se estiver configurada; senão
+`CHATBOT_MASTER_PHONE`, a mesma convenção que o chatbot e o processarnovasp já
+usam para falar com o dono.
+
+**O aviso vai só para o dono, um número só.** Não confundir com o WhatsApp que o
+robô manda ao **responsável pela SP** quando a baixa dá certo — aquele é outra
+coisa, existe desde antes, vai para quem pediu o pagamento e não tem relação com
+este aviso. Há teste travando os dois destinos separados.
+
+Falha de aviso nunca derruba a baixa: ela já aconteceu.
+
 ## Variáveis de ambiente
 
 | Variável | Para quê | Sem ela |
@@ -196,6 +232,8 @@ publicação). Foi aceito assim: o Make pode reenviar.
 | `DROPBOX_APP_KEY` / `DROPBOX_APP_SECRET` / `DROPBOX_REFRESH_TOKEN` | guardar o comprovante | o comprovante não é salvo |
 | `ZAPI_INSTANCE_ID` / `ZAPI_API_TOKEN` / `ZAPI_CLIENT_TOKEN` | WhatsApp | o aviso é pulado |
 | `NOTIFICAR_WHATSAPP` | desliga o WhatsApp de vez | ligado |
+| `BAIXABRADESCO_AVISO_TELEFONE` | para quem vai o aviso do que não baixou | usa `CHATBOT_MASTER_PHONE` |
+| `NOTIFICAR_TELEGRAM` | desliga o aviso de vez | ligado |
 
 ## Serviços que ele toca
 

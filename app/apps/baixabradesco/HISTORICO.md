@@ -392,3 +392,75 @@ produção em 2026 e coberta por teste para não ser "corrigida" sem querer.
 que a transferência aparece no Omie entre as contas certas, que a baixa caiu na
 conta Somapay (e não na do Bradesco), e o campo `duplicados_ja_baixados` no
 retorno quando os dois comprovantes da mesma rescisão chegarem.
+
+### 11/09/2026 — primeira baixa real: o robô recusou, e estava certo
+
+O dono enviou em produção o comprovante Somapay de uma rescisão (EDUARDO,
+R$ 452,40) e recebeu `nao_localizado` — "Nenhum candidato encontrado" —, mesmo
+com as quatro SPs de R$ 452,40 existindo na planilha.
+
+**A causa, confirmada pelo dono olhando o registro:** a SP estava com a coluna
+**Agendado vazia**. A lista de SPs candidatas (`load_spsbd_operacional`) só
+carrega quem tem `agendar`, `agendado` ou `falhaagendar` ali. Sem isso a SP nem
+chega a ser comparada — valor e nome estavam certos, mas ninguém olhou para
+eles. Reproduzido em teste local: dá exatamente a mesma mensagem.
+
+**A decisão do dono, perguntado diretamente: o robô agiu certo, o esquecimento
+foi dele.** A coluna Agendado é controle de verdade — só o que foi agendado pode
+ser baixado. O caminho é marcar a SP e reenviar o comprovante.
+
+**O que foi feito e desfeito:** chegou a ser escrita uma lista nova
+(`load_spsbd_folha`) que carregava despesas de folha com `O=Pagar` **sem** olhar
+a coluna Agendado, com 9 testes. **Foi revertida** depois da decisão acima, e
+nunca foi publicada. Fica registrado aqui porque a ideia vai reaparecer: se um
+dia a rescisão pela Somapay deixar de passar pelo agendador, é esse o caminho —
+e o filtro de `Status Pgt = Pagar` tem de continuar, senão SP já paga volta a
+ser baixável.
+
+**Melhoria sugerida, não feita:** quando o robô não acha candidato, ele diz
+apenas "nenhum candidato encontrado". Se dissesse *"existe SP com este valor e
+este nome, mas ela não está agendada"*, esta investigação inteira teria sido
+uma linha. Vale a pena, e é barato — depende do dono pedir.
+
+### 11/09/2026 — o robô passou a avisar o que NÃO baixou
+
+Consequência direta do caso acima: a explicação de por que um comprovante não
+baixou existia, mas morria dentro da resposta devolvida ao Make. O dono pediu o
+aviso, com o recorte dele: *"o que baixou normal, não preciso saber. Só o que
+deu alguma falha, que de repente merece uma atenção ou uma melhoria na regra."*
+
+**Como ficou:** no fim de cada lote, **uma** mensagem pelo WhatsApp com o que
+ficou de fora e o motivo de cada um — sem SP encontrada, mais de uma candidata,
+recusado pelo banco, ou falha ao baixar no Omie. Fora do aviso, de propósito: o
+que baixou e o que foi barrado por duplicidade (o dono disse que não precisa
+saber, e a trava já resolve).
+
+**Decisões de desenho:**
+- **Um aviso por lote, no máximo dez itens.** Comprovante chega em leva; um
+  aviso por comprovante viraria barulho, e barulho faz parar de ler.
+- **Destinatário único: o dono.** Ele confirmou que o número passado é para
+  receber este aviso e só ele deve receber. Não confundir com o WhatsApp que vai
+  ao responsável pela SP quando a baixa dá certo — aquele é anterior, tem outro
+  propósito e continua indo para quem pediu o pagamento. Há teste travando que o
+  aviso de falhas nunca alcança o telefone do solicitante, que circula no lote
+  dentro dos dados do card do Pipefy.
+- **WhatsApp, a pedido do dono** — e é mesmo o canal melhor aqui: chega direto
+  pelo número, enquanto o Telegram só alcança quem já conversou com o bot. O
+  Telegram vai de espelho, sem custo.
+- **Reusa o envio que o módulo já tem** (`zapi.send_text`), o mesmo que avisa o
+  responsável pela SP. Ele funciona em produção e aceita as credenciais Z-API
+  vindas no pedido do Make — que é como elas chegam. ⚠️ Isso importa: o
+  `notificador` comum lê `ZAPI_INSTANCE_TOKEN`, e este módulo usa
+  `ZAPI_API_TOKEN`. Nomes diferentes para a mesma coisa; usar o envio próprio
+  evita depender de qual das duas está configurada no Render. Se nenhuma
+  estiver, cai no notificador como reserva.
+- **Reusa `CHATBOT_MASTER_PHONE`**, a convenção que o chatbot e o
+  processarnovasp já usam, em vez de escrever o número num terceiro lugar.
+  `BAIXABRADESCO_AVISO_TELEFONE` troca o destino se um dia for outra pessoa.
+- **Avisar nunca derruba a baixa.** O envio é protegido: se o Telegram cair, a
+  baixa já aconteceu e a resposta sai normal.
+
+**Limite conhecido:** o WhatsApp depende do toggle `NOTIFICAR_WHATSAPP` e das
+credenciais Z-API. O espelho no Telegram só alcança quem está na aba
+`TelegramID`. Se o aviso não chegar, conferir nessa ordem: toggle ligado,
+credenciais presentes, número certo.

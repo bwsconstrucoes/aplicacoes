@@ -17,6 +17,7 @@ from .pipefy import build_get_cards_query, build_update_card_mutation, execute_g
 from .zapi import build_whatsapp_messages, send_messages_batch, resolve_zapi_auth, validate_zapi_auth
 from .storage import upload_dropbox_bytes, build_receipt_page_filename, normalize_dropbox_link
 from .fila import enqueue_failure
+from .avisos import enviar_aviso
 
 # Teto por comprovante baixado via URL — evita que um download gigante entre
 # 100% na RAM e derrube o worker (limite Render: 2GB).
@@ -291,7 +292,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         # Pipefy e Z-API são executados por plano acima, para manter o output correto.
 
     # ── Monta output de modo_teste (preview de tudo que seria feito) ───────────
-    return {
+    resultado = {
         'ok': True,
         'app': 'baixabradesco',
         'modo_teste': modo_teste,
@@ -310,6 +311,13 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         'duplicados': duplicados,
         'planos': [p.to_dict() for p in plans],
     }
+
+    # Avisa o dono do que NÃO foi baixado. Só em produção, e nunca derruba a
+    # resposta: a baixa já aconteceu, o aviso é sobre o que ficou de fora.
+    if not modo_teste:
+        resultado['aviso'] = enviar_aviso(resultado, payload)
+
+    return resultado
 
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
