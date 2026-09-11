@@ -17,9 +17,51 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
+---
+
+## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
+
+**Fechamento do dia 11/09/2026.** O dono disse, com estas palavras: *"Por aqui
+nós estamos atualizados de implementações. Tudo que foi solicitado foi feito."*
+Tudo do ERP está publicado na `main` (último merge do ERP: `e5892ee`), e as
+migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
+
+**Nada está pendente do lado do código.** O que segue aberto é de dois tipos:
+
+### 1. Decisões que só o dono pode tomar
+
+| O que falta decidir | Por que trava |
+|---|---|
+| **"custo da obra"** — competência ou caixa? entra o que está em análise? entra rateio de administração? | Trava o grupo de Obras inteiro nas perguntas. Há teste recusando a pergunta enquanto a palavra não tiver definição. |
+| **"obra em andamento"**, **"este mês"**, **"gastei com fulano"**, **"resultado da obra"** | Mesma coisa: cada leitura dá um número diferente, todos com cara de certo. Ver `PERGUNTAS.md` §1. |
+| **Por qual empresa sai o e-mail** dos relatórios automáticos | Hoje só vai por Telegram. As credenciais de envio são por CNPJ, e a BWS tem mais de uma. |
+| **Vale a pena o índice por significado** nos documentos? | A busca de hoje acha por palavra ("reajuste" acha "reajustar"), não por sentido ("correção monetária"). O caro só se compra quando a lista de perguntas sem resposta mostrar que faz falta. |
+
+### 2. Coisas de operação, que dependem de alguém usar
+
+- **Arquivar os contratos de verdade no Arquivo.** A busca nos documentos está
+  pronta e o acervo de produção está vazio de contrato. Sem documento
+  arquivado, não há o que procurar.
+- **Telefone no cadastro de quem recebe relatório automático.** Sem telefone,
+  não há por onde mandar — o sistema registra isso, não some calado.
+- **Testar a pergunta por voz no iPhone.** Foi corrigida (era o formato do
+  arquivo), mas quem tem iPhone é o dono.
+- **Suprimentos continua construído e nunca operado.**
+
+### 3. Duas coisas que EU deixei anotadas para olhar
+
+- **Recado técnico cru chegando à tela.** O painel do assistente já foi
+  corrigido, mas a API devolve `str(e)` em falha inesperada — o mesmo pode
+  aparecer em qualquer outra tela. Vale uma varredura.
+- **Telas que listam obra com valor.** A brecha "quem pode escolher o registro
+  ≠ quem pode ver os números dele" foi fechada no painel de Obras e nas
+  Locações. Não varri as outras.
+
+---
+
 **Estado em 11/09/2026 (sétima entrega):** no ramo, **a pergunta vira relatório
 que chega sozinho**. **TRAZ A MIGRAÇÃO 060** — apertar "Aplicar atualizações do
-banco" no mesmo momento da publicação.
+banco" no mesmo momento da publicação. ✔ **Aplicada pelo dono.**
 
 ### O pedido, e onde o botão ficou
 
@@ -92,9 +134,7 @@ combiná-lo de novo na mesma tela ouviria "já está combinado" — porque a
 consulta ainda enxergaria a linha ligada.
 
 **Estado em 11/09/2026 (sexta entrega):** no ramo, **o assistente responde
-sobre o que está ESCRITO nos documentos** da empresa. **TRAZ A MIGRAÇÃO 059** —
-o dono precisa apertar "Aplicar atualizações do banco" no mesmo momento da
-publicação.
+sobre o que está ESCRITO nos documentos** da empresa. **TRAZ A MIGRAÇÃO 059** — ✔ aplicada pelo dono em 11/09/2026.
 
 ### A pergunta que ele passa a responder
 
