@@ -438,8 +438,9 @@ saber, e a trava já resolve).
 **Decisões de desenho:**
 - **Um aviso por lote, no máximo dez itens.** Comprovante chega em leva; um
   aviso por comprovante viraria barulho, e barulho faz parar de ler.
-- **Destinatário único: o dono.** Ele confirmou que o número passado é para
-  receber este aviso e só ele deve receber. Não confundir com o WhatsApp que vai
+- **Destinatário único.** Começou no celular do dono e, ainda em 11/09/2026,
+  ele trocou para o **número do financeiro**: *"ele é o número do financeiro e
+  fica mais geral"* — o recado deve chegar a quem resolve. Não confundir com o WhatsApp que vai
   ao responsável pela SP quando a baixa dá certo — aquele é anterior, tem outro
   propósito e continua indo para quem pediu o pagamento. Há teste travando que o
   aviso de falhas nunca alcança o telefone do solicitante, que circula no lote
@@ -503,6 +504,20 @@ na memória — exatamente o que derrubou a instância em julho.
 mesmo valor em PDFs separados, ainda que no mesmo envio, continuam pendentes.
 Estender exigiria guardar a página isolada de cada pendente até o fim do lote —
 é possível e barato (pendentes são poucos), mas não foi feito.
+
+### 11/09/2026 — dois acertos no aviso
+
+**O destino virou o financeiro.** O dono trocou o próprio celular pelo número do
+financeiro, para o recado chegar a quem resolve. Continua sendo **um destino
+só**, e `BAIXABRADESCO_AVISO_TELEFONE` troca sem mexer no código.
+
+**O aviso passou a explicar o empate.** Quando o desempate por lote não acontece,
+o motivo que ia na mensagem era o do casador — técnico ("retornou 2
+candidatos"), e não dizia o que fazer. Agora o próprio desempate escreve a
+explicação: *"quantidades diferentes, não dá para distribuir sem marcar alguma SP
+como paga sem ter sido"* ou *"parecem ser o MESMO pagamento (identificador
+repetido ou ausente)"*. Há teste garantindo que explicar melhor **não** mexe no
+status — continua pendente, ninguém baixa.
 
 ---
 

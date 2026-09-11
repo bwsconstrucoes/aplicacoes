@@ -180,3 +180,40 @@ def test_o_numero_de_controle_nao_serve_de_identificador_sozinho():
     texto = (EXEMPLOS / 'bradesco_transferencia_somapay.txt').read_text(encoding='utf-8')
     rec = parse_bradesco_text('transferencia.pdf', 1, texto)
     assert rec.identificador != '111222333444555666'
+
+
+# ── Quando não dá para distribuir, o aviso explica por quê ────────────────────
+#
+# O motivo que vem do casador é técnico ("retornou 2 candidatos"). Quem recebe o
+# aviso no WhatsApp precisa saber o que aconteceu e o que olhar.
+
+def test_identificador_repetido_explica_no_motivo():
+    candidatos = [sp('7001'), sp('7002')]
+    lote = [pendente(1, 'MESMO', candidatos), pendente(2, 'MESMO', candidatos)]
+    resolver_empates_do_lote(lote)
+
+    motivo = lote[0]['match'].motivo
+    assert 'MESMO pagamento' in motivo
+    assert 'baixaria mais de uma SP' in motivo
+    assert 'candidatos' not in motivo.lower()
+
+
+def test_quantidades_diferentes_explicam_no_motivo():
+    candidatos = [sp('7001'), sp('7002'), sp('7003')]
+    lote = [pendente(1, 'A', candidatos), pendente(2, 'B', candidatos)]
+    resolver_empates_do_lote(lote)
+
+    motivo = lote[0]['match'].motivo
+    assert '2 comprovante(s) de mesmo valor para 3 SPs' in motivo
+    assert 'paga sem ter sido' in motivo
+
+
+def test_explicar_o_motivo_nao_muda_o_status():
+    """Explicar melhor não pode virar autorização para baixar."""
+    candidatos = [sp('7001'), sp('7002')]
+    lote = [pendente(1, 'MESMO', candidatos), pendente(2, 'MESMO', candidatos)]
+    resolver_empates_do_lote(lote)
+
+    for item in lote:
+        assert item['match'].status == 'pendente_validacao'
+        assert not item['match'].id

@@ -339,6 +339,20 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
 # ── Helpers internos ──────────────────────────────────────────────────────────
 
 
+def _anotar_motivo(itens: List[Dict[str, Any]], explicacao: str) -> None:
+    """Troca o motivo do empate por uma frase que diz o que fazer.
+
+    O motivo que vem do casador é técnico ("retornou 2 candidatos"). Quem recebe
+    o aviso precisa saber por que não deu e o que olhar.
+    """
+    for item in itens:
+        m = item['match']
+        item['match'] = MatchResult(
+            status=m.status, metodo=m.metodo, id=m.id, sp=m.sp,
+            candidatos=m.candidatos, motivo=explicacao,
+        )
+
+
 def resolver_empates_do_lote(analisadas: List[Dict[str, Any]]) -> int:
     """Comprovantes iguais para SPs iguais: distribui um para cada.
 
@@ -379,11 +393,22 @@ def resolver_empates_do_lote(analisadas: List[Dict[str, Any]]) -> int:
         candidatos = itens[0]['match'].candidatos
 
         if len(itens) != len(candidatos):
-            continue  # trava 1
+            # Trava 1. Explica no motivo, senão o aviso sai técnico demais e
+            # quem lê não sabe o que fazer.
+            _anotar_motivo(itens, (
+                f'{len(itens)} comprovante(s) de mesmo valor para {len(candidatos)} SPs '
+                'de mesmo valor — quantidades diferentes, não dá para distribuir sem '
+                'marcar alguma SP como paga sem ter sido.'))
+            continue
 
         identificadores = [as_string(i['rec'].identificador) for i in itens]
         if not all(identificadores) or len(set(identificadores)) != len(identificadores):
-            continue  # trava 2
+            # Trava 2.
+            _anotar_motivo(itens, (
+                f'{len(itens)} comprovantes de mesmo valor, mas eles parecem ser o MESMO '
+                'pagamento (identificador repetido ou ausente). Distribuir baixaria mais '
+                'de uma SP para um pagamento só.'))
+            continue
 
         itens_ordenados = sorted(itens, key=lambda i: i['page_num'])
         sps_ordenadas   = sorted(candidatos, key=lambda c: as_string(c.id))

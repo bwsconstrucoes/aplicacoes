@@ -140,6 +140,10 @@ Três travas, e as três são necessárias:
 ⚠️ **Só enxerga o PDF atual.** Dois comprovantes do mesmo valor em arquivos
 separados, ainda que no mesmo envio, não se encontram e continuam pendentes.
 
+Quando a distribuição **não** acontece, os comprovantes entram no aviso com a
+explicação do porquê — quantidades diferentes, ou identificador repetido —, e não
+com o motivo técnico do casador.
+
 ### Os dois caminhos da Somapay, que não podem ser confundidos
 
 A folha de pagamento passa pela Somapay de duas formas, e cada uma lança coisa
@@ -236,11 +240,12 @@ vindas dentro do próprio pedido do Make, que é como elas chegam hoje. O
 Telegram vai junto, de espelho. Se as credenciais não vierem nem no pedido nem
 no ambiente, cai no notificador comum, que tem as suas próprias.
 
-**Para quem vai:** `BAIXABRADESCO_AVISO_TELEFONE` se estiver configurada; senão
-`CHATBOT_MASTER_PHONE`, a mesma convenção que o chatbot e o processarnovasp já
-usam para falar com o dono.
+**Para quem vai:** um destino só — por padrão o **número do financeiro**
+(decisão do dono em 11/09/2026: o recado deve chegar a quem resolve, não ao
+celular dele). `BAIXABRADESCO_AVISO_TELEFONE` troca o destino sem mexer no
+código.
 
-**O aviso vai só para o dono, um número só.** Não confundir com o WhatsApp que o
+**Um número só.** Não confundir com o WhatsApp que o
 robô manda ao **responsável pela SP** quando a baixa dá certo — aquele é outra
 coisa, existe desde antes, vai para quem pediu o pagamento e não tem relação com
 este aviso. Há teste travando os dois destinos separados.

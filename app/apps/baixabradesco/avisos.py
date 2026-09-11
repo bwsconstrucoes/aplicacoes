@@ -21,7 +21,12 @@ from typing import Any, Dict, List
 
 from .utils import as_string
 
-LIMITE_ITENS = 10   # acima disso o aviso vira parede de texto e ninguém lê
+LIMITE_ITENS = 10
+
+# Destino do aviso: o WhatsApp do financeiro, não o celular do dono — foi o que
+# ele pediu em 11/09/2026, para o recado chegar a quem resolve. Trocável pela
+# variável BAIXABRADESCO_AVISO_TELEFONE, sem mexer no código.
+TELEFONE_FINANCEIRO = '5585996992197'   # acima disso o aviso vira parede de texto e ninguém lê
 
 
 def _motivo_do_plano(plano: Dict[str, Any]) -> str:
@@ -102,22 +107,14 @@ def montar_aviso(resultado: Dict[str, Any]) -> str:
 def resolver_telefone() -> str:
     """Para quem vai o aviso.
 
-    Ordem: `BAIXABRADESCO_AVISO_TELEFONE` (se um dia o destino for outra
-    pessoa), depois `CHATBOT_MASTER_PHONE`, que é a convenção já usada pelo
-    chatbot e pelo processarnovasp para falar com o dono. Reusar evita ter o
-    mesmo número escrito num terceiro lugar do repositório.
+    Um destino só. Por padrão o número do financeiro — decisão do dono em
+    11/09/2026: *"ele é o número do financeiro e fica mais geral"*, em vez do
+    celular dele. `BAIXABRADESCO_AVISO_TELEFONE` troca sem mexer no código.
     """
     telefone = as_string(os.getenv('BAIXABRADESCO_AVISO_TELEFONE', ''))
     if telefone:
         return telefone
-    telefone = as_string(os.getenv('CHATBOT_MASTER_PHONE', ''))
-    if telefone:
-        return telefone
-    try:
-        from app.apps.chatbot.auth import TELEFONE_MASTER
-        return as_string(TELEFONE_MASTER)
-    except Exception:
-        return ''
+    return TELEFONE_FINANCEIRO
 
 
 def enviar_aviso(resultado: Dict[str, Any], payload: Dict[str, Any] | None = None) -> Dict[str, Any]:

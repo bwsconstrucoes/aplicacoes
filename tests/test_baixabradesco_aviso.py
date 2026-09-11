@@ -128,12 +128,12 @@ def test_o_aviso_nao_usa_marcacao_que_o_telegram_quebra():
 
 # ── O envio nunca pode derrubar a baixa ───────────────────────────────────────
 
-def test_o_aviso_vai_para_o_dono_sem_precisar_configurar_nada(monkeypatch):
-    """Reusa a convenção que o chatbot e o processarnovasp já usam."""
-    from app.apps.baixabradesco.avisos import resolver_telefone
+def test_o_aviso_vai_para_o_financeiro_sem_precisar_configurar_nada(monkeypatch):
+    """Decisão do dono: o recado vai para o número do financeiro, que é mais
+    geral, e não para o celular dele."""
+    from app.apps.baixabradesco.avisos import TELEFONE_FINANCEIRO, resolver_telefone
     monkeypatch.delenv('BAIXABRADESCO_AVISO_TELEFONE', raising=False)
-    monkeypatch.delenv('CHATBOT_MASTER_PHONE', raising=False)
-    assert resolver_telefone()
+    assert resolver_telefone() == TELEFONE_FINANCEIRO
 
 
 def test_o_destino_pode_ser_trocado_por_configuracao(monkeypatch):
@@ -215,10 +215,9 @@ def test_sem_credenciais_zapi_cai_no_notificador(monkeypatch):
     assert chamou['politica'] == 'fallback'
 
 
-# ── O aviso é só do dono ──────────────────────────────────────────────────────
+# ── O aviso tem um destino só ─────────────────────────────────────────────────
 #
-# Confirmado por ele em 11/09/2026: o número que passou é para receber ESTE
-# aviso, e só ele deve receber. Não confundir com o WhatsApp que o robô manda ao
+# Hoje é o número do financeiro. Não confundir com o WhatsApp que o robô manda ao
 # responsável pela SP quando a baixa dá certo — aquele é outra coisa, existe
 # desde antes, e continua indo para quem pediu o pagamento.
 
