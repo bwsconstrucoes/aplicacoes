@@ -443,6 +443,22 @@ def exigir_obra_no_escopo(s: Session, usuario: Usuario, obra_id: int) -> None:
         raise ErroNaoEncontrado("Obra não encontrada.")
 
 
+def exigir_agendada_no_escopo(s: Session, usuario: Usuario,
+                              agendada_id: int) -> None:
+    """O relatório automático é DE QUEM O RECEBE, e de mais ninguém.
+
+    Ele roda com a permissão do destinatário, então mexer no de outra pessoa
+    seria mexer num recorte que não é seu. Fora do escopo responde "não
+    encontrado": dizer "sem permissão" para um número que existe confirma que
+    ele existe, e varrer os números mapearia quem recebe o quê.
+    """
+    from app.apps.erp.db.models.financeiro import PerguntaAgendada
+
+    a = s.get(PerguntaAgendada, agendada_id)
+    if a is None or a.usuario_id != usuario.id:
+        raise ErroNaoEncontrado("Relatório automático não encontrado.")
+
+
 def exigir_parcela_no_escopo(s: Session, usuario: Usuario, parcela_id: int) -> None:
     """A parcela herda o escopo do título dela."""
     from app.apps.erp.db.models.financeiro import Parcela

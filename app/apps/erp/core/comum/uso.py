@@ -94,6 +94,9 @@ POR_ENTIDADE: dict[str, str] = {
     # não inflar a produção de ninguém, e porque saber QUEM pergunta muito é
     # informação útil por si só.
     "pergunta": "pergunta",
+    # Combinar um relatório automático é trabalho de quem pergunta — e some
+    # junto com as perguntas dele no relatório de uso.
+    "pergunta_agendada": "pergunta",
     "categoria": "configuracao",
     "categoria_depara": "configuracao",
     "parametro": "configuracao",
@@ -150,6 +153,7 @@ NOME_DA_ENTIDADE: dict[str, str] = {
     "empresa": "empresa", "conta_bancaria": "conta bancária",
     "unidade_compra": "unidade de compra", "condicao_pagamento": "condição de pagamento",
     "agenda": "agenda", "pergunta": "pergunta escrita", "categoria": "conta do plano",
+    "pergunta_agendada": "relatório automático",
     "categoria_depara": "tradução do plano antigo", "parametro": "parâmetro",
     "usuario": "operador", "periodo": "período", "indice": "índice",
     "configuracao": "configuração", "erp": "sistema", "suprimentos": "suprimentos",
