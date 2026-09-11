@@ -81,23 +81,107 @@ resolver ganha:
 1. **O número da SP escrito no comprovante** (o campo "Descrição"). É o caminho
    mais confiável. Um cuidado: o QR Code do Pix começa com `000201` e já foi
    confundido com número de SP — números assim são ignorados de propósito.
-2. **Somapay** (folha de pagamento): por valor, entre as SPs a pagar e
-   agendadas, e só para despesas de rescisão, férias, gratificação ou
-   participação nos lucros. Não usa a conta, porque o dinheiro sai do Bradesco
-   mas a baixa acontece na conta Somapay.
-3. **BeeVale** (vale-alimentação): por valor, aceitando o valor da SP com 1,5%
+2. **Depósito da Somapay** (rescisão paga direto da conta Somapay): pelo **nome
+   de quem recebeu + valor exato**. Esse comprovante é emitido pela própria
+   Somapay e não traz o número da SP nem a conta da empresa.
+   ⚠️ **Por que o nome e não o CPF:** numa SP de rescisão o credor é a
+   **empresa**, e a coluna CPF/CNPJ traz o CNPJ dela — não o do funcionário.
+   Quem identifica a pessoa é o nome escrito na descrição, no formato
+   "TRCT <NOME>". E o valor sozinho não serve: em 09/09/2026 havia **quatro**
+   rescisões de R$ 452,40, de quatro pessoas diferentes.
+3. **Somapay via transferência** (o dinheiro sai do Bradesco para a Somapay):
+   por valor, entre as SPs a pagar e agendadas, e só para despesas de rescisão,
+   férias, gratificação ou participação nos lucros. Empatando, desempata pela
+   conta que foi debitada. ⚠️ O comprovante **não traz o nome do funcionário**,
+   então duas rescisões pendentes de mesmo valor na mesma conta ficam paradas
+   para conferência — e isso acontece de verdade (quatro de R$ 452,40 em
+   09/09/2026).
+4. **BeeVale** (vale-alimentação): por valor, aceitando o valor da SP com 1,5%
    de acréscimo (é a taxa da BeeVale) ou o valor exato.
-4. **FGTS/Caixa**: por valor, entre as SPs a pagar e agendadas; se não achar,
+5. **FGTS/Caixa**: por valor, entre as SPs a pagar e agendadas; se não achar,
    tenta por palavra-chave no nome do credor.
-5. **Boleto**: pelo código de barras, comparado só pelos números, mais o valor.
-6. **Valor + conta + tipo de pagamento**, entre as SPs a agendar.
-7. **Valor + conta + status agendado**, na SPsBD. Se sobrar mais de uma
+6. **Boleto**: pelo código de barras, comparado só pelos números, mais o valor.
+7. **Valor + conta + tipo de pagamento**, entre as SPs a agendar.
+8. **Valor + conta + status agendado**, na SPsBD. Se sobrar mais de uma
    candidata, o desempate procura o nome do credor **no texto bruto do PDF**.
-8. **Última tentativa**: as SPs que a planilha já marcou como pagas e que o Omie
+   ⚠️ Este é o **único** caminho que exige o status exatamente `agendado`: uma
+   SP em `falhaagendar` não é encontrada por aqui. Todos os outros aceitam
+   `agendar`, `agendado` e `falhaagendar`.
+9. **Última tentativa**: as SPs que a planilha já marcou como pagas e que o Omie
    não baixou. Aqui ele executa **só o Omie** e não mexe em mais nada.
 
 **Se sobrar mais de uma candidata e o desempate não resolver, ele não executa
-nada** — marca como `pendente_validacao` e alguém precisa olhar.
+nada** — marca como `pendente_validacao` e alguém precisa olhar. Com uma exceção,
+abaixo.
+
+### Comprovantes iguais para SPs iguais: ele distribui
+
+Duas rescisões do mesmo valor, das duas pessoas, ambas agendadas — e dois
+comprovantes daquele valor no mesmo PDF. Um a um, cada comprovante vê duas SPs
+possíveis e para. Olhando o PDF inteiro, são **dois pagamentos para duas SPs**:
+dá para baixar as duas.
+
+Qual comprovante fica com qual SP **não importa**: são do mesmo valor, do mesmo
+dia, da mesma conta, e o comprovante de transferência nem traz o nome do
+funcionário. O que importa é baixar. Vale para dois, três, quantos forem.
+
+Três travas, e as três são necessárias:
+
+1. **Mesma quantidade dos dois lados.** Dois comprovantes para três SPs não
+   distribui — sobraria uma SP paga sem ter sido.
+2. **Pagamentos comprovadamente diferentes.** Cada comprovante traz um
+   identificador próprio (o campo `Identificador` do Bradesco, ou o número do
+   documento). Se eles se repetem, é o mesmo comprovante mandado duas vezes, e
+   distribuir baixaria duas SPs para um pagamento só. Sem identificador, também
+   não distribui.
+3. **Emparelhamento estável.** Página na ordem, SP na ordem — o mesmo lote
+   reprocessado dá sempre o mesmo resultado.
+
+⚠️ **Só enxerga o PDF atual.** Dois comprovantes do mesmo valor em arquivos
+separados, ainda que no mesmo envio, não se encontram e continuam pendentes.
+
+Quando a distribuição **não** acontece, os comprovantes entram no aviso com a
+explicação do porquê — quantidades diferentes, ou identificador repetido —, e não
+com o motivo técnico do casador.
+
+### Os dois caminhos da Somapay, que não podem ser confundidos
+
+A folha de pagamento passa pela Somapay de duas formas, e cada uma lança coisa
+diferente no Omie:
+
+| Situação | O que o Omie recebe |
+|---|---|
+| O dinheiro **sai do Bradesco** para a Somapay | a transferência entre as contas **e depois** a baixa do título na conta Somapay |
+| O pagamento **já saiu da conta Somapay** (este é o comprovante que a Somapay emite) | **só a baixa** na conta Somapay — não há transferência que tenha acontecido |
+
+**Qual conta Somapay recebeu** vem da **chave PIX impressa no comprovante**,
+casada com a coluna Chave PIX da BaseBancos. Cada uma das três contas tem a sua,
+então não há o que adivinhar. Se a chave não estiver cadastrada, o robô não
+escolhe: deixa pendente e diz o motivo.
+
+Os dois comprovantes podem chegar para a mesma rescisão, e **os dois dão baixa**.
+Quem chegar primeiro baixa; o segundo encontra o título já pago no Omie e para
+sozinho. O comprovante que fica anexado na SP é o do primeiro que chegou —
+decisão do dono em 11/09/2026, ciente de que costuma ser o do Bradesco e não o
+da Somapay.
+
+Lançar a transferência no segundo caso criaria no Omie um dinheiro que não
+andou. Por isso os dois são tipos separados no código.
+
+**O comprovante emitido pela Somapay não traz a conta da empresa**, só a do
+funcionário que recebeu. A conta em que a baixa é lançada vem da **BaseBancos**,
+pelo **nome do depositante**: "BWS CONSTRUÇÕES" casa com a conta "Somapay BWS".
+A comparação ignora espaços e acentos, então "IFPE SANTA CRUZ" acha
+"Somapay IFPESANTACRUZ".
+
+⚠️ **Não dá para usar o CNPJ aqui.** As três contas Somapay da BaseBancos
+(BWS, INFRADENDE e IFPESANTACRUZ) têm o **mesmo CNPJ** — o da própria Somapay,
+não o da empresa do grupo. Conferido com a planilha real em 11/09/2026.
+
+Se nenhum nome bater, ou mais de um bater, o robô **não escolhe**: deixa o
+comprovante pendente de validação e diz o motivo. Errar entre as três contas
+jogaria o dinheiro na contabilidade errada, e isso ninguém percebe olhando a
+tela.
 
 ## O que ele escreve quando casa
 
@@ -131,6 +215,48 @@ módulos do monorepo. Quando o Google recusa por excesso de pedidos, o robô
 ⚠️ O que está em `/tmp` **se perde quando o serviço reinicia** (ou seja, a cada
 publicação). Foi aceito assim: o Make pode reenviar.
 
+## O aviso do que NÃO foi baixado
+
+Comprovante que baixa normalmente não gera aviso nenhum — é o esperado. O que
+**não** baixa gera: no fim de cada lote, o robô manda **uma** mensagem pelo
+Telegram com a lista do que ficou de fora e o motivo de cada um.
+
+Cada linha traz a página, o valor, o nome de quem recebeu (quando o comprovante
+tem), e **o número da SP** — o escolhido, quando já se sabe qual é, ou a lista
+das candidatas, quando o robô parou justamente por não saber. É por esse número
+que se procura na planilha e no Omie.
+
+Entram no aviso:
+
+- comprovante que não achou SP, ou achou mais de uma e parou;
+- comprovante que o banco não efetivou;
+- baixa que falhou no Omie (foi para a fila de nova tentativa).
+
+**Não** entram, de propósito: o que baixou (é o esperado) e o que foi barrado por
+já ter sido baixado (a trava fez o trabalho dela). Aviso demais faz a pessoa
+parar de ler, e aí o que importava se perde.
+
+É **um aviso por lote**, não um por comprovante, com no máximo dez itens
+listados — acima disso ele diz quantos ficaram de fora.
+
+**Por onde vai:** WhatsApp, pelo mesmo envio que o robô já usa para avisar o
+responsável pela SP — aquele funciona em produção e aceita as credenciais Z-API
+vindas dentro do próprio pedido do Make, que é como elas chegam hoje. O
+Telegram vai junto, de espelho. Se as credenciais não vierem nem no pedido nem
+no ambiente, cai no notificador comum, que tem as suas próprias.
+
+**Para quem vai:** **dois números** — o do financeiro, que é quem resolve, e o
+do dono, que é quem decide se a regra muda. Os dois recebem a mesma mensagem, e
+falha em um não impede o outro. `BAIXABRADESCO_AVISO_TELEFONE` substitui a lista
+inteira e aceita vários números separados por vírgula ou ponto e vírgula.
+
+**Só esses dois.** Não confundir com o WhatsApp que o
+robô manda ao **responsável pela SP** quando a baixa dá certo — aquele é outra
+coisa, existe desde antes, vai para quem pediu o pagamento e não tem relação com
+este aviso. Há teste travando os dois destinos separados.
+
+Falha de aviso nunca derruba a baixa: ela já aconteceu.
+
 ## Variáveis de ambiente
 
 | Variável | Para quê | Sem ela |
@@ -143,6 +269,8 @@ publicação). Foi aceito assim: o Make pode reenviar.
 | `DROPBOX_APP_KEY` / `DROPBOX_APP_SECRET` / `DROPBOX_REFRESH_TOKEN` | guardar o comprovante | o comprovante não é salvo |
 | `ZAPI_INSTANCE_ID` / `ZAPI_API_TOKEN` / `ZAPI_CLIENT_TOKEN` | WhatsApp | o aviso é pulado |
 | `NOTIFICAR_WHATSAPP` | desliga o WhatsApp de vez | ligado |
+| `BAIXABRADESCO_AVISO_TELEFONE` | para quem vai o aviso do que não baixou | usa `CHATBOT_MASTER_PHONE` |
+| `NOTIFICAR_TELEGRAM` | desliga o aviso de vez | ligado |
 
 ## Serviços que ele toca
 

@@ -8,6 +8,18 @@ from .utils import normalize_text, only_digits, money_to_decimal, decimal_to_br,
 FGTS_CNPJ = '00360305000104'
 BEEVALE_TEXT = 'beevale pagamentos e beneficios'
 
+# Comprovante emitido pela PRÓPRIA Somapay, quando o pagamento saiu direto da
+# conta Somapay (rescisão depositada na conta do funcionário). NÃO confundir com
+# o comprovante Bradesco de transferência para a Somapay, que é outro fluxo e
+# exige lançar a transferência antes da baixa.
+SOMAPAY_INSTITUICAO = 'somapay sociedade de credito direto'
+
+# Comprovante do BRADESCO de transferência para a Somapay. Outro fluxo: aqui o
+# dinheiro apenas mudou de conta, e o Omie precisa receber a transferência ANTES
+# da baixa. Reconhecido pela instituição de destino, não pela palavra 'somapay'
+# solta — ela também aparece no comprovante emitido pela própria Somapay.
+RE_DESTINO_SOMAPAY = re.compile(r'institui[cç][aã]o\s+destino\s*:?\s*somapay', re.I)
+
 # Frases que provam que o pagamento NÃO aconteceu. Comparadas contra o texto já
 # normalizado (minúsculas, sem acento). O Bradesco usa redações diferentes para
 # a mesma coisa — "Operação Não Realizada" no Pix, "Transação Não Realizada" no
@@ -61,12 +73,20 @@ def parse_bradesco_text(filename: str, page: int, text: str, drive_link: str = '
     r.data_pagamento = extract_data_pagamento(text)
     r.forma_pagamento = classify_payment_type(text)
     r.nome_recebedor = extract_nome_recebedor(text)
+    r.nome_pagador = extract_nome_pagador(text)
     r.documento_recebedor = extract_documento_recebedor(text)
+    r.documento_pagador = extract_documento_pagador(text)
     r.agencia_origem, r.conta_origem, r.conta_origem_raw = extract_conta_origem(text)
     r.conta_destino_raw = extract_conta_destino(text)
+    r.chave_pix_destino = extract_chave_pix(text)
     r.codigo_barras = extract_codigo_barras(text)
+    r.identificador = extract_identificador(text)
 
-    if (('cef matriz' in norm or 'caixa economica federal' in norm) and FGTS_CNPJ in digits):
+    if SOMAPAY_INSTITUICAO in norm:
+        r.tipo_comprovante = 'somapay_deposito'
+    elif RE_DESTINO_SOMAPAY.search(normalize_text(text)):
+        r.tipo_comprovante = 'somapay'
+    elif (('cef matriz' in norm or 'caixa economica federal' in norm) and FGTS_CNPJ in digits):
         r.tipo_comprovante = 'fgts_rescisorio'
     elif BEEVALE_TEXT in norm:
         r.tipo_comprovante = 'beevale'
@@ -124,6 +144,7 @@ def _first_money_after(patterns, text: str) -> str:
 def extract_valor_pago(text: str) -> str:
     # Prioriza "Valor total" (total pago) sobre "Valor R$" (valor original do boleto)
     return _first_money_after([
+        r'Valor\s+Depositado\s*:?\s*R?\$?\s*([\d\.]+,\d{2})',
         r'Valor\s+total\s*:?\s*R?\$?\s*([\d\.]+,\d{2})',
         r'Valor\s+do\s+pagamento\s*:?\s*R?\$?\s*([\d\.]+,\d{2})',
         r'Valor\s+(?:pago|transferido)\s*:?\s*R?\$?\s*([\d\.]+,\d{2})',
@@ -164,6 +185,7 @@ def extract_tarifa(text: str) -> str:
 
 def extract_data_pagamento(text: str) -> str:
     patterns = [
+        r'Data\s+do\s+Dep[oó]sito\s*:?\s*(\d{2}/\d{2}/\d{4})',
         r'Data\s*(?:do pagamento|da opera[cç][aã]o|de pagamento)?\s*:?\s*(\d{2}/\d{2}/\d{4})',
         r'Pagamento\s*realizado\s*em\s*(\d{2}/\d{2}/\d{4})',
         r'\b(\d{2}/\d{2}/\d{4})\b',
@@ -200,9 +222,103 @@ def extract_nome_recebedor(text: str) -> str:
     return ''
 
 
+def extract_identificador(text: str) -> str:
+    """O que diz que DOIS comprovantes são dois pagamentos, e não o mesmo duas vezes.
+
+    Serve ao desempate por lote: só dá para distribuir N comprovantes entre N
+    SPs de mesmo valor se os N forem mesmo pagamentos diferentes.
+
+    A ordem importa. O "Identificador" e o "Documento" são por pagamento; o
+    "N° de controle" é do lote inteiro e se repete entre as páginas — por isso
+    vem por último. Comprovante que só tenha o número de controle acaba com
+    identificador repetido, o desempate não acontece e ele fica pendente. É o
+    resultado seguro.
+    """
+    patterns = [
+        r'Identificador\s*:?\s*([A-Za-z0-9]{8,})',
+        r'N[úu]mero\s+de\s+Autentica[cç][aã]o\s*:?\s*([A-Za-z0-9]{6,})',
+        r'Comprovante\s+de\s+Dep[óo]sito\s+n[ºo°]\s*:?\s*(\d{6,})',
+        r'Documento\s*:?\s*(\d{4,})',
+        r'N[°º]\s*de\s*controle\s*:?\s*([\d\.]{6,})',
+    ]
+    for p in patterns:
+        m = re.search(p, text or '', flags=re.I)
+        if m:
+            return as_string(m.group(1))
+    return ''
+
+
+def extract_chave_pix(text: str) -> str:
+    """Chave PIX de quem recebeu.
+
+    É o identificador exato da conta de destino: cada conta cadastrada na
+    BaseBancos tem a sua. Vale mais que qualquer regra por nome ou por número
+    de conta.
+    """
+    m = re.search(r'Chave\s*:?\s*([^\n\r]+)', text or '', flags=re.I)
+    return as_string(m.group(1))[:120] if m else ''
+
+
+def extract_nome_pagador(text: str) -> str:
+    """Nome de quem PAGOU.
+
+    No comprovante da Somapay é o "Depositante", e é ele que diz de qual conta
+    Somapay o dinheiro saiu — o papel não traz a conta da empresa.
+    """
+    patterns = [
+        r'(?:Depositante|Pagador|Empregadora)\s*:?\s*([^\n\r]+)',
+        r'Nome\s+do\s+Pagador\s*:?\s*([^\n\r]+)',
+    ]
+    for p in patterns:
+        m = re.search(p, text or '', flags=re.I)
+        if m:
+            return as_string(m.group(1))[:120]
+    return ''
+
+
 def extract_documento_recebedor(text: str) -> str:
+    """CPF/CNPJ de quem RECEBEU.
+
+    O rótulo vem primeiro. Sem isso, a varredura solta pega o primeiro número
+    com cara de documento — e num comprovante Somapay o número do depósito tem
+    14 dígitos, exatamente o tamanho de um CNPJ, então ele era lido como se
+    fosse o documento do beneficiário.
+    """
+    rotulados = [
+        r'(?:Benefici[aá]rio|Favorecido|Recebedor|Credor)\s*:?[^\n\r]{0,80}?'
+        r'\n?\s*CPF(?:/CNPJ)?\s*:?\s*([\d./\-]{11,20})',
+        r'CPF\s+do\s+Benefici[aá]rio\s*:?\s*([\d./\-]{11,20})',
+        r'CPF/CNPJ\s+do\s+Benefici[aá]rio\s*:?\s*([\d./\-]{11,20})',
+    ]
+    for p in rotulados:
+        m = re.search(p, text or '', flags=re.I)
+        if m:
+            doc = only_digits(m.group(1))
+            if len(doc) in (11, 14):
+                return doc
+
     m = re.search(r'((?:\d{2}\.?\d{3}\.?\d{3}/?\d{4}-?\d{2})|(?:\d{3}\.?\d{3}\.?\d{3}-?\d{2}))', text or '')
     return only_digits(m.group(1)) if m else ''
+
+
+def extract_documento_pagador(text: str) -> str:
+    """CPF/CNPJ de quem PAGOU.
+
+    É o que diz de qual empresa do grupo saiu o dinheiro — e, no comprovante
+    Somapay, é a única pista do papel sobre qual conta Somapay usar.
+    """
+    patterns = [
+        r'(?:Depositante|Pagador|Empresa|Empregadora)\s*:?[^\n\r]{0,80}?'
+        r'\n?\s*CNPJ(?:/CPF)?\s*:?\s*([\d./\-]{11,20})',
+        r'CPF/CNPJ\s+do\s+Pagador\s*:?\s*([\d./\-]{11,20})',
+    ]
+    for p in patterns:
+        m = re.search(p, text or '', flags=re.I)
+        if m:
+            doc = only_digits(m.group(1))
+            if len(doc) in (11, 14):
+                return doc
+    return ''
 
 
 def extract_conta_origem(text: str):

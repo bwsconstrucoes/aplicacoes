@@ -974,21 +974,39 @@ def test_lote_vazio_nao_consulta_o_banco(banco_analisesps):
 
 def test_o_lote_e_guardado_e_relido(banco_analisesps):
     from app.apps.analisesps import lote
-    lote.salvar("Pagar amanhã\n111", "operador")
-    guardado = lote.ler()
+    lote.salvar("Pagar amanhã\n111", "operador", "marcelo")
+    guardado = lote.ler("marcelo")
     assert guardado["conteudo"] == "Pagar amanhã\n111"
     assert guardado["salvo_por"] == "operador"
     assert guardado["salvo_em"] is not None
 
 
 def test_salvar_o_lote_de_novo_substitui_e_nao_acumula(banco_analisesps):
-    """A tabela tem uma linha só, e é de propósito — o lote é um só."""
+    """Uma linha POR PESSOA. Salvar de novo substitui a dela, e não empilha."""
     from app.apps.analisesps import lote
     from app.apps.analisesps.db import consultar_um
-    lote.salvar("primeiro", "a")
-    lote.salvar("segundo", "b")
-    assert consultar_um("SELECT count(*) FROM analisesps.lote")[0] == 1
-    assert lote.ler()["conteudo"] == "segundo"
+    lote.salvar("primeiro", "a", "marcelo")
+    lote.salvar("segundo", "b", "marcelo")
+    assert consultar_um(
+        "SELECT count(*) FROM analisesps.lote WHERE pessoa = 'marcelo'")[0] == 1
+    assert lote.ler("marcelo")["conteudo"] == "segundo"
+
+
+def test_o_lote_de_uma_pessoa_nao_encosta_no_da_outra(banco_analisesps):
+    """Era um lote só até a migração 003, e a segunda pessoa a salvar
+    sobrescrevia o trabalho da primeira — sem aviso nenhum.
+
+    ESTE TESTE TAMBÉM COBRE O DEFEITO DE 11/09/2026: a exportação e o PDF
+    liam o lote de `pessoa = ""`, que é o antigo compartilhado, e entregavam
+    um lote congelado por mais que a pessoa salvasse o dela."""
+    from app.apps.analisesps import lote
+    lote.salvar("o do marcelo", "MARCELO", "marcelo")
+    lote.salvar("o da karla", "KARLA", "karla")
+
+    assert lote.ler("marcelo")["conteudo"] == "o do marcelo"
+    assert lote.ler("karla")["conteudo"] == "o da karla"
+    # E o lote antigo, o de pessoa vazia, continua sendo outra coisa.
+    assert lote.ler("")["conteudo"] != "o do marcelo"
 
 
 # ---------------------------------------------------------------------------
@@ -1297,3 +1315,183 @@ def test_a_obra_casa_sem_ligar_para_maiuscula(banco_analisesps):
 
     assert consultas.listar({"centro_custo": ["cons"]})
     assert consultas.listar({"centro_custo": ["CoNs"]})
+
+
+# ---------------------------------------------------------------------------
+# A SINCRONIZAÇÃO QUE NÃO ENXERGAVA A LINHA SEM CARIMBO NOVO
+#
+# O dono, em 11/09/2026, olhando a SP 1443253428: "na planilha esse registro
+# está pago, e ele está aparecendo no lote como PAGAR. A base está atualizada,
+# o relógio está batendo."
+#
+# A causa: o carimbo da coluna V é escrito pelo gatilho `onEdit` da planilha, e
+# esse gatilho NÃO DISPARA quando quem escreve é um script — e quem alimenta a
+# SPsBD são scripts. A célula muda, o carimbo não, e a linha nunca era relida.
+# Conferido na planilha de verdade: entre as 63 primeiras linhas visíveis, 5
+# estão com o carimbo VAZIO.
+# ---------------------------------------------------------------------------
+class AbaFalsa:
+    """Uma aba de planilha de mentira, com as duas chamadas que a sincronização
+    faz: ler uma coluna inteira e buscar faixas de linhas."""
+
+    def __init__(self, linhas):
+        # `linhas` já inclui o cabeçalho na posição 0, como na planilha.
+        self.linhas = linhas
+        self.faixas_pedidas = []
+
+    def col_values(self, numero):
+        return [(l[numero - 1] if numero - 1 < len(l) else "")
+                for l in self.linhas]
+
+    def batch_get(self, faixas):
+        import re
+        self.faixas_pedidas.extend(faixas)
+        saida = []
+        for faixa in faixas:
+            n = int(re.search(r"A(\d+):", faixa).group(1))
+            saida.append([self.linhas[n - 1]])
+        return saida
+
+
+def _linha_da_planilha(sp_id, status, carimbo):
+    """Uma linha crua da SPsBD, nas posições de verdade das colunas."""
+    from app.apps.analisesps import colunas
+    linha = [""] * len(colunas._DEFS)
+    linha[colunas.COLS["id"].idx] = sp_id
+    linha[colunas.COLS["status_pgt"].idx] = status
+    linha[colunas.COLS["carimbo"].idx] = carimbo
+    return linha
+
+
+def _sincronizar(monkeypatch, linhas):
+    from app.apps.analisesps import sincronizacao
+    aba = AbaFalsa([["cabeçalho"]] + linhas)
+    monkeypatch.setattr(sincronizacao, "_aba_sps", lambda: aba)
+    return sincronizacao.sincronizar_delta(), aba
+
+
+def _marca_dagua_em(valor):
+    """Põe a marca d'água onde o teste precisa.
+
+    Sem isto a base nasce com marca d'água VAZIA, e aí todo carimbo é "maior
+    que" ela — a sincronização traz a planilha inteira, que é o certo numa base
+    virgem e atrapalha quem quer medir o caminho do dia a dia."""
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute("INSERT INTO analisesps.meta (chave, valor) "
+                     "VALUES ('ultimo_carimbo', ?) "
+                     "ON CONFLICT (chave) DO UPDATE SET valor = EXCLUDED.valor",
+                     (valor,))
+        conn.commit()
+
+
+def _status_no_banco(sp_id):
+    from app.apps.analisesps.db import consultar_um
+    linha = consultar_um(
+        "SELECT status_pgt FROM analisesps.sps WHERE id = ?", (sp_id,))
+    return linha[0] if linha else None
+
+
+@pytest.mark.banco
+def test_linha_com_carimbo_VAZIO_e_alcancada_pela_conferencia(
+        banco_analisesps, monkeypatch):
+    """O DEFEITO QUE O DONO ACHOU. Sem carimbo, a linha nunca era relida — e
+    não era atraso, era permanente: ela ficaria "Pagar" para sempre, por mais
+    que se apertasse Atualizar."""
+    semear([sp("1443253428", status_pgt="Pagar", carimbo="")])
+    assert _status_no_banco("1443253428") == "Pagar"
+
+    resultado, _ = _sincronizar(monkeypatch, [
+        _linha_da_planilha("1443253428", "Pago", "")])
+
+    assert _status_no_banco("1443253428") == "Pago", (
+        "a linha sem carimbo continuou velha — é o defeito de 11/09/2026")
+    assert resultado["sem_carimbo"] == 1
+
+
+@pytest.mark.banco
+def test_linha_com_carimbo_VELHO_tambem_e_alcancada(
+        banco_analisesps, monkeypatch):
+    """Pior que o carimbo vazio, e mais comum: o script muda a célula e o
+    carimbo fica com a data antiga. Pelo carimbo, nada mudou."""
+    semear([sp("1", status_pgt="Pagar", carimbo="2026-09-04 16:05:23")])
+    _marca_dagua_em("2026-09-10 10:00:00")
+
+    _sincronizar(monkeypatch, [
+        _linha_da_planilha("1", "Pago", "2026-09-04 16:05:23")])
+
+    assert _status_no_banco("1") == "Pago"
+
+
+@pytest.mark.banco
+def test_a_conferencia_nao_relê_a_planilha_inteira(banco_analisesps, monkeypatch):
+    """A conferência acha a linha mudada SEM trazer as outras. Se ela puxasse
+    tudo, a sincronização de 5 em 5 minutos viraria a carga inicial — e o banco
+    tem um décimo de um núcleo."""
+    semear([sp(str(n), status_pgt="Pagar", carimbo="2026-09-04 16:05:23")
+            for n in range(1, 21)])
+    _marca_dagua_em("2026-09-04 16:05:23")
+
+    _, aba = _sincronizar(monkeypatch, [
+        _linha_da_planilha(str(n), "Pago" if n == 7 else "Pagar",
+                           "2026-09-04 16:05:23")
+        for n in range(1, 21)])
+
+    assert len(aba.faixas_pedidas) == 1, (
+        f"trouxe {len(aba.faixas_pedidas)} linhas; só uma mudou")
+    assert _status_no_banco("7") == "Pago"
+    assert _status_no_banco("8") == "Pagar"
+
+
+@pytest.mark.banco
+def test_carimbo_novo_continua_bastando_sem_conferir_conteudo(
+        banco_analisesps, monkeypatch):
+    """O caminho barato não pode ter sido quebrado: carimbo novo traz a linha
+    mesmo quando a coluna conferida está igual."""
+    semear([sp("1", status_pgt="Pagar", carimbo="2026-09-04 16:05:23",
+               nf="")])
+    _marca_dagua_em("2026-09-04 16:05:23")
+    _, aba = _sincronizar(monkeypatch, [
+        _linha_da_planilha("1", "Pagar", "2026-09-30 09:00:00")])
+    assert len(aba.faixas_pedidas) == 1
+
+
+@pytest.mark.banco
+def test_a_marca_dagua_fica_um_segundo_atras(banco_analisesps, monkeypatch):
+    """AS LINHAS QUE EMPATAM NO SEGUNDO. Um script que grava 800 linhas de uma
+    vez carimba TODAS com o mesmo segundo — visto na planilha de verdade: 58
+    linhas com "2026-09-04 16:05:23".
+
+    Se a varredura pegar metade delas, a marca d'água sobe para aquele segundo
+    e a outra metade, carimbada igual, nunca mais satisfaz "maior que". Some
+    para sempre. Guardar um segundo atrás faz a borda ser reexaminada."""
+    from app.apps.analisesps.db import consultar_um
+
+    semear([sp("1", status_pgt="Pagar", carimbo="")])
+    _sincronizar(monkeypatch, [
+        _linha_da_planilha("1", "Pagar", "2026-09-11 14:32:10")])
+
+    guardado = consultar_um(
+        "SELECT valor FROM analisesps.meta WHERE chave = 'ultimo_carimbo'")
+    assert guardado[0] == "2026-09-11 14:32:09", (
+        "a marca d'água ficou no próprio segundo — quem empatar nele se perde")
+
+
+@pytest.mark.banco
+def test_a_sincronizacao_registra_QUANTAS_linhas_desceram(
+        banco_analisesps, monkeypatch):
+    """O RELÓGIO DA TELA NÃO PROVA NADA, e foi isso que despistou o dono: a
+    hora da sincronização é gravada no fim de TODA rodada, tenha vindo linha
+    ou não. Então "o relógio está batendo" só diz que ela rodou."""
+    from app.apps.analisesps.db import consultar_um
+
+    semear([sp("1", status_pgt="Pagar", carimbo="2026-09-04 16:05:23")])
+    _marca_dagua_em("2026-09-04 16:05:23")
+    _sincronizar(monkeypatch, [
+        _linha_da_planilha("1", "Pagar", "2026-09-04 16:05:23")])
+
+    assert consultar_um("SELECT valor FROM analisesps.meta "
+                        "WHERE chave = 'ultima_sincronizacao_alteradas'")[0] == "0"
+    assert consultar_um("SELECT valor FROM analisesps.meta "
+                        "WHERE chave = 'ultima_sincronizacao'")[0], (
+        "a hora foi gravada mesmo sem nada ter mudado — é isso que despista")

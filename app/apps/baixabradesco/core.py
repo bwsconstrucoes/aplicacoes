@@ -6,17 +6,18 @@ from typing import Dict, Any, List
 
 import requests
 
-from .models import AttachmentInput, ExecutionPlan
+from .models import AttachmentInput, ExecutionPlan, MatchResult
 from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
-from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, build_spsbd_updates, execute_spsbd_updates, load_fingerprints_processados, registrar_fingerprint
+from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, find_somapay_account, find_account_by_pix_key, build_spsbd_updates, execute_spsbd_updates, load_fingerprints_processados, registrar_fingerprint
 from .matcher import match_receipt
 from .omie import build_omie_plan, build_incluir_lanc_cc, build_somapay_plan, execute_omie, execute_omie_lanccc, codigo_integracao
 from .pipefy import build_get_cards_query, build_update_card_mutation, execute_graphql
 from .zapi import build_whatsapp_messages, send_messages_batch, resolve_zapi_auth, validate_zapi_auth
 from .storage import upload_dropbox_bytes, build_receipt_page_filename, normalize_dropbox_link
 from .fila import enqueue_failure
+from .avisos import enviar_aviso
 
 # Teto por comprovante baixado via URL — evita que um download gigante entre
 # 100% na RAM e derrube o worker (limite Render: 2GB).
@@ -79,6 +80,11 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         fp_file   = fingerprint_bytes(pdf_bytes, att.filename)
         pages     = extract_pdf_pages(pdf_bytes)
 
+        # Primeira passada: lê e localiza a SP de cada página, sem executar nada.
+        # A segunda passada é que salva comprovante e monta os planos. Entre as
+        # duas entra o desempate por lote, que precisa enxergar o anexo inteiro.
+        analisadas: List[Dict[str, Any]] = []
+
         for page_num, text in pages:
             if not as_string(text):
                 continue
@@ -118,8 +124,6 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             # Primeiro localiza a SP/título. Só depois salva o comprovante.
             # Isso evita gerar arquivos órfãos no Dropbox quando a baixa não puder
             # ser vinculada a nenhuma solicitação financeira.
-            page_filename = build_receipt_page_filename(att.filename, page_num, rec.id_pipefy)
-
             match = match_receipt(rec, sps_index, sps_agendar)
 
             # Fallback: SP já marcada Pago na planilha mas Omie pendente
@@ -127,7 +131,33 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                 match_pendente = match_omie_pendente(rec, sps_omie_pendente)
                 if match_pendente.status == 'localizado':
                     match = match_pendente
+
+            analisadas.append({'page_num': page_num, 'rec': rec, 'match': match})
+
+        # Desempate por lote: comprovantes iguais para SPs iguais.
+        resolver_empates_do_lote(analisadas)
+
+        # Segunda passada: agora sim, salvar comprovante e montar os planos.
+        for item in analisadas:
+            page_num = item['page_num']
+            rec      = item['rec']
+            match    = item['match']
+            page_filename = build_receipt_page_filename(att.filename, page_num, rec.id_pipefy)
+
             banco = find_bank_account(base_bancos, rec.agencia_origem, rec.conta_origem) if base_bancos else None
+
+            # O comprovante emitido pela Somapay não traz a conta da empresa —
+            # só a do funcionário. A conta de baixa vem da BaseBancos, pelo NOME
+            # de quem depositou ('BWS CONSTRUÇÕES' → conta 'Somapay BWS').
+            if banco is None and rec.tipo_comprovante == 'somapay_deposito' and base_bancos:
+                banco = find_somapay_account(base_bancos, rec.nome_pagador)
+
+            # Transferência do Bradesco para a Somapay: a conta que RECEBEU vem
+            # da chave PIX impressa no comprovante. Cada conta da BaseBancos tem
+            # a sua, então não há o que adivinhar.
+            banco_destino = None
+            if rec.tipo_comprovante == 'somapay' and base_bancos:
+                banco_destino = find_account_by_pix_key(base_bancos, rec.chave_pix_destino)
 
             storage_info = {
                 'storage': 'dropbox',
@@ -164,7 +194,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
 
             rec.drive_link = normalize_dropbox_link(rec.drive_link)
 
-            plan = ExecutionPlan(receipt=rec, match=match, banco=banco)
+            plan = ExecutionPlan(receipt=rec, match=match, banco=banco, banco_destino=banco_destino)
             plan.responses['storage'] = storage_info
 
             if match.metodo == 'omie_pendente':
@@ -278,7 +308,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         # Pipefy e Z-API são executados por plano acima, para manter o output correto.
 
     # ── Monta output de modo_teste (preview de tudo que seria feito) ───────────
-    return {
+    resultado = {
         'ok': True,
         'app': 'baixabradesco',
         'modo_teste': modo_teste,
@@ -298,8 +328,103 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
         'planos': [p.to_dict() for p in plans],
     }
 
+    # Avisa o dono do que NÃO foi baixado. Só em produção, e nunca derruba a
+    # resposta: a baixa já aconteceu, o aviso é sobre o que ficou de fora.
+    if not modo_teste:
+        resultado['aviso'] = enviar_aviso(resultado, payload)
+
+    return resultado
+
 
 # ── Helpers internos ──────────────────────────────────────────────────────────
+
+
+def _anotar_motivo(itens: List[Dict[str, Any]], explicacao: str) -> None:
+    """Troca o motivo do empate por uma frase que diz o que fazer.
+
+    O motivo que vem do casador é técnico ("retornou 2 candidatos"). Quem recebe
+    o aviso precisa saber por que não deu e o que olhar.
+    """
+    for item in itens:
+        m = item['match']
+        item['match'] = MatchResult(
+            status=m.status, metodo=m.metodo, id=m.id, sp=m.sp,
+            candidatos=m.candidatos, motivo=explicacao,
+        )
+
+
+def resolver_empates_do_lote(analisadas: List[Dict[str, Any]]) -> int:
+    """Comprovantes iguais para SPs iguais: distribui um para cada.
+
+    O caso que motivou, em 11/09/2026: duas rescisões de R$ 5.532,57, de duas
+    pessoas, ambas agendadas — e dois comprovantes de transferência de
+    R$ 5.532,57. Um a um, cada comprovante via duas SPs possíveis e parava. Mas
+    olhando o lote inteiro são dois pagamentos para duas SPs: dá para baixar as
+    duas.
+
+    Decisão do dono: **não importa qual comprovante fica com qual SP.** Os
+    papéis são intercambiáveis — mesmo valor, mesma data, mesma conta, e o da
+    transferência nem traz o nome do funcionário. O que importa é baixar.
+
+    Três travas, e as três são necessárias:
+
+    1. **Mesma quantidade dos dois lados.** Dois comprovantes para três SPs
+       deixaria uma SP paga por engano — não se distribui.
+    2. **Pagamentos comprovadamente diferentes.** Se os identificadores se
+       repetem, é o mesmo comprovante mandado duas vezes, e aí seriam duas
+       baixas para um pagamento só. Sem identificador, também não distribui.
+    3. **Emparelhamento estável** (página na ordem, SP na ordem), para o mesmo
+       lote reprocessado dar sempre o mesmo resultado.
+
+    Devolve quantos comprovantes saíram de pendente. Só enxerga o anexo atual:
+    dois comprovantes em PDFs separados não se encontram (ver HISTORICO).
+    """
+    grupos: Dict[Any, List[Dict[str, Any]]] = {}
+    for item in analisadas:
+        m = item['match']
+        if m.status != 'pendente_validacao' or not m.candidatos:
+            continue
+        chave = frozenset(as_string(c.id) for c in m.candidatos if as_string(c.id))
+        if chave:
+            grupos.setdefault(chave, []).append(item)
+
+    resolvidos = 0
+    for itens in grupos.values():
+        candidatos = itens[0]['match'].candidatos
+
+        if len(itens) != len(candidatos):
+            # Trava 1. Explica no motivo, senão o aviso sai técnico demais e
+            # quem lê não sabe o que fazer.
+            _anotar_motivo(itens, (
+                f'{len(itens)} comprovante(s) de mesmo valor para {len(candidatos)} SPs '
+                'de mesmo valor — quantidades diferentes, não dá para distribuir sem '
+                'marcar alguma SP como paga sem ter sido.'))
+            continue
+
+        identificadores = [as_string(i['rec'].identificador) for i in itens]
+        if not all(identificadores) or len(set(identificadores)) != len(identificadores):
+            # Trava 2.
+            _anotar_motivo(itens, (
+                f'{len(itens)} comprovantes de mesmo valor, mas eles parecem ser o MESMO '
+                'pagamento (identificador repetido ou ausente). Distribuir baixaria mais '
+                'de uma SP para um pagamento só.'))
+            continue
+
+        itens_ordenados = sorted(itens, key=lambda i: i['page_num'])
+        sps_ordenadas   = sorted(candidatos, key=lambda c: as_string(c.id))
+
+        for item, sp in zip(itens_ordenados, sps_ordenadas):
+            metodo = as_string(item['match'].metodo)
+            item['match'] = MatchResult(
+                status='localizado',
+                metodo=f'{metodo}_distribuido_no_lote' if metodo else 'distribuido_no_lote',
+                id=sp.id, sp=sp, candidatos=candidatos,
+                motivo=(f'{len(itens)} comprovantes distintos para {len(candidatos)} SPs '
+                        'de mesmo valor: cada comprovante ficou com uma SP.'),
+            )
+            resolvidos += 1
+
+    return resolvidos
 
 
 def match_omie_pendente(receipt: ExtractedReceipt, sps_pendente: Dict[str, SpRecord]) -> MatchResult:
@@ -372,11 +497,33 @@ def _decidir_execucao(plan: ExecutionPlan, executar_omie: bool, atualizar_pipefy
     if not rec.data_pagamento:
         faltas.append('data_pagamento')
     if executar_omie and not (plan.banco and plan.banco.codigo_omie):
+        if rec.tipo_comprovante == 'somapay':
+            plan.acao = 'pendente_validacao'
+            plan.motivos_bloqueio.append(
+                'Conta de débito do comprovante não encontrada na BaseBancos.'
+            )
+            return
+        if rec.tipo_comprovante == 'somapay_deposito':
+            plan.acao = 'pendente_validacao'
+            plan.motivos_bloqueio.append(
+                'Conta Somapay não identificada na BaseBancos pelo nome do depositante. '
+                'Confira se existe a linha da conta Somapay correspondente.'
+            )
+            return
         faltas.append('codigo_conta_omie')
 
     if faltas:
         plan.acao = 'pendente_validacao'
         plan.motivos_bloqueio.append('Campos mínimos ausentes: ' + ', '.join(faltas))
+        return
+
+    if rec.tipo_comprovante == 'somapay' and executar_omie and not (
+            plan.banco_destino and plan.banco_destino.codigo_omie):
+        plan.acao = 'pendente_validacao'
+        plan.motivos_bloqueio.append(
+            'Conta Somapay de destino não identificada pela chave PIX do comprovante. '
+            'Confira a coluna Chave PIX da BaseBancos.'
+        )
         return
 
     plan.acao = 'baixar_omie_atualizar_pipefy_sheets'

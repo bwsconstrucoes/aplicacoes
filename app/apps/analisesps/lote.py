@@ -95,32 +95,110 @@ def acrescentar_grupo(texto_atual: str, ids: list[str]) -> tuple[str, str]:
     return novo, titulo
 
 
-def remover_por_status(texto: str, status_alvo: set[str],
-                       status_por_id: dict) -> tuple[str, int]:
-    """Tira do lote as SPs que já estão num determinado status.
+def _limpar(texto: str, sai) -> tuple[str, int]:
+    """A limpeza do lote, com a regra de quem sai vindo de fora.
 
-    Serve para limpar o que já foi pago ou cancelado sem desmontar os grupos: os
-    títulos ficam, mesmo que o grupo esvazie. Devolve o texto novo e quantas
-    saíram."""
-    alvos = {s.strip().lower() for s in status_alvo}
-    linhas_novas: list[str] = []
+    `sai(sp_id)` responde se aquela SP deve deixar o lote. É chamada NA ORDEM
+    do texto, de cima para baixo, e pode guardar estado entre as chamadas —
+    é assim que a remoção de duplicados sabe qual ocorrência é a primeira.
+
+    O TÍTULO DE UM GRUPO QUE ESVAZIOU NESTA LIMPEZA VAI JUNTO. Antes ele
+    ficava, e o lote terminava cheio de cabeçalhos sem nada embaixo — "Pagar
+    amanhã" sem uma SP sequer. Pedido do dono em 11/09/2026.
+
+    MAS SÓ QUEM ESVAZIOU AGORA. Um grupo que já estava vazio antes continua:
+    alguém escreveu aquele título de propósito, para encher depois, e apagar o
+    que a pessoa acabou de digitar seria pior do que o cabeçalho sobrando.
+
+    Vive separado porque as três limpezas (pagas, canceladas, duplicadas) têm
+    de tratar o cabeçalho órfão do MESMO jeito. Em três cópias, a terceira
+    nasceria sem a regra — e ninguém notaria até o lote encher de título
+    solto."""
     removidos = 0
 
+    # Primeiro quebra em blocos: cada um é um título (ou nenhum, no começo) e
+    # as linhas de SPs que vêm debaixo dele. Só assim dá para saber se um
+    # título ficou órfão POR CAUSA desta limpeza.
+    blocos: list = [{"titulo": None, "linhas": [], "tinha": 0}]
     for bruta in str(texto or "").split("\n"):
         linha = bruta.strip()
         if not linha:
             continue
         pedacos = [p for p in SEPARADORES.split(linha) if p]
         if pedacos and all(SO_DIGITOS.fullmatch(p) for p in pedacos):
-            mantidos = [p for p in pedacos
-                        if str(status_por_id.get(p, "")).strip().lower() not in alvos]
+            mantidos = [p for p in pedacos if not sai(p)]
             removidos += len(pedacos) - len(mantidos)
+            blocos[-1]["tinha"] += len(pedacos)
             if mantidos:
-                linhas_novas.append(" ".join(mantidos))
+                blocos[-1]["linhas"].append(" ".join(mantidos))
         else:
-            linhas_novas.append(linha)      # título de grupo: sempre fica
+            blocos.append({"titulo": linha, "linhas": [], "tinha": 0})
+
+    linhas_novas: list = []
+    for bloco in blocos:
+        esvaziou_agora = bloco["tinha"] > 0 and not bloco["linhas"]
+        if bloco["titulo"] is not None and not esvaziou_agora:
+            linhas_novas.append(bloco["titulo"])
+        linhas_novas.extend(bloco["linhas"])
 
     return "\n".join(linhas_novas).strip("\n"), removidos
+
+
+def remover_por_status(texto: str, status_alvo: set[str],
+                       status_por_id: dict) -> tuple[str, int]:
+    """Tira do lote as SPs que já estão num determinado status.
+
+    Serve para limpar o que já foi pago ou cancelado. Devolve o texto novo e
+    quantas saíram. O cabeçalho de grupo que esvaziou sai junto — ver
+    `_limpar`."""
+    alvos = {s.strip().lower() for s in status_alvo}
+    return _limpar(
+        texto,
+        lambda sp: str(status_por_id.get(sp, "")).strip().lower() in alvos)
+
+
+def remover_duplicados(texto: str) -> tuple[str, int]:
+    """Tira do lote a SP repetida, guardando a PRIMEIRA aparição.
+
+    Pedido do dono em 11/09/2026, e ele disse qual das cópias fica: *"mantém o
+    registro mais superior, e os que estão mais para baixo no lote remove"*.
+
+    A primeira, e não a última, porque o lote é lido de cima para baixo e o que
+    está em cima é o grupo mais recente — `acrescentar_grupo` põe o novo no
+    topo. Guardar a de baixo mudaria a SP de grupo sem ninguém ter pedido.
+
+    POR QUE A REPETIÇÃO ATRAPALHA, e não é só feiúra: o mesmo número em dois
+    grupos aparece duas vezes na tela, é somado duas vezes no total do lote, e
+    convida a agir duas vezes sobre o mesmo pagamento. Era também o que fazia a
+    marcação reposta pegar a linha errada.
+
+    Devolve o texto novo e quantas cópias saíram — cópias, não SPs: três
+    aparições do mesmo número contam duas."""
+    vistos: set = set()
+
+    def sai(sp: str) -> bool:
+        if sp in vistos:
+            return True
+        vistos.add(sp)
+        return False
+
+    return _limpar(texto, sai)
+
+
+def contar_duplicados(texto: str) -> int:
+    """Quantas cópias sobrando existem no lote, sem mexer em nada.
+
+    A tela usa isto para só oferecer o botão quando há o que remover — um botão
+    que não faz nada quando apertado é pior do que botão nenhum."""
+    vistos: set = set()
+    sobrando = 0
+    for grupo in separar_grupos(texto):
+        for sp in grupo["ids"]:
+            if sp in vistos:
+                sobrando += 1
+            else:
+                vistos.add(sp)
+    return sobrando
 
 
 def remover_ids(texto: str, ids) -> tuple[str, int]:
@@ -188,8 +266,15 @@ def _reserva_ler(pessoa: str) -> dict:
     return preferencias.ler(pessoa, CHAVE_RESERVA)
 
 
-def ler(pessoa: str = "") -> dict:
+def ler(pessoa: str) -> dict:
     """O lote DESTA pessoa, com quem salvou por último e quando.
+
+    A PESSOA NÃO TEM VALOR PADRÃO, e isso é de propósito. Ela tinha, e o padrão
+    era `""` — que significa o LOTE ANTIGO, de quando ele era compartilhado.
+    Duas rotas (a exportação e o PDF) ficaram chamando `ler()` sem argumento
+    quando o lote passou a ser de cada um, e por meses entregaram um lote
+    congelado sem reclamar de nada. Quem quiser mesmo o lote antigo chama
+    `lote_de_antes()`, que diz isso no nome.
 
     Até 04/09/2026 havia um lote só, de todo mundo: quem salvasse depois
     sobrescrevia o trabalho do outro sem aviso. Agora cada um tem o seu — foi
@@ -240,8 +325,11 @@ def ler(pessoa: str = "") -> dict:
             "salvo_em": linha[2], "compartilhado": False}
 
 
-def salvar(conteudo: str, quem: str = "", pessoa: str = "") -> None:
-    """Guarda o lote da pessoa. `quem` é o nome que a tela mostra depois."""
+def salvar(conteudo: str, quem: str, pessoa: str) -> None:
+    """Guarda o lote da pessoa. `quem` é o nome que a tela mostra depois.
+
+    Sem valor padrão pelo mesmo motivo de `ler`: salvar no lote errado é pior
+    do que não salvar, porque ninguém percebe."""
     from .db import conexao
     if not por_pessoa():
         from . import preferencias

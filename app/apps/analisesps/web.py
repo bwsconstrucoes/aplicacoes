@@ -1369,6 +1369,14 @@ def tela_lote():
             conteudo, quantos = lote.remover_por_status(conteudo, alvo, status)
             rotulo = "paga(s)" if acao == "remover_pagos" else "cancelada(s)"
             aviso = f"{quantos} SP(s) {rotulo} saíram do lote."
+        elif acao == "remover_duplicados":
+            # O mesmo número em dois grupos aparece duas vezes na tela e é
+            # somado duas vezes no total. Fica a PRIMEIRA aparição, como o dono
+            # pediu: "mantém o registro mais superior".
+            conteudo, quantos = lote.remover_duplicados(conteudo)
+            aviso = (f"{quantos} repetição(ões) saíram do lote — ficou a "
+                     "primeira aparição de cada SP."
+                     if quantos else "Não havia nenhuma SP repetida no lote.")
 
         lote.salvar(conteudo, quem, pessoa)
         return redirect(url_for("analisesps.tela_lote", aviso=aviso or ""))
@@ -1421,6 +1429,10 @@ def tela_lote():
         "analisesps_lote.html",
         aba="lote", base=base, lote=guardado, montado=montado, antes=antes,
         outras_pessoas=outras,
+        # Quantas cópias sobrando há. O botão de remover duplicados só aparece
+        # quando existe o que remover — botão que não faz nada quando apertado
+        # é pior do que botão nenhum.
+        duplicados=lote.contar_duplicados(guardado["conteudo"]),
         colunas=_colunas_da_pessoa(), todas_colunas=_TODAS_COLUNAS(),
         painel=painel,
         aviso=request.args.get("aviso") or None,
@@ -1748,7 +1760,12 @@ def tela_bradesco():
     colado = ""
     resultado = None
     erro = None
-    foco = request.form.get("foco", "1") == "1"
+    # A CAIXINHA DESMARCADA NÃO CHEGA NO FORMULÁRIO — é assim que o HTML
+    # funciona. Com `.get("foco", "1")` o padrão "1" entrava justamente quando
+    # a pessoa DESMARCAVA, e o foco nunca desligava. No GET (primeira visita)
+    # ele deve vir ligado; no POST vale o que a caixinha diz.
+    foco = (request.form.get("foco") == "1" if request.method == "POST"
+            else True)
 
     if request.method == "POST":
         colado = request.form.get("extrato", "")
@@ -2128,8 +2145,13 @@ def exportar_lote():
     # lido lá dentro do gerador, o cabeçalho já teria saído com HTTP 200 e a
     # pessoa receberia um arquivo pela metade, sem erro nenhum — pior do que
     # uma mensagem.
+    # A PESSOA TEM DE SER PASSADA. Sem ela, `ler` devolvia o lote de
+    # `pessoa = ''` — que é o LOTE ANTIGO, de quando ele era um só e
+    # compartilhado, congelado desde a migração 003. Era isso que fazia a
+    # exportação e o PDF saírem desatualizados por mais que a pessoa salvasse
+    # o lote dela. Reportado pelo dono em 11/09/2026.
     try:
-        montado = lote.montar(lote.ler()["conteudo"])
+        montado = lote.montar(lote.ler(auth.pessoa_atual())["conteudo"])
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou montar o lote para exportar")
         return render_template(
@@ -2197,8 +2219,9 @@ def lote_pdf():
     from . import lote, pdf
     from .horario import agora
 
+    # Ver o comentário em `exportar_lote`: sem a pessoa, sai o lote antigo.
     try:
-        montado = lote.montar(lote.ler()["conteudo"])
+        montado = lote.montar(lote.ler(auth.pessoa_atual())["conteudo"])
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou montar o lote para o PDF")
         return render_template(

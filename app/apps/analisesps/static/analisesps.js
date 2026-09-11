@@ -204,6 +204,11 @@ const LEMBRAR = {
   if (!barra) return;
 
   const marcas = () => Array.from(document.querySelectorAll("input.marca"));
+
+  // O que identifica a linha para a memoria da marcacao. No Lote e a chave da
+  // linha (grupo + posicao + SP), porque la a mesma SP pode aparecer duas
+  // vezes; nas Solicitacoes nao ha chave e vale o numero, que ja e unico.
+  const chaveDaLinha = c => c.dataset.chave || c.value;
   const marcadas = () => marcas().filter(c => c.checked);
 
   const moeda = v => v.toLocaleString("pt-BR",
@@ -221,6 +226,26 @@ const LEMBRAR = {
           : sel.length + (sel.length === 1 ? " SP marcada" : " SPs marcadas");
     }
     if (valor) valor.textContent = moeda(total);
+
+    // O TOTAL POR CONTA do que está marcado. É por conta que o dinheiro sai,
+    // então é este número que diz se a remessa cabe — o total geral só diz se
+    // ela é grande. Ordenado do maior para o menor: com seis contas, a que
+    // importa é a que concentra.
+    const contas = document.getElementById("ba-contas");
+    if (contas) {
+      const soma = new Map();
+      sel.forEach(c => {
+        const nome = (c.dataset.conta || "").trim() || "(sem conta)";
+        soma.set(nome, (soma.get(nome) || 0)
+                 + (parseFloat(c.dataset.valor || "0") || 0));
+      });
+      const partes = Array.from(soma.entries()).sort((a, b) => b[1] - a[1]);
+      contas.textContent = partes
+          .map(([nome, v]) => nome + ": " + moeda(v)).join("  ·  ");
+      // Uma conta só não acrescenta nada ao total que já está acima.
+      contas.hidden = partes.length < 2;
+    }
+
     barra.classList.toggle("tem-selecao", sel.length > 0);
 
     marcas().forEach(c => c.closest("tr").classList.toggle("marcada", c.checked));
@@ -243,7 +268,11 @@ const LEMBRAR = {
     // E guarda o que está marcado, para a volta a esta tela trazer tudo de
     // novo. Vazio é apagado em vez de guardado: uma lista vazia guardada
     // sobrescreveria a marcação de uma volta anterior.
-    if (sel.length) LEMBRAR.gravar("marcadas", sel.map(c => c.value));
+    //
+    // GUARDA A CHAVE DA LINHA, NAO O NUMERO DA SP. No Lote a mesma SP pode
+    // estar em dois grupos, e guardar o numero fazia a volta marcar as duas -
+    // o dono relatou em 11/09/2026: "esta bagunçando".
+    if (sel.length) LEMBRAR.gravar("marcadas", sel.map(chaveDaLinha));
     else LEMBRAR.esquecer("marcadas");
   }
 
@@ -253,7 +282,7 @@ const LEMBRAR = {
     const querem = new Set(guardadas);
     let repostas = 0;
     marcas().forEach(c => {
-      if (querem.has(c.value)) { c.checked = true; repostas += 1; }
+      if (querem.has(chaveDaLinha(c))) { c.checked = true; repostas += 1; }
     });
     // A barra do alto mostra quantas e quanto somam — então a marcação
     // reposta nunca é invisível, e nenhum botão age sobre ela sem confirmar.
@@ -280,11 +309,29 @@ const LEMBRAR = {
     return ids;
   }
 
+  // AGIR SOBRE A SELECAO APAGA A MEMORIA DELA.
+  //
+  // A memoria existe para quem SAI da tela e VOLTA: o filtro, a rolagem e as
+  // caixinhas voltam como estavam. Mas depois de uma acao a tela recarrega, e
+  // repor a marcacao fazia as SPs voltarem marcadas DEPOIS de ja terem sido
+  // tratadas. O dono reportou em 11/09/2026: "sao reaplicadas selecoes que ja
+  // desmarquei; nao pode retroagir".
+  //
+  // E nao e so incomodo: uma marcacao que reaparece sozinha convida a agir
+  // duas vezes sobre a mesma SP - agendar de novo, mandar ao lote de novo.
+  //
+  // A tela de QR NAO chama isto de proposito: ela nao altera nada, so abre
+  // outra tela, e quem volta de la quer a selecao inteira de volta.
+  function selecaoConsumida() {
+    try { LEMBRAR.esquecer("marcadas"); } catch (e) { /* aba anonima */ }
+  }
+
   // --- Alterar coluna (status de pagamento e agendamento) ------------------
   barra.querySelectorAll("button[data-coluna]").forEach(botao => {
     botao.addEventListener("click", async () => {
       const ids = idsMarcados();
       if (!ids) return;
+      selecaoConsumida();
       const rotulo = botao.dataset.rotulo || botao.textContent.trim();
       const valor = botao.dataset.valor || "";
       const efeito = valor === ""
@@ -359,6 +406,7 @@ const LEMBRAR = {
   if (btnLote) btnLote.addEventListener("click", async () => {
     const ids = idsMarcados();
     if (!ids) return;
+    selecaoConsumida();
     btnLote.disabled = true;
     try {
       const r = await fetch(barra.dataset.urlEnviarLote, {
@@ -401,6 +449,7 @@ const LEMBRAR = {
   if (btnValidar) btnValidar.addEventListener("click", async () => {
     const ids = idsMarcados();
     if (!ids) return;
+    selecaoConsumida();
     const senha = prompt(`Validar ${ids.length} SP(s) — marca Validação = "Sim".`
                          + `\n\nSenha de validação:`);
     if (senha === null) return;
@@ -425,6 +474,7 @@ const LEMBRAR = {
   if (btnRemover) btnRemover.addEventListener("click", () => {
     const ids = idsMarcados();
     if (!ids) return;
+    selecaoConsumida();
     if (!confirm(`Tirar ${ids.length} SP(s) do lote.\n\nIsto mexe só na sua `
                  + `lista — não altera nada na planilha nem no Pipefy. `
                  + `Confirma?`)) return;
