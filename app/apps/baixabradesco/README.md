@@ -81,11 +81,14 @@ resolver ganha:
 1. **O número da SP escrito no comprovante** (o campo "Descrição"). É o caminho
    mais confiável. Um cuidado: o QR Code do Pix começa com `000201` e já foi
    confundido com número de SP — números assim são ignorados de propósito.
-2. **Depósito da Somapay** (rescisão paga direto da conta Somapay): pelo **CPF
+2. **Depósito da Somapay** (rescisão paga direto da conta Somapay): pelo **nome
    de quem recebeu + valor exato**. Esse comprovante é emitido pela própria
-   Somapay e não traz o número da SP nem a conta da empresa. Havendo duas SPs da
-   mesma pessoa com o mesmo valor, desempata a que é verba rescisória; se ainda
-   assim empatar, não executa.
+   Somapay e não traz o número da SP nem a conta da empresa.
+   ⚠️ **Por que o nome e não o CPF:** numa SP de rescisão o credor é a
+   **empresa**, e a coluna CPF/CNPJ traz o CNPJ dela — não o do funcionário.
+   Quem identifica a pessoa é o nome escrito na descrição, no formato
+   "TRCT <NOME>". E o valor sozinho não serve: em 09/09/2026 havia **quatro**
+   rescisões de R$ 452,40, de quatro pessoas diferentes.
 3. **Somapay via transferência** (o dinheiro sai do Bradesco para a Somapay):
    por valor, entre as SPs a pagar e agendadas, e só para despesas de rescisão,
    férias, gratificação ou participação nos lucros. ⚠️ **Este caminho está

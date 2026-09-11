@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from app.apps.baixabradesco.matcher import match_receipt, match_cpf_valor
+from app.apps.baixabradesco.matcher import match_receipt, match_nome_valor
 from app.apps.baixabradesco.models import BankAccount, SpRecord
 from app.apps.baixabradesco.parser_bradesco import parse_bradesco_text
 from app.apps.baixabradesco.sheets import find_somapay_account
@@ -33,9 +33,18 @@ def comprovante():
 
 
 def sp(**kwargs):
+    """Uma SP de rescisão como ela é DE VERDADE na SPsBD.
+
+    Conferido contra a planilha real em 11/09/2026: o credor é a EMPRESA, a
+    coluna CPF/CNPJ traz o CNPJ dela, e o nome do funcionário aparece só na
+    descrição, no formato "TRCT <NOME>".
+    """
     base = dict(
-        row_number=2, id='7001', nome_credor='JOAO DA SILVA EXEMPLO',
-        cpf_cnpj='123.456.789-09', valor_total='452,40',
+        row_number=2, id='7001',
+        nome_credor='BWS CONSTRUÇÕES LTDA',
+        cpf_cnpj='00.079.526/0001-09',
+        descricao='Conta Origem: 50024-0  TRCT JOAO DA SILVA EXEMPLO',
+        valor_total='452,40',
         status_pgt='Pagar', status_agendamento='agendado',
         raw={'Tipo de Despesa': 'Rescisões e Indenizações Trabalhistas'},
     )
@@ -75,44 +84,56 @@ def test_o_comprovante_nao_traz_numero_de_sp(comprovante):
 
 # ── O casamento por CPF + valor ───────────────────────────────────────────────
 
-def test_casa_pelo_cpf_e_valor(comprovante):
+def test_casa_pelo_nome_e_valor(comprovante):
     resultado = match_receipt(comprovante, {'7001': sp()}, [])
     assert resultado.status == 'localizado'
     assert resultado.id == '7001'
-    assert resultado.metodo == 'somapay_deposito_cpf_valor'
+    assert resultado.metodo == 'somapay_deposito_nome_valor'
 
 
 def test_cpf_certo_e_valor_diferente_nao_casa(comprovante):
-    assert match_cpf_valor(comprovante, [sp(valor_total='500,00')]) == []
+    assert match_nome_valor(comprovante, [sp(valor_total='500,00')]) == []
 
 
-def test_valor_certo_e_cpf_de_outra_pessoa_nao_casa(comprovante):
-    assert match_cpf_valor(comprovante, [sp(cpf_cnpj='987.654.321-00')]) == []
+def test_valor_certo_e_outra_pessoa_na_descricao_nao_casa(comprovante):
+    outra = sp(descricao='Conta Origem: 50024-0  TRCT MARIA DE SOUZA EXEMPLO')
+    assert match_nome_valor(comprovante, [outra]) == []
 
 
 def test_sp_ja_paga_nao_e_baixada_de_novo(comprovante):
-    assert match_cpf_valor(comprovante, [sp(status_pgt='Pago')]) == []
+    assert match_nome_valor(comprovante, [sp(status_pgt='Pago')]) == []
 
 
 def test_falhaagendar_tambem_casa(comprovante):
     """Agendamento que falhou costuma virar pagamento na mão — é justamente o
     caso deste comprovante."""
-    achados = match_cpf_valor(comprovante, [sp(status_agendamento='falhaagendar')])
+    achados = match_nome_valor(comprovante, [sp(status_agendamento='falhaagendar')])
     assert [r.id for r in achados] == ['7001']
 
 
-def test_o_cpf_casa_com_a_planilha_em_qualquer_formatacao(comprovante):
-    """Na planilha o CPF pode estar com ponto, sem ponto ou com zero à esquerda."""
-    for escrito in ('123.456.789-09', '12345678909', '123456789-09'):
-        achados = match_cpf_valor(comprovante, [sp(cpf_cnpj=escrito)])
+def test_o_cpf_tambem_casa_quando_a_planilha_o_traz(comprovante):
+    """Algumas abas trazem o CPF do funcionário. A planilha guarda como NÚMERO,
+    então os zeros da frente se perdem: 123.456.789-09 vira 12345678909, e um
+    CPF começando com zero vira mais curto ainda. A comparação devolve os
+    zeros."""
+    sem_nome = dict(descricao='TRCT OUTRA PESSOA QUALQUER')
+    for escrito in ('123.456.789-09', '12345678909'):
+        achados = match_nome_valor(comprovante, [sp(cpf_cnpj=escrito, **sem_nome)])
         assert [r.id for r in achados] == ['7001'], escrito
+
+
+def test_cpf_com_zero_na_frente_nao_se_perde():
+    """O caso real: 008.115.554-96 está na planilha como 811555496."""
+    from app.apps.baixabradesco.matcher import _cpf_normalizado
+    assert _cpf_normalizado('811555496') == _cpf_normalizado('008.115.554-96')
+    assert _cpf_normalizado('008.115.554-96') == '00811555496'
 
 
 def test_duas_sps_da_mesma_pessoa_e_mesmo_valor_ficam_pendentes(comprovante):
     """Sem desempate possível, não executa: conferência humana."""
     duas = {
-        '7001': sp(id='7001', raw={'Tipo de Despesa': 'Rescisões e Indenizações Trabalhistas'}),
-        '7002': sp(id='7002', raw={'Tipo de Despesa': 'Rescisões e Indenizações Trabalhistas'}),
+        '7001': sp(id='7001'),
+        '7002': sp(id='7002'),
     }
     resultado = match_receipt(comprovante, duas, [])
     assert resultado.status == 'pendente_validacao'
@@ -121,7 +142,7 @@ def test_duas_sps_da_mesma_pessoa_e_mesmo_valor_ficam_pendentes(comprovante):
 def test_desempate_pela_verba_rescisoria(comprovante):
     """Mesma pessoa, mesmo valor: fica a SP de rescisão, que é o que o papel prova."""
     duas = {
-        '7001': sp(id='7001', raw={'Tipo de Despesa': 'Rescisões e Indenizações Trabalhistas'}),
+        '7001': sp(id='7001'),
         '7002': sp(id='7002', raw={'Tipo de Despesa': 'Material de Construção'}),
     }
     resultado = match_receipt(comprovante, duas, [])
@@ -210,7 +231,7 @@ def plano_para(comprovante, banco):
     registro = sp()
     return ExecutionPlan(
         receipt=comprovante,
-        match=MatchResult(status='localizado', metodo='somapay_deposito_cpf_valor',
+        match=MatchResult(status='localizado', metodo='somapay_deposito_nome_valor',
                           id=registro.id, sp=registro),
         banco=banco,
     )
@@ -311,3 +332,34 @@ def test_o_deposito_somapay_nao_depende_da_conta_de_debito(comprovante):
     """O papel emitido pela Somapay não tem conta do Bradesco — e não precisa."""
     assert comprovante.conta_origem == ''
     assert comprovante.tipo_comprovante == 'somapay_deposito'
+
+
+def test_quatro_rescisoes_do_mesmo_valor_e_o_nome_que_decide(comprovante):
+    """A situação real de 09/09/2026: quatro pessoas diferentes, R$ 452,40 cada.
+
+    Se o casamento fosse só por valor, o robô teria quatro candidatas e baixaria
+    a errada — ou pararia sempre. O nome do funcionário, que vem escrito na
+    descrição da SP, resolve.
+    """
+    quatro = {
+        '7001': sp(id='7001', descricao='Conta Origem: 50024-0  TRCT JOAO DA SILVA EXEMPLO'),
+        '7002': sp(id='7002', descricao='Conta Origem: 50024-0  TRCT JONES EXEMPLO DE BARROS'),
+        '7003': sp(id='7003', descricao='Conta Origem: 50024-0  TRCT CRISTIANO EXEMPLO DE ALMEIDA'),
+        '7004': sp(id='7004', descricao='Conta Origem: 50024-0  TRCT MARCOS EXEMPLO DE MEDEIROS'),
+    }
+    resultado = match_receipt(comprovante, quatro, [])
+    assert resultado.status == 'localizado'
+    assert resultado.id == '7001'
+
+
+def test_a_sp_de_rescisao_nao_tem_o_cpf_do_funcionario(comprovante):
+    """Registra o formato real, que foi o que derrubou a primeira versão.
+
+    A SP traz o CNPJ da empresa. Uma regra que exigisse o CPF do funcionário
+    nunca casaria nada — e o comprovante ficaria parado para sempre.
+    """
+    registro = sp()
+    assert registro.cpf_cnpj == '00.079.526/0001-09'
+    assert comprovante.documento_recebedor != '00079526000109'
+    achados = match_nome_valor(comprovante, [registro])
+    assert [r.id for r in achados] == ['7001']

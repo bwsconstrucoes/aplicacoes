@@ -181,6 +181,22 @@ três foram tratadas em 04/09/2026:
   máquina toda existe, mas o leitor nunca marca comprovante como sendo desse
   tipo. Não foi ligado porque não havia exemplo desse comprovante em mãos.
 
+- **11/09/2026 — a planilha de verdade derrubou a regra do CPF, ainda no ramo.**
+  A primeira versão do depósito Somapay casava a SP pelo **CPF do funcionário**.
+  Com acesso à SPsBD pelo conector do Google, ficou claro que ela **nunca teria
+  funcionado**: numa SP de rescisão o credor é a **empresa**, e a coluna
+  CPF/CNPJ traz o CNPJ dela. O nome do funcionário aparece só na descrição, no
+  formato `Conta Origem: 50024-0  TRCT <NOME>`.
+  **Como ficou:** casamento por **nome do beneficiário + valor exato**, com o
+  CPF aceito como sinal extra quando a aba o traz. O valor sozinho não serve —
+  em 09/09/2026 havia quatro rescisões de R$ 452,40, de quatro pessoas.
+  **Segundo achado:** a planilha guarda CPF como **número**, então
+  008.115.554-96 vira `811555496` e perde os zeros da frente. Qualquer
+  comparação de CPF devolve os zeros antes de comparar.
+  **Lição que vale para a área inteira:** regra de casamento escrita sem olhar o
+  dado real é chute com cara de engenharia. O conector do Google resolve isso —
+  ver a limitação dele abaixo.
+
 ## O que ficou de fora, e é bom saber
 
 - **Comprovante sem número de SP e sem casamento fica parado** como
@@ -260,3 +276,32 @@ dono mostrou.
 
 **Não verificado:** nada disso passou por um comprovante de verdade em
 produção.
+
+### 11/09/2026 (tarde) — acesso às planilhas, e o que ele mostrou
+
+O dono perguntou como dar acesso às planilhas. **O conector do Google Drive do
+Claude já está ligado** e foi usado nesta sessão: a BaseBancos foi lida inteira,
+e a SPsBD foi lida em parte.
+
+**A limitação, que precisa ficar registrada:** a SPsBD tem ~52 mil linhas e o
+conector devolveu **65 linhas** da aba principal. Serve para conferir formato,
+nomes de coluna e amostras — **não serve para procurar um registro** no meio das
+52 mil. Para busca de verdade, quem tem a chave é o próprio robô (conta de
+serviço), pela rota de diagnóstico.
+
+Mesmo truncada, a leitura pagou: derrubou a regra do CPF (acima) e mostrou o
+formato real da SP de rescisão.
+
+**Sobre o comprovante de transferência Bradesco → Somapay**, que o dono mandou:
+duas transferências PIX de 11/09/2026, da conta Bradesco 50024-0. A **chave PIX
+impressa no comprovante é exatamente a chave cadastrada na BaseBancos para a
+conta `Somapay BWS - 22005-1`**. É o identificador exato que faltava: ele diz
+que o dinheiro foi para a Somapay **e qual** das três contas, sem heurística
+nenhuma. É o que deve substituir a regra antiga de "se a conta contém 2541".
+
+**Em aberto, e é o que trava o caminho da transferência:** uma transferência
+corresponde a UMA SP ou a um lote? Das duas do comprovante, R$ 8.128,17 bate
+exatamente com uma rescisão (TRCT DIOGENES DAVID DA SILVA); R$ 7.350,48 **não
+bate com nenhuma** das que deu para ler, nem com soma de rescisões daquele dia.
+Pode ser truncamento da leitura, pode ser lote. Sem essa resposta, casar
+transferência por valor é chute.

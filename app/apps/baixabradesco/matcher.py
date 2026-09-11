@@ -23,12 +23,12 @@ def match_receipt(receipt: ExtractedReceipt, sps_index: Dict[str, SpRecord], sps
         # Pagamento feito direto da conta Somapay (rescisão depositada na conta
         # do funcionário). O papel não traz o número da SP, então o casamento é
         # por CPF do beneficiário + valor.
-        cands = match_cpf_valor(receipt, list(sps_index.values()))
+        cands = match_nome_valor(receipt, list(sps_index.values()))
         if not cands:
-            cands = match_cpf_valor(receipt, sps_agendar)
+            cands = match_nome_valor(receipt, sps_agendar)
         return _result_from_candidates(
-            cands, 'somapay_deposito_cpf_valor',
-            'Depósito Somapay localizado por CPF do beneficiário + valor.')
+            cands, 'somapay_deposito_nome_valor',
+            'Depósito Somapay localizado pelo nome do beneficiário + valor.')
 
     if receipt.tipo_comprovante == 'beevale':
         # BeeVale deve procurar na SPsBD completa, pois quando o comprovante chega
@@ -245,29 +245,45 @@ def match_valor_conta_agendado(receipt: ExtractedReceipt, records: List[SpRecord
 
     return out
 
-def match_cpf_valor(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
-    """Casa pelo CPF/CNPJ de quem recebeu + valor exato.
+def _cpf_normalizado(valor: str) -> str:
+    """CPF/CNPJ só com números e com os zeros da frente de volta.
 
-    Usado quando o comprovante não traz o número da SP e nem a conta de débito
-    da empresa — caso do depósito emitido pela própria Somapay. O CPF é a
-    informação forte: sozinho ele já restringe a uma pessoa, e com o valor
-    exato a chance de casar com a SP errada é remota.
+    A planilha guarda o CPF como NÚMERO, então 008.115.554-96 vira 811555496 e
+    perde os dois zeros. Comparar sem devolver os zeros nunca casa.
+    """
+    doc = only_digits(valor or '')
+    if not doc:
+        return ''
+    if len(doc) <= 11:
+        return doc.zfill(11)
+    return doc.zfill(14)
 
-    Filtros de status são aplicados só quando a coluna vem preenchida: a
-    SPsAgendar não carrega Status Pgt, e exigi-lo ali descartaria tudo.
+
+def match_nome_valor(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[SpRecord]:
+    """Casa pelo NOME de quem recebeu + valor exato.
+
+    Numa SP de rescisão, o credor é a EMPRESA e a coluna CPF/CNPJ traz o CNPJ
+    dela — não o do funcionário. Quem identifica a pessoa é o nome escrito na
+    descrição da despesa, no formato "TRCT <NOME>". Conferido contra a SPsBD
+    real em 11/09/2026.
+
+    O valor sozinho não serve: no mesmo dia havia QUATRO rescisões de R$ 452,40,
+    de quatro pessoas diferentes. É o nome que decide.
+
+    O CPF ainda é aceito quando a planilha o traz — algumas abas trazem —, mas
+    não é exigido.
     """
     valor = money_to_decimal(receipt.valor_pago)
     if valor is None:
         return []
 
-    doc = only_digits(receipt.documento_recebedor or '')
-    if len(doc) not in (11, 14):
+    nome = normalize_text(receipt.nome_recebedor or '')
+    doc = _cpf_normalizado(receipt.documento_recebedor)
+    if not nome and not doc:
         return []
 
     out = []
     for r in records:
-        if only_digits(r.cpf_cnpj or '') != doc:
-            continue
         if money_to_decimal(r.valor_total) != valor:
             continue
         if r.status_pgt and normalize_compact(r.status_pgt) != 'pagar':
@@ -275,10 +291,14 @@ def match_cpf_valor(receipt: ExtractedReceipt, records: List[SpRecord]) -> List[
         if (r.status_agendamento and normalize_compact(r.status_agendamento)
                 not in {'agendar', 'agendado', 'falhaagendar'}):
             continue
-        out.append(r)
 
-    # Desempate: entre SPs da mesma pessoa e mesmo valor, fica a que é de
-    # verba rescisória — que é o que este comprovante prova.
+        por_cpf = bool(doc) and _cpf_normalizado(r.cpf_cnpj) == doc
+        texto_sp = normalize_text(f'{r.descricao} {r.nome_credor} {r.info_pgt}')
+        por_nome = bool(nome) and nome in texto_sp
+        if por_cpf or por_nome:
+            out.append(r)
+
+    # Desempate: entre candidatas iguais, fica a que é de verba rescisória.
     if len(out) > 1:
         tipos_ok = {normalize_compact(t) for t in SOMAPAY_TIPOS_DESPESA}
         filtrados = [
