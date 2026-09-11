@@ -95,6 +95,84 @@ Futura e Não Dedutível**; todo o resto é "Documentação OK". Duas opções d
 estavam nessa tabela — **BeeVale e Férias ou PL** —, e o dono respondeu em
 11/09: as duas são **dedutíveis**, assim como Rescisões.
 
+## A CORREÇÃO DE 11/09 QUE MUDOU O MIOLO: a nota é o balizador
+
+Foi proposto ao dono apontar como divergência o caso "tipo de despesa é
+Material Elétrico mas está classificado como Não Dedutível". **Ele recusou, e
+com razão:**
+
+> *"Categoria de despesa não vai ser regra para dedutibilidade ou não, porque
+> você pode comprar um material elétrico sem nota fiscal. Então nesse caso vai
+> ser não dedutível. O fato de ter a nota fiscal é que vai ser o balizador.
+> A simples divergência de material elétrico nem adianta mostrar."*
+
+**O que decide é a EXISTÊNCIA DA NOTA, não o tipo de despesa.** A regra tirada
+do histórico dele continua útil, mas num papel bem menor do que se pensava.
+
+### E a categoria não precisa ser adivinhada: ela está DENTRO da chave
+
+Os dígitos 21 e 22 da chave de acesso são o **modelo do documento**, por
+definição da Receita. Conferido nas chaves reais da planilha do dono:
+
+| Chave | Modelo | Categoria |
+|---|---|---|
+| `...0724`**`55`**`2070...` | 55 | NF-e (Mercadoria) |
+| `...0152`**`55`**`0100...` | 55 | NF-e (Mercadoria) |
+| `...1889`**`57`**`0010...` | 57 | CT-e (Frete) |
+
+Nos dois primeiros, é exatamente o que o dono classificou à mão. **Achada a
+nota, a categoria é CERTEZA, não sugestão.**
+
+### O papel que sobra para o tipo de despesa
+
+Só quando **não há nota**, e só para as despesas que **nunca têm nota
+eletrônica**: aluguel é Contrato, veículo é Seguros, água e energia e locação
+são Nota de Débito/Fatura, cartório é Taxas Diversas. **Fora dessas, sem nota
+é Ausente ou Não Dedutível** — e sugerir "NF-e" por ser material seria
+justamente o erro que o dono apontou.
+
+### Um achado que nasceu escrevendo os testes
+
+Quando o card **tem chave** mas a nota **não veio no relatório do FSist**, ainda
+dá para conferir alguma coisa **sem o relatório do FSist**: o CNPJ de quem
+emitiu está dentro da própria chave (dígitos 7 a 20). Se ele não é o do credor
+da SP, a chave veio de outro lançamento — a troca de anexo detectada sem
+depender de achar a nota certa.
+
+Quando o CNPJ bate, o caso é o normal: o relatório cobre um período, e nota
+antiga fora dele não é erro de ninguém. A tela diz isso e não acusa.
+
+### O que o sistema aponta, então
+
+Só o que a nota sustenta:
+
+| Situação | Por que é achado |
+|---|---|
+| Está como Não Dedutível / Ausente / Aguardando Nota **e a nota foi achada** | **É a correção que vale.** A nota é a prova |
+| Está como Emissão Futura e a nota **apareceu agora** | Era antecipado; a nota saiu |
+| Está como NF-e mas **não há chave nem nota achada** | Classificado sem documento |
+| A chave do card **não bate** com a SP (valor ou emitente) | Provável troca de nota entre lançamentos |
+| **A mesma nota em duas SPs** | Ou é parcelamento, ou é erro |
+| **Nota no FSist sem lançamento** | A visão que fecha com a contabilidade |
+| **Nota cancelada** em SP paga | O mais grave |
+
+**NÃO entra na lista:** tipo de despesa discordando da categoria. Foi
+explicitamente recusado pelo dono.
+
+### E ele decidiu: PROPOR, não só apontar
+
+Onde a nota foi achada, o sistema chega com a correção pronta e a pessoa
+aprova em bloco. Com duas salvaguardas ditas na frente:
+
+1. **Duas pilhas separadas.** O que não tem dúvida vem marcado para aprovação
+   em bloco; o que tem dúvida **não vem marcado** e é decidido um a um.
+2. **O motivo escrito em cada linha**, para discordar dar tão pouco trabalho
+   quanto concordar.
+
+> **O risco de propor, dito na frente:** se vinte e oito de trinta estão
+> sempre certas, na terceira semana ninguém confere mais — é o mesmo olho
+> cansado, só que mais rápido. As duas pilhas existem por causa disso.
+
 ## O ERP, e por que isto não pode ser feito duas vezes
 
 O ERP **já está construindo o cruzamento de notas** (migração 044, ditada pelo

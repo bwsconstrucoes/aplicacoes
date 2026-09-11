@@ -1577,6 +1577,86 @@ alteram alguma coisa chamam isso; a tela de QR **não**, de propósito — ela n
 altera nada, só abre outra tela, e quem volta de lá quer a seleção inteira de
 volta. Há teste para as duas coisas.
 
+### Vigésima quinta leva (11/09) — as críticas da conciliação fiscal
+
+A conciliação já sabia **casar** nota com lançamento (24ª leva). Esta leva é a
+outra metade: decidido o par, **o que se faz com ele**. É a regra de negócio da
+tela nova de Documentação Fiscal, escrita e travada em teste antes de existir
+tela — porque é aqui que mora o risco, não no desenho.
+
+**A correção do dono que reescreveu o miolo.** Foi proposto apontar como
+divergência o caso "o tipo de despesa é Material Elétrico, mas o card está como
+Não Dedutível". Ele recusou:
+
+> *"Categoria de despesa não vai ser regra para dedutibilidade ou não, porque
+> você pode comprar um material elétrico sem nota fiscal. Então nesse caso vai
+> ser não dedutível. O fato de ter a nota fiscal é que vai ser o balizador.
+> A simples divergência de material elétrico nem adianta mostrar."*
+
+Ele está certo, e isso derrubou uma regra inteira que já estava escrita aqui: a
+que sugeria categoria **por palavra** no tipo de despesa ("material" → NF-e).
+Sugerir NF-e para uma compra feita sem nota é propor dedução de despesa que não
+dá dedução — o erro exato que ele apontou. **A regra foi removida, e um teste
+guarda a remoção**: se alguém a reintroduzir, a suíte quebra citando a frase
+dele. Conferido que o teste falha quando a regra volta.
+
+**O que sobrou para o tipo de despesa, e só isso:** as sete despesas que
+**nunca** têm nota eletrônica — aluguel tem contrato, veículo tem apólice, água
+e energia têm fatura, cartório tem taxa. Nessas, e apenas quando nenhuma nota
+foi encontrada, ele diz qual documento procurar. Fora delas, sem nota o sistema
+**cala**.
+
+**E a categoria não precisa mais ser adivinhada: ela está DENTRO da chave.** Os
+dígitos 21 e 22 da chave de acesso são o modelo do documento, por definição da
+Receita — 55 é NF-e, 57 é CT-e, 65 é NFC-e. Conferido nas chaves reais da
+planilha do dono, e bate exatamente com o que ele classificou à mão. **Achada a
+nota, a categoria é certeza, não palpite.** É essa diferença que autoriza o
+sistema a propor em lote.
+
+**O que a tela vai apontar, em ordem de urgência:**
+
+| O que | O que o sistema faz |
+|---|---|
+| A nota que está no card está **cancelada** | Aponta como crítico. **Nunca propõe** — pagar contra documento cancelado é decisão de gente |
+| A chave do card **não é desta SP** | Levanta a suspeita de notas trocadas entre dois lançamentos |
+| O card diz "não há nota" e **a nota foi encontrada** | **Propõe a correção**, com a categoria lida da chave |
+| O card afirma NF-e e **não há chave nem nota** | Levanta dúvida — pode ser classificação sem documento, pode ser nota que ainda não veio |
+| Nada encontrado, nada afirmado | Diz que **procurou e não achou** — que é diferente de não ter procurado |
+
+**Duas pilhas, e elas existem por causa de um risco real.** Propor cria fadiga
+de aprovação: se vinte e oito de trinta estão sempre certas, na terceira semana
+ninguém confere mais — é o mesmo olho cansado, só que mais rápido. Por isso o
+que tem dúvida **não vem marcado** e é decidido um a um; só o que não tem dúvida
+nenhuma vai marcado para aprovação em lote.
+
+**Um achado que nasceu escrevendo os testes.** Quando o card tem chave mas a
+nota não veio no relatório do FSist, ainda dá para conferir alguma coisa **sem
+o relatório**: o CNPJ de quem emitiu está dentro da própria chave. Se ele não é
+o do credor da SP, a chave veio de outro lançamento — a troca de anexo
+detectada sem depender de achar a nota certa. Antes disso, esse caso caía num
+"nada a apontar" silencioso.
+
+**A revarredura que o dono pediu está travada em teste:** "Emissão Futura" e
+"Não Dedutível" — e mais cinco categorias de ausência — voltam a ser
+examinadas a cada relatório novo do FSist. A nota que faltava em julho pode
+estar no relatório de setembro, e era justamente esse o caso que ele descreveu.
+
+**A segunda visão também entrou:** as notas emitidas contra a BWS que não estão
+em lançamento nenhum. É ela que fecha com a contabilidade — *"se tem uma nota
+emitida, tem uma despesa para estar associada"*. As canceladas ficam de fora de
+propósito: nota cancelada sem despesa é o esperado, não um achado.
+
+**Verificação.** 4.286 testes verdes com Postgres de verdade (descartável,
+nesta máquina — a produção não é alcançável), 129 pulados. 26 testes novos,
+um por caso. Os dois que guardam decisões do dono foram conferidos **quebrando
+o código de propósito** para provar que mordem. A aplicação sobe com os 18
+blueprints.
+
+**O que NÃO foi feito ainda, e é o próximo passo:** a tela em si. Hoje isto é
+regra sem interface — nada disso aparece para ninguém. Faltam também a gravação
+em lote de volta no Pipefy e a leitura dos anexos por IA, que o dono decidiu
+manter no escopo.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a

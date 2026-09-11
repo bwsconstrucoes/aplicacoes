@@ -204,7 +204,7 @@ def test_todas_as_opcoes_do_pipefy_tem_dedutibilidade_definida():
 
 
 # ---------------------------------------------------------------------------
-# A CATEGORIA SUGERIDA PELO TIPO DE DESPESA
+# A CATEGORIA SUGERIDA PELO TIPO DE DESPESA — e o papel dela é PEQUENO
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("tipo,esperado", [
     ("Veículos (Taxas, Impostos, Multas)", "Seguros"),
@@ -214,14 +214,32 @@ def test_todas_as_opcoes_do_pipefy_tem_dedutibilidade_definida():
     ("Aluguéis e Condomínios", "Contrato"),
     ("Multas e Processos Trabalhistas", "Rescisões (TRCT e Multa)"),
     ("Cartórios, Crea, Taxas", "Taxas Diversas"),
-    ("Material Elétrico", "NF-e (Mercadoria)"),
-    ("Parafusos, Ferragens e Acessórios", "NF-e (Mercadoria)"),
-    ("Ferramentas", "NF-e (Mercadoria)"),
 ])
-def test_a_sugestao_vem_do_historico_do_dono(tipo, esperado):
-    """Não é invenção: na planilha dele, 18 dos 19 tipos de despesa tiveram
-    SEMPRE a mesma categoria. A regra apenas repete o que ele já fazia."""
+def test_so_o_que_NUNCA_tem_nota_eletronica_ganha_sugestao(tipo, esperado):
+    """Aluguel tem contrato, veículo tem apólice, água tem fatura. Para essas
+    despesas não existe nota eletrônica para procurar, então o tipo de despesa
+    é a única pista que sobra — e aí ela vale."""
     assert fiscal.categoria_sugerida(tipo) == esperado
+
+
+@pytest.mark.parametrize("tipo", [
+    "Material Elétrico", "Parafusos, Ferragens e Acessórios", "Ferramentas",
+    "Material Hidráulico",
+])
+def test_despesa_de_mercadoria_NAO_ganha_sugestao_por_palavra(tipo):
+    """A REGRA QUE O DONO DERRUBOU EM 11/09/2026, com todas as letras:
+
+        "Categoria de despesa não vai ser regra para dedutibilidade ou não,
+         porque você pode comprar um material elétrico SEM nota fiscal. Então
+         nesse caso vai ser não dedutível. O FATO DE TER A NOTA FISCAL é que
+         vai ser o balizador. A simples divergência de material elétrico nem
+         adianta mostrar."
+
+    Sugerir "NF-e" para uma compra de material feita sem nota seria propor
+    dedução de despesa que não dá dedução — o erro exato que ele apontou.
+    Material elétrico só vira NF-e quando a NOTA é encontrada, e aí a
+    categoria sai de dentro da chave, não de palpite por palavra."""
+    assert fiscal.categoria_sugerida(tipo) == ""
 
 
 def test_tipo_de_despesa_desconhecido_nao_sugere_nada():
@@ -229,6 +247,36 @@ def test_tipo_de_despesa_desconhecido_nao_sugere_nada():
     card como se fosse decisão."""
     assert fiscal.categoria_sugerida("Alguma Coisa Nova") == ""
     assert fiscal.categoria_sugerida("") == ""
+
+
+# ---------------------------------------------------------------------------
+# A CATEGORIA LIDA DE DENTRO DA CHAVE
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize("modelo,esperado", [
+    ("55", "NF-e (Mercadoria)"),
+    ("57", "CT-e (Frete)"),
+    ("65", "NFC-e (Cupom Fiscal eletrônico)"),
+])
+def test_o_modelo_do_documento_esta_nos_digitos_21_e_22(modelo, esperado):
+    """Os dígitos 21 e 22 da chave SÃO o modelo, por definição da Receita.
+    Conferido nas chaves reais da planilha do dono: as que ele classificou à
+    mão como frete têm 57 ali, e as de mercadoria têm 55.
+
+    É isso que faz a categoria proposta ser CERTEZA e não palpite."""
+    assert fiscal.categoria_da_chave(
+        chave(CREDOR, modelo + "0010000123456789012345")) == esperado
+
+
+def test_chave_que_nao_tem_44_digitos_nao_diz_categoria_nenhuma():
+    """Meia chave não é chave. Ler modelo de uma chave truncada devolveria
+    dois dígitos quaisquer do meio do número."""
+    assert fiscal.categoria_da_chave("123") == ""
+    assert fiscal.categoria_da_chave("") == ""
+
+
+def test_modelo_desconhecido_nao_inventa_categoria():
+    assert fiscal.categoria_da_chave(
+        chave(CREDOR, "990010000123456789012345")) == ""
 
 
 def test_seguros_e_contrato_nao_entram_na_conciliacao():
@@ -476,3 +524,223 @@ def test_aba_de_lancamentos_sem_as_colunas_diz_o_que_encontrou(monkeypatch):
     assert gravadas == []
     aviso = " ".join(resposta["avisos"])
     assert "ID SP" in aviso and "Documento" in aviso
+
+
+# ---------------------------------------------------------------------------
+# AS CRÍTICAS: o que a tela aponta, o que ela PROPÕE, e o que ela CALA
+#
+# As duas pilhas existem por causa de um risco real: se o sistema propõe e
+# quase tudo está certo, em três semanas ninguém confere mais — é o mesmo olho
+# cansado, só que mais rápido. Por isso `propoe` só é verdadeiro quando não há
+# dúvida nenhuma, e cada teste daqui prende UM caso.
+# ---------------------------------------------------------------------------
+def escolha(nota_achada=None, pontos=0, propoe=False, porques=None):
+    """O que `melhor_nota` devolveria, montado à mão para isolar `avaliar`."""
+    return {"nota": nota_achada, "pontos": pontos, "propoe": propoe,
+            "porques": porques or ["o CNPJ do credor é o de quem emitiu a nota"]}
+
+
+def test_nota_do_card_cancelada_e_o_achado_mais_grave():
+    """Despesa paga contra documento que não existe mais. Nunca é proposta:
+    o que fazer com isso é decisão de gente, não correção automática."""
+    a_nota = nota(status="Cancelada")
+    r = fiscal.avaliar(
+        sp(status_pgt="Pago"),
+        {"documentacao": "NF-e (Mercadoria)", "chave": a_nota["chave"]},
+        escolha(a_nota, 85, True))
+    assert r["grupo"] == fiscal.CRITICO
+    assert r["propoe"] is False, "cancelamento não se resolve marcando um card"
+    assert "CANCELADA" in r["motivo"] and "paga" in r["motivo"]
+
+
+def test_nota_cancelada_em_despesa_ainda_nao_paga_tambem_e_critica():
+    a_nota = nota(status="Cancelada")
+    r = fiscal.avaliar(sp(status_pgt="Em aberto"),
+                       {"documentacao": "NF-e (Mercadoria)",
+                        "chave": a_nota["chave"]},
+                       escolha(a_nota, 85, True))
+    assert r["grupo"] == fiscal.CRITICO
+    assert "paga" not in r["motivo"], "não afirmar pagamento que não houve"
+
+
+def test_a_nota_que_ja_esta_no_card_e_confere_nao_vira_tarefa():
+    """O grosso da base está certo. Encher a tela com o que já está em ordem
+    é o jeito mais rápido de fazer a pessoa parar de olhar a tela."""
+    a_nota = nota()
+    r = fiscal.avaliar(sp(), {"documentacao": "NF-e (Mercadoria)",
+                             "chave": a_nota["chave"]},
+                       escolha(a_nota, 90, True))
+    assert r["grupo"] == fiscal.EM_DIA and r["propoe"] is False
+
+
+def test_chave_do_card_diferente_da_nota_que_combina_levanta_a_troca():
+    """O erro que o dono descreveu com essas palavras: "colocar uma nota de um
+    registro para outro". Duas SPs do mesmo fornecedor, os anexos trocados."""
+    outra = nota(chave=chave(CREDOR, "550010000999888777666555"))
+    r = fiscal.avaliar(sp(), {"documentacao": "NF-e (Mercadoria)",
+                             "chave": nota()["chave"]},
+                       escolha(outra, 85, True))
+    assert r["grupo"] == fiscal.DUVIDA
+    assert r["propoe"] is False, "troca de nota se confere a olho, não em lote"
+    assert "trocadas" in r["motivo"]
+
+
+def test_achei_a_nota_e_o_card_diz_que_nao_ha_nota_e_a_correcao_que_vale():
+    """Exatamente o caso que ele descreveu: "colocado algo não dedutível de uma
+    coisa que não foi localizada naquele momento, mas que depois ela surge"."""
+    r = fiscal.avaliar(sp(), {"documentacao": "Não Dedutível"},
+                       escolha(nota(), 85, True))
+    assert r["grupo"] == fiscal.CORRECAO
+    assert r["propoe"] is True
+    assert r["documentacao"] == "NF-e (Mercadoria)"
+    assert r["chave"] == nota()["chave"]
+
+
+def test_a_categoria_proposta_sai_de_dentro_da_chave_nao_de_palpite():
+    """Um frete achado vira CT-e porque os dígitos 21-22 da chave dizem 57 —
+    não porque a palavra "frete" apareceu em algum lugar."""
+    frete = nota(chave=chave(CREDOR, "570010000123456789012345"))
+    r = fiscal.avaliar(sp(tipo_despesa="Material Elétrico"),
+                       {"documentacao": "Ausente"}, escolha(frete, 85, True))
+    assert r["documentacao"] == "CT-e (Frete)"
+
+
+@pytest.mark.parametrize("hoje", [
+    "Ausente", "Não Dedutível", "Reanalisar", "Emissão Futura",
+    "Aguardando Nota (Ilegível)", "Aguardando Nota (Não Anexada)", "",
+])
+def test_a_revarredura_alcanca_todas_as_categorias_de_ausencia(hoje):
+    """"Emissão Futura" e "Não Dedutível" são justamente as que precisam ser
+    revistas quando o relatório novo do FSist chega — a nota que faltava em
+    julho pode estar no relatório de setembro."""
+    r = fiscal.avaliar(sp(), {"documentacao": hoje}, escolha(nota(), 85, True))
+    assert r["grupo"] == fiscal.CORRECAO and r["propoe"] is True
+
+
+def test_nota_encontrada_sem_confianca_nao_e_proposta():
+    """Abaixo da linha de confiança a candidata aparece, mas desmarcada. É a
+    segunda pilha: decidida uma a uma, e não no lote."""
+    r = fiscal.avaliar(sp(), {"documentacao": "Ausente"},
+                       escolha(nota(), 35, False))
+    assert r["grupo"] == fiscal.DUVIDA
+    assert r["propoe"] is False
+    assert r["documentacao"] == "NF-e (Mercadoria)", (
+        "mesmo sem propor, mostrar o que seria — a pessoa decide olhando")
+    assert "certeza" in r["motivo"]
+
+
+def test_card_afirma_nota_eletronica_sem_chave_e_sem_nota_encontrada():
+    """Alguém classificou como NF-e sem documento nenhum, ou a nota ainda não
+    entrou no relatório. As duas hipóteses vão escritas — não se acusa."""
+    r = fiscal.avaliar(sp(), {"documentacao": "NF-e (Mercadoria)"}, escolha())
+    assert r["grupo"] == fiscal.DUVIDA and r["propoe"] is False
+    assert "não há chave" in r["motivo"]
+
+
+def test_despesa_de_mercadoria_sem_nota_NAO_vira_divergencia():
+    """O TESTE QUE GUARDA A CORREÇÃO DO DONO, de 11/09/2026:
+
+        "A simples divergência de material elétrico nem adianta mostrar."
+
+    Material elétrico sem nota é compra sem nota — não dedutível, e correto do
+    jeito que está. Se este teste começar a falhar porque alguém reintroduziu
+    a regra por palavra, é a regra que está errada, não o teste."""
+    r = fiscal.avaliar(sp(tipo_despesa="Material Elétrico"),
+                       {"documentacao": "Não Dedutível"}, escolha())
+    assert r["grupo"] == fiscal.SEM_PAR
+    assert r["documentacao"] == "", "não propor NF-e para compra sem nota"
+    assert r["propoe"] is False
+
+
+def test_o_que_nunca_tem_nota_eletronica_ganha_sugestao_de_documento():
+    """Aqui a sugestão pelo tipo de despesa continua valendo: aluguel não tem
+    NF-e para procurar, tem contrato. E ela vem DESMARCADA."""
+    r = fiscal.avaliar(sp(tipo_despesa="Aluguéis e Condomínios"),
+                       {"documentacao": "Ausente"}, escolha())
+    assert r["grupo"] == fiscal.DUVIDA
+    assert r["documentacao"] == "Contrato"
+    assert r["propoe"] is False
+
+
+def test_sugestao_que_ja_e_o_que_esta_no_card_nao_vira_tarefa():
+    r = fiscal.avaliar(sp(tipo_despesa="Aluguéis e Condomínios"),
+                       {"documentacao": "Contrato"}, escolha())
+    assert r["grupo"] == fiscal.SEM_PAR
+
+
+def test_sem_nota_e_sem_pista_o_sistema_diz_que_procurou():
+    """"Procurei e não achei" é diferente de "não procurei" — e quem lê a tela
+    precisa saber qual dos dois é."""
+    r = fiscal.avaliar(sp(), {}, escolha())
+    assert r["grupo"] == fiscal.SEM_PAR
+    assert "não encontrei" in r["motivo"]
+
+
+def test_chave_no_card_emitida_por_outro_cnpj_e_apontada_sem_o_fsist():
+    """Nem precisa achar a nota certa: o CNPJ de quem emitiu está DENTRO da
+    chave. Se não é o do credor, a chave veio de outro lançamento."""
+    r = fiscal.avaliar(sp(), {"documentacao": "NF-e (Mercadoria)",
+                             "chave": chave("11222333000181")}, escolha())
+    assert r["grupo"] == fiscal.DUVIDA
+    assert "trocadas" in r["motivo"]
+
+
+def test_chave_do_credor_certo_que_nao_veio_no_relatorio_nao_e_acusada():
+    """O relatório do FSist cobre um período. Nota antiga fora dele não é
+    erro de ninguém, e tratar como erro encheria a tela de falso alarme."""
+    r = fiscal.avaliar(sp(), {"documentacao": "NF-e (Mercadoria)",
+                             "chave": chave(CREDOR)}, escolha())
+    assert r["grupo"] == fiscal.EM_DIA
+    assert "FSist" in r["motivo"]
+
+
+def test_a_confianca_vai_junto_para_a_tela():
+    """O número que a pessoa lê para decidir se confere ou se confia."""
+    r = fiscal.avaliar(sp(), {"documentacao": "Ausente"},
+                       escolha(nota(), 85, True))
+    assert r["confianca"] == 85
+
+
+def test_avaliar_aguenta_analise_vazia_e_escolha_vazia():
+    """A SP que nunca passou por aqui é a maioria da base. Estourar nela
+    derrubaria a tela inteira na primeira carga."""
+    r = fiscal.avaliar(sp(), None, None)
+    assert r["grupo"] == fiscal.SEM_PAR and r["propoe"] is False
+
+
+# ---------------------------------------------------------------------------
+# A SEGUNDA VISÃO: as notas que não estão em lançamento nenhum
+#
+# É ela que fecha com a contabilidade. Nas palavras do dono: "se tem uma nota
+# emitida, tem uma despesa para estar associada".
+# ---------------------------------------------------------------------------
+def test_nota_sem_lancamento_aparece():
+    orfa = nota(chave=chave("11222333000181"))
+    saida = fiscal.notas_sem_lancamento([nota(), orfa], {nota()["chave"]})
+    assert [n["chave"] for n in saida] == [orfa["chave"]]
+
+
+def test_a_chave_usada_e_comparada_so_pelos_digitos():
+    """A chave vem do card digitada de mil jeitos — com espaço, com ponto. Se
+    a comparação for literal, a mesma nota aparece como órfã."""
+    suja = " ".join([nota()["chave"][:22], nota()["chave"][22:]])
+    assert fiscal.notas_sem_lancamento([nota()], {suja}) == []
+
+
+def test_nota_cancelada_sem_lancamento_nao_e_achado():
+    """Nota cancelada sem despesa é o esperado, não um problema. Listá-la
+    faria a segunda visão nascer cheia de ruído."""
+    cancelada = nota(chave=chave("11222333000181"), status="Cancelada")
+    assert fiscal.notas_sem_lancamento([cancelada], set()) == []
+
+
+def test_nota_sem_chave_nao_entra_na_lista():
+    """Sem chave não há como ligar a lançamento nenhum depois — listar só
+    geraria uma linha que ninguém consegue resolver."""
+    assert fiscal.notas_sem_lancamento([nota(chave="")], set()) == []
+
+
+def test_sem_nenhuma_chave_usada_todas_as_notas_sao_orfas():
+    """O estado do primeiro dia, antes de qualquer conciliação."""
+    assert len(fiscal.notas_sem_lancamento([nota(), nota(
+        chave=chave("11222333000181"))], set())) == 2

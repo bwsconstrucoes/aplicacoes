@@ -81,14 +81,50 @@ NAO_CONCILIA = {
 }
 
 # ---------------------------------------------------------------------------
-# O QUE O TIPO DE DESPESA DO CARD SUGERE
+# A CATEGORIA VEM DE DENTRO DA CHAVE — não de palpite
 #
-# Tirado do histórico do próprio dono, não inventado: na planilha dele, em 18
-# dos 19 tipos de despesa a categoria escolhida foi SEMPRE a mesma. Serve para
-# PROPOR e poupar o clique — nunca para decidir sozinho, e a tela sempre mostra
-# que foi uma proposta.
+# Os dígitos 21 e 22 da chave de acesso são o MODELO do documento, por
+# definição da Receita. Conferido nas chaves reais da planilha do dono, e bate
+# exatamente com o que ele classificou à mão.
+#
+# Achada a nota, a categoria é CERTEZA. É a diferença entre propor e adivinhar.
 # ---------------------------------------------------------------------------
-CATEGORIA_POR_TIPO_DESPESA = {
+MODELOS = {
+    "55": "NF-e (Mercadoria)",
+    "57": "CT-e (Frete)",
+    "65": "NFC-e (Cupom Fiscal eletrônico)",
+}
+
+
+def categoria_da_chave(chave: str) -> str:
+    """A categoria do documento, lida de dentro da própria chave."""
+    digitos = so_digitos(chave)
+    if len(digitos) != 44:
+        return ""
+    return MODELOS.get(digitos[20:22], "")
+
+
+# ---------------------------------------------------------------------------
+# O QUE O TIPO DE DESPESA SUGERE — e o papel dele é PEQUENO
+#
+# A proposta inicial era usar o tipo de despesa para apontar divergência de
+# categoria. O DONO RECUSOU em 11/09/2026, e com razão:
+#
+#   "Categoria de despesa não vai ser regra para dedutibilidade ou não, porque
+#    você pode comprar um material elétrico SEM nota fiscal. Então nesse caso
+#    vai ser não dedutível. O FATO DE TER A NOTA FISCAL é que vai ser o
+#    balizador. A simples divergência de material elétrico nem adianta mostrar."
+#
+# Ele está certo, e isso derruba a regra por palavra ("material" → NF-e) que
+# existia aqui: sugerir NF-e para uma compra sem nota seria exatamente o erro
+# que ele apontou.
+#
+# SOBRA UM PAPEL, e só este: as despesas que NUNCA têm nota eletrônica. Aluguel
+# tem contrato, veículo tem apólice, água e energia têm fatura, cartório tem
+# recibo de taxa. Nessas, e só quando nenhuma nota foi encontrada, o tipo de
+# despesa diz qual documento procurar.
+# ---------------------------------------------------------------------------
+CATEGORIA_SEM_NOTA_ELETRONICA = {
     "veiculos (taxas, impostos, multas)": "Seguros",
     "locacao de equipamentos": "Nota de Débito/Fatura",
     "agua e energia": "Nota de Débito/Fatura",
@@ -98,26 +134,13 @@ CATEGORIA_POR_TIPO_DESPESA = {
     "cartorios, crea, taxas": "Taxas Diversas",
 }
 
-# Os tipos de material, que no histórico do dono deram sempre NF-e. São muitos
-# e crescem com o cadastro da empresa, então a regra é por PALAVRA e não por
-# lista fechada — e vale só quando nenhuma regra exata acima casou.
-PALAVRAS_DE_MERCADORIA = (
-    "material", "ferramenta", "parafuso", "ferragen", "telha", "argamassa",
-    "impermeabilizante", "aditivo", "cola", "pintura", "forro", "hidraulic",
-    "eletric", "climatizac", "cabeamento",
-)
-
 
 def categoria_sugerida(tipo_despesa: str) -> str:
-    """A categoria que o histórico do dono sugere para este tipo de despesa."""
-    arrumado = _texto(tipo_despesa).lower()
-    if not arrumado:
-        return ""
-    if arrumado in CATEGORIA_POR_TIPO_DESPESA:
-        return CATEGORIA_POR_TIPO_DESPESA[arrumado]
-    if any(p in arrumado for p in PALAVRAS_DE_MERCADORIA):
-        return "NF-e (Mercadoria)"
-    return ""
+    """A categoria para quando NÃO há nota — e só para o que nunca tem nota.
+
+    Fora dessa lista, sem nota é Ausente ou Não Dedutível, e este módulo não
+    chuta."""
+    return CATEGORIA_SEM_NOTA_ELETRONICA.get(_texto(tipo_despesa).lower(), "")
 
 
 # ---------------------------------------------------------------------------
@@ -331,3 +354,154 @@ def melhor_nota(lancamento: dict, notas: list) -> dict:
         melhor["porques"] = melhor["porques"] + [
             "há outra nota quase tão parecida — confira antes de confirmar"]
     return melhor
+
+
+# ---------------------------------------------------------------------------
+# AS CRÍTICAS: o que este módulo aponta, e o que ele PROPÕE
+#
+# O dono decidiu em 11/09/2026: PROPOR a correção, não só apontar. E disse por
+# quê — "o humano às vezes esquece de visualizar; ele erra na categorização, em
+# coisas até meio óbvias, de regras que a gente já definiu. É muito falho o
+# olho humano."
+#
+# O QUE GOVERNA TUDO AQUI, e vem da correção dele no mesmo dia: **a existência
+# da nota é o balizador**, não o tipo de despesa. Comprar material elétrico sem
+# nota é não dedutível, e apontar isso como divergência seria ruído.
+#
+# DUAS PILHAS, E ELAS EXISTEM POR CAUSA DE UM RISCO REAL. Propor cria "fadiga
+# de aprovação": se vinte e oito de trinta estão sempre certas, na terceira
+# semana ninguém confere mais — é o mesmo olho cansado, só que mais rápido.
+# Por isso o que tem dúvida NÃO vem marcado, e é decidido um a um.
+# ---------------------------------------------------------------------------
+
+# As categorias que dizem "não há documento". Achar a nota depois é justamente
+# a correção que vale a pena — foi o que o dono descreveu: "colocado algo não
+# dedutível de uma coisa que não foi localizada naquele momento, mas que depois
+# ela surge".
+DIZEM_QUE_NAO_HA_NOTA = {
+    "Ausente", "Não Dedutível", "Reanalisar", "Emissão Futura",
+    "Aguardando Nota (Ilegível)", "Aguardando Nota (Não Anexada)", "",
+}
+
+# As que afirmam que existe nota eletrônica. Se não há chave nem nota achada,
+# alguém classificou sem documento.
+EXIGEM_NOTA = {"NF-e (Mercadoria)", "NFS-e (Serviço)", "CT-e (Frete)",
+               "NFC-e (Cupom Fiscal eletrônico)"}
+
+# Os grupos em que a tela separa o que encontrou. A ordem é a da urgência.
+CRITICO, CORRECAO, DUVIDA, SEM_PAR, EM_DIA = (
+    "CRITICO", "CORRECAO", "DUVIDA", "SEM_PAR", "EM_DIA")
+
+
+def avaliar(sp: dict, analise: dict, escolha: dict) -> dict:
+    """O que fazer com esta SP, com o porquê escrito.
+
+    `sp` é a linha da base; `analise` é o que já está gravado no diário (pode
+    vir vazio); `escolha` é o que `melhor_nota` devolveu.
+
+    Devolve {grupo, propoe, documentacao, chave, motivo, confianca}. `propoe`
+    só é verdadeiro quando NÃO há dúvida — é o que decide em qual das duas
+    pilhas a linha cai."""
+    analise = analise or {}
+    escolha = escolha or {}
+    hoje = str(analise.get("documentacao") or "").strip()
+    chave_no_card = so_digitos(analise.get("chave"))
+    nota = escolha.get("nota")
+    confianca = int(escolha.get("pontos") or 0)
+    porques = list(escolha.get("porques") or [])
+
+    def resposta(grupo, propoe, documentacao="", chave="", motivo=""):
+        return {"grupo": grupo, "propoe": propoe,
+                "documentacao": documentacao, "chave": chave,
+                "motivo": motivo, "confianca": confianca}
+
+    # 1. A NOTA JÁ ESTÁ NO CARD, E ESTÁ CANCELADA. É o mais grave da lista:
+    #    despesa paga contra documento que não existe mais. Nunca é proposta —
+    #    o que fazer é decisão de gente.
+    if nota and chave_no_card and so_digitos(nota.get("chave")) == chave_no_card:
+        if _texto(nota.get("status")).upper() == "CANCELADA":
+            paga = _texto(sp.get("status_pgt")).lower() == "pago"
+            return resposta(CRITICO, False, motivo=(
+                "a nota deste card está CANCELADA"
+                + (" e a despesa já foi paga" if paga else "")
+                + ". Precisa de decisão, não de correção automática."))
+        return resposta(EM_DIA, False, motivo="a nota do card confere")
+
+    # 2. A CHAVE DO CARD NÃO É DESTA SP. Valor ou emitente divergentes é o
+    #    sintoma clássico da troca de anexo entre lançamentos, que o dono
+    #    descreveu: "colocar uma nota de um registro para outro".
+    if chave_no_card and nota and so_digitos(nota.get("chave")) != chave_no_card:
+        return resposta(DUVIDA, False, motivo=(
+            "a chave que está no card não parece ser desta SP; achei outra "
+            "nota que combina melhor. Confira se as notas não foram trocadas "
+            "entre dois lançamentos."))
+
+    # 3. ACHEI A NOTA, E O CARD DIZ QUE NÃO HÁ NOTA. É A CORREÇÃO QUE VALE.
+    #    A categoria sai de DENTRO da chave, então não é palpite.
+    if nota and hoje in DIZEM_QUE_NAO_HA_NOTA:
+        categoria = categoria_da_chave(nota.get("chave")) or "NF-e (Mercadoria)"
+        antes = f'está como "{hoje}"' if hoje else "está sem categoria"
+        motivo = (f"{antes}, mas a nota foi encontrada — "
+                  + "; ".join(porques) + ".")
+        if escolha.get("propoe"):
+            return resposta(CORRECAO, True, categoria,
+                            so_digitos(nota.get("chave")), motivo)
+        return resposta(DUVIDA, False, categoria,
+                        so_digitos(nota.get("chave")),
+                        motivo + " Não tenho certeza suficiente para propor.")
+
+    # 4. O CARD AFIRMA QUE HÁ NOTA, E NÃO HÁ NENHUMA. Classificado sem
+    #    documento — ou a nota ainda não chegou no relatório do FSist.
+    if hoje in EXIGEM_NOTA and not chave_no_card and not nota:
+        return resposta(DUVIDA, False, motivo=(
+            f'está como "{hoje}", mas não há chave no card e não encontrei '
+            "nota que combine. Pode ser nota que ainda não veio no relatório."))
+
+    # 5. O CARD TEM CHAVE E A NOTA NÃO APARECEU NO RELATÓRIO DO FSIST. Ainda
+    #    dá para conferir alguma coisa sem o relatório: o CNPJ de quem emitiu
+    #    está DENTRO da chave. Se ele não é o credor desta SP, a chave é de
+    #    outro lançamento — a troca de anexo outra vez, e desta vez detectada
+    #    sem depender de achar a nota certa.
+    if chave_no_card and not nota:
+        emitente = emitente_da_chave(chave_no_card)
+        if emitente and not mesmo_documento(sp.get("documento"), emitente):
+            return resposta(DUVIDA, False, motivo=(
+                "a chave que está no card foi emitida por outro CNPJ, e não "
+                "pelo credor desta SP. Confira se as notas não foram trocadas "
+                "entre dois lançamentos."))
+        return resposta(EM_DIA, False, motivo=(
+            "o card já tem a chave; a nota não veio no relatório do FSist."))
+
+    # 6. NÃO ACHEI NADA, E O CARD TAMBÉM NÃO DIZ NADA. Aqui — e só aqui — o
+    #    tipo de despesa ajuda, e apenas para o que nunca tem nota eletrônica.
+    if not nota and not chave_no_card:
+        sugerida = categoria_sugerida(sp.get("tipo_despesa"))
+        if sugerida and hoje != sugerida:
+            return resposta(DUVIDA, False, sugerida, "", (
+                f'não há nota eletrônica para "{sp.get("tipo_despesa")}" — '
+                f'o documento costuma ser "{sugerida}".'))
+        return resposta(SEM_PAR, False, motivo=(
+            "procurei e não encontrei nota que combine com esta SP."))
+
+    return resposta(EM_DIA, False, motivo="nada a apontar")
+
+
+def notas_sem_lancamento(notas: list, chaves_usadas: set) -> list:
+    """As notas emitidas contra a BWS que não estão em lançamento nenhum.
+
+    É A SEGUNDA VISÃO, e é ela que fecha com a contabilidade. Nas palavras do
+    dono: *"se tem uma nota emitida, tem uma despesa para estar associada"*.
+    Nota órfã é problema fiscal, e hoje ninguém a enxerga.
+
+    As canceladas ficam de fora: nota cancelada sem despesa é o esperado, não
+    um achado."""
+    usadas = {so_digitos(c) for c in (chaves_usadas or set()) if c}
+    saida = []
+    for nota in notas:
+        chave = so_digitos(nota.get("chave"))
+        if not chave or chave in usadas:
+            continue
+        if _texto(nota.get("status")).upper() == "CANCELADA":
+            continue
+        saida.append(nota)
+    return saida
