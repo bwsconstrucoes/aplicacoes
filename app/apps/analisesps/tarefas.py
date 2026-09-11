@@ -204,6 +204,35 @@ def _marcar_etapa_feita(execucao_id: int, etapa: str) -> None:
         conn.commit()
 
 
+def _apoios_recentes() -> bool:
+    """As planilhas de apoio foram relidas há menos de uma hora?
+
+    Na dúvida responde NÃO: deixar de trazer um dado é pior do que trazê-lo
+    uma vez a mais."""
+    try:
+        from .db import consultar_um
+        linha = consultar_um(
+            "SELECT extract(epoch FROM (now() - valor::timestamptz)) / 60 "
+            "  FROM analisesps.meta WHERE chave = 'apoios_em'")
+    except Exception:  # noqa: BLE001 — carimbo ilegível ou banco fora
+        return False
+    if not linha or linha[0] is None:
+        return False
+    return float(linha[0]) < MINUTOS_ENTRE_APOIOS_AUTOMATICOS
+
+
+def _marcar_apoios_feitos() -> None:
+    """Anota a hora em que as planilhas de apoio foram relidas."""
+    try:
+        from . import sincronizacao
+        from .db import conexao
+        from .horario import agora
+        with conexao() as conn:
+            sincronizacao._meta_gravar(conn, "apoios_em", agora().isoformat())
+    except Exception:  # noqa: BLE001 — sem o carimbo, relê da próxima vez
+        logger.exception("Análise de SPs: falhou anotar a hora dos apoios")
+
+
 # ---------------------------------------------------------------------------
 # O trabalho
 # ---------------------------------------------------------------------------
@@ -219,6 +248,22 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
     inicio = agora()
     ultimo_batimento = [0.0]
     total_linhas = [0]
+    recado_apoios = [""]
+
+    # Quem pediu: "tela aberta" é o disparo automático de 5 em 5 minutos;
+    # qualquer outra coisa é gente apertando botão. A diferença decide se as
+    # planilhas de apoio são relidas agora (ver a constante lá em cima).
+    try:
+        with conexao() as conn:
+            cur = conn.execute(
+                "SELECT disparo FROM analisesps.execucoes WHERE id = ?",
+                (execucao_id,))
+            linha = cur.fetchone()
+            cur.close()
+        automatica = bool(linha) and str(linha[0] or "") == "tela aberta"
+    except Exception:  # noqa: BLE001 — na dúvida, trata como pedido de gente
+        logger.exception("Análise de SPs: não consegui saber quem disparou")
+        automatica = False
 
     def anotar(etapa: str, progresso: str = "") -> None:
         """Vai para o banco de tempos em tempos, não a cada bloco."""
@@ -262,16 +307,47 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 total_linhas[0] = resultado.get("alteradas", 0)
 
             elif etapa == "apoios":
-                mudar_etapa("trazendo as planilhas de apoio")
-                sincronizacao.sincronizar_apoios(anotar)
-                sincronizacao.sincronizar_agenda(anotar)
-                sincronizacao.sincronizar_referencias_rateio(anotar)
+                if automatica and _apoios_recentes():
+                    logger.info("Análise de SPs: planilhas de apoio ainda "
+                                "recentes — pulando nesta automática.")
+                else:
+                    mudar_etapa("trazendo as planilhas de apoio")
+                    a = sincronizacao.sincronizar_apoios(anotar)
+                    sincronizacao.sincronizar_agenda(anotar)
+                    r = sincronizacao.sincronizar_referencias_rateio(anotar)
+                    _marcar_apoios_feitos()
+                    # O QUE VEIO, E O QUE NÃO VEIO, VAI PARA A MENSAGEM DA
+                    # EXECUÇÃO — que é o que a tela de Configurações mostra.
+                    # Antes esta etapa terminava dizendo "0 SPs", e um motivo
+                    # que só existia no log do serviço; quem aperta o botão não
+                    # tem como ler log. Ver `sincronizar_referencias_rateio`.
+                    recado_apoios[0] = (
+                        f"documentação fiscal: {a.get('fiscais', 0)} · "
+                        f"contas: {a.get('contas', 0)} · "
+                        f"obras: {r.get('obras', 0)} · "
+                        f"categorias: {r.get('categorias', 0)}")
+                    # SEM REPETIR: a aba "C. Diários" é lida por dois
+                    # caminhos (as contas e as obras). Quando ela falta, as
+                    # duas leituras reclamam a mesma coisa, e o recado saía
+                    # com a frase duplicada.
+                    problemas = list(dict.fromkeys(
+                        (a.get("avisos") or []) + (r.get("avisos") or [])))
+                    if problemas:
+                        recado_apoios[0] += " — " + " ".join(problemas)
 
             _marcar_etapa_feita(execucao_id, etapa)
 
         duracao = (agora() - inicio).total_seconds()
-        mensagem = (f"{total_linhas[0]:,} SPs em {duracao / 60:.1f} min."
-                    .replace(",", "."))
+        if modo == "apoios":
+            # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
+            # parecer que nada aconteceu justamente quando algo aconteceu.
+            mensagem = (recado_apoios[0]
+                        or "planilhas de apoio ainda recentes — nada a refazer.")
+        else:
+            mensagem = (f"{total_linhas[0]:,} SPs em {duracao / 60:.1f} min."
+                        .replace(",", "."))
+            if recado_apoios[0]:
+                mensagem += " Apoio — " + recado_apoios[0]
         logger.info("Análise de SPs: %s concluída — %s", modo, mensagem)
         with conexao() as conn:
             _fechar_execucao(conn, execucao_id, True, mensagem, total_linhas[0])
@@ -322,6 +398,23 @@ def _iniciar_processo(modo: str, execucao_id: int) -> None:
 # planilha. Cinco minutos é fresco o bastante para contas a pagar e é uma
 # leitura da planilha a cada cinco minutos, no pior caso.
 MINUTOS_ENTRE_SYNC_DA_TELA = 5
+
+# De quanto em quanto tempo as planilhas de APOIO são relidas, quando quem
+# pediu a sincronização foi a tela aberta e não uma pessoa.
+#
+# Elas não são o dado principal: são a documentação fiscal por SP, as contas
+# por centro de custo, a agenda e as listas do rateio. Mudam raramente — mas
+# vinham sendo relidas INTEIRAS a cada cinco minutos, junto com as SPs.
+#
+# O estrago apareceu na tela do banco em 10/09/2026: a gravação da
+# documentação fiscal era, disparada, a consulta mais chamada de todo o banco
+# — **14,3 milhões de vezes**. E cada passagem ainda baixa a planilha inteira
+# do Google, na instância de 2 GB que já morreu de memória uma vez.
+#
+# Uma hora é folgado para dado de apoio, e quem precisar na hora tem dois
+# caminhos que continuam imediatos: o botão de atualizar e o modo "Só as
+# planilhas de apoio". A trava vale SÓ para o disparo automático.
+MINUTOS_ENTRE_APOIOS_AUTOMATICOS = 60
 
 
 def _minutos_desde_a_ultima_sincronizacao():

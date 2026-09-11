@@ -15,6 +15,7 @@ from __future__ import annotations
 import re
 import time
 import logging
+import datetime as dt
 
 from flask import (
     Blueprint, g, jsonify, redirect, render_template, request, session, url_for,
@@ -844,6 +845,235 @@ def _aplicar_mudanca_da_prestacao(dados, form):
                 dados.salvar_config(chave, form[chave])
 
 
+# ---------------------------------------------------------------------------
+# Explorador de lancamentos — saneamento da base
+# ---------------------------------------------------------------------------
+# FORA do menu principal, de proposito: e ferramenta de manutencao, nao
+# relatorio. Chega-se a ela por Configuracoes. O dono pediu assim — "uma tela
+# mais escondida, para nao ser algo tao exposto".
+def _pedido_do_explorador():
+    """Le da URL o que a pessoa escolheu nos filtros."""
+    de, ate = _faixa_de_data()
+    return {
+        "tipo": request.args.get("tipo", ""),
+        "analises": request.args.getlist("analise"),
+        "grupos": request.args.getlist("grupo"),
+        "categorias": request.args.getlist("categoria"),
+        "obras": request.args.getlist("obra"),
+        "projetos": request.args.getlist("projeto"),
+        "contas": request.args.getlist("conta"),
+        "situacoes": request.args.getlist("situacao"),
+        "busca": (request.args.get("busca") or "").strip(),
+        "com_trf": request.args.get("trf") == "1",
+        "de": de, "ate": ate,
+    }
+
+
+@bp.route("/explorador")
+def explorador():
+    """Procura um lancamento em QUALQUER lugar da base — inclusive fora do DRE.
+
+    As outras telas olham so o DRE. Esta olha tudo, porque ela existe para achar
+    o que esta classificado errado, e o erro quase sempre e o lancamento estar
+    na analise errada."""
+    from . import consultas, saneamento
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+
+    pedido = _pedido_do_explorador()
+    # so busca quando ha algum filtro: abrir a tela e varrer as 185 mil linhas
+    # para mostrar as 3.000 mais recentes nao ajuda ninguem e custa caro
+    escolheu = any(pedido[c] for c in ("tipo", "analises", "grupos", "categorias",
+                                       "obras", "projetos", "contas", "situacoes",
+                                       "busca", "de", "ate"))
+    dados = consultas.explorar(pedido) if escolheu else None
+    return render_template(
+        "painel_explorador.html",
+        aba_ativa="config", abas=ABAS,
+        pedido=pedido, escolheu=escolheu, dados=dados,
+        resumo=consultas.resumo_do_explorador(pedido) if escolheu else [],
+        opcoes=consultas.opcoes_do_explorador(),
+        sem_obra=consultas.SEM_OBRA,
+        teto=consultas.TETO_DO_EXPLORADOR,
+        escrita_ligada=saneamento.escrita_configurada(),
+        categorias_omie=consultas.categorias_para_alterar(),
+        obras_omie=consultas.departamentos_para_alterar(),
+        alteracao=None, erro_alteracao=None, marcados=[],
+    )
+
+
+@bp.route("/explorador/alterar", methods=["POST"])
+def explorador_alterar():
+    """Altera a classificacao de titulos NO OMIE — ou so ensaia.
+
+    A unica rota do painel que escreve num sistema de fora. Quatro protecoes,
+    todas em `saneamento.py`: senha propria, simulacao por padrao, trava contra
+    desfazer rateio e registro de tudo no banco."""
+    from . import saneamento
+
+    codigos = request.form.getlist("codigo")
+    categoria = (request.form.get("categoria_nova") or "").strip()
+    departamento = (request.form.get("departamento_novo") or "").strip()
+    # SIMULAR e o padrao: so sai do ensaio quem marcar E acertar a senha
+    executar = request.form.get("executar") == "1"
+    aceita = request.form.get("aceita_desfazer_rateio") == "1"
+
+    erro = None
+    if executar:
+        if not saneamento.escrita_configurada():
+            erro = ("A alteração no OMIE está desligada neste serviço: falta a "
+                    "senha de execução (PAINEL_SENHA_ESCRITA).")
+        elif not saneamento.senha_de_escrita_confere(request.form.get("senha", "")):
+            logger.warning("Painel: senha de execucao incorreta na alteracao do OMIE.")
+            erro = "Senha de execução incorreta. Nada foi enviado ao OMIE."
+
+    resultado = None
+    if not erro:
+        resultado = saneamento.aplicar(
+            codigos, categoria, departamento,
+            simulacao=not executar, aceita_desfazer_rateio=aceita)
+        if not resultado.get("ok"):
+            erro, resultado = resultado.get("erro"), None
+
+    from . import consultas
+    pedido = _pedido_do_explorador()
+    return render_template(
+        "painel_explorador.html",
+        aba_ativa="config", abas=ABAS,
+        pedido=pedido, escolheu=True,
+        dados=consultas.explorar(pedido),
+        resumo=consultas.resumo_do_explorador(pedido),
+        opcoes=consultas.opcoes_do_explorador(),
+        sem_obra=consultas.SEM_OBRA,
+        teto=consultas.TETO_DO_EXPLORADOR,
+        escrita_ligada=saneamento.escrita_configurada(),
+        categorias_omie=consultas.categorias_para_alterar(),
+        obras_omie=consultas.departamentos_para_alterar(),
+        alteracao=resultado, erro_alteracao=erro,
+        marcados=codigos,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Rateio da Administracao — simulacao
+# ---------------------------------------------------------------------------
+def _escolhas_do_conjunto(prefixo: str):
+    """Le da URL os pares (item, %) do conjunto — mesmo formato da Necessidade
+    de Caixa, para quem ja conhece uma tela conhecer a outra."""
+    itens = request.args.getlist(f"{prefixo}_item")
+    pcts = request.args.getlist(f"{prefixo}_pct")
+    escolhas = []
+    for i, item in enumerate(itens):
+        if not item:
+            continue
+        try:
+            pct = float(pcts[i]) if i < len(pcts) and pcts[i] else 100.0
+        except ValueError:
+            pct = 100.0
+        escolhas.append((item, pct))
+    return escolhas
+
+
+def _ajustes_de_caixa():
+    """(lado, mes, valor) — recurso que existe mas nao esta na base."""
+    lados = request.args.getlist("ajuste_lado")
+    meses = request.args.getlist("ajuste_mes")
+    valores = request.args.getlist("ajuste_valor")
+    saida = []
+    for i, lado in enumerate(lados):
+        if lado not in ("A", "B") or i >= len(meses) or not meses[i]:
+            continue
+        try:
+            ano, mes = str(meses[i]).split("-")[:2]
+            quando = dt.date(int(ano), int(mes), 1)
+            valor = float(str(valores[i]).replace(",", ".")) if i < len(valores) else 0.0
+        except (ValueError, IndexError):
+            continue
+        if valor:
+            saida.append((lado, quando, valor))
+    return saida
+
+
+@bp.route("/rateio-administracao")
+def rateio_administracao():
+    """Como o custo da matriz se divide entre dois lados — e quem pagou os juros.
+
+    IGNORA os filtros da barra lateral, como a Necessidade de Caixa: a conta e
+    sobre a empresa inteira ao longo do tempo, e recortar por ano ou obra faria
+    o acumulado mentir."""
+    from . import consultas, graficos, prestacao_dados, rateio_admin
+    if consultas.base_vazia():
+        return redirect(url_for("painel.configuracoes", primeira="1"))
+
+    config = prestacao_dados.config()
+    opcoes = consultas.opcoes_de_filtro()
+    administrativos = consultas.departamentos_administrativos()
+    matriz = (request.args.get("matriz")
+              or (administrativos[0] if administrativos else ""))
+    categoria_juros = (request.args.get("categoria_juros")
+                       or "Juros sobre Empréstimos")
+    criterio = request.args.get("criterio", "faturamento")
+    if criterio not in rateio_admin.CRITERIOS:
+        criterio = "faturamento"
+    janela = request.args.get("janela", "12")
+    if janela not in rateio_admin.JANELAS:
+        janela = "12"
+
+    def _numero(nome, padrao=0.0):
+        try:
+            return float(str(request.args.get(nome, padrao)).replace(",", "."))
+        except ValueError:
+            return padrao
+
+    escolhas_a = _escolhas_do_conjunto("a")
+    suprimidas = request.args.getlist("suprimir")
+    resultado = None
+    if escolhas_a and matriz:
+        resultado = rateio_admin.simular(
+            consultas.caixa_mensal_por_obra(),
+            consultas.receita_mensal_por_obra(),
+            consultas.pessoal_mensal_por_obra(config["grupo_pessoal"]),
+            consultas.matriz_mensal(matriz, categoria_juros, suprimidas),
+            consultas.juros_de_emprestimo_mensal(categoria_juros),
+            escolhas_a, consultas.obra_para_projeto(), opcoes["obras"],
+            depto_matriz=matriz, criterio=criterio, janela=janela,
+            pct_fixo=_numero("pct_fixo", 50.0),
+            valor_fixo_por_mes=_numero("valor_fixo", 0.0),
+            abater_receita_da_matriz=request.args.get("abater", "1") == "1",
+            ajustes=_ajustes_de_caixa(),
+            juros_sem_deficit=request.args.get("sem_deficit", "criterio"))
+
+    grafico = None
+    if resultado and not resultado["vazio"]:
+        grafico = graficos.linhas_com_barras(
+            resultado["linhas"],
+            [("caixa_a", "var(--azul-claro)", "Caixa A (antes dos juros)"),
+             ("caixa_b", "var(--roxo)", "Caixa B (antes dos juros)"),
+             ("final_a", "var(--verde)", "Posição final A"),
+             ("final_b", "var(--vermelho)", "Posição final B")],
+            barras=("juros_mes", "b-despesa", "Juros do mês"),
+            campo_rotulo="rotulo")
+
+    return render_template(
+        "painel_rateio_admin.html",
+        aba_ativa="config", abas=ABAS,
+        administrativos=administrativos, matriz=matriz,
+        categoria_juros=categoria_juros,
+        criterios=rateio_admin.CRITERIOS, criterio=criterio,
+        janelas=rateio_admin.JANELAS, janela=janela,
+        pct_fixo=_numero("pct_fixo", 50.0),
+        valor_fixo=_numero("valor_fixo", 0.0),
+        abater=request.args.get("abater", "1") == "1",
+        sem_deficit=request.args.get("sem_deficit", "criterio"),
+        opcoes=opcoes, escolhas_a=escolhas_a,
+        categorias_da_matriz=(consultas.custo_da_matriz_por_categoria(matriz)
+                              if matriz else []),
+        suprimidas=suprimidas,
+        ajustes=_ajustes_de_caixa(),
+        resultado=resultado, grafico=grafico,
+    )
+
+
 @bp.route("/configuracoes")
 def configuracoes():
     from . import migracoes_runner, tarefas
@@ -991,6 +1221,70 @@ def baixar(assunto):
             de=de, ate=ate, base=request.args.get("base", "movimento"),
             pagina=1, por_pagina=limite)["linhas"]
 
+    def _abas_do_rateio_admin():
+        """A memoria de calculo mes a mes, com os parametros ao lado.
+
+        Os PARAMETROS vao junto de proposito: uma memoria de calculo sem as
+        escolhas que a geraram nao da para conferir seis meses depois."""
+        from . import prestacao_dados, rateio_admin
+        config = prestacao_dados.config()
+        opcoes = consultas.opcoes_de_filtro()
+        administrativos = consultas.departamentos_administrativos()
+        matriz = (request.args.get("matriz")
+                  or (administrativos[0] if administrativos else ""))
+        categoria_juros = (request.args.get("categoria_juros")
+                           or "Juros sobre Empréstimos")
+        escolhas = _escolhas_do_conjunto("a")
+        criterio = request.args.get("criterio", "faturamento")
+        janela = request.args.get("janela", "12")
+        suprimidas = request.args.getlist("suprimir")
+
+        def _num(nome, padrao=0.0):
+            try:
+                return float(str(request.args.get(nome, padrao)).replace(",", "."))
+            except ValueError:
+                return padrao
+
+        simulado = rateio_admin.simular(
+            consultas.caixa_mensal_por_obra(),
+            consultas.receita_mensal_por_obra(),
+            consultas.pessoal_mensal_por_obra(config["grupo_pessoal"]),
+            consultas.matriz_mensal(matriz, categoria_juros, suprimidas),
+            consultas.juros_de_emprestimo_mensal(categoria_juros),
+            escolhas, consultas.obra_para_projeto(), opcoes["obras"],
+            depto_matriz=matriz, criterio=criterio, janela=janela,
+            pct_fixo=_num("pct_fixo", 50.0), valor_fixo_por_mes=_num("valor_fixo"),
+            abater_receita_da_matriz=request.args.get("abater", "1") == "1",
+            ajustes=_ajustes_de_caixa(),
+            juros_sem_deficit=request.args.get("sem_deficit", "criterio"))
+
+        parametros = [
+            {"o_que": "Departamento da matriz", "valor": matriz},
+            {"o_que": "Criterio do rateio", "valor": criterio},
+            {"o_que": "Janela do criterio", "valor": janela},
+            {"o_que": "% fixo para A", "valor": str(_num("pct_fixo", 50.0))},
+            {"o_que": "Tirado do bolo por mes", "valor": str(_num("valor_fixo"))},
+            {"o_que": "Abate a receita da matriz",
+             "valor": "sim" if request.args.get("abater", "1") == "1" else "nao"},
+            {"o_que": "Categoria dos juros", "valor": categoria_juros},
+            {"o_que": "Juros sem ninguem negativo",
+             "valor": request.args.get("sem_deficit", "criterio")},
+        ]
+        parametros += [{"o_que": "Lado A", "valor": f"{item} — {pct:.0f}%"}
+                       for item, pct in escolhas]
+        parametros += [{"o_que": "Suprimida do bolo", "valor": c}
+                       for c in suprimidas]
+        parametros += [{"o_que": f"Ajuste {lado}",
+                        "valor": f"{quando:%m/%Y}: {valor:,.2f}"}
+                       for lado, quando, valor in _ajustes_de_caixa()]
+        return [
+            ("Parametros", [("o_que", "O que"), ("valor", "Valor")], parametros),
+            ("Memoria mensal", C["rateio_admin"], simulado.get("linhas", [])),
+            ("Matriz por categoria",
+             [("categoria", "Categoria"), ("valor", "Total pago")],
+             consultas.custo_da_matriz_por_categoria(matriz) if matriz else []),
+        ]
+
     def _abas_de_aporte():
         # Na tela os lançamentos são cortados num teto; no arquivo saem todos —
         # é para isso que se baixa o arquivo.
@@ -1012,6 +1306,12 @@ def baixar(assunto):
         "despesas": lambda: [("Despesas", C["despesas"], consultas.despesas_por(
             f, quebra=request.args.get("quebra", "grupo"),
             visao=request.args.get("visao", "comprometido"), limite=1000))],
+        # o explorador leva TUDO que o filtro pegou, nao as 3.000 da tela: e para
+        # isso que se baixa o arquivo
+        "explorador": lambda: [("Lancamentos", C["explorador"],
+                                consultas.explorar(_pedido_do_explorador(),
+                                                   limite=50000)["linhas"])],
+        "rateio_admin": _abas_do_rateio_admin,
         "credores": lambda: [("Top Credores", C["credores"],
                               consultas.top_credores(f, limite=1000))],
         "medicoes": lambda: [("Receita de Obra", C["medicoes"], consultas.medicoes(

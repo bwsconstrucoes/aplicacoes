@@ -289,6 +289,50 @@ def contagem_agendamento(f: dict) -> dict:
             "Agendado": linha[2], "Agendar": linha[3]}
 
 
+def resumo_e_agendamento(f: dict) -> tuple[dict, dict]:
+    """Os dois de cima NUMA IDA SÓ ao banco.
+
+    Separados, cada um varria a tabela filtrada por conta própria: medidos aqui
+    com as 59 mil SPs, 44 ms + 48 ms. Juntos, 59 ms — porque a varredura é uma
+    só e as contagens vão de carona. As duas funções acima continuam existindo
+    para quem precisa de um dos dois sozinho (a exportação, por exemplo).
+
+    O SQL é montado a partir das MESMAS peças das duas funções, de propósito:
+    duas cópias do texto divergiriam no dia em que a regra de "pago ganha de
+    tudo" mudasse em uma delas."""
+    from .db import consultar_um
+    where, params = _where(f)
+    # O `lower(...)` vai escrito em cada linha, e não numa variável costurada
+    # depois: há um teste que lê este arquivo linha a linha procurando LIKE
+    # contra texto sem `lower()` — no Postgres o LIKE distingue maiúscula, e
+    # esse já foi um defeito de verdade aqui. Esconder a normalização atrás de
+    # uma variável cega o teste sem consertar nada.
+    pago = "lower(trim(coalesce(status_pgt,'')))"
+    linha = consultar_um(
+        "SELECT count(*), coalesce(sum(valor_num), 0), "
+        f"       count(*) FILTER (WHERE {pago} = 'pagar'), "
+        "       coalesce(sum(valor_num) FILTER "
+        f"                (WHERE {pago} = 'pagar'), 0), "
+        f"       count(*) FILTER (WHERE {pago} = 'pago'), "
+        f"       count(*) FILTER (WHERE {pago} <> 'pago' "
+        "                          AND lower(coalesce(agendado,'')) LIKE '%falha%'), "
+        f"       count(*) FILTER (WHERE {pago} <> 'pago' "
+        "                          AND lower(coalesce(agendado,'')) NOT LIKE '%falha%' "
+        "                          AND lower(trim(coalesce(agendado,''))) = 'agendado'), "
+        f"       count(*) FILTER (WHERE {pago} <> 'pago' "
+        "                          AND lower(coalesce(agendado,'')) NOT LIKE '%falha%' "
+        "                          AND lower(trim(coalesce(agendado,''))) <> 'agendado') "
+        f"  FROM analisesps.sps{where}", tuple(params))
+    if not linha:
+        return ({"quantidade": 0, "total": 0, "quantidade_pagar": 0,
+                 "total_pagar": 0},
+                {"Pago": 0, "Falha Agendar": 0, "Agendado": 0, "Agendar": 0})
+    return ({"quantidade": linha[0], "total": linha[1],
+             "quantidade_pagar": linha[2], "total_pagar": linha[3]},
+            {"Pago": linha[4], "Falha Agendar": linha[5],
+             "Agendado": linha[6], "Agendar": linha[7]})
+
+
 def soma_por(f: dict, coluna: str, limite: int = 12) -> list[dict]:
     """Σ do valor por conta ou por forma de pagamento, como no Streamlit.
 
@@ -360,6 +404,67 @@ def uma(sp_id: str) -> dict | None:
     return dict(zip(nomes, linhas[0]))
 
 
+def painel_por_agendamento(rotulos: list, quantos: int = 20) -> list[dict]:
+    """As listas do painel do Lote, TODAS numa varredura só.
+
+    Antes eram OITO consultas — uma lista e um resumo para cada um dos quatro
+    status —, e cada uma percorria as 59 mil SPs inteiras. Medido: 185 dos
+    200 ms da tela do Lote eram isto. Agora são duas: uma traz as primeiras
+    linhas de cada status, outra traz quantidade e total de cada um.
+
+    A primeira usa `row_number`, que numera as linhas DENTRO de cada status já
+    ordenadas por vencimento — assim o banco separa os quatro grupos numa
+    passada e devolve só as vinte de cada, em vez de mandar oitocentas para
+    serem jogadas fora aqui."""
+    from .db import consultar
+
+    if not rotulos:
+        return []
+    marcadores = ",".join(["?"] * len(rotulos))
+    campos = ", ".join(CAMPOS_LISTA)
+
+    linhas = consultar(
+        f"WITH classificadas AS ("
+        f"  SELECT {campos}, ({SQL_STATUS_AGEND}) AS status_agend, "
+        f"         ({SQL_RISCO}) AS risco, "
+        f"         {SQL_CADASTRO_INCOMPLETO} AS cadastro_incompleto, "
+        f"         (vencimento_d IS NOT NULL AND vencimento_d < {SQL_HOJE} "
+        "           AND lower(trim(coalesce(status_pgt,''))) = 'pagar') AS vencido, "
+        f"         (vencimento_d = {SQL_HOJE} "
+        "           AND lower(trim(coalesce(status_pgt,''))) = 'pagar') AS vence_hoje "
+        "    FROM analisesps.sps), "
+        "numeradas AS ("
+        "  SELECT *, row_number() OVER (PARTITION BY status_agend "
+        "                               ORDER BY vencimento_d ASC NULLS LAST, id) AS posicao "
+        f"    FROM classificadas WHERE status_agend IN ({marcadores})) "
+        f"SELECT * FROM numeradas WHERE posicao <= ? "
+        " ORDER BY status_agend, posicao",
+        tuple(rotulos) + (quantos,))
+
+    totais = consultar(
+        f"SELECT ({SQL_STATUS_AGEND}) AS status_agend, count(*), "
+        "       coalesce(sum(valor_num), 0) "
+        "  FROM analisesps.sps GROUP BY 1",
+        ())
+    por_status = {t[0]: (t[1], t[2]) for t in totais}
+
+    nomes = CAMPOS_LISTA + ["status_agend", "risco", "cadastro_incompleto",
+                            "vencido", "vence_hoje", "posicao"]
+    agrupadas: dict = {r: [] for r in rotulos}
+    for linha in linhas:
+        registro = dict(zip(nomes, linha))
+        agrupadas.setdefault(registro["status_agend"], []).append(registro)
+
+    saida = []
+    for rotulo in rotulos:
+        quantidade, total = por_status.get(rotulo, (0, 0))
+        minhas = agrupadas.get(rotulo, [])
+        saida.append({"rotulo": rotulo, "linhas": minhas,
+                      "quantidade": quantidade, "total": total,
+                      "tem_mais": quantidade > len(minhas)})
+    return saida
+
+
 def opcoes(coluna: str, limite: int = 400) -> list[str]:
     """Os valores distintos de uma coluna, para montar as listas de filtro.
 
@@ -396,6 +501,83 @@ def opcoes(coluna: str, limite: int = 400) -> list[str]:
     return [linha[0] for linha in linhas]
 
 
+# ---------------------------------------------------------------------------
+# AS LISTAS DE FILTRO, GUARDADAS ATÉ A PRÓXIMA CARGA
+#
+# Medido nesta máquina, com as 59.055 SPs de verdade: montar as sete listas
+# custa 194 ms, e era isso a CADA clique no filtro. Cada uma varre a tabela
+# inteira para descobrir quais valores existem naquela coluna, e o índice não
+# ajuda — a consulta limpa o texto antes de agrupar, e aí o banco lê tudo.
+# Índice de expressão foi tentado e o Postgres continuou preferindo a varredura;
+# não é caminho.
+#
+# O desperdício é que essas listas quase nunca mudam: os projetos, as contas e
+# os tipos de despesa da empresa são os mesmos hoje e amanhã. Só mudam quando
+# entra SP nova — ou seja, quando a carga da planilha roda.
+#
+# Então a chave do que fica guardado é O CARIMBO DA ÚLTIMA SINCRONIZAÇÃO. Ele
+# muda, as listas são refeitas; não muda, valem as de antes. Funciona ENTRE
+# PROCESSOS sem combinação nenhuma: a carga roda num processo separado e não
+# tem como avisar este, mas o carimbo que ela grava no banco é o próprio aviso.
+#
+# O CUSTO, dito na cara: um projeto novo cadastrado na planilha só aparece na
+# listinha depois da próxima sincronização (a tela dispara uma a cada 5 min).
+# A SP nova aparece na LISTA normalmente — é só o menu de filtro que demora a
+# saber do valor novo.
+# ---------------------------------------------------------------------------
+COLUNAS_DE_FILTRO = {
+    "status_pgt": ("status_pgt", 400),
+    "conta": ("conta", 400),
+    "forma": ("forma_pagamento", 400),
+    "tipo_despesa": ("tipo_despesa", 400),
+    "projeto": ("projeto", 400),
+    "responsavel": ("responsavel", 400),
+    "centro_custo": ("centro_custo", 200),
+}
+
+# Trocado inteiro a cada recálculo, nunca alterado no lugar: com 4 threads no
+# mesmo processo, duas podem recalcular ao mesmo tempo — e trocar a referência
+# de uma vez faz com que a pior consequência disso seja trabalho repetido, e
+# nunca uma lista pela metade na tela.
+_LISTAS_GUARDADAS: dict = {"carimbo": object(), "valores": {}}
+
+
+def opcoes_de_filtro(carimbo=None) -> dict:
+    """As sete listas da barra lateral, de uma vez.
+
+    `carimbo` é o valor de `ultima_sincronizacao` — quem chama normalmente já
+    o tem em mãos (veio do `base_carregada()`), e passá-lo evita uma consulta
+    a mais só para descobrir se o que está guardado ainda serve."""
+    if carimbo is None:
+        from .db import consultar_um
+        try:
+            linha = consultar_um("SELECT valor FROM analisesps.meta "
+                                 "WHERE chave = 'ultima_sincronizacao'")
+            carimbo = linha[0] if linha else ""
+        except Exception:  # noqa: BLE001 — sem carimbo, recalcula; não quebra
+            carimbo = None
+
+    guardado = _LISTAS_GUARDADAS
+    if guardado["carimbo"] == carimbo and guardado["valores"]:
+        return dict(guardado["valores"], status_agend=opcoes_agendamento())
+
+    valores = {apelido: opcoes(coluna, limite=limite)
+               for apelido, (coluna, limite) in COLUNAS_DE_FILTRO.items()}
+    _substituir_listas(carimbo, valores)
+    return dict(valores, status_agend=opcoes_agendamento())
+
+
+def _substituir_listas(carimbo, valores) -> None:
+    global _LISTAS_GUARDADAS
+    _LISTAS_GUARDADAS = {"carimbo": carimbo, "valores": valores}
+
+
+def esquecer_opcoes_de_filtro() -> None:
+    """Joga fora o que está guardado. Para os testes e para quem mexer na
+    estrutura sem passar por uma sincronização."""
+    _substituir_listas(object(), {})
+
+
 def opcoes_agendamento() -> list[str]:
     """Os valores possíveis do status de agendamento — lista fixa, curta, e na
     ordem em que o operador pensa neles."""
@@ -414,19 +596,70 @@ def base_carregada() -> dict:
     "vazia" no segundo caso é afirmar o que não se sabe — e foi assim que a
     tela de Configurações chegou a informar "o banco está em dia" justamente
     quando não conseguia falar com ele."""
-    from .db import consultar_um
+    from .db import consultar, conexao
+
+    # CONTAR AS SPs UMA VEZ POR SINCRONIZAÇÃO, E NÃO UMA VEZ POR TELA.
+    #
+    # `count(*)` no Postgres percorre a tabela inteira — e esta função é
+    # chamada em TODA tela, só para saber se a base foi carregada e para
+    # escrever "de 59.055 na base" embaixo do total.
+    #
+    # Na produção isso apareceu medido pelo dono em 09/09/2026: a rotina que
+    # só pergunta a hora da base levou 1,4 segundo, e ela não fazia nada além
+    # desta contagem. Aqui, com a mesma quantidade de SPs, custa 5 ms — a
+    # diferença é o banco de lá, que recebe a base inteira reescrita a cada
+    # carga e acumula linhas mortas até o faxineiro do Postgres passar.
+    #
+    # O número só muda quando a base é carregada ou sincronizada, e as duas
+    # coisas deixam a HORA registrada. Então guardamos a contagem junto da
+    # hora a que ela se refere: enquanto a hora for a mesma, o número vale, e
+    # nenhuma tela precisa percorrer a tabela. Quando a hora muda, conta-se de
+    # novo, uma vez, e guarda-se outra vez.
+    #
+    # O LIMITE, e é honesto dizê-lo: se alguém acrescentar ou apagar linhas
+    # POR FORA da carga e da sincronização, o número fica velho até a próxima.
+    # Hoje ninguém faz isso — a fila de volta altera SPs que já existem, não
+    # cria nem remove.
     try:
-        linha = consultar_um("SELECT count(*) FROM analisesps.sps")
-        quantas = linha[0] if linha else 0
-    except Exception:  # noqa: BLE001 — tabela ainda não criada
+        guardado = {c: v for c, v in consultar(
+            "SELECT chave, valor FROM analisesps.meta "
+            " WHERE chave IN ('ultima_sincronizacao', 'quantidade', "
+            "                 'quantidade_em')")}
+    except Exception:  # noqa: BLE001 — estrutura ainda não criada
         return {"pronta": False, "quantidade": 0, "ultima": None,
                 "desconhecida": True}
+
+    ultima = guardado.get("ultima_sincronizacao") or None
+
+    if ultima and guardado.get("quantidade_em") == ultima:
+        try:
+            quantas = int(guardado.get("quantidade") or 0)
+        except (TypeError, ValueError):
+            quantas = -1
+        if quantas >= 0:
+            return {"pronta": quantas > 0, "quantidade": quantas,
+                    "ultima": ultima, "desconhecida": False}
+
     try:
-        linha = consultar_um(
-            "SELECT valor FROM analisesps.meta WHERE chave = 'ultima_sincronizacao'")
-        ultima = linha[0] if linha else None
-    except Exception:  # noqa: BLE001 — não saber a data não justifica derrubar a tela
-        ultima = None
+        linha = consultar("SELECT count(*) FROM analisesps.sps")
+        quantas = linha[0][0] if linha else 0
+    except Exception:  # noqa: BLE001 — tabela ainda não criada
+        return {"pronta": False, "quantidade": 0, "ultima": ultima,
+                "desconhecida": True}
+
+    if ultima:
+        try:
+            with conexao() as conn:
+                for chave, valor in (("quantidade", str(quantas)),
+                                     ("quantidade_em", ultima)):
+                    conn.execute(
+                        "INSERT INTO analisesps.meta (chave, valor) "
+                        "VALUES (?, ?) ON CONFLICT (chave) DO UPDATE "
+                        "SET valor = EXCLUDED.valor", (chave, valor))
+                conn.commit()
+        except Exception:  # noqa: BLE001 — não conseguir guardar só custa lentidão
+            logger.exception("Análise de SPs: falhou guardar a contagem da base")
+
     return {"pronta": quantas > 0, "quantidade": quantas, "ultima": ultima,
             "desconhecida": False}
 
@@ -554,6 +787,80 @@ def agregar(f: dict, dimensao: str, tipo: str = "geral", periodo: str = "tudo",
         "  GROUP BY 1 ORDER BY 3 DESC, 1 LIMIT ?",
         (VAZIO,) + tuple(params) + (limite,))
     return [{"rotulo": r[0], "quantidade": r[1], "total": r[2]} for r in linhas]
+
+
+def agregar_varias(f: dict, dimensoes: list, tipo: str = "geral",
+                   periodo: str = "tudo", limite: int = 100) -> dict:
+    """Várias dimensões de uma vez, NUMA VARREDURA SÓ do banco.
+
+    O Relatório soma por projeto, por obra, por tipo de despesa e por conta —
+    quatro perguntas sobre EXATAMENTE as mesmas linhas. Separadas, eram quatro
+    varreduras das 59 mil SPs, ~41 ms cada; medido, elas eram a maior parte dos
+    331 ms da tela.
+
+    `GROUPING SETS` é a resposta que o Postgres já tem para isto: ele percorre
+    a tabela uma vez e devolve os quatro agrupamentos juntos, marcando a qual
+    deles cada linha pertence. A ordenação e o corte de cada lista continuam
+    sendo feitos aqui, sobre poucas dezenas de linhas.
+
+    Devolve {dimensao: [{rotulo, quantidade, total}, ...]}, cada lista já
+    ordenada do maior total para o menor — igual ao que `agregar` devolvia."""
+    from .db import consultar
+
+    pedidas = [d for d in dict.fromkeys(dimensoes) if d in DIMENSOES]
+    if not pedidas:
+        return {}
+    if len(pedidas) == 1:
+        # Uma só não tem o que agrupar junto; o caminho simples é mais barato.
+        return {pedidas[0]: agregar(f, pedidas[0], tipo, periodo, limite)}
+
+    where, params = _where_relatorio(f, tipo)
+    recorte = _periodo(tipo, periodo)
+
+    # O rótulo de cada dimensão, na ordem pedida. O "(vazio)" entra como
+    # parâmetro, como em `agregar`.
+    rotulos = [f"CASE WHEN trim(coalesce({d},'')) = '' THEN ? "
+               f"     ELSE trim({d}) END" for d in pedidas]
+    # Os conjuntos de agrupamento: um por dimensão, pela posição no SELECT.
+    conjuntos = ", ".join(f"({i + 1})" for i in range(len(pedidas)))
+    # `GROUPING` diz, em cada linha do resultado, quais dimensões estão
+    # agregadas — é como se sabe de qual das listas aquela linha é.
+    marcas = ", ".join(f"GROUPING({r})" for r in rotulos)
+
+    # A ORDEM DOS PARÂMETROS SEGUE A ORDEM DO TEXTO DO SQL, e não a ordem em
+    # que a gente pensa nas partes. No texto vêm primeiro os CASE do SELECT,
+    # LOGO EM SEGUIDA os mesmos CASE dentro de GROUPING(...), e só então o
+    # WHERE. Trocar as duas últimas foi o defeito de 09/09: com filtro sem
+    # valor nenhum as duas ordens coincidiam e a tela abria; bastava filtrar
+    # por qualquer coisa para os CASE do GROUPING receberem o valor do filtro,
+    # deixarem de ser idênticos aos do SELECT, e o banco recusar a consulta.
+    linhas = consultar(
+        "SELECT " + ", ".join(rotulos) + ", " + marcas
+        + ", count(*), coalesce(sum(valor_num),0) "
+        f"  FROM analisesps.sps{where}{recorte} "
+        f" GROUP BY GROUPING SETS ({conjuntos})",
+        tuple([VAZIO] * len(pedidas))          # os CASE do SELECT
+        + tuple([VAZIO] * len(pedidas))        # os mesmos CASE no GROUPING
+        + tuple(params))                       # o WHERE, que vem depois
+
+    quantas = len(pedidas)
+    saida: dict = {d: [] for d in pedidas}
+    for linha in linhas:
+        valores = linha[:quantas]
+        agregadas = linha[quantas:quantas * 2]
+        quantidade, total = linha[-2], linha[-1]
+        # A dimensão desta linha é a única que NÃO está agregada (marca 0).
+        for i, marca in enumerate(agregadas):
+            if marca == 0:
+                saida[pedidas[i]].append({"rotulo": valores[i],
+                                          "quantidade": quantidade,
+                                          "total": total})
+                break
+
+    for dimensao, lista in saida.items():
+        lista.sort(key=lambda x: (-x["total"], x["rotulo"]))
+        saida[dimensao] = lista[:limite]
+    return saida
 
 
 def top_credores(f: dict, tipo: str = "geral", periodo: str = "tudo",

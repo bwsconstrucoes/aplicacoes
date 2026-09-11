@@ -7,14 +7,20 @@
 <div id="mensagem"></div>
 
 <!-- 1. DOCUMENTO -->
+{# 1 · DOCUMENTOS, no plural. Antes era um só, e ele nem ficava guardado:
+   servia para a leitura e ia embora. Duas coisas erradas de uma vez, e o dono
+   esbarrou nas duas em 10/09/2026 — *"eu botei a nota, pô, esqueci o boleto"*.
+   Agora dá para juntar quantos forem (nota + boleto + comprovante), ler os que
+   valem a pena ler, e TODOS ficam anexados ao título. #}
 <div class="cartao">
-  <div class="cartao-cab"><h3>1 · Documento</h3>
-    <small>XML da NFe, PDF ou foto — o sistema lê e preenche o resto</small></div>
+  <div class="cartao-cab"><h3>1 · Documentos</h3>
+    <small>nota, boleto, guia — o sistema lê e preenche, e todos ficam anexados</small></div>
   <div class="form-grade">
     <div class="campo" style="grid-column:span 2">
-      <label for="arq">Anexo</label>
-      <input type="file" id="arq" accept=".xml,.pdf,.png,.jpg,.jpeg,.webp">
-      <div class="dica">Nota, recibo, RPA, guia (DARF/GPS/FGTS), fatura, boleto, contrato,
+      <label for="arq">Documentos</label>
+      <input type="file" id="arq" multiple accept=".xml,.pdf,.png,.jpg,.jpeg,.webp">
+      <div class="dica">Pode escolher mais de um de uma vez, ou ir acrescentando.
+        Nota, recibo, RPA, guia (DARF/GPS/FGTS), fatura, boleto, contrato,
         termo de rescisão, comprovante ou prestação de contas — em PDF, <b>foto do celular</b>
         ou XML. Documento digitalizado e foto torta funcionam; confira os campos depois.</div>
     </div>
@@ -26,6 +32,7 @@
       <button class="btn secundario" id="btn-manual" style="margin-left:6px">Lançar manualmente</button>
     </div>
   </div>
+  <div id="lista-docs"></div>
   <div id="leitura"></div>
 </div>
 
@@ -57,8 +64,15 @@
         <input type="date" id="f-emissao"></div>
     </div>
     <div class="form-grade" style="margin-top:12px">
+      {# TEXTO DE VÁRIAS LINHAS, e não uma caixinha. O dono pediu isso duas
+         vezes: numa linha só, a descrição longa vai entrando para dentro e
+         some da vista, e não há como separar "o que é" de "para quê". A
+         caixa cresce sozinha até um limite; depois rola. #}
       <div class="campo" style="grid-column:span 2"><label for="f-descricao">Descrição *</label>
-        <input id="f-descricao" placeholder="o que foi comprado ou contratado"></textarea></div>
+        <textarea id="f-descricao" rows="3"
+          placeholder="o que foi comprado ou contratado&#10;pode usar mais de uma linha"></textarea>
+        <div class="dica">Enter quebra a linha — a quebra é guardada e aparece
+          igual na ficha do título.</div></div>
       <div class="campo"><label for="f-valor">Valor bruto *</label>
         <input id="f-valor" inputmode="decimal" placeholder="0,00"></div>
       <div class="campo"><label for="f-doc-numero">Nº do documento</label>
@@ -78,7 +92,11 @@
     <div class="cartao-cab"><h3>4 · Parcelas</h3><small>a soma precisa fechar com o líquido</small></div>
     <div id="lista-parcelas"></div>
     <button class="btn secundario" id="btn-add-parc">+ Adicionar parcela</button>
-    <div class="cartao-dica">Soma das parcelas: <b id="soma-parcelas">R$ 0,00</b></div>
+    <div class="cartao-dica">Soma das parcelas: <b id="soma-parcelas">R$ 0,00</b>
+      <br>A primeira já nasce com o líquido inteiro. <b>Acrescentar parcela
+      divide</b> o valor entre elas e joga o vencimento seguinte um mês à
+      frente. Valor que <b>você</b> digitar fica como está — só a divisão ao
+      acrescentar passa por cima, porque aí você está pedindo para dividir.</div>
   </div>
 
   <div class="cartao oculto" id="bloco-colaborador">
@@ -93,11 +111,23 @@
   </div>
 
   <div class="cartao">
-    <div class="cartao-cab"><h3>5 · Rateio por obra e conta</h3>
-      <small>divide entre obras e, se a nota tiver naturezas diferentes, entre contas</small></div>
+    <div class="cartao-cab"><h3>5 · Rateio por obra e conta do plano</h3>
+      <small>uma linha por pedaço da nota — pode ser outra obra, outra conta, ou as duas</small></div>
     <div id="lista-rateios"></div>
-    <button class="btn secundario" id="btn-add-rat">+ Adicionar obra</button>
-    <div class="cartao-dica">Soma do rateio: <b id="soma-rateios">R$ 0,00</b></div>
+    <div style="display:flex; gap:8px; flex-wrap:wrap">
+      <button class="btn secundario" id="btn-add-rat">+ Adicionar linha</button>
+      <button class="btn secundario" id="btn-dividir-rat"
+        title="Divide o líquido igualmente entre as linhas">Dividir igualmente</button>
+    </div>
+    {# O dono achou em 10/09/2026 que não dava para usar duas contas no mesmo
+       título — *"e se tiver mais de uma categoria eu não consigo adicionar
+       mais uma"*. Dava, mas a tela só falava em OBRA: o botão dizia "adicionar
+       obra" e a conta parecia acessório. Agora o rótulo diz o que a coisa é, e
+       a linha nova já vem com a obra da anterior, que é o caso comum: mesma
+       obra, contas diferentes. #}
+    <div class="cartao-dica">Soma do rateio: <b id="soma-rateios">R$ 0,00</b>
+      <br>Para dividir a nota entre <b>duas contas do plano</b>, acrescente uma
+      linha e troque só a conta — a obra já vem repetida.</div>
   </div>
 
   <div class="cartao">
@@ -210,24 +240,37 @@ function desenharLinhas(){
     </div>`).join("");
   els("lista-rateios").innerHTML = RAT.map((r,i) => `
     <div class="form-grade" style="margin-bottom:8px">
-      <div class="campo"><label>Obra ${i+1}</label>
+      <div class="campo"><label>Obra — parte ${i+1}</label>
         <select data-t="obra_id" data-i="${i}"><option value="">— escolher —</option>
         ${D.obras.map(o=>`<option value="${o.id}" ${String(r.obra_id)===String(o.id)?"selected":""}>${rotuloObra(o)}</option>`).join("")}
         </select></div>
-      <div class="campo" style="grid-column:span 2"><label>Conta desta parte</label>
+      <div class="campo" style="grid-column:span 2"><label>Conta do plano desta parte</label>
         <select data-t="categoria_id" data-i="${i}">
           <option value="">— mesma do título —</option>
           ${D.categorias.map(x=>`<option value="${x.id}" ${String(r.categoria_id)===String(x.id)?"selected":""}>${x.codigo} · ${x.descricao}</option>`).join("")}
         </select></div>
       <div class="campo"><label>Valor</label><input data-t="valor" data-i="${i}" value="${r.valor||""}"></div>
-      <div class="campo"><label>Descrição</label><input data-t="descricao" data-i="${i}" value="${r.descricao||""}" placeholder="ex.: material"></div>
+      <div class="campo"><label>O que é esta parte</label>
+        <input data-t="descricao" data-i="${i}" value="${escapar(r.descricao||"")}"
+               placeholder="ex.: material" title="Aparece no relatório por conta, para explicar por que a nota foi partida"></div>
       <div class="campo" style="align-self:end">${RAT.length>1?`<button class="btn secundario" data-del-t="${i}">Remover</button>`:""}</div>
     </div>`).join("");
 
   document.querySelectorAll("[data-r]").forEach(el => el.addEventListener("input", ev => {
     RET[+ev.target.dataset.i][ev.target.dataset.r] = ev.target.value; totais(); }));
   document.querySelectorAll("[data-p]").forEach(el => el.addEventListener("input", ev => {
-    PARC[+ev.target.dataset.i][ev.target.dataset.p] = ev.target.value; totais(); }));
+    const linha = PARC[+ev.target.dataset.i], campo = ev.target.dataset.p;
+    linha[campo] = ev.target.value;
+    // Digitou: o sistema não mexe mais NESTE campo desta parcela.
+    if (campo === "valor") linha.valor_auto = false;
+    if (campo === "vencimento") {
+      linha.venc_auto = false;
+      // …mas os seguintes que continuam automáticos andam junto.
+      distribuirParcelas();
+      desenharLinhas();
+      return;
+    }
+    totais(); }));
   document.querySelectorAll("[data-t]").forEach(el => el.addEventListener("input", ev => {
     RAT[+ev.target.dataset.i][ev.target.dataset.t] = ev.target.value; totais(); }));
   document.querySelectorAll("[data-del-r]").forEach(b => b.addEventListener("click", () => {
@@ -252,22 +295,97 @@ function totais(){
     (Math.abs(sr-liq) > 0.01 ? ` <span style="color:var(--vermelho)">— difere do líquido em ${fmt(Math.abs(sr-liq))}</span>` : " ✓");
 }
 
-// ---------- leitura do documento
-els("btn-ler").addEventListener("click", async () => {
-  const arq = els("arq").files[0];
-  if (!arq) { aviso("mensagem","Escolha o arquivo primeiro.","erro"); return; }
+// ---------------------------------------------------------------------------
+// OS DOCUMENTOS DO LANÇAMENTO
+//
+// Antes era um arquivo só, e ele NÃO FICAVA GUARDADO: servia para a leitura e
+// ia embora — a tela dizia "anexo" e não anexava nada. O dono esbarrou nisso
+// em 10/09/2026 (*"eu botei a nota, pô, esqueci o boleto"*), e são dois
+// defeitos: não dava para juntar mais de um, e nenhum ficava no título.
+//
+// Agora a lista fica na tela, cada um pode ser lido ou só arquivado, e TODOS
+// sobem como anexo do título depois que ele nasce.
+// ---------------------------------------------------------------------------
+let DOCS = [];              // {arquivo, lido, categoria}
+
+function categoriaDoDoc(x){
+  const tipo = ((x && x.tipo_documento) || "").toUpperCase();
+  if (tipo.includes("BOLETO")) return "BOLETO";
+  if (tipo.includes("GUIA") || tipo.includes("DARF") || tipo.includes("GPS")) return "GUIA";
+  if (tipo.includes("NF") || tipo.includes("NOTA")) return "NOTA";
+  if (tipo.includes("COMPROVANTE")) return "COMPROVANTE";
+  if (tipo.includes("CONTRATO")) return "CONTRATO";
+  return "OUTRO";
+}
+
+function desenharDocumentos(){
+  const alvo = els("lista-docs");
+  if (!DOCS.length) { alvo.innerHTML = ""; return; }
+  alvo.innerHTML = `<div class="cartao" style="box-shadow:none; border:1px solid var(--borda); padding:0; margin-top:10px">
+    <table><tbody>${DOCS.map((d, i) => `
+      <tr>
+        <td>${escapar(d.arquivo.name)}
+          <small>${Math.round(d.arquivo.size / 1024)} KB</small></td>
+        <td style="width:150px">${d.lido
+          ? `<span class="selo aprovado">lido</span>`
+          : `<span class="selo outro">só arquiva</span>`}</td>
+        <td style="width:210px; white-space:nowrap">
+          ${d.lido ? "" : `<button class="btn secundario" data-ler-doc="${i}">Ler este</button>`}
+          <button class="btn secundario" data-tira-doc="${i}">Remover</button></td>
+      </tr>`).join("")}</tbody></table>
+    <div class="cartao-dica" style="margin:0">Todos ficam anexados ao título.
+      <b>Ler</b> é opcional: o boleto costuma valer a leitura (traz vencimento,
+      valor e linha digitável); um comprovante, normalmente não.</div></div>`;
+  document.querySelectorAll("[data-ler-doc]").forEach(b =>
+    b.addEventListener("click", () => lerDocumento(+b.dataset.lerDoc)));
+  document.querySelectorAll("[data-tira-doc]").forEach(b =>
+    b.addEventListener("click", () => { DOCS.splice(+b.dataset.tiraDoc, 1); desenharDocumentos(); }));
+}
+
+els("arq").addEventListener("change", () => {
+  [...els("arq").files].forEach(f => {
+    // O mesmo arquivo escolhido duas vezes vira um anexo repetido no título.
+    if (!DOCS.some(d => d.arquivo.name === f.name && d.arquivo.size === f.size)) {
+      DOCS.push({arquivo: f, lido: false, categoria: "OUTRO"});
+    }
+  });
+  els("arq").value = "";        // libera o campo para acrescentar mais
+  desenharDocumentos();
+});
+
+async function lerDocumento(indice){
+  if (!DOCS.length) { aviso("mensagem","Escolha o arquivo primeiro.","erro"); return; }
+  const i = (indice === undefined || indice === null)
+    ? DOCS.findIndex(d => !d.lido) : indice;
+  if (i < 0) { aviso("mensagem","Todos os documentos já foram lidos.","info"); return; }
   const b = els("btn-ler"); b.disabled = true; b.textContent = "Lendo…";
-  const fd = new FormData(); fd.append("arquivo", arq); fd.append("dica", els("dica").value);
+  const fd = new FormData();
+  fd.append("arquivo", DOCS[i].arquivo); fd.append("dica", els("dica").value);
   try {
     const d = await api("/erp/api/lancamento/ler-documento", {method:"POST", body: fd});
-    LIDO = d.documento;
-    aplicarLeitura(LIDO);
+    const primeira = !LIDO;
+    LIDO = LIDO || d.documento;      // o primeiro lido é quem manda no cabeçalho
+    DOCS[i].lido = true;
+    DOCS[i].categoria = categoriaDoDoc(d.documento);
+    aplicarLeitura(d.documento, primeira);
   } catch(e){ aviso("mensagem", e.message + " Você pode preencher manualmente.", "erro");
     els("form-bloco").classList.remove("oculto"); }
   b.disabled = false; b.textContent = "Ler documento";
-});
+  desenharDocumentos();
+}
 
-function aplicarLeitura(x){
+els("btn-ler").addEventListener("click", () => lerDocumento());
+
+// `primeira` distingue o documento que MANDA (a nota, normalmente) dos que
+// vêm depois. O segundo documento só preenche o que está VAZIO: se o boleto
+// traz um valor um pouco diferente do da nota, quem vale é a nota — trocar
+// calado o valor já conferido é como se perde a confiança na leitura.
+function aplicarLeitura(x, primeira = true){
+  const porFora = (id, valor) => {
+    if (valor === undefined || valor === null || valor === "") return;
+    if (!primeira && (els(id).value || "").trim()) return;
+    els(id).value = valor;
+  };
   const conf = {ALTA:"aprovado", MEDIA:"aguardando", BAIXA:"bloqueado"}[x.confianca] || "outro";
   els("leitura").innerHTML = `
     <div class="aviso ${x.confianca==="ALTA"?"ok":"info"}" style="margin-top:12px">
@@ -321,18 +439,29 @@ function aplicarLeitura(x){
   }
   if (x.obra_sugerida) RAT = [{obra_id: x.obra_sugerida.obra_id,
                               valor: String(x.valor_total||"").replace(".",",")}];
-  if (x.fornecedor_id) els("f-credor").value = x.fornecedor_id;
-  if (x.descricao) els("f-descricao").value = x.descricao;
-  if (x.valor_total) els("f-valor").value = String(x.valor_total).replace(".",",");
-  if (x.numero_documento) els("f-doc-numero").value = x.numero_documento;
-  if (x.data_emissao) { els("f-emissao").value = x.data_emissao;
-    els("f-competencia").value = x.data_emissao.slice(0,7); }
-  if (x.parcelas && x.parcelas.length) PARC = x.parcelas.map(p => ({
-    vencimento: p.vencimento||"", valor: String(p.valor||"").replace(".",","),
-    linha_digitavel: p.linha_digitavel||""}));
-  if (x.retencoes && x.retencoes.length) RET = x.retencoes.map(r => ({
+  if (x.fornecedor_id && (primeira || !els("f-credor").value)) els("f-credor").value = x.fornecedor_id;
+  porFora("f-descricao", x.descricao);
+  porFora("f-valor", x.valor_total ? String(x.valor_total).replace(".",",") : "");
+  porFora("f-doc-numero", x.numero_documento);
+  if (x.data_emissao && (primeira || !els("f-emissao").value)) {
+    els("f-emissao").value = x.data_emissao;
+    els("f-competencia").value = x.data_emissao.slice(0,7);
+  }
+  // Parcela que veio de DOCUMENTO é fato, não sugestão: entra travada, para o
+  // "dividir igualmente" não passar por cima do que o boleto diz.
+  const temVencimento = PARC.some(p => p.vencimento);
+  if (x.parcelas && x.parcelas.length && (primeira || !temVencimento)) {
+    PARC = x.parcelas.map(p => ({
+      vencimento: p.vencimento||"", valor: String(p.valor||"").replace(".",","),
+      linha_digitavel: p.linha_digitavel||"",
+      valor_auto: false, venc_auto: false}));
+  }
+  if (x.retencoes && x.retencoes.length && (primeira || !RET.length)) RET = x.retencoes.map(r => ({
     tipo: r.tipo, base_calculo: String(r.base_calculo||"").replace(".",","),
     aliquota: String(r.aliquota||"").replace(".",","), valor: String(r.valor||"").replace(".",",")}));
+  // Documento que não trouxe parcela nenhuma: a primeira parcela nasce com o
+  // líquido inteiro, que é o pedido do dono — em vez de zero para digitar.
+  distribuirParcelas();
   if (x.obra_id) RAT = [{obra_id: x.obra_id, valor: String(x.valor_total||"").replace(".",",")}];
   els("form-bloco").classList.remove("oculto");
   desenharLinhas(); atualizarCredor();
@@ -386,10 +515,100 @@ els("f-categoria").addEventListener("change", () => {
   els("dica-categoria").innerHTML = c ? (c.uso || `${c.grupo} › ${c.subgrupo}`) +
     (c.natureza === "FLUXO" ? " · <b>conta de fluxo</b> (não entra na DRE)" : "") : "";
 });
-els("f-valor").addEventListener("input", totais);
+els("f-valor").addEventListener("input", () => {
+  // O valor mudou: as parcelas que o sistema preencheu acompanham. As que a
+  // pessoa digitou ficam onde estão — e a soma passa a acusar a diferença,
+  // que é exatamente o que ela precisa ver.
+  distribuirParcelas();
+  desenharLinhas();
+});
 els("btn-add-ret").addEventListener("click", () => { RET.push({tipo:"INSS"}); desenharLinhas(); });
-els("btn-add-parc").addEventListener("click", () => { PARC.push({}); desenharLinhas(); });
-els("btn-add-rat").addEventListener("click", () => { RAT.push({}); desenharLinhas(); });
+
+// ---------------------------------------------------------------------------
+// PARCELAS QUE SE PREENCHEM SOZINHAS
+//
+// Pedido do dono em 10/09/2026: *"gostaria que ele já sugerisse o valor da
+// parcela baseado no valor que ele detectou da nota. Se eu adicionar mais
+// parcelas, ele já dividisse. E os vencimentos: se eu já coloquei o primeiro,
+// jogar o próximo pra trinta dias."*
+//
+// A regra que evita o pior defeito possível aqui — apagar o que a pessoa
+// digitou — é a MARCA: campo que o sistema preencheu fica marcado como
+// automático; assim que alguém digita nele, a marca cai e o sistema não
+// encosta mais. Dividir de novo só mexe no que continua automático.
+// ---------------------------------------------------------------------------
+function liquidoAtual(){
+  return dec(els("f-valor").value) - RET.reduce((a,r)=>a+dec(r.valor),0);
+}
+
+// Mesmo dia no mês seguinte. Dia 31 em mês de 30 cai no último dia — que é o
+// que o boleto faz, e não dia 1º do mês seguinte.
+function maisUmMes(iso){
+  const [a, m, d] = (iso || "").split("-").map(Number);
+  if (!a || !m || !d) return "";
+  const alvo = new Date(a, m, 1);              // mês seguinte, dia 1
+  const ultimo = new Date(a, m + 1, 0).getDate();
+  alvo.setDate(Math.min(d, ultimo));
+  const p = n => String(n).padStart(2, "0");
+  return `${alvo.getFullYear()}-${p(alvo.getMonth() + 1)}-${p(alvo.getDate())}`;
+}
+
+function distribuirParcelas(){
+  const liq = liquidoAtual();
+  const auto = PARC.filter(p => p.valor_auto !== false);
+  if (liq > 0 && auto.length) {
+    // O resto do centavo vai para a ÚLTIMA automática, para a soma fechar
+    // exata com o líquido — é isso que a conferência vai cobrar depois.
+    const jaFixo = PARC.filter(p => p.valor_auto === false)
+                       .reduce((a, p) => a + dec(p.valor), 0);
+    const sobra = Math.max(0, liq - jaFixo);
+    const cota = Math.floor((sobra / auto.length) * 100) / 100;
+    auto.forEach((p, i) => {
+      const v = (i === auto.length - 1)
+        ? Math.round((sobra - cota * (auto.length - 1)) * 100) / 100
+        : cota;
+      p.valor = v.toFixed(2).replace(".", ",");
+    });
+  }
+  // Vencimento em cadeia: cada automático cai um mês depois do anterior.
+  for (let i = 1; i < PARC.length; i++) {
+    if (PARC[i].venc_auto === false) continue;
+    const anterior = PARC[i - 1].vencimento;
+    PARC[i].vencimento = anterior ? maisUmMes(anterior) : "";
+  }
+}
+
+els("btn-add-parc").addEventListener("click", () => {
+  // Acrescentar parcela é um pedido EXPLÍCITO de dividir — então aqui as
+  // marcas de "não mexa" caem, inclusive a do valor que veio do boleto. Foi o
+  // que o dono descreveu: *"quando eu adicionar outra parcela ele já quebra em
+  // dois"*. Nos outros recálculos (valor mudou, vencimento editado) as marcas
+  // continuam valendo, e é isso que protege o que a pessoa digitou.
+  PARC.forEach(p => { p.valor_auto = true; });
+  PARC.push({});
+  distribuirParcelas();
+  desenharLinhas();
+});
+
+els("btn-add-rat").addEventListener("click", () => {
+  // A linha nova repete a obra da anterior: o caso comum de acrescentar linha
+  // é partir a MESMA obra em duas contas do plano.
+  const ultima = RAT[RAT.length - 1] || {};
+  RAT.push({obra_id: ultima.obra_id || ""});
+  desenharLinhas();
+});
+
+els("btn-dividir-rat").addEventListener("click", () => {
+  const liq = liquidoAtual();
+  if (liq <= 0 || !RAT.length) return;
+  const cota = Math.floor((liq / RAT.length) * 100) / 100;
+  RAT.forEach((r, i) => {
+    const v = (i === RAT.length - 1)
+      ? Math.round((liq - cota * (RAT.length - 1)) * 100) / 100 : cota;
+    r.valor = v.toFixed(2).replace(".", ",");
+  });
+  desenharLinhas();
+});
 
 function montar(){
   return {
@@ -469,13 +688,31 @@ els("btn-enviar").addEventListener("click", async () => {
     const d = await api("/erp/api/lancamento", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify(montar())});
     const t = d.titulo;
-    aviso("mensagem", t.status === "BLOQUEADO"
+    // OS DOCUMENTOS SOBEM DEPOIS, porque só agora existe título a que
+    // prendê-los. Falha em anexar não desfaz o título — seria pior: a
+    // solicitação já foi analisada e numerada. O que ela faz é DIZER quais
+    // ficaram de fora, com o número da SP, para reanexar pela ficha.
+    const falhas = [];
+    for (const doc of DOCS) {
+      const fd = new FormData();
+      fd.append("arquivo", doc.arquivo);
+      fd.append("categoria", doc.categoria || "OUTRO");
+      try {
+        await api(`/erp/api/anexos/titulo/${t.id}`, {method:"POST", body: fd});
+      } catch(err){ falhas.push(`${doc.arquivo.name} (${err.message})`); }
+    }
+    const quantos = DOCS.length - falhas.length;
+    aviso("mensagem", (t.status === "BLOQUEADO"
       ? `Solicitação <b>${t.numero_sp}</b> registrada e <b>bloqueada</b> pela análise (risco ${t.risco}). Veja em Títulos.`
-      : `Solicitação <b>${t.numero_sp}</b> enviada para autorização (risco ${t.risco}).`,
-      t.status === "BLOQUEADO" ? "info" : "ok");
-    RET = []; PARC = [{}]; RAT = [{}]; LIDO = null;
+      : `Solicitação <b>${t.numero_sp}</b> enviada para autorização (risco ${t.risco}).`)
+      + (quantos ? ` ${quantos} documento(s) anexado(s).` : "")
+      + (falhas.length ? `<br><b>Não consegui anexar:</b> ${falhas.map(escapar).join("; ")}
+           — anexe pela ficha do título ${escapar(t.numero_sp)}.` : ""),
+      falhas.length ? "info" : (t.status === "BLOQUEADO" ? "info" : "ok"));
+    RET = []; PARC = [{}]; RAT = [{}]; LIDO = null; DOCS = [];
     ["f-descricao","f-valor","f-doc-numero","f-emissao"].forEach(i=>els(i).value="");
     els("leitura").innerHTML = ""; els("bloco-critica").innerHTML = "";
+    desenharDocumentos();
     desenharLinhas();
     window.scrollTo({top:0, behavior:"smooth"});
   } catch(e){

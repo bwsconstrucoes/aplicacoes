@@ -99,13 +99,24 @@ def remover_por_status(texto: str, status_alvo: set[str],
                        status_por_id: dict) -> tuple[str, int]:
     """Tira do lote as SPs que já estão num determinado status.
 
-    Serve para limpar o que já foi pago ou cancelado sem desmontar os grupos: os
-    títulos ficam, mesmo que o grupo esvazie. Devolve o texto novo e quantas
-    saíram."""
+    Serve para limpar o que já foi pago ou cancelado. Devolve o texto novo e
+    quantas saíram.
+
+    O TÍTULO DE UM GRUPO QUE ESVAZIOU NA LIMPEZA VAI JUNTO. Antes ele ficava, e
+    o lote terminava cheio de cabeçalhos sem nada embaixo — "Pagar amanhã" sem
+    uma SP sequer. Pedido do dono em 11/09/2026.
+
+    MAS SÓ QUEM ESVAZIOU AGORA. Um grupo que já estava vazio antes da limpeza
+    continua: alguém escreveu aquele título de propósito, para encher depois, e
+    apagar o que a pessoa acabou de digitar seria pior do que o cabeçalho
+    sobrando."""
     alvos = {s.strip().lower() for s in status_alvo}
-    linhas_novas: list[str] = []
     removidos = 0
 
+    # Primeiro quebra em blocos: cada um é um título (ou nenhum, no começo) e
+    # as linhas de SPs que vêm debaixo dele. Só assim dá para saber se um
+    # título ficou órfão POR CAUSA desta limpeza.
+    blocos: list = [{"titulo": None, "linhas": [], "tinha": 0}]
     for bruta in str(texto or "").split("\n"):
         linha = bruta.strip()
         if not linha:
@@ -115,10 +126,18 @@ def remover_por_status(texto: str, status_alvo: set[str],
             mantidos = [p for p in pedacos
                         if str(status_por_id.get(p, "")).strip().lower() not in alvos]
             removidos += len(pedacos) - len(mantidos)
+            blocos[-1]["tinha"] += len(pedacos)
             if mantidos:
-                linhas_novas.append(" ".join(mantidos))
+                blocos[-1]["linhas"].append(" ".join(mantidos))
         else:
-            linhas_novas.append(linha)      # título de grupo: sempre fica
+            blocos.append({"titulo": linha, "linhas": [], "tinha": 0})
+
+    linhas_novas: list = []
+    for bloco in blocos:
+        esvaziou_agora = bloco["tinha"] > 0 and not bloco["linhas"]
+        if bloco["titulo"] is not None and not esvaziou_agora:
+            linhas_novas.append(bloco["titulo"])
+        linhas_novas.extend(bloco["linhas"])
 
     return "\n".join(linhas_novas).strip("\n"), removidos
 
@@ -178,39 +197,90 @@ def por_pessoa() -> bool:
     return tem_coluna("lote", "pessoa")
 
 
-def ler(pessoa: str = "") -> dict:
+# A chave do lote no armário de reserva — ver `preferencias.py`. Enquanto a
+# coluna `pessoa` não existir, é aqui que o lote de cada um fica.
+CHAVE_RESERVA = "lote"
+
+
+def _reserva_ler(pessoa: str) -> dict:
+    from . import preferencias
+    return preferencias.ler(pessoa, CHAVE_RESERVA)
+
+
+def ler(pessoa: str) -> dict:
     """O lote DESTA pessoa, com quem salvou por último e quando.
+
+    A PESSOA NÃO TEM VALOR PADRÃO, e isso é de propósito. Ela tinha, e o padrão
+    era `""` — que significa o LOTE ANTIGO, de quando ele era compartilhado.
+    Duas rotas (a exportação e o PDF) ficaram chamando `ler()` sem argumento
+    quando o lote passou a ser de cada um, e por meses entregaram um lote
+    congelado sem reclamar de nada. Quem quiser mesmo o lote antigo chama
+    `lote_de_antes()`, que diz isso no nome.
 
     Até 04/09/2026 havia um lote só, de todo mundo: quem salvasse depois
     sobrescrevia o trabalho do outro sem aviso. Agora cada um tem o seu — foi
-    decisão do dono, e é como era no Streamlit, que rodava numa máquina só."""
+    decisão do dono, e é como era no Streamlit, que rodava numa máquina só.
+
+    ENQUANTO A COLUNA `pessoa` NÃO EXISTIR (migração 003 não aplicada), o lote
+    de cada um vai para o armário de reserva, em vez de todo mundo voltar a
+    dividir a mesma lista. Antes daqui a separação por pessoa só passava a
+    valer depois do botão — e "depois do botão" durou dias."""
     from .db import consultar_um
-    if por_pessoa():
-        linha = consultar_um(
-            "SELECT conteudo, salvo_por, salvo_em FROM analisesps.lote "
-            " WHERE pessoa = ?", (str(pessoa or ""),))
-    else:
+    if not por_pessoa():
+        guardado = _reserva_ler(pessoa)
+        if guardado:
+            return {"conteudo": guardado.get("conteudo", "") or "",
+                    "salvo_por": guardado.get("salvo_por"),
+                    "salvo_em": guardado.get("salvo_em"),
+                    "compartilhado": False}
+        # Nada guardado ainda: aproveita o lote antigo, o de quando era um só.
+        # É trabalho de verdade que estava em andamento; começar do zero seria
+        # o mesmo que apagá-lo.
         linha = consultar_um(
             "SELECT conteudo, salvo_por, salvo_em FROM analisesps.lote "
             " WHERE id = 1")
+        if not linha:
+            return {"conteudo": "", "salvo_por": None, "salvo_em": None,
+                    "compartilhado": False}
+        return {"conteudo": linha[0] or "", "salvo_por": linha[1],
+                "salvo_em": linha[2], "compartilhado": False}
+
+    linha = consultar_um(
+        "SELECT conteudo, salvo_por, salvo_em FROM analisesps.lote "
+        " WHERE pessoa = ?", (str(pessoa or ""),))
     if not linha:
+        # A tabela boa existe mas esta pessoa não tem linha lá: o que ela
+        # guardou antes do botão está no armário de reserva. Traz para cá.
+        guardado = _reserva_ler(pessoa)
+        if guardado and guardado.get("conteudo"):
+            salvar(guardado["conteudo"], guardado.get("salvo_por") or "", pessoa)
+            logger.info("Análise de SPs: lote de %r trazido do armário de "
+                        "reserva.", pessoa)
+            return {"conteudo": guardado["conteudo"],
+                    "salvo_por": guardado.get("salvo_por"),
+                    "salvo_em": guardado.get("salvo_em"),
+                    "compartilhado": False}
         return {"conteudo": "", "salvo_por": None, "salvo_em": None,
-                "compartilhado": not por_pessoa()}
+                "compartilhado": False}
     return {"conteudo": linha[0] or "", "salvo_por": linha[1],
-            "salvo_em": linha[2], "compartilhado": not por_pessoa()}
+            "salvo_em": linha[2], "compartilhado": False}
 
 
-def salvar(conteudo: str, quem: str = "", pessoa: str = "") -> None:
-    """Guarda o lote da pessoa. `quem` é o nome que a tela mostra depois."""
+def salvar(conteudo: str, quem: str, pessoa: str) -> None:
+    """Guarda o lote da pessoa. `quem` é o nome que a tela mostra depois.
+
+    Sem valor padrão pelo mesmo motivo de `ler`: salvar no lote errado é pior
+    do que não salvar, porque ninguém percebe."""
     from .db import conexao
     if not por_pessoa():
-        # Banco ainda atrasado: grava onde ele sabe, sem perder o trabalho.
-        with conexao() as conn:
-            conn.execute(
-                "UPDATE analisesps.lote SET conteudo = ?, salvo_por = ?, "
-                "       salvo_em = now() WHERE id = 1",
-                (str(conteudo or ""), quem))
-            conn.commit()
+        from . import preferencias
+        from .horario import agora
+        # A hora vai em formato de máquina: quem mostra na tela é o
+        # `momento_br`, que sabe converter. Guardar já formatado faria a tela
+        # mostrar a hora duas vezes escrita de jeitos diferentes.
+        preferencias.gravar(pessoa, CHAVE_RESERVA, {
+            "conteudo": str(conteudo or ""), "salvo_por": quem,
+            "salvo_em": agora().isoformat()})
         return
     with conexao() as conn:
         conn.execute(

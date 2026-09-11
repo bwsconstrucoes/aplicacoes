@@ -159,7 +159,9 @@ def simular(linhas_por_obra, financeiro, escolhas_a, mapa_projeto,
         "obras": obras,
         "composicao": composicao,
         "conjunto_montado": any(p > 0 for p in pesos_a.values()),
-        "leitura": _ler(linhas, incluir_aportes),
+        "leitura": _ler(linhas, incluir_aportes,
+                        sum(f["emprestimo_tomado"] for f in financeiro),
+                        sum(f["emprestimo_pago"] for f in financeiro)),
     }
 
 
@@ -192,7 +194,8 @@ def _janelas_negativas(linhas, campo):
     return janelas
 
 
-def _ler(linhas, incluir_aportes: bool) -> list[str]:
+def _ler(linhas, incluir_aportes: bool,
+         emprestimo_tomado: float = 0.0, emprestimo_pago: float = 0.0) -> list[str]:
     if not linhas:
         return []
     frases = []
@@ -288,6 +291,23 @@ def _ler(linhas, incluir_aportes: bool) -> list[str]:
             f"(mínimo de {_brl(pior_c['caixa_reconstruido'])} em {pior_c['rotulo']}); "
             f"termina em {_brl(fim_caixa)}. As fontes de dinheiro que o painel "
             f"conhece explicam o caixa, ao menos no total.")
+
+    # 4b) o empréstimo devolveu mais do que entrou?
+    # Sozinho isso é impossível: ninguém paga principal de dinheiro que não
+    # tomou. Quando aparece, ou o empréstimo foi tomado antes do período que a
+    # base cobre, ou há título de empréstimo classificado em outra categoria no
+    # OMIE — e aí o número de todas as telas está torto, não só o desta.
+    liquido = round(emprestimo_tomado + emprestimo_pago, 2)  # o pago já é negativo
+    if liquido < -0.5:
+        frases.append(
+            f"<b>Saiu mais principal de empréstimo do que entrou:</b> "
+            f"{_brl(emprestimo_tomado)} tomados contra {_brl(abs(emprestimo_pago))} "
+            f"de principal pago, um líquido de <b>{_brl(liquido)}</b>. Ninguém paga "
+            f"principal de dinheiro que não tomou: ou parte dos empréstimos é "
+            f"anterior ao período que a base cobre, ou há título de empréstimo "
+            f"classificado em outra categoria no OMIE. No segundo caso o erro não "
+            f"fica só aqui — vira despesa de obra em todas as telas. <b>O Explorador "
+            f"mostra os lançamentos por categoria, e é por lá que se corrige.</b>")
 
     # 5) o fechamento
     ultimo = linhas[-1]

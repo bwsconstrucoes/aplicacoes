@@ -24,6 +24,13 @@
     <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-obra"></div></div>
   </div>
   <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Conta que paga</span>
+      <span class="filtro-badge" id="badge-conta">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-conta"></div>
+      <div class="dica">A conta vem da obra. Título rateado entre obras de contas
+        diferentes aparece nas duas.</div></div>
+  </div>
+  <div class="filtro aberto">
     <button class="filtro-cab" type="button"><span>Lote</span><span class="seta">▾</span></button>
     <div class="filtro-cont">
       <label class="opcao"><input type="checkbox" id="f-sem-lote"><span class="rotulo">Fora de lote</span></label>
@@ -100,157 +107,10 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 let P = [], CONTAS = [], LOTES = [], SEL = new Set(), ORDEM = {campo:"vencimento", asc:true};
-let F = {forma: new Set(), obra: new Set()};
+let F = {forma: new Set(), obra: new Set(), conta: new Set()};
 
 document.querySelectorAll(".filtro-cab").forEach(b =>
   b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
-
-async function carregar(){
-  try {
-    const d = await api("/erp/api/pagamentos/agenda");
-    P = d.parcelas; CONTAS = d.contas;
-    const l = await api("/erp/api/lotes"); LOTES = l.lotes;
-    els("conta-baixa").innerHTML = CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("")
-      || `<option value="">— cadastre uma conta —</option>`;
-    els("comp-conta").innerHTML = CONTAS.map(c=>`<option value="${c.id}">${c.descricao}</option>`).join("")
-      || `<option value="">— cadastre uma conta —</option>`;
-    els("lote-destino").innerHTML = `<option value="">— escolher lote —</option>` +
-      LOTES.filter(l=>l.status==="ABERTO").map(l=>`<option value="${l.id}">${l.nome}</option>`).join("");
-    els("data-baixa").value = new Date().toISOString().slice(0,10);
-    montarFiltros(); desenharLotes(); desenhar();
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
-}
-
-function montarFiltros(){
-  const cont = campo => { const m={}; P.forEach(p=>{ if(p[campo]) m[p[campo]]=(m[p[campo]]||0)+1; }); return m; };
-  const cf = cont("forma"), co = cont("obra");
-  els("opcoes-forma").innerHTML = Object.keys(cf).sort().map(k=>
-    `<label class="opcao"><input type="checkbox" data-f="forma" value="${k}" ${F.forma.has(k)?"checked":""}>
-     <span class="rotulo">${rotulo(k)}</span><span class="qtd">${cf[k]}</span></label>`).join("");
-  els("opcoes-obra").innerHTML = Object.keys(co).sort().map(k=>
-    `<label class="opcao"><input type="checkbox" data-f="obra" value="${k}" ${F.obra.has(k)?"checked":""}>
-     <span class="rotulo">${k}</span><span class="qtd">${co[k]}</span></label>`).join("");
-  els("badge-forma").textContent = F.forma.size; els("badge-obra").textContent = F.obra.size;
-  document.querySelectorAll("[data-f]").forEach(i=>i.addEventListener("change", ev=>{
-    const f=ev.target.dataset.f, v=ev.target.value;
-    ev.target.checked ? F[f].add(v) : F[f].delete(v);
-    montarFiltros(); desenhar();
-  }));
-}
-
-function desenharLotes(){
-  els("lista-lotes").innerHTML = LOTES.length ? `<div class="grade">` + LOTES.map(l => `
-    <button class="kpi ${l.prioridade<=2?"vermelho":l.prioridade===3?"":"ciano"}" data-lote="${l.id}">
-      <div class="kpi-rotulo">${l.prioridade_rotulo} · ${rotulo(l.status)}</div>
-      <div class="kpi-valor" style="font-size:15px">${l.nome}</div>
-      <div class="kpi-sub">${l.itens} parcela(s) · ${moeda(l.total)}
-        ${l.pagas ? ` · ${l.pagas} paga(s)` : ""}</div>
-    </button>`).join("") + `</div>`
-    : `<div class="cartao-dica">Nenhum lote aberto. Crie um lote para organizar os pagamentos do dia.</div>`;
-  document.querySelectorAll("[data-lote]").forEach(b =>
-    b.addEventListener("click", () => abrirLote(+b.dataset.lote)));
-}
-
-function visiveis(){
-  const hoje = new Date().toISOString().slice(0,10);
-  const lim7 = new Date(Date.now()+7*864e5).toISOString().slice(0,10);
-  const busca = (els("f-busca").value||"").toLowerCase().trim();
-  let l = P.filter(p => {
-    if (F.forma.size && !F.forma.has(p.forma)) return false;
-    if (F.obra.size && !F.obra.has(p.obra)) return false;
-    if (els("f-atrasadas").checked && !p.atrasada) return false;
-    if (els("f-hoje").checked && p.vencimento !== hoje) return false;
-    if (els("f-7").checked && p.vencimento > lim7) return false;
-    if (els("f-sem-lote").checked && p.em_lote) return false;
-    if (busca && !`${p.numero_sp} ${p.credor} ${p.descricao} ${p.obra}`.toLowerCase().includes(busca)) return false;
-    return true;
-  });
-  const {campo, asc} = ORDEM;
-  return l.sort((a,b)=>{ let x=a[campo], y=b[campo];
-    return typeof x === "string" ? (asc?x.localeCompare(y,"pt-BR"):y.localeCompare(x,"pt-BR")) : (asc?x-y:y-x); });
-}
-
-function desenhar(){
-  const l = visiveis();
-  const soma = f => l.filter(f).reduce((a,p)=>a+p.valor,0);
-  const hoje = new Date().toISOString().slice(0,10);
-  els("kpis").innerHTML = `
-    <div class="kpi estatico"><div class="kpi-rotulo">A pagar</div>
-      <div class="kpi-valor">${l.length}</div><div class="kpi-sub">${moeda(soma(()=>true))}</div></div>
-    <div class="kpi estatico vermelho"><div class="kpi-rotulo">Atrasadas</div>
-      <div class="kpi-valor">${l.filter(p=>p.atrasada).length}</div>
-      <div class="kpi-sub">${moeda(soma(p=>p.atrasada))}</div></div>
-    <div class="kpi estatico ambar"><div class="kpi-rotulo">Vencem hoje</div>
-      <div class="kpi-valor">${l.filter(p=>p.vencimento===hoje).length}</div>
-      <div class="kpi-sub">${moeda(soma(p=>p.vencimento===hoje))}</div></div>
-    <div class="kpi estatico ciano"><div class="kpi-rotulo">Fora de lote</div>
-      <div class="kpi-valor">${l.filter(p=>!p.em_lote).length}</div>
-      <div class="kpi-sub">${moeda(soma(p=>!p.em_lote))}</div></div>`;
-  els("vazio").classList.toggle("oculto", l.length>0);
-  if (!l.length) els("vazio").innerHTML = P.length
-    ? "<b>Nada nestes filtros</b>Ajuste à esquerda."
-    : "<b>Nenhuma parcela liberada</b>Títulos precisam ser liberados para pagamento na aba Títulos.";
-  els("corpo").innerHTML = l.map(p => `
-    <tr class="${SEL.has(p.parcela_id)?"marcada":""}">
-      <td><input type="checkbox" data-sel="${p.parcela_id}" ${SEL.has(p.parcela_id)?"checked":""}></td>
-      <td class="dados">${p.numero_sp}${p.parcela>1?`<small>/${p.parcela}</small>`:""}</td>
-      <td>${p.credor}</td>
-      <td class="desc">${p.descricao}${p.em_lote?`<small>em lote</small>`:""}</td>
-      <td>${p.obra||"—"}</td>
-      <td class="dados ${p.atrasada?"atrasado":""}">${dataBR(p.vencimento)}</td>
-      <td class="direita dados">${numero(p.valor)}</td>
-      <td><span class="selo outro">${rotulo(p.forma)}</span></td>
-      <td><button class="btn secundario" data-pagar="${p.parcela_id}">Como pagar</button></td>
-    </tr>`).join("");
-  document.querySelectorAll("[data-sel]").forEach(c=>c.addEventListener("change", ev=>{
-    const id=+ev.target.dataset.sel; ev.target.checked?SEL.add(id):SEL.delete(id); desenhar(); }));
-  document.querySelectorAll("[data-pagar]").forEach(b=>b.addEventListener("click",()=>comoPagar(+b.dataset.pagar)));
-  const sel = P.filter(p=>SEL.has(p.parcela_id));
-  els("acoes").classList.toggle("oculto", !sel.length);
-  els("resumo").innerHTML = sel.length
-    ? `<b>${sel.length}</b> selecionada(s) · <b>${moeda(sel.reduce((a,p)=>a+p.valor,0))}</b>`
-    : `<b>${l.length}</b> parcela(s) · <b>${moeda(l.reduce((a,p)=>a+p.valor,0))}</b>`;
-  els("marca-todos").checked = l.length>0 && l.every(p=>SEL.has(p.parcela_id));
-}
-
-async function comoPagar(parcelaId){
-  try {
-    const {pagamento: d} = await api(`/erp/api/pagamentos/detalhe/${parcelaId}`);
-    els("dlg-titulo").textContent = `${d.numero_sp} — ${d.credor}`;
-    els("dlg-corpo").innerHTML = `
-      ${d.aviso ? `<div class="aviso erro">${d.aviso}</div>` : ""}
-      <div class="kpis">
-        <div class="kpi estatico"><div class="kpi-rotulo">Valor</div>
-          <div class="kpi-valor" style="font-size:19px">${numero(d.valor)}</div></div>
-        <div class="kpi estatico"><div class="kpi-rotulo">Vencimento</div>
-          <div class="kpi-valor" style="font-size:19px">${dataBR(d.vencimento)}</div></div>
-        <div class="kpi estatico"><div class="kpi-rotulo">Forma</div>
-          <div class="kpi-valor" style="font-size:19px">${rotulo(d.forma)}</div></div>
-      </div>
-      <div class="cartao-dica">${d.descricao} · credor ${d.documento_credor}</div>
-      ${d.boleto ? `<h4>Linha digitável</h4>
-        <div class="cartao"><div class="dados" style="font-size:15px; word-break:break-all">${d.boleto}</div>
-        <button class="btn secundario" style="margin-top:8px" onclick="copiar('${d.boleto}')">Copiar</button></div>` : ""}
-      ${d.pix ? `<h4>Pix — copia e cola</h4>
-        <div class="cartao">
-          <div class="dados" style="font-size:12px; word-break:break-all">${d.pix.copia_e_cola}</div>
-          <div style="display:flex; gap:10px; align-items:flex-start; margin-top:10px">
-            <button class="btn" onclick="copiar('${d.pix.copia_e_cola}')">Copiar código</button>
-            <div id="qr"></div>
-          </div>
-          <div class="cartao-dica">Chave ${d.pix.tipo}: ${d.pix.chave} · titular ${d.pix.titular}.
-            Leia o QR pelo aplicativo do banco no celular.</div>
-        </div>` : ""}
-      ${d.transferencia ? `<h4>Transferência</h4><div class="cartao">
-        <div class="dados">Banco ${d.transferencia.banco} · Ag ${d.transferencia.agencia} ·
-          Conta ${d.transferencia.conta}</div>
-        <div class="cartao-dica">${d.transferencia.titular} · ${d.transferencia.documento}</div></div>` : ""}`;
-    els("dlg").showModal();
-    if (d.pix && window.QRCode) new QRCode(els("qr"), {text: d.pix.copia_e_cola, width: 150, height: 150});
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
-}
-
-function copiar(txt){ navigator.clipboard.writeText(txt).then(()=>aviso("mensagem","Copiado.","ok")); }
 
 
 async function abrirLote(id){
@@ -362,7 +222,19 @@ function montarFiltros(){
   els("opcoes-obra").innerHTML = Object.keys(co).sort().map(k=>
     `<label class="opcao"><input type="checkbox" data-f="obra" value="${k}" ${F.obra.has(k)?"checked":""}>
      <span class="rotulo">${k}</span><span class="qtd">${co[k]}</span></label>`).join("");
+  // A CONTA QUE PAGA. Pedido do dono: "às vezes a gente quer filtrar o que tem
+  // pra pagar nessa conta, o que tem pra pagar na outra — às vezes é mais fácil
+  // do que filtrar por obra". Uma parcela pode contar em mais de uma conta
+  // quando o título é rateado entre obras de contas diferentes.
+  const cc = {};
+  P.forEach(p => (p.contas_nomes||[]).forEach(n => { if(n) cc[n] = (cc[n]||0)+1; }));
+  els("opcoes-conta").innerHTML = Object.keys(cc).sort().map(k=>
+    `<label class="opcao"><input type="checkbox" data-f="conta" value="${k}" ${F.conta.has(k)?"checked":""}>
+     <span class="rotulo">${k}</span><span class="qtd">${cc[k]}</span></label>`).join("")
+    || `<div class="cartao-dica">Nenhuma obra com conta definida. A conta se
+        escolhe no cadastro da obra.</div>`;
   els("badge-forma").textContent = F.forma.size; els("badge-obra").textContent = F.obra.size;
+  els("badge-conta").textContent = F.conta.size;
   document.querySelectorAll("[data-f]").forEach(i=>i.addEventListener("change", ev=>{
     const f=ev.target.dataset.f, v=ev.target.value;
     ev.target.checked ? F[f].add(v) : F[f].delete(v);
@@ -390,6 +262,7 @@ function visiveis(){
   let l = P.filter(p => {
     if (F.forma.size && !F.forma.has(p.forma)) return false;
     if (F.obra.size && !F.obra.has(p.obra)) return false;
+    if (F.conta.size && !(p.contas_nomes||[]).some(n => F.conta.has(n))) return false;
     if (els("f-atrasadas").checked && !p.atrasada) return false;
     if (els("f-hoje").checked && p.vencimento !== hoje) return false;
     if (els("f-7").checked && p.vencimento > lim7) return false;
@@ -420,7 +293,7 @@ function desenhar(){
       <div class="kpi-sub">${moeda(soma(p=>!p.em_lote))}</div></div>`;
   els("vazio").classList.toggle("oculto", l.length>0);
   if (!l.length) els("vazio").innerHTML = P.length
-    ? "<b>Nada nestes filtros</b>Ajuste à esquerda."
+    ? "<b>Nada nestes filtros</b>Ajuste os filtros."
     : "<b>Nenhuma parcela liberada</b>Títulos precisam ser liberados para pagamento na aba Títulos.";
   els("corpo").innerHTML = l.map(p => `
     <tr class="${SEL.has(p.parcela_id)?"marcada":""}">
@@ -485,52 +358,6 @@ async function comoPagar(parcelaId){
 function copiar(txt){ navigator.clipboard.writeText(txt).then(()=>aviso("mensagem","Copiado.","ok")); }
 
 
-async function abrirLote(id){
-  try {
-    const {lote: l} = await api(`/erp/api/lotes/${id}`);
-    els("dlg-titulo").textContent = `${l.nome} · ${l.prioridade_rotulo}`;
-    els("dlg-corpo").innerHTML = `
-      <div class="kpis">
-        <div class="kpi estatico"><div class="kpi-rotulo">Parcelas</div><div class="kpi-valor">${l.itens.length}</div></div>
-        <div class="kpi estatico"><div class="kpi-rotulo">Total</div><div class="kpi-valor" style="font-size:18px">${numero(l.total)}</div></div>
-        <div class="kpi estatico verde"><div class="kpi-rotulo">Pagas</div><div class="kpi-valor">${l.pagas}</div>
-          <div class="kpi-sub">${moeda(l.total_pago)}</div></div>
-        <div class="kpi estatico"><div class="kpi-rotulo">Situação</div><div class="kpi-valor" style="font-size:16px">${rotulo(l.status)}</div></div>
-      </div>
-      <div style="display:flex; gap:8px; margin-bottom:8px; align-items:center; flex-wrap:wrap">
-        <button class="btn amarelo" id="lote-add-sps">+ Colar SPs neste lote</button>
-        <span class="cartao-dica" style="margin:0">Cole a lista que veio do solicitante —
-          o sistema acha cada SP e traz as parcelas em aberto.</span>
-      </div>
-      ${l.itens.length ? "" : `<div class="aviso info">Lote vazio. Use o botão acima ou
-        marque as parcelas na tabela de pagamentos e clique em "Adicionar ao lote".</div>`}
-      <div class="cartao" style="padding:0"><table><thead><tr><th>SP</th><th>Credor</th>
-        <th>Vencimento</th><th class="direita">Valor</th><th>Situação</th><th></th></tr></thead><tbody>
-        ${l.itens.map(i=>`<tr><td class="dados">${i.numero_sp}</td><td>${i.credor}</td>
-          <td class="dados">${dataBR(i.vencimento)}</td><td class="direita dados">${numero(i.valor)}</td>
-          <td><span class="selo ${i.status_parcela==="PAGA"?"aprovado":"outro"}">${rotulo(i.status_parcela)}</span></td>
-          <td><button class="btn secundario" data-tirar="${i.parcela_id}">Tirar</button></td></tr>`).join("")}
-        </tbody></table></div>
-      <div style="display:flex; gap:8px; margin-top:14px">
-        ${["ABERTO","ENVIADO","PAGO","CANCELADO"].map(st=>
-          `<button class="btn ${st===l.status?"":"secundario"}" data-status="${st}">${rotulo(st)}</button>`).join("")}
-      </div>`;
-    const bAdd = els("lote-add-sps");
-  if (bAdd) bAdd.addEventListener("click", () => adicionarSPsAoLote(id));
-  document.querySelectorAll("[data-tirar]").forEach(b=>b.addEventListener("click", async ()=>{
-      await api(`/erp/api/lotes/${id}/parcelas`, {method:"POST",
-        headers:{"Content-Type":"application/json"}, body: JSON.stringify({remover:+b.dataset.tirar})});
-      els("dlg").close(); carregar();
-    }));
-    document.querySelectorAll("[data-status]").forEach(b=>b.addEventListener("click", async ()=>{
-      await api(`/erp/api/lotes/${id}/status`, {method:"POST",
-        headers:{"Content-Type":"application/json"}, body: JSON.stringify({status:b.dataset.status})});
-      els("dlg").close(); aviso("mensagem","Lote atualizado.","ok"); carregar();
-    }));
-    els("dlg").showModal();
-  } catch(e){ aviso("mensagem", e.message, "erro"); }
-}
-
 els("btn-comp").addEventListener("click", async () => {
   const arqs = [...els("comp-arq").files];
   if (!arqs.length) { aviso("mensagem","Escolha o(s) comprovante(s).","erro"); return; }
@@ -551,18 +378,56 @@ els("btn-comp").addEventListener("click", async () => {
     }
   }
   b.disabled = false; b.textContent = "Processar comprovante";
+  mostrarResumoDoLote();
   carregar();
 });
+
+// O RELATÓRIO DO LOTE — pedido do dono: "a tela, quando ele fizer a leitura,
+// já dá um relatório do que foi resolvido, o que foi detectado e o que não".
+// Com dez comprovantes de uma vez, ler linha por linha para saber quantos
+// entraram é trabalho que a tela devia poupar.
+function mostrarResumoDoLote(){
+  const lugar = els("comp-resultado");
+  if (!lugar) return;
+  const conta = (classe) => lugar.querySelectorAll(classe).length;
+  const baixados = conta(".aviso.ok");
+  const repetidos = conta(".aviso.alerta");
+  const pendentes = conta(".critica");
+  const total = baixados + repetidos + pendentes;
+  if (total < 2) return;              // com um só, o próprio resultado já diz
+  const anterior = document.getElementById("comp-resumo");
+  if (anterior) anterior.remove();
+  lugar.insertAdjacentHTML("afterbegin", `
+    <div id="comp-resumo" class="cartao-dica" style="margin-bottom:10px">
+      <b>${total} comprovante(s) lidos:</b>
+      ${baixados} baixado(s) ·
+      ${repetidos} já processado(s) antes ·
+      ${pendentes} precisa(m) de você.
+    </div>`);
+}
 
 function mostrarComprovante(nome, r, arquivo){
   const l = r.leitura || {};
   const cab = `<b>${nome}</b> · ${l.valor?moeda(l.valor):"valor ilegível"} ·
     ${l.data?dataBR(l.data):"sem data"} · ${l.favorecido||"favorecido não lido"}
-    <small style="color:var(--tinta-suave)"> (leitura ${(l.confianca_leitura||"").toLowerCase()})</small>`;
+    ${l.confianca_leitura ? `<small style="color:var(--tinta-suave)">
+      (leitura ${l.confianca_leitura.toLowerCase()})</small>` : ""}`;
   if (r.situacao === "BAIXADO") {
     els("comp-resultado").insertAdjacentHTML("beforeend",
       `<div class="aviso ok">${cab}<br>✔ <b>${r.baixa.numero_sp}</b> baixado
        (${r.baixa.motivos.join(", ")}) · comprovante guardado.</div>`);
+    return;
+  }
+  // COMPROVANTE REPETIDO. Não é erro nem sucesso: é o sistema barrando uma
+  // segunda baixa. Precisa dizer ONDE ele já baixou, senão a pessoa acha que o
+  // arquivo se perdeu e manda de novo — e o ciclo recomeça.
+  if (r.situacao === "DUPLICADO") {
+    const a = r.anterior || {};
+    els("comp-resultado").insertAdjacentHTML("beforeend",
+      `<div class="aviso alerta">${cab}<br>
+        ⛔ <b>Já processado.</b> ${escapar(r.mensagem)}
+        ${a.titulo_id ? `<br><a class="link-btn" href="/erp/titulos?titulo=${a.titulo_id}"
+          >ver o título ›</a>` : ""}</div>`);
     return;
   }
   const id = "cf" + Math.random().toString(36).slice(2, 8);
@@ -666,6 +531,28 @@ els("btn-colar-sp").addEventListener("click", () => {
   els("dlg").showModal();
 });
 
+// Manda para um lote as parcelas marcadas na tabela. É o que o botão dentro
+// da ficha do lote sempre prometeu fazer — a função nunca tinha sido escrita,
+// e o clique morria com "adicionarSPsAoLote is not defined".
+async function adicionarSPsAoLote(loteId){
+  if (!SEL.size) {
+    return aviso("dlg-msg", "Marque as parcelas na tabela de pagamentos antes " +
+                            "de trazer para o lote.", "erro");
+  }
+  try {
+    const d = await api(`/erp/api/lotes/${loteId}/parcelas`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({parcela_ids: [...SEL]})});
+    let m = `${d.relatorio.incluidas.length} adicionada(s) ao lote.`;
+    if (d.relatorio.recusadas.length) m += `<br>Recusadas: ` +
+      d.relatorio.recusadas.map(r => r.motivo).join("; ");
+    aviso("mensagem", m, d.relatorio.recusadas.length ? "info" : "ok");
+    SEL.clear();
+    els("dlg").close();
+    carregar();
+  } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+}
+
 document.querySelectorAll("[data-acao]").forEach(b => b.addEventListener("click", async () => {
   const acao = b.dataset.acao;
   try {
@@ -700,7 +587,7 @@ els("marca-todos").addEventListener("change", ev => {
 let deb; els("f-busca").addEventListener("input", ()=>{ clearTimeout(deb); deb=setTimeout(desenhar,250); });
 ["f-atrasadas","f-hoje","f-7","f-sem-lote"].forEach(id=>els(id).addEventListener("change", desenhar));
 els("btn-limpar").addEventListener("click", ()=>{
-  F={forma:new Set(),obra:new Set()}; els("f-busca").value="";
+  F={forma:new Set(),obra:new Set(),conta:new Set()}; els("f-busca").value="";
   ["f-atrasadas","f-hoje","f-7","f-sem-lote"].forEach(i=>els(i).checked=false);
   montarFiltros(); desenhar();
 });

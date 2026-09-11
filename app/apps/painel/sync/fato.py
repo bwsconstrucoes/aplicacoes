@@ -295,7 +295,10 @@ def _buckets_rateio(linhas, bruto, proj_map):
 # ----------------------------------------------------------------------------- 
 COLUNAS_FATO = (
     "codigo_lancamento", "tipo", "analise", "situacao", "situacao_vencimento",
-    "categoria", "grupo", "projeto", "departamento", "razao_social", "cnpj_cpf",
+    # `categoria` e a DESCRICAO, que a tela mostra; `codigo_categoria` e o
+    # codigo do OMIE, que a tela de saneamento precisa para ALTERAR o titulo la.
+    "categoria", "codigo_categoria", "grupo", "projeto", "departamento",
+    "razao_social", "cnpj_cpf",
     "numero_documento", "pedido_compra", "conta_corrente", "observacao", "link",
     "medicao", "medicao_rotulo",
     # `data` e a das telas: pagamento quando quitado, senao vencimento. As duas
@@ -407,14 +410,14 @@ def gerar_linhas_fato(conn):
                 # linha LIQUIDA (categoria real). Juros e multa sao os encargos
                 # efetivamente pagos e ficam SEPARADOS do principal, para virarem
                 # linha financeira no DRE.
-                yield comum + (desc_cat, grupo) + identificacao + (
+                yield comum + (desc_cat, ccat, grupo) + identificacao + (
                     round(sinal * realizado * frac, 2),
                     round(sinal * aberto * frac, 2),
                     round(sinal * juros_mov * frac, 2),
                     round(sinal * multa_mov * frac, 2))
                 # linha RETIDO (so a receber; valor sempre como realizado)
                 if is_rec and ret_total > TOL:
-                    yield comum + (CATEGORIA_RETIDO, GRUPO_RETIDO) + identificacao + (
+                    yield comum + (CATEGORIA_RETIDO, None, GRUPO_RETIDO) + identificacao + (
                         round(ret_total * frac, 2), 0.0, 0.0, 0.0)
 
 

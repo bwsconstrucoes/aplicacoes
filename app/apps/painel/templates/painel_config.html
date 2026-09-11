@@ -137,6 +137,36 @@
   <div id="saida-sync"></div>
 </div>
 
+<!-- ===================== SANEAMENTO ===================== -->
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Explorador de lançamentos</h3>
+    <small>para achar o que está classificado errado</small>
+  </div>
+  <p style="font-size:13.5px; margin-top:0">
+    As telas do painel mostram só o <b>DRE</b>. O explorador mostra
+    <b>toda a base</b> — inclusive Fluxo de Caixa e transferências —, que é onde
+    aparece o lançamento na análise errada, o aporte lançado como despesa e o
+    título que ficou <b>sem apropriação de obra</b>.
+  </p>
+  <a class="btn secundario" style="display:inline-block; text-decoration:none"
+     href="{{ url_for('painel.explorador') }}">Abrir o explorador</a>
+</div>
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>Rateio da Administração</h3>
+    <small>simulação: como o custo da matriz se divide entre dois lados</small>
+  </div>
+  <p style="font-size:13.5px; margin-top:0">
+    Divide o custo da matriz entre dois lados da empresa, mês a mês, e aloca os
+    <b>juros do banco</b> a quem estava com o caixa negativo. Sai uma memória de
+    cálculo em Excel. <b>Não grava nada</b>.
+  </p>
+  <a class="btn secundario" style="display:inline-block; text-decoration:none"
+     href="{{ url_for('painel.rateio_administracao') }}">Abrir o rateio</a>
+</div>
+
 <!-- ===================== 3. AUTOMÁTICO ===================== -->
 <div class="cartao">
   <div class="cartao-cab">
@@ -230,8 +260,12 @@ if (btnMigrar) {
       const r = await fetch("{{ url_for('painel.aplicar_migracoes') }}", {method: "POST"});
       const d = await r.json();
       if (d.ok) {
-        aviso(saidaMigrar, "ok", "Pronto. Recarregando a página…");
-        setTimeout(() => location.reload(), 900);
+        // quando a migracao cria coluna que nasce vazia, o recalculo comeca
+        // sozinho — a tela diz isso em vez de deixar o dono descobrir depois
+        const extra = (d.reconstrucao && d.reconstrucao.mensagem)
+          ? "<br>" + d.reconstrucao.mensagem : "";
+        aviso(saidaMigrar, "ok", "Pronto." + extra + "<br>Recarregando a página…");
+        setTimeout(() => location.reload(), extra ? 2500 : 900);
       } else {
         aviso(saidaMigrar, "erro",
           "<b>Falhou em " + d.erro.migracao + ".</b><br>" + d.erro.erro +

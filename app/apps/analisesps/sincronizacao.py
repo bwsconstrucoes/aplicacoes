@@ -38,6 +38,34 @@ PLANILHA_FISCAL = os.getenv(
     "ANALISESPS_SHEET_FISCAL", "1xMu76lEiiJFlCgNNXldraW2enIuHdZL0D5QTuhZAc0w")
 ABA_FISCAL = "Lançamentos"
 
+# Relatório do FSist: as notas emitidas CONTRA os CNPJs da BWS. Mesma planilha
+# da aba Lançamentos — é para lá que o script do dono já despeja o relatório.
+ABA_NOTAS = "Relatório FSIST"
+
+
+def _normalizar_cabecalho(cabecalho) -> list:
+    """O cabeçalho pronto para comparar: sem espaço sobrando, sem caixa."""
+    return [" ".join(str(c).split()).strip().lower() for c in cabecalho]
+
+
+def achar_coluna(cabecalho_normalizado, aceitos):
+    """A posição da primeira coluna aceita que existir, ou None.
+
+    ACEITA MAIS DE UM NOME de propósito, e essa peça já se perdeu uma vez: o
+    Streamlit procurava "Código Primário" e, se não achasse, "Obra"; a
+    conversão ficou só com a segunda — justamente a que a planilha NÃO tem, e
+    a lista do rateio nunca carregou desde a estreia (10/09/2026).
+
+    Procurar PELO NOME, e não pela posição, é também o único acerto do script
+    que roda na planilha do dono hoje que valia a pena copiar inteiro: uma
+    coluna que muda de lugar no relatório deixa de quebrar a importação."""
+    for nome in aceitos:
+        arrumado = " ".join(str(nome).split()).strip().lower()
+        if arrumado in cabecalho_normalizado:
+            return cabecalho_normalizado.index(arrumado)
+    return None
+
+
 # Quantas linhas por ida à planilha na carga inicial.
 #
 # Cinco mil é o meio-termo medido: blocos menores multiplicam as idas ao Google
@@ -52,6 +80,28 @@ FAIXAS_POR_LOTE = 200
 
 def _aba(planilha_id: str, nome: str):
     return com_retry(lambda: cliente().open_by_key(planilha_id).worksheet(nome))
+
+
+def _abas_existentes(planilha_id: str) -> list[str]:
+    """Os nomes das abas que a planilha REALMENTE tem.
+
+    Serve para o recado: dizer "não achei a aba 'C. Diários'" sem dizer quais
+    existem obriga a pessoa a adivinhar. Se nem isso der para descobrir,
+    devolve lista vazia — o recado fica mais pobre, não vira erro."""
+    try:
+        return [a.title for a in com_retry(
+            lambda: cliente().open_by_key(planilha_id).worksheets())]
+    except Exception:  # noqa: BLE001 — é enfeite do recado, não a resposta
+        return []
+
+
+def _explicar_aba(planilha_id: str, nome: str, erro: Exception) -> str:
+    """Por que não deu para ler esta aba, em português e com o que ajuda."""
+    existentes = _abas_existentes(planilha_id)
+    if existentes and nome not in existentes:
+        return (f'a aba "{nome}" não existe nesta planilha. '
+                f'As que existem são: {", ".join(existentes)}.')
+    return f'não deu para ler a aba "{nome}": {erro}'.strip()
 
 
 def _aba_sps():
@@ -111,6 +161,34 @@ def _meta_gravar(conn, chave: str, valor: str) -> None:
     conn.commit()
 
 
+def _anotar_a_base_em_dia(conn) -> None:
+    """Anota a hora e QUANTAS SPs ficaram na base, no fim de uma carga ou de
+    uma sincronização.
+
+    A contagem fica guardada porque `count(*)` percorre a tabela inteira, e a
+    tela pergunta "quantas SPs há na base" em TODA visita. Contando aqui, no
+    processo separado onde um segundo a mais não incomoda ninguém, nenhuma
+    tela precisa contar. Ver `consultas.base_carregada`, onde está o porquê
+    inteiro.
+
+    A HORA também é gravada pela carga inicial, e não só pela sincronização do
+    dia. Uma carga acabada de rodar É a base em dia: sem isto, a tela dizia
+    "base de —" até a primeira sincronização passar, e o relógio do alto — que
+    é como se sabe de quando é o dado — ficava mudo justamente no dia da
+    estreia."""
+    from .horario import agora
+    quando = agora().isoformat()
+    _meta_gravar(conn, "ultima_sincronizacao", quando)
+    try:
+        cur = conn.execute("SELECT count(*) FROM analisesps.sps")
+        linha = cur.fetchone()
+        cur.close()
+        _meta_gravar(conn, "quantidade", str(linha[0] if linha else 0))
+        _meta_gravar(conn, "quantidade_em", quando)
+    except Exception:  # noqa: BLE001 — sem a contagem a tela conta sozinha
+        logger.exception("Análise de SPs: falhou contar a base no fim da carga")
+
+
 def _maior_carimbo(registros: list[dict]) -> str:
     marcas = [str(r.get(colunas.CHAVE_CARIMBO) or "") for r in registros]
     marcas = [m for m in marcas if m]
@@ -168,6 +246,7 @@ def carga_inicial(anotar=None, retomar_de: int = 0) -> int:
 
     with conexao() as conn:
         _meta_gravar(conn, "carga_ate_linha", "")      # terminou: nada a retomar
+        _anotar_a_base_em_dia(conn)
     logger.info("Análise de SPs: carga inicial concluída — %d SPs.", gravadas)
     return gravadas
 
@@ -241,8 +320,7 @@ def sincronizar_delta(anotar=None) -> dict:
     with conexao() as conn:
         if maior and maior != ultimo:
             _meta_gravar(conn, "ultimo_carimbo", maior)
-        from .horario import agora
-        _meta_gravar(conn, "ultima_sincronizacao", agora().isoformat())
+        _anotar_a_base_em_dia(conn)
 
     logger.info("Análise de SPs: sincronização — %d alteradas, %d removidas.",
                 novas, removidas)
@@ -332,11 +410,29 @@ def drenar_fila(anotar=None) -> dict:
 # ---------------------------------------------------------------------------
 def sincronizar_apoios(anotar=None) -> dict:
     """Traz as duas planilhas de apoio: contas por centro de custo e a
-    documentação fiscal por SP."""
+    documentação fiscal por SP.
+
+    O `WHERE ... IS DISTINCT FROM` no fim de cada gravação não é detalhe.
+    Sem ele, esta função REESCREVIA todas as linhas das duas tabelas a cada
+    passagem, mesmo quando nada havia mudado — e ela passa a cada
+    sincronização. Na produção isso apareceu em 10/09/2026, na tela do banco:
+    **14,3 MILHÕES** de gravações em `sp_fiscal`, o campeão disparado de todo
+    o banco, 34 minutos de tempo de processador num banco que tem um DÉCIMO
+    de um núcleo.
+
+    E o custo não é só o tempo: no Postgres, reescrever uma linha com o mesmo
+    valor deixa a versão antiga como lixo para o faxineiro recolher depois.
+    Dezenas de milhares de linhas de lixo a cada cinco minutos é o que engorda
+    a tabela até ela não caber mais na memória do banco — que é exatamente a
+    lentidão que se estava caçando.
+
+    Com a condição, a gravação só acontece quando o valor MUDOU de verdade.
+    O resultado final é idêntico; o que some é o trabalho inútil."""
     from .db import conexao
 
     anotar = anotar or (lambda *a, **k: None)
     contas = fiscais = 0
+    avisos: list[str] = []
 
     anotar("trazendo as contas de pagamento")
     try:
@@ -348,11 +444,16 @@ def sincronizar_apoios(anotar=None) -> dict:
                 conn.executemany(
                     "INSERT INTO analisesps.contas_diarios (codigo, conta_pagamento) "
                     "VALUES (?, ?) ON CONFLICT (codigo) DO UPDATE SET "
-                    "conta_pagamento = EXCLUDED.conta_pagamento", linhas)
+                    "conta_pagamento = EXCLUDED.conta_pagamento "
+                    " WHERE contas_diarios.conta_pagamento "
+                    "       IS DISTINCT FROM EXCLUDED.conta_pagamento", linhas)
                 conn.commit()
             contas = len(linhas)
-    except Exception:  # noqa: BLE001 — apoio que falta não derruba a carga
+        else:
+            avisos.append('a aba "C. Diários" não trouxe nenhuma conta.')
+    except Exception as e:  # noqa: BLE001 — apoio que falta não derruba a carga
         logger.exception("Análise de SPs: falhou ler 'C. Diários'")
+        avisos.append(_explicar_aba(PLANILHA_SPS, "C. Diários", e))
 
     anotar("trazendo a documentação fiscal")
     try:
@@ -364,13 +465,304 @@ def sincronizar_apoios(anotar=None) -> dict:
                 conn.executemany(
                     "INSERT INTO analisesps.sp_fiscal (sp_id, doc_fiscal) "
                     "VALUES (?, ?) ON CONFLICT (sp_id) DO UPDATE SET "
-                    "doc_fiscal = EXCLUDED.doc_fiscal", linhas)
+                    "doc_fiscal = EXCLUDED.doc_fiscal "
+                    " WHERE sp_fiscal.doc_fiscal "
+                    "       IS DISTINCT FROM EXCLUDED.doc_fiscal", linhas)
                 conn.commit()
             fiscais = len(linhas)
-    except Exception:  # noqa: BLE001
+        else:
+            avisos.append(f'a aba "{ABA_FISCAL}" não trouxe nenhum documento.')
+    except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou ler a planilha fiscal")
+        avisos.append(_explicar_aba(PLANILHA_FISCAL, ABA_FISCAL, e))
 
-    return {"contas": contas, "fiscais": fiscais}
+    return {"contas": contas, "fiscais": fiscais, "avisos": avisos}
+
+
+# ---------------------------------------------------------------------------
+# AS NOTAS EMITIDAS CONTRA O CNPJ DA BWS (relatório do FSist)
+#
+# O FSist monitora os CNPJs da empresa e entrega o que foi emitido contra eles.
+# O dono despeja esse relatório numa aba, e é de lá que se lê — assim o fluxo
+# dele não muda e ninguém precisa aprender a subir arquivo.
+#
+# OS NOMES DE COLUNA E OS APELIDOS SÃO OS DO SCRIPT DELE, copiados de
+# propósito: é a parte que aquele script acerta, e o relatório do FSist muda de
+# layout entre NF-e e CT-e (num é "Destinatário", noutro é "Tomador").
+#
+# A CHAVE É A IDENTIDADE, então reimportar o mesmo relatório não duplica nada.
+# E só se grava o que MUDOU — `IS DISTINCT FROM` —, pelo mesmo motivo que valeu
+# 14,3 milhões de gravações inúteis em 10/09: regravar com o mesmo valor deixa
+# lixo que engorda a tabela até ela não caber na memória do banco.
+# ---------------------------------------------------------------------------
+COLUNAS_DAS_NOTAS = {
+    "emissao":     ["Emissão", "Data Emissão", "Data de Emissão"],
+    "chave":       ["Chave", "Chave de Acesso"],
+    "numero":      ["Número", "Nº", "Num"],
+    "serie":       ["Série"],
+    "tipo":        ["Tipo"],
+    "valor":       ["Valor", "Valor Total"],
+    "status":      ["Status", "Situação"],
+    "emitente_doc": ["Emitente CNPJ", "Emitente CNPJ/CPF", "CNPJ Emitente"],
+    "emitente":    ["Emitente", "Emitente Nome", "Nome Emitente",
+                    "Emitente Razão Social"],
+    "emitente_uf": ["Emitente UF", "UF Emitente"],
+    # No CT-e quem paga o frete é o TOMADOR; na NF-e é o DESTINATÁRIO. Os dois
+    # são a BWS, e por isso ocupam a mesma coluna aqui.
+    "destinatario_doc": ["Destinatário CNPJ/CPF", "Destinatário CPF/CNPJ",
+                         "Destinatário CNPJ", "CNPJ/CPF Destinatário",
+                         "Tomador CNPJ/CPF", "Tomador CPF/CNPJ", "Tomador CNPJ"],
+    "destinatario": ["Destinatário", "Destinatário Nome", "Nome Destinatário",
+                     "Destinatário Razão Social", "Tomador", "Tomador Nome"],
+    "chaves_nfe":  ["Chaves NFE Tranporte", "Chaves NFe Transporte",
+                    "NFe Chaves", "NFe Chaves (com vírgula)"],
+}
+
+# Sem estas duas não há nota: uma linha sem chave não é identificável, e sem
+# emitente não há como casar com credor nenhum.
+COLUNAS_OBRIGATORIAS_DAS_NOTAS = ["chave"]
+
+
+def sincronizar_notas_fiscais(anotar=None) -> dict:
+    """Traz as notas do relatório do FSist para o banco.
+
+    Devolve {novas, atualizadas, ignoradas, avisos}. `ignoradas` são as linhas
+    sem chave — lixo de rodapé, totalizador, linha em branco no meio."""
+    from . import fiscal
+    from .db import conexao
+
+    anotar = anotar or (lambda *a, **k: None)
+    anotar("trazendo as notas emitidas contra a empresa")
+    avisos: list = []
+
+    try:
+        valores = com_retry(_aba(PLANILHA_FISCAL, ABA_NOTAS).get_all_values)
+    except Exception as e:  # noqa: BLE001
+        motivo = _explicar_aba(PLANILHA_FISCAL, ABA_NOTAS, e)
+        logger.warning("Análise de SPs: notas — %s", motivo)
+        return {"novas": 0, "atualizadas": 0, "ignoradas": 0, "avisos": [motivo]}
+
+    # O CABEÇALHO NÃO ESTÁ NA PRIMEIRA LINHA. Na planilha do dono a linha 1 é
+    # o título ("Relatório de Notas de Compras") e a 2 é o cabeçalho de verdade.
+    # Procurar a linha que TEM a coluna "Chave" é mais robusto do que fixar o
+    # número: o dia em que alguém inserir uma linha acima, nada quebra.
+    linha_cab = -1
+    indices: dict = {}
+    for i, linha in enumerate(valores[:10]):
+        normalizado = _normalizar_cabecalho(linha)
+        achados = {campo: achar_coluna(normalizado, nomes)
+                   for campo, nomes in COLUNAS_DAS_NOTAS.items()}
+        if all(achados.get(c) is not None for c in COLUNAS_OBRIGATORIAS_DAS_NOTAS):
+            linha_cab, indices = i, achados
+            break
+
+    if linha_cab < 0:
+        # MOSTRA AS PRIMEIRAS LINHAS QUE FORAM OLHADAS, e não uma linha fixa: o
+        # cabeçalho pode estar em qualquer uma delas, e apontar a errada manda
+        # a pessoa conferir o lugar errado da planilha.
+        olhadas = []
+        for linha in valores[:3]:
+            texto = ", ".join(str(x).strip() for x in linha if str(x).strip())
+            if texto:
+                olhadas.append(texto[:160])
+        motivo = (f'a aba "{ABA_NOTAS}" não tem a coluna "Chave" nas primeiras '
+                  "linhas. O que encontrei foi: "
+                  + (" | ".join(olhadas) or "(nada)") + ".")
+        logger.warning("Análise de SPs: notas — %s", motivo)
+        return {"novas": 0, "atualizadas": 0, "ignoradas": 0, "avisos": [motivo]}
+
+    faltando = [c for c, i in indices.items() if i is None]
+    if faltando:
+        avisos.append("colunas não encontradas (seguindo sem elas): "
+                      + ", ".join(sorted(faltando)))
+
+    def pegar(linha, campo):
+        i = indices.get(campo)
+        return str(linha[i]).strip() if i is not None and i < len(linha) else ""
+
+    registros = []
+    ignoradas = 0
+    for linha in valores[linha_cab + 1:]:
+        chave = fiscal.so_digitos(pegar(linha, "chave"))
+        if len(chave) != 44:
+            ignoradas += 1
+            continue
+        # O CNPJ DE QUEM EMITIU SAI DE DENTRO DA CHAVE quando a coluna não
+        # veio. São os dígitos 7 a 20, por definição da Receita — mais
+        # confiável do que a coluna, que vem com formatação variada.
+        emitente_doc = (fiscal.so_digitos(pegar(linha, "emitente_doc"))
+                        or fiscal.emitente_da_chave(chave))
+        registros.append((
+            chave, formatos.para_data(pegar(linha, "emissao")),
+            pegar(linha, "numero"), pegar(linha, "serie"), pegar(linha, "tipo"),
+            formatos.para_numero(pegar(linha, "valor")),
+            pegar(linha, "status"), emitente_doc, pegar(linha, "emitente"),
+            pegar(linha, "emitente_uf"),
+            fiscal.so_digitos(pegar(linha, "destinatario_doc")),
+            pegar(linha, "destinatario"), pegar(linha, "chaves_nfe")))
+
+    if not registros:
+        avisos.append(f'a aba "{ABA_NOTAS}" não trouxe nenhuma nota com chave.')
+        return {"novas": 0, "atualizadas": 0, "ignoradas": ignoradas,
+                "avisos": avisos}
+
+    with conexao() as conn:
+        cur = conn.execute("SELECT count(*) FROM analisesps.notas_fiscais")
+        antes = (cur.fetchone() or [0])[0]
+        cur.close()
+        conn.executemany(
+            "INSERT INTO analisesps.notas_fiscais "
+            "  (chave, emissao, numero, serie, tipo, valor, status, "
+            "   emitente_doc, emitente, emitente_uf, destinatario_doc, "
+            "   destinatario, chaves_nfe) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (chave) DO UPDATE SET "
+            "  emissao = EXCLUDED.emissao, numero = EXCLUDED.numero, "
+            "  serie = EXCLUDED.serie, tipo = EXCLUDED.tipo, "
+            "  valor = EXCLUDED.valor, status = EXCLUDED.status, "
+            "  emitente_doc = EXCLUDED.emitente_doc, "
+            "  emitente = EXCLUDED.emitente, emitente_uf = EXCLUDED.emitente_uf, "
+            "  destinatario_doc = EXCLUDED.destinatario_doc, "
+            "  destinatario = EXCLUDED.destinatario, "
+            "  chaves_nfe = EXCLUDED.chaves_nfe, importada_em = now() "
+            " WHERE notas_fiscais.status IS DISTINCT FROM EXCLUDED.status "
+            "    OR notas_fiscais.valor IS DISTINCT FROM EXCLUDED.valor "
+            "    OR notas_fiscais.numero IS DISTINCT FROM EXCLUDED.numero "
+            "    OR notas_fiscais.emitente_doc IS DISTINCT FROM EXCLUDED.emitente_doc",
+            registros)
+        conn.commit()
+        cur = conn.execute("SELECT count(*) FROM analisesps.notas_fiscais")
+        depois = (cur.fetchone() or [0])[0]
+        cur.close()
+
+    novas = depois - antes
+    logger.info("Análise de SPs: notas do FSist — %d lidas, %d novas.",
+                len(registros), novas)
+    return {"novas": novas, "atualizadas": len(registros) - novas,
+            "ignoradas": ignoradas, "avisos": avisos}
+
+
+# ---------------------------------------------------------------------------
+# O PASSADO: o que já está preenchido nos cards
+#
+# Dos lançamentos da planilha do dono, um terço já tem chave de acesso e
+# categoria — preenchidos à mão, ao longo dos meses. Essa informação **só
+# existe no card**, porque a base SPsBD não tem esses campos, e o dono decidiu
+# NÃO mexer nela.
+#
+# Por isso o relatório do Pipefy é lido UMA VEZ, para o diário nascer sabendo
+# o que já foi feito. Decisão dele, em 11/09/2026: *"à medida que forem
+# lançados novos registros, eles vão aparecer. Então não precisa ficar toda
+# hora baixando, já que está gravando a informação complementar no outro
+# canto."*
+#
+# A REGRA QUE PROTEGE O TRABALHO: a semeadura NUNCA sobrescreve uma linha que
+# já existe aqui. Se este módulo já decidiu alguma coisa sobre uma SP, o que
+# veio do relatório é história velha — e história velha não manda em decisão
+# nova. `ON CONFLICT DO NOTHING` diz isso ao banco, em vez de confiar em quem
+# lembra da regra.
+# ---------------------------------------------------------------------------
+CHAVE_SEMEADURA = "analise_fiscal_semeada_em"
+
+COLUNAS_DOS_LANCAMENTOS = {
+    "sp_id":        ["ID SP", "Código", "ID do Card"],
+    "documentacao": ["Documentação Fiscal"],
+    "chave":        ["Chave de Acesso", "Chave"],
+    "numero_nota":  ["Nº da Nota Fiscal", "N da Nota Fiscal",
+                     "Número da Nota Fiscal", "Nº Nota Fiscal"],
+}
+
+
+def semear_analise_do_pipefy(anotar=None, forcar: bool = False) -> dict:
+    """Traz para o diário o que já está preenchido nos cards. Roda UMA vez.
+
+    `forcar` existe para o dia em que alguém precisar refazer — e mesmo assim
+    não sobrescreve nada que já tenha sido decidido aqui."""
+    from . import fiscal
+    from .db import conexao
+    from .horario import agora
+
+    anotar = anotar or (lambda *a, **k: None)
+
+    with conexao() as conn:
+        if not forcar and _meta_ler(conn, CHAVE_SEMEADURA, ""):
+            return {"semeadas": 0, "ja_existiam": 0, "pulada": True, "avisos": []}
+
+    anotar("trazendo o que já está preenchido nos cards")
+    try:
+        valores = com_retry(_aba(PLANILHA_FISCAL, ABA_FISCAL).get_all_values)
+    except Exception as e:  # noqa: BLE001
+        motivo = _explicar_aba(PLANILHA_FISCAL, ABA_FISCAL, e)
+        return {"semeadas": 0, "ja_existiam": 0, "pulada": False,
+                "avisos": [motivo]}
+
+    linha_cab, indices = -1, {}
+    for i, linha in enumerate(valores[:10]):
+        normalizado = _normalizar_cabecalho(linha)
+        achados = {campo: achar_coluna(normalizado, nomes)
+                   for campo, nomes in COLUNAS_DOS_LANCAMENTOS.items()}
+        if achados.get("sp_id") is not None and achados.get("documentacao") is not None:
+            linha_cab, indices = i, achados
+            break
+
+    if linha_cab < 0:
+        olhadas = [", ".join(str(x).strip() for x in l if str(x).strip())[:160]
+                   for l in valores[:3]]
+        return {"semeadas": 0, "ja_existiam": 0, "pulada": False, "avisos": [
+            f'a aba "{ABA_FISCAL}" não tem as colunas "ID SP" e "Documentação '
+            f'Fiscal". O que encontrei foi: {" | ".join(x for x in olhadas if x)}.']}
+
+    def pegar(linha, campo):
+        i = indices.get(campo)
+        return str(linha[i]).strip() if i is not None and i < len(linha) else ""
+
+    registros = []
+    for linha in valores[linha_cab + 1:]:
+        sp_id = fiscal.so_digitos(pegar(linha, "sp_id"))
+        if not sp_id:
+            continue
+        documentacao = pegar(linha, "documentacao")
+        chave = fiscal.so_digitos(pegar(linha, "chave"))
+        if len(chave) != 44:
+            chave = ""
+        # SEM CATEGORIA E SEM CHAVE NÃO HÁ O QUE SEMEAR: essa SP entra na fila
+        # normal, e semeá-la como "pendente" só encheria a tabela.
+        if not documentacao and not chave:
+            continue
+        registros.append((
+            sp_id,
+            "ESCRITA" if documentacao else "PENDENTE",
+            documentacao, chave, pegar(linha, "numero_nota"),
+            "Sim" if chave else "",
+            fiscal.dedutivel(documentacao) if documentacao else None,
+            "PIPEFY",
+            "veio preenchido no card, antes de esta tela existir"))
+
+    if not registros:
+        return {"semeadas": 0, "ja_existiam": 0, "pulada": False, "avisos": [
+            f'a aba "{ABA_FISCAL}" não trouxe nenhum lançamento já analisado.']}
+
+    with conexao() as conn:
+        cur = conn.execute("SELECT count(*) FROM analisesps.sp_fiscal_analise")
+        antes = (cur.fetchone() or [0])[0]
+        cur.close()
+        conn.executemany(
+            "INSERT INTO analisesps.sp_fiscal_analise "
+            "  (sp_id, situacao, documentacao, chave, numero_nota, gerou_nota, "
+            "   dedutivel, origem, motivo) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (sp_id) DO NOTHING", registros)
+        cur = conn.execute("SELECT count(*) FROM analisesps.sp_fiscal_analise")
+        depois = (cur.fetchone() or [0])[0]
+        cur.close()
+        _meta_gravar(conn, CHAVE_SEMEADURA, agora().isoformat())
+        conn.commit()
+
+    semeadas = depois - antes
+    logger.info("Análise de SPs: semeadura fiscal — %d lidas, %d novas.",
+                len(registros), semeadas)
+    return {"semeadas": semeadas, "ja_existiam": len(registros) - semeadas,
+            "pulada": False, "avisos": []}
 
 
 # ---------------------------------------------------------------------------
@@ -512,33 +904,70 @@ def sincronizar_referencias_rateio(anotar=None) -> dict:
     anotar = anotar or (lambda *a, **k: None)
     anotar("trazendo as listas do rateio")
     obras = categorias = 0
+    avisos: list[str] = []
 
-    def _ler(aba_nome, coluna_nome, coluna_codigo):
-        valores = com_retry(_aba(PLANILHA_SPS, aba_nome).get_all_values)
-        if not valores:
-            return []
-        cabecalho = [str(x).strip().lower() for x in valores[0]]
+    # POR QUE ESTA FUNÇÃO DEVOLVE O MOTIVO, E NÃO SÓ A LISTA. Em 10/09/2026 o
+    # dono encontrou a tela de Ratear dizendo "as listas ainda não foram
+    # carregadas", apertou o botão que a própria tela mandava apertar, o botão
+    # disse "concluída", e nada mudou. As três causas possíveis — aba com outro
+    # nome, coluna com outro nome, aba vazia — eram engolidas por um `continue`
+    # e por um aviso no log do serviço, que ele não tem como ler.
+    #
+    # Falha silenciosa em botão que a tela manda apertar é armadilha: a pessoa
+    # aperta de novo, e de novo, e conclui que o sistema está quebrado. Agora
+    # cada motivo volta escrito, chega à mensagem da execução e aparece em
+    # Configurações — com os nomes que a planilha REALMENTE tem.
+    def _ler(aba_nome, aceitos_nome, aceitos_codigo):
+        """Devolve (linhas, motivo). `motivo` é None quando deu certo."""
         try:
-            i_nome = cabecalho.index(coluna_nome.lower())
-            i_codigo = cabecalho.index(coluna_codigo.lower())
-        except ValueError:
-            logger.warning("Análise de SPs: a aba '%s' não tem as colunas "
-                           "'%s' e '%s'.", aba_nome, coluna_nome, coluna_codigo)
-            return []
+            valores = com_retry(_aba(PLANILHA_SPS, aba_nome).get_all_values)
+        except Exception as e:  # noqa: BLE001
+            return [], _explicar_aba(PLANILHA_SPS, aba_nome, e)
+        if not valores:
+            return [], f'a aba "{aba_nome}" está vazia.'
+        cabecalho = [str(x).strip() for x in valores[0]]
+        normalizado = _normalizar_cabecalho(cabecalho)
+
+        i_nome = achar_coluna(normalizado, aceitos_nome)
+        i_codigo = achar_coluna(normalizado, aceitos_codigo)
+        faltando = ([aceitos_nome] if i_nome is None else []) + \
+                   ([aceitos_codigo] if i_codigo is None else [])
+        if faltando:
+            quais = "; ".join(" ou ".join(f'"{n}"' for n in g) for g in faltando)
+            return [], (f'a aba "{aba_nome}" não tem a(s) coluna(s) {quais}. '
+                        f'O cabeçalho dela é: {", ".join(cabecalho) or "(vazio)"}.')
+
         saida = []
         for linha in valores[1:]:
             nome = str(linha[i_nome]).strip() if i_nome < len(linha) else ""
             codigo = str(linha[i_codigo]).strip() if i_codigo < len(linha) else ""
-            if nome:
+            # AS DUAS COISAS SÃO OBRIGATÓRIAS, como no Streamlit: sem o código
+            # do Omie a linha não serve para gerar o JSON, e oferecê-la na
+            # lista só levaria a pessoa a montar um rateio que o Omie recusa.
+            if nome and codigo:
                 saida.append((nome, codigo))
-        return saida
+        if not saida:
+            return [], (f'a aba "{aba_nome}" tem as colunas certas, mas nenhuma '
+                        f'linha com "{aceitos_nome[0]}" e "{aceitos_codigo[0]}" '
+                        "preenchidos.")
+        return saida, None
 
-    for tipo, aba_nome, coluna_nome, coluna_codigo in (
-            ("obra", "C. Diários", "Obra", "Código"),
-            ("categoria", "Plano Financeiro", "Categoria", "Código")):
+    # OS NOMES DE COLUNA SÃO OS DO STREAMLIT, na mesma ordem de preferência —
+    # recuperados do código original em 10/09/2026, depois que o dono confirmou
+    # o cabeçalho de verdade das duas abas. O primeiro de cada par é o que a
+    # planilha realmente usa hoje; o segundo ficou por compatibilidade, que era
+    # como o original fazia.
+    for tipo, aba_nome, aceitos_nome, aceitos_codigo in (
+            ("obra", "C. Diários",
+             ["Código Primário", "Obra"], ["Código Omie", "Codigo Omie", "Código"]),
+            ("categoria", "Plano Financeiro",
+             ["Plano Financeiro", "Categoria"],
+             ["Código Omie", "Codigo Omie", "Código"])):
         try:
-            linhas = _ler(aba_nome, coluna_nome, coluna_codigo)
-            if not linhas:
+            linhas, motivo = _ler(aba_nome, aceitos_nome, aceitos_codigo)
+            if motivo:
+                logger.warning("Análise de SPs: rateio — %s", motivo)
+                avisos.append(motivo)
                 continue
             with conexao() as conn:
                 conn.execute(
@@ -555,10 +984,11 @@ def sincronizar_referencias_rateio(anotar=None) -> dict:
                 obras = len(linhas)
             else:
                 categorias = len(linhas)
-        except Exception:  # noqa: BLE001
+        except Exception as e:  # noqa: BLE001
             logger.exception("Análise de SPs: falhou ler a aba '%s'", aba_nome)
+            avisos.append(f'falhou gravar o que veio da aba "{aba_nome}": {e}')
 
-    return {"obras": obras, "categorias": categorias}
+    return {"obras": obras, "categorias": categorias, "avisos": avisos}
 
 
 def referencias_rateio() -> dict:

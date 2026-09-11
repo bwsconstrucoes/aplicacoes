@@ -81,23 +81,76 @@ resolver ganha:
 1. **O número da SP escrito no comprovante** (o campo "Descrição"). É o caminho
    mais confiável. Um cuidado: o QR Code do Pix começa com `000201` e já foi
    confundido com número de SP — números assim são ignorados de propósito.
-2. **Somapay** (folha de pagamento): por valor, entre as SPs a pagar e
-   agendadas, e só para despesas de rescisão, férias, gratificação ou
-   participação nos lucros. Não usa a conta, porque o dinheiro sai do Bradesco
-   mas a baixa acontece na conta Somapay.
-3. **BeeVale** (vale-alimentação): por valor, aceitando o valor da SP com 1,5%
+2. **Depósito da Somapay** (rescisão paga direto da conta Somapay): pelo **nome
+   de quem recebeu + valor exato**. Esse comprovante é emitido pela própria
+   Somapay e não traz o número da SP nem a conta da empresa.
+   ⚠️ **Por que o nome e não o CPF:** numa SP de rescisão o credor é a
+   **empresa**, e a coluna CPF/CNPJ traz o CNPJ dela — não o do funcionário.
+   Quem identifica a pessoa é o nome escrito na descrição, no formato
+   "TRCT <NOME>". E o valor sozinho não serve: em 09/09/2026 havia **quatro**
+   rescisões de R$ 452,40, de quatro pessoas diferentes.
+3. **Somapay via transferência** (o dinheiro sai do Bradesco para a Somapay):
+   por valor, entre as SPs a pagar e agendadas, e só para despesas de rescisão,
+   férias, gratificação ou participação nos lucros. Empatando, desempata pela
+   conta que foi debitada. ⚠️ O comprovante **não traz o nome do funcionário**,
+   então duas rescisões pendentes de mesmo valor na mesma conta ficam paradas
+   para conferência — e isso acontece de verdade (quatro de R$ 452,40 em
+   09/09/2026).
+4. **BeeVale** (vale-alimentação): por valor, aceitando o valor da SP com 1,5%
    de acréscimo (é a taxa da BeeVale) ou o valor exato.
-4. **FGTS/Caixa**: por valor, entre as SPs a pagar e agendadas; se não achar,
+5. **FGTS/Caixa**: por valor, entre as SPs a pagar e agendadas; se não achar,
    tenta por palavra-chave no nome do credor.
-5. **Boleto**: pelo código de barras, comparado só pelos números, mais o valor.
-6. **Valor + conta + tipo de pagamento**, entre as SPs a agendar.
-7. **Valor + conta + status agendado**, na SPsBD. Se sobrar mais de uma
+6. **Boleto**: pelo código de barras, comparado só pelos números, mais o valor.
+7. **Valor + conta + tipo de pagamento**, entre as SPs a agendar.
+8. **Valor + conta + status agendado**, na SPsBD. Se sobrar mais de uma
    candidata, o desempate procura o nome do credor **no texto bruto do PDF**.
-8. **Última tentativa**: as SPs que a planilha já marcou como pagas e que o Omie
+   ⚠️ Este é o **único** caminho que exige o status exatamente `agendado`: uma
+   SP em `falhaagendar` não é encontrada por aqui. Todos os outros aceitam
+   `agendar`, `agendado` e `falhaagendar`.
+9. **Última tentativa**: as SPs que a planilha já marcou como pagas e que o Omie
    não baixou. Aqui ele executa **só o Omie** e não mexe em mais nada.
 
 **Se sobrar mais de uma candidata e o desempate não resolver, ele não executa
 nada** — marca como `pendente_validacao` e alguém precisa olhar.
+
+### Os dois caminhos da Somapay, que não podem ser confundidos
+
+A folha de pagamento passa pela Somapay de duas formas, e cada uma lança coisa
+diferente no Omie:
+
+| Situação | O que o Omie recebe |
+|---|---|
+| O dinheiro **sai do Bradesco** para a Somapay | a transferência entre as contas **e depois** a baixa do título na conta Somapay |
+| O pagamento **já saiu da conta Somapay** (este é o comprovante que a Somapay emite) | **só a baixa** na conta Somapay — não há transferência que tenha acontecido |
+
+**Qual conta Somapay recebeu** vem da **chave PIX impressa no comprovante**,
+casada com a coluna Chave PIX da BaseBancos. Cada uma das três contas tem a sua,
+então não há o que adivinhar. Se a chave não estiver cadastrada, o robô não
+escolhe: deixa pendente e diz o motivo.
+
+Os dois comprovantes podem chegar para a mesma rescisão, e **os dois dão baixa**.
+Quem chegar primeiro baixa; o segundo encontra o título já pago no Omie e para
+sozinho. O comprovante que fica anexado na SP é o do primeiro que chegou —
+decisão do dono em 11/09/2026, ciente de que costuma ser o do Bradesco e não o
+da Somapay.
+
+Lançar a transferência no segundo caso criaria no Omie um dinheiro que não
+andou. Por isso os dois são tipos separados no código.
+
+**O comprovante emitido pela Somapay não traz a conta da empresa**, só a do
+funcionário que recebeu. A conta em que a baixa é lançada vem da **BaseBancos**,
+pelo **nome do depositante**: "BWS CONSTRUÇÕES" casa com a conta "Somapay BWS".
+A comparação ignora espaços e acentos, então "IFPE SANTA CRUZ" acha
+"Somapay IFPESANTACRUZ".
+
+⚠️ **Não dá para usar o CNPJ aqui.** As três contas Somapay da BaseBancos
+(BWS, INFRADENDE e IFPESANTACRUZ) têm o **mesmo CNPJ** — o da própria Somapay,
+não o da empresa do grupo. Conferido com a planilha real em 11/09/2026.
+
+Se nenhum nome bater, ou mais de um bater, o robô **não escolhe**: deixa o
+comprovante pendente de validação e diz o motivo. Errar entre as três contas
+jogaria o dinheiro na contabilidade errada, e isso ninguém percebe olhando a
+tela.
 
 ## O que ele escreve quando casa
 

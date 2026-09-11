@@ -37,6 +37,11 @@
   estava preenchido com o comando antigo e o Procfile era ignorado (descoberto
   2026-07-14). Ao mudar o comando do gunicorn, alterar nos DOIS lugares — ou
   deixar o Start Command em branco pra valer o Procfile (preferido, versionado).
+- ✔ **Conferido em 2026-09-10** (o dono mostrou o campo): o Start Command é
+  **idêntico** ao `Procfile` acima, palavra por palavra. A suspeita anotada no
+  `CLAUDE.md` de que a produção rodasse com **8 threads** era infundada — são
+  4. A armadilha do "mexer só no Procfile não tem efeito" continua valendo,
+  porque o campo continua preenchido.
 - **Entry-point real:** `app/main.py` (NÃO é `app.py` na raiz — esse é legado do
   pdf-processor que ainda existe no monorepo).
 
@@ -316,6 +321,29 @@ caem todos em `PROPRIOS`: **a ausência de configuração fecha**. Quem está em
 `OBRAS_DESIGNADAS` sem nenhuma obra associada enxerga só a autoria — uma lista
 vazia não pode virar "vê tudo".
 
+**A alçada também é ajustável por PESSOA** (migração 032). O cargo continua
+sendo a base — é ele que responde por tudo que já está no ar —, e a tabela
+`usuario_permissoes` guarda só as **exceções** marcadas no cadastro de alguém:
+`concedida=TRUE` acrescenta uma ação que o cargo não dá, `concedida=FALSE` tira
+uma que o cargo daria. Sem linha, vale o cargo, e a tabela nascer vazia não muda
+o comportamento de ninguém.
+
+Motivo prático, nas palavras do dono: "de repente o diretor sai de férias e eu
+quero deixar outra pessoa responsável por autorizar alguma coisa" — sem
+inventar um cargo novo para cada arranjo.
+
+Três cuidados que sustentam isso:
+
+- a decisão mora em **um lugar só**: `pode()` (com o objeto `Usuario`) e
+  `decidir()` (com valores soltos, para a guarda) aplicam a mesma regra, e um
+  teste percorre perfil × ação × marcação exigindo que as duas concordem;
+- o **ADMIN não se tranca para fora**: `configurar`, `gerir_usuarios` e
+  `ver_erp` não podem ser desmarcadas dele, senão um clique errado deixaria o
+  sistema sem ninguém que consertasse;
+- as exceções são lidas por **SQL direto**, como o perfil, e se a tabela ainda
+  não existir a leitura falha em silêncio e vale o cargo. Pelo mesmo motivo do
+  §3.8: o botão que aplica as migrações não pode depender da migração.
+
 ### 3.10 Consumo de IA: um ponto de registro, um teto que só avisa
 
 Toda leitura por IA passa por `documentos/leitor._chamar_ia`, e é **ali** que o
@@ -428,10 +456,15 @@ por obra/autoria é um `WHERE`. Por isso há uma segunda camada, marcada
 - `ERP_SECRET_KEY` — assinatura da sessão do login. Lida em `app/main.py`, com
   cascata `ERP_SECRET_KEY` → `SECRET_KEY` → literal de desenvolvimento
   (ver a pendência em §10).
-- `OPENAI_API_KEY` — leitura de documento por IA, sugestão de categoria e
-  leitura de contrato de locação.
+- `OPENAI_API_KEY` — leitura de documento por IA, sugestão de categoria,
+  leitura de contrato de locação e **a pergunta por voz** (11/09/2026).
+  **Está configurada em produção com esse nome** — confirmado em 11/09/2026
+  pelo painel de Consumo de IA, com chamadas reais cobradas.
 - `ERP_MODELO_IA` — modelo de texto (padrão `gpt-4o-mini`).
 - `ERP_MODELO_IA_VISAO` — modelo de visão, para foto e PDF ruim (padrão `gpt-4o`).
+- `ERP_MODELO_IA_AUDIO` — modelo de transcrição da pergunta falada (padrão
+  `gpt-4o-mini-transcribe`). Existe como variável justamente para poder ser
+  trocado sem publicar, caso a conta não alcance esse modelo.
 - `ERP_MODO_TRANSICAO` — **padrão ligado** ("1"). Desligar com "0"/"false".
 - `PIPEFY_API_TOKEN` / `PIPEFY_TOKEN` — importador de cards do Pipefy (o módulo
   aceita os dois nomes; o restante do monorepo usa `PIPEFY_API_TOKEN`).
@@ -708,6 +741,235 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-11 — Relatório agendado roda com a permissão de QUEM RECEBE.**
+  Migração 060 (`perguntas_agendadas`): a pergunta que o dono aprovou vira
+  relatório que chega sozinho, pendurado no relógio que já existe (a rotina
+  diária do agente — um segundo relógio seria outra coisa para quebrar).
+  **A regra de arquitetura:** a resposta é calculada com o usuário
+  DESTINATÁRIO, nunca com quem criou; e agendar para outra pessoa exige
+  `gerir_usuarios`. Sem isso o agendamento vira um furo no escopo por obra.
+  Guarda-se a CONSULTA (chave + filtros), não a frase — reinterpretar o texto
+  a cada rodada faria o critério mudar sozinho. O agendado **só lê**: há
+  varredura recusando lançar, aprovar, pagar ou emitir de dentro dele.
+
+- **2026-09-11 — O assistente passa a ler os DOCUMENTOS, e o escopo do acervo
+  vira função única.** Migração 059: coluna `busca` em `documentos`, gerada
+  pelo próprio banco (`GENERATED ALWAYS`) com o dicionário de português, mais
+  índice GIN. A busca do assistente e a listagem da tela do Arquivo passam
+  pelo MESMO `arquivo/service.aplicar_escopo` (faixa de sigilo + obra
+  designada) — decisão do dono: *"quem vê o quê tem que estar associado às
+  suas permissões"*. A pergunta exige `ver_arquivo`, não `ver_erp`.
+  **Escolha do índice:** busca por palavra do Postgres, e não índice por
+  significado (vetor) — *"começar do simples, depois a gente decide se parte
+  pro caro"*. O limite (não acha sinônimo) está escrito na resposta.
+  **Regra que fica:** resposta vinda de documento traz SEMPRE o trecho; a
+  frase da IA lê só os trechos achados e é acréscimo, nunca a resposta.
+
+- **2026-09-11 — Coluna gerada pelo banco NÃO entra no modelo.** A `busca` é
+  `GENERATED ALWAYS`; mapeá-la no SQLAlchemy fazia todo INSERT tentar escrever
+  nela, e o Postgres recusa — o arquivamento inteiro morria junto. Quem precisa
+  dela cita a coluna direto na consulta (`literal_column`).
+
+- **2026-09-11 — O assistente é uma PORTA a mais, nunca um caminho novo.**
+  Ele saiu da aba do Financeiro e virou botão no canto de toda tela
+  (`erp_base.html`), como se faz lá fora — o padrão se chama *ambient
+  copilot*. A regra de arquitetura: ele fala com as MESMAS rotas de resposta,
+  que carregam a permissão e o escopo por obra de cada grupo. **Uma rota só,
+  respondendo tudo, teria de conferir permissão por dentro — e a ação
+  declarada nela mentiria.** Há varredura recusando endereço novo dentro do
+  bloco dele. Tudo o que ele declara começa com `ia` e vive numa função
+  fechada: a base é carregada junto com as 20 telas, e nome repetido ou apaga
+  a função da tela em silêncio, ou mata a tela com erro de sintaxe.
+
+- **2026-09-11 — Formato de arquivo se descobre olhando o CONTEÚDO.** O áudio
+  gravado no iPhone (MP4) ia com nome `.webm`, e o serviço de transcrição, que
+  decide pelo nome, recusava como "corrompido". A correção que fica é conferir
+  a assinatura dos primeiros bytes: nome vem do navegador e navegador varia; o
+  conteúdo não mente. **Vale para todo arquivo que chega de fora.**
+
+- **2026-09-11 — Deste contêiner NÃO se enxerga a produção.** Eu afirmei, aqui
+  e ao dono, que a `OPENAI_API_KEY` não estava configurada em produção. O que
+  eu tinha verificado era outra coisa: que **ela não existe neste contêiner de
+  desenvolvimento**. Não há chave nenhuma nem `DATABASE_URL` de produção aqui —
+  é assim de propósito. **Ausência local não é prova de ausência no Render.**
+  Quando a pergunta for "isto está ligado em produção?", pergunte ao dono ou
+  olhe uma tela que leia o ambiente de lá (hoje: Configurações › Saúde do
+  sistema › "O que está ligado"); nunca conclua do que falta aqui. O mesmo vale
+  para qualquer afirmação sobre o estado do mundo lá fora — quanto tem no
+  banco, o que já foi aplicado, quem está cadastrado.
+
+- **2026-09-11 — Credencial com o nome trocado não dá erro, e por isso o ERP
+  passou a MOSTRAR o nome que procura.** Configurações › Saúde do sistema ganhou
+  o quadro "O que está ligado": o que está configurado, **sob qual nome exato**,
+  e — quando falta — se o ambiente tem alguma variável de nome parecido (o caso
+  de "está lá, com outro nome"), que vira aviso no topo. O valor nunca aparece;
+  só os quatro últimos caracteres, e só em KEY/TOKEN/SECRET. **Ao criar
+  integração nova, acrescente a variável em `saude.INTEGRACOES`** — há
+  varredura exigindo que todo nome listado seja lido por algum código, e a
+  regra do repositório continua sendo UM nome por credencial (nada de aceitar
+  apelidos, que é como se perde o controle de qual está valendo).
+
+- **2026-09-11 — O ERP instalável no celular, e o cache que NÃO pode existir.**
+  O ERP passou a poder ser instalado como ícone no celular (manifesto +
+  service worker em `/erp/`, servidos por rotas públicas porque o navegador os
+  busca antes do login). **A decisão que importa não é essa, é a de não
+  guardar dado no aparelho:** o caminho normal de um service worker é cachear
+  as respostas, e num ERP isso faria a pessoa ver o "a pagar" de ontem sem
+  nada avisando. Só a folha de estilo e os ícones entram no cache; sem
+  internet, a tela diz que está sem internet. `tests/test_pwa.py` recusa
+  qualquer outro endereço no cache. **Aplicativo nativo foi descartado**: duas
+  bases de código e duas lojas para mostrar as telas que já existem.
+
+- **2026-09-11 — IA que se cobra por MINUTO não cabe na conta de tokens.**
+  A transcrição de áudio (pergunta falada) é cobrada por tempo, não por
+  token. `ia_custo` ganhou `PRECOS_POR_MINUTO` e `custo_de_audio`, e
+  `registrar` passou a aceitar um `custo_usd` já calculado. Sem isso a
+  pergunta falada apareceria custando ZERO no painel de consumo, e o teto
+  mensal deixaria de valer justamente na função nova. **Serviço de IA novo
+  que não cobre por token precisa entrar por aqui** — não basta chamá-lo.
+
+- **2026-09-11 — Onde a IA pode responder, e onde não pode.** Regra que passa
+  a valer para o assistente inteiro: a IA responde quando **quem perguntou tem
+  como conferir a resposta na fonte**. Documento anexado, sim (o papel está na
+  mão dele, e a tela avisa em amarelo que aquilo foi LIDO e não calculado).
+  Total somado sobre o banco, não — ninguém recalcula dez mil lançamentos de
+  olho, e um número errado com cara de certo é pior que resposta nenhuma.
+
+- **2026-09-11 — Escolher o registro e ver os números dele são duas
+  permissões diferentes.** Segunda brecha da mesma família, no **painel de
+  Obras**: quem enxerga "só o que eu lancei" via valor de contrato, gasto,
+  recebido e margem de todas as obras da empresa. A correção das Locações —
+  fechar a lista — **não servia aqui**: a mesma rota alimenta cinco telas, e em
+  quatro delas ela é a lista de onde se ESCOLHE a obra (arquivar documento,
+  marcar compromisso, filtrar contrato e nota). Fechá-la deixaria o lançador
+  sem conseguir arquivar nada. O que ficou: **identificação aberta, números em
+  branco** — em branco e não zero, porque zero seria o sistema afirmando que a
+  obra não gastou nada; pelo mesmo motivo os totalizadores mostram traço.
+  **Ao dar escopo a uma tela de lista, pergunte as duas coisas separadamente:**
+  quem pode escolher este registro, e quem pode ver os números dele.
+
+- **2026-09-11 — Escopo de registro que NÃO TEM AUTOR.** `obras_do_usuario`
+  devolve `None` com dois significados diferentes: "enxerga tudo" e "filtra por
+  autoria, não por obra". Em título isso é seguro, porque ele tem
+  `solicitante_id` e o filtro de autoria entra depois. Em **contrato de
+  locação, que não tem autor nenhum**, o `None` virava "sem filtro" e vazava a
+  base inteira para quem só deveria ver o que lançou — e o painel por obra, que
+  nem recebia usuário, mostrava o aluguel de todas as obras a qualquer
+  operador. Ambas as brechas foram fechadas em `core/auth/permissoes.py`, com
+  regra de nome próprio: `obras_de_registro_sem_autor`. **Ao escrever escopo
+  para entidade nova, a pergunta é: esta tabela tem autor?** Se não tem, é essa
+  função que se usa — nunca `obras_do_usuario`.
+
+- **2026-09-10 — Funcionalidade nova passa a trazer as perguntas que ela
+  responde.** Regra acrescentada ao `CLAUDE.md`, a pedido do dono, por causa do
+  assistente de IA que o ERP vai ganhar: pergunta prevista é respondida por
+  código escrito e testado, e pergunta imprevista cai numa consulta inventada
+  pela IA, que acerta quase sempre e erra EM SILÊNCIO no resto. Como o dono não
+  tem como conferir a consulta, cada pergunta antecipada é um erro que deixa de
+  acontecer. O catálogo vive em `app/apps/erp/PERGUNTAS.md`, e a parte mais
+  importante dele não são as perguntas: é a lista das PALAVRAS ambíguas ("a
+  pagar", "este mês", "custo da obra") que precisam de uma definição só, senão
+  dois relatórios sobre a mesma coisa discordam e ninguém sabe qual está certo.
+
+- **2026-09-10 — Devolução e estorno deixaram de ser receita e viraram CUSTO
+  NEGATIVO.** Devolução de material, estorno de despesa e reembolso de custas
+  estavam no grupo 1 do plano financeiro do ERP. O efeito era o pior possível
+  para quem lê o relatório: a obra aparecia com receita a mais e o custo
+  intacto, e a margem saía errada dos dois lados. Foram para o grupo 3 como
+  contas REDUTORAS — a migração 058 acrescentou a coluna `categorias.redutora`,
+  e `core/relatorios.py` soma essas contas com sinal negativo. **O lançamento
+  original nunca é estornado:** as duas linhas continuam visíveis no analítico,
+  e é só o total que fecha certo. Isto muda o significado de todo relatório do
+  ERP e por isso está aqui, não só no histórico da área. Junto veio a decisão
+  de que o **grupo 8 (aquisição de bens) passa a ser RESULTADO**: um bem
+  comprado para uma obra em parceria precisa aparecer no custo dela, senão não
+  há como cobrar a parte do parceiro. A depreciação fica com a contabilidade
+  externa, no balanço.
+
+- **2026-09-10 — Instalar o plano padrão não apaga conta com movimento.** O
+  botão "Instalar plano padrão BWS" ganhou uma rotina de aposentadoria, e ela
+  desativa APENAS a conta que nunca foi usada, apontando a sucessora. Conta com
+  lançamento continua ativa e sai num relatório para o dono remanejar pela
+  tela, que leva o histórico junto. A regra existe porque a alternativa —
+  desativar tudo que saiu do plano — esconderia lançamento do relatório sem
+  ninguém ter pedido, e o ERP não tem como saber o que a produção já lançou:
+  o ambiente de desenvolvimento não tem (nem deve ter) `DATABASE_URL` de
+  produção.
+
+- **2026-09-10 — Os importadores de planilha passaram a ler Excel (.xlsx).**
+  `core/importadores/planilhas.ler_tabela` reconhece o formato pelo CONTEÚDO
+  (assinatura "PK"), não pela extensão, e vale a primeira aba. O passo do
+  "salvar como CSV" era o que ninguém lembrava de fazer, e quando fazia
+  estragava acento e separador. **Sem dependência nova:** `openpyxl` já estava
+  no `requirements.txt` por causa do relatório do painel em Excel.
+
+- **2026-09-10 — A suíte roda com a fila de trabalho em segundo plano
+  DESLIGADA.** O ERP ganhou uma fila para o que não cabe no tempo de um clique
+  (migração 055): importar cards, recalcular a agenda, emitir nota. Ela tem
+  uma linha de trabalho de fundo que anda sozinha. Nos testes essa linha
+  atravessaria tudo, mexendo no banco por FORA da transação que cada teste
+  desfaz no fim — e o resultado seria falha intermitente, do tipo que se culpa
+  o acaso. Por isso `tests/conftest.py` define `ERP_TAREFAS=0` antes de
+  qualquer import do ERP. A fila continua sendo provada: os testes enfileiram e
+  mandam executar na hora (`tarefas.executar_agora`). **Em produção a variável
+  não existe, e o padrão é LIGADO** — se um dia alguém a definir como `0` no
+  Render, os trabalhos entram na fila e não andam; a tela de Configurações ›
+  Trabalhos avisa isso em letras grandes.
+
+- **2026-09-10 — O ERP passou a reusar o emissor de NFS-e do `emissaonf`.**
+  A emissão automática (migração 056) importa `el_nfse_nacional` e a tabela
+  `municipios_ibge` daquele módulo, em vez de recriar os dois. É reuso, não
+  acoplamento novo: os dois vivem no mesmo serviço e o padrão nacional é um só.
+  O cuidado que ficou: os imports são LOCAIS, dentro das funções, para que um
+  defeito no `emissaonf` não derrube o ERP no boot — e com ele os catorze
+  blueprints. O que o ERP NÃO reusa é o jeito de carregar o certificado: lá ele
+  é lido de um ARQUIVO em disco; aqui vem cifrado do banco e é aberto em
+  memória (`core/cadastros/certificado.chave_e_certificado_pem`).
+
+- **2026-09-07 — Duas varreduras que valem para o repositório inteiro.**
+  Cinco telas já chegaram à produção mortas, e sempre em silêncio: um nome de
+  variável errado, um `import` faltando, um endereço de API que não existe.
+  Nada disso aparece na suíte, porque ela não roda aquela linha, e nada
+  aparece na tela, porque a chamada morre dentro de um `try`. Foram criadas
+  duas varreduras baratas, sem dependência nova (`symtable` e o próprio
+  casador de rotas do Flask): `tests/test_nomes_indefinidos.py` lê todo o
+  código Python de `app/` e recusa nome que o Python não vá encontrar;
+  `tests/test_telas_chamam_rota_que_existe.py` lê cada endereço que cada tela
+  pede e confere contra as rotas registradas. As duas foram provadas contra os
+  defeitos reais que as motivaram. Elas cobrem os módulos de TODAS as áreas,
+  não só o ERP — quem mexer em painel, análise de SPs ou baixabradesco também
+  passa por elas.
+
+- **2026-09-04 — Permissão fina por pessoa, sem refazer a matriz de perfis.**
+  O dono pediu que cada pessoa tenha uma função principal e, além dela,
+  permissões marcadas uma a uma no cadastro. Duas saídas eram possíveis:
+  substituir o perfil global por uma matriz área × nível, ou manter o perfil e
+  acrescentar exceções. Escolhida a segunda (migração 032, tabela
+  `usuario_permissoes`), porque a primeira exigiria refazer a proteção das 125
+  rotas antes de o dono ter homologado a que acabou de ser endurecida — e o
+  ganho prático que ele descreveu ("deixar outra pessoa autorizando enquanto o
+  diretor está de férias") já sai da segunda. Detalhes em §3.9. A dívida está
+  escrita: um dia as áreas viram estrutura, não exceção.
+- **2026-09-05 — Suprimentos construído, das fases 1 a 5.** Migrações 033 a
+  037: cadastros (unidades, condições de pagamento como regra, fornecedor com
+  região/porte/cotador, solicitação de cadastro de insumo), solicitação com
+  obra por item e 15 situações, mapa de cotação com banco de preços, pedido
+  com autorização e previsão de pagamento, e recebimento com pendência como
+  saldo do item. O que NÃO entrou, e por quê: o disparo da cotação por e-mail
+  (o monorepo não tem envio de e-mail, e a conta é decisão do dono) e a
+  conversão da previsão em título (passa pelas regras fiscais do ERP e não
+  deve ser contornada por dentro do suprimento). Detalhes e pendências em
+  `app/apps/erp/SUPRIMENTOS.md`.
+- **2026-09-05 — A ação declarada decide sozinha quem entra.** Uma tela nova
+  declarava uma ação e conferia outra por dentro; a homologação com banco
+  acusou. Regra registrada no CLAUDE.md: quando duas ações precisam abrir a
+  mesma tela, cria-se ação própria com a implicação em `ACOES_IMPLICADAS`.
+- **2026-09-04 — Suprimentos: especificação antes de código.** As seis
+  planilhas em uso foram lidas e confrontadas com o ditado do dono; o resultado
+  está em `app/apps/erp/SUPRIMENTOS.md`, com as decisões dele e o plano em
+  cinco fases. O `tests/conftest.py` ganhou o dublê das exceções de permissão
+  (`permissoes_por_usuario`) — mudança que atravessa áreas.
+
 - **2026-07-10 — WhatsApp: Z-API → Evolution API (self-hosted).** Escolhida a
   Evolution API (open source, multi-instância, envia mídia) em vez do WAHA
   (grátis limita a 1 número e sem mídia). Estratégia de transição: blueprint
@@ -753,6 +1015,105 @@ Quando eu pedir nova feature ou adaptação:
   Itens 3-4 atacam o pico residual. Se AINDA ocorrer OOM após isso, próximos
   suspeitos: `processarnovasp` (não auditado), `validasp` (não auditado), ou
   subir instância pra 4 GB.
+- **2026-09-10 — Métricas do Render lidas pela primeira vez, e o Start Command
+  conferido.** Origem: a caça à lentidão do Análise de SPs. Três achados que
+  valem para o monorepo inteiro, não só para aquela área:
+  1. **O Start Command das Settings é idêntico ao `Procfile`** (o dono mostrou
+     o campo). A suspeita de 8 threads em produção era infundada — são 4,
+     como no arquivo. Ver §2.
+  2. **Memória em 48 h: 15% a 45% dos 2 GB**, sem encostar no limite, e CPU
+     quase sempre abaixo de 5%. As causas de verdade do OOM de julho foram
+     atacadas na origem (itens 3-4 do incidente abaixo), e o efeito aparece
+     aqui: a folga é grande. Com isso, o `--max-requests 150` — que, com
+     `--workers 1`, faz TODA requisição esperar a partida do serviço a cada
+     ~150 acessos (1,7 s só para importar os 18 módulos, medido) — passa a
+     custar mais do que protege. **Não foi mexido**: é decisão do dono, e o
+     caminho seguro é subir o valor e vigiar a memória, não remover a rede.
+  3. **O gargalo do Análise de SPs não é a instância web.** Com CPU perto de
+     zero e memória sobrando, o tempo é ESPERA — e o suspeito é o banco:
+     `SELECT count(*)` sobre 59 mil SPs levou **1.463 ms** em produção
+     (medido pelo dono na tela de rede do navegador) contra 5 ms num Postgres
+     local. A contagem foi tirada de todas as telas
+     (`analisesps/HISTORICO.md`, 22ª leva), mas as outras varreduras
+     continuam — e o item seguinte diz por que elas doem.
+- **2026-09-10 — O BANCO `erp-db` É O GARGALO, e o motivo é o plano dele.**
+  O dono mostrou as métricas do serviço de banco. Os limites do plano
+  atual são:
+
+  | | Limite | Uso observado |
+  |---|---|---|
+  | CPU | **0,1 CPU** (um décimo de um núcleo) | picos de 0,06 a 0,08 — **60% a 80% do limite** |
+  | Memória | **0,25 GB** | 100 a 230 MB — **encostando no teto** |
+  | Disco | 1 GB | ~430 MB |
+
+  **Os três números juntos explicam a lentidão inteira, sem sobrar nada:**
+
+  - Há **430 MB de dados** para uma memória de **250 MB**. Os dados NÃO cabem
+    na memória do banco, e o Postgres ainda precisa de parte dela para
+    conexões e ordenações. Ou seja: toda varredura da tabela de SPs vai ao
+    **disco**, sempre — não há cache que a segure.
+  - E vai ao disco com **um décimo de um núcleo**. Para comparar: a mesma
+    contagem custa 5 ms numa máquina de 4 núcleos a 2,8 GHz com o dado quente
+    na memória. 1.463 ms em produção é exatamente a ordem de grandeza que se
+    espera de "ler do disco com 0,1 CPU".
+  - Os picos de CPU chegando a 80% do limite significam que o banco está sendo
+    **estrangulado** (throttled) nos momentos de uso: as consultas entram em
+    fila.
+
+  **A consequência atravessa as áreas:** este banco serve o **ERP**, o
+  **Análise de SPs** e o **painel**. Nenhuma otimização de consulta compensa um
+  décimo de núcleo com os dados fora da memória — dá para diminuir o número de
+  varreduras (e foi feito), não para torná-las rápidas.
+
+  **A recomendação, e a decisão é do dono:** subir o plano do banco é o que tem
+  maior efeito por real gasto neste sistema hoje — mais do que qualquer
+  mudança de código pendente. Um plano com ~1 GB de memória faria os 430 MB
+  caberem inteiros, e mais CPU tira a fila.
+
+  **A ordem importa, e foi combinada com o dono em 10/09:** publicar a
+  correção das gravações inúteis (item abaixo) → faxina no banco num horário
+  sem ninguém usando (ela TRANCA as tabelas, e com 0,1 CPU demora) → medir o
+  tamanho de verdade → só então escolher o plano. Parte dos 430 MB é lixo
+  gerado pelo próprio defeito corrigido; dimensionar o plano pela sujeira é
+  pagar por ela todo mês.
+
+  **O DISCO é uma pressão separada da memória, e vem do ERP:** a migração 010
+  do ERP guarda os anexos DENTRO do banco (`anexos.conteudo`, BYTEA) —
+  comprovante, nota, contrato, ART, seguro. Com 1 GB de limite e 430 MB já
+  ocupados, o ERP em uso de verdade encheria isso em poucos meses.
+  **DECIDIDO pelo dono em 10/09/2026: os anexos do ERP vão para o Google
+  Drive**, e não para o banco. Quem for implementar isso no ERP precisa saber
+  que a coluna `conteudo` existe e é o caminho atual.
+
+  **Não verificado:** os números vieram da tela do Render, lida por mim numa
+  imagem. Não há acesso ao banco de produção a partir dos testes (§ regra),
+  então o tamanho de cada tabela lá dentro não foi conferido.
+- **2026-09-10 — 14,3 MILHÕES de gravações inúteis, achadas na aba de
+  consultas do banco.** A lista de "quem mais chama" mostrou
+  `INSERT INTO analisesps.sp_fiscal` com **14.328.805 chamadas** e 34 min 30 s
+  de processador — vinte e uma vezes mais que a gravação das próprias SPs, e
+  para uma tabela de uns 15 a 20 mil registros.
+
+  **Causa:** a etapa que traz as planilhas de apoio regravava TODAS as linhas
+  a cada passagem (`ON CONFLICT DO UPDATE` sem condição), e essa etapa roda em
+  toda sincronização — disparada de 5 em 5 minutos por quem estiver com a tela
+  aberta.
+
+  **A lição que vale para o monorepo inteiro, e não só para esta área:**
+  no Postgres, **regravar uma linha com o mesmo valor não é de graça** — deixa
+  a versão antiga como lixo, que engorda a tabela até ela não caber mais na
+  memória do banco. Num banco com 0,25 GB e 0,1 CPU (item acima), isso é a
+  diferença entre rápido e inutilizável, e o sintoma se alimenta da causa.
+  **Todo `ON CONFLICT DO UPDATE` que roda em laço deve ter
+  `WHERE <tabela>.col IS DISTINCT FROM EXCLUDED.col`.** Os outros módulos que
+  gravam em laço (`painel`, com `rateio`, `titulos`, `fato` e `movimentos` na
+  lista das mais chamadas) **não foram auditados** — é o próximo lugar a
+  olhar, e é área de outro chat.
+
+  **Corrigido no Análise de SPs** (`analisesps/HISTORICO.md`, 22ª leva): a
+  condição nas duas gravações de apoio, e a releitura das planilhas de apoio
+  passa a ser de hora em hora no disparo automático — o botão continua
+  imediato.
 - **2026-08-30 — Nasce o ERP como blueprint do monorepo** (`0976b8f`, primeiro
   de 50 commits até 2026-09-01). Decisões que vieram junto:
   1. **Hospedar dentro do serviço `aplicacoes`**, não em serviço novo — sem

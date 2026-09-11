@@ -45,6 +45,11 @@ Coluna = namedtuple("Coluna", "chave rotulo tipo padrao")
 # Sobre "Tipo de Despesa": é a classificação de despesa que existe NA SP
 # (coluna I da SPsBD). "Categoria de Despesa" no sentido do Omie é outra
 # coisa e só aparece na tela de Ratear — ela não é gravada em cada SP.
+#
+# Sobre "Obra": é o CENTRO DE CUSTO da planilha (coluna H). O cabeçalho usa a
+# palavra que o dono usa; a barra de filtros diz "Obra (centro de custo)"
+# porque lá cabe, e é ela que faz a ponte com o nome da planilha. A célula
+# pode trazer mais de uma obra — ver `consultas.MULTIPLAS_NA_CELULA`.
 DEFINICOES = [
     Coluna("id",               "ID",                  "id",      True),
     Coluna("solicitacao_d",    "Data",                "data",    False),
@@ -53,8 +58,8 @@ DEFINICOES = [
     Coluna("descricao",        "Descrição",           "longo",   True),
     Coluna("documento",        "CPF/CNPJ",            "texto",   False),
     Coluna("tipo_despesa",     "Tipo de Despesa",     "texto",   True),
-    Coluna("centro_custo",     "Centro de Custo",     "texto",   False),
     Coluna("valor_num",        "Valor",               "moeda",   True),
+    Coluna("centro_custo",     "Obra",                "texto",   True),
     Coluna("status_pgt",       "Status Pgt",          "status",  True),
     Coluna("status_agend",     "Status Agend",        "agend",   True),
     Coluna("forma_pagamento",  "Forma de Pgt",        "texto",   True),
@@ -84,17 +89,55 @@ def escolhidas(guardado) -> list:
     `guardado` é o que veio das preferências — pode ser lixo, de uma versão
     anterior ou de um erro. Nada aqui pode derrubar a tela por causa disso:
     o que não se reconhece é ignorado, e uma escolha vazia volta ao padrão.
-    Tabela sem coluna nenhuma não é uma escolha, é um acidente."""
+    Tabela sem coluna nenhuma não é uma escolha, é um acidente.
+
+    COLUNA NOVA APARECE PARA QUEM JÁ TINHA ESCOLHIDO. Este é o defeito que o
+    dono sentiu: a Obra entrou nas colunas padrão em 05/09, mas quem já tinha
+    uma escolha guardada continuou sem ela — a escolha antiga simplesmente não
+    mencionava uma coluna que ainda não existia, e o programa lia isso como
+    "ele não quer". Uma coluna acrescentada depois ficava invisível para
+    sempre, e sem nenhuma pista de que existia.
+
+    A correção guarda, junto com a escolha, QUAIS COLUNAS EXISTIAM na hora de
+    escolher. O que nasceu depois disso e é padrão entra sozinho; o que a
+    pessoa tirou de propósito continua fora, porque estava entre as conhecidas.
+
+    Para uma escolha antiga, que não diz o que conhecia, o desempate é: as
+    colunas padrão que estiverem faltando voltam, uma vez. Custa um clique a
+    quem tinha escondido alguma de propósito; a alternativa era deixar a Obra
+    invisível para quem mais precisa dela."""
+    conhecidas = None
     if isinstance(guardado, dict):
+        bruto = guardado.get("conhecidas")
+        if isinstance(bruto, list):
+            conhecidas = {str(c) for c in bruto}
         guardado = guardado.get("colunas")
+
     if not isinstance(guardado, list):
         return [POR_CHAVE[c] for c in PADRAO]
     marcadas = {str(c) for c in guardado if str(c) in POR_CHAVE}
     if not marcadas:
         return [POR_CHAVE[c] for c in PADRAO]
+
+    if conhecidas is None:
+        # Escolha antiga: não dá para saber o que ela conhecia. Repõe o padrão
+        # que falta — ver o parágrafo acima.
+        marcadas |= {c for c in PADRAO if c not in marcadas}
+    else:
+        marcadas |= {c for c in PADRAO if c not in conhecidas}
+
     # A ORDEM é a da definição, nunca a da escolha: a tabela tem de ficar
     # sempre com a mesma cara, senão cada pessoa lê num lugar diferente.
     return [c for c in DEFINICOES if c.chave in marcadas]
+
+
+def para_guardar(chaves) -> dict:
+    """O que vai para as preferências: a escolha E o que existia na hora.
+
+    Sem a segunda parte, uma coluna criada amanhã ficaria invisível para todo
+    mundo que já escolheu hoje — ver `escolhidas`."""
+    return {"colunas": [str(c) for c in chaves if str(c) in POR_CHAVE],
+            "conhecidas": list(CHAVES)}
 
 
 # A coluna que mais atrapalha quando não se quer ela: comprida, e no meio da

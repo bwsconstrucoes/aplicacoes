@@ -54,6 +54,33 @@ TIPOS = ("NFE", "NFSE", "CTE", "NFCE", "RECIBO", "RPA", "GUIA", "BOLETO",
          "FATURA_CONCESSIONARIA", "CONTRATO", "TERMO_RESCISAO", "COMPROVANTE",
          "PRESTACAO_CONTAS", "NOTA_DEVOLUCAO", "ORCAMENTO", "OUTRO")
 
+# Como cada tipo se chama para uma pessoa. As chaves acima são do sistema —
+# "FATURA_CONCESSIONARIA" em maiúscula e sem acento é o banco falando, e o
+# dono não lê o sistema dele assim.
+ROTULOS_DE_TIPO = {
+    "NFE": "Nota fiscal eletrônica (NFe)",
+    "NFSE": "Nota fiscal de serviço (NFS-e)",
+    "CTE": "Conhecimento de transporte (CT-e)",
+    "NFCE": "Nota fiscal ao consumidor (NFC-e)",
+    "RECIBO": "Recibo",
+    "RPA": "Recibo de pagamento a autônomo (RPA)",
+    "GUIA": "Guia de imposto",
+    "BOLETO": "Boleto",
+    "FATURA_CONCESSIONARIA": "Fatura de concessionária",
+    "CONTRATO": "Contrato",
+    "TERMO_RESCISAO": "Termo de rescisão",
+    "COMPROVANTE": "Comprovante bancário",
+    "PRESTACAO_CONTAS": "Prestação de contas",
+    "NOTA_DEVOLUCAO": "Nota de devolução",
+    "ORCAMENTO": "Orçamento",
+    "OUTRO": "Não identificado",
+}
+
+
+def rotulo_do_tipo(tipo: Any) -> str:
+    chave = str(tipo or "").strip().upper()
+    return ROTULOS_DE_TIPO.get(chave, chave or "Não identificado")
+
 _INSTRUCAO = f"""Você lê documentos financeiros brasileiros para o ERP de uma construtora (BWS Construções).
 Os documentos chegam como foto de celular, digitalização torta, PDF gerado por sistema ou impressão.
 Leia com paciência: o que estiver ilegível você declara em "observacoes", nunca inventa.
@@ -216,7 +243,7 @@ def _preparar_imagem(conteudo: bytes) -> tuple[str, str]:
 
 
 def _chamar_ia(*, texto: str = "", imagens: Optional[list[tuple[str, str]]] = None,
-               dica: str = "") -> dict[str, Any]:
+               dica: str = "", instrucao: str = "") -> dict[str, Any]:
     cliente = _cliente()
     imagens = imagens or []
     partes: list[dict[str, Any]] = []
@@ -238,7 +265,7 @@ def _chamar_ia(*, texto: str = "", imagens: Optional[list[tuple[str, str]]] = No
     try:
         resp = cliente.chat.completions.create(
             model=modelo, temperature=0, max_tokens=2000,
-            messages=[{"role": "system", "content": _INSTRUCAO},
+            messages=[{"role": "system", "content": instrucao or _INSTRUCAO},
                       {"role": "user", "content": partes}])
     except Exception as e:
         logger.exception("ERP/leitor: falha na IA (%s)", modelo)
@@ -356,6 +383,64 @@ def _normalizar(d: dict[str, Any]) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Entrada
 # ---------------------------------------------------------------------------
+def ler_com_instrucao(conteudo: bytes, nome_arquivo: str, instrucao: str,
+                      dica_usuario: str = "") -> dict[str, Any]:
+    """Mesma mecânica de leitura, com OUTRA pergunta.
+
+    `ler_documento` sabe ler nota, guia e comprovante — o que interessa ao
+    financeiro. O arquivo da empresa precisa de outra pergunta sobre o mesmo
+    papel: que documento é este, de quem é, até quando vale. A mecânica
+    (extrair texto do PDF, rasterizar página, encolher foto, contar o consumo
+    de IA) é a mesma, e continua num lugar só.
+
+    Devolve o que a IA respondeu, sem normalização financeira, mais
+    `texto_extraido` — que serve para a busca dentro do documento e evita ter
+    de reprocessar o arquivo depois.
+    """
+    if not conteudo:
+        raise ErroLeitura("Arquivo vazio.")
+    if len(conteudo) > MAX_ARQUIVO_BYTES:
+        raise ErroLeitura(f"Arquivo acima de {MAX_ARQUIVO_BYTES // (1024*1024)} MB. "
+                          f"Envie uma foto menor ou o PDF.")
+    ext = os.path.splitext(nome_arquivo or "")[1].lower()
+    cabeca = conteudo[:512].lstrip()
+    dica = f"Contexto informado pelo usuário: {dica_usuario}" if dica_usuario.strip() else ""
+
+    if ext == ".pdf" or conteudo[:5] == b"%PDF-":
+        texto = _texto_do_pdf(conteudo)
+        tem_texto = len(texto) >= 120
+        try:
+            imagens_b64 = _paginas_como_png(conteudo)
+        except ErroLeitura:
+            imagens_b64 = []
+        if tem_texto and imagens_b64:
+            d = _chamar_ia(texto=texto, imagens=[(b, "image/png") for b in imagens_b64[:3]],
+                           dica=dica, instrucao=instrucao)
+            d["origem_leitura"] = "PDF_TEXTO_E_IMAGEM"
+        elif tem_texto:
+            d = _chamar_ia(texto=texto, dica=dica, instrucao=instrucao)
+            d["origem_leitura"] = "PDF_TEXTO"
+        elif imagens_b64:
+            d = _chamar_ia(imagens=[(b, "image/png") for b in imagens_b64],
+                           dica=dica, instrucao=instrucao)
+            d["origem_leitura"] = "PDF_DIGITALIZADO"
+        else:
+            raise ErroLeitura("PDF sem texto e sem páginas legíveis.")
+        d["texto_extraido"] = texto
+        return d
+
+    if ext in (".png", ".jpg", ".jpeg", ".webp", ".heic", ".heif", ".bmp", ".tif", ".tiff") \
+            or cabeca[:3] == b"\xff\xd8\xff" or cabeca[:8] == b"\x89PNG\r\n\x1a\n":
+        b64, media = _preparar_imagem(conteudo)
+        d = _chamar_ia(imagens=[(b64, media)], dica=dica, instrucao=instrucao)
+        d["origem_leitura"] = "FOTO"
+        d["texto_extraido"] = ""
+        return d
+
+    raise ErroLeitura(f"Formato não suportado: {ext or 'desconhecido'}. "
+                      f"Envie PDF ou foto (JPG/PNG/HEIC).")
+
+
 def ler_documento(conteudo: bytes, nome_arquivo: str,
                   dica_usuario: str = "") -> dict[str, Any]:
     """Lê o documento e devolve os campos sugeridos. `dica_usuario` permite

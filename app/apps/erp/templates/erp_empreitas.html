@@ -13,6 +13,7 @@
     <input id="busca" placeholder="contrato, prestador, obra, serviço…"
            style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; min-width:280px">
     <span class="espaco"></span>
+    <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn amarelo" id="btn-novo">+ Novo contrato</button>
   </div>
 </div>
@@ -37,6 +38,8 @@
 <script>
 let CT = [], OBRAS = [], FORN = [], CATS = [];
 const dec = paraNumero;   // conversor único: trata "30.00" e "1.234,56" corretamente
+// Devolver garantia é dinheiro saindo: quem pode aprovar é quem pode devolver.
+const PODE_APROVAR = {{ 'true' if pode.aprovar else 'false' }};
 
 async function carregar(){
   try {
@@ -101,6 +104,12 @@ async function abrir(id){
           <div class="kpi-rotulo">Adiantamento em aberto</div>
           <div class="kpi-valor" style="font-size:17px">${numero(c.adiantamento_em_aberto)}</div>
           <div class="kpi-sub">será abatido na próxima medição</div></div>`:""}
+        ${c.retido>0||c.retencao_pct>0?`<div class="kpi estatico roxo">
+          <div class="kpi-rotulo">Garantia retida</div>
+          <div class="kpi-valor" style="font-size:17px">${numero(c.retido)}</div>
+          <div class="kpi-sub">${c.retencao_liberada_em
+            ? "devolvida em " + dataBR(c.retencao_liberada_em)
+            : c.retencao_pct + "% de cada medição"}</div></div>`:""}
       </div>
       <div class="cartao-dica">${c.objeto} · obra ${c.obra}
         ${c.quantidade?` · ${c.quantidade} ${c.unidade} × ${moeda(c.preco_unitario)}`:""}
@@ -110,15 +119,29 @@ async function abrir(id){
         Quem cadastrou não pode aprovar.
         <button class="btn" id="ct-aprovar" style="margin-left:8px">Aprovar contrato</button></div>`:""}
 
+      ${c.retido>0 && !c.retencao_liberada_em ? `<div class="aviso ${
+          c.status==="CONCLUIDO"||c.status==="ENCERRADO" ? "alerta" : "info"}">
+        <b>${moeda(c.retido)}</b> de garantia retida neste contrato.
+        ${c.status==="CONCLUIDO"||c.status==="ENCERRADO"
+          ? "O serviço terminou — é hora de devolver."
+          : "Será devolvida quando o serviço terminar."}
+        ${PODE_APROVAR ? `<button class="btn" id="ct-garantia" style="margin-left:8px"
+           >Devolver a garantia</button>` : ""}</div>` : ""}
+      ${c.retencao_liberada_em ? `<div class="aviso ok">Garantia devolvida em
+        ${dataBR(c.retencao_liberada_em)}${c.retencao_motivo
+          ? " — " + escapar(c.retencao_motivo) : ""}.</div>` : ""}
+
       <h4>Medições</h4>
       <table><thead><tr><th>Nº</th><th>Período</th><th class="direita">Qtd</th>
         <th class="direita">Medido</th><th class="direita">Abatido</th>
+        <th class="direita">Retido</th>
         <th class="direita">A pagar</th><th>Situação</th><th>Fotos</th><th></th></tr></thead>
       <tbody>${c.medicoes.map(m=>`<tr>
         <td class="dados">${m.numero}</td><td class="dados">${m.periodo}</td>
         <td class="direita dados">${m.quantidade??"—"}</td>
         <td class="direita dados">${numero(m.valor_medido)}</td>
         <td class="direita dados">${m.abatido?numero(m.abatido):"—"}</td>
+        <td class="direita dados">${m.retido?numero(m.retido):"—"}</td>
         <td class="direita dados"><b>${numero(m.valor_liquido)}</b></td>
         <td><span class="selo ${m.status==="FATURADA"?"aprovado":"aguardando"}">${rotulo(m.status)}</span>
           <small>${m.medido_por}</small></td>
@@ -178,6 +201,39 @@ async function abrir(id){
     if (bApr) bApr.addEventListener("click", async () => {
       try { await api(`/erp/api/empreitas/${id}/aprovar`, {method:"POST"});
         aviso("mensagem","Contrato aprovado — pode medir.","ok"); els("dlg").close(); carregar();
+      } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+    });
+
+    // DEVOLVER A GARANTIA. Vira título a pagar, com vencimento — não é acerto
+    // de planilha: passa pela mesma aprovação, baixa e comprovante de qualquer
+    // pagamento, porque é dinheiro saindo.
+    const bGar = els("ct-garantia");
+    if (bGar) bGar.addEventListener("click", async () => {
+      const emAndamento = c.status !== "CONCLUIDO" && c.status !== "ENCERRADO";
+      const r = await perguntar({
+        titulo: `Devolver ${moeda(c.retido)} de garantia`,
+        aviso: `Vai virar um título a pagar para ${escapar(c.prestador)}. ` +
+               (emAndamento
+                 ? "<b>O contrato ainda não terminou</b> — escreva o motivo, é o " +
+                   "que responde 'por que devolvemos antes?' daqui a seis meses."
+                 : "O serviço terminou, então é o momento normal de devolver."),
+        campos: [
+          {nome: "vencimento", rotulo: "Vencimento", tipo: "date"},
+          {nome: "motivo", rotulo: "Motivo", tipo: "textarea", linhas: 3,
+           obrigatorio: emAndamento,
+           dica: emAndamento ? "Obrigatório: o contrato ainda está em andamento."
+                             : "Opcional."},
+        ],
+        textoOk: "Gerar o título",
+      });
+      if (!r) return;
+      try {
+        const d = await api(`/erp/api/empreitas/${id}/garantia`, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(r)});
+        aviso("mensagem", `Garantia de ${moeda(d.resultado.valor)} devolvida no ` +
+              `título ${d.resultado.titulo}.`, "ok");
+        els("dlg").close(); carregar();
       } catch(e){ aviso("dlg-msg", e.message, "erro"); }
     });
 
@@ -291,6 +347,10 @@ els("btn-novo").addEventListener("click", () => {
       <div class="campo"><label>Término</label><input type="date" id="n-fim"></div>
       <div class="campo"><label>Exigir foto na medição</label><select id="n-foto">
         <option value="1" selected>Sim</option><option value="0">Não</option></select></div>
+      <div class="campo"><label>Retenção de garantia (%)</label>
+        <input id="n-garantia" inputmode="decimal" placeholder="5">
+        <div class="dica">Parte de cada medição que fica guardada até o fim do
+          serviço. O usual é 5%. Vazio ou zero não retém nada.</div></div>
     </div>
     <h4>Serviços contratados</h4>
     <div id="n-itens"></div>
@@ -334,7 +394,8 @@ els("btn-novo").addEventListener("click", () => {
           itens: ITS.filter(i=>i.descricao && dec(i.quantidade)>0 && dec(i.preco_unitario)>0),
           valor_total: els("n-total").value,
           parcelas_previstas: els("n-parc").value, data_inicio: els("n-ini").value || null,
-          data_fim: els("n-fim").value || null, exige_foto: els("n-foto").value === "1"})});
+          data_fim: els("n-fim").value || null, exige_foto: els("n-foto").value === "1",
+          retencao_garantia_pct: (els("n-garantia").value || "0").replace(",", ".")})});
       els("dlg").close();
       aviso("mensagem", `Contrato ${d.contrato.numero} cadastrado (${moeda(d.contrato.valor)}) —
         aguardando aval.`, "ok");
@@ -346,5 +407,8 @@ els("btn-novo").addEventListener("click", () => {
 
 els("busca").addEventListener("input", desenhar);
 carregar();
+
+// Excel e PDF do que está na tela, com os filtros no cabeçalho.
+botoesDeExportar("exportar");
 </script>
 {% endblock %}

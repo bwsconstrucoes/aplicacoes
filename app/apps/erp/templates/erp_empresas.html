@@ -1,0 +1,668 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Empresas — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="razão social, CNPJ, cidade…"></div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Situação e pendências</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-inativas">
+        <span class="rotulo">Mostrar também as inativas</span></label>
+      <label class="opcao"><input type="checkbox" id="f-sem-conta">
+        <span class="rotulo">Sem conta de e-mail (não dispara cotação)</span></label>
+      <label class="opcao"><input type="checkbox" id="f-sem-logo">
+        <span class="rotulo">Sem logo</span></label>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Obras sem empresa</span>
+      <span class="filtro-badge" id="badge-orfas">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <div class="cartao-dica" style="margin:0 0 6px">Obra sem empresa não sabe
+        por qual e-mail a cotação sai. Clique para acertar.</div>
+      <div id="lista-orfas"></div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+{# Empresas mora dentro de Configurações desde 10/09/2026. Esta faixa existe
+   para a pessoa saber onde está e conseguir voltar sem passar pelo menu. #}
+<nav class="subabas">
+  <a class="subaba" href="{{ url_for('erp.pagina_config') }}">◀ Configurações</a>
+  <a class="subaba ativa" href="{{ url_for('erp.pagina_empresas') }}">Empresas</a>
+</nav>
+<h2>Empresas
+  <small>o CNPJ que executa a obra, compra e assina — mais de um, a partir de agora</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo"></span>
+    <span class="espaco"></span>
+    <button class="btn" id="btn-nova">+ Nova empresa</button>
+  </div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th data-ordem="razao_social">Empresa</th>
+      <th data-ordem="cnpj">CNPJ</th>
+      <th data-ordem="municipio">Cidade</th>
+      <th class="direita" data-ordem="obras">Obras</th>
+      <th class="sem-ordem">Conta de e-mail</th>
+      <th class="sem-ordem">Logo</th>
+      <th class="sem-ordem">Situação</th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// A tela existe por causa de dois números: empresa sem conta de e-mail não
+// dispara cotação nenhuma, e obra sem empresa não sabe por qual endereço sair.
+let D = {empresas: [], obras_sem_empresa: [], indicadores: {},
+         tem_chave_de_segredos: false, seguranca_opcoes: []};
+let ORDEM = {campo: "razao_social", asc: true};
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+async function carregar(){
+  try {
+    D = await api("/erp/api/empresas");
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function visiveis(){
+  const b = (els("f-busca").value || "").toLowerCase().trim();
+  const l = D.empresas.filter(e => {
+    if (!e.ativo && !els("f-inativas").checked) return false;
+    if (els("f-sem-conta").checked && e.pode_enviar) return false;
+    if (els("f-sem-logo").checked && e.tem_logo) return false;
+    if (b && !`${e.razao_social} ${e.nome_fantasia} ${e.cnpj} ${e.municipio}`
+              .toLowerCase().includes(b)) return false;
+    return true;
+  });
+  const {campo, asc} = ORDEM;
+  return l.sort((x, y) => {
+    const a = x[campo], c = y[campo];
+    if (typeof a === "number") return asc ? a - c : c - a;
+    return asc ? String(a || "").localeCompare(String(c || ""), "pt-BR")
+               : String(c || "").localeCompare(String(a || ""), "pt-BR");
+  });
+}
+
+function desenhar(){
+  const k = D.indicadores || {};
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Empresas ativas</div>
+      <div class="kpi-valor">${k.ativas || 0}</div>
+      <div class="kpi-sub">de ${k.total || 0} cadastradas</div></div>
+    <button class="kpi vermelho ${els("f-sem-conta").checked ? "ativo" : ""}"
+      data-pendencia="f-sem-conta">
+      <div class="kpi-rotulo">Sem conta de e-mail</div>
+      <div class="kpi-valor">${k.sem_conta_de_email || 0}</div>
+      <div class="kpi-sub">não disparam cotação</div></button>
+    <div class="kpi estatico ${(k.obras_sem_empresa || 0) ? "vermelho" : "verde"}">
+      <div class="kpi-rotulo">Obras sem empresa</div>
+      <div class="kpi-valor">${k.obras_sem_empresa || 0}</div>
+      <div class="kpi-sub">não sabem por qual CNPJ correm</div></div>
+    <button class="kpi ambar ${els("f-sem-logo").checked ? "ativo" : ""}"
+      data-pendencia="f-sem-logo">
+      <div class="kpi-rotulo">Sem logo</div>
+      <div class="kpi-valor">${k.sem_logo || 0}</div>
+      <div class="kpi-sub">relatório sai sem marca</div></button>`;
+  document.querySelectorAll("[data-pendencia]").forEach(b =>
+    b.addEventListener("click", () => {
+      const alvo = els(b.dataset.pendencia);
+      alvo.checked = !alvo.checked;
+      desenhar();
+    }));
+
+  if (!D.tem_chave_de_segredos) {
+    els("mensagem").innerHTML = `<div class="aviso info">
+      <b>A senha do e-mail ainda não pode ser guardada.</b> Falta a variável
+      <b>ERP_CHAVE_SEGREDOS</b> na Environment do Render — é ela que cifra a
+      senha no banco. Sem ela, o resto do cadastro salva normalmente; só a
+      senha fica de fora. Como gerar a chave está escrito em
+      <code>core/comum/segredos.py</code>.</div>`;
+  }
+
+  const l = visiveis();
+  els("vazio").classList.toggle("oculto", l.length > 0);
+  if (!l.length) els("vazio").innerHTML = D.empresas.length
+    ? "<b>Nada nestes filtros</b>" : "<b>Nenhuma empresa</b>Cadastre a primeira.";
+
+  els("corpo").innerHTML = l.map(e => `
+    <tr data-id="${e.id}" style="cursor:pointer" ${e.ativo ? "" : 'style="opacity:.55"'}>
+      <td class="desc"><b>${e.razao_social}</b>
+        ${e.nome_fantasia ? `<small>${e.nome_fantasia}</small>` : ""}
+        ${e.padrao ? `<span class="selo pago">padrão</span>` : ""}</td>
+      <td class="dados">${e.cnpj}</td>
+      <td>${e.municipio || "—"}${e.uf ? ` / ${e.uf}` : ""}</td>
+      <td class="direita dados">${e.obras}</td>
+      <td class="desc">${e.pode_enviar
+        ? `<span class="selo aprovado">pronta</span>
+           <small>${e.smtp_usuario}</small>
+           ${e.conferido_em ? `<small>testada em ${dataBR((e.conferido_em||"").slice(0,10))}</small>`
+                            : `<small style="color:var(--ambar)">nunca testada</small>`}`
+        : `<span class="selo bloqueado">incompleta</span><small>${e.o_que_falta}</small>`}</td>
+      <td>${e.tem_logo
+        ? `<img src="/erp/api/empresas/${e.id}/logo" alt="logo"
+             style="max-height:28px; max-width:90px">`
+        : `<span class="selo aguardando">sem logo</span>`}</td>
+      <td><span class="selo ${e.ativo ? "aprovado" : "outro"}">${e.ativo ? "Ativa" : "Inativa"}</span></td>
+    </tr>`).join("");
+  document.querySelectorAll("[data-id]").forEach(tr =>
+    tr.addEventListener("click", () => abrir(+tr.dataset.id)));
+
+  // as obras órfãs, na barra da esquerda
+  els("badge-orfas").textContent = (D.obras_sem_empresa || []).length;
+  els("lista-orfas").innerHTML = (D.obras_sem_empresa || []).map(o => `
+    <button class="btn secundario" data-orfa="${o.id}"
+      style="display:block; width:100%; text-align:left; margin-bottom:4px">
+      <b>${o.codigo}</b><br><small>${o.nome}</small></button>`).join("")
+    || `<div class="cartao-dica">nenhuma — todas as obras têm empresa</div>`;
+  document.querySelectorAll("[data-orfa]").forEach(b =>
+    b.addEventListener("click", () => ligarObra(+b.dataset.orfa)));
+
+  els("resumo").innerHTML = `<b>${l.length}</b> empresa(s)`;
+}
+
+document.querySelectorAll("thead th[data-ordem]").forEach(th =>
+  th.addEventListener("click", () => {
+    const campo = th.dataset.ordem;
+    ORDEM = {campo, asc: ORDEM.campo === campo ? !ORDEM.asc : true};
+    desenhar();
+  }));
+
+// ------------------------------------------------------------------- ficha
+// ---------------------------------------------------------------------------
+// EMISSÃO DE NOTA POR EMPRESA
+//
+// Três defesas visíveis na tela, e cada uma tem motivo:
+//   MANUAL é o padrão — empresa nova não sai emitindo nota sozinha.
+//   HOMOLOGAÇÃO é o padrão — emitir é irreversível.
+//   O token, uma vez guardado, NÃO volta para a tela. Ele assina em nome da
+//   empresa; quem precisa dele é o servidor, não quem está olhando.
+// ---------------------------------------------------------------------------
+async function carregarEmissao(id){
+  const alvo = els("painel");
+  let em;
+  try {
+    const d = await api(`/erp/api/empresas/${id}/emissao`);
+    em = d.emissao;
+  } catch(e){
+    alvo.innerHTML = `<div class="critica CRITICA">${e.message}</div>`;
+    return;
+  }
+  const op = (lista, atual) => lista.map(([v, r]) =>
+    `<option value="${v}" ${v === atual ? "selected" : ""}>${r}</option>`).join("");
+
+  alvo.innerHTML = `
+    <div class="${em.pode_emitir ? "aviso ok" : "cartao-dica"}">
+      ${em.modo === "API"
+        ? (em.pode_emitir
+            ? `Esta empresa emite <b>pela API</b> de ${em.municipio || "seu município"},
+               no ambiente <b>${em.ambiente === "PRODUCAO" ? "de produção" : "de teste"}</b>.`
+            : `Está marcada para emitir pela API, mas ainda falta:
+               <b>${(em.o_que_falta || []).join(", ")}</b>.`)
+        : `Esta empresa emite <b>manualmente</b>: a nota é feita fora e anexada
+           aqui, e o sistema lê e registra. Nada é enviado ao município.`}
+    </div>
+
+    <div class="form-grade" style="margin-top:12px">
+      <div class="campo"><label>Como a nota é emitida</label>
+        <select id="em-modo">${op([["MANUAL","Manual — anexo a nota pronta"],
+                                   ["API","Automática — o sistema emite"]], em.modo)}</select>
+        <div class="dica">Manual funciona sem credenciamento nenhum.</div></div>
+      <div class="campo"><label>Ambiente</label>
+        <select id="em-ambiente">${op([["HOMOLOGACAO","Teste (homologação)"],
+                                       ["PRODUCAO","Produção — nota de verdade"]], em.ambiente)}</select>
+        <div class="dica">Em produção, <b>cada emissão gera nota fiscal real</b>.</div></div>
+
+      <div class="campo"><label>Município</label>
+        <select id="em-conhecido">
+          <option value="">— escolher da lista —</option>
+          ${(em.conhecidos||[]).map(c =>
+            `<option value="${c.ibge}" data-url="${c.url_base}" data-nome="${c.nome}"
+              ${c.ibge === em.codigo_ibge ? "selected" : ""}>${c.nome}</option>`).join("")}
+        </select>
+        <div class="dica">Escolher preenche o endereço e o código sozinho.</div></div>
+      <div class="campo"><label>Nome do município</label>
+        <input id="em-municipio" value="${em.municipio || ""}"></div>
+      <div class="campo"><label>Código IBGE</label>
+        <input id="em-ibge" value="${em.codigo_ibge || ""}" inputmode="numeric"
+          placeholder="7 dígitos"></div>
+      <div class="campo"><label>Canal</label>
+        <select id="em-canal">${op([["NACIONAL","Padrão nacional"],
+                                    ["ABRASF","ABRASF 2.04 (antigo)"]], em.canal)}</select>
+        <div class="dica">O ABRASF está sendo encerrado ao longo de 2026.</div></div>
+      <div class="campo" style="grid-column:span 2"><label>Endereço do serviço</label>
+        <input id="em-url" value="${em.url_base || ""}" placeholder="https://…"></div>
+
+      <div class="campo"><label>Série da nota</label>
+        <input id="em-serie" value="${em.serie || ""}"></div>
+      <div class="campo"><label>Código do serviço</label>
+        <input id="em-servico" value="${em.codigo_servico || ""}"></div>
+      <div class="campo"><label>Alíquota de ISS (%)</label>
+        <input id="em-iss" value="${em.aliquota_iss || ""}" inputmode="decimal"></div>
+      <div class="campo"><label>Token do canal</label>
+        <input id="em-token" type="password"
+          placeholder="${em.tem_token ? "guardado — digite para trocar" : "cole o token"}">
+        <div class="dica">Vai <b>cifrado</b>, e não volta para a tela.</div></div>
+    </div>
+    <div style="margin-top:12px"><button class="btn amarelo" id="em-salvar">Salvar</button></div>
+
+    <h4 style="margin-top:20px">Certificado digital (A1)</h4>
+    <div id="cert-painel" class="cartao-dica">carregando…</div>`;
+
+  carregarCertificado(id);
+
+  els("em-conhecido").addEventListener("change", ev => {
+    const o = ev.target.selectedOptions[0];
+    if (!o || !o.value) return;
+    els("em-ibge").value = o.value;
+    els("em-url").value = o.dataset.url || "";
+    els("em-municipio").value = o.dataset.nome || "";
+  });
+
+  els("em-salvar").addEventListener("click", async () => {
+    try {
+      await api(`/erp/api/empresas/${id}/emissao`, {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          modo: els("em-modo").value, ambiente: els("em-ambiente").value,
+          canal: els("em-canal").value, municipio: els("em-municipio").value,
+          codigo_ibge: els("em-ibge").value, url_base: els("em-url").value,
+          serie: els("em-serie").value, codigo_servico: els("em-servico").value,
+          aliquota_iss: els("em-iss").value, token: els("em-token").value})});
+      aviso("ficha-msg", "Guardado.", "ok");
+      carregarEmissao(id);
+    } catch(e){ aviso("ficha-msg", e.message, "erro"); }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// O CERTIFICADO DIGITAL (A1)
+//
+// Hoje o arquivo vive no computador de alguém, com a senha num papel. Aí ele
+// vence num sábado, ninguém sabe, e a obra para de faturar na segunda.
+//
+// A tela NUNCA recebe o arquivo nem a senha de volta: mostra titular,
+// validade e emissor. Não existe botão de baixar, de propósito — certificado
+// digital é a assinatura da empresa, e o que não tem porta não é arrombado.
+// ---------------------------------------------------------------------------
+async function carregarCertificado(id){
+  const alvo = els("cert-painel");
+  if (!alvo) return;
+  let d;
+  try { d = await api(`/erp/api/empresas/${id}/certificado`); }
+  catch(e){ alvo.innerHTML = `<div class="critica CRITICA">${escapar(e.message)}</div>`; return; }
+  const c = d.certificado;
+
+  alvo.innerHTML = `
+    ${!c.ha_chave ? `<div class="aviso alerta">A chave de segredos do ERP não
+      está configurada, então o certificado não pode ser guardado com segurança.
+      Defina <b>ERP_CHAVE_SEGREDOS</b> na Environment do Render.</div>` : ""}
+
+    ${c.tem
+      ? `<div class="aviso ${c.vencido ? "erro" : c.vencendo ? "alerta" : "ok"}">
+           <b>${escapar(c.titular)}</b>${c.documento ? " · " + escapar(c.documento) : ""}
+           <br>Válido até <b>${dataBR(c.valido_ate)}</b> — ${escapar(c.situacao_texto)}.
+           ${c.emissor ? "<br><small>Emitido por " + escapar(c.emissor) + "</small>" : ""}
+           ${c.vencido
+             ? "<br><b>Sem certificado válido a nota de serviço não é assinada.</b>"
+             : c.vencendo
+               ? "<br>Peça a renovação à contadora: leva dias."
+               : ""}
+         </div>`
+      : `<div class="cartao-dica">Nenhum certificado guardado. Sem ele a emissão
+           automática da nota não funciona — no padrão nacional a declaração vai
+           assinada.</div>`}
+
+    <div class="form-grade" style="align-items:end; margin-top:10px">
+      <div class="campo" style="grid-column:span 2"><label>Arquivo do certificado</label>
+        <input type="file" id="cert-arquivo" accept=".pfx,.p12">
+        <div class="dica">O arquivo <b>.pfx</b> (ou .p12) do A1. Vai
+          <b>cifrado</b> e nunca volta pela tela.</div></div>
+      <div class="campo"><label>Senha do certificado</label>
+        <input type="password" id="cert-senha" placeholder="a senha do arquivo">
+        <div class="dica">Confiro abrindo o arquivo — se abrir, está certa.</div></div>
+      <div><button class="btn" id="cert-salvar" ${c.ha_chave ? "" : "disabled"}
+        >${c.tem ? "Substituir" : "Guardar"}</button></div>
+    </div>
+    <div id="cert-msg"></div>
+
+    ${d.historico.length > 1 ? `<div class="cartao-dica" style="margin-top:10px">
+      <b>Anteriores:</b> ${d.historico.filter(h => h.situacao !== "ATIVO").map(h =>
+        `${escapar(h.titular)} (até ${dataBR(h.valido_ate)})`).join("; ")}.
+      <br><small>Guardados porque a nota assinada naquela época foi assinada com
+      eles.</small></div>` : ""}`;
+
+  els("cert-salvar").addEventListener("click", async () => {
+    const f = els("cert-arquivo").files[0];
+    if (!f) return aviso("cert-msg", "Escolha o arquivo do certificado.", "alerta");
+    if (!els("cert-senha").value) return aviso("cert-msg", "Informe a senha.", "alerta");
+    const fd = new FormData();
+    fd.append("arquivo", f);
+    fd.append("senha", els("cert-senha").value);
+    const b = els("cert-salvar");
+    b.disabled = true; b.textContent = "Conferindo…";
+    try {
+      const r = await fetch(`/erp/api/empresas/${id}/certificado`,
+                            {method: "POST", body: fd});
+      const j = await r.json();
+      if (!j.ok) throw new Error(j.erro || "Não consegui guardar.");
+      // A confirmação vai para a mensagem da FICHA, não para a do painel: o
+      // painel é redesenhado logo abaixo, e a frase morreria antes de ser
+      // lida — que é o mesmo que não ter avisado.
+      const ate = j.certificado && j.certificado.valido_ate;
+      aviso("ficha-msg", "Certificado guardado" +
+            (ate ? `, válido até ${dataBR(ate)}.` : "."), "ok");
+      carregarCertificado(id);
+    } catch(e){
+      aviso("cert-msg", e.message, "erro");
+      b.disabled = false; b.textContent = c.tem ? "Substituir" : "Guardar";
+    }
+  });
+}
+
+function abrir(id){
+  const e = D.empresas.find(x => x.id === id);
+  els("dlg-titulo").textContent = e.razao_social;
+  els("dlg-corpo").innerHTML = `
+    <div id="ficha-msg"></div>
+    <div class="topo-abas" style="background:var(--azul); border-radius:8px; padding:4px; margin-bottom:14px">
+      ${["Dados da empresa", "Conta de e-mail", "Emissão de nota", "Logo"].map((t, i) =>
+        `<button class="topo-aba ${i === 0 ? "ativa" : ""}" data-painel="${i}">${t}</button>`).join("")}
+    </div>
+    <div id="painel"></div>
+
+    {# OS CONJUNTOS DA EMPRESA. Habilitação é o que o edital exige; cadastro de
+       fornecedor é o que o cliente pede para registrar a BWS. Estavam só na
+       tela do Arquivo — e quem precisa deles está aqui, olhando a empresa. #}
+    <div class="cartao" style="box-shadow:none; border:1px solid var(--borda); margin-top:14px">
+      <b>Documentação desta empresa</b>
+      <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:8px">
+        ${botaoDeBloco("HABILITACAO", "Habilitação para licitação", {empresa_id: id})}
+        ${botaoDeBloco("CADASTRO-FORNECEDOR", "Cadastro como fornecedor", {empresa_id: id})}
+      </div>
+      <div class="cartao-dica">Vem em pasta compactada, com a lista do que falta
+        dentro — e o que falta também aparece na Agenda.</div>
+    </div>`;
+  document.querySelectorAll("[data-painel]").forEach(b =>
+    b.addEventListener("click", () => {
+      document.querySelectorAll("[data-painel]").forEach(x => x.classList.remove("ativa"));
+      b.classList.add("ativa");
+      painel(+b.dataset.painel, id);
+    }));
+  els("dlg").showModal();
+  painel(0, id);
+}
+
+function painel(i, id){
+  const e = D.empresas.find(x => x.id === id);
+  const alvo = els("painel");
+
+  if (i === 0) {
+    alvo.innerHTML = `
+      <div class="form-grade">
+        <div class="campo" style="grid-column:span 2"><label>Razão social</label>
+          <input id="e-razao" value="${e.razao_social}"></div>
+        <div class="campo"><label>Nome fantasia</label>
+          <input id="e-fantasia" value="${e.nome_fantasia}"></div>
+        <div class="campo"><label>CNPJ</label><input value="${e.cnpj}" disabled>
+          <div class="dica">Não muda. CNPJ errado se inativa e se cadastra outro
+            — é o que preserva as obras e os envios já ligados.</div></div>
+        <div class="campo"><label>Inscrição estadual</label>
+          <input id="e-ie" value="${e.inscricao_estadual}"></div>
+        <div class="campo"><label>Inscrição municipal</label>
+          <input id="e-im" value="${e.inscricao_municipal}"></div>
+        <div class="campo"><label>CEP</label><input id="e-cep" value="${e.cep}"></div>
+        <div class="campo" style="grid-column:span 2"><label>Logradouro</label>
+          <input id="e-logradouro" value="${e.logradouro}"></div>
+        <div class="campo"><label>Número</label><input id="e-numero" value="${e.numero}"></div>
+        <div class="campo"><label>Complemento</label>
+          <input id="e-complemento" value="${e.complemento}"></div>
+        <div class="campo"><label>Bairro</label><input id="e-bairro" value="${e.bairro}"></div>
+        <div class="campo"><label>Cidade</label><input id="e-municipio" value="${e.municipio}"></div>
+        <div class="campo"><label>UF</label><input id="e-uf" value="${e.uf}" maxlength="2"></div>
+        <div class="campo"><label>Telefone</label><input id="e-telefone" value="${e.telefone}"></div>
+        <div class="campo" style="grid-column:span 2"><label>E-mail</label>
+          <input id="e-email" value="${e.email}">
+          <div class="dica">O endereço que aparece para quem recebe.</div></div>
+        <div class="campo" style="grid-column:span 2"><label>Site</label>
+          <input id="e-site" value="${e.site}"></div>
+      </div>
+      <div style="margin-top:12px; display:flex; flex-direction:column; gap:8px">
+        <label class="opcao"><input type="checkbox" id="e-ativo" ${e.ativo ? "checked" : ""}>
+          <span class="rotulo">Ativa</span></label>
+        <label class="opcao"><input type="checkbox" id="e-padrao" ${e.padrao ? "checked" : ""}
+          ${e.padrao ? "disabled" : ""}>
+          <span class="rotulo">Empresa padrão — usada quando a obra não diz qual é</span></label>
+      </div>
+      <div style="margin-top:14px"><button class="btn" id="e-salvar">Salvar</button></div>`;
+    els("e-salvar").addEventListener("click", async () => {
+      const corpo = {razao_social: els("e-razao").value.trim(),
+        nome_fantasia: els("e-fantasia").value, inscricao_estadual: els("e-ie").value,
+        inscricao_municipal: els("e-im").value, cep: els("e-cep").value,
+        logradouro: els("e-logradouro").value, numero: els("e-numero").value,
+        complemento: els("e-complemento").value, bairro: els("e-bairro").value,
+        municipio: els("e-municipio").value, uf: els("e-uf").value,
+        telefone: els("e-telefone").value, email: els("e-email").value,
+        site: els("e-site").value, ativo: els("e-ativo").checked};
+      if (els("e-padrao").checked && !e.padrao) corpo.padrao = true;
+      try {
+        await api(`/erp/api/empresas/${id}`, {method: "PATCH",
+          headers: {"Content-Type": "application/json"}, body: JSON.stringify(corpo)});
+        els("dlg").close();
+        aviso("mensagem", "Empresa atualizada.", "ok");
+        carregar();
+      } catch(err){ aviso("ficha-msg", err.message, "erro"); }
+    });
+    return;
+  }
+
+  if (i === 1) {
+    alvo.innerHTML = `
+      <div class="cartao-dica">É por esta conta que a cotação sai. O fornecedor
+        <b>responde para ela</b> — por isso o endereço tem de ser um que a
+        equipe de compras acompanhe, não uma caixa de sistema.</div>
+      ${D.tem_chave_de_segredos ? "" : `<div class="aviso info">
+        A senha não pode ser guardada agora: falta ERP_CHAVE_SEGREDOS na
+        Environment do Render. Os demais campos salvam normalmente.</div>`}
+      <div class="form-grade" style="margin-top:12px">
+        <div class="campo" style="grid-column:span 2"><label>Servidor de saída (SMTP)</label>
+          <input id="s-servidor" value="${e.smtp_servidor}" placeholder="ex.: smtp.gmail.com"></div>
+        <div class="campo"><label>Porta</label>
+          <input id="s-porta" value="${e.smtp_porta || ""}" inputmode="numeric" placeholder="587"></div>
+        <div class="campo"><label>Segurança</label>
+          <select id="s-seguranca">
+            ${(D.seguranca_opcoes || []).map(o =>
+              `<option value="${o}" ${o === e.smtp_seguranca ? "selected" : ""}>${
+                o === "STARTTLS" ? "STARTTLS (porta 587)" :
+                o === "SSL" ? "SSL (porta 465)" : "Nenhuma"}</option>`).join("")}
+          </select></div>
+        <div class="campo" style="grid-column:span 2"><label>Usuário (a conta que entra)</label>
+          <input id="s-usuario" value="${e.smtp_usuario}" placeholder="compras@suaempresa.com.br"></div>
+        <div class="campo" style="grid-column:span 2"><label>Senha</label>
+          <input id="s-senha" type="password" autocomplete="new-password"
+            placeholder="${e.tem_senha ? "guardada — deixe em branco para manter" : "digite a senha"}">
+          <div class="dica">No Gmail e no Google Workspace com verificação em duas
+            etapas, use uma <b>senha de aplicativo</b>, não a senha de entrar no
+            e-mail. A senha é guardada cifrada; ninguém a lê depois, nem eu.</div></div>
+        <div class="campo" style="grid-column:span 3"><label>Como aparece para quem recebe</label>
+          <input id="s-remetente" value="${e.smtp_remetente}"
+            placeholder="ex.: BWS Construções &lt;compras@bwsconstrucoes.com.br&gt;"></div>
+        <div class="campo" style="grid-column:span 3"><label>Responder para</label>
+          <input id="s-resposta" value="${e.smtp_responder_para}"
+            placeholder="para onde a resposta do fornecedor deve cair"></div>
+      </div>
+      <div style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap">
+        <button class="btn" id="s-salvar">Salvar a conta</button>
+        <button class="btn secundario" id="s-testar" ${e.pode_enviar ? "" : "disabled"}>
+          Mandar mensagem de teste</button>
+      </div>
+      ${e.conferido_em ? `<div class="cartao-dica">Último teste que deu certo:
+        ${dataBR((e.conferido_em || "").slice(0, 10))}.</div>` : ""}`;
+
+    els("s-salvar").addEventListener("click", async () => {
+      try {
+        await api(`/erp/api/empresas/${id}/conta-email`, {method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            smtp_servidor: els("s-servidor").value, smtp_porta: els("s-porta").value,
+            smtp_usuario: els("s-usuario").value, smtp_senha: els("s-senha").value,
+            smtp_seguranca: els("s-seguranca").value,
+            smtp_remetente: els("s-remetente").value,
+            smtp_responder_para: els("s-resposta").value})});
+        aviso("ficha-msg", "Conta salva. Mande uma mensagem de teste para ter certeza.", "ok");
+        await carregar();
+        painel(1, id);
+      } catch(err){ aviso("ficha-msg", err.message, "erro"); }
+    });
+
+    els("s-testar").addEventListener("click", async () => {
+      const d = await perguntar({titulo: "Mandar mensagem de teste",
+        textoOk: "Mandar",
+        aviso: "Uma mensagem curta sai agora por esta conta. Se ela chegar, " +
+               "a configuração está certa.",
+        campos: [{nome: "para", rotulo: "Mandar para", obrigatorio: true, largura: 3,
+                  dica: "normalmente o seu próprio e-mail"}]});
+      if (!d) return;
+      aviso("ficha-msg", "Mandando…", "info");
+      try {
+        const r = await api(`/erp/api/empresas/${id}/testar-email`, {method: "POST",
+          headers: {"Content-Type": "application/json"}, body: JSON.stringify(d)});
+        if (r.situacao === "ENVIADO") {
+          aviso("ficha-msg", `Saiu para ${r.para}. Confira a caixa de entrada — ` +
+                             `o sistema garante que o servidor aceitou, não que chegou.`, "ok");
+          carregar();
+        } else {
+          aviso("ficha-msg", `Não saiu: ${r.erro}`, "erro");
+        }
+      } catch(err){ aviso("ficha-msg", err.message, "erro"); }
+    });
+    return;
+  }
+
+  // EMISSÃO DE NOTA. Por empresa e não constante no código porque são duas
+  // empresas em municípios diferentes: uma emite no Eusébio/CE, outra em
+  // Petrolina/PE — e uma por API, outra manual.
+  if (i === 2) {
+    alvo.innerHTML = `<div class="cartao-dica">carregando…</div>`;
+    carregarEmissao(id);
+    return;
+  }
+
+  // logo
+  alvo.innerHTML = `
+    <div class="cartao-dica">Entra no cabeçalho dos relatórios mandados ao
+      fornecedor. PNG, JPG, WEBP ou SVG, até 512 KB — ela é lida junto com a
+      empresa em toda tela, e arquivo grande deixa o sistema lento inteiro.</div>
+    <div style="margin:14px 0; min-height:60px">
+      ${e.tem_logo
+        ? `<img src="/erp/api/empresas/${id}/logo?t=${Date.now()}" alt="logo"
+             style="max-height:90px; max-width:280px">`
+        : `<span class="selo aguardando">sem logo</span>`}
+    </div>
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Arquivo</label>
+        <input type="file" id="l-arquivo" accept="image/png,image/jpeg,image/webp,image/svg+xml"></div>
+    </div>
+    <div style="margin-top:12px; display:flex; gap:8px">
+      <button class="btn" id="l-enviar">Guardar a logo</button>
+      ${e.tem_logo ? `<button class="btn perigo" id="l-tirar">Tirar a logo</button>` : ""}
+    </div>`;
+  els("l-enviar").addEventListener("click", async () => {
+    const arquivo = els("l-arquivo").files[0];
+    if (!arquivo) return aviso("ficha-msg", "Escolha o arquivo da logo.", "erro");
+    const fd = new FormData();
+    fd.append("arquivo", arquivo);
+    try {
+      await api(`/erp/api/empresas/${id}/logo`, {method: "POST", body: fd});
+      aviso("ficha-msg", "Logo guardada.", "ok");
+      await carregar();
+      painel(2, id);
+    } catch(err){ aviso("ficha-msg", err.message, "erro"); }
+  });
+  if (els("l-tirar")) els("l-tirar").addEventListener("click", async () => {
+    try {
+      await api(`/erp/api/empresas/${id}/logo`, {method: "DELETE"});
+      await carregar();
+      painel(2, id);
+    } catch(err){ aviso("ficha-msg", err.message, "erro"); }
+  });
+}
+
+// ------------------------------------------------------------ obra ↔ empresa
+async function ligarObra(obraId){
+  const obra = (D.obras_sem_empresa || []).find(o => o.id === obraId);
+  const ativas = D.empresas.filter(e => e.ativo);
+  if (!ativas.length) return aviso("mensagem", "Cadastre uma empresa primeiro.", "erro");
+  const d = await perguntar({
+    titulo: `Empresa da obra ${obra.codigo}`,
+    textoOk: "Ligar",
+    aviso: "É por esta empresa que a cotação desta obra vai sair, e é o CNPJ " +
+           "que aparece para o fornecedor.",
+    campos: [{nome: "empresa_id", rotulo: "Empresa", tipo: "select", largura: 3,
+              opcoes: ativas.map(e => ({valor: String(e.id),
+                                        rotulo: `${e.razao_social} · ${e.cnpj}`}))}]});
+  if (!d) return;
+  try {
+    await api(`/erp/api/obras/${obraId}/empresa`, {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({empresa_id: +d.empresa_id})});
+    aviso("mensagem", `${obra.codigo} ligada à empresa.`, "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function novaEmpresa(){
+  const d = await perguntar({
+    titulo: "Nova empresa",
+    textoOk: "Cadastrar",
+    aviso: "O CNPJ não muda depois. Os dados de endereço e a conta de e-mail " +
+           "podem ser preenchidos em seguida, na ficha.",
+    campos: [
+      {nome: "cnpj", rotulo: "CNPJ", obrigatorio: true, largura: 2},
+      {nome: "razao_social", rotulo: "Razão social", obrigatorio: true, largura: 3},
+      {nome: "nome_fantasia", rotulo: "Nome fantasia", largura: 2},
+      {nome: "email", rotulo: "E-mail", largura: 2},
+      {nome: "municipio", rotulo: "Cidade", largura: 2},
+      {nome: "uf", rotulo: "UF"}]});
+  if (!d) return;
+  try {
+    const r = await api("/erp/api/empresas", {method: "POST",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(d)});
+    aviso("mensagem", "Empresa cadastrada. Configure agora a conta de e-mail.", "ok");
+    await carregar();
+    abrir(r.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+["f-busca", "f-inativas", "f-sem-conta", "f-sem-logo"].forEach(id =>
+  els(id).addEventListener("input", desenhar));
+els("btn-limpar").addEventListener("click", () => {
+  els("f-busca").value = "";
+  ["f-inativas", "f-sem-conta", "f-sem-logo"].forEach(id => els(id).checked = false);
+  desenhar();
+});
+els("btn-nova").addEventListener("click", novaEmpresa);
+
+carregar();
+</script>
+{% endblock %}

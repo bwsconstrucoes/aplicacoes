@@ -466,6 +466,16 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .entrada input[type=password]:focus {
   outline: 2px solid var(--azul-claro); border-color: var(--azul-claro);
 }
+/* A lista de quem entra. Mesmo tamanho e mesma caixa do campo de senha: os
+   dois são o mesmo gesto, um embaixo do outro. */
+.entrada select {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--borda-forte);
+  border-radius: var(--raio-p); font-size: 15px; margin-bottom: 14px;
+  background: var(--branco); color: inherit;
+}
+.entrada select:focus {
+  outline: 2px solid var(--azul-claro); border-color: var(--azul-claro);
+}
 .entrada .btn { width: 100%; padding: 11px; font-size: 15px; }
 
 .aviso {
@@ -688,15 +698,29 @@ a.kpi { display: block; }
   color: var(--azul); white-space: nowrap;
 }
 .ficha-links { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
-/* "Cancelar SP" e uma acao seria, mas nao e a acao principal da ficha: em
-   vermelho puro ele puxava o olho para si toda vez que a ficha abria. Fica
-   discreto, e a confirmacao continua sendo o formulario do Pipefy. */
-.ficha-links .btn.perigo { border-color: #E0B4B0; color: #8C3A33; }
+/* "Cancelar SP" ficou igual aos outros botoes da fileira: ele so ABRE o
+   formulario do Pipefy, nao cancela nada por si. Em vermelho puxava o olho
+   para si toda vez que a ficha abria, como se fosse a acao principal. */
+
+/* A DESCRICAO, no alto da ficha. Texto de gente: respeita a quebra de linha
+   digitada e quebra palavra comprida (link colado) em vez de esticar a caixa. */
+.ficha-descricao { margin: 0 0 12px; }
+.texto-livre {
+  margin: 0; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.texto-livre a { color: var(--azul); }
 .ficha-acoes {
   display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
   padding: 12px; margin: 12px 0; background: var(--papel);
   border-radius: var(--raio-p);
 }
+/* Agendamento travado pela Validacao. NAO usa `disabled`: botao desabilitado
+   nao recebe clique, e assim ele parecia apenas quebrado. Aqui ele tem cara
+   de cadeado, aceita o clique e o clique diz por que nao foi. */
+.ficha-acoes .btn.bloqueado {
+  opacity: .55; border-style: dashed; cursor: help;
+}
+.ficha-acoes .btn.bloqueado:hover { background: var(--branco); }
 
 /* O que a barra de filtros mostra enquanto reconsulta */
 .filtros-estado {
@@ -832,10 +856,9 @@ a.kpi { display: block; }
 .acoes-linha { white-space: nowrap; }
 .acoes-linha .link-btn + form { margin-left: 8px; }
 
-/* "Remover do lote" na barra: acao de tirar, nao de alterar. Discreto, mas
-   distinguivel dos botoes que escrevem na planilha. */
-.barra-acoes .btn.perigo { border-color: #E0B4B0; color: #8C3A33; }
-.barra-acoes .btn.perigo:hover:not(:disabled) { background: #FDF3F2; }
+/* "Remover do lote" ficou igual aos demais, por decisao do dono (05/09/2026):
+   ele nao altera nada na planilha, entao nao merecia cor de alerta. O aviso
+   continua na confirmacao do clique, que e onde importa. */
 
 /* O aviso de que a base mudou. Discreto e no rodape: nao pode tapar a tabela
    nem competir com o que a pessoa esta fazendo. */
@@ -845,10 +868,53 @@ a.kpi { display: block; }
   padding: 10px 16px; background: var(--azul); color: var(--branco);
   border-radius: 999px; box-shadow: var(--sombra-forte); font-size: 13.5px;
 }
+/* O recado de que uma acao saiu — "12 SPs entraram no grupo X". Aparece no
+   canto, some sozinho, e nao empurra nada da tela: quem mandou o lote quer
+   continuar de onde estava, nao ser levado para outro lugar. */
+/* O botao de atualizar, colado na hora da base. Pequeno de proposito: e um
+   atalho, nao a acao principal da tela. */
+.btn-atualizar {
+  margin-left: 6px; padding: 1px 7px; font-size: 11px; font-weight: 700;
+  border: 1px solid rgba(255,255,255,.45); border-radius: 999px;
+  background: transparent; color: inherit; cursor: pointer;
+}
+.btn-atualizar:hover { background: rgba(255,255,255,.15); }
+.btn-atualizar:disabled { opacity: .5; cursor: default; }
+
+.recado-acao {
+  position: fixed; right: 16px; bottom: 16px; z-index: 60;
+  max-width: min(420px, calc(100vw - 32px));
+  background: var(--azul); color: #fff;
+  padding: 12px 16px; border-radius: var(--raio-p);
+  box-shadow: var(--sombra-forte); font-size: 13.5px; font-weight: 600;
+  transition: opacity .5s ease, transform .5s ease;
+}
+.recado-acao a { color: var(--amarelo); text-decoration: underline; }
+.recado-acao.saindo { opacity: 0; transform: translateY(8px); }
+
 .aviso-frescor .btn {
   background: var(--amarelo); border-color: var(--amarelo);
   color: var(--azul-fundo); padding: 5px 12px; font-size: 12.5px;
 }
+
+/* O total por conta, embaixo do total geral da barra de acoes. */
+.ba-contas {
+  font-size: 11.5px; color: var(--tinta-suave); font-family: var(--fonte-dados);
+  margin-top: 2px; line-height: 1.4;
+}
+
+/* ESCONDER TEM DE ESCONDER.
+ *
+ * O navegador esconde `[hidden]` com `display: none`, mas isso vem da folha
+ * DELE — e qualquer regra nossa ganha, por mais fraca que seja. `.opcao` tem
+ * `display: flex`, e por isso a procura dentro do filtro de "Tipo de despesa"
+ * simplesmente NAO FUNCIONAVA: o javascript marcava a opcao como escondida, o
+ * estilo mandava mostrar assim mesmo, e quem digitava via a lista inteira
+ * parada. Reportado pelo dono em 11/09/2026.
+ *
+ * A regra vale para a folha toda de proposito: o mesmo tropeco aconteceria em
+ * qualquer elemento com `display` proprio que alguem mandasse esconder. */
+[hidden] { display: none !important; }
 
 /* Procurar dentro de um bloco de filtro (obras, projetos, credores...) */
 .procura-opcao {
@@ -859,3 +925,14 @@ a.kpi { display: block; }
 .procura-nada {
   margin: 0 0 8px; font-size: 12px; color: var(--tinta-suave); font-style: italic;
 }
+
+/* A caixa de marcar no cabecalho de cada codigo gerado */
+.marca-codigo { display: inline-flex; align-items: center; margin-right: 8px; }
+.marca-codigo input { width: 16px; height: 16px; cursor: pointer; }
+
+/* O codigo de pagamento dentro da ficha */
+.ficha-codigo {
+  padding: 14px; margin: 12px 0; background: var(--papel);
+  border-radius: var(--raio-p);
+}
+.ficha-codigo .qr { max-width: 190px; }

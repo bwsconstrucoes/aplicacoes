@@ -15,7 +15,7 @@
 # ============================================================================
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any, Optional
 
@@ -87,6 +87,46 @@ def proximo_numero_sp(s: Session) -> str:
 # ---------------------------------------------------------------------------
 # Criação (lançamento dirigido)
 # ---------------------------------------------------------------------------
+def _exigir_uma_conta_so(s: Session, rateios: list[Rateio]) -> None:
+    """Um título não pode ser rateado entre obras pagas por CONTAS diferentes.
+
+    Decisão do dono, em 09/09/2026, e o argumento é irrespondível: *"como é que
+    eu vou pagar um boleto de duas contas bancárias? É impossível."*
+
+    O título vira UM boleto, UM Pix, UMA transferência. Se as obras saem de
+    contas diferentes, não existe pagamento único — e o erro só apareceria no
+    dia de pagar, com o boleto na mão e o prazo vencendo.
+
+    A recusa é na hora do LANÇAMENTO de propósito: quem lança ainda pode
+    dividir a compra em dois pedidos, dois boletos, dois títulos. Depois de
+    lançado, dividir dá trabalho e envolve o fornecedor.
+
+    Obra SEM conta definida não bloqueia: o cadastro é que está incompleto, e
+    travar o lançamento por isso pararia o financeiro por um campo em branco.
+    """
+    contas: dict[int, list[str]] = {}
+    for r in rateios:
+        obra = s.get(Obra, r.obra_id)
+        conta_id = getattr(obra, "conta_bancaria_id", None) if obra else None
+        if not conta_id:
+            continue
+        contas.setdefault(conta_id, []).append(getattr(obra, "codigo", "?"))
+    if len(contas) <= 1:
+        return
+
+    from app.apps.erp.db.models.cadastros import ContaBancaria
+    partes = []
+    for conta_id, obras in contas.items():
+        conta = s.get(ContaBancaria, conta_id)
+        partes.append(f"{', '.join(sorted(obras))} → {getattr(conta, 'descricao', conta_id)}")
+    raise ErroValidacao(
+        "Este título está rateado entre obras que são pagas por CONTAS "
+        "DIFERENTES: " + " · ".join(partes) + ". Um título vira um pagamento só "
+        "— não dá para pagar o mesmo boleto de duas contas. Separe em dois "
+        "títulos (peça ao fornecedor dois boletos), ou acerte a conta das obras "
+        "no cadastro.")
+
+
 def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
     from app.apps.erp.core.titulos.enquadramento import exigir_caminho_correto
     exigir_caminho_correto(s, dados, usuario)
@@ -269,6 +309,8 @@ def criar_titulo(s: Session, dados: dict[str, Any], usuario: Usuario) -> Titulo:
         raise ErroValidacao(
             f"Soma dos rateios (R$ {soma_rat}) ≠ valor líquido (R$ {valor_liquido}).")
 
+    _exigir_uma_conta_so(s, rateios_obj)
+
     # ---- C7(d): duplicidade credor + valor + 1º vencimento em janela de 30 dias
     venc1 = parcelas_obj[0].vencimento
     dup_tit = s.execute(text(
@@ -375,27 +417,159 @@ def obter(s: Session, titulo_id: int) -> Titulo:
     return t
 
 
-def listar(s: Session, *, status: Optional[str] = None, fornecedor_id: Optional[int] = None,
-           competencia: Optional[date] = None, busca: str = "",
-           limite: int = 500, usuario: Optional[Usuario] = None) -> list[Titulo]:
-    stmt = (select(Titulo)
-            .options(selectinload(Titulo.parcelas), selectinload(Titulo.fornecedor),
-                     selectinload(Titulo.categoria),
-                     selectinload(Titulo.rateios).selectinload(Rateio.obra))
-            .order_by(Titulo.id.desc()).limit(limite))
+def consulta_de_titulos(s: Session, *, status: Any = None,
+                        fornecedor_id: Optional[int] = None,
+                        competencia: Optional[date] = None, busca: str = "",
+                        usuario: Optional[Usuario] = None):
+    """A consulta filtrada, SEM limite e SEM ordenação de página.
+
+    Ela é montada uma vez e serve a três perguntas — a página que se mostra, a
+    contagem do total e as somas do topo. Elas não podem divergir porque não
+    existem separadas.
+
+    O `status` aceita um ou vários. Antes ele era aplicado DEPOIS da consulta,
+    em Python, sobre os 500 títulos mais novos: filtrar por "bloqueado" não
+    achava nada se os 500 mais novos não tivessem nenhum — mesmo havendo
+    dezenas mais antigos. Aqui ele entra no WHERE, que é onde filtro mora.
+    """
+    stmt = select(Titulo)
     if status:
-        stmt = stmt.where(Titulo.status == StatusTitulo(status))
+        valores = [status] if isinstance(status, str) else list(status)
+        convertidos = []
+        for v in valores:
+            if not v:
+                continue
+            convertidos.append(v if isinstance(v, StatusTitulo) else StatusTitulo(v))
+        if convertidos:
+            stmt = stmt.where(Titulo.status.in_(convertidos))
     if fornecedor_id:
         stmt = stmt.where(Titulo.fornecedor_id == fornecedor_id)
     if competencia:
         stmt = stmt.where(Titulo.competencia == competencia.replace(day=1))
     busca = (busca or "").strip()
     if busca:
-        stmt = stmt.where(Titulo.descricao.ilike(f"%{busca}%") | Titulo.numero_sp.ilike(f"%{busca}%"))
+        stmt = stmt.where(Titulo.descricao.ilike(f"%{busca}%")
+                          | Titulo.numero_sp.ilike(f"%{busca}%"))
     if usuario is not None:
         from app.apps.erp.core.auth.permissoes import aplicar_escopo
         stmt = aplicar_escopo(stmt, s, usuario)
-    return list(s.scalars(stmt).all())
+    return stmt
+
+
+def listar(s: Session, *, status: Any = None, fornecedor_id: Optional[int] = None,
+           competencia: Optional[date] = None, busca: str = "",
+           limite: int = 500, usuario: Optional[Usuario] = None) -> list[Titulo]:
+    """Uma fatia da lista. Continua existindo para quem só quer os primeiros."""
+    stmt = consulta_de_titulos(s, status=status, fornecedor_id=fornecedor_id,
+                               competencia=competencia, busca=busca, usuario=usuario)
+    return list(s.scalars(_com_carregamentos(stmt)
+                          .order_by(Titulo.id.desc()).limit(limite)).all())
+
+
+def _com_carregamentos(stmt):
+    """Os carregamentos que a TELA precisa. Ficam fora da consulta base porque
+    contar não precisa deles — e pedi-los na contagem faria o banco montar
+    milhares de objetos que ninguém vai ver."""
+    return stmt.options(
+        selectinload(Titulo.parcelas), selectinload(Titulo.fornecedor),
+        selectinload(Titulo.categoria),
+        selectinload(Titulo.rateios).selectinload(Rateio.obra))
+
+
+def pagina_de_titulos(s: Session, *, pagina: Any = 1, tamanho: Any = None,
+                      **filtros) -> dict[str, Any]:
+    """A página que a tela mostra, com o total de verdade ao lado."""
+    from app.apps.erp.core.comum import paginacao
+
+    stmt = consulta_de_titulos(s, **filtros)
+    return paginacao.paginar(
+        s, _com_carregamentos(stmt).order_by(Titulo.id.desc()),
+        pagina=pagina, tamanho=(tamanho or paginacao.TAMANHO))
+
+
+def somar_titulos(s: Session, **filtros) -> dict[str, Any]:
+    """As somas do topo, sobre TODOS os títulos do filtro — não só a página.
+
+    Este é o ponto que mais importava consertar. Antes, os números do topo
+    somavam os 500 títulos trazidos e se apresentavam como "total": uma lista
+    cortada é um incômodo, mas um total que soma metade da base e se chama
+    total é um número que MENTE. E ninguém confere um número que o sistema deu.
+
+    Só as colunas necessárias são lidas — id, status, valor e o vencimento mais
+    próximo —, então somar a base inteira custa uma consulta magra em vez de
+    milhares de objetos completos.
+    """
+    from sqlalchemy import func as _f
+
+    stmt = consulta_de_titulos(s, **filtros)
+    ids = stmt.with_only_columns(Titulo.id).order_by(None).subquery()
+
+    primeiro_venc = (select(Parcela.titulo_id,
+                            _f.min(Parcela.vencimento).label("venc"))
+                     .group_by(Parcela.titulo_id).subquery())
+    linhas = s.execute(
+        select(Titulo.status, Titulo.valor_liquido, primeiro_venc.c.venc,
+               Titulo.dedutibilidade)
+        .join(ids, ids.c.id == Titulo.id)
+        .outerjoin(primeiro_venc, primeiro_venc.c.titulo_id == Titulo.id)).all()
+
+    limite7 = date.today() + timedelta(days=7)
+    abertos = {StatusTitulo.EM_ANALISE, StatusTitulo.AGUARDANDO_APROVACAO,
+               StatusTitulo.APROVADO, StatusTitulo.BLOQUEADO,
+               StatusTitulo.PAGO_PARCIAL}
+
+    hoje = date.today()
+
+    def _soma(teste) -> float:
+        return round(float(sum((v or 0) for st, v, venc, ded in linhas
+                               if teste(st, venc, ded))), 2)
+
+    def _conta(teste) -> int:
+        return sum(1 for st, v, venc, ded in linhas if teste(st, venc, ded))
+
+    def _texto(valor) -> str:
+        return valor.value if hasattr(valor, "value") else str(valor or "")
+
+    vencendo = lambda st, venc, ded: bool(venc and venc <= limite7 and st in abertos)
+    atrasado = lambda st, venc, ded: bool(venc and venc < hoje and st in abertos)
+    dedutivel = lambda st, venc, ded: _texto(ded) == "DEDUTIVEL"
+    a_decidir = lambda st, venc, ded: _texto(ded) in ("", "PENDENTE", "None")
+
+    # Quantos existem de CADA situação, na base inteira. A tela usa isto nas
+    # caixinhas do filtro: antes elas contavam só o que estava carregado, e
+    # uma situação sem nenhum registro na página aparecia "zerada" — o que
+    # desencoraja o clique justamente quando há registros mais antigos.
+    por_situacao: dict[str, int] = {}
+    for st, _v, _venc, _ded in linhas:
+        chave = st.value if hasattr(st, "value") else str(st)
+        por_situacao[chave] = por_situacao.get(chave, 0) + 1
+
+    def _por_status(alvo):
+        return lambda st, venc, ded: st == alvo
+
+    # TODOS os quadrinhos saem daqui, e não só alguns. Ter metade somando a
+    # base inteira e a outra metade somando a página deixaria dois números
+    # diferentes sobre a mesma coisa na MESMA tela — pior que os dois errados,
+    # porque quem vê não sabe em qual acreditar.
+    return {
+        "quantidade": len(linhas),
+        "por_situacao": por_situacao,
+        "total": _soma(lambda st, venc, ded: True),
+        "aguardando": _soma(_por_status(StatusTitulo.AGUARDANDO_APROVACAO)),
+        "qtd_aguardando": _conta(_por_status(StatusTitulo.AGUARDANDO_APROVACAO)),
+        "bloqueado": _soma(_por_status(StatusTitulo.BLOQUEADO)),
+        "qtd_bloqueado": _conta(_por_status(StatusTitulo.BLOQUEADO)),
+        "aprovado": _soma(_por_status(StatusTitulo.APROVADO)),
+        "qtd_aprovado": _conta(_por_status(StatusTitulo.APROVADO)),
+        "vencendo": _soma(vencendo),
+        "qtd_vencendo": _conta(vencendo),
+        "atrasado": _soma(atrasado),
+        "qtd_atrasado": _conta(atrasado),
+        "dedutivel": _soma(dedutivel),
+        "qtd_dedutivel": _conta(dedutivel),
+        "dedut_a_decidir": _soma(a_decidir),
+        "qtd_dedut_a_decidir": _conta(a_decidir),
+    }
 
 
 # ---------------------------------------------------------------------------

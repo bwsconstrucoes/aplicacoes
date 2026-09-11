@@ -17,10 +17,12 @@
 -- trocar o significado de `data` mexeria em nove telas conferidas contra o
 -- Streamlit, e não é isso que está sendo pedido.
 --
--- Ficam VAZIAS até a próxima atualização da base. Toda atualização refaz o fato
--- (`fato.reconstruir`, em qualquer um dos quatro modos), então a carga da
--- madrugada preenche sozinha; para ver hoje, Configurações › "Só refazer os
--- números". A tela avisa enquanto estiverem vazias.
+-- Ficam VAZIAS até a base ser recalculada. A marca REFAZER-O-FATO abaixo diz
+-- isso ao aplicador de migrações, que dispara o recálculo sozinho assim que
+-- termina de aplicar — sem baixar nada do OMIE. Antes desta marca existir, o
+-- dono precisava descobrir por conta própria que tinha de apertar "Só refazer
+-- os números", e reclamou com razão.
+-- REFAZER-O-FATO
 -- ===========================================================================
 ALTER TABLE painel.fato ADD COLUMN IF NOT EXISTS data_vencimento DATE;
 ALTER TABLE painel.fato ADD COLUMN IF NOT EXISTS data_pagamento  DATE;

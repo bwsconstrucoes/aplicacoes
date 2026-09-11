@@ -3,6 +3,28 @@
 {% block classe_corpo %}sem-filtros{% endblock %}
 
 {% block conteudo %}
+{# O QUE TEM PRAZO VEM ANTES DOS MÓDULOS.
+
+   A agenda só serve se a pessoa esbarrar nela. Deixá-la esperando dentro de
+   uma aba faria dela mais uma tela que se abre quando já se lembrou do
+   assunto — que é exatamente o problema que ela veio resolver. #}
+{% if agenda and agenda.abertos %}
+<a class="cartao" href="{{ url_for('erp.pagina_agenda') }}"
+   style="display:block; text-decoration:none; margin-bottom:20px;
+          border-left:4px solid {{ 'var(--vermelho)' if agenda.vencidos else 'var(--ambar)' }}">
+  <div class="cartao-cab"><h3>Agenda</h3>
+    <small>obrigações com prazo</small></div>
+  <p style="margin:0">
+    {% if agenda.vencidos %}
+      <b>{{ agenda.vencidos }}</b> com o prazo já vencido,
+      de <b>{{ agenda.abertos }}</b> na agenda.
+    {% else %}
+      <b>{{ agenda.abertos }}</b> obrigação(ões) com prazo chegando.
+    {% endif %}
+  </p>
+</a>
+{% endif %}
+
 <h2>Módulos <small>escolha a área do sistema</small></h2>
 <div class="hub">
   {% for m in modulos %}
@@ -22,9 +44,8 @@
     <small>áreas previstas, ainda não abertas</small></div>
   <div class="telas">
     <span class="tela">Suprimentos — pedidos de compra e recebimento</span>
-    <span class="tela">Contratos e medições — emissão de nota</span>
+    <span class="tela">Contratos e medições — emissão automática de nota</span>
     <span class="tela">Pessoal</span>
-    <span class="tela">Agenda de obrigações</span>
   </div>
 </div>
 {% endblock %}

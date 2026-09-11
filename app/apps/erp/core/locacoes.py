@@ -27,6 +27,7 @@ from typing import Any, Optional
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.apps.erp.core.comum.formato import _dinheiro_br
 from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
 import re
 
@@ -111,11 +112,16 @@ def criar(s: Session, dados: dict[str, Any], usuario: Usuario) -> ContratoLocaca
         qtd = _dec(i.get("quantidade"), "quantidade")
         if qtd <= 0:
             raise ErroValidacao("Quantidade deve ser maior que zero.")
+        # QUANDO ESTE EQUIPAMENTO VOLTA — perguntado aqui, na contratação,
+        # porque é agora que a pessoa sabe a resposta e ainda não tem motivo
+        # para esconder. Seis meses depois ninguém lembra o combinado.
+        devolve = _data(i.get("devolucao_prevista"))
         s.add(LocacaoItem(
             contrato_id=c.id, insumo_id=i.get("insumo_id") or None,
             descricao=(i.get("descricao") or "").strip()[:200] or "(equipamento)",
             quantidade=qtd, valor_unitario=_dec(i.get("valor_unitario"), "valor unitário"),
-            obra_id=obra.id))
+            obra_id=obra.id,
+            devolucao_prevista=devolve, devolucao_prevista_original=devolve))
     s.flush()
     registrar_evento(s, "contrato_locacao", c.id, "CRIADO", {
         "numero": c.numero, "locadora": forn.razao_social, "obra": obra.codigo,
@@ -304,11 +310,21 @@ def lancar_parcela(s: Session, parcela_id: int, dados: dict[str, Any],
     registrar_evento(s, "contrato_locacao", c.id, "PARCELA_LANCADA", {
         "competencia": p.competencia.isoformat(), "titulo": titulo.numero_sp,
         "valor": str(valor), "diferenca_da_previsao": str(diferenca)}, usuario.id)
+    avisos = []
+    if abs(diferenca) > Decimal("0.01"):
+        avisos.append(f"Cobrado R$ {_dinheiro_br(valor)} contra previsão de "
+                      f"R$ {_dinheiro_br(p.valor_previsto)} — confira se houve devolução não "
+                      f"registrada.")
+    # A CONFERÊNCIA DA OBRA. Não bloqueia o pagamento — bloquear trocaria
+    # equipamento esquecido por multa e briga com a locadora —, mas quem paga
+    # tem de saber que está pagando sem ninguém ter olhado.
+    conferencia = _conferencia_do_mes(s, c.id)
+    if conferencia.get("conferido") is False and conferencia.get("aviso"):
+        avisos.append(conferencia["aviso"])
     return {"titulo": titulo.numero_sp, "valor": float(valor),
             "diferenca": float(diferenca),
-            "aviso": (f"Cobrado R$ {valor} contra previsão de R$ {p.valor_previsto} "
-                      f"— confira se houve devolução não registrada."
-                      if abs(diferenca) > Decimal("0.01") else None)}
+            "conferencia": conferencia,
+            "aviso": " ".join(avisos) or None}
 
 
 # ---------------------------------------------------------------------------
@@ -334,8 +350,30 @@ def _alertas(s: Session, c: ContratoLocacao, pago: Decimal,
             if gasto_item >= preco:
                 alertas.append({
                     "gravidade": "CRITICA",
-                    "msg": f"{i.descricao}: já se pagou R$ {gasto_item:.2f} de aluguel, "
-                           f"acima do preço de compra (R$ {preco:.2f})."})
+                    "msg": f"{i.descricao}: já se pagou R$ {_dinheiro_br(gasto_item)} de aluguel, "
+                           f"acima do preço de compra (R$ {_dinheiro_br(preco)})."})
+    # A DEVOLUÇÃO PROMETIDA DE CADA EQUIPAMENTO. É por item que a coisa
+    # acontece: a betoneira fica a obra toda, as escoras eram para três
+    # semanas — e é a escora que se esquece na obra.
+    for i in itens:
+        em_obra = Decimal(i.quantidade) - Decimal(i.quantidade_devolvida)
+        prevista = getattr(i, "devolucao_prevista", None)
+        if em_obra <= 0 or not prevista:
+            continue
+        dias = (date.today() - prevista).days
+        if dias > 0:
+            custo = (em_obra * Decimal(i.valor_unitario) * Decimal(dias) / Decimal(30))
+            alertas.append({
+                "gravidade": "CRITICA" if dias > 30 else "ALERTA",
+                "msg": f"{i.descricao}: devolução prevista para "
+                       f"{prevista:%d/%m/%Y}, {dias} dia(s) atrás — "
+                       f"cerca de R$ {_dinheiro_br(custo)} de aluguel depois do combinado."})
+        elif dias > -8:
+            alertas.append({
+                "gravidade": "AVISO",
+                "msg": f"{i.descricao}: devolução prevista para "
+                       f"{prevista:%d/%m/%Y}. Prepare a retirada."})
+
     if c.status == "ATIVO" and c.data_fim_prevista and c.data_fim_prevista < date.today():
         alertas.append({"gravidade": "CRITICA",
                         "msg": f"Prazo previsto venceu em {c.data_fim_prevista:%d/%m/%Y} "
@@ -349,7 +387,7 @@ def _alertas(s: Session, c: ContratoLocacao, pago: Decimal,
 
 def listar(s: Session, usuario: Optional[Usuario] = None,
            apenas_ativos: bool = False) -> list[dict[str, Any]]:
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
     stmt = (select(ContratoLocacao)
             .options(selectinload(ContratoLocacao.fornecedor),
                      selectinload(ContratoLocacao.obra),
@@ -358,7 +396,12 @@ def listar(s: Session, usuario: Optional[Usuario] = None,
     if apenas_ativos:
         stmt = stmt.where(ContratoLocacao.status == "ATIVO")
     if usuario is not None:
-        permitidas = obras_do_usuario(s, usuario)
+        # Contrato de locação NÃO TEM AUTOR: o único recorte possível é a obra.
+        # Antes isto usava `obras_do_usuario`, que devolve None para quem
+        # enxerga por autoria — e None ali quer dizer "sem filtro". Efeito: o
+        # administrativo que só deveria ver o que ele lançou via TODOS os
+        # contratos da empresa. Ver a regra em `obras_de_registro_sem_autor`.
+        permitidas = obras_de_registro_sem_autor(s, usuario)
         if permitidas is not None:
             stmt = stmt.where(ContratoLocacao.obra_id.in_(permitidas or [0]))
     saida = []
@@ -382,6 +425,7 @@ def listar(s: Session, usuario: Optional[Usuario] = None,
             "pago_ate_agora": float(pago),
             "parcelas_vencidas_sem_lancar": atrasadas,
             "alertas": _alertas(s, c, pago, list(c.itens)),
+            "conferencia": _conferencia_do_mes(s, c.id),
         })
     return saida
 
@@ -415,6 +459,10 @@ def detalhar(s: Session, contrato_id: int) -> dict[str, Any]:
         "valor_periodo": float(valor_periodo(s, contrato_id)),
         "pago_ate_agora": float(pago),
         "alertas": _alertas(s, c, pago, list(c.itens)),
+        # A conferência do mês aparece na ficha do contrato, não só na lista:
+        # é aqui que quem abre o contrato para lançar a parcela vê que ninguém
+        # olhou os equipamentos.
+        "conferencia": _conferencia_do_mes(s, contrato_id),
         "itens": [{
             "id": i.id, "descricao": i.descricao,
             "quantidade": float(i.quantidade),
@@ -424,6 +472,14 @@ def detalhar(s: Session, contrato_id: int) -> dict[str, Any]:
             "valor_periodo": float(((Decimal(i.quantidade) - Decimal(i.quantidade_devolvida))
                                     * Decimal(i.valor_unitario)).quantize(_CENT)),
             "obra": obras.get(i.obra_id, c.obra.codigo),
+            "devolucao_prevista": (i.devolucao_prevista.isoformat()
+                                   if getattr(i, "devolucao_prevista", None) else None),
+            "devolucao_original": (i.devolucao_prevista_original.isoformat()
+                                   if getattr(i, "devolucao_prevista_original", None)
+                                   else None),
+            "atrasado": bool(getattr(i, "devolucao_prevista", None)
+                             and i.devolucao_prevista < date.today()
+                             and Decimal(i.quantidade) > Decimal(i.quantidade_devolvida)),
         } for i in c.itens],
         "parcelas": [{
             "id": p.id, "competencia": p.competencia.strftime("%m/%Y"),
@@ -439,6 +495,16 @@ def detalhar(s: Session, contrato_id: int) -> dict[str, Any]:
             "por": (s.get(Usuario, m.usuario_id).nome if m.usuario_id else "—"),
         } for m in movimentos],
     }
+
+
+def _conferencia_do_mes(s: Session, contrato_id: int) -> dict[str, Any]:
+    """A obra conferiu este contrato no mês? Silencioso se a migração 039 ainda
+    não rodou — a ficha do contrato não pode depender disso para abrir."""
+    try:
+        from app.apps.erp.core import locacoes_conferencia as svc
+        return svc.houve_conferencia(s, contrato_id)
+    except Exception:                                   # pragma: no cover
+        return {"conferido": None}
 
 
 def ler_contrato(s: Session, conteudo: bytes, nome_arquivo: str) -> dict[str, Any]:
@@ -641,10 +707,10 @@ def identificar_contrato(s: Session, documento: dict[str, Any],
             dif = abs(valor_doc - periodo)
             if dif <= _CENT:
                 pontos += 4
-                motivos.append(f"valor bate com a parcela (R$ {periodo})")
+                motivos.append(f"valor bate com a parcela (R$ {_dinheiro_br(periodo)})")
             elif dif <= periodo * Decimal("0.1"):
                 pontos += 2
-                motivos.append(f"valor próximo da parcela (R$ {periodo})")
+                motivos.append(f"valor próximo da parcela (R$ {_dinheiro_br(periodo)})")
         equipamentos = [i.descricao.upper()[:14] for i in c.itens]
         if any(e and e in texto for e in equipamentos):
             pontos += 2
@@ -685,8 +751,22 @@ def identificar_contrato(s: Session, documento: dict[str, Any],
     }
 
 
-def painel_por_obra(s: Session) -> list[dict[str, Any]]:
-    """Quanto cada obra tem locado por período — a visão macro que falta hoje."""
+def painel_por_obra(s: Session,
+                    usuario: Optional[Usuario] = None) -> list[dict[str, Any]]:
+    """Quanto cada obra tem locado por período — a visão macro que falta hoje.
+
+    ⚠️ ANTES ELE NÃO RECEBIA USUÁRIO NENHUM, e a rota que o serve é aberta a
+    todo operador (`ver_erp`): qualquer pessoa via quanto CADA obra da empresa
+    tem de aluguel, inclusive obras que ela não alcança. Achado por um teste em
+    11/09/2026, junto com a brecha do `listar`. Agora ele recorta pelas mesmas
+    obras — e quem enxerga tudo continua vendo tudo.
+    """
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+
+    permitidas = (obras_de_registro_sem_autor(s, usuario)
+                  if usuario is not None else None)
+    if permitidas is not None and not permitidas:
+        return []
     linhas = s.execute(
         select(LocacaoItem.obra_id,
                func.sum((LocacaoItem.quantidade - LocacaoItem.quantidade_devolvida)
@@ -694,7 +774,8 @@ def painel_por_obra(s: Session) -> list[dict[str, Any]]:
                func.count(LocacaoItem.id))
         .join(ContratoLocacao, ContratoLocacao.id == LocacaoItem.contrato_id)
         .where(ContratoLocacao.status == "ATIVO",
-               LocacaoItem.quantidade > LocacaoItem.quantidade_devolvida)
+               LocacaoItem.quantidade > LocacaoItem.quantidade_devolvida,
+               *( [LocacaoItem.obra_id.in_(permitidas)] if permitidas else [] ))
         .group_by(LocacaoItem.obra_id)).all()
     obras = {o.id: o for o in s.scalars(select(Obra)).all()}
     saida = []

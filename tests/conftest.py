@@ -18,10 +18,18 @@ do que existe aqui:
 """
 from __future__ import annotations
 
+import os
 import sys
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
+
+# A LINHA DE TRABALHO EM SEGUNDO PLANO FICA DESLIGADA NA SUÍTE (migração 055).
+# A fila continua funcionando — os testes enfileiram e mandam executar na hora,
+# por `tarefas.executar_agora`. O que se desliga é a thread que anda sozinha:
+# ela atravessaria os testes, mexendo no banco por fora da transação que cada
+# teste desfaz no fim. Precisa vir ANTES de qualquer import do ERP.
+os.environ.setdefault("ERP_TAREFAS", "0")
 
 RAIZ = Path(__file__).resolve().parents[1]
 if str(RAIZ) not in sys.path:
@@ -53,6 +61,19 @@ class ResultadoFalso:
     def first(self):
         return self._linhas[0] if self._linhas else None
 
+    def scalar(self):
+        """Primeira coluna da primeira linha, como o SQLAlchemy devolve num
+        `SELECT count(*)`. Sem linha nenhuma, devolve None."""
+        if not self._linhas:
+            return None
+        primeira = self._linhas[0]
+        return primeira[0] if isinstance(primeira, (tuple, list)) else primeira
+
+    @property
+    def rowcount(self) -> int:
+        """Quantas linhas o comando alcançou — o que um DELETE devolve."""
+        return len(self._linhas)
+
     def __iter__(self):
         return iter(self._linhas)
 
@@ -66,18 +87,38 @@ class SessaoFalsa:
     `scalar()` (usado nos SUM) consome a fila `escalares`.
     """
 
-    def __init__(self, *objetos, escalares=None, linhas_sql=None):
+    def __init__(self, *objetos, escalares=None, linhas_sql=None,
+                 permissoes_por_usuario=None):
         self.objetos = list(objetos)
         self.escalares = list(escalares or [])
         self.linhas_sql = list(linhas_sql or [])
+        # {usuario_id: {acao: concedida}} — as marcações do cadastro da pessoa,
+        # que a guarda lê por SQL direto.
+        self.permissoes_por_usuario = dict(permissoes_por_usuario or {})
         self.adicionados = []
+        self.executados = []
+        self.removidos = []
         self.eventos = []
+        self.desfeita = False
 
     # -- leitura ------------------------------------------------------------
     def get(self, modelo, ident, options=None, with_for_update=None,
             populate_existing=False):
+        # A maioria dos modelos tem `id`, mas alguns têm chave própria
+        # (unidades_compra por `codigo`, parametros por `chave`). Sem olhar a
+        # chave real, o dublê não acha esses e o teste falha por motivo errado.
+        chaves = ["id"]
+        try:
+            chaves = [c.name for c in modelo.__table__.primary_key.columns] or ["id"]
+        except AttributeError:
+            pass
         for o in self.objetos:
-            if isinstance(o, modelo) and getattr(o, "id", None) == ident:
+            if not isinstance(o, modelo):
+                continue
+            if len(chaves) == 1 and getattr(o, chaves[0], None) == ident:
+                return o
+            if len(chaves) > 1 and isinstance(ident, (tuple, list)) and \
+                    tuple(getattr(o, c, None) for c in chaves) == tuple(ident):
                 return o
         return None
 
@@ -103,6 +144,9 @@ class SessaoFalsa:
 
     def execute(self, stmt, params=None):
         texto = str(stmt)
+        # Guarda o que foi executado: é assim que um teste consegue exigir que
+        # uma regra tenha recusado ANTES de tocar no banco.
+        self.executados.append(texto)
         if "INSERT INTO eventos" in texto:
             self.eventos.append(params)
             return ResultadoFalso([])
@@ -114,6 +158,12 @@ class SessaoFalsa:
                 if isinstance(o, Usuario) and o.id == uid:
                     return ResultadoFalso([(o.perfil.value,)])
             return ResultadoFalso([])
+        # Exceções de permissão da pessoa, também lidas por SQL direto. Sem
+        # nada configurado, responde vazio — que é o mesmo que "vale o cargo".
+        if "FROM usuario_permissoes" in texto:
+            uid = (params or {}).get("i")
+            marcadas = (self.permissoes_por_usuario or {}).get(uid, {})
+            return ResultadoFalso([(acao, bool(v)) for acao, v in marcadas.items()])
         return ResultadoFalso(self.linhas_sql.pop(0) if self.linhas_sql else [])
 
     # -- escrita ------------------------------------------------------------
@@ -125,6 +175,18 @@ class SessaoFalsa:
 
     def commit(self):  # pragma: no cover - nenhum teste comita
         pass
+
+    def delete(self, obj):
+        """Anota a remoção e tira o objeto de circulação, para o teste poder
+        exigir que a regra tenha apagado o que devia."""
+        self.removidos.append(obj)
+        if obj in self.objetos:
+            self.objetos.remove(obj)
+
+    def rollback(self):
+        """A sessão real desfaz; o dublê só anota que foi chamado, para o teste
+        da prévia poder exigir que a rota tenha desfeito."""
+        self.desfeita = True
 
 
 # ---------------------------------------------------------------------------

@@ -297,6 +297,71 @@ def find_bank_account(accounts: List[BankAccount], agencia: str, conta: str) -> 
     return None
 
 
+def find_account_by_pix_key(accounts: List[BankAccount], chave: str) -> Optional[BankAccount]:
+    """Acha a conta pela chave PIX impressa no comprovante.
+
+    É o identificador EXATO: cada conta da BaseBancos tem a sua chave própria,
+    e ela vem escrita no comprovante de quem recebeu. Não depende de nome, de
+    número de conta nem de regra escrita no código.
+    """
+    alvo = normalize_compact(chave)
+    if not alvo:
+        return None
+    achados = [
+        a for a in accounts
+        if normalize_compact(as_string((a.raw or {}).get('Chave PIX', ''))) == alvo
+    ]
+    return achados[0] if len(achados) == 1 else None
+
+
+def apelido_somapay(banco: str) -> str:
+    """Devolve o que diferencia uma conta Somapay das outras.
+
+    'Somapay BWS' → 'bws'; 'Somapay IFPESANTACRUZ' → 'ifpesantacruz'.
+    """
+    n = normalize_compact(banco)
+    if not n.startswith('somapay'):
+        return ''
+    return n[len('somapay'):]
+
+
+def find_somapay_account(accounts: List[BankAccount], nome_depositante: str) -> Optional[BankAccount]:
+    """Acha a conta Somapay de onde saiu o pagamento, na BaseBancos.
+
+    O comprovante emitido pela Somapay não traz a conta da empresa — só a do
+    funcionário que recebeu. A pista é o NOME do depositante: 'BWS CONSTRUÇÕES'
+    casa com a conta 'Somapay BWS'.
+
+    ⚠️ Por que não pelo CNPJ: as três contas Somapay da BaseBancos têm o MESMO
+    CNPJ (o da própria Somapay, não o da empresa do grupo). O CNPJ não
+    distingue nada aqui — conferido com a planilha real em 11/09/2026.
+
+    Devolve None quando não dá para ter certeza (nenhuma conta Somapay
+    cadastrada, nenhum apelido batendo, ou mais de um batendo). **Não
+    adivinha**: sem conta resolvida o comprovante fica pendente de validação,
+    que é muito melhor do que baixar na conta errada.
+    """
+    somapays = [a for a in accounts if 'somapay' in normalize_compact(a.banco)]
+    if not somapays:
+        return None
+
+    alvo = normalize_compact(nome_depositante)
+    if alvo:
+        achados = [
+            a for a in somapays
+            if apelido_somapay(a.banco) and apelido_somapay(a.banco) in alvo
+        ]
+        if len(achados) == 1:
+            return achados[0]
+        if len(achados) > 1:
+            return None  # ambíguo — não escolher no palpite
+
+    # Nome não resolveu: só segue se houver UMA conta Somapay cadastrada.
+    if len(somapays) == 1:
+        return somapays[0]
+    return None
+
+
 def build_spsbd_updates(plan) -> List[dict]:
     """Monta updates para a SPsBD com colunas validadas pelo usuário:
       O  = Status Pgt       → 'Pago'

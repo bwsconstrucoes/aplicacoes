@@ -434,6 +434,1162 @@ pergunta de negócio: meio a meio? pelo rateio do Omie? Somar o valor cheio nas
 duas faria o total do relatório passar do total real. Ficou como está até
 alguém decidir.
 
+### Nona leva (05/09) — a tela dos códigos de pagamento
+
+Dois defeitos que o uso mostrou, e o segundo era caro:
+
+**1. Faltava marcar dali.** O caminho normal é: gerar o código, pagar, marcar.
+Sem a barra de ações na tela dos códigos, era voltar para a lista, procurar as
+mesmas SPs de novo e marcar lá. No Streamlit os códigos apareciam LOGO ABAIXO
+da barra, na mesma tela — a barra sempre esteve ao alcance.
+
+Agora a barra está lá, e **as SPs já chegam marcadas**: quem entrou nesta tela
+foi porque escolheu aquelas. Os botões que não fazem sentido aqui ficam de
+fora — gerar o QR estando nele, e mexer no lote.
+
+**2. Clicar no número da SP destruía o trabalho.** O número abria a ficha em
+tela cheia; voltar trazia a lista, e **os códigos recém-gerados sumiam**. Quem
+só queria conferir um dado tinha de refazer todo o caminho — escolher as SPs,
+gerar de novo — e isso no meio de um pagamento.
+
+Agora abre no **modal**, por cima dos códigos. Continua sendo um link de
+verdade: ctrl+clique e botão do meio abrem a página inteira em outra aba, que
+é o certo — um modal não sobrevive à aba nova.
+
+O modal passou a abrir também **no clique de qualquer link marcado**, não só
+no duplo clique de uma linha de tabela. Nas tabelas o número segue abrindo o
+card no Pipefy, como o dono pediu; fora delas, abre a ficha.
+
+### Décima leva (05/09) — o código de pagamento dentro da ficha
+
+Pedido do dono: ao abrir a SP no modal, mostrar já o QR Pix ou o código de
+barras. Quem abre a ficha para conferir um dado quase sempre está a caminho de
+pagar, e voltar à lista só para gerar o código era um caminho a mais em cada
+pagamento.
+
+- **A montagem do código virou função** (`_codigo_de_pagamento`), usada pela
+  tela de códigos E pela ficha. Duas cópias divergiriam no dia em que uma
+  ganhasse um caso — e a que ficasse para trás mostraria um código errado a
+  quem está pagando.
+- **O botão "QR / Código" saiu da ficha**, por decisão do dono: com o código
+  ali, virou redundante.
+- **SP que já saiu recebe aviso antes do código.** Mostrar um QR de pagamento
+  numa SP marcada como Paga é o caminho curto para pagar duas vezes. O código
+  continua aparecendo — às vezes é justamente o que se quer conferir —, mas
+  com o aviso na frente.
+- **Forma sem código explica**, em vez de deixar um espaço em branco que
+  pareceria falha do sistema.
+- **"Remover do lote" perdeu a cor de alerta**, por decisão do dono: ele não
+  altera nada na planilha, então não merecia se destacar. O aviso continua na
+  confirmação do clique, que é onde importa.
+
+**Um defeito antigo corrigido junto.** O gerador devolve o código de barras
+como um SVG de ARQUIVO, com cabeçalho XML e `<!DOCTYPE>` próprios. Colado
+dentro de uma página HTML isso é inválido, e alguns navegadores param de
+desenhar o resto a partir dali. Agora só o `<svg>` vai para dentro. Estava
+assim desde a conversão, na tela de códigos — foi um teste que apontou.
+
+### Décima primeira leva (05/09) — a hora crua e a coluna Obra
+
+**O carimbo aparecia cru na tela:** *"base de 2026-09-04T17:25:31.319885-03:00"*.
+A última sincronização é guardada como **texto** em `analisesps.meta`, e o
+formatador de data só sabia converter data de verdade — o resto passava
+inteiro. Agora há `momento_br`, que aceita texto, data e data-e-hora, e
+devolve **"04/09/2026 às 17:25"**, na hora de Brasília.
+
+E aqui a **hora é o ponto**: "a base é de quando?" respondido só com o dia diz
+"hoje", que é o que já se sabia. Pelo mesmo motivo, o **registro de
+alterações** passou a mostrar a hora — duas mudanças no mesmo dia, sem ela,
+ficam indistinguíveis.
+
+**Um defeito de fuso corrigido junto:** uma sincronização das 22h daqui é 1h
+do dia seguinte em UTC. Sem converter antes de cortar a hora, a tela mostraria
+**a data de amanhã**. O `data_br` agora normaliza para Brasília antes.
+
+**A coluna Obra entrou nas colunas padrão**, logo depois do Valor — é a
+pergunta seguinte a "quanto é": "de qual obra?". Vale nas duas telas, que leem
+a mesma escolha. O cabeçalho usa **"Obra"**, a palavra do dono, porque cabe na
+coluna estreita; a barra de filtros diz "Obra (centro de custo)", que é onde a
+ponte com o nome da planilha cabe.
+
+### Décima segunda leva (05/09) — o botão que parecia quebrado
+
+**"Clico em Agendado no modal e não acontece nada."** Não era defeito de
+ligação, e vale registrar porque a conclusão é contraintuitiva: a **trava da
+Validação** — restaurada do Streamlit — punha `disabled` nos quatro botões de
+agendamento quando a coluna Validação não estava em "Sim". E **botão
+desabilitado não recebe nem o clique**: para quem não leu o aviso logo acima,
+ele é indistinguível de um botão quebrado.
+
+A trava continua valendo (nada é gravado sem Validação = "Sim"), mas agora ela
+**se explica**: o botão tem cara de cadeado, aceita o clique, e o clique diz
+por que não foi — oferecendo validar ali mesmo. Trocar um bloqueio mudo por um
+bloqueio que fala custa nada e evita o chamado.
+
+> Nota de fidelidade, para quem for mexer nisso: no Streamlit a trava valia no
+> **detalhe** e no **lote** ("Alterar Status" só habilitava com todos os
+> selecionados validados). Na **tela de códigos**, o botão "📅 Agendado" era
+> *sempre clicável*. Aqui a barra de ações de cima **não** exige Validação em
+> nenhuma tela — é mais permissivo que o Streamlit. Está assim de propósito
+> até o dono decidir: apertar a barra tiraria função que ele já usa hoje.
+
+**A ficha foi virada de cabeça para baixo, a pedido do dono:**
+
+- a **Descrição subiu para o topo**, logo abaixo do cabeçalho. É o que diz do
+  que se trata a SP, e é a primeira coisa que se procura ao abrir; estava no
+  fim de tudo, depois de vinte e sete campos.
+- o **código de barras / QR desceu para o fim**. É o passo final de quem já
+  conferiu o resto e vai pagar.
+
+**Link escrito na descrição virou link clicável.** A descrição costuma trazer
+o endereço de uma pasta ou de um contrato, e como texto puro era selecionar na
+mão e colar no navegador.
+
+> O cuidado que isso exige, para não ser desfeito por engano: a descrição vem
+> da **planilha**, que qualquer um edita. O filtro `com_links` **escapa o texto
+> inteiro primeiro** e só depois transforma em link o que sobrou — sem isso,
+> uma célula com `<script>` dentro rodaria na tela de quem abrisse a SP. Por
+> devolver HTML pronto, no template ele vai com `|safe`; quem mexer nele mexe
+> nos dois lados. Há teste para o `<script>`, para a aspa dentro do endereço e
+> para o ponto final da frase não entrar no link. Usa `html.escape` da
+> biblioteca padrão de propósito — nenhuma dependência nova.
+
+**"Cancelar SP" deixou de ser vermelho.** Ele só **abre** o formulário do
+Pipefy; não cancela nada por si. Em vermelho puxava o olho toda vez que a
+ficha abria, como se fosse a ação principal.
+
+**Defeito achado de passagem, e sério:** abrir uma SP em **página inteira**
+vindo do **Lote** estourava a tela. O endereço da volta era montado colando
+`"analisesps."` com a origem, e dava `analisesps.lote` — que não existe; a tela
+do Lote chama-se `tela_lote`. Só não aparecia sempre porque o caminho normal
+hoje é o modal. Corrigido, com teste.
+
+**Verificado:** 1342 testes verdes, agora **com Postgres de verdade** (local e
+descartável — a produção não foi tocada), e os 18 blueprints sobem. O que
+**não** foi verificado: nada disto foi exercitado no navegador com dado real —
+são mudanças de tela, e o teste confere o HTML, não o que o olho vê.
+
+### Décima terceira leva (05/09) — o BeeVale voltou
+
+O dono perguntou pelas três funções do BeeVale ("gerar a planilha, cadastro,
+e o gerar") e não as encontrou. **Estavam mesmo faltando**: na conversão do
+Streamlit elas não vieram, e o `HISTORICO` registrava isso como "não voltou"
+por causa de um erro 403 de cota no Drive. A decisão do dono foi: **criar
+tudo, e ele informa a pasta depois.**
+
+**O que voltou, com os mesmos nomes do Streamlit:**
+
+- **Cadastro BeeVale** — cola-se a lista de e-mails/CPFs que o portal
+  devolveu, e sai a planilha de cadastro para baixar. **Não escreve em lugar
+  nenhum**: lê a planilha "Dados Documentos" e devolve um arquivo. Funciona
+  hoje, sem depender de nada configurado.
+- **Gerar BeeVale** — as SPs marcadas, uma tela de **conferência** primeiro
+  (o que cada card tem, o que está impedido e por quê), e só então o botão que
+  monta as duas planilhas por card, sobe no Drive e escreve os links e a
+  Documentação Fiscal no card do Pipefy.
+
+**Três coisas foram feitas diferente do Streamlit, e cada uma tem motivo:**
+
+1. **A conferência antes.** No Streamlit o diálogo abria e o botão fazia tudo.
+   Aqui a tela lista, ANTES, quem está pronto e quem está impedido — e mostra
+   o valor do card **ao lado** do valor da base. São duas origens diferentes;
+   é aqui que uma divergência aparece antes de virar recarga errada.
+2. **A ordem é sagrada, e há teste para ela:** primeiro tudo o que pode falhar
+   sem estragar (buscar, montar, subir no Drive), e **só no fim** a escrita nos
+   cards. Se o Drive recusar, nenhum card foi tocado. Marcar o card e depois
+   descobrir que o arquivo não subiu deixaria um card dizendo "pronto" quando
+   não está — e ninguém teria como saber.
+3. **Sucesso pela metade não conta como sucesso.** Arquivo no Drive com o card
+   sem atualizar aparece como problema na tela, com os links à mão para colar
+   no card manualmente.
+
+**A resposta à pergunta "a pasta do Drive ficou salva?":** não dava para saber
+de dentro do código — é uma variável do Render/planilha de credenciais, que
+esta máquina não enxerga. Por isso **Configurações ganhou um cartão que
+responde**: diz se `DRIVE_FOLDER_ID` e `PIPEFY_TOKEN` estão configurados
+(sem mostrar o valor — só os **seis últimos caracteres** da pasta, o
+suficiente para reconhecer qual é), e um botão **"Conferir a pasta do Drive"**
+que olha a pasta **sem escrever nada** e diz o nome dela.
+
+> **A ARMADILHA DA COTA, escrita uma vez para não se perder de novo.** A conta
+> de serviço do Google **não tem espaço de armazenamento próprio**. Ela grava
+> numa pasta de **Drive Compartilhado** (Shared Drive) onde seja membro com
+> permissão de gravar. Numa pasta comum do "Meu Drive" — **mesmo
+> compartilhada com ela como Editor** — o Google recusa com
+> `storageQuotaExceeded`, cuja tradução ao pé da letra ("cota estourada") faz
+> pensar em falta de espaço e manda consertar a coisa errada. O conserto é
+> **mover a pasta para um Drive Compartilhado**. O `drive.py` traduz esse erro
+> para essa instrução, e o botão de conferir avisa antes de qualquer geração.
+>
+> Vale notar: o `email_financeiro`, neste mesmo repositório, já sobe arquivo no
+> Drive com a **mesma** conta de serviço, numa pasta que funciona. Ou seja, o
+> caminho é viável — o que falhou em 02/09 foi a pasta, não a conta.
+
+**Trava mantida do Streamlit:** "Gerar BeeVale" só habilita quando **todas** as
+SPs marcadas têm forma de pagamento BeeVale. Não é preciosismo: gerar a
+recarga de uma SP que se paga por boleto põe dinheiro no cartão de quem não
+devia receber, **e** marca o card como resolvido.
+
+**Arquivos novos:** `beevale.py` (as regras e os dois arquivos `.xlsx`),
+`pipefy.py` (o pouco que se lê e escreve lá) e `drive.py` (a subida). O
+`pipefy.py` é o **único lugar do módulo que escreve fora** da planilha SPsBD —
+está dito no alto do arquivo. Nenhuma dependência nova: o `openpyxl` já estava
+no `requirements.txt` por causa do painel, e a autenticação do Drive usa o
+`google-auth` que o gspread já traz. A credencial é a de sempre
+(`GOOGLE_CREDENTIALS_BASE64`).
+
+**O que FALTA para funcionar de verdade** (nesta ordem):
+
+1. o dono informar a pasta do Drive → `DRIVE_FOLDER_ID` no Render, **de um
+   Drive Compartilhado**;
+2. conferir que `PIPEFY_TOKEN` está no Render (Configurações diz);
+3. apertar "Conferir a pasta do Drive" e ver "em Drive Compartilhado";
+4. **gerar UMA SP primeiro**, conferir o card, e só então usar em leva.
+
+**Verificado:** os testes cobrem o layout das duas planilhas (contrato com o
+portal do BeeVale), o CPF saindo como texto (o zero da frente some se virar
+número, e o portal recusa), a descrição do card sendo preservada, os links não
+empilhando a cada geração, a ordem Drive→Pipefy, o Drive falhando sem tocar no
+card, o card sem CPF não parando os outros, e o id de card não numérico sendo
+recusado (ele entra na consulta sem aspas — texto ali seria injeção).
+
+**NÃO verificado, e é a parte que importa:** nenhum teste encosta no Drive ou
+no Pipefy de verdade — os dois são dublados. A primeira geração real **é** o
+teste. Faça com uma SP só.
+
+### Décima quarta leva (05/09) — a lentidão, medida em vez de deduzida
+
+O dono reclamou: *"funcional, mas não é legal — você está toda hora esperando
+a tela carregar"*, e disse que o Streamlit, que ele já achava lento, é **mais
+rápido** que isto. Uma sessão anterior já tinha apontado uma causa; esta
+**mediu**, e o número mudou o plano.
+
+**Como foi medido, para quem quiser repetir:** um Postgres local e descartável
+com **59.055 SPs** sintéticas (a produção não foi tocada), cronometrando cada
+consulta e depois a tela inteira pelo cliente de teste. Vale a ressalva: o
+banco estava na MESMA máquina, sem a latência de rede que existe no Render.
+Os números reais lá são maiores; as proporções, as mesmas.
+
+| | Antes | Depois |
+|---|---|---|
+| Solicitações | 376 ms · 15 idas ao banco | **162 ms · 8 idas** |
+| Solicitações filtrada | 359 ms | **154 ms** |
+| Solicitações pelo menu | 357 ms | **151 ms** |
+| Relatório pelo menu | 404 ms | **219 ms** |
+
+**Correção da análise anterior, para o histórico não guardar número errado:**
+ela dizia "doze idas ao banco". São **quinze**. E a primeira contagem que fiz
+disse vinte — eu tinha instrumentado `consultar` e `consultar_um` ao mesmo
+tempo, e `consultar_um` chama `consultar`, então tudo contou dobrado. Quinze é
+o número certo.
+
+**Causa 1, a maior: as sete listas do filtro, 194 ms por clique.** Cada uma
+varre as 59 mil SPs inteiras para descobrir quais valores existem naquela
+coluna. Os índices não ajudam — a consulta limpa o texto antes de agrupar.
+**Índice de expressão foi tentado** (inclusive um que casa exatamente com a
+expressão da consulta) e o Postgres continuou preferindo a varredura; não é
+caminho, e fica registrado para ninguém tentar de novo.
+
+O desperdício é que essas listas quase nunca mudam: os projetos e as contas da
+empresa são os mesmos hoje e amanhã. Passam a ser calculadas **uma vez por
+carga**, com o carimbo da última sincronização como chave. Isso funciona
+**entre processos** sem combinação nenhuma: a carga roda num processo separado
+e não tem como avisar o da tela, mas o carimbo que ela grava no banco é o
+próprio aviso.
+
+> **O custo, que é do dono e ele aceitou:** um projeto novo cadastrado na
+> planilha só aparece na listinha do filtro depois da próxima sincronização
+> (a tela dispara uma a cada 5 min). A SP nova aparece na LISTA normalmente —
+> é só o menu de filtro que demora a saber do valor novo.
+
+**Causa 2: duas varreduras da mesma tabela filtrada.** O resumo (44 ms) e a
+divisão do agendamento (48 ms) percorriam separadamente exatamente as mesmas
+linhas. Juntos numa consulta só: **59 ms**, porque a varredura é uma e as
+contagens vão de carona. Conferido com dado real em quatro filtros diferentes:
+as contas batem exatamente com as das duas funções antigas.
+
+> **Tentado e DESCARTADO:** juntar também as duas somas (por conta e por forma
+> de pagamento) numa consulta com CTE. Ficou **pior** — 67 ms contra 51 ms —,
+> porque o banco precisa guardar o resultado do meio. Ficam separadas. Está
+> aqui para não ser "otimizado" de novo por intuição.
+
+**Causa 3: quem clica no menu carrega a tela duas vezes.** Chegar sem filtro na
+barra de endereço dispara um redirecionamento para o endereço COM o filtro
+guardado — e a função inteira roda duas vezes por clique. O redirecionamento
+continua (é ele que faz o filtro sobreviver à troca de tela), mas agora é a
+**primeira coisa** que a tela confere: antes ele já tinha perguntado o tamanho
+da base para nada. A perna que só redireciona caiu de 4 idas ao banco para 1.
+
+**O que NÃO foi mexido, e por quê:** as duas somas por conta e por forma
+(51 ms) e o resumo (59 ms) varrem a tabela filtrada e não têm como não varrer —
+somar o que o filtro alcança é a pergunta. O **Relatório** ainda faz 12 idas
+(oito agregações); é o próximo lugar a olhar se ele continuar pesado, e é uma
+mudança maior do que estas.
+
+**Há teste para o ganho não se desfazer sozinho:** que as listas não são
+refeitas sem carga nova, que uma carga nova as refaz, e que o resumo junto
+varre a tabela uma vez só. É o tipo de correção que uma refatoração distraída
+desmancha, e cujo efeito só aparece em produção, como lentidão sem culpado.
+
+### Décima quinta leva (05/09) — a pasta do Drive vira campo na tela
+
+O dono pediu: *"deixa esse campo lá pra poder colar a informação da pasta e
+salvar"*. Feito, em **Configurações**. Guardado na tabela `meta`, que já
+existe — **sem migração nova**, então funciona no dia da publicação.
+
+Três decisões que valem registro:
+
+1. **O que é colado na tela GANHA do Render e da planilha.** É o contrário da
+   regra geral da casa ("ambiente ganha da planilha"), e de propósito: se um
+   valor do Render vencesse em silêncio, o dono colaria a pasta, apertaria
+   salvar, veria "salvo" — e nada mudaria. Um campo que aceita e ignora é pior
+   do que campo nenhum. Para a regra não virar surpresa, a tela **diz de onde**
+   o valor que está valendo veio.
+2. **Aceita o endereço inteiro da pasta**, copiado da barra do navegador, e
+   guarda só o identificador. Exigir que a pessoa recorte o pedaço certo de
+   uma URL é pedir para errar. O campo mostra depois o que FICOU salvo.
+3. **A pasta aparece no campo; o token do Pipefy, nunca.** A pasta não é
+   segredo — é o endereço de uma pasta — e ele precisa poder conferir e trocar
+   o que colou. O token é segredo de verdade: com ele se lê e se escreve nos
+   cards da empresa, e a tela só diz se está configurado. Há teste para os dois.
+
+### Décima sexta leva (09/09) — a lista de quem entra, e o fim da espera pelo botão
+
+Duas coisas, e a segunda é a que importa.
+
+**O dono perguntou:** *"basta colocar o nome idêntico toda vez para acessar os
+meus filtros e o meu lote?"* A resposta era "sim, mas" — e o "mas" era grande
+demais para deixar como está.
+
+**1. A entrada virou LISTA.** MARCELO, THIAGO, KARLA e RAFAEL, escolhidos num
+menu em vez de digitados. O nome é a chave de tudo o que é "seu"; com campo
+livre, digitar "Marcelo" hoje e "Marcelo Leitão" amanhã dava DUAS pessoas, e a
+segunda abria o Lote, via vazio e concluía que o sistema tinha perdido o
+trabalho dela. Não há como digitar diferente aquilo que não se digita.
+
+O que a tela manda é **conferido contra a lista** e volta com a grafia oficial:
+um pedido montado à mão não cria uma quinta pessoa por fora, e o registro de
+alterações para de mostrar o mesmo colega escrito de três jeitos. A lista se
+edita em **Configurações** — a tabela `meta`, sem migração, então funciona no
+dia da publicação.
+
+> **Isto NÃO é cadastro de usuário e não dá acesso a ninguém.** As quatro
+> pessoas usam a MESMA senha, e é a senha que decide o que se pode fazer.
+> Escolher "KARLA" não dá poder nenhum a mais. Quem um dia precisar impedir
+> que alguém se passe por outro tem de usar o cadastro do ERP; aqui o nome é
+> etiqueta honesta entre colegas, não tranca. Há teste para isso.
+
+**2. O ARMÁRIO DE RESERVA — e este era um defeito de verdade, não uma
+melhoria.** O dono pediu: *"faça de alguma forma que os filtros e o lote
+fiquem salvos"*. Fui olhar por quê não estavam:
+
+A tabela `preferencias` e a coluna `lote.pessoa` nascem na **migração 003**, e
+migração só entra quando alguém aperta "Aplicar atualizações do banco". O botão
+não foi apertado — e ficou **dias** sem ser. Nesse período:
+
+- o filtro **não era guardado**. A leitura caía no `except`, e a tela abria sem
+  filtro. Em silêncio.
+- o lote voltava a ser **um só, de todo mundo**: quem salvasse depois apagava o
+  trabalho do outro sem aviso.
+
+O dono digitava o nome todo dia achando que estava separando o trabalho dele, e
+não estava. **Depender de um botão para uma coisa que a pessoa espera que "só
+funcione" é um jeito de nunca funcionar** — a lição desta leva.
+
+Agora há um segundo lugar, `analisesps.meta`, que existe desde a **migração
+001** e portanto está no ar desde o primeiro dia. É (chave, valor), e a chave
+carrega dentro dela a pessoa e a preferência (`pref:<pessoa>:<chave>`). O lote
+de cada um usa o mesmo caminho.
+
+> **E quando o botão finalmente for apertado, nada se perde.** A tabela boa
+> passa a valer, e o que estiver no armário de reserva é **copiado para lá na
+> primeira leitura**. Sem essa passagem, apertar o botão pareceria apagar os
+> filtros e os lotes de todo mundo — o que teria sido um estrago causado
+> justamente pela correção. Há teste para a passagem.
+
+Detalhe que evita perder trabalho em andamento: quem ainda não salvou nada no
+armário **herda uma vez** o lote antigo, o de quando ele era compartilhado.
+Começar do zero seria o mesmo que apagá-lo.
+
+**Verificado, e desta vez do jeito que importa:** 1424 testes verdes com
+Postgres de verdade, e o fluxo inteiro exercitado contra um banco montado no
+**estado exato da produção de hoje** (só as migrações 001 e 002 aplicadas):
+a lista aparece na entrada, nome de fora da lista não entra, o filtro é
+guardado e volta sozinho ao trocar de tela, e os lotes de MARCELO e THIAGO
+ficam separados. Depois, aplicando 003 e 004 no mesmo banco, **os três
+sobreviveram** e continuaram separados.
+
+**O que NÃO foi verificado:** nada disto foi aberto num navegador de verdade —
+são telas, e o teste confere o HTML, não o que o olho vê.
+
+### Décima sétima leva (09/09) — a Obra sumida, e o defeito maior por trás dela
+
+*"dentre as colunas não está aparecendo a coluna com a obra, muito
+importante"* — e a Obra **estava** nas colunas padrão desde 05/09. O que
+acontecia é mais amplo do que uma coluna:
+
+**Uma coluna criada depois ficava invisível para sempre para quem já tinha
+escolhido suas colunas.** A escolha guardada era lida como a lista COMPLETA do
+que a pessoa quer ver. Uma escolha feita antes de 05/09 simplesmente não
+mencionava a Obra — porque ela ainda não existia —, e o programa lia essa
+ausência como *"ele não quer essa coluna"*. Sem nenhuma pista de que a coluna
+existia, e sem jeito de descobrir a não ser abrindo a lista inteira.
+
+Vale notar que **o botão de esconder a Descrição** (usado dez vezes por dia)
+grava a lista inteira: bastava usá-lo uma vez para congelar as colunas
+daquele dia e nunca mais ver nada criado depois.
+
+**A correção guarda, junto com a escolha, QUAIS COLUNAS EXISTIAM na hora de
+escolher.** O que nasceu depois disso e é padrão entra sozinho; o que a pessoa
+tirou de propósito continua fora, porque estava entre as conhecidas. Assim a
+próxima coluna que alguém criar não repete o problema.
+
+> **A escolha antiga não diz o que conhecia**, e para ela o desempate é: as
+> colunas padrão que estiverem faltando voltam, **uma vez**. Custa um clique a
+> quem tinha escondido alguma de propósito; a alternativa era deixar a Obra
+> invisível justamente para quem mais precisa dela. Da primeira gravação em
+> diante a escolha volta a ser exata.
+
+**Verificado com banco de verdade**, no estado da produção de hoje: com escolha
+antiga guardada (sem a Obra), a Obra volta em **Solicitações e no Lote**, as
+duas telas com o mesmo conjunto; escondendo a Descrição pelo botão em seguida,
+a Descrição sai e a Obra fica; e tirando a Obra de propósito, ela fica fora
+mesmo. 2819 testes verdes.
+
+**Ficou um teste de baixo nível** só para a Obra não sair da lista padrão por
+descuido, e outro para o formato guardado registrar as colunas conhecidas — é
+esse registro que impede o defeito de voltar na próxima coluna criada.
+
+### Décima oitava leva (09/09) — a segunda revisão de velocidade
+
+*"continuo achando lento quando mudamos de aba, ou quando vai carregar os
+dados após o filtro"*. A primeira revisão (décima quarta leva) tinha mexido só
+em Solicitações. Desta vez a medição foi mais larga — e o maior achado não
+estava no banco.
+
+**Medido com as 59.055 SPs, num Postgres local; a produção não foi tocada:**
+
+| Tela | Antes | Depois |
+|---|---|---|
+| Solicitações | 171 ms · 10 idas · **430 KB** | 177 ms · 10 idas · **27 KB** |
+| Lote | 321 ms · 18 idas · 171 KB | **135 ms · 12 idas · 13 KB** |
+| Relatório | 388 ms · 13 idas · 72 KB | **245 ms · 9 idas · 8,7 KB** |
+| Auditoria | 228 ms · 9 idas · 6,6 KB | **149 ms · 6 idas · 1,6 KB** |
+
+**1. O ACHADO PRINCIPAL: a página ia CRUA pela internet.** A tela de
+Solicitações são **430 KB** de HTML — 200 linhas com vinte colunas —, e nada
+no caminho comprimia. Comprimida dá **27 KB**: dezesseis vezes menos, por
+1,4 ms de processamento.
+
+> É a maior diferença de todas para quem está do outro lado, e explica por que
+> ele continuava sentindo lentidão mesmo depois da primeira revisão: o banco
+> podia responder em 100 ms, mas meio megabyte ainda leva segundos numa
+> internet ruim ou no celular na obra. **Nenhuma otimização de consulta
+> compensa isso** — e é o tipo de coisa que não aparece medindo o servidor.
+>
+> Feito com a biblioteca padrão, num `after_request` do próprio módulo: nada
+> de dependência nova, e nada que atravesse para as outras áreas. Nível 1 de
+> compressão de propósito — 6,3% do tamanho por 1,4 ms; o nível 6 chega a 4,4%
+> gastando o dobro, e esta instância tem 2 GB e histórico de morrer de
+> memória.
+>
+> **Três coisas ficam de fora, cada uma por um motivo:** o que sai em fluxo (a
+> exportação CSV, escrita em blocos justamente para não abrir a base na
+> memória — comprimir obrigaria a juntar tudo antes); o que já vem comprimido
+> (PDF, xlsx); e o que é pequeno demais para valer. Há teste para os três, e
+> para o navegador que não aceita comprimido continuar recebendo a página
+> normal.
+
+**2. O painel do Lote fazia OITO varreduras da base.** Uma lista e um resumo
+para cada um dos quatro status de agendamento, cada um percorrendo as 59 mil
+SPs: 185 dos 200 ms da tela. Agora são **duas** — `row_number` separa os
+quatro grupos numa passada e devolve só as vinte de cada, em vez de mandar
+oitocentas linhas para serem jogadas fora no Python.
+
+**3. O Relatório somava quatro dimensões em quatro varreduras.** Projeto,
+obra, tipo de despesa e conta são quatro perguntas sobre EXATAMENTE as mesmas
+linhas. `GROUPING SETS` é a resposta que o Postgres já tem: uma varredura,
+todos os agrupamentos juntos. Medido isolado: **183 ms → 96 ms**, com
+resultado idêntico.
+
+**4. A Auditoria contava quatro condições em quatro consultas.** Viraram uma,
+com `FILTER` — o banco lê a tabela uma vez e incrementa quatro contadores.
+Conferido: as quatro contagens batem exatamente com as de antes.
+
+**Tentado e DESCARTADO nesta leva** (para não ser retentado por intuição):
+- **Solicitações não melhorou em tempo de servidor**, e está certo assim: os
+  177 ms restantes são somar 59 mil linhas para o rodapé (74 ms numa consulta
+  só) e trazer a página. Somar o que o filtro alcança exige percorrer o que o
+  filtro alcança. O ganho dela veio todo da compressão — 430 KB para 27 KB.
+- **Índice de expressão** para as listas de filtro já tinha sido tentado e
+  descartado na décima quarta leva; continua valendo.
+
+**O que ficou de fora:** o `top_credores` do Relatório (59 ms, agrupa por
+CPF/CNPJ) e o `numeros_do_relatorio` ainda são varreduras próprias. Dariam
+para entrar no mesmo `GROUPING SETS`, mas agrupam por outra coisa e com outro
+recorte — é mais risco do que os ~60 ms valem hoje.
+
+**Verificado:** 2829 testes verdes com Postgres de verdade. Os testes novos
+prendem a FORMA das consultas (`GROUPING SETS`, `row_number`, `FILTER`),
+porque o efeito — a lentidão — só aparece com a base cheia, e aí é tarde.
+
+**NÃO verificado:** os tempos são com o banco na mesma máquina. Na produção o
+banco está noutro lugar e cada ida custa mais — por isso cortar o NÚMERO de
+idas (10→6 na Auditoria, 18→12 no Lote, 13→9 no Relatório) vale ainda mais lá
+do que aqui. E nada foi aberto num navegador de verdade.
+
+### Décima nona leva (09/09) — a tela volta como estava
+
+*"Eu filtro, vou para o Lote, volto para Solicitações — e ele refaz tudo de
+novo. É como se eu tivesse duas abas do navegador e quisesse alternar entre
+elas na hora."* A observação do dono estava certa, e era de concepção: **não
+havia cache nenhum**. Toda troca de aba refazia as consultas e remontava a
+tela inteira, mesmo três segundos depois.
+
+**Agora a tela fica guardada no navegador por cinco minutos.** A volta não vai
+ao servidor: aparece na hora, com o filtro e tudo. Cinco minutos foi escolha do
+dono, com os riscos na frente.
+
+**SÓ AS TELAS DE LEITURA ENTRAM** — Solicitações, Relatório, Auditoria e Log.
+A razão é concreta e não é preciosismo: **Lote, Agenda, Ratear e Bradesco
+recebem alterações NO PRÓPRIO ENDEREÇO** (o formulário manda para elas
+mesmas). Guardá-las mostraria o estado ANTERIOR à mudança que a pessoa acabou
+de fazer — que é pior do que ser lento. A **ficha da SP** também fica de fora:
+ela mostra o status atual e tem botões que agem sobre ele.
+
+As quatro que entraram só são alteradas por `/api/...`, e toda alteração por
+lá termina recarregando a tela — o que substitui o que estava guardado. Há um
+teste que prende a lista, porque entrar nela é uma decisão, não um detalhe.
+
+> **O QUE FICA EM ABERTO, dito com todas as letras:** se OUTRA pessoa alterar
+> algo, você pode ver o estado anterior por até cinco minutos. As redes de
+> proteção já existiam e continuam valendo na tela guardada — o relógio no
+> alto diz de quando é o dado, e a busca de 90 em 90 segundos avisa se a base
+> mudou. Mas o atraso existe, e foi aceito.
+
+**Sair apaga o que ficou guardado** (`Clear-Site-Data`). Sem isso, num
+computador compartilhado, apertar Voltar depois de sair mostraria as telas da
+pessoa anterior pelos minutos que faltassem. Sair tem de sair de verdade.
+
+**A ROLAGEM E AS CAIXINHAS MARCADAS TAMBÉM VOLTAM.** A tela guardada voltava
+no topo e sem as marcações — e quem marcou vinte SPs, foi conferir uma no Lote
+e voltou, remarcava tudo. Ficam na memória da ABA (`sessionStorage`), não no
+computador: fechou a aba, acabou. A chave inclui o endereço inteiro com o
+filtro, então mudar o filtro não ressuscita a marcação de outra lista, e há
+meia hora de validade para não trazer de volta uma seleção esquecida.
+
+> A marcação reposta **nunca é invisível**: a barra do alto mostra quantas são
+> e quanto somam, e nenhum botão age sobre ela sem confirmar.
+
+### Vigésima leva (09/09) — enviar ao lote sem sair da tela
+
+*"Ao enviar registro ao lote, não quero mudar de tela. Mantenha-se em
+Solicitações, apenas avise que foi executada a ação."*
+
+O botão mandava um formulário e levava a pessoa para o Lote — perdendo o
+filtro, a rolagem e a marcação de quem só queria separar um grupo e continuar
+conferindo a lista. Agora ele age no lugar e aparece um recado no canto
+("12 SP(s) entraram no grupo Novo Lote 1"), com um link para quem quiser
+conferir, que some sozinho em seis segundos.
+
+A regra é a MESMA do formulário — grupo novo no topo, o que já estava fica
+abaixo —, e é **chamada, não copiada**: duas cópias divergiriam no dia em que
+uma delas mudasse. Há teste para as duas coisas.
+
+**Verificado:** 2839 testes verdes com Postgres de verdade, e o envio ao lote
+exercitado ponta a ponta contra o banco: as SPs entram, o grupo novo fica no
+topo, o que já estava é preservado, e a resposta é 200 — não um
+redirecionamento.
+
+**NÃO verificado:** nada foi aberto num navegador de verdade. O comportamento
+de guardar a tela depende do navegador respeitar o cabeçalho, e a reposição da
+rolagem e das marcações é JavaScript — as duas coisas os testes não alcançam.
+São as primeiras a conferir na tela.
+
+### Vigésima primeira leva (09/09) — por que o cache não servia para nada
+
+*"Não senti diferença nenhuma... nem indo nem voltando."* O dono estava certo,
+e o defeito era meu: **o menu passava por fora do cache.**
+
+O link da aba aponta para `/analisesps/solicitacoes`, **sem filtro**. O
+servidor recebe isso, vê que há filtro guardado, e **REDIRECIONA** para
+`/analisesps/solicitacoes?...&f=1`. Redirecionamento não se guarda — então
+toda troca de aba ia ao servidor de qualquer jeito, e a cópia guardada, que
+fica sob o endereço COM filtro, nunca era alcançada.
+
+**A correção reescreve o link do menu no navegador**, apontando para o
+endereço que a pessoa realmente usou. Sem redirecionamento, e a tela guardada
+é servida na hora. Fica no navegador e não no servidor de propósito: montar
+esses links no servidor custaria uma consulta a mais em TODA tela, inclusive
+nas que não têm filtro nenhum — pagar em todas para economizar em duas.
+
+> **A lição, e ela é geral:** eu publiquei o cache e disse "deve ficar
+> instantâneo" sem ter como exercitar um navegador de verdade. O teste
+> conferia o cabeçalho da resposta, que estava certo; o que estava errado era
+> o CAMINHO que o navegador percorria até ela. Ficou um teste fixando o
+> defeito — o endereço sem filtro redireciona e não é guardável — para
+> ninguém "consertar" o link de volta.
+
+**Um suspeito para o "às vezes demora alguns segundos", que cache nenhum
+explica.** Medido nesta máquina: **subir o serviço custa 1,7 s** (importar os
+18 módulos), e numa máquina rápida. O `Procfile` manda o gunicorn **reciclar o
+worker a cada 150 requisições** (`--max-requests 150`), e com `--workers 1`
+isso significa que, a cada ~150 requisições, TODA requisição espera essa
+partida. Na instância do Render, de 2 GB e compartilhada, é razoável supor
+vários segundos.
+
+> **NÃO MEXI NISSO, e é decisão do dono.** O `Procfile` governa os 18 módulos,
+> não só este; e o valor 150 foi posto justamente para conter o estouro de
+> memória de julho de 2026 (`CONTEXTO.md` §9). Aumentar troca segurança de
+> memória por velocidade. Some-se a isso a divergência já anotada no
+> `CLAUDE.md`: há indício de que a produção rode com 8 threads via o campo
+> *Start Command* do Render, que sobrescreve o `Procfile` — ou seja, não se
+> sabe ao certo qual dos dois vale hoje. **Conferir isso é o primeiro passo**
+> antes de qualquer ajuste.
+
+**O botão de atualizar saiu de Configurações e foi para o lado da hora da
+base**, em todas as telas. É a mesma "Atualização do dia"; só mudou de lugar —
+quem olha a hora e acha que está velha quer atualizar ali, não noutra tela. Só
+aparece para quem opera, e a porta já recusava quem só consulta.
+
+**O que continua NÃO sendo medido, e é o limite honesto desta sessão:** o
+proxy desta máquina **bloqueia o domínio da empresa**, então não consigo
+cronometrar a produção. Todos os números aqui são locais, com o banco na mesma
+máquina. A diferença entre eles e o que o dono sente é justamente onde mora o
+que falta descobrir.
+
+### Vigésima segunda leva (10/09) — a primeira medição da PRODUÇÃO
+
+O dono mandou **a tela de rede do navegador dele**, aberta na produção. É a
+primeira vez que esta área tem número de lá em vez de número desta máquina — e
+ela mudou o diagnóstico em três pontos.
+
+**O que a tela dele provou que estava CERTO:**
+
+- **Solicitações vem do cache, "0 ms".** A correção do menu da leva anterior
+  funcionou. A dúvida dele era legítima e a resposta é: funcionou, sim.
+- **A compressão funciona.** O Lote aparece com 41 kB trafegados para 403 kB
+  de página.
+
+**O que a tela dele mostrou de errado, e foi corrigido:**
+
+| O que aparecia | Custo | Correção |
+|---|---|---|
+| `analisesps.css` e `analisesps.js` respondendo "não mudou nada" | 402 ms + 423 ms **em toda tela** | valem um ano e `immutable`; o endereço carrega a versão publicada |
+| `favicon.ico` dando 404 | uma ida perdida por tela | uma linha no cabeçalho |
+| a rotina que pergunta a hora da base | **1.463 ms** | lê só o carimbo — 6 ms medidos |
+| o Lote | 2.828, 2.936 e 4.055 ms | ver abaixo |
+
+**A CONTAGEM DA BASE, que era o custo escondido em TODA tela.** Aqueles
+1.463 ms da rotina da hora não tinham como vir de outro lugar: ela só fazia
+duas coisas, e uma delas era `SELECT count(*) FROM analisesps.sps`. No
+Postgres isso **percorre a tabela inteira** — e `base_carregada()` é chamada
+por toda tela do módulo, para saber se a base foi carregada e para escrever
+"de 59.055 na base" embaixo do total.
+
+Nesta máquina a mesma contagem custa **5 ms**. A diferença é o banco de lá: a
+base é reescrita a cada carga, e as linhas mortas ficam ocupando espaço até o
+faxineiro automático do Postgres passar — a tabela que ele percorre é muito
+maior do que as 59 mil linhas vivas.
+
+A correção é a mesma ideia das listas de filtro, e pelo mesmo motivo:
+**contar uma vez por carga, não uma vez por tela**. Quem conta agora é a carga
+e a sincronização, no processo separado onde um segundo a mais não incomoda
+ninguém; o número fica em `analisesps.meta` junto da hora a que se refere.
+Conferido: **nenhuma das seis telas percorre a tabela para contar**, e há
+teste que falha se voltar a percorrer.
+
+> **De brinde, um defeito pequeno que ninguém tinha reportado:** a carga
+> inicial não anotava a hora — só a sincronização do dia anotava. Quem fizesse
+> a primeira carga via "base de —" no alto até a primeira sincronização
+> passar, justamente no dia em que ninguém sabe se deu certo. Agora as duas
+> anotam.
+
+> **O limite, dito sem rodeio:** se alguém acrescentar ou apagar linhas POR
+> FORA da carga e da sincronização, o número mostrado fica velho até a
+> próxima. Hoje ninguém faz isso — a fila de volta altera SPs que já existem,
+> não cria nem remove.
+
+**O LOTE PASSOU A FICAR GUARDADO NO NAVEGADOR.** Era metade da ida e volta que
+o dono reclamava (*"permaneceu a demora entre o Lote e as Solicitações"*): as
+Solicitações já ficavam guardadas, o Lote não, então o caminho continuava
+lento numa das direções.
+
+Ele tinha ficado de fora **de propósito**, e a razão continua válida: é tela
+que recebe alteração no próprio endereço. O que mudou é que agora há duas
+travas, e só com as duas isso deixa de ser aposta:
+
+1. A tela que volta de uma salvada traz `?aviso=` e **não** é guardada. Senão
+   o recado de "salvo" reapareceria minutos depois, dizendo que algo acabou de
+   acontecer quando não aconteceu.
+2. A tela carrega **a hora em que o lote foi salvo**, e o navegador compara
+   com a última que viu. Se a cópia guardada for anterior à última salvada,
+   ela se recarrega sozinha, uma vez.
+
+> **Por que a trava 2 existe, se a regra do HTTP já cobre isso.** A regra diz
+> que um POST apaga a cópia guardada daquele endereço, e todo salvamento do
+> Lote é um POST para o próprio endereço. Mas o preço de o navegador não
+> cumprir seria a pessoa ver o lote SEM o que acabou de fazer e salvar por
+> cima do próprio trabalho. Isso não se aposta em regra alheia. A recarga só
+> dispara quando a tela veio DO CACHE (conferido pelo tamanho trafegado) —
+> sem essa condição, a tela que volta de uma salvada se recarregaria à toa a
+> cada salvamento.
+
+**Medido aqui, com as 59.055 SPs e um lote de 150 SPs** (o banco na mesma
+máquina, então os números absolutos não são os de lá):
+
+| Tela | Tempo | Idas ao banco | Página |
+|---|---|---|---|
+| Solicitações | 208 ms | 7 (era 10) | 429 KB → ~27 KB comprimida |
+| Lote | 176 ms | 7 (era 8) | 471 KB → ~45 KB comprimida |
+| Relatório | 317 ms | 7 (era 9) | 72 KB |
+| Auditoria | 194 ms | 5 (era 6) | 7 KB |
+
+Uma ida a menos por tela é a contagem que saiu. **Aqui isso quase não aparece
+no relógio — são 5 ms.** É lá que vale 1,4 segundo, e é honesto dizer que
+essa parte NÃO foi medida na produção.
+
+**O QUE CONTINUA EM ABERTO, e é onde eu apostaria o próximo olhar.** Os 2,8 a
+4,0 segundos do Lote na produção **não são explicados** pelo que consigo ver:
+41 kB comprimidos não levam três segundos, e sete consultas num banco na mesma
+região também não. Sobram três suspeitos, nenhum deles verificável daqui:
+
+1. **A partida do serviço.** Já anotada na leva anterior: `--max-requests 150`
+   com `--workers 1` faz o worker reiniciar a cada ~150 requisições, e subir
+   custa 1,7 s nesta máquina. É decisão do dono, e o primeiro passo é
+   conferir se a produção roda com o `Procfile` ou com o *Start Command* do
+   Render.
+2. **O banco de lá**, pelo mesmo motivo que fazia a contagem custar 1,4 s. Se
+   for isso, a contagem que saiu já ajuda, e o resto some com uma faxina
+   (`VACUUM FULL` / `REINDEX`) — que não é coisa para fazer sem combinar,
+   porque tranca a tabela enquanto roda.
+3. **O tamanho da página do Lote**: 471 KB crus com 150 SPs no lote mais os 80
+   do painel por status. Comprimida é pouco na rede, mas o navegador ainda
+   monta ~230 linhas de vinte colunas. Dá para carregar o painel só depois da
+   tela aparecer — **não foi feito**, porque muda o que a pessoa vê ao abrir e
+   a regra da casa é fazer como o Streamlit fazia.
+
+**NÃO VERIFICADO, e é o mesmo limite de sempre:** o proxy desta máquina
+bloqueia o domínio da empresa. Todos os tempos são locais. E as duas travas do
+Lote guardado são JavaScript — os testes conferem que o código está lá, não
+que o navegador obedece. **É a primeira coisa a conferir na tela:** salvar o
+lote, ir às Solicitações, voltar, e ver se o que foi salvo está lá.
+
+### E a resposta apareceu no mesmo dia: o banco tem um décimo de um núcleo
+
+Ainda em 10/09, o dono mandou as métricas do serviço de banco (`erp-db`). Elas
+fecham a investigação, e o achado é maior do que esta área:
+
+| | Limite do plano | Uso observado |
+|---|---|---|
+| CPU | **0,1 CPU** — um décimo de um núcleo | picos de 0,06 a 0,08: **60% a 80% do limite** |
+| Memória | **0,25 GB** | 100 a 230 MB — **encostando no teto** |
+| Disco | 1 GB | ~430 MB |
+
+**São 430 MB de dados para 250 MB de memória.** Os dados não cabem, e o
+Postgres ainda precisa de parte dela para outras coisas. Toda varredura da
+tabela de SPs vai ao **disco** — sempre, não há cache que a segure. E vai ao
+disco com um décimo de um núcleo, com o banco já estrangulado nos picos.
+
+Isso explica os 1.463 ms da contagem sem sobrar nada: aqui, com 4 núcleos e o
+dado quente na memória, a mesma consulta custa 5 ms. E explica os 2,8 a 4,0
+segundos do Lote, que faz várias varreduras.
+
+> **A conclusão que muda a estratégia desta área:** o trabalho de tirar
+> varreduras — feito nas levas 14, 18 e 22 — **valeu, e vale ainda mais neste
+> banco do que valeria num banco folgado**. Mas há um teto: nenhuma
+> otimização de consulta torna rápida uma leitura de disco com 0,1 CPU. Dá
+> para diminuir o NÚMERO de varreduras, não para torná-las rápidas.
+>
+> **Antes de gastar mais esforço aqui, subir o plano do banco tem efeito
+> maior.** É decisão do dono, e o banco serve ERP, painel e esta área juntos —
+> está registrado em `CONTEXTO.md` › "Histórico de decisões".
+
+**Se o plano NÃO subir, o que ainda dá para fazer daqui**, em ordem de
+proveito: (1) o painel por status do Lote sai numa varredura da tabela inteira
+— um índice sob medida a transformaria em leitura de índice; (2) carregar esse
+painel só depois da tela aparecer, para o lote em si abrir na hora; (3) as
+contagens do topo das Solicitações, que também varrem. Nenhuma das três foi
+feita, e as três são mais arriscadas do que o que já está aqui.
+
+**Não verificado:** os números vieram da tela do Render, lida numa imagem. Os
+testes não alcançam o banco de produção, então o tamanho de cada tabela lá
+dentro não foi conferido.
+
+### E aí a tela do banco entregou o culpado: 14,3 MILHÕES de gravações
+
+Na mesma leva o dono mandou a aba de consultas do banco. A lista de "quem mais
+chama" é a coisa mais reveladora que esta área já teve:
+
+| Consulta | Chamadas | Tempo total |
+|---|---|---|
+| `INSERT ... analisesps.sp_fiscal` | **14.328.805** | 34 min 30 s |
+| `INSERT ... analisesps.sps` | 662.556 | 11 min 27 s |
+| `INSERT ... rateio` (painel) | 388.029 | 44 s |
+
+**A documentação fiscal é, disparada, a consulta mais chamada de todo o
+banco** — vinte e uma vezes mais que a gravação das próprias SPs. E são só uns
+15 a 20 mil registros.
+
+**A causa, e ela é uma linha de SQL.** `sincronizar_apoios()` lia a planilha
+fiscal inteira e gravava TODAS as linhas, sempre — com `ON CONFLICT DO UPDATE`
+sem condição nenhuma. Como essa etapa roda em toda sincronização, e a
+sincronização é disparada de 5 em 5 minutos por quem estiver com a tela
+aberta, o resultado é dezenas de milhares de gravações a cada cinco minutos
+para reescrever exatamente os mesmos valores.
+
+> **E no Postgres reescrever com o mesmo valor NÃO é de graça.** Cada
+> reescrita deixa a versão antiga como lixo, para o faxineiro automático
+> recolher depois. Dezenas de milhares de linhas de lixo a cada cinco minutos
+> é o que engorda a tabela até ela não caber mais na memória do banco —
+> **exatamente a lentidão que se estava caçando**. O sintoma e a causa se
+> alimentavam.
+
+**Duas correções:**
+
+1. **`WHERE ... IS DISTINCT FROM`** nas duas gravações de apoio (documentação
+   fiscal e contas por centro de custo): o banco só grava quando o valor mudou
+   de verdade. Resultado final idêntico; o que some é o trabalho inútil.
+   **Conferido contra um Postgres de verdade** olhando a versão interna de
+   cada linha: a que não mudou continua com a versão original — não foi
+   tocada; a que mudou ganhou versão nova. E o contador de atualizações do
+   banco marca **uma**, não duas.
+
+2. **A sincronização automática relê as planilhas de apoio no máximo de hora
+   em hora**, e não a cada cinco minutos. Elas são dado de apoio — mudam
+   raramente — e cada passagem ainda baixa a planilha inteira do Google, na
+   instância de 2 GB que já morreu de memória uma vez. **A trava vale só para
+   o disparo automático:** o botão de atualizar e o modo "Só as planilhas de
+   apoio" continuam imediatos, e há teste prendendo isso.
+
+> **O que fica em aberto por escolha:** um documento fiscal cadastrado na
+> planilha pode levar até uma hora para aparecer, se ninguém apertar o botão.
+> Antes eram cinco minutos. É dado de apoio, e o caminho imediato continua
+> existindo — mas está escrito aqui para não ser descoberto por susto.
+
+**A ordem de grandeza do que isso devolve:** eram 14,3 milhões de gravações e
+34 minutos de processador num banco que tem **um décimo de um núcleo**. Some
+quase tudo. É, de longe, a maior economia desta sessão — e não veio de medir a
+tela, veio de olhar o que o banco estava fazendo.
+
+### INCIDENTE (10/09) — o Relatório estourava sempre que havia filtro
+
+*"Veja quando clico em relatório: Deu erro."* Reportado pelo dono minutos
+depois da publicação da 22ª leva. **O defeito era meu, e estava no ar desde a
+18ª leva (09/09)** — não veio da publicação de hoje.
+
+**O que acontecia:** o Relatório abria normalmente **sem filtro** e estourava
+**com qualquer filtro que tivesse valor** (uma lista suspensa, a busca, uma
+faixa de valor, um período). Só os filtros de "situação" escapavam.
+
+**A causa, em uma frase:** as somas das quatro dimensões saem de uma varredura
+só (`GROUPING SETS`, 18ª leva), e os parâmetros estavam sendo passados **fora
+da ordem em que aparecem no texto do SQL** — o WHERE antes dos `CASE`
+repetidos dentro do `GROUPING(...)`.
+
+Sem filtro, as duas ordens coincidiam por acaso e tudo funcionava. Com filtro,
+os `CASE` do `GROUPING` recebiam o valor do filtro, deixavam de ser idênticos
+aos do `SELECT`, e o banco recusava a consulta inteira.
+
+> **POR QUE PASSOU POR TODA A SUÍTE, e é a lição que fica.** A sessão dublada
+> **ignora WHERE** — lá o filtro nunca vira parâmetro de verdade. E os testes
+> com banco de verdade que existiam somavam **sem filtro nenhum**, que era
+> exatamente o único caso que funcionava. O buraco é o que este arquivo de
+> testes existe para tapar, e ele estava aberto bem no meio.
+>
+> Mais fundo ainda: eu escrevi na 18ª leva que os testes "prendem a FORMA das
+> consultas". Prender a forma **não é o mesmo que exercitar a consulta**. Uma
+> consulta pode ter a forma certa e a ordem dos parâmetros errada.
+
+**Ficaram onze testes com banco de verdade**, cobrindo sete filtros diferentes
+em duas frentes: que o banco ACEITA a consulta, e que o número que ela devolve
+**bate com a soma feita uma dimensão por vez** — porque uma ordem errada pode
+não estourar e ainda assim somar a coisa errada, e aí ninguém percebe.
+**Conferido que os onze falham sem a correção e passam com ela.**
+
+**E foi feita uma varredura de todas as telas contra todos os filtros** —
+285 endereços, cada tela do módulo contra 19 filtros diferentes. Fora o
+Relatório, nada mais estourou. Os dois casos que respondem 400 respondem de
+propósito, com recado ("Nada para exportar", "Lote vazio").
+
+### INCIDENTE (10/09) — o botão que a tela mandava apertar falhava calado
+
+*"Ratear... 'As listas de obras e categorias ainda não foram carregadas'.
+Pelo que entendi essa mensagem é corrigida no botão 'Só as planilhas de
+apoio', mas já cliquei e não atualizou."*
+
+**Primeiro, o que NÃO era:** a trava de uma hora que entrou na 22ª leva vale
+**só para o disparo automático**. O botão manda `disparo="manual"` e nunca é
+travado. Conferido no código e com teste.
+
+**O que era:** as listas do rateio vêm das abas "C. Diários" (colunas "Obra" e
+"Código") e "Plano Financeiro" (colunas "Categoria" e "Código"). Se a aba tem
+outro nome, se a coluna tem outro nome, ou se a aba está vazia, a leitura
+devolvia lista vazia, um `continue` pulava, e o único registro do motivo ia
+para o **log do serviço** — que o dono não tem como ler.
+
+Resultado: a tela mandava apertar o botão, o botão dizia "concluída", e nada
+mudava. Sem nenhuma pista. **Botão que a tela manda apertar não pode falhar
+calado** — a pessoa aperta de novo, e de novo, e conclui que o sistema está
+quebrado.
+
+**Piorava porque a mensagem final do modo "apoios" era "0 SPs em 0.1 min."** —
+este modo não traz SP nenhuma, então ele SEMPRE terminava dizendo zero. A tela
+parecia dizer "não aconteceu nada" justamente quando algo tinha acontecido.
+
+**A correção: o motivo passa a chegar à tela, com o que resolve.** A mensagem
+da execução — que Configurações mostra logo abaixo do botão — passa a dizer o
+que veio e o que não veio:
+
+```
+documentação fiscal: 1 · contas: 1 · obras: 0 · categorias: 1 —
+a aba "C. Diários" não tem a(s) coluna(s) "Obra", "Código".
+O cabeçalho dela é: Centro de Custo, Cod.
+```
+
+Os três casos ficam distintos, e cada um manda a pessoa para um lugar
+diferente da planilha:
+
+| O que aconteceu | O que a tela diz |
+|---|---|
+| aba com outro nome | `a aba "C. Diários" não existe nesta planilha. As que existem são: …` |
+| coluna com outro nome | `não tem a(s) coluna(s) "Obra". O cabeçalho dela é: …` |
+| aba certa e vazia | `tem as colunas certas, mas nenhuma linha preenchida em "Obra"` |
+
+Listar o que a planilha REALMENTE tem é o que transforma "não carregou" em
+algo que se resolve sozinho, sem precisar de outra sessão.
+
+A tela de Ratear também mudou: em vez de só mandar rodar a sincronização, ela
+diz onde está a explicação se a pessoa já tiver rodado.
+
+**Verificado ponta a ponta contra o banco**, com a planilha dublada, nos quatro
+cenários — tudo certo, aba com outro nome, coluna com outro nome, aba vazia —
+lendo a mensagem que ficou gravada na execução. É o texto da tabela acima.
+
+**E o recado respondeu na primeira tentativa.** O dono publicou, apertou o
+botão, e a tela disse:
+
+> documentação fiscal: 13.695 · contas: 182 · obras: 0 · categorias: 0 — a aba
+> "C. Diários" não tem a(s) coluna(s) "Obra", "Código". O cabeçalho dela é:
+> **Código Primário, Conta de Pagamento, Projeto, Código Omie**. A aba "Plano
+> Financeiro" não tem a(s) coluna(s) "Categoria", "Código". O cabeçalho dela
+> é: **Plano Financeiro, Código Omie**.
+
+**A causa raiz, e ela é mais velha do que parecia: a conversão do Streamlit
+PERDEU a lista de nomes aceitos por coluna.** O original procurava
+`"Código Primário"` e, **só se não achasse**, `"Obra"`; e `"Código Omie"`
+antes de `"Código"`. A conversão ficou com a segunda opção de cada par —
+justamente a que a planilha não tem.
+
+Ou seja: **a lista do rateio nunca carregou, desde a estreia do módulo.**
+Ninguém tinha percebido porque a tela só dizia "ainda não foram carregadas",
+que soa como "falta rodar a sincronização", e não como "está quebrado".
+
+> **A regra da casa resolveu isto, e vale registrar que resolveu:** *em
+> dúvida, faça como o Streamlit fazia*. O código original está recuperável no
+> histórico do git (`git show dab6ee2^:app/apps/analisesps/app/gsheets.py`), e
+> foi ele quem deu a resposta — não a adivinhação. Os nomes voltaram na mesma
+> ordem de preferência que ele usava.
+
+Voltou junto uma segunda coisa que a conversão tinha perdido: **linha sem o
+Código Omie fica de fora**. Sem o código a linha não serve para gerar o JSON,
+e oferecê-la na lista levaria a pessoa a montar um rateio que o Omie recusa —
+e ela só descobriria na hora de lançar.
+
+**Verificado contra o banco, com o cabeçalho REAL das duas abas:** as obras e
+as categorias entram com o Código Omie certo, o nome vai para a lista e o
+código para o JSON (trocar os dois geraria um lançamento no lugar errado, e há
+teste prendendo a ordem), e a linha sem código não entra. Os nomes antigos
+também continuam funcionando, com teste.
+
+### Vigésima terceira leva (10/09) — colar uma tabela no Ratear
+
+*"Imagina que eu tenho trinta obras para ratear. Se eu for colocar uma a uma é
+trabalhoso, e essa informação normalmente vem de uma planilha do Excel. Queria
+poder copiar e colar uma tabelinha e o sistema já interpretar."*
+
+Feito, nos dois lados — centro de custo e categoria de despesa. Uma caixa
+**fechada por padrão** em cada cartão (quem rateia duas obras não precisa
+dela), com um botão "Interpretar o que colei".
+
+**A interpretação é no SERVIDOR, e essa foi a decisão de projeto.** O caminho
+óbvio era fazer no navegador — instantâneo, sem recarregar. Mas esta sessão
+inteira ensinou que **o que roda no navegador esta máquina não consegue
+exercitar**, e um rateio na obra errada não avisa: o Omie aceita e lança. No
+servidor, a interpretação tem teste de verdade e reusa o `_to_float`, que já
+sabia ler "1.234,56", "R$ 994,12" e até colagem em padrão americano.
+
+**O que ela entende**, cada um testado porque cada um é um jeito real de
+copiar: a tabulação do Excel, o ponto e vírgula do CSV, duas colunas separadas
+por espaços, um espaço só, com "R$" na frente, com o cabeçalho colado junto e
+com linhas em branco no meio. **O valor é o último pedaço que parece número, e
+o nome é tudo o que vem antes** — é isso que faz funcionar com qualquer
+separador e com nome que tem espaço no meio ("CRECHE SWAP 3").
+
+**A REGRA QUE GOVERNA O RESTO: nunca adivinhar.** Nome que não bate NÃO entra
+— volta escrito na tela. E toda interpretação que não seja o nome exato
+aparece no recado, porque acertar a obra errada é pior do que não achar
+nenhuma.
+
+| O que foi colado | O que acontece |
+|---|---|
+| o nome exato | entra, sem recado |
+| o código do Omie | entra, e o recado diz que foi pelo código |
+| o nome pela metade, sem dúvida | entra, e o recado pede para conferir |
+| o nome pela metade, com dúvida | **não entra**, e o recado diz com quais combinou |
+| nome que não existe | **não entra**, e o recado diz qual |
+| valor que não é número positivo | **não entra**, e o recado diz qual linha |
+| a mesma obra duas vezes | entram as duas, com recado |
+
+> **O erro que eu mesmo cometi e o teste pegou:** a primeira versão comparava
+> "um contém o outro", e **"OBRA-1" casava com "OBRA-12"**. É exatamente o
+> erro que não pode acontecer. A comparação passou a ser por COMEÇO, com
+> desempate pelo nome mais longo, e só quando não sobra dúvida. Há teste com
+> duas obras de nome parecido conferindo que ela RECLAMA em vez de escolher —
+> e conferido que ele falha na versão errada.
+
+**Três detalhes que só aparecem usando:**
+
+1. **Interpretar um lado não apaga o outro.** O que já estava digitado nas
+   categorias, e a base, voltam intactos. Tem teste.
+2. **Apertar Enter num campo continua GERANDO, e não interpretando.** O
+   navegador usa o primeiro botão de envio do formulário, que passou a ser o
+   "Interpretar" da caixa de cima; um botão escondido de "gerar" ficou antes
+   de todos. Tem teste prendendo a ordem.
+3. **O texto colado volta para a caixa, e ela fica aberta** ao lado do recado
+   — quem precisa corrigir uma linha não cola tudo de novo.
+
+**De brinde, uma feiura antiga:** a tela mostrava uma caixa chamada **"erro"
+com a palavra "None" dentro** sempre que dava tudo certo — o laço percorria as
+três chaves que o gerador devolve. E, quando dava erro de verdade, o motivo
+aparecia dentro de uma caixa de copiar, como se fosse para colar no Omie.
+Agora o erro é um aviso vermelho e as caixas mostram só os JSONs.
+
+**Verificado contra o banco, ponta a ponta pela tela:** colar preenche as
+linhas com a obra certa selecionada e o valor no campo, o outro lado e a base
+sobrevivem, o recado aparece, e o JSON gerado em seguida sai com os códigos do
+Omie certos e os percentuais fechando 100%.
+
+**NÃO verificado:** nada foi aberto num navegador de verdade. A caixa que abre
+e fecha é `<details>`, do próprio HTML, sem JavaScript — mas o efeito de colar
+com Ctrl+V uma seleção do Excel de verdade não foi visto. **É a primeira coisa
+a conferir na tela.**
+
+### Vigésima quarta leva (11/09) — seis defeitos que o dono achou usando
+
+**1. A procura dentro do filtro não filtrava nada.** *"No filtro tipo de
+despesa existe o campo, mas se eu escrever, ele não está filtrando as
+possibilidades."*
+
+O javascript estava certo e funcionando. **O ESTILO é que anulava.** O
+navegador esconde `[hidden]` com `display: none`, mas isso vem da folha DELE —
+e qualquer regra nossa ganha, por mais fraca que seja. Como `.opcao` tem
+`display: flex`, a opção era marcada como escondida e continuava na tela,
+parada, enquanto a pessoa digitava.
+
+A correção é uma linha (`[hidden] { display: none !important; }`) e vale para
+a folha inteira de propósito: **o mesmo tropeço aconteceria em qualquer
+elemento com `display` próprio** que alguém mandasse esconder — e já havia
+outros. Há teste, e conferido que ele falha sem a correção.
+
+> **A lição, e ela é do mesmo tipo das outras desta semana:** o código estava
+> lá, o teste do código passaria, e mesmo assim a função não existia para quem
+> usa. Conferir que o código está escrito não é conferir que ele funciona.
+
+**2. Faltava o total POR CONTA do que está marcado.** *"Aparece o total dos
+selecionados; era só o total por conta que estava faltando."*
+
+O total geral diz se a remessa é **grande**; o total por conta diz se ela
+**cabe** — é por conta que o dinheiro sai. Agora aparece embaixo do total, na
+barra do alto, ordenado do maior para o menor (com seis contas, a que importa é
+a que concentra), e **some quando há uma conta só**, porque aí repetiria o
+número que está logo acima.
+
+**3. A exportação e o PDF do lote entregavam um lote CONGELADO.** *"Eu
+atualizei o lote, e o relatório permanece desatualizado."*
+
+As duas rotas chamavam `lote.ler()` **sem a pessoa**. O argumento tinha valor
+padrão `""` — e `""` é o **lote antigo**, de quando ele era um só e
+compartilhado, parado no tempo desde que o lote passou a ser de cada um
+(migração 003). Ou seja: a pessoa salvava o lote dela, e o arquivo saía com
+outra coisa. **Sem erro nenhum**, porque um lote congelado não estoura: ele só
+fica errado.
+
+> **Como isso sobreviveu à suíte, e é a parte que incomoda:** havia teste do
+> PDF do lote. Ele dublava `lote.ler` com uma função **sem argumento** — ou
+> seja, **imitava exatamente a chamada errada**, e por isso passava. O teste
+> não estava conferindo o comportamento; estava congelando o defeito.
+
+**A correção fecha a armadilha, e não só o buraco:** `ler` e `salvar`
+perderam o valor padrão da pessoa. Quem esquecer de passar agora quebra alto,
+na hora. Quem quiser mesmo o lote antigo chama `lote_de_antes()`, que diz isso
+no nome. Há teste prendendo a ausência do padrão, e outro conferindo que as
+duas rotas leem o lote da pessoa logada — conferido que ele falha com o
+defeito de volta.
+
+**4. A tela do Bradesco ficava em branco.** *"Cliquei conferir e ficou tudo em
+branco"*, com o texto colado junto.
+
+O interpretador estava **certo**. Reproduzido com o texto dele: o **mesmo
+texto com tabulação dá duas operações; com espaços, nenhuma**. Copiar a tabela
+do Bradesco traz tabulação na maioria das vezes — não sempre, e depende do
+navegador e de como a seleção é feita. Quando vinham espaços, o texto inteiro
+era ignorado **em silêncio**.
+
+Duas correções, e a segunda vale mais do que a primeira:
+
+- a linha da operação passa a ser separada por tabulação **ou por dois ou mais
+  espaços**. É seguro porque uma linha só vira operação se tiver, ao mesmo
+  tempo, data, agência|conta e valor — e nome com espaço simples ("JOSE THIAGO
+  DA SILVA") continua inteiro. Há teste com o texto real do dono, nas duas
+  formas, e conferido que ele falha com o defeito de volta.
+- **a tela deixa de ficar muda.** Quando não reconhece nada, ela diz o que
+  precisa haver na linha e quantas linhas foram coladas. Ficar em branco é o
+  pior resultado possível: quem colou não sabe se o sistema leu, se travou, ou
+  se não havia o que conferir.
+
+**De brinde, um defeito que ninguém tinha reportado:** a caixinha "focar nos
+agendados" **não desligava**. Caixinha desmarcada não chega no formulário, e o
+valor padrão entrava justamente aí — então marcar ou desmarcar dava no mesmo.
+
+**5. O título do grupo que esvazia na limpeza vai junto.** *"Quando limparmos
+um lote tirando pagas e canceladas e ele estiver vazio, apagar o cabeçalho."*
+
+**Mas só quem esvaziou AGORA.** Um grupo que já estava vazio antes continua:
+alguém escreveu aquele título de propósito, para encher depois, e apagar o que
+a pessoa acabou de digitar seria pior do que o cabeçalho sobrando.
+
+**6. A marcação voltava depois de a pessoa agir — e esse defeito é meu.**
+*"Para toda ação que faço no lote, tipo marcar agendado, agendar... são
+reaplicadas seleções que talvez estejam salvas. Está errado. Eu já desmarquei.
+Não pode retroagir."*
+
+A memória da marcação (19ª leva) existe para quem **sai da tela e volta**. Mas
+depois de uma ação a tela recarrega, e a marcação era reposta — fazendo as SPs
+voltarem marcadas **depois de já terem sido tratadas**.
+
+> **E não é só incômodo:** uma marcação que reaparece sozinha convida a agir
+> duas vezes sobre a mesma SP — agendar de novo, mandar ao lote de novo. O
+> incômodo era o sintoma; o risco era o problema.
+
+Agora **agir sobre a seleção apaga a memória dela**. As quatro ações que
+alteram alguma coisa chamam isso; a tela de QR **não**, de propósito — ela não
+altera nada, só abre outra tela, e quem volta de lá quer a seleção inteira de
+volta. Há teste para as duas coisas.
+
+### Pedido na fila, ainda NÃO feito
+
+**Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a
+mesma estrutura do PDF que já existe. *"Coloca isso na fila de produção
+também."*
+
+> **Uma coisa mudou e vale para quem pegar esta tarefa:** o README diz que
+> exportação é CSV "porque gerar Excel de verdade exigiria uma biblioteca
+> nova". **Isso não é mais verdade desde 05/09**: o `openpyxl` entrou por causa
+> do BeeVale e está no `requirements.txt`. Excel de verdade agora é possível
+> sem dependência nova — e a exceção de importação para ele já está declarada
+> em `LIBERADO_EM`.
+
 ### A janela entre publicar e apertar o botão
 
 Esta entrega foi publicada **com o dono dormindo**, e isso obrigou a resolver
@@ -478,8 +1634,11 @@ principal para uma coluna a mais, na véspera de uma publicação sem ninguém
 acordado, não vale o risco.
 
 ### O que ainda NÃO voltou
-- **Gerar BeeVale** (depende do Shared Drive — erro 403 de cota) e **cancelar
-  a SP por dentro do Pipefy** (o botão abre o formulário deles, como lá).
+- **Cancelar a SP por dentro do Pipefy** (o botão abre o formulário deles,
+  como lá).
+
+  *(O **BeeVale** saiu desta lista em 05/09 — ver a décima terceira leva. O
+  código está pronto; falta o dono informar a pasta do Drive.)*
 - **A coluna SP Fiscal na lista** (ver acima).
 - **Reenviar comprovante por e-mail** (depende de SMTP no serviço).
 

@@ -1,0 +1,246 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Compras — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="insumo, obra, fornecedor, pedido…"></div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Ver</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <select id="f-agrupar">
+        <option value="obra">Por obra — o que cada canteiro comprou</option>
+        <option value="insumo">Por insumo — tudo que foi de cimento</option>
+        <option value="categoria">Por categoria de insumo</option>
+        <option value="fornecedor">Por fornecedor</option>
+      </select>
+      <div class="cartao-dica" style="margin-top:6px">É o mesmo relatório visto
+        de outro lado. Por obra, abre até o insumo; por insumo, abre até a obra.</div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Obra</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><select id="f-obra"><option value="">todas</option></select></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Insumo</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><select id="f-insumo"><option value="">todos</option></select></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Fornecedor</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><select id="f-fornecedor"><option value="">todos</option></select></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Período</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <div class="campo"><label>De</label><input type="date" id="f-de"></div>
+      <div class="campo"><label>Até</label><input type="date" id="f-ate"></div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>O que contar</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="checkbox" id="f-pendentes">
+        <span class="rotulo">Incluir pedidos ainda não autorizados</span></label>
+      <div class="cartao-dica">Sem isto, conta só o que foi AUTORIZADO — pedido
+        esperando autorização ainda pode não acontecer, e somá-lo faria o
+        relatório dizer que a obra gastou o que não gastou.</div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+<h2>Compras <small>o que cada obra comprou, aberto até o insumo</small></h2>
+<div id="mensagem"></div>
+<div class="kpis" id="kpis"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <div class="resumo" id="resumo"></div>
+    <div class="espaco"></div>
+    <span id="exportar"></span>
+  </div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th id="th-grupo">Obra</th>
+      <th class="direita">Itens</th>
+      <th class="direita">Quantidade</th>
+      <th class="direita">Pedidos</th>
+      <th class="direita">Fornecedores</th>
+      <th class="direita">Total</th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ---------------------------------------------------------------------------
+// COMPRAS — o mesmo relatório, visto pelos dois lados
+//
+// O dono pediu duas coisas na mesma frase: "de pedido a gente vai conseguir ver
+// tudo de uma obra" e "eu quero ver tudo que foi de cimento". São a mesma
+// consulta lida de lados opostos, e por isso NÃO são duas telas: é uma, com o
+// agrupamento escolhido no filtro. Duas telas divergiriam no primeiro mês.
+//
+// A linha do grupo abre e fecha. Fechada, responde "quanto"; aberta, responde
+// "em quê" — que é a pergunta seguinte, sempre.
+// ---------------------------------------------------------------------------
+let DADOS = null;
+const ABERTOS = new Set();
+
+function parametros(){
+  const p = new URLSearchParams();
+  p.set("agrupar", els("f-agrupar").value);
+  const mapa = {obra_id: "f-obra", insumo_id: "f-insumo",
+                fornecedor_id: "f-fornecedor", de: "f-de", ate: "f-ate",
+                busca: "f-busca"};
+  for (const [chave, id] of Object.entries(mapa)) {
+    const v = (els(id).value || "").trim();
+    if (v) p.set(chave, v);
+  }
+  if (els("f-pendentes").checked) p.set("pendentes", "1");
+  return p.toString();
+}
+
+async function carregar(){
+  try {
+    DADOS = await api(`/erp/api/suprimentos/compras?${parametros()}`);
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenhar(){
+  const t = DADOS.total_geral;
+  els("kpis").innerHTML = `
+    <div class="kpi estatico"><div class="kpi-rotulo">Total comprado</div>
+      <div class="kpi-valor">${moeda(t.total)}</div>
+      <div class="kpi-sub">${t.itens} item(ns) em ${t.pedidos} pedido(s)</div></div>
+    <div class="kpi estatico verde"><div class="kpi-rotulo">${DADOS.agrupar_rotulo}</div>
+      <div class="kpi-valor">${DADOS.grupos.length}</div>
+      <div class="kpi-sub">abrindo até ${DADOS.segundo_nivel}</div></div>
+    <div class="kpi estatico ciano"><div class="kpi-rotulo">Fornecedores</div>
+      <div class="kpi-valor">${t.fornecedores}</div>
+      <div class="kpi-sub">com pedido no período</div></div>`;
+
+  els("th-grupo").textContent = DADOS.agrupar_rotulo.replace("Por ", "")
+    .replace(/^./, c => c.toUpperCase());
+  els("resumo").innerHTML = `<b>${DADOS.grupos.length}</b> ${DADOS.agrupar}(s) ·
+    <b>${moeda(t.total)}</b>`;
+
+  if (!DADOS.grupos.length) {
+    els("corpo").innerHTML = `<tr><td colspan="6" class="cartao-dica">
+      <b>Nada comprado nestes filtros.</b> Só entram pedidos autorizados —
+      marque "incluir pedidos ainda não autorizados" para ver o que está em
+      andamento.</td></tr>`;
+    return;
+  }
+
+  els("corpo").innerHTML = DADOS.grupos.map(g => {
+    const aberto = ABERTOS.has(g.id);
+    const filhos = aberto ? g.filhos.map(f => `
+      <tr class="filho">
+        <td style="padding-left:28px">↳ ${escapar(f.rotulo)}</td>
+        <td class="direita">${f.itens}</td>
+        <td class="direita">${numero(f.quantidade)} ${escapar(f.unidade || "")}</td>
+        <td class="direita">${f.pedidos}</td>
+        <td class="direita">${f.fornecedores}</td>
+        <td class="direita">${moeda(f.total)}</td>
+      </tr>`).join("") : "";
+    return `<tr data-grupo="${g.id}" style="cursor:pointer">
+        <td><b>${aberto ? "▾" : "▸"} ${escapar(g.rotulo)}</b>
+          ${g.detalhe ? `<small> · ${escapar(g.detalhe)}</small>` : ""}</td>
+        <td class="direita">${g.itens}</td>
+        <td class="direita">${numero(g.quantidade)}</td>
+        <td class="direita">${g.pedidos}</td>
+        <td class="direita">${g.fornecedores}</td>
+        <td class="direita"><b>${moeda(g.total)}</b></td>
+      </tr>${filhos}`;
+  }).join("");
+
+  document.querySelectorAll("[data-grupo]").forEach(tr =>
+    tr.addEventListener("click", () => {
+      const id = +tr.dataset.grupo;
+      ABERTOS.has(id) ? ABERTOS.delete(id) : ABERTOS.add(id);
+      desenhar();
+    }));
+}
+
+// As listas dos filtros. Um cuidado aprendido a duro: NÃO engolir a falha em
+// silêncio. Um `try` mudo aqui faz o filtro abrir vazio para sempre, sem nada
+// vermelho na tela, e ninguém descobre — já aconteceu duas vezes neste ERP.
+// Se a lista não vier, a pessoa fica sabendo.
+//
+// E atenção ao formato: /erp/api/lancamento/dados embrulha tudo numa chave
+// `dados`. Ler `d.obras` em vez de `d.dados.obras` devolve vazio sem erro.
+function opcoes(id, itens, rotulo, textoVazio){
+  els(id).innerHTML = `<option value="">${textoVazio}</option>` +
+    itens.map(x => `<option value="${x.id}">${escapar(rotulo(x))}</option>`).join("");
+}
+
+async function carregarListas(){
+  const falhas = [];
+  try {
+    const d = (await api("/erp/api/lancamento/dados")).dados || {};
+    opcoes("f-obra", d.obras || [], o => `${o.codigo} · ${o.nome}`, "todas");
+    opcoes("f-fornecedor", d.fornecedores || [], f => f.nome, "todos");
+    if (!(d.obras || []).length) falhas.push("obras");
+  } catch(e){ falhas.push("obras e fornecedores"); }
+  try {
+    const d = await api("/erp/api/insumos");
+    opcoes("f-insumo", d.insumos || [], i => i.descricao, "todos");
+  } catch(e){ falhas.push("insumos"); }
+  if (falhas.length) {
+    aviso("mensagem", `Não consegui carregar a lista de ${falhas.join(" e ")} `
+      + `para os filtros. O relatório funciona; o filtro fica vazio.`, "alerta");
+  }
+}
+
+["f-agrupar","f-obra","f-insumo","f-fornecedor","f-de","f-ate","f-pendentes"]
+  .forEach(id => els(id).addEventListener("change", () => { ABERTOS.clear(); carregar(); }));
+els("f-busca").addEventListener("input", () => { clearTimeout(window.__t);
+  window.__t = setTimeout(carregar, 350); });
+els("btn-limpar").addEventListener("click", () => {
+  ["f-obra","f-insumo","f-fornecedor","f-de","f-ate","f-busca"].forEach(id => els(id).value = "");
+  els("f-pendentes").checked = false;
+  els("f-agrupar").value = "obra";
+  ABERTOS.clear(); carregar();
+});
+
+// Vindo do banco de preços ou de uma obra, o endereço pode já trazer o filtro.
+const busca = new URLSearchParams(location.search);
+["obra_id","insumo_id","fornecedor_id"].forEach(chave => {
+  const v = busca.get(chave);
+  if (v) els("f-" + chave.replace("_id", "")).value = v;
+});
+if (busca.get("agrupar")) els("f-agrupar").value = busca.get("agrupar");
+
+carregarListas().then(carregar);
+
+// Excel e PDF do que está na tela. Exporta a LINHA A LINHA, não a árvore —
+// planilha com hierarquia não se soma nem se filtra.
+botoesDeExportar("exportar", () => ({
+  titulo: "Compras",
+  subtitulo: DADOS ? `${DADOS.agrupar_rotulo} · ${moeda(DADOS.total_geral.total)}` : "",
+  colunas: [
+    {rotulo: "Data"}, {rotulo: "Pedido"}, {rotulo: "Obra"},
+    {rotulo: "Insumo"}, {rotulo: "Especificação"}, {rotulo: "Unid."},
+    {rotulo: "Quantidade", tipo: "numero"}, {rotulo: "Preço unit.", tipo: "dinheiro"},
+    {rotulo: "Total", tipo: "dinheiro"}, {rotulo: "Fornecedor"},
+    {rotulo: "Solicitação"},
+  ],
+  linhas: (DADOS ? DADOS.linhas : []).map(l => [
+    dataBR(l.data), l.pedido, l.obra, l.insumo, l.especificacao, l.unidade,
+    l.quantidade, l.preco_unitario, l.total, l.fornecedor, l.solicitacao,
+  ]),
+  filtros: filtrosDaTela(),
+}));
+</script>
+{% endblock %}

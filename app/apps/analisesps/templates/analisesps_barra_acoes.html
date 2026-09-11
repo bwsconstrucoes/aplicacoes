@@ -12,6 +12,8 @@
 
    Parâmetros esperados de quem inclui:
      origem      'solicitacoes' ou 'lote' — para onde as telas filhas voltam
+     tela        (opcional) 'codigos' esconde os botões que não fazem sentido
+                 lá: gerar o QR estando nele, e mexer no lote
      com_pgt     mostra "Marcar Pago/Pagar" (só Solicitações; no Lote o dono
                  mandou tirar, e o Streamlit nunca teve)
 --------------------------------------------------------------------------- #}
@@ -19,6 +21,8 @@
      data-url-alterar="{{ url_for('analisesps.alterar') }}"
      data-url-codigos="{{ url_for('analisesps.codigos') }}"
      data-url-validar="{{ url_for('analisesps.validar') }}"
+     data-url-enviar-lote="{{ url_for('analisesps.enviar_ao_lote') }}"
+     data-url-lote="{{ url_for('analisesps.tela_lote') }}"
      data-origem="{{ origem }}">
 
   <div class="ba-esquerda">
@@ -46,12 +50,12 @@
                 data-precisa-selecao
                 title="Apaga o campo Agendado na planilha">Desagendar</button>
       </div>
-      {% if origem == 'lote' %}
+      {% if origem == 'lote' and tela != 'codigos' %}
         {# Tirar do lote o que estiver marcado, em qualquer grupo. Fica aqui,
            com os outros, porque é a mesma seleção e o mesmo gesto — e porque
            antes só dava para editar o texto do lote na mão, achando o número
            no meio dos outros. NÃO altera a SP: mexe só na lista. #}
-        <button class="btn secundario perigo" id="ba-remover-lote"
+        <button class="btn secundario" id="ba-remover-lote"
                 data-precisa-selecao
                 title="Tira as SPs marcadas do lote. Não altera nada na planilha.">
           Remover do lote</button>
@@ -64,10 +68,14 @@
   <div class="ba-centro">
     <div class="ba-rotulo" id="ba-quantos">Nenhuma SP marcada</div>
     <div class="ba-total" id="ba-valor">R$ 0,00</div>
+    {# O TOTAL POR CONTA do que está marcado. O total geral diz se a remessa é
+       grande; este diz se ela CABE — é por conta que o dinheiro sai, e era o
+       número que faltava aqui. Pedido do dono em 11/09/2026. #}
+    <div class="ba-contas" id="ba-contas" hidden></div>
   </div>
 
   <div class="ba-direita">
-    {% if origem != 'lote' and pode_operar %}
+    {% if origem != 'lote' and pode_operar and tela != 'codigos' %}
       <button class="btn secundario" id="ba-enviar-lote" data-precisa-selecao
               title="Manda as marcadas para o Lote, num grupo novo">Enviar ao Lote</button>
     {% endif %}
@@ -77,14 +85,30 @@
     {% endif %}
     <button class="btn secundario" id="ba-cards" data-precisa-selecao
             title="Abre no Pipefy o card de cada SP marcada">Abrir cards</button>
-    <button class="btn secundario" id="ba-codigos" data-precisa-selecao>QR / Código</button>
-    {% if origem == 'solicitacoes' %}
+    {% if pode_operar %}
+      {# Os dois do Streamlit, com os mesmos nomes. "Gerar" só habilita quando
+         TODAS as marcadas são BeeVale — era assim lá, e é o que impede subir
+         no Drive o arquivo de uma SP que se paga por boleto. "Cadastro" não
+         depende de seleção nenhuma: é uma lista colada na mão. #}
+      <button class="btn secundario" id="ba-beevale" data-precisa-selecao
+              data-url="{{ url_for('analisesps.beevale_gerar') }}"
+              title="Monta as planilhas BeeVale das SPs marcadas">
+        Gerar BeeVale</button>
+      <a class="btn secundario"
+         href="{{ url_for('analisesps.beevale_cadastro', origem=origem) }}"
+         title="Planilha de cadastro para quem ainda não tem cartão">
+        Cadastro BeeVale</a>
+    {% endif %}
+    {% if tela != 'codigos' %}
+      <button class="btn secundario" id="ba-codigos" data-precisa-selecao>QR / Código</button>
+    {% endif %}
+    {% if origem == 'solicitacoes' and tela != 'codigos' %}
       <a class="btn secundario" href="{{ url_for('analisesps.exportar', **args) }}">Exportar CSV</a>
     {% endif %}
   </div>
 </div>
 
-{% if pode_operar %}
+{% if pode_operar and tela != 'codigos' %}
   {% if origem != 'lote' %}
     {# O envio ao Lote é POST: acrescenta um grupo lá e leva a pessoa junto. #}
     <form method="post" action="{{ url_for('analisesps.tela_lote') }}"

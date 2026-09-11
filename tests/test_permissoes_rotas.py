@@ -116,9 +116,63 @@ def test_rota_publica_tem_motivo_escrito():
 
 
 def test_o_conjunto_de_rotas_publicas_e_pequeno_e_conhecido():
-    """Se esta lista crescer, alguém abriu uma rota — que apareça na revisão."""
+    """Se esta lista crescer, alguém abriu uma rota — que apareça na revisão.
+
+    `api_agente_rodar` entrou em 07/09/2026 e é a única que aceita ORDEM sem
+    sessão: é a rotina diária, de fora, mandando o agente varrer as pendências.
+    Ela não é aberta de verdade — recusa sem `ERP_AGENTE_SECRET` no corpo, e
+    RECUSA TAMBÉM se o segredo não estiver configurado no ambiente, em vez de
+    liberar. O teste logo abaixo prova as duas recusas.
+
+    `manifesto_pwa` e `service_worker` entraram em 11/09/2026, quando o ERP
+    passou a poder ser instalado como ícone no celular. São públicas por
+    OBRIGAÇÃO DO NAVEGADOR: ele busca as duas antes de qualquer login, e um
+    302 para a tela de entrar faria a instalação simplesmente não ser
+    oferecida — sem erro nenhum aparecendo. **Nem uma nem outra consulta o
+    banco**: uma é a ficha do ícone, a outra é código de navegador. O teste
+    `tests/test_pwa.py` monta o ERP SEM banco configurado só para provar isso
+    — se alguém puser uma consulta ali dentro, aquele arquivo quebra.
+    """
     assert set(routes._ENDPOINTS_PUBLICOS) == {
-        "erp.pagina_login", "erp.sair", "erp.health"}
+        "erp.pagina_login", "erp.sair", "erp.health", "erp.api_agente_rodar",
+        "erp.api_comprovantes_lote", "erp.manifesto_pwa", "erp.service_worker"}
+
+
+def test_a_porta_dos_comprovantes_recusa_sem_segredo_e_com_segredo_errado(app, monkeypatch):
+    """Esta rota RECEBE ARQUIVO e DÁ BAIXA — é a que mais precisa se defender.
+
+    Sem sessão, quem a alcança é qualquer um. Por isso ela recusa duas vezes: se
+    o segredo não estiver configurado no ambiente (não pode virar porta aberta
+    por esquecimento) e se o segredo do pedido não bater.
+    """
+    with app.test_client() as c:
+        monkeypatch.delenv("ERP_COMPROVANTE_SECRET", raising=False)
+        r = c.post("/erp/api/pagamentos/comprovantes/lote", json={})
+        assert r.status_code == 503
+        assert "não configurado" in r.get_json()["erro"]
+
+        monkeypatch.setenv("ERP_COMPROVANTE_SECRET", "o-segredo-de-verdade")
+        assert c.post("/erp/api/pagamentos/comprovantes/lote",
+                      json={"secret": "chute"}).status_code == 403
+        assert c.post("/erp/api/pagamentos/comprovantes/lote",
+                      json={}).status_code == 403
+
+
+def test_a_rota_do_agente_recusa_sem_segredo_e_com_segredo_errado(app, monkeypatch):
+    """Rota sem login é rota que qualquer um alcança — então ela tem de se
+    defender sozinha. Duas recusas, e a primeira é a que mais importa:
+    ambiente SEM segredo configurado não pode virar porta aberta."""
+    with app.test_client() as c:
+        monkeypatch.delenv("ERP_AGENTE_SECRET", raising=False)
+        r = c.post("/erp/api/agente/rodar", json={})
+        assert r.status_code == 503, "sem segredo no ambiente tem de recusar"
+        assert "não configurado" in r.get_json()["erro"]
+
+        monkeypatch.setenv("ERP_AGENTE_SECRET", "o-segredo-de-verdade")
+        r = c.post("/erp/api/agente/rodar", json={"secret": "chute"})
+        assert r.status_code == 403
+        r = c.post("/erp/api/agente/rodar", json={})
+        assert r.status_code == 403, "sem segredo no corpo também recusa"
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +271,9 @@ def test_quem_tem_alcada_passa_pelo_guard(app, monkeypatch):
     ("/erp/api/conciliacao/manual", "post"),
     ("/erp/api/obras/1/fase", "post"),
     ("/erp/api/config/categoria", "post"),
-    ("/erp/api/config/obra", "post"),
+    ("/erp/api/obras/nova", "post"),
+    ("/erp/api/obras/documento", "post"),
+    ("/erp/api/obras/documento/ler", "post"),
     ("/erp/api/config/depara/definir", "post"),
 ])
 def test_administrativo_de_obra_nao_executa_acao_de_alcada(app, monkeypatch,

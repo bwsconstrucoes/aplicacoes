@@ -1,0 +1,668 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Arquivo — ERP BWS{% endblock %}
+
+{# O arquivo de documentos da empresa. Especificação em GESTAO_DOCUMENTOS.md.
+
+   Pedido do dono: "um ambiente onde eu pudesse simplesmente jogar esse
+   documento, ele fosse interpretado, lido, e a partir dali categorizado,
+   renomeado e salvo. E que eu pudesse facilmente gerir uma tela onde eu
+   fizesse filtros, pesquisasse, buscasse."
+
+   O primeiro quadrinho é VENCIDOS de propósito: certidão que vence sem
+   ninguém ver é a diferença entre ganhar e perder uma licitação. #}
+
+{% block filtros %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="nome, referência, texto do documento…">
+  </div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Validade</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="radio" name="sit" value="" checked>
+        <span class="rotulo">Todos</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="VENCIDO">
+        <span class="rotulo">Vencidos</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="VENCENDO">
+        <span class="rotulo">Vencendo</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="VALIDO">
+        <span class="rotulo">Válidos</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="SEM_VALIDADE">
+        <span class="rotulo">Sem validade</span></label>
+    </div>
+  </div>
+  <div class="campo"><label>Grupo</label><select id="f-grupo"></select></div>
+  <div class="campo"><label>Tipo de documento</label><select id="f-tipo"></select></div>
+  <div class="campo"><label>Empresa</label><select id="f-empresa"></select></div>
+  <div class="campo"><label>Obra</label><select id="f-obra"></select></div>
+  <div class="campo"><label>Competência</label><input id="f-comp" type="month"></div>
+
+  {% if pode.arquivar %}
+  <button class="btn amarelo" id="btn-novo" style="width:100%; margin-top:12px">
+    + Guardar documento</button>
+  {% endif %}
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+
+{# O CATÁLOGO VAZIO TRAVA A TELA INTEIRA, e até 10/09/2026 não havia como
+   destravá-la: a mensagem mandava "instale o catálogo" e não existia botão
+   nenhum em lugar nenhum — a rota existia, mas nenhuma tela a chamava. O dono
+   esbarrou nisso na primeira vez que abriu o Arquivo em produção. #}
+<div class="cartao oculto" id="cartao-catalogo"
+     style="border-left:4px solid var(--amarelo)">
+  <div class="cartao-cab"><h3>O catálogo de tipos ainda não foi instalado</h3>
+    <small>sem ele não dá para arquivar nem para o sistema ler documento</small></div>
+  <div class="cartao-dica">O catálogo é a lista dos tipos de documento que a BWS
+    usa — certidões, contrato, ART, folha, ASO, apólice — com o que cada um
+    significa: se vence, com quantos dias avisar, de quem costuma ser e quem
+    pode ver. É <b>uma instalação só</b>, e ela <b>nunca apaga nada</b>: cria o
+    que falta e deixa como está o que você já tiver personalizado.</div>
+  <div id="cat-acao" style="margin-top:12px"></div>
+  <div id="cat-msg"></div>
+</div>
+
+<div class="kpis" id="kpis"></div>
+
+{# OS BLOCOS. O que sempre é pedido junto: a documentação fiscal da medição, a
+   habilitação, o cadastro de fornecedor. O bloco aponta para TIPOS, não para
+   documentos — por isso o de agosto e o de setembro são o mesmo bloco. #}
+<div class="cartao" id="cartao-blocos">
+  <div class="cartao-cab"><h3>Baixar um conjunto</h3>
+    <small>o que sempre é pedido junto — vem em pasta compactada, com a lista do que falta dentro</small></div>
+  <div class="form-grade" style="align-items:end">
+    <div class="campo"><label>Conjunto</label><select id="b-bloco"></select></div>
+    <div class="campo" id="campo-b-empresa"><label>Empresa</label><select id="b-empresa"></select></div>
+    <div class="campo" id="campo-b-obra"><label>Obra</label><select id="b-obra"></select></div>
+    <div class="campo" id="campo-b-comp"><label>Competência</label><input id="b-comp" type="month"></div>
+    <div style="display:flex; gap:8px">
+      <button class="btn secundario" id="btn-b-conferir">Conferir</button>
+      <button class="btn amarelo" id="btn-b-baixar">Baixar</button></div>
+  </div>
+  <div id="b-resultado"></div>
+</div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra"><span class="resumo" id="resumo"></span></div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th>Documento</th><th>Tipo</th><th>De quem</th><th>Competência</th>
+      <th>Emissão</th><th>Validade</th><th>Situação</th><th></th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
+
+{% if pode.arquivar %}
+{# ARRASTAR PARA DENTRO. Cobre a tela inteira de propósito: com o arquivo no
+   ar, "onde eu solto?" é a pergunta que faz a pessoa desistir e voltar para o
+   botão. Qualquer lugar serve. #}
+<div class="veu-arrastar" id="veu-arrastar">
+  <div class="caixa">Solte o documento aqui
+    <small>eu leio, entendo e abro a tela já preenchida</small></div>
+</div>
+{% endif %}
+
+<dialog id="dlg"><div class="dlg-topo"><h3>Guardar documento</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo">
+    <div class="form-grade">
+      <div class="campo" style="grid-column: span 2"><label>Arquivo</label>
+        <div class="solta-aqui" id="solta-aqui">
+          <input type="file" id="d-arquivo">
+          <div class="dica" style="margin-top:4px">Ou arraste o arquivo para
+            cá — a leitura começa sozinha.</div>
+        </div></div>
+      {# JOGAR O DOCUMENTO E DEIXAR O SISTEMA ENTENDER. A leitura preenche o
+         formulário; quem grava continua sendo a pessoa, depois de conferir —
+         documento arquivado no tipo errado some do conjunto que o cliente
+         pede na medição, e ninguém descobre até o dia da entrega. #}
+      <div class="campo" style="grid-column: span 2">
+        <label>Deixe o sistema ler</label>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
+          <button class="btn secundario" id="btn-ler" type="button">Ler o documento</button>
+          <input id="d-dica" placeholder="ajuda (opcional): 'é a CND federal da BWS'"
+                 style="flex:1; min-width:200px; padding:7px 10px;
+                        border:1px solid var(--borda-forte); border-radius:8px; font-size:13px">
+        </div>
+        <div class="dica">Escolha o arquivo acima e clique em ler: o sistema sugere
+          tipo, dono, datas e o nome. Você confere antes de guardar.</div>
+      </div>
+      <div id="d-leitura" style="grid-column: 1 / -1"></div>
+      <div class="campo" style="grid-column: span 2"><label>Tipo de documento</label>
+        <select id="d-tipo"></select></div>
+      <div class="campo" style="grid-column: span 2"><label id="rot-dono">De quem é</label>
+        <select id="d-dono"></select>
+        <div class="dica" id="dica-dono">O documento pertence a UM dono só.</div></div>
+      <div class="campo"><label>Competência</label><input id="d-comp" type="month"></div>
+      <div class="campo"><label>Referência</label>
+        <input id="d-ref" placeholder="ex.: 02, ART-1234567">
+        <div class="dica">Número do aditivo, da medição, da ART…</div></div>
+      <div class="campo"><label>Emissão</label><input id="d-emissao" type="date"></div>
+      <div class="campo"><label>Validade</label><input id="d-validade" type="date"></div>
+      <div class="campo" style="grid-column: span 2"><label>Observação</label>
+        <input id="d-obs"></div>
+    </div>
+    <div class="cartao-dica" style="margin-top:10px">
+      O arquivo será guardado como: <b class="mono" id="d-previa">—</b>
+    </div>
+    <div style="margin-top:10px"><button class="btn amarelo" id="btn-guardar">Guardar</button></div>
+    <div id="dlg-aviso"></div>
+  </div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PODE_ARQUIVAR = {{ 'true' if pode.arquivar else 'false' }};
+const PODE_CONFIGURAR = {{ 'true' if pode.configurar else 'false' }};
+let TIPOS = [], GRUPOS = {}, DOCS = [], RESUMO = {}, EMPRESAS = [], OBRAS = [], BLOCOS = [];
+// Donos que só existem por causa do arquivo: colaborador e fornecedor. Vêm de
+// um endereço próprio porque quem arquiva não necessariamente pode abrir as
+// telas de Pessoal e de Suprimentos.
+let COLABORADORES = [], FORNECEDORES = [];
+// O que a última leitura devolveu. O TEXTO extraído viaja junto no momento de
+// guardar: é o que torna possível, depois, buscar DENTRO do documento sem
+// reprocessar o arquivo.
+let LEITURA = null;
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+const SITUACAO = {VENCIDO:["bloqueado","Vencido"], VENCENDO:["aguardando","Vencendo"],
+                  VALIDO:["aprovado","Válido"], SEM_VALIDADE:["","—"]};
+
+function situacaoAtual(){
+  const m = document.querySelector('input[name="sit"]:checked');
+  return m ? m.value : "";
+}
+
+async function carregarListas(){
+  try {
+    const d = await api("/erp/api/arquivo/tipos");
+    TIPOS = d.tipos || []; GRUPOS = d.grupos || {};
+    els("f-grupo").innerHTML = `<option value="">Todos</option>` +
+      Object.entries(GRUPOS).map(([k,v]) => `<option value="${k}">${v}</option>`).join("");
+    montarTipos();
+    mostrarAvisoDoCatalogo();
+  } catch(e){ aviso("mensagem", "Não consegui carregar os tipos: " + e.message, "erro"); }
+
+  try {
+    const d = await api("/erp/api/empresas");
+    EMPRESAS = d.empresas || d.dados || [];
+    els("f-empresa").innerHTML = `<option value="">Todas</option>` + EMPRESAS.map(e =>
+      `<option value="${e.id}">${e.nome_fantasia || e.razao_social}</option>`).join("");
+  } catch(e){ els("f-empresa").innerHTML = `<option value="">(não carregou)</option>`; }
+
+  if (PODE_ARQUIVAR) {
+    try {
+      const d = await api("/erp/api/arquivo/donos");
+      COLABORADORES = d.colaboradores || [];
+      FORNECEDORES = d.fornecedores || [];
+    } catch(e){ COLABORADORES = []; FORNECEDORES = []; }
+  }
+
+  try {
+    const d = await api("/erp/api/obras");
+    OBRAS = d.obras || d.dados || [];
+    els("f-obra").innerHTML = `<option value="">Todas</option>` + OBRAS.map(o =>
+      `<option value="${o.id}">${rotuloObra(o)}</option>`).join("");
+  } catch(e){ els("f-obra").innerHTML = `<option value="">(não carregou)</option>`; }
+}
+
+// Sem catálogo, a tela não serve para nada — então o aviso vem por cima de
+// tudo, e com o botão junto para quem pode apertar.
+function mostrarAvisoDoCatalogo(){
+  const vazio = !TIPOS.length;
+  els("cartao-catalogo").classList.toggle("oculto", !vazio);
+  if (!vazio) return;
+  els("cat-acao").innerHTML = PODE_CONFIGURAR
+    ? `<button class="btn amarelo" id="btn-instalar-catalogo">Instalar o catálogo de tipos</button>`
+    : `<div class="aviso info" style="margin:0">Quem instala é um administrador,
+        em <b>Administração › Configurações</b>. Peça a ele.</div>`;
+  const b = els("btn-instalar-catalogo");
+  if (b) b.addEventListener("click", async () => {
+    b.disabled = true; b.textContent = "Instalando…";
+    try {
+      const d = await api("/erp/api/arquivo/tipos/aplicar", {method: "POST"});
+      // Os conjuntos prontos apontam para os tipos: instalar um sem o outro
+      // deixaria "Baixar um conjunto" vazio logo em seguida.
+      try { await api("/erp/api/arquivo/blocos/aplicar", {method: "POST"}); }
+      catch(err){ /* o catálogo já entrou; o conjunto se instala nas Configurações */ }
+      aviso("cat-msg", `${d.dados.criados} tipo(s) instalado(s). `
+        + `Agora dá para arquivar e para o sistema ler documento.`, "ok");
+      await carregarListas();
+      await carregarBlocos();     // os conjuntos prontos entraram agora também
+      carregar();
+    } catch(e){ aviso("cat-msg", e.message, "erro"); }
+    b.disabled = false; b.textContent = "Instalar o catálogo de tipos";
+  });
+}
+
+function montarTipos(){
+  const g = els("f-grupo").value;
+  const lista = TIPOS.filter(t => !g || t.grupo === g);
+  els("f-tipo").innerHTML = `<option value="">Todos</option>` + lista.map(t =>
+    `<option value="${t.codigo}">${t.nome}</option>`).join("");
+  const alvo = els("d-tipo");
+  if (alvo) {
+    alvo.innerHTML = `<option value="">escolha…</option>` + TIPOS.map(t =>
+      `<option value="${t.codigo}">${GRUPOS[t.grupo]||t.grupo} · ${t.nome}</option>`).join("");
+    comBusca(alvo, "digite para filtrar o tipo…");
+  }
+}
+
+async function carregar(){
+  const p = new URLSearchParams();
+  const s = situacaoAtual(); if (s) p.set("situacao", s);
+  ["grupo","tipo","empresa","obra"].forEach(k => {
+    const v = els("f-" + k).value;
+    if (v) p.set(k === "empresa" ? "empresa_id" : k === "obra" ? "obra_id" : k, v);
+  });
+  if (els("f-comp").value) p.set("competencia", els("f-comp").value);
+  if (els("f-busca").value.trim()) p.set("busca", els("f-busca").value.trim());
+  try {
+    const d = await api("/erp/api/arquivo?" + p.toString());
+    DOCS = d.documentos || []; RESUMO = d.resumo || {};
+    desenhar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function desenhar(){
+  const r = RESUMO;
+  els("kpis").innerHTML = `
+    <button class="kpi vermelho" data-kpi="VENCIDO"><div class="kpi-rotulo">Vencidos</div>
+      <div class="kpi-valor">${r.vencidos||0}</div>
+      <div class="kpi-sub">não entram em bloco nenhum</div></button>
+    <button class="kpi ambar" data-kpi="VENCENDO"><div class="kpi-rotulo">Vencendo</div>
+      <div class="kpi-valor">${r.vencendo||0}</div></button>
+    <button class="kpi verde" data-kpi="VALIDO"><div class="kpi-rotulo">Válidos</div>
+      <div class="kpi-valor">${r.validos||0}</div></button>
+    <button class="kpi estatico"><div class="kpi-rotulo">Em tela</div>
+      <div class="kpi-valor">${r.quantidade||0}</div></button>`;
+  document.querySelectorAll("[data-kpi]").forEach(b => b.addEventListener("click", () => {
+    const alvo = document.querySelector(`input[name="sit"][value="${b.dataset.kpi}"]`);
+    if (alvo) { alvo.checked = true; carregar(); }
+  }));
+
+  els("resumo").textContent = `${DOCS.length} documento(s)`;
+  els("vazio").classList.toggle("oculto", DOCS.length > 0);
+  if (!DOCS.length) els("vazio").innerHTML =
+    "<b>Nenhum documento nestes filtros</b>Guarde o primeiro pela barra da esquerda.";
+
+  els("corpo").innerHTML = DOCS.map(d => {
+    const [classe, texto] = SITUACAO[d.situacao] || ["", d.situacao];
+    const dias = d.dias_para_vencer;
+    const detalhe = d.situacao === "VENCIDO" ? `há ${Math.abs(dias)} dia(s)`
+                  : d.situacao === "VENCENDO" ? `em ${dias} dia(s)` : "";
+    return `<tr>
+      <td><a href="/erp/anexo/${d.anexo_id}" target="_blank" class="mono">${d.nome}</a>
+        ${d.nome_original && d.nome_original !== d.nome
+          ? `<br><small>enviado como ${d.nome_original}</small>` : ""}</td>
+      <td>${d.tipo_nome}</td>
+      <td>${d.dono || "—"}</td>
+      <td>${d.competencia ? d.competencia.split("-").reverse().join("/") : "—"}</td>
+      <td>${dataBR(d.emissao)}</td>
+      <td>${dataBR(d.validade)}</td>
+      <td><span class="selo ${classe}">${texto}</span>
+        ${detalhe ? `<br><small>${detalhe}</small>` : ""}</td>
+      <td>${PODE_ARQUIVAR ? `<button class="btn secundario" data-excluir="${d.id}">Excluir</button>` : ""}</td>
+    </tr>`;
+  }).join("");
+
+  document.querySelectorAll("[data-excluir]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("Excluir este documento do arquivo? O arquivo também é apagado.")) return;
+    try {
+      await api(`/erp/api/arquivo/${b.dataset.excluir}`, {method:"DELETE"});
+      carregar();
+    } catch(e){ aviso("mensagem", e.message, "erro"); }
+  }));
+}
+
+// ---------------------------------------------------------------------------
+// Guardar um documento
+// ---------------------------------------------------------------------------
+function tipoEscolhido(){
+  return TIPOS.find(t => t.codigo === els("d-tipo").value) || null;
+}
+
+function ajustarFormulario(){
+  const t = tipoEscolhido();
+  const dono = els("d-dono"), rot = els("rot-dono"), dica = els("dica-dono");
+  if (!t) { dono.innerHTML = ""; rot.textContent = "De quem é"; return; }
+  const mapa = {
+    EMPRESA: ["Empresa", EMPRESAS.map(e => [e.id, e.nome_fantasia || e.razao_social])],
+    OBRA:    ["Obra", OBRAS.map(o => [o.id, rotuloObra(o)])],
+    PESSOA:  ["Colaborador", COLABORADORES.map(c => [c.id, c.nome])],
+    PARCEIRO:["Fornecedor", FORNECEDORES.map(f => [f.id, f.nome])],
+    LANCAMENTO: ["Lançamento", []],
+  };
+  const [rotulo, itens] = mapa[t.dono] || ["De quem é", []];
+  rot.textContent = rotulo;
+  dono.innerHTML = itens.length
+    ? itens.map(([id, nome]) => `<option value="${id}">${nome}</option>`).join("")
+    : `<option value="">(este tipo ainda não tem lista aqui)</option>`;
+  comBusca(dono, "digite para filtrar…");
+  dica.textContent = t.vence
+    ? "Este tipo VENCE — a validade é obrigatória, senão o sistema não avisa antes."
+    : t.por_competencia
+      ? "Este tipo é de um mês — informe a competência."
+      : "O documento pertence a UM dono só.";
+  els("d-validade").required = !!t.vence;
+  els("d-comp").required = !!t.por_competencia;
+  previa();
+}
+
+function previa(){
+  const t = tipoEscolhido();
+  if (!t) { els("d-previa").textContent = "—"; return; }
+  const dono = els("d-dono");
+  const nomeDono = dono.selectedOptions.length ? dono.selectedOptions[0].textContent : "";
+  const limpo = s => (s||"").normalize("NFD").replace(/[̀-ͯ]/g,"")
+    .replace(/[^A-Za-z0-9]+/g,"-").replace(/^-|-$/g,"").toUpperCase().slice(0,40);
+  const campos = [t.codigo, limpo(nomeDono)];
+  if (els("d-ref").value.trim()) campos.push(limpo(els("d-ref").value));
+  if (t.vence && els("d-validade").value) campos.push("val-" + els("d-validade").value);
+  else if (t.por_competencia && els("d-comp").value) campos.push(els("d-comp").value);
+  else if (els("d-emissao").value) campos.push(els("d-emissao").value);
+  const arq = els("d-arquivo").files[0];
+  const ext = arq && arq.name.includes(".") ? "." + arq.name.split(".").pop().toLowerCase() : "";
+  els("d-previa").textContent = campos.filter(Boolean).join("_") + ext;
+}
+
+// ---------------------------------------------------------------------------
+// A LEITURA AUTOMÁTICA
+//
+// Preenche o formulário e diz o que ela mesma NÃO conseguiu resolver. A parte
+// mais importante da tela é essa última: uma sugestão que se apresenta como
+// certeza é pior do que campo em branco, porque ninguém confere.
+// ---------------------------------------------------------------------------
+const CONFIANCA = {ALTA: ["ok", "leitura confiável"],
+                   MEDIA: ["alerta", "confira com atenção"],
+                   BAIXA: ["erro", "confira campo por campo"]};
+
+function mostrarLeitura(g){
+  const [classe, recado] = CONFIANCA[g.confianca] || CONFIANCA.MEDIA;
+  const linha = (rot, val) => val
+    ? `<div><span class="kpi-rotulo">${rot}</span> ${escapar(val)}</div>` : "";
+  els("d-leitura").innerHTML = `
+    <div class="aviso ${classe}">
+      <b>Lido ${escapar(g.lido_em)} — ${recado}.</b>
+      ${g.faltando.length
+        ? `<br>Falta você preencher: <b>${g.faltando.map(escapar).join(", ")}</b>.`
+        : ""}
+      ${g.dono_lido && !g.dono_encontrado
+        ? `<br>O documento diz ser de <b>${escapar(g.dono_lido)}</b>, que não achei no
+           cadastro — escolha na lista ou cadastre antes.` : ""}
+      ${g.campos_ilegiveis.length
+        ? `<br>Não consegui ler: ${g.campos_ilegiveis.map(escapar).join(", ")}.` : ""}
+      ${g.observacoes ? `<br><i>${escapar(g.observacoes)}</i>` : ""}
+    </div>
+    <div class="cartao" style="box-shadow:none; border:1px solid var(--borda); margin-bottom:0">
+      ${linha("Tipo", g.tipo_nome)}
+      ${linha("Por quê", g.tipo_motivo)}
+      ${linha("De quem", g.dono_encontrado || g.dono_lido)}
+      ${linha("Resumo", g.resumo)}
+      ${g.nome_sugerido
+        ? `<div><span class="kpi-rotulo">Nome</span>
+           <b class="mono">${escapar(g.nome_sugerido)}</b></div>` : ""}
+    </div>`;
+}
+
+async function lerDocumento(){
+  const arq = els("d-arquivo").files[0];
+  if (!arq) { aviso("dlg-aviso", "Escolha o arquivo antes de mandar ler.", "erro"); return; }
+  const b = els("btn-ler");
+  b.disabled = true; b.textContent = "Lendo…";
+  els("d-leitura").innerHTML = `<div class="cartao-dica">Lendo o documento…</div>`;
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    if (els("d-dica").value.trim()) fd.append("dica", els("d-dica").value.trim());
+    const d = await api("/erp/api/arquivo/ler", {method:"POST", body: fd});
+    const g = d.sugestao;
+    g.arquivo_lido = arq.name;      // para não colar o texto de um arquivo em outro
+    LEITURA = g;
+
+    // Ordem importa: o tipo decide QUAL lista de donos aparece, então ele vem
+    // primeiro e o dono só depois de o formulário se ajustar.
+    if (g.tipo_codigo) els("d-tipo").value = g.tipo_codigo;
+    ajustarFormulario();
+    const idDono = g.empresa_id || g.obra_id || g.colaborador_id || g.fornecedor_id;
+    if (idDono && [...els("d-dono").options].some(o => o.value === String(idDono))) {
+      els("d-dono").value = String(idDono);
+    }
+    if (g.competencia) els("d-comp").value = g.competencia;
+    if (g.referencia) els("d-ref").value = g.referencia;
+    if (g.emissao) els("d-emissao").value = g.emissao;
+    if (g.validade) els("d-validade").value = g.validade;
+    previa();
+    mostrarLeitura(g);
+    aviso("dlg-aviso", "", "ok");
+  } catch(e){
+    LEITURA = null;
+    els("d-leitura").innerHTML = "";
+    aviso("dlg-aviso", e.message, "erro");
+  }
+  b.disabled = false; b.textContent = "Ler o documento";
+}
+
+// ---------------------------------------------------------------------------
+// ARRASTAR O DOCUMENTO PARA DENTRO DA TELA
+//
+// Pedido do dono em 10/09/2026: *"arrasto o documento pra dentro daquele
+// local e é feita a leitura do arquivo já, e aberta a tela com as informações
+// que você detectou."*
+//
+// Três decisões de comportamento:
+//
+//   1. A ZONA É A TELA INTEIRA. Com o arquivo no ar, procurar o retângulo
+//      certo é o que faz a pessoa desistir e voltar para o botão.
+//   2. UM ARQUIVO POR VEZ. A leitura é por documento; aceitar cinco de uma vez
+//      e ler só o primeiro em silêncio seria pior que recusar — então o
+//      primeiro entra e a tela DIZ que os outros ficaram de fora.
+//   3. O BOTÃO CONTINUA. Quem prefere procurar no computador não perde nada.
+// ---------------------------------------------------------------------------
+function temArquivo(ev){
+  const t = ev.dataTransfer;
+  return !!t && [...(t.types || [])].includes("Files");
+}
+
+function mostrarVeu(ligado){
+  const veu = els("veu-arrastar");
+  if (veu) veu.classList.toggle("ativo", ligado && !els("dlg").open);
+  const zona = els("solta-aqui");
+  if (zona) zona.classList.toggle("sobre", ligado);
+}
+
+async function receberArquivoArrastado(arquivos){
+  if (!arquivos || !arquivos.length) return;
+  // Põe o arquivo no campo de verdade: daí para a frente tudo é o caminho
+  // que já existia e já foi provado, inclusive o "guardar".
+  const dt = new DataTransfer();
+  dt.items.add(arquivos[0]);
+  els("d-arquivo").files = dt.files;
+
+  LEITURA = null; els("d-leitura").innerHTML = "";
+  ajustarFormulario();
+  if (!els("dlg").open) els("dlg").showModal();
+  previa();
+  if (arquivos.length > 1) {
+    aviso("dlg-aviso", `Li só <b>${escapar(arquivos[0].name)}</b>. `
+      + `Os outros ${arquivos.length - 1} arquivo(s) ficaram de fora — `
+      + `é um documento por vez.`, "alerta");
+  }
+  await lerDocumento();
+}
+
+function ligarArrastar(){
+  let dentro = 0;
+  document.addEventListener("dragenter", ev => {
+    if (!temArquivo(ev)) return;
+    ev.preventDefault(); dentro++; mostrarVeu(true);
+  });
+  document.addEventListener("dragover", ev => {
+    if (!temArquivo(ev)) return;
+    ev.preventDefault();                 // sem isto o navegador recusa o soltar
+    ev.dataTransfer.dropEffect = "copy";
+  });
+  document.addEventListener("dragleave", ev => {
+    if (!temArquivo(ev)) return;
+    dentro = Math.max(0, dentro - 1);
+    if (!dentro) mostrarVeu(false);
+  });
+  document.addEventListener("drop", ev => {
+    if (!temArquivo(ev)) return;
+    // Sem isto o navegador ABRE o arquivo numa aba e some com a tela.
+    ev.preventDefault();
+    dentro = 0; mostrarVeu(false);
+    receberArquivoArrastado(ev.dataTransfer.files);
+  });
+}
+
+if (PODE_ARQUIVAR) {
+  ligarArrastar();
+  els("btn-ler").addEventListener("click", lerDocumento);
+  els("btn-novo").addEventListener("click", () => {
+    LEITURA = null; els("d-leitura").innerHTML = "";
+    ajustarFormulario(); els("dlg").showModal();
+  });
+  els("d-tipo").addEventListener("change", ajustarFormulario);
+  ["d-dono","d-ref","d-comp","d-emissao","d-validade","d-arquivo"].forEach(id =>
+    els(id).addEventListener("change", previa));
+  // Trocou o arquivo: a leitura anterior era de outro documento e não vale mais.
+  els("d-arquivo").addEventListener("change", () => {
+    LEITURA = null; els("d-leitura").innerHTML = "";
+  });
+  els("btn-guardar").addEventListener("click", async (ev) => {
+    const arq = els("d-arquivo").files[0];
+    if (!arq) { aviso("dlg-aviso", "Escolha o arquivo.", "erro"); return; }
+    if (!els("d-tipo").value) { aviso("dlg-aviso", "Escolha o tipo.", "erro"); return; }
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    fd.append("tipo", els("d-tipo").value);
+    const t = tipoEscolhido();
+    const campoDono = {EMPRESA:"empresa_id", OBRA:"obra_id", PESSOA:"colaborador_id",
+                       PARCEIRO:"fornecedor_id"}[t.dono];
+    if (campoDono && els("d-dono").value) fd.append(campoDono, els("d-dono").value);
+    ["comp:competencia","ref:referencia","emissao:emissao","validade:validade","obs:observacao"]
+      .forEach(par => {
+        const [id, nome] = par.split(":");
+        if (els("d-" + id).value) fd.append(nome, els("d-" + id).value);
+      });
+    // Só vale se a leitura foi DESTE arquivo: trocar o arquivo depois de ler
+    // guardaria o texto de outro documento, e a busca passaria a mentir.
+    if (LEITURA && LEITURA.arquivo_lido === arq.name) {
+      if (LEITURA.texto) fd.append("texto", LEITURA.texto);
+      if (LEITURA.resumo) fd.append("resumo", LEITURA.resumo);
+    }
+    const b = ev.target; b.disabled = true; b.textContent = "Guardando…";
+    try {
+      const d = await api("/erp/api/arquivo", {method:"POST", body: fd});
+      els("dlg").close();
+      aviso("mensagem", `Guardado como <b class="mono">${d.documento.nome}</b>.`, "ok");
+      ["d-arquivo","d-ref","d-comp","d-emissao","d-validade","d-obs","d-dica"]
+        .forEach(i => els(i).value = "");
+      LEITURA = null; els("d-leitura").innerHTML = "";
+      carregar();
+    } catch(e){ aviso("dlg-aviso", e.message, "erro"); }
+    b.disabled = false; b.textContent = "Guardar";
+  });
+}
+
+let deb;
+els("f-busca").addEventListener("input", () => { clearTimeout(deb); deb = setTimeout(carregar, 300); });
+els("f-grupo").addEventListener("change", () => { montarTipos(); carregar(); });
+["f-tipo","f-empresa","f-obra","f-comp"].forEach(id => els(id).addEventListener("change", carregar));
+document.querySelectorAll('input[name="sit"]').forEach(r => r.addEventListener("change", carregar));
+els("btn-limpar").addEventListener("click", () => {
+  ["f-busca","f-tipo","f-empresa","f-obra","f-comp"].forEach(i => els(i).value = "");
+  els("f-grupo").value = ""; montarTipos();
+  document.querySelector('input[name="sit"][value=""]').checked = true;
+  carregar();
+});
+
+// ---------------------------------------------------------------------------
+// OS BLOCOS
+// ---------------------------------------------------------------------------
+function blocoEscolhido(){
+  return BLOCOS.find(b => b.codigo === els("b-bloco").value) || null;
+}
+
+function ajustarBloco(){
+  const b = blocoEscolhido();
+  els("campo-b-empresa").classList.toggle("oculto", !b || !b.precisa_empresa);
+  els("campo-b-obra").classList.toggle("oculto", !b || !b.precisa_obra);
+  els("campo-b-comp").classList.toggle("oculto", !b || !b.precisa_competencia);
+  els("b-resultado").innerHTML = b
+    ? `<div class="cartao-dica">${b.descricao || ""} Junta ${b.itens.length} tipo(s) de
+       documento — ${b.itens.filter(i=>i.obrigatorio).length} obrigatório(s).</div>`
+    : "";
+}
+
+function recorteDoBloco(){
+  const p = new URLSearchParams();
+  const b = blocoEscolhido();
+  if (!b) return p;
+  if (b.precisa_empresa && els("b-empresa").value) p.set("empresa_id", els("b-empresa").value);
+  if (b.precisa_obra && els("b-obra").value) p.set("obra_id", els("b-obra").value);
+  if (b.precisa_competencia && els("b-comp").value) p.set("competencia", els("b-comp").value);
+  return p;
+}
+
+async function conferirBloco(){
+  const b = blocoEscolhido();
+  if (!b) return;
+  try {
+    const d = await api(`/erp/api/arquivo/blocos/${b.codigo}/conferir?` + recorteDoBloco());
+    const r = d.resultado;
+    const faltas = (r.faltas||[]).map(f =>
+      `<li>${f.obrigatorio ? "<b>" : ""}${f.nome}${f.obrigatorio ? "</b>" : ""}
+        <small>(${f.motivo})</small></li>`).join("");
+    els("b-resultado").innerHTML = `
+      <div class="${r.completo ? "aviso ok" : "critica CRITICA"}">
+        <b>${r.rotulo}</b><br>
+        ${r.documentos.length} documento(s) encontrado(s).
+        ${r.completo
+          ? "Nenhum obrigatório faltando."
+          : `<b>${r.faltas_obrigatorias} obrigatório(s) faltando.</b>`}
+        ${faltas ? `<ul style="margin:8px 0 0 18px">${faltas}</ul>` : ""}
+      </div>`;
+  } catch(e){ aviso("b-resultado", e.message, "erro"); }
+}
+
+if (els("btn-b-conferir")) {
+  els("b-bloco").addEventListener("change", ajustarBloco);
+  els("btn-b-conferir").addEventListener("click", conferirBloco);
+  els("btn-b-baixar").addEventListener("click", () => {
+    const b = blocoEscolhido();
+    if (!b) return;
+    // Conferir junto com o download: a pessoa vê o que falta na tela, não só
+    // dentro do arquivo compactado.
+    conferirBloco();
+    window.location = `/erp/api/arquivo/blocos/${b.codigo}/baixar?` + recorteDoBloco();
+  });
+}
+
+async function carregarBlocos(){
+  try {
+    const d = await api("/erp/api/arquivo/blocos");
+    BLOCOS = d.blocos || [];
+    els("b-bloco").innerHTML = BLOCOS.length
+      ? BLOCOS.map(b => `<option value="${b.codigo}">${b.nome}</option>`).join("")
+      : `<option value="">(nenhum conjunto configurado)</option>`;
+    els("b-empresa").innerHTML = EMPRESAS.map(e =>
+      `<option value="${e.id}">${e.nome_fantasia || e.razao_social}</option>`).join("");
+    els("b-obra").innerHTML = OBRAS.map(o =>
+      `<option value="${o.id}">${rotuloObra(o)}</option>`).join("");
+    ajustarBloco();
+  } catch(e){ aviso("mensagem", "Não consegui carregar os conjuntos: " + e.message, "erro"); }
+}
+
+(async () => { await carregarListas(); await carregarBlocos(); carregar(); })();
+</script>
+{% endblock %}

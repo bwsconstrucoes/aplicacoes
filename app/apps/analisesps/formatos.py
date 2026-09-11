@@ -114,12 +114,107 @@ def moeda(valor) -> str:
     return ("-" if n < 0 else "") + ".".join(grupos) + "," + centavos
 
 
+def _como_momento(valor):
+    """Aceita data, data-e-hora ou o TEXTO de uma delas. None quando não dá.
+
+    O texto existe porque nem tudo que a tela mostra vem de uma coluna de
+    data: o carimbo da última sincronização, por exemplo, é guardado como
+    texto em `analisesps.meta`. Sem isto, ele aparecia cru na tela —
+    "2026-09-04T17:25:31.319885-03:00" no lugar de "04/09/2026 às 17:25"."""
+    if isinstance(valor, dt.datetime) or isinstance(valor, dt.date):
+        return valor
+    texto = str(valor or "").strip()
+    if not texto:
+        return None
+    try:
+        return dt.datetime.fromisoformat(texto)
+    except ValueError:
+        pass
+    # Já veio no formato brasileiro? Então não há o que converter.
+    return None
+
+
 def data_br(valor) -> str:
     """Data do banco -> "31/12/2026". Vazio vira vazio, nunca "None"."""
-    if valor is None:
+    if valor is None or (isinstance(valor, str) and not valor.strip()):
         return ""
-    if isinstance(valor, dt.datetime):
-        valor = valor.date()
-    if isinstance(valor, dt.date):
-        return valor.strftime("%d/%m/%Y")
+    momento = _como_momento(valor)
+    if isinstance(momento, dt.datetime):
+        # Data e hora viram o DIA EM BRASÍLIA. Sem converter, uma
+        # sincronização das 22h daqui (1h do dia seguinte em UTC) apareceria
+        # com a data de amanhã.
+        from .horario import para_brasilia
+        return (para_brasilia(momento) or momento).strftime("%d/%m/%Y")
+    if isinstance(momento, dt.date):
+        return momento.strftime("%d/%m/%Y")
     return str(valor)
+
+
+def momento_br(valor) -> str:
+    """Data E HORA, na hora de Brasília -> "31/12/2026 às 17:25".
+
+    Para o que só faz sentido com a hora: "a base é de quando?". Dizer só o
+    dia responderia "hoje", que é justamente o que já se sabia."""
+    if valor is None or (isinstance(valor, str) and not valor.strip()):
+        return ""
+    momento = _como_momento(valor)
+    if momento is None:
+        return str(valor)
+    if not isinstance(momento, dt.datetime):
+        return momento.strftime("%d/%m/%Y")
+    from .horario import texto as _texto_br
+    return _texto_br(momento)
+
+
+# ---------------------------------------------------------------------------
+# Link dentro de texto livre
+#
+# A descrição da SP vem digitada por gente, e com frequência traz o endereço
+# de uma pasta, de um contrato ou de um comprovante. Como texto puro, era
+# preciso selecionar na mão e colar no navegador.
+#
+# A ordem aqui importa e não é detalhe de estilo: PRIMEIRO escapa o texto
+# inteiro, DEPOIS transforma em link o que sobrou. Ao contrário, uma descrição
+# com HTML dentro entraria na página como HTML.
+# ---------------------------------------------------------------------------
+_ENDERECO = re.compile(
+    r"""(?xi)
+    \b(
+        (?:https?://|www\.)         # com esquema, ou começando por www.
+        [^\s<>"']+                  # o corpo do endereço
+    )
+    """)
+
+# Pontuação que quase sempre é da frase, não do endereço: "veja em
+# https://x.com/y." termina com o ponto final da frase.
+_PONTUACAO_FINAL = ".,;:!?)]}>”’'\""
+
+
+def com_links(texto) -> str:
+    """Texto livre virando HTML seguro, com os endereços já clicáveis.
+
+    Devolve HTML PRONTO — no template vai com `|safe`, senão as tags saem na
+    tela como texto. Por isso o escape aqui não é opcional: a descrição vem da
+    planilha, que qualquer um edita, e sem ele uma célula com `<script>`
+    dentro rodaria na tela de quem abrisse a SP. Usa o `html.escape` da
+    biblioteca padrão de propósito — nada de dependência nova para isto."""
+    import html as _html
+
+    if texto is None:
+        return ""
+
+    seguro = _html.escape(str(texto), quote=True)
+
+    def trocar(achado):
+        bruto = achado.group(1)
+        rabo = ""
+        while bruto and bruto[-1] in _PONTUACAO_FINAL:
+            rabo = bruto[-1] + rabo
+            bruto = bruto[:-1]
+        if not bruto:
+            return achado.group(0)
+        destino = bruto if bruto.lower().startswith("http") else "https://" + bruto
+        return (f'<a href="{destino}" target="_blank" rel="noopener noreferrer">'
+                f'{bruto}</a>{rabo}')
+
+    return _ENDERECO.sub(trocar, seguro)

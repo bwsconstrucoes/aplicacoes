@@ -1,0 +1,724 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Cotações — ERP BWS{% endblock %}
+
+{% block filtros %}
+  <div class="filtros-cab"><h2>Cotações</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button></div>
+  <div class="busca"><span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="número ou título da cotação…"></div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Situação</span>
+      <span class="filtro-badge" id="badge-status">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-status"></div></div>
+  </div>
+
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Escolha o mapa</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div id="lista-cotacoes"></div></div>
+  </div>
+{% endblock %}
+
+{% block conteudo %}
+<h2>Mapa de cotação <small>fornecedores em coluna, insumos em linha, preço na célula</small></h2>
+<div id="mensagem"></div>
+
+<div class="tabela-barra" style="background:var(--branco); border-radius:var(--raio);
+     box-shadow:var(--sombra); margin-bottom:14px">
+  <span class="resumo" id="resumo-cotacao">nenhum mapa aberto</span>
+  <span class="espaco"></span>
+  <button class="btn" id="btn-nova-cot">Nova cotação</button>
+</div>
+
+<div id="painel-mapa"></div>
+
+<dialog id="dlg">
+  <div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+    <button class="topo-btn" style="margin-left:auto" onclick="els('dlg').close()">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div>
+</dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let COTACOES = [], MAPA = null,
+    BASE = {fornecedores: [], condicoes: [], insumos: [], unidades: [], obras: []};
+
+const STATUS = new Set();
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+async function carregarListas(){
+  const [cots, cadastros] = await Promise.all([
+    api("/erp/api/suprimentos/cotacoes"), api("/erp/api/suprimentos/cadastros")]);
+  COTACOES = cots.cotacoes;
+  BASE.condicoes = cadastros.condicoes;
+  // Insumos, unidades e obras vêm junto porque a correção do item acontece
+  // AQUI: é olhando o mapa que o comprador descobre o pedido errado.
+  BASE.insumos = cadastros.insumos || [];
+  BASE.unidades = cadastros.unidades || [];
+  BASE.obras = cadastros.obras || [];
+  desenharLista();
+}
+
+// A escolha do mapa vive na barra da esquerda, como o filtro de qualquer
+// outra tela do ERP — e não numa caixinha de cem cotações no topo.
+function desenharLista(){
+  const contagem = {};
+  COTACOES.forEach(c => contagem[c.status] = (contagem[c.status] || 0) + 1);
+  els("opcoes-status").innerHTML = Object.keys(contagem).sort().map(s => `
+    <label class="opcao"><input type="checkbox" data-status="${s}"
+      ${STATUS.has(s) ? "checked" : ""}>
+      <span class="rotulo">${rotulo(s)}</span>
+      <span class="qtd">${contagem[s]}</span></label>`).join("")
+    || `<div class="cartao-dica">nenhuma cotação ainda</div>`;
+  els("badge-status").textContent = STATUS.size;
+  document.querySelectorAll("[data-status]").forEach(i =>
+    i.addEventListener("change", ev => {
+      const s = ev.target.dataset.status;
+      ev.target.checked ? STATUS.add(s) : STATUS.delete(s);
+      desenharLista();
+    }));
+
+  const q = (els("f-busca").value || "").toLowerCase().trim();
+  const lista = COTACOES.filter(c =>
+    (!STATUS.size || STATUS.has(c.status)) &&
+    (!q || `${c.numero} ${c.titulo}`.toLowerCase().includes(q)));
+  els("lista-cotacoes").innerHTML = lista.map(c => `
+    <button class="btn secundario" data-cotacao="${c.id}"
+      style="display:block; width:100%; text-align:left; margin-bottom:4px;
+             ${MAPA && MAPA.id === c.id ? "border-color:var(--azul)" : ""}">
+      <b>${c.numero}</b><br><small>${c.titulo}</small>
+      ${c.status !== "ABERTA" ? `<br><span class="selo outro">${rotulo(c.status)}</span>` : ""}
+    </button>`).join("")
+    || `<div class="cartao-dica">nada com esses filtros</div>`;
+  document.querySelectorAll("[data-cotacao]").forEach(b =>
+    b.addEventListener("click", () => abrirMapa(+b.dataset.cotacao)));
+}
+
+function desenharMapa(){
+  if (!MAPA) { els("painel-mapa").innerHTML = ""; return; }
+  const colunas = MAPA.fornecedores;
+  if (!colunas.length) {
+    els("painel-mapa").innerHTML = `<div class="cartao">
+      <div class="cartao-cab"><h3>${MAPA.numero} · ${MAPA.titulo}</h3></div>
+      <div class="cartao-dica">Nenhum fornecedor no mapa ainda.</div>
+      <div style="margin-top:10px"><button class="btn" id="btn-add-forn">Acrescentar fornecedor</button></div>
+    </div>`;
+    els("btn-add-forn").addEventListener("click", abrirFornecedor);
+    return;
+  }
+
+  // O cabeçalho de cada fornecedor: tudo o que decide a compra, junto, em
+  // linhas curtas. Espalhado, seis fornecedores não cabem na tela.
+  const cab = colunas.map(c => `<th style="min-width:104px">
+      <div style="font-weight:700; font-size:11px">${escapar(c.fornecedor)}</div>
+      <span class="sub">${escapar(c.condicao || "sem condição")} ·
+        ${c.entrega ? (c.entrega === "COLETA" ? "coleta" : "entrega") : "—"}</span>
+      ${Number(c.frete) > 0 || Number(c.desconto) > 0 ? `<span class="sub">${
+        [Number(c.frete) > 0 ? `frete ${numero(c.frete)}` : "",
+         Number(c.desconto) > 0 ? `desc. ${numero(c.desconto)}` : ""]
+        .filter(Boolean).join(" · ")}</span>` : ""}
+      <span class="sub">${c.itens_cotados}/${c.itens_no_mapa} itens · ${situacaoDoEnvio(c.id)}</span>
+      <button class="link-btn" data-proposta="${c.id}" style="font-size:10.5px">ler proposta</button>
+    </th>`).join("");
+
+  // Uma linha por item, com a SITUAÇÃO ao lado do insumo: quem abre um mapa de
+  // duas semanas atrás vê na hora o que já virou pedido, o que já chegou e o
+  // que ainda está em cotação, sem sair da tela.
+  const linhas = MAPA.itens.map(i => `<tr>
+      <td class="insumo"><b>${escapar(i.insumo)}</b>
+        ${i.corrigivel ? `<button class="lapis" data-corrigir="${i.suprimento_item_id}"
+          title="Corrigir o que a obra pediu — exige motivo e fica registrado"
+          aria-label="corrigir">✎</button>` : ""}
+        ${i.especificacao ? `<small>${escapar(i.especificacao)}</small>` : ""}
+        ${i.correcoes ? `<small class="corrigido">corrigido ${i.correcoes}×</small>` : ""}</td>
+      <td>${selo(i.status, i.status_rotulo)}</td>
+      <td class="dados" style="font-size:11px">${escapar(i.obra || "—")}</td>
+      <td class="direita dados" style="white-space:nowrap">${
+        quantidadeBR(i.quantidade)} <small>${escapar(i.unidade)}</small></td>
+      ${colunas.map(c => {
+        const cel = i.precos[c.id];
+        if (!cel) return `<td class="direita"><input class="cel" data-col="${c.id}"
+            data-lin="${i.id}" placeholder="—"></td>`;
+        const melhor = i.menor_preco_de === c.id;
+        return `<td class="direita ${melhor ? "menor-preco" : ""}">
+          <input class="cel" data-col="${c.id}" data-lin="${i.id}"
+                 value="${cel.preco_unitario}">
+          <span class="sub">${numero(cel.total)}${
+            cel.origem === "HERDADO" ? ` · <span style="color:var(--ambar)"
+              title="preço de outra cotação">herdado</span>` : ""}${
+            cel.origem === "IA" ? ` · <span style="color:var(--ciano)">lido</span>` : ""}</span>
+        </td>`;
+      }).join("")}
+    </tr>`).join("");
+
+  const totais = colunas.map(c => `<td class="direita dados"><b>${numero(c.total)}</b>
+      ${c.itens_cotados < c.itens_no_mapa
+        ? `<span class="sub">não cotou tudo</span>`
+        : (MAPA.melhor_fornecedor_unico === c.id
+            ? `<span class="sub" style="color:var(--verde); font-weight:700"
+                 >melhor no total</span>` : "")}</td>`).join("");
+
+  // Quantos itens em cada situação — o resumo que a planilha dá pela cor.
+  const porSituacao = {};
+  MAPA.itens.forEach(i => {
+    if (!i.status) return;
+    porSituacao[i.status] = porSituacao[i.status] || {n: 0, rotulo: i.status_rotulo};
+    porSituacao[i.status].n++;
+  });
+  const resumoSituacoes = Object.entries(porSituacao)
+    .map(([chave, x]) => `${selo(chave, `${x.rotulo}: ${x.n}`)}`).join(" ");
+
+  els("painel-mapa").innerHTML = `<div class="cartao">
+    <div class="cartao-cab"><h3>${escapar(MAPA.numero)} · ${escapar(MAPA.titulo)}</h3>
+      <small>o total já inclui frete, desconto e acréscimo — comparar só o
+        preço unitário engana</small></div>
+    ${resumoSituacoes ? `<div style="margin:0 0 8px; display:flex; gap:4px;
+      flex-wrap:wrap">${resumoSituacoes}</div>` : ""}
+    <div style="overflow-x:auto">
+      <table class="mapa"><thead><tr>
+        <th>Insumo</th><th>Situação</th><th>Obra</th><th class="direita">Qtd</th>${cab}
+      </tr></thead>
+        <tbody>${linhas}</tbody>
+        <tfoot><tr><td colspan="4"><b>Total</b></td>${totais}</tr>
+          <tr><td colspan="4"><span class="sub">comprando cada item de quem tem o
+            menor preço</span></td>
+            <td colspan="${colunas.length}" class="direita dados">
+              ${numero(MAPA.total_pulverizado)} <span class="sub">(sem frete)</span></td></tr>
+        </tfoot></table>
+    </div>
+    <div style="margin-top:12px; display:flex; gap:8px; flex-wrap:wrap">
+      <button class="btn" id="btn-salvar-precos">Salvar preços</button>
+      <button class="btn secundario" id="btn-add-forn">Acrescentar fornecedor</button>
+      <button class="btn secundario" id="btn-herdar">Puxar preços anteriores</button>
+      <button class="btn secundario" id="btn-relatorios">📊 Relatórios do mapa</button>
+      <button class="btn secundario" id="btn-mapa-pdf"
+        title="O mapa inteiro em PDF, deitado quando tem muitos fornecedores"
+        >&#10515; Mapa em PDF</button>
+      <span class="espaco" style="flex:1"></span>
+      <button class="btn" id="btn-disparar">✉ Disparar a cotação</button>
+    </div>
+    <div class="cartao-dica" style="margin-top:8px">A célula em verde é o menor
+      preço da linha. "Herdado" quer dizer que o preço veio de outra cotação —
+      confira a data antes de fechar com ele.</div>
+  </div>`;
+
+  els("btn-salvar-precos").addEventListener("click", salvarPrecos);
+  els("btn-add-forn").addEventListener("click", abrirFornecedor);
+  els("btn-herdar").addEventListener("click", herdarPrecos);
+  els("btn-relatorios").addEventListener("click", () => abrirRelatorios("POR_ITEM"));
+  els("btn-mapa-pdf").addEventListener("click", exportarMapa);
+  els("btn-disparar").addEventListener("click", abrirDisparo);
+  document.querySelectorAll("[data-proposta]").forEach(b =>
+    b.addEventListener("click", () => lerProposta(+b.dataset.proposta)));
+  document.querySelectorAll("[data-corrigir]").forEach(b =>
+    b.addEventListener("click", () => corrigirItem(+b.dataset.corrigir)));
+}
+
+// ---------------------------------------------------------------------------
+// Correção do item, sem sair do mapa
+//
+// A obra pede em saco o que só vem em bag, escreve o material errado, confunde
+// um insumo com o vizinho — e é aqui, comparando preços, que o comprador
+// percebe. Corrigir sem assinatura vira "eu não pedi isso": o MOTIVO é
+// obrigatório e tudo fica gravado.
+// ---------------------------------------------------------------------------
+async function corrigirItem(itemId){
+  const i = (MAPA.itens || []).find(x => x.suprimento_item_id === itemId);
+  if (!i) return;
+  const d = await perguntar({
+    titulo: `Corrigir ${i.insumo}`,
+    textoOk: "Corrigir e registrar",
+    aviso: "Fica gravado o que era, o que passou a ser, quem mudou e quando. " +
+           "Mudando o material ou a unidade, os preços já digitados nesta " +
+           "linha são apagados — eram de outra coisa.",
+    campos: [
+      {nome: "insumo_id", rotulo: "Insumo", tipo: "select", largura: 3,
+       valor: String(i.insumo_id),
+       opcoes: BASE.insumos.map(x => ({valor: String(x.id), rotulo: x.descricao}))},
+      {nome: "especificacao", rotulo: "Especificação", largura: 2,
+       valor: i.especificacao || "", exemplo: "ex.: CP-II 50kg, cinza"},
+      {nome: "quantidade", rotulo: "Quantidade", largura: 1,
+       valor: quantidadeBR(i.quantidade)},
+      {nome: "unidade", rotulo: "Unidade", tipo: "select", largura: 1,
+       valor: i.unidade,
+       opcoes: BASE.unidades.map(u => ({valor: u.codigo,
+                                        rotulo: `${u.codigo} · ${u.descricao}`}))},
+      {nome: "obra_id", rotulo: "Obra que recebe", tipo: "select", largura: 2,
+       valor: String(i.obra_id),
+       opcoes: BASE.obras.map(o => ({valor: String(o.id), rotulo: rotuloObra(o)}))},
+      {nome: "motivo", rotulo: "Motivo da correção", tipo: "textarea", linhas: 2,
+       obrigatorio: true, largura: 3,
+       exemplo: "ex.: material solicitado errado — a obra queria CP-V"}]});
+  if (!d) return;
+  try {
+    const r = await api(`/erp/api/suprimentos/itens/${itemId}`, {method: "PATCH",
+      headers: {"Content-Type": "application/json"}, body: JSON.stringify(d)});
+    aviso("mensagem", `${Object.keys(r.mudancas || {}).length} campo(s) corrigido(s).` +
+      (r.avisos && r.avisos.length ? " " + r.avisos.join(" ") : ""),
+      r.avisos && r.avisos.length ? "alerta" : "ok");
+    abrirMapa(MAPA.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// OS QUATRO RELATÓRIOS DO MAPA
+//
+// São os mesmos das abas R2 a R5 da planilha que a equipe já usa. Cada um
+// responde uma pergunta diferente, e é por isso que são quatro:
+//
+//   por item        "de quem compro cada coisa pelo menor preço?"
+//   por fornecedor  "então o que compro de cada um?" — é a lista de compra
+//   um fornecedor   "e se eu comprar tudo deste aqui?"
+//   comparativo     "quem sai melhor no total, com frete e desconto?"
+//
+// Os quatro saem do mesmo mapa: não há como dois deles darem números
+// diferentes para a mesma cotação.
+// ---------------------------------------------------------------------------
+const RELATORIOS = [
+  ["POR_ITEM", "Por item"],
+  ["POR_FORNECEDOR", "Por fornecedor"],
+  ["UM_FORNECEDOR", "Comprando tudo de um"],
+  ["COMPARATIVO", "Comparativo"],
+];
+let REL = null;          // o relatório aberto agora
+
+async function abrirRelatorios(tipo, fornecedor){
+  if (!MAPA) return;
+  els("dlg-titulo").textContent = `Relatórios — ${MAPA.numero}`;
+  els("dlg-corpo").innerHTML = `<div id="rel-msg"></div>
+    <div class="subabas" id="rel-abas"></div>
+    <div id="rel-corpo" class="cartao-dica">carregando…</div>`;
+  els("dlg").showModal();
+  desenharAbasDeRelatorio(tipo);
+  await carregarRelatorio(tipo, fornecedor);
+}
+
+function desenharAbasDeRelatorio(ativo){
+  els("rel-abas").innerHTML = RELATORIOS.map(([chave, rotulo]) =>
+    `<button class="subaba ${chave === ativo ? "ativa" : ""}"
+       data-rel="${chave}">${rotulo}</button>`).join("");
+  document.querySelectorAll("[data-rel]").forEach(b =>
+    b.addEventListener("click", () => abrirRelatorios(b.dataset.rel)));
+}
+
+async function carregarRelatorio(tipo, fornecedor){
+  try {
+    const url = `/erp/api/suprimentos/cotacoes/${MAPA.id}/relatorio?tipo=${tipo}`
+      + (fornecedor ? `&fornecedor=${fornecedor}` : "");
+    const d = await api(url);
+    REL = d.relatorio;
+    desenharRelatorio();
+  } catch(e){ els("rel-corpo").innerHTML = ""; aviso("rel-msg", e.message, "erro"); }
+}
+
+function desenharRelatorio(){
+  const r = REL;
+  // No relatório de um fornecedor só, dá para trocar de fornecedor sem sair
+  // da tela — é comparando "tudo do A" com "tudo do B" que se decide.
+  const escolha = r.escolhas ? `
+    <div class="campo" style="max-width:520px; margin-bottom:10px">
+      <label>Comprando tudo de</label>
+      <select id="rel-forn">${r.escolhas.map(e => `
+        <option value="${e.id}" ${e.id === r.cotacao_fornecedor_id ? "selected" : ""}>
+          ${escapar(e.fornecedor)} — ${e.itens_cotados}/${e.itens_no_mapa} itens ·
+          R$ ${escapar(e.total)}</option>`).join("")}</select></div>` : "";
+
+  const rodape = r.total !== undefined ? `
+    <div class="kpis" style="margin-top:12px">
+      ${r.soma_itens !== undefined ? `<div class="kpi estatico">
+        <div class="kpi-rotulo">Soma dos itens</div>
+        <div class="kpi-valor" style="font-size:17px">${escapar(r.soma_itens)}</div></div>` : ""}
+      <div class="kpi estatico verde"><div class="kpi-rotulo">Total</div>
+        <div class="kpi-valor" style="font-size:17px">${escapar(r.total_br || r.total)}</div></div>
+      ${r.sem_preco ? `<div class="kpi estatico vermelho">
+        <div class="kpi-rotulo">Sem preço nenhum</div>
+        <div class="kpi-valor" style="font-size:17px">${r.sem_preco}</div>
+        <div class="kpi-sub">ninguém cotou</div></div>` : ""}
+      ${r.itens_sem_preco ? `<div class="kpi estatico ambar">
+        <div class="kpi-rotulo">Este não cotou</div>
+        <div class="kpi-valor" style="font-size:17px">${r.itens_sem_preco}</div>
+        <div class="kpi-sub">item(ns) ficariam de fora</div></div>` : ""}
+    </div>` : "";
+
+  const resumo = r.resumo_por_fornecedor && r.resumo_por_fornecedor.length > 1 ? `
+    <div class="cartao-dica" style="margin-top:10px"><b>A compra ficaria assim:</b>
+      ${r.resumo_por_fornecedor.map(x =>
+        `<br>${escapar(x.fornecedor)} — ${x.itens} item(ns) · R$ ${escapar(x.total)}`)
+        .join("")}</div>` : "";
+
+  els("rel-corpo").innerHTML = `
+    ${escolha}
+    <div class="aviso info">${escapar(r.aviso || "")}</div>
+    <div class="tabela-rolagem" style="max-height:46vh; margin-top:10px">
+      <table class="mapa"><thead><tr>${r.colunas.map(c =>
+        `<th class="${c.tipo && c.tipo !== "texto" ? "direita" : ""}"
+          >${escapar(c.rotulo)}</th>`).join("")}</tr></thead>
+        <tbody>${r.linhas.map(l => `<tr>${l.map((v, i) =>
+          `<td class="${r.colunas[i].tipo && r.colunas[i].tipo !== "texto"
+            ? "direita dados" : ""}">${escapar(v)}</td>`).join("")}</tr>`).join("")}
+        </tbody></table>
+    </div>
+    ${resumo}
+    ${rodape}
+    <div style="margin-top:12px; display:flex; gap:6px" id="rel-exportar"></div>`;
+
+  if (r.escolhas) {
+    els("rel-forn").addEventListener("change", ev =>
+      abrirRelatorios("UM_FORNECEDOR", ev.target.value));
+  }
+  botoesDeExportar("rel-exportar", () => ({
+    titulo: r.titulo, subtitulo: r.subtitulo, filtros: r.filtros,
+    colunas: r.colunas, linhas: r.linhas,
+  }));
+}
+
+// O MAPA INTEIRO EM PDF. Deitado quando há muitos fornecedores — em pé, as
+// colunas ficam tão estreitas que não se lê nada. Foi o pedido do dono.
+function exportarMapa(){
+  if (!MAPA) return;
+  const colunas = [{rotulo: "Insumo"}, {rotulo: "Situação"}, {rotulo: "Obra"},
+                   {rotulo: "Qtd", tipo: "quantidade"}, {rotulo: "Un."}]
+    .concat(MAPA.fornecedores.map(c => ({rotulo: c.fornecedor, tipo: "dinheiro"})));
+  // Os números vão FORMATADOS: "14.000" no banco é catorze, e "38.5000" não
+  // se lê em português. O papel é lido por gente.
+  const linhas = MAPA.itens.map(i => [
+    i.especificacao ? `${i.insumo} — ${i.especificacao}` : i.insumo,
+    i.status_rotulo || "", i.obra || "", quantidadeBR(i.quantidade), i.unidade,
+    ...MAPA.fornecedores.map(c => {
+      const cel = i.precos[c.id];
+      return cel ? numero(cel.preco_unitario) : "";
+    })]);
+  linhas.push(["TOTAL (com frete, desconto e acréscimo)", "", "", "", "",
+               ...MAPA.fornecedores.map(c => numero(c.total))]);
+  exportarTela({
+    titulo: `Mapa de cotação ${MAPA.numero}`,
+    subtitulo: MAPA.titulo,
+    filtros: [`${MAPA.itens.length} item(ns) · ${MAPA.fornecedores.length} fornecedor(es)`,
+              "A célula do menor preço está destacada na tela, não no papel."],
+    colunas, linhas, formato: "pdf",
+    paisagem: MAPA.fornecedores.length > 2,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Disparar a cotação
+//
+// O comprador precisa de duas certezas: que saiu, e para quem. Por isso o
+// modal mostra o texto exato ANTES de mandar, e a coluna de cada fornecedor
+// passa a dizer "enviada em tal dia" ou o motivo de não ter saído.
+//
+// O que o sistema NÃO promete está escrito na tela com todas as letras:
+// registrar que o servidor aceitou não é o mesmo que o fornecedor ter lido.
+// ---------------------------------------------------------------------------
+let ENVIOS = {};          // coluna_id → último envio
+
+function situacaoDoEnvio(colunaId){
+  const e = ENVIOS[colunaId];
+  if (!e) return `<small style="color:var(--tinta-suave)">não enviada</small>`;
+  if (e.situacao === "ENVIADO")
+    return `<small style="color:var(--verde)">enviada ${dataBR((e.quando||"").slice(0,10))}</small>`;
+  return `<small style="color:var(--vermelho)" title="${(e.erro||"").replace(/"/g,"&quot;")}"
+            >não saiu</small>`;
+}
+
+async function carregarEnvios(){
+  ENVIOS = {};
+  try {
+    const d = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/envios`);
+    // o histórico vem do mais novo para o mais velho: o primeiro de cada
+    // fornecedor é o último envio para ele
+    d.envios.forEach(e => {
+      if (e.destinatario_tipo !== "cotacao_fornecedor") return;
+      if (!(e.destinatario_id in ENVIOS)) ENVIOS[e.destinatario_id] = e;
+    });
+  } catch(e){ /* sem histórico não impede o mapa de abrir */ }
+}
+
+async function abrirDisparo(){
+  let p;
+  try {
+    p = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/envio`);
+  } catch(e){ return aviso("mensagem", e.message, "erro"); }
+
+  const marcados = new Set(p.destinatarios.filter(d => d.pode).map(d => d.coluna_id));
+  els("dlg-titulo").textContent = `Disparar ${MAPA.numero} — ${MAPA.titulo}`;
+  els("dlg-corpo").innerHTML = `
+    <div id="disp-msg"></div>
+
+    ${p.precisa_escolher_empresa ? `<div class="aviso info">
+      Esta cotação tem itens de obras de <b>empresas diferentes</b>. Escolha por
+      qual delas ela sai — o fornecedor responde para quem mandou.</div>` : ""}
+    ${p.obras_sem_empresa.length ? `<div class="aviso info">
+      Obras sem empresa definida: <b>${p.obras_sem_empresa.join(", ")}</b>.
+      Acerte em Administração › Empresas.</div>` : ""}
+    ${p.conta_pronta ? "" : `<div class="aviso erro">${p.o_que_falta}</div>`}
+
+    <div class="form-grade">
+      <div class="campo" style="grid-column:span 2"><label>Sai pela empresa</label>
+        <select id="disp-empresa">
+          ${(p.empresas_possiveis.length ? p.empresas_possiveis
+             : (p.empresa ? [p.empresa] : [])).map(e =>
+            `<option value="${e.id}" ${p.empresa && e.id === p.empresa.id ? "selected" : ""}
+              >${e.razao_social} · ${e.cnpj}</option>`).join("")}
+        </select>
+        ${p.empresa ? `<div class="dica">Quem recebe vê: ${escapar(p.empresa.remetente)}</div>` : ""}</div>
+      <div class="campo"><label>Pedir retorno até</label>
+        <input id="disp-prazo" type="date"></div>
+      <div class="campo" style="grid-column:span 3"><label>Observação (entra no e-mail)</label>
+        <input id="disp-obs" placeholder="ex.: entrega na obra, das 8h às 17h"></div>
+    </div>
+
+    <div class="cartao" style="margin-top:12px">
+      <div class="cartao-cab"><h3>Quem recebe</h3>
+        <small>cada um recebe só a lista de itens, nunca o mapa</small></div>
+      <div id="disp-destinos"></div>
+    </div>
+
+    <div class="cartao">
+      <div class="cartao-cab"><h3>O que vai ser mandado</h3>
+        <small>é este texto, exatamente</small></div>
+      <div class="dados" style="white-space:pre-wrap; font-size:12.5px;
+           max-height:240px; overflow:auto; background:#F7F9FC; padding:10px;
+           border-radius:8px">${(p.corpo || "").replace(/</g, "&lt;")}</div>
+    </div>
+
+    <div class="cartao-dica">${p.aviso}</div>
+
+    <div style="margin-top:14px; display:flex; gap:8px">
+      <button class="btn" id="disp-ok" ${p.conta_pronta ? "" : "disabled"}>Disparar agora</button>
+      <button class="btn secundario" onclick="els('dlg').close()">Cancelar</button>
+    </div>`;
+
+  const pintar = () => {
+    els("disp-destinos").innerHTML = p.destinatarios.map(d => `
+      <label class="opcao">
+        <input type="checkbox" data-dest="${d.coluna_id}"
+          ${marcados.has(d.coluna_id) ? "checked" : ""} ${d.pode ? "" : "disabled"}>
+        <span class="rotulo">${d.fornecedor}
+          <small style="display:block; color:var(--tinta-suave)">${
+            d.pode ? d.para.join(", ") : d.motivo}</small>
+          ${d.ultimo_envio ? `<small style="display:block; color:${
+            d.ultimo_envio.situacao === "ENVIADO" ? "var(--verde)" : "var(--vermelho)"}">
+            último envio: ${d.ultimo_envio.situacao === "ENVIADO"
+              ? `saiu em ${dataBR((d.ultimo_envio.quando||"").slice(0,10))}`
+              : d.ultimo_envio.erro}</small>` : ""}
+        </span></label>`).join("")
+      || `<div class="cartao-dica">nenhum fornecedor no mapa</div>`;
+    document.querySelectorAll("[data-dest]").forEach(c =>
+      c.addEventListener("change", ev => {
+        const id = +ev.target.dataset.dest;
+        ev.target.checked ? marcados.add(id) : marcados.delete(id);
+      }));
+  };
+  pintar();
+
+  els("disp-ok").addEventListener("click", async () => {
+    if (!marcados.size)
+      return aviso("disp-msg", "Marque ao menos um fornecedor.", "erro");
+    els("disp-ok").disabled = true;
+    aviso("disp-msg", "Mandando…", "info");
+    try {
+      const r = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/envio`, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({empresa_id: +els("disp-empresa").value,
+                              colunas: [...marcados],
+                              prazo: els("disp-prazo").value,
+                              observacao: els("disp-obs").value})});
+      els("dlg").close();
+      const tipo = r.falhas.length || r.sem_endereco.length ? "alerta" : "ok";
+      let recado = `${r.resumo} Saiu de ${r.remetente}.`;
+      if (r.falhas.length) recado += "<br><b>Não saiu para:</b> " +
+        r.falhas.map(f => `${f.fornecedor} — ${f.motivo}`).join("; ");
+      if (r.sem_endereco.length) recado += "<br><b>Sem e-mail no cadastro:</b> " +
+        r.sem_endereco.join(", ");
+      aviso("mensagem", recado, tipo);
+      await carregarEnvios();
+      desenharMapa();
+    } catch(e){
+      els("disp-ok").disabled = false;
+      aviso("disp-msg", e.message, "erro");
+    }
+  });
+
+  els("dlg").showModal();
+}
+
+// A proposta chega como PDF, foto do WhatsApp ou texto colado. A IA casa o que
+// veio com os itens QUE JÁ ESTÃO NO MAPA — problema bem mais fácil do que
+// adivinhar material do zero. O que ela não casar volta escrito na tela.
+async function lerProposta(colunaId){
+  const r = await perguntar({
+    titulo: "Ler proposta do fornecedor",
+    aviso: "Anexe o PDF/foto ou cole o texto. A IA preenche a coluna para você " +
+           "conferir — nada é gravado sem você mandar salvar. O arquivo fica " +
+           "guardado no mapa como prova.",
+    campos: [{nome: "texto", rotulo: "Cole o texto da proposta", tipo: "textarea",
+              linhas: 8, exemplo: "Vergalhão CA50 12.5mm — 100 M — R$ 38,50/un"}],
+    textoOk: "Ler"});
+  if (!r || !r.texto.trim()) return;
+  aviso("mensagem", "Lendo a proposta…", "info");
+  try {
+    const d = await api(`/erp/api/suprimentos/cotacoes/fornecedores/${colunaId}/proposta`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({texto: r.texto})});
+    aplicarProposta(colunaId, d.leitura);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function aplicarProposta(colunaId, leitura){
+  leitura.sugestoes.forEach(sug => {
+    const campo = document.querySelector(
+      `.cel[data-col="${colunaId}"][data-lin="${sug.cotacao_item_id}"]`);
+    if (campo) {
+      campo.value = sug.preco;
+      campo.style.outline = sug.confianca === "ALTA"
+        ? "2px solid var(--verde)" : "2px solid var(--ambar)";
+      campo.title = `lido da proposta: ${sug.descricao_lida}` +
+        (sug.confianca === "MEDIA" ? " — confira, a correspondência não é exata" : "");
+    }
+  });
+  const partes = [leitura.resumo];
+  if (leitura.nao_casados.length)
+    partes.push("Não casou com o mapa: " +
+      leitura.nao_casados.map(x => x.descricao).join(" · "));
+  if (leitura.condicoes_lidas)
+    partes.push("Condições lidas: " + leitura.condicoes_lidas);
+  partes.push("Confira e clique em Salvar preços.");
+  aviso("mensagem", partes.join(" "),
+        leitura.nao_casados.length ? "alerta" : "ok");
+}
+
+async function abrirMapa(id){
+  if (!id) { MAPA = null; desenharMapa(); desenharLista(); return; }
+  try {
+    const d = await api(`/erp/api/suprimentos/cotacoes/${id}/mapa`);
+    MAPA = d.mapa;
+    await carregarEnvios();
+    els("resumo-cotacao").innerHTML =
+      `<b>${MAPA.numero}</b> · ${MAPA.titulo} · ${MAPA.fornecedores.length} fornecedor(es)`;
+    desenharMapa();
+    desenharLista();                 // realça na barra qual mapa está aberto
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function salvarPrecos(){
+  const precos = [...document.querySelectorAll(".cel")]
+    .filter(i => i.value.trim())
+    .map(i => ({cotacao_fornecedor_id: +i.dataset.col, cotacao_item_id: +i.dataset.lin,
+                preco: i.value.trim()}));
+  if (!precos.length) { aviso("mensagem", "Nada para salvar.", "erro"); return; }
+  try {
+    const d = await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/precos`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify({precos})});
+    aviso("mensagem", `${d.gravados} preço(s) salvos.` +
+      (d.recusados.length ? ` ${d.recusados.length} recusado(s): ${
+        d.recusados.map(r => r.motivo).join(" · ")}` : ""),
+      d.recusados.length ? "alerta" : "ok");
+    abrirMapa(MAPA.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+async function abrirFornecedor(){
+  const cadastros = await api("/erp/api/suprimentos/cadastros");
+  const r = await perguntar({
+    titulo: "Acrescentar fornecedor ao mapa",
+    aviso: "Forma de pagamento, frete e desconto entram no total — é o que " +
+           "permite comparar o custo real, e não só o preço unitário.",
+    campos: [
+      {nome: "fornecedor_id", rotulo: "Fornecedor", tipo: "select", obrigatorio: true,
+       opcoes: (cadastros.fornecedores || []).map(f => ({valor: String(f.id), rotulo: f.nome}))},
+      {nome: "condicao_pagamento_id", rotulo: "Condição de pagamento", tipo: "select",
+       opcoes: [{valor: "", rotulo: "—"}].concat(
+         BASE.condicoes.map(c => ({valor: String(c.id), rotulo: c.nome})))},
+      {nome: "entrega", rotulo: "Entrega", tipo: "select",
+       opcoes: [{valor: "", rotulo: "—"}, {valor: "ENTREGA", rotulo: "Fornecedor entrega"},
+                {valor: "COLETA", rotulo: "Nós coletamos"}]},
+      {nome: "frete", rotulo: "Frete (R$)", largura: 1},
+      {nome: "desconto", rotulo: "Desconto (R$)", largura: 1},
+      {nome: "respondido_por", rotulo: "Quem respondeu", largura: 1},
+    ], textoOk: "Acrescentar"});
+  if (!r) return;
+  try {
+    await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/fornecedores`,
+      {method: "POST", headers: {"Content-Type": "application/json"},
+       body: JSON.stringify(r)});
+    abrirMapa(MAPA.id);
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// Puxa, para cada linha vazia, o último preço conhecido daquele insumo. O que
+// entra assim fica marcado como HERDADO no mapa — com a cotação de origem.
+async function herdarPrecos(){
+  const coluna = MAPA.fornecedores[0];
+  if (!coluna) return;
+  const precos = [];
+  for (const linha of MAPA.itens) {
+    if (linha.precos[coluna.id]) continue;
+    if (!linha.insumo_id) continue;
+    const d = await api(`/erp/api/suprimentos/precos?insumo_id=${
+      linha.insumo_id}&dias=365`).catch(() => null);
+    const r = d?.historico?.registros?.[0];
+    if (r) precos.push({cotacao_fornecedor_id: coluna.id, cotacao_item_id: linha.id,
+                        preco: r.preco_unitario, origem: "HERDADO",
+                        herdado_de: r.cotacao_id,
+                        observacao: `preço de ${r.data}`});
+  }
+  if (!precos.length) { aviso("mensagem", "Não há preço anterior para estes itens.", "alerta"); return; }
+  await api(`/erp/api/suprimentos/cotacoes/${MAPA.id}/precos`,
+    {method: "POST", headers: {"Content-Type": "application/json"},
+     body: JSON.stringify({precos})});
+  aviso("mensagem", `${precos.length} preço(s) herdados — confira a data antes de fechar.`, "alerta");
+  abrirMapa(MAPA.id);
+}
+
+async function novaCotacao(){
+  const d = await api("/erp/api/suprimentos/solicitacoes?status=SOLICITACAO");
+  if (!d.itens.length) { aviso("mensagem", "Não há itens aguardando cotação.", "alerta"); return; }
+  els("dlg-titulo").textContent = "Nova cotação";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="campo"><label>Título da cotação *</label>
+      <input id="nc-titulo" placeholder="ex.: armadura da fundação — setembro">
+      <div class="dica">É por ele que você acha esta cotação depois.</div></div>
+    <div class="campo" style="margin-top:10px"><label>Itens a cotar</label>
+      <div class="filtro-opcoes" style="max-height:280px; border:1px solid var(--borda);
+           border-radius:8px; padding:6px">
+        ${d.itens.map(i => `<label class="opcao"><input type="checkbox" class="nc-item"
+          value="${i.id}"><span class="rotulo">${i.solicitacao} · ${i.insumo}
+          ${i.especificacao ? `(${i.especificacao})` : ""} — ${quantidadeBR(i.quantidade)} ${i.unidade}
+          · ${i.obra}</span></label>`).join("")}
+      </div></div>
+    <div style="margin-top:14px"><button class="btn" id="nc-salvar">Abrir cotação</button></div>`;
+  els("nc-salvar").addEventListener("click", async () => {
+    const itens = [...document.querySelectorAll(".nc-item:checked")].map(i => +i.value);
+    try {
+      const r = await api("/erp/api/suprimentos/cotacoes", {method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({titulo: els("nc-titulo").value, itens})});
+      els("dlg").close();
+      aviso("mensagem", `Cotação ${r.numero} aberta.`, "ok");
+      await carregarListas();
+      abrirMapa(r.id);
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+}
+
+els("btn-nova-cot").addEventListener("click", () => novaCotacao().catch(
+  e => aviso("mensagem", e.message, "erro")));
+els("f-busca").addEventListener("input", desenharLista);
+els("btn-limpar").addEventListener("click", () => {
+  STATUS.clear(); els("f-busca").value = ""; desenharLista();
+});
+
+carregarListas().then(() => {
+  // A cotação nasce na tela de Solicitações e manda para cá pelo endereço:
+  // quem acabou de gerar o mapa quer VER o mapa, não procurá-lo numa lista.
+  const pedida = new URLSearchParams(location.search).get("cotacao");
+  if (pedida) abrirMapa(+pedida);
+}).catch(e => aviso("mensagem", e.message, "erro"));
+</script>
+{% endblock %}

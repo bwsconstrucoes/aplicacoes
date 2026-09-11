@@ -9,6 +9,9 @@ backlog do ERP, `app/apps/erp/ROTEIRO.md`.
 Quem pede o trabalho é o dono da BWS e cliente do ERP — **não é programador**.
 Isso muda a resposta, não o cuidado com o código.
 
+- **Trate por VOCÊ, nunca por "senhor".** Ele pediu isso com todas as letras em
+  07/09/2026: "não gostei não, fala você mesmo". É conversa entre duas pessoas
+  que trabalham juntas, não atendimento.
 - **Português simples, sem jargão.** Termo técnico inevitável vem com uma linha
   de explicação junto.
 - **Diga o efeito, não a implementação.** O que muda para quem usa o sistema, o
@@ -106,8 +109,9 @@ def load_spsbd_values(sheet_id: str) -> list[list[str]]:
 
 ## Gunicorn
 
-⚠️ **Há uma divergência a confirmar.** O `Procfile` versionado está com
-**1 worker e 4 threads**:
+✔ **Divergência RESOLVIDA em 10/09/2026.** O dono mostrou o campo *Start
+Command* das Settings do Render, e ele é **idêntico**, palavra por palavra, ao
+`Procfile` versionado:
 
 ```
 web: gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 120 \
@@ -115,15 +119,24 @@ web: gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 12
      --max-requests 150 --max-requests-jitter 40 --log-level info
 ```
 
-As `4` threads vieram do commit `352782d` ("reduz threads e adiciona
-max-requests p/ conter OOM"): a instância tem 2 GB e, com 8 threads, morria de
-OOM em julho de 2026 (`CONTEXTO.md` §9). Há indicação de que a produção esteja
-rodando com **8 threads** — o que é possível porque **o campo Start Command nas
-Settings do Render sobrescreve o Procfile**.
+Ou seja: a produção roda com **1 worker e 4 threads**, e não com 8 — a suspeita
+anotada aqui desde julho era infundada. As `4` threads vieram do commit
+`352782d`, que conteve o OOM de julho de 2026 (`CONTEXTO.md` §9).
 
-Antes de mexer nesse comando: conferir qual dos dois vale hoje e alinhar os
-dois lugares. Se 8 for mesmo o valor em produção, vigiar memória — foi essa a
-configuração associada ao OOM.
+**A armadilha continua de pé, e é por isso que a nota fica:** o Start Command
+**sobrescreve o Procfile**. Como hoje os dois são iguais, mexer só no Procfile
+não teria efeito nenhum em produção, e ninguém perceberia. Ao mudar o comando,
+mudar nos DOIS lugares — ou esvaziar o Start Command, para valer o Procfile,
+que é o versionado.
+
+**O que as métricas do Render mostraram** (48 h, 08 a 10/09/2026): memória
+entre **15% e 45%** dos 2 GB, sem chegar perto do limite nenhuma vez, e CPU
+quase sempre abaixo de 5%. As causas de verdade do OOM foram corrigidas na
+origem em julho (`pdf_processor` e `baixabradesco`, §9). Com essa folga, o
+`--max-requests 150` — que com `--workers 1` faz TODA requisição esperar a
+partida do serviço a cada ~150 acessos — tem espaço para ser afrouxado. É
+decisão do dono, e o jeito seguro é subir o valor (1000, por exemplo) e vigiar
+a memória, não remover a rede de proteção.
 
 - `--workers 1` é obrigatório e não está em discussão: há estado em memória por
   processo (sessão do `chatbot`), que quebra com mais de um worker.
@@ -206,6 +219,19 @@ As duas coisas são diferentes: a primeira responde "este perfil pode esta
 ação?"; a segunda, "pode NESTE registro?". Ter alçada para lançar não autoriza
 a mexer no título da obra de outro.
 
+**A ação declarada tem de decidir sozinha quem entra.** Rota que declara uma
+ação e confere outra por dentro faz a declaração mentir — e a homologação com
+banco de verdade acusa isso. Quando duas ações diferentes precisam abrir a
+mesma tela, crie uma ação própria e registre a implicação em `ACOES_IMPLICADAS`
+(ex.: quem tem `comprar` ou `autorizar_pedido` ganha `ver_pedidos_compra`).
+
+**A alçada do perfil pode ser ajustada por pessoa** (migração 032): a tabela
+`usuario_permissoes` guarda exceções marcadas no cadastro — concede o que o
+cargo não dá, ou tira o que ele daria. Ao criar ação nova, dê a ela um nome em
+português em `ACAO_ROTULOS`, senão ela aparece na tela de cadastro com o nome
+técnico. A decisão vive em `pode()` e `decidir()`, que têm de concordar sempre —
+há teste percorrendo perfil × ação × marcação.
+
 **Fora do escopo responde 404 "não encontrado", nunca 403 "sem permissão".**
 Dizer "sem permissão" para um número que existe confirma a existência dele, e
 varrer os números mapearia o sistema sem abrir um registro. Levante
@@ -215,6 +241,32 @@ tiver um `except Exception`, reerga a exceção antes dele.
 Nunca escreva escopo novo à mão: `pode_ver_titulo` passa pelo mesmo
 `aplicar_escopo` da listagem, e é isso que garante que detalhe e lista não
 divirjam. Se a regra de escopo mudar, muda num lugar só.
+
+## Funcionalidade nova traz as perguntas que ela responde
+
+O ERP vai ganhar um assistente que responde perguntas em português. O desenho
+dele depende de uma coisa: pergunta PREVISTA é respondida por código escrito e
+testado — exata e sem custo de IA; pergunta imprevista cai numa consulta
+inventada na hora, que acerta quase sempre e **erra em silêncio** no resto. Um
+número errado com cara de certo é pior que resposta nenhuma, e o dono não tem
+como conferir.
+
+Por isso, **desde 10/09/2026, funcionalidade nova só está pronta quando as
+perguntas que ela torna possíveis entram em `app/apps/erp/PERGUNTAS.md`** —
+pedido do dono, com todas as letras: *"a cada nova funcionalidade que nós
+temos, você já gera uma lista de possíveis perguntas (…) pra que a gente
+minimize a possibilidade de alguma falha."*
+
+Ao acrescentar perguntas ali:
+
+- Escreva **como o dono perguntaria**, não como o banco guarda.
+- Marque a pergunta que depende de uma palavra ambígua ("a pagar", "este mês",
+  "custo da obra") — a lista dessas palavras está no topo do arquivo e é a
+  parte que mais evita número errado.
+- Marque a pergunta cuja resposta **muda conforme quem pergunta** (escopo por
+  obra ou por autoria).
+- Registre também a pergunta que o sistema **ainda não consegue** responder, e
+  o que falta. O assistente deve dizer "não sei, falta X" — nunca chutar.
 
 ## Padrões que já existem — reusar, não recriar
 

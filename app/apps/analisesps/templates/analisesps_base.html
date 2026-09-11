@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block titulo %}Análise de SPs — BWS{% endblock %}</title>
-<link rel="stylesheet" href="{{ url_for('analisesps.static', filename='analisesps.css') }}">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="{{ url_for('analisesps.static', filename='analisesps.css', v=versao_estatica) }}">
 </head>
 <body>
 <header class="topo">
@@ -45,8 +46,18 @@
         {# A hora da última sincronização, à vista. "Está atualizando?" tem de
            ser respondível de relance, sem abrir Configurações. #}
         {% if base is defined and base and base.ultima %}
+          {# O BOTÃO DE ATUALIZAR AO LADO DA HORA. Antes era preciso ir a
+             Configurações só para apertá-lo — e quem olha a hora da base e
+             acha que está velha quer atualizar ALI, não noutra tela. É a
+             mesma "Atualização do dia" de lá; só mudou de lugar. #}
           <br><small title="A tela busca atualizações a cada 90 segundos">
-            base de {{ base.ultima|data_br }}</small>
+            base de {{ base.ultima|momento_br }}</small>
+          {% if pode_operar %}
+            <button class="btn-atualizar" id="btn-atualizar-base" type="button"
+                    data-url="{{ url_for('analisesps.sincronizar') }}"
+                    title="Atualização do dia — traz o que mudou na planilha">
+              Atualizar</button>
+          {% endif %}
         {% endif %}
       </div>
     {% endif %}
@@ -78,7 +89,7 @@
    duas que têm tabela. Cada pedaço dele confere se o seu elemento existe
    antes de fazer qualquer coisa, então carregar em tela que não usa não
    custa nada. #}
-<script src="{{ url_for('analisesps.static', filename='analisesps.js') }}"></script>
+<script src="{{ url_for('analisesps.static', filename='analisesps.js', v=versao_estatica) }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
