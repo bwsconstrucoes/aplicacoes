@@ -332,6 +332,42 @@ nova — e não entendeu: ele repetiu a anterior.
 Quando a frase curta empata entre duas perguntas, ele continua perguntando de
 volta em vez de escolher.
 
+## 3e. O que está ESCRITO nos documentos
+
+Desde 11/09/2026 o assistente também responde sobre o que está nos documentos
+arquivados — contrato, edital, norma —, e não só sobre os números do banco.
+
+- ✅ **O que os documentos dizem sobre um assunto?** — "o que o contrato diz
+  sobre reajuste", "qual o prazo de garantia", "procure multa por atraso" 🔒
+
+**Esta é a única família de perguntas que não faz conta nenhuma.** A resposta é
+um pedaço de texto que já estava escrito, e o que o sistema garante não é o
+número: é **de qual documento saiu e em que trecho**. As « » marcam onde as
+suas palavras aparecem.
+
+### Três coisas que valem a pena você saber
+
+**1. Só aparece o que você já podia ver.** A busca passa pelo mesmo recorte da
+tela do Arquivo — faixa de sigilo e obra designada. Quem é preso a uma obra não
+lê o contrato da outra; quem não alcança documento de pessoal não o encontra
+aqui. Decisão sua, com todas as letras: *"quem vê o quê tem que estar associado
+às suas permissões"*.
+
+**2. A busca é por PALAVRA, não por sentido.** Ela entende família de palavra —
+"reajuste" acha "reajustar" e "reajustados" — e ignora as palavras de ligação.
+Mas **não** acha "correção monetária" quando você procura "reajuste". Quando
+não achar, são duas causas bem diferentes, e a resposta diz as duas: ou o
+documento não está no Arquivo, ou ele usa outras palavras.
+
+O passo seguinte, se isso incomodar, é o índice por significado — que acha
+mesmo com outras palavras e custa por documento. Decisão sua: *"vamos começar
+do simples, depois a gente decide se parte pro caro"*.
+
+**3. Quando aparecer uma frase de resumo em cima, ela foi escrita pela IA
+lendo SÓ os trechos de baixo.** Ela não consulta o banco e não lembra de nada
+por fora. Os trechos continuam ali, e são eles a resposta — a frase é só a
+leitura em voz alta. Sem chave de IA, a frase some e os trechos ficam.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

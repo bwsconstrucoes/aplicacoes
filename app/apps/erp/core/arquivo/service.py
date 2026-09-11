@@ -44,6 +44,32 @@ VE_PESSOAL = (P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL)
 SIGILOS_TODOS = ("ABERTO", "RESTRITO", "PESSOAL")
 
 
+def aplicar_escopo(stmt, s: Session, usuario: Optional[Usuario]):
+    """O recorte do acervo para esta pessoa — em UM lugar só.
+
+    Duas travas, e a mais restrita ganha:
+
+      · a FAIXA DE SIGILO do tipo de documento (aberto, restrito, pessoal);
+      · a OBRA, para quem é preso a obras designadas.
+
+    Existe como função desde 11/09/2026 porque a busca do assistente precisou
+    do mesmo recorte da tela. Duas cópias da regra divergem no dia em que
+    alguém corrige uma — e aqui divergir quer dizer alguém ver documento que
+    não devia. Decisão do dono, com todas as letras: *"quem vê o quê tem que
+    estar associado às suas permissões"*.
+
+    A consulta precisa já ter feito o `join` com `DocumentoTipo`.
+    """
+    stmt = stmt.where(DocumentoTipo.sigilo.in_(sigilos_visiveis(usuario)))
+    if usuario is not None and usuario.perfil in (P.SUPERVISOR_OBRA,
+                                                  P.ADMINISTRATIVO_OBRA):
+        from app.apps.erp.core.auth.permissoes import obras_do_usuario
+        minhas = obras_do_usuario(s, usuario)
+        stmt = stmt.where(or_(Documento.obra_id.is_(None),
+                              Documento.obra_id.in_(minhas or [-1])))
+    return stmt
+
+
 def sigilos_visiveis(usuario: Optional[Usuario]) -> tuple[str, ...]:
     if usuario is None:
         return ("ABERTO",)
@@ -231,8 +257,8 @@ def listar(s: Session, *, usuario: Optional[Usuario] = None,
     hoje = date.today()
     stmt = (select(Documento).join(DocumentoTipo,
                                    Documento.tipo_codigo == DocumentoTipo.codigo)
-            .where(DocumentoTipo.sigilo.in_(sigilos_visiveis(usuario)))
             .order_by(Documento.id.desc()).limit(limite))
+    stmt = aplicar_escopo(stmt, s, usuario)
     if tipo:
         stmt = stmt.where(Documento.tipo_codigo == tipo)
     if grupo:
@@ -258,14 +284,6 @@ def listar(s: Session, *, usuario: Optional[Usuario] = None,
                               Documento.referencia.ilike(alvo),
                               Documento.resumo.ilike(alvo),
                               Documento.texto.ilike(alvo)))
-
-    # O escopo por obra do usuário continua valendo por cima de tudo.
-    if usuario is not None and usuario.perfil in (P.SUPERVISOR_OBRA,
-                                                  P.ADMINISTRATIVO_OBRA):
-        from app.apps.erp.core.auth.permissoes import obras_do_usuario
-        minhas = obras_do_usuario(s, usuario)
-        stmt = stmt.where(or_(Documento.obra_id.is_(None),
-                              Documento.obra_id.in_(minhas or [-1])))
 
     linhas = [ler(s, d, hoje) for d in s.scalars(stmt).all()]
     if situacao:

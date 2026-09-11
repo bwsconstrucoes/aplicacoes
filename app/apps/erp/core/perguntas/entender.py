@@ -119,6 +119,19 @@ ANUNCIAM = {
     "obra": ("obra", "canteiro"),
     "categoria": ("categoria",),
     "insumo": ("insumo", "material", "preco de", "preço de"),
+    "assunto": ("sobre", "a respeito de", "respeito de", "procure", "procura",
+                "procurar", "fala de", "falam de"),
+}
+
+# Palavras que aparecem na PERGUNTA e não no assunto. Sem tirá-las, "o que o
+# contrato diz sobre reajuste" procuraria por "contrato" junto — e contrato é
+# o que TODOS os contratos são, então tudo empataria e o "reajuste", que é o
+# que importa, se perderia no meio.
+MOLDURA = {
+    "documento", "documentos", "contrato", "contratos", "arquivo", "acervo",
+    "papel", "papeis", "diz", "dizem", "fala", "falam", "consta", "escrito",
+    "texto", "clausula", "clausulas", "sobre", "respeito", "procure",
+    "procura", "procurar", "acha", "achar", "busca", "buscar", "ver", "saber",
 }
 
 
@@ -157,9 +170,35 @@ def extrair_parametros(texto: str, pergunta: dict[str, Any]) -> dict[str, str]:
                 if len(palavras_depois) >= 3:
                     break
             valor = " ".join(palavras_depois).strip()
+            # Num parâmetro que pode valer a frase toda, as palavras da
+            # moldura também entram pelo caminho anunciado: "procure X nos
+            # DOCUMENTOS" traria "documentos" junto, e aí a busca procuraria
+            # por uma palavra que está em todo documento.
+            if parametro.get("a_frase_toda"):
+                valor = " ".join(x for x in valor.split()
+                                 if x not in MOLDURA and x not in VAZIAS).strip()
             if valor and valor not in {"tal", "x"}:
                 achados[nome] = valor
             break
+
+    # UM PARÂMETRO PODE VALER A FRASE INTEIRA, quando a pergunta declara isso.
+    #
+    # É o caso da busca nos documentos: ninguém escreve "procure o ASSUNTO
+    # reajuste" — escreve "o que o contrato diz sobre reajuste", ou só "prazo
+    # de garantia". Aí o assunto não é uma palavra anunciada, é o que sobra da
+    # frase depois de tirar a moldura da pergunta.
+    #
+    # Vale só onde está DECLARADO no catálogo (`a_frase_toda`), e só quando
+    # nada foi achado pelo caminho normal. Aplicar isso a todo parâmetro faria
+    # qualquer pergunta virar busca por si mesma.
+    for parametro in pergunta.get("parametros") or []:
+        nome = parametro.get("nome") or ""
+        if not parametro.get("a_frase_toda") or achados.get(nome):
+            continue
+        sobrou = [p for p in re.findall(r"[a-z0-9\-]+", cru)
+                  if len(p) > 2 and p not in VAZIAS and p not in MOLDURA]
+        if sobrou:
+            achados[nome] = " ".join(sobrou[:8])
     return achados
 
 

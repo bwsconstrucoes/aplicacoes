@@ -288,35 +288,38 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       A tela cheia continua em `/erp/perguntar`, alcançada pelo ⤢, para
       resposta com tabela grande.
 
-- [ ] **3c. A DOCUMENTAÇÃO DA EMPRESA ORIENTANDO O ASSISTENTE** — pedido do
-      dono em 11/09/2026: *"atrelar depois documentação da empresa para
-      orientar o assistente/agente… temos que pensar grande"*.
-      **O que é:** hoje o assistente responde sobre o que está no BANCO
-      (números). Isto acrescenta responder sobre o que está nos DOCUMENTOS da
-      empresa — contrato, edital, procedimento interno, norma: *"o que o
-      contrato da Creche diz sobre reajuste?"*, *"qual o prazo de garantia
-      combinado?"*.
-      **Como se faz isso lá fora** (o nome é RAG): o documento é quebrado em
-      pedaços, cada pedaço vira um índice, a pergunta busca os pedaços que
-      falam daquilo, e **só esses pedaços** vão para a IA responder — com a
-      citação de onde saiu. Dois terços das grandes empresas já rodam algo
-      assim em produção; o ganho é que a resposta sai com fonte, e se atualiza
-      trocando o documento, sem retreinar nada.
-      ⚠️ **As três decisões que precisam ser tomadas ANTES de construir:**
-      1. **Quem vê o quê.** O acervo tem contrato e documento de pessoal. A
-         busca TEM de respeitar o mesmo escopo das telas — senão o assistente
-         vira a porta dos fundos do controle de acesso que já existe.
-      2. **Onde fica o índice.** Postgres já tem busca de texto embutida e
-         resolve bem documento em português; índice por significado (vetor)
-         responde melhor pergunta feita com outras palavras, e custa mais.
-         Começar pelo primeiro e medir.
-      3. **Resposta com citação, sempre.** Sem o trecho do documento ao lado,
-         é a IA falando — e aí vale a mesma regra de hoje: só se pode
-         confiar no que dá para conferir na fonte.
-      **Base que já existe e não precisa ser refeita:** o Arquivo já guarda os
-      documentos, já extrai o texto deles e já grava esse texto (é o que
-      permite buscar DENTRO do documento hoje). O que falta é o índice, a
-      busca e a resposta com citação.
+- [x] **3c. A DOCUMENTAÇÃO DA EMPRESA ORIENTANDO O ASSISTENTE** — PRIMEIRA
+      VOLTA FEITA em 11/09/2026, com as três decisões tomadas pelo dono.
+      O assistente passa a responder sobre o que está ESCRITO nos documentos
+      arquivados, sempre com o trecho e o documento de onde saiu.
+      · **Escopo:** o mesmo recorte da tela do Arquivo (faixa de sigilo + obra
+        designada), extraído para uma função só (`aplicar_escopo`) que as duas
+        usam — decisão do dono: *"quem vê o quê tem que estar associado às
+        suas permissões"*. Testado com banco de verdade, inclusive o caso do
+        documento de pessoal que fala do assunto e não pode aparecer.
+      · **Índice:** busca de texto do Postgres, com dicionário de português
+        (migração 059, coluna gerada pelo próprio banco). Decisão do dono:
+        *"começar do simples, depois a gente decide se parte pro caro"*.
+      · **Citação:** o trecho vem sempre, com as palavras marcadas. A frase de
+        resumo da IA é acréscimo e lê SÓ os trechos achados.
+      ⚠️ **O limite, escrito onde a pessoa lê:** acha por palavra, não por
+      sentido — "reajuste" acha "reajustar", não acha "correção monetária". O
+      índice por significado é o passo seguinte, e a hora de comprá-lo é quando
+      a lista de perguntas sem resposta mostrar que faz falta.
+      **Falta ainda:** o dono arquivar os contratos de verdade no Arquivo. Sem
+      documento arquivado, não há o que procurar.
+
+- [ ] **3c-2. O ÍNDICE POR SIGNIFICADO** — o passo seguinte da busca nos
+      documentos, e a hora de fazê-lo é quando a lista de perguntas sem
+      resposta mostrar que faz falta. Decisão do dono em 11/09/2026: *"vamos
+      começar do simples, depois a gente decide se parte pro caro"*.
+      **O que muda:** a busca de hoje acha pela PALAVRA ("reajuste" acha
+      "reajustar"); o índice por significado acha também quando a pergunta usa
+      outras palavras ("correção monetária", "quando o preço sobe"). Custa por
+      documento indexado, e reindexar a cada documento novo.
+      **O que NÃO muda, e é o que segura a qualidade:** o escopo (mesmo
+      `aplicar_escopo`), a citação obrigatória, e a IA lendo só os trechos
+      achados. Só a forma de escolher os trechos é que troca.
 
 - [ ] **4. As AÇÕES pelo assistente** (cadastrar insumo, lançar título) —
       sempre **preparar e confirmar**: o assistente preenche e mostra, a pessoa

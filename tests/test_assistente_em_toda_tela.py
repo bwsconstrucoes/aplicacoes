@@ -85,7 +85,7 @@ def test_nao_inventou_rota_propria_que_responde_tudo():
         "/erp/api/perguntar/entender", "/erp/api/perguntar/ouvir",
         "/erp/api/perguntar/documento", "/erp/api/perguntar/financeiro",
         "/erp/api/perguntar/contratos", "/erp/api/perguntar/suprimentos",
-        "/erp/api/perguntar/obras",
+        "/erp/api/perguntar/obras", "/erp/api/perguntar/documentos",
     }
     assert set(endereco) <= permitidos, (
         f"endereço novo no assistente: {set(endereco) - permitidos}")

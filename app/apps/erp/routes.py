@@ -2404,6 +2404,49 @@ def api_perguntar_obras():
         return jsonify({"ok": False, "erro": str(e)}), 500
 
 
+@bp.route("/erp/api/perguntas/documentos")
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_perguntas_documentos():
+    from app.apps.erp.core.perguntas import catalogo
+    return jsonify({"ok": True, "perguntas": catalogo.para_a_tela("documentos")})
+
+
+@bp.route("/erp/api/perguntar/documentos", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_perguntar_documentos():
+    """O que está ESCRITO nos documentos da empresa.
+
+    A ação é `ver_arquivo`, e não `ver_erp` como os outros grupos: quem não
+    pode abrir o acervo também não pode perguntar o que está escrito dentro
+    dele. Por dentro, a busca passa pelo MESMO recorte da tela do Arquivo —
+    faixa de sigilo mais obra designada.
+
+    Esta é a única família de perguntas que não calcula nada: ela devolve
+    trechos, com o documento de onde saíram.
+    """
+    from app.apps.erp.core.perguntas import catalogo
+    d = request.get_json(silent=True) or {}
+    chave = (d.get("chave") or "").strip()
+    if chave not in {p["chave"] for p in catalogo.do_grupo("documentos")}:
+        raise ErroNaoEncontrado("Pergunta desconhecida neste grupo.")
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = catalogo.responder(chave, s, atual, d.get("parametros") or {})
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao procurar nos documentos")
+        return jsonify({"ok": False, "erro": str(e)}), 500
+
+
 @bp.route("/erp/api/perguntas/contratos")
 @login_obrigatorio
 @permissao("ver_contratos")
