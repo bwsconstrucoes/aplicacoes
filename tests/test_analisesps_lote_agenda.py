@@ -89,16 +89,19 @@ def test_acrescentar_grupo_poe_no_topo_e_numera():
 # ---------------------------------------------------------------------------
 # O lote: tirar as que já saíram
 # ---------------------------------------------------------------------------
-def test_remover_por_status_tira_so_o_alvo_e_mantem_os_titulos():
+def test_remover_por_status_tira_so_o_alvo():
+    """O TÍTULO DO GRUPO QUE ESVAZIOU VAI JUNTO, e esta regra mudou em
+    11/09/2026 a pedido do dono: antes o título ficava, e o lote terminava
+    cheio de cabeçalhos sem nada embaixo. O grupo que ainda tem SP mantém o
+    seu."""
     texto = "Pagar amanhã\n111 222\n\nDepois\n333"
     status = {"111": "Pago", "222": "Pagar", "333": "Pago"}
     novo, quantos = lote.remover_por_status(texto, {"pago"}, status)
     assert quantos == 2
     assert "111" not in novo and "333" not in novo
     assert "222" in novo
-    # Os títulos ficam, mesmo com o grupo esvaziado — quem montou o lote
-    # organizou por algum motivo, e apagar a organização seria pior.
-    assert "Pagar amanhã" in novo and "Depois" in novo
+    assert "Pagar amanhã" in novo, "o grupo que sobrou perdeu o título"
+    assert "Depois" not in novo, "o título do grupo esvaziado ficou órfão"
 
 
 def test_remover_por_status_ignora_maiuscula():

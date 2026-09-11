@@ -300,11 +300,29 @@ const LEMBRAR = {
     return ids;
   }
 
+  // AGIR SOBRE A SELECAO APAGA A MEMORIA DELA.
+  //
+  // A memoria existe para quem SAI da tela e VOLTA: o filtro, a rolagem e as
+  // caixinhas voltam como estavam. Mas depois de uma acao a tela recarrega, e
+  // repor a marcacao fazia as SPs voltarem marcadas DEPOIS de ja terem sido
+  // tratadas. O dono reportou em 11/09/2026: "sao reaplicadas selecoes que ja
+  // desmarquei; nao pode retroagir".
+  //
+  // E nao e so incomodo: uma marcacao que reaparece sozinha convida a agir
+  // duas vezes sobre a mesma SP - agendar de novo, mandar ao lote de novo.
+  //
+  // A tela de QR NAO chama isto de proposito: ela nao altera nada, so abre
+  // outra tela, e quem volta de la quer a selecao inteira de volta.
+  function selecaoConsumida() {
+    try { LEMBRAR.esquecer("marcadas"); } catch (e) { /* aba anonima */ }
+  }
+
   // --- Alterar coluna (status de pagamento e agendamento) ------------------
   barra.querySelectorAll("button[data-coluna]").forEach(botao => {
     botao.addEventListener("click", async () => {
       const ids = idsMarcados();
       if (!ids) return;
+      selecaoConsumida();
       const rotulo = botao.dataset.rotulo || botao.textContent.trim();
       const valor = botao.dataset.valor || "";
       const efeito = valor === ""
@@ -379,6 +397,7 @@ const LEMBRAR = {
   if (btnLote) btnLote.addEventListener("click", async () => {
     const ids = idsMarcados();
     if (!ids) return;
+    selecaoConsumida();
     btnLote.disabled = true;
     try {
       const r = await fetch(barra.dataset.urlEnviarLote, {
@@ -421,6 +440,7 @@ const LEMBRAR = {
   if (btnValidar) btnValidar.addEventListener("click", async () => {
     const ids = idsMarcados();
     if (!ids) return;
+    selecaoConsumida();
     const senha = prompt(`Validar ${ids.length} SP(s) — marca Validação = "Sim".`
                          + `\n\nSenha de validação:`);
     if (senha === null) return;
@@ -445,6 +465,7 @@ const LEMBRAR = {
   if (btnRemover) btnRemover.addEventListener("click", () => {
     const ids = idsMarcados();
     if (!ids) return;
+    selecaoConsumida();
     if (!confirm(`Tirar ${ids.length} SP(s) do lote.\n\nIsto mexe só na sua `
                  + `lista — não altera nada na planilha nem no Pipefy. `
                  + `Confirma?`)) return;

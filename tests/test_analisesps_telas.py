@@ -3528,3 +3528,159 @@ def test_ler_e_salvar_o_lote_exigem_a_pessoa():
         parametro = inspect.signature(funcao).parameters["pessoa"]
         assert parametro.default is inspect.Parameter.empty, (
             f"{funcao.__name__} voltou a ter padrão para a pessoa")
+
+
+# ---------------------------------------------------------------------------
+# A TELA DO BRADESCO FICAVA EM BRANCO
+#
+# "Cliquei conferir e ficou tudo em branco." Reportado pelo dono em 11/09/2026,
+# com o texto que ele colou. O interpretador estava certo: o MESMO texto com
+# tabulação dá duas operações e com espaços dá zero — e zero operações não
+# desenhava nada na tela.
+# ---------------------------------------------------------------------------
+EXTRATO_DO_DONO = "\n".join([
+    "\t11/09/2026\t-\t1251 | 0002541-0\tJOSE THIAGO DA SILVA\t0 / 1\t160,00\t\t",
+    "",
+    "Operação e Descrição: Pagamento Pix",
+    "",
+    "TRANSFERENCIA PIX",
+    "",
+    "Nome: PARAIBA LOCACOES LTDA",
+    "",
+    "\t11/09/2026\t11/09/2026\t1251 | 0002541-0\tKarla Erica dos Sant\t0 / 1\t20.741,39\t\t",
+    "",
+    "Operação e Descrição: Boletos de Cobrança",
+    "",
+    "Boleto de Cobrança - 75691.42933 01254.645003 00000.150011 1 15570002068980"
+    " - 1436337687 - 11/09/2026",
+])
+
+
+def test_o_extrato_e_lido_com_tabulacao_ou_com_espacos():
+    """Copiar a tabela do Bradesco às vezes traz tabulação e às vezes traz
+    espaços — depende do navegador e de como a seleção é feita. Só o primeiro
+    caso funcionava, e o segundo era ignorado em silêncio."""
+    from app.apps.analisesps import bradesco
+    com_tab = bradesco.parse_autorizacao(EXTRATO_DO_DONO)
+    com_espaco = bradesco.parse_autorizacao(EXTRATO_DO_DONO.replace("\t", "    "))
+
+    assert len(com_tab) == 2, "o caso que já funcionava parou de funcionar"
+    assert len(com_espaco) == 2, "o texto com espaços continua sendo ignorado"
+    for lidas in (com_tab, com_espaco):
+        assert [o["tipo"] for o in lidas] == ["pix", "boleto"]
+        assert lidas[0]["nome"] == "PARAIBA LOCACOES LTDA"
+        assert lidas[1]["sp"] == "1436337687"
+
+
+def test_o_nome_com_espaco_simples_nao_e_partido_em_colunas():
+    """"JOSE THIAGO DA SILVA" tem espaço simples e é UMA coluna. Se a divisão
+    fosse por qualquer espaço, o nome viraria quatro campos e a linha deixaria
+    de ser reconhecida."""
+    from app.apps.analisesps import bradesco
+    lidas = bradesco.parse_autorizacao(
+        EXTRATO_DO_DONO.replace("\t", "    "))
+    assert lidas, "a linha com nome composto deixou de ser lida"
+
+
+def test_a_tela_do_bradesco_diz_quando_nao_reconhece_nada(app_bradesco):
+    """Ficar em branco é o pior resultado: quem colou não sabe se o sistema
+    leu, se travou, ou se não havia o que conferir."""
+    html = como(app_bradesco, SENHA_OPERADOR).post(
+        "/analisesps/bradesco",
+        data={"extrato": "isto não é um extrato"}).get_data(as_text=True)
+    assert "Não reconheci nenhuma operação" in html
+    assert "agência | conta" in html, "tem de dizer o que falta na linha"
+    assert "linha(s)" in html, "tem de dizer quanto foi colado"
+
+
+def test_a_caixinha_de_foco_desmarcada_desliga_o_foco(app_bradesco):
+    """Caixinha desmarcada NÃO chega no formulário — é assim que o HTML
+    funciona. O padrão "1" entrava justamente quando a pessoa desmarcava, e o
+    foco nunca desligava."""
+    from app.apps.analisesps import bradesco
+    vistos = []
+    import app.apps.analisesps.web as web_mod
+    original = bradesco.cruzar_tudo
+
+    def espiar(raw, df, foco_agendados=True):
+        vistos.append(foco_agendados)
+        return original(raw, df, foco_agendados)
+
+    bradesco.cruzar_tudo = espiar
+    try:
+        cliente = como(app_bradesco, SENHA_OPERADOR)
+        cliente.post("/analisesps/bradesco",
+                     data={"extrato": EXTRATO_DO_DONO, "foco": "1"})
+        cliente.post("/analisesps/bradesco", data={"extrato": EXTRATO_DO_DONO})
+    finally:
+        bradesco.cruzar_tudo = original
+
+    assert vistos == [True, False], (
+        f"a caixinha não desligou o foco: {vistos}")
+
+
+@pytest.fixture
+def app_bradesco(app, monkeypatch):
+    """A tela do Bradesco com a base carregada, sem tocar no banco."""
+    from app.apps.analisesps import web
+    monkeypatch.setattr(web, "_candidatas_bradesco", lambda: [])
+    return app
+
+
+# ---------------------------------------------------------------------------
+# DUAS CORREÇÕES DO LOTE, REPORTADAS EM 11/09/2026
+# ---------------------------------------------------------------------------
+def test_o_titulo_do_grupo_que_esvaziou_na_limpeza_vai_junto():
+    """"Quando limparmos um lote tirando pagas e canceladas e ele estiver
+    vazio, apagar o cabeçalho." Antes o título ficava, e o lote terminava
+    cheio de cabeçalhos sem nada embaixo."""
+    from app.apps.analisesps import lote
+    texto = "Pagar amanhã\n111 222\n\nJá pago\n333"
+    status = {"111": "Pagar", "222": "Pagar", "333": "Pago"}
+
+    novo, quantos = lote.remover_por_status(texto, {"pago"}, status)
+
+    assert quantos == 1
+    assert "Já pago" not in novo, "o cabeçalho órfão ficou"
+    assert "Pagar amanhã" in novo and "111 222" in novo
+
+
+def test_o_grupo_que_JA_estava_vazio_nao_e_apagado():
+    """Alguém escreveu aquele título de propósito, para encher depois. Apagar
+    o que a pessoa acabou de digitar é pior do que o cabeçalho sobrando."""
+    from app.apps.analisesps import lote
+    texto = "Para amanhã\n\nJá pago\n333"
+    novo, _ = lote.remover_por_status(texto, {"pago"}, {"333": "Pago"})
+    assert "Para amanhã" in novo
+    assert "Já pago" not in novo
+
+
+def test_limpar_o_lote_inteiro_nao_deixa_cabecalho_nenhum():
+    from app.apps.analisesps import lote
+    texto = "Grupo A\n111\n\nGrupo B\n222"
+    novo, quantos = lote.remover_por_status(
+        texto, {"pago"}, {"111": "Pago", "222": "Pago"})
+    assert quantos == 2 and novo.strip() == ""
+
+
+def test_agir_sobre_a_selecao_apaga_a_memoria_dela():
+    """"São reaplicadas seleções que eu já desmarquei; não pode retroagir."
+
+    A memória existe para quem SAI da tela e VOLTA. Depois de uma ação a tela
+    recarrega, e repor a marcação fazia as SPs voltarem marcadas DEPOIS de já
+    terem sido tratadas — convidando a agir duas vezes sobre a mesma SP."""
+    from pathlib import Path
+    js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
+    assert "function selecaoConsumida()" in js
+    # As quatro ações que ALTERAM alguma coisa têm de chamar.
+    assert js.count("selecaoConsumida();") == 4, (
+        "cada ação que altera precisa apagar a memória da seleção")
+
+
+def test_a_tela_de_QR_nao_apaga_a_memoria_da_selecao():
+    """Ela não altera nada, só abre outra tela — e quem volta de lá quer a
+    seleção inteira de volta."""
+    from pathlib import Path
+    js = Path("app/apps/analisesps/static/analisesps.js").read_text(encoding="utf-8")
+    trecho = js.split('getElementById("ba-codigos")')[1].split("});")[0]
+    assert "selecaoConsumida" not in trecho

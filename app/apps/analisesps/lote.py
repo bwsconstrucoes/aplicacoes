@@ -99,13 +99,24 @@ def remover_por_status(texto: str, status_alvo: set[str],
                        status_por_id: dict) -> tuple[str, int]:
     """Tira do lote as SPs que já estão num determinado status.
 
-    Serve para limpar o que já foi pago ou cancelado sem desmontar os grupos: os
-    títulos ficam, mesmo que o grupo esvazie. Devolve o texto novo e quantas
-    saíram."""
+    Serve para limpar o que já foi pago ou cancelado. Devolve o texto novo e
+    quantas saíram.
+
+    O TÍTULO DE UM GRUPO QUE ESVAZIOU NA LIMPEZA VAI JUNTO. Antes ele ficava, e
+    o lote terminava cheio de cabeçalhos sem nada embaixo — "Pagar amanhã" sem
+    uma SP sequer. Pedido do dono em 11/09/2026.
+
+    MAS SÓ QUEM ESVAZIOU AGORA. Um grupo que já estava vazio antes da limpeza
+    continua: alguém escreveu aquele título de propósito, para encher depois, e
+    apagar o que a pessoa acabou de digitar seria pior do que o cabeçalho
+    sobrando."""
     alvos = {s.strip().lower() for s in status_alvo}
-    linhas_novas: list[str] = []
     removidos = 0
 
+    # Primeiro quebra em blocos: cada um é um título (ou nenhum, no começo) e
+    # as linhas de SPs que vêm debaixo dele. Só assim dá para saber se um
+    # título ficou órfão POR CAUSA desta limpeza.
+    blocos: list = [{"titulo": None, "linhas": [], "tinha": 0}]
     for bruta in str(texto or "").split("\n"):
         linha = bruta.strip()
         if not linha:
@@ -115,10 +126,18 @@ def remover_por_status(texto: str, status_alvo: set[str],
             mantidos = [p for p in pedacos
                         if str(status_por_id.get(p, "")).strip().lower() not in alvos]
             removidos += len(pedacos) - len(mantidos)
+            blocos[-1]["tinha"] += len(pedacos)
             if mantidos:
-                linhas_novas.append(" ".join(mantidos))
+                blocos[-1]["linhas"].append(" ".join(mantidos))
         else:
-            linhas_novas.append(linha)      # título de grupo: sempre fica
+            blocos.append({"titulo": linha, "linhas": [], "tinha": 0})
+
+    linhas_novas: list = []
+    for bloco in blocos:
+        esvaziou_agora = bloco["tinha"] > 0 and not bloco["linhas"]
+        if bloco["titulo"] is not None and not esvaziou_agora:
+            linhas_novas.append(bloco["titulo"])
+        linhas_novas.extend(bloco["linhas"])
 
     return "\n".join(linhas_novas).strip("\n"), removidos
 

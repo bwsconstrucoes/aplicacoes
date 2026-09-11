@@ -1748,7 +1748,12 @@ def tela_bradesco():
     colado = ""
     resultado = None
     erro = None
-    foco = request.form.get("foco", "1") == "1"
+    # A CAIXINHA DESMARCADA NÃO CHEGA NO FORMULÁRIO — é assim que o HTML
+    # funciona. Com `.get("foco", "1")` o padrão "1" entrava justamente quando
+    # a pessoa DESMARCAVA, e o foco nunca desligava. No GET (primeira visita)
+    # ele deve vir ligado; no POST vale o que a caixinha diz.
+    foco = (request.form.get("foco") == "1" if request.method == "POST"
+            else True)
 
     if request.method == "POST":
         colado = request.form.get("extrato", "")

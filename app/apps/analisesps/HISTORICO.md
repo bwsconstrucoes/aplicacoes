@@ -1475,7 +1475,7 @@ e fecha é `<details>`, do próprio HTML, sem JavaScript — mas o efeito de col
 com Ctrl+V uma seleção do Excel de verdade não foi visto. **É a primeira coisa
 a conferir na tela.**
 
-### Vigésima quarta leva (11/09) — três defeitos que o dono achou usando
+### Vigésima quarta leva (11/09) — seis defeitos que o dono achou usando
 
 **1. A procura dentro do filtro não filtrava nada.** *"No filtro tipo de
 despesa existe o campo, mas se eu escrever, ele não está filtrando as
@@ -1526,6 +1526,56 @@ na hora. Quem quiser mesmo o lote antigo chama `lote_de_antes()`, que diz isso
 no nome. Há teste prendendo a ausência do padrão, e outro conferindo que as
 duas rotas leem o lote da pessoa logada — conferido que ele falha com o
 defeito de volta.
+
+**4. A tela do Bradesco ficava em branco.** *"Cliquei conferir e ficou tudo em
+branco"*, com o texto colado junto.
+
+O interpretador estava **certo**. Reproduzido com o texto dele: o **mesmo
+texto com tabulação dá duas operações; com espaços, nenhuma**. Copiar a tabela
+do Bradesco traz tabulação na maioria das vezes — não sempre, e depende do
+navegador e de como a seleção é feita. Quando vinham espaços, o texto inteiro
+era ignorado **em silêncio**.
+
+Duas correções, e a segunda vale mais do que a primeira:
+
+- a linha da operação passa a ser separada por tabulação **ou por dois ou mais
+  espaços**. É seguro porque uma linha só vira operação se tiver, ao mesmo
+  tempo, data, agência|conta e valor — e nome com espaço simples ("JOSE THIAGO
+  DA SILVA") continua inteiro. Há teste com o texto real do dono, nas duas
+  formas, e conferido que ele falha com o defeito de volta.
+- **a tela deixa de ficar muda.** Quando não reconhece nada, ela diz o que
+  precisa haver na linha e quantas linhas foram coladas. Ficar em branco é o
+  pior resultado possível: quem colou não sabe se o sistema leu, se travou, ou
+  se não havia o que conferir.
+
+**De brinde, um defeito que ninguém tinha reportado:** a caixinha "focar nos
+agendados" **não desligava**. Caixinha desmarcada não chega no formulário, e o
+valor padrão entrava justamente aí — então marcar ou desmarcar dava no mesmo.
+
+**5. O título do grupo que esvazia na limpeza vai junto.** *"Quando limparmos
+um lote tirando pagas e canceladas e ele estiver vazio, apagar o cabeçalho."*
+
+**Mas só quem esvaziou AGORA.** Um grupo que já estava vazio antes continua:
+alguém escreveu aquele título de propósito, para encher depois, e apagar o que
+a pessoa acabou de digitar seria pior do que o cabeçalho sobrando.
+
+**6. A marcação voltava depois de a pessoa agir — e esse defeito é meu.**
+*"Para toda ação que faço no lote, tipo marcar agendado, agendar... são
+reaplicadas seleções que talvez estejam salvas. Está errado. Eu já desmarquei.
+Não pode retroagir."*
+
+A memória da marcação (19ª leva) existe para quem **sai da tela e volta**. Mas
+depois de uma ação a tela recarrega, e a marcação era reposta — fazendo as SPs
+voltarem marcadas **depois de já terem sido tratadas**.
+
+> **E não é só incômodo:** uma marcação que reaparece sozinha convida a agir
+> duas vezes sobre a mesma SP — agendar de novo, mandar ao lote de novo. O
+> incômodo era o sintoma; o risco era o problema.
+
+Agora **agir sobre a seleção apaga a memória dela**. As quatro ações que
+alteram alguma coisa chamam isso; a tela de QR **não**, de propósito — ela não
+altera nada, só abre outra tela, e quem volta de lá quer a seleção inteira de
+volta. Há teste para as duas coisas.
 
 ### Pedido na fila, ainda NÃO feito
 
