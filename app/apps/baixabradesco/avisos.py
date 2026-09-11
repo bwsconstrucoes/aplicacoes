@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Aviso por Telegram do que NÃO foi baixado.
+"""Aviso por WhatsApp do que NÃO foi baixado.
 
 Até 11/09/2026 um comprovante que não casava não gerava nada: nem mensagem, nem
 linha em planilha. A explicação existia, mas só dentro da resposta devolvida ao
@@ -120,9 +120,16 @@ def resolver_telefone() -> str:
         return ''
 
 
-def enviar_aviso(resultado: Dict[str, Any]) -> Dict[str, Any]:
-    """Manda o aviso pelo Telegram. Nunca levanta erro: avisar não pode derrubar
-    a baixa, que já aconteceu."""
+def enviar_aviso(resultado: Dict[str, Any], payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """Manda o aviso pelo WhatsApp, com o Telegram de espelho.
+
+    Usa o mesmo envio que o módulo já faz para avisar o responsável pela SP —
+    aquele funciona em produção e aceita as credenciais Z-API vindas no próprio
+    pedido do Make, que é como elas chegam hoje. Se as credenciais não vierem,
+    cai no notificador comum, que lê as credenciais do ambiente.
+
+    Nunca levanta erro: avisar não pode derrubar a baixa, que já aconteceu.
+    """
     telefone = resolver_telefone()
     if not telefone:
         return {'ok': None, 'skipped': True, 'motivo': 'nenhum telefone de aviso configurado'}
@@ -132,7 +139,18 @@ def enviar_aviso(resultado: Dict[str, Any]) -> Dict[str, Any]:
         return {'ok': None, 'skipped': True, 'motivo': 'nada a avisar'}
 
     try:
-        from app.apps.notificador import enviar_telegram
-        return enviar_telegram(telefone=telefone, mensagem=texto)
+        from .zapi import resolve_zapi_auth, send_text, validate_zapi_auth
+        auth = resolve_zapi_auth(payload or {})
+        if not validate_zapi_auth(auth):
+            return send_text(auth, telefone, texto)
+    except Exception as e:
+        return {'ok': False, 'erro': str(e)[:200]}
+
+    # Sem credenciais Z-API no pedido nem no ambiente: tenta o notificador,
+    # que tem as suas próprias e ainda alcança o Telegram.
+    try:
+        from app.apps.notificador import notificar
+        return notificar(telefone=telefone, mensagem=texto,
+                         canais=('whatsapp', 'telegram'), politica='fallback')
     except Exception as e:
         return {'ok': False, 'erro': str(e)[:200]}

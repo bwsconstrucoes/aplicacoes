@@ -149,32 +149,67 @@ def test_lote_sem_falha_nao_manda_mensagem(monkeypatch):
     assert r['motivo'] == 'nada a avisar'
 
 
+AUTH = {'zapi': {'instance_id': 'i', 'api_token': 't', 'client_token': 'c'}}
+
+
 def test_falha_no_envio_nao_levanta_erro(monkeypatch):
     """A baixa já aconteceu. Avisar não pode derrubar nada."""
     monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5585900000000')
 
-    import app.apps.notificador as notificador
-    def explode(**kwargs):
-        raise RuntimeError('Telegram fora do ar')
-    monkeypatch.setattr(notificador, 'enviar_telegram', explode)
+    import app.apps.baixabradesco.zapi as zapi
+    def explode(*a, **k):
+        raise RuntimeError('Z-API fora do ar')
+    monkeypatch.setattr(zapi, 'send_text', explode)
 
-    r = enviar_aviso(resultado([plano(pode_executar=False, motivos=['x'])]))
+    r = enviar_aviso(resultado([plano(pode_executar=False, motivos=['x'])]), AUTH)
     assert r['ok'] is False
-    assert 'Telegram fora do ar' in r['erro']
+    assert 'Z-API fora do ar' in r['erro']
 
 
-def test_envia_para_o_telefone_configurado(monkeypatch):
+def test_envia_pelo_whatsapp_para_o_telefone_configurado(monkeypatch):
     monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5585900000000')
     enviados = {}
 
-    import app.apps.notificador as notificador
-    def fake(**kwargs):
-        enviados.update(kwargs)
-        return {'ok': True}
-    monkeypatch.setattr(notificador, 'enviar_telegram', fake)
+    import app.apps.baixabradesco.zapi as zapi
+    def fake(auth, phone, message):
+        enviados.update(auth=auth, phone=phone, message=message)
+        return {'ok': True, 'whatsapp': {'ok': True}, 'telegram': {'ok': True}}
+    monkeypatch.setattr(zapi, 'send_text', fake)
 
     r = enviar_aviso(resultado([plano(pode_executar=False,
-                                      motivos=['Nenhum candidato encontrado.'])]))
+                                      motivos=['Nenhum candidato encontrado.'])]), AUTH)
     assert r['ok'] is True
-    assert enviados['telefone'] == '5585900000000'
-    assert 'Nenhum candidato encontrado.' in enviados['mensagem']
+    assert enviados['phone'] == '5585900000000'
+    assert 'Nenhum candidato encontrado.' in enviados['message']
+
+
+def test_usa_as_credenciais_que_vieram_no_pedido(monkeypatch):
+    """É assim que as credenciais Z-API chegam hoje: dentro do pedido do Make."""
+    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5585900000000')
+    enviados = {}
+
+    import app.apps.baixabradesco.zapi as zapi
+    monkeypatch.setattr(zapi, 'send_text',
+                        lambda auth, phone, message: enviados.update(auth=auth) or {'ok': True})
+
+    enviar_aviso(resultado([plano(pode_executar=False, motivos=['x'])]), AUTH)
+    assert enviados['auth']['instanceId'] == 'i'
+    assert enviados['auth']['apiToken'] == 't'
+
+
+def test_sem_credenciais_zapi_cai_no_notificador(monkeypatch):
+    """Assim o aviso ainda sai, pelo caminho que lê as credenciais do ambiente."""
+    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5585900000000')
+    for v in ('ZAPI_INSTANCE_ID', 'ZAPI_API_TOKEN', 'ZAPI_CLIENT_TOKEN'):
+        monkeypatch.delenv(v, raising=False)
+    chamou = {}
+
+    import app.apps.notificador as notificador
+    def fake(**kwargs):
+        chamou.update(kwargs)
+        return {'whatsapp': {'ok': True}}
+    monkeypatch.setattr(notificador, 'notificar', fake)
+
+    enviar_aviso(resultado([plano(pode_executar=False, motivos=['x'])]), {})
+    assert chamou['canais'][0] == 'whatsapp'
+    assert chamou['politica'] == 'fallback'

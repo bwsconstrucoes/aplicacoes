@@ -315,7 +315,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
     # Avisa o dono do que NÃO foi baixado. Só em produção, e nunca derruba a
     # resposta: a baixa já aconteceu, o aviso é sobre o que ficou de fora.
     if not modo_teste:
-        resultado['aviso'] = enviar_aviso(resultado)
+        resultado['aviso'] = enviar_aviso(resultado, payload)
 
     return resultado
 

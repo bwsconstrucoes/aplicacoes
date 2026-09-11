@@ -203,14 +203,17 @@ parar de ler, e aí o que importava se perde.
 É **um aviso por lote**, não um por comprovante, com no máximo dez itens
 listados — acima disso ele diz quantos ficaram de fora.
 
-Para quem vai: `BAIXABRADESCO_AVISO_TELEFONE` se estiver configurada; senão
+**Por onde vai:** WhatsApp, pelo mesmo envio que o robô já usa para avisar o
+responsável pela SP — aquele funciona em produção e aceita as credenciais Z-API
+vindas dentro do próprio pedido do Make, que é como elas chegam hoje. O
+Telegram vai junto, de espelho. Se as credenciais não vierem nem no pedido nem
+no ambiente, cai no notificador comum, que tem as suas próprias.
+
+**Para quem vai:** `BAIXABRADESCO_AVISO_TELEFONE` se estiver configurada; senão
 `CHATBOT_MASTER_PHONE`, a mesma convenção que o chatbot e o processarnovasp já
 usam para falar com o dono.
 
-⚠️ **O Telegram só chega em quem já falou com o robô.** A mensagem é entregue
-pelo número, e o número precisa estar na aba `TelegramID` — quem nunca abriu
-conversa com o bot não recebe, e o aviso volta como "destinatário sem ID
-Telegram". Falha de aviso nunca derruba a baixa: ela já aconteceu.
+Falha de aviso nunca derruba a baixa: ela já aconteceu.
 
 ## Variáveis de ambiente
 

@@ -429,7 +429,7 @@ baixou existia, mas morria dentro da resposta devolvida ao Make. O dono pediu o
 aviso, com o recorte dele: *"o que baixou normal, não preciso saber. Só o que
 deu alguma falha, que de repente merece uma atenção ou uma melhoria na regra."*
 
-**Como ficou:** no fim de cada lote, **uma** mensagem pelo Telegram com o que
+**Como ficou:** no fim de cada lote, **uma** mensagem pelo WhatsApp com o que
 ficou de fora e o motivo de cada um — sem SP encontrada, mais de uma candidata,
 recusado pelo banco, ou falha ao baixar no Omie. Fora do aviso, de propósito: o
 que baixou e o que foi barrado por duplicidade (o dono disse que não precisa
@@ -438,12 +438,23 @@ saber, e a trava já resolve).
 **Decisões de desenho:**
 - **Um aviso por lote, no máximo dez itens.** Comprovante chega em leva; um
   aviso por comprovante viraria barulho, e barulho faz parar de ler.
+- **WhatsApp, a pedido do dono** — e é mesmo o canal melhor aqui: chega direto
+  pelo número, enquanto o Telegram só alcança quem já conversou com o bot. O
+  Telegram vai de espelho, sem custo.
+- **Reusa o envio que o módulo já tem** (`zapi.send_text`), o mesmo que avisa o
+  responsável pela SP. Ele funciona em produção e aceita as credenciais Z-API
+  vindas no pedido do Make — que é como elas chegam. ⚠️ Isso importa: o
+  `notificador` comum lê `ZAPI_INSTANCE_TOKEN`, e este módulo usa
+  `ZAPI_API_TOKEN`. Nomes diferentes para a mesma coisa; usar o envio próprio
+  evita depender de qual das duas está configurada no Render. Se nenhuma
+  estiver, cai no notificador como reserva.
 - **Reusa `CHATBOT_MASTER_PHONE`**, a convenção que o chatbot e o
   processarnovasp já usam, em vez de escrever o número num terceiro lugar.
   `BAIXABRADESCO_AVISO_TELEFONE` troca o destino se um dia for outra pessoa.
 - **Avisar nunca derruba a baixa.** O envio é protegido: se o Telegram cair, a
   baixa já aconteceu e a resposta sai normal.
 
-**Limite conhecido:** o Telegram entrega pelo número, e o número precisa estar
-na aba `TelegramID` — quem nunca abriu conversa com o bot não recebe. É a
-primeira coisa a conferir se o aviso não chegar.
+**Limite conhecido:** o WhatsApp depende do toggle `NOTIFICAR_WHATSAPP` e das
+credenciais Z-API. O espelho no Telegram só alcança quem está na aba
+`TelegramID`. Se o aviso não chegar, conferir nessa ordem: toggle ligado,
+credenciais presentes, número certo.
