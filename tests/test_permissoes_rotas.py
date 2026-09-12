@@ -71,7 +71,11 @@ def test_rota_que_recebe_id_e_aberta_a_perfil_restrito_precisa_checar_escopo():
     # `cancelar_titulo` entrou em 12/09/2026: quem tem "lancar" a recebe por
     # implicação, então um perfil preso a obra ou a autoria alcança a rota — e
     # ela recebe o número do título.
-    AMPLAS = {"ver_erp", "lancar", "ver_pessoal", "lancar_dc", "cancelar_titulo"}
+    AMPLAS = {"ver_erp", "lancar", "ver_pessoal", "lancar_dc", "cancelar_titulo",
+              # `encaminhar` (12/09/2026) manda informação do sistema para um
+              # celular. Sem o recorte, bastaria mandar o número de um título
+              # de outra obra para receber o conteúdo dele no próprio aparelho.
+              "encaminhar"}
 
     def chama_escopo(fn):
         """Procura a CHAMADA, não o nome solto.

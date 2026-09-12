@@ -510,6 +510,63 @@ centavos por pergunta.
   acervo comparando cláusulas, não ler um documento. Precisaria do índice por
   significado.
 
+## 3g. A resposta vira RELATÓRIO — Excel e PDF
+
+Desde 12/09/2026, pedido seu: *"se eu quiser, olha, gera um relatório em PDF de
+um determinado assunto, gera um relatório em Excel com essas informações"*.
+
+Toda resposta que tem TABELA ganha dois botões embaixo dela: **⬇ Excel** e
+**⬇ PDF**. Vale no painel do cantinho e na tela cheia.
+
+**Quem monta o arquivo é o sistema, não a IA.** São os mesmos números da
+resposta, exportados — e isso é o que importa: relatório escrito por IA é
+relatório que ninguém pode conferir.
+
+Três coisas que valem saber:
+
+- **O arquivo leva TODAS as linhas que a resposta trouxe**, mesmo quando a
+  tela mostra só as primeiras. Exportar só o que está visível seria uma
+  armadilha silenciosa.
+- **O cabeçalho do arquivo diz de onde veio**: a frase da resposta, a tela de
+  origem e quem gerou, com data. Planilha sem procedência é número sem origem,
+  e três meses depois ninguém sabe o que era.
+- **Resposta sem tabela não vira arquivo** — o botão nem aparece. É o caso do
+  trecho de contrato: ele é texto, não planilha.
+
+## 3h. Encaminhar a informação por WhatsApp
+
+Desde 12/09/2026, pedido seu: *"às vezes a gente quer encaminhar alguma
+informação pra alguém (…) referente a um título financeiro"*.
+
+- **No lançamento** (Financeiro › Solicitações, abrindo a ficha): botão
+  **↗ Encaminhar**. Vai credor, valor, forma de pagamento, conta, obra,
+  vencimento de cada parcela, descrição e situação.
+- **No documento** (Arquivo): botão **Enviar** — o nome do documento, o tipo e
+  até quando vale.
+- Para **operadores cadastrados** (a lista aparece pronta) ou para um **número
+  avulso** com DDD. Dá para mandar o arquivo junto e escrever um recado.
+
+**As três travas, para você saber o que está protegido:**
+
+1. **Ninguém encaminha o que não pode ver** — passa pelo mesmo recorte por obra
+   da tela. Sem isso, encaminhar seria a porta dos fundos do controle de acesso.
+2. **Fica registrado quem mandou o quê para quem, e quando.** A mensagem sai do
+   sistema e o ERP não controla o que acontece depois; o que ele pode fazer é
+   dar nome ao que saiu.
+3. **Número que não parece telefone é recusado** antes de sair, e a tela mostra
+   o texto inteiro antes do disparo. Enviado não volta.
+
+⚠️ **O que NÃO vai, nunca:** senha, chave de acesso e dado bancário completo.
+Mensagem de WhatsApp é o lugar mais fácil de vazar que existe na empresa.
+
+Perguntas que isso torna possíveis, e que **ainda não respondem**:
+
+- ❌ **O que foi encaminhado deste lançamento, e para quem?** 🔒 — o registro
+  existe; falta a consulta pronta.
+- ❌ **Quem mais encaminha informação para fora?** — pergunta de processo, não
+  de culpa: muito encaminhamento costuma significar que falta alguém ter
+  acesso à tela.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

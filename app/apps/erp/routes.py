@@ -198,6 +198,9 @@ ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  # cancela o PRÓPRIO lançamento, e a tela precisa saber disso
                  # para mostrar o botão a quem não aprova.
                  "cancelar_titulo",
+                 # Encaminhar informação por WhatsApp (12/09/2026): decide se o
+                 # botão "↗ Encaminhar" aparece no lançamento e no documento.
+                 "encaminhar",
                  # Encadeamento: a tela só transforma obra/conta/credor/pedido
                  # em link para quem consegue abrir o destino.
                  "ver_suprimentos", "ver_pedidos_compra",
@@ -3129,6 +3132,78 @@ def api_cancelar_titulo(titulo_id: int):
         aviso = {"ok": False, "motivo": "o aviso não saiu; o cancelamento foi gravado"}
 
     return jsonify({"ok": True, "numero_sp": numero, "aviso": aviso})
+
+
+# ---------------------------------------------------------------------------
+# ENCAMINHAR INFORMAÇÃO (12/09/2026)
+#
+# Pedido do dono: um botão para mandar a informação de um lançamento — ou de um
+# documento do acervo — para um operador ou para um número avulso, por
+# WhatsApp. Ver o porquê inteiro, e as três travas, em `core/encaminhar.py`.
+# ---------------------------------------------------------------------------
+@bp.route("/erp/api/encaminhar/destinos")
+@login_obrigatorio
+@permissao("encaminhar")
+def api_encaminhar_destinos():
+    """Os operadores que a tela oferece como destino."""
+    from app.apps.erp.core import encaminhar as svc
+
+    with get_session() as s:
+        return jsonify({"ok": True, "pessoas": svc.destinos_possiveis(s)})
+
+
+@bp.route("/erp/api/encaminhar/<tipo>/<int:registro_id>/previa")
+@login_obrigatorio
+@permissao("encaminhar")
+def api_encaminhar_previa(tipo: str, registro_id: int):
+    """O texto que SERÁ enviado — última chance de ver que é o errado."""
+    from app.apps.erp.core import encaminhar as svc
+
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            svc.exigir_registro_no_escopo(s, atual, tipo, registro_id)
+            return jsonify({"ok": True, **svc.montar(s, atual, tipo=tipo,
+                                                     registro_id=registro_id)})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha na prévia do encaminhamento")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/encaminhar/<tipo>/<int:registro_id>", methods=["POST"])
+@login_obrigatorio
+@permissao("encaminhar")
+def api_encaminhar(tipo: str, registro_id: int):
+    """Dispara o encaminhamento e devolve o que saiu e o que não saiu."""
+    from app.apps.erp.core import encaminhar as svc
+
+    d = request.get_json(silent=True) or {}
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            svc.exigir_registro_no_escopo(s, atual, tipo, registro_id)
+            r = svc.enviar(s, atual, tipo=tipo, registro_id=registro_id,
+                           usuarios=[int(x) for x in (d.get("usuarios") or [])],
+                           numeros=[str(x) for x in (d.get("numeros") or [])],
+                           com_anexo=bool(d.get("com_anexo")),
+                           observacao=str(d.get("observacao") or ""))
+            s.commit()
+        return jsonify({"ok": True, "resultado": r})
+    except ErroNaoEncontrado:
+        raise
+    except (ErroValidacao, ErroPermissao) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao encaminhar %s %s", tipo, registro_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
 @bp.route("/erp/api/titulos/acao", methods=["POST"])

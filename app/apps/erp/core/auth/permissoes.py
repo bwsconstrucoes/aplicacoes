@@ -58,6 +58,20 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # logo abaixo); o que ele NÃO ganha é cancelar o lançamento dos outros, e
     # isso quem decide é o serviço, olhando de quem é o título.
     "cancelar_titulo": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.APROVADOR},
+    # ENCAMINHAR informação do sistema por WhatsApp/Telegram (12/09/2026).
+    # Pedido do dono: *"o pessoal pede informação, você quer encaminhar pra um
+    # operador, pra um número que a gente adicionar lá"*.
+    #
+    # Quem entra: quem já opera o sistema. Quem NÃO entra, e é escolha:
+    #   · CONSULTA — existe para olhar, não para redistribuir;
+    #   · PARCEIRO — é de fora da empresa; ele vê a obra dele na tela, e
+    #     empurrar dado da BWS para fora pelo WhatsApp da empresa é outra
+    #     coisa.
+    # O que cada um pode encaminhar continua limitado ao que ele VÊ: o envio
+    # passa pelo mesmo recorte por obra da tela.
+    "encaminhar":      {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                        P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.LANCADOR},
     "pagar":           {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
     "conciliar":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
     "receber":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
@@ -183,6 +197,7 @@ ACAO_ROTULOS = {
     "avalizar":             "Avalizar (1º aval)",
     "aprovar":              "Aprovar título",
     "cancelar_titulo":      "Cancelar título (o próprio, se ninguém baixou)",
+    "encaminhar":           "Encaminhar informação por WhatsApp",
     "pagar":                "Dar baixa em pagamento",
     "conciliar":            "Conciliar extrato",
     "receber":              "Lançar recebimento",

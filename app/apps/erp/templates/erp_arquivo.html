@@ -329,12 +329,17 @@ function desenhar(){
         ${detalhe ? `<br><small>${detalhe}</small>` : ""}</td>
       <td style="white-space:nowrap">
         <button class="btn secundario" data-perguntar="${d.id}" data-nome="${escapar(d.nome)}">Perguntar</button>
+        {% if pode.encaminhar %}<button class="btn secundario" data-encaminhar="${d.id}">Enviar</button>{% endif %}
         ${PODE_ARQUIVAR ? `<button class="btn secundario" data-excluir="${d.id}">Excluir</button>` : ""}</td>
     </tr>`;
   }).join("");
 
   document.querySelectorAll("[data-perguntar]").forEach(b => b.addEventListener("click", () => {
     abrirPergunta(b.dataset.perguntar, b.dataset.nome);
+  }));
+
+  document.querySelectorAll("[data-encaminhar]").forEach(b => b.addEventListener("click", () => {
+    abrirEncaminhar("documento", b.dataset.encaminhar);
   }));
 
   document.querySelectorAll("[data-excluir]").forEach(b => b.addEventListener("click", async () => {

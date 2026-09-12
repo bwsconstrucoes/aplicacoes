@@ -168,6 +168,83 @@ banco — **não consome nada**.
 
 ---
 
+**Estado em 12/09/2026 (décima sexta entrega):** **encaminhar por WhatsApp** e
+**a resposta virando relatório em Excel/PDF**. Sem migração.
+
+### Antes do trabalho: uma reclamação do dono que virou regra
+
+*"Eu já disse dezenas de vezes. Eu passo duas, três tarefas, ao invés de você
+executar as duas, três tarefas, você faz uma e para. Aí me pergunta se eu
+quero seguir. Se eu já estou dando três tarefas, por que tu não executa as
+três?"*
+
+Ele tinha razão: na mesma mensagem ele pediu relatório em PDF/Excel,
+encaminhar por WhatsApp e cancelamento de título — eu entreguei o cancelamento
+e voltei perguntando a ordem dos outros dois. **A regra entrou no `CLAUDE.md`**
+(que toda sessão nova lê) e em `CONTEXTO.md`: pedido com várias tarefas se
+executa inteiro; ordem é escolha de quem executa; dúvida de detalhe vira
+padrão sensato escrito na resposta. Só publicar na `main` continua exigindo o
+"pode" dele.
+
+### Encaminhar informação
+
+O encanamento JÁ EXISTIA e estava ligado: `app/apps/notificador.py` manda por
+Telegram e por WhatsApp (Z-API), e é assim que o aviso de pagamento sai hoje.
+Faltava o botão manual.
+
+- **No lançamento**, botão "↗ Encaminhar" na ficha: credor, valor, forma de
+  pagamento, conta, obra, vencimento de cada parcela, descrição e situação —
+  os campos que o pessoal pedia por WhatsApp.
+- **No documento do Arquivo**, botão "Enviar".
+- Para operadores cadastrados ou número avulso, com recado e anexo opcional.
+- **Prévia obrigatória na tela**: enviado não volta.
+
+**As três travas, e o porquê de cada uma:** só se encaminha o que a pessoa
+pode ver (senão vira a porta dos fundos do controle de acesso); fica
+registrado quem mandou o quê para quem (a mensagem sai do sistema e o ERP não
+controla o resto — o que ele pode fazer é dar NOME ao que saiu); número que não
+parece telefone é recusado antes de sair.
+
+**Quem NÃO encaminha, e é escolha:** CONSULTA (existe para olhar, não para
+redistribuir) e PARCEIRO (é de fora da empresa).
+
+### A resposta virando relatório
+
+A máquina de exportar já existia e é genérica. Bastou ligar: toda resposta com
+tabela ganha "⬇ Excel" e "⬇ PDF", no painel e na tela cheia. **Quem monta o
+arquivo é o sistema, com os mesmos números da resposta** — não a IA escrevendo
+um texto com cara de relatório, que ninguém poderia conferir.
+
+### A falha que apareceu ao ligar isso — e ela era ANTIGA
+
+**O exportador punha o valor debaixo do cabeçalho errado.** Ele pegava
+`linha.values()` — os valores na ordem em que o dicionário foi montado, não na
+ordem das colunas. Dois jeitos de dar errado, nenhum deles avisa:
+
+- dicionário montado em outra ordem → valor na coluna errada;
+- linha faltando um campo → todos os seguintes andam uma casa à esquerda.
+
+O arquivo sai bonito, sem erro, com o número errado no lugar certo. **É o pior
+defeito que um relatório pode ter**, porque quem lê não tem como desconfiar.
+Agora a coluna casa pela CHAVE quando ela existe; a tela que manda só rótulos
+(a maioria das listas) continua como era.
+
+### Conferência
+
+20 testes novos do encaminhamento (com banco) e 5 do alinhamento da planilha;
+conferi desligando a trava de escopo e a correção do alinhamento, e eles
+quebram. **As três coisas foram exercitadas no navegador**: o diálogo de
+encaminhar mostrando o texto pronto do lançamento, e o Excel baixando de
+verdade — tanto do painel do cantinho quanto da tela cheia.
+
+⚠️ **Defeito meu, achado no navegador e não por teste:** eu criei a ação
+`encaminhar` mas esqueci de pô-la na lista que a tela consulta
+(`ACOES_NA_TELA`), então o botão não aparecia para ninguém. E liguei o botão a
+uma variável que não existia naquele ponto do código. Nenhum teste pegaria os
+dois — **tela só se confere abrindo**.
+
+---
+
 **Estado em 12/09/2026 (décima quinta entrega):** **cancelar lançamento —
 quem lançou desfaz o próprio, e quem lançou é avisado.** Sem migração.
 

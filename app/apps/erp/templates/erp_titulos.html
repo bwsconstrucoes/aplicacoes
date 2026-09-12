@@ -486,6 +486,9 @@ function montarFicha(t){
           <div><div class="kpi-rotulo">Dedutibilidade</div>
             <div style="font-size:15px">${rotulo(c.dedutibilidade||"PENDENTE")}</div></div>
           <span style="flex:1"></span>
+          {% if pode.encaminhar %}
+          <button class="btn secundario" id="btn-encaminhar-detalhe">↗ Encaminhar</button>
+          {% endif %}
           <button class="btn secundario" id="btn-reclass-detalhe">↔ Alterar conta/obra</button>
         </div>
         <div class="cartao-dica">${t.forma_pagamento} · solicitado por ${escapar(t.solicitante||"—")}</div>
@@ -591,6 +594,8 @@ function ligarFicha(id, t, raiz){
       } catch(e){ aviso("mensagem", e.message, "erro"); }
     });
 
+    const bEnc = raiz.querySelector("#btn-encaminhar-detalhe");
+    if (bEnc) bEnc.addEventListener("click", () => abrirEncaminhar("titulo", id));
     const bRe = raiz.querySelector("#btn-reclass-detalhe");
     if (bRe) bRe.addEventListener("click", () => {
       const j = els("dlg");

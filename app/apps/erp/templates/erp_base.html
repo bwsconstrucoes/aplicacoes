@@ -92,6 +92,44 @@
 <button type="button" class="ia-botao" id="ia-botao" title="Perguntar ao sistema"
         aria-label="Perguntar ao sistema">💬</button>
 
+{# ===================================================================
+   ENCAMINHAR INFORMAÇÃO (12/09/2026)
+
+   Pedido do dono: *"às vezes a gente quer encaminhar alguma informação pra
+   alguém (…) encaminhar pra um operador, pra um número que a gente adicionar
+   lá"*. Mora aqui, no esqueleto, porque serve a mais de uma tela — o
+   lançamento nos Títulos, o documento no Arquivo — e duas cópias do mesmo
+   diálogo divergem no dia em que alguém corrige uma.
+
+   A PRÉ-VISUALIZAÇÃO NÃO É ENFEITE: é a última chance de a pessoa perceber
+   que está mandando o lançamento errado. Enviado não volta.
+   =================================================================== #}
+{% if pode.encaminhar %}
+<dialog id="dlg-enc"><div class="dlg-topo"><h3>Encaminhar</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg-enc').close()">Fechar</button></div>
+  <div class="dlg-corpo">
+    <div class="campo"><label>Para quem, da equipe</label>
+      <div id="enc-pessoas" style="max-height:190px; overflow:auto; border:1px solid var(--borda);
+           border-radius:8px; padding:8px">carregando…</div>
+      <div class="dica">Quem não tem telefone no cadastro aparece marcado — é
+        cadastrar o telefone dele, não é falha da tela.</div></div>
+    <div class="campo" style="margin-top:10px"><label>Ou para um número avulso</label>
+      <input id="enc-numero" placeholder="85 99999-0000 — com DDD">
+      <div class="dica">Confira o número antes de enviar: um dígito trocado
+        manda a informação para um estranho, e não tem como desfazer.</div></div>
+    <div class="campo" style="margin-top:10px"><label>Recado (opcional)</label>
+      <input id="enc-obs" placeholder="ex.: segue o que você pediu"></div>
+    <label class="opcao" style="margin-top:10px"><input type="checkbox" id="enc-anexo">
+      <span class="rotulo">Mandar o documento junto (nota, boleto, comprovante)</span></label>
+    <div class="cartao-dica" style="margin-top:10px">
+      <div class="kpi-rotulo">O que vai ser enviado</div>
+      <div id="enc-previa" style="white-space:pre-wrap; font-size:13px; margin-top:6px">…</div>
+    </div>
+    <div style="margin-top:10px"><button class="btn amarelo" id="btn-enc-enviar">Encaminhar</button></div>
+    <div id="enc-msg"></div>
+  </div></dialog>
+{% endif %}
+
 <div class="ia-painel" id="ia-painel" hidden role="dialog"
      aria-label="Assistente do ERP">
   <div class="ia-cab">
@@ -414,6 +452,80 @@ function comBusca(alvo, textoVazio) {
     sel.size = q ? Math.min(8, Math.max(2, sel.options.length)) : 0;
   });
   sel.addEventListener("change", () => { sel.size = 0; });
+}
+
+// ENCAMINHAR INFORMAÇÃO — para a equipe ou para um número avulso.
+//
+// Um ajudante só, usado por qualquer tela: `abrirEncaminhar("titulo", 123)` ou
+// `abrirEncaminhar("documento", 45)`. A tela diz O QUE encaminhar; o resto —
+// a lista de pessoas, a prévia, o envio e o recado do resultado — é daqui.
+//
+// A TELA NUNCA É A TRAVA: quem confere se esta pessoa alcança este registro é
+// o servidor, pelo mesmo recorte por obra da listagem.
+let ENC = {tipo: null, id: null, pessoas: null};
+
+async function abrirEncaminhar(tipo, id){
+  const dlg = document.getElementById("dlg-enc");
+  if (!dlg) return;
+  ENC.tipo = tipo; ENC.id = id;
+  els("enc-numero").value = ""; els("enc-obs").value = "";
+  els("enc-anexo").checked = false;
+  els("enc-msg").innerHTML = "";
+  els("enc-previa").textContent = "carregando…";
+  dlg.showModal();
+
+  // A lista de pessoas é buscada UMA vez por tela e reaproveitada: ela muda
+  // raramente, e buscá-la a cada abertura tornaria o diálogo lento à toa.
+  try {
+    if (!ENC.pessoas) ENC.pessoas = (await api("/erp/api/encaminhar/destinos")).pessoas;
+    els("enc-pessoas").innerHTML = ENC.pessoas.map(p => `
+      <label class="opcao" style="display:flex; gap:8px; align-items:center; margin:2px 0">
+        <input type="checkbox" class="enc-p" value="${p.id}" ${p.tem_telefone ? "" : "disabled"}>
+        <span class="rotulo">${escapar(p.nome)}
+          <small style="color:var(--tinta-suave)">· ${escapar(p.perfil||"")}</small>
+          ${p.tem_telefone ? "" : "<small style=\"color:var(--vermelho)\"> · sem telefone no cadastro</small>"}
+        </span></label>`).join("") || "<i>ninguém cadastrado</i>";
+  } catch(e) { els("enc-pessoas").innerHTML = escapar(e.message); }
+
+  try {
+    const d = await api(`/erp/api/encaminhar/${tipo}/${id}/previa`);
+    els("enc-previa").textContent = d.mensagem;
+    els("enc-anexo").parentElement.style.display = d.tem_anexo ? "" : "none";
+  } catch(e) { els("enc-previa").textContent = "não consegui montar: " + e.message; }
+}
+
+async function encaminharAgora(){
+  const b = els("btn-enc-enviar");
+  const usuarios = [...document.querySelectorAll(".enc-p:checked")].map(x => x.value);
+  const numero = (els("enc-numero").value || "").trim();
+  if (!usuarios.length && !numero) {
+    return aviso("enc-msg", "Escolha alguém da equipe ou informe um número.", "erro");
+  }
+  b.disabled = true; b.textContent = "Enviando…";
+  try {
+    const d = await api(`/erp/api/encaminhar/${ENC.tipo}/${ENC.id}`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({usuarios, numeros: numero ? [numero] : [],
+                            com_anexo: els("enc-anexo").checked,
+                            observacao: els("enc-obs").value || ""})});
+    const r = d.resultado || {};
+    let m = r.enviados && r.enviados.length
+      ? `Enviado para: <b>${escapar(r.enviados.join(", "))}</b>.`
+      : "Não saiu para ninguém.";
+    // Falha e "sem telefone" são coisas diferentes, e a pessoa precisa saber
+    // qual foi: uma se resolve tentando de novo, a outra se resolve no
+    // cadastro.
+    if (r.sem_destino && r.sem_destino.length)
+      m += `<br>Sem telefone no cadastro: ${escapar(r.sem_destino.join(", "))}.`;
+    if (r.falhas && r.falhas.length)
+      m += `<br><b>Não saiu:</b> ${escapar(r.falhas.join(" · "))}`;
+    aviso("enc-msg", m, (r.falhas||[]).length ? "alerta" : "ok");
+  } catch(e) { aviso("enc-msg", escapar(e.message), "erro"); }
+  b.disabled = false; b.textContent = "Encaminhar";
+}
+
+if (document.getElementById("btn-enc-enviar")) {
+  els("btn-enc-enviar").addEventListener("click", encaminharAgora);
 }
 
 // EXPORTAR O QUE ESTÁ NA TELA — Excel ou PDF.
@@ -882,6 +994,9 @@ async function api(url, opcoes) {
         b.textContent.trim())));
     alvo.querySelectorAll("[data-ia-agendar]").forEach(b =>
       b.addEventListener("click", () => agendar(JSON.parse(b.dataset.iaAgendar), b)));
+    alvo.querySelectorAll("[data-ia-exportar]").forEach(b =>
+      b.addEventListener("click", () => exportarResposta(
+        JSON.parse(b.dataset.iaExportar).titulo, b.dataset.iaFormato)));
     alvo.scrollTop = alvo.scrollHeight;
   }
 
@@ -892,6 +1007,28 @@ async function api(url, opcoes) {
   function euDisse(texto){
     conversa.push({de: "eu", texto});
     guardar(); desenhar();
+  }
+
+  // A última resposta calculada, para o botão de exportar. Guardada aqui e
+  // não no botão porque a tabela inteira pode ter milhares de linhas — e
+  // enfiar isso num atributo do HTML deixaria a conversa pesada à toa.
+  let ULTIMA_RESPOSTA = null;
+
+  function exportarResposta(titulo, formato){
+    const r = ULTIMA_RESPOSTA;
+    if (!r || !(r.linhas || []).length) {
+      return dizer(`<div class="ia-frase">Esta resposta não tem tabela para
+        virar arquivo.</div>`);
+    }
+    // O rodapé do arquivo leva a frase da resposta e de onde ela veio: uma
+    // planilha sem procedência é número sem origem, e três meses depois
+    // ninguém sabe o que era.
+    const filtros = {"Resposta": r.frase || "",
+                     "De onde veio": (r.de_onde_veio || {}).explicacao || "—"};
+    if (r.observacao) filtros["Observação"] = r.observacao;
+    exportarTela({titulo: titulo || r.titulo || "Relatório",
+                  subtitulo: r.frase || "", colunas: r.colunas || [],
+                  linhas: r.linhas, filtros, formato});
   }
 
   function tabela(r){
@@ -964,8 +1101,26 @@ async function api(url, opcoes) {
         <div class="ia-nota">${esc(r.titulo)}${r.de_onde_veio
           ? ` · <a href="${esc(r.de_onde_veio.tela)}">${esc(r.de_onde_veio.explicacao)}</a>`
           : ""}</div>
+        ${(r.linhas || []).length ? `<button class="ia-opcao"
+            data-ia-exportar='${esc(JSON.stringify({titulo: r.titulo || rotulo || "Relatório"}))}'
+            data-ia-formato="xlsx">⬇ Excel</button>
+          <button class="ia-opcao"
+            data-ia-exportar='${esc(JSON.stringify({titulo: r.titulo || rotulo || "Relatório"}))}'
+            data-ia-formato="pdf">⬇ PDF</button>` : ""}
         <button class="ia-opcao" data-ia-agendar='${esc(combinado)}'>
           📅 Me manda isso toda segunda</button>`);
+      // A RESPOSTA VIRA RELATÓRIO. Pedido do dono em 12/09/2026: *"se eu
+      // quiser, olha, gera um relatório em PDF de um determinado assunto, gera
+      // um relatório em Excel com essas informações"*.
+      //
+      // Quem monta o arquivo é o SISTEMA, com os mesmos números da resposta —
+      // não a IA escrevendo um texto que parece relatório. Relatório escrito
+      // por IA é relatório que ninguém pode conferir.
+      //
+      // A tabela na tela mostra 12 linhas; o arquivo leva TODAS as que a
+      // resposta trouxe. Exportar o que está visível seria uma armadilha
+      // silenciosa: a planilha viria cortada e ninguém perceberia.
+      ULTIMA_RESPOSTA = r;
     } catch (e) {
       conversa.pop();
       dizer(`<div class="ia-frase">${esc(curto(e.message))}</div>`);

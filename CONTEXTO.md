@@ -741,6 +741,16 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-12 — Pedido com várias tarefas se executa INTEIRO antes de voltar.**
+  Reclamação do dono, e não a primeira: *"eu passo duas, três tarefas, ao invés
+  de você executar as duas, três tarefas, você faz uma e para. Aí me pergunta
+  se eu quero seguir"*. A regra entrou no `CLAUDE.md`, que é o que toda sessão
+  nova lê. **O que fica:** ordem é escolha de quem executa, não pergunta;
+  dúvida de detalhe vira padrão sensato escrito na resposta; pergunta que
+  interrompe só quando seguir sem a resposta produziria trabalho inútil ou
+  perigoso. Publicar na `main` continua exigindo o "pode" dele — isso nunca
+  foi o problema.
+
 - **2026-09-12 — Teto de IA é POR PESSOA, fica no cadastro dela, e BARRA.**
   Migração 064. US$ 5,00 de padrão para quem entra novo, editável um a um, e
   **vazio = sem limite**. A diferença para o teto global é o ponto: o global

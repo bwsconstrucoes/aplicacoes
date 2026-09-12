@@ -309,6 +309,26 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       **Falta ainda:** o dono arquivar os contratos de verdade no Arquivo. Sem
       documento arquivado, não há o que procurar.
 
+- [x] **ENCAMINHAR INFORMAÇÃO POR WHATSAPP** — FEITO em 12/09/2026, pedido do
+      dono. Botão "↗ Encaminhar" na ficha do lançamento e "Enviar" no
+      documento do Arquivo; para operadores cadastrados ou número avulso, com
+      recado e anexo opcional, e prévia antes do disparo.
+      · Reusa `app/apps/notificador.py`, que já manda por Telegram e WhatsApp.
+      · **Três travas:** só se encaminha o que se pode ver (mesmo recorte por
+        obra); fica registrado quem mandou o quê para quem; número que não
+        parece telefone é recusado.
+      · CONSULTA e PARCEIRO não encaminham, por escolha.
+      **Falta ainda:** as perguntas sobre o que foi encaminhado (o registro
+      existe, falta a consulta pronta).
+
+- [x] **A RESPOSTA DO ASSISTENTE VIRA RELATÓRIO (Excel e PDF)** — FEITO em
+      12/09/2026, pedido do dono. Toda resposta com tabela ganha os dois
+      botões, no painel do cantinho e na tela cheia. Quem monta o arquivo é o
+      SISTEMA, com os mesmos números — não a IA escrevendo um texto.
+      · **Falha antiga corrigida junto:** o exportador punha o valor debaixo do
+        cabeçalho errado quando a linha era um dicionário fora da ordem das
+        colunas, ou quando faltava um campo. Saía bonito e errado, sem aviso.
+
 - [x] **CANCELAR LANÇAMENTO: quem lançou desfaz o próprio, e é avisado** —
       FEITO em 12/09/2026. Pedido do dono, e decisão dele: *"liberado o
       lançamento que não está baixado ou conciliado"*.

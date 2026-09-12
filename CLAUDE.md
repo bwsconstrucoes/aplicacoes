@@ -22,6 +22,28 @@ Isso muda a resposta, não o cuidado com o código.
   verificado são decisão de negócio — e a decisão é dele. Não esconder atrás de
   "está pronto".
 
+## Pedido com várias tarefas: execute TODAS antes de voltar
+
+Reclamação do dono em 12/09/2026, e não foi a primeira vez: *"eu passo duas,
+três tarefas, ao invés de você executar as duas, três tarefas, você faz uma e
+para. Aí me pergunta se eu quero seguir. Se eu já estou dando três tarefas, por
+que tu não executa as três?"*
+
+- **Ele mandou três coisas? Entregue as três**, e só então volte. Terminar a
+  primeira e perguntar "faço a próxima?" não é prudência — é devolver para ele
+  um trabalho que ele já mandou fazer.
+- **Ordem é escolha sua**, não pergunta. Se uma delas for maior, comece por
+  ela ou pela que destrava as outras — e diga no fim em que ordem foi.
+- **Dúvida de detalhe se resolve com um padrão sensato**, escrito na resposta
+  ("fiz assim, porque X; se preferir diferente, eu troco"). Pergunta que
+  INTERROMPE só quando seguir sem a resposta produziria trabalho inútil ou
+  perigoso — publicar na `main`, apagar dado, gastar dinheiro.
+- **Uma pergunta que ele já respondeu não se repete.** Se ele decidiu, use a
+  decisão e siga.
+
+O que continua exigindo o "pode" dele, sempre: **juntar na `main`** (publica no
+Render na hora) e qualquer coisa destrutiva ou irreversível.
+
 ## Quatro áreas, quatro chats — e a memória fica no repositório
 
 O dono trabalha com **um chat por área**, na nuvem (claude.ai/code), sem
