@@ -785,7 +785,32 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 }
 .ia-acao { background: var(--papel); color: var(--azul); }
 .ia-acao:hover { background: #E4EBF7; }
-.ia-acao.gravando { background: var(--vermelho); color: #fff; }
+/* GRAVANDO. O vermelho sozinho não bastava: no celular o dono viu só "um x"
+   e não soube se estava gravando. Agora pulsa, e a tarja acima do campo diz
+   em palavras o que está acontecendo e por quanto tempo. */
+.ia-acao.gravando { background: var(--vermelho); color: #fff;
+                    animation: ia-pulso 1.2s ease-in-out infinite; }
+@keyframes ia-pulso {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(200, 30, 30, .55); }
+  50%      { box-shadow: 0 0 0 7px rgba(200, 30, 30, 0); }
+}
+.ia-gravando {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+  padding: 8px 12px; border-top: 1px solid var(--borda);
+  background: #FFF3F3; font-size: 12.5px; color: var(--vermelho);
+}
+.ia-gravando b { font-variant-numeric: tabular-nums; }
+.ia-gravando .ia-nota { flex: 1 1 100%; color: var(--tinta-suave); }
+.ia-ponto {
+  width: 9px; height: 9px; border-radius: 50%; background: var(--vermelho);
+  flex: 0 0 auto; animation: ia-pisca 1.2s steps(2, start) infinite;
+}
+@keyframes ia-pisca { 50% { opacity: .25; } }
+
+/* Quem pediu menos animação no sistema não quer piscada nenhuma. */
+@media (prefers-reduced-motion: reduce) {
+  .ia-acao.gravando, .ia-ponto { animation: none; }
+}
 .ia-enviar { background: var(--azul); color: #fff; }
 .ia-enviar:disabled { opacity: .5; cursor: default; }
 

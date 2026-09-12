@@ -741,6 +741,25 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-12 — Botão que muda de estado tem de dizer o estado EM PALAVRAS.**
+  O microfone do assistente só trocava o ícone e ficava vermelho; o dono, no
+  celular, viu "um x" e não soube se estava gravando. Agora há tarja com
+  relógio correndo, o que fazer para parar, e o lembrete de que escrever
+  continua valendo. **Regra que fica: ícone sozinho não é aviso** — quem usa
+  não decora símbolo, e botão que não diz o que faz vira botão que ninguém
+  aperta duas vezes. Vale para qualquer estado que dure mais que um piscar:
+  gravando, enviando, calculando.
+
+- **2026-09-12 — Soma de dinheiro arredonda LINHA A LINHA, nunca no fim.** A
+  medição por item somava sem arredondar e arredondava o total; cada linha era
+  gravada arredondada. Com preço de três casas, o total da medição divergia da
+  soma das próprias linhas em centavos — e esse total consome saldo de
+  contrato, retém garantia e vira título a pagar. **Regra que fica: o número
+  que a pessoa consegue conferir na calculadora é o que manda; o sistema soma
+  do mesmo jeito que mostra.** Vale para rateio, parcela, medição e item de
+  pedido. E preço nunca passa por `float` no caminho do dinheiro — o `float`
+  é da tela.
+
 - **2026-09-12 — O padrão do ERP é RECORTAR POR OBRA.** Dito pelo dono com
   todas as letras: *"o ideal é sempre limitar as informações a quem está
   associado a cada obra"*. Deixou de ser regra do financeiro e virou regra do

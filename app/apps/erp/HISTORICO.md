@@ -98,6 +98,68 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
 
 ---
 
+**Estado em 12/09/2026 (décima primeira entrega):** **duas coisas que o dono
+viu na tela, e o primeiro achado da varredura da aritmética.** Sem migração.
+
+### O botão de falar não dizia que estava gravando
+
+Palavras dele: *"tem alguma falha no botão de conversar, você clica, aparece o
+x, mas não dá pra saber se está gravando se não está, é só pra gravar e se eu
+quiser escrever, como é que funciona"*.
+
+Estava certo. O único sinal era o ícone virar um quadradinho (que no celular
+ele leu como "x") e o botão ficar vermelho. Nenhuma palavra, nenhum relógio,
+nenhuma pista de que dá para escrever em vez de falar. Botão que não diz o que
+está fazendo é botão que ninguém usa duas vezes.
+
+Agora, enquanto grava, aparece uma tarja acima do campo:
+
+> 🔴 **Gravando 0:07** — Toque de novo no botão vermelho para parar. Ou escreva
+> no campo abaixo — tanto faz.
+
+E mais quatro coisas que faltavam:
+
+- **relógio correndo**, para a pessoa saber que está sendo ouvida;
+- **teto de dois minutos**, com aviso — gravação esquecida no bolso vira
+  arquivo enorme, custo de transcrição e, no fim, uma falha sem explicação;
+- **"Ouvindo o que você falou…"** enquanto transcreve, em vez de silêncio;
+- **o que eu entendi aparece escrito** ("Entendi: …"), com o texto no campo
+  para conferir antes de enviar. Transcrição erra, e pergunta mal ouvida
+  respondida em silêncio é o pior defeito possível.
+
+A tela cheia (`/erp/perguntar`) já tinha texto nos botões — era só o painel
+flutuante que estava mudo.
+
+### A tela de entrada dizia "ERP Financeiro"
+
+Ele viu: *"a tela de login do sistema é ERP Financeiro, tá errado"*. E está: o
+resto do sistema se chama **ERP BWS** desde que deixou de ser só contas a
+pagar — hoje tem Obras, Pessoal, Suprimentos, Contratos, Locações, Arquivo e
+Agenda. Só a porta de entrada tinha ficado para trás, com o nome antigo e o
+subtítulo "Contas a pagar". Alinhado com o resto. **Conferido no navegador**,
+não só no código.
+
+### Primeiro achado da varredura da aritmética: a medição não batia com as linhas dela
+
+A medição por item somava as linhas SEM arredondar e arredondava só no fim,
+enquanto cada linha era GRAVADA arredondada. Com preço de três casas — e a
+coluna aceita quatro, porque R$ 12,345 por m² existe — três linhas de R$ 12,345
+davam **R$ 37,04 no total e R$ 37,02 nas linhas**.
+
+Não é cosmético. O valor medido é o que consome o saldo do contrato, o que a
+retenção de garantia calcula em cima e o que vira título a pagar. Quem confere
+a medição soma as linhas na calculadora e encontra outro número — e é aí que se
+perde a confiança em TODOS os números, inclusive nos que estão certos.
+
+Agora cada linha é arredondada antes de somar, igual ao que é gravado. E o
+preço passou a ser lido em decimal exato, sem o desvio pelo `float` que a tela
+usa.
+
+**Ainda faltam, desta varredura:** locação (valor do período, devolução
+parcial) e despesa de colaborador (soma dos itens contra o total do título).
+
+---
+
 **Estado em 12/09/2026 (décima entrega):** **o princípio do recorte por obra,
 aplicado — e o perfil PARCEIRO**. **TRAZ A MIGRAÇÃO 063.**
 

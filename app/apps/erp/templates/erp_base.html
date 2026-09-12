@@ -110,6 +110,18 @@
 
   <div class="ia-conversa" id="ia-conversa"></div>
 
+  <!-- A TARJA DO MICROFONE. Sem ela, o único sinal de que estava gravando era
+       o ícone do botão virar um quadradinho — e o dono disse, com todas as
+       letras: "você clica, aparece o x, mas não dá pra saber se está gravando
+       se não está". Botão que não diz o que está fazendo é botão que ninguém
+       usa duas vezes. -->
+  <div class="ia-gravando" id="ia-gravando" hidden>
+    <span class="ia-ponto"></span>
+    <b id="ia-relogio">Gravando 0:00</b>
+    <span class="ia-nota" id="ia-gravando-dica">Toque de novo no botão vermelho
+      para parar. Ou escreva no campo abaixo — tanto faz.</span>
+  </div>
+
   <div class="ia-pe">
     <input id="ia-texto" type="text" autocomplete="off"
            placeholder="o que tem a pagar hoje">
@@ -992,11 +1004,34 @@ async function api(url, opcoes) {
     if (t.includes("mpeg") || t.includes("mp3")) return "mp3";
     return "webm";
   }
-  async function gravar(){
+  // Teto de dois minutos. Não é capricho: gravação esquecida no bolso vira
+  // arquivo enorme, custo de transcrição e, no fim, uma falha — e a pessoa
+  // nunca saberia por quê.
+  const TETO_DE_GRAVACAO = 120;
+  let relogioIa = null;
+
+  function mostrarGravando(ligado, segundos){
+    const tarja = document.getElementById("ia-gravando");
     const b = document.getElementById("ia-gravar");
+    tarja.hidden = !ligado;
+    b.classList.toggle("gravando", ligado);
+    b.textContent = ligado ? "⏹" : "🎤";
+    b.title = ligado ? "Parar de gravar" : "Falar a pergunta";
+    if (ligado) {
+      const m = Math.floor(segundos / 60), ss = String(segundos % 60).padStart(2, "0");
+      document.getElementById("ia-relogio").textContent = `Gravando ${m}:${ss}`;
+    }
+  }
+
+  function pararRelogioIa(){
+    if (relogioIa) { clearInterval(relogioIa); relogioIa = null; }
+    mostrarGravando(false);
+  }
+
+  async function gravar(){
     if (gravador) {
       if (gravador.state !== "inactive") gravador.stop();
-      gravador = null; b.classList.remove("gravando"); b.textContent = "🎤";
+      gravador = null; pararRelogioIa();
       return;
     }
     try {
@@ -1013,14 +1048,36 @@ async function api(url, opcoes) {
                     (Date.now() - comecou) / 1000);
       };
       g.start(); gravador = g;
-      b.classList.add("gravando"); b.textContent = "⏹";
+      mostrarGravando(true, 0);
+      relogioIa = setInterval(() => {
+        const seg = Math.floor((Date.now() - comecou) / 1000);
+        if (seg >= TETO_DE_GRAVACAO) {
+          gravar();                       // para sozinho e manda o que tem
+          dizer(`<div class="ia-nota">Parei em dois minutos — é o limite de
+            cada gravação. Se faltou dizer alguma coisa, é só falar de novo.</div>`);
+          return;
+        }
+        mostrarGravando(true, seg);
+      }, 1000);
     } catch (e) {
-      dizer(`<div class="ia-frase">Não consegui usar o microfone. Escreva a
-        pergunta que eu respondo igual.</div>`);
+      pararRelogioIa();
+      dizer(`<div class="ia-frase">Não consegui usar o microfone. Pode ser que
+        o navegador esteja com ele bloqueado nesta página.</div>
+        <div class="ia-nota">Escreva a pergunta no campo abaixo que eu respondo
+        igual — falar é só um atalho.</div>`);
     }
   }
   async function mandarAudio(blob, segundos){
-    if (!blob.size) return;
+    if (!blob.size || segundos < 1) {
+      dizer(`<div class="ia-frase">Não peguei nada — foi curto demais.</div>
+        <div class="ia-nota">Segure o botão do microfone enquanto fala, ou
+        escreva no campo abaixo.</div>`);
+      return;
+    }
+    document.getElementById("ia-gravando").hidden = false;
+    document.getElementById("ia-relogio").textContent = "Ouvindo o que você falou…";
+    document.getElementById("ia-gravando-dica").textContent =
+      "Vou escrever no campo abaixo para você conferir antes de enviar.";
     const dados = new FormData();
     // O nome tem de bater com o formato: o Safari grava em MP4 e o Chrome em
     // WebM, e o serviço decide pelo nome.
@@ -1032,8 +1089,17 @@ async function api(url, opcoes) {
       // pergunta mal ouvida respondida em silêncio é o pior defeito possível.
       document.getElementById("ia-texto").value = d.texto;
       document.getElementById("ia-texto").focus();
+      dizer(`<div class="ia-nota">Entendi: “${esc(d.texto)}”. Está no campo
+        abaixo — corrija se eu ouvi errado e toque em enviar.</div>`);
     } catch (e) {
       dizer(`<div class="ia-frase">${esc(curto(e.message))}</div>`);
+    } finally {
+      // A tarja volta ao texto de gravação, senão a próxima vez começa
+      // dizendo "ouvindo" antes de ouvir nada.
+      document.getElementById("ia-gravando").hidden = true;
+      document.getElementById("ia-gravando-dica").textContent =
+        "Toque de novo no botão vermelho para parar. Ou escreva no campo " +
+        "abaixo — tanto faz.";
     }
   }
 
