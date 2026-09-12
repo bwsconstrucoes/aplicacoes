@@ -1962,48 +1962,96 @@ dublado em todos os testes. Omie, Pipefy, Dropbox e a planilha não foram
 tocados. O primeiro comprovante de verdade é o teste que falta, e o certo é
 começar com UM.
 
+### Vigésima oitava leva (12/09) — o nome do credor
+
+*"O Pipefy é frouxo no campo credor. Um lança 'Aço Cearense Limitada', outro
+bota só 'Aço Cearense', o outro escreve errado."* O pedido foi comparar credor e
+CPF/CNPJ e equalizar para o melhor nome.
+
+**A MEDIÇÃO DERRUBOU A REGRA QUE EU MESMO TINHA PROPOSTO.** Rodando contra a
+planilha de verdade (aba Lançamentos, 116 lançamentos, 41 CNPJs): **8 CNPJs —
+um em cada cinco — aparecem com mais de um nome**. E "fica o nome mais
+completo" não serve, com a prova nos dados dele:
+
+    MAGNA LOCAÇÕES LTDA      3x
+    MAGNA LOCAÇÃOES LTDA     1x   <- o MAIS LONGO é o digitado errado
+
+Aquela regra trocaria o certo pelo errado em todas as SPs daquele fornecedor. E
+há casos em que **nenhum dos dois é erro**: CELPE virou NEOENERGIA (a empresa
+mudou de nome) e MAFEMA aparece como razão social e como nome de fantasia. Isso
+não é divergência para corrigir: é decisão de gente.
+
+**A regra que ficou**, e é a mesma da conciliação fiscal — *juntar errado é pior
+do que não juntar*:
+
+| Caso | O sistema |
+|---|---|
+| Só acento, cedilha, pontuação ou espaço a mais ("MBP ISOBLOCK" = "MBP ISO BLOCK") | **resolve sozinho** |
+| Um nome é o **começo** do outro ("TRI" → "TRIBUNAL DE JUSTIÇA DO CEARÁ") | **resolve sozinho** |
+| Nomes de verdade diferentes | **pergunta — uma vez por CNPJ** |
+
+Entre grafias do mesmo nome fica **a mais usada**, não a mais longa: a equipe
+reconhece o nome que ela escreve, e trocá-lo pelo que alguém digitou uma vez
+seria piorar.
+
+**A decisão do dono MANDA sobre a proposta.** Uma vez escolhido NEOENERGIA, a
+regra não pode voltar a propor CELPE na semana seguinte — senão ele decidiria a
+mesma coisa para sempre, que é o contrário do que ele pediu. É para isso que
+existe a migração **007**.
+
+> **Nos oito casos reais: 2 o sistema resolve sozinho, 6 esperam ele.** Uma vez
+> cada. Com 59 mil SPs a primeira lista vai ser maior; depois disso é só o
+> fornecedor novo.
+
+#### Dois defeitos MEUS, achados rodando contra o dado de verdade
+
+1. **Eu contava divergência por grupo de nome.** Com isso "MASSA PRONTA …
+   SERVIÇOS LTDA" e "… SERVICOS LTDA" caíam no mesmo grupo, o CNPJ sumia da
+   lista e a planilha ficava como estava — justamente o caso mais seguro de
+   arrumar, porque é a mesma palavra com e sem cedilha. Passou a contar
+   **grafias escritas**.
+2. **O "quantas faltam arrumar" também contava por grupo**, e por isso dizia
+   "0 a arrumar" no mesmo caso. Passou a contar **grafia por grafia**.
+
+Os dois só apareceram porque a regra foi rodada contra os dados dele, e não
+contra exemplo inventado. Cada um virou teste.
+
+#### Onde a tela mora, e por quê
+
+**Fora das abas de cima**, alcançada por Configurações. É arrumação ocasional,
+não trabalho do dia — e a barra de abas é para o que se abre todo dia. Encher
+a barra com manutenção faria o que importa ficar mais longe.
+
+**A reescrita passa pelo caminho de sempre** — banco, fila, log, planilha —,
+que é o que garante que a mudança apareça no Log com o valor anterior e com
+quem mexeu, e que chegue à planilha mesmo se a internet cair no meio. E entra
+por **porta própria**, como a Validação e o "Remover risco": a coluna do credor
+**continua fora de `EDITAVEIS`**, então ninguém reescreve nome de fornecedor
+pela tela comum. Há teste travando isso.
+
+**O que já foi decidido não some da lista** — muda de lugar, para "já
+decididos". Sumir faria parecer que o problema desapareceu sozinho, e no dia em
+que alguém lançasse o nome velho de novo ninguém entenderia por que voltou.
+
+**Verificação:** 4.457 testes verdes com Postgres de verdade, 129 pulados; 35
+testes novos, montados com os **oito casos reais**. Conferido pondo a regra do
+"nome mais completo" de volta: sete testes caem. **E a tela foi exercitada de
+verdade** contra um Postgres descartável, semeado com os oito casos e com o
+mesmo CNPJ formatado de dois jeitos: ela mostra 2 automáticos e 6 para decidir;
+aplicar os 2 reescreveu 2 SPs, pôs 2 células na fila da planilha e 2 linhas no
+log; "TRI" e "SERVICOS" sumiram da base; e escolher NEOENERGIA ficou gravado com
+o nome de quem decidiu.
+
+> **PRECISA DO BOTÃO.** A migração **007** cria a tabela da memória das
+> escolhas. Ao publicar, apertar "Aplicar atualizações do banco" no mesmo
+> momento. Sem ela a tela abre e avisa que falta, em vez de estourar.
+
+**O que NÃO foi verificado:** nenhuma escrita chegou à planilha de verdade — a
+fila foi conferida, mas quem a esvazia é a sincronização, e ela precisa da
+credencial do Google, que não existe fora do Render. E a lista nunca foi vista
+contra as 59 mil SPs: o tamanho real dela é desconhecido.
+
 ### Pedido na fila, ainda NÃO feito
-
-**Normalizar o nome do credor na SPsBD** (pedido em 11/09/2026). *"O Pipefy é
-frouxo no campo credor. Um lança 'Aço Cearense Limitada', outro bota só 'Aço
-Cearense', o outro escreve errado. Queria que a planilha fosse analisada
-comparando credor e CPF/CNPJ, e equalizasse para o melhor nome."*
-
-**MEDIDO em dado de verdade** (aba Lançamentos, 116 lançamentos, 41 CNPJs):
-**8 CNPJs — 20% — aparecem com mais de um nome**. E os casos NÃO são todos do
-mesmo tipo, o que derruba a regra simples de "fica o nome mais completo":
-
-| CNPJ | Nomes encontrados | Que tipo de caso é |
-|---|---|---|
-| 28566933001727 | MBP ISOBLOCK · MBP ISO BLOCK · METALURGICA BARRA DO PIRAI S/A | espaço a mais **e** nome de fantasia vs. razão social |
-| 03666136000123 | ESPERANÇA · ESPERAÇA · ESPERANCA NORDESTE LTDA | acento e **erro de digitação** |
-| 01519852000829 | MAGNA LOCAÇÕES · MAGNA LOCAÇÃOES LTDA | erro de digitação — e **o errado é o MAIS LONGO** |
-| 09444530000101 | TRIBUNAL DE JUSTIÇA DO CEARÁ · TRI | abreviação |
-| 10835932000108 | CELPE CIA ENERGETICA · NEOENERGIA | **a empresa mudou de nome** |
-| 24091522000104 | MAFEMA MATERIAIS ELÉTRICOS · MAFEMA LIMITADA | fantasia vs. razão social |
-
-**O que esses dados provam:** "o nome mais completo" não serve como regra
-sozinha — em MAGNA, o mais longo é o errado. E CELPE/NEOENERGIA e
-MAFEMA não são erro nenhum: são decisões que só uma pessoa toma.
-
-**Proposta levada ao dono, ainda sem resposta:** normalizar sozinho **só quando
-é literalmente o mesmo nome** (tirando acento, pontuação, espaço e maiúscula —
-"MBP ISOBLOCK" = "MBP ISO BLOCK") ou quando um é começo do outro ("TRI" →
-"TRIBUNAL…"); tudo o mais vai para uma lista onde ele decide **uma vez por
-CNPJ**, e a escolha fica gravada. Rodar sob botão e uma vez por dia, **nunca**
-na sincronização de 5 em 5 minutos — é varredura da base inteira e o banco tem
-um décimo de um núcleo.
-
-**A IA da conciliação fiscal — o dono decidiu o desenho em 11/09/2026.** Não é
-automática: os pendentes aparecem com a opção *"analisar com IA"*, e ele
-**escolhe quais**, para ir medindo se compensa. Volume estimado por ele: *"mil
-por mês no total"*, e desses só uma parte precisaria de IA. A decisão dele, com
-as palavras dele: *"eu prefiro gastar um pouco com a IA do que ter um
-funcionário fazendo isso"*. Quer também o **download autônomo das notas** ("não
-quero ter trabalho nenhum em baixar no FSist"), mantendo o FSist E a importação
-manual de relatório — porque pode ter relatório de outra empresa para jogar
-ali. A importação **não pode duplicar**: nota que já existe é ignorada, e no fim
-diz quantas entraram, quantas já tinha e quantas não tinha.
 
 **O relatório do lote em PDF precisa caber mais** (pedido em 11/09/2026).
 *"Está bacaninha, só que reduz a fonte consideravelmente pra caber mais

@@ -122,6 +122,11 @@ def escolher(nomes) -> dict:
             "nome": _melhor_escrita(grafias),
             "vezes": sum(q for _, q in grafias),
             "grafias": sorted(n for n, _ in grafias),
+            # QUANTAS SPs TÊM CADA GRAFIA, e não só quais grafias existem.
+            # A contagem por grupo não serve para dizer o que falta arrumar:
+            # "SERVIÇOS" e "SERVICOS" são o mesmo grupo, e mesmo assim há uma
+            # SP escrita diferente para reescrever.
+            "vezes_por_grafia": {n: q for n, q in grafias},
         })
     variantes.sort(key=lambda v: (-v["vezes"], v["nome"]))
 
@@ -196,3 +201,131 @@ def a_corrigir(documento_nome_por_sp, escolhido_por_documento) -> list:
         if str(nome or "").strip() != certo:
             saida.append((sp_id, certo))
     return saida
+
+
+# ---------------------------------------------------------------------------
+# O QUE VEM DO BANCO
+# ---------------------------------------------------------------------------
+def _agrupado_da_base() -> list:
+    """(documento só com dígitos, nome, quantas SPs) — já agrupado pelo banco.
+
+    AGRUPA NO SQL, e não em Python: trazer as 59 mil linhas para contar aqui
+    seriam 59 mil textos na memória de uma instância que já morreu disso. O
+    banco devolve alguns milhares de pares, que é o tamanho do cadastro de
+    fornecedores, não o da base.
+
+    E NORMALIZA O DOCUMENTO NO SQL pelo mesmo motivo de sempre: na planilha o
+    mesmo CNPJ vem "29.066.773/0001-52" numa linha e "29066773000152" noutra.
+    Agrupar pelo texto cru faria o fornecedor virar dois."""
+    from .db import consultar
+
+    return consultar(
+        "SELECT regexp_replace(documento, '\\D', '', 'g') AS doc, "
+        "       trim(credor) AS nome, count(*) "
+        "  FROM analisesps.sps "
+        " WHERE length(regexp_replace(coalesce(documento, ''), '\\D', '', 'g')) "
+        "       IN (11, 14) "
+        "   AND trim(coalesce(credor, '')) <> '' "
+        " GROUP BY 1, 2")
+
+
+def escolhas_guardadas() -> dict:
+    """O que já foi decidido: documento -> {nome, tipo, automatico, ...}."""
+    from .db import consultar
+    try:
+        linhas = consultar(
+            "SELECT documento, nome, tipo, automatico, decidido_por, "
+            "       decidido_em, sps_mudadas FROM analisesps.credor_nome")
+    except Exception:  # noqa: BLE001 — migração 007 ainda não aplicada
+        logger.exception("Análise de SPs: não consegui ler os nomes escolhidos")
+        return {}
+    return {l[0]: {"nome": l[1], "tipo": l[2], "automatico": l[3],
+                   "decidido_por": l[4], "decidido_em": l[5],
+                   "sps_mudadas": l[6]} for l in linhas}
+
+
+def divergencias_da_base() -> list:
+    """A lista que a tela mostra, já sabendo o que o dono decidiu antes.
+
+    Uma divergência JÁ DECIDIDA não some da lista — ela muda de lugar: vai para
+    "resolvido", com o nome escolhido. Sumir faria parecer que o problema
+    desapareceu sozinho, e no dia em que alguém lançasse o nome velho de novo a
+    pessoa não entenderia por que voltou."""
+    agrupado = _agrupado_da_base()
+    por_documento: dict = {}
+    for documento, nome, quantas in agrupado:
+        por_documento.setdefault(documento, []).extend([nome] * int(quantas or 1))
+
+    decididas = escolhas_guardadas()
+    saida = []
+    for documento, nomes in por_documento.items():
+        resultado = escolher(nomes)
+        escritas = sum(len(v["grafias"]) for v in resultado["variantes"])
+        ja = decididas.get(documento)
+        if escritas < 2 and not ja:
+            continue
+        # A escolha guardada MANDA sobre a proposta. Se o dono disse que é
+        # NEOENERGIA, a regra não pode voltar a propor CELPE na semana seguinte.
+        nome = ja["nome"] if ja else resultado["nome"]
+        saida.append({
+            "documento": documento,
+            "nome": nome,
+            "proposto": resultado["nome"],
+            "tipo": (ja or resultado)["tipo"],
+            "motivo": MOTIVOS.get((ja or resultado)["tipo"], ""),
+            "automatico": resultado["automatico"],
+            "decidido": bool(ja),
+            "decidido_por": (ja or {}).get("decidido_por", ""),
+            "variantes": resultado["variantes"],
+            "sps": sum(v["vezes"] for v in resultado["variantes"]),
+            # QUANTAS SPs AINDA ESTÃO ESCRITAS DIFERENTE do nome que vale.
+            # Conta grafia por grafia: contar por grupo dizia "0 a arrumar"
+            # justamente no caso mais fácil — o mesmo nome com e sem cedilha,
+            # que está no mesmo grupo e mesmo assim precisa ser reescrito.
+            "fora": sum(quantas
+                        for v in resultado["variantes"]
+                        for grafia, quantas in v["vezes_por_grafia"].items()
+                        if grafia != nome),
+        })
+    # Primeiro o que espera decisão, depois o que já pode ser aplicado, e
+    # dentro de cada grupo o que afeta mais SPs.
+    saida.sort(key=lambda d: (d["decidido"], d["automatico"], -d["sps"]))
+    return saida
+
+
+def guardar_escolha(documento: str, nome: str, tipo: str, automatico: bool,
+                    quem: str, sps_mudadas: int = 0) -> None:
+    """Grava a decisão. É ela que faz a pergunta não voltar na semana seguinte."""
+    from .db import conexao
+
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.credor_nome "
+            "  (documento, nome, tipo, automatico, decidido_por, decidido_em, "
+            "   sps_mudadas) "
+            "VALUES (?, ?, ?, ?, ?, now(), ?) "
+            "ON CONFLICT (documento) DO UPDATE SET "
+            "  nome = EXCLUDED.nome, tipo = EXCLUDED.tipo, "
+            "  automatico = EXCLUDED.automatico, "
+            "  decidido_por = EXCLUDED.decidido_por, decidido_em = now(), "
+            "  sps_mudadas = analisesps.credor_nome.sps_mudadas "
+            "                + EXCLUDED.sps_mudadas",
+            (so_digitos(documento), nome, tipo, bool(automatico), quem or "",
+             int(sps_mudadas)))
+        conn.commit()
+
+
+def sps_para_reescrever(documento: str, nome: str) -> list:
+    """Os IDs das SPs daquele CPF/CNPJ cujo credor está escrito diferente.
+
+    COMPARA O TEXTO EXATO, e não a chave: o objetivo aqui é deixar a planilha
+    toda com a MESMA grafia, então "SERVICOS" tem de virar "SERVIÇOS" mesmo
+    sendo a mesma palavra. É justo esse o pedido do dono."""
+    from .db import consultar
+
+    linhas = consultar(
+        "SELECT id FROM analisesps.sps "
+        " WHERE regexp_replace(coalesce(documento, ''), '\\D', '', 'g') = ? "
+        "   AND trim(coalesce(credor, '')) <> ? "
+        "   AND trim(coalesce(credor, '')) <> ''", (so_digitos(documento), nome))
+    return [str(l[0]) for l in linhas]

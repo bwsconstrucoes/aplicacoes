@@ -968,3 +968,14 @@ a.kpi { display: block; }
 .lote-comprovante { border-top: 1px solid #e4e9ee; padding: 10px 0; }
 .lote-comprovante > summary { cursor: pointer; line-height: 1.8; }
 .lote-comprovante > summary > .cartao-dica { margin-left: 8px; }
+
+/* Cada caso de credor e um formulario proprio: a pessoa decide UM fornecedor
+   por vez, e mandar todos juntos faria um clique errado atingir trinta. */
+.credor-caso {
+  border-top: 1px solid #e4e9ee; padding: 12px 0;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+}
+.credor-opcao {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  cursor: pointer; padding: 2px 0;
+}

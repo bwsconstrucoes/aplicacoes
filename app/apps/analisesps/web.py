@@ -1748,6 +1748,98 @@ def ratear():
 # BRADESCO
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
+# CREDORES — o mesmo CNPJ escrito de cinco jeitos
+#
+# FORA DAS ABAS DE CIMA, e de propósito: isto é arrumação ocasional, não
+# trabalho do dia. A barra de abas é para o que se abre todo dia; encher ela
+# com manutenção faria o que importa ficar mais longe. Chega-se aqui por
+# Configurações, onde a contagem aparece.
+# ---------------------------------------------------------------------------
+@bp.route("/credores")
+@exige_consulta
+def tela_credores():
+    from . import consultas, credores
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+    try:
+        lista = credores.divergencias_da_base()
+        erro = None
+    except Exception as e:  # noqa: BLE001 — migração 007 ainda não aplicada
+        logger.exception("Análise de SPs: falhou levantar os credores")
+        lista, erro = [], (
+            "Esta tela precisa da atualização do banco. Vá em Configurações e "
+            f"aperte \"Aplicar atualizações do banco\". (detalhe: {e})")
+
+    return render_template(
+        "analisesps_credores.html", aba="configuracoes", base=base,
+        divergencias=lista, erro=erro,
+        aviso=request.args.get("aviso") or None,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/credores/aplicar", methods=["POST"])
+@exige_operador
+def aplicar_credor():
+    """Grava a escolha e reescreve o nome nas SPs daquele CPF/CNPJ.
+
+    PASSA PELO MESMO CAMINHO DE SEMPRE — `_gravar_alteracao`: banco, fila, log,
+    planilha. Não é atalho: é o que garante que a mudança apareça no Log com o
+    valor anterior e com quem mexeu, e que chegue à planilha mesmo se a
+    internet cair no meio.
+
+    E ENTRA POR PORTA PRÓPRIA, como a Validação e o "Remover risco": a coluna
+    do credor NÃO está em `EDITAVEIS`, então ninguém reescreve nome de
+    fornecedor pela tela comum. Nome de credor não é campo de trabalho do dia
+    a dia."""
+    from . import credores
+
+    documentos = [d for d in request.form.getlist("documento") if d.strip()]
+    escolhidos = request.form.getlist("nome")
+    if len(documentos) != len(escolhidos):
+        return redirect(url_for("analisesps.tela_credores",
+                                aviso="Pedido incompleto. Tente de novo."))
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    mudadas, fornecedores, sem_efeito = 0, 0, 0
+    for documento, nome in zip(documentos, escolhidos):
+        nome = (nome or "").strip()
+        if not nome:
+            continue
+        ids = credores.sps_para_reescrever(documento, nome)
+        tipo = request.form.get(f"tipo-{documento}") or credores.DECIDIR
+        if ids:
+            # Em blocos: uma SP com muitos lançamentos do mesmo fornecedor
+            # pode passar do teto de 500 da rota comum.
+            for inicio in range(0, len(ids), 400):
+                _gravar_alteracao(ids[inicio:inicio + 400], "credor", nome,
+                                  "Equalizar nome do credor")
+            mudadas += len(ids)
+        else:
+            sem_efeito += 1
+        credores.guardar_escolha(documento, nome, tipo,
+                                 tipo != credores.DECIDIR, quem, len(ids))
+        fornecedores += 1
+
+    if not fornecedores:
+        aviso = "Nenhum nome foi escolhido."
+    else:
+        aviso = (f"{fornecedores} fornecedor(es) equalizado(s), "
+                 f"{mudadas} SP(s) reescrita(s). A planilha é atualizada na "
+                 "próxima sincronização.")
+        if sem_efeito:
+            aviso += (f" {sem_efeito} já estava(m) com o nome certo — ficou só "
+                      "a decisão guardada.")
+    logger.info("Análise de SPs: %s equalizou %d credor(es), %d SP(s).",
+                quem or "sem nome", fornecedores, mudadas)
+    return redirect(url_for("analisesps.tela_credores", aviso=aviso))
+
+
+# ---------------------------------------------------------------------------
 # COMPROVANTES — arrastar o PDF e a baixa acontece
 #
 # O trabalho pesado NÃO É DAQUI: o robô que dá baixa é o `baixabradesco`, que

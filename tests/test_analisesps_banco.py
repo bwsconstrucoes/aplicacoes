@@ -1732,3 +1732,153 @@ def test_o_que_pede_acao_aparece_no_topo_da_lista(banco_analisesps, monkeypatch,
     itens = comprovantes.itens_do_lote(lote_id)
     assert itens[0]["situacao"] == comprovantes.NAO_LOCALIZADO, (
         "o que baixou veio na frente do que precisa de atenção")
+
+
+# ---------------------------------------------------------------------------
+# O NOME DO CREDOR — o mesmo CNPJ escrito de cinco jeitos
+#
+# A regra pura está em `test_analisesps_credores.py`, montada com os oito casos
+# reais da planilha. Aqui é o que só o banco alcança: o agrupamento por CNPJ
+# quando ele vem formatado de dois jeitos, a memória da decisão, e a reescrita
+# chegando à fila da planilha.
+# ---------------------------------------------------------------------------
+def _sp_credor(sp_id, documento, credor):
+    return sp(sp_id, documento=documento, credor=credor)
+
+
+@pytest.mark.banco
+def test_o_mesmo_CNPJ_formatado_de_dois_jeitos_e_UM_fornecedor(banco_analisesps):
+    """Na planilha o mesmo CNPJ vem "09.444.530/0001-01" numa linha e
+    "09444530000101" noutra. Agrupar pelo texto cru faria o fornecedor virar
+    dois — e aí nenhuma das duas metades pareceria divergente."""
+    from app.apps.analisesps import credores
+
+    semear([_sp_credor("1", "09.444.530/0001-01", "TRIBUNAL DE JUSTIÇA DO CEARÁ"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ"),
+            _sp_credor("3", "09.444.530/0001-01", "TRI")])
+
+    achadas = credores.divergencias_da_base()
+    assert len(achadas) == 1
+    assert achadas[0]["documento"] == "09444530000101"
+    assert achadas[0]["sps"] == 3
+    assert achadas[0]["automatico"] is True
+
+
+@pytest.mark.banco
+def test_fornecedor_escrito_sempre_igual_nao_entra_na_lista(banco_analisesps):
+    """Com 59 mil SPs, a lista só é útil se trouxer o que está errado."""
+    from app.apps.analisesps import credores
+    semear([_sp_credor(str(n), "29.066.773/0001-52", "SERTAO CASA E CONSTRUCAO")
+            for n in range(1, 21)])
+    assert credores.divergencias_da_base() == []
+
+
+@pytest.mark.banco
+def test_quantas_SPs_faltam_arrumar_conta_GRAFIA_e_nao_grupo(banco_analisesps):
+    """O DEFEITO QUE APARECEU RODANDO CONTRA O DADO REAL. "SERVIÇOS" e
+    "SERVICOS" são o mesmo grupo de nome — e mesmo assim há uma SP escrita
+    diferente para reescrever. Contando por grupo, a tela dizia "0 a arrumar"
+    justamente no caso mais fácil de todos."""
+    from app.apps.analisesps import credores
+    semear([_sp_credor("1", "04100718000100", "MASSA PRONTA SERVIÇOS LTDA"),
+            _sp_credor("2", "04100718000100", "MASSA PRONTA SERVIÇOS LTDA"),
+            _sp_credor("3", "04100718000100", "MASSA PRONTA SERVICOS LTDA")])
+    achada = credores.divergencias_da_base()[0]
+    assert achada["sps"] == 3
+    assert achada["fora"] == 1, "disse que não havia nada para arrumar"
+
+
+@pytest.mark.banco
+def test_a_decisao_do_dono_MANDA_sobre_a_proposta(banco_analisesps):
+    """CELPE virou NEOENERGIA. Se a regra pudesse voltar a propor CELPE na
+    semana seguinte, o dono decidiria a mesma coisa para sempre — o contrário
+    de "minimizar a interação do humano"."""
+    from app.apps.analisesps import credores
+
+    semear([_sp_credor("1", "10835932000108", "CELPE CIA ENERGETICA"),
+            _sp_credor("2", "10835932000108", "NEOENERGIA")])
+    antes = credores.divergencias_da_base()[0]
+    assert antes["decidido"] is False
+
+    credores.guardar_escolha("10.835.932/0001-08", "NEOENERGIA",
+                             credores.DECIDIR, False, "Marcelo", 1)
+    depois = credores.divergencias_da_base()[0]
+    assert depois["nome"] == "NEOENERGIA"
+    assert depois["decidido"] is True and depois["decidido_por"] == "Marcelo"
+
+
+@pytest.mark.banco
+def test_so_as_SPs_fora_do_padrao_sao_reescritas(banco_analisesps):
+    """Cada reescrita é uma célula na fila e uma ida ao Google. Regravar o que
+    já está certo seria pagar o preço sem mudar nada."""
+    from app.apps.analisesps import credores
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ"),
+            _sp_credor("3", "09444530000101", "TRIBUNAL")])
+    assert sorted(credores.sps_para_reescrever(
+        "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")) == ["1", "3"]
+
+
+@pytest.mark.banco
+def test_aplicar_o_nome_passa_pela_FILA_e_pelo_LOG(banco_analisesps, monkeypatch):
+    """O caminho tem de ser o de sempre — banco, fila, log, planilha. É ele que
+    garante que a mudança apareça no Log com quem mexeu, e que chegue à planilha
+    mesmo se a internet cair no meio.
+
+    Também trava a porta: a coluna do credor NÃO está em `EDITAVEIS`, então
+    ninguém reescreve nome de fornecedor pela tela comum."""
+    from app.apps.analisesps import colunas, credores
+    from app.apps.analisesps.db import consultar
+
+    assert "credor" not in colunas.EDITAVEIS, (
+        "o credor virou coluna do dia a dia — qualquer operador reescreve "
+        "nome de fornecedor pela tela comum")
+
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as sessao:
+        sessao["analisesps_perfil"] = "operador"
+        sessao["analisesps_nome"] = "Marcelo"
+    resposta = cliente.post("/analisesps/credores/aplicar", follow_redirects=True,
+                            data={"documento": "09444530000101",
+                                  "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+                                  "tipo-09444530000101": "COMECO"})
+    assert resposta.status_code == 200
+
+    assert consultar("SELECT count(*) FROM analisesps.sps "
+                     " WHERE credor = 'TRI'")[0][0] == 0
+    assert consultar("SELECT sp_id, coluna FROM analisesps.fila") == [
+        ("1", "credor")], "não entrou na fila da planilha"
+    assert consultar("SELECT count(*) FROM analisesps.log_alteracoes "
+                     " WHERE coluna = 'credor'")[0][0] == 1
+
+
+@pytest.mark.banco
+def test_aplicar_duas_vezes_nao_reescreve_de_novo(banco_analisesps, monkeypatch):
+    """Apertar o botão duas vezes é comum. A segunda não pode encher a fila com
+    gravações que não mudam nada."""
+    from app.apps.analisesps.db import conexao, consultar
+
+    semear([_sp_credor("1", "09444530000101", "TRI")])
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as sessao:
+        sessao["analisesps_perfil"] = "operador"
+        sessao["analisesps_nome"] = "Marcelo"
+    dados = {"documento": "09444530000101",
+             "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+             "tipo-09444530000101": "COMECO"}
+    cliente.post("/analisesps/credores/aplicar", data=dados)
+    with conexao() as conn:      # a fila é esvaziada pelo processo separado
+        conn.execute("DELETE FROM analisesps.fila")
+        conn.commit()
+    resposta = cliente.post("/analisesps/credores/aplicar", data=dados,
+                            follow_redirects=True)
+
+    assert consultar("SELECT count(*) FROM analisesps.fila")[0][0] == 0
+    assert "já estava" in resposta.get_data(as_text=True)

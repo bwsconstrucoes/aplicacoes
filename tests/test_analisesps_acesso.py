@@ -93,6 +93,8 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/ratear"),
     ("GET", "/analisesps/bradesco"),
     ("POST", "/analisesps/bradesco"),
+    ("GET", "/analisesps/credores"),
+    ("POST", "/analisesps/credores/aplicar"),
     ("GET", "/analisesps/comprovantes"),
     ("POST", "/analisesps/comprovantes/enviar"),
     ("GET", "/analisesps/api/comprovantes/estado"),
