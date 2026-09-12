@@ -220,8 +220,8 @@ o recado seria mentira e a pessoa desfaria à toa.
 
 ### Conferência
 
-13 testes novos com banco de verdade; conferi desligando as duas travas e o
-caminho do autor, e **seis deles quebram**. A tela foi exercitada no navegador:
+**4.527 testes passando, nenhuma falha** (com banco de verdade). Os 13 novos
+eu conferi desligando as duas travas e o caminho do autor: **seis quebram**. A tela foi exercitada no navegador:
 cancelei uma solicitação de verdade no banco de demonstração e vi o contador
 cair de 244 para 243.
 
