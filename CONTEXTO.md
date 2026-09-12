@@ -741,6 +741,16 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-12 — Só diretoria, financeiro e ADMIN enxergam a base inteira.**
+  Palavras do dono: *"com exceção dos perfis de diretoria e financeiro, o
+  natural é visualizar somente as obras associadas no cadastro do operador"*.
+  `VE_TUDO` encolheu de seis perfis para três; GESTOR_OBRA, APROVADOR e
+  CONSULTA passaram a enxergar só as obras marcadas no cadastro deles.
+  ⚠️ **Quem estiver sem obra marcada não vê quase nada** — sobra só a própria
+  autoria. É o padrão NEGAR, e exige ajuste de cadastro ao publicar.
+  **Regra que fica: enxergar a empresa inteira é exceção, e a exceção tem
+  nome.**
+
 - **2026-09-12 — "CUSTO DA OBRA" tem definição fechada: despesa DIRETA de DRE,
   nas visões COMPROMETIDO e EXECUTADO.** Palavras do dono: *"o custo
   normalmente está associado só às despesas de DRE, nada de fluxo. E é o custo

@@ -114,7 +114,15 @@ def cenario(sessao_real) -> Cenario:
     c = Cenario(obra_a=a, obra_b=b)
     u = c.usuarios
     u["admin"] = _usuario(s, "admin", P.ADMIN)
-    u["gestor"] = _usuario(s, "gestor", P.GESTOR_OBRA)
+    # O gestor passou a ser preso às obras designadas em 12/09/2026, por
+    # decisão do dono: *"com exceção dos perfis de diretoria e financeiro, o
+    # natural é visualizar somente as obras associadas no cadastro do
+    # operador"*. Por isso ele agora tem obra marcada — e há um segundo,
+    # SEM obra nenhuma, para a consequência ficar visível.
+    u["gestor"] = _usuario(s, "gestor", P.GESTOR_OBRA, obras=[a])
+    u["gestor_sem_obra"] = _usuario(s, "gestor-sem-obra", P.GESTOR_OBRA)
+    u["aprovador"] = _usuario(s, "aprovador", P.APROVADOR, obras=[b])
+    u["consulta"] = _usuario(s, "consulta", P.CONSULTA, obras=[a])
     u["supervisor"] = _usuario(s, "supervisor", P.SUPERVISOR_OBRA, obras=[a])
     u["adm_proprios"] = _usuario(s, "adm-proprios", P.ADMINISTRATIVO_OBRA)
     u["adm_obras"] = _usuario(s, "adm-obras", P.ADMINISTRATIVO_OBRA,
@@ -143,7 +151,14 @@ def cenario(sessao_real) -> Cenario:
 # O que cada um TEM de enxergar. Esta tabela é a especificação do escopo.
 ESPERADO = {
     "admin":             {"T1", "T2", "T3", "T4", "FOLHA", "RPA"},
-    "gestor":            {"T1", "T2", "T3", "T4", "FOLHA", "RPA"},
+    # Obra A + o que ele mesmo lançou (T3 é da obra B, mas é dele).
+    "gestor":            {"T1", "T2", "T3", "FOLHA"},
+    # ⚠️ SEM obra marcada no cadastro, sobra só a autoria — e ele não lançou
+    # nada. É o padrão NEGAR, e é a consequência operacional da decisão: cada
+    # gestor precisa ter as obras dele marcadas em Configurações › Operadores.
+    "gestor_sem_obra":   set(),
+    "aprovador":         {"T3", "T4", "RPA"},       # tudo da obra B
+    "consulta":          {"T1", "T2", "FOLHA"},     # tudo da obra A
     "supervisor":        {"T1", "T2", "FOLHA"},     # tudo da obra A
     "adm_proprios":      {"T1", "RPA"},             # só o que lançou
     "adm_obras":         {"T1", "T2", "T4", "FOLHA"},  # obra A + o que lançou

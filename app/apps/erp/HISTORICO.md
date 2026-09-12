@@ -168,6 +168,43 @@ banco — **não consome nada**.
 
 ---
 
+**Estado em 12/09/2026 (vigésima entrega):** **gestor, aprovador e consulta
+passam a enxergar só as obras deles.** Sem migração. ⚠️ **Exige ajuste de
+cadastro ANTES de publicar — ver abaixo.**
+
+### A decisão
+
+Palavras do dono: *"com exceção dos perfis de diretoria e financeiro, o natural
+é visualizar somente as obras associadas no cadastro do operador"*.
+
+Veio logo depois de eu apontar que o GESTOR_OBRA estava em `VE_TUDO` — coisa
+que apareceu por acaso, num teste meu que partiu do contrário e falhou.
+
+### O que mudou
+
+`VE_TUDO` encolheu de seis perfis para **três**: ADMIN, DIRETOR_FINANCEIRO e
+FINANCEIRO. Saíram GESTOR_OBRA, APROVADOR e CONSULTA, que entraram para a lista
+dos presos às obras designadas, junto com supervisor e parceiro.
+
+O ADMIN fica porque é quem configura o sistema e destrava os outros.
+
+### ⚠️ A CONSEQUÊNCIA OPERACIONAL, e ela morde
+
+**Gestor, aprovador ou consulta SEM obra marcada no cadastro passa a não ver
+quase nada** — sobra só o que a própria pessoa lançou, e quem nunca lançou vê
+uma tela vazia. Não é defeito: é o padrão NEGAR do ERP, dito em voz alta.
+
+**Antes de publicar, cada operador desses três perfis precisa ter as obras dele
+marcadas em Configurações › Operadores.** Foi avisado ao dono, com as duas
+opções (publicar e ajustar depois, ou ajustar antes e publicar sem ninguém
+sentir).
+
+Isso está testado: a tabela de escopo em `tests/test_escopo_banco.py` — que é a
+ESPECIFICAÇÃO do recorte, e não só um teste — ganhou o caso do
+`gestor_sem_obra` justamente para a consequência ficar visível a quem ler.
+
+---
+
 **Estado em 12/09/2026 (décima nona entrega):** **"custo da obra" foi
 decidido — e o grupo de Obras do assistente destravou.** Sem migração.
 

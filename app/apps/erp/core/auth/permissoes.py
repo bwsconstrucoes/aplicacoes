@@ -343,8 +343,23 @@ def exigir(usuario: Usuario, acao: str) -> None:
 
 
 # Perfis que enxergam a base inteira: nem escopo de obra, nem de autoria.
-VE_TUDO = (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-           P.APROVADOR, P.CONSULTA)
+#
+# ENCOLHEU EM 12/09/2026, por decisão do dono: *"com exceção dos perfis de
+# diretoria e financeiro, o natural é visualizar somente as obras associadas no
+# cadastro do operador"*.
+#
+# Saíram daqui GESTOR_OBRA, APROVADOR e CONSULTA. Os três passaram a enxergar
+# **só as obras marcadas no cadastro deles** — como o supervisor de obra já
+# fazia. O gestor ver a empresa inteira contradizia o princípio que o dono
+# repetiu desde o começo, e ninguém tinha percebido porque o perfil funcionava.
+#
+# ⚠️ **CONSEQUÊNCIA OPERACIONAL, e ela morde:** gestor, aprovador ou consulta
+# SEM obra marcada no cadastro passa a não ver NADA. Não é defeito — é o padrão
+# NEGAR do ERP. Ao publicar isto, cada um desses operadores precisa ter as
+# obras dele marcadas em Configurações › Operadores.
+#
+# ADMIN continua vendo tudo: é quem configura o sistema e destrava os outros.
+VE_TUDO = (P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO)
 
 # ---------------------------------------------------------------------------
 # O DEPARTAMENTO PESSOAL enxerga por ASSUNTO, não por obra nem por autoria.
@@ -394,9 +409,16 @@ def _obras_designadas(s: Session, usuario: Usuario) -> list[int]:
         select(UsuarioObra).where(UsuarioObra.usuario_id == usuario.id)).all()]
 
 
+# Perfis presos SEMPRE às obras designadas — sem depender de marcação por
+# pessoa. Cresceu em 12/09/2026 com a decisão do dono (ver `VE_TUDO`): gestor,
+# aprovador e consulta entraram para cá.
+PRESOS_A_OBRA = (P.SUPERVISOR_OBRA, P.PARCEIRO, P.GESTOR_OBRA, P.APROVADOR,
+                 P.CONSULTA)
+
+
 def _ve_por_obra(usuario: Usuario) -> bool:
     """Esta pessoa enxerga por OBRA (e não apenas o que ela mesma lançou)?"""
-    if usuario.perfil in (P.SUPERVISOR_OBRA, P.PARCEIRO):
+    if usuario.perfil in PRESOS_A_OBRA:
         return True
     return (usuario.perfil in ESCOPO_CONFIGURAVEL
             and escopo_visao(usuario) is EscopoVisao.OBRAS_DESIGNADAS)
