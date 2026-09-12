@@ -214,17 +214,21 @@ def test_o_chefe_enxerga_todas(base):
 # ---------------------------------------------------------------------------
 # O que este grupo NÃO promete — e não pode passar a prometer por descuido
 # ---------------------------------------------------------------------------
-PALAVRAS_AINDA_NAO_DECIDIDAS = ("custo", "resultado", "lucro", "margem",
+# "custo" SAIU desta lista em 12/09/2026, quando o dono fechou a palavra:
+# *"o custo normalmente está associado só às despesas de DRE, nada de fluxo. E
+# é o custo executado e o custo comprometido"*. As demais continuam abertas — e
+# a trava continua de pé para elas.
+PALAVRAS_AINDA_NAO_DECIDIDAS = ("resultado", "lucro", "margem",
                                 "gastou", "gastei")
 
 
-def test_o_grupo_de_obras_nao_responde_custo_nem_resultado():
+def test_o_grupo_de_obras_nao_usa_palavra_sem_definicao():
     """Trava proposital.
 
-    Enquanto o dono não disser o que "custo da obra" e "resultado da obra"
-    significam — competência ou caixa, com ou sem o que está em análise —,
-    responder é escolher uma leitura por ele em silêncio. Quem for acrescentar
-    a pergunta vai esbarrar aqui e lembrar de combinar a palavra primeiro.
+    Enquanto o dono não disser o que "resultado da obra", "margem" e "gastei
+    com fulano" significam, responder é escolher uma leitura por ele em
+    silêncio. Quem for acrescentar a pergunta vai esbarrar aqui e lembrar de
+    combinar a palavra primeiro.
     """
     for pergunta in catalogo.do_grupo("obras"):
         texto = (pergunta["pergunta"] + " " + " ".join(pergunta["exemplos"])).lower()
@@ -232,6 +236,16 @@ def test_o_grupo_de_obras_nao_responde_custo_nem_resultado():
             assert palavra not in texto, (
                 f"A pergunta “{pergunta['pergunta']}” usa a palavra "
                 f"“{palavra}”, que ainda não tem definição combinada.")
+
+
+def test_a_pergunta_de_custo_existe_e_carrega_a_definicao():
+    """O outro lado da trava: agora que a palavra foi decidida, a pergunta
+    PRECISA existir — e precisa dizer, na própria resposta, o que está
+    contando. Um número de custo sem a definição junto volta a ser ambíguo na
+    cabeça de quem lê."""
+    perguntas = {p["chave"] for p in catalogo.do_grupo("obras")}
+    assert "custo_da_obra" in perguntas, (
+        "a palavra foi decidida em 12/09/2026 e a pergunta sumiu do catálogo")
 
 
 def test_as_travas_do_cadastro_sao_as_mesmas_que_a_emissao_exige():
