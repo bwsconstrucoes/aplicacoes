@@ -1,0 +1,142 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Documentação Fiscal{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   DOCUMENTAÇÃO FISCAL — qual nota é de qual SP.
+
+   O objetivo, nas palavras do dono: *"eu quero minimizar a interação do
+   humano (…) é muito falho o olho humano, e nós não temos esse tempo."*
+
+   DUAS PILHAS. O que o sistema propõe com confiança vem MARCADO, para aprovar
+   em lote. O que tem dúvida vem DESMARCADO, e é decidido um a um. Isso existe
+   por causa de um risco real: se quase tudo estiver sempre certo e marcado, em
+   três semanas ninguém confere mais.
+
+   E a regra que governa tudo, da correção do dono em 11/09/2026: **a
+   existência da nota é o balizador**, não o tipo de despesa.
+--------------------------------------------------------------------------- #}
+{% block conteudo %}
+
+{% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
+{% if erro %}<div class="aviso atencao">{{ erro }}</div>{% endif %}
+
+<div class="corpo">
+  {% include "analisesps_filtros.html" %}
+
+  <div class="principal">
+    <div class="cartao">
+      <div class="cartao-cab">
+        <h2>Documentação Fiscal</h2>
+        <small>{{ resumo.quantidade }} SP(s) no filtro</small>
+      </div>
+
+      {# OS NÚMEROS DO ALTO, e eles são atalho: clicar filtra por aquele grupo.
+         Sem isso, achar "as sete que precisam de decisão" no meio de duzentas
+         linhas seria rolagem. #}
+      {# O MESMO JEITO DAS OUTRAS TELAS de montar endereço com os filtros
+         inteiros: o filtro não pode se perder ao trocar de grupo ou de página. #}
+      {% set base_args = args.to_dict(flat=false) %}
+      {% set _ = base_args.pop('grupo', None) %}
+      {% set _ = base_args.pop('pagina', None) %}
+      <div class="fiscal-grupos">
+        <a class="etiqueta {{ 'ativa' if not grupo }}"
+           href="{{ url_for('analisesps.tela_fiscal', **base_args) }}">Tudo</a>
+        {% for chave, rotulo, quantos in contagem %}
+          <a class="etiqueta {{ 'boa' if chave == 'EM_DIA' else 'ruim' }} {{ 'ativa' if grupo == chave }}"
+             href="{{ url_for('analisesps.tela_fiscal', **dict(base_args, grupo=chave)) }}">
+            {{ rotulo }}: {{ quantos }}</a>
+        {% endfor %}
+      </div>
+
+      {% if pode_operar %}
+        <div class="fiscal-acoes" id="fiscal-acoes">
+          <span id="fiscal-quantas">Nenhuma marcada</span>
+          <button class="btn" id="btn-confirmar-fiscal" disabled>
+            Confirmar as marcadas</button>
+          <span class="cartao-dica">
+            Confirmar grava a análise. A gravação nos cards do Pipefy é o passo
+            seguinte.
+          </span>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="cartao">
+      {% if not linhas %}
+        <p class="cartao-dica">Nenhuma SP neste filtro.</p>
+      {% else %}
+        <div class="tabela-rolagem">
+          <table class="sps">
+            <thead>
+              <tr>
+                <th class="sel"><input type="checkbox" id="fiscal-todas"
+                      title="Marcar todas as propostas desta página"></th>
+                <th>SP</th><th>Credor</th><th>Valor</th>
+                <th>Está como</th><th>Proposta</th><th>Confiança</th>
+                <th>Por quê</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for l in linhas %}
+                <tr class="{{ 'com-risco' if l.grupo in ('CRITICO', 'DUVIDA') }}">
+                  <td class="sel">
+                    {# MARCADA SÓ QUANDO NÃO HÁ DÚVIDA. É a diferença entre as
+                       duas pilhas, e está aqui, num atributo — não no olho de
+                       quem lê. #}
+                    {% if l.documentacao %}
+                      <input type="checkbox" class="fiscal-marca"
+                             {{ 'checked' if l.propoe }}
+                             data-sp="{{ l.sp.id }}"
+                             data-documentacao="{{ l.documentacao }}"
+                             data-chave="{{ l.chave }}"
+                             data-confianca="{{ l.confianca }}"
+                             data-motivo="{{ l.motivo }}">
+                    {% endif %}
+                  </td>
+                  <td class="id">
+                    {% if l.sp.card_link %}
+                      <a href="{{ l.sp.card_link }}" target="_blank"
+                         rel="noopener">{{ l.sp.id }}</a>
+                    {% else %}{{ l.sp.id }}{% endif %}
+                  </td>
+                  <td>{{ l.sp.credor }}</td>
+                  <td class="num">{{ l.sp.valor_num|moeda }}</td>
+                  <td>{{ l.analise.documentacao or '—' }}</td>
+                  <td><b>{{ l.documentacao or '—' }}</b></td>
+                  <td class="num">
+                    {% if l.nota %}{{ l.confianca }}%{% else %}—{% endif %}
+                  </td>
+                  <td class="cartao-dica">
+                    {{ l.motivo }}
+                    {% if l.nota %}
+                      <br><small>nota {{ l.nota.numero }} ·
+                        {{ l.nota.emitente }} · chave {{ l.chave or l.nota.chave }}</small>
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        {% set pag_args = args.to_dict(flat=false) %}
+        {% set _ = pag_args.pop('pagina', None) %}
+        <div class="paginacao">
+          {{ primeira_linha }}–{{ ultima_linha }} de {{ resumo.quantidade }}
+          {% if pagina > 1 %}
+            <a class="btn secundario"
+               href="{{ url_for('analisesps.tela_fiscal', **dict(pag_args, pagina=pagina-1)) }}">‹ Anterior</a>
+          {% endif %}
+          {% if tem_proxima %}
+            <a class="btn secundario"
+               href="{{ url_for('analisesps.tela_fiscal', **dict(pag_args, pagina=pagina+1)) }}">Próxima ›</a>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div id="fiscal-config" hidden
+     data-url-confirmar="{{ url_for('analisesps.confirmar_fiscal') }}"></div>
+{% endblock %}

@@ -2102,6 +2102,78 @@ extração de texto — é assim que o defeito da data apareceu. Conferido
 desligando cada correção: sem o conserto da data, dois testes caem; sem a
 quebra de linha, outros dois.
 
+### Trigésima leva (12/09) — a tela de Documentação Fiscal (primeira parte)
+
+*"Eu quero minimizar a interação do humano (…) é muito falho o olho humano, e
+nós não temos esse tempo."* A regra de negócio já estava escrita e travada em
+teste (25ª leva); esta leva é a **tela** que a mostra.
+
+**O que ela faz hoje:** varre as SPs do filtro, procura a nota de cada uma no
+relatório do FSist, e entrega a análise pronta, separada por urgência.
+
+**Os números do alto são atalho:** "Proposta de correção: 12", "Em dúvida: 3",
+"Precisa de decisão: 1". Clicar filtra por aquele grupo. Sem isso, achar as três
+que precisam de gente no meio de duzentas linhas seria rolagem.
+
+**As duas pilhas estão na tela, e a diferença está num atributo — não no olho
+de quem lê.** O que o sistema propõe com confiança **já vem marcado**, para
+aprovar em lote; o que tem dúvida vem **desmarcado**, e é decidido um a um. A
+tela não decide isso: quem marca é o servidor, onde a regra mora.
+
+#### O que faz a tela ABRIR, e não é detalhe
+
+São 59 mil SPs e milhares de notas, e o banco tem **um décimo de um núcleo**.
+Pontuar toda SP contra toda nota seriam centenas de milhões de comparações — a
+tela nunca carregaria.
+
+O que evita isso: **a nota de um lançamento quase sempre foi emitida pelo credor
+dele**. Então busca-se, para a página que está na tela, só as notas daqueles
+CNPJs. De centenas de milhões, cai para algumas dezenas por SP.
+
+Duas portas de busca, e a segunda tem motivo próprio:
+
+- **pelo CNPJ de quem emitiu** — pela RAIZ de oito dígitos, porque a nota sai
+  da filial que entregou e o cadastro do credor quase sempre tem a matriz;
+- **pelo número da nota** — para quando quem lançou digitou o número e o
+  CPF/CNPJ do credor está errado no cadastro. Sem essa porta, a nota certa
+  nunca seria nem considerada.
+
+#### Decidir e gravar são DUAS coisas
+
+`decidida_em` é quando alguém escolheu; `escrita_em` é quando o card aceitou.
+Enquanto a segunda estiver vazia, a decisão está pendente e volta na próxima
+leva. **É isso que permite tentar de novo quando o Pipefy recusa** — se as duas
+fossem uma coisa só, uma falha de rede apagaria a decisão de trinta cards. E
+mudar de ideia depois de o card já ter sido escrito **devolve a SP para a fila
+de escrita**, senão a correção ficaria só aqui dentro.
+
+**A categoria é conferida contra as 22 opções do Pipefy antes de gravar.** Ele
+**recusa o card inteiro** quando o texto não é uma das opções — então um valor
+inventado não erraria uma SP: derrubaria a gravação do lote todo.
+
+**Verificação:** 4.478 testes verdes com Postgres de verdade, 129 pulados; 12
+testes novos com banco. **A tela foi aberta de verdade** contra um Postgres
+descartável, com duas SPs e duas notas do FSist semeadas: mostrou a proposta
+marcada e a dúvida desmarcada, confirmar gravou no diário com o nome de quem
+decidiu, a SP entrou na fila de escrita do card, a categoria inventada foi
+recusada, e a nota órfã apareceu na segunda visão.
+
+**O QUE AINDA NÃO EXISTE, e é o resto desta frente:**
+
+1. **A gravação em lote nos cards do Pipefy.** A fila está pronta e os
+   identificadores dos campos estão travados em teste; falta o passo que fala
+   com a API.
+2. **A IA lendo os anexos**, com a opção por SP que o dono desenhou: os
+   pendentes ganham *"analisar com IA"* e ele escolhe quais.
+3. **O download autônomo das notas** pela chave.
+4. **A segunda visão na tela.** A função que acha as notas sem lançamento
+   existe e está testada, mas ainda não tem tela — hoje só a primeira visão
+   (lançamento → nota) aparece.
+
+> **PRECISA DO BOTÃO.** A tela usa a migração **005**, que ainda não foi
+> aplicada em produção. Sem ela a tela abre e avisa que falta, em vez de
+> estourar.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a

@@ -1748,6 +1748,115 @@ def ratear():
 # BRADESCO
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
+# DOCUMENTAÇÃO FISCAL — qual nota é de qual SP
+#
+# O objetivo, nas palavras do dono: *"eu quero minimizar a interação do humano
+# (…) é muito falho o olho humano, e nós não temos esse tempo."* A tela entrega
+# a análise pronta; quem executa só confere e confirma.
+#
+# DUAS PILHAS, e elas existem por causa de um risco real. Propor cria fadiga de
+# aprovação: se vinte e oito de trinta estão sempre certas, na terceira semana
+# ninguém confere mais — é o mesmo olho cansado, só que mais rápido. Por isso o
+# que tem dúvida NÃO vem marcado, e é decidido um a um.
+# ---------------------------------------------------------------------------
+@bp.route("/fiscal")
+@exige_consulta
+def tela_fiscal():
+    from . import consultas, fiscal
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+
+    filtros = _filtros_do_pedido()
+    try:
+        pagina = max(1, int(request.args.get("pagina", 1)))
+    except ValueError:
+        pagina = 1
+    grupo = request.args.get("grupo") or ""
+
+    try:
+        linhas = consultas.listar(filtros, ordem=request.args.get(
+            "ordem", "vencimento"), pagina=pagina)
+        conciliadas = fiscal.conciliar(linhas)
+        resumo = consultas.resumo(filtros)
+        erro = None
+    except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
+        logger.exception("Análise de SPs: falhou a conciliação fiscal")
+        conciliadas, resumo, erro = [], {"quantidade": 0, "total": 0}, (
+            "Esta tela precisa da atualização do banco. Vá em Configurações e "
+            f"aperte \"Aplicar atualizações do banco\". (detalhe: {e})")
+
+    contagem = fiscal.contar_por_grupo(conciliadas)
+    if grupo:
+        conciliadas = [c for c in conciliadas if c["grupo"] == grupo]
+
+    ultima = (pagina - 1) * consultas.POR_PAGINA + len(linhas or [])
+    return render_template(
+        "analisesps_fiscal.html", aba="fiscal", base=base,
+        linhas=conciliadas, contagem=contagem, grupo=grupo, erro=erro,
+        resumo=resumo, filtros=filtros, args=request.args,
+        opcoes=_opcoes_dos_filtros(base.get("ultima")),
+        pagina=pagina, por_pagina=consultas.POR_PAGINA,
+        primeira_linha=(pagina - 1) * consultas.POR_PAGINA + 1,
+        ultima_linha=ultima, tem_proxima=ultima < resumo["quantidade"],
+        categorias=fiscal.CATEGORIAS,
+        aviso=request.args.get("aviso") or None,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/fiscal/confirmar", methods=["POST"])
+@exige_operador
+def confirmar_fiscal():
+    """Grava as decisões marcadas NO DIÁRIO — ainda não no card.
+
+    A separação é o que permite tentar de novo quando o Pipefy recusa: a
+    decisão fica registrada com quem decidiu, e a escrita no card é um passo
+    à parte, que volta a tentar sozinho. Se as duas fossem uma coisa só, uma
+    falha de rede apagaria a decisão de trinta cards."""
+    from . import fiscal
+
+    dados = request.get_json(silent=True) or {}
+    itens = dados.get("itens") or []
+    if not itens:
+        return {"ok": False, "erro": "Nenhuma linha marcada."}, 400
+    if len(itens) > 500:
+        return {"ok": False,
+                "erro": "São no máximo 500 por vez. Refine o filtro."}, 400
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    gravadas, recusadas = 0, []
+    for item in itens:
+        sp_id = str(item.get("sp") or "").strip()
+        documentacao = str(item.get("documentacao") or "").strip()
+        if not sp_id or not documentacao:
+            continue
+        # A categoria TEM de ser uma das 22 do campo do Pipefy. Ele recusa o
+        # card inteiro quando o texto não é uma das opções — então um valor
+        # inventado aqui não erraria uma SP, derrubaria a gravação do lote.
+        if documentacao not in fiscal.CATEGORIAS:
+            recusadas.append(f"{sp_id}: categoria desconhecida")
+            continue
+        try:
+            fiscal.guardar_decisao(
+                sp_id, documentacao, item.get("chave") or "",
+                item.get("motivo") or "", item.get("confianca") or 0, quem)
+            gravadas += 1
+        except Exception as e:  # noqa: BLE001 — uma linha ruim não derruba as outras
+            logger.exception("Análise de SPs: falhou gravar a decisão de %s", sp_id)
+            recusadas.append(f"{sp_id}: {e}")
+
+    logger.info("Análise de SPs: %s confirmou %d análise(s) fiscal(is).",
+                quem or "sem nome", gravadas)
+    return {"ok": True, "gravadas": gravadas, "recusadas": recusadas,
+            "aviso": (f"{gravadas} análise(s) confirmada(s). A gravação nos "
+                      "cards do Pipefy é o passo seguinte.")}
+
+
+# ---------------------------------------------------------------------------
 # CREDORES — o mesmo CNPJ escrito de cinco jeitos
 #
 # FORA DAS ABAS DE CIMA, e de propósito: isto é arrumação ocasional, não

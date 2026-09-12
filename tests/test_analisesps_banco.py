@@ -1882,3 +1882,230 @@ def test_aplicar_duas_vezes_nao_reescreve_de_novo(banco_analisesps, monkeypatch)
 
     assert consultar("SELECT count(*) FROM analisesps.fila")[0][0] == 0
     assert "já estava" in resposta.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------------------
+# A CONCILIAÇÃO FISCAL ligada ao banco
+#
+# As regras puras estão em `test_analisesps_fiscal.py`. Aqui é o que só o banco
+# alcança: a busca das notas candidatas (que é o que faz a tela abrir em vez de
+# comparar tudo contra tudo) e o diário das decisões.
+# ---------------------------------------------------------------------------
+def _chave(cnpj, resto="550010000123456789012345"):
+    return ("26" + "2609" + cnpj + resto + "0" * 44)[:44]
+
+
+def _guardar_nota(chave, numero, valor, emitente_doc, status="Autorizada",
+                  emissao="2026-06-18"):
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.notas_fiscais "
+            "(chave, emissao, numero, valor, status, emitente_doc, emitente, "
+            " destinatario_doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (chave, emissao, numero, valor, status, emitente_doc,
+             "FORNECEDOR", "10656452007869"))
+        conn.commit()
+
+
+CREDOR_CNPJ = "29066773000152"
+
+
+@pytest.mark.banco
+def test_a_busca_de_notas_traz_SO_as_do_credor_daquela_pagina(banco_analisesps):
+    """O QUE FAZ A TELA ABRIR. São 59 mil SPs e milhares de notas, e o banco
+    tem um décimo de um núcleo: pontuar tudo contra tudo seriam centenas de
+    milhões de comparações.
+
+    A nota de um lançamento quase sempre foi emitida PELO CREDOR dele — então
+    só se buscam as notas daqueles CNPJs."""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+    _guardar_nota(_chave("11222333000181"), "77", 88.00, "11222333000181")
+
+    lancamento = {"documento": "29.066.773/0001-52", "nf": ""}
+    # Pelo caminho de verdade: o índice guarda a nota sob mais de uma chave de
+    # busca (o CNPJ e o número), e quem tira a repetição é `_para_esta_sp`.
+    achadas = fiscal._para_esta_sp(
+        lancamento, fiscal.notas_candidatas([lancamento]))
+    assert len(achadas) == 1
+    assert achadas[0]["numero"] == "1430", "trouxe a nota de outro fornecedor"
+
+
+@pytest.mark.banco
+def test_a_mesma_nota_nao_aparece_duas_vezes_como_candidata(banco_analisesps):
+    """Ela é indexada pelo CNPJ de quem emitiu E pelo número — as duas portas
+    de busca. Quando as duas apontam para a mesma nota, ela é UMA candidata:
+    contá-la duas vezes não mudaria a pontuação, mas apareceria como empate e
+    a proposta seria segurada sem motivo."""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+    lancamento = {"documento": "29.066.773/0001-52", "nf": "1430"}
+    achadas = fiscal._para_esta_sp(
+        lancamento, fiscal.notas_candidatas([lancamento]))
+    assert len(achadas) == 1
+
+
+@pytest.mark.banco
+def test_a_nota_da_FILIAL_e_encontrada_pelo_CNPJ_da_matriz(banco_analisesps):
+    """A nota sai da filial que entregou, e o cadastro do credor quase sempre
+    tem a matriz. Exigir os catorze dígitos perderia o caso comum."""
+    from app.apps.analisesps import fiscal
+    filial = "29066773000899"
+    _guardar_nota(_chave(filial), "50", 100.00, filial)
+    por_raiz = fiscal.notas_candidatas([
+        {"documento": "29.066.773/0001-52", "nf": ""}])
+    assert any(n["numero"] == "50" for notas in por_raiz.values() for n in notas)
+
+
+@pytest.mark.banco
+def test_a_nota_e_achada_pelo_NUMERO_quando_o_CNPJ_do_cadastro_esta_errado(
+        banco_analisesps):
+    """Acontece: quem lançou digitou o número da nota, mas o CPF/CNPJ do credor
+    está errado no cadastro. Sem esta segunda porta, a nota certa nunca seria
+    nem considerada."""
+    from app.apps.analisesps import fiscal
+    _guardar_nota(_chave("11222333000181"), "1430", 269.00, "11222333000181")
+    por_raiz = fiscal.notas_candidatas([
+        {"documento": "99.999.999/9999-99", "nf": "001430"}])
+    assert any(n["numero"] == "1430" for notas in por_raiz.values() for n in notas)
+
+
+@pytest.mark.banco
+def test_a_conciliacao_propoe_a_correcao_quando_o_card_diz_que_nao_ha_nota(
+        banco_analisesps):
+    """O caso que o dono descreveu: "colocado algo não dedutível de uma coisa
+    que não foi localizada naquele momento, mas que depois ela surge"."""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+    linha = fiscal.conciliar([{
+        "id": "1409289353", "credor": "SERTAO CASA E CONSTRUCAO",
+        "documento": "29.066.773/0001-52", "valor": "269,00", "nf": "1430",
+        "vencimento": "10/07/2026", "tipo_despesa": "Ferramentas"}])[0]
+
+    assert linha["grupo"] == fiscal.CORRECAO
+    assert linha["propoe"] is True, "a proposta não veio marcada"
+    assert linha["documentacao"] == "NF-e (Mercadoria)"
+    assert linha["confianca"] >= fiscal.CONFIANCA_PARA_PROPOR
+
+
+@pytest.mark.banco
+def test_o_que_NUNCA_tem_nota_eletronica_nao_e_conciliado(banco_analisesps):
+    """Herdado do script da planilha, que já acertava nisto: procurar par para
+    uma apólice ou um contrato só produziria ruído e faria a pessoa desconfiar
+    do resto da tela."""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise "
+            "(sp_id, situacao, documentacao) VALUES ('1', 'ESCRITA', 'Seguros')")
+        conn.commit()
+
+    linha = fiscal.conciliar([{
+        "id": "1", "credor": "SEGURADORA", "documento": "29.066.773/0001-52",
+        "valor": "269,00", "nf": "1430", "tipo_despesa": "Seguros"}])[0]
+    assert linha["nota"] is None, "procurou nota para uma apólice"
+
+
+@pytest.mark.banco
+def test_a_decisao_fica_no_DIARIO_e_ainda_NAO_no_card(banco_analisesps):
+    """Duas coisas diferentes, e a diferença é o que permite tentar de novo
+    quando o Pipefy recusa: `decidida_em` é quando alguém escolheu,
+    `escrita_em` é quando o card aceitou."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import consultar_um
+
+    fiscal.guardar_decisao("1409289353", "NF-e (Mercadoria)",
+                           _chave(CREDOR_CNPJ), "achei a nota", 90, "Marcelo")
+
+    linha = consultar_um(
+        "SELECT situacao, documentacao, dedutivel, decidida_por, "
+        "       decidida_em IS NOT NULL, escrita_em IS NULL "
+        "  FROM analisesps.sp_fiscal_analise WHERE sp_id = '1409289353'")
+    assert linha[0] == fiscal.CONFIRMADA
+    assert linha[1] == "NF-e (Mercadoria)"
+    assert linha[2] is True, "NF-e é dedutível"
+    assert linha[3] == "Marcelo"
+    assert linha[4] is True and linha[5] is True, (
+        "decidida sim, escrita no card ainda não")
+    assert [d["sp_id"] for d in fiscal.a_escrever_no_card()] == ["1409289353"]
+
+
+@pytest.mark.banco
+def test_decidir_de_novo_devolve_a_SP_para_a_fila_de_escrita(banco_analisesps):
+    """Quem muda de ideia depois de o card já ter sido escrito precisa que a
+    correção vá para o card também. Sem isto, a segunda decisão ficaria só
+    aqui dentro e o Pipefy continuaria com a primeira."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    fiscal.guardar_decisao("1", "NF-e (Mercadoria)", "", "", 90, "Marcelo")
+    with conexao() as conn:       # finge que o card aceitou
+        conn.execute("UPDATE analisesps.sp_fiscal_analise "
+                     "SET escrita_em = now() WHERE sp_id = '1'")
+        conn.commit()
+    assert fiscal.a_escrever_no_card() == []
+
+    fiscal.guardar_decisao("1", "Não Dedutível", "", "mudei de ideia", 0, "Marcelo")
+    assert [d["documentacao"] for d in fiscal.a_escrever_no_card()] == [
+        "Não Dedutível"]
+
+
+@pytest.mark.banco
+def test_a_tela_fiscal_abre_e_separa_as_duas_pilhas(banco_analisesps, monkeypatch):
+    """O que o dono vê: os números do alto por grupo, a proposta já marcada e
+    a dúvida desmarcada."""
+    import re
+
+    from app.apps.analisesps import colunas, sincronizacao
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+    registros = []
+    for sp_id, valor, nf in (("1409289353", "269,00", "1430"),
+                             ("1409289354", "500,00", "")):
+        r = {c: "" for c in colunas.CHAVES}
+        r.update({"id": sp_id, "credor": "SERTAO CASA E CONSTRUCAO",
+                  "documento": "29.066.773/0001-52", "valor": valor, "nf": nf,
+                  "tipo_despesa": "Ferramentas"})
+        registros.append(r)
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        sincronizacao.gravar_registros(conn, registros)
+        sincronizacao._anotar_a_base_em_dia(conn)
+
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as sessao:
+        sessao["analisesps_perfil"] = "operador"
+        sessao["analisesps_nome"] = "Marcelo"
+    html = cliente.get("/analisesps/fiscal").get_data(as_text=True)
+
+    assert "Proposta de correção" in html
+    assert "NF-e (Mercadoria)" in html
+    # UMA marcada (a proposta), e a outra não: são as duas pilhas.
+    marcadas = len(re.findall(r'class="fiscal-marca"[^>]*checked', html))
+    assert marcadas == 1, f"vieram {marcadas} marcadas; deviam ser 1"
+
+
+@pytest.mark.banco
+def test_categoria_fora_da_lista_do_Pipefy_e_recusada(banco_analisesps, monkeypatch):
+    """O Pipefy RECUSA O CARD INTEIRO quando o texto não é uma das 22 opções.
+    Um valor inventado aqui não erraria uma SP: derrubaria a gravação do lote."""
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as sessao:
+        sessao["analisesps_perfil"] = "operador"
+        sessao["analisesps_nome"] = "Marcelo"
+    resposta = cliente.post("/analisesps/api/fiscal/confirmar", json={
+        "itens": [{"sp": "1", "documentacao": "CATEGORIA INVENTADA"}]})
+    dados = resposta.get_json()
+    assert dados["gravadas"] == 0
+    assert "categoria desconhecida" in " ".join(dados["recusadas"])

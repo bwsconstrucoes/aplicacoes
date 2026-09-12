@@ -804,3 +804,88 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     }, 5000);
   }
 })();
+
+
+/* ---------------------------------------------------------------------------
+   DOCUMENTACAO FISCAL — as duas pilhas.
+
+   O que o sistema propoe com confianca ja vem MARCADO pelo servidor; o que tem
+   duvida vem desmarcado. Este arquivo NAO decide nada disso — ele so conta o
+   que esta marcado e manda. A decisao de marcar ou nao e do servidor, onde a
+   regra mora, e nao da tela.
+
+   POR QUE ISSO IMPORTA: propor cria fadiga de aprovacao. Se a tela pudesse
+   marcar tudo "para facilitar", em tres semanas ninguem conferiria mais — o
+   mesmo olho cansado, so que mais rapido.
+--------------------------------------------------------------------------- */
+(function () {
+  const config = document.getElementById("fiscal-config");
+  const botao = document.getElementById("btn-confirmar-fiscal");
+  if (!config || !botao) return;
+
+  const marcas = () => Array.from(document.querySelectorAll(".fiscal-marca"));
+  const marcadas = () => marcas().filter(c => c.checked);
+  const contador = document.getElementById("fiscal-quantas");
+  const todas = document.getElementById("fiscal-todas");
+
+  function atualizar() {
+    const quantas = marcadas().length;
+    botao.disabled = quantas === 0;
+    if (contador) {
+      contador.textContent = quantas === 0 ? "Nenhuma marcada"
+          : quantas + (quantas === 1 ? " marcada" : " marcadas");
+    }
+    if (todas) {
+      const total = marcas().length;
+      todas.checked = total > 0 && quantas === total;
+      todas.indeterminate = quantas > 0 && quantas < total;
+    }
+  }
+
+  marcas().forEach(c => c.addEventListener("change", atualizar));
+  if (todas) todas.addEventListener("change", () => {
+    marcas().forEach(c => { c.checked = todas.checked; });
+    atualizar();
+  });
+  atualizar();
+
+  botao.addEventListener("click", async () => {
+    const itens = marcadas().map(c => ({
+      sp: c.dataset.sp,
+      documentacao: c.dataset.documentacao,
+      chave: c.dataset.chave || "",
+      confianca: parseInt(c.dataset.confianca || "0", 10) || 0,
+      motivo: c.dataset.motivo || "",
+    }));
+    if (!itens.length) return;
+
+    // A CONFIRMACAO DIZ O QUE VAI ACONTECER E O QUE NAO VAI. "Confirmar" numa
+    // tela fiscal soa como "ja foi para a contabilidade"; aqui ainda nao foi
+    // nem para o card.
+    if (!confirm(`Confirmar a analise de ${itens.length} SP(s).\n\n`
+                 + `Isto grava a decisao aqui. A gravacao nos cards do Pipefy `
+                 + `e o passo seguinte.`)) return;
+
+    botao.disabled = true;
+    const texto = botao.textContent;
+    botao.textContent = "Gravando…";
+    try {
+      const r = await fetch(config.dataset.urlConfirmar, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({itens}),
+      });
+      const dados = await r.json();
+      if (!dados.ok) { alert(dados.erro || "Nao consegui gravar."); return; }
+      if ((dados.recusadas || []).length) {
+        alert(`${dados.gravadas} gravada(s). Estas ficaram de fora:\n`
+              + dados.recusadas.join("\n"));
+      }
+      location.reload();
+    } catch (e) {
+      alert("Nao consegui falar com o servidor: " + e);
+    } finally {
+      botao.disabled = false;
+      botao.textContent = texto;
+    }
+  });
+})();

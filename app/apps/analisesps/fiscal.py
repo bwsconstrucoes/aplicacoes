@@ -505,3 +505,207 @@ def notas_sem_lancamento(notas: list, chaves_usadas: set) -> list:
             continue
         saida.append(nota)
     return saida
+
+
+# ---------------------------------------------------------------------------
+# A CONCILIAÇÃO INTEIRA, ligada ao banco
+#
+# O CUIDADO QUE GOVERNA ESTA PARTE É DESEMPENHO, e não é preciosismo: são 59
+# mil SPs e milhares de notas, e o banco tem UM DÉCIMO DE UM NÚCLEO. Pontuar
+# toda SP contra toda nota seriam centenas de milhões de comparações — a tela
+# nunca abriria.
+#
+# O que evita isso: a nota candidata de um lançamento quase sempre foi emitida
+# PELO CREDOR DELE. Então busca-se, para a página de SPs que está na tela, só
+# as notas daqueles CNPJs (mais as do número de nota que já está no card). De
+# centenas de milhões, cai para algumas dezenas por SP.
+# ---------------------------------------------------------------------------
+def _raiz(documento) -> str:
+    """Os oito primeiros dígitos de um CNPJ — matriz e filial juntas.
+
+    A nota sai da filial que entregou, e o cadastro do credor quase sempre tem
+    a matriz. Buscar pelos catorze dígitos perderia justamente o caso comum;
+    quem decide de fato é `mesmo_documento`, na pontuação."""
+    digitos = so_digitos(documento)
+    return digitos[:8] if len(digitos) == 14 else digitos
+
+
+def notas_candidatas(lancamentos: list) -> dict:
+    """As notas que PODEM ser de alguma destas SPs, agrupadas por raiz de CNPJ.
+
+    Uma consulta só para a página inteira. Traz também as notas cujo número
+    bate com o que já está no card — é o caso em que quem lançou digitou o
+    número e o CNPJ do credor está errado no cadastro."""
+    from .db import consultar
+
+    raizes = {_raiz(l.get("documento")) for l in lancamentos}
+    raizes = {r for r in raizes if len(r) >= 8}
+    numeros = {so_digitos(l.get("nf")).lstrip("0") for l in lancamentos}
+    numeros = {n for n in numeros if n}
+    if not raizes and not numeros:
+        return {}
+
+    condicoes, params = [], []
+    if raizes:
+        condicoes.append("left(emitente_doc, 8) IN (%s)"
+                         % ",".join(["?"] * len(raizes)))
+        params.extend(sorted(raizes))
+    if numeros:
+        condicoes.append("ltrim(regexp_replace(numero, '\\D', '', 'g'), '0') IN (%s)"
+                         % ",".join(["?"] * len(numeros)))
+        params.extend(sorted(numeros))
+
+    linhas = consultar(
+        "SELECT chave, emissao, numero, serie, tipo, valor, status, "
+        "       emitente_doc, emitente, destinatario_doc, destinatario "
+        "  FROM analisesps.notas_fiscais "
+        " WHERE " + " OR ".join(condicoes), tuple(params))
+
+    nomes = ["chave", "emissao", "numero", "serie", "tipo", "valor", "status",
+             "emitente_doc", "emitente", "destinatario_doc", "destinatario"]
+    por_raiz: dict = {}
+    for linha in linhas:
+        nota = dict(zip(nomes, linha))
+        # Indexa pela raiz do emitente E pelo número: as duas portas de busca.
+        chaves = {_raiz(nota["emitente_doc"] or emitente_da_chave(nota["chave"]))}
+        numero = so_digitos(nota["numero"]).lstrip("0")
+        if numero:
+            chaves.add("n:" + numero)
+        for k in chaves:
+            if k:
+                por_raiz.setdefault(k, []).append(nota)
+    return por_raiz
+
+
+def _para_esta_sp(lancamento: dict, por_raiz: dict) -> list:
+    """As notas candidatas DESTA SP, sem repetir."""
+    candidatas, vistas = [], set()
+    numero = so_digitos(lancamento.get("nf")).lstrip("0")
+    for k in (_raiz(lancamento.get("documento")), ("n:" + numero) if numero else ""):
+        for nota in por_raiz.get(k, []) if k else []:
+            if nota["chave"] not in vistas:
+                vistas.add(nota["chave"])
+                candidatas.append(nota)
+    return candidatas
+
+
+def analises_guardadas(ids: list) -> dict:
+    """O diário: o que já foi decidido sobre estas SPs."""
+    from .db import consultar
+    if not ids:
+        return {}
+    marcadores = ",".join(["?"] * len(ids))
+    linhas = consultar(
+        "SELECT sp_id, situacao, documentacao, chave, numero_nota, dedutivel, "
+        "       origem, motivo, confianca, decidida_por "
+        f"  FROM analisesps.sp_fiscal_analise WHERE sp_id IN ({marcadores})",
+        tuple(str(i) for i in ids))
+    nomes = ["sp_id", "situacao", "documentacao", "chave", "numero_nota",
+             "dedutivel", "origem", "motivo", "confianca", "decidida_por"]
+    return {str(l[0]): dict(zip(nomes, l)) for l in linhas}
+
+
+def conciliar(lancamentos: list) -> list:
+    """Junta SP, nota e diário. Devolve o que a tela mostra, linha a linha.
+
+    NÃO ESCREVE NADA. Separar o "decidir" do "gravar" é o que permite mostrar
+    a proposta antes de ela virar fato — e é a diferença entre propor e
+    adivinhar."""
+    por_raiz = notas_candidatas(lancamentos)
+    diario = analises_guardadas([l.get("id") for l in lancamentos])
+
+    saida = []
+    for sp in lancamentos:
+        analise = diario.get(str(sp.get("id")), {})
+        hoje = str(analise.get("documentacao") or "").strip()
+        # O que não tem nota eletrônica para procurar não entra na conciliação
+        # — herdado do script da planilha, que já acertava nisto. Procurar par
+        # para uma apólice só produziria ruído e faria a pessoa desconfiar do
+        # resto da tela.
+        if hoje in NAO_CONCILIA:
+            escolha = {"nota": None, "pontos": 0, "porques": [], "propoe": False}
+        else:
+            escolha = melhor_nota(sp, _para_esta_sp(sp, por_raiz))
+        veredito = avaliar(sp, analise, escolha)
+        saida.append({
+            "sp": sp,
+            "analise": analise,
+            "nota": escolha.get("nota"),
+            "segunda": escolha.get("segunda"),
+            "porques": escolha.get("porques") or [],
+            **veredito,
+        })
+    return saida
+
+
+def contar_por_grupo(linhas: list) -> list:
+    """Quantas em cada grupo, na ordem da urgência — os números do alto."""
+    contagem: dict = {}
+    for linha in linhas:
+        contagem[linha["grupo"]] = contagem.get(linha["grupo"], 0) + 1
+    return [(g, ROTULOS_GRUPO[g], contagem.get(g, 0)) for g in ORDEM_GRUPOS
+            if contagem.get(g)]
+
+
+ROTULOS_GRUPO = {
+    CRITICO: "Precisa de decisão",
+    CORRECAO: "Proposta de correção",
+    DUVIDA: "Em dúvida",
+    SEM_PAR: "Sem nota encontrada",
+    EM_DIA: "Em dia",
+}
+
+# A ordem da urgência: o que pede ação primeiro, o que está certo por último.
+ORDEM_GRUPOS = [CRITICO, CORRECAO, DUVIDA, SEM_PAR, EM_DIA]
+
+
+# ---------------------------------------------------------------------------
+# GRAVAR A DECISÃO — no diário, ainda NÃO no card
+#
+# Duas coisas diferentes, e a diferença é o que permite tentar de novo quando o
+# Pipefy recusa: `decidida_em` é quando alguém escolheu; `escrita_em` é quando
+# o card aceitou. Enquanto a segunda estiver vazia, a decisão está pendente de
+# escrita e volta na próxima leva.
+# ---------------------------------------------------------------------------
+PENDENTE, PROPOSTA, CONFIRMADA, ESCRITA = (
+    "PENDENTE", "PROPOSTA", "CONFIRMADA", "ESCRITA")
+
+
+def guardar_decisao(sp_id: str, documentacao: str, chave: str, motivo: str,
+                    confianca: int, quem: str, origem: str = "PESSOA") -> None:
+    """Registra o que vai ser escrito no card. NÃO fala com o Pipefy."""
+    from .db import conexao
+
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise "
+            "  (sp_id, situacao, documentacao, chave, numero_nota, dedutivel, "
+            "   confianca, origem, motivo, decidida_por, decidida_em) "
+            "VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, ?, now()) "
+            "ON CONFLICT (sp_id) DO UPDATE SET "
+            "  situacao = EXCLUDED.situacao, "
+            "  documentacao = EXCLUDED.documentacao, chave = EXCLUDED.chave, "
+            "  dedutivel = EXCLUDED.dedutivel, confianca = EXCLUDED.confianca, "
+            "  origem = EXCLUDED.origem, motivo = EXCLUDED.motivo, "
+            "  decidida_por = EXCLUDED.decidida_por, decidida_em = now(), "
+            "  escrita_em = NULL, erro_escrita = ''",
+            (str(sp_id), CONFIRMADA, documentacao, so_digitos(chave),
+             dedutivel(documentacao), int(confianca or 0), origem,
+             str(motivo or "")[:1000], quem or ""))
+        conn.commit()
+
+
+def a_escrever_no_card(limite: int = 200) -> list:
+    """As decisões que ainda não chegaram ao card.
+
+    `escrita_em` vazio é o que separa "decidido" de "gravado". Uma decisão que
+    o Pipefy recusou continua aqui, e volta na próxima leva — nada se perde
+    porque a API deu erro."""
+    from .db import consultar
+    linhas = consultar(
+        "SELECT sp_id, documentacao, chave, motivo, erro_escrita "
+        "  FROM analisesps.sp_fiscal_analise "
+        " WHERE situacao = ? AND escrita_em IS NULL "
+        " ORDER BY decidida_em LIMIT ?", (CONFIRMADA, int(limite)))
+    return [{"sp_id": l[0], "documentacao": l[1], "chave": l[2],
+             "motivo": l[3], "erro_anterior": l[4]} for l in linhas]
