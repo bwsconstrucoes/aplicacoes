@@ -420,12 +420,27 @@ def test_aba_sem_a_coluna_chave_diz_o_que_encontrou(monkeypatch):
 
 def test_so_grava_a_nota_que_mudou():
     """Mesmo motivo que valeu 14,3 milhões de gravações inúteis em 10/09:
-    regravar com o mesmo valor deixa lixo que engorda a tabela."""
-    from pathlib import Path
-    fonte = Path("app/apps/analisesps/sincronizacao.py").read_text(encoding="utf-8")
-    trecho = fonte.split("def sincronizar_notas_fiscais")[1].split("\ndef ")[0]
-    assert "IS DISTINCT FROM" in trecho
-    assert "notas_fiscais.status IS DISTINCT FROM" in trecho
+    regravar com o mesmo valor deixa lixo que engorda a tabela.
+
+    Aqui isto vale duas vezes: a contagem de "quantas mudaram" — que é como se
+    descobre uma nota que voltou CANCELADA — só funciona porque a gravação
+    ignora a reescrita idêntica."""
+    from app.apps.analisesps import sincronizacao
+    assert "IS DISTINCT FROM" in sincronizacao.SQL_NOTA
+    assert "notas_fiscais.status IS DISTINCT FROM" in sincronizacao.SQL_NOTA
+
+
+def test_a_nota_tem_UM_caminho_de_gravacao_para_as_DUAS_origens():
+    """A nota chega por dois lugares — o relatório do FSist e a busca na
+    Receita. Se cada um tivesse a sua gravação, no dia em que uma ganhasse um
+    campo a outra ficaria para trás, e a mesma nota ficaria diferente conforme
+    a porta por onde entrou."""
+    import inspect
+
+    from app.apps.analisesps import sefaz, sincronizacao
+    assert "_gravar_notas" in inspect.getsource(
+        sincronizacao.sincronizar_notas_fiscais)
+    assert "_gravar_notas" in inspect.getsource(sefaz.buscar_um)
 
 
 # ---------------------------------------------------------------------------

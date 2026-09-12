@@ -2456,6 +2456,88 @@ depender de alguém lembrar dela daqui a seis meses.
 planilhas de apoio, cola o seguinte, manda de novo. Cada leva entra e fica, e a
 tela diz quantas entraram, quantas mudaram e quantas já tinha.
 
+### Trigésima sexta leva (12/09) — a busca automática de notas na Receita
+
+*"Um dos corações dessa atualização é essa busca automática por novas notas."*
+E ele estava certo em cobrar: eu tinha tratado isso como **bloqueado pelo
+certificado**, quando na verdade só a última peça precisa dele. Tudo o mais
+dava para construir e provar.
+
+**Como o serviço da Receita funciona, e é isso que explica o desenho:** ele não
+responde "me dá tudo de setembro". Responde **"me dá o que veio depois do número
+N"** — um contador por CNPJ, o NSU. Cada resposta traz um lote e diz qual foi o
+último número entregue; a consulta seguinte começa dali.
+
+**Por isso o ponteiro mora no banco** (migração 008). Se ele se perdesse, a
+busca recomeçaria do zero toda rodada — e **a Receita limita consultas**: quem
+rebobina toda hora bate no limite e **para de receber**. Guardar onde parou não
+é otimização; é o que faz a busca funcionar.
+
+**Um ponteiro por CNPJ e por TIPO.** A BWS tem mais de um CNPJ, e NF-e e CT-e
+são serviços separados na Receita, cada um com a sua contagem. Um ponteiro só
+faria um sobrescrever o outro e perder notas em silêncio.
+
+#### Biblioteca de terceiro, e o dono autorizou sabendo
+
+`erpbrasil.edoc` + `erpbrasil.assinatura`, no `requirements.txt`. O que ela
+resolve é a **assinatura digital do pedido com o certificado A1** — a parte
+onde escrever do zero custa caro, porque o erro volta como "recusado" sem dizer
+por quê. Ele perguntou se "biblioteca" era código de terceiro, eu confirmei, e
+ele mandou fazer.
+
+**A biblioteca NÃO cobre CT-e.** Esse pedido é montado aqui, reusando o
+transporte e o certificado dela. E os dois são chamados **separados de
+propósito**: o caminho de CT-e nunca foi exercitado contra o serviço de verdade,
+e não pode derrubar a busca de NF-e, que é a maior parte do volume. Há teste
+para isso.
+
+#### Três formas de saber que o lote acabou — e todas são respeitadas
+
+Insistir depois do "não há nada novo" é o caminho curto para o bloqueio por
+consulta demais. O teto de lotes por rodada é **rede de segurança, não
+critério**:
+
+1. a Receita responde que não há mais;
+2. o ponteiro não andou (protege de laço infinito, quando ela diz "há mais" e
+   devolve o mesmo número);
+3. chegou no maior número que ela informou.
+
+#### Detalhes que custariam nota perdida
+
+- **O NSU é guardado com os zeros à esquerda.** Sem eles, a comparação de texto
+  faria "9" parecer maior que "10", o ponteiro recuaria e a busca releria tudo.
+- **O ponteiro só avança, nunca recua.** Uma resposta vazia traz NSU zero.
+- **O número da nota sai de dentro da chave** quando o resumo não traz campo
+  próprio (posições 26 a 34, definição da Receita). Sem isso, a conciliação
+  perderia os 25 pontos do número em TODA nota vinda por aqui.
+- **"Cancelada" na Receita vira a mesma palavra do FSist.** Ela responde código
+  3; se cada origem gravasse do seu jeito, a mesma nota teria dois status
+  conforme a porta de entrada, e a crítica de nota cancelada deixaria de
+  disparar para metade delas.
+- **A gravação da nota virou UM caminho só** para as duas origens. Duas
+  gravações divergiriam no dia em que uma ganhasse um campo.
+- **O FSist roda DEPOIS da Receita**, e a ordem importa: quem chega por último
+  manda, e assim uma nota cancelada no relatório não é sobrescrita pelo
+  "autorizada" que a Receita entregou antes do cancelamento.
+- **Falha vira recado gravado**, não queda: "consumo indevido" e "certificado
+  vencido" chegam os dois como erro e pedem coisas completamente diferentes.
+
+**Verificação:** 4.659 testes verdes com Postgres de verdade, 129 pulados; 22
+testes novos. **Nenhum liga para a Receita** — a conversa está isolada em duas
+funções, e tudo o mais é exercitado com a resposta dublada, inclusive o laço
+inteiro contra banco de verdade.
+
+> **O QUE NÃO FOI PROVADO, e é o que falta:** nenhuma consulta de verdade foi
+> feita. Não há certificado fora do Render. O primeiro teste real é com **um
+> CNPJ só**, olhando o recado que fica no ponteiro. E o caminho de **CT-e** é o
+> mais provável de precisar de ajuste, porque é o que não veio pronto da
+> biblioteca.
+
+**O que o dono precisa pôr no Render:** `ANALISESPS_CERT_A1_BASE64` (o
+certificado em base64), `ANALISESPS_CERT_A1_SENHA` e `ANALISESPS_CNPJS` (os
+CNPJs vigiados, separados por vírgula). Enquanto faltarem, a busca não roda e
+diz isso — as notas continuam entrando pelo relatório do FSist.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Nada do dono esperando código.** O que falta não é programação — é o certificado digital A1, para o download autônomo das notas (ver a 34ª leva).

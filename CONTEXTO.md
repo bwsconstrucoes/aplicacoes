@@ -741,6 +741,17 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-12 — Dependência nova: `erpbrasil.edoc` e `erpbrasil.assinatura`.**
+  Para a busca automática de notas na Receita, no Análise de SPs. **Autorizada
+  pelo dono**, que perguntou se "biblioteca" era código de terceiro, ouviu que
+  sim e mandou fazer. O que ela resolve é a **assinatura digital do pedido com
+  o certificado A1** — a parte onde escrever do zero custa caro, porque o erro
+  volta como "recusado" sem dizer por quê. Ela **não** cobre CT-e: esse pedido
+  é montado à mão, reusando o transporte dela. Três variáveis novas no Render:
+  `ANALISESPS_CERT_A1_BASE64`, `ANALISESPS_CERT_A1_SENHA` e `ANALISESPS_CNPJS`.
+  ⚠️ **O A1 vence em um ano** e a busca para no dia seguinte — o motivo fica
+  gravado no ponteiro, que é o que a tela mostra.
+
 - **2026-09-12 — Pedido com várias tarefas é FILA, não cardápio.** O dono
   pediu isto mais de uma vez antes de mandar registrar: *"eu passo uma demanda,
   aí só depois de um bom tempo eu volto pro Claude pra olhar. Aí quando eu

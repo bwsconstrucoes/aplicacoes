@@ -25,3 +25,10 @@ pillow
 # compilado — a tela que a usa vem numa entrega seguinte.
 python-barcode>=0.15
 openpyxl  # relatorio do painel em Excel (uma aba por assunto)
+
+# Busca automatica de notas na Receita (NF-e), para o Analise de SPs.
+# CODIGO DE TERCEIRO DE PROPOSITO: ela resolve a assinatura digital do pedido
+# com o certificado A1, que e a parte onde escrever do zero custa caro - o erro
+# volta como "recusado" sem dizer por que. Autorizada pelo dono em 12/09/2026.
+erpbrasil.edoc==3.1.1
+erpbrasil.assinatura==1.8.0

@@ -2476,3 +2476,196 @@ def test_nenhum_caminho_do_modulo_apaga_nota_fiscal(banco_analisesps):
         texto = caminho.read_text(encoding="utf-8").lower()
         assert "delete from analisesps.notas_fiscais" not in texto, caminho
         assert "truncate" not in texto, caminho
+
+
+# ---------------------------------------------------------------------------
+# A BUSCA NA RECEITA, com banco de verdade
+#
+# A conversa com a Receita é dublada — nenhum teste liga para ela. O que se
+# exercita é o laço: onde parou, quando parar, e a nota chegando na tabela.
+# ---------------------------------------------------------------------------
+def _resposta_sefaz(documentos=(), codigo="138", ultimo="10", maior="10"):
+    import base64 as _b64
+    import gzip as _gzip
+    import io as _io
+
+    def zipar(xml):
+        saco = _io.BytesIO()
+        with _gzip.GzipFile(fileobj=saco, mode="wb") as z:
+            z.write(xml.encode("utf-8"))
+        return _b64.b64encode(saco.getvalue()).decode("ascii")
+
+    zips = "".join(f"<docZip>{zipar(d)}</docZip>" for d in documentos)
+    return (f"<retDistDFeInt><cStat>{codigo}</cStat>"
+            f"<xMotivo>ok</xMotivo><ultNSU>{ultimo}</ultNSU>"
+            f"<maxNSU>{maior}</maxNSU>{zips}</retDistDFeInt>")
+
+
+def _resumo(chave, valor="269.00", situacao="1"):
+    return (f"<resNFe><chNFe>{chave}</chNFe><CNPJ>{CREDOR_CNPJ}</CNPJ>"
+            f"<xNome>SERTAO</xNome><dhEmi>2026-06-18T10:00:00-03:00</dhEmi>"
+            f"<vNF>{valor}</vNF><cSitNFe>{situacao}</cSitNFe></resNFe>")
+
+
+@pytest.mark.banco
+def test_a_nota_buscada_na_Receita_chega_na_tabela(banco_analisesps, monkeypatch):
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_resumo(chave)], ultimo="10", maior="10")))
+
+    resultado = sefaz.buscar_um("10.656.452/0078-69", sefaz.NFE)
+    assert resultado["trazidas"] == 1
+    assert consultar_um("SELECT emitente_doc, status FROM "
+                        " analisesps.notas_fiscais WHERE chave = ?",
+                        (chave,)) == (CREDOR_CNPJ, "Autorizada")
+
+
+@pytest.mark.banco
+def test_o_ponteiro_avanca_e_a_proxima_rodada_comeca_dali(banco_analisesps,
+                                                          monkeypatch):
+    """É o que impede reler tudo a cada rodada — e reler é o caminho curto
+    para a Receita bloquear por consulta demais."""
+    from app.apps.analisesps import sefaz
+
+    pedidos = []
+
+    def falso(cnpj, nsu):
+        pedidos.append(nsu)
+        return sefaz._ler_resposta(_resposta_sefaz(
+            [_resumo(_chave(CREDOR_CNPJ))], ultimo="25", maior="25"))
+
+    monkeypatch.setattr(sefaz, "_consultar_nfe", falso)
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+    assert sefaz.ponteiro("10656452007869", sefaz.NFE)["ultimo_nsu"] == \
+        "000000000000025"
+
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+    assert pedidos[-1] == "000000000000025", (
+        "a segunda rodada recomeçou do zero")
+
+
+@pytest.mark.banco
+def test_o_ponteiro_NUNCA_recua(banco_analisesps, monkeypatch):
+    """Uma resposta vazia traz NSU zero. Se ela fizesse o ponteiro voltar, a
+    rodada seguinte releria meses de documentos."""
+    from app.apps.analisesps import sefaz
+
+    sefaz.gravar_ponteiro("10656452007869", sefaz.NFE, "500", "500")
+    sefaz.gravar_ponteiro("10656452007869", sefaz.NFE, "0", "0", "vazio")
+    assert sefaz.ponteiro("10656452007869", sefaz.NFE)["ultimo_nsu"] == \
+        "000000000000500"
+
+
+@pytest.mark.banco
+def test_a_busca_para_quando_a_Receita_diz_que_nao_ha_mais(banco_analisesps,
+                                                           monkeypatch):
+    """Insistir depois do "não há nada novo" é o caminho curto para o bloqueio
+    por consulta demais. O teto de lotes é rede, não critério."""
+    from app.apps.analisesps import sefaz
+
+    chamadas = [0]
+
+    def falso(cnpj, nsu):
+        chamadas[0] += 1
+        return sefaz._ler_resposta(_resposta_sefaz(codigo="137", ultimo="0"))
+
+    monkeypatch.setattr(sefaz, "_consultar_nfe", falso)
+    resultado = sefaz.buscar_um("10656452007869", sefaz.NFE)
+    assert chamadas[0] == 1, f"insistiu {chamadas[0]} vezes depois do 'nada novo'"
+    assert resultado["trazidas"] == 0
+    assert "Nenhuma nota nova" in sefaz.ponteiro(
+        "10656452007869", sefaz.NFE)["ultimo_recado"]
+
+
+@pytest.mark.banco
+def test_a_busca_para_quando_o_ponteiro_nao_anda(banco_analisesps, monkeypatch):
+    """A terceira forma de saber que acabou, e a que protege de laço infinito:
+    a Receita responde "há mais" mas devolve o mesmo NSU."""
+    from app.apps.analisesps import sefaz
+
+    chamadas = [0]
+
+    def travado(cnpj, nsu):
+        chamadas[0] += 1
+        return sefaz._ler_resposta(_resposta_sefaz(codigo="138", ultimo="0",
+                                                   maior="999"))
+
+    monkeypatch.setattr(sefaz, "_consultar_nfe", travado)
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+    assert chamadas[0] == 1, f"ficou em laço: {chamadas[0]} consultas"
+
+
+@pytest.mark.banco
+def test_falha_de_rede_vira_RECADO_e_nao_queda(banco_analisesps, monkeypatch):
+    """"Consumo indevido" e "certificado vencido" chegam os dois como falha, e
+    pedem coisas completamente diferentes. O motivo fica gravado para a tela
+    poder dizer qual é."""
+    from app.apps.analisesps import sefaz
+
+    def cai(cnpj, nsu):
+        raise RuntimeError("certificado vencido")
+
+    monkeypatch.setattr(sefaz, "_consultar_nfe", cai)
+    resultado = sefaz.buscar_um("10656452007869", sefaz.NFE)
+    assert resultado["trazidas"] == 0 and "vencido" in resultado["erro"]
+    assert "vencido" in sefaz.ponteiro("10656452007869",
+                                       sefaz.NFE)["ultimo_recado"]
+
+
+@pytest.mark.banco
+def test_NFe_e_CTe_tem_ponteiros_SEPARADOS(banco_analisesps):
+    """São dois serviços da Receita, cada um com a sua contagem. Um ponteiro só
+    faria um sobrescrever o outro e perder notas em silêncio."""
+    from app.apps.analisesps import sefaz
+
+    sefaz.gravar_ponteiro("10656452007869", sefaz.NFE, "100", "100")
+    sefaz.gravar_ponteiro("10656452007869", sefaz.CTE, "7", "7")
+    assert sefaz.ponteiro("10656452007869", sefaz.NFE)["ultimo_nsu"] == \
+        "000000000000100"
+    assert sefaz.ponteiro("10656452007869", sefaz.CTE)["ultimo_nsu"] == \
+        "000000000000007"
+
+
+@pytest.mark.banco
+def test_a_nota_da_Receita_e_a_do_FSist_nao_viram_duas_linhas(banco_analisesps,
+                                                              monkeypatch):
+    """A MESMA nota chega pelas duas portas. Se virasse duas linhas, a
+    conciliação veria duas candidatas idênticas, chamaria de empate e seguraria
+    a proposta — em toda nota."""
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(chave)])
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz([_resumo(chave)])))
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+
+    assert consultar_um("SELECT count(*) FROM analisesps.notas_fiscais")[0] == 1
+
+
+@pytest.mark.banco
+def test_a_falha_do_CTe_nao_leva_a_busca_de_NFe_junto(banco_analisesps,
+                                                      monkeypatch):
+    """O caminho de CT-e nunca foi exercitado contra o serviço de verdade. Ele
+    não pode derrubar a busca de NF-e, que é a maior parte do volume."""
+    from app.apps.analisesps import sefaz
+
+    monkeypatch.setenv("ANALISESPS_CERT_A1_BASE64", "fingido")
+    monkeypatch.setenv("ANALISESPS_CERT_A1_SENHA", "fingida")
+    monkeypatch.setenv("ANALISESPS_CNPJS", "10656452007869")
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_resumo(_chave(CREDOR_CNPJ))])))
+
+    def cte_quebrado(cnpj, nsu):
+        raise RuntimeError("o CT-e recusou")
+
+    monkeypatch.setattr(sefaz, "_consultar_cte", cte_quebrado)
+    resultado = sefaz.buscar_tudo()
+    assert resultado["trazidas"] == 1, "a NF-e se perdeu junto com o CT-e"
+    assert any("recusou" in (p.get("erro") or "") for p in resultado["por_cnpj"])

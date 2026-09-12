@@ -613,6 +613,55 @@ COLUNAS_DAS_NOTAS = {
 COLUNAS_OBRIGATORIAS_DAS_NOTAS = ["chave"]
 
 
+SQL_NOTA = (
+    "INSERT INTO analisesps.notas_fiscais "
+    "  (chave, emissao, numero, serie, tipo, valor, status, "
+    "   emitente_doc, emitente, emitente_uf, destinatario_doc, "
+    "   destinatario, chaves_nfe) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+    "ON CONFLICT (chave) DO UPDATE SET "
+    "  emissao = EXCLUDED.emissao, numero = EXCLUDED.numero, "
+    "  serie = EXCLUDED.serie, tipo = EXCLUDED.tipo, "
+    "  valor = EXCLUDED.valor, status = EXCLUDED.status, "
+    "  emitente_doc = EXCLUDED.emitente_doc, "
+    "  emitente = EXCLUDED.emitente, emitente_uf = EXCLUDED.emitente_uf, "
+    "  destinatario_doc = EXCLUDED.destinatario_doc, "
+    "  destinatario = EXCLUDED.destinatario, "
+    "  chaves_nfe = EXCLUDED.chaves_nfe, importada_em = now() "
+    # SÓ REGRAVA O QUE MUDOU DE VERDADE. Regravar com o mesmo valor deixa lixo
+    # no banco (foi o que rendeu 14,3 milhões de gravações inúteis em 10/09) —
+    # e, aqui, ainda estragaria a contagem de "quantas mudaram", que é como se
+    # descobre uma nota que voltou cancelada.
+    " WHERE notas_fiscais.status IS DISTINCT FROM EXCLUDED.status "
+    "    OR notas_fiscais.valor IS DISTINCT FROM EXCLUDED.valor "
+    "    OR notas_fiscais.numero IS DISTINCT FROM EXCLUDED.numero "
+    "    OR notas_fiscais.emitente_doc IS DISTINCT FROM EXCLUDED.emitente_doc")
+
+CAMPOS_NOTA = ("chave", "emissao", "numero", "serie", "tipo", "valor", "status",
+               "emitente_doc", "emitente", "emitente_uf", "destinatario_doc",
+               "destinatario", "chaves_nfe")
+
+
+def _gravar_notas(conn, registros) -> int:
+    """Grava um lote de notas. DUAS ORIGENS, UM CAMINHO SÓ.
+
+    A nota chega por dois lugares — o relatório do FSist, colado na aba, e a
+    busca automática na Receita. Se cada um tivesse a sua gravação, no dia em
+    que uma ganhasse um campo a outra ficaria para trás, e a mesma nota ficaria
+    diferente conforme a porta por onde entrou.
+
+    Aceita tupla (como vem da leitura da planilha) ou dicionário (como vem da
+    Receita) — o que muda é de onde veio, não o que se grava."""
+    if not registros:
+        return 0
+    linhas = [r if isinstance(r, (tuple, list))
+              else tuple(r.get(c, "") for c in CAMPOS_NOTA)
+              for r in registros]
+    conn.executemany(SQL_NOTA, linhas)
+    conn.commit()
+    return len(linhas)
+
+
 def sincronizar_notas_fiscais(anotar=None) -> dict:
     """Traz as notas do relatório do FSist para o banco.
 
@@ -705,27 +754,7 @@ def sincronizar_notas_fiscais(anotar=None) -> dict:
         linha = cur.fetchone() or [0, None]
         antes, comeco = linha[0], linha[1]
         cur.close()
-        conn.executemany(
-            "INSERT INTO analisesps.notas_fiscais "
-            "  (chave, emissao, numero, serie, tipo, valor, status, "
-            "   emitente_doc, emitente, emitente_uf, destinatario_doc, "
-            "   destinatario, chaves_nfe) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT (chave) DO UPDATE SET "
-            "  emissao = EXCLUDED.emissao, numero = EXCLUDED.numero, "
-            "  serie = EXCLUDED.serie, tipo = EXCLUDED.tipo, "
-            "  valor = EXCLUDED.valor, status = EXCLUDED.status, "
-            "  emitente_doc = EXCLUDED.emitente_doc, "
-            "  emitente = EXCLUDED.emitente, emitente_uf = EXCLUDED.emitente_uf, "
-            "  destinatario_doc = EXCLUDED.destinatario_doc, "
-            "  destinatario = EXCLUDED.destinatario, "
-            "  chaves_nfe = EXCLUDED.chaves_nfe, importada_em = now() "
-            " WHERE notas_fiscais.status IS DISTINCT FROM EXCLUDED.status "
-            "    OR notas_fiscais.valor IS DISTINCT FROM EXCLUDED.valor "
-            "    OR notas_fiscais.numero IS DISTINCT FROM EXCLUDED.numero "
-            "    OR notas_fiscais.emitente_doc IS DISTINCT FROM EXCLUDED.emitente_doc",
-            registros)
-        conn.commit()
+        _gravar_notas(conn, registros)
         cur = conn.execute(
             "SELECT count(*), count(*) FILTER (WHERE importada_em >= ?) "
             "  FROM analisesps.notas_fiscais", (comeco,))

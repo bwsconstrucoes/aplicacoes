@@ -530,6 +530,11 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # Partir o PDF de comprovantes em levas de dez páginas. Já estava no
         # requirements (o BaixaBradesco usa), então nada novo entrou.
         "pypdf": "pypdf",
+        # A busca de notas na Receita. CÓDIGO DE TERCEIRO DE PROPÓSITO: ela
+        # resolve a assinatura digital do pedido com o certificado A1, que é a
+        # parte onde escrever do zero custa caro — o erro volta como "recusado"
+        # sem dizer por quê. Autorizada pelo dono em 12/09/2026.
+        "erpbrasil": "erpbrasil",
         # `app` é o PRÓPRIO repositório, não uma biblioteca — o
         # `comprovantes.py` chama o robô do `baixabradesco` por
         # `from app.apps.baixabradesco...`. Não tem o que conferir no
