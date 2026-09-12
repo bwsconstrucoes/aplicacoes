@@ -309,6 +309,21 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       **Falta ainda:** o dono arquivar os contratos de verdade no Arquivo. Sem
       documento arquivado, não há o que procurar.
 
+- [x] **CANCELAR LANÇAMENTO: quem lançou desfaz o próprio, e é avisado** —
+      FEITO em 12/09/2026. Pedido do dono, e decisão dele: *"liberado o
+      lançamento que não está baixado ou conciliado"*.
+      · Ação PRÓPRIA (`cancelar_titulo`), implicada por "lancar" e "aprovar".
+        Quem lançou cancela o SEU; quem aprova cancela o de qualquer um.
+      · Aviso a quem lançou, com o motivo inteiro, pelo mesmo caminho do aviso
+        de pagamento (Telegram). Quem cancelou não recebe aviso de si mesmo.
+      · **Falha corrigida junto:** a trava era `parcela PAGA`, e parcela pode
+        ter PAGAMENTO sem estar marcada paga (baixa parcial, baixa do robô) —
+        o cancelamento passava e o pagamento ficava pendurado num título
+        cancelado. Agora olha pagamento E conciliação, com recados diferentes.
+      **Falta ainda:** as perguntas sobre cancelamento no assistente
+      (`PERGUNTAS.md` §Financeiro) — hoje o cancelamento vive no registro de
+      eventos e não há consulta pronta.
+
 - [x] **3c-1. PERGUNTAR SOBRE **UM** DOCUMENTO** — FEITO em 12/09/2026, a
       pedido do dono: *"tem um contrato de uma obra e eu quero perguntar
       alguma coisa sobre ele"*.

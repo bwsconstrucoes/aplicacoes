@@ -62,9 +62,17 @@
     <span id="exportar" style="display:flex; gap:6px"></span>
     <span id="acoes-lote" class="oculto" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap">
       <input id="motivo" placeholder="Motivo (devolver / cancelar)" style="padding:7px 10px; border:1px solid var(--borda-forte); border-radius:8px; font-size:13px; min-width:220px">
+      {% if pode.aprovar %}
       <button class="btn" data-acao="aprovar">✔ Liberar p/ pagamento</button>
       <button class="btn secundario" data-acao="devolver">↩ Devolver ao solicitante</button>
+      {% endif %}
+      {# CANCELAR tem condição PRÓPRIA desde 12/09/2026: quem lança cancela o
+         próprio lançamento sem depender do financeiro. O botão aparece para
+         ele; se o título for de outra pessoa, quem recusa é o servidor, com
+         recado. A tela nunca é a trava. #}
+      {% if pode.cancelar_titulo %}
       <button class="btn perigo" data-acao="cancelar">✕ Cancelar SP</button>
+      {% endif %}
       <button class="btn secundario" data-acao="reclassificar">↔ Reclassificar</button>
       <button class="btn secundario" data-acao="desfazer">⟲ Desfazer baixa</button>
     </span>
@@ -686,12 +694,44 @@ function resumoDetalhe(d){
   return chaves.map(k=>`${k}: ${JSON.stringify(d[k]).slice(0,40)}`).join(" · ");
 }
 
+// CANCELAR — e avisar quem lançou.
+//
+// Pedido do dono em 12/09/2026: *"a pessoa que lançou vai receber aquela
+// informação de que o título foi cancelado e qual o motivo"*. O aviso sai do
+// servidor; aqui a tela só conta quantos foram e quantos recusaram.
+async function cancelarSelecionados(ids, motivo){
+  if (!confirm(`Cancelar ${ids.length} lançamento(s)? Quem lançou será avisado, `
+               + `com o motivo que você escreveu.`)) return;
+  const ok = [], erros = [], semAviso = [];
+  for (const id of ids) {
+    try {
+      const d = await api(`/erp/api/titulos/${id}/cancelar`, {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({motivo})});
+      ok.push(d.numero_sp || `#${id}`);
+      // O cancelamento gravou; o aviso é outra coisa e pode falhar sozinho.
+      // Dizer isso importa: quem cancelou precisa saber se tem de avisar na mão.
+      if (d.aviso && d.aviso.ok === false) semAviso.push(d.numero_sp || `#${id}`);
+    } catch(e) { erros.push(`#${id}: ${e.message}`); }
+  }
+  let m = `${ok.length} cancelado(s)${ok.length ? ": " + ok.join(", ") : "."}`;
+  if (semAviso.length) m += `<br><b>Sem aviso enviado:</b> ${semAviso.join(", ")} — `
+    + `o cancelamento está gravado, mas avise essas pessoas.`;
+  if (erros.length) m += `<br><b>${erros.length} não passou(aram):</b><br>` + erros.join("<br>");
+  aviso("mensagem", m, (erros.length || semAviso.length) ? "info" : "ok");
+  SELECAO.clear(); els("motivo").value = "";
+  carregar();
+}
+
 async function executar(acao){
   const ids = [...SELECAO], motivo = els("motivo").value.trim();
   if (["devolver","cancelar"].includes(acao) && motivo.length < 10) {
     aviso("mensagem", "Informe o motivo (mínimo 10 caracteres) antes de devolver ou cancelar.", "erro");
     els("motivo").focus(); return;
   }
+  // CANCELAR vai por um caminho próprio, um título de cada vez. Duas razões:
+  // é essa rota que AVISA quem lançou, e ela é aberta a quem só tem "lancar" —
+  // a rota do lote exige alçada de aprovar, e cancelar deixou de exigir.
+  if (acao === "cancelar") return cancelarSelecionados(ids, motivo);
   try {
     const d = await api("/erp/api/titulos/acao", {method:"POST",
       headers:{"Content-Type":"application/json"}, body: JSON.stringify({acao, ids, motivo})});

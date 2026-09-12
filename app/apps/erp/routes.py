@@ -194,6 +194,10 @@ ACOES_NA_TELA = ("administrar_insumos", "administrar_fornecedores", "comprar",
                  "autorizar_pedido", "solicitar_suprimento", "configurar",
                  "cruzar_notas", "arquivar", "receber", "emitir_nota",
                  "tratar_agenda", "aprovar",
+                 # Cancelar título é ação própria desde 12/09/2026: quem lança
+                 # cancela o PRÓPRIO lançamento, e a tela precisa saber disso
+                 # para mostrar o botão a quem não aprova.
+                 "cancelar_titulo",
                  # Encadeamento: a tela só transforma obra/conta/credor/pedido
                  # em link para quem consegue abrir o destino.
                  "ver_suprimentos", "ver_pedidos_compra",
@@ -3064,6 +3068,67 @@ def api_titulo_detalhe(titulo_id: int):
     except Exception as e:
         logger.exception("ERP: falha no detalhe do título %s", titulo_id)
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/titulos/<int:titulo_id>/cancelar", methods=["POST"])
+@login_obrigatorio
+@permissao("cancelar_titulo")
+def api_cancelar_titulo(titulo_id: int):
+    """Cancela UM título, com motivo — e avisa quem lançou.
+
+    A ação é `cancelar_titulo`, própria, e não `aprovar`: desde 12/09/2026 quem
+    LANÇOU cancela o próprio lançamento sem depender do financeiro, por decisão
+    do dono — *"liberado o lançamento que não está baixado ou conciliado"*.
+    Quem tem `lancar` recebe esta ação por implicação.
+
+    Por dentro, o serviço confere o ESCOPO (fora do recorte responde "não
+    encontrado") e, para quem não aprova, que o título seja dele.
+
+    O aviso sai DEPOIS do commit, de propósito: mensagem enviada sobre um
+    cancelamento que não gravou seria pior que aviso nenhum.
+    """
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+
+    d = request.get_json(silent=True) or {}
+    motivo = (d.get("motivo") or "").strip()
+    try:
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            if usuario is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            # O escopo aparece AQUI, e não só lá dentro, porque é aqui que a
+            # varredura estrutural da suíte procura — rota que recebe o número
+            # de um registro e é aberta a perfil preso a obra ou a autoria tem
+            # de conferir o recorte. O serviço confere de novo; a repetição é
+            # barata e a ausência seria invisível.
+            exigir_titulo_no_escopo(s, usuario, titulo_id)
+            t = svc_titulos.cancelar(s, titulo_id, motivo, usuario)
+            numero = t.numero_sp
+            quem_id = usuario.id
+            s.commit()
+    except ErroNaoEncontrado:
+        raise        # recusa de escopo vira 404, nunca 500
+    except (ErroValidacao, ErroPermissao) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao cancelar o título %s", titulo_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+    aviso = {}
+    try:
+        from app.apps.erp.core import notificacoes
+        with get_session() as s:
+            aviso = notificacoes.avisar_cancelamento(
+                s, titulo_id, motivo=motivo, cancelado_por=s.get(Usuario, quem_id))
+            s.commit()
+    except Exception:
+        # O cancelamento já está gravado. Aviso que não saiu fica no histórico
+        # de notificações como falha, e dá para reenviar — derrubar a resposta
+        # por causa dele faria a pessoa cancelar de novo.
+        logger.exception("ERP: título %s cancelado, mas o aviso não saiu", numero)
+        aviso = {"ok": False, "motivo": "o aviso não saiu; o cancelamento foi gravado"}
+
+    return jsonify({"ok": True, "numero_sp": numero, "aviso": aviso})
 
 
 @bp.route("/erp/api/titulos/acao", methods=["POST"])

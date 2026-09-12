@@ -150,6 +150,33 @@ obra e por autoria das telas, e cada resposta mostra de onde veio.
 - Quanto esta obra gastou em cimento este ano? 🔒
 - Qual foi o maior gasto da obra X no mês? 🔒
 
+#### Cancelamento de lançamento — perguntas abertas em 12/09/2026
+
+Desde 12/09/2026 quem lançou cancela o próprio lançamento (enquanto ninguém
+baixou nem conciliou), e quem lançou é avisado com o motivo. Isso torna
+possíveis perguntas que antes nem faziam sentido — e **nenhuma delas responde
+ainda**, porque o cancelamento vive no registro de eventos e não numa consulta
+pronta:
+
+- ❌ **Quais lançamentos foram cancelados este mês, e por quê?** 🔒
+  Falta: uma resposta que leia o registro de eventos do título, trazendo quem
+  cancelou, quando e o motivo escrito.
+- ❌ **Quem cancelou a SP tal, e qual foi o motivo?** 🔒
+- ❌ **Algum lançamento meu foi cancelado?** 🔒 — a resposta muda conforme quem
+  pergunta, por definição.
+- ❌ **Quanto foi cancelado em valor, por obra?** 🔒 — cuidado com a palavra:
+  "cancelado" não é perda nem economia; é lançamento que não devia existir.
+  Somar isso como se fosse dinheiro poupado seria número errado com cara de
+  certo.
+- ❌ **Quem mais cancela lançamento?** — é pergunta de qualidade do
+  lançamento, não de culpa. Muita coisa cancelada na mesma obra costuma
+  significar processo confuso, não pessoa desatenta.
+
+⚠️ **A palavra ambígua aqui é "cancelado".** Um título CANCELADO nunca foi
+pago; um ESTORNADO foi pago e desfeito. São coisas diferentes no dinheiro e no
+imposto, e qualquer resposta sobre "cancelados" tem de dizer qual das duas está
+contando.
+
 ### Obras, contratos e medições
 
 - Quais obras estão em andamento? ⚠️

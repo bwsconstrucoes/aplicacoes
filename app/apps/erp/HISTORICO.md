@@ -168,6 +168,69 @@ banco — **não consome nada**.
 
 ---
 
+**Estado em 12/09/2026 (décima quinta entrega):** **cancelar lançamento —
+quem lançou desfaz o próprio, e quem lançou é avisado.** Sem migração.
+
+### O que o dono pediu, e o que ele decidiu
+
+Primeiro o pedido: *"pode ser que eventualmente um título financeiro necessite
+ser cancelado (…) a gente poder ter um botão lá de cancelar, e botar uma
+justificativa obviamente, e a pessoa que lançou vai receber aquela informação
+de que o título foi cancelado e qual o motivo"*.
+
+Metade já existia: botão, motivo obrigatório e registro de quem cancelou. O que
+não existia era o AVISO. Perguntei se quem lança deveria poder cancelar o
+próprio lançamento, e ele decidiu: ***"liberado o lançamento que não está
+baixado ou conciliado"***.
+
+### Como ficou
+
+- **Quem lançou cancela o próprio lançamento**, sem depender do financeiro.
+  Antes precisava interromper outra pessoa, e o lançamento errado ficava no ar
+  até alguém ter tempo.
+- **Quem tem alçada de aprovar cancela o de qualquer um** — como era.
+- **Quem lançou não cancela o dos outros.** A recusa aí é "sem permissão", e
+  não "não encontrado", DE PROPÓSITO: o título é da mesma obra e a pessoa já o
+  vê na tela; esconder a existência não esconderia nada, e o recado claro
+  evita que ela fique tentando. Fora da obra dela, aí sim é "não encontrado".
+- **Quem lançou é avisado**, com o número, o credor, o valor, quem cancelou e
+  **o motivo inteiro**. Um aviso que diz "foi cancelado" sem o porquê obriga a
+  pessoa a ligar para perguntar — e aí não economizou trabalho nenhum.
+- **Quem cancelou não recebe aviso de si mesmo.** Ruído faz a pessoa parar de
+  ler os avisos que importam.
+
+**Ação própria, `cancelar_titulo`**, e não um pedaço de "aprovar": quem tem
+"lancar" a recebe por implicação (`ACOES_IMPLICADAS`). É a regra do repositório
+— a ação declarada tem de decidir sozinha quem entra; quem decide *neste
+registro* é o serviço, olhando de quem é o título.
+
+### A falha que apareceu no caminho
+
+**A trava era `parcela.status == PAGA`, e isso não é o mesmo que "tem
+pagamento".** Uma parcela pode ter PAGAMENTO registrado sem estar marcada PAGA
+— baixa parcial, baixa que o robô lançou e ninguém fechou. Nesses casos o
+cancelamento **passava**: a parcela virava CANCELADA e o pagamento ficava
+pendurado num título que "não existe mais". Dinheiro que saiu da conta e sumiu
+do relatório, sem ninguém perceber.
+
+Agora a trava olha o PAGAMENTO e a CONCILIAÇÃO, que são coisas diferentes e dão
+recados diferentes: conciliado diz *"desfaça a conciliação primeiro"*, que é
+acionável; pago diz *"use estorno"*. Conciliação já desfeita não impede — senão
+o recado seria mentira e a pessoa desfaria à toa.
+
+### Conferência
+
+13 testes novos com banco de verdade; conferi desligando as duas travas e o
+caminho do autor, e **seis deles quebram**. A tela foi exercitada no navegador:
+cancelei uma solicitação de verdade no banco de demonstração e vi o contador
+cair de 244 para 243.
+
+⚠️ **O aviso sai por TELEGRAM, não por WhatsApp** — é o mesmo caminho do aviso
+de pagamento, que já funciona assim. Quem não tem telefone nem CPF no cadastro
+fica registrado como "sem destino", e a tela diz quando o aviso não saiu.
+
+---
+
 **Estado em 12/09/2026 (décima quarta entrega):** **perguntar sobre UM
 documento do acervo.** Sem migração.
 
