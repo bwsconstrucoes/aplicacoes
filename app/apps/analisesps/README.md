@@ -40,6 +40,7 @@ sincronizacao.py   a ponte com a planilha, nos dois sentidos
 tarefas.py         a carga em segundo plano, com andamento e retomada
 executar_sync.py   o processo separado que faz o trabalho longo
 exportar.py        o CSV que o Excel em português abre com dois cliques
+lote_excel.py      o lote em .xlsx de verdade — valor somável, código como texto
 pdf.py             os relatórios em PDF (fpdf2, que o serviço já tem)
 migracoes/         .sql numerados; aplicados por botão, nunca no boot
 

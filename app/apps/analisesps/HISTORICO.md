@@ -2378,18 +2378,60 @@ porque A1 vale um ano e para de funcionar em silêncio.
 testes novos. Um deles guarda o defeito de cima: se alguém desligar a chamada,
 a suíte acusa.
 
+### Trigésima quinta leva (12/09) — o lote em Excel de verdade
+
+*"Relatório do lote em Excel, por lote e de todos os lotes juntos."* Era o
+último pedido da fila.
+
+**Por que agora dá, e até 05/09 não dava:** o `exportar.py` diz que a
+exportação é CSV *"porque gerar Excel de verdade exigiria uma biblioteca nova,
+e a regra da casa é não acrescentar dependência sem combinar"*. Isso deixou de
+valer quando o `openpyxl` entrou por causa do BeeVale. **Nada novo no serviço.**
+
+**O CSV continua, e não é redundância:** ele sai em BLOCOS e é o único que
+aguenta exportar a base larga sem estourar a memória. O Excel monta o arquivo
+inteiro antes de enviar — por isso é do LOTE, que tem dezenas de linhas, e não
+da base, que tem 59 mil. Tem teto de linhas pelo mesmo motivo.
+
+**O que o Excel resolve e o CSV não:**
+
+- **Valor é número.** No CSV ele vai como texto "1.234,56" para o Excel
+  brasileiro entender; aqui é número de fato, então dá para somar, ordenar e
+  filtrar sem converter nada antes.
+- **Código não vira notação científica.** O Excel transforma um código de 47
+  dígitos em `1,23457E+46`, e o número volta **arredondado, irrecuperável**. As
+  colunas de código vão como texto de propósito.
+- **O total é FÓRMULA** (`SUBTOTAL`), então acompanha o filtro. Um número fixo
+  mentiria em silêncio — e é justamente para filtrar que se pede Excel.
+- **Uma aba por pessoa** na exportação de todos, com um **resumo na primeira**:
+  quem abre um arquivo de oito abas quer ver o tamanho do todo antes de escolher
+  em qual entrar. Responde a pergunta que hoje não tem resposta em lugar nenhum
+  — *"quanto está separado para pagar somando o que cada um montou?"*.
+
+**Um cuidado que só existe por o título ser texto livre:** o Excel **recusa**
+`: \ / ? * [ ]` num nome de aba e corta em 31 caracteres. "Pagar 15/09" tem
+barra e "Depois: urgente" tem dois pontos — deixar passar faria o arquivo
+**inteiro** não abrir por causa de um título. Nomes repetidos também: dois
+"Marcelo" acontecem, e o Excel recusa abas de mesmo nome.
+
+**Dois defeitos meus, achados conferindo o arquivo gerado:**
+
+1. **A expressão que limpa o nome da aba estava escapada errada** e não limpava
+   nada — o arquivo estourava no primeiro título com barra. Apareceu porque o
+   teste usou um nome de lote de verdade, com barra, e não "Lote 1".
+2. **A soma do resumo incluía a própria célula** — referência circular, e o
+   Excel abre com erro em vez de com o número. A última linha estava sendo lida
+   *depois* de a linha do total já existir.
+
+**Verificação:** 4.540 testes verdes com Postgres de verdade, 129 pulados; 17
+testes novos. **As duas rotas foram exercitadas de verdade** contra um Postgres
+descartável, com dois lotes de pessoas diferentes: os arquivos saem, o valor
+chega como número, o ID como texto, as abas saem por pessoa com o resumo na
+frente, e lote vazio responde avisando em vez de entregar planilha em branco.
+
 ### Pedido na fila, ainda NÃO feito
 
-**Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a
-mesma estrutura do PDF que já existe. *"Coloca isso na fila de produção
-também."*
-
-> **Uma coisa mudou e vale para quem pegar esta tarefa:** o README diz que
-> exportação é CSV "porque gerar Excel de verdade exigiria uma biblioteca
-> nova". **Isso não é mais verdade desde 05/09**: o `openpyxl` entrou por causa
-> do BeeVale e está no `requirements.txt`. Excel de verdade agora é possível
-> sem dependência nova — e a exceção de importação para ele já está declarada
-> em `LIBERADO_EM`.
+**Nada do dono esperando código.** O que falta não é programação — é o certificado digital A1, para o download autônomo das notas (ver a 34ª leva).
 
 ### A janela entre publicar e apertar o botão
 

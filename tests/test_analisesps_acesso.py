@@ -112,6 +112,8 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/lote/exportar"),
     ("GET", "/analisesps/relatorio/pdf"),
     ("GET", "/analisesps/lote/pdf"),
+    ("GET", "/analisesps/lote/excel"),
+    ("GET", "/analisesps/lote/excel/todos"),
     ("GET", "/analisesps/api/andamento"),
     ("GET", "/analisesps/api/frescor"),
     ("POST", "/analisesps/api/alterar"),

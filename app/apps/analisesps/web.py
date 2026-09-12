@@ -2652,6 +2652,102 @@ def lote_pdf():
 
 
 # ---------------------------------------------------------------------------
+# O LOTE EM EXCEL — .xlsx de verdade, não CSV
+#
+# Pedido do dono: *"relatório do lote em Excel, por lote e de todos os lotes
+# juntos"*. O CSV continua existindo, e não é redundância: ele sai em BLOCOS,
+# e é o único que aguenta exportar a base larga sem estourar a memória. O
+# Excel monta o arquivo inteiro antes de enviar — por isso é do LOTE, que tem
+# dezenas de linhas, e não da base, que tem 59 mil.
+# ---------------------------------------------------------------------------
+def _responder_xlsx(conteudo: bytes, nome: str):
+    from flask import Response
+    return Response(
+        conteudo,
+        mimetype=("application/vnd.openxmlformats-officedocument"
+                  ".spreadsheetml.sheet"),
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+@bp.route("/lote/excel")
+@exige_consulta
+def lote_excel_rota():
+    """O lote DESTA pessoa, em Excel."""
+    from . import lote, lote_excel
+    from .horario import agora
+
+    pessoa = auth.pessoa_atual()
+    # Ver o comentário em `exportar_lote`: sem a pessoa, sai o lote antigo.
+    try:
+        montado = lote.montar(lote.ler(pessoa)["conteudo"])
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou montar o lote para o Excel")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui montar o lote",
+            mensagem=f"{e}"), 500
+    if not montado["quantidade"]:
+        return render_template(
+            "analisesps_erro.html", titulo="Lote vazio",
+            mensagem="Não há SPs no lote para pôr na planilha."), 400
+
+    try:
+        conteudo = lote_excel.de_um_lote(
+            montado, auth.nome_atual() or "Lote")
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou gerar o Excel do lote")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui gerar o Excel",
+            mensagem=f"{e}. A exportação em CSV continua disponível."), 500
+
+    return _responder_xlsx(
+        conteudo, f"lote_{agora().strftime('%Y-%m-%d_%H%M')}.xlsx")
+
+
+@bp.route("/lote/excel/todos")
+@exige_consulta
+def lote_excel_todos():
+    """TODOS os lotes, uma aba por pessoa, com um resumo na frente.
+
+    Serve para a pergunta que hoje não tem resposta em lugar nenhum: "quanto
+    está separado para pagar, no total, somando o que cada um montou?". A tela
+    do Lote mostra só o de quem está olhando."""
+    from . import lote, lote_excel, preferencias
+    from .horario import agora
+
+    try:
+        pessoas = preferencias.pessoas_conhecidas() if lote.por_pessoa() else []
+        lotes = []
+        for pessoa in pessoas:
+            conteudo = lote.ler(pessoa["chave"])["conteudo"]
+            if not (conteudo or "").strip():
+                continue          # lote vazio não vira aba
+            lotes.append({"nome": pessoa.get("nome") or pessoa["chave"],
+                          "montado": lote.montar(conteudo)})
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou juntar os lotes para o Excel")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui juntar os lotes",
+            mensagem=f"{e}"), 500
+
+    if not lotes:
+        return render_template(
+            "analisesps_erro.html", titulo="Nenhum lote com SPs",
+            mensagem="Ninguém tem SP no lote agora."), 400
+
+    try:
+        conteudo = lote_excel.de_todos(lotes)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou gerar o Excel de todos")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui gerar o Excel",
+            mensagem=f"{e}"), 500
+
+    logger.info("Análise de SPs: Excel de %d lote(s) gerado.", len(lotes))
+    return _responder_xlsx(
+        conteudo, f"lotes_todos_{agora().strftime('%Y-%m-%d_%H%M')}.xlsx")
+
+
+# ---------------------------------------------------------------------------
 # Erros
 # ---------------------------------------------------------------------------
 @bp.errorhandler(500)

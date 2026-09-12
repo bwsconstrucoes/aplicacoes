@@ -473,7 +473,16 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
     #
     # Se alguém quiser exportar as 59 mil SPs em Excel, a resposta continua
     # sendo NÃO por aqui: é exatamente o caminho que estourava a memória.
-    LIBERADO_EM = {"beevale.py": {"openpyxl"}}
+    # O `openpyxl` é a única exceção, e ela vale para quem gera planilha de
+    # verdade: o BeeVale (que sobe para o portal) e o relatório do lote em
+    # Excel. O motivo da proibição é MEMÓRIA, e nos dois casos o que se monta
+    # são dezenas de linhas, não as 59 mil da base.
+    #
+    # Para exportar a base larga a resposta continua sendo NÃO por aqui: é
+    # exatamente o caminho que estourava a memória, e o CSV — que sai em
+    # blocos — existe para isso.
+    LIBERADO_EM = {"beevale.py": {"openpyxl"},
+                   "lote_excel.py": {"openpyxl"}}
 
     achados = []
     for caminho in _arquivos():
