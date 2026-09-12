@@ -155,8 +155,43 @@ Agora cada linha é arredondada antes de somar, igual ao que é gravado. E o
 preço passou a ser lido em decimal exato, sem o desvio pelo `float` que a tela
 usa.
 
-**Ainda faltam, desta varredura:** locação (valor do período, devolução
-parcial) e despesa de colaborador (soma dos itens contra o total do título).
+### A locação tinha a MESMA falha — e aqui ela vira conta a pagar
+
+Achada logo depois, pelo mesmo padrão: `valor_periodo` somava os itens sem
+arredondar e arredondava no fim, enquanto a ficha do contrato mostra o valor de
+CADA equipamento já arredondado. Com diária de R$ 12,3450 (a coluna aceita
+quatro casas, e locadora usa), três escoras davam **R$ 37,04 no contrato e
+R$ 37,02 na ficha**.
+
+Aqui é pior que na medição, porque esse total vira o `valor_previsto` de cada
+parcela — **é o valor que o ERP diz que a BWS deve pagar todo mês**, e que
+alguém confere contra o boleto da locadora.
+
+O caso que mostra melhor: devolver uma escora que a ficha diz valer R$ 12,34
+derrubava **R$ 12,35** do contrato. A devolução comia um centavo a mais do que
+o equipamento valia.
+
+Corrigido do mesmo jeito, e a ficha passou a usar a MESMA função do total —
+para não existirem duas contas do mesmo número.
+
+### A despesa de colaborador está certa — e vale dizer por quê
+
+Varri e não achei nada: ali cada item já tem um valor digitado por uma pessoa,
+em reais e centavos, e a soma é exata do começo ao fim. Não há multiplicação
+no meio, então não há onde o arredondamento entrar. O rateio por obra soma
+esses mesmos valores. **Nada a corrigir** — e registro isto porque "varri e
+está certo" é informação, não silêncio.
+
+### Dois lugares com a mesma FORMA, que eu NÃO mexi
+
+Encontrei mais dois trechos que somam produto sem arredondar antes: o total do
+pedido de compra e a comparação "quanto do pedido já veio em nota". **Não
+mexi**, e o motivo é o que vale como regra: não consegui construir um caso em
+que eles errem — o segundo tem tolerância de dois centavos justamente para
+essa folga, e o primeiro não é mostrado linha a linha arredondado em lugar
+nenhum. **Mexer em conta de dinheiro sem um caso que prove a falha é trocar um
+erro conhecido por um desconhecido.** Ficam anotados aqui para quem for mexer
+naquelas telas um dia.
 
 ---
 

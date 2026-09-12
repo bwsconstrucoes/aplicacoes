@@ -458,6 +458,24 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       23:59:59 ainda pode atravessar — resolver de vez exigiria as funções do
       ERP receberem a data de fora.
 
+- [x] **VARREDURA DA ARITMÉTICA: empreita, locação e pessoal** — FEITA em
+      12/09/2026. Sem migração.
+      **Um defeito só, nos dois lugares onde havia multiplicação:** somava as
+      linhas sem arredondar e arredondava o total, enquanto cada linha era
+      gravada (e mostrada) arredondada.
+      1. **Medição de empreita por item** — o total divergia da soma das
+         próprias linhas. Esse total consome saldo de contrato, retém garantia
+         e vira título a pagar.
+      2. **Locação** — o valor do período divergia da ficha, e esse número é o
+         `valor_previsto` de cada parcela, ou seja, a conta a pagar do mês.
+         Devolver uma escora de R$ 12,34 derrubava R$ 12,35 do contrato.
+      **Despesa de colaborador: varrida e correta** — ali cada valor é digitado
+      por uma pessoa e a soma é exata, sem multiplicação no meio.
+      **Dois lugares com a mesma forma NÃO foram mexidos** (total do pedido de
+      compra e a comparação pedido × notas): não consegui construir um caso em
+      que errem, e mexer em conta de dinheiro sem caso que prove a falha é
+      trocar erro conhecido por erro desconhecido. Anotados no HISTORICO.
+
 - [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
       ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
       come o mês inteiro.
