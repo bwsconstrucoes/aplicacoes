@@ -2051,15 +2051,58 @@ fila foi conferida, mas quem a esvazia é a sincronização, e ela precisa da
 credencial do Google, que não existe fora do Render. E a lista nunca foi vista
 contra as 59 mil SPs: o tamanho real dela é desconhecido.
 
-### Pedido na fila, ainda NÃO feito
+### Vigésima nona leva (12/09) — o relatório do lote com descrição e obra
 
-**O relatório do lote em PDF precisa caber mais** (pedido em 11/09/2026).
-*"Está bacaninha, só que reduz a fonte consideravelmente pra caber mais
+*"Está bacaninha, só reduz a fonte consideravelmente pra caber mais
 informação. Quero que tenha a descrição. Quero que tenha obra. E pode usar a
-quebra de linha."* Ou seja: fonte menor, duas colunas novas (Descrição e Obra)
-e texto quebrando em mais de uma linha dentro da célula — o que hoje não
-acontece, o texto é cortado. Ele fechou dizendo que com essas duas colunas já
-fica suficiente.
+quebra de linha."*
+
+**Feito:** fonte de 8 para **6,5**, duas colunas novas (**Descrição** e
+**Obra** — que é o centro de custo, a palavra que ele usa) e o texto agora
+**quebra em até três linhas** dentro da célula em vez de ser cortado.
+
+A descrição ficou com a maior fatia da largura (44 mm de 190) porque é o único
+texto realmente livre; as outras colunas cabem numa linha quase sempre. O "R$"
+saiu das células e foi para o título da coluna: repetido em trinta linhas, ele
+só gastava a largura que a descrição queria.
+
+**Detalhes que a tabela precisou ganhar:**
+
+- **Quebra por palavra**, e só parte a palavra quando ela sozinha não cabe —
+  um código emendado sem espaço não pode empurrar o valor para fora da página.
+- **Passando de três linhas, a última termina em "…"**. Sem isso a pessoa lê
+  meia frase achando que é a frase inteira.
+- **A régua vai embaixo da linha inteira**, desenhada depois de escrever todas
+  as células. Com alturas diferentes por célula, a borda de cada uma sairia
+  numa altura diferente e a tabela ficaria serrilhada.
+
+#### INCIDENTE achado conferindo o papel: o vencimento saía um dia antes
+
+Gerado o PDF e **aberto como imagem para conferir de olho**, um vencimento de
+**20/09** apareceu impresso como **19/09**.
+
+**A causa, e ela é antiga:** uma data escrita sem hora (`"2026-09-20"`) virava
+meia-noite sem fuso, e a conversão para Brasília levava esse instante para as
+21h do **dia anterior**. Meia-noite de uma data sem hora não é um instante no
+mundo: é o dia. Converter fuso ali inventa uma hora que ninguém informou.
+
+> **Por que ninguém tinha visto:** nas telas as datas chegam das colunas DATE
+> do banco, que vêm como data de verdade e não passam por esse caminho. O
+> defeito só aparece onde a data viaja como TEXTO — que é o caso do PDF e do
+> JSON. Um relatório de pagamento com o vencimento um dia antes é o tipo de
+> erro que faz alguém pagar na data errada.
+
+A conversão de fuso continua valendo onde ela é certa: uma sincronização de
+00h30 em UTC continua aparecendo como 21h30 do dia anterior, em Brasília. Há
+teste para as duas coisas.
+
+**Verificação:** 4.466 testes verdes com Postgres de verdade, 129 pulados; 12
+testes novos. **O PDF foi gerado e olhado como imagem**, não só lido por
+extração de texto — é assim que o defeito da data apareceu. Conferido
+desligando cada correção: sem o conserto da data, dois testes caem; sem a
+quebra de linha, outros dois.
+
+### Pedido na fila, ainda NÃO feito
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a
 mesma estrutura do PDF que já existe. *"Coloca isso na fila de produção
