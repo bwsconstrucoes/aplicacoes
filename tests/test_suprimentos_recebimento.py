@@ -26,10 +26,9 @@ from app.apps.erp.db.models.cadastros import (
     StatusPedidoCompra as SP, SuprimentoItem, SuprimentoSolicitacao,
 )
 
-from conftest import SessaoFalsa, novo_usuario
+from conftest import SessaoFalsa, hoje, novo_usuario
 
 OBRA = novo_usuario(5, P.ADMINISTRATIVO_OBRA, nome="Amanda")
-HOJE = date.today()
 
 
 def _cenario(quantidade="100", recebida="0", status_pedido=SP.AUTORIZADO):
@@ -108,7 +107,7 @@ def test_item_de_outro_pedido_e_recusado():
 
 def test_nao_se_recebe_no_futuro():
     s, item, pedido, linha = _cenario()
-    amanha = (HOJE + timedelta(days=1)).isoformat()
+    amanha = (hoje() + timedelta(days=1)).isoformat()
 
     with pytest.raises(ErroValidacao, match="no futuro"):
         svc.registrar(s, 50, {"data": amanha,
@@ -145,7 +144,7 @@ def test_avisa_quando_a_parcela_venceu_e_o_material_nao_chegou():
     pode pagar mesmo?"""
     s, item, pedido, linha = _cenario()
     s.objetos.append(PrevisaoPagamento(id=90, pedido_id=50, numero=1,
-                                       vencimento=HOJE - timedelta(days=3),
+                                       vencimento=hoje() - timedelta(days=3),
                                        valor=Decimal("3800")))
 
     r = svc.situacao(s, 50)
@@ -158,7 +157,7 @@ def test_avisa_quando_o_material_chegou_e_ninguem_lancou_a_nota():
     s, item, pedido, linha = _cenario(quantidade="100", recebida="100")
     item.status = ST.RECEBIDO
     s.objetos.append(PrevisaoPagamento(id=90, pedido_id=50, numero=1,
-                                       vencimento=HOJE + timedelta(days=20),
+                                       vencimento=hoje() + timedelta(days=20),
                                        valor=Decimal("3800")))
 
     r = svc.situacao(s, 50)
@@ -169,7 +168,7 @@ def test_avisa_quando_o_material_chegou_e_ninguem_lancou_a_nota():
 
 def test_avisa_quando_a_entrega_atrasou():
     s, item, pedido, linha = _cenario()
-    pedido.previsao_entrega = HOJE - timedelta(days=5)
+    pedido.previsao_entrega = hoje() - timedelta(days=5)
 
     r = svc.situacao(s, 50)
 
@@ -180,7 +179,7 @@ def test_pedido_em_dia_nao_gera_aviso_nenhum():
     s, item, pedido, linha = _cenario(quantidade="100", recebida="100")
     item.status = ST.RECEBIDO
     s.objetos.append(PrevisaoPagamento(id=90, pedido_id=50, numero=1,
-                                       vencimento=HOJE + timedelta(days=20),
+                                       vencimento=hoje() + timedelta(days=20),
                                        valor=Decimal("3800"), titulo_id=777))
 
     assert svc.situacao(s, 50)["avisos"] == []

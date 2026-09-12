@@ -47,6 +47,10 @@ class PerfilUsuario(str, enum.Enum):
     APROVADOR = "APROVADOR"
     LANCADOR = "LANCADOR"
     CONSULTA = "CONSULTA"
+    # Gente de FORA da BWS, associada a uma obra (migração 063). Enxerga TUDO
+    # daquela obra e nada do resto da empresa, e só OLHA — nenhuma ação de
+    # escrita. Sem obra designada, não vê nada.
+    PARCEIRO = "PARCEIRO"
 
 
 class EscopoVisao(str, enum.Enum):

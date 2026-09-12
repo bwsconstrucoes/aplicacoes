@@ -62,13 +62,25 @@ def aplicar_escopo(stmt, s: Session, usuario: Optional[Usuario]):
     A consulta precisa já ter feito o `join` com `DocumentoTipo`.
     """
     stmt = stmt.where(DocumentoTipo.sigilo.in_(sigilos_visiveis(usuario)))
-    if usuario is not None and usuario.perfil in (P.SUPERVISOR_OBRA,
-                                                  P.ADMINISTRATIVO_OBRA):
-        from app.apps.erp.core.auth.permissoes import obras_do_usuario
-        minhas = obras_do_usuario(s, usuario)
-        stmt = stmt.where(or_(Documento.obra_id.is_(None),
-                              Documento.obra_id.in_(minhas or [-1])))
-    return stmt
+    if usuario is None:
+        return stmt
+
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+
+    minhas = obras_do_usuario(s, usuario)
+    if minhas is None:
+        return stmt                       # enxerga todas as obras
+
+    if usuario.perfil is P.PARCEIRO:
+        # O parceiro é de FORA da BWS: documento que não é de obra nenhuma é
+        # papelada da empresa (contrato social, certidão, seguro) e não lhe diz
+        # respeito. Sem obra designada, ele não alcança documento nenhum.
+        return stmt.where(Documento.obra_id.in_(minhas or [-1]))
+
+    # Quem é de dentro e responde por obra continua alcançando o que é da
+    # empresa como um todo — é a papelada que ele precisa para tocar a obra.
+    return stmt.where(or_(Documento.obra_id.is_(None),
+                          Documento.obra_id.in_(minhas or [-1])))
 
 
 def sigilos_visiveis(usuario: Optional[Usuario]) -> tuple[str, ...]:

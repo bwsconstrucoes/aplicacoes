@@ -414,6 +414,38 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       no caso das notas está escrito que é de propósito. Recortar por obra é
       decisão de negócio, não correção.
 
+- [x] **O RECORTE POR OBRA VIRA O PADRÃO DO ERP, E NASCE O PERFIL PARCEIRO** —
+      FEITO em 12/09/2026. **TRAZ A MIGRAÇÃO 063** (só acrescenta o cargo à
+      lista; não mexe em dado e não pode falhar).
+      Princípio dito pelo dono: *"o ideal é sempre limitar as informações a
+      quem está associado a cada obra"*.
+      1. **A lista de colaboradores vazava dado pessoal**: quem responde por
+         uma obra via CPF, chave Pix e diária de TODA a empresa. Recortado.
+      2. **A agenda passou a ter recorte** — listagem, ações e a contagem da
+         tela de início, que agora bate com a tela.
+      3. **Perfil PARCEIRO**: gente de fora, presa a obra, que **só olha**.
+         Vê financeiro, equipe, suprimentos, arquivo e agenda das obras dele.
+         Não vê dado bancário, quadro de contratos com o cliente, notas contra
+         a empresa, documento sem obra nem documento de faixa pessoal.
+         **Sem obra designada, não vê nada** — negado por escrito.
+      **Decisões do dono registradas:** ele escolheu que o parceiro veja TODO
+      o custo da obra, sabendo que isso mostra por quanto a BWS compra; e que
+      os dados de pessoal sigam a regra dos demais perfis, sem exceção.
+      **Fica com o dono:** as notas fiscais recebidas continuam mostrando a
+      empresa inteira, porque recortar por obra esconderia justamente a nota
+      que ninguém ligou a nada. Se o supervisor não deve ver essa tela, o
+      certo é tirar a ação dele.
+      **Falta:** cadastrar o primeiro parceiro de verdade e conferir tela por
+      tela antes de dar senha a alguém de fora.
+
+- [x] **A SUÍTE DEIXA DE QUEBRAR NA VIRADA DO DIA** — FEITO em 12/09/2026.
+      Seis testes calculavam a data no topo do arquivo e discordavam do ERP se
+      a rodada atravessasse a meia-noite (aconteceu). Agora existe `hoje()` no
+      conftest, lido no momento do uso, e uma varredura estrutural recusando o
+      cálculo no topo. Limite conhecido e escrito: um teste que comece às
+      23:59:59 ainda pode atravessar — resolver de vez exigiria as funções do
+      ERP receberem a data de fora.
+
 - [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
       ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
       come o mês inteiro.

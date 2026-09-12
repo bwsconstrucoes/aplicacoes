@@ -240,6 +240,22 @@ conferência do próprio sistema:**
   obra; antes o relatório olhava a situação do título e mostrava título pago
   pela metade como inteiramente em aberto.
 
+### Quem vê o quê (perguntas que o recorte por obra tornou possíveis)
+
+Desde 12/09/2026 o padrão do ERP é **limitar a informação a quem está
+associado à obra**. Isso muda a resposta de quase toda pergunta conforme quem
+pergunta — e cria perguntas novas sobre o próprio acesso:
+
+- Quais obras eu enxergo?
+- Quem tem acesso à obra X? (e quem é de fora da empresa nessa lista)
+- O parceiro fulano enxerga o quê, exatamente?
+  ⚠️ **Depende de quem pergunta** — só quem cadastra operador alcança isso.
+- Tem alguém cadastrado sem obra nenhuma associada? (essa pessoa não vê nada,
+  e provavelmente é cadastro pela metade)
+- 📌 **Toda pergunta de dinheiro, de equipe e de documento já responde
+  recortada** pelas obras de quem pergunta. Duas pessoas fazendo a MESMA
+  pergunta recebem números diferentes, e isso é o certo — não é defeito.
+
 ### Uso do sistema (o relatório de trabalho)
 
 - O que fulano fez no sistema hoje? E esta semana?

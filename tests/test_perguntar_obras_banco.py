@@ -25,9 +25,10 @@ from app.apps.erp.db.models.cadastros import (
     Empresa, EscopoVisao, Obra, PerfilUsuario as P, Usuario, UsuarioObra,
 )
 
+from conftest import hoje
+
 pytestmark = pytest.mark.banco
 
-HOJE = date.today()
 
 
 @pytest.fixture
@@ -45,8 +46,8 @@ def base(sessao_real):
         cno="123456789", codigo_ibge="2304400",
         aliquota_iss_pct=Decimal("3.00"), empresa_id=empresa.id,
         fase="EM_EXECUCAO",
-        seguro_garantia="AP-001", seguro_vigencia_fim=HOJE + timedelta(days=400),
-        vigencia_fim=HOJE + timedelta(days=300))
+        seguro_garantia="AP-001", seguro_vigencia_fim=hoje() + timedelta(days=400),
+        vigencia_fim=hoje() + timedelta(days=300))
     nua = Obra(codigo="OBRA-NUA", nome="Escola de Maracanaú",
                cliente="Prefeitura", fase="EM_EXECUCAO")
     garantia = Obra(
@@ -54,19 +55,19 @@ def base(sessao_real):
         cno="987654321", codigo_ibge="2304400",
         aliquota_iss_pct=Decimal("2.00"), empresa_id=empresa.id,
         fase="EM_EXECUCAO",
-        seguro_garantia="AP-009", seguro_vigencia_fim=HOJE - timedelta(days=10),
-        vigencia_fim=HOJE + timedelta(days=100))
+        seguro_garantia="AP-009", seguro_vigencia_fim=hoje() - timedelta(days=10),
+        vigencia_fim=hoje() + timedelta(days=100))
     prazo = Obra(
         codigo="OBRA-PZ", nome="Quadra poliesportiva", cliente="Prefeitura",
         cno="555444333", codigo_ibge="2304400",
         aliquota_iss_pct=Decimal("5.00"), empresa_id=empresa.id,
         fase="EM_EXECUCAO", contrato="CT-2024/07",
-        vigencia_fim=HOJE - timedelta(days=45))
+        vigencia_fim=hoje() - timedelta(days=45))
     encerrada = Obra(
         codigo="OBRA-FIM", nome="Reforma antiga", cliente="Prefeitura",
         cno="111222333", codigo_ibge="2304400",
         aliquota_iss_pct=Decimal("5.00"), empresa_id=empresa.id,
-        fase="CONCLUIDA", vigencia_fim=HOJE - timedelta(days=900))
+        fase="CONCLUIDA", vigencia_fim=hoje() - timedelta(days=900))
     s.add_all([completa, nua, garantia, prazo, encerrada])
     s.flush()
 

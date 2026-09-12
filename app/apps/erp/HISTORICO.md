@@ -21,7 +21,11 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### TRAZ AS MIGRAÇÕES 061 E 062 — o botão tem de ser apertado junto com a publicação
+### TRAZ AS MIGRAÇÕES 061, 062 E 063 — o botão tem de ser apertado junto com a publicação
+
+A **063** só acrescenta o perfil PARCEIRO à lista de cargos. Não mexe em dado
+nenhum e não pode falhar; enquanto ninguém for cadastrado com ele, é um nome a
+mais na caixinha do cadastro de operador.
 
 A varredura adversarial do núcleo financeiro (11/09/2026) achou **nove falhas
 reais**, oito delas reproduzidas com teste antes de corrigidas. Três delas são travas no
@@ -72,11 +76,15 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
   Locações e nos Relatórios. A varredura mecânica das rotas com número não
   achou outra — mas ela só pega rota com número no endereço, não tela que
   soma sozinha. Continua aberto.
-- **PERGUNTA PARA VOCÊ: a agenda e as notas fiscais mostram a empresa
-  inteira** para quem só responde por uma obra. Sempre foi assim, e no caso
-  das notas está escrito que é de propósito ("nota emitida contra a empresa
-  sem ninguém saber é problema fiscal, e mais olhos ajudam"). Se você quiser
-  recortar por obra, é decisão sua — eu não mudo regra de negócio sozinho.
+- ✔ **A agenda foi recortada por obra** em 12/09/2026, por decisão sua.
+- **AS NOTAS FISCAIS recebidas NÃO foram**, e de propósito: recortar por obra
+  esconderia justamente as notas que ninguém ainda ligou a nada — que são as
+  que precisam de atenção. Se o supervisor não deve ver essa tela, o certo é
+  tirar a ação `ver_notas` dele. **Decisão sua.**
+- **Cadastrar o primeiro parceiro e conferir na tela.** O perfil está pronto e
+  testado, mas nunca foi usado por gente de verdade: vale abrir o ERP com um
+  parceiro de teste e olhar tela por tela antes de dar a senha a alguém de
+  fora.
 - **Desfazer conciliação sozinha não tem botão.** A função existe e agora
   funciona (a migração 061 destravou), mas nenhuma tela chama: só dá para
   desfazer a conciliação junto com a baixa, pelo "Desfazer baixa" do título.
@@ -88,6 +96,93 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
   algum mês antigo, é quase certo que seja isto: dois pagamentos iguais no
   mesmo dia viraram um. Reimportar o OFX daquele período resolve, porque a
   linha que falta passa a ter identidade própria.
+
+---
+
+**Estado em 12/09/2026 (décima entrega):** **o princípio do recorte por obra,
+aplicado — e o perfil PARCEIRO**. **TRAZ A MIGRAÇÃO 063.**
+
+### O princípio, dito pelo dono
+
+*"O ideal é sempre limitar as informações a quem está associado a cada obra."*
+
+Isso respondeu a pergunta que a parte 2 tinha deixado em aberto (agenda e notas
+mostrando a empresa inteira) e virou regra geral do ERP. Três coisas saíram
+daí.
+
+### 1. A lista de colaboradores vazava dado pessoal
+
+`listar_colaboradores` nunca recebeu usuário. Quem tem a ação `ver_pessoal` —
+e isso inclui supervisor e administrativo, que são presos a obra — via TODO
+colaborador da empresa, com **CPF, chave Pix, valor da diária e auxílios**. Não
+é número de obra alheia: é dado pessoal de quem trabalha em outra frente.
+
+Agora recorta pelas obras da pessoa. O Departamento Pessoal continua vendo a
+folha inteira — ele enxerga por ASSUNTO, é o trabalho dele. Colaborador sem
+obra é do escritório e não aparece para quem responde por uma obra.
+
+### 2. A agenda passou a ter recorte, e a bolinha passou a bater
+
+A agenda mostrava a empresa inteira. Agora:
+
+- quem responde por obra vê os avisos DAS OBRAS DELE **mais** os que não são
+  de obra nenhuma (certidão da empresa, obrigação fiscal) — esconder a
+  certidão vencida de quem vai ao órgão não protege nada, e é a mesma regra
+  que o Arquivo já usava;
+- o PARCEIRO, que é de fora, vê só as obras dele;
+- **a contagem da tela de início usa o mesmo recorte**: bolinha dizendo "12
+  avisos" e tela mostrando 3 é defeito que ninguém reporta e todo mundo
+  desconfia;
+- resolver, dispensar, reabrir e apagar anotação passaram a conferir o mesmo
+  recorte, e anotar NA obra de outro foi fechado. Listagem não é trava.
+
+### 3. O perfil PARCEIRO
+
+Pedido do dono: *"tem um perfil que vai precisar ser criado, que é onde
+parceiro, e esse parceiro vai estar associado a alguma obra, e o correto é que
+ele possa visualizar todas as informações referente à obra — de financeiro, de
+DP, de contratos e etcétera — mas não visualizar o restante da empresa"*.
+
+**Três decisões dele, tomadas com o preço na mesa:**
+
+| Pergunta | Resposta |
+|---|---|
+| Até onde vai o financeiro da obra para ele? | **Todo o custo da obra.** Ele escolheu a leitura larga sabendo do que ela custa: o parceiro passa a enxergar por quanto a BWS compra naquela obra. |
+| E os dados das pessoas? | *"Aqui não muda. Não precisa de perfil novo pra isso. Segue os demais perfis."* — ou seja, ele vê a equipe da obra dele com os mesmos campos que um supervisor vê. |
+| Ele lança alguma coisa? | **Só olha.** |
+
+**O que ele alcança:** as telas do ERP, os relatórios, a equipe, os
+suprimentos, o arquivo e a agenda — tudo recortado pelas obras dele.
+
+**O que ele NÃO alcança, e por quê:**
+
+- **dado bancário** (conta e chave Pix de credor) — não é informação de obra;
+- **o quadro financeiro dos contratos** (`ver_contratos`) — aquela tela é o
+  contrato entre a BWS e o CLIENTE, pode atravessar várias obras e mostra o
+  que a BWS tem a receber. O contrato que interessa ao parceiro é a
+  **empreita** dele, e essa ele vê;
+- **notas fiscais contra a empresa**, fila de pedidos, uso da equipe,
+  configurações e cadastro de operadores;
+- **documento sem obra** (certidão, contrato social, seguro da BWS) e
+  **documento de faixa pessoal**, mesmo o da obra dele: folha e acordo de
+  jornada são da BWS com o empregado dela;
+- **qualquer ação que grave.** Há teste percorrendo a tabela de permissões
+  inteira e recusando se alguém der escrita ao parceiro um dia.
+
+**E a trava mais importante: sem obra designada, ele não vê NADA.** Escrito em
+voz alta, não como efeito colateral de lista vazia — os outros perfis presos a
+obra caem em "o que eu mesmo lancei" quando não têm obra, e para o parceiro,
+que não lança nada, isso seria uma porta que só existe por descuido.
+
+### O que ficou como decisão sua, e por que eu não mexi
+
+**As notas fiscais recebidas continuam mostrando a empresa inteira.** Recortar
+por obra ali faria o contrário do que a tela serve: o objetivo dela é pegar
+nota emitida contra a BWS que ninguém conhece — e essa, por definição, ainda
+não está ligada a obra nenhuma. Recortar por obra esconderia justamente as que
+precisam de atenção. **Se você não quiser que o supervisor veja essa tela, o
+certo é tirar a ação `ver_notas` dele — não recortar a tela.** É uma linha, e
+é sua decisão.
 
 ---
 

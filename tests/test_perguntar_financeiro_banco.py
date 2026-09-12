@@ -38,11 +38,10 @@ from app.apps.erp.db.models.financeiro import (
     Parcela, StatusParcela, StatusTitulo, Titulo,
 )
 
-from conftest import como
+from conftest import como, hoje
 
 pytestmark = pytest.mark.banco
 
-HOJE = date.today()
 
 
 @pytest.fixture
@@ -80,7 +79,7 @@ def cenario(sessao_real):
         t = Titulo(numero_sp=numero, fornecedor_id=forn, categoria_id=conta,
                    descricao=f"Compra {numero}",
                    valor_bruto=Decimal(valor), valor_liquido=Decimal(valor),
-                   competencia=HOJE.replace(day=1), status=status,
+                   competencia=hoje().replace(day=1), status=status,
                    solicitante_id=chefe.id, tipo="T1_MATERIAL_NFE",
                    forma_pagamento="PIX")
         s.add(t)
@@ -95,10 +94,10 @@ def cenario(sessao_real):
         return t
 
     titulos = {
-        "vencido_a": _titulo("SP-1", obra_a, HOJE - timedelta(days=10), "1000.00"),
-        "hoje_a": _titulo("SP-2", obra_a, HOJE, "500.00"),
-        "hoje_b": _titulo("SP-3", obra_b, HOJE, "700.00"),
-        "parado_a": _titulo("SP-4", obra_a, HOJE + timedelta(days=3), "300.00",
+        "vencido_a": _titulo("SP-1", obra_a, hoje() - timedelta(days=10), "1000.00"),
+        "hoje_a": _titulo("SP-2", obra_a, hoje(), "500.00"),
+        "hoje_b": _titulo("SP-3", obra_b, hoje(), "700.00"),
+        "parado_a": _titulo("SP-4", obra_a, hoje() + timedelta(days=3), "300.00",
                             StatusTitulo.AGUARDANDO_APROVACAO),
     }
     return {"chefe": chefe, "adm": adm, "titulos": titulos, "sessao": s}
@@ -148,18 +147,18 @@ def test_o_panorama_soma_so_o_que_a_pessoa_ve(cenario):
 # ---------------------------------------------------------------------------
 def test_a_pagar_conta_pelo_vencimento_da_parcela(cenario):
     r = _responder(cenario, "chefe", "a_pagar_no_periodo")
-    assert all(l["vencimento"] == HOJE.isoformat() for l in r["linhas"])
+    assert all(l["vencimento"] == hoje().isoformat() for l in r["linhas"])
     assert "SP-1" not in [l["numero_sp"] for l in r["linhas"]], \
         "o que venceu ontem não é 'a pagar hoje'"
 
 
 def test_a_pagar_aceita_periodo_e_obra(cenario):
     tudo = _responder(cenario, "chefe", "a_pagar_no_periodo",
-                      de=(HOJE - timedelta(days=30)).isoformat(),
-                      ate=(HOJE + timedelta(days=30)).isoformat())
+                      de=(hoje() - timedelta(days=30)).isoformat(),
+                      ate=(hoje() + timedelta(days=30)).isoformat())
     so_a = _responder(cenario, "chefe", "a_pagar_no_periodo",
-                      de=(HOJE - timedelta(days=30)).isoformat(),
-                      ate=(HOJE + timedelta(days=30)).isoformat(), obra="OBRA-A")
+                      de=(hoje() - timedelta(days=30)).isoformat(),
+                      ate=(hoje() + timedelta(days=30)).isoformat(), obra="OBRA-A")
 
     assert len(tudo["linhas"]) == 4
     assert {l["numero_sp"] for l in so_a["linhas"]} == {"SP-1", "SP-2", "SP-4"}
@@ -249,7 +248,7 @@ def test_data_chega_como_TEXTO_da_tela_e_e_convertida(cenario):
     mandar igual. Sem converter no catálogo, a comparação com o vencimento
     estoura. Foi assim que este defeito apareceu."""
     r = _responder(cenario, "chefe", "a_pagar_no_periodo",
-                   de=HOJE.isoformat(), ate=HOJE.isoformat())
+                   de=hoje().isoformat(), ate=hoje().isoformat())
     assert {l["numero_sp"] for l in r["linhas"]} == {"SP-2", "SP-3"}
 
 

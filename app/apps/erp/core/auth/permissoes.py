@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import false as sql_false, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
@@ -45,7 +45,7 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # escolha escrita, e não o silêncio de quem esqueceu.
     "ver_erp":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
-                        P.APROVADOR, P.LANCADOR, P.CONSULTA},
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
     "lancar":          {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.LANCADOR,
                         P.DEPARTAMENTO_PESSOAL},
@@ -67,11 +67,11 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # outra pessoa, então não há como uma virar a outra.
     "ver_uso_da_equipe": {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "ver_relatorios":  {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-                        P.SUPERVISOR_OBRA},
+                        P.SUPERVISOR_OBRA, P.PARCEIRO},
     # Pessoal: o DP revisa a despesa com colaborador depois do supervisor,
     # porque só ele conhece o cadastro e sabe se a verba é devida
     "ver_pessoal":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL, P.PARCEIRO},
     "lancar_dc":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
     "editar_colaboradores": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL},
@@ -81,7 +81,7 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # deliberadamente estreito — pedir material é de todo mundo da obra,
     # comprar e autorizar não são de ninguém por herança de cargo.
     "ver_suprimentos":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-                            P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.CONSULTA},
+                            P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.CONSULTA, P.PARCEIRO},
     "solicitar_suprimento": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
                              P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA},
     "comprar":             {P.ADMIN, P.DIRETOR_FINANCEIRO},
@@ -106,7 +106,7 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # para quem não é do financeiro ou do DP, mesmo com esta ação marcada.
     "ver_arquivo":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
-                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA},
+                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA, P.PARCEIRO},
     "arquivar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
                         P.DEPARTAMENTO_PESSOAL, P.GESTOR_OBRA},
     # Quadro financeiro do contrato: medições, faturamento e recebimento.
@@ -133,7 +133,7 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # dela continua limitado pelo escopo de obra, não por esta ação.
     "ver_agenda":      {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
-                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA},
+                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA, P.PARCEIRO},
     # Marcar como resolvido é afirmação com nome e data. Fica fora de CONSULTA
     # — quem só olha não resolve.
     "tratar_agenda":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
@@ -214,6 +214,7 @@ ROTULOS = {
     P.APROVADOR: "Aprovador",
     P.LANCADOR: "Lançador",
     P.CONSULTA: "Consulta",
+    P.PARCEIRO: "Parceiro da obra (só olha)",
 }
 
 
@@ -329,7 +330,7 @@ def _obras_designadas(s: Session, usuario: Usuario) -> list[int]:
 
 def _ve_por_obra(usuario: Usuario) -> bool:
     """Esta pessoa enxerga por OBRA (e não apenas o que ela mesma lançou)?"""
-    if usuario.perfil == P.SUPERVISOR_OBRA:
+    if usuario.perfil in (P.SUPERVISOR_OBRA, P.PARCEIRO):
         return True
     return (usuario.perfil in ESCOPO_CONFIGURAVEL
             and escopo_visao(usuario) is EscopoVisao.OBRAS_DESIGNADAS)
@@ -370,7 +371,13 @@ def _escopo_por_obras(stmt: Select, usuario: Usuario, obras: list[int]) -> Selec
 
     Sem obra designada sobra só a autoria — quem não foi associado a obra
     nenhuma não passa a ver a base inteira por causa de uma lista vazia.
+
+    O PARCEIRO é a exceção e é de propósito: ele é de fora da BWS e não lança
+    nada, então "o que eu lancei" seria uma porta que só existe por descuido.
+    Sem obra designada, ele não vê NADA — o padrão NEGAR, dito em voz alta.
     """
+    if usuario.perfil == P.PARCEIRO and not obras:
+        return stmt.where(sql_false())
     if not obras:
         return stmt.where(Titulo.solicitante_id == usuario.id)
     return stmt.where(or_(
@@ -423,6 +430,8 @@ def condicao_escopo_sql(s: Session, usuario: Usuario,
     if _ve_por_obra(usuario):
         obras = _obras_designadas(s, usuario)
         if not obras:
+            if usuario.perfil == P.PARCEIRO:
+                return "FALSE", {}          # parceiro sem obra não vê nada
             return f"{t}.solicitante_id = :escopo_usuario", {"escopo_usuario": usuario.id}
         return (f"({t}.solicitante_id = :escopo_usuario OR {t}.id IN "
                 f"(SELECT titulo_id FROM rateios WHERE obra_id = ANY(:escopo_obras)))"

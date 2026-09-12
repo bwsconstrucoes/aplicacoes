@@ -553,7 +553,7 @@ def pagina_inicio():
     try:
         from app.apps.erp.core.agenda import service as svc_agenda
         with get_session() as s:
-            agenda = svc_agenda.contagem(s)
+            agenda = svc_agenda.contagem(s, usuario=_usuario_logado(s))
     except Exception:
         logger.warning("ERP/agenda: contagem indisponível na tela de início "
                        "(migração 051 pendente?)")
@@ -6322,6 +6322,7 @@ def api_agenda_obrigacoes():
                 s.rollback()
         return jsonify({"ok": True, "tarefa": tarefa, **svc.listar(
             s,
+            usuario=_usuario_logado(s),
             situacao=(request.args.get("situacao") or "ABERTO").strip().upper(),
             origem=(request.args.get("origem") or "").strip().upper(),
             obra_id=(int(request.args["obra_id"]) if request.args.get("obra_id") else None),
@@ -8224,7 +8225,8 @@ def api_colaboradores():
             if request.method == "GET":
                 return jsonify({"ok": True, "colaboradores": listar_colaboradores(
                     s, request.args.get("obra_id", type=int),
-                    ativos=request.args.get("todos") != "1")})
+                    ativos=request.args.get("todos") != "1",
+                    usuario=usuario)})
             c = salvar_colaborador(s, request.get_json(silent=True) or {}, usuario)
             s.commit()
             return jsonify({"ok": True, "colaborador_id": c.id})

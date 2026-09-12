@@ -741,6 +741,44 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-12 — O padrão do ERP é RECORTAR POR OBRA.** Dito pelo dono com
+  todas as letras: *"o ideal é sempre limitar as informações a quem está
+  associado a cada obra"*. Deixou de ser regra do financeiro e virou regra do
+  sistema. Consequências já aplicadas: a lista de colaboradores (que mostrava
+  CPF, chave Pix e diária de TODA a empresa a quem responde por uma obra) e a
+  agenda inteira, listagem e ações. **Ao criar tela nova, a pergunta não é "dá
+  para recortar?" — é "por que não estou recortando?".** A exceção precisa de
+  motivo escrito, como o das notas fiscais recebidas (recortar por obra
+  esconderia justamente a nota que ninguém ligou a nada, que é a que importa).
+
+- **2026-09-12 — Número de bolinha usa o MESMO recorte da tela que ele
+  resume.** A contagem da agenda na tela de início não passava pelo recorte.
+  Bolinha dizendo "12 avisos" e tela mostrando 3 é defeito que ninguém reporta
+  e todo mundo desconfia — e desconfiança de número é mais cara que número
+  errado, porque contamina os que estão certos.
+
+- **2026-09-12 — O perfil PARCEIRO: de FORA da empresa, preso a obra, só
+  olha.** Migração 063. Enxerga o financeiro, a equipe, os suprimentos, o
+  arquivo e a agenda das obras designadas a ele, e nada do resto. Três
+  decisões do dono estão no código: **todo o custo da obra** (ele escolheu a
+  leitura larga sabendo que o parceiro passa a ver por quanto a BWS compra);
+  **dados de pessoal seguem os demais perfis**, sem regra especial; e **só
+  olha** — há teste percorrendo a tabela de permissões e recusando qualquer
+  ação de escrita para ele. **A trava que importa: sem obra designada, não vê
+  NADA** — escrito em voz alta, e não como efeito colateral de lista vazia,
+  porque os outros perfis presos a obra caem em "o que eu mesmo lancei", e o
+  parceiro não lança nada. **Regra que fica: perfil de gente de FORA nega por
+  escrito, não por acidente.**
+
+- **2026-09-12 — Teste não calcula data no topo do arquivo.** Seis testes
+  falharam sem nada ter mudado: a rodada com banco dura sete minutos, começou
+  num dia e terminou no outro, e o `HOJE = date.today()` do topo do módulo
+  (calculado na importação) passou a discordar do ERP, que pergunta as horas
+  na hora de executar. Agora existe `hoje()` no `conftest`, lido no momento do
+  uso, e uma varredura estrutural recusando o cálculo no topo. **Importa
+  porque rodada vermelha sem causa real ensina a equipe a ignorar rodada
+  vermelha** — e aí a vermelha de verdade passa batida.
+
 - **2026-09-11 — Falha inesperada NUNCA devolve o texto da exceção para a
   tela.** Toda rota do ERP devolvia `str(e)` numa falha não prevista — e o
   dono viu o resultado: perguntou uma coisa ao assistente e recebeu a lista de
