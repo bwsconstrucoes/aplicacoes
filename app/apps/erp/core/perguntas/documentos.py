@@ -34,6 +34,7 @@
 # ============================================================================
 from __future__ import annotations
 
+import json
 import logging
 import os
 from typing import Any, Optional
@@ -206,3 +207,149 @@ def resumir(trechos: list[dict[str, Any]], pergunta: str,
         # respondem. Derrubar a pergunta inteira por causa disso, não.
         logger.warning("ERP/documentos: resumo não saiu (%s)", e)
         return ""
+
+
+# ===========================================================================
+# PERGUNTAR SOBRE **UM** DOCUMENTO
+#
+# O PEDIDO, do dono, em 12/09/2026: *"tem um contrato de uma obra e eu quero
+# perguntar alguma coisa sobre ele"*.
+#
+# A DIFERENÇA PARA A BUSCA ACIMA, e ela é grande. Lá a pessoa procura uma
+# palavra no acervo inteiro e a IA lê só os pedacinhos que casaram — umas
+# quarenta palavras. Serve para achar ONDE está escrito; não serve para
+# perguntar "qual o prazo de garantia deste contrato", porque a resposta
+# depende de ler o documento, não de encontrar a palavra.
+#
+# Aqui a pessoa APONTA o documento e a IA lê o texto dele. Nada de acervo,
+# nada de banco: um documento, uma pergunta.
+#
+# AS TRÊS TRAVAS, e nenhuma delas é enfeite:
+#
+#   1. ESCOPO. Passa por `exigir_documento_no_escopo` antes de qualquer coisa.
+#      Documento fora do recorte responde "não encontrado" — nunca "sem
+#      permissão", que confirmaria a existência dele.
+#
+#   2. SÓ O QUE ESTÁ NO DOCUMENTO. A instrução proíbe completar com
+#      conhecimento geral, e manda dizer que não está escrito quando não
+#      estiver. O que o mercado costuma praticar não é o que ESTE contrato diz.
+#
+#   3. A CITAÇÃO É CONFERIDA PELO SISTEMA. A IA devolve os trechos de onde
+#      tirou, e o código PROCURA cada um dentro do documento antes de mostrar.
+#      Trecho que não está lá não vai para a tela, e a resposta sai marcada
+#      como não conferida. Essa é a única defesa real contra número inventado
+#      com cara de citação — o resto é confiança, e confiança não dá para
+#      auditar.
+#
+# O QUE FICA DE FORA, por decisão do dono: documento ESCANEADO (foto, PDF sem
+# camada de texto). Ele responde "este documento é uma imagem, não consigo ler
+# o texto dele" — e é isso mesmo que tem de acontecer. Fingir que leu uma
+# imagem seria o pior desfecho possível.
+# ===========================================================================
+MODELO_UM = os.getenv("ERP_MODELO_IA_DOCUMENTO", "gpt-4o-mini")
+OPERACAO_UM = "pergunta_sobre_um_documento"
+
+_INSTRUCAO_UM = """Você lê UM documento de uma construtora brasileira (BWS Construções) e responde uma pergunta sobre ele.
+
+REGRAS, e elas não têm exceção:
+- Responda SOMENTE com o que está escrito no documento abaixo. Nunca complete com conhecimento geral, com o que é usual no mercado ou com o que seria razoável supor.
+- Se o documento não responder, responda com "achou": false e explique em uma linha o que falta.
+- Todo trecho que você citar em "trechos" deve ser COPIADO LETRA POR LETRA do documento, sem reescrever, sem resumir e sem corrigir. O sistema procura cada trecho dentro do documento e descarta o que não encontrar.
+- Português do Brasil, direto ao ponto, no máximo 5 linhas.
+- Valores e prazos: repita exatamente como estão escritos.
+
+Devolva SOMENTE um JSON assim:
+{"achou": true, "resposta": "...", "trechos": ["...", "..."]}"""
+
+
+def perguntar_sobre(s: Session, usuario: Usuario, *, documento_id: int,
+                    pergunta: str) -> dict[str, Any]:
+    """A resposta desta pergunta sobre ESTE documento, com a citação conferida."""
+    from app.apps.erp.core.arquivo import texto as svc_texto
+    from app.apps.erp.core.arquivo.service import exigir_documento_no_escopo
+    from app.apps.erp.core.comum.auditoria import ErroValidacao
+
+    pergunta = (pergunta or "").strip()
+    if not pergunta:
+        raise ErroValidacao("Diga o que você quer saber sobre o documento.")
+
+    # PRIMEIRA COISA, antes de tocar no documento: quem não alcança este
+    # documento na tela também não pergunta sobre ele por aqui.
+    exigir_documento_no_escopo(s, usuario, documento_id)
+    documento = s.get(Documento, documento_id)
+    if documento is None:
+        from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado
+        raise ErroNaoEncontrado("Documento não encontrado.")
+
+    nome = documento.nome_padronizado
+    conteudo = svc_texto.garantir_texto(s, documento)
+    if not conteudo:
+        return {
+            "documento_id": documento_id, "documento": nome,
+            "achou": False, "conferido": False, "trechos": [],
+            "resposta": (
+                "Não consigo ler o texto deste documento — ele é uma imagem "
+                "(foto ou digitalização), e não tem texto por dentro. Dá para "
+                "abri-lo no Arquivo e ler na tela."),
+        }
+
+    chave = os.getenv("OPENAI_API_KEY", "").strip()
+    if not chave:
+        return {
+            "documento_id": documento_id, "documento": nome,
+            "achou": False, "conferido": False, "trechos": [],
+            "resposta": ("A leitura por IA não está ligada neste ambiente, "
+                         "então não consigo responder sobre o documento."),
+        }
+    try:
+        from openai import OpenAI
+    except ImportError:                            # pragma: no cover - ambiente
+        return {
+            "documento_id": documento_id, "documento": nome,
+            "achou": False, "conferido": False, "trechos": [],
+            "resposta": "A leitura por IA não está disponível neste ambiente.",
+        }
+
+    material = svc_texto.pedacos_para_a_pergunta(conteudo, pergunta)
+    from app.apps.erp.core.comum import ia_custo
+    with ia_custo.contexto(operacao=OPERACAO_UM,
+                           usuario_id=getattr(usuario, "id", None),
+                           referencia=f"{nome}: {pergunta}"[:120]):
+        resp = OpenAI(api_key=chave).chat.completions.create(
+            model=MODELO_UM, temperature=0, max_tokens=700,
+            response_format={"type": "json_object"},
+            messages=[{"role": "system", "content": _INSTRUCAO_UM},
+                      {"role": "user", "content": (
+                          f"Documento: {nome}\n\n"
+                          f"Pergunta: {pergunta}\n\n"
+                          f"Texto do documento:\n{material}")}])
+        ia_custo.registrar_autonomo(modelo=MODELO_UM, resposta=resp,
+                                    operacao=OPERACAO_UM,
+                                    usuario_id=getattr(usuario, "id", None))
+
+    bruto = (resp.choices[0].message.content or "").strip()
+    try:
+        dados = json.loads(bruto)
+    except json.JSONDecodeError:
+        logger.warning("ERP/documentos: resposta fora do formato para %s", nome)
+        dados = {"achou": False, "resposta": bruto[:800], "trechos": []}
+
+    achou = bool(dados.get("achou"))
+    frase = str(dados.get("resposta") or "").strip()
+    pedidos = [str(t) for t in (dados.get("trechos") or []) if str(t).strip()]
+    # AQUI ESTÁ A GARANTIA: só sobe para a tela o trecho que o sistema achou
+    # dentro do documento. O resto some, e a resposta avisa que não foi
+    # conferida.
+    conferidos = svc_texto.conferir_trechos(pedidos, conteudo)
+
+    if achou and not conferidos:
+        logger.warning("ERP/documentos: %s respondeu sem trecho conferível", nome)
+
+    return {
+        "documento_id": documento_id, "documento": nome,
+        "achou": achou and bool(conferidos),
+        "conferido": bool(conferidos),
+        "trechos": conferidos,
+        "resposta": frase or "Não consegui responder com este documento.",
+        "parcial": len(material) < len(conteudo),
+    }

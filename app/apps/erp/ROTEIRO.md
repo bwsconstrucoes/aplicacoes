@@ -309,6 +309,31 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       **Falta ainda:** o dono arquivar os contratos de verdade no Arquivo. Sem
       documento arquivado, não há o que procurar.
 
+- [x] **3c-1. PERGUNTAR SOBRE **UM** DOCUMENTO** — FEITO em 12/09/2026, a
+      pedido do dono: *"tem um contrato de uma obra e eu quero perguntar
+      alguma coisa sobre ele"*.
+      Botão **Perguntar** em cada documento, na tela do Arquivo: a IA lê o
+      texto DAQUELE documento e responde. Diferente do 3c, que procura uma
+      palavra no acervo inteiro e lê só os pedacinhos que casaram.
+      · **O buraco que apareceu no caminho:** só as SEIS primeiras páginas de
+        cada documento ficavam guardadas como texto, e só quando a leitura por
+        IA tinha rodado. Contrato de quarenta páginas: 85% invisível. Documento
+        arrastado e cadastrado à mão: sem texto nenhum. Agora todo
+        arquivamento extrai o texto inteiro (PyMuPDF, **sem custo de IA**), e o
+        acervo antigo tem botão em Configurações, em segundo plano.
+      · **A citação é conferida pelo sistema:** o código procura cada trecho
+        dentro do documento antes de mostrar. Trecho inventado é descartado e a
+        resposta sai marcada como não conferida. Teste com citação falsa prova.
+      · **Escopo:** o mesmo `exigir_documento_no_escopo` da tela. Fora do
+        recorte responde "não encontrado", nunca "sem permissão".
+      ⚠️ **Escaneado fica de fora**, por decisão do dono: *"não ler escaneados
+      por hora"*. Responde "este documento é uma imagem, não consigo ler o
+      texto dele" — e a IA nem é chamada. Ler escaneado custa por documento.
+      ⚠️ **Um documento por pergunta, sem memória entre perguntas.** Comparar
+      dois contratos ou continuar a conversa sobre o mesmo documento não dá —
+      o dono recusou o caminho da conversa: *"isso fica pra fazer direto com
+      GPT, Claude"*.
+
 - [ ] **3c-2. O ÍNDICE POR SIGNIFICADO** — o passo seguinte da busca nos
       documentos, e a hora de fazê-lo é quando a lista de perguntas sem
       resposta mostrar que faz falta. Decisão do dono em 11/09/2026: *"vamos

@@ -168,6 +168,78 @@ banco — **não consome nada**.
 
 ---
 
+**Estado em 12/09/2026 (décima quarta entrega):** **perguntar sobre UM
+documento do acervo.** Sem migração.
+
+### O que o dono pediu
+
+*"É interessante a gente colocar essa possibilidade de pergunta sobre arquivos
+que já estão anexados. (…) Tem um contrato de uma obra e eu quero perguntar
+alguma coisa sobre ele, eu acho que é válido."*
+
+### O que já existia, e por que não bastava
+
+O assistente já tinha "O que os documentos dizem sobre um assunto?" (11/09):
+busca por PALAVRA no acervo inteiro, e a IA lendo só os pedacinhos que
+casaram — umas quarenta palavras. Serve para achar ONDE está escrito. Não
+serve para "qual o prazo de garantia deste contrato", porque a resposta
+depende de LER o documento, não de encontrar a palavra.
+
+### O buraco de verdade, que ninguém tinha visto
+
+**Só as SEIS primeiras páginas de cada documento ficavam guardadas como
+texto** — e só quando a leitura por IA tinha rodado no arquivamento. Duas
+consequências que estavam no ar sem ninguém saber:
+
+- contrato de quarenta páginas: 85% invisível, inclusive para a busca por
+  palavra que já existia;
+- documento arrastado para a tela e cadastrado à mão (o caso mais comum) não
+  tinha texto NENHUM guardado. Para a busca, ele não existia.
+
+O teto de seis páginas é da leitura por IA (`core/documentos/leitor.py`), onde
+página custa dinheiro e memória — e lá ele está certo. O erro foi ele valer
+também para o texto guardado.
+
+### Como ficou
+
+- **Todo documento novo nasce legível.** Extrair a camada de texto do PDF é
+  trabalho de biblioteca, **não custa IA nenhuma**, e agora roda em todo
+  arquivamento (`core/arquivo/texto.py`, com PyMuPDF — centenas de páginas em
+  uma fração do tempo do pdfplumber, que é o certo para o outro caso).
+- **O acervo antigo tem botão**, em Configurações › "Documentos legíveis para
+  perguntas". Roda em segundo plano, em blocos de 200. Também sem custo de IA.
+- **Botão "Perguntar" em cada documento**, na tela do Arquivo. A IA lê o texto
+  daquele documento e responde.
+- Custo: uns **três centavos de dólar** por pergunta num contrato longo — cabe
+  folgado no teto de US$ 5 por pessoa, que esta rota confere como as outras.
+
+### A trava que sustenta tudo: a citação é conferida pelo SISTEMA
+
+A IA devolve a resposta E os trechos de onde tirou. **O código procura cada
+trecho dentro do documento antes de mostrar.** Trecho que não está lá é
+descartado, e a resposta sai marcada: *"não consegui conferir esta resposta no
+texto do documento — trate como pista"*.
+
+Isso não é zelo: é a única coisa que separa "o contrato diz" de "a IA acha que
+o contrato diz". Citação inventada é plausível por construção, e é exatamente
+o que o dono não tem como conferir. **Há teste com uma citação falsa provando
+que ela não chega à tela** — e eu vi os dois desfechos no navegador, o
+conferido e o não conferido.
+
+### O que ficou de fora, por decisão do dono
+
+*"Não ler escaneados por hora."* Documento que é foto ou digitalização não tem
+camada de texto; o sistema responde **"este documento é uma imagem, não
+consigo ler o texto dele"** e a IA nem é chamada (há teste que explode se ela
+for). Ler escaneado exigiria IA olhando página por página, o que custa por
+documento — é acréscimo à parte, para quando ele quiser.
+
+E, na mesma conversa, ele recusou o outro caminho: anexar um documento novo e
+CONVERSAR sobre ele — *"isso fica pra fazer direto com GPT, Claude"*. Um
+documento por pergunta, sem memória entre perguntas: é o desenho de propósito.
+
+---
+
 **Estado em 12/09/2026 (décima terceira entrega):** **a tarja de gravação**, e
 uma decisão do dono sobre o anexo. Sem migração.
 

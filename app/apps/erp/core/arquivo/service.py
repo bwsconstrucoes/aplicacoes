@@ -186,6 +186,23 @@ def arquivar(s: Session, conteudo: bytes, nome_arquivo: str, *,
     if ja is not None:
         return ja        # o mesmo arquivo já está catalogado
 
+    # O TEXTO DE DENTRO, quando a leitura por IA não o trouxe.
+    #
+    # Sem isto o documento nasce mudo: não aparece na busca por palavra e não
+    # dá para perguntar sobre ele. Quem arrasta um contrato para a tela e
+    # preenche o cadastro à mão — o caso mais comum — caía exatamente aí.
+    #
+    # Não custa IA (é a camada de texto do próprio PDF) e não pode derrubar o
+    # arquivamento: documento sem texto extraível continua sendo arquivado,
+    # calado. Ver `core/arquivo/texto.py`.
+    if not (texto or "").strip():
+        from app.apps.erp.core.arquivo import texto as svc_texto
+        try:
+            texto = svc_texto.extrair(conteudo, nome_arquivo)
+        except Exception as e:                     # pragma: no cover - defensivo
+            logger.warning("ERP/arquivo: texto de %s não saiu (%s)",
+                           nome_arquivo, e)
+
     d = Documento(
         tipo_codigo=tipo.codigo, anexo_id=anexo.id,
         nome_padronizado=nome_padrao, nome_original=nome_arquivo or None,

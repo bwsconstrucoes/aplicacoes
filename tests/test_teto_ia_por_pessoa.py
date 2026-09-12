@@ -153,7 +153,7 @@ def test_o_gasto_do_mes_passado_nao_conta(gente):
 # A varredura que impede a nona rota de esquecer a trava
 # ---------------------------------------------------------------------------
 def test_toda_rota_que_gasta_ia_confere_o_teto():
-    """São oito rotas hoje. A nona é a que alguém esquece — por isso a
+    """São nove rotas hoje. A décima é a que alguém esquece — por isso a
     conferência é estrutural, lendo o próprio código das rotas."""
     import ast
     import pathlib
@@ -163,7 +163,11 @@ def test_toda_rota_que_gasta_ia_confere_o_teto():
         encoding="utf-8"))
     # o que caracteriza "esta rota gasta IA"
     GASTA = ("ler_documento(", "transcrever(", "leitura.sugerir(",
-             "ler_contrato(", "contexto(operacao=", "ia_custo.contexto(")
+             "ler_contrato(", "contexto(operacao=", "ia_custo.contexto(",
+             # Perguntar sobre UM documento do acervo (12/09/2026): a rota
+             # chama o serviço, e é lá dentro que a IA é acionada. Sem este
+             # nome aqui, a varredura não a enxergaria.
+             "perguntar_sobre(")
     sem_trava = []
     for no in arv.body:
         if not isinstance(no, ast.FunctionDef):

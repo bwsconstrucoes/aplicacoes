@@ -96,6 +96,27 @@
 {# O CATÁLOGO DE TIPOS DE DOCUMENTO. Fica aqui porque é instalação de uma vez
    só, como o plano de contas — e porque, quando falta, quem vê o aviso é quem
    está no Arquivo, que pode não ser quem tem permissão de instalar. #}
+{# DEIXAR O ACERVO ANTIGO LEGÍVEL.
+   Documento arquivado antes de 12/09/2026 pode não ter o texto de dentro
+   guardado — e sem o texto ele não aparece na busca e não dá para perguntar
+   sobre ele. Isto extrai o texto do próprio PDF: não gasta IA nenhuma. #}
+<div class="cartao" data-secao="documentos">
+  <div class="cartao-cab"><h3>Documentos legíveis para perguntas</h3>
+    <small>o texto de dentro dos documentos que já estão no Arquivo</small></div>
+  <div class="cartao-dica">Documento guardado antes de setembro de 2026 pode
+    não ter o texto de dentro registrado. Sem isso ele não aparece na busca por
+    palavra e não dá para perguntar sobre ele. Este botão lê o texto do próprio
+    arquivo — <b>não gasta IA nenhuma</b>, e pode ser repetido à vontade.</div>
+  <div style="margin-top:10px">
+    <button class="btn amarelo" id="btn-texto-docs">Deixar os documentos legíveis</button>
+  </div>
+  <div class="cartao-dica">Roda em segundo plano, em blocos de 200 documentos —
+    acompanhe em <b>Trabalhos em segundo plano</b>. Documento que é foto ou
+    digitalização continua sem texto: para lê-lo seria preciso IA olhando
+    página por página, o que custa por documento.</div>
+  <div id="texto-docs-msg"></div>
+</div>
+
 <div class="cartao" data-secao="documentos">
   <div class="cartao-cab"><h3>Catálogos que se instalam uma vez</h3>
     <small>os tipos de documento do Arquivo e os tipos de medição do contrato</small></div>
@@ -1527,6 +1548,17 @@ async function carregarTiposDeDocumento(){
          automática: instale abaixo.`;
   } catch(e){ els("cat-doc-estado").textContent = "não consegui conferir: " + e.message; }
 }
+
+els("btn-texto-docs").addEventListener("click", async () => {
+  const b = els("btn-texto-docs");
+  b.disabled = true; b.textContent = "Enfileirando…";
+  try {
+    const d = await api("/erp/api/arquivo/texto-dos-documentos", {method: "POST"});
+    aviso("texto-docs-msg", "Trabalho na fila: <b>" + escapar(d.tarefa.rotulo)
+      + "</b>. Acompanhe em Trabalhos em segundo plano.", "ok");
+  } catch(e){ aviso("texto-docs-msg", escapar(e.message), "erro"); }
+  b.disabled = false; b.textContent = "Deixar os documentos legíveis";
+});
 
 els("btn-instalar-tipos").addEventListener("click", async () => {
   const b = els("btn-instalar-tipos");

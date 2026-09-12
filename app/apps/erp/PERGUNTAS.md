@@ -426,6 +426,63 @@ lendo SÓ os trechos de baixo.** Ela não consulta o banco e não lembra de nada
 por fora. Os trechos continuam ali, e são eles a resposta — a frase é só a
 leitura em voz alta. Sem chave de IA, a frase some e os trechos ficam.
 
+## 3f. Perguntar sobre UM documento — o contrato da obra, por exemplo
+
+Desde 12/09/2026, pedido seu: *"tem um contrato de uma obra e eu quero
+perguntar alguma coisa sobre ele"*. No Arquivo, cada documento tem o botão
+**Perguntar**. Você aponta o documento e a IA lê o texto DELE.
+
+**A diferença para a busca de cima, e ela é grande.** Lá você procura uma
+palavra no acervo inteiro e recebe os trechos que casaram. Aqui você pergunta
+sobre um documento só, e a IA lê o documento — não a palavra.
+
+Perguntas que passam a funcionar (e não funcionavam antes):
+
+- ✅ **Qual o prazo de garantia deste contrato?** 🔒
+- ✅ **Como é o reajuste, e a partir de quando?** 🔒
+- ✅ **Qual a multa por atraso?** 🔒
+- ✅ **O que este contrato exige na entrega da medição?** 🔒
+- ✅ **Quem são as partes e qual o objeto?** 🔒
+- ✅ **Tem cláusula de retenção de garantia? De quanto?** 🔒
+- ✅ **Esta certidão vale até quando?** 🔒
+- ✅ **Este documento fala em multa? O que exatamente?** 🔒
+
+🔒 = **a resposta depende de quem pergunta.** O documento passa pelo mesmo
+recorte do Arquivo: quem é preso a uma obra não pergunta sobre o contrato da
+outra — e ouve "documento não encontrado", nunca "sem permissão", porque dizer
+"sem permissão" confirmaria que aquele documento existe.
+
+### As três coisas que decidem se dá para confiar
+
+**1. A resposta nunca vem sozinha.** Embaixo dela ficam os trechos do
+documento, na íntegra. E o sistema PROCURA cada trecho dentro do documento
+antes de mostrar: trecho que a IA escreveu mas que não está lá é descartado, e
+a resposta sai marcada como **não conferida** — "trate como pista, não como
+resposta". É a única defesa real contra um número inventado com cara de
+citação.
+
+**2. Documento que é FOTO ou digitalização não é lido.** Decisão sua em
+12/09/2026: *"não ler escaneados por hora"*. O sistema responde "este documento
+é uma imagem, não consigo ler o texto dele" — ele não chuta. Ler escaneado
+exigiria IA olhando página por página, e isso custa por documento; é um
+acréscimo à parte, para quando você quiser.
+
+**3. Documento muito longo entra pelos trechos que falam do assunto**, não
+inteiro — e a tela avisa quando isso acontece. É o que mantém o custo em
+centavos por pergunta.
+
+### O que ainda NÃO dá
+
+- ❌ **"Compare este contrato com o da outra obra"** — hoje é um documento por
+  pergunta. Falta poder apontar dois.
+- ❌ **"Continue perguntando sobre o mesmo documento"** — cada pergunta é
+  independente; ela não lembra da anterior.
+- ❌ **Perguntar sobre documento escaneado** — falta a leitura por imagem, que
+  custa por documento (acima).
+- ❌ **"Qual dos meus contratos tem a multa mais alta?"** — isso é varrer o
+  acervo comparando cláusulas, não ler um documento. Precisaria do índice por
+  significado.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

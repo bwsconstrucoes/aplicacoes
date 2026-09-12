@@ -2567,6 +2567,46 @@ def api_perguntar_documentos():
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
+@bp.route("/erp/api/documentos/<int:documento_id>/perguntar", methods=["POST"])
+@login_obrigatorio
+@permissao("ver_arquivo")
+def api_perguntar_sobre_documento(documento_id: int):
+    """Perguntar sobre UM documento do acervo — a IA lê o texto dele.
+
+    A ação é `ver_arquivo`, a mesma da tela do acervo, e por dentro ainda passa
+    por `exigir_documento_no_escopo`: ter a ação não é alcançar ESTE documento.
+    Fora do recorte responde 'não encontrado', nunca 'sem permissão'.
+
+    A resposta traz os trechos que o SISTEMA conferiu dentro do documento —
+    ver o porquê inteiro em `core/perguntas/documentos.py`.
+    """
+    from app.apps.erp.core.perguntas import documentos as svc_doc
+
+    d = request.get_json(silent=True) or {}
+    pergunta = (d.get("pergunta") or "").strip()
+    # FORA do try: a recusa por teto tem resposta própria (402), e o
+    # `except Exception` lá embaixo a transformaria em 'falha do sistema'.
+    _exigir_saldo_de_ia()
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if atual is None:
+                return jsonify({"ok": False, "erro": "Sessão expirada."}), 401
+            resposta = svc_doc.perguntar_sobre(s, atual,
+                                               documento_id=documento_id,
+                                               pergunta=pergunta)
+            s.commit()
+        return jsonify({"ok": True, "resposta": resposta})
+    except ErroNaoEncontrado:
+        raise
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao perguntar sobre o documento %s",
+                         documento_id)
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
 @bp.route("/erp/api/perguntas/contratos")
 @login_obrigatorio
 @permissao("ver_contratos")
@@ -3271,6 +3311,41 @@ def api_importar_pipefy():
         return jsonify({"ok": False, "erro": str(e)}), 400
     except Exception as e:
         logger.exception("ERP: falha ao enfileirar a importação do Pipefy")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/arquivo/texto-dos-documentos", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_texto_dos_documentos():
+    """Deixa legíveis os documentos que foram arquivados sem o texto de dentro.
+
+    Só quem configura o sistema chega aqui: é trabalho sobre o acervo INTEIRO,
+    sem recorte por obra — quem dispara não está lendo documento nenhum, está
+    mandando o sistema extrair texto de todos. Ler continua passando pelo
+    recorte de sempre, na hora de perguntar.
+
+    Não gasta IA: é a camada de texto do próprio PDF.
+    """
+    from app.apps.erp.core.comum import tarefas, trabalhos
+
+    d = request.get_json(silent=True) or {}
+    try:
+        trabalhos.registrar_todos()
+        with get_session() as s:
+            usuario = _usuario_logado(s)
+            t = tarefas.enfileirar(
+                s, "texto_dos_documentos",
+                {"limite": int(d.get("limite") or trabalhos.LOTE_DE_TEXTOS)},
+                rotulo="Deixar documentos legíveis para perguntas",
+                usuario=usuario)
+            linha = tarefas.ler(s, t.id)
+            s.commit()
+        return jsonify({"ok": True, "tarefa": linha})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except Exception as e:
+        logger.exception("ERP: falha ao enfileirar a leitura dos documentos")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 

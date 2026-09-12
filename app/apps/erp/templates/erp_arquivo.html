@@ -154,6 +154,23 @@
     <div style="margin-top:10px"><button class="btn amarelo" id="btn-guardar">Guardar</button></div>
     <div id="dlg-aviso"></div>
   </div></dialog>
+
+{# PERGUNTAR SOBRE O DOCUMENTO.
+   Pedido do dono em 12/09/2026: "tem um contrato de uma obra e eu quero
+   perguntar alguma coisa sobre ele". A resposta NUNCA vem sozinha: embaixo
+   dela ficam os trechos que o sistema achou dentro do documento. Sem isso é
+   a IA falando, e o que não dá para conferir não serve para decidir. #}
+<dialog id="dlg-perg"><div class="dlg-topo"><h3>Perguntar sobre o documento</h3>
+  <button class="topo-btn" style="margin-left:auto" onclick="els('dlg-perg').close()">Fechar</button></div>
+  <div class="dlg-corpo">
+    <div class="cartao-dica">Documento: <b class="mono" id="p-nome">—</b></div>
+    <div class="campo" style="margin-top:10px"><label>O que você quer saber?</label>
+      <input id="p-pergunta" placeholder="ex.: qual o prazo de garantia? como é o reajuste?">
+      <div class="dica">A IA lê só ESTE documento — não consulta o banco e não
+        completa com o que costuma ser praticado no mercado.</div></div>
+    <div style="margin-top:10px"><button class="btn amarelo" id="btn-perguntar">Perguntar</button></div>
+    <div id="p-resposta" style="margin-top:12px"></div>
+  </div></dialog>
 {% endblock %}
 
 {% block scripts %}
@@ -310,9 +327,15 @@ function desenhar(){
       <td>${dataBR(d.validade)}</td>
       <td><span class="selo ${classe}">${texto}</span>
         ${detalhe ? `<br><small>${detalhe}</small>` : ""}</td>
-      <td>${PODE_ARQUIVAR ? `<button class="btn secundario" data-excluir="${d.id}">Excluir</button>` : ""}</td>
+      <td style="white-space:nowrap">
+        <button class="btn secundario" data-perguntar="${d.id}" data-nome="${escapar(d.nome)}">Perguntar</button>
+        ${PODE_ARQUIVAR ? `<button class="btn secundario" data-excluir="${d.id}">Excluir</button>` : ""}</td>
     </tr>`;
   }).join("");
+
+  document.querySelectorAll("[data-perguntar]").forEach(b => b.addEventListener("click", () => {
+    abrirPergunta(b.dataset.perguntar, b.dataset.nome);
+  }));
 
   document.querySelectorAll("[data-excluir]").forEach(b => b.addEventListener("click", async () => {
     if (!confirm("Excluir este documento do arquivo? O arquivo também é apagado.")) return;
@@ -321,6 +344,59 @@ function desenhar(){
       carregar();
     } catch(e){ aviso("mensagem", e.message, "erro"); }
   }));
+}
+
+// ---------------------------------------------------------------------------
+// PERGUNTAR SOBRE O DOCUMENTO
+//
+// A regra que manda na tela: a RESPOSTA nunca aparece sozinha. Embaixo dela
+// ficam os trechos que o sistema procurou e ACHOU dentro do documento — e é
+// por isso que eles são mostrados na íntegra, sem reescrever. O que não dá
+// para conferir na fonte não serve para decidir nada.
+// ---------------------------------------------------------------------------
+let DOC_PERGUNTADO = null;
+
+function abrirPergunta(id, nome){
+  DOC_PERGUNTADO = id;
+  els("p-nome").textContent = nome || "—";
+  els("p-pergunta").value = "";
+  els("p-resposta").innerHTML = "";
+  els("dlg-perg").showModal();
+  setTimeout(() => els("p-pergunta").focus(), 50);
+}
+
+async function perguntarSobreDoc(){
+  const pergunta = (els("p-pergunta").value || "").trim();
+  if (!pergunta) { aviso("p-resposta", "Escreva a pergunta.", "erro"); return; }
+  const b = els("btn-perguntar");
+  b.disabled = true; b.textContent = "Lendo o documento…";
+  els("p-resposta").innerHTML = "";
+  try {
+    const d = await api(`/erp/api/documentos/${DOC_PERGUNTADO}/perguntar`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({pergunta})});
+    const r = d.resposta || {};
+    const trechos = (r.trechos || []).map(x =>
+      `<div class="cartao-dica" style="margin-top:6px"><i>“${escapar(x)}”</i></div>`).join("");
+    // Resposta SEM trecho conferido sai marcada. Não escondo a frase — ela
+    // pode estar certa — mas ninguém pode confundi-la com o documento falando.
+    const selo = r.trechos && r.trechos.length
+      ? `<div class="dica" style="margin-top:8px">Os trechos abaixo o sistema
+           achou dentro do documento, letra por letra.</div>`
+      : `<div class="aviso alerta" style="margin-top:8px">Não consegui conferir
+           esta resposta no texto do documento. Trate como pista, não como
+           resposta — abra o documento e confira.</div>`;
+    const parcial = r.parcial
+      ? `<div class="dica" style="margin-top:6px">O documento é longo: eu li os
+           trechos que falam do assunto, não ele inteiro.</div>` : "";
+    els("p-resposta").innerHTML =
+      `<div class="cartao-dica"><b>${escapar(r.resposta || "")}</b></div>`
+      + selo + trechos + parcial;
+  } catch(e) {
+    aviso("p-resposta", escapar(e.message), "erro");
+  } finally {
+    b.disabled = false; b.textContent = "Perguntar";
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -526,6 +602,10 @@ function ligarArrastar(){
 
 if (PODE_ARQUIVAR) {
   ligarArrastar();
+  els("btn-perguntar").addEventListener("click", perguntarSobreDoc);
+  els("p-pergunta").addEventListener("keydown", ev => {
+    if (ev.key === "Enter") { ev.preventDefault(); perguntarSobreDoc(); }
+  });
   els("btn-ler").addEventListener("click", lerDocumento);
   els("btn-novo").addEventListener("click", () => {
     LEITURA = null; els("d-leitura").innerHTML = "";
