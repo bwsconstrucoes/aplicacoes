@@ -5081,7 +5081,8 @@ def api_notas():
             empresa_id=(int(request.args["empresa_id"])
                         if request.args.get("empresa_id") else None),
             desde=_data("desde"), ate=_data("ate"),
-            busca=(request.args.get("busca") or "").strip())
+            busca=(request.args.get("busca") or "").strip(),
+            usuario=_usuario_logado(s))
     return jsonify({"ok": True, **dados})
 
 
@@ -5093,6 +5094,9 @@ def api_nota(nota_id: int):
     from app.apps.erp.core.notas import cruzamento
     from app.apps.erp.db.models.financeiro import DocumentoFiscal
     with get_session() as s:
+        # Mesmo recorte da listagem: abrir pelo número não pode alcançar o que
+        # a tela não mostra. Fora do recorte responde igual a inexistente.
+        cruzamento.exigir_nota_no_escopo(s, _usuario_logado(s), nota_id)
         nota = s.get(DocumentoFiscal, nota_id)
         if nota is None:
             raise ErroNaoEncontrado("Nota não encontrada.")

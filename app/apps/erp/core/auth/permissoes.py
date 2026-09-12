@@ -235,6 +235,45 @@ def excecoes_do_usuario(usuario: Usuario) -> dict[str, bool]:
     return valor if isinstance(valor, dict) else {}
 
 
+def pode_com_banco(s: Session, usuario: Usuario, acao: str) -> bool:
+    """A mesma decisão de `pode`, mas sem depender de quem carregou o usuário.
+
+    `pode` lê as marcações do cadastro de um atributo que `_usuario_logado`
+    preenche. Funciona nas rotas, e falha calado em qualquer outro caminho: a
+    pessoa perde a ação que foi MARCADA para ela e passa a ver menos do que
+    devia, sem nada acusar. Como regra de recorte roda também fora de rota
+    (relatório agendado, robô, teste), esta versão vai buscar as marcações no
+    banco quando elas não vieram junto.
+
+    A decisão em si continua sendo uma só — `decidir` — para não haver duas
+    respostas possíveis à mesma pergunta.
+    """
+    if usuario is None:
+        return False
+    excecoes = excecoes_do_usuario(usuario)
+    if not excecoes:
+        excecoes = _excecoes_no_banco(s, usuario.id)
+    return decidir(usuario.perfil, acao, excecoes)
+
+
+def _excecoes_no_banco(s: Session, usuario_id: int) -> dict[str, bool]:
+    """As marcações desta pessoa, por SQL direto.
+
+    SQL direto e não ORM pelo mesmo motivo do resto da guarda: enquanto a
+    migração 032 não tiver rodado a tabela não existe, e a resposta certa é
+    "nenhuma marcação" — o que faz valer o cargo — e não derrubar a tela.
+    """
+    from sqlalchemy import text as _text
+
+    try:
+        linhas = s.execute(
+            _text("SELECT acao, concedida FROM usuario_permissoes "
+                  "WHERE usuario_id = :i"), {"i": usuario_id}).all()
+    except Exception:
+        return {}
+    return {acao: bool(concedida) for acao, concedida in linhas}
+
+
 def pode(usuario: Usuario, acao: str) -> bool:
     """Pode esta ação? O cargo decide; a marcação no cadastro corrige.
 

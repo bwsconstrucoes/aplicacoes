@@ -77,10 +77,9 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
   achou outra — mas ela só pega rota com número no endereço, não tela que
   soma sozinha. Continua aberto.
 - ✔ **A agenda foi recortada por obra** em 12/09/2026, por decisão sua.
-- **AS NOTAS FISCAIS recebidas NÃO foram**, e de propósito: recortar por obra
-  esconderia justamente as notas que ninguém ainda ligou a nada — que são as
-  que precisam de atenção. Se o supervisor não deve ver essa tela, o certo é
-  tirar a ação `ver_notas` dele. **Decisão sua.**
+- ✔ **As notas fiscais recebidas foram resolvidas** em 12/09/2026, por decisão
+  sua: quem CRUZA vê tudo (inclusive a nota solta), os demais veem só as já
+  associadas — e, se presos a obra, só as das obras deles.
 - **Cadastrar o primeiro parceiro e conferir na tela.** O perfil está pronto e
   testado, mas nunca foi usado por gente de verdade: vale abrir o ERP com um
   parceiro de teste e olhar tela por tela antes de dar a senha a alguém de
@@ -174,15 +173,36 @@ voz alta, não como efeito colateral de lista vazia — os outros perfis presos 
 obra caem em "o que eu mesmo lancei" quando não têm obra, e para o parceiro,
 que não lança nada, isso seria uma porta que só existe por descuido.
 
-### O que ficou como decisão sua, e por que eu não mexi
+### As notas recebidas — decidido no mesmo dia
 
-**As notas fiscais recebidas continuam mostrando a empresa inteira.** Recortar
-por obra ali faria o contrário do que a tela serve: o objetivo dela é pegar
-nota emitida contra a BWS que ninguém conhece — e essa, por definição, ainda
-não está ligada a obra nenhuma. Recortar por obra esconderia justamente as que
-precisam de atenção. **Se você não quiser que o supervisor veja essa tela, o
-certo é tirar a ação `ver_notas` dele — não recortar a tela.** É uma linha, e
-é sua decisão.
+Eu tinha deixado essa em aberto explicando o dilema: recortar a tela por obra
+esconderia justamente a nota que ninguém ligou a nada, que é a que importa. O
+dono respondeu: *"esse negócio de ver as notas acho que deve ficar restrito ao
+pessoal do financeiro. Demais verão notas que já estão associadas"*.
+
+Feito assim, e é melhor do que as duas saídas que eu tinha imaginado:
+
+- **quem CRUZA vê tudo**, inclusive a nota solta — é dele o assunto, porque a
+  nota solta ou é compra que ninguém lançou, ou é nota emitida contra a
+  empresa sem autorização, e nos dois casos alguém precisa agir;
+- **os demais veem só as já associadas** — e, se forem presos a obra, só as
+  que alcançam as obras deles. As duas travas valem juntas.
+
+**A trava é a AÇÃO de cruzar, não o cargo.** Hoje ela é do financeiro por
+cargo, mas o ERP permite marcá-la numa pessoa, e é justamente o caso do
+comprador: é ele quem sabe de que pedido cada nota é. Se eu tivesse amarrado ao
+cargo, a regra mentiria no dia em que você marcasse a caixinha para alguém.
+
+**E o resumo da tela conta só o que a pessoa vê** — se ele somasse a base
+inteira, o número de "pendentes" entregaria a existência da nota solta que o
+recorte acabou de esconder.
+
+**Um achado de brinde, dentro desse mesmo trabalho:** a função que responde
+"esta pessoa pode tal ação?" lia as marcações do cadastro de um atributo que só
+a rota preenche. Nas telas funciona; em qualquer outro caminho (relatório
+agendado, robô, teste) a pessoa perderia calada a ação que foi MARCADA para
+ela. Agora existe uma versão que busca a marcação no banco quando ela não veio
+junto — com a decisão continuando num lugar só.
 
 ---
 

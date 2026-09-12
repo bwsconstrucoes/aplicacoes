@@ -751,6 +751,30 @@ Quando eu pedir nova feature ou adaptação:
   motivo escrito, como o das notas fiscais recebidas (recortar por obra
   esconderia justamente a nota que ninguém ligou a nada, que é a que importa).
 
+- **2026-09-12 — Na tela de notas recebidas, quem CRUZA vê a nota solta; os
+  demais veem só as já associadas.** Decisão do dono. A nota que não casa com
+  nada ou é compra que ninguém lançou, ou é nota emitida contra a empresa sem
+  autorização — quem não pode cruzar não pode fazer nada com ela, e para essa
+  pessoa seria só ruído. **A trava é a AÇÃO (`cruzar_notas`), não o cargo**,
+  de propósito: hoje ela é do financeiro por cargo, mas o ERP permite marcá-la
+  numa pessoa (migração 032), e é o caso do comprador — é ele quem sabe de que
+  pedido cada nota é. Amarrar ao cargo faria a regra mentir no dia em que a
+  caixinha fosse marcada. Sobre o que resta, vale o recorte por obra, pelos
+  dois caminhos que a nota tem até uma obra: pela linha da prestação
+  (nota → item → título → rateio) e pelo pedido de compra
+  (nota → pedido → item do suprimento → obra). **Regra que fica: quando uma
+  tela tem "o que precisa de ação" e "o que é só consulta", quem age vê as
+  duas e quem consulta vê a segunda.**
+
+- **2026-09-12 — `pode()` depende de quem carregou o usuário; fora de rota,
+  use `pode_com_banco()`.** As marcações de permissão por pessoa vinham de um
+  atributo preenchido só pelo `_usuario_logado` das rotas. Em qualquer outro
+  caminho — relatório agendado, robô, teste — a pessoa perdia CALADA a ação
+  que tinha sido marcada para ela, e passava a ver menos do que devia. Falha
+  fechada, e por isso mesmo invisível. A nova função busca a marcação no banco
+  quando ela não veio junto; a decisão continua só em `decidir()`, para não
+  haver duas respostas possíveis à mesma pergunta.
+
 - **2026-09-12 — Número de bolinha usa o MESMO recorte da tela que ele
   resume.** A contagem da agenda na tela de início não passava pelo recorte.
   Bolinha dizendo "12 avisos" e tela mostrando 3 é defeito que ninguém reporta

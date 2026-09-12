@@ -431,12 +431,24 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       **Decisões do dono registradas:** ele escolheu que o parceiro veja TODO
       o custo da obra, sabendo que isso mostra por quanto a BWS compra; e que
       os dados de pessoal sigam a regra dos demais perfis, sem exceção.
-      **Fica com o dono:** as notas fiscais recebidas continuam mostrando a
-      empresa inteira, porque recortar por obra esconderia justamente a nota
-      que ninguém ligou a nada. Se o supervisor não deve ver essa tela, o
-      certo é tirar a ação dele.
+      ✔ **As notas recebidas foram decididas no mesmo dia** — ver o item
+      abaixo.
       **Falta:** cadastrar o primeiro parceiro de verdade e conferir tela por
       tela antes de dar senha a alguém de fora.
+
+- [x] **NOTAS RECEBIDAS: A SOLTA É DE QUEM CRUZA** — FEITO em 12/09/2026, por
+      decisão do dono: *"esse negócio de ver as notas acho que deve ficar
+      restrito ao pessoal do financeiro. Demais verão notas que já estão
+      associadas"*. Sem migração.
+      Quem tem a ação de cruzar vê tudo, inclusive a nota que não casou com
+      nada; os demais veem só as já associadas, e quem é preso a obra vê só as
+      das obras dele. **A trava é a AÇÃO, não o cargo**, porque o comprador
+      recebe essa ação marcada no cadastro e é ele quem sabe de que pedido a
+      nota é. O resumo da tela conta só o que a pessoa vê — senão o número de
+      "pendentes" entregaria a nota que o recorte escondeu.
+      **Achado de brinde:** `pode()` lia as marcações por pessoa de um
+      atributo que só a rota preenche; fora de rota a pessoa perdia calada a
+      ação marcada para ela. Agora existe `pode_com_banco()`.
 
 - [x] **A SUÍTE DEIXA DE QUEBRAR NA VIRADA DO DIA** — FEITO em 12/09/2026.
       Seis testes calculavam a data no topo do arquivo e discordavam do ERP se
