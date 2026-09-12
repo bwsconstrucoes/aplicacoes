@@ -741,6 +741,32 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-11 — Falha inesperada NUNCA devolve o texto da exceção para a
+  tela.** Toda rota do ERP devolvia `str(e)` numa falha não prevista — e o
+  dono viu o resultado: perguntou uma coisa ao assistente e recebeu a lista de
+  colunas de uma tabela do banco. Agora existe `recado_de_falha()`
+  (`core/comum/formato.py`): fala português, não cita nada de dentro do
+  sistema (tabela, coluna, caminho) e carrega um **código curto e estável**
+  derivado da própria falha, que casa com a linha do registro do servidor — o
+  log continua com a exceção inteira, porque quem precisa do detalhe é quem
+  conserta, não quem usa. Há varredura estrutural na suíte proibindo o texto
+  cru de voltar. **Regra que fica: mensagem de erro é parte da interface;
+  vazar a intimidade do sistema é defeito, não conveniência de depuração.**
+  **A exceção, e ela importa: o BANCO ATRASADO.** "Coluna não existe" é a
+  única falha em que quem lê a tela resolve sozinho, e ali o recado diz o que
+  fazer (Configurações → "Aplicar atualizações do banco") — esconder isso
+  recriaria o impasse de 02/09/2026. A troca das 148 rotas quebrou o teste que
+  já protegia esse caso, e o teste estava certo.
+
+- **2026-09-11 — Falha de escopo tem UMA forma só, e por isso se acha por
+  varredura.** A parte 2 da varredura adversarial não leu módulo por módulo:
+  listou toda rota com NÚMERO no endereço (64), cruzou com quem tem a ação por
+  cargo, e ficou com as que alcançam perfil preso a obra ou a autoria (8).
+  Cinco já conferiam por dentro; duas não — e uma delas APAGAVA documento sem
+  conferir nada. **Regra que fica: rota que recebe número é suspeita até provar
+  que pergunta de quem é o número, e isso se confere por varredura, não por
+  leitura.** Vale repetir a varredura quando entrar área nova.
+
 - **2026-09-11 — O recorte por obra tem DUAS escritas, e um teste que as
   obriga a concordar.** A varredura adversarial do financeiro achou que os
   relatórios (`core/relatorios.py`) somavam a empresa inteira para quem

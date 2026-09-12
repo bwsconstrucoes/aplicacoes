@@ -393,6 +393,27 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       telas próprias contra o relatório equivalente; e o extrato importado
       ANTES da correção, que pode ter linha faltando.
 
+- [x] **VARREDURA ADVERSARIAL, PARTE 2 — fora do financeiro** — FEITA em
+      11/09/2026, na sequência da primeira. Sem migração; é só código.
+      **O método mudou:** em vez de ler módulo por módulo, virou varredura
+      mecânica — toda rota com NÚMERO no endereço (64), cruzada com quem tem a
+      ação por cargo, filtrada pelas que alcançam perfil preso a obra ou a
+      autoria (8). Cinco já conferiam certo. Três achados:
+      1. **Apagar documento do Arquivo não conferia nada** — o FINANCEIRO e o
+         gestor de obra podiam APAGAR documento de sigilo pessoal que nem
+         enxergam na tela. Destrutivo.
+      2. **O aval respondia "não é de uma obra sua"** para o número de outra
+         obra, confirmando que o título existe. Agora responde "não
+         encontrado", igual a número inexistente.
+      3. **148 rotas devolviam o texto cru da falha** para a tela — foi o que
+         o dono viu com a lista de colunas do banco. Agora é recado em
+         português com código para procurar no registro, e tem varredura na
+         suíte impedindo a volta.
+      **Fica como PERGUNTA ao dono:** a agenda e as notas fiscais mostram a
+      empresa inteira para quem responde por uma obra só. É como sempre foi, e
+      no caso das notas está escrito que é de propósito. Recortar por obra é
+      decisão de negócio, não correção.
+
 - [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
       ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
       come o mês inteiro.

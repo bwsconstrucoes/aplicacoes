@@ -65,13 +65,18 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
 
 ### 3. O que EU deixei anotado para olhar
 
-- **Recado técnico cru chegando à tela.** O painel do assistente e a
-  conciliação manual já foram corrigidos, mas a API ainda devolve `str(e)` em
-  falha inesperada de várias rotas — o mesmo pode aparecer em qualquer outra
-  tela. Vale uma varredura própria.
+- ✔ **Recado técnico cru chegando à tela — RESOLVIDO** em 11/09/2026, nas
+  148 rotas de uma vez, com varredura na suíte impedindo a volta.
 - **Telas que listam obra com valor.** A brecha "quem pode escolher o registro
   ≠ quem pode ver os números dele" foi fechada no painel de Obras, nas
-  Locações e agora nos Relatórios. Não varri as outras.
+  Locações e nos Relatórios. A varredura mecânica das rotas com número não
+  achou outra — mas ela só pega rota com número no endereço, não tela que
+  soma sozinha. Continua aberto.
+- **PERGUNTA PARA VOCÊ: a agenda e as notas fiscais mostram a empresa
+  inteira** para quem só responde por uma obra. Sempre foi assim, e no caso
+  das notas está escrito que é de propósito ("nota emitida contra a empresa
+  sem ninguém saber é problema fiscal, e mais olhos ajudam"). Se você quiser
+  recortar por obra, é decisão sua — eu não mudo regra de negócio sozinho.
 - **Desfazer conciliação sozinha não tem botão.** A função existe e agora
   funciona (a migração 061 destravou), mas nenhuma tela chama: só dá para
   desfazer a conciliação junto com a baixa, pelo "Desfazer baixa" do título.
@@ -83,6 +88,84 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
   algum mês antigo, é quase certo que seja isto: dois pagamentos iguais no
   mesmo dia viraram um. Reimportar o OFX daquele período resolve, porque a
   linha que falta passa a ter identidade própria.
+
+---
+
+**Estado em 11/09/2026 (nona entrega):** **varredura adversarial, parte 2 —
+fora do financeiro**. Não traz migração; é só código.
+
+### Como esta parte foi feita
+
+Em vez de ler módulo por módulo, esta parte usou o padrão que a parte 1
+ensinou: as falhas de escopo têm SEMPRE a mesma forma — *uma rota que recebe
+um NÚMERO e não pergunta se aquele número é da pessoa*. Então virou varredura
+mecânica: listar toda rota do ERP que tem número no endereço, cruzar com a
+lista de quem tem a ação por cargo, e ficar só com as que alcançam perfil
+preso a obra ou a autoria.
+
+Das 64 rotas com número, 8 caíram no filtro. Dessas, 5 já conferiam por
+dentro (Suprimentos e a fila de aval fazem certo). Sobraram **duas de escopo**
+— e uma terceira falha apareceu pelo caminho.
+
+### Os três achados
+
+| # | O que estava errado | O que acontecia na prática |
+|---|---|---|
+| 1 | **Apagar documento do Arquivo não conferia NADA** | Quem tem a ação "arquivar" apagava qualquer documento pelo número — inclusive de faixa de sigilo que não enxerga na tela. **O FINANCEIRO e o gestor de obra não veem documento PESSOAL (folha, acordo de jornada) e podiam apagar um.** Apagar leva junto o arquivo guardado: não é ver o que não devia, é DESTRUIR o que não devia. |
+| 2 | **O aval contava demais na recusa** | A fila de aval já era filtrada — o supervisor nunca via na tela o título de outra obra. Mas quem mandasse o número direto recebia *"este título não é de uma obra sob sua supervisão"*, resposta que CONFIRMA que o título existe. Varrer os números mapearia os lançamentos das outras obras sem abrir nenhum. |
+| 3 | **148 rotas devolviam o texto cru da falha para a tela** | Foi o que você viu acontecer: perguntou uma coisa ao assistente e recebeu a lista de colunas de uma tabela do banco. O painel do assistente foi corrigido na hora; a varredura mostrou que o mesmo saía por outras 148 portas. |
+
+### O que mudou
+
+**Apagar documento passou a usar o mesmo recorte da tela.** Não foi escrita
+regra nova: a função de apagar agora passa pelo `aplicar_escopo` que a
+listagem já usava — o mesmo princípio da parte 1. E a recusa é "não
+encontrado", idêntica à de um número que não existe.
+
+**O aval confere o escopo ANTES de qualquer outra coisa**, com o
+`exigir_titulo_no_escopo` que já existia. A conferência de quem PODE assinar
+continua onde estava; o que mudou é que ela nem chega a ser consultada para um
+título que a pessoa não alcança.
+
+**A falha inesperada virou recado em português**, com um código curto. O
+código é sempre o mesmo para a mesma falha, então serve para procurar no
+registro do servidor — e o registro continua guardando a exceção inteira, que
+é o que quem conserta precisa. Tem varredura na suíte proibindo o texto cru de
+voltar.
+
+**Com UMA exceção, e ela é importante: o banco atrasado.** Quando falta
+aplicar migração, o Postgres responde "coluna não existe" — e essa é a única
+falha em que quem lê a tela RESOLVE sozinho. Ali o recado diz exatamente o que
+fazer: "o banco está desatualizado, vá em Configurações e aperte Aplicar
+atualizações do banco". Esconder isso atrás de "falha do sistema" tiraria a
+informação que resolve o problema em dez segundos, e foi esse o impasse que
+derrubou o ERP em 02/09/2026. **Quem pegou isso foi um teste que já existia** —
+a troca das 148 rotas o quebrou, e ele estava certo.
+
+### Um achado de brinde: a suíte quebra se a rodada virar a meia-noite
+
+Na última conferência desta parte, seis testes falharam — e nenhum deles tinha
+a ver com a mudança. A rodada durou sete minutos e **começou dia 11, terminou
+dia 12**. Os seis são testes que comparam com "hoje" (atraso em dias, "a pagar
+no período", "não se recebe no futuro"): o cenário foi montado num dia e
+conferido no outro. Rodando de novo dentro do mesmo dia, os 4.434 passam.
+
+Não é defeito do sistema, é fragilidade da suíte — e importa porque o GitHub
+Actions roda a cada envio, inclusive de madrugada. O conserto é congelar o
+"hoje" nesses testes em vez de perguntar ao relógio. **Fica anotado, não foi
+feito** — mexer nisso no meio de uma varredura misturaria dois assuntos.
+
+### O que esta parte NÃO varreu
+
+- **Somatório de tela contra somatório de relatório** continua não conferido.
+- **A agenda e as notas fiscais não têm recorte por obra** — e isso é
+  DECISÃO, não defeito: as duas listagens sempre mostraram a empresa inteira,
+  e no caso das notas está escrito no código que "ver é largo de propósito".
+  Se você quiser que o supervisor veja só a agenda das obras dele, é uma
+  mudança de regra, não uma correção. **Fica como pergunta para você.**
+- Empreitas, Locações e Pessoal foram varridos só pelo filtro mecânico de
+  escopo; a aritmética deles (saldo de item, retenção de garantia) não foi
+  conferida.
 
 ---
 
