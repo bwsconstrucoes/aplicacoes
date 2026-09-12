@@ -334,13 +334,29 @@ def _importar(monkeypatch, linhas, gravou=None):
     guardadas = [] if gravou is None else gravou
 
     class ConexaoFalsa:
+        """Banco de mentira. Ele responde as DUAS contagens que a importação
+        faz — a de antes (com a hora do banco junto) e a de depois (com
+        quantas linhas foram tocadas) —, porque é dessas duas que saem os três
+        números que a tela mostra."""
+
         def __enter__(self): return self
         def __exit__(self, *a): return False
+
         def execute(self, sql, params=()):
+            import datetime as _dt
+            quantas = len(guardadas)
+            if "now()" in sql:               # a contagem de ANTES
+                resposta = (quantas, _dt.datetime(2026, 9, 12, 12, 0))
+            elif "FILTER" in sql:            # a de DEPOIS, com as tocadas
+                resposta = (quantas, quantas)
+            else:
+                resposta = (quantas,)
+
             class Cur:
-                def fetchone(self_): return (len(guardadas),)
+                def fetchone(self_): return resposta
                 def close(self_): pass
             return Cur()
+
         def executemany(self, sql, seq): guardadas.extend(seq)
         def commit(self): pass
 

@@ -2331,3 +2331,98 @@ def test_uma_leitura_que_falha_nao_derruba_as_outras(banco_analisesps, monkeypat
     resultado = fiscal_ia.analisar(["1", "2"])
     assert resultado["lidas"] == 1
     assert "corrompido" in resultado["falhas"]["1"]
+
+
+# ---------------------------------------------------------------------------
+# A IMPORTAÇÃO DO RELATÓRIO DE NOTAS — três números, e um deles é notícia
+# ---------------------------------------------------------------------------
+def _importar(monkeypatch, linhas):
+    """Roda a importação do relatório do FSist com a aba dublada."""
+    from app.apps.analisesps import sincronizacao
+
+    class AbaFalsa:
+        def get_all_values(self):
+            return linhas
+
+    monkeypatch.setattr(sincronizacao, "_aba",
+                        lambda planilha, nome: AbaFalsa())
+    return sincronizacao.sincronizar_notas_fiscais()
+
+
+CABECALHO_NOTAS = ["Chave de Acesso", "Emissão", "Número", "Valor", "Status",
+                   "CNPJ Emitente", "Emitente"]
+
+
+def _linha_nota(chave, numero="1430", valor="269,00", status="Autorizada"):
+    return [chave, "18/06/2026", numero, valor, status,
+            "29.066.773/0001-52", "SERTAO CASA E CONSTRUCAO"]
+
+
+@pytest.mark.banco
+def test_a_importacao_separa_NOVAS_MUDARAM_e_JA_TINHA(banco_analisesps,
+                                                      monkeypatch):
+    """O dono pediu exatamente estes três: *"vai dizer quantos importou, que
+    conseguiu, que já tinha, que não tinha"*."""
+    chave = _chave(CREDOR_CNPJ)
+
+    primeira = _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(chave)])
+    assert (primeira["novas"], primeira["mudaram"], primeira["ja_tinha"]) == (1, 0, 0)
+
+    igual = _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(chave)])
+    assert (igual["novas"], igual["mudaram"], igual["ja_tinha"]) == (0, 0, 1), (
+        "reimportar a mesma nota contou como movimento")
+
+
+@pytest.mark.banco
+def test_a_nota_que_volta_CANCELADA_aparece_como_MUDOU(banco_analisesps,
+                                                       monkeypatch):
+    """É O NÚMERO QUE INTERESSA, e ele não existia antes: uma nota que volta no
+    relatório cancelada pode ser despesa já paga contra documento que não
+    existe mais. Antes ela se escondia no meio das "atualizadas", que contavam
+    as inalteradas junto."""
+    chave = _chave(CREDOR_CNPJ)
+    _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(chave)])
+
+    depois = _importar(monkeypatch, [
+        CABECALHO_NOTAS, _linha_nota(chave, status="Cancelada")])
+    assert depois["mudaram"] == 1 and depois["novas"] == 0
+    assert depois["ja_tinha"] == 0
+
+    from app.apps.analisesps.db import consultar_um
+    assert consultar_um("SELECT status FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,))[0] == "Cancelada"
+
+
+@pytest.mark.banco
+def test_a_mesma_nota_importada_duas_vezes_nao_vira_duas_linhas(banco_analisesps,
+                                                                monkeypatch):
+    """"Se aquela informação de nota já estiver dentro, você vai ignorar."""
+    chave = _chave(CREDOR_CNPJ)
+    for _ in range(3):
+        _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(chave)])
+    from app.apps.analisesps.db import consultar_um
+    assert consultar_um("SELECT count(*) FROM analisesps.notas_fiscais")[0] == 1
+
+
+@pytest.mark.banco
+def test_linha_sem_chave_de_44_digitos_e_contada_como_ignorada(banco_analisesps,
+                                                               monkeypatch):
+    """Total de rodapé, linha em branco, chave truncada. Contar quantas foram
+    ignoradas é o que permite desconfiar de um relatório torto."""
+    resultado = _importar(monkeypatch, [
+        CABECALHO_NOTAS, _linha_nota(_chave(CREDOR_CNPJ)),
+        _linha_nota("123"), ["", "", "", "", "", "", ""]])
+    assert resultado["novas"] == 1
+    assert resultado["ignoradas"] == 2
+
+
+def test_a_importacao_das_notas_e_CHAMADA_pela_atualizacao():
+    """O DEFEITO QUE ESTE TESTE GUARDA: a importação existia, estava testada, e
+    NINGUÉM A CHAMAVA. A tabela de notas ficaria vazia para sempre e a
+    conciliação fiscal não teria contra o que casar — uma tela inteira
+    funcionando sobre nada. Achado em 12/09/2026 procurando quem importava o
+    relatório."""
+    from pathlib import Path
+    fonte = Path("app/apps/analisesps/tarefas.py").read_text(encoding="utf-8")
+    assert "sincronizar_notas_fiscais" in fonte, (
+        "ninguém importa o relatório do FSist — a conciliação fica sem notas")

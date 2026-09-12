@@ -187,6 +187,45 @@ onde ele quer o link da nota baixada — isso importa: se for campo de seleção
 não de texto, o link não cabe ali. Descobrir é uma consulta à API, e fica para
 quando a gravação for construída.
 
+## O DOWNLOAD AUTÔNOMO DAS NOTAS — o que falta, e o que trava
+
+Pedido do dono em 11/09/2026: *"eu quero que sejam baixadas as notas também, de
+forma autônoma. Eu não quero ter trabalho nenhum em ter que baixar no FSist."*
+
+**O que já dá para fazer sem nada novo**, e já está feito: quando o anexo existe
+no card, a IA lê o documento e tira dele a chave de acesso e o tipo. Isso cobre
+o caso em que quem lançou já anexou alguma coisa.
+
+**O que falta é buscar a nota QUANDO SÓ SE TEM A CHAVE.** E aqui há um bloqueio
+real, que não se resolve programando:
+
+- O portal da Receita exige **captcha** na consulta pública por chave. Não há
+  como automatizar isso, e tentar seria construir uma coisa que quebra no
+  primeiro dia.
+- O caminho que funciona é o **certificado digital A1 da empresa** — que é
+  justamente o que o dono levantou: *"a gente pode incluir os certificados
+  digitais na análise de SPs e nem precisar mais do relatório do FSist."*
+- Com o A1 instalado, o XML da nota é baixado direto do webservice da SEFAZ
+  pela chave, e o `leitor.py` do ERP **já sabe ler esse XML por parser exato,
+  sem IA nenhuma e sem custo**.
+
+**O que isso muda quando entrar:** o FSist deixa de ser necessário para o
+download (continua útil como fonte de descoberta — ele diz QUE a nota existe), a
+leitura vira exata em vez de interpretada, e a IA sobra só para o que não é nota
+eletrônica.
+
+**O que é preciso do dono para destravar**, e é a parte que não é código:
+
+1. O arquivo do **certificado A1** da BWS e a senha dele.
+2. A decisão de onde ele fica guardado — é credencial sensível, e a regra da
+   casa manda usar variável de ambiente no Render, não arquivo no repositório.
+3. O aviso de quando ele vence: certificado A1 vale um ano, e no dia em que
+   vencer o download para de funcionar em silêncio se ninguém tiver previsto.
+
+**Enquanto isso não vier, o que fica:** o link do documento no campo "Análise
+Dedutibilidade" do card — que o dono pediu — só pode apontar para o anexo que já
+existe, e não para uma nota baixada da Receita. Está anotado para não se perder.
+
 ## A LEITURA DOS ANEXOS POR IA — o degrau seguinte, e AINDA NÃO EXISTE
 
 Pergunta do dono, em 11/09/2026: *"está entrando aí a análise dos anexos?

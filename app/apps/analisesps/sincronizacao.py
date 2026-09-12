@@ -696,9 +696,14 @@ def sincronizar_notas_fiscais(anotar=None) -> dict:
         return {"novas": 0, "atualizadas": 0, "ignoradas": ignoradas,
                 "avisos": avisos}
 
+    # O RELÓGIO DO BANCO, e não o de Python: o servidor pode estar em outro
+    # fuso, e comparar carimbo do banco com hora daqui erraria a contagem
+    # inteira — para mais ou para menos, conforme a diferença.
     with conexao() as conn:
-        cur = conn.execute("SELECT count(*) FROM analisesps.notas_fiscais")
-        antes = (cur.fetchone() or [0])[0]
+        cur = conn.execute(
+            "SELECT count(*), now() FROM analisesps.notas_fiscais")
+        linha = cur.fetchone() or [0, None]
+        antes, comeco = linha[0], linha[1]
         cur.close()
         conn.executemany(
             "INSERT INTO analisesps.notas_fiscais "
@@ -721,14 +726,35 @@ def sincronizar_notas_fiscais(anotar=None) -> dict:
             "    OR notas_fiscais.emitente_doc IS DISTINCT FROM EXCLUDED.emitente_doc",
             registros)
         conn.commit()
-        cur = conn.execute("SELECT count(*) FROM analisesps.notas_fiscais")
-        depois = (cur.fetchone() or [0])[0]
+        cur = conn.execute(
+            "SELECT count(*), count(*) FILTER (WHERE importada_em >= ?) "
+            "  FROM analisesps.notas_fiscais", (comeco,))
+        linha = cur.fetchone() or [0, 0]
+        depois, tocadas = linha[0], linha[1]
         cur.close()
 
+    # TRÊS NÚMEROS, E NÃO DOIS, e o dono pediu exatamente assim em 11/09/2026:
+    # *"na hora que você for importar, se aquela informação de nota já estiver
+    # dentro, você vai ignorar; e quando importar vai dizer quantos importou,
+    # que conseguiu, que já tinha, que não tinha"*.
+    #
+    # "MUDARAM" É O NÚMERO QUE INTERESSA, e ele não existia antes: uma nota
+    # que volta no relatório com status CANCELADA é notícia — pode ser despesa
+    # já paga contra documento que não existe mais. Antes ela se escondia no
+    # meio das "atualizadas", que na verdade contavam as inalteradas também.
+    #
+    # O `importada_em` só é tocado quando algo mudou de verdade (é o `WHERE`
+    # do ON CONFLICT ali em cima), então este é o número certo.
     novas = depois - antes
-    logger.info("Análise de SPs: notas do FSist — %d lidas, %d novas.",
-                len(registros), novas)
-    return {"novas": novas, "atualizadas": len(registros) - novas,
+    mudaram = max(0, tocadas - novas)
+    ja_tinha = max(0, len(registros) - novas - mudaram)
+    logger.info("Análise de SPs: notas do FSist — %d lidas, %d novas, "
+                "%d mudaram, %d já tinha, %d ignoradas.",
+                len(registros), novas, mudaram, ja_tinha, ignoradas)
+    return {"novas": novas, "mudaram": mudaram, "ja_tinha": ja_tinha,
+            # `atualizadas` fica pelo nome antigo, para nada que já lia isto
+            # quebrar — mas quem for escrever recado novo usa os três acima.
+            "atualizadas": mudaram, "lidas": len(registros),
             "ignoradas": ignoradas, "avisos": avisos}
 
 

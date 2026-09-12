@@ -2327,6 +2327,57 @@ contam SPs prendia a linha exata do `if` e quebrava a cada modo novo, dizendo
 **O que falta nesta frente:** o download autônomo das notas pela chave — o
 único item do desenho do dono que ainda não existe.
 
+### Trigésima quarta leva (12/09) — as notas do FSist, e um defeito grave
+
+#### O DEFEITO: ninguém importava o relatório de notas
+
+A importação do relatório do FSist existia desde 11/09, estava escrita, testada
+e funcionando — e **nenhum código a chamava**. A tabela de notas ficaria vazia
+para sempre, e a conciliação fiscal não teria contra o que casar: uma tela
+inteira funcionando sobre nada.
+
+Achado em 12/09 procurando quem importava o relatório, ao ligar o último pedaço
+da frente. **Agora ela roda junto com as outras planilhas de apoio**, e há teste
+travando a chamada — porque "existe e está testado" não quer dizer "acontece".
+
+> Nada disso chegou a ir para o ar: a migração 005 ainda não foi aplicada, e a
+> tela é desta mesma semana. Mas se tivesse ido, a conciliação abriria vazia e
+> ninguém saberia por quê.
+
+#### Os três números que o dono pediu
+
+*"Quando importar vai dizer quantos importou, que conseguiu, que já tinha, que
+não tinha."* Agora a importação responde **novas · mudaram · já tinha**, além
+das ignoradas (linha sem chave de 44 dígitos: total de rodapé, linha em branco).
+
+**"Mudaram" é o número que interessa, e ele não existia.** Uma nota que volta no
+relatório com status **CANCELADA** é notícia — pode ser despesa já paga contra
+documento que não existe mais. Antes ela se escondia no meio das "atualizadas",
+que na verdade contavam as inalteradas junto.
+
+A contagem usa o **relógio do banco**, e não o de Python: o servidor pode estar
+em outro fuso, e comparar carimbo do banco com hora daqui erraria a conta
+inteira. E ela é exata porque o carimbo da nota só é tocado quando algo mudou de
+verdade — a gravação já ignorava reescrita idêntica desde 10/09.
+
+#### O download autônomo das notas: o que trava, e não é código
+
+Levantado e escrito em `CONCILIACAO_FISCAL.md`. Em resumo: a consulta pública
+por chave no portal da Receita **exige captcha**, e automatizar isso seria
+construir algo que quebra no primeiro dia. O caminho que funciona é o
+**certificado digital A1** — que o próprio dono levantou. Com ele, o XML vem
+direto do webservice da SEFAZ pela chave, e o leitor do ERP **já sabe ler esse
+XML por parser exato, sem IA e sem custo**.
+
+**Falta do dono, e não é programação:** o arquivo do certificado A1 e a senha;
+a decisão de onde ele fica guardado (é credencial sensível — variável de
+ambiente no Render, nunca arquivo no repositório); e o aviso de vencimento,
+porque A1 vale um ano e para de funcionar em silêncio.
+
+**Verificação:** 4.520 testes verdes com Postgres de verdade, 129 pulados; 5
+testes novos. Um deles guarda o defeito de cima: se alguém desligar a chamada,
+a suíte acusa.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a

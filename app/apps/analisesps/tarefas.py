@@ -369,6 +369,18 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     a = sincronizacao.sincronizar_apoios(anotar)
                     sincronizacao.sincronizar_agenda(anotar)
                     r = sincronizacao.sincronizar_referencias_rateio(anotar)
+                    # AS NOTAS DO FSIST vêm junto com o resto do apoio. Elas
+                    # existiam e estavam testadas desde 11/09, mas NINGUÉM AS
+                    # CHAMAVA: a tabela ficaria vazia para sempre, e a
+                    # conciliação fiscal não teria contra o que casar.
+                    # Achado em 12/09 procurando quem importava o relatório.
+                    try:
+                        n = sincronizacao.sincronizar_notas_fiscais(anotar)
+                    except Exception as e:  # noqa: BLE001 — não derruba o apoio
+                        logger.exception("Análise de SPs: falhou importar as "
+                                         "notas do FSist")
+                        n = {"novas": 0, "mudaram": 0, "ja_tinha": 0,
+                             "avisos": [f"notas do FSist: {e}"]}
                     _marcar_apoios_feitos()
                     # O QUE VEIO, E O QUE NÃO VEIO, VAI PARA A MENSAGEM DA
                     # EXECUÇÃO — que é o que a tela de Configurações mostra.
@@ -379,13 +391,20 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                         f"documentação fiscal: {a.get('fiscais', 0)} · "
                         f"contas: {a.get('contas', 0)} · "
                         f"obras: {r.get('obras', 0)} · "
-                        f"categorias: {r.get('categorias', 0)}")
+                        f"categorias: {r.get('categorias', 0)} · "
+                        # OS TRÊS NÚMEROS DAS NOTAS, como o dono pediu: o que
+                        # entrou, o que MUDOU (uma nota que volta cancelada é
+                        # notícia) e o que já estava lá.
+                        f"notas: {n.get('novas', 0)} nova(s), "
+                        f"{n.get('mudaram', 0)} mudou/mudaram, "
+                        f"{n.get('ja_tinha', 0)} já tinha")
                     # SEM REPETIR: a aba "C. Diários" é lida por dois
                     # caminhos (as contas e as obras). Quando ela falta, as
                     # duas leituras reclamam a mesma coisa, e o recado saía
                     # com a frase duplicada.
                     problemas = list(dict.fromkeys(
-                        (a.get("avisos") or []) + (r.get("avisos") or [])))
+                        (a.get("avisos") or []) + (r.get("avisos") or [])
+                        + (n.get("avisos") or [])))
                     if problemas:
                         recado_apoios[0] += " — " + " ".join(problemas)
 
