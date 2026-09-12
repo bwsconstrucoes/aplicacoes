@@ -238,6 +238,20 @@ E, na mesma conversa, ele recusou o outro caminho: anexar um documento novo e
 CONVERSAR sobre ele — *"isso fica pra fazer direto com GPT, Claude"*. Um
 documento por pergunta, sem memória entre perguntas: é o desenho de propósito.
 
+### Conferência, e um erro meu de leitura
+
+**4.514 testes passando, 129 pulados, nenhuma falha** — duas rodadas seguidas
+com banco de verdade, o mesmo número nas duas. Os 17 testes novos eu conferi um
+a um desligando a trava que cada um cobre, para vê-los quebrar.
+
+⚠️ **ERRO MEU, registrado para não se repetir:** na mensagem do commit
+`ff5875d` eu escrevi que o Postgres deste contêiner tinha caído no meio da
+rodada e que parte dos testes de banco fora pulada — e disse isso ao dono. Não
+tinha caído. Eu vi muitas marcas de "pulado" passando na tela no meio da
+execução e concluí antes de ver o total; os 129 pulados são os de sempre, de
+outros módulos. **A lição é a de sempre neste repositório: a conclusão vem do
+número final, não do que está passando na tela.**
+
 ---
 
 **Estado em 12/09/2026 (décima terceira entrega):** **a tarja de gravação**, e
