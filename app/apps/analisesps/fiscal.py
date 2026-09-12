@@ -210,6 +210,22 @@ def _para_data(v):
 
 
 def _para_numero(v):
+    """Valor virando número, venha ele da planilha ou do banco.
+
+    O `Decimal` É O CASO DO BANCO, e ignorá-lo custou caro: a coluna `valor` da
+    tabela de notas é NUMERIC, e o psycopg2 devolve NUMERIC como `Decimal` —
+    que não é `int` nem `float`. Sem esta linha, `Decimal("269.00")` caía no
+    caminho do texto brasileiro, onde o ponto é separador de milhar: virava
+    **26.900**.
+
+    O estrago não aparecia na tela. Ele aparecia como ponto que faltava: o
+    valor NUNCA batia, e toda conciliação perdia os 25 pontos do valor exato.
+    Achado em 12/09/2026 por um teste que esperava a SP de mesmo valor em
+    primeiro lugar e recebeu a outra."""
+    import decimal
+
+    if isinstance(v, decimal.Decimal):
+        return float(v)
     if isinstance(v, (int, float)):
         return float(v)
     s = str(v or "").replace("R$", "").strip()
@@ -763,3 +779,72 @@ def escrever_nos_cards(anotar=None, limite: int = 200) -> dict:
                 "%d recusado(s).", escritas, falhas)
     return {"escritas": escritas, "falhas": falhas,
             "pendentes": len(a_escrever_no_card(limite))}
+
+
+# ---------------------------------------------------------------------------
+# A SEGUNDA VISÃO, ligada ao banco: nota -> lançamento
+#
+# É ela que fecha com a contabilidade. Nas palavras do dono: *"se tem uma nota
+# emitida, tem uma despesa para estar associada"*. Nota órfã é problema fiscal,
+# e hoje ninguém a enxerga.
+# ---------------------------------------------------------------------------
+def notas_orfas(pagina: int = 1, por_pagina: int = 200) -> tuple:
+    """As notas que não estão em lançamento nenhum, e quantas são ao todo.
+
+    A CONTA É FEITA NO BANCO, com `NOT EXISTS`. Trazer as notas todas para
+    Python e cruzar aqui seria carregar milhares de linhas na memória de uma
+    instância que já morreu disso — e o `NOT EXISTS` usa o índice da chave.
+
+    As CANCELADAS ficam de fora: nota cancelada sem despesa é o esperado, não
+    um achado. Listá-las faria esta visão nascer cheia de ruído."""
+    from .db import consultar, consultar_um
+
+    onde = ("""
+         WHERE upper(trim(coalesce(status, ''))) <> 'CANCELADA'
+           AND NOT EXISTS (
+               SELECT 1 FROM analisesps.sp_fiscal_analise a
+                WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g')
+                      = notas_fiscais.chave)""")
+
+    total = consultar_um(
+        "SELECT count(*) FROM analisesps.notas_fiscais" + onde)
+    pagina = max(1, int(pagina or 1))
+    linhas = consultar(
+        "SELECT chave, emissao, numero, valor, status, emitente_doc, emitente "
+        "  FROM analisesps.notas_fiscais" + onde +
+        " ORDER BY emissao DESC NULLS LAST, numero LIMIT ? OFFSET ?",
+        (int(por_pagina), (pagina - 1) * int(por_pagina)))
+
+    nomes = ["chave", "emissao", "numero", "valor", "status",
+             "emitente_doc", "emitente"]
+    notas = []
+    for linha in linhas:
+        nota = dict(zip(nomes, linha))
+        # A categoria sai de DENTRO da chave — é certeza, não palpite. Saber
+        # que aquela órfã é um CT-e já diz onde procurar a despesa.
+        nota["categoria"] = categoria_da_chave(nota["chave"])
+        notas.append(nota)
+    return notas, (total[0] if total else 0)
+
+
+def sps_possiveis_da_nota(nota: dict, quantas: int = 5) -> list:
+    """As SPs que PODEM ser desta nota — o caminho inverso da conciliação.
+
+    Busca pelo CNPJ de quem emitiu, que é o credor do lançamento, e pelo valor.
+    Sem isso a segunda visão diria "esta nota está órfã" e pararia ali, o que é
+    meio caminho: quem vai resolver precisa de por onde começar."""
+    from .db import consultar
+
+    emitente = nota.get("emitente_doc") or emitente_da_chave(nota.get("chave"))
+    raiz = _raiz(emitente)
+    if not raiz:
+        return []
+    valor = _para_numero(nota.get("valor"))
+    linhas = consultar(
+        "SELECT id, credor, valor_num, vencimento_d, status_pgt, nf "
+        "  FROM analisesps.sps "
+        " WHERE left(regexp_replace(coalesce(documento, ''), '\\D', '', 'g'), 8) = ? "
+        " ORDER BY CASE WHEN valor_num = ? THEN 0 ELSE 1 END, vencimento_d DESC "
+        " LIMIT ?", (raiz, valor, int(quantas)))
+    nomes = ["id", "credor", "valor_num", "vencimento_d", "status_pgt", "nf"]
+    return [dict(zip(nomes, linha)) for linha in linhas]

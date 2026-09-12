@@ -568,7 +568,11 @@ def solicitacoes():
 # propósito: o destino sai da barra de endereço, e um destino livre viraria um
 # jeito de usar este módulo como trampolim para fora.
 ORIGENS = {"solicitacoes": "analisesps.solicitacoes",
-           "lote": "analisesps.tela_lote"}
+           "lote": "analisesps.tela_lote",
+           # Quem abre uma SP a partir da lista de notas órfãs tem de voltar
+           # para lá, e não para as Solicitações: a lista é o trabalho, e
+           # perder o lugar nela a cada ficha aberta faria desistir dela.
+           "fiscal": "analisesps.tela_fiscal"}
 
 
 def _origem_pedida() -> str:
@@ -1775,6 +1779,32 @@ def tela_fiscal():
     except ValueError:
         pagina = 1
     grupo = request.args.get("grupo") or ""
+
+    # A SEGUNDA VISÃO — nota → lançamento. É ela que fecha com a contabilidade:
+    # *"se tem uma nota emitida, tem uma despesa para estar associada"*. Nota
+    # órfã é problema fiscal, e hoje ninguém a enxerga.
+    if request.args.get("visao") == "notas":
+        try:
+            orfas, total = fiscal.notas_orfas(pagina)
+            for nota in orfas:
+                nota["candidatas"] = fiscal.sps_possiveis_da_nota(nota)
+            erro = None
+        except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
+            logger.exception("Análise de SPs: falhou listar as notas órfãs")
+            orfas, total, erro = [], 0, (
+                "Esta tela precisa da atualização do banco. Vá em "
+                f"Configurações e aperte \"Aplicar atualizações do banco\". "
+                f"(detalhe: {e})")
+        ultima = (pagina - 1) * 200 + len(orfas)
+        return render_template(
+            "analisesps_fiscal_notas.html", aba="fiscal", base=base,
+            notas=orfas, total=total, erro=erro, pagina=pagina,
+            primeira_linha=(pagina - 1) * 200 + 1, ultima_linha=ultima,
+            tem_proxima=ultima < total, args=request.args,
+            aviso=request.args.get("aviso") or None,
+            pode_operar=auth.pode_operar(),
+            perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+            nome=auth.nome_atual())
 
     try:
         linhas = consultas.listar(filtros, ordem=request.args.get(

@@ -924,3 +924,29 @@ def test_falha_de_rede_num_bloco_nao_derruba_os_outros(monkeypatch):
     assert len(resultado["falhas"]) == 20, "o bloco que caiu"
     assert len(resultado["ok"]) == 5, "o bloco seguinte tinha de passar"
     assert "a rede caiu" in " ".join(resultado["falhas"].values())
+
+
+def test_o_valor_que_VEM_DO_BANCO_conta_como_valor():
+    """O DEFEITO QUE ESTE TESTE GUARDA, achado em 12/09/2026: a coluna do valor
+    da nota é NUMERIC, e o banco devolve NUMERIC como `Decimal` — que não é
+    `int` nem `float`.
+
+    Sem tratar esse tipo, `Decimal("269.00")` caía no caminho do texto
+    brasileiro, onde o ponto é separador de milhar: virava **26.900**. E o
+    estrago não aparecia na tela — aparecia como ponto que faltava: o valor
+    NUNCA batia, e toda conciliação perdia os 25 pontos do valor exato.
+
+    Um erro de conciliação que some 25 pontos em TODO caso é o tipo de defeito
+    que faz a tela "quase funcionar" para sempre."""
+    from decimal import Decimal
+
+    pontos, porques = fiscal.pontuar(sp(), nota(valor=Decimal("269.00")))
+    assert any("valor é igual" in p for p in porques), (
+        "o valor vindo do banco não foi reconhecido")
+    assert pontos >= fiscal.PONTOS_EMITENTE + fiscal.PONTOS_VALOR_EXATO
+
+
+def test_o_valor_do_lancamento_tambem_pode_vir_do_banco():
+    from decimal import Decimal
+    _, porques = fiscal.pontuar(sp(valor=Decimal("269.00")), nota())
+    assert any("valor é igual" in p for p in porques)

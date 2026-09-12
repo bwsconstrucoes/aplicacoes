@@ -2218,6 +2218,49 @@ Pipefy foi dublado em todos — **nenhum card de verdade foi tocado**.
 **O que falta nesta frente:** a IA lendo os anexos, o download autônomo das
 notas, e a segunda visão (notas sem lançamento) na tela.
 
+### Trigésima segunda leva (12/09) — a segunda visão, e um defeito que ela achou
+
+**A visão nota → lançamento entrou na tela.** É ela que fecha com a
+contabilidade: *"se tem uma nota emitida, tem uma despesa para estar
+associada"*. Nota órfã é problema fiscal, e até agora ninguém a enxergava — a
+conciliação só olhava do lado do lançamento, e o que nunca virou lançamento
+nenhum não aparecia em lugar nenhum.
+
+**Ela não para em "esta nota está órfã".** Cada linha já traz as **SPs
+candidatas** — as do mesmo CNPJ, com as de mesmo valor na frente — e a
+**categoria lida de dentro da chave**. Saber que a órfã é um CT-e já diz onde
+procurar a despesa. Dizer só "está órfã" seria meio caminho: quem vai resolver
+precisa de por onde começar.
+
+As canceladas ficam de fora de propósito, e a comparação da chave ignora
+pontuação — uma chave gravada com espaço no meio faria a mesma nota voltar a
+aparecer como órfã depois de conciliada, e ninguém entenderia por quê.
+
+#### INCIDENTE: o valor da nota NUNCA batia
+
+Escrevendo o teste que esperava a SP de mesmo valor em primeiro lugar, ela veio
+em segundo. A causa:
+
+> A coluna do valor da nota é **NUMERIC**, e o banco devolve NUMERIC como
+> **`Decimal`** — que não é `int` nem `float`. Sem tratar esse tipo,
+> `Decimal("269.00")` caía no caminho do texto brasileiro, onde o ponto é
+> separador de milhar: virava **26.900**.
+
+**O estrago não aparecia na tela. Aparecia como ponto que faltava:** o valor
+nunca batia, e **toda** conciliação perdia os 25 pontos do valor exato. A tela
+continuava propondo — pelo CNPJ do emitente e pelo número da nota —, só que com
+menos confiança do que devia, e os casos que dependiam do valor para chegar aos
+60 pontos ficavam em dúvida sem motivo.
+
+É o tipo de defeito que faz a tela "quase funcionar" para sempre: nada quebra,
+nada acusa, e o resultado é pior sem ninguém saber. Só apareceu porque o teste
+foi escrito contra o **banco de verdade**, e não contra um valor digitado à mão
+no teste.
+
+**Verificação:** 4.497 testes verdes com Postgres de verdade, 129 pulados; 8
+testes novos. A segunda visão foi **aberta de verdade**: a nota órfã apareceu
+com a categoria certa lida da chave, e a que já tinha sido conciliada não.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a

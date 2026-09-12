@@ -38,6 +38,15 @@
       {% set base_args = args.to_dict(flat=false) %}
       {% set _ = base_args.pop('grupo', None) %}
       {% set _ = base_args.pop('pagina', None) %}
+      {# O ATALHO PARA A SEGUNDA VISÃO. As duas juntas são o que "zera" com a
+         contabilidade: esta olha do lado do lançamento, a outra do lado da
+         nota — e o que nunca virou lançamento só aparece lá. #}
+      <div class="fiscal-grupos">
+        <a class="etiqueta"
+           href="{{ url_for('analisesps.tela_fiscal', **dict(base_args, visao='notas')) }}">
+          Notas sem lançamento →</a>
+      </div>
+
       <div class="fiscal-grupos">
         <a class="etiqueta {{ 'ativa' if not grupo }}"
            href="{{ url_for('analisesps.tela_fiscal', **base_args) }}">Tudo</a>

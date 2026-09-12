@@ -2163,3 +2163,82 @@ def test_sem_nada_na_fila_a_gravacao_nao_fala_com_o_Pipefy(banco_analisesps,
     monkeypatch.setattr(pipefy, "atualizar_documentacao_fiscal", nunca)
     assert fiscal.escrever_nos_cards() == {"escritas": 0, "falhas": 0,
                                            "pendentes": 0}
+
+
+# ---------------------------------------------------------------------------
+# A SEGUNDA VISÃO — nota → lançamento
+#
+# É ela que fecha com a contabilidade. Nas palavras do dono: *"se tem uma nota
+# emitida, tem uma despesa para estar associada"*. Nota órfã é problema fiscal,
+# e hoje ninguém a enxerga.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_a_nota_sem_lancamento_aparece_e_a_conciliada_nao(banco_analisesps):
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+    _guardar_nota(_chave("11222333000181"), "77", 88.00, "11222333000181")
+    fiscal.guardar_decisao("1", "NF-e (Mercadoria)", _chave(CREDOR_CNPJ),
+                           "", 90, "Marcelo")
+
+    notas, total = fiscal.notas_orfas()
+    assert total == 1
+    assert [n["numero"] for n in notas] == ["77"]
+
+
+@pytest.mark.banco
+def test_a_chave_gravada_com_pontuacao_ainda_TIRA_a_nota_da_lista(banco_analisesps):
+    """A chave chega de mil jeitos — com espaço, com ponto. Se a comparação
+    fosse literal, a mesma nota voltaria a aparecer como órfã depois de já
+    conciliada, e ninguém entenderia por quê."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('1', 'ESCRITA', ?)", (chave[:22] + " " + chave[22:],))
+        conn.commit()
+
+    assert fiscal.notas_orfas()[1] == 0
+
+
+@pytest.mark.banco
+def test_nota_CANCELADA_sem_lancamento_nao_e_achado(banco_analisesps):
+    """Nota cancelada sem despesa é o esperado, não um problema. Listá-la faria
+    esta visão nascer cheia de ruído."""
+    from app.apps.analisesps import fiscal
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ,
+                  status="Cancelada")
+    assert fiscal.notas_orfas()[1] == 0
+
+
+@pytest.mark.banco
+def test_a_nota_orfa_diz_POR_ONDE_COMECAR(banco_analisesps):
+    """Não basta dizer "esta nota está órfã": quem vai resolver precisa das
+    SPs candidatas. E a de MESMO VALOR vem na frente — é a que quase sempre
+    é a certa."""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", documento="29.066.773/0001-52", credor="SERTAO",
+               valor="999,00", valor_num=999.00),
+            sp("2", documento="29066773000899", credor="SERTAO FILIAL",
+               valor="269,00", valor_num=269.00)])
+
+    nota = fiscal.notas_orfas()[0][0]
+    candidatas = fiscal.sps_possiveis_da_nota(nota)
+    assert [c["id"] for c in candidatas] == ["2", "1"], (
+        "a SP de mesmo valor tinha de vir na frente")
+
+
+@pytest.mark.banco
+def test_a_categoria_da_nota_orfa_sai_de_dentro_da_chave(banco_analisesps):
+    """Saber que a órfã é um CT-e já diz onde procurar a despesa — e a
+    categoria é CERTEZA, porque vem dos dígitos 21-22 da própria chave."""
+    from app.apps.analisesps import fiscal
+    _guardar_nota(_chave("11222333000181", "570010000999888777666555"),
+                  "77", 88.00, "11222333000181")
+    assert fiscal.notas_orfas()[0][0]["categoria"] == "CT-e (Frete)"
