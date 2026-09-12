@@ -660,7 +660,14 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 
   /* 8. A caixa de diálogo ocupa a tela toda e rola por dentro. Antes o corpo
      era cortado em 74% da altura e o resto ficava inalcançável no telefone. */
-  dialog { height: 100dvh; max-height: 100dvh; display: flex; flex-direction: column; }
+  /* O `display:flex` VENCE o `display:none` que o navegador dá a toda caixa de
+     diálogo FECHADA — e aí todas elas apareciam empilhadas dentro da página,
+     no telefone e em qualquer janela estreita. Foi assim que "Nova chave Pix"
+     e "Encaminhar" passaram a aparecer soltos no meio de Configurações.
+     O `[open]` limita a regra à caixa que está de fato aberta.
+     É a MESMA armadilha da tarja de gravação, corrigida horas antes no mesmo
+     arquivo: regra de layout que esquece o estado fechado do elemento. */
+  dialog[open] { height: 100dvh; max-height: 100dvh; display: flex; flex-direction: column; }
   .dlg-topo { flex: 0 0 auto; }
   .dlg-corpo { flex: 1 1 auto; max-height: none; padding: 14px 14px 40px; }
 

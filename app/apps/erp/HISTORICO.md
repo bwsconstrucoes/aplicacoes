@@ -168,6 +168,36 @@ banco — **não consome nada**.
 
 ---
 
+**Estado em 12/09/2026 (décima oitava entrega):** **caixas de diálogo
+aparecendo soltas dentro da página, em janela estreita.** Sem migração.
+
+O dono viu logo depois da publicação: *"onde eu estou na tela fica aparecendo
+aqui nova chave Pix e encaminhar, mesmo em Configurações"*.
+
+### A causa, e ela é a MESMA armadilha de horas antes
+
+Uma regra de estilo para telefone dizia `dialog { display: flex }`, para a
+caixa ocupar a tela e rolar por dentro. Só que **`display:flex` vence o
+`display:none` que o navegador dá a toda caixa FECHADA** — e aí TODAS elas
+apareciam empilhadas dentro da página, em qualquer janela abaixo de 720px.
+
+Corrigido com `dialog[open]`: a regra passa a valer só para a caixa aberta.
+
+**Por que só apareceu agora:** o defeito estava no estilo desde que a versão
+para telefone foi feita, mas cada tela tinha uma ou duas caixas próprias, e o
+dono trabalha em janela larga. Ao pôr o diálogo de "Encaminhar" no ESQUELETO
+(para servir a mais de uma tela), ele passou a existir em TODAS — e o defeito
+saiu do canto para o meio da tela.
+
+⚠️ **É a terceira vez hoje que a mesma armadilha aparece** (a tarja de
+gravação, e agora esta). **Regra que fica: toda regra de `display` precisa
+dizer a qual ESTADO se aplica** — `[open]`, `:not([hidden])`, o que for.
+Layout que esquece o estado fechado do elemento é defeito invisível para a
+suíte: 4.710 testes passaram com este no ar. **Estilo só se confere abrindo a
+tela — e em janela estreita também.**
+
+---
+
 **Estado em 12/09/2026 (décima sétima entrega):** **os relatórios** — e um
 defeito de verdade que apareceu ao olhá-los. Sem migração.
 
