@@ -168,6 +168,66 @@ banco — **não consome nada**.
 
 ---
 
+**Estado em 12/09/2026 (décima nona entrega):** **"custo da obra" foi
+decidido — e o grupo de Obras do assistente destravou.** Sem migração.
+
+### A definição, nas palavras do dono
+
+*"O custo normalmente está associado só às despesas de DRE, nada de fluxo. E é
+o custo executado e o custo comprometido — são essas duas visões que a gente
+tem em relação ao custo de obra."*
+
+Isso fecha a palavra que estava em aberto desde 11/09 e que travava o grupo
+inteiro. Faltava o REGIME, e a resposta dele deu mais do que isso: deu os dois
+nomes que a empresa já usa.
+
+| Visão | O que é |
+|---|---|
+| **Comprometido** | a obrigação já existe, tendo o dinheiro saído ou não |
+| **Executado** | o dinheiro já saiu do caixa |
+
+E três regras junto:
+
+1. **Só conta de DRE** (natureza RESULTADO). Transferência entre contas e
+   aporte não são custo — é dinheiro mudando de lugar, e somá-los inflaria o
+   custo sem nada ter sido consumido.
+2. **Rascunho, cancelado, estornado e devolvido não comprometem nada.**
+3. Continua valendo a decisão de 11/09: custo é a despesa **direta** da obra;
+   rateio da administração não vira custo de obra.
+
+**As duas visões aparecem sempre juntas**, com a diferença numa terceira
+coluna ("falta executar"). Mostrar uma só seria escolher pelo dono em
+silêncio — e a diferença entre elas é justamente o que ele ainda tem a pagar.
+
+### Como foi feito, e por que assim
+
+A resposta **reusa `core/relatorios.py` inteiro**: mesmo recorte por obra,
+mesma conta de rateio, mesma correção da conta redutora, mesmo filtro de
+espécie. Uma consulta própria divergiria da tela de Relatórios no dia em que
+alguém corrigisse uma das duas — e aí o assistente e o relatório dariam
+números diferentes sobre a mesma obra.
+
+### O que apareceu no caminho, e é decisão do dono
+
+⚠️ **O perfil GESTOR_OBRA está em `VE_TUDO`** — ele enxerga TODAS as obras da
+empresa, não só as designadas a ele. Descobri porque um teste meu partiu do
+contrário e falhou. Quem é preso às obras designadas é o SUPERVISOR_OBRA
+(sempre) e o administrativo/lançador (quando marcado assim no cadastro).
+
+Isso pode estar certo — gestor é cargo de gerência — mas **contradiz o
+princípio que o dono deu em 12/09/2026**: *"o ideal é sempre limitar as
+informações a quem está associado a cada obra"*. Não mudei: quem vê o quê é
+decisão de negócio, não ajuste técnico. **Está aqui para ele decidir.**
+
+### Conferência
+
+9 testes novos com banco de verdade; conferi tirando a regra de "só DRE" e
+**quatro quebram**. A pergunta foi exercitada no navegador, pelo painel do
+assistente: ela aparece na lista, responde as três obras com as duas colunas,
+e oferece Excel e PDF.
+
+---
+
 **Estado em 12/09/2026 (décima oitava entrega):** **caixas de diálogo
 aparecendo soltas dentro da página, em janela estreita.** Sem migração.
 

@@ -36,7 +36,7 @@ não estiver decidida, o assistente **pergunta de volta** em vez de escolher.
 | A palavra | Os significados possíveis | Decisão |
 |---|---|---|
 | **"a pagar"** | por vencimento da parcela, ou por competência do título? Inclui BLOQUEADO? Inclui o que ainda não foi aprovado? | ⬜ a decidir |
-| **"custo da obra"** | o que entra na conta? | ✔ **decidido 11/09/2026: são as DESPESAS DIRETAS da obra** — ver abaixo |
+| **"custo da obra"** | o que entra na conta? | ✔ **FECHADO em 12/09/2026: despesa DIRETA de DRE, nas visões COMPROMETIDO e EXECUTADO** — ver abaixo |
 | **"obra em andamento"** | pela situação no cadastro, pela data de término, ou por ter tido movimento nos últimos N dias? | ⬜ a decidir |
 | **"quanto falta receber"** | são QUATRO leituras, todas legítimas — ver a régua abaixo | ✔ **decidido: o assistente PERGUNTA de volta** |
 | **"resultado da obra"** | inclui rateio da administração? inclui os tributos? | ✔ **decidido 11/09/2026: receita − custo direto** — ver abaixo |
@@ -55,19 +55,31 @@ Então:
   não vira custo de obra.
 - **Resultado da obra = receita da obra − custo direto da obra.**
 
-**O que a decisão dele ainda NÃO resolve, e não pode ser inventado:** o regime.
-"Despesa direta" pode ser o que foi LANÇADO (competência — a obra já consumiu)
-ou o que foi PAGO (caixa — o dinheiro já saiu). Os dois números são legítimos e
-diferentes, e a diferença é justamente o que está em aberto para pagar.
+### O regime — FECHADO em 12/09/2026
 
-**Como isso é resolvido aqui, sem inventar e sem travar:** o mesmo caminho da
-régua do recebimento — a resposta mostra **os dois lado a lado**. "Custo da
-obra X: R$ 1,2 mi lançado, R$ 900 mil pago." Quem lê escolhe qual usar, e
-ninguém escolhe por ele em silêncio.
+Faltava dizer o regime, e o dono fechou, com estas palavras: *"o custo
+normalmente está associado só às despesas de DRE, nada de fluxo. E é o custo
+executado e o custo comprometido — são essas duas visões que a gente tem"*.
 
-Falta ainda combinar, quando aparecer: se o título **em análise** (ainda não
-aprovado) entra no lançado. Enquanto não estiver combinado, a resposta diz
-quanto do número está nessa situação.
+Então a pergunta **"quanto custou a obra X"** responde assim, e sempre com os
+dois números juntos:
+
+| Visão | O que é | O que entra |
+|---|---|---|
+| **Comprometido** | a obrigação já existe, tendo o dinheiro saído ou não | todo título lançado que ainda vale |
+| **Executado** | o dinheiro já saiu do caixa | a soma dos pagamentos |
+
+E três regras que vêm junto:
+
+1. **Só conta de DRE** (natureza *resultado*). Transferência entre contas,
+   aporte e principal de empréstimo **não são custo** — é dinheiro mudando de
+   lugar, e somá-los inflaria o custo sem nada ter sido consumido.
+2. **Rascunho, cancelado, estornado e devolvido não comprometem nada.**
+3. **Continua valendo a despesa DIRETA**: rateio da administração da empresa
+   não vira custo de obra.
+
+A diferença entre comprometido e executado é, por definição, **o que ainda
+falta sair do caixa** — e a resposta mostra essa terceira coluna também.
 
 ### A regra geral, decidida pelo dono em 10/09/2026
 

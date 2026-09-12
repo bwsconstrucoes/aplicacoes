@@ -309,6 +309,16 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       **Falta ainda:** o dono arquivar os contratos de verdade no Arquivo. Sem
       documento arquivado, não há o que procurar.
 
+- [x] **CUSTO DA OBRA: comprometido e executado, só DRE** — FEITO em
+      12/09/2026, com a definição dada pelo dono. Destrava a pergunta "quanto
+      custou a obra" no assistente, que estava fora do catálogo esperando a
+      palavra ser decidida.
+      · Reusa `core/relatorios.py` — mesmo recorte, mesma conta, mesma espécie.
+      · **Decisão pendente do dono:** o perfil GESTOR_OBRA enxerga TODAS as
+        obras (está em `VE_TUDO`), o que contradiz o princípio "limitar as
+        informações a quem está associado a cada obra". Não mexi: quem vê o
+        quê é decisão de negócio.
+
 - [x] **RELATÓRIOS: fluxo de caixa, curva ABC, empresa, Excel/PDF — e o
       defeito da espécie** — FEITO em 12/09/2026, aprovado pelo dono.
       · **Defeito corrigido:** "totais por obra" somava o que a obra vai

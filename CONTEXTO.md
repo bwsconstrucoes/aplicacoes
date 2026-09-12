@@ -741,6 +741,20 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-12 — "CUSTO DA OBRA" tem definição fechada: despesa DIRETA de DRE,
+  nas visões COMPROMETIDO e EXECUTADO.** Palavras do dono: *"o custo
+  normalmente está associado só às despesas de DRE, nada de fluxo. E é o custo
+  executado e o custo comprometido"*. Comprometido = a obrigação já existe,
+  tendo o dinheiro saído ou não; executado = o dinheiro já saiu. Conta de
+  FLUXO (transferência, aporte, principal de empréstimo) **não é custo** — é
+  dinheiro mudando de lugar. Rascunho, cancelado, estornado e devolvido não
+  comprometem nada. Rateio da administração não vira custo de obra
+  (decisão de 11/09). **As duas visões aparecem sempre juntas**, com a
+  diferença numa terceira coluna. Isto destravou o grupo de Obras do
+  assistente, que estava parado esperando a palavra. **Regra que fica: a
+  resposta mostra as duas leituras legítimas lado a lado em vez de escolher
+  uma em silêncio.**
+
 - **2026-09-12 — Pedido com várias tarefas se executa INTEIRO antes de voltar.**
   Reclamação do dono, e não a primeira: *"eu passo duas, três tarefas, ao invés
   de você executar as duas, três tarefas, você faz uma e para. Aí me pergunta
