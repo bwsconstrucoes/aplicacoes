@@ -747,10 +747,31 @@ Quando eu pedir nova feature ou adaptação:
   sim e mandou fazer. O que ela resolve é a **assinatura digital do pedido com
   o certificado A1** — a parte onde escrever do zero custa caro, porque o erro
   volta como "recusado" sem dizer por quê. Ela **não** cobre CT-e: esse pedido
-  é montado à mão, reusando o transporte dela. Três variáveis novas no Render:
-  `ANALISESPS_CERT_A1_BASE64`, `ANALISESPS_CERT_A1_SENHA` e `ANALISESPS_CNPJS`.
-  ⚠️ **O A1 vence em um ano** e a busca para no dia seguinte — o motivo fica
-  gravado no ponteiro, que é o que a tela mostra.
+  é montado à mão, reusando o transporte dela. ~~Três variáveis novas no
+  Render: `ANALISESPS_CERT_A1_BASE64`, `ANALISESPS_CERT_A1_SENHA` e
+  `ANALISESPS_CNPJS`.~~ **Substituídas no mesmo dia** pelo cofre de
+  certificados (decisão seguinte). ⚠️ **O A1 vence em um ano** e a busca para
+  no dia seguinte — o motivo fica gravado no ponteiro, que é o que a tela
+  mostra.
+
+- **2026-09-12 — Credencial sensível entra pela TELA e fica cifrada no banco;
+  a chave mora no ambiente.** Dependência nova: `cryptography` (já era
+  dependência indireta de várias, agora é declarada). Motivo do dono: o
+  certificado digital A1 **vence todo ano**, e em variável de ambiente cada
+  troca é mexer no Render e reiniciar o serviço — além de uma variável por
+  empresa. Agora ele sobe pela tela de Configurações do Análise de SPs e fica
+  na tabela `analisesps.certificados`, com **arquivo e senha cifrados**
+  (Fernet, chave derivada de `ANALISESPS_CHAVE_COFRE`). **Regras que ficam,
+  para qualquer credencial guardada assim:** (1) a chave que cifra vive FORA
+  do banco, senão cifrar não protege de nada; (2) **sem a chave, recusa-se a
+  guardar** — nunca "em texto puro por enquanto"; (3) **não existe rota que
+  devolva** o segredo, só uso interno; (4) o que identifica a credencial
+  (titular, validade) é **lido de dentro do arquivo**, não digitado; (5)
+  remover apaga a linha, não marca um campo. ⚠️ **Trocar
+  `ANALISESPS_CHAVE_COFRE` torna ilegível o que já foi guardado** — não há
+  rotação implementada; seria preciso subir os certificados de novo. E a lista
+  de CNPJs vigiados pela busca da Receita **saiu de variável**: é quem tem
+  certificado válido guardado, para duas listas não divergirem.
 
 - **2026-09-12 — Pedido com várias tarefas é FILA, não cardápio.** O dono
   pediu isto mais de uma vez antes de mandar registrar: *"eu passo uma demanda,

@@ -77,48 +77,52 @@ class ErroDaReceita(RuntimeError):
 # ---------------------------------------------------------------------------
 # O certificado
 # ---------------------------------------------------------------------------
-def _certificado():
-    """Abre o certificado A1 a partir da variável de ambiente.
+def _certificado(cnpj: str):
+    """Abre o certificado A1 DAQUELE CNPJ, vindo do cofre.
 
-    O ARQUIVO NÃO ENTRA NO REPOSITÓRIO, e isto não é preciosismo: com ele e a
-    senha, qualquer um emite nota em nome da empresa. Vai em base64 numa
-    variável do Render, como já é a credencial do Google.
+    ELE VEM DA TELA, e não de variável de ambiente. Pedido do dono em
+    12/09/2026, e o ganho é maior que a conveniência: o A1 vence todo ano, e
+    com ele em variável cada troca é mexer no Render e reiniciar o serviço —
+    cada empresa nova, uma variável nova.
 
-    ⚠️ O A1 VENCE EM UM ANO, e no dia seguinte a busca para — a Receita recusa
-    e o motivo fica gravado no ponteiro, que é o que a tela mostra. Sem isso o
-    sistema pararia de trazer nota sem ninguém perceber."""
+    ⚠️ O A1 VENCE EM UM ANO, e no dia seguinte a busca para. Por isso a
+    validade é lida de dentro do arquivo quando ele sobe, a tela avisa com
+    trinta dias, e o CNPJ vencido nem é consultado: consultar com certificado
+    vencido só produz recusa, e a recusa gasta a cota."""
     from erpbrasil.assinatura.certificado import Certificado
 
-    conteudo = os.getenv("ANALISESPS_CERT_A1_BASE64", "").strip()
-    senha = os.getenv("ANALISESPS_CERT_A1_SENHA", "")
-    if not conteudo or not senha:
-        raise SemCertificado(
-            "O certificado digital A1 não está configurado. Ele é o que "
-            "autoriza a busca na Receita — sem ele, as notas só entram pelo "
-            "relatório do FSist. Faltam ANALISESPS_CERT_A1_BASE64 e "
-            "ANALISESPS_CERT_A1_SENHA no Render.")
+    from . import certificados
+
     try:
-        return Certificado(base64.b64decode(conteudo), senha)
+        conteudo, senha = certificados.abrir_para_uso(cnpj)
+    except certificados.SemCofre as e:
+        raise SemCertificado(str(e)) from e
+    except certificados.ErroDeCertificado as e:
+        raise SemCertificado(str(e)) from e
+
+    try:
+        return Certificado(conteudo, senha)
     except Exception as e:  # noqa: BLE001 — a mensagem tem de dizer o que fazer
         raise SemCertificado(
-            f"Não consegui abrir o certificado A1: {e}. Confira a senha, e se "
-            "ele não venceu — o A1 vale um ano.") from e
+            f"Não consegui abrir o certificado de {cnpj}: {e}. Ele pode ter "
+            "vencido — o A1 vale um ano. Suba o novo em Configurações.") from e
 
 
 def configurado() -> bool:
     """Dá para buscar na Receita? A tela pergunta isto antes de oferecer."""
-    return bool(os.getenv("ANALISESPS_CERT_A1_BASE64", "").strip()
-                and os.getenv("ANALISESPS_CERT_A1_SENHA", ""))
+    from . import certificados
+    return bool(certificados.cofre_configurado() and certificados.cnpjs_ativos())
 
 
 def cnpjs_vigiados() -> list:
-    """Os CNPJs da empresa que são consultados. Vêm da configuração.
+    """Os CNPJs consultados: os que TÊM certificado válido guardado.
 
-    Mais de um de propósito: a BWS tem mais de um CNPJ, e cada um tem a sua
-    própria contagem de NSU na Receita."""
-    bruto = os.getenv("ANALISESPS_CNPJS", "")
-    return [re.sub(r"\D", "", p) for p in bruto.split(",")
-            if len(re.sub(r"\D", "", p)) == 14]
+    A LISTA SAI DO COFRE, e não de configuração à parte. Duas listas — uma de
+    CNPJs e outra de certificados — divergiriam no dia em que alguém subisse um
+    certificado e esquecesse de acrescentar o CNPJ, e a busca ficaria sem
+    rodar para aquela empresa sem ninguém entender por quê."""
+    from . import certificados
+    return certificados.cnpjs_ativos()
 
 
 # ---------------------------------------------------------------------------
@@ -270,7 +274,7 @@ def _consultar_nfe(cnpj: str, desde_nsu: str) -> dict:
     from erpbrasil.edoc.nfe import NFe
     from erpbrasil.transmissao import TransmissaoSOAP
 
-    with TransmissaoSOAP(_certificado()) as transmissao:
+    with TransmissaoSOAP(_certificado(cnpj)) as transmissao:
         servico = NFe(transmissao, UF, ambiente=AMBIENTE)
         retorno = servico.consultar_distribuicao(
             cnpj_cpf=re.sub(r"\D", "", cnpj), ultimo_nsu=_nsu(desde_nsu))
@@ -305,7 +309,7 @@ def _consultar_cte(cnpj: str, desde_nsu: str) -> dict:
         "</distDFeInt>"
         "</cteDadosMsg></cteDistDFeInteresse></soap12:Body></soap12:Envelope>")
 
-    transmissao = TransmissaoSOAP(_certificado())
+    transmissao = TransmissaoSOAP(_certificado(cnpj))
     sessao = getattr(transmissao, "session", None) or requests.Session()
     resposta = sessao.post(
         URL_CTE_DISTRIBUICAO, data=pedido.encode("utf-8"), timeout=60,

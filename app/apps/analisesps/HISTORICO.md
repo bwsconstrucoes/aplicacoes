@@ -2533,14 +2533,95 @@ inteiro contra banco de verdade.
 > mais provável de precisar de ajuste, porque é o que não veio pronto da
 > biblioteca.
 
-**O que o dono precisa pôr no Render:** `ANALISESPS_CERT_A1_BASE64` (o
-certificado em base64), `ANALISESPS_CERT_A1_SENHA` e `ANALISESPS_CNPJS` (os
-CNPJs vigiados, separados por vírgula). Enquanto faltarem, a busca não roda e
-diz isso — as notas continuam entrando pelo relatório do FSist.
+~~**O que o dono precisa pôr no Render:** `ANALISESPS_CERT_A1_BASE64`,
+`ANALISESPS_CERT_A1_SENHA` e `ANALISESPS_CNPJS`.~~ **Substituído no mesmo dia
+pela 37ª leva:** o certificado passou a ser subido pela tela de Configurações,
+e a lista de CNPJs vigiados saiu de variável — é quem está guardado. A única
+variável que continua de pé é `ANALISESPS_CHAVE_COFRE`. Enquanto não houver
+certificado guardado, a busca não roda e diz isso — as notas continuam entrando
+pelo relatório do FSist.
+
+### Trigésima sétima leva (12/09) — o certificado sobe pela tela
+
+*"Não daria pra adicionar o certificado a partir da tela de configurações,
+inserir o arquivo, e adicionar lá, que facilitaria uma troca ou a inclusão de
+outros certificados de outras empresas."*
+
+Ele viu o problema antes de ele acontecer. O certificado A1 **vence todo ano**.
+Guardado em variável de ambiente, cada renovação é mexer no Render, converter o
+arquivo para texto e reiniciar o serviço — coisa que ele não faz sozinho. E
+cada empresa nova do grupo seria mais uma variável. Pela tela, é escolher o
+arquivo, digitar a senha e pronto.
+
+**O que mudou na prática:** em Configurações há um cartão "Certificados
+digitais". Ele mostra de quem é cada certificado, até quando vale, quem subiu e
+quando — e avisa em amarelo quando faltam menos de 30 dias para vencer, e em
+vermelho quando já venceu. Subir um certificado do mesmo CNPJ **substitui** o
+antigo: é assim que a renovação acontece, sem passo extra.
+
+**A lista de CNPJs que a busca vigia deixou de ser configuração.** Antes era uma
+variável de ambiente escrita à mão, que podia discordar do certificado que
+existe. Agora a busca percorre **os certificados guardados que ainda valem** —
+duas listas que podiam divergir viraram uma. Certificado vencido sai da busca
+sozinho, em vez de gerar erro de conexão sem explicação.
+
+#### O cuidado, porque esta é a credencial mais perigosa do sistema
+
+Com o arquivo e a senha, alguém **emite nota fiscal em nome da empresa**. Não é
+senha de sistema; é a assinatura da empresa. Por isso:
+
+1. **Arquivo e senha ficam cifrados no banco.** Um backup esquecido ou um
+   acesso indevido ao banco entrega bytes embaralhados. A chave que decifra
+   vive fora do banco, no ambiente do Render.
+2. **Não existe caminho de volta.** Nenhuma tela, nenhum endereço devolve o
+   arquivo ou a senha. O conteúdo só é decifrado dentro do próprio sistema, na
+   hora de falar com a Receita. Há teste que falha se alguém criar essa rota
+   sem perceber.
+3. **Sem a chave, o sistema RECUSA guardar.** Não guarda em texto puro "por
+   enquanto". A conveniência da tela com o arquivo aberto no banco seria pior
+   que as duas situações anteriores.
+4. **Só quem opera sobe ou remove**, e fica registrado quem foi.
+
+#### Detalhes que evitam erro silencioso
+
+- **O CNPJ e a validade são lidos de DENTRO do arquivo**, não digitados. Data
+  digitada à mão erra, e o erro só apareceria no dia em que a busca parasse.
+  CNPJ digitado errado faria o sistema consultar em nome de outra empresa.
+- **Senha errada é recusada na hora de subir**, com recado claro — em vez de
+  virar falha de conexão semanas depois.
+- **A tela nunca lê as colunas cifradas.** A listagem seleciona apenas os
+  campos que ela mostra; o conteúdo só é buscado pela função que usa.
+- **Remover apaga de verdade.** Credencial desativada que continua no banco é
+  credencial vazada com passo a mais.
+
+**Verificação:** 4.682 testes verdes com Postgres de verdade, 129 pulados; 20
+testes novos, sendo 13 sem banco e 7 com banco. Os testes fabricam um
+certificado de mentira na hora, inclusive um já vencido — nenhum certificado de
+verdade encostou nesta máquina.
+
+> **O QUE NÃO FOI PROVADO:** a tela não foi aberta num navegador com arquivo de
+> verdade, porque não há certificado aqui. O caminho todo foi exercitado contra
+> banco de verdade com certificado fabricado, mas o primeiro arquivo real é o
+> teste real. E a busca na Receita continua sem nunca ter falado com o serviço
+> dela — isso não mudou nesta leva.
+
+**O que o dono precisa fazer, NESTA ORDEM:**
+
+1. Criar no Render a variável `ANALISESPS_CHAVE_COFRE` com uma frase secreta
+   qualquer, longa. **Antes de subir qualquer certificado** — sem ela o sistema
+   recusa guardar.
+2. **Nunca trocar essa frase depois.** Trocar torna ilegível o que já foi
+   guardado, e os certificados teriam de ser subidos de novo. Guardar a frase
+   em lugar seguro é parte do trabalho.
+3. Aplicar as atualizações do banco (migrações 008 e 009).
+4. Subir o certificado A1 pela tela de Configurações.
 
 ### Pedido na fila, ainda NÃO feito
 
-**Nada do dono esperando código.** O que falta não é programação — é o certificado digital A1, para o download autônomo das notas (ver a 34ª leva).
+**Nada do dono esperando código.** O que falta não é programação — é o
+certificado digital A1 em si, que agora entra pela tela de Configurações (37ª
+leva), e a variável `ANALISESPS_CHAVE_COFRE` no Render, que precisa existir
+antes dele.
 
 ### A janela entre publicar e apertar o botão
 

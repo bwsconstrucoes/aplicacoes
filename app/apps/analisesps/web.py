@@ -967,10 +967,21 @@ def configuracoes():
         logger.exception("Análise de SPs: não consegui conferir as integrações")
         integracoes = {"ok": False, "erro": str(e)}
 
+    # OS CERTIFICADOS: só de quem são, até quando valem e quem subiu. O
+    # conteúdo NÃO passa por aqui, nem por rota nenhuma.
+    from . import certificados
+    try:
+        lista_certificados = certificados.listar()
+    except Exception:  # noqa: BLE001 — a tela abre mesmo sem isto
+        logger.exception("Análise de SPs: não consegui listar os certificados")
+        lista_certificados = []
+
     return render_template(
         "analisesps_config.html",
         migracoes=migracoes, erro_banco=erro_banco, integracoes=integracoes,
-        equipe=equipe,
+        equipe=equipe, certificados=lista_certificados,
+        cofre_ok=certificados.cofre_configurado(),
+        aviso=request.args.get("aviso") or None,
         base=consultas.base_carregada(),
         andamento=tarefas.estado(),
         ultima=tarefas.ultima_concluida() if not erro_banco else None,
@@ -1938,6 +1949,64 @@ def pedir_ia_fiscal():
     logger.info("Análise de SPs: %s mandou %d SP(s) para a IA.",
                 quem or "sem nome", entraram)
     return {"ok": True, "enfileiradas": entraram, "aviso": aviso}
+
+
+# ---------------------------------------------------------------------------
+# CERTIFICADOS DIGITAIS — subidos pela tela, guardados cifrados
+#
+# ⚠️ A CREDENCIAL MAIS SENSÍVEL DO SISTEMA: com o arquivo e a senha, qualquer um
+# emite nota em nome da empresa. Por isso NÃO EXISTE rota que devolva o
+# conteúdo — nem para quem subiu. A tela mostra de quem é, até quando vale e
+# quem subiu; o arquivo só sai do banco para dentro do próprio sistema, na hora
+# de falar com a Receita.
+# ---------------------------------------------------------------------------
+@bp.route("/certificados/subir", methods=["POST"])
+@exige_operador
+def subir_certificado():
+    """Recebe o .pfx, confere abrindo, e guarda cifrado."""
+    from . import certificados
+
+    arquivo = request.files.get("certificado")
+    senha = request.form.get("senha") or ""
+    apelido = request.form.get("apelido") or ""
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+
+    if not arquivo or not arquivo.filename:
+        return redirect(url_for("analisesps.configuracoes",
+                                aviso="Escolha o arquivo do certificado."))
+    try:
+        dados = certificados.guardar(arquivo.read(), senha, apelido, quem)
+    except (certificados.ErroDeCertificado, certificados.SemCofre) as e:
+        return redirect(url_for("analisesps.configuracoes", aviso=str(e)))
+    except Exception as e:  # noqa: BLE001 — migração 009 ainda não aplicada
+        logger.exception("Análise de SPs: falhou guardar o certificado")
+        return redirect(url_for(
+            "analisesps.configuracoes",
+            aviso=f"Não consegui guardar o certificado: {e}"))
+
+    return redirect(url_for("analisesps.configuracoes", aviso=(
+        f"Certificado de {dados['titular']} guardado. Vale até "
+        f"{dados['valido_ate'].strftime('%d/%m/%Y') if dados['valido_ate'] else '—'}"
+        ". A busca de notas na Receita passa a usá-lo na próxima rodada.")))
+
+
+@bp.route("/certificados/remover", methods=["POST"])
+@exige_operador
+def remover_certificado():
+    """Tira o certificado de uso. Apaga de verdade — ver `certificados.py`."""
+    from . import certificados
+
+    cnpj = request.form.get("cnpj") or ""
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        saiu = certificados.remover(cnpj, quem)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou remover o certificado")
+        return redirect(url_for("analisesps.configuracoes",
+                                aviso=f"Não consegui remover: {e}"))
+    return redirect(url_for("analisesps.configuracoes", aviso=(
+        "Certificado removido. A busca de notas daquele CNPJ para agora."
+        if saiu else "Não havia certificado guardado para esse CNPJ.")))
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,8 @@
 {% block conteudo %}
 <h2>Configurações <small>versão publicada: {{ versao }}</small></h2>
 
+{% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
+
 {% if erro_banco %}
   <div class="aviso erro">
     <b>O banco não respondeu.</b> {{ erro_banco }}
@@ -52,6 +54,99 @@
     </p>
   {% endif %}
   <div id="saida-migrar"></div>
+</div>
+
+{# ---------------------------------------------------------------------------
+   CERTIFICADO DIGITAL — o que autoriza buscar nota na Receita.
+
+   ⚠️ A CREDENCIAL MAIS SENSÍVEL DO SISTEMA: com o arquivo e a senha, qualquer
+   um emite nota em nome da empresa. Por isso a tela mostra de quem é, até
+   quando vale e quem subiu — e NUNCA o conteúdo. Não há como baixar de volta.
+
+   O aviso de vencimento é a razão de metade disto existir: o A1 vale um ano e
+   PARA DE FUNCIONAR CALADO no dia seguinte.
+--------------------------------------------------------------------------- #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Certificados digitais</h3></div>
+  <p class="cartao-dica">
+    É o certificado A1 que autoriza buscar na Receita as notas emitidas contra
+    o CNPJ da empresa — NF-e e CT-e. Um por empresa; para acrescentar outra,
+    basta subir o certificado dela.
+  </p>
+
+  {% if not cofre_ok %}
+    <div class="aviso atencao">
+      <b>Falta a chave que protege o certificado no banco.</b>
+      Sem ela o arquivo seria guardado aberto, e isso não vai acontecer —
+      configure <code>ANALISESPS_CHAVE_COFRE</code> no Render antes de subir.
+    </div>
+  {% endif %}
+
+  {% if certificados %}
+    <table class="sps">
+      <thead><tr><th>Empresa</th><th>CNPJ</th><th>Vale até</th>
+                 <th>Quem subiu</th><th></th></tr></thead>
+      <tbody>
+        {% for c in certificados %}
+          <tr class="{{ 'com-risco' if c.vencido or c.vencendo }}">
+            <td>{{ c.apelido or c.titular }}</td>
+            <td class="id">{{ c.cnpj }}</td>
+            <td>
+              {{ c.valido_ate|data_br or '—' }}
+              {% if c.vencido %}
+                <span class="etiqueta ruim">VENCIDO — a busca parou</span>
+              {% elif c.vencendo %}
+                <span class="etiqueta ruim">
+                  vence em {{ c.dias_para_vencer }} dia(s)</span>
+              {% endif %}
+            </td>
+            <td>{{ c.subido_por or '—' }}</td>
+            <td>
+              {% if pode_operar %}
+                <form method="post"
+                      action="{{ url_for('analisesps.remover_certificado') }}"
+                      onsubmit="return confirm('Remover o certificado de {{ c.cnpj }}?\n\nA busca de notas desse CNPJ para na hora.')">
+                  <input type="hidden" name="cnpj" value="{{ c.cnpj }}">
+                  <button class="link-btn" type="submit">remover</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="cartao-dica">
+      Nenhum certificado guardado. Enquanto não houver, as notas só entram pelo
+      relatório do FSist colado na planilha.
+    </p>
+  {% endif %}
+
+  {% if pode_operar %}
+    <form method="post" enctype="multipart/form-data" style="margin-top:12px"
+          action="{{ url_for('analisesps.subir_certificado') }}">
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+        <label>
+          <span class="rotulo-campo">Arquivo (.pfx ou .p12)</span>
+          <input type="file" name="certificado" accept=".pfx,.p12" required>
+        </label>
+        <label>
+          <span class="rotulo-campo">Senha do certificado</span>
+          <input type="password" name="senha" required autocomplete="off">
+        </label>
+        <label>
+          <span class="rotulo-campo">Apelido (opcional)</span>
+          <input type="text" name="apelido" placeholder="BWS Nordeste">
+        </label>
+        <button class="btn" type="submit">Guardar certificado</button>
+      </div>
+      <p class="cartao-dica">
+        O CNPJ e a validade são lidos de dentro do arquivo — não precisa
+        digitar. Subir o certificado de um CNPJ que já existe substitui o
+        anterior, que é como se faz a troca anual.
+      </p>
+    </form>
+  {% endif %}
 </div>
 
 {# ARRUMAÇÃO DO CADASTRO — fica aqui, e não nas abas de cima, porque é trabalho

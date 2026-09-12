@@ -97,6 +97,8 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/fiscal?visao=notas"),
     ("POST", "/analisesps/api/fiscal/confirmar"),
     ("POST", "/analisesps/api/fiscal/ia"),
+    ("POST", "/analisesps/certificados/subir"),
+    ("POST", "/analisesps/certificados/remover"),
     ("GET", "/analisesps/credores"),
     ("POST", "/analisesps/credores/aplicar"),
     ("GET", "/analisesps/comprovantes"),

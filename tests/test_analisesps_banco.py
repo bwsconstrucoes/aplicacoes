@@ -2655,9 +2655,9 @@ def test_a_falha_do_CTe_nao_leva_a_busca_de_NFe_junto(banco_analisesps,
     não pode derrubar a busca de NF-e, que é a maior parte do volume."""
     from app.apps.analisesps import sefaz
 
-    monkeypatch.setenv("ANALISESPS_CERT_A1_BASE64", "fingido")
-    monkeypatch.setenv("ANALISESPS_CERT_A1_SENHA", "fingida")
-    monkeypatch.setenv("ANALISESPS_CNPJS", "10656452007869")
+    from app.apps.analisesps import certificados
+    monkeypatch.setattr(certificados, "cofre_configurado", lambda: True)
+    monkeypatch.setattr(certificados, "cnpjs_ativos", lambda: ["10656452007869"])
     monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
                         sefaz._ler_resposta(_resposta_sefaz(
                             [_resumo(_chave(CREDOR_CNPJ))])))
@@ -2669,3 +2669,154 @@ def test_a_falha_do_CTe_nao_leva_a_busca_de_NFe_junto(banco_analisesps,
     resultado = sefaz.buscar_tudo()
     assert resultado["trazidas"] == 1, "a NF-e se perdeu junto com o CT-e"
     assert any("recusou" in (p.get("erro") or "") for p in resultado["por_cnpj"])
+
+
+# ---------------------------------------------------------------------------
+# O COFRE DOS CERTIFICADOS, com banco de verdade
+# ---------------------------------------------------------------------------
+def _pfx(cnpj="10656452007869", senha="senha-de-teste", vence=None):
+    import datetime as _dt
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    from cryptography.x509.oid import NameOID
+
+    vence = vence or _dt.datetime(2027, 1, 1)
+    # O "vale a partir de" tem de ser ANTES do "vale até" — inclusive no
+    # certificado já vencido que um dos testes usa, que é o caso real de quem
+    # esqueceu de renovar.
+    comeca = min(_dt.datetime(2026, 1, 1), vence - _dt.timedelta(days=365))
+    chave = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    titular = x509.Name([x509.NameAttribute(
+        NameOID.COMMON_NAME, f"BWS CONSTRUCOES LTDA:{cnpj}")])
+    cert = (x509.CertificateBuilder().subject_name(titular).issuer_name(titular)
+            .public_key(chave.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(comeca)
+            .not_valid_after(vence).sign(chave, hashes.SHA256()))
+    return pkcs12.serialize_key_and_certificates(
+        b"t", chave, cert, None,
+        serialization.BestAvailableEncryption(senha.encode()))
+
+
+@pytest.mark.banco
+def test_o_certificado_vai_e_volta_inteiro_pelo_cofre(banco_analisesps,
+                                                      monkeypatch):
+    """Ele tem de sair do banco byte a byte igual ao que entrou — um
+    certificado corrompido é recusado pela Receita sem dizer por quê."""
+    from app.apps.analisesps import certificados
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    original = _pfx()
+    certificados.guardar(original, "senha-de-teste", "BWS", "Marcelo")
+
+    conteudo, senha = certificados.abrir_para_uso("10.656.452/0078-69")
+    assert conteudo == original
+    assert senha == "senha-de-teste"
+
+
+@pytest.mark.banco
+def test_o_banco_guarda_CIFRADO_e_nao_o_arquivo(banco_analisesps, monkeypatch):
+    """A prova de que o vazamento do banco não entrega o certificado."""
+    from app.apps.analisesps import certificados
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    original = _pfx()
+    certificados.guardar(original, "senha-de-teste", "BWS", "Marcelo")
+
+    guardado = consultar_um(
+        "SELECT arquivo, senha FROM analisesps.certificados")
+    assert bytes(guardado[0]) != original, "o arquivo está aberto no banco"
+    assert b"senha-de-teste" not in bytes(guardado[1])
+
+
+@pytest.mark.banco
+def test_subir_de_novo_TROCA_o_certificado_daquele_CNPJ(banco_analisesps,
+                                                        monkeypatch):
+    """É como se faz a troca anual: sobe o novo por cima. Duas linhas para o
+    mesmo CNPJ fariam a busca usar o vencido metade das vezes."""
+    import datetime as _dt
+
+    from app.apps.analisesps import certificados
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    certificados.guardar(_pfx(vence=_dt.datetime(2027, 1, 1)),
+                         "senha-de-teste", "antigo", "Marcelo")
+    certificados.guardar(_pfx(vence=_dt.datetime(2028, 6, 30)),
+                         "senha-de-teste", "novo", "Marcelo")
+
+    assert consultar_um("SELECT count(*) FROM analisesps.certificados")[0] == 1
+    assert certificados.listar()[0]["valido_ate"] == _dt.date(2028, 6, 30)
+
+
+@pytest.mark.banco
+def test_o_CNPJ_com_certificado_VENCIDO_nao_e_consultado(banco_analisesps,
+                                                         monkeypatch):
+    """Consultar a Receita com certificado vencido só produz recusa — e a
+    recusa GASTA A COTA de consultas, que é limitada."""
+    import datetime as _dt
+
+    from app.apps.analisesps import certificados
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    certificados.guardar(_pfx(vence=_dt.datetime(2020, 1, 1)),
+                         "senha-de-teste", "vencido", "Marcelo")
+
+    assert certificados.cnpjs_ativos() == []
+    assert certificados.listar()[0]["vencido"] is True
+
+
+@pytest.mark.banco
+def test_a_lista_de_CNPJs_da_busca_SAI_do_cofre(banco_analisesps, monkeypatch):
+    """Duas listas — uma de CNPJs e outra de certificados — divergiriam no dia
+    em que alguém subisse um certificado e esquecesse de acrescentar o CNPJ, e
+    a busca ficaria sem rodar para aquela empresa sem ninguém entender."""
+    from app.apps.analisesps import certificados, sefaz
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    assert sefaz.cnpjs_vigiados() == []
+    assert sefaz.configurado() is False
+
+    certificados.guardar(_pfx(), "senha-de-teste", "BWS", "Marcelo")
+    assert sefaz.cnpjs_vigiados() == ["10656452007869"]
+    assert sefaz.configurado() is True
+
+
+@pytest.mark.banco
+def test_remover_apaga_de_verdade(banco_analisesps, monkeypatch):
+    """Guardar credencial "desativada" é guardar credencial — e o motivo de
+    tirar costuma ser justamente que ela não deveria mais existir."""
+    from app.apps.analisesps import certificados
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    certificados.guardar(_pfx(), "senha-de-teste", "BWS", "Marcelo")
+    assert certificados.remover("10.656.452/0078-69", "Marcelo") is True
+    assert consultar_um("SELECT count(*) FROM analisesps.certificados")[0] == 0
+    assert certificados.remover("10656452007869", "Marcelo") is False
+
+
+@pytest.mark.banco
+def test_a_tela_de_configuracoes_mostra_o_certificado_sem_o_conteudo(
+        banco_analisesps, monkeypatch):
+    from app.apps.analisesps import certificados
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    certificados.guardar(_pfx(), "senha-de-teste", "BWS Nordeste", "Marcelo")
+
+    import app.main as main
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as sessao:
+        sessao["analisesps_perfil"] = "operador"
+        sessao["analisesps_nome"] = "Marcelo"
+    html = cliente.get("/analisesps/configuracoes").get_data(as_text=True)
+
+    assert "BWS Nordeste" in html
+    assert "10656452007869" in html
+    assert "01/01/2027" in html
+    assert "senha-de-teste" not in html, "a senha vazou para a tela"

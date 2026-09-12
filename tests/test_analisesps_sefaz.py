@@ -144,21 +144,27 @@ def test_a_UF_vira_o_codigo_que_a_Receita_usa():
     assert sefaz._codigo_uf("xx") == "26", "desconhecida cai no padrão da casa"
 
 
-def test_sem_certificado_a_busca_NAO_estoura_e_diz_o_que_falta(monkeypatch):
-    """Falta de certificado é configuração que não foi feita, não defeito. E o
-    recado tem de dizer o nome das variáveis — senão ninguém sabe o que pôr."""
-    monkeypatch.delenv("ANALISESPS_CERT_A1_BASE64", raising=False)
-    monkeypatch.delenv("ANALISESPS_CERT_A1_SENHA", raising=False)
+def test_sem_certificado_a_busca_NAO_estoura(monkeypatch):
+    """Falta de certificado é configuração que não foi feita, não defeito: a
+    rotina de hora em hora continua rodando, e as notas continuam entrando
+    pelo relatório do FSist."""
+    from app.apps.analisesps import certificados
+
+    monkeypatch.setattr(certificados, "cnpjs_ativos", lambda: [])
     assert sefaz.configurado() is False
     assert sefaz.buscar_tudo() == {"trazidas": 0, "erro": "sem certificado",
                                    "por_cnpj": []}
-    with pytest.raises(sefaz.SemCertificado) as erro:
-        sefaz._certificado()
-    assert "ANALISESPS_CERT_A1_BASE64" in str(erro.value)
 
 
-def test_a_lista_de_CNPJs_ignora_o_que_nao_e_CNPJ(monkeypatch):
-    """Campo de configuração é texto livre: vírgula sobrando, espaço, CPF."""
-    monkeypatch.setenv("ANALISESPS_CNPJS",
-                       "10.656.452/0078-69, 29066773000152, , 12345")
-    assert sefaz.cnpjs_vigiados() == ["10656452007869", "29066773000152"]
+def test_a_lista_de_CNPJs_SAI_DO_COFRE_e_nao_de_configuracao(monkeypatch):
+    """MUDOU EM 12/09/2026, a pedido do dono: o certificado passou a ser subido
+    pela tela, e a lista de CNPJs passou a sair dele.
+
+    Duas listas — uma de CNPJs e outra de certificados — divergiriam no dia em
+    que alguém subisse um certificado e esquecesse de acrescentar o CNPJ, e a
+    busca ficaria sem rodar para aquela empresa sem ninguém entender por quê."""
+    from app.apps.analisesps import certificados
+
+    monkeypatch.setattr(certificados, "cnpjs_ativos",
+                        lambda: ["10656452007869"])
+    assert sefaz.cnpjs_vigiados() == ["10656452007869"]
