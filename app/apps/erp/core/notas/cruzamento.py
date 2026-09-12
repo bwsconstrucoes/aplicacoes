@@ -32,7 +32,8 @@ from typing import Any, Optional
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
+from app.apps.erp.core.comum.auditoria import (
+    ErroNaoEncontrado, ErroValidacao, registrar_evento)
 from app.apps.erp.core.comum.formato import _dinheiro_br
 from app.apps.erp.db.models.cadastros import (Empresa, Fornecedor, Obra,
                                               PedidoCompra, Usuario)
@@ -290,10 +291,86 @@ def ler(s: Session, nota: DocumentoFiscal, *, com_candidatos: bool = False) -> d
     return linha
 
 
+def aplicar_escopo(stmt, s: Session, usuario: Optional[Usuario]):
+    """O recorte da tela de notas recebidas — em UM lugar só.
+
+    Duas travas, e valem juntas:
+
+      · quem NÃO é do financeiro vê apenas a nota **já associada** a um
+        pedido, a um título ou a uma linha de prestação;
+      · quem é preso a obra vê, dessas, só as que alcançam as obras dele.
+
+    A nota associada é o que sobra: o que ela liga já é coisa da obra, e
+    quem responde pela obra tem por que consultá-la.
+    """
+    if usuario is None:
+        return stmt
+
+    from app.apps.erp.core.auth.permissoes import (
+        aplicar_escopo as escopo_de_titulo, obras_do_usuario, pode_com_banco)
+
+    # QUEM CRUZA VÊ A NOTA SOLTA. Decisão do dono em 12/09/2026: *"esse negócio
+    # de ver as notas acho que deve ficar restrito ao pessoal do financeiro.
+    # Demais verão notas que já estão associadas"*.
+    #
+    # A trava é a AÇÃO de cruzar, não o cargo — de propósito. Hoje ela é do
+    # financeiro por cargo, mas o ERP permite marcá-la numa pessoa (migração
+    # 032), e é o caso do comprador: é ele quem sabe de que pedido cada nota
+    # é. Amarrar ao cargo faria a regra mentir no dia em que o dono marcasse a
+    # caixinha para alguém.
+    #
+    # E o motivo de fechar: a nota solta ou é compra legítima que ninguém
+    # lançou, ou é nota emitida contra a empresa sem autorização. Nos dois
+    # casos, quem não pode cruzar não pode fazer nada com ela — seria ruído.
+    if pode_com_banco(s, usuario, "cruzar_notas"):
+        return stmt
+
+    # 1) só o que já está associado a alguma coisa
+    stmt = stmt.where(or_(DocumentoFiscal.pedido_compra_id.is_not(None),
+                          DocumentoFiscal.titulo_item_id.is_not(None)))
+
+    obras = obras_do_usuario(s, usuario)
+    if obras is None:
+        return stmt                       # enxerga todas as obras
+
+    # 2) e, dessas, só as que chegam nas obras da pessoa. O caminho até a obra
+    #    é um dos dois: pela linha da prestação (nota → item → título) ou pelo
+    #    pedido de compra (nota → pedido → item do suprimento → obra).
+    from app.apps.erp.db.models.cadastros import PedidoItem, SuprimentoItem
+
+    titulos_no_escopo = escopo_de_titulo(select(Titulo.id), s, usuario)
+    por_titulo = select(TituloItem.id).where(
+        TituloItem.titulo_id.in_(titulos_no_escopo))
+    por_pedido = (select(PedidoItem.pedido_id)
+                  .join(SuprimentoItem,
+                        SuprimentoItem.id == PedidoItem.suprimento_item_id)
+                  .where(SuprimentoItem.obra_id.in_(obras or [-1])))
+    return stmt.where(or_(DocumentoFiscal.titulo_item_id.in_(por_titulo),
+                          DocumentoFiscal.pedido_compra_id.in_(por_pedido)))
+
+
+def pode_ver_nota(s: Session, usuario: Optional[Usuario], nota_id: int) -> bool:
+    """A nota existe E está dentro do recorte desta pessoa?
+
+    Passa pelo MESMO `aplicar_escopo` da listagem — tela e detalhe não têm
+    como divergir sem que alguém altere os dois.
+    """
+    stmt = select(DocumentoFiscal.id).where(DocumentoFiscal.id == nota_id)
+    return s.scalar(aplicar_escopo(stmt, s, usuario)) is not None
+
+
+def exigir_nota_no_escopo(s: Session, usuario: Optional[Usuario],
+                          nota_id: int) -> None:
+    """Fora do recorte responde igual a inexistente."""
+    if not pode_ver_nota(s, usuario, nota_id):
+        raise ErroNaoEncontrado("Nota não encontrada.")
+
+
 def listar(s: Session, *, conferencia: str = "", empresa_id: Optional[int] = None,
            desde: Optional[date] = None, ate: Optional[date] = None,
-           busca: str = "", limite: int = 500) -> dict[str, Any]:
-    stmt = select(DocumentoFiscal).order_by(
+           busca: str = "", limite: int = 500,
+           usuario: Optional[Usuario] = None) -> dict[str, Any]:
+    stmt = aplicar_escopo(select(DocumentoFiscal), s, usuario).order_by(
         DocumentoFiscal.data_emissao.desc().nullslast(),
         DocumentoFiscal.id.desc()).limit(limite)
     if conferencia:

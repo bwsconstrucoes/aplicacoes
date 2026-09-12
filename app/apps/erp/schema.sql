@@ -352,9 +352,10 @@ CREATE TABLE conciliacoes (
     confianca       NUMERIC(4,3),
     conciliado_por  BIGINT      REFERENCES usuarios(id),
     conciliado_em   TIMESTAMPTZ NOT NULL DEFAULT now(),
-    desfeita_em     TIMESTAMPTZ,
-    CONSTRAINT uq_conc_pagamento UNIQUE (pagamento_id),
-    CONSTRAINT uq_conc_extrato UNIQUE (extrato_id)
+    desfeita_em     TIMESTAMPTZ
+    -- A unicidade vale só ENQUANTO a conciliação está de pé: desfeita, a
+    -- linha do extrato volta a ficar livre. São os índices parciais das
+    -- migrações 031 e 061, não restrição de coluna. Ver migração 061.
 );
 
 CREATE TABLE sync_queue (

@@ -741,6 +741,178 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-12 — Botão que muda de estado tem de dizer o estado EM PALAVRAS.**
+  O microfone do assistente só trocava o ícone e ficava vermelho; o dono, no
+  celular, viu "um x" e não soube se estava gravando. Agora há tarja com
+  relógio correndo, o que fazer para parar, e o lembrete de que escrever
+  continua valendo. **Regra que fica: ícone sozinho não é aviso** — quem usa
+  não decora símbolo, e botão que não diz o que faz vira botão que ninguém
+  aperta duas vezes. Vale para qualquer estado que dure mais que um piscar:
+  gravando, enviando, calculando.
+
+- **2026-09-12 — Soma de dinheiro arredonda LINHA A LINHA, nunca no fim.** A
+  medição por item somava sem arredondar e arredondava o total; cada linha era
+  gravada arredondada. Com preço de três casas, o total da medição divergia da
+  soma das próprias linhas em centavos — e esse total consome saldo de
+  contrato, retém garantia e vira título a pagar. **Regra que fica: o número
+  que a pessoa consegue conferir na calculadora é o que manda; o sistema soma
+  do mesmo jeito que mostra.** Vale para rateio, parcela, medição e item de
+  pedido. E preço nunca passa por `float` no caminho do dinheiro — o `float`
+  é da tela.
+
+- **2026-09-12 — O padrão do ERP é RECORTAR POR OBRA.** Dito pelo dono com
+  todas as letras: *"o ideal é sempre limitar as informações a quem está
+  associado a cada obra"*. Deixou de ser regra do financeiro e virou regra do
+  sistema. Consequências já aplicadas: a lista de colaboradores (que mostrava
+  CPF, chave Pix e diária de TODA a empresa a quem responde por uma obra) e a
+  agenda inteira, listagem e ações. **Ao criar tela nova, a pergunta não é "dá
+  para recortar?" — é "por que não estou recortando?".** A exceção precisa de
+  motivo escrito, como o das notas fiscais recebidas (recortar por obra
+  esconderia justamente a nota que ninguém ligou a nada, que é a que importa).
+
+- **2026-09-12 — Na tela de notas recebidas, quem CRUZA vê a nota solta; os
+  demais veem só as já associadas.** Decisão do dono. A nota que não casa com
+  nada ou é compra que ninguém lançou, ou é nota emitida contra a empresa sem
+  autorização — quem não pode cruzar não pode fazer nada com ela, e para essa
+  pessoa seria só ruído. **A trava é a AÇÃO (`cruzar_notas`), não o cargo**,
+  de propósito: hoje ela é do financeiro por cargo, mas o ERP permite marcá-la
+  numa pessoa (migração 032), e é o caso do comprador — é ele quem sabe de que
+  pedido cada nota é. Amarrar ao cargo faria a regra mentir no dia em que a
+  caixinha fosse marcada. Sobre o que resta, vale o recorte por obra, pelos
+  dois caminhos que a nota tem até uma obra: pela linha da prestação
+  (nota → item → título → rateio) e pelo pedido de compra
+  (nota → pedido → item do suprimento → obra). **Regra que fica: quando uma
+  tela tem "o que precisa de ação" e "o que é só consulta", quem age vê as
+  duas e quem consulta vê a segunda.**
+
+- **2026-09-12 — `pode()` depende de quem carregou o usuário; fora de rota,
+  use `pode_com_banco()`.** As marcações de permissão por pessoa vinham de um
+  atributo preenchido só pelo `_usuario_logado` das rotas. Em qualquer outro
+  caminho — relatório agendado, robô, teste — a pessoa perdia CALADA a ação
+  que tinha sido marcada para ela, e passava a ver menos do que devia. Falha
+  fechada, e por isso mesmo invisível. A nova função busca a marcação no banco
+  quando ela não veio junto; a decisão continua só em `decidir()`, para não
+  haver duas respostas possíveis à mesma pergunta.
+
+- **2026-09-12 — Número de bolinha usa o MESMO recorte da tela que ele
+  resume.** A contagem da agenda na tela de início não passava pelo recorte.
+  Bolinha dizendo "12 avisos" e tela mostrando 3 é defeito que ninguém reporta
+  e todo mundo desconfia — e desconfiança de número é mais cara que número
+  errado, porque contamina os que estão certos.
+
+- **2026-09-12 — O perfil PARCEIRO: de FORA da empresa, preso a obra, só
+  olha.** Migração 063. Enxerga o financeiro, a equipe, os suprimentos, o
+  arquivo e a agenda das obras designadas a ele, e nada do resto. Três
+  decisões do dono estão no código: **todo o custo da obra** (ele escolheu a
+  leitura larga sabendo que o parceiro passa a ver por quanto a BWS compra);
+  **dados de pessoal seguem os demais perfis**, sem regra especial; e **só
+  olha** — há teste percorrendo a tabela de permissões e recusando qualquer
+  ação de escrita para ele. **A trava que importa: sem obra designada, não vê
+  NADA** — escrito em voz alta, e não como efeito colateral de lista vazia,
+  porque os outros perfis presos a obra caem em "o que eu mesmo lancei", e o
+  parceiro não lança nada. **Regra que fica: perfil de gente de FORA nega por
+  escrito, não por acidente.**
+
+- **2026-09-12 — Teste não calcula data no topo do arquivo.** Seis testes
+  falharam sem nada ter mudado: a rodada com banco dura sete minutos, começou
+  num dia e terminou no outro, e o `HOJE = date.today()` do topo do módulo
+  (calculado na importação) passou a discordar do ERP, que pergunta as horas
+  na hora de executar. Agora existe `hoje()` no `conftest`, lido no momento do
+  uso, e uma varredura estrutural recusando o cálculo no topo. **Importa
+  porque rodada vermelha sem causa real ensina a equipe a ignorar rodada
+  vermelha** — e aí a vermelha de verdade passa batida.
+
+- **2026-09-11 — Falha inesperada NUNCA devolve o texto da exceção para a
+  tela.** Toda rota do ERP devolvia `str(e)` numa falha não prevista — e o
+  dono viu o resultado: perguntou uma coisa ao assistente e recebeu a lista de
+  colunas de uma tabela do banco. Agora existe `recado_de_falha()`
+  (`core/comum/formato.py`): fala português, não cita nada de dentro do
+  sistema (tabela, coluna, caminho) e carrega um **código curto e estável**
+  derivado da própria falha, que casa com a linha do registro do servidor — o
+  log continua com a exceção inteira, porque quem precisa do detalhe é quem
+  conserta, não quem usa. Há varredura estrutural na suíte proibindo o texto
+  cru de voltar. **Regra que fica: mensagem de erro é parte da interface;
+  vazar a intimidade do sistema é defeito, não conveniência de depuração.**
+  **A exceção, e ela importa: o BANCO ATRASADO.** "Coluna não existe" é a
+  única falha em que quem lê a tela resolve sozinho, e ali o recado diz o que
+  fazer (Configurações → "Aplicar atualizações do banco") — esconder isso
+  recriaria o impasse de 02/09/2026. A troca das 148 rotas quebrou o teste que
+  já protegia esse caso, e o teste estava certo.
+
+- **2026-09-11 — Falha de escopo tem UMA forma só, e por isso se acha por
+  varredura.** A parte 2 da varredura adversarial não leu módulo por módulo:
+  listou toda rota com NÚMERO no endereço (64), cruzou com quem tem a ação por
+  cargo, e ficou com as que alcançam perfil preso a obra ou a autoria (8).
+  Cinco já conferiam por dentro; duas não — e uma delas APAGAVA documento sem
+  conferir nada. **Regra que fica: rota que recebe número é suspeita até provar
+  que pergunta de quem é o número, e isso se confere por varredura, não por
+  leitura.** Vale repetir a varredura quando entrar área nova.
+
+- **2026-09-11 — O recorte por obra tem DUAS escritas, e um teste que as
+  obriga a concordar.** A varredura adversarial do financeiro achou que os
+  relatórios (`core/relatorios.py`) somavam a empresa inteira para quem
+  enxerga uma obra só: eles agregam com SQL escrito à mão — de propósito,
+  porque carregar milhares de títulos na memória não cabe nos 2 GB da
+  instância — e por isso nunca passaram pelo `aplicar_escopo`, que só monta
+  consulta do SQLAlchemy. **Escrever a regra de novo garantiria divergência
+  com o tempo**, então ela ganhou uma segunda forma (`condicao_escopo_sql`)
+  colada à primeira, no mesmo módulo, e um teste com banco de verdade percorre
+  perfil por perfil conferindo que as duas devolvem exatamente os mesmos
+  títulos. **Quem mudar o escopo e esquecer uma das duas, o teste acusa.**
+  Consulta agregada nova segue a mesma regra: pega o pedaço de WHERE dali,
+  nunca escreve o recorte à mão.
+
+- **2026-09-11 — "Pago" é soma de pagamento, não situação do título.** O
+  relatório dizia pago/em aberto olhando `status = 'PAGO'`, e título de duas
+  parcelas com uma paga aparecia com o valor INTEIRO em aberto. Agora a conta
+  soma os pagamentos de verdade e distribui na proporção do rateio. **A regra
+  que fica: situação é rótulo, dinheiro é soma — número de relatório sai da
+  soma.**
+
+- **2026-09-11 — Dinheiro tem trava em dois lugares: no código e no banco.**
+  Migração 062. Nada impedia dois pagamentos na mesma parcela: a conferência
+  existia em Python, mas lê antes de gravar, e dois cliques simultâneos
+  passavam os dois. Agora há trava de linha (`FOR UPDATE`) na baixa E restrição
+  única no banco. **Cinto e suspensório de propósito**, porque dinheiro pago
+  duas vezes não tem desfazer bonito e porque um caminho novo sempre pode
+  esquecer a trava. A migração 061, separada de propósito, removeu as
+  restrições antigas de `conciliacoes`, que desmentiam a promessa escrita da
+  migração 031 ("desfeita, a linha volta a ficar livre") e faziam o banco
+  recusar o que o sistema oferecia como possível. **São dois arquivos porque a
+  062 é a única que pode falhar por causa do dado que já existe** (parcela
+  paga duas vezes no passado) — e um problema de dado não pode impedir a
+  correção da conciliação de entrar. **Regra que fica: migração que depende do
+  dado antigo vai sozinha no arquivo, e recusa com mensagem em português em
+  vez de erro de restrição.**
+
+- **2026-09-11 — A identidade da linha do extrato inclui a ORDEM da repetição
+  quando o banco não manda FITID.** Dois PIX iguais, no mesmo dia, para o
+  mesmo favorecido viravam UMA linha só: o segundo era descartado como
+  "duplicado" e o extrato divergia do banco em silêncio — justamente o caso
+  que a conciliação por atribuição ótima existe para resolver. Com FITID, ele
+  continua mandando a verdade. Sem FITID, a 1ª e a 2ª ocorrência idênticas
+  recebem identidades diferentes, o que mantém a reimportação idempotente
+  (mesmo período → mesmas linhas). **Regra que fica: "parece repetido" não é
+  "é repetido" — descartar dado do banco em silêncio é pior que importar
+  demais.**
+
+- **2026-09-11 — Uma regra sensível existe num lugar só; cópia morta se
+  apaga.** Havia duas implementações de "conciliar" no código: a viva, em
+  `pagamentos/conciliacao.py`, e uma antiga em `pagamentos/service.py` que
+  nenhuma tela chamava — e que **já divergia** (não conferia se o extrato era
+  da mesma conta bancária do pagamento). Código morto que faz a mesma coisa de
+  um jeito diferente não é inofensivo: é a versão errada esperando ser ligada
+  num botão. Foi apagada. **A regra que fica: ao encontrar duas escritas para
+  a mesma coisa, uma das duas some — não se "mantém as duas em dia".**
+
+- **2026-09-11 — Listagem não é trava.** A tela de conciliação só oferecia
+  candidatos da mesma conta bancária, mas a função que GRAVA aceitava
+  qualquer par com o valor batendo — a linha do Bradesco podia comprovar
+  pagamento saído do Itaú. Vale para o ERP inteiro: **a regra mora em quem
+  escreve, não em quem lista**; o que a tela mostra é conveniência, não
+  autorização. Mesmo motivo pelo qual a rota de baixa passou a conferir o
+  escopo da parcela, e não só a alçada de "pagar".
+
 - **2026-09-11 — Relatório agendado roda com a permissão de QUEM RECEBE.**
   Migração 060 (`perguntas_agendadas`): a pergunta que o dono aprovou vira
   relatório que chega sozinho, pendurado no relógio que já existe (a rotina

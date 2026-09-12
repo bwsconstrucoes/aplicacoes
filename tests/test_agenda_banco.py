@@ -27,7 +27,7 @@ import pytest
 from app.apps.erp.core.agenda import geradores
 from app.apps.erp.core.agenda import service as svc
 from app.apps.erp.core.auth.service import gerar_hash
-from app.apps.erp.core.comum.auditoria import ErroValidacao
+from app.apps.erp.core.comum.auditoria import ErroNaoEncontrado, ErroValidacao
 from app.apps.erp.db.models.cadastros import (Contrato, Fornecedor,
                                               IndiceEconomico, Obra,
                                               PerfilUsuario as P,
@@ -383,5 +383,12 @@ def test_o_filtro_por_assunto_funciona(cenario):
 
 
 def test_aviso_inexistente_da_erro_claro(cenario):
-    with pytest.raises(ErroValidacao):
+    """Desde 12/09/2026 é `ErroNaoEncontrado`, e não `ErroValidacao`.
+
+    A agenda passou a ter recorte por obra, e aviso FORA DO ESCOPO tem de
+    responder exatamente o mesmo que aviso INEXISTENTE — senão a diferença
+    entre as duas respostas conta que o número existe, e varrer os números
+    mapearia a agenda das outras obras.
+    """
+    with pytest.raises(ErroNaoEncontrado):
         svc.resolver(cenario["s"], 999999)

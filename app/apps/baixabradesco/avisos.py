@@ -19,9 +19,20 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List
 
-from .utils import as_string
+import re
 
-LIMITE_ITENS = 10   # acima disso o aviso vira parede de texto e ninguém lê
+from .utils import as_string, only_digits
+
+LIMITE_ITENS = 10   # comprovantes listados por aviso
+LIMITE_SPS = 12     # números de SP listados por comprovante
+
+# Destinos do aviso: o WhatsApp do financeiro (quem resolve) e o do dono (quem
+# decide se a regra muda). Os dois recebem a mesma mensagem — decisão dele em
+# 11/09/2026. Trocável pela variável BAIXABRADESCO_AVISO_TELEFONE, que aceita
+# vários números separados por vírgula ou ponto e vírgula.
+TELEFONE_FINANCEIRO = '5585996992197'
+TELEFONE_DONO = '5585987846225'
+TELEFONES_AVISO = (TELEFONE_FINANCEIRO, TELEFONE_DONO)
 
 
 def _motivo_do_plano(plano: Dict[str, Any]) -> str:
@@ -40,16 +51,46 @@ def _falhou_no_omie(plano: Dict[str, Any]) -> bool:
     return any(p.get('step') in ruins for p in passos if isinstance(p, dict))
 
 
+def _sps_candidatas(plano: Dict[str, Any]) -> str:
+    """Os números das SPs que o robô considerou.
+
+    Sem eles a mensagem diz que havia doze candidatas e não diz quais — e quem
+    lê não tem por onde começar. Com os números, é abrir a planilha e olhar.
+    """
+    match = plano.get('match') or {}
+    ids = [as_string((c or {}).get('id')) for c in (match.get('candidatos') or [])]
+    ids = [i for i in ids if i]
+    if not ids:
+        return ''
+    mostradas = ids[:LIMITE_SPS]
+    texto = ', '.join(mostradas)
+    if len(ids) > LIMITE_SPS:
+        texto += f' (+{len(ids) - LIMITE_SPS})'
+    return f'SPs possíveis: {texto}'
+
+
 def _descrever(plano: Dict[str, Any], motivo: str) -> str:
     rec = plano.get('receipt') or {}
+    match = plano.get('match') or {}
+
     partes = [f"pág. {rec.get('page') or '?'}"]
     if rec.get('valor_pago'):
         partes.append(f"R$ {rec['valor_pago']}")
     if rec.get('nome_recebedor'):
         partes.append(as_string(rec['nome_recebedor'])[:40])
-    elif rec.get('id_pipefy'):
-        partes.append(f"SP {rec['id_pipefy']}")
-    return f"- {' | '.join(partes)}\n  {motivo}"
+
+    # O número da SP, quando já se sabe qual é — é por ele que se procura na
+    # planilha e no Omie.
+    sp_id = as_string(match.get('id')) or as_string(rec.get('id_pipefy'))
+    if sp_id:
+        partes.append(f'SP {sp_id}')
+
+    linhas = [f"- {' | '.join(partes)}"]
+    candidatas = _sps_candidatas(plano) if not sp_id else ''
+    if candidatas:
+        linhas.append(f'  {candidatas}')
+    linhas.append(f'  {motivo}')
+    return '\n'.join(linhas)
 
 
 def coletar_falhas(resultado: Dict[str, Any]) -> List[str]:
@@ -99,25 +140,28 @@ def montar_aviso(resultado: Dict[str, Any]) -> str:
     return f"{cabecalho}\n\n{corpo}{rodape}"
 
 
-def resolver_telefone() -> str:
+def resolver_telefones() -> List[str]:
     """Para quem vai o aviso.
 
-    Ordem: `BAIXABRADESCO_AVISO_TELEFONE` (se um dia o destino for outra
-    pessoa), depois `CHATBOT_MASTER_PHONE`, que é a convenção já usada pelo
-    chatbot e pelo processarnovasp para falar com o dono. Reusar evita ter o
-    mesmo número escrito num terceiro lugar do repositório.
+    Por padrão dois números: o do **financeiro**, que é quem resolve, e o do
+    **dono**, que é quem decide se a regra muda. Os dois recebem a mesma
+    mensagem — ele pediu assim em 11/09/2026.
+
+    `BAIXABRADESCO_AVISO_TELEFONE` substitui a lista inteira e aceita vários
+    números separados por vírgula ou ponto e vírgula.
     """
-    telefone = as_string(os.getenv('BAIXABRADESCO_AVISO_TELEFONE', ''))
-    if telefone:
-        return telefone
-    telefone = as_string(os.getenv('CHATBOT_MASTER_PHONE', ''))
-    if telefone:
-        return telefone
-    try:
-        from app.apps.chatbot.auth import TELEFONE_MASTER
-        return as_string(TELEFONE_MASTER)
-    except Exception:
-        return ''
+    configurado = as_string(os.getenv('BAIXABRADESCO_AVISO_TELEFONE', ''))
+    if configurado:
+        brutos = re.split(r'[;,]', configurado)
+    else:
+        brutos = list(TELEFONES_AVISO)
+
+    telefones: List[str] = []
+    for bruto in brutos:
+        numero = only_digits(bruto)
+        if numero and numero not in telefones:   # nunca mandar duas vezes ao mesmo
+            telefones.append(numero)
+    return telefones
 
 
 def enviar_aviso(resultado: Dict[str, Any], payload: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -130,14 +174,20 @@ def enviar_aviso(resultado: Dict[str, Any], payload: Dict[str, Any] | None = Non
 
     Nunca levanta erro: avisar não pode derrubar a baixa, que já aconteceu.
     """
-    telefone = resolver_telefone()
-    if not telefone:
+    telefones = resolver_telefones()
+    if not telefones:
         return {'ok': None, 'skipped': True, 'motivo': 'nenhum telefone de aviso configurado'}
 
     texto = montar_aviso(resultado)
     if not texto:
         return {'ok': None, 'skipped': True, 'motivo': 'nada a avisar'}
 
+    envios = {t: _enviar_para(t, texto, payload) for t in telefones}
+    return {'ok': any(bool(r.get('ok')) for r in envios.values()), 'envios': envios}
+
+
+def _enviar_para(telefone: str, texto: str, payload: Dict[str, Any] | None) -> Dict[str, Any]:
+    """Um destinatário. Falha de um não impede o outro, nem derruba a baixa."""
     try:
         from .zapi import resolve_zapi_auth, send_text, validate_zapi_auth
         auth = resolve_zapi_auth(payload or {})

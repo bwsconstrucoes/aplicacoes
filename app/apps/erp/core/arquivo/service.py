@@ -23,7 +23,8 @@ from sqlalchemy import func, or_, select, text
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.arquivo import catalogo, nomes
-from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
+from app.apps.erp.core.comum.auditoria import (
+    ErroNaoEncontrado, ErroValidacao, registrar_evento)
 from app.apps.erp.db.models.cadastros import (Colaborador, Empresa, Fornecedor,
                                               Obra, PerfilUsuario as P, Usuario)
 from app.apps.erp.db.models.financeiro import Anexo, Documento, DocumentoTipo
@@ -61,13 +62,25 @@ def aplicar_escopo(stmt, s: Session, usuario: Optional[Usuario]):
     A consulta precisa já ter feito o `join` com `DocumentoTipo`.
     """
     stmt = stmt.where(DocumentoTipo.sigilo.in_(sigilos_visiveis(usuario)))
-    if usuario is not None and usuario.perfil in (P.SUPERVISOR_OBRA,
-                                                  P.ADMINISTRATIVO_OBRA):
-        from app.apps.erp.core.auth.permissoes import obras_do_usuario
-        minhas = obras_do_usuario(s, usuario)
-        stmt = stmt.where(or_(Documento.obra_id.is_(None),
-                              Documento.obra_id.in_(minhas or [-1])))
-    return stmt
+    if usuario is None:
+        return stmt
+
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+
+    minhas = obras_do_usuario(s, usuario)
+    if minhas is None:
+        return stmt                       # enxerga todas as obras
+
+    if usuario.perfil is P.PARCEIRO:
+        # O parceiro é de FORA da BWS: documento que não é de obra nenhuma é
+        # papelada da empresa (contrato social, certidão, seguro) e não lhe diz
+        # respeito. Sem obra designada, ele não alcança documento nenhum.
+        return stmt.where(Documento.obra_id.in_(minhas or [-1]))
+
+    # Quem é de dentro e responde por obra continua alcançando o que é da
+    # empresa como um todo — é a papelada que ele precisa para tocar a obra.
+    return stmt.where(or_(Documento.obra_id.is_(None),
+                          Documento.obra_id.in_(minhas or [-1])))
 
 
 def sigilos_visiveis(usuario: Optional[Usuario]) -> tuple[str, ...]:
@@ -316,11 +329,44 @@ def vencendo(s: Session, *, dias: int = 30,
     return [ler(s, d, hoje) for d in s.scalars(stmt).all()]
 
 
+def pode_ver_documento(s: Session, usuario: Optional[Usuario],
+                       documento_id: int) -> bool:
+    """O documento existe E está dentro do recorte desta pessoa?
+
+    Passa pelo MESMO `aplicar_escopo` da listagem, de propósito: detalhe e
+    lista não têm como divergir sem que alguém altere os dois.
+    """
+    stmt = select(Documento.id).join(
+        DocumentoTipo, Documento.tipo_codigo == DocumentoTipo.codigo
+    ).where(Documento.id == documento_id)
+    return s.scalar(aplicar_escopo(stmt, s, usuario)) is not None
+
+
+def exigir_documento_no_escopo(s: Session, usuario: Optional[Usuario],
+                               documento_id: int) -> None:
+    """Fora do recorte responde igual a inexistente.
+
+    Dizer "sem permissão" para um número que existe confirmaria que ele
+    existe, e varrer os números mapearia o acervo inteiro sem abrir nada.
+    """
+    if not pode_ver_documento(s, usuario, documento_id):
+        raise ErroNaoEncontrado("Documento não encontrado.")
+
+
 def excluir(s: Session, documento_id: int, usuario: Usuario) -> None:
+    """Apaga o documento e o arquivo guardado com ele.
+
+    APAGAR É DESTRUTIVO, e até 11/09/2026 não conferia nada: quem tinha a ação
+    "arquivar" apagava qualquer documento pelo número, inclusive de faixa de
+    sigilo que não enxerga na tela (o FINANCEIRO e o gestor de obra não veem
+    documento PESSOAL) e de obra que não é dele. Agora passa pelo mesmo
+    recorte da listagem.
+    """
     from app.apps.erp.core.documentos.armazenamento import excluir as excluir_anexo
+    exigir_documento_no_escopo(s, usuario, documento_id)
     d = s.get(Documento, documento_id)
     if d is None:
-        raise ErroValidacao("Documento não encontrado.")
+        raise ErroNaoEncontrado("Documento não encontrado.")
     registrar_evento(s, "documento", d.id, "EXCLUIDO",
                      {"tipo": d.tipo_codigo, "nome": d.nome_padronizado},
                      usuario.id)

@@ -28,7 +28,8 @@ from typing import Any, Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.apps.erp.core.comum.auditoria import ErroPermissao, ErroValidacao, registrar_evento
+from app.apps.erp.core.comum.auditoria import (
+    ErroNaoEncontrado, ErroPermissao, ErroValidacao, registrar_evento)
 from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario, UsuarioObra
 from app.apps.erp.db.models.financeiro import (
     Rateio, StatusTitulo, Titulo, TituloAval,
@@ -124,11 +125,20 @@ def registrar(s: Session, titulo_id: int, usuario: Usuario, *, decisao: str = "C
               motivo: str = "", ip: str = "", dispositivo: str = "") -> dict[str, Any]:
     """Assina (ou recusa) o título. Confirmado, ele segue para liberação de
     pagamento; recusado, volta ao solicitante com o motivo."""
+    # ESCOPO DO OBJETO, antes de qualquer outra coisa. A fila de aval já é
+    # filtrada, mas quem mandasse o número direto recebia "este título não é de
+    # uma obra sob sua supervisão" — o que CONFIRMA que o título existe, e
+    # varrer os números mapearia os lançamentos das outras obras sem abrir
+    # nenhum. Fora do escopo responde igual a inexistente. Achado em
+    # 11/09/2026, na segunda parte da varredura adversarial.
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo
+    exigir_titulo_no_escopo(s, usuario, titulo_id)
+
     t = s.get(Titulo, titulo_id, options=[
         selectinload(Titulo.parcelas), selectinload(Titulo.fornecedor),
         selectinload(Titulo.categoria)])
     if t is None:
-        raise ErroValidacao("Título não encontrado.")
+        raise ErroNaoEncontrado("Título não encontrado.")
     decisao = (decisao or "").upper()
     if decisao not in ("CONFIRMADO", "RECUSADO"):
         raise ErroValidacao("Decisão inválida.")

@@ -1,0 +1,26 @@
+-- ============================================================================
+-- Migração 063 — o perfil PARCEIRO
+--
+-- Pedido do dono em 12/09/2026: *"tem um perfil que eu acho que vai precisar
+-- ser criado, que é onde parceiro, e esse parceiro vai estar associado a
+-- alguma obra, e o correto é que ele possa visualizar todas as informações
+-- referente à obra — de financeiro, de DP, de contratos e etcétera — mas não
+-- visualizar o restante da empresa"*.
+--
+-- É gente de FORA da BWS com acesso a UMA obra. Por isso duas coisas foram
+-- decididas junto com ele e estão no código, não aqui:
+--
+--   · SÓ OLHA. Nenhuma ação de escrita. Há teste percorrendo a tabela de
+--     permissões e recusando qualquer ação que grave.
+--   · SEM OBRA DESIGNADA, NÃO VÊ NADA. O padrão NEGAR do ERP: quem não foi
+--     associado a obra nenhuma não passa a ver a empresa inteira por causa de
+--     uma lista vazia.
+--
+-- Esta migração só acrescenta o valor ao enum. É reversível na prática:
+-- enquanto ninguém for cadastrado com ele, o valor sobrando não faz nada.
+--
+-- Postgres 12 ou mais novo aceita ADD VALUE dentro de transação, e o valor só
+-- não pode ser USADO na mesma transação — por isso aqui não há INSERT nenhum.
+-- ============================================================================
+
+ALTER TYPE perfil_usuario ADD VALUE IF NOT EXISTS 'PARCEIRO';

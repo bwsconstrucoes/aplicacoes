@@ -397,8 +397,10 @@ class Conciliacao(Base):
     __tablename__ = "conciliacoes"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    pagamento_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("pagamentos.id"), nullable=False, unique=True)
-    extrato_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("extratos.id"), nullable=False, unique=True)
+    # Sem `unique=True`: a unicidade é PARCIAL (só vale enquanto desfeita_em
+    # for nulo) e vive nos índices das migrações 031 e 061.
+    pagamento_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("pagamentos.id"), nullable=False)
+    extrato_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("extratos.id"), nullable=False)
     metodo: Mapped[str] = mapped_column(Text, nullable=False, default="MANUAL")
     confianca: Mapped[Optional[Decimal]] = mapped_column(Numeric(4, 3))
     conciliado_por: Mapped[Optional[int]] = mapped_column(BigInteger, ForeignKey("usuarios.id"))

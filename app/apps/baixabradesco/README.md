@@ -111,7 +111,38 @@ resolver ganha:
    não baixou. Aqui ele executa **só o Omie** e não mexe em mais nada.
 
 **Se sobrar mais de uma candidata e o desempate não resolver, ele não executa
-nada** — marca como `pendente_validacao` e alguém precisa olhar.
+nada** — marca como `pendente_validacao` e alguém precisa olhar. Com uma exceção,
+abaixo.
+
+### Comprovantes iguais para SPs iguais: ele distribui
+
+Duas rescisões do mesmo valor, das duas pessoas, ambas agendadas — e dois
+comprovantes daquele valor no mesmo PDF. Um a um, cada comprovante vê duas SPs
+possíveis e para. Olhando o PDF inteiro, são **dois pagamentos para duas SPs**:
+dá para baixar as duas.
+
+Qual comprovante fica com qual SP **não importa**: são do mesmo valor, do mesmo
+dia, da mesma conta, e o comprovante de transferência nem traz o nome do
+funcionário. O que importa é baixar. Vale para dois, três, quantos forem.
+
+Três travas, e as três são necessárias:
+
+1. **Mesma quantidade dos dois lados.** Dois comprovantes para três SPs não
+   distribui — sobraria uma SP paga sem ter sido.
+2. **Pagamentos comprovadamente diferentes.** Cada comprovante traz um
+   identificador próprio (o campo `Identificador` do Bradesco, ou o número do
+   documento). Se eles se repetem, é o mesmo comprovante mandado duas vezes, e
+   distribuir baixaria duas SPs para um pagamento só. Sem identificador, também
+   não distribui.
+3. **Emparelhamento estável.** Página na ordem, SP na ordem — o mesmo lote
+   reprocessado dá sempre o mesmo resultado.
+
+⚠️ **Só enxerga o PDF atual.** Dois comprovantes do mesmo valor em arquivos
+separados, ainda que no mesmo envio, não se encontram e continuam pendentes.
+
+Quando a distribuição **não** acontece, os comprovantes entram no aviso com a
+explicação do porquê — quantidades diferentes, ou identificador repetido —, e não
+com o motivo técnico do casador.
 
 ### Os dois caminhos da Somapay, que não podem ser confundidos
 
@@ -190,6 +221,11 @@ Comprovante que baixa normalmente não gera aviso nenhum — é o esperado. O qu
 **não** baixa gera: no fim de cada lote, o robô manda **uma** mensagem pelo
 Telegram com a lista do que ficou de fora e o motivo de cada um.
 
+Cada linha traz a página, o valor, o nome de quem recebeu (quando o comprovante
+tem), e **o número da SP** — o escolhido, quando já se sabe qual é, ou a lista
+das candidatas, quando o robô parou justamente por não saber. É por esse número
+que se procura na planilha e no Omie.
+
 Entram no aviso:
 
 - comprovante que não achou SP, ou achou mais de uma e parou;
@@ -209,11 +245,12 @@ vindas dentro do próprio pedido do Make, que é como elas chegam hoje. O
 Telegram vai junto, de espelho. Se as credenciais não vierem nem no pedido nem
 no ambiente, cai no notificador comum, que tem as suas próprias.
 
-**Para quem vai:** `BAIXABRADESCO_AVISO_TELEFONE` se estiver configurada; senão
-`CHATBOT_MASTER_PHONE`, a mesma convenção que o chatbot e o processarnovasp já
-usam para falar com o dono.
+**Para quem vai:** **dois números** — o do financeiro, que é quem resolve, e o
+do dono, que é quem decide se a regra muda. Os dois recebem a mesma mensagem, e
+falha em um não impede o outro. `BAIXABRADESCO_AVISO_TELEFONE` substitui a lista
+inteira e aceita vários números separados por vírgula ou ponto e vírgula.
 
-**O aviso vai só para o dono, um número só.** Não confundir com o WhatsApp que o
+**Só esses dois.** Não confundir com o WhatsApp que o
 robô manda ao **responsável pela SP** quando a baixa dá certo — aquele é outra
 coisa, existe desde antes, vai para quem pediu o pagamento e não tem relação com
 este aviso. Há teste travando os dois destinos separados.

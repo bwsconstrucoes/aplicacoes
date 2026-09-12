@@ -136,9 +136,33 @@ def salvar_colaborador(s: Session, dados: dict[str, Any], usuario: Usuario) -> C
 
 
 def listar_colaboradores(s: Session, obra_id: Optional[int] = None,
-                         ativos: bool = True) -> list[dict[str, Any]]:
+                         ativos: bool = True,
+                         usuario: Optional[Usuario] = None) -> list[dict[str, Any]]:
+    """A equipe — recortada pelas obras de quem pergunta.
+
+    Até 12/09/2026 esta lista não recebia usuário nenhum, e devolvia TODO
+    colaborador da empresa para quem tivesse a ação `ver_pessoal` — inclusive
+    para o supervisor e o administrativo, que são presos a obra. E não é
+    número de obra alheia que vazava: é **CPF, chave Pix, valor da diária e
+    auxílios** de gente que trabalha em outra frente.
+
+    Quem enxerga por ASSUNTO (o Departamento Pessoal) continua enxergando a
+    folha inteira — é o trabalho dele, e `obras_do_usuario` devolve "todas"
+    para ele.
+
+    Colaborador SEM obra é do escritório, e não aparece para quem responde por
+    uma obra: o escritório não é a frente dele.
+    """
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+
     stmt = select(Colaborador).options(
         selectinload(Colaborador.funcao), selectinload(Colaborador.obra))
+    if usuario is not None:
+        permitidas = obras_do_usuario(s, usuario)
+        if permitidas is not None:
+            if not permitidas:
+                return []
+            stmt = stmt.where(Colaborador.obra_id.in_(permitidas))
     if obra_id:
         stmt = stmt.where(Colaborador.obra_id == obra_id)
     if ativos:

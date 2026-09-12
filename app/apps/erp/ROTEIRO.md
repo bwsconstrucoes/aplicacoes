@@ -362,6 +362,120 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       **Falta:** o "só me avise se passar de X" (hoje é só "se houver algo"),
       e escolher o dia da semana pela tela (hoje toda combinação é segunda).
 
+- [x] **VARREDURA ADVERSARIAL DO NÚCLEO FINANCEIRO** — FEITA em 11/09/2026, a
+      pedido do dono: *"tudo que é muito sensível, que é exatamente a parte
+      financeira, não pode ter falha em hipótese alguma. O casamento das
+      informações bancárias de conciliação, de extratos, com a informação de
+      baixa, isso aí é extremamente sensível."*
+      **Nove falhas reais**; as oito primeiras foram reproduzidas com teste
+      antes de corrigidas, e cada teste foi conferido caindo sem a correção:
+      1. Relatórios somavam a empresa inteira para quem enxerga uma obra só.
+      2. "Pago"/"em aberto" olhavam a situação do título, não os pagamentos —
+         título pago pela metade aparecia inteiramente em aberto.
+      3. Nada impedia dois pagamentos na mesma parcela (dois cliques no mesmo
+         instante registravam a saída duas vezes).
+      4. A rota de baixa não conferia o escopo da parcela.
+      5. Extrato sem FITID perdia linha de verdade: dois PIX iguais no mesmo
+         dia viravam um só, e a tela dizia "1 duplicada".
+      6. Conciliação manual aceitava linha de OUTRA conta bancária.
+      7. Linha já conciliada devolvia erro de programador na tela.
+      8. "Desfazer conciliação" não funcionava — as restrições antigas da
+         tabela desmentiam a promessa escrita da migração 031.
+      9. Existiam DUAS conciliações no código, e a morta já divergia da viva
+         (não conferia a conta bancária). A cópia foi apagada.
+      **TRAZ AS MIGRAÇÕES 061 E 062.** A 062 é a única que pode falhar por
+      causa do dado que já existe: se falhar, a mensagem diz quantas parcelas
+      têm mais de um pagamento — dinheiro para conferir, não defeito da
+      migração. Está separada da 061 para não impedir a correção da
+      conciliação de entrar.
+      **O que NÃO foi varrido** (e portanto não tem garantia nenhuma):
+      Suprimentos, Empreitas, Locações, Pessoal e Contratos; os totais das
+      telas próprias contra o relatório equivalente; e o extrato importado
+      ANTES da correção, que pode ter linha faltando.
+
+- [x] **VARREDURA ADVERSARIAL, PARTE 2 — fora do financeiro** — FEITA em
+      11/09/2026, na sequência da primeira. Sem migração; é só código.
+      **O método mudou:** em vez de ler módulo por módulo, virou varredura
+      mecânica — toda rota com NÚMERO no endereço (64), cruzada com quem tem a
+      ação por cargo, filtrada pelas que alcançam perfil preso a obra ou a
+      autoria (8). Cinco já conferiam certo. Três achados:
+      1. **Apagar documento do Arquivo não conferia nada** — o FINANCEIRO e o
+         gestor de obra podiam APAGAR documento de sigilo pessoal que nem
+         enxergam na tela. Destrutivo.
+      2. **O aval respondia "não é de uma obra sua"** para o número de outra
+         obra, confirmando que o título existe. Agora responde "não
+         encontrado", igual a número inexistente.
+      3. **148 rotas devolviam o texto cru da falha** para a tela — foi o que
+         o dono viu com a lista de colunas do banco. Agora é recado em
+         português com código para procurar no registro, e tem varredura na
+         suíte impedindo a volta.
+      **Fica como PERGUNTA ao dono:** a agenda e as notas fiscais mostram a
+      empresa inteira para quem responde por uma obra só. É como sempre foi, e
+      no caso das notas está escrito que é de propósito. Recortar por obra é
+      decisão de negócio, não correção.
+
+- [x] **O RECORTE POR OBRA VIRA O PADRÃO DO ERP, E NASCE O PERFIL PARCEIRO** —
+      FEITO em 12/09/2026. **TRAZ A MIGRAÇÃO 063** (só acrescenta o cargo à
+      lista; não mexe em dado e não pode falhar).
+      Princípio dito pelo dono: *"o ideal é sempre limitar as informações a
+      quem está associado a cada obra"*.
+      1. **A lista de colaboradores vazava dado pessoal**: quem responde por
+         uma obra via CPF, chave Pix e diária de TODA a empresa. Recortado.
+      2. **A agenda passou a ter recorte** — listagem, ações e a contagem da
+         tela de início, que agora bate com a tela.
+      3. **Perfil PARCEIRO**: gente de fora, presa a obra, que **só olha**.
+         Vê financeiro, equipe, suprimentos, arquivo e agenda das obras dele.
+         Não vê dado bancário, quadro de contratos com o cliente, notas contra
+         a empresa, documento sem obra nem documento de faixa pessoal.
+         **Sem obra designada, não vê nada** — negado por escrito.
+      **Decisões do dono registradas:** ele escolheu que o parceiro veja TODO
+      o custo da obra, sabendo que isso mostra por quanto a BWS compra; e que
+      os dados de pessoal sigam a regra dos demais perfis, sem exceção.
+      ✔ **As notas recebidas foram decididas no mesmo dia** — ver o item
+      abaixo.
+      **Falta:** cadastrar o primeiro parceiro de verdade e conferir tela por
+      tela antes de dar senha a alguém de fora.
+
+- [x] **NOTAS RECEBIDAS: A SOLTA É DE QUEM CRUZA** — FEITO em 12/09/2026, por
+      decisão do dono: *"esse negócio de ver as notas acho que deve ficar
+      restrito ao pessoal do financeiro. Demais verão notas que já estão
+      associadas"*. Sem migração.
+      Quem tem a ação de cruzar vê tudo, inclusive a nota que não casou com
+      nada; os demais veem só as já associadas, e quem é preso a obra vê só as
+      das obras dele. **A trava é a AÇÃO, não o cargo**, porque o comprador
+      recebe essa ação marcada no cadastro e é ele quem sabe de que pedido a
+      nota é. O resumo da tela conta só o que a pessoa vê — senão o número de
+      "pendentes" entregaria a nota que o recorte escondeu.
+      **Achado de brinde:** `pode()` lia as marcações por pessoa de um
+      atributo que só a rota preenche; fora de rota a pessoa perdia calada a
+      ação marcada para ela. Agora existe `pode_com_banco()`.
+
+- [x] **A SUÍTE DEIXA DE QUEBRAR NA VIRADA DO DIA** — FEITO em 12/09/2026.
+      Seis testes calculavam a data no topo do arquivo e discordavam do ERP se
+      a rodada atravessasse a meia-noite (aconteceu). Agora existe `hoje()` no
+      conftest, lido no momento do uso, e uma varredura estrutural recusando o
+      cálculo no topo. Limite conhecido e escrito: um teste que comece às
+      23:59:59 ainda pode atravessar — resolver de vez exigiria as funções do
+      ERP receberem a data de fora.
+
+- [x] **VARREDURA DA ARITMÉTICA: empreita, locação e pessoal** — FEITA em
+      12/09/2026. Sem migração.
+      **Um defeito só, nos dois lugares onde havia multiplicação:** somava as
+      linhas sem arredondar e arredondava o total, enquanto cada linha era
+      gravada (e mostrada) arredondada.
+      1. **Medição de empreita por item** — o total divergia da soma das
+         próprias linhas. Esse total consome saldo de contrato, retém garantia
+         e vira título a pagar.
+      2. **Locação** — o valor do período divergia da ficha, e esse número é o
+         `valor_previsto` de cada parcela, ou seja, a conta a pagar do mês.
+         Devolver uma escora de R$ 12,34 derrubava R$ 12,35 do contrato.
+      **Despesa de colaborador: varrida e correta** — ali cada valor é digitado
+      por uma pessoa e a soma é exata, sem multiplicação no meio.
+      **Dois lugares com a mesma forma NÃO foram mexidos** (total do pedido de
+      compra e a comparação pedido × notas): não consegui construir um caso em
+      que errem, e mexer em conta de dinheiro sem caso que prove a falha é
+      trocar erro conhecido por erro desconhecido. Anotados no HISTORICO.
+
 - [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
       ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
       come o mês inteiro.

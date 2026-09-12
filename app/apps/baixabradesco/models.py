@@ -38,6 +38,7 @@ class ExtractedReceipt:
     documento_pagador: str = ''
     descricao: str = ''
     codigo_barras: str = ''
+    identificador: str = ''
     confianca: Dict[str, float] = field(default_factory=dict)
     pendencias: List[str] = field(default_factory=list)
 

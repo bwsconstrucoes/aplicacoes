@@ -128,18 +128,25 @@ def test_o_aviso_nao_usa_marcacao_que_o_telegram_quebra():
 
 # ── O envio nunca pode derrubar a baixa ───────────────────────────────────────
 
-def test_o_aviso_vai_para_o_dono_sem_precisar_configurar_nada(monkeypatch):
-    """Reusa a convenção que o chatbot e o processarnovasp já usam."""
-    from app.apps.baixabradesco.avisos import resolver_telefone
+def test_o_aviso_vai_para_os_dois_numeros_sem_precisar_configurar_nada(monkeypatch):
+    """O financeiro resolve; o dono decide se a regra muda. Os dois recebem."""
+    from app.apps.baixabradesco.avisos import (TELEFONE_DONO, TELEFONE_FINANCEIRO,
+                                               resolver_telefones)
     monkeypatch.delenv('BAIXABRADESCO_AVISO_TELEFONE', raising=False)
-    monkeypatch.delenv('CHATBOT_MASTER_PHONE', raising=False)
-    assert resolver_telefone()
+    assert resolver_telefones() == [TELEFONE_FINANCEIRO, TELEFONE_DONO]
 
 
-def test_o_destino_pode_ser_trocado_por_configuracao(monkeypatch):
-    from app.apps.baixabradesco.avisos import resolver_telefone
-    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5511999999999')
-    assert resolver_telefone() == '5511999999999'
+def test_os_destinos_podem_ser_trocados_por_configuracao(monkeypatch):
+    from app.apps.baixabradesco.avisos import resolver_telefones
+    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5511999999999; 5511888888888')
+    assert resolver_telefones() == ['5511999999999', '5511888888888']
+
+
+def test_numero_repetido_na_configuracao_nao_manda_duas_vezes(monkeypatch):
+    from app.apps.baixabradesco.avisos import resolver_telefones
+    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE',
+                       '5511999999999, (55) 11 99999-9999')
+    assert resolver_telefones() == ['5511999999999']
 
 
 def test_lote_sem_falha_nao_manda_mensagem(monkeypatch):
@@ -163,7 +170,7 @@ def test_falha_no_envio_nao_levanta_erro(monkeypatch):
 
     r = enviar_aviso(resultado([plano(pode_executar=False, motivos=['x'])]), AUTH)
     assert r['ok'] is False
-    assert 'Z-API fora do ar' in r['erro']
+    assert all('Z-API fora do ar' in e['erro'] for e in r['envios'].values())
 
 
 def test_envia_pelo_whatsapp_para_o_telefone_configurado(monkeypatch):
@@ -215,15 +222,15 @@ def test_sem_credenciais_zapi_cai_no_notificador(monkeypatch):
     assert chamou['politica'] == 'fallback'
 
 
-# ── O aviso é só do dono ──────────────────────────────────────────────────────
+# ── O aviso tem um destino só ─────────────────────────────────────────────────
 #
-# Confirmado por ele em 11/09/2026: o número que passou é para receber ESTE
-# aviso, e só ele deve receber. Não confundir com o WhatsApp que o robô manda ao
+# Hoje é o número do financeiro. Não confundir com o WhatsApp que o robô manda ao
 # responsável pela SP quando a baixa dá certo — aquele é outra coisa, existe
 # desde antes, e continua indo para quem pediu o pagamento.
 
-def test_o_aviso_vai_para_um_unico_numero(monkeypatch):
-    monkeypatch.setenv('BAIXABRADESCO_AVISO_TELEFONE', '5585900000000')
+def test_o_aviso_vai_uma_vez_para_cada_destino(monkeypatch):
+    """Três falhas no lote continuam sendo UMA mensagem — só que para os dois."""
+    monkeypatch.delenv('BAIXABRADESCO_AVISO_TELEFONE', raising=False)
     chamadas = []
 
     import app.apps.baixabradesco.zapi as zapi
@@ -234,7 +241,25 @@ def test_o_aviso_vai_para_um_unico_numero(monkeypatch):
                             plano(pode_executar=False, motivos=['b'], pagina=2),
                             plano(pode_executar=False, motivos=['c'], pagina=3)]), AUTH)
 
-    assert chamadas == ['5585900000000'], 'um envio só, para um número só'
+    from app.apps.baixabradesco.avisos import TELEFONE_DONO, TELEFONE_FINANCEIRO
+    assert chamadas == [TELEFONE_FINANCEIRO, TELEFONE_DONO]
+
+
+def test_falha_em_um_destino_nao_impede_o_outro(monkeypatch):
+    monkeypatch.delenv('BAIXABRADESCO_AVISO_TELEFONE', raising=False)
+    from app.apps.baixabradesco.avisos import TELEFONE_DONO, TELEFONE_FINANCEIRO
+
+    import app.apps.baixabradesco.zapi as zapi
+    def instavel(auth, phone, message):
+        if phone == TELEFONE_FINANCEIRO:
+            raise RuntimeError('Z-API recusou este número')
+        return {'ok': True}
+    monkeypatch.setattr(zapi, 'send_text', instavel)
+
+    r = enviar_aviso(resultado([plano(pode_executar=False, motivos=['x'])]), AUTH)
+    assert r['envios'][TELEFONE_FINANCEIRO]['ok'] is False
+    assert r['envios'][TELEFONE_DONO]['ok'] is True
+    assert r['ok'] is True
 
 
 def test_o_aviso_nunca_vai_para_o_responsavel_pela_sp(monkeypatch):
@@ -256,3 +281,50 @@ def test_o_aviso_nunca_vai_para_o_responsavel_pela_sp(monkeypatch):
 
     assert destinos == ['5585900000000']
     assert '5511888888888' not in destinos
+
+
+# ── Os números das SPs na mensagem ────────────────────────────────────────────
+#
+# Pedido do dono em 11/09/2026: "você identificou que tinha doze SPs mas não
+# colocou qual é o número delas. Coloca também o número do registro, porque isso
+# facilita muito a identificação do problema."
+
+def com_candidatas(*ids, **kwargs):
+    p = plano(pode_executar=False, motivos=['Retornou vários candidatos.'], **kwargs)
+    p['match'] = {'id': '', 'candidatos': [{'id': i} for i in ids]}
+    return p
+
+
+def test_a_mensagem_lista_os_numeros_das_sps_candidatas():
+    texto = montar_aviso(resultado([com_candidatas('1442670864', '1442703969')]))
+    assert 'SPs possíveis: 1442670864, 1442703969' in texto
+
+
+def test_a_mensagem_traz_o_numero_da_sp_quando_ja_se_sabe_qual_e():
+    """Falha no Omie: a SP é conhecida, e é por ela que se procura no Omie."""
+    p = plano(responses={'fila_omie': {'ok': True}})
+    p['match'] = {'id': '1442630306', 'candidatos': []}
+    texto = montar_aviso(resultado([p]))
+    assert 'SP 1442630306' in texto
+
+
+def test_nao_repete_candidatas_quando_a_sp_ja_foi_escolhida():
+    p = plano(responses={'fila_omie': {'ok': True}})
+    p['match'] = {'id': '1442630306', 'candidatos': [{'id': '1442630306'}, {'id': '9'}]}
+    texto = montar_aviso(resultado([p]))
+    assert 'SP 1442630306' in texto
+    assert 'SPs possíveis' not in texto
+
+
+def test_muitas_candidatas_sao_cortadas_mas_o_total_aparece():
+    ids = [str(1442600000 + i) for i in range(14)]
+    texto = montar_aviso(resultado([com_candidatas(*ids)]))
+    assert '1442600000' in texto
+    assert '1442600011' in texto
+    assert '(+2)' in texto
+
+
+def test_sem_candidata_nenhuma_a_linha_nao_aparece():
+    texto = montar_aviso(resultado([plano(pode_executar=False,
+                                          motivos=['Nenhum candidato encontrado.'])]))
+    assert 'SPs possíveis' not in texto

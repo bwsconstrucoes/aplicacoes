@@ -438,8 +438,10 @@ saber, e a trava já resolve).
 **Decisões de desenho:**
 - **Um aviso por lote, no máximo dez itens.** Comprovante chega em leva; um
   aviso por comprovante viraria barulho, e barulho faz parar de ler.
-- **Destinatário único: o dono.** Ele confirmou que o número passado é para
-  receber este aviso e só ele deve receber. Não confundir com o WhatsApp que vai
+- **Dois destinatários.** Começou no celular do dono, passou para o número do
+  financeiro (*"fica mais geral"*) e terminou nos **dois**, ainda em 11/09/2026:
+  o financeiro resolve, o dono decide se a regra muda. Falha em um não impede o
+  outro, e um número repetido na configuração não gera duas mensagens. Não confundir com o WhatsApp que vai
   ao responsável pela SP quando a baixa dá certo — aquele é anterior, tem outro
   propósito e continua indo para quem pediu o pagamento. Há teste travando que o
   aviso de falhas nunca alcança o telefone do solicitante, que circula no lote
@@ -465,6 +467,65 @@ credenciais Z-API. O espelho no Telegram só alcança quem está na aba
 `TelegramID`. Se o aviso não chegar, conferir nessa ordem: toggle ligado,
 credenciais presentes, número certo.
 
+### 11/09/2026 (noite) — o empate que travava duas baixas virou distribuição (publicado, `546b45a`)
+
+Caso real: duas rescisões de R$ 5.532,57 (CAIO e ALEXSANDRO), as duas agendadas,
+e um PDF com dois comprovantes de transferência de R$ 5.532,57. Um a um, cada
+comprovante via duas SPs possíveis e parava como `pendente_validacao`. As duas
+baixas ficavam esperando conferência humana por uma ambiguidade que, olhando o
+PDF inteiro, não existe: são dois pagamentos para duas SPs.
+
+**Decisão do dono:** distribuir. *"Não importa saber exatamente quem é quem, o
+que importa é que a gente consiga baixar."* Os papéis são intercambiáveis —
+mesmo valor, mesma data, mesma conta, e o da transferência nem traz o nome do
+funcionário. Vale para dois, três, quantos forem.
+
+**Como ficou:** o processamento de cada anexo virou duas passadas. A primeira lê
+e localiza a SP de cada página sem executar nada; entre as duas entra o
+desempate por lote; a segunda salva o comprovante e monta os planos. A segunda
+passada continua dentro do laço do anexo **de propósito**: é ali que os bytes do
+PDF ainda existem, e tirá-los de lá significaria segurar todos os PDFs do lote
+na memória — exatamente o que derrubou a instância em julho.
+
+**As três travas, e por que cada uma existe:**
+
+1. **Mesma quantidade dos dois lados.** Dois comprovantes para três SPs deixaria
+   uma SP paga sem ter sido.
+2. **Pagamentos comprovadamente diferentes.** Esta é a que segura dinheiro: se
+   o mesmo comprovante for mandado duas vezes no mesmo PDF, distribuir baixaria
+   **duas** SPs para **um** pagamento. O identificador de cada pagamento
+   (`Identificador`, ou o número do documento) resolve. ⚠️ O `N° de controle`
+   **não serve**: ele é do lote inteiro e se repete entre as páginas — conferido
+   no comprovante real, onde as três páginas tinham o mesmo número de controle e
+   identificadores diferentes. Por isso ele entra por último na extração.
+3. **Emparelhamento estável.** Página na ordem, SP na ordem, para o mesmo lote
+   reenviado não trocar as atribuições.
+
+**Limite conhecido:** o desempate só enxerga o anexo atual. Dois comprovantes de
+mesmo valor em PDFs separados, ainda que no mesmo envio, continuam pendentes.
+Estender exigiria guardar a página isolada de cada pendente até o fim do lote —
+é possível e barato (pendentes são poucos), mas não foi feito.
+
+### 11/09/2026 — três acertos no aviso (publicado, `546b45a`)
+
+**O destino virou o financeiro.** O dono trocou o próprio celular pelo número do
+financeiro, para o recado chegar a quem resolve. Continua sendo **um destino
+só**, e `BAIXABRADESCO_AVISO_TELEFONE` troca sem mexer no código.
+
+**O aviso passou a trazer os números das SPs.** *"Você identificou que tinha
+doze SPs mas não colocou qual é o número delas."* Sem os números, a mensagem
+dizia que havia candidatas e não dizia quais — e quem lê não tinha por onde
+começar. Agora cada linha traz o número da SP escolhida, ou a lista das
+candidatas (até doze, e o total quando passa disso).
+
+**O aviso passou a explicar o empate.** Quando o desempate por lote não acontece,
+o motivo que ia na mensagem era o do casador — técnico ("retornou 2
+candidatos"), e não dizia o que fazer. Agora o próprio desempate escreve a
+explicação: *"quantidades diferentes, não dá para distribuir sem marcar alguma SP
+como paga sem ter sido"* ou *"parecem ser o MESMO pagamento (identificador
+repetido ou ausente)"*. Há teste garantindo que explicar melhor **não** mexe no
+status — continua pendente, ninguém baixa.
+
 ---
 
 ## Estado no fim de 11/09/2026
@@ -477,10 +538,17 @@ Tudo publicado. A área fechou o dia com:
 - a trava contra baixar duas vezes ligada de fato;
 - **aviso por WhatsApp, só para o dono, do que não foi baixado.**
 
+**Publicado até `546b45a`**, com a `main` de outro chat (Análise de SPs) trazida
+para o ramo antes da junção, como manda o `CLAUDE.md`: 2706 testes verdes e os
+blueprints subindo com os dois trabalhos juntos.
+
 **O que conferir nos próximos lotes reais**, nesta ordem:
 
-1. O aviso chega no WhatsApp. Se não chegar: toggle `NOTIFICAR_WHATSAPP` ligado,
-   credencial Z-API chegando no pedido do Make, número certo.
+1. O aviso chega nos **dois** WhatsApp (financeiro e dono). Se não chegar:
+   toggle `NOTIFICAR_WHATSAPP` ligado, credencial Z-API chegando no pedido do
+   Make, número certo.
+2. Dois comprovantes de mesmo valor no mesmo PDF, com duas SPs de mesmo valor,
+   baixam os dois — e o aviso não menciona nenhum deles.
 2. A transferência aparece no Omie entre as contas certas, e a baixa cai na
    conta Somapay — não na do Bradesco.
 3. Nenhum comprovante bom sendo barrado por engano.
