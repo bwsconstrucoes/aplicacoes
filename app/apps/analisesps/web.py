@@ -1851,9 +1851,17 @@ def confirmar_fiscal():
 
     logger.info("Análise de SPs: %s confirmou %d análise(s) fiscal(is).",
                 quem or "sem nome", gravadas)
+
+    # DISPARA A GRAVAÇÃO NOS CARDS, em processo separado. Se já houver outra
+    # rodada em andamento o disparo é recusado — e tudo bem: a decisão fica na
+    # fila e entra na próxima. Nada se perde por isso.
+    from . import tarefas
+    disparou = tarefas.disparar("fiscal", disparo=quem or "análise fiscal")
+    recado = ("A gravação nos cards começou." if disparou.get("ok")
+              else "A gravação nos cards entra na próxima rodada "
+                   f"({disparou.get('erro') or 'já há uma em andamento'}).")
     return {"ok": True, "gravadas": gravadas, "recusadas": recusadas,
-            "aviso": (f"{gravadas} análise(s) confirmada(s). A gravação nos "
-                      "cards do Pipefy é o passo seguinte.")}
+            "aviso": f"{gravadas} análise(s) confirmada(s). {recado}"}
 
 
 # ---------------------------------------------------------------------------

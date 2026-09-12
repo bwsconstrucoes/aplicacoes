@@ -2109,3 +2109,57 @@ def test_categoria_fora_da_lista_do_Pipefy_e_recusada(banco_analisesps, monkeypa
     dados = resposta.get_json()
     assert dados["gravadas"] == 0
     assert "categoria desconhecida" in " ".join(dados["recusadas"])
+
+
+@pytest.mark.banco
+def test_o_card_que_ACEITOU_sai_da_fila_de_escrita(banco_analisesps, monkeypatch):
+    """`escrita_em` é o que separa "decidido" de "gravado"."""
+    from app.apps.analisesps import fiscal, pipefy
+
+    fiscal.guardar_decisao("1", "NF-e (Mercadoria)", _chave(CREDOR_CNPJ),
+                           "achei", 90, "Marcelo")
+    monkeypatch.setattr(pipefy, "atualizar_documentacao_fiscal",
+                        lambda itens, token=None: {"ok": ["1"], "falhas": {}})
+
+    assert fiscal.escrever_nos_cards() == {"escritas": 1, "falhas": 0,
+                                           "pendentes": 0}
+    assert fiscal.a_escrever_no_card() == []
+    from app.apps.analisesps.db import consultar_um
+    assert consultar_um("SELECT situacao FROM analisesps.sp_fiscal_analise "
+                        " WHERE sp_id = '1'")[0] == fiscal.ESCRITA
+
+
+@pytest.mark.banco
+def test_o_card_que_RECUSOU_continua_na_fila_com_o_motivo(banco_analisesps,
+                                                          monkeypatch):
+    """A decisão não pode se perder porque a API deu erro — ela volta na
+    próxima leva. E o motivo fica gravado: "o Pipefy não confirmou" é
+    informação; "sumiu" não é."""
+    from app.apps.analisesps import fiscal, pipefy
+
+    fiscal.guardar_decisao("1", "Seguros", "", "", 0, "Marcelo")
+    monkeypatch.setattr(
+        pipefy, "atualizar_documentacao_fiscal",
+        lambda itens, token=None: {"ok": [], "falhas": {"1": "a rede caiu"}})
+
+    resultado = fiscal.escrever_nos_cards()
+    assert resultado["escritas"] == 0 and resultado["falhas"] == 1
+    pendente = fiscal.a_escrever_no_card()[0]
+    assert pendente["sp_id"] == "1"
+    assert pendente["erro_anterior"] == "a rede caiu", (
+        "a SP voltou para a fila sem dizer por que falhou")
+
+
+@pytest.mark.banco
+def test_sem_nada_na_fila_a_gravacao_nao_fala_com_o_Pipefy(banco_analisesps,
+                                                           monkeypatch):
+    """Uma rodada vazia não pode gastar uma chamada de API — a rotina roda
+    junto com a atualização do dia."""
+    from app.apps.analisesps import fiscal, pipefy
+
+    def nunca(*a, **k):
+        raise AssertionError("falou com o Pipefy sem ter o que gravar")
+
+    monkeypatch.setattr(pipefy, "atualizar_documentacao_fiscal", nunca)
+    assert fiscal.escrever_nos_cards() == {"escritas": 0, "falhas": 0,
+                                           "pendentes": 0}

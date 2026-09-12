@@ -2174,6 +2174,50 @@ recusada, e a nota órfã apareceu na segunda visão.
 > aplicada em produção. Sem ela a tela abre e avisa que falta, em vez de
 > estourar.
 
+### Trigésima primeira leva (12/09) — a análise fiscal chegando ao card
+
+Fecha o ciclo: a análise sai da tela e vira campo preenchido no Pipefy. Sem
+isto ela ficava bonita e não saía do lugar.
+
+**Quatro campos são escritos**, e os identificadores estão travados em teste
+desde 11/09: Documentação Fiscal, Chave de Acesso, "A despesa gerou emissão de
+Nota Fiscal?" e o Nº da Nota Fiscal.
+
+#### Três regras que protegem o card, e cada uma tem um porquê caro
+
+1. **Campo vazio NÃO é mandado.** Mandar chave vazia para um card que já tem a
+   chave preenchida **apagaria** a chave — e apagar o que outra pessoa
+   preencheu à mão seria o pior efeito possível desta tela.
+2. **"Gerou nota" só vira "Sim", nunca "Não".** Com a chave na mão, a resposta
+   é sim. **Não ter encontrado não prova que não existe** — pode ser nota fora
+   do relatório do FSist. Escrever "Não" ali seria afirmar o que este módulo
+   não sabe, num campo que outras pessoas usam.
+3. **Chave pela metade não é mandada.** 44 dígitos ou não é chave. Meia chave
+   num card é pior que nenhuma: parece decidida.
+
+#### O que acontece quando o Pipefy recusa
+
+A função devolve **quais** cards passaram, não quantos — só esses podem ser
+marcados como escritos. Quem recusou **continua na fila**, com o motivo
+gravado, e volta na próxima leva. Uma ida à API que cai leva só os vinte cards
+daquele bloco; os seguintes continuam.
+
+> **Roda no processo separado**, como a baixa dos comprovantes e pelo mesmo
+> motivo: são até duzentos cards falando com a API, e dentro do worker isso
+> seguraria uma das quatro threads do gunicorn por minutos.
+
+Confirmar na tela **dispara a gravação na hora**. Se já houver uma rodada em
+andamento, o disparo é recusado e a tela diz isso — a decisão fica na fila e
+entra na próxima. Nada se perde por causa disso.
+
+**Verificação:** 4.489 testes verdes com Postgres de verdade, 129 pulados; 11
+testes novos. Os testes olham **o que é mandado para a API**, e não só se a
+função roda: o estrago de mandar errado não aparece na tela, aparece no card. O
+Pipefy foi dublado em todos — **nenhum card de verdade foi tocado**.
+
+**O que falta nesta frente:** a IA lendo os anexos, o download autônomo das
+notas, e a segunda visão (notas sem lançamento) na tela.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a

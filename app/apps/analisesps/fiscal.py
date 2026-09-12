@@ -709,3 +709,57 @@ def a_escrever_no_card(limite: int = 200) -> list:
         " ORDER BY decidida_em LIMIT ?", (CONFIRMADA, int(limite)))
     return [{"sp_id": l[0], "documentacao": l[1], "chave": l[2],
              "motivo": l[3], "erro_anterior": l[4]} for l in linhas]
+
+
+def marcar_escritas(cards_ok: list, falhas: dict) -> None:
+    """Anota quem o card aceitou e quem recusou, com o motivo.
+
+    QUEM FALHOU NÃO PERDE A DECISÃO: continua com `escrita_em` vazio e volta na
+    próxima leva. O motivo fica gravado para a tela poder dizer por que aquela
+    SP não foi — "o Pipefy não confirmou" é informação, "sumiu" não é."""
+    from .db import conexao
+
+    with conexao() as conn:
+        for sp_id in cards_ok or []:
+            conn.execute(
+                "UPDATE analisesps.sp_fiscal_analise "
+                "   SET situacao = ?, escrita_em = now(), erro_escrita = '' "
+                " WHERE sp_id = ?", (ESCRITA, str(sp_id)))
+        for sp_id, motivo in (falhas or {}).items():
+            conn.execute(
+                "UPDATE analisesps.sp_fiscal_analise "
+                "   SET erro_escrita = ? WHERE sp_id = ?",
+                (str(motivo)[:500], str(sp_id)))
+        conn.commit()
+
+
+def escrever_nos_cards(anotar=None, limite: int = 200) -> dict:
+    """Leva as decisões confirmadas para os cards do Pipefy.
+
+    RODA NO PROCESSO SEPARADO. São até duzentos cards por rodada, cada um
+    falando com a API — dentro do worker isso seguraria uma das quatro threads
+    do gunicorn por minutos.
+
+    O NÚMERO DA SP **É** O NÚMERO DO CARD: a coluna A da planilha é o id do
+    card do Pipefy, e é assim que o BeeVale já faz."""
+    from . import pipefy
+
+    anotar = anotar or (lambda *a, **k: None)
+    pendentes = a_escrever_no_card(limite)
+    if not pendentes:
+        return {"escritas": 0, "falhas": 0, "pendentes": 0}
+
+    anotar("gravando a análise fiscal nos cards", f"{len(pendentes)} card(s)")
+    # O número da nota sai da chave que foi decidida — não de um campo à parte
+    # que poderia discordar dela.
+    atualizacoes = [{"card": p["sp_id"], "documentacao": p["documentacao"],
+                     "chave": p["chave"], "numero": ""} for p in pendentes]
+    resultado = pipefy.atualizar_documentacao_fiscal(atualizacoes)
+    marcar_escritas(resultado.get("ok"), resultado.get("falhas"))
+
+    escritas = len(resultado.get("ok") or [])
+    falhas = len(resultado.get("falhas") or {})
+    logger.info("Análise de SPs: análise fiscal gravada em %d card(s), "
+                "%d recusado(s).", escritas, falhas)
+    return {"escritas": escritas, "falhas": falhas,
+            "pendentes": len(a_escrever_no_card(limite))}

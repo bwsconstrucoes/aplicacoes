@@ -54,6 +54,7 @@ MODOS = {
     "apoios": "Só as planilhas de apoio (contas e documentação fiscal)",
     "fila": "Só devolver para a planilha as alterações pendentes",
     "comprovantes": "Dar baixa nos comprovantes arrastados para a tela",
+    "fiscal": "Gravar nos cards do Pipefy a análise fiscal confirmada",
 }
 
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
@@ -64,6 +65,7 @@ ETAPAS = {
     "apoios": ["apoios"],
     "fila": ["fila"],
     "comprovantes": ["comprovantes"],
+    "fiscal": ["fiscal"],
 }
 
 
@@ -321,6 +323,20 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     f"{c.get('lotes', 0)} arquivo(s) processado(s)"
                     + (f", {c['falhas']} com falha" if c.get("falhas") else ""))
 
+            elif etapa == "fiscal":
+                # NO PROCESSO SEPARADO pelo mesmo motivo da baixa: são até
+                # duzentos cards falando com a API do Pipefy, e dentro do
+                # worker isso seguraria uma das quatro threads por minutos.
+                mudar_etapa("gravando a análise fiscal nos cards")
+                from . import fiscal as _fiscal
+                f = _fiscal.escrever_nos_cards(anotar)
+                total_linhas[0] = f.get("escritas", 0)
+                recado_apoios[0] = (
+                    f"{f.get('escritas', 0)} card(s) gravado(s)"
+                    + (f", {f['falhas']} recusado(s)" if f.get("falhas") else "")
+                    + (f", {f['pendentes']} ainda na fila"
+                       if f.get("pendentes") else ""))
+
             elif etapa == "apoios":
                 if automatica and _apoios_recentes():
                     logger.info("Análise de SPs: planilhas de apoio ainda "
@@ -353,7 +369,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             _marcar_etapa_feita(execucao_id, etapa)
 
         duracao = (agora() - inicio).total_seconds()
-        if modo in ("apoios", "comprovantes"):
+        if modo in ("apoios", "comprovantes", "fiscal"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
             mensagem = (recado_apoios[0]

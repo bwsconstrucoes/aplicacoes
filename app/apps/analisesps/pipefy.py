@@ -271,3 +271,74 @@ def atualizar_descricao_e_doc_fiscal(atualizacoes, token=None) -> list:
         logger.warning("Análise de SPs: %d card(s) não aceitaram a atualização "
                        "no Pipefy.", len(falhas))
     return falhas
+
+
+def atualizar_documentacao_fiscal(atualizacoes, token=None) -> dict:
+    """Escreve a análise fiscal no card: categoria, chave, "gerou nota" e o nº.
+
+    `atualizacoes`: [{'card': '123', 'documentacao': 'NF-e (Mercadoria)',
+                      'chave': '...', 'numero': '1430'}, ...].
+    Devolve {'ok': [cards], 'falhas': {card: motivo}} — quem chama precisa
+    saber QUAIS passaram, não só quantos, porque só esses podem ser marcados
+    como escritos.
+
+    ⚠️ Esta é a chamada sem volta. Ver o aviso no alto do arquivo.
+
+    SÓ ESCREVE O QUE TEM VALOR. Mandar chave vazia para um card que já tem a
+    chave preenchida APAGARIA a chave — e apagar o que outra pessoa preencheu
+    à mão seria o pior efeito possível desta tela.
+
+    "A despesa gerou emissão de Nota Fiscal?" só vira "Sim", nunca "Não":
+    quando a nota foi encontrada, a resposta é sim. Não ter encontrado não
+    prova que não existe — pode ser nota fora do relatório do FSist —, e
+    escrever "Não" ali seria afirmar o que este módulo não sabe."""
+    token = token or _token()
+    passaram, falhas = [], {}
+
+    for bloco in _blocos(list(atualizacoes), POR_VEZ):
+        pedacos, cards = [], []
+        for i, item in enumerate(bloco):
+            valores = []
+            documentacao = str(item.get("documentacao") or "").strip()
+            if documentacao:
+                valores.append(f'{{ fieldId: "{CAMPO_DOC_FISCAL}", '
+                               f"value: {_texto_gql(documentacao)} }}")
+            chave = re.sub(r"\D", "", str(item.get("chave") or ""))
+            if len(chave) == 44:
+                valores.append(f'{{ fieldId: "{CAMPO_CHAVE_ACESSO}", '
+                               f"value: {_texto_gql(chave)} }}")
+                valores.append(f'{{ fieldId: "{CAMPO_GEROU_NOTA}", '
+                               f'value: "{GEROU_NOTA_SIM}" }}')
+            numero = str(item.get("numero") or "").strip()
+            if numero:
+                valores.append(f'{{ fieldId: "{CAMPO_NUMERO_NOTA}", '
+                               f"value: {_texto_gql(numero)} }}")
+            if not valores:
+                falhas[str(item.get("card"))] = "nada para escrever"
+                continue
+            pedacos.append(
+                f"m{len(cards)}: updateFieldsValues(input: {{ "
+                f"nodeId: {_numero_do_card(item['card'])}, "
+                f"values: [{', '.join(valores)}] }}) {{ success }}")
+            cards.append(str(item["card"]))
+
+        if not pedacos:
+            continue
+        try:
+            dados = graphql("mutation { " + "\n".join(pedacos) + " }", token)
+        except Exception as e:  # noqa: BLE001 — um bloco ruim não derruba os outros
+            logger.exception("Análise de SPs: falhou um bloco no Pipefy")
+            for card in cards:
+                falhas[card] = str(e)[:300]
+            continue
+        for i, card in enumerate(cards):
+            resultado = (dados or {}).get(f"m{i}")
+            if resultado and resultado.get("success") is True:
+                passaram.append(card)
+            else:
+                falhas[card] = "o Pipefy não confirmou a gravação"
+
+    if falhas:
+        logger.warning("Análise de SPs: %d card(s) não aceitaram a análise "
+                       "fiscal.", len(falhas))
+    return {"ok": passaram, "falhas": falhas}
