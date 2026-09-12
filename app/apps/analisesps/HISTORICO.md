@@ -2429,6 +2429,33 @@ descartável, com dois lotes de pessoas diferentes: os arquivos saem, o valor
 chega como número, o ID como texto, as abas saem por pessoa com o resumo na
 frente, e lote vazio responde avisando em vez de entregar planilha em branco.
 
+### 12/09 — o plano das notas fechado, e a trava que ele exige
+
+**Nem o FSist nem a Receita guardam o passado**, e o dono confirmou: *"o passado
+é o que eu tenho, que eu já baixei de relatório lá. O relatório mais antigo que
+eu tenho a gente vai importar pra dentro do Análise de SPs, e deixar lá dentro;
+e a partir de então você vai começar a fazer o download."*
+
+**Duas metades:** o passado vem dos relatórios que ele já tem, colados na aba,
+uma vez cada; daqui para a frente vem da Receita, pela chave, com o certificado.
+**Nota de serviço está fora por decisão dele** — é municipal, não tem serviço
+nacional, e continua chegando pelo anexo do card (que a IA já lê).
+
+**O que isso exige da importação, e foi conferido:** a aba do FSist é uma
+JANELA que ele troca a cada relatório; a tabela de notas é o ARQUIVO, e ela só
+cresce. Se a importação apagasse o que não está no relatório do dia, **o
+histórico dele se perderia na primeira colagem** — e é histórico que não se
+recupera de lugar nenhum, porque nem o FSist nem a Receita o guardam.
+
+Conferido com banco de verdade: colar o relatório de janeiro e depois o de
+fevereiro na mesma aba deixa as duas levas guardadas. E há um teste varrendo o
+módulo inteiro atrás de qualquer `DELETE` nessa tabela — a garantia não pode
+depender de alguém lembrar dela daqui a seis meses.
+
+**Na prática, para ele:** cola o relatório mais antigo, manda atualizar as
+planilhas de apoio, cola o seguinte, manda de novo. Cada leva entra e fica, e a
+tela diz quantas entraram, quantas mudaram e quantas já tinha.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Nada do dono esperando código.** O que falta não é programação — é o certificado digital A1, para o download autônomo das notas (ver a 34ª leva).

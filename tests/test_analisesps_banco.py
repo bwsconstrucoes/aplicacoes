@@ -2426,3 +2426,53 @@ def test_a_importacao_das_notas_e_CHAMADA_pela_atualizacao():
     fonte = Path("app/apps/analisesps/tarefas.py").read_text(encoding="utf-8")
     assert "sincronizar_notas_fiscais" in fonte, (
         "ninguém importa o relatório do FSist — a conciliação fica sem notas")
+
+
+# ---------------------------------------------------------------------------
+# O ARQUIVO PERMANENTE DE NOTAS
+#
+# É A BASE DO PLANO DO DONO, dito por ele em 12/09/2026: *"o passado é o que eu
+# tenho, que eu já baixei de relatório lá. O relatório mais antigo que eu tenho
+# a gente vai importar pra dentro do Análise de SPs, e deixar lá dentro; e a
+# partir de então você vai começar a fazer o download."*
+#
+# Ou seja: a aba do FSist é uma JANELA que ele troca, e a tabela aqui é o
+# ARQUIVO que só cresce. Se a importação apagasse o que não está no relatório
+# do dia, o histórico dele se perderia na primeira colagem — e é histórico que
+# não dá para recuperar, porque nem o FSist nem a Receita guardam o passado.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_relatorio_novo_NAO_apaga_as_notas_do_relatorio_anterior(banco_analisesps,
+                                                                 monkeypatch):
+    """O teste que sustenta o plano inteiro. Ele cola o relatório de janeiro,
+    depois o de fevereiro na MESMA aba — e as de janeiro têm de continuar
+    aqui."""
+    antiga = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    nova = _chave(CREDOR_CNPJ, "550010000222222222222222")
+
+    _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(antiga, numero="100")])
+    # A aba é trocada inteira pelo relatório seguinte: a nota antiga some DELA.
+    resultado = _importar(monkeypatch, [CABECALHO_NOTAS,
+                                        _linha_nota(nova, numero="200")])
+
+    from app.apps.analisesps.db import consultar
+    guardadas = sorted(l[0] for l in consultar(
+        "SELECT numero FROM analisesps.notas_fiscais"))
+    assert guardadas == ["100", "200"], (
+        "a importação apagou o histórico que não está no relatório do dia")
+    assert resultado["novas"] == 1
+
+
+@pytest.mark.banco
+def test_nenhum_caminho_do_modulo_apaga_nota_fiscal(banco_analisesps):
+    """A trava, escrita onde não depende de alguém lembrar: uma nota só sai
+    daqui se alguém escrever um DELETE de propósito. O histórico do dono não
+    pode depender de ninguém lembrar disso."""
+    from pathlib import Path
+
+    pasta = Path("app/apps/analisesps")
+    arquivos = list(pasta.glob("*.py")) + list(pasta.glob("migracoes/*.sql"))
+    for caminho in arquivos:
+        texto = caminho.read_text(encoding="utf-8").lower()
+        assert "delete from analisesps.notas_fiscais" not in texto, caminho
+        assert "truncate" not in texto, caminho
