@@ -168,6 +168,35 @@ banco — **não consome nada**.
 
 ---
 
+**Estado em 12/09/2026 (décima terceira entrega):** **a tarja de gravação**, e
+uma decisão do dono sobre o anexo. Sem migração.
+
+### O defeito da tarja, e como ele escapou
+
+A tarja "Gravando 0:00" ficava visível o tempo todo, com o microfone
+desligado — defeito que EU introduzi na entrega anterior, ao criar a própria
+tarja. Causa: `display:flex` vence o `hidden` que o navegador aplica sozinho.
+A convenção que resolve isso já existia no mesmo arquivo, duas linhas acima,
+no painel da IA e no botão de filtros; eu repeti a armadilha mesmo assim.
+
+**A lição é sobre o que a suíte NÃO cobre.** Folha de estilo não tem teste
+nenhum: 4.492 testes passaram com o defeito no ar. Só apareceu porque abri a
+tela no navegador. Mexeu em aparência — abre a tela e OLHA; não há substituto.
+
+### Anexar e conversar sobre o documento: NÃO vai ser feito
+
+Eu ofereci transformar o anexo em conversa — anexar um documento e continuar
+perguntando sobre ele. **O dono recusou**, com estas palavras: *"Acho que não
+precisa colocar anexo e perguntar sobre. Isso fica pra fazer direto com GPT,
+Claude."*
+
+O que fica de pé, e continua funcionando: anexar um documento na pergunta e
+receber UMA leitura, marcada como lida do arquivo e não calculada, sem nada
+guardado. **Não reabrir este assunto** sem ele pedir: conversa longa sobre
+documento ele faz fora do ERP, de propósito.
+
+---
+
 **Estado em 12/09/2026 (décima primeira entrega):** **duas coisas que o dono
 viu na tela, e o primeiro achado da varredura da aritmética.** Sem migração.
 
