@@ -30,6 +30,7 @@ from app.apps.erp.core.comum.auditoria import (
     ErroNaoEncontrado, ErroPermissao, ErroValidacao,
 )
 from app.apps.erp.core.comum.formato import recado_de_falha
+from app.apps.erp.core.comum.ia_custo import SemSaldoDeIa
 from app.apps.erp.core.titulos import service as svc_titulos
 from app.apps.erp.db.database import get_session
 from app.apps.erp.db.models.cadastros import PerfilUsuario, Usuario
@@ -241,6 +242,22 @@ def _usuario_logado(s) -> Usuario | None:
     return u
 
 
+def _exigir_saldo_de_ia():
+    """O teto de IA do MÊS desta pessoa, conferido antes de gastar.
+
+    Existe como função de uma linha porque são oito rotas que gastam IA, e a
+    conferência repetida em oito lugares é a que alguém esquece na nona. Há
+    varredura estrutural na suíte cobrando esta chamada em toda rota que gasta
+    (`tests/test_teto_ia_por_pessoa.py`).
+
+    Levanta `SemSaldoDeIa`, que cada rota devolve como 402 com o recado pronto.
+    """
+    from app.apps.erp.core.comum.ia_custo import exigir_saldo_de_ia
+    with get_session() as s:
+        atual = _usuario_logado(s)
+        exigir_saldo_de_ia(s, atual.id if atual else None)
+
+
 def _excecoes_brutas(s, usuario_id: int) -> dict[str, bool]:
     """As marcações de permissão da pessoa, por SQL direto (ação → concedida).
 
@@ -368,6 +385,20 @@ def _fora_do_escopo(e: ErroNaoEncontrado):
     oráculo: bastaria varrer os ids para saber quais existem.
     """
     return jsonify({"ok": False, "erro": str(e) or "Não encontrado."}), 404
+
+
+@bp.errorhandler(SemSaldoDeIa)
+def _sem_saldo_de_ia(e: SemSaldoDeIa):
+    """A pessoa gastou o teto de IA do mês dela.
+
+    Errorhandler e não `except` em cada rota: são oito rotas que gastam IA
+    hoje, e a nona seria a esquecida. 402 ("é preciso pagar") é o status que
+    existe justamente para "a sua cota acabou" — não é erro do sistema nem
+    falta de permissão, e a tela precisa saber diferenciar para mostrar o
+    recado certo.
+    """
+    logger.info("ERP/ia: teto do mês atingido em %s", request.path)
+    return jsonify({"ok": False, "sem_saldo_de_ia": True, "erro": str(e)}), 402
 
 
 @bp.before_request
@@ -2175,6 +2206,9 @@ def api_pergunta_por_audio():
     arquivo = request.files.get("audio")
     if arquivo is None:
         return jsonify({"ok": False, "erro": "Não chegou áudio nenhum."}), 400
+    # FORA do try: a recusa por teto tem resposta própria (402), e um
+    # `except Exception` a transformaria em 'falha do sistema'.
+    _exigir_saldo_de_ia()
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
@@ -2221,6 +2255,9 @@ def api_pergunta_com_documento():
                         "A leitura de documento não está ligada neste sistema "
                         "(falta a chave do serviço). As perguntas sobre o que "
                         "já está no ERP continuam funcionando normalmente."}), 400
+    # FORA do try: a recusa por teto tem resposta própria (402), e um
+    # `except Exception` a transformaria em 'falha do sistema'.
+    _exigir_saldo_de_ia()
     try:
         with get_session() as s:
             atual = _usuario_logado(s)
@@ -3678,6 +3715,9 @@ def api_ler_documento():
     if arquivo is None:
         return jsonify({"ok": False, "erro": "Nenhum arquivo enviado."}), 400
     from app.apps.erp.core.comum.ia_custo import contexto
+    # FORA do try: a recusa por teto tem resposta própria (402), e um
+    # `except Exception` a transformaria em 'falha do sistema'.
+    _exigir_saldo_de_ia()
     try:
         with contexto(operacao="leitura_documento"):
             lido = ler_documento(arquivo.read(), arquivo.filename or "",
@@ -5448,6 +5488,9 @@ def api_arquivo_ler():
     f = request.files.get("arquivo")
     if f is None:
         return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    # FORA do try: a recusa por teto tem resposta própria (402), e um
+    # `except Exception` a transformaria em 'falha do sistema'.
+    _exigir_saldo_de_ia()
     try:
         conteudo = f.read()
         with get_session() as s:
@@ -5480,6 +5523,9 @@ def api_obra_documento_ler(obra_id: int):
     f = request.files.get("arquivo")
     if f is None:
         return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    # FORA do try: a recusa por teto tem resposta própria (402), e um
+    # `except Exception` a transformaria em 'falha do sistema'.
+    _exigir_saldo_de_ia()
     try:
         conteudo = f.read()
         with get_session() as s:
@@ -5597,6 +5643,9 @@ def api_nova_obra_documento_ler():
     f = request.files.get("arquivo")
     if f is None:
         return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    # FORA do try: a recusa por teto tem resposta própria (402), e um
+    # `except Exception` a transformaria em 'falha do sistema'.
+    _exigir_saldo_de_ia()
     try:
         conteudo = f.read()
         with get_session() as s:
@@ -5725,6 +5774,9 @@ def api_colaborador_documento_ler(colaborador_id: int):
     f = request.files.get("arquivo")
     if f is None:
         return jsonify({"ok": False, "erro": "Escolha o arquivo."}), 400
+    # FORA do try: a recusa por teto tem resposta própria (402), e um
+    # `except Exception` a transformaria em 'falha do sistema'.
+    _exigir_saldo_de_ia()
     try:
         conteudo = f.read()
         with get_session() as s:
@@ -6412,6 +6464,7 @@ def api_usuarios():
     from sqlalchemy import select
     from app.apps.erp.core.auth.permissoes import ROTULOS, escopo_visao, exigir
     from app.apps.erp.core.auth.service import criar_usuario
+    from app.apps.erp.core.comum import ia_custo as _ia_custo
     from app.apps.erp.core.cadastros.validadores import cpf_valido, somente_digitos
     from app.apps.erp.db.models.cadastros import (
         EscopoVisao, Obra, PerfilUsuario, Usuario, UsuarioCategoria, UsuarioObra,
@@ -6443,6 +6496,12 @@ def api_usuarios():
                     "perfil": u.perfil.value,
                     "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
                     "escopo_visao": escopo_visao(u).value,
+                    # Teto de IA do mês desta pessoa e quanto dele já foi.
+                    # Nulo = sem limite, e a tela escreve isso com todas as
+                    # letras — caixa vazia parece esquecimento, não escolha.
+                    "teto_ia_usd": (float(u.teto_ia_usd)
+                                    if u.teto_ia_usd is not None else None),
+                    "ia_do_mes": _ia_custo.situacao_da_pessoa(s, u.id),
                     "ativo": u.ativo, "obras": vinculos.get(u.id, []),
                     # por quais obras esta pessoa RESPONDE (recebe a conferência
                     # mensal e a cobrança do agente) — é a mesma marca que
@@ -6522,6 +6581,25 @@ def api_editar_usuario(usuario_id: int):
             if "ff_autorizado" in d:
                 u.ff_autorizado = bool(d["ff_autorizado"])
             from decimal import Decimal as _D, InvalidOperation as _IE
+            if "teto_ia_usd" in d:
+                # Campo VAZIO = sem limite. É escolha, não esquecimento: quem
+                # deixa em branco está dizendo "esta pessoa pode gastar à
+                # vontade", e a tela avisa isso na hora de salvar.
+                bruto = str(d["teto_ia_usd"] or "").replace("US$", "").strip()
+                bruto = bruto.replace(".", "").replace(",", ".") if "," in bruto else bruto
+                if not bruto:
+                    u.teto_ia_usd = None
+                else:
+                    try:
+                        valor = _D(bruto).quantize(_D("0.01"))
+                    except _IE:
+                        return jsonify({"ok": False, "erro":
+                                        "Limite de IA inválido — informe um valor "
+                                        "em dólar, como 5 ou 10,50."}), 400
+                    if valor < 0:
+                        return jsonify({"ok": False, "erro":
+                                        "O limite de IA não pode ser negativo."}), 400
+                    u.teto_ia_usd = valor
             for campo in ("ff_teto_item", "ff_teto_prestacao"):
                 if campo in d:
                     valor = str(d[campo] or "").replace(".", "").replace(",", ".").strip()
@@ -8127,6 +8205,9 @@ def api_ler_contrato_locacao():
     arquivo = request.files.get("arquivo")
     if arquivo is None:
         return jsonify({"ok": False, "erro": "Envie o contrato em PDF ou foto."}), 400
+    # FORA do try: a recusa por teto tem resposta própria (402), e um
+    # `except Exception` a transformaria em 'falha do sistema'.
+    _exigir_saldo_de_ia()
     try:
         conteudo = arquivo.read()
         with get_session() as s:

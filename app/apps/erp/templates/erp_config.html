@@ -458,6 +458,22 @@ function formOperador(u){
         <div class="dica">Atualizado pelas prestações; não se edita aqui.</div></div>
     </div>
 
+    <h4>Inteligência artificial</h4>
+    <div class="form-grade">
+      <div class="campo"><label>Limite do mês (US$)</label>
+        <input id="op-teto-ia" value="${u.teto_ia_usd??""}" placeholder="5,00">
+        <div class="dica">
+          Padrão de US$ 5,00 por mês. <b>Deixe em branco para sem limite.</b>
+          Só a leitura de documento e a transcrição de áudio gastam — telas,
+          relatórios e as perguntas calculadas pelo sistema não consomem nada.
+        </div></div>
+      <div class="campo"><label>Já usou neste mês</label>
+        <input value="${u.ia_do_mes && u.ia_do_mes.teto!==null
+                        ? `US$ ${(u.ia_do_mes.gasto||0).toFixed(2)} de US$ ${u.ia_do_mes.teto.toFixed(2)} (${u.ia_do_mes.percentual}%)`
+                        : `US$ ${((u.ia_do_mes&&u.ia_do_mes.gasto)||0).toFixed(2)} — sem limite`}" disabled>
+        <div class="dica">Zera na virada do mês.</div></div>
+    </div>
+
     <div class="campo" style="margin-top:12px">
       <label>Contas do plano liberadas para lançar
         <span id="op-cat-resumo" class="qtd" style="float:right; font-weight:700"></span></label>
@@ -680,6 +696,7 @@ function formOperador(u){
       escopo_visao: els("op-escopo").value,
       ff_autorizado: els("op-ff").value === "1",
       ff_teto_item: els("op-ff-item").value, ff_teto_prestacao: els("op-ff-total").value,
+      teto_ia_usd: els("op-teto-ia").value,
       categorias: [...document.querySelectorAll(".op-cat:checked")].map(i=>+i.value),
       obras: [...document.querySelectorAll(".op-obra:checked")].map(i=>+i.value),
       obras_responsavel: [...document.querySelectorAll(".op-resp:checked")].map(i=>+i.value)};

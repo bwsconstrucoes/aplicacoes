@@ -741,6 +741,31 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-12 — Teto de IA é POR PESSOA, fica no cadastro dela, e BARRA.**
+  Migração 064. US$ 5,00 de padrão para quem entra novo, editável um a um, e
+  **vazio = sem limite**. A diferença para o teto global é o ponto: o global
+  avisa os administradores e deixa passar (termômetro); este recusa a chamada.
+  *"Teto que só avisa vira aviso que chega depois da fatura"*, e o pedido do
+  dono foi "não ter surpresa". **Conta do sistema (robô, relatório agendado,
+  agente) nunca é barrada** — não é curiosidade de ninguém, e travar rotina
+  sem explicação é pior que o custo. **Regra que fica: limite que protege
+  dinheiro recusa; limite que só informa é relatório, não limite.**
+
+- **2026-09-12 — Padrão de valor NÃO vai no modelo quando "vazio" é uma
+  escolha.** Com `default=` no `mapped_column`, o SQLAlchemy omite a coluna do
+  INSERT quando ela está nula — e aí apagar o campo para dizer "sem limite"
+  gravava o padrão do mesmo jeito, desfazendo a escolha da pessoa em silêncio.
+  Achado por teste em 12/09/2026. O padrão foi para o lugar que CRIA o
+  registro, onde está escrito e se lê. **Regra que fica: se o vazio quer dizer
+  alguma coisa, o modelo não pode ter padrão.**
+
+- **2026-09-12 — Trava de custo fica FORA do `try`.** As rotas do ERP terminam
+  em `except Exception`; uma recusa por teto levantada lá dentro viraria
+  "falha do sistema" com código de erro, em vez de "seu limite acabou". Há
+  varredura estrutural cobrando as duas coisas: toda rota que gasta IA confere
+  o teto, e a conferência fica fora do `try`. **Regra que fica: recusa
+  ESPERADA não passa por tratamento de falha inesperada.**
+
 - **2026-09-12 — Botão que muda de estado tem de dizer o estado EM PALAVRAS.**
   O microfone do assistente só trocava o ícone e ficava vermelho; o dono, no
   celular, viu "um x" e não soube se estava gravando. Agora há tarja com

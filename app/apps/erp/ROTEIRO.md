@@ -476,15 +476,23 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       que errem, e mexer em conta de dinheiro sem caso que prove a falha é
       trocar erro conhecido por erro desconhecido. Anotados no HISTORICO.
 
-- [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
-      ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
-      come o mês inteiro.
-      ✔ **DECIDIDO em 10/09/2026:** o assistente é para **qualquer pessoa,
-      dentro das atribuições e permissões dela** — não só o dono. E por isso
-      mesmo o teto por pessoa é requisito, não enfeite: *"a gente pode ter
-      muitas pessoas aí utilizando, a brincar às vezes, e a gente não pode
-      estourar os limites"*. O VALOR mensal por colaborador fica para o dono
-      definir depois.
+- [x] **8. TETO DE CUSTO DE IA POR PESSOA** — FEITO em 12/09/2026. **TRAZ A
+      MIGRAÇÃO 064.**
+      O dono definiu o valor: *"pra gente não ter surpresa, vamos limitar aí.
+      Deve ficar no cadastro da pessoa, com o valor estimado já de cinco
+      dólares. (…) Se eu quiser colocar alguém sem limite, eu coloco, ou botar
+      dez dólares"*. Raciocínio dele: *"isso é mais é gestão que vai usar,
+      pessoal de obra eu não acredito que vai usar muito"*.
+      **US$ 5,00** de padrão para quem entra novo, editável um a um no cadastro
+      do operador, **vazio = sem limite**, e a tela mostra quanto a pessoa já
+      usou no mês.
+      **Este teto BARRA** — o global só avisa. Teto que só avisa vira aviso que
+      chega depois da fatura.
+      **Conta do sistema nunca é barrada** (robô, relatório agendado, agente).
+      **Duas armadilhas, as duas pegas por teste:** padrão no modelo desfazia
+      em silêncio a escolha de "sem limite"; e a trava dentro do `try` viraria
+      "falha do sistema" em vez de "seu limite acabou". Há varredura estrutural
+      cobrando as duas.
 - [ ] **9. Guardar toda pergunta e toda resposta.** Serve para controlar custo,
       para auditar e — o mais útil — porque a lista do que perguntam repetido é
       a lista das telas que faltam.

@@ -21,7 +21,14 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### TRAZ AS MIGRAÇÕES 061, 062 E 063 — o botão tem de ser apertado junto com a publicação
+### TRAZ AS MIGRAÇÕES 061 A 064 — o botão tem de ser apertado junto com a publicação
+
+A **064** acrescenta o limite de IA ao cadastro do operador e já deixa todo
+mundo com US$ 5,00. ⚠️ **É coluna nova em `usuarios`** — a armadilha conhecida
+do ERP: entre publicar e apertar o botão, telas que carregam o operador falham.
+A leitura do limite no caminho quente é por SQL direto justamente para o ERP
+continuar de pé nessa janela, mas **apertar o botão no mesmo momento fecha o
+buraco**.
 
 A **063** só acrescenta o perfil PARCEIRO à lista de cargos. Não mexe em dado
 nenhum e não pode falhar; enquanto ninguém for cadastrado com ele, é um nome a
@@ -95,6 +102,69 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
   algum mês antigo, é quase certo que seja isto: dois pagamentos iguais no
   mesmo dia viraram um. Reimportar o OFX daquele período resolve, porque a
   linha que falta passa a ter identidade própria.
+
+---
+
+**Estado em 12/09/2026 (décima segunda entrega):** **teto de IA por pessoa**.
+**TRAZ A MIGRAÇÃO 064.**
+
+### O que o dono decidiu
+
+*"Pra gente não ter surpresa, vamos limitar aí. Deve ficar no cadastro da
+pessoa, com o valor estimado já de cinco dólares. E se eu quiser colocar
+diferente pra outras pessoas (…) que seja editável. Se eu quiser colocar
+alguém sem limite, eu coloco, ou botar dez dólares."*
+
+E o raciocínio, que explica o valor baixo: *"isso é mais é gestão que vai usar,
+pessoal de obra eu não acredito que vai usar muito"*.
+
+### Como ficou
+
+- **US$ 5,00 por mês** é o padrão de quem entra novo. Está escrito em
+  `core/auth/service.py`, no lugar que CRIA o operador.
+- **Editável um a um**, no cadastro do operador, com um bloco próprio
+  ("Inteligência artificial") que mostra o limite e **quanto a pessoa já usou
+  no mês**.
+- **Campo vazio = sem limite**, e a tela diz isso com todas as letras.
+- **Vira o mês, zera.**
+
+### A diferença que importa: este BARRA, o global só avisa
+
+O teto global que já existia manda recado aos administradores e deixa passar —
+é termômetro. Este aqui **recusa a chamada**. Teto que só avisa vira aviso que
+chega depois da fatura, e o pedido foi "não ter surpresa".
+
+O recado para quem é barrado diz três coisas, porque quem lê não é
+programador: **o que acabou** (o limite do mês), **o que continua funcionando**
+(telas, relatórios e as perguntas calculadas pelo sistema — nada disso consome
+IA) e **a quem pedir** (o administrador, no cadastro dela).
+
+**O que nunca é barrado:** conta do sistema — robô, relatório agendado, agente.
+Não é curiosidade de ninguém, e travar rotina sem ninguém entender por quê é
+pior que o custo.
+
+### Duas armadilhas que apareceram no caminho
+
+**1. O padrão do modelo desfazia a escolha de "sem limite", em silêncio.** Com
+`default=5.00` no modelo, o SQLAlchemy OMITE a coluna do INSERT quando ela está
+nula — então apagar o campo para dizer "sem limite" gravava 5,00 do mesmo
+jeito. **Quem pegou foi um teste.** O padrão saiu do modelo e foi para o lugar
+que cria o operador, onde está escrito e se lê.
+
+**2. A trava não pode ficar dentro do `try`.** São oito rotas que gastam IA, e
+todas têm um `except Exception` no fim; ali dentro, a recusa por teto viraria
+"falha do sistema" com código de erro, em vez de "seu limite acabou". Ela fica
+FORA, e há varredura estrutural na suíte cobrando as duas coisas: que toda rota
+que gasta IA confira o teto, e que a conferência esteja fora do `try`. **São
+oito hoje; a nona é a que alguém esqueceria.**
+
+### Onde a IA é gasta, para você saber o que o limite alcança
+
+Só duas coisas que a pessoa faz de propósito: **ler documento anexado**
+(no lançamento, no Arquivo, na obra, no colaborador, no contrato de locação e
+na pergunta com anexo) e **transcrever áudio**. Tudo o mais do ERP — telas,
+listas, relatórios, e as perguntas do assistente que o sistema calcula sobre o
+banco — **não consome nada**.
 
 ---
 
