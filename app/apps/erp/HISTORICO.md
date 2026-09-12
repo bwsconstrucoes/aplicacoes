@@ -231,9 +231,9 @@ Agora a coluna casa pela CHAVE quando ela existe; a tela que manda só rótulos
 
 ### Conferência
 
-20 testes novos do encaminhamento (com banco) e 5 do alinhamento da planilha;
-conferi desligando a trava de escopo e a correção do alinhamento, e eles
-quebram. **As três coisas foram exercitadas no navegador**: o diálogo de
+**4.557 testes passando, nenhuma falha** (com banco de verdade). Os 25 novos —
+20 do encaminhamento e 5 do alinhamento da planilha — eu conferi desligando a
+trava de escopo e a correção do alinhamento, e eles quebram. **As três coisas foram exercitadas no navegador**: o diálogo de
 encaminhar mostrando o texto pronto do lançamento, e o Excel baixando de
 verdade — tanto do painel do cantinho quanto da tela cheia.
 
