@@ -741,6 +741,18 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-12 — Pedido com várias tarefas é FILA, não cardápio.** O dono
+  pediu isto mais de uma vez antes de mandar registrar: *"eu passo uma demanda,
+  aí só depois de um bom tempo eu volto pro Claude pra olhar. Aí quando eu
+  olho, você fez uma e estavam pendentes as outras duas, sem razão."* **Regra
+  que fica** (detalhada no `CLAUDE.md`): tarefas independentes num pedido só
+  são executadas todas, uma atrás da outra, sem devolver a conversa no meio.
+  Dúvida trava SÓ a tarefa dela; as outras seguem. Só três coisas param a fila:
+  publicar, algo sem desfazer que ele não autorizou, e uma dúvida que trava
+  tudo o que sobrou. **A causa, escrita para não se repetir:** parar e relatar
+  parece cuidado e é o contrário — seguir errado numa tarefa independente custa
+  uma tarefa refeita; parar no meio custa horas paradas do dono, garantidas.
+
 - **2026-09-12 — Botão que muda de estado tem de dizer o estado EM PALAVRAS.**
   O microfone do assistente só trocava o ícone e ficava vermelho; o dono, no
   celular, viu "um x" e não soube se estava gravando. Agora há tarja com
