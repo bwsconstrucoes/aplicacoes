@@ -62,6 +62,12 @@
           <span id="fiscal-quantas">Nenhuma marcada</span>
           <button class="btn" id="btn-confirmar-fiscal" disabled>
             Confirmar as marcadas</button>
+          {# A IA NUNCA RODA SOZINHA. Quem escolhe é o dono, SP a SP — é assim
+             que ele mede se compensa antes de soltar em tudo. Cada leitura é
+             paga, e o botão diz isso. #}
+          <button class="btn secundario" id="btn-ia-fiscal" disabled
+                  title="Baixa o anexo e lê com IA. Cada leitura é cobrada.">
+            Analisar com IA</button>
           <span class="cartao-dica">
             Confirmar grava a análise. A gravação nos cards do Pipefy é o passo
             seguinte.
@@ -91,16 +97,24 @@
                   <td class="sel">
                     {# MARCADA SÓ QUANDO NÃO HÁ DÚVIDA. É a diferença entre as
                        duas pilhas, e está aqui, num atributo — não no olho de
-                       quem lê. #}
-                    {% if l.documentacao %}
-                      <input type="checkbox" class="fiscal-marca"
-                             {{ 'checked' if l.propoe }}
-                             data-sp="{{ l.sp.id }}"
-                             data-documentacao="{{ l.documentacao }}"
-                             data-chave="{{ l.chave }}"
-                             data-confianca="{{ l.confianca }}"
-                             data-motivo="{{ l.motivo }}">
-                    {% endif %}
+                       quem lê.
+
+                       A CAIXINHA EXISTE SEMPRE, mesmo sem proposta, e isso é
+                       proposital: são justamente as linhas SEM proposta que
+                       precisam da leitura por IA. Só com caixinha quando há
+                       proposta, a pessoa não conseguiria escolher para a IA
+                       exatamente o que a IA existe para resolver.
+
+                       "Confirmar" só age no que TEM proposta — é o
+                       `data-documentacao` que diz isso. #}
+                    <input type="checkbox" class="fiscal-marca"
+                           {{ 'checked' if l.propoe }}
+                           data-sp="{{ l.sp.id }}"
+                           data-documentacao="{{ l.documentacao }}"
+                           data-chave="{{ l.chave }}"
+                           data-confianca="{{ l.confianca }}"
+                           data-motivo="{{ l.motivo }}"
+                           data-anexo="{{ '1' if l.sp.anexo_link else '' }}">
                   </td>
                   <td class="id">
                     {% if l.sp.card_link %}
@@ -147,5 +161,6 @@
 </div>
 
 <div id="fiscal-config" hidden
-     data-url-confirmar="{{ url_for('analisesps.confirmar_fiscal') }}"></div>
+     data-url-confirmar="{{ url_for('analisesps.confirmar_fiscal') }}"
+     data-url-ia="{{ url_for('analisesps.pedir_ia_fiscal') }}"></div>
 {% endblock %}

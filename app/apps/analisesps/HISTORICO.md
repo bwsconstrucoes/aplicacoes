@@ -2261,6 +2261,72 @@ no teste.
 testes novos. A segunda visão foi **aberta de verdade**: a nota órfã apareceu
 com a categoria certa lida da chave, e a que já tinha sido conciliada não.
 
+### Trigésima terceira leva (12/09) — a IA lendo o anexo
+
+**A descoberta que poupou o maior pedaço desta frente: o leitor já existe.** O
+ERP tem um leitor de documentos rodando em produção
+(`erp/core/documentos/leitor.py`) que já faz exatamente o que faltava — XML de
+NFe por **parser exato, sem IA nenhuma**; PDF com camada de texto; e foto ou
+PDF escaneado por **leitura visual** —, devolvendo a chave de acesso, o tipo do
+documento, o emitente, o número, o valor e um nível de confiança.
+
+**Escrever um segundo leitor seria ter duas verdades sobre o mesmo PDF.** Aqui
+só se chama a função pública dele. Nada foi alterado naquela área.
+
+**A ordem é a que o dono definiu:** primeiro o cruzamento de texto, que é de
+graça e resolve a maioria; só o que sobrar vai para a IA. Mandar todo anexo
+para a IA seria pagar caro para responder o que já se sabia.
+
+**E ela NUNCA roda sozinha**, com as palavras dele: *"aí você pode até fazer a
+sugestão, analisar com IA, e a gente seleciona ou não seleciona, que me permita
+selecionar alguns que eu queira testar."* Botão próprio, ele marca as SPs, e a
+confirmação diz que cada leitura é cobrada. **Teto de 50 por vez**, de
+propósito: ele manda uma leva, vê o resultado, e decide se continua.
+
+#### O que protege o resultado, e cada um tem um porquê
+
+- **A chave manda sobre o palpite da IA.** Se ela leu 44 dígitos, a categoria
+  sai dos dígitos 21-22 da própria chave — definição da Receita. Aí é certeza,
+  não interpretação, e é isso que autoriza propor. Se a IA disser "NFe" e a
+  chave disser CT-e, **vale a chave**.
+- **O que a IA leu é conferido contra a SP.** Se quem emitiu o documento não é
+  o credor daquela SP, a proposta é barrada e a linha diz que o anexo pode ser
+  de outro lançamento. É o erro mais caro possível, e ele acontece — o dono
+  descreveu: *"colocar uma nota de um registro para outro"*.
+- **Documento que não é fiscal não ganha categoria chutada.** Um orçamento ou
+  um comprovante bancário voltam como "não sei", e não como uma categoria
+  inventada.
+- **Confiança BAIXA não vira proposta marcada.** O leitor devolve
+  ALTA/MEDIA/BAIXA; marcar o que ele mesmo desconfia seria transformar a dúvida
+  dele em decisão nossa.
+- **A IA grava como PROPOSTA, nunca como confirmada**, e **não atropela o que
+  uma pessoa já decidiu**. Quem quiser refazer desfaz primeiro. Uma nota lida
+  errado de um PDF torto é dedução indevida com cara de decisão tomada.
+
+**A fila mora no banco**, e não em memória: o processo separado pode ser
+reiniciado no meio, e quem escolheu trinta SPs não pode perder a escolha por
+isso. O anexo é baixado em streaming com teto de 20 MB — `resposta.content`
+traria o arquivo inteiro para a memória antes de qualquer conferência, que é
+como esta instância morreu em julho de 2026.
+
+#### Um defeito de tela que a IA expôs
+
+A caixinha de marcar só existia nas linhas que **tinham proposta**. Só que são
+justamente as linhas **sem** proposta que precisam da IA — ou seja, era
+impossível escolher para a IA exatamente o que a IA existe para resolver. Agora
+a caixinha existe sempre; "Confirmar" age só no que tem proposta, "Analisar com
+IA" age em qualquer marcada, e o contador diz quantas das marcadas têm
+proposta.
+
+**Verificação:** 4.515 testes verdes com Postgres de verdade, 129 pulados; 15
+testes novos. **Nenhum chamou a OpenAI** — o leitor do ERP foi dublado em
+todos. Aproveitei para trocar um teste frágil: o que guardava os modos que não
+contam SPs prendia a linha exata do `if` e quebrava a cada modo novo, dizendo
+"defeito" quando o que havia era código novo. Agora é teste de lista.
+
+**O que falta nesta frente:** o download autônomo das notas pela chave — o
+único item do desenho do dono que ainda não existe.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a

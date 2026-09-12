@@ -1894,6 +1894,52 @@ def confirmar_fiscal():
             "aviso": f"{gravadas} análise(s) confirmada(s). {recado}"}
 
 
+@bp.route("/api/fiscal/ia", methods=["POST"])
+@exige_operador
+def pedir_ia_fiscal():
+    """Manda a IA ler o anexo das SPs escolhidas.
+
+    NUNCA AUTOMÁTICO, e é decisão do dono, com as palavras dele: *"aí você pode
+    até fazer a sugestão, analisar com IA, e a gente seleciona ou não seleciona,
+    que me permita selecionar alguns que eu queira testar"*. Quem escolhe é
+    ele, SP a SP — e é assim que ele mede se compensa antes de soltar em tudo.
+
+    A leitura NÃO acontece aqui: baixar e ler cada anexo leva segundos por SP.
+    Aqui só se enfileira, no banco, e dispara o processo separado."""
+    from . import fiscal, tarefas
+
+    dados = request.get_json(silent=True) or {}
+    ids = [str(i).strip() for i in (dados.get("ids") or []) if str(i).strip()]
+    if not ids:
+        return {"ok": False, "erro": "Nenhuma SP marcada."}, 400
+    # O TETO É BAIXO DE PROPÓSITO: cada leitura é paga. Quem quiser mandar
+    # trezentas manda em levas, e vê o resultado das cinquenta primeiras antes
+    # de decidir se vale a pena continuar.
+    if len(ids) > 50:
+        return {"ok": False,
+                "erro": "São no máximo 50 por vez. Cada leitura é cobrada — "
+                        "mande uma leva, veja o resultado, e siga."}, 400
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        entraram = fiscal.por_na_fila_da_ia(ids, quem)
+    except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
+        logger.exception("Análise de SPs: falhou enfileirar para a IA")
+        return {"ok": False, "erro": f"Não consegui enfileirar: {e}"}, 500
+
+    disparou = tarefas.disparar("fiscal_ia", disparo=quem or "análise fiscal")
+    de_fora = len(ids) - entraram
+    aviso = f"{entraram} SP(s) na fila da IA."
+    if de_fora:
+        aviso += (f" {de_fora} ficou/ficaram de fora por já terem análise "
+                  "confirmada — desfaça a decisão antes, se quiser refazer.")
+    aviso += (" A leitura começou." if disparou.get("ok")
+              else " Entra na próxima rodada.")
+    logger.info("Análise de SPs: %s mandou %d SP(s) para a IA.",
+                quem or "sem nome", entraram)
+    return {"ok": True, "enfileiradas": entraram, "aviso": aviso}
+
+
 # ---------------------------------------------------------------------------
 # CREDORES — o mesmo CNPJ escrito de cinco jeitos
 #

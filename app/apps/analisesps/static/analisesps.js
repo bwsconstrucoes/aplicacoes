@@ -828,12 +828,22 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
   const contador = document.getElementById("fiscal-quantas");
   const todas = document.getElementById("fiscal-todas");
 
+  // "Confirmar" so age no que TEM proposta; a IA age em qualquer marcada, e e
+  // justamente nas SEM proposta que ela serve. Sao dois conjuntos diferentes
+  // sobre as mesmas caixinhas.
+  const comProposta = () => marcadas().filter(c => c.dataset.documentacao);
+  const botaoIA = document.getElementById("btn-ia-fiscal");
+
   function atualizar() {
     const quantas = marcadas().length;
-    botao.disabled = quantas === 0;
+    const propostas = comProposta().length;
+    botao.disabled = propostas === 0;
+    if (botaoIA) botaoIA.disabled = quantas === 0;
     if (contador) {
       contador.textContent = quantas === 0 ? "Nenhuma marcada"
-          : quantas + (quantas === 1 ? " marcada" : " marcadas");
+          : quantas + (quantas === 1 ? " marcada" : " marcadas")
+            + (propostas < quantas
+               ? ` (${propostas} com proposta)` : "");
     }
     if (todas) {
       const total = marcas().length;
@@ -849,8 +859,45 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
   });
   atualizar();
 
+  // --- Mandar para a IA ler o anexo -----------------------------------------
+  //
+  // NUNCA automatico: quem escolhe e o dono, SP a SP. E a confirmacao diz o
+  // que custa, porque cada leitura e cobrada — um clique distraido em duzentas
+  // linhas seria uma conta que ninguem pediu.
+  if (botaoIA) botaoIA.addEventListener("click", async () => {
+    const ids = marcadas().map(c => c.dataset.sp);
+    const semAnexo = marcadas().filter(c => !c.dataset.anexo).length;
+    if (!ids.length) return;
+    let recado = `Ler o anexo de ${ids.length} SP(s) com IA.\n\n`
+        + `Cada leitura e cobrada. A IA PROPOE — quem confirma continua sendo `
+        + `voce.`;
+    if (semAnexo) {
+      recado += `\n\nATENCAO: ${semAnexo} nao tem anexo e vao ser puladas.`;
+    }
+    if (!confirm(recado)) return;
+
+    botaoIA.disabled = true;
+    const antes = botaoIA.textContent;
+    botaoIA.textContent = "Mandando…";
+    try {
+      const r = await fetch(config.dataset.urlIa, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids}),
+      });
+      const dados = await r.json();
+      if (!dados.ok) { alert(dados.erro || "Nao consegui enfileirar."); return; }
+      alert(dados.aviso);
+      location.reload();
+    } catch (e) {
+      alert("Nao consegui falar com o servidor: " + e);
+    } finally {
+      botaoIA.disabled = false;
+      botaoIA.textContent = antes;
+    }
+  });
+
   botao.addEventListener("click", async () => {
-    const itens = marcadas().map(c => ({
+    const itens = comProposta().map(c => ({
       sp: c.dataset.sp,
       documentacao: c.dataset.documentacao,
       chave: c.dataset.chave || "",

@@ -583,17 +583,40 @@ def test_a_linha_sem_codigo_do_omie_fica_de_fora():
     assert not any(n == "OBRA-SEM-CODIGO" for _, n, _ in gravados)
 
 
-def test_o_modo_apoios_nao_termina_dizendo_zero_sps():
-    """Este modo não traz SP nenhuma. Terminar com "0 SPs" fazia a tela
-    parecer que nada aconteceu justamente quando algo aconteceu."""
+# Os modos que NÃO trazem SP nenhuma. Terminar com "0 SPs" faz a tela parecer
+# que nada aconteceu justamente quando algo aconteceu — e cada um destes faz
+# trabalho que não se mede em SPs: relê planilha de apoio, dá baixa em
+# comprovante, grava card no Pipefy, lê anexo com IA.
+#
+# A LISTA É O TESTE. Quando um modo novo destes nascer, ele entra aqui e o
+# teste diz se alguém esqueceu de incluí-lo lá.
+MODOS_QUE_NAO_CONTAM_SPS = ("apoios", "comprovantes", "fiscal", "fiscal_ia")
+
+
+def test_os_modos_que_nao_trazem_SP_nao_terminam_dizendo_zero_sps():
+    """Este é um teste de lista, e não de texto: antes ele prendia a linha
+    exata do `if`, e quebrava a cada modo novo — dizendo "defeito" quando o que
+    havia era código novo."""
+    import re
     from pathlib import Path
+
     fonte = Path("app/apps/analisesps/tarefas.py").read_text(encoding="utf-8")
-    assert 'if modo in ("apoios", "comprovantes", "fiscal")' in fonte, (
-        'o modo "apoios" voltou a cair na mensagem que conta SPs — e ele não '
-        "traz nenhuma. O modo dos comprovantes divide a mesma regra: os dois "
-        "fazem trabalho que não se mede em SPs — e a gravação da análise "
-        "fiscal nos cards, que entrou depois, divide a mesma regra.")
+    trecho = re.search(r"if modo in \(([^)]*)\):", fonte)
+    assert trecho, "sumiu a regra que separa os modos que não contam SPs"
+    listados = set(re.findall(r'"([a-z_]+)"', trecho.group(1)))
+    faltando = set(MODOS_QUE_NAO_CONTAM_SPS) - listados
+    assert not faltando, (
+        f"estes modos não trazem SP nenhuma e vão terminar dizendo \"0 SPs\": "
+        f"{sorted(faltando)}")
     assert "recado_apoios" in fonte
+
+
+def test_todo_modo_da_lista_existe_de_verdade():
+    """A lista acima só protege enquanto os nomes forem reais. Um modo
+    renomeado deixaria o teste passando sobre nada."""
+    from app.apps.analisesps import tarefas
+    for modo in MODOS_QUE_NAO_CONTAM_SPS:
+        assert modo in tarefas.MODOS, modo
 
 
 def test_o_que_veio_e_o_que_nao_veio_chega_a_mensagem_da_execucao():

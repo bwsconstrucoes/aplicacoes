@@ -686,6 +686,40 @@ ORDEM_GRUPOS = [CRITICO, CORRECAO, DUVIDA, SEM_PAR, EM_DIA]
 PENDENTE, PROPOSTA, CONFIRMADA, ESCRITA = (
     "PENDENTE", "PROPOSTA", "CONFIRMADA", "ESCRITA")
 
+# Esperando a IA ler o anexo. A fila mora no BANCO, e não em memória: o
+# processo separado pode ser reiniciado no meio, e quem escolheu trinta SPs
+# não pode perder a escolha por causa disso.
+NA_FILA_IA = "NA_FILA_IA"
+
+
+def por_na_fila_da_ia(sp_ids: list, quem: str) -> int:
+    """Marca as SPs escolhidas para a IA ler o anexo. Devolve quantas entraram.
+
+    NÃO ATROPELA DECISÃO JÁ TOMADA: uma SP já confirmada ou já escrita no card
+    fica como está. Quem quiser refazer a análise dela desfaz primeiro — e isso
+    é de propósito, porque mandar a IA reescrever por cima do que uma pessoa
+    decidiu é exatamente o contrário de "a IA propõe, nunca decide"."""
+    from .db import conexao
+
+    entraram = 0
+    with conexao() as conn:
+        for sp_id in sp_ids:
+            cur = conn.execute(
+                "INSERT INTO analisesps.sp_fiscal_analise "
+                "  (sp_id, situacao, origem, decidida_por, decidida_em) "
+                "VALUES (?, ?, 'IA', ?, now()) "
+                "ON CONFLICT (sp_id) DO UPDATE SET "
+                "  situacao = ?, decidida_por = EXCLUDED.decidida_por, "
+                "  decidida_em = now() "
+                " WHERE analisesps.sp_fiscal_analise.situacao "
+                "       NOT IN (?, ?)",
+                (str(sp_id), NA_FILA_IA, quem or "", NA_FILA_IA,
+                 CONFIRMADA, ESCRITA))
+            entraram += cur.rowcount or 0
+            cur.close()
+        conn.commit()
+    return entraram
+
 
 def guardar_decisao(sp_id: str, documentacao: str, chave: str, motivo: str,
                     confianca: int, quem: str, origem: str = "PESSOA") -> None:

@@ -55,6 +55,7 @@ MODOS = {
     "fila": "Só devolver para a planilha as alterações pendentes",
     "comprovantes": "Dar baixa nos comprovantes arrastados para a tela",
     "fiscal": "Gravar nos cards do Pipefy a análise fiscal confirmada",
+    "fiscal_ia": "Ler com IA os anexos das SPs escolhidas",
 }
 
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
@@ -66,6 +67,7 @@ ETAPAS = {
     "fila": ["fila"],
     "comprovantes": ["comprovantes"],
     "fiscal": ["fiscal"],
+    "fiscal_ia": ["fiscal_ia"],
 }
 
 
@@ -337,6 +339,27 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     + (f", {f['pendentes']} ainda na fila"
                        if f.get("pendentes") else ""))
 
+            elif etapa == "fiscal_ia":
+                # BAIXAR E LER CADA ANEXO leva segundos por SP; trinta SPs são
+                # minutos. Dentro do worker isso seguraria uma das quatro
+                # threads do gunicorn — e a fila de quem escolheu fica no
+                # banco, não em memória, porque o processo pode ser reiniciado.
+                mudar_etapa("lendo os anexos com IA")
+                from . import fiscal_ia as _fiscal_ia
+                from .db import conexao as _conexao
+                with _conexao() as _conn:
+                    _cur = _conn.execute(
+                        "SELECT sp_id FROM analisesps.sp_fiscal_analise "
+                        " WHERE situacao = 'NA_FILA_IA' ORDER BY decidida_em")
+                    _ids = [str(r[0]) for r in _cur.fetchall()]
+                    _cur.close()
+                i = _fiscal_ia.analisar(_ids, anotar)
+                total_linhas[0] = i.get("lidas", 0)
+                recado_apoios[0] = (
+                    f"{i.get('lidas', 0)} anexo(s) lido(s) pela IA"
+                    + (f", {i['sem_anexo']} sem anexo" if i.get("sem_anexo") else "")
+                    + (f", {len(i['falhas'])} com falha" if i.get("falhas") else ""))
+
             elif etapa == "apoios":
                 if automatica and _apoios_recentes():
                     logger.info("Análise de SPs: planilhas de apoio ainda "
@@ -369,7 +392,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             _marcar_etapa_feita(execucao_id, etapa)
 
         duracao = (agora() - inicio).total_seconds()
-        if modo in ("apoios", "comprovantes", "fiscal"):
+        if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
             mensagem = (recado_apoios[0]

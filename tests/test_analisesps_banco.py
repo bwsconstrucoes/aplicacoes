@@ -2242,3 +2242,92 @@ def test_a_categoria_da_nota_orfa_sai_de_dentro_da_chave(banco_analisesps):
     _guardar_nota(_chave("11222333000181", "570010000999888777666555"),
                   "77", 88.00, "11222333000181")
     assert fiscal.notas_orfas()[0][0]["categoria"] == "CT-e (Frete)"
+
+
+# ---------------------------------------------------------------------------
+# A FILA DA IA — ela não roda sozinha, e não atropela decisão de gente
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_a_fila_da_IA_mora_no_BANCO_e_nao_em_memoria(banco_analisesps):
+    """O processo separado pode ser reiniciado no meio. Quem escolheu trinta
+    SPs não pode perder a escolha por causa disso."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import consultar
+
+    assert fiscal.por_na_fila_da_ia(["1", "2", "3"], "Marcelo") == 3
+    na_fila = consultar(
+        "SELECT sp_id FROM analisesps.sp_fiscal_analise "
+        " WHERE situacao = ? ORDER BY sp_id", (fiscal.NA_FILA_IA,))
+    assert [l[0] for l in na_fila] == ["1", "2", "3"]
+
+
+@pytest.mark.banco
+def test_a_IA_nao_atropela_o_que_uma_PESSOA_ja_decidiu(banco_analisesps):
+    """Mandar a IA reescrever por cima do que alguém decidiu é o contrário de
+    "a IA propõe, nunca decide". Quem quiser refazer desfaz primeiro."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import consultar_um
+
+    fiscal.guardar_decisao("1", "Seguros", "", "eu decidi", 0, "Marcelo")
+    assert fiscal.por_na_fila_da_ia(["1", "2"], "Marcelo") == 1, (
+        "a SP já decidida entrou na fila da IA")
+    assert consultar_um("SELECT situacao, documentacao "
+                        "  FROM analisesps.sp_fiscal_analise WHERE sp_id = '1'"
+                        ) == (fiscal.CONFIRMADA, "Seguros")
+
+
+@pytest.mark.banco
+def test_a_IA_grava_como_PROPOSTA_e_nunca_como_confirmada(banco_analisesps,
+                                                          monkeypatch):
+    """A IA propõe; quem confirma é gente. Se ela gravasse como confirmada, a
+    leitura de um PDF torto iria direto para o card."""
+    from app.apps.analisesps import colunas, fiscal, fiscal_ia, sincronizacao
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    registro = {c: "" for c in colunas.CHAVES}
+    registro.update({"id": "1", "credor": "SERTAO", "valor": "269,00",
+                     "documento": "29.066.773/0001-52",
+                     "anexo_link": "https://exemplo/anexo.pdf"})
+    with conexao() as conn:
+        sincronizacao.gravar_registros(conn, [registro])
+
+    monkeypatch.setattr(fiscal_ia, "ler_anexo", lambda sp: {
+        "tipo_documento": "NFE", "confianca": "ALTA",
+        "chave_acesso": _chave(CREDOR_CNPJ), "emitente_documento": CREDOR_CNPJ})
+
+    assert fiscal_ia.analisar(["1"])["lidas"] == 1
+    linha = consultar_um(
+        "SELECT situacao, documentacao, origem, dedutivel "
+        "  FROM analisesps.sp_fiscal_analise WHERE sp_id = '1'")
+    assert linha[0] == fiscal.PROPOSTA, "a IA gravou como decisão tomada"
+    assert linha[1] == "NF-e (Mercadoria)"
+    assert linha[2] == "IA", "não ficou registrado que a origem foi a IA"
+    assert linha[3] is True
+    assert fiscal.a_escrever_no_card() == [], (
+        "a leitura da IA foi direto para a fila do card sem ninguém confirmar")
+
+
+@pytest.mark.banco
+def test_uma_leitura_que_falha_nao_derruba_as_outras(banco_analisesps, monkeypatch):
+    """Trinta anexos, um corrompido. As vinte e nove boas têm de ficar."""
+    from app.apps.analisesps import colunas, fiscal_ia, sincronizacao
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        for sp_id in ("1", "2"):
+            registro = {c: "" for c in colunas.CHAVES}
+            registro.update({"id": sp_id, "credor": "SERTAO",
+                             "documento": "29.066.773/0001-52",
+                             "anexo_link": "https://exemplo/anexo.pdf"})
+            sincronizacao.gravar_registros(conn, [registro])
+
+    def instavel(sp):
+        if sp["id"] == "1":
+            raise RuntimeError("o PDF veio corrompido")
+        return {"tipo_documento": "GUIA", "confianca": "ALTA",
+                "chave_acesso": "", "emitente_documento": ""}
+
+    monkeypatch.setattr(fiscal_ia, "ler_anexo", instavel)
+    resultado = fiscal_ia.analisar(["1", "2"])
+    assert resultado["lidas"] == 1
+    assert "corrompido" in resultado["falhas"]["1"]
