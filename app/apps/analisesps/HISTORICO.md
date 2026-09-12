@@ -1872,18 +1872,566 @@ correção**: com o código que estava no ar, a SP com carimbo vazio continua
 > na planilha à mão: edição de gente dispara o gatilho, o carimbo é escrito, e
 > a sincronização seguinte traz a linha.
 
+### Vigésima sétima leva (11/09) — os comprovantes arrastados para a tela
+
+*"Eu arrasto esses comprovantes pra dentro e dispara a automação, sem nem
+precisar passar pelo Make."* E, logo depois: *"se eu sair da tela e voltar, a
+informação vai ser me dada ainda ou eu vou perder se eu mudar de tela?"*
+
+**A descoberta que poupou um módulo inteiro: o robô já existe.** O
+`baixabradesco` roda em produção há meses — recebe o PDF, descobre a SP, dá
+baixa no Omie, marca paga na SPsBD, move o card no Pipefy e guarda o
+comprovante. E já aceita o PDF dentro do próprio pedido. **O que faltava não era
+a baixa: era a porta de entrada.** Nada foi mudado naquela área.
+
+**A aba nova é "Comprovantes"**, e ela é própria de propósito: nas Solicitações
+a tela já está cheia de linhas, e arrastar arquivo por cima de uma lista de
+pagamentos é convite a soltar no lugar errado.
+
+**As levas de dez não são invenção daqui.** O dono descreveu o que o script
+dele já faz: *"ele divide o PDF em dez páginas; se eu mandar cinquenta num
+único PDF, ele quebra em cinco e manda um por um"*. Manter o mesmo tamanho tem
+uma razão a mais do que a simetria — é o tamanho de lote que o robô já recebe
+há meses, então não se estreia carga nova nele.
+
+> **E a conta é por PÁGINA, não por arquivo.** O robô trata cada página como um
+> comprovante separado. Cortar por quantidade de arquivos deixaria um PDF de
+> cinquenta páginas passar inteiro numa chamada só — o caso que as levas
+> existem para evitar. A numeração mostrada é a do arquivo original: a página 1
+> da terceira leva aparece como "página 21", que é onde ela está no PDF que a
+> pessoa soltou.
+
+#### A resposta à pergunta dele: a informação FICA
+
+O resultado mora no **banco**, não na tela. Sair da aba, fechar o navegador,
+voltar no dia seguinte — está tudo lá. Se morasse na tela, trocar de aba
+perderia tudo, e o serviço ainda reinicia sozinho a cada ~150 requisições.
+
+**E essa informação hoje é jogada fora.** O robô já devolve, a cada leva,
+exatamente o que o dono pediu para ver — *"esse deu certo, esse deu errado,
+esse tem duplicidade, esse faltou aquilo"*:
+
+| O que a tela mostra | De onde vem |
+|---|---|
+| **Baixado** | o robô localizou a SP e executou |
+| **Já tinha sido baixado** | a trava de duplicidade fez o trabalho dela |
+| **Não achei a SP** | com o motivo escrito pelo robô |
+| **Falta liberar antes de baixar** | achou a SP, mas ela não está liberada |
+| **Pagamento não efetivado** | o comprovante não confirma o pagamento |
+
+Isso tudo voltava para o Make.com e morria lá. **O que pede ação aparece em
+cima**, e o que baixou fica por último: quem abre a tela quer saber o que ficou
+de fora — o que baixou é o esperado, e esperado não é notícia.
+
+#### Decisões de construção que não são óbvias
+
+- **A baixa roda no processo separado**, como a carga da planilha. Ela fala com
+  Omie, Pipefy, Sheets e Dropbox e leva minutos; dentro do worker seria morta
+  pelo reinício do gunicorn — foi o que matou a carga três vezes na conversão
+  do painel.
+- **Cada leva é gravada na hora, não no fim.** Se o serviço reiniciar no meio
+  de um PDF de cinquenta páginas, as levas já feitas estão no banco. Há teste
+  olhando o banco de dentro do processamento para provar isso.
+- **O PDF não entra no banco.** Ele espera em disco e é apagado quando o lote
+  termina. O banco tem 1 GB e já usa 430 MB, e o comprovante já é guardado pelo
+  robô no destino definitivo.
+- **Se o contêiner reiniciar antes de processar**, o arquivo some do disco e o
+  lote vira "falhou" com um recado que diz para arrastar de novo — e que fazer
+  isso é seguro, porque a trava do robô barra a baixa repetida.
+- **Teto de 25 MB por arquivo e 20 arquivos por vez.** A instância tem 2 GB
+  divididos com 17 módulos e já morreu de memória em julho de 2026.
+- **A chamada ao robô é direta, não por HTTP.** Falar com a própria rota
+  ocuparia uma das QUATRO threads do gunicorn por vários minutos. O pedido
+  montado é o MESMO que aquela rota passa adiante, então o contrato é o
+  documentado.
+
+**Verificação:** 4.421 testes verdes com Postgres de verdade, 129 pulados; 22
+testes novos, 10 deles com banco. **E a tela foi exercitada de verdade**, contra
+um Postgres descartável: soltar um PDF de 12 páginas cria o lote com 2 levas,
+grava o arquivo, dispara o processo e mostra o recado; a tela do histórico
+mostra a linha baixada e a que não achou a SP, com o motivo; arquivo que não é
+PDF vira recado em português; e o perfil Consulta recebe 403 ao tentar enviar.
+
+> **PRECISA DO BOTÃO.** A migração **006** cria as duas tabelas. Ao publicar,
+> apertar **"Aplicar atualizações do banco"** em Configurações no mesmo
+> momento. Sem ela a tela abre, mas avisa que falta a atualização em vez de
+> estourar.
+
+**O que NÃO foi verificado:** nenhuma baixa de verdade foi feita — o robô foi
+dublado em todos os testes. Omie, Pipefy, Dropbox e a planilha não foram
+tocados. O primeiro comprovante de verdade é o teste que falta, e o certo é
+começar com UM.
+
+### Vigésima oitava leva (12/09) — o nome do credor
+
+*"O Pipefy é frouxo no campo credor. Um lança 'Aço Cearense Limitada', outro
+bota só 'Aço Cearense', o outro escreve errado."* O pedido foi comparar credor e
+CPF/CNPJ e equalizar para o melhor nome.
+
+**A MEDIÇÃO DERRUBOU A REGRA QUE EU MESMO TINHA PROPOSTO.** Rodando contra a
+planilha de verdade (aba Lançamentos, 116 lançamentos, 41 CNPJs): **8 CNPJs —
+um em cada cinco — aparecem com mais de um nome**. E "fica o nome mais
+completo" não serve, com a prova nos dados dele:
+
+    MAGNA LOCAÇÕES LTDA      3x
+    MAGNA LOCAÇÃOES LTDA     1x   <- o MAIS LONGO é o digitado errado
+
+Aquela regra trocaria o certo pelo errado em todas as SPs daquele fornecedor. E
+há casos em que **nenhum dos dois é erro**: CELPE virou NEOENERGIA (a empresa
+mudou de nome) e MAFEMA aparece como razão social e como nome de fantasia. Isso
+não é divergência para corrigir: é decisão de gente.
+
+**A regra que ficou**, e é a mesma da conciliação fiscal — *juntar errado é pior
+do que não juntar*:
+
+| Caso | O sistema |
+|---|---|
+| Só acento, cedilha, pontuação ou espaço a mais ("MBP ISOBLOCK" = "MBP ISO BLOCK") | **resolve sozinho** |
+| Um nome é o **começo** do outro ("TRI" → "TRIBUNAL DE JUSTIÇA DO CEARÁ") | **resolve sozinho** |
+| Nomes de verdade diferentes | **pergunta — uma vez por CNPJ** |
+
+Entre grafias do mesmo nome fica **a mais usada**, não a mais longa: a equipe
+reconhece o nome que ela escreve, e trocá-lo pelo que alguém digitou uma vez
+seria piorar.
+
+**A decisão do dono MANDA sobre a proposta.** Uma vez escolhido NEOENERGIA, a
+regra não pode voltar a propor CELPE na semana seguinte — senão ele decidiria a
+mesma coisa para sempre, que é o contrário do que ele pediu. É para isso que
+existe a migração **007**.
+
+> **Nos oito casos reais: 2 o sistema resolve sozinho, 6 esperam ele.** Uma vez
+> cada. Com 59 mil SPs a primeira lista vai ser maior; depois disso é só o
+> fornecedor novo.
+
+#### Dois defeitos MEUS, achados rodando contra o dado de verdade
+
+1. **Eu contava divergência por grupo de nome.** Com isso "MASSA PRONTA …
+   SERVIÇOS LTDA" e "… SERVICOS LTDA" caíam no mesmo grupo, o CNPJ sumia da
+   lista e a planilha ficava como estava — justamente o caso mais seguro de
+   arrumar, porque é a mesma palavra com e sem cedilha. Passou a contar
+   **grafias escritas**.
+2. **O "quantas faltam arrumar" também contava por grupo**, e por isso dizia
+   "0 a arrumar" no mesmo caso. Passou a contar **grafia por grafia**.
+
+Os dois só apareceram porque a regra foi rodada contra os dados dele, e não
+contra exemplo inventado. Cada um virou teste.
+
+#### Onde a tela mora, e por quê
+
+**Fora das abas de cima**, alcançada por Configurações. É arrumação ocasional,
+não trabalho do dia — e a barra de abas é para o que se abre todo dia. Encher
+a barra com manutenção faria o que importa ficar mais longe.
+
+**A reescrita passa pelo caminho de sempre** — banco, fila, log, planilha —,
+que é o que garante que a mudança apareça no Log com o valor anterior e com
+quem mexeu, e que chegue à planilha mesmo se a internet cair no meio. E entra
+por **porta própria**, como a Validação e o "Remover risco": a coluna do credor
+**continua fora de `EDITAVEIS`**, então ninguém reescreve nome de fornecedor
+pela tela comum. Há teste travando isso.
+
+**O que já foi decidido não some da lista** — muda de lugar, para "já
+decididos". Sumir faria parecer que o problema desapareceu sozinho, e no dia em
+que alguém lançasse o nome velho de novo ninguém entenderia por que voltou.
+
+**Verificação:** 4.457 testes verdes com Postgres de verdade, 129 pulados; 35
+testes novos, montados com os **oito casos reais**. Conferido pondo a regra do
+"nome mais completo" de volta: sete testes caem. **E a tela foi exercitada de
+verdade** contra um Postgres descartável, semeado com os oito casos e com o
+mesmo CNPJ formatado de dois jeitos: ela mostra 2 automáticos e 6 para decidir;
+aplicar os 2 reescreveu 2 SPs, pôs 2 células na fila da planilha e 2 linhas no
+log; "TRI" e "SERVICOS" sumiram da base; e escolher NEOENERGIA ficou gravado com
+o nome de quem decidiu.
+
+> **PRECISA DO BOTÃO.** A migração **007** cria a tabela da memória das
+> escolhas. Ao publicar, apertar "Aplicar atualizações do banco" no mesmo
+> momento. Sem ela a tela abre e avisa que falta, em vez de estourar.
+
+**O que NÃO foi verificado:** nenhuma escrita chegou à planilha de verdade — a
+fila foi conferida, mas quem a esvazia é a sincronização, e ela precisa da
+credencial do Google, que não existe fora do Render. E a lista nunca foi vista
+contra as 59 mil SPs: o tamanho real dela é desconhecido.
+
+### Vigésima nona leva (12/09) — o relatório do lote com descrição e obra
+
+*"Está bacaninha, só reduz a fonte consideravelmente pra caber mais
+informação. Quero que tenha a descrição. Quero que tenha obra. E pode usar a
+quebra de linha."*
+
+**Feito:** fonte de 8 para **6,5**, duas colunas novas (**Descrição** e
+**Obra** — que é o centro de custo, a palavra que ele usa) e o texto agora
+**quebra em até três linhas** dentro da célula em vez de ser cortado.
+
+A descrição ficou com a maior fatia da largura (44 mm de 190) porque é o único
+texto realmente livre; as outras colunas cabem numa linha quase sempre. O "R$"
+saiu das células e foi para o título da coluna: repetido em trinta linhas, ele
+só gastava a largura que a descrição queria.
+
+**Detalhes que a tabela precisou ganhar:**
+
+- **Quebra por palavra**, e só parte a palavra quando ela sozinha não cabe —
+  um código emendado sem espaço não pode empurrar o valor para fora da página.
+- **Passando de três linhas, a última termina em "…"**. Sem isso a pessoa lê
+  meia frase achando que é a frase inteira.
+- **A régua vai embaixo da linha inteira**, desenhada depois de escrever todas
+  as células. Com alturas diferentes por célula, a borda de cada uma sairia
+  numa altura diferente e a tabela ficaria serrilhada.
+
+#### INCIDENTE achado conferindo o papel: o vencimento saía um dia antes
+
+Gerado o PDF e **aberto como imagem para conferir de olho**, um vencimento de
+**20/09** apareceu impresso como **19/09**.
+
+**A causa, e ela é antiga:** uma data escrita sem hora (`"2026-09-20"`) virava
+meia-noite sem fuso, e a conversão para Brasília levava esse instante para as
+21h do **dia anterior**. Meia-noite de uma data sem hora não é um instante no
+mundo: é o dia. Converter fuso ali inventa uma hora que ninguém informou.
+
+> **Por que ninguém tinha visto:** nas telas as datas chegam das colunas DATE
+> do banco, que vêm como data de verdade e não passam por esse caminho. O
+> defeito só aparece onde a data viaja como TEXTO — que é o caso do PDF e do
+> JSON. Um relatório de pagamento com o vencimento um dia antes é o tipo de
+> erro que faz alguém pagar na data errada.
+
+A conversão de fuso continua valendo onde ela é certa: uma sincronização de
+00h30 em UTC continua aparecendo como 21h30 do dia anterior, em Brasília. Há
+teste para as duas coisas.
+
+**Verificação:** 4.466 testes verdes com Postgres de verdade, 129 pulados; 12
+testes novos. **O PDF foi gerado e olhado como imagem**, não só lido por
+extração de texto — é assim que o defeito da data apareceu. Conferido
+desligando cada correção: sem o conserto da data, dois testes caem; sem a
+quebra de linha, outros dois.
+
+### Trigésima leva (12/09) — a tela de Documentação Fiscal (primeira parte)
+
+*"Eu quero minimizar a interação do humano (…) é muito falho o olho humano, e
+nós não temos esse tempo."* A regra de negócio já estava escrita e travada em
+teste (25ª leva); esta leva é a **tela** que a mostra.
+
+**O que ela faz hoje:** varre as SPs do filtro, procura a nota de cada uma no
+relatório do FSist, e entrega a análise pronta, separada por urgência.
+
+**Os números do alto são atalho:** "Proposta de correção: 12", "Em dúvida: 3",
+"Precisa de decisão: 1". Clicar filtra por aquele grupo. Sem isso, achar as três
+que precisam de gente no meio de duzentas linhas seria rolagem.
+
+**As duas pilhas estão na tela, e a diferença está num atributo — não no olho
+de quem lê.** O que o sistema propõe com confiança **já vem marcado**, para
+aprovar em lote; o que tem dúvida vem **desmarcado**, e é decidido um a um. A
+tela não decide isso: quem marca é o servidor, onde a regra mora.
+
+#### O que faz a tela ABRIR, e não é detalhe
+
+São 59 mil SPs e milhares de notas, e o banco tem **um décimo de um núcleo**.
+Pontuar toda SP contra toda nota seriam centenas de milhões de comparações — a
+tela nunca carregaria.
+
+O que evita isso: **a nota de um lançamento quase sempre foi emitida pelo credor
+dele**. Então busca-se, para a página que está na tela, só as notas daqueles
+CNPJs. De centenas de milhões, cai para algumas dezenas por SP.
+
+Duas portas de busca, e a segunda tem motivo próprio:
+
+- **pelo CNPJ de quem emitiu** — pela RAIZ de oito dígitos, porque a nota sai
+  da filial que entregou e o cadastro do credor quase sempre tem a matriz;
+- **pelo número da nota** — para quando quem lançou digitou o número e o
+  CPF/CNPJ do credor está errado no cadastro. Sem essa porta, a nota certa
+  nunca seria nem considerada.
+
+#### Decidir e gravar são DUAS coisas
+
+`decidida_em` é quando alguém escolheu; `escrita_em` é quando o card aceitou.
+Enquanto a segunda estiver vazia, a decisão está pendente e volta na próxima
+leva. **É isso que permite tentar de novo quando o Pipefy recusa** — se as duas
+fossem uma coisa só, uma falha de rede apagaria a decisão de trinta cards. E
+mudar de ideia depois de o card já ter sido escrito **devolve a SP para a fila
+de escrita**, senão a correção ficaria só aqui dentro.
+
+**A categoria é conferida contra as 22 opções do Pipefy antes de gravar.** Ele
+**recusa o card inteiro** quando o texto não é uma das opções — então um valor
+inventado não erraria uma SP: derrubaria a gravação do lote todo.
+
+**Verificação:** 4.478 testes verdes com Postgres de verdade, 129 pulados; 12
+testes novos com banco. **A tela foi aberta de verdade** contra um Postgres
+descartável, com duas SPs e duas notas do FSist semeadas: mostrou a proposta
+marcada e a dúvida desmarcada, confirmar gravou no diário com o nome de quem
+decidiu, a SP entrou na fila de escrita do card, a categoria inventada foi
+recusada, e a nota órfã apareceu na segunda visão.
+
+**O QUE AINDA NÃO EXISTE, e é o resto desta frente:**
+
+1. **A gravação em lote nos cards do Pipefy.** A fila está pronta e os
+   identificadores dos campos estão travados em teste; falta o passo que fala
+   com a API.
+2. **A IA lendo os anexos**, com a opção por SP que o dono desenhou: os
+   pendentes ganham *"analisar com IA"* e ele escolhe quais.
+3. **O download autônomo das notas** pela chave.
+4. **A segunda visão na tela.** A função que acha as notas sem lançamento
+   existe e está testada, mas ainda não tem tela — hoje só a primeira visão
+   (lançamento → nota) aparece.
+
+> **PRECISA DO BOTÃO.** A tela usa a migração **005**, que ainda não foi
+> aplicada em produção. Sem ela a tela abre e avisa que falta, em vez de
+> estourar.
+
+### Trigésima primeira leva (12/09) — a análise fiscal chegando ao card
+
+Fecha o ciclo: a análise sai da tela e vira campo preenchido no Pipefy. Sem
+isto ela ficava bonita e não saía do lugar.
+
+**Quatro campos são escritos**, e os identificadores estão travados em teste
+desde 11/09: Documentação Fiscal, Chave de Acesso, "A despesa gerou emissão de
+Nota Fiscal?" e o Nº da Nota Fiscal.
+
+#### Três regras que protegem o card, e cada uma tem um porquê caro
+
+1. **Campo vazio NÃO é mandado.** Mandar chave vazia para um card que já tem a
+   chave preenchida **apagaria** a chave — e apagar o que outra pessoa
+   preencheu à mão seria o pior efeito possível desta tela.
+2. **"Gerou nota" só vira "Sim", nunca "Não".** Com a chave na mão, a resposta
+   é sim. **Não ter encontrado não prova que não existe** — pode ser nota fora
+   do relatório do FSist. Escrever "Não" ali seria afirmar o que este módulo
+   não sabe, num campo que outras pessoas usam.
+3. **Chave pela metade não é mandada.** 44 dígitos ou não é chave. Meia chave
+   num card é pior que nenhuma: parece decidida.
+
+#### O que acontece quando o Pipefy recusa
+
+A função devolve **quais** cards passaram, não quantos — só esses podem ser
+marcados como escritos. Quem recusou **continua na fila**, com o motivo
+gravado, e volta na próxima leva. Uma ida à API que cai leva só os vinte cards
+daquele bloco; os seguintes continuam.
+
+> **Roda no processo separado**, como a baixa dos comprovantes e pelo mesmo
+> motivo: são até duzentos cards falando com a API, e dentro do worker isso
+> seguraria uma das quatro threads do gunicorn por minutos.
+
+Confirmar na tela **dispara a gravação na hora**. Se já houver uma rodada em
+andamento, o disparo é recusado e a tela diz isso — a decisão fica na fila e
+entra na próxima. Nada se perde por causa disso.
+
+**Verificação:** 4.489 testes verdes com Postgres de verdade, 129 pulados; 11
+testes novos. Os testes olham **o que é mandado para a API**, e não só se a
+função roda: o estrago de mandar errado não aparece na tela, aparece no card. O
+Pipefy foi dublado em todos — **nenhum card de verdade foi tocado**.
+
+**O que falta nesta frente:** a IA lendo os anexos, o download autônomo das
+notas, e a segunda visão (notas sem lançamento) na tela.
+
+### Trigésima segunda leva (12/09) — a segunda visão, e um defeito que ela achou
+
+**A visão nota → lançamento entrou na tela.** É ela que fecha com a
+contabilidade: *"se tem uma nota emitida, tem uma despesa para estar
+associada"*. Nota órfã é problema fiscal, e até agora ninguém a enxergava — a
+conciliação só olhava do lado do lançamento, e o que nunca virou lançamento
+nenhum não aparecia em lugar nenhum.
+
+**Ela não para em "esta nota está órfã".** Cada linha já traz as **SPs
+candidatas** — as do mesmo CNPJ, com as de mesmo valor na frente — e a
+**categoria lida de dentro da chave**. Saber que a órfã é um CT-e já diz onde
+procurar a despesa. Dizer só "está órfã" seria meio caminho: quem vai resolver
+precisa de por onde começar.
+
+As canceladas ficam de fora de propósito, e a comparação da chave ignora
+pontuação — uma chave gravada com espaço no meio faria a mesma nota voltar a
+aparecer como órfã depois de conciliada, e ninguém entenderia por quê.
+
+#### INCIDENTE: o valor da nota NUNCA batia
+
+Escrevendo o teste que esperava a SP de mesmo valor em primeiro lugar, ela veio
+em segundo. A causa:
+
+> A coluna do valor da nota é **NUMERIC**, e o banco devolve NUMERIC como
+> **`Decimal`** — que não é `int` nem `float`. Sem tratar esse tipo,
+> `Decimal("269.00")` caía no caminho do texto brasileiro, onde o ponto é
+> separador de milhar: virava **26.900**.
+
+**O estrago não aparecia na tela. Aparecia como ponto que faltava:** o valor
+nunca batia, e **toda** conciliação perdia os 25 pontos do valor exato. A tela
+continuava propondo — pelo CNPJ do emitente e pelo número da nota —, só que com
+menos confiança do que devia, e os casos que dependiam do valor para chegar aos
+60 pontos ficavam em dúvida sem motivo.
+
+É o tipo de defeito que faz a tela "quase funcionar" para sempre: nada quebra,
+nada acusa, e o resultado é pior sem ninguém saber. Só apareceu porque o teste
+foi escrito contra o **banco de verdade**, e não contra um valor digitado à mão
+no teste.
+
+**Verificação:** 4.497 testes verdes com Postgres de verdade, 129 pulados; 8
+testes novos. A segunda visão foi **aberta de verdade**: a nota órfã apareceu
+com a categoria certa lida da chave, e a que já tinha sido conciliada não.
+
+### Trigésima terceira leva (12/09) — a IA lendo o anexo
+
+**A descoberta que poupou o maior pedaço desta frente: o leitor já existe.** O
+ERP tem um leitor de documentos rodando em produção
+(`erp/core/documentos/leitor.py`) que já faz exatamente o que faltava — XML de
+NFe por **parser exato, sem IA nenhuma**; PDF com camada de texto; e foto ou
+PDF escaneado por **leitura visual** —, devolvendo a chave de acesso, o tipo do
+documento, o emitente, o número, o valor e um nível de confiança.
+
+**Escrever um segundo leitor seria ter duas verdades sobre o mesmo PDF.** Aqui
+só se chama a função pública dele. Nada foi alterado naquela área.
+
+**A ordem é a que o dono definiu:** primeiro o cruzamento de texto, que é de
+graça e resolve a maioria; só o que sobrar vai para a IA. Mandar todo anexo
+para a IA seria pagar caro para responder o que já se sabia.
+
+**E ela NUNCA roda sozinha**, com as palavras dele: *"aí você pode até fazer a
+sugestão, analisar com IA, e a gente seleciona ou não seleciona, que me permita
+selecionar alguns que eu queira testar."* Botão próprio, ele marca as SPs, e a
+confirmação diz que cada leitura é cobrada. **Teto de 50 por vez**, de
+propósito: ele manda uma leva, vê o resultado, e decide se continua.
+
+#### O que protege o resultado, e cada um tem um porquê
+
+- **A chave manda sobre o palpite da IA.** Se ela leu 44 dígitos, a categoria
+  sai dos dígitos 21-22 da própria chave — definição da Receita. Aí é certeza,
+  não interpretação, e é isso que autoriza propor. Se a IA disser "NFe" e a
+  chave disser CT-e, **vale a chave**.
+- **O que a IA leu é conferido contra a SP.** Se quem emitiu o documento não é
+  o credor daquela SP, a proposta é barrada e a linha diz que o anexo pode ser
+  de outro lançamento. É o erro mais caro possível, e ele acontece — o dono
+  descreveu: *"colocar uma nota de um registro para outro"*.
+- **Documento que não é fiscal não ganha categoria chutada.** Um orçamento ou
+  um comprovante bancário voltam como "não sei", e não como uma categoria
+  inventada.
+- **Confiança BAIXA não vira proposta marcada.** O leitor devolve
+  ALTA/MEDIA/BAIXA; marcar o que ele mesmo desconfia seria transformar a dúvida
+  dele em decisão nossa.
+- **A IA grava como PROPOSTA, nunca como confirmada**, e **não atropela o que
+  uma pessoa já decidiu**. Quem quiser refazer desfaz primeiro. Uma nota lida
+  errado de um PDF torto é dedução indevida com cara de decisão tomada.
+
+**A fila mora no banco**, e não em memória: o processo separado pode ser
+reiniciado no meio, e quem escolheu trinta SPs não pode perder a escolha por
+isso. O anexo é baixado em streaming com teto de 20 MB — `resposta.content`
+traria o arquivo inteiro para a memória antes de qualquer conferência, que é
+como esta instância morreu em julho de 2026.
+
+#### Um defeito de tela que a IA expôs
+
+A caixinha de marcar só existia nas linhas que **tinham proposta**. Só que são
+justamente as linhas **sem** proposta que precisam da IA — ou seja, era
+impossível escolher para a IA exatamente o que a IA existe para resolver. Agora
+a caixinha existe sempre; "Confirmar" age só no que tem proposta, "Analisar com
+IA" age em qualquer marcada, e o contador diz quantas das marcadas têm
+proposta.
+
+**Verificação:** 4.515 testes verdes com Postgres de verdade, 129 pulados; 15
+testes novos. **Nenhum chamou a OpenAI** — o leitor do ERP foi dublado em
+todos. Aproveitei para trocar um teste frágil: o que guardava os modos que não
+contam SPs prendia a linha exata do `if` e quebrava a cada modo novo, dizendo
+"defeito" quando o que havia era código novo. Agora é teste de lista.
+
+**O que falta nesta frente:** o download autônomo das notas pela chave — o
+único item do desenho do dono que ainda não existe.
+
+### Trigésima quarta leva (12/09) — as notas do FSist, e um defeito grave
+
+#### O DEFEITO: ninguém importava o relatório de notas
+
+A importação do relatório do FSist existia desde 11/09, estava escrita, testada
+e funcionando — e **nenhum código a chamava**. A tabela de notas ficaria vazia
+para sempre, e a conciliação fiscal não teria contra o que casar: uma tela
+inteira funcionando sobre nada.
+
+Achado em 12/09 procurando quem importava o relatório, ao ligar o último pedaço
+da frente. **Agora ela roda junto com as outras planilhas de apoio**, e há teste
+travando a chamada — porque "existe e está testado" não quer dizer "acontece".
+
+> Nada disso chegou a ir para o ar: a migração 005 ainda não foi aplicada, e a
+> tela é desta mesma semana. Mas se tivesse ido, a conciliação abriria vazia e
+> ninguém saberia por quê.
+
+#### Os três números que o dono pediu
+
+*"Quando importar vai dizer quantos importou, que conseguiu, que já tinha, que
+não tinha."* Agora a importação responde **novas · mudaram · já tinha**, além
+das ignoradas (linha sem chave de 44 dígitos: total de rodapé, linha em branco).
+
+**"Mudaram" é o número que interessa, e ele não existia.** Uma nota que volta no
+relatório com status **CANCELADA** é notícia — pode ser despesa já paga contra
+documento que não existe mais. Antes ela se escondia no meio das "atualizadas",
+que na verdade contavam as inalteradas junto.
+
+A contagem usa o **relógio do banco**, e não o de Python: o servidor pode estar
+em outro fuso, e comparar carimbo do banco com hora daqui erraria a conta
+inteira. E ela é exata porque o carimbo da nota só é tocado quando algo mudou de
+verdade — a gravação já ignorava reescrita idêntica desde 10/09.
+
+#### O download autônomo das notas: o que trava, e não é código
+
+Levantado e escrito em `CONCILIACAO_FISCAL.md`. Em resumo: a consulta pública
+por chave no portal da Receita **exige captcha**, e automatizar isso seria
+construir algo que quebra no primeiro dia. O caminho que funciona é o
+**certificado digital A1** — que o próprio dono levantou. Com ele, o XML vem
+direto do webservice da SEFAZ pela chave, e o leitor do ERP **já sabe ler esse
+XML por parser exato, sem IA e sem custo**.
+
+**Falta do dono, e não é programação:** o arquivo do certificado A1 e a senha;
+a decisão de onde ele fica guardado (é credencial sensível — variável de
+ambiente no Render, nunca arquivo no repositório); e o aviso de vencimento,
+porque A1 vale um ano e para de funcionar em silêncio.
+
+**Verificação:** 4.520 testes verdes com Postgres de verdade, 129 pulados; 5
+testes novos. Um deles guarda o defeito de cima: se alguém desligar a chamada,
+a suíte acusa.
+
+### Trigésima quinta leva (12/09) — o lote em Excel de verdade
+
+*"Relatório do lote em Excel, por lote e de todos os lotes juntos."* Era o
+último pedido da fila.
+
+**Por que agora dá, e até 05/09 não dava:** o `exportar.py` diz que a
+exportação é CSV *"porque gerar Excel de verdade exigiria uma biblioteca nova,
+e a regra da casa é não acrescentar dependência sem combinar"*. Isso deixou de
+valer quando o `openpyxl` entrou por causa do BeeVale. **Nada novo no serviço.**
+
+**O CSV continua, e não é redundância:** ele sai em BLOCOS e é o único que
+aguenta exportar a base larga sem estourar a memória. O Excel monta o arquivo
+inteiro antes de enviar — por isso é do LOTE, que tem dezenas de linhas, e não
+da base, que tem 59 mil. Tem teto de linhas pelo mesmo motivo.
+
+**O que o Excel resolve e o CSV não:**
+
+- **Valor é número.** No CSV ele vai como texto "1.234,56" para o Excel
+  brasileiro entender; aqui é número de fato, então dá para somar, ordenar e
+  filtrar sem converter nada antes.
+- **Código não vira notação científica.** O Excel transforma um código de 47
+  dígitos em `1,23457E+46`, e o número volta **arredondado, irrecuperável**. As
+  colunas de código vão como texto de propósito.
+- **O total é FÓRMULA** (`SUBTOTAL`), então acompanha o filtro. Um número fixo
+  mentiria em silêncio — e é justamente para filtrar que se pede Excel.
+- **Uma aba por pessoa** na exportação de todos, com um **resumo na primeira**:
+  quem abre um arquivo de oito abas quer ver o tamanho do todo antes de escolher
+  em qual entrar. Responde a pergunta que hoje não tem resposta em lugar nenhum
+  — *"quanto está separado para pagar somando o que cada um montou?"*.
+
+**Um cuidado que só existe por o título ser texto livre:** o Excel **recusa**
+`: \ / ? * [ ]` num nome de aba e corta em 31 caracteres. "Pagar 15/09" tem
+barra e "Depois: urgente" tem dois pontos — deixar passar faria o arquivo
+**inteiro** não abrir por causa de um título. Nomes repetidos também: dois
+"Marcelo" acontecem, e o Excel recusa abas de mesmo nome.
+
+**Dois defeitos meus, achados conferindo o arquivo gerado:**
+
+1. **A expressão que limpa o nome da aba estava escapada errada** e não limpava
+   nada — o arquivo estourava no primeiro título com barra. Apareceu porque o
+   teste usou um nome de lote de verdade, com barra, e não "Lote 1".
+2. **A soma do resumo incluía a própria célula** — referência circular, e o
+   Excel abre com erro em vez de com o número. A última linha estava sendo lida
+   *depois* de a linha do total já existir.
+
+**Verificação:** 4.540 testes verdes com Postgres de verdade, 129 pulados; 17
+testes novos. **As duas rotas foram exercitadas de verdade** contra um Postgres
+descartável, com dois lotes de pessoas diferentes: os arquivos saem, o valor
+chega como número, o ID como texto, as abas saem por pessoa com o resumo na
+frente, e lote vazio responde avisando em vez de entregar planilha em branco.
+
 ### Pedido na fila, ainda NÃO feito
 
-**Relatório do lote em Excel** — por lote e de todos os lotes juntos, com a
-mesma estrutura do PDF que já existe. *"Coloca isso na fila de produção
-também."*
-
-> **Uma coisa mudou e vale para quem pegar esta tarefa:** o README diz que
-> exportação é CSV "porque gerar Excel de verdade exigiria uma biblioteca
-> nova". **Isso não é mais verdade desde 05/09**: o `openpyxl` entrou por causa
-> do BeeVale e está no `requirements.txt`. Excel de verdade agora é possível
-> sem dependência nova — e a exceção de importação para ele já está declarada
-> em `LIBERADO_EM`.
+**Nada do dono esperando código.** O que falta não é programação — é o certificado digital A1, para o download autônomo das notas (ver a 34ª leva).
 
 ### A janela entre publicar e apertar o botão
 

@@ -54,6 +54,20 @@
   <div id="saida-migrar"></div>
 </div>
 
+{# ARRUMAÇÃO DO CADASTRO — fica aqui, e não nas abas de cima, porque é trabalho
+   ocasional. A barra de abas é para o que se abre todo dia. #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Nomes de credor</h3></div>
+  <p class="cartao-dica">
+    O Pipefy é frouxo no campo do credor: o mesmo CNPJ entra como "Aço Cearense
+    Limitada" numa SP e só "Aço Cearense" noutra. Aqui dá para equalizar — o
+    sistema resolve sozinho o que é só acento ou abreviação, e pergunta o resto
+    <b>uma vez por fornecedor</b>.
+  </p>
+  <a class="btn secundario" href="{{ url_for('analisesps.tela_credores') }}">
+    Ver os nomes divergentes</a>
+</div>
+
 <div class="cartao">
   <div class="cartao-cab">
     <h3>A base</h3>

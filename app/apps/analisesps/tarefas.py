@@ -53,6 +53,9 @@ MODOS = {
     "carga_inicial": "Primeira carga — traz a planilha inteira (demorado)",
     "apoios": "Só as planilhas de apoio (contas e documentação fiscal)",
     "fila": "Só devolver para a planilha as alterações pendentes",
+    "comprovantes": "Dar baixa nos comprovantes arrastados para a tela",
+    "fiscal": "Gravar nos cards do Pipefy a análise fiscal confirmada",
+    "fiscal_ia": "Ler com IA os anexos das SPs escolhidas",
 }
 
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
@@ -62,6 +65,9 @@ ETAPAS = {
     "sincronizar": ["fila", "delta", "apoios"],
     "apoios": ["apoios"],
     "fila": ["fila"],
+    "comprovantes": ["comprovantes"],
+    "fiscal": ["fiscal"],
+    "fiscal_ia": ["fiscal_ia"],
 }
 
 
@@ -306,6 +312,54 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 resultado = sincronizacao.sincronizar_delta(anotar)
                 total_linhas[0] = resultado.get("alteradas", 0)
 
+            elif etapa == "comprovantes":
+                # A BAIXA NÃO PODE RODAR DENTRO DO WORKER, e é o mesmo motivo
+                # da carga: ela fala com Omie, Pipefy, Sheets e Dropbox e leva
+                # minutos, enquanto o gunicorn recicla o processo a cada ~150
+                # requisições. Por isso ela mora aqui, no processo separado.
+                mudar_etapa("dando baixa nos comprovantes")
+                from . import comprovantes as _comprovantes
+                c = _comprovantes.processar_pendentes(anotar)
+                total_linhas[0] = c.get("lotes", 0)
+                recado_apoios[0] = (
+                    f"{c.get('lotes', 0)} arquivo(s) processado(s)"
+                    + (f", {c['falhas']} com falha" if c.get("falhas") else ""))
+
+            elif etapa == "fiscal":
+                # NO PROCESSO SEPARADO pelo mesmo motivo da baixa: são até
+                # duzentos cards falando com a API do Pipefy, e dentro do
+                # worker isso seguraria uma das quatro threads por minutos.
+                mudar_etapa("gravando a análise fiscal nos cards")
+                from . import fiscal as _fiscal
+                f = _fiscal.escrever_nos_cards(anotar)
+                total_linhas[0] = f.get("escritas", 0)
+                recado_apoios[0] = (
+                    f"{f.get('escritas', 0)} card(s) gravado(s)"
+                    + (f", {f['falhas']} recusado(s)" if f.get("falhas") else "")
+                    + (f", {f['pendentes']} ainda na fila"
+                       if f.get("pendentes") else ""))
+
+            elif etapa == "fiscal_ia":
+                # BAIXAR E LER CADA ANEXO leva segundos por SP; trinta SPs são
+                # minutos. Dentro do worker isso seguraria uma das quatro
+                # threads do gunicorn — e a fila de quem escolheu fica no
+                # banco, não em memória, porque o processo pode ser reiniciado.
+                mudar_etapa("lendo os anexos com IA")
+                from . import fiscal_ia as _fiscal_ia
+                from .db import conexao as _conexao
+                with _conexao() as _conn:
+                    _cur = _conn.execute(
+                        "SELECT sp_id FROM analisesps.sp_fiscal_analise "
+                        " WHERE situacao = 'NA_FILA_IA' ORDER BY decidida_em")
+                    _ids = [str(r[0]) for r in _cur.fetchall()]
+                    _cur.close()
+                i = _fiscal_ia.analisar(_ids, anotar)
+                total_linhas[0] = i.get("lidas", 0)
+                recado_apoios[0] = (
+                    f"{i.get('lidas', 0)} anexo(s) lido(s) pela IA"
+                    + (f", {i['sem_anexo']} sem anexo" if i.get("sem_anexo") else "")
+                    + (f", {len(i['falhas'])} com falha" if i.get("falhas") else ""))
+
             elif etapa == "apoios":
                 if automatica and _apoios_recentes():
                     logger.info("Análise de SPs: planilhas de apoio ainda "
@@ -315,6 +369,18 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     a = sincronizacao.sincronizar_apoios(anotar)
                     sincronizacao.sincronizar_agenda(anotar)
                     r = sincronizacao.sincronizar_referencias_rateio(anotar)
+                    # AS NOTAS DO FSIST vêm junto com o resto do apoio. Elas
+                    # existiam e estavam testadas desde 11/09, mas NINGUÉM AS
+                    # CHAMAVA: a tabela ficaria vazia para sempre, e a
+                    # conciliação fiscal não teria contra o que casar.
+                    # Achado em 12/09 procurando quem importava o relatório.
+                    try:
+                        n = sincronizacao.sincronizar_notas_fiscais(anotar)
+                    except Exception as e:  # noqa: BLE001 — não derruba o apoio
+                        logger.exception("Análise de SPs: falhou importar as "
+                                         "notas do FSist")
+                        n = {"novas": 0, "mudaram": 0, "ja_tinha": 0,
+                             "avisos": [f"notas do FSist: {e}"]}
                     _marcar_apoios_feitos()
                     # O QUE VEIO, E O QUE NÃO VEIO, VAI PARA A MENSAGEM DA
                     # EXECUÇÃO — que é o que a tela de Configurações mostra.
@@ -325,20 +391,27 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                         f"documentação fiscal: {a.get('fiscais', 0)} · "
                         f"contas: {a.get('contas', 0)} · "
                         f"obras: {r.get('obras', 0)} · "
-                        f"categorias: {r.get('categorias', 0)}")
+                        f"categorias: {r.get('categorias', 0)} · "
+                        # OS TRÊS NÚMEROS DAS NOTAS, como o dono pediu: o que
+                        # entrou, o que MUDOU (uma nota que volta cancelada é
+                        # notícia) e o que já estava lá.
+                        f"notas: {n.get('novas', 0)} nova(s), "
+                        f"{n.get('mudaram', 0)} mudou/mudaram, "
+                        f"{n.get('ja_tinha', 0)} já tinha")
                     # SEM REPETIR: a aba "C. Diários" é lida por dois
                     # caminhos (as contas e as obras). Quando ela falta, as
                     # duas leituras reclamam a mesma coisa, e o recado saía
                     # com a frase duplicada.
                     problemas = list(dict.fromkeys(
-                        (a.get("avisos") or []) + (r.get("avisos") or [])))
+                        (a.get("avisos") or []) + (r.get("avisos") or [])
+                        + (n.get("avisos") or [])))
                     if problemas:
                         recado_apoios[0] += " — " + " ".join(problemas)
 
             _marcar_etapa_feita(execucao_id, etapa)
 
         duracao = (agora() - inicio).total_seconds()
-        if modo == "apoios":
+        if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
             mensagem = (recado_apoios[0]

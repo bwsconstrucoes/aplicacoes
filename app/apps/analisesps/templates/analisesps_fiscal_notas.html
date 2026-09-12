@@ -1,0 +1,103 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Notas sem lançamento{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   A SEGUNDA VISÃO: nota → lançamento.
+
+   É ela que fecha com a contabilidade. Nas palavras do dono: *"se tem uma nota
+   emitida, tem uma despesa para estar associada"*. Nota órfã é problema
+   fiscal, e hoje ninguém a enxerga — a conciliação só olha do lado do
+   lançamento, e o que nunca virou lançamento nenhum não aparece em lugar
+   nenhum.
+
+   As CANCELADAS ficam de fora de propósito: nota cancelada sem despesa é o
+   esperado, não um achado.
+--------------------------------------------------------------------------- #}
+{% block conteudo %}
+
+{% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
+{% if erro %}<div class="aviso atencao">{{ erro }}</div>{% endif %}
+
+{% set base_args = args.to_dict(flat=false) %}
+{% set _ = base_args.pop('visao', None) %}
+{% set _ = base_args.pop('pagina', None) %}
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h2>Notas sem lançamento</h2>
+    <small>{{ total }} nota(s)</small>
+  </div>
+  <div class="fiscal-grupos">
+    <a class="etiqueta" href="{{ url_for('analisesps.tela_fiscal', **base_args) }}">
+      ← Ver por lançamento</a>
+    <span class="etiqueta ativa">Por nota</span>
+  </div>
+  <p class="cartao-dica">
+    Notas emitidas contra o CNPJ da BWS que <b>não estão em lançamento
+    nenhum</b>. Se tem nota emitida, tem uma despesa para estar associada — é
+    esta lista que fecha com a contabilidade. Nota cancelada fica de fora: sem
+    despesa ela é o esperado, não um problema.
+  </p>
+</div>
+
+<div class="cartao">
+  {% if not notas %}
+    <p class="cartao-dica">
+      {% if erro %}—{% else %}Nenhuma nota órfã. 👍{% endif %}
+    </p>
+  {% else %}
+    <div class="tabela-rolagem">
+      <table class="sps">
+        <thead>
+          <tr><th>Emissão</th><th>Nº</th><th>Emitente</th><th>Valor</th>
+              <th>Tipo</th><th>SPs possíveis</th></tr>
+        </thead>
+        <tbody>
+          {% for n in notas %}
+            <tr>
+              <td>{{ n.emissao|data_br }}</td>
+              <td class="id">{{ n.numero }}</td>
+              <td>{{ n.emitente }}<br>
+                <small class="cartao-dica">{{ n.emitente_doc }}</small></td>
+              <td class="num">{{ n.valor|moeda }}</td>
+              <td>{{ n.categoria or '—' }}</td>
+              <td>
+                {# NÃO BASTA DIZER "esta nota está órfã": quem vai resolver
+                   precisa de por onde começar. Estas são as SPs do mesmo
+                   CNPJ, com as de valor igual na frente. #}
+                {% if not n.candidatas %}
+                  <span class="cartao-dica">
+                    nenhuma SP deste CNPJ na base</span>
+                {% else %}
+                  {% for c in n.candidatas %}
+                    <div>
+                      <a href="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}">{{ c.id }}</a>
+                      — {{ c.valor_num|moeda }}
+                      {% if c.valor_num == n.valor %}
+                        <span class="etiqueta boa">mesmo valor</span>
+                      {% endif %}
+                      <small class="cartao-dica">{{ c.status_pgt }}</small>
+                    </div>
+                  {% endfor %}
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="paginacao">
+      {{ primeira_linha }}–{{ ultima_linha }} de {{ total }}
+      {% if pagina > 1 %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_fiscal', **dict(base_args, visao='notas', pagina=pagina-1)) }}">‹ Anterior</a>
+      {% endif %}
+      {% if tem_proxima %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_fiscal', **dict(base_args, visao='notas', pagina=pagina+1)) }}">Próxima ›</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

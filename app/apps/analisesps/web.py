@@ -568,7 +568,11 @@ def solicitacoes():
 # propósito: o destino sai da barra de endereço, e um destino livre viraria um
 # jeito de usar este módulo como trampolim para fora.
 ORIGENS = {"solicitacoes": "analisesps.solicitacoes",
-           "lote": "analisesps.tela_lote"}
+           "lote": "analisesps.tela_lote",
+           # Quem abre uma SP a partir da lista de notas órfãs tem de voltar
+           # para lá, e não para as Solicitações: a lista é o trabalho, e
+           # perder o lugar nela a cada ficha aberta faria desistir dela.
+           "fiscal": "analisesps.tela_fiscal"}
 
 
 def _origem_pedida() -> str:
@@ -1747,6 +1751,407 @@ def ratear():
 # ---------------------------------------------------------------------------
 # BRADESCO
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# DOCUMENTAÇÃO FISCAL — qual nota é de qual SP
+#
+# O objetivo, nas palavras do dono: *"eu quero minimizar a interação do humano
+# (…) é muito falho o olho humano, e nós não temos esse tempo."* A tela entrega
+# a análise pronta; quem executa só confere e confirma.
+#
+# DUAS PILHAS, e elas existem por causa de um risco real. Propor cria fadiga de
+# aprovação: se vinte e oito de trinta estão sempre certas, na terceira semana
+# ninguém confere mais — é o mesmo olho cansado, só que mais rápido. Por isso o
+# que tem dúvida NÃO vem marcado, e é decidido um a um.
+# ---------------------------------------------------------------------------
+@bp.route("/fiscal")
+@exige_consulta
+def tela_fiscal():
+    from . import consultas, fiscal
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+
+    filtros = _filtros_do_pedido()
+    try:
+        pagina = max(1, int(request.args.get("pagina", 1)))
+    except ValueError:
+        pagina = 1
+    grupo = request.args.get("grupo") or ""
+
+    # A SEGUNDA VISÃO — nota → lançamento. É ela que fecha com a contabilidade:
+    # *"se tem uma nota emitida, tem uma despesa para estar associada"*. Nota
+    # órfã é problema fiscal, e hoje ninguém a enxerga.
+    if request.args.get("visao") == "notas":
+        try:
+            orfas, total = fiscal.notas_orfas(pagina)
+            for nota in orfas:
+                nota["candidatas"] = fiscal.sps_possiveis_da_nota(nota)
+            erro = None
+        except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
+            logger.exception("Análise de SPs: falhou listar as notas órfãs")
+            orfas, total, erro = [], 0, (
+                "Esta tela precisa da atualização do banco. Vá em "
+                f"Configurações e aperte \"Aplicar atualizações do banco\". "
+                f"(detalhe: {e})")
+        ultima = (pagina - 1) * 200 + len(orfas)
+        return render_template(
+            "analisesps_fiscal_notas.html", aba="fiscal", base=base,
+            notas=orfas, total=total, erro=erro, pagina=pagina,
+            primeira_linha=(pagina - 1) * 200 + 1, ultima_linha=ultima,
+            tem_proxima=ultima < total, args=request.args,
+            aviso=request.args.get("aviso") or None,
+            pode_operar=auth.pode_operar(),
+            perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+            nome=auth.nome_atual())
+
+    try:
+        linhas = consultas.listar(filtros, ordem=request.args.get(
+            "ordem", "vencimento"), pagina=pagina)
+        conciliadas = fiscal.conciliar(linhas)
+        resumo = consultas.resumo(filtros)
+        erro = None
+    except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
+        logger.exception("Análise de SPs: falhou a conciliação fiscal")
+        conciliadas, resumo, erro = [], {"quantidade": 0, "total": 0}, (
+            "Esta tela precisa da atualização do banco. Vá em Configurações e "
+            f"aperte \"Aplicar atualizações do banco\". (detalhe: {e})")
+
+    contagem = fiscal.contar_por_grupo(conciliadas)
+    if grupo:
+        conciliadas = [c for c in conciliadas if c["grupo"] == grupo]
+
+    ultima = (pagina - 1) * consultas.POR_PAGINA + len(linhas or [])
+    return render_template(
+        "analisesps_fiscal.html", aba="fiscal", base=base,
+        linhas=conciliadas, contagem=contagem, grupo=grupo, erro=erro,
+        resumo=resumo, filtros=filtros, args=request.args,
+        opcoes=_opcoes_dos_filtros(base.get("ultima")),
+        pagina=pagina, por_pagina=consultas.POR_PAGINA,
+        primeira_linha=(pagina - 1) * consultas.POR_PAGINA + 1,
+        ultima_linha=ultima, tem_proxima=ultima < resumo["quantidade"],
+        categorias=fiscal.CATEGORIAS,
+        aviso=request.args.get("aviso") or None,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/api/fiscal/confirmar", methods=["POST"])
+@exige_operador
+def confirmar_fiscal():
+    """Grava as decisões marcadas NO DIÁRIO — ainda não no card.
+
+    A separação é o que permite tentar de novo quando o Pipefy recusa: a
+    decisão fica registrada com quem decidiu, e a escrita no card é um passo
+    à parte, que volta a tentar sozinho. Se as duas fossem uma coisa só, uma
+    falha de rede apagaria a decisão de trinta cards."""
+    from . import fiscal
+
+    dados = request.get_json(silent=True) or {}
+    itens = dados.get("itens") or []
+    if not itens:
+        return {"ok": False, "erro": "Nenhuma linha marcada."}, 400
+    if len(itens) > 500:
+        return {"ok": False,
+                "erro": "São no máximo 500 por vez. Refine o filtro."}, 400
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    gravadas, recusadas = 0, []
+    for item in itens:
+        sp_id = str(item.get("sp") or "").strip()
+        documentacao = str(item.get("documentacao") or "").strip()
+        if not sp_id or not documentacao:
+            continue
+        # A categoria TEM de ser uma das 22 do campo do Pipefy. Ele recusa o
+        # card inteiro quando o texto não é uma das opções — então um valor
+        # inventado aqui não erraria uma SP, derrubaria a gravação do lote.
+        if documentacao not in fiscal.CATEGORIAS:
+            recusadas.append(f"{sp_id}: categoria desconhecida")
+            continue
+        try:
+            fiscal.guardar_decisao(
+                sp_id, documentacao, item.get("chave") or "",
+                item.get("motivo") or "", item.get("confianca") or 0, quem)
+            gravadas += 1
+        except Exception as e:  # noqa: BLE001 — uma linha ruim não derruba as outras
+            logger.exception("Análise de SPs: falhou gravar a decisão de %s", sp_id)
+            recusadas.append(f"{sp_id}: {e}")
+
+    logger.info("Análise de SPs: %s confirmou %d análise(s) fiscal(is).",
+                quem or "sem nome", gravadas)
+
+    # DISPARA A GRAVAÇÃO NOS CARDS, em processo separado. Se já houver outra
+    # rodada em andamento o disparo é recusado — e tudo bem: a decisão fica na
+    # fila e entra na próxima. Nada se perde por isso.
+    from . import tarefas
+    disparou = tarefas.disparar("fiscal", disparo=quem or "análise fiscal")
+    recado = ("A gravação nos cards começou." if disparou.get("ok")
+              else "A gravação nos cards entra na próxima rodada "
+                   f"({disparou.get('erro') or 'já há uma em andamento'}).")
+    return {"ok": True, "gravadas": gravadas, "recusadas": recusadas,
+            "aviso": f"{gravadas} análise(s) confirmada(s). {recado}"}
+
+
+@bp.route("/api/fiscal/ia", methods=["POST"])
+@exige_operador
+def pedir_ia_fiscal():
+    """Manda a IA ler o anexo das SPs escolhidas.
+
+    NUNCA AUTOMÁTICO, e é decisão do dono, com as palavras dele: *"aí você pode
+    até fazer a sugestão, analisar com IA, e a gente seleciona ou não seleciona,
+    que me permita selecionar alguns que eu queira testar"*. Quem escolhe é
+    ele, SP a SP — e é assim que ele mede se compensa antes de soltar em tudo.
+
+    A leitura NÃO acontece aqui: baixar e ler cada anexo leva segundos por SP.
+    Aqui só se enfileira, no banco, e dispara o processo separado."""
+    from . import fiscal, tarefas
+
+    dados = request.get_json(silent=True) or {}
+    ids = [str(i).strip() for i in (dados.get("ids") or []) if str(i).strip()]
+    if not ids:
+        return {"ok": False, "erro": "Nenhuma SP marcada."}, 400
+    # O TETO É BAIXO DE PROPÓSITO: cada leitura é paga. Quem quiser mandar
+    # trezentas manda em levas, e vê o resultado das cinquenta primeiras antes
+    # de decidir se vale a pena continuar.
+    if len(ids) > 50:
+        return {"ok": False,
+                "erro": "São no máximo 50 por vez. Cada leitura é cobrada — "
+                        "mande uma leva, veja o resultado, e siga."}, 400
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    try:
+        entraram = fiscal.por_na_fila_da_ia(ids, quem)
+    except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
+        logger.exception("Análise de SPs: falhou enfileirar para a IA")
+        return {"ok": False, "erro": f"Não consegui enfileirar: {e}"}, 500
+
+    disparou = tarefas.disparar("fiscal_ia", disparo=quem or "análise fiscal")
+    de_fora = len(ids) - entraram
+    aviso = f"{entraram} SP(s) na fila da IA."
+    if de_fora:
+        aviso += (f" {de_fora} ficou/ficaram de fora por já terem análise "
+                  "confirmada — desfaça a decisão antes, se quiser refazer.")
+    aviso += (" A leitura começou." if disparou.get("ok")
+              else " Entra na próxima rodada.")
+    logger.info("Análise de SPs: %s mandou %d SP(s) para a IA.",
+                quem or "sem nome", entraram)
+    return {"ok": True, "enfileiradas": entraram, "aviso": aviso}
+
+
+# ---------------------------------------------------------------------------
+# CREDORES — o mesmo CNPJ escrito de cinco jeitos
+#
+# FORA DAS ABAS DE CIMA, e de propósito: isto é arrumação ocasional, não
+# trabalho do dia. A barra de abas é para o que se abre todo dia; encher ela
+# com manutenção faria o que importa ficar mais longe. Chega-se aqui por
+# Configurações, onde a contagem aparece.
+# ---------------------------------------------------------------------------
+@bp.route("/credores")
+@exige_consulta
+def tela_credores():
+    from . import consultas, credores
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+    try:
+        lista = credores.divergencias_da_base()
+        erro = None
+    except Exception as e:  # noqa: BLE001 — migração 007 ainda não aplicada
+        logger.exception("Análise de SPs: falhou levantar os credores")
+        lista, erro = [], (
+            "Esta tela precisa da atualização do banco. Vá em Configurações e "
+            f"aperte \"Aplicar atualizações do banco\". (detalhe: {e})")
+
+    return render_template(
+        "analisesps_credores.html", aba="configuracoes", base=base,
+        divergencias=lista, erro=erro,
+        aviso=request.args.get("aviso") or None,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/credores/aplicar", methods=["POST"])
+@exige_operador
+def aplicar_credor():
+    """Grava a escolha e reescreve o nome nas SPs daquele CPF/CNPJ.
+
+    PASSA PELO MESMO CAMINHO DE SEMPRE — `_gravar_alteracao`: banco, fila, log,
+    planilha. Não é atalho: é o que garante que a mudança apareça no Log com o
+    valor anterior e com quem mexeu, e que chegue à planilha mesmo se a
+    internet cair no meio.
+
+    E ENTRA POR PORTA PRÓPRIA, como a Validação e o "Remover risco": a coluna
+    do credor NÃO está em `EDITAVEIS`, então ninguém reescreve nome de
+    fornecedor pela tela comum. Nome de credor não é campo de trabalho do dia
+    a dia."""
+    from . import credores
+
+    documentos = [d for d in request.form.getlist("documento") if d.strip()]
+    escolhidos = request.form.getlist("nome")
+    if len(documentos) != len(escolhidos):
+        return redirect(url_for("analisesps.tela_credores",
+                                aviso="Pedido incompleto. Tente de novo."))
+
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    mudadas, fornecedores, sem_efeito = 0, 0, 0
+    for documento, nome in zip(documentos, escolhidos):
+        nome = (nome or "").strip()
+        if not nome:
+            continue
+        ids = credores.sps_para_reescrever(documento, nome)
+        tipo = request.form.get(f"tipo-{documento}") or credores.DECIDIR
+        if ids:
+            # Em blocos: uma SP com muitos lançamentos do mesmo fornecedor
+            # pode passar do teto de 500 da rota comum.
+            for inicio in range(0, len(ids), 400):
+                _gravar_alteracao(ids[inicio:inicio + 400], "credor", nome,
+                                  "Equalizar nome do credor")
+            mudadas += len(ids)
+        else:
+            sem_efeito += 1
+        credores.guardar_escolha(documento, nome, tipo,
+                                 tipo != credores.DECIDIR, quem, len(ids))
+        fornecedores += 1
+
+    if not fornecedores:
+        aviso = "Nenhum nome foi escolhido."
+    else:
+        aviso = (f"{fornecedores} fornecedor(es) equalizado(s), "
+                 f"{mudadas} SP(s) reescrita(s). A planilha é atualizada na "
+                 "próxima sincronização.")
+        if sem_efeito:
+            aviso += (f" {sem_efeito} já estava(m) com o nome certo — ficou só "
+                      "a decisão guardada.")
+    logger.info("Análise de SPs: %s equalizou %d credor(es), %d SP(s).",
+                quem or "sem nome", fornecedores, mudadas)
+    return redirect(url_for("analisesps.tela_credores", aviso=aviso))
+
+
+# ---------------------------------------------------------------------------
+# COMPROVANTES — arrastar o PDF e a baixa acontece
+#
+# O trabalho pesado NÃO É DAQUI: o robô que dá baixa é o `baixabradesco`, que
+# roda em produção há meses. Estas rotas são a porta de entrada que o dono
+# pediu em 11/09/2026 — *"eu arrasto esses comprovantes pra dentro e dispara a
+# automação, sem nem precisar passar pelo Make"* — e a memória do que
+# aconteceu, que hoje volta para o Make.com e morre lá.
+# ---------------------------------------------------------------------------
+@bp.route("/comprovantes")
+@exige_consulta
+def tela_comprovantes():
+    from . import comprovantes, consultas, tarefas
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+
+    try:
+        historico = comprovantes.historico()
+        for lote in historico:
+            lote["itens"] = comprovantes.itens_do_lote(lote["id"])
+    except Exception as e:  # noqa: BLE001 — migração 006 ainda não aplicada
+        logger.exception("Análise de SPs: falhou ler o histórico de comprovantes")
+        historico = []
+        return render_template(
+            "analisesps_comprovantes.html", aba="comprovantes", base=base,
+            historico=[], andamento={"rodando": False},
+            por_leva=comprovantes.POR_LEVA,
+            maximo_mb=comprovantes.MAXIMO_POR_ARQUIVO // (1024 * 1024),
+            maximo_arquivos=comprovantes.MAXIMO_DE_ARQUIVOS,
+            aviso="Esta tela precisa da atualização do banco. Vá em "
+                  "Configurações e aperte \"Aplicar atualizações do banco\". "
+                  f"(detalhe: {e})",
+            pode_operar=auth.pode_operar(),
+            perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+            nome=auth.nome_atual())
+
+    return render_template(
+        "analisesps_comprovantes.html", aba="comprovantes", base=base,
+        historico=historico, andamento=tarefas.estado(),
+        por_leva=comprovantes.POR_LEVA,
+        maximo_mb=comprovantes.MAXIMO_POR_ARQUIVO // (1024 * 1024),
+        maximo_arquivos=comprovantes.MAXIMO_DE_ARQUIVOS,
+        aviso=request.args.get("aviso") or None,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
+@bp.route("/comprovantes/enviar", methods=["POST"])
+@exige_operador
+def enviar_comprovantes():
+    """Recebe os arquivos soltos e põe na fila. NÃO dá baixa aqui.
+
+    A baixa fala com Omie, Pipefy, Sheets e Dropbox e leva minutos; dentro do
+    worker ela seria morta pelo reinício do gunicorn, como já aconteceu três
+    vezes com a carga da planilha. Aqui só se guarda e se dispara o processo
+    separado — quem responde à pessoa é a tela, lendo o banco."""
+    from . import comprovantes, tarefas
+
+    arquivos = [a for a in request.files.getlist("arquivos")
+                if a and a.filename]
+    if not arquivos:
+        return redirect(url_for("analisesps.tela_comprovantes",
+                                aviso="Nenhum arquivo foi escolhido."))
+    if len(arquivos) > comprovantes.MAXIMO_DE_ARQUIVOS:
+        return redirect(url_for(
+            "analisesps.tela_comprovantes",
+            aviso=f"São no máximo {comprovantes.MAXIMO_DE_ARQUIVOS} arquivos "
+                  "por vez. Mande em duas levas."))
+
+    pessoa = auth.pessoa_atual()
+    quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
+    aceitos, recusados = 0, []
+    for arquivo in arquivos:
+        try:
+            comprovantes.guardar(arquivo.read(), arquivo.filename, pessoa, quem)
+            aceitos += 1
+        except comprovantes.ErroDeComprovante as e:
+            recusados.append(str(e))
+        except Exception as e:  # noqa: BLE001 — um arquivo ruim não derruba os outros
+            logger.exception("Análise de SPs: falhou guardar %r",
+                             arquivo.filename)
+            recusados.append(f"{arquivo.filename}: {e}")
+
+    if aceitos:
+        # Se já houver uma atualização rodando, o disparo é recusado — e tudo
+        # bem: o lote fica ESPERANDO e entra na próxima. Dizer isso é melhor
+        # do que fingir que já está processando.
+        tarefas.disparar("comprovantes", disparo=quem or "comprovantes")
+
+    aviso = (f"{aceitos} arquivo(s) na fila. O resultado aparece aqui embaixo; "
+             "pode fechar a tela." if aceitos else "")
+    if recusados:
+        aviso = (aviso + " " if aviso else "") + " ".join(recusados)
+    return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
+
+
+@bp.route("/api/comprovantes/estado")
+@exige_consulta
+def estado_comprovantes():
+    """O andamento, para a tela se atualizar sozinha sem recarregar tudo."""
+    from . import comprovantes, tarefas
+    try:
+        lotes = comprovantes.historico(quantos=5)
+    except Exception:  # noqa: BLE001 — migração ainda não aplicada
+        return {"ok": False, "rodando": False, "lotes": []}
+    andamento = tarefas.estado()
+    return {
+        "ok": True,
+        "rodando": bool(andamento.get("rodando")),
+        "lotes": [{"id": l["id"], "situacao": l["situacao"],
+                   "levas": l["levas"], "levas_feitas": l["levas_feitas"],
+                   "pendencias": l["pendencias"], "resolvidos": l["resolvidos"]}
+                  for l in lotes],
+    }
+
+
 @bp.route("/bradesco", methods=["GET", "POST"])
 @exige_consulta
 def tela_bradesco():
@@ -2244,6 +2649,102 @@ def lote_pdf():
     return Response(conteudo, mimetype="application/pdf",
                     headers={"Content-Disposition":
                              f'attachment; filename="{nome}"'})
+
+
+# ---------------------------------------------------------------------------
+# O LOTE EM EXCEL — .xlsx de verdade, não CSV
+#
+# Pedido do dono: *"relatório do lote em Excel, por lote e de todos os lotes
+# juntos"*. O CSV continua existindo, e não é redundância: ele sai em BLOCOS,
+# e é o único que aguenta exportar a base larga sem estourar a memória. O
+# Excel monta o arquivo inteiro antes de enviar — por isso é do LOTE, que tem
+# dezenas de linhas, e não da base, que tem 59 mil.
+# ---------------------------------------------------------------------------
+def _responder_xlsx(conteudo: bytes, nome: str):
+    from flask import Response
+    return Response(
+        conteudo,
+        mimetype=("application/vnd.openxmlformats-officedocument"
+                  ".spreadsheetml.sheet"),
+        headers={"Content-Disposition": f'attachment; filename="{nome}"'})
+
+
+@bp.route("/lote/excel")
+@exige_consulta
+def lote_excel_rota():
+    """O lote DESTA pessoa, em Excel."""
+    from . import lote, lote_excel
+    from .horario import agora
+
+    pessoa = auth.pessoa_atual()
+    # Ver o comentário em `exportar_lote`: sem a pessoa, sai o lote antigo.
+    try:
+        montado = lote.montar(lote.ler(pessoa)["conteudo"])
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou montar o lote para o Excel")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui montar o lote",
+            mensagem=f"{e}"), 500
+    if not montado["quantidade"]:
+        return render_template(
+            "analisesps_erro.html", titulo="Lote vazio",
+            mensagem="Não há SPs no lote para pôr na planilha."), 400
+
+    try:
+        conteudo = lote_excel.de_um_lote(
+            montado, auth.nome_atual() or "Lote")
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou gerar o Excel do lote")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui gerar o Excel",
+            mensagem=f"{e}. A exportação em CSV continua disponível."), 500
+
+    return _responder_xlsx(
+        conteudo, f"lote_{agora().strftime('%Y-%m-%d_%H%M')}.xlsx")
+
+
+@bp.route("/lote/excel/todos")
+@exige_consulta
+def lote_excel_todos():
+    """TODOS os lotes, uma aba por pessoa, com um resumo na frente.
+
+    Serve para a pergunta que hoje não tem resposta em lugar nenhum: "quanto
+    está separado para pagar, no total, somando o que cada um montou?". A tela
+    do Lote mostra só o de quem está olhando."""
+    from . import lote, lote_excel, preferencias
+    from .horario import agora
+
+    try:
+        pessoas = preferencias.pessoas_conhecidas() if lote.por_pessoa() else []
+        lotes = []
+        for pessoa in pessoas:
+            conteudo = lote.ler(pessoa["chave"])["conteudo"]
+            if not (conteudo or "").strip():
+                continue          # lote vazio não vira aba
+            lotes.append({"nome": pessoa.get("nome") or pessoa["chave"],
+                          "montado": lote.montar(conteudo)})
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou juntar os lotes para o Excel")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui juntar os lotes",
+            mensagem=f"{e}"), 500
+
+    if not lotes:
+        return render_template(
+            "analisesps_erro.html", titulo="Nenhum lote com SPs",
+            mensagem="Ninguém tem SP no lote agora."), 400
+
+    try:
+        conteudo = lote_excel.de_todos(lotes)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou gerar o Excel de todos")
+        return render_template(
+            "analisesps_erro.html", titulo="Não consegui gerar o Excel",
+            mensagem=f"{e}"), 500
+
+    logger.info("Análise de SPs: Excel de %d lote(s) gerado.", len(lotes))
+    return _responder_xlsx(
+        conteudo, f"lotes_todos_{agora().strftime('%Y-%m-%d_%H%M')}.xlsx")
 
 
 # ---------------------------------------------------------------------------

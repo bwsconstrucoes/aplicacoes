@@ -473,7 +473,16 @@ def test_o_modulo_nao_depende_de_pandas_nem_de_streamlit():
     #
     # Se alguém quiser exportar as 59 mil SPs em Excel, a resposta continua
     # sendo NÃO por aqui: é exatamente o caminho que estourava a memória.
-    LIBERADO_EM = {"beevale.py": {"openpyxl"}}
+    # O `openpyxl` é a única exceção, e ela vale para quem gera planilha de
+    # verdade: o BeeVale (que sobe para o portal) e o relatório do lote em
+    # Excel. O motivo da proibição é MEMÓRIA, e nos dois casos o que se monta
+    # são dezenas de linhas, não as 59 mil da base.
+    #
+    # Para exportar a base larga a resposta continua sendo NÃO por aqui: é
+    # exatamente o caminho que estourava a memória, e o CSV — que sai em
+    # blocos — existe para isso.
+    LIBERADO_EM = {"beevale.py": {"openpyxl"},
+                   "lote_excel.py": {"openpyxl"}}
 
     achados = []
     for caminho in _arquivos():
@@ -518,6 +527,14 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
         # Só o `beevale.py` importa — ver a exceção explicada no teste acima.
         # Já estava no requirements por causa do painel.
         "openpyxl": "openpyxl",
+        # Partir o PDF de comprovantes em levas de dez páginas. Já estava no
+        # requirements (o BaixaBradesco usa), então nada novo entrou.
+        "pypdf": "pypdf",
+        # `app` é o PRÓPRIO repositório, não uma biblioteca — o
+        # `comprovantes.py` chama o robô do `baixabradesco` por
+        # `from app.apps.baixabradesco...`. Não tem o que conferir no
+        # requirements.
+        "app": "",
     }
 
     faltando = []
@@ -537,6 +554,8 @@ def test_tudo_que_o_modulo_importa_esta_no_requirements():
                 if nome in {c.stem for c in MODULO.glob("*.py")}:
                     continue
                 pacote = INSTALADO_COMO.get(nome)
+                if pacote == "":
+                    continue      # é código deste repositório, não biblioteca
                 if pacote is None:
                     faltando.append(f"{caminho.name}:{no.lineno}  '{nome}' "
                                     "não está na lista de nomes conhecidos")

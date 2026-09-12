@@ -1,0 +1,123 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Comprovantes{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   COMPROVANTES — arrastar o PDF e a baixa acontece.
+
+   Aba PRÓPRIA, e não um canto das Solicitações: lá a tela já está cheia de
+   linhas, e arrastar um arquivo por cima de uma lista de pagamentos é convite
+   a soltar no lugar errado.
+
+   O que o dono pediu em 11/09/2026: *"eu arrasto esses comprovantes pra dentro
+   e dispara a automação, sem nem precisar passar pelo Make"* — e, logo depois:
+   *"se eu sair da tela e voltar, a informação vai ser me dada ainda?"*. Vai: o
+   resultado mora no banco, não nesta página.
+--------------------------------------------------------------------------- #}
+{% block conteudo %}
+
+{# O endereço e o "tem coisa andando" vêm do SERVIDOR, não são adivinhados
+   pelo texto da página: adivinhar pelo texto já deu errado antes, e uma tela
+   que fica perguntando ao banco a noite inteira é exatamente o que este
+   módulo evita. #}
+{% set trabalhando = andamento.rodando or historico
+     |selectattr('situacao', 'in', ['ESPERANDO', 'RODANDO'])|list %}
+<div id="comprovantes-estado" hidden
+     data-url-estado="{{ url_for('analisesps.estado_comprovantes') }}"
+     data-trabalhando="{{ '1' if trabalhando else '' }}"></div>
+
+{% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
+
+<div class="cartao">
+  <h2>Comprovantes</h2>
+  <p class="cartao-dica">
+    Arraste os comprovantes aqui. Cada <b>página</b> do PDF é um comprovante, e
+    eles são processados em levas de {{ por_leva }} — do mesmo jeito que o seu
+    script já faz hoje pelo e-mail. Você pode fechar esta tela: o trabalho
+    continua, e o resultado fica guardado.
+  </p>
+
+  {% if pode_operar %}
+    <form id="form-comprovantes" method="post" enctype="multipart/form-data"
+          action="{{ url_for('analisesps.enviar_comprovantes') }}">
+      <label id="area-solta" class="solta" for="campo-comprovantes">
+        <span class="solta-titulo">Solte os comprovantes aqui</span>
+        <span class="solta-dica">ou clique para escolher — PDF, até
+          {{ maximo_mb }} MB cada, {{ maximo_arquivos }} por vez</span>
+        <input type="file" id="campo-comprovantes" name="arquivos"
+               accept="application/pdf" multiple hidden>
+      </label>
+      <div id="escolhidos" class="cartao-dica" hidden></div>
+      <div style="display:flex; gap:8px; margin-top:12px">
+        <button class="btn" type="submit" id="btn-enviar" disabled>
+          Mandar para a baixa</button>
+      </div>
+    </form>
+  {% else %}
+    <p class="cartao-dica">O perfil Consulta vê o resultado, mas não envia.</p>
+  {% endif %}
+</div>
+
+{% if andamento.rodando %}
+  <div class="aviso atencao" id="aviso-rodando">
+    <b>Dando baixa agora:</b>
+    {{ andamento.detalhe.etapa or 'processando' }}
+    {% if andamento.detalhe.progresso %} — {{ andamento.detalhe.progresso }}{% endif %}.
+    Esta página se atualiza sozinha.
+  </div>
+{% endif %}
+
+<div class="cartao">
+  <h2>O que aconteceu</h2>
+  {% if not historico %}
+    <p class="cartao-dica">Nenhum comprovante foi enviado por aqui ainda.</p>
+  {% else %}
+    {% for lote in historico %}
+      <details class="lote-comprovante" {% if loop.first %}open{% endif %}>
+        <summary>
+          <b>{{ lote.arquivo }}</b>
+          — {{ lote.paginas }} comprovante{{ 's' if lote.paginas != 1 }}
+          {% if lote.situacao == 'ESPERANDO' %}
+            <span class="etiqueta">na fila</span>
+          {% elif lote.situacao == 'RODANDO' %}
+            <span class="etiqueta">processando {{ lote.levas_feitas }}/{{ lote.levas }}</span>
+          {% elif lote.situacao == 'FALHOU' %}
+            <span class="etiqueta ruim">falhou</span>
+          {% endif %}
+          {% for chave, rotulo, quantos in lote.contagem %}
+            <span class="etiqueta {{ 'boa' if chave in ('BAIXADO', 'DUPLICADO') else 'ruim' }}">
+              {{ rotulo }}: {{ quantos }}</span>
+          {% endfor %}
+          <span class="cartao-dica">{{ lote.quem }} · {{ lote.recebido_em|momento_br }}</span>
+        </summary>
+
+        {% if lote.erro %}<div class="aviso atencao">{{ lote.erro }}</div>{% endif %}
+
+        {% set itens = lote.itens %}
+        {% if itens %}
+          <table class="sps">
+            <thead><tr>
+              <th>Pág.</th><th>Situação</th><th>SP</th><th>Valor</th>
+              <th>Quem recebeu</th><th>Por quê</th>
+            </tr></thead>
+            <tbody>
+              {% for i in itens %}
+                <tr class="{{ 'com-risco' if i.situacao not in ('BAIXADO', 'DUPLICADO') }}">
+                  <td>{{ i.pagina or '—' }}</td>
+                  <td>{{ i.rotulo }}</td>
+                  <td class="id">{{ i.sp_id or '—' }}</td>
+                  <td>{{ i.valor or '—' }}</td>
+                  <td>{{ i.recebedor or '—' }}</td>
+                  <td>{{ i.motivo or '' }}</td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% elif lote.situacao in ('ESPERANDO', 'RODANDO') %}
+          <p class="cartao-dica">Ainda processando — as linhas vão aparecendo.</p>
+        {% endif %}
+      </details>
+    {% endfor %}
+  {% endif %}
+</div>
+
+{% endblock %}

@@ -334,13 +334,29 @@ def _importar(monkeypatch, linhas, gravou=None):
     guardadas = [] if gravou is None else gravou
 
     class ConexaoFalsa:
+        """Banco de mentira. Ele responde as DUAS contagens que a importação
+        faz — a de antes (com a hora do banco junto) e a de depois (com
+        quantas linhas foram tocadas) —, porque é dessas duas que saem os três
+        números que a tela mostra."""
+
         def __enter__(self): return self
         def __exit__(self, *a): return False
+
         def execute(self, sql, params=()):
+            import datetime as _dt
+            quantas = len(guardadas)
+            if "now()" in sql:               # a contagem de ANTES
+                resposta = (quantas, _dt.datetime(2026, 9, 12, 12, 0))
+            elif "FILTER" in sql:            # a de DEPOIS, com as tocadas
+                resposta = (quantas, quantas)
+            else:
+                resposta = (quantas,)
+
             class Cur:
-                def fetchone(self_): return (len(guardadas),)
+                def fetchone(self_): return resposta
                 def close(self_): pass
             return Cur()
+
         def executemany(self, sql, seq): guardadas.extend(seq)
         def commit(self): pass
 
@@ -803,3 +819,150 @@ def test_gerou_nota_so_aceita_sim_ou_nao():
     from app.apps.analisesps import pipefy
     assert pipefy.GEROU_NOTA_SIM == "Sim"
     assert pipefy.GEROU_NOTA_NAO == "Não"
+
+
+# ---------------------------------------------------------------------------
+# A GRAVAÇÃO NOS CARDS DO PIPEFY
+#
+# É A CHAMADA SEM VOLTA deste módulo: o card é alterado de verdade, e não há
+# desfazer. Por isso os testes aqui olham o que É MANDADO, e não só se a função
+# roda — o estrago de mandar errado não aparece na tela, aparece no card.
+# ---------------------------------------------------------------------------
+class PipefyFalso:
+    """Guarda a consulta que teria ido para a API, e responde o que ela
+    responderia. Nenhum teste encosta no Pipefy de verdade."""
+
+    def __init__(self, sucesso=True):
+        self.consultas = []
+        self.sucesso = sucesso
+
+    def __call__(self, consulta, token=None):
+        self.consultas.append(consulta)
+        import re as _re
+        return {m: {"success": self.sucesso}
+                for m in _re.findall(r"(m\d+):", consulta)}
+
+
+def _mandar(monkeypatch, atualizacoes, sucesso=True):
+    from app.apps.analisesps import pipefy
+    falso = PipefyFalso(sucesso)
+    monkeypatch.setattr(pipefy, "graphql", falso)
+    monkeypatch.setattr(pipefy, "_token", lambda: "fingido")
+    resultado = pipefy.atualizar_documentacao_fiscal(atualizacoes)
+    return resultado, " ".join(falso.consultas)
+
+
+def test_a_categoria_e_a_chave_vao_para_os_campos_certos(monkeypatch):
+    """Errar um identificador do Pipefy NÃO dá erro: a chamada é aceita e nada
+    é gravado. Só se descobriria abrindo o card."""
+    resultado, enviado = _mandar(monkeypatch, [{
+        "card": "1409289353", "documentacao": "NF-e (Mercadoria)",
+        "chave": chave(CREDOR)}])
+    assert resultado["ok"] == ["1409289353"] and not resultado["falhas"]
+    assert "documenta_o_fiscal" in enviado
+    assert "chave_de_acesso" in enviado
+    assert chave(CREDOR) in enviado
+    assert "NF-e (Mercadoria)" in enviado
+
+
+def test_achar_a_nota_marca_que_a_despesa_GEROU_nota():
+    """Com a chave na mão, a resposta é sim — e é esse campo que destrava o
+    resto do fluxo no Pipefy."""
+    import inspect
+
+    from app.apps.analisesps import pipefy
+    codigo = inspect.getsource(pipefy.atualizar_documentacao_fiscal)
+    assert "CAMPO_GEROU_NOTA" in codigo and "GEROU_NOTA_SIM" in codigo
+
+
+def test_NAO_achar_a_nota_nunca_escreve_NAO_no_card(monkeypatch):
+    """Não ter encontrado não prova que não existe — pode ser nota fora do
+    relatório do FSist. Escrever "Não" ali seria afirmar o que este módulo não
+    sabe, e o campo é usado por outras pessoas."""
+    _, enviado = _mandar(monkeypatch, [{
+        "card": "1", "documentacao": "Ausente", "chave": ""}])
+    assert "a_despesa_gerou_emiss_o_de_nota_fiscal" not in enviado
+
+
+def test_chave_vazia_NAO_e_mandada_para_nao_apagar_a_que_ja_existe(monkeypatch):
+    """O PIOR EFEITO POSSÍVEL DESTA TELA seria apagar a chave que outra pessoa
+    preencheu à mão. Mandar campo vazio é gravar vazio."""
+    _, enviado = _mandar(monkeypatch, [{
+        "card": "1", "documentacao": "Não Dedutível", "chave": ""}])
+    assert "chave_de_acesso" not in enviado
+
+
+def test_chave_pela_metade_nao_e_mandada(monkeypatch):
+    """44 dígitos ou não é chave. Meia chave num card é pior que nenhuma:
+    parece decidida."""
+    _, enviado = _mandar(monkeypatch, [{
+        "card": "1", "documentacao": "NF-e (Mercadoria)", "chave": "12345"}])
+    assert "chave_de_acesso" not in enviado
+
+
+def test_card_sem_nada_para_escrever_e_recusado_e_nao_mandado(monkeypatch):
+    resultado, enviado = _mandar(monkeypatch, [{
+        "card": "1", "documentacao": "", "chave": ""}])
+    assert resultado["ok"] == []
+    assert "1" in resultado["falhas"]
+    assert "updateFieldsValues" not in enviado
+
+
+def test_quem_o_Pipefy_recusa_e_devolvido_com_nome(monkeypatch):
+    """Quem chama precisa saber QUAIS passaram, não só quantos: só esses podem
+    ser marcados como escritos. Contar erraria para sempre."""
+    resultado, _ = _mandar(monkeypatch, [
+        {"card": "1", "documentacao": "NF-e (Mercadoria)", "chave": chave(CREDOR)},
+        {"card": "2", "documentacao": "Seguros", "chave": ""}], sucesso=False)
+    assert resultado["ok"] == []
+    assert set(resultado["falhas"]) == {"1", "2"}
+
+
+def test_falha_de_rede_num_bloco_nao_derruba_os_outros(monkeypatch):
+    """Vinte cards por ida à API. Uma ida que falha não pode levar as outras
+    junto — e os que passaram têm de ficar marcados como passados."""
+    from app.apps.analisesps import pipefy
+
+    chamadas = [0]
+
+    def instavel(consulta, token=None):
+        chamadas[0] += 1
+        if chamadas[0] == 1:
+            raise RuntimeError("a rede caiu")
+        import re as _re
+        return {m: {"success": True} for m in _re.findall(r"(m\d+):", consulta)}
+
+    monkeypatch.setattr(pipefy, "graphql", instavel)
+    monkeypatch.setattr(pipefy, "_token", lambda: "fingido")
+    resultado = pipefy.atualizar_documentacao_fiscal([
+        {"card": str(n), "documentacao": "Seguros"} for n in range(1, 26)])
+
+    assert len(resultado["falhas"]) == 20, "o bloco que caiu"
+    assert len(resultado["ok"]) == 5, "o bloco seguinte tinha de passar"
+    assert "a rede caiu" in " ".join(resultado["falhas"].values())
+
+
+def test_o_valor_que_VEM_DO_BANCO_conta_como_valor():
+    """O DEFEITO QUE ESTE TESTE GUARDA, achado em 12/09/2026: a coluna do valor
+    da nota é NUMERIC, e o banco devolve NUMERIC como `Decimal` — que não é
+    `int` nem `float`.
+
+    Sem tratar esse tipo, `Decimal("269.00")` caía no caminho do texto
+    brasileiro, onde o ponto é separador de milhar: virava **26.900**. E o
+    estrago não aparecia na tela — aparecia como ponto que faltava: o valor
+    NUNCA batia, e toda conciliação perdia os 25 pontos do valor exato.
+
+    Um erro de conciliação que some 25 pontos em TODO caso é o tipo de defeito
+    que faz a tela "quase funcionar" para sempre."""
+    from decimal import Decimal
+
+    pontos, porques = fiscal.pontuar(sp(), nota(valor=Decimal("269.00")))
+    assert any("valor é igual" in p for p in porques), (
+        "o valor vindo do banco não foi reconhecido")
+    assert pontos >= fiscal.PONTOS_EMITENTE + fiscal.PONTOS_VALOR_EXATO
+
+
+def test_o_valor_do_lancamento_tambem_pode_vir_do_banco():
+    from decimal import Decimal
+    _, porques = fiscal.pontuar(sp(valor=Decimal("269.00")), nota())
+    assert any("valor é igual" in p for p in porques)
