@@ -567,6 +567,41 @@ Perguntas que isso torna possíveis, e que **ainda não respondem**:
   de culpa: muito encaminhamento costuma significar que falta alguém ter
   acesso à tela.
 
+## 3i. Os relatórios — e a palavra que faltava separar
+
+Em 12/09/2026 a tela de Relatórios ganhou **fluxo de caixa projetado**, **curva
+ABC**, **consolidado por empresa** e a exportação em **Excel e PDF** (era a
+única tela do ERP que só dava CSV).
+
+⚠️ **E uma palavra entrou para a lista das ambíguas: "total da obra".**
+
+Até então, "totais por obra" somava o que a obra vai **RECEBER** com o que ela
+**CUSTOU**, num número positivo só — porque a medição a receber e a nota a
+pagar moram na mesma lista. Uma obra que gastou 10 mil e vai receber 50 mil
+aparecia com "60 mil". Agora a **espécie** é escolha explícita na tela, e o
+padrão é **a pagar**, porque este é um relatório de custo.
+
+Perguntas que passam a funcionar:
+
+- OK **Quanto eu tenho a pagar por semana, nas próximas 13 semanas?**
+- OK **Em que semana o caixa fica negativo?** — a partir do saldo que você
+  informar; o sistema **não sabe** o saldo do banco.
+- OK **Quais fornecedores respondem por 80% do que eu gasto?**
+- OK **Quanto cada empresa do grupo gastou no período?**
+- OK **Quanto esta obra vai receber, separado do que ela custa?**
+
+Todas mudam conforme quem pergunta (recorte por obra).
+
+O que ainda **nao** responde:
+
+- FALTA **"Este gasto esta dentro do previsto?"** — falta orcamento por obra.
+  E a pergunta que o sistema inteiro ainda nao sabe responder, e a que mais
+  muda uma decisao.
+- FALTA **"Como esta este mes comparado com o mes passado?"** — nenhum
+  relatorio compara periodos.
+- FALTA **"Quanto esta vencido ha mais de 60 dias?"** — o fluxo mostra o
+  vencido num total so, sem faixas.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

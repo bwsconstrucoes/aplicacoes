@@ -3254,14 +3254,23 @@ def api_acao_lote():
 @permissao("configurar")
 def api_config():
     from sqlalchemy import select
-    from app.apps.erp.db.models.cadastros import Categoria, ContaBancaria, Obra
+    from app.apps.erp.db.models.cadastros import (
+        Categoria, ContaBancaria, Empresa, Obra)
     try:
         with get_session() as s:
             cats = s.scalars(select(Categoria).order_by(Categoria.ordem, Categoria.codigo)).all()
             obras = s.scalars(select(Obra).order_by(Obra.codigo)).all()
+            # As empresas entram AQUI, e não numa chamada própria: a tela de
+            # relatórios já busca este payload, e a rota de empresas exige
+            # "configurar" — o filtro ficaria vazio calado para quem só olha
+            # relatório.
+            empresas = s.scalars(select(Empresa).order_by(Empresa.razao_social)).all()
             contas = s.scalars(select(ContaBancaria).order_by(ContaBancaria.descricao)).all()
             usuarios = s.scalars(select(Usuario).order_by(Usuario.nome)).all()
             dados = {
+                "empresas": [{"id": e.id,
+                              "nome": e.nome_fantasia or e.razao_social}
+                             for e in empresas],
                 "categorias": [{
                     "id": c.id, "codigo": c.codigo, "descricao": c.descricao,
                     "natureza": getattr(c, "natureza", "RESULTADO"),
@@ -4427,7 +4436,8 @@ def api_conciliar_manual():
 @login_obrigatorio
 @permissao("ver_relatorios")
 def api_relatorios():
-    from app.apps.erp.core.relatorios import analitico, dre_gerencial, resumo
+    from app.apps.erp.core.relatorios import (
+        analitico, curva_abc, dre_gerencial, fluxo_de_caixa, resumo)
     d = request.get_json(silent=True) or {}
     tipo = (d.get("tipo") or "resumo").strip()
     filtros = d.get("filtros") or {}
@@ -4439,6 +4449,16 @@ def api_relatorios():
             if tipo == "analitico":
                 return jsonify({"ok": True,
                                 "linhas": analitico(s, filtros, usuario)})
+            if tipo == "abc":
+                return jsonify({"ok": True,
+                                "resumo": curva_abc(s, d.get("dimensao") or "credor",
+                                                    filtros, usuario)})
+            if tipo == "fluxo":
+                return jsonify({"ok": True, "fluxo": fluxo_de_caixa(
+                    s, filtros, usuario,
+                    periodos=int(d.get("periodos") or 13),
+                    passo=(d.get("passo") or "semana"),
+                    saldo_inicial=float(d.get("saldo_inicial") or 0))})
             return jsonify({"ok": True,
                             "resumo": resumo(s, d.get("dimensao") or "grupo", filtros,
                                              usuario)})

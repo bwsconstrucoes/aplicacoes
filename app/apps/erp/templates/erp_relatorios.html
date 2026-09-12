@@ -5,6 +5,16 @@
   <div class="filtros-cab"><h2>Filtros</h2><button class="link-btn" id="btn-limpar">Limpar</button></div>
   <div class="campo"><label>Competência de</label><input type="month" id="f-de"></div>
   <div class="campo"><label>até</label><input type="month" id="f-ate"></div>
+  {# ESPÉCIE — a separação que faltava, e que fazia o relatório somar o que a
+     obra vai RECEBER com o que ela CUSTOU, num número positivo só. O padrão é
+     "a pagar" porque este é um relatório de custo; a escolha fica à vista. #}
+  <div class="campo"><label>Espécie</label><select id="f-especie">
+    <option value="pagar">A pagar (custo)</option>
+    <option value="receber">A receber (medições)</option>
+    <option value="tudo">Os dois juntos</option></select>
+    <div class="dica">A pagar e a receber moram na mesma lista. Somados no
+      mesmo número, um esconde o outro.</div></div>
+  <div class="campo"><label>Empresa</label><select id="f-empresa"><option value="">Todas</option></select></div>
   <div class="campo"><label>Obra</label><select id="f-obra"><option value="">Todas</option></select></div>
   <div class="campo"><label>Grupo do plano</label><select id="f-grupo"><option value="">Todos</option></select></div>
   <div class="campo"><label>Credor</label><select id="f-credor"><option value="">Todos</option></select></div>
@@ -23,6 +33,8 @@
     <div class="campo" style="margin:0"><label>Relatório</label>
       <select id="tipo" style="min-width:200px">
         <option value="resumo">Totais por dimensão</option>
+        <option value="fluxo">Fluxo de caixa projetado</option>
+        <option value="abc">Curva ABC (onde o dinheiro está)</option>
         <option value="dre">Resultado do período (DRE gerencial)</option>
         <option value="analitico">Analítico (título a título)</option>
       </select></div>
@@ -36,9 +48,22 @@
         <option value="competencia">Competência</option>
         <option value="situacao">Situação</option>
         <option value="dedutibilidade">Dedutibilidade</option>
+        <option value="empresa">Empresa</option>
+        <option value="especie">Espécie (a pagar × a receber)</option>
       </select></div>
+    <div class="campo" id="campo-fluxo" style="margin:0; display:none">
+      <label>Horizonte</label>
+      <select id="passo" style="min-width:150px">
+        <option value="semana">Semana a semana</option>
+        <option value="mes">Mês a mês</option></select></div>
+    <div class="campo" id="campo-saldo" style="margin:0; display:none">
+      <label>Saldo de hoje (opcional)</label>
+      <input id="saldo-inicial" placeholder="0,00" style="width:130px">
+      <div class="dica">O sistema não sabe o saldo do banco.</div></div>
     <span class="espaco"></span>
-    <button class="btn secundario" id="btn-csv">Baixar CSV</button>
+    <button class="btn secundario" id="btn-excel">⬇ Excel</button>
+    <button class="btn secundario" id="btn-pdf">⬇ PDF</button>
+    <button class="btn secundario" id="btn-csv">CSV</button>
   </div>
 </div>
 <div class="kpis" id="kpis"></div>
@@ -52,6 +77,8 @@ async function cadastros(){
     const d = await api("/erp/api/config");
     els("f-obra").innerHTML = `<option value="">Todas</option>` +
       d.dados.obras.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("");
+    els("f-empresa").innerHTML = `<option value="">Todas</option>` +
+      (d.dados.empresas || []).map(e=>`<option value="${e.id}">${escapar(e.nome)}</option>`).join("");
     const grupos = {};
     d.dados.categorias.forEach(c => grupos[c.grupo_codigo] = c.grupo_nome);
     els("f-grupo").innerHTML = `<option value="">Todos</option>` +
@@ -68,23 +95,116 @@ function filtros(){
   return {competencia_de: els("f-de").value || null, competencia_ate: els("f-ate").value || null,
     obra_id: els("f-obra").value || null, grupo: els("f-grupo").value || null,
     credor_id: els("f-credor").value || null, natureza: els("f-natureza").value || null,
+    empresa_id: els("f-empresa").value || null,
+    especie: els("f-especie").value || "pagar",
     apenas_pagos: els("f-pagos").checked};
 }
 
+// O que cada relatório usa. O DRE é o único que precisa dos DOIS lados por
+// natureza (receita menos custo é o que ele calcula), então ele muda a espécie
+// sozinho — e a tela mostra a mudança, em vez de fazê-la calada.
 els("tipo").addEventListener("change", () => {
-  els("campo-dim").style.display = els("tipo").value === "resumo" ? "" : "none";
+  const tipo = els("tipo").value;
+  els("campo-dim").style.display = ["resumo","abc"].includes(tipo) ? "" : "none";
+  els("campo-fluxo").style.display = tipo === "fluxo" ? "" : "none";
+  els("campo-saldo").style.display = tipo === "fluxo" ? "" : "none";
+  if (tipo === "dre") els("f-especie").value = "tudo";
+  if (tipo === "abc" && !["credor","categoria","obra"].includes(els("dimensao").value)) {
+    els("dimensao").value = "credor";
+  }
 });
+
+let ULTIMO = null;          // o que está na tela, para virar arquivo
 
 async function gerar(){
   const tipo = els("tipo").value;
   try {
     const d = await api("/erp/api/relatorios", {method:"POST",
       headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({tipo, dimensao: els("dimensao").value, filtros: filtros()})});
+      body: JSON.stringify({tipo, dimensao: els("dimensao").value, filtros: filtros(),
+                            passo: els("passo").value,
+                            periodos: els("passo").value === "mes" ? 12 : 13,
+                            saldo_inicial: paraNumero(els("saldo-inicial").value) || 0})});
     if (tipo === "dre") return desenharDre(d.dre);
     if (tipo === "analitico") return desenharAnalitico(d.linhas);
+    if (tipo === "fluxo") return desenharFluxo(d.fluxo);
+    if (tipo === "abc") return desenharAbc(d.resumo);
     desenharResumo(d.resumo);
   } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// FLUXO DE CAIXA PROJETADO — o que entra e o que sai, pela data de vencimento.
+function desenharFluxo(f){
+  const rotulo = f.passo === "mes" ? "Mês" : "Semana";
+  els("kpis").innerHTML = `
+    <div class="kpi estatico verde"><div class="kpi-rotulo">A receber no período</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(f.total_entra)}</div></div>
+    <div class="kpi estatico vermelho"><div class="kpi-rotulo">A pagar no período</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(f.total_sai)}</div></div>
+    <div class="kpi estatico ${f.saldo_final>=0?"verde":"vermelho"}">
+      <div class="kpi-rotulo">Saldo acumulado ao fim</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(f.saldo_final)}</div>
+      <div class="kpi-sub">a partir de ${moeda(f.saldo_inicial)}</div></div>
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Já vencido</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(f.atrasado.sai)}</div>
+      <div class="kpi-sub">a receber vencido: ${moeda(f.atrasado.entra)}</div></div>`;
+  els("saida").innerHTML = `
+    <div class="cartao-dica">Isto é <b>previsão</b>: conta a parcela EM ABERTO
+      pela data de <b>vencimento</b>. Não é competência e não é o que já foi
+      pago. O que já venceu aparece à parte, e não diluído nas semanas — senão
+      a previsão pareceria melhor do que é. O saldo acumulado parte do valor
+      que você informou: <b>o sistema não sabe o saldo do banco</b>.</div>
+    <div class="tabela-wrap"><div class="tabela-rolagem"><table>
+    <thead><tr><th>${rotulo}</th><th class="direita">Entra</th>
+      <th class="direita">Sai</th><th class="direita">No período</th>
+      <th class="direita">Acumulado</th></tr></thead>
+    <tbody>${f.linhas.map(l=>`<tr>
+      <td class="dados">${dataBR(l.quando)}</td>
+      <td class="direita dados">${l.entra ? numero(l.entra) : "—"}</td>
+      <td class="direita dados">${l.sai ? numero(l.sai) : "—"}</td>
+      <td class="direita dados ${l.resultado<0?"negativo":""}"><b>${numero(l.resultado)}</b></td>
+      <td class="direita dados ${l.acumulado<0?"negativo":""}">${numero(l.acumulado)}</td>
+      </tr>`).join("") || `<tr><td colspan="5">Nada previsto neste horizonte.</td></tr>`}
+    </tbody></table></div></div>`;
+  ULTIMO = {titulo: `Fluxo de caixa projetado (${rotulo.toLowerCase()} a ${rotulo.toLowerCase()})`,
+    colunas: [{chave:"quando",rotulo:rotulo}, {chave:"entra",rotulo:"Entra",tipo:"dinheiro"},
+              {chave:"sai",rotulo:"Sai",tipo:"dinheiro"},
+              {chave:"resultado",rotulo:"No período",tipo:"dinheiro"},
+              {chave:"acumulado",rotulo:"Acumulado",tipo:"dinheiro"}],
+    linhas: f.linhas};
+}
+
+// CURVA ABC — onde o dinheiro realmente está.
+function desenharAbc(r){
+  const cor = {A:"vermelho", B:"ambar", C:"verde"};
+  els("kpis").innerHTML = r.classes.map(c=>`
+    <div class="kpi estatico ${cor[c.classe]||""}"><div class="kpi-rotulo">Classe ${c.classe}</div>
+      <div class="kpi-valor" style="font-size:20px">${moeda(c.total)}</div>
+      <div class="kpi-sub">${c.quantos} de ${r.linhas.length} · ${c.percentual}% do total</div></div>`).join("")
+    || `<div class="kpi estatico"><div class="kpi-rotulo">Sem dados no filtro</div></div>`;
+  els("saida").innerHTML = `
+    <div class="cartao-dica">Ordenado do maior para o menor. <b>A</b> é quem
+      responde pelos primeiros ${r.corte_a}% do gasto, <b>B</b> vai até
+      ${r.corte_b}%, e <b>C</b> é o resto. O corte é convenção de mercado, não
+      lei — serve para dizer com quem vale negociar primeiro.</div>
+    <div class="tabela-wrap"><div class="tabela-rolagem"><table>
+    <thead><tr><th style="width:40px">#</th><th>${r.rotulo}</th>
+      <th class="direita">Total</th><th class="direita">% do total</th>
+      <th class="direita">Acumulado</th><th style="width:60px">Classe</th></tr></thead>
+    <tbody>${r.linhas.map(l=>`<tr>
+      <td class="dados">${l.ordem}</td><td>${l.chave}</td>
+      <td class="direita dados"><b>${numero(l.total)}</b></td>
+      <td class="direita dados">${l.percentual}%</td>
+      <td class="direita dados">${l.acumulado_pct}%</td>
+      <td><span class="selo ${l.classe==="A"?"recusado":l.classe==="B"?"outro":"aprovado"}">${l.classe}</span></td>
+      </tr>`).join("")}</tbody></table></div></div>`;
+  ULTIMO = {titulo: `Curva ABC por ${r.rotulo.toLowerCase()}`,
+    colunas: [{chave:"ordem",rotulo:"#"}, {chave:"chave",rotulo:r.rotulo},
+              {chave:"total",rotulo:"Total",tipo:"dinheiro"},
+              {chave:"percentual",rotulo:"% do total",tipo:"numero"},
+              {chave:"acumulado_pct",rotulo:"Acumulado %",tipo:"numero"},
+              {chave:"classe",rotulo:"Classe"}],
+    linhas: r.linhas};
 }
 
 function desenharResumo(r){
@@ -114,6 +234,13 @@ function desenharResumo(r){
       <th class="direita dados">${numero(r.total_pago)}</th>
       <th class="direita dados">${numero(r.total_aberto)}</th><th></th></tr></tfoot>
   </table></div></div>`;
+  ULTIMO = {titulo: `Totais por ${r.rotulo.toLowerCase()}`,
+    colunas: [{chave:"chave",rotulo:r.rotulo}, {chave:"titulos",rotulo:"Títulos",tipo:"numero"},
+              {chave:"total",rotulo:"Total",tipo:"dinheiro"},
+              {chave:"pago",rotulo:"Pago",tipo:"dinheiro"},
+              {chave:"aberto",rotulo:"Em aberto",tipo:"dinheiro"},
+              {chave:"percentual",rotulo:"% do total",tipo:"numero"}],
+    linhas: r.linhas};
 }
 
 function desenharDre(d){
@@ -139,6 +266,21 @@ function desenharDre(d){
     bloco("Resultado", d.resultado, "contas que compõem a DRE gerencial") +
     (d.fluxo.length ? bloco("Movimentações de fluxo", d.fluxo,
       "não são resultado — investimentos, transferências, aportes e principal de empréstimos") : "");
+  // Para o arquivo, a DRE vira uma tabela plana: grupo e subgrupo em linhas,
+  // na mesma ordem da tela. Planilha não tem recuo, mas tem coluna.
+  const planas = [];
+  const achatar = (grupos, bloco) => grupos.forEach(g => {
+    planas.push({bloco, nivel: "Grupo", codigo: g.codigo, nome: g.nome, total: g.total});
+    g.subgrupos.forEach(sg => planas.push({bloco, nivel: "Subgrupo",
+      codigo: sg.codigo, nome: sg.nome, total: sg.total}));
+  });
+  achatar(d.resultado, "Resultado");
+  achatar(d.fluxo, "Fluxo");
+  ULTIMO = {titulo: "Resultado do período (DRE gerencial)",
+    colunas: [{chave:"bloco",rotulo:"Bloco"}, {chave:"nivel",rotulo:"Nível"},
+              {chave:"codigo",rotulo:"Código"}, {chave:"nome",rotulo:"Conta"},
+              {chave:"total",rotulo:"Total",tipo:"dinheiro"}],
+    linhas: planas};
 }
 
 function desenharAnalitico(l){
@@ -161,9 +303,52 @@ function desenharAnalitico(l){
       <td class="dados">${dataBR(x.pagamento)}</td>
       <td><span class="selo ${x.situacao==="PAGO"?"aprovado":"outro"}">${rotulo(x.situacao)}</span></td>
       <td><small>${rotulo(x.dedutibilidade)}</small></td></tr>`).join("")}</tbody></table></div></div>`;
+  ULTIMO = {titulo: "Analítico — título a título",
+    colunas: [{chave:"numero_sp",rotulo:"SP"}, {chave:"competencia",rotulo:"Competência"},
+              {chave:"credor",rotulo:"Credor"}, {chave:"descricao",rotulo:"Descrição"},
+              {chave:"grupo",rotulo:"Grupo"}, {chave:"conta",rotulo:"Conta"},
+              {chave:"obra",rotulo:"Obra"}, {chave:"valor",rotulo:"Valor",tipo:"dinheiro"},
+              {chave:"vencimento",rotulo:"Vencimento",tipo:"data"},
+              {chave:"pagamento",rotulo:"Pagamento",tipo:"data"},
+              {chave:"situacao",rotulo:"Situação"},
+              {chave:"dedutibilidade",rotulo:"Dedutibilidade"}],
+    linhas: l};
 }
 
 els("btn-gerar").addEventListener("click", gerar);
+
+// EXCEL E PDF — como em toda outra tela do ERP. Até 12/09/2026 esta era a
+// única que só dava CSV, e era justamente a tela de relatório.
+//
+// Os FILTROS vão impressos no cabeçalho do arquivo, incluindo a ESPÉCIE: sem
+// ela, ninguém saberia se aquele total é custo, medição, ou os dois somados.
+function filtrosLegiveis(){
+  const texto = (id) => {
+    const e = els(id);
+    return e && e.selectedIndex >= 0 ? e.options[e.selectedIndex].text : "";
+  };
+  const f = {"Espécie": texto("f-especie")};
+  if (els("f-de").value)   f["Competência de"] = els("f-de").value;
+  if (els("f-ate").value)  f["Competência até"] = els("f-ate").value;
+  if (els("f-empresa").value) f["Empresa"] = texto("f-empresa");
+  if (els("f-obra").value)    f["Obra"] = texto("f-obra");
+  if (els("f-grupo").value)   f["Grupo do plano"] = texto("f-grupo");
+  if (els("f-credor").value)  f["Credor"] = texto("f-credor");
+  if (els("f-natureza").value) f["Natureza"] = texto("f-natureza");
+  if (els("f-pagos").checked)  f["Somente pagos"] = "sim";
+  return f;
+}
+
+function baixar(formato){
+  if (!ULTIMO || !(ULTIMO.linhas || []).length) {
+    return aviso("mensagem", "Gere o relatório antes de baixar.", "alerta");
+  }
+  exportarTela({titulo: ULTIMO.titulo, colunas: ULTIMO.colunas,
+                linhas: ULTIMO.linhas, filtros: filtrosLegiveis(), formato,
+                paisagem: ULTIMO.colunas.length > 6});
+}
+els("btn-excel").addEventListener("click", () => baixar("xlsx"));
+els("btn-pdf").addEventListener("click", () => baixar("pdf"));
 els("btn-csv").addEventListener("click", async () => {
   const r = await fetch("/erp/api/relatorios/csv", {method:"POST",
     headers:{"Content-Type":"application/json"},

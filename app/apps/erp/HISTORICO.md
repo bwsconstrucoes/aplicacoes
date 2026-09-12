@@ -168,6 +168,52 @@ banco — **não consome nada**.
 
 ---
 
+**Estado em 12/09/2026 (décima sétima entrega):** **os relatórios** — e um
+defeito de verdade que apareceu ao olhá-los. Sem migração.
+
+### O DEFEITO: o relatório somava receita com custo
+
+Títulos A RECEBER (medição de obra) moram na MESMA tabela dos títulos a pagar,
+com rateio por obra igual. Foi decisão de projeto, e é boa. O que faltou foi o
+filtro: **os relatórios nunca olharam a espécie**.
+
+"Totais por obra" devolvia custo + receita num número positivo só. Uma obra que
+gastou R$ 10.000 e vai receber R$ 50.000 aparecia com **R$ 60.000**, e quem
+lesse não teria como desconfiar.
+
+O DRE sempre esteve certo — ele classifica pela conta do plano (grupo 1 é
+receita), não pela espécie. O erro estava no resumo por dimensão e no
+analítico. Agora a **espécie é escolha explícita na tela**, com padrão
+"a pagar", porque este é um relatório de custo; ela também virou dimensão, para
+quem pedir os dois vê-los em linhas separadas.
+
+### O que a tela ganhou, tudo aprovado pelo dono
+
+- **Fluxo de caixa projetado**, semana a semana ou mês a mês: o que entra, o
+  que sai, o resultado e o acumulado. **O vencido aparece à parte**, não
+  diluído — senão a previsão pareceria melhor do que é. O acumulado parte de
+  um saldo que a PESSOA informa: o sistema não sabe o saldo do banco, e
+  inventar um faria o número parecer conta bancária sem ser.
+- **Curva ABC** por credor, conta ou obra, com o acumulado e as classes A/B/C.
+  A régua olha o acumulado **antes** de cada linha: com um fornecedor
+  respondendo por 83% do gasto, olhar depois o jogaria para a classe B e a
+  classe A ficaria vazia justamente no caso mais óbvio. **Quem pegou isso foi
+  um teste.**
+- **Consolidado por empresa** — filtro e dimensão. A BWS opera com mais de um
+  CNPJ e era a única visão que faltava.
+- **Excel e PDF**, como em toda outra tela. Esta era a única do ERP que só dava
+  CSV — e era justamente a tela de relatório. Os filtros vão impressos no
+  cabeçalho, **a espécie inclusive**: sem ela ninguém saberia se aquele total é
+  custo, medição, ou os dois somados.
+
+### Conferência
+
+11 testes novos com banco de verdade; conferi desligando o filtro de espécie e
+**cinco quebram**. As duas telas novas foram exercitadas no navegador, e o
+Excel baixou de verdade.
+
+---
+
 **Estado em 12/09/2026 (décima sexta entrega):** **encaminhar por WhatsApp** e
 **a resposta virando relatório em Excel/PDF**. Sem migração.
 

@@ -309,6 +309,20 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       **Falta ainda:** o dono arquivar os contratos de verdade no Arquivo. Sem
       documento arquivado, não há o que procurar.
 
+- [x] **RELATÓRIOS: fluxo de caixa, curva ABC, empresa, Excel/PDF — e o
+      defeito da espécie** — FEITO em 12/09/2026, aprovado pelo dono.
+      · **Defeito corrigido:** "totais por obra" somava o que a obra vai
+        RECEBER com o que ela CUSTOU. Espécie virou escolha explícita, padrão
+        "a pagar". O DRE sempre esteve certo (classifica pela conta do plano).
+      · **Fluxo de caixa projetado** por semana ou mês, com o vencido à parte
+        e o saldo inicial informado pela pessoa (o sistema não sabe o saldo do
+        banco).
+      · **Curva ABC** por credor, conta ou obra.
+      · **Consolidado por empresa** (filtro e dimensão).
+      · **Excel e PDF** — era a única tela do ERP que só dava CSV.
+      **Falta ainda:** comparação entre períodos, faixas de atraso (aging), e
+      orçado × realizado — que depende de existir orçamento por obra.
+
 - [x] **ENCAMINHAR INFORMAÇÃO POR WHATSAPP** — FEITO em 12/09/2026, pedido do
       dono. Botão "↗ Encaminhar" na ficha do lançamento e "Enviar" no
       documento do Arquivo; para operadores cadastrados ou número avulso, com
