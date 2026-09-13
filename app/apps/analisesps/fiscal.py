@@ -1515,6 +1515,81 @@ def parcelas_irmas(sp: dict) -> list:
     return irmas
 
 
+# ===========================================================================
+# O PANORAMA DAS PARCELAS — o que a janela "ver os dados" tem de DIZER ANTES
+#
+# Pergunta do dono em 13/09/2026, na tela "Por lançamento": *"clico em ver os
+# dados de uma sugestão. Claramente é a situação de parcelas que informei. Não
+# deveria haver uma associação com as outras parcelas pra vincular logo tudo?
+# Ou avisar que já tá associado com outras?"*
+#
+# Ele está apontando um buraco de INFORMAÇÃO, não de comportamento: gravar nas
+# irmãs já acontece desde a leva anterior — mas só se descobre DEPOIS de
+# clicar. Ação que alcança mais do que se vê tem de ser anunciada antes, não
+# explicada depois.
+#
+# ⚠️ ESTA FUNÇÃO NÃO ESCREVE NADA e mostra TODAS as irmãs, inclusive as que já
+# apontam para outra nota — que `parcelas_irmas` deixa de fora de propósito,
+# porque aquela é a lista de quem VAI ser gravado. Aqui a de fora é a
+# informação mais importante da tela: é ela que responde "já tá associado com
+# outras?".
+# ===========================================================================
+def panorama_das_parcelas(sp: dict, chave_em_questao: str = "") -> dict:
+    """Onde esta SP está dentro do parcelamento, e como estão as irmãs."""
+    from .db import consultar
+
+    parcela = parcela_do_lancamento(sp)
+    numero = so_digitos(sp.get("nf")).lstrip("0")
+    documento = so_digitos(sp.get("documento"))
+    if not parcela:
+        return {}
+    if not numero or not documento:
+        # É parcela, mas sem o nº da nota no card não há como achar as irmãs
+        # com segurança — e dizer isso é melhor do que calar.
+        return {"qual": parcela[0], "de": parcela[1], "irmas": [],
+                "sem_numero": True}
+
+    linhas = consultar(
+        "SELECT s.id, s.parcela, s.valor_num, s.vencimento_d, "
+        "       btrim(coalesce(a.chave, '')) "
+        "  FROM analisesps.sps s "
+        "  LEFT JOIN analisesps.sp_fiscal_analise a ON a.sp_id = s.id "
+        " WHERE left(regexp_replace(coalesce(s.documento,''), '\\D', '', 'g'), 8)"
+        "       = ? "
+        "   AND regexp_replace(coalesce(s.documento,''), '\\D', '', 'g') = ? "
+        "   AND ltrim(regexp_replace(coalesce(s.nf,''), '\\D', '', 'g'), '0') = ? "
+        "   AND s.id <> ? "
+        " ORDER BY s.vencimento_d NULLS LAST, s.id "
+        " LIMIT ?",
+        (documento[:8], documento, numero, str(sp.get("id")),
+         int(MAXIMO_DE_PARCELAS)))
+
+    esta = so_digitos(chave_em_questao)
+    irmas = []
+    for id_, parc, valor, vence, chave_dela in linhas:
+        dela = parcela_do_lancamento({"parcela": parc})
+        if not dela or dela[1] != parcela[1]:
+            continue
+        limpa = so_digitos(chave_dela)
+        if not limpa:
+            situacao = "livre"
+        elif esta and limpa == esta:
+            situacao = "mesma_nota"
+        else:
+            situacao = "outra_nota"
+        irmas.append({"id": str(id_), "parcela": _texto(parc),
+                      "valor": valor, "vencimento": vence,
+                      "situacao": situacao, "chave": limpa})
+
+    return {
+        "qual": parcela[0], "de": parcela[1], "irmas": irmas,
+        "sem_numero": False,
+        "livres": sum(1 for i in irmas if i["situacao"] == "livre"),
+        "mesma_nota": sum(1 for i in irmas if i["situacao"] == "mesma_nota"),
+        "outra_nota": sum(1 for i in irmas if i["situacao"] == "outra_nota"),
+    }
+
+
 def uma_nota(chave: str) -> dict:
     """A nota guardada, pela chave. Vazio quando não existe aqui."""
     from .db import consultar_um

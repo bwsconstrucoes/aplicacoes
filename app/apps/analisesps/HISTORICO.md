@@ -3761,6 +3761,80 @@ arquivo é um A1 com chave privada** — o CNPJ e a validade saem de dentro dele
   dele.
 
 ---
+
+### Quadragésima oitava leva (13/09) — o "Usar este" que subia a tela, e o parcelamento dito ANTES do clique
+
+Publicada a 46ª + 47ª na `main` (`94fb023`) antes desta.
+
+#### 1. "Usar este" — eu tinha consertado a tela ERRADA
+
+*"Clico usar este, continua subindo a tela. Clico em dois e acho que ele
+somente resolve um."*
+
+Na leva anterior eu tirei o recarregamento dos botões de **associar nota**, na
+Documentação Fiscal. **O "Usar este" dele é o da tela de CREDORES** — outro
+lugar, outro mecanismo, e lá o defeito continuava inteiro.
+
+Ali cada fornecedor é um `<form method="post">` próprio e cada envio era uma
+página inteira indo e voltando. Duas consequências, e ele viu as duas:
+
+- a rolagem voltava ao topo de uma lista longa;
+- **o segundo clique ABORTAVA o primeiro**, que ainda estava no ar — daí "só
+  resolve um".
+
+A rota passou a responder JSON quando vem o cabeçalho `X-Sem-Recarregar: 1`, e
+a tela envia por trás. **Sem JavaScript continua funcionando**: o formulário é
+de verdade, o POST é de verdade, e sem o cabeçalho a resposta segue sendo
+redirecionamento. Há teste para os dois caminhos.
+
+O formulário ganhou `data-sem-aguarde`, senão o bloco global do "Aguarde…"
+brigaria com este pelo mesmo botão.
+
+**Medido no navegador, com 15 fornecedores na tela:** dois cliques em sequência
+(60 ms entre eles) → **os dois resolveram**, e a rolagem **mexeu 0 px**.
+⚠️ A primeira medição deu "a página subiu" e era **falso**: o Playwright rola
+até o elemento antes de clicar. Medir com o clique disparado por JavaScript,
+sem rolagem automática, é o que deu o número certo.
+
+#### 2. O parcelamento, dito ANTES do clique
+
+*"Clico em ver os dados de uma sugestão. Claramente é a situação de parcelas
+que informei. Não deveria haver uma associação com as outras parcelas pra
+vincular logo tudo? Ou avisar que já tá associado com outras?"*
+
+Ele apontou um buraco de **informação**, não de comportamento: gravar nas irmãs
+já acontecia desde a 47ª — mas só se descobria **depois** de clicar. Ação que
+alcança mais do que se vê tem de ser anunciada antes.
+
+`panorama_das_parcelas` (não escreve nada) mostra **TODAS** as irmãs, inclusive
+as que `parcelas_irmas` esconde de propósito — porque aquela é a lista de quem
+VAI ser gravado, e a de fora é justamente a que responde "já tá associado com
+outras?". Três estados, e cada um com cor:
+
+- **sem nota** (verde) — vai receber esta mesma nota;
+- **já com esta nota** (azul);
+- **com OUTRA nota** (vermelho) — não será mexida.
+
+E o **rótulo do botão passa a dizer o alcance**: "Usar esta nota nas 2 SPs do
+parcelamento". Quando falta o nº da nota no card, a janela diz que sem ele não
+dá para achar as irmãs com segurança — calar deixaria parecer que não há
+parcelamento.
+
+#### O que foi verificado
+
+- Suíte completa com Postgres de verdade: **5.025 passaram, 129 pulados**.
+- A aplicação sobe (18 blueprints).
+- No Chromium, com uma parcela plantada apontando para OUTRA nota: o aviso
+  saiu "Achei outras 2: 1 ainda sem nota — vão receber esta mesma nota; 1
+  aponta para OUTRA nota — não será mexida", com as duas etiquetas coloridas e
+  o botão dizendo "nas 2 SPs do parcelamento".
+
+#### O que NÃO foi verificado
+
+- Nada rodou contra a base de produção.
+- A busca na Receita continua sem exercício real daqui.
+
+---
 ---
 
 ## Regras que não se discutem
