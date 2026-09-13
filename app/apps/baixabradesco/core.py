@@ -45,7 +45,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
     sps_agendar = []
     base_bancos = []
     sps_omie_pendente = {}
-    fingerprints_processados: set = set()
+    fingerprints_processados: Dict[str, str] = {}   # impressão digital → nº da SP
     google_error = ''
 
     try:
@@ -75,6 +75,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
     card_ids_para_get: List[str] = []
     recusados: List[Dict[str, Any]] = []   # páginas que o banco não efetivou
     duplicados: List[Dict[str, Any]] = []  # páginas que já haviam sido baixadas
+    completados: List[Dict[str, Any]] = []  # reenvios aceitos para concluir baixa pela metade
 
     for att in attachments:
         pdf_bytes = load_attachment_bytes(att)
@@ -113,19 +114,36 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                 })
                 continue
 
-            # Esta mesma página já virou baixa antes? Então não vira de novo.
-            # A conferência é em memória, contra a lista carregada uma vez por
-            # lote — e a página processada agora entra na lista, para que o
-            # mesmo PDF repetido dentro do próprio lote também seja barrado.
+            # Esta mesma página já virou baixa antes? Então não vira de novo —
+            # a não ser que aquela baixa tenha ficado pela METADE.
+            #
+            # O Omie e a planilha são gravados em momentos diferentes, e a
+            # impressão digital é registrada assim que o Omie aceita. Se a
+            # gravação na planilha falhar depois disso, a SP fica "Pagar" para
+            # sempre e o comprovante reenviado era barrado como repetido — o
+            # pior dos dois mundos. Agora, se a SP daquele comprovante ainda
+            # estiver na lista das que faltam pagar, o reenvio passa: o Omie
+            # responde "título já pago", o robô pula essa parte e termina o que
+            # faltava na planilha.
             if rec.fingerprint and rec.fingerprint in fingerprints_processados:
-                duplicados.append({
+                sp_registrada = as_string(fingerprints_processados.get(rec.fingerprint))
+                baixa_incompleta = bool(sp_registrada) and sp_registrada in sps_index
+                if not baixa_incompleta:
+                    duplicados.append({
+                        'arquivo': att.filename,
+                        'pagina': page_num,
+                        'motivo': 'Comprovante já baixado antes (consta na LogBaixaBradesco).',
+                    })
+                    continue
+                completados.append({
                     'arquivo': att.filename,
                     'pagina': page_num,
-                    'motivo': 'Comprovante já baixado antes (consta na LogBaixaBradesco).',
+                    'sp': sp_registrada,
+                    'motivo': ('Baixa anterior ficou pela metade: o Omie foi baixado mas a '
+                               'planilha continua como "Pagar". Reenvio aceito para concluir.'),
                 })
-                continue
             if rec.fingerprint:
-                fingerprints_processados.add(rec.fingerprint)
+                fingerprints_processados.setdefault(rec.fingerprint, '')
 
             # Primeiro localiza a SP/título. Só depois salva o comprovante.
             # Isso evita gerar arquivos órfãos no Dropbox quando a baixa não puder
@@ -278,7 +296,7 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
 
             # 2. Sheets SPsBD (em background para não atrasar resposta)
             if plan.sheets_updates and atualizar_spsbd:
-                _executar_sheets_async(plan.sheets_updates)
+                _executar_sheets_async(plan, payload)
 
             # 3. Pipefy mutation montada com dados do get
             if atualizar_pipefy and plan.match.id:
@@ -327,10 +345,12 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             'pendentes_validacao': sum(1 for p in plans if p.match.status == 'pendente_validacao'),
             'recusados_nao_efetivados': len(recusados),
             'duplicados_ja_baixados': len(duplicados),
+            'baixas_concluidas': len(completados),
             'google_error': google_error,
         },
         'recusados': recusados,
         'duplicados': duplicados,
+        'completados': completados,
         'planos': [p.to_dict() for p in plans],
     }
 
@@ -588,12 +608,27 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
     return resultados
 
 
-def _executar_sheets_async(updates: list):
+def _executar_sheets_async(plan: ExecutionPlan, payload: dict):
+    """Grava na SPsBD em segundo plano, sem atrasar a resposta ao Make.
+
+    Falha aqui NÃO pode mais sumir: o Omie já baixou, a impressão digital já
+    foi registrada, e uma gravação perdida deixava a SP como "Pagar" para
+    sempre. Agora vai para a fila, como já acontecia com Pipefy e WhatsApp.
+    """
+    updates = plan.sheets_updates
+
     def _run():
         try:
-            execute_spsbd_updates(updates)
-        except Exception:
-            pass
+            resultado = execute_spsbd_updates(updates)
+        except Exception as e:
+            resultado = {'ok': False, 'erros': [str(e)[:200]]}
+        plan.responses['sheets'] = resultado
+        if not resultado.get('ok'):
+            try:
+                enqueue_failure(plan, 'sheets', 'sheets_erro', str(resultado), payload)
+            except Exception:
+                pass
+
     t = threading.Thread(target=_run, daemon=True)
     t.start()
 

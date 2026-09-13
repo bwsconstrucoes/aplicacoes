@@ -607,3 +607,82 @@ WhatsApp. Isso quer dizer que a perna do WhatsApp não está entregando — e qu
 **financeiro provavelmente não recebeu nada**, porque o Telegram só alcança quem
 já conversou com o robô. O campo `aviso` da resposta ao Make diz o motivo em uma
 linha; ninguém foi atrás ainda.
+
+### 13/09/2026 — a baixa pela metade que o reenvio não consertava (publicado, `c4c4724`)
+
+Pergunta do dono: *"se eu enviar um comprovante que já foi baixado, ele checa por
+onde? É conferido se a baixa está no Omie e na planilha? Às vezes falha um dos
+dois e, se eu enviar novamente, é pra concluir a baixa."*
+
+**A resposta era não, e o desenho era o pior possível.** A baixa acontece em duas
+etapas: o Omie primeiro, a planilha depois, em segundo plano. A impressão digital
+do comprovante era registrada **assim que o Omie aceitava**. Se a gravação na
+planilha falhasse em seguida, três coisas aconteciam juntas:
+
+1. a SP ficava **"Pagar"** na planilha, para sempre;
+2. o erro sumia — `execute_spsbd_updates` engolia qualquer exceção num
+   `except: pass`, e o `_executar_sheets_async` engolia de novo;
+3. o comprovante reenviado era **barrado como repetido**, em silêncio.
+
+Ou seja: o único caminho de conserto estava fechado, e ninguém era avisado.
+
+**O que mudou:**
+
+- A lista de comprovantes já baixados passou a trazer **o número da SP** junto
+  da impressão digital (as duas colunas numa leitura só — a regra de uma leitura
+  por lote continua valendo).
+- Na conferência, se a SP daquele comprovante **ainda está entre as que faltam
+  pagar**, a baixa ficou pela metade e o reenvio **passa**. O Omie responde
+  "título já pago", o robô pula essa parte e termina o que faltava na planilha.
+  Esses casos aparecem no retorno em `baixas_concluidas`, separados dos
+  `duplicados_ja_baixados`.
+- **A gravação na planilha deixou de falhar em silêncio.** Ela agora diz se
+  gravou, e o erro vai para a fila de tentativas — como já acontecia com Pipefy
+  e WhatsApp. Era a única das três escritas que sumia sem deixar rastro.
+
+**O que continua não sendo feito, e é bom saber:** o robô **não** consulta o Omie
+nem lê a linha da SP para decidir se um comprovante é repetido. A decisão sai da
+lista dele mais o estado da SP na carga do lote, que já está em memória. Consultar
+o Omie por comprovante repetido custaria uma chamada por página, e a lista já
+responde bem.
+
+**Não verificado:** nada disso passou por produção. O caso exige que a gravação
+na planilha falhe de verdade, o que não dá para provocar daqui.
+
+### 13/09/2026 — a outra metade: planilha paga, Omie pendente, reenvio sem efeito (publicado, `c4c4724`)
+
+Na mesma conversa, o dono achou **duas SPs** com a planilha gravada por inteiro e
+o Omie **não** baixado — conferiu nas duas fontes. Reenviar o comprovante não
+fazia nada.
+
+**É o espelho do buraco anterior, e tinha causa própria.** Existe um caminho para
+"planilha paga, Omie pendente" (`load_spsbd_omie_pendente`), mas ele exigia a
+**data de pagamento vazia**. Só que a gravação escreve status, carimbo, data,
+comprovante e conta **de uma vez**: uma SP com a planilha completa ficava fora do
+índice. O caminho de conserto só servia para gravação pela metade — justamente o
+caso que **não** era o dele.
+
+**Como ficou:** o índice passou a aceitar também SP paga nos **últimos 30 dias**.
+A janela existe por memória: sem ela, "Pago + com comprovante" traria dezenas de
+milhares das ~52 mil linhas. Trinta dias é o tempo em que alguém ainda percebe e
+reenvia.
+
+**O que já funcionava e vale saber:** comprovante que traz o **número da SP** não
+depende de nada disso — o robô vai direto ao Omie por aquele número, mesmo com a
+SP já Pago na planilha. Quem dependia do índice era o comprovante sem número
+(depósito Somapay, transferência, boleto sem ID).
+
+**Não verificado:** as duas SPs do dono não foram consertadas por aqui. Depois de
+publicado, reenviar os comprovantes delas deve resolver — e é a primeira coisa a
+conferir.
+
+**Publicado em 13/09/2026 (`c4c4724`).** Junto veio da `main` um achado de outro
+chat que toca esta área: a tela de comprovantes do **Análise de SPs** chamava
+este robô **em modo de ensaio** — `modo_teste` é `True` por padrão quando o
+pedido não diz o contrário, e aquele pedido não dizia. Toda baixa feita por
+aquela tela desde a estreia foi simulação, e a tela ainda dizia "Baixado". O
+caminho do Make nunca foi afetado. Corrigido lá; fica registrado aqui porque o
+padrão perigoso é **deste** módulo.
+
+**Primeira coisa a conferir agora:** reenviar os comprovantes das duas SPs com
+planilha paga e Omie pendente. Devem concluir.
