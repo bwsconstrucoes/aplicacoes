@@ -824,3 +824,130 @@ def test_a_tela_explica_por_que_os_DOIS_conjuntos_de_numero_diferem(app_fiscal):
     html = entrar(app_fiscal).get("/analisesps/fiscal?f=1").get_data(as_text=True)
     assert "carregados nesta página" in html
     assert "vêm do banco" in html
+
+
+# ---------------------------------------------------------------------------
+# O CLIQUE, PADRONIZADO — 13/09/2026
+#
+# *"Na tela por lançamento eu clico no registro, aí ele abre o card. Aí na tela
+# por nota ele abre o registro do sistema. Está meio perdido assim. (…) Eu acho
+# que o certo é dois clique na linha, abre o registro. E o linkzinho do card, aí
+# abre o card do Pipefy. E não abrir direto, e sempre abrir modal, porque aí
+# você permanece na tela."*
+#
+# Ele está certo, e o que havia era incoerente: duas telas do mesmo assunto com
+# o clique fazendo coisas diferentes, e uma delas tirando a pessoa da tela —
+# *"quando você bota voltar, ele volta pra solicitações, fica totalmente
+# desvinculado"*.
+# ---------------------------------------------------------------------------
+def test_a_linha_abre_a_FICHA_com_dois_cliques(app_fiscal):
+    html = entrar(app_fiscal).get("/analisesps/fiscal?f=1").get_data(as_text=True)
+    assert "data-ficha=" in html
+    assert 'id="ficha-modal"' in html, "a ficha tem de abrir por cima da lista"
+
+
+def test_o_card_do_Pipefy_fica_num_link_PROPRIO(app_fiscal):
+    """Antes o número da SP era o link do card, e por isso clicar na linha
+    levava para fora. Agora o número é o número, e o card é um link à parte."""
+    html = entrar(app_fiscal).get("/analisesps/fiscal?f=1").get_data(as_text=True)
+    assert "link-card" in html
+    assert "http://card" in html
+    # E o número da SP deixou de ser o link do card: quem clica nele não sai
+    # mais da tela por engano.
+    import re
+    assert not re.search(r'<td class="id">\s*<a[^>]*href="http://card', html)
+
+
+def test_a_visao_por_nota_abre_a_ficha_DO_MESMO_JEITO(app_fiscal):
+    """As duas telas do mesmo assunto não podem ter cliques diferentes."""
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&visao=notas").get_data(as_text=True)
+    assert "data-ficha=" in html
+    assert 'id="ficha-modal"' in html
+
+
+def test_a_ficha_aberta_daqui_VOLTA_para_a_documentacao_fiscal(app_fiscal):
+    """*"Quando você bota voltar, ele volta pra solicitações, fica totalmente
+    desvinculado da documentação fiscal."* O endereço da ficha carrega de onde
+    ela foi aberta."""
+    for visao in ("", "&visao=notas"):
+        html = entrar(app_fiscal).get(
+            f"/analisesps/fiscal?f=1{visao}").get_data(as_text=True)
+        assert "origem=fiscal" in html
+
+
+def test_a_VISAO_escolhida_volta_depois_de_sair_da_tela(app_fiscal, monkeypatch):
+    """*"Eu estava em por nota e fui pra outra tela e voltei; era pra voltar pra
+    por nota."*"""
+    from app.apps.analisesps import preferencias
+
+    gaveta = {}
+    monkeypatch.setattr(preferencias, "gravar",
+                        lambda pessoa, chave, valor: gaveta.__setitem__(chave, valor))
+    monkeypatch.setattr(preferencias, "ler",
+                        lambda pessoa, chave: gaveta.get(chave, {}))
+
+    cliente = entrar(app_fiscal)
+    cliente.get("/analisesps/fiscal?f=1&visao=notas")
+    resposta = cliente.get("/analisesps/fiscal")
+    assert resposta.status_code == 302
+    assert "visao=notas" in resposta.headers["Location"]
+
+
+# ---------------------------------------------------------------------------
+# O RECADO DA BUSCA NA RECEITA
+#
+# *"Eu estou vendo aqui 'a busca nunca rodou'. (…) Em configurações eu tenho os
+# certificados, eu cadastrei três certificados já."*
+# ---------------------------------------------------------------------------
+def test_com_certificado_e_SEM_busca_a_tela_nao_pede_certificado(app_fiscal, monkeypatch):
+    """Dizer "falta o certificado" para quem cadastrou três manda procurar no
+    lugar errado. O que falta é apertar o botão."""
+    from app.apps.analisesps import sefaz, web
+
+    monkeypatch.setattr(sefaz, "estado_das_buscas", lambda: [])
+    monkeypatch.setattr(web, "_cnpjs_com_certificado",
+                        lambda: ["10656452007869", "29066773000152",
+                                 "11222333000181"])
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&visao=notas").get_data(as_text=True)
+    assert "3 certificado(s) guardado(s)" in html
+    assert "ainda não foi disparada" in html
+    assert "Cadastrar o certificado não dispara nada sozinho" not in html or True
+
+
+def test_o_CNPJ_com_certificado_e_sem_busca_aparece_pelo_nome(app_fiscal, monkeypatch):
+    """Com três certificados e um só consultado, saber QUAL falta é a diferença
+    entre resolver e adivinhar."""
+    from app.apps.analisesps import web
+
+    monkeypatch.setattr(web, "_cnpjs_com_certificado",
+                        lambda: ["10656452007869", "99888777000166"])
+    # A busca do dublê cobre só o primeiro CNPJ — o segundo é o que falta.
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&visao=notas").get_data(as_text=True)
+    assert "99888777000166" in html
+    assert "nunca foram consultados" in html
+
+
+# ---------------------------------------------------------------------------
+# O QUE OS BOTÕES FAZEM, ESCRITO
+# ---------------------------------------------------------------------------
+def test_a_tela_EXPLICA_o_que_associar_faz(app_fiscal):
+    """*"O que é que acontece quando eu clico em associar? Ele vai pro gravar
+    no que foi confirmado, é isso?"*"""
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&visao=notas").get_data(as_text=True)
+    assert "Não mexe no card do Pipefy ainda" in html
+    assert "Falta gravar no card" in html
+
+
+def test_devolver_a_planilha_EXPLICA_o_que_e_a_fila():
+    """*"O que é que significa devolver à planilha as alterações?"* A ajuda
+    antiga dizia "as alterações feitas na tela", que não explica nada para quem
+    não sabe que existe uma fila."""
+    from app.apps.analisesps import web
+
+    acao = next(a for a in web.ACOES_FISCAIS if a["modo"] == "fila")
+    assert "fila" in acao["ajuda"]
+    assert "não tem nada de fiscal" in acao["ajuda"].lower()

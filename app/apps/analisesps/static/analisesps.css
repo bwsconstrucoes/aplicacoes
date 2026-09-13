@@ -1191,3 +1191,20 @@ a.kpi { display: block; }
 .dia-nota:hover { border-color: var(--azul-claro); background: #EEF2FA; }
 .dia-nota span { font-family: var(--fonte-dados); font-weight: 700; font-size: 14px; }
 .dia-nota small { color: var(--tinta-suave); }
+
+/* SUBIR O RELATORIO DO FSIST. "Cade a opcao de incluir o arquivo? De onde vai
+   tirar essa informacao, se eu nao estou nem colocando?" - botao que pede um
+   arquivo e nao tem onde por e botao que mente. */
+.subir-relatorio {
+  background: var(--papel); border: 1px dashed var(--borda-forte);
+  border-radius: var(--raio); padding: 12px 14px; margin: 10px 0;
+}
+.subir-linha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.subir-linha input[type=file] { font-size: 13px; max-width: 100%; }
+.subir-relatorio .cartao-dica { margin: 8px 0 0; }
+
+/* O LINK DO CARD, discreto, embaixo do numero da SP. O duplo clique na linha e
+   que abre a ficha — e o card do Pipefy fica a um clique, dito com todas as
+   letras em vez de escondido no numero. */
+.link-card { font-size: 11px; font-weight: 600; text-decoration: none; }
+.sps tr[data-ficha] { cursor: default; }

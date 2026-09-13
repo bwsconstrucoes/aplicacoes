@@ -3291,3 +3291,124 @@ def test_o_recorte_de_EMISSAO_responde_as_notas_do_dia(banco_analisesps):
     do_dia, _ = fiscal.listar_notas({"emissao_ini": "2026-09-10",
                                      "emissao_fim": "2026-09-10"})
     assert len(do_dia) == 1 and do_dia[0]["numero"] == "1"
+
+
+# ---------------------------------------------------------------------------
+# O RELATÓRIO DO FSIST SUBIDO COMO ARQUIVO — 13/09/2026
+#
+# *"Cadê a opção de incluir o arquivo? De onde vai tirar essa informação, se eu
+# não estou nem colocando?"* Aqui é o caminho inteiro, com banco de verdade:
+# arquivo entra, nota fica gravada, e reimportar não duplica.
+# ---------------------------------------------------------------------------
+def _relatorio_csv(linhas, separador=";"):
+    return "\r\n".join(separador.join(c for c in linha)
+                       for linha in linhas).encode("utf-8")
+
+
+_CAB_FSIST = ["Emissão", "Chave", "Número", "Série", "Valor", "Situação",
+              "Emitente CNPJ", "Emitente", "Emitente UF", "Destinatário CNPJ"]
+
+
+@pytest.mark.banco
+def test_o_arquivo_do_FSist_vira_nota_no_banco(banco_analisesps):
+    from app.apps.analisesps import sincronizacao
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    arquivo = _relatorio_csv([
+        ["Relatório de Notas de Compras"],          # o título, na linha 1
+        _CAB_FSIST,
+        ["01/09/2026", chave, "1430", "1", "269,00", "Autorizada",
+         "29.066.773/0001-52", "ACME MATERIAIS", "BA", "10.656.452/0078-69"]])
+
+    saida = sincronizacao.importar_notas_de_arquivo(arquivo, "fsist.csv")
+    assert saida["lidas"] == 1 and saida["novas"] == 1
+
+    linha = consultar_um(
+        "SELECT numero, valor, status, emitente_doc, emissao "
+        "  FROM analisesps.notas_fiscais WHERE chave = ?", (chave,))
+    assert linha[0] == "1430"
+    assert linha[1] == Decimal("269.00"), "o valor em português virou número"
+    assert linha[2] == "Autorizada"
+    assert linha[3] == CREDOR_CNPJ, "o CNPJ perdeu a pontuação"
+    assert linha[4] == dt.date(2026, 9, 1), "a data em DD/MM/AAAA virou data"
+
+
+@pytest.mark.banco
+def test_subir_o_MESMO_relatorio_duas_vezes_nao_duplica(banco_analisesps):
+    """A chave é a identidade. Reimportar é o que ele vai fazer sem pensar —
+    e tem de ser inofensivo."""
+    from app.apps.analisesps import sincronizacao
+    from app.apps.analisesps.db import consultar_um
+
+    arquivo = _relatorio_csv([
+        _CAB_FSIST,
+        ["01/09/2026", _chave(CREDOR_CNPJ), "1430", "1", "269,00",
+         "Autorizada", "29.066.773/0001-52", "ACME", "BA",
+         "10.656.452/0078-69"]])
+
+    sincronizacao.importar_notas_de_arquivo(arquivo, "fsist.csv")
+    segunda = sincronizacao.importar_notas_de_arquivo(arquivo, "fsist.csv")
+
+    assert consultar_um("SELECT count(*) FROM analisesps.notas_fiscais")[0] == 1
+    assert segunda["novas"] == 0
+
+
+@pytest.mark.banco
+def test_a_nota_que_voltou_CANCELADA_e_atualizada(banco_analisesps):
+    """É o achado que mais importa num reenvio do relatório: pagar contra nota
+    cancelada é problema fiscal."""
+    from app.apps.analisesps import sincronizacao
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+
+    def arquivo(status):
+        return _relatorio_csv([
+            _CAB_FSIST,
+            ["01/09/2026", chave, "1430", "1", "269,00", status,
+             "29.066.773/0001-52", "ACME", "BA", "10.656.452/0078-69"]])
+
+    sincronizacao.importar_notas_de_arquivo(arquivo("Autorizada"), "a.csv")
+    saida = sincronizacao.importar_notas_de_arquivo(arquivo("Cancelada"), "b.csv")
+
+    assert saida["novas"] == 0 and saida["atualizadas"] == 1
+    assert consultar_um("SELECT status FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,))[0] == "Cancelada"
+
+
+@pytest.mark.banco
+def test_linhas_de_rodape_e_totalizador_sao_IGNORADAS(banco_analisesps):
+    """O relatório traz total no fim e linhas em branco no meio. Elas não são
+    erro — são o formato — e não podem virar recado de falha."""
+    from app.apps.analisesps import sincronizacao
+
+    arquivo = _relatorio_csv([
+        _CAB_FSIST,
+        ["01/09/2026", _chave(CREDOR_CNPJ), "1430", "1", "269,00",
+         "Autorizada", "29.066.773/0001-52", "ACME", "BA", "10.656.452/0078-69"],
+        ["", "", "", "", "", "", "", "", "", ""],
+        ["TOTAL", "", "", "", "269,00", "", "", "", "", ""]])
+
+    saida = sincronizacao.importar_notas_de_arquivo(arquivo, "fsist.csv")
+    assert saida["lidas"] == 1
+    assert saida["ignoradas"] == 2
+
+
+@pytest.mark.banco
+def test_a_nota_do_arquivo_APARECE_na_tela_de_notas(banco_analisesps):
+    """O caminho da ponta à ponta: subiu o arquivo, a nota aparece na lista e
+    conta nos totais."""
+    from app.apps.analisesps import fiscal, sincronizacao
+
+    sincronizacao.importar_notas_de_arquivo(_relatorio_csv([
+        _CAB_FSIST,
+        ["01/09/2026", _chave(CREDOR_CNPJ), "1430", "1", "269,00",
+         "Autorizada", "29.066.773/0001-52", "ACME", "BA",
+         "10.656.452/0078-69"]]), "fsist.csv")
+
+    notas, resumo = fiscal.listar_notas({})
+    assert resumo["quantidade"] == 1
+    assert notas[0]["numero"] == "1430"
+    assert notas[0]["orfa"] is True
+    assert fiscal.painel_notas()["total"] == 1

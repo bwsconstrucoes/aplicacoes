@@ -178,12 +178,23 @@
     <h3>A busca na Receita</h3>
     <small>o que o sistema já trouxe sozinho</small>
   </div>
-  {% if not buscas %}
+  {# TRÊS ESTADOS, E ELES PEDEM COISAS DIFERENTES. Antes havia um recado só —
+     "falta o certificado" — e ele aparecia até para quem já tinha cadastrado
+     três. Mandava procurar no lugar errado. #}
+  {% if not buscas and not cnpjs_com_certificado %}
     <p class="cartao-dica">
-      <b>A busca nunca rodou.</b> Ela precisa de um certificado digital A1
-      guardado em <a href="{{ url_for('analisesps.configuracoes') }}">Configurações</a>.
-      Enquanto isso, as notas entram pelo relatório do FSist colado na planilha
-      de apoio.
+      <b>A busca nunca rodou, e não há certificado guardado.</b> Ela precisa de
+      um certificado digital A1, que se sobe em
+      <a href="{{ url_for('analisesps.configuracoes') }}">Configurações</a>.
+      Enquanto isso, as notas entram pelo relatório do FSist — colado na
+      planilha de apoio ou subido aqui embaixo.
+    </p>
+  {% elif not buscas %}
+    <p class="cartao-dica">
+      <b>Há {{ cnpjs_com_certificado|length }} certificado(s) guardado(s), e a
+      busca ainda não foi disparada nenhuma vez.</b> Cadastrar o certificado não
+      dispara nada sozinho — aperte <b>"Buscar notas na Receita"</b> aqui
+      embaixo. A primeira rodada costuma demorar mais, porque começa do zero.
     </p>
   {% else %}
     <div class="tabela-rolagem">
@@ -219,9 +230,42 @@
       zero, vale apertar "Buscar notas na Receita" de novo — ela entrega em
       lotes, e uma rodada não traz tudo.
     </p>
+    {% set sem_busca = cnpjs_com_certificado
+         | reject('in', buscas|map(attribute='cnpj')|list) | list %}
+    {% if sem_busca %}
+      <p class="cartao-dica">
+        <b>{{ sem_busca|length }} CNPJ(s) com certificado nunca foram consultados:</b>
+        {{ sem_busca|join(', ') }}. Aperte "Buscar notas na Receita".
+      </p>
+    {% endif %}
   {% endif %}
 
   {% if pode_operar %}
+    {# ---------------------------------------------------------------------
+       SUBIR O ARQUIVO — o que faltava, e o dono cobrou com todas as letras:
+       *"Importar relatório FSist — e cadê a opção de incluir o arquivo? De
+       onde vai tirar essa informação, se eu não estou nem colocando?"*
+
+       As duas portas ficam: colar na aba da planilha é o hábito da equipe, e
+       subir o arquivo é o caminho curto — e é como está o relatório antigo
+       que ele quer trazer. As duas passam pelo mesmo mapeamento de colunas e
+       pela mesma gravação.
+    --------------------------------------------------------------------- #}
+    <form method="post" enctype="multipart/form-data" class="subir-relatorio"
+          action="{{ url_for('analisesps.importar_relatorio_fsist') }}">
+      <label class="rotulo-campo">Subir o relatório do FSist</label>
+      <div class="subir-linha">
+        <input type="file" name="relatorio" required
+               accept=".xlsx,.xlsm,.csv,.txt">
+        <button class="btn" type="submit">Importar este arquivo</button>
+      </div>
+      <p class="cartao-dica">
+        Aceita <b>.xlsx</b>, <b>.csv</b> e <b>.txt</b>. A nota é identificada
+        pela chave de acesso, então subir o mesmo relatório duas vezes não
+        duplica nada — só atualiza o que mudou.
+      </p>
+    </form>
+
     <div class="fiscal-acoes-tarefa" style="margin-top:10px">
       {% for a in acoes %}
         <button class="btn secundario" data-modo="{{ a.modo }}"
@@ -265,6 +309,20 @@
     <h2>As notas emitidas contra a BWS</h2>
     <small>{{ '{:,}'.format(total)|replace(',', '.') }} no filtro</small>
   </div>
+  {# O QUE "ASSOCIAR" FAZ, escrito. O dono perguntou em 13/09/2026: *"o que é
+     que acontece quando eu clico em associar? Ele vai pro gravar no que foi
+     confirmado, é isso?"* — e a resposta é sim, com um passo no meio. #}
+  <p class="cartao-dica">
+    Ao lado de cada nota <b>sem lançamento</b> vão as SPs do mesmo CNPJ, com as
+    de valor igual na frente. <b>Associar</b> faz três coisas, nesta ordem:
+    grava a chave da nota naquela SP, tira a categoria de dentro da própria
+    chave (NF-e, CT-e…) e a nota sai desta lista.
+    <b>Não mexe no card do Pipefy ainda</b> — ela passa a contar em "Falta
+    gravar no card", e quem leva para lá é o botão <b>"Gravar no Pipefy o que
+    foi confirmado"</b>. A separação existe para que uma falha do Pipefy não
+    apague a decisão de trinta notas. <b>Dois cliques na linha da SP</b> abrem a
+    ficha dela aqui mesmo.
+  </p>
   {% if not notas %}
     <p class="cartao-dica">
       {% if erro %}—{% else %}Nenhuma nota neste filtro.{% endif %}
@@ -295,7 +353,15 @@
                 {% else %}
                   {% for c in n.candidatas %}
                     <div class="nota-candidata">
-                      <a href="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}">{{ c.id }}</a>
+                      {# A FICHA ABRE POR CIMA, como na tela de lançamentos e
+                         como nas Solicitações. Antes este link levava para a
+                         página inteira, e o "Voltar" de lá jogava a pessoa nas
+                         Solicitações — *"fica totalmente desvinculado da
+                         documentação fiscal"*. #}
+                      <a data-ficha="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}"
+                         data-id="{{ c.id }}"
+                         href="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}"
+                         title="Abre a ficha aqui mesmo">{{ c.id }}</a>
                       — {{ c.valor_num|moeda }}
                       {% if c.valor_num == n.valor %}
                         <span class="etiqueta boa">mesmo valor</span>
@@ -332,6 +398,8 @@
     </div>
   {% endif %}
 </div>
+
+{% include "analisesps_ficha_modal.html" %}
 
 <div id="fiscal-config" hidden
      data-url-mao="{{ url_for('analisesps.decidir_fiscal_a_mao') }}"

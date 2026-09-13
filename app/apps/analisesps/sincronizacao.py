@@ -1147,3 +1147,191 @@ def referencias_rateio() -> dict:
         chave = "obras" if tipo == "obra" else "categorias"
         saida[chave].append({"nome": nome, "codigo": codigo})
     return saida
+
+
+# ---------------------------------------------------------------------------
+# O RELATÓRIO DO FSIST SUBIDO COMO ARQUIVO
+#
+# Reclamação do dono em 13/09/2026, e ela é justa: *"Importar relatório FSist —
+# e ele diz que vai rodar no sistema? E cadê a opção de incluir o arquivo? Como
+# é que ele vai rodar? De onde vai tirar essa informação, se eu não estou nem
+# colocando?"*
+#
+# O botão lia a aba "Relatório FSIST" da planilha de apoio — o fluxo antigo
+# dele, de colar o relatório lá. Funciona, e não era o que o nome prometia:
+# "importar relatório" pede um arquivo, e não havia onde pôr.
+#
+# AS DUAS PORTAS FICAM. Colar na aba continua valendo, porque é o hábito da
+# equipe; subir o arquivo entra porque é o caminho curto, e porque o relatório
+# antigo que ele quer trazer está em arquivo, não na planilha.
+#
+# E AS DUAS PASSAM PELO MESMO LUGAR: o mesmo mapeamento de colunas
+# (`COLUNAS_DAS_NOTAS`), a mesma procura de cabeçalho e a mesma gravação
+# (`_gravar_notas`). Um segundo caminho de leitura divergiria no dia em que o
+# FSist mudasse uma coluna de nome — e só um dos dois seria corrigido.
+# ---------------------------------------------------------------------------
+
+# Teto do arquivo. Um relatório do FSist com um ano de notas tem poucos MB; o
+# teto existe porque a instância divide 2 GB com 17 módulos e já morreu de
+# falta de memória em julho de 2026.
+MAXIMO_RELATORIO = 20 * 1024 * 1024      # 20 MB
+
+
+class ErroDeRelatorio(RuntimeError):
+    """Arquivo recusado, com a mensagem já pronta para a tela."""
+
+
+def _linhas_do_arquivo(conteudo: bytes, nome: str) -> list:
+    """O arquivo vira uma lista de linhas, cada uma uma lista de textos.
+
+    ACEITA OS TRÊS FORMATOS que o FSist exporta — .xlsx, .csv e .txt separado
+    por ponto e vírgula. Recusar um deles obrigaria a converter antes, que é
+    exatamente o trabalho manual que esta tela existe para tirar."""
+    nome = (nome or "").lower()
+
+    if nome.endswith((".xlsx", ".xlsm")):
+        import io as _io
+
+        from openpyxl import load_workbook
+        try:
+            livro = load_workbook(_io.BytesIO(conteudo), read_only=True,
+                                  data_only=True)
+        except Exception as e:  # noqa: BLE001
+            raise ErroDeRelatorio(
+                f"não consegui abrir a planilha: {e}") from e
+        aba = livro[livro.sheetnames[0]]
+        linhas = [["" if c is None else str(c).strip() for c in linha]
+                  for linha in aba.iter_rows(values_only=True)]
+        livro.close()
+        return linhas
+
+    if nome.endswith(".xls"):
+        raise ErroDeRelatorio(
+            "o formato .xls (Excel antigo) não é aceito. Abra no Excel e "
+            'salve como ".xlsx" ou ".csv" antes de subir.')
+
+    # TEXTO. O FSist exporta em português, e por isso a leitura tenta os dois
+    # jeitos de escrever acento que aparecem na prática — o arquivo salvo pelo
+    # Excel brasileiro não é UTF-8.
+    texto = None
+    for codificacao in ("utf-8-sig", "utf-8", "cp1252", "latin-1"):
+        try:
+            texto = conteudo.decode(codificacao)
+            break
+        except UnicodeDecodeError:
+            continue
+    if texto is None:
+        raise ErroDeRelatorio(
+            "não consegui ler o arquivo como texto. Se ele for Excel, "
+            'salve como ".xlsx" antes de subir.')
+
+    import csv
+    import io as _io
+
+    # O SEPARADOR É DESCOBERTO, não presumido: o Excel brasileiro salva CSV com
+    # ponto e vírgula, e o de fora com vírgula. Presumir um dos dois faria o
+    # arquivo inteiro virar uma coluna só, e o recado seria "não achei a coluna
+    # Chave" — que manda procurar defeito no lugar errado.
+    amostra = texto[:4000]
+    separador = ";" if amostra.count(";") >= amostra.count(",") else ","
+    if amostra.count("\t") > max(amostra.count(";"), amostra.count(",")):
+        separador = "\t"
+    return [[str(c).strip() for c in linha]
+            for linha in csv.reader(_io.StringIO(texto), delimiter=separador)]
+
+
+def importar_notas_de_arquivo(conteudo: bytes, nome: str) -> dict:
+    """Lê um relatório do FSist subido pela tela e grava as notas.
+
+    Mesmo mapeamento de colunas, mesma procura de cabeçalho e mesma gravação da
+    leitura pela aba — ver o cabeçalho desta seção."""
+    from . import fiscal
+    from .db import conexao
+
+    if not conteudo:
+        raise ErroDeRelatorio("o arquivo chegou vazio.")
+    if len(conteudo) > MAXIMO_RELATORIO:
+        raise ErroDeRelatorio(
+            f"o arquivo tem {len(conteudo) // (1024 * 1024)} MB e o limite é "
+            f"{MAXIMO_RELATORIO // (1024 * 1024)} MB.")
+
+    valores = _linhas_do_arquivo(conteudo, nome)
+    if not valores:
+        raise ErroDeRelatorio("o arquivo não tem nenhuma linha.")
+
+    # O CABEÇALHO NÃO ESTÁ NA PRIMEIRA LINHA. No relatório do FSist a primeira
+    # é o título; procurar a linha que TEM a coluna "Chave" é mais robusto do
+    # que fixar o número.
+    linha_cab, indices = -1, {}
+    for i, linha in enumerate(valores[:10]):
+        normalizado = _normalizar_cabecalho(linha)
+        achados = {campo: achar_coluna(normalizado, nomes)
+                   for campo, nomes in COLUNAS_DAS_NOTAS.items()}
+        if all(achados.get(c) is not None
+               for c in COLUNAS_OBRIGATORIAS_DAS_NOTAS):
+            linha_cab, indices = i, achados
+            break
+
+    if linha_cab < 0:
+        olhadas = []
+        for linha in valores[:3]:
+            texto = ", ".join(str(x).strip() for x in linha if str(x).strip())
+            if texto:
+                olhadas.append(texto[:160])
+        raise ErroDeRelatorio(
+            'não achei a coluna "Chave" nas primeiras linhas do arquivo. '
+            "O que encontrei foi: " + (" | ".join(olhadas) or "(nada)")
+            + ". Confira se subiu o relatório certo.")
+
+    avisos = []
+    faltando = [c for c, i in indices.items() if i is None]
+    if faltando:
+        avisos.append("colunas não encontradas (segui sem elas): "
+                      + ", ".join(sorted(faltando)))
+
+    def pegar(linha, campo):
+        i = indices.get(campo)
+        return str(linha[i]).strip() if i is not None and i < len(linha) else ""
+
+    registros, ignoradas = [], 0
+    for linha in valores[linha_cab + 1:]:
+        chave = fiscal.so_digitos(pegar(linha, "chave"))
+        if len(chave) != 44:
+            ignoradas += 1
+            continue
+        emitente_doc = (fiscal.so_digitos(pegar(linha, "emitente_doc"))
+                        or fiscal.emitente_da_chave(chave))
+        registros.append((
+            chave, formatos.para_data(pegar(linha, "emissao")),
+            pegar(linha, "numero"), pegar(linha, "serie"), pegar(linha, "tipo"),
+            formatos.para_numero(pegar(linha, "valor")),
+            pegar(linha, "status"), emitente_doc, pegar(linha, "emitente"),
+            pegar(linha, "emitente_uf"),
+            fiscal.so_digitos(pegar(linha, "destinatario_doc")),
+            pegar(linha, "destinatario"), pegar(linha, "chaves_nfe")))
+
+    if not registros:
+        raise ErroDeRelatorio(
+            f"achei o cabeçalho, mas nenhuma linha com chave de 44 números "
+            f"({ignoradas} linha(s) olhadas). Confira o arquivo.")
+
+    with conexao() as conn:
+        cur = conn.execute("SELECT count(*), now() FROM analisesps.notas_fiscais")
+        linha = cur.fetchone() or [0, None]
+        antes, comeco = linha[0], linha[1]
+        cur.close()
+        _gravar_notas(conn, registros)
+        cur = conn.execute(
+            "SELECT count(*), count(*) FILTER (WHERE importada_em >= ?) "
+            "  FROM analisesps.notas_fiscais", (comeco,))
+        linha = cur.fetchone() or [0, 0]
+        depois, tocadas = linha[0], linha[1]
+        cur.close()
+
+    novas = depois - antes
+    logger.info("Análise de SPs: relatório %r — %d lidas, %d novas, %d "
+                "atualizadas, %d ignoradas.", nome, len(registros), novas,
+                max(0, tocadas - novas), ignoradas)
+    return {"lidas": len(registros), "novas": novas,
+            "atualizadas": max(0, tocadas - novas), "ignoradas": ignoradas,
+            "avisos": avisos}

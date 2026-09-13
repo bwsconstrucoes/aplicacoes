@@ -3080,6 +3080,132 @@ verdade, descartável, nesta máquina.
 > é o mais caro que sobrou, porque o filtro usa subconsulta. Se lá ficar
 > pesado, é o próximo lugar para mexer.
 
+### Correção (13/09) — o botão que pedia um arquivo e não tinha onde pôr
+
+*"Importar relatório FSist — e ele diz que vai rodar no sistema? E cadê a opção
+de incluir o arquivo? Como é que ele vai rodar? De onde vai tirar essa
+informação, se eu não estou nem colocando?"*
+
+Ele está certo, e o defeito é de **nome**, não de função. O botão lia a aba
+"Relatório FSIST" da planilha de apoio — o fluxo antigo, de colar o relatório
+lá. Funciona. Só que *"importar relatório"* pede um arquivo, não havia onde pôr,
+e **nada na tela dizia de onde ele tirava a informação**.
+
+**Duas coisas mudaram:**
+
+1. **O botão passou a dizer o que faz:** "Ler a aba do FSist na planilha". Botão
+   que pede um arquivo e não tem onde pôr é botão que mente.
+2. **Agora dá para subir o arquivo**, na tela das notas. Aceita **.xlsx, .csv e
+   .txt**, descobre sozinho o separador (o Excel brasileiro salva com ponto e
+   vírgula, o de fora com vírgula) e lê acento em qualquer das codificações que
+   aparecem na prática — o arquivo salvo pelo Excel brasileiro **não** é UTF-8,
+   e recusar por isso obrigaria a converter antes, que é o trabalho manual que
+   esta tela existe para tirar.
+
+**AS DUAS PORTAS FICAM.** Colar na aba é o hábito da equipe; subir o arquivo é o
+caminho curto — e é como está o relatório antigo que ele quer trazer para
+dentro. E as duas passam pelo **mesmo mapeamento de colunas, a mesma procura de
+cabeçalho e a mesma gravação**: um segundo caminho de leitura divergiria no dia
+em que o FSist mudasse uma coluna de nome, e só um dos dois seria corrigido. Há
+teste estrutural cobrando isso.
+
+**Detalhes que evitam chamado:**
+
+- **O cabeçalho não precisa estar na primeira linha** — no relatório do FSist a
+  primeira é o título. Procura-se a linha que TEM a coluna "Chave".
+- **Arquivo errado diz o que encontrou no lugar.** Subir o extrato do banco por
+  engano responde *"não achei a coluna Chave; o que encontrei foi: Data,
+  Histórico, Valor"* — é o que permite descobrir o próprio engano sem
+  perguntar a ninguém.
+- **Rodapé e totalizador são ignorados em silêncio**: são o formato do
+  relatório, não erro, e não podem virar recado de falha.
+- **Subir o mesmo relatório duas vezes não duplica nada** — a chave é a
+  identidade, e só se regrava o que mudou. Reimportar é o que ele vai fazer sem
+  pensar, e tem de ser inofensivo.
+- **A nota que voltou CANCELADA é atualizada**, e é o achado que mais importa
+  num reenvio: pagar contra nota cancelada é problema fiscal.
+- **`.xls` (Excel antigo) é recusado dizendo o que fazer** — salvar como .xlsx
+  ou .csv. Recusa que não diz o que fazer é recusa que vira chamado.
+
+**Verificação:** 11 testes novos sem banco (os três formatos, a codificação, o
+separador, o arquivo errado) e 5 com banco de verdade (o caminho inteiro, a
+reimportação, a nota cancelada, o rodapé, e a nota aparecendo na tela). E o
+arquivo foi subido **pela tela, num navegador**, com relatório de mentira salvo
+na codificação do Excel brasileiro: importou 1 nota, ignorou as 2 linhas de
+rodapé e listou a nota; e o extrato do banco subido por engano foi recusado com
+o recado certo.
+
+### Quadragésima segunda leva (13/09) — o clique padronizado, e o que os botões fazem
+
+Cinco coisas que ele achou navegando, e quatro eram incoerência minha.
+
+#### O clique fazia coisas diferentes em telas do mesmo assunto
+
+*"Na tela por lançamento eu clico no registro, aí ele abre o card. Aí na tela
+por nota ele abre o registro do sistema. Está meio perdido assim. (…) Eu acho
+que o certo é dois clique na linha, abre o registro. E o linkzinho do card, aí
+abre o card do Pipefy. E não abrir direto, e sempre abrir modal, porque aí você
+permanece na tela."*
+
+Ele está certo, e a proposta dele é exatamente o que as **Solicitações** já
+faziam desde a conversão — o modal de duplo clique existia e as duas telas
+fiscais não usavam. Agora usam as três:
+
+- **dois cliques na linha** abrem a ficha por cima da lista, sem perder a
+  rolagem, o filtro nem a marcação;
+- **o número da SP deixou de ser o link do card**, e o card virou um link
+  próprio ("card ↗"), que abre em outra aba.
+
+E o "Voltar" parou de desligar as telas uma da outra: *"quando você bota
+voltar, ele volta pra solicitações, fica totalmente desvinculado da
+documentação fiscal"*. Como a ficha agora abre por cima, não há de onde voltar
+— e quando ela é aberta em página inteira, o endereço leva de volta à
+Documentação Fiscal.
+
+#### A visão se perdia ao sair da tela
+
+*"Quando eu saio de documentação fiscal pra um outro menu e volto, ele volta
+sempre pra por lançamento. Só que eu estava em por nota."* A visão passou a ser
+guardada junto com o filtro, na mesma gaveta — assim como os recortes da tela de
+notas, a busca e o período de emissão.
+
+#### "A busca nunca rodou" com três certificados cadastrados
+
+*"Eu estou vendo aqui a busca nunca rodou. (…) Em configurações eu cadastrei
+três certificados já."* O recado era um só, e mandava procurar no lugar errado:
+**cadastrar o certificado não dispara busca nenhuma**. Agora são três estados
+diferentes, porque pedem coisas diferentes:
+
+- **sem certificado e sem busca** → falta o certificado, e diz onde subir;
+- **com certificado e sem busca** → *"há 3 certificado(s) guardado(s), e a busca
+  ainda não foi disparada nenhuma vez"*, com o botão ao lado;
+- **com busca** → a tabela por CNPJ, e **os CNPJs que têm certificado e nunca
+  foram consultados aparecem pelo nome** — com três certificados e um só
+  consultado, saber QUAL falta é a diferença entre resolver e adivinhar.
+
+#### As duas perguntas dele, respondidas na tela
+
+*"O que é que acontece quando eu clico em associar? Ele vai pro gravar no que
+foi confirmado, é isso?"* — **é isso, com um passo no meio**, e agora está
+escrito acima da lista: associar grava a chave naquela SP, tira a categoria de
+dentro da própria chave e a nota sai da lista; **não mexe no card ainda** — ela
+passa a contar em "Falta gravar no card", e quem leva para lá é o outro botão. A
+separação existe para que uma falha do Pipefy não apague a decisão de trinta
+notas.
+
+*"O que é que significa devolver à planilha as alterações?"* — a ajuda antiga
+dizia *"as alterações feitas na tela"*, que não explica nada para quem não sabe
+que existe uma fila. Agora diz: **nada do que se altera nas telas vai direto
+para a SPsBD** — fica numa fila e sobe de uma vez, para não escrever na planilha
+a cada clique (foi o que a deixou lenta). O botão esvazia a fila agora, em vez
+de esperar a atualização do dia. **E não tem nada de fiscal**: vale para
+alteração feita em qualquer tela.
+
+**Verificação:** 11 testes novos. E as quatro coisas foram **clicadas num
+navegador**, contra banco com dado dentro: o duplo clique abre a ficha sem sair
+da tela, o link do card aponta para o Pipefy, a tela por nota abre a ficha do
+mesmo jeito, e sair para Configurações e voltar traz de volta a visão por nota.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Nada do dono esperando código.** O que falta não é programação — é o

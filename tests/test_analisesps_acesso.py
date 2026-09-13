@@ -101,6 +101,7 @@ TODAS_AS_TELAS = [
     ("GET", "/analisesps/api/fiscal/nota"),
     ("POST", "/analisesps/api/fiscal/reconferir"),
     ("GET", "/analisesps/api/fiscal/comparar"),
+    ("POST", "/analisesps/notas/importar"),
     ("POST", "/analisesps/certificados/subir"),
     ("POST", "/analisesps/certificados/remover"),
     ("GET", "/analisesps/credores"),

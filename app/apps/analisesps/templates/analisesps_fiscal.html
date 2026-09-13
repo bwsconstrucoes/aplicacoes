@@ -308,7 +308,21 @@
         </thead>
         <tbody>
           {% for l in linhas %}
-            <tr class="{{ 'com-risco' if l.grupo in ('CRITICO', 'DUVIDA') }}">
+            {# DUPLO CLIQUE ABRE A FICHA POR CIMA DA LISTA, e o número da SP
+               vira um link discreto para o card do Pipefy.
+
+               Pedido do dono em 13/09/2026: *"eu acho que o certo é dois
+               clique na linha, abre o registro. E o linkzinho do card, aí abre
+               o card do Pipefy. (…) E não abrir direto, e sempre abrir modal,
+               porque aí você permanece na tela."*
+
+               Ele está certo e o que havia era incoerente: aqui o clique
+               abria o CARD, e na tela por nota abria o REGISTRO. Duas telas do
+               mesmo assunto com o clique fazendo coisas diferentes. Agora as
+               duas usam o mesmo modal que as Solicitações já usavam. #}
+            <tr class="{{ 'com-risco' if l.grupo in ('CRITICO', 'DUVIDA') }}"
+                data-ficha="{{ url_for('analisesps.detalhe', sp_id=l.sp.id, origem='fiscal') }}"
+                data-id="{{ l.sp.id }}" title="Dois cliques abrem a ficha">
               <td class="sel">
                 {# MARCADA SÓ QUANDO NÃO HÁ DÚVIDA. É a diferença entre as duas
                    pilhas, e está aqui, num atributo — não no olho de quem lê.
@@ -325,10 +339,12 @@
                        data-anexo="{{ '1' if l.sp.anexo_link else '' }}">
               </td>
               <td class="id">
+                {{ l.sp.id }}
                 {% if l.sp.card_link %}
-                  <a href="{{ l.sp.card_link }}" target="_blank"
-                     rel="noopener">{{ l.sp.id }}</a>
-                {% else %}{{ l.sp.id }}{% endif %}
+                  <br><a class="link-card" href="{{ l.sp.card_link }}"
+                         target="_blank" rel="noopener"
+                         title="Abre o card no Pipefy, em outra aba">card ↗</a>
+                {% endif %}
               </td>
               <td>{{ l.sp.credor }}</td>
               <td class="num">{{ l.sp.valor_num|moeda }}</td>
@@ -460,6 +476,8 @@
   </div>
 </dialog>
 {% endif %}
+
+{% include "analisesps_ficha_modal.html" %}
 
 <div id="fiscal-config" hidden
      data-url-confirmar="{{ url_for('analisesps.confirmar_fiscal') }}"

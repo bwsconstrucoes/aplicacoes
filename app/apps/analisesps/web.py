@@ -359,7 +359,13 @@ def saude():
 CHAVES_FILTRO = ("busca", "status_pgt", "conta", "forma", "status_agend",
                  "tipo_despesa", "projeto", "responsavel", "centro_custo",
                  "situacoes", "fiscais", "periodo_ini", "periodo_fim",
-                 "pgt_ini", "pgt_fim", "valor_ini", "valor_fim", "ordem")
+                 "pgt_ini", "pgt_fim", "valor_ini", "valor_fim", "ordem",
+                 # Os da tela de notas, que tem recortes próprios — e a VISÃO,
+                 # porque sair para outro menu e voltar jogava a pessoa de volta
+                 # em "por lançamento". Reclamação do dono em 13/09/2026: *"eu
+                 # estava em por nota e fui pra outra tela e voltei; era pra
+                 # voltar pra por nota."*
+                 "visao", "nota", "busca_nota", "emissao_ini", "emissao_fim")
 
 # Marca que a barra de endereço JÁ carrega um filtro — mesmo que ele esteja
 # vazio. Sem ela não há como distinguir "acabei de chegar nesta tela" de
@@ -1830,16 +1836,32 @@ ACOES_FISCAIS = [
     {"modo": "notas_receita", "rotulo": "Buscar notas na Receita",
      "ajuda": "Baixa da Receita as NF-e e CT-e emitidas contra os CNPJs que "
               "têm certificado guardado. Continua de onde parou da última vez."},
-    {"modo": "apoios", "rotulo": "Importar o relatório do FSist",
-     "ajuda": "Lê a aba \"Relatório FSIST\" da planilha de apoio. É por aqui "
-              "que entra o histórico que a Receita não devolve mais."},
+    # O NOME DIZ DE ONDE ELE LÊ. Chamava-se "Importar o relatório do FSist", e
+    # o dono cobrou com razão: *"cadê a opção de incluir o arquivo? De onde vai
+    # tirar essa informação, se eu não estou nem colocando?"* Botão que pede um
+    # arquivo e não tem onde pôr é botão que mente. Para subir o arquivo há o
+    # formulário próprio, na tela das notas.
+    {"modo": "apoios", "rotulo": "Ler a aba do FSist na planilha",
+     "ajuda": "Lê a aba \"Relatório FSIST\" da planilha de apoio — o que "
+              "estiver colado lá. Para subir um arquivo, use \"Subir o "
+              "relatório do FSist\" na tela das notas."},
     {"modo": "fiscal_ia", "rotulo": "Ler com IA os anexos escolhidos",
      "ajuda": "Só as SPs que você marcou. Cada leitura é cobrada."},
     {"modo": "fiscal", "rotulo": "Gravar no Pipefy o que foi confirmado",
-     "ajuda": "Leva para o card a categoria e a chave já confirmadas aqui."},
+     "ajuda": "Leva para o card do Pipefy a categoria e a chave de tudo que já "
+              "foi confirmado aqui (o número \"Falta gravar no card\"). "
+              "Enquanto não rodar, a decisão existe só aqui dentro."},
+    # O DONO PERGUNTOU O QUE ERA, em 13/09/2026: *"o que é que significa
+    # devolver à planilha as alterações?"* A ajuda antiga dizia "as alterações
+    # feitas na tela", que não explica NADA para quem não sabe que existe uma
+    # fila. Agora diz o que é a fila e por que ela existe.
     {"modo": "fila", "rotulo": "Devolver à planilha as alterações",
-     "ajuda": "Escreve na SPsBD as alterações feitas na tela que ainda não "
-              "subiram."},
+     "ajuda": "Nada que você altera nas telas vai direto para a planilha "
+              "SPsBD: fica numa fila e sobe de uma vez, para não escrever na "
+              "planilha a cada clique (é o que a deixava lenta). Este botão "
+              "esvazia essa fila agora, em vez de esperar a próxima "
+              "atualização do dia. Não tem nada de fiscal — vale para "
+              "qualquer alteração feita em qualquer tela."},
 ]
 
 
@@ -1883,6 +1905,61 @@ def decidir_fiscal_a_mao():
     logger.info("Análise de SPs: %s marcou a SP %s como %r à mão.",
                 quem, sp_id, gravado["documentacao"])
     return {"ok": True, **gravado}
+
+
+def _cnpjs_com_certificado() -> list:
+    """Os CNPJs que já têm certificado guardado. Nunca derruba a tela."""
+    from . import certificados
+    try:
+        return certificados.cnpjs_ativos()
+    except Exception:  # noqa: BLE001 — migração 009 ainda não aplicada
+        logger.exception("Análise de SPs: não consegui listar os certificados")
+        return []
+
+
+@bp.route("/notas/importar", methods=["POST"])
+@exige_operador
+def importar_relatorio_fsist():
+    """Recebe o relatório do FSist como ARQUIVO e grava as notas.
+
+    Reclamação do dono em 13/09/2026: *"Importar relatório FSist — e cadê a
+    opção de incluir o arquivo? De onde vai tirar essa informação, se eu não
+    estou nem colocando?"*
+
+    Ele está certo: o botão lia a aba da planilha de apoio, que é o fluxo antigo
+    de colar o relatório lá. Funciona, e não era o que o nome prometia. As duas
+    portas ficam — colar na aba é o hábito da equipe; subir o arquivo é o
+    caminho curto, e é como está o relatório antigo que ele quer trazer."""
+    from . import sincronizacao
+
+    arquivo = request.files.get("relatorio")
+    if not arquivo or not arquivo.filename:
+        return redirect(url_for("analisesps.tela_fiscal", visao="notas", f=1,
+                                aviso="Escolha o arquivo do relatório."))
+    try:
+        saida = sincronizacao.importar_notas_de_arquivo(
+            arquivo.read(), arquivo.filename)
+    except sincronizacao.ErroDeRelatorio as e:
+        # RECUSA ESPERADA NÃO É FALHA: a frase é para a pessoa ler e corrigir.
+        return redirect(url_for("analisesps.tela_fiscal", visao="notas", f=1,
+                                aviso=f"Não importei: {e}"))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou importar o relatório")
+        return redirect(url_for("analisesps.tela_fiscal", visao="notas", f=1,
+                                aviso=f"Não consegui importar: {e}"))
+
+    recado = (f"{saida['lidas']} nota(s) lidas do arquivo: "
+              f"{saida['novas']} nova(s), {saida['atualizadas']} atualizada(s)")
+    if saida["ignoradas"]:
+        recado += f", {saida['ignoradas']} linha(s) sem chave ignorada(s)"
+    recado += "."
+    if saida["avisos"]:
+        recado += " " + " ".join(saida["avisos"])
+    logger.info("Análise de SPs: %s importou o relatório %r — %s",
+                auth.nome_atual() or auth.pessoa_atual(), arquivo.filename,
+                recado)
+    return redirect(url_for("analisesps.tela_fiscal", visao="notas", f=1,
+                            aviso=recado))
 
 
 @bp.route("/api/fiscal/comparar")
@@ -2074,6 +2151,11 @@ def tela_fiscal():
             grupos_de_nota=fiscal.GRUPOS_DE_NOTA,
             frases_da_nota=fiscal.FRASE_DA_NOTA,
             buscas=sefaz.estado_das_buscas(),
+            # QUANTOS CERTIFICADOS EXISTEM. Sem isso a tela dizia "a busca
+            # nunca rodou — falta o certificado" para quem já tinha cadastrado
+            # três, e mandava procurar no lugar errado. Reclamação do dono em
+            # 13/09/2026.
+            cnpjs_com_certificado=_cnpjs_com_certificado(),
             primeira_linha=(pagina - 1) * fiscal.NOTAS_POR_PAGINA + 1,
             ultima_linha=ultima, tem_proxima=ultima < total, args=request.args,
             painel_notas=painel_notas, categorias=fiscal.CATEGORIAS,
