@@ -259,7 +259,6 @@ def _contexto_comum(aba: str):
             "anos": request.args.getlist("ano"),
             "projetos": request.args.getlist("projeto"),
             "obras": request.args.getlist("obra"),
-        "fornecedores": request.args.getlist("fornecedor"),
             "trf": request.args.get("trf") == "1",
         },
     }
@@ -861,6 +860,7 @@ def _pedido_do_explorador():
         "grupos": request.args.getlist("grupo"),
         "categorias": request.args.getlist("categoria"),
         "obras": request.args.getlist("obra"),
+        "fornecedores": request.args.getlist("fornecedor"),
         "projetos": request.args.getlist("projeto"),
         "contas": request.args.getlist("conta"),
         "situacoes": request.args.getlist("situacao"),

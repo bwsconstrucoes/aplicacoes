@@ -602,3 +602,32 @@ def test_as_telas_de_analise_continuam_tirando_a_transferencia(base_com_transfer
     filtro = consultas.Filtros(excluir_trf=True)
     onde, _ = filtro.where()
     assert "analise <> 'TRF'" in onde
+
+
+def test_a_tela_abre_sem_filtro_nenhum(cliente_web):
+    """O jeito como se ENTRA na tela: clicar no menu, sem nada na URL.
+
+    Em 13/09/2026 isto foi para a produção quebrado — um `KeyError` derrubava a
+    rota inteira, porque uma chave nova do pedido foi parar na função errada.
+    Nenhum dos testes existentes pegou, porque TODOS abriam a tela já com filtro
+    na URL. O caminho mais comum era o único sem guarda."""
+    r = cliente_web.get("/painel/explorador")
+    assert r.status_code == 200
+    html = r.get_data(as_text=True)
+    assert "Escolha ao menos um filtro" in html, \
+        "sem filtro, a tela convida a filtrar — não estoura"
+    assert "Alguma coisa deu errado" not in html
+
+
+def test_a_tela_abre_com_cada_filtro_sozinho(cliente_web):
+    """Cada filtro tem de funcionar por si. Um pedido montado pela metade só
+    aparece quando alguém usa justamente aquele campo."""
+    for campo, valor in (("analise", "DRE"), ("grupo", "Custo de obra"),
+                         ("categoria", "Serviços"), ("obra", "CASA"),
+                         ("fornecedor", "FORNECEDOR"), ("projeto", "ALFA"),
+                         ("conta", "Conta 1"), ("situacao", "Pago"),
+                         ("tipo", "pagar"), ("busca", "FORNECEDOR"),
+                         ("de", "2025-01-01"), ("ate", "2026-12-31")):
+        r = cliente_web.get(f"/painel/explorador?{campo}={valor}")
+        assert r.status_code == 200, f"a tela quebrou com o filtro {campo}"
+        assert "Alguma coisa deu errado" not in r.get_data(as_text=True), campo
