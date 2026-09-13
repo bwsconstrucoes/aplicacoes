@@ -976,6 +976,9 @@ def sps_possiveis_das_notas(notas: list, quantas: int = 5) -> dict:
     raizes = sorted({r for _, r, _ in pedidos})
     marcas = ",".join(["?"] * len(raizes))
     por_raiz: dict = {}
+    # A nota inteira, para a conferência de cada candidata poder olhar o número
+    # e a data — e não só o valor.
+    por_chave = {so_digitos(n.get("chave")): n for n in notas}
 
     def guardar(linha):
         sp = dict(zip(_NOMES_SP, linha[:len(_NOMES_SP)]))
@@ -1008,8 +1011,20 @@ def sps_possiveis_das_notas(notas: list, quantas: int = 5) -> dict:
         guardar(linha)
 
     # A escolha de cada nota: as de valor igual primeiro, sem repetir.
+    #
+    # ⚠️ E CADA CANDIDATA VAI COM O PORQUÊ ESCRITO. Cobrança do dono em
+    # 13/09/2026: *"você bota aqui a nota e bota 'mesmo valor'. Mas gera dúvida:
+    # você está comparando o mesmo valor de quê? Do mesmo fornecedor, do mesmo
+    # número de nota fiscal? Como é que você chegou a essa informação? Era
+    # interessante ampliar essa informação, mesmo que esse seja o critério, pelo
+    # menos para dar segurança a quem está fazendo essa associação."*
+    #
+    # Ele está certo, e "mesmo valor" sozinho é pior que nada: dá ar de
+    # conferência a uma coincidência. Duas notas do mesmo fornecedor no mesmo
+    # mês com o mesmo valor existem — e é exatamente aí que se associa a errada.
     saida: dict = {}
     for chave, raiz, valor in pedidos:
+        nota = por_chave.get(chave, {})
         vistas, escolhidas = set(), []
         candidatas = sorted(
             por_raiz.get(raiz, []),
@@ -1020,11 +1035,81 @@ def sps_possiveis_das_notas(notas: list, quantas: int = 5) -> dict:
             if sp["id"] in vistas:
                 continue
             vistas.add(sp["id"])
-            escolhidas.append(sp)
+            escolhidas.append(dict(sp, **_porque_esta_candidata(sp, nota)))
             if len(escolhidas) >= quantas:
                 break
         saida[chave] = escolhidas
     return saida
+
+
+# Quanto o valor pode diferir e ainda ser "perto" — o mesmo teto da conciliação
+# do outro lado. Dois números diferentes para a mesma ideia dariam telas que
+# discordam.
+def _porque_esta_candidata(sp: dict, nota: dict) -> dict:
+    """Por que ESTA SP é candidata a ESTA nota, item por item.
+
+    O que decide quem entra na lista é UM critério só — o CNPJ do emitente da
+    nota é o do credor da SP. Os demais são conferência, e é deles que vem a
+    segurança de quem clica em "associar": valor, número da nota digitado no
+    card e data compatível."""
+    valor_sp = valor_do_lancamento(sp)
+    valor_nota = _para_numero(nota.get("valor"))
+    diferenca = (abs(valor_sp - valor_nota)
+                 if valor_sp is not None and valor_nota is not None else None)
+
+    numero_nota = _texto(nota.get("numero"))
+    bate_numero = mesmo_numero_de_nota(sp.get("nf"), numero_nota)
+
+    emissao = _para_data(nota.get("emissao"))
+    bate_data = False
+    if emissao:
+        for _rotulo, alvo in datas_do_lancamento(sp):
+            if -DIAS_DEPOIS <= (alvo - emissao).days <= DIAS_ANTES:
+                bate_data = True
+                break
+
+    razoes = [{
+        "rotulo": "CNPJ do credor é o de quem emitiu",
+        "bate": True,          # é por isso que ela está na lista
+        "detalhe": _texto(sp.get("documento")) or _texto(nota.get("emitente_doc")),
+    }]
+
+    if diferenca is None:
+        razoes.append({"rotulo": "Valor", "bate": False,
+                       "detalhe": "não deu para comparar"})
+    elif diferenca < 0.005:
+        razoes.append({"rotulo": "Valor igual", "bate": True,
+                       "detalhe": f"os dois de R$ {valor_nota:,.2f}"
+                                  .replace(",", "X").replace(".", ",")
+                                  .replace("X", ".")})
+    else:
+        razoes.append({
+            "rotulo": "Valor DIFERENTE", "bate": False,
+            "detalhe": (f"a SP é R$ {valor_sp:,.2f} e a nota R$ {valor_nota:,.2f}"
+                        .replace(",", "X").replace(".", ",").replace("X", ".")),
+        })
+
+    razoes.append({
+        "rotulo": "Nº da nota no card",
+        "bate": bate_numero,
+        "detalhe": (f"os dois {numero_nota}" if bate_numero
+                    else (f"o card diz {_texto(sp.get('nf'))} e a nota é "
+                          f"{numero_nota}" if _texto(sp.get("nf"))
+                          else "o card está sem o nº da nota")),
+    })
+    razoes.append({
+        "rotulo": "Data compatível",
+        "bate": bate_data,
+        "detalhe": ("emissão perto do vencimento/pagamento" if bate_data
+                    else "a emissão não bate com as datas da SP"),
+    })
+
+    return {
+        "razoes": razoes,
+        "valor_igual": bool(diferenca is not None and diferenca < 0.005),
+        "confere": sum(1 for r in razoes if r["bate"]),
+        "de": len(razoes),
+    }
 
 
 def sps_possiveis_da_nota(nota: dict, quantas: int = 5) -> list:
@@ -1070,9 +1155,15 @@ def painel_notas() -> dict:
         # Receita: é a mesma certeza que `categoria_da_chave` usa, e vale para
         # toda nota, tenha vindo por onde tiver vindo.
         "       count(*) FILTER (WHERE substring(chave from 21 for 2) = '57'), "
+        # ⚠️ O ALARME. Nota cancelada que JÁ está num lançamento — o fornecedor
+        # cancelou depois de a gente associar. Não aparece na lista de órfãs
+        # (ela não é órfã, está associada), e por isso ficava invisível
+        # justamente por estar "resolvida".
+        f"       count(*) FILTER (WHERE {SQL_CANCELADA_EM_USO}), "
         "       max(importada_em) "
         "  FROM analisesps.notas_fiscais")
-    nomes = ["total", "canceladas", "sem_lancamento", "ctes", "ultima"]
+    nomes = ["total", "canceladas", "sem_lancamento", "ctes",
+             "canceladas_em_uso", "ultima"]
     if not linha:
         return {n: 0 for n in nomes}
     return dict(zip(nomes, linha))
@@ -1484,6 +1575,43 @@ SEM_LANCAMENTO_SQL = (
 
 # Os recortes da lista de notas. Mesma ideia da tela de lançamentos: o nome do
 # grupo diz de que dado se está falando.
+# O CNPJ DE QUEM EMITIU, com a coluna e, se ela vier vazia, a chave. Os dígitos
+# 7 a 20 são o emitente por definição da Receita — mais confiável que a coluna,
+# que chega com formatação variada.
+EMITENTE_DA_NOTA = ("coalesce(nullif(btrim(coalesce(emitente_doc, '')), ''), "
+                    "         substring(chave from 7 for 14))")
+
+# EXISTE UMA SP DO MESMO CNPJ COM O MESMO VALOR? É o par que se fecha sem
+# pensar — e o dono pediu o filtro em 13/09/2026: *"nessas que estão aqui já
+# verdinha pra associar (…) tem outra sim, o valor é diferente. Tem que ter um
+# tratamento aí."*
+SQL_TEM_SP_DE_VALOR_IGUAL = f"""
+EXISTS (SELECT 1 FROM analisesps.sps s
+         WHERE left(regexp_replace(coalesce(s.documento, ''), '\\D', '', 'g'), 8)
+               = left({EMITENTE_DA_NOTA}, 8)
+           AND s.valor_num = notas_fiscais.valor)"""
+
+SQL_TEM_SP_DO_CREDOR = f"""
+EXISTS (SELECT 1 FROM analisesps.sps s
+         WHERE left(regexp_replace(coalesce(s.documento, ''), '\\D', '', 'g'), 8)
+               = left({EMITENTE_DA_NOTA}, 8))"""
+
+# ⚠️ A NOTA CANCELADA QUE JÁ ESTÁ NUM LANÇAMENTO. É o caso que o dono descreveu
+# em 13/09/2026, e é o mais grave desta tela: *"imagina, o fornecedor emitiu e
+# cancelou a nota. E a gente associou, pagou, e a nota virou cancelada. A gente
+# tem que ter um local de visualização disso, facilmente poder tratar isso aí,
+# ligar pro fornecedor e pedir uma nova nota (…) é algo que tem que dar
+# destaque."*
+#
+# Ele está certo: despesa paga contra documento que não existe mais é problema
+# fiscal, e não se descobre olhando a lista de órfãs — a nota cancelada NÃO é
+# órfã, ela está associada. Ficava invisível justamente por estar resolvida.
+SQL_CANCELADA_EM_USO = (
+    "upper(btrim(coalesce(status, ''))) = 'CANCELADA' "
+    " AND EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+    "              WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') "
+    "                    = notas_fiscais.chave)")
+
 GRUPOS_DE_NOTA = [
     ("O lançamento", [
         ("sem_lancamento", "Sem lançamento",
@@ -1491,10 +1619,20 @@ GRUPOS_DE_NOTA = [
         ("com_lancamento", "Já está num lançamento",
          "a chave está gravada em alguma SP"),
     ]),
+    ("O par com a SP", [
+        ("casa_valor", "Tem SP do mesmo valor",
+         "existe SP do mesmo CNPJ com o valor idêntico — é o par que fecha"),
+        ("sem_valor_igual", "Tem SP do credor, mas de outro valor",
+         "há SP daquele CNPJ e nenhuma com o mesmo valor; precisa de olho"),
+        ("sem_sp_do_credor", "Nenhuma SP daquele CNPJ",
+         "a despesa pode não ter sido lançada ainda"),
+    ]),
     ("A situação na Receita", [
         ("autorizada", "Autorizada", ""),
         ("cancelada", "Cancelada",
          "documento que não existe mais; pagar contra ele é problema fiscal"),
+        ("cancelada_em_uso", "⚠️ Cancelada E já associada a uma SP",
+         "o fornecedor cancelou depois de a gente associar — pedir nota nova"),
     ]),
     ("O tipo de documento", [
         ("nfe", "NF-e (mercadoria)", "modelo 55, lido de dentro da chave"),
@@ -1506,6 +1644,11 @@ GRUPOS_DE_NOTA = [
 RECORTES_DE_NOTA = {
     "sem_lancamento": SEM_LANCAMENTO_SQL,
     "com_lancamento": "NOT (" + SEM_LANCAMENTO_SQL + ")",
+    "casa_valor": SQL_TEM_SP_DE_VALOR_IGUAL,
+    "sem_valor_igual": (SQL_TEM_SP_DO_CREDOR + " AND NOT ("
+                        + SQL_TEM_SP_DE_VALOR_IGUAL + ")"),
+    "sem_sp_do_credor": "NOT (" + SQL_TEM_SP_DO_CREDOR + ")",
+    "cancelada_em_uso": SQL_CANCELADA_EM_USO,
     "autorizada": "upper(trim(coalesce(status,''))) <> 'CANCELADA'",
     "cancelada": "upper(trim(coalesce(status,''))) = 'CANCELADA'",
     "nfe": "substring(chave from 21 for 2) = '55'",
@@ -1516,6 +1659,10 @@ RECORTES_DE_NOTA = {
 FRASE_DA_NOTA = {
     "sem_lancamento": "não está em lançamento nenhum",
     "com_lancamento": "já está num lançamento",
+    "casa_valor": "tem SP do mesmo CNPJ e do mesmo valor",
+    "sem_valor_igual": "tem SP do credor, mas nenhuma do mesmo valor",
+    "sem_sp_do_credor": "não tem nenhuma SP daquele CNPJ",
+    "cancelada_em_uso": "está cancelada E já associada a uma SP",
     "autorizada": "está autorizada",
     "cancelada": "está cancelada",
     "nfe": "é NF-e (mercadoria)",
@@ -1566,14 +1713,26 @@ def listar_notas(filtros: dict, pagina: int = 1) -> tuple:
     linhas = consultar(
         "SELECT chave, emissao, numero, serie, valor, status, emitente_doc, "
         "       emitente, emitente_uf, importada_em, "
-        f"       {SEM_LANCAMENTO_SQL} AS orfa "
+        f"       {SEM_LANCAMENTO_SQL} AS orfa, "
+        # EM QUAL SP ELA ESTÁ. Dizer só "já está num lançamento" é meio
+        # caminho: na nota cancelada, saber QUAL SP é o que permite agir — ver
+        # se foi paga e ligar para o fornecedor. Sem o número, ele teria de
+        # procurar a chave na outra tela.
+        "       (SELECT a.sp_id FROM analisesps.sp_fiscal_analise a "
+        "         WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') "
+        "               = notas_fiscais.chave LIMIT 1) AS sp_id, "
+        "       (SELECT s.status_pgt FROM analisesps.sp_fiscal_analise a "
+        "          JOIN analisesps.sps s ON s.id = a.sp_id "
+        "         WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') "
+        "               = notas_fiscais.chave LIMIT 1) AS sp_status "
         f"  FROM analisesps.notas_fiscais{where} "
         " ORDER BY emissao DESC NULLS LAST, numero DESC "
         " LIMIT ? OFFSET ?",
         tuple(params) + (NOTAS_POR_PAGINA, (pagina - 1) * NOTAS_POR_PAGINA))
 
     nomes = ["chave", "emissao", "numero", "serie", "valor", "status",
-             "emitente_doc", "emitente", "emitente_uf", "importada_em", "orfa"]
+             "emitente_doc", "emitente", "emitente_uf", "importada_em", "orfa",
+             "sp_id", "sp_status"]
     notas = []
     for linha in linhas:
         nota = dict(zip(nomes, linha))

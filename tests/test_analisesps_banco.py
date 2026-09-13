@@ -3412,3 +3412,183 @@ def test_a_nota_do_arquivo_APARECE_na_tela_de_notas(banco_analisesps):
     assert notas[0]["numero"] == "1430"
     assert notas[0]["orfa"] is True
     assert fiscal.painel_notas()["total"] == 1
+
+
+# ---------------------------------------------------------------------------
+# O PAR COM A SP, E O ALARME DA NOTA CANCELADA — 13/09/2026
+#
+# *"Nessas que estão aqui já verdinha pra associar (…) tem outra sim, o valor é
+# diferente. Tem que ter um tratamento aí."* E, mais grave: *"imagina, o
+# fornecedor emitiu e cancelou a nota. E a gente associou, pagou, e a nota virou
+# cancelada. A gente tem que ter um local de visualização disso."*
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_o_recorte_separa_a_que_FECHA_da_que_tem_valor_diferente(banco_analisesps):
+    """Três estados, e eles pedem coisas diferentes: a que fecha sem pensar, a
+    que tem SP do credor mas de outro valor (precisa de olho), e a que não tem
+    SP nenhuma daquele CNPJ (a despesa pode nem ter sido lançada)."""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1", 269.00, CREDOR_CNPJ)
+    _guardar_nota(_chave("11222333000181"), "2", 500.00, "11222333000181")
+    _guardar_nota(_chave("99888777000166"), "3", 800.00, "99888777000166")
+    semear([
+        sp("1", credor="ACME", documento="29.066.773/0001-52", valor="269,00"),
+        sp("2", credor="BETA", documento="11.222.333/0001-81", valor="123,00"),
+    ])
+
+    fecha, _ = fiscal.listar_notas({"recortes": ["casa_valor"]})
+    assert [n["numero"] for n in fecha] == ["1"]
+
+    olho, _ = fiscal.listar_notas({"recortes": ["sem_valor_igual"]})
+    assert [n["numero"] for n in olho] == ["2"]
+
+    sem_sp, _ = fiscal.listar_notas({"recortes": ["sem_sp_do_credor"]})
+    assert [n["numero"] for n in sem_sp] == ["3"]
+
+
+@pytest.mark.banco
+def test_os_tres_recortes_do_par_se_COMPLETAM(banco_analisesps):
+    """Uma nota que ficasse de fora dos três, ou em dois, faria os números não
+    fecharem — e o dono confere somando."""
+    from app.apps.analisesps import fiscal
+
+    for i, cnpj in enumerate([CREDOR_CNPJ, "11222333000181", "99888777000166"]):
+        _guardar_nota(_chave(cnpj), str(i), 100.00 * (i + 1), cnpj)
+    semear([sp("1", credor="A", documento="29.066.773/0001-52", valor="100,00"),
+            sp("2", credor="B", documento="11.222.333/0001-81", valor="999,00")])
+
+    somados = sum(len(fiscal.listar_notas({"recortes": [r]})[0])
+                  for r in ("casa_valor", "sem_valor_igual", "sem_sp_do_credor"))
+    assert somados == 3
+
+
+@pytest.mark.banco
+def test_a_nota_CANCELADA_JA_ASSOCIADA_e_o_alarme(banco_analisesps):
+    """O caso mais grave desta tela, e o que ficava INVISÍVEL justamente por
+    estar "resolvido": a nota cancelada não é órfã — ela está associada —, então
+    não aparecia na lista das que precisam de despesa."""
+    from app.apps.analisesps import fiscal
+
+    boa = _chave(CREDOR_CNPJ)
+    ruim = _chave("11222333000181")
+    _guardar_nota(boa, "1", 100.00, CREDOR_CNPJ)
+    _guardar_nota(ruim, "2", 200.00, "11222333000181", status="Cancelada")
+    # Uma cancelada e SOLTA: não é alarme — cancelada sem despesa é o esperado.
+    _guardar_nota(_chave("99888777000166"), "3", 300.00, "99888777000166",
+                  status="Cancelada")
+    semear([sp("1", credor="A"), sp("2", credor="B")])
+    _diario("1", chave=boa)
+    _diario("2", chave=ruim, documentacao="NF-e (Mercadoria)")
+
+    assert fiscal.painel_notas()["canceladas_em_uso"] == 1
+    alarme, _ = fiscal.listar_notas({"recortes": ["cancelada_em_uso"]})
+    assert [n["numero"] for n in alarme] == ["2"]
+    # E a cancelada solta continua contando como cancelada, sem ser alarme.
+    assert fiscal.painel_notas()["canceladas"] == 2
+
+
+@pytest.mark.banco
+def test_cada_candidata_vem_com_o_PORQUE_escrito(banco_analisesps):
+    """*"Você bota 'mesmo valor'. Mas você está comparando o mesmo valor de
+    quê? Como é que chegou a essa informação?"* "Mesmo valor" sozinho dá ar de
+    conferência a uma coincidência."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ, emissao="2026-09-01")
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00", vencimento="10/09/2026", nf="1430")])
+
+    candidatas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ, "emissao": dt.date(2026, 9, 1)}])
+    sp1 = candidatas[chave][0]
+
+    rotulos = {r["rotulo"]: r["bate"] for r in sp1["razoes"]}
+    assert rotulos["CNPJ do credor é o de quem emitiu"] is True
+    assert rotulos["Valor igual"] is True
+    assert rotulos["Nº da nota no card"] is True
+    assert rotulos["Data compatível"] is True
+    assert sp1["confere"] == 4 and sp1["de"] == 4
+
+
+@pytest.mark.banco
+def test_a_candidata_de_valor_DIFERENTE_diz_os_dois_numeros(banco_analisesps):
+    """Ver "a SP é R$ 500,00 e a nota R$ 269,00" é o que impede associar por
+    engano — e é a informação que faltava."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="500,00")])
+
+    candidatas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])
+    razao = next(r for r in candidatas[chave][0]["razoes"]
+                 if "Valor" in r["rotulo"])
+    assert razao["bate"] is False
+    assert "500,00" in razao["detalhe"] and "269,00" in razao["detalhe"]
+
+
+@pytest.mark.banco
+def test_a_nota_associada_DIZ_em_qual_SP_esta(banco_analisesps):
+    """Dizer só "já está num lançamento" é meio caminho: na nota cancelada,
+    saber QUAL SP é o que permite agir — ver se foi paga e ligar para o
+    fornecedor. Sem o número, ele teria de procurar a chave na outra tela."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "555", 269.00, CREDOR_CNPJ, status="Cancelada")
+    semear([sp("1443253428", credor="ACME", status_pgt="Pago")])
+    _diario("1443253428", chave=chave, documentacao="NF-e (Mercadoria)")
+
+    notas, _ = fiscal.listar_notas({"recortes": ["cancelada_em_uso"]})
+    assert notas[0]["sp_id"] == "1443253428"
+    assert notas[0]["sp_status"] == "Pago", (
+        "sem saber que foi PAGA, não dá para medir a urgência")
+
+
+@pytest.mark.banco
+def test_as_ULTIMAS_rodadas_saem_UMA_POR_TIPO(banco_analisesps):
+    """A tela mostra o resultado da última vez que CADA botão rodou. Uma
+    consulta por tipo seriam cinco varreduras da mesma tabela num banco que tem
+    um décimo de um núcleo — por isso é uma só, com DISTINCT ON."""
+    from app.apps.analisesps import tarefas
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        for tipo, quando, ok, msg in [
+                ("fiscal", "2026-09-13 10:00", True, "3 card(s) gravado(s)"),
+                ("fiscal", "2026-09-13 14:00", True, "12 card(s) gravado(s)"),
+                ("notas_receita", "2026-09-13 13:00", False, "certificado vencido"),
+                ("carga_inicial", "2026-09-13 09:00", True, "não é fiscal")]:
+            conn.execute(
+                "INSERT INTO analisesps.execucoes "
+                "  (tipo, disparo, inicio, fim, ok, mensagem) "
+                "VALUES (?, 'manual', ?, ?, ?, ?)",
+                (tipo, quando, quando, ok, msg))
+        conn.commit()
+
+    ultimas = tarefas.ultimas_por_tipo(tarefas.MODOS_FISCAIS)
+    assert ultimas["fiscal"]["mensagem"] == "12 card(s) gravado(s)", (
+        "veio a rodada antiga, não a última")
+    assert ultimas["notas_receita"]["ok"] is False
+    assert "carga_inicial" not in ultimas, "trouxe um tipo que não foi pedido"
+
+
+@pytest.mark.banco
+def test_uma_rodada_que_NAO_TERMINOU_nao_conta_como_resultado(banco_analisesps):
+    """O que está rodando agora aparece no aviso de andamento; aqui é o que
+    TERMINOU. Misturar os dois faria a tela dizer "gravou" no meio da gravação."""
+    from app.apps.analisesps import tarefas
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.execucoes (tipo, disparo, inicio, fim) "
+            "VALUES ('fiscal', 'manual', now(), NULL)")
+        conn.commit()
+    assert tarefas.ultimas_por_tipo(["fiscal"]) == {}

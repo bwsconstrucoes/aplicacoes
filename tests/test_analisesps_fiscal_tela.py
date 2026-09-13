@@ -951,3 +951,84 @@ def test_devolver_a_planilha_EXPLICA_o_que_e_a_fila():
     acao = next(a for a in web.ACOES_FISCAIS if a["modo"] == "fila")
     assert "fila" in acao["ajuda"]
     assert "não tem nada de fiscal" in acao["ajuda"].lower()
+
+
+# ---------------------------------------------------------------------------
+# "COMO É QUE A GENTE SABE SE RODOU?" — 13/09/2026
+#
+# *"Eu clico gravar no Pipefy, aí diz que está rodando no servidor, mas como é
+# que a gente sabe se rodou, se não rodou, se terminou? (…) Não aparece nada na
+# tela, a tela continua do mesmo jeito. Não deveria ter alguma coisa dizendo que
+# gravou, uma confirmação?"*
+#
+# O dado SEMPRE existiu — cada rodada grava o que fez, em português. Só que
+# aparecia na tela de Configurações, que não é onde o trabalho acontece.
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def app_com_rodadas(app_fiscal, monkeypatch):
+    from app.apps.analisesps import tarefas
+
+    monkeypatch.setattr(tarefas, "ultimas_por_tipo", lambda tipos: {
+        "fiscal": {"tipo": "fiscal", "fim": dt.datetime(2026, 9, 13, 14, 30),
+                   "ok": True, "mensagem": "12 card(s) gravado(s), 2 recusado(s)",
+                   "linhas": 12, "disparo": "manual"},
+        "notas_receita": {"tipo": "notas_receita",
+                          "fim": dt.datetime(2026, 9, 13, 13, 0), "ok": False,
+                          "mensagem": "certificado vencido", "linhas": 0,
+                          "disparo": "manual"},
+    })
+    return app_fiscal
+
+
+def test_cada_botao_mostra_o_QUE_FEZ_da_ultima_vez(app_com_rodadas):
+    html = entrar(app_com_rodadas).get(
+        "/analisesps/fiscal?f=1").get_data(as_text=True)
+    assert "12 card(s) gravado(s), 2 recusado(s)" in html
+    assert "13/09/2026" in html, "sem a hora, não dá para saber se é de agora"
+
+
+def test_a_rodada_que_FALHOU_aparece_como_falha(app_com_rodadas):
+    """"Certificado vencido" e "12 gravados" não podem sair com a mesma cara."""
+    html = entrar(app_com_rodadas).get(
+        "/analisesps/fiscal?f=1").get_data(as_text=True)
+    assert "certificado vencido" in html
+    assert "acao-resultado erro" in html
+
+
+def test_o_botao_que_NUNCA_rodou_diz_isso(app_com_rodadas):
+    """"Nunca rodou" e "rodou e não fez nada" são coisas diferentes."""
+    html = entrar(app_com_rodadas).get(
+        "/analisesps/fiscal?f=1").get_data(as_text=True)
+    assert "nunca rodou" in html
+
+
+def test_as_DUAS_telas_fiscais_mostram_o_mesmo(app_com_rodadas):
+    """Os botões são os mesmos nas duas; o resultado deles também tem de ser —
+    e por isso as duas incluem o mesmo pedaço de tela."""
+    cliente = entrar(app_com_rodadas)
+    for url in ("/analisesps/fiscal?f=1",
+                "/analisesps/fiscal?f=1&visao=notas"):
+        html = cliente.get(url).get_data(as_text=True)
+        assert "12 card(s) gravado(s)" in html, url
+
+
+def test_a_nota_associada_mostra_a_SP_na_tela(app_fiscal, monkeypatch):
+    """*"Diz que está associado mas não diz com a SP que está associada, o
+    registro que está associado. Isso é ruim, que a gente fica perdido."*"""
+    from app.apps.analisesps import fiscal
+
+    monkeypatch.setattr(fiscal, "listar_notas", lambda f, pagina=1: (
+        [{"chave": CHAVE_ACME, "emissao": dt.date(2026, 9, 1), "numero": "555",
+          "serie": "1", "valor": Decimal("269.00"), "status": "Cancelada",
+          "emitente_doc": "11222333000181", "emitente": "ACME",
+          "emitente_uf": "BA", "importada_em": None, "orfa": False,
+          "categoria": "NF-e (Mercadoria)", "candidatas": [],
+          "sp_id": "1443253428", "sp_status": "Pago"}],
+        {"quantidade": 1, "total": Decimal("269.00"), "sem_lancamento": 0}))
+
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&visao=notas").get_data(as_text=True)
+    assert "1443253428" in html, "não diz em qual SP a nota está"
+    # E, sendo cancelada numa SP paga, o alerta é explícito.
+    assert "paga sem documento" in html
+    assert "cancelada, e está na SP" in html

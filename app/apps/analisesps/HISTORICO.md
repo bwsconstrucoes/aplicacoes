@@ -3206,6 +3206,112 @@ navegador**, contra banco com dado dentro: o duplo clique abre a ficha sem sair
 da tela, o link do card aponta para o Pipefy, a tela por nota abre a ficha do
 mesmo jeito, e sair para Configurações e voltar traz de volta a visão por nota.
 
+### Quadragésima terceira leva (13/09) — o porquê de cada par, e o alarme da nota cancelada
+
+#### "Mesmo valor" não dava segurança nenhuma
+
+*"Você bota aqui a nota e bota 'mesmo valor'. Mas gera dúvida: você está
+comparando o mesmo valor de quê? Do mesmo fornecedor, do mesmo número de nota
+fiscal? Como é que você chegou a essa informação? (…) Era interessante ampliar
+essa informação, mesmo que esse seja o critério, pelo menos para dar segurança a
+quem está fazendo essa associação."*
+
+Ele está certo, e **"mesmo valor" sozinho é pior que nada**: dá ar de
+conferência a uma coincidência. Duas notas do mesmo fornecedor no mesmo mês com
+o mesmo valor existem — e é exatamente aí que se associa a errada.
+
+Agora cada SP candidata mostra **quantos critérios conferem, e quais**:
+
+- **CNPJ do credor é o de quem emitiu** — é o critério que a põe na lista, e
+  agora está dito em vez de subentendido;
+- **Valor igual** (ou **Valor DIFERENTE**, dizendo os dois números — ver "a SP é
+  R$ 500,00 e a nota R$ 269,00" é o que impede associar por engano);
+- **Nº da nota no card** — bate, ou diz o que o card tem;
+- **Data compatível** — a emissão contra o vencimento e o pagamento.
+
+#### Os filtros do par, que ele pediu e eu não tinha feito
+
+*"Nessas que estão aqui já verdinha pra associar (…) tem outra sim, o valor é
+diferente. Tem que ter um tratamento aí."* Três recortes novos, e eles se
+completam (há teste somando):
+
+- **Tem SP do mesmo valor** — o par que fecha sem pensar;
+- **Tem SP do credor, mas de outro valor** — precisa de olho;
+- **Nenhuma SP daquele CNPJ** — a despesa pode nem ter sido lançada.
+
+#### ⚠️ O alarme: nota cancelada que JÁ está num lançamento
+
+*"Imagina, o fornecedor emitiu e cancelou a nota. E a gente associou, pagou, e a
+nota virou cancelada. A gente tem que ter um local de visualização disso,
+facilmente poder tratar isso aí, ligar pro fornecedor e pedir uma nova nota (…)
+é algo que tem que dar destaque."*
+
+**Este é o caso mais grave da tela, e ficava INVISÍVEL justamente por estar
+"resolvido":** a nota cancelada **não é órfã** — ela está associada —, então
+nunca apareceu na lista das que precisam de despesa. Só se descobriria abrindo a
+nota certa por acaso.
+
+Agora é a **primeira coisa da tela**, em vermelho, antes dos números, e leva
+para a lista delas. E a linha da nota diz tudo o que é preciso para agir: a
+etiqueta **não sai em verde** (verde diz "resolvido"), vai o **número da SP**, o
+**status de pagamento dela**, e quando a SP está paga sai o carimbo **"paga sem
+documento"** — sem o número da SP, agir obrigaria a procurar a chave na outra
+tela.
+
+**Verificação:** 6 testes novos com banco de verdade — os três recortes do par
+se completando, o alarme separando a cancelada associada da cancelada solta (que
+é o esperado, não um achado), os porquês de cada candidata e o caso do valor
+diferente dizendo os dois números. E a tela foi aberta num navegador com uma
+nota cancelada associada a uma SP paga: o alarme aparece, o recorte funciona e a
+linha mostra SP, status e o carimbo.
+
+### Quadragésima quarta leva (13/09) — "como é que a gente sabe se rodou?"
+
+*"Eu clico gravar no Pipefy, aí diz que está rodando no servidor, mas como é que
+a gente sabe se rodou, se não rodou, se terminou? (…) Depois que eu fiz isso não
+aparece nada na tela, a tela continua do mesmo jeito. É isso mesmo? Não deveria
+ter alguma coisa dizendo que gravou, uma confirmação?"*
+
+**O dado SEMPRE existiu.** Cada rodada grava quando terminou, se deu certo e um
+recado em português — *"12 card(s) gravado(s), 2 recusado(s)"*. Só que isso
+aparecia na tela de **Configurações**, que não é onde o trabalho acontece.
+Informação guardada e mostrada no lugar errado é informação que não existe para
+quem trabalha.
+
+Agora **cada botão carrega embaixo o resultado da última vez que ele rodou**,
+com a hora, em verde ou vermelho. E fica lá: quem sai da tela e volta continua
+vendo o que a rodada fez, em vez de ter de lembrar. Quem nunca rodou diz "nunca
+rodou" — que é diferente de "rodou e não fez nada".
+
+Os dois blocos de botão (por lançamento e por nota) passaram a ser **o mesmo
+pedaço de tela**: eram duas cópias, e o dia em que uma ganhasse o resultado a
+outra ficaria para trás.
+
+#### E a nota associada agora diz EM QUAL SP
+
+*"Eu filtrei 'já está no lançamento' (…) diz que está associado mas não diz com
+a SP que está associada, o registro que está associado. Isso é ruim, que a gente
+fica perdido. Se eu quiser confirmar, visualizar de novo, checar, então não está
+funcionando assim."*
+
+A linha passou a trazer o **número da SP** e o **status de pagamento dela**, com
+dois cliques abrindo a ficha ali mesmo. Sem o número, conferir obrigava a
+procurar a chave na outra tela.
+
+#### A resposta sobre o Pipefy, para ficar registrada
+
+Ele perguntou se a gravação é em lote. **É:** as decisões confirmadas vão em
+blocos de **20 cards por chamada** — uma única mutação com 20 operações dentro.
+Trinta notas são duas chamadas (20 + 10), não trinta. O resultado de **cada
+card** é lido individualmente, então um card recusado não derruba os outros 19;
+e um bloco que falha inteiro marca só os 20 dele, que voltam na rodada seguinte
+porque a decisão continua gravada aqui.
+
+**Verificação:** 7 testes novos (4 de tela, 2 com banco de verdade, 1 da nota
+associada). E a tela foi aberta num navegador com rodadas gravadas de verdade:
+os cinco botões mostram o que fizeram, o que falhou sai em vermelho com o
+motivo, e a nota associada mostra a SP e o status dela.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Nada do dono esperando código.** O que falta não é programação — é o

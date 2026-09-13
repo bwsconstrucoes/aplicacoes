@@ -201,20 +201,7 @@
     <h3>Trazer, ler e gravar</h3>
     <small>uma de cada vez</small>
   </div>
-  <div class="fiscal-acoes-tarefa">
-    {% for a in acoes %}
-      <button class="btn secundario" data-modo="{{ a.modo }}"
-              title="{{ a.ajuda }}">{{ a.rotulo }}</button>
-    {% endfor %}
-  </div>
-  <div id="andamento-fiscal">
-    {% if andamento.rodando %}
-      <div class="aviso"><b>Rodando agora:</b> {{ andamento.detalhe.etapa }}
-        {% if andamento.detalhe.progresso %}— {{ andamento.detalhe.progresso }}{% endif %}
-        <br><small>Pode continuar trabalhando: isto roda no servidor.</small>
-      </div>
-    {% endif %}
-  </div>
+    {% include "analisesps_acoes_fiscais.html" %}
   <p class="cartao-dica">
     A Receita só devolve as notas recentes; o histórico antigo entra pelo
     relatório do FSist colado na planilha de apoio. As duas alimentam a mesma

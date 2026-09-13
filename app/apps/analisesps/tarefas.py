@@ -623,3 +623,43 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
 
     return {"ok": True, "modo": modo, "descricao": MODOS[modo],
             "execucao": execucao_id}
+
+
+# Os modos que a tela de Documentação Fiscal dispara. O resultado do último de
+# cada um é mostrado lá — ver `ultimas_por_tipo`.
+MODOS_FISCAIS = ["notas_receita", "apoios", "fiscal_ia", "fiscal", "fila"]
+
+
+def ultimas_por_tipo(tipos: list) -> dict:
+    """A última execução CONCLUÍDA de cada tipo pedido.
+
+    Existe por causa de uma reclamação do dono em 13/09/2026: *"eu clico gravar
+    no Pipefy, aí diz que está rodando no servidor, mas como é que a gente sabe
+    se rodou, se não rodou, se terminou? (…) Não aparece nada na tela, a tela
+    continua do mesmo jeito. Não deveria ter alguma coisa dizendo que gravou,
+    uma confirmação?"*
+
+    Ele está certo, e o dado sempre existiu: cada execução grava quando
+    terminou, se deu certo e um recado em português ("12 card(s) gravado(s), 2
+    recusado(s)"). Isso aparecia SÓ na tela de Configurações, que não é onde o
+    trabalho acontece. Aqui a tela de onde o botão foi apertado passa a mostrar
+    o que ele fez.
+
+    UMA CONSULTA SÓ, com `DISTINCT ON`: uma por tipo seriam cinco varreduras da
+    mesma tabela num banco que tem um décimo de um núcleo."""
+    tipos = [t for t in (tipos or []) if t]
+    if not tipos:
+        return {}
+    try:
+        from .db import consultar
+        marcas = ",".join(["?"] * len(tipos))
+        linhas = consultar(
+            "SELECT DISTINCT ON (tipo) tipo, fim, ok, mensagem, linhas, disparo "
+            "  FROM analisesps.execucoes "
+            f" WHERE fim IS NOT NULL AND tipo IN ({marcas}) "
+            " ORDER BY tipo, fim DESC", tuple(tipos))
+    except Exception:  # noqa: BLE001 — banco fora do ar, ou migração por aplicar
+        logger.exception("Análise de SPs: não consegui ler as últimas execuções")
+        return {}
+    nomes = ["tipo", "fim", "ok", "mensagem", "linhas", "disparo"]
+    return {l[0]: dict(zip(nomes, l)) for l in linhas}

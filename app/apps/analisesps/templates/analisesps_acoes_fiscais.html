@@ -1,0 +1,50 @@
+{# ---------------------------------------------------------------------------
+   OS BOTÕES DE TRABALHO, E O QUE CADA UM FEZ DA ÚLTIMA VEZ.
+
+   Reclamação do dono em 13/09/2026: *"eu clico gravar no Pipefy, aí diz que
+   está rodando no servidor, mas como é que a gente sabe se rodou, se não rodou,
+   se terminou? (…) Não aparece nada na tela, a tela continua do mesmo jeito.
+   Não deveria ter alguma coisa dizendo que gravou, uma confirmação?"*
+
+   Ele está certo, e o dado SEMPRE existiu: cada rodada grava quando terminou,
+   se deu certo e um recado em português ("12 card(s) gravado(s), 2
+   recusado(s)"). Só que isso aparecia na tela de Configurações — que não é onde
+   o trabalho acontece. Informação guardada e mostrada no lugar errado é
+   informação que não existe para quem trabalha.
+
+   Agora cada botão carrega embaixo o resultado da ÚLTIMA vez que ele rodou,
+   com a hora. E ele fica lá: quem sai da tela e volta continua vendo o que a
+   rodada fez, em vez de ter de lembrar.
+
+   Usado pelas duas telas fiscais — por lançamento e por nota — para não
+   divergirem.
+--------------------------------------------------------------------------- #}
+<div class="fiscal-acoes-tarefa">
+  {% for a in acoes %}
+    {% set ultima = (ultimas or {}).get(a.modo) %}
+    <div class="acao-com-resultado">
+      <button class="btn secundario" data-modo="{{ a.modo }}"
+              title="{{ a.ajuda }}">{{ a.rotulo }}</button>
+      {% if ultima %}
+        <span class="acao-resultado {{ 'ok' if ultima.ok else 'erro' }}"
+              title="{{ a.ajuda }}">
+          {{ '✔' if ultima.ok else '✕' }}
+          {{ ultima.mensagem or ('terminou' if ultima.ok else 'falhou') }}
+          <small>{{ ultima.fim|momento_br }}</small>
+        </span>
+      {% else %}
+        <span class="acao-resultado nunca">nunca rodou</span>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+<div id="andamento-fiscal">
+  {% if andamento.rodando %}
+    <div class="aviso"><b>Rodando agora:</b> {{ andamento.detalhe.etapa }}
+      {% if andamento.detalhe.progresso %}— {{ andamento.detalhe.progresso }}{% endif %}
+      <br><small>Pode continuar trabalhando: isto roda no servidor. Quando
+        terminar, a tela se atualiza sozinha e mostra o que foi feito.</small>
+    </div>
+  {% endif %}
+</div>

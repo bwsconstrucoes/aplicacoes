@@ -1208,3 +1208,37 @@ a.kpi { display: block; }
    letras em vez de escondido no numero. */
 .link-card { font-size: 11px; font-weight: 600; text-decoration: none; }
 .sps tr[data-ficha] { cursor: default; }
+
+/* ⚠️ O ALARME DA NOTA CANCELADA JA ASSOCIADA. E a primeira coisa da tela, e nao
+   mais um numero na fileira: despesa paga contra documento que nao existe mais
+   e problema fiscal, e quem ve precisa agir hoje. */
+.alarme-fiscal {
+  display: flex; gap: 12px; align-items: flex-start; text-decoration: none;
+  background: #FDECEC; border: 1px solid var(--vermelho);
+  border-left: 6px solid var(--vermelho); border-radius: var(--raio);
+  padding: 12px 16px; margin: 0 2px 14px; color: var(--tinta);
+  font-size: 14px; line-height: 1.5;
+}
+.alarme-fiscal:hover { background: #FBDCDC; }
+.alarme-icone { font-size: 20px; line-height: 1.2; }
+
+/* POR QUE ESTA SP E CANDIDATA, item por item. "Mesmo valor" sozinho e pior que
+   nada: da ar de conferencia a uma coincidencia. */
+.razoes { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin: 3px 0 8px; font-size: 11.5px; }
+.razoes > b { color: var(--tinta-suave); font-weight: 700; }
+.razao { padding: 1px 7px; border-radius: 10px; white-space: nowrap; cursor: help; }
+.razao.bate { background: #E3F3E8; color: #124F26; }
+.razao.falha { background: #F1F3F6; color: var(--tinta-suave); }
+
+/* O QUE CADA BOTAO FEZ DA ULTIMA VEZ. "Como e que a gente sabe se rodou, se nao
+   rodou, se terminou? Nao aparece nada na tela." O dado sempre existiu — so
+   aparecia na tela de Configuracoes, que nao e onde o trabalho acontece. */
+.acao-com-resultado { display: flex; flex-direction: column; gap: 3px; }
+.acao-resultado {
+  font-size: 11.5px; line-height: 1.3; padding: 2px 6px; border-radius: 5px;
+  max-width: 260px;
+}
+.acao-resultado small { display: block; color: var(--tinta-suave); font-size: 10.5px; }
+.acao-resultado.ok { color: #124F26; background: #E3F3E8; }
+.acao-resultado.erro { color: #7A1220; background: #FDECEC; }
+.acao-resultado.nunca { color: var(--tinta-suave); }
