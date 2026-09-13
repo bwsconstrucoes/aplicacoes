@@ -730,6 +730,16 @@ nisso agora: é o caminho que escreve, e alargá-lo sem pedido não vale o risco
 mudou isso. O protocolo segue igual: ensaio → **um** título conferido dentro do
 OMIE com os olhos → lote.
 
+### O que foi conferido antes de publicar
+
+Suíte completa com banco de verdade, já com o Análise de SPs junto na `main`:
+**5038 passaram, 129 pulados**. Os treze testes novos foram conferidos
+quebrando o código de propósito, um a um — inclusive o da trava do rateio, que
+passava sem provar nada até ganhar a asserção de que a mudança pedida acontece
+mesmo. A tela foi exercitada em navegador de verdade: editar uma linha, marcar
+três e mudar todas, desfazer, e o título rateado virando um envio só. Publicado
+em `86636c7`, sem migração.
+
 ## O empréstimo que devolveu mais do que entrou — 09/09/2026
 
 A base diz que a empresa pagou **R$ 9,25 milhões** de principal contra
