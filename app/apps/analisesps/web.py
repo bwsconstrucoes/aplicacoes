@@ -2044,6 +2044,24 @@ def comparar_fiscal():
          "html": com_links(texto(sp.get(campo)))}
         for campo in colunas.CHAVES if texto(sp.get(campo)).strip()
     ]
+    # O PANORAMA DAS PARCELAS, DITO ANTES DO CLIQUE.
+    #
+    # *"Claramente é a situação de parcelas que informei. Não deveria haver uma
+    # associação com as outras parcelas pra vincular logo tudo? Ou avisar que
+    # já tá associado com outras?"* Gravar nas irmãs já acontecia — só que ele
+    # só descobria DEPOIS. Ação que alcança mais do que se vê tem de ser
+    # anunciada antes.
+    #
+    # A chave "em questão" é a da melhor candidata: é contra ela que se sabe se
+    # uma irmã já está com ESTA nota ou com outra.
+    melhor = (comparacao.get("candidatas") or [{}])[0]
+    try:
+        comparacao["parcelas"] = fiscal.panorama_das_parcelas(
+            sp, melhor.get("chave") or "")
+    except Exception:  # noqa: BLE001 — a janela abre mesmo sem isto
+        logger.exception("Análise de SPs: falhou ler o panorama das parcelas")
+        comparacao["parcelas"] = {}
+
     comparacao["ok"] = True
     return comparacao
 
@@ -2583,6 +2601,26 @@ def aplicar_credor():
                       "a decisão guardada.")
     logger.info("Análise de SPs: %s equalizou %d credor(es), %d SP(s).",
                 quem or "sem nome", fornecedores, mudadas)
+
+    # ⚠️ SEM RECARREGAR A PÁGINA, quando quem pede é a tela por trás.
+    #
+    # Reclamação do dono em 13/09/2026, depois de publicado: *"clico 'usar
+    # este', continua subindo a tela. Clico em dois e acho que ele somente
+    # resolve um."*
+    #
+    # Cada fornecedor é um formulário próprio, e cada envio era uma página
+    # inteira indo e voltando: a rolagem ia para o topo de uma lista longa, e
+    # o segundo clique cancelava o primeiro, que ainda estava no ar. Com
+    # `fetch` cada linha se resolve onde está e vários podem estar gravando ao
+    # mesmo tempo.
+    #
+    # A resposta continua sendo redirecionamento para quem chega pelo caminho
+    # normal — sem JavaScript a tela tem de continuar funcionando.
+    if request.headers.get("X-Sem-Recarregar") == "1":
+        return {"ok": True, "aviso": aviso, "fornecedores": fornecedores,
+                "sps": mudadas,
+                "documentos": documentos,
+                "nomes": [str(n or "").strip() for n in escolhidos]}
     return redirect(url_for("analisesps.tela_credores", aviso=aviso))
 
 

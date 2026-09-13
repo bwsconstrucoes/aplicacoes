@@ -1484,6 +1484,16 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
          + regras.map(linha).join("") + '</tbody></table>';
   }
 
+  /* QUANTAS SPs O BOTAO VAI ALCANCAR — fica no rotulo, que e onde se olha
+     antes de clicar. Preenchido por `desenhar` a cada abertura. */
+  let quantasSPs = 1;
+
+  function rotuloDoBotao() {
+    return quantasSPs > 1
+      ? "Usar esta nota nas " + quantasSPs + " SPs do parcelamento"
+      : "Usar esta nota nesta SP";
+  }
+
   function candidata(c, i, corte) {
     const cabeca = '<div class="prova-cab"><b>'
         + (i === 0 ? "Melhor candidata" : "Candidata " + (i + 1)) + '</b>'
@@ -1504,7 +1514,7 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
          // "discordo" em trabalho feito, em vez de reclamacao.
          + (config.dataset.urlMao
             ? '<button class="btn secundario prova-usar" data-chave="'
-              + esc(c.chave) + '">Usar esta nota nesta SP</button>' : "")
+              + esc(c.chave) + '">' + rotuloDoBotao() + "</button>" : "")
          + '</div>';
   }
 
@@ -1530,6 +1540,57 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
            + (j.chave ? ' · chave ' + esc(j.chave) : "")
            + (j.origem ? ' · origem ' + esc(j.origem) : "")
            + (j.por ? ' · por ' + esc(j.por) : "") + '</div>';
+    }
+
+    /* =====================================================================
+       O PARCELAMENTO, DITO ANTES DO CLIQUE.
+
+       *"Claramente e a situacao de parcelas que informei. Nao deveria haver
+       uma associacao com as outras parcelas pra vincular logo tudo? Ou avisar
+       que ja ta associado com outras?"*
+
+       Gravar nas irmas ja acontecia — so que ele so descobria DEPOIS de
+       clicar. Acao que alcanca mais do que se ve tem de ser anunciada antes.
+    ===================================================================== */
+    const par = d.parcelas || {};
+    quantasSPs = 1 + (par.livres || 0);
+    if (par.de) {
+      let texto = "<b>Esta SP e a parcela " + par.qual + "/" + par.de
+                + " de um pagamento.</b> ";
+      if (par.sem_numero) {
+        texto += "O card esta SEM o n° da nota, e sem ele nao da para achar as "
+               + "outras parcelas com seguranca — esta associacao vale so para "
+               + "esta SP.";
+      } else if (!(par.irmas || []).length) {
+        texto += "Nao encontrei outra SP com o mesmo CNPJ e o mesmo n° de nota. "
+               + "Esta associacao vale so para esta SP.";
+      } else {
+        const partes = [];
+        if (par.livres) {
+          partes.push("<b>" + par.livres + "</b> ainda sem nota — "
+                      + "<b>vao receber esta mesma nota</b> quando voce gravar");
+        }
+        if (par.mesma_nota) {
+          partes.push("<b>" + par.mesma_nota + "</b> ja esta(o) com ESTA nota");
+        }
+        if (par.outra_nota) {
+          partes.push("<b>" + par.outra_nota + "</b> aponta(m) para OUTRA nota "
+                      + "— nao sera(ao) mexida(s)");
+        }
+        texto += "Achei outras " + par.irmas.length + ": " + partes.join("; ")
+               + ".";
+        texto += '<div class="prova-parcelas">'
+          + par.irmas.map(i => {
+            const comoEsta = i.situacao === "livre" ? "sem nota"
+                           : (i.situacao === "mesma_nota" ? "ja com esta nota"
+                              : "com OUTRA nota");
+            return '<span class="parcela-irma ' + i.situacao + '">SP '
+                 + esc(i.id) + " · parcela " + esc(i.parcela) + " · "
+                 + dinheiro(i.valor) + " · " + comoEsta + "</span>";
+          }).join("") + "</div>";
+      }
+      html += '<div class="aviso ' + (par.outra_nota ? "atencao" : "info")
+            + '">' + texto + "</div>";
     }
 
     html += ficha("O lançamento (a SP inteira)", d.lancamento || []);
@@ -1775,5 +1836,73 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
         corpo.innerHTML = '<p class="aviso">Não consegui buscar as SPs: '
           + escapar(e && e.message) + "</p>";
       });
+  });
+})();
+
+/* ==========================================================================
+   "USAR ESTE" SEM A TELA SUBIR, NA TELA DE CREDORES.
+
+   Reclamacao do dono em 13/09/2026, com a tela ja publicada: *"clico usar
+   este, continua subindo a tela. Clico em dois e acho que ele somente resolve
+   um."*
+
+   A CAUSA: cada fornecedor e um `<form method="post">` proprio, e cada envio
+   era uma pagina inteira indo e voltando. Duas consequencias, e ele viu as
+   duas: a rolagem voltava para o topo de uma lista longa, e o segundo clique
+   ABORTAVA o primeiro, que ainda estava no ar — por isso "so resolve um".
+
+   Agora o envio vai por tras. Cada caso se resolve no lugar onde esta, e
+   varios podem estar gravando ao mesmo tempo.
+
+   SEM JAVASCRIPT A TELA CONTINUA FUNCIONANDO: o formulario e de verdade, o
+   metodo e POST de verdade, e a rota so responde diferente para quem manda o
+   cabecalho. Isto aqui e melhoria, nao a unica porta.
+   ========================================================================== */
+(function () {
+  var casos = document.querySelectorAll("form.credor-caso");
+  if (!casos.length) { return; }
+
+  function resolver(form, dados) {
+    var caixa = document.createElement("div");
+    caixa.className = "cartao credor-resolvido";
+    var nome = (dados.nomes && dados.nomes[0]) || "";
+    caixa.innerHTML = '<b>✔ ' + (nome ? nome.replace(/[<>&]/g, "") : "aplicado")
+      + "</b> <span class=\"cartao-dica\">— " + (dados.sps || 0)
+      + " SP(s) reescrita(s). A planilha é atualizada na próxima "
+      + "sincronização.</span>";
+    /* O bloco da Receita vem LOGO DEPOIS do formulario; some junto, senao
+       fica uma sugestao orfa embaixo de um caso ja decidido. */
+    var depois = form.nextElementSibling;
+    if (depois && depois.classList
+        && depois.classList.contains("consulta-receita")) {
+      depois.remove();
+    }
+    form.replaceWith(caixa);
+  }
+
+  casos.forEach(function (form) {
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var botao = form.querySelector("button[type=submit]");
+      if (botao) { botao.disabled = true; botao.textContent = "gravando…"; }
+
+      fetch(form.action, {
+        method: "POST",
+        body: new FormData(form),
+        credentials: "same-origin",
+        headers: {"X-Sem-Recarregar": "1"},
+      }).then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) { throw new Error(d.erro || "não consegui gravar"); }
+          resolver(form, d);
+        })
+        .catch(function (e) {
+          if (botao) { botao.disabled = false; botao.textContent = "Usar este"; }
+          var erro = document.createElement("div");
+          erro.className = "associada-erro";
+          erro.textContent = "✕ " + (e && e.message ? e.message : e);
+          form.appendChild(erro);
+        });
+    });
   });
 })();

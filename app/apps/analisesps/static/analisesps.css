@@ -1342,3 +1342,29 @@ a.kpi { display: block; }
    precisa poder conferir o que fez. */
 tr.nota-resolvida { opacity: .62; }
 tr.nota-resolvida .nota-candidata { filter: grayscale(1); }
+
+/* O caso de credor resolvido sem a página recarregar. */
+.credor-resolvido {
+  border-left: 3px solid #10B981;
+  background: #ECFDF5;
+  padding: 10px 12px;
+}
+.credor-resolvido b { color: #065F46; }
+
+/* AS OUTRAS PARCELAS, ditas ANTES do clique. *"Não deveria haver uma
+   associação com as outras parcelas pra vincular logo tudo? Ou avisar que já
+   tá associado com outras?"* */
+.prova-parcelas {
+  margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px;
+}
+.parcela-irma {
+  font-size: 12px; padding: 3px 8px; border-radius: 12px;
+  border: 1px solid var(--borda, #cbd5e1); background: #fff;
+}
+.parcela-irma.livre { border-color: #10B981; color: #065F46; }
+.parcela-irma.mesma_nota { border-color: #6366F1; color: #3730A3; }
+/* A que aponta para OUTRA nota é a informação mais importante das três: é ela
+   que responde "já está associado com outras?". */
+.parcela-irma.outra_nota {
+  border-color: #DC2626; color: #991B1B; font-weight: 600;
+}
