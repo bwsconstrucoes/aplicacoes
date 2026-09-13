@@ -990,3 +990,154 @@ a.kpi { display: block; }
   display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
   margin-top: 10px; padding-top: 10px; border-top: 1px solid #e4e9ee;
 }
+
+/* ================= DOCUMENTACAO FISCAL — a tela refeita em 13/09/2026 ======
+   O dono usou a primeira versao e disse: "nao da pra fazer a gestao dessa
+   documentacao fiscal da forma que esta". O que se ve aqui e a resposta.    */
+
+/* AS DUAS VISOES, sempre visiveis. Antes a segunda era um link solto no meio
+   da tela, facil de nao ver — e ele pediu as duas com todas as letras. */
+.fiscal-visoes {
+  display: flex; gap: 4px; margin: 0 0 14px; padding: 4px;
+  background: #EDF1F7; border-radius: var(--raio); width: fit-content;
+  max-width: 100%; flex-wrap: wrap;
+}
+.fiscal-visao {
+  padding: 7px 16px; border-radius: var(--raio-p); font-size: 13.5px;
+  font-weight: 600; color: var(--tinta-suave); text-decoration: none;
+}
+.fiscal-visao:hover { background: #E2E8F2; color: var(--azul); }
+.fiscal-visao.ativa { background: var(--branco); color: var(--azul); box-shadow: var(--sombra); }
+.fiscal-visao b {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 10px;
+  background: var(--ambar); color: #fff; font-size: 12px;
+}
+
+/* OS TOTALIZADORES sao ATALHO: clicar aplica o recorte. Um numero que a pessoa
+   ve e depois tem de ir procurar no filtro e meio caminho. */
+.fiscal-kpis .kpi { text-decoration: none; color: inherit; display: block; }
+.fiscal-kpis .kpi.ligado { outline: 2px solid var(--azul-claro); }
+.fiscal-kpis .kpi.ligado .kpi-rotulo { color: var(--azul); }
+
+/* AS ACOES DENTRO DA TELA DE TRABALHO. "Ler, e pra estar dentro da tela.
+   Gravar nos cards, e pra estar dentro da tela." */
+.fiscal-acoes-tarefa {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;
+}
+
+/* A janela de escrever a mao e um formulario curto: a largura padrao de 940px
+   faria tres campos nadarem na tela. */
+.dlg-estreito { width: min(520px, 94vw); }
+
+/* Cada SP candidata da visao por nota vira uma linha com o botao de fechar o
+   par ali mesmo. */
+.nota-candidata { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 2px 0; }
+
+/* O RECORTE PRINCIPAL APARECE INTEIRO, sem rolagem por dentro.
+
+   Os blocos comuns da barra tem teto de 260px porque listam oitenta obras; com
+   doze recortes fixos, esse teto cortava o ultimo item no meio da linha e
+   colava a dica embaixo — na tela parecia defeito de desenho, e escondia
+   justamente "Confirmado, falta gravar no card". A barra lateral ja rola
+   sozinha; um segundo rolamento dentro dela nao ajuda ninguem. */
+.filtro-trabalho .filtro-opcoes { max-height: none; overflow-y: visible; }
+
+/* ============ A NAVEGACAO EM TELA PEQUENA — 13/09/2026 ====================
+   "Numa tela grande e tranquilo de navegar, porque todos aparecem, mas numa
+   tela pequena ele fica escondido, as ultimas."
+
+   Medido: a faixa de abas ocupa ~1.000px e comeca a ser cortada perto de
+   1.400px de janela — num notebook comum a ultima ja sumia, e nada dizia que
+   tinha sumido. Quem decide trocar a faixa pelo menu e o script, MEDINDO: nao
+   ha largura de corte chutada aqui. */
+.topo-menu {
+  display: none; align-items: center; gap: 8px; margin-left: 12px;
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22);
+  color: #fff; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+  font-size: 14px; font-weight: 700; white-space: nowrap; flex: 0 0 auto;
+}
+/* O NOME DA TELA NO BOTAO nao pode ser cortado: ele e a unica marca de onde se
+   esta quando a faixa some. Em tela estreita quem cede espaco e o "Perfil
+   Operador" do canto, que e informacao de conferencia, nao de navegacao. */
+@media (max-width: 560px) {
+  .topo-meta { display: none; }
+}
+.topo-menu:hover { background: rgba(255,255,255,.2); }
+.topo-menu-risco { font-size: 17px; line-height: 1; }
+
+/* O estado compacto: a faixa sai, o botao entra. */
+.topo.compacto .topo-abas { display: none; }
+.topo.compacto .topo-menu { display: inline-flex; }
+
+/* O PAINEL cai por baixo do topo e ocupa a largura toda em tela estreita.
+   Uma tela por linha, com alvo grande para o dedo. */
+.menu-painel {
+  position: sticky; top: var(--altura-topo); z-index: 29;
+  background: var(--branco); border-bottom: 1px solid var(--borda);
+  box-shadow: var(--sombra); display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  padding: 8px; gap: 4px;
+}
+.menu-item {
+  display: block; padding: 13px 14px; border-radius: var(--raio-p);
+  color: var(--tinta); text-decoration: none; font-size: 15px; font-weight: 600;
+}
+.menu-item:hover { background: var(--papel); }
+/* A ATUAL VEM MARCADA: em tela pequena, saber onde se esta e metade da
+   navegacao — na faixa isso era obvio, no menu precisa ser dito. */
+.menu-item.ativa { background: var(--azul); color: #fff; }
+
+/* O RESULTADO DA RECONFERENCIA fica na tela, e nao num alerta: sao varias
+   linhas que a pessoa precisa reler enquanto decide o que fazer. */
+#fiscal-reconferencia { margin-top: 10px; }
+.reconf-item {
+  padding: 8px 12px; margin-bottom: 6px; background: var(--papel);
+  border-left: 4px solid var(--borda-forte); border-radius: var(--raio-p);
+  font-size: 13px; line-height: 1.45;
+}
+.reconf-item small { color: var(--tinta-suave); }
+
+/* A frase que diz que a conferencia esta acontecendo. Fica discreta, mas
+   precisa caber inteira — e a resposta a "como eu sei que isso roda?". */
+.fiscal-conferencia { margin: 0 2px 14px; max-width: 90ch; line-height: 1.55; }
+
+/* ============ A PROVA POR TRAS DA PROPOSTA — 13/09/2026 ===================
+   "Voce sugere e eu quero ver de forma completa os dados do que voce esta
+   sugerindo (...) pra eu nao ter que confiar somente no que voce observou."
+
+   Duas fichas completas lado a lado. Esprema-las obrigaria a rolar para
+   comparar dois numeros que precisam ser vistos juntos — que e exatamente o
+   trabalho. */
+#dlg-provas { width: min(1100px, 96vw); }
+.dlg-sub { margin-left: 10px; font-size: 13px; opacity: .85; }
+.prova-lados { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.prova-ficha {
+  background: var(--branco); border-radius: var(--raio-p); padding: 10px 12px;
+  border: 1px solid var(--borda);
+}
+.prova-ficha h4 { margin: 0 0 8px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--tinta-suave); }
+.prova-ficha dl { display: grid; grid-template-columns: minmax(120px, auto) 1fr; gap: 3px 10px; margin: 0; font-size: 13px; }
+.prova-ficha dt { color: var(--tinta-suave); }
+.prova-ficha dd { margin: 0; word-break: break-word; font-family: var(--fonte-dados); }
+
+.prova-candidata {
+  margin-top: 12px; padding: 10px; border-radius: var(--raio);
+  background: var(--papel); border: 1px solid var(--borda);
+}
+.prova-cab { font-size: 13.5px; margin-bottom: 8px; }
+.prova-diario {
+  background: #EEF2FA; border-radius: var(--raio-p); padding: 8px 12px;
+  font-size: 13px; margin-bottom: 12px;
+}
+.prova-usar { margin-top: 10px; }
+
+/* A CONTA ABERTA. O que NAO pontuou fica visivel de proposito: e o que explica
+   por que a confianca nao foi maior, e e onde a pessoa olha para discordar. */
+.prova-conta { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.prova-conta td { padding: 5px 6px; border-bottom: 1px solid var(--borda); vertical-align: top; }
+.prova-conta td:first-child { width: 20px; font-weight: 800; }
+.prova-conta small { color: var(--tinta-suave); font-family: var(--fonte-dados); }
+.prova-conta tr.bateu td:first-child { color: var(--verde); }
+.prova-conta tr.quase td:first-child { color: var(--ambar); }
+.prova-conta tr.falhou td:first-child { color: var(--borda-forte); }
+.prova-conta tr.falhou { opacity: .75; }

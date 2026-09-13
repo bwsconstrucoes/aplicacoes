@@ -123,9 +123,38 @@ def versao_publicada() -> str:
     return os.getenv("RENDER_GIT_COMMIT", "")[:8] or "dev"
 
 
+# ---------------------------------------------------------------------------
+# AS TELAS DO MÓDULO, NA ORDEM EM QUE ELE TRABALHA
+#
+# A ordem é do dono, pedida em 13/09/2026: *"eu queria colocar solicitações
+# primeiro, depois lote, aí depois eu queria comprovantes, depois relatório, e
+# depois documentação fiscal, aí depois agenda, e pronto, aí pode seguir com os
+# demais."* É o caminho do dia dele — pedir, juntar no lote, dar baixa nos
+# comprovantes, olhar o resultado, tratar a documentação fiscal.
+#
+# POR QUE A LISTA VIVE AQUI, e não solta no HTML: ela é desenhada em DOIS
+# lugares — a faixa de abas do alto e o menu que se abre em tela pequena. Duas
+# cópias divergiriam no dia em que uma tela nova entrasse em uma só, e a que
+# ficasse de fora seria justamente a do menu, que é o caminho de quem está no
+# celular e não tem como descobrir que faltou.
+TELAS = [
+    ("solicitacoes",  "Solicitações",  "analisesps.solicitacoes"),
+    ("lote",          "Lote",          "analisesps.tela_lote"),
+    ("comprovantes",  "Comprovantes",  "analisesps.tela_comprovantes"),
+    ("relatorio",     "Relatório",     "analisesps.relatorio"),
+    ("fiscal",        "Doc. Fiscal",   "analisesps.tela_fiscal"),
+    ("agenda",        "Agenda",        "analisesps.tela_agenda"),
+    ("auditoria",     "Auditoria",     "analisesps.auditoria"),
+    ("ratear",        "Ratear",        "analisesps.ratear"),
+    ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
+    ("log",           "Log",           "analisesps.log"),
+    ("configuracoes", "Configurações", "analisesps.configuracoes"),
+]
+
+
 @bp.app_context_processor
 def _versao_para_os_templates():
-    return {"versao_estatica": versao_publicada()}
+    return {"versao_estatica": versao_publicada(), "telas": TELAS}
 
 
 @bp.after_request
@@ -329,8 +358,8 @@ def saude():
 # página 7.
 CHAVES_FILTRO = ("busca", "status_pgt", "conta", "forma", "status_agend",
                  "tipo_despesa", "projeto", "responsavel", "centro_custo",
-                 "situacoes", "periodo_ini", "periodo_fim", "pgt_ini",
-                 "pgt_fim", "valor_ini", "valor_fim", "ordem")
+                 "situacoes", "fiscais", "periodo_ini", "periodo_fim",
+                 "pgt_ini", "pgt_fim", "valor_ini", "valor_fim", "ordem")
 
 # Marca que a barra de endereço JÁ carrega um filtro — mesmo que ele esteja
 # vazio. Sem ela não há como distinguir "acabei de chegar nesta tela" de
@@ -425,7 +454,7 @@ def _opcoes_dos_filtros(carimbo=None) -> dict:
     return consultas.opcoes_de_filtro(carimbo)
 
 
-def _lembrar_filtro(endpoint: str):
+def _lembrar_filtro(endpoint: str, gaveta: str = None):
     """Guarda o filtro desta tela, ou traz de volta o da última vez.
 
     Devolve um redirecionamento quando há filtro guardado a restaurar, e None
@@ -437,12 +466,13 @@ def _lembrar_filtro(endpoint: str):
     tela), o guardado volta. É isso que faz o filtro de Solicitações valer
     também no Relatório — os dois guardam no mesmo lugar."""
     pessoa = auth.pessoa_atual()
+    gaveta = gaveta or preferencias.FILTRO
 
     if request.args.get(MARCA_FILTRO):
-        preferencias.gravar(pessoa, preferencias.FILTRO, _filtro_cru())
+        preferencias.gravar(pessoa, gaveta, _filtro_cru())
         return None
 
-    guardado = preferencias.ler(pessoa, preferencias.FILTRO)
+    guardado = preferencias.ler(pessoa, gaveta)
     if not guardado:
         return None
 
@@ -489,6 +519,10 @@ def _filtros_do_pedido() -> dict:
         "responsavel": lista("responsavel"),
         "centro_custo": lista("centro_custo"),
         "situacoes": lista("situacoes"),
+        # O recorte da Documentação Fiscal — ver `consultas.SITUACOES_FISCAIS`.
+        # Vive no mesmo dicionário que os demais de propósito: é uma montagem
+        # de WHERE só, e duas não poderiam divergir.
+        "fiscais": lista("fiscais"),
         "periodo_ini": data("periodo_ini"),
         "periodo_fim": data("periodo_fim"),
         "pgt_ini": data("pgt_ini"),
@@ -985,7 +1019,7 @@ def configuracoes():
         base=consultas.base_carregada(),
         andamento=tarefas.estado(),
         ultima=tarefas.ultima_concluida() if not erro_banco else None,
-        modos=tarefas.MODOS,
+        modos=tarefas.MODOS, modos_da_base=tarefas.MODOS_DA_BASE,
         versao=os.getenv("RENDER_GIT_COMMIT", "")[:8] or "desenvolvimento",
         pode_operar=auth.pode_operar())
 
@@ -1774,15 +1808,211 @@ def ratear():
 # ninguém confere mais — é o mesmo olho cansado, só que mais rápido. Por isso o
 # que tem dúvida NÃO vem marcado, e é decidido um a um.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# AS AÇÕES DA DOCUMENTAÇÃO FISCAL MORAM NA TELA DELA
+#
+# Correção do dono em 13/09/2026, com todas as letras: *"ao buscar na Receita
+# as notas emitidas contra a BWS, não tem absolutamente nada a ver eu estar com
+# um botão desse fora da tela de trabalho. (…) Ler, é pra estar dentro da tela.
+# Gravar nos cards, é pra estar dentro da tela. (…) Eu estou trabalhando lá,
+# estou tratando lá, e vou operacionalizar por lá."*
+#
+# Ele está certo e o erro tinha uma causa boba: todas as tarefas longas nascem
+# do mesmo lugar (`tarefas.MODOS`), e a tela de Configurações desenha a lista
+# INTEIRA de modos como botões. Quem acrescenta um modo ganha um botão lá sem
+# querer. As quatro que são trabalho fiscal passam a aparecer aqui, com o nome
+# do que fazem — e continuam existindo em Configurações, que é onde se dispara
+# carga fora do fluxo de trabalho.
+#
+# A ORDEM É A DO TRABALHO: primeiro trazer nota (das duas fontes), depois ler o
+# que falta, depois devolver o resultado (card e planilha).
+ACOES_FISCAIS = [
+    {"modo": "notas_receita", "rotulo": "Buscar notas na Receita",
+     "ajuda": "Baixa da Receita as NF-e e CT-e emitidas contra os CNPJs que "
+              "têm certificado guardado. Continua de onde parou da última vez."},
+    {"modo": "apoios", "rotulo": "Importar o relatório do FSist",
+     "ajuda": "Lê a aba \"Relatório FSIST\" da planilha de apoio. É por aqui "
+              "que entra o histórico que a Receita não devolve mais."},
+    {"modo": "fiscal_ia", "rotulo": "Ler com IA os anexos escolhidos",
+     "ajuda": "Só as SPs que você marcou. Cada leitura é cobrada."},
+    {"modo": "fiscal", "rotulo": "Gravar no Pipefy o que foi confirmado",
+     "ajuda": "Leva para o card a categoria e a chave já confirmadas aqui."},
+    {"modo": "fila", "rotulo": "Devolver à planilha as alterações",
+     "ajuda": "Escreve na SPsBD as alterações feitas na tela que ainda não "
+              "subiram."},
+]
+
+
+@bp.route("/api/fiscal/mao", methods=["POST"])
+@exige_operador
+def decidir_fiscal_a_mao():
+    """Grava a categoria e a chave DIGITADAS por uma pessoa.
+
+    Existe por causa do buraco que o dono achou usando a tela em 13/09/2026:
+    *"tudo aquilo que você sugeriu (…) mas o que você não sugeriu, como é que
+    eu adiciono a informação? Porque a planilha ela me permite adicionar, e a
+    tela não permite."* Sem isto, a tela só sabia aprovar proposta — e o
+    trabalho que sobra é justamente o que não tem proposta."""
+    from . import consultas, fiscal
+
+    dados = request.get_json(silent=True) or {}
+    sp_id = str(dados.get("sp") or "").strip()
+    if not sp_id:
+        return {"ok": False, "erro": "SP não informada."}, 400
+
+    try:
+        sp = consultas.uma(sp_id)
+    except Exception:  # noqa: BLE001 — banco fora do ar
+        logger.exception("Análise de SPs: falhou ler a SP %r", sp_id)
+        sp = None
+    if not sp:
+        return {"ok": False, "erro": "SP não encontrada na base."}, 404
+
+    quem = auth.nome_atual() or auth.pessoa_atual()
+    try:
+        gravado = fiscal.decidir_a_mao(
+            sp_id, dados.get("documentacao"), dados.get("chave"), quem, sp)
+    except fiscal.ErroDeEntrada as e:
+        # RECUSA ESPERADA NÃO É FALHA: a mensagem é para a pessoa ler e
+        # corrigir, não um erro de sistema.
+        return {"ok": False, "erro": str(e)}, 400
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou gravar a decisão à mão")
+        return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
+
+    logger.info("Análise de SPs: %s marcou a SP %s como %r à mão.",
+                quem, sp_id, gravado["documentacao"])
+    return {"ok": True, **gravado}
+
+
+@bp.route("/api/fiscal/comparar")
+@exige_consulta
+def comparar_fiscal():
+    """TUDO o que sustenta (ou derruba) a proposta de uma SP.
+
+    Cobrança do dono em 13/09/2026: *"você sugere e eu quero ver de forma
+    completa os dados do que você está sugerindo. Os dados do relatório FSist.
+    Como faço? Ou quero ver os dados do registro, não dá pra ver pra validar.
+    Isso pra eu ter que confiar somente no que você observou."*
+
+    Ele está certo, e o desenho anterior era ruim: a tela mostrava a conclusão
+    e escondia a prova. Numa tela cujo trabalho é achar erro, quem confere sem
+    poder ver vira carimbo — e carimbo não acha nada.
+
+    Devolve a SP INTEIRA, a nota INTEIRA (todas as candidatas, não só a
+    vencedora), e a conta dos pontos regra a regra, inclusive as que NÃO
+    pontuaram — são elas que explicam por que a confiança não foi maior."""
+    from . import colunas, consultas, fiscal
+
+    sp_id = (request.args.get("sp") or "").strip()
+    if not sp_id:
+        return {"ok": False, "erro": "SP não informada."}, 400
+    try:
+        sp = consultas.uma(sp_id)
+    except Exception as e:  # noqa: BLE001 — banco fora do ar
+        logger.exception("Análise de SPs: falhou ler a SP %r", sp_id)
+        return {"ok": False, "erro": f"Não consegui ler a SP: {e}"}, 500
+    if not sp:
+        return {"ok": False, "erro": "SP não encontrada na base."}, 404
+
+    try:
+        comparacao = fiscal.comparar(sp)
+    except Exception as e:  # noqa: BLE001 — migração ainda não aplicada
+        logger.exception("Análise de SPs: falhou comparar a SP %r", sp_id)
+        return {"ok": False, "erro": f"Não consegui comparar: {e}"}, 500
+
+    # A SP INTEIRA, com o rótulo em português de cada coluna e na ordem da
+    # planilha — é a mesma ordem em que ele lê a SPsBD, e ler na ordem
+    # conhecida é metade da conferência.
+    def texto(v):
+        return "" if v is None else str(v)
+
+    comparacao["lancamento"] = [
+        {"rotulo": colunas.ROTULOS.get(campo, campo), "valor": texto(sp.get(campo))}
+        for campo in colunas.CHAVES if texto(sp.get(campo)).strip()
+    ]
+    comparacao["ok"] = True
+    return comparacao
+
+
+@bp.route("/api/fiscal/reconferir", methods=["POST"])
+@exige_consulta
+def reconferir_fiscal():
+    """Refaz a conferência das SPs escolhidas AGORA, inclusive as já decididas.
+
+    Pergunta do dono em 13/09/2026: *"se eu quiser selecionar um determinado
+    registro e reprocessar ele pra ver se está batendo (…) como é que eu sei
+    que isso está sendo analisado?"*
+
+    É `@exige_consulta` de propósito: reconferir NÃO GRAVA NADA — devolve o que
+    encontrou. Quem decide continua sendo gente, e olhar não é alterar."""
+    from . import consultas, fiscal
+
+    dados = request.get_json(silent=True) or {}
+    ids = [str(i).strip() for i in (dados.get("ids") or []) if str(i).strip()]
+    if not ids:
+        return {"ok": False, "erro": "Nenhuma SP marcada."}, 400
+    # Teto por chamada: reconferir é uma busca de notas candidatas por SP, e
+    # soltar a lista inteira de uma vez num banco de um décimo de núcleo é o
+    # jeito conhecido de derrubar a tela de todo mundo.
+    if len(ids) > 200:
+        return {"ok": False,
+                "erro": "Dá para reconferir até 200 por vez."}, 400
+
+    try:
+        linhas = [sp for sp in (consultas.uma(i) for i in ids) if sp]
+        resultado = fiscal.resumo_da_reconferencia(fiscal.reconferir(linhas))
+    except Exception as e:  # noqa: BLE001 — migração ainda não aplicada
+        logger.exception("Análise de SPs: falhou reconferir")
+        return {"ok": False, "erro": f"Não consegui reconferir: {e}"}, 500
+
+    faltaram = [i for i in ids if i not in {x["sp"] for x in resultado["itens"]}]
+    logger.info("Análise de SPs: %s reconferiu %d SP(s).",
+                auth.nome_atual() or auth.pessoa_atual(), len(resultado["itens"]))
+    return {"ok": True, "faltaram": faltaram, **resultado}
+
+
+@bp.route("/api/fiscal/nota")
+@exige_consulta
+def conferir_nota_fiscal():
+    """Diz o que se sabe de uma chave ANTES de ela ser gravada.
+
+    Serve à digitação: colada a chave, a tela responde de quem é a nota, de
+    quando e de quanto — e é assim que quem digita percebe que colou a chave
+    errada, em vez de descobrir depois no card."""
+    from . import fiscal
+    try:
+        nota = fiscal.uma_nota(request.args.get("chave", ""))
+    except Exception:  # noqa: BLE001 — migração ainda não aplicada
+        logger.exception("Análise de SPs: falhou conferir a chave")
+        return {"ok": False, "nota": None}
+    return {"ok": True, "nota": {
+        "chave": nota.get("chave"), "numero": nota.get("numero"),
+        "emitente": nota.get("emitente"), "status": nota.get("status"),
+        "valor": float(nota["valor"]) if nota.get("valor") is not None else None,
+        "emissao": nota["emissao"].isoformat() if nota.get("emissao") else None,
+    } if nota else None}
+
+
 @bp.route("/fiscal")
 @exige_consulta
 def tela_fiscal():
-    from . import consultas, fiscal
+    from . import consultas, fiscal, tarefas
 
     base = consultas.base_carregada()
     if not base["pronta"]:
         return render_template("analisesps_vazio.html", base=base,
                                pode_operar=auth.pode_operar())
+
+    # O FILTRO DESTA TELA VOLTA COMO FOI DEIXADO. Reclamação do dono em
+    # 13/09/2026: *"eu saio e volto e o filtro que eu estou trabalhando eles
+    # somem. Eu vou pra configurações pra fazer alguma coisa, aí volto pra cá e
+    # o filtro some."* Ele guarda numa gaveta PRÓPRIA — ver
+    # `preferencias.FILTRO_FISCAL`.
+    voltar = _lembrar_filtro("analisesps.tela_fiscal",
+                             preferencias.FILTRO_FISCAL)
+    if voltar is not None:
+        return voltar
 
     filtros = _filtros_do_pedido()
     try:
@@ -1806,12 +2036,18 @@ def tela_fiscal():
                 "Esta tela precisa da atualização do banco. Vá em "
                 f"Configurações e aperte \"Aplicar atualizações do banco\". "
                 f"(detalhe: {e})")
+        try:
+            painel_notas = fiscal.painel_notas()
+        except Exception:  # noqa: BLE001 — migração ainda não aplicada
+            painel_notas = {}
         ultima = (pagina - 1) * 200 + len(orfas)
         return render_template(
             "analisesps_fiscal_notas.html", aba="fiscal", base=base,
             notas=orfas, total=total, erro=erro, pagina=pagina,
             primeira_linha=(pagina - 1) * 200 + 1, ultima_linha=ultima,
             tem_proxima=ultima < total, args=request.args,
+            painel_notas=painel_notas, categorias=fiscal.CATEGORIAS,
+            andamento=tarefas.estado(), acoes=ACOES_FISCAIS,
             aviso=request.args.get("aviso") or None,
             pode_operar=auth.pode_operar(),
             perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
@@ -1822,10 +2058,15 @@ def tela_fiscal():
             "ordem", "vencimento"), pagina=pagina)
         conciliadas = fiscal.conciliar(linhas)
         resumo = consultas.resumo(filtros)
+        # OS TOTAIS SÃO DA BASE INTEIRA, não da página. Ver
+        # `consultas.painel_fiscal`: contar as 200 linhas da tela responderia
+        # "o que falta NESTA PÁGINA", que parece certo e não é.
+        painel = consultas.painel_fiscal(filtros)
+        painel["sem_lancamento"] = fiscal.painel_notas().get("sem_lancamento", 0)
         erro = None
     except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
         logger.exception("Análise de SPs: falhou a conciliação fiscal")
-        conciliadas, resumo, erro = [], {"quantidade": 0, "total": 0}, (
+        conciliadas, resumo, painel, erro = [], {"quantidade": 0, "total": 0}, {}, (
             "Esta tela precisa da atualização do banco. Vá em Configurações e "
             f"aperte \"Aplicar atualizações do banco\". (detalhe: {e})")
 
@@ -1842,7 +2083,9 @@ def tela_fiscal():
         pagina=pagina, por_pagina=consultas.POR_PAGINA,
         primeira_linha=(pagina - 1) * consultas.POR_PAGINA + 1,
         ultima_linha=ultima, tem_proxima=ultima < resumo["quantidade"],
-        categorias=fiscal.CATEGORIAS,
+        categorias=fiscal.CATEGORIAS, painel=painel,
+        rotulos_fiscais=consultas.ROTULOS_FISCAIS,
+        andamento=tarefas.estado(), acoes=ACOES_FISCAIS,
         aviso=request.args.get("aviso") or None,
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),

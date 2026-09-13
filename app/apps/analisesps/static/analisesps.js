@@ -936,3 +936,571 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     }
   });
 })();
+
+
+/* ---------------------------------------------------------------------------
+   DOCUMENTACAO FISCAL — as acoes que moram DENTRO da tela de trabalho.
+
+   Correcao do dono em 13/09/2026: *"ao buscar na Receita as notas emitidas
+   contra a BWS, nao tem absolutamente nada a ver eu estar com um botao desse
+   fora da tela de trabalho. (...) Ler, e pra estar dentro da tela. Gravar nos
+   cards, e pra estar dentro da tela. Eu estou trabalhando la, estou tratando
+   la, e vou operacionalizar por la."*
+
+   Este bloco cuida de tres coisas, e vive SEPARADO do bloco das duas pilhas
+   acima porque as duas visoes (por lancamento e por nota) usam partes
+   diferentes: a visao por nota nao tem caixinhas nem botao de confirmar, e o
+   bloco de cima desiste logo no comeco quando nao encontra o botao dele.
+
+     1. disparar as tarefas longas e acompanhar o andamento;
+     2. escrever a documentacao A MAO, quando o sistema nao propos nada;
+     3. associar uma nota orfa a uma SP, do lado da nota.
+--------------------------------------------------------------------------- */
+(function () {
+  const config = document.getElementById("fiscal-config");
+  if (!config || !config.dataset.urlTarefa) return;
+
+  // --- 1. As tarefas longas ------------------------------------------------
+  //
+  // O andamento vem do BANCO, nao da memoria de um processo: continua certo
+  // mesmo se o servico reiniciar no meio, e mesmo se a tela for aberta de
+  // outro aparelho. E o mesmo arranjo da tela de Configuracoes.
+  const painelAndamento = document.getElementById("andamento-fiscal");
+  let relogio = null;
+
+  function acompanhar() {
+    if (!painelAndamento || !config.dataset.urlAndamento) return;
+    if (relogio) clearInterval(relogio);
+    // SO RECARREGA DEPOIS DE TER VISTO A TAREFA VIVA. Entre o clique e a
+    // tarefa aparecer no banco passa um instante; sem esta trava, a primeira
+    // resposta ("nao ha nada rodando") recarregaria a tela na hora e daria a
+    // impressao de que o botao nao fez nada.
+    let viuRodando = false;
+    relogio = setInterval(async () => {
+      try {
+        const r = await fetch(config.dataset.urlAndamento);
+        const d = await r.json();
+        if (d.rodando) {
+          viuRodando = true;
+          painelAndamento.innerHTML =
+              '<div class="aviso"><b>Rodando agora:</b> '
+              + (d.etapa || "") + (d.progresso ? " — " + d.progresso : "")
+              + '<br><small>Pode continuar trabalhando: isto roda no servidor.'
+              + '</small></div>';
+        } else if (viuRodando) {
+          // Terminou: a tela precisa ser relida, porque os numeros e a lista
+          // mudaram. Quem disparou uma busca de notas esta esperando
+          // justamente por isso.
+          clearInterval(relogio);
+          relogio = null;
+          location.reload();
+        }
+      } catch (e) { /* rede oscilou; a proxima volta tenta de novo */ }
+    }, 4000);
+  }
+
+  document.querySelectorAll(".fiscal-acoes-tarefa button[data-modo]")
+      .forEach(b => b.addEventListener("click", async () => {
+    const rotulo = b.textContent.trim();
+    if (!confirm(`${rotulo}?\n\nIsto roda no servidor e pode demorar. `
+                 + `Voce pode continuar trabalhando.`)) return;
+    b.disabled = true;
+    const antes = b.textContent;
+    b.textContent = "Disparando…";
+    try {
+      const r = await fetch(config.dataset.urlTarefa, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({modo: b.dataset.modo}),
+      });
+      const d = await r.json();
+      if (!d.ok) { alert(d.erro || "Nao consegui disparar."); return; }
+      if (painelAndamento) {
+        painelAndamento.innerHTML =
+            '<div class="aviso"><b>Disparado:</b> ' + rotulo
+            + '<br><small>Pode continuar trabalhando: isto roda no servidor.'
+            + '</small></div>';
+      }
+      acompanhar();
+    } catch (e) {
+      alert("Nao consegui falar com o servidor: " + e);
+    } finally {
+      b.disabled = false;
+      b.textContent = antes;
+    }
+  }));
+
+  // Ja havia carga rodando quando a tela abriu: acompanha sem esperar clique.
+  if (painelAndamento && painelAndamento.querySelector(".aviso")) acompanhar();
+
+  // --- 2. Escrever a documentacao A MAO ------------------------------------
+  //
+  // O buraco que ele achou usando a tela: *"tudo aquilo que voce sugeriu (...)
+  // mas o que voce nao sugeriu, como e que eu adiciono a informacao? Porque a
+  // planilha ela me permite adicionar, e a tela nao permite."*
+  //
+  // UMA janela so, preenchida pela linha em que se clicou. Duzentas janelas
+  // escondidas na pagina custariam memoria de navegador a toa.
+  const dlg = document.getElementById("dlg-mao");
+  const campoDoc = document.getElementById("mao-documentacao");
+  const campoChave = document.getElementById("mao-chave");
+  const alvoQuem = document.getElementById("mao-quem");
+  const alvoNota = document.getElementById("mao-nota");
+  const alvoErro = document.getElementById("mao-erro");
+  let spAtual = "";
+
+  function recado(texto, classe) {
+    if (!alvoErro) return;
+    alvoErro.innerHTML = texto
+        ? '<div class="aviso ' + (classe || "atencao") + '">' + texto + '</div>'
+        : "";
+  }
+
+  if (dlg) {
+    document.querySelectorAll(".fiscal-mao").forEach(b =>
+      b.addEventListener("click", () => {
+        spAtual = b.dataset.sp;
+        if (alvoQuem) {
+          alvoQuem.textContent = `SP ${b.dataset.sp} · ${b.dataset.credor}`
+              + ` · ${b.dataset.valor}`;
+        }
+        if (campoDoc) campoDoc.value = b.dataset.documentacao || "";
+        if (campoChave) campoChave.value = b.dataset.chave || "";
+        if (alvoNota) alvoNota.textContent = "";
+        recado("");
+        dlg.showModal();
+        conferirChave();
+      }));
+
+    // CONFERIR A CHAVE ENQUANTO SE DIGITA. Uma chave errada nao da erro: ela
+    // grava no card uma nota que nao e a da despesa, e ninguem descobre — e e
+    // exatamente esse o defeito que esta tela existe para achar. Dizer de quem
+    // e a nota ANTES de gravar e o que transforma digitacao em conferencia.
+    let esperaChave = null;
+    async function conferirChave() {
+      if (!campoChave || !alvoNota || !config.dataset.urlNota) return;
+      const digitos = (campoChave.value || "").replace(/\D/g, "");
+      if (digitos.length !== 44) {
+        alvoNota.textContent = digitos.length
+            ? `${digitos.length} de 44 numeros` : "";
+        return;
+      }
+      try {
+        const r = await fetch(config.dataset.urlNota + "?chave="
+                              + encodeURIComponent(digitos));
+        const d = await r.json();
+        if (d.nota) {
+          alvoNota.textContent = `Nota ${d.nota.numero} — ${d.nota.emitente}`
+              + (d.nota.status ? ` (${d.nota.status})` : "");
+        } else {
+          // NAO E ERRO: a nota pode ainda nao ter sido importada. Dizer que
+          // ela "nao existe" faria a pessoa desistir de uma chave correta.
+          alvoNota.textContent = "Esta chave ainda nao esta na lista de notas "
+              + "daqui — pode ser nota que ainda nao foi importada.";
+        }
+      } catch (e) { alvoNota.textContent = ""; }
+    }
+    if (campoChave) campoChave.addEventListener("input", () => {
+      if (esperaChave) clearTimeout(esperaChave);
+      esperaChave = setTimeout(conferirChave, 400);
+    });
+
+    const btnCancelar = document.getElementById("btn-mao-cancelar");
+    if (btnCancelar) btnCancelar.addEventListener("click", e => {
+      e.preventDefault();
+      dlg.close();
+    });
+
+    const btnGravar = document.getElementById("btn-mao-gravar");
+    if (btnGravar) btnGravar.addEventListener("click", async e => {
+      e.preventDefault();
+      btnGravar.disabled = true;
+      const antes = btnGravar.textContent;
+      btnGravar.textContent = "Gravando…";
+      try {
+        const r = await fetch(config.dataset.urlMao, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            sp: spAtual,
+            documentacao: campoDoc ? campoDoc.value : "",
+            chave: campoChave ? campoChave.value : "",
+          }),
+        });
+        const d = await r.json();
+        if (!d.ok) { recado(d.erro || "Nao consegui gravar."); return; }
+        dlg.close();
+        location.reload();
+      } catch (e2) {
+        recado("Nao consegui falar com o servidor: " + e2);
+      } finally {
+        btnGravar.disabled = false;
+        btnGravar.textContent = antes;
+      }
+    });
+  }
+
+  // --- 3. Associar uma nota orfa a uma SP ----------------------------------
+  //
+  // Do lado da NOTA. Passa pelo mesmo caminho da decisao a mao, entao a nota
+  // associada some desta lista sozinha na proxima leitura — a lista de orfas e
+  // "nota sem chave gravada em SP nenhuma".
+  document.querySelectorAll(".fiscal-associar").forEach(b =>
+    b.addEventListener("click", async () => {
+      if (!confirm(`Associar esta nota a SP ${b.dataset.sp}`
+                   + ` (${b.dataset.credor})?\n\n`
+                   + `A categoria sai de dentro da propria chave. A gravacao `
+                   + `no card do Pipefy e o passo seguinte.`)) return;
+      b.disabled = true;
+      const antes = b.textContent;
+      b.textContent = "gravando…";
+      try {
+        const r = await fetch(config.dataset.urlMao, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({sp: b.dataset.sp, chave: b.dataset.chave}),
+        });
+        const d = await r.json();
+        if (!d.ok) { alert(d.erro || "Nao consegui associar."); return; }
+        location.reload();
+      } catch (e) {
+        alert("Nao consegui falar com o servidor: " + e);
+      } finally {
+        b.disabled = false;
+        b.textContent = antes;
+      }
+    }));
+})();
+
+
+/* ---------------------------------------------------------------------------
+   A NAVEGACAO QUE CABE — 13/09/2026
+
+   Reclamacao do dono: *"numa tela grande e tranquilo de navegar, porque todos
+   aparecem, mas numa tela pequena ele fica escondido, as ultimas."*
+
+   NAO HA LARGURA DE CORTE CHUTADA. A pagina MEDE: se a faixa de abas nao couber
+   inteira, ela sai e entra o botao de menu, que lista todas as telas. Escolher
+   um numero magico (900px? 1100px?) erraria sozinho, porque o canto direito do
+   topo muda de tamanho conforme a tela — a hora da base e o botao "Atualizar"
+   so aparecem em algumas. Medindo, acerta sempre.
+
+   SEM ESTE SCRIPT nada quebra: a faixa fica como era, rolando de lado.
+--------------------------------------------------------------------------- */
+(function () {
+  const topo = document.querySelector(".topo");
+  const abas = document.getElementById("topo-abas");
+  const botao = document.getElementById("btn-menu");
+  const painel = document.getElementById("menu-painel");
+  if (!topo || !abas || !botao || !painel) return;
+
+  const ondeEstou = document.getElementById("btn-menu-onde");
+  const ativa = abas.querySelector(".topo-aba.ativa");
+
+  // O botao diz ONDE se esta, nao so "Menu". Numa tela pequena a faixa some, e
+  // com ela some a unica marca de qual tela esta aberta.
+  if (ondeEstou && ativa) ondeEstou.textContent = ativa.textContent.trim();
+
+  function cabe() {
+    // Medido com a faixa VISIVEL. Se ela estiver escondida (estado compacto),
+    // e preciso mostra-la por um instante para saber se ja caberia de novo —
+    // senao a tela nunca voltaria ao normal ao ser alargada.
+    const compacto = topo.classList.contains("compacto");
+    if (compacto) topo.classList.remove("compacto");
+    const serve = abas.scrollWidth <= abas.clientWidth + 1;
+    if (compacto && !serve) topo.classList.add("compacto");
+    return serve;
+  }
+
+  function ajustar() {
+    if (cabe()) {
+      topo.classList.remove("compacto");
+      fechar();
+    } else {
+      topo.classList.add("compacto");
+      botao.hidden = false;
+    }
+  }
+
+  function abrir() {
+    painel.hidden = false;
+    botao.setAttribute("aria-expanded", "true");
+  }
+
+  function fechar() {
+    painel.hidden = true;
+    botao.setAttribute("aria-expanded", "false");
+  }
+
+  botao.addEventListener("click", e => {
+    e.stopPropagation();
+    if (painel.hidden) abrir(); else fechar();
+  });
+
+  // Clicar fora fecha, e a tecla Esc tambem. Menu aberto que so fecha no
+  // proprio botao e menu que fica aberto por engano.
+  document.addEventListener("click", e => {
+    if (!painel.hidden && !painel.contains(e.target)) fechar();
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") fechar();
+  });
+
+  // Redimensionar dispara muito; esperar um instante evita medir dezenas de
+  // vezes durante o arrasto da janela.
+  let espera = null;
+  window.addEventListener("resize", () => {
+    if (espera) clearTimeout(espera);
+    espera = setTimeout(ajustar, 120);
+  });
+
+  ajustar();
+})();
+
+
+/* ---------------------------------------------------------------------------
+   RECONFERIR — "como e que eu sei que isso esta sendo analisado?"
+
+   Pergunta do dono em 13/09/2026, e ela tinha razao de ser: a conferencia SEMPRE
+   rodou a cada abertura da tela, inclusive sobre o que ja foi decidido e ja foi
+   gravado no card — e a tela nunca disse isso em lugar nenhum. O que nao e dito
+   nao existe para quem usa.
+
+   O que faltava de verdade era mandar reconferir REGISTROS ESCOLHIDOS, sem
+   esperar a proxima abertura. E o que este bloco faz.
+
+   NAO GRAVA NADA e nao custa IA: e so perguntar de novo. Por isso nao pede
+   confirmacao — o custo de um clique errado aqui e zero.
+--------------------------------------------------------------------------- */
+(function () {
+  const config = document.getElementById("fiscal-config");
+  if (!config || !config.dataset.urlReconferir) return;
+  const alvo = document.getElementById("fiscal-reconferencia");
+
+  function linha(i) {
+    const mudou = i.mudou
+        ? '<b>mudou:</b> estava "' + i.antes + '", proponho "' + i.proposta + '"'
+        : '<b>sem mudanca:</b> continua "' + i.antes + '"';
+    const nota = i.nota && i.nota.numero
+        ? ' · nota ' + i.nota.numero + ' de ' + (i.nota.emitente || "")
+          + (i.nota.status ? " (" + i.nota.status + ")" : "")
+        : "";
+    return '<div class="reconf-item"><b>SP ' + i.sp + '</b> — ' + i.rotulo
+         + '<br>' + mudou + nota
+         + '<br><small>' + (i.motivo || "") + '</small></div>';
+  }
+
+  async function reconferir(ids, botao) {
+    if (!ids.length || !alvo) return;
+    const antes = botao ? botao.textContent : "";
+    if (botao) { botao.disabled = true; botao.textContent = "Conferindo…"; }
+    alvo.innerHTML = '<div class="aviso">Reconferindo ' + ids.length
+                   + ' lancamento(s)…</div>';
+    try {
+      const r = await fetch(config.dataset.urlReconferir, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids}),
+      });
+      const d = await r.json();
+      if (!d.ok) {
+        alvo.innerHTML = '<div class="aviso atencao">' + (d.erro || "Falhou.")
+                       + '</div>';
+        return;
+      }
+      // A CONCLUSAO VEM PRIMEIRO. Trinta paragrafos sem uma frase no alto
+      // seriam trinta paragrafos que ninguem le.
+      const cabeca = '<div class="aviso ' + (d.mudaram ? "atencao" : "ok") + '">'
+          + '<b>Reconferidos ' + d.itens.length + '</b> agora, contra as notas '
+          + 'que existem hoje. ' + d.mudaram + ' com proposta diferente do que '
+          + 'esta gravado; ' + d.apontados + ' com alguma coisa a apontar.'
+          + (d.faltaram && d.faltaram.length
+             ? '<br><small>Nao achei na base: ' + d.faltaram.join(", ")
+               + '</small>' : "")
+          + '<br><small>Nada foi gravado — isto e so a conferencia.</small>'
+          + '</div>';
+      alvo.innerHTML = cabeca + d.itens.map(linha).join("");
+      alvo.scrollIntoView({behavior: "smooth", block: "nearest"});
+    } catch (e) {
+      alvo.innerHTML = '<div class="aviso atencao">Nao consegui falar com o '
+                     + 'servidor: ' + e + '</div>';
+    } finally {
+      if (botao) { botao.disabled = false; botao.textContent = antes; }
+    }
+  }
+
+  const botaoLote = document.getElementById("btn-reconferir");
+  if (botaoLote) {
+    const marcadas = () => Array.from(
+        document.querySelectorAll(".fiscal-marca:checked"));
+    // O botao acompanha a selecao, como os outros dois ao lado dele.
+    const seguir = () => { botaoLote.disabled = marcadas().length === 0; };
+    document.querySelectorAll(".fiscal-marca").forEach(
+        c => c.addEventListener("change", seguir));
+    const todas = document.getElementById("fiscal-todas");
+    if (todas) todas.addEventListener("change", () => setTimeout(seguir, 0));
+    seguir();
+    botaoLote.addEventListener("click", () =>
+        reconferir(marcadas().map(c => c.dataset.sp), botaoLote));
+  }
+
+  document.querySelectorAll(".fiscal-reconferir").forEach(b =>
+    b.addEventListener("click", () => reconferir([b.dataset.sp], b)));
+})();
+
+
+/* ---------------------------------------------------------------------------
+   VER OS DADOS — a prova por tras da proposta.
+
+   Cobranca do dono em 13/09/2026: *"voce sugere e eu quero ver de forma
+   completa os dados do que voce esta sugerindo. Os dados do relatorio FSist.
+   Como faco? Ou quero ver os dados do registro, nao da pra ver pra validar.
+   Isso pra eu ter que confiar somente no que voce observou."*
+
+   A tela mostrava a CONCLUSAO e escondia o que a sustenta. Numa tela cujo
+   trabalho e achar erro, quem confere sem poder ver vira carimbo — e carimbo
+   nao acha nada.
+
+   O QUE APARECE: a SP inteira, a nota inteira, e a conta dos pontos regra a
+   regra — INCLUSIVE as que nao pontuaram, que sao as que explicam por que a
+   confianca nao foi maior. E todas as candidatas, nao so a vencedora: ver a
+   segunda colocada e o que permite discordar da escolha.
+--------------------------------------------------------------------------- */
+(function () {
+  const config = document.getElementById("fiscal-config");
+  const dlg = document.getElementById("dlg-provas");
+  if (!config || !dlg || !config.dataset.urlComparar) return;
+  const corpo = document.getElementById("provas-corpo");
+  const titulo = document.getElementById("provas-sp");
+
+  const esc = s => String(s === null || s === undefined ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const dinheiro = v => (v === null || v === undefined || v === "")
+      ? "—"
+      : Number(v).toLocaleString("pt-BR",
+          {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+  function ficha(titulo, campos) {
+    return '<div class="prova-ficha"><h4>' + esc(titulo) + '</h4><dl>'
+      + campos.map(c => '<dt>' + esc(c.rotulo) + '</dt><dd>'
+                        + (esc(c.valor) || "—") + '</dd>').join("")
+      + '</dl></div>';
+  }
+
+  // A CONTA ABERTA. Cada regra com o que tem de um lado e do outro, quanto
+  // vale, e se entrou ou nao. E a parte que responde "por que 35%?".
+  function conta(regras) {
+    const linha = r => {
+      const marca = r.bateu ? "✔" : (r.quase ? "≈" : "✕");
+      const classe = r.bateu ? "bateu" : (r.quase ? "quase" : "falhou");
+      let lado;
+      if (r.chave === "valor") {
+        lado = "SP " + dinheiro(r.no_lancamento) + " · nota "
+             + dinheiro(r.na_nota)
+             + (r.diferenca ? " · diferenca " + dinheiro(r.diferenca) : "");
+      } else {
+        lado = "SP: " + (esc(r.no_lancamento) || "—")
+             + " · nota: " + (esc(r.na_nota) || "—");
+      }
+      const ganhou = r.bateu ? "+" + r.pontos
+                   : (r.quase ? "parcial" : "0 de " + r.pontos);
+      return '<tr class="' + classe + '"><td>' + marca + '</td><td>'
+           + esc(r.rotulo) + '<br><small>' + lado + '</small></td>'
+           + '<td class="num">' + ganhou + '</td></tr>';
+    };
+    return '<table class="prova-conta"><tbody>'
+         + regras.map(linha).join("") + '</tbody></table>';
+  }
+
+  function candidata(c, i, corte) {
+    const cabeca = '<div class="prova-cab"><b>'
+        + (i === 0 ? "Melhor candidata" : "Candidata " + (i + 1)) + '</b>'
+        + ' — confianca <b>' + c.pontos + '%</b>'
+        + (c.pontos >= corte ? ' <span class="etiqueta boa">acima do corte</span>'
+                             : ' <span class="etiqueta">abaixo do corte de '
+                               + corte + '%</span>')
+        + (c.categoria_pela_chave
+           ? ' · a chave diz que e <b>' + esc(c.categoria_pela_chave) + '</b>'
+           : "")
+        + '</div>';
+    return '<div class="prova-candidata">' + cabeca
+         + '<div class="prova-lados">' + ficha("A nota (como está guardada)", c.campos)
+         + '<div class="prova-ficha"><h4>Como os pontos foram contados</h4>'
+         + conta(c.regras) + '</div></div>'
+         // USAR ESTA NOTA: fecha o par com a candidata que a PESSOA escolheu,
+         // e nao so com a que o sistema pos em primeiro. E o que transforma
+         // "discordo" em trabalho feito, em vez de reclamacao.
+         + (config.dataset.urlMao
+            ? '<button class="btn secundario prova-usar" data-chave="'
+              + esc(c.chave) + '">Usar esta nota nesta SP</button>' : "")
+         + '</div>';
+  }
+
+  function desenhar(d) {
+    if (!d.ok) {
+      corpo.innerHTML = '<div class="aviso atencao">'
+                      + esc(d.erro || "Não consegui carregar.") + '</div>';
+      return;
+    }
+    const v = d.veredito || {};
+    const j = d.diario || {};
+    let html = '<div class="aviso ' + (v.propoe ? "info" : "") + '">'
+        + '<b>' + esc(v.rotulo || "") + '</b> — ' + esc(v.motivo || "")
+        + (v.proposta ? '<br>Proposta: <b>' + esc(v.proposta) + '</b> · '
+                      + 'confianca ' + v.confianca + '%' : "")
+        + '<br><small>Olhei <b>' + d.olhadas + '</b> nota(s) deste credor. '
+        + 'O sistema so propoe a partir de ' + d.corte + '% de confianca.</small>'
+        + '</div>';
+
+    if (j.documentacao || j.chave) {
+      html += '<div class="prova-diario">O que ja esta gravado: <b>'
+           + (esc(j.documentacao) || "sem categoria") + '</b>'
+           + (j.chave ? ' · chave ' + esc(j.chave) : "")
+           + (j.origem ? ' · origem ' + esc(j.origem) : "")
+           + (j.por ? ' · por ' + esc(j.por) : "") + '</div>';
+    }
+
+    html += ficha("O lançamento (a SP inteira)", d.lancamento || []);
+
+    if (!d.candidatas || !d.candidatas.length) {
+      html += '<div class="aviso atencao">Nenhuma nota deste credor foi '
+            + 'encontrada na base. Isso nao quer dizer que ela nao exista — '
+            + 'pode ser nota que ainda nao foi importada, ou emitida por outro '
+            + 'CNPJ do mesmo grupo.</div>';
+    } else {
+      html += d.candidatas.map((c, i) => candidata(c, i, d.corte)).join("");
+    }
+    corpo.innerHTML = html;
+
+    corpo.querySelectorAll(".prova-usar").forEach(b =>
+      b.addEventListener("click", async () => {
+        if (!confirm("Gravar esta nota nesta SP?\n\nA categoria sai de dentro "
+                     + "da propria chave. A gravacao no card do Pipefy e o "
+                     + "passo seguinte.")) return;
+        b.disabled = true;
+        try {
+          const r = await fetch(config.dataset.urlMao, {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({sp: d.sp, chave: b.dataset.chave}),
+          });
+          const resp = await r.json();
+          if (!resp.ok) { alert(resp.erro || "Nao consegui gravar."); return; }
+          location.reload();
+        } catch (e) {
+          alert("Nao consegui falar com o servidor: " + e);
+        } finally { b.disabled = false; }
+      }));
+  }
+
+  document.querySelectorAll(".fiscal-provas").forEach(b =>
+    b.addEventListener("click", async () => {
+      if (titulo) titulo.textContent = "SP " + b.dataset.sp;
+      corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+      dlg.showModal();
+      try {
+        const r = await fetch(config.dataset.urlComparar + "?sp="
+                              + encodeURIComponent(b.dataset.sp));
+        desenhar(await r.json());
+      } catch (e) {
+        corpo.innerHTML = '<div class="aviso atencao">Nao consegui falar com o '
+                        + 'servidor: ' + e + '</div>';
+      }
+    }));
+})();

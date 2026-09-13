@@ -18,23 +18,44 @@
     </div>
   </a>
 
-  <nav class="topo-abas">
-    {% for chave, rotulo, rota in [
-        ('solicitacoes', 'Solicitações', 'analisesps.solicitacoes'),
-        ('lote',         'Lote',         'analisesps.tela_lote'),
-        ('relatorio',    'Relatório',    'analisesps.relatorio'),
-        ('auditoria',    'Auditoria',    'analisesps.auditoria'),
-        ('ratear',       'Ratear',       'analisesps.ratear'),
-        ('fiscal',       'Doc. Fiscal',  'analisesps.tela_fiscal'),
-        ('bradesco',     'Bradesco',     'analisesps.tela_bradesco'),
-        ('comprovantes', 'Comprovantes', 'analisesps.tela_comprovantes'),
-        ('agenda',       'Agenda',       'analisesps.tela_agenda'),
-        ('log',          'Log',          'analisesps.log'),
-        ('configuracoes','Configurações','analisesps.configuracoes')] %}
+  {# -------------------------------------------------------------------------
+     A NAVEGAÇÃO — a faixa de abas, e o menu para quando ela não couber.
+
+     Reclamação do dono em 13/09/2026: *"numa tela grande é tranquilo de
+     navegar, porque todos aparecem, mas numa tela pequena ele fica escondido,
+     as últimas."*
+
+     E medindo, era pior do que parecia: a faixa inteira ocupa cerca de 1.000
+     pixels, e com a marca e o canto direito ela JÁ começa a ser cortada perto
+     de 1.400 — ou seja, num notebook comum a última aba some, e nada na tela
+     diz que sumiu. A rolagem lateral existia, mas sem seta, sem sombra, sem
+     nada: quem não soubesse arrastar não descobria.
+
+     A SOLUÇÃO NÃO TEM NÚMERO MÁGICO. Em vez de escolher uma largura de corte
+     no chute, a própria página mede: se a faixa não couber inteira, ela some e
+     entra o botão de menu, que lista TODAS as telas em coluna. Isso acerta
+     sozinho em qualquer tamanho de janela, e continua acertando quando o canto
+     direito cresce (a hora da base e o botão Atualizar só aparecem em algumas
+     telas).
+
+     SEM JAVASCRIPT nada quebra: a faixa fica como era, rolando de lado.
+
+     A ORDEM das telas é a do dono, e mora no Python (`web.TELAS`) — a mesma
+     lista alimenta a faixa e o menu, que por isso não têm como divergir.
+  ------------------------------------------------------------------------- #}
+  <nav class="topo-abas" id="topo-abas">
+    {% for chave, rotulo, rota in telas %}
       <a class="topo-aba {% if aba == chave %}ativa{% endif %}"
          href="{{ url_for(rota) }}">{{ rotulo }}</a>
     {% endfor %}
   </nav>
+
+  {# O botão só aparece quando a faixa não cabe — quem decide é o script. #}
+  <button class="topo-menu" id="btn-menu" type="button" hidden
+          aria-expanded="false" aria-controls="menu-painel">
+    <span class="topo-menu-risco">☰</span>
+    <span id="btn-menu-onde">Menu</span>
+  </button>
 
   <div class="topo-direita">
     {% if perfil %}
@@ -66,6 +87,16 @@
     <a class="topo-btn" href="{{ url_for('analisesps.sair') }}">Sair</a>
   </div>
 </header>
+
+{# O MENU QUE SE ABRE. Uma tela por linha, com alvo grande o bastante para o
+   dedo, e a atual marcada — em tela pequena, saber ONDE se está é metade da
+   navegação. Fica sempre no HTML e escondido; quem o revela é o script. #}
+<nav class="menu-painel" id="menu-painel" hidden>
+  {% for chave, rotulo, rota in telas %}
+    <a class="menu-item {% if aba == chave %}ativa{% endif %}"
+       href="{{ url_for(rota) }}">{{ rotulo }}</a>
+  {% endfor %}
+</nav>
 
 {% block avisos %}{% endblock %}
 

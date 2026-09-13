@@ -196,17 +196,31 @@
   </div>
 
   {% if pode_operar %}
+    {# SÓ O QUE É CARGA DA BASE FICA AQUI.
+
+       Correção do dono em 13/09/2026: *"ao buscar na Receita as notas emitidas
+       contra a BWS, não tem absolutamente nada a ver eu estar com um botão
+       desse fora da tela de trabalho. (…) Ler, é pra estar dentro da tela.
+       Gravar nos cards, é pra estar dentro da tela."*
+
+       A causa do engano era boba e vale registrar: esta tela desenhava a
+       lista INTEIRA de modos como botão, então quem criasse um modo novo
+       ganhava um botão aqui sem querer. Agora a lista é explícita, e o
+       trabalho fiscal mora na tela de Documentação Fiscal. #}
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">
-      {% for modo, descricao in modos.items() %}
+      {% for modo in modos_da_base %}
         <button class="btn {{ '' if modo == 'sincronizar' else 'secundario' }}"
-                data-modo="{{ modo }}" title="{{ descricao }}">
-          {{ descricao.split('—')[0].strip() }}
+                data-modo="{{ modo }}" title="{{ modos[modo] }}">
+          {{ modos[modo].split('—')[0].strip() }}
         </button>
       {% endfor %}
     </div>
     <p class="cartao-dica">
       Uma de cada vez. Se já houver carga rodando, a segunda é recusada em vez
-      de duplicar o trabalho.
+      de duplicar o trabalho. Buscar notas na Receita, importar o relatório do
+      FSist, ler com IA e gravar nos cards ficam na tela de
+      <a href="{{ url_for('analisesps.tela_fiscal') }}">Documentação
+      Fiscal</a>, que é onde esse trabalho é feito.
     </p>
   {% else %}
     <p class="cartao-dica">Só o perfil Operador dispara atualização.</p>

@@ -131,6 +131,146 @@ SITUACOES = {
 
 
 # ---------------------------------------------------------------------------
+# O RECORTE DA DOCUMENTAÇÃO FISCAL
+#
+# Correção do dono em 13/09/2026, depois de usar a tela: *"você replicou os
+# filtros de solicitações, mas não é o que a gente trabalha aqui. Porque aqui o
+# objetivo é categorizar a nota, o lançamento."*
+#
+# Ele tem razão, e o erro não era cosmético. O filtro de Solicitações responde
+# "o que tem para pagar"; aqui a pergunta é outra — **o que falta documentar, o
+# que está documentado, e o que provavelmente está errado**. Sem isso a tela
+# vira uma lista para rolar, e ele disse a palavra: ingerível.
+#
+# POR QUE ISTO É SQL, E NÃO CONTA EM PYTHON. A conciliação roda sobre a página
+# que está na tela (200 linhas). Filtrar e contar em cima dela responderia "o
+# que falta NESTA PÁGINA", que é uma resposta inútil para decidir onde focar —
+# e pior que inútil, porque parece certa. Aqui o recorte é do banco, sobre a
+# base inteira.
+#
+# ONDE MORA CADA COISA. O card do Pipefy chega por duas portas e as duas valem:
+# `sp_fiscal.doc_fiscal` é o que a planilha de apoio traz do card, e
+# `sp_fiscal_analise` é o diário deste módulo (o que o card já trazia quando a
+# tela nasceu, mais toda decisão tomada aqui). O diário manda quando existe.
+# ---------------------------------------------------------------------------
+
+# A documentação que vale para esta SP: a decidida aqui, ou a do card.
+SQL_DOC_FISCAL = """
+coalesce(nullif(trim(coalesce(
+    (SELECT a.documentacao FROM analisesps.sp_fiscal_analise a
+      WHERE a.sp_id = sps.id), '')), ''),
+         nullif(trim(coalesce(
+    (SELECT x.doc_fiscal FROM analisesps.sp_fiscal x
+      WHERE x.sp_id = sps.id), '')), ''),
+         '')
+"""
+
+# A chave de acesso conhecida, só dígitos.
+SQL_CHAVE_FISCAL = r"""
+regexp_replace(coalesce(
+    (SELECT a.chave FROM analisesps.sp_fiscal_analise a
+      WHERE a.sp_id = sps.id), ''), '\D', '', 'g')
+"""
+
+# Em que pé está o trabalho desta SP no diário.
+SQL_SITUACAO_FISCAL = """
+coalesce((SELECT a.situacao FROM analisesps.sp_fiscal_analise a
+           WHERE a.sp_id = sps.id), '')
+"""
+
+# O CNPJ do credor, só dígitos — é com ele que o emitente de dentro da chave é
+# comparado.
+SQL_DOC_CREDOR = r"regexp_replace(coalesce(documento,''), '\D', '', 'g')"
+
+# O CNPJ de quem emitiu, lido de DENTRO da chave: posições 7 a 20, definição da
+# Receita. Serve para acusar nota trocada entre dois lançamentos sem depender
+# de achar a nota no relatório.
+SQL_EMITENTE_DA_CHAVE = f"substring({SQL_CHAVE_FISCAL} from 7 for 14)"
+
+# As categorias que AFIRMAM existir nota eletrônica. Iguais às de `fiscal.py`,
+# e o teste `test_as_categorias_que_exigem_nota_sao_as_mesmas` trava isso: duas
+# listas divergentes fariam a tela contar uma coisa e a conciliação outra.
+CATEGORIAS_QUE_EXIGEM_NOTA = ("NF-e (Mercadoria)", "NFS-e (Serviço)",
+                              "CT-e (Frete)", "NFC-e (Cupom Fiscal eletrônico)")
+
+_LISTA_EXIGEM_NOTA = ",".join(
+    "'" + c.replace("'", "''") + "'" for c in CATEGORIAS_QUE_EXIGEM_NOTA)
+
+# PROVAVELMENTE ERRADO. Três sintomas, e basta um:
+#   (a) a nota que está no card foi CANCELADA — despesa contra documento que
+#       não existe mais, o mais grave da lista;
+#   (b) o card afirma que há nota eletrônica e não há chave nenhuma — alguém
+#       classificou sem documento;
+#   (c) a chave do card foi emitida por um CNPJ que não é o do credor — o
+#       sintoma clássico de anexo trocado entre dois lançamentos.
+SQL_FISCAL_PROVAVEL_ERRO = f"""(
+    EXISTS (SELECT 1 FROM analisesps.notas_fiscais n
+             WHERE n.chave = {SQL_CHAVE_FISCAL}
+               AND upper(coalesce(n.status,'')) = 'CANCELADA')
+ OR (trim({SQL_DOC_FISCAL}) IN ({_LISTA_EXIGEM_NOTA})
+     AND {SQL_CHAVE_FISCAL} = '')
+ OR (length({SQL_CHAVE_FISCAL}) = 44
+     AND length({SQL_DOC_CREDOR}) = 14
+     AND {SQL_EMITENTE_DA_CHAVE} <> {SQL_DOC_CREDOR})
+)"""
+
+# O RECORTE PRINCIPAL DESTA TELA. Somam-se como os outros: marcar dois exige
+# os dois ao mesmo tempo.
+SITUACOES_FISCAIS = {
+    "sem_marcacao": f"trim({SQL_DOC_FISCAL}) = ''",
+    "ja_marcado": f"trim({SQL_DOC_FISCAL}) <> ''",
+    "provavel_erro": SQL_FISCAL_PROVAVEL_ERRO,
+    "com_chave": f"length({SQL_CHAVE_FISCAL}) = 44",
+    "sem_chave": f"length({SQL_CHAVE_FISCAL}) <> 44",
+    "na_fila_ia": f"{SQL_SITUACAO_FISCAL} = 'NA_FILA_IA'",
+    "lida_ia": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id AND a.origem = 'IA')"),
+    "confirmada": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id AND a.situacao = 'CONFIRMADA' "
+        "           AND a.escrita_em IS NULL)"),
+    "escrita": f"{SQL_SITUACAO_FISCAL} = 'ESCRITA'",
+    "decidida_por_pessoa": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id AND a.origem = 'PESSOA')"),
+    # O OUTRO LADO DA MESMA PERGUNTA, e faltava: o que foi marcado SEM gente.
+    # `CONCILIACAO` é proposta do sistema aprovada, `IA` é leitura de anexo.
+    # `PIPEFY` fica de fora de propósito: aquilo não foi o sistema que marcou,
+    # é o que já estava no card antes desta tela existir.
+    "decidida_pelo_sistema": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id "
+        "           AND a.origem IN ('CONCILIACAO', 'IA'))"),
+    # E o que veio pronto do card, que não é decisão de ninguém aqui.
+    "veio_do_card": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id AND a.origem = 'PIPEFY')"),
+    "com_anexo": "trim(coalesce(anexo_link,'')) <> ''",
+    "sem_anexo": "trim(coalesce(anexo_link,'')) = ''",
+}
+
+# Como cada recorte aparece na tela, na ordem em que o dono trabalha: primeiro
+# o que falta, depois o que está errado, depois o que já foi feito.
+ROTULOS_FISCAIS = [
+    ("sem_marcacao", "Sem documentação"),
+    ("provavel_erro", "Provavelmente errado"),
+    ("sem_chave", "Sem chave de acesso"),
+    ("com_chave", "Com chave de acesso"),
+    ("ja_marcado", "Já categorizado"),
+    ("na_fila_ia", "Na fila da IA"),
+    ("lida_ia", "Lido pela IA"),
+    ("decidida_por_pessoa", "Decidido por pessoa"),
+    ("decidida_pelo_sistema", "Decidido pelo sistema"),
+    ("veio_do_card", "Já veio preenchido do card"),
+    ("confirmada", "Confirmado, falta gravar no card"),
+    ("escrita", "Já gravado no card"),
+    ("com_anexo", "Com anexo"),
+    ("sem_anexo", "Sem anexo"),
+]
+
+
+# ---------------------------------------------------------------------------
 # Montagem do filtro
 # ---------------------------------------------------------------------------
 def _como_texto_literal(termo: str) -> str:
@@ -217,6 +357,14 @@ def _condicoes(f: dict) -> tuple[list[str], list]:
         if chave in SITUACOES:
             onde.append(SITUACOES[chave])
 
+    # O recorte da Documentação Fiscal. Mesma regra de soma, e de propósito na
+    # MESMA função: se o filtro da tela e a conta do painel fossem montados em
+    # dois lugares, o dia em que um ganhasse um recorte a mais o outro passaria
+    # a mentir sem ninguém notar.
+    for chave in (f.get("fiscais") or []):
+        if chave in SITUACOES_FISCAIS:
+            onde.append(SITUACOES_FISCAIS[chave])
+
     # Períodos e faixa de valor.
     for campo, coluna, operador in (
             ("periodo_ini", "vencimento_d", ">="),
@@ -258,6 +406,46 @@ def resumo(f: dict) -> dict:
         return {"quantidade": 0, "total": 0, "quantidade_pagar": 0, "total_pagar": 0}
     return {"quantidade": linha[0], "total": linha[1],
             "quantidade_pagar": linha[2], "total_pagar": linha[3]}
+
+
+def painel_fiscal(f: dict) -> dict:
+    """Os totalizadores da Documentação Fiscal, sobre TUDO que o filtro alcança.
+
+    Pedido do dono em 13/09/2026: *"onde é que eu vejo aqui como é que está a
+    situação, uma espécie de totalizadores, pra saber o que que está faltando,
+    o que que não está faltando, onde é que eu tenho que focar"*. Sem eles a
+    tela é uma lista para rolar — a palavra dele foi ingerível.
+
+    UMA CONSULTA SÓ, com `FILTER`: sete contagens em sete consultas seriam sete
+    varreduras da base num banco que tem um décimo de um núcleo (o incidente de
+    10/09). E os números saem dos MESMOS pedaços de SQL que os filtros usam,
+    então clicar num total leva exatamente às linhas que ele contou."""
+    from .db import consultar_um
+    where, params = _where(f)
+
+    def conta(chave):
+        return f"count(*) FILTER (WHERE {SITUACOES_FISCAIS[chave]})"
+
+    linha = consultar_um(
+        "SELECT count(*), "
+        f"       {conta('sem_marcacao')}, "
+        f"       {conta('ja_marcado')}, "
+        f"       {conta('provavel_erro')}, "
+        f"       {conta('com_chave')}, "
+        f"       {conta('na_fila_ia')}, "
+        f"       {conta('confirmada')}, "
+        f"       {conta('escrita')}, "
+        f"       {conta('sem_anexo')}, "
+        "       coalesce(sum(valor_num) FILTER "
+        f"               (WHERE {SITUACOES_FISCAIS['sem_marcacao']}), 0) "
+        f"  FROM analisesps.sps{where}", tuple(params))
+
+    nomes = ["total", "sem_marcacao", "ja_marcado", "provavel_erro",
+             "com_chave", "na_fila_ia", "confirmada", "escrita", "sem_anexo",
+             "valor_sem_marcacao"]
+    if not linha:
+        return {n: 0 for n in nomes}
+    return dict(zip(nomes, linha))
 
 
 def contagem_agendamento(f: dict) -> dict:

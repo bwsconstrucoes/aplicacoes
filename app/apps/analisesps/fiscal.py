@@ -276,6 +276,53 @@ DIAS_ANTES = 400          # emitida até 400 dias antes de vencer
 DIAS_DEPOIS = 30          # emitida até 30 dias depois de vencer
 
 
+# ---------------------------------------------------------------------------
+# DE ONDE SAI CADA NÚMERO DO LANÇAMENTO — e por que isto é uma função
+#
+# ⚠️ DEFEITO ACHADO EM 13/09/2026, e ele estava calado desde a estreia da tela.
+#
+# A mesma SP pontuava **65% na janela de conferência e 35% na lista**. A causa:
+# a base guarda cada valor DUAS VEZES — o texto que veio da planilha
+# (`valor`, `vencimento`) e a versão já convertida (`valor_num`,
+# `vencimento_d`). A LISTA da tela traz só as convertidas; a ficha completa traz
+# as duas. A pontuação lia só as de texto.
+#
+# Resultado: na tela de verdade, TODA SP perdia os 25 pontos do valor e os 5 da
+# data — 30 de 100. E o corte para propor é 60. Ou seja: **o sistema quase
+# nunca propunha**, e as duas pilhas ("aprovar em lote o que é certo, decidir um
+# a um o que tem dúvida") nunca chegaram a existir de verdade. Tudo caía na
+# pilha da dúvida, e ninguém tinha como desconfiar — 35% parece um número
+# legítimo.
+#
+# É primo do defeito do Decimal (12/09), e a lição é a mesma: **quando o mesmo
+# dado tem duas formas, a leitura tem de aceitar as duas** — e num lugar só,
+# senão a próxima leitura esquece de novo.
+# ---------------------------------------------------------------------------
+def valor_do_lancamento(lancamento: dict):
+    """O valor da SP, venha ele convertido ou como texto da planilha."""
+    bruto = lancamento.get("valor_num")
+    if bruto is None or bruto == "":
+        bruto = lancamento.get("valor")
+    return _para_numero(bruto)
+
+
+def datas_do_lancamento(lancamento: dict) -> list:
+    """As datas que servem para conferir a emissão, com o nome de cada uma.
+
+    Vencimento e pagamento, nesta ordem, cada uma na forma que existir."""
+    saida = []
+    for convertida, texto_, rotulo in (
+            ("vencimento_d", "vencimento", "vencimento"),
+            ("data_pagamento_d", "data_pagamento", "pagamento")):
+        bruto = lancamento.get(convertida)
+        if bruto is None or bruto == "":
+            bruto = lancamento.get(texto_)
+        data = _para_data(bruto)
+        if data:
+            saida.append((rotulo, data))
+    return saida
+
+
 def pontuar(lancamento: dict, nota: dict) -> tuple[int, list]:
     """Quanto esta nota combina com este lançamento, e POR QUÊ.
 
@@ -295,8 +342,9 @@ def pontuar(lancamento: dict, nota: dict) -> tuple[int, list]:
         pontos += PONTOS_NUMERO
         porques.append(f"o nº da nota bate ({nota.get('numero')})")
 
-    # 3. O valor.
-    valor_sp = _para_numero(lancamento.get("valor"))
+    # 3. O valor. Ver `valor_do_lancamento`: ele vem em duas formas, e ler só
+    #    uma delas foi o defeito de 13/09/2026.
+    valor_sp = valor_do_lancamento(lancamento)
     valor_nota = _para_numero(nota.get("valor"))
     if valor_sp is not None and valor_nota is not None:
         diferenca = abs(valor_sp - valor_nota)
@@ -315,9 +363,8 @@ def pontuar(lancamento: dict, nota: dict) -> tuple[int, list]:
     # 5. A data, só para confirmar.
     emissao = _para_data(nota.get("emissao"))
     if emissao:
-        for campo in ("vencimento", "data_pagamento"):
-            alvo = _para_data(lancamento.get(campo))
-            if alvo and -DIAS_DEPOIS <= (alvo - emissao).days <= DIAS_ANTES:
+        for _rotulo, alvo in datas_do_lancamento(lancamento):
+            if -DIAS_DEPOIS <= (alvo - emissao).days <= DIAS_ANTES:
                 pontos += PONTOS_DATA
                 porques.append("a data de emissão é compatível")
                 break
@@ -606,16 +653,38 @@ def _para_esta_sp(lancamento: dict, por_raiz: dict) -> list:
 
 
 def analises_guardadas(ids: list) -> dict:
-    """O diário: o que já foi decidido sobre estas SPs."""
+    """O diário: o que já se sabe sobre estas SPs.
+
+    DUAS PORTAS, E AS DUAS VALEM. `sp_fiscal_analise` é o diário deste módulo
+    (o que o card trazia quando a tela nasceu, mais toda decisão tomada aqui).
+    `sp_fiscal` é o espelho do card que a planilha de apoio traz a cada carga.
+    O diário manda quando existe, porque é mais novo; onde ele está vazio, vale
+    o que está no card.
+
+    POR QUE ISSO É IMPORTANTE E NÃO É DETALHE. Achado ao abrir a tela contra
+    banco de verdade em 13/09/2026: os totalizadores contavam as duas portas
+    (é SQL, em `consultas.SITUACOES_FISCAIS`) e a LISTA só olhava o diário. O
+    resultado era o painel dizer "3 já categorizados" e a linha mostrar "—" na
+    coluna "Está como" — duas afirmações contrárias na mesma tela, e nenhuma
+    delas com jeito de errada. Agora as duas leem a mesma coisa."""
     from .db import consultar
     if not ids:
         return {}
     marcadores = ",".join(["?"] * len(ids))
     linhas = consultar(
-        "SELECT sp_id, situacao, documentacao, chave, numero_nota, dedutivel, "
-        "       origem, motivo, confianca, decidida_por "
-        f"  FROM analisesps.sp_fiscal_analise WHERE sp_id IN ({marcadores})",
-        tuple(str(i) for i in ids))
+        "SELECT s.sp_id, a.situacao, "
+        "       coalesce(nullif(btrim(coalesce(a.documentacao, '')), ''), "
+        "                btrim(coalesce(x.doc_fiscal, ''))) AS documentacao, "
+        "       a.chave, a.numero_nota, a.dedutivel, a.origem, a.motivo, "
+        "       a.confianca, a.decidida_por "
+        "  FROM (SELECT sp_id FROM analisesps.sp_fiscal_analise "
+        f"        WHERE sp_id IN ({marcadores}) "
+        "        UNION "
+        "        SELECT sp_id FROM analisesps.sp_fiscal "
+        f"        WHERE sp_id IN ({marcadores})) s "
+        "  LEFT JOIN analisesps.sp_fiscal_analise a ON a.sp_id = s.sp_id "
+        "  LEFT JOIN analisesps.sp_fiscal x ON x.sp_id = s.sp_id",
+        tuple(str(i) for i in ids) * 2)
     nomes = ["sp_id", "situacao", "documentacao", "chave", "numero_nota",
              "dedutivel", "origem", "motivo", "confianca", "decidida_por"]
     return {str(l[0]): dict(zip(nomes, l)) for l in linhas}
@@ -882,3 +951,433 @@ def sps_possiveis_da_nota(nota: dict, quantas: int = 5) -> list:
         " LIMIT ?", (raiz, valor, int(quantas)))
     nomes = ["id", "credor", "valor_num", "vencimento_d", "status_pgt", "nf"]
     return [dict(zip(nomes, linha)) for linha in linhas]
+
+
+# ---------------------------------------------------------------------------
+# OS NÚMEROS DO LADO DA NOTA
+#
+# Pedido do dono em 13/09/2026: *"onde é que eu vejo aqui como é que está a
+# situação (…) pra saber o que que está faltando, onde é que eu tenho que
+# focar"*. Do lado do lançamento os números saem de `consultas.painel_fiscal`;
+# aqui saem os do lado da NOTA, que é a outra metade da mesma gestão.
+#
+# Uma consulta só, com `FILTER`. Ver o porquê em `consultas.painel_fiscal`.
+# ---------------------------------------------------------------------------
+def painel_notas() -> dict:
+    """Quantas notas entraram, de onde vieram e quantas estão órfãs."""
+    from .db import consultar_um
+
+    sem_lancamento = (
+        "upper(trim(coalesce(status, ''))) <> 'CANCELADA' "
+        " AND NOT EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "                  WHERE regexp_replace(coalesce(a.chave, ''), "
+        "                                       '\\D', '', 'g') "
+        "                        = notas_fiscais.chave)")
+
+    linha = consultar_um(
+        "SELECT count(*), "
+        "       count(*) FILTER (WHERE upper(trim(coalesce(status,''))) "
+        "                              = 'CANCELADA'), "
+        f"       count(*) FILTER (WHERE {sem_lancamento}), "
+        # O CT-e É CONTADO PELA CHAVE, e não pela coluna `tipo`.
+        #
+        # Achado ao exercitar a tela contra banco de verdade em 13/09/2026: a
+        # coluna vem preenchida de jeitos diferentes conforme a porta de
+        # entrada — a Receita grava "CT-e", e o relatório do FSist grava o que
+        # estiver escrito na coluna "Tipo" da planilha, que ninguém controla.
+        # Contar por ela dava ZERO com CT-e na base.
+        #
+        # As posições 21 e 22 da chave são o modelo do documento, definição da
+        # Receita: é a mesma certeza que `categoria_da_chave` usa, e vale para
+        # toda nota, tenha vindo por onde tiver vindo.
+        "       count(*) FILTER (WHERE substring(chave from 21 for 2) = '57'), "
+        "       max(importada_em) "
+        "  FROM analisesps.notas_fiscais")
+    nomes = ["total", "canceladas", "sem_lancamento", "ctes", "ultima"]
+    if not linha:
+        return {n: 0 for n in nomes}
+    return dict(zip(nomes, linha))
+
+
+# ---------------------------------------------------------------------------
+# ESCREVER À MÃO — o que o sistema NÃO propôs
+#
+# Correção do dono em 13/09/2026: *"tudo aquilo que você sugeriu (…) mas o que
+# você não sugeriu, como é que eu adiciono a informação? Porque a planilha ela
+# me permite adicionar, e a tela não permite."*
+#
+# Ele está certo e o buraco era grande: a tela só sabia APROVAR proposta. Numa
+# lista em que boa parte não tem proposta nenhuma — é justamente o trabalho que
+# sobra —, não haver como digitar transforma a tela em relatório, e o trabalho
+# volta para a planilha. É o contrário do que ela existe para fazer.
+#
+# A decisão à mão entra pelo MESMO caminho da decisão aprovada
+# (`guardar_decisao`), com origem PESSOA: assim ela é gravada no card pela
+# mesma leva, aparece no mesmo diário e conta nos mesmos totais. Um segundo
+# caminho de gravação seria a chance de a tela e o card divergirem.
+# ---------------------------------------------------------------------------
+class ErroDeEntrada(ValueError):
+    """Dado recusado, com a mensagem já pronta para a tela."""
+
+
+def conferir_chave(chave: str, sp: dict = None) -> str:
+    """Devolve a chave só com dígitos, ou recusa dizendo por quê.
+
+    A CONFERÊNCIA É A PARTE ÚTIL. Uma chave digitada errada não dá erro: ela
+    grava no card uma nota que não é a da despesa, e ninguém descobre — é
+    exatamente o defeito que esta tela existe para achar. Então confere-se o
+    que dá para conferir sozinho: o tamanho, o modelo do documento (que sai das
+    posições 21 e 22) e, quando a SP é conhecida, o CNPJ de quem emitiu, que
+    mora dentro da própria chave."""
+    limpa = so_digitos(chave)
+    if not limpa:
+        return ""
+    if len(limpa) != 44:
+        raise ErroDeEntrada(
+            f"a chave de acesso tem 44 números; esta tem {len(limpa)}.")
+    if limpa[20:22] not in MODELOS:
+        raise ErroDeEntrada(
+            "esta chave não é de NF-e, NFC-e nem CT-e — confira se não faltou "
+            "ou sobrou algum número.")
+    if sp:
+        emitente = emitente_da_chave(limpa)
+        credor = so_digitos(sp.get("documento"))
+        if emitente and len(credor) == 14 and not mesmo_documento(credor, emitente):
+            raise ErroDeEntrada(
+                "esta chave foi emitida por outro CNPJ, e não pelo credor "
+                "desta SP. Confira se não é a nota de outro lançamento.")
+    return limpa
+
+
+def decidir_a_mao(sp_id: str, documentacao: str, chave: str, quem: str,
+                  sp: dict = None) -> dict:
+    """Grava a categoria (e a chave, quando houver) digitada por uma pessoa.
+
+    Devolve o que ficou gravado, para a tela mostrar sem recarregar."""
+    documentacao = str(documentacao or "").strip()
+    if documentacao and documentacao not in CATEGORIAS:
+        raise ErroDeEntrada(f'"{documentacao}" não é uma categoria conhecida.')
+
+    limpa = conferir_chave(chave, sp)
+    if not documentacao and not limpa:
+        raise ErroDeEntrada("escolha a categoria ou informe a chave de acesso.")
+
+    # CATEGORIA DEDUZIDA DA CHAVE quando a pessoa informou só a chave. É o
+    # mesmo caminho da proposta automática: o modelo do documento está dentro
+    # da chave, então não é palpite.
+    if not documentacao:
+        documentacao = categoria_da_chave(limpa) or "NF-e (Mercadoria)"
+
+    motivo = "informado à mão" + (" com a chave conferida" if limpa else "")
+    guardar_decisao(sp_id, documentacao, limpa, motivo, 100, quem,
+                    origem="PESSOA")
+    return {"sp_id": str(sp_id), "documentacao": documentacao, "chave": limpa,
+            "dedutivel": dedutivel(documentacao)}
+
+
+def uma_nota(chave: str) -> dict:
+    """A nota guardada, pela chave. Vazio quando não existe aqui."""
+    from .db import consultar_um
+    limpa = so_digitos(chave)
+    if len(limpa) != 44:
+        return {}
+    linha = consultar_um(
+        "SELECT chave, emissao, numero, valor, status, emitente_doc, emitente "
+        "  FROM analisesps.notas_fiscais WHERE chave = ?", (limpa,))
+    if not linha:
+        return {}
+    nomes = ["chave", "emissao", "numero", "valor", "status",
+             "emitente_doc", "emitente"]
+    return dict(zip(nomes, linha))
+
+
+# ---------------------------------------------------------------------------
+# RECONFERIR — o que já está gravado continua sendo olhado
+#
+# Pergunta do dono em 13/09/2026: *"aquela varredura pra conferir se o que nós
+# já temos está ok, como é que eu sei se isso está acontecendo? É toda vez que
+# eu abro, é uma vez? E se eu quiser fazer uma reanálise das informações que a
+# gente já gravou, já salvou? E se eu quiser selecionar um determinado registro
+# e reprocessar ele pra ver se está batendo? E se o que tiver pra trás tiver
+# coisa errada, como é que eu sei que isso está sendo analisado?"*
+#
+# A RESPOSTA HONESTA, e é por isso que esta parte existe:
+#
+#   1. A conferência roda A CADA ABERTURA da tela, sobre os lançamentos que
+#      estão na página — e isso vale também para o que já foi decidido e já foi
+#      gravado no card. Nada é "conferido uma vez e esquecido". Só que a tela
+#      não dizia isso em lugar nenhum, e o que não é dito não existe para quem
+#      usa.
+#   2. O que está FORA da página não era reconferido enquanto ninguém chegasse
+#      nela. Os três sintomas mais graves de erro antigo — nota cancelada,
+#      categoria que afirma nota sem haver chave, e chave de outro CNPJ — são
+#      varridos sobre a BASE INTEIRA pelo recorte "Provavelmente errado"
+#      (`consultas.SQL_FISCAL_PROVAVEL_ERRO`), que é SQL. Esse é o número que
+#      responde "tem coisa errada para trás?".
+#   3. FALTAVA reconferir SOB DEMANDA um registro escolhido. É o que entra
+#      aqui.
+#
+# O QUE `reconferir` FAZ DE DIFERENTE da conciliação da tela: ela procura nota
+# MESMO para as categorias que normalmente não se concilia (apólice, contrato,
+# guia de tributo). Na lista isso seria ruído — procurar nota de aluguel todo
+# dia; pedido registro a registro, é exatamente o que se quer, porque a pergunta
+# passa a ser "será que classificaram errado?". NÃO GRAVA NADA: devolve o que
+# encontrou, e quem decide continua sendo gente.
+# ---------------------------------------------------------------------------
+def reconferir(sps: list) -> list:
+    """Refaz a conferência destas SPs agora, inclusive as já decididas.
+
+    `sps` são as linhas da base (o que `consultas.listar`/`uma` devolvem)."""
+    por_raiz = notas_candidatas(sps)
+    diario = analises_guardadas([s.get("id") for s in sps])
+
+    saida = []
+    for sp in sps:
+        analise = diario.get(str(sp.get("id")), {})
+        # SEM O ATALHO do `NAO_CONCILIA`: aqui a pergunta é justamente se a
+        # categoria que está lá é a certa.
+        escolha = melhor_nota(sp, _para_esta_sp(sp, por_raiz))
+        veredito = avaliar(sp, analise, escolha)
+        saida.append({
+            "sp": sp, "analise": analise, "nota": escolha.get("nota"),
+            "porques": escolha.get("porques") or [], **veredito,
+        })
+    return saida
+
+
+def resumo_da_reconferencia(linhas: list) -> dict:
+    """Uma frase por SP, para a tela dizer o que mudou sem recarregar tudo."""
+    saida = []
+    for l in linhas:
+        antes = str((l.get("analise") or {}).get("documentacao") or "").strip()
+        achou = l.get("nota") or {}
+        saida.append({
+            "sp": str(l["sp"].get("id")),
+            "grupo": l.get("grupo"),
+            "rotulo": ROTULOS_GRUPO.get(l.get("grupo"), l.get("grupo")),
+            "antes": antes or "sem categoria",
+            "proposta": l.get("documentacao") or "",
+            "chave": l.get("chave") or "",
+            "confianca": int(l.get("confianca") or 0),
+            "motivo": l.get("motivo") or "",
+            "nota": ({"numero": achou.get("numero"),
+                      "emitente": achou.get("emitente"),
+                      "status": achou.get("status")} if achou else None),
+            # O QUE MUDA A VIDA DE QUEM LÊ: mudou ou continua igual? Sem esta
+            # linha, reconferir trinta registros devolveria trinta parágrafos
+            # e nenhuma conclusão.
+            "mudou": bool(l.get("documentacao")) and l.get("documentacao") != antes,
+        })
+    return {"itens": saida,
+            "mudaram": sum(1 for i in saida if i["mudou"]),
+            "apontados": sum(1 for i in saida
+                             if i["grupo"] in (CRITICO, CORRECAO, DUVIDA))}
+
+
+# ---------------------------------------------------------------------------
+# A PROVA — os dois lados abertos, campo a campo
+#
+# Cobrança do dono em 13/09/2026, e ela derruba o desenho anterior: *"você
+# sugere e eu quero ver de forma completa os dados do que você está sugerindo.
+# Os dados do relatório FSist. Como faço? Ou quero ver os dados do registro,
+# não dá pra ver pra validar. Isso pra eu ter que confiar somente no que você
+# observou."*
+#
+# Ele está certo. A tela mostrava a CONCLUSÃO ("nota 1430 · FORNECEDOR") e
+# escondia o que a sustenta. Numa tela cujo trabalho é achar erro, pedir
+# confiança cega é o pior arranjo possível: quem confere sem poder ver vira
+# carimbo, e carimbo não acha nada.
+#
+# ENTÃO AQUI SAI TUDO: a SP inteira, a nota inteira, a conta dos pontos regra a
+# regra (inclusive as que NÃO pontuaram, que são as que explicam por que a
+# confiança não foi maior), e TODAS as candidatas consideradas — não só a
+# vencedora. Ver a segunda colocada é o que permite discordar da escolha.
+# ---------------------------------------------------------------------------
+
+# Como cada regra da pontuação aparece na tela, e quanto ela vale. A ordem é a
+# do peso: quem lê quer saber primeiro o que mais decidiu.
+REGRAS_DA_PONTUACAO = [
+    ("emitente", "CNPJ do credor é o de quem emitiu", PONTOS_EMITENTE),
+    ("numero", "Nº da nota digitado no card bate", PONTOS_NUMERO),
+    ("valor", "Valor", PONTOS_VALOR_EXATO),
+    ("nome", "Nome do credor parecido com o do emitente", PONTOS_NOME),
+    ("data", "Data de emissão compatível", PONTOS_DATA),
+]
+
+
+def _conferir_regras(lancamento: dict, nota: dict) -> list:
+    """Regra a regra: bateu, não bateu, e com que número de cada lado.
+
+    O QUE NÃO BATEU É O MAIS IMPORTANTE AQUI. "Confiança 35%" não diz nada;
+    "o valor difere em R$ 12,00 e o nº da nota do card está vazio" diz onde
+    olhar."""
+    saida = []
+
+    emitente = nota.get("emitente_doc") or emitente_da_chave(nota.get("chave"))
+    saida.append({
+        "chave": "emitente", "rotulo": "CNPJ do credor é o de quem emitiu",
+        "bateu": mesmo_documento(lancamento.get("documento"), emitente),
+        "pontos": PONTOS_EMITENTE,
+        "no_lancamento": _texto(lancamento.get("documento")),
+        "na_nota": _texto(emitente),
+    })
+
+    saida.append({
+        "chave": "numero", "rotulo": "Nº da nota digitado no card bate",
+        "bateu": mesmo_numero_de_nota(lancamento.get("nf"), nota.get("numero")),
+        "pontos": PONTOS_NUMERO,
+        "no_lancamento": _texto(lancamento.get("nf")) or "(vazio)",
+        "na_nota": _texto(nota.get("numero")),
+    })
+
+    valor_sp = valor_do_lancamento(lancamento)
+    valor_nota = _para_numero(nota.get("valor"))
+    diferenca = (abs(valor_sp - valor_nota)
+                 if valor_sp is not None and valor_nota is not None else None)
+    saida.append({
+        "chave": "valor", "rotulo": "Valor",
+        "bateu": diferenca is not None and diferenca < 0.005,
+        "quase": diferenca is not None and 0.005 <= diferenca <= TOLERANCIA_VALOR,
+        "pontos": PONTOS_VALOR_EXATO,
+        "no_lancamento": valor_sp, "na_nota": valor_nota,
+        "diferenca": diferenca,
+    })
+
+    saida.append({
+        "chave": "nome", "rotulo": "Nome do credor parecido com o do emitente",
+        "bateu": _nome_parecido(lancamento.get("credor"), nota.get("emitente")),
+        "pontos": PONTOS_NOME,
+        "no_lancamento": _texto(lancamento.get("credor")),
+        "na_nota": _texto(nota.get("emitente")),
+    })
+
+    emissao = _para_data(nota.get("emissao"))
+    bateu_data, quando = False, ""
+    if emissao:
+        for rotulo, alvo in datas_do_lancamento(lancamento):
+            if -DIAS_DEPOIS <= (alvo - emissao).days <= DIAS_ANTES:
+                from .formatos import data_br
+                bateu_data, quando = True, f"{rotulo} em {data_br(alvo)}"
+                break
+    saida.append({
+        "chave": "data", "rotulo": "Data de emissão compatível",
+        "bateu": bateu_data, "pontos": PONTOS_DATA,
+        "no_lancamento": quando or "(sem data compatível)",
+        "na_nota": _escrever("emissao", emissao),
+    })
+
+    return saida
+
+
+# Os campos da nota que a tela mostra, na ordem em que se confere um documento
+# fiscal. TODOS, e de propósito: o pedido foi ver "de forma completa".
+CAMPOS_DA_NOTA = [
+    ("numero", "Número"), ("serie", "Série"), ("emissao", "Emissão"),
+    ("valor", "Valor"), ("status", "Situação"), ("tipo", "Tipo"),
+    ("emitente", "Emitente"), ("emitente_doc", "CNPJ do emitente"),
+    ("emitente_uf", "UF"), ("destinatario", "Destinatário"),
+    ("destinatario_doc", "CNPJ do destinatário"),
+    ("chaves_nfe", "NF-e dentro deste CT-e"), ("chave", "Chave de acesso"),
+    ("importada_em", "Entrou aqui em"),
+]
+
+
+def nota_completa(chave: str) -> dict:
+    """A nota inteira, como ela está guardada. Sem recorte."""
+    from .db import consultar_um
+    limpa = so_digitos(chave)
+    if len(limpa) != 44:
+        return {}
+    campos = [c for c, _ in CAMPOS_DA_NOTA]
+    linha = consultar_um(
+        f"SELECT {', '.join(campos)} FROM analisesps.notas_fiscais "
+        " WHERE chave = ?", (limpa,))
+    return dict(zip(campos, linha)) if linha else {}
+
+
+# Como cada campo da nota é escrito para gente ler. Um documento fiscal com
+# data 2026-09-01 e valor 269.00 numa tela em português é erro de leitura
+# esperando acontecer — e esta é exatamente a tela em que ele vai comparar
+# número com número.
+_COMO_ESCREVER = {
+    "emissao": "data", "valor": "dinheiro", "importada_em": "momento",
+}
+
+
+def _escrever(campo: str, valor) -> str:
+    if valor is None or valor == "":
+        return ""
+    from .formatos import data_br, moeda, momento_br
+    jeito = _COMO_ESCREVER.get(campo)
+    if jeito == "data":
+        return data_br(valor)
+    if jeito == "dinheiro":
+        return moeda(valor)
+    if jeito == "momento":
+        return momento_br(valor)
+    return str(valor)
+
+
+def _nota_para_a_tela(nota: dict) -> dict:
+    """A nota vira texto, campo a campo, com o rótulo em português."""
+    completa = nota_completa(nota.get("chave")) or dict(nota)
+    return {
+        "chave": so_digitos(completa.get("chave") or nota.get("chave")),
+        "campos": [{"rotulo": rotulo,
+                    "valor": _escrever(campo, completa.get(campo))}
+                   for campo, rotulo in CAMPOS_DA_NOTA],
+    }
+
+
+def comparar(lancamento: dict) -> dict:
+    """Tudo o que sustenta (ou derruba) a proposta desta SP.
+
+    NÃO É RESUMO: é a SP inteira, todas as candidatas com a conta dos pontos
+    aberta regra a regra, e o que já está gravado no diário. Quem confere
+    precisa poder discordar com o dado na mão."""
+    por_raiz = notas_candidatas([lancamento])
+    candidatas = _para_esta_sp(lancamento, por_raiz)
+    diario = analises_guardadas([lancamento.get("id")]).get(
+        str(lancamento.get("id")), {})
+
+    avaliadas = []
+    for nota in candidatas:
+        pontos, porques = pontuar(lancamento, nota)
+        avaliadas.append({
+            "pontos": pontos,
+            "porques": porques,
+            "propoe": pontos >= CONFIANCA_PARA_PROPOR,
+            "regras": _conferir_regras(lancamento, nota),
+            "categoria_pela_chave": categoria_da_chave(nota.get("chave")),
+            **_nota_para_a_tela(nota),
+        })
+    avaliadas.sort(key=lambda x: -x["pontos"])
+
+    escolha = melhor_nota(lancamento, candidatas)
+    veredito = avaliar(lancamento, diario, escolha)
+
+    return {
+        "sp": str(lancamento.get("id")),
+        "diario": {
+            "documentacao": _texto(diario.get("documentacao")),
+            "chave": so_digitos(diario.get("chave")),
+            "origem": _texto(diario.get("origem")),
+            "situacao": _texto(diario.get("situacao")),
+            "por": _texto(diario.get("decidida_por")),
+            "motivo": _texto(diario.get("motivo")),
+        },
+        "veredito": {
+            "grupo": veredito.get("grupo"),
+            "rotulo": ROTULOS_GRUPO.get(veredito.get("grupo"), ""),
+            "proposta": veredito.get("documentacao") or "",
+            "chave": veredito.get("chave") or "",
+            "confianca": veredito.get("confianca"),
+            "motivo": veredito.get("motivo"),
+            "propoe": bool(veredito.get("propoe")),
+        },
+        "candidatas": avaliadas,
+        # QUANTAS FORAM OLHADAS, mesmo que nenhuma tenha servido. "Não achei" e
+        # "não procurei" são coisas diferentes, e só este número separa as duas.
+        "olhadas": len(candidatas),
+        "corte": CONFIANCA_PARA_PROPOR,
+    }
