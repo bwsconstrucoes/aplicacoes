@@ -101,6 +101,8 @@ POR_ENTIDADE: dict[str, str] = {
     "categoria_depara": "configuracao",
     "parametro": "configuracao",
     "usuario": "configuracao",
+    # Perfil de acesso é cadastro de quem pode o quê: mesma família do operador.
+    "perfil": "configuracao",
     "periodo": "configuracao",
     "indice": "configuracao",
     "configuracao": "configuracao",
@@ -155,7 +157,8 @@ NOME_DA_ENTIDADE: dict[str, str] = {
     "agenda": "agenda", "pergunta": "pergunta escrita", "categoria": "conta do plano",
     "pergunta_agendada": "relatório automático",
     "categoria_depara": "tradução do plano antigo", "parametro": "parâmetro",
-    "usuario": "operador", "periodo": "período", "indice": "índice",
+    "usuario": "operador", "perfil": "perfil de acesso",
+    "periodo": "período", "indice": "índice",
     "configuracao": "configuração", "erp": "sistema", "suprimentos": "suprimentos",
 }
 

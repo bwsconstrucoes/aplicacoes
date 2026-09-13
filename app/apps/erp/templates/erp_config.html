@@ -14,6 +14,7 @@
   <a class="subaba" href="#obras" data-ir="obras">Obras</a>
   <a class="subaba" href="#contas" data-ir="contas">Contas bancárias</a>
   <a class="subaba" href="#usuarios" data-ir="usuarios">Operadores</a>
+  <a class="subaba" href="#perfis" data-ir="perfis">Perfis de acesso</a>
   {# Empresas é uma TELA à parte, não uma seção desta página — por isso link de
      verdade, sem `data-ir`: o alternador de seções só mexe no que tem essa
      marca. #}
@@ -354,11 +355,28 @@
   <table><thead><tr><th>Nome</th><th>E-mail</th><th>CPF</th><th>Telefone</th>
     <th>Perfil</th><th>Fundo fixo</th><th>Obras</th><th>Situação</th></tr></thead>
     <tbody id="tb-usuarios"></tbody></table>
-  <div class="cartao-dica">O perfil define o que a pessoa <b>pode fazer</b>; o campo
-    "o que esta pessoa enxerga", no cadastro dela, define o <b>alcance</b>.
-    Administrativo de obra e lançador começam vendo só o que lançaram, e podem ser
-    ampliados para tudo das obras designadas — um a um. Supervisor vê as obras
-    designadas; gestor, todas; administrador também configura.</div>
+  <div class="cartao-dica">Duas perguntas diferentes, e elas ficam em lugares
+    diferentes de propósito: <b>o que</b> a pessoa faz vem do <b>perfil de
+    acesso</b> (na faixa acima); <b>onde</b> ela faz vem do cadastro dela —
+    todas as obras, ou só as marcadas. Quem não tem perfil escolhido ainda
+    segue pelo cargo antigo.</div>
+</div>
+
+<div class="cartao" data-secao="perfis">
+  <div class="cartao-cab"><h3>Perfis de acesso</h3>
+    <small>o que cada grupo de pessoas pode ver e mexer</small></div>
+  <div class="tabela-barra" style="padding:0 0 10px">
+    <span class="espaco"></span>
+    <button class="btn secundario" id="btn-novo-perfil">+ Novo perfil</button>
+  </div>
+  <table><thead><tr><th>Perfil</th><th>Para que serve</th>
+    <th class="direita">Seções abertas</th><th class="direita">Com edição</th>
+    <th class="direita">Pessoas</th></tr></thead>
+    <tbody id="tb-perfis"></tbody></table>
+  <div class="cartao-dica">O perfil diz <b>o que</b> a pessoa faz; o cadastro dela
+    diz <b>onde</b> — quais obras. Duas pessoas do mesmo perfil podem acompanhar
+    obras diferentes. Perfil novo nasce <b>sem abrir nada</b>: marque seção por
+    seção o que ele libera.</div>
 </div>
 
 <dialog id="dlg">
@@ -414,18 +432,140 @@ document.addEventListener("DOMContentLoaded", () =>
 
 let DADOS = {categorias: [], obras: [], contas: [], usuarios: []};
 let OPCOES_CAT = "";
-let OPERADORES = [], PERFIS = [];
+let OPERADORES = [], PERFIS = [], PERFIS_CADASTRADOS = [];
+// O catálogo de seções vem do servidor — é ele que sabe o que "só olhar" e
+// "olhar e mexer" liberam em cada tela. Repetir isso aqui seria a segunda
+// resposta possível para a mesma pergunta.
+let CATALOGO = [], NIVEIS = [];
 
 async function carregarOperadores(){
   try {
     const d = await api("/erp/api/usuarios");
     OPERADORES = d.usuarios; PERFIS = d.perfis;
+    PERFIS_CADASTRADOS = d.perfis_cadastrados || [];
     desenhar();
   } catch(e){ /* sem permissão para ver operadores */ }
 }
 
+async function carregarPerfis(){
+  try {
+    const d = await api("/erp/api/perfis");
+    PERFIS_CADASTRADOS = d.perfis; CATALOGO = d.catalogo;
+    NIVEIS = d.niveis;
+    desenharPerfis();
+  } catch(e){ /* migração 065 pendente, ou sem permissão */ }
+}
+
+function desenharPerfis(){
+  const corpo = els("tb-perfis");
+  if (!corpo) return;
+  if (!PERFIS_CADASTRADOS.length) {
+    corpo.innerHTML = `<tr><td colspan="5"><small>Nenhum perfil cadastrado ainda.
+      Se o banco acabou de ser atualizado, recarregue a página.</small></td></tr>`;
+    return;
+  }
+  corpo.innerHTML = PERFIS_CADASTRADOS.map(p => `
+    <tr style="cursor:pointer" data-perfil="${p.id}" title="Clique para editar">
+      <td><b>${escapar(p.nome)}</b>${p.de_sistema
+        ? ` <small style="color:var(--tinta-suave)">· veio pronto</small>` : ""}</td>
+      <td><small>${escapar(p.descricao || "—")}</small></td>
+      <td class="direita">${p.quantas_secoes}</td>
+      <td class="direita">${p.quantas_editam}</td>
+      <td class="direita">${p.pessoas}</td></tr>`).join("");
+  document.querySelectorAll("[data-perfil]").forEach(tr =>
+    tr.addEventListener("click", () =>
+      formPerfil(PERFIS_CADASTRADOS.find(x => x.id === +tr.dataset.perfil))));
+}
+
+// ---- O cadastro do perfil: uma linha por seção, três níveis, nada mais.
+function formPerfil(p){
+  const novo = !p;
+  p = p || {nome: "", descricao: "", secoes: {}, de_sistema: false, pessoas: 0};
+  els("dlg-titulo").textContent = novo ? "Novo perfil de acesso" : `Perfil: ${p.nome}`;
+  const nivelDe = chave => p.secoes[chave] || "NADA";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="form-grade">
+      <div class="campo"><label>Nome do perfil *</label>
+        <input id="pf-nome" value="${escapar(p.nome || "")}"
+               placeholder="ex.: Engenheiro de obra"></div>
+      <div class="campo" style="grid-column:span 2"><label>Para que serve</label>
+        <input id="pf-desc" value="${escapar(p.descricao || "")}"
+               placeholder="uma linha, para quem for escolher o perfil depois"></div>
+    </div>
+    <div class="cartao-dica" style="margin:10px 0">Em cada tela, escolha
+      <b>Não acessa</b>, <b>Só olhar</b> ou <b>Olhar e mexer</b>. O que não for
+      marcado fica fechado — é o padrão. <b>As obras não se escolhem aqui</b>:
+      elas são do cadastro de cada pessoa.</div>
+    ${CATALOGO.map(area => `
+      <h4>${escapar(area.area)}</h4>
+      {# Sem rolagem própria: a caixa cresce e quem rola é o diálogo. Uma
+         rolagem dentro da outra esconde metade das telas da área, e quem está
+         montando o perfil não percebe que faltou marcar. #}
+      <div class="filtro-opcoes" style="border:1px solid var(--borda);
+           border-radius:8px; padding:6px; margin-bottom:10px;
+           max-height:none; overflow:visible">
+        ${area.secoes.map(s => `
+          <div style="display:flex; gap:10px; align-items:flex-start; padding:4px 2px">
+            <div style="flex:1">
+              <b>${escapar(s.nome)}</b>
+              <div class="dica" style="margin:0">${escapar(s.explicacao)}</div>
+            </div>
+            <select class="pf-nivel" data-secao="${escapar(s.chave)}"
+                    style="width:170px; margin:0">
+              ${NIVEIS.map(n => `<option value="${n.chave}"
+                ${n.chave === nivelDe(s.chave) ? "selected" : ""}
+                ${n.chave === "EDITAR" && !s.editar.length ? "disabled" : ""}
+                >${escapar(n.rotulo)}</option>`).join("")}
+            </select>
+          </div>`).join("")}
+      </div>`).join("")}
+    <div style="margin-top:14px; display:flex; gap:10px; align-items:center">
+      <button class="btn" id="pf-salvar">Salvar</button>
+      ${novo ? "" : `<button class="btn secundario" id="pf-arquivar">Arquivar perfil</button>
+        <small style="color:var(--tinta-suave)">${p.pessoas
+          ? `${p.pessoas} pessoa(s) neste perfil — mude-as de perfil antes de arquivar`
+          : "ninguém está neste perfil"}</small>`}
+    </div>`;
+
+  els("pf-salvar").addEventListener("click", async () => {
+    const secoes = {};
+    document.querySelectorAll(".pf-nivel").forEach(sel => {
+      if (sel.value !== "NADA") secoes[sel.dataset.secao] = sel.value;
+    });
+    const corpo = {nome: els("pf-nome").value, descricao: els("pf-desc").value, secoes};
+    try {
+      await api(novo ? "/erp/api/perfis" : `/erp/api/perfis/${p.id}`,
+        {method:"POST", headers:{"Content-Type":"application/json"},
+         body: JSON.stringify(corpo)});
+      els("dlg").close();
+      aviso("mensagem", novo ? "Perfil criado." : "Perfil atualizado.", "ok");
+      carregarPerfis(); carregarOperadores();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  if (!novo) els("pf-arquivar").addEventListener("click", async () => {
+    try {
+      await api(`/erp/api/perfis/${p.id}`,
+        {method:"POST", headers:{"Content-Type":"application/json"},
+         body: JSON.stringify({arquivar: true})});
+      els("dlg").close();
+      aviso("mensagem", "Perfil arquivado.", "ok");
+      carregarPerfis();
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  els("dlg").showModal();
+}
+
 // Em palavras, o que este operador alcança — espelha aplicar_escopo do core.
 function alcanceDoOperador(u){
+  // Depois da migração 065 quem responde é o CADASTRO da pessoa. Antes dela a
+  // marca vem nula, e aí vale a leitura antiga, pelo cargo — as duas
+  // convivem só na janela entre publicar e apertar o botão do banco.
+  if (u.ve_todas_as_obras === true) return "todas as obras";
+  if (u.ve_todas_as_obras === false) {
+    if (u.escopo_visao !== "OBRAS_DESIGNADAS") return "só o que ela lançou";
+    return u.obras.length ? u.obras.join(", ")
+      : "nenhuma obra marcada — não enxerga nada";
+  }
   const porObra = u.perfil === "SUPERVISOR_OBRA"
     || (["ADMINISTRATIVO_OBRA","LANCADOR"].includes(u.perfil)
         && u.escopo_visao === "OBRAS_DESIGNADAS");
@@ -447,9 +587,27 @@ function formOperador(u){
         <input id="op-email" type="email" value="${u.email||""}" ${novo?"":"disabled"}></div>
       <div class="campo"><label>CPF</label><input id="op-cpf" value="${u.cpf||""}" placeholder="somente números"></div>
       <div class="campo"><label>Telefone</label><input id="op-tel" value="${u.telefone||""}" placeholder="85999998888"></div>
-      <div class="campo"><label>Perfil *</label><select id="op-perfil">
+      <div class="campo"><label>Perfil de acesso *</label><select id="op-perfil-cad">
+        <option value="">— nenhum —</option>
+        ${PERFIS_CADASTRADOS.map(p=>`<option value="${p.id}"
+          ${p.id===u.perfil_id?"selected":""}>${escapar(p.nome)}</option>`).join("")}
+      </select>
+        <div class="dica">Diz <b>o que</b> esta pessoa faz. Cria-se e edita-se em
+          <b>Perfis de acesso</b>, na faixa acima. Sem perfil escolhido, vale o
+          cargo antigo — o campo de baixo.</div></div>
+      <div class="campo"><label>Obras que esta pessoa enxerga</label>
+        <select id="op-todas-obras">
+          <option value="0" ${u.ve_todas_as_obras?"":"selected"}>Só as obras marcadas abaixo</option>
+          <option value="1" ${u.ve_todas_as_obras?"selected":""}>Todas as obras da empresa</option>
+        </select>
+        <div class="dica">Diz <b>onde</b>. Duas pessoas do mesmo perfil podem
+          acompanhar obras diferentes — por isso fica aqui, e não no perfil.</div></div>
+      <div class="campo"><label>Cargo (herança)</label><select id="op-perfil">
         ${PERFIS.map(p=>`<option value="${p.chave}" ${p.chave===u.perfil?"selected":""}>${p.rotulo}</option>`).join("")}
-      </select></div>
+      </select>
+        <div class="dica">O cargo de antes dos perfis. Ele ainda decide para
+          quem não tem perfil de acesso escolhido, e sai de cena quando todo
+          mundo tiver.</div></div>
       <div class="campo" id="op-escopo-bloco"><label>O que esta pessoa enxerga</label>
         <select id="op-escopo">
           <option value="PROPRIOS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"":"selected"}>Só os lançamentos dela</option>
@@ -536,10 +694,10 @@ function formOperador(u){
            style="max-height:260px; border:1px solid var(--borda); border-radius:8px; padding:6px">
         <small>carregando…</small>
       </div>
-      <div class="dica">O <b>cargo</b> já define o essencial. Aqui você acrescenta
-        ou tira <b>desta pessoa</b> — por exemplo, deixar alguém autorizando
-        enquanto o diretor está de férias. O que estiver diferente do cargo fica
-        marcado como <b>ajuste</b>.</div>
+      <div class="dica">O <b>perfil de acesso</b> já define o essencial. Aqui você
+        acrescenta ou tira <b>desta pessoa</b> — por exemplo, deixar alguém
+        autorizando enquanto o diretor está de férias. O que estiver diferente
+        do perfil fica marcado como <b>ajuste</b>.</div>
     </div>`}
     <div style="margin-top:14px"><button class="btn" id="op-salvar">Salvar</button></div>`;
 
@@ -548,16 +706,16 @@ function formOperador(u){
   const ESCOPO_CONFIGURAVEL = ["ADMINISTRATIVO_OBRA", "LANCADOR"];
 
   function alternarObras(){
-    const perfil = els("op-perfil").value;
-    const configuravel = ESCOPO_CONFIGURAVEL.includes(perfil);
-    els("op-escopo-bloco").style.display = configuravel ? "" : "none";
-    // Só faz sentido escolher obras para quem enxerga POR obra.
-    const porObra = perfil === "SUPERVISOR_OBRA"
-      || (configuravel && els("op-escopo").value === "OBRAS_DESIGNADAS");
+    // Quem enxerga TODAS as obras não escolhe obra nenhuma, e a pergunta "só
+    // os lançamentos dela" perde o sentido junto.
+    const todas = els("op-todas-obras").value === "1";
+    els("op-escopo-bloco").style.display = todas ? "none" : "";
+    const porObra = !todas && els("op-escopo").value === "OBRAS_DESIGNADAS";
     els("op-obras-bloco").style.display = porObra ? "" : "none";
   }
   els("op-perfil").addEventListener("change", alternarObras);
   els("op-escopo").addEventListener("change", alternarObras);
+  els("op-todas-obras").addEventListener("change", alternarObras);
   // Marcar "responde" liga a obra junto: responder por obra que a pessoa não
   // enxerga daria a ela uma cobrança que ela não consegue abrir.
   document.querySelectorAll(".op-resp").forEach(caixa =>
@@ -700,7 +858,7 @@ function formOperador(u){
     try {
       const d = await api(`/erp/api/usuarios/${u.id}/permissoes`);
       els("op-perms").innerHTML = d.acoes.map(a => `
-        <label class="opcao" title="${a.do_cargo ? "o cargo já dá" : "o cargo não dá"}">
+        <label class="opcao" title="${a.do_cargo ? "o perfil já dá" : "o perfil não dá"}">
           <input type="checkbox" class="op-perm" value="${a.acao}"
                  ${a.efetiva ? "checked" : ""} ${a.travada ? "disabled" : ""}>
           <span class="rotulo">${a.rotulo}${
@@ -714,6 +872,8 @@ function formOperador(u){
   els("op-salvar").addEventListener("click", async () => {
     const corpo = {nome: els("op-nome").value, telefone: els("op-tel").value,
       perfil: els("op-perfil").value, ativo: els("op-ativo").value === "1",
+      perfil_id: els("op-perfil-cad").value || null,
+      ve_todas_as_obras: els("op-todas-obras").value === "1",
       escopo_visao: els("op-escopo").value,
       ff_autorizado: els("op-ff").value === "1",
       ff_teto_item: els("op-ff-item").value, ff_teto_prestacao: els("op-ff-total").value,
@@ -972,7 +1132,9 @@ function desenhar(){
     <tr style="cursor:pointer" data-op="${u.id}" title="Clique para editar">
       <td>${u.nome}</td><td>${u.email}</td>
       <td class="dados">${u.cpf||"—"}</td><td class="dados">${u.telefone||"—"}</td>
-      <td>${u.perfil_rotulo}</td>
+      <td>${u.perfil_id
+        ? escapar((PERFIS_CADASTRADOS.find(p=>p.id===u.perfil_id)||{}).nome || u.perfil_rotulo)
+        : `<span style="color:var(--tinta-suave)">${u.perfil_rotulo} <small>(cargo)</small></span>`}</td>
       <td><small>${u.ff_autorizado
         ? `até ${u.ff_teto_item?moeda(u.ff_teto_item):"—"} / despesa`
         : `<span style="color:var(--tinta-suave)">não usa</span>`}</small></td>
@@ -1105,6 +1267,8 @@ checarBanco();
 carregarDepara();
 carregarOperadores();
 els("btn-novo-op").addEventListener("click", () => formOperador(null));
+carregarPerfis();
+els("btn-novo-perfil").addEventListener("click", () => formPerfil(null));
 
 async function carregarDepara(){
   try {

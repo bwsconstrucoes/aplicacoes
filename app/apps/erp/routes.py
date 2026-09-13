@@ -23,7 +23,8 @@ from flask import (
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from app.apps.erp.core.auth.permissoes import (
-    ACAO_ROTULOS, PERMISSOES, PROTEGIDAS_DO_ADMIN, ROTULOS, decidir, pode,
+    ACAO_ROTULOS, PERMISSOES, PROTEGIDAS_DO_ADMIN, ROTULOS,
+    acoes_do_perfil_no_banco, decidir, pode,
 )
 from app.apps.erp.core.auth.service import ErroAutenticacao, autenticar
 from app.apps.erp.core.comum.auditoria import (
@@ -246,6 +247,7 @@ def _usuario_logado(s) -> Usuario | None:
     u = s.get(Usuario, uid)
     if u is not None:
         u.permissoes_extras = _excecoes_brutas(s, uid)
+        u.acoes_do_perfil = acoes_do_perfil_no_banco(s, uid)
     return u
 
 
@@ -452,6 +454,11 @@ def _guarda_permissao():
     with get_session() as s:
         perfil = _perfil_bruto(s)
         excecoes = _excecoes_brutas(s, session["erp_usuario_id"]) if perfil else {}
+        # O PERFIL CADASTRADO (migração 065) decide, quando existe. Devolve
+        # None enquanto a migração não rodou ou a pessoa não foi apontada para
+        # perfil nenhum — e aí vale o cargo, como antes.
+        acoes = (acoes_do_perfil_no_banco(s, session["erp_usuario_id"])
+                 if perfil else None)
     if not perfil:
         return None          # usuário sumiu do banco: a rota responde
     try:
@@ -460,7 +467,7 @@ def _guarda_permissao():
         logger.error("ERP/permissao: perfil desconhecido %r no usuário %s",
                      perfil, session.get("erp_usuario_id"))
         return jsonify({"ok": False, "erro": "Perfil de usuário inválido."}), 403
-    if not decidir(perfil_enum, acao, excecoes):
+    if not decidir(perfil_enum, acao, excecoes, acoes):
         logger.warning("ERP/permissao: %s negado ao usuário %s (%s) em %s",
                        acao, session.get("erp_usuario_id"), perfil, endpoint)
         return jsonify({"ok": False,
@@ -852,10 +859,11 @@ def _pode_agora(*acoes: str) -> dict[str, bool]:
         with get_session() as s:
             perfil = _perfil_bruto(s)
             excecoes = _excecoes_brutas(s, session["erp_usuario_id"]) if perfil else {}
+            do_perfil = acoes_do_perfil_no_banco(s, session["erp_usuario_id"])
         alvo = PerfilUsuario(perfil)
     except Exception:
         return {a: False for a in acoes}
-    return {a: decidir(alvo, a, excecoes) for a in acoes}
+    return {a: decidir(alvo, a, excecoes, do_perfil) for a in acoes}
 
 
 def _contexto_cadastros(sub: str) -> dict:
@@ -6691,6 +6699,36 @@ def api_saude():
         return jsonify({"ok": True, **saude.panorama(s, dias=dias)})
 
 
+def _perfis_cadastrados(s) -> list[dict]:
+    """Os perfis de acesso cadastrados, para a caixa de escolha do operador.
+
+    Devolve lista vazia — e não erro — enquanto a migração 065 não rodou: a
+    tela de operadores continua funcionando com o cargo antigo, que é o que
+    segura o sistema na janela entre publicar e apertar o botão.
+    """
+    try:
+        from app.apps.erp.core.auth import perfis as svc_perfis
+        return svc_perfis.listar(s)
+    except Exception:
+        logger.warning("ERP: perfis indisponíveis (migração 065 pendente?)")
+        return []
+
+
+def _aplicar_perfil_cadastrado(u, d: dict) -> None:
+    """Grava o perfil de acesso e a marca "enxerga todas as obras".
+
+    As duas coisas são diferentes de propósito, e foi o dono quem separou:
+    *"só que tem uma diferença do banco, porque tem a questão da obra"*. O
+    perfil diz O QUE a pessoa faz; as obras, ONDE. Duas pessoas do mesmo perfil
+    acompanham obras diferentes.
+    """
+    if "perfil_id" in d:
+        valor = d.get("perfil_id")
+        u.perfil_id = int(valor) if valor not in (None, "", 0, "0") else None
+    if "ve_todas_as_obras" in d:
+        u.ve_todas_as_obras = bool(d.get("ve_todas_as_obras"))
+
+
 @bp.route("/erp/api/usuarios", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao("gerir_usuarios")
@@ -6730,6 +6768,11 @@ def api_usuarios():
                             UsuarioCategoria.usuario_id == u.id)).all()],
                     "perfil": u.perfil.value,
                     "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
+                    # O perfil CADASTRADO (migração 065) e as obras da pessoa.
+                    # É aqui que o dono mexe agora — o cargo acima ficou de
+                    # herança e sai quando nada mais o ler.
+                    "perfil_id": getattr(u, "perfil_id", None),
+                    "ve_todas_as_obras": getattr(u, "ve_todas_as_obras", None),
                     "escopo_visao": escopo_visao(u).value,
                     # Teto de IA do mês desta pessoa e quanto dele já foi.
                     # Nulo = sem limite, e a tela escreve isso com todas as
@@ -6744,7 +6787,8 @@ def api_usuarios():
                     "obras_responsavel": responde_por.get(u.id, []),
                 } for u in usuarios], "perfis": [
                     {"chave": p.value, "rotulo": ROTULOS.get(p, p.value)}
-                    for p in PerfilUsuario]})
+                    for p in PerfilUsuario],
+                    "perfis_cadastrados": _perfis_cadastrados(s)})
 
             exigir(atual, "gerir_usuarios")
             d = request.get_json(silent=True) or {}
@@ -6757,6 +6801,7 @@ def api_usuarios():
             u.cpf = cpf or None
             u.telefone = somente_digitos(d.get("telefone") or "") or None
             u.observacoes = (d.get("observacoes") or "").strip() or None
+            _aplicar_perfil_cadastrado(u, d)
             # Escopo ausente ou desconhecido cai no mais restritivo.
             try:
                 u.escopo_visao = EscopoVisao(d.get("escopo_visao"))
@@ -6843,6 +6888,7 @@ def api_editar_usuario(usuario_id: int):
                     except _IE:
                         return jsonify({"ok": False,
                                         "erro": f"Valor inválido em {campo}."}), 400
+            _aplicar_perfil_cadastrado(u, d)
             if "obras" in d:
                 # Um caminho só, compartilhado com a tela da OBRA. Antes daqui
                 # esta rota apagava todos os vínculos e recriava — o que
@@ -6874,11 +6920,16 @@ def api_editar_usuario(usuario_id: int):
 @login_obrigatorio
 @permissao(GET="gerir_usuarios", POST="gerir_usuarios")
 def api_permissoes_do_usuario(usuario_id: int):
-    """As marcações de permissão de UMA pessoa, sobre o que o cargo já dá.
+    """As marcações de permissão de UMA pessoa, sobre o que o PERFIL dela já dá.
 
-    GET devolve, para cada ação: o que o cargo dá, o que está marcado à mão e o
-    resultado. POST grava as marcações — só as que diferem do cargo viram linha,
-    para o cadastro não guardar repetição do que o cargo já responde.
+    GET devolve, para cada ação: o que a base dá, o que está marcado à mão e o
+    resultado. POST grava as marcações — só as que diferem da base viram linha,
+    para o cadastro não guardar repetição do que a base já responde.
+
+    ⚠️ A BASE é o perfil cadastrado (migração 065) quando a pessoa tem um, e o
+    cargo antigo quando não tem. Comparar com o cargo depois que o perfil
+    passou a mandar criaria exceção onde não há diferença nenhuma — e, pior,
+    salvar a tela tiraria em silêncio uma ação que o perfil concede.
     """
     from sqlalchemy import select
     from app.apps.erp.core.auth.permissoes import exigir
@@ -6897,22 +6948,28 @@ def api_permissoes_do_usuario(usuario_id: int):
                     UsuarioPermissao.usuario_id == usuario_id)).all()
                 if r.usuario_id == usuario_id}
 
+            base = acoes_do_perfil_no_banco(s, usuario_id)
+
+            def _da_base(acao: str) -> bool:
+                return acao in base if base is not None else u.perfil in PERMISSOES[acao]
+
             if request.method == "GET":
                 acoes = []
                 for acao in sorted(PERMISSOES):
-                    do_cargo = u.perfil in PERMISSOES[acao]
+                    do_cargo = _da_base(acao)
                     marcada = marcadas.get(acao)
                     acoes.append({
                         "acao": acao,
                         "rotulo": ACAO_ROTULOS.get(acao, acao),
                         "do_cargo": do_cargo,
                         "marcada": marcada,
-                        "efetiva": decidir(u.perfil, acao, marcadas),
+                        "efetiva": decidir(u.perfil, acao, marcadas, base),
                         "travada": u.perfil is PerfilUsuario.ADMIN and acao in PROTEGIDAS_DO_ADMIN,
                     })
                 return jsonify({"ok": True, "usuario": {"id": u.id, "nome": u.nome,
                                                         "perfil": u.perfil.value,
-                                                        "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value)},
+                                                        "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
+                                                        "tem_perfil_cadastrado": base is not None},
                                 "acoes": acoes})
 
             pedido = (request.get_json(silent=True) or {}).get("permissoes") or {}
@@ -6930,8 +6987,8 @@ def api_permissoes_do_usuario(usuario_id: int):
             gravadas = {}
             for acao, valor in pedido.items():
                 quer = bool(valor)
-                if quer == (u.perfil in PERMISSOES[acao]):
-                    continue          # igual ao cargo: não vira exceção
+                if quer == _da_base(acao):
+                    continue          # igual à base: não vira exceção
                 s.add(UsuarioPermissao(usuario_id=usuario_id, acao=acao,
                                        concedida=quer, definida_por=atual.id))
                 gravadas[acao] = quer
@@ -6948,6 +7005,77 @@ def api_permissoes_do_usuario(usuario_id: int):
         raise
     except Exception as e:
         logger.exception("ERP: falha ao ajustar permissões do operador")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/perfis", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="gerir_usuarios", POST="gerir_usuarios")
+def api_perfis():
+    """O CADASTRO de perfis de acesso (migração 065).
+
+    GET devolve os perfis e o catálogo de seções — as telas do sistema
+    agrupadas por área, com o que "só olhar" e "olhar e mexer" liberam em cada
+    uma. POST cria um perfil novo, que nasce sem abrir porta nenhuma.
+    """
+    from app.apps.erp.core.auth import perfis as svc_perfis
+    from app.apps.erp.core.auth import secoes as cat
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({
+                    "ok": True,
+                    "perfis": svc_perfis.listar(
+                        s, incluir_arquivados=request.args.get("todos") == "1"),
+                    "catalogo": cat.para_a_tela(),
+                    "niveis": [{"chave": n, "rotulo": cat.NIVEL_ROTULOS[n]}
+                               for n in cat.NIVEIS],
+                })
+            d = request.get_json(silent=True) or {}
+            perfil = svc_perfis.criar(s, d, atual)
+            s.commit()
+            logger.info("ERP: perfil %s criado por %s", perfil["nome"], atual.id)
+        return jsonify({"ok": True, "perfil": perfil})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha no cadastro de perfis")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/perfis/<int:perfil_id>", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="gerir_usuarios", POST="gerir_usuarios")
+def api_perfil(perfil_id: int):
+    """Um perfil: ler, editar as seções, ou arquivar (`{"arquivar": true}`)."""
+    from app.apps.erp.core.auth import perfis as svc_perfis
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, "perfil": svc_perfis.obter(s, perfil_id),
+                                "acoes": sorted(svc_perfis.acoes_do_perfil(s, perfil_id))})
+            d = request.get_json(silent=True) or {}
+            if d.get("arquivar"):
+                perfil = svc_perfis.arquivar(s, perfil_id, atual)
+            else:
+                perfil = svc_perfis.editar(s, perfil_id, d, atual)
+            s.commit()
+            logger.info("ERP: perfil %s alterado por %s", perfil_id, atual.id)
+        return jsonify({"ok": True, "perfil": perfil})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao editar perfil")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 

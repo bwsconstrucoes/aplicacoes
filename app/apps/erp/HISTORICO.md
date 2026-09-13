@@ -21,7 +21,16 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### TRAZ AS MIGRAÇÕES 061 A 064 — o botão tem de ser apertado junto com a publicação
+### TRAZ AS MIGRAÇÕES 061 A 065 — o botão tem de ser apertado junto com a publicação
+
+A **065** é a maior delas: o **perfil de acesso vira cadastro**. Cria as
+tabelas `perfis` e `perfil_secoes`, acrescenta duas colunas em `usuarios`
+(o perfil apontado e a marca "enxerga todas as obras") e deixa **onze perfis
+prontos**, um por cargo de hoje, com exatamente as mesmas permissões — ninguém
+ganha nem perde acesso no dia da virada, e há teste com banco de verdade
+cobrando isso ação por ação. ⚠️ **São colunas novas em `usuarios`**: entre
+publicar e apertar o botão, a tela de operadores falha. Apertar no mesmo
+momento fecha o buraco.
 
 A **064** acrescenta o limite de IA ao cadastro do operador e já deixa todo
 mundo com US$ 5,00. ⚠️ **É coluna nova em `usuarios`** — a armadilha conhecida
@@ -102,6 +111,104 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
   algum mês antigo, é quase certo que seja isto: dois pagamentos iguais no
   mesmo dia viraram um. Reimportar o OFX daquele período resolve, porque a
   linha que falta passa a ter identidade própria.
+
+---
+
+**Estado em 13/09/2026 (vigésima primeira entrega):** **o perfil de acesso
+virou CADASTRO.** **TRAZ A MIGRAÇÃO 065.**
+
+### O que o dono pediu, e a reclamação junto
+
+*"Essa discussão sobre o que se pode visualizar, ela já foi discutida
+repetidamente (…) o operador, mais, ele não vai ter acesso a nada. Aí eu vou
+agregando ao cadastro dele possibilidades: somente leitura de alguma área,
+leitura e edição das áreas. Isso pra uma obra, pra várias obras, pra todas as
+obras. (…) Por exemplo, o Banco Bradesco: a gente tanto cadastra o usuário
+como cadastra perfil de uso. E dentro daquele perfil, eu incluo pessoas. (…)
+Só que tem uma diferença do Bradesco, porque tem a questão da obra, né? Quais
+obras a pessoa tem acesso? Então, não era pra gente estar discutindo tanto
+isso repetidamente."*
+
+Ele estava certo, e a causa da repetição era estrutural: **quem podia o quê
+estava colado ao NOME DO CARGO, escrito em código**. Toda vez que ele dizia
+"fulano tem de ver só a obra dele", a resposta era mexer no código e discutir
+cargo por cargo. Por isso a mudança não foi mais um remendo — foi trocar o
+modelo.
+
+### Como ficou
+
+- **Perfil é cadastro**, em Configurações › **Perfis de acesso**. Para cada
+  uma das 23 seções do sistema, o perfil escolhe **Não acessa**, **Só olhar**
+  ou **Olhar e mexer**. Perfil novo nasce sem abrir nada.
+- **As obras são do OPERADOR**, não do perfil — a diferença que ele apontou.
+  No cadastro da pessoa: *todas as obras da empresa* ou *só as marcadas*.
+  Duas pessoas do mesmo perfil alcançam obras diferentes.
+- **O cargo antigo continua na tabela e no modelo**, e decide para quem ainda
+  não tem perfil apontado. Ele sai numa migração futura, quando nada mais o
+  ler. Tirá-lo agora derrubaria o ERP na janela entre publicar e apertar o
+  botão — a armadilha conhecida desta casa.
+- As **marcações por pessoa** (migração 032) continuam valendo POR CIMA do
+  perfil: é o "fulano autoriza enquanto o diretor está de férias".
+
+### A guarda não foi reescrita, e isso é escolha
+
+As ações (`lancar`, `pagar`, `ver_arquivo`…) e a guarda de cada rota ficaram
+exatamente como estavam. O que mudou é de ONDE sai o conjunto de ações de uma
+pessoa: antes de uma tabela em código indexada pelo cargo, agora das seções do
+perfil dela. Reescrever a guarda seria trocar a peça mais perigosa do sistema
+com toda a suíte apoiada nela. Assim, se a camada nova tiver defeito, ela
+concede **de menos** (padrão NADA), nunca de mais.
+
+### O erro que a conferência pegou — e que teria ido para produção
+
+A primeira versão da migração tinha as seções de cada perfil **escritas à
+mão**. A conferência contra a tabela antiga, ação por ação, mostrou que ela
+teria:
+
+- dado **aprovação de pagamento ao supervisor de obras**, que hoje só
+  confirma (as duas coisas estavam na mesma seção — agora são duas);
+- dado **configuração do sistema e cadastro de operadores ao diretor
+  financeiro**, que hoje não tem;
+- **tirado** a agenda de obrigações de quase todo mundo, e as notas emitidas
+  do financeiro.
+
+O bloco do `.sql` passou a ser **gerado a partir da própria tabela de cargos**,
+e há teste com banco de verdade (`tests/test_perfis_cadastro_banco.py`)
+cobrando, para os 11 cargos e todas as ações, que o perfil pronto responda
+exatamente o mesmo que o cargo respondia. **Nenhum acesso muda no dia da
+virada.**
+
+### Duas armadilhas que apareceram no caminho
+
+1. **`ve_todas_as_obras` como NOT NULL quebrou o cadastro de operador novo.**
+   O ORM manda a coluna no INSERT mesmo sem valor, e batia na restrição. A
+   coluna passou a aceitar nulo — nulo quer dizer "ninguém disse", e aí vale o
+   cargo —, e a migração escreve a decisão de todo mundo, sem deixar nulo
+   nenhum. Só o teste com banco de verdade pega isso.
+2. **Uma seção do catálogo não concedia ação nenhuma** ("Painel de obras"):
+   apareceria na tela como se desse acesso, e não daria. Foi retirada — o
+   painel de obras hoje abre para quem entra no ERP, e o que ele edita está
+   sob "Configurações".
+
+### Conferência
+
+- Suíte completa sem banco: passa.
+- Testes com banco de verdade: os de escopo tiveram a especificação ajustada
+  ao modelo novo (o alcance agora vem do cadastro, não do cargo) e passam.
+- `tests/test_perfis_cadastro_banco.py`: 15 casos novos, inclusive os três que
+  provam que o cadastro **fecha** o que o cargo abria.
+
+### O que fica pendente do lado do dono
+
+1. **Apertar "Aplicar atualizações do banco" no mesmo momento da publicação.**
+   A 065 cria tabela e duas colunas em `usuarios`.
+2. **Decidir quando apertar o cinto das obras.** Hoje a migração mantém todo
+   mundo como está. A conta que ele pediu em 12/09 — *"com exceção dos perfis
+   de diretoria e financeiro, o natural é visualizar somente as obras
+   associadas"* — já está no cadastro de cada pessoa, mas **quem não tiver
+   obra marcada deixa de ver lançamento nenhum**. O caminho seguro é: marcar
+   as obras de cada operador em Configurações › Operadores e só depois
+   desmarcar "todas as obras" de quem não deve ter.
 
 ---
 

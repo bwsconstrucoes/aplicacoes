@@ -741,6 +741,28 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-13 — O PERFIL DE ACESSO VIROU CADASTRO (migração 065).** Pedido do
+  dono, no modelo do banco dele: *"eu cadastro usuários e cadastro perfil. O
+  perfil eu digo: esse perfil tem acesso a isso, aquilo e aquilo outro. E o
+  usuário está dentro daquele perfil (…) só que tem uma diferença do Bradesco,
+  porque tem a questão da obra"*. Ele veio com uma reclamação junto — *"não era
+  pra gente estar discutindo tanto isso repetidamente"* —, e a reclamação era
+  procedente: quem podia o quê estava colado ao NOME DO CARGO, em código, e
+  qualquer ajuste exigia programador.
+  **Como ficou:** perfil é cadastro, com um nível por seção (**NADA / LER /
+  EDITAR**) nas 23 seções do sistema, em `core/auth/secoes.py`; as **obras
+  continuam sendo do operador**, não do perfil, porque duas pessoas do mesmo
+  perfil acompanham obras diferentes. **A guarda de rota NÃO foi reescrita** —
+  as ações e o `@permissao` de cada rota são os mesmos; só mudou de onde sai o
+  conjunto de ações de uma pessoa. Se a camada nova falhar, ela concede de
+  MENOS, nunca de mais.
+  **O cargo (`usuarios.perfil`) continua existindo** e decide para quem ainda
+  não tem perfil apontado; sai numa migração futura. **Regra que fica: o
+  arquivo `.sql` que semeia os perfis é GERADO a partir da tabela de cargos, e
+  há teste com banco real cobrando que cada perfil pronto responda igual ao
+  cargo, ação por ação** — a versão escrita à mão dava aprovação de pagamento a
+  quem só confirma, e foi essa conferência que pegou.
+
 - **2026-09-12 — Só diretoria, financeiro e ADMIN enxergam a base inteira.**
   Palavras do dono: *"com exceção dos perfis de diretoria e financeiro, o
   natural é visualizar somente as obras associadas no cadastro do operador"*.

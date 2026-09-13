@@ -280,7 +280,10 @@ def pode_com_banco(s: Session, usuario: Usuario, acao: str) -> bool:
     excecoes = excecoes_do_usuario(usuario)
     if not excecoes:
         excecoes = _excecoes_no_banco(s, usuario.id)
-    return decidir(usuario.perfil, acao, excecoes)
+    acoes = getattr(usuario, "acoes_do_perfil", None)
+    if acoes is None:
+        acoes = acoes_do_perfil_no_banco(s, usuario.id)
+    return decidir(usuario.perfil, acao, excecoes, acoes)
 
 
 def _excecoes_no_banco(s: Session, usuario_id: int) -> dict[str, bool]:
@@ -301,34 +304,77 @@ def _excecoes_no_banco(s: Session, usuario_id: int) -> dict[str, bool]:
     return {acao: bool(concedida) for acao, concedida in linhas}
 
 
-def pode(usuario: Usuario, acao: str) -> bool:
-    """Pode esta ação? O cargo decide; a marcação no cadastro corrige.
+def acoes_do_perfil_no_banco(s: Session, usuario_id: int) -> Optional[set[str]]:
+    """As ações que o PERFIL CADASTRADO desta pessoa concede (migração 065).
 
-    Ordem: o cargo dá a base, a exceção da pessoa vence, e o ADMIN não pode ser
-    trancado para fora das telas que consertam o sistema.
+    Devolve `None` quando não há o que ler — a tabela ainda não existe, ou a
+    pessoa não foi apontada para perfil nenhum. `None` quer dizer "não sei", e
+    aí vale a tabela em código, que é o comportamento de antes. Isso é o que
+    mantém o ERP de pé na janela entre a publicação e o aperto do botão que
+    aplica a migração — a armadilha conhecida deste repositório.
+
+    Note a diferença entre `None` e conjunto VAZIO: vazio quer dizer "perfil
+    cadastrado que não concede nada", e aí a pessoa não entra em lugar nenhum.
+    É o padrão NADA, e ele tem de ser respeitado.
+    """
+    from sqlalchemy import text as _text
+
+    try:
+        linhas = s.execute(_text(
+            "SELECT ps.secao, ps.nivel "
+            "  FROM usuarios u "
+            "  JOIN perfis p ON p.id = u.perfil_id AND p.ativo "
+            "  LEFT JOIN perfil_secoes ps ON ps.perfil_id = p.id "
+            " WHERE u.id = :i"), {"i": usuario_id}).all()
+    except Exception:
+        return None          # migração 065 ainda não aplicada
+    if not linhas:
+        return None          # sem perfil cadastrado: vale o cargo antigo
+    try:
+        marcacoes = {linha[0]: linha[1] for linha in linhas if linha[0]}
+    except (TypeError, IndexError, ValueError):
+        # Resposta com formato inesperado (a sessão dublada dos testes é um
+        # caso). "Não sei" é a resposta honesta, e ela cai no cargo antigo.
+        return None
+    from app.apps.erp.core.auth import secoes as cat
+    return cat.acoes_do_perfil(marcacoes)
+
+
+def pode(usuario: Usuario, acao: str) -> bool:
+    """Pode esta ação? O PERFIL decide; a marcação no cadastro corrige.
+
+    Ordem: o perfil dá a base, a exceção da pessoa vence, e o ADMIN não pode
+    ser trancado para fora das telas que consertam o sistema.
     """
     if usuario is None:
         return False
     excecoes = excecoes_do_usuario(usuario)
-    return decidir(usuario.perfil, acao, excecoes)
+    return decidir(usuario.perfil, acao, excecoes,
+                   getattr(usuario, "acoes_do_perfil", None))
 
 
-def decidir(perfil: PerfilUsuario, acao: str, excecoes: dict[str, bool]) -> bool:
+def decidir(perfil: PerfilUsuario, acao: str, excecoes: dict[str, bool],
+            acoes_do_perfil: Optional[set[str]] = None) -> bool:
     """A mesma decisão de `pode`, a partir de valores soltos.
 
     Existe porque a guarda que roda antes de toda rota lê perfil e exceções por
     SQL direto, sem carregar o objeto Usuario — ver a explicação em
     `routes._guarda_permissao`. Regra num lugar só: se mudar aqui, muda nos dois.
+
+    `acoes_do_perfil` é o conjunto vindo do PERFIL CADASTRADO (migração 065).
+    Quando é `None`, vale a tabela em código — o comportamento de antes, e o
+    que segura o sistema enquanto a migração não roda.
     """
     excecoes = excecoes or {}
-    base = perfil in PERMISSOES.get(acao, set())
+    base = (acao in acoes_do_perfil if acoes_do_perfil is not None
+            else perfil in PERMISSOES.get(acao, set()))
     marcada = excecoes.get(acao)
     efetiva = base if marcada is None else bool(marcada)
     if not efetiva and acao in ACOES_IMPLICADAS and marcada is not True:
         # Desmarcar explicitamente continua valendo (marcada is False fecha),
         # mas quem NÃO tem marcação nenhuma ganha pela ação que já possui.
         if marcada is None:
-            efetiva = any(decidir(perfil, outra, excecoes)
+            efetiva = any(decidir(perfil, outra, excecoes, acoes_do_perfil)
                           for outra in ACOES_IMPLICADAS[acao])
     if not efetiva and perfil is P.ADMIN and acao in PROTEGIDAS_DO_ADMIN:
         return True
@@ -417,16 +463,45 @@ PRESOS_A_OBRA = (P.SUPERVISOR_OBRA, P.PARCEIRO, P.GESTOR_OBRA, P.APROVADOR,
 
 
 def _ve_por_obra(usuario: Usuario) -> bool:
-    """Esta pessoa enxerga por OBRA (e não apenas o que ela mesma lançou)?"""
+    """Esta pessoa enxerga por OBRA (e não apenas o que ela mesma lançou)?
+
+    Desde a migração 065 quem responde é o CADASTRO dela, não o cargo: o campo
+    "o que esta pessoa enxerga" passou a valer para todo mundo que não enxerga
+    todas as obras. Antes, cinco cargos enxergavam por obra por estarem numa
+    lista em código, e o campo do cadastro deles nem era lido — a migração
+    marca esses cinco como "tudo das obras designadas" para que ninguém perca
+    alcance no dia da virada.
+
+    Enquanto a migração não roda, a coluna não existe e vale a lista antiga.
+    """
+    if getattr(usuario, "ve_todas_as_obras", None) is not None:
+        return escopo_visao(usuario) is EscopoVisao.OBRAS_DESIGNADAS
     if usuario.perfil in PRESOS_A_OBRA:
         return True
     return (usuario.perfil in ESCOPO_CONFIGURAVEL
             and escopo_visao(usuario) is EscopoVisao.OBRAS_DESIGNADAS)
 
 
+def ve_todas_as_obras(usuario: Usuario) -> bool:
+    """Esta pessoa enxerga TODAS as obras?
+
+    A resposta passou a morar no CADASTRO DELA em 13/09/2026 (migração 065),
+    por decisão do dono. Antes dependia do cargo, numa lista em código — e era
+    a causa de a mesma discussão voltar toda semana: para mudar quem enxerga o
+    quê era preciso mexer no código.
+
+    Enquanto a migração não roda, a coluna não existe e vale o cargo, como
+    antes: é o que segura o ERP na janela entre publicar e apertar o botão.
+    """
+    marcado = getattr(usuario, "ve_todas_as_obras", None)
+    if marcado is not None:
+        return bool(marcado)
+    return usuario.perfil in VE_TUDO
+
+
 def obras_do_usuario(s: Session, usuario: Usuario) -> Optional[list[int]]:
     """IDs das obras que o usuário enxerga. None = todas."""
-    if usuario.perfil in VE_TUDO:
+    if ve_todas_as_obras(usuario):
         return None
     if _ve_por_obra(usuario):
         return _obras_designadas(s, usuario)
@@ -449,7 +524,7 @@ def obras_de_registro_sem_autor(s: Session, usuario: Usuario) -> Optional[list[i
 
     Devolve None só para quem enxerga tudo.
     """
-    if usuario.perfil in VE_TUDO:
+    if ve_todas_as_obras(usuario):
         return None
     return _obras_designadas(s, usuario)
 
@@ -506,7 +581,7 @@ def condicao_escopo_sql(s: Session, usuario: Usuario,
 
     `t` é o apelido da tabela de títulos na consulta que vai receber o pedaço.
     """
-    if usuario.perfil in VE_TUDO:
+    if ve_todas_as_obras(usuario):
         return "TRUE", {}
 
     if usuario.perfil == P.DEPARTAMENTO_PESSOAL:
@@ -534,7 +609,7 @@ def aplicar_escopo(stmt: Select, s: Session, usuario: Usuario) -> Select:
     Um só caminho para listagem e detalhe: `pode_ver_titulo` passa por aqui,
     então mudar a regra muda os dois de uma vez.
     """
-    if usuario.perfil in VE_TUDO:
+    if ve_todas_as_obras(usuario):
         return stmt
     if usuario.perfil == P.DEPARTAMENTO_PESSOAL:
         return _escopo_do_pessoal(stmt)
@@ -741,7 +816,7 @@ def exigir_tarefa_no_escopo(s: Session, usuario: Usuario, tarefa_id: int):
     t = s.get(Tarefa, tarefa_id)
     if t is None:
         raise ErroNaoEncontrado("Trabalho não encontrado.")
-    if usuario.perfil in VE_TUDO or t.usuario_id == usuario.id:
+    if ve_todas_as_obras(usuario) or t.usuario_id == usuario.id:
         return t
     raise ErroNaoEncontrado("Trabalho não encontrado.")
 
@@ -755,8 +830,15 @@ def contexto_permissoes(s: Session, usuario: Usuario) -> dict[str, Any]:
         "pode": {acao: pode(usuario, acao) for acao in PERMISSOES},
         "excecoes": dict(excecoes_do_usuario(usuario)),
         "escopo_obras": obras,
+        # ⚠️ `obras is None` quer dizer DUAS coisas — "enxerga todas" e "não
+        # filtra por obra, filtra por autoria" —, e a frase antiga desempatava
+        # pelo cargo. Com o alcance vindo do cadastro isso passou a mentir:
+        # quem só vê os próprios lançamentos lia "todas as obras". Agora quem
+        # desempata são as mesmas funções que o SQL usa.
         "escopo_descricao": (
-            "todas as obras" if obras is None and usuario.perfil != P.ADMINISTRATIVO_OBRA
+            "todas as obras" if ve_todas_as_obras(usuario)
             else f"{len(obras)} obra(s) designada(s)" if obras
+            else "nenhuma obra marcada — peça para marcarem as suas"
+            if _ve_por_obra(usuario)
             else "apenas os lançamentos que você fez"),
     }

@@ -70,10 +70,20 @@ class Cenario:
         return {self.titulos[n].id for n in nomes}
 
 
-def _usuario(s, chave, perfil, *, escopo=None, obras=()):
+def _usuario(s, chave, perfil, *, escopo=None, obras=(), todas=False):
+    """Cria o operador COMO O CADASTRO passou a descrevê-lo (migração 065).
+
+    Duas perguntas, dois campos: `todas` diz se ele enxerga todas as obras da
+    empresa; `escopo` diz, para quem não enxerga todas, se ele alcança tudo
+    das obras marcadas ou só o que ele mesmo lançou. Quem tem obra marcada e
+    não disse nada alcança as obras — dizer o contrário seria marcar obra para
+    alguém e ele continuar sem ver nada.
+    """
+    if escopo is None:
+        escopo = EscopoVisao.OBRAS_DESIGNADAS if obras else EscopoVisao.PROPRIOS
     u = Usuario(nome=f"Teste {chave}", email=f"{chave}@teste.bws.local",
-                senha_hash=SENHA, perfil=perfil,
-                escopo_visao=escopo or EscopoVisao.PROPRIOS)
+                senha_hash=SENHA, perfil=perfil, ve_todas_as_obras=todas,
+                escopo_visao=escopo)
     s.add(u)
     s.flush()
     for o in obras:
@@ -113,14 +123,15 @@ def cenario(sessao_real) -> Cenario:
 
     c = Cenario(obra_a=a, obra_b=b)
     u = c.usuarios
-    u["admin"] = _usuario(s, "admin", P.ADMIN)
+    u["admin"] = _usuario(s, "admin", P.ADMIN, todas=True)
     # O gestor passou a ser preso às obras designadas em 12/09/2026, por
     # decisão do dono: *"com exceção dos perfis de diretoria e financeiro, o
     # natural é visualizar somente as obras associadas no cadastro do
     # operador"*. Por isso ele agora tem obra marcada — e há um segundo,
     # SEM obra nenhuma, para a consequência ficar visível.
     u["gestor"] = _usuario(s, "gestor", P.GESTOR_OBRA, obras=[a])
-    u["gestor_sem_obra"] = _usuario(s, "gestor-sem-obra", P.GESTOR_OBRA)
+    u["gestor_sem_obra"] = _usuario(s, "gestor-sem-obra", P.GESTOR_OBRA,
+                                    escopo=EscopoVisao.OBRAS_DESIGNADAS)
     u["aprovador"] = _usuario(s, "aprovador", P.APROVADOR, obras=[b])
     u["consulta"] = _usuario(s, "consulta", P.CONSULTA, obras=[a])
     u["supervisor"] = _usuario(s, "supervisor", P.SUPERVISOR_OBRA, obras=[a])

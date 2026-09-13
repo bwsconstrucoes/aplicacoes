@@ -103,6 +103,53 @@ def pg_enum(py_enum: type[enum.Enum], nome: str) -> Enum:
 
 
 # ---------------------------------------------------------------------------
+class Perfil(Base):
+    """O perfil de acesso, como CADASTRO (migração 065).
+
+    Pedido do dono em 13/09/2026, no modelo do banco dele: *"eu cadastro
+    usuários e cadastro perfil. O perfil eu digo: esse perfil tem acesso a
+    isso, aquilo e aquilo outro. E o usuário está dentro daquele perfil"*.
+
+    O que o perfil NÃO diz é em quais OBRAS — isso é do cadastro da pessoa,
+    porque duas pessoas do mesmo perfil acompanham obras diferentes. Foi a
+    diferença que ele apontou para o banco: *"só que tem uma diferença, porque
+    tem a questão da obra"*.
+    """
+    __tablename__ = "perfis"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
+    # Perfil de sistema é o que nasceu da migração, espelhando um cargo antigo.
+    # Pode ser EDITADO à vontade; o que não pode é ser apagado, porque há
+    # operador apontando para ele.
+    de_sistema: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    criado_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+
+    secoes: Mapped[list["PerfilSecao"]] = relationship(
+        back_populates="perfil", cascade="all, delete-orphan")
+
+
+class PerfilSecao(Base):
+    """O nível de uma seção dentro do perfil: LER ou EDITAR.
+
+    O que NÃO está aqui é NADA — o padrão, e a razão de um perfil recém-criado
+    não abrir porta nenhuma. Ver o catálogo em `core/auth/secoes.py`.
+    """
+    __tablename__ = "perfil_secoes"
+
+    perfil_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("perfis.id", ondelete="CASCADE"), primary_key=True)
+    secao: Mapped[str] = mapped_column(Text, primary_key=True)
+    nivel: Mapped[str] = mapped_column(Text, nullable=False)
+
+    perfil: Mapped[Perfil] = relationship(back_populates="secoes")
+
+
 class Usuario(Base):
     __tablename__ = "usuarios"
 
@@ -133,6 +180,19 @@ class Usuario(Base):
     # todas as letras. O `DEFAULT 5.00` continua no banco, para linha criada
     # fora do sistema, mas o ERP não depende dele.
     teto_ia_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
+
+    # O PERFIL COMO CADASTRO (migração 065). O cargo (`perfil`) continua na
+    # tabela e no modelo de propósito: a guarda de permissão roda antes de toda
+    # rota e o código sobe ao Render antes de o botão da migração ser apertado
+    # — sem o cargo, a janela entre uma coisa e outra derrubaria o ERP.
+    perfil_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("perfis.id"))
+    # ⚠️ SEM default nenhum, nem no Python nem no banco, e de propósito: NULO
+    # aqui quer dizer "ninguém disse", e aí vale o cargo antigo — o mesmo
+    # princípio do perfil. Um default FALSE faria o cadastro que ninguém
+    # tocou virar "não enxerga nada" em silêncio, e a migração 065 escreve a
+    # decisão de todo mundo justamente para que ninguém fique no escuro.
+    ve_todas_as_obras: Mapped[Optional[bool]] = mapped_column(Boolean)
     # fundo fixo: alçada de quem gasta, não do sistema
     ff_teto_item: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     ff_teto_prestacao: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))

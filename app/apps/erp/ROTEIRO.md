@@ -498,6 +498,29 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       no caso das notas está escrito que é de propósito. Recortar por obra é
       decisão de negócio, não correção.
 
+- [x] **O PERFIL DE ACESSO VIRA CADASTRO — seções, níveis e obras por pessoa** —
+      FEITO em 13/09/2026. **TRAZ A MIGRAÇÃO 065** (duas tabelas novas e duas
+      colunas em `usuarios`; apertar o botão no mesmo momento da publicação).
+      Pedido do dono, no modelo do banco dele: cadastra-se o **perfil**, diz-se
+      o que ele abre em cada tela (**não acessa / só olhar / olhar e mexer**) e
+      a pessoa entra dentro do perfil — *"só que tem uma diferença, porque tem
+      a questão da obra"*: **as obras são do cadastro da pessoa**, não do
+      perfil.
+      1. Nova aba **Configurações › Perfis de acesso**: criar, editar e
+         arquivar perfil; 23 seções agrupadas por área, com a explicação do que
+         cada nível libera. Perfil novo **não abre nada**.
+      2. No cadastro do operador: o **perfil de acesso** e a marca **"todas as
+         obras da empresa"** ou **"só as marcadas"**. O cargo antigo fica como
+         herança, e decide só para quem ainda não tem perfil.
+      3. **Onze perfis prontos**, um por cargo de hoje, com exatamente as
+         mesmas permissões. O bloco do `.sql` é **gerado** a partir da tabela
+         de cargos, e a suíte com banco de verdade cobra a equivalência ação
+         por ação — a versão escrita à mão dava aprovação de pagamento a quem
+         hoje só confirma.
+      **Falta do lado do dono:** marcar as obras de cada operador antes de
+      desmarcar "todas as obras" de alguém — quem ficar sem obra marcada deixa
+      de ver lançamento nenhum.
+
 - [x] **O RECORTE POR OBRA VIRA O PADRÃO DO ERP, E NASCE O PERFIL PARCEIRO** —
       FEITO em 12/09/2026. **TRAZ A MIGRAÇÃO 063** (só acrescenta o cargo à
       lista; não mexe em dado e não pode falhar).

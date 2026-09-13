@@ -614,6 +614,43 @@ O que ainda **nao** responde:
 - FALTA **"Quanto esta vencido ha mais de 60 dias?"** — o fluxo mostra o
   vencido num total so, sem faixas.
 
+## 3j. Perfil de acesso virou cadastro — e o que dá para perguntar sobre ele
+
+Em 13/09/2026 o **perfil deixou de ser um nome de cargo escrito em código** e
+virou **cadastro**, do jeito que o dono descreveu: cria-se o perfil, diz-se o
+que ele abre em cada tela (**não acessa / só olhar / olhar e mexer**), e a
+pessoa entra dentro do perfil. As **obras continuam sendo do cadastro da
+pessoa**, e não do perfil — foi a diferença que ele mesmo apontou.
+
+Perguntas que passam a funcionar:
+
+- OK **Quem está no perfil X?**
+- OK **O que este perfil abre, tela por tela?**
+- OK **Quantas pessoas ficariam sem acesso se eu arquivar este perfil?** — o
+  sistema recusa arquivar com gente dentro e diz quantas são.
+- OK **Quem enxerga TODAS as obras da empresa?** — é uma marca no cadastro de
+  cada pessoa, não mais uma lista em código.
+- OK **Quem está sem obra nenhuma marcada?** — essa pessoa não enxerga nada,
+  e quase sempre é cadastro pela metade.
+- OK **Fulano pode pagar? E por quê — veio do perfil ou foi marcado nele?**
+  ⚠️ **Depende de quem pergunta**: só quem cadastra operador alcança isso.
+
+⚠️ **Palavra ambígua que entrou junto: "acesso".** Ela quer dizer duas coisas
+diferentes, e a resposta muda conforme a que se pediu:
+
+- **o que a pessoa FAZ** — vem do perfil (lançar, pagar, aprovar…);
+- **ONDE ela faz** — vem das obras marcadas no cadastro dela.
+
+Alguém pode ter o perfil mais completo da empresa e não enxergar lançamento
+nenhum, por não ter obra marcada. Não é defeito: é o padrão NEGAR.
+
+O que ainda **não** responde:
+
+- FALTA **"O que mudou no acesso de fulano no último mês?"** — cada mudança
+  fica registrada, mas não há pergunta pronta que leia esse histórico.
+- FALTA **"Este perfil está sobrando?"** — ninguém mede quais seções de um
+  perfil nunca foram usadas por quem está nele.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,
