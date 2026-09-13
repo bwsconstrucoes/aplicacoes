@@ -83,37 +83,52 @@
   </div>
 
   {# ---------------------------------------------------------------------
-     O FILTRO PRINCIPAL — o estado do trabalho fiscal.
+     O RECORTE PRINCIPAL — EM GRUPOS, E O TÍTULO DO GRUPO É O NOME DO DADO.
 
-     Aberto sempre, e primeiro na barra, porque é a pergunta desta tela.
-     Os recortes somam: marcar "Sem documentação" e "Com anexo" pede as duas
-     coisas ao mesmo tempo — que é, por sinal, a fila mais útil que existe
-     aqui (o que dá para resolver lendo o anexo).
+     Refeito em 13/09/2026 depois de ele usar: *"a nomenclatura dos filtros tá
+     estranha, a compreensão tá ruim, muito ruim mesmo. Eu não consigo filtrar
+     como eu faria numa planilha facilmente. Não dá nem pra entender o que
+     estamos filtrando, quais dados."*
+
+     Ele está certo, e o erro era de NOME, não de função: os recortes estavam
+     numa lista corrida, sem dizer de que coluna cada um fala. Numa planilha
+     ele filtra clicando no cabeçalho — sabe exatamente o que está recortando.
+     Agora o título do grupo é o nome do dado, e cada opção traz a explicação
+     embaixo.
   --------------------------------------------------------------------- #}
-  <div class="filtro aberto filtro-trabalho">
-    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
-      <span>O que fazer</span>
-      {% if filtros.fiscais %}
-        <span class="filtro-badge">{{ filtros.fiscais|length }}</span>
-      {% endif %}
-      <span class="seta">▾</span>
-    </div>
-    <div class="filtro-cont">
-      <div class="filtro-opcoes">
-        {% for chave, rotulo in rotulos_fiscais %}
-          <label class="opcao">
-            <input type="checkbox" name="fiscais" value="{{ chave }}"
-                   {% if chave in filtros.fiscais %}checked{% endif %}>
-            <span class="rotulo">{{ rotulo }}</span>
-          </label>
-        {% endfor %}
+  {% for titulo, opcoes_do_grupo in grupos_de_recorte %}
+    {% set marcadas_aqui = opcoes_do_grupo
+         | selectattr('0', 'in', filtros.fiscais) | list %}
+    <div class="filtro aberto filtro-trabalho">
+      <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+        <span>{{ titulo }}</span>
+        {% if marcadas_aqui %}
+          <span class="filtro-badge">{{ marcadas_aqui|length }}</span>
+        {% endif %}
+        <span class="seta">▾</span>
       </div>
-      <p class="cartao-dica" style="margin:8px 2px 0">
-        Marcar dois exige os dois ao mesmo tempo. "Sem documentação" + "Com
-        anexo" é a fila que dá para resolver lendo o anexo.
-      </p>
+      <div class="filtro-cont">
+        <div class="filtro-opcoes">
+          {% for chave, rotulo, explicacao in opcoes_do_grupo %}
+            <label class="opcao opcao-explicada">
+              <input type="checkbox" name="fiscais" value="{{ chave }}"
+                     {% if chave in filtros.fiscais %}checked{% endif %}>
+              <span class="rotulo">{{ rotulo }}
+                {% if explicacao %}
+                  <small>{{ explicacao }}</small>
+                {% endif %}
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
     </div>
-  </div>
+  {% endfor %}
+
+  <p class="cartao-dica" style="margin:2px 2px 14px">
+    Marcar dois recortes exige os dois ao mesmo tempo, como numa planilha com
+    dois filtros ligados.
+  </p>
 
   {# O resto é recorte de contexto, não a pergunta da tela — por isso vem
      depois e fechado. #}

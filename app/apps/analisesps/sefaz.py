@@ -463,3 +463,45 @@ def buscar_tudo(anotar=None) -> dict:
             total += resultado.get("trazidas", 0)
             por_cnpj.append({"cnpj": cnpj, "tipo": tipo, **resultado})
     return {"trazidas": total, "erro": "", "por_cnpj": por_cnpj}
+
+
+def estado_das_buscas() -> list:
+    """Em que pé está a busca na Receita, por CNPJ e por tipo de documento.
+
+    Pergunta do dono em 13/09/2026: *"eu coloquei pra baixar notas mas não
+    tenho nem ideia de que se baixou, se não baixou."*
+
+    Ele está certo: o ponteiro sempre guardou tudo — até onde leu, quando, o
+    recado da Receita e quantos documentos vieram — e NADA disso aparecia em
+    tela nenhuma. Informação guardada e não mostrada é informação que não
+    existe para quem usa."""
+    from .db import consultar
+
+    try:
+        linhas = consultar(
+            "SELECT cnpj, tipo, ultimo_nsu, maior_nsu, consultado_em, "
+            "       ultimo_recado, documentos "
+            "  FROM analisesps.sefaz_ponteiro ORDER BY cnpj, tipo")
+    except Exception:      # noqa: BLE001 — migração 008 ainda não aplicada
+        logger.exception("Análise de SPs: não consegui ler o ponteiro da busca")
+        return []
+
+    nomes = ["cnpj", "tipo", "ultimo_nsu", "maior_nsu", "consultado_em",
+             "ultimo_recado", "documentos"]
+    saida = []
+    for linha in linhas:
+        estado = dict(zip(nomes, linha))
+        # FALTA MUITO? É a diferença entre os dois contadores. Zero quer dizer
+        # "está em dia"; um número grande quer dizer que a busca foi
+        # interrompida no meio e vale rodar de novo.
+        try:
+            estado["faltam"] = max(0, int(estado["maior_nsu"] or 0)
+                                   - int(estado["ultimo_nsu"] or 0))
+        except (TypeError, ValueError):
+            estado["faltam"] = 0
+        estado["em_dia"] = estado["faltam"] == 0 and not estado["ultimo_recado"]
+        estado["rotulo_tipo"] = {"NFE": "Notas (NF-e)",
+                                 "CTE": "Fretes (CT-e)"}.get(estado["tipo"],
+                                                             estado["tipo"])
+        saida.append(estado)
+    return saida

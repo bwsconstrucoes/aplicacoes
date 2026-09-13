@@ -30,11 +30,31 @@
 {% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
 {% if erro %}<div class="aviso atencao">{{ erro }}</div>{% endif %}
 
-{% set base_args = args.to_dict(flat=false) %}
-{% set _ = base_args.pop('grupo', None) %}
-{% set _ = base_args.pop('pagina', None) %}
-{% set _ = base_args.pop('fiscais', None) %}
-{% set _ = base_args.pop('visao', None) %}
+{# ---------------------------------------------------------------------------
+   DOIS CONJUNTOS DE PARÂMETROS, E MISTURÁ-LOS FOI UM DEFEITO DE VERDADE.
+
+   Ele achou usando, em 13/09/2026: *"se eu clico Sem documentação aparece
+   Proposta de correção 28, e aí se eu clico em cima de Proposta de correção 28,
+   ele filtra para apenas 2."*
+
+   A causa: havia UM conjunto de parâmetros só, e dele o recorte (`fiscais`)
+   era retirado — porque os totalizadores do alto precisam TROCAR o recorte ao
+   serem clicados. Só que as etiquetas de grupo usavam o mesmo conjunto, e por
+   isso clicar numa delas APAGAVA o recorte: voltava para a lista inteira, onde
+   aquele grupo tinha 2. O número mudava debaixo do dedo dele.
+
+   Agora são dois, com nomes que dizem para que servem:
+     • `args_troca_recorte` — sem o recorte, para os totalizadores o definirem;
+     • `args_mantem_tudo`   — com tudo, para quem só navega dentro do que já
+                               está filtrado (as etiquetas e a paginação).
+--------------------------------------------------------------------------- #}
+{% set args_mantem_tudo = args.to_dict(flat=false) %}
+{% set _ = args_mantem_tudo.pop('grupo', None) %}
+{% set _ = args_mantem_tudo.pop('pagina', None) %}
+{% set _ = args_mantem_tudo.pop('visao', None) %}
+
+{% set args_troca_recorte = args_mantem_tudo.copy() %}
+{% set _ = args_troca_recorte.pop('fiscais', None) %}
 
 {# ---------------------------------------------------------------------------
    AS DUAS VISÕES, lado a lado e sempre visíveis.
@@ -47,7 +67,7 @@
 <div class="fiscal-visoes">
   <span class="fiscal-visao ativa">Por lançamento</span>
   <a class="fiscal-visao"
-     href="{{ url_for('analisesps.tela_fiscal', **dict(base_args, visao='notas')) }}">
+     href="{{ url_for('analisesps.tela_fiscal', **dict(args_mantem_tudo, visao='notas')) }}">
     Por nota{% if painel.sem_lancamento %}
       <b>{{ painel.sem_lancamento }}</b> sem lançamento{% endif %}</a>
 </div>
@@ -71,7 +91,8 @@
   {% set ligado = chave in filtros.fiscais %}
   <a class="kpi {{ cor }} {{ 'ligado' if ligado }}"
      href="{{ url_for('analisesps.tela_fiscal',
-                      **dict(base_args, f=1, fiscais=[] if ligado else [chave])) }}"
+                      **dict(args_troca_recorte, f=1,
+                             fiscais=[] if ligado else [chave])) }}"
      title="{{ 'Clique para tirar este recorte' if ligado
                else 'Clique para ver só estas' }}">
     <div class="kpi-rotulo">{{ rotulo }}</div>
@@ -79,23 +100,52 @@
   </a>
 {% endmacro %}
 
+{# ---------------------------------------------------------------------------
+   O QUE ESTÁ FILTRADO AGORA, ESCRITO EM PORTUGUÊS.
+
+   *"Não dá nem pra entender o que estamos filtrando, quais dados."* Numa
+   planilha o funil fica desenhado no cabeçalho da coluna; aqui não havia nada
+   equivalente — as caixas marcadas ficam na barra lateral, fora do campo de
+   visão de quem olha a tabela. Esta linha é o cabeçalho que faltava.
+--------------------------------------------------------------------------- #}
+{% if filtros.fiscais %}
+  <div class="fiscal-recorte">
+    <b>Mostrando as SPs em que</b>
+    {% for chave in filtros.fiscais %}
+      <span class="recorte-marca">{{ frases_do_recorte.get(chave, chave) }}<a
+         href="{{ url_for('analisesps.tela_fiscal', **dict(args_troca_recorte, f=1,
+                fiscais=filtros.fiscais|reject('equalto', chave)|list)) }}"
+         title="Tirar este recorte">✕</a></span>{% if not loop.last %}
+      <b>e</b>{% endif %}
+    {% endfor %}
+    <a class="link-btn" href="{{ url_for('analisesps.tela_fiscal',
+         **dict(args_troca_recorte, f=1)) }}">limpar o recorte</a>
+  </div>
+{% endif %}
+
 <div class="kpis fiscal-kpis">
   <div class="kpi estatico">
     <div class="kpi-rotulo">No filtro</div>
     <div class="kpi-valor">{{ '{:,}'.format(painel.get('total') or 0)|replace(',', '.') }}</div>
     <div class="kpi-sub">SP(s)</div>
   </div>
-  {{ total('sem_marcacao', 'Sem documentação', 'ambar') }}
-  {{ total('provavel_erro', 'Provavelmente errado', 'vermelho') }}
-  {{ total('ja_marcado', 'Já categorizado', 'verde') }}
-  {{ total('confirmada', 'A gravar no card') }}
-  {{ total('na_fila_ia', 'Na fila da IA') }}
+  {# OS MESMOS NOMES DA BARRA DE FILTROS, palavra por palavra.
+
+     Eram diferentes ("Sem documentação" aqui, "Está vazia" lá) e isso era
+     metade da confusão: o número dizia uma coisa, o filtro dizia outra, e nada
+     indicava que eram a MESMA pergunta. Ao clicar no número, o recorte que
+     aparece escrito tem de ser reconhecível como o que ele acabou de apertar. #}
+  {{ total('sem_marcacao', 'Categoria vazia', 'ambar') }}
+  {{ total('provavel_erro', 'Nota parece errada', 'vermelho') }}
+  {{ total('ja_marcado', 'Categoria preenchida', 'verde') }}
+  {{ total('confirmada', 'Falta gravar no card') }}
+  {{ total('na_fila_ia', 'Esperando a IA') }}
   {{ total('sem_anexo', 'Sem anexo') }}
 </div>
 
 {% if painel.get('valor_sem_marcacao') %}
   <p class="cartao-dica" style="margin:-6px 2px 6px">
-    O que está sem documentação soma
+    O que está com a categoria vazia soma
     <b>{{ painel.valor_sem_marcacao|moeda }}</b>.
   </p>
 {% endif %}
@@ -115,7 +165,7 @@
    parece a outra:
      • a lista é reconferida agora, mas só sobre os lançamentos desta página;
      • os três sintomas mais graves de erro antigo são varridos sobre a BASE
-       INTEIRA, e é isso que o número "Provavelmente errado" responde.
+       INTEIRA, e é isso que o número "Nota parece errada" responde.
 --------------------------------------------------------------------------- #}
 <p class="cartao-dica fiscal-conferencia">
   <b>Reconferido agora</b>, ao abrir esta tela: {{ linhas|length }} lançamento(s)
@@ -125,7 +175,7 @@
   O que está <b>fora desta página</b> é varrido pelo banco, sobre as
   {{ '{:,}'.format(painel.get('total') or 0)|replace(',', '.') }} SPs do filtro:
   é de lá que sai o número
-  <b>Provavelmente errado ({{ painel.get('provavel_erro') or 0 }})</b> —
+  <b>Nota parece errada ({{ painel.get('provavel_erro') or 0 }})</b> —
   nota cancelada, categoria que afirma nota sem haver chave, e chave emitida por
   outro CNPJ.
   Para forçar a conferência de registros escolhidos, marque-os e use
@@ -183,17 +233,33 @@
      por isso dizem isso com todas as letras: a conciliação roda sobre a página
      carregada. Quem quer o número da base inteira usa os totalizadores acima,
      que vêm do banco. Deixar os dois sem rótulo faria parecer que discordam. #}
+  {# ---------------------------------------------------------------------
+     AS ETIQUETAS DA CONFERÊNCIA — e agora elas dizem de onde vem o número.
+
+     Eram a segunda metade da confusão: dois conjuntos de números na mesma
+     tela, um do banco (os totalizadores, sobre a base inteira) e outro da
+     conferência (estas, sobre os lançamentos carregados). Sem dizer qual é
+     qual, parecia que a tela discordava de si mesma.
+  --------------------------------------------------------------------- #}
   {% if contagem %}
+    <p class="cartao-dica" style="margin:10px 2px 4px">
+      Dos <b>{{ linhas|length }}</b> lançamento(s) carregados nesta página, a
+      conferência de agora separou assim:
+    </p>
     <div class="fiscal-grupos">
       <a class="etiqueta {{ 'ativa' if not grupo }}"
-         href="{{ url_for('analisesps.tela_fiscal', **base_args) }}">Tudo</a>
+         href="{{ url_for('analisesps.tela_fiscal', **args_mantem_tudo) }}">Tudo</a>
       {% for chave, rotulo, quantos in contagem %}
         <a class="etiqueta {{ 'boa' if chave == 'EM_DIA' else 'ruim' }} {{ 'ativa' if grupo == chave }}"
-           href="{{ url_for('analisesps.tela_fiscal', **dict(base_args, grupo=chave)) }}">
+           href="{{ url_for('analisesps.tela_fiscal', **dict(args_mantem_tudo, grupo=chave)) }}">
           {{ rotulo }}: {{ quantos }}</a>
       {% endfor %}
-      <small class="cartao-dica">nesta página</small>
     </div>
+    <p class="cartao-dica" style="margin:2px 2px 10px">
+      Estes números são só desta página. Os do alto vêm do banco e valem para
+      as {{ '{:,}'.format(painel.get('total') or 0)|replace(',', '.') }} SPs do
+      filtro inteiro — por isso são maiores.
+    </p>
   {% endif %}
 
   {% if pode_operar %}
@@ -316,6 +382,8 @@
 
     {% set pag_args = args.to_dict(flat=false) %}
     {% set _ = pag_args.pop('pagina', None) %}
+    {# A paginação carrega TUDO: recorte, grupo e ordem. Perder qualquer um
+       deles ao virar a página é o mesmo defeito das etiquetas. #}
     <div class="paginacao">
       {{ primeira_linha }}–{{ ultima_linha }} de {{ resumo.quantidade }}
       {% if pagina > 1 %}

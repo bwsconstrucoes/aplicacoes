@@ -2025,14 +2025,33 @@ def tela_fiscal():
     # *"se tem uma nota emitida, tem uma despesa para estar associada"*. Nota
     # órfã é problema fiscal, e hoje ninguém a enxerga.
     if request.args.get("visao") == "notas":
+        from . import sefaz
+
+        # OS RECORTES DESTA VISÃO SÃO OUTROS: aqui a linha é a NOTA, e os
+        # recortes dos lançamentos (obra, tipo de despesa) não se aplicam.
+        filtros_nota = {
+            "recortes": [v for v in request.args.getlist("nota")
+                         if v in fiscal.RECORTES_DE_NOTA],
+            "busca": request.args.get("busca_nota", "").strip(),
+            "emissao_ini": request.args.get("emissao_ini") or None,
+            "emissao_fim": request.args.get("emissao_fim") or None,
+        }
         try:
-            orfas, total = fiscal.notas_orfas(pagina)
-            for nota in orfas:
-                nota["candidatas"] = fiscal.sps_possiveis_da_nota(nota)
+            notas, resumo_notas = fiscal.listar_notas(filtros_nota, pagina)
+            # AS SPs CANDIDATAS SÓ DAS ÓRFÃS, e numa busca só para a página.
+            # Era uma consulta POR NOTA, e com 200 notas na tela isso virava
+            # 200 varreduras da base — 28 segundos medidos aqui, e em produção
+            # a tela não abria.
+            orfas = [n for n in notas if n.get("orfa")]
+            candidatas = fiscal.sps_possiveis_das_notas(orfas)
+            for nota in notas:
+                nota["candidatas"] = candidatas.get(
+                    fiscal.so_digitos(nota.get("chave")), [])
             erro = None
         except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
-            logger.exception("Análise de SPs: falhou listar as notas órfãs")
-            orfas, total, erro = [], 0, (
+            logger.exception("Análise de SPs: falhou listar as notas")
+            notas, resumo_notas, erro = [], {"quantidade": 0, "total": 0,
+                                             "sem_lancamento": 0}, (
                 "Esta tela precisa da atualização do banco. Vá em "
                 f"Configurações e aperte \"Aplicar atualizações do banco\". "
                 f"(detalhe: {e})")
@@ -2040,12 +2059,23 @@ def tela_fiscal():
             painel_notas = fiscal.painel_notas()
         except Exception:  # noqa: BLE001 — migração ainda não aplicada
             painel_notas = {}
-        ultima = (pagina - 1) * 200 + len(orfas)
+        try:
+            por_dia = fiscal.notas_por_dia()
+        except Exception:  # noqa: BLE001
+            por_dia = []
+
+        total = resumo_notas["quantidade"]
+        ultima = (pagina - 1) * fiscal.NOTAS_POR_PAGINA + len(notas)
         return render_template(
             "analisesps_fiscal_notas.html", aba="fiscal", base=base,
-            notas=orfas, total=total, erro=erro, pagina=pagina,
-            primeira_linha=(pagina - 1) * 200 + 1, ultima_linha=ultima,
-            tem_proxima=ultima < total, args=request.args,
+            notas=notas, total=total, erro=erro, pagina=pagina,
+            resumo_notas=resumo_notas, por_dia=por_dia,
+            filtros_nota=filtros_nota,
+            grupos_de_nota=fiscal.GRUPOS_DE_NOTA,
+            frases_da_nota=fiscal.FRASE_DA_NOTA,
+            buscas=sefaz.estado_das_buscas(),
+            primeira_linha=(pagina - 1) * fiscal.NOTAS_POR_PAGINA + 1,
+            ultima_linha=ultima, tem_proxima=ultima < total, args=request.args,
             painel_notas=painel_notas, categorias=fiscal.CATEGORIAS,
             andamento=tarefas.estado(), acoes=ACOES_FISCAIS,
             aviso=request.args.get("aviso") or None,
@@ -2085,6 +2115,8 @@ def tela_fiscal():
         ultima_linha=ultima, tem_proxima=ultima < resumo["quantidade"],
         categorias=fiscal.CATEGORIAS, painel=painel,
         rotulos_fiscais=consultas.ROTULOS_FISCAIS,
+        grupos_de_recorte=consultas.GRUPOS_DE_RECORTE,
+        frases_do_recorte=consultas.FRASE_DO_RECORTE,
         andamento=tarefas.estado(), acoes=ACOES_FISCAIS,
         aviso=request.args.get("aviso") or None,
         pode_operar=auth.pode_operar(),

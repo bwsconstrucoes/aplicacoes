@@ -250,24 +250,85 @@ SITUACOES_FISCAIS = {
     "sem_anexo": "trim(coalesce(anexo_link,'')) = ''",
 }
 
-# Como cada recorte aparece na tela, na ordem em que o dono trabalha: primeiro
-# o que falta, depois o que está errado, depois o que já foi feito.
-ROTULOS_FISCAIS = [
-    ("sem_marcacao", "Sem documentação"),
-    ("provavel_erro", "Provavelmente errado"),
-    ("sem_chave", "Sem chave de acesso"),
-    ("com_chave", "Com chave de acesso"),
-    ("ja_marcado", "Já categorizado"),
-    ("na_fila_ia", "Na fila da IA"),
-    ("lida_ia", "Lido pela IA"),
-    ("decidida_por_pessoa", "Decidido por pessoa"),
-    ("decidida_pelo_sistema", "Decidido pelo sistema"),
-    ("veio_do_card", "Já veio preenchido do card"),
-    ("confirmada", "Confirmado, falta gravar no card"),
-    ("escrita", "Já gravado no card"),
-    ("com_anexo", "Com anexo"),
-    ("sem_anexo", "Sem anexo"),
+# ---------------------------------------------------------------------------
+# COMO OS RECORTES APARECEM NA TELA — em grupos, e com o nome do DADO
+#
+# Refeito em 13/09/2026 depois de ele usar: *"a nomenclatura dos filtros tá
+# estranha, a compreensão tá ruim, muito ruim mesmo. Eu não consigo filtrar
+# como eu faria numa planilha facilmente. Não dá nem pra entender o que estamos
+# filtrando, quais dados."*
+#
+# Ele está certo, e o erro era de nome, não de função: "Sem documentação",
+# "Já categorizado", "Com chave de acesso" e "Confirmado" estavam numa lista
+# corrida, sem dizer de QUE COLUNA cada um fala. Numa planilha ele filtra
+# clicando no cabeçalho da coluna — sabe exatamente o que está recortando.
+#
+# ENTÃO OS RECORTES PASSAM A VIR EM GRUPOS, e o título do grupo é o nome do
+# dado. "A categoria (coluna 'Está como')" diz, sozinho, o que as duas opções
+# abaixo dele fazem. Cada opção ainda traz uma linha explicando, para o caso de
+# o título não bastar.
+# ---------------------------------------------------------------------------
+GRUPOS_DE_RECORTE = [
+    ("A categoria — é a coluna \"Está como\"", [
+        ("sem_marcacao", "Está vazia",
+         "nenhuma categoria, nem daqui nem do card do Pipefy"),
+        ("ja_marcado", "Está preenchida",
+         "tem categoria, seja qual for"),
+    ]),
+    ("A nota fiscal", [
+        ("com_chave", "Tem chave de acesso",
+         "os 44 números que identificam a nota"),
+        ("sem_chave", "Não tem chave de acesso",
+         "pode ter categoria e mesmo assim não ter nota apontada"),
+        ("provavel_erro", "Parece errada",
+         "nota cancelada, ou categoria que afirma nota sem haver chave, "
+         "ou chave emitida por outro CNPJ"),
+    ]),
+    ("Quem preencheu", [
+        ("decidida_por_pessoa", "Uma pessoa, aqui",
+         "alguém digitou ou confirmou nesta tela"),
+        ("decidida_pelo_sistema", "O sistema",
+         "proposta aprovada ou leitura por IA"),
+        ("veio_do_card", "Já veio do card",
+         "estava no Pipefy antes desta tela existir"),
+    ]),
+    ("Em que pé está o trabalho", [
+        ("na_fila_ia", "Esperando a IA ler o anexo", ""),
+        ("lida_ia", "A IA já leu", ""),
+        ("confirmada", "Confirmado aqui, falta ir para o card", ""),
+        ("escrita", "Já gravado no card do Pipefy", ""),
+    ]),
+    ("O anexo da SP", [
+        ("com_anexo", "Tem anexo", "dá para mandar para a IA ler"),
+        ("sem_anexo", "Não tem anexo",
+         "sem anexo, a IA não tem o que ler"),
+    ]),
 ]
+
+# A lista corrida, que é o que a barra antiga usava e o painel ainda usa.
+ROTULOS_FISCAIS = [(chave, rotulo)
+                   for _, itens in GRUPOS_DE_RECORTE
+                   for chave, rotulo, _ in itens]
+
+# O nome de cada recorte numa frase só, para a tela poder dizer em português o
+# que está filtrando agora. Sem isto, quem chega numa tela filtrada por outra
+# pessoa (ou por si mesmo ontem) não tem como saber o que está vendo.
+FRASE_DO_RECORTE = {
+    "sem_marcacao": "a categoria está vazia",
+    "ja_marcado": "a categoria está preenchida",
+    "com_chave": "tem chave de acesso",
+    "sem_chave": "não tem chave de acesso",
+    "provavel_erro": "a nota parece errada",
+    "decidida_por_pessoa": "quem preencheu foi uma pessoa",
+    "decidida_pelo_sistema": "quem preencheu foi o sistema",
+    "veio_do_card": "já veio preenchido do card",
+    "na_fila_ia": "está esperando a IA ler o anexo",
+    "lida_ia": "a IA já leu",
+    "confirmada": "está confirmado aqui e falta ir para o card",
+    "escrita": "já foi gravado no card",
+    "com_anexo": "tem anexo",
+    "sem_anexo": "não tem anexo",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +469,44 @@ def resumo(f: dict) -> dict:
             "quantidade_pagar": linha[2], "total_pagar": linha[3]}
 
 
+# As mesmas regras dos recortes, escritas sobre uma LINHA JÁ MONTADA em vez de
+# subconsulta por linha. Ver `painel_fiscal` para o porquê — e para o teste que
+# impede as duas de divergirem.
+_PAINEL_COLUNAS = f"""
+    SELECT sps.id, sps.valor_num, sps.anexo_link, sps.documento,
+           coalesce(nullif(btrim(coalesce(a.documentacao, '')), ''),
+                    btrim(coalesce(x.doc_fiscal, ''))) AS doc,
+           regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') AS chave_lim,
+           coalesce(a.situacao, '') AS situacao,
+           coalesce(a.origem, '') AS origem,
+           a.escrita_em
+      FROM analisesps.sps
+      LEFT JOIN analisesps.sp_fiscal_analise a ON a.sp_id = sps.id
+      LEFT JOIN analisesps.sp_fiscal x ON x.sp_id = sps.id
+"""
+
+_PAINEL_REGRAS = {
+    "sem_marcacao": "btrim(doc) = ''",
+    "ja_marcado": "btrim(doc) <> ''",
+    "com_chave": "length(chave_lim) = 44",
+    "sem_chave": "length(chave_lim) <> 44",
+    "na_fila_ia": "situacao = 'NA_FILA_IA'",
+    "confirmada": "situacao = 'CONFIRMADA' AND escrita_em IS NULL",
+    "escrita": "situacao = 'ESCRITA'",
+    "sem_anexo": "btrim(coalesce(anexo_link, '')) = ''",
+    "provavel_erro": f"""(
+        EXISTS (SELECT 1 FROM analisesps.notas_fiscais n
+                 WHERE n.chave = chave_lim
+                   AND upper(coalesce(n.status, '')) = 'CANCELADA')
+     OR (btrim(doc) IN ({_LISTA_EXIGEM_NOTA}) AND chave_lim = '')
+     OR (length(chave_lim) = 44
+         AND length(regexp_replace(coalesce(documento, ''), '\\D', '', 'g')) = 14
+         AND substring(chave_lim from 7 for 14)
+             <> regexp_replace(coalesce(documento, ''), '\\D', '', 'g'))
+    )""",
+}
+
+
 def painel_fiscal(f: dict) -> dict:
     """Os totalizadores da Documentação Fiscal, sobre TUDO que o filtro alcança.
 
@@ -416,15 +515,25 @@ def painel_fiscal(f: dict) -> dict:
     o que que não está faltando, onde é que eu tenho que focar"*. Sem eles a
     tela é uma lista para rolar — a palavra dele foi ingerível.
 
-    UMA CONSULTA SÓ, com `FILTER`: sete contagens em sete consultas seriam sete
-    varreduras da base num banco que tem um décimo de um núcleo (o incidente de
-    10/09). E os números saem dos MESMOS pedaços de SQL que os filtros usam,
-    então clicar num total leva exatamente às linhas que ele contou."""
+    UMA CONSULTA SÓ, com `FILTER`: nove contagens em nove consultas seriam nove
+    varreduras da base num banco que tem um décimo de um núcleo.
+
+    ⚠️ E AS REGRAS SÃO ESCRITAS DE OUTRO JEITO AQUI, DE PROPÓSITO. Os recortes
+    do filtro são subconsultas correlacionadas — certas, e o índice as resolve
+    linha a linha. Repetir nove delas na MESMA varredura custava caro: medido
+    em 13/09/2026 com 59.000 SPs, **1,18 segundo** nesta máquina, que é bem
+    mais rápida que o banco do Render. Aqui as duas tabelas entram por JUNÇÃO,
+    uma vez, e as contagens leem colunas já prontas.
+
+    O RISCO DISSO É ÓBVIO — duas escritas da mesma regra divergindo — e é por
+    isso que `test_o_painel_e_o_filtro_CONCORDAM_sempre` existe, com banco de
+    verdade, comparando cada contagem com o filtro correspondente. Sem esse
+    teste, esta otimização não valeria o preço."""
     from .db import consultar_um
     where, params = _where(f)
 
     def conta(chave):
-        return f"count(*) FILTER (WHERE {SITUACOES_FISCAIS[chave]})"
+        return f"count(*) FILTER (WHERE {_PAINEL_REGRAS[chave]})"
 
     linha = consultar_um(
         "SELECT count(*), "
@@ -437,8 +546,8 @@ def painel_fiscal(f: dict) -> dict:
         f"       {conta('escrita')}, "
         f"       {conta('sem_anexo')}, "
         "       coalesce(sum(valor_num) FILTER "
-        f"               (WHERE {SITUACOES_FISCAIS['sem_marcacao']}), 0) "
-        f"  FROM analisesps.sps{where}", tuple(params))
+        f"               (WHERE {_PAINEL_REGRAS['sem_marcacao']}), 0) "
+        f"  FROM ({_PAINEL_COLUNAS}{where}) t", tuple(params))
 
     nomes = ["total", "sem_marcacao", "ja_marcado", "provavel_erro",
              "com_chave", "na_fila_ia", "confirmada", "escrita", "sem_anexo",

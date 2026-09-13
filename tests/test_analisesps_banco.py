@@ -3172,3 +3172,122 @@ def test_QUEM_marcou_separa_pessoa_sistema_e_o_que_veio_do_card(banco_analisesps
     assert _quantas(["decidida_por_pessoa"]) == 1
     assert _quantas(["decidida_pelo_sistema"]) == 2      # a conciliação e a IA
     assert _quantas(["veio_do_card"]) == 1
+
+
+@pytest.mark.banco
+def test_o_painel_e_o_filtro_concordam_tambem_COM_JUNCAO(banco_analisesps):
+    """O painel passou a montar as regras por JUNÇÃO (rápido) enquanto o filtro
+    segue com subconsulta correlacionada (índice resolve linha a linha). São
+    duas escritas da MESMA regra, e o risco disso é óbvio.
+
+    Medido em 13/09/2026 com 59.000 SPs: 1,18s com subconsulta contra 0,14s com
+    junção, nesta máquina — e o banco do Render tem um décimo de um núcleo. A
+    otimização vale; este teste é o preço dela.
+
+    O caso é montado com as três portas da documentação ao mesmo tempo, que é
+    onde as duas escritas teriam mais chance de discordar."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A", documento="29.066.773/0001-52", valor="10,00"),
+            sp("2", credor="B", documento="11.222.333/0001-81", valor="20,00",
+               anexo_link="http://x"),
+            sp("3", credor="C", documento="123.456.789-09", valor="30,00"),
+            sp("4", credor="D", valor="40,00")])
+    _marcar_no_card("1", "Contrato")                       # só no card
+    _diario("2", documentacao="NF-e (Mercadoria)",         # chave de OUTRO CNPJ
+            chave=_chave(CREDOR_CNPJ), origem="PESSOA")
+    _diario("3", documentacao="NFS-e (Serviço)", chave="") # afirma nota sem ter
+    _diario("4", situacao="NA_FILA_IA")
+
+    painel = consultas.painel_fiscal({})
+    assert painel["total"] == 4
+    for chave in ("sem_marcacao", "ja_marcado", "provavel_erro", "com_chave",
+                  "na_fila_ia", "confirmada", "escrita", "sem_anexo"):
+        assert painel[chave] == _quantas([chave]), chave
+
+
+@pytest.mark.banco
+def test_a_busca_de_SPs_por_nota_traz_o_MESMO_em_lote_e_uma_a_uma(banco_analisesps):
+    """A busca virou duas consultas para a página inteira, em vez de uma por
+    nota — 28 segundos medidos com 59.000 SPs, e em produção a tela não abria.
+
+    Trocar o caminho não pode trocar o RESULTADO: este teste compara os dois."""
+    from app.apps.analisesps import fiscal
+
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52", valor="269,00"),
+            sp("2", credor="ACME", documento="29.066.773/0001-52", valor="500,00"),
+            sp("3", credor="OUTRA", documento="11.222.333/0001-81", valor="269,00")])
+    notas = [
+        {"chave": _chave(CREDOR_CNPJ), "valor": 269.00,
+         "emitente_doc": CREDOR_CNPJ},
+        {"chave": _chave("11222333000181"), "valor": 269.00,
+         "emitente_doc": "11222333000181"},
+    ]
+
+    em_lote = fiscal.sps_possiveis_das_notas(notas)
+    for nota in notas:
+        uma_a_uma = fiscal.sps_possiveis_da_nota(nota)
+        chave = fiscal.so_digitos(nota["chave"])
+        assert [s["id"] for s in em_lote[chave]] == [s["id"] for s in uma_a_uma]
+
+    # E a de valor IGUAL vem na frente — é a que fecha o par.
+    assert em_lote[fiscal.so_digitos(notas[0]["chave"])][0]["id"] == "1"
+
+
+@pytest.mark.banco
+def test_a_LISTA_de_notas_recorta_pelo_que_a_tela_oferece(banco_analisesps):
+    """*"Não consigo visualizar numa tela o que temos de notas e o que não
+    temos."* A lista era só das órfãs; agora é de tudo, e "sem lançamento" é um
+    recorte dela."""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1", 10.00, CREDOR_CNPJ)
+    _guardar_nota(_chave("11222333000181", "570010000123456789012345"),
+                  "2", 20.00, "11222333000181")
+    _guardar_nota(_chave("99888777000166"), "3", 30.00, "99888777000166",
+                  status="Cancelada")
+    semear([sp("1", credor="A")])
+    _diario("1", chave=_chave(CREDOR_CNPJ))
+
+    todas, resumo = fiscal.listar_notas({})
+    assert resumo["quantidade"] == 3
+    assert resumo["sem_lancamento"] == 2
+
+    orfas, _ = fiscal.listar_notas({"recortes": ["sem_lancamento"]})
+    assert len(orfas) == 2
+    ctes, _ = fiscal.listar_notas({"recortes": ["cte"]})
+    assert len(ctes) == 1
+    canceladas, _ = fiscal.listar_notas({"recortes": ["cancelada"]})
+    assert len(canceladas) == 1
+    # Dois recortes somam, como na tela de lançamentos.
+    nada, _ = fiscal.listar_notas({"recortes": ["cte", "cancelada"]})
+    assert nada == []
+
+
+@pytest.mark.banco
+def test_a_busca_da_lista_de_notas_acha_por_numero_CNPJ_e_chave(banco_analisesps):
+    """Os quatro jeitos de procurar uma nota que alguém tem na mão."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 10.00, CREDOR_CNPJ)
+    _guardar_nota(_chave("11222333000181"), "77", 20.00, "11222333000181")
+
+    for termo in ("1430", CREDOR_CNPJ, chave, "fornecedor"):
+        achadas, _ = fiscal.listar_notas({"busca": termo})
+        assert achadas, f"a busca por {termo!r} não achou nada"
+
+
+@pytest.mark.banco
+def test_o_recorte_de_EMISSAO_responde_as_notas_do_dia(banco_analisesps):
+    """*"Ver as notas do dia ou consultar as notas."*"""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1", 10.00, CREDOR_CNPJ,
+                  emissao="2026-09-10")
+    _guardar_nota(_chave("11222333000181"), "2", 20.00, "11222333000181",
+                  emissao="2026-09-12")
+
+    do_dia, _ = fiscal.listar_notas({"emissao_ini": "2026-09-10",
+                                     "emissao_fim": "2026-09-10"})
+    assert len(do_dia) == 1 and do_dia[0]["numero"] == "1"

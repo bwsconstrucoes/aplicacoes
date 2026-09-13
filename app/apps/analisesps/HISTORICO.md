@@ -2960,6 +2960,126 @@ pergunta.** As duas metades são diferentes e vale separar:
 > decisão do dono, porque custa uma varredura pesada no banco pequeno; foi
 > apresentada a ele em 13/09/2026 e ainda não há resposta.
 
+### INCIDENTE (13/09) — "a tela por nota não abre"
+
+**Não era erro: era lentidão, e de um tipo que dá exatamente essa cara.**
+
+A lista de notas montava, para CADA nota da página, uma consulta buscando as
+SPs daquele CNPJ. Com 200 notas na tela, **200 consultas** — e cada uma varria
+as 59 mil SPs comparando os oito primeiros dígitos do documento, que é uma
+EXPRESSÃO, e índice de coluna não serve para expressão.
+
+**Medido aqui, com 59.000 SPs e 4.000 notas: 28 segundos** só para montar as
+candidatas — nesta máquina, muito mais rápida que o banco do Render (um décimo
+de um núcleo). Lá, o navegador desiste antes.
+
+**Duas correções, e as duas fazem falta:**
+
+- **Uma busca para a página inteira**, em vez de uma por nota. São duas
+  consultas: a primeira traz as SPs de valor exatamente igual ao de alguma nota
+  (são as que fecham o par) e a segunda as mais recentes de cada CNPJ, para
+  haver o que mostrar quando o valor não bate.
+- **Migração 010: o índice sobre a expressão** — a mesma que o código usa,
+  caractere por caractere. Se ela mudar num lugar e não no outro, o índice
+  deixa de ser usado em silêncio e a lentidão volta sem ninguém entender por
+  quê. Isso está escrito no `.sql`.
+
+**Depois: 0,19 segundo.** A tela por nota inteira abre em 0,11s.
+
+#### E a medição pegou outro, na tela que ele mais usa
+
+Com o mesmo volume, **"por lançamento" levava 15,6 segundos**. O culpado eram
+os totalizadores que entraram ontem: nove contagens, cada uma com uma
+subconsulta correlacionada, na mesma varredura das 59 mil linhas.
+
+As duas tabelas da documentação passaram a entrar por **junção**, uma vez, e as
+contagens leem colunas já prontas: **1,18s → 0,14s**, e a tela inteira caiu para
+**0,26s**.
+
+> **O risco disso é óbvio** — a mesma regra escrita de dois jeitos, uma para o
+> filtro (subconsulta, que o índice resolve linha a linha) e outra para o painel
+> (junção). É por isso que `test_o_painel_e_o_filtro_CONCORDAM_sempre` existe,
+> com banco de verdade, comparando cada contagem com o filtro correspondente.
+> Sem esse teste, a otimização não valeria o preço.
+
+### Quadragésima primeira leva (13/09) — a tela das notas, de verdade
+
+*"Eu coloquei pra baixar notas mas não tenho nem ideia de que se baixou, se não
+baixou, não consigo visualizar numa tela o que temos de notas e o que não temos.
+Ver as notas do dia ou consultar as notas, ver as informações do que foi emitido
+contra a BWS, conforme vemos no FSist e no relatório que baixamos e como víamos
+na planilha."*
+
+A tela "por nota" mostrava **só as órfãs**. É um recorte útil, e é só um
+recorte: quem quer saber "chegou a nota da semana?" não tinha onde olhar.
+
+**Agora a lista é de tudo**, com barra de filtros própria — porque os recortes
+do lançamento (obra, tipo de despesa, vencimento) não se aplicam quando a linha
+é a nota. Os recortes daqui são: **o lançamento** (sem / já está em um), **a
+situação na Receita** (autorizada / cancelada), **o tipo de documento** (NF-e,
+CT-e, NFC-e, lido de dentro da chave) e **a data de emissão**. A busca acha por
+número, chave, CNPJ ou nome do emitente — os quatro jeitos de procurar uma nota
+que se tem na mão.
+
+**"Notas por dia de emissão"**, das últimas duas semanas, responde o *"ver as
+notas do dia"* sem obrigar a filtrar: o número de ontem ao lado do de hoje já
+diz se a busca está trazendo coisa ou se parou. Cada dia é um atalho.
+
+#### "Baixou ou não baixou?"
+
+O ponteiro da busca na Receita **sempre guardou tudo** — até onde leu por CNPJ e
+por tipo, quando consultou, quantos documentos vieram e o recado de erro — e
+**nada disso aparecia em tela nenhuma**. Informação guardada e não mostrada é
+informação que não existe para quem usa, e a pergunta dele é a prova.
+
+Entrou um quadro "A busca na Receita" com uma linha por CNPJ: última consulta,
+documentos trazidos, **quanto falta buscar** (a Receita entrega em lotes, e uma
+rodada não traz tudo) e a situação — em dia, ainda há lote, ou o recado de erro
+em vermelho. Quando nunca rodou, a tela diz isso e diz o que falta: o
+certificado.
+
+### Correção (13/09) — os filtros que ninguém entendia
+
+*"A nomenclatura dos filtros tá estranha, a compreensão tá ruim, muito ruim
+mesmo. Eu não consigo filtrar como eu faria numa planilha facilmente. Não dá nem
+pra entender o que estamos filtrando, quais dados."*
+
+Três coisas, e as três eram culpa minha:
+
+1. **Um defeito de verdade:** *"se eu clico Sem documentação aparece Proposta de
+   correção 28, e aí se eu clico em cima de Proposta de correção 28, ele filtra
+   para apenas 2."* Havia **um conjunto de parâmetros só**, e dele o recorte era
+   retirado — porque os totalizadores precisam TROCAR o recorte ao serem
+   clicados. As etiquetas usavam o mesmo conjunto, e por isso clicar numa delas
+   **apagava o recorte**. O número mudava debaixo do dedo dele. Agora são dois
+   conjuntos, com nomes que dizem para que servem, e há teste para as etiquetas,
+   para a paginação e para os totalizadores.
+2. **Os nomes não diziam de que dado falavam.** Numa planilha ele filtra
+   clicando no cabeçalho da coluna e sabe exatamente o que está recortando. Os
+   recortes passaram a vir **em grupos, e o título do grupo é o nome do dado**:
+   *A categoria — é a coluna "Está como"*, *A nota fiscal*, *Quem preencheu*,
+   *Em que pé está o trabalho*, *O anexo da SP*. Cada opção traz uma linha
+   explicando embaixo.
+3. **A tela não dizia o que estava filtrando.** As caixas marcadas ficam na
+   barra lateral, fora do campo de visão de quem olha a tabela. Agora há uma
+   linha acima dela: *"Mostrando as SPs em que a categoria está vazia e tem
+   anexo"*, com um ✕ em cada recorte para tirá-lo dali mesmo.
+
+E os **totalizadores passaram a usar as mesmas palavras** dos filtros
+("Categoria vazia", e não "Sem documentação"): eram diferentes, e isso era
+metade da confusão — o número dizia uma coisa, o filtro dizia outra, e nada
+indicava que eram a mesma pergunta.
+
+**Verificação:** 4.900 testes verdes com Postgres de verdade, 129 pulados. As
+medições de tempo foram feitas com **59.000 SPs e 4.000 notas** num Postgres de
+verdade, descartável, nesta máquina.
+
+> **O QUE NÃO FOI MEDIDO:** o banco do Render é muito mais lento que esta
+> máquina. Os números aqui são a ORDEM DE GRANDEZA, não a previsão. O recorte
+> ligado na tela de lançamentos ("categoria vazia") ainda leva **1,3s aqui** —
+> é o mais caro que sobrou, porque o filtro usa subconsulta. Se lá ficar
+> pesado, é o próximo lugar para mexer.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Nada do dono esperando código.** O que falta não é programação — é o

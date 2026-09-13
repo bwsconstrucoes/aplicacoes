@@ -218,11 +218,18 @@ def test_a_tela_fiscal_usa_a_COLUNA_de_filtros_do_esqueleto():
     assert '<div class="corpo">' not in texto
 
 
-def test_a_visao_por_nota_DISPENSA_a_coluna_em_vez_de_deixar_vazia():
-    """Os recortes da barra são do lançamento; aqui a linha é a nota. Deixar a
-    coluna vazia daria a mesma margem branca."""
+def test_a_visao_por_nota_tem_BARRA_PROPRIA():
+    """Os recortes da barra de lançamentos (obra, tipo de despesa, vencimento)
+    são do lançamento; aqui a linha é a NOTA, e os recortes são outros — o
+    lançamento, a situação na Receita, o tipo de documento, a emissão.
+
+    Antes esta visão dispensava a coluna inteira, e ficava sem filtro nenhum:
+    dava para ver as órfãs e mais nada. *"Não consigo visualizar numa tela o
+    que temos de notas e o que não temos."*"""
     texto = _template("analisesps_fiscal_notas.html")
-    assert "sem-filtros" in texto
+    assert "{% block filtros %}" in texto
+    assert 'name="nota"' in texto
+    assert "sem-filtros" not in texto
 
 
 def test_a_barra_fiscal_NAO_traz_o_bloco_de_pagamento():
@@ -238,7 +245,36 @@ def test_a_barra_fiscal_abre_NO_recorte_do_trabalho():
     """O filtro principal da tela é o que ela serve para responder."""
     texto = _template("analisesps_filtros_fiscal.html")
     assert 'name="fiscais"' in texto
-    assert texto.index("O que fazer") < texto.index("Tipo de despesa")
+    assert texto.index('name="fiscais"') < texto.index("Tipo de despesa")
+
+
+def test_todo_recorte_diz_de_QUE_DADO_ele_fala():
+    """*"A nomenclatura dos filtros tá estranha (…) não dá nem pra entender o
+    que estamos filtrando, quais dados."*
+
+    Numa planilha ele filtra clicando no cabeçalho da coluna e sabe exatamente
+    o que está recortando. Aqui o título do grupo é o nome do dado — e todo
+    recorte tem de estar dentro de um."""
+    from app.apps.analisesps import consultas
+    dentro_de_grupo = {chave for _, itens in consultas.GRUPOS_DE_RECORTE
+                       for chave, _, _ in itens}
+    assert dentro_de_grupo == set(consultas.SITUACOES_FISCAIS)
+
+
+def test_nenhum_recorte_aparece_em_DOIS_grupos():
+    """O mesmo recorte em dois lugares faria a pessoa achar que são coisas
+    diferentes."""
+    from app.apps.analisesps import consultas
+    vistos = [chave for _, itens in consultas.GRUPOS_DE_RECORTE
+              for chave, _, _ in itens]
+    assert len(vistos) == len(set(vistos))
+
+
+def test_todo_recorte_tem_FRASE_para_a_tela_dizer_o_que_filtra():
+    """A linha acima da tabela escreve o recorte em português. Um recorte sem
+    frase apareceria lá com o nome técnico."""
+    from app.apps.analisesps import consultas
+    assert set(consultas.FRASE_DO_RECORTE) == set(consultas.SITUACOES_FISCAIS)
 
 
 def test_a_ordenacao_continua_na_barra():
@@ -299,12 +335,27 @@ def app_fiscal(monkeypatch):
         "grupo": "SEM_PAR", "propoe": False, "documentacao": "", "chave": "",
         "motivo": "procurei e não encontrei nota que combine.",
         "confianca": 0}])
-    monkeypatch.setattr(fiscal, "notas_orfas", lambda pagina=1: ([{
+    nota_falsa = {
         "chave": CHAVE_ACME, "emissao": dt.date(2026, 9, 1), "numero": "123",
-        "valor": Decimal("269.00"), "status": "Autorizada",
+        "serie": "1", "valor": Decimal("269.00"), "status": "Autorizada",
         "emitente_doc": "11222333000181", "emitente": "ACME",
-        "categoria": "NF-e (Mercadoria)"}], 42))
-    monkeypatch.setattr(fiscal, "sps_possiveis_da_nota", lambda nota, **k: [sp])
+        "emitente_uf": "BA", "importada_em": None, "orfa": True,
+        "categoria": "NF-e (Mercadoria)"}
+    monkeypatch.setattr(fiscal, "notas_orfas",
+                        lambda pagina=1: ([dict(nota_falsa)], 42))
+    monkeypatch.setattr(fiscal, "listar_notas", lambda f, pagina=1: (
+        [dict(nota_falsa)], {"quantidade": 42, "total": Decimal("269.00"),
+                             "sem_lancamento": 42}))
+    monkeypatch.setattr(fiscal, "notas_por_dia", lambda dias=14: [
+        {"dia": dt.date(2026, 9, 1), "quantas": 3, "total": Decimal("800.00")}])
+    monkeypatch.setattr(fiscal, "sps_possiveis_das_notas",
+                        lambda notas, **k: {CHAVE_ACME: [sp]})
+    from app.apps.analisesps import sefaz
+    monkeypatch.setattr(sefaz, "estado_das_buscas", lambda: [{
+        "cnpj": "10656452007869", "tipo": "NFE", "rotulo_tipo": "Notas (NF-e)",
+        "ultimo_nsu": "000000000000120", "maior_nsu": "000000000000150",
+        "consultado_em": None, "ultimo_recado": "", "documentos": 120,
+        "faltam": 30, "em_dia": False}])
     monkeypatch.setattr(tarefas, "estado",
                         lambda: {"rodando": False, "detalhe": None,
                                  "interrompida": None})
@@ -335,9 +386,20 @@ def test_os_totalizadores_aparecem_com_os_numeros_em_portugues(app_fiscal):
     totalizadores, pra saber o que que está faltando (…) onde é que eu tenho
     que focar?"* Ponto no milhar, senão o número não se lê."""
     html = entrar(app_fiscal).get("/analisesps/fiscal?f=1").get_data(as_text=True)
-    assert "Sem documentação" in html
+    assert "Categoria vazia" in html
     assert "1.200" in html
-    assert "Provavelmente errado" in html and "37" in html
+    assert "Nota parece errada" in html and "37" in html
+
+
+def test_o_TOTALIZADOR_e_o_FILTRO_usam_as_MESMAS_palavras(app_fiscal):
+    """Eram diferentes ("Sem documentação" no número, "Está vazia" no filtro), e
+    isso era metade da confusão: o número dizia uma coisa, o filtro dizia outra,
+    e nada indicava que eram a MESMA pergunta."""
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&fiscais=sem_marcacao").get_data(as_text=True)
+    # O número apertado e o recorte escrito falam da mesma coluna.
+    assert "Categoria vazia" in html
+    assert "a categoria está vazia" in html
 
 
 def test_cada_totalizador_e_um_ATALHO_para_o_proprio_recorte(app_fiscal):
@@ -392,9 +454,50 @@ def test_as_duas_visoes_aparecem_das_duas_telas(app_fiscal):
 def test_a_visao_por_nota_monta_e_deixa_ASSOCIAR(app_fiscal):
     html = entrar(app_fiscal).get(
         "/analisesps/fiscal?f=1&visao=notas").get_data(as_text=True)
-    assert "Notas sem lançamento" in html
+    assert "As notas emitidas contra a BWS" in html
     assert "fiscal-associar" in html
-    assert "42" in html          # o total de órfãs, do painel
+    assert "42" in html          # o total do filtro
+
+
+def test_a_visao_por_nota_lista_TUDO_e_nao_so_as_orfas(app_fiscal):
+    """*"Não consigo visualizar numa tela o que temos de notas e o que não
+    temos."* A lista era só das órfãs — um recorte útil, e só um recorte."""
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&visao=notas").get_data(as_text=True)
+    # "Sem lançamento" virou um FILTRO da lista, não a lista inteira.
+    assert 'name="nota" value="sem_lancamento"' in html
+    assert 'name="nota" value="com_lancamento"' in html
+
+
+def test_a_visao_por_nota_DIZ_se_a_busca_na_Receita_rodou(app_fiscal):
+    """*"Eu coloquei pra baixar notas mas não tenho nem ideia de que se baixou,
+    se não baixou."* O ponteiro sempre soube; nenhuma tela mostrava."""
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&visao=notas").get_data(as_text=True)
+    assert "A busca na Receita" in html
+    assert "10656452007869" in html      # o CNPJ vigiado
+    assert "120" in html                 # quantos documentos já vieram
+
+
+def test_sem_busca_nenhuma_a_tela_DIZ_o_que_falta(app_fiscal, monkeypatch):
+    """"Nunca rodou" e "rodou e não trouxe nada" são coisas diferentes, e a
+    primeira tem uma causa que se resolve: falta o certificado."""
+    from app.apps.analisesps import sefaz
+
+    monkeypatch.setattr(sefaz, "estado_das_buscas", lambda: [])
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&visao=notas").get_data(as_text=True)
+    assert "A busca nunca rodou" in html
+    assert "certificado digital A1" in html
+
+
+def test_as_notas_POR_DIA_aparecem_e_cada_dia_e_um_atalho(app_fiscal):
+    """*"Ver as notas do dia ou consultar as notas."* O número de ontem ao lado
+    do de hoje já diz se a busca está trazendo coisa ou se parou."""
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&visao=notas").get_data(as_text=True)
+    assert "Notas por dia de emissão" in html
+    assert "emissao_ini=2026-09-01" in html
 
 
 def test_mexer_no_filtro_NAO_joga_de_volta_para_a_outra_visao(app_fiscal):
@@ -635,3 +738,89 @@ def test_o_resumo_diz_o_que_MUDOU_e_nao_so_o_que_achou():
     assert resumo["apontados"] == 1
     assert resumo["itens"][0]["mudou"] is True
     assert resumo["itens"][1]["mudou"] is False
+
+
+# ---------------------------------------------------------------------------
+# O DEFEITO DO NÚMERO QUE MUDAVA DEBAIXO DO DEDO — 13/09/2026
+#
+# *"Se eu clico Sem documentação aparece Proposta de correção 28, e aí se eu
+# clico em cima de Proposta de correção 28, ele filtra para apenas 2."*
+#
+# A causa: havia UM conjunto de parâmetros só, e dele o recorte era retirado —
+# porque os totalizadores do alto precisam TROCAR o recorte ao serem clicados.
+# As etiquetas de grupo usavam o mesmo conjunto, e por isso clicar numa delas
+# APAGAVA o recorte, voltando para a lista inteira.
+#
+# É o tipo de defeito que só aparece clicando, e por isso ele vira teste.
+# ---------------------------------------------------------------------------
+def test_clicar_na_ETIQUETA_nao_apaga_o_recorte(app_fiscal):
+    """O número 28 tem de continuar 28 depois do clique."""
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&fiscais=sem_marcacao").get_data(as_text=True)
+
+    import re
+    etiquetas = re.findall(r'href="([^"]*grupo=[^"]*)"', html)
+    assert etiquetas, "nenhuma etiqueta de grupo na tela"
+    for endereco in etiquetas:
+        assert "fiscais=sem_marcacao" in endereco, (
+            "a etiqueta perdeu o recorte — é o defeito do 28 que virava 2")
+
+
+def test_clicar_no_TOTALIZADOR_troca_o_recorte_em_vez_de_somar(app_fiscal):
+    """O totalizador é outro caminho de propósito: ele DEFINE o recorte. Se
+    somasse ao que já está marcado, clicar em dois seguidos daria zero linha e
+    pareceria defeito."""
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&fiscais=sem_marcacao").get_data(as_text=True)
+    assert "fiscais=provavel_erro" in html
+    # E o que está ligado vira o atalho para DESLIGAR.
+    assert "ligado" in html
+
+
+def test_virar_a_PAGINA_nao_apaga_o_recorte(app_fiscal, monkeypatch):
+    """Mesmo defeito, outro caminho."""
+    from app.apps.analisesps import consultas
+
+    monkeypatch.setattr(consultas, "resumo", lambda f: {
+        "quantidade": 500, "total": 0, "quantidade_pagar": 0, "total_pagar": 0})
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&fiscais=sem_marcacao").get_data(as_text=True)
+    import re
+    paginas = re.findall(r'href="([^"]*pagina=\d+[^"]*)"', html)
+    assert paginas, "nenhum link de paginação"
+    for endereco in paginas:
+        assert "fiscais=sem_marcacao" in endereco
+
+
+def test_a_tela_DIZ_em_portugues_o_que_esta_filtrando(app_fiscal):
+    """*"Não dá nem pra entender o que estamos filtrando, quais dados."* Numa
+    planilha o funil fica no cabeçalho da coluna; as caixas marcadas ficam na
+    barra lateral, fora do campo de visão de quem olha a tabela."""
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&fiscais=sem_marcacao&fiscais=com_anexo"
+    ).get_data(as_text=True)
+    assert "Mostrando as SPs em que" in html
+    assert "a categoria está vazia" in html
+    assert "tem anexo" in html
+
+
+def test_da_para_TIRAR_um_recorte_sem_ir_na_barra_lateral(app_fiscal):
+    """Dois recortes ligados, e o ✕ de cada um tira só aquele."""
+    html = entrar(app_fiscal).get(
+        "/analisesps/fiscal?f=1&fiscais=sem_marcacao&fiscais=com_anexo"
+    ).get_data(as_text=True)
+    import re
+    tirar = re.findall(r'href="([^"]*)"[^>]*title="Tirar este recorte"', html)
+    assert len(tirar) == 2
+    # Tirar um deixa o outro de pé.
+    assert any("fiscais=com_anexo" in e and "sem_marcacao" not in e for e in tirar)
+    assert any("fiscais=sem_marcacao" in e and "com_anexo" not in e for e in tirar)
+
+
+def test_a_tela_explica_por_que_os_DOIS_conjuntos_de_numero_diferem(app_fiscal):
+    """Um vem do banco (base inteira), o outro da conferência (página). Sem
+    dizer qual é qual, parece que a tela discorda de si mesma — foi metade da
+    confusão."""
+    html = entrar(app_fiscal).get("/analisesps/fiscal?f=1").get_data(as_text=True)
+    assert "carregados nesta página" in html
+    assert "vêm do banco" in html

@@ -930,29 +930,108 @@ def notas_orfas(pagina: int = 1, por_pagina: int = 200) -> tuple:
     return notas, (total[0] if total else 0)
 
 
-def sps_possiveis_da_nota(nota: dict, quantas: int = 5) -> list:
-    """As SPs que PODEM ser desta nota — o caminho inverso da conciliação.
+# Quantas SPs de cada CNPJ são trazidas para depois escolher as melhores de
+# cada nota. Cinco aparecem na tela; buscar 25 dá margem para o desempate por
+# valor sem trazer a base inteira.
+SPS_POR_CNPJ = 25
 
-    Busca pelo CNPJ de quem emitiu, que é o credor do lançamento, e pelo valor.
-    Sem isso a segunda visão diria "esta nota está órfã" e pararia ali, o que é
-    meio caminho: quem vai resolver precisa de por onde começar."""
+_RAIZ_SQL = r"left(regexp_replace(coalesce(documento, ''), '\D', '', 'g'), 8)"
+_CAMPOS_SP = "id, credor, valor_num, vencimento_d, status_pgt, nf"
+_NOMES_SP = ["id", "credor", "valor_num", "vencimento_d", "status_pgt", "nf"]
+
+
+def sps_possiveis_das_notas(notas: list, quantas: int = 5) -> dict:
+    """As SPs que PODEM ser de cada nota — o caminho inverso da conciliação.
+
+    ⚠️ DUAS CONSULTAS PARA A PÁGINA INTEIRA, e não uma por nota. Esta busca
+    nasceu dentro de um laço: 200 notas na tela viravam **200 consultas**, cada
+    uma varrendo as 59 mil SPs por uma expressão sem índice.
+
+    MEDIDO EM 13/09/2026, com 59.000 SPs e 4.000 notas: **28 segundos** só para
+    montar as candidatas — e isso nesta máquina, muito mais rápida que o banco
+    do Render (um décimo de um núcleo). Em produção a tela simplesmente não
+    abria, e foi assim que o dono relatou: *"a tela por nota não abre"*.
+
+    A primeira consulta pega as SPs de valor EXATAMENTE igual ao de alguma
+    nota — é o caso que fecha o par, e o que se perderia em qualquer recorte
+    por quantidade. A segunda pega as mais recentes de cada CNPJ, para haver o
+    que mostrar quando o valor não bate."""
     from .db import consultar
 
-    emitente = nota.get("emitente_doc") or emitente_da_chave(nota.get("chave"))
-    raiz = _raiz(emitente)
-    if not raiz:
-        return []
-    valor = _para_numero(nota.get("valor"))
-    linhas = consultar(
-        "SELECT id, credor, valor_num, vencimento_d, status_pgt, nf "
-        "  FROM analisesps.sps "
-        " WHERE left(regexp_replace(coalesce(documento, ''), '\\D', '', 'g'), 8) = ? "
-        " ORDER BY CASE WHEN valor_num = ? THEN 0 ELSE 1 END, vencimento_d DESC "
-        " LIMIT ?", (raiz, valor, int(quantas)))
-    nomes = ["id", "credor", "valor_num", "vencimento_d", "status_pgt", "nf"]
-    return [dict(zip(nomes, linha)) for linha in linhas]
+    if not notas:
+        return {}
+
+    # Cada nota, com a raiz do CNPJ de quem emitiu e o valor dela.
+    pedidos = []
+    for nota in notas:
+        emitente = nota.get("emitente_doc") or emitente_da_chave(nota.get("chave"))
+        raiz = _raiz(emitente)
+        if raiz:
+            pedidos.append((so_digitos(nota.get("chave")), raiz,
+                            _para_numero(nota.get("valor"))))
+    if not pedidos:
+        return {chave: [] for chave in
+                (so_digitos(n.get("chave")) for n in notas)}
+
+    raizes = sorted({r for _, r, _ in pedidos})
+    marcas = ",".join(["?"] * len(raizes))
+    por_raiz: dict = {}
+
+    def guardar(linha):
+        sp = dict(zip(_NOMES_SP, linha[:len(_NOMES_SP)]))
+        por_raiz.setdefault(linha[len(_NOMES_SP)], []).append(sp)
+
+    # 1. As de valor igual ao de alguma nota desta página. São as que fecham o
+    #    par, e é por elas que se começa a conferir.
+    valores = sorted({v for _, _, v in pedidos if v is not None})
+    if valores:
+        for linha in consultar(
+                f"SELECT {_CAMPOS_SP}, {_RAIZ_SQL} AS raiz "
+                "  FROM analisesps.sps "
+                f" WHERE {_RAIZ_SQL} IN ({marcas}) "
+                f"   AND valor_num IN ({','.join(['?'] * len(valores))})",
+                tuple(raizes) + tuple(valores)):
+            guardar(linha)
+
+    # 2. As mais recentes de cada CNPJ, para haver o que mostrar quando o valor
+    #    não bate. `row_number()` faz o corte DENTRO do banco — trazer tudo e
+    #    cortar em Python seria carregar a base na memória de uma instância que
+    #    já morreu disso em julho.
+    for linha in consultar(
+            f"SELECT {_CAMPOS_SP}, raiz FROM ("
+            f"  SELECT {_CAMPOS_SP}, {_RAIZ_SQL} AS raiz, "
+            f"         row_number() OVER (PARTITION BY {_RAIZ_SQL} "
+            "                             ORDER BY vencimento_d DESC NULLS LAST,"
+            "                                      id) AS n"
+            f"    FROM analisesps.sps WHERE {_RAIZ_SQL} IN ({marcas})) t "
+            " WHERE n <= ?", tuple(raizes) + (int(SPS_POR_CNPJ),)):
+        guardar(linha)
+
+    # A escolha de cada nota: as de valor igual primeiro, sem repetir.
+    saida: dict = {}
+    for chave, raiz, valor in pedidos:
+        vistas, escolhidas = set(), []
+        candidatas = sorted(
+            por_raiz.get(raiz, []),
+            key=lambda sp: 0 if (valor is not None
+                                 and _para_numero(sp.get("valor_num")) == valor)
+            else 1)
+        for sp in candidatas:
+            if sp["id"] in vistas:
+                continue
+            vistas.add(sp["id"])
+            escolhidas.append(sp)
+            if len(escolhidas) >= quantas:
+                break
+        saida[chave] = escolhidas
+    return saida
 
 
+def sps_possiveis_da_nota(nota: dict, quantas: int = 5) -> list:
+    """Uma nota só. Passa pelo MESMO caminho da página inteira, para as duas
+    não divergirem no dia em que a regra de escolha mudar."""
+    return sps_possiveis_das_notas([nota], quantas).get(
+        so_digitos(nota.get("chave")), [])
 # ---------------------------------------------------------------------------
 # OS NÚMEROS DO LADO DA NOTA
 #
@@ -1381,3 +1460,146 @@ def comparar(lancamento: dict) -> dict:
         "olhadas": len(candidatas),
         "corte": CONFIANCA_PARA_PROPOR,
     }
+
+
+# ---------------------------------------------------------------------------
+# A LISTA DE TODAS AS NOTAS — o que existe, não só o que está órfão
+#
+# Pedido do dono em 13/09/2026: *"não consigo visualizar numa tela o que temos
+# de notas e o que não temos. Ver as notas do dia ou consultar as notas, ver as
+# informações do que foi emitido contra a BWS, conforme vemos no FSist e no
+# relatório que baixamos e como víamos na planilha."*
+#
+# A tela só tinha a lista das ÓRFÃS — as notas sem lançamento. É um recorte
+# útil e é só um recorte: quem quer conferir "chegou a nota da semana?" ou
+# "quantas vieram hoje?" não tinha onde olhar. Agora a lista é de tudo, e as
+# órfãs viram um filtro dela.
+# ---------------------------------------------------------------------------
+NOTAS_POR_PAGINA = 200
+
+SEM_LANCAMENTO_SQL = (
+    "NOT EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+    "             WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') "
+    "                   = notas_fiscais.chave)")
+
+# Os recortes da lista de notas. Mesma ideia da tela de lançamentos: o nome do
+# grupo diz de que dado se está falando.
+GRUPOS_DE_NOTA = [
+    ("O lançamento", [
+        ("sem_lancamento", "Sem lançamento",
+         "nota emitida que não está em SP nenhuma"),
+        ("com_lancamento", "Já está num lançamento",
+         "a chave está gravada em alguma SP"),
+    ]),
+    ("A situação na Receita", [
+        ("autorizada", "Autorizada", ""),
+        ("cancelada", "Cancelada",
+         "documento que não existe mais; pagar contra ele é problema fiscal"),
+    ]),
+    ("O tipo de documento", [
+        ("nfe", "NF-e (mercadoria)", "modelo 55, lido de dentro da chave"),
+        ("cte", "CT-e (frete)", "modelo 57"),
+        ("nfce", "NFC-e (cupom)", "modelo 65"),
+    ]),
+]
+
+RECORTES_DE_NOTA = {
+    "sem_lancamento": SEM_LANCAMENTO_SQL,
+    "com_lancamento": "NOT (" + SEM_LANCAMENTO_SQL + ")",
+    "autorizada": "upper(trim(coalesce(status,''))) <> 'CANCELADA'",
+    "cancelada": "upper(trim(coalesce(status,''))) = 'CANCELADA'",
+    "nfe": "substring(chave from 21 for 2) = '55'",
+    "cte": "substring(chave from 21 for 2) = '57'",
+    "nfce": "substring(chave from 21 for 2) = '65'",
+}
+
+FRASE_DA_NOTA = {
+    "sem_lancamento": "não está em lançamento nenhum",
+    "com_lancamento": "já está num lançamento",
+    "autorizada": "está autorizada",
+    "cancelada": "está cancelada",
+    "nfe": "é NF-e (mercadoria)",
+    "cte": "é CT-e (frete)",
+    "nfce": "é NFC-e (cupom)",
+}
+
+
+def _where_das_notas(filtros: dict) -> tuple:
+    """Traduz os recortes da tela em SQL. Tudo entra como parâmetro."""
+    onde, params = [], []
+
+    for chave in (filtros.get("recortes") or []):
+        if chave in RECORTES_DE_NOTA:
+            onde.append("(" + RECORTES_DE_NOTA[chave] + ")")
+
+    busca = str(filtros.get("busca") or "").strip()
+    if busca:
+        # Número, chave, CNPJ ou nome do emitente — os quatro jeitos de
+        # procurar uma nota que alguém tem na mão.
+        alvo = ("lower(coalesce(numero,'') || ' ' || coalesce(chave,'') || ' ' "
+                "|| coalesce(emitente_doc,'') || ' ' || coalesce(emitente,''))")
+        for termo in [t.strip().lower() for t in busca.split(",") if t.strip()]:
+            onde.append(f"{alvo} LIKE ?")
+            params.append("%" + termo.replace("\\", "\\\\")
+                          .replace("%", r"\%").replace("_", r"\_") + "%")
+
+    for campo, operador in (("emissao_ini", ">="), ("emissao_fim", "<=")):
+        valor = filtros.get(campo)
+        if valor:
+            onde.append(f"emissao {operador} ?")
+            params.append(valor)
+
+    return (" WHERE " + " AND ".join(onde)) if onde else "", params
+
+
+def listar_notas(filtros: dict, pagina: int = 1) -> tuple:
+    """Uma página de notas, com o total e a soma. Três perguntas, uma varredura."""
+    from .db import consultar, consultar_um
+
+    where, params = _where_das_notas(filtros or {})
+    resumo = consultar_um(
+        "SELECT count(*), coalesce(sum(valor), 0), "
+        f"       count(*) FILTER (WHERE {SEM_LANCAMENTO_SQL}) "
+        f"  FROM analisesps.notas_fiscais{where}", tuple(params))
+
+    pagina = max(1, int(pagina or 1))
+    linhas = consultar(
+        "SELECT chave, emissao, numero, serie, valor, status, emitente_doc, "
+        "       emitente, emitente_uf, importada_em, "
+        f"       {SEM_LANCAMENTO_SQL} AS orfa "
+        f"  FROM analisesps.notas_fiscais{where} "
+        " ORDER BY emissao DESC NULLS LAST, numero DESC "
+        " LIMIT ? OFFSET ?",
+        tuple(params) + (NOTAS_POR_PAGINA, (pagina - 1) * NOTAS_POR_PAGINA))
+
+    nomes = ["chave", "emissao", "numero", "serie", "valor", "status",
+             "emitente_doc", "emitente", "emitente_uf", "importada_em", "orfa"]
+    notas = []
+    for linha in linhas:
+        nota = dict(zip(nomes, linha))
+        nota["categoria"] = categoria_da_chave(nota["chave"])
+        notas.append(nota)
+
+    return notas, {
+        "quantidade": resumo[0] if resumo else 0,
+        "total": resumo[1] if resumo else 0,
+        "sem_lancamento": resumo[2] if resumo else 0,
+    }
+
+
+def notas_por_dia(dias: int = 14) -> list:
+    """Quantas notas entraram por dia de emissão, nos últimos dias.
+
+    Responde à pergunta que ele fez primeiro — *"ver as notas do dia"* — sem
+    obrigar a filtrar: o número de ontem ao lado do de hoje já diz se a busca
+    está trazendo coisa ou parou."""
+    from .db import consultar
+
+    linhas = consultar(
+        "SELECT emissao, count(*), coalesce(sum(valor), 0) "
+        "  FROM analisesps.notas_fiscais "
+        " WHERE emissao IS NOT NULL "
+        "   AND emissao >= (now() AT TIME ZONE 'America/Sao_Paulo')::date "
+        "                   - make_interval(days => ?) "
+        " GROUP BY emissao ORDER BY emissao DESC", (int(dias),))
+    return [{"dia": l[0], "quantas": l[1], "total": l[2]} for l in linhas]

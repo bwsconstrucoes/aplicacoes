@@ -1141,3 +1141,53 @@ a.kpi { display: block; }
 .prova-conta tr.quase td:first-child { color: var(--ambar); }
 .prova-conta tr.falhou td:first-child { color: var(--borda-forte); }
 .prova-conta tr.falhou { opacity: .75; }
+
+/* O QUE ESTA FILTRADO AGORA, escrito em portugues acima da tabela.
+   "Nao da nem pra entender o que estamos filtrando, quais dados." Numa planilha
+   o funil fica no cabecalho da coluna; aqui as caixas marcadas ficam na barra
+   lateral, fora do campo de visao de quem olha a tabela. Esta linha e o
+   cabecalho que faltava — e cada recorte sai dali mesmo, com um clique. */
+.fiscal-recorte {
+  background: #EEF2FA; border-left: 4px solid var(--azul-claro);
+  border-radius: var(--raio-p); padding: 9px 12px; margin: 0 2px 14px;
+  font-size: 13.5px; line-height: 2;
+}
+.recorte-marca {
+  display: inline-flex; align-items: center; gap: 6px; background: var(--branco);
+  border: 1px solid var(--borda-forte); border-radius: 20px; padding: 3px 6px 3px 12px;
+  margin: 0 2px;
+}
+.recorte-marca a {
+  text-decoration: none; color: var(--tinta-suave); font-weight: 700;
+  width: 18px; height: 18px; display: grid; place-items: center;
+  border-radius: 50%; font-size: 11px;
+}
+.recorte-marca a:hover { background: var(--vermelho); color: #fff; }
+
+/* A OPCAO COM EXPLICACAO. O rotulo sozinho ("Sem documentacao") nao dizia de
+   que coluna falava; a linha de baixo diz. */
+.opcao-explicada { align-items: flex-start; }
+/* O CORTE COM "..." E DAS LISTAS LONGAS (oitenta obras), onde o nome cabe numa
+   linha. Aqui a explicacao tem de aparecer INTEIRA — cortada, ela vira
+   justamente o que o dono reclamou: um rotulo que nao diz de que dado fala. */
+.opcao-explicada .rotulo {
+  display: block; line-height: 1.35;
+  overflow: visible; text-overflow: clip; white-space: normal;
+}
+.opcao-explicada .rotulo small {
+  display: block; color: var(--tinta-suave); font-size: 11.5px; margin-top: 1px;
+}
+
+/* AS NOTAS POR DIA. Responde "ver as notas do dia" sem obrigar a filtrar: o
+   numero de ontem ao lado do de hoje ja diz se a busca esta trazendo coisa ou
+   se parou. Cada dia e um atalho para o proprio recorte. */
+.notas-por-dia { display: flex; gap: 8px; flex-wrap: wrap; }
+.dia-nota {
+  display: flex; flex-direction: column; gap: 1px; min-width: 118px;
+  padding: 8px 10px; border-radius: var(--raio-p); background: var(--papel);
+  border: 1px solid var(--borda); text-decoration: none; color: var(--tinta);
+  font-size: 12.5px;
+}
+.dia-nota:hover { border-color: var(--azul-claro); background: #EEF2FA; }
+.dia-nota span { font-family: var(--fonte-dados); font-weight: 700; font-size: 14px; }
+.dia-nota small { color: var(--tinta-suave); }
