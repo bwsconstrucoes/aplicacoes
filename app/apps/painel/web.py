@@ -895,10 +895,11 @@ def explorador():
         opcoes=consultas.opcoes_do_explorador(),
         sem_obra=consultas.SEM_OBRA,
         teto=consultas.TETO_DO_EXPLORADOR,
+        teto_do_lote=saneamento.TETO_POR_LOTE,
         escrita_ligada=saneamento.escrita_configurada(),
         categorias_omie=consultas.categorias_para_alterar(),
         obras_omie=consultas.departamentos_para_alterar(),
-        alteracao=None, erro_alteracao=None, marcados=[],
+        alteracao=None, erro_alteracao=None,
     )
 
 
@@ -911,9 +912,18 @@ def explorador_alterar():
     desfazer rateio e registro de tudo no banco."""
     from . import saneamento
 
-    codigos = request.form.getlist("codigo")
+    # A tela manda uma alteracao POR TITULO — cada linha pode ir para um lugar
+    # diferente. As tres listas andam juntas, na mesma ordem.
+    alvos = [{"codigo": c, "categoria": cat, "departamento": dep}
+             for c, cat, dep in zip(request.form.getlist("alvo_codigo"),
+                                    request.form.getlist("alvo_categoria"),
+                                    request.form.getlist("alvo_departamento"))]
+    # Sem JavaScript sobra a forma antiga: os marcados vao todos para o mesmo
+    # lugar. Continua valendo — e o caminho que funciona com o navegador travado.
     categoria = (request.form.get("categoria_nova") or "").strip()
     departamento = (request.form.get("departamento_novo") or "").strip()
+    if not alvos:
+        alvos = request.form.getlist("codigo")
     # SIMULAR e o padrao: so sai do ensaio quem marcar E acertar a senha
     executar = request.form.get("executar") == "1"
     aceita = request.form.get("aceita_desfazer_rateio") == "1"
@@ -930,7 +940,7 @@ def explorador_alterar():
     resultado = None
     if not erro:
         resultado = saneamento.aplicar(
-            codigos, categoria, departamento,
+            alvos, categoria, departamento,
             simulacao=not executar, aceita_desfazer_rateio=aceita)
         if not resultado.get("ok"):
             erro, resultado = resultado.get("erro"), None
@@ -946,11 +956,11 @@ def explorador_alterar():
         opcoes=consultas.opcoes_do_explorador(),
         sem_obra=consultas.SEM_OBRA,
         teto=consultas.TETO_DO_EXPLORADOR,
+        teto_do_lote=saneamento.TETO_POR_LOTE,
         escrita_ligada=saneamento.escrita_configurada(),
         categorias_omie=consultas.categorias_para_alterar(),
         obras_omie=consultas.departamentos_para_alterar(),
         alteracao=resultado, erro_alteracao=erro,
-        marcados=codigos,
     )
 
 

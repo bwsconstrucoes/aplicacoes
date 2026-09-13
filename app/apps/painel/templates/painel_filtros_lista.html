@@ -1,0 +1,45 @@
+{# A lista de filtro que TODAS as barras laterais usam.
+
+   Vive sozinha aqui porque duas telas precisam dela com conteúdos diferentes:
+   a barra padrão (ano, projeto, obra) e a do Explorador (análise, grupo,
+   categoria, obra, projeto, conta, situação). Uma cópia de cada lado ia
+   divergir na primeira correção.
+
+   O comportamento — buscar sem acento, o marcado subir para o topo, "marcar os
+   que aparecem" — está em `static/filtros.js`, e vale para as duas.
+#}
+{% macro lista(nome, rotulo, itens, marcados, com_busca=False) %}
+<div class="filtro {% if marcados %}aberto{% endif %}" data-filtro="{{ nome }}">
+  <button type="button" class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+    {{ rotulo }}
+    <span class="filtro-badge {% if not marcados %}oculto{% endif %}"
+          data-contador>{{ marcados|length }}</span>
+    <span class="seta">▾</span>
+  </button>
+  <div class="filtro-cont">
+    {% if com_busca %}
+    <div class="busca-filtro">
+      <input type="search" placeholder="Buscar {{ rotulo|lower }}…" data-busca
+             autocomplete="off" aria-label="Buscar {{ rotulo|lower }}">
+      <span class="busca-conta" data-visiveis></span>
+    </div>
+    <div class="filtro-acoes">
+      <button type="button" class="link-btn" data-marcar-visiveis>Marcar os que aparecem</button>
+      <button type="button" class="link-btn" data-desmarcar>Limpar</button>
+    </div>
+    {% endif %}
+    <div class="filtro-opcoes" data-opcoes>
+      {% for item in itens %}
+        <label class="opcao" data-texto="{{ item }}">
+          <input type="checkbox" name="{{ nome }}" value="{{ item }}"
+                 {% if item|string in marcados %}checked{% endif %}>
+          <span class="rotulo" title="{{ item }}">{{ item }}</span>
+        </label>
+      {% endfor %}
+    </div>
+    {% if com_busca %}
+      <p class="sem-resultado oculto" data-vazio>Nada encontrado.</p>
+    {% endif %}
+  </div>
+</div>
+{% endmacro %}
