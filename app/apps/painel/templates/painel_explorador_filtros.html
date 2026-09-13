@@ -51,8 +51,24 @@
   {{ lista('analise', 'Análise', opcoes.analises, pedido.analises) }}
   {{ lista('grupo', 'Grupo', opcoes.grupos, pedido.grupos, com_busca=True) }}
   {{ lista('categoria', 'Categoria', opcoes.categorias, pedido.categorias, com_busca=True) }}
-  {{ lista('fornecedor', 'Cliente ou Fornecedor', opcoes.fornecedores,
-           pedido.fornecedores, com_busca=True) }}
+  {% if fornecedores.sem_recorte %}
+    <div class="filtro">
+      <div class="filtro-cab" style="cursor:default">Cliente ou Fornecedor</div>
+      <p class="cartao-dica" style="padding:0 6px 10px">
+        Escolha um filtro acima e aplique: a lista traz os fornecedores
+        <b>do que você estiver olhando</b>, não os milhares da base inteira.
+      </p>
+    </div>
+  {% else %}
+    {{ lista('fornecedor', 'Cliente ou Fornecedor', fornecedores.itens,
+             pedido.fornecedores, com_busca=True) }}
+    {% if fornecedores.cortou %}
+      <p class="cartao-dica" style="padding:0 6px 10px; margin-top:-6px">
+        Há mais fornecedores do que cabem na lista. Estreite o filtro, ou digite
+        o nome no campo <b>Buscar</b>, lá em cima.
+      </p>
+    {% endif %}
+  {% endif %}
   {{ lista('obra', 'Obra', opcoes.obras, pedido.obras, com_busca=True) }}
   {{ lista('projeto', 'Projeto', opcoes.projetos, pedido.projetos, com_busca=True) }}
   {{ lista('conta', 'Conta corrente', opcoes.contas, pedido.contas, com_busca=True) }}

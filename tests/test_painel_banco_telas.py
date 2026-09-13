@@ -657,6 +657,14 @@ def base_para_explorar(painel_no_banco):
     yield
 
 
+def _pedido_padrao(**extra):
+    base = {"tipo": "", "analises": [], "grupos": [], "categorias": [],
+            "obras": [], "fornecedores": [], "projetos": [], "contas": [],
+            "situacoes": [], "busca": "", "com_trf": False, "de": "", "ate": ""}
+    base.update(extra)
+    return base
+
+
 def _codigos(pedido):
     from app.apps.painel import consultas
     base = {"tipo": "", "analises": [], "grupos": [], "categorias": [],
@@ -806,10 +814,10 @@ def test_procurar_por_numero_nao_perde_o_documento_que_e_numero(base_para_explor
 # tornando-a invisível para qualquer busca por nome.
 
 def test_fornecedor_e_filtro_de_lista_nao_so_texto(base_para_explorar):
-    """Marcar na lista não depende de acertar a grafia."""
+    """Marcar na lista não depende de acertar a grafia do cadastro do OMIE."""
     from app.apps.painel import consultas
-    opcoes = consultas.opcoes_do_explorador()
-    assert "fornecedores" in opcoes and opcoes["fornecedores"]
+    r = consultas.fornecedores_do_recorte(consultas.explorar(_pedido_padrao()))
+    assert r["itens"], "a barra lateral tem de oferecer os nomes para marcar"
 
 
 def test_filtrar_por_fornecedor_traz_so_os_dele(base_para_explorar):
@@ -833,7 +841,8 @@ def test_quem_esta_sem_fornecedor_pode_ser_achado(base_para_explorar):
         conn.execute("UPDATE fato SET razao_social = '' WHERE codigo_lancamento = 702")
         conn.commit()
     consultas.esquecer_listas()
-    assert consultas.SEM_FORNECEDOR in consultas.opcoes_do_explorador()["fornecedores"]
+    r = consultas.fornecedores_do_recorte(consultas.explorar(_pedido_padrao()))
+    assert consultas.SEM_FORNECEDOR in r["itens"]
     assert _codigos({"fornecedores": [consultas.SEM_FORNECEDOR]}) == {702}
 
 
@@ -893,3 +902,39 @@ def test_quando_as_duas_regras_concordam_a_conferencia_fica_limpa(base_para_expl
     """Sem o caso ruim na base, ela não pode inventar alarme."""
     from app.apps.painel import consultas
     assert consultas.conferencia_do_pago()["titulos"] == 0
+
+
+def test_a_lista_de_fornecedores_nao_custa_consulta_nem_pagina(base_para_explorar):
+    """13/09/2026: a primeira versão deste filtro desenhava TODOS os
+    fornecedores da base. Com milhares deles a página foi a 1,16 MB — 86% do
+    peso dela — e o dono sentiu na hora: "o painel tá super lento agora".
+
+    A lista sai das linhas já buscadas: nenhuma consulta a mais, e ela oferece
+    exatamente o que está à vista."""
+    from app.apps.painel import consultas
+
+    dados = consultas.explorar(_pedido_padrao())
+    r = consultas.fornecedores_do_recorte(dados)
+    nomes_na_tela = {(l["razao_social"] or "").strip() or consultas.SEM_FORNECEDOR
+                     for l in dados["linhas"]}
+    assert set(r["itens"]) == nomes_na_tela
+    assert len(r["itens"]) <= consultas.TETO_DE_FORNECEDORES
+
+
+def test_sem_recorte_a_lista_de_fornecedores_nem_e_desenhada(base_para_explorar):
+    """Sem filtro a tela não lista lançamento nenhum. Desenhar milhares de
+    nomes ali seria peso pago à toa."""
+    from app.apps.painel import consultas
+    assert consultas.fornecedores_do_recorte(None)["sem_recorte"] is True
+    assert consultas.fornecedores_do_recorte({"linhas": []})["itens"] == []
+
+
+def test_a_lista_tem_teto_de_desenho(base_para_explorar):
+    """O teto não é de busca, é de HTML: cada nome vira uma caixa de marcar no
+    navegador."""
+    from app.apps.painel import consultas
+    falso = {"linhas": [{"razao_social": f"FORNECEDOR {i:05d}"} for i in range(5000)],
+             "cortou": False}
+    r = consultas.fornecedores_do_recorte(falso)
+    assert len(r["itens"]) == consultas.TETO_DE_FORNECEDORES
+    assert r["cortou"] is True, "e tem de AVISAR que cortou, senão some nome em silêncio"

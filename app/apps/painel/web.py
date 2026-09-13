@@ -894,6 +894,7 @@ def explorador():
         pedido=pedido, escolheu=escolheu, dados=dados,
         resumo=consultas.resumo_do_explorador(pedido) if escolheu else [],
         opcoes=consultas.opcoes_do_explorador(),
+        fornecedores=consultas.fornecedores_do_recorte(dados),
         sem_obra=consultas.SEM_OBRA,
         sem_fornecedor=consultas.SEM_FORNECEDOR,
         teto=consultas.TETO_DO_EXPLORADOR,
@@ -949,13 +950,15 @@ def explorador_alterar():
 
     from . import consultas
     pedido = _pedido_do_explorador()
+    dados = consultas.explorar(pedido)
     return render_template(
         "painel_explorador.html",
         aba_ativa="config", abas=ABAS,
         pedido=pedido, escolheu=True,
-        dados=consultas.explorar(pedido),
+        dados=dados,
         resumo=consultas.resumo_do_explorador(pedido),
         opcoes=consultas.opcoes_do_explorador(),
+        fornecedores=consultas.fornecedores_do_recorte(dados),
         sem_obra=consultas.SEM_OBRA,
         sem_fornecedor=consultas.SEM_FORNECEDOR,
         teto=consultas.TETO_DO_EXPLORADOR,

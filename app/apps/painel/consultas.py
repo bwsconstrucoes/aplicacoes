@@ -1380,13 +1380,38 @@ def opcoes_do_explorador() -> dict:
             "projetos": _distintos("projeto"),
             "contas": _distintos("conta_corrente"),
             "situacoes": _distintos("situacao"),
-            # Procurar empresa digitando o nome obriga a acertar a grafia do
-            # cadastro do OMIE — e a mesma empresa costuma ter mais de um.
-            # Com a lista, marcam-se os dois nomes e nada escapa.
-            "fornecedores": _distintos("razao_social", SEM_FORNECEDOR),
         }
 
     return _lembrando(("opcoes_do_explorador",), calcular)
+
+
+# Quantos fornecedores a barra lateral desenha. NAO e teto de busca: e teto de
+# HTML. Cada nome vira uma caixa de marcar no navegador, e uma base de verdade
+# tem milhares deles — desenhar todos custou 1,16 MB de pagina e deixou a tela
+# lenta assim que subiu, em 13/09/2026. O painel ja morreu de memoria uma vez.
+TETO_DE_FORNECEDORES = 600
+
+
+def fornecedores_do_recorte(dados: dict | None) -> dict:
+    """Os fornecedores QUE APARECEM na lista que está na tela.
+
+    Sai das linhas já buscadas — nenhuma consulta a mais. Isso importa: a
+    primeira versão disto perguntava ao banco de novo e a tela passou de 34 para
+    126 ms, além de desenhar os milhares de nomes da base inteira (1,16 MB de
+    página, 86% do peso dela). O dono sentiu na hora: "o painel tá super lento
+    agora".
+
+    Tirar da própria lista tem outra vantagem, que não é consolo: a barra
+    lateral passa a oferecer exatamente o que está à vista. Quem filtrou
+    "Devolução de Aportes" escolhe entre os poucos fornecedores daquilo, em vez
+    de rolar milhares de nomes que não vêm ao caso."""
+    if not dados or not dados.get("linhas"):
+        return {"itens": [], "cortou": False, "sem_recorte": True}
+    nomes = sorted({(l.get("razao_social") or "").strip() or SEM_FORNECEDOR
+                    for l in dados["linhas"]})
+    return {"itens": nomes[:TETO_DE_FORNECEDORES],
+            "cortou": len(nomes) > TETO_DE_FORNECEDORES or bool(dados.get("cortou")),
+            "sem_recorte": False}
 
 
 COLUNAS_DO_EXPLORADOR = (
