@@ -47,6 +47,24 @@ PRECOS = {
 PRECO_PADRAO = (Decimal("0.50"), Decimal("2.00"))
 _MILHAO = Decimal("1000000")
 
+# TRANSCRIÇÃO DE ÁUDIO SE COBRA POR MINUTO, NÃO POR TOKEN.
+#
+# A tabela acima é em dólares por milhão de tokens, e não serve para áudio: o
+# fornecedor cobra pelo tempo do que foi falado. Manter o áudio na conta de
+# tokens daria custo ZERO para toda pergunta falada — e o teto mensal que o
+# dono definiu deixaria de valer justamente na função nova.
+#
+# Dólares por MINUTO de áudio:
+PRECOS_POR_MINUTO = {
+    "whisper-1":              Decimal("0.006"),
+    "gpt-4o-transcribe":      Decimal("0.006"),
+    "gpt-4o-mini-transcribe": Decimal("0.003"),
+}
+# Modelo que não está na tabela custa o dobro do mais caro conhecido. É de
+# propósito: na dúvida o gasto aparece MAIOR do que é, e o teto protege. O
+# contrário — subestimar — só se descobre na fatura.
+PRECO_PADRAO_POR_MINUTO = Decimal("0.012")
+
 # Operação usada quando ninguém disse qual é. Existe para o registro nunca
 # ficar sem rótulo — mas toda tela que usa IA deve declarar a sua.
 OPERACAO_PADRAO = "leitura_documento"
@@ -60,6 +78,24 @@ LIMIAR_AVISO = 80                          # % do teto em que o aviso sai
 
 def preco_conhecido(modelo: str) -> bool:
     return (modelo or "").lower() in PRECOS
+
+
+def custo_de_audio(modelo: str, segundos: Any) -> Decimal:
+    """Quanto custou transcrever este áudio, em dólares.
+
+    O tempo é o que o navegador mediu na gravação, então é ESTIMATIVA — e é
+    por isso que o preço desconhecido puxa para cima. O que não pode acontecer
+    é a pergunta falada custar zero no painel de consumo.
+    """
+    try:
+        seg = Decimal(str(segundos or 0))
+    except Exception:
+        seg = Decimal(0)
+    if seg <= 0:
+        return Decimal("0")
+    por_minuto = PRECOS_POR_MINUTO.get((modelo or "").lower(),
+                                       PRECO_PADRAO_POR_MINUTO)
+    return (seg / Decimal(60) * por_minuto).quantize(Decimal("0.000001"))
 
 
 def custo(modelo: str, entrada: int, saida: int) -> Decimal:
@@ -132,15 +168,21 @@ def _tokens(resposta: Any) -> tuple[int, int]:
 
 def registrar(s: Session, *, modelo: str, operacao: str, resposta: Any = None,
               duracao_ms: Optional[int] = None, usuario_id: Optional[int] = None,
-              referencia: str = "", sucesso: bool = True, erro: str = "") -> None:
+              referencia: str = "", sucesso: bool = True, erro: str = "",
+              custo_usd: Optional[Decimal] = None) -> None:
     """Grava o consumo de uma chamada na sessão dada. Nunca derruba a operação
-    principal."""
+    principal.
+
+    `custo_usd` existe para o que NÃO se cobra por token — hoje, a transcrição
+    de áudio, que é por minuto. Quando vem preenchido, é ele que vale.
+    """
     from app.apps.erp.db.models.financeiro import IaUso
     try:
         entrada, saida = _tokens(resposta)
         s.add(IaUso(modelo=modelo or "?", operacao=operacao or OPERACAO_PADRAO,
                     tokens_entrada=entrada, tokens_saida=saida,
-                    custo_usd=custo(modelo, entrada, saida),
+                    custo_usd=(custo_usd if custo_usd is not None
+                               else custo(modelo, entrada, saida)),
                     duracao_ms=duracao_ms, sucesso=sucesso,
                     erro=(erro or "")[:400] or None,
                     usuario_id=usuario_id, referencia=(referencia or "")[:120] or None))
@@ -152,7 +194,8 @@ def registrar(s: Session, *, modelo: str, operacao: str, resposta: Any = None,
 def registrar_autonomo(*, modelo: str, resposta: Any = None,
                        duracao_ms: Optional[int] = None, operacao: Optional[str] = None,
                        usuario_id: Optional[int] = None, referencia: Optional[str] = None,
-                       sucesso: bool = True, erro: str = "") -> None:
+                       sucesso: bool = True, erro: str = "",
+                       custo_usd: Optional[Decimal] = None) -> None:
     """Grava o consumo em sessão PRÓPRIA, com commit, lendo do contexto o que
     não vier por parâmetro. É o que o leitor chama — ele não tem sessão.
 
@@ -167,7 +210,8 @@ def registrar_autonomo(*, modelo: str, resposta: Any = None,
         with get_session() as s:
             registrar(s, modelo=modelo, operacao=operacao, resposta=resposta,
                       duracao_ms=duracao_ms, usuario_id=usuario_id,
-                      referencia=referencia, sucesso=sucesso, erro=erro)
+                      referencia=referencia, sucesso=sucesso, erro=erro,
+                      custo_usd=custo_usd)
             s.commit()
             _avisar_se_passou_do_teto(s)
     except Exception as e:
@@ -327,6 +371,107 @@ def _enviar_aos_administradores(s: Session, texto: str) -> int:
         except Exception as e:
             logger.warning("ERP/IA: aviso de teto não chegou a %s (%s)", u.nome, e)
     return enviados
+
+
+# ---------------------------------------------------------------------------
+# O TETO POR PESSOA
+#
+# Decisão do dono em 12/09/2026: *"pra gente não ter surpresa, vamos limitar.
+# Deve ficar no cadastro da pessoa, com o valor estimado já de cinco dólares.
+# (…) que seja editável. Se eu quiser colocar alguém sem limite, eu coloco, ou
+# botar dez dólares"*. O raciocínio dele: *"isso é mais é gestão que vai usar,
+# pessoal de obra eu não acredito que vai usar muito"*.
+#
+# DIFERENÇA PARA O TETO GLOBAL, e ela importa: o global AVISA os
+# administradores e deixa passar — é um termômetro. Este aqui BARRA. Foi o que
+# o dono pediu com a palavra "limitar", e é o que evita a surpresa: teto que só
+# avisa vira aviso que chega depois da fatura.
+#
+# O que ele NUNCA barra: contas do sistema (robô, relatório agendado, agente),
+# porque essas não são a curiosidade de ninguém e travá-las quebraria rotina
+# sem ninguém entender por quê.
+# ---------------------------------------------------------------------------
+TETO_PESSOA_PADRAO = Decimal("5.00")
+
+
+class SemSaldoDeIa(Exception):
+    """A pessoa gastou o teto do mês dela. A mensagem já vem pronta para a
+    tela — quem lê não é programador e precisa saber a quem pedir."""
+
+
+def teto_da_pessoa(s: Session, usuario_id: Optional[int]) -> Optional[Decimal]:
+    """O teto desta pessoa, em US$. None = sem limite.
+
+    Lê por SQL DIRETO, e não pelo ORM, de propósito: esta consulta roda antes
+    de cada chamada de IA, inclusive na janela entre publicar o código e
+    apertar "Aplicar atualizações do banco". Nessa janela a coluna ainda não
+    existe, e carregar o objeto Usuario derrubaria a tela — a armadilha que já
+    derrubou o ERP em 02/09/2026. Sem a coluna, vale "sem teto configurado":
+    o ERP continua de pé e o aviso global segue valendo.
+    """
+    if not usuario_id:
+        return None
+    from sqlalchemy import text as _text
+
+    try:
+        bruto = s.scalar(_text("SELECT teto_ia_usd FROM usuarios WHERE id = :i"),
+                         {"i": usuario_id})
+    except Exception:
+        logger.warning("ERP/ia: coluna teto_ia_usd indisponível "
+                       "(migração 064 pendente?) — valendo só o teto global")
+        return None
+    if bruto is None:
+        return None
+    v = Decimal(str(bruto))
+    return v if v > 0 else None
+
+
+def gasto_do_mes_da_pessoa(s: Session, usuario_id: Optional[int],
+                           hoje: Optional[date] = None) -> Decimal:
+    from app.apps.erp.db.models.financeiro import IaUso
+
+    if not usuario_id:
+        return Decimal("0")
+    v = s.scalar(select(func.coalesce(func.sum(IaUso.custo_usd), 0))
+                 .where(IaUso.criado_em >= _inicio_do_mes(hoje),
+                        IaUso.usuario_id == usuario_id))
+    return Decimal(str(v or 0))
+
+
+def situacao_da_pessoa(s: Session, usuario_id: Optional[int],
+                       hoje: Optional[date] = None) -> dict[str, Any]:
+    """Quanto desta pessoa já foi. Mesmo formato do teto global."""
+    teto = teto_da_pessoa(s, usuario_id)
+    gasto = gasto_do_mes_da_pessoa(s, usuario_id, hoje)
+    if teto is None:
+        return {"teto": None, "gasto": float(gasto), "percentual": None,
+                "alerta": None, "restante": None}
+    pct = int((gasto / teto * 100).quantize(Decimal("1")))
+    alerta = "ESTOUROU" if gasto >= teto else ("AVISO" if pct >= LIMIAR_AVISO else None)
+    return {"teto": float(teto), "gasto": float(gasto), "percentual": pct,
+            "alerta": alerta, "restante": float(max(teto - gasto, Decimal("0")))}
+
+
+def exigir_saldo_de_ia(s: Session, usuario_id: Optional[int],
+                       hoje: Optional[date] = None) -> None:
+    """Barra a chamada quando a pessoa já gastou o teto do mês dela.
+
+    Sem usuário (robô, relatório agendado, agente) não há teto: essas contas
+    não são curiosidade de ninguém, e travá-las quebraria rotina sem ninguém
+    entender por quê.
+    """
+    if not usuario_id:
+        return
+    sit = situacao_da_pessoa(s, usuario_id, hoje)
+    if sit["alerta"] != "ESTOUROU":
+        return
+    raise SemSaldoDeIa(
+        f"Você já usou o limite de inteligência artificial deste mês "
+        f"(US$ {sit['teto']:.2f}). Isso não bloqueia nada do ERP: as telas, os "
+        f"relatórios e as perguntas calculadas pelo sistema seguem normais — "
+        f"só a leitura de documento e a transcrição de áudio ficam de fora até "
+        f"o mês virar. Se você precisa de mais, peça para o administrador "
+        f"aumentar o seu limite no seu cadastro.")
 
 
 # ---------------------------------------------------------------------------

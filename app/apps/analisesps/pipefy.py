@@ -34,12 +34,39 @@ API = "https://api.pipefy.com/graphql"
 # A "database" do Pipefy com o cadastro dos colaboradores BeeVale.
 BASE_BEEVALE = "307056545"
 
-# Os campos do card, pelos identificadores que o Pipefy usa. São os mesmos do
-# Apps Script que fazia isto antes — mudar um aqui quebra silenciosamente.
-CAMPO_DESCRICAO = "descri_o"
+# ---------------------------------------------------------------------------
+# OS CAMPOS DO CARD, pelos identificadores que o Pipefy usa.
+#
+# Mudar um destes quebra em SILÊNCIO: o Pipefy aceita a chamada e não grava
+# nada. Por isso a origem fica escrita e o UUID vai ao lado — o identificador
+# muda se alguém renomear o campo na tela do Pipefy; o UUID, não.
+#
+# Os quatro primeiros já rodam em produção desde o BeeVale (05/09/2026). Os
+# cinco da conciliação fiscal saíram da estrutura do pipe que o dono colou em
+# 11/09/2026, conferidos um a um contra aquele JSON.
+# ---------------------------------------------------------------------------
+CAMPO_DESCRICAO = "descri_o"                    # f59b3fa0-8365-472d-b61e-73b5b538ad5b
 CAMPO_CADASTRO = "cadastro_bee_vale"
 CAMPO_VALOR = "valor"
-CAMPO_DOC_FISCAL = "documenta_o_fiscal"
+CAMPO_DOC_FISCAL = "documenta_o_fiscal"         # 40c54379-ca2b-4410-a2a4-6aeab3ca6401
+
+# Os campos que a conciliação fiscal preenche. A ORDEM ABAIXO É A DA ESCRITA,
+# e ela não é arbitrária: "gerou nota" é o que destrava o resto no fluxo do
+# Pipefy, e a chave é o que permite baixar o documento depois.
+CAMPO_GEROU_NOTA = "a_despesa_gerou_emiss_o_de_nota_fiscal"   # f2453ccf-fb3c-4ba6-8667-d36a1133cc18
+CAMPO_NUMERO_NOTA = "n_da_nota_fiscal"          # d19d97ad-6fac-4301-a18f-bbf4745600ac
+CAMPO_CHAVE_ACESSO = "chave_de_acesso"          # fa6f8252-7634-468e-87ce-68dfb9eba167
+CAMPO_ANALISE_DEDUT = "an_lise_dedutibilidade"  # 969cf0da-4a66-4e63-9072-54d31c66b90e
+CAMPO_ETIQUETAS = "etiquetas"                   # 88ba0d09-06fa-41ce-9e7b-42c03fe040c5
+
+# "A despesa gerou emissão de Nota Fiscal?" é Sim/Não — as duas únicas opções.
+GEROU_NOTA_SIM = "Sim"
+GEROU_NOTA_NAO = "Não"
+
+# As 22 opções do campo Documentação Fiscal vivem em `fiscal.CATEGORIAS`, e são
+# as MESMAS do JSON do pipe, na mesma ordem — conferido em 11/09/2026. Escrever
+# ali um texto que não seja uma delas faz o Pipefy recusar o card inteiro, e é
+# por isso que a lista tem um dono só.
 
 # Quantos cards por ida à API. O Pipefy aceita várias consultas numa só
 # requisição; vinte é o que o Apps Script usava e nunca deu problema.
@@ -244,3 +271,74 @@ def atualizar_descricao_e_doc_fiscal(atualizacoes, token=None) -> list:
         logger.warning("Análise de SPs: %d card(s) não aceitaram a atualização "
                        "no Pipefy.", len(falhas))
     return falhas
+
+
+def atualizar_documentacao_fiscal(atualizacoes, token=None) -> dict:
+    """Escreve a análise fiscal no card: categoria, chave, "gerou nota" e o nº.
+
+    `atualizacoes`: [{'card': '123', 'documentacao': 'NF-e (Mercadoria)',
+                      'chave': '...', 'numero': '1430'}, ...].
+    Devolve {'ok': [cards], 'falhas': {card: motivo}} — quem chama precisa
+    saber QUAIS passaram, não só quantos, porque só esses podem ser marcados
+    como escritos.
+
+    ⚠️ Esta é a chamada sem volta. Ver o aviso no alto do arquivo.
+
+    SÓ ESCREVE O QUE TEM VALOR. Mandar chave vazia para um card que já tem a
+    chave preenchida APAGARIA a chave — e apagar o que outra pessoa preencheu
+    à mão seria o pior efeito possível desta tela.
+
+    "A despesa gerou emissão de Nota Fiscal?" só vira "Sim", nunca "Não":
+    quando a nota foi encontrada, a resposta é sim. Não ter encontrado não
+    prova que não existe — pode ser nota fora do relatório do FSist —, e
+    escrever "Não" ali seria afirmar o que este módulo não sabe."""
+    token = token or _token()
+    passaram, falhas = [], {}
+
+    for bloco in _blocos(list(atualizacoes), POR_VEZ):
+        pedacos, cards = [], []
+        for i, item in enumerate(bloco):
+            valores = []
+            documentacao = str(item.get("documentacao") or "").strip()
+            if documentacao:
+                valores.append(f'{{ fieldId: "{CAMPO_DOC_FISCAL}", '
+                               f"value: {_texto_gql(documentacao)} }}")
+            chave = re.sub(r"\D", "", str(item.get("chave") or ""))
+            if len(chave) == 44:
+                valores.append(f'{{ fieldId: "{CAMPO_CHAVE_ACESSO}", '
+                               f"value: {_texto_gql(chave)} }}")
+                valores.append(f'{{ fieldId: "{CAMPO_GEROU_NOTA}", '
+                               f'value: "{GEROU_NOTA_SIM}" }}')
+            numero = str(item.get("numero") or "").strip()
+            if numero:
+                valores.append(f'{{ fieldId: "{CAMPO_NUMERO_NOTA}", '
+                               f"value: {_texto_gql(numero)} }}")
+            if not valores:
+                falhas[str(item.get("card"))] = "nada para escrever"
+                continue
+            pedacos.append(
+                f"m{len(cards)}: updateFieldsValues(input: {{ "
+                f"nodeId: {_numero_do_card(item['card'])}, "
+                f"values: [{', '.join(valores)}] }}) {{ success }}")
+            cards.append(str(item["card"]))
+
+        if not pedacos:
+            continue
+        try:
+            dados = graphql("mutation { " + "\n".join(pedacos) + " }", token)
+        except Exception as e:  # noqa: BLE001 — um bloco ruim não derruba os outros
+            logger.exception("Análise de SPs: falhou um bloco no Pipefy")
+            for card in cards:
+                falhas[card] = str(e)[:300]
+            continue
+        for i, card in enumerate(cards):
+            resultado = (dados or {}).get(f"m{i}")
+            if resultado and resultado.get("success") is True:
+                passaram.append(card)
+            else:
+                falhas[card] = "o Pipefy não confirmou a gravação"
+
+    if falhas:
+        logger.warning("Análise de SPs: %d card(s) não aceitaram a análise "
+                       "fiscal.", len(falhas))
+    return {"ok": passaram, "falhas": falhas}

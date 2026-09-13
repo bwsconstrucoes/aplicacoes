@@ -28,6 +28,10 @@
 {% endblock %}
 {% block scripts %}
 <script>
+// A área de jogar documento exige DUAS coisas: poder arquivar e enxergar
+// documento de pessoa (sigilo PESSOAL). Quem só tem a primeira arquivaria um
+// ASO que não conseguiria abrir depois.
+const PODE_ARQUIVAR = {{ 'true' if pode.arquivar and ve_pessoal else 'false' }};
 let COL = [], OBRAS = [], FUNCOES = [];
 async function carregar(){
   try {
@@ -96,10 +100,176 @@ async function ficha(id){
         <td>${rotulo(l.situacao)}</td></tr>`).join("")
         || `<tr><td colspan="6" class="cartao-dica">Nada pago a esta pessoa ainda.</td></tr>`}
       </tbody></table>
+      ${PODE_ARQUIVAR ? `
+      <h4>Documentos da pessoa</h4>
+      <div class="cartao" style="box-shadow:none; border:1px solid var(--borda);
+           border-left:4px solid var(--verde)">
+        <b>Jogue o documento aqui — ele arquiva e preenche o cadastro</b>
+        <div class="cartao-dica">RG, carteira de trabalho, ficha de registro, contrato,
+          ASO, certificado de NR. O sistema lê, guarda com nome padronizado e mostra
+          o que preencheria no cadastro — você confere antes de gravar.</div>
+        <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:10px">
+          <input type="file" id="pdoc-arq" accept=".pdf,.png,.jpg,.jpeg,.webp">
+          <input id="pdoc-dica" placeholder="ajuda (opcional): 'é a ficha de registro'"
+                 style="flex:1; min-width:180px; padding:7px 10px;
+                        border:1px solid var(--borda-forte); border-radius:8px; font-size:13px">
+          <button class="btn" id="btn-pdoc-ler" type="button">Ler o documento</button>
+        </div>
+        <div id="pdoc-leitura"></div>
+      </div>` : ""}
+
       <div style="margin-top:14px"><button class="btn secundario" id="ir-editar">Editar cadastro</button></div>`;
     els("ir-editar").addEventListener("click", ()=>formulario(COL.find(x=>x.id===id)));
+    if (els("btn-pdoc-ler")) {
+      PDOC = null;
+      els("btn-pdoc-ler").addEventListener("click", () => lerDocumentoDaPessoa(id));
+      els("pdoc-arq").addEventListener("change", () => {
+        PDOC = null; els("pdoc-leitura").innerHTML = "";
+      });
+    }
     els("dlg").showModal();
   } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+// ---------------------------------------------------------------------------
+// O DOCUMENTO QUE ARQUIVA E PREENCHE — o mesmo princípio da obra, do lado das
+// pessoas. Pedido do dono em 10/09/2026: "cadastros e arquivo estarem
+// associados quando fizer sentido".
+//
+// Uma diferença que importa aqui: o CPF do documento é CONFERIDO contra o do
+// cadastro, e nunca gravado. Ele é a identidade da pessoa — trocá-lo
+// repontaria pagamento e histórico para outra. Quando não bate, a tela grita
+// e nada entra marcado: a dúvida passa a ser de quem é o documento.
+// ---------------------------------------------------------------------------
+let PDOC = null;
+
+function desenharLeituraDaPessoa(id){
+  const g = PDOC.sugestao, c = PDOC.cadastro;
+  const cor = c.cpf_confere === false ? "erro"
+            : {ALTA:"ok", MEDIA:"alerta", BAIXA:"erro"}[g.confianca] || "alerta";
+  const duvida = c.cpf_confere === false;
+  const linhas = (c.campos || []).map(x => `
+    <tr>
+      <td style="width:34px"><input type="checkbox" data-pcampo="${escapar(x.campo)}"
+          data-pid="${x.valor_id || ""}" ${x.marcar ? "checked" : ""}
+          ${duvida ? "disabled" : ""}></td>
+      <td>${escapar(x.rotulo)}</td>
+      <td><input data-pvalor="${escapar(x.campo)}" value="${escapar(x.valor)}"
+           ${x.valor_id ? "readonly" : ""}
+           style="width:100%; padding:5px 8px; border:1px solid var(--borda-forte);
+                  border-radius:6px; font-size:13px"></td>
+      <td>${x.conflito
+        ? `<small style="color:var(--ambar)"><b>hoje está:</b> ${escapar(x.valor_atual)}
+            — marque só se quiser trocar</small>`
+        : `<small style="color:var(--tinta-suave)">campo vazio hoje</small>`}</td>
+    </tr>`).join("");
+
+  els("pdoc-leitura").innerHTML = `
+    <div class="aviso ${cor}" style="margin-top:12px">
+      <b>${escapar(g.tipo_nome || "Tipo não reconhecido")}</b>
+      ${g.nome_sugerido ? `<br>Vai ser guardado como
+        <b class="mono">${escapar(g.nome_sugerido)}</b>` : ""}
+      ${(c.avisos || []).map(a => `<br>${escapar(a)}`).join("")}
+      ${g.observacoes ? `<br><i>${escapar(g.observacoes)}</i>` : ""}
+    </div>
+    ${c.tipo_nao_preenche
+      ? `<div class="cartao-dica">Este tipo não alimenta o cadastro — vale pela
+          VALIDADE, que já vira aviso na agenda. Vai ser só arquivado.</div>`
+      : linhas
+        ? `<div class="cartao" style="box-shadow:none; border:1px solid var(--borda); padding:0">
+            <div style="padding:10px 12px"><b>O que vai para o cadastro</b>
+              <small style="color:var(--tinta-suave)"> — desmarque o que não quiser</small></div>
+            ${duvida ? `<div style="padding:0 12px 10px">
+              <label class="opcao" style="margin:0"><input type="checkbox" id="pdoc-confirmo">
+                <span class="rotulo">Confirmo que este documento é desta pessoa —
+                  liberar o preenchimento</span></label>
+              <div class="dica">Enquanto o CPF não bater, o cadastro fica trancado.
+                O arquivo pode ser guardado assim mesmo, se você quiser.</div></div>` : ""}
+            <table><tbody>${linhas}</tbody></table></div>`
+        : `<div class="cartao-dica">Não achei nada novo para o cadastro.</div>`}
+    <div style="margin-top:10px; display:flex; gap:8px; align-items:center">
+      <button class="btn amarelo" id="btn-pdoc-guardar" type="button">Arquivar e preencher</button>
+      <button class="link-btn" id="btn-pdoc-cancelar" type="button">Descartar leitura</button>
+    </div>
+    <div id="pdoc-msg"></div>`;
+
+  els("btn-pdoc-guardar").addEventListener("click", () => guardarDocumentoDaPessoa(id));
+  const confirmo = els("pdoc-confirmo");
+  if (confirmo) confirmo.addEventListener("change", () => {
+    document.querySelectorAll("[data-pcampo]").forEach(c => {
+      c.disabled = !confirmo.checked;
+      if (!confirmo.checked) c.checked = false;
+    });
+  });
+  els("btn-pdoc-cancelar").addEventListener("click", () => {
+    PDOC = null; els("pdoc-leitura").innerHTML = "";
+  });
+}
+
+async function lerDocumentoDaPessoa(id){
+  const arq = els("pdoc-arq").files[0];
+  if (!arq) { aviso("dlg-msg", "Escolha o arquivo antes de mandar ler.", "erro"); return; }
+  const b = els("btn-pdoc-ler");
+  b.disabled = true; b.textContent = "Lendo…";
+  els("pdoc-leitura").innerHTML = `<div class="cartao-dica">Lendo o documento…</div>`;
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    if (els("pdoc-dica").value.trim()) fd.append("dica", els("pdoc-dica").value.trim());
+    PDOC = await api(`/erp/api/colaboradores/${id}/documento/ler`, {method:"POST", body: fd});
+    PDOC.arquivo_lido = arq.name;
+    desenharLeituraDaPessoa(id);
+  } catch(e){
+    PDOC = null;
+    els("pdoc-leitura").innerHTML = `<div class="aviso erro">${escapar(e.message)}</div>`;
+  }
+  b.disabled = false; b.textContent = "Ler o documento";
+}
+
+async function guardarDocumentoDaPessoa(id){
+  const arq = els("pdoc-arq").files[0];
+  if (!arq || !PDOC) { aviso("pdoc-msg", "Leia o documento antes.", "erro"); return; }
+  if (PDOC.arquivo_lido !== arq.name) {
+    aviso("pdoc-msg", "O arquivo mudou depois da leitura. Leia de novo.", "erro"); return;
+  }
+  const g = PDOC.sugestao;
+  if (!g.tipo_codigo) {
+    aviso("pdoc-msg", "A leitura não reconheceu o tipo. Use “Guardar documento” "
+      + "na tela do Arquivo para escolher o tipo à mão.", "erro");
+    return;
+  }
+  const campos = {};
+  document.querySelectorAll("[data-pcampo]:checked").forEach(c => {
+    const campo = c.dataset.pcampo;
+    if (c.dataset.pid) { campos[campo] = c.dataset.pid; return; }
+    const entrada = document.querySelector(`[data-pvalor="${campo}"]`);
+    if (entrada && entrada.value.trim()) campos[campo] = entrada.value.trim();
+  });
+
+  const b = els("btn-pdoc-guardar");
+  b.disabled = true; b.textContent = "Guardando…";
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    fd.append("tipo", g.tipo_codigo);
+    ["referencia","emissao","validade","competencia","texto","resumo"].forEach(k => {
+      if (g[k]) fd.append(k, g[k]);
+    });
+    fd.append("campos", JSON.stringify(campos));
+    const d = await api(`/erp/api/colaboradores/${id}/documento`, {method:"POST", body: fd});
+    let recado = `Guardado como <b class="mono">${escapar(d.documento.nome)}</b>.`;
+    if (d.preenchido.quantidade)
+      recado += ` ${d.preenchido.quantidade} campo(s) do cadastro preenchido(s): `
+        + d.preenchido.mudancas.map(escapar).join("; ") + ".";
+    PDOC = null;
+    await carregar();
+    // A ficha se REFAZ (o cadastro mudou), e só depois o recado — ela recria o
+    // lugar onde ele aparece. Sem o await, a mensagem nascia e era apagada
+    // meio segundo depois, e a pessoa não via nada acontecer.
+    await ficha(id);
+    aviso("dlg-msg", recado, "ok");
+  } catch(e){ aviso("pdoc-msg", e.message, "erro"); }
+  b.disabled = false; b.textContent = "Arquivar e preencher";
 }
 
 function formulario(c){

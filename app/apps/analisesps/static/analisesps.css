@@ -466,6 +466,16 @@ dialog::backdrop { background: rgba(7,30,64,.45); }
 .entrada input[type=password]:focus {
   outline: 2px solid var(--azul-claro); border-color: var(--azul-claro);
 }
+/* A lista de quem entra. Mesmo tamanho e mesma caixa do campo de senha: os
+   dois são o mesmo gesto, um embaixo do outro. */
+.entrada select {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--borda-forte);
+  border-radius: var(--raio-p); font-size: 15px; margin-bottom: 14px;
+  background: var(--branco); color: inherit;
+}
+.entrada select:focus {
+  outline: 2px solid var(--azul-claro); border-color: var(--azul-claro);
+}
 .entrada .btn { width: 100%; padding: 11px; font-size: 15px; }
 
 .aviso {
@@ -858,10 +868,53 @@ a.kpi { display: block; }
   padding: 10px 16px; background: var(--azul); color: var(--branco);
   border-radius: 999px; box-shadow: var(--sombra-forte); font-size: 13.5px;
 }
+/* O recado de que uma acao saiu — "12 SPs entraram no grupo X". Aparece no
+   canto, some sozinho, e nao empurra nada da tela: quem mandou o lote quer
+   continuar de onde estava, nao ser levado para outro lugar. */
+/* O botao de atualizar, colado na hora da base. Pequeno de proposito: e um
+   atalho, nao a acao principal da tela. */
+.btn-atualizar {
+  margin-left: 6px; padding: 1px 7px; font-size: 11px; font-weight: 700;
+  border: 1px solid rgba(255,255,255,.45); border-radius: 999px;
+  background: transparent; color: inherit; cursor: pointer;
+}
+.btn-atualizar:hover { background: rgba(255,255,255,.15); }
+.btn-atualizar:disabled { opacity: .5; cursor: default; }
+
+.recado-acao {
+  position: fixed; right: 16px; bottom: 16px; z-index: 60;
+  max-width: min(420px, calc(100vw - 32px));
+  background: var(--azul); color: #fff;
+  padding: 12px 16px; border-radius: var(--raio-p);
+  box-shadow: var(--sombra-forte); font-size: 13.5px; font-weight: 600;
+  transition: opacity .5s ease, transform .5s ease;
+}
+.recado-acao a { color: var(--amarelo); text-decoration: underline; }
+.recado-acao.saindo { opacity: 0; transform: translateY(8px); }
+
 .aviso-frescor .btn {
   background: var(--amarelo); border-color: var(--amarelo);
   color: var(--azul-fundo); padding: 5px 12px; font-size: 12.5px;
 }
+
+/* O total por conta, embaixo do total geral da barra de acoes. */
+.ba-contas {
+  font-size: 11.5px; color: var(--tinta-suave); font-family: var(--fonte-dados);
+  margin-top: 2px; line-height: 1.4;
+}
+
+/* ESCONDER TEM DE ESCONDER.
+ *
+ * O navegador esconde `[hidden]` com `display: none`, mas isso vem da folha
+ * DELE — e qualquer regra nossa ganha, por mais fraca que seja. `.opcao` tem
+ * `display: flex`, e por isso a procura dentro do filtro de "Tipo de despesa"
+ * simplesmente NAO FUNCIONAVA: o javascript marcava a opcao como escondida, o
+ * estilo mandava mostrar assim mesmo, e quem digitava via a lista inteira
+ * parada. Reportado pelo dono em 11/09/2026.
+ *
+ * A regra vale para a folha toda de proposito: o mesmo tropeco aconteceria em
+ * qualquer elemento com `display` proprio que alguem mandasse esconder. */
+[hidden] { display: none !important; }
 
 /* Procurar dentro de um bloco de filtro (obras, projetos, credores...) */
 .procura-opcao {
@@ -883,3 +936,409 @@ a.kpi { display: block; }
   border-radius: var(--raio-p);
 }
 .ficha-codigo .qr { max-width: 190px; }
+
+/* ---------------------------------------------------------------------------
+   COMPROVANTES — a area de soltar arquivo e o resultado de cada leva.
+
+   A area precisa parecer que ACEITA algo solto em cima dela, senao ninguem
+   arrasta: borda tracejada e um realce forte enquanto o arquivo esta por cima.
+--------------------------------------------------------------------------- */
+.solta {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 34px 16px; margin-top: 10px; cursor: pointer;
+  border: 2px dashed #b9c6d4; border-radius: 10px;
+  background: #f7fafd; text-align: center;
+  transition: background .12s, border-color .12s;
+}
+.solta:hover { border-color: #7d97ad; background: #f0f6fb; }
+.solta.por-cima { border-color: #1b6ec2; background: #e6f1fb; }
+.solta-titulo { font-weight: 600; }
+.solta-dica { font-size: .85rem; color: #5b6b7a; }
+
+/* A etiqueta e o resumo da leva: "Baixado: 8  Nao achei a SP: 2". E a primeira
+   coisa que a pessoa le, entao a que pede acao tem de saltar. */
+.etiqueta {
+  display: inline-block; margin-left: 6px; padding: 1px 8px;
+  border-radius: 999px; font-size: .8rem; white-space: nowrap;
+  background: #e8edf2; color: #33414f;
+}
+.etiqueta.boa { background: #e3f3e6; color: #1d6b2c; }
+.etiqueta.ruim { background: #fdeaea; color: #a32020; }
+
+.lote-comprovante { border-top: 1px solid #e4e9ee; padding: 10px 0; }
+.lote-comprovante > summary { cursor: pointer; line-height: 1.8; }
+.lote-comprovante > summary > .cartao-dica { margin-left: 8px; }
+
+/* Cada caso de credor e um formulario proprio: a pessoa decide UM fornecedor
+   por vez, e mandar todos juntos faria um clique errado atingir trinta. */
+.credor-caso {
+  border-top: 1px solid #e4e9ee; padding: 12px 0;
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+}
+.credor-opcao {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  cursor: pointer; padding: 2px 0;
+}
+
+/* Os numeros do alto da Documentacao Fiscal sao ATALHO: clicar filtra por
+   aquele grupo. Sem isso, achar "as sete que precisam de decisao" no meio de
+   duzentas linhas seria rolagem. */
+.fiscal-grupos { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.fiscal-grupos .etiqueta { text-decoration: none; }
+.fiscal-grupos .etiqueta.ativa { outline: 2px solid #1b6ec2; }
+.fiscal-acoes {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  margin-top: 10px; padding-top: 10px; border-top: 1px solid #e4e9ee;
+}
+
+/* ================= DOCUMENTACAO FISCAL — a tela refeita em 13/09/2026 ======
+   O dono usou a primeira versao e disse: "nao da pra fazer a gestao dessa
+   documentacao fiscal da forma que esta". O que se ve aqui e a resposta.    */
+
+/* AS DUAS VISOES, sempre visiveis. Antes a segunda era um link solto no meio
+   da tela, facil de nao ver — e ele pediu as duas com todas as letras. */
+.fiscal-visoes {
+  display: flex; gap: 4px; margin: 0 0 14px; padding: 4px;
+  background: #EDF1F7; border-radius: var(--raio); width: fit-content;
+  max-width: 100%; flex-wrap: wrap;
+}
+.fiscal-visao {
+  padding: 7px 16px; border-radius: var(--raio-p); font-size: 13.5px;
+  font-weight: 600; color: var(--tinta-suave); text-decoration: none;
+}
+.fiscal-visao:hover { background: #E2E8F2; color: var(--azul); }
+.fiscal-visao.ativa { background: var(--branco); color: var(--azul); box-shadow: var(--sombra); }
+.fiscal-visao b {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 10px;
+  background: var(--ambar); color: #fff; font-size: 12px;
+}
+
+/* OS TOTALIZADORES sao ATALHO: clicar aplica o recorte. Um numero que a pessoa
+   ve e depois tem de ir procurar no filtro e meio caminho. */
+.fiscal-kpis .kpi { text-decoration: none; color: inherit; display: block; }
+.fiscal-kpis .kpi.ligado { outline: 2px solid var(--azul-claro); }
+.fiscal-kpis .kpi.ligado .kpi-rotulo { color: var(--azul); }
+
+/* AS ACOES DENTRO DA TELA DE TRABALHO. "Ler, e pra estar dentro da tela.
+   Gravar nos cards, e pra estar dentro da tela." */
+.fiscal-acoes-tarefa {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;
+}
+
+/* A janela de escrever a mao e um formulario curto: a largura padrao de 940px
+   faria tres campos nadarem na tela. */
+.dlg-estreito { width: min(520px, 94vw); }
+
+/* Cada SP candidata da visao por nota vira uma linha com o botao de fechar o
+   par ali mesmo. */
+.nota-candidata { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 2px 0; }
+
+/* O RECORTE PRINCIPAL APARECE INTEIRO, sem rolagem por dentro.
+
+   Os blocos comuns da barra tem teto de 260px porque listam oitenta obras; com
+   doze recortes fixos, esse teto cortava o ultimo item no meio da linha e
+   colava a dica embaixo — na tela parecia defeito de desenho, e escondia
+   justamente "Confirmado, falta gravar no card". A barra lateral ja rola
+   sozinha; um segundo rolamento dentro dela nao ajuda ninguem. */
+.filtro-trabalho .filtro-opcoes { max-height: none; overflow-y: visible; }
+
+/* ============ A NAVEGACAO EM TELA PEQUENA — 13/09/2026 ====================
+   "Numa tela grande e tranquilo de navegar, porque todos aparecem, mas numa
+   tela pequena ele fica escondido, as ultimas."
+
+   Medido: a faixa de abas ocupa ~1.000px e comeca a ser cortada perto de
+   1.400px de janela — num notebook comum a ultima ja sumia, e nada dizia que
+   tinha sumido. Quem decide trocar a faixa pelo menu e o script, MEDINDO: nao
+   ha largura de corte chutada aqui. */
+.topo-menu {
+  display: none; align-items: center; gap: 8px; margin-left: 12px;
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22);
+  color: #fff; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+  font-size: 14px; font-weight: 700; white-space: nowrap; flex: 0 0 auto;
+}
+/* O NOME DA TELA NO BOTAO nao pode ser cortado: ele e a unica marca de onde se
+   esta quando a faixa some. Em tela estreita quem cede espaco e o "Perfil
+   Operador" do canto, que e informacao de conferencia, nao de navegacao. */
+@media (max-width: 560px) {
+  .topo-meta { display: none; }
+}
+.topo-menu:hover { background: rgba(255,255,255,.2); }
+.topo-menu-risco { font-size: 17px; line-height: 1; }
+
+/* O estado compacto: a faixa sai, o botao entra. */
+.topo.compacto .topo-abas { display: none; }
+.topo.compacto .topo-menu { display: inline-flex; }
+
+/* O PAINEL cai por baixo do topo e ocupa a largura toda em tela estreita.
+   Uma tela por linha, com alvo grande para o dedo. */
+.menu-painel {
+  position: sticky; top: var(--altura-topo); z-index: 29;
+  background: var(--branco); border-bottom: 1px solid var(--borda);
+  box-shadow: var(--sombra); display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  padding: 8px; gap: 4px;
+}
+.menu-item {
+  display: block; padding: 13px 14px; border-radius: var(--raio-p);
+  color: var(--tinta); text-decoration: none; font-size: 15px; font-weight: 600;
+}
+.menu-item:hover { background: var(--papel); }
+/* A ATUAL VEM MARCADA: em tela pequena, saber onde se esta e metade da
+   navegacao — na faixa isso era obvio, no menu precisa ser dito. */
+.menu-item.ativa { background: var(--azul); color: #fff; }
+
+/* O RESULTADO DA RECONFERENCIA fica na tela, e nao num alerta: sao varias
+   linhas que a pessoa precisa reler enquanto decide o que fazer. */
+#fiscal-reconferencia { margin-top: 10px; }
+.reconf-item {
+  padding: 8px 12px; margin-bottom: 6px; background: var(--papel);
+  border-left: 4px solid var(--borda-forte); border-radius: var(--raio-p);
+  font-size: 13px; line-height: 1.45;
+}
+.reconf-item small { color: var(--tinta-suave); }
+
+/* A frase que diz que a conferencia esta acontecendo. Fica discreta, mas
+   precisa caber inteira — e a resposta a "como eu sei que isso roda?". */
+.fiscal-conferencia { margin: 0 2px 14px; max-width: 90ch; line-height: 1.55; }
+
+/* ============ A PROVA POR TRAS DA PROPOSTA — 13/09/2026 ===================
+   "Voce sugere e eu quero ver de forma completa os dados do que voce esta
+   sugerindo (...) pra eu nao ter que confiar somente no que voce observou."
+
+   Duas fichas completas lado a lado. Esprema-las obrigaria a rolar para
+   comparar dois numeros que precisam ser vistos juntos — que e exatamente o
+   trabalho. */
+#dlg-provas { width: min(1100px, 96vw); }
+.dlg-sub { margin-left: 10px; font-size: 13px; opacity: .85; }
+.prova-lados { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.prova-ficha {
+  background: var(--branco); border-radius: var(--raio-p); padding: 10px 12px;
+  border: 1px solid var(--borda);
+}
+.prova-ficha h4 { margin: 0 0 8px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--tinta-suave); }
+.prova-ficha dl { display: grid; grid-template-columns: minmax(120px, auto) 1fr; gap: 3px 10px; margin: 0; font-size: 13px; }
+.prova-ficha dt { color: var(--tinta-suave); }
+.prova-ficha dd { margin: 0; word-break: break-word; font-family: var(--fonte-dados); }
+
+.prova-candidata {
+  margin-top: 12px; padding: 10px; border-radius: var(--raio);
+  background: var(--papel); border: 1px solid var(--borda);
+}
+.prova-cab { font-size: 13.5px; margin-bottom: 8px; }
+.prova-diario {
+  background: #EEF2FA; border-radius: var(--raio-p); padding: 8px 12px;
+  font-size: 13px; margin-bottom: 12px;
+}
+.prova-usar { margin-top: 10px; }
+
+/* A CONTA ABERTA. O que NAO pontuou fica visivel de proposito: e o que explica
+   por que a confianca nao foi maior, e e onde a pessoa olha para discordar. */
+.prova-conta { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.prova-conta td { padding: 5px 6px; border-bottom: 1px solid var(--borda); vertical-align: top; }
+.prova-conta td:first-child { width: 20px; font-weight: 800; }
+.prova-conta small { color: var(--tinta-suave); font-family: var(--fonte-dados); }
+.prova-conta tr.bateu td:first-child { color: var(--verde); }
+.prova-conta tr.quase td:first-child { color: var(--ambar); }
+.prova-conta tr.falhou td:first-child { color: var(--borda-forte); }
+.prova-conta tr.falhou { opacity: .75; }
+
+/* O QUE ESTA FILTRADO AGORA, escrito em portugues acima da tabela.
+   "Nao da nem pra entender o que estamos filtrando, quais dados." Numa planilha
+   o funil fica no cabecalho da coluna; aqui as caixas marcadas ficam na barra
+   lateral, fora do campo de visao de quem olha a tabela. Esta linha e o
+   cabecalho que faltava — e cada recorte sai dali mesmo, com um clique. */
+.fiscal-recorte {
+  background: #EEF2FA; border-left: 4px solid var(--azul-claro);
+  border-radius: var(--raio-p); padding: 9px 12px; margin: 0 2px 14px;
+  font-size: 13.5px; line-height: 2;
+}
+.recorte-marca {
+  display: inline-flex; align-items: center; gap: 6px; background: var(--branco);
+  border: 1px solid var(--borda-forte); border-radius: 20px; padding: 3px 6px 3px 12px;
+  margin: 0 2px;
+}
+.recorte-marca a {
+  text-decoration: none; color: var(--tinta-suave); font-weight: 700;
+  width: 18px; height: 18px; display: grid; place-items: center;
+  border-radius: 50%; font-size: 11px;
+}
+.recorte-marca a:hover { background: var(--vermelho); color: #fff; }
+
+/* A OPCAO COM EXPLICACAO. O rotulo sozinho ("Sem documentacao") nao dizia de
+   que coluna falava; a linha de baixo diz. */
+.opcao-explicada { align-items: flex-start; }
+/* O CORTE COM "..." E DAS LISTAS LONGAS (oitenta obras), onde o nome cabe numa
+   linha. Aqui a explicacao tem de aparecer INTEIRA — cortada, ela vira
+   justamente o que o dono reclamou: um rotulo que nao diz de que dado fala. */
+.opcao-explicada .rotulo {
+  display: block; line-height: 1.35;
+  overflow: visible; text-overflow: clip; white-space: normal;
+}
+.opcao-explicada .rotulo small {
+  display: block; color: var(--tinta-suave); font-size: 11.5px; margin-top: 1px;
+}
+
+/* AS NOTAS POR DIA. Responde "ver as notas do dia" sem obrigar a filtrar: o
+   numero de ontem ao lado do de hoje ja diz se a busca esta trazendo coisa ou
+   se parou. Cada dia e um atalho para o proprio recorte. */
+.notas-por-dia { display: flex; gap: 8px; flex-wrap: wrap; }
+.dia-nota {
+  display: flex; flex-direction: column; gap: 1px; min-width: 118px;
+  padding: 8px 10px; border-radius: var(--raio-p); background: var(--papel);
+  border: 1px solid var(--borda); text-decoration: none; color: var(--tinta);
+  font-size: 12.5px;
+}
+.dia-nota:hover { border-color: var(--azul-claro); background: #EEF2FA; }
+.dia-nota span { font-family: var(--fonte-dados); font-weight: 700; font-size: 14px; }
+.dia-nota small { color: var(--tinta-suave); }
+
+/* SUBIR O RELATORIO DO FSIST. "Cade a opcao de incluir o arquivo? De onde vai
+   tirar essa informacao, se eu nao estou nem colocando?" - botao que pede um
+   arquivo e nao tem onde por e botao que mente. */
+.subir-relatorio {
+  background: var(--papel); border: 1px dashed var(--borda-forte);
+  border-radius: var(--raio); padding: 12px 14px; margin: 10px 0;
+}
+.subir-linha { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.subir-linha input[type=file] { font-size: 13px; max-width: 100%; }
+.subir-relatorio .cartao-dica { margin: 8px 0 0; }
+
+/* O LINK DO CARD, discreto, embaixo do numero da SP. O duplo clique na linha e
+   que abre a ficha — e o card do Pipefy fica a um clique, dito com todas as
+   letras em vez de escondido no numero. */
+.link-card { font-size: 11px; font-weight: 600; text-decoration: none; }
+.sps tr[data-ficha] { cursor: default; }
+
+/* ⚠️ O ALARME DA NOTA CANCELADA JA ASSOCIADA. E a primeira coisa da tela, e nao
+   mais um numero na fileira: despesa paga contra documento que nao existe mais
+   e problema fiscal, e quem ve precisa agir hoje. */
+.alarme-fiscal {
+  display: flex; gap: 12px; align-items: flex-start; text-decoration: none;
+  background: #FDECEC; border: 1px solid var(--vermelho);
+  border-left: 6px solid var(--vermelho); border-radius: var(--raio);
+  padding: 12px 16px; margin: 0 2px 14px; color: var(--tinta);
+  font-size: 14px; line-height: 1.5;
+}
+.alarme-fiscal:hover { background: #FBDCDC; }
+.alarme-icone { font-size: 20px; line-height: 1.2; }
+
+/* POR QUE ESTA SP E CANDIDATA, item por item. "Mesmo valor" sozinho e pior que
+   nada: da ar de conferencia a uma coincidencia. */
+.razoes { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin: 3px 0 8px; font-size: 11.5px; }
+.razoes > b { color: var(--tinta-suave); font-weight: 700; }
+.razao { padding: 1px 7px; border-radius: 10px; white-space: nowrap; cursor: help; }
+.razao.bate { background: #E3F3E8; color: #124F26; }
+.razao.falha { background: #F1F3F6; color: var(--tinta-suave); }
+
+/* O QUE CADA BOTAO FEZ DA ULTIMA VEZ. "Como e que a gente sabe se rodou, se nao
+   rodou, se terminou? Nao aparece nada na tela." O dado sempre existiu — so
+   aparecia na tela de Configuracoes, que nao e onde o trabalho acontece. */
+.acao-com-resultado { display: flex; flex-direction: column; gap: 3px; }
+.acao-resultado {
+  font-size: 11.5px; line-height: 1.3; padding: 2px 6px; border-radius: 5px;
+  max-width: 260px;
+}
+.acao-resultado small { display: block; color: var(--tinta-suave); font-size: 10.5px; }
+.acao-resultado.ok { color: #124F26; background: #E3F3E8; }
+.acao-resultado.erro { color: #7A1220; background: #FDECEC; }
+.acao-resultado.nunca { color: var(--tinta-suave); }
+
+/* O BOTAO OCUPADO. "Voce fica cego, sem saber se esta acontecendo alguma coisa
+   ou nao." Entre o clique e a tela voltar podem passar varios segundos. */
+.btn.ocupado, button.ocupado {
+  opacity: .8; cursor: progress; position: relative;
+}
+.btn.ocupado::after, button.ocupado::after {
+  content: ""; display: inline-block; width: 11px; height: 11px;
+  margin-left: 8px; vertical-align: -1px; border-radius: 50%;
+  border: 2px solid currentColor; border-right-color: transparent;
+  animation: girando .7s linear infinite;
+}
+@keyframes girando { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .btn.ocupado::after, button.ocupado::after { animation: none; }
+}
+
+/* O RECADO DO QUE ACABOU DE ACONTECER precisa ser visto. Voltar para o alto da
+   pagina com uma tarja discreta e o mesmo que nao dizer nada. */
+.aviso.destaque {
+  border-left-width: 6px; font-size: 14.5px; padding: 14px 16px;
+  animation: chamar 1.2s ease-out;
+}
+@keyframes chamar {
+  0%, 100% { box-shadow: none; }
+  30% { box-shadow: 0 0 0 4px rgba(27,110,194,.25); }
+}
+@media (prefers-reduced-motion: reduce) { .aviso.destaque { animation: none; } }
+
+/* A TERCEIRA OPINIAO: quem a Receita diz que e o dono do CNPJ. E a suspeita de
+   CNPJ digitado errado, que vem na frente de tudo — escolher o nome certo para
+   o CNPJ errado e trabalho jogado fora, e pior, da ar de resolvido. */
+.suspeita-cnpj {
+  border-radius: var(--raio-p); padding: 8px 12px; margin: 6px 0;
+  font-size: 12.5px; line-height: 1.45;
+}
+.suspeita-cnpj.certeza { background: #FDECEC; border-left: 4px solid var(--vermelho); }
+.suspeita-cnpj.suspeita { background: #FFF6E5; border-left: 4px solid var(--ambar); }
+.suspeita-cnpj small { color: var(--tinta-suave); }
+.consulta-receita {
+  font-size: 12px; color: var(--tinta); background: var(--papel);
+  border-radius: var(--raio-p); padding: 6px 10px; margin: 4px 0; line-height: 1.4;
+}
+.consulta-receita.erro { background: #FDECEC; }
+.consulta-receita small { display: block; color: var(--tinta-suave); font-size: 11px; }
+.consulta-form { display: inline; }
+
+/* AS SPs QUE JÁ TÊM NOTA, na tela por nota. Discretas de propósito: estão ali
+   para provar que nada foi escondido, não para serem escolhidas. */
+.ja-com-nota {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-left: 3px solid #cbd5e1;
+  background: #f8fafc;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.6;
+}
+.ja-com-nota b { color: #475569; }
+.ja-com-nota a { color: #475569; text-decoration: underline; }
+
+/* O quadro das SPs por trás de cada nome, na tela de credores. O <dialog> do
+   módulo vem com padding 0 — o conteúdo põe o seu. */
+#sps-do-nome { padding: 18px 20px 16px; }
+#sps-do-nome h3 { margin: 0 0 10px; font-size: 16px; }
+#sps-do-nome table.sps { font-size: 12px; }
+/* Dentro do <label> da opção o botão precisa se destacar do texto, senão some
+   entre o nome e a contagem. */
+.credor-opcao .ver-sps-do-nome { margin-left: 6px; text-decoration: underline; }
+
+/* O endereço inteiro do Dropbox tem mais de 100 caracteres e estouraria a
+   coluna da ficha. Quebra onde der, inclusive no meio do endereço. */
+.prova-ficha dd a { word-break: break-all; }
+
+/* O QUE A TELA FISCAL NEM OLHA. Fica à vista de propósito: um corte de escopo
+   escondido faz o painel e a planilha discordarem sem explicação. */
+.filtro-escopo .escopo-lista {
+  margin: 2px 0 8px; padding-left: 18px;
+  font-size: 12px; color: #64748b; line-height: 1.7;
+}
+.filtro-escopo .escopo-lista b { color: #475569; }
+
+/* O RESULTADO NA PRÓPRIA LINHA — o que substituiu o recarregamento da página.
+   *"A página vai lá pra cima. Eu poderia ser rápido se eu pudesse ir seguindo,
+   clicar no outro."* */
+.associada-agora {
+  margin-top: 4px; padding: 3px 7px; border-radius: 5px;
+  background: #ECFDF5; color: #065F46; font-size: 12px; font-weight: 600;
+  display: inline-block;
+}
+.associada-erro {
+  margin-top: 4px; padding: 3px 7px; border-radius: 5px;
+  background: #FEF2F2; color: #991B1B; font-size: 12px; font-weight: 600;
+  display: inline-block;
+}
+/* A nota resolvida some do caminho sem sumir da tela: quem acabou de associar
+   precisa poder conferir o que fez. */
+tr.nota-resolvida { opacity: .62; }
+tr.nota-resolvida .nota-candidata { filter: grayscale(1); }

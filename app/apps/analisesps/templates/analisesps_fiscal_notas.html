@@ -1,0 +1,511 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Notas fiscais — Análise de SPs{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   A SEGUNDA VISÃO: as NOTAS.
+
+   Pedido do dono: *"eu preciso de duas visões. Uma é: eu estou olhando para os
+   registros financeiros e buscando bater as notas. E outra é: eu estou olhando
+   para as notas e buscando o registro financeiro."*
+
+   E o conserto de 13/09/2026, depois de ele usar: *"não consigo visualizar
+   numa tela o que temos de notas e o que não temos. Ver as notas do dia ou
+   consultar as notas, ver as informações do que foi emitido contra a BWS,
+   conforme vemos no FSist e no relatório que baixamos e como víamos na
+   planilha."*
+
+   A tela mostrava só as ÓRFÃS. É um recorte útil, e é só um recorte: quem
+   quer saber "chegou a nota da semana?" ou "quantas vieram hoje?" não tinha
+   onde olhar. Agora a lista é de TUDO, e "sem lançamento" virou um filtro dela.
+--------------------------------------------------------------------------- #}
+{% block filtros %}
+<form method="get" id="form-filtros"
+      action="{{ url_for('analisesps.tela_fiscal') }}">
+  <input type="hidden" name="visao" value="notas">
+  <input type="hidden" name="f" value="1">
+
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <span class="filtros-estado" id="filtros-estado" hidden>atualizando…</span>
+    <a class="link-btn" href="{{ url_for('analisesps.tela_fiscal',
+         visao='notas', f=1) }}">Limpar</a>
+  </div>
+
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="busca_nota" value="{{ filtros_nota.busca }}"
+           placeholder="Nº, chave, CNPJ ou nome do emitente"
+           title="Vários termos separados por vírgula. Todos precisam aparecer.">
+  </div>
+
+  {% for titulo, opcoes_do_grupo in grupos_de_nota %}
+    <div class="filtro aberto filtro-trabalho">
+      <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+        <span>{{ titulo }}</span><span class="seta">▾</span>
+      </div>
+      <div class="filtro-cont">
+        <div class="filtro-opcoes">
+          {% for chave, rotulo, explicacao in opcoes_do_grupo %}
+            <label class="opcao opcao-explicada">
+              <input type="checkbox" name="nota" value="{{ chave }}"
+                     {% if chave in filtros_nota.recortes %}checked{% endif %}>
+              <span class="rotulo">{{ rotulo }}
+                {% if explicacao %}<small>{{ explicacao }}</small>{% endif %}
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+
+  <div class="filtro {% if filtros_nota.emissao_ini or filtros_nota.emissao_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Data de emissão</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label>
+          <input type="date" name="emissao_ini"
+                 value="{{ filtros_nota.emissao_ini or '' }}"></div>
+        <div><label>Até</label>
+          <input type="date" name="emissao_fim"
+                 value="{{ filtros_nota.emissao_fim or '' }}"></div>
+      </div>
+    </div>
+  </div>
+
+  <noscript>
+    <button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar</button>
+  </noscript>
+</form>
+
+<script>
+// Mesma barra das outras telas: aplica sozinha meio segundo depois do último
+// clique, para cinco caixas marcadas gerarem UMA consulta e não cinco.
+(function () {
+  const form = document.getElementById("form-filtros");
+  if (!form) return;
+  const estado = document.getElementById("filtros-estado");
+  let relogio = null;
+  function agendar(espera) {
+    if (relogio) clearTimeout(relogio);
+    if (estado) estado.hidden = false;
+    relogio = setTimeout(() => form.submit(), espera);
+  }
+  form.addEventListener("change", e => {
+    if (e.target.matches("input[type=checkbox], input[type=date]")) agendar(500);
+  });
+  form.addEventListener("input", e => {
+    if (e.target.matches("input[type=search]")) agendar(900);
+  });
+  form.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); agendar(0); }
+  });
+})();
+</script>
+{% endblock %}
+
+{% block conteudo %}
+
+{% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
+{% if erro %}<div class="aviso atencao">{{ erro }}</div>{% endif %}
+
+{% set args_mantem_tudo = args.to_dict(flat=false) %}
+{% set _ = args_mantem_tudo.pop('visao', None) %}
+{% set _ = args_mantem_tudo.pop('pagina', None) %}
+{% set args_troca_recorte = args_mantem_tudo.copy() %}
+{% set _ = args_troca_recorte.pop('nota', None) %}
+
+<div class="fiscal-visoes">
+  <a class="fiscal-visao"
+     href="{{ url_for('analisesps.tela_fiscal', **args_mantem_tudo) }}">Por lançamento</a>
+  <span class="fiscal-visao ativa">Por nota</span>
+</div>
+
+{% if filtros_nota.recortes %}
+  <div class="fiscal-recorte">
+    <b>Mostrando as notas que</b>
+    {% for chave in filtros_nota.recortes %}
+      <span class="recorte-marca">{{ frases_da_nota.get(chave, chave) }}<a
+         href="{{ url_for('analisesps.tela_fiscal', **dict(args_troca_recorte,
+                visao='notas', f=1,
+                nota=filtros_nota.recortes|reject('equalto', chave)|list)) }}"
+         title="Tirar este recorte">✕</a></span>{% if not loop.last %}
+      <b>e</b>{% endif %}
+    {% endfor %}
+    <a class="link-btn" href="{{ url_for('analisesps.tela_fiscal',
+         **dict(args_troca_recorte, visao='notas', f=1)) }}">limpar o recorte</a>
+  </div>
+{% endif %}
+
+{% macro atalho(chave, rotulo, valor, cor='') %}
+  {% set ligado = chave in filtros_nota.recortes %}
+  <a class="kpi {{ cor }} {{ 'ligado' if ligado }}"
+     href="{{ url_for('analisesps.tela_fiscal', **dict(args_troca_recorte,
+                      visao='notas', f=1, nota=[] if ligado else [chave])) }}">
+    <div class="kpi-rotulo">{{ rotulo }}</div>
+    <div class="kpi-valor">{{ '{:,}'.format(valor or 0)|replace(',', '.') }}</div>
+  </a>
+{% endmacro %}
+
+{# ---------------------------------------------------------------------------
+   ⚠️ O ALARME: nota cancelada que JÁ está num lançamento.
+
+   Pedido do dono em 13/09/2026: *"imagina, o fornecedor emitiu e cancelou a
+   nota. E a gente associou, pagou, e a nota virou cancelada. A gente tem que
+   ter um local de visualização disso, facilmente poder tratar isso aí, ligar
+   pro fornecedor e pedir uma nova nota (…) é algo que tem que dar destaque."*
+
+   Ele está certo, e o caso ficava INVISÍVEL justamente por estar "resolvido":
+   a nota cancelada não é órfã — ela está associada —, então não aparecia na
+   lista das que precisam de despesa. Só se descobriria abrindo a nota certa
+   por acaso.
+
+   Por isso é a primeira coisa da tela, em vermelho, e não mais um número na
+   fileira: despesa paga contra documento que não existe mais é problema
+   fiscal, e quem vê precisa agir hoje — ligar para o fornecedor e pedir
+   outra nota.
+--------------------------------------------------------------------------- #}
+{% if painel_notas.get('canceladas_em_uso') %}
+  <a class="alarme-fiscal"
+     href="{{ url_for('analisesps.tela_fiscal', **dict(args_troca_recorte,
+                      visao='notas', f=1, nota=['cancelada_em_uso'])) }}">
+    <span class="alarme-icone">⚠️</span>
+    <span>
+      <b>{{ painel_notas.canceladas_em_uso }} nota(s) CANCELADA(S) já
+      associada(s) a um lançamento.</b>
+      O fornecedor cancelou depois de a gente associar — se a despesa foi paga,
+      ela está sem documento. Ver quais são e pedir nota nova.
+    </span>
+  </a>
+{% endif %}
+
+<div class="kpis fiscal-kpis">
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">No filtro</div>
+    <div class="kpi-valor">{{ '{:,}'.format(resumo_notas.quantidade or 0)|replace(',', '.') }}</div>
+    <div class="kpi-sub">de {{ '{:,}'.format(painel_notas.get('total') or 0)|replace(',', '.') }} guardadas</div>
+  </div>
+  <div class="kpi estatico">
+    <div class="kpi-rotulo">Valor no filtro</div>
+    <div class="kpi-valor">{{ resumo_notas.total|moeda }}</div>
+  </div>
+  {{ atalho('sem_lancamento', 'Sem lançamento',
+            painel_notas.get('sem_lancamento'), 'ambar') }}
+  {{ atalho('cte', 'Fretes (CT-e)', painel_notas.get('ctes')) }}
+  {{ atalho('cancelada', 'Canceladas', painel_notas.get('canceladas'), 'vermelho') }}
+</div>
+
+{# ---------------------------------------------------------------------------
+   A BUSCA NA RECEITA — "baixou ou não baixou?"
+
+   *"Eu coloquei pra baixar notas mas não tenho nem ideia de que se baixou, se
+   não baixou."* O ponteiro sempre guardou tudo — até onde leu, quando, o
+   recado da Receita, quantos documentos vieram — e nada disso aparecia em tela
+   nenhuma. Informação guardada e não mostrada é informação que não existe.
+--------------------------------------------------------------------------- #}
+<div class="cartao">
+  <div class="cartao-cab">
+    <h3>A busca na Receita</h3>
+    <small>o que o sistema já trouxe sozinho</small>
+  </div>
+  {# TRÊS ESTADOS, E ELES PEDEM COISAS DIFERENTES. Antes havia um recado só —
+     "falta o certificado" — e ele aparecia até para quem já tinha cadastrado
+     três. Mandava procurar no lugar errado. #}
+  {% if not buscas and not cnpjs_com_certificado %}
+    <p class="cartao-dica">
+      <b>A busca nunca rodou, e não há certificado guardado.</b> Ela precisa de
+      um certificado digital A1, que se sobe em
+      <a href="{{ url_for('analisesps.configuracoes') }}">Configurações</a>.
+      Enquanto isso, as notas entram pelo relatório do FSist — colado na
+      planilha de apoio ou subido aqui embaixo.
+    </p>
+  {% elif not buscas %}
+    <p class="cartao-dica">
+      <b>Há {{ cnpjs_com_certificado|length }} certificado(s) guardado(s), e a
+      busca ainda não foi disparada nenhuma vez.</b> Cadastrar o certificado não
+      dispara nada sozinho — aperte <b>"Buscar notas na Receita"</b> aqui
+      embaixo. A primeira rodada costuma demorar mais, porque começa do zero.
+    </p>
+  {% else %}
+    <div class="tabela-rolagem">
+      <table class="sps">
+        <thead>
+          <tr><th>CNPJ</th><th>O quê</th><th>Última consulta</th>
+              <th>Documentos</th><th>Falta buscar</th><th>Situação</th></tr>
+        </thead>
+        <tbody>
+          {% for b in buscas %}
+            <tr class="{{ 'com-risco' if b.ultimo_recado }}">
+              <td class="id">{{ b.cnpj }}</td>
+              <td>{{ b.rotulo_tipo }}</td>
+              <td>{{ b.consultado_em|momento_br if b.consultado_em else 'nunca' }}</td>
+              <td class="num">{{ '{:,}'.format(b.documentos or 0)|replace(',', '.') }}</td>
+              <td class="num">{{ b.faltam if b.faltam else '—' }}</td>
+              <td>
+                {# ⚠️ TENTATIVA QUE FALHOU TEM DE APARECER COMO FALHA.
+                   *"Eu coloco o certificado, boto a senha, ele aceita (…) mas
+                   simplesmente nada é feito, nada é executado, e eu não sei o
+                   que está acontecendo."* Antes, a busca que falhava não
+                   escrevia nada e a tela continuava dizendo "nunca rodou" —
+                   o caso em que ele mais precisa saber era o único que não
+                   contava nada. #}
+                {% if b.falhou %}
+                  <span class="etiqueta ruim">tentou e NÃO conseguiu</span>
+                  <small class="cartao-dica">{{ b.motivo_da_falha }}</small>
+                {% elif b.ultimo_recado %}
+                  <span class="etiqueta ruim">{{ b.ultimo_recado }}</span>
+                {% elif b.em_dia %}
+                  <span class="etiqueta boa">em dia</span>
+                {% else %}
+                  <span class="etiqueta">ainda há lote para buscar</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="cartao-dica">
+      "Falta buscar" é quanto a Receita ainda tem para entregar. Diferente de
+      zero, vale apertar "Buscar notas na Receita" de novo — ela entrega em
+      lotes, e uma rodada não traz tudo.
+    </p>
+    {% set sem_busca = cnpjs_com_certificado
+         | reject('in', buscas|map(attribute='cnpj')|list) | list %}
+    {% if sem_busca %}
+      <p class="cartao-dica">
+        <b>{{ sem_busca|length }} CNPJ(s) com certificado nunca foram consultados:</b>
+        {{ sem_busca|join(', ') }}. Aperte "Buscar notas na Receita".
+      </p>
+    {% endif %}
+  {% endif %}
+
+  {% if pode_operar %}
+    {# ---------------------------------------------------------------------
+       SUBIR O ARQUIVO — o que faltava, e o dono cobrou com todas as letras:
+       *"Importar relatório FSist — e cadê a opção de incluir o arquivo? De
+       onde vai tirar essa informação, se eu não estou nem colocando?"*
+
+       As duas portas ficam: colar na aba da planilha é o hábito da equipe, e
+       subir o arquivo é o caminho curto — e é como está o relatório antigo
+       que ele quer trazer. As duas passam pelo mesmo mapeamento de colunas e
+       pela mesma gravação.
+    --------------------------------------------------------------------- #}
+    <form method="post" enctype="multipart/form-data" class="subir-relatorio"
+          action="{{ url_for('analisesps.importar_relatorio_fsist') }}">
+      <label class="rotulo-campo">Subir o relatório do FSist</label>
+      <div class="subir-linha">
+        <input type="file" name="relatorio" required
+               accept=".xlsx,.xlsm,.csv,.txt">
+        <button class="btn" type="submit">Importar este arquivo</button>
+      </div>
+      <p class="cartao-dica">
+        Aceita <b>.xlsx</b>, <b>.csv</b> e <b>.txt</b>. A nota é identificada
+        pela chave de acesso, então subir o mesmo relatório duas vezes não
+        duplica nada — só atualiza o que mudou.
+      </p>
+    </form>
+    {% include "analisesps_acoes_fiscais.html" %}
+  {% endif %}
+</div>
+
+{# QUANTAS ENTRARAM POR DIA. Responde "ver as notas do dia" sem obrigar a
+   filtrar: o número de ontem ao lado do de hoje já diz se a busca está
+   trazendo coisa ou se parou. #}
+{% if por_dia %}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Notas por dia de emissão</h3>
+    <small>últimas duas semanas</small></div>
+  <div class="notas-por-dia">
+    {% for d in por_dia %}
+      <a class="dia-nota" href="{{ url_for('analisesps.tela_fiscal',
+           **dict(args_troca_recorte, visao='notas', f=1,
+                  emissao_ini=d.dia.isoformat(), emissao_fim=d.dia.isoformat())) }}">
+        <b>{{ d.dia|data_br }}</b>
+        <span>{{ d.quantas }} nota(s)</span>
+        <small>{{ d.total|moeda }}</small>
+      </a>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="cartao">
+  <div class="cartao-cab">
+    <h2>As notas emitidas contra a BWS</h2>
+    <small>{{ '{:,}'.format(total)|replace(',', '.') }} no filtro</small>
+  </div>
+  {# O QUE "ASSOCIAR" FAZ, escrito. O dono perguntou em 13/09/2026: *"o que é
+     que acontece quando eu clico em associar? Ele vai pro gravar no que foi
+     confirmado, é isso?"* — e a resposta é sim, com um passo no meio. #}
+  <p class="cartao-dica">
+    Ao lado de cada nota <b>sem lançamento</b> vão as SPs do mesmo CNPJ, com as
+    de valor igual na frente. <b>Associar</b> faz três coisas, nesta ordem:
+    grava a chave da nota naquela SP, tira a categoria de dentro da própria
+    chave (NF-e, CT-e…) e a nota sai desta lista.
+    <b>Não mexe no card do Pipefy ainda</b> — ela passa a contar em "Falta
+    gravar no card", e quem leva para lá é o botão <b>"Gravar no Pipefy o que
+    foi confirmado"</b>. A separação existe para que uma falha do Pipefy não
+    apague a decisão de trinta notas. <b>Dois cliques na linha da SP</b> abrem a
+    ficha dela aqui mesmo.
+  </p>
+  {% if not notas %}
+    <p class="cartao-dica">
+      {% if erro %}—{% else %}Nenhuma nota neste filtro.{% endif %}
+    </p>
+  {% else %}
+    <div class="tabela-rolagem">
+      <table class="sps">
+        <thead>
+          <tr><th>Emissão</th><th>Nº</th><th>Emitente</th><th>Valor</th>
+              <th>Tipo</th><th>Situação</th><th>Lançamento</th></tr>
+        </thead>
+        <tbody>
+          {% for n in notas %}
+            <tr class="{{ 'com-risco' if n.status|upper == 'CANCELADA' }}">
+              <td>{{ n.emissao|data_br }}</td>
+              <td class="id">{{ n.numero }}{% if n.serie %}<small>/{{ n.serie }}</small>{% endif %}</td>
+              <td>{{ n.emitente }}<br>
+                <small class="cartao-dica">{{ n.emitente_doc }}
+                  {%- if n.emitente_uf %} · {{ n.emitente_uf }}{% endif %}</small></td>
+              <td class="num">{{ n.valor|moeda }}</td>
+              <td>{{ n.categoria or '—' }}</td>
+              <td>{{ n.status or '—' }}</td>
+              <td>
+                {% if not n.orfa %}
+                  {# ⚠️ CANCELADA E ASSOCIADA não pode sair em verde. Verde diz
+                     "resolvido", e este é o caso mais grave da tela — despesa
+                     contra documento que não existe mais. E vai o número da SP:
+                     sem ele, agir obrigaria a procurar a chave na outra tela. #}
+                  {% if n.status|upper == 'CANCELADA' %}
+                    <span class="etiqueta ruim">⚠️ cancelada, e está na SP</span>
+                  {% else %}
+                    <span class="etiqueta boa">já está num lançamento</span>
+                  {% endif %}
+                  {% if n.sp_id %}
+                    <div class="nota-candidata">
+                      <a data-ficha="{{ url_for('analisesps.detalhe', sp_id=n.sp_id, origem='fiscal') }}"
+                         data-id="{{ n.sp_id }}"
+                         href="{{ url_for('analisesps.detalhe', sp_id=n.sp_id, origem='fiscal') }}"
+                         title="Abre a ficha aqui mesmo">{{ n.sp_id }}</a>
+                      {% if n.sp_status %}
+                        <small class="cartao-dica">{{ n.sp_status }}</small>
+                      {% endif %}
+                      {% if n.status|upper == 'CANCELADA'
+                            and n.sp_status|lower == 'pago' %}
+                        <span class="etiqueta ruim">paga sem documento</span>
+                      {% endif %}
+                    </div>
+                  {% endif %}
+                {% elif not n.candidatas and not n.ja_com_nota %}
+                  <span class="cartao-dica">sem lançamento · nenhuma SP deste CNPJ</span>
+                {% elif not n.candidatas %}
+                  <span class="cartao-dica">sem lançamento · todas as SPs deste
+                    CNPJ já têm nota</span>
+                {% else %}
+                  {% for c in n.candidatas %}
+                    <div class="nota-candidata">
+                      {# A FICHA ABRE POR CIMA, como na tela de lançamentos e
+                         como nas Solicitações. Antes este link levava para a
+                         página inteira, e o "Voltar" de lá jogava a pessoa nas
+                         Solicitações — *"fica totalmente desvinculado da
+                         documentação fiscal"*. #}
+                      <a data-ficha="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}"
+                         data-id="{{ c.id }}"
+                         href="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}"
+                         title="Abre a ficha aqui mesmo">{{ c.id }}</a>
+                      — {{ c.valor_num|moeda }}
+                      <small class="cartao-dica">{{ c.status_pgt }}</small>
+                      {% if pode_operar %}
+                        <button class="link-btn fiscal-associar"
+                                data-sp="{{ c.id }}" data-chave="{{ n.chave }}"
+                                data-credor="{{ c.credor }}"
+                                title="Grava esta nota nesta SP">associar</button>
+                      {% endif %}
+                      {# ---------------------------------------------------
+                         POR QUE ESTA SP É CANDIDATA, item por item.
+
+                         *"Você bota aqui a nota e bota 'mesmo valor'. Mas gera
+                         dúvida: você está comparando o mesmo valor de quê? Do
+                         mesmo fornecedor, do mesmo número de nota fiscal? Como
+                         é que você chegou a essa informação? (…) Pelo menos
+                         para dar segurança a quem está fazendo essa
+                         associação."*
+
+                         "Mesmo valor" sozinho é pior que nada: dá ar de
+                         conferência a uma coincidência. Duas notas do mesmo
+                         fornecedor no mesmo mês com o mesmo valor existem — e é
+                         exatamente aí que se associa a errada.
+                      --------------------------------------------------- #}
+                      <div class="razoes">
+                        <b>{{ c.confere }} de {{ c.de }} conferem:</b>
+                        {% for r in c.razoes %}
+                          <span class="razao {{ 'bate' if r.bate else 'falha' }}"
+                                title="{{ r.detalhe }}">
+                            {{ '✔' if r.bate else '✕' }} {{ r.rotulo }}</span>
+                        {% endfor %}
+                      </div>
+                    </div>
+                  {% endfor %}
+                {% endif %}
+
+                {# ---------------------------------------------------------
+                   AS SPs QUE JÁ TÊM NOTA — fora da lista de sugestões.
+
+                   *"Se eu tenho um registro todo associado, batendo tudo, e
+                   ele ainda está querendo que utilize aquilo como dado pra
+                   bater uma nota que eu já fiz o batimento antes? Eu acho que
+                   não tem muito sentido isso."*
+
+                   Não tem mesmo. Elas saem das vagas de sugestão, mas não
+                   somem da tela: ficam aqui, contadas e clicáveis, para que
+                   dê para conferir que o sistema não escondeu nada errado. E
+                   SEM botão de associar — associar de novo é o erro que esta
+                   separação existe para impedir.
+                --------------------------------------------------------- #}
+                {% if n.ja_com_nota %}
+                  <div class="ja-com-nota">
+                    <b>{{ n.ja_com_nota|length }}</b>
+                    {{ 'SP deste CNPJ já tem' if n.ja_com_nota|length == 1
+                       else 'SPs deste CNPJ já têm' }} nota associada — fora da
+                    sugestão:
+                    {% for c in n.ja_com_nota %}
+                      <a data-ficha="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}"
+                         data-id="{{ c.id }}"
+                         href="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}"
+                         title="Abre a ficha aqui mesmo">{{ c.id }}</a>{{ ',' if not loop.last }}
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% set pag_args = args.to_dict(flat=false) %}
+    {% set _ = pag_args.pop('pagina', None) %}
+    <div class="paginacao">
+      {{ primeira_linha }}–{{ ultima_linha }} de {{ total }}
+      {% if pagina > 1 %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_fiscal', **dict(pag_args, pagina=pagina-1)) }}">‹ Anterior</a>
+      {% endif %}
+      {% if tem_proxima %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_fiscal', **dict(pag_args, pagina=pagina+1)) }}">Próxima ›</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
+{% include "analisesps_ficha_modal.html" %}
+
+<div id="fiscal-config" hidden
+     data-url-mao="{{ url_for('analisesps.decidir_fiscal_a_mao') }}"
+     data-url-tarefa="{{ url_for('analisesps.sincronizar') }}"
+     data-url-andamento="{{ url_for('analisesps.andamento') }}"></div>
+{% endblock %}

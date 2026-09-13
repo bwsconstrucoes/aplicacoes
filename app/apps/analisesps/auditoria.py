@@ -330,23 +330,26 @@ def resumo(f: dict, aplicar_filtros: bool = False,
 
     where, params = _where(f, aplicar_filtros, periodo)
 
-    def contar(condicao: str) -> int:
-        linha = consultar_um(
-            f"SELECT count(*) FROM analisesps.sps{where} AND {condicao}",
-            tuple(params))
-        return linha[0] if linha else 0
-
-    contagens = {
-        "risco_ia": contar("upper(coalesce(analise_ia,'')) LIKE '%COM RISCO%'"),
-        "codigos_barras": contar(
-            f"({consultas.SQL_BOLETO_INVALIDO} OR {consultas.SQL_BOLETO_DUPLICADO})"),
-        "sem_classificacao": contar(
+    # AS QUATRO CONTAGENS SAEM DE UMA VARREDURA SÓ. Eram quatro consultas
+    # percorrendo as MESMAS linhas das 59 mil SPs, cada uma para devolver um
+    # número. `FILTER` conta as quatro condições numa passada: o banco lê a
+    # tabela uma vez e incrementa quatro contadores.
+    condicoes = {
+        "risco_ia": "upper(coalesce(analise_ia,'')) LIKE '%COM RISCO%'",
+        "codigos_barras":
+            f"({consultas.SQL_BOLETO_INVALIDO} OR {consultas.SQL_BOLETO_DUPLICADO})",
+        "sem_classificacao":
             "(trim(coalesce(centro_custo,'')) = '' "
-            " OR trim(coalesce(projeto,'')) = '')"),
-        "sem_integracao": contar(
+            " OR trim(coalesce(projeto,'')) = '')",
+        "sem_integracao":
             "trim(coalesce(codigo_integracao,'')) = '' "
-            "AND lower(trim(coalesce(status_pgt,''))) NOT IN ('cancelado','pago')"),
+            "AND lower(trim(coalesce(status_pgt,''))) NOT IN ('cancelado','pago')",
     }
+    nomes = list(condicoes)
+    selecao = ", ".join(f"count(*) FILTER (WHERE {condicoes[n]})" for n in nomes)
+    linha = consultar_um(
+        f"SELECT {selecao} FROM analisesps.sps{where}", tuple(params))
+    contagens = {n: (linha[i] if linha else 0) for i, n in enumerate(nomes)}
     # Estas duas precisam de agrupamento, então contam as linhas do resultado.
     contagens["nf_duplicada"] = len(nf_duplicada(f, aplicar_filtros))
     contagens["possivel_duplicidade"] = len(possivel_duplicidade(f, aplicar_filtros))

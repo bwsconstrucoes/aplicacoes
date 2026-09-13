@@ -53,7 +53,25 @@ MODOS = {
     "carga_inicial": "Primeira carga — traz a planilha inteira (demorado)",
     "apoios": "Só as planilhas de apoio (contas e documentação fiscal)",
     "fila": "Só devolver para a planilha as alterações pendentes",
+    "comprovantes": "Dar baixa nos comprovantes arrastados para a tela",
+    "fiscal": "Gravar nos cards do Pipefy a análise fiscal confirmada",
+    "fiscal_ia": "Ler com IA os anexos das SPs escolhidas",
+    "notas_receita": "Buscar na Receita as notas emitidas contra a BWS",
 }
+
+# QUAIS MODOS APARECEM EM CONFIGURAÇÕES, e quais são trabalho fiscal.
+#
+# Correção do dono em 13/09/2026: *"ao buscar na Receita as notas emitidas
+# contra a BWS, não tem absolutamente nada a ver eu estar com um botão desse
+# fora da tela de trabalho. (…) Ler, é pra estar dentro da tela. Gravar nos
+# cards, é pra estar dentro da tela."*
+#
+# A causa do engano era boba, e é o motivo de esta lista existir: a tela de
+# Configurações desenhava a lista INTEIRA de `MODOS` como botões, então quem
+# criasse um modo novo ganhava um botão lá sem querer. Agora a divisão é
+# explícita, e um modo novo só aparece onde alguém escreveu que ele aparece.
+MODOS_DA_BASE = ["sincronizar", "carga_inicial", "apoios", "fila",
+                 "comprovantes"]
 
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
 # marcado como pronto não roda de novo.
@@ -62,6 +80,10 @@ ETAPAS = {
     "sincronizar": ["fila", "delta", "apoios"],
     "apoios": ["apoios"],
     "fila": ["fila"],
+    "comprovantes": ["comprovantes"],
+    "fiscal": ["fiscal"],
+    "fiscal_ia": ["fiscal_ia"],
+    "notas_receita": ["notas_receita"],
 }
 
 
@@ -204,6 +226,35 @@ def _marcar_etapa_feita(execucao_id: int, etapa: str) -> None:
         conn.commit()
 
 
+def _apoios_recentes() -> bool:
+    """As planilhas de apoio foram relidas há menos de uma hora?
+
+    Na dúvida responde NÃO: deixar de trazer um dado é pior do que trazê-lo
+    uma vez a mais."""
+    try:
+        from .db import consultar_um
+        linha = consultar_um(
+            "SELECT extract(epoch FROM (now() - valor::timestamptz)) / 60 "
+            "  FROM analisesps.meta WHERE chave = 'apoios_em'")
+    except Exception:  # noqa: BLE001 — carimbo ilegível ou banco fora
+        return False
+    if not linha or linha[0] is None:
+        return False
+    return float(linha[0]) < MINUTOS_ENTRE_APOIOS_AUTOMATICOS
+
+
+def _marcar_apoios_feitos() -> None:
+    """Anota a hora em que as planilhas de apoio foram relidas."""
+    try:
+        from . import sincronizacao
+        from .db import conexao
+        from .horario import agora
+        with conexao() as conn:
+            sincronizacao._meta_gravar(conn, "apoios_em", agora().isoformat())
+    except Exception:  # noqa: BLE001 — sem o carimbo, relê da próxima vez
+        logger.exception("Análise de SPs: falhou anotar a hora dos apoios")
+
+
 # ---------------------------------------------------------------------------
 # O trabalho
 # ---------------------------------------------------------------------------
@@ -219,6 +270,23 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
     inicio = agora()
     ultimo_batimento = [0.0]
     total_linhas = [0]
+    recado_apoios = [""]
+    recado_receita = [""]
+
+    # Quem pediu: "tela aberta" é o disparo automático de 5 em 5 minutos;
+    # qualquer outra coisa é gente apertando botão. A diferença decide se as
+    # planilhas de apoio são relidas agora (ver a constante lá em cima).
+    try:
+        with conexao() as conn:
+            cur = conn.execute(
+                "SELECT disparo FROM analisesps.execucoes WHERE id = ?",
+                (execucao_id,))
+            linha = cur.fetchone()
+            cur.close()
+        automatica = bool(linha) and str(linha[0] or "") == "tela aberta"
+    except Exception:  # noqa: BLE001 — na dúvida, trata como pedido de gente
+        logger.exception("Análise de SPs: não consegui saber quem disparou")
+        automatica = False
 
     def anotar(etapa: str, progresso: str = "") -> None:
         """Vai para o banco de tempos em tempos, não a cada bloco."""
@@ -261,17 +329,144 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 resultado = sincronizacao.sincronizar_delta(anotar)
                 total_linhas[0] = resultado.get("alteradas", 0)
 
+            elif etapa == "comprovantes":
+                # A BAIXA NÃO PODE RODAR DENTRO DO WORKER, e é o mesmo motivo
+                # da carga: ela fala com Omie, Pipefy, Sheets e Dropbox e leva
+                # minutos, enquanto o gunicorn recicla o processo a cada ~150
+                # requisições. Por isso ela mora aqui, no processo separado.
+                mudar_etapa("dando baixa nos comprovantes")
+                from . import comprovantes as _comprovantes
+                c = _comprovantes.processar_pendentes(anotar)
+                total_linhas[0] = c.get("lotes", 0)
+                recado_apoios[0] = (
+                    f"{c.get('lotes', 0)} arquivo(s) processado(s)"
+                    + (f", {c['falhas']} com falha" if c.get("falhas") else ""))
+
+            elif etapa == "fiscal":
+                # NO PROCESSO SEPARADO pelo mesmo motivo da baixa: são até
+                # duzentos cards falando com a API do Pipefy, e dentro do
+                # worker isso seguraria uma das quatro threads por minutos.
+                mudar_etapa("gravando a análise fiscal nos cards")
+                from . import fiscal as _fiscal
+                f = _fiscal.escrever_nos_cards(anotar)
+                total_linhas[0] = f.get("escritas", 0)
+                recado_apoios[0] = (
+                    f"{f.get('escritas', 0)} card(s) gravado(s)"
+                    + (f", {f['falhas']} recusado(s)" if f.get("falhas") else "")
+                    + (f", {f['pendentes']} ainda na fila"
+                       if f.get("pendentes") else ""))
+
+            elif etapa == "fiscal_ia":
+                # BAIXAR E LER CADA ANEXO leva segundos por SP; trinta SPs são
+                # minutos. Dentro do worker isso seguraria uma das quatro
+                # threads do gunicorn — e a fila de quem escolheu fica no
+                # banco, não em memória, porque o processo pode ser reiniciado.
+                mudar_etapa("lendo os anexos com IA")
+                from . import fiscal_ia as _fiscal_ia
+                from .db import conexao as _conexao
+                with _conexao() as _conn:
+                    _cur = _conn.execute(
+                        "SELECT sp_id FROM analisesps.sp_fiscal_analise "
+                        " WHERE situacao = 'NA_FILA_IA' ORDER BY decidida_em")
+                    _ids = [str(r[0]) for r in _cur.fetchall()]
+                    _cur.close()
+                i = _fiscal_ia.analisar(_ids, anotar)
+                total_linhas[0] = i.get("lidas", 0)
+                recado_apoios[0] = (
+                    f"{i.get('lidas', 0)} anexo(s) lido(s) pela IA"
+                    + (f", {i['sem_anexo']} sem anexo" if i.get("sem_anexo") else "")
+                    + (f", {len(i['falhas'])} com falha" if i.get("falhas") else ""))
+
+            elif etapa == "notas_receita":
+                # NO PROCESSO SEPARADO como tudo o que fala com fora: são
+                # vários lotes por CNPJ, cada um uma ida à Receita.
+                mudar_etapa("buscando notas na Receita")
+                from . import sefaz as _sefaz
+                b = _sefaz.buscar_tudo(anotar)
+                total_linhas[0] = b.get("trazidas", 0)
+                recado_apoios[0] = (
+                    f"{b.get('trazidas', 0)} nota(s) trazida(s) da Receita"
+                    + (f" — {b['erro']}" if b.get("erro") else ""))
+
             elif etapa == "apoios":
-                mudar_etapa("trazendo as planilhas de apoio")
-                sincronizacao.sincronizar_apoios(anotar)
-                sincronizacao.sincronizar_agenda(anotar)
-                sincronizacao.sincronizar_referencias_rateio(anotar)
+                if automatica and _apoios_recentes():
+                    logger.info("Análise de SPs: planilhas de apoio ainda "
+                                "recentes — pulando nesta automática.")
+                else:
+                    mudar_etapa("trazendo as planilhas de apoio")
+                    a = sincronizacao.sincronizar_apoios(anotar)
+                    sincronizacao.sincronizar_agenda(anotar)
+                    r = sincronizacao.sincronizar_referencias_rateio(anotar)
+                    # AS NOTAS DO FSIST vêm junto com o resto do apoio. Elas
+                    # existiam e estavam testadas desde 11/09, mas NINGUÉM AS
+                    # CHAMAVA: a tabela ficaria vazia para sempre, e a
+                    # conciliação fiscal não teria contra o que casar.
+                    # Achado em 12/09 procurando quem importava o relatório.
+                    # A BUSCA NA RECEITA VEM ANTES do relatório do FSist,
+                    # e a ordem importa: o relatório é a fonte do passado e
+                    # pode trazer a mesma nota com status mais velho. Quem
+                    # chega depois manda, então o FSist por último garante que
+                    # uma nota cancelada NO RELATÓRIO não seja sobrescrita pelo
+                    # "autorizada" que a Receita entregou antes do cancelamento.
+                    try:
+                        from . import sefaz as _sefaz
+                        if _sefaz.configurado():
+                            b = _sefaz.buscar_tudo(anotar)
+                            recado_receita[0] = (
+                                f"Receita: {b.get('trazidas', 0)} nota(s)"
+                                + (f" — {b['erro']}" if b.get("erro") else ""))
+                    except Exception as e:  # noqa: BLE001 — não derruba o apoio
+                        logger.exception("Análise de SPs: falhou a busca na "
+                                         "Receita")
+                        recado_receita[0] = f"Receita: falhou ({e})"
+                    try:
+                        n = sincronizacao.sincronizar_notas_fiscais(anotar)
+                    except Exception as e:  # noqa: BLE001 — não derruba o apoio
+                        logger.exception("Análise de SPs: falhou importar as "
+                                         "notas do FSist")
+                        n = {"novas": 0, "mudaram": 0, "ja_tinha": 0,
+                             "avisos": [f"notas do FSist: {e}"]}
+                    _marcar_apoios_feitos()
+                    # O QUE VEIO, E O QUE NÃO VEIO, VAI PARA A MENSAGEM DA
+                    # EXECUÇÃO — que é o que a tela de Configurações mostra.
+                    # Antes esta etapa terminava dizendo "0 SPs", e um motivo
+                    # que só existia no log do serviço; quem aperta o botão não
+                    # tem como ler log. Ver `sincronizar_referencias_rateio`.
+                    recado_apoios[0] = (
+                        f"documentação fiscal: {a.get('fiscais', 0)} · "
+                        f"contas: {a.get('contas', 0)} · "
+                        f"obras: {r.get('obras', 0)} · "
+                        f"categorias: {r.get('categorias', 0)} · "
+                        # OS TRÊS NÚMEROS DAS NOTAS, como o dono pediu: o que
+                        # entrou, o que MUDOU (uma nota que volta cancelada é
+                        # notícia) e o que já estava lá.
+                        f"notas: {n.get('novas', 0)} nova(s), "
+                        f"{n.get('mudaram', 0)} mudou/mudaram, "
+                        f"{n.get('ja_tinha', 0)} já tinha"
+                        + (" · " + recado_receita[0] if recado_receita[0] else ""))
+                    # SEM REPETIR: a aba "C. Diários" é lida por dois
+                    # caminhos (as contas e as obras). Quando ela falta, as
+                    # duas leituras reclamam a mesma coisa, e o recado saía
+                    # com a frase duplicada.
+                    problemas = list(dict.fromkeys(
+                        (a.get("avisos") or []) + (r.get("avisos") or [])
+                        + (n.get("avisos") or [])))
+                    if problemas:
+                        recado_apoios[0] += " — " + " ".join(problemas)
 
             _marcar_etapa_feita(execucao_id, etapa)
 
         duracao = (agora() - inicio).total_seconds()
-        mensagem = (f"{total_linhas[0]:,} SPs em {duracao / 60:.1f} min."
-                    .replace(",", "."))
+        if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia"):
+            # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
+            # parecer que nada aconteceu justamente quando algo aconteceu.
+            mensagem = (recado_apoios[0]
+                        or "planilhas de apoio ainda recentes — nada a refazer.")
+        else:
+            mensagem = (f"{total_linhas[0]:,} SPs em {duracao / 60:.1f} min."
+                        .replace(",", "."))
+            if recado_apoios[0]:
+                mensagem += " Apoio — " + recado_apoios[0]
         logger.info("Análise de SPs: %s concluída — %s", modo, mensagem)
         with conexao() as conn:
             _fechar_execucao(conn, execucao_id, True, mensagem, total_linhas[0])
@@ -322,6 +517,23 @@ def _iniciar_processo(modo: str, execucao_id: int) -> None:
 # planilha. Cinco minutos é fresco o bastante para contas a pagar e é uma
 # leitura da planilha a cada cinco minutos, no pior caso.
 MINUTOS_ENTRE_SYNC_DA_TELA = 5
+
+# De quanto em quanto tempo as planilhas de APOIO são relidas, quando quem
+# pediu a sincronização foi a tela aberta e não uma pessoa.
+#
+# Elas não são o dado principal: são a documentação fiscal por SP, as contas
+# por centro de custo, a agenda e as listas do rateio. Mudam raramente — mas
+# vinham sendo relidas INTEIRAS a cada cinco minutos, junto com as SPs.
+#
+# O estrago apareceu na tela do banco em 10/09/2026: a gravação da
+# documentação fiscal era, disparada, a consulta mais chamada de todo o banco
+# — **14,3 milhões de vezes**. E cada passagem ainda baixa a planilha inteira
+# do Google, na instância de 2 GB que já morreu de memória uma vez.
+#
+# Uma hora é folgado para dado de apoio, e quem precisar na hora tem dois
+# caminhos que continuam imediatos: o botão de atualizar e o modo "Só as
+# planilhas de apoio". A trava vale SÓ para o disparo automático.
+MINUTOS_ENTRE_APOIOS_AUTOMATICOS = 60
 
 
 def _minutos_desde_a_ultima_sincronizacao():
@@ -411,3 +623,43 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
 
     return {"ok": True, "modo": modo, "descricao": MODOS[modo],
             "execucao": execucao_id}
+
+
+# Os modos que a tela de Documentação Fiscal dispara. O resultado do último de
+# cada um é mostrado lá — ver `ultimas_por_tipo`.
+MODOS_FISCAIS = ["notas_receita", "apoios", "fiscal_ia", "fiscal", "fila"]
+
+
+def ultimas_por_tipo(tipos: list) -> dict:
+    """A última execução CONCLUÍDA de cada tipo pedido.
+
+    Existe por causa de uma reclamação do dono em 13/09/2026: *"eu clico gravar
+    no Pipefy, aí diz que está rodando no servidor, mas como é que a gente sabe
+    se rodou, se não rodou, se terminou? (…) Não aparece nada na tela, a tela
+    continua do mesmo jeito. Não deveria ter alguma coisa dizendo que gravou,
+    uma confirmação?"*
+
+    Ele está certo, e o dado sempre existiu: cada execução grava quando
+    terminou, se deu certo e um recado em português ("12 card(s) gravado(s), 2
+    recusado(s)"). Isso aparecia SÓ na tela de Configurações, que não é onde o
+    trabalho acontece. Aqui a tela de onde o botão foi apertado passa a mostrar
+    o que ele fez.
+
+    UMA CONSULTA SÓ, com `DISTINCT ON`: uma por tipo seriam cinco varreduras da
+    mesma tabela num banco que tem um décimo de um núcleo."""
+    tipos = [t for t in (tipos or []) if t]
+    if not tipos:
+        return {}
+    try:
+        from .db import consultar
+        marcas = ",".join(["?"] * len(tipos))
+        linhas = consultar(
+            "SELECT DISTINCT ON (tipo) tipo, fim, ok, mensagem, linhas, disparo "
+            "  FROM analisesps.execucoes "
+            f" WHERE fim IS NOT NULL AND tipo IN ({marcas}) "
+            " ORDER BY tipo, fim DESC", tuple(tipos))
+    except Exception:  # noqa: BLE001 — banco fora do ar, ou migração por aplicar
+        logger.exception("Análise de SPs: não consegui ler as últimas execuções")
+        return {}
+    nomes = ["tipo", "fim", "ok", "mensagem", "linhas", "disparo"]
+    return {l[0]: dict(zip(nomes, l)) for l in linhas}

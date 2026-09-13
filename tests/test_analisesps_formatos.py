@@ -179,3 +179,39 @@ def test_descricao_vazia_nao_vira_a_palavra_none():
     from app.apps.analisesps.formatos import com_links
     assert str(com_links(None)) == ""
     assert str(com_links("")) == ""
+
+
+# ---------------------------------------------------------------------------
+# SÓ DATA, SEM HORA, É DATA — e não meia-noite
+#
+# Achado em 12/09/2026 conferindo o relatório do lote impresso: um vencimento
+# de dia 20 saía no papel como dia 19.
+# ---------------------------------------------------------------------------
+def test_data_escrita_sem_hora_nao_anda_um_dia_para_tras():
+    """O DEFEITO: "2026-09-20" virava meia-noite sem fuso, e a conversão para
+    Brasília levava esse instante para 21h do DIA ANTERIOR.
+
+    Meia-noite de uma data escrita sem hora não é um instante no mundo: é o
+    dia. Converter fuso ali inventa uma hora que ninguém informou."""
+    from app.apps.analisesps.formatos import data_br
+    assert data_br("2026-09-20") == "20/09/2026"
+    assert data_br("2026-01-01") == "01/01/2026"
+
+
+def test_a_conversao_de_fuso_continua_valendo_para_data_COM_hora():
+    """A regra que o defeito acima NÃO pode ter derrubado: uma sincronização
+    de 00h30 em UTC é 21h30 do dia anterior em Brasília, e é esse dia que a
+    tela tem de mostrar."""
+    from app.apps.analisesps.formatos import data_br, momento_br
+    assert data_br("2026-09-04T00:30:00+00:00") == "03/09/2026"
+    assert momento_br("2026-09-04T00:30:00+00:00") == "03/09/2026 às 21:30"
+    assert momento_br("2026-09-04T17:25:31.319885-03:00") == "04/09/2026 às 17:25"
+
+
+def test_data_de_verdade_e_texto_brasileiro_continuam_iguais():
+    import datetime as dt
+
+    from app.apps.analisesps.formatos import data_br
+    assert data_br(dt.date(2026, 9, 20)) == "20/09/2026"
+    assert data_br("20/09/2026") == "20/09/2026"
+    assert data_br("") == "" and data_br(None) == ""

@@ -24,6 +24,55 @@ from app.apps.erp.core.comum.auditoria import ErroValidacao
 from app.apps.erp.db.models.cadastros import Usuario
 
 
+def ler_tabela(conteudo: bytes) -> list[dict[str, str]]:
+    """Lê a planilha venha ela em CSV ou em Excel (.xlsx).
+
+    Existe porque exportar para CSV é um passo a mais que ninguém lembra de
+    fazer — e quando faz, o acento e o ponto e vírgula viram problema. O
+    formato é reconhecido pelo CONTEÚDO, não pela extensão: arquivo .xlsx
+    começa com a assinatura "PK" de arquivo compactado. Assim o nome do
+    arquivo pode estar errado que a leitura funciona igual.
+
+    Devolve o mesmo formato do CSV — uma lista de dicionários com o cabeçalho
+    em minúsculas — para o resto do importador não precisar saber a diferença.
+    `openpyxl` já é dependência do serviço (relatório do painel em Excel):
+    nenhuma biblioteca nova entra por causa disto.
+    """
+    if conteudo[:2] == b"PK":
+        return _ler_xlsx(conteudo)
+    return _ler_csv(conteudo)
+
+
+def _ler_xlsx(conteudo: bytes) -> list[dict[str, str]]:
+    """Primeira aba da pasta, em modo de leitura (não carrega tudo em memória
+    de uma vez — a planilha de insumos da BWS tem mais de 3 mil linhas e a
+    instância divide 2 GB com os outros módulos)."""
+    from openpyxl import load_workbook
+
+    try:
+        pasta = load_workbook(io.BytesIO(conteudo), data_only=True, read_only=True)
+    except Exception as e:
+        raise ErroValidacao(f"Não consegui abrir a planilha Excel: {e}") from e
+    aba = pasta.worksheets[0] if pasta.worksheets else None
+    if aba is None:
+        raise ErroValidacao("A planilha Excel não tem nenhuma aba.")
+    linhas: list[dict[str, str]] = []
+    cabecalho: list[str] = []
+    for bruta in aba.iter_rows(values_only=True):
+        valores = ["" if v is None else str(v).strip() for v in bruta]
+        if not cabecalho:
+            if not any(valores):
+                continue                 # linha em branco antes do cabeçalho
+            cabecalho = [v.strip().lower() for v in valores]
+            continue
+        if not any(valores):
+            continue                     # linha em branco no meio ou no fim
+        linhas.append({c: (valores[i] if i < len(valores) else "")
+                       for i, c in enumerate(cabecalho) if c})
+    pasta.close()
+    return linhas
+
+
 def _ler_csv(conteudo: bytes) -> list[dict[str, str]]:
     for enc in ("utf-8-sig", "utf-8", "latin-1"):
         try:

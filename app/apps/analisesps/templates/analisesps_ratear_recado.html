@@ -1,0 +1,13 @@
+{# O que a interpretação da colagem tem a dizer. Aparece só depois de colar.
+
+   TUDO o que não foi o nome exato aparece aqui, de propósito: acertar a obra
+   errada é pior do que não achar nenhuma, e o Omie aceita um rateio no lugar
+   errado sem reclamar. #}
+{% if avisos %}
+  <div class="aviso atencao" style="margin-bottom:12px">
+    <b>Confira o que eu entendi:</b>
+    <ul style="margin:6px 0 0 18px">
+      {% for a in avisos %}<li>{{ a }}</li>{% endfor %}
+    </ul>
+  </div>
+{% endif %}

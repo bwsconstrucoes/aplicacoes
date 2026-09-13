@@ -170,6 +170,30 @@ Fica registrado que a agenda deixou de ser "seria bom ter": **ela é o lugar
 onde os alertas de todas as áreas se encontram**, e três coisas já dependem
 dela.
 
+## 8-B. O QUE JÁ FOI CONSTRUÍDO — 09/09/2026
+
+Os passos 2, 3, 4 e 5 da ordem abaixo estão **feitos** (migração 044, tela
+Financeiro › Notas fiscais). Detalhe e provas em `HISTORICO.md`, seção "A tela
+do cruzamento de notas fiscais". Em resumo:
+
+- as notas entram por **importação de XML** (solto ou .zip), como recomendado;
+- o cruzamento com **pedido, título e fundo fixo** funciona, com um pedido
+  recebendo várias notas e o saldo diminuindo a cada uma;
+- o casamento automático só acontece pela **chave de acesso**; indício vira
+  proposta para uma pessoa confirmar;
+- a **trava contra contar a mesma despesa duas vezes** está no lugar, nos dois
+  sentidos, com caso de teste em banco de verdade;
+- **ignorar uma nota exige motivo escrito**, e o banco recusa sem ele.
+
+Continua **sem construir**: o passo 1 (certificado por empresa), o passo 6 (a
+agenda) e a captura direta na SEFAZ — os três dependem de decisão dele (§9).
+
+Das quatro perguntas do §9, uma foi **respondida** pelo dono em 07/09/2026:
+*"fundo fixo é dedutível, ponto final"*. Uma foi **decidida na prática** aqui:
+quem confere são os dois (financeiro por cargo, comprador por marcação), na
+mesma tela. Duas continuam abertas: manifestação do destinatário, e trocar o
+FSist pela SEFAZ.
+
 ## 8. Ordem sugerida (a combinar com o dono)
 
 1. **Cadastro do certificado por empresa**, cifrado, com data de validade —
@@ -183,10 +207,43 @@ dela.
 5. **Fundo fixo e dedutibilidade**, com a trava contra contar duas vezes.
 6. **A agenda**, recolhendo os alertas de todas as áreas.
 
+## 8-C. RESPONDIDO PELO DONO — 09/09/2026
+
+Palavras dele: *"quanto à captura de notas, basta avisar; a ideia é deixar de
+usar o FSist e fazer o trabalho autônomo integrado."*
+
+Duas decisões, e as duas mudam o rumo:
+
+1. **O ERP AVISA, NÃO MANIFESTA.** A manifestação do destinatário (dizer ao
+   fisco "ciente", "confirmo" ou "desconheço") continua sendo ato humano, fora
+   do sistema. O ERP mostra a nota que não cruza com nada e avisa — quem
+   responde ao fisco é gente. É a escolha conservadora e é a certa: manifestação
+   tem consequência fiscal e prazo, e robô que manifesta sozinho erra em nome
+   da empresa.
+
+2. **O FSIST SAI; A CAPTURA PASSA A SER DIRETO NA SEFAZ.** Isso promove dois
+   itens que estavam adiados a pré-requisitos de verdade:
+   - o **certificado digital por empresa**, cifrado, com alerta de validade
+     (§6) — sem ele não há captura;
+   - o **serviço de distribuição de documentos da SEFAZ**, percorrido por
+     número de sequência, guardando o ponto de onde parou.
+
+   ⚠️ **A ordem não muda por causa disso.** A importação de XML que já existe
+   continua sendo o caminho enquanto a captura direta não estiver de pé — e ela
+   serve de rede: se a SEFAZ ficar fora do ar ou o certificado vencer, o
+   caminho manual ainda funciona. Desligar o FSist ANTES da captura própria
+   estar rodando e conferida seria trocar o certo pelo duvidoso.
+
+   ⚠️ **O que ainda não foi verificado por ninguém aqui:** o comportamento real
+   do serviço da SEFAZ (limites de consulta, o que acontece ao perder o número
+   de sequência, e se o certificado A1 da BWS tem o perfil necessário). Isso é
+   estudo antes de código, e será feito antes de prometer data.
+
 ## 9. O que ainda precisa da palavra dele
 
 - A regra de dedutibilidade do fundo fixo (§4) — é o item de maior risco.
-- Manifestação do destinatário: o ERP manifesta, ou só avisa? (§5)
-- Começar pelo FSist ou ir direto à SEFAZ? (§5)
+- ~~Manifestação do destinatário~~ — **RESPONDIDO em 09/09/2026: só avisa.**
+- ~~Começar pelo FSist ou ir direto à SEFAZ?~~ — **RESPONDIDO em 09/09/2026:
+  captura própria, direto na SEFAZ; o FSist sai depois que ela estiver de pé.**
 - Quem confere o cruzamento duvidoso — o financeiro, o comprador, ou os dois
   em telas diferentes?

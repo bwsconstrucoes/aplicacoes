@@ -22,6 +22,71 @@ Isso muda a resposta, não o cuidado com o código.
   verificado são decisão de negócio — e a decisão é dele. Não esconder atrás de
   "está pronto".
 
+## VÁRIAS TAREFAS NUM PEDIDO SÓ: vá até o fim, sem voltar no meio
+
+**Esta é a regra que mais foi quebrada, e o dono já a pediu mais de uma vez.**
+Ele cobrou isso em DOIS chats diferentes no mesmo dia, 12/09/2026 — o que por
+si só mostra que não é manha de uma área:
+
+> *"Eu passo uma demanda, aí só depois de um bom tempo eu volto pro Claude pra
+> olhar. Aí quando eu olho, como é que está, você fez uma e estavam pendentes as
+> outras duas, sem razão."*
+
+> *"Eu passo duas, três tarefas, ao invés de você executar as duas, três
+> tarefas, você faz uma e para. Aí me pergunta se eu quero seguir. Se eu já
+> estou dando três tarefas, por que tu não executa as três?"*
+
+Quando o pedido traz **três, quatro, cinco tarefas** que não dependem umas das
+outras, aquilo é uma **FILA, não um cardápio**. Faça todas, uma atrás da outra,
+**sem voltar entre elas**.
+
+### O que fazer quando uma emperra
+
+**A dúvida trava SÓ a tarefa dela.** As outras seguem. Terminadas as que dá para
+terminar, aí sim volte — **uma vez** — com a lista: o que ficou pronto, o que
+ficou parado e a pergunta exata que destrava.
+
+**Dúvida de detalhe não é motivo nem para travar a tarefa dela**: resolva com um
+padrão sensato e escreva a escolha na resposta ("fiz assim, porque X; se
+preferir diferente, eu troco").
+
+### O que NÃO é motivo para parar
+
+Nenhum destes justifica devolver a conversa no meio da fila:
+
+- ter terminado uma tarefa e querer contar;
+- achar que "é muito trabalho para uma tanda só";
+- querer confirmar a abordagem de algo que ele **já decidiu** — pergunta que ele
+  já respondeu não se repete;
+- querer perguntar **por onde começar**. Se ele não disse a ordem, é porque
+  tanto faz — escolha (pela maior, ou pela que destrava as outras), siga, e diga
+  no fim em que ordem foi.
+
+### O que É motivo para parar
+
+Só três coisas:
+
+1. **Publicar.** Juntar na `main` sempre espera o "pode" dele — isso não muda.
+2. **Algo sem desfazer** que ele não autorizou (apagar dado, gastar dinheiro,
+   escrever em sistema de terceiro que não estava no pedido).
+3. **Uma dúvida que trava TODAS as tarefas que sobraram** — e aí volte, porque
+   não há mais o que fazer.
+
+### Por que isso acontece, para não acontecer de novo
+
+Registrado aqui porque entender o mecanismo é o que impede a repetição: parar e
+relatar **parece** cuidado, e é o contrário. Terminar um pedaço grande cria uma
+sensação de "bom lugar para conferir se estou no caminho certo" — mas essa
+conferência custa uma ida e volta dele, e ele pode demorar horas para ver.
+
+**Trocar tempo do dono por segurança minha é um mau negócio, e o erro está na
+conta:** seguir na direção errada numa tarefa independente custa uma tarefa
+refeita; parar no meio da fila custa horas paradas, garantidas, toda vez. O
+segundo é sempre mais caro — e, diferente do primeiro, é certo.
+
+**Na dúvida sobre parar ou seguir: siga.** E escreva no relatório final o que
+você assumiu.
+
 ## Quatro áreas, quatro chats — e a memória fica no repositório
 
 O dono trabalha com **um chat por área**, na nuvem (claude.ai/code), sem
@@ -109,8 +174,9 @@ def load_spsbd_values(sheet_id: str) -> list[list[str]]:
 
 ## Gunicorn
 
-⚠️ **Há uma divergência a confirmar.** O `Procfile` versionado está com
-**1 worker e 4 threads**:
+✔ **Divergência RESOLVIDA em 10/09/2026.** O dono mostrou o campo *Start
+Command* das Settings do Render, e ele é **idêntico**, palavra por palavra, ao
+`Procfile` versionado:
 
 ```
 web: gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 120 \
@@ -118,15 +184,24 @@ web: gunicorn app.main:app --timeout 3600 --graceful-timeout 120 --keep-alive 12
      --max-requests 150 --max-requests-jitter 40 --log-level info
 ```
 
-As `4` threads vieram do commit `352782d` ("reduz threads e adiciona
-max-requests p/ conter OOM"): a instância tem 2 GB e, com 8 threads, morria de
-OOM em julho de 2026 (`CONTEXTO.md` §9). Há indicação de que a produção esteja
-rodando com **8 threads** — o que é possível porque **o campo Start Command nas
-Settings do Render sobrescreve o Procfile**.
+Ou seja: a produção roda com **1 worker e 4 threads**, e não com 8 — a suspeita
+anotada aqui desde julho era infundada. As `4` threads vieram do commit
+`352782d`, que conteve o OOM de julho de 2026 (`CONTEXTO.md` §9).
 
-Antes de mexer nesse comando: conferir qual dos dois vale hoje e alinhar os
-dois lugares. Se 8 for mesmo o valor em produção, vigiar memória — foi essa a
-configuração associada ao OOM.
+**A armadilha continua de pé, e é por isso que a nota fica:** o Start Command
+**sobrescreve o Procfile**. Como hoje os dois são iguais, mexer só no Procfile
+não teria efeito nenhum em produção, e ninguém perceberia. Ao mudar o comando,
+mudar nos DOIS lugares — ou esvaziar o Start Command, para valer o Procfile,
+que é o versionado.
+
+**O que as métricas do Render mostraram** (48 h, 08 a 10/09/2026): memória
+entre **15% e 45%** dos 2 GB, sem chegar perto do limite nenhuma vez, e CPU
+quase sempre abaixo de 5%. As causas de verdade do OOM foram corrigidas na
+origem em julho (`pdf_processor` e `baixabradesco`, §9). Com essa folga, o
+`--max-requests 150` — que com `--workers 1` faz TODA requisição esperar a
+partida do serviço a cada ~150 acessos — tem espaço para ser afrouxado. É
+decisão do dono, e o jeito seguro é subir o valor (1000, por exemplo) e vigiar
+a memória, não remover a rede de proteção.
 
 - `--workers 1` é obrigatório e não está em discussão: há estado em memória por
   processo (sessão do `chatbot`), que quebra com mais de um worker.
@@ -231,6 +306,32 @@ tiver um `except Exception`, reerga a exceção antes dele.
 Nunca escreva escopo novo à mão: `pode_ver_titulo` passa pelo mesmo
 `aplicar_escopo` da listagem, e é isso que garante que detalhe e lista não
 divirjam. Se a regra de escopo mudar, muda num lugar só.
+
+## Funcionalidade nova traz as perguntas que ela responde
+
+O ERP vai ganhar um assistente que responde perguntas em português. O desenho
+dele depende de uma coisa: pergunta PREVISTA é respondida por código escrito e
+testado — exata e sem custo de IA; pergunta imprevista cai numa consulta
+inventada na hora, que acerta quase sempre e **erra em silêncio** no resto. Um
+número errado com cara de certo é pior que resposta nenhuma, e o dono não tem
+como conferir.
+
+Por isso, **desde 10/09/2026, funcionalidade nova só está pronta quando as
+perguntas que ela torna possíveis entram em `app/apps/erp/PERGUNTAS.md`** —
+pedido do dono, com todas as letras: *"a cada nova funcionalidade que nós
+temos, você já gera uma lista de possíveis perguntas (…) pra que a gente
+minimize a possibilidade de alguma falha."*
+
+Ao acrescentar perguntas ali:
+
+- Escreva **como o dono perguntaria**, não como o banco guarda.
+- Marque a pergunta que depende de uma palavra ambígua ("a pagar", "este mês",
+  "custo da obra") — a lista dessas palavras está no topo do arquivo e é a
+  parte que mais evita número errado.
+- Marque a pergunta cuja resposta **muda conforme quem pergunta** (escopo por
+  obra ou por autoria).
+- Registre também a pergunta que o sistema **ainda não consegue** responder, e
+  o que falta. O assistente deve dizer "não sei, falta X" — nunca chutar.
 
 ## Padrões que já existem — reusar, não recriar
 

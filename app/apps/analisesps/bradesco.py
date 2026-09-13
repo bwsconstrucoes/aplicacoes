@@ -137,6 +137,27 @@ _RE_AGCONTA = re.compile(r"\d{3,4}\s*\|\s*\d{4,10}-[0-9Xx]")
 _RE_MONEY_FULL = re.compile(r"^\d{1,3}(?:\.\d{3})*,\d{2}$")
 
 
+# COMO A LINHA DA OPERAÇÃO É SEPARADA EM COLUNAS
+#
+# O original só aceitava TABULAÇÃO, e isso funcionava porque copiar a tabela do
+# Bradesco costuma trazer tabulação. Costuma — não sempre: dependendo do
+# navegador e de como a seleção é feita, as colunas chegam separadas por
+# ESPAÇOS, e aí o texto inteiro era ignorado em silêncio.
+#
+# Foi o que o dono viu em 11/09/2026: colou, clicou em Conferir, e a tela ficou
+# em branco. Reproduzido — o mesmo texto com tabulação dá duas operações; com
+# espaços, nenhuma.
+#
+# ACEITAR DOIS OU MAIS ESPAÇOS é seguro porque uma linha só vira operação se
+# tiver, AO MESMO TEMPO, uma data, uma agência|conta e um valor. Nome de pessoa
+# tem espaço simples e continua inteiro ("JOSE THIAGO DA SILVA").
+_RE_COLUNAS = re.compile(r"\t+| {2,}")
+
+
+def _colunas(line: str) -> list:
+    return [f.strip() for f in _RE_COLUNAS.split(line) if f.strip()]
+
+
 def parse_autorizacao(raw: str) -> list:
     """
     Lê a tela 'Detalhes das Operações' do Bradesco. Cada operação:
@@ -163,7 +184,7 @@ def parse_autorizacao(raw: str) -> list:
             empresa = prev_simple
             continue
 
-        fields = [f.strip() for f in line.split("\t")]
+        fields = _colunas(line)
         conta = next((f for f in fields if _RE_AGCONTA.search(f)), "")
         has_date = any(_RE_DATA.match(f) for f in fields)
         moneys = [f for f in fields if _RE_MONEY_FULL.match(f)]

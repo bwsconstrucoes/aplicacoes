@@ -127,11 +127,25 @@ def _como_momento(valor):
     if not texto:
         return None
     try:
-        return dt.datetime.fromisoformat(texto)
+        lido = dt.datetime.fromisoformat(texto)
     except ValueError:
-        pass
-    # Já veio no formato brasileiro? Então não há o que converter.
-    return None
+        # Já veio no formato brasileiro? Então não há o que converter.
+        return None
+    # SÓ DATA, SEM HORA, É DATA — e não meia-noite.
+    #
+    # O DEFEITO QUE ISTO CORRIGE, achado em 12/09/2026 conferindo o relatório
+    # do lote impresso: "2026-09-20" virava meia-noite sem fuso, e a conversão
+    # para Brasília levava esse instante para 21h do DIA ANTERIOR. Um
+    # vencimento de dia 20 saía impresso como dia 19.
+    #
+    # Meia-noite de uma data escrita sem hora não é um instante no mundo: é o
+    # dia. Converter fuso ali é inventar uma hora que ninguém informou. Nas
+    # telas o problema não aparecia porque as colunas DATE do banco chegam
+    # como data de verdade; some pelo caminho do texto, que é o que o PDF e o
+    # JSON usam.
+    if len(texto) <= 10 and lido.time() == dt.time(0, 0):
+        return lido.date()
+    return lido
 
 
 def data_br(valor) -> str:

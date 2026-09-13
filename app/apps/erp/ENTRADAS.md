@@ -85,7 +85,15 @@ das impressões já processadas mora numa aba de planilha
 5. **Ela conhece o ARQUIVO, não o PAGAMENTO.** O banco gerando um PDF novo do
    mesmo pagamento produz bytes diferentes — e passa.
 
-**Como tem de ser no ERP** (e é isto que será construído):
+**CONSTRUÍDA em 08/09/2026 — migração 042.** O que segue era o desenho; hoje é
+o que está no código, provado com banco de verdade (o mesmo comprovante entrando
+quatro vezes por portas diferentes termina com UMA baixa). Detalhe do que foi
+feito e da prova: `HISTORICO.md`, "A trava contra baixar o mesmo pagamento duas
+vezes". Uma diferença em relação ao desenho: o segundo nível compara **parcela,
+valor e dia**, sem o número do documento no banco — ele nem sempre é legível no
+comprovante, e exigir um campo que costuma faltar deixaria a trava dormindo.
+
+**Como tem de ser no ERP:**
 
 - **A trava mora no BANCO, com restrição única** — não numa lista carregada em
   memória. O banco recusa a segunda; o código não tem como esquecer. É a mesma
@@ -195,9 +203,10 @@ chave de acesso.
 
 ## A ordem que eu recomendo, e por quê
 
-1. **Baixa por comprovante, pela tela do ERP.** É a menor peça, o casamento já
-   está resolvido em `baixabradesco`, e entrega valor sem depender de decidir
-   nada sobre e-mail.
+1. ~~**Baixa por comprovante, pela tela do ERP.**~~ **FEITA em 08/09/2026**,
+   com a trava contra duplicidade junto. A porta do Make (lote de comprovantes
+   por chamada automática) também já está pronta e fechada por senha própria —
+   falta só definir `ERP_COMPROVANTE_SECRET` no Render e apontar o cenário.
 2. **Baixa por comprovante, por e-mail.** Acrescenta só a porta de entrada —
    e obriga a resolver "como o ERP lê uma caixa", que serve para tudo depois.
 3. **A tela do cruzamento** (notas × pedido × título × fundo fixo), que é onde

@@ -4,7 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Entrar — Análise de SPs BWS</title>
-<link rel="stylesheet" href="{{ url_for('analisesps.static', filename='analisesps.css') }}">
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="{{ url_for('analisesps.static', filename='analisesps.css', v=versao_estatica) }}">
 </head>
 <body>
 <div class="entrada">
@@ -27,10 +28,19 @@
       </div>
     {% else %}
       {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
-      <label for="nome">Seu nome</label>
-      <input id="nome" name="nome" type="text" maxlength="40"
-             value="{{ nome or '' }}" autocomplete="nickname" autofocus required
-             placeholder="como a equipe te chama">
+      {# LISTA, não campo livre. O nome é a chave do lote e dos filtros: com
+         campo livre, digitar diferente um dia dava outra pessoa, e o lote
+         aparecia vazio sem explicação. #}
+      <label for="nome">Quem é você</label>
+      <select id="nome" name="nome" required autofocus
+              {% if not nome %}aria-describedby="dica-nome"{% endif %}>
+        <option value="" {% if not nome %}selected{% endif %} disabled>
+          escolha o seu nome</option>
+        {% for pessoa in equipe %}
+          <option value="{{ pessoa }}"
+                  {% if nome == pessoa %}selected{% endif %}>{{ pessoa }}</option>
+        {% endfor %}
+      </select>
       <label for="senha">Senha</label>
       <input id="senha" name="senha" type="password"
              autocomplete="current-password" required>
@@ -39,10 +49,11 @@
         A <b>senha</b> diz o que você pode fazer: uma abre em modo de consulta,
         que vê e exporta; a outra abre como operador, que também altera.
       </p>
-      <p class="sub">
+      <p class="sub" id="dica-nome">
         O <b>nome</b> não é senha e não dá poder nenhum a mais — ele separa o
         que é seu do que é dos outros: o seu lote, os seus filtros, e o seu
-        nome no registro de quem alterou o quê.
+        nome no registro de quem alterou o quê. Quem faltar na lista se
+        acrescenta em <b>Configurações</b>.
       </p>
     {% endif %}
   </form>

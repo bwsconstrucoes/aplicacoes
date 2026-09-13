@@ -47,6 +47,15 @@ class DadosCNPJ:
     uf: Optional[str]
     email: Optional[str]
     telefone: Optional[str]
+    # O ENDEREÇO (migração 056). A declaração que vai para a prefeitura exige o
+    # endereço de quem recebe o serviço; sem isto alguém teria de digitar à mão
+    # o que a Receita já entrega de graça na mesma consulta.
+    cep: Optional[str] = None
+    logradouro: Optional[str] = None
+    numero: Optional[str] = None
+    complemento: Optional[str] = None
+    bairro: Optional[str] = None
+    codigo_ibge: Optional[str] = None
     fonte: str = "BRASILAPI"
     bruto: dict[str, Any] = field(default_factory=dict)
 
@@ -88,8 +97,36 @@ def _http_json(url: str) -> dict[str, Any]:
     raise ErroConsultaCNPJ(f"Serviço de consulta indisponível: {ultimo}")
 
 
+def _ibge_de(municipio: Optional[str], uf: Optional[str]) -> Optional[str]:
+    """O código IBGE do município, pela tabela offline que já existe no repo.
+
+    Só é usado quando a fonte não devolve o código — a ReceitaWS não devolve.
+    A tabela é a do `emissaonf`, baixada uma vez do IBGE: reusar é melhor do
+    que ter duas listas de 5.570 municípios que podem divergir.
+    """
+    if not municipio or not uf:
+        return None
+    try:
+        import os
+
+        from app.apps.emissaonf import municipios_ibge as mapa
+        # Só a tabela que já está no repositório: `carregar_cache` sabe baixar
+        # do IBGE se o arquivo faltar, e uma ida à rede no meio de um cadastro
+        # é justamente o que não se quer aqui.
+        if not os.path.exists(mapa.CACHE_PADRAO):
+            return None
+        return str(mapa.resolver(municipio, mapa.carregar_cache(), uf)) or None
+    except Exception:
+        # Município ambíguo, nome fora do padrão, tabela indisponível: fica sem
+        # o código e a pessoa preenche. Chutar aqui poria a nota no município
+        # errado, que é problema de fisco, não de cadastro.
+        return None
+
+
 def _da_brasilapi(d: dict[str, Any], cnpj: str) -> DadosCNPJ:
     tel = somente_digitos(str(d.get("ddd_telefone_1") or ""))
+    municipio = _normalizar_texto(d.get("municipio"))
+    uf = _normalizar_texto(d.get("uf"))
     return DadosCNPJ(
         cnpj=cnpj,
         razao_social=_normalizar_texto(d.get("razao_social")) or "",
@@ -98,10 +135,19 @@ def _da_brasilapi(d: dict[str, Any], cnpj: str) -> DadosCNPJ:
         cnae_principal=str(d.get("cnae_fiscal") or "") or None,
         cnae_descricao=_normalizar_texto(d.get("cnae_fiscal_descricao")),
         data_abertura=(d.get("data_inicio_atividade") or None),
-        municipio=_normalizar_texto(d.get("municipio")),
-        uf=_normalizar_texto(d.get("uf")),
+        municipio=municipio,
+        uf=uf,
         email=(str(d.get("email") or "").strip().lower() or None),
         telefone=tel or None,
+        cep=somente_digitos(str(d.get("cep") or "")) or None,
+        logradouro=_normalizar_texto(
+            " ".join(x for x in (d.get("descricao_tipo_de_logradouro"),
+                                 d.get("logradouro")) if x)),
+        numero=(str(d.get("numero") or "").strip() or None),
+        complemento=_normalizar_texto(d.get("complemento")),
+        bairro=_normalizar_texto(d.get("bairro")),
+        codigo_ibge=(str(d.get("codigo_municipio_ibge") or "").strip()
+                     or _ibge_de(municipio, uf)),
         fonte="BRASILAPI", bruto=d,
     )
 
@@ -127,6 +173,14 @@ def _da_receitaws(d: dict[str, Any], cnpj: str) -> DadosCNPJ:
         uf=_normalizar_texto(d.get("uf")),
         email=(str(d.get("email") or "").strip().lower() or None),
         telefone=somente_digitos(str(d.get("telefone") or "").split("/")[0]) or None,
+        cep=somente_digitos(str(d.get("cep") or "")) or None,
+        logradouro=_normalizar_texto(d.get("logradouro")),
+        numero=(str(d.get("numero") or "").strip() or None),
+        complemento=_normalizar_texto(d.get("complemento")),
+        bairro=_normalizar_texto(d.get("bairro")),
+        # A ReceitaWS não devolve o código do município: sai da tabela offline.
+        codigo_ibge=_ibge_de(_normalizar_texto(d.get("municipio")),
+                             _normalizar_texto(d.get("uf"))),
         fonte="RECEITAWS", bruto=d,
     )
 

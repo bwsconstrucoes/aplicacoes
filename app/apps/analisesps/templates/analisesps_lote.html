@@ -16,14 +16,28 @@
        href="{{ url_for('analisesps.exportar_lote') }}">Exportar o lote</a>
     <a class="btn secundario"
        href="{{ url_for('analisesps.lote_pdf') }}">Relatório do Lote (PDF)</a>
+    {# EXCEL DE VERDADE, e não o CSV ao lado. A diferença que importa: aqui o
+       valor é NÚMERO, então dá para somar e ordenar sem converter nada; e o
+       número da SP vai como texto, para o Excel não transformar código
+       comprido em notação científica. #}
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.lote_excel_rota') }}">Lote em Excel</a>
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.lote_excel_todos') }}"
+       title="Uma aba por pessoa, com um resumo na frente">
+      Todos os lotes em Excel</a>
     <span class="cartao-dica" style="margin-left:10px">
       Sai com os mesmos grupos e o total de cada um — é o que se manda
-      para quem vai efetivar os pagamentos.
+      para quem vai efetivar os pagamentos. O Excel traz também a descrição,
+      a obra e o tipo de despesa, com o valor somável.
     </span>
   </p>
 {% endif %}
 
-<div class="cartao">
+{# A hora em que este lote foi salvo viaja com a tela. O navegador compara com
+   a última que viu: se a tela guardada for mais antiga do que a última
+   salvada, ela se recarrega sozinha. O porquê está em `analisesps.js`. #}
+<div class="cartao" id="cartao-lote" data-lote-em="{{ lote.salvo_em or '' }}">
   <div class="cartao-cab">
     <h3>O lote</h3>
     <small>
@@ -96,8 +110,19 @@
       <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:12px">
         <button class="btn" type="submit" name="acao" value="salvar">Salvar lote</button>
         <button class="btn secundario" type="submit" name="acao" value="extrair">Extrair SPs do texto</button>
-        <button class="btn secundario" type="submit" name="acao" value="remover_pagos">Tirar as pagas</button>
-        <button class="btn secundario" type="submit" name="acao" value="remover_cancelados">Tirar as canceladas</button>
+        {# "Tirar" virou "Remover", a pedido do dono em 11/09/2026. Numa tela de
+           pagamentos "tirar as pagas" chega a soar como desfazer o pagamento —
+           e o botão só mexe na lista do lote. #}
+        <button class="btn secundario" type="submit" name="acao" value="remover_pagos">Remover pagos</button>
+        <button class="btn secundario" type="submit" name="acao" value="remover_cancelados">Remover cancelados</button>
+        {% if duplicados %}
+          {# Só aparece quando há o que remover. Fica a PRIMEIRA aparição de
+             cada SP — "mantém o registro mais superior". #}
+          <button class="btn secundario" type="submit" name="acao"
+                  value="remover_duplicados"
+                  title="Fica a primeira aparição de cada SP; as de baixo saem">
+            Remover duplicados ({{ duplicados }})</button>
+        {% endif %}
       </div>
     </form>
   {% else %}

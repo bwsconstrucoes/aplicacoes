@@ -109,10 +109,40 @@ def load_spsbd_operacional(gc=None, values: list | None = None) -> Dict[str, SpR
     return result
 
 
+DIAS_OMIE_PENDENTE = 30   # janela de "pago recentemente", ver abaixo
+
+
+def _pago_ha_pouco(data_pgt: str, dias: int = DIAS_OMIE_PENDENTE) -> bool:
+    """Diz se a data de pagamento (dd/mm/aaaa) cabe na janela recente."""
+    from datetime import datetime, timedelta
+    texto = as_string(data_pgt)
+    if not texto:
+        return False
+    for formato in ('%d/%m/%Y', '%Y-%m-%d', '%d/%m/%y'):
+        try:
+            quando = datetime.strptime(texto[:10], formato)
+        except ValueError:
+            continue
+        return quando >= datetime.now() - timedelta(days=dias)
+    return False
+
+
 def load_spsbd_omie_pendente(gc=None, values: list | None = None) -> Dict[str, SpRecord]:
-    """Carrega SPs com O=Pago + AG preenchido + X vazia.
-    Indica planilha atualizada mas Omie possivelmente não baixado.
-    Usado como fallback quando match normal falha.
+    """SPs em que a planilha diz Pago mas o Omie pode não ter sido baixado.
+
+    Critério: O=Pago + comprovante preenchido + (sem data de pagamento **OU**
+    pago nos últimos 30 dias).
+
+    ⚠️ A parte dos 30 dias entrou em 13/09/2026 e conserta um buraco real: a
+    regra antiga exigia a **data de pagamento vazia**. Só que a gravação da
+    planilha escreve status, carimbo, data, comprovante e conta de uma vez —
+    então uma SP com a planilha gravada por inteiro e o Omie pendente ficava
+    **fora** deste índice, e o comprovante reenviado não achava nada. Foi
+    exatamente o que aconteceu com duas SPs do dono.
+
+    A janela existe por memória: sem ela, "O=Pago + comprovante" traria dezenas
+    de milhares de linhas das ~52 mil da planilha. Trinta dias é a janela em que
+    alguém ainda percebe e reenvia o comprovante.
 
     Aceita `values` pré-carregado (ver load_spsbd_values) pelo mesmo motivo
     de memória descrito em load_spsbd_operacional.
@@ -134,12 +164,13 @@ def load_spsbd_omie_pendente(gc=None, values: list | None = None) -> Dict[str, S
         data_pgt   = (row[IDX_X]  if IDX_X  < len(row) else '').strip()
         comprovante= (row[IDX_AG] if IDX_AG < len(row) else '').strip()
 
-        # Pago + sem data de pagamento + com comprovante = Omie provavelmente pendente
         if status_pgt != 'pago':
             continue
-        if data_pgt:
-            continue
         if not comprovante:
+            continue
+        # Sem data de pagamento, ou paga há pouco: nos dois casos o Omie ainda
+        # pode estar pendente e vale deixar o comprovante reenviado alcançar.
+        if data_pgt and not _pago_ha_pouco(data_pgt):
             continue
 
         row = list(row) + [''] * (len(headers) - len(row))
@@ -297,6 +328,71 @@ def find_bank_account(accounts: List[BankAccount], agencia: str, conta: str) -> 
     return None
 
 
+def find_account_by_pix_key(accounts: List[BankAccount], chave: str) -> Optional[BankAccount]:
+    """Acha a conta pela chave PIX impressa no comprovante.
+
+    É o identificador EXATO: cada conta da BaseBancos tem a sua chave própria,
+    e ela vem escrita no comprovante de quem recebeu. Não depende de nome, de
+    número de conta nem de regra escrita no código.
+    """
+    alvo = normalize_compact(chave)
+    if not alvo:
+        return None
+    achados = [
+        a for a in accounts
+        if normalize_compact(as_string((a.raw or {}).get('Chave PIX', ''))) == alvo
+    ]
+    return achados[0] if len(achados) == 1 else None
+
+
+def apelido_somapay(banco: str) -> str:
+    """Devolve o que diferencia uma conta Somapay das outras.
+
+    'Somapay BWS' → 'bws'; 'Somapay IFPESANTACRUZ' → 'ifpesantacruz'.
+    """
+    n = normalize_compact(banco)
+    if not n.startswith('somapay'):
+        return ''
+    return n[len('somapay'):]
+
+
+def find_somapay_account(accounts: List[BankAccount], nome_depositante: str) -> Optional[BankAccount]:
+    """Acha a conta Somapay de onde saiu o pagamento, na BaseBancos.
+
+    O comprovante emitido pela Somapay não traz a conta da empresa — só a do
+    funcionário que recebeu. A pista é o NOME do depositante: 'BWS CONSTRUÇÕES'
+    casa com a conta 'Somapay BWS'.
+
+    ⚠️ Por que não pelo CNPJ: as três contas Somapay da BaseBancos têm o MESMO
+    CNPJ (o da própria Somapay, não o da empresa do grupo). O CNPJ não
+    distingue nada aqui — conferido com a planilha real em 11/09/2026.
+
+    Devolve None quando não dá para ter certeza (nenhuma conta Somapay
+    cadastrada, nenhum apelido batendo, ou mais de um batendo). **Não
+    adivinha**: sem conta resolvida o comprovante fica pendente de validação,
+    que é muito melhor do que baixar na conta errada.
+    """
+    somapays = [a for a in accounts if 'somapay' in normalize_compact(a.banco)]
+    if not somapays:
+        return None
+
+    alvo = normalize_compact(nome_depositante)
+    if alvo:
+        achados = [
+            a for a in somapays
+            if apelido_somapay(a.banco) and apelido_somapay(a.banco) in alvo
+        ]
+        if len(achados) == 1:
+            return achados[0]
+        if len(achados) > 1:
+            return None  # ambíguo — não escolher no palpite
+
+    # Nome não resolveu: só segue se houver UMA conta Somapay cadastrada.
+    if len(somapays) == 1:
+        return somapays[0]
+    return None
+
+
 def build_spsbd_updates(plan) -> List[dict]:
     """Monta updates para a SPsBD com colunas validadas pelo usuário:
       O  = Status Pgt       → 'Pago'
@@ -338,8 +434,12 @@ def _letra_to_idx(letra: str) -> int:
     return result
 
 
-def execute_spsbd_updates(updates: list):
+def execute_spsbd_updates(updates: list) -> dict:
     """Executa updates na planilha via gspread (chamada direta, sem GAS).
+
+    Devolve `{'ok': bool, 'gravados': int, 'erros': [...]}`. Antes engolia
+    qualquer falha em silêncio, e uma gravação perdida deixava a SP como
+    "Pagar" para sempre — sem ninguém saber, porque o Omie já tinha baixado.
 
     Otimizado para memória: busca APENAS as colunas usadas nos filtros
     (ex.: A:A para localizar a linha pelo ID) em vez de get_all_values(),
@@ -349,7 +449,9 @@ def execute_spsbd_updates(updates: list):
     A gravação usa batch_update (1 chamada) em vez de update_cell por célula.
     """
     if not updates:
-        return
+        return {'ok': True, 'gravados': 0, 'erros': []}
+    gravados = 0
+    erros = []
     gc = get_gc()
     for upd in updates:
         try:
@@ -390,6 +492,7 @@ def execute_spsbd_updates(updates: list):
                     break  # update_multiple=false: apenas primeira linha
 
             if target_row is None:
+                erros.append(f"linha não encontrada para {upd.get('filtros')}")
                 continue
 
             # Grava todas as células de uma vez (1 chamada à API)
@@ -398,9 +501,12 @@ def execute_spsbd_updates(updates: list):
                 for col_letra, novo_val in updates_cols.items()
             ]
             sheet.batch_update(data, value_input_option='USER_ENTERED')
+            gravados += 1
 
-        except Exception:
-            pass
+        except Exception as e:
+            erros.append(str(e)[:200])
+
+    return {'ok': not erros and gravados > 0, 'gravados': gravados, 'erros': erros}
 
 # ── Controle de duplicatas via aba LogBaixaBradesco ───────────────────────────
 
@@ -420,8 +526,13 @@ def _get_log_sheet(gc):
         return ws
 
 
-def load_fingerprints_processados(gc) -> set:
-    """Lê a coluna de fingerprints da LogBaixaBradesco UMA vez por lote.
+def load_fingerprints_processados(gc) -> dict:
+    """Lê a LogBaixaBradesco UMA vez por lote: impressão digital → nº da SP.
+
+    A SP vem junto de propósito: é ela que permite descobrir se a baixa daquele
+    comprovante ficou **completa**. Se a SP ainda estiver como "Pagar" na
+    planilha, a baixa ficou pela metade e o comprovante reenviado precisa
+    passar, em vez de ser barrado como repetido.
 
     ⚠️ Memória e cota: nunca trocar isto por uma consulta por página. Um lote de
     dez comprovantes viraria dez leituras da mesma coluna — foi esse padrão que
@@ -429,11 +540,15 @@ def load_fingerprints_processados(gc) -> set:
     """
     try:
         ws = _get_log_sheet(gc)
-        col = ws.col_values(1)
+        valores = ws.batch_get(['A2:A', 'B2:B'])
     except Exception:
-        return set()
-    # A primeira linha é o cabeçalho ('fingerprint').
-    return {as_string(v) for v in col[1:] if as_string(v)}
+        return {}
+
+    fingerprints = [as_string(l[0]) if l else '' for l in (valores[0] or [])]
+    sps          = [as_string(l[0]) if l else '' for l in (valores[1] or [])]
+    sps += [''] * (len(fingerprints) - len(sps))
+
+    return {fp: sp for fp, sp in zip(fingerprints, sps) if fp}
 
 
 def check_fingerprint_processado(gc, fingerprint: str) -> bool:

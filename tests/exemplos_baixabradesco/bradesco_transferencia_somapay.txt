@@ -1,0 +1,27 @@
+Comprovante de Transação Bancária
+PIX
+Data da operação: 11/09/2026 - 15h12
+N° de controle: 111222333444555666 | Documento: 9990001
+Conta de débito: Agência: 0624 | Conta: 0050024-0 | Tipo: Conta-Corrente
+Empresa: EMPRESA EXEMPLO LTDA-EPP | CNPJ: 111.222.333/0001-44
+Dados de quem
+recebeu
+Nome: EMPRESA EXEMPLO LTDA
+CPF/CNPJ: 11.222.333/0001-44
+Instituição destino: SOMAPAY SCD S.A.
+Chave: aaaa1111-bbbb-2222-cccc-333344445555
+Agência: 1
+Conta: 22005
+Dados da
+Transferência/Pagamento
+Valor: R$ 8.128,17
+Mídia: BRADESCO NET EMPRESA
+Descrição: PAYMENT_FILE_000111
+Identificador: E00000000202609111744I0624AAAAAA
+transacao.lbl_txid CashInPlatform000111
+Debitado da: conta-corrente
+Instituição origem: Banco Bradesco S.A.
+SAC - Serviço de Alô Bradesco Deficiente Auditivo ou de Fala Cancelamentos, Reclamações e Demais telefones
+Apoio ao Cliente 0800 704 8383 0800 722 0099 Informações. Atendimento 24 horas, 7 dias consulte o site
+por semana. Fale Conosco
+Ouvidoria 0800 727 9933 Atendimento de segunda a sexta-feira, das 8h às 18h, exceto feriados.

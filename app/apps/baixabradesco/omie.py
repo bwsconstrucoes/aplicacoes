@@ -160,26 +160,20 @@ def build_omie_plan(plan, payload: dict) -> List[Dict[str, Any]]:
 
 # ── Somapay: transferência Bradesco -> Somapay + baixa na conta Somapay ──────
 
-SOMAPAY_BWS = {
-    'nome': 'Somapay BWS - 22005-1',
-    'codigo_omie': '586876091',
-}
-SOMAPAY_IFPESANTACRUZ = {
-    'nome': 'Somapay IFPESANTACRUZ - 908146-1',
-    'codigo_omie': '11119266982',
-}
-CONTA_BRADESCO_IFPESANTACRUZ = '0002541-0'  # Agência 1251
+def resolver_conta_somapay(plan) -> dict:
+    """Conta Somapay que recebeu, resolvida a partir da BaseBancos.
 
+    Vem da chave PIX impressa no comprovante (ver find_account_by_pix_key). A
+    regra antiga — "se a conta de débito contém 2541" — foi aposentada em
+    11/09/2026: ela só conhecia duas das três contas Somapay e dependia do
+    número da conta de débito, não de um identificador do destino.
 
-def resolver_conta_somapay(receipt) -> dict:
-    """Define qual conta Somapay usar como destino/baixa conforme a conta
-    Bradesco de débito do comprovante.
+    Sem conta resolvida devolve dicionário vazio, e o core bloqueia a execução.
     """
-    conta_origem = as_string(getattr(receipt, 'conta_origem', '') or '')
-    conta_limpa = conta_origem.replace(' ', '')
-    if '2541' in conta_limpa or '02541' in conta_limpa:
-        return SOMAPAY_IFPESANTACRUZ
-    return SOMAPAY_BWS
+    banco = getattr(plan, 'banco_destino', None)
+    if banco and banco.codigo_omie:
+        return {'nome': banco.descricao or banco.banco, 'codigo_omie': banco.codigo_omie}
+    return {'nome': '', 'codigo_omie': ''}
 
 
 def build_transferencia_somapay(plan, payload: dict) -> dict:
@@ -194,7 +188,7 @@ def build_transferencia_somapay(plan, payload: dict) -> dict:
     """
     rec = plan.receipt
     banco_origem = plan.banco
-    somapay = resolver_conta_somapay(rec)
+    somapay = resolver_conta_somapay(plan)
     codigo_int = ('CCS' + as_string(plan.match.id))[:20]
 
     return {
@@ -227,7 +221,7 @@ def build_alterar_conta_pagar_somapay(plan, payload: dict) -> dict:
     valor_pago = money_to_decimal(rec.valor_pago)
     acresc = money_to_decimal(rec.acrescimos) or money_to_decimal('0')
     valor_doc = valor_pago - acresc if valor_pago is not None else valor_pago
-    somapay = resolver_conta_somapay(rec)
+    somapay = resolver_conta_somapay(plan)
 
     return omie_body('AlterarContaPagar', {
         'valor_documento': decimal_to_omie(valor_doc) if valor_doc is not None else decimal_to_omie(rec.valor_pago),
@@ -239,7 +233,7 @@ def build_alterar_conta_pagar_somapay(plan, payload: dict) -> dict:
 def build_lancar_pagamento_somapay(plan, payload: dict) -> dict:
     """LancarPagamento na conta Somapay correta (não Bradesco)."""
     rec = plan.receipt
-    somapay = resolver_conta_somapay(rec)
+    somapay = resolver_conta_somapay(plan)
     return omie_body('LancarPagamento', {
         'data': rec.data_pagamento,
         'valor': decimal_to_omie(rec.valor_pago),

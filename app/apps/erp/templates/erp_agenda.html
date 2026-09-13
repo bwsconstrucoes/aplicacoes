@@ -1,0 +1,325 @@
+{% extends "erp_base.html" %}
+{% block titulo %}Agenda — ERP BWS{% endblock %}
+
+{# A AGENDA: o calendário de obrigações.
+
+   Ela existe porque quatro coisas construídas antes dela sabiam calcular a
+   própria data e não tinham onde AVISAR:
+
+     - o aniversário do reajuste da obra;
+     - a conferência mensal dos equipamentos locados;
+     - o vencimento das certidões;
+     - o fim da vigência do contrato.
+
+   Um alerta que mora dentro da tela que a pessoa só abre quando já lembrou do
+   assunto não é alerta, é enfeite. O que faltava era um lugar que se abre de
+   manhã.
+
+   O que está vencido vem primeiro, em vermelho. Não por dramatização: prazo
+   perdido é o único item da lista em que a ordem de atendimento realmente
+   muda o resultado. #}
+
+{% block filtros %}
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <button class="link-btn" id="btn-limpar">Limpar</button>
+  </div>
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input id="f-busca" type="search" placeholder="obra, documento, contrato…">
+  </div>
+  <div class="campo"><label>Obra</label><select id="f-obra"></select></div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Assunto</span><span class="seta">▾</span></button>
+    <div class="filtro-cont" id="f-origens"></div>
+  </div>
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Situação</span><span class="seta">▾</span></button>
+    <div class="filtro-cont">
+      <label class="opcao"><input type="radio" name="sit" value="ABERTO" checked>
+        <span class="rotulo">Em aberto</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="RESOLVIDO">
+        <span class="rotulo">Resolvidos</span></label>
+      <label class="opcao"><input type="radio" name="sit" value="DISPENSADO">
+        <span class="rotulo">Dispensados</span></label>
+    </div>
+  </div>
+  <label class="opcao" style="margin-top:10px"><input type="checkbox" id="f-futuros">
+    <span class="rotulo">Ver também o que vem depois</span></label>
+  <div class="dica" style="margin-top:6px">Por padrão a agenda só mostra o que já
+    chegou a hora. Certidão que vence daqui a três meses existe, mas ocupar a tela
+    com ela hoje é o caminho para você parar de olhar a tela.</div>
+
+  {% if pode.tratar_agenda %}
+  <button class="btn amarelo" id="btn-anotar" style="width:100%; margin-top:14px">
+    + Anotar uma obrigação</button>
+  <div class="dica" style="margin-top:6px">Para o que o sistema não tem como
+    deduzir sozinho.</div>
+  {% endif %}
+{% endblock %}
+
+{% block conteudo %}
+<div id="mensagem"></div>
+<div class="kpis kpis-largos" id="kpis"></div>
+
+<div class="tabela-wrap">
+  <div class="tabela-barra">
+    <span class="resumo" id="resumo"></span>
+    <span class="espaco"></span>
+    <span id="exportar"></span>
+  </div>
+  <div class="tabela-rolagem">
+    <table><thead><tr>
+      <th>Quando</th><th>Prazo</th><th>Assunto</th><th>O que é</th>
+      <th>Obra</th><th class="sem-exportar"></th>
+    </tr></thead><tbody id="corpo"></tbody></table>
+  </div>
+  <div class="vazio oculto" id="vazio"></div>
+</div>
+
+<dialog id="dlg"><div class="dlg-topo"><h3 id="dlg-titulo">—</h3>
+  <button class="topo-btn" style="margin-left:auto" id="dlg-fechar">Fechar</button></div>
+  <div class="dlg-corpo" id="dlg-corpo"></div></dialog>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PODE_TRATAR = {{ 'true' if pode.tratar_agenda else 'false' }};
+// A lista de origens vem do SERVIDOR, não escrita aqui. Quando o certificado
+// digital virou aviso, esta lista ficou para trás e o aviso novo não tinha
+// como ser filtrado — e nada quebrou, então ninguém viu. Fica só um começo
+// para a tela ter o que desenhar antes da primeira resposta.
+let ORIGENS = [["REAJUSTE","Reajuste"], ["CERTIDAO","Documento vencendo"],
+               ["LOCACAO","Equipamento locado"], ["CONTRATO","Contrato"],
+               ["MANUAL","Anotação"]];
+let EVENTOS = [], RESUMO = {};
+
+document.querySelectorAll(".filtro-cab").forEach(b =>
+  b.addEventListener("click", () => b.closest(".filtro").classList.toggle("aberto")));
+
+// Redesenhável: quando a lista chega do servidor, o filtro se refaz sem
+// perder o que estava marcado.
+function montarOrigens(){
+  const antes = marcado("orig");
+  els("f-origens").innerHTML =
+    `<label class="opcao"><input type="radio" name="orig" value="" ${antes?"":"checked"}>
+       <span class="rotulo">Todos</span></label>` +
+    ORIGENS.map(([v, r]) => `<label class="opcao">
+       <input type="radio" name="orig" value="${escapar(v)}" ${antes===v?"checked":""}>
+       <span class="rotulo">${escapar(r)}</span></label>`).join("");
+  document.querySelectorAll('#f-origens input[name="orig"]').forEach(r =>
+    r.addEventListener("change", carregar));
+}
+montarOrigens();
+
+function marcado(nome){
+  const m = document.querySelector(`input[name="${nome}"]:checked`);
+  return m ? m.value : "";
+}
+
+async function carregarObras(){
+  try {
+    const d = await api("/erp/api/obras");
+    els("f-obra").innerHTML = `<option value="">Todas</option>` +
+      (d.obras || []).map(o =>
+        `<option value="${o.id}">${escapar(rotuloObra(o))}</option>`).join("");
+  } catch(e){
+    els("f-obra").innerHTML = `<option value="">(não consegui carregar)</option>`;
+  }
+}
+
+// A AGENDA ABRE COM O QUE JÁ ESTÁ CALCULADO, e o recálculo acontece por trás.
+//
+// Antes ela recalculava tudo — obras, contratos, certidões, locações,
+// certificados — com a pessoa olhando a tela em branco, e isso cresce junto
+// com a empresa. O recálculo continua acontecendo sozinho (agenda que só
+// atualiza no botão é agenda desatualizada): só deixou de ser na frente de
+// quem abriu. Quando termina, a lista se refaz sozinha.
+let JA_RECARREGOU = false;
+
+async function carregar(recalculando = true){
+  const p = new URLSearchParams();
+  p.set("situacao", marcado("sit"));
+  if (marcado("orig")) p.set("origem", marcado("orig"));
+  if (els("f-obra").value) p.set("obra_id", els("f-obra").value);
+  if (els("f-futuros").checked) p.set("futuros", "1");
+  if (!recalculando) p.set("sincronizar", "0");
+  try {
+    const d = await api("/erp/api/agenda?" + p.toString());
+    EVENTOS = d.eventos || []; RESUMO = d.resumo || {};
+    if (d.origens && d.origens.length) { ORIGENS = d.origens; montarOrigens(); }
+    desenhar();
+    // Só uma vez por visita: senão cada filtro clicado dispararia outro
+    // acompanhamento, e a tela ficaria se refazendo sozinha sem parar.
+    if (d.tarefa && !JA_RECARREGOU) {
+      JA_RECARREGOU = true;
+      acompanharTarefa(d.tarefa.id, {intervalo: 2000, teto: 300}).then(t => {
+        if (t && t.situacao === "CONCLUIDA") carregar(false);
+      });
+    }
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+}
+
+function emTela(){
+  const b = (els("f-busca").value || "").trim().toLowerCase();
+  if (!b) return EVENTOS;
+  return EVENTOS.filter(e =>
+    `${e.titulo} ${e.detalhe} ${e.obra} ${e.empresa}`.toLowerCase().includes(b));
+}
+
+function desenhar(){
+  const r = RESUMO, lista = emTela();
+  els("kpis").innerHTML = `
+    ${r.vencidos ? `<div class="kpi estatico vermelho"><div class="kpi-rotulo">Vencidos</div>
+      <div class="kpi-valor">${r.vencidos}</div>
+      <div class="kpi-sub">o prazo já passou</div></div>` : ""}
+    <div class="kpi estatico ambar"><div class="kpi-rotulo">Esta semana</div>
+      <div class="kpi-valor">${r.esta_semana || 0}</div>
+      <div class="kpi-sub">${r.hoje || 0} para hoje</div></div>
+    <div class="kpi estatico"><div class="kpi-rotulo">Na agenda</div>
+      <div class="kpi-valor">${r.total || 0}</div>
+      <div class="kpi-sub">no filtro atual</div></div>
+    ${ORIGENS.filter(([v]) => (r.por_origem || {})[v]).map(([v, rot]) => `
+      <div class="kpi estatico ciano"><div class="kpi-rotulo">${rot}</div>
+        <div class="kpi-valor">${r.por_origem[v]}</div></div>`).join("")}`;
+
+  els("resumo").innerHTML = `<b>${lista.length}</b> item(ns)`;
+  els("vazio").classList.toggle("oculto", lista.length > 0);
+  if (!lista.length){
+    els("vazio").innerHTML = marcado("sit") === "ABERTO"
+      ? "<b>Nada pendente</b>Nenhuma obrigação com prazo chegando. " +
+        "A agenda se atualiza sozinha sempre que você abre esta tela."
+      : "<b>Nada aqui</b>Nenhum item nesta situação.";
+  }
+  els("corpo").innerHTML = lista.map(e => `
+    <tr class="${e.dias < 0 && e.situacao === 'ABERTO' ? 'linha-alerta' : ''}">
+      <td>${dataBR(e.quando)}</td>
+      <td>${e.situacao === "ABERTO"
+            ? `<span class="selo ${e.dias < 0 ? "bloqueado" : e.dias <= 7 ? "aguardando" : "outro"}"
+                >${escapar(e.prazo)}</span>`
+            : `<span class="selo aprovado">${e.situacao === "RESOLVIDO" ? "resolvido" : "dispensado"}</span>`}</td>
+      <td>${escapar(e.origem_nome)}</td>
+      <td><b>${escapar(e.titulo)}</b>
+        ${e.detalhe ? `<br><small>${escapar(e.detalhe)}</small>` : ""}
+        ${e.observacao ? `<br><small><b>${escapar(e.resolvido_por || "alguém")}:</b>
+           ${escapar(e.observacao)}</small>` : ""}</td>
+      <td>${escapar(e.obra || e.empresa || "—")}</td>
+      <td class="sem-exportar">
+        ${e.link ? `<a class="btn secundario" href="${escapar(e.link)}">Abrir</a>` : ""}
+        ${PODE_TRATAR && e.situacao === "ABERTO"
+          ? `<button class="btn secundario" data-tratar="${e.id}">Tratar</button>` : ""}
+        ${PODE_TRATAR && e.situacao !== "ABERTO"
+          ? `<button class="btn secundario" data-reabrir="${e.id}">Reabrir</button>` : ""}
+      </td>
+    </tr>`).join("");
+
+  document.querySelectorAll("[data-tratar]").forEach(b =>
+    b.addEventListener("click", () => tratar(Number(b.dataset.tratar))));
+  document.querySelectorAll("[data-reabrir]").forEach(b =>
+    b.addEventListener("click", () => reabrir(Number(b.dataset.reabrir))));
+  botoesDeExportar("exportar");
+}
+
+// -------------------------------------------------------------------------
+// Tratar, dispensar, reabrir, anotar
+// -------------------------------------------------------------------------
+// A recusa do servidor NÃO pode custar o que a pessoa digitou.
+//
+// Na primeira versão, dispensar sem motivo era recusado (certo) e a janela já
+// tinha fechado (errado): a mensagem aparecia atrás, e quem tinha escrito meia
+// frase começava do zero. Aqui a janela volta com tudo preenchido e o erro
+// escrito em cima — que é o que qualquer formulário deveria fazer.
+async function tratar(id, valores){
+  const e = EVENTOS.find(x => x.id === id);
+  const v = valores || {acao: "resolver", observacao: ""};
+  const r = await perguntar({
+    titulo: e ? e.titulo : "Tratar",
+    aviso: (v.erro ? `<b style="color:var(--vermelho)">${escapar(v.erro)}</b><br>` : "") +
+           "<b>Resolvido</b> é para o que você fez. <b>Dispensado</b> é para o " +
+           "que não se aplica — e aí o motivo é obrigatório, porque três meses " +
+           "depois ninguém distingue 'não se aplica' de 'esqueceram'.",
+    campos: [
+      {nome: "acao", rotulo: "O que houve", tipo: "select", valor: v.acao,
+       opcoes: [{valor: "resolver", rotulo: "Resolvido — já tratei"},
+                {valor: "dispensar", rotulo: "Dispensar — não se aplica"}]},
+      {nome: "observacao", rotulo: "Observação", tipo: "textarea", linhas: 3,
+       valor: v.observacao, dica: "Obrigatória para dispensar."},
+    ],
+    textoOk: "Confirmar",
+  });
+  if (!r) return;
+  try {
+    await api(`/erp/api/agenda/${id}`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(r)});
+    aviso("mensagem", "Anotado.", "ok");
+    carregar();
+  } catch(err){
+    tratar(id, {...r, erro: err.message});
+  }
+}
+
+async function reabrir(id){
+  try {
+    await api(`/erp/api/agenda/${id}`, {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({acao: "reabrir"})});
+    aviso("mensagem", "Voltou para a agenda.", "ok");
+    carregar();
+  } catch(err){ aviso("mensagem", err.message, "erro"); }
+}
+
+async function anotar(valores){
+  const obras = Array.from(els("f-obra").options)
+    .map(o => ({valor: o.value, rotulo: o.textContent}));
+  const v = valores || {};
+  const r = await perguntar({
+    titulo: "Anotar uma obrigação",
+    aviso: (v.erro ? `<b style="color:var(--vermelho)">${escapar(v.erro)}</b><br>` : "") +
+           "Para o que o sistema não deduz sozinho — entregar uma declaração, " +
+           "renovar um seguro, uma reunião com prazo.",
+    campos: [
+      {nome: "titulo", rotulo: "Do que se trata", obrigatorio: true, largura: 6,
+       valor: v.titulo || ""},
+      {nome: "quando", rotulo: "Data", tipo: "date", obrigatorio: true,
+       valor: v.quando || ""},
+      {nome: "avisar_dias", rotulo: "Avisar quantos dias antes", tipo: "number",
+       valor: v.avisar_dias || "7"},
+      {nome: "obra_id", rotulo: "Obra (opcional)", tipo: "select", opcoes: obras,
+       valor: v.obra_id || ""},
+      {nome: "detalhe", rotulo: "Detalhe", tipo: "textarea", linhas: 3, largura: 6,
+       valor: v.detalhe || ""},
+    ],
+    textoOk: "Anotar",
+  });
+  if (!r) return;
+  try {
+    await api("/erp/api/agenda/anotar", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(r)});
+    aviso("mensagem", "Anotado na agenda.", "ok");
+    carregar();
+  } catch(err){
+    anotar({...r, erro: err.message});
+  }
+}
+
+// -------------------------------------------------------------------------
+els("dlg-fechar").addEventListener("click", () => els("dlg").close());
+if (els("btn-anotar")) els("btn-anotar").addEventListener("click", anotar);
+els("f-obra").addEventListener("change", carregar);
+els("f-futuros").addEventListener("change", carregar);
+document.querySelectorAll('input[name="sit"], input[name="orig"]').forEach(r =>
+  r.addEventListener("change", carregar));
+els("f-busca").addEventListener("input", desenhar);
+els("btn-limpar").addEventListener("click", () => {
+  els("f-obra").value = ""; els("f-busca").value = "";
+  els("f-futuros").checked = false;
+  document.querySelector('input[name="sit"][value="ABERTO"]').checked = true;
+  document.querySelector('input[name="orig"][value=""]').checked = true;
+  carregar();
+});
+
+carregarObras().then(carregar);
+</script>
+{% endblock %}

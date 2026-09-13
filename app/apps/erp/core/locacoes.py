@@ -131,12 +131,34 @@ def criar(s: Session, dados: dict[str, Any], usuario: Usuario) -> ContratoLocaca
     return c
 
 
+def valor_item(item: LocacaoItem) -> Decimal:
+    """O que UM equipamento custa por período — já arredondado.
+
+    É este número que a ficha do contrato mostra em cada linha, e é por ele que
+    a soma do contrato passa. Ver `valor_periodo`.
+    """
+    return ((Decimal(item.quantidade) - Decimal(item.quantidade_devolvida))
+            * Decimal(item.valor_unitario)).quantize(_CENT)
+
+
 def valor_periodo(s: Session, contrato_id: int) -> Decimal:
-    """Quanto o contrato custa por período, já descontado o que foi devolvido."""
+    """Quanto o contrato custa por período, já descontado o que foi devolvido.
+
+    ARREDONDA CADA ITEM e só depois soma. Somando sem arredondar e
+    arredondando no fim — como era até 12/09/2026 — o total do contrato
+    divergia em centavos da soma dos itens que a própria ficha mostra, porque
+    lá cada linha já aparece arredondada. Com diária de R$ 12,3450 (a coluna
+    aceita quatro casas, e locadora usa), três escoras davam R$ 37,04 no
+    contrato e R$ 37,02 na tela.
+
+    E não parava na tela: este é o `valor_previsto` de cada parcela, isto é, o
+    que o ERP diz que a BWS deve pagar no mês, e que alguém confere contra o
+    boleto da locadora. Devolver uma escora de R$ 12,34 chegava a derrubar
+    R$ 12,35 do contrato — a devolução comia um centavo a mais do que o
+    equipamento valia.
+    """
     itens = s.scalars(select(LocacaoItem).where(LocacaoItem.contrato_id == contrato_id)).all()
-    total = sum(((Decimal(i.quantidade) - Decimal(i.quantidade_devolvida))
-                 * Decimal(i.valor_unitario) for i in itens), Decimal("0"))
-    return total.quantize(_CENT)
+    return sum((valor_item(i) for i in itens), Decimal("0.00")).quantize(_CENT)
 
 
 def gerar_previsao(s: Session, contrato_id: int, meses: int = 6,
@@ -387,7 +409,7 @@ def _alertas(s: Session, c: ContratoLocacao, pago: Decimal,
 
 def listar(s: Session, usuario: Optional[Usuario] = None,
            apenas_ativos: bool = False) -> list[dict[str, Any]]:
-    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
     stmt = (select(ContratoLocacao)
             .options(selectinload(ContratoLocacao.fornecedor),
                      selectinload(ContratoLocacao.obra),
@@ -396,7 +418,12 @@ def listar(s: Session, usuario: Optional[Usuario] = None,
     if apenas_ativos:
         stmt = stmt.where(ContratoLocacao.status == "ATIVO")
     if usuario is not None:
-        permitidas = obras_do_usuario(s, usuario)
+        # Contrato de locação NÃO TEM AUTOR: o único recorte possível é a obra.
+        # Antes isto usava `obras_do_usuario`, que devolve None para quem
+        # enxerga por autoria — e None ali quer dizer "sem filtro". Efeito: o
+        # administrativo que só deveria ver o que ele lançou via TODOS os
+        # contratos da empresa. Ver a regra em `obras_de_registro_sem_autor`.
+        permitidas = obras_de_registro_sem_autor(s, usuario)
         if permitidas is not None:
             stmt = stmt.where(ContratoLocacao.obra_id.in_(permitidas or [0]))
     saida = []
@@ -464,8 +491,7 @@ def detalhar(s: Session, contrato_id: int) -> dict[str, Any]:
             "devolvida": float(i.quantidade_devolvida),
             "em_obra": float(Decimal(i.quantidade) - Decimal(i.quantidade_devolvida)),
             "valor_unitario": float(i.valor_unitario),
-            "valor_periodo": float(((Decimal(i.quantidade) - Decimal(i.quantidade_devolvida))
-                                    * Decimal(i.valor_unitario)).quantize(_CENT)),
+            "valor_periodo": float(valor_item(i)),
             "obra": obras.get(i.obra_id, c.obra.codigo),
             "devolucao_prevista": (i.devolucao_prevista.isoformat()
                                    if getattr(i, "devolucao_prevista", None) else None),
@@ -746,8 +772,22 @@ def identificar_contrato(s: Session, documento: dict[str, Any],
     }
 
 
-def painel_por_obra(s: Session) -> list[dict[str, Any]]:
-    """Quanto cada obra tem locado por período — a visão macro que falta hoje."""
+def painel_por_obra(s: Session,
+                    usuario: Optional[Usuario] = None) -> list[dict[str, Any]]:
+    """Quanto cada obra tem locado por período — a visão macro que falta hoje.
+
+    ⚠️ ANTES ELE NÃO RECEBIA USUÁRIO NENHUM, e a rota que o serve é aberta a
+    todo operador (`ver_erp`): qualquer pessoa via quanto CADA obra da empresa
+    tem de aluguel, inclusive obras que ela não alcança. Achado por um teste em
+    11/09/2026, junto com a brecha do `listar`. Agora ele recorta pelas mesmas
+    obras — e quem enxerga tudo continua vendo tudo.
+    """
+    from app.apps.erp.core.auth.permissoes import obras_de_registro_sem_autor
+
+    permitidas = (obras_de_registro_sem_autor(s, usuario)
+                  if usuario is not None else None)
+    if permitidas is not None and not permitidas:
+        return []
     linhas = s.execute(
         select(LocacaoItem.obra_id,
                func.sum((LocacaoItem.quantidade - LocacaoItem.quantidade_devolvida)
@@ -755,7 +795,8 @@ def painel_por_obra(s: Session) -> list[dict[str, Any]]:
                func.count(LocacaoItem.id))
         .join(ContratoLocacao, ContratoLocacao.id == LocacaoItem.contrato_id)
         .where(ContratoLocacao.status == "ATIVO",
-               LocacaoItem.quantidade > LocacaoItem.quantidade_devolvida)
+               LocacaoItem.quantidade > LocacaoItem.quantidade_devolvida,
+               *( [LocacaoItem.obra_id.in_(permitidas)] if permitidas else [] ))
         .group_by(LocacaoItem.obra_id)).all()
     obras = {o.id: o for o in s.scalars(select(Obra)).all()}
     saida = []

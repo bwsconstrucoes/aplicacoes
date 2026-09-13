@@ -143,7 +143,7 @@ function desenhar(){
   const l = visiveis();
   els("vazio").classList.toggle("oculto", l.length>0);
   if (!l.length) els("vazio").innerHTML = LINHAS.length
-    ? "<b>Nada nesta situação</b>Troque o filtro à esquerda."
+    ? "<b>Nada nesta situação</b>Troque o filtro."
     : "<b>Extrato vazio</b>Importe o arquivo OFX do banco para começar.";
   els("corpo").innerHTML = l.map(x => {
     const d = x.detalhe || {};

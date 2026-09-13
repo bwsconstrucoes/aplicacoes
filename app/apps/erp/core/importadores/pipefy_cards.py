@@ -153,6 +153,33 @@ def extrair_urls_anexo(valor: Any) -> list[str]:
     return urls
 
 
+def campos_de_anexo_desconhecidos(card: dict[str, Any]) -> list[dict[str, str]]:
+    """Campos de ANEXO do card que este importador não conhece.
+
+    `CAMPOS_ANEXO` é uma lista fixa de identificadores do pipe financeiro. Se
+    o pipe ganhar um campo de anexo novo — ou se um pipe diferente for
+    importado —, os arquivos daquele campo simplesmente não viriam, e o
+    relatório diria "0 anexos" sem que nada parecesse errado.
+
+    Silêncio é o pior resultado possível numa migração: a SP entra, parece
+    completa, e a nota fiscal dela ficou para trás sem ninguém notar. Aqui o
+    campo desconhecido é NOMEADO no relatório, para alguém decidir.
+    """
+    achados = []
+    for f in card.get("fields") or []:
+        campo = f.get("field") or {}
+        fid = campo.get("id") or ""
+        tipo = (campo.get("type") or "").lower()
+        if tipo != "attachment" or fid in CAMPOS_ANEXO:
+            continue
+        if not extrair_urls_anexo(f.get("value") or f.get("report_value")):
+            continue        # campo de anexo vazio não é problema de ninguém
+        achados.append({"campo": fid, "rotulo": campo.get("label") or fid,
+                        "quantos": len(extrair_urls_anexo(
+                            f.get("value") or f.get("report_value")))})
+    return achados
+
+
 def baixar_anexos_do_card(s, card_campos: dict[str, Any], titulo_id: int,
                           usuario) -> list[dict[str, Any]]:
     """Traz os arquivos do card para o banco do ERP.
@@ -512,15 +539,28 @@ def _achar_categoria(s: Session, tipo_despesa: str) -> tuple[Optional[Categoria]
 def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
                    categoria_padrao_id: Optional[int] = None,
                    obra_padrao_id: Optional[int] = None,
-                   criar_fornecedor: bool = True, baixar_anexos: bool = True) -> dict[str, Any]:
+                   criar_fornecedor: bool = True, baixar_anexos: bool = True,
+                   andamento=None) -> dict[str, Any]:
     """Cria títulos a partir dos cards. Devolve relatório detalhado —
-    o que entrou, o que já existia e o que precisa de decisão humana."""
+    o que entrou, o que já existia e o que precisa de decisão humana.
+
+    `andamento(passo, total, mensagem)` é opcional e existe para quando a
+    importação roda em segundo plano: cem cards, cada um com consulta e anexos
+    para baixar, levam minutos, e a pessoa precisa ver que está andando.
+    """
     importados, ja_existiam, pendencias = [], [], []
     contas_criadas: list[dict[str, Any]] = []
 
-    for card in cards:
+    anexos_ignorados: list[dict[str, Any]] = []
+
+    for indice, card in enumerate(cards, start=1):
+        if andamento is not None:
+            andamento(indice, len(cards), f"Card {indice} de {len(cards)}")
         d = extrair_dados(card)
         cid = d["card_id"]
+        if baixar_anexos:
+            for x in campos_de_anexo_desconhecidos(card):
+                anexos_ignorados.append({"card": cid, **x})
         try:
             existente = s.scalars(select(Titulo).where(Titulo.ref_pipefy == cid)).first()
             if existente is not None:
@@ -671,4 +711,9 @@ def importar_cards(s: Session, cards: list[dict[str, Any]], usuario: Usuario, *,
 
     return {"analisados": len(cards), "importados": importados,
             "contas_criadas": contas_criadas,
-            "ja_existiam": ja_existiam, "pendencias": pendencias}
+            "ja_existiam": ja_existiam, "pendencias": pendencias,
+            # Campos de anexo que existem no card e este importador não
+            # conhece. Vazio é o esperado; cheio significa que arquivo ficou
+            # para trás, e alguém precisa saber ANTES de dar a migração por
+            # concluída.
+            "anexos_ignorados": anexos_ignorados}

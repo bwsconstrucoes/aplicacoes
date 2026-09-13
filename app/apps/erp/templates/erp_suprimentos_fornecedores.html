@@ -218,7 +218,7 @@ function desenhar(){
 
   els("vazio").classList.toggle("oculto", l.length > 0);
   if (!l.length) els("vazio").innerHTML = D.fornecedores.length
-    ? "<b>Nada nestes filtros</b>Limpe os filtros à esquerda."
+    ? "<b>Nada nestes filtros</b>Limpe os filtros."
     : "<b>Nenhum fornecedor</b>Use “+ Novo fornecedor”, ou traga a planilha em Importações.";
 
   els("corpo").innerHTML = l.slice(0, LIMITE).map(f => `
@@ -450,6 +450,13 @@ els("btn-novo").addEventListener("click", novoFornecedor);
 botoesDeExportar("exportar");
 if (!PODE_EDITAR) els("btn-novo").style.display = "none";
 
-carregar();
+// ENCADEAMENTO: ?fornecedor=N abre a ficha do credor direto, vindo do título.
+carregar().then(() => {
+  const pedido = new URLSearchParams(location.search).get("fornecedor");
+  if (!pedido) return;
+  const id = +pedido;
+  if (D.fornecedores.some(f => f.id === id)) abrir(id);
+  else aviso("mensagem", "Este fornecedor não está mais no cadastro.", "erro");
+});
 </script>
 {% endblock %}

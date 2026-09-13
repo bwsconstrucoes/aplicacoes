@@ -33,11 +33,34 @@
             data-id="{{ l.id }}"
             data-ficha="{{ url_for('analisesps.detalhe', sp_id=l.id, origem=origem) }}">
           <td class="sel">
+            {# A CHAVE DA LINHA — SÓ NO LOTE, e não é o número da SP.
+
+               No Lote a mesma SP pode aparecer em dois grupos. Quando a
+               marcação guardada era reposta pelo NÚMERO, marcar uma das cópias
+               e voltar à tela marcava as duas — o dono relatou em 11/09/2026:
+               "está bagunçando". Com o grupo e a posição na chave, volta
+               marcada só a linha que a pessoa marcou.
+
+               Nas Solicitações NÃO há chave, e isso é de propósito: lá cada SP
+               aparece uma vez só (a consulta devolve uma linha por número),
+               então o número já identifica a linha — e usar a posição faria a
+               marcação se perder toda vez que a base sincronizasse e empurrasse
+               as linhas, que é justamente a memória que a 19ª leva criou.
+
+               TRADE-OFF ESCRITO: no Lote, mexer no conteúdo (remover pagos,
+               por exemplo) muda as posições e a marcação guardada não volta.
+               É o lado certo de errar — deixar de repor não faz nada; repor na
+               linha errada faz agir sobre o pagamento errado. #}
             <input type="checkbox" class="marca" value="{{ l.id }}"
+                   {% if grupo is defined %}data-chave="{{ grupo }}:{{ loop.index0 }}:{{ l.id }}"{% endif %}
                    {% if grupo is defined %}data-grupo="{{ grupo }}"{% endif %}
                    data-valor="{{ l.valor_num or 0 }}"
                    data-card="{{ l.card_link or '' }}"
-                   data-forma="{{ l.forma_pagamento or '' }}">
+                   data-forma="{{ l.forma_pagamento or '' }}"
+                   {# A conta viaja junto para a barra do alto poder somar o
+                      marcado POR CONTA — que é o número que decide se a
+                      remessa cabe no banco. Pedido do dono em 11/09/2026. #}
+                   data-conta="{{ l.conta or '' }}">
           </td>
 
           {% for c in colunas %}

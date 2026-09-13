@@ -212,7 +212,7 @@ function desenhar(){
 
   els("vazio").classList.toggle("oculto", l.length > 0);
   if (!l.length) els("vazio").innerHTML = ITENS.length
-    ? "<b>Nada nestes filtros</b>Limpe os filtros à esquerda."
+    ? "<b>Nada nestes filtros</b>Limpe os filtros."
     : "<b>Nenhum pedido de material</b>Use “+ Novo pedido de material”.";
 
   els("tb-itens").innerHTML = l.map(i => `

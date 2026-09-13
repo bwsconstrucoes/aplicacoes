@@ -107,41 +107,98 @@ class Folha:
             self.pdf.set_font("Helvetica", "B", 10)
             self.pdf.cell(0, 6, _texto(valor), new_x="LMARGIN", new_y="NEXT")
 
-    def tabela(self, cabecalho, linhas, larguras=None, direita=()) -> None:
-        """Uma tabela simples, com o cabeçalho repetido a cada página.
+    def _quebrar(self, texto: str, largura: float, linhas_max: int) -> list:
+        """O texto repartido nas linhas que cabem na coluna.
+
+        QUEBRA POR PALAVRA, e só parte a palavra quando ela sozinha não cabe —
+        um código de obra comprido não pode empurrar a descrição inteira para
+        fora. Passando do teto de linhas, a última termina em "..." para ficar
+        claro que sobrou texto; sem isso, a pessoa lê meia frase achando que é
+        a frase inteira."""
+        util = largura - 1.4
+        saida: list = []
+        for pedaco in _texto(texto).split():
+            if not saida:
+                saida.append(pedaco)
+                continue
+            tentativa = saida[-1] + " " + pedaco
+            if self.pdf.get_string_width(tentativa) <= util:
+                saida[-1] = tentativa
+            else:
+                saida.append(pedaco)
+        # Palavra sozinha maior que a coluna: parte na marra, senão ela invade
+        # a coluna vizinha e embaralha a linha toda.
+        partidas: list = []
+        for linha in saida:
+            while self.pdf.get_string_width(linha) > util:
+                corte = len(linha)
+                while corte > 1 and self.pdf.get_string_width(linha[:corte]) > util:
+                    corte -= 1
+                partidas.append(linha[:corte])
+                linha = linha[corte:]
+            partidas.append(linha)
+        if not partidas:
+            return [""]
+        if len(partidas) > linhas_max:
+            partidas = partidas[:linhas_max]
+            ultima = partidas[-1]
+            while ultima and self.pdf.get_string_width(ultima + "...") > util:
+                ultima = ultima[:-1]
+            partidas[-1] = ultima + "..."
+        return partidas
+
+    def tabela(self, cabecalho, linhas, larguras=None, direita=(),
+               fonte=8, linhas_max=1) -> None:
+        """Uma tabela, com o cabeçalho repetido a cada página.
 
         `direita` são os índices das colunas de número, que alinham à direita —
-        coluna de dinheiro alinhada à esquerda é ilegível."""
+        coluna de dinheiro alinhada à esquerda é ilegível.
+
+        `linhas_max` maior que 1 deixa o texto QUEBRAR EM VÁRIAS LINHAS dentro
+        da célula, em vez de ser cortado. Pedido do dono em 11/09/2026, para o
+        relatório do lote caber a descrição: *"pode reduzir a fonte
+        consideravelmente pra caber mais informação (…) e pode usar a quebra de
+        linha"*. Com `linhas_max=1` o comportamento é o de antes."""
         if larguras is None:
             larguras = [LARGURA_UTIL / len(cabecalho)] * len(cabecalho)
+        altura = fonte * 0.5          # entrelinha proporcional ao corpo
 
         def escrever_cabecalho():
-            self.pdf.set_font("Helvetica", "B", 8)
+            self.pdf.set_font("Helvetica", "B", fonte)
             self.pdf.set_fill_color(238, 242, 250)
             for i, titulo in enumerate(cabecalho):
-                self.pdf.cell(larguras[i], 6, _texto(titulo), border="B",
-                              fill=True, align="R" if i in direita else "L")
+                self.pdf.cell(larguras[i], altura + 1.5, _texto(titulo),
+                              border="B", fill=True,
+                              align="R" if i in direita else "L")
             self.pdf.ln()
 
         escrever_cabecalho()
-        self.pdf.set_font("Helvetica", "", 8)
+        self.pdf.set_font("Helvetica", "", fonte)
         for linha in linhas:
-            # Quebrou a página? O cabeçalho precisa reaparecer, senão a
-            # segunda página vira uma tabela de colunas sem nome.
-            if self.pdf.will_page_break(6):
+            celulas = [self._quebrar(valor, larguras[i], linhas_max)
+                       for i, valor in enumerate(linha)]
+            alta = max(len(c) for c in celulas) * altura + 1
+
+            # Quebrou a página? O cabeçalho precisa reaparecer, senão a segunda
+            # página vira uma tabela de colunas sem nome.
+            if self.pdf.will_page_break(alta):
                 self.pdf.add_page()
                 escrever_cabecalho()
-                self.pdf.set_font("Helvetica", "", 8)
-            for i, valor in enumerate(linha):
-                texto = _texto(valor)
-                # Corta o que não cabe, em vez de deixar invadir a coluna
-                # seguinte e embaralhar a linha inteira.
-                largura = larguras[i]
-                while texto and self.pdf.get_string_width(texto) > largura - 2:
-                    texto = texto[:-1]
-                self.pdf.cell(largura, 5, texto, border="B",
-                              align="R" if i in direita else "L")
-            self.pdf.ln()
+                self.pdf.set_font("Helvetica", "", fonte)
+
+            topo, esquerda = self.pdf.get_y(), self.pdf.get_x()
+            x = esquerda
+            for i, pedacos in enumerate(celulas):
+                for n, pedaco in enumerate(pedacos):
+                    self.pdf.set_xy(x, topo + n * altura)
+                    self.pdf.cell(larguras[i], altura, pedaco,
+                                  align="R" if i in direita else "L")
+                x += larguras[i]
+            # A régua vai embaixo da linha INTEIRA, depois de escrever tudo:
+            # com alturas diferentes por célula, a borda de cada `cell` sairia
+            # em alturas diferentes e a tabela ficaria serrilhada.
+            self.pdf.line(esquerda, topo + alta, x, topo + alta)
+            self.pdf.set_xy(esquerda, topo + alta)
 
     def bytes(self) -> bytes:
         return bytes(self.pdf.output())
@@ -225,12 +282,29 @@ def relatorio_do_lote(montado: dict) -> bytes:
             f"{grupo['titulo_exibido']}  -  {len(grupo['linhas'])} SP(s), "
             f"R$ {moeda(grupo['total'])}")
         if grupo["linhas"]:
+            # AS COLUNAS E O TAMANHO DA FONTE SÃO PEDIDO DO DONO, 11/09/2026:
+            # *"reduz a fonte consideravelmente pra caber mais informação.
+            # Quero que tenha a descrição. Quero que tenha obra. E pode usar a
+            # quebra de linha."*
+            #
+            # "Obra" é o CENTRO DE CUSTO da planilha — é a palavra que ele usa,
+            # e é o mesmo nome que a coluna tem na tela.
+            #
+            # A DESCRIÇÃO GANHA A MAIOR FATIA e três linhas: é o texto livre, o
+            # único que realmente precisa quebrar. As outras colunas cabem em
+            # uma linha quase sempre, e duas são folga para o credor comprido.
+            #
+            # O "R$" saiu das células e foi para o título da coluna: repetido
+            # em trinta linhas ele só gastava a largura que a descrição queria.
             folha.tabela(
-                ["SP", "Vencimento", "Credor", "Forma", "Conta", "Valor"],
+                ["SP", "Vencim.", "Credor", "Descrição", "Obra", "Forma",
+                 "Conta", "Valor R$"],
                 [[l["id"], data_br(l["vencimento_d"]), l["credor"],
-                  l["forma_pagamento"], l["conta"], "R$ " + moeda(l["valor_num"])]
+                  l.get("descricao") or "", l.get("centro_custo") or "",
+                  l["forma_pagamento"], l["conta"], moeda(l["valor_num"])]
                  for l in grupo["linhas"]],
-                larguras=[26, 24, 55, 22, 30, 33], direita={5})
+                larguras=[20, 17, 34, 44, 24, 16, 17, 18], direita={7},
+                fonte=6.5, linhas_max=3)
         if grupo["nao_encontrados"]:
             folha.observacao(
                 "Não encontradas na base: " + ", ".join(grupo["nao_encontrados"]))
