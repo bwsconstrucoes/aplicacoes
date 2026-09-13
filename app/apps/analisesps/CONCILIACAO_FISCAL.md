@@ -187,6 +187,86 @@ onde ele quer o link da nota baixada — isso importa: se for campo de seleção
 não de texto, o link não cabe ali. Descobrir é uma consulta à API, e fica para
 quando a gravação for construída.
 
+## O PLANO DAS NOTAS, fechado com o dono em 12/09/2026
+
+**Nem o FSist nem a Receita guardam o passado.** O dono confirmou o que a
+investigação apontava:
+
+> *"O FSist também não traz o passado não. O passado é o que eu tenho, que eu já
+> baixei de relatório lá. O relatório mais antigo que eu tenho a gente vai
+> importar pra dentro do Análise de SPs, e deixar lá dentro; e a partir de então
+> você vai começar a fazer o download."*
+
+**Então o desenho é este, e ele tem duas metades:**
+
+| | De onde vem | Quando |
+|---|---|---|
+| **O passado** | os relatórios que o dono já baixou do FSist, colados na aba | uma vez, e fica |
+| **Daqui para a frente** | a Receita, pela chave, com o certificado | sozinho |
+
+### O que isso exige da importação, e por que virou teste
+
+A aba do FSist é uma **janela** que ele troca a cada relatório; a tabela
+`notas_fiscais` é o **arquivo**, e ela só cresce. Se a importação apagasse o que
+não está no relatório do dia, o histórico dele **se perderia na primeira
+colagem** — e é histórico que não dá para recuperar de lugar nenhum.
+
+**Conferido e travado em teste** (12/09/2026): colar o relatório de janeiro e
+depois o de fevereiro na mesma aba deixa as duas levas guardadas. E há um teste
+varrendo o módulo inteiro atrás de qualquer `DELETE` nessa tabela — a garantia
+não pode depender de alguém lembrar.
+
+> **Para o dono, na prática:** cole o relatório mais antigo, mande atualizar as
+> planilhas de apoio, cole o seguinte, mande de novo. Cada leva entra e fica. A
+> tela de Configurações diz quantas entraram, quantas mudaram e quantas já
+> tinha.
+
+### Nota de serviço está FORA, e por decisão dele
+
+*"Nota de serviço eu sei que não dá pra baixar direto da Receita pelo município,
+e não é o que eu estou buscando. Pelo menos por enquanto."* A NFS-e é municipal
+e não tem serviço nacional. Continua chegando pelo anexo do card, que é o
+caminho que a IA já cobre.
+
+## O DOWNLOAD AUTÔNOMO DAS NOTAS — o que falta, e o que trava
+
+Pedido do dono em 11/09/2026: *"eu quero que sejam baixadas as notas também, de
+forma autônoma. Eu não quero ter trabalho nenhum em ter que baixar no FSist."*
+
+**O que já dá para fazer sem nada novo**, e já está feito: quando o anexo existe
+no card, a IA lê o documento e tira dele a chave de acesso e o tipo. Isso cobre
+o caso em que quem lançou já anexou alguma coisa.
+
+**O que falta é buscar a nota QUANDO SÓ SE TEM A CHAVE.** E aqui há um bloqueio
+real, que não se resolve programando:
+
+- O portal da Receita exige **captcha** na consulta pública por chave. Não há
+  como automatizar isso, e tentar seria construir uma coisa que quebra no
+  primeiro dia.
+- O caminho que funciona é o **certificado digital A1 da empresa** — que é
+  justamente o que o dono levantou: *"a gente pode incluir os certificados
+  digitais na análise de SPs e nem precisar mais do relatório do FSist."*
+- Com o A1 instalado, o XML da nota é baixado direto do webservice da SEFAZ
+  pela chave, e o `leitor.py` do ERP **já sabe ler esse XML por parser exato,
+  sem IA nenhuma e sem custo**.
+
+**O que isso muda quando entrar:** o FSist deixa de ser necessário para o
+download (continua útil como fonte de descoberta — ele diz QUE a nota existe), a
+leitura vira exata em vez de interpretada, e a IA sobra só para o que não é nota
+eletrônica.
+
+**O que é preciso do dono para destravar**, e é a parte que não é código:
+
+1. O arquivo do **certificado A1** da BWS e a senha dele.
+2. A decisão de onde ele fica guardado — é credencial sensível, e a regra da
+   casa manda usar variável de ambiente no Render, não arquivo no repositório.
+3. O aviso de quando ele vence: certificado A1 vale um ano, e no dia em que
+   vencer o download para de funcionar em silêncio se ninguém tiver previsto.
+
+**Enquanto isso não vier, o que fica:** o link do documento no campo "Análise
+Dedutibilidade" do card — que o dono pediu — só pode apontar para o anexo que já
+existe, e não para uma nota baixada da Receita. Está anotado para não se perder.
+
 ## A LEITURA DOS ANEXOS POR IA — o degrau seguinte, e AINDA NÃO EXISTE
 
 Pergunta do dono, em 11/09/2026: *"está entrando aí a análise dos anexos?

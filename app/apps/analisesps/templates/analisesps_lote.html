@@ -16,9 +16,20 @@
        href="{{ url_for('analisesps.exportar_lote') }}">Exportar o lote</a>
     <a class="btn secundario"
        href="{{ url_for('analisesps.lote_pdf') }}">Relatório do Lote (PDF)</a>
+    {# EXCEL DE VERDADE, e não o CSV ao lado. A diferença que importa: aqui o
+       valor é NÚMERO, então dá para somar e ordenar sem converter nada; e o
+       número da SP vai como texto, para o Excel não transformar código
+       comprido em notação científica. #}
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.lote_excel_rota') }}">Lote em Excel</a>
+    <a class="btn secundario"
+       href="{{ url_for('analisesps.lote_excel_todos') }}"
+       title="Uma aba por pessoa, com um resumo na frente">
+      Todos os lotes em Excel</a>
     <span class="cartao-dica" style="margin-left:10px">
       Sai com os mesmos grupos e o total de cada um — é o que se manda
-      para quem vai efetivar os pagamentos.
+      para quem vai efetivar os pagamentos. O Excel traz também a descrição,
+      a obra e o tipo de despesa, com o valor somável.
     </span>
   </p>
 {% endif %}

@@ -106,25 +106,51 @@ def _numero(valor: Any) -> Optional[Decimal]:
 
 
 def normalizar_colunas(colunas: Sequence[Any]) -> list[dict[str, str]]:
-    """Aceita ["A", "B"] ou [{"rotulo": "A", "tipo": "dinheiro"}]."""
+    """Aceita ["A", "B"] ou [{"chave": "valor", "rotulo": "A", "tipo": "dinheiro"}].
+
+    A CHAVE é guardada quando vem, e é ela que casa a coluna com o campo da
+    linha — ver `_linhas_como_listas`.
+    """
     saida = []
     for c in colunas or []:
         if isinstance(c, dict):
             saida.append({"rotulo": _texto(c.get("rotulo") or c.get("chave") or ""),
+                          "chave": str(c.get("chave") or ""),
                           "tipo": (c.get("tipo") or "texto").lower()})
         else:
-            saida.append({"rotulo": _texto(c), "tipo": "texto"})
+            saida.append({"rotulo": _texto(c), "chave": "", "tipo": "texto"})
     return saida
 
 
-def _linhas_como_listas(linhas: Sequence[Any], quantas_colunas: int) -> list[list[Any]]:
+def _linhas_como_listas(linhas: Sequence[Any],
+                        cols: Sequence[dict[str, str]]) -> list[list[Any]]:
+    """Cada linha vira uma lista NA ORDEM DAS COLUNAS.
+
+    A ARMADILHA QUE ISTO EVITA, achada em 12/09/2026 ao fazer a resposta do
+    assistente virar planilha: a linha costuma ser um dicionário, e pegar
+    `linha.values()` entrega os valores na ordem em que o dicionário foi
+    montado — que NÃO é necessariamente a ordem das colunas. Pior: linha à
+    qual falta um campo empurra todos os seguintes uma casa para a esquerda.
+    Nos dois casos o arquivo sai com o valor debaixo do cabeçalho errado, sem
+    erro nenhum e sem ninguém perceber. Número errado com cara de certo é o
+    pior defeito que um relatório pode ter.
+
+    Quando as colunas trazem CHAVE, cada valor é buscado pela chave. Sem
+    chave (a tela que manda só os rótulos), a ordem do dicionário é tudo o que
+    existe, e aí ela é respeitada como antes.
+    """
+    chaves = [c.get("chave") or "" for c in cols]
+    tem_chaves = any(chaves)
     saida = []
     for linha in linhas or []:
         if isinstance(linha, dict):
+            if tem_chaves:
+                saida.append([linha.get(k) if k else None for k in chaves])
+                continue
             linha = list(linha.values())
         linha = list(linha)
-        linha += [None] * (quantas_colunas - len(linha))
-        saida.append(linha[:quantas_colunas])
+        linha += [None] * (len(cols) - len(linha))
+        saida.append(linha[:len(cols)])
     return saida
 
 
@@ -149,7 +175,7 @@ def para_excel(titulo: str, colunas: Sequence[Any], linhas: Sequence[Any], *,
     from openpyxl.utils import get_column_letter
 
     cols = normalizar_colunas(colunas)
-    dados = _linhas_como_listas(linhas, len(cols))[:LIMITE_EXCEL]
+    dados = _linhas_como_listas(linhas, cols)[:LIMITE_EXCEL]
 
     wb = Workbook()
     ws = wb.active
@@ -240,7 +266,7 @@ def para_pdf(titulo: str, colunas: Sequence[Any], linhas: Sequence[Any], *,
     from fpdf import FPDF
 
     cols = normalizar_colunas(colunas)
-    todas = _linhas_como_listas(linhas, len(cols))
+    todas = _linhas_como_listas(linhas, cols)
     dados = todas[:LIMITE_PDF]
     cortou = len(todas) - len(dados)
 

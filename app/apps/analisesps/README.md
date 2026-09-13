@@ -40,6 +40,7 @@ sincronizacao.py   a ponte com a planilha, nos dois sentidos
 tarefas.py         a carga em segundo plano, com andamento e retomada
 executar_sync.py   o processo separado que faz o trabalho longo
 exportar.py        o CSV que o Excel em português abre com dois cliques
+lote_excel.py      o lote em .xlsx de verdade — valor somável, código como texto
 pdf.py             os relatórios em PDF (fpdf2, que o serviço já tem)
 migracoes/         .sql numerados; aplicados por botão, nunca no boot
 
@@ -187,6 +188,7 @@ seria ou perdido, ou versionado por engano.
 | `ANALISESPS_SENHA_CONSULTA` | senha de quem só olha. **Sem ela, ninguém consulta** |
 | `ANALISESPS_SECRET` | autoriza a chamada do agendador |
 | `ANALISESPS_HOOK_OMIE` | gancho do Make dos botões "Consulta" e "Atualizar" da ficha. **Opcional**: sem ela os dois botões não aparecem |
+| `ANALISESPS_CHAVE_COFRE` | frase secreta que cifra os certificados digitais no banco. **Sem ela, o sistema recusa guardar certificado** — e sem certificado a busca de notas na Receita não roda. ⚠️ **Trocar a frase torna ilegível o que já foi guardado**: os certificados teriam de ser subidos de novo |
 | `DATABASE_URL` | Postgres — já existe, é o do ERP |
 | `GOOGLE_CREDENTIALS_BASE64` | leitura da planilha — já existe |
 

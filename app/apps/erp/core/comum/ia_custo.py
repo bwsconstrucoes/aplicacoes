@@ -374,6 +374,107 @@ def _enviar_aos_administradores(s: Session, texto: str) -> int:
 
 
 # ---------------------------------------------------------------------------
+# O TETO POR PESSOA
+#
+# Decisão do dono em 12/09/2026: *"pra gente não ter surpresa, vamos limitar.
+# Deve ficar no cadastro da pessoa, com o valor estimado já de cinco dólares.
+# (…) que seja editável. Se eu quiser colocar alguém sem limite, eu coloco, ou
+# botar dez dólares"*. O raciocínio dele: *"isso é mais é gestão que vai usar,
+# pessoal de obra eu não acredito que vai usar muito"*.
+#
+# DIFERENÇA PARA O TETO GLOBAL, e ela importa: o global AVISA os
+# administradores e deixa passar — é um termômetro. Este aqui BARRA. Foi o que
+# o dono pediu com a palavra "limitar", e é o que evita a surpresa: teto que só
+# avisa vira aviso que chega depois da fatura.
+#
+# O que ele NUNCA barra: contas do sistema (robô, relatório agendado, agente),
+# porque essas não são a curiosidade de ninguém e travá-las quebraria rotina
+# sem ninguém entender por quê.
+# ---------------------------------------------------------------------------
+TETO_PESSOA_PADRAO = Decimal("5.00")
+
+
+class SemSaldoDeIa(Exception):
+    """A pessoa gastou o teto do mês dela. A mensagem já vem pronta para a
+    tela — quem lê não é programador e precisa saber a quem pedir."""
+
+
+def teto_da_pessoa(s: Session, usuario_id: Optional[int]) -> Optional[Decimal]:
+    """O teto desta pessoa, em US$. None = sem limite.
+
+    Lê por SQL DIRETO, e não pelo ORM, de propósito: esta consulta roda antes
+    de cada chamada de IA, inclusive na janela entre publicar o código e
+    apertar "Aplicar atualizações do banco". Nessa janela a coluna ainda não
+    existe, e carregar o objeto Usuario derrubaria a tela — a armadilha que já
+    derrubou o ERP em 02/09/2026. Sem a coluna, vale "sem teto configurado":
+    o ERP continua de pé e o aviso global segue valendo.
+    """
+    if not usuario_id:
+        return None
+    from sqlalchemy import text as _text
+
+    try:
+        bruto = s.scalar(_text("SELECT teto_ia_usd FROM usuarios WHERE id = :i"),
+                         {"i": usuario_id})
+    except Exception:
+        logger.warning("ERP/ia: coluna teto_ia_usd indisponível "
+                       "(migração 064 pendente?) — valendo só o teto global")
+        return None
+    if bruto is None:
+        return None
+    v = Decimal(str(bruto))
+    return v if v > 0 else None
+
+
+def gasto_do_mes_da_pessoa(s: Session, usuario_id: Optional[int],
+                           hoje: Optional[date] = None) -> Decimal:
+    from app.apps.erp.db.models.financeiro import IaUso
+
+    if not usuario_id:
+        return Decimal("0")
+    v = s.scalar(select(func.coalesce(func.sum(IaUso.custo_usd), 0))
+                 .where(IaUso.criado_em >= _inicio_do_mes(hoje),
+                        IaUso.usuario_id == usuario_id))
+    return Decimal(str(v or 0))
+
+
+def situacao_da_pessoa(s: Session, usuario_id: Optional[int],
+                       hoje: Optional[date] = None) -> dict[str, Any]:
+    """Quanto desta pessoa já foi. Mesmo formato do teto global."""
+    teto = teto_da_pessoa(s, usuario_id)
+    gasto = gasto_do_mes_da_pessoa(s, usuario_id, hoje)
+    if teto is None:
+        return {"teto": None, "gasto": float(gasto), "percentual": None,
+                "alerta": None, "restante": None}
+    pct = int((gasto / teto * 100).quantize(Decimal("1")))
+    alerta = "ESTOUROU" if gasto >= teto else ("AVISO" if pct >= LIMIAR_AVISO else None)
+    return {"teto": float(teto), "gasto": float(gasto), "percentual": pct,
+            "alerta": alerta, "restante": float(max(teto - gasto, Decimal("0")))}
+
+
+def exigir_saldo_de_ia(s: Session, usuario_id: Optional[int],
+                       hoje: Optional[date] = None) -> None:
+    """Barra a chamada quando a pessoa já gastou o teto do mês dela.
+
+    Sem usuário (robô, relatório agendado, agente) não há teto: essas contas
+    não são curiosidade de ninguém, e travá-las quebraria rotina sem ninguém
+    entender por quê.
+    """
+    if not usuario_id:
+        return
+    sit = situacao_da_pessoa(s, usuario_id, hoje)
+    if sit["alerta"] != "ESTOUROU":
+        return
+    raise SemSaldoDeIa(
+        f"Você já usou o limite de inteligência artificial deste mês "
+        f"(US$ {sit['teto']:.2f}). Isso não bloqueia nada do ERP: as telas, os "
+        f"relatórios e as perguntas calculadas pelo sistema seguem normais — "
+        f"só a leitura de documento e a transcrição de áudio ficam de fora até "
+        f"o mês virar. Se você precisa de mais, peça para o administrador "
+        f"aumentar o seu limite no seu cadastro.")
+
+
+# ---------------------------------------------------------------------------
 # Painel
 # ---------------------------------------------------------------------------
 def painel(s: Session, dias: int = 90) -> dict[str, Any]:

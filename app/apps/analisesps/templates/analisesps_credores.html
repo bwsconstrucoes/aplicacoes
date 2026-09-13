@@ -1,0 +1,136 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Nomes de credor{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   CREDORES — o mesmo CNPJ escrito de cinco jeitos.
+
+   A tela existe porque a medição na planilha de verdade mostrou que a regra
+   automática NÃO resolve tudo: dos 8 CNPJs divergentes, 6 precisam de uma
+   pessoa. CELPE virou NEOENERGIA; MAFEMA aparece como razão social e como nome
+   de fantasia; e em MAGNA o nome mais longo é o digitado errado.
+
+   Por isso são DUAS PILHAS, como na conciliação fiscal: o que o sistema
+   resolve sozinho vem marcado, e o que é decisão fica desmarcado, um a um.
+--------------------------------------------------------------------------- #}
+{% block conteudo %}
+
+{% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
+{% if erro %}<div class="aviso atencao">{{ erro }}</div>{% endif %}
+
+{% set decidir = divergencias|rejectattr('decidido')|rejectattr('automatico')|list %}
+{% set sozinho = divergencias|rejectattr('decidido')|selectattr('automatico')|list %}
+{% set prontos = divergencias|selectattr('decidido')|list %}
+
+<div class="cartao">
+  <h2>Nomes de credor</h2>
+  <p class="cartao-dica">
+    O mesmo CPF/CNPJ escrito de mais de um jeito. Escolher aqui reescreve o
+    nome nas SPs daquele fornecedor e devolve para a planilha — e a escolha
+    fica guardada, então <b>este fornecedor não volta a perguntar</b>.
+  </p>
+  {% if not divergencias and not erro %}
+    <p class="cartao-dica">Nenhum CPF/CNPJ está com nome divergente. 👍</p>
+  {% endif %}
+</div>
+
+{% if sozinho %}
+  <form method="post" action="{{ url_for('analisesps.aplicar_credor') }}">
+    <div class="cartao">
+      <h2>O sistema resolve sozinho ({{ sozinho|length }})</h2>
+      <p class="cartao-dica">
+        Aqui é o <b>mesmo nome</b> escrito diferente — acento, cedilha, espaço a
+        mais — ou uma abreviação do nome inteiro. Não há o que decidir.
+      </p>
+      <table class="sps">
+        <thead><tr><th>CPF/CNPJ</th><th>Fica</th><th>No lugar de</th>
+                   <th>SPs</th><th>Por quê</th></tr></thead>
+        <tbody>
+          {% for d in sozinho %}
+            <tr>
+              <td class="id">{{ d.documento }}
+                <input type="hidden" name="documento" value="{{ d.documento }}">
+                <input type="hidden" name="nome" value="{{ d.nome }}">
+                <input type="hidden" name="tipo-{{ d.documento }}" value="{{ d.tipo }}">
+              </td>
+              <td><b>{{ d.nome }}</b></td>
+              <td>{% for v in d.variantes %}{% for g in v.grafias %}
+                    {% if g != d.nome %}{{ g }}{{ "; " if not loop.last }}{% endif %}
+                  {% endfor %}{% endfor %}</td>
+              <td>{{ d.fora }} de {{ d.sps }}</td>
+              <td class="cartao-dica">{{ d.motivo }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if pode_operar %}
+        <button class="btn" type="submit" style="margin-top:12px">
+          Aplicar os {{ sozinho|length }}</button>
+      {% endif %}
+    </div>
+  </form>
+{% endif %}
+
+{% if decidir %}
+  <div class="cartao">
+    <h2>Precisa de você ({{ decidir|length }})</h2>
+    <p class="cartao-dica">
+      Aqui os nomes são <b>de verdade diferentes</b>, e nenhuma regra sabe qual
+      vale: pode ser a empresa que mudou de nome, pode ser o nome de fantasia
+      contra a razão social, pode ser erro de digitação. Escolha um — e não
+      volta a perguntar.
+    </p>
+    {% for d in decidir %}
+      <form method="post" action="{{ url_for('analisesps.aplicar_credor') }}"
+            class="credor-caso">
+        <input type="hidden" name="documento" value="{{ d.documento }}">
+        <input type="hidden" name="tipo-{{ d.documento }}" value="DECIDIR">
+        <div>
+          <b class="id">{{ d.documento }}</b>
+          <span class="cartao-dica">— {{ d.sps }} SP(s) neste fornecedor</span>
+        </div>
+        {% for v in d.variantes %}
+          <label class="credor-opcao">
+            <input type="radio" name="nome" value="{{ v.nome }}"
+                   {{ 'checked' if loop.first }}>
+            <b>{{ v.nome }}</b>
+            <span class="cartao-dica">{{ v.vezes }} SP(s)</span>
+            {% if v.grafias|length > 1 %}
+              <span class="cartao-dica">
+                (também escrito: {{ v.grafias|reject('equalto', v.nome)|join('; ') }})
+              </span>
+            {% endif %}
+          </label>
+        {% endfor %}
+        {% if pode_operar %}
+          <button class="btn secundario" type="submit">Usar este</button>
+        {% endif %}
+      </form>
+    {% endfor %}
+  </div>
+{% endif %}
+
+{% if prontos %}
+  <div class="cartao">
+    <h2>Já decididos ({{ prontos|length }})</h2>
+    <p class="cartao-dica">
+      Ficam à vista de propósito: se alguém lançar o nome velho de novo, estas
+      SPs voltam a ser corrigidas sozinhas — e você precisa poder ver por quê.
+    </p>
+    <table class="sps">
+      <thead><tr><th>CPF/CNPJ</th><th>Nome que vale</th><th>Quem decidiu</th>
+                 <th>Fora do padrão</th></tr></thead>
+      <tbody>
+        {% for d in prontos %}
+          <tr>
+            <td class="id">{{ d.documento }}</td>
+            <td>{{ d.nome }}</td>
+            <td>{{ d.decidido_por or '—' }}</td>
+            <td>{{ d.fora }} de {{ d.sps }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
+
+{% endblock %}

@@ -503,6 +503,18 @@ def criticar_medicao(s: Session, contrato_id: int, dados: dict[str, Any]) -> lis
     return criticas
 
 
+def item_preco(s: Session, contrato_item_id: int) -> Decimal:
+    """O preço unitário do item, em Decimal exato.
+
+    O saldo por item devolve `float` para a tela; usar aquele número na conta
+    do dinheiro seria passar por uma casa decimal que não existe no banco.
+    """
+    item = s.get(ContratoServicoItem, contrato_item_id)
+    if item is None:
+        raise ErroValidacao("Serviço não pertence a este contrato.")
+    return Decimal(item.preco_unitario)
+
+
 def _saldo_por_item(s: Session, contrato_id: int) -> dict[int, dict[str, Any]]:
     """Quanto resta de cada serviço do orçamento."""
     itens = s.scalars(select(ContratoServicoItem).where(
@@ -558,10 +570,22 @@ def registrar_medicao(s: Session, contrato_id: int, dados: dict[str, Any],
                 raise ErroValidacao(
                     f"{info['descricao']}: medindo {q} {info['unidade'] or ''} mas restam "
                     f"apenas {info['saldo']}. Aditive o item antes.")
-            total += (q * Decimal(str(info["preco_unitario"])))
+            # ARREDONDA CADA LINHA, e só depois soma — exatamente como cada
+            # `MedicaoItem.valor` é gravado logo abaixo. Somando sem arredondar
+            # e arredondando no fim, o total da medição saía diferente da soma
+            # das próprias linhas dela: com preço de três casas (a coluna
+            # aceita quatro, e R$ 12,345 por m² existe), três linhas de
+            # R$ 12,345 davam R$ 37,04 no total e R$ 37,02 nas linhas.
+            #
+            # Não é cosmético: o `valor_medido` é o que consome o saldo do
+            # contrato, o que a garantia retém em cima e o que vira título a
+            # pagar. Quem confere soma as linhas na calculadora e encontra
+            # outro número — e aí perde a confiança em TODOS os números.
+            # Achado em 12/09/2026.
+            total += (q * Decimal(item_preco(s, item_id))).quantize(_CENT)
         if total <= 0:
             raise ErroValidacao("Informe a quantidade executada de ao menos um serviço.")
-        dados = {**dados, "valor_medido": str(total.quantize(_CENT))}
+        dados = {**dados, "valor_medido": str(total)}
     criticas = criticar_medicao(s, contrato_id, dados)
     bloqueios = [x for x in criticas if x["gravidade"] == "BLOQUEIA"]
     if bloqueios:

@@ -17,9 +17,930 @@ ERP financeiro em `/erp`, Flask + Postgres no Render, 15 módulos no mesmo
 serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 **Suprimentos construído e nunca operado** — ver `SUPRIMENTOS.md`.
 
+---
+
+## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
+
+### TRAZ AS MIGRAÇÕES 061 A 064 — o botão tem de ser apertado junto com a publicação
+
+A **064** acrescenta o limite de IA ao cadastro do operador e já deixa todo
+mundo com US$ 5,00. ⚠️ **É coluna nova em `usuarios`** — a armadilha conhecida
+do ERP: entre publicar e apertar o botão, telas que carregam o operador falham.
+A leitura do limite no caminho quente é por SQL direto justamente para o ERP
+continuar de pé nessa janela, mas **apertar o botão no mesmo momento fecha o
+buraco**.
+
+A **063** só acrescenta o perfil PARCEIRO à lista de cargos. Não mexe em dado
+nenhum e não pode falhar; enquanto ninguém for cadastrado com ele, é um nome a
+mais na caixinha do cadastro de operador.
+
+A varredura adversarial do núcleo financeiro (11/09/2026) achou **nove falhas
+reais**, oito delas reproduzidas com teste antes de corrigidas. Três delas são travas no
+próprio banco, e vêm nas migrações **061** e **062**. Enquanto não forem
+aplicadas, o código novo já está no ar mas a rede de proteção do banco não.
+
+**A 062 é a única que pode falhar por causa do dado que já existe.** Se
+falhar, a mensagem diz quantas parcelas têm mais de um pagamento registrado —
+isso não é defeito da migração, é dinheiro pago em dobro que já está no banco
+e precisa ser conferido no financeiro. Ela está separada da 061 justamente
+para que um problema assim não impeça a correção da conciliação de entrar.
+
+---
+
+**Fechamento do dia 11/09/2026.** O dono disse, com estas palavras: *"Por aqui
+nós estamos atualizados de implementações. Tudo que foi solicitado foi feito."*
+Tudo do ERP está publicado na `main` (último merge do ERP: `e5892ee`), e as
+migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
+
+**Nada está pendente do lado do código.** O que segue aberto é de dois tipos:
+
+### 1. Decisões que só o dono pode tomar
+
+| O que falta decidir | Por que trava |
+|---|---|
+| **"custo da obra"** — competência ou caixa? entra o que está em análise? entra rateio de administração? | Trava o grupo de Obras inteiro nas perguntas. Há teste recusando a pergunta enquanto a palavra não tiver definição. |
+| **"obra em andamento"**, **"este mês"**, **"gastei com fulano"**, **"resultado da obra"** | Mesma coisa: cada leitura dá um número diferente, todos com cara de certo. Ver `PERGUNTAS.md` §1. |
+| **Por qual empresa sai o e-mail** dos relatórios automáticos | Hoje só vai por Telegram. As credenciais de envio são por CNPJ, e a BWS tem mais de uma. |
+| **Vale a pena o índice por significado** nos documentos? | A busca de hoje acha por palavra ("reajuste" acha "reajustar"), não por sentido ("correção monetária"). O caro só se compra quando a lista de perguntas sem resposta mostrar que faz falta. |
+
+### 2. Coisas de operação, que dependem de alguém usar
+
+- **Arquivar os contratos de verdade no Arquivo.** A busca nos documentos está
+  pronta e o acervo de produção está vazio de contrato. Sem documento
+  arquivado, não há o que procurar.
+- **Telefone no cadastro de quem recebe relatório automático.** Sem telefone,
+  não há por onde mandar — o sistema registra isso, não some calado.
+- **Testar a pergunta por voz no iPhone.** Foi corrigida (era o formato do
+  arquivo), mas quem tem iPhone é o dono.
+- **Suprimentos continua construído e nunca operado.**
+
+### 3. O que EU deixei anotado para olhar
+
+- ✔ **Recado técnico cru chegando à tela — RESOLVIDO** em 11/09/2026, nas
+  148 rotas de uma vez, com varredura na suíte impedindo a volta.
+- **Telas que listam obra com valor.** A brecha "quem pode escolher o registro
+  ≠ quem pode ver os números dele" foi fechada no painel de Obras, nas
+  Locações e nos Relatórios. A varredura mecânica das rotas com número não
+  achou outra — mas ela só pega rota com número no endereço, não tela que
+  soma sozinha. Continua aberto.
+- ✔ **A agenda foi recortada por obra** em 12/09/2026, por decisão sua.
+- ✔ **As notas fiscais recebidas foram resolvidas** em 12/09/2026, por decisão
+  sua: quem CRUZA vê tudo (inclusive a nota solta), os demais veem só as já
+  associadas — e, se presos a obra, só as das obras deles.
+- **Cadastrar o primeiro parceiro e conferir na tela.** O perfil está pronto e
+  testado, mas nunca foi usado por gente de verdade: vale abrir o ERP com um
+  parceiro de teste e olhar tela por tela antes de dar a senha a alguém de
+  fora.
+- **Desfazer conciliação sozinha não tem botão.** A função existe e agora
+  funciona (a migração 061 destravou), mas nenhuma tela chama: só dá para
+  desfazer a conciliação junto com a baixa, pelo "Desfazer baixa" do título.
+  Se o dono quiser separar as duas coisas, é uma tela a mais, não uma
+  reescrita.
+- **O extrato importado antes de 11/09/2026 pode ter linha faltando.** A
+  correção da identidade da linha vale para importação NOVA; o que já entrou
+  ficou como estava. Se o saldo do extrato dentro do ERP divergir do banco em
+  algum mês antigo, é quase certo que seja isto: dois pagamentos iguais no
+  mesmo dia viraram um. Reimportar o OFX daquele período resolve, porque a
+  linha que falta passa a ter identidade própria.
+
+---
+
+**Estado em 12/09/2026 (décima segunda entrega):** **teto de IA por pessoa**.
+**TRAZ A MIGRAÇÃO 064.**
+
+### O que o dono decidiu
+
+*"Pra gente não ter surpresa, vamos limitar aí. Deve ficar no cadastro da
+pessoa, com o valor estimado já de cinco dólares. E se eu quiser colocar
+diferente pra outras pessoas (…) que seja editável. Se eu quiser colocar
+alguém sem limite, eu coloco, ou botar dez dólares."*
+
+E o raciocínio, que explica o valor baixo: *"isso é mais é gestão que vai usar,
+pessoal de obra eu não acredito que vai usar muito"*.
+
+### Como ficou
+
+- **US$ 5,00 por mês** é o padrão de quem entra novo. Está escrito em
+  `core/auth/service.py`, no lugar que CRIA o operador.
+- **Editável um a um**, no cadastro do operador, com um bloco próprio
+  ("Inteligência artificial") que mostra o limite e **quanto a pessoa já usou
+  no mês**.
+- **Campo vazio = sem limite**, e a tela diz isso com todas as letras.
+- **Vira o mês, zera.**
+
+### A diferença que importa: este BARRA, o global só avisa
+
+O teto global que já existia manda recado aos administradores e deixa passar —
+é termômetro. Este aqui **recusa a chamada**. Teto que só avisa vira aviso que
+chega depois da fatura, e o pedido foi "não ter surpresa".
+
+O recado para quem é barrado diz três coisas, porque quem lê não é
+programador: **o que acabou** (o limite do mês), **o que continua funcionando**
+(telas, relatórios e as perguntas calculadas pelo sistema — nada disso consome
+IA) e **a quem pedir** (o administrador, no cadastro dela).
+
+**O que nunca é barrado:** conta do sistema — robô, relatório agendado, agente.
+Não é curiosidade de ninguém, e travar rotina sem ninguém entender por quê é
+pior que o custo.
+
+### Duas armadilhas que apareceram no caminho
+
+**1. O padrão do modelo desfazia a escolha de "sem limite", em silêncio.** Com
+`default=5.00` no modelo, o SQLAlchemy OMITE a coluna do INSERT quando ela está
+nula — então apagar o campo para dizer "sem limite" gravava 5,00 do mesmo
+jeito. **Quem pegou foi um teste.** O padrão saiu do modelo e foi para o lugar
+que cria o operador, onde está escrito e se lê.
+
+**2. A trava não pode ficar dentro do `try`.** São oito rotas que gastam IA, e
+todas têm um `except Exception` no fim; ali dentro, a recusa por teto viraria
+"falha do sistema" com código de erro, em vez de "seu limite acabou". Ela fica
+FORA, e há varredura estrutural na suíte cobrando as duas coisas: que toda rota
+que gasta IA confira o teto, e que a conferência esteja fora do `try`. **São
+oito hoje; a nona é a que alguém esqueceria.**
+
+### Onde a IA é gasta, para você saber o que o limite alcança
+
+Só duas coisas que a pessoa faz de propósito: **ler documento anexado**
+(no lançamento, no Arquivo, na obra, no colaborador, no contrato de locação e
+na pergunta com anexo) e **transcrever áudio**. Tudo o mais do ERP — telas,
+listas, relatórios, e as perguntas do assistente que o sistema calcula sobre o
+banco — **não consome nada**.
+
+---
+
+**Estado em 12/09/2026 (décima nona entrega):** **"custo da obra" foi
+decidido — e o grupo de Obras do assistente destravou.** Sem migração.
+
+### A definição, nas palavras do dono
+
+*"O custo normalmente está associado só às despesas de DRE, nada de fluxo. E é
+o custo executado e o custo comprometido — são essas duas visões que a gente
+tem em relação ao custo de obra."*
+
+Isso fecha a palavra que estava em aberto desde 11/09 e que travava o grupo
+inteiro. Faltava o REGIME, e a resposta dele deu mais do que isso: deu os dois
+nomes que a empresa já usa.
+
+| Visão | O que é |
+|---|---|
+| **Comprometido** | a obrigação já existe, tendo o dinheiro saído ou não |
+| **Executado** | o dinheiro já saiu do caixa |
+
+E três regras junto:
+
+1. **Só conta de DRE** (natureza RESULTADO). Transferência entre contas e
+   aporte não são custo — é dinheiro mudando de lugar, e somá-los inflaria o
+   custo sem nada ter sido consumido.
+2. **Rascunho, cancelado, estornado e devolvido não comprometem nada.**
+3. Continua valendo a decisão de 11/09: custo é a despesa **direta** da obra;
+   rateio da administração não vira custo de obra.
+
+**As duas visões aparecem sempre juntas**, com a diferença numa terceira
+coluna ("falta executar"). Mostrar uma só seria escolher pelo dono em
+silêncio — e a diferença entre elas é justamente o que ele ainda tem a pagar.
+
+### Como foi feito, e por que assim
+
+A resposta **reusa `core/relatorios.py` inteiro**: mesmo recorte por obra,
+mesma conta de rateio, mesma correção da conta redutora, mesmo filtro de
+espécie. Uma consulta própria divergiria da tela de Relatórios no dia em que
+alguém corrigisse uma das duas — e aí o assistente e o relatório dariam
+números diferentes sobre a mesma obra.
+
+### O que apareceu no caminho, e é decisão do dono
+
+⚠️ **O perfil GESTOR_OBRA está em `VE_TUDO`** — ele enxerga TODAS as obras da
+empresa, não só as designadas a ele. Descobri porque um teste meu partiu do
+contrário e falhou. Quem é preso às obras designadas é o SUPERVISOR_OBRA
+(sempre) e o administrativo/lançador (quando marcado assim no cadastro).
+
+Isso pode estar certo — gestor é cargo de gerência — mas **contradiz o
+princípio que o dono deu em 12/09/2026**: *"o ideal é sempre limitar as
+informações a quem está associado a cada obra"*. Não mudei: quem vê o quê é
+decisão de negócio, não ajuste técnico. **Está aqui para ele decidir.**
+
+### Conferência
+
+9 testes novos com banco de verdade; conferi tirando a regra de "só DRE" e
+**quatro quebram**. A pergunta foi exercitada no navegador, pelo painel do
+assistente: ela aparece na lista, responde as três obras com as duas colunas,
+e oferece Excel e PDF.
+
+---
+
+**Estado em 12/09/2026 (décima oitava entrega):** **caixas de diálogo
+aparecendo soltas dentro da página, em janela estreita.** Sem migração.
+
+O dono viu logo depois da publicação: *"onde eu estou na tela fica aparecendo
+aqui nova chave Pix e encaminhar, mesmo em Configurações"*.
+
+### A causa, e ela é a MESMA armadilha de horas antes
+
+Uma regra de estilo para telefone dizia `dialog { display: flex }`, para a
+caixa ocupar a tela e rolar por dentro. Só que **`display:flex` vence o
+`display:none` que o navegador dá a toda caixa FECHADA** — e aí TODAS elas
+apareciam empilhadas dentro da página, em qualquer janela abaixo de 720px.
+
+Corrigido com `dialog[open]`: a regra passa a valer só para a caixa aberta.
+
+**Por que só apareceu agora:** o defeito estava no estilo desde que a versão
+para telefone foi feita, mas cada tela tinha uma ou duas caixas próprias, e o
+dono trabalha em janela larga. Ao pôr o diálogo de "Encaminhar" no ESQUELETO
+(para servir a mais de uma tela), ele passou a existir em TODAS — e o defeito
+saiu do canto para o meio da tela.
+
+⚠️ **É a terceira vez hoje que a mesma armadilha aparece** (a tarja de
+gravação, e agora esta). **Regra que fica: toda regra de `display` precisa
+dizer a qual ESTADO se aplica** — `[open]`, `:not([hidden])`, o que for.
+Layout que esquece o estado fechado do elemento é defeito invisível para a
+suíte: 4.710 testes passaram com este no ar. **Estilo só se confere abrindo a
+tela — e em janela estreita também.**
+
+---
+
+**Estado em 12/09/2026 (décima sétima entrega):** **os relatórios** — e um
+defeito de verdade que apareceu ao olhá-los. Sem migração.
+
+### O DEFEITO: o relatório somava receita com custo
+
+Títulos A RECEBER (medição de obra) moram na MESMA tabela dos títulos a pagar,
+com rateio por obra igual. Foi decisão de projeto, e é boa. O que faltou foi o
+filtro: **os relatórios nunca olharam a espécie**.
+
+"Totais por obra" devolvia custo + receita num número positivo só. Uma obra que
+gastou R$ 10.000 e vai receber R$ 50.000 aparecia com **R$ 60.000**, e quem
+lesse não teria como desconfiar.
+
+O DRE sempre esteve certo — ele classifica pela conta do plano (grupo 1 é
+receita), não pela espécie. O erro estava no resumo por dimensão e no
+analítico. Agora a **espécie é escolha explícita na tela**, com padrão
+"a pagar", porque este é um relatório de custo; ela também virou dimensão, para
+quem pedir os dois vê-los em linhas separadas.
+
+### O que a tela ganhou, tudo aprovado pelo dono
+
+- **Fluxo de caixa projetado**, semana a semana ou mês a mês: o que entra, o
+  que sai, o resultado e o acumulado. **O vencido aparece à parte**, não
+  diluído — senão a previsão pareceria melhor do que é. O acumulado parte de
+  um saldo que a PESSOA informa: o sistema não sabe o saldo do banco, e
+  inventar um faria o número parecer conta bancária sem ser.
+- **Curva ABC** por credor, conta ou obra, com o acumulado e as classes A/B/C.
+  A régua olha o acumulado **antes** de cada linha: com um fornecedor
+  respondendo por 83% do gasto, olhar depois o jogaria para a classe B e a
+  classe A ficaria vazia justamente no caso mais óbvio. **Quem pegou isso foi
+  um teste.**
+- **Consolidado por empresa** — filtro e dimensão. A BWS opera com mais de um
+  CNPJ e era a única visão que faltava.
+- **Excel e PDF**, como em toda outra tela. Esta era a única do ERP que só dava
+  CSV — e era justamente a tela de relatório. Os filtros vão impressos no
+  cabeçalho, **a espécie inclusive**: sem ela ninguém saberia se aquele total é
+  custo, medição, ou os dois somados.
+
+### Conferência
+
+11 testes novos com banco de verdade; conferi desligando o filtro de espécie e
+**cinco quebram**. As duas telas novas foram exercitadas no navegador, e o
+Excel baixou de verdade.
+
+---
+
+**Estado em 12/09/2026 (décima sexta entrega):** **encaminhar por WhatsApp** e
+**a resposta virando relatório em Excel/PDF**. Sem migração.
+
+### Antes do trabalho: uma reclamação do dono que virou regra
+
+*"Eu já disse dezenas de vezes. Eu passo duas, três tarefas, ao invés de você
+executar as duas, três tarefas, você faz uma e para. Aí me pergunta se eu
+quero seguir. Se eu já estou dando três tarefas, por que tu não executa as
+três?"*
+
+Ele tinha razão: na mesma mensagem ele pediu relatório em PDF/Excel,
+encaminhar por WhatsApp e cancelamento de título — eu entreguei o cancelamento
+e voltei perguntando a ordem dos outros dois. **A regra entrou no `CLAUDE.md`**
+(que toda sessão nova lê) e em `CONTEXTO.md`: pedido com várias tarefas se
+executa inteiro; ordem é escolha de quem executa; dúvida de detalhe vira
+padrão sensato escrito na resposta. Só publicar na `main` continua exigindo o
+"pode" dele.
+
+### Encaminhar informação
+
+O encanamento JÁ EXISTIA e estava ligado: `app/apps/notificador.py` manda por
+Telegram e por WhatsApp (Z-API), e é assim que o aviso de pagamento sai hoje.
+Faltava o botão manual.
+
+- **No lançamento**, botão "↗ Encaminhar" na ficha: credor, valor, forma de
+  pagamento, conta, obra, vencimento de cada parcela, descrição e situação —
+  os campos que o pessoal pedia por WhatsApp.
+- **No documento do Arquivo**, botão "Enviar".
+- Para operadores cadastrados ou número avulso, com recado e anexo opcional.
+- **Prévia obrigatória na tela**: enviado não volta.
+
+**As três travas, e o porquê de cada uma:** só se encaminha o que a pessoa
+pode ver (senão vira a porta dos fundos do controle de acesso); fica
+registrado quem mandou o quê para quem (a mensagem sai do sistema e o ERP não
+controla o resto — o que ele pode fazer é dar NOME ao que saiu); número que não
+parece telefone é recusado antes de sair.
+
+**Quem NÃO encaminha, e é escolha:** CONSULTA (existe para olhar, não para
+redistribuir) e PARCEIRO (é de fora da empresa).
+
+### A resposta virando relatório
+
+A máquina de exportar já existia e é genérica. Bastou ligar: toda resposta com
+tabela ganha "⬇ Excel" e "⬇ PDF", no painel e na tela cheia. **Quem monta o
+arquivo é o sistema, com os mesmos números da resposta** — não a IA escrevendo
+um texto com cara de relatório, que ninguém poderia conferir.
+
+### A falha que apareceu ao ligar isso — e ela era ANTIGA
+
+**O exportador punha o valor debaixo do cabeçalho errado.** Ele pegava
+`linha.values()` — os valores na ordem em que o dicionário foi montado, não na
+ordem das colunas. Dois jeitos de dar errado, nenhum deles avisa:
+
+- dicionário montado em outra ordem → valor na coluna errada;
+- linha faltando um campo → todos os seguintes andam uma casa à esquerda.
+
+O arquivo sai bonito, sem erro, com o número errado no lugar certo. **É o pior
+defeito que um relatório pode ter**, porque quem lê não tem como desconfiar.
+Agora a coluna casa pela CHAVE quando ela existe; a tela que manda só rótulos
+(a maioria das listas) continua como era.
+
+### Conferência
+
+**4.557 testes passando, nenhuma falha** (com banco de verdade). Os 25 novos —
+20 do encaminhamento e 5 do alinhamento da planilha — eu conferi desligando a
+trava de escopo e a correção do alinhamento, e eles quebram. **As três coisas foram exercitadas no navegador**: o diálogo de
+encaminhar mostrando o texto pronto do lançamento, e o Excel baixando de
+verdade — tanto do painel do cantinho quanto da tela cheia.
+
+⚠️ **Defeito meu, achado no navegador e não por teste:** eu criei a ação
+`encaminhar` mas esqueci de pô-la na lista que a tela consulta
+(`ACOES_NA_TELA`), então o botão não aparecia para ninguém. E liguei o botão a
+uma variável que não existia naquele ponto do código. Nenhum teste pegaria os
+dois — **tela só se confere abrindo**.
+
+---
+
+**Estado em 12/09/2026 (décima quinta entrega):** **cancelar lançamento —
+quem lançou desfaz o próprio, e quem lançou é avisado.** Sem migração.
+
+### O que o dono pediu, e o que ele decidiu
+
+Primeiro o pedido: *"pode ser que eventualmente um título financeiro necessite
+ser cancelado (…) a gente poder ter um botão lá de cancelar, e botar uma
+justificativa obviamente, e a pessoa que lançou vai receber aquela informação
+de que o título foi cancelado e qual o motivo"*.
+
+Metade já existia: botão, motivo obrigatório e registro de quem cancelou. O que
+não existia era o AVISO. Perguntei se quem lança deveria poder cancelar o
+próprio lançamento, e ele decidiu: ***"liberado o lançamento que não está
+baixado ou conciliado"***.
+
+### Como ficou
+
+- **Quem lançou cancela o próprio lançamento**, sem depender do financeiro.
+  Antes precisava interromper outra pessoa, e o lançamento errado ficava no ar
+  até alguém ter tempo.
+- **Quem tem alçada de aprovar cancela o de qualquer um** — como era.
+- **Quem lançou não cancela o dos outros.** A recusa aí é "sem permissão", e
+  não "não encontrado", DE PROPÓSITO: o título é da mesma obra e a pessoa já o
+  vê na tela; esconder a existência não esconderia nada, e o recado claro
+  evita que ela fique tentando. Fora da obra dela, aí sim é "não encontrado".
+- **Quem lançou é avisado**, com o número, o credor, o valor, quem cancelou e
+  **o motivo inteiro**. Um aviso que diz "foi cancelado" sem o porquê obriga a
+  pessoa a ligar para perguntar — e aí não economizou trabalho nenhum.
+- **Quem cancelou não recebe aviso de si mesmo.** Ruído faz a pessoa parar de
+  ler os avisos que importam.
+
+**Ação própria, `cancelar_titulo`**, e não um pedaço de "aprovar": quem tem
+"lancar" a recebe por implicação (`ACOES_IMPLICADAS`). É a regra do repositório
+— a ação declarada tem de decidir sozinha quem entra; quem decide *neste
+registro* é o serviço, olhando de quem é o título.
+
+### A falha que apareceu no caminho
+
+**A trava era `parcela.status == PAGA`, e isso não é o mesmo que "tem
+pagamento".** Uma parcela pode ter PAGAMENTO registrado sem estar marcada PAGA
+— baixa parcial, baixa que o robô lançou e ninguém fechou. Nesses casos o
+cancelamento **passava**: a parcela virava CANCELADA e o pagamento ficava
+pendurado num título que "não existe mais". Dinheiro que saiu da conta e sumiu
+do relatório, sem ninguém perceber.
+
+Agora a trava olha o PAGAMENTO e a CONCILIAÇÃO, que são coisas diferentes e dão
+recados diferentes: conciliado diz *"desfaça a conciliação primeiro"*, que é
+acionável; pago diz *"use estorno"*. Conciliação já desfeita não impede — senão
+o recado seria mentira e a pessoa desfaria à toa.
+
+### Conferência
+
+**4.527 testes passando, nenhuma falha** (com banco de verdade). Os 13 novos
+eu conferi desligando as duas travas e o caminho do autor: **seis quebram**. A tela foi exercitada no navegador:
+cancelei uma solicitação de verdade no banco de demonstração e vi o contador
+cair de 244 para 243.
+
+⚠️ **O aviso sai por TELEGRAM, não por WhatsApp** — é o mesmo caminho do aviso
+de pagamento, que já funciona assim. Quem não tem telefone nem CPF no cadastro
+fica registrado como "sem destino", e a tela diz quando o aviso não saiu.
+
+---
+
+**Estado em 12/09/2026 (décima quarta entrega):** **perguntar sobre UM
+documento do acervo.** Sem migração.
+
+### O que o dono pediu
+
+*"É interessante a gente colocar essa possibilidade de pergunta sobre arquivos
+que já estão anexados. (…) Tem um contrato de uma obra e eu quero perguntar
+alguma coisa sobre ele, eu acho que é válido."*
+
+### O que já existia, e por que não bastava
+
+O assistente já tinha "O que os documentos dizem sobre um assunto?" (11/09):
+busca por PALAVRA no acervo inteiro, e a IA lendo só os pedacinhos que
+casaram — umas quarenta palavras. Serve para achar ONDE está escrito. Não
+serve para "qual o prazo de garantia deste contrato", porque a resposta
+depende de LER o documento, não de encontrar a palavra.
+
+### O buraco de verdade, que ninguém tinha visto
+
+**Só as SEIS primeiras páginas de cada documento ficavam guardadas como
+texto** — e só quando a leitura por IA tinha rodado no arquivamento. Duas
+consequências que estavam no ar sem ninguém saber:
+
+- contrato de quarenta páginas: 85% invisível, inclusive para a busca por
+  palavra que já existia;
+- documento arrastado para a tela e cadastrado à mão (o caso mais comum) não
+  tinha texto NENHUM guardado. Para a busca, ele não existia.
+
+O teto de seis páginas é da leitura por IA (`core/documentos/leitor.py`), onde
+página custa dinheiro e memória — e lá ele está certo. O erro foi ele valer
+também para o texto guardado.
+
+### Como ficou
+
+- **Todo documento novo nasce legível.** Extrair a camada de texto do PDF é
+  trabalho de biblioteca, **não custa IA nenhuma**, e agora roda em todo
+  arquivamento (`core/arquivo/texto.py`, com PyMuPDF — centenas de páginas em
+  uma fração do tempo do pdfplumber, que é o certo para o outro caso).
+- **O acervo antigo tem botão**, em Configurações › "Documentos legíveis para
+  perguntas". Roda em segundo plano, em blocos de 200. Também sem custo de IA.
+- **Botão "Perguntar" em cada documento**, na tela do Arquivo. A IA lê o texto
+  daquele documento e responde.
+- Custo: uns **três centavos de dólar** por pergunta num contrato longo — cabe
+  folgado no teto de US$ 5 por pessoa, que esta rota confere como as outras.
+
+### A trava que sustenta tudo: a citação é conferida pelo SISTEMA
+
+A IA devolve a resposta E os trechos de onde tirou. **O código procura cada
+trecho dentro do documento antes de mostrar.** Trecho que não está lá é
+descartado, e a resposta sai marcada: *"não consegui conferir esta resposta no
+texto do documento — trate como pista"*.
+
+Isso não é zelo: é a única coisa que separa "o contrato diz" de "a IA acha que
+o contrato diz". Citação inventada é plausível por construção, e é exatamente
+o que o dono não tem como conferir. **Há teste com uma citação falsa provando
+que ela não chega à tela** — e eu vi os dois desfechos no navegador, o
+conferido e o não conferido.
+
+### O que ficou de fora, por decisão do dono
+
+*"Não ler escaneados por hora."* Documento que é foto ou digitalização não tem
+camada de texto; o sistema responde **"este documento é uma imagem, não
+consigo ler o texto dele"** e a IA nem é chamada (há teste que explode se ela
+for). Ler escaneado exigiria IA olhando página por página, o que custa por
+documento — é acréscimo à parte, para quando ele quiser.
+
+E, na mesma conversa, ele recusou o outro caminho: anexar um documento novo e
+CONVERSAR sobre ele — *"isso fica pra fazer direto com GPT, Claude"*. Um
+documento por pergunta, sem memória entre perguntas: é o desenho de propósito.
+
+### Conferência, e um erro meu de leitura
+
+**4.514 testes passando, 129 pulados, nenhuma falha** — duas rodadas seguidas
+com banco de verdade, o mesmo número nas duas. Os 17 testes novos eu conferi um
+a um desligando a trava que cada um cobre, para vê-los quebrar.
+
+⚠️ **ERRO MEU, registrado para não se repetir:** na mensagem do commit
+`ff5875d` eu escrevi que o Postgres deste contêiner tinha caído no meio da
+rodada e que parte dos testes de banco fora pulada — e disse isso ao dono. Não
+tinha caído. Eu vi muitas marcas de "pulado" passando na tela no meio da
+execução e concluí antes de ver o total; os 129 pulados são os de sempre, de
+outros módulos. **A lição é a de sempre neste repositório: a conclusão vem do
+número final, não do que está passando na tela.**
+
+---
+
+**Estado em 12/09/2026 (décima terceira entrega):** **a tarja de gravação**, e
+uma decisão do dono sobre o anexo. Sem migração.
+
+### O defeito da tarja, e como ele escapou
+
+A tarja "Gravando 0:00" ficava visível o tempo todo, com o microfone
+desligado — defeito que EU introduzi na entrega anterior, ao criar a própria
+tarja. Causa: `display:flex` vence o `hidden` que o navegador aplica sozinho.
+A convenção que resolve isso já existia no mesmo arquivo, duas linhas acima,
+no painel da IA e no botão de filtros; eu repeti a armadilha mesmo assim.
+
+**A lição é sobre o que a suíte NÃO cobre.** Folha de estilo não tem teste
+nenhum: 4.492 testes passaram com o defeito no ar. Só apareceu porque abri a
+tela no navegador. Mexeu em aparência — abre a tela e OLHA; não há substituto.
+
+### Anexar e conversar sobre o documento: NÃO vai ser feito
+
+Eu ofereci transformar o anexo em conversa — anexar um documento e continuar
+perguntando sobre ele. **O dono recusou**, com estas palavras: *"Acho que não
+precisa colocar anexo e perguntar sobre. Isso fica pra fazer direto com GPT,
+Claude."*
+
+O que fica de pé, e continua funcionando: anexar um documento na pergunta e
+receber UMA leitura, marcada como lida do arquivo e não calculada, sem nada
+guardado. **Não reabrir este assunto** sem ele pedir: conversa longa sobre
+documento ele faz fora do ERP, de propósito.
+
+---
+
+**Estado em 12/09/2026 (décima primeira entrega):** **duas coisas que o dono
+viu na tela, e o primeiro achado da varredura da aritmética.** Sem migração.
+
+### O botão de falar não dizia que estava gravando
+
+Palavras dele: *"tem alguma falha no botão de conversar, você clica, aparece o
+x, mas não dá pra saber se está gravando se não está, é só pra gravar e se eu
+quiser escrever, como é que funciona"*.
+
+Estava certo. O único sinal era o ícone virar um quadradinho (que no celular
+ele leu como "x") e o botão ficar vermelho. Nenhuma palavra, nenhum relógio,
+nenhuma pista de que dá para escrever em vez de falar. Botão que não diz o que
+está fazendo é botão que ninguém usa duas vezes.
+
+Agora, enquanto grava, aparece uma tarja acima do campo:
+
+> 🔴 **Gravando 0:07** — Toque de novo no botão vermelho para parar. Ou escreva
+> no campo abaixo — tanto faz.
+
+E mais quatro coisas que faltavam:
+
+- **relógio correndo**, para a pessoa saber que está sendo ouvida;
+- **teto de dois minutos**, com aviso — gravação esquecida no bolso vira
+  arquivo enorme, custo de transcrição e, no fim, uma falha sem explicação;
+- **"Ouvindo o que você falou…"** enquanto transcreve, em vez de silêncio;
+- **o que eu entendi aparece escrito** ("Entendi: …"), com o texto no campo
+  para conferir antes de enviar. Transcrição erra, e pergunta mal ouvida
+  respondida em silêncio é o pior defeito possível.
+
+A tela cheia (`/erp/perguntar`) já tinha texto nos botões — era só o painel
+flutuante que estava mudo.
+
+### A tela de entrada dizia "ERP Financeiro"
+
+Ele viu: *"a tela de login do sistema é ERP Financeiro, tá errado"*. E está: o
+resto do sistema se chama **ERP BWS** desde que deixou de ser só contas a
+pagar — hoje tem Obras, Pessoal, Suprimentos, Contratos, Locações, Arquivo e
+Agenda. Só a porta de entrada tinha ficado para trás, com o nome antigo e o
+subtítulo "Contas a pagar". Alinhado com o resto. **Conferido no navegador**,
+não só no código.
+
+### Primeiro achado da varredura da aritmética: a medição não batia com as linhas dela
+
+A medição por item somava as linhas SEM arredondar e arredondava só no fim,
+enquanto cada linha era GRAVADA arredondada. Com preço de três casas — e a
+coluna aceita quatro, porque R$ 12,345 por m² existe — três linhas de R$ 12,345
+davam **R$ 37,04 no total e R$ 37,02 nas linhas**.
+
+Não é cosmético. O valor medido é o que consome o saldo do contrato, o que a
+retenção de garantia calcula em cima e o que vira título a pagar. Quem confere
+a medição soma as linhas na calculadora e encontra outro número — e é aí que se
+perde a confiança em TODOS os números, inclusive nos que estão certos.
+
+Agora cada linha é arredondada antes de somar, igual ao que é gravado. E o
+preço passou a ser lido em decimal exato, sem o desvio pelo `float` que a tela
+usa.
+
+### A locação tinha a MESMA falha — e aqui ela vira conta a pagar
+
+Achada logo depois, pelo mesmo padrão: `valor_periodo` somava os itens sem
+arredondar e arredondava no fim, enquanto a ficha do contrato mostra o valor de
+CADA equipamento já arredondado. Com diária de R$ 12,3450 (a coluna aceita
+quatro casas, e locadora usa), três escoras davam **R$ 37,04 no contrato e
+R$ 37,02 na ficha**.
+
+Aqui é pior que na medição, porque esse total vira o `valor_previsto` de cada
+parcela — **é o valor que o ERP diz que a BWS deve pagar todo mês**, e que
+alguém confere contra o boleto da locadora.
+
+O caso que mostra melhor: devolver uma escora que a ficha diz valer R$ 12,34
+derrubava **R$ 12,35** do contrato. A devolução comia um centavo a mais do que
+o equipamento valia.
+
+Corrigido do mesmo jeito, e a ficha passou a usar a MESMA função do total —
+para não existirem duas contas do mesmo número.
+
+### A despesa de colaborador está certa — e vale dizer por quê
+
+Varri e não achei nada: ali cada item já tem um valor digitado por uma pessoa,
+em reais e centavos, e a soma é exata do começo ao fim. Não há multiplicação
+no meio, então não há onde o arredondamento entrar. O rateio por obra soma
+esses mesmos valores. **Nada a corrigir** — e registro isto porque "varri e
+está certo" é informação, não silêncio.
+
+### Dois lugares com a mesma FORMA, que eu NÃO mexi
+
+Encontrei mais dois trechos que somam produto sem arredondar antes: o total do
+pedido de compra e a comparação "quanto do pedido já veio em nota". **Não
+mexi**, e o motivo é o que vale como regra: não consegui construir um caso em
+que eles errem — o segundo tem tolerância de dois centavos justamente para
+essa folga, e o primeiro não é mostrado linha a linha arredondado em lugar
+nenhum. **Mexer em conta de dinheiro sem um caso que prove a falha é trocar um
+erro conhecido por um desconhecido.** Ficam anotados aqui para quem for mexer
+naquelas telas um dia.
+
+---
+
+**Estado em 12/09/2026 (décima entrega):** **o princípio do recorte por obra,
+aplicado — e o perfil PARCEIRO**. **TRAZ A MIGRAÇÃO 063.**
+
+### O princípio, dito pelo dono
+
+*"O ideal é sempre limitar as informações a quem está associado a cada obra."*
+
+Isso respondeu a pergunta que a parte 2 tinha deixado em aberto (agenda e notas
+mostrando a empresa inteira) e virou regra geral do ERP. Três coisas saíram
+daí.
+
+### 1. A lista de colaboradores vazava dado pessoal
+
+`listar_colaboradores` nunca recebeu usuário. Quem tem a ação `ver_pessoal` —
+e isso inclui supervisor e administrativo, que são presos a obra — via TODO
+colaborador da empresa, com **CPF, chave Pix, valor da diária e auxílios**. Não
+é número de obra alheia: é dado pessoal de quem trabalha em outra frente.
+
+Agora recorta pelas obras da pessoa. O Departamento Pessoal continua vendo a
+folha inteira — ele enxerga por ASSUNTO, é o trabalho dele. Colaborador sem
+obra é do escritório e não aparece para quem responde por uma obra.
+
+### 2. A agenda passou a ter recorte, e a bolinha passou a bater
+
+A agenda mostrava a empresa inteira. Agora:
+
+- quem responde por obra vê os avisos DAS OBRAS DELE **mais** os que não são
+  de obra nenhuma (certidão da empresa, obrigação fiscal) — esconder a
+  certidão vencida de quem vai ao órgão não protege nada, e é a mesma regra
+  que o Arquivo já usava;
+- o PARCEIRO, que é de fora, vê só as obras dele;
+- **a contagem da tela de início usa o mesmo recorte**: bolinha dizendo "12
+  avisos" e tela mostrando 3 é defeito que ninguém reporta e todo mundo
+  desconfia;
+- resolver, dispensar, reabrir e apagar anotação passaram a conferir o mesmo
+  recorte, e anotar NA obra de outro foi fechado. Listagem não é trava.
+
+### 3. O perfil PARCEIRO
+
+Pedido do dono: *"tem um perfil que vai precisar ser criado, que é onde
+parceiro, e esse parceiro vai estar associado a alguma obra, e o correto é que
+ele possa visualizar todas as informações referente à obra — de financeiro, de
+DP, de contratos e etcétera — mas não visualizar o restante da empresa"*.
+
+**Três decisões dele, tomadas com o preço na mesa:**
+
+| Pergunta | Resposta |
+|---|---|
+| Até onde vai o financeiro da obra para ele? | **Todo o custo da obra.** Ele escolheu a leitura larga sabendo do que ela custa: o parceiro passa a enxergar por quanto a BWS compra naquela obra. |
+| E os dados das pessoas? | *"Aqui não muda. Não precisa de perfil novo pra isso. Segue os demais perfis."* — ou seja, ele vê a equipe da obra dele com os mesmos campos que um supervisor vê. |
+| Ele lança alguma coisa? | **Só olha.** |
+
+**O que ele alcança:** as telas do ERP, os relatórios, a equipe, os
+suprimentos, o arquivo e a agenda — tudo recortado pelas obras dele.
+
+**O que ele NÃO alcança, e por quê:**
+
+- **dado bancário** (conta e chave Pix de credor) — não é informação de obra;
+- **o quadro financeiro dos contratos** (`ver_contratos`) — aquela tela é o
+  contrato entre a BWS e o CLIENTE, pode atravessar várias obras e mostra o
+  que a BWS tem a receber. O contrato que interessa ao parceiro é a
+  **empreita** dele, e essa ele vê;
+- **notas fiscais contra a empresa**, fila de pedidos, uso da equipe,
+  configurações e cadastro de operadores;
+- **documento sem obra** (certidão, contrato social, seguro da BWS) e
+  **documento de faixa pessoal**, mesmo o da obra dele: folha e acordo de
+  jornada são da BWS com o empregado dela;
+- **qualquer ação que grave.** Há teste percorrendo a tabela de permissões
+  inteira e recusando se alguém der escrita ao parceiro um dia.
+
+**E a trava mais importante: sem obra designada, ele não vê NADA.** Escrito em
+voz alta, não como efeito colateral de lista vazia — os outros perfis presos a
+obra caem em "o que eu mesmo lancei" quando não têm obra, e para o parceiro,
+que não lança nada, isso seria uma porta que só existe por descuido.
+
+### As notas recebidas — decidido no mesmo dia
+
+Eu tinha deixado essa em aberto explicando o dilema: recortar a tela por obra
+esconderia justamente a nota que ninguém ligou a nada, que é a que importa. O
+dono respondeu: *"esse negócio de ver as notas acho que deve ficar restrito ao
+pessoal do financeiro. Demais verão notas que já estão associadas"*.
+
+Feito assim, e é melhor do que as duas saídas que eu tinha imaginado:
+
+- **quem CRUZA vê tudo**, inclusive a nota solta — é dele o assunto, porque a
+  nota solta ou é compra que ninguém lançou, ou é nota emitida contra a
+  empresa sem autorização, e nos dois casos alguém precisa agir;
+- **os demais veem só as já associadas** — e, se forem presos a obra, só as
+  que alcançam as obras deles. As duas travas valem juntas.
+
+**A trava é a AÇÃO de cruzar, não o cargo.** Hoje ela é do financeiro por
+cargo, mas o ERP permite marcá-la numa pessoa, e é justamente o caso do
+comprador: é ele quem sabe de que pedido cada nota é. Se eu tivesse amarrado ao
+cargo, a regra mentiria no dia em que você marcasse a caixinha para alguém.
+
+**E o resumo da tela conta só o que a pessoa vê** — se ele somasse a base
+inteira, o número de "pendentes" entregaria a existência da nota solta que o
+recorte acabou de esconder.
+
+**Um achado de brinde, dentro desse mesmo trabalho:** a função que responde
+"esta pessoa pode tal ação?" lia as marcações do cadastro de um atributo que só
+a rota preenche. Nas telas funciona; em qualquer outro caminho (relatório
+agendado, robô, teste) a pessoa perderia calada a ação que foi MARCADA para
+ela. Agora existe uma versão que busca a marcação no banco quando ela não veio
+junto — com a decisão continuando num lugar só.
+
+---
+
+**Estado em 11/09/2026 (nona entrega):** **varredura adversarial, parte 2 —
+fora do financeiro**. Não traz migração; é só código.
+
+### Como esta parte foi feita
+
+Em vez de ler módulo por módulo, esta parte usou o padrão que a parte 1
+ensinou: as falhas de escopo têm SEMPRE a mesma forma — *uma rota que recebe
+um NÚMERO e não pergunta se aquele número é da pessoa*. Então virou varredura
+mecânica: listar toda rota do ERP que tem número no endereço, cruzar com a
+lista de quem tem a ação por cargo, e ficar só com as que alcançam perfil
+preso a obra ou a autoria.
+
+Das 64 rotas com número, 8 caíram no filtro. Dessas, 5 já conferiam por
+dentro (Suprimentos e a fila de aval fazem certo). Sobraram **duas de escopo**
+— e uma terceira falha apareceu pelo caminho.
+
+### Os três achados
+
+| # | O que estava errado | O que acontecia na prática |
+|---|---|---|
+| 1 | **Apagar documento do Arquivo não conferia NADA** | Quem tem a ação "arquivar" apagava qualquer documento pelo número — inclusive de faixa de sigilo que não enxerga na tela. **O FINANCEIRO e o gestor de obra não veem documento PESSOAL (folha, acordo de jornada) e podiam apagar um.** Apagar leva junto o arquivo guardado: não é ver o que não devia, é DESTRUIR o que não devia. |
+| 2 | **O aval contava demais na recusa** | A fila de aval já era filtrada — o supervisor nunca via na tela o título de outra obra. Mas quem mandasse o número direto recebia *"este título não é de uma obra sob sua supervisão"*, resposta que CONFIRMA que o título existe. Varrer os números mapearia os lançamentos das outras obras sem abrir nenhum. |
+| 3 | **148 rotas devolviam o texto cru da falha para a tela** | Foi o que você viu acontecer: perguntou uma coisa ao assistente e recebeu a lista de colunas de uma tabela do banco. O painel do assistente foi corrigido na hora; a varredura mostrou que o mesmo saía por outras 148 portas. |
+
+### O que mudou
+
+**Apagar documento passou a usar o mesmo recorte da tela.** Não foi escrita
+regra nova: a função de apagar agora passa pelo `aplicar_escopo` que a
+listagem já usava — o mesmo princípio da parte 1. E a recusa é "não
+encontrado", idêntica à de um número que não existe.
+
+**O aval confere o escopo ANTES de qualquer outra coisa**, com o
+`exigir_titulo_no_escopo` que já existia. A conferência de quem PODE assinar
+continua onde estava; o que mudou é que ela nem chega a ser consultada para um
+título que a pessoa não alcança.
+
+**A falha inesperada virou recado em português**, com um código curto. O
+código é sempre o mesmo para a mesma falha, então serve para procurar no
+registro do servidor — e o registro continua guardando a exceção inteira, que
+é o que quem conserta precisa. Tem varredura na suíte proibindo o texto cru de
+voltar.
+
+**Com UMA exceção, e ela é importante: o banco atrasado.** Quando falta
+aplicar migração, o Postgres responde "coluna não existe" — e essa é a única
+falha em que quem lê a tela RESOLVE sozinho. Ali o recado diz exatamente o que
+fazer: "o banco está desatualizado, vá em Configurações e aperte Aplicar
+atualizações do banco". Esconder isso atrás de "falha do sistema" tiraria a
+informação que resolve o problema em dez segundos, e foi esse o impasse que
+derrubou o ERP em 02/09/2026. **Quem pegou isso foi um teste que já existia** —
+a troca das 148 rotas o quebrou, e ele estava certo.
+
+### Um achado de brinde: a suíte quebra se a rodada virar a meia-noite
+
+Na última conferência desta parte, seis testes falharam — e nenhum deles tinha
+a ver com a mudança. A rodada durou sete minutos e **começou dia 11, terminou
+dia 12**. Os seis são testes que comparam com "hoje" (atraso em dias, "a pagar
+no período", "não se recebe no futuro"): o cenário foi montado num dia e
+conferido no outro. Rodando de novo dentro do mesmo dia, os 4.434 passam.
+
+Não é defeito do sistema, é fragilidade da suíte — e importa porque o GitHub
+Actions roda a cada envio, inclusive de madrugada. O conserto é congelar o
+"hoje" nesses testes em vez de perguntar ao relógio. **Fica anotado, não foi
+feito** — mexer nisso no meio de uma varredura misturaria dois assuntos.
+
+### O que esta parte NÃO varreu
+
+- **Somatório de tela contra somatório de relatório** continua não conferido.
+- **A agenda e as notas fiscais não têm recorte por obra** — e isso é
+  DECISÃO, não defeito: as duas listagens sempre mostraram a empresa inteira,
+  e no caso das notas está escrito no código que "ver é largo de propósito".
+  Se você quiser que o supervisor veja só a agenda das obras dele, é uma
+  mudança de regra, não uma correção. **Fica como pergunta para você.**
+- Empreitas, Locações e Pessoal foram varridos só pelo filtro mecânico de
+  escopo; a aritmética deles (saldo de item, retenção de garantia) não foi
+  conferida.
+
+---
+
+**Estado em 11/09/2026 (oitava entrega):** **varredura adversarial do núcleo
+financeiro**. **TRAZ AS MIGRAÇÕES 061 E 062** — apertar "Aplicar atualizações
+do banco" no mesmo momento da publicação.
+
+### Por que esta varredura existiu
+
+Pedido do dono, nestas palavras: *"tudo que é muito sensível, né? que é
+exatamente a parte financeira, não pode ter falha em hipótese alguma nesse
+registro financeiro, nesse somatório, nesses relatórios de resultado. O
+casamento das informações bancárias de conciliação, de extratos, com a
+informação de baixa, isso aí é extremamente sensível. Tem que ter garantia de
+cem por cento que está tudo funcionando."*
+
+**A resposta honesta sobre "cem por cento":** não existe. O que existe é
+provar PROPRIEDADE ESPECÍFICA com teste contra banco de verdade. Foi o que foi
+feito: cada um dos oito primeiros achados tem um teste que **falha sem a
+correção** — isso foi conferido um por um, desligando a correção e vendo o
+teste cair. (O nono é código apagado; para isso não há teste, há a conferência
+de que nada chamava.) O que os testes não cobrem continua sem garantia, e está
+dito no fim desta seção.
+
+### Os nove achados, e o que cada um custava
+
+| # | O que estava errado | O que acontecia na prática |
+|---|---|---|
+| 1 | **Relatórios não tinham recorte por obra** | O supervisor de UMA obra abria Relatórios e via o custo, os credores e o resultado da empresa inteira. Silencioso: número certo, obra errada. |
+| 2 | **"Pago" e "em aberto" olhavam a SITUAÇÃO do título** | Título de duas parcelas com uma paga aparecia com o valor INTEIRO em aberto e zero pago. Quem lia o relatório achava que devia mais do que devia. |
+| 3 | **Nada impedia dois pagamentos na mesma parcela** | Dois cliques em "baixar" no mesmo instante — ou o mesmo clique repetido em conexão ruim — registravam a saída duas vezes. A conferência existia, mas em Python, sem trava: as duas liam "em aberto" antes de qualquer uma gravar. |
+| 4 | **A baixa não conferia o escopo da parcela** | Quem recebeu a permissão de pagar marcada no cadastro (e é preso a uma obra) podia pagar título de obra alheia. |
+| 5 | **Extrato sem FITID perdia linha de verdade** | Dois PIX iguais, no mesmo dia, para o mesmo favorecido viravam UM só no ERP. O segundo era descartado como "duplicado" e a tela dizia "1 duplicada", com ar de tudo certo. O extrato passava a divergir do banco em silêncio — e é justamente o caso que a conciliação foi feita para resolver. |
+| 6 | **Conciliação manual aceitava contas diferentes** | A linha do Bradesco podia comprovar um pagamento saído do Itaú, bastando o valor bater. A tela só oferecia candidatos da mesma conta — mas listagem não é trava, e quem grava é a função. |
+| 7 | **Linha já conciliada voltava erro de programador** | Duas pessoas casando a mesma linha no mesmo instante: a segunda via `duplicate key value violates unique constraint` na tela. |
+| 8 | **"Desfazer conciliação" não funcionava** | A migração 031 prometeu por escrito: *"desfeita, a linha volta a ficar livre"*. As restrições antigas da tabela nunca foram removidas e desmentiam a promessa — o sistema oferecia a linha como livre e o banco recusava. |
+| 9 | **Existiam DUAS conciliações no código** | Uma segunda versão, mais antiga, que nenhuma tela chamava — e que já divergia da de verdade (não conferia a conta bancária). Duas versões da escrita mais sensível do sistema é como a errada acaba ligada num botão algum dia. Apagada. |
+
+### O que mudou, por assunto
+
+**O recorte por obra agora vale nos relatórios.** Os relatórios somam com SQL
+escrito à mão (agregar milhares de títulos na memória não cabe nos 2 GB da
+instância), e por isso nunca passaram pelo recorte que as listagens usam. Em
+vez de escrever a regra de novo — o que garantiria divergência com o tempo —
+ela ganhou uma segunda escrita ao lado da primeira, em
+`core/auth/permissoes.py`, e **um teste percorre perfil por perfil conferindo
+que as duas devolvem exatamente os mesmos títulos**. Mudou uma e esqueceu a
+outra: o teste acusa.
+
+**"Pago" virou soma de pagamento de verdade**, rateada na mesma proporção do
+rateio da obra. Título pago pela metade agora mostra metade paga e metade em
+aberto, em vez de tudo em aberto.
+
+**Uma parcela, um pagamento — em dois lugares.** A trava de linha no código
+(a segunda pessoa espera a primeira e aí encontra a parcela PAGA) e a restrição
+única no banco (migração 062), para o caso de um caminho novo esquecer a
+trava. Cinto e suspensório de propósito: dinheiro pago duas vezes não tem
+desfazer bonito.
+
+**A identidade da linha do extrato ficou mais fina.** Quando o banco manda o
+identificador da transação (FITID), ele continua mandando a verdade. Quando não
+manda, entra também a ORDEM da repetição dentro do arquivo: a 1ª e a 2ª linha
+iguais recebem identidades diferentes. Continua idempotente — reimportar o
+mesmo período reconhece as mesmas linhas e não duplica nada; há teste para os
+dois casos, inclusive para extrato de período maior contendo o mês já
+importado.
+
+**A conciliação manual ganhou as travas que a tela já tinha:** mesma conta
+bancária, e recusa em português quando a linha (ou o pagamento) já está casada.
+
+**O relatório agora EXIGE saber quem pergunta.** O argumento não tem valor
+padrão de propósito: com padrão, esquecer de passar devolveria a empresa
+inteira em silêncio — que é exatamente a falha nº 1. Sem usuário, o relatório
+não roda. A mudança já pegou dois pontos do próprio sistema que chamavam sem
+dizer quem era; os dois foram acertados.
+
+**A conciliação passou a existir num lugar só.** A cópia antiga, morta e
+divergente, foi apagada de `pagamentos/service.py`, que ficou com a baixa e a
+importação de extrato. Não há teste para "código apagado" — o que há é a
+conferência de que nenhuma tela, rota ou teste chamava a cópia.
+
+### O que esta varredura NÃO garante
+
+Dito sem enfeite, porque é o que evita confiança demais:
+
+- **Extrato importado ANTES desta correção pode ter linha faltando.** A
+  correção vale para importação nova. Ver "PENDENTE AGORA" — reimportar o OFX
+  do período resolve.
+- **Só o núcleo financeiro foi varrido**: conciliação, baixa, extrato,
+  relatórios e o recorte por obra deles. Suprimentos, Empreitas, Locações,
+  Pessoal e Contratos não passaram por esta varredura.
+- **Somatório de tela não é o mesmo que somatório de relatório.** As telas que
+  mostram total próprio (quadro do contrato, painel de obras, medições) não
+  foram conferidas contra o relatório correspondente.
+- **Simultaneidade só está provada onde há trava ou restrição.** Onde não há,
+  continua valendo o que o código lê antes de gravar.
+
+---
+
 **Estado em 11/09/2026 (sétima entrega):** no ramo, **a pergunta vira relatório
 que chega sozinho**. **TRAZ A MIGRAÇÃO 060** — apertar "Aplicar atualizações do
-banco" no mesmo momento da publicação.
+banco" no mesmo momento da publicação. ✔ **Aplicada pelo dono.**
 
 ### O pedido, e onde o botão ficou
 
@@ -92,9 +1013,7 @@ combiná-lo de novo na mesma tela ouviria "já está combinado" — porque a
 consulta ainda enxergaria a linha ligada.
 
 **Estado em 11/09/2026 (sexta entrega):** no ramo, **o assistente responde
-sobre o que está ESCRITO nos documentos** da empresa. **TRAZ A MIGRAÇÃO 059** —
-o dono precisa apertar "Aplicar atualizações do banco" no mesmo momento da
-publicação.
+sobre o que está ESCRITO nos documentos** da empresa. **TRAZ A MIGRAÇÃO 059** — ✔ aplicada pelo dono em 11/09/2026.
 
 ### A pergunta que ele passa a responder
 

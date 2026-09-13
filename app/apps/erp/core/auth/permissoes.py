@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import false as sql_false, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql import Select
 
@@ -45,12 +45,33 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # escolha escrita, e não o silêncio de quem esqueceu.
     "ver_erp":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
-                        P.APROVADOR, P.LANCADOR, P.CONSULTA},
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
     "lancar":          {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.LANCADOR,
                         P.DEPARTAMENTO_PESSOAL},
     "avalizar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA, P.SUPERVISOR_OBRA},
     "aprovar":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.APROVADOR},
+    # CANCELAR TÍTULO é ação PRÓPRIA, e não um pedaço de "aprovar", desde
+    # 12/09/2026. Decisão do dono: *"liberado o lançamento que não está baixado
+    # ou conciliado"* — quem lançou desfaz o próprio engano, sem pedir ao
+    # financeiro. Quem tem "lancar" ganha esta por implicação (ACOES_IMPLICADAS
+    # logo abaixo); o que ele NÃO ganha é cancelar o lançamento dos outros, e
+    # isso quem decide é o serviço, olhando de quem é o título.
+    "cancelar_titulo": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.APROVADOR},
+    # ENCAMINHAR informação do sistema por WhatsApp/Telegram (12/09/2026).
+    # Pedido do dono: *"o pessoal pede informação, você quer encaminhar pra um
+    # operador, pra um número que a gente adicionar lá"*.
+    #
+    # Quem entra: quem já opera o sistema. Quem NÃO entra, e é escolha:
+    #   · CONSULTA — existe para olhar, não para redistribuir;
+    #   · PARCEIRO — é de fora da empresa; ele vê a obra dele na tela, e
+    #     empurrar dado da BWS para fora pelo WhatsApp da empresa é outra
+    #     coisa.
+    # O que cada um pode encaminhar continua limitado ao que ele VÊ: o envio
+    # passa pelo mesmo recorte por obra da tela.
+    "encaminhar":      {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                        P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.LANCADOR},
     "pagar":           {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
     "conciliar":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
     "receber":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
@@ -67,11 +88,11 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # outra pessoa, então não há como uma virar a outra.
     "ver_uso_da_equipe": {P.ADMIN, P.DIRETOR_FINANCEIRO},
     "ver_relatorios":  {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-                        P.SUPERVISOR_OBRA},
+                        P.SUPERVISOR_OBRA, P.PARCEIRO},
     # Pessoal: o DP revisa a despesa com colaborador depois do supervisor,
     # porque só ele conhece o cadastro e sabe se a verba é devida
     "ver_pessoal":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL, P.PARCEIRO},
     "lancar_dc":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL},
     "editar_colaboradores": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.DEPARTAMENTO_PESSOAL},
@@ -81,7 +102,7 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # deliberadamente estreito — pedir material é de todo mundo da obra,
     # comprar e autorizar não são de ninguém por herança de cargo.
     "ver_suprimentos":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
-                            P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.CONSULTA},
+                            P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.CONSULTA, P.PARCEIRO},
     "solicitar_suprimento": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA,
                              P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA},
     "comprar":             {P.ADMIN, P.DIRETOR_FINANCEIRO},
@@ -106,7 +127,7 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # para quem não é do financeiro ou do DP, mesmo com esta ação marcada.
     "ver_arquivo":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
-                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA},
+                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA, P.PARCEIRO},
     "arquivar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
                         P.DEPARTAMENTO_PESSOAL, P.GESTOR_OBRA},
     # Quadro financeiro do contrato: medições, faturamento e recebimento.
@@ -133,7 +154,7 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     # dela continua limitado pelo escopo de obra, não por esta ação.
     "ver_agenda":      {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
-                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA},
+                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.CONSULTA, P.PARCEIRO},
     # Marcar como resolvido é afirmação com nome e data. Fica fora de CONSULTA
     # — quem só olha não resolve.
     "tratar_agenda":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
@@ -162,6 +183,10 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     # emissor e ele não conseguir abrir a lista seria uma armadilha.
     "ver_notas_emitidas": ("emitir_nota", "ver_contratos"),
     "ver_agenda": ("tratar_agenda",),
+    # Quem lança cancela — o PRÓPRIO lançamento, e só enquanto ninguém baixou
+    # nem conciliou. Sem esta linha, corrigir o próprio engano dependeria de
+    # interromper o financeiro, e o erro ficaria no ar até alguém ter tempo.
+    "cancelar_titulo": ("aprovar", "lancar"),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -171,6 +196,8 @@ ACAO_ROTULOS = {
     "lancar":               "Lançar título",
     "avalizar":             "Avalizar (1º aval)",
     "aprovar":              "Aprovar título",
+    "cancelar_titulo":      "Cancelar título (o próprio, se ninguém baixou)",
+    "encaminhar":           "Encaminhar informação por WhatsApp",
     "pagar":                "Dar baixa em pagamento",
     "conciliar":            "Conciliar extrato",
     "receber":              "Lançar recebimento",
@@ -214,6 +241,7 @@ ROTULOS = {
     P.APROVADOR: "Aprovador",
     P.LANCADOR: "Lançador",
     P.CONSULTA: "Consulta",
+    P.PARCEIRO: "Parceiro da obra (só olha)",
 }
 
 
@@ -232,6 +260,45 @@ def excecoes_do_usuario(usuario: Usuario) -> dict[str, bool]:
     """
     valor = getattr(usuario, "permissoes_extras", None)
     return valor if isinstance(valor, dict) else {}
+
+
+def pode_com_banco(s: Session, usuario: Usuario, acao: str) -> bool:
+    """A mesma decisão de `pode`, mas sem depender de quem carregou o usuário.
+
+    `pode` lê as marcações do cadastro de um atributo que `_usuario_logado`
+    preenche. Funciona nas rotas, e falha calado em qualquer outro caminho: a
+    pessoa perde a ação que foi MARCADA para ela e passa a ver menos do que
+    devia, sem nada acusar. Como regra de recorte roda também fora de rota
+    (relatório agendado, robô, teste), esta versão vai buscar as marcações no
+    banco quando elas não vieram junto.
+
+    A decisão em si continua sendo uma só — `decidir` — para não haver duas
+    respostas possíveis à mesma pergunta.
+    """
+    if usuario is None:
+        return False
+    excecoes = excecoes_do_usuario(usuario)
+    if not excecoes:
+        excecoes = _excecoes_no_banco(s, usuario.id)
+    return decidir(usuario.perfil, acao, excecoes)
+
+
+def _excecoes_no_banco(s: Session, usuario_id: int) -> dict[str, bool]:
+    """As marcações desta pessoa, por SQL direto.
+
+    SQL direto e não ORM pelo mesmo motivo do resto da guarda: enquanto a
+    migração 032 não tiver rodado a tabela não existe, e a resposta certa é
+    "nenhuma marcação" — o que faz valer o cargo — e não derrubar a tela.
+    """
+    from sqlalchemy import text as _text
+
+    try:
+        linhas = s.execute(
+            _text("SELECT acao, concedida FROM usuario_permissoes "
+                  "WHERE usuario_id = :i"), {"i": usuario_id}).all()
+    except Exception:
+        return {}
+    return {acao: bool(concedida) for acao, concedida in linhas}
 
 
 def pode(usuario: Usuario, acao: str) -> bool:
@@ -329,7 +396,7 @@ def _obras_designadas(s: Session, usuario: Usuario) -> list[int]:
 
 def _ve_por_obra(usuario: Usuario) -> bool:
     """Esta pessoa enxerga por OBRA (e não apenas o que ela mesma lançou)?"""
-    if usuario.perfil == P.SUPERVISOR_OBRA:
+    if usuario.perfil in (P.SUPERVISOR_OBRA, P.PARCEIRO):
         return True
     return (usuario.perfil in ESCOPO_CONFIGURAVEL
             and escopo_visao(usuario) is EscopoVisao.OBRAS_DESIGNADAS)
@@ -370,7 +437,13 @@ def _escopo_por_obras(stmt: Select, usuario: Usuario, obras: list[int]) -> Selec
 
     Sem obra designada sobra só a autoria — quem não foi associado a obra
     nenhuma não passa a ver a base inteira por causa de uma lista vazia.
+
+    O PARCEIRO é a exceção e é de propósito: ele é de fora da BWS e não lança
+    nada, então "o que eu lancei" seria uma porta que só existe por descuido.
+    Sem obra designada, ele não vê NADA — o padrão NEGAR, dito em voz alta.
     """
+    if usuario.perfil == P.PARCEIRO and not obras:
+        return stmt.where(sql_false())
     if not obras:
         return stmt.where(Titulo.solicitante_id == usuario.id)
     return stmt.where(or_(
@@ -392,6 +465,45 @@ def _escopo_do_pessoal(stmt: Select) -> Select:
         Titulo.tipo.in_(TIPOS_DO_PESSOAL),
         Titulo.id.in_(select(DespesaColaborador.titulo_id)
                       .where(DespesaColaborador.titulo_id.is_not(None)))))
+
+
+def condicao_escopo_sql(s: Session, usuario: Usuario,
+                        t: str = "t") -> tuple[str, dict[str, Any]]:
+    """O MESMO recorte de `aplicar_escopo`, escrito como pedaço de WHERE.
+
+    Existe porque os relatórios somam no banco com SQL escrito à mão (agregar
+    milhares de títulos em memória não cabe nos 2 GB da instância) e, por isso,
+    não tinham como passar pelo `aplicar_escopo`, que só monta consulta do
+    SQLAlchemy. O resultado era grave e silencioso: quem enxerga uma obra via
+    o resultado da empresa inteira na tela de Relatórios. Achado em 11/09/2026.
+
+    As duas formas do recorte precisam concordar SEMPRE, e é isso que o teste
+    `test_escopo_sql_igual_ao_orm` (em `tests/test_auditoria_financeira_banco.py`)
+    prova, perfil a perfil, com banco de verdade. Mudou a regra aqui, muda lá
+    em cima — e o teste acusa se só um dos dois mudou.
+
+    `t` é o apelido da tabela de títulos na consulta que vai receber o pedaço.
+    """
+    if usuario.perfil in VE_TUDO:
+        return "TRUE", {}
+
+    if usuario.perfil == P.DEPARTAMENTO_PESSOAL:
+        tipos = ", ".join(f"'{x.value}'" for x in TIPOS_DO_PESSOAL)
+        return (f"({t}.tipo::text IN ({tipos}) OR {t}.id IN "
+                f"(SELECT titulo_id FROM despesas_colaborador "
+                f"WHERE titulo_id IS NOT NULL))"), {}
+
+    if _ve_por_obra(usuario):
+        obras = _obras_designadas(s, usuario)
+        if not obras:
+            if usuario.perfil == P.PARCEIRO:
+                return "FALSE", {}          # parceiro sem obra não vê nada
+            return f"{t}.solicitante_id = :escopo_usuario", {"escopo_usuario": usuario.id}
+        return (f"({t}.solicitante_id = :escopo_usuario OR {t}.id IN "
+                f"(SELECT titulo_id FROM rateios WHERE obra_id = ANY(:escopo_obras)))"
+                ), {"escopo_usuario": usuario.id, "escopo_obras": list(obras)}
+
+    return f"{t}.solicitante_id = :escopo_usuario", {"escopo_usuario": usuario.id}
 
 
 def aplicar_escopo(stmt: Select, s: Session, usuario: Usuario) -> Select:

@@ -43,11 +43,10 @@ from app.apps.erp.db.models.cadastros import (
     Obra, PerfilUsuario as P, Usuario,
 )
 
-from conftest import como
+from conftest import como, hoje
 
 pytestmark = pytest.mark.banco
 
-HOJE = date.today()
 
 
 @pytest.fixture
@@ -84,7 +83,7 @@ def contrato(sessao_real):
                                vigencia_inicio, status)
              VALUES (:f, :o, 'OBRA', 'Construção da creche', 100000,
                      :d, 'ATIVO')"""),
-        {"f": forn, "o": obra.id, "d": HOJE})
+        {"f": forn, "o": obra.id, "d": hoje()})
     s.flush()
     contrato_id = s.execute(text("SELECT id FROM contratos LIMIT 1")).scalar()
 
@@ -100,7 +99,7 @@ def contrato(sessao_real):
                          :comp, 'APROVADO', :u, 'PIX', 'RECEBER', :nf)"""),
             {"n": f"MED-{numero}", "f": forn, "c": conta, "ct": contrato_id,
              "m": numero, "d": f"Medição {numero}", "v": Decimal(valor),
-             "comp": HOJE.replace(day=1), "u": chefe.id,
+             "comp": hoje().replace(day=1), "u": chefe.id,
              "nf": [nota] if nota else []})
     s.flush()
     medicao = s.execute(text(
@@ -121,14 +120,14 @@ def contrato(sessao_real):
                                     titulo_id, obra_id, situacao, valor_bruto,
                                     valor_liquido, data_emissao)
              VALUES (:e, 1, 'NF-100', :t, :o, 'EMITIDA', 40000, 40000, :d)"""),
-        {"e": empresa, "t": medicao, "o": obra.id, "d": HOJE})
+        {"e": empresa, "t": medicao, "o": obra.id, "d": hoje()})
     s.flush()
 
     # Recebimento de R$ 25.000 na medição faturada
     s.execute(text("""
         INSERT INTO parcelas (titulo_id, numero, vencimento, valor, status)
              VALUES (:t, 1, :d, 40000, 'ABERTA')"""),
-        {"t": medicao, "d": HOJE})
+        {"t": medicao, "d": hoje()})
     s.flush()
     parcela = s.execute(text(
         "SELECT id FROM parcelas WHERE titulo_id = :t"), {"t": medicao}).scalar()
@@ -141,7 +140,7 @@ def contrato(sessao_real):
         INSERT INTO pagamentos (parcela_id, conta_bancaria_id, valor_pago,
                                 data_pagamento, meio)
              VALUES (:p, :cb, 25000, :d, 'PIX')"""),
-        {"p": parcela, "cb": conta_banco, "d": HOJE})
+        {"p": parcela, "cb": conta_banco, "d": hoje()})
     s.flush()
     return {"chefe": chefe, "peao": peao, "sessao": s, "id": contrato_id}
 

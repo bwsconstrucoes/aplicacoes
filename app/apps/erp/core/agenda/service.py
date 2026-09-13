@@ -30,11 +30,12 @@ import logging
 from datetime import date, datetime
 from typing import Any, Optional
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.apps.erp.core.agenda import geradores
-from app.apps.erp.core.comum.auditoria import ErroValidacao, registrar_evento
+from app.apps.erp.core.comum.auditoria import (
+    ErroNaoEncontrado, ErroValidacao, registrar_evento)
 from app.apps.erp.db.models.cadastros import Empresa, Obra, Usuario
 from app.apps.erp.db.models.financeiro import AgendaEvento
 
@@ -103,10 +104,63 @@ def sincronizar(s: Session, *, hoje: Optional[date] = None,
     return resumo
 
 
+def aplicar_escopo(stmt, s: Session, usuario: Optional[Usuario]):
+    """O recorte da agenda para esta pessoa — em UM lugar só.
+
+    Decisão do dono em 12/09/2026: *"o ideal é sempre limitar as informações a
+    quem está associado a cada obra"*. Até então a agenda mostrava a empresa
+    inteira para todo mundo que tivesse a ação de vê-la, e isso inclui quem
+    responde por uma obra só.
+
+    O aviso SEM OBRA (certidão da empresa, obrigação fiscal, certificado
+    digital) segue a mesma regra já usada no Arquivo, e pelo mesmo motivo:
+
+      · quem é de DENTRO e responde por obra continua alcançando — é a
+        papelada que ele precisa para tocar a obra, e esconder a certidão
+        vencida de quem vai ao órgão não protege nada;
+      · o PARCEIRO, que é de FORA, não alcança: obrigação da BWS não é
+        assunto dele.
+
+    Sem obra designada e sendo de fora, não sobra nada — o padrão NEGAR.
+    """
+    if usuario is None:
+        return stmt
+
+    from app.apps.erp.core.auth.permissoes import obras_do_usuario
+    from app.apps.erp.db.models.cadastros import PerfilUsuario as P
+
+    minhas = obras_do_usuario(s, usuario)
+    if minhas is None:
+        return stmt                        # enxerga todas as obras
+
+    if usuario.perfil is P.PARCEIRO:
+        return stmt.where(AgendaEvento.obra_id.in_(minhas or [-1]))
+    return stmt.where(or_(AgendaEvento.obra_id.is_(None),
+                          AgendaEvento.obra_id.in_(minhas or [-1])))
+
+
+def pode_ver_evento(s: Session, usuario: Optional[Usuario],
+                    evento_id: int) -> bool:
+    """O aviso existe E está dentro do recorte desta pessoa?
+
+    Passa pelo MESMO `aplicar_escopo` da listagem: tela e ação não têm como
+    divergir sem que alguém altere as duas.
+    """
+    stmt = select(AgendaEvento.id).where(AgendaEvento.id == evento_id)
+    return s.scalar(aplicar_escopo(stmt, s, usuario)) is not None
+
+
+def exigir_evento_no_escopo(s: Session, usuario: Optional[Usuario],
+                            evento_id: int) -> None:
+    """Fora do recorte responde igual a inexistente."""
+    if not pode_ver_evento(s, usuario, evento_id):
+        raise ErroNaoEncontrado("Aviso não encontrado.")
+
+
 def listar(s: Session, *, situacao: str = "ABERTO", origem: str = "",
            obra_id: Optional[int] = None, ate: Optional[date] = None,
            incluir_futuros: bool = False, hoje: Optional[date] = None,
-           limite: int = 500) -> dict[str, Any]:
+           limite: int = 500, usuario: Optional[Usuario] = None) -> dict[str, Any]:
     """O que está na agenda, do mais urgente para o menos.
 
     Por padrão mostra só o que JÁ chegou a hora de avisar. O que vence daqui a
@@ -114,7 +168,7 @@ def listar(s: Session, *, situacao: str = "ABERTO", origem: str = "",
     para a pessoa parar de olhar a tela.
     """
     hoje = hoje or date.today()
-    stmt = select(AgendaEvento)
+    stmt = aplicar_escopo(select(AgendaEvento), s, usuario)
     if situacao:
         stmt = stmt.where(AgendaEvento.situacao == situacao)
     if origem:
@@ -186,9 +240,10 @@ def resolver(s: Session, evento_id: int, *, observacao: str = "",
     é indistinguível de esquecimento — e é justamente o que alguém vai querer
     entender quando o problema aparecer.
     """
+    exigir_evento_no_escopo(s, usuario, evento_id)
     e = s.get(AgendaEvento, evento_id)
     if e is None:
-        raise ErroValidacao("Aviso não encontrado.")
+        raise ErroNaoEncontrado("Aviso não encontrado.")
     if e.situacao != "ABERTO":
         raise ErroValidacao(f"Este aviso já está {e.situacao.lower()}.")
     observacao = (observacao or "").strip()
@@ -211,9 +266,10 @@ def resolver(s: Session, evento_id: int, *, observacao: str = "",
 def reabrir(s: Session, evento_id: int, *, usuario: Optional[Usuario] = None) -> AgendaEvento:
     """Errou o clique, ou o assunto voltou. Reabrir é barato; perder o aviso
     porque alguém clicou errado, não."""
+    exigir_evento_no_escopo(s, usuario, evento_id)
     e = s.get(AgendaEvento, evento_id)
     if e is None:
-        raise ErroValidacao("Aviso não encontrado.")
+        raise ErroNaoEncontrado("Aviso não encontrado.")
     e.situacao = "ABERTO"
     e.resolvido_por, e.resolvido_em = None, None
     s.flush()
@@ -233,6 +289,12 @@ def criar_manual(s: Session, *, titulo: str, quando: date, detalhe: str = "",
         raise ErroValidacao("Escreva do que se trata.")
     if avisar_dias < 0:
         raise ErroValidacao("A antecedência do aviso não pode ser negativa.")
+
+    # Anotar NA obra de outro seria escrever no que não se alcança — e depois
+    # nem dava para desfazer, porque a anotação sumiria da própria tela.
+    if obra_id is not None and usuario is not None:
+        from app.apps.erp.core.auth.permissoes import exigir_obra_no_escopo
+        exigir_obra_no_escopo(s, usuario, obra_id)
 
     # A chave carrega o instante de criação: duas anotações iguais no mesmo dia
     # são duas anotações, não uma repetida.
@@ -254,9 +316,10 @@ def apagar_manual(s: Session, evento_id: int, *,
     """Só anotação se apaga. Aviso deduzido pelo sistema se resolve ou se
     dispensa — apagar faria ele voltar na próxima sincronização, e a pessoa
     apagaria de novo, para sempre."""
+    exigir_evento_no_escopo(s, usuario, evento_id)
     e = s.get(AgendaEvento, evento_id)
     if e is None:
-        raise ErroValidacao("Aviso não encontrado.")
+        raise ErroNaoEncontrado("Aviso não encontrado.")
     if e.origem != "MANUAL":
         raise ErroValidacao(
             "Este aviso foi deduzido pelo sistema — apagar não adianta, ele "
@@ -268,12 +331,18 @@ def apagar_manual(s: Session, evento_id: int, *,
     s.flush()
 
 
-def contagem(s: Session, *, hoje: Optional[date] = None) -> dict[str, int]:
+def contagem(s: Session, *, hoje: Optional[date] = None,
+             usuario: Optional[Usuario] = None) -> dict[str, int]:
     """O número que a tela de início mostra. Consulta curta de propósito: ela
-    roda em toda visita à porta de entrada."""
+    roda em toda visita à porta de entrada.
+
+    Recortada como a listagem: o número tem de bater com o que a pessoa vê ao
+    abrir a agenda. Bolinha dizendo "12 avisos" e tela mostrando 3 é defeito
+    que ninguém reporta e todo mundo desconfia.
+    """
     hoje = hoje or date.today()
-    abertos = list(s.scalars(select(AgendaEvento).where(
-        AgendaEvento.situacao == "ABERTO",
-        AgendaEvento.avisar_em <= hoje)).all())
+    stmt = aplicar_escopo(select(AgendaEvento), s, usuario).where(
+        AgendaEvento.situacao == "ABERTO", AgendaEvento.avisar_em <= hoje)
+    abertos = list(s.scalars(stmt).all())
     return {"abertos": len(abertos),
             "vencidos": sum(1 for e in abertos if e.quando < hoje)}

@@ -223,6 +223,122 @@ def avisar_baixa(s: Session, pagamento_id: int, *, forcar: bool = False,
             "destinatarios": len(pessoas)}
 
 
+# ---------------------------------------------------------------------------
+# AVISO DE CANCELAMENTO
+#
+# O PEDIDO, do dono, em 12/09/2026: *"a pessoa que lançou vai receber aquela
+# informação de que o título foi cancelado e qual o motivo"*.
+#
+# O BURACO QUE ISTO TAPA. Cancelar título já existia, com motivo obrigatório e
+# registro de quem cancelou. O que não existia era o aviso: quem tinha lançado
+# descobria por acaso, abrindo a tela — ou não descobria, e ficava esperando um
+# pagamento que nunca ia sair. Um lançamento cancelado em silêncio é pior que
+# um lançamento errado: o errado alguém corrige, o silencioso ninguém vê.
+#
+# QUEM RECEBE: quem lançou e os demais interessados do título — os mesmos do
+# aviso de pagamento, pela mesma função. Duas listas de interessados divergem
+# no dia em que alguém corrige uma.
+#
+# QUEM NÃO RECEBE: quem cancelou. Ele acabou de fazer isso, na tela, e não
+# precisa que o celular lhe conte.
+# ---------------------------------------------------------------------------
+def _referencia_cancelamento(titulo_id: int) -> str:
+    """Um cancelamento por título. Cancelar é definitivo: não há o que repetir."""
+    return hashlib.sha256(f"cancelamento|{titulo_id}".encode()).hexdigest()[:32]
+
+
+def _texto_cancelamento(t: Titulo, motivo: str, quem: str, obras: str) -> str:
+    linhas = [
+        "🚫 *Lançamento cancelado*",
+        "",
+        f"*{t.numero_sp}* — {t.fornecedor.razao_social}",
+        f"{t.descricao[:120]}",
+        "",
+        f"💰 Valor: *{_moeda(t.valor_liquido)}*",
+    ]
+    if obras:
+        linhas.append(f"🏗️ Obra: {obras}")
+    linhas += [
+        f"👤 Cancelado por: {quem}",
+        "",
+        # O MOTIVO VEM INTEIRO, e é a razão de a mensagem existir. "Foi
+        # cancelado" sem o porquê obriga a pessoa a ligar para perguntar — e
+        # aí o aviso não economizou trabalho nenhum.
+        f"📝 Motivo: {motivo}",
+        "",
+        "_Acompanhe pelo ERP: aplicacoes.bwsconstrucoes.com.br/erp_",
+    ]
+    return "\n".join(linhas)
+
+
+def avisar_cancelamento(s: Session, titulo_id: int, *, motivo: str,
+                        cancelado_por: Optional[Usuario] = None,
+                        forcar: bool = False) -> dict[str, Any]:
+    """Avisa quem lançou (e os interessados) de que o título foi cancelado."""
+    t = s.get(Titulo, titulo_id, options=[selectinload(Titulo.fornecedor),
+                                          selectinload(Titulo.parcelas)])
+    if t is None:
+        return {"ok": False, "motivo": "título não encontrado"}
+
+    referencia = _referencia_cancelamento(t.id)
+    quem_id = getattr(cancelado_por, "id", None)
+    pessoas = [p for p in destinatarios(s, t) if p.id != quem_id]
+    if not pessoas:
+        return {"ok": True, "situacao": "SEM_DESTINO",
+                "motivo": "não há mais ninguém para avisar deste cancelamento"}
+
+    obras = " + ".join(sorted({r.obra.codigo for r in
+                              s.scalars(select(Rateio).where(Rateio.titulo_id == t.id)
+                                        .options(selectinload(Rateio.obra))).all()
+                              if r.obra}))
+    mensagem = _texto_cancelamento(
+        t, (motivo or "").strip() or "não informado",
+        getattr(cancelado_por, "nome", "") or "o financeiro", obras)
+
+    enviados, falhas, sem_destino = [], [], []
+    for pessoa in pessoas:
+        ref_pessoa = f"{referencia}:{pessoa.id}"
+        anterior = _ja_enviado(s, "CANCELAMENTO", ref_pessoa)
+        if anterior and anterior["situacao"] == "ENVIADO" and not forcar:
+            continue
+        if not (pessoa.telefone or pessoa.cpf):
+            sem_destino.append(pessoa.nome)
+            _registrar(s, evento="CANCELAMENTO", referencia=ref_pessoa,
+                       titulo_id=t.id, pagamento_id=None, destinatario_id=pessoa.id,
+                       destino="", situacao="IGNORADO", mensagem="",
+                       erro="sem telefone/CPF no cadastro")
+            continue
+        try:
+            from app.apps.notificador import enviar_telegram
+            resultado = enviar_telegram(telefone=pessoa.telefone, cpf=pessoa.cpf,
+                                        mensagem=mensagem)
+            ok = bool(resultado and resultado.get("ok"))
+            detalhe = str(resultado.get("detalhe") or resultado.get("erro") or "") if resultado else ""
+        except Exception as e:
+            # Falha de aviso NUNCA derruba o cancelamento: o cancelamento já
+            # aconteceu e está registrado; o aviso que não saiu fica gravado
+            # como FALHA e dá para reenviar.
+            logger.exception("ERP/aviso: falha ao avisar cancelamento de %s para %s",
+                             t.numero_sp, pessoa.nome)
+            ok, detalhe = False, str(e)
+        _registrar(s, evento="CANCELAMENTO", referencia=ref_pessoa, titulo_id=t.id,
+                   pagamento_id=None, destinatario_id=pessoa.id,
+                   destino=pessoa.telefone or pessoa.cpf or "",
+                   situacao="ENVIADO" if ok else "FALHA", mensagem=mensagem,
+                   erro="" if ok else detalhe)
+        (enviados if ok else falhas).append(
+            pessoa.nome if ok else f"{pessoa.nome}: {detalhe}")
+
+    if not enviados and not falhas and not sem_destino:
+        return {"ok": True, "situacao": "JA_ENVIADO",
+                "motivo": "todos já foram avisados deste cancelamento"}
+    logger.info("ERP/aviso: cancelamento de %s → %d enviado(s), %d falha(s)",
+                t.numero_sp, len(enviados), len(falhas))
+    return {"ok": bool(enviados), "situacao": "ENVIADO" if enviados else "FALHA",
+            "enviados": enviados, "falhas": falhas, "sem_destino": sem_destino,
+            "destinatarios": len(pessoas)}
+
+
 def historico(s: Session, titulo_id: int) -> list[dict[str, Any]]:
     linhas = s.execute(text(
         "SELECT n.evento, n.situacao, n.criado_em, n.enviado_em, n.com_anexo, "

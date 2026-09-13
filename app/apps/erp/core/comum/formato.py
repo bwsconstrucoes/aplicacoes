@@ -89,3 +89,62 @@ def data_br(valor: Any) -> str:
     if len(partes) == 2 and all(x.isdigit() for x in partes) and len(partes[0]) == 4:
         return f"{partes[1].zfill(2)}/{partes[0]}"
     return bruto
+
+
+# ---------------------------------------------------------------------------
+# O recado de falha inesperada
+# ---------------------------------------------------------------------------
+# Até 11/09/2026 toda falha inesperada do ERP devolvia o texto CRU da exceção
+# para a tela. O dono viu isso acontecer: perguntou uma coisa ao assistente e
+# recebeu de volta a lista de colunas de uma tabela do banco. Três problemas
+# no mesmo lugar:
+#
+#   1. quem lê não é programador — "UndefinedColumn: column t.xpto does not
+#      exist" não diz o que fazer;
+#   2. o texto cru conta como o sistema é feito por dentro (nome de tabela, de
+#      coluna, caminho de arquivo), que é informação para quem quer atacar;
+#   3. some a informação útil: qual foi a falha, para poder ser procurada
+#      depois no registro do servidor.
+#
+# Este recado resolve os três: fala português, não conta nada de dentro, e
+# carrega um código curto que casa com a linha do log (o log continua com a
+# exceção inteira — quem precisa do detalhe é quem conserta, não quem usa).
+# ---------------------------------------------------------------------------
+# A ÚNICA falha que continua sendo explicada em detalhe, porque quem lê PODE
+# resolver sozinho: o banco atrasado. O código do ERP sobe para o Render antes
+# de o botão "Aplicar atualizações do banco" ser apertado — e nessa janela o
+# Postgres responde "coluna não existe". Foi o que derrubou o ERP em
+# 02/09/2026. Esconder isso atrás de "falha do sistema" tiraria da pessoa a
+# única informação que resolve o problema em dez segundos.
+_BANCO_ATRASADO = ("does not exist", "não existe", "undefinedcolumn",
+                   "undefinedtable")
+
+RECADO_BANCO_ATRASADO = (
+    "O banco de dados está desatualizado em relação ao sistema: falta aplicar "
+    "as atualizações mais recentes. Vá em Configurações e aperte "
+    "\"Aplicar atualizações do banco\" — depois disso a tela volta ao normal. "
+    "Se você não for ADMIN, peça isso a quem for.")
+
+
+def recado_de_falha(erro: BaseException, acao: str = "") -> str:
+    """Mensagem de falha inesperada para a TELA, com código para o registro.
+
+    Nunca devolve o texto da exceção: nome de tabela, de coluna e caminho de
+    arquivo são a intimidade do sistema, e quem lê a tela não é programador. O
+    registro do servidor continua com a exceção inteira — quem precisa do
+    detalhe é quem conserta.
+
+    A exceção à regra é o banco atrasado, logo acima.
+    """
+    import hashlib
+
+    texto = f"{type(erro).__name__}: {erro}".lower()
+    if any(p in texto for p in _BANCO_ATRASADO):
+        return RECADO_BANCO_ATRASADO
+
+    marca = f"{type(erro).__name__}:{erro}"
+    codigo = hashlib.sha256(marca.encode("utf-8")).hexdigest()[:6].upper()
+    o_que = f" ao {acao}" if acao else ""
+    return (f"Não consegui concluir{o_que}. Isso é falha do sistema, não do que "
+            f"você preencheu — nada foi gravado pela metade. Se acontecer de "
+            f"novo, me mande o código {codigo}.")

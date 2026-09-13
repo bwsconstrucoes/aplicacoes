@@ -124,10 +124,70 @@ def emitir_nota(s: Session, parametros: dict[str, Any], andamento) -> dict[str, 
         usuario=_usuario(s, parametros), andamento=andamento)
 
 
+# ---------------------------------------------------------------------------
+# Deixar o acervo antigo legível
+# ---------------------------------------------------------------------------
+# Documento arquivado antes de 12/09/2026 pode não ter o texto de dentro
+# guardado: até então só a leitura por IA o trazia, e só das seis primeiras
+# páginas. Sem o texto, o documento não aparece na busca por palavra e não dá
+# para perguntar sobre ele.
+#
+# Está na fila, e não num clique, por dois motivos: o acervo tem milhares de
+# documentos, e cada um precisa ter os bytes buscados (banco ou Google Drive)
+# antes de extrair. Não gasta IA nenhuma — é a camada de texto do próprio PDF.
+LOTE_DE_TEXTOS = 200
+
+
+def texto_dos_documentos(s: Session, parametros: dict[str, Any], andamento) -> dict[str, Any]:
+    """Extrai e guarda o texto dos documentos que ainda não têm."""
+    from sqlalchemy import func, or_, select
+
+    from app.apps.erp.core.arquivo import texto as svc_texto
+    from app.apps.erp.db.models.financeiro import Documento
+
+    limite = int(parametros.get("limite") or LOTE_DE_TEXTOS)
+    alvos = s.scalars(
+        select(Documento)
+        .where(or_(Documento.texto.is_(None), Documento.texto == ""))
+        .order_by(Documento.id.desc())
+        .limit(max(1, limite))).all()
+
+    lidos = vazios = 0
+    for i, d in enumerate(alvos, start=1):
+        andamento(i, len(alvos), f"Lendo {d.nome_padronizado}")
+        try:
+            if svc_texto.garantir_texto(s, d):
+                lidos += 1
+            else:
+                vazios += 1
+        except Exception as e:
+            # Um documento ilegível não pode parar o lote inteiro: o valor
+            # está nos outros mil que vão ficar legíveis.
+            vazios += 1
+            logger.warning("ERP/trabalhos: documento %s não deu texto (%s)",
+                           d.id, e)
+        if i % 25 == 0:
+            s.commit()
+    s.commit()
+
+    faltam = s.scalar(
+        select(func.count()).select_from(Documento)
+        .where(or_(Documento.texto.is_(None), Documento.texto == ""))) or 0
+    return {
+        "lidos": lidos, "sem_texto": vazios, "faltam": int(faltam),
+        "recado": (
+            f"{lidos} documento(s) ficaram legíveis para perguntas. "
+            f"{vazios} não têm texto por dentro (são imagem ou digitalização). "
+            + (f"Ainda faltam {faltam} — rode de novo." if faltam else
+               "Não falta nenhum.")),
+    }
+
+
 def registrar_todos() -> None:
     """Liga os executores à fila. Chamado uma vez, no import das rotas."""
     tarefas.registrar("importar_pipefy", importar_pipefy)
     tarefas.registrar("sincronizar_agenda", sincronizar_agenda)
     tarefas.registrar("emitir_nota", emitir_nota)
+    tarefas.registrar("texto_dos_documentos", texto_dos_documentos)
     # Emitir duas vezes cria duas notas de verdade na prefeitura.
     tarefas.registrar_sem_repeticao("emitir_nota")

@@ -705,3 +705,234 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
 
   setInterval(bater, CADA);
 })();
+
+
+/* ---------------------------------------------------------------------------
+   COMPROVANTES — arrastar e soltar, e a tela se atualizando sozinha.
+
+   O dono pediu em 11/09/2026: "eu arrasto esses comprovantes pra dentro da
+   tela e dispara a automacao". E logo depois: "se eu sair da tela e voltar, a
+   informacao vai ser me dada ainda?".
+
+   VAI. O resultado NAO mora aqui: mora no banco. Este arquivo so mostra. Se a
+   pessoa fechar a aba no meio, o processo separado continua, e ao voltar ela
+   ve tudo. Por isso aqui nao se guarda nada em memoria de pagina.
+--------------------------------------------------------------------------- */
+(function () {
+  const area = document.getElementById("area-solta");
+  const campo = document.getElementById("campo-comprovantes");
+  const lista = document.getElementById("escolhidos");
+  const botao = document.getElementById("btn-enviar");
+  if (!area || !campo) return;
+
+  function descrever() {
+    const arquivos = Array.from(campo.files || []);
+    botao.disabled = arquivos.length === 0;
+    if (!arquivos.length) { lista.hidden = true; lista.textContent = ""; return; }
+    const mb = t => (t / (1024 * 1024)).toFixed(1).replace(".", ",");
+    lista.hidden = false;
+    lista.textContent = arquivos.length + " arquivo(s): "
+        + arquivos.map(a => `${a.name} (${mb(a.size)} MB)`).join(" · ");
+  }
+
+  // `dragover` PRECISA do preventDefault, senao o navegador abre o PDF numa
+  // aba nova em vez de deixar soltar aqui — e a pessoa perde o que arrastou.
+  ["dragenter", "dragover"].forEach(evento => {
+    area.addEventListener(evento, e => {
+      e.preventDefault();
+      area.classList.add("por-cima");
+    });
+  });
+  ["dragleave", "drop"].forEach(evento => {
+    area.addEventListener(evento, e => {
+      e.preventDefault();
+      area.classList.remove("por-cima");
+    });
+  });
+
+  area.addEventListener("drop", e => {
+    const soltos = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+    const pdfs = soltos.filter(a => /\.pdf$/i.test(a.name));
+    if (!pdfs.length) {
+      alert("Solte arquivos PDF. Comprovante em foto ou print ainda nao e "
+            + "aceito por aqui.");
+      return;
+    }
+    if (pdfs.length < soltos.length) {
+      alert((soltos.length - pdfs.length) + " arquivo(s) que nao sao PDF "
+            + "ficaram de fora.");
+    }
+    // DataTransfer e o unico jeito de por arquivos soltos dentro do <input>,
+    // que e quem o formulario envia. Sem isto o arrastar nao manda nada.
+    const saco = new DataTransfer();
+    pdfs.forEach(a => saco.items.add(a));
+    campo.files = saco.files;
+    descrever();
+  });
+
+  campo.addEventListener("change", descrever);
+
+  // O botao so pode ser apertado uma vez: dois envios do mesmo arquivo criariam
+  // dois lotes. A baixa duplicada e barrada pelo robo, mas a tela ficaria com
+  // duas linhas dizendo a mesma coisa, e isso confunde na hora de conferir.
+  const form = document.getElementById("form-comprovantes");
+  if (form) form.addEventListener("submit", () => {
+    botao.disabled = true;
+    botao.textContent = "Mandando…";
+  });
+
+  // Enquanto houver lote na fila ou processando, a tela se atualiza sozinha.
+  // Quem diz se HA trabalho e o servidor, num atributo — nao o texto da
+  // pagina. E perguntar so o andamento (consulta curta) em vez de recarregar
+  // tudo: o banco tem um decimo de um nucleo.
+  const estado = document.getElementById("comprovantes-estado");
+  if (estado && estado.dataset.trabalhando) {
+    let tentativas = 0;
+    const relogio = setInterval(async () => {
+      // Para de perguntar depois de ~10 minutos. Uma tela esquecida aberta a
+      // noite inteira nao pode ficar batendo no banco para sempre.
+      if (++tentativas > 120) { clearInterval(relogio); return; }
+      try {
+        const r = await fetch(estado.dataset.urlEstado, {
+          headers: {"Accept": "application/json"}});
+        const dados = await r.json();
+        const parado = !dados.rodando && !(dados.lotes || []).some(
+            l => l.situacao === "ESPERANDO" || l.situacao === "RODANDO");
+        // Recarrega UMA vez quando tudo terminou, para mostrar as linhas.
+        if (parado) { clearInterval(relogio); location.reload(); }
+      } catch (e) { /* rede caiu: a proxima tentativa resolve */ }
+    }, 5000);
+  }
+})();
+
+
+/* ---------------------------------------------------------------------------
+   DOCUMENTACAO FISCAL — as duas pilhas.
+
+   O que o sistema propoe com confianca ja vem MARCADO pelo servidor; o que tem
+   duvida vem desmarcado. Este arquivo NAO decide nada disso — ele so conta o
+   que esta marcado e manda. A decisao de marcar ou nao e do servidor, onde a
+   regra mora, e nao da tela.
+
+   POR QUE ISSO IMPORTA: propor cria fadiga de aprovacao. Se a tela pudesse
+   marcar tudo "para facilitar", em tres semanas ninguem conferiria mais — o
+   mesmo olho cansado, so que mais rapido.
+--------------------------------------------------------------------------- */
+(function () {
+  const config = document.getElementById("fiscal-config");
+  const botao = document.getElementById("btn-confirmar-fiscal");
+  if (!config || !botao) return;
+
+  const marcas = () => Array.from(document.querySelectorAll(".fiscal-marca"));
+  const marcadas = () => marcas().filter(c => c.checked);
+  const contador = document.getElementById("fiscal-quantas");
+  const todas = document.getElementById("fiscal-todas");
+
+  // "Confirmar" so age no que TEM proposta; a IA age em qualquer marcada, e e
+  // justamente nas SEM proposta que ela serve. Sao dois conjuntos diferentes
+  // sobre as mesmas caixinhas.
+  const comProposta = () => marcadas().filter(c => c.dataset.documentacao);
+  const botaoIA = document.getElementById("btn-ia-fiscal");
+
+  function atualizar() {
+    const quantas = marcadas().length;
+    const propostas = comProposta().length;
+    botao.disabled = propostas === 0;
+    if (botaoIA) botaoIA.disabled = quantas === 0;
+    if (contador) {
+      contador.textContent = quantas === 0 ? "Nenhuma marcada"
+          : quantas + (quantas === 1 ? " marcada" : " marcadas")
+            + (propostas < quantas
+               ? ` (${propostas} com proposta)` : "");
+    }
+    if (todas) {
+      const total = marcas().length;
+      todas.checked = total > 0 && quantas === total;
+      todas.indeterminate = quantas > 0 && quantas < total;
+    }
+  }
+
+  marcas().forEach(c => c.addEventListener("change", atualizar));
+  if (todas) todas.addEventListener("change", () => {
+    marcas().forEach(c => { c.checked = todas.checked; });
+    atualizar();
+  });
+  atualizar();
+
+  // --- Mandar para a IA ler o anexo -----------------------------------------
+  //
+  // NUNCA automatico: quem escolhe e o dono, SP a SP. E a confirmacao diz o
+  // que custa, porque cada leitura e cobrada — um clique distraido em duzentas
+  // linhas seria uma conta que ninguem pediu.
+  if (botaoIA) botaoIA.addEventListener("click", async () => {
+    const ids = marcadas().map(c => c.dataset.sp);
+    const semAnexo = marcadas().filter(c => !c.dataset.anexo).length;
+    if (!ids.length) return;
+    let recado = `Ler o anexo de ${ids.length} SP(s) com IA.\n\n`
+        + `Cada leitura e cobrada. A IA PROPOE — quem confirma continua sendo `
+        + `voce.`;
+    if (semAnexo) {
+      recado += `\n\nATENCAO: ${semAnexo} nao tem anexo e vao ser puladas.`;
+    }
+    if (!confirm(recado)) return;
+
+    botaoIA.disabled = true;
+    const antes = botaoIA.textContent;
+    botaoIA.textContent = "Mandando…";
+    try {
+      const r = await fetch(config.dataset.urlIa, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids}),
+      });
+      const dados = await r.json();
+      if (!dados.ok) { alert(dados.erro || "Nao consegui enfileirar."); return; }
+      alert(dados.aviso);
+      location.reload();
+    } catch (e) {
+      alert("Nao consegui falar com o servidor: " + e);
+    } finally {
+      botaoIA.disabled = false;
+      botaoIA.textContent = antes;
+    }
+  });
+
+  botao.addEventListener("click", async () => {
+    const itens = comProposta().map(c => ({
+      sp: c.dataset.sp,
+      documentacao: c.dataset.documentacao,
+      chave: c.dataset.chave || "",
+      confianca: parseInt(c.dataset.confianca || "0", 10) || 0,
+      motivo: c.dataset.motivo || "",
+    }));
+    if (!itens.length) return;
+
+    // A CONFIRMACAO DIZ O QUE VAI ACONTECER E O QUE NAO VAI. "Confirmar" numa
+    // tela fiscal soa como "ja foi para a contabilidade"; aqui ainda nao foi
+    // nem para o card.
+    if (!confirm(`Confirmar a analise de ${itens.length} SP(s).\n\n`
+                 + `Isto grava a decisao aqui. A gravacao nos cards do Pipefy `
+                 + `e o passo seguinte.`)) return;
+
+    botao.disabled = true;
+    const texto = botao.textContent;
+    botao.textContent = "Gravando…";
+    try {
+      const r = await fetch(config.dataset.urlConfirmar, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({itens}),
+      });
+      const dados = await r.json();
+      if (!dados.ok) { alert(dados.erro || "Nao consegui gravar."); return; }
+      if ((dados.recusadas || []).length) {
+        alert(`${dados.gravadas} gravada(s). Estas ficaram de fora:\n`
+              + dados.recusadas.join("\n"));
+      }
+      location.reload();
+    } catch (e) {
+      alert("Nao consegui falar com o servidor: " + e);
+    } finally {
+      botao.disabled = false;
+      botao.textContent = texto;
+    }
+  });
+})();

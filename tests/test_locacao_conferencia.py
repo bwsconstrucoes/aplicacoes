@@ -29,16 +29,15 @@ from app.apps.erp.db.models.financeiro import (
     ContratoLocacao, LocacaoConferencia, LocacaoConferenciaItem, LocacaoItem,
 )
 
-from conftest import SessaoFalsa, novo_usuario
+from conftest import SessaoFalsa, hoje, novo_usuario
 
 ADMIN = novo_usuario(1, P.ADMIN, nome="Ruan do administrativo")
-HOJE = date.today()
-COMP = date(HOJE.year, HOJE.month, 1)
+COMP = date(hoje().year, hoje().month, 1)
 
 
 def contrato(**extra):
     dados = dict(id=5, numero="LOC00005", fornecedor_id=9, obra_id=1,
-                 status="ATIVO", data_inicio=HOJE - timedelta(days=60),
+                 status="ATIVO", data_inicio=hoje() - timedelta(days=60),
                  responsavel_id=ADMIN.id)
     dados.update(extra)
     return ContratoLocacao(**dados)
@@ -92,7 +91,7 @@ def test_contrato_encerrado_nao_gera_conferencia():
 
 
 def test_contrato_que_comecou_depois_do_mes_nao_gera():
-    s = sessao(contrato(data_inicio=HOJE + timedelta(days=90)))
+    s = sessao(contrato(data_inicio=hoje() + timedelta(days=90)))
     assert svc.abrir_do_mes(s)["abertas"] == []
 
 
@@ -161,22 +160,22 @@ def test_a_resposta_fica_gravada_com_quem_respondeu():
 
 def test_adiar_a_devolucao_exige_motivo():
     """Prorrogar é normal; prorrogar em silêncio é que não pode."""
-    i = item(devolucao_prevista=HOJE)
+    i = item(devolucao_prevista=hoje())
     s = sessao(contrato(), i, conferencia())
     with pytest.raises(ErroValidacao, match="motivo"):
-        responder(s, devolucao_prevista=(HOJE + timedelta(days=30)).isoformat(),
+        responder(s, devolucao_prevista=(hoje() + timedelta(days=30)).isoformat(),
                   motivo="")
 
 
 def test_adiar_guarda_a_data_original():
     """Depois de duas ou três prorrogações, a data original é o que denuncia."""
-    i = item(devolucao_prevista=HOJE)
+    i = item(devolucao_prevista=hoje())
     s = sessao(contrato(), i, conferencia())
-    nova = HOJE + timedelta(days=30)
+    nova = hoje() + timedelta(days=30)
     r = responder(s, devolucao_prevista=nova.isoformat(),
                   motivo="a desforma atrasou por causa da chuva")
     assert i.devolucao_prevista == nova
-    assert i.devolucao_prevista_original == HOJE
+    assert i.devolucao_prevista_original == hoje()
     assert r["avisos"] and "adiada" in r["avisos"][0]
 
 

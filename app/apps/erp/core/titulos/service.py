@@ -30,7 +30,8 @@ from app.apps.erp.db.models.cadastros import (
     PerfilUsuario, StatusConta, TipoTitulo, Usuario,
 )
 from app.apps.erp.db.models.financeiro import (
-    Parcela, Rateio, Retencao, StatusParcela, StatusTitulo, TipoRetencao, Titulo,
+    Conciliacao, Pagamento, Parcela, Rateio, Retencao, StatusParcela,
+    StatusTitulo, TipoRetencao, Titulo,
 )
 
 _CENT = Decimal("0.01")
@@ -631,10 +632,74 @@ def devolver(s: Session, titulo_id: int, motivo: str, usuario: Usuario) -> Titul
     return t
 
 
+def _tem_dinheiro_encostado(s: Session, t: Titulo) -> str:
+    """O título já foi tocado pelo caixa? Devolve o motivo, ou "" se está limpo.
+
+    POR QUE NÃO BASTA OLHAR A PARCELA. Até 12/09/2026 a única trava era
+    `parcela.status == PAGA`. Uma parcela pode ter PAGAMENTO registrado sem
+    estar marcada PAGA — baixa parcial, baixa em processamento, baixa que o
+    robô lançou e ninguém fechou. Nesses casos o cancelamento passava, a
+    parcela virava CANCELADA e o pagamento ficava pendurado num título que
+    "não existe mais": dinheiro que saiu da conta e sumiu do relatório.
+
+    E a CONCILIAÇÃO é uma trava à parte, não um detalhe da baixa: conciliado
+    quer dizer que aquela saída já foi casada com a linha do extrato do banco.
+    Cancelar depois disso desmancha a conferência do mês.
+
+    Decisão do dono, com estas palavras: *"liberado o lançamento que não está
+    baixado ou conciliado"*.
+    """
+    ids = [p.id for p in t.parcelas if p.id]
+    if not ids:
+        return ""
+    pagos = s.scalars(select(Pagamento).where(Pagamento.parcela_id.in_(ids))).all()
+    if not pagos:
+        return ""
+    conciliados = s.scalar(select(func.count()).select_from(Conciliacao).where(
+        Conciliacao.pagamento_id.in_([pg.id for pg in pagos]),
+        Conciliacao.desfeita_em.is_(None))) or 0
+    if conciliados:
+        return ("Este título já foi conciliado com o extrato do banco. "
+                "Cancelar agora desmancharia a conferência do mês — desfaça a "
+                "conciliação primeiro, ou use estorno.")
+    return ("Este título já tem pagamento registrado. Título baixado não se "
+            "cancela — use estorno, que preserva o histórico.")
+
+
 def cancelar(s: Session, titulo_id: int, motivo: str, usuario: Usuario) -> Titulo:
+    """Cancela o título, com motivo escrito.
+
+    QUEM PODE, e por quê assim (decisão do dono em 12/09/2026):
+
+      · quem tem a alçada de APROVAR cancela qualquer título que alcance —
+        é o financeiro desfazendo o engano de outra pessoa, que era o único
+        caminho até aqui;
+      · **quem LANÇOU cancela o próprio lançamento**, sem depender de
+        ninguém — *"liberado o lançamento que não está baixado ou
+        conciliado"*. Antes, corrigir o próprio erro exigia interromper o
+        financeiro, e o lançamento errado ficava no ar até alguém ter tempo.
+
+    O que NENHUM dos dois faz é cancelar título em que o dinheiro já encostou:
+    ver `_tem_dinheiro_encostado`.
+    """
+    from app.apps.erp.core.auth.permissoes import exigir_titulo_no_escopo, pode
+
+    # O ESCOPO PRIMEIRO. Cancelar é destrutivo, e quem é preso a obra ou a
+    # autoria não alcança título de fora — fora do recorte responde "não
+    # encontrado", nunca "sem permissão".
+    exigir_titulo_no_escopo(s, usuario, titulo_id)
     t = obter(s, titulo_id)
-    if any(p.status == StatusParcela.PAGA for p in t.parcelas):
-        raise ErroValidacao("Título com parcela paga não se cancela — use estorno.")
+
+    # QUEM NÃO APROVA só cancela o que é dele. Isto é escopo de REGISTRO, não
+    # declaração de ação: a ação (`cancelar_titulo`) já decidiu quem entra.
+    if not pode(usuario, "aprovar") and t.solicitante_id != usuario.id:
+        raise ErroPermissao(
+            "Este lançamento é de outra pessoa. Você cancela os seus; para "
+            "cancelar o de outro, peça ao financeiro.")
+
+    impedimento = _tem_dinheiro_encostado(s, t)
+    if impedimento:
+        raise ErroValidacao(impedimento)
     _exigir_status(t, StatusTitulo.RASCUNHO, StatusTitulo.EM_ANALISE,
                    StatusTitulo.DEVOLVIDO, StatusTitulo.AGUARDANDO_APROVACAO,
                    StatusTitulo.APROVADO, StatusTitulo.BLOQUEADO)

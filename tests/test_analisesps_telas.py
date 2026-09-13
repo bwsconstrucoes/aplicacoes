@@ -2864,7 +2864,95 @@ def test_o_texto_que_nao_cabe_e_cortado_e_nao_invade_a_coluna():
     inteira, e o número fica ilegível justamente onde importa."""
     import inspect
     from app.apps.analisesps import pdf
-    assert "get_string_width" in inspect.getsource(pdf.Folha.tabela)
+    assert "get_string_width" in inspect.getsource(pdf.Folha._quebrar)
+
+
+# ---------------------------------------------------------------------------
+# O RELATÓRIO DO LOTE COM DESCRIÇÃO E OBRA
+#
+# Pedido do dono em 11/09/2026: *"reduz a fonte consideravelmente pra caber
+# mais informação. Quero que tenha a descrição. Quero que tenha obra. E pode
+# usar a quebra de linha."*
+# ---------------------------------------------------------------------------
+def _lote_de_papel(**campos):
+    linha = {"id": "1443253401", "vencimento_d": "2026-09-20",
+             "credor": "SERTAO CASA E CONSTRUCAO", "descricao": "MATERIAL",
+             "centro_custo": "CREPETRIUNFO", "forma_pagamento": "Pix",
+             "conta": "Bradesco - 50024-0", "valor_num": 1234.56}
+    linha.update(campos)
+    return {"quantidade": 1, "total_geral": linha["valor_num"], "grupos": [
+        {"titulo_exibido": "Pagar amanhã", "total": linha["valor_num"],
+         "nao_encontrados": [], "linhas": [linha]}]}
+
+
+def _texto_do_pdf(dados: bytes) -> str:
+    import io as _io
+
+    from pypdf import PdfReader
+    return "\n".join(p.extract_text()
+                     for p in PdfReader(_io.BytesIO(dados)).pages)
+
+
+def test_o_relatorio_do_lote_traz_descricao_e_obra():
+    from app.apps.analisesps import pdf
+    texto = _texto_do_pdf(pdf.relatorio_do_lote(_lote_de_papel(
+        descricao="AQUISICAO DE MATERIAL ELETRICO", centro_custo="CREPEBELEM")))
+    assert "Descrição" in texto and "Obra" in texto
+    assert "AQUISICAO DE MATERIAL ELETRICO" in texto
+    assert "CREPEBELEM" in texto
+
+
+def test_a_descricao_longa_QUEBRA_em_vez_de_sumir():
+    """Antes o texto era cortado na largura da coluna. Uma descrição de
+    pagamento cortada na terceira palavra não serve para conferir nada."""
+    from app.apps.analisesps import pdf
+    longa = ("REFERENTE A AQUISICAO DE MATERIAL ELETRICO PARA A OBRA DO "
+             "ALOJAMENTO CONFORME PEDIDO 4417")
+    texto = _texto_do_pdf(pdf.relatorio_do_lote(_lote_de_papel(descricao=longa)))
+    assert "ALOJAMENTO" in texto, "a descrição foi cortada antes do fim"
+
+
+def test_palavra_gigante_SEM_espaco_e_partida_e_nao_invade_a_coluna():
+    """Um código ou um nome digitado sem espaço nenhum não pode empurrar o
+    valor para fora da página."""
+    from app.apps.analisesps import pdf
+    emendado = "FORNECEDORCOMNOMEGIGANTESEMESPACONENHUMPARATESTARAQUEBRA"
+    texto = _texto_do_pdf(pdf.relatorio_do_lote(_lote_de_papel(credor=emendado)))
+    assert "1.234,56" in texto, "o valor sumiu da linha"
+    assert "FORNECEDORCOMNOME" in texto
+
+
+def test_o_vencimento_impresso_e_o_DO_DIA_certo():
+    """O defeito que apareceu conferindo este relatório: o vencimento de dia 20
+    saía impresso como dia 19, porque a data sem hora era tratada como
+    meia-noite e convertida de fuso."""
+    from app.apps.analisesps import pdf
+    texto = _texto_do_pdf(pdf.relatorio_do_lote(
+        _lote_de_papel(vencimento_d="2026-09-20")))
+    assert "20/09/2026" in texto
+    assert "19/09/2026" not in texto
+
+
+def test_a_fonte_do_relatorio_do_lote_e_menor_que_a_padrao():
+    """"Pode reduzir a fonte consideravelmente pra caber mais informação."""
+    import inspect
+
+    from app.apps.analisesps import pdf
+    codigo = inspect.getsource(pdf.relatorio_do_lote)
+    assert "fonte=6.5" in codigo and "linhas_max=3" in codigo
+
+
+def test_as_colunas_do_lote_cabem_na_folha():
+    """Somar mais que a largura útil empurra a última coluna — a do valor —
+    para fora da página, e é justamente ela que precisa ser lida."""
+    import inspect
+    import re
+
+    from app.apps.analisesps import pdf
+    codigo = inspect.getsource(pdf.relatorio_do_lote)
+    larguras = re.search(r"larguras=\[([0-9,\s.]+)\]", codigo).group(1)
+    total = sum(float(x) for x in larguras.split(","))
+    assert total <= pdf.LARGURA_UTIL, f"as colunas somam {total} mm"
 
 
 # ---------------------------------------------------------------------------

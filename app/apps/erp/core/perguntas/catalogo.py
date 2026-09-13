@@ -208,6 +208,20 @@ CATALOGO += [
 # ---------------------------------------------------------------------------
 CATALOGO += [
     {
+        "chave": "custo_da_obra",
+        "grupo": "obras",
+        "pergunta": "Quanto custou a obra — comprometido e executado?",
+        "exemplos": ["quanto custou a obra Creche",
+                     "qual o custo executado da Creche este ano",
+                     "quanto eu já comprometi nas obras"],
+        "parametros": [
+            _p("obra", "Obra", TEXTO, "em branco = todas"),
+            _p("competencia_de", "Competência de", TEXTO, "AAAA-MM, opcional"),
+            _p("competencia_ate", "até", TEXTO, "AAAA-MM, opcional"),
+        ],
+        "funcao": respostas.custo_da_obra,
+    },
+    {
         "chave": "cadastro_incompleto",
         "grupo": "obras",
         "pergunta": "Quais obras não emitem nota hoje por falta de cadastro?",

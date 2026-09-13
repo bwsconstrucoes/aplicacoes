@@ -75,7 +75,15 @@
 
 <div class="cartao" id="cartao-resposta" hidden>
   <div class="cartao-cab"><h3 id="titulo-resposta"></h3>
-    <small id="de-onde-veio"></small></div>
+    <small id="de-onde-veio"></small>
+    {# A RESPOSTA VIRA RELATÓRIO. Pedido do dono em 12/09/2026. Quem monta o
+       arquivo é o sistema, com os MESMOS números da resposta — não a IA
+       escrevendo um texto com cara de relatório, que ninguém poderia
+       conferir. #}
+    <span style="margin-left:auto; display:flex; gap:6px" id="exportar-resposta" hidden>
+      <button class="btn secundario" id="btn-resp-excel">⬇ Excel</button>
+      <button class="btn secundario" id="btn-resp-pdf">⬇ PDF</button>
+    </span></div>
   <div class="aviso info" id="frase-resposta"></div>
   <div id="observacao-resposta"></div>
   <!-- A régua do recebimento tem nove colunas e não cabe na largura da tela;
@@ -214,9 +222,31 @@ function desenharResposta(r) {
       ${r.linhas.map(l => `<tr>${r.colunas.map(c =>
         `<td class="${ALINHA_A_DIREITA.includes(c.tipo) ? "dados" : ""}">${celula(c, l)}</td>`).join("")}</tr>`).join("")}
     </tbody></table>` : "";
+  // Sem tabela não há o que exportar — e um botão que não faz nada é pior que
+  // botão nenhum.
+  RESPOSTA_NA_TELA = r;
+  els("exportar-resposta").hidden = !(r.linhas || []).length;
   els("cartao-resposta").hidden = false;
   els("cartao-resposta").scrollIntoView({behavior: "smooth", block: "nearest"});
 }
+
+// A resposta inteira, para virar arquivo. A tela mostra tudo o que veio, e o
+// arquivo leva o mesmo — com a frase e a procedência no cabeçalho, porque
+// planilha sem origem é número sem procedência.
+let RESPOSTA_NA_TELA = null;
+
+function baixarResposta(formato){
+  const r = RESPOSTA_NA_TELA;
+  if (!r || !(r.linhas || []).length) return;
+  const filtros = {"Resposta": r.frase || "",
+                   "De onde veio": (r.de_onde_veio || {}).explicacao || "—"};
+  if (r.observacao) filtros["Observação"] = r.observacao;
+  exportarTela({titulo: r.titulo || "Relatório", subtitulo: r.frase || "",
+                colunas: r.colunas || [], linhas: r.linhas, filtros, formato});
+}
+
+els("btn-resp-excel").addEventListener("click", () => baixarResposta("xlsx"));
+els("btn-resp-pdf").addEventListener("click", () => baixarResposta("pdf"));
 
 // ------------------------------------------------------- pergunta escrita
 async function perguntarEscrevendo() {

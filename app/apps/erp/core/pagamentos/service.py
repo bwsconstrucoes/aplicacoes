@@ -1,35 +1,27 @@
 # ============================================================================
 # BWS ERP — core/pagamentos/service.py
-# Baixa de pagamentos, importação de extrato (OFX) e conciliação automática.
+# Baixa de pagamentos e importação de extrato (OFX).
 #
-# Conciliação (item 12 da triagem — matching do spsbd adaptado):
-#   candidato = lançamento de DÉBITO no extrato, ainda não conciliado, com
-#   |valor| == valor pago e data dentro de ±N dias (padrão 3).
-#   confiança = 1.0 − 0.1·|Δdias| + bônus de similaridade de nome
-#   (difflib entre nome da contraparte no extrato e razão social do credor).
-#   AUTO quando candidato ÚNICO com confiança ≥ 0.75; senão vai para a fila
-#   de conciliação manual com os candidatos ranqueados.
+# O CASAMENTO do extrato com a baixa NÃO mora aqui — mora em
+# `conciliacao.py`, e só lá. Ver a nota na seção "Conciliação", mais abaixo.
 # ============================================================================
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
-from difflib import SequenceMatcher
 from typing import Any, Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.apps.erp.core.comum.auditoria import ErroPermissao, ErroValidacao, registrar_evento
-from app.apps.erp.core.pagamentos.ofx import LancamentoOFX, extrair_nome_contraparte, parsear_ofx
+from app.apps.erp.core.pagamentos.ofx import extrair_nome_contraparte, parsear_ofx
 from app.apps.erp.db.models.cadastros import ContaBancaria, FormaPagamento, PerfilUsuario, Usuario
 from app.apps.erp.db.models.financeiro import (
     Conciliacao, Extrato, Pagamento, Parcela, StatusParcela, StatusTitulo, Titulo,
 )
 
 _CENT = Decimal("0.01")
-JANELA_DIAS_PADRAO = 3
-CONFIANCA_AUTO = Decimal("0.750")
 
 
 # ---------------------------------------------------------------------------
@@ -40,7 +32,14 @@ def registrar_pagamento(s: Session, *, parcela_id: int, conta_bancaria_id: int,
                         meio: Optional[str] = None, usuario: Optional[Usuario] = None,
                         robo: bool = False,
                         comprovante_anexo_id: Optional[int] = None) -> Pagamento:
-    parcela = s.get(Parcela, parcela_id, options=[selectinload(Parcela.titulo)])
+    # TRAVA DE LINHA: duas pessoas clicando "baixar" na mesma parcela no mesmo
+    # instante liam as duas o status ABERTA e gravavam DOIS pagamentos — o
+    # dinheiro sairia uma vez e o ERP registraria duas. Com FOR UPDATE a
+    # segunda espera a primeira terminar e aí encontra a parcela PAGA. A
+    # segunda linha de defesa é a restrição única da migração 062, no banco,
+    # para o caso de um caminho novo esquecer a trava.
+    parcela = s.get(Parcela, parcela_id, options=[selectinload(Parcela.titulo)],
+                    with_for_update=True, populate_existing=True)
     if parcela is None:
         raise ErroValidacao(f"Parcela {parcela_id} não encontrada.")
     if parcela.status == StatusParcela.PAGA:
@@ -123,98 +122,18 @@ def importar_ofx(s: Session, conteudo: bytes, conta_bancaria_id: int,
 
 
 # ---------------------------------------------------------------------------
-# Conciliação automática
+# Conciliação
+#
+# A conciliação MORA EM `conciliacao.py`, e só lá. Até 11/09/2026 existia aqui
+# uma SEGUNDA implementação de "conciliar automático" e "conciliar manual",
+# mais antiga, que nenhuma tela chamava e que já divergia da de verdade (a
+# daqui nem conferia se o extrato era da mesma conta bancária do pagamento).
+# Duas versões da escrita mais sensível do sistema é como a errada acaba
+# ligada num botão algum dia — foram apagadas na varredura adversarial.
+#
+# O que continua aqui é o que não é escrita de casamento: desfazer (que muda
+# uma conciliação existente) e a lista de linhas do extrato ainda livres.
 # ---------------------------------------------------------------------------
-def _similaridade(a: Optional[str], b: Optional[str]) -> float:
-    if not a or not b:
-        return 0.0
-    return SequenceMatcher(None, a.upper().strip(), b.upper().strip()).ratio()
-
-
-def _candidatos(s: Session, pg: Pagamento, credor_nome: str,
-                janela_dias: int) -> list[tuple[Extrato, Decimal]]:
-    ini = pg.data_pagamento - timedelta(days=janela_dias)
-    fim = pg.data_pagamento + timedelta(days=janela_dias)
-    ja_conciliados = select(Conciliacao.extrato_id).where(Conciliacao.desfeita_em.is_(None))
-    exts = s.scalars(select(Extrato).where(
-        Extrato.conta_bancaria_id == pg.conta_bancaria_id,
-        Extrato.valor == -Decimal(pg.valor_pago),
-        Extrato.data_lancamento.between(ini, fim),
-        Extrato.id.not_in(ja_conciliados))).all()
-    ranqueados = []
-    for e in exts:
-        delta = abs((e.data_lancamento - pg.data_pagamento).days)
-        conf = Decimal("1.0") - Decimal(delta) * Decimal("0.1")
-        sim = _similaridade(e.nome_contraparte, credor_nome)
-        if sim >= 0.55:
-            conf += Decimal("0.10")
-        elif e.nome_contraparte and sim < 0.30:
-            conf -= Decimal("0.20")     # nome diverge: cautela
-        ranqueados.append((e, max(conf, Decimal("0")).quantize(Decimal("0.001"))))
-    ranqueados.sort(key=lambda x: x[1], reverse=True)
-    return ranqueados
-
-
-def conciliar_automatico(s: Session, *, janela_dias: int = JANELA_DIAS_PADRAO,
-                         usuario: Optional[Usuario] = None) -> dict[str, Any]:
-    """Percorre pagamentos sem conciliação e casa com o extrato.
-    Retorna resumo + pendências com candidatos para a tela manual."""
-    ja = select(Conciliacao.pagamento_id).where(Conciliacao.desfeita_em.is_(None))
-    pendentes = s.scalars(
-        select(Pagamento).where(Pagamento.id.not_in(ja),
-                                Pagamento.estorna_pagamento_id.is_(None))
-        .options(selectinload(Pagamento.parcela).selectinload(Parcela.titulo)
-                 .selectinload(Titulo.fornecedor))).all()
-
-    conciliados, fila_manual = 0, []
-    for pg in pendentes:
-        credor = pg.parcela.titulo.fornecedor.razao_social
-        cands = _candidatos(s, pg, credor, janela_dias)
-        if len(cands) == 1 and cands[0][1] >= CONFIANCA_AUTO:
-            ext, conf = cands[0]
-            s.add(Conciliacao(pagamento_id=pg.id, extrato_id=ext.id,
-                              metodo="AUTO_VALOR_DATA_NOME", confianca=conf,
-                              conciliado_por=(usuario.id if usuario else None)))
-            conciliados += 1
-        else:
-            fila_manual.append({
-                "pagamento_id": pg.id,
-                "titulo": pg.parcela.titulo.numero_sp,
-                "credor": credor,
-                "valor": str(pg.valor_pago),
-                "data": pg.data_pagamento.isoformat(),
-                "candidatos": [{"extrato_id": e.id, "data": e.data_lancamento.isoformat(),
-                                "historico": (e.historico or "")[:80],
-                                "nome": e.nome_contraparte,
-                                "confianca": str(c)} for e, c in cands[:5]],
-            })
-    s.flush()
-    if conciliados:
-        registrar_evento(s, "conciliacao", 0, "AUTO_EXECUTADA",
-                         {"conciliados": conciliados, "pendentes_manuais": len(fila_manual)},
-                         usuario.id if usuario else None)
-    return {"conciliados_auto": conciliados, "pendentes": fila_manual}
-
-
-def conciliar_manual(s: Session, pagamento_id: int, extrato_id: int,
-                     usuario: Usuario) -> Conciliacao:
-    pg = s.get(Pagamento, pagamento_id)
-    ext = s.get(Extrato, extrato_id)
-    if pg is None or ext is None:
-        raise ErroValidacao("Pagamento ou extrato inexistente.")
-    if abs(Decimal(ext.valor) + Decimal(pg.valor_pago)) > Decimal("0.01"):
-        raise ErroValidacao(
-            f"Valores não conferem: extrato R$ {ext.valor} × pagamento R$ {pg.valor_pago}. "
-            f"Conciliação manual não força divergência de valor.")
-    c = Conciliacao(pagamento_id=pg.id, extrato_id=ext.id, metodo="MANUAL",
-                    confianca=None, conciliado_por=usuario.id)
-    s.add(c)
-    s.flush()
-    registrar_evento(s, "conciliacao", c.id, "MANUAL",
-                     {"pagamento_id": pg.id, "extrato_id": ext.id}, usuario.id)
-    return c
-
-
 def desfazer_conciliacao(s: Session, conciliacao_id: int, motivo: str,
                          usuario: Usuario) -> Conciliacao:
     if usuario.perfil not in (PerfilUsuario.ADMIN, PerfilUsuario.FINANCEIRO):

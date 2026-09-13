@@ -384,3 +384,35 @@ def _listas_do_painel_nao_atravessam_testes():
     consultas.esquecer_listas()
     yield
     consultas.esquecer_listas()
+
+
+# ---------------------------------------------------------------------------
+# O "HOJE" DOS TESTES — por que é função, e não constante
+#
+# Em 12/09/2026 seis testes falharam sem que nada no sistema tivesse mudado. A
+# rodada da suíte com banco de verdade dura sete minutos, começou dia 11 e
+# terminou dia 12. Os seis comparavam com um `HOJE = date.today()` escrito no
+# TOPO do arquivo — valor calculado uma vez, quando o pytest importa o módulo,
+# lá no começo da rodada. O código do ERP, esse, pergunta as horas na hora de
+# executar. Passada a meia-noite, os dois discordavam em um dia: "amanhã" para
+# o teste já era "hoje" para o sistema, e a conferência de "não se recebe no
+# futuro" deixava de valer.
+#
+# Não era defeito do ERP — era do jeito de escrever teste. E importa porque o
+# GitHub Actions roda a cada envio, inclusive de madrugada: uma rodada
+# vermelha sem causa real ensina a equipe a ignorar rodada vermelha.
+#
+# Por isso `hoje()` é FUNÇÃO: cada uso pergunta as horas no momento do uso, do
+# mesmo jeito que o ERP pergunta. A janela de discordância cai de sete minutos
+# para o intervalo entre duas linhas.
+#
+# O que isto NÃO resolve, dito sem enfeite: um teste que comece às 23:59:59.999
+# ainda pode atravessar a virada no meio. Resolver isso de vez exigiria as
+# funções do ERP receberem a data de fora, em vez de perguntarem ao relógio —
+# mudança no código de produção, não nos testes, e que não se faz no meio de
+# outra coisa.
+# ---------------------------------------------------------------------------
+def hoje():
+    """A data de HOJE, lida no momento do uso — nunca no topo do arquivo."""
+    from datetime import date as _date
+    return _date.today()

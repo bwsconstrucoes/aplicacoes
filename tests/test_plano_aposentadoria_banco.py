@@ -26,7 +26,7 @@ from sqlalchemy import select, text
 
 from app.apps.erp.core import relatorios
 from app.apps.erp.core.cadastros.plano_padrao import aplicar_plano
-from app.apps.erp.db.models.cadastros import Categoria
+from app.apps.erp.db.models.cadastros import Categoria, PerfilUsuario, Usuario
 
 pytestmark = pytest.mark.banco
 
@@ -102,6 +102,17 @@ def com_lancamento(sessao_real, cenario_de_titulo):
     velha = _conta(sessao_real, "1.2.01")
     cenario_de_titulo(velha.id)
     return sessao_real
+
+
+def _quem_ve_tudo(s):
+    """Relatório exige saber QUEM pergunta — o recorte por obra depende disso.
+
+    Aqui o assunto é o plano de contas, não o escopo: usa-se o ADMIN que o
+    cenário já cria, para o número não mudar por causa de quem olha.
+    """
+    from sqlalchemy import select as _select
+    return s.scalars(_select(Usuario).where(
+        Usuario.perfil == PerfilUsuario.ADMIN)).first()
 
 
 @pytest.fixture
@@ -194,7 +205,7 @@ def test_devolucao_abate_o_custo_em_vez_de_somar(sessao_real, cenario_de_titulo)
             {"c": categoria_id, "v": valor})
     sessao_real.flush()
 
-    dre = relatorios.dre_gerencial(sessao_real, {})
+    dre = relatorios.dre_gerencial(sessao_real, {}, _quem_ve_tudo(sessao_real))
     grupo3 = [g for g in dre["resultado"] if g["codigo"] == "3"]
     assert grupo3, "o grupo de custos precisa aparecer no resultado"
     assert grupo3[0]["total"] == pytest.approx(9500.0)
@@ -222,6 +233,6 @@ def test_as_duas_linhas_continuam_no_analitico(sessao_real, cenario_de_titulo):
             {"c": categoria_id, "v": valor})
     sessao_real.flush()
 
-    linhas = relatorios.analitico(sessao_real, {})
+    linhas = relatorios.analitico(sessao_real, {}, _quem_ve_tudo(sessao_real))
     valores = sorted(l["valor"] for l in linhas)
     assert valores == [-500.0, 10000.0]
