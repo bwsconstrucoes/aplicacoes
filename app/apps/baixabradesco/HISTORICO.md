@@ -608,7 +608,7 @@ WhatsApp. Isso quer dizer que a perna do WhatsApp não está entregando — e qu
 já conversou com o robô. O campo `aviso` da resposta ao Make diz o motivo em uma
 linha; ninguém foi atrás ainda.
 
-### 13/09/2026 — a baixa pela metade que o reenvio não consertava
+### 13/09/2026 — a baixa pela metade que o reenvio não consertava (publicado, `c4c4724`)
 
 Pergunta do dono: *"se eu enviar um comprovante que já foi baixado, ele checa por
 onde? É conferido se a baixa está no Omie e na planilha? Às vezes falha um dos
@@ -649,7 +649,7 @@ responde bem.
 **Não verificado:** nada disso passou por produção. O caso exige que a gravação
 na planilha falhe de verdade, o que não dá para provocar daqui.
 
-### 13/09/2026 — a outra metade: planilha paga, Omie pendente, reenvio sem efeito
+### 13/09/2026 — a outra metade: planilha paga, Omie pendente, reenvio sem efeito (publicado, `c4c4724`)
 
 Na mesma conversa, o dono achou **duas SPs** com a planilha gravada por inteiro e
 o Omie **não** baixado — conferiu nas duas fontes. Reenviar o comprovante não
@@ -676,3 +676,13 @@ SP já Pago na planilha. Quem dependia do índice era o comprovante sem número
 publicado, reenviar os comprovantes delas deve resolver — e é a primeira coisa a
 conferir.
 
+**Publicado em 13/09/2026 (`c4c4724`).** Junto veio da `main` um achado de outro
+chat que toca esta área: a tela de comprovantes do **Análise de SPs** chamava
+este robô **em modo de ensaio** — `modo_teste` é `True` por padrão quando o
+pedido não diz o contrário, e aquele pedido não dizia. Toda baixa feita por
+aquela tela desde a estreia foi simulação, e a tela ainda dizia "Baixado". O
+caminho do Make nunca foi afetado. Corrigido lá; fica registrado aqui porque o
+padrão perigoso é **deste** módulo.
+
+**Primeira coisa a conferir agora:** reenviar os comprovantes das duas SPs com
+planilha paga e Omie pendente. Devem concluir.
