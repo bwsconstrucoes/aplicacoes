@@ -314,11 +314,12 @@ conta corrente), **Pipefy** (cards), **Dropbox** (arquivo do comprovante),
 
 ## Ressalvas do código de hoje (conferidas em 04/09/2026, na `main`)
 
-**O leitor do Sicredi nunca é chamado.** O `core.py` manda toda página para o
-leitor do Bradesco; o `parser_sicredi.py` existe, está completo e ninguém o usa.
-Fica assim de propósito: em 04/09/2026 o dono confirmou que **não usa mais o
-Sicredi**. Se algum dia voltar a usar, é ligar o desvio no `core.py` — e cobrir
-com teste antes.
+**O leitor do Sicredi está ligado** (desde 13/09/2026). O robô escolhe o leitor
+pelo formato do papel: comprovante com cooperativa + conta de origem vai para o
+leitor do Sicredi, o resto vai para o do Bradesco. ⚠️ A palavra "sicredi"
+sozinha **não** manda para lá: ela aparece em comprovante do Bradesco quando o
+destino é uma conta Sicredi, e ler com o leitor errado pode sair com valor
+errado.
 
 Duas coisas foram corrigidas em 04/09/2026 e estão descritas no `HISTORICO.md`:
 
