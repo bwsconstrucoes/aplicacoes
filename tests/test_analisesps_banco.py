@@ -3592,3 +3592,206 @@ def test_uma_rodada_que_NAO_TERMINOU_nao_conta_como_resultado(banco_analisesps):
             "VALUES ('fiscal', 'manual', now(), NULL)")
         conn.commit()
     assert tarefas.ultimas_por_tipo(["fiscal"]) == {}
+
+
+# ===========================================================================
+# A SP QUE JÁ TEM NOTA NÃO É SUGESTÃO — cobrança do dono em 13/09/2026
+#
+# *"Tem registro que está aparecendo aqui que ele já tem nota fiscal, já é um
+# registro que tem uma nota fiscal associada anteriormente, e inclusive já tem
+# o número da nota, já está associado lá na planilha de documentação fiscal,
+# ou seja, está tudo identificado — e ele está colocando aqui como sugestão de
+# uma nota pra associar. Qual é o sentido disso?"*
+#
+# Nenhum. E o risco não era só ocupar vaga: era ficar a um clique de gravar uma
+# SEGUNDA nota numa SP já conferida.
+# ===========================================================================
+@pytest.mark.banco
+def test_a_SP_que_ja_aponta_para_outra_nota_NAO_disputa_vaga(banco_analisesps):
+    """Trabalho já feito sai da fila de sugestões."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    # Duas SPs do mesmo CNPJ e do mesmo valor. A "2" já foi conferida antes,
+    # contra OUTRA nota.
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00"),
+            sp("2", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00")])
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('2', 'ESCRITA', ?)", (_chave("11222333000144"),))
+        conn.commit()
+
+    escolhidas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+
+    sugeridas = [c for c in escolhidas if not c["ja_tem_nota"]]
+    assert [c["id"] for c in sugeridas] == ["1"]
+
+
+@pytest.mark.banco
+def test_a_SP_que_ja_tem_nota_continua_VISIVEL_so_que_marcada(banco_analisesps):
+    """Sumir sem dizer seria esconder. Ela fica, contada e clicável, para dar
+    onde conferir que o corte não comeu nada por engano."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("2", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00")])
+    outra = _chave("11222333000144")
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('2', 'ESCRITA', ?)", (outra,))
+        conn.commit()
+
+    escolhidas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+
+    assert [c["id"] for c in escolhidas] == ["2"]
+    assert escolhidas[0]["ja_tem_nota"] is True
+    assert fiscal.so_digitos(escolhidas[0]["nota_que_ja_tem"]) == outra
+
+
+@pytest.mark.banco
+def test_a_SP_com_o_numero_da_NF_no_card_CONTINUA_sendo_sugerida(
+        banco_analisesps):
+    """⚠️ O CORTE É PELA CHAVE, NUNCA PELO Nº DA NF DIGITADO NO CARD.
+
+    A SP que tem o número escrito mas nunca foi associada é a MELHOR candidata
+    que existe — o número confere. Cortar por ele esconderia justamente o par
+    mais fácil da base, que é o contrário do que foi pedido."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00", nf="1430")])
+
+    escolhidas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+
+    assert [c["id"] for c in escolhidas] == ["1"]
+    assert escolhidas[0]["ja_tem_nota"] is False
+
+
+@pytest.mark.banco
+def test_a_SP_que_ja_aponta_para_ESTA_nota_some_de_vez(banco_analisesps):
+    """Se a SP já é desta nota, não é sugestão nem "já tem nota de outra": é o
+    que já existe. Mostrá-la seria oferecer o que já está feito."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00")])
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('1', 'ESCRITA', ?)", (chave[:22] + " " + chave[22:],))
+        conn.commit()
+
+    escolhidas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+
+    assert escolhidas == []
+
+
+# ===========================================================================
+# AS SPs POR TRÁS DE CADA NOME — cobrança do dono em 13/09/2026
+#
+# *"Eu estou diante de um determinado CNPJ, aí aparecem várias opções (…) ele
+# marca aqui uma, duas, três, quatro SPs que é de uma outra locadora que não
+# tem nada a ver, ou seja, aqui foi claramente um erro. Só que a partir daqui
+# eu não consigo ir a essas SPs que estão erradas. Só pra poder confirmar se eu
+# posso realmente aplicar ou não, eu precisaria ver essas SPs e entender onde
+# foi o erro."*
+# ===========================================================================
+@pytest.mark.banco
+def test_ver_as_SPs_de_um_nome_traz_so_as_daquele_nome(banco_analisesps):
+    """A conferência que fundamenta a decisão: quais SPs usam CADA nome."""
+    from app.apps.analisesps import credores
+
+    semear([
+        sp("1", credor="LOCADORA DO VALE LTDA",
+           documento="29.066.773/0001-52", valor="100,00"),
+        sp("2", credor="LOCADORA DO VALE LTDA",
+           documento="29066773000152", valor="200,00"),
+        sp("3", credor="LOCADORA SERRA NEGRA",
+           documento="29.066.773/0001-52", valor="300,00"),
+    ])
+
+    achadas = credores.sps_do_nome("29.066.773/0001-52",
+                                   ["LOCADORA SERRA NEGRA"])
+    assert [s_["id"] for s_ in achadas] == ["3"]
+
+
+@pytest.mark.banco
+def test_ver_as_SPs_junta_as_GRAFIAS_do_mesmo_nome(banco_analisesps):
+    """A opção da tela é um GRUPO de grafias ("SERVIÇOS" e "SERVICOS"). Se a
+    busca pegasse só a grafia escolhida, a tela diria "3 SPs" e a lista traria
+    2 — e uma conta que não fecha derruba a confiança na tela inteira."""
+    from app.apps.analisesps import credores
+
+    semear([
+        sp("1", credor="MASSA PRONTA SERVIÇOS", documento="29066773000152"),
+        sp("2", credor="MASSA PRONTA SERVICOS", documento="29066773000152"),
+        sp("3", credor="OUTRA EMPRESA", documento="29066773000152"),
+    ])
+
+    achadas = credores.sps_do_nome(
+        "29066773000152", ["MASSA PRONTA SERVIÇOS", "MASSA PRONTA SERVICOS"])
+    assert sorted(s_["id"] for s_ in achadas) == ["1", "2"]
+
+
+@pytest.mark.banco
+def test_ver_as_SPs_casa_o_CNPJ_escrito_de_qualquer_jeito(banco_analisesps):
+    """Na planilha o mesmo CNPJ vem pontuado numa linha e cru noutra. Casar
+    pelo texto faria o fornecedor virar dois — e a lista viria pela metade."""
+    from app.apps.analisesps import credores
+
+    semear([
+        sp("1", credor="ACME", documento="29.066.773/0001-52"),
+        sp("2", credor="ACME", documento="29066773000152"),
+    ])
+
+    achadas = credores.sps_do_nome("29066773000152", ["ACME"])
+    assert sorted(s_["id"] for s_ in achadas) == ["1", "2"]
+
+
+@pytest.mark.banco
+def test_ver_as_SPs_sem_documento_ou_sem_nome_nao_varre_a_base(banco_analisesps):
+    """Pedido vazio devolve vazio. Sem esta guarda, um clique com o campo em
+    branco traria a base inteira — 59 mil linhas na memória da instância que já
+    morreu disso em julho."""
+    from app.apps.analisesps import credores
+
+    semear([sp("1", credor="ACME", documento="29066773000152")])
+
+    assert credores.sps_do_nome("", ["ACME"]) == []
+    assert credores.sps_do_nome("29066773000152", []) == []
+    assert credores.sps_do_nome("29066773000152", ["  "]) == []
+
+
+@pytest.mark.banco
+def test_ver_as_SPs_tem_TETO(banco_analisesps):
+    """Ninguém confere novecentas linhas, e mandá-las para o navegador trava a
+    tela. O teto é dito na tela, não escondido."""
+    from app.apps.analisesps import credores
+
+    semear([sp(str(i), credor="ACME", documento="29066773000152",
+               valor="10,00") for i in range(1, credores.SPS_POR_NOME + 21)])
+
+    assert len(credores.sps_do_nome("29066773000152", ["ACME"])) == \
+        credores.SPS_POR_NOME

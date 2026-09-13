@@ -2122,8 +2122,15 @@ def tela_fiscal():
             orfas = [n for n in notas if n.get("orfa")]
             candidatas = fiscal.sps_possiveis_das_notas(orfas)
             for nota in notas:
-                nota["candidatas"] = candidatas.get(
+                todas = candidatas.get(
                     fiscal.so_digitos(nota.get("chave")), [])
+                # DUAS LISTAS, e não uma. A SP que já aponta para outra nota
+                # não é sugestão nenhuma — ela aparece à parte, contada e
+                # clicável, para dar onde conferir sem virar proposta.
+                nota["candidatas"] = [c for c in todas
+                                      if not c.get("ja_tem_nota")]
+                nota["ja_com_nota"] = [c for c in todas
+                                       if c.get("ja_tem_nota")]
             erro = None
         except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
             logger.exception("Análise de SPs: falhou listar as notas")
@@ -2440,6 +2447,40 @@ def consultar_cnpj_credor():
     logger.info("Análise de SPs: %s consultou o CNPJ %s.",
                 auth.nome_atual() or auth.pessoa_atual(), documento)
     return redirect(url_for("analisesps.tela_credores", aviso=aviso))
+
+
+@bp.route("/credores/sps", methods=["POST"])
+@exige_consulta
+def sps_do_nome_credor():
+    """As SPs escritas com um determinado nome, para conferir antes de decidir.
+
+    Pedido do dono em 13/09/2026: *"aí ele marca aqui uma, duas, três, quatro
+    SPs que é de uma outra locadora que não tem nada a ver, ou seja, aqui foi
+    claramente um erro. Só que a partir daqui eu não consigo ir a essas SPs que
+    estão erradas. Só pra poder confirmar se eu posso realmente aplicar ou não,
+    eu precisaria ver essas SPs e entender onde foi o erro."*
+
+    É `@exige_consulta` e não `@exige_operador`: isto só LÊ, e ler o que
+    fundamenta uma decisão não pode ser mais difícil do que tomar a decisão."""
+    from . import credores
+    from .formatos import data_br, moeda
+
+    documento = (request.form.get("documento") or "").strip()
+    grafias = [g for g in request.form.getlist("grafia") if g.strip()]
+    try:
+        sps = credores.sps_do_nome(documento, grafias)
+    except Exception as e:  # noqa: BLE001 — migração ainda não aplicada
+        logger.exception("Análise de SPs: falhou listar as SPs do nome")
+        return {"ok": False, "erro": str(e), "sps": []}
+    return {"ok": True, "teto": credores.SPS_POR_NOME, "sps": [{
+        "id": str(linha.get("id") or ""),
+        "credor": linha.get("credor") or "",
+        "valor": moeda(linha.get("valor_num")),
+        "vencimento": data_br(linha.get("vencimento_d")),
+        "status": linha.get("status_pgt") or "",
+        "descricao": (linha.get("descricao") or "")[:120],
+        "card": linha.get("card_link") or "",
+    } for linha in sps]}
 
 
 @bp.route("/credores/aplicar", methods=["POST"])

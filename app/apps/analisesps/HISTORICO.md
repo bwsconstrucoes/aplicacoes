@@ -3477,6 +3477,115 @@ acordado, não vale o risco.
 - **A coluna SP Fiscal na lista** (ver acima).
 - **Reenviar comprovante por e-mail** (depende de SMTP no serviço).
 
+
+### Quadragésima sexta leva (13/09) — trabalho já feito não volta para a fila, e a decisão passa a ter o dado embaixo
+
+**Publicada na `main` antes desta leva:** a quadragésima quinta (botão que
+mostra que está trabalhando, nota cancelada nunca proposta, consulta à
+Receita, CNPJ digitado errado). Commit de junção `75ab256`.
+
+**⚠️ PENDENTE DO DONO, e repetido aqui porque continua pendente:** apertar
+**"Aplicar atualizações do banco"**. As migrações **010** (índice da busca por
+CNPJ) e **011** (o que a Receita respondeu) foram para produção com aquela
+junção e **ainda não foram aplicadas**. Sem a 010 a busca por CNPJ volta a
+varrer a base; sem a 011 a consulta à Receita não tem onde guardar a resposta.
+
+#### 1. A SP que já tem nota deixou de ser sugerida (o achado dele)
+
+*"Tem registro que está aparecendo aqui que ele já tem nota fiscal, já é um
+registro que tem uma nota fiscal associada anteriormente, e inclusive já tem o
+número da nota, já está associado lá na planilha de documentação fiscal, ou
+seja, está tudo identificado — e ele está colocando aqui como sugestão de uma
+nota pra associar. Qual é o sentido disso? (…) Qual foi sua lógica nisso?"*
+
+**Não havia lógica.** `sps_possiveis_das_notas` pegava TODAS as SPs daquele
+CNPJ e nunca perguntava se a SP já tinha nota. Duas consequências, e a segunda
+é a grave:
+
+1. Trabalho já conferido voltava para a fila disputando as cinco vagas com
+   quem está de fato sem documento.
+2. A SP conferida ficava **a um clique de receber uma SEGUNDA nota**.
+
+**O corte é pela CHAVE gravada no diário (`sp_fiscal_analise.chave`), e só por
+ela.** O número da NF escrito no card **NÃO** serve de corte — e essa
+distinção é o cuidado que evita o conserto virar um defeito novo: a SP que tem
+o número digitado mas nunca foi associada é a **melhor candidata que existe**,
+porque o número confere. Cortar por ele esconderia justamente o par mais fácil
+da base. Há teste cravando isso.
+
+**Não somem da tela.** Ficam num bloco à parte, contadas e clicáveis
+(`.ja-com-nota`), **sem botão de associar**. Sumir em silêncio seria pedir
+confiança cega; ficar ali é dar como conferir que o corte não comeu nada.
+
+E a SP que já aponta para **esta mesma** nota some de vez — não é sugestão nem
+"já tem nota de outra": é o que já existe.
+
+**Custo medido, com 59.000 SPs e 4.000 notas:** o LEFT JOIN com o diário levou
+as candidatas de 0,19 s para **0,27 s** na página de 200 notas. O número que
+importa continua sendo o de onde se veio: **28 segundos**, quando a tela não
+abria.
+
+#### 2. A decisão dos credores passou a ter o dado embaixo
+
+*"Eu estou diante de um determinado CNPJ, aí aparecem várias opções. Só que
+para algumas eu precisaria, por exemplo, ter um determinado CNPJ que eu
+entendo que seja da locadora do Vale. Só que ele marca aqui uma, duas, três,
+quatro SPs que é de uma outra locadora que não tem nada a ver, ou seja, aqui
+foi claramente um erro. Só que a partir daqui eu não consigo ir a essas SPs
+que estão erradas. Só pra poder confirmar se eu posso realmente aplicar ou
+não, eu precisaria ver essas SPs e entender onde foi o erro."*
+
+A tela pedia uma **decisão** e escondia o dado que fundamenta a decisão. Ver
+"LOCADORA A (4 SPs)" contra "LOCADORA B (37 SPs)" não diz nada; ver as quatro
+SPs — número, credor escrito, valor, vencimento, situação do pagamento,
+descrição e o link do card — diz se foi engano de digitação, se é outro
+fornecedor de verdade ou se o CNPJ é que está trocado.
+
+- `credores.sps_do_nome(documento, grafias)` + rota `POST /credores/sps`.
+- **Casa pelas GRAFIAS do grupo, não pelo nome escolhido.** A opção da tela é
+  um grupo ("SERVIÇOS" e "SERVICOS" são a mesma opção). Buscar só a grafia
+  escolhida faria a tela dizer "3 SPs" e a lista trazer 2 — e uma conta que
+  não fecha derruba a confiança na tela inteira.
+- **Abre por cima**, como todo o resto do módulo, e **não mexe no rádio**: o
+  botão vive dentro do `<label>` da opção, e sem `stopPropagation` clicar em
+  "ver as SPs" marcaria aquela opção — a tela decidiria por ele só por ele ter
+  pedido para conferir.
+- **Teto de 50 linhas, e o teto é DITO na tela.** Lista cortada em silêncio
+  faz a conferência concluir o contrário do que os dados dizem.
+- É `@exige_consulta`, não `@exige_operador`: isto só lê, e ler o que
+  fundamenta uma decisão não pode ser mais difícil do que tomar a decisão.
+
+**Desempenho, e por que a condição redundante fica:** a consulta compara o
+documento INTEIRO, e o índice da migração 010 é sobre a **raiz** (8 dígitos).
+Sem ajuda, o banco varria as 59 mil SPs a cada clique — **0,11 s aqui**, e o
+banco do Render tem um décimo de um núcleo. Filtrando primeiro pela raiz (uma
+condição redundante, de propósito) o banco usa o índice: **0,001 s**. As duas
+condições juntas dão exatamente o mesmo resultado da exata sozinha.
+
+#### O que foi verificado
+
+- Suíte completa com Postgres de verdade: **4.985 passaram, 129 pulados**
+  (10 testes novos).
+- As duas telas abertas no Chromium com base semeada. Medido **linha a
+  linha**, e não na tela toda — a primeira medição deu falso positivo porque o
+  seletor pegava também a SP da nota que já está num lançamento:
+  - nota órfã → sugeridas `7001, 7003, 7005, 7004`; **`7002` fora**, no bloco
+    "1 SP deste CNPJ já tem nota associada — fora da sugestão";
+  - `7003`, que tem o nº da NF no card mas nunca foi associada, **continua
+    sugerida** — que é o ponto do parágrafo acima;
+  - "ver as SPs" abriu por cima, listou as 3 SPs do nome e **não mexeu na
+    escolha marcada**.
+
+#### O que NÃO foi verificado
+
+- **Nada disto rodou contra a base de produção.** O volume foi simulado
+  (59.000 SPs, 4.000 notas geradas aqui).
+- **A consulta à Receita continua sem um único acerto real** — esta máquina
+  não tem saída para o brasilapi.com.br. O primeiro clique em produção é o
+  teste real.
+- O bloco `.ja-com-nota` não foi visto em celular estreito.
+
+---
 ---
 
 ## Regras que não se discutem

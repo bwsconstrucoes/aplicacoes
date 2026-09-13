@@ -470,3 +470,70 @@ def suspeita_de_cnpj_errado(documento: str, nomes_escritos: list,
 
 def _texto(v) -> str:
     return "" if v is None else str(v).strip()
+
+
+# ===========================================================================
+# AS SPs POR TRÁS DE CADA NOME — pedido do dono em 13/09/2026
+#
+# *"Eu estou diante de um determinado CNPJ, aí aparecem várias opções. Só que
+# para algumas eu precisaria, por exemplo, ter um determinado CNPJ que eu
+# entendo que seja da locadora do Vale. Só que ele marca aqui uma, duas, três,
+# quatro SPs que é de uma outra locadora que não tem nada a ver, ou seja, aqui
+# foi claramente um erro. Só que a partir daqui eu não consigo ir a essas SPs
+# que estão erradas. Só pra poder confirmar se eu posso realmente aplicar ou
+# não, eu precisaria ver essas SPs e entender onde foi o erro."*
+#
+# Ele está certo e o buraco era grande: a tela pedia uma DECISÃO e escondia o
+# dado que fundamenta a decisão. Ver "LOCADORA A (4 SPs)" contra "LOCADORA B
+# (37 SPs)" não diz nada; ver as quatro SPs — número, valor, vencimento e o
+# card — diz se foi engano de digitação, se foi outro fornecedor de verdade ou
+# se o CNPJ é que está trocado.
+#
+# NÃO DECIDE NADA: só mostra. A escolha continua sendo dele.
+# ===========================================================================
+# Teto do que volta por nome. Um fornecedor de novecentas SPs travaria a tela,
+# e ninguém confere novecentas linhas — quem tem tanta coisa assim já não é o
+# caso duvidoso.
+SPS_POR_NOME = 50
+
+
+def sps_do_nome(documento: str, grafias: list) -> list:
+    """As SPs deste CNPJ escritas com exatamente estes nomes.
+
+    O casamento é pelo CNPJ NORMALIZADO e pelo nome APARADO, os mesmos dois
+    tratamentos de `_agrupado_da_base`. Se aqui fosse diferente, a tela
+    mostraria "4 SPs" e a lista traria três — e a conta que não fecha destrói a
+    confiança na tela inteira."""
+    from .db import consultar
+
+    limpo = so_digitos(documento)
+    nomes = [str(g).strip() for g in (grafias or []) if str(g).strip()]
+    if not limpo or not nomes:
+        return []
+
+    marcas = ",".join(["?"] * len(nomes))
+    # ⚠️ A PRIMEIRA CONDIÇÃO É REDUNDANTE DE PROPÓSITO, e não é sobra.
+    #
+    # O índice da migração 010 é sobre a RAIZ (os 8 primeiros dígitos), porque
+    # é por ela que a conciliação agrupa. Comparar o documento inteiro não
+    # alcança esse índice: o banco varreria as 59 mil SPs a cada clique.
+    # Medido aqui com base cheia: 0,11 s nesta máquina — e o banco do Render
+    # tem um décimo de um núcleo, onde isso vira segundos de tela parada.
+    #
+    # Filtrando primeiro pela raiz o banco usa o índice e sobra um punhado de
+    # linhas para a comparação exata, que continua sendo quem decide. As duas
+    # condições juntas dão exatamente o mesmo resultado da exata sozinha.
+    linhas = consultar(
+        "SELECT id, credor, valor_num, vencimento_d, status_pgt, "
+        "       descricao, card_link "
+        "  FROM analisesps.sps "
+        " WHERE left(regexp_replace(coalesce(documento, ''), '\\D', '', 'g'), 8)"
+        "       = ? "
+        "   AND regexp_replace(coalesce(documento, ''), '\\D', '', 'g') = ? "
+        f"   AND trim(coalesce(credor, '')) IN ({marcas}) "
+        " ORDER BY vencimento_d DESC NULLS LAST, id "
+        " LIMIT ?",
+        (limpo[:8], limpo) + tuple(nomes) + (int(SPS_POR_NOME),))
+    campos = ["id", "credor", "valor_num", "vencimento_d", "status_pgt",
+              "descricao", "card_link"]
+    return [dict(zip(campos, l)) for l in linhas]

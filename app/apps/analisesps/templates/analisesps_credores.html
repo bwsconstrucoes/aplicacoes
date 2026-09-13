@@ -160,6 +160,25 @@
                 (também escrito: {{ v.grafias|reject('equalto', v.nome)|join('; ') }})
               </span>
             {% endif %}
+            {# -----------------------------------------------------------
+               VER AS SPs DESTA OPÇÃO, sem sair da tela.
+
+               *"Ele marca aqui uma, duas, três, quatro SPs que é de uma outra
+               locadora que não tem nada a ver, ou seja, aqui foi claramente um
+               erro. Só que a partir daqui eu não consigo ir a essas SPs que
+               estão erradas. Só pra poder confirmar se eu posso realmente
+               aplicar ou não, eu precisaria ver essas SPs e entender onde foi
+               o erro."*
+
+               A tela pedia uma decisão e escondia o dado que fundamenta a
+               decisão. "LOCADORA A (4 SPs)" contra "LOCADORA B (37 SPs)" não
+               diz nada; as quatro SPs dizem.
+            ----------------------------------------------------------- #}
+            <button type="button" class="link-btn ver-sps-do-nome"
+                    data-documento="{{ d.documento }}"
+                    data-nome="{{ v.nome }}"
+                    data-grafias="{{ v.grafias|join('\n') }}"
+                    title="Mostra as SPs escritas com este nome">ver as SPs</button>
           </label>
         {% endfor %}
         {% if pode_operar %}
@@ -195,4 +214,15 @@
   </div>
 {% endif %}
 
+<dialog id="sps-do-nome">
+  <h3 id="sps-do-nome-titulo">SPs deste nome</h3>
+  <div id="sps-do-nome-corpo">carregando…</div>
+  <div style="margin-top:12px; text-align:right">
+    <button class="btn secundario" type="button"
+            onclick="document.getElementById('sps-do-nome').close()">Fechar</button>
+  </div>
+</dialog>
+
+<div id="credores-config" hidden
+     data-url-sps="{{ url_for('analisesps.sps_do_nome_credor') }}"></div>
 {% endblock %}

@@ -1573,3 +1573,99 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     }, 60000);
   }, true);
 })();
+
+/* ==========================================================================
+   AS SPs POR TRÁS DE CADA NOME, na tela de credores.
+
+   Pedido do dono em 13/09/2026: *"eu estou diante de um determinado CNPJ, aí
+   aparecem várias opções (…) ele marca aqui uma, duas, três, quatro SPs que é
+   de uma outra locadora que não tem nada a ver, ou seja, aqui foi claramente
+   um erro. Só que a partir daqui eu não consigo ir a essas SPs que estão
+   erradas. Só pra poder confirmar se eu posso realmente aplicar ou não, eu
+   precisaria ver essas SPs e entender onde foi o erro."*
+
+   A tela pedia decisão e escondia o dado da decisão. Abre POR CIMA, como todo
+   o resto do módulo — sair da tela no meio de uma escolha perde a escolha.
+   ========================================================================== */
+(function () {
+  var cfg = document.getElementById("credores-config");
+  var caixa = document.getElementById("sps-do-nome");
+  if (!cfg || !caixa) { return; }
+  var titulo = document.getElementById("sps-do-nome-titulo");
+  var corpo = document.getElementById("sps-do-nome-corpo");
+
+  function escapar(t) {
+    var d = document.createElement("div");
+    d.textContent = t == null ? "" : String(t);
+    return d.innerHTML;
+  }
+
+  function desenhar(dados, nome) {
+    if (!dados.ok) {
+      corpo.innerHTML = '<p class="aviso">Não consegui buscar as SPs: '
+        + escapar(dados.erro || "erro desconhecido") + "</p>";
+      return;
+    }
+    var sps = dados.sps || [];
+    if (!sps.length) {
+      corpo.innerHTML = '<p class="cartao-dica">Nenhuma SP escrita com este '
+        + "nome. Se isso aparecer, a contagem da tela e a base discordam — "
+        + "vale avisar.</p>";
+      return;
+    }
+    var linhas = sps.map(function (s) {
+      return "<tr><td class=\"id\">" + escapar(s.id) + "</td>"
+        + "<td>" + escapar(s.credor) + "</td>"
+        + "<td>" + escapar(s.valor) + "</td>"
+        + "<td>" + escapar(s.vencimento) + "</td>"
+        + "<td>" + escapar(s.status) + "</td>"
+        + "<td class=\"cartao-dica\">" + escapar(s.descricao) + "</td>"
+        + "<td>" + (s.card
+          ? '<a href="' + escapar(s.card) + '" target="_blank" rel="noopener">card</a>'
+          : "—") + "</td></tr>";
+    }).join("");
+    /* O TETO É DITO, e não escondido: uma lista cortada em silêncio faria a
+       conferência concluir o contrário do que os dados dizem. */
+    var aviso = sps.length >= (dados.teto || 50)
+      ? '<p class="cartao-dica">Mostrando as ' + sps.length
+        + " mais recentes. Há mais SPs com este nome.</p>"
+      : "";
+    corpo.innerHTML = '<p class="cartao-dica">' + sps.length
+      + " SP(s) escritas como <b>" + escapar(nome) + "</b>.</p>"
+      + '<div style="max-height:60vh; overflow:auto">'
+      + '<table class="sps"><thead><tr><th>SP</th><th>Credor escrito</th>'
+      + "<th>Valor</th><th>Vencimento</th><th>Pagamento</th><th>Descrição</th>"
+      + "<th>Card</th></tr></thead><tbody>" + linhas + "</tbody></table></div>"
+      + aviso;
+  }
+
+  document.addEventListener("click", function (ev) {
+    var botao = ev.target.closest && ev.target.closest(".ver-sps-do-nome");
+    if (!botao) { return; }
+    /* O botão vive DENTRO do <label> da opção: sem isto, clicar em "ver as
+       SPs" marcaria o rádio daquela opção — a tela decidiria por ele só por
+       ele ter pedido para conferir. */
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    var nome = botao.dataset.nome || "";
+    titulo.textContent = "SPs escritas como “" + nome + "”";
+    corpo.innerHTML = '<p class="cartao-dica">Buscando…</p>';
+    if (typeof caixa.showModal === "function") { caixa.showModal(); }
+
+    var dados = new FormData();
+    dados.append("documento", botao.dataset.documento || "");
+    (botao.dataset.grafias || nome).split("\n").forEach(function (g) {
+      if (g.trim()) { dados.append("grafia", g); }
+    });
+
+    fetch(cfg.dataset.urlSps, {
+      method: "POST", body: dados, credentials: "same-origin"
+    }).then(function (r) { return r.json(); })
+      .then(function (d) { desenhar(d, nome); })
+      .catch(function (e) {
+        corpo.innerHTML = '<p class="aviso">Não consegui buscar as SPs: '
+          + escapar(e && e.message) + "</p>";
+      });
+  });
+})();

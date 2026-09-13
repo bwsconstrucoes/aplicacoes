@@ -954,8 +954,41 @@ def notas_orfas(pagina: int = 1, por_pagina: int = 200) -> tuple:
 SPS_POR_CNPJ = 25
 
 _RAIZ_SQL = r"left(regexp_replace(coalesce(documento, ''), '\D', '', 'g'), 8)"
-_CAMPOS_SP = "id, credor, valor_num, vencimento_d, status_pgt, nf"
-_NOMES_SP = ["id", "credor", "valor_num", "vencimento_d", "status_pgt", "nf"]
+
+# ⚠️ A CHAVE DA NOTA QUE ESTA SP JÁ TEM. Não é enfeite: é o que tira da fila o
+# trabalho já feito.
+#
+# Cobrança do dono em 13/09/2026, olhando a tela por nota: *"tem registro que
+# está aparecendo aqui que ele já tem nota fiscal, já é um registro que tem uma
+# nota fiscal associada anteriormente, e inclusive já tem o número da nota, já
+# está associado lá na planilha de documentação fiscal, ou seja, está tudo
+# identificado — e ele está colocando aqui como sugestão de uma nota pra
+# associar. Qual é o sentido disso?"*
+#
+# Não tinha sentido nenhum. A busca pegava TODAS as SPs do CNPJ e nunca
+# perguntava se aquela SP já tinha nota. Trabalho conferido voltava para a fila
+# disputando as cinco vagas com quem de fato está sem documento — e, pior,
+# ficava a um clique de receber uma SEGUNDA nota.
+#
+# O corte é pela CHAVE gravada no diário, e só por ela: chave gravada quer
+# dizer que esta SP já aponta para uma nota específica. O número da NF escrito
+# no card NÃO serve de corte — a SP que tem o número digitado mas nunca foi
+# associada é justamente a melhor candidata que existe, porque o número
+# confere. Cortar por ele esconderia o par mais fácil da base.
+_NOTA_DA_SP_SQL = "btrim(coalesce(a.chave, ''))"
+
+_CAMPOS_SP = ("s.id, s.credor, s.valor_num, s.vencimento_d, s.status_pgt, "
+              "s.nf, " + _NOTA_DA_SP_SQL + " AS nota_que_ja_tem")
+# Os mesmos campos já com nome, para o SELECT de fora da subconsulta.
+_CAMPOS_SP_NOMES = ("id, credor, valor_num, vencimento_d, status_pgt, nf, "
+                    "nota_que_ja_tem")
+_NOMES_SP = ["id", "credor", "valor_num", "vencimento_d", "status_pgt", "nf",
+             "nota_que_ja_tem"]
+
+# O diário entra por fora, com LEFT JOIN: SP sem linha no diário continua
+# aparecendo, com a chave vazia.
+_DE_SPS = ("analisesps.sps s "
+           " LEFT JOIN analisesps.sp_fiscal_analise a ON a.sp_id = s.id")
 
 
 def sps_possiveis_das_notas(notas: list, quantas: int = 5) -> dict:
@@ -1008,7 +1041,7 @@ def sps_possiveis_das_notas(notas: list, quantas: int = 5) -> dict:
     if valores:
         for linha in consultar(
                 f"SELECT {_CAMPOS_SP}, {_RAIZ_SQL} AS raiz "
-                "  FROM analisesps.sps "
+                f"  FROM {_DE_SPS} "
                 f" WHERE {_RAIZ_SQL} IN ({marcas}) "
                 f"   AND valor_num IN ({','.join(['?'] * len(valores))})",
                 tuple(raizes) + tuple(valores)):
@@ -1019,12 +1052,12 @@ def sps_possiveis_das_notas(notas: list, quantas: int = 5) -> dict:
     #    cortar em Python seria carregar a base na memória de uma instância que
     #    já morreu disso em julho.
     for linha in consultar(
-            f"SELECT {_CAMPOS_SP}, raiz FROM ("
+            f"SELECT {_CAMPOS_SP_NOMES}, raiz FROM ("
             f"  SELECT {_CAMPOS_SP}, {_RAIZ_SQL} AS raiz, "
             f"         row_number() OVER (PARTITION BY {_RAIZ_SQL} "
             "                             ORDER BY vencimento_d DESC NULLS LAST,"
             "                                      id) AS n"
-            f"    FROM analisesps.sps WHERE {_RAIZ_SQL} IN ({marcas})) t "
+            f"    FROM {_DE_SPS} WHERE {_RAIZ_SQL} IN ({marcas})) t "
             " WHERE n <= ?", tuple(raizes) + (int(SPS_POR_CNPJ),)):
         guardar(linha)
 
@@ -1043,7 +1076,7 @@ def sps_possiveis_das_notas(notas: list, quantas: int = 5) -> dict:
     saida: dict = {}
     for chave, raiz, valor in pedidos:
         nota = por_chave.get(chave, {})
-        vistas, escolhidas = set(), []
+        vistas, escolhidas, presas = set(), [], []
         candidatas = sorted(
             por_raiz.get(raiz, []),
             key=lambda sp: 0 if (valor is not None
@@ -1053,10 +1086,30 @@ def sps_possiveis_das_notas(notas: list, quantas: int = 5) -> dict:
             if sp["id"] in vistas:
                 continue
             vistas.add(sp["id"])
-            escolhidas.append(dict(sp, **_porque_esta_candidata(sp, nota)))
-            if len(escolhidas) >= quantas:
+            ja = so_digitos(sp.get("nota_que_ja_tem"))
+            # Já aponta para ESTA mesma nota: não é sugestão, é o que já existe.
+            # Some da lista inteira — inclusive da lista das presas, porque
+            # nesse caso a nota nem órfã deveria estar.
+            if ja and ja == chave:
+                continue
+            linha = dict(sp, ja_tem_nota=bool(ja),
+                         **_porque_esta_candidata(sp, nota))
+            if ja:
+                # Fica FORA das vagas. Vai no fim, marcada, só para a conta
+                # fechar na tela e para dar onde clicar e conferir — nunca
+                # como proposta.
+                if len(presas) < quantas:
+                    presas.append(linha)
+                continue
+            if len(escolhidas) < quantas:
+                escolhidas.append(linha)
+            # NÃO se para na primeira lista cheia: a varredura segue até o fim
+            # das 25 do CNPJ para a conta das "já com nota" fechar. Sem isso a
+            # tela mostraria cinco livres e nem contaria as presas, que é
+            # exatamente a informação que faltava.
+            if len(escolhidas) >= quantas and len(presas) >= quantas:
                 break
-        saida[chave] = escolhidas
+        saida[chave] = escolhidas + presas
     return saida
 
 
