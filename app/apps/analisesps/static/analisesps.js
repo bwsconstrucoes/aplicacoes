@@ -1143,12 +1143,68 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
   // Do lado da NOTA. Passa pelo mesmo caminho da decisao a mao, entao a nota
   // associada some desta lista sozinha na proxima leitura — a lista de orfas e
   // "nota sem chave gravada em SP nenhuma".
+  /* =====================================================================
+     UM CLIQUE POR NOTA, SEM A PAGINA IR EMBORA — 13/09/2026
+
+     Reclamacao do dono, usando a tela: *"eu clico 'usar este'. Enquanto ele
+     esta pensando eu ja vou pra outro e clico em 'usar este'. So que parece
+     que so aceita o primeiro. A pagina vai la pra cima. Eu poderia ser rapido
+     se eu pudesse ir seguindo, clicar no outro, e nao ficar esse vai-e-volta
+     de pagina."*
+
+     A CAUSA ERA O `location.reload()`: recarregar mata as gravacoes que ainda
+     estao no ar (por isso "so aceita o primeiro") e joga a rolagem para o
+     topo de uma pagina de 200 linhas. Agora cada linha se resolve sozinha, no
+     lugar onde esta, e varias podem estar gravando ao mesmo tempo.
+
+     A PERGUNTA DE CONFIRMACAO E UMA SO, na primeira da sessao: ela existe
+     para explicar a regra (a categoria sai da chave, as parcelas irmas vao
+     junto), e repetir a explicacao a cada clique e exatamente o atrito que ele
+     esta pedindo para tirar. Depois da primeira, o clique dispara.
+  ===================================================================== */
+  let jaExplicou = false;
+
+  function marcarAssociada(botao, d) {
+    const caixa = botao.closest(".nota-candidata") || botao.parentNode;
+    const irmas = d.parcelas_irmas || [];
+    const linha = document.createElement("div");
+    linha.className = "associada-agora";
+    linha.textContent = "✔ associada à SP " + d.sp_id
+      + (d.documentacao ? " · " + d.documentacao : "")
+      + (irmas.length
+         ? " · e mais " + irmas.length + " parcela(s) da mesma nota: "
+           + irmas.join(", ")
+         : "");
+    /* A LINHA INTEIRA DA NOTA sai do caminho: associada, ela deixou de ser
+       orfa, e deixar as outras candidatas clicaveis convidaria a gravar uma
+       segunda nota na mesma SP. */
+    const tr = botao.closest("tr");
+    if (tr) {
+      tr.classList.add("nota-resolvida");
+      tr.querySelectorAll(".fiscal-associar").forEach(o => {
+        o.disabled = true;
+        o.textContent = "—";
+      });
+    }
+    caixa.appendChild(linha);
+  }
+
   document.querySelectorAll(".fiscal-associar").forEach(b =>
     b.addEventListener("click", async () => {
-      if (!confirm(`Associar esta nota a SP ${b.dataset.sp}`
-                   + ` (${b.dataset.credor})?\n\n`
-                   + `A categoria sai de dentro da propria chave. A gravacao `
-                   + `no card do Pipefy e o passo seguinte.`)) return;
+      if (!jaExplicou) {
+        if (!confirm(`Associar esta nota a SP ${b.dataset.sp}`
+                     + ` (${b.dataset.credor})?\n\n`
+                     + `A categoria sai de dentro da propria chave. A gravacao `
+                     + `no card do Pipefy e o passo seguinte.\n\n`
+                     + `Se a SP for parcela de um parcelamento, as demais `
+                     + `parcelas da MESMA nota (mesmo CNPJ e mesmo n° de nota `
+                     + `no card, ainda sem nota apontada) recebem a mesma `
+                     + `associacao.\n\n`
+                     + `Esta pergunta e so desta vez: daqui em diante o clique `
+                     + `grava direto, e cada linha mostra o resultado no lugar `
+                     + `onde esta.`)) return;
+        jaExplicou = true;
+      }
       b.disabled = true;
       const antes = b.textContent;
       b.textContent = "gravando…";
@@ -1158,13 +1214,26 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
           body: JSON.stringify({sp: b.dataset.sp, chave: b.dataset.chave}),
         });
         const d = await r.json();
-        if (!d.ok) { alert(d.erro || "Nao consegui associar."); return; }
-        location.reload();
+        if (!d.ok) {
+          b.textContent = antes;
+          b.disabled = false;
+          /* O RECADO VAI NA LINHA, e nao num alerta: alerta bloqueia, e ele
+             esta clicando em varias ao mesmo tempo. */
+          const erro = document.createElement("div");
+          erro.className = "associada-erro";
+          erro.textContent = "✕ " + (d.erro || "Nao consegui associar.");
+          (b.closest(".nota-candidata") || b.parentNode).appendChild(erro);
+          return;
+        }
+        b.textContent = "associada";
+        marcarAssociada(b, d);
       } catch (e) {
-        alert("Nao consegui falar com o servidor: " + e);
-      } finally {
-        b.disabled = false;
         b.textContent = antes;
+        b.disabled = false;
+        const erro = document.createElement("div");
+        erro.className = "associada-erro";
+        erro.textContent = "✕ nao consegui falar com o servidor: " + e;
+        (b.closest(".nota-candidata") || b.parentNode).appendChild(erro);
       }
     }));
 })();
@@ -1378,9 +1447,12 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
           {minimumFractionDigits: 2, maximumFractionDigits: 2});
 
   function ficha(titulo, campos) {
+    /* `c.html` chega do servidor JA ESCAPADO e ja com os enderecos virados em
+       link (o `com_links` do `formatos.py`, o mesmo da ficha da SP). Quando
+       ele nao vem — os campos da nota, que nao tem endereco —, escapa aqui. */
     return '<div class="prova-ficha"><h4>' + esc(titulo) + '</h4><dl>'
       + campos.map(c => '<dt>' + esc(c.rotulo) + '</dt><dd>'
-                        + (esc(c.valor) || "—") + '</dd>').join("")
+                        + (c.html || esc(c.valor) || "—") + '</dd>').join("")
       + '</dl></div>';
   }
 
@@ -1394,7 +1466,10 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
       if (r.chave === "valor") {
         lado = "SP " + dinheiro(r.no_lancamento) + " · nota "
              + dinheiro(r.na_nota)
-             + (r.diferenca ? " · diferenca " + dinheiro(r.diferenca) : "");
+             + (r.diferenca ? " · diferenca " + dinheiro(r.diferenca) : "")
+             /* A CONTA DA PARCELA POR EXTENSO. Sem ela a linha dizia
+                "SP 696,34 · nota 2.089,02" e parecia erro. */
+             + (r.parcelado ? " · " + esc(r.parcelado) : "");
       } else {
         lado = "SP: " + (esc(r.no_lancamento) || "—")
              + " · nota: " + (esc(r.na_nota) || "—");
@@ -1473,7 +1548,9 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
       b.addEventListener("click", async () => {
         if (!confirm("Gravar esta nota nesta SP?\n\nA categoria sai de dentro "
                      + "da propria chave. A gravacao no card do Pipefy e o "
-                     + "passo seguinte.")) return;
+                     + "passo seguinte.\n\nSe esta SP for parcela de um "
+                     + "parcelamento, as demais parcelas da MESMA nota "
+                     + "recebem a mesma associacao.")) return;
         b.disabled = true;
         try {
           const r = await fetch(config.dataset.urlMao, {
@@ -1482,7 +1559,24 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
           });
           const resp = await r.json();
           if (!resp.ok) { alert(resp.erro || "Nao consegui gravar."); return; }
-          location.reload();
+          /* NADA DE `location.reload()`: aqui a janela esta aberta por cima de
+             uma lista de 200 linhas, e recarregar jogaria a rolagem para o
+             topo — a reclamacao dele em 13/09/2026. A janela diz o que gravou
+             e fica; a lista atras se atualiza quando ele quiser. */
+          const outras = resp.parcelas_irmas || [];
+          const feito = document.createElement("div");
+          feito.className = "associada-agora";
+          feito.textContent = "✔ gravada na SP " + resp.sp_id
+            + (resp.documentacao ? " · " + resp.documentacao : "")
+            + (outras.length
+               ? " · e mais " + outras.length + " parcela(s) da mesma nota: "
+                 + outras.join(", ")
+               : "");
+          b.replaceWith(feito);
+          corpo.querySelectorAll(".prova-usar").forEach(o => {
+            o.disabled = true;
+          });
+          return;
         } catch (e) {
           alert("Nao consegui falar com o servidor: " + e);
         } finally { b.disabled = false; }
@@ -1555,6 +1649,20 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     // Formulario de filtro se reenvia sozinho o tempo todo: marcaria "Aguarde"
     // a cada caixa e viraria ruido.
     if (form.id === "form-filtros" || form.dataset.semAguarde) return;
+    /* ⚠️ O BOTAO "FECHAR" DAS JANELAS NAO E UM ENVIO — E O DEFEITO QUE ESTE
+       BLOCO CRIOU no dia em que nasceu (13/09/2026).
+
+       `<form method="dialog">` e como o proprio navegador fecha um <dialog>:
+       ele dispara `submit`, mas NAO vai a lugar nenhum. Este bloco tratava
+       aquilo como ida ao servidor, trocava o "fechar" por "Aguarde…" e
+       desligava o botao. Como a janela e uma so e fica na pagina, da segunda
+       vez em diante ela abria SEM o fechar — preso em "Aguarde…" ate o
+       destravamento de um minuto.
+
+       Relato do dono: *"eu clico que ver os dados, da um bug, o link de fechar
+       nao aparece, fica em aguardando..."*. Era isto, e nao tinha a ver com o
+       tipo da sugestao. */
+    if ((form.getAttribute("method") || "").toLowerCase() === "dialog") return;
     // O botao que de fato enviou, quando da para saber; senao, o primeiro.
     const botao = (e.submitter && e.submitter.tagName === "BUTTON")
         ? e.submitter
@@ -1572,4 +1680,100 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
       delete botao.dataset.ocupado;
     }, 60000);
   }, true);
+})();
+
+/* ==========================================================================
+   AS SPs POR TRÁS DE CADA NOME, na tela de credores.
+
+   Pedido do dono em 13/09/2026: *"eu estou diante de um determinado CNPJ, aí
+   aparecem várias opções (…) ele marca aqui uma, duas, três, quatro SPs que é
+   de uma outra locadora que não tem nada a ver, ou seja, aqui foi claramente
+   um erro. Só que a partir daqui eu não consigo ir a essas SPs que estão
+   erradas. Só pra poder confirmar se eu posso realmente aplicar ou não, eu
+   precisaria ver essas SPs e entender onde foi o erro."*
+
+   A tela pedia decisão e escondia o dado da decisão. Abre POR CIMA, como todo
+   o resto do módulo — sair da tela no meio de uma escolha perde a escolha.
+   ========================================================================== */
+(function () {
+  var cfg = document.getElementById("credores-config");
+  var caixa = document.getElementById("sps-do-nome");
+  if (!cfg || !caixa) { return; }
+  var titulo = document.getElementById("sps-do-nome-titulo");
+  var corpo = document.getElementById("sps-do-nome-corpo");
+
+  function escapar(t) {
+    var d = document.createElement("div");
+    d.textContent = t == null ? "" : String(t);
+    return d.innerHTML;
+  }
+
+  function desenhar(dados, nome) {
+    if (!dados.ok) {
+      corpo.innerHTML = '<p class="aviso">Não consegui buscar as SPs: '
+        + escapar(dados.erro || "erro desconhecido") + "</p>";
+      return;
+    }
+    var sps = dados.sps || [];
+    if (!sps.length) {
+      corpo.innerHTML = '<p class="cartao-dica">Nenhuma SP escrita com este '
+        + "nome. Se isso aparecer, a contagem da tela e a base discordam — "
+        + "vale avisar.</p>";
+      return;
+    }
+    var linhas = sps.map(function (s) {
+      return "<tr><td class=\"id\">" + escapar(s.id) + "</td>"
+        + "<td>" + escapar(s.credor) + "</td>"
+        + "<td>" + escapar(s.valor) + "</td>"
+        + "<td>" + escapar(s.vencimento) + "</td>"
+        + "<td>" + escapar(s.status) + "</td>"
+        + "<td class=\"cartao-dica\">" + escapar(s.descricao) + "</td>"
+        + "<td>" + (s.card
+          ? '<a href="' + escapar(s.card) + '" target="_blank" rel="noopener">card</a>'
+          : "—") + "</td></tr>";
+    }).join("");
+    /* O TETO É DITO, e não escondido: uma lista cortada em silêncio faria a
+       conferência concluir o contrário do que os dados dizem. */
+    var aviso = sps.length >= (dados.teto || 50)
+      ? '<p class="cartao-dica">Mostrando as ' + sps.length
+        + " mais recentes. Há mais SPs com este nome.</p>"
+      : "";
+    corpo.innerHTML = '<p class="cartao-dica">' + sps.length
+      + " SP(s) escritas como <b>" + escapar(nome) + "</b>.</p>"
+      + '<div style="max-height:60vh; overflow:auto">'
+      + '<table class="sps"><thead><tr><th>SP</th><th>Credor escrito</th>'
+      + "<th>Valor</th><th>Vencimento</th><th>Pagamento</th><th>Descrição</th>"
+      + "<th>Card</th></tr></thead><tbody>" + linhas + "</tbody></table></div>"
+      + aviso;
+  }
+
+  document.addEventListener("click", function (ev) {
+    var botao = ev.target.closest && ev.target.closest(".ver-sps-do-nome");
+    if (!botao) { return; }
+    /* O botão vive DENTRO do <label> da opção: sem isto, clicar em "ver as
+       SPs" marcaria o rádio daquela opção — a tela decidiria por ele só por
+       ele ter pedido para conferir. */
+    ev.preventDefault();
+    ev.stopPropagation();
+
+    var nome = botao.dataset.nome || "";
+    titulo.textContent = "SPs escritas como “" + nome + "”";
+    corpo.innerHTML = '<p class="cartao-dica">Buscando…</p>';
+    if (typeof caixa.showModal === "function") { caixa.showModal(); }
+
+    var dados = new FormData();
+    dados.append("documento", botao.dataset.documento || "");
+    (botao.dataset.grafias || nome).split("\n").forEach(function (g) {
+      if (g.trim()) { dados.append("grafia", g); }
+    });
+
+    fetch(cfg.dataset.urlSps, {
+      method: "POST", body: dados, credentials: "same-origin"
+    }).then(function (r) { return r.json(); })
+      .then(function (d) { desenhar(d, nome); })
+      .catch(function (e) {
+        corpo.innerHTML = '<p class="aviso">Não consegui buscar as SPs: '
+          + escapar(e && e.message) + "</p>";
+      });
+  });
 })();

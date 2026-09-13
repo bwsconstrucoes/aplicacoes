@@ -130,6 +130,41 @@
     dois filtros ligados.
   </p>
 
+  {# ---------------------------------------------------------------------
+     O QUE ESTA TELA NEM OLHA — dito na cara, e não escondido no código.
+
+     Pedido do dono em 13/09/2026. São três cortes de escopo, e eles mudam o
+     TAMANHO do trabalho, não o recorte dele: sem dizer que existem, o painel
+     mostraria um número e a planilha outro, e ele passaria a desconfiar dos
+     dois. Só o dos cancelados tem volta, porque só esse ele pediu com volta.
+  --------------------------------------------------------------------- #}
+  <div class="filtro aberto filtro-escopo">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>O que esta tela nem olha</span>
+      {% if request.args.get('canceladas') == '1' %}
+        <span class="filtro-badge">1</span>
+      {% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <ul class="escopo-lista">
+        <li>o que venceu <b>e</b> foi pago antes de 2026</li>
+        <li>tipo de despesa com <b>(TRF)</b> — transferência entre contas não
+          gera nota</li>
+      </ul>
+      <div class="filtro-opcoes">
+        <label class="opcao opcao-explicada">
+          <input type="checkbox" name="canceladas" value="1"
+                 {% if request.args.get('canceladas') == '1' %}checked{% endif %}>
+          <span class="rotulo">Trazer também os cancelados
+            <small>SPs com Status Pgt “Cancelado”, que ficam fora por
+              padrão</small>
+          </span>
+        </label>
+      </div>
+    </div>
+  </div>
+
   {# O resto é recorte de contexto, não a pergunta da tela — por isso vem
      depois e fechado. #}
   {{ bloco('Tipo de despesa', 'tipo_despesa', opcoes.tipo_despesa, filtros.tipo_despesa) }}

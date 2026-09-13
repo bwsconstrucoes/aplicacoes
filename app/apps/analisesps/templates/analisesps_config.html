@@ -84,7 +84,21 @@
 
   {% if certificados %}
     <table class="sps">
+      {# ⚠️ A COLUNA "A BUSCA" É O QUE FALTAVA, e o buraco era grande.
+
+         *"O certificado continua uma incógnita. Eu coloco o certificado, boto
+         a senha, ele aceita, eu acho que a senha está certa, o certificado
+         está válido. Mas simplesmente nada é feito, nada é executado, e eu não
+         sei o que está acontecendo."*
+
+         Ele estava certo em duas coisas ao mesmo tempo: (1) guardar o
+         certificado NÃO dispara busca nenhuma — é preciso apertar o botão na
+         Documentação Fiscal —, e a tela nunca disse isso; e (2) quando a busca
+         rodava e falhava, nada era escrito em lugar nenhum que ele visse.
+         Agora as duas coisas aparecem AQUI, na tela em que ele acabou de subir
+         o certificado e fica esperando. #}
       <thead><tr><th>Empresa</th><th>CNPJ</th><th>Vale até</th>
+                 <th>A busca na Receita</th>
                  <th>Quem subiu</th><th></th></tr></thead>
       <tbody>
         {% for c in certificados %}
@@ -98,6 +112,25 @@
               {% elif c.vencendo %}
                 <span class="etiqueta ruim">
                   vence em {{ c.dias_para_vencer }} dia(s)</span>
+              {% endif %}
+            </td>
+            <td>
+              {% set b = buscas_por_cnpj.get(c.cnpj) %}
+              {% if not b %}
+                <span class="etiqueta">nunca rodou</span>
+                <small class="cartao-dica">guardar o certificado não dispara a
+                  busca. Vá em
+                  <a href="{{ url_for('analisesps.tela_fiscal', visao='notas') }}">Documentação
+                  Fiscal › Por nota</a> e aperte "Buscar notas na Receita".</small>
+              {% elif b.falhou %}
+                <span class="etiqueta ruim">tentou e NÃO conseguiu</span>
+                <small class="cartao-dica">{{ b.consultado_em|momento_br }} —
+                  {{ b.motivo_da_falha }}</small>
+              {% else %}
+                <span class="etiqueta boa">{{ b.documentos or 0 }} documento(s)</span>
+                <small class="cartao-dica">última em
+                  {{ b.consultado_em|momento_br if b.consultado_em else '—' }}
+                  {%- if b.faltam %} · faltam {{ b.faltam }} para buscar{% endif %}</small>
               {% endif %}
             </td>
             <td>{{ c.subido_por or '—' }}</td>
