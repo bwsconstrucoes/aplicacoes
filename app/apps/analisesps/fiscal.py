@@ -416,6 +416,24 @@ def melhor_nota(lancamento: dict, notas: list) -> dict:
     if empate:
         melhor["porques"] = melhor["porques"] + [
             "há outra nota quase tão parecida — confira antes de confirmar"]
+
+    # ⚠️ NOTA CANCELADA NUNCA VEM PROPOSTA, por mais que ela combine.
+    #
+    # Pedido do dono em 13/09/2026: *"quando tiver a nota cancelada na tela de
+    # associação, tem que deixar em vermelhinho o cancelado, pra a gente não
+    # associar a uma nota cancelada sem perceber."* A cor resolve para quem
+    # olha — e a marcação em lote existe justamente para quem NÃO olha linha a
+    # linha. Uma cancelada pré-marcada entraria no "Confirmar as marcadas" sem
+    # ninguém ver, que é o contrário do que ele pediu.
+    #
+    # Ela continua APARECENDO, e tem de aparecer: se aquela é mesmo a nota do
+    # lançamento, quem analisa precisa saber que ela foi cancelada — é problema
+    # fiscal, não informação a esconder. Só não vem decidida.
+    if melhor.get("nota") and _texto(
+            melhor["nota"].get("status")).upper() == "CANCELADA":
+        melhor["propoe"] = False
+        melhor["porques"] = melhor["porques"] + [
+            "NÃO marquei esta: nota cancelada é decisão de gente"]
     return melhor
 
 

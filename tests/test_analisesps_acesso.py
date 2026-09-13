@@ -106,6 +106,7 @@ TODAS_AS_TELAS = [
     ("POST", "/analisesps/certificados/remover"),
     ("GET", "/analisesps/credores"),
     ("POST", "/analisesps/credores/aplicar"),
+    ("POST", "/analisesps/credores/consultar"),
     ("GET", "/analisesps/comprovantes"),
     ("POST", "/analisesps/comprovantes/enviar"),
     ("GET", "/analisesps/api/comprovantes/estado"),

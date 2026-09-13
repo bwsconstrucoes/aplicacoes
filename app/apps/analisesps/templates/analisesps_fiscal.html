@@ -343,6 +343,19 @@
               <td class="cartao-dica">
                 {{ l.motivo }}
                 {% if l.nota %}
+                  {# ⚠️ NOTA CANCELADA EM VERMELHO, e não no meio do texto
+                     cinza. Pedido do dono em 13/09/2026: *"quando tiver a nota
+                     cancelada na tela de associação, tem que deixar em
+                     vermelhinho o cancelado, pra a gente não associar a uma
+                     nota cancelada sem perceber."*
+
+                     Ele está certo: a informação estava lá, no meio de uma
+                     linha cinza de oito palavras — que é o mesmo que não
+                     estar. #}
+                  {% if l.nota.status|upper == 'CANCELADA' %}
+                    <br><span class="etiqueta ruim">⚠️ esta nota está
+                      CANCELADA</span>
+                  {% endif %}
                   <br><small>nota {{ l.nota.numero }} ·
                     {{ l.nota.emitente }} · chave {{ l.chave or l.nota.chave }}</small>
                 {% endif %}

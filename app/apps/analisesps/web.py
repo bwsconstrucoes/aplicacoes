@@ -2403,6 +2403,45 @@ def tela_credores():
         nome=auth.nome_atual())
 
 
+@bp.route("/credores/consultar", methods=["POST"])
+@exige_operador
+def consultar_cnpj_credor():
+    """Pergunta à Receita de quem é um CNPJ, UM por vez e por pedido de gente.
+
+    Pedido do dono em 13/09/2026: *"eu quero que você faça a consulta via API do
+    credor desse CNPJ."*
+
+    É `@exige_operador` não porque altere dado da empresa — a consulta só lê —,
+    mas porque ela fala com um serviço de fora, e quem dispara chamada externa
+    é quem opera. E é UM CNPJ por clique de propósito: varrer novecentos
+    fornecedores de uma vez é o jeito certo de ser bloqueado por uso excessivo,
+    e aí a consulta para de funcionar inclusive no caso em que importa."""
+    from . import receita
+
+    documento = (request.form.get("documento") or "").strip()
+    try:
+        dados = receita.consultar(documento, forcar=True)
+    except receita.ErroDeConsulta as e:
+        return redirect(url_for("analisesps.tela_credores",
+                                aviso=f"Não consegui consultar: {e}"))
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou consultar o CNPJ")
+        return redirect(url_for("analisesps.tela_credores",
+                                aviso=f"Não consegui consultar: {e}"))
+
+    if dados.get("erro"):
+        aviso = f"{documento}: {dados['erro']}"
+    else:
+        aviso = (f"{documento} é \"{dados.get('razao_social') or '(sem nome)'}\""
+                 + (f" — nome de fantasia \"{dados['fantasia']}\""
+                    if dados.get("fantasia") else "")
+                 + (f", situação {dados['situacao']}"
+                    if dados.get("situacao") else "") + ".")
+    logger.info("Análise de SPs: %s consultou o CNPJ %s.",
+                auth.nome_atual() or auth.pessoa_atual(), documento)
+    return redirect(url_for("analisesps.tela_credores", aviso=aviso))
+
+
 @bp.route("/credores/aplicar", methods=["POST"])
 @exige_operador
 def aplicar_credor():

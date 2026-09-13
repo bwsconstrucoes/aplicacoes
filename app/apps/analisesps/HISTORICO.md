@@ -3312,6 +3312,112 @@ associada). E a tela foi aberta num navegador com rodadas gravadas de verdade:
 os cinco botões mostram o que fizeram, o que falhou sai em vermelho com o
 motivo, e a nota associada mostra a SP e o status dela.
 
+### Quadragésima quinta leva (13/09) — o botão que não dizia nada, e o CNPJ digitado errado
+
+#### A regra geral: todo botão tem de dizer que está fazendo
+
+*"Eu estou vendo que é muito comum acontecer isso: os botões que deveriam, após
+o clique, mostrar a ação que está sendo executada, ele não mostra. Você fica
+cego, sem saber se está acontecendo alguma coisa ou não."*
+
+Ele tem razão, e o caso que mais dói é o do formulário que recarrega a página:
+entre o clique e a tela voltar passam **vários segundos** — a equalização de
+credor reescreve centenas de SPs, uma a uma, pelo caminho que grava banco, fila,
+log e planilha. Nesse intervalo a tela fica **exatamente igual**, e quem clicou
+conclui que o botão não funcionou. Aí clica de novo.
+
+**A correção é de uma vez para o módulo inteiro**, e não tela por tela: qualquer
+formulário enviado agora trava a largura do botão, troca o texto por "Aguarde…"
+com um rodinha e o desliga — e se a rede cair, ele volta ao normal sozinho
+depois de um minuto, porque deixar "Aguarde" para sempre seria trocar um engano
+por outro. Tratar isso tela por tela é justamente por que o defeito aparecia em
+tantos lugares.
+
+**E o recado de volta também mudou:** na tela de credores, *"eu clico em
+aplicar, e na tela nada acontece, eu não sei se foi aplicado ou não."* O recado
+existia — voltava numa tarja discreta no alto, e a tela pode voltar com a
+rolagem no meio da lista, deixando-o acima da dobra. Agora ele vem em destaque e
+a tela leva o olho até ele.
+
+#### A nota cancelada, em vermelho — e fora da pilha do "aprovar em lote"
+
+*"Quando tiver a nota cancelada na tela de associação, tem que deixar em
+vermelhinho o cancelado, pra a gente não associar a uma nota cancelada sem
+perceber."*
+
+A informação estava lá, no meio de uma linha cinza de oito palavras — o que é o
+mesmo que não estar. Agora sai em vermelho.
+
+**E foi mais fundo do que a cor:** a marcação em lote existe justamente para
+quem NÃO olha linha a linha. Uma cancelada pré-marcada entraria no "Confirmar as
+marcadas" sem ninguém ver, que é o contrário do que ele pediu. **Nota cancelada
+nunca mais vem proposta**, por mais que combine — ela continua aparecendo, e tem
+de aparecer (se aquela é mesmo a nota do lançamento, quem analisa precisa saber
+que ela foi cancelada), só não vem decidida.
+
+#### A terceira opinião: quem a Receita diz que é o dono do CNPJ
+
+*"Quando você dá sugestão aqui, esse CNPJ é o quê? Eu quero que você faça a
+consulta via API do credor desse CNPJ."*
+
+Entrou, com um botão por fornecedor. O serviço é o **brasilapi.com.br** —
+público, sem cadastro e sem chave, alimentado pelos dados abertos da Receita.
+Escolhido por não exigir credencial nova (credencial nova é decisão dele) e por
+não cobrar.
+
+**Três cuidados, e nenhum é opcional:**
+
+1. **Nunca automático e nunca em massa.** A consulta sai por pedido de uma
+   pessoa, um CNPJ por vez. Varrer novecentos fornecedores ao abrir a tela é o
+   jeito certo de ser bloqueado por uso excessivo — e aí ela para de funcionar
+   inclusive no caso em que importa.
+2. **A resposta fica guardada** (migração 011). CNPJ não muda de dono.
+3. **Nunca decide sozinha.** A Receita informa; quem escolhe continua sendo ele.
+   E **se o serviço sair do ar, a tela continua funcionando** — a consulta é um
+   extra.
+
+#### O caso difícil: o CNPJ digitado errado
+
+*"Pode ser que a pessoa digitou errado o CNPJ. Digamos que ela foi digitar o
+CNPJ de uma empresa e confundiu: olhou na nota e olhou o CNPJ da BWS, da empresa
+que ela trabalha, aí digitou o nome da empresa ao invés do CNPJ ao qual a nota
+fazia referência. Como é que a gente resolve essa parada aí?"*
+
+**Nenhuma comparação de nomes resolve isso**, e é o que torna o caso diferente
+de tudo o que a tela fazia: o erro não está no nome, está no NÚMERO. Os nomes
+podem estar todos certos e escritos igual, e mesmo assim apontando para o CNPJ
+errado.
+
+Três sinais, e os dois primeiros são **certeza**, não suspeita:
+
+- **É um CNPJ da própria BWS.** A empresa não é fornecedora de si mesma — é
+  exatamente o engano que ele descreveu. Os nossos CNPJs saem de onde o sistema
+  já os conhece: o destinatário das notas guardadas e os certificados digitais;
+  nada de mais uma lista para ele manter.
+- **A Receita não conhece o CNPJ.** Número que não existe foi digitado errado.
+- **A razão social não se parece com nenhum dos nomes escritos** — esta é
+  suspeita de verdade, porque nome de fantasia legítimo também não se parece.
+  Serve para olhar, não para concluir. Nome parecido ou contido não acusa nada:
+  exigir igualdade acusaria metade da base, e aviso que aparece sempre é aviso
+  que ninguém lê.
+
+**O CNPJ comprovadamente errado sai da pilha do "resolve sozinho"** e vai para a
+de decisão. Aquela pilha é aplicada em bloco, sem ninguém olhar: equalizar
+bonitinho o nome de um fornecedor que não é aquele seria trabalho jogado fora, e
+pior, com ar de resolvido. A *suspeita* não tira dali — barrar por suspeita
+encheria a fila de decisão de coisa que não precisa de decisão.
+
+**Verificação:** 16 testes novos. Nenhum fala com a internet — a conversa está
+isolada numa função. E a tela foi aberta num navegador com dois casos montados:
+o CNPJ da própria BWS lançado como fornecedor (sai o alerta vermelho e ele cai
+na pilha de decisão) e um fornecedor com a consulta já feita (a razão social
+aparece embaixo das opções).
+
+> **O QUE NÃO FOI PROVADO:** nenhuma consulta de verdade foi feita ao
+> brasilapi.com.br — esta máquina não tem saída para ele. O primeiro clique real
+> é o teste real. Se o serviço não responder do Render, a tela diz "não consegui
+> consultar" e segue funcionando; nada depende dele.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Nada do dono esperando código.** O que falta não é programação — é o
