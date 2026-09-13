@@ -403,8 +403,12 @@ def _letra_to_idx(letra: str) -> int:
     return result
 
 
-def execute_spsbd_updates(updates: list):
+def execute_spsbd_updates(updates: list) -> dict:
     """Executa updates na planilha via gspread (chamada direta, sem GAS).
+
+    Devolve `{'ok': bool, 'gravados': int, 'erros': [...]}`. Antes engolia
+    qualquer falha em silêncio, e uma gravação perdida deixava a SP como
+    "Pagar" para sempre — sem ninguém saber, porque o Omie já tinha baixado.
 
     Otimizado para memória: busca APENAS as colunas usadas nos filtros
     (ex.: A:A para localizar a linha pelo ID) em vez de get_all_values(),
@@ -414,7 +418,9 @@ def execute_spsbd_updates(updates: list):
     A gravação usa batch_update (1 chamada) em vez de update_cell por célula.
     """
     if not updates:
-        return
+        return {'ok': True, 'gravados': 0, 'erros': []}
+    gravados = 0
+    erros = []
     gc = get_gc()
     for upd in updates:
         try:
@@ -455,6 +461,7 @@ def execute_spsbd_updates(updates: list):
                     break  # update_multiple=false: apenas primeira linha
 
             if target_row is None:
+                erros.append(f"linha não encontrada para {upd.get('filtros')}")
                 continue
 
             # Grava todas as células de uma vez (1 chamada à API)
@@ -463,9 +470,12 @@ def execute_spsbd_updates(updates: list):
                 for col_letra, novo_val in updates_cols.items()
             ]
             sheet.batch_update(data, value_input_option='USER_ENTERED')
+            gravados += 1
 
-        except Exception:
-            pass
+        except Exception as e:
+            erros.append(str(e)[:200])
+
+    return {'ok': not erros and gravados > 0, 'gravados': gravados, 'erros': erros}
 
 # ── Controle de duplicatas via aba LogBaixaBradesco ───────────────────────────
 
@@ -485,8 +495,13 @@ def _get_log_sheet(gc):
         return ws
 
 
-def load_fingerprints_processados(gc) -> set:
-    """Lê a coluna de fingerprints da LogBaixaBradesco UMA vez por lote.
+def load_fingerprints_processados(gc) -> dict:
+    """Lê a LogBaixaBradesco UMA vez por lote: impressão digital → nº da SP.
+
+    A SP vem junto de propósito: é ela que permite descobrir se a baixa daquele
+    comprovante ficou **completa**. Se a SP ainda estiver como "Pagar" na
+    planilha, a baixa ficou pela metade e o comprovante reenviado precisa
+    passar, em vez de ser barrado como repetido.
 
     ⚠️ Memória e cota: nunca trocar isto por uma consulta por página. Um lote de
     dez comprovantes viraria dez leituras da mesma coluna — foi esse padrão que
@@ -494,11 +509,15 @@ def load_fingerprints_processados(gc) -> set:
     """
     try:
         ws = _get_log_sheet(gc)
-        col = ws.col_values(1)
+        valores = ws.batch_get(['A2:A', 'B2:B'])
     except Exception:
-        return set()
-    # A primeira linha é o cabeçalho ('fingerprint').
-    return {as_string(v) for v in col[1:] if as_string(v)}
+        return {}
+
+    fingerprints = [as_string(l[0]) if l else '' for l in (valores[0] or [])]
+    sps          = [as_string(l[0]) if l else '' for l in (valores[1] or [])]
+    sps += [''] * (len(fingerprints) - len(sps))
+
+    return {fp: sp for fp, sp in zip(fingerprints, sps) if fp}
 
 
 def check_fingerprint_processado(gc, fingerprint: str) -> bool:

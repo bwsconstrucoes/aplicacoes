@@ -215,6 +215,24 @@ módulos do monorepo. Quando o Google recusa por excesso de pedidos, o robô
 ⚠️ O que está em `/tmp` **se perde quando o serviço reinicia** (ou seja, a cada
 publicação). Foi aceito assim: o Make pode reenviar.
 
+### O que acontece se o mesmo comprovante for enviado de novo
+
+O robô confere **só a lista dele** — a aba `LogBaixaBradesco`, pela impressão
+digital da página. Ele **não** consulta o Omie nem lê a linha da SP para saber
+se a baixa está lá.
+
+Isso importa porque a baixa acontece em duas etapas separadas: primeiro o Omie,
+depois a planilha. A impressão digital é registrada assim que o Omie aceita.
+
+| O que falhou | O reenvio resolve? |
+|---|---|
+| **O Omie falhou** (planilha não foi tocada) | **Sim** — nada foi registrado, o comprovante passa normalmente |
+| **A planilha já dizia Pago e o Omie ficou pendente** | **Sim** — existe um caminho próprio para isso, que executa só o Omie |
+| **O Omie baixou e a planilha falhou** | **Sim, desde 13/09/2026** — antes era barrado como repetido, e a SP ficava "Pagar" para sempre |
+
+E a gravação na planilha **deixou de falhar em silêncio**: erro ali vai para a
+fila de tentativas, como já acontecia com o Pipefy, e aparece no aviso.
+
 ## O aviso do que NÃO foi baixado
 
 Comprovante que baixa normalmente não gera aviso nenhum — é o esperado. O que
@@ -330,9 +348,14 @@ Duas coisas foram corrigidas em 04/09/2026 e estão descritas no `HISTORICO.md`:
    qualquer campo — um comprovante recusado não entrega nem valor nem código de
    barras ao casador — e o que foi barrado aparece no resumo da resposta, em
    `recusados_nao_efetivados`.
-2. **A trava contra pagar duas vezes.** A lista de comprovantes já baixados era
-   gravada e nunca conferida. Hoje ela é lida **uma vez por lote** e conferida
-   página a página, e o que foi barrado aparece em `duplicados_ja_baixados`.
+2. **A trava contra pagar duas vezes.** A lista de comprovantes já baixados é
+   lida **uma vez por lote** e conferida página a página; o que foi barrado
+   aparece em `duplicados_ja_baixados`.
+   **Com uma exceção importante (13/09/2026):** se a SP daquele comprovante
+   ainda estiver como "Pagar" na planilha, a baixa anterior ficou pela metade —
+   o Omie baixou, a planilha não — e o reenvio **passa**, para concluir. O Omie
+   responde "título já pago", o robô pula essa parte e termina o que faltava.
+   Esses casos aparecem em `baixas_concluidas`.
    ⚠️ Nunca trocar essa leitura única por uma consulta por página: um lote de
    dez comprovantes viraria dez leituras da mesma coluna, que é o padrão que
    derrubou a instância em julho de 2026.

@@ -593,3 +593,44 @@ aparece em comprovante do **Bradesco** quando o destino é uma conta Sicredi, e
 mandá-lo para o leitor errado pode produzir valor errado. Não reconhecer é
 barato (cai no leitor do Bradesco, não acha SP, fica pendente e o aviso conta);
 ler errado, não.
+
+### 13/09/2026 — a baixa pela metade que o reenvio não consertava
+
+Pergunta do dono: *"se eu enviar um comprovante que já foi baixado, ele checa por
+onde? É conferido se a baixa está no Omie e na planilha? Às vezes falha um dos
+dois e, se eu enviar novamente, é pra concluir a baixa."*
+
+**A resposta era não, e o desenho era o pior possível.** A baixa acontece em duas
+etapas: o Omie primeiro, a planilha depois, em segundo plano. A impressão digital
+do comprovante era registrada **assim que o Omie aceitava**. Se a gravação na
+planilha falhasse em seguida, três coisas aconteciam juntas:
+
+1. a SP ficava **"Pagar"** na planilha, para sempre;
+2. o erro sumia — `execute_spsbd_updates` engolia qualquer exceção num
+   `except: pass`, e o `_executar_sheets_async` engolia de novo;
+3. o comprovante reenviado era **barrado como repetido**, em silêncio.
+
+Ou seja: o único caminho de conserto estava fechado, e ninguém era avisado.
+
+**O que mudou:**
+
+- A lista de comprovantes já baixados passou a trazer **o número da SP** junto
+  da impressão digital (as duas colunas numa leitura só — a regra de uma leitura
+  por lote continua valendo).
+- Na conferência, se a SP daquele comprovante **ainda está entre as que faltam
+  pagar**, a baixa ficou pela metade e o reenvio **passa**. O Omie responde
+  "título já pago", o robô pula essa parte e termina o que faltava na planilha.
+  Esses casos aparecem no retorno em `baixas_concluidas`, separados dos
+  `duplicados_ja_baixados`.
+- **A gravação na planilha deixou de falhar em silêncio.** Ela agora diz se
+  gravou, e o erro vai para a fila de tentativas — como já acontecia com Pipefy
+  e WhatsApp. Era a única das três escritas que sumia sem deixar rastro.
+
+**O que continua não sendo feito, e é bom saber:** o robô **não** consulta o Omie
+nem lê a linha da SP para decidir se um comprovante é repetido. A decisão sai da
+lista dele mais o estado da SP na carga do lote, que já está em memória. Consultar
+o Omie por comprovante repetido custaria uma chamada por página, e a lista já
+responde bem.
+
+**Não verificado:** nada disso passou por produção. O caso exige que a gravação
+na planilha falhe de verdade, o que não dá para provocar daqui.
