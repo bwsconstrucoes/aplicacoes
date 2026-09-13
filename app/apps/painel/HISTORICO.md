@@ -20,23 +20,27 @@ Resultado por Obra, Comprometido × Executado, Necessidade de Caixa, Prestação
 Contas e os Cenários de rateio — mais o relatório em PDF, o **Explorador** e o
 **Rateio da Administração**.
 
-**Estado em 09/09/2026:** a conversão terminou e o painel já passou do que o
-Streamlit fazia. Publicado neste dia (`07b026a`): o Explorador dos lançamentos,
-a **alteração de classificação no OMIE** (categoria e obra, escondida numa aba
-de Configurações, com senha própria) e o **Rateio da Administração**. Antes
-dele, em 08/09, os juros e multas passaram a contar como despesa em todas as
-telas — inclusive a Prestação de Contas — e os gráficos deixaram de sair
-desproporcionais.
+**Estado em 13/09/2026:** a conversão terminou e o painel já passou do que o
+Streamlit fazia. Em 09/09 (`07b026a`) subiram o Explorador, a **alteração de
+classificação no OMIE** e o **Rateio da Administração**; o dono aplicou as
+migrações 007 e 008 e criou a `PAINEL_SENHA_ESCRITA` no Render. Em 13/09 o
+Explorador foi **reprovado por ele e refeito**: filtros na barra da esquerda,
+com busca e marcação de vários, e **uma lista só**, editável linha a linha ou
+em lote — ver a seção própria mais abaixo.
 
 ### O que está pendente AGORA
 
-**Nada de código.** O que falta são três coisas, e nenhuma é escrever tela:
+**Nada de código.** O que falta é conferência com dado real, e duas coisas
+merecem destaque:
 
-1. **O dono apertar "Aplicar atualizações do banco"** — as migrações 007 e 008
-   subiram em 09/09 e o Explorador não funciona sem elas.
-2. **A variável `PAINEL_SENHA_ESCRITA` no Render** — sem ela a aba de alteração
-   no OMIE nem aparece, de propósito.
-3. **Conferência com dado real** — ver "O que falta" no fim deste arquivo.
+1. **A primeira escrita no OMIE nunca aconteceu.** O caminho que grava foi
+   testado só contra dublê. Protocolo: ensaio → **um** título conferido dentro
+   do OMIE com os olhos → só então lote.
+2. **O saneamento da base em si** — os empréstimos classificados fora do lugar,
+   os títulos sem obra. A ferramenta está pronta; o trabalho é de quem conhece
+   as obras.
+
+O resto está em "O que falta", no fim deste arquivo.
 
 <details>
 <summary>O que já foi publicado nesta leva (04/09/2026)</summary>
@@ -643,6 +647,89 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## O Explorador foi reprovado e refeito — 13/09/2026
+
+O dono abriu a primeira versão e reprovou, com razão. Três defeitos, e nenhum
+deles era detalhe:
+
+1. **Os filtros estavam no alto da tela**, e em todas as outras telas do painel
+   eles ficam na barra da esquerda. Quem usa o painel todo dia tropeça.
+2. **Escolher dois grupos ou duas categorias era, na prática, impossível.** Eram
+   listas de rolagem `<select multiple>`: aceitavam vários itens, sim, mas só
+   segurando Ctrl — e uma dica escrita embaixo não conserta uma interação que
+   ninguém descobre. Vale a frase dele: *"eu posso buscar só um grupo ou só uma
+   categoria, assim não funciona"*.
+3. **Havia DUAS listas de lançamentos**: a de procurar, embaixo, e outra dentro
+   do bloco "Alterar no OMIE", com as caixas de marcar. Quem achava o lançamento
+   numa tinha de reencontrá-lo na outra. *"Basta uma lista e a gente vai
+   trabalhar em cima dessa lista."*
+
+### Como ficou
+
+**Os filtros foram para a esquerda**, na mesma barra do resto do painel, e
+viraram listas de marcar com busca: análise, grupo, categoria, obra, projeto,
+conta corrente e situação. Marca-se quantos quiser em cada uma, a busca ignora
+acento, o que está marcado sobe para o topo, e há "marcar os que aparecem". Nada
+disso foi inventado: é a mesma peça que a barra padrão já usava — ela saiu de
+dentro do `painel_filtros.html` e virou `painel_filtros_lista.html` mais
+`static/filtros.js`, usados pelas duas. Uma cópia de cada lado divergiria na
+primeira correção.
+
+**Sobrou uma lista só, e é nela que se edita.** Dois jeitos de trabalhar, os
+dois que o dono descreveu:
+
+- **Um a um:** clicar na célula de Categoria ou de Obra de qualquer linha e
+  escolher a nova no seletor que abre ali.
+- **Em lote:** marcar várias linhas e usar os botões do alto — "Mudar a
+  categoria dos marcados", "Mudar a obra dos marcados" —, que valem para todas
+  de uma vez.
+
+Os dois se misturam à vontade: dá para mandar trinta títulos para uma obra e
+depois corrigir dois deles individualmente, tudo antes de enviar.
+
+### O que se decidiu no caminho
+
+**Nada é enviado enquanto se edita.** O que se monta na tela é um *rascunho*:
+a célula mostra `valor de hoje → valor novo`, a linha fica amarela, e um contador
+diz quantos títulos estão pendentes. Só o Ensaiar e o Alterar de verdade falam
+com o OMIE. Sem isso, um clique errado numa célula seria um envio.
+
+**Só a célula que mudou aparece riscada.** A primeira versão riscava a linha
+inteira — quem trocasse só a categoria via a obra riscada também, e a tela
+estava mentindo sobre o que o botão ia fazer. Apareceu em captura de tela do
+navegador, não em teste: número nenhum pega isso.
+
+**Um título rateado em três obras aparece em três linhas, mas é UM cadastro no
+OMIE.** Então marcar qualquer uma das linhas marca as três, editar uma edita as
+três, e o envio manda **uma** chamada. O contador diz "1 título marcado", não
+"3 linhas". Fingir que são registros separados seria mentir sobre o que o botão
+faz — e mandaria o mesmo título três vezes para o OMIE.
+
+**O servidor passou a aceitar um destino POR TÍTULO** (`normalizar_alvos`, em
+`saneamento.py`), em vez de um valor único para todos. A forma antiga continua
+valendo, e não por preguiça: é ela que funciona com o JavaScript travado, e é
+ela que os testes exercitam desde o começo.
+
+**O seletor de categoria é um só na tela inteira**, que se move para perto de
+quem o chamou. São centenas de categorias: desenhar a lista dentro de cada uma
+das até 3.000 linhas seriam centenas de milhares de elementos. Este painel já
+morreu de falta de memória uma vez (§9 do `CONTEXTO.md`) — não é hipótese.
+
+**O teto de 200 títulos por envio agora avisa enquanto se edita**, não só depois
+de enviar. Descobrir o limite depois de montar duzentas alterações seria cruel.
+
+### O que ficou de fora, e por quê
+
+**O ensaio depende do OMIE estar no ar.** A recusa por rateio é calculada pelo
+espelho do próprio painel e não precisaria de rede nenhuma, mas hoje ela só
+aparece depois de o painel conseguir falar com o OMIE. Se a API estiver fora, o
+ensaio inteiro falha em vez de ao menos listar os títulos rateados. Não mexi
+nisso agora: é o caminho que escreve, e alargá-lo sem pedido não vale o risco.
+
+**A escrita continua sem nunca ter tocado a API de verdade.** Nada nesta leva
+mudou isso. O protocolo segue igual: ensaio → **um** título conferido dentro do
+OMIE com os olhos → lote.
+
 ## O empréstimo que devolveu mais do que entrou — 09/09/2026
 
 A base diz que a empresa pagou **R$ 9,25 milhões** de principal contra
@@ -668,26 +755,15 @@ mostrá-lo, e o erro continuaria contaminando as outras telas em silêncio.
 
 ## O que falta
 
-Atualizado em **09/09/2026**, depois de publicar o Explorador, a alteração de
-classificação no OMIE e o Rateio da Administração (`07b026a`).
+Atualizado em **13/09/2026**, depois de refazer o Explorador. As migrações
+007 e 008 já foram aplicadas pelo dono e a `PAINEL_SENHA_ESCRITA` já existe no
+Render — o que era imediato saiu desta lista.
 
 **Não há tela por escrever.** O painel faz tudo o que o Streamlit fazia, mais o
 que o Streamlit ganhou depois e voltou para cá no documento de repasse. O que
 resta é de dois tipos: **conferência com dado real** — que só o dono consegue
 fazer, porque exige abrir a tela publicada — e **saneamento da base no OMIE**,
 que agora tem ferramenta própria.
-
-### Apertar o botão do banco (imediato)
-
-O pacote de 09/09 subiu com as migrações **007** (código da categoria no fato) e
-**008** (registro das alterações no OMIE). Enquanto o botão "Aplicar
-atualizações do banco" não for apertado, o Explorador e a tela de alteração não
-funcionam. A 007 se declara `REFAZER-O-FATO`: ao terminar, o painel dispara o
-recálculo sozinho e avisa na tela.
-
-Para a alteração no OMIE funcionar falta também a variável
-**`PAINEL_SENHA_ESCRITA`** no Render. Sem ela a aba nem aparece — é de
-propósito: sem senha configurada, ninguém escreve no OMIE por engano.
 
 ### Conferir com a base da empresa (só o dono consegue)
 

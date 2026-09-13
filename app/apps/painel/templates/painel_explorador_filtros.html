@@ -1,0 +1,73 @@
+{# Barra lateral do Explorador.
+
+   A barra padrão (`painel_filtros.html`) filtra por ano, projeto e obra, que é
+   o que as telas de análise precisam. Aqui a pergunta é outra — "onde está o
+   lançamento classificado errado?" — e por isso entram análise, grupo,
+   categoria, conta e situação, que nas outras telas não fariam falta.
+
+   As listas são as mesmas do resto do painel: busca sem acento, marcação de
+   vários, o que está marcado sobe para o topo. Antes de 13/09/2026 isto era um
+   punhado de caixas no alto da tela, onde escolher mais de um item exigia saber
+   segurar Ctrl — ou seja, não funcionava.
+#}
+{% from "painel_filtros_lista.html" import lista %}
+<form method="get" id="form-filtros">
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <a class="link-btn" href="{{ request.path }}">Limpar</a>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cont" style="padding-top:8px">
+      <div class="campo">
+        <label for="busca">Buscar</label>
+        <input id="busca" name="busca" type="search" value="{{ pedido.busca }}"
+               placeholder="fornecedor, documento ou observação">
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro aberto">
+    <div class="filtro-cont">
+      <div class="campo">
+        <label for="tipo">Tipo</label>
+        <select id="tipo" name="tipo">
+          <option value="">A pagar e a receber</option>
+          <option value="pagar" {% if pedido.tipo == 'pagar' %}selected{% endif %}>Só a pagar</option>
+          <option value="receber" {% if pedido.tipo == 'receber' %}selected{% endif %}>Só a receber</option>
+        </select>
+      </div>
+      <div class="campo">
+        <label for="de">Data — de</label>
+        <input id="de" name="de" type="date" value="{{ pedido.de }}">
+      </div>
+      <div class="campo">
+        <label for="ate">Data — até</label>
+        <input id="ate" name="ate" type="date" value="{{ pedido.ate }}">
+      </div>
+    </div>
+  </div>
+
+  {{ lista('analise', 'Análise', opcoes.analises, pedido.analises) }}
+  {{ lista('grupo', 'Grupo', opcoes.grupos, pedido.grupos, com_busca=True) }}
+  {{ lista('categoria', 'Categoria', opcoes.categorias, pedido.categorias, com_busca=True) }}
+  {{ lista('obra', 'Obra', opcoes.obras, pedido.obras, com_busca=True) }}
+  {{ lista('projeto', 'Projeto', opcoes.projetos, pedido.projetos, com_busca=True) }}
+  {{ lista('conta', 'Conta corrente', opcoes.contas, pedido.contas, com_busca=True) }}
+  {{ lista('situacao', 'Situação', opcoes.situacoes, pedido.situacoes) }}
+
+  <div class="filtro aberto">
+    <div class="filtro-cont" style="padding-top:10px">
+      <label class="opcao">
+        <input type="checkbox" name="trf" value="1" {% if pedido.com_trf %}checked{% endif %}>
+        <span class="rotulo">Incluir transferências entre contas</span>
+      </label>
+      <p class="cartao-dica" style="margin:6px 0 12px">
+        Nada marcado numa lista quer dizer <b>todos</b>.
+      </p>
+      <button class="btn" type="submit" style="width:100%">Aplicar filtros</button>
+    </div>
+  </div>
+</form>
+
+<script src="{{ url_for('painel.static', filename='filtros.js') }}"></script>

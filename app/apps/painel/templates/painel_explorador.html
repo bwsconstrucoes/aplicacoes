@@ -1,99 +1,33 @@
 {% extends "painel_base.html" %}
 {% block titulo %}Explorador de lançamentos — Painel Financeiro BWS{% endblock %}
-{% block classe_corpo %}sem-filtros{% endblock %}
-
-{% macro caixa_multipla(nome, rotulo, itens, escolhidos, altura=120) %}
-<div class="campo">
-  <label for="{{ nome }}">{{ rotulo }}</label>
-  <select id="{{ nome }}" name="{{ nome }}" multiple size="4"
-          style="height:{{ altura }}px">
-    {% for i in itens %}
-      <option value="{{ i }}" {% if i in escolhidos %}selected{% endif %}>{{ i }}</option>
-    {% endfor %}
-  </select>
-</div>
-{% endmacro %}
+{% block filtros %}{% include "painel_explorador_filtros.html" %}{% endblock %}
 
 {% block conteudo %}
 <h2>Explorador de lançamentos
-  <small>procura em toda a base, não só no DRE</small>
+  <small>procura em toda a base e corrige a classificação</small>
 </h2>
 
-<p class="dica" style="margin-top:-6px">
+<p class="cartao-dica" style="margin:-8px 0 14px">
   As outras telas mostram só o <b>DRE</b>. Esta mostra <b>tudo</b> — DRE, Fluxo
   de Caixa e transferências —, porque ela existe para <b>achar o que está
-  classificado errado</b>, e o erro quase sempre é o lançamento estar na
-  análise errada. Procure por <b>{{ sem_obra }}</b> na Obra para achar o que
-  ficou sem apropriação.<br>
-  Aqui nada é alterado: é uma tela de procurar.
+  classificado errado</b>, e o erro quase sempre é o lançamento estar na análise
+  errada. Procure por <b>{{ sem_obra }}</b> na Obra para achar o que ficou sem
+  apropriação.
 </p>
 
-<div class="cartao">
-  <form method="get">
-    <div class="form-grade">
-      <div class="campo">
-        <label for="busca">Buscar</label>
-        <input id="busca" name="busca" type="search" value="{{ pedido.busca }}"
-               placeholder="cliente/fornecedor, documento ou observação">
-      </div>
-      <div class="campo">
-        <label for="tipo">Tipo</label>
-        <select id="tipo" name="tipo">
-          <option value="">Todos</option>
-          <option value="pagar" {% if pedido.tipo == 'pagar' %}selected{% endif %}>A pagar</option>
-          <option value="receber" {% if pedido.tipo == 'receber' %}selected{% endif %}>A receber</option>
-        </select>
-      </div>
-      <div class="campo">
-        <label for="de">Data — de</label>
-        <input id="de" name="de" type="date" value="{{ pedido.de }}">
-      </div>
-      <div class="campo">
-        <label for="ate">Data — até</label>
-        <input id="ate" name="ate" type="date" value="{{ pedido.ate }}">
-      </div>
-    </div>
-
-    <div class="form-grade" style="margin-top:10px">
-      {{ caixa_multipla('analise', 'Análise', opcoes.analises, pedido.analises) }}
-      {{ caixa_multipla('grupo', 'Grupo', opcoes.grupos, pedido.grupos) }}
-      {{ caixa_multipla('categoria', 'Categoria', opcoes.categorias, pedido.categorias) }}
-      {{ caixa_multipla('obra', 'Obra', opcoes.obras, pedido.obras) }}
-      {{ caixa_multipla('projeto', 'Projeto', opcoes.projetos, pedido.projetos) }}
-      {{ caixa_multipla('conta', 'Conta corrente', opcoes.contas, pedido.contas) }}
-      {{ caixa_multipla('situacao', 'Situação', opcoes.situacoes, pedido.situacoes) }}
-    </div>
-
-    <div class="tabela-barra" style="border:0; padding-left:0">
-      <label style="display:flex; align-items:center; gap:6px; font-size:13px">
-        <input type="checkbox" name="trf" value="1" {% if pedido.com_trf %}checked{% endif %}>
-        Incluir transferências entre contas
-      </label>
-      <span class="espaco"></span>
-      <a class="btn secundario" style="text-decoration:none"
-         href="{{ url_for('painel.explorador') }}">Limpar</a>
-      <button class="btn">Procurar</button>
-    </div>
-    <p class="cartao-dica">
-      Escolher vários numa lista: segure Ctrl (ou Cmd no Mac) e clique.
-      Nada selecionado numa lista quer dizer "todos".
-    </p>
-  </form>
-</div>
-
 {% if not escolheu %}
-  <div class="aviso info" style="margin-top:14px">
-    <b>Escolha ao menos um filtro e clique em Procurar.</b>
+  <div class="aviso info">
+    <b>Escolha ao menos um filtro, ao lado, e clique em Aplicar filtros.</b>
     Abrir a base inteira para mostrar as mais recentes não ajuda a achar nada —
     e custa caro.
   </div>
 {% elif not dados.linhas %}
-  <div class="vazio" style="margin-top:14px">
+  <div class="vazio">
     <b>Nada encontrado</b>Nenhum lançamento com esses filtros.
   </div>
 {% else %}
 
-<div class="kpis" style="margin-top:14px">
+<div class="kpis">
   <div class="kpi estatico">
     <div class="kpi-rotulo">Linhas</div>
     <div class="kpi-valor">{{ '{:,}'.format(dados.quantos).replace(',', '.') }}</div>
@@ -119,7 +53,7 @@
   <summary style="cursor:pointer; font-weight:600">
     Resumo por Análise × Grupo × Categoria ({{ resumo | length }} combinações)
   </summary>
-  <p class="cartao-dica">Enxergar o padrão antes de sair alterando título a título.</p>
+  <p class="cartao-dica">Enxergar o padrão antes de sair corrigindo título a título.</p>
   <div class="tabela-rolagem">
     <table>
       <thead>
@@ -149,8 +83,9 @@
 </details>
 {% endif %}
 
+{# ============== O QUE O ENSAIO OU O ENVIO DEVOLVEU ============== #}
 {% if alteracao or erro_alteracao %}
-<div class="cartao" style="margin-bottom:14px; border-left:4px solid var(--amarelo)">
+<div class="cartao" style="margin-bottom:14px; border-left:4px solid var(--ambar)">
   <div class="cartao-cab">
     <h3>{{ 'Resultado do ensaio' if alteracao and alteracao.simulacao
            else 'Resultado da alteração no OMIE' }}</h3>
@@ -168,7 +103,7 @@
       {% endif %}
       {% if alteracao.recusados %}
         <br><b>{{ alteracao.recusados }} recusado(s)</b> por terem rateio entre
-        obras — trocar o departamento apagaria esse rateio.
+        obras — trocar a obra apagaria esse rateio.
       {% endif %}
     </div>
     <div class="tabela-rolagem">
@@ -202,87 +137,121 @@
 </div>
 {% endif %}
 
-<!-- ============ ALTERAR NO OMIE — a única parte que escreve ============ -->
-<details class="cartao" style="margin-bottom:14px; border-left:4px solid var(--vermelho)"
-         {% if alteracao or erro_alteracao %}open{% endif %}>
-  <summary style="cursor:pointer; font-weight:600">
-    Alterar a classificação no OMIE
-    <small style="font-weight:400"> — escreve no OMIE de verdade</small>
-  </summary>
+{# ================= A LISTA — UMA SÓ, E É NELA QUE SE EDITA ================= #}
+<form method="post" id="form-alterar"
+      action="{{ url_for('painel.explorador_alterar', **request.args) }}">
+  <div id="campos-alteracao"></div>
 
-  <div class="aviso erro" style="margin-top:10px">
-    <b>Isto altera o cadastro no OMIE, não o painel.</b>
-    Só a <b>categoria</b> e o <b>departamento</b> mudam — valor, data e situação
-    nunca. Desfazer é manual, título a título.<br>
-    <b>Trocar o departamento coloca 100% no novo</b> e apaga qualquer rateio
-    anterior. Títulos rateados entre obras são recusados, a menos que você
-    marque que sabe.
-  </div>
-
-  {% if not escrita_ligada %}
-    <div class="aviso info">
-      <b>A execução está desligada neste serviço.</b> O ensaio funciona e mostra
-      o que aconteceria; para enviar de verdade, é preciso configurar a senha de
-      execução (<code>PAINEL_SENHA_ESCRITA</code>) nas variáveis do serviço.
-    </div>
-  {% endif %}
-
-  <form method="post" action="{{ url_for('painel.explorador_alterar', **request.args) }}">
-    <div class="form-grade">
-      <div class="campo">
-        <label for="categoria_nova">Nova categoria</label>
-        <select id="categoria_nova" name="categoria_nova">
-          <option value="">— não mudar —</option>
-          {% for c in categorias_omie %}
-            <option value="{{ c.codigo }}">{{ c.codigo }} · {{ c.descricao }} [{{ c.onde }}]</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="campo">
-        <label for="departamento_novo">Novo departamento (100% nele)</label>
-        <select id="departamento_novo" name="departamento_novo">
-          <option value="">— não mudar —</option>
-          {% for o in obras_omie %}
-            <option value="{{ o.codigo }}">{{ o.nome }} ({{ o.codigo }})</option>
-          {% endfor %}
-        </select>
-      </div>
+  <div class="tabela-wrap">
+    <div class="barra-lote">
+      <label class="marca-todos">
+        <input type="checkbox" id="marcar-todos"> Marcar todos
+      </label>
+      <span id="conta-marcados" class="conta-lote">nenhum título marcado</span>
+      <button type="button" class="btn secundario" data-lote="categoria"
+              data-precisa-marcado disabled>Mudar a categoria dos marcados…</button>
+      <button type="button" class="btn secundario" data-lote="obra"
+              data-precisa-marcado disabled>Mudar a obra dos marcados…</button>
+      <span class="espaco"></span>
+      <span id="conta-pendentes" class="conta-lote">nenhuma alteração pendente</span>
+      <button type="button" class="link-btn" id="limpar-rascunhos">Descartar alterações</button>
+      <a class="btn secundario" style="text-decoration:none"
+         href="{{ link_baixar('explorador') }}">⬇ Excel</a>
     </div>
 
-    <div class="tabela-rolagem" style="max-height:260px; margin-top:10px">
-      <table>
+    <p class="cartao-dica" style="padding:0 14px">
+      Clique na <b>Categoria</b> ou na <b>Obra</b> de qualquer linha para trocá-la
+      só naquele título; ou marque várias linhas e use os botões acima para mudar
+      todas de uma vez. Nada é enviado enquanto você edita — o que se monta aqui é
+      um rascunho.
+      {% if dados.cortou %}
+        <br>Mostrando as <b>{{ '{:,}'.format(teto).replace(',', '.') }}</b> mais
+        recentes de {{ '{:,}'.format(dados.quantos).replace(',', '.') }}; o Excel
+        leva todas.
+      {% endif %}
+    </p>
+
+    <div class="tabela-rolagem">
+      <table id="lista-explorador" data-teto="{{ teto_do_lote }}">
         <thead>
           <tr>
-            <th class="sem-ordem">Alterar</th>
+            <th class="sem-ordem"></th>
             <th class="sem-ordem">Cód. OMIE</th>
             <th class="sem-ordem">Data</th>
-            <th class="sem-ordem">Categoria hoje</th>
-            <th class="sem-ordem">Obra hoje</th>
+            <th class="sem-ordem">Tipo</th>
+            <th class="sem-ordem">Análise</th>
+            <th class="sem-ordem">Categoria</th>
+            <th class="sem-ordem">Obra</th>
             <th class="sem-ordem">Cliente ou Fornecedor</th>
+            <th class="sem-ordem">Documento</th>
+            <th class="sem-ordem">Situação</th>
+            <th class="sem-ordem direita">Pago/Receb.</th>
+            <th class="sem-ordem direita">A pagar/receb.</th>
           </tr>
         </thead>
         <tbody>
         {% for l in dados.linhas %}
-          <tr>
-            <td><input type="checkbox" name="codigo" value="{{ l.codigo_lancamento }}"
-                       {% if l.codigo_lancamento|string in marcados %}checked{% endif %}></td>
+          <tr data-codigo="{{ l.codigo_lancamento }}">
+            <td class="cel-marca">
+              <input type="checkbox" data-marca
+                     aria-label="Marcar o título {{ l.codigo_lancamento }}">
+              <button type="button" class="link-btn oculto" data-desfazer
+                      title="Descartar a alteração deste título">↺</button>
+            </td>
             <td class="dados">{{ l.codigo_lancamento }}</td>
             <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
-            <td class="desc">{{ l.categoria or '—' }}</td>
-            <td class="desc">{{ l.departamento or '—' }}</td>
-            <td class="desc">{{ l.razao_social or '—' }}</td>
+            <td><small>{{ 'A pagar' if '2.' in (l.tipo or '') else 'A receber' }}</small></td>
+            <td><small>{{ l.analise or '—' }}</small></td>
+            <td class="desc editavel" data-campo="categoria" tabindex="0"
+                title="Clique para trocar a categoria deste título">
+              <span class="atual">{{ l.categoria or '—' }}</span>
+              <small>{{ l.grupo or '' }}</small>
+              <span class="novo oculto" data-novo></span>
+            </td>
+            <td class="desc editavel" data-campo="obra" tabindex="0"
+                title="Clique para trocar a obra deste título">
+              <span class="atual">{{ l.departamento or '—' }}</span>
+              <small>{{ l.projeto or '' }}</small>
+              <span class="novo oculto" data-novo></span>
+            </td>
+            <td class="desc">{{ l.razao_social or '—' }}
+              {% if l.observacao %}<small>{{ l.observacao[:60] }}</small>{% endif %}</td>
+            <td class="dados">{{ l.numero_documento or '—' }}</td>
+            <td><small>{{ l.situacao or '—' }}</small></td>
+            <td class="dados direita {{ classe_valor(l.pago_recebido) }}">
+              {{ brl(l.pago_recebido) if l.pago_recebido else '—' }}</td>
+            <td class="dados direita {{ classe_valor(l.a_pagar_receber) }}">
+              {{ brl(l.a_pagar_receber) if l.a_pagar_receber else '—' }}</td>
           </tr>
         {% endfor %}
         </tbody>
       </table>
     </div>
-    <p class="cartao-dica">
-      Marcar qualquer linha de um título seleciona o título inteiro — um título
-      rateado em três obras aparece em três linhas.
-    </p>
+  </div>
+
+  {# =============== ENVIAR — a única parte que escreve no OMIE =============== #}
+  <div class="cartao" style="margin-top:14px; border-left:4px solid var(--vermelho)">
+    <div class="cartao-cab"><h3>Enviar as alterações ao OMIE</h3></div>
+
+    <div class="aviso erro">
+      <b>Isto altera o cadastro no OMIE, não o painel.</b>
+      Só a <b>categoria</b> e a <b>obra</b> mudam — valor, data e situação nunca.
+      Desfazer é manual, título a título.<br>
+      <b>Trocar a obra coloca 100% nela</b> e apaga qualquer rateio anterior.
+      Títulos rateados entre obras são recusados, a menos que você marque abaixo
+      que sabe.
+    </div>
+
+    {% if not escrita_ligada %}
+      <div class="aviso info">
+        <b>A execução está desligada neste serviço.</b> O ensaio funciona e mostra
+        o que aconteceria; para enviar de verdade, é preciso configurar a senha de
+        execução (<code>PAINEL_SENHA_ESCRITA</code>) nas variáveis do serviço.
+      </div>
+    {% endif %}
 
     <div class="tabela-barra" style="border:0; padding-left:0">
-      <button class="btn secundario" name="executar" value="0">
+      <button class="btn secundario" name="executar" value="0" data-precisa-pendencia disabled>
         Ensaiar (não envia nada)
       </button>
     </div>
@@ -290,8 +259,8 @@
     <hr style="border:0; border-top:1px solid var(--borda); margin:12px 0">
     <label style="display:flex; align-items:center; gap:8px; font-size:13px">
       <input type="checkbox" name="aceita_desfazer_rateio" value="1">
-      Entendo que trocar o departamento <b>apaga o rateio</b> dos títulos
-      divididos entre obras, e quero alterá-los mesmo assim
+      Entendo que trocar a obra <b>apaga o rateio</b> dos títulos divididos entre
+      obras, e quero alterá-los mesmo assim
     </label>
     <div class="form-grade" style="margin-top:8px">
       <div class="campo">
@@ -300,74 +269,36 @@
                {% if not escrita_ligada %}disabled{% endif %}>
       </div>
       <div class="campo" style="align-self:flex-end">
-        <button class="btn amarelo" name="executar" value="1"
+        <button class="btn amarelo" name="executar" value="1" data-precisa-pendencia
                 {% if not escrita_ligada %}disabled{% endif %}>
           Alterar no OMIE de verdade
         </button>
       </div>
     </div>
     <p class="cartao-dica">
-      Ensaie primeiro. Depois altere <b>um</b> título, confira no OMIE, e só
-      então faça o lote — é o protocolo que o próprio código da versão anterior
-      pede, porque esta escrita nunca foi testada contra a API de verdade.
+      Ensaie primeiro. Depois altere <b>um</b> título, confira no OMIE, e só então
+      faça o lote — esta escrita nunca foi testada contra a API de verdade.
     </p>
-  </form>
-</details>
+  </div>
+</form>
 
-<div class="tabela-wrap">
-  <div class="tabela-barra">
-    <span class="resumo">
-      {% if dados.cortou %}
-        Mostrando as <b>{{ '{:,}'.format(teto).replace(',', '.') }}</b> mais
-        recentes de {{ '{:,}'.format(dados.quantos).replace(',', '.') }} —
-        a planilha leva todas.
-      {% else %}
-        Todas as <b>{{ '{:,}'.format(dados.quantos).replace(',', '.') }}</b> linhas.
-      {% endif %}
-    </span>
-    <span class="espaco"></span>
-    <a class="btn secundario" style="text-decoration:none"
-       href="{{ link_baixar('explorador') }}">⬇ Baixar Excel</a>
+{# O seletor: um só para a tela inteira, desenhado uma vez #}
+<div id="picker" class="picker oculto">
+  <div class="picker-cab">
+    <b data-picker-titulo></b>
+    <button type="button" class="link-btn" data-picker-fechar>✕</button>
   </div>
-  <div class="tabela-rolagem">
-    <table>
-      <thead>
-        <tr>
-          <th class="sem-ordem">Cód. OMIE</th>
-          <th class="sem-ordem">Data</th>
-          <th class="sem-ordem">Tipo</th>
-          <th class="sem-ordem">Análise</th>
-          <th class="sem-ordem">Categoria</th>
-          <th class="sem-ordem">Obra</th>
-          <th class="sem-ordem">Cliente ou Fornecedor</th>
-          <th class="sem-ordem">Documento</th>
-          <th class="sem-ordem">Situação</th>
-          <th class="sem-ordem direita">Pago/Receb.</th>
-          <th class="sem-ordem direita">A pagar/receb.</th>
-        </tr>
-      </thead>
-      <tbody>
-      {% for l in dados.linhas %}
-        <tr>
-          <td class="dados">{{ l.codigo_lancamento }}</td>
-          <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
-          <td><small>{{ 'A pagar' if '2.' in (l.tipo or '') else 'A receber' }}</small></td>
-          <td><small>{{ l.analise or '—' }}</small></td>
-          <td class="desc">{{ l.categoria or '—' }}<small>{{ l.grupo or '' }}</small></td>
-          <td class="desc">{{ l.departamento or '—' }}<small>{{ l.projeto or '' }}</small></td>
-          <td class="desc">{{ l.razao_social or '—' }}
-            {% if l.observacao %}<small>{{ l.observacao[:60] }}</small>{% endif %}</td>
-          <td class="dados">{{ l.numero_documento or '—' }}</td>
-          <td><small>{{ l.situacao or '—' }}</small></td>
-          <td class="dados direita {{ classe_valor(l.pago_recebido) }}">
-            {{ brl(l.pago_recebido) if l.pago_recebido else '—' }}</td>
-          <td class="dados direita {{ classe_valor(l.a_pagar_receber) }}">
-            {{ brl(l.a_pagar_receber) if l.a_pagar_receber else '—' }}</td>
-        </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
+  <input type="search" data-picker-busca autocomplete="off"
+         placeholder="Digite para procurar…" aria-label="Procurar">
+  <div class="picker-opcoes" data-picker-opcoes></div>
+  <p class="sem-resultado oculto" data-picker-vazio>Nada encontrado.</p>
 </div>
+
+<script type="application/json" id="dados-categorias">{{ categorias_omie | tojson }}</script>
+<script type="application/json" id="dados-obras">{{ obras_omie | tojson }}</script>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('painel.static', filename='explorador.js') }}"></script>
 {% endblock %}

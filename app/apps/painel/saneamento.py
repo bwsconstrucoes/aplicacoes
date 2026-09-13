@@ -121,7 +121,39 @@ def historico(limite: int = 200) -> list[dict]:
                 f" ORDER BY quando DESC LIMIT {int(limite)}")]
 
 
-def aplicar(codigos, categoria_nova="", departamento_novo="", *,
+def normalizar_alvos(alvos, categoria_nova="", departamento_novo="") -> dict:
+    """O que vai mudar em CADA título, no formato `{codigo: (categoria, obra)}`.
+
+    Duas formas chegam aqui, e as duas são legítimas:
+
+    - **um valor para todos** — `[501, 502]` mais `categoria_nova="2.02"`. É o
+      lote: marcar várias linhas e mandar todas para a mesma obra.
+    - **um valor por título** — `[{"codigo": 501, "categoria": "2.02"},
+      {"codigo": 502, "departamento": "D9"}]`. É a edição na própria lista, em
+      que cada linha pode ir para um lugar diferente.
+
+    A tela usa a segunda; a primeira continua valendo porque é a que funciona
+    sem JavaScript, e porque é ela que os testes exercitam há mais tempo.
+
+    Título repetido não soma: o último pedido vale. Duas linhas do mesmo título
+    rateado nunca podem virar duas chamadas ao OMIE — é um cadastro só."""
+    pedido = {}
+    for alvo in alvos or []:
+        if isinstance(alvo, dict):
+            codigo = str(alvo.get("codigo", "")).strip()
+            categoria = (alvo.get("categoria") or "").strip()
+            departamento = (alvo.get("departamento") or "").strip()
+        else:
+            codigo = str(alvo).strip()
+            categoria = (categoria_nova or "").strip()
+            departamento = (departamento_novo or "").strip()
+        if not codigo.isdigit() or not (categoria or departamento):
+            continue
+        pedido[int(codigo)] = (categoria, departamento)
+    return pedido
+
+
+def aplicar(alvos, categoria_nova="", departamento_novo="", *,
             simulacao: bool = True, aceita_desfazer_rateio: bool = False,
             cliente=None) -> dict:
     """Altera (ou simula alterar) a classificação dos títulos escolhidos.
@@ -131,11 +163,12 @@ def aplicar(codigos, categoria_nova="", departamento_novo="", *,
     exatamente o que a execução vai fazer."""
     from .sync import omie_escrita
 
-    if not categoria_nova and not departamento_novo:
+    pedido = normalizar_alvos(alvos, categoria_nova, departamento_novo)
+    if not pedido:
         return {"ok": False, "erro": "Escolha a categoria nova, o departamento "
                                      "novo, ou os dois."}
 
-    titulos = titulos_para_alterar(codigos)
+    titulos = titulos_para_alterar(pedido.keys())
     if not titulos:
         return {"ok": False, "erro": "Nenhum título válido foi escolhido."}
     if len(titulos) > TETO_POR_LOTE:
@@ -158,13 +191,18 @@ def aplicar(codigos, categoria_nova="", departamento_novo="", *,
 
     resultados = []
     for titulo in titulos:
+        # cada título carrega o SEU destino: na edição linha a linha, um vai
+        # para uma categoria e o outro para outra, no mesmo envio
+        categoria_do_titulo, departamento_do_titulo = pedido[titulo["codigo"]]
         tipo = omie_escrita.tipo_do_titulo(titulo["tipo"])
         titulo["tipo_omie"] = tipo
         linha = {**titulo, "tipo_omie": tipo, "mudancas": [], "ok": False,
-                 "resultado": ""}
+                 "resultado": "",
+                 "categoria_pedida": categoria_do_titulo,
+                 "departamento_pedido": departamento_do_titulo}
 
         # a trava do rateio: recusar ANTES de consultar o OMIE
-        if departamento_novo and titulo["tem_rateio_multiplo"] and not aceita_desfazer_rateio:
+        if departamento_do_titulo and titulo["tem_rateio_multiplo"] and not aceita_desfazer_rateio:
             linha["resultado"] = (
                 "RECUSADO: este título está rateado entre "
                 + ", ".join(titulo["rateado_em"])
@@ -175,7 +213,8 @@ def aplicar(codigos, categoria_nova="", departamento_novo="", *,
         try:
             cadastro = cliente.consultar_titulo(titulo["codigo"], tipo)
             novo, mudancas = omie_escrita.preparar_alteracao(
-                cadastro, categoria_nova or None, departamento_novo or None)
+                cadastro, categoria_do_titulo or None,
+                departamento_do_titulo or None)
             linha["mudancas"] = mudancas
             if not mudancas:
                 linha["resultado"] = "Nada a mudar: já está assim."
@@ -187,14 +226,15 @@ def aplicar(codigos, categoria_nova="", departamento_novo="", *,
                 retorno = cliente.alterar_titulo(novo, tipo)
                 linha["resultado"] = "Alterado no OMIE."
                 linha["ok"] = True
-                registrar(titulo, False, categoria_nova, departamento_novo,
-                          mudancas, True, str(retorno)[:500])
+                registrar(titulo, False, categoria_do_titulo,
+                          departamento_do_titulo, mudancas, True,
+                          str(retorno)[:500])
         except Exception as e:  # noqa: BLE001 — um título com erro não para o lote
             linha["resultado"] = f"ERRO: {e}"
             logger.exception("Painel: falha ao alterar o titulo %s", titulo["codigo"])
             if not simulacao:
-                registrar(titulo, False, categoria_nova, departamento_novo,
-                          linha["mudancas"], False, str(e))
+                registrar(titulo, False, categoria_do_titulo,
+                          departamento_do_titulo, linha["mudancas"], False, str(e))
         resultados.append(linha)
 
     enviados = sum(1 for r in resultados if r["ok"] and r["mudancas"])

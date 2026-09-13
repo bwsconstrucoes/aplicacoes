@@ -119,10 +119,12 @@ def base_de_saneamento():
         for codigo, dep in ((501, "CASA"), (502, "CASA"), (502, "PREDIO")):
             conn.execute(
                 "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
-                " categoria, codigo_categoria, departamento, razao_social,"
+                " categoria, codigo_categoria, grupo, departamento, projeto,"
+                " conta_corrente, razao_social,"
                 " numero_documento, pago_recebido, a_pagar_receber, juros, multa)"
                 " VALUES (?,'2. Contas a Pagar','DRE','Pago','Serviços','1.01',"
-                "         ?,'FORNECEDOR','NF 1',-100,0,0,0)", (codigo, dep))
+                "         'Custo de obra',?,'ALFA','Conta 1','FORNECEDOR',"
+                "         'NF 1',-100,0,0,0)", (codigo, dep))
         # o 502 esta rateado entre duas obras — e o que a trava protege
         conn.execute("INSERT INTO rateio (codigo_lancamento_omie, seq, ccoddep,"
                      " cdesdep, nperdep, nvaldep) VALUES (501,1,'D1','CASA',100,100)")
@@ -276,6 +278,90 @@ def test_o_lote_tem_teto(base_de_saneamento, monkeypatch):
 
 
 # ===========================================================================
+# 2b. Uma alteração diferente por título — a edição na própria lista
+# ===========================================================================
+# A tela deixou de mandar "um valor para todos" e passou a mandar o destino de
+# cada título. Duas linhas do mesmo título rateado não podem virar duas
+# chamadas ao OMIE: lá é um cadastro só.
+
+def test_cada_titulo_pode_ir_para_um_lugar_diferente(base_de_saneamento):
+    """O que o dono pediu com todas as letras: editar linha a linha, e depois
+    mandar tudo de uma vez."""
+    from app.apps.painel import saneamento
+    cliente = ClienteFalso()
+    r = saneamento.aplicar(
+        [{"codigo": 501, "categoria": "2.02"},
+         {"codigo": 502, "categoria": "3.03"}],
+        simulacao=True, cliente=cliente)
+    assert r["ok"] is True
+    por_codigo = {l["codigo"]: l for l in r["linhas"]}
+    assert por_codigo[501]["categoria_pedida"] == "2.02"
+    assert por_codigo[502]["categoria_pedida"] == "3.03"
+    assert any("2.02" in m for m in por_codigo[501]["mudancas"])
+    assert any("3.03" in m for m in por_codigo[502]["mudancas"])
+
+
+def test_o_mesmo_titulo_repetido_vira_uma_chamada_so(base_de_saneamento, monkeypatch):
+    """Um título rateado em três obras aparece em três linhas da tela. Se cada
+    linha virasse um envio, o OMIE receberia o mesmo título três vezes."""
+    from app.apps.painel import saneamento
+    monkeypatch.setenv("PAINEL_SENHA_ESCRITA", "x")
+    cliente = ClienteFalso()
+    r = saneamento.aplicar(
+        [{"codigo": 502, "categoria": "2.02"},
+         {"codigo": 502, "categoria": "2.02"},
+         {"codigo": 502, "categoria": "2.02"}],
+        simulacao=False, cliente=cliente)
+    assert r["quantos"] == 1
+    assert len(cliente.enviados) == 1
+
+
+def test_titulo_repetido_com_destinos_diferentes_vale_o_ultimo(base_de_saneamento):
+    """Não dá para somar dois destinos contraditórios — e escolher em silêncio o
+    primeiro esconderia do usuário a última coisa que ele clicou."""
+    from app.apps.painel import saneamento
+    alvos = saneamento.normalizar_alvos(
+        [{"codigo": 501, "categoria": "2.02"},
+         {"codigo": 501, "categoria": "9.99"}])
+    assert alvos == {501: ("9.99", "")}
+
+
+def test_titulo_sem_destino_nenhum_e_ignorado(base_de_saneamento):
+    """Marcar uma linha e não escolher nada não pode virar uma chamada vazia."""
+    from app.apps.painel import saneamento
+    alvos = saneamento.normalizar_alvos(
+        [{"codigo": 501, "categoria": "", "departamento": ""},
+         {"codigo": 502, "departamento": "D9"}])
+    assert alvos == {502: ("", "D9")}
+
+
+def test_a_forma_antiga_continua_valendo(base_de_saneamento):
+    """Sem JavaScript, a tela manda os marcados e UM destino para todos. É o
+    caminho que funciona com o navegador travado — não pode morrer."""
+    from app.apps.painel import saneamento
+    alvos = saneamento.normalizar_alvos([501, 502], categoria_nova="2.02")
+    assert alvos == {501: ("2.02", ""), 502: ("2.02", "")}
+
+
+def test_a_trava_do_rateio_olha_o_destino_DAQUELE_titulo(base_de_saneamento):
+    """A trava é por título: quem só troca a categoria passa, mesmo no mesmo
+    envio em que outro título troca de obra."""
+    from app.apps.painel import saneamento
+    r = saneamento.aplicar(
+        [{"codigo": 502, "categoria": "2.02"},          # só categoria: passa
+         {"codigo": 501, "departamento": "D9"}],        # troca obra, sem rateio
+        simulacao=True, cliente=ClienteFalso())
+    por_codigo = {l["codigo"]: l for l in r["linhas"]}
+    # o rateado passa PORQUE o destino dele não mexe em obra...
+    assert not por_codigo[502]["resultado"].startswith("RECUSADO")
+    assert any("2.02" in m for m in por_codigo[502]["mudancas"]), \
+        "e a categoria dele tem de mudar de verdade, não sobrar sem destino"
+    # ...enquanto o outro, no MESMO envio, troca de obra
+    assert not por_codigo[501]["resultado"].startswith("RECUSADO")
+    assert any("D9" in m for m in por_codigo[501]["mudancas"])
+
+
+# ===========================================================================
 # 3. A tela — a senha é exigida AQUI, na porta
 # ===========================================================================
 @pytest.fixture()
@@ -359,3 +445,87 @@ def test_alterar_exige_login_como_todo_o_resto(base_de_saneamento, monkeypatch):
     r = app.test_client().post("/painel/explorador/alterar",
                                data={"codigo": "501", "categoria_nova": "2.02"})
     assert r.status_code == 302
+
+
+# ===========================================================================
+# 4. A tela: UMA lista só, e é nela que se edita
+# ===========================================================================
+# O dono abriu a versão anterior e reprovou, em 13/09/2026: os filtros estavam
+# no alto em vez de à esquerda, escolher mais de um item exigia saber segurar
+# Ctrl, e havia DUAS listas — a de procurar e outra dentro do bloco de alterar.
+# A frase dele: "basta uma lista e a gente vai trabalhar em cima dessa lista".
+
+def test_a_tela_tem_uma_lista_so(cliente_web):
+    """Duas tabelas de lançamentos era o defeito. A do resumo por categoria não
+    conta: ela agrupa, não lista lançamento."""
+    html = cliente_web.get("/painel/explorador?busca=FORNECEDOR").get_data(as_text=True)
+    assert html.count('id="lista-explorador"') == 1
+    # a marca da segunda lista de antes: caixas `name="codigo"` numa tabela
+    assert 'name="codigo"' not in html
+
+
+def test_os_filtros_ficam_na_barra_da_esquerda(cliente_web):
+    """Como em todas as outras telas do painel — e como o dono pediu."""
+    html = cliente_web.get("/painel/explorador?busca=FORNECEDOR").get_data(as_text=True)
+    assert "sem-filtros" not in html, "a barra lateral não pode estar desligada"
+    assert 'id="form-filtros"' in html
+
+
+def test_cada_filtro_aceita_marcar_mais_de_um(cliente_web):
+    """Antes era `<select multiple>`: dava para escolher vários, mas só quem
+    sabia segurar Ctrl descobria. Agora é caixa de marcar, uma por item."""
+    html = cliente_web.get("/painel/explorador?busca=FORNECEDOR").get_data(as_text=True)
+    for campo in ("analise", "grupo", "categoria", "obra", "projeto",
+                  "conta", "situacao"):
+        assert f'data-filtro="{campo}"' in html, campo
+        assert f'type="checkbox" name="{campo}"' in html, campo
+    # e nenhum deles pode ter voltado a ser a lista de rolagem de antes, onde
+    # escolher dois itens exigia segurar Ctrl. (O "Tipo" segue sendo lista: são
+    # três opções que se excluem, a pagar OU a receber.)
+    assert "multiple" not in html, "filtro de marcar não pode virar select múltiplo"
+
+
+def test_os_filtros_longos_tem_busca(cliente_web):
+    """A lista de obras passa de cem. Sem busca, achar uma é rolar até topar."""
+    html = cliente_web.get("/painel/explorador?busca=FORNECEDOR").get_data(as_text=True)
+    assert "Buscar obra…" in html
+    assert "Buscar categoria…" in html
+
+
+def test_dois_filtros_ao_mesmo_tempo_filtram_os_dois(cliente_web):
+    """Marcar duas obras tem de trazer as duas — e só elas."""
+    from app.apps.painel import consultas
+    pedido = {"obras": ["CASA", "PREDIO"], "categorias": ["Serviços"],
+              "analises": [], "grupos": [], "projetos": [], "contas": [],
+              "situacoes": [], "tipo": "", "busca": "", "com_trf": False,
+              "de": "", "ate": ""}
+    linhas = consultas.explorar(pedido)["linhas"]
+    assert linhas, "os dois filtros juntos não podem zerar a busca"
+    assert {l["departamento"] for l in linhas} == {"CASA", "PREDIO"}
+
+
+def test_a_lista_traz_o_codigo_do_titulo_em_cada_linha(cliente_web):
+    """É o que amarra as linhas do mesmo título rateado: editar uma edita
+    todas, porque no OMIE é um cadastro só."""
+    html = cliente_web.get("/painel/explorador?busca=FORNECEDOR").get_data(as_text=True)
+    assert 'data-codigo="501"' in html
+    assert 'data-campo="categoria"' in html and 'data-campo="obra"' in html
+
+
+def test_a_alteracao_chega_por_titulo_pela_tela(cliente_web, monkeypatch):
+    """O caminho inteiro, da tela ao saneamento: três listas paralelas viram
+    um destino por título."""
+    from app.apps.painel import saneamento
+    pedidos = []
+    monkeypatch.setattr(saneamento, "aplicar",
+                        lambda alvos, *a, **k: pedidos.append(alvos) or
+                        {"ok": True, "simulacao": True, "linhas": [],
+                         "quantos": 0, "alterados": 0, "recusados": 0})
+    r = cliente_web.post("/painel/explorador/alterar?busca=FORNECEDOR", data={
+        "alvo_codigo": ["501", "502"],
+        "alvo_categoria": ["2.02", ""],
+        "alvo_departamento": ["", "D9"],
+        "executar": "0"})
+    assert r.status_code == 200
+    assert pedidos[0] == [{"codigo": "501", "categoria": "2.02", "departamento": ""},
+                          {"codigo": "502", "categoria": "", "departamento": "D9"}]
