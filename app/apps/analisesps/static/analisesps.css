@@ -1100,3 +1100,44 @@ a.kpi { display: block; }
 /* A frase que diz que a conferencia esta acontecendo. Fica discreta, mas
    precisa caber inteira — e a resposta a "como eu sei que isso roda?". */
 .fiscal-conferencia { margin: 0 2px 14px; max-width: 90ch; line-height: 1.55; }
+
+/* ============ A PROVA POR TRAS DA PROPOSTA — 13/09/2026 ===================
+   "Voce sugere e eu quero ver de forma completa os dados do que voce esta
+   sugerindo (...) pra eu nao ter que confiar somente no que voce observou."
+
+   Duas fichas completas lado a lado. Esprema-las obrigaria a rolar para
+   comparar dois numeros que precisam ser vistos juntos — que e exatamente o
+   trabalho. */
+#dlg-provas { width: min(1100px, 96vw); }
+.dlg-sub { margin-left: 10px; font-size: 13px; opacity: .85; }
+.prova-lados { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.prova-ficha {
+  background: var(--branco); border-radius: var(--raio-p); padding: 10px 12px;
+  border: 1px solid var(--borda);
+}
+.prova-ficha h4 { margin: 0 0 8px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .06em; color: var(--tinta-suave); }
+.prova-ficha dl { display: grid; grid-template-columns: minmax(120px, auto) 1fr; gap: 3px 10px; margin: 0; font-size: 13px; }
+.prova-ficha dt { color: var(--tinta-suave); }
+.prova-ficha dd { margin: 0; word-break: break-word; font-family: var(--fonte-dados); }
+
+.prova-candidata {
+  margin-top: 12px; padding: 10px; border-radius: var(--raio);
+  background: var(--papel); border: 1px solid var(--borda);
+}
+.prova-cab { font-size: 13.5px; margin-bottom: 8px; }
+.prova-diario {
+  background: #EEF2FA; border-radius: var(--raio-p); padding: 8px 12px;
+  font-size: 13px; margin-bottom: 12px;
+}
+.prova-usar { margin-top: 10px; }
+
+/* A CONTA ABERTA. O que NAO pontuou fica visivel de proposito: e o que explica
+   por que a confianca nao foi maior, e e onde a pessoa olha para discordar. */
+.prova-conta { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.prova-conta td { padding: 5px 6px; border-bottom: 1px solid var(--borda); vertical-align: top; }
+.prova-conta td:first-child { width: 20px; font-weight: 800; }
+.prova-conta small { color: var(--tinta-suave); font-family: var(--fonte-dados); }
+.prova-conta tr.bateu td:first-child { color: var(--verde); }
+.prova-conta tr.quase td:first-child { color: var(--ambar); }
+.prova-conta tr.falhou td:first-child { color: var(--borda-forte); }
+.prova-conta tr.falhou { opacity: .75; }

@@ -981,3 +981,100 @@ def test_o_valor_do_lancamento_tambem_pode_vir_do_banco():
     from decimal import Decimal
     _, porques = fiscal.pontuar(sp(valor=Decimal("269.00")), nota())
     assert any("valor é igual" in p for p in porques)
+
+
+# ---------------------------------------------------------------------------
+# O DEFEITO DE 13/09/2026 — a pontuação lia só metade da base
+#
+# A mesma SP pontuava 65% na janela de conferência e 35% na lista. A causa: a
+# base guarda cada valor DUAS VEZES — o texto que veio da planilha (`valor`,
+# `vencimento`) e a versão já convertida (`valor_num`, `vencimento_d`). A LISTA
+# da tela traz só as convertidas; a ficha completa traz as duas. A pontuação
+# lia só as de texto.
+#
+# Resultado na tela de verdade: TODA SP perdia os 25 pontos do valor e os 5 da
+# data — 30 de 100. E o corte para propor é 60. O sistema quase nunca propunha,
+# e as duas pilhas nunca chegaram a existir. Ninguém tinha como desconfiar:
+# 35% parece um número legítimo.
+#
+# É primo do defeito do Decimal (12/09), e a lição é a mesma: quando o mesmo
+# dado tem duas formas, a leitura tem de aceitar as duas — e num lugar só.
+# ---------------------------------------------------------------------------
+import datetime as _dt
+from decimal import Decimal as _Decimal
+
+
+NOTA_DE_PROVA = {
+    "chave": "26260929066773000152550010000014301000000010",
+    "numero": "1430", "valor": _Decimal("269.00"), "status": "Autorizada",
+    "emitente_doc": "29066773000152", "emitente": "FORNECEDOR",
+    "emissao": _dt.date(2026, 9, 1),
+}
+
+
+def test_o_valor_pontua_venha_ele_CONVERTIDO_ou_como_texto():
+    """É a forma que a LISTA da tela entrega. Sem isto, 25 pontos sumiam em
+    toda SP, em silêncio."""
+    from app.apps.analisesps import fiscal
+
+    da_lista = {"id": "1", "documento": "29.066.773/0001-52",
+                "credor": "ACME", "valor_num": _Decimal("269.00"),
+                "vencimento_d": _dt.date(2026, 9, 10), "nf": ""}
+    da_ficha = {"id": "1", "documento": "29.066.773/0001-52",
+                "credor": "ACME", "valor": "269,00",
+                "vencimento": "10/09/2026", "nf": ""}
+
+    pontos_lista, _ = fiscal.pontuar(da_lista, NOTA_DE_PROVA)
+    pontos_ficha, _ = fiscal.pontuar(da_ficha, NOTA_DE_PROVA)
+    assert pontos_lista == pontos_ficha, (
+        "a mesma SP pontuando diferente conforme de onde veio é o defeito")
+    assert pontos_lista == 65      # 35 emitente + 25 valor + 5 data
+
+
+def test_com_a_leitura_certa_a_SP_CHEGA_ao_corte_de_propor():
+    """O que estava em jogo: com 35% nada era proposto, e as duas pilhas —
+    aprovar em lote o que é certo, decidir um a um o que tem dúvida — nunca
+    existiram de verdade."""
+    from app.apps.analisesps import fiscal
+
+    da_lista = {"id": "1", "documento": "29.066.773/0001-52",
+                "credor": "ACME", "valor_num": _Decimal("269.00"),
+                "vencimento_d": _dt.date(2026, 9, 10), "nf": ""}
+    escolha = fiscal.melhor_nota(da_lista, [NOTA_DE_PROVA])
+    assert escolha["pontos"] >= fiscal.CONFIANCA_PARA_PROPOR
+    assert escolha["propoe"] is True
+
+
+def test_a_data_pontua_nas_DUAS_formas():
+    from app.apps.analisesps import fiscal
+
+    assert fiscal.datas_do_lancamento(
+        {"vencimento_d": _dt.date(2026, 9, 10)}) == [
+            ("vencimento", _dt.date(2026, 9, 10))]
+    assert fiscal.datas_do_lancamento(
+        {"vencimento": "10/09/2026"}) == [
+            ("vencimento", _dt.date(2026, 9, 10))]
+
+
+def test_a_forma_CONVERTIDA_manda_quando_as_duas_existem():
+    """A ficha completa traz as duas. A convertida é a que o banco garantiu."""
+    from app.apps.analisesps import fiscal
+
+    valor = fiscal.valor_do_lancamento(
+        {"valor_num": _Decimal("269.00"), "valor": "lixo"})
+    assert valor == 269.0
+
+
+def test_a_CONTA_ABERTA_e_a_pontuacao_concordam():
+    """A janela de conferência mostra regra a regra o que a pontuação somou. Se
+    as duas lerem a base de jeitos diferentes, a prova desmente a conclusão — e
+    foi assim que este defeito apareceu."""
+    from app.apps.analisesps import fiscal
+
+    da_lista = {"id": "1", "documento": "29.066.773/0001-52",
+                "credor": "ACME", "valor_num": _Decimal("269.00"),
+                "vencimento_d": _dt.date(2026, 9, 10), "nf": ""}
+    pontos, _ = fiscal.pontuar(da_lista, NOTA_DE_PROVA)
+    somado = sum(r["pontos"] for r in fiscal._conferir_regras(da_lista, NOTA_DE_PROVA)
+                 if r.get("bateu"))
+    assert somado == pontos

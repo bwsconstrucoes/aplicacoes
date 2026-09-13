@@ -276,6 +276,53 @@ DIAS_ANTES = 400          # emitida até 400 dias antes de vencer
 DIAS_DEPOIS = 30          # emitida até 30 dias depois de vencer
 
 
+# ---------------------------------------------------------------------------
+# DE ONDE SAI CADA NÚMERO DO LANÇAMENTO — e por que isto é uma função
+#
+# ⚠️ DEFEITO ACHADO EM 13/09/2026, e ele estava calado desde a estreia da tela.
+#
+# A mesma SP pontuava **65% na janela de conferência e 35% na lista**. A causa:
+# a base guarda cada valor DUAS VEZES — o texto que veio da planilha
+# (`valor`, `vencimento`) e a versão já convertida (`valor_num`,
+# `vencimento_d`). A LISTA da tela traz só as convertidas; a ficha completa traz
+# as duas. A pontuação lia só as de texto.
+#
+# Resultado: na tela de verdade, TODA SP perdia os 25 pontos do valor e os 5 da
+# data — 30 de 100. E o corte para propor é 60. Ou seja: **o sistema quase
+# nunca propunha**, e as duas pilhas ("aprovar em lote o que é certo, decidir um
+# a um o que tem dúvida") nunca chegaram a existir de verdade. Tudo caía na
+# pilha da dúvida, e ninguém tinha como desconfiar — 35% parece um número
+# legítimo.
+#
+# É primo do defeito do Decimal (12/09), e a lição é a mesma: **quando o mesmo
+# dado tem duas formas, a leitura tem de aceitar as duas** — e num lugar só,
+# senão a próxima leitura esquece de novo.
+# ---------------------------------------------------------------------------
+def valor_do_lancamento(lancamento: dict):
+    """O valor da SP, venha ele convertido ou como texto da planilha."""
+    bruto = lancamento.get("valor_num")
+    if bruto is None or bruto == "":
+        bruto = lancamento.get("valor")
+    return _para_numero(bruto)
+
+
+def datas_do_lancamento(lancamento: dict) -> list:
+    """As datas que servem para conferir a emissão, com o nome de cada uma.
+
+    Vencimento e pagamento, nesta ordem, cada uma na forma que existir."""
+    saida = []
+    for convertida, texto_, rotulo in (
+            ("vencimento_d", "vencimento", "vencimento"),
+            ("data_pagamento_d", "data_pagamento", "pagamento")):
+        bruto = lancamento.get(convertida)
+        if bruto is None or bruto == "":
+            bruto = lancamento.get(texto_)
+        data = _para_data(bruto)
+        if data:
+            saida.append((rotulo, data))
+    return saida
+
+
 def pontuar(lancamento: dict, nota: dict) -> tuple[int, list]:
     """Quanto esta nota combina com este lançamento, e POR QUÊ.
 
@@ -295,8 +342,9 @@ def pontuar(lancamento: dict, nota: dict) -> tuple[int, list]:
         pontos += PONTOS_NUMERO
         porques.append(f"o nº da nota bate ({nota.get('numero')})")
 
-    # 3. O valor.
-    valor_sp = _para_numero(lancamento.get("valor"))
+    # 3. O valor. Ver `valor_do_lancamento`: ele vem em duas formas, e ler só
+    #    uma delas foi o defeito de 13/09/2026.
+    valor_sp = valor_do_lancamento(lancamento)
     valor_nota = _para_numero(nota.get("valor"))
     if valor_sp is not None and valor_nota is not None:
         diferenca = abs(valor_sp - valor_nota)
@@ -315,9 +363,8 @@ def pontuar(lancamento: dict, nota: dict) -> tuple[int, list]:
     # 5. A data, só para confirmar.
     emissao = _para_data(nota.get("emissao"))
     if emissao:
-        for campo in ("vencimento", "data_pagamento"):
-            alvo = _para_data(lancamento.get(campo))
-            if alvo and -DIAS_DEPOIS <= (alvo - emissao).days <= DIAS_ANTES:
+        for _rotulo, alvo in datas_do_lancamento(lancamento):
+            if -DIAS_DEPOIS <= (alvo - emissao).days <= DIAS_ANTES:
                 pontos += PONTOS_DATA
                 porques.append("a data de emissão é compatível")
                 break
@@ -1125,3 +1172,212 @@ def resumo_da_reconferencia(linhas: list) -> dict:
             "mudaram": sum(1 for i in saida if i["mudou"]),
             "apontados": sum(1 for i in saida
                              if i["grupo"] in (CRITICO, CORRECAO, DUVIDA))}
+
+
+# ---------------------------------------------------------------------------
+# A PROVA — os dois lados abertos, campo a campo
+#
+# Cobrança do dono em 13/09/2026, e ela derruba o desenho anterior: *"você
+# sugere e eu quero ver de forma completa os dados do que você está sugerindo.
+# Os dados do relatório FSist. Como faço? Ou quero ver os dados do registro,
+# não dá pra ver pra validar. Isso pra eu ter que confiar somente no que você
+# observou."*
+#
+# Ele está certo. A tela mostrava a CONCLUSÃO ("nota 1430 · FORNECEDOR") e
+# escondia o que a sustenta. Numa tela cujo trabalho é achar erro, pedir
+# confiança cega é o pior arranjo possível: quem confere sem poder ver vira
+# carimbo, e carimbo não acha nada.
+#
+# ENTÃO AQUI SAI TUDO: a SP inteira, a nota inteira, a conta dos pontos regra a
+# regra (inclusive as que NÃO pontuaram, que são as que explicam por que a
+# confiança não foi maior), e TODAS as candidatas consideradas — não só a
+# vencedora. Ver a segunda colocada é o que permite discordar da escolha.
+# ---------------------------------------------------------------------------
+
+# Como cada regra da pontuação aparece na tela, e quanto ela vale. A ordem é a
+# do peso: quem lê quer saber primeiro o que mais decidiu.
+REGRAS_DA_PONTUACAO = [
+    ("emitente", "CNPJ do credor é o de quem emitiu", PONTOS_EMITENTE),
+    ("numero", "Nº da nota digitado no card bate", PONTOS_NUMERO),
+    ("valor", "Valor", PONTOS_VALOR_EXATO),
+    ("nome", "Nome do credor parecido com o do emitente", PONTOS_NOME),
+    ("data", "Data de emissão compatível", PONTOS_DATA),
+]
+
+
+def _conferir_regras(lancamento: dict, nota: dict) -> list:
+    """Regra a regra: bateu, não bateu, e com que número de cada lado.
+
+    O QUE NÃO BATEU É O MAIS IMPORTANTE AQUI. "Confiança 35%" não diz nada;
+    "o valor difere em R$ 12,00 e o nº da nota do card está vazio" diz onde
+    olhar."""
+    saida = []
+
+    emitente = nota.get("emitente_doc") or emitente_da_chave(nota.get("chave"))
+    saida.append({
+        "chave": "emitente", "rotulo": "CNPJ do credor é o de quem emitiu",
+        "bateu": mesmo_documento(lancamento.get("documento"), emitente),
+        "pontos": PONTOS_EMITENTE,
+        "no_lancamento": _texto(lancamento.get("documento")),
+        "na_nota": _texto(emitente),
+    })
+
+    saida.append({
+        "chave": "numero", "rotulo": "Nº da nota digitado no card bate",
+        "bateu": mesmo_numero_de_nota(lancamento.get("nf"), nota.get("numero")),
+        "pontos": PONTOS_NUMERO,
+        "no_lancamento": _texto(lancamento.get("nf")) or "(vazio)",
+        "na_nota": _texto(nota.get("numero")),
+    })
+
+    valor_sp = valor_do_lancamento(lancamento)
+    valor_nota = _para_numero(nota.get("valor"))
+    diferenca = (abs(valor_sp - valor_nota)
+                 if valor_sp is not None and valor_nota is not None else None)
+    saida.append({
+        "chave": "valor", "rotulo": "Valor",
+        "bateu": diferenca is not None and diferenca < 0.005,
+        "quase": diferenca is not None and 0.005 <= diferenca <= TOLERANCIA_VALOR,
+        "pontos": PONTOS_VALOR_EXATO,
+        "no_lancamento": valor_sp, "na_nota": valor_nota,
+        "diferenca": diferenca,
+    })
+
+    saida.append({
+        "chave": "nome", "rotulo": "Nome do credor parecido com o do emitente",
+        "bateu": _nome_parecido(lancamento.get("credor"), nota.get("emitente")),
+        "pontos": PONTOS_NOME,
+        "no_lancamento": _texto(lancamento.get("credor")),
+        "na_nota": _texto(nota.get("emitente")),
+    })
+
+    emissao = _para_data(nota.get("emissao"))
+    bateu_data, quando = False, ""
+    if emissao:
+        for rotulo, alvo in datas_do_lancamento(lancamento):
+            if -DIAS_DEPOIS <= (alvo - emissao).days <= DIAS_ANTES:
+                from .formatos import data_br
+                bateu_data, quando = True, f"{rotulo} em {data_br(alvo)}"
+                break
+    saida.append({
+        "chave": "data", "rotulo": "Data de emissão compatível",
+        "bateu": bateu_data, "pontos": PONTOS_DATA,
+        "no_lancamento": quando or "(sem data compatível)",
+        "na_nota": _escrever("emissao", emissao),
+    })
+
+    return saida
+
+
+# Os campos da nota que a tela mostra, na ordem em que se confere um documento
+# fiscal. TODOS, e de propósito: o pedido foi ver "de forma completa".
+CAMPOS_DA_NOTA = [
+    ("numero", "Número"), ("serie", "Série"), ("emissao", "Emissão"),
+    ("valor", "Valor"), ("status", "Situação"), ("tipo", "Tipo"),
+    ("emitente", "Emitente"), ("emitente_doc", "CNPJ do emitente"),
+    ("emitente_uf", "UF"), ("destinatario", "Destinatário"),
+    ("destinatario_doc", "CNPJ do destinatário"),
+    ("chaves_nfe", "NF-e dentro deste CT-e"), ("chave", "Chave de acesso"),
+    ("importada_em", "Entrou aqui em"),
+]
+
+
+def nota_completa(chave: str) -> dict:
+    """A nota inteira, como ela está guardada. Sem recorte."""
+    from .db import consultar_um
+    limpa = so_digitos(chave)
+    if len(limpa) != 44:
+        return {}
+    campos = [c for c, _ in CAMPOS_DA_NOTA]
+    linha = consultar_um(
+        f"SELECT {', '.join(campos)} FROM analisesps.notas_fiscais "
+        " WHERE chave = ?", (limpa,))
+    return dict(zip(campos, linha)) if linha else {}
+
+
+# Como cada campo da nota é escrito para gente ler. Um documento fiscal com
+# data 2026-09-01 e valor 269.00 numa tela em português é erro de leitura
+# esperando acontecer — e esta é exatamente a tela em que ele vai comparar
+# número com número.
+_COMO_ESCREVER = {
+    "emissao": "data", "valor": "dinheiro", "importada_em": "momento",
+}
+
+
+def _escrever(campo: str, valor) -> str:
+    if valor is None or valor == "":
+        return ""
+    from .formatos import data_br, moeda, momento_br
+    jeito = _COMO_ESCREVER.get(campo)
+    if jeito == "data":
+        return data_br(valor)
+    if jeito == "dinheiro":
+        return moeda(valor)
+    if jeito == "momento":
+        return momento_br(valor)
+    return str(valor)
+
+
+def _nota_para_a_tela(nota: dict) -> dict:
+    """A nota vira texto, campo a campo, com o rótulo em português."""
+    completa = nota_completa(nota.get("chave")) or dict(nota)
+    return {
+        "chave": so_digitos(completa.get("chave") or nota.get("chave")),
+        "campos": [{"rotulo": rotulo,
+                    "valor": _escrever(campo, completa.get(campo))}
+                   for campo, rotulo in CAMPOS_DA_NOTA],
+    }
+
+
+def comparar(lancamento: dict) -> dict:
+    """Tudo o que sustenta (ou derruba) a proposta desta SP.
+
+    NÃO É RESUMO: é a SP inteira, todas as candidatas com a conta dos pontos
+    aberta regra a regra, e o que já está gravado no diário. Quem confere
+    precisa poder discordar com o dado na mão."""
+    por_raiz = notas_candidatas([lancamento])
+    candidatas = _para_esta_sp(lancamento, por_raiz)
+    diario = analises_guardadas([lancamento.get("id")]).get(
+        str(lancamento.get("id")), {})
+
+    avaliadas = []
+    for nota in candidatas:
+        pontos, porques = pontuar(lancamento, nota)
+        avaliadas.append({
+            "pontos": pontos,
+            "porques": porques,
+            "propoe": pontos >= CONFIANCA_PARA_PROPOR,
+            "regras": _conferir_regras(lancamento, nota),
+            "categoria_pela_chave": categoria_da_chave(nota.get("chave")),
+            **_nota_para_a_tela(nota),
+        })
+    avaliadas.sort(key=lambda x: -x["pontos"])
+
+    escolha = melhor_nota(lancamento, candidatas)
+    veredito = avaliar(lancamento, diario, escolha)
+
+    return {
+        "sp": str(lancamento.get("id")),
+        "diario": {
+            "documentacao": _texto(diario.get("documentacao")),
+            "chave": so_digitos(diario.get("chave")),
+            "origem": _texto(diario.get("origem")),
+            "situacao": _texto(diario.get("situacao")),
+            "por": _texto(diario.get("decidida_por")),
+            "motivo": _texto(diario.get("motivo")),
+        },
+        "veredito": {
+            "grupo": veredito.get("grupo"),
+            "rotulo": ROTULOS_GRUPO.get(veredito.get("grupo"), ""),
+            "proposta": veredito.get("documentacao") or "",
+            "chave": veredito.get("chave") or "",
+            "confianca": veredito.get("confianca"),
+            "motivo": veredito.get("motivo"),
+            "propoe": bool(veredito.get("propoe")),
+        },
+        "candidatas": avaliadas,
+        # QUANTAS FORAM OLHADAS, mesmo que nenhuma tenha servido. "Não achei" e
+        # "não procurei" são coisas diferentes, e só este número separa as duas.
+        "olhadas": len(candidatas),
+        "corte": CONFIANCA_PARA_PROPOR,
+    }

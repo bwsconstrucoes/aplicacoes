@@ -1885,6 +1885,56 @@ def decidir_fiscal_a_mao():
     return {"ok": True, **gravado}
 
 
+@bp.route("/api/fiscal/comparar")
+@exige_consulta
+def comparar_fiscal():
+    """TUDO o que sustenta (ou derruba) a proposta de uma SP.
+
+    Cobrança do dono em 13/09/2026: *"você sugere e eu quero ver de forma
+    completa os dados do que você está sugerindo. Os dados do relatório FSist.
+    Como faço? Ou quero ver os dados do registro, não dá pra ver pra validar.
+    Isso pra eu ter que confiar somente no que você observou."*
+
+    Ele está certo, e o desenho anterior era ruim: a tela mostrava a conclusão
+    e escondia a prova. Numa tela cujo trabalho é achar erro, quem confere sem
+    poder ver vira carimbo — e carimbo não acha nada.
+
+    Devolve a SP INTEIRA, a nota INTEIRA (todas as candidatas, não só a
+    vencedora), e a conta dos pontos regra a regra, inclusive as que NÃO
+    pontuaram — são elas que explicam por que a confiança não foi maior."""
+    from . import colunas, consultas, fiscal
+
+    sp_id = (request.args.get("sp") or "").strip()
+    if not sp_id:
+        return {"ok": False, "erro": "SP não informada."}, 400
+    try:
+        sp = consultas.uma(sp_id)
+    except Exception as e:  # noqa: BLE001 — banco fora do ar
+        logger.exception("Análise de SPs: falhou ler a SP %r", sp_id)
+        return {"ok": False, "erro": f"Não consegui ler a SP: {e}"}, 500
+    if not sp:
+        return {"ok": False, "erro": "SP não encontrada na base."}, 404
+
+    try:
+        comparacao = fiscal.comparar(sp)
+    except Exception as e:  # noqa: BLE001 — migração ainda não aplicada
+        logger.exception("Análise de SPs: falhou comparar a SP %r", sp_id)
+        return {"ok": False, "erro": f"Não consegui comparar: {e}"}, 500
+
+    # A SP INTEIRA, com o rótulo em português de cada coluna e na ordem da
+    # planilha — é a mesma ordem em que ele lê a SPsBD, e ler na ordem
+    # conhecida é metade da conferência.
+    def texto(v):
+        return "" if v is None else str(v)
+
+    comparacao["lancamento"] = [
+        {"rotulo": colunas.ROTULOS.get(campo, campo), "valor": texto(sp.get(campo))}
+        for campo in colunas.CHAVES if texto(sp.get(campo)).strip()
+    ]
+    comparacao["ok"] = True
+    return comparacao
+
+
 @bp.route("/api/fiscal/reconferir", methods=["POST"])
 @exige_consulta
 def reconferir_fiscal():

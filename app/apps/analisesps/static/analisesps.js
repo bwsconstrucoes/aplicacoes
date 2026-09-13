@@ -1343,3 +1343,164 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
   document.querySelectorAll(".fiscal-reconferir").forEach(b =>
     b.addEventListener("click", () => reconferir([b.dataset.sp], b)));
 })();
+
+
+/* ---------------------------------------------------------------------------
+   VER OS DADOS — a prova por tras da proposta.
+
+   Cobranca do dono em 13/09/2026: *"voce sugere e eu quero ver de forma
+   completa os dados do que voce esta sugerindo. Os dados do relatorio FSist.
+   Como faco? Ou quero ver os dados do registro, nao da pra ver pra validar.
+   Isso pra eu ter que confiar somente no que voce observou."*
+
+   A tela mostrava a CONCLUSAO e escondia o que a sustenta. Numa tela cujo
+   trabalho e achar erro, quem confere sem poder ver vira carimbo — e carimbo
+   nao acha nada.
+
+   O QUE APARECE: a SP inteira, a nota inteira, e a conta dos pontos regra a
+   regra — INCLUSIVE as que nao pontuaram, que sao as que explicam por que a
+   confianca nao foi maior. E todas as candidatas, nao so a vencedora: ver a
+   segunda colocada e o que permite discordar da escolha.
+--------------------------------------------------------------------------- */
+(function () {
+  const config = document.getElementById("fiscal-config");
+  const dlg = document.getElementById("dlg-provas");
+  if (!config || !dlg || !config.dataset.urlComparar) return;
+  const corpo = document.getElementById("provas-corpo");
+  const titulo = document.getElementById("provas-sp");
+
+  const esc = s => String(s === null || s === undefined ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const dinheiro = v => (v === null || v === undefined || v === "")
+      ? "—"
+      : Number(v).toLocaleString("pt-BR",
+          {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+  function ficha(titulo, campos) {
+    return '<div class="prova-ficha"><h4>' + esc(titulo) + '</h4><dl>'
+      + campos.map(c => '<dt>' + esc(c.rotulo) + '</dt><dd>'
+                        + (esc(c.valor) || "—") + '</dd>').join("")
+      + '</dl></div>';
+  }
+
+  // A CONTA ABERTA. Cada regra com o que tem de um lado e do outro, quanto
+  // vale, e se entrou ou nao. E a parte que responde "por que 35%?".
+  function conta(regras) {
+    const linha = r => {
+      const marca = r.bateu ? "✔" : (r.quase ? "≈" : "✕");
+      const classe = r.bateu ? "bateu" : (r.quase ? "quase" : "falhou");
+      let lado;
+      if (r.chave === "valor") {
+        lado = "SP " + dinheiro(r.no_lancamento) + " · nota "
+             + dinheiro(r.na_nota)
+             + (r.diferenca ? " · diferenca " + dinheiro(r.diferenca) : "");
+      } else {
+        lado = "SP: " + (esc(r.no_lancamento) || "—")
+             + " · nota: " + (esc(r.na_nota) || "—");
+      }
+      const ganhou = r.bateu ? "+" + r.pontos
+                   : (r.quase ? "parcial" : "0 de " + r.pontos);
+      return '<tr class="' + classe + '"><td>' + marca + '</td><td>'
+           + esc(r.rotulo) + '<br><small>' + lado + '</small></td>'
+           + '<td class="num">' + ganhou + '</td></tr>';
+    };
+    return '<table class="prova-conta"><tbody>'
+         + regras.map(linha).join("") + '</tbody></table>';
+  }
+
+  function candidata(c, i, corte) {
+    const cabeca = '<div class="prova-cab"><b>'
+        + (i === 0 ? "Melhor candidata" : "Candidata " + (i + 1)) + '</b>'
+        + ' — confianca <b>' + c.pontos + '%</b>'
+        + (c.pontos >= corte ? ' <span class="etiqueta boa">acima do corte</span>'
+                             : ' <span class="etiqueta">abaixo do corte de '
+                               + corte + '%</span>')
+        + (c.categoria_pela_chave
+           ? ' · a chave diz que e <b>' + esc(c.categoria_pela_chave) + '</b>'
+           : "")
+        + '</div>';
+    return '<div class="prova-candidata">' + cabeca
+         + '<div class="prova-lados">' + ficha("A nota (como está guardada)", c.campos)
+         + '<div class="prova-ficha"><h4>Como os pontos foram contados</h4>'
+         + conta(c.regras) + '</div></div>'
+         // USAR ESTA NOTA: fecha o par com a candidata que a PESSOA escolheu,
+         // e nao so com a que o sistema pos em primeiro. E o que transforma
+         // "discordo" em trabalho feito, em vez de reclamacao.
+         + (config.dataset.urlMao
+            ? '<button class="btn secundario prova-usar" data-chave="'
+              + esc(c.chave) + '">Usar esta nota nesta SP</button>' : "")
+         + '</div>';
+  }
+
+  function desenhar(d) {
+    if (!d.ok) {
+      corpo.innerHTML = '<div class="aviso atencao">'
+                      + esc(d.erro || "Não consegui carregar.") + '</div>';
+      return;
+    }
+    const v = d.veredito || {};
+    const j = d.diario || {};
+    let html = '<div class="aviso ' + (v.propoe ? "info" : "") + '">'
+        + '<b>' + esc(v.rotulo || "") + '</b> — ' + esc(v.motivo || "")
+        + (v.proposta ? '<br>Proposta: <b>' + esc(v.proposta) + '</b> · '
+                      + 'confianca ' + v.confianca + '%' : "")
+        + '<br><small>Olhei <b>' + d.olhadas + '</b> nota(s) deste credor. '
+        + 'O sistema so propoe a partir de ' + d.corte + '% de confianca.</small>'
+        + '</div>';
+
+    if (j.documentacao || j.chave) {
+      html += '<div class="prova-diario">O que ja esta gravado: <b>'
+           + (esc(j.documentacao) || "sem categoria") + '</b>'
+           + (j.chave ? ' · chave ' + esc(j.chave) : "")
+           + (j.origem ? ' · origem ' + esc(j.origem) : "")
+           + (j.por ? ' · por ' + esc(j.por) : "") + '</div>';
+    }
+
+    html += ficha("O lançamento (a SP inteira)", d.lancamento || []);
+
+    if (!d.candidatas || !d.candidatas.length) {
+      html += '<div class="aviso atencao">Nenhuma nota deste credor foi '
+            + 'encontrada na base. Isso nao quer dizer que ela nao exista — '
+            + 'pode ser nota que ainda nao foi importada, ou emitida por outro '
+            + 'CNPJ do mesmo grupo.</div>';
+    } else {
+      html += d.candidatas.map((c, i) => candidata(c, i, d.corte)).join("");
+    }
+    corpo.innerHTML = html;
+
+    corpo.querySelectorAll(".prova-usar").forEach(b =>
+      b.addEventListener("click", async () => {
+        if (!confirm("Gravar esta nota nesta SP?\n\nA categoria sai de dentro "
+                     + "da propria chave. A gravacao no card do Pipefy e o "
+                     + "passo seguinte.")) return;
+        b.disabled = true;
+        try {
+          const r = await fetch(config.dataset.urlMao, {
+            method: "POST", headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({sp: d.sp, chave: b.dataset.chave}),
+          });
+          const resp = await r.json();
+          if (!resp.ok) { alert(resp.erro || "Nao consegui gravar."); return; }
+          location.reload();
+        } catch (e) {
+          alert("Nao consegui falar com o servidor: " + e);
+        } finally { b.disabled = false; }
+      }));
+  }
+
+  document.querySelectorAll(".fiscal-provas").forEach(b =>
+    b.addEventListener("click", async () => {
+      if (titulo) titulo.textContent = "SP " + b.dataset.sp;
+      corpo.innerHTML = '<p class="cartao-dica">Carregando…</p>';
+      dlg.showModal();
+      try {
+        const r = await fetch(config.dataset.urlComparar + "?sp="
+                              + encodeURIComponent(b.dataset.sp));
+        desenhar(await r.json());
+      } catch (e) {
+        corpo.innerHTML = '<div class="aviso atencao">Nao consegui falar com o '
+                        + 'servidor: ' + e + '</div>';
+      }
+    }));
+})();

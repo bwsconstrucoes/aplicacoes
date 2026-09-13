@@ -293,6 +293,14 @@
                           title="Informar a categoria e a chave à mão">
                     ✎ informar</button><br>
                 {% endif %}
+                {# VER A PROVA. *"Você sugere e eu quero ver de forma completa
+                   os dados do que você está sugerindo (…) pra eu não ter que
+                   confiar somente no que você observou."* A tela mostrava a
+                   conclusão e escondia o que a sustenta. #}
+                <button class="link-btn fiscal-provas"
+                        data-sp="{{ l.sp.id }}"
+                        title="Ver a SP e a nota inteiras, campo a campo, e a conta dos pontos">
+                  🔍 ver os dados</button><br>
                 {# RECONFERIR vale para quem só consulta: não grava nada e não
                    custa IA — é só perguntar de novo. #}
                 <button class="link-btn fiscal-reconferir"
@@ -321,6 +329,29 @@
     </div>
   {% endif %}
 </div>
+
+{# ---------------------------------------------------------------------------
+   A JANELA DA PROVA — os dois lados abertos, campo a campo.
+
+   É larga de propósito: são duas fichas completas lado a lado, e espremê-las
+   obrigaria a rolar para comparar dois números que precisam ser vistos juntos.
+
+   NÃO DEPENDE DE PERFIL: olhar o dado não é alterar dado. Quem só consulta
+   abre igual — e é quem mais precisa, porque não pode corrigir e só pode
+   apontar.
+--------------------------------------------------------------------------- #}
+<dialog id="dlg-provas">
+  <div class="dlg-topo">
+    <h3>Os dados, inteiros</h3>
+    <span id="provas-sp" class="dlg-sub"></span>
+    <form method="dialog" style="margin-left:auto">
+      <button class="link-btn" value="fechar" style="color:#fff">fechar</button>
+    </form>
+  </div>
+  <div class="dlg-corpo" id="provas-corpo">
+    <p class="cartao-dica">Carregando…</p>
+  </div>
+</dialog>
 
 {# A JANELA DE ESCREVER À MÃO. Uma só, preenchida pela linha em que se clicou —
    200 janelas escondidas na página custariam memória de navegador à toa. #}
@@ -368,6 +399,7 @@
      data-url-mao="{{ url_for('analisesps.decidir_fiscal_a_mao') }}"
      data-url-nota="{{ url_for('analisesps.conferir_nota_fiscal') }}"
      data-url-reconferir="{{ url_for('analisesps.reconferir_fiscal') }}"
+     data-url-comparar="{{ url_for('analisesps.comparar_fiscal') }}"
      data-url-tarefa="{{ url_for('analisesps.sincronizar') }}"
      data-url-andamento="{{ url_for('analisesps.andamento') }}"></div>
 {% endblock %}

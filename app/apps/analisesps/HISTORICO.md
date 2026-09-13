@@ -2874,6 +2874,68 @@ verdade, uma linha e em lote.
 > e que a tela recusa anunciar baixa sem confirmação. **O teste de verdade é o
 > primeiro comprovante reenviado depois de publicar**, conferindo na planilha.
 
+### Quadragésima leva (13/09) — a PROVA por trás da proposta, e o defeito que ela achou
+
+*"Você sugere e eu quero ver de forma completa os dados do que você está
+sugerindo. Os dados do relatório FSist. Como faço? Ou quero ver os dados do
+registro, não dá pra ver pra validar. Isso pra eu ter que confiar somente no
+que você observou."*
+
+**Ele está certo, e o desenho anterior era ruim de um jeito específico:** a tela
+mostrava a CONCLUSÃO ("nota 1430 · FORNECEDOR") e escondia o que a sustenta.
+Numa tela cujo trabalho é achar erro, pedir confiança cega é o pior arranjo
+possível — quem confere sem poder ver vira carimbo, e carimbo não acha nada.
+
+**O que entrou:** um botão "🔍 ver os dados" em cada linha, que abre os dois
+lados inteiros —
+
+- **a SP completa**, campo a campo, com os rótulos da planilha e na ordem dela;
+- **a nota completa** como está guardada: número, série, emissão, valor,
+  situação, emitente e CNPJ, UF, destinatário, as NF-e de dentro de um CT-e, a
+  chave, e quando ela entrou aqui;
+- **a conta dos pontos, regra a regra** — e aqui está o que mais importa: **as
+  regras que NÃO pontuaram aparecem também**, com o que tem de cada lado. "35%"
+  não diz nada; *"o nº da nota no card está vazio e o nome do emitente é
+  'FORNECEDOR' em vez de 'ACME'"* diz onde olhar;
+- **todas as candidatas**, não só a vencedora, cada uma com a conta aberta e um
+  botão **"usar esta nota nesta SP"**. Ver a segunda colocada é o que permite
+  discordar da escolha — e o botão é o que transforma "discordo" em trabalho
+  feito, em vez de reclamação.
+
+Quem só consulta abre igual: olhar o dado não é alterar dado, e é justamente
+quem não pode corrigir que mais precisa poder apontar.
+
+#### E a prova achou um defeito grave na hora em que foi ligada
+
+**A mesma SP pontuava 65% na janela e 35% na lista.**
+
+A base guarda cada valor **duas vezes**: o texto que veio da planilha (`valor`,
+`vencimento`) e a versão já convertida (`valor_num`, `vencimento_d`). A **lista**
+da tela traz só as convertidas; a **ficha completa** traz as duas. E a pontuação
+lia só as de texto.
+
+**O efeito, na tela de verdade:** toda SP perdia os **25 pontos do valor e os 5
+da data** — 30 de 100. E o corte para o sistema propor é 60. Ou seja: **o
+sistema quase nunca propunha**, e as duas pilhas — aprovar em lote o que é
+certo, decidir um a um o que tem dúvida — **nunca chegaram a existir**. Tudo
+caía na pilha da dúvida, e ninguém tinha como desconfiar: 35% parece um número
+perfeitamente legítimo.
+
+É primo do defeito do Decimal (12/09), e a lição é a mesma, agora escrita no
+código: **quando o mesmo dado tem duas formas, a leitura tem de aceitar as duas
+— e num lugar só**, senão a próxima leitura esquece de novo. As duas formas
+passaram a sair de duas funções (`valor_do_lancamento`, `datas_do_lancamento`)
+que a pontuação e a conta aberta usam juntas.
+
+> **Por que nenhum teste pegou antes:** todos montavam a SP com os campos de
+> texto, que é a forma da ficha. Nenhum montava com a forma que a LISTA entrega
+> — e é a lista que a tela usa. Agora há teste exigindo que as duas formas deem
+> o mesmo número, e outro exigindo que a conta aberta feche com a pontuação.
+
+**Conferido na tela, depois da correção:** a lista e a janela dizem 65% as duas,
+e a SP passou a vir **marcada** — a pilha do "aprovar em lote" funcionando pela
+primeira vez.
+
 ### Pergunta (13/09) — "qual o filtro pra aparecer só as que o sistema marcou?"
 
 **A resposta honesta é que não havia um, e agora há — mas só para metade da
