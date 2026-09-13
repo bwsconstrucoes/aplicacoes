@@ -562,7 +562,7 @@ blueprints subindo com os dois trabalhos juntos.
   a leitura dos campos e a escolha da SP. Faltam comprovantes de exemplo de cada
   tipo.
 
-### 13/09/2026 — o leitor do Sicredi estava desligado por um engano meu
+### 13/09/2026 — o leitor do Sicredi estava desligado por um engano meu (publicado, `27f62fb`)
 
 Um comprovante real do Sicredi, de R$ 10.861,20, voltou `nao_localizado`. O robô
 mandava toda página para o leitor do **Bradesco**, e para esse papel ele saía
@@ -593,3 +593,17 @@ aparece em comprovante do **Bradesco** quando o destino é uma conta Sicredi, e
 mandá-lo para o leitor errado pode produzir valor errado. Não reconhecer é
 barato (cai no leitor do Bradesco, não acha SP, fica pendente e o aviso conta);
 ler errado, não.
+
+**Publicado em 13/09/2026 (`27f62fb`)**, com a `main` de dois dias de outros
+chats (40 commits) trazida para o ramo antes da junção: 2907 testes verdes e os
+blueprints subindo com tudo junto.
+
+**Conferir no primeiro comprovante Sicredi real:** que ele acha a SP pelo número
+que vem em "Descrição do Pagamento", e que a baixa cai na conta Sicredi certa.
+O leitor nunca rodou em produção — este será o primeiro uso de verdade.
+
+**Aberto, e é de decidir:** o aviso chegou ao dono **pelo Telegram**, não pelo
+WhatsApp. Isso quer dizer que a perna do WhatsApp não está entregando — e que o
+**financeiro provavelmente não recebeu nada**, porque o Telegram só alcança quem
+já conversou com o robô. O campo `aviso` da resposta ao Make diz o motivo em uma
+linha; ninguém foi atrás ainda.
