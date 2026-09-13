@@ -287,9 +287,43 @@ def divergencias_da_base() -> list:
                         for grafia, quantas in v["vezes_por_grafia"].items()
                         if grafia != nome),
         })
+    # O QUE A RECEITA JÁ DISSE, e a suspeita de CNPJ digitado errado. As duas
+    # coisas são acrescentadas DEPOIS, numa consulta só para a tela inteira —
+    # uma por linha seriam dezenas de idas ao banco.
+    #
+    # A consulta à Receita NÃO acontece aqui: ela é sob demanda, por botão, um
+    # CNPJ por vez. Varrer novecentos fornecedores ao abrir a tela é o jeito
+    # certo de ser bloqueado por uso excessivo — e aí ela para de funcionar
+    # inclusive no caso em que importa.
+    from . import receita
+    sabidas = receita.guardadas([d["documento"] for d in saida])
+    nossos = cnpjs_da_empresa()
+    for d in saida:
+        limpo = so_digitos(d["documento"])
+        d["consulta"] = sabidas.get(limpo, {})
+        d["suspeita"] = suspeita_de_cnpj_errado(
+            d["documento"],
+            [g for v in d["variantes"] for g in v["grafias"]],
+            d["consulta"], nossos)
+        # ⚠️ CNPJ COMPROVADAMENTE ERRADO SAI DA PILHA DO "RESOLVE SOZINHO".
+        #
+        # Aquela pilha é aplicada em bloco, sem ninguém olhar linha a linha —
+        # é para isso que ela existe. Deixar ali um caso em que o NÚMERO está
+        # errado faria o sistema equalizar bonitinho o nome de um fornecedor
+        # que não é aquele: trabalho jogado fora, e pior, com ar de resolvido.
+        #
+        # A suspeita (razão social que não parece com os nomes) NÃO tira dali:
+        # ela pode ser só nome de fantasia, e barrar por suspeita encheria a
+        # pilha da decisão de coisa que não precisa de decisão.
+        if d["suspeita"].get("grau") == "certeza":
+            d["automatico"] = False
+
     # Primeiro o que espera decisão, depois o que já pode ser aplicado, e
-    # dentro de cada grupo o que afeta mais SPs.
-    saida.sort(key=lambda d: (d["decidido"], d["automatico"], -d["sps"]))
+    # dentro de cada grupo o que afeta mais SPs. A SUSPEITA DE CNPJ ERRADO VEM
+    # NA FRENTE DE TUDO: escolher o nome certo para o CNPJ errado é trabalho
+    # jogado fora, e pior, é trabalho que dá ar de resolvido.
+    saida.sort(key=lambda d: (not d.get("suspeita"), d["decidido"],
+                              d["automatico"], -d["sps"]))
     return saida
 
 
@@ -329,3 +363,110 @@ def sps_para_reescrever(documento: str, nome: str) -> list:
         "   AND trim(coalesce(credor, '')) <> ? "
         "   AND trim(coalesce(credor, '')) <> ''", (so_digitos(documento), nome))
     return [str(l[0]) for l in linhas]
+
+
+# ---------------------------------------------------------------------------
+# O CNPJ QUE FOI DIGITADO ERRADO — o caso mais difícil desta tela
+#
+# Descrito pelo dono em 13/09/2026: *"pode ser que a pessoa digitou errado o
+# CNPJ. Digamos que ela foi digitar o CNPJ de uma empresa e confundiu: olhou na
+# nota e olhou o CNPJ da BWS, da empresa que ela trabalha, aí digitou o nome da
+# empresa ao invés do CNPJ ao qual a nota fazia referência. Como é que a gente
+# resolve essa parada aí?"*
+#
+# **NENHUMA COMPARAÇÃO DE NOMES RESOLVE ISSO**, e é o que torna o caso
+# diferente de tudo o que esta tela fazia até aqui: o erro não está no nome,
+# está no NÚMERO. Os nomes podem estar todos certos e escritos igual, e mesmo
+# assim apontando para o CNPJ errado.
+#
+# Há três sinais que se consegue ver daqui, e os três são SUSPEITA, não
+# veredito — quem decide continua sendo gente:
+#
+#   1. **É um CNPJ DA PRÓPRIA BWS.** Este é certeza, não suspeita: a empresa não
+#      é fornecedora de si mesma. É exatamente o engano que ele descreveu.
+#   2. **A Receita não conhece o CNPJ.** Número que não existe foi digitado
+#      errado, ponto.
+#   3. **A razão social não se parece com NENHUM dos nomes escritos.** Aqui é
+#      suspeita de verdade: nome de fantasia legítimo também não se parece com a
+#      razão social. Serve para olhar, não para concluir.
+# ---------------------------------------------------------------------------
+def cnpjs_da_empresa() -> set:
+    """Os CNPJs da própria BWS, do jeito que o sistema já os conhece.
+
+    Saem de dois lugares que já existem e não precisam de cadastro novo: o
+    destinatário das notas guardadas (a BWS é sempre o destinatário) e os
+    certificados digitais. Pedir ao dono uma lista à mão seria mais uma coisa
+    para ele manter — e que envelheceria calada."""
+    nossos = set()
+    try:
+        from .db import consultar
+        for linha in consultar(
+                "SELECT DISTINCT destinatario_doc FROM analisesps.notas_fiscais "
+                " WHERE length(regexp_replace(coalesce(destinatario_doc,''), "
+                "                             '\\D', '', 'g')) = 14"):
+            nossos.add(so_digitos(linha[0]))
+    except Exception:  # noqa: BLE001 — migração ainda não aplicada
+        logger.exception("Análise de SPs: não consegui ler os CNPJs das notas")
+    try:
+        from . import certificados
+        nossos.update(so_digitos(c) for c in certificados.cnpjs_ativos())
+    except Exception:  # noqa: BLE001
+        logger.exception("Análise de SPs: não consegui ler os certificados")
+    return {c for c in nossos if len(c) == 14}
+
+
+def suspeita_de_cnpj_errado(documento: str, nomes_escritos: list,
+                            consulta: dict = None, nossos: set = None) -> dict:
+    """O CNPJ deste credor parece digitado errado? Devolve o porquê, ou vazio.
+
+    `consulta` é o que a Receita respondeu (pode vir vazio: a consulta é
+    opcional e sob demanda). `nossos` são os CNPJs da própria empresa."""
+    limpo = so_digitos(documento)
+    if len(limpo) != 14:
+        return {}
+
+    if limpo in (nossos or set()):
+        return {"grau": "certeza",
+                "motivo": ("este é um CNPJ da PRÓPRIA BWS — a empresa não é "
+                           "fornecedora de si mesma. Quem lançou provavelmente "
+                           "copiou o CNPJ do destinatário da nota, e não o do "
+                           "emitente."),
+                "o_que_fazer": ("corrigir o CNPJ na SP, pelo CNPJ de quem "
+                                "emitiu a nota.")}
+
+    consulta = consulta or {}
+    if consulta.get("erro"):
+        if "não encontrado" in consulta["erro"]:
+            return {"grau": "certeza",
+                    "motivo": "a Receita não conhece este CNPJ.",
+                    "o_que_fazer": "conferir o número na nota e corrigir."}
+        return {}
+
+    oficial = _texto(consulta.get("razao_social"))
+    if not oficial:
+        return {}
+
+    fantasia = _texto(consulta.get("fantasia"))
+    conhecidos = [chave(n) for n in (nomes_escritos or []) if _texto(n)]
+    oficiais = [chave(oficial)] + ([chave(fantasia)] if fantasia else [])
+    if not conhecidos:
+        return {}
+
+    # PARECIDO É O BASTANTE: "SERTAO CASA E CONSTRUCAO LTDA" contra "SERTAO CASA
+    # E CONSTRUCAO" é a mesma empresa. Exigir igualdade acusaria metade da base.
+    for escrito in conhecidos:
+        for real in oficiais:
+            if escrito == real or escrito in real or real in escrito:
+                return {}
+
+    return {"grau": "suspeita",
+            "motivo": (f'a Receita diz que este CNPJ é de "{oficial}"'
+                       + (f' (fantasia "{fantasia}")' if fantasia else "")
+                       + ", que não se parece com nenhum dos nomes lançados."),
+            "o_que_fazer": ("conferir na nota de quem é o CNPJ. Se o número "
+                            "estiver certo, pode ser só nome de fantasia — e aí "
+                            "é escolher o nome e seguir.")}
+
+
+def _texto(v) -> str:
+    return "" if v is None else str(v).strip()

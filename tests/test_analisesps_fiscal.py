@@ -1078,3 +1078,46 @@ def test_a_CONTA_ABERTA_e_a_pontuacao_concordam():
     somado = sum(r["pontos"] for r in fiscal._conferir_regras(da_lista, NOTA_DE_PROVA)
                  if r.get("bateu"))
     assert somado == pontos
+
+
+# ---------------------------------------------------------------------------
+# A NOTA CANCELADA NÃO PODE ENTRAR NA PILHA DO "APROVAR EM LOTE" — 13/09/2026
+#
+# *"Quando tiver a nota cancelada na tela de associação, tem que deixar em
+# vermelhinho o cancelado, pra a gente não associar a uma nota cancelada sem
+# perceber."*
+#
+# A cor resolve para quem olha. A marcação em lote existe justamente para quem
+# NÃO olha linha a linha — uma cancelada pré-marcada entraria no "Confirmar as
+# marcadas" sem ninguém ver.
+# ---------------------------------------------------------------------------
+def test_nota_CANCELADA_nunca_vem_proposta_por_mais_que_combine():
+    from app.apps.analisesps import fiscal
+
+    cancelada = dict(NOTA_DE_PROVA, status="Cancelada")
+    da_lista = {"id": "1", "documento": "29.066.773/0001-52", "credor": "ACME",
+                "valor_num": _Decimal("269.00"),
+                "vencimento_d": _dt.date(2026, 9, 10), "nf": "1430"}
+
+    # A mesma SP com a nota AUTORIZADA é proposta…
+    assert fiscal.melhor_nota(da_lista, [NOTA_DE_PROVA])["propoe"] is True
+    # …e com ela cancelada, não.
+    escolha = fiscal.melhor_nota(da_lista, [cancelada])
+    assert escolha["propoe"] is False
+
+
+def test_a_cancelada_continua_APARECENDO_e_diz_por_que_nao_foi_marcada():
+    """Esconder seria pior: se aquela é mesmo a nota do lançamento, quem analisa
+    PRECISA saber que ela foi cancelada — é problema fiscal, não informação a
+    esconder."""
+    from app.apps.analisesps import fiscal
+
+    cancelada = dict(NOTA_DE_PROVA, status="Cancelada")
+    escolha = fiscal.melhor_nota(
+        {"id": "1", "documento": "29.066.773/0001-52", "credor": "ACME",
+         "valor_num": _Decimal("269.00"), "nf": "1430"}, [cancelada])
+
+    assert escolha["nota"] is not None, "a nota sumiu da tela"
+    porques = " ".join(escolha["porques"])
+    assert "CANCELADA" in porques
+    assert "decisão de gente" in porques

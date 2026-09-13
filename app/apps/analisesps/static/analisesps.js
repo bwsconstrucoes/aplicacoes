@@ -1504,3 +1504,72 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
       }
     }));
 })();
+
+
+/* ---------------------------------------------------------------------------
+   TODO BOTAO QUE FAZ ALGUMA COISA TEM DE DIZER QUE ESTA FAZENDO.
+
+   Reclamacao do dono em 13/09/2026, e ele diz que e geral: *"eu estou vendo que
+   e muito comum acontecer isso: os botoes que deveriam, apos o clique,
+   determinar alguma acao, ou mostrar a acao que esta sendo executada, ele nao
+   mostra. Voce fica cego, sem saber se esta acontecendo alguma coisa ou nao."*
+
+   Ele tem razao, e o caso que mais dói e o do formulario que recarrega a
+   pagina: entre o clique e a tela voltar podem passar VARIOS SEGUNDOS — a
+   equalizacao de credor reescreve centenas de SPs, uma de cada vez, pelo mesmo
+   caminho que grava banco, fila, log e planilha. Nesse intervalo a tela fica
+   exatamente igual, e quem clicou conclui que o botao nao funcionou. Aí clica
+   de novo.
+
+   ESTE BLOCO NAO SABE O QUE CADA BOTAO FAZ, e nao precisa: ele so trata o
+   envio de formulario, que e o momento em que a pagina vai embora e nao volta
+   na hora. Um por um, cada tela teria de lembrar — e e por isso que este
+   defeito aparecia em tantos lugares.
+
+   O QUE ELE NAO FAZ: mexer em botao de JavaScript (os que chamam o servidor
+   por tras e ja tratam o proprio estado), nem em formulario de filtro, que se
+   reenvia sozinho a cada caixa marcada e ficaria piscando "Aguarde" o tempo
+   todo.
+--------------------------------------------------------------------------- */
+(function () {
+  const PALAVRA = "Aguarde…";
+
+  function ocupar(botao) {
+    if (!botao || botao.dataset.ocupado) return;
+    botao.dataset.ocupado = "1";
+    // A LARGURA E TRAVADA ANTES de trocar o texto: sem isso o botao encolhe ou
+    // cresce no meio do clique, e a tela "pula" na cara de quem apertou.
+    const caixa = botao.getBoundingClientRect();
+    if (caixa.width) botao.style.minWidth = Math.ceil(caixa.width) + "px";
+    botao.dataset.textoAntes = botao.textContent;
+    botao.textContent = PALAVRA;
+    botao.classList.add("ocupado");
+    // `disabled` num botao de submit CANCELA o envio em alguns navegadores se
+    // aplicado cedo demais; por isso o desligamento espera o proximo quadro.
+    setTimeout(() => { botao.disabled = true; }, 0);
+  }
+
+  document.addEventListener("submit", e => {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement)) return;
+    // Formulario de filtro se reenvia sozinho o tempo todo: marcaria "Aguarde"
+    // a cada caixa e viraria ruido.
+    if (form.id === "form-filtros" || form.dataset.semAguarde) return;
+    // O botao que de fato enviou, quando da para saber; senao, o primeiro.
+    const botao = (e.submitter && e.submitter.tagName === "BUTTON")
+        ? e.submitter
+        : form.querySelector("button[type=submit], button:not([type])");
+    ocupar(botao);
+
+    // REDE CAIU OU O SERVIDOR DEMOROU DEMAIS: o botao volta ao normal depois
+    // de um minuto. Deixar "Aguarde" para sempre numa tela que nao recarregou
+    // seria trocar um engano por outro.
+    setTimeout(() => {
+      if (!botao || !botao.dataset.ocupado) return;
+      botao.disabled = false;
+      botao.textContent = botao.dataset.textoAntes || botao.textContent;
+      botao.classList.remove("ocupado");
+      delete botao.dataset.ocupado;
+    }, 60000);
+  }, true);
+})();
