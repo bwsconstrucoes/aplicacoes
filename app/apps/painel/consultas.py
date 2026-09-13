@@ -1422,6 +1422,23 @@ COLUNAS_DO_EXPLORADOR = (
 )
 
 
+def _valor_procurado(texto: str):
+    """O número que a pessoa digitou, ou None se não for número.
+
+    Aceita os formatos que aparecem na tela do OMIE e no copiar-colar:
+    `784.647,07`, `784647,07`, `784647.07`, `784647`. Texto com letra não é
+    valor — senão procurar por "NF 100" viraria uma busca por cem reais."""
+    limpo = (texto or "").strip().replace("R$", "").replace(" ", "")
+    if not limpo or any(c.isalpha() for c in limpo):
+        return None
+    if "," in limpo:                      # vírgula decimal: ponto é milhar
+        limpo = limpo.replace(".", "").replace(",", ".")
+    try:
+        return round(abs(float(limpo)), 2)
+    except ValueError:
+        return None
+
+
 def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
     """Monta o WHERE do explorador a partir do que a pessoa escolheu."""
     condicoes, params = [], []
@@ -1484,6 +1501,15 @@ def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
         if busca.isdigit():
             alternativas.append("codigo_lancamento = ?")
             valores.append(int(busca))
+        # Procurar por VALOR. É o dado que a pessoa sempre tem à mão quando está
+        # conferindo o painel contra o OMIE lado a lado — e era o único jeito de
+        # perguntar "este lançamento está aqui?" que a tela não aceitava.
+        # Digitar 784.647,07 ou 784647.07 ou 784647 tem de achar o mesmo.
+        valor = _valor_procurado(busca)
+        if valor is not None:
+            alternativas.append(
+                "(ROUND(ABS(pago_recebido), 2) = ? OR ROUND(ABS(a_pagar_receber), 2) = ?)")
+            valores.extend([valor, valor])
         condicoes.append("(" + " OR ".join(alternativas) + ")")
         params.extend(valores)
 

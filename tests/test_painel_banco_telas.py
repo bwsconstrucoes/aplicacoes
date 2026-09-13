@@ -938,3 +938,43 @@ def test_a_lista_tem_teto_de_desenho(base_para_explorar):
     r = consultas.fornecedores_do_recorte(falso)
     assert len(r["itens"]) == consultas.TETO_DE_FORNECEDORES
     assert r["cortou"] is True, "e tem de AVISAR que cortou, senão some nome em silêncio"
+
+
+# ===========================================================================
+# Procurar por VALOR
+# ===========================================================================
+# 13/09/2026. O dono passou a tarde conferindo o painel contra a tela do OMIE
+# lado a lado, com os valores na mão — e era justamente o único jeito de
+# perguntar "este lançamento está aqui?" que a tela não aceitava. Sobrava
+# procurar por nome (que falha quando o nome está vazio) ou pelo número do
+# título (que ele não tem à mão no OMIE).
+
+def test_procurar_pelo_valor_do_lancamento(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET pago_recebido = -784647.07"
+                     "  WHERE codigo_lancamento = 701")
+        conn.commit()
+    consultas.esquecer_listas()
+    # os formatos que se copia da tela do OMIE têm de achar o mesmo lançamento
+    for digitado in ("784.647,07", "784647,07", "784647.07", "R$ 784.647,07"):
+        assert _codigos({"busca": digitado}) == {701}, digitado
+
+
+def test_o_valor_acha_tanto_o_pago_quanto_o_em_aberto(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET pago_recebido = 0, a_pagar_receber = -400000"
+                     "  WHERE codigo_lancamento = 702")
+        conn.commit()
+    consultas.esquecer_listas()
+    assert 702 in _codigos({"busca": "400.000,00"})
+
+
+def test_texto_com_letra_nao_vira_busca_por_valor(base_para_explorar):
+    """Procurar "NF 100" não pode virar uma busca por cem reais."""
+    from app.apps.painel import consultas
+    assert consultas._valor_procurado("NF 100") is None
+    assert consultas._valor_procurado("CONSTRUTORA") is None
