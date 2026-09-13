@@ -335,7 +335,32 @@
               </td>
               <td>{{ l.sp.credor }}</td>
               <td class="num">{{ l.sp.valor_num|moeda }}</td>
-              <td>{{ l.analise.documentacao or '—' }}</td>
+              {# ---------------------------------------------------------
+                 O QUE A IA DISSE, na própria linha.
+
+                 Pergunta do dono em 13/09/2026: *"mandei pra IA e então, o que
+                 acontece? O que foi que a IA disse? O que foi sugerido? Ficou
+                 gravada essa informação onde?"*
+
+                 Ficou gravada desde sempre — no diário, com a categoria, a
+                 chave, a confiança e o MOTIVO escrito pela IA. Só que a tela
+                 não mostrava nada disso: nem quem preencheu, nem por quê. A
+                 informação existia e não existia para quem usa.
+              --------------------------------------------------------- #}
+              <td>{{ l.analise.documentacao or '—' }}
+                {% if l.analise.origem %}
+                  {% set quem_disse = {
+                       'IA': ('a IA leu o anexo', 'ia'),
+                       'PESSOA': ('uma pessoa informou aqui', 'pessoa'),
+                       'CONCILIACAO': ('o sistema conciliou', 'sistema'),
+                       'PIPEFY': ('já veio do card', 'card'),
+                     }.get(l.analise.origem, (l.analise.origem, '')) %}
+                  <br><span class="quem-disse {{ quem_disse[1] }}"
+                            title="{{ l.analise.motivo }}">{{ quem_disse[0] }}
+                    {%- if l.analise.confianca %} · {{ l.analise.confianca }}%{% endif %}
+                  </span>
+                {% endif %}
+              </td>
               <td><b>{{ l.documentacao or '—' }}</b></td>
               <td class="num">
                 {% if l.nota %}{{ l.confianca }}%{% else %}—{% endif %}

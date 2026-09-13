@@ -95,13 +95,21 @@ def _abrir(conteudo: bytes, senha: str) -> dict:
     quê."""
     from cryptography.hazmat.primitives.serialization import pkcs12
 
-    try:
-        chave, certificado, _ = pkcs12.load_key_and_certificates(
-            conteudo, (senha or "").encode("utf-8"))
-    except Exception as e:  # noqa: BLE001 — a mensagem tem de dizer o que fazer
+    chave, certificado, usada, detalhe = None, None, "", ""
+    for rotulo, tentativa in _senhas_a_tentar(senha):
+        try:
+            chave, certificado, _ = pkcs12.load_key_and_certificates(
+                conteudo, tentativa)
+        except Exception as e:  # noqa: BLE001
+            detalhe = str(e)
+            continue
+        usada = rotulo
+        break
+
+    if certificado is None:
         raise ErroDeCertificado(
-            "Não consegui abrir o certificado. Confira a senha — e confira se "
-            f"o arquivo é mesmo um A1 (.pfx ou .p12). Detalhe: {e}") from e
+            "Não consegui abrir o certificado. "
+            + _diagnostico(conteudo, senha, detalhe))
     if certificado is None or chave is None:
         raise ErroDeCertificado(
             "O arquivo abriu, mas não traz um certificado com chave privada. "
@@ -123,6 +131,111 @@ def _abrir(conteudo: bytes, senha: str) -> dict:
         "titular": titular,
         "cnpj": digitos[0] if digitos else "",
         "valido_ate": _validade(certificado),
+        # QUAL FORMA DA SENHA ABRIU. Vazio quer dizer "a que ele digitou". Serve
+        # para a tela dizer "abriu, mas com a senha sem o espaço do fim" — que é
+        # informação, não detalhe.
+        "senha_ajustada": usada,
+    }
+
+
+# ===========================================================================
+# POR QUE A SENHA "CERTA" NÃO ABRE — 13/09/2026
+#
+# *"Suspeito que o certificado e a senha estejam corretos, mas a mensagem é de
+# certificado inválido ou senha. Existe algum canto que eu possa tirar essa
+# prova?"*
+#
+# Existe agora, e a desconfiança dele tinha fundamento. MEDIDO AQUI, com um
+# .pfx de verdade e a senha de verdade:
+#
+#     senha com espaço no FIM     -> FALHOU
+#     espaço no COMEÇO            -> FALHOU
+#     senha de verdade errada     -> FALHOU
+#
+# As três davam **a mesma mensagem**. Ou seja: quem colou a senha de um e-mail
+# ou de um PDF — e veio o espaço junto, que é o normal — recebia "senha errada"
+# sem ter errado a senha, e sem nada que permitisse desconfiar disso.
+#
+# ⚠️ TENTAR A SENHA APARADA NÃO É "ACEITAR QUALQUER COISA": o certificado só
+# abre se a senha for exatamente a certa. O que se tenta aqui são FORMAS DA
+# MESMA SENHA que o teclado e o "copiar e colar" produzem sem a pessoa querer.
+# Nenhuma delas abre um certificado com senha diferente.
+def _senhas_a_tentar(senha):
+    """(rótulo, bytes) — a senha como veio e as variações inocentes dela."""
+    bruta = senha or ""
+    formas = [("", bruta)]
+    if bruta != bruta.strip():
+        formas.append(("sem os espaços das pontas", bruta.strip()))
+    # Alguns programas geram o .pfx com a senha em latin-1. Só entra quando há
+    # acento, senão seria a mesma tentativa de novo.
+    if any(ord(c) > 127 for c in bruta):
+        try:
+            return [(r, t.encode("utf-8")) for r, t in formas] + [
+                ("lida como latin-1", bruta.encode("latin-1"))]
+        except UnicodeEncodeError:
+            pass
+    saida = [(r, t.encode("utf-8")) for r, t in formas]
+    # Certificado sem senha existe, e a mensagem "senha errada" para quem não
+    # digitou senha nenhuma é a mais confusa de todas.
+    if not bruta:
+        saida.append(("sem senha", b""))
+    return saida
+
+
+def _parece_pkcs12(conteudo: bytes) -> bool:
+    """O arquivo é um .pfx de verdade? Começa com uma SEQUENCE do ASN.1.
+
+    Não prova que é válido — prova que NÃO é um .cer, um .pem ou um PDF, que é
+    o engano de arquivo mais comum e o que a mensagem antiga não distinguia."""
+    return bool(conteudo) and conteudo[:1] == b"\x30"
+
+
+def _diagnostico(conteudo: bytes, senha, detalhe: str) -> str:
+    """A frase que diz O QUE FAZER, e não só que deu errado."""
+    if not conteudo:
+        return "O arquivo chegou vazio. Tente subir de novo."
+    if not _parece_pkcs12(conteudo):
+        inicio = conteudo[:40].decode("latin-1", "replace")
+        if "BEGIN" in inicio:
+            return ("Este arquivo é um .pem/.crt (texto), não um A1. O A1 é um "
+                    "arquivo único, .pfx ou .p12, que traz o certificado E a "
+                    "chave juntos — é o que a certificadora entrega.")
+        if inicio.startswith("%PDF"):
+            return "Este arquivo é um PDF, não um certificado."
+        return ("Este arquivo não é um .pfx/.p12. Confira se não subiu o "
+                "arquivo errado.")
+    if not (senha or ""):
+        return ("O arquivo é um .pfx, mas a senha está em branco e ele pede "
+                "senha. Informe a senha do certificado.")
+    return ("O arquivo É um .pfx, então o problema está na SENHA. Confira se "
+            "não veio espaço junto ao copiar e colar, e se não há letra "
+            "maiúscula trocada — o certificado não abre com senha parecida, só "
+            "com a exata. "
+            f"(detalhe técnico: {detalhe})")
+
+
+# ===========================================================================
+# CONFERIR SEM GUARDAR — a prova que o dono pediu
+#
+# *"Existe algum canto que eu possa tirar essa prova?"* Esta função é esse
+# canto: ela tenta abrir e CONTA O QUE ACONTECEU, sem gravar nada, sem mexer no
+# certificado que já está guardado e sem depender de a busca na Receita rodar.
+# ===========================================================================
+def conferir(conteudo: bytes, senha: str) -> dict:
+    """Tenta abrir e explica o resultado. NÃO GUARDA NADA."""
+    try:
+        lido = _abrir(conteudo, senha)
+    except ErroDeCertificado as e:
+        return {"ok": False, "motivo": str(e),
+                "e_pkcs12": _parece_pkcs12(conteudo),
+                "tamanho": len(conteudo or b"")}
+    return {
+        "ok": True,
+        "titular": lido.get("titular", ""),
+        "cnpj": lido.get("cnpj", ""),
+        "valido_ate": lido.get("valido_ate"),
+        "senha_ajustada": lido.get("senha_ajustada", ""),
+        "tamanho": len(conteudo or b""),
     }
 
 

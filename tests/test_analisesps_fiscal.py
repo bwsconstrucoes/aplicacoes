@@ -1238,3 +1238,71 @@ def test_a_PROVA_mostra_a_conta_da_parcela():
     valor = next(r for r in regras if r["chave"] == "valor")
     assert valor["bateu"] is True
     assert "696,34" in valor["parcelado"]
+
+
+# ===========================================================================
+# A SENHA "CERTA" QUE NÃO ABRIA — 13/09/2026
+#
+# *"Suspeito que o certificado e a senha estejam corretos, mas a mensagem é de
+# certificado inválido ou senha. Existe algum canto que eu possa tirar essa
+# prova?"*
+#
+# A desconfiança tinha fundamento. MEDIDO com um .pfx de verdade: senha com
+# espaço no fim, espaço no começo e senha de verdade errada davam TODAS a mesma
+# mensagem. Quem copia a senha de um e-mail traz o espaço junto.
+# ===========================================================================
+def test_as_variacoes_da_senha_sao_do_TECLADO_e_nao_adivinhacao():
+    """⚠️ O que se tenta são FORMAS DA MESMA SENHA que o copiar-e-colar produz
+    sem a pessoa querer. Nenhuma delas abre um certificado de senha diferente —
+    o teste garante que não entrou nada parecido com "tentar variações"."""
+    from app.apps.analisesps import certificados
+
+    formas = dict((r, t) for r, t in certificados._senhas_a_tentar("  Ab1  "))
+    assert formas[""] == "  Ab1  ".encode("utf-8")
+    assert formas["sem os espaços das pontas"] == b"Ab1"
+    assert len(formas) == 2
+
+    # Sem espaço nas pontas, nada a variar.
+    assert len(certificados._senhas_a_tentar("Ab1")) == 1
+
+
+def test_senha_com_ACENTO_ganha_a_leitura_em_latin1():
+    """Alguns programas geram o .pfx com a senha em latin-1."""
+    from app.apps.analisesps import certificados
+
+    rotulos = [r for r, _ in certificados._senhas_a_tentar("Senhaç1")]
+    assert "lida como latin-1" in rotulos
+
+
+def test_senha_em_branco_tenta_o_certificado_SEM_SENHA():
+    """"Senha errada" para quem não digitou senha nenhuma é a mensagem mais
+    confusa de todas."""
+    from app.apps.analisesps import certificados
+
+    rotulos = [r for r, _ in certificados._senhas_a_tentar("")]
+    assert "sem senha" in rotulos
+
+
+def test_o_diagnostico_separa_ARQUIVO_ERRADO_de_SENHA_ERRADA():
+    """A mensagem antiga dizia as duas coisas ao mesmo tempo — e por isso não
+    dizia nenhuma. São problemas com soluções opostas."""
+    from app.apps.analisesps import certificados
+
+    pem = b"-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+    assert ".pem" in certificados._diagnostico(pem, "x", "")
+    assert "PDF" in certificados._diagnostico(b"%PDF-1.7 ...", "x", "")
+    assert "vazio" in certificados._diagnostico(b"", "x", "")
+    # Um .pfx de verdade começa com a SEQUENCE do ASN.1.
+    assert "SENHA" in certificados._diagnostico(b"\x30\x82\x09\x00", "abc", "")
+    assert "em branco" in certificados._diagnostico(b"\x30\x82\x09\x00", "", "")
+
+
+def test_conferir_um_arquivo_que_nao_e_certificado_NAO_LEVANTA_erro():
+    """A conferência devolve o diagnóstico; ela existe justamente para o caso
+    em que dá errado, e não pode explodir na cara de quem foi conferir."""
+    from app.apps.analisesps import certificados
+
+    r = certificados.conferir(b"%PDF-1.7 nada a ver", "seja la")
+    assert r["ok"] is False
+    assert "PDF" in r["motivo"]
+    assert r["e_pkcs12"] is False

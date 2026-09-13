@@ -2420,6 +2420,55 @@ def subir_certificado():
         ". A busca de notas na Receita passa a usá-lo na próxima rodada.")))
 
 
+@bp.route("/certificados/conferir", methods=["POST"])
+@exige_operador
+def conferir_certificado():
+    """Tenta abrir o .pfx e CONTA o que aconteceu. NÃO GUARDA NADA.
+
+    Pedido do dono em 13/09/2026: *"suspeito que o certificado e a senha estejam
+    corretos, mas a mensagem é de certificado inválido ou senha. Existe algum
+    canto que eu possa tirar essa prova?"*
+
+    A desconfiança dele tinha fundamento: um espaço colado junto com a senha
+    dava exatamente a mesma mensagem de uma senha errada — e quem copia a senha
+    de um e-mail traz o espaço junto sem perceber. Ver `certificados._abrir`.
+
+    ⚠️ NÃO GUARDA E NÃO MEXE no que já está guardado: é só uma conferência. Por
+    isso dá para experimentar à vontade sem risco de estragar o certificado que
+    está em uso."""
+    from . import certificados
+
+    arquivo = request.files.get("certificado")
+    senha = request.form.get("senha") or ""
+    if not arquivo or not arquivo.filename:
+        return redirect(url_for("analisesps.configuracoes",
+                                aviso="Escolha o arquivo para conferir."))
+    try:
+        r = certificados.conferir(arquivo.read(), senha)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou conferir o certificado")
+        return redirect(url_for("analisesps.configuracoes",
+                                aviso=f"Não consegui conferir: {e}"))
+
+    if not r["ok"]:
+        aviso = "✕ " + r["motivo"]
+    else:
+        validade = (r["valido_ate"].strftime("%d/%m/%Y")
+                    if r.get("valido_ate") else "—")
+        aviso = (f"✔ O certificado ABRIU com esta senha. Titular: "
+                 f"{r['titular']} · CNPJ {r['cnpj']} · vale até {validade}.")
+        if r.get("senha_ajustada"):
+            aviso += (f" ⚠️ Abriu com a senha {r['senha_ajustada']} — ou seja, "
+                      "veio espaço junto no copiar e colar. A senha está certa; "
+                      "o espaço é que atrapalhava.")
+    # O nome do arquivo NÃO vai para o aviso: ele aparece no endereço da
+    # página, e nome de arquivo de certificado costuma trazer o CNPJ.
+    logger.info("Análise de SPs: %s conferiu um certificado — %s.",
+                auth.nome_atual() or auth.pessoa_atual(),
+                "abriu" if r["ok"] else "não abriu")
+    return redirect(url_for("analisesps.configuracoes", aviso=aviso))
+
+
 @bp.route("/certificados/remover", methods=["POST"])
 @exige_operador
 def remover_certificado():
@@ -2489,16 +2538,29 @@ def consultar_cnpj_credor():
     e aí a consulta para de funcionar inclusive no caso em que importa."""
     from . import receita
 
+    # ⚠️ SEM RECARREGAR, quando quem pede é a tela por trás. Reclamação do dono
+    # em 13/09/2026: *"quando consulta o nome na Receita, a tela sobe. O
+    # resultado deveria aparecer flutuante, ou de forma que não mexa na tela."*
+    #
+    # O resultado desta consulta é sobre UM fornecedor específico, no meio de
+    # uma lista longa: mandá-lo para um aviso no alto da página, depois de
+    # recarregar tudo, é entregar a resposta longe da pergunta.
+    sem_recarregar = request.headers.get("X-Sem-Recarregar") == "1"
+
+    def falhou(mensagem: str):
+        if sem_recarregar:
+            return {"ok": False, "erro": mensagem}
+        return redirect(url_for("analisesps.tela_credores",
+                                aviso=f"Não consegui consultar: {mensagem}"))
+
     documento = (request.form.get("documento") or "").strip()
     try:
         dados = receita.consultar(documento, forcar=True)
     except receita.ErroDeConsulta as e:
-        return redirect(url_for("analisesps.tela_credores",
-                                aviso=f"Não consegui consultar: {e}"))
+        return falhou(str(e))
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou consultar o CNPJ")
-        return redirect(url_for("analisesps.tela_credores",
-                                aviso=f"Não consegui consultar: {e}"))
+        return falhou(str(e))
 
     if dados.get("erro"):
         aviso = f"{documento}: {dados['erro']}"
@@ -2510,6 +2572,16 @@ def consultar_cnpj_credor():
                     if dados.get("situacao") else "") + ".")
     logger.info("Análise de SPs: %s consultou o CNPJ %s.",
                 auth.nome_atual() or auth.pessoa_atual(), documento)
+    if sem_recarregar:
+        # Os campos vão separados para a tela montar a linha do jeito dela —
+        # o mesmo formato da linha que já existe quando a página é desenhada.
+        return {"ok": True, "documento": documento, "aviso": aviso,
+                "erro_receita": dados.get("erro") or "",
+                "razao_social": dados.get("razao_social") or "",
+                "fantasia": dados.get("fantasia") or "",
+                "situacao": dados.get("situacao") or "",
+                "municipio": dados.get("municipio") or "",
+                "uf": dados.get("uf") or ""}
     return redirect(url_for("analisesps.tela_credores", aviso=aviso))
 
 

@@ -3835,6 +3835,149 @@ parcelamento.
 - A busca na Receita continua sem exercício real daqui.
 
 ---
+
+### Quadragésima nona leva (13/09) — a Receita sem subir a tela, o certificado que "não é aceito", o que a IA disse, e dois filtros
+
+Publicadas na `main` antes desta: a 48ª (`ee2c103`).
+
+#### 1. A consulta à Receita deixou de recarregar a página
+
+*"Quando consulta o nome na Receita, a tela sobe. O resultado deveria aparecer
+flutuante, ou de forma que não mexa na tela."*
+
+O resultado é sobre UM fornecedor no meio de uma lista longa, e ia para um
+aviso no ALTO da página depois de recarregar tudo — a resposta chegava longe
+da pergunta. Agora é escrita logo acima do próprio botão. **Medido: 0 px de
+rolagem**, e "consultar de novo" substitui a linha em vez de empilhar.
+
+Mesma regra do "Usar este": a rota só responde JSON com o cabeçalho
+`X-Sem-Recarregar`; **sem JavaScript a tela continua funcionando**.
+
+#### 2. ⚠️ O certificado que "não é aceito" — e a desconfiança dele estava certa
+
+*"Suspeito que o certificado e a senha estejam corretos, mas a mensagem é de
+certificado inválido ou senha. Existe algum canto que eu possa tirar essa
+prova?"*
+
+**MEDIDO aqui, com um .pfx de verdade e a senha de verdade:**
+
+    senha com espaço no FIM ......... FALHOU
+    espaço no COMEÇO ................ FALHOU
+    senha de verdade errada ......... FALHOU
+
+As três davam **a mesma mensagem**. Quem copia a senha de um e-mail ou de um
+PDF traz o espaço junto — e recebia "senha errada" sem ter errado a senha.
+
+- `_senhas_a_tentar` tenta a senha como veio, sem os espaços das pontas, em
+  latin-1 (quando há acento) e vazia (quando não foi digitada). ⚠️ **Não é
+  "aceitar qualquer coisa"**: são formas da MESMA senha que o teclado e o
+  copiar-e-colar produzem sem a pessoa querer. Nenhuma abre certificado de
+  senha diferente, e há teste cravando que a lista não cresce além disso.
+- `_diagnostico` separa **arquivo errado** de **senha errada** — antes a
+  mensagem dizia as duas ao mesmo tempo, e por isso não dizia nenhuma.
+  Reconhece .pem/.crt, PDF, arquivo vazio e senha em branco.
+- **"Conferir sem guardar"**, em Configurações: sobe o arquivo, informa a senha
+  e a tela diz o que aconteceu. Não grava nada e não mexe no que está em uso.
+  Quando abre com a senha aparada, ela diz isso com todas as letras.
+
+**Descartado pelo caminho, e fica registrado para ninguém refazer:** suspeitei
+de criptografia antiga (RC2, comum em A1 brasileiro, que o OpenSSL 3 joga no
+provedor `legacy`). **Testei e não é**: gerei um `.pfx` com `-legacy` e a
+biblioteca abriu normalmente. A causa é a senha, não o algoritmo.
+
+#### 3. O que a IA disse, e onde isso fica
+
+*"Mandei pra IA e então, o que acontece? O que foi que a IA disse? O que foi
+sugerido? Ficou gravada essa informação onde?"*
+
+**Ficou gravada desde sempre** — em `sp_fiscal_analise`, com categoria, chave,
+confiança e o MOTIVO escrito pela IA. A tela é que não mostrava nada disso.
+
+- A linha ganhou a etiqueta de **quem preencheu** ("a IA leu o anexo", "uma
+  pessoa informou aqui", "o sistema conciliou", "já veio do card"), com a
+  confiança e o motivo no rótulo de passar o mouse.
+- A janela "ver os dados" mostra o motivo por extenso e a confiança.
+
+#### 4. Filtrar por confiança
+
+*"Deveria poder filtrar por confiança."* Quatro faixas, em SQL, sobre a
+confiança **gravada**. ⚠️ O nome do grupo diz "do que está gravado" porque há
+DUAS confianças na tela: a gravada (no banco, filtrável) e a que o sistema
+calcula ao abrir para a linha ainda não decidida (só das 200 da página).
+Filtrar pela segunda responderia "nesta página".
+
+Zero conta como **sem confiança gravada**, e não como "baixa": a linha que veio
+pronta do card entra com zero, e chamá-la de baixa mandaria conferir o que
+ninguém aqui decidiu.
+
+#### 5. Filtrar pela qualidade do par — ⚠️ e o que ficou de fora, medido
+
+*"Deveria poder também filtrar pela nota de associação: 1-4, 2-4, ou pelo
+percentual também."*
+
+Construí as cinco faixas, medi as cinco, e **só a de 100% se paga**. Com 59.000
+SPs e 4.000 notas, no pior caso:
+
+    confere nos 4 (100%) ....... 0,02 s
+    confere em 3 ou mais ....... 0,74 s POR CONSULTA
+    confere em exatamente 3 .... 0,70 s POR CONSULTA
+
+E a tela roda a consulta DUAS vezes (a contagem e a página). No banco do
+Render, com um décimo de um núcleo, isso é **a tela que não abre** — o defeito
+que já custou duas correções nesta mesma tela.
+
+**Por que só o de 100% é rápido:** é uma conjunção de igualdades, resolvida
+pelo índice. Os outros perguntam "2 dos 3", e o "ou" faz o planejador desistir
+dos índices e juntar a tabela inteira — o EXPLAIN mostrou **262.497 pares**
+avaliados. Tentei três caminhos e registro os três para ninguém repetir:
+
+1. separar em EXISTS independentes (é equivalente) → **piorou**, 2,4 s;
+2. pôr a condição necessária `(valor OU número)` na frente → 0,74 s;
+3. forçar subconsulta escalar para impedir o semi-join → 0,62 s.
+
+**Migração 012**: coluna GERADA `nf_num` (o nº da nota já normalizado) e dois
+índices compostos. Ajuda o recorte de 100%; sozinha **não resolveu** os outros,
+porque a conta era do tamanho da junção, e não do `regexp`.
+
+**O que destrava as faixas que faltam:** guardar a conta do par no banco, numa
+varredura em processo separado — a mesma oferta que faria "o que o sistema está
+propondo" virar totalizador de verdade. **Continua sem resposta do dono.**
+
+#### 6. O segundo jeito de "já estar associado" (ele cobrou de novo)
+
+*"Eu já havia comentado isso (…) tá aparecendo registro já associado. A MENOS
+QUE A ASSOCIAÇÃO ESTEJA PROVAVELMENTE ERRADA."*
+
+Na 46ª eu cortei só quem tem CHAVE gravada aqui — metade do conserto. O card do
+Pipefy também tem "Nº NF": preenchido com número DIFERENTE, aquela SP já está
+falada por outra nota.
+
+⚠️ **Número IGUAL continua sendo sugestão**, e a distinção é o coração da
+coisa: ali o número CONFIRMA o par. Cortar por "tem número" esconderia o par
+mais fácil da base; não cortar por "tem número diferente" enchia a lista de
+trabalho já feito. E a ressalva dele está atendida: nada some — vai para o
+bloco à parte **com o motivo escrito**, que é onde ele confere se a associação
+anterior está errada.
+
+#### O que foi verificado
+
+- Suíte completa com Postgres de verdade: **5.051 passaram, 129 pulados**.
+- A aplicação sobe (18 blueprints).
+- No Chromium: consulta à Receita com **0 px** de rolagem e resposta ao lado da
+  pergunta; "consultar de novo" substitui em vez de empilhar.
+- O diagnóstico do certificado distingue os seis casos (espaço no fim, nos dois
+  lados, senha exata, cedilha, senha errada, arquivo .pem).
+
+#### O que NÃO foi verificado
+
+- Nada rodou contra a base de produção.
+- A busca na Receita continua sem exercício real daqui.
+- **A conferência do certificado não foi feita com o certificado DELE** — foi
+  com um gerado aqui. O primeiro uso real é o teste real.
+- O número de 0,74 s é desta máquina; o do Render é estimado por proporção, não
+  medido.
+
+---
 ---
 
 ## Regras que não se discutem

@@ -248,6 +248,39 @@ SITUACOES_FISCAIS = {
         "         WHERE a.sp_id = sps.id AND a.origem = 'PIPEFY')"),
     "com_anexo": "trim(coalesce(anexo_link,'')) <> ''",
     "sem_anexo": "trim(coalesce(anexo_link,'')) = ''",
+    # -----------------------------------------------------------------------
+    # A CONFIANÇA DO QUE ESTÁ GRAVADO — pedido do dono em 13/09/2026:
+    # *"deveria poder filtrar por confiança"*.
+    #
+    # ⚠️ E É PRECISO DIZER DE QUAL CONFIANÇA SE ESTÁ FALANDO, porque existem
+    # DUAS na tela e confundi-las daria um filtro que mente:
+    #
+    #   1. A que está GRAVADA no diário — a da IA, e a da proposta que alguém
+    #      já aprovou. Vive no banco, então dá para filtrar a base inteira.
+    #      É esta.
+    #   2. A do par que o sistema calcula AO ABRIR a tela, para a linha que
+    #      ainda não foi decidida. Ela não existe no banco: nasce e morre a
+    #      cada abertura, e só para as 200 linhas da página. Filtrar por ela
+    #      responderia "nesta página", que parece certo e não é.
+    #
+    # Os nomes na tela dizem "do que está gravado" justamente para não haver
+    # engano. Passar a segunda para o banco exige a varredura da base inteira
+    # em processo separado — está oferecido ao dono e ainda sem resposta.
+    # -----------------------------------------------------------------------
+    "confianca_alta": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id AND a.confianca >= 80)"),
+    "confianca_media": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id "
+        "           AND a.confianca >= 60 AND a.confianca < 80)"),
+    "confianca_baixa": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id "
+        "           AND a.confianca > 0 AND a.confianca < 60)"),
+    "sem_confianca": (
+        "NOT EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "             WHERE a.sp_id = sps.id AND a.confianca > 0)"),
 }
 
 # ---------------------------------------------------------------------------
@@ -298,6 +331,16 @@ GRUPOS_DE_RECORTE = [
         ("confirmada", "Confirmado aqui, falta ir para o card", ""),
         ("escrita", "Já gravado no card do Pipefy", ""),
     ]),
+    ("A confiança do que está gravado", [
+        ("confianca_alta", "Alta — 80% ou mais",
+         "a IA ou a conciliação gravaram com pouca dúvida"),
+        ("confianca_media", "Média — de 60% a 79%",
+         "acima do corte para propor, mas vale conferir"),
+        ("confianca_baixa", "Baixa — abaixo de 60%",
+         "gravado, mas com dúvida; é onde olhar primeiro"),
+        ("sem_confianca", "Sem confiança gravada",
+         "nunca foi decidido, ou veio pronto do card"),
+    ]),
     ("O anexo da SP", [
         ("com_anexo", "Tem anexo", "dá para mandar para a IA ler"),
         ("sem_anexo", "Não tem anexo",
@@ -328,6 +371,10 @@ FRASE_DO_RECORTE = {
     "escrita": "já foi gravado no card",
     "com_anexo": "tem anexo",
     "sem_anexo": "não tem anexo",
+    "confianca_alta": "a confiança gravada é 80% ou mais",
+    "confianca_media": "a confiança gravada é de 60% a 79%",
+    "confianca_baixa": "a confiança gravada é menor que 60%",
+    "sem_confianca": "não há confiança gravada",
 }
 
 

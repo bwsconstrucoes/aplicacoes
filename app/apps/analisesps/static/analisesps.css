@@ -1368,3 +1368,33 @@ tr.nota-resolvida .nota-candidata { filter: grayscale(1); }
 .parcela-irma.outra_nota {
   border-color: #DC2626; color: #991B1B; font-weight: 600;
 }
+
+/* CONFERIR O CERTIFICADO SEM GUARDAR. Fechado por padrão: só interessa a quem
+   está com problema, e aberto ele competiria com o formulário de guardar. */
+.conferir-cert { margin-top: 14px; }
+.conferir-cert > summary {
+  cursor: pointer; font-size: 13px; font-weight: 600;
+  color: var(--azul-claro, #2563eb); padding: 6px 0;
+}
+
+/* QUEM PREENCHEU A CATEGORIA, na própria linha. *"Mandei pra IA e então, o que
+   foi que a IA disse? Ficou gravada essa informação onde?"* Ficava gravada e
+   não aparecia. */
+.quem-disse {
+  display: inline-block; font-size: 11px; padding: 1px 6px;
+  border-radius: 10px; border: 1px solid var(--borda, #cbd5e1);
+  color: #64748b; margin-top: 3px; cursor: help;
+}
+.quem-disse.ia { border-color: #8B5CF6; color: #5B21B6; background: #F5F3FF; }
+.quem-disse.pessoa { border-color: #0EA5E9; color: #075985; background: #F0F9FF; }
+.quem-disse.sistema { border-color: #10B981; color: #065F46; background: #ECFDF5; }
+.quem-disse.card { border-color: #cbd5e1; }
+/* O texto que a IA escreveu, na janela dos dados. */
+.prova-motivo {
+  margin-top: 6px; padding: 6px 8px; border-radius: 5px;
+  background: #F8FAFC; color: #334155; font-size: 12px; line-height: 1.5;
+}
+
+/* Cada SP fora da sugestão com o MOTIVO ao lado. *"A menos que a associação
+   esteja provavelmente errada"* — é aqui que se confere isso. */
+.fora-da-sugestao { margin-top: 3px; }

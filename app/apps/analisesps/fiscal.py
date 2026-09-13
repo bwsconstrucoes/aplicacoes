@@ -1205,9 +1205,43 @@ def sps_possiveis_das_notas(notas: list, quantas: int = 5) -> dict:
             # nesse caso a nota nem órfã deveria estar.
             if ja and ja == chave:
                 continue
-            linha = dict(sp, ja_tem_nota=bool(ja),
+
+            # ⚠️ O SEGUNDO JEITO DE "JÁ ESTAR ASSOCIADO", e eu tinha feito só
+            # metade do conserto na leva anterior.
+            #
+            # Cobrança do dono, repetida em 13/09/2026: *"eu já havia comentado
+            # isso. Na tela por nota me aparece uma nota e vários registros pra
+            # eu associar. Só que tá aparecendo registro já associado, não tem
+            # sentido. A MENOS QUE A ASSOCIAÇÃO ESTEJA PROVAVELMENTE ERRADA."*
+            #
+            # Na primeira volta eu cortei só quem tem CHAVE gravada aqui. Mas o
+            # card do Pipefy tem o campo "Nº NF", e quando ele está preenchido
+            # com um número DIFERENTE do desta nota, aquela SP já está falada
+            # por outra nota — oferecê-la é oferecer trabalho já feito.
+            #
+            # O CARD COM O MESMO NÚMERO CONTINUA SENDO SUGESTÃO, e essa
+            # distinção é o coração da coisa: ali o número CONFIRMA o par, é a
+            # melhor candidata que existe. Cortar por "tem número" escondia o
+            # par mais fácil da base; não cortar por "tem número DIFERENTE"
+            # enchia a lista de trabalho já feito. São casos opostos.
+            #
+            # E a ressalva dele está atendida: nada some da tela. O que está
+            # falado por outra nota vai para o bloco à parte, com o motivo
+            # escrito — é lá que ele confere se a associação anterior estava
+            # errada.
+            numero_no_card = so_digitos(sp.get("nf")).lstrip("0")
+            outro_numero = bool(
+                numero_no_card
+                and not mesmo_numero_de_nota(sp.get("nf"), nota.get("numero")))
+
+            linha = dict(sp, ja_tem_nota=bool(ja) or outro_numero,
+                         porque_fora=(
+                             f"já aponta para a nota {ja[25:34].lstrip('0')}"
+                             if ja else
+                             (f"o card já diz Nº NF {_texto(sp.get('nf'))}"
+                              if outro_numero else "")),
                          **_porque_esta_candidata(sp, nota))
-            if ja:
+            if ja or outro_numero:
                 # Fica FORA das vagas. Vai no fim, marcada, só para a conta
                 # fechar na tela e para dar onde clicar e conferir — nunca
                 # como proposta.
@@ -1888,6 +1922,9 @@ def comparar(lancamento: dict) -> dict:
             "situacao": _texto(diario.get("situacao")),
             "por": _texto(diario.get("decidida_por")),
             "motivo": _texto(diario.get("motivo")),
+            # A CONFIANÇA DE QUEM GRAVOU. Faltava, e é metade da resposta a
+            # *"o que foi que a IA disse?"*: 90% e 40% pedem reações opostas.
+            "confianca": int(diario.get("confianca") or 0),
         },
         "veredito": {
             "grupo": veredito.get("grupo"),
@@ -1980,6 +2017,22 @@ GRUPOS_DE_NOTA = [
         ("sem_sp_do_credor", "Nenhuma SP daquele CNPJ",
          "a despesa pode não ter sido lançada ainda"),
     ]),
+    # ⚠️ O TÍTULO DIZ OS QUATRO ITENS, porque "3 de 4" sozinho não diz de quê.
+    # ⚠️ SÓ AS FAIXAS DE 75% PARA CIMA, e a ausência das outras é decisão
+    # medida, não esquecimento. "Confere em 2" e "confere só no CNPJ"
+    # perguntam por AUSÊNCIA — "o valor NÃO bate, o número NÃO bate" —, e
+    # ausência nenhum índice acha: deu 1,5 s aqui, com 59.000 SPs, o que no
+    # banco do Render (um décimo de um núcleo) é a tela que não abre. São,
+    # também, as faixas de menor uso: o trabalho dele é confirmar o que fecha,
+    # não varrer o que não fecha.
+    #
+    # Para tê-las é preciso guardar a conta do par no banco, numa varredura em
+    # processo separado — está oferecido ao dono e ainda sem resposta.
+    ("A qualidade do par — CNPJ, valor, nº da nota e data", [
+        ("confere_4", "Confere nos 4 (100%)",
+         "CNPJ, valor, nº da nota no card e data batem — é o par que fecha, "
+         "e é a pilha de confirmar em lote"),
+    ]),
     ("A situação na Receita", [
         ("autorizada", "Autorizada", ""),
         ("cancelada", "Cancelada",
@@ -1994,6 +2047,68 @@ GRUPOS_DE_NOTA = [
     ]),
 ]
 
+# ===========================================================================
+# FILTRAR PELA QUALIDADE DO PAR — *"deveria poder também filtrar pela nota de
+# associação: 1-4, 2-4, ou pelo percentual também"* (dono, 13/09/2026)
+#
+# A tela já mostrava, em cada candidata, "3 de 4 conferem". Ele quer filtrar
+# por esse número — e está certo: é ele que separa "confirmar em lote sem
+# medo" de "olhar um por um".
+#
+# ⚠️ FEITO NO BANCO, E NÃO NA PÁGINA, e essa é a decisão que importa. O "X de
+# 4" nasce em Python, ao desenhar cada linha — filtrar por ali responderia
+# "das 200 desta página", e a paginação passaria a mentir: ele veria "12 de
+# 4.000" e os 4.000 continuariam contando o que o filtro tirou.
+#
+# Então os mesmos quatro critérios foram reescritos em SQL, contra a nota:
+#
+#   1. EXISTE SP DO MESMO CNPJ ......... é o que põe a SP na lista, sempre vale
+#   2. do MESMO VALOR .................. `SQL_TEM_SP_DE_VALOR_IGUAL`
+#   3. com o MESMO Nº DE NOTA no card .. abaixo
+#   4. com DATA COMPATÍVEL ............. abaixo, a mesma janela da pontuação
+#
+# A conta é `1 + (2) + (3) + (4)`, de 1 a 4 — a mesma que a linha mostra. E o
+# recorte pega a MELHOR SP de cada nota (`EXISTS`), que é a que a tela propõe.
+# ===========================================================================
+# O Nº DA NOTA ESCRITO NO CARD, comparado sem zeros à esquerda e sem
+# pontuação — a planilha traz "1.002.924", "0001430" e "1430" para a mesma
+# coisa, e comparar o texto cru perderia o par mais fácil da base.
+# `s.nf_num` é COLUNA GERADA pelo banco (migração 012) — o mesmo
+# `ltrim(regexp_replace(...))`, só que calculado uma vez na gravação em vez de
+# 262 mil vezes por abertura de tela. Ver o comentário da migração.
+_SQL_NUMERO_DO_CARD = (
+    "s.nf_num = ltrim(regexp_replace(coalesce(notas_fiscais.numero,''), "
+    "                                '\\D', '', 'g'), '0') "
+    "AND s.nf_num <> ''")
+
+# A MESMA JANELA DE DATA DA PONTUAÇÃO (`DIAS_ANTES` / `DIAS_DEPOIS`). Dois
+# números diferentes para a mesma ideia dariam uma tela que discorda de si
+# mesma: o filtro traria a nota e a linha diria que a data não bate.
+_SQL_DATA_COMPATIVEL = (
+    "(s.vencimento_d IS NOT NULL AND notas_fiscais.emissao IS NOT NULL "
+    f" AND s.vencimento_d - notas_fiscais.emissao BETWEEN -{DIAS_DEPOIS} "
+    f"     AND {DIAS_ANTES})"
+    " OR (s.data_pagamento_d IS NOT NULL AND notas_fiscais.emissao IS NOT NULL "
+    f"     AND s.data_pagamento_d - notas_fiscais.emissao "
+    f"         BETWEEN -{DIAS_DEPOIS} AND {DIAS_ANTES})")
+
+
+# AS TRÊS CONFERÊNCIAS, cada uma como uma condição própria. O CNPJ não entra:
+# ele é o que põe a SP na lista, e vale sempre — é o "1" fixo da conta.
+_CONF_VALOR = "s.valor_num = notas_fiscais.valor"
+_CONF_NUMERO = _SQL_NUMERO_DO_CARD
+_CONF_DATA = "(" + _SQL_DATA_COMPATIVEL + ")"
+
+
+def _existe_sp(condicao: str) -> str:
+    """EXISTE SP deste CNPJ em que `condicao` é verdadeira?"""
+    return f"""
+EXISTS (SELECT 1 FROM analisesps.sps s
+         WHERE left(regexp_replace(coalesce(s.documento, ''), '\\D', '', 'g'), 8)
+               = left({EMITENTE_DA_NOTA}, 8)
+           AND ({condicao}))"""
+
+
 RECORTES_DE_NOTA = {
     "sem_lancamento": SEM_LANCAMENTO_SQL,
     "com_lancamento": "NOT (" + SEM_LANCAMENTO_SQL + ")",
@@ -2007,6 +2122,39 @@ RECORTES_DE_NOTA = {
     "nfe": "substring(chave from 21 for 2) = '55'",
     "cte": "substring(chave from 21 for 2) = '57'",
     "nfce": "substring(chave from 21 for 2) = '65'",
+    # A QUALIDADE DO PAR, de 1 a 4 — ver o bloco acima.
+    # ⚠️ SÓ O RECORTE DE 100%, e a ausência dos outros é decisão MEDIDA.
+    #
+    # Pedido do dono em 13/09/2026: *"deveria poder também filtrar pela nota de
+    # associação: 1-4, 2-4, ou pelo percentual também"*. Construí as cinco
+    # faixas, medi as cinco, e só esta se paga.
+    #
+    # COM 59.000 SPs E 4.000 NOTAS, no pior caso (nenhuma SP casando, que é
+    # quando o EXISTS não tem como parar no meio):
+    #
+    #     confere nos 4 (100%) ............ 0,02 s
+    #     confere em 3 ou mais ............ 0,74 s por consulta
+    #     confere em exatamente 3 ......... 0,70 s por consulta
+    #
+    # E a tela roda a consulta DUAS VEZES — a contagem e a página —, então
+    # aqueles 0,74 s viram 1,5 s aqui. O banco do Render tem **um décimo de um
+    # núcleo**: ali isso é a tela que não abre, que é o defeito que já custou
+    # duas correções nesta mesma tela.
+    #
+    # POR QUE SÓ O DE 100% É RÁPIDO: ele é uma conjunção de igualdades, e o
+    # banco resolve pelo índice. Os outros perguntam "2 dos 3", e a pergunta
+    # tem um "ou" dentro — o EXPLAIN mostra o planejador desistindo dos índices
+    # e juntando a tabela inteira (262.497 pares avaliados). Tentei três
+    # caminhos — separar os EXISTS, pôr a condição necessária `(valor OU
+    # número)` na frente, e forçar subconsulta escalar — e nenhum passou de
+    # 0,6 s por consulta.
+    #
+    # O QUE DESTRAVA AS OUTRAS FAIXAS: guardar a conta do par no banco, numa
+    # varredura da base em processo separado. Está oferecido ao dono e ainda
+    # sem resposta — e é a mesma varredura que faria "o que o sistema está
+    # propondo" virar um totalizador de verdade.
+    "confere_4": _existe_sp(
+        f"{_CONF_VALOR} AND {_CONF_NUMERO} AND {_CONF_DATA}"),
 }
 
 FRASE_DA_NOTA = {
@@ -2021,6 +2169,7 @@ FRASE_DA_NOTA = {
     "nfe": "é NF-e (mercadoria)",
     "cte": "é CT-e (frete)",
     "nfce": "é NFC-e (cupom)",
+    "confere_4": "tem SP que confere nos 4 itens (100%)",
 }
 
 
