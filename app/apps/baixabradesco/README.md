@@ -217,6 +217,11 @@ publicação). Foi aceito assim: o Make pode reenviar.
 
 ### O que acontece se o mesmo comprovante for enviado de novo
 
+Antes de tudo: o robô **não consulta o Omie** para saber se a baixa está lá. Se
+o comprovante trouxer o **número da SP**, o reenvio funciona sempre — ele vai
+direto ao Omie por aquele número. Sem o número, ele depende de achar a SP na
+planilha, e aí valem as regras abaixo.
+
 O robô confere **só a lista dele** — a aba `LogBaixaBradesco`, pela impressão
 digital da página. Ele **não** consulta o Omie nem lê a linha da SP para saber
 se a baixa está lá.
@@ -227,7 +232,7 @@ depois a planilha. A impressão digital é registrada assim que o Omie aceita.
 | O que falhou | O reenvio resolve? |
 |---|---|
 | **O Omie falhou** (planilha não foi tocada) | **Sim** — nada foi registrado, o comprovante passa normalmente |
-| **A planilha já dizia Pago e o Omie ficou pendente** | **Sim** — existe um caminho próprio para isso, que executa só o Omie |
+| **A planilha já dizia Pago e o Omie ficou pendente** | **Sim** — existe um caminho próprio, que executa só o Omie. ⚠️ Até 13/09/2026 ele só enxergava SP **sem data de pagamento**; hoje enxerga também as pagas nos últimos **30 dias** |
 | **O Omie baixou e a planilha falhou** | **Sim, desde 13/09/2026** — antes era barrado como repetido, e a SP ficava "Pagar" para sempre |
 
 E a gravação na planilha **deixou de falhar em silêncio**: erro ali vai para a

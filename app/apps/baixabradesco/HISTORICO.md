@@ -634,3 +634,30 @@ responde bem.
 
 **Não verificado:** nada disso passou por produção. O caso exige que a gravação
 na planilha falhe de verdade, o que não dá para provocar daqui.
+
+### 13/09/2026 — a outra metade: planilha paga, Omie pendente, reenvio sem efeito
+
+Na mesma conversa, o dono achou **duas SPs** com a planilha gravada por inteiro e
+o Omie **não** baixado — conferiu nas duas fontes. Reenviar o comprovante não
+fazia nada.
+
+**É o espelho do buraco anterior, e tinha causa própria.** Existe um caminho para
+"planilha paga, Omie pendente" (`load_spsbd_omie_pendente`), mas ele exigia a
+**data de pagamento vazia**. Só que a gravação escreve status, carimbo, data,
+comprovante e conta **de uma vez**: uma SP com a planilha completa ficava fora do
+índice. O caminho de conserto só servia para gravação pela metade — justamente o
+caso que **não** era o dele.
+
+**Como ficou:** o índice passou a aceitar também SP paga nos **últimos 30 dias**.
+A janela existe por memória: sem ela, "Pago + com comprovante" traria dezenas de
+milhares das ~52 mil linhas. Trinta dias é o tempo em que alguém ainda percebe e
+reenvia.
+
+**O que já funcionava e vale saber:** comprovante que traz o **número da SP** não
+depende de nada disso — o robô vai direto ao Omie por aquele número, mesmo com a
+SP já Pago na planilha. Quem dependia do índice era o comprovante sem número
+(depósito Somapay, transferência, boleto sem ID).
+
+**Não verificado:** as duas SPs do dono não foram consertadas por aqui. Depois de
+publicado, reenviar os comprovantes delas deve resolver — e é a primeira coisa a
+conferir.

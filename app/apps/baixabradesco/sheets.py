@@ -109,10 +109,40 @@ def load_spsbd_operacional(gc=None, values: list | None = None) -> Dict[str, SpR
     return result
 
 
+DIAS_OMIE_PENDENTE = 30   # janela de "pago recentemente", ver abaixo
+
+
+def _pago_ha_pouco(data_pgt: str, dias: int = DIAS_OMIE_PENDENTE) -> bool:
+    """Diz se a data de pagamento (dd/mm/aaaa) cabe na janela recente."""
+    from datetime import datetime, timedelta
+    texto = as_string(data_pgt)
+    if not texto:
+        return False
+    for formato in ('%d/%m/%Y', '%Y-%m-%d', '%d/%m/%y'):
+        try:
+            quando = datetime.strptime(texto[:10], formato)
+        except ValueError:
+            continue
+        return quando >= datetime.now() - timedelta(days=dias)
+    return False
+
+
 def load_spsbd_omie_pendente(gc=None, values: list | None = None) -> Dict[str, SpRecord]:
-    """Carrega SPs com O=Pago + AG preenchido + X vazia.
-    Indica planilha atualizada mas Omie possivelmente não baixado.
-    Usado como fallback quando match normal falha.
+    """SPs em que a planilha diz Pago mas o Omie pode não ter sido baixado.
+
+    Critério: O=Pago + comprovante preenchido + (sem data de pagamento **OU**
+    pago nos últimos 30 dias).
+
+    ⚠️ A parte dos 30 dias entrou em 13/09/2026 e conserta um buraco real: a
+    regra antiga exigia a **data de pagamento vazia**. Só que a gravação da
+    planilha escreve status, carimbo, data, comprovante e conta de uma vez —
+    então uma SP com a planilha gravada por inteiro e o Omie pendente ficava
+    **fora** deste índice, e o comprovante reenviado não achava nada. Foi
+    exatamente o que aconteceu com duas SPs do dono.
+
+    A janela existe por memória: sem ela, "O=Pago + comprovante" traria dezenas
+    de milhares de linhas das ~52 mil da planilha. Trinta dias é a janela em que
+    alguém ainda percebe e reenvia o comprovante.
 
     Aceita `values` pré-carregado (ver load_spsbd_values) pelo mesmo motivo
     de memória descrito em load_spsbd_operacional.
@@ -134,12 +164,13 @@ def load_spsbd_omie_pendente(gc=None, values: list | None = None) -> Dict[str, S
         data_pgt   = (row[IDX_X]  if IDX_X  < len(row) else '').strip()
         comprovante= (row[IDX_AG] if IDX_AG < len(row) else '').strip()
 
-        # Pago + sem data de pagamento + com comprovante = Omie provavelmente pendente
         if status_pgt != 'pago':
             continue
-        if data_pgt:
-            continue
         if not comprovante:
+            continue
+        # Sem data de pagamento, ou paga há pouco: nos dois casos o Omie ainda
+        # pode estar pendente e vale deixar o comprovante reenviado alcançar.
+        if data_pgt and not _pago_ha_pouco(data_pgt):
             continue
 
         row = list(row) + [''] * (len(headers) - len(row))
