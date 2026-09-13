@@ -1521,10 +1521,18 @@ def _robo_falso(por_leva):
     """Um `baixabradesco` de mentira: devolve o que o de verdade devolveria.
 
     O robô verdadeiro fala com Omie, Pipefy, Sheets e Dropbox — nenhum teste
-    encosta neles."""
+    encosta neles.
+
+    A RESPOSTA INCLUI A CONFIRMAÇÃO DO OMIE, e isso passou a importar depois do
+    defeito de 13/09/2026: "pode executar" não é "executou", e a tela só chama
+    de baixa o que o Omie confirmou. Um dublê que devolvesse só o plano estaria
+    imitando o ENSAIO, não a produção — e um teste que imita o defeito não
+    protege de nada."""
     def responder(pedaco, nome):
-        return {"planos": [
+        return {"modo_teste": False, "planos": [
             {"match": {"status": "localizado"}, "pode_executar": True,
+             "acao": "baixar_omie_atualizar_pipefy_sheets",
+             "responses": {"omie": [{"step": "baixar", "response": {"ok": True}}]},
              "receipt": {"page": n + 1, "id_pipefy": f"sp{n}",
                          "valor_pago": "10,00", "nome_recebedor": "FORNECEDOR"}}
             for n in range(por_leva)]}
@@ -1721,8 +1729,11 @@ def test_o_que_pede_acao_aparece_no_topo_da_lista(banco_analisesps, monkeypatch,
 
     monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
     monkeypatch.setattr(comprovantes, "_mandar_ao_robo", lambda p, n: {
+        "modo_teste": False,
         "planos": [
             {"match": {"status": "localizado"}, "pode_executar": True,
+             "acao": "baixar_omie_atualizar_pipefy_sheets",
+             "responses": {"omie": [{"step": "baixar", "response": {"ok": True}}]},
              "receipt": {"page": 1}},
             {"match": {"status": "nao_localizado", "motivo": "sem par"},
              "pode_executar": False, "receipt": {"page": 2}}]})

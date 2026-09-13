@@ -94,11 +94,43 @@
 </div>
 
 {% if painel.get('valor_sem_marcacao') %}
-  <p class="cartao-dica" style="margin:-6px 2px 14px">
+  <p class="cartao-dica" style="margin:-6px 2px 6px">
     O que está sem documentação soma
     <b>{{ painel.valor_sem_marcacao|moeda }}</b>.
   </p>
 {% endif %}
+
+{# ---------------------------------------------------------------------------
+   DIZER QUE A CONFERÊNCIA ESTÁ ACONTECENDO.
+
+   Pergunta do dono: *"aquela varredura pra conferir se o que nós já temos está
+   ok, como é que eu sei se isso está acontecendo? É toda vez que eu abro, é
+   uma vez? (…) E se o que tiver pra trás tiver coisa errada, como é que eu sei
+   que isso está sendo analisado?"*
+
+   A conferência SEMPRE rodou a cada abertura — e a tela nunca disse isso. O
+   que não é dito não existe para quem usa, e a pergunta dele é a prova.
+
+   As duas coberturas são diferentes e as duas precisam ser ditas, senão uma
+   parece a outra:
+     • a lista é reconferida agora, mas só sobre os lançamentos desta página;
+     • os três sintomas mais graves de erro antigo são varridos sobre a BASE
+       INTEIRA, e é isso que o número "Provavelmente errado" responde.
+--------------------------------------------------------------------------- #}
+<p class="cartao-dica fiscal-conferencia">
+  <b>Reconferido agora</b>, ao abrir esta tela: {{ linhas|length }} lançamento(s)
+  desta página foram comparados de novo com as notas — <b>inclusive os que já
+  estão decididos e já foram gravados no card</b>. Nada aqui fica "conferido
+  uma vez e esquecido".
+  O que está <b>fora desta página</b> é varrido pelo banco, sobre as
+  {{ '{:,}'.format(painel.get('total') or 0)|replace(',', '.') }} SPs do filtro:
+  é de lá que sai o número
+  <b>Provavelmente errado ({{ painel.get('provavel_erro') or 0 }})</b> —
+  nota cancelada, categoria que afirma nota sem haver chave, e chave emitida por
+  outro CNPJ.
+  Para forçar a conferência de registros escolhidos, marque-os e use
+  <b>Reconferir as marcadas</b>.
+</p>
 
 {# ---------------------------------------------------------------------------
    AS AÇÕES — dentro da tela de trabalho, e não em Configurações.
@@ -171,6 +203,14 @@
         Confirmar as marcadas</button>
       {# A IA NUNCA RODA SOZINHA. Quem escolhe é o dono, SP a SP — é assim que
          ele mede se compensa antes de soltar em tudo. Cada leitura é paga. #}
+      {# RECONFERIR NÃO GRAVA NADA e não custa IA — por isso não pede
+         confirmação e vale para quem só consulta. E procura nota MESMO para as
+         categorias que a lista normalmente não concilia (apólice, contrato,
+         guia): na lista isso seria ruído; pedido registro a registro, é
+         exatamente a pergunta "será que classificaram errado?". #}
+      <button class="btn secundario" id="btn-reconferir" disabled
+              title="Compara de novo estas SPs com as notas, agora. Não grava nada.">
+        Reconferir as marcadas</button>
       <button class="btn secundario" id="btn-ia-fiscal" disabled
               title="Baixa o anexo e lê com IA. Cada leitura é cobrada.">
         Mandar para a IA</button>
@@ -179,6 +219,9 @@
         leva para o card.
       </span>
     </div>
+    {# O resultado da reconferência fica NA TELA, e não num alerta: são várias
+       linhas de texto que a pessoa precisa reler enquanto decide. #}
+    <div id="fiscal-reconferencia"></div>
   {% endif %}
 </div>
 
@@ -248,8 +291,14 @@
                           data-documentacao="{{ l.analise.documentacao or l.documentacao or '' }}"
                           data-chave="{{ l.analise.chave or l.chave or '' }}"
                           title="Informar a categoria e a chave à mão">
-                    ✎ informar</button>
+                    ✎ informar</button><br>
                 {% endif %}
+                {# RECONFERIR vale para quem só consulta: não grava nada e não
+                   custa IA — é só perguntar de novo. #}
+                <button class="link-btn fiscal-reconferir"
+                        data-sp="{{ l.sp.id }}"
+                        title="Compara esta SP com as notas agora. Não grava nada.">
+                  ↻ reconferir</button>
               </td>
             </tr>
           {% endfor %}
@@ -318,6 +367,7 @@
      data-url-ia="{{ url_for('analisesps.pedir_ia_fiscal') }}"
      data-url-mao="{{ url_for('analisesps.decidir_fiscal_a_mao') }}"
      data-url-nota="{{ url_for('analisesps.conferir_nota_fiscal') }}"
+     data-url-reconferir="{{ url_for('analisesps.reconferir_fiscal') }}"
      data-url-tarefa="{{ url_for('analisesps.sincronizar') }}"
      data-url-andamento="{{ url_for('analisesps.andamento') }}"></div>
 {% endblock %}

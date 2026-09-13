@@ -492,3 +492,146 @@ def test_gravar_a_mao_passa_pelo_MESMO_diario_da_decisao_aprovada(
     assert gravado["doc"] == "NF-e (Mercadoria)"
     assert gravado["quem"] == "MARCELO"
     assert gravado["origem"] == "PESSOA"
+
+
+# ---------------------------------------------------------------------------
+# A NAVEGAÇÃO — 13/09/2026
+#
+# *"Numa tela grande é tranquilo de navegar, porque todos aparecem, mas numa
+# tela pequena ele fica escondido, as últimas."*
+# ---------------------------------------------------------------------------
+def test_a_ordem_das_telas_e_a_que_o_dono_pediu():
+    """*"Solicitações primeiro, depois lote, aí depois comprovantes, depois
+    relatório, e depois documentação fiscal, aí depois agenda, e pronto, aí
+    pode seguir com os demais."* É o caminho do dia dele."""
+    from app.apps.analisesps import web
+    assert [c for c, _, _ in web.TELAS][:6] == [
+        "solicitacoes", "lote", "comprovantes", "relatorio", "fiscal", "agenda"]
+
+
+def test_toda_tela_do_menu_aponta_para_uma_rota_QUE_EXISTE():
+    """Link quebrado no menu só apareceria no clique."""
+    from flask import Flask
+
+    from app.apps.analisesps import web
+    a = Flask(__name__)
+    a.register_blueprint(web.bp)
+    rotas = {r.endpoint for r in a.url_map.iter_rules()}
+    for _, rotulo, rota in web.TELAS:
+        assert rota in rotas, f"{rotulo} aponta para uma rota que não existe"
+
+
+def test_a_FAIXA_e_o_MENU_saem_da_mesma_lista():
+    """Duas cópias divergiriam no dia em que uma tela nova entrasse em uma só —
+    e a que ficaria de fora seria justamente a do menu, que é o caminho de quem
+    está no celular e não tem como descobrir que faltou."""
+    import pathlib
+
+    from app.apps.analisesps import db
+    texto = (pathlib.Path(db.__file__).parent / "templates"
+             / "analisesps_base.html").read_text(encoding="utf-8")
+    # As duas varreduras usam `telas`, e nenhuma lista está escrita no HTML.
+    assert texto.count("for chave, rotulo, rota in telas") == 2
+    assert "analisesps.tela_lote'" not in texto
+
+
+def test_o_menu_existe_no_HTML_mesmo_em_tela_grande(app_fiscal):
+    """Ele nasce escondido e quem o revela é o script, medindo. Se dependesse
+    do servidor saber a largura da janela, não funcionaria — o servidor não
+    sabe."""
+    html = entrar(app_fiscal).get("/analisesps/fiscal?f=1").get_data(as_text=True)
+    assert 'id="menu-painel"' in html
+    assert 'id="btn-menu"' in html
+
+
+# ---------------------------------------------------------------------------
+# RECONFERIR — "como é que eu sei que isso está sendo analisado?"
+# ---------------------------------------------------------------------------
+def test_a_tela_DIZ_que_reconfere_a_cada_abertura(app_fiscal):
+    """A conferência sempre rodou a cada abertura, inclusive sobre o que já foi
+    decidido — e a tela nunca disse isso. O que não é dito não existe para quem
+    usa, e a pergunta dele é a prova."""
+    html = entrar(app_fiscal).get("/analisesps/fiscal?f=1").get_data(as_text=True)
+    assert "Reconferido agora" in html
+    assert "já foram gravados no card" in html
+
+
+def test_toda_linha_tem_como_RECONFERIR(app_fiscal):
+    html = entrar(app_fiscal).get("/analisesps/fiscal?f=1").get_data(as_text=True)
+    assert "fiscal-reconferir" in html
+    assert 'id="btn-reconferir"' in html
+
+
+def test_quem_so_CONSULTA_pode_reconferir(app_fiscal, monkeypatch):
+    """Reconferir não grava nada e não custa IA — é só perguntar de novo.
+    Recusar isso a quem consulta seria proibir olhar."""
+    from app.apps.analisesps import consultas, fiscal
+
+    monkeypatch.setattr(consultas, "uma", lambda sp_id: {"id": sp_id, "credor": "A"})
+    monkeypatch.setattr(fiscal, "reconferir", lambda sps: [])
+    r = entrar(app_fiscal, SENHA_CONSULTA).post(
+        "/analisesps/api/fiscal/reconferir", json={"ids": ["1"]})
+    assert r.status_code == 200 and r.get_json()["ok"]
+
+
+def test_reconferir_NAO_GRAVA_nada(app_fiscal, monkeypatch):
+    """Devolve o que encontrou; quem decide continua sendo gente."""
+    from app.apps.analisesps import consultas, fiscal
+
+    monkeypatch.setattr(consultas, "uma", lambda sp_id: {"id": sp_id, "credor": "A"})
+    monkeypatch.setattr(fiscal, "guardar_decisao",
+                        lambda *a, **k: pytest.fail("reconferir não pode gravar"))
+    monkeypatch.setattr(fiscal, "notas_candidatas", lambda l: {})
+    monkeypatch.setattr(fiscal, "analises_guardadas", lambda ids: {})
+    r = entrar(app_fiscal).post("/analisesps/api/fiscal/reconferir",
+                                json={"ids": ["1"]})
+    assert r.status_code == 200
+
+
+def test_reconferir_tem_TETO_por_chamada(app_fiscal):
+    """Soltar a base inteira num banco de um décimo de núcleo é o jeito
+    conhecido de derrubar a tela de todo mundo."""
+    r = entrar(app_fiscal).post("/analisesps/api/fiscal/reconferir",
+                                json={"ids": [str(i) for i in range(300)]})
+    assert r.status_code == 400
+    assert "200" in r.get_json()["erro"]
+
+
+def test_reconferir_procura_nota_ATE_para_o_que_a_lista_nao_concilia(monkeypatch):
+    """Na lista, procurar nota de apólice ou de contrato todo dia seria ruído.
+    Pedido registro a registro, é exatamente a pergunta — *"será que
+    classificaram errado?"*"""
+    from app.apps.analisesps import fiscal
+
+    chamou = []
+    monkeypatch.setattr(fiscal, "notas_candidatas", lambda l: {})
+    monkeypatch.setattr(fiscal, "analises_guardadas",
+                        lambda ids: {"1": {"documentacao": "Contrato"}})
+    monkeypatch.setattr(fiscal, "melhor_nota",
+                        lambda sp, notas: chamou.append(sp) or
+                        {"nota": None, "pontos": 0, "porques": [], "propoe": False})
+
+    fiscal.reconferir([{"id": "1", "credor": "ALUGUEL"}])
+    assert chamou, ('"Contrato" está em NAO_CONCILIA; a reconferência tem de '
+                    "procurar mesmo assim")
+
+
+def test_o_resumo_diz_o_que_MUDOU_e_nao_so_o_que_achou():
+    """Reconferir trinta registros sem uma conclusão no alto devolveria trinta
+    parágrafos que ninguém lê."""
+    from app.apps.analisesps import fiscal
+
+    linhas = [
+        {"sp": {"id": "1"}, "analise": {"documentacao": "Ausente"},
+         "nota": {"numero": "77", "emitente": "ACME", "status": "Autorizada"},
+         "grupo": fiscal.CORRECAO, "documentacao": "NF-e (Mercadoria)",
+         "chave": "x", "confianca": 85, "motivo": "achei"},
+        {"sp": {"id": "2"}, "analise": {"documentacao": "Contrato"},
+         "nota": None, "grupo": fiscal.EM_DIA, "documentacao": "",
+         "chave": "", "confianca": 0, "motivo": "nada a apontar"},
+    ]
+    resumo = fiscal.resumo_da_reconferencia(linhas)
+    assert resumo["mudaram"] == 1
+    assert resumo["apontados"] == 1
+    assert resumo["itens"][0]["mudou"] is True
+    assert resumo["itens"][1]["mudou"] is False

@@ -129,24 +129,80 @@ def _texto(v) -> str:
     return "" if v is None else str(v).strip()
 
 
-def _situacao_do_plano(plano: dict) -> tuple[str, str]:
+# AÇÕES QUE NÃO MEXEM EM SP NENHUMA. O robô as executa direto no Omie, sem
+# card e sem planilha — é transferência entre contas e movimentação avulsa. A
+# baixa é real, mas dizer só "Baixado" faria quem lê procurar a SP na planilha e
+# não achar. Ver a linha de FERNANDO CARVALHO em 13/09/2026, que apareceu com
+# "Baixado" e SP "—".
+ACOES_SEM_SP = {
+    "lancar_movimentacao_omie": "lançado no Omie como movimentação avulsa",
+    "lancar_movimentacao_omie_sem_sp": "lançado no Omie como transferência",
+}
+
+
+def _omie_respondeu_ok(plano: dict) -> bool | None:
+    """O Omie confirmou a baixa? `None` quando não deu para saber.
+
+    Os três estados são diferentes e a tela precisa deles: confirmou, recusou,
+    ou não há resposta nenhuma para ler (é o caso do ensaio, e o de uma ação
+    que não chama o Omie)."""
+    passos = (plano.get("responses") or {}).get("omie")
+    if not passos:
+        return None
+    baixas = [p for p in passos
+              if _texto((p or {}).get("step")).lower() == "baixar"]
+    if not baixas:
+        return None
+    return any(((p or {}).get("response") or {}).get("ok") for p in baixas)
+
+
+def _situacao_do_plano(plano: dict, ensaio: bool = False) -> tuple[str, str]:
     """A situação de uma página e o motivo, em português.
 
     O robô responde em três níveis: o `match.status` diz se achou a SP, os
-    `motivos_bloqueio` dizem por que não pôde executar, e as `responses`
-    dizem o que cada sistema respondeu. A tela precisa de UMA frase."""
+    `motivos_bloqueio` dizem por que não pôde executar, e as `responses` dizem
+    o que cada sistema respondeu. A tela precisa de UMA frase.
+
+    ⚠️ "PODE EXECUTAR" NÃO É "EXECUTOU", e confundir os dois foi o defeito de
+    13/09/2026: a tela lia o plano e anunciava baixa. Agora "Baixado" só sai
+    quando houve execução de verdade — e quando o Omie recusou, o que aparece é
+    o erro dele, não um "Baixado" por cima."""
     casamento = plano.get("match") or {}
     status = _texto(casamento.get("status")).lower()
     motivos = [_texto(m) for m in (plano.get("motivos_bloqueio") or []) if _texto(m)]
     motivo = motivos[0] if motivos else _texto(casamento.get("motivo"))
+    acao = _texto(plano.get("acao"))
 
-    if status == "nao_localizado":
+    if status == "nao_localizado" and acao not in ACOES_SEM_SP:
         return NAO_LOCALIZADO, motivo or "Não encontrei a SP deste comprovante."
     if status == "pendente_validacao":
         return PENDENTE_VALIDACAO, motivo or "A SP ainda não está liberada para baixa."
     if not plano.get("pode_executar"):
         return ERRO, motivo or "Não foi possível dar baixa."
-    return BAIXADO, ""
+
+    # O PLANO ESTAVA BOM. Agora: ele chegou a ser executado?
+    if ensaio:
+        return ERRO, ("O robô rodou em modo de ENSAIO e não gravou nada. "
+                      "Nada foi baixado — reenvie este comprovante.")
+
+    confirmou = _omie_respondeu_ok(plano)
+    if confirmou is False:
+        return ERRO, ("O Omie não confirmou a baixa. Nada foi marcado como "
+                      "pago — este comprovante precisa ser reenviado.")
+
+    if acao in ACOES_SEM_SP:
+        # Baixa real, mas sem SP: dizer isso evita que ele vá procurar a SP na
+        # planilha e conclua que o sistema mentiu.
+        return BAIXADO, (ACOES_SEM_SP[acao].capitalize()
+                         + ". Não há SP para marcar como paga na planilha.")
+
+    if confirmou is None:
+        return ERRO, ("Não recebi confirmação do Omie para esta baixa. "
+                      "Confira na planilha antes de reenviar.")
+
+    # A PLANILHA É ATUALIZADA EM SEGUNDO PLANO pelo robô, então a resposta dele
+    # não diz se ela já mudou. Não se promete o que não se sabe.
+    return BAIXADO, "Baixa confirmada no Omie. A planilha é atualizada logo em seguida."
 
 
 def ler_resposta(resposta: dict, primeira_pagina: int = 1) -> list[dict]:
@@ -181,8 +237,17 @@ def ler_resposta(resposta: dict, primeira_pagina: int = 1) -> list[dict]:
         acrescentar(RECUSADO, item,
                     _texto(item.get("motivo"))
                     or "O pagamento não consta como efetivado.")
+    # ⚠️ A TRAVA QUE TERIA PEGADO O DEFEITO DE 13/09/2026 NO PRIMEIRO DIA.
+    # O robô devolve no corpo da resposta se rodou em ensaio. Se rodou, NADA
+    # foi gravado — e nenhuma página pode ser anunciada como baixada, por mais
+    # que o plano dela estivesse perfeito.
+    ensaio = bool(resposta.get("modo_teste"))
+    if ensaio:
+        logger.error("Análise de SPs: o robô respondeu em MODO DE ENSAIO — "
+                     "nenhuma baixa foi gravada. Confira o pedido enviado.")
+
     for plano in resposta.get("planos") or []:
-        situacao, motivo = _situacao_do_plano(plano)
+        situacao, motivo = _situacao_do_plano(plano, ensaio=ensaio)
         acrescentar(situacao, plano, motivo)
 
     return linhas
@@ -267,11 +332,38 @@ def _mandar_ao_robo(pedaco: bytes, nome: str) -> dict:
 
     from app.apps.baixabradesco.core import processar_baixabradesco
 
+    # ⚠️ `modo_teste` VAI EXPLÍCITO, E ISSO NÃO É ZELO — É O DEFEITO DE
+    # 13/09/2026.
+    #
+    # O robô assume **ensaio** quando o pedido não diz nada
+    # (`payload.get('modo_teste', True)`). Como este pedido só mandava o
+    # arquivo, TODA baixa feita por esta tela desde a estreia foi simulação: o
+    # robô localizava a SP, montava o plano, respondia "dá para executar" — e
+    # não escrevia em lugar nenhum. Nem Omie, nem SPsBD, nem Pipefy, nem o
+    # comprovante guardado.
+    #
+    # A tela então dizia "Baixado", porque lia o "dá para executar" como "foi
+    # feito". O dono descobriu do único jeito que dava: *"teve dois
+    # comprovantes que eu acabei de encaminhar, e a resposta foi que estava
+    # baixado, mas na planilha eles não ficaram como pagos."*
+    #
+    # AS OPÇÕES TAMBÉM VÃO ESCRITAS, pelo mesmo motivo: um padrão que muda do
+    # outro lado muda o que esta tela faz, sem ninguém aqui saber. WhatsApp
+    # fica DESLIGADO de propósito — mandar mensagem para fornecedor é efeito
+    # para fora da empresa, e ninguém pediu isso a partir daqui.
     pedido = {
         "attachments": [{
             "filename": nome,
             "base64": base64.b64encode(pedaco).decode("ascii"),
         }],
+        "modo_teste": False,
+        "opcoes": {
+            "executar_omie": True,
+            "atualizar_spsbd": True,
+            "atualizar_pipefy": True,
+            "salvar_comprovante": True,
+            "enviar_whatsapp": False,
+        },
     }
     return processar_baixabradesco(pedido) or {}
 

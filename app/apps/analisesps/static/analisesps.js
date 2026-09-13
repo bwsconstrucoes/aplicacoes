@@ -1168,3 +1168,178 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
       }
     }));
 })();
+
+
+/* ---------------------------------------------------------------------------
+   A NAVEGACAO QUE CABE — 13/09/2026
+
+   Reclamacao do dono: *"numa tela grande e tranquilo de navegar, porque todos
+   aparecem, mas numa tela pequena ele fica escondido, as ultimas."*
+
+   NAO HA LARGURA DE CORTE CHUTADA. A pagina MEDE: se a faixa de abas nao couber
+   inteira, ela sai e entra o botao de menu, que lista todas as telas. Escolher
+   um numero magico (900px? 1100px?) erraria sozinho, porque o canto direito do
+   topo muda de tamanho conforme a tela — a hora da base e o botao "Atualizar"
+   so aparecem em algumas. Medindo, acerta sempre.
+
+   SEM ESTE SCRIPT nada quebra: a faixa fica como era, rolando de lado.
+--------------------------------------------------------------------------- */
+(function () {
+  const topo = document.querySelector(".topo");
+  const abas = document.getElementById("topo-abas");
+  const botao = document.getElementById("btn-menu");
+  const painel = document.getElementById("menu-painel");
+  if (!topo || !abas || !botao || !painel) return;
+
+  const ondeEstou = document.getElementById("btn-menu-onde");
+  const ativa = abas.querySelector(".topo-aba.ativa");
+
+  // O botao diz ONDE se esta, nao so "Menu". Numa tela pequena a faixa some, e
+  // com ela some a unica marca de qual tela esta aberta.
+  if (ondeEstou && ativa) ondeEstou.textContent = ativa.textContent.trim();
+
+  function cabe() {
+    // Medido com a faixa VISIVEL. Se ela estiver escondida (estado compacto),
+    // e preciso mostra-la por um instante para saber se ja caberia de novo —
+    // senao a tela nunca voltaria ao normal ao ser alargada.
+    const compacto = topo.classList.contains("compacto");
+    if (compacto) topo.classList.remove("compacto");
+    const serve = abas.scrollWidth <= abas.clientWidth + 1;
+    if (compacto && !serve) topo.classList.add("compacto");
+    return serve;
+  }
+
+  function ajustar() {
+    if (cabe()) {
+      topo.classList.remove("compacto");
+      fechar();
+    } else {
+      topo.classList.add("compacto");
+      botao.hidden = false;
+    }
+  }
+
+  function abrir() {
+    painel.hidden = false;
+    botao.setAttribute("aria-expanded", "true");
+  }
+
+  function fechar() {
+    painel.hidden = true;
+    botao.setAttribute("aria-expanded", "false");
+  }
+
+  botao.addEventListener("click", e => {
+    e.stopPropagation();
+    if (painel.hidden) abrir(); else fechar();
+  });
+
+  // Clicar fora fecha, e a tecla Esc tambem. Menu aberto que so fecha no
+  // proprio botao e menu que fica aberto por engano.
+  document.addEventListener("click", e => {
+    if (!painel.hidden && !painel.contains(e.target)) fechar();
+  });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") fechar();
+  });
+
+  // Redimensionar dispara muito; esperar um instante evita medir dezenas de
+  // vezes durante o arrasto da janela.
+  let espera = null;
+  window.addEventListener("resize", () => {
+    if (espera) clearTimeout(espera);
+    espera = setTimeout(ajustar, 120);
+  });
+
+  ajustar();
+})();
+
+
+/* ---------------------------------------------------------------------------
+   RECONFERIR — "como e que eu sei que isso esta sendo analisado?"
+
+   Pergunta do dono em 13/09/2026, e ela tinha razao de ser: a conferencia SEMPRE
+   rodou a cada abertura da tela, inclusive sobre o que ja foi decidido e ja foi
+   gravado no card — e a tela nunca disse isso em lugar nenhum. O que nao e dito
+   nao existe para quem usa.
+
+   O que faltava de verdade era mandar reconferir REGISTROS ESCOLHIDOS, sem
+   esperar a proxima abertura. E o que este bloco faz.
+
+   NAO GRAVA NADA e nao custa IA: e so perguntar de novo. Por isso nao pede
+   confirmacao — o custo de um clique errado aqui e zero.
+--------------------------------------------------------------------------- */
+(function () {
+  const config = document.getElementById("fiscal-config");
+  if (!config || !config.dataset.urlReconferir) return;
+  const alvo = document.getElementById("fiscal-reconferencia");
+
+  function linha(i) {
+    const mudou = i.mudou
+        ? '<b>mudou:</b> estava "' + i.antes + '", proponho "' + i.proposta + '"'
+        : '<b>sem mudanca:</b> continua "' + i.antes + '"';
+    const nota = i.nota && i.nota.numero
+        ? ' · nota ' + i.nota.numero + ' de ' + (i.nota.emitente || "")
+          + (i.nota.status ? " (" + i.nota.status + ")" : "")
+        : "";
+    return '<div class="reconf-item"><b>SP ' + i.sp + '</b> — ' + i.rotulo
+         + '<br>' + mudou + nota
+         + '<br><small>' + (i.motivo || "") + '</small></div>';
+  }
+
+  async function reconferir(ids, botao) {
+    if (!ids.length || !alvo) return;
+    const antes = botao ? botao.textContent : "";
+    if (botao) { botao.disabled = true; botao.textContent = "Conferindo…"; }
+    alvo.innerHTML = '<div class="aviso">Reconferindo ' + ids.length
+                   + ' lancamento(s)…</div>';
+    try {
+      const r = await fetch(config.dataset.urlReconferir, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({ids}),
+      });
+      const d = await r.json();
+      if (!d.ok) {
+        alvo.innerHTML = '<div class="aviso atencao">' + (d.erro || "Falhou.")
+                       + '</div>';
+        return;
+      }
+      // A CONCLUSAO VEM PRIMEIRO. Trinta paragrafos sem uma frase no alto
+      // seriam trinta paragrafos que ninguem le.
+      const cabeca = '<div class="aviso ' + (d.mudaram ? "atencao" : "ok") + '">'
+          + '<b>Reconferidos ' + d.itens.length + '</b> agora, contra as notas '
+          + 'que existem hoje. ' + d.mudaram + ' com proposta diferente do que '
+          + 'esta gravado; ' + d.apontados + ' com alguma coisa a apontar.'
+          + (d.faltaram && d.faltaram.length
+             ? '<br><small>Nao achei na base: ' + d.faltaram.join(", ")
+               + '</small>' : "")
+          + '<br><small>Nada foi gravado — isto e so a conferencia.</small>'
+          + '</div>';
+      alvo.innerHTML = cabeca + d.itens.map(linha).join("");
+      alvo.scrollIntoView({behavior: "smooth", block: "nearest"});
+    } catch (e) {
+      alvo.innerHTML = '<div class="aviso atencao">Nao consegui falar com o '
+                     + 'servidor: ' + e + '</div>';
+    } finally {
+      if (botao) { botao.disabled = false; botao.textContent = antes; }
+    }
+  }
+
+  const botaoLote = document.getElementById("btn-reconferir");
+  if (botaoLote) {
+    const marcadas = () => Array.from(
+        document.querySelectorAll(".fiscal-marca:checked"));
+    // O botao acompanha a selecao, como os outros dois ao lado dele.
+    const seguir = () => { botaoLote.disabled = marcadas().length === 0; };
+    document.querySelectorAll(".fiscal-marca").forEach(
+        c => c.addEventListener("change", seguir));
+    const todas = document.getElementById("fiscal-todas");
+    if (todas) todas.addEventListener("change", () => setTimeout(seguir, 0));
+    seguir();
+    botaoLote.addEventListener("click", () =>
+        reconferir(marcadas().map(c => c.dataset.sp), botaoLote));
+  }
+
+  document.querySelectorAll(".fiscal-reconferir").forEach(b =>
+    b.addEventListener("click", () => reconferir([b.dataset.sp], b)));
+})();

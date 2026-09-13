@@ -2749,6 +2749,131 @@ solta.
 > com um décimo de um núcleo (o incidente de 10/09) isso precisa ser medido com
 > dado de verdade. Se a tela abrir devagar, é o primeiro lugar para olhar.
 
+### INCIDENTE (13/09) — "estava baixado, mas na planilha não ficaram pagos"
+
+**O mais grave até aqui, e estava no ar desde a estreia dos comprovantes.**
+
+Ele mandou dois comprovantes pela tela, a tela respondeu **"Baixado"** nos dois,
+e nada aconteceu: *"na planilha eles não ficaram como pagos. Tem alguma coisa
+errada aí."*
+
+**A causa, em uma linha:** o robô da baixa (`baixabradesco`) assume **modo de
+ensaio** quando o pedido não diz o contrário — `payload.get('modo_teste', True)`.
+O pedido montado pela tela mandava só o arquivo. Então **toda baixa feita por
+esta tela desde a estreia foi simulação**: o robô localizava a SP, montava o
+plano, respondia "dá para executar" — e não escrevia em lugar nenhum. Nem Omie,
+nem SPsBD, nem Pipefy, nem o comprovante guardado no Dropbox.
+
+**E a tela dizia "Baixado" porque lia "pode executar" como "foi feito".** Essa é
+a segunda metade do defeito, e a pior: um padrão errado é um descuido; anunciar
+como pronto o que não aconteceu é o sistema mentindo para quem confia nele.
+
+#### O que foi corrigido — duas travas, de propósito independentes
+
+1. **O pedido agora diz `modo_teste: False`**, e diz também cada opção
+   (Omie, SPsBD, Pipefy, guardar o comprovante — todas ligadas; **WhatsApp
+   desligado**, porque mandar mensagem para fornecedor é efeito para fora da
+   empresa e ninguém pediu isso a partir daqui). Um padrão que muda do outro
+   lado deixa de mudar o que esta tela faz.
+2. **A tela nunca mais chama de "Baixado" o que não foi executado.** São três
+   conferências novas, e qualquer uma sozinha teria pego o defeito no primeiro
+   dia:
+   - se a resposta vier marcada como ensaio, **nenhuma** página é baixa —
+     todas viram erro com "reenvie este comprovante";
+   - se o Omie recusou, aparece o erro dele, não um "Baixado" por cima;
+   - se não há resposta do Omie para ler, também não é baixa — "pode executar"
+     não é "executou".
+
+#### E a linha com SP "—" que dizia "Baixado"
+
+Aquela (FERNANDO CARVALHO, R$ 15.000) tem outra explicação, e é legítima: o robô
+classificou como **transferência sem SP** e lança direto no Omie, sem card e sem
+planilha. A baixa seria real — mas dizer só "Baixado" faz quem lê ir procurar a
+SP na planilha e concluir que o sistema mentiu. Agora essas dizem com todas as
+letras: *"lançado no Omie como transferência. Não há SP para marcar como paga na
+planilha."*
+
+> **O QUE ELE PRECISA FAZER, e não dá para eu fazer por ele:** **reenviar os
+> dois comprovantes** depois de publicar. Nada foi gravado, e — importante — o
+> registro que impede baixa em duplicidade **também** só é escrito em produção,
+> então reenviar não corre risco de baixar duas vezes. Vale para **tudo** que
+> passou por esta tela desde a estreia: nenhuma baixa feita por aqui aconteceu
+> de verdade. O caminho do Make.com, que é o de sempre, nunca foi afetado — ele
+> manda `modo_teste` correto.
+
+### Trigésima nona leva (13/09) — navegar, e saber que a conferência acontece
+
+Três pedidos dele no mesmo dia, e os três são de "não estou enxergando o que o
+sistema faz".
+
+#### A ordem do menu, e o menu que cabe
+
+*"Numa tela grande é tranquilo de navegar, porque todos aparecem, mas numa tela
+pequena ele fica escondido, as últimas."*
+
+**Medindo, era pior do que parecia:** a faixa de abas ocupa cerca de 1.000
+pixels, e com a marca e o canto direito ela já começa a ser cortada perto de
+1.400 — ou seja, **num notebook comum a última aba já sumia**, e nada na tela
+dizia que tinha sumido. A rolagem lateral existia, mas sem seta e sem sombra:
+quem não soubesse arrastar não descobria.
+
+**A solução não tem número mágico.** Em vez de escolher uma largura de corte no
+chute, a própria página mede: se a faixa não couber inteira, ela sai e entra um
+botão de menu que lista **todas** as telas em coluna, com a atual marcada e o
+nome dela escrito no próprio botão. Acerta sozinho em qualquer tamanho de
+janela, e continua acertando quando o canto direito cresce (a hora da base e o
+botão Atualizar só aparecem em algumas telas). Sem JavaScript nada quebra: a
+faixa fica como era.
+
+**A ordem é a dele:** Solicitações, Lote, Comprovantes, Relatório, Doc. Fiscal,
+Agenda, e depois os demais. A lista passou a morar no Python e alimenta a faixa
+e o menu ao mesmo tempo — duas cópias divergiriam, e a que ficaria de fora seria
+a do menu, que é o caminho de quem está no celular.
+
+#### "Como é que eu sei que isso está sendo analisado?"
+
+*"Aquela varredura pra conferir se o que nós já temos está ok, como é que eu sei
+se isso está acontecendo? É toda vez que eu abro, é uma vez? E se eu quiser
+fazer uma reanálise das informações que a gente já gravou? E se eu quiser
+selecionar um determinado registro e reprocessar ele pra ver se está batendo? E
+se o que tiver pra trás tiver coisa errada, como é que eu sei?"*
+
+**A resposta honesta tem três partes, e duas delas já eram verdade — a tela é
+que nunca disse.**
+
+1. A conferência **roda a cada abertura da tela**, sobre os lançamentos da
+   página — **inclusive os que já foram decididos e já foram gravados no card**.
+   Nada fica "conferido uma vez e esquecido". Agora está escrito na tela, com o
+   número de lançamentos reconferidos.
+2. O que está **fora da página** é varrido pelo banco, sobre a base inteira do
+   filtro: é de lá que sai o número **"Provavelmente errado"** — nota cancelada,
+   categoria que afirma nota sem haver chave, e chave emitida por outro CNPJ.
+   Esse é o número que responde "tem coisa errada para trás?".
+3. **Faltava mesmo reconferir sob demanda**, e entrou: "↻ reconferir" em cada
+   linha e "Reconferir as marcadas" para a seleção. O resultado aparece na
+   tela, com a conclusão em cima (quantos mudaram, quantos têm algo a apontar) e
+   uma linha por SP dizendo se mudou ou continua igual.
+
+**Uma diferença de propósito:** a reconferência sob demanda procura nota **mesmo
+para as categorias que a lista normalmente não concilia** (apólice, contrato,
+guia de tributo). Na lista isso seria ruído — procurar nota de aluguel todo dia.
+Pedido registro a registro, é exatamente a pergunta que se quer fazer: *"será
+que classificaram errado?"* E **não grava nada**: por isso não pede confirmação,
+não custa IA, e vale também para quem só consulta.
+
+**Verificação:** 4.861 testes verdes com Postgres de verdade, 129 pulados; 19
+testes novos nesta leva. A navegação foi **medida num navegador** em seis
+larguras (1600 a 390 px): a faixa fica enquanto cabe, o menu entra quando não
+cabe, lista as onze telas na ordem pedida, marca a atual, fecha com Esc e some
+quando a janela volta a alargar. A reconferência foi exercitada contra banco de
+verdade, uma linha e em lote.
+
+> **O QUE NÃO FOI PROVADO:** a correção da baixa de comprovantes **não pôde ser
+> testada de ponta a ponta aqui** — testar de verdade seria dar baixa real no
+> Omie da empresa. O que está provado é que o pedido sai com `modo_teste: False`
+> e que a tela recusa anunciar baixa sem confirmação. **O teste de verdade é o
+> primeiro comprovante reenviado depois de publicar**, conferindo na planilha.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Nada do dono esperando código.** O que falta não é programação — é o

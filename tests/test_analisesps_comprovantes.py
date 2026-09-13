@@ -93,12 +93,19 @@ def test_contar_paginas_de_coisa_que_nao_e_pdf_nao_estoura():
 # tem duplicidade, esse faltou aquilo". Isso hoje volta para o Make.com e morre
 # lá. Estes testes travam a tradução para as linhas que a tela mostra.
 # ---------------------------------------------------------------------------
-def _plano(status="localizado", pode=True, pagina=1, motivos=None, **recibo):
+OMIE_OK = {"omie": [{"step": "baixar", "response": {"ok": True}}]}
+OMIE_RECUSOU = {"omie": [{"step": "baixar", "response": {"ok": False}}]}
+
+
+def _plano(status="localizado", pode=True, pagina=1, motivos=None,
+           respostas=None, acao="baixar_omie_atualizar_pipefy_sheets",
+           **recibo):
     base = {"page": pagina, "valor_pago": "1.234,56",
             "nome_recebedor": "SERTAO CASA E CONSTRUCAO", "id_pipefy": "1443253428"}
     base.update(recibo)
-    return {"match": {"status": status}, "pode_executar": pode,
-            "motivos_bloqueio": motivos or [], "receipt": base}
+    return {"match": {"status": status}, "pode_executar": pode, "acao": acao,
+            "motivos_bloqueio": motivos or [], "receipt": base,
+            "responses": OMIE_OK if respostas is None else respostas}
 
 
 def test_o_que_baixou_vira_linha_BAIXADO():
@@ -107,6 +114,90 @@ def test_o_que_baixou_vira_linha_BAIXADO():
     assert linhas[0]["situacao"] == comprovantes.BAIXADO
     assert linhas[0]["sp_id"] == "1443253428"
     assert linhas[0]["valor"] == "1.234,56"
+
+
+# ---------------------------------------------------------------------------
+# O DEFEITO DE 13/09/2026 — "estava baixado, mas na planilha não ficaram pagos"
+#
+# O robô assume MODO DE ENSAIO quando o pedido não diz nada. O pedido montado
+# aqui só mandava o arquivo, então TODA baixa feita por esta tela desde a
+# estreia foi simulação: o robô localizava a SP, montava o plano, respondia
+# "dá para executar" — e não escrevia em lugar nenhum.
+#
+# A tela dizia "Baixado" porque lia "dá para executar" como "foi feito". Duas
+# travas entram aqui, e elas são independentes de propósito: uma conserta o
+# pedido, a outra impede a tela de anunciar baixa que não houve. Se um dia
+# alguém mexer no pedido de novo, a segunda ainda pega.
+# ---------------------------------------------------------------------------
+def test_o_pedido_ao_robo_diz_EXPLICITAMENTE_que_nao_e_ensaio(monkeypatch):
+    """A causa. Sem esta linha, o robô assume ensaio e não grava nada."""
+    capturado = {}
+    import sys
+    import types
+
+    falso = types.ModuleType("app.apps.baixabradesco.core")
+    falso.processar_baixabradesco = lambda pedido: capturado.update(pedido) or {}
+    monkeypatch.setitem(sys.modules, "app.apps.baixabradesco.core", falso)
+
+    comprovantes._mandar_ao_robo(b"%PDF-", "comprovante.pdf")
+    assert capturado["modo_teste"] is False, (
+        "sem isto o robô roda em ensaio e a tela mente para quem usa")
+
+
+def test_WhatsApp_fica_DESLIGADO_a_partir_desta_tela(monkeypatch):
+    """Mandar mensagem para fornecedor é efeito para fora da empresa, e
+    ninguém pediu isso a partir daqui."""
+    capturado = {}
+    import sys
+    import types
+
+    falso = types.ModuleType("app.apps.baixabradesco.core")
+    falso.processar_baixabradesco = lambda pedido: capturado.update(pedido) or {}
+    monkeypatch.setitem(sys.modules, "app.apps.baixabradesco.core", falso)
+
+    comprovantes._mandar_ao_robo(b"%PDF-", "comprovante.pdf")
+    assert capturado["opcoes"]["enviar_whatsapp"] is False
+
+
+def test_resposta_em_ENSAIO_nunca_vira_BAIXADO():
+    """A segunda trava, e a que teria pego o defeito no primeiro dia: o robô
+    diz no corpo da resposta que rodou em ensaio."""
+    linhas = comprovantes.ler_resposta({"modo_teste": True, "planos": [_plano()]})
+    assert linhas[0]["situacao"] == comprovantes.ERRO
+    assert "ENSAIO" in linhas[0]["motivo"]
+    assert "reenvie" in linhas[0]["motivo"].lower()
+
+
+def test_plano_bom_SEM_resposta_do_Omie_nao_e_baixa():
+    """"Pode executar" não é "executou". Era exatamente essa confusão."""
+    linhas = comprovantes.ler_resposta({"planos": [_plano(respostas={})]})
+    assert linhas[0]["situacao"] == comprovantes.ERRO
+    assert "confirmação do Omie" in linhas[0]["motivo"]
+
+
+def test_Omie_que_RECUSOU_aparece_como_erro_e_nao_como_baixa():
+    linhas = comprovantes.ler_resposta({"planos": [_plano(respostas=OMIE_RECUSOU)]})
+    assert linhas[0]["situacao"] == comprovantes.ERRO
+    assert "não confirmou" in linhas[0]["motivo"]
+
+
+def test_baixa_SEM_SP_diz_que_nao_ha_SP_para_marcar_na_planilha():
+    """A linha de FERNANDO CARVALHO em 13/09: "Baixado" com SP "—". A baixa é
+    real (transferência lançada direto no Omie), mas quem lê "Baixado" vai
+    procurar a SP na planilha e concluir que o sistema mentiu."""
+    linhas = comprovantes.ler_resposta({"planos": [_plano(
+        status="transferencia_sem_sp", acao="lancar_movimentacao_omie_sem_sp",
+        id_pipefy="")]})
+    assert linhas[0]["situacao"] == comprovantes.BAIXADO
+    assert "Não há SP" in linhas[0]["motivo"]
+
+
+def test_a_baixa_confirmada_NAO_promete_a_planilha_ja_atualizada():
+    """O robô atualiza a planilha em segundo plano, então a resposta dele não
+    diz se ela já mudou. Prometer o que não se sabe é como este defeito
+    começou."""
+    linhas = comprovantes.ler_resposta({"planos": [_plano()]})
+    assert "logo em seguida" in linhas[0]["motivo"]
 
 
 def test_o_que_nao_achou_a_SP_diz_isso_e_diz_por_que():

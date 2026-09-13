@@ -123,9 +123,38 @@ def versao_publicada() -> str:
     return os.getenv("RENDER_GIT_COMMIT", "")[:8] or "dev"
 
 
+# ---------------------------------------------------------------------------
+# AS TELAS DO MÓDULO, NA ORDEM EM QUE ELE TRABALHA
+#
+# A ordem é do dono, pedida em 13/09/2026: *"eu queria colocar solicitações
+# primeiro, depois lote, aí depois eu queria comprovantes, depois relatório, e
+# depois documentação fiscal, aí depois agenda, e pronto, aí pode seguir com os
+# demais."* É o caminho do dia dele — pedir, juntar no lote, dar baixa nos
+# comprovantes, olhar o resultado, tratar a documentação fiscal.
+#
+# POR QUE A LISTA VIVE AQUI, e não solta no HTML: ela é desenhada em DOIS
+# lugares — a faixa de abas do alto e o menu que se abre em tela pequena. Duas
+# cópias divergiriam no dia em que uma tela nova entrasse em uma só, e a que
+# ficasse de fora seria justamente a do menu, que é o caminho de quem está no
+# celular e não tem como descobrir que faltou.
+TELAS = [
+    ("solicitacoes",  "Solicitações",  "analisesps.solicitacoes"),
+    ("lote",          "Lote",          "analisesps.tela_lote"),
+    ("comprovantes",  "Comprovantes",  "analisesps.tela_comprovantes"),
+    ("relatorio",     "Relatório",     "analisesps.relatorio"),
+    ("fiscal",        "Doc. Fiscal",   "analisesps.tela_fiscal"),
+    ("agenda",        "Agenda",        "analisesps.tela_agenda"),
+    ("auditoria",     "Auditoria",     "analisesps.auditoria"),
+    ("ratear",        "Ratear",        "analisesps.ratear"),
+    ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
+    ("log",           "Log",           "analisesps.log"),
+    ("configuracoes", "Configurações", "analisesps.configuracoes"),
+]
+
+
 @bp.app_context_processor
 def _versao_para_os_templates():
-    return {"versao_estatica": versao_publicada()}
+    return {"versao_estatica": versao_publicada(), "telas": TELAS}
 
 
 @bp.after_request
@@ -1854,6 +1883,43 @@ def decidir_fiscal_a_mao():
     logger.info("Análise de SPs: %s marcou a SP %s como %r à mão.",
                 quem, sp_id, gravado["documentacao"])
     return {"ok": True, **gravado}
+
+
+@bp.route("/api/fiscal/reconferir", methods=["POST"])
+@exige_consulta
+def reconferir_fiscal():
+    """Refaz a conferência das SPs escolhidas AGORA, inclusive as já decididas.
+
+    Pergunta do dono em 13/09/2026: *"se eu quiser selecionar um determinado
+    registro e reprocessar ele pra ver se está batendo (…) como é que eu sei
+    que isso está sendo analisado?"*
+
+    É `@exige_consulta` de propósito: reconferir NÃO GRAVA NADA — devolve o que
+    encontrou. Quem decide continua sendo gente, e olhar não é alterar."""
+    from . import consultas, fiscal
+
+    dados = request.get_json(silent=True) or {}
+    ids = [str(i).strip() for i in (dados.get("ids") or []) if str(i).strip()]
+    if not ids:
+        return {"ok": False, "erro": "Nenhuma SP marcada."}, 400
+    # Teto por chamada: reconferir é uma busca de notas candidatas por SP, e
+    # soltar a lista inteira de uma vez num banco de um décimo de núcleo é o
+    # jeito conhecido de derrubar a tela de todo mundo.
+    if len(ids) > 200:
+        return {"ok": False,
+                "erro": "Dá para reconferir até 200 por vez."}, 400
+
+    try:
+        linhas = [sp for sp in (consultas.uma(i) for i in ids) if sp]
+        resultado = fiscal.resumo_da_reconferencia(fiscal.reconferir(linhas))
+    except Exception as e:  # noqa: BLE001 — migração ainda não aplicada
+        logger.exception("Análise de SPs: falhou reconferir")
+        return {"ok": False, "erro": f"Não consegui reconferir: {e}"}, 500
+
+    faltaram = [i for i in ids if i not in {x["sp"] for x in resultado["itens"]}]
+    logger.info("Análise de SPs: %s reconferiu %d SP(s).",
+                auth.nome_atual() or auth.pessoa_atual(), len(resultado["itens"]))
+    return {"ok": True, "faltaram": faltaram, **resultado}
 
 
 @bp.route("/api/fiscal/nota")

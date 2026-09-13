@@ -1041,3 +1041,62 @@ a.kpi { display: block; }
    justamente "Confirmado, falta gravar no card". A barra lateral ja rola
    sozinha; um segundo rolamento dentro dela nao ajuda ninguem. */
 .filtro-trabalho .filtro-opcoes { max-height: none; overflow-y: visible; }
+
+/* ============ A NAVEGACAO EM TELA PEQUENA — 13/09/2026 ====================
+   "Numa tela grande e tranquilo de navegar, porque todos aparecem, mas numa
+   tela pequena ele fica escondido, as ultimas."
+
+   Medido: a faixa de abas ocupa ~1.000px e comeca a ser cortada perto de
+   1.400px de janela — num notebook comum a ultima ja sumia, e nada dizia que
+   tinha sumido. Quem decide trocar a faixa pelo menu e o script, MEDINDO: nao
+   ha largura de corte chutada aqui. */
+.topo-menu {
+  display: none; align-items: center; gap: 8px; margin-left: 12px;
+  background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22);
+  color: #fff; border-radius: 8px; padding: 8px 14px; cursor: pointer;
+  font-size: 14px; font-weight: 700; white-space: nowrap; flex: 0 0 auto;
+}
+/* O NOME DA TELA NO BOTAO nao pode ser cortado: ele e a unica marca de onde se
+   esta quando a faixa some. Em tela estreita quem cede espaco e o "Perfil
+   Operador" do canto, que e informacao de conferencia, nao de navegacao. */
+@media (max-width: 560px) {
+  .topo-meta { display: none; }
+}
+.topo-menu:hover { background: rgba(255,255,255,.2); }
+.topo-menu-risco { font-size: 17px; line-height: 1; }
+
+/* O estado compacto: a faixa sai, o botao entra. */
+.topo.compacto .topo-abas { display: none; }
+.topo.compacto .topo-menu { display: inline-flex; }
+
+/* O PAINEL cai por baixo do topo e ocupa a largura toda em tela estreita.
+   Uma tela por linha, com alvo grande para o dedo. */
+.menu-painel {
+  position: sticky; top: var(--altura-topo); z-index: 29;
+  background: var(--branco); border-bottom: 1px solid var(--borda);
+  box-shadow: var(--sombra); display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  padding: 8px; gap: 4px;
+}
+.menu-item {
+  display: block; padding: 13px 14px; border-radius: var(--raio-p);
+  color: var(--tinta); text-decoration: none; font-size: 15px; font-weight: 600;
+}
+.menu-item:hover { background: var(--papel); }
+/* A ATUAL VEM MARCADA: em tela pequena, saber onde se esta e metade da
+   navegacao — na faixa isso era obvio, no menu precisa ser dito. */
+.menu-item.ativa { background: var(--azul); color: #fff; }
+
+/* O RESULTADO DA RECONFERENCIA fica na tela, e nao num alerta: sao varias
+   linhas que a pessoa precisa reler enquanto decide o que fazer. */
+#fiscal-reconferencia { margin-top: 10px; }
+.reconf-item {
+  padding: 8px 12px; margin-bottom: 6px; background: var(--papel);
+  border-left: 4px solid var(--borda-forte); border-radius: var(--raio-p);
+  font-size: 13px; line-height: 1.45;
+}
+.reconf-item small { color: var(--tinta-suave); }
+
+/* A frase que diz que a conferencia esta acontecendo. Fica discreta, mas
+   precisa caber inteira — e a resposta a "como eu sei que isso roda?". */
+.fiscal-conferencia { margin: 0 2px 14px; max-width: 90ch; line-height: 1.55; }

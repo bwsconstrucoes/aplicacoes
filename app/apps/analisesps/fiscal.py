@@ -1042,3 +1042,86 @@ def uma_nota(chave: str) -> dict:
     nomes = ["chave", "emissao", "numero", "valor", "status",
              "emitente_doc", "emitente"]
     return dict(zip(nomes, linha))
+
+
+# ---------------------------------------------------------------------------
+# RECONFERIR — o que já está gravado continua sendo olhado
+#
+# Pergunta do dono em 13/09/2026: *"aquela varredura pra conferir se o que nós
+# já temos está ok, como é que eu sei se isso está acontecendo? É toda vez que
+# eu abro, é uma vez? E se eu quiser fazer uma reanálise das informações que a
+# gente já gravou, já salvou? E se eu quiser selecionar um determinado registro
+# e reprocessar ele pra ver se está batendo? E se o que tiver pra trás tiver
+# coisa errada, como é que eu sei que isso está sendo analisado?"*
+#
+# A RESPOSTA HONESTA, e é por isso que esta parte existe:
+#
+#   1. A conferência roda A CADA ABERTURA da tela, sobre os lançamentos que
+#      estão na página — e isso vale também para o que já foi decidido e já foi
+#      gravado no card. Nada é "conferido uma vez e esquecido". Só que a tela
+#      não dizia isso em lugar nenhum, e o que não é dito não existe para quem
+#      usa.
+#   2. O que está FORA da página não era reconferido enquanto ninguém chegasse
+#      nela. Os três sintomas mais graves de erro antigo — nota cancelada,
+#      categoria que afirma nota sem haver chave, e chave de outro CNPJ — são
+#      varridos sobre a BASE INTEIRA pelo recorte "Provavelmente errado"
+#      (`consultas.SQL_FISCAL_PROVAVEL_ERRO`), que é SQL. Esse é o número que
+#      responde "tem coisa errada para trás?".
+#   3. FALTAVA reconferir SOB DEMANDA um registro escolhido. É o que entra
+#      aqui.
+#
+# O QUE `reconferir` FAZ DE DIFERENTE da conciliação da tela: ela procura nota
+# MESMO para as categorias que normalmente não se concilia (apólice, contrato,
+# guia de tributo). Na lista isso seria ruído — procurar nota de aluguel todo
+# dia; pedido registro a registro, é exatamente o que se quer, porque a pergunta
+# passa a ser "será que classificaram errado?". NÃO GRAVA NADA: devolve o que
+# encontrou, e quem decide continua sendo gente.
+# ---------------------------------------------------------------------------
+def reconferir(sps: list) -> list:
+    """Refaz a conferência destas SPs agora, inclusive as já decididas.
+
+    `sps` são as linhas da base (o que `consultas.listar`/`uma` devolvem)."""
+    por_raiz = notas_candidatas(sps)
+    diario = analises_guardadas([s.get("id") for s in sps])
+
+    saida = []
+    for sp in sps:
+        analise = diario.get(str(sp.get("id")), {})
+        # SEM O ATALHO do `NAO_CONCILIA`: aqui a pergunta é justamente se a
+        # categoria que está lá é a certa.
+        escolha = melhor_nota(sp, _para_esta_sp(sp, por_raiz))
+        veredito = avaliar(sp, analise, escolha)
+        saida.append({
+            "sp": sp, "analise": analise, "nota": escolha.get("nota"),
+            "porques": escolha.get("porques") or [], **veredito,
+        })
+    return saida
+
+
+def resumo_da_reconferencia(linhas: list) -> dict:
+    """Uma frase por SP, para a tela dizer o que mudou sem recarregar tudo."""
+    saida = []
+    for l in linhas:
+        antes = str((l.get("analise") or {}).get("documentacao") or "").strip()
+        achou = l.get("nota") or {}
+        saida.append({
+            "sp": str(l["sp"].get("id")),
+            "grupo": l.get("grupo"),
+            "rotulo": ROTULOS_GRUPO.get(l.get("grupo"), l.get("grupo")),
+            "antes": antes or "sem categoria",
+            "proposta": l.get("documentacao") or "",
+            "chave": l.get("chave") or "",
+            "confianca": int(l.get("confianca") or 0),
+            "motivo": l.get("motivo") or "",
+            "nota": ({"numero": achou.get("numero"),
+                      "emitente": achou.get("emitente"),
+                      "status": achou.get("status")} if achou else None),
+            # O QUE MUDA A VIDA DE QUEM LÊ: mudou ou continua igual? Sem esta
+            # linha, reconferir trinta registros devolveria trinta parágrafos
+            # e nenhuma conclusão.
+            "mudou": bool(l.get("documentacao")) and l.get("documentacao") != antes,
+        })
+    return {"itens": saida,
+            "mudaram": sum(1 for i in saida if i["mudou"]),
+            "apontados": sum(1 for i in saida
+                             if i["grupo"] in (CRITICO, CORRECAO, DUVIDA))}
