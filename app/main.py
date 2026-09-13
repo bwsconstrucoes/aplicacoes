@@ -86,51 +86,6 @@ def create_app():
               + (["analisesps"] if analisesps_bp is not None else [])
         }
 
-    # TEMPORÁRIO — remover após o diagnóstico
-    # Testa se este serviço (Render) alcança o portal do DETRAN-CE. Sem
-    # autenticação, sem banco, sem variável de ambiente: só sai para a internet
-    # e mostra o resultado em texto. Nunca lança erro — captura tudo e exibe.
-    @app.route("/teste-detran")
-    def teste_detran():
-        import time
-        import requests as _requests
-
-        cabecalhos = {
-            "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) "
-                           "Gecko/20100101 Firefox/149.0"),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Accept-Language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
-        }
-        alvos = [
-            "https://sistemas.detran.ce.gov.br/central",
-            "https://www.detran.ce.gov.br",
-            "https://example.com",  # controle
-        ]
-        linhas = ["Diagnóstico de rede — DETRAN-CE", ""]
-
-        try:
-            inicio = time.monotonic()
-            ip = _requests.get("https://api.ipify.org", timeout=25).text.strip()
-            linhas.append(f"IP de saída: {ip} ({time.monotonic() - inicio:.1f}s)")
-        except Exception as e:  # noqa: BLE001
-            linhas.append(f"IP de saída: FALHOU — {type(e).__name__}: {e}")
-        linhas.append("")
-
-        for url in alvos:
-            inicio = time.monotonic()
-            try:
-                r = _requests.get(url, headers=cabecalhos, timeout=25)
-                gasto = time.monotonic() - inicio
-                linhas.append(f"{url}\n  HTTP {r.status_code} | {len(r.text)} caracteres | "
-                              f"{gasto:.1f}s | URL final: {r.url}")
-            except Exception as e:  # noqa: BLE001
-                gasto = time.monotonic() - inicio
-                linhas.append(f"{url}\n  FALHOU após {gasto:.1f}s | "
-                              f"{type(e).__name__}: {e}")
-            linhas.append("")
-
-        return "\n".join(linhas), 200, {"Content-Type": "text/plain; charset=utf-8"}
-
     return app
 
 
