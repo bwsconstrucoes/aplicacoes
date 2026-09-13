@@ -8,6 +8,8 @@ então a regra fica presa aqui, caso a caso.
 """
 from __future__ import annotations
 
+import datetime as dt
+
 import pytest
 
 from app.apps.analisesps import fiscal
@@ -1121,3 +1123,118 @@ def test_a_cancelada_continua_APARECENDO_e_diz_por_que_nao_foi_marcada():
     porques = " ".join(escolha["porques"])
     assert "CANCELADA" in porques
     assert "decisão de gente" in porques
+
+
+# ===========================================================================
+# A NOTA PARCELADA — o caso que o dono mandou em 13/09/2026, com os números
+#
+#   SP 1441193033 · "Parcela 3/3" · Nº NF 1002924 · R$    696,34 · FRIGELAR
+#   Nota nº 1.002.924 ................................ R$  2.089,02 · FRIGELAR
+#
+# 696,34 × 3 = 2.089,02. O sistema via diferença de R$ 1.392,68, não dava
+# nenhum dos 25 pontos do valor, e um par que qualquer pessoa fecha em dois
+# segundos nunca chegava ao corte de 60.
+# ===========================================================================
+FRIGELAR = "92660406000623"
+
+
+def _sp_frigelar(**extra):
+    base = {"id": "1441193033", "credor": "FRIGELAR COMERCIO LTDA",
+            "documento": "92.660.406/0006-23", "valor_num": 696.34,
+            "vencimento_d": dt.date(2026, 11, 30), "parcela": "3/3",
+            "nf": "1002924"}
+    base.update(extra)
+    return base
+
+
+def _nota_frigelar(**extra):
+    base = {"chave": "26260992660406000623550050010029241000204887",
+            "numero": "1002924", "valor": 2089.02, "status": "Autorizada",
+            "emitente_doc": FRIGELAR,
+            "emitente": "FRIGELAR COMERCIO E INDUSTRIA LTDA",
+            "emissao": dt.date(2026, 9, 1)}
+    base.update(extra)
+    return base
+
+
+def test_a_parcela_e_lida_em_todas_as_grafias_da_planilha():
+    from app.apps.analisesps import fiscal
+    assert fiscal.parcela_do_lancamento({"parcela": "3/3"}) == (3, 3)
+    assert fiscal.parcela_do_lancamento({"parcela": " 1 / 12 "}) == (1, 12)
+    assert fiscal.parcela_do_lancamento({"parcela": "3 de 3"}) == (3, 3)
+
+
+def test_parcela_UNICA_ou_sem_sentido_nao_e_parcelamento():
+    """"1/1" é parcela única e não muda conta nenhuma. "4/3" é lixo da
+    planilha, e tratar lixo como regra é como se casa a nota errada."""
+    from app.apps.analisesps import fiscal
+    assert fiscal.parcela_do_lancamento({"parcela": "1/1"}) is None
+    assert fiscal.parcela_do_lancamento({"parcela": "4/3"}) is None
+    assert fiscal.parcela_do_lancamento({"parcela": ""}) is None
+    assert fiscal.parcela_do_lancamento({"parcela": "à vista"}) is None
+    assert fiscal.parcela_do_lancamento({"parcela": "1/900"}) is None
+
+
+def test_o_caso_do_dono_FECHA_pela_conta_da_parcela():
+    from app.apps.analisesps import fiscal
+    bateu = fiscal.bate_como_parcela(_sp_frigelar(), _nota_frigelar())
+    assert bateu["qual"] == 3 and bateu["de"] == 3
+    assert "696,34" in bateu["conta"] and "2.089,02" in bateu["conta"]
+
+
+def test_o_caso_do_dono_passa_a_ser_PROPOSTO():
+    """Era o ponto todo: antes ficava abaixo do corte de 60 e nunca era
+    proposto, mesmo com CNPJ, número da nota e conta do valor fechando."""
+    from app.apps.analisesps import fiscal
+    pontos, porques = fiscal.pontuar(_sp_frigelar(), _nota_frigelar())
+    assert pontos >= fiscal.CONFIANCA_PARA_PROPOR
+    assert any("696,34" in p for p in porques)
+
+
+def test_a_divisao_tem_de_ser_EXATA_ate_o_centavo():
+    """⚠️ Folga aqui casaria notas quaisquer: com 12 parcelas, qualquer valor
+    numa faixa de dez reais viraria par. O centavo é o que separa "é a mesma
+    nota" de "coincidência"."""
+    from app.apps.analisesps import fiscal
+    assert fiscal.bate_como_parcela(
+        _sp_frigelar(), _nota_frigelar(valor=2100.00)) == {}
+    assert fiscal.bate_como_parcela(
+        _sp_frigelar(), _nota_frigelar(valor=2089.50)) == {}
+
+
+def test_a_divisao_que_NAO_FECHA_redonda_ainda_vale():
+    """100,00 em 3 vezes dá 33,33 + 33,33 + 33,34. Um centavo por parcela é
+    arredondamento de verdade, e recusar isso perderia o caso comum."""
+    from app.apps.analisesps import fiscal
+    sp = {"parcela": "1/3", "valor_num": 33.33}
+    assert fiscal.bate_como_parcela(sp, {"valor": 100.00})
+
+
+def test_a_SP_que_NAO_e_parcela_nao_ganha_nada_pela_conta():
+    """Sem a coluna Parcela preenchida, 696,34 contra 2.089,02 continua sendo
+    o que sempre foi: valor diferente."""
+    from app.apps.analisesps import fiscal
+    assert fiscal.bate_como_parcela(
+        _sp_frigelar(parcela=""), _nota_frigelar()) == {}
+    _, porques = fiscal.pontuar(_sp_frigelar(parcela=""), _nota_frigelar())
+    assert not any("×" in p for p in porques)
+
+
+def test_a_tela_EXPLICA_a_conta_em_vez_de_dizer_valor_diferente():
+    """Dizer "a SP é R$ 696,34 e a nota R$ 2.089,02" é verdade no número e
+    mentira no sentido — e é a pior espécie de erro, porque tem cara de
+    conferência feita."""
+    from app.apps.analisesps import fiscal
+    saida = fiscal._porque_esta_candidata(_sp_frigelar(), _nota_frigelar())
+    valor = next(r for r in saida["razoes"] if "Valor" in r["rotulo"])
+    assert valor["bate"] is True
+    assert "× 3" in valor["detalhe"]
+    assert saida["valor_igual"] is True
+
+
+def test_a_PROVA_mostra_a_conta_da_parcela():
+    from app.apps.analisesps import fiscal
+    regras = fiscal._conferir_regras(_sp_frigelar(), _nota_frigelar())
+    valor = next(r for r in regras if r["chave"] == "valor")
+    assert valor["bateu"] is True
+    assert "696,34" in valor["parcelado"]

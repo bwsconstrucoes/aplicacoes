@@ -26,16 +26,45 @@ FORNECEDOR = "29066773000152"
 # ---------------------------------------------------------------------------
 # O CNPJ DIGITADO ERRADO
 # ---------------------------------------------------------------------------
-def test_o_CNPJ_da_PROPRIA_BWS_e_certeza_de_erro():
+def test_o_CNPJ_DO_CERTIFICADO_e_certeza_de_erro():
     """A empresa não é fornecedora de si mesma. É exatamente o engano que ele
-    descreveu: copiar o CNPJ do destinatário da nota em vez do emitente."""
+    descreveu: copiar o CNPJ do destinatário da nota em vez do emitente.
+
+    CERTEZA só com CERTIFICADO — ali não há heurística: é a empresa dizendo
+    quem ela é, com a mão e a senha do dono."""
     from app.apps.analisesps import credores
 
     achado = credores.suspeita_de_cnpj_errado(
-        "10.656.452/0078-69", ["ACME MATERIAIS"], nossos={BWS})
+        "10.656.452/0078-69", ["ACME MATERIAIS"],
+        nossos={BWS: "certificado"})
     assert achado["grau"] == "certeza"
     assert "PRÓPRIA BWS" in achado["motivo"]
     assert "corrigir o CNPJ" in achado["o_que_fazer"]
+
+
+def test_o_CNPJ_conhecido_so_PELAS_NOTAS_e_SUSPEITA_e_nao_certeza():
+    """⚠️ O defeito que o dono pegou com a tela no ar em 13/09/2026: *"está
+    aparecendo um CNPJ errado e dizendo que é da BWS, sendo que não tem nada a
+    ver o CNPJ."*
+
+    Sem certificado, "ser destinatário de muitas notas" é indício, não prova —
+    e acusar errado ensina a ignorar o alarme."""
+    from app.apps.analisesps import credores
+
+    achado = credores.suspeita_de_cnpj_errado(
+        "10.656.452/0078-69", ["ACME MATERIAIS"], nossos={BWS: "notas"})
+    assert achado["grau"] == "suspeita"
+    assert "Não é certeza" in achado["motivo"]
+
+
+def test_um_CONJUNTO_simples_de_CNPJs_e_lido_do_jeito_conservador():
+    """Quem chamar passando só um conjunto (sem dizer a origem) recebe
+    suspeita, nunca certeza. O padrão que erra é o que erra para menos."""
+    from app.apps.analisesps import credores
+
+    achado = credores.suspeita_de_cnpj_errado(
+        "10.656.452/0078-69", ["ACME"], nossos={BWS})
+    assert achado["grau"] == "suspeita"
 
 
 def test_CNPJ_que_a_Receita_NAO_CONHECE_e_certeza_de_erro():

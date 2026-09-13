@@ -1016,10 +1016,29 @@ def configuracoes():
         logger.exception("Análise de SPs: não consegui listar os certificados")
         lista_certificados = []
 
+    # EM QUE PÉ ESTÁ A BUSCA DE CADA CNPJ. *"Eu coloco o certificado (…) mas
+    # simplesmente nada é feito, nada é executado, e eu não sei o que está
+    # acontecendo."* A resposta tem de estar NESTA tela, que é onde ele acabou
+    # de subir o certificado e fica esperando.
+    #
+    # Fica o pior caso de cada CNPJ (a falha manda sobre o sucesso): duas
+    # linhas por CNPJ — NF-e e CT-e — e mostrar só a primeira esconderia
+    # justamente a que deu errado.
+    buscas_por_cnpj: dict = {}
+    try:
+        from . import sefaz
+        for b in sefaz.estado_das_buscas():
+            atual = buscas_por_cnpj.get(b["cnpj"])
+            if atual is None or (b.get("falhou") and not atual.get("falhou")):
+                buscas_por_cnpj[b["cnpj"]] = b
+    except Exception:  # noqa: BLE001 — migração 008 ainda não aplicada
+        logger.exception("Análise de SPs: não consegui ler o estado da busca")
+
     return render_template(
         "analisesps_config.html",
         migracoes=migracoes, erro_banco=erro_banco, integracoes=integracoes,
         equipe=equipe, certificados=lista_certificados,
+        buscas_por_cnpj=buscas_por_cnpj,
         cofre_ok=certificados.cofre_configurado(),
         aviso=request.args.get("aviso") or None,
         base=consultas.base_carregada(),
@@ -1902,8 +1921,11 @@ def decidir_fiscal_a_mao():
         logger.exception("Análise de SPs: falhou gravar a decisão à mão")
         return {"ok": False, "erro": f"Não consegui gravar: {e}"}, 500
 
-    logger.info("Análise de SPs: %s marcou a SP %s como %r à mão.",
-                quem, sp_id, gravado["documentacao"])
+    irmas = gravado.get("parcelas_irmas") or []
+    logger.info("Análise de SPs: %s marcou a SP %s como %r à mão%s.",
+                quem, sp_id, gravado["documentacao"],
+                f" (e mais {len(irmas)} parcela(s) da mesma nota)"
+                if irmas else "")
     return {"ok": True, **gravado}
 
 
@@ -2004,8 +2026,22 @@ def comparar_fiscal():
     def texto(v):
         return "" if v is None else str(v)
 
+    # O ENDEREÇO VAI CLICÁVEL. Pedido do dono em 13/09/2026: *"quando clicamos
+    # em ver dados, das informações que vêm da planilha vêm alguns links,
+    # torná-los clicáveis."* São o anexo no Dropbox e o card do Pipefy — o
+    # atalho que ele mais usa para conferir, e que estava obrigando a marcar o
+    # texto com o mouse e colar na barra do navegador.
+    #
+    # Quem monta o HTML é o `com_links` que já existe, e não um segundo
+    # transformador escrito no navegador: ele já escapa o texto (a descrição
+    # vem da planilha, que qualquer um edita) e já trata a pontuação colada no
+    # fim do endereço. Dois lugares fazendo a mesma coisa divergem com o tempo.
+    from .formatos import com_links
+
     comparacao["lancamento"] = [
-        {"rotulo": colunas.ROTULOS.get(campo, campo), "valor": texto(sp.get(campo))}
+        {"rotulo": colunas.ROTULOS.get(campo, campo),
+         "valor": texto(sp.get(campo)),
+         "html": com_links(texto(sp.get(campo)))}
         for campo in colunas.CHAVES if texto(sp.get(campo)).strip()
     ]
     comparacao["ok"] = True
@@ -2092,6 +2128,16 @@ def tela_fiscal():
         return voltar
 
     filtros = _filtros_do_pedido()
+    # ⚠️ O ESCOPO DESTA TELA, e não um filtro a mais. Pedido do dono em
+    # 13/09/2026: fora fica o que venceu e foi pago antes de 2026, o que está
+    # com Status Pgt "Cancelado" (salvo se ele pedir) e tudo que tem "(TRF)"
+    # no tipo de despesa, que é transferência entre contas e não gera nota.
+    #
+    # Vai no dicionário ANTES de qualquer consulta, porque a lista, o resumo e
+    # o painel leem o mesmo dicionário — é isso que impede o painel de contar
+    # trabalho que a lista não mostra.
+    filtros["escopo_fiscal"] = True
+    filtros["mostrar_canceladas"] = request.args.get("canceladas") == "1"
     try:
         pagina = max(1, int(request.args.get("pagina", 1)))
     except ValueError:

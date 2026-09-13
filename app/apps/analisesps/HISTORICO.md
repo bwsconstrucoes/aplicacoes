@@ -3586,6 +3586,181 @@ condições juntas dão exatamente o mesmo resultado da exata sozinha.
 - O bloco `.ja-com-nota` não foi visto em celular estreito.
 
 ---
+
+### Quadragésima sétima leva (13/09) — o escopo da tela, a nota parcelada, e um defeito que EU criei
+
+**Publicada na `main` no começo desta sessão:** a 45ª leva (commit `75ab256`).
+A 46ª (SP já com nota fora da sugestão; "ver as SPs" nos credores) está no
+ramo, **não publicada** — o dono perguntou por ela em uso (*"não funcionou.
+Você sabe que não deployou ainda?"*) e a resposta é essa: está pronta, falta
+juntar.
+
+**⚠️ PENDENTE DO DONO:** apertar **"Aplicar atualizações do banco"**. As
+migrações 010 e 011 foram para produção e continuam não aplicadas.
+
+#### 1. O botão "fechar" das janelas — defeito que a 45ª leva criou
+
+*"Eu clico em ver os dados, dá um bug, o link de fechar não aparece, fica em
+aguardando."*
+
+**A causa fui eu.** O bloco global "todo botão mostra que está trabalhando",
+que nasceu na 45ª leva, trata `submit` como ida ao servidor. Só que
+`<form method="dialog">` — o jeito do próprio navegador fechar um `<dialog>` —
+dispara `submit` e **não vai a lugar nenhum**. O bloco trocava "fechar" por
+"Aguarde…" e desligava o botão; como a janela é uma só e fica na página, da
+segunda abertura em diante ela vinha sem o fechar, presa até o destravamento de
+um minuto. Não tinha nada a ver com "Nota de Débito", que foi só onde ele
+reparou.
+
+Conserto: formulário `method="dialog"` sai do bloco. **Lição:** um
+comportamento global aplicado a "todo formulário" precisa saber que existe
+formulário que não navega.
+
+#### 2. Os endereços da planilha viraram links
+
+*"Quando clicamos em ver dados, das informações que vêm da planilha vêm alguns
+links, torná-los clicáveis."* Anexo (Dropbox) e card (Pipefy). Quem monta o
+HTML é o `com_links` que **já existia** — ele escapa o texto (a descrição vem da
+planilha, que qualquer um edita) e trata pontuação colada no fim do endereço.
+Escrever um segundo transformador no navegador daria dois lugares divergindo.
+
+#### 3. O ESCOPO da Documentação Fiscal — três cortes
+
+Não são "mais um filtro": mudam o tamanho do universo, e por isso ficam
+**escritos na barra**, no bloco "O que esta tela nem olha".
+
+- **Antes de 2026 fica fora** — vale pelo vencimento **ou** pelo pagamento (a
+  SP vencida em dezembro e paga em janeiro é trabalho de 2026).
+  **Escolhi `>= 2026`, não `= 2026`:** com igual a tela esvaziaria sozinha na
+  virada do ano, sem ninguém mexer em nada. Se ele quiser só o ano corrente, é
+  uma linha.
+- **A SP SEM DATA NENHUMA FICA.** Sem data não é "velha", é *sem data*. Sumir
+  com ela tiraria da conta um trabalho que ninguém mais veria. Se em produção
+  aparecer muita, vira decisão dele.
+- **Status Pgt "Cancelado" fora por padrão**, com caixa para trazer de volta.
+- **`(TRF)` no tipo de despesa nunca aparece** — transferência entre contas não
+  gera nota. Este não tem caixa, porque não foi pedido com volta.
+
+Os cortes vivem em `consultas.condicoes_do_escopo_fiscal`, dentro de
+`_condicoes` — o mesmo caminho da lista, do resumo e do painel. Aplicar em dois
+dos três traria de volta o defeito de 13/09 (painel dizendo "3 categorizados" e
+a linha mostrando "—"). **E valem também para as SPs candidatas da visão por
+nota**, senão a tela ofereceria para associar exatamente o que ela esconde.
+**Solicitações NÃO herda nada disso**, senão a conta dele deixaria de fechar
+com a SPsBD.
+
+#### 4. A nota parcelada — com o caso que ele mandou
+
+    SP 1441193033 · "Parcela 3/3" · Nº NF 1002924 · R$   696,34 · FRIGELAR
+    Nota nº 1.002.924 ............................... R$ 2.089,02 · FRIGELAR
+
+696,34 × 3 = 2.089,02. O sistema via diferença de R$ 1.392,68, não dava nenhum
+dos 25 pontos do valor, e um par que qualquer pessoa fecha em dois segundos
+ficava abaixo do corte de 60 e **nunca era proposto**. Pior: a tela dizia "o
+valor é diferente" — verdade no número e mentira no sentido, que é a pior
+espécie de erro, porque tem cara de conferência feita.
+
+- `parcela_do_lancamento` lê "3/3" e "3 de 3"; "1/1" não é parcelamento.
+- **A divisão tem de fechar no centavo.** Folga aqui casaria notas quaisquer:
+  com 12 parcelas, qualquer valor numa faixa de dez reais viraria par. A folga
+  de um centavo por parcela existe só para 100,00 ÷ 3.
+- Teto de 60 parcelas: acima disso a divisão vira verdadeira por acaso.
+- A conta aparece por extenso nas três telas que explicam o par.
+
+**E a nota vai para as demais parcelas.** `parcelas_irmas` casa por CNPJ +
+**mesmo nº de nota no card** + mesmo denominador + **ainda sem chave**. O nº da
+nota é o laço forte: sem ele, "parcela 2/3 de 696,34" casaria com qualquer
+outro parcelamento do mesmo credor — que num fornecedor de aluguel mensal é o
+caso comum. Irmã que já aponta para outra nota **não é sobrescrita**.
+
+#### 5. O clique em série, sem a página ir embora
+
+*"Eu clico 'usar este'. Enquanto ele está pensando eu já vou pra outro e clico.
+Só que parece que só aceita o primeiro. A página vai lá pra cima."*
+
+A causa era o `location.reload()`: recarregar mata as gravações ainda no ar
+(daí "só aceita o primeiro") e joga a rolagem para o topo de uma página de 200
+linhas. Agora cada linha se resolve no lugar, várias podem gravar ao mesmo
+tempo, e a pergunta de confirmação é **uma só por sessão de tela** — ela existe
+para explicar a regra, e repetir a explicação a cada clique é o atrito que ele
+pediu para tirar.
+
+**Ficou de fora:** a janela "informar à mão" ainda recarrega. É uma edição
+avulsa, e o risco de mexer nela agora não se paga.
+
+#### 6. ⚠️ A acusação errada de "CNPJ da própria BWS" — defeito GRAVE, no ar
+
+*"Na página de nomes está aparecendo um CNPJ errado e dizendo que é da BWS,
+sendo que não tem nada a ver o CNPJ."*
+
+A causa estava **escrita com todas as letras** no comentário antigo: *"a BWS é
+sempre o destinatário"*. **Não é.** A busca baixa, pelo certificado da empresa,
+também as notas que a BWS **emite** — e nessas o destinatário é o **cliente**.
+Cada cliente virava "um CNPJ nosso", e qualquer fornecedor com aquele número era
+acusado **em vermelho e como CERTEZA**.
+
+Acusar errado é pior do que não acusar: manda conferir o que está certo e ensina
+a ignorar o alarme — justamente o que ele não pode ignorar no dia em que o
+alarme estiver certo.
+
+- `cnpjs_da_empresa()` passou a devolver `{cnpj: origem}`.
+- Das notas, só o destinatário que recebe de **5 emitentes distintos ou mais** —
+  a BWS recebe de centenas, um cliente recebe de um só.
+- **CERTEZA agora só vem do CERTIFICADO DIGITAL**, que ele cadastrou com a mão e
+  a senha. O resto é **suspeita**, com o texto dizendo por quê.
+
+#### 7. O certificado que "aceita e não faz nada"
+
+*"Eu coloco o certificado, boto a senha, ele aceita (…) mas simplesmente nada é
+feito, nada é executado, e eu não sei o que está acontecendo."*
+
+Ele estava certo em **duas** coisas ao mesmo tempo:
+
+1. **Guardar o certificado não dispara busca nenhuma** — é preciso apertar
+   "Buscar notas na Receita" — e a tela de Configurações nunca disse isso.
+2. **A busca que falhava não deixava rastro visível.** A tela lia só o ponteiro,
+   e o ponteiro só era escrito quando a busca dava certo. O caso em que ele mais
+   precisa saber o que houve era o único que não contava nada — e a tela
+   continuava dizendo "a busca nunca rodou".
+
+Agora `sefaz.registrar_falha` grava hora e motivo **sem mexer no NSU** (zerar o
+ponteiro faria a próxima rodada reler tudo e bater no limite da Receita, que é
+como se perde o acesso por consumo indevido), e a tela de Configurações ganhou
+a coluna **"A busca na Receita"** por certificado: "nunca rodou" com o caminho
+do botão, "tentou e NÃO conseguiu" com o motivo, ou quantos documentos vieram.
+
+**O que a aceitação do upload JÁ PROVA, e vale ele saber:** o sistema abre o
+`.pfx` com a senha na hora de subir. Se aceitou, **a senha está certa e o
+arquivo é um A1 com chave privada** — o CNPJ e a validade saem de dentro dele.
+
+#### O que foi verificado
+
+- Suíte completa com Postgres de verdade: **5.017 passaram, 129 pulados**.
+- A aplicação sobe (18 blueprints).
+- No Chromium, com o caso real dele semeado:
+  - escopo → só as 3 parcelas; com "trazer cancelados" → entra a `8002`;
+  - "fechar" funciona na 1ª e na 2ª abertura;
+  - links do Dropbox e do Pipefy clicáveis na ficha;
+  - a conta "parcela 1/3 de R$ 696,34 × 3 = R$ 2.089,02" aparece, e a SP virou
+    **Proposta de correção**;
+  - associar: **a página não recarregou**, a rolagem ficou em 400px, e a linha
+    mostrou "✔ associada à SP 1441193033 · NF-e (Mercadoria) · e mais 2
+    parcela(s): 1441193031, 1441193032";
+  - Configurações mostra "tentou e NÃO conseguiu — a Receita respondeu 656
+    Consumo Indevido" e "nunca rodou" com o caminho do botão.
+
+#### O que NÃO foi verificado
+
+- **Nada rodou contra a base de produção.**
+- **A busca na Receita nunca foi exercitada de verdade daqui** — não há
+  certificado fora do Render, e esta máquina não fala com a SEFAZ. O que se
+  consertou foi o RASTRO da falha, não a causa dela: se a busca lá está
+  falhando, agora a tela dirá por quê — e só então dá para consertar.
+- A consulta ao brasilapi.com.br continua sem um acerto real daqui.
+- O corte dos 5 emitentes é uma escolha minha, não um número medido na base
+  dele.
+
+---
 ---
 
 ## Regras que não se discutem

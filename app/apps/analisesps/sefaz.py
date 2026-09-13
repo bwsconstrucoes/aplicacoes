@@ -170,6 +170,41 @@ def gravar_ponteiro(cnpj: str, tipo: str, ultimo_nsu: str, maior_nsu: str,
         conn.commit()
 
 
+# ⚠️ A TENTATIVA QUE FALHOU TAMBÉM DEIXA RASTRO — 13/09/2026
+#
+# Relato do dono, e é o retrato exato do buraco: *"o certificado continua uma
+# incógnita. Eu coloco o certificado, boto a senha, ele aceita, eu acho que a
+# senha está certa, o certificado está válido. Mas simplesmente nada é feito,
+# nada é executado, e eu não sei o que está acontecendo."*
+#
+# A tela lia SÓ o ponteiro, e o ponteiro só era escrito quando a busca DAVA
+# CERTO. Uma busca que falhasse — certificado recusado, rede bloqueada, a
+# Receita fora do ar, "consumo indevido" — não escrevia nada em lugar nenhum
+# que ele pudesse ver, e a tela continuava dizendo "a busca nunca rodou".
+#
+# Ou seja: o caso em que ele MAIS precisa saber o que houve era justamente o
+# único que não contava nada. Agora a falha grava a hora e o motivo, sem mexer
+# no NSU — o ponteiro continua sendo só do que foi lido de verdade.
+def registrar_falha(cnpj: str, tipo: str, motivo: str) -> None:
+    """Anota que houve tentativa e por que ela não deu certo."""
+    from .db import conexao
+
+    try:
+        with conexao() as conn:
+            conn.execute(
+                "INSERT INTO analisesps.sefaz_ponteiro "
+                "  (cnpj, tipo, ultimo_nsu, maior_nsu, consultado_em, "
+                "   ultimo_recado, documentos) "
+                "VALUES (?, ?, '0', '0', now(), ?, 0) "
+                "ON CONFLICT (cnpj, tipo) DO UPDATE SET "
+                "  consultado_em = now(), ultimo_recado = EXCLUDED.ultimo_recado",
+                (re.sub(r"\D", "", cnpj), tipo,
+                 ("FALHOU: " + str(motivo or "sem detalhe"))[:500]))
+            conn.commit()
+    except Exception:  # noqa: BLE001 — anotar a falha não pode virar outra falha
+        logger.exception("Análise de SPs: não consegui anotar a falha da busca")
+
+
 def _nsu(valor) -> str:
     """O NSU no formato da Receita: quinze dígitos, com os zeros à esquerda.
 
@@ -455,10 +490,14 @@ def buscar_tudo(anotar=None) -> dict:
             try:
                 resultado = buscar_um(cnpj, tipo, anotar)
             except SemCertificado as e:
+                registrar_falha(cnpj, tipo, str(e))
                 return {"trazidas": total, "erro": str(e), "por_cnpj": por_cnpj}
             except Exception as e:  # noqa: BLE001
                 logger.exception("Análise de SPs: falhou a busca %s/%s",
                                  cnpj, tipo)
+                # A FALHA VAI PARA O BANCO, não só para o log: o log ele não
+                # lê, e é justamente aqui que ele fica sem saber o que houve.
+                registrar_falha(cnpj, tipo, str(e))
                 resultado = {"trazidas": 0, "erro": str(e)}
             total += resultado.get("trazidas", 0)
             por_cnpj.append({"cnpj": cnpj, "tipo": tipo, **resultado})
@@ -500,6 +539,16 @@ def estado_das_buscas() -> list:
         except (TypeError, ValueError):
             estado["faltam"] = 0
         estado["em_dia"] = estado["faltam"] == 0 and not estado["ultimo_recado"]
+        # A TENTATIVA QUE FALHOU FICA MARCADA COMO FALHA, e não como "em dia
+        # com um recado estranho". É a diferença entre a tela dizer "rodou" e
+        # dizer "tentei e não consegui, por isto aqui".
+        estado["falhou"] = str(estado["ultimo_recado"] or "").startswith(
+            "FALHOU: ")
+        estado["motivo_da_falha"] = (
+            str(estado["ultimo_recado"])[len("FALHOU: "):]
+            if estado["falhou"] else "")
+        if estado["falhou"]:
+            estado["em_dia"] = False
         estado["rotulo_tipo"] = {"NFE": "Notas (NF-e)",
                                  "CTE": "Fretes (CT-e)"}.get(estado["tipo"],
                                                              estado["tipo"])

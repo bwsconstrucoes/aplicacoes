@@ -331,6 +331,71 @@ FRASE_DO_RECORTE = {
 }
 
 
+# ===========================================================================
+# O QUE A DOCUMENTAÇÃO FISCAL NEM DEVE OLHAR — pedido do dono em 13/09/2026
+#
+# Três cortes que valem para a tela inteira, e não são "mais um filtro": são o
+# tamanho do universo. Fora deles, o painel conta trabalho que ninguém vai
+# fazer, e "faltam 4.000" vira um número que ninguém acredita.
+#
+# 1. *"Os registros da documentação fiscal não devem retornar apenas os dados
+#    do que venceu em 2026 ou do que foi pago em 2026, o restante ignorar."*
+#
+#    ⚠️ ESCOLHI **2026 EM DIANTE**, e não "só 2026", e a diferença importa: com
+#    "= 2026" a tela esvaziaria sozinha na virada do ano, sem ninguém mexer em
+#    nada e sem aviso nenhum. Com ">= 2026" o atraso velho fica de fora — que é
+#    o que ele pediu — e a tela continua funcionando em 2027. Se ele quiser
+#    mesmo só o ano corrente, é trocar uma linha.
+#
+# 2. *"A princípio tudo que está com o Status Pgt = Cancelado não deveria ser
+#    exibido, somente se colocássemos para exibir."* — some por padrão, com
+#    uma caixa para trazer de volta.
+#
+# 3. *"Não deve ser exibido registros que contenham no Tipo de Despesa a
+#    informação '(TRF)'."* — transferência não gera documento fiscal, e este
+#    não tem caixa nenhuma: é sempre fora.
+#
+# POR QUE AQUI DENTRO, e não no `listar`: o painel, a lista e a paginação
+# passam todos por `_condicoes`. Um corte aplicado em dois dos três daria de
+# novo o defeito de 13/09 — o painel dizendo "3 já categorizados" e a linha
+# mostrando "—".
+# ===========================================================================
+ANO_FISCAL_MINIMO = 2026
+
+# O ano é lido do VENCIMENTO **ou** do PAGAMENTO: a SP vencida em dezembro de
+# 2025 e paga em janeiro de 2026 é trabalho de 2026 e tem de aparecer.
+#
+# ⚠️ A SP SEM DATA NENHUMA FICA. Ela não é "velha" — ela é *sem data*, e são
+# coisas diferentes. O pedido foi deixar de fora o atraso antigo; uma SP que
+# não diz quando vence não prova ser antiga, e sumir com ela seria tirar da
+# conta um trabalho que ninguém mais veria. Some em silêncio é o defeito que
+# esta tela já teve duas vezes.
+#
+# Se em produção aparecer muita SP sem data, isto vira decisão do dono — e aí
+# a linha muda para excluir. Hoje ela aparece.
+SQL_ANO_FISCAL = (
+    "(extract(year from vencimento_d) >= ? "
+    " OR extract(year from data_pagamento_d) >= ? "
+    " OR (vencimento_d IS NULL AND data_pagamento_d IS NULL))")
+
+SQL_NAO_CANCELADA = "lower(btrim(coalesce(status_pgt,''))) <> 'cancelado'"
+
+# `(TRF)` marca transferência entre contas da empresa. Casa sem diferenciar
+# maiúscula, e o `%` dos dois lados porque a marca vem no meio do texto
+# ("Mat. Construção (TRF)").
+SQL_SEM_TRF = "coalesce(tipo_despesa,'') NOT ILIKE ?"
+MARCA_TRF = "%(TRF)%"
+
+
+def condicoes_do_escopo_fiscal(mostrar_canceladas: bool = False):
+    """Os três cortes da tela fiscal, em SQL e parâmetros."""
+    onde = [SQL_ANO_FISCAL, SQL_SEM_TRF]
+    params: list = [ANO_FISCAL_MINIMO, ANO_FISCAL_MINIMO, MARCA_TRF]
+    if not mostrar_canceladas:
+        onde.append(SQL_NAO_CANCELADA)
+    return onde, params
+
+
 # ---------------------------------------------------------------------------
 # Montagem do filtro
 # ---------------------------------------------------------------------------
@@ -425,6 +490,15 @@ def _condicoes(f: dict) -> tuple[list[str], list]:
     for chave in (f.get("fiscais") or []):
         if chave in SITUACOES_FISCAIS:
             onde.append(SITUACOES_FISCAIS[chave])
+
+    # O ESCOPO DA DOCUMENTAÇÃO FISCAL. Só entra quando a tela pede — em
+    # Solicitações ele veria menos SPs do que a planilha tem, e aí a conta dele
+    # não fecharia com a SPsBD.
+    if f.get("escopo_fiscal"):
+        cortes, valores = condicoes_do_escopo_fiscal(
+            bool(f.get("mostrar_canceladas")))
+        onde.extend(cortes)
+        params.extend(valores)
 
     # Períodos e faixa de valor.
     for campo, coluna, operador in (

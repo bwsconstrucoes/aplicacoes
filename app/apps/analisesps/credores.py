@@ -390,49 +390,104 @@ def sps_para_reescrever(documento: str, nome: str) -> list:
 #      suspeita de verdade: nome de fantasia legítimo também não se parece com a
 #      razão social. Serve para olhar, não para concluir.
 # ---------------------------------------------------------------------------
-def cnpjs_da_empresa() -> set:
-    """Os CNPJs da própria BWS, do jeito que o sistema já os conhece.
+# ⚠️ DEFEITO GRAVE, ACHADO PELO DONO EM 13/09/2026 COM A TELA NO AR:
+#
+#   *"Na página de nomes está aparecendo um CNPJ errado e dizendo que é da BWS,
+#   sendo que não tem nada a ver o CNPJ. Tem algum acusamento errado aí."*
+#
+# A CAUSA, e o erro estava escrito com todas as letras no comentário antigo:
+# *"a BWS é sempre o destinatário"*. **Não é.** A busca na Receita baixa, pelo
+# certificado da empresa, também as notas que a BWS EMITE — e nessas o
+# destinatário é o CLIENTE da BWS, não a BWS. O relatório do FSist traz o mesmo
+# problema. Cada cliente virava "um CNPJ nosso", e qualquer fornecedor com
+# aquele número era acusado, EM VERMELHO E COMO CERTEZA, de ser a própria
+# empresa.
+#
+# Acusar errado é pior do que não acusar: manda conferir o que está certo, e
+# ensina a ignorar o alarme — que é justamente o que ele não pode ignorar no
+# dia em que o alarme estiver certo.
+#
+# O QUE SEPARA A BWS DE UM CLIENTE DA BWS, nos dados que existem: a BWS recebe
+# nota de CENTENAS de fornecedores diferentes; um cliente recebe nota de um
+# emitente só (a própria BWS). Então "ser destinatário de notas de muitos
+# emitentes distintos" é o sinal — e mesmo ele só vale como SUSPEITA.
+#
+# CERTEZA agora só vem do CERTIFICADO DIGITAL, que o dono cadastrou com a mão e
+# a senha: ali não há heurística nenhuma, é a empresa dizendo quem ela é.
+MINIMO_DE_EMITENTES_PARA_SER_NOSSO = 5
 
-    Saem de dois lugares que já existem e não precisam de cadastro novo: o
-    destinatário das notas guardadas (a BWS é sempre o destinatário) e os
-    certificados digitais. Pedir ao dono uma lista à mão seria mais uma coisa
-    para ele manter — e que envelheceria calada."""
-    nossos = set()
+
+def cnpjs_da_empresa() -> dict:
+    """Os CNPJs da própria BWS e DE ONDE se sabe disso.
+
+    Devolve {cnpj: "certificado" | "notas"} — e a origem não é detalhe: ela é
+    o que decide se a tela acusa com certeza ou levanta suspeita."""
+    nossos: dict = {}
     try:
         from .db import consultar
+        # Só o destinatário que recebe de MUITOS emitentes diferentes. O
+        # cliente da BWS recebe de um só — a própria BWS.
         for linha in consultar(
-                "SELECT DISTINCT destinatario_doc FROM analisesps.notas_fiscais "
+                "SELECT regexp_replace(destinatario_doc, '\\D', '', 'g') AS doc "
+                "  FROM analisesps.notas_fiscais "
                 " WHERE length(regexp_replace(coalesce(destinatario_doc,''), "
-                "                             '\\D', '', 'g')) = 14"):
-            nossos.add(so_digitos(linha[0]))
+                "                             '\\D', '', 'g')) = 14 "
+                " GROUP BY 1 "
+                " HAVING count(DISTINCT regexp_replace("
+                "          coalesce(emitente_doc,''), '\\D', '', 'g')) >= ?",
+                (int(MINIMO_DE_EMITENTES_PARA_SER_NOSSO),)):
+            nossos[so_digitos(linha[0])] = "notas"
     except Exception:  # noqa: BLE001 — migração ainda não aplicada
         logger.exception("Análise de SPs: não consegui ler os CNPJs das notas")
     try:
         from . import certificados
-        nossos.update(so_digitos(c) for c in certificados.cnpjs_ativos())
+        # O CERTIFICADO MANDA e sobrescreve: é a empresa dizendo quem ela é.
+        for c in certificados.cnpjs_ativos():
+            nossos[so_digitos(c)] = "certificado"
     except Exception:  # noqa: BLE001
         logger.exception("Análise de SPs: não consegui ler os certificados")
-    return {c for c in nossos if len(c) == 14}
+    return {c: origem for c, origem in nossos.items() if len(c) == 14}
 
 
 def suspeita_de_cnpj_errado(documento: str, nomes_escritos: list,
-                            consulta: dict = None, nossos: set = None) -> dict:
+                            consulta: dict = None, nossos=None) -> dict:
     """O CNPJ deste credor parece digitado errado? Devolve o porquê, ou vazio.
 
     `consulta` é o que a Receita respondeu (pode vir vazio: a consulta é
-    opcional e sob demanda). `nossos` são os CNPJs da própria empresa."""
+    opcional e sob demanda). `nossos` é o que `cnpjs_da_empresa` devolve —
+    {cnpj: origem}. Aceita um conjunto simples também, e aí a origem é tratada
+    como "notas", que é a leitura conservadora."""
     limpo = so_digitos(documento)
     if len(limpo) != 14:
         return {}
 
-    if limpo in (nossos or set()):
+    # ⚠️ A ORIGEM DECIDE O TOM, e isso nasceu de um erro real: a tela acusou,
+    # em vermelho e como CERTEZA, um CNPJ que não tinha nada a ver com a BWS.
+    # Ver o bloco de `cnpjs_da_empresa`. Acusar errado é pior do que não
+    # acusar — ensina a ignorar o alarme.
+    if not isinstance(nossos, dict):
+        nossos = {c: "notas" for c in (nossos or set())}
+    origem = nossos.get(limpo)
+
+    if origem == "certificado":
         return {"grau": "certeza",
-                "motivo": ("este é um CNPJ da PRÓPRIA BWS — a empresa não é "
+                "motivo": ("este é um CNPJ da PRÓPRIA BWS — há certificado "
+                           "digital cadastrado com ele, e a empresa não é "
                            "fornecedora de si mesma. Quem lançou provavelmente "
                            "copiou o CNPJ do destinatário da nota, e não o do "
                            "emitente."),
                 "o_que_fazer": ("corrigir o CNPJ na SP, pelo CNPJ de quem "
                                 "emitiu a nota.")}
+    if origem:
+        return {"grau": "suspeita",
+                "motivo": ("este CNPJ aparece como DESTINATÁRIO de notas de "
+                           "vários fornecedores, que é como a BWS aparece na "
+                           "base — pode ser um CNPJ da própria empresa lançado "
+                           "no lugar do de quem emitiu a nota. Não é certeza: "
+                           "não há certificado cadastrado com ele."),
+                "o_que_fazer": ("conferir na nota de quem é o CNPJ. Se for "
+                                "mesmo da BWS, vale cadastrar o certificado "
+                                "dele — aí o sistema passa a ter certeza.")}
 
     consulta = consulta or {}
     if consulta.get("erro"):

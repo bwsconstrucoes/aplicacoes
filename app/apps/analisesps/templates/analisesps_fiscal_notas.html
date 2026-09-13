@@ -244,7 +244,17 @@
               <td class="num">{{ '{:,}'.format(b.documentos or 0)|replace(',', '.') }}</td>
               <td class="num">{{ b.faltam if b.faltam else '—' }}</td>
               <td>
-                {% if b.ultimo_recado %}
+                {# ⚠️ TENTATIVA QUE FALHOU TEM DE APARECER COMO FALHA.
+                   *"Eu coloco o certificado, boto a senha, ele aceita (…) mas
+                   simplesmente nada é feito, nada é executado, e eu não sei o
+                   que está acontecendo."* Antes, a busca que falhava não
+                   escrevia nada e a tela continuava dizendo "nunca rodou" —
+                   o caso em que ele mais precisa saber era o único que não
+                   contava nada. #}
+                {% if b.falhou %}
+                  <span class="etiqueta ruim">tentou e NÃO conseguiu</span>
+                  <small class="cartao-dica">{{ b.motivo_da_falha }}</small>
+                {% elif b.ultimo_recado %}
                   <span class="etiqueta ruim">{{ b.ultimo_recado }}</span>
                 {% elif b.em_dia %}
                   <span class="etiqueta boa">em dia</span>

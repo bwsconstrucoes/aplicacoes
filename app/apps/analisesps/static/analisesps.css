@@ -1312,3 +1312,33 @@ a.kpi { display: block; }
 /* Dentro do <label> da opção o botão precisa se destacar do texto, senão some
    entre o nome e a contagem. */
 .credor-opcao .ver-sps-do-nome { margin-left: 6px; text-decoration: underline; }
+
+/* O endereço inteiro do Dropbox tem mais de 100 caracteres e estouraria a
+   coluna da ficha. Quebra onde der, inclusive no meio do endereço. */
+.prova-ficha dd a { word-break: break-all; }
+
+/* O QUE A TELA FISCAL NEM OLHA. Fica à vista de propósito: um corte de escopo
+   escondido faz o painel e a planilha discordarem sem explicação. */
+.filtro-escopo .escopo-lista {
+  margin: 2px 0 8px; padding-left: 18px;
+  font-size: 12px; color: #64748b; line-height: 1.7;
+}
+.filtro-escopo .escopo-lista b { color: #475569; }
+
+/* O RESULTADO NA PRÓPRIA LINHA — o que substituiu o recarregamento da página.
+   *"A página vai lá pra cima. Eu poderia ser rápido se eu pudesse ir seguindo,
+   clicar no outro."* */
+.associada-agora {
+  margin-top: 4px; padding: 3px 7px; border-radius: 5px;
+  background: #ECFDF5; color: #065F46; font-size: 12px; font-weight: 600;
+  display: inline-block;
+}
+.associada-erro {
+  margin-top: 4px; padding: 3px 7px; border-radius: 5px;
+  background: #FEF2F2; color: #991B1B; font-size: 12px; font-weight: 600;
+  display: inline-block;
+}
+/* A nota resolvida some do caminho sem sumir da tela: quem acabou de associar
+   precisa poder conferir o que fez. */
+tr.nota-resolvida { opacity: .62; }
+tr.nota-resolvida .nota-candidata { filter: grayscale(1); }
