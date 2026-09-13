@@ -936,3 +936,235 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     }
   });
 })();
+
+
+/* ---------------------------------------------------------------------------
+   DOCUMENTACAO FISCAL — as acoes que moram DENTRO da tela de trabalho.
+
+   Correcao do dono em 13/09/2026: *"ao buscar na Receita as notas emitidas
+   contra a BWS, nao tem absolutamente nada a ver eu estar com um botao desse
+   fora da tela de trabalho. (...) Ler, e pra estar dentro da tela. Gravar nos
+   cards, e pra estar dentro da tela. Eu estou trabalhando la, estou tratando
+   la, e vou operacionalizar por la."*
+
+   Este bloco cuida de tres coisas, e vive SEPARADO do bloco das duas pilhas
+   acima porque as duas visoes (por lancamento e por nota) usam partes
+   diferentes: a visao por nota nao tem caixinhas nem botao de confirmar, e o
+   bloco de cima desiste logo no comeco quando nao encontra o botao dele.
+
+     1. disparar as tarefas longas e acompanhar o andamento;
+     2. escrever a documentacao A MAO, quando o sistema nao propos nada;
+     3. associar uma nota orfa a uma SP, do lado da nota.
+--------------------------------------------------------------------------- */
+(function () {
+  const config = document.getElementById("fiscal-config");
+  if (!config || !config.dataset.urlTarefa) return;
+
+  // --- 1. As tarefas longas ------------------------------------------------
+  //
+  // O andamento vem do BANCO, nao da memoria de um processo: continua certo
+  // mesmo se o servico reiniciar no meio, e mesmo se a tela for aberta de
+  // outro aparelho. E o mesmo arranjo da tela de Configuracoes.
+  const painelAndamento = document.getElementById("andamento-fiscal");
+  let relogio = null;
+
+  function acompanhar() {
+    if (!painelAndamento || !config.dataset.urlAndamento) return;
+    if (relogio) clearInterval(relogio);
+    // SO RECARREGA DEPOIS DE TER VISTO A TAREFA VIVA. Entre o clique e a
+    // tarefa aparecer no banco passa um instante; sem esta trava, a primeira
+    // resposta ("nao ha nada rodando") recarregaria a tela na hora e daria a
+    // impressao de que o botao nao fez nada.
+    let viuRodando = false;
+    relogio = setInterval(async () => {
+      try {
+        const r = await fetch(config.dataset.urlAndamento);
+        const d = await r.json();
+        if (d.rodando) {
+          viuRodando = true;
+          painelAndamento.innerHTML =
+              '<div class="aviso"><b>Rodando agora:</b> '
+              + (d.etapa || "") + (d.progresso ? " — " + d.progresso : "")
+              + '<br><small>Pode continuar trabalhando: isto roda no servidor.'
+              + '</small></div>';
+        } else if (viuRodando) {
+          // Terminou: a tela precisa ser relida, porque os numeros e a lista
+          // mudaram. Quem disparou uma busca de notas esta esperando
+          // justamente por isso.
+          clearInterval(relogio);
+          relogio = null;
+          location.reload();
+        }
+      } catch (e) { /* rede oscilou; a proxima volta tenta de novo */ }
+    }, 4000);
+  }
+
+  document.querySelectorAll(".fiscal-acoes-tarefa button[data-modo]")
+      .forEach(b => b.addEventListener("click", async () => {
+    const rotulo = b.textContent.trim();
+    if (!confirm(`${rotulo}?\n\nIsto roda no servidor e pode demorar. `
+                 + `Voce pode continuar trabalhando.`)) return;
+    b.disabled = true;
+    const antes = b.textContent;
+    b.textContent = "Disparando…";
+    try {
+      const r = await fetch(config.dataset.urlTarefa, {
+        method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({modo: b.dataset.modo}),
+      });
+      const d = await r.json();
+      if (!d.ok) { alert(d.erro || "Nao consegui disparar."); return; }
+      if (painelAndamento) {
+        painelAndamento.innerHTML =
+            '<div class="aviso"><b>Disparado:</b> ' + rotulo
+            + '<br><small>Pode continuar trabalhando: isto roda no servidor.'
+            + '</small></div>';
+      }
+      acompanhar();
+    } catch (e) {
+      alert("Nao consegui falar com o servidor: " + e);
+    } finally {
+      b.disabled = false;
+      b.textContent = antes;
+    }
+  }));
+
+  // Ja havia carga rodando quando a tela abriu: acompanha sem esperar clique.
+  if (painelAndamento && painelAndamento.querySelector(".aviso")) acompanhar();
+
+  // --- 2. Escrever a documentacao A MAO ------------------------------------
+  //
+  // O buraco que ele achou usando a tela: *"tudo aquilo que voce sugeriu (...)
+  // mas o que voce nao sugeriu, como e que eu adiciono a informacao? Porque a
+  // planilha ela me permite adicionar, e a tela nao permite."*
+  //
+  // UMA janela so, preenchida pela linha em que se clicou. Duzentas janelas
+  // escondidas na pagina custariam memoria de navegador a toa.
+  const dlg = document.getElementById("dlg-mao");
+  const campoDoc = document.getElementById("mao-documentacao");
+  const campoChave = document.getElementById("mao-chave");
+  const alvoQuem = document.getElementById("mao-quem");
+  const alvoNota = document.getElementById("mao-nota");
+  const alvoErro = document.getElementById("mao-erro");
+  let spAtual = "";
+
+  function recado(texto, classe) {
+    if (!alvoErro) return;
+    alvoErro.innerHTML = texto
+        ? '<div class="aviso ' + (classe || "atencao") + '">' + texto + '</div>'
+        : "";
+  }
+
+  if (dlg) {
+    document.querySelectorAll(".fiscal-mao").forEach(b =>
+      b.addEventListener("click", () => {
+        spAtual = b.dataset.sp;
+        if (alvoQuem) {
+          alvoQuem.textContent = `SP ${b.dataset.sp} · ${b.dataset.credor}`
+              + ` · ${b.dataset.valor}`;
+        }
+        if (campoDoc) campoDoc.value = b.dataset.documentacao || "";
+        if (campoChave) campoChave.value = b.dataset.chave || "";
+        if (alvoNota) alvoNota.textContent = "";
+        recado("");
+        dlg.showModal();
+        conferirChave();
+      }));
+
+    // CONFERIR A CHAVE ENQUANTO SE DIGITA. Uma chave errada nao da erro: ela
+    // grava no card uma nota que nao e a da despesa, e ninguem descobre — e e
+    // exatamente esse o defeito que esta tela existe para achar. Dizer de quem
+    // e a nota ANTES de gravar e o que transforma digitacao em conferencia.
+    let esperaChave = null;
+    async function conferirChave() {
+      if (!campoChave || !alvoNota || !config.dataset.urlNota) return;
+      const digitos = (campoChave.value || "").replace(/\D/g, "");
+      if (digitos.length !== 44) {
+        alvoNota.textContent = digitos.length
+            ? `${digitos.length} de 44 numeros` : "";
+        return;
+      }
+      try {
+        const r = await fetch(config.dataset.urlNota + "?chave="
+                              + encodeURIComponent(digitos));
+        const d = await r.json();
+        if (d.nota) {
+          alvoNota.textContent = `Nota ${d.nota.numero} — ${d.nota.emitente}`
+              + (d.nota.status ? ` (${d.nota.status})` : "");
+        } else {
+          // NAO E ERRO: a nota pode ainda nao ter sido importada. Dizer que
+          // ela "nao existe" faria a pessoa desistir de uma chave correta.
+          alvoNota.textContent = "Esta chave ainda nao esta na lista de notas "
+              + "daqui — pode ser nota que ainda nao foi importada.";
+        }
+      } catch (e) { alvoNota.textContent = ""; }
+    }
+    if (campoChave) campoChave.addEventListener("input", () => {
+      if (esperaChave) clearTimeout(esperaChave);
+      esperaChave = setTimeout(conferirChave, 400);
+    });
+
+    const btnCancelar = document.getElementById("btn-mao-cancelar");
+    if (btnCancelar) btnCancelar.addEventListener("click", e => {
+      e.preventDefault();
+      dlg.close();
+    });
+
+    const btnGravar = document.getElementById("btn-mao-gravar");
+    if (btnGravar) btnGravar.addEventListener("click", async e => {
+      e.preventDefault();
+      btnGravar.disabled = true;
+      const antes = btnGravar.textContent;
+      btnGravar.textContent = "Gravando…";
+      try {
+        const r = await fetch(config.dataset.urlMao, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({
+            sp: spAtual,
+            documentacao: campoDoc ? campoDoc.value : "",
+            chave: campoChave ? campoChave.value : "",
+          }),
+        });
+        const d = await r.json();
+        if (!d.ok) { recado(d.erro || "Nao consegui gravar."); return; }
+        dlg.close();
+        location.reload();
+      } catch (e2) {
+        recado("Nao consegui falar com o servidor: " + e2);
+      } finally {
+        btnGravar.disabled = false;
+        btnGravar.textContent = antes;
+      }
+    });
+  }
+
+  // --- 3. Associar uma nota orfa a uma SP ----------------------------------
+  //
+  // Do lado da NOTA. Passa pelo mesmo caminho da decisao a mao, entao a nota
+  // associada some desta lista sozinha na proxima leitura — a lista de orfas e
+  // "nota sem chave gravada em SP nenhuma".
+  document.querySelectorAll(".fiscal-associar").forEach(b =>
+    b.addEventListener("click", async () => {
+      if (!confirm(`Associar esta nota a SP ${b.dataset.sp}`
+                   + ` (${b.dataset.credor})?\n\n`
+                   + `A categoria sai de dentro da propria chave. A gravacao `
+                   + `no card do Pipefy e o passo seguinte.`)) return;
+      b.disabled = true;
+      const antes = b.textContent;
+      b.textContent = "gravando…";
+      try {
+        const r = await fetch(config.dataset.urlMao, {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({sp: b.dataset.sp, chave: b.dataset.chave}),
+        });
+        const d = await r.json();
+        if (!d.ok) { alert(d.erro || "Nao consegui associar."); return; }
+        location.reload();
+      } catch (e) {
+        alert("Nao consegui falar com o servidor: " + e);
+      } finally {
+        b.disabled = false;
+        b.textContent = antes;
+      }
+    }));
+})();

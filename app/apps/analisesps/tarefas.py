@@ -59,6 +59,20 @@ MODOS = {
     "notas_receita": "Buscar na Receita as notas emitidas contra a BWS",
 }
 
+# QUAIS MODOS APARECEM EM CONFIGURAÇÕES, e quais são trabalho fiscal.
+#
+# Correção do dono em 13/09/2026: *"ao buscar na Receita as notas emitidas
+# contra a BWS, não tem absolutamente nada a ver eu estar com um botão desse
+# fora da tela de trabalho. (…) Ler, é pra estar dentro da tela. Gravar nos
+# cards, é pra estar dentro da tela."*
+#
+# A causa do engano era boba, e é o motivo de esta lista existir: a tela de
+# Configurações desenhava a lista INTEIRA de `MODOS` como botões, então quem
+# criasse um modo novo ganhava um botão lá sem querer. Agora a divisão é
+# explícita, e um modo novo só aparece onde alguém escreveu que ele aparece.
+MODOS_DA_BASE = ["sincronizar", "carga_inicial", "apoios", "fila",
+                 "comprovantes"]
+
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
 # marcado como pronto não roda de novo.
 ETAPAS = {

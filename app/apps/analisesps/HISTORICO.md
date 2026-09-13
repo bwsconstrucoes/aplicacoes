@@ -2616,6 +2616,139 @@ verdade encostou nesta máquina.
 3. Aplicar as atualizações do banco (migrações 008 e 009).
 4. Subir o certificado A1 pela tela de Configurações.
 
+### Trigésima oitava leva (13/09) — a Documentação Fiscal refeita para GERIR
+
+Ele abriu a tela publicada, usou, e voltou com oito coisas de uma vez. A frase
+que resume: *"não dá pra fazer a gestão dessa documentação fiscal da forma que
+está. O meu objetivo é categorizar e associar nota. Mas do jeito que está aqui
+não dá pra fazer isso."*
+
+**O erro de fundo era um só, e vale escrever:** eu tinha reaproveitado a barra
+de filtros das Solicitações. Ela responde *"o que tem para pagar"* — pendências,
+boleto duplicado, risco de duplicidade. Aqui a pergunta é outra: *"o que falta
+documentar, o que já está documentado, o que provavelmente está errado"*.
+Reaproveitar economizou trabalho meu e custou a tela inteira: com o filtro
+errado, tudo o mais vira uma lista para rolar.
+
+#### O que mudou
+
+**1. O filtro principal virou o do trabalho fiscal.** Doze recortes, abertos no
+alto da barra: sem documentação, provavelmente errado, com/sem chave de acesso,
+já categorizado, na fila da IA, lido pela IA, decidido por pessoa, confirmado
+(falta gravar no card), já gravado no card, com/sem anexo. Marcar dois exige os
+dois — *"sem documentação" + "com anexo"* é a fila que dá para resolver lendo o
+anexo, e é a mais útil que existe aqui.
+
+**2. O bloco "Situação" saiu**, como ele mandou: *"esse primeiro filtro aqui que
+fica aberto, a situação, pendência, risco, isso aqui já tira logo."* Os outros
+(obra, tipo de despesa, vencimento, valor) ficaram, também como ele disse — são
+recorte de contexto, não a pergunta da tela. E "Ordenar por" ficou: ele olhou e
+disse *"não, pode deixar"*.
+
+**3. Totalizadores no alto, e cada um é um atalho.** *"Onde é que eu vejo aqui
+como é que está a situação, uma espécie de totalizadores, pra saber o que que
+está faltando, onde é que eu tenho que focar?"* Clicar num número aplica o
+recorte dele.
+
+> **A parte que mais importa e não se vê:** os números são do **banco**, sobre a
+> base inteira dentro do filtro — não sobre as 200 linhas carregadas. Contar a
+> página responderia "o que falta NESTA PÁGINA", que é inútil para decidir onde
+> focar **e parece certo**. As etiquetas da conciliação (Em dúvida, Sem nota
+> encontrada) continuam sendo da página, e agora dizem "nesta página" do lado —
+> sem isso, os dois conjuntos de número pareceriam discordar.
+
+**4. As ações vieram para dentro da tela de trabalho.** *"Ao buscar na Receita
+as notas emitidas contra a BWS, não tem absolutamente nada a ver eu estar com um
+botão desse fora da tela de trabalho. (…) Ler, é pra estar dentro da tela.
+Gravar nos cards, é pra estar dentro da tela. Eu estou trabalhando lá, estou
+tratando lá, e vou operacionalizar por lá."*
+
+Os cinco botões — buscar na Receita, importar o relatório do FSist, ler com IA,
+gravar no Pipefy, devolver à planilha — ficam no alto da tela, com o andamento
+embaixo e a tela se relendo sozinha quando a tarefa acaba.
+
+**A causa do engano era boba e por isso ficou registrada no código:** todas as
+tarefas longas nascem da mesma lista, e a tela de Configurações desenhava a
+lista INTEIRA como botões. Quem criasse um modo novo ganhava um botão lá sem
+querer. Agora a divisão é explícita.
+
+**5. Dá para escrever à mão — e este era o buraco maior.** *"Tudo aquilo que
+você sugeriu (…) mas o que você NÃO sugeriu, como é que eu adiciono a
+informação? Porque a planilha ela me permite adicionar, e a tela não permite."*
+
+Cada linha tem "✎ informar": abre uma janela com a categoria e a chave de
+acesso. **E a conferência é a parte útil**, porque chave errada não dá erro —
+grava no card uma nota que não é a da despesa, e ninguém descobre, que é
+exatamente o defeito que esta tela existe para achar. Então recusa-se o que dá
+para recusar sozinho: tamanho diferente de 44, modelo que não é NF-e/NFC-e/CT-e,
+e chave emitida por CNPJ que não é o do credor daquela SP. Enquanto se digita, a
+tela diz de quem é a nota.
+
+Informando **só a chave**, a categoria sai de dentro dela — o modelo do
+documento está na própria chave, então não é palpite. Do lado da nota há
+"associar", que fecha o par ali mesmo e tira a nota da lista de órfãs.
+
+**6. As duas visões ficaram lado a lado**, sempre visíveis. *"Eu preciso de duas
+visões. Uma é: eu estou olhando para os registros financeiros e buscando bater
+as notas. E outra é: eu estou olhando para as notas e buscando o registro
+financeiro."* A segunda ganhou painel próprio: quantas notas existem, quantas
+estão sem lançamento, quantos CT-e, quantas canceladas.
+
+**7. O filtro parou de sumir.** *"Eu saio e volto e o filtro que eu estou
+trabalhando eles somem. Eu vou pra configurações pra fazer alguma coisa, aí
+volto pra cá e o filtro some."* Ele agora fica guardado — numa **gaveta própria,
+separada da de Solicitações**, porque são perguntas diferentes e quem trabalha
+nas duas telas no mesmo dia perderia o recorte toda vez.
+
+**8. A margem branca da esquerda.** *"O filtro ficou deslocado pra direita,
+ficou uma margem branca do lado esquerdo."* A tela montava uma **segunda grade
+dentro da área de conteúdo**: a coluna de filtros do esqueleto ficava vazia —
+288 px de branco — e a barra aparecia depois dela. Corrigido usando a coluna que
+já existe. Há teste que falha se alguém refizer isso.
+
+#### Dois defeitos que só apareceram abrindo a tela de verdade
+
+Os dois passaram por toda a suíte e pelos testes com banco. Só apareceram com a
+tela montada num navegador, contra um Postgres com dado dentro — e é por isso
+que esse passo continua na lista.
+
+- **O painel dizia "3 já categorizados" e a linha mostrava "—".** A documentação
+  chega por duas portas: o diário deste módulo e o espelho do card que a planilha
+  de apoio traz. Os totalizadores (que são SQL) liam as duas; a LISTA lia só o
+  diário. Duas afirmações contrárias na mesma tela, e nenhuma delas com jeito de
+  errada. Agora as duas leem a mesma coisa, com a mesma precedência: o diário
+  manda onde existe, porque é mais novo.
+- **O contador de CT-e dava zero com CT-e na base.** Ele contava pela coluna
+  "tipo", que vem preenchida de jeitos diferentes conforme a porta de entrada — a
+  Receita grava "CT-e", e o relatório do FSist grava o que estiver escrito na
+  planilha, que ninguém controla. Agora conta pelas posições 21 e 22 da chave,
+  que são o modelo do documento por definição da Receita e valem para toda nota.
+
+#### Respostas às perguntas dele
+
+- **"Eu não vou poder importar o relatório do FSist mais?"** Vai, e as duas
+  fontes são para conviver. A Receita só devolve o que é recente; o histórico
+  antigo entra pelo relatório colado na planilha de apoio. As duas escrevem na
+  mesma tabela de notas, pelo mesmo caminho de gravação. O botão está na tela.
+- **"Se eu gravar um certificado com a senha errada, eu vou saber?"** Sim, na
+  hora. A senha é usada para abrir o arquivo no momento de subir; se ela não
+  abrir, o certificado **não é guardado** e a tela diz que a senha não confere.
+  Não existe caminho em que ele fique guardado com senha errada para falhar
+  semanas depois.
+
+**Verificação:** 4.842 testes verdes com Postgres de verdade, 129 pulados; 60
+testes novos. A tela foi **aberta num navegador** contra um Postgres com dado
+dentro (descartável, nesta máquina): a barra começa no pixel zero, as duas
+visões trocam, a janela de escrever à mão abre e grava, o filtro sobrevive a ir
+em Configurações e voltar, Configurações não oferece mais os botões fiscais, e a
+700 px de largura não há rolagem lateral nem caixa de diálogo fechada aparecendo
+solta.
+
+> **O QUE NÃO FOI PROVADO:** nada disso foi visto com a base real de 59 mil SPs —
+> os totalizadores são uma varredura a mais por abertura de tela, e num banco
+> com um décimo de um núcleo (o incidente de 10/09) isso precisa ser medido com
+> dado de verdade. Se a tela abrir devagar, é o primeiro lugar para olhar.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Nada do dono esperando código.** O que falta não é programação — é o

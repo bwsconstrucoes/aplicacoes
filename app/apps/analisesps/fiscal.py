@@ -606,16 +606,38 @@ def _para_esta_sp(lancamento: dict, por_raiz: dict) -> list:
 
 
 def analises_guardadas(ids: list) -> dict:
-    """O diário: o que já foi decidido sobre estas SPs."""
+    """O diário: o que já se sabe sobre estas SPs.
+
+    DUAS PORTAS, E AS DUAS VALEM. `sp_fiscal_analise` é o diário deste módulo
+    (o que o card trazia quando a tela nasceu, mais toda decisão tomada aqui).
+    `sp_fiscal` é o espelho do card que a planilha de apoio traz a cada carga.
+    O diário manda quando existe, porque é mais novo; onde ele está vazio, vale
+    o que está no card.
+
+    POR QUE ISSO É IMPORTANTE E NÃO É DETALHE. Achado ao abrir a tela contra
+    banco de verdade em 13/09/2026: os totalizadores contavam as duas portas
+    (é SQL, em `consultas.SITUACOES_FISCAIS`) e a LISTA só olhava o diário. O
+    resultado era o painel dizer "3 já categorizados" e a linha mostrar "—" na
+    coluna "Está como" — duas afirmações contrárias na mesma tela, e nenhuma
+    delas com jeito de errada. Agora as duas leem a mesma coisa."""
     from .db import consultar
     if not ids:
         return {}
     marcadores = ",".join(["?"] * len(ids))
     linhas = consultar(
-        "SELECT sp_id, situacao, documentacao, chave, numero_nota, dedutivel, "
-        "       origem, motivo, confianca, decidida_por "
-        f"  FROM analisesps.sp_fiscal_analise WHERE sp_id IN ({marcadores})",
-        tuple(str(i) for i in ids))
+        "SELECT s.sp_id, a.situacao, "
+        "       coalesce(nullif(btrim(coalesce(a.documentacao, '')), ''), "
+        "                btrim(coalesce(x.doc_fiscal, ''))) AS documentacao, "
+        "       a.chave, a.numero_nota, a.dedutivel, a.origem, a.motivo, "
+        "       a.confianca, a.decidida_por "
+        "  FROM (SELECT sp_id FROM analisesps.sp_fiscal_analise "
+        f"        WHERE sp_id IN ({marcadores}) "
+        "        UNION "
+        "        SELECT sp_id FROM analisesps.sp_fiscal "
+        f"        WHERE sp_id IN ({marcadores})) s "
+        "  LEFT JOIN analisesps.sp_fiscal_analise a ON a.sp_id = s.sp_id "
+        "  LEFT JOIN analisesps.sp_fiscal x ON x.sp_id = s.sp_id",
+        tuple(str(i) for i in ids) * 2)
     nomes = ["sp_id", "situacao", "documentacao", "chave", "numero_nota",
              "dedutivel", "origem", "motivo", "confianca", "decidida_por"]
     return {str(l[0]): dict(zip(nomes, l)) for l in linhas}
@@ -882,3 +904,141 @@ def sps_possiveis_da_nota(nota: dict, quantas: int = 5) -> list:
         " LIMIT ?", (raiz, valor, int(quantas)))
     nomes = ["id", "credor", "valor_num", "vencimento_d", "status_pgt", "nf"]
     return [dict(zip(nomes, linha)) for linha in linhas]
+
+
+# ---------------------------------------------------------------------------
+# OS NÚMEROS DO LADO DA NOTA
+#
+# Pedido do dono em 13/09/2026: *"onde é que eu vejo aqui como é que está a
+# situação (…) pra saber o que que está faltando, onde é que eu tenho que
+# focar"*. Do lado do lançamento os números saem de `consultas.painel_fiscal`;
+# aqui saem os do lado da NOTA, que é a outra metade da mesma gestão.
+#
+# Uma consulta só, com `FILTER`. Ver o porquê em `consultas.painel_fiscal`.
+# ---------------------------------------------------------------------------
+def painel_notas() -> dict:
+    """Quantas notas entraram, de onde vieram e quantas estão órfãs."""
+    from .db import consultar_um
+
+    sem_lancamento = (
+        "upper(trim(coalesce(status, ''))) <> 'CANCELADA' "
+        " AND NOT EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "                  WHERE regexp_replace(coalesce(a.chave, ''), "
+        "                                       '\\D', '', 'g') "
+        "                        = notas_fiscais.chave)")
+
+    linha = consultar_um(
+        "SELECT count(*), "
+        "       count(*) FILTER (WHERE upper(trim(coalesce(status,''))) "
+        "                              = 'CANCELADA'), "
+        f"       count(*) FILTER (WHERE {sem_lancamento}), "
+        # O CT-e É CONTADO PELA CHAVE, e não pela coluna `tipo`.
+        #
+        # Achado ao exercitar a tela contra banco de verdade em 13/09/2026: a
+        # coluna vem preenchida de jeitos diferentes conforme a porta de
+        # entrada — a Receita grava "CT-e", e o relatório do FSist grava o que
+        # estiver escrito na coluna "Tipo" da planilha, que ninguém controla.
+        # Contar por ela dava ZERO com CT-e na base.
+        #
+        # As posições 21 e 22 da chave são o modelo do documento, definição da
+        # Receita: é a mesma certeza que `categoria_da_chave` usa, e vale para
+        # toda nota, tenha vindo por onde tiver vindo.
+        "       count(*) FILTER (WHERE substring(chave from 21 for 2) = '57'), "
+        "       max(importada_em) "
+        "  FROM analisesps.notas_fiscais")
+    nomes = ["total", "canceladas", "sem_lancamento", "ctes", "ultima"]
+    if not linha:
+        return {n: 0 for n in nomes}
+    return dict(zip(nomes, linha))
+
+
+# ---------------------------------------------------------------------------
+# ESCREVER À MÃO — o que o sistema NÃO propôs
+#
+# Correção do dono em 13/09/2026: *"tudo aquilo que você sugeriu (…) mas o que
+# você não sugeriu, como é que eu adiciono a informação? Porque a planilha ela
+# me permite adicionar, e a tela não permite."*
+#
+# Ele está certo e o buraco era grande: a tela só sabia APROVAR proposta. Numa
+# lista em que boa parte não tem proposta nenhuma — é justamente o trabalho que
+# sobra —, não haver como digitar transforma a tela em relatório, e o trabalho
+# volta para a planilha. É o contrário do que ela existe para fazer.
+#
+# A decisão à mão entra pelo MESMO caminho da decisão aprovada
+# (`guardar_decisao`), com origem PESSOA: assim ela é gravada no card pela
+# mesma leva, aparece no mesmo diário e conta nos mesmos totais. Um segundo
+# caminho de gravação seria a chance de a tela e o card divergirem.
+# ---------------------------------------------------------------------------
+class ErroDeEntrada(ValueError):
+    """Dado recusado, com a mensagem já pronta para a tela."""
+
+
+def conferir_chave(chave: str, sp: dict = None) -> str:
+    """Devolve a chave só com dígitos, ou recusa dizendo por quê.
+
+    A CONFERÊNCIA É A PARTE ÚTIL. Uma chave digitada errada não dá erro: ela
+    grava no card uma nota que não é a da despesa, e ninguém descobre — é
+    exatamente o defeito que esta tela existe para achar. Então confere-se o
+    que dá para conferir sozinho: o tamanho, o modelo do documento (que sai das
+    posições 21 e 22) e, quando a SP é conhecida, o CNPJ de quem emitiu, que
+    mora dentro da própria chave."""
+    limpa = so_digitos(chave)
+    if not limpa:
+        return ""
+    if len(limpa) != 44:
+        raise ErroDeEntrada(
+            f"a chave de acesso tem 44 números; esta tem {len(limpa)}.")
+    if limpa[20:22] not in MODELOS:
+        raise ErroDeEntrada(
+            "esta chave não é de NF-e, NFC-e nem CT-e — confira se não faltou "
+            "ou sobrou algum número.")
+    if sp:
+        emitente = emitente_da_chave(limpa)
+        credor = so_digitos(sp.get("documento"))
+        if emitente and len(credor) == 14 and not mesmo_documento(credor, emitente):
+            raise ErroDeEntrada(
+                "esta chave foi emitida por outro CNPJ, e não pelo credor "
+                "desta SP. Confira se não é a nota de outro lançamento.")
+    return limpa
+
+
+def decidir_a_mao(sp_id: str, documentacao: str, chave: str, quem: str,
+                  sp: dict = None) -> dict:
+    """Grava a categoria (e a chave, quando houver) digitada por uma pessoa.
+
+    Devolve o que ficou gravado, para a tela mostrar sem recarregar."""
+    documentacao = str(documentacao or "").strip()
+    if documentacao and documentacao not in CATEGORIAS:
+        raise ErroDeEntrada(f'"{documentacao}" não é uma categoria conhecida.')
+
+    limpa = conferir_chave(chave, sp)
+    if not documentacao and not limpa:
+        raise ErroDeEntrada("escolha a categoria ou informe a chave de acesso.")
+
+    # CATEGORIA DEDUZIDA DA CHAVE quando a pessoa informou só a chave. É o
+    # mesmo caminho da proposta automática: o modelo do documento está dentro
+    # da chave, então não é palpite.
+    if not documentacao:
+        documentacao = categoria_da_chave(limpa) or "NF-e (Mercadoria)"
+
+    motivo = "informado à mão" + (" com a chave conferida" if limpa else "")
+    guardar_decisao(sp_id, documentacao, limpa, motivo, 100, quem,
+                    origem="PESSOA")
+    return {"sp_id": str(sp_id), "documentacao": documentacao, "chave": limpa,
+            "dedutivel": dedutivel(documentacao)}
+
+
+def uma_nota(chave: str) -> dict:
+    """A nota guardada, pela chave. Vazio quando não existe aqui."""
+    from .db import consultar_um
+    limpa = so_digitos(chave)
+    if len(limpa) != 44:
+        return {}
+    linha = consultar_um(
+        "SELECT chave, emissao, numero, valor, status, emitente_doc, emitente "
+        "  FROM analisesps.notas_fiscais WHERE chave = ?", (limpa,))
+    if not linha:
+        return {}
+    nomes = ["chave", "emissao", "numero", "valor", "status",
+             "emitente_doc", "emitente"]
+    return dict(zip(nomes, linha))

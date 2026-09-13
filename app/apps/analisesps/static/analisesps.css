@@ -990,3 +990,54 @@ a.kpi { display: block; }
   display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
   margin-top: 10px; padding-top: 10px; border-top: 1px solid #e4e9ee;
 }
+
+/* ================= DOCUMENTACAO FISCAL — a tela refeita em 13/09/2026 ======
+   O dono usou a primeira versao e disse: "nao da pra fazer a gestao dessa
+   documentacao fiscal da forma que esta". O que se ve aqui e a resposta.    */
+
+/* AS DUAS VISOES, sempre visiveis. Antes a segunda era um link solto no meio
+   da tela, facil de nao ver — e ele pediu as duas com todas as letras. */
+.fiscal-visoes {
+  display: flex; gap: 4px; margin: 0 0 14px; padding: 4px;
+  background: #EDF1F7; border-radius: var(--raio); width: fit-content;
+  max-width: 100%; flex-wrap: wrap;
+}
+.fiscal-visao {
+  padding: 7px 16px; border-radius: var(--raio-p); font-size: 13.5px;
+  font-weight: 600; color: var(--tinta-suave); text-decoration: none;
+}
+.fiscal-visao:hover { background: #E2E8F2; color: var(--azul); }
+.fiscal-visao.ativa { background: var(--branco); color: var(--azul); box-shadow: var(--sombra); }
+.fiscal-visao b {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 10px;
+  background: var(--ambar); color: #fff; font-size: 12px;
+}
+
+/* OS TOTALIZADORES sao ATALHO: clicar aplica o recorte. Um numero que a pessoa
+   ve e depois tem de ir procurar no filtro e meio caminho. */
+.fiscal-kpis .kpi { text-decoration: none; color: inherit; display: block; }
+.fiscal-kpis .kpi.ligado { outline: 2px solid var(--azul-claro); }
+.fiscal-kpis .kpi.ligado .kpi-rotulo { color: var(--azul); }
+
+/* AS ACOES DENTRO DA TELA DE TRABALHO. "Ler, e pra estar dentro da tela.
+   Gravar nos cards, e pra estar dentro da tela." */
+.fiscal-acoes-tarefa {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px;
+}
+
+/* A janela de escrever a mao e um formulario curto: a largura padrao de 940px
+   faria tres campos nadarem na tela. */
+.dlg-estreito { width: min(520px, 94vw); }
+
+/* Cada SP candidata da visao por nota vira uma linha com o botao de fechar o
+   par ali mesmo. */
+.nota-candidata { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 2px 0; }
+
+/* O RECORTE PRINCIPAL APARECE INTEIRO, sem rolagem por dentro.
+
+   Os blocos comuns da barra tem teto de 260px porque listam oitenta obras; com
+   doze recortes fixos, esse teto cortava o ultimo item no meio da linha e
+   colava a dica embaixo — na tela parecia defeito de desenho, e escondia
+   justamente "Confirmado, falta gravar no card". A barra lateral ja rola
+   sozinha; um segundo rolamento dentro dela nao ajuda ninguem. */
+.filtro-trabalho .filtro-opcoes { max-height: none; overflow-y: visible; }
