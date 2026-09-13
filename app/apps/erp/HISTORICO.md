@@ -176,7 +176,7 @@ prontos, ou seja, **ninguém perde nada**; o que muda é que agora dá para tira
 perfil a perfil, na tela. Esconder **não é a trava**: a trava continua sendo a
 recusa da rota, e a suíte prova as duas coisas.
 
-### Três coisas que apareceram no caminho
+### Quatro coisas que apareceram no caminho
 
 1. **A tela de início contava a agenda para quem não tem agenda.** "2
    obrigações vencidas" aparecia para um perfil que não abre a tela — e sem
@@ -187,6 +187,14 @@ recusa da rota, e a suíte prova as duas coisas.
 3. **A lista de projetos não pode entregar o nome das obras.** Ela é aberta a
    quem entra no ERP (o projeto é filtro de tela); quem é preso a uma obra não
    tem por que saber o nome das outras. O detalhe, esse exige `configurar`.
+4. **Desmarcar "entrar no ERP" tinha deixado de fechar o ERP** — e isso foi a
+   suíte completa com banco que pegou, depois do commit. Enquanto quase toda
+   tela pedia `ver_erp`, tirar a porta de entrada fechava o sistema na prática;
+   com cada tela tendo ação própria, a caixinha passaria a fechar só as poucas
+   que ainda pedem `ver_erp`. Marcação que promete uma coisa e faz outra é pior
+   do que não existir: agora desmarcar a porta **desliga a pessoa**, e o ADMIN
+   continua alcançando as telas que consertam o sistema — trancar quem
+   destranca não é decisão, é acidente.
 
 ### Conferência
 

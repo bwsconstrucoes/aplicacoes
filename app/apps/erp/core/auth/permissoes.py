@@ -285,6 +285,11 @@ ROTULOS = {
 # erro — e não sobra ninguém para desfazer.
 PROTEGIDAS_DO_ADMIN = ("configurar", "gerir_usuarios", "ver_erp")
 
+# A porta de entrada do ERP. Mora em `core/auth/secoes.py` com o mesmo nome, e
+# é repetida aqui só para não fazer este módulo importar aquele em toda
+# decisão — se um dia mudar, muda nos dois (há teste cobrando a igualdade).
+ACAO_DE_ENTRADA = "ver_erp"
+
 
 def excecoes_do_usuario(usuario: Usuario) -> dict[str, bool]:
     """As marcações feitas no cadastro DESTA pessoa (ação → concedida).
@@ -401,6 +406,19 @@ def decidir(perfil: PerfilUsuario, acao: str, excecoes: dict[str, bool],
     que segura o sistema enquanto a migração não roda.
     """
     excecoes = excecoes or {}
+    # DESMARCAR "entrar no ERP" FECHA TUDO para esta pessoa.
+    #
+    # Enquanto quase toda tela era guardada por `ver_erp`, desmarcar a porta de
+    # entrada fechava o sistema na prática. Desde 13/09/2026 cada tela tem ação
+    # própria (foi o que fez a área sumir do menu de quem não a tem), e aí a
+    # caixinha passaria a fechar só as poucas telas que ainda pedem `ver_erp` —
+    # uma marcação que promete uma coisa e faz outra. Quem tira a porta de
+    # entrada está desligando a pessoa, e é isso que acontece.
+    #
+    # O ADMIN continua alcançando as telas que consertam o sistema: trancar a
+    # última pessoa que pode destrancar não é decisão, é acidente.
+    if excecoes.get(ACAO_DE_ENTRADA) is False:
+        return perfil is P.ADMIN and acao in PROTEGIDAS_DO_ADMIN
     base = (acao in acoes_do_perfil if acoes_do_perfil is not None
             else perfil in PERMISSOES.get(acao, set()))
     marcada = excecoes.get(acao)

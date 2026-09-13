@@ -247,3 +247,53 @@ def test_a_migracao_032_criou_a_tabela(sessao_real):
         "SELECT column_name FROM information_schema.columns "
         "WHERE table_name = 'usuario_permissoes'")).all()}
     assert {"usuario_id", "acao", "concedida", "definida_em", "definida_por"} <= colunas
+
+
+@pytest.mark.banco
+def test_desmarcar_a_porta_de_entrada_fecha_o_erp_inteiro(app_real, sessao_real):
+    """Tirar "entrar no ERP" de alguém desliga essa pessoa, e não quase.
+
+    Enquanto quase toda tela pedia `ver_erp`, desmarcar a porta fechava o
+    sistema na prática. Desde 13/09/2026 cada tela tem ação própria — foi o que
+    fez a área sumir do menu de quem não a tem —, e sem esta regra a caixinha
+    passaria a fechar só as poucas telas que ainda pedem `ver_erp`. Marcação
+    que promete uma coisa e faz outra é pior do que não existir.
+    """
+    from app.apps.erp.core.auth.service import gerar_hash
+    from app.apps.erp.db.models.cadastros import Usuario, UsuarioPermissao
+    from conftest import como
+
+    u = Usuario(nome="Desligado", email="desligado@teste.bws.local",
+                senha_hash=gerar_hash("senha-de-teste-1234"),
+                perfil=P.FINANCEIRO)
+    sessao_real.add(u)
+    sessao_real.flush()
+    sessao_real.commit()
+
+    abertas = ("/erp/titulos", "/erp/lancar", "/erp/relatorios", "/erp/arquivo")
+    for rota in abertas:
+        assert como(app_real, u.id).get(rota).status_code == 200, rota
+
+    sessao_real.add(UsuarioPermissao(usuario_id=u.id, acao="ver_erp",
+                                     concedida=False))
+    sessao_real.commit()
+    for rota in abertas:
+        assert como(app_real, u.id).get(rota).status_code == 403, rota
+
+
+@pytest.mark.banco
+def test_o_administrador_nao_se_tranca_para_fora(app_real, sessao_real):
+    """Trancar quem destranca não é decisão, é acidente: o ADMIN mantém as
+    telas que consertam o sistema mesmo com a porta de entrada desmarcada."""
+    from app.apps.erp.core.auth.service import gerar_hash
+    from app.apps.erp.db.models.cadastros import Usuario, UsuarioPermissao
+    from conftest import como
+
+    u = Usuario(nome="Administrador", email="adm-trancado@teste.bws.local",
+                senha_hash=gerar_hash("senha-de-teste-1234"), perfil=P.ADMIN)
+    sessao_real.add(u)
+    sessao_real.flush()
+    sessao_real.add(UsuarioPermissao(usuario_id=u.id, acao="ver_erp",
+                                     concedida=False))
+    sessao_real.commit()
+    assert como(app_real, u.id).get("/erp/configuracoes").status_code == 200
