@@ -10,6 +10,7 @@ from .models import AttachmentInput, ExecutionPlan, MatchResult
 from .utils import b64decode_bytes, fingerprint_bytes, as_string
 from .parser_pdf import extract_pdf_pages, extract_single_page_pdf
 from .parser_bradesco import parse_bradesco_text
+from .parser_sicredi import is_sicredi, parse_sicredi_text
 from .sheets import get_gc, load_spsbd_index, load_spsbd_values, load_spsbd_operacional, load_spsbd_omie_pendente, load_spsagendar, load_base_bancos, find_bank_account, find_somapay_account, find_account_by_pix_key, build_spsbd_updates, execute_spsbd_updates, load_fingerprints_processados, registrar_fingerprint
 from .matcher import match_receipt
 from .omie import build_omie_plan, build_incluir_lanc_cc, build_somapay_plan, execute_omie, execute_omie_lanccc, codigo_integracao
@@ -89,7 +90,12 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
             if not as_string(text):
                 continue
 
-            rec = parse_bradesco_text(
+            # Cada banco escreve de um jeito. O Sicredi, por exemplo, põe o
+            # valor como "Valor Pago (R$): 10.861,20" e o número da SP em
+            # "Descrição do Pagamento" — o leitor do Bradesco não enxerga
+            # nenhum dos dois e o comprovante ficaria sem valor e sem SP.
+            ler = parse_sicredi_text if is_sicredi(text) else parse_bradesco_text
+            rec = ler(
                 filename=att.filename,
                 page=page_num,
                 text=text,

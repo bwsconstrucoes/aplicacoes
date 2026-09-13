@@ -57,10 +57,10 @@ três foram tratadas em 04/09/2026:
    ver o incidente abaixo.
 2. **A trava contra pagar duas vezes só gravava, não conferia.** Corrigido — ver
    o incidente abaixo.
-3. **O leitor do Sicredi nunca é chamado.** Fica como está, por decisão do dono:
-   **a empresa não usa mais o Sicredi**. O arquivo continua no repositório, sem
-   ligação com o fluxo. Se voltar a usar, é ligar o desvio e cobrir com teste
-   antes.
+3. **O leitor do Sicredi nunca é chamado.** ❌ Registrado em 11/09/2026 como
+   decisão do dono — **e estava errado, por mal-entendido meu**. Ele havia dito
+   que não usava as outras duas contas **Somapay**; eu entendi Sicredi.
+   Corrigido em 13/09/2026: o leitor foi ligado. Ver o incidente no fim.
 
 ## Decisões já tomadas (e por quê)
 
@@ -561,4 +561,49 @@ blueprints subindo com os dois trabalhos juntos.
 - Pix, boleto, transferência comum, FGTS e BeeVale continuam **sem teste** sobre
   a leitura dos campos e a escolha da SP. Faltam comprovantes de exemplo de cada
   tipo.
-- O leitor do Sicredi segue desligado (a empresa não usa mais).
+
+### 13/09/2026 — o leitor do Sicredi estava desligado por um engano meu (publicado, `27f62fb`)
+
+Um comprovante real do Sicredi, de R$ 10.861,20, voltou `nao_localizado`. O robô
+mandava toda página para o leitor do **Bradesco**, e para esse papel ele saía
+**sem valor, sem conta e sem número de SP** — nada com que procurar.
+
+**A causa não foi o código, foi a leitura errada de uma frase.** Em 11/09/2026 o
+dono disse que não usava "as outras" — falando das duas contas **Somapay**
+(INFRADENDE e IFPESANTACRUZ), das quais só a BWS é usada para baixa. Eu entendi
+que o **Sicredi** não era mais usado, registrei isso no README e no HISTORICO
+como decisão dele, e deixei o leitor desligado. O Sicredi é usado normalmente.
+
+**Lição:** decisão do dono que desliga um caminho inteiro merece ser repetida de
+volta com o nome do caminho antes de virar registro. "Não usamos mais" é uma
+frase curta demais para uma consequência dessa.
+
+**O que o leitor certo enxerga, no mesmo papel:** valor 10.861,20 (o Sicredi
+escreve "Valor Pago (R$):", com o "(R$)" no meio, que o leitor do Bradesco não
+reconhece), cooperativa 02205 e conta de origem, e — o mais importante — **o
+número da SP**, que vem em "Descrição do Pagamento". Com o número, o casamento é
+o mais confiável que existe: não depende de valor nem de conta.
+
+**Como ficou:** o fluxo escolhe o leitor pelo formato do papel (cooperativa +
+conta de origem → Sicredi). O diagnóstico faz o mesmo desvio — diagnóstico que lê
+diferente do fluxo real mente para quem investiga.
+
+⚠️ **A palavra "sicredi" sozinha deixou de servir como pista**, de propósito: ela
+aparece em comprovante do **Bradesco** quando o destino é uma conta Sicredi, e
+mandá-lo para o leitor errado pode produzir valor errado. Não reconhecer é
+barato (cai no leitor do Bradesco, não acha SP, fica pendente e o aviso conta);
+ler errado, não.
+
+**Publicado em 13/09/2026 (`27f62fb`)**, com a `main` de dois dias de outros
+chats (40 commits) trazida para o ramo antes da junção: 2907 testes verdes e os
+blueprints subindo com tudo junto.
+
+**Conferir no primeiro comprovante Sicredi real:** que ele acha a SP pelo número
+que vem em "Descrição do Pagamento", e que a baixa cai na conta Sicredi certa.
+O leitor nunca rodou em produção — este será o primeiro uso de verdade.
+
+**Aberto, e é de decidir:** o aviso chegou ao dono **pelo Telegram**, não pelo
+WhatsApp. Isso quer dizer que a perna do WhatsApp não está entregando — e que o
+**financeiro provavelmente não recebeu nada**, porque o Telegram só alcança quem
+já conversou com o robô. O campo `aviso` da resposta ao Make diz o motivo em uma
+linha; ninguém foi atrás ainda.
