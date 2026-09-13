@@ -289,6 +289,9 @@ def caixa_por_ano(f: Filtros) -> list[dict]:
 # Um lugar so: o Explorador filtra por ele, e dois nomes diferentes para a mesma
 # coisa fariam a busca nao achar nada.
 SEM_OBRA = "(não apropriado)"
+# Mesmo padrao do SEM_OBRA: um rotulo so, em toda a tela, para o que
+# nao tem fornecedor — senao filtrar por ele vira adivinhacao.
+SEM_FORNECEDOR = "(sem fornecedor)"
 OBRA_OU_SEM = f"COALESCE(NULLIF(TRIM(departamento),''), '{SEM_OBRA}')"
 
 ENCARGO = f"CASE WHEN {PAGO} THEN (juros + multa) ELSE 0 END"
@@ -1377,6 +1380,10 @@ def opcoes_do_explorador() -> dict:
             "projetos": _distintos("projeto"),
             "contas": _distintos("conta_corrente"),
             "situacoes": _distintos("situacao"),
+            # Procurar empresa digitando o nome obriga a acertar a grafia do
+            # cadastro do OMIE — e a mesma empresa costuma ter mais de um.
+            # Com a lista, marcam-se os dois nomes e nada escapa.
+            "fornecedores": _distintos("razao_social", SEM_FORNECEDOR),
         }
 
     return _lembrando(("opcoes_do_explorador",), calcular)
@@ -1399,14 +1406,27 @@ def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
         condicoes.append("tipo = ?")
         params.append(PAG if tipo == "pagar" else REC)
 
+    # O EXPLORADOR NÃO ESCONDE NADA. As telas de análise (DRE, Visão Geral,
+    # Resultado por Obra) tiram as transferências de propósito: são dinheiro
+    # trocando de conta da própria empresa, e somá-las contaria o mesmo valor
+    # duas vezes. Aqui é o contrário — a tela existe para ACHAR o que está
+    # classificado errado, e "lançado numa categoria marcada como transferência
+    # no OMIE" é justamente um desses erros. Esconder o que se procura é o
+    # oposto do trabalho.
+    #
+    # Até 13/09/2026 o padrão escondia TRF, e isso custou caro: o dono procurou
+    # uma devolução de aporte de 24/12/2025 conciliada, viu a devolução do lado
+    # aparecer e essa não, e não havia nada na tela explicando a diferença — a
+    # categoria dela está marcada como transferência no OMIE. A frase dele:
+    # "aqui era pra aparecer todos os lançamentos igual como aparece no
+    # relatório de conta corrente do OMIE".
+    #
+    # Quem quiser cortar por análise usa a lista Análise da barra lateral, onde
+    # DRE, Fluxo de Caixa e TRF são três caixas de marcar.
     analises = [a for a in pedido.get("analises") or [] if a]
     if analises:
         condicoes.append("analise = ANY(?)")
         params.append(analises)
-    elif not pedido.get("com_trf"):
-        # Transferência é dinheiro trocando de conta da própria empresa: ela
-        # dobra qualquer soma e polui a busca. Fica de fora até alguém pedir.
-        condicoes.append("COALESCE(analise,'') <> 'TRF'")
 
     for campo, coluna in (("grupos", "grupo"), ("categorias", "categoria"),
                           ("projetos", "projeto"), ("contas", "conta_corrente"),
@@ -1421,11 +1441,26 @@ def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
         condicoes.append(f"{OBRA_OU_SEM} = ANY(?)")
         params.append(obras)
 
+    fornecedores = [f for f in pedido.get("fornecedores") or [] if f]
+    if fornecedores:
+        condicoes.append(
+            f"COALESCE(NULLIF(TRIM(razao_social),''), '{SEM_FORNECEDOR}') = ANY(?)")
+        params.append(fornecedores)
+
     busca = (pedido.get("busca") or "").strip()
     if busca:
-        condicoes.append("(" + " OR ".join(
-            f"{c} ILIKE ?" for c in BUSCA_DO_EXPLORADOR) + ")")
-        params.extend([f"%{busca}%"] * len(BUSCA_DO_EXPLORADOR))
+        # Procurar pelo NUMERO DO TITULO do OMIE tem de funcionar. Sem isso, a
+        # única maneira de perguntar "este título está no painel?" era procurar
+        # pelo nome do fornecedor e conferir a olho — e se o nome não estiver
+        # preenchido, nem isso. Em 13/09/2026 o dono passou meia hora atrás de um
+        # lançamento por falta desta busca.
+        alternativas = [f"{c} ILIKE ?" for c in BUSCA_DO_EXPLORADOR]
+        valores = [f"%{busca}%"] * len(BUSCA_DO_EXPLORADOR)
+        if busca.isdigit():
+            alternativas.append("codigo_lancamento = ?")
+            valores.append(int(busca))
+        condicoes.append("(" + " OR ".join(alternativas) + ")")
+        params.extend(valores)
 
     # A faixa de data DEIXA PASSAR o que não tem data — ao contrário do
     # Analítico. Aqui a pergunta é "onde está o lançamento errado", e lançamento
@@ -1514,6 +1549,65 @@ def departamentos_para_alterar() -> list[dict]:
             "SELECT DISTINCT ccoddep, cdesdep FROM rateio "
             " WHERE COALESCE(TRIM(cdesdep),'') <> '' ORDER BY cdesdep")]
     return _lembrando(("departamentos_para_alterar",), calcular)
+
+
+# ---------------------------------------------------------------------------
+# Conferência: as duas definições de "foi pago" concordam?
+# ---------------------------------------------------------------------------
+# Existem duas, e elas DIVERGEM (descoberto em 13/09/2026, investigando valores
+# errados no bloco de Aportes e Dividendos do DRE):
+#
+#   CARGA (`sync/fato.py`): quitado = o texto do status diz pago/recebido/
+#     conciliado **OU** a baixa do OMIE diz liquidado ("cLiquidado = S").
+#   TELAS (o `PAGO` acima):  só a primeira metade — o texto do status.
+#
+# Um título liquidado cujo status use outra palavra ("Quitado", "Baixado") tem o
+# valor gravado como realizado na base e NÃO É CONTADO POR NENHUMA TELA. O
+# dinheiro existe no painel e não aparece em lugar nenhum. A regra do `PAGO`
+# aparece em dez lugares — DRE, Visão Geral, fluxo de caixa, aportes.
+#
+# Esta função NÃO CORRIGE NADA. Ela mede o estrago, para a decisão de corrigir
+# ser tomada com o número na mão. A carga grava a própria decisão na coluna
+# `situacao_vencimento` ('Quitado'), então dá para comparar as duas sem adivinhar.
+
+INVISIVEL_PARA_AS_TELAS = (
+    f"situacao_vencimento = 'Quitado' AND NOT ({PAGO}) AND pago_recebido <> 0")
+
+
+def conferencia_do_pago() -> dict:
+    """Quanto dinheiro a carga deu por realizado e as telas não enxergam.
+
+    Devolve o total, a contagem, e a lista dos textos de situação envolvidos —
+    que é o que diz QUAIS palavras o `PAGO` está deixando escapar."""
+    (quantos, valor, titulos) = consultar(
+        f"""SELECT COUNT(*), COALESCE(SUM(ABS(pago_recebido)), 0),
+                   COUNT(DISTINCT codigo_lancamento)
+              FROM fato WHERE {INVISIVEL_PARA_AS_TELAS}""")[0]
+
+    situacoes = [{"situacao": sit or "(vazia)", "linhas": n,
+                  "valor": float(v or 0)}
+                 for sit, n, v in consultar(
+        f"""SELECT situacao, COUNT(*), COALESCE(SUM(ABS(pago_recebido)), 0)
+              FROM fato WHERE {INVISIVEL_PARA_AS_TELAS}
+             GROUP BY 1 ORDER BY 2 DESC LIMIT 30""")]
+
+    categorias = [{"categoria": c or "(sem categoria)", "analise": a or "—",
+                   "linhas": n, "valor": float(v or 0)}
+                  for c, a, n, v in consultar(
+        f"""SELECT categoria, analise, COUNT(*),
+                   COALESCE(SUM(ABS(pago_recebido)), 0)
+              FROM fato WHERE {INVISIVEL_PARA_AS_TELAS}
+             GROUP BY 1, 2 ORDER BY 4 DESC LIMIT 30""")]
+
+    # o outro lado da moeda: o status diz pago mas a carga nao achou realizado.
+    # Nao some dinheiro por aqui, mas ajuda a saber se as duas regras batem.
+    (ao_contrario,) = consultar(
+        f"""SELECT COUNT(*) FROM fato
+             WHERE {PAGO} AND situacao_vencimento <> 'Quitado'""")[0]
+
+    return {"linhas": quantos or 0, "titulos": titulos or 0,
+            "valor": float(valor or 0), "situacoes": situacoes,
+            "categorias": categorias, "ao_contrario": ao_contrario or 0}
 
 
 # ---------------------------------------------------------------------------

@@ -239,6 +239,98 @@
     </tbody>
   </table>
 </div>
+
+{# ============ CONFERÊNCIA: as duas regras de "foi pago" batem? ============ #}
+{% if conferencia %}
+<div class="cartao" style="margin-top:14px;
+     border-left:4px solid {{ 'var(--vermelho)' if conferencia.linhas else 'var(--verde)' }}">
+  <div class="cartao-cab"><h3>Conferência — dinheiro que as telas não contam</h3></div>
+
+  {% if not conferencia.linhas %}
+    <div class="aviso ok">
+      <b>As duas regras concordam.</b> Tudo o que a carga deu por realizado está
+      sendo contado pelas telas. Nada a fazer.
+    </div>
+  {% else %}
+    <div class="aviso erro">
+      <b>{{ brl(conferencia.valor) }}</b> em
+      <b>{{ conferencia.titulos }}</b> título(s) estão marcados como pagos pela
+      carga e <b>não são contados por nenhuma tela</b> — nem no DRE, nem na Visão
+      Geral, nem no fluxo de caixa, nem no bloco de aportes.
+    </div>
+    <p class="cartao-dica">
+      A causa: a carga considera pago o título cujo status diga <i>pago</i>,
+      <i>recebido</i> ou <i>conciliado</i> <b>ou</b> cuja baixa no OMIE diga
+      liquidado. As telas só olham a primeira metade — o texto do status. Quem
+      foi liquidado com outra palavra fica invisível. Abaixo, exatamente quais
+      palavras estão escapando.
+    </p>
+
+    <div class="tabela-rolagem" style="max-height:260px">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem">Situação escrita no OMIE</th>
+            <th class="sem-ordem direita">Linhas</th>
+            <th class="sem-ordem direita">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for s in conferencia.situacoes %}
+          <tr>
+            <td class="dados">{{ s.situacao }}</td>
+            <td class="dados direita">{{ s.linhas }}</td>
+            <td class="dados direita">{{ brl(s.valor) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <details style="margin-top:10px">
+      <summary style="cursor:pointer; font-weight:600">
+        Por categoria ({{ conferencia.categorias | length }})
+      </summary>
+      <div class="tabela-rolagem" style="max-height:260px; margin-top:8px">
+        <table>
+          <thead>
+            <tr>
+              <th class="sem-ordem">Categoria</th>
+              <th class="sem-ordem">Análise</th>
+              <th class="sem-ordem direita">Linhas</th>
+              <th class="sem-ordem direita">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for c in conferencia.categorias %}
+            <tr>
+              <td class="desc">{{ c.categoria }}</td>
+              <td><small>{{ c.analise }}</small></td>
+              <td class="dados direita">{{ c.linhas }}</td>
+              <td class="dados direita">{{ brl(c.valor) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  {% endif %}
+
+  {% if conferencia.ao_contrario %}
+    <p class="cartao-dica" style="margin-top:8px">
+      No sentido inverso há {{ conferencia.ao_contrario }} linha(s): o status diz
+      pago e a carga não achou valor realizado. Aqui não some dinheiro — são
+      títulos com status de pago e baixa de valor zero.
+    </p>
+  {% endif %}
+
+  <p class="cartao-dica">
+    <b>Esta tela só mede: nada foi alterado.</b> Corrigir é fazer as telas lerem
+    a decisão que a própria carga já grava, em vez de refazer meia regra por
+    conta própria — e os números do DRE e da Visão Geral vão subir.
+  </p>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

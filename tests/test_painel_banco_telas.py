@@ -672,11 +672,26 @@ def test_o_explorador_enxerga_fora_do_dre(base_para_explorar):
     assert _codigos({"busca": "SOCIO"}) == {702}
 
 
-def test_a_transferencia_so_aparece_quando_alguem_pede(base_para_explorar):
-    """Transferência é dinheiro trocando de conta da própria empresa: ela dobra
-    qualquer soma e polui a busca."""
-    assert 703 not in _codigos({"busca": "BANCO"})
-    assert _codigos({"busca": "BANCO", "com_trf": True}) == {703}
+def test_a_transferencia_aparece_sem_precisar_pedir(base_para_explorar):
+    """A regra era o contrário até 13/09/2026, e estava errada.
+
+    Transferência é dinheiro trocando de conta da própria empresa: nas telas de
+    análise ela fica fora, senão o mesmo valor conta duas vezes. Mas ESTA tela
+    existe para achar classificação errada, e "está numa categoria marcada como
+    transferência no OMIE sem ser uma" é exatamente um desses erros. Esconder o
+    que se procura é o oposto do trabalho.
+
+    O dono topou com isso procurando uma devolução de aporte de 24/12/2025:
+    "aqui era pra aparecer todos os lançamentos igual como aparece no relatório
+    de conta corrente do OMIE"."""
+    assert 703 in _codigos({"busca": "BANCO"})
+
+
+def test_quem_quiser_so_a_transferencia_marca_a_analise(base_para_explorar):
+    """Mostrar tudo por padrão não pode custar o corte: a lista Análise da barra
+    lateral continua separando DRE, Fluxo de Caixa e TRF."""
+    assert _codigos({"busca": "BANCO", "analises": ["TRF"]}) == {703}
+    assert 703 not in _codigos({"analises": ["DRE"]})
 
 
 def test_procurar_pelo_titulo_sem_apropriacao(base_para_explorar):
@@ -757,3 +772,124 @@ def test_o_explorador_exige_login(base_para_explorar, monkeypatch):
     app = create_app()
     app.config.update(TESTING=True)
     assert app.test_client().get("/painel/explorador").status_code == 302
+
+
+def test_procurar_pelo_numero_do_titulo_do_omie(base_para_explorar):
+    """A pergunta mais básica que se faz a esta tela — "o título 12345 está no
+    painel?" — não tinha resposta até 13/09/2026: a busca só olhava fornecedor,
+    documento e observação. Quem procurava um lançamento cujo fornecedor não
+    está preenchido não tinha como perguntar."""
+    assert _codigos({"busca": "703"}) == {703}
+
+
+def test_procurar_por_numero_nao_perde_o_documento_que_e_numero(base_para_explorar):
+    """Documento também costuma ser só dígitos. Somar a busca por código não
+    pode custar a busca por documento."""
+    from app.apps.painel.db import conexao
+    from app.apps.painel import consultas
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET numero_documento = '703' "
+                     " WHERE codigo_lancamento = 701")
+        conn.commit()
+    consultas.esquecer_listas()
+    # tem de achar os dois: o título 703 e o título 701, cujo documento é "703"
+    assert _codigos({"busca": "703"}) == {701, 703}
+
+
+# ===========================================================================
+# Fornecedor: filtro de lista, e nunca uma linha sem nome
+# ===========================================================================
+# 13/09/2026. O dono quis analisar as devoluções de aporte de uma empresa,
+# digitou o nome no Buscar e achou menos lançamentos do que existiam. Procurar
+# empresa digitando o nome obriga a acertar a grafia do cadastro do OMIE — e o
+# painel ainda deixava a linha SEM NOME quando o cadastro não estava na base,
+# tornando-a invisível para qualquer busca por nome.
+
+def test_fornecedor_e_filtro_de_lista_nao_so_texto(base_para_explorar):
+    """Marcar na lista não depende de acertar a grafia."""
+    from app.apps.painel import consultas
+    opcoes = consultas.opcoes_do_explorador()
+    assert "fornecedores" in opcoes and opcoes["fornecedores"]
+
+
+def test_filtrar_por_fornecedor_traz_so_os_dele(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET razao_social = 'CONSTRUTORA X LTDA'"
+                     " WHERE codigo_lancamento = 701")
+        conn.commit()
+    consultas.esquecer_listas()
+    assert _codigos({"fornecedores": ["CONSTRUTORA X LTDA"]}) == {701}
+
+
+def test_quem_esta_sem_fornecedor_pode_ser_achado(base_para_explorar):
+    """Antes, linha sem nome não tinha como ser encontrada — nem por busca nem
+    por filtro. Agora ela tem um rótulo próprio, como o "(não apropriado)" da
+    obra, e aparece na lista para ser marcada."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET razao_social = '' WHERE codigo_lancamento = 702")
+        conn.commit()
+    consultas.esquecer_listas()
+    assert consultas.SEM_FORNECEDOR in consultas.opcoes_do_explorador()["fornecedores"]
+    assert _codigos({"fornecedores": [consultas.SEM_FORNECEDOR]}) == {702}
+
+
+# ===========================================================================
+# A conferência das duas regras de "foi pago"
+# ===========================================================================
+# 13/09/2026, investigando valores errados no bloco de Aportes do DRE: a CARGA
+# considera pago o título cujo status diga pago/recebido/conciliado OU cuja
+# baixa do OMIE diga liquidado. As TELAS só olham o texto do status. Um título
+# liquidado com outra palavra tem valor gravado como realizado e não é contado
+# por nenhuma tela — o dinheiro existe na base e não aparece em lugar nenhum.
+#
+# Esta conferência MEDE o estrago, sem corrigir: o dono decide com o número.
+
+@pytest.fixture()
+def base_com_pago_invisivel(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        # a carga deu por QUITADO (a baixa do OMIE disse liquidado), mas o texto
+        # do status usa outra palavra — e e so o texto que as telas olham
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, departamento, razao_social,"
+            " data, pago_recebido, a_pagar_receber, juros, multa)"
+            " VALUES (901,'2. Contas a Pagar','DRE','Baixado','Quitado',"
+            "         'Devolução de Aportes','CASA','SOCIO','2025-12-24',"
+            "         -320000,0,0,0)")
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+def test_a_conferencia_acha_o_dinheiro_que_as_telas_nao_contam(base_com_pago_invisivel):
+    from app.apps.painel import consultas
+    r = consultas.conferencia_do_pago()
+    assert r["titulos"] >= 1
+    assert r["valor"] >= 320000
+    assert any(s["situacao"] == "Baixado" for s in r["situacoes"]), \
+        "tem de dizer QUAL palavra está escapando — é isso que orienta a correção"
+
+
+def test_a_conferencia_nao_altera_nada(base_com_pago_invisivel):
+    """Ela mede. Se corrigisse por conta própria, os números do DRE mudariam
+    sem ninguém decidir — e o dono pediu para medir antes."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import consultar
+    antes = consultar("SELECT situacao, situacao_vencimento, pago_recebido"
+                      "  FROM fato WHERE codigo_lancamento = 901")
+    consultas.conferencia_do_pago()
+    depois = consultar("SELECT situacao, situacao_vencimento, pago_recebido"
+                       "  FROM fato WHERE codigo_lancamento = 901")
+    assert antes == depois
+
+
+def test_quando_as_duas_regras_concordam_a_conferencia_fica_limpa(base_para_explorar):
+    """Sem o caso ruim na base, ela não pode inventar alarme."""
+    from app.apps.painel import consultas
+    assert consultas.conferencia_do_pago()["titulos"] == 0

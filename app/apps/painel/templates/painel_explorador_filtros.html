@@ -22,7 +22,7 @@
       <div class="campo">
         <label for="busca">Buscar</label>
         <input id="busca" name="busca" type="search" value="{{ pedido.busca }}"
-               placeholder="fornecedor, documento ou observação">
+               placeholder="nº do título, fornecedor, documento…">
       </div>
     </div>
   </div>
@@ -51,6 +51,8 @@
   {{ lista('analise', 'Análise', opcoes.analises, pedido.analises) }}
   {{ lista('grupo', 'Grupo', opcoes.grupos, pedido.grupos, com_busca=True) }}
   {{ lista('categoria', 'Categoria', opcoes.categorias, pedido.categorias, com_busca=True) }}
+  {{ lista('fornecedor', 'Cliente ou Fornecedor', opcoes.fornecedores,
+           pedido.fornecedores, com_busca=True) }}
   {{ lista('obra', 'Obra', opcoes.obras, pedido.obras, com_busca=True) }}
   {{ lista('projeto', 'Projeto', opcoes.projetos, pedido.projetos, com_busca=True) }}
   {{ lista('conta', 'Conta corrente', opcoes.contas, pedido.contas, com_busca=True) }}
@@ -58,12 +60,10 @@
 
   <div class="filtro aberto">
     <div class="filtro-cont" style="padding-top:10px">
-      <label class="opcao">
-        <input type="checkbox" name="trf" value="1" {% if pedido.com_trf %}checked{% endif %}>
-        <span class="rotulo">Incluir transferências entre contas</span>
-      </label>
-      <p class="cartao-dica" style="margin:6px 0 12px">
-        Nada marcado numa lista quer dizer <b>todos</b>.
+      <p class="cartao-dica" style="margin:0 0 12px">
+        Nada marcado numa lista quer dizer <b>todos</b>. Esta tela mostra
+        <b>tudo</b> — inclusive as transferências entre contas, que as telas de
+        análise escondem. Para ver só um tipo, marque em <b>Análise</b>.
       </p>
       <button class="btn" type="submit" style="width:100%">Aplicar filtros</button>
     </div>

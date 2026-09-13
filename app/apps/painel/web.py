@@ -259,6 +259,7 @@ def _contexto_comum(aba: str):
             "anos": request.args.getlist("ano"),
             "projetos": request.args.getlist("projeto"),
             "obras": request.args.getlist("obra"),
+        "fornecedores": request.args.getlist("fornecedor"),
             "trf": request.args.get("trf") == "1",
         },
     }
@@ -884,8 +885,8 @@ def explorador():
     # so busca quando ha algum filtro: abrir a tela e varrer as 185 mil linhas
     # para mostrar as 3.000 mais recentes nao ajuda ninguem e custa caro
     escolheu = any(pedido[c] for c in ("tipo", "analises", "grupos", "categorias",
-                                       "obras", "projetos", "contas", "situacoes",
-                                       "busca", "de", "ate"))
+                                       "obras", "fornecedores", "projetos",
+                                       "contas", "situacoes", "busca", "de", "ate"))
     dados = consultas.explorar(pedido) if escolheu else None
     return render_template(
         "painel_explorador.html",
@@ -894,6 +895,7 @@ def explorador():
         resumo=consultas.resumo_do_explorador(pedido) if escolheu else [],
         opcoes=consultas.opcoes_do_explorador(),
         sem_obra=consultas.SEM_OBRA,
+        sem_fornecedor=consultas.SEM_FORNECEDOR,
         teto=consultas.TETO_DO_EXPLORADOR,
         teto_do_lote=saneamento.TETO_POR_LOTE,
         escrita_ligada=saneamento.escrita_configurada(),
@@ -955,6 +957,7 @@ def explorador_alterar():
         resumo=consultas.resumo_do_explorador(pedido),
         opcoes=consultas.opcoes_do_explorador(),
         sem_obra=consultas.SEM_OBRA,
+        sem_fornecedor=consultas.SEM_FORNECEDOR,
         teto=consultas.TETO_DO_EXPLORADOR,
         teto_do_lote=saneamento.TETO_POR_LOTE,
         escrita_ligada=saneamento.escrita_configurada(),
@@ -1092,7 +1095,7 @@ def configuracoes():
     sincronizacao = tarefas.estado()
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
-        atualizacao, vazia, etapas = None, True, []
+        atualizacao, vazia, etapas, conferencia = None, True, [], None
     else:
         from . import consultas
         # A caixa vermelha logo abaixo ja conta, com etapa e tempo de silencio,
@@ -1104,6 +1107,9 @@ def configuracoes():
             so_concluidas=bool(sincronizacao["interrompida"]))
         vazia = consultas.base_vazia()
         etapas = consultas.etapas_da_carga()
+        # So mede, nao corrige: quanto dinheiro a carga deu por realizado e as
+        # telas nao enxergam. Ver o comentario em `conferencia_do_pago`.
+        conferencia = None if vazia else consultas.conferencia_do_pago()
     return render_template(
         "painel_config.html", **contexto,
         migracoes=estado_migracoes,
@@ -1111,6 +1117,7 @@ def configuracoes():
         base_vazia=vazia,
         primeira=request.args.get("primeira") == "1",
         etapas=etapas,
+        conferencia=conferencia,
         modos=tarefas.MODOS,
         sincronizacao=sincronizacao,
     )

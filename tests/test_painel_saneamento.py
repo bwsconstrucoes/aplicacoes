@@ -529,3 +529,76 @@ def test_a_alteracao_chega_por_titulo_pela_tela(cliente_web, monkeypatch):
     assert r.status_code == 200
     assert pedidos[0] == [{"codigo": "501", "categoria": "2.02", "departamento": ""},
                           {"codigo": "502", "categoria": "", "departamento": "D9"}]
+
+
+# ===========================================================================
+# 5. O Explorador não esconde nada
+# ===========================================================================
+# 13/09/2026: o dono procurou uma devolução de aporte de 24/12/2025, conciliada
+# nessa data. Uma devolução do mesmo dia aparecia, essa não — e uma saída de
+# transferência também não. A causa: a categoria delas está marcada como
+# transferência no OMIE, e a tela escondia TRF por padrão. Numa tela cujo
+# trabalho é ACHAR classificação errada, esconder uma classe inteira é o
+# oposto do trabalho. "Aqui era pra aparecer todos os lançamentos igual como
+# aparece no relatório de conta corrente do OMIE."
+
+@pytest.fixture()
+def base_com_transferencia(base_de_saneamento):
+    from app.apps.painel import consultas, db as painel_db
+    with painel_db.conexao() as conn:
+        for codigo, analise, quem in ((7777, "TRF", "SOCIO FULANO"),
+                                      (7778, "Fluxo de Caixa", "SOCIO BELTRANO")):
+            conn.execute(
+                "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao, data,"
+                " categoria, codigo_categoria, grupo, departamento, projeto,"
+                " conta_corrente, razao_social, numero_documento,"
+                " pago_recebido, a_pagar_receber, juros, multa)"
+                " VALUES (?,'2. Contas a Pagar',?,'Pago','2025-12-24',"
+                "         'Devolução de aporte','2.09','Aportes','CASA','ALFA',"
+                "         'BRADESCO 123',?,'DEV 24-12',-50000,0,0,0)",
+                (codigo, analise, quem))
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+def _pedido(**extra):
+    base = {"analises": [], "grupos": [], "categorias": [], "obras": [],
+            "projetos": [], "contas": [], "situacoes": [], "tipo": "",
+            "busca": "", "com_trf": False, "de": "", "ate": ""}
+    base.update(extra)
+    return base
+
+
+def test_transferencia_aparece_sem_precisar_marcar_nada(base_com_transferencia):
+    """O caso exato do dono: dois lançamentos no mesmo dia, um deles em
+    categoria de transferência. Os DOIS têm de aparecer."""
+    from app.apps.painel import consultas
+    linhas = consultas.explorar(_pedido(de="2025-12-24", ate="2025-12-24"))["linhas"]
+    quem = {l["razao_social"] for l in linhas}
+    assert {"SOCIO FULANO", "SOCIO BELTRANO"} <= quem, \
+        "a tela de achar erro de classificação não pode esconder uma classe inteira"
+
+
+def test_quem_quiser_cortar_por_analise_ainda_corta(base_com_transferencia):
+    """Mostrar tudo por padrão não pode custar o filtro: marcar Análise = TRF
+    continua trazendo só as transferências."""
+    from app.apps.painel import consultas
+    linhas = consultas.explorar(
+        _pedido(de="2025-12-24", ate="2025-12-24", analises=["TRF"]))["linhas"]
+    assert {l["razao_social"] for l in linhas} == {"SOCIO FULANO"}
+
+    linhas = consultas.explorar(
+        _pedido(de="2025-12-24", ate="2025-12-24",
+                analises=["Fluxo de Caixa"]))["linhas"]
+    assert {l["razao_social"] for l in linhas} == {"SOCIO BELTRANO"}
+
+
+def test_as_telas_de_analise_continuam_tirando_a_transferencia(base_com_transferencia):
+    """A mudança é SÓ do Explorador. No DRE e na Visão Geral a transferência
+    tem de continuar fora: é dinheiro trocando de conta da própria empresa, e
+    somá-la contaria o mesmo valor duas vezes."""
+    from app.apps.painel import consultas
+    filtro = consultas.Filtros(excluir_trf=True)
+    onde, _ = filtro.where()
+    assert "analise <> 'TRF'" in onde
