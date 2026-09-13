@@ -15,6 +15,9 @@
     <div class="dica">A pagar e a receber moram na mesma lista. Somados no
       mesmo número, um esconde o outro.</div></div>
   <div class="campo"><label>Empresa</label><select id="f-empresa"><option value="">Todas</option></select></div>
+  {# Projeto é o agrupamento de obras que o dono pediu em 13/09/2026: ele quer
+     ver o SOMATÓRIO das obras de um projeto, e não obra a obra. #}
+  <div class="campo"><label>Projeto</label><select id="f-projeto"><option value="">Todos</option></select></div>
   <div class="campo"><label>Obra</label><select id="f-obra"><option value="">Todas</option></select></div>
   <div class="campo"><label>Grupo do plano</label><select id="f-grupo"><option value="">Todos</option></select></div>
   <div class="campo"><label>Credor</label><select id="f-credor"><option value="">Todos</option></select></div>
@@ -49,6 +52,7 @@
         <option value="situacao">Situação</option>
         <option value="dedutibilidade">Dedutibilidade</option>
         <option value="empresa">Empresa</option>
+        <option value="projeto">Projeto (soma das obras dele)</option>
         <option value="especie">Espécie (a pagar × a receber)</option>
       </select></div>
     <div class="campo" id="campo-fluxo" style="margin:0; display:none">
@@ -79,6 +83,11 @@ async function cadastros(){
       d.dados.obras.map(o=>`<option value="${o.id}">${o.codigo} · ${o.nome}</option>`).join("");
     els("f-empresa").innerHTML = `<option value="">Todas</option>` +
       (d.dados.empresas || []).map(e=>`<option value="${e.id}">${escapar(e.nome)}</option>`).join("");
+    try {
+      const pj = await api("/erp/api/projetos");
+      els("f-projeto").innerHTML = `<option value="">Todos</option>` +
+        pj.projetos.map(p=>`<option value="${p.id}">${escapar(p.codigo)} · ${escapar(p.nome)}</option>`).join("");
+    } catch(e) { /* migração 066 pendente: o filtro fica só com "Todos" */ }
     const grupos = {};
     d.dados.categorias.forEach(c => grupos[c.grupo_codigo] = c.grupo_nome);
     els("f-grupo").innerHTML = `<option value="">Todos</option>` +
@@ -96,6 +105,7 @@ function filtros(){
     obra_id: els("f-obra").value || null, grupo: els("f-grupo").value || null,
     credor_id: els("f-credor").value || null, natureza: els("f-natureza").value || null,
     empresa_id: els("f-empresa").value || null,
+    projeto_id: els("f-projeto").value || null,
     especie: els("f-especie").value || "pagar",
     apenas_pagos: els("f-pagos").checked};
 }
@@ -331,6 +341,7 @@ function filtrosLegiveis(){
   if (els("f-de").value)   f["Competência de"] = els("f-de").value;
   if (els("f-ate").value)  f["Competência até"] = els("f-ate").value;
   if (els("f-empresa").value) f["Empresa"] = texto("f-empresa");
+  if (els("f-projeto").value) f["Projeto"] = texto("f-projeto");
   if (els("f-obra").value)    f["Obra"] = texto("f-obra");
   if (els("f-grupo").value)   f["Grupo do plano"] = texto("f-grupo");
   if (els("f-credor").value)  f["Credor"] = texto("f-credor");

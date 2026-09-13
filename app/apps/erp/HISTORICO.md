@@ -21,7 +21,13 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### TRAZ AS MIGRAÇÕES 061 A 065 — o botão tem de ser apertado junto com a publicação
+### TRAZ AS MIGRAÇÕES 061 A 066 — o botão tem de ser apertado junto com a publicação
+
+A **066** cria o **PROJETO** (um conjunto de obras que se olha somado) e o
+**alcance do operador por empresa e por projeto**, além da obra. Acrescenta a
+tabela `projetos`, a coluna `obras.projeto_id` e duas tabelas de ligação. Não
+tira acesso de ninguém: sem projeto marcado, tudo segue como está.
+
 
 A **065** é a maior delas: o **perfil de acesso vira cadastro**. Cria as
 tabelas `perfis` e `perfil_secoes`, acrescenta duas colunas em `usuarios`
@@ -111,6 +117,100 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
   algum mês antigo, é quase certo que seja isto: dois pagamentos iguais no
   mesmo dia viraram um. Reimportar o OFX daquele período resolve, porque a
   linha que falta passa a ter identidade própria.
+
+---
+
+**Estado em 13/09/2026 (vigésima segunda entrega):** **projeto agrupa obras, o
+alcance do operador ganha três alturas, e o perfil passa a ESCONDER a área que
+não libera.** **TRAZ A MIGRAÇÃO 066.**
+
+### O que o dono fechou, nas palavras dele
+
+*"Nós temos o perfil de acesso. O perfil vai dizer quais áreas do sistema
+aquela pessoa vai poder acessar, e se ela tem poderes apenas de visualização ou
+de edição. Aí nós teremos os usuários: eu associo ele a obras ou não — a uma
+obra, ou mais obras, ou a todas."*
+
+E acrescentou o que faltava:
+
+*"No cadastro das obras eu precisaria criar PROJETOS, porque com projetos eu
+faço uma associação de algumas obras e coloco todas dentro do projeto (…) tudo
+que eu for visualizar em relação a elas — relatórios, resultados, custos — eu
+poder visualizar o projeto, ou seja, o somatório daquelas obras. (…) E a gente
+poder adicionar ao usuário a obra, ou um projeto, ou todas as obras, ou uma
+empresa ou outra empresa."*
+
+E respondeu, de uma vez, a pergunta que voltava:
+
+*"Se a pessoa está liberada apenas pra visualizar lançamento financeiro, ela
+não tem que ver nada do suprimento. Não vai ver cadastro de suprimento, de
+insumo, pedidos de compra — não vai ver nada disso se eu não disponibilizar pra
+aquele perfil."*
+
+### Como ficou
+
+**1. Projeto.** Cadastro em **Obras › ▦ Projetos**: código, nome e quais obras
+entram. Obra pertence a **um** projeto só — em dois, o somatório contaria a
+mesma obra duas vezes. A obra também escolhe o projeto pela ficha dela. Nos
+relatórios entrou **agrupar por projeto** e **filtrar por projeto**; obra fora
+de projeto aparece numa linha chamada **"Sem projeto"**, em vez de sumir. O
+assistente responde *"quanto custou o projeto X"* somado, nas mesmas duas
+visões (comprometido e executado).
+
+**2. O alcance do operador tem três alturas, e elas se somam:** empresa,
+projeto e obra. **A obra continua sendo a unidade do recorte** — empresa e
+projeto são jeitos de NOMEAR um conjunto de obras, resolvido na hora da
+consulta. Duas consequências que valem o registro:
+
+- **obra nova dentro de um projeto já marcado entra sozinha** no alcance de
+  quem tem o projeto: ninguém precisa voltar no cadastro de cada pessoa;
+- **todo o recorte que já existia** (títulos, notas, agenda, colaboradores,
+  suprimentos) passou a obedecer empresa e projeto **sem uma linha a mais em
+  cada lugar**, porque tudo passa pela mesma função.
+
+**3. O perfil esconde a área.** O módulo, as abas e o cartão da tela de início
+somem para quem o perfil não libera. Para isso, cinco telas que só pediam
+"estar no ERP" ganharam **ação própria** (Solicitações, Fundo fixo, Empreitas,
+Painel de obras e Locações) — todas nascendo liberadas para os onze perfis
+prontos, ou seja, **ninguém perde nada**; o que muda é que agora dá para tirar,
+perfil a perfil, na tela. Esconder **não é a trava**: a trava continua sendo a
+recusa da rota, e a suíte prova as duas coisas.
+
+### Três coisas que apareceram no caminho
+
+1. **A tela de início contava a agenda para quem não tem agenda.** "2
+   obrigações vencidas" aparecia para um perfil que não abre a tela — e sem
+   poder fazer nada a respeito. Sumiu junto com o módulo.
+2. **O botão do módulo apontava para a primeira aba da lista**, que pode ser
+   justamente a que a pessoa não abre. Agora aponta para a primeira que ela
+   abre.
+3. **A lista de projetos não pode entregar o nome das obras.** Ela é aberta a
+   quem entra no ERP (o projeto é filtro de tela); quem é preso a uma obra não
+   tem por que saber o nome das outras. O detalhe, esse exige `configurar`.
+
+### Conferência
+
+- Suíte sem banco: passa (inclusive duas travas estruturais novas — toda aba do
+  menu tem de ter ação própria, e o botão do módulo tem de levar a uma tela que
+  a pessoa abre).
+- `tests/test_projetos_e_alcance_banco.py`: 15 casos com Postgres de verdade,
+  entre eles o que prova que **obra nova no projeto entra sozinha** no alcance.
+- `tests/test_perfis_cadastro_banco.py`: 27 casos, dois deles novos —
+  perfil só de financeiro recebe 403 em Suprimentos, Obras e Configurações, e
+  não vê esses módulos no menu.
+- Telas exercitadas no navegador: criar projeto com obras, filtrar obras por
+  projeto, relatório somado por projeto, cadastro do operador com empresa e
+  projeto, e a comparação do menu entre o administrador e um perfil só de
+  financeiro.
+
+### O que fica pendente do lado do dono
+
+1. **Apertar "Aplicar atualizações do banco" no mesmo momento da publicação**
+   (migrações 061 a 066).
+2. **Criar os projetos** em Obras › ▦ Projetos e pendurar as obras.
+3. **Montar os perfis que ele descreveu** — administrador financeiro,
+   comprador, diretoria, diretoria de obras — e apontar cada operador para o
+   seu, marcando empresa, projeto ou obras.
 
 ---
 

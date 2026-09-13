@@ -635,6 +635,13 @@ Perguntas que passam a funcionar:
 - OK **Fulano pode pagar? E por quê — veio do perfil ou foi marcado nele?**
   ⚠️ **Depende de quem pergunta**: só quem cadastra operador alcança isso.
 
+Desde 13/09/2026 o perfil também **esconde a área que não libera**: quem não
+tem Suprimentos não vê o módulo, nem as abas dele, nem a tela de início
+oferecendo — decisão do dono, com estas palavras: *"se a pessoa está liberada
+apenas pra visualizar lançamento financeiro, ela não tem que ver nada do
+suprimento"*. Esconder não é a trava (a trava é a recusa da rota), é para o
+menu não oferecer o que vai responder "sem permissão".
+
 ⚠️ **Palavra ambígua que entrou junto: "acesso".** Ela quer dizer duas coisas
 diferentes, e a resposta muda conforme a que se pediu:
 
@@ -650,6 +657,40 @@ O que ainda **não** responde:
   fica registrada, mas não há pergunta pronta que leia esse histórico.
 - FALTA **"Este perfil está sobrando?"** — ninguém mede quais seções de um
   perfil nunca foram usadas por quem está nele.
+
+## 3k. PROJETO: um punhado de obras olhado somado
+
+Em 13/09/2026 nasceu o **projeto**: um conjunto de obras que se olha junto.
+A hierarquia do sistema passou a ser **empresa › projeto › obra**, e obra sem
+projeto continua sendo o caso comum.
+
+Perguntas que passam a funcionar:
+
+- OK **Quanto custou o projeto Creches 2026?** — vem SOMADO, não obra a obra,
+  nas mesmas duas visões: comprometido e executado.
+- OK **Quanto cada projeto comprometeu no ano?**
+- OK **Quais obras estão no projeto X?**
+- OK **Qual obra está fora de qualquer projeto?**
+- OK **Quanto esta empresa do grupo gastou?** — já existia; agora convive com
+  o projeto na mesma tela de relatórios.
+
+⚠️ **Duas palavras para não confundir**, e a diferença muda o número:
+
+- **empresa** é o CNPJ que executa a obra;
+- **projeto** é um agrupamento que VOCÊ define, e pode até misturar obras de
+  empresas diferentes.
+
+Somar "projeto" achando que é "empresa" dá um número que parece certo e não é.
+Por isso a linha das obras sem projeto aparece com o nome **"Sem projeto"** —
+número que some é pior que número errado, porque ninguém procura o que não
+sabe que falta.
+
+O que ainda **não** responde:
+
+- FALTA **"Este projeto está dentro do orçamento?"** — continua faltando
+  orçamento, que é a resposta que mais muda uma decisão.
+- FALTA **"Qual o resultado do projeto?"** — depende de fechar a palavra
+  "resultado da obra", que segue indefinida.
 
 ## 4. Como esta lista vira código
 

@@ -46,6 +46,18 @@ CARGO_E_PERFIL = {
 }
 
 
+def _modulos_do_menu(html: str) -> list[str]:
+    """Os botões de MÓDULO que a página desenhou, na ordem."""
+    import re
+    return re.findall(r'class="modulo-btn[^"]*"[^>]*>([^<]+)</a>', html)
+
+
+def _abas_do_menu(html: str) -> list[str]:
+    """As abas do módulo aberto."""
+    import re
+    return re.findall(r'class="topo-aba[^"]*"\s*\n?\s*href="[^"]*">([^<]+)</a>', html)
+
+
 def _pessoa(s, chave, cargo, *, perfil_id=None, todas=False):
     u = Usuario(nome=f"Teste {chave}", email=f"{chave}@teste.bws.local",
                 senha_hash=SENHA, perfil=cargo, perfil_id=perfil_id,
@@ -256,3 +268,58 @@ def test_o_catalogo_cobre_todas_as_acoes_do_sistema(sessao_real):
         cobertas |= set(s_["ler"]) | set(s_["editar"])
     assert sorted(set(PERMISSOES) - cobertas) == []
     assert sorted(cobertas - set(PERMISSOES)) == []
+
+
+# ---------------------------------------------------------------------------
+# 5. O perfil ESCONDE a área que ele não libera (13/09/2026)
+# ---------------------------------------------------------------------------
+def test_perfil_so_de_financeiro_nao_ve_nada_de_suprimentos(sessao_real, app_real):
+    """A frase do dono, virada teste: *"se a pessoa está liberada apenas pra
+    visualizar lançamento financeiro, ela não tem que ver nada do suprimento.
+    Não vai ver cadastro de suprimento, de insumo, pedidos de compra"*.
+
+    Duas metades, e as duas contam: a TELA some do menu, e a rota RECUSA. A
+    primeira é conforto; a segunda é a trava.
+    """
+    from conftest import como
+
+    s = sessao_real
+    perfil = svc.criar(s, {"nome": "Só financeiro",
+                           "secoes": {"fin_lancar": cat.EDITAR,
+                                      "fin_titulos": cat.LER}}, None)
+    u = _pessoa(s, "so-financeiro", P.LANCADOR, perfil_id=perfil["id"], todas=True)
+    s.commit()
+    cliente = como(app_real, u.id)
+
+    # A trava: as telas de Suprimentos e de Obras recusam.
+    for rota in ("/erp/suprimentos", "/erp/suprimentos/insumos",
+                 "/erp/suprimentos/pedidos", "/erp/obras", "/erp/configuracoes"):
+        assert cliente.get(rota).status_code == 403, rota
+
+    # O que ela abre continua abrindo.
+    for rota in ("/erp/lancar", "/erp/titulos"):
+        assert cliente.get(rota).status_code == 200, rota
+
+    # E o menu não oferece o que vai responder 403. Confere-se no MENU, e não
+    # na página inteira: "Suprimentos" aparece em comentário de código dentro
+    # da tela, e procurar a palavra solta daria um verde falso ao contrário.
+    pagina = cliente.get("/erp/titulos").get_data(as_text=True)
+    assert _modulos_do_menu(pagina) == ["Financeiro", "Administração"]
+    assert "Pedidos" not in _abas_do_menu(pagina)
+
+
+def test_quem_tem_suprimentos_continua_vendo_suprimentos(sessao_real, app_real):
+    """A outra ponta: esconder por perfil não pode esconder de quem tem."""
+    from conftest import como
+
+    s = sessao_real
+    perfil = svc.criar(s, {"nome": "Comprador",
+                           "secoes": {"sup_comprar": cat.EDITAR,
+                                      "sup_cadastros": cat.EDITAR}}, None)
+    u = _pessoa(s, "comprador-completo", P.LANCADOR,
+                perfil_id=perfil["id"], todas=True)
+    s.commit()
+    cliente = como(app_real, u.id)
+    assert cliente.get("/erp/suprimentos").status_code == 200
+    pagina = cliente.get("/erp/suprimentos").get_data(as_text=True)
+    assert "Suprimentos" in _modulos_do_menu(pagina)

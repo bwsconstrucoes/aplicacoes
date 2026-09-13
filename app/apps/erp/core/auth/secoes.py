@@ -90,10 +90,14 @@ SECOES: list[dict[str, Any]] = [
     # ---------------------------------------------------------- Financeiro
     {"chave": "fin_lancar", "area": "Financeiro", "nome": "Lançar e Fundo fixo",
      "explicacao": "criar solicitação de pagamento e prestação de fundo fixo",
-     "ler": [], "editar": ["lancar"]},
+     "ler": ["ver_fundo_fixo"], "editar": ["lancar"]},
     {"chave": "fin_titulos", "area": "Financeiro", "nome": "Solicitações",
-     "explicacao": "cancelar lançamento de outra pessoa e trocar a conta do plano",
-     "ler": [], "editar": ["cancelar_titulo", "reclassificar"]},
+     "explicacao": ("a lista dos lançamentos e a fila de confirmação; editar "
+                    "cancela o de outra pessoa e troca a conta do plano"),
+     "ler": ["ver_titulos"], "editar": ["cancelar_titulo", "reclassificar"]},
+    {"chave": "fin_empreitas", "area": "Financeiro", "nome": "Empreitas",
+     "explicacao": "contratos de empreita e as medições que consomem o saldo",
+     "ler": ["ver_empreitas"], "editar": []},
     # Confirmar e aprovar são DUAS seções, e não uma, porque na BWS são dois
     # passos de duas pessoas diferentes: quem confirma na obra não é quem
     # libera para pagamento. Juntar as duas num nível só daria aprovação a
@@ -121,6 +125,9 @@ SECOES: list[dict[str, Any]] = [
      "explicacao": "totais, DRE gerencial, fluxo de caixa e curva ABC",
      "ler": ["ver_relatorios"], "editar": []},
     # --------------------------------------------------------------- Obras
+    {"chave": "obr_obras", "area": "Obras", "nome": "Painel de obras",
+     "explicacao": "a lista das obras, com contrato, vigência e alertas",
+     "ler": ["ver_obras"], "editar": []},
     {"chave": "obr_contratos", "area": "Obras", "nome": "Contratos e medições",
      "explicacao": "o quadro financeiro do contrato, medições e faturamento",
      "ler": ["ver_contratos"], "editar": []},
@@ -147,6 +154,9 @@ SECOES: list[dict[str, Any]] = [
     {"chave": "sup_autorizar", "area": "Suprimentos", "nome": "Autorização de pedido",
      "explicacao": "liberar o pedido de compra fechado",
      "ler": ["ver_pedidos_compra"], "editar": ["autorizar_pedido"]},
+    {"chave": "sup_locacoes", "area": "Suprimentos", "nome": "Locações",
+     "explicacao": "equipamentos locados, parcelas e a conferência mensal",
+     "ler": ["ver_locacoes"], "editar": []},
     {"chave": "sup_cadastros", "area": "Suprimentos", "nome": "Insumos e fornecedores",
      "explicacao": "o catálogo de materiais e o cadastro de fornecedores",
      "ler": ["ver_suprimentos"],

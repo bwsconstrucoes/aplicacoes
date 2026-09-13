@@ -374,6 +374,60 @@ class FornecedorConta(Base):
     fornecedor: Mapped[Fornecedor] = relationship(back_populates="contas")
 
 
+class Projeto(Base):
+    """Um conjunto de obras que se olha junto (migração 066).
+
+    Pedido do dono em 13/09/2026: *"com projetos eu faço uma associação de
+    algumas obras e coloco todas dentro do projeto (…) tudo que eu for
+    visualizar em relação a elas — relatórios, resultados, custos — eu poder
+    visualizar o projeto, ou seja, o somatório daquelas obras"*.
+
+    Obra sem projeto continua sendo o caso comum: o projeto é opcional.
+    """
+    __tablename__ = "projetos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    codigo: Mapped[str] = mapped_column(Text, nullable=False, unique=True)
+    nome: Mapped[str] = mapped_column(Text, nullable=False)
+    descricao: Mapped[Optional[str]] = mapped_column(Text)
+    # Opcional: há projeto que atravessa empresas do grupo.
+    empresa_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("empresas.id"))
+    ativo: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    criado_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    criado_por: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id"))
+
+
+class UsuarioProjeto(Base):
+    """O alcance do operador dito no nível do PROJETO (migração 066).
+
+    Quem tem o projeto alcança as obras dele — inclusive as que forem
+    penduradas no projeto DEPOIS. É a razão de o conjunto ser resolvido na
+    consulta, e não copiado para `usuario_obras` no momento da marcação.
+    """
+    __tablename__ = "usuario_projetos"
+
+    usuario_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True)
+    projeto_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("projetos.id", ondelete="CASCADE"), primary_key=True)
+
+
+class UsuarioEmpresa(Base):
+    """O alcance do operador dito no nível da EMPRESA (migração 066).
+
+    Alcança todas as obras daquele CNPJ, inclusive as que nascerem depois.
+    """
+    __tablename__ = "usuario_empresas"
+
+    usuario_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True)
+    empresa_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("empresas.id", ondelete="CASCADE"), primary_key=True)
+
+
 class Obra(Base):
     __tablename__ = "obras"
 
@@ -408,6 +462,10 @@ class Obra(Base):
     # disparo da cotação é que exige.
     empresa_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("empresas.id"))
+    # O projeto que agrupa esta obra — migração 066. Opcional, e o comum é não
+    # ter: projeto existe para somar um punhado de obras que se olha junto.
+    projeto_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("projetos.id"))
     responsavel_tecnico: Mapped[Optional[str]] = mapped_column(Text)
     art_rrt: Mapped[Optional[str]] = mapped_column(Text)
     engenheiro_fiscal: Mapped[Optional[str]] = mapped_column(Text)

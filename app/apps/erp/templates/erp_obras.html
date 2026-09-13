@@ -10,6 +10,14 @@
       <span class="filtro-badge" id="badge-fase">0</span><span class="seta">▾</span></button>
     <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-fase"></div></div>
   </div>
+  {# Projeto é o agrupamento que o dono pediu em 13/09/2026: um punhado de
+     obras que ele quer olhar SOMADAS. Aqui ele serve de filtro; o somatório
+     em si sai no relatório. #}
+  <div class="filtro aberto">
+    <button class="filtro-cab" type="button"><span>Projeto</span>
+      <span class="filtro-badge" id="badge-projeto">0</span><span class="seta">▾</span></button>
+    <div class="filtro-cont"><div class="filtro-opcoes" id="opcoes-projeto"></div></div>
+  </div>
   <div class="filtro aberto">
     <button class="filtro-cab" type="button"><span>Atenção</span><span class="seta">▾</span></button>
     <div class="filtro-cont">
@@ -35,6 +43,7 @@
     <span class="espaco"></span>
     <span id="exportar" style="display:flex; gap:6px"></span>
     <button class="btn secundario" id="btn-mapa">🗺 Mapa</button>
+    <button class="btn secundario" id="btn-projetos">▦ Projetos</button>
     <button class="btn secundario" id="btn-nova">+ Nova obra</button>
   </div>
   <div class="tabela-rolagem">
@@ -58,7 +67,8 @@
 
 {% block scripts %}
 <script>
-let OBRAS = [], FASES = [], CONTAS = [], F = {fase: new Set()}, ORDEM = {campo:"codigo", asc:true};
+let OBRAS = [], FASES = [], CONTAS = [], PROJETOS = [],
+    F = {fase: new Set(), projeto: new Set()}, ORDEM = {campo:"codigo", asc:true};
 const CATEGORIAS_ANEXO = ["CONTRATO","ART","SEGURO","OS","MEDICAO","OUTRO"];
 
 document.querySelectorAll(".filtro-cab").forEach(b =>
@@ -67,7 +77,7 @@ document.querySelectorAll(".filtro-cab").forEach(b =>
 async function carregar(){
   try {
     const d = await api("/erp/api/obras");
-    OBRAS = d.obras; FASES = d.fases;
+    OBRAS = d.obras; FASES = d.fases; PROJETOS = d.projetos || [];
     if (!CONTAS.length) {
       try { CONTAS = (await api("/erp/api/contas")).contas; } catch(e) { CONTAS = []; }
     }
@@ -85,6 +95,25 @@ function montarFiltros(){
   els("badge-fase").textContent = F.fase.size;
   document.querySelectorAll("[data-fase]").forEach(i=>i.addEventListener("change", ev=>{
     ev.target.checked ? F.fase.add(ev.target.dataset.fase) : F.fase.delete(ev.target.dataset.fase);
+    montarFiltros(); desenhar();
+  }));
+
+  const contP = {};
+  OBRAS.forEach(o => { const k = o.projeto_id || "sem";
+                       contP[k] = (contP[k]||0)+1; });
+  els("opcoes-projeto").innerHTML = PROJETOS.map(p=>`
+    <label class="opcao ${contP[p.id]?"":"zerada"}">
+      <input type="checkbox" data-projeto="${p.id}" ${F.projeto.has(String(p.id))?"checked":""}>
+      <span class="rotulo">${escapar(p.codigo)} · ${escapar(p.nome)}</span>
+      <span class="qtd">${contP[p.id]||0}</span></label>`).join("") +
+    `<label class="opcao ${contP["sem"]?"":"zerada"}">
+      <input type="checkbox" data-projeto="sem" ${F.projeto.has("sem")?"checked":""}>
+      <span class="rotulo">Sem projeto</span>
+      <span class="qtd">${contP["sem"]||0}</span></label>`;
+  els("badge-projeto").textContent = F.projeto.size;
+  document.querySelectorAll("[data-projeto]").forEach(i=>i.addEventListener("change", ev=>{
+    const v = ev.target.dataset.projeto;
+    ev.target.checked ? F.projeto.add(v) : F.projeto.delete(v);
     montarFiltros(); desenhar();
   }));
 }
@@ -107,6 +136,7 @@ function visiveis(){
   const b = (els("f-busca").value||"").toLowerCase().trim();
   let l = OBRAS.filter(o => {
     if (F.fase.size && !F.fase.has(o.fase)) return false;
+    if (F.projeto.size && !F.projeto.has(String(o.projeto_id || "sem"))) return false;
     if (els("f-vigencia").checked && !(o.vence_em_dias !== null && o.vence_em_dias <= 90)) return false;
     if (els("f-reajuste").checked && !(o.reajuste_em_dias !== null && o.reajuste_em_dias <= 60)) return false;
     if (els("f-fiscal").checked && o.aliquota_iss) return false;
@@ -411,6 +441,12 @@ async function painel(i, id){
           ${(CONTAS||[]).map(x=>`<option value="${x.id}" ${String(d.conta_bancaria_id)===String(x.id)?"selected":""}>${x.descricao}</option>`).join("")}
           </select><div class="dica">De onde saem os pagamentos desta obra — serve de
           filtro nas solicitações.</div></div>
+        <div class="campo"><label>Projeto</label>
+          <select id="o-projeto"><option value="">— sem projeto —</option>
+          ${(PROJETOS||[]).map(x=>`<option value="${x.id}" ${String(d.projeto_id)===String(x.id)?"selected":""}>${escapar(x.codigo)} · ${escapar(x.nome)}</option>`).join("")}
+          </select><div class="dica">Projeto agrupa obras que você quer olhar
+          SOMADAS — em relatório, em custo, em resultado. Obra sem projeto é o
+          caso comum.</div></div>
         ${campo("Fiscal do contrato","o-fiscal",d.engenheiro_fiscal)}
       </div>
 
@@ -431,7 +467,7 @@ async function painel(i, id){
         numero_endereco:"o-numero", bairro:"o-bairro", municipio:"o-municipio", uf:"o-uf",
         cep:"o-cep", cno:"o-cno", art_rrt:"o-art", responsavel_tecnico:"o-rt",
         engenheiro_fiscal:"o-fiscal", latitude:"o-lat", longitude:"o-lng",
-        conta_bancaria_id:"o-conta"});
+        conta_bancaria_id:"o-conta", projeto_id:"o-projeto"});
       carregarResponsaveis(id);
       return;
     }
@@ -852,6 +888,98 @@ function codigosRecentes(){
   return OBRAS.slice().sort((a,b)=>b.id-a.id).slice(0,4).map(o=>o.codigo);
 }
 
+// ---------------------------------------------------------------------------
+// PROJETOS — o punhado de obras que se olha junto (migração 066)
+//
+// Pedido do dono em 13/09/2026. Fica AQUI, no painel de obras, e não em
+// Configurações, porque projeto é assunto de quem toca obra: quem cria a obra
+// é quem sabe a que projeto ela pertence.
+// ---------------------------------------------------------------------------
+function abrirProjetos(){
+  els("dlg-titulo").textContent = "Projetos";
+  els("dlg-corpo").innerHTML = `<div id="dlg-msg"></div>
+    <div class="cartao-dica">Projeto é um conjunto de obras que você quer olhar
+      <b>somado</b> — em relatório, em custo, em resultado. Obra pode ficar
+      fora de projeto, e esse é o caso comum. No cadastro do operador, dar o
+      PROJETO a alguém dá junto todas as obras dele, inclusive as que entrarem
+      depois.</div>
+    <table style="margin-top:10px"><thead><tr><th>Código</th><th>Projeto</th>
+      <th>Empresa</th><th class="direita">Obras</th></tr></thead>
+      <tbody id="tb-projetos"></tbody></table>
+    <div style="margin-top:12px"><button class="btn secundario" id="pj-novo">+ Novo projeto</button></div>
+    <div id="pj-form"></div>`;
+  desenharProjetos();
+  els("pj-novo").addEventListener("click", () => formProjeto(null));
+  els("dlg").showModal();
+}
+
+function desenharProjetos(){
+  els("tb-projetos").innerHTML = PROJETOS.length ? PROJETOS.map(p=>`
+    <tr style="cursor:pointer" data-pj="${p.id}" title="Clique para editar">
+      <td class="dados">${escapar(p.codigo)}</td><td>${escapar(p.nome)}</td>
+      <td><small>${escapar(p.empresa_nome || "—")}</small></td>
+      <td class="direita">${p.quantas_obras}</td></tr>`).join("")
+    : `<tr><td colspan="4"><small>Nenhum projeto cadastrado ainda.</small></td></tr>`;
+  document.querySelectorAll("[data-pj]").forEach(tr =>
+    tr.addEventListener("click", () => formProjeto(PROJETOS.find(x=>x.id===+tr.dataset.pj))));
+}
+
+function formProjeto(p){
+  const novo = !p;
+  p = p || {codigo:"", nome:"", descricao:"", obras:[], quantas_obras:0};
+  const dentro = new Set((p.obras||[]).map(o=>o.id));
+  els("pj-form").innerHTML = `
+    <h4 style="margin-top:16px">${novo ? "Novo projeto" : "Editar " + escapar(p.codigo)}</h4>
+    <div class="form-grade">
+      <div class="campo"><label>Código *</label>
+        <input id="pj-codigo" value="${escapar(p.codigo||"")}" placeholder="CRECHES-2026"></div>
+      <div class="campo" style="grid-column:span 2"><label>Nome *</label>
+        <input id="pj-nome" value="${escapar(p.nome||"")}" placeholder="Creches do Eusébio"></div>
+      <div class="campo" style="grid-column:span 3"><label>Descrição</label>
+        <input id="pj-desc" value="${escapar(p.descricao||"")}"></div>
+    </div>
+    <div class="campo" style="margin-top:10px"><label>Obras deste projeto</label>
+      <div class="filtro-opcoes" style="max-height:240px; border:1px solid var(--borda);
+           border-radius:8px; padding:6px">
+        ${OBRAS.map(o=>`<label class="opcao"><input type="checkbox" class="pj-obra"
+           value="${o.id}" ${dentro.has(o.id)?"checked":""}
+           ${(o.projeto_id && !dentro.has(o.id)) ? "disabled" : ""}>
+          <span class="rotulo">${escapar(o.codigo)} · ${escapar(o.nome)}${
+            (o.projeto_id && !dentro.has(o.id)) ? " — já está em outro projeto" : ""}</span>
+        </label>`).join("")}
+      </div>
+      <div class="dica">Obra pertence a <b>um</b> projeto só — senão o somatório
+        contaria a mesma obra duas vezes.</div></div>
+    <div style="margin-top:12px; display:flex; gap:10px; align-items:center">
+      <button class="btn" id="pj-salvar">Salvar</button>
+      ${novo ? "" : `<button class="btn secundario" id="pj-arquivar">Arquivar</button>`}
+    </div>`;
+
+  els("pj-salvar").addEventListener("click", async () => {
+    const corpo = {codigo: els("pj-codigo").value, nome: els("pj-nome").value,
+      descricao: els("pj-desc").value,
+      obras: [...document.querySelectorAll(".pj-obra:checked")].map(i=>+i.value)};
+    try {
+      await api(novo ? "/erp/api/projetos" : `/erp/api/projetos/${p.id}`,
+        {method:"POST", headers:{"Content-Type":"application/json"},
+         body: JSON.stringify(corpo)});
+      aviso("dlg-msg", novo ? "Projeto criado." : "Projeto atualizado.", "ok");
+      await carregar();
+      desenharProjetos(); els("pj-form").innerHTML = "";
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+  if (!novo) els("pj-arquivar").addEventListener("click", async () => {
+    try {
+      await api(`/erp/api/projetos/${p.id}`, {method:"POST",
+        headers:{"Content-Type":"application/json"}, body: JSON.stringify({arquivar:true})});
+      aviso("dlg-msg", "Projeto arquivado.", "ok");
+      await carregar(); desenharProjetos(); els("pj-form").innerHTML = "";
+    } catch(e){ aviso("dlg-msg", e.message, "erro"); }
+  });
+}
+
+els("btn-projetos").addEventListener("click", abrirProjetos);
+
 els("btn-nova").addEventListener("click", () => {
   NOVA_DOC = null;
   els("dlg-titulo").textContent = "Nova obra";
@@ -1110,7 +1238,7 @@ async function criarObraDoDocumento(){
 let deb; els("f-busca").addEventListener("input", ()=>{clearTimeout(deb); deb=setTimeout(desenhar,250);});
 ["f-vigencia","f-reajuste","f-fiscal","f-margem"].forEach(i=>els(i).addEventListener("change", desenhar));
 els("btn-limpar").addEventListener("click", ()=>{
-  F.fase.clear(); els("f-busca").value="";
+  F.fase.clear(); F.projeto.clear(); els("f-busca").value="";
   ["f-vigencia","f-reajuste","f-fiscal","f-margem"].forEach(i=>els(i).checked=false);
   montarFiltros(); desenhar();
 });

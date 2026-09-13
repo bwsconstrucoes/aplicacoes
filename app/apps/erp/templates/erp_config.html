@@ -433,6 +433,10 @@ document.addEventListener("DOMContentLoaded", () =>
 let DADOS = {categorias: [], obras: [], contas: [], usuarios: []};
 let OPCOES_CAT = "";
 let OPERADORES = [], PERFIS = [], PERFIS_CADASTRADOS = [];
+// Os dois níveis acima da obra (migração 066): marcar a EMPRESA alcança as
+// obras dela; marcar o PROJETO alcança as obras dele — inclusive as que
+// entrarem depois.
+let PROJETOS_CAD = [], EMPRESAS_CAD = [];
 // O catálogo de seções vem do servidor — é ele que sabe o que "só olhar" e
 // "olhar e mexer" liberam em cada tela. Repetir isso aqui seria a segunda
 // resposta possível para a mesma pergunta.
@@ -443,6 +447,8 @@ async function carregarOperadores(){
     const d = await api("/erp/api/usuarios");
     OPERADORES = d.usuarios; PERFIS = d.perfis;
     PERFIS_CADASTRADOS = d.perfis_cadastrados || [];
+    PROJETOS_CAD = d.projetos_cadastrados || [];
+    EMPRESAS_CAD = d.empresas_cadastradas || [];
     desenhar();
   } catch(e){ /* sem permissão para ver operadores */ }
 }
@@ -563,8 +569,20 @@ function alcanceDoOperador(u){
   if (u.ve_todas_as_obras === true) return "todas as obras";
   if (u.ve_todas_as_obras === false) {
     if (u.escopo_visao !== "OBRAS_DESIGNADAS") return "só o que ela lançou";
-    return u.obras.length ? u.obras.join(", ")
-      : "nenhuma obra marcada — não enxerga nada";
+    // O alcance pode vir de três alturas (migração 066): a linha diz as três,
+    // porque "3 obras" sem dizer que veio de um projeto engana quem confere.
+    const partes = [];
+    if (u.obras.length) partes.push(u.obras.join(", "));
+    (u.empresas||[]).forEach(id => {
+      const e = EMPRESAS_CAD.find(x=>x.id===id);
+      partes.push(`empresa ${e ? e.nome : id}`);
+    });
+    (u.projetos||[]).forEach(id => {
+      const p = PROJETOS_CAD.find(x=>x.id===id);
+      partes.push(`projeto ${p ? p.codigo : id}`);
+    });
+    return partes.length ? partes.join(" · ")
+      : "nada marcado — não enxerga nada";
   }
   const porObra = u.perfil === "SUPERVISOR_OBRA"
     || (["ADMINISTRATIVO_OBRA","LANCADOR"].includes(u.perfil)
@@ -608,13 +626,15 @@ function formOperador(u){
         <div class="dica">O cargo de antes dos perfis. Ele ainda decide para
           quem não tem perfil de acesso escolhido, e sai de cena quando todo
           mundo tiver.</div></div>
-      <div class="campo" id="op-escopo-bloco"><label>O que esta pessoa enxerga</label>
+      <div class="campo" id="op-escopo-bloco"><label>Dentro do alcance dela, o que vê</label>
         <select id="op-escopo">
-          <option value="PROPRIOS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"":"selected"}>Só os lançamentos dela</option>
-          <option value="OBRAS_DESIGNADAS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"selected":""}>Tudo das obras designadas</option>
+          <option value="OBRAS_DESIGNADAS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"selected":""}>Tudo das obras marcadas</option>
+          <option value="PROPRIOS" ${u.escopo_visao==="OBRAS_DESIGNADAS"?"":"selected"}>Só os lançamentos que ela fez</option>
         </select>
-        <div class="dica">Escolha por pessoa, não pelo cargo. Vale igual na
-          listagem e ao abrir um título.</div></div>
+        <div class="dica"><b>Tudo das obras marcadas</b> é o caso comum. <b>Só
+          os lançamentos dela</b> é mais apertado: nem o que o colega lançou na
+          mesma obra ela vê — e aí as marcações de obra abaixo não têm efeito
+          no financeiro.</div></div>
       <div class="campo"><label>${novo?"Senha *":"Nova senha (deixe vazio para manter)"}</label>
         <input id="op-senha" type="password" placeholder="mínimo 8 caracteres"></div>
       <div class="campo"><label>Situação</label><select id="op-ativo">
@@ -668,6 +688,40 @@ function formOperador(u){
         todo marcado, <b>âmbar</b> quando está pela metade.</div>
     </div>
 
+    <div id="op-aviso-proprios" class="cartao-dica" style="margin-top:12px; display:none">
+      Com <b>“só os lançamentos que ela fez”</b> não há o que marcar aqui: ela
+      enxerga o que ela mesma lançou, em qualquer obra. Para prendê-la a obras,
+      troque para <b>“tudo das obras marcadas”</b>.</div>
+
+    <div id="op-alcance-bloco" style="margin-top:12px">
+      <div class="cartao-dica">O alcance pode ser dito em três alturas, e elas
+        se somam: <b>empresa</b> (todas as obras daquele CNPJ), <b>projeto</b>
+        (as obras daquele projeto) e <b>obra</b> (uma a uma). Marcar a empresa
+        ou o projeto alcança também as obras que entrarem depois — sem precisar
+        voltar aqui.</div>
+      <div class="form-grade" style="margin-top:8px">
+        <div class="campo"><label>Empresas que esta pessoa alcança</label>
+          <div class="filtro-opcoes" style="max-height:140px; border:1px solid var(--borda);
+               border-radius:8px; padding:6px">
+            ${EMPRESAS_CAD.length ? EMPRESAS_CAD.map(e=>`<label class="opcao">
+              <input type="checkbox" class="op-empresa" value="${e.id}"
+                ${(u.empresas||[]).includes(e.id)?"checked":""}>
+              <span class="rotulo">${escapar(e.nome)}</span></label>`).join("")
+              : `<small>Nenhuma empresa cadastrada.</small>`}
+          </div></div>
+        <div class="campo"><label>Projetos que esta pessoa alcança</label>
+          <div class="filtro-opcoes" style="max-height:140px; border:1px solid var(--borda);
+               border-radius:8px; padding:6px">
+            ${PROJETOS_CAD.length ? PROJETOS_CAD.map(p=>`<label class="opcao">
+              <input type="checkbox" class="op-projeto" value="${p.id}"
+                ${(u.projetos||[]).includes(p.id)?"checked":""}>
+              <span class="rotulo">${escapar(p.codigo)} · ${escapar(p.nome)}
+                <small>(${p.quantas_obras} obra(s))</small></span></label>`).join("")
+              : `<small>Nenhum projeto cadastrado. Crie em Obras › ▦ Projetos.</small>`}
+          </div></div>
+      </div>
+    </div>
+
     <div id="op-obras-bloco" class="campo" style="margin-top:12px">
       <label>Obras que este operador acompanha</label>
       <div class="filtro-opcoes" style="max-height:220px; border:1px solid var(--borda); border-radius:8px; padding:6px">
@@ -712,6 +766,12 @@ function formOperador(u){
     els("op-escopo-bloco").style.display = todas ? "none" : "";
     const porObra = !todas && els("op-escopo").value === "OBRAS_DESIGNADAS";
     els("op-obras-bloco").style.display = porObra ? "" : "none";
+    els("op-alcance-bloco").style.display = porObra ? "" : "none";
+    // Quem vê "só os próprios lançamentos" não é recortado por obra em lugar
+    // nenhum — e esconder as marcações sem dizer por quê deixa quem cadastra
+    // procurando um campo que sumiu.
+    const aviso_ = els("op-aviso-proprios");
+    if (aviso_) aviso_.style.display = (!todas && !porObra) ? "" : "none";
   }
   els("op-perfil").addEventListener("change", alternarObras);
   els("op-escopo").addEventListener("change", alternarObras);
@@ -880,6 +940,8 @@ function formOperador(u){
       teto_ia_usd: els("op-teto-ia").value,
       categorias: [...document.querySelectorAll(".op-cat:checked")].map(i=>+i.value),
       obras: [...document.querySelectorAll(".op-obra:checked")].map(i=>+i.value),
+      projetos: [...document.querySelectorAll(".op-projeto:checked")].map(i=>+i.value),
+      empresas: [...document.querySelectorAll(".op-empresa:checked")].map(i=>+i.value),
       obras_responsavel: [...document.querySelectorAll(".op-resp:checked")].map(i=>+i.value)};
     if (els("op-senha").value) corpo.senha = els("op-senha").value;
     if (novo) { corpo.email = els("op-email").value; corpo.cpf = els("op-cpf").value; }

@@ -357,3 +357,55 @@ def test_handler_de_fora_do_escopo_esta_registrado_no_blueprint():
             registrados.update(mapa)
 
     assert ErroNaoEncontrado in registrados
+
+
+# ---------------------------------------------------------------------------
+# O MENU SOME PARA QUEM NÃO TEM A ÁREA (13/09/2026)
+#
+# Decisão do dono: *"se a pessoa está liberada apenas pra visualizar lançamento
+# financeiro, ela não tem que ver nada do suprimento. Não vai ver cadastro de
+# suprimento, de insumo, pedidos de compra — não vai ver nada disso se eu não
+# disponibilizar pra aquele perfil"*.
+#
+# Para uma área SUMIR, cada tela precisa de ação própria: `ver_erp` é a porta
+# de entrada, e esconder por ela esconderia o ERP inteiro. Este teste é a
+# trava estrutural disso — aba nova declarada com `ver_erp` aparece para todo
+# mundo, e isso tem de ser uma escolha escrita, não um descuido.
+# ---------------------------------------------------------------------------
+ABAS_ABERTAS_A_TODOS = {
+    # Cada pessoa vê a PRÓPRIA semana aqui; quem vê a equipe precisa de
+    # `ver_uso_da_equipe`, que é conferido dentro da tela. Decisão do dono em
+    # 10/09/2026: "deixa de ser vigilância para virar retorno".
+    "uso",
+}
+
+
+def test_toda_aba_do_menu_tem_acao_propria():
+    from app.apps.erp.routes import MODULOS, _REGISTRO_PERMISSOES
+
+    sem_acao_propria = []
+    for m in MODULOS:
+        for chave, rotulo, rota in m["abas"]:
+            acao = (_REGISTRO_PERMISSOES.get(rota) or {}).get("GET")
+            if acao is None:
+                sem_acao_propria.append((chave, "sem declaração"))
+            elif acao == "ver_erp" and chave not in ABAS_ABERTAS_A_TODOS:
+                sem_acao_propria.append((chave, "só ver_erp"))
+    assert sem_acao_propria == [], (
+        "estas abas apareceriam no menu de todo mundo — dê a cada uma a ação "
+        f"da própria tela, ou registre em ABAS_ABERTAS_A_TODOS: {sem_acao_propria}")
+
+
+def test_o_botao_do_modulo_leva_a_uma_aba_que_a_pessoa_abre():
+    """O módulo aponta para a PRIMEIRA aba visível, não para a primeira da
+    lista — senão quem tem acesso parcial cairia numa tela que responde 403."""
+    from app.apps.erp.routes import MODULOS, _menu_da_pessoa, _acao_da_aba
+
+    # Uma pessoa que só abre "Cotações" dentro de Suprimentos.
+    pode = {a: False for m in MODULOS for _, _, r in m["abas"]
+            for a in [_acao_da_aba(r)]}
+    pode["comprar"] = True
+    modulos, _ = _menu_da_pessoa(pode)
+    assert [m["chave"] for m in modulos] == ["suprimentos"]
+    primeira = modulos[0]["abas"][0]
+    assert pode[_acao_da_aba(primeira[2])] is True

@@ -46,6 +46,36 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
     "ver_erp":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
                         P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
+    # ---------------------------------------------------------------------
+    # AS TELAS QUE ANTES SÓ PEDIAM `ver_erp` (13/09/2026)
+    #
+    # Decisão do dono, com todas as letras: *"se a pessoa está liberada apenas
+    # pra visualizar lançamento financeiro, ela não tem que ver nada do
+    # suprimento. Não vai ver cadastro de suprimento, de insumo, pedidos de
+    # compra — ela não vai ver nada disso se eu não disponibilizar pra aquele
+    # perfil"*.
+    #
+    # Para uma área SUMIR do menu de quem não a tem, cada tela precisa de uma
+    # ação própria: `ver_erp` é a porta de entrada, e esconder por ela
+    # esconderia o ERP inteiro. Estas cinco nascem valendo para TODOS os
+    # cargos — ou seja, ninguém perde nada no dia da virada; o que muda é que
+    # agora dá para tirar, perfil a perfil, na tela.
+    # ---------------------------------------------------------------------
+    "ver_titulos":     {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
+    "ver_fundo_fixo":  {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
+    "ver_empreitas":   {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
+    "ver_obras":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
+    "ver_locacoes":    {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
+                        P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.DEPARTAMENTO_PESSOAL,
+                        P.APROVADOR, P.LANCADOR, P.CONSULTA, P.PARCEIRO},
     "lancar":          {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.GESTOR_OBRA,
                         P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA, P.LANCADOR,
                         P.DEPARTAMENTO_PESSOAL},
@@ -209,6 +239,11 @@ ACAO_ROTULOS = {
     "gerir_usuarios":       "Cadastrar e editar operadores",
     "ver_uso_da_equipe":    "Ver o trabalho da equipe no sistema",
     "ver_relatorios":       "Ver relatórios",
+    "ver_titulos":          "Ver a lista de solicitações de pagamento",
+    "ver_fundo_fixo":       "Ver o fundo fixo e o cartão",
+    "ver_empreitas":        "Ver as empreitas",
+    "ver_obras":            "Ver o painel de obras",
+    "ver_locacoes":         "Ver as locações de equipamento",
     "ver_pessoal":          "Ver despesas de colaborador",
     "lancar_dc":            "Lançar despesa de colaborador",
     "editar_colaboradores": "Cadastrar e editar colaboradores",
@@ -450,9 +485,40 @@ def escopo_visao(usuario: Usuario) -> EscopoVisao:
 
 
 def _obras_designadas(s: Session, usuario: Usuario) -> list[int]:
-    """Obras associadas a esta pessoa em usuario_obras."""
-    return [o.obra_id for o in s.scalars(
-        select(UsuarioObra).where(UsuarioObra.usuario_id == usuario.id)).all()]
+    """As obras que esta pessoa alcança — por OBRA, por PROJETO ou por EMPRESA.
+
+    Pedido do dono em 13/09/2026: *"a gente poder adicionar ao usuário a obra,
+    ou um projeto, ou todas as obras, ou uma empresa ou outra empresa"*.
+
+    Os três níveis se somam, e o conjunto é resolvido AQUI, na hora da
+    consulta — nunca copiado para `usuario_obras` no momento da marcação. É o
+    que faz obra nova, pendurada num projeto que a pessoa já tem, entrar
+    sozinha no alcance dela: ninguém precisa lembrar de voltar no cadastro.
+
+    A obra segue sendo a unidade do recorte, e por isso todo o resto do ERP
+    (títulos, notas, agenda, colaboradores, suprimentos) passou a obedecer
+    empresa e projeto sem uma linha a mais em cada lugar.
+    """
+    from sqlalchemy import text as _text
+
+    diretas = {o.obra_id for o in s.scalars(
+        select(UsuarioObra).where(UsuarioObra.usuario_id == usuario.id)).all()}
+    try:
+        herdadas = s.execute(_text(
+            "SELECT o.id FROM obras o "
+            " WHERE (o.projeto_id IS NOT NULL AND o.projeto_id IN ("
+            "         SELECT projeto_id FROM usuario_projetos WHERE usuario_id = :u))"
+            "    OR (o.empresa_id IS NOT NULL AND o.empresa_id IN ("
+            "         SELECT empresa_id FROM usuario_empresas WHERE usuario_id = :u))"),
+            {"u": usuario.id}).all()
+    except Exception:
+        # Migração 066 ainda não aplicada: vale só o que está marcado obra a
+        # obra, que é exatamente o comportamento de antes dela.
+        return sorted(diretas)
+    try:
+        return sorted(diretas | {linha[0] for linha in herdadas})
+    except (TypeError, IndexError):
+        return sorted(diretas)          # sessão dublada dos testes
 
 
 # Perfis presos SEMPRE às obras designadas — sem depender de marcação por

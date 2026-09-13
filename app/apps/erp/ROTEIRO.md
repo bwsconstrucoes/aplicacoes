@@ -498,6 +498,28 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       no caso das notas está escrito que é de propósito. Recortar por obra é
       decisão de negócio, não correção.
 
+- [x] **PROJETO AGRUPA OBRAS, E O ALCANCE GANHA EMPRESA E PROJETO** — FEITO em
+      13/09/2026. **TRAZ A MIGRAÇÃO 066.** Pedido do dono: *"com projetos eu
+      faço uma associação de algumas obras (…) eu poder visualizar o projeto,
+      ou seja, o somatório daquelas obras"*.
+      1. **Obras › ▦ Projetos**: cria o projeto e escolhe as obras. Obra
+         pertence a um projeto só; a ficha da obra também escolhe o projeto.
+      2. **Relatórios**: agrupar por projeto e filtrar por projeto. Obra fora
+         de projeto vira a linha "Sem projeto", em vez de sumir.
+      3. **Assistente**: *"quanto custou o projeto X"* responde somado.
+      4. **Cadastro do operador**: marcar empresa(s), projeto(s) ou obra(s) —
+         as três alturas se somam, e obra nova num projeto marcado entra
+         sozinha no alcance.
+      **Falta do lado do dono:** criar os projetos e pendurar as obras.
+
+- [x] **O PERFIL ESCONDE A ÁREA QUE NÃO LIBERA** — FEITO em 13/09/2026, por
+      decisão do dono: *"se a pessoa está liberada apenas pra visualizar
+      lançamento financeiro, ela não tem que ver nada do suprimento"*. Sem
+      migração. Módulo, abas e a tela de início passam a mostrar só o que a
+      pessoa abre; cinco telas que só pediam "estar no ERP" ganharam ação
+      própria, todas liberadas para os perfis prontos — ninguém perde nada, e
+      agora dá para tirar perfil a perfil.
+
 - [x] **O PERFIL DE ACESSO VIRA CADASTRO — seções, níveis e obras por pessoa** —
       FEITO em 13/09/2026. **TRAZ A MIGRAÇÃO 065** (duas tabelas novas e duas
       colunas em `usuarios`; apertar o botão no mesmo momento da publicação).

@@ -741,6 +741,32 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-13 — PROJETO agrupa obras, e o alcance do operador tem três
+  alturas (migração 066).** Pedido do dono: *"com projetos eu faço uma
+  associação de algumas obras e coloco todas dentro do projeto (…) eu poder
+  visualizar o projeto, ou seja, o somatório daquelas obras"*, e *"poder
+  adicionar ao usuário a obra, ou um projeto, ou todas as obras, ou uma empresa
+  ou outra empresa"*. A hierarquia do sistema passou a ser **empresa › projeto
+  › obra**, com o projeto opcional.
+  **Regra de engenharia que fica: a OBRA continua sendo a unidade do recorte.**
+  Empresa e projeto são apenas jeitos de NOMEAR um conjunto de obras, e esse
+  conjunto é resolvido na CONSULTA (`permissoes._obras_designadas`), nunca
+  copiado para `usuario_obras` no momento da marcação. Duas consequências: obra
+  nova dentro de um projeto já marcado entra sozinha no alcance de quem tem o
+  projeto; e todo o recorte que já existia passou a obedecer empresa e projeto
+  sem uma linha a mais em cada tela.
+
+- **2026-09-13 — O PERFIL ESCONDE A ÁREA QUE NÃO LIBERA.** Decisão do dono:
+  *"se a pessoa está liberada apenas pra visualizar lançamento financeiro, ela
+  não tem que ver nada do suprimento"*. Módulo, abas e cartão da tela de início
+  passaram a ser filtrados pela ação que CADA TELA declara — lida do próprio
+  `@permissao`, e não de uma segunda lista. Para isso, cinco telas que só
+  pediam `ver_erp` ganharam ação própria (`ver_titulos`, `ver_fundo_fixo`,
+  `ver_empreitas`, `ver_obras`, `ver_locacoes`), todas nascendo liberadas para
+  os onze perfis prontos. **Regra que fica: aba de menu tem ação própria — se
+  ficar só com `ver_erp`, ela aparece para todo mundo, e há teste estrutural
+  cobrando isso.** Esconder não é trava: a trava segue sendo a recusa da rota.
+
 - **2026-09-13 — O PERFIL DE ACESSO VIROU CADASTRO (migração 065).** Pedido do
   dono, no modelo do banco dele: *"eu cadastro usuários e cadastro perfil. O
   perfil eu digo: esse perfil tem acesso a isso, aquilo e aquilo outro. E o

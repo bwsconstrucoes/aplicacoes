@@ -1133,9 +1133,15 @@ def vigencia_vencida(s: Session, usuario: Usuario) -> dict[str, Any]:
 # números diferentes sobre a mesma obra, que é o pior desfecho possível.
 # ---------------------------------------------------------------------------
 def custo_da_obra(s: Session, usuario: Usuario, *, obra: str = "",
+                  projeto: str = "",
                   competencia_de: str = "",
                   competencia_ate: str = "") -> dict[str, Any]:
-    """Quanto a obra comprometeu e quanto ela já executou de custo."""
+    """Quanto a obra comprometeu e quanto ela já executou de custo.
+
+    Dizendo um PROJETO, a resposta vem SOMADA por projeto — pedido do dono em
+    13/09/2026: *"se a obra estiver dentro de algum projeto (…) eu poder
+    visualizar o projeto, ou seja, o somatório daquelas obras"*.
+    """
     from app.apps.erp.core import relatorios
 
     filtros: dict[str, Any] = {"natureza": "RESULTADO", "especie": "pagar"}
@@ -1143,6 +1149,28 @@ def custo_da_obra(s: Session, usuario: Usuario, *, obra: str = "",
         filtros["competencia_de"] = competencia_de
     if competencia_ate:
         filtros["competencia_ate"] = competencia_ate
+
+    # O PROJETO some as obras dele numa linha só — e o agrupamento muda junto,
+    # senão a resposta viria obra a obra e não seria a soma que ele pediu.
+    dimensao, rotulo_coluna, chave_coluna = "obra", "Obra", "obra"
+    escolhido_projeto = None
+    if projeto:
+        from app.apps.erp.core.cadastros import projetos as svc_projetos
+        cadastrados = svc_projetos.listar(s)
+        escolhido_projeto = next(
+            (p for p in cadastrados
+             if _casa(projeto, p["codigo"]) or _casa(projeto, p["nome"])), None)
+        if escolhido_projeto is None:
+            return _resposta(
+                titulo="Custo do projeto",
+                frase=f"Não achei o projeto “{projeto}”. "
+                      f"Projetos cadastrados: "
+                      f"{', '.join(p['codigo'] for p in cadastrados) or 'nenhum'}.",
+                linhas=[], colunas=[],
+                de_onde_veio={"tela": "/erp/relatorios",
+                              "explicacao": "Relatórios › agrupar por projeto."})
+        filtros["projeto_id"] = escolhido_projeto["id"]
+        dimensao, rotulo_coluna, chave_coluna = "projeto", "Projeto", "obra"
 
     obras = _obras_que_alcanco(s, usuario)
     escolhida = None
@@ -1158,7 +1186,7 @@ def custo_da_obra(s: Session, usuario: Usuario, *, obra: str = "",
                               "explicacao": "Relatórios › totais por obra."})
         filtros["obra_id"] = escolhida.id
 
-    r = relatorios.resumo(s, "obra", filtros, usuario)
+    r = relatorios.resumo(s, dimensao, filtros, usuario)
     linhas = [{"obra": l["chave"],
                "comprometido": l["total"],
                "executado": l["pago"],
@@ -1171,6 +1199,13 @@ def custo_da_obra(s: Session, usuario: Usuario, *, obra: str = "",
 
     if not linhas:
         frase = f"Nenhum custo lançado{periodo} nas obras que você alcança."
+    elif escolhido_projeto is not None:
+        l = linhas[0]
+        frase = (f"Projeto {escolhido_projeto['codigo']}{periodo} "
+                 f"({escolhido_projeto['quantas_obras']} obra(s)): "
+                 f"**{_reais(l['comprometido'])} comprometido** e "
+                 f"**{_reais(l['executado'])} executado**. "
+                 f"Faltam {_reais(l['a_executar'])} para sair do caixa.")
     elif escolhida is not None:
         l = linhas[0]
         frase = (f"{escolhida.codigo}{periodo}: **{_reais(l['comprometido'])} "
@@ -1182,8 +1217,9 @@ def custo_da_obra(s: Session, usuario: Usuario, *, obra: str = "",
                  f"{_reais(r['total_pago'])} executado.")
 
     return _resposta(
-        titulo=f"Custo da obra{periodo}", frase=frase, linhas=linhas,
-        colunas=[("obra", "Obra"), ("comprometido", "Comprometido"),
+        titulo=(f"Custo do projeto{periodo}" if escolhido_projeto
+                else f"Custo da obra{periodo}"), frase=frase, linhas=linhas,
+        colunas=[(chave_coluna, rotulo_coluna), ("comprometido", "Comprometido"),
                  ("executado", "Executado"), ("a_executar", "Falta executar")],
         total=Decimal(str(r["total"])),
         de_onde_veio={"tela": "/erp/relatorios",
