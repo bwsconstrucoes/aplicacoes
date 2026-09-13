@@ -234,6 +234,18 @@ SITUACOES_FISCAIS = {
     "decidida_por_pessoa": (
         "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
         "         WHERE a.sp_id = sps.id AND a.origem = 'PESSOA')"),
+    # O OUTRO LADO DA MESMA PERGUNTA, e faltava: o que foi marcado SEM gente.
+    # `CONCILIACAO` é proposta do sistema aprovada, `IA` é leitura de anexo.
+    # `PIPEFY` fica de fora de propósito: aquilo não foi o sistema que marcou,
+    # é o que já estava no card antes desta tela existir.
+    "decidida_pelo_sistema": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id "
+        "           AND a.origem IN ('CONCILIACAO', 'IA'))"),
+    # E o que veio pronto do card, que não é decisão de ninguém aqui.
+    "veio_do_card": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id AND a.origem = 'PIPEFY')"),
     "com_anexo": "trim(coalesce(anexo_link,'')) <> ''",
     "sem_anexo": "trim(coalesce(anexo_link,'')) = ''",
 }
@@ -249,6 +261,8 @@ ROTULOS_FISCAIS = [
     ("na_fila_ia", "Na fila da IA"),
     ("lida_ia", "Lido pela IA"),
     ("decidida_por_pessoa", "Decidido por pessoa"),
+    ("decidida_pelo_sistema", "Decidido pelo sistema"),
+    ("veio_do_card", "Já veio preenchido do card"),
     ("confirmada", "Confirmado, falta gravar no card"),
     ("escrita", "Já gravado no card"),
     ("com_anexo", "Com anexo"),

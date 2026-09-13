@@ -2874,6 +2874,30 @@ verdade, uma linha e em lote.
 > e que a tela recusa anunciar baixa sem confirmação. **O teste de verdade é o
 > primeiro comprovante reenviado depois de publicar**, conferindo na planilha.
 
+### Pergunta (13/09) — "qual o filtro pra aparecer só as que o sistema marcou?"
+
+**A resposta honesta é que não havia um, e agora há — mas só para metade da
+pergunta.** As duas metades são diferentes e vale separar:
+
+- **"O que o sistema JÁ MARCOU"** (decisão gravada, sem gente no meio): passou a
+  ser filtro na barra. São três origens diferentes, e misturá-las mentiria:
+  **Decidido por pessoa**, **Decidido pelo sistema** (proposta aprovada ou
+  leitura por IA) e **Já veio preenchido do card** — esta última não é decisão
+  de ninguém aqui, e contá-la como trabalho do sistema faria o número parecer
+  maior do que é.
+- **"O que o sistema ESTÁ PROPONDO agora"**: continua sendo a etiqueta
+  *Proposta de correção*, acima da tabela — e ela vale **só para a página
+  aberta**. A proposta é calculada quando a tela monta e não fica gravada em
+  lugar nenhum.
+
+> **A LIMITAÇÃO, dita para não ser esquecida:** com 59 mil SPs, varrer as
+> propostas de página em página não é trabalho de gente. O conserto de verdade
+> é rodar a conciliação sobre a base inteira num processo separado e **gravar a
+> proposta**, como já é feito com a busca de notas — aí a proposta vira coluna
+> no banco e pode ser filtro, totalizador e fila de aprovação em lote. É uma
+> decisão do dono, porque custa uma varredura pesada no banco pequeno; foi
+> apresentada a ele em 13/09/2026 e ainda não há resposta.
+
 ### Pedido na fila, ainda NÃO feito
 
 **Nada do dono esperando código.** O que falta não é programação — é o

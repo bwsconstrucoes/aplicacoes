@@ -3151,3 +3151,24 @@ def test_SP_sem_nenhuma_das_duas_portas_nao_aparece_no_diario(banco_analisesps):
 
     semear([sp("1", credor="A")])
     assert fiscal.analises_guardadas(["1"]) == {}
+
+
+@pytest.mark.banco
+def test_QUEM_marcou_separa_pessoa_sistema_e_o_que_veio_do_card(banco_analisesps):
+    """Pergunta do dono em 13/09/2026: *"qual o filtro pra aparecer somente as
+    que o sistema marcou?"*
+
+    São três origens diferentes e elas não podem se misturar: o que uma pessoa
+    decidiu, o que o sistema decidiu (proposta aprovada ou leitura por IA), e o
+    que já veio preenchido do card antes desta tela existir. Essa última não é
+    decisão de ninguém aqui — contá-la como "o sistema marcou" faria o número
+    parecer trabalho feito pela ferramenta quando não foi."""
+    semear([sp(str(i), credor="A") for i in range(1, 5)])
+    _diario("1", documentacao="NF-e (Mercadoria)", origem="PESSOA")
+    _diario("2", documentacao="NF-e (Mercadoria)", origem="CONCILIACAO")
+    _diario("3", documentacao="NF-e (Mercadoria)", origem="IA")
+    _diario("4", documentacao="Contrato", origem="PIPEFY")
+
+    assert _quantas(["decidida_por_pessoa"]) == 1
+    assert _quantas(["decidida_pelo_sistema"]) == 2      # a conciliação e a IA
+    assert _quantas(["veio_do_card"]) == 1
