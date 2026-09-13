@@ -51,6 +51,27 @@ PERMISSOES: dict[str, set[PerfilUsuario]] = {
                         P.DEPARTAMENTO_PESSOAL},
     "avalizar":        {P.ADMIN, P.DIRETOR_FINANCEIRO, P.GESTOR_OBRA, P.SUPERVISOR_OBRA},
     "aprovar":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.APROVADOR},
+    # CANCELAR TÍTULO é ação PRÓPRIA, e não um pedaço de "aprovar", desde
+    # 12/09/2026. Decisão do dono: *"liberado o lançamento que não está baixado
+    # ou conciliado"* — quem lançou desfaz o próprio engano, sem pedir ao
+    # financeiro. Quem tem "lancar" ganha esta por implicação (ACOES_IMPLICADAS
+    # logo abaixo); o que ele NÃO ganha é cancelar o lançamento dos outros, e
+    # isso quem decide é o serviço, olhando de quem é o título.
+    "cancelar_titulo": {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO, P.APROVADOR},
+    # ENCAMINHAR informação do sistema por WhatsApp/Telegram (12/09/2026).
+    # Pedido do dono: *"o pessoal pede informação, você quer encaminhar pra um
+    # operador, pra um número que a gente adicionar lá"*.
+    #
+    # Quem entra: quem já opera o sistema. Quem NÃO entra, e é escolha:
+    #   · CONSULTA — existe para olhar, não para redistribuir;
+    #   · PARCEIRO — é de fora da empresa; ele vê a obra dele na tela, e
+    #     empurrar dado da BWS para fora pelo WhatsApp da empresa é outra
+    #     coisa.
+    # O que cada um pode encaminhar continua limitado ao que ele VÊ: o envio
+    # passa pelo mesmo recorte por obra da tela.
+    "encaminhar":      {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO,
+                        P.GESTOR_OBRA, P.SUPERVISOR_OBRA, P.ADMINISTRATIVO_OBRA,
+                        P.DEPARTAMENTO_PESSOAL, P.APROVADOR, P.LANCADOR},
     "pagar":           {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
     "conciliar":       {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
     "receber":         {P.ADMIN, P.DIRETOR_FINANCEIRO, P.FINANCEIRO},
@@ -162,6 +183,10 @@ ACOES_IMPLICADAS: dict[str, tuple[str, ...]] = {
     # emissor e ele não conseguir abrir a lista seria uma armadilha.
     "ver_notas_emitidas": ("emitir_nota", "ver_contratos"),
     "ver_agenda": ("tratar_agenda",),
+    # Quem lança cancela — o PRÓPRIO lançamento, e só enquanto ninguém baixou
+    # nem conciliou. Sem esta linha, corrigir o próprio engano dependeria de
+    # interromper o financeiro, e o erro ficaria no ar até alguém ter tempo.
+    "cancelar_titulo": ("aprovar", "lancar"),
 }
 
 # Nome de cada ação em português, para a tela de cadastro do operador. Quem
@@ -171,6 +196,8 @@ ACAO_ROTULOS = {
     "lancar":               "Lançar título",
     "avalizar":             "Avalizar (1º aval)",
     "aprovar":              "Aprovar título",
+    "cancelar_titulo":      "Cancelar título (o próprio, se ninguém baixou)",
+    "encaminhar":           "Encaminhar informação por WhatsApp",
     "pagar":                "Dar baixa em pagamento",
     "conciliar":            "Conciliar extrato",
     "receber":              "Lançar recebimento",

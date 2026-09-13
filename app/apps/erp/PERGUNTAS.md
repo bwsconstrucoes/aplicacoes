@@ -36,7 +36,7 @@ não estiver decidida, o assistente **pergunta de volta** em vez de escolher.
 | A palavra | Os significados possíveis | Decisão |
 |---|---|---|
 | **"a pagar"** | por vencimento da parcela, ou por competência do título? Inclui BLOQUEADO? Inclui o que ainda não foi aprovado? | ⬜ a decidir |
-| **"custo da obra"** | o que entra na conta? | ✔ **decidido 11/09/2026: são as DESPESAS DIRETAS da obra** — ver abaixo |
+| **"custo da obra"** | o que entra na conta? | ✔ **FECHADO em 12/09/2026: despesa DIRETA de DRE, nas visões COMPROMETIDO e EXECUTADO** — ver abaixo |
 | **"obra em andamento"** | pela situação no cadastro, pela data de término, ou por ter tido movimento nos últimos N dias? | ⬜ a decidir |
 | **"quanto falta receber"** | são QUATRO leituras, todas legítimas — ver a régua abaixo | ✔ **decidido: o assistente PERGUNTA de volta** |
 | **"resultado da obra"** | inclui rateio da administração? inclui os tributos? | ✔ **decidido 11/09/2026: receita − custo direto** — ver abaixo |
@@ -55,19 +55,31 @@ Então:
   não vira custo de obra.
 - **Resultado da obra = receita da obra − custo direto da obra.**
 
-**O que a decisão dele ainda NÃO resolve, e não pode ser inventado:** o regime.
-"Despesa direta" pode ser o que foi LANÇADO (competência — a obra já consumiu)
-ou o que foi PAGO (caixa — o dinheiro já saiu). Os dois números são legítimos e
-diferentes, e a diferença é justamente o que está em aberto para pagar.
+### O regime — FECHADO em 12/09/2026
 
-**Como isso é resolvido aqui, sem inventar e sem travar:** o mesmo caminho da
-régua do recebimento — a resposta mostra **os dois lado a lado**. "Custo da
-obra X: R$ 1,2 mi lançado, R$ 900 mil pago." Quem lê escolhe qual usar, e
-ninguém escolhe por ele em silêncio.
+Faltava dizer o regime, e o dono fechou, com estas palavras: *"o custo
+normalmente está associado só às despesas de DRE, nada de fluxo. E é o custo
+executado e o custo comprometido — são essas duas visões que a gente tem"*.
 
-Falta ainda combinar, quando aparecer: se o título **em análise** (ainda não
-aprovado) entra no lançado. Enquanto não estiver combinado, a resposta diz
-quanto do número está nessa situação.
+Então a pergunta **"quanto custou a obra X"** responde assim, e sempre com os
+dois números juntos:
+
+| Visão | O que é | O que entra |
+|---|---|---|
+| **Comprometido** | a obrigação já existe, tendo o dinheiro saído ou não | todo título lançado que ainda vale |
+| **Executado** | o dinheiro já saiu do caixa | a soma dos pagamentos |
+
+E três regras que vêm junto:
+
+1. **Só conta de DRE** (natureza *resultado*). Transferência entre contas,
+   aporte e principal de empréstimo **não são custo** — é dinheiro mudando de
+   lugar, e somá-los inflaria o custo sem nada ter sido consumido.
+2. **Rascunho, cancelado, estornado e devolvido não comprometem nada.**
+3. **Continua valendo a despesa DIRETA**: rateio da administração da empresa
+   não vira custo de obra.
+
+A diferença entre comprometido e executado é, por definição, **o que ainda
+falta sair do caixa** — e a resposta mostra essa terceira coluna também.
 
 ### A regra geral, decidida pelo dono em 10/09/2026
 
@@ -149,6 +161,33 @@ obra e por autoria das telas, e cada resposta mostra de onde veio.
   (a pergunta que impede o plano de apodrecer)
 - Quanto esta obra gastou em cimento este ano? 🔒
 - Qual foi o maior gasto da obra X no mês? 🔒
+
+#### Cancelamento de lançamento — perguntas abertas em 12/09/2026
+
+Desde 12/09/2026 quem lançou cancela o próprio lançamento (enquanto ninguém
+baixou nem conciliou), e quem lançou é avisado com o motivo. Isso torna
+possíveis perguntas que antes nem faziam sentido — e **nenhuma delas responde
+ainda**, porque o cancelamento vive no registro de eventos e não numa consulta
+pronta:
+
+- ❌ **Quais lançamentos foram cancelados este mês, e por quê?** 🔒
+  Falta: uma resposta que leia o registro de eventos do título, trazendo quem
+  cancelou, quando e o motivo escrito.
+- ❌ **Quem cancelou a SP tal, e qual foi o motivo?** 🔒
+- ❌ **Algum lançamento meu foi cancelado?** 🔒 — a resposta muda conforme quem
+  pergunta, por definição.
+- ❌ **Quanto foi cancelado em valor, por obra?** 🔒 — cuidado com a palavra:
+  "cancelado" não é perda nem economia; é lançamento que não devia existir.
+  Somar isso como se fosse dinheiro poupado seria número errado com cara de
+  certo.
+- ❌ **Quem mais cancela lançamento?** — é pergunta de qualidade do
+  lançamento, não de culpa. Muita coisa cancelada na mesma obra costuma
+  significar processo confuso, não pessoa desatenta.
+
+⚠️ **A palavra ambígua aqui é "cancelado".** Um título CANCELADO nunca foi
+pago; um ESTORNADO foi pago e desfeito. São coisas diferentes no dinheiro e no
+imposto, e qualquer resposta sobre "cancelados" tem de dizer qual das duas está
+contando.
 
 ### Obras, contratos e medições
 
@@ -425,6 +464,155 @@ do simples, depois a gente decide se parte pro caro"*.
 lendo SÓ os trechos de baixo.** Ela não consulta o banco e não lembra de nada
 por fora. Os trechos continuam ali, e são eles a resposta — a frase é só a
 leitura em voz alta. Sem chave de IA, a frase some e os trechos ficam.
+
+## 3f. Perguntar sobre UM documento — o contrato da obra, por exemplo
+
+Desde 12/09/2026, pedido seu: *"tem um contrato de uma obra e eu quero
+perguntar alguma coisa sobre ele"*. No Arquivo, cada documento tem o botão
+**Perguntar**. Você aponta o documento e a IA lê o texto DELE.
+
+**A diferença para a busca de cima, e ela é grande.** Lá você procura uma
+palavra no acervo inteiro e recebe os trechos que casaram. Aqui você pergunta
+sobre um documento só, e a IA lê o documento — não a palavra.
+
+Perguntas que passam a funcionar (e não funcionavam antes):
+
+- ✅ **Qual o prazo de garantia deste contrato?** 🔒
+- ✅ **Como é o reajuste, e a partir de quando?** 🔒
+- ✅ **Qual a multa por atraso?** 🔒
+- ✅ **O que este contrato exige na entrega da medição?** 🔒
+- ✅ **Quem são as partes e qual o objeto?** 🔒
+- ✅ **Tem cláusula de retenção de garantia? De quanto?** 🔒
+- ✅ **Esta certidão vale até quando?** 🔒
+- ✅ **Este documento fala em multa? O que exatamente?** 🔒
+
+🔒 = **a resposta depende de quem pergunta.** O documento passa pelo mesmo
+recorte do Arquivo: quem é preso a uma obra não pergunta sobre o contrato da
+outra — e ouve "documento não encontrado", nunca "sem permissão", porque dizer
+"sem permissão" confirmaria que aquele documento existe.
+
+### As três coisas que decidem se dá para confiar
+
+**1. A resposta nunca vem sozinha.** Embaixo dela ficam os trechos do
+documento, na íntegra. E o sistema PROCURA cada trecho dentro do documento
+antes de mostrar: trecho que a IA escreveu mas que não está lá é descartado, e
+a resposta sai marcada como **não conferida** — "trate como pista, não como
+resposta". É a única defesa real contra um número inventado com cara de
+citação.
+
+**2. Documento que é FOTO ou digitalização não é lido.** Decisão sua em
+12/09/2026: *"não ler escaneados por hora"*. O sistema responde "este documento
+é uma imagem, não consigo ler o texto dele" — ele não chuta. Ler escaneado
+exigiria IA olhando página por página, e isso custa por documento; é um
+acréscimo à parte, para quando você quiser.
+
+**3. Documento muito longo entra pelos trechos que falam do assunto**, não
+inteiro — e a tela avisa quando isso acontece. É o que mantém o custo em
+centavos por pergunta.
+
+### O que ainda NÃO dá
+
+- ❌ **"Compare este contrato com o da outra obra"** — hoje é um documento por
+  pergunta. Falta poder apontar dois.
+- ❌ **"Continue perguntando sobre o mesmo documento"** — cada pergunta é
+  independente; ela não lembra da anterior.
+- ❌ **Perguntar sobre documento escaneado** — falta a leitura por imagem, que
+  custa por documento (acima).
+- ❌ **"Qual dos meus contratos tem a multa mais alta?"** — isso é varrer o
+  acervo comparando cláusulas, não ler um documento. Precisaria do índice por
+  significado.
+
+## 3g. A resposta vira RELATÓRIO — Excel e PDF
+
+Desde 12/09/2026, pedido seu: *"se eu quiser, olha, gera um relatório em PDF de
+um determinado assunto, gera um relatório em Excel com essas informações"*.
+
+Toda resposta que tem TABELA ganha dois botões embaixo dela: **⬇ Excel** e
+**⬇ PDF**. Vale no painel do cantinho e na tela cheia.
+
+**Quem monta o arquivo é o sistema, não a IA.** São os mesmos números da
+resposta, exportados — e isso é o que importa: relatório escrito por IA é
+relatório que ninguém pode conferir.
+
+Três coisas que valem saber:
+
+- **O arquivo leva TODAS as linhas que a resposta trouxe**, mesmo quando a
+  tela mostra só as primeiras. Exportar só o que está visível seria uma
+  armadilha silenciosa.
+- **O cabeçalho do arquivo diz de onde veio**: a frase da resposta, a tela de
+  origem e quem gerou, com data. Planilha sem procedência é número sem origem,
+  e três meses depois ninguém sabe o que era.
+- **Resposta sem tabela não vira arquivo** — o botão nem aparece. É o caso do
+  trecho de contrato: ele é texto, não planilha.
+
+## 3h. Encaminhar a informação por WhatsApp
+
+Desde 12/09/2026, pedido seu: *"às vezes a gente quer encaminhar alguma
+informação pra alguém (…) referente a um título financeiro"*.
+
+- **No lançamento** (Financeiro › Solicitações, abrindo a ficha): botão
+  **↗ Encaminhar**. Vai credor, valor, forma de pagamento, conta, obra,
+  vencimento de cada parcela, descrição e situação.
+- **No documento** (Arquivo): botão **Enviar** — o nome do documento, o tipo e
+  até quando vale.
+- Para **operadores cadastrados** (a lista aparece pronta) ou para um **número
+  avulso** com DDD. Dá para mandar o arquivo junto e escrever um recado.
+
+**As três travas, para você saber o que está protegido:**
+
+1. **Ninguém encaminha o que não pode ver** — passa pelo mesmo recorte por obra
+   da tela. Sem isso, encaminhar seria a porta dos fundos do controle de acesso.
+2. **Fica registrado quem mandou o quê para quem, e quando.** A mensagem sai do
+   sistema e o ERP não controla o que acontece depois; o que ele pode fazer é
+   dar nome ao que saiu.
+3. **Número que não parece telefone é recusado** antes de sair, e a tela mostra
+   o texto inteiro antes do disparo. Enviado não volta.
+
+⚠️ **O que NÃO vai, nunca:** senha, chave de acesso e dado bancário completo.
+Mensagem de WhatsApp é o lugar mais fácil de vazar que existe na empresa.
+
+Perguntas que isso torna possíveis, e que **ainda não respondem**:
+
+- ❌ **O que foi encaminhado deste lançamento, e para quem?** 🔒 — o registro
+  existe; falta a consulta pronta.
+- ❌ **Quem mais encaminha informação para fora?** — pergunta de processo, não
+  de culpa: muito encaminhamento costuma significar que falta alguém ter
+  acesso à tela.
+
+## 3i. Os relatórios — e a palavra que faltava separar
+
+Em 12/09/2026 a tela de Relatórios ganhou **fluxo de caixa projetado**, **curva
+ABC**, **consolidado por empresa** e a exportação em **Excel e PDF** (era a
+única tela do ERP que só dava CSV).
+
+⚠️ **E uma palavra entrou para a lista das ambíguas: "total da obra".**
+
+Até então, "totais por obra" somava o que a obra vai **RECEBER** com o que ela
+**CUSTOU**, num número positivo só — porque a medição a receber e a nota a
+pagar moram na mesma lista. Uma obra que gastou 10 mil e vai receber 50 mil
+aparecia com "60 mil". Agora a **espécie** é escolha explícita na tela, e o
+padrão é **a pagar**, porque este é um relatório de custo.
+
+Perguntas que passam a funcionar:
+
+- OK **Quanto eu tenho a pagar por semana, nas próximas 13 semanas?**
+- OK **Em que semana o caixa fica negativo?** — a partir do saldo que você
+  informar; o sistema **não sabe** o saldo do banco.
+- OK **Quais fornecedores respondem por 80% do que eu gasto?**
+- OK **Quanto cada empresa do grupo gastou no período?**
+- OK **Quanto esta obra vai receber, separado do que ela custa?**
+
+Todas mudam conforme quem pergunta (recorte por obra).
+
+O que ainda **nao** responde:
+
+- FALTA **"Este gasto esta dentro do previsto?"** — falta orcamento por obra.
+  E a pergunta que o sistema inteiro ainda nao sabe responder, e a que mais
+  muda uma decisao.
+- FALTA **"Como esta este mes comparado com o mes passado?"** — nenhum
+  relatorio compara periodos.
+- FALTA **"Quanto esta vencido ha mais de 60 dias?"** — o fluxo mostra o
+  vencido num total so, sem faixas.
 
 ## 4. Como esta lista vira código
 

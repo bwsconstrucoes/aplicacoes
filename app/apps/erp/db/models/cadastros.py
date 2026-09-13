@@ -120,6 +120,19 @@ class Usuario(Base):
         default=EscopoVisao.PROPRIOS, server_default="PROPRIOS")
     cpf: Mapped[Optional[str]] = mapped_column(Text)
     telefone: Mapped[Optional[str]] = mapped_column(Text)
+    # Teto mensal de gasto com IA desta pessoa, em US$ (migração 064).
+    # NULO = SEM LIMITE, e é escolha explícita de quem edita o cadastro — todo
+    # mundo que já existia recebeu os 5 dólares na migração.
+    #
+    # SEM `default` E SEM `server_default` AQUI, de propósito. Com qualquer um
+    # dos dois, o SQLAlchemy OMITE a coluna do INSERT quando ela está nula — e
+    # aí apagar o campo para dizer "sem limite" gravava 5,00 do mesmo jeito, a
+    # escolha da pessoa desfeita em silêncio. Achado por teste em 12/09/2026.
+    #
+    # Quem decide o padrão é quem CRIA o operador (`core/auth/service.py`), com
+    # todas as letras. O `DEFAULT 5.00` continua no banco, para linha criada
+    # fora do sistema, mas o ERP não depende dele.
+    teto_ia_usd: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2))
     # fundo fixo: alçada de quem gasta, não do sistema
     ff_teto_item: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))
     ff_teto_prestacao: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2))

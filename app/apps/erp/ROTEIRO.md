@@ -309,6 +309,90 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       **Falta ainda:** o dono arquivar os contratos de verdade no Arquivo. Sem
       documento arquivado, não há o que procurar.
 
+- [x] **CUSTO DA OBRA: comprometido e executado, só DRE** — FEITO em
+      12/09/2026, com a definição dada pelo dono. Destrava a pergunta "quanto
+      custou a obra" no assistente, que estava fora do catálogo esperando a
+      palavra ser decidida.
+      · Reusa `core/relatorios.py` — mesmo recorte, mesma conta, mesma espécie.
+      · **Decisão pendente do dono:** o perfil GESTOR_OBRA enxerga TODAS as
+        obras (está em `VE_TUDO`), o que contradiz o princípio "limitar as
+        informações a quem está associado a cada obra". Não mexi: quem vê o
+        quê é decisão de negócio.
+
+- [x] **RELATÓRIOS: fluxo de caixa, curva ABC, empresa, Excel/PDF — e o
+      defeito da espécie** — FEITO em 12/09/2026, aprovado pelo dono.
+      · **Defeito corrigido:** "totais por obra" somava o que a obra vai
+        RECEBER com o que ela CUSTOU. Espécie virou escolha explícita, padrão
+        "a pagar". O DRE sempre esteve certo (classifica pela conta do plano).
+      · **Fluxo de caixa projetado** por semana ou mês, com o vencido à parte
+        e o saldo inicial informado pela pessoa (o sistema não sabe o saldo do
+        banco).
+      · **Curva ABC** por credor, conta ou obra.
+      · **Consolidado por empresa** (filtro e dimensão).
+      · **Excel e PDF** — era a única tela do ERP que só dava CSV.
+      **Falta ainda:** comparação entre períodos, faixas de atraso (aging), e
+      orçado × realizado — que depende de existir orçamento por obra.
+
+- [x] **ENCAMINHAR INFORMAÇÃO POR WHATSAPP** — FEITO em 12/09/2026, pedido do
+      dono. Botão "↗ Encaminhar" na ficha do lançamento e "Enviar" no
+      documento do Arquivo; para operadores cadastrados ou número avulso, com
+      recado e anexo opcional, e prévia antes do disparo.
+      · Reusa `app/apps/notificador.py`, que já manda por Telegram e WhatsApp.
+      · **Três travas:** só se encaminha o que se pode ver (mesmo recorte por
+        obra); fica registrado quem mandou o quê para quem; número que não
+        parece telefone é recusado.
+      · CONSULTA e PARCEIRO não encaminham, por escolha.
+      **Falta ainda:** as perguntas sobre o que foi encaminhado (o registro
+      existe, falta a consulta pronta).
+
+- [x] **A RESPOSTA DO ASSISTENTE VIRA RELATÓRIO (Excel e PDF)** — FEITO em
+      12/09/2026, pedido do dono. Toda resposta com tabela ganha os dois
+      botões, no painel do cantinho e na tela cheia. Quem monta o arquivo é o
+      SISTEMA, com os mesmos números — não a IA escrevendo um texto.
+      · **Falha antiga corrigida junto:** o exportador punha o valor debaixo do
+        cabeçalho errado quando a linha era um dicionário fora da ordem das
+        colunas, ou quando faltava um campo. Saía bonito e errado, sem aviso.
+
+- [x] **CANCELAR LANÇAMENTO: quem lançou desfaz o próprio, e é avisado** —
+      FEITO em 12/09/2026. Pedido do dono, e decisão dele: *"liberado o
+      lançamento que não está baixado ou conciliado"*.
+      · Ação PRÓPRIA (`cancelar_titulo`), implicada por "lancar" e "aprovar".
+        Quem lançou cancela o SEU; quem aprova cancela o de qualquer um.
+      · Aviso a quem lançou, com o motivo inteiro, pelo mesmo caminho do aviso
+        de pagamento (Telegram). Quem cancelou não recebe aviso de si mesmo.
+      · **Falha corrigida junto:** a trava era `parcela PAGA`, e parcela pode
+        ter PAGAMENTO sem estar marcada paga (baixa parcial, baixa do robô) —
+        o cancelamento passava e o pagamento ficava pendurado num título
+        cancelado. Agora olha pagamento E conciliação, com recados diferentes.
+      **Falta ainda:** as perguntas sobre cancelamento no assistente
+      (`PERGUNTAS.md` §Financeiro) — hoje o cancelamento vive no registro de
+      eventos e não há consulta pronta.
+
+- [x] **3c-1. PERGUNTAR SOBRE **UM** DOCUMENTO** — FEITO em 12/09/2026, a
+      pedido do dono: *"tem um contrato de uma obra e eu quero perguntar
+      alguma coisa sobre ele"*.
+      Botão **Perguntar** em cada documento, na tela do Arquivo: a IA lê o
+      texto DAQUELE documento e responde. Diferente do 3c, que procura uma
+      palavra no acervo inteiro e lê só os pedacinhos que casaram.
+      · **O buraco que apareceu no caminho:** só as SEIS primeiras páginas de
+        cada documento ficavam guardadas como texto, e só quando a leitura por
+        IA tinha rodado. Contrato de quarenta páginas: 85% invisível. Documento
+        arrastado e cadastrado à mão: sem texto nenhum. Agora todo
+        arquivamento extrai o texto inteiro (PyMuPDF, **sem custo de IA**), e o
+        acervo antigo tem botão em Configurações, em segundo plano.
+      · **A citação é conferida pelo sistema:** o código procura cada trecho
+        dentro do documento antes de mostrar. Trecho inventado é descartado e a
+        resposta sai marcada como não conferida. Teste com citação falsa prova.
+      · **Escopo:** o mesmo `exigir_documento_no_escopo` da tela. Fora do
+        recorte responde "não encontrado", nunca "sem permissão".
+      ⚠️ **Escaneado fica de fora**, por decisão do dono: *"não ler escaneados
+      por hora"*. Responde "este documento é uma imagem, não consigo ler o
+      texto dele" — e a IA nem é chamada. Ler escaneado custa por documento.
+      ⚠️ **Um documento por pergunta, sem memória entre perguntas.** Comparar
+      dois contratos ou continuar a conversa sobre o mesmo documento não dá —
+      o dono recusou o caminho da conversa: *"isso fica pra fazer direto com
+      GPT, Claude"*.
+
 - [ ] **3c-2. O ÍNDICE POR SIGNIFICADO** — o passo seguinte da busca nos
       documentos, e a hora de fazê-lo é quando a lista de perguntas sem
       resposta mostrar que faz falta. Decisão do dono em 11/09/2026: *"vamos
@@ -476,15 +560,23 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       que errem, e mexer em conta de dinheiro sem caso que prove a falha é
       trocar erro conhecido por erro desconhecido. Anotados no HISTORICO.
 
-- [ ] **8. Teto de custo de IA POR PESSOA**, não só global (`core/comum/
-      ia_custo.py` já tem o teto do mês). Sem isso, a curiosidade de uma pessoa
-      come o mês inteiro.
-      ✔ **DECIDIDO em 10/09/2026:** o assistente é para **qualquer pessoa,
-      dentro das atribuições e permissões dela** — não só o dono. E por isso
-      mesmo o teto por pessoa é requisito, não enfeite: *"a gente pode ter
-      muitas pessoas aí utilizando, a brincar às vezes, e a gente não pode
-      estourar os limites"*. O VALOR mensal por colaborador fica para o dono
-      definir depois.
+- [x] **8. TETO DE CUSTO DE IA POR PESSOA** — FEITO em 12/09/2026. **TRAZ A
+      MIGRAÇÃO 064.**
+      O dono definiu o valor: *"pra gente não ter surpresa, vamos limitar aí.
+      Deve ficar no cadastro da pessoa, com o valor estimado já de cinco
+      dólares. (…) Se eu quiser colocar alguém sem limite, eu coloco, ou botar
+      dez dólares"*. Raciocínio dele: *"isso é mais é gestão que vai usar,
+      pessoal de obra eu não acredito que vai usar muito"*.
+      **US$ 5,00** de padrão para quem entra novo, editável um a um no cadastro
+      do operador, **vazio = sem limite**, e a tela mostra quanto a pessoa já
+      usou no mês.
+      **Este teto BARRA** — o global só avisa. Teto que só avisa vira aviso que
+      chega depois da fatura.
+      **Conta do sistema nunca é barrada** (robô, relatório agendado, agente).
+      **Duas armadilhas, as duas pegas por teste:** padrão no modelo desfazia
+      em silêncio a escolha de "sem limite"; e a trava dentro do `try` viraria
+      "falha do sistema" em vez de "seu limite acabou". Há varredura estrutural
+      cobrando as duas.
 - [ ] **9. Guardar toda pergunta e toda resposta.** Serve para controlar custo,
       para auditar e — o mais útil — porque a lista do que perguntam repetido é
       a lista das telas que faltam.

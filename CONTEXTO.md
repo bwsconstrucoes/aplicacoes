@@ -773,17 +773,60 @@ Quando eu pedir nova feature ou adaptação:
   de CNPJs vigiados pela busca da Receita **saiu de variável**: é quem tem
   certificado válido guardado, para duas listas não divergirem.
 
+- **2026-09-12 — "CUSTO DA OBRA" tem definição fechada: despesa DIRETA de DRE,
+  nas visões COMPROMETIDO e EXECUTADO.** Palavras do dono: *"o custo
+  normalmente está associado só às despesas de DRE, nada de fluxo. E é o custo
+  executado e o custo comprometido"*. Comprometido = a obrigação já existe,
+  tendo o dinheiro saído ou não; executado = o dinheiro já saiu. Conta de
+  FLUXO (transferência, aporte, principal de empréstimo) **não é custo** — é
+  dinheiro mudando de lugar. Rascunho, cancelado, estornado e devolvido não
+  comprometem nada. Rateio da administração não vira custo de obra
+  (decisão de 11/09). **As duas visões aparecem sempre juntas**, com a
+  diferença numa terceira coluna. Isto destravou o grupo de Obras do
+  assistente, que estava parado esperando a palavra. **Regra que fica: a
+  resposta mostra as duas leituras legítimas lado a lado em vez de escolher
+  uma em silêncio.**
+
+- **2026-09-12 — Teto de IA é POR PESSOA, fica no cadastro dela, e BARRA.**
+  Migração 064. US$ 5,00 de padrão para quem entra novo, editável um a um, e
+  **vazio = sem limite**. A diferença para o teto global é o ponto: o global
+  avisa os administradores e deixa passar (termômetro); este recusa a chamada.
+  *"Teto que só avisa vira aviso que chega depois da fatura"*, e o pedido do
+  dono foi "não ter surpresa". **Conta do sistema (robô, relatório agendado,
+  agente) nunca é barrada** — não é curiosidade de ninguém, e travar rotina
+  sem explicação é pior que o custo. **Regra que fica: limite que protege
+  dinheiro recusa; limite que só informa é relatório, não limite.**
+
+- **2026-09-12 — Padrão de valor NÃO vai no modelo quando "vazio" é uma
+  escolha.** Com `default=` no `mapped_column`, o SQLAlchemy omite a coluna do
+  INSERT quando ela está nula — e aí apagar o campo para dizer "sem limite"
+  gravava o padrão do mesmo jeito, desfazendo a escolha da pessoa em silêncio.
+  Achado por teste em 12/09/2026. O padrão foi para o lugar que CRIA o
+  registro, onde está escrito e se lê. **Regra que fica: se o vazio quer dizer
+  alguma coisa, o modelo não pode ter padrão.**
+
+- **2026-09-12 — Trava de custo fica FORA do `try`.** As rotas do ERP terminam
+  em `except Exception`; uma recusa por teto levantada lá dentro viraria
+  "falha do sistema" com código de erro, em vez de "seu limite acabou". Há
+  varredura estrutural cobrando as duas coisas: toda rota que gasta IA confere
+  o teto, e a conferência fica fora do `try`. **Regra que fica: recusa
+  ESPERADA não passa por tratamento de falha inesperada.**
+
 - **2026-09-12 — Pedido com várias tarefas é FILA, não cardápio.** O dono
-  pediu isto mais de uma vez antes de mandar registrar: *"eu passo uma demanda,
-  aí só depois de um bom tempo eu volto pro Claude pra olhar. Aí quando eu
-  olho, você fez uma e estavam pendentes as outras duas, sem razão."* **Regra
-  que fica** (detalhada no `CLAUDE.md`): tarefas independentes num pedido só
-  são executadas todas, uma atrás da outra, sem devolver a conversa no meio.
-  Dúvida trava SÓ a tarefa dela; as outras seguem. Só três coisas param a fila:
-  publicar, algo sem desfazer que ele não autorizou, e uma dúvida que trava
-  tudo o que sobrou. **A causa, escrita para não se repetir:** parar e relatar
-  parece cuidado e é o contrário — seguir errado numa tarefa independente custa
-  uma tarefa refeita; parar no meio custa horas paradas do dono, garantidas.
+  cobrou isto em DOIS chats no mesmo dia, e nenhuma das duas vezes foi a
+  primeira: *"eu passo uma demanda, aí só depois de um bom tempo eu volto pro
+  Claude pra olhar. Aí quando eu olho, você fez uma e estavam pendentes as
+  outras duas, sem razão."* / *"Se eu já estou dando três tarefas, por que tu
+  não executa as três?"* **Regra que fica** (detalhada no `CLAUDE.md`, que toda
+  sessão nova lê): tarefas independentes num pedido só são executadas todas,
+  uma atrás da outra, sem devolver a conversa no meio. Ordem é escolha de quem
+  executa, não pergunta. Dúvida de detalhe vira padrão sensato escrito na
+  resposta; dúvida de verdade trava SÓ a tarefa dela, e as outras seguem. Só
+  três coisas param a fila: publicar, algo sem desfazer que ele não autorizou,
+  e uma dúvida que trava tudo o que sobrou. **A causa, escrita para não se
+  repetir:** parar e relatar parece cuidado e é o contrário — seguir errado
+  numa tarefa independente custa uma tarefa refeita; parar no meio custa horas
+  paradas do dono, garantidas.
 
 - **2026-09-12 — Botão que muda de estado tem de dizer o estado EM PALAVRAS.**
   O microfone do assistente só trocava o ícone e ficava vermelho; o dono, no

@@ -10,6 +10,8 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+from decimal import Decimal
+
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -82,6 +84,12 @@ def autenticar(s: Session, email: str, senha: str) -> Usuario:
                              perfil=PerfilUsuario(dados[3]))
 
 
+# Teto mensal de gasto com IA de um operador NOVO, em US$. Decidido pelo dono
+# em 12/09/2026: cinco dólares seguram a curiosidade de quem experimenta, e
+# quem precisa de mais recebe mais, um a um, no cadastro dele.
+TETO_IA_PADRAO = Decimal("5.00")
+
+
 def criar_usuario(s: Session, *, nome: str, email: str, senha: str,
                   perfil: str = "CONSULTA", criado_por: Optional[Usuario] = None) -> Usuario:
     if criado_por is not None and criado_por.perfil != PerfilUsuario.ADMIN:
@@ -95,7 +103,12 @@ def criar_usuario(s: Session, *, nome: str, email: str, senha: str,
     if s.scalars(select(Usuario).where(Usuario.email == email)).first() is not None:
         raise ValueError(f"Já existe usuário com o e-mail {email}.")
     usuario = Usuario(nome=(nome or "").strip(), email=email,
-                      senha_hash=gerar_hash(senha), perfil=PerfilUsuario(perfil))
+                      senha_hash=gerar_hash(senha), perfil=PerfilUsuario(perfil),
+                      # Operador novo nasce com o teto combinado de IA. Está
+                      # escrito AQUI, e não como padrão do modelo, porque
+                      # padrão de modelo desfaz em silêncio a escolha de quem
+                      # apaga o campo para dizer "sem limite" (migração 064).
+                      teto_ia_usd=TETO_IA_PADRAO)
     s.add(usuario)
     s.flush()
     return usuario

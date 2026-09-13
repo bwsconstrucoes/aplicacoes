@@ -156,6 +156,9 @@ TIPO_DA_COLUNA: dict[str, str] = {
     "medido_sem_nota": "dinheiro", "pago_ate_agora": "dinheiro",
     "recebido": "dinheiro", "ultimo_preco": "dinheiro", "valor": "dinheiro",
     "valor_periodo": "dinheiro", "vigente": "dinheiro",
+    # Custo da obra, nas duas visões decididas pelo dono em 12/09/2026.
+    "comprometido": "dinheiro", "executado": "dinheiro",
+    "a_executar": "dinheiro",
     # contagem
     "alertas": "numero", "atraso": "numero", "dias": "numero",
     "itens": "numero", "meses": "numero", "parado_ha": "numero",
@@ -929,18 +932,36 @@ def parcelas_de_locacao_sem_lancar(s: Session, usuario: Usuario) -> dict[str, An
 # ===========================================================================
 # OBRAS — o cadastro que trava (ou destrava) o resto do sistema
 #
-# POR QUE ESTE GRUPO NASCEU PEQUENO, E DE PROPÓSITO.
-# A pergunta que o dono mais faria aqui é "quanto custou a obra tal" — e essa
-# NÃO está neste arquivo. Motivo: "custo da obra" ainda não tem UMA definição
-# combinada (o que foi lançado? o que foi pago? inclui o que está em análise?
-# inclui rateio de administração?), e cada leitura dá um número diferente,
-# todos com cara de certo. Enquanto a palavra não estiver decidida, responder
-# seria escolher por ele em silêncio — exatamente o que este módulo existe
-# para não fazer. O mesmo vale para "obra em andamento" e "resultado da obra".
+# O GRUPO NASCEU PEQUENO E CRESCEU EM 12/09/2026, quando a palavra foi
+# decidida. Até então "quanto custou a obra tal" não estava aqui, porque
+# "custo da obra" tinha mais de uma leitura possível e cada uma dá um número
+# diferente, todos com cara de certo.
 #
-# O que entrou é o que NÃO depende de palavra ambígua: o cadastro. São
-# perguntas de conferência — as que evitam descobrir que falta um campo no dia
-# em que a nota precisa sair.
+# A DEFINIÇÃO, nas palavras do dono: *"o custo normalmente está associado só
+# às despesas de DRE, nada de fluxo. E é o custo executado e o custo
+# comprometido — são essas duas visões que a gente tem"*.
+#
+# Ou seja, três regras, e elas mandam em `custo_da_obra`:
+#
+#   1. **Só conta de DRE** (natureza RESULTADO). Conta de FLUXO — transferência
+#      entre contas, aporte, principal de empréstimo — não é custo: é dinheiro
+#      mudando de lugar. Somá-la inflaria o custo da obra sem que nada tenha
+#      sido consumido.
+#   2. **COMPROMETIDO** é o que já foi lançado e ainda vale: a obrigação
+#      existe, tendo o dinheiro saído ou não. Rascunho, cancelado, estornado e
+#      devolvido ficam de fora — não comprometem nada.
+#   3. **EXECUTADO** é o que saiu do caixa de verdade: a soma dos pagamentos.
+#
+# E continua valendo a decisão de 11/09/2026: custo é a despesa DIRETA da obra,
+# o que foi rateado nela. Rateio da administração da empresa não vira custo de
+# obra.
+#
+# AS DUAS VISÕES APARECEM JUNTAS, sempre. Escolher uma e mostrar só ela seria
+# escolher pelo dono em silêncio — e a diferença entre as duas é justamente o
+# que ele ainda tem para pagar.
+#
+# O resto do grupo é conferência de cadastro: as perguntas que evitam descobrir
+# que falta um campo no dia em que a nota precisa sair.
 #
 # ESCOPO: obra é registro SEM AUTOR, igual a contrato de locação. Por isso
 # passa por `obras_de_registro_sem_autor`, e não por `obras_do_usuario` — a
@@ -1100,6 +1121,81 @@ def vigencia_vencida(s: Session, usuario: Usuario) -> dict[str, Any]:
                     "o que está concluído, recebido, em acervo técnico ou "
                     "distratado. Não é uma opinião do sistema sobre a obra "
                     "estar ou não tocando — é o que alguém marcou na tela."))
+
+
+# ---------------------------------------------------------------------------
+# O CUSTO DA OBRA — nas duas visões que o dono nomeou
+# ---------------------------------------------------------------------------
+# Reusa `core/relatorios.py` inteiro: o mesmo recorte por obra, a mesma conta
+# de rateio, a mesma correção da conta redutora, o mesmo filtro de espécie.
+# Uma consulta própria aqui divergiria da tela de Relatórios no dia em que
+# alguém corrigisse uma das duas — e aí o assistente e o relatório dariam
+# números diferentes sobre a mesma obra, que é o pior desfecho possível.
+# ---------------------------------------------------------------------------
+def custo_da_obra(s: Session, usuario: Usuario, *, obra: str = "",
+                  competencia_de: str = "",
+                  competencia_ate: str = "") -> dict[str, Any]:
+    """Quanto a obra comprometeu e quanto ela já executou de custo."""
+    from app.apps.erp.core import relatorios
+
+    filtros: dict[str, Any] = {"natureza": "RESULTADO", "especie": "pagar"}
+    if competencia_de:
+        filtros["competencia_de"] = competencia_de
+    if competencia_ate:
+        filtros["competencia_ate"] = competencia_ate
+
+    obras = _obras_que_alcanco(s, usuario)
+    escolhida = None
+    if obra:
+        escolhida = next((o for o in obras
+                          if _casa(obra, o.codigo) or _casa(obra, o.nome)), None)
+        if escolhida is None:
+            return _resposta(
+                titulo="Custo da obra",
+                frase=f"Não achei a obra “{obra}” entre as que você alcança.",
+                linhas=[], colunas=[],
+                de_onde_veio={"tela": "/erp/relatorios",
+                              "explicacao": "Relatórios › totais por obra."})
+        filtros["obra_id"] = escolhida.id
+
+    r = relatorios.resumo(s, "obra", filtros, usuario)
+    linhas = [{"obra": l["chave"],
+               "comprometido": l["total"],
+               "executado": l["pago"],
+               "a_executar": l["aberto"]} for l in r["linhas"] if l["total"]]
+    linhas.sort(key=lambda l: -l["comprometido"])
+
+    periodo = ""
+    if competencia_de or competencia_ate:
+        periodo = f" entre {competencia_de or '…'} e {competencia_ate or '…'}"
+
+    if not linhas:
+        frase = f"Nenhum custo lançado{periodo} nas obras que você alcança."
+    elif escolhida is not None:
+        l = linhas[0]
+        frase = (f"{escolhida.codigo}{periodo}: **{_reais(l['comprometido'])} "
+                 f"comprometido** e **{_reais(l['executado'])} executado**. "
+                 f"Faltam {_reais(l['a_executar'])} para sair do caixa.")
+    else:
+        frase = (f"{len(linhas)} obra(s){periodo}: "
+                 f"{_reais(r['total'])} comprometido e "
+                 f"{_reais(r['total_pago'])} executado.")
+
+    return _resposta(
+        titulo=f"Custo da obra{periodo}", frase=frase, linhas=linhas,
+        colunas=[("obra", "Obra"), ("comprometido", "Comprometido"),
+                 ("executado", "Executado"), ("a_executar", "Falta executar")],
+        total=Decimal(str(r["total"])),
+        de_onde_veio={"tela": "/erp/relatorios",
+                      "explicacao": "Relatórios › totais por obra."},
+        observacao=(
+            "**Comprometido** é o que já foi lançado e ainda vale — a "
+            "obrigação existe, tendo o dinheiro saído ou não. **Executado** é "
+            "o que já saiu do caixa. Entram só contas de RESULTADO (DRE): "
+            "transferência entre contas e aporte não são custo, são dinheiro "
+            "mudando de lugar. É a despesa DIRETA da obra — rateio da "
+            "administração da empresa não vira custo de obra. Definição do "
+            "dono, em 12/09/2026."))
 
 
 # ===========================================================================
