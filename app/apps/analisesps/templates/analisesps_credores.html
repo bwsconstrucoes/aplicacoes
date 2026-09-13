@@ -141,8 +141,12 @@
       volta a perguntar.
     </p>
     {% for d in decidir %}
+      {# `data-sem-aguarde`: quem dá o retorno deste botão é o bloco do
+         "Usar este" logo abaixo, que grava por trás e resolve o caso no lugar.
+         Sem isto, o bloco global trocaria o texto por "Aguarde…" por cima e os
+         dois brigariam pelo mesmo botão. #}
       <form method="post" action="{{ url_for('analisesps.aplicar_credor') }}"
-            class="credor-caso">
+            class="credor-caso" data-sem-aguarde="1">
         <input type="hidden" name="documento" value="{{ d.documento }}">
         <input type="hidden" name="tipo-{{ d.documento }}" value="DECIDIR">
         <div>

@@ -4222,3 +4222,182 @@ def test_uma_busca_BEM_SUCEDIDA_apaga_a_marca_de_falha(banco_analisesps):
     estado = [e for e in sefaz.estado_das_buscas() if e["tipo"] == "NFE"][0]
     assert estado["falhou"] is False
     assert estado["em_dia"] is True
+
+
+# ===========================================================================
+# "USAR ESTE" SEM A TELA SUBIR — 13/09/2026, com a tela já publicada
+#
+# *"Clico usar este, continua subindo a tela. Clico em dois e acho que ele
+# somente resolve um."*
+#
+# Cada fornecedor é um formulário próprio, e cada envio era uma página inteira
+# indo e voltando: a rolagem voltava ao topo, e o segundo clique ABORTAVA o
+# primeiro, que ainda estava no ar.
+# ===========================================================================
+def _cliente_operador(monkeypatch):
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as sessao:
+        sessao["analisesps_perfil"] = "operador"
+        sessao["analisesps_nome"] = "Marcelo"
+    return cliente
+
+
+@pytest.mark.banco
+def test_usar_este_responde_SEM_REDIRECIONAR_quando_a_tela_pede(
+        banco_analisesps, monkeypatch):
+    """É o cabeçalho que muda a resposta — e é ele que tira o recarregamento."""
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    resposta = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "09444530000101",
+              "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+              "tipo-09444530000101": "COMECO"})
+
+    assert resposta.status_code == 200
+    corpo = resposta.get_json()
+    assert corpo["ok"] is True
+    assert corpo["sps"] == 1
+    assert corpo["nomes"] == ["TRIBUNAL DE JUSTIÇA DO CEARÁ"]
+
+
+@pytest.mark.banco
+def test_usar_este_SEM_o_cabecalho_continua_redirecionando(
+        banco_analisesps, monkeypatch):
+    """⚠️ Sem JavaScript a tela tem de continuar funcionando. O formulário é de
+    verdade; o atalho é melhoria, não a única porta."""
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    resposta = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        data={"documento": "09444530000101",
+              "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+              "tipo-09444530000101": "COMECO"})
+
+    assert resposta.status_code == 302
+    assert "/analisesps/credores" in resposta.headers["Location"]
+
+
+@pytest.mark.banco
+def test_DOIS_usar_este_seguidos_resolvem_OS_DOIS(banco_analisesps, monkeypatch):
+    """*"Clico em dois e acho que ele somente resolve um."* Era isso: o
+    segundo envio cancelava o primeiro, que ainda estava no ar."""
+    from app.apps.analisesps.db import consultar
+
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ"),
+            _sp_credor("3", "11222333000144", "LOCADORA DO VALE"),
+            _sp_credor("4", "11222333000144", "LOCADORA DO VALE LTDA")])
+
+    cliente = _cliente_operador(monkeypatch)
+    for documento, nome in (("09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ"),
+                            ("11222333000144", "LOCADORA DO VALE LTDA")):
+        r = cliente.post("/analisesps/credores/aplicar",
+                         headers={"X-Sem-Recarregar": "1"},
+                         data={"documento": documento, "nome": nome,
+                               f"tipo-{documento}": "COMECO"})
+        assert r.get_json()["ok"] is True
+
+    decididos = {l[0] for l in consultar(
+        "SELECT documento FROM analisesps.credor_nome")}
+    assert decididos == {"09444530000101", "11222333000144"}
+
+
+# ===========================================================================
+# O PANORAMA DAS PARCELAS — dito ANTES do clique (13/09/2026)
+#
+# *"Clico em ver os dados de uma sugestão. Claramente é a situação de parcelas
+# que informei. Não deveria haver uma associação com as outras parcelas pra
+# vincular logo tudo? Ou avisar que já tá associado com outras?"*
+#
+# Gravar nas irmãs já acontecia — ele só descobria DEPOIS de clicar.
+# ===========================================================================
+@pytest.mark.banco
+def test_o_panorama_diz_quantas_parcelas_VAO_receber_a_nota(banco_analisesps):
+    from app.apps.analisesps import fiscal
+
+    semear(_tres_parcelas())
+    p = fiscal.panorama_das_parcelas(
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": "3/3"})
+
+    assert (p["qual"], p["de"]) == (3, 3)
+    assert p["livres"] == 2
+    assert sorted(i["id"] for i in p["irmas"]) == ["9001", "9002"]
+
+
+@pytest.mark.banco
+def test_o_panorama_AVISA_a_parcela_que_ja_esta_com_OUTRA_nota(banco_analisesps):
+    """⚠️ É a informação que responde "já tá associado com outras?" — e é a
+    única das três que `parcelas_irmas` esconde de propósito, porque aquela
+    lista é de quem VAI ser gravado."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    esta = _chave(FRIGELAR_DOC)
+    outra = _chave("11222333000144")
+    semear(_tres_parcelas())
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('9001', 'ESCRITA', ?)", (outra,))
+        conn.commit()
+
+    p = fiscal.panorama_das_parcelas(
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": "3/3"}, chave_em_questao=esta)
+
+    assert p["outra_nota"] == 1
+    assert p["livres"] == 1
+    presa = next(i for i in p["irmas"] if i["id"] == "9001")
+    assert presa["situacao"] == "outra_nota"
+
+
+@pytest.mark.banco
+def test_o_panorama_reconhece_a_irma_que_JA_ESTA_com_a_MESMA_nota(
+        banco_analisesps):
+    """"Já está com esta nota" e "está com outra" pedem reações opostas, e
+    misturar as duas seria pior do que não dizer nada."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    esta = _chave(FRIGELAR_DOC)
+    semear(_tres_parcelas())
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('9001', 'ESCRITA', ?)", (esta,))
+        conn.commit()
+
+    p = fiscal.panorama_das_parcelas(
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": "3/3"}, chave_em_questao=esta)
+
+    assert p["mesma_nota"] == 1 and p["outra_nota"] == 0
+
+
+@pytest.mark.banco
+def test_o_panorama_DIZ_quando_falta_o_numero_da_nota_no_card(banco_analisesps):
+    """Sem o nº da nota não há como achar as irmãs com segurança. Dizer isso é
+    melhor do que calar e deixar parecer que não há parcelamento."""
+    from app.apps.analisesps import fiscal
+
+    semear(_tres_parcelas(nf=""))
+    p = fiscal.panorama_das_parcelas(
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "",
+         "parcela": "3/3"})
+
+    assert p["sem_numero"] is True and p["irmas"] == []
+
+
+@pytest.mark.banco
+def test_SP_que_nao_e_parcela_nao_tem_panorama(banco_analisesps):
+    from app.apps.analisesps import fiscal
+    assert fiscal.panorama_das_parcelas(
+        {"id": "1", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": ""}) == {}
