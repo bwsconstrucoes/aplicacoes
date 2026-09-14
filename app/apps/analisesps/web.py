@@ -2255,19 +2255,33 @@ def tela_fiscal():
         # "o que falta NESTA PÁGINA", que parece certo e não é.
         painel = consultas.painel_fiscal(filtros)
         painel["sem_lancamento"] = fiscal.painel_notas().get("sem_lancamento", 0)
-        # O QUADRO POR CATEGORIA, com o dinheiro ao lado da contagem. Ver
-        # `consultas.quadro_por_categoria`: é o "quanto isso em valores" dele.
-        #
-        # ⚠️ Sai do MESMO filtro da lista, então o que o quadro soma e o que a
-        # lista mostra não têm como divergir.
-        quadro_categorias = consultas.quadro_por_categoria(filtros)
         erro = None
     except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
         logger.exception("Análise de SPs: falhou a conciliação fiscal")
-        quadro_categorias = []
         conciliadas, resumo, painel, erro = [], {"quantidade": 0, "total": 0}, {}, (
             "Esta tela precisa da atualização do banco. Vá em Configurações e "
             f"aperte \"Aplicar atualizações do banco\". (detalhe: {e})")
+
+    # O QUADRO POR CATEGORIA, com o dinheiro ao lado da contagem. Ver
+    # `consultas.quadro_por_categoria`: é o "quanto isso em valores" dele.
+    #
+    # ⚠️ EM BLOCO PRÓPRIO, E ISSO NÃO É ZELO — foi defeito, pego pela suíte no
+    # mesmo dia em que o quadro nasceu. Ele estava DENTRO do try da lista, e
+    # uma falha aqui derrubava a TELA INTEIRA: a lista sumia, o painel sumia, e
+    # o recado dizia "esta tela precisa da atualização do banco" — que nem era
+    # verdade.
+    #
+    # A REGRA GERAL, e vale para o que vier depois: **o acessório não pode
+    # derrubar o principal**. O quadro é um extra; sem ele a tela continua
+    # fazendo o trabalho dela.
+    #
+    # ⚠️ Sai do MESMO filtro da lista, então o que o quadro soma e o que a
+    # lista mostra não têm como divergir.
+    try:
+        quadro_categorias = consultas.quadro_por_categoria(filtros)
+    except Exception:  # noqa: BLE001 — o quadro é extra; a lista não é
+        logger.exception("Análise de SPs: falhou o quadro por categoria")
+        quadro_categorias = []
 
     contagem = fiscal.contar_por_grupo(conciliadas)
     if grupo:

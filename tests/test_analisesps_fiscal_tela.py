@@ -1105,3 +1105,56 @@ def test_o_endereco_ANTIGO_da_tela_solta_continua_levando_a_algum_lugar():
 
     r = cliente.get("/analisesps/planilha?aba=notas")
     assert "visao=dados_notas" in r.headers["Location"]
+
+
+def test_o_QUADRO_que_falha_NAO_derruba_a_tela(monkeypatch):
+    """⚠️ Foi defeito de verdade, pego pela suíte no mesmo dia em que o quadro
+    nasceu — 14/09/2026.
+
+    Ele estava dentro do mesmo `try` da lista, e uma falha ali derrubava a TELA
+    INTEIRA: a lista sumia, o painel sumia, e o recado dizia "esta tela precisa
+    da atualização do banco", que nem era verdade.
+
+    A REGRA QUE FICA, e vale para o que vier depois: **o acessório não pode
+    derrubar o principal**."""
+    from flask import Flask
+
+    from app.apps.analisesps import consultas, fiscal, tarefas, web
+
+    def explode(*a, **k):
+        raise RuntimeError("o banco caiu bem no quadro")
+
+    monkeypatch.setattr(consultas, "quadro_por_categoria", explode)
+    monkeypatch.setattr(consultas, "base_carregada",
+                        lambda: {"pronta": True, "quantidade": 1,
+                                 "ultima": None, "desconhecida": False})
+    monkeypatch.setattr(consultas, "listar", lambda *a, **k: [
+        {"id": "1", "credor": "ACME MATERIAIS", "valor_num": 10}])
+    monkeypatch.setattr(consultas, "resumo",
+                        lambda *a, **k: {"quantidade": 1, "total": 10})
+    monkeypatch.setattr(consultas, "painel_fiscal", lambda *a, **k: {})
+    monkeypatch.setattr(fiscal, "painel_notas", lambda *a, **k: {})
+    monkeypatch.setattr(fiscal, "conciliar", lambda linhas: [
+        {"sp": linhas[0], "grupo": "em_dia", "analise": {}, "nota": None,
+         "documentacao": "", "confianca": 0, "motivo": "", "porques": [],
+         "propoe": False}])
+    monkeypatch.setattr(fiscal, "contar_por_grupo", lambda *a, **k: {})
+    monkeypatch.setattr(tarefas, "estado", lambda *a, **k: {})
+    monkeypatch.setattr(tarefas, "ultimas_por_tipo", lambda *a, **k: {})
+    monkeypatch.setattr(web, "_opcoes_dos_filtros", lambda *a, **k: {})
+    monkeypatch.setattr(web, "_lembrar_filtro", lambda *a, **k: None)
+
+    a = Flask(__name__)
+    a.secret_key = "x"
+    a.register_blueprint(web.bp)
+    cliente = a.test_client()
+    with cliente.session_transaction() as sessao:
+        sessao["analisesps_perfil"] = "operador"
+
+    r = cliente.get("/analisesps/fiscal?f=1")
+    assert r.status_code == 200
+    corpo = r.get_data(as_text=True)
+    # A LISTA CONTINUA LÁ, que é o trabalho da tela.
+    assert "ACME MATERIAIS" in corpo
+    # E o recado falso NÃO aparece: não é o banco que está desatualizado.
+    assert "precisa da atualização do banco" not in corpo
