@@ -331,6 +331,105 @@
   </p>
 </div>
 {% endif %}
+
+{# ========== ONDE FOI PARAR ESTE NÚMERO? ========== #}
+{% if sumidos %}
+<div class="cartao" style="margin-top:14px">
+  <div class="cartao-cab"><h3>Procurar um lançamento pelo valor, na base crua</h3></div>
+  <p class="cartao-dica">
+    O Explorador mostra as <b>linhas das telas</b>. Isto olha o que a carga
+    <b>baixou do OMIE</b>, antes de virar linha — e diz se o título chegou, se
+    foi descartado, ou se nunca veio. Use quando um lançamento existe no OMIE e
+    não aparece em lugar nenhum.
+  </p>
+  <form method="get">
+    <div class="form-grade">
+      <div class="campo">
+        <label for="procurar">Valor do lançamento</label>
+        <input id="procurar" name="procurar" type="search"
+               value="{{ request.args.get('procurar', '') }}"
+               placeholder="784.647,07">
+      </div>
+      <div class="campo" style="align-self:flex-end">
+        <button class="btn">Procurar na base crua</button>
+      </div>
+    </div>
+  </form>
+
+  {% if sumidos.procurado is not none %}
+    {% if not sumidos.achados %}
+      <div class="aviso erro" style="margin-top:10px">
+        <b>Nenhum título com esse valor foi baixado do OMIE.</b>
+        Não é descarte na montagem: a carga nunca trouxe esse lançamento. O
+        problema está na carga, não nas telas.
+      </div>
+    {% else %}
+      <div class="tabela-rolagem" style="margin-top:10px">
+        <table>
+          <thead>
+            <tr>
+              <th class="sem-ordem">Cód. OMIE</th>
+              <th class="sem-ordem">Tipo</th>
+              <th class="sem-ordem">Documento</th>
+              <th class="sem-ordem">Vencimento</th>
+              <th class="sem-ordem">Situação no OMIE</th>
+              <th class="sem-ordem direita">Valor</th>
+              <th class="sem-ordem">Aparece nas telas?</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for a in sumidos.achados %}
+            <tr>
+              <td class="dados">{{ a.codigo }}</td>
+              <td><small>{{ 'A pagar' if a.natureza == 'P' else 'A receber' }}</small></td>
+              <td class="dados">{{ a.documento or '—' }}</td>
+              <td class="dados">{{ a.vencimento or '—' }}</td>
+              <td class="desc">{{ a.situacao or '—' }}</td>
+              <td class="dados direita">{{ brl(a.valor) }}</td>
+              <td class="desc {{ '' if a.nas_telas else 'v-neg' }}">
+                {{ 'sim' if a.nas_telas else 'NÃO — baixado e descartado' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  {% if sumidos.quantos %}
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer; font-weight:600">
+      {{ sumidos.quantos }} título(s) baixados do OMIE não viraram linha nenhuma
+      ({{ brl(sumidos.valor) }})
+    </summary>
+    <p class="cartao-dica">
+      O único descarte previsto é o CANCELADO. Status diferente disso aqui é
+      coisa a investigar.
+    </p>
+    <div class="tabela-rolagem" style="max-height:240px">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem">Situação no OMIE</th>
+            <th class="sem-ordem direita">Títulos</th>
+            <th class="sem-ordem direita">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for s in sumidos.por_status %}
+          <tr>
+            <td class="desc">{{ s.situacao }}</td>
+            <td class="dados direita">{{ s.quantos }}</td>
+            <td class="dados direita">{{ brl(s.valor) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

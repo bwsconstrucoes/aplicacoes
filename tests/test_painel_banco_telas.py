@@ -978,3 +978,82 @@ def test_texto_com_letra_nao_vira_busca_por_valor(base_para_explorar):
     from app.apps.painel import consultas
     assert consultas._valor_procurado("NF 100") is None
     assert consultas._valor_procurado("CONSTRUTORA") is None
+
+
+def test_o_valor_acha_o_titulo_rateado_entre_obras(base_para_explorar):
+    """O painel quebra o título por obra: um título rateado entre três obras
+    vira três linhas, cada uma com uma FRAÇÃO do valor. Nenhuma delas tem o
+    número que está na tela do OMIE.
+
+    Foi assim que três devoluções de aporte pareceram sumidas em 13/09/2026 —
+    estavam na base o tempo todo, partidas entre obras. Procurar pelo valor
+    cheio não achava nada, e passar o olho na lista também não."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM fato WHERE codigo_lancamento = 801")
+        for obra, parte in (("CASA", -300000.00), ("PREDIO", -250000.00),
+                            ("PONTE", -234647.07)):
+            conn.execute(
+                "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+                " categoria, departamento, razao_social, data, pago_recebido,"
+                " a_pagar_receber, juros, multa)"
+                " VALUES (801,'2. Contas a Pagar','Fluxo de Caixa','PAGO',"
+                "         'Devolução de Aportes',?,'CONSTRUTORA','2025-12-24',"
+                "         ?,0,0,0)", (obra, parte))
+        conn.commit()
+    consultas.esquecer_listas()
+    # 300.000 + 250.000 + 234.647,07 = 784.647,07 — o valor que está no OMIE
+    assert 801 in _codigos({"busca": "784.647,07"}), \
+        "procurar pelo valor do OMIE tem de achar o título, mesmo partido entre obras"
+    # e as três linhas dele vêm juntas: é um título só
+    assert len([l for l in consultas.explorar(
+        _pedido_padrao(busca="784.647,07"))["linhas"]
+        if l["codigo_lancamento"] == 801]) == 3
+
+
+# ===========================================================================
+# "Onde foi parar este número?" — a base crua, antes de virar linha
+# ===========================================================================
+# 13/09/2026: uma tarde inteira de hipóteses minhas derrubadas uma a uma pelo
+# dono, sobre um lançamento que existia no OMIE e não aparecia em tela nenhuma.
+# Se isso acontece, só há dois caminhos — a carga nunca baixou, ou baixou e
+# descartou ao montar as linhas. Perguntar ao banco é mais barato que adivinhar.
+
+def test_diz_quando_o_titulo_foi_baixado_e_descartado(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM titulos WHERE codigo_lancamento_omie = 9001")
+        conn.execute(
+            "INSERT INTO titulos (codigo_lancamento_omie, natureza,"
+            " valor_documento, status_titulo, numero_documento)"
+            " VALUES (9001,'P',784647.07,'CANCELADO','NF X')")
+        conn.commit()
+    r = consultas.titulos_que_sumiram(784647.07)
+    assert r["achados"], "tem de achar o título na base crua"
+    achado = r["achados"][0]
+    assert achado["codigo"] == 9001
+    assert achado["nas_telas"] is False, "e dizer que ele NÃO virou linha"
+    assert achado["situacao"] == "CANCELADO", "e por quê"
+
+
+def test_diz_quando_a_carga_nunca_trouxe(base_para_explorar):
+    """A outra metade da resposta, e a mais importante: se nem na base crua
+    está, o problema é a carga, não a montagem das linhas."""
+    from app.apps.painel import consultas
+    assert consultas.titulos_que_sumiram(99999999.99)["achados"] == []
+
+
+def test_titulo_que_virou_linha_aparece_como_presente(base_para_explorar):
+    """Sem isso a conferência acusaria todo mundo e não serviria para nada."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM titulos WHERE codigo_lancamento_omie = 701")
+        conn.execute(
+            "INSERT INTO titulos (codigo_lancamento_omie, natureza,"
+            " valor_documento, status_titulo) VALUES (701,'P',12345.67,'PAGO')")
+        conn.commit()
+    achados = consultas.titulos_que_sumiram(12345.67)["achados"]
+    assert achados and achados[0]["nas_telas"] is True

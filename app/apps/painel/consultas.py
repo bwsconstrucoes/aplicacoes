@@ -1507,9 +1507,22 @@ def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
         # Digitar 784.647,07 ou 784647.07 ou 784647 tem de achar o mesmo.
         valor = _valor_procurado(busca)
         if valor is not None:
+            # O VALOR DO TITULO INTEIRO, não o da linha. O painel quebra o
+            # título por obra: um título rateado entre três obras vira três
+            # linhas, cada uma com uma FRAÇÃO do valor. Nenhuma delas tem o
+            # número que está na tela do OMIE.
+            #
+            # Foi assim que três devoluções de aporte pareceram sumidas em
+            # 13/09/2026 — estavam na base o tempo todo, partidas entre obras.
+            # Comparar linha a linha acharia só o que está numa obra só, que é
+            # justamente o caso fácil.
             alternativas.append(
-                "(ROUND(ABS(pago_recebido), 2) = ? OR ROUND(ABS(a_pagar_receber), 2) = ?)")
-            valores.extend([valor, valor])
+                "(ROUND(ABS(pago_recebido), 2) = ? OR ROUND(ABS(a_pagar_receber), 2) = ?"
+                " OR codigo_lancamento IN ("
+                "     SELECT codigo_lancamento FROM fato GROUP BY codigo_lancamento"
+                "      HAVING ROUND(ABS(SUM(pago_recebido)), 2) = ?"
+                "          OR ROUND(ABS(SUM(a_pagar_receber)), 2) = ?))")
+            valores.extend([valor, valor, valor, valor])
         condicoes.append("(" + " OR ".join(alternativas) + ")")
         params.extend(valores)
 
@@ -1659,6 +1672,62 @@ def conferencia_do_pago() -> dict:
     return {"linhas": quantos or 0, "titulos": titulos or 0,
             "valor": float(valor or 0), "situacoes": situacoes,
             "categorias": categorias, "ao_contrario": ao_contrario or 0}
+
+
+def titulos_que_sumiram(valor_procurado=None) -> dict:
+    """Títulos que a carga BAIXOU do OMIE e que não viraram linha nenhuma.
+
+    Se um lançamento existe no OMIE e não aparece em tela nenhuma, só há dois
+    caminhos: a carga nunca o baixou, ou baixou e descartou ao montar as linhas.
+    Esta conferência separa os dois — e é a diferença entre caçar na carga e
+    caçar na montagem.
+
+    Hoje o único descarte declarado é o status CANCELADO (`sync/fato.py`), mas
+    a conferência não confia nisso: ela compara as duas tabelas e mostra o que
+    achar, com o status de cada um. Se aparecer status que ninguém esperava, é
+    justamente o que se quer saber.
+
+    Nasceu em 13/09/2026, depois de uma tarde inteira de hipóteses minhas
+    derrubadas uma a uma pelo dono sobre uma devolução de aporte de 24/12/2025
+    que não aparecia. Perguntar ao banco é mais barato que adivinhar."""
+    sql_base = """
+          FROM titulos t
+         WHERE NOT EXISTS (SELECT 1 FROM fato f
+                            WHERE f.codigo_lancamento = t.codigo_lancamento_omie)"""
+
+    (quantos, valor) = consultar(
+        f"SELECT COUNT(*), COALESCE(SUM(ABS(valor_documento))::numeric, 0){sql_base}")[0]
+
+    por_status = [{"situacao": st or "(vazio)", "quantos": n, "valor": float(v or 0)}
+                  for st, n, v in consultar(
+        f"""SELECT t.status_titulo, COUNT(*),
+                   COALESCE(SUM(ABS(t.valor_documento))::numeric, 0){sql_base}
+             GROUP BY 1 ORDER BY 2 DESC LIMIT 30""")]
+
+    # e, quando se procura um valor especifico, os titulos com aquele valor —
+    # esteja ele nas linhas ou nao. E a pergunta "onde foi parar este numero?"
+    achados = []
+    if valor_procurado is not None:
+        achados = [{"codigo": c, "natureza": nat, "valor": float(v or 0),
+                    "situacao": st or "", "documento": doc or "",
+                    "vencimento": venc or "", "nas_telas": bool(n)}
+                   for c, nat, v, st, doc, venc, n in consultar(
+            """SELECT t.codigo_lancamento_omie, t.natureza, t.valor_documento,
+                      t.status_titulo, t.numero_documento, t.data_vencimento,
+                      (SELECT COUNT(*) FROM fato f
+                        WHERE f.codigo_lancamento = t.codigo_lancamento_omie)
+                 FROM titulos t
+                -- POR TOLERANCIA, nao por igualdade. `valor_documento` e REAL
+                -- (ponto flutuante de 4 bytes), que so guarda ~7 digitos
+                -- significativos: 784.647,07 vira 784.647,06 ao ser gravado.
+                -- Comparar exato nunca acharia lancamento grande nenhum. Meio
+                -- real de folga acha o que se procura sem confundir titulos.
+                WHERE ABS(ABS(COALESCE(t.valor_documento, 0)) - ?) < 0.5
+                ORDER BY 1 LIMIT 50""", [valor_procurado])]
+
+    return {"quantos": quantos or 0, "valor": float(valor or 0),
+            "por_status": por_status, "achados": achados,
+            "procurado": valor_procurado}
 
 
 # ---------------------------------------------------------------------------

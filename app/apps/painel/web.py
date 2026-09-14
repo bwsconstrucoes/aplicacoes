@@ -1098,7 +1098,8 @@ def configuracoes():
     sincronizacao = tarefas.estado()
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
-        atualizacao, vazia, etapas, conferencia = None, True, [], None
+        atualizacao, vazia, etapas = None, True, []
+        conferencia = sumidos = None
     else:
         from . import consultas
         # A caixa vermelha logo abaixo ja conta, com etapa e tempo de silencio,
@@ -1113,6 +1114,9 @@ def configuracoes():
         # So mede, nao corrige: quanto dinheiro a carga deu por realizado e as
         # telas nao enxergam. Ver o comentario em `conferencia_do_pago`.
         conferencia = None if vazia else consultas.conferencia_do_pago()
+        # "onde foi parar este numero?" — respondida pelo banco, nao por palpite
+        procurado = consultas._valor_procurado(request.args.get("procurar", ""))
+        sumidos = None if vazia else consultas.titulos_que_sumiram(procurado)
     return render_template(
         "painel_config.html", **contexto,
         migracoes=estado_migracoes,
@@ -1121,6 +1125,7 @@ def configuracoes():
         primeira=request.args.get("primeira") == "1",
         etapas=etapas,
         conferencia=conferencia,
+        sumidos=sumidos,
         modos=tarefas.MODOS,
         sincronizacao=sincronizacao,
     )
