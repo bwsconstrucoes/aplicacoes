@@ -21,7 +21,40 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### TRAZ AS MIGRAÇÕES 061 A 068 — o botão tem de ser apertado junto com a publicação
+### A 069 ALINHA O ÍNDICE COM O BOLETIM DO DONO — e ele precisa informar UM número
+
+Publicada a 068, o dono olhou a tela e disse: *"apareceram os índices, mas os
+números estão diferentes do que eu costumo ver. Veja o de 08/2026:
+305,943822."*
+
+**Ele estava certo, e o número não estava errado — estava noutra régua.** O
+Banco Central republica só a VARIAÇÃO mensal do INCC-DI (série 192); a série do
+número-índice da FGV é licenciada. Então o sistema acumula o índice sozinho, e
+acumular obriga a escolher onde a contagem começa: começava em **100 no mês
+mais antigo guardado (01/2010)**. Com essa régua, 08/2026 dá 305,943822 — o
+custo da construção multiplicado por 3,059 desde janeiro de 2010. O boletim
+dele usa outra base e mostra outro número para o mesmo mês.
+
+A 069 resolve **sem inventar número**: na tela de índices ele digita o índice de
+**um** mês, como o boletim dele mostra, e a série inteira se desloca para bater
+— para a frente multiplicando pelas variações, para trás dividindo.
+
+- **Nenhum reajuste muda de valor.** O fator é índice final ÷ índice inicial, e
+  essa divisão dá o mesmo resultado em qualquer régua. Há teste com banco de
+  verdade cobrando exatamente isso (`tests/test_indice_ancora_banco.py`).
+- **Uma âncora por índice**, de propósito: duas que não fechem entre si
+  partiriam a série em dois trechos incompatíveis, e o fator entre meses de
+  lados diferentes sairia errado com cara de certo.
+- **O que o sistema não consegue conferir:** se alguém digitar o número de um
+  INCC diferente (o -M em vez do -DI), a tela fica plausível e errada. O
+  reajuste continua certo — ele não usa o número absoluto —, mas a conferência
+  visual passa a mentir.
+
+**Pendente do lado dele:** informar esse número. Enquanto não informar, a tela
+diz com todas as letras que a régua é a do sistema e não a do boletim.
+
+
+### TRAZ AS MIGRAÇÕES 061 A 069 — o botão tem de ser apertado junto com a publicação
 
 **Publicado na `main` em 14/09/2026** (commit `726a985`, autorizado pelo dono:
 *"eu falei ajusta e já publica"*). O Render já subiu o código; o botão

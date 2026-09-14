@@ -262,6 +262,30 @@
   <div class="dica" style="margin-top:6px">Use o número do boletim da FGV quando o
     mês ainda não estiver no Banco Central. A linha fica marcada como manual.</div>
 
+  {# A RÉGUA DO NÚMERO-ÍNDICE (migração 069). O dono, vendo a coluna nova:
+     *"apareceram os índices, mas os números estão diferentes do que eu costumo
+     ver — veja o de 08/2026, 305,943822"*. O Banco Central publica só a
+     variação, então o sistema acumula o índice sozinho e precisa escolher onde
+     a régua começa. Aqui ele informa o número que o boletim dele mostra para um
+     mês, e a série inteira se desloca para bater com o papel. #}
+  <div class="form-grade" style="align-items:end; margin-top:18px;
+       border-top:1px solid var(--borda); padding-top:14px">
+    <div class="campo"><label>Mês de referência</label>
+      <input id="ind-anc-mes" type="month"></div>
+    <div class="campo"><label>Índice desse mês, como você vê no boletim</label>
+      <input id="ind-anc-valor" inputmode="decimal" placeholder="ex.: 1.234,567890"></div>
+    <div class="campo"><label>De onde veio o número</label>
+      <input id="ind-anc-obs" maxlength="120" placeholder="boletim da FGV, contrato…"></div>
+    <div><button class="btn secundario" id="btn-ind-ancorar">Alinhar a tabela</button></div>
+  </div>
+  <div class="dica" style="margin-top:6px">O sistema busca do Banco Central a
+    <b>variação</b> de cada mês, não o índice — e o índice depende de onde a
+    contagem começa. Informando aqui o número de <b>um</b> mês, todos os outros
+    passam a bater com o seu boletim. <b>Nenhum reajuste muda de valor</b>: o
+    cálculo é índice final dividido pelo inicial, e essa divisão dá o mesmo
+    resultado em qualquer régua.
+    <a href="#" id="btn-ind-desancorar">Voltar para a régua do sistema</a>.</div>
+
   <div id="ind-resultado"></div>
   <div class="tabela-rolagem" style="margin-top:12px; max-height:340px">
     {# O NÚMERO-ÍNDICE ao lado da variação (14/09/2026). Pedido do dono: *"a
@@ -1855,13 +1879,25 @@ async function carregarIndices(){
          o mais recente é ${escapar(d.ultimo.slice(5, 7) + "/" + d.ultimo.slice(0, 4))}.
          ${d.em_dia ? "A tabela está em dia."
                     : "<b>A tabela está atrasada</b> — busque no Banco Central."}
-         <br><b>Índice com base ${escapar(d.base_do_numero || "—")}.</b>
-         O reajuste é <b>índice final ÷ índice inicial</b>; o número em si
-         depende da base e <b>não é igual ao do boletim da FGV</b>, mas a
-         divisão entre dois meses dá exatamente o mesmo fator. O Banco Central
-         publica a variação mensal — o índice é acumulado aqui a partir dela.`
+         <br><b>Régua do índice: ${escapar(d.base_do_numero || "—")}.</b>
+         ${d.ancora
+            ? `Os números batem com o seu boletim${d.ancora.observacao
+                 ? " (" + escapar(d.ancora.observacao) + ")" : ""}.`
+            : `<b>Os números não são os do boletim da FGV</b> — a contagem
+               começa no mês mais antigo guardado. Informe abaixo o índice de um
+               mês, como você o vê, e a tabela inteira se alinha.`}
+         O reajuste é <b>índice final ÷ índice inicial</b>, e essa divisão dá o
+         mesmo fator em qualquer régua. O Banco Central publica a variação
+         mensal — o índice é acumulado aqui a partir dela.`
       : `<b>${escapar(d.nome)}</b> — nenhum mês guardado ainda.
          Aperte "Buscar no Banco Central" para trazer a série.`;
+    // O formulário da régua mostra o que está valendo hoje.
+    if (els("ind-anc-mes") && d.ancora) {
+      els("ind-anc-mes").value = d.ancora.competencia.slice(0, 7);
+      els("ind-anc-valor").value = d.ancora.numero_indice.toLocaleString(
+        "pt-BR", {minimumFractionDigits: 6, maximumFractionDigits: 6});
+      els("ind-anc-obs").value = d.ancora.observacao || "";
+    }
     els("ind-corpo").innerHTML = d.meses.map(m => `
       <tr><td>${escapar(m.competencia.slice(5, 7) + "/" + m.competencia.slice(0, 4))}</td>
         <td class="direita mono">${m.numero_indice === null || m.numero_indice === undefined
@@ -1911,8 +1947,47 @@ async function lancarIndice(){
   } catch(e){ aviso("ind-resultado", e.message, "erro"); }
 }
 
+async function ancorarIndice(){
+  if (!els("ind-anc-mes").value || !els("ind-anc-valor").value.trim()) {
+    return aviso("ind-resultado",
+      "Informe o mês e o índice que o seu boletim mostra para ele.", "alerta");
+  }
+  // "1.234,567890" é como se lê; o servidor espera ponto decimal e sem
+  // separador de milhar.
+  const numeroDigitado = els("ind-anc-valor").value.trim()
+    .replace(/\./g, "").replace(",", ".");
+  try {
+    await api("/erp/api/indices/ancora", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({codigo: els("ind-codigo").value,
+                            competencia: els("ind-anc-mes").value,
+                            numero_indice: numeroDigitado,
+                            observacao: els("ind-anc-obs").value})});
+    aviso("ind-resultado", "Tabela alinhada — confira alguns meses com o seu "
+          + "boletim.", "ok");
+    carregarIndices();
+  } catch(e){ aviso("ind-resultado", e.message, "erro"); }
+}
+
+async function desancorarIndice(ev){
+  ev.preventDefault();
+  if (!confirm("Voltar para a régua do sistema? Os números do índice deixam de "
+             + "bater com o seu boletim. Os reajustes não mudam.")) return;
+  try {
+    await api("/erp/api/indices/ancora", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({codigo: els("ind-codigo").value, remover: true})});
+    els("ind-anc-mes").value = ""; els("ind-anc-valor").value = "";
+    els("ind-anc-obs").value = "";
+    aviso("ind-resultado", "Régua do sistema de volta.", "ok");
+    carregarIndices();
+  } catch(e){ aviso("ind-resultado", e.message, "erro"); }
+}
+
 els("btn-ind-atualizar").addEventListener("click", atualizarIndices);
 els("btn-ind-lancar").addEventListener("click", lancarIndice);
+els("btn-ind-ancorar").addEventListener("click", ancorarIndice);
+els("btn-ind-desancorar").addEventListener("click", desancorarIndice);
 els("ind-codigo").addEventListener("change", carregarIndices);
 carregarIndices();
 

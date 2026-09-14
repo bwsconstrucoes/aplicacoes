@@ -6580,6 +6580,38 @@ def api_indices_lancar():
         return jsonify({"ok": False, "erro": str(e)}), 400
 
 
+@bp.route("/erp/api/indices/ancora", methods=["POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_indices_ancora():
+    """Pendura a série no número oficial de um mês — ou tira a âncora.
+
+    O número-índice é acumulado pelo sistema a partir da variação, e acumular
+    exige escolher onde a régua começa. Sem isso o número não bate com o do
+    boletim, e o dono não tem como conferir (migração 069).
+    """
+    from app.apps.erp.core.indices import bcb
+    d = request.get_json(silent=True) or {}
+    codigo = (d.get("codigo") or bcb.PADRAO)
+    try:
+        with get_session() as s:
+            u = _usuario_logado(s)
+            if d.get("remover"):
+                bcb.limpar_ancora(s, codigo=codigo, usuario=u)
+            else:
+                mes = (d.get("competencia") or "").strip()
+                bcb.definir_ancora(
+                    s, codigo=codigo,
+                    competencia=date.fromisoformat(mes + "-01" if len(mes) == 7
+                                                   else mes),
+                    numero_indice=d.get("numero_indice"),
+                    observacao=d.get("observacao") or "", usuario=u)
+            s.commit()
+        return jsonify({"ok": True})
+    except (ErroValidacao, ValueError) as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+
+
 @bp.route("/erp/api/contratos/<int:contrato_id>/reajuste")
 @login_obrigatorio
 @permissao("ver_contratos")

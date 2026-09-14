@@ -1333,6 +1333,35 @@ class IndiceEconomico(Base):
         DateTime(timezone=True), server_default=func.now())
 
 
+class IndiceAncora(Base):
+    """O ponto de referência do número-índice (migração 069).
+
+    O Banco Central republica só a VARIAÇÃO mensal, então o sistema acumula o
+    número-índice sozinho — e acumular exige escolher onde a régua começa. Sem
+    esta linha, a régua começa em 100 no mês mais antigo guardado, e o número
+    de cada mês não bate com o do boletim, que usa outra base.
+
+    Aqui fica o número oficial de UM mês, digitado de um boletim ou de um
+    contrato. A série inteira é recalculada a partir dele: para a frente
+    multiplicando pelas variações, para trás dividindo. As variações não mudam
+    — muda só o ponto de partida.
+
+    Uma âncora por índice, de propósito: duas que não fechem entre si partiriam
+    a série em dois trechos incompatíveis, e o fator entre meses de lados
+    diferentes sairia errado com cara de certo.
+    """
+    __tablename__ = "indices_ancora"
+
+    codigo: Mapped[str] = mapped_column(Text, primary_key=True)
+    competencia: Mapped[date] = mapped_column(Date, nullable=False)
+    numero_indice: Mapped[Decimal] = mapped_column(Numeric(18, 6), nullable=False)
+    # De onde veio o número, escrito por quem digitou.
+    observacao: Mapped[Optional[str]] = mapped_column(Text)
+    definido_em: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now())
+    definido_por: Mapped[Optional[int]] = mapped_column(BigInteger)
+
+
 class EmpresaCertificado(Base):
     """O certificado digital A1 da empresa (migração 053).
 
