@@ -1057,3 +1057,34 @@ def test_titulo_que_virou_linha_aparece_como_presente(base_para_explorar):
         conn.commit()
     achados = consultas.titulos_que_sumiram(12345.67)["achados"]
     assert achados and achados[0]["nas_telas"] is True
+
+
+def test_a_busca_por_valor_perdoa_o_centavo_que_o_omie_perdeu(base_para_explorar):
+    """O caso que custou a tarde de 13/09/2026.
+
+    O valor chega do OMIE numa coluna de ponto flutuante de 4 bytes, que acima
+    de uns R$ 131 mil não guarda centavo: os R$ 784.647,07 da tela do OMIE ficam
+    gravados como 784.647,06. Comparar exato errava por um centavo e dizia que o
+    lançamento não existia — quando ele estava lá o tempo todo."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET pago_recebido = -784647.06"
+                     "  WHERE codigo_lancamento = 701")
+        conn.commit()
+    consultas.esquecer_listas()
+    # o que a pessoa digita é o que ela LÊ no OMIE, com o centavo certo
+    assert _codigos({"busca": "784.647,07"}) == {701}
+
+
+def test_a_folga_nao_confunde_titulos_diferentes(base_para_explorar):
+    """Meio real de folga não pode virar uma busca que traz o que não foi
+    pedido — senão a tela mente de outro jeito."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET pago_recebido = -50000 WHERE codigo_lancamento = 701")
+        conn.execute("UPDATE fato SET pago_recebido = -50002 WHERE codigo_lancamento = 702")
+        conn.commit()
+    consultas.esquecer_listas()
+    assert _codigos({"busca": "50.000,00"}) == {701}

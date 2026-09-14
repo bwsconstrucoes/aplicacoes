@@ -1391,6 +1391,12 @@ def opcoes_do_explorador() -> dict:
 # lenta assim que subiu, em 13/09/2026. O painel ja morreu de memoria uma vez.
 TETO_DE_FORNECEDORES = 600
 
+# Quanta folga a busca por valor dá. NÃO é capricho: o valor chega do OMIE numa
+# coluna de ponto flutuante de 4 bytes, que acima de uns R$ 131 mil não guarda
+# centavo. Procurar exato erra por um centavo e jura que o lançamento não
+# existe. Meio real acha o que se procura sem confundir dois títulos.
+TOLERANCIA_DE_VALOR = 0.5
+
 
 def fornecedores_do_recorte(dados: dict | None) -> dict:
     """Os fornecedores QUE APARECEM na lista que está na tela.
@@ -1516,12 +1522,23 @@ def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
             # 13/09/2026 — estavam na base o tempo todo, partidas entre obras.
             # Comparar linha a linha acharia só o que está numa obra só, que é
             # justamente o caso fácil.
+            # POR TOLERANCIA, nao por igualdade — e o motivo importa.
+            #
+            # O valor chega do OMIE numa coluna REAL (ponto flutuante de 4
+            # bytes, ~7 digitos significativos), entao acima de uns R$ 131 mil
+            # ele PERDE CENTAVOS: os R$ 784.647,07 da tela do OMIE estao
+            # gravados aqui como 784.647,06. Comparar exato errava por um
+            # centavo e dizia que o lancamento nao existia.
+            #
+            # Foi assim que uma devolucao de aporte de 24/12/2025 pareceu sumida
+            # a tarde inteira de 13/09/2026. Ela estava na base o tempo todo.
             alternativas.append(
-                "(ROUND(ABS(pago_recebido), 2) = ? OR ROUND(ABS(a_pagar_receber), 2) = ?"
+                f"(ABS(ABS(pago_recebido) - ?) < {TOLERANCIA_DE_VALOR}"
+                f" OR ABS(ABS(a_pagar_receber) - ?) < {TOLERANCIA_DE_VALOR}"
                 " OR codigo_lancamento IN ("
                 "     SELECT codigo_lancamento FROM fato GROUP BY codigo_lancamento"
-                "      HAVING ROUND(ABS(SUM(pago_recebido)), 2) = ?"
-                "          OR ROUND(ABS(SUM(a_pagar_receber)), 2) = ?))")
+                f"      HAVING ABS(ABS(SUM(pago_recebido)) - ?) < {TOLERANCIA_DE_VALOR}"
+                f"          OR ABS(ABS(SUM(a_pagar_receber)) - ?) < {TOLERANCIA_DE_VALOR}))")
             valores.extend([valor, valor, valor, valor])
         condicoes.append("(" + " OR ".join(alternativas) + ")")
         params.extend(valores)

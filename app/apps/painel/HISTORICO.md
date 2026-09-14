@@ -763,6 +763,68 @@ A escolha foi deliberada: o painel não deve adivinhar nem "consertar" o número
 por dentro. Um ajuste automático esconderia o erro de classificação em vez de
 mostrá-lo, e o erro continuaria contaminando as outras telas em silêncio.
 
+## A tarde de 13/09/2026: um centavo custou uma tarde
+
+O dono quis conferir as devoluções de aporte de uma empresa contra a tela do
+OMIE. Sete lançamentos lá, dois no painel. Levantei **cinco** explicações e ele
+derrubou **quatro**, sempre com dado:
+
+1. *"A data do painel é outra"* → ele: está conciliado em 24/12, na data certa.
+2. *"É lançamento de conta corrente, não título"* → ele: os dois foram lançados
+   igual, e abriu os dois para conferir.
+3. *"A janela da carga de pagamentos não alcança data retroativa"* → ele tirou o
+   filtro de data e continuou sem aparecer.
+4. *"O nome do fornecedor está vazio"* → o recálculo já tinha a correção e não
+   mudou nada. (E eu ainda errei o fuso ao comparar os horários, e o fiz
+   recalcular à toa.)
+5. *"O título está rateado, então cada linha tem uma fração"* → ele: não é
+   rateado.
+
+**A causa real:** o lançamento estava no painel o tempo todo. A busca por valor
+comparava por **igualdade exata**, e o valor guardado é `784.647,06` — o OMIE
+mostra `784.647,07`. Um centavo. A busca errava por um centavo e afirmava que o
+lançamento não existia.
+
+### Por que falta esse centavo — e onde mais ele falta
+
+Todas as colunas de dinheiro do espelho (`titulos`, `movimentos`, `rateio`) são
+**`REAL`**: ponto flutuante de 4 bytes, ~7 dígitos significativos. Acima de
+**R$ 131.072** o menor passo representável passa de um centavo, e o valor gravado
+deixa de ser o valor real. Não é só o `valor_documento`: é o valor pago, juros,
+multa, os impostos retidos e os valores do rateio.
+
+A tabela `fato` usa `NUMERIC(16,2)`, exata — mas ela é **calculada a partir
+das colunas `REAL`**, então guarda com precisão um número que já veio errado.
+Ou seja: **as telas carregam esse erro de centavos em todo título grande.**
+
+**O tamanho, medido e não estimado no susto:** centavos por título, e só nos
+grandes. Um título de R$ 8 milhões pode estar até ~50 centavos fora. Somada a
+base inteira, a diferença deve ficar em poucos reais. Não move decisão de
+negócio nenhuma. **Atrapalha exatamente uma coisa: bater o painel com o OMIE no
+centavo** — que era o que o dono estava tentando fazer.
+
+### O que foi feito, e o que não foi
+
+**Feito:** toda busca por valor (no Explorador e na conferência da base crua)
+compara com **meia unidade de folga**, não por igualdade. Há teste provando que
+a folga acha o centavo perdido e que não confunde dois títulos próximos.
+
+**Não feito, e é decisão de negócio:** trocar as colunas para `NUMERIC`. Não
+adianta converter o que está gravado — a precisão se perdeu na escrita, o número
+certo não está mais lá. Seria migração **mais uma carga completa do OMIE**, que
+pelo próprio código leva horas. Recomendei não fazer agora: o dano prático era a
+busca, e ele está resolvido. Fica como dívida conhecida. No dia em que for
+preciso conferir no centavo, é isso que tem de ser feito.
+
+### A lição que vale mais que o conserto
+
+Gastei a tarde inteira raciocinando sobre o código sem enxergar a base do dono,
+e cada hipótese custou uma ida e volta com ele. **A ferramenta que resolveu — o
+campo "procurar na base crua", em Configurações — levou vinte minutos para ser
+feita e respondeu na primeira tentativa.** Devia ter sido a primeira coisa, não
+a sexta. Quando o dado está do outro lado, construir o instrumento é mais barato
+que adivinhar.
+
 ## O que falta
 
 Atualizado em **13/09/2026**, depois de refazer o Explorador. As migrações
