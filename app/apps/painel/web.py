@@ -1099,7 +1099,7 @@ def configuracoes():
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
-        conferencia = sumidos = None
+        conferencia = sumidos = aportes_conf = None
     else:
         from . import consultas
         # A caixa vermelha logo abaixo ja conta, com etapa e tempo de silencio,
@@ -1117,6 +1117,8 @@ def configuracoes():
         # "onde foi parar este numero?" — respondida pelo banco, nao por palpite
         procurado = consultas._valor_procurado(request.args.get("procurar", ""))
         sumidos = None if vazia else consultas.titulos_que_sumiram(procurado)
+        # de onde vem a diferenca do bloco de Aportes do DRE, corte a corte
+        aportes_conf = None if vazia else consultas.conferencia_dos_aportes()
     return render_template(
         "painel_config.html", **contexto,
         migracoes=estado_migracoes,
@@ -1126,6 +1128,7 @@ def configuracoes():
         etapas=etapas,
         conferencia=conferencia,
         sumidos=sumidos,
+        aportes_conf=aportes_conf,
         modos=tarefas.MODOS,
         sincronizacao=sincronizacao,
     )

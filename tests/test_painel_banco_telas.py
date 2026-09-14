@@ -1088,3 +1088,75 @@ def test_a_folga_nao_confunde_titulos_diferentes(base_para_explorar):
         conn.commit()
     consultas.esquecer_listas()
     assert _codigos({"busca": "50.000,00"}) == {701}
+
+
+# ===========================================================================
+# A cascata dos aportes: onde os valores se perdem
+# ===========================================================================
+# 14/09/2026, o dono: o bloco de Aportes do DRE mostra R$ 567 mil de devolvido
+# para uma empresa, e um unico titulo dela e de R$ 784 mil. O bloco esta comendo
+# lancamentos, e a tela nao dizia quais. Em vez de apostar em qual corte e o
+# culpado, a cascata mostra quanto CADA UM leva.
+
+@pytest.fixture()
+def base_de_aportes(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("TRUNCATE TABLE fato")
+        # 1) devolucao normal: tem de chegar ate o fim da cascata
+        # 2) devolucao marcada como transferencia: cortada no degrau do TRF
+        # 3) devolucao com status que o PAGO nao reconhece: cortada no ultimo
+        # 4) dividendo: sai no degrau do saldo
+        for cod, analise, situacao, cat, valor in (
+                (601, "Fluxo de Caixa", "PAGO", "Devolução de Aportes", -100000),
+                (602, "TRF", "PAGO", "Devolução de Aportes", -200000),
+                (603, "Fluxo de Caixa", "Baixado", "Devolução de Aportes", -400000),
+                (604, "Fluxo de Caixa", "PAGO", "Dividendos", -50000)):
+            conn.execute(
+                "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+                " situacao_vencimento, categoria, departamento, razao_social,"
+                " data, pago_recebido, a_pagar_receber, juros, multa)"
+                " VALUES (?,'2. Contas a Pagar',?,?,'Quitado',?,'CASA','MORAIS',"
+                "         '2025-12-24',?,0,0,0)", (cod, analise, situacao, cat, valor))
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+def test_a_cascata_mostra_quanto_cada_corte_leva(base_de_aportes):
+    from app.apps.painel import consultas
+    passos = dict(consultas.conferencia_dos_aportes()["passos"])
+
+    # tudo: 100 + 200 + 400 + 50 (o dividendo) = 750 mil
+    assert passos["Tudo com categoria de aporte"]["devolvido"] == pytest.approx(750000)
+    # tirando dividendo: 700 mil, e o degrau declara ter levado 50
+    saldo = passos["Só o que entra no saldo (tira Dividendos)"]
+    assert saldo["devolvido"] == pytest.approx(700000)
+    assert saldo["comeu_devolvido"] == pytest.approx(50000)
+    # tirando transferencia: 500 mil, o degrau levou 200
+    trf = passos["Tirando transferências entre contas"]
+    assert trf["devolvido"] == pytest.approx(500000)
+    assert trf["comeu_devolvido"] == pytest.approx(200000)
+    # tirando o que nao e reconhecido como pago: 100 mil, o degrau levou 400
+    pago = passos["Tirando o que o painel não reconhece como pago"]
+    assert pago["devolvido"] == pytest.approx(100000)
+    assert pago["comeu_devolvido"] == pytest.approx(400000)
+
+
+def test_a_cascata_bate_com_o_que_o_bloco_do_dre_mostra(base_de_aportes):
+    """Se o último degrau não for exatamente o número do DRE, a conferência
+    mente — e uma conferência que mente é pior que nenhuma."""
+    from app.apps.painel import consultas
+    passos = dict(consultas.conferencia_dos_aportes()["passos"])
+    ultimo = passos["Tirando o que o painel não reconhece como pago"]
+    assert ultimo["devolvido"] == pytest.approx(
+        consultas.aportes(consultas.Filtros())["devolvido"])
+
+
+def test_a_cascata_nomeia_os_lancamentos_cortados(base_de_aportes):
+    """Número sem nome não ajuda ninguém a corrigir: tem de dizer QUAIS."""
+    from app.apps.painel import consultas
+    r = consultas.conferencia_dos_aportes()
+    assert [l["codigo"] for l in r["comidos_trf"]] == [602]
+    assert [l["codigo"] for l in r["comidos_pago"]] == [603]

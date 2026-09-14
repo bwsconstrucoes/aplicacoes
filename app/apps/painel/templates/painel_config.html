@@ -430,6 +430,93 @@
   {% endif %}
 </div>
 {% endif %}
+
+{# ========== DE ONDE VEM A DIFERENÇA DO BLOCO DE APORTES ========== #}
+{% if aportes_conf %}
+<div class="cartao" style="margin-top:14px">
+  <div class="cartao-cab"><h3>Aportes do DRE — onde os valores se perdem</h3></div>
+  <p class="cartao-dica">
+    O valor entra inteiro em cima e cada linha tira um pedaço. A linha que comer
+    o valor que está faltando é a culpada. A última linha é o que o bloco do DRE
+    mostra.
+  </p>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Corte</th>
+          <th class="sem-ordem direita">Aportado</th>
+          <th class="sem-ordem direita">Devolvido</th>
+          <th class="sem-ordem direita">Quanto levou (devolvido)</th>
+          <th class="sem-ordem direita">Linhas</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for rotulo, v in aportes_conf.passos %}
+        <tr>
+          <td class="desc">{{ rotulo }}</td>
+          <td class="dados direita">{{ brl(v.aportado) }}</td>
+          <td class="dados direita">{{ brl(v.devolvido) }}</td>
+          <td class="dados direita {{ 'v-neg' if v.comeu_devolvido else '' }}">
+            {{ brl(v.comeu_devolvido) if v.comeu_devolvido else '—' }}</td>
+          <td class="dados direita">{{ v.linhas }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% for titulo, linhas in [('Cortados por serem transferência entre contas',
+                             aportes_conf.comidos_trf),
+                            ('Cortados por o painel não reconhecer como pagos',
+                             aportes_conf.comidos_pago)] %}
+    {% if linhas %}
+    <details style="margin-top:10px">
+      <summary style="cursor:pointer; font-weight:600">
+        {{ titulo }} ({{ linhas | length }})
+      </summary>
+      <div class="tabela-rolagem" style="max-height:260px; margin-top:8px">
+        <table>
+          <thead>
+            <tr>
+              <th class="sem-ordem">Cód. OMIE</th>
+              <th class="sem-ordem">Data</th>
+              <th class="sem-ordem">Contraparte</th>
+              <th class="sem-ordem">Categoria</th>
+              <th class="sem-ordem">Análise</th>
+              <th class="sem-ordem">Situação</th>
+              <th class="sem-ordem">Obra</th>
+              <th class="sem-ordem direita">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for l in linhas %}
+            <tr>
+              <td class="dados">{{ l.codigo }}</td>
+              <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
+              <td class="desc">{{ l.socio }}</td>
+              <td class="desc">{{ l.categoria or '—' }}</td>
+              <td><small>{{ l.analise or '—' }}</small></td>
+              <td><small>{{ l.situacao or '—' }}</small></td>
+              <td class="desc">{{ l.obra }}</td>
+              <td class="dados direita {{ classe_valor(l.valor) }}">{{ brl(l.valor) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+  {% endfor %}
+
+  <p class="cartao-dica">
+    <b>Atenção ao agrupamento por contraparte.</b> O bloco do DRE soma por
+    <b>nome</b>. A mesma empresa com mais de um cadastro no OMIE, ou com título
+    apontando para cadastro que o painel não tem, aparece em <b>linhas
+    separadas</b> — e cada uma parece menor do que a empresa é.
+  </p>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}
