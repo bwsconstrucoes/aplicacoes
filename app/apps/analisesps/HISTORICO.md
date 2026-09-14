@@ -3835,6 +3835,296 @@ parcelamento.
 - A busca na Receita continua sem exercício real daqui.
 
 ---
+
+### Quadragésima nona leva (13/09) — a Receita sem subir a tela, o certificado que "não é aceito", o que a IA disse, e dois filtros
+
+Publicadas na `main` antes desta: a 48ª (`ee2c103`).
+
+#### 1. A consulta à Receita deixou de recarregar a página
+
+*"Quando consulta o nome na Receita, a tela sobe. O resultado deveria aparecer
+flutuante, ou de forma que não mexa na tela."*
+
+O resultado é sobre UM fornecedor no meio de uma lista longa, e ia para um
+aviso no ALTO da página depois de recarregar tudo — a resposta chegava longe
+da pergunta. Agora é escrita logo acima do próprio botão. **Medido: 0 px de
+rolagem**, e "consultar de novo" substitui a linha em vez de empilhar.
+
+Mesma regra do "Usar este": a rota só responde JSON com o cabeçalho
+`X-Sem-Recarregar`; **sem JavaScript a tela continua funcionando**.
+
+#### 2. ⚠️ O certificado que "não é aceito" — e a desconfiança dele estava certa
+
+*"Suspeito que o certificado e a senha estejam corretos, mas a mensagem é de
+certificado inválido ou senha. Existe algum canto que eu possa tirar essa
+prova?"*
+
+**MEDIDO aqui, com um .pfx de verdade e a senha de verdade:**
+
+    senha com espaço no FIM ......... FALHOU
+    espaço no COMEÇO ................ FALHOU
+    senha de verdade errada ......... FALHOU
+
+As três davam **a mesma mensagem**. Quem copia a senha de um e-mail ou de um
+PDF traz o espaço junto — e recebia "senha errada" sem ter errado a senha.
+
+- `_senhas_a_tentar` tenta a senha como veio, sem os espaços das pontas, em
+  latin-1 (quando há acento) e vazia (quando não foi digitada). ⚠️ **Não é
+  "aceitar qualquer coisa"**: são formas da MESMA senha que o teclado e o
+  copiar-e-colar produzem sem a pessoa querer. Nenhuma abre certificado de
+  senha diferente, e há teste cravando que a lista não cresce além disso.
+- `_diagnostico` separa **arquivo errado** de **senha errada** — antes a
+  mensagem dizia as duas ao mesmo tempo, e por isso não dizia nenhuma.
+  Reconhece .pem/.crt, PDF, arquivo vazio e senha em branco.
+- **"Conferir sem guardar"**, em Configurações: sobe o arquivo, informa a senha
+  e a tela diz o que aconteceu. Não grava nada e não mexe no que está em uso.
+  Quando abre com a senha aparada, ela diz isso com todas as letras.
+
+**Descartado pelo caminho, e fica registrado para ninguém refazer:** suspeitei
+de criptografia antiga (RC2, comum em A1 brasileiro, que o OpenSSL 3 joga no
+provedor `legacy`). **Testei e não é**: gerei um `.pfx` com `-legacy` e a
+biblioteca abriu normalmente. A causa é a senha, não o algoritmo.
+
+#### 3. O que a IA disse, e onde isso fica
+
+*"Mandei pra IA e então, o que acontece? O que foi que a IA disse? O que foi
+sugerido? Ficou gravada essa informação onde?"*
+
+**Ficou gravada desde sempre** — em `sp_fiscal_analise`, com categoria, chave,
+confiança e o MOTIVO escrito pela IA. A tela é que não mostrava nada disso.
+
+- A linha ganhou a etiqueta de **quem preencheu** ("a IA leu o anexo", "uma
+  pessoa informou aqui", "o sistema conciliou", "já veio do card"), com a
+  confiança e o motivo no rótulo de passar o mouse.
+- A janela "ver os dados" mostra o motivo por extenso e a confiança.
+
+#### 4. Filtrar por confiança
+
+*"Deveria poder filtrar por confiança."* Quatro faixas, em SQL, sobre a
+confiança **gravada**. ⚠️ O nome do grupo diz "do que está gravado" porque há
+DUAS confianças na tela: a gravada (no banco, filtrável) e a que o sistema
+calcula ao abrir para a linha ainda não decidida (só das 200 da página).
+Filtrar pela segunda responderia "nesta página".
+
+Zero conta como **sem confiança gravada**, e não como "baixa": a linha que veio
+pronta do card entra com zero, e chamá-la de baixa mandaria conferir o que
+ninguém aqui decidiu.
+
+#### 5. Filtrar pela qualidade do par — ⚠️ e o que ficou de fora, medido
+
+*"Deveria poder também filtrar pela nota de associação: 1-4, 2-4, ou pelo
+percentual também."*
+
+Construí as cinco faixas, medi as cinco, e **só a de 100% se paga**. Com 59.000
+SPs e 4.000 notas, no pior caso:
+
+    confere nos 4 (100%) ....... 0,02 s
+    confere em 3 ou mais ....... 0,74 s POR CONSULTA
+    confere em exatamente 3 .... 0,70 s POR CONSULTA
+
+E a tela roda a consulta DUAS vezes (a contagem e a página). No banco do
+Render, com um décimo de um núcleo, isso é **a tela que não abre** — o defeito
+que já custou duas correções nesta mesma tela.
+
+**Por que só o de 100% é rápido:** é uma conjunção de igualdades, resolvida
+pelo índice. Os outros perguntam "2 dos 3", e o "ou" faz o planejador desistir
+dos índices e juntar a tabela inteira — o EXPLAIN mostrou **262.497 pares**
+avaliados. Tentei três caminhos e registro os três para ninguém repetir:
+
+1. separar em EXISTS independentes (é equivalente) → **piorou**, 2,4 s;
+2. pôr a condição necessária `(valor OU número)` na frente → 0,74 s;
+3. forçar subconsulta escalar para impedir o semi-join → 0,62 s.
+
+**Migração 012**: coluna GERADA `nf_num` (o nº da nota já normalizado) e dois
+índices compostos. Ajuda o recorte de 100%; sozinha **não resolveu** os outros,
+porque a conta era do tamanho da junção, e não do `regexp`.
+
+**O que destrava as faixas que faltam:** guardar a conta do par no banco, numa
+varredura em processo separado — a mesma oferta que faria "o que o sistema está
+propondo" virar totalizador de verdade. **Continua sem resposta do dono.**
+
+#### 6. O segundo jeito de "já estar associado" (ele cobrou de novo)
+
+*"Eu já havia comentado isso (…) tá aparecendo registro já associado. A MENOS
+QUE A ASSOCIAÇÃO ESTEJA PROVAVELMENTE ERRADA."*
+
+Na 46ª eu cortei só quem tem CHAVE gravada aqui — metade do conserto. O card do
+Pipefy também tem "Nº NF": preenchido com número DIFERENTE, aquela SP já está
+falada por outra nota.
+
+⚠️ **Número IGUAL continua sendo sugestão**, e a distinção é o coração da
+coisa: ali o número CONFIRMA o par. Cortar por "tem número" esconderia o par
+mais fácil da base; não cortar por "tem número diferente" enchia a lista de
+trabalho já feito. E a ressalva dele está atendida: nada some — vai para o
+bloco à parte **com o motivo escrito**, que é onde ele confere se a associação
+anterior está errada.
+
+#### O que foi verificado
+
+- Suíte completa com Postgres de verdade: **5.051 passaram, 129 pulados**.
+- A aplicação sobe (18 blueprints).
+- No Chromium: consulta à Receita com **0 px** de rolagem e resposta ao lado da
+  pergunta; "consultar de novo" substitui em vez de empilhar.
+- O diagnóstico do certificado distingue os seis casos (espaço no fim, nos dois
+  lados, senha exata, cedilha, senha errada, arquivo .pem).
+
+#### O que NÃO foi verificado
+
+- Nada rodou contra a base de produção.
+- A busca na Receita continua sem exercício real daqui.
+- **A conferência do certificado não foi feita com o certificado DELE** — foi
+  com um gerado aqui. O primeiro uso real é o teste real.
+- O número de 0,74 s é desta máquina; o do Render é estimado por proporção, não
+  medido.
+
+---
+
+### Quinquagésima leva (13/09) — ⚠️ o defeito que mantinha a busca na Receita SEM FUNCIONAR, e o "não marcar algum"
+
+#### 1. ⚠️ O CERTIFICADO — A CULPA ERA NOSSA, e o dono estava certo desde o começo
+
+Ele insistiu três vezes que a senha e o certificado estavam corretos. **Estavam.**
+A mensagem que ele mandou de produção fechou o caso:
+
+> *"tentou e NÃO conseguiu — Não consegui abrir o certificado de
+> 00079526000109: Certificado ou senha inválida!!!"*
+
+A causa está no construtor da `erpbrasil.assinatura.certificado.Certificado`:
+
+```
+elif isinstance(arquivo, bytes):
+    self._arquivo = base64.b64decode(arquivo)     # <- assume BASE64
+```
+
+Ao receber `bytes`, a biblioteca assume que é o conteúdo **em base64**.
+Mandávamos o `.pfx` **cru**. Ela decodificava lixo, o
+`load_key_and_certificates` levantava `ValueError`, e ela traduzia isso para
+**"Certificado ou senha inválida!!!"**.
+
+**MEDIDO, com um .pfx de verdade e a senha certa:**
+
+    Certificado(bruto, senha) ................. CertificadoSenhaInvalida
+    Certificado(base64encode(bruto), senha) ... abriu
+
+**É o pior tipo de defeito que existe:** a mensagem acusava a SENHA, o erro era
+de quem chamava, e não havia como desconfiar olhando a tela. Mandou o dono
+procurar no lugar errado por dias — trocar certificado, reconferir senha — e
+foi por isso que a busca na Receita **nunca trouxe nota nenhuma**.
+
+Duas coisas que a leva anterior fez e que foram o que permitiu achar isto:
+o rastro da falha gravado no banco (sem ele, a tela continuaria dizendo "nunca
+rodou") e o "conferir sem guardar" (que provou que o arquivo abria pelo nosso
+caminho). Sem as duas, este defeito continuaria invisível.
+
+Corrigido com teste cravando o ponto exato — um dia alguém "simplifica" isso de
+volta.
+
+#### 2. Deixar SPs de fora da equalização de nome
+
+*"Às vezes não queremos renomear todos os lançamentos. O erro pode ter sido no
+CNPJ e não somente o nome. Preciso poder não marcar algum."*
+
+⚠️ **Por que isso é grave e não é refinamento:** quatro SPs com o nome de uma
+locadora e o CNPJ de outra. O nome "certo" daquele CNPJ é o das outras trinta —
+e reescrever as quatro **apaga a única pista** de que alguém digitou o CNPJ
+errado. Depois disso elas ficam idênticas às certas e ninguém mais acha o erro.
+O que fica de fora fica **errado de propósito**, à vista, esperando a correção
+do número.
+
+- Caixa de marcar por SP dentro do "ver as SPs"; desmarcada vira um campo
+  escondido no formulário daquele fornecedor.
+- **Fica guardado no formulário, e não numa variável solta**: fechar a janela,
+  reabrir ou recarregar não perde a marcação.
+- O que ficou de fora **aparece ao lado do botão** ("2 SPs fora: não serão
+  renomeadas") e é dito de novo no aviso do resultado. Exclusão que só existe
+  dentro de uma janela fechada é exclusão que se esquece.
+
+#### O que foi verificado
+
+- Suíte completa com Postgres de verdade: **5.057 passaram, 129 pulados**.
+- A aplicação sobe (18 blueprints).
+- No Chromium: desmarcar cria o campo escondido, o aviso aparece ao lado do
+  botão, e a marcação **sobrevive a fechar e reabrir** a janela.
+- O conserto do certificado foi provado contra a biblioteca de verdade, com um
+  `.pfx` gerado aqui.
+
+#### O que NÃO foi verificado
+
+- **A busca na Receita ainda não rodou de verdade.** Esta máquina não fala com
+  a SEFAZ e não há certificado aqui. O conserto é certo no ponto do defeito,
+  mas só o primeiro clique em produção dirá se havia OUTRO problema atrás dele.
+- Nada rodou contra a base de produção.
+
+---
+
+### Quinquagésima primeira leva (13/09) — a tela de VER, que ele pediu desde o começo
+
+*"Desde o começo eu pedi uma tela simples pra poder visualizar similar ao que
+eu visualizo na planilha. Uma tela das notas e outra tela dos registros com os
+dados que estamos trabalhando. Similar à planilha. Mas até agora não foi
+entregue."*
+
+**Ele está certo, e a cobrança é antiga.** O que faltava não era dado — era a
+TELA. Todas as telas deste módulo são de **trabalho**: cada uma mostra um
+recorte, com painel, proposta e botão de agir. Nenhuma respondia à pergunta
+mais simples que existe: *"deixa eu ver os dados"*.
+
+#### O que faz esta ser "a planilha", e não mais uma tela de trabalho
+
+1. **Todas as colunas, na ORDEM DA PLANILHA** (A, B, C…) — e não na ordem de
+   uso. Ele lê a SPsBD por posição; a coluna "O" é o Status Pgt, e ele sabe
+   disso de cor. São **34 colunas** do lado das SPs e 14 do lado das notas.
+2. **A letra da coluna no cabeçalho.** É o detalhe que faz reconhecer.
+3. **Nenhuma ação.** Sem propor, sem confirmar, sem marcar. Olhar não é mexer.
+4. Uma busca só, e **ordenar clicando no cabeçalho** — como numa planilha.
+5. **Cabeçalho e primeira coluna grudados**, que é o "congelar painéis": sem
+   isso, 34 colunas ficam impossíveis de ler no meio.
+
+#### Decisões que valem registro
+
+- **Não reusa `consultas.listar`.** Aquela traz um punhado de colunas
+  escolhidas e ainda calcula risco, atraso e agendamento por linha. Aqui é o
+  contrário: tudo, e sem conta nenhuma por cima.
+- **Data e valor ordenam pela versão CONVERTIDA.** Ordenar "10/01/2026" como
+  texto põe outubro antes de fevereiro — a tela passaria a mentir numa coisa
+  que ele confere de olho. Há teste para os dois.
+- **A ordenação sai de uma lista fechada.** O nome da coluna vem do endereço;
+  costurá-lo dentro do SQL é o caminho conhecido para mandar comando pela barra
+  do navegador. Teste cravando que `ordem=id; DROP TABLE …` cai no padrão.
+- **⚠️ NÃO herda o escopo da Documentação Fiscal.** Os cortes de lá (antes de
+  2026, cancelado, TRF) não valem aqui: esta tela é "a planilha", e se ela
+  escondesse linhas a conta dele deixaria de fechar com a SPsBD — que é
+  exatamente o que ele vem conferir.
+- **Sentido padrão diferente por aba:** a nota mais recente primeiro (é a que
+  acabou de chegar); a SP pelo número, como na planilha.
+- **Entra no menu DEPOIS da Agenda.** A ordem até ali é o caminho do dia dele,
+  pedida com todas as letras. ⚠️ A tela nasceu furando essa ordem e **foi o
+  teste que pegou** — agora o teste também crava que tela nova entra depois.
+
+#### Desempenho, medido com 59.000 SPs e 4.000 notas
+
+    lançamentos, 1ª página ...... 0,15 s
+    lançamentos por valor ....... 0,01 s
+    lançamentos, busca .......... 0,19 s (7.326 achadas)
+    lançamentos, página 50 ...... 0,03 s
+    notas, 1ª página ............ 0,00 s
+
+#### O que foi verificado
+
+- Suíte completa com Postgres de verdade: **5.067 passaram, 129 pulados**.
+- A aplicação sobe (18 blueprints).
+- No Chromium: 34 colunas com as letras (A ID, B Data, C Vencimento…),
+  cabeçalho e primeira coluna **grudados**, notas abrindo da mais recente (▾),
+  e **nenhum erro de console**.
+
+#### O que NÃO foi verificado
+
+- Nada rodou contra a base de produção.
+- A tela não foi vista em celular estreito.
+- Não há exportação para CSV nesta tela ainda — as outras têm; esta ficou só
+  de ver. Se ele quiser baixar, é acrescentar.
+
+---
 ---
 
 ## Regras que não se discutem

@@ -67,7 +67,9 @@
     </div>
   {% endif %}
   {% if pode_operar and d.documento|replace('.','')|replace('/','')|replace('-','')|length == 14 %}
-    <form method="post" class="consulta-form"
+    {# `data-sem-aguarde`: quem dá o retorno deste botão é o bloco da consulta,
+       que busca por trás e escreve a resposta AQUI, ao lado da pergunta. #}
+    <form method="post" class="consulta-form" data-sem-aguarde="1"
           action="{{ url_for('analisesps.consultar_cnpj_credor') }}">
       <input type="hidden" name="documento" value="{{ d.documento }}">
       <button class="link-btn" type="submit">

@@ -468,14 +468,21 @@
                 {% if n.ja_com_nota %}
                   <div class="ja-com-nota">
                     <b>{{ n.ja_com_nota|length }}</b>
-                    {{ 'SP deste CNPJ já tem' if n.ja_com_nota|length == 1
-                       else 'SPs deste CNPJ já têm' }} nota associada — fora da
-                    sugestão:
+                    {{ 'SP deste CNPJ já está falada' if n.ja_com_nota|length == 1
+                       else 'SPs deste CNPJ já estão faladas' }} por outra nota
+                    — fora da sugestão.
+                    {# O MOTIVO DE CADA UMA, e não só o número. *"A menos que a
+                       associação esteja provavelmente errada."* É aqui que ele
+                       confere se a associação anterior está certa — e sem o
+                       motivo escrito não há o que conferir. #}
                     {% for c in n.ja_com_nota %}
-                      <a data-ficha="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}"
-                         data-id="{{ c.id }}"
-                         href="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}"
-                         title="Abre a ficha aqui mesmo">{{ c.id }}</a>{{ ',' if not loop.last }}
+                      <div class="fora-da-sugestao">
+                        <a data-ficha="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}"
+                           data-id="{{ c.id }}"
+                           href="{{ url_for('analisesps.detalhe', sp_id=c.id, origem='fiscal') }}"
+                           title="Abre a ficha aqui mesmo">{{ c.id }}</a>
+                        {% if c.porque_fora %}— {{ c.porque_fora }}{% endif %}
+                      </div>
                     {% endfor %}
                   </div>
                 {% endif %}

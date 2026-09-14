@@ -1535,11 +1535,28 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
         + '</div>';
 
     if (j.documentacao || j.chave) {
+      /* ⚠️ O QUE A IA DISSE, POR EXTENSO. *"Mandei pra IA e entao, o que
+         acontece? O que foi que a IA disse? O que foi sugerido? Ficou gravada
+         essa informacao onde?"*
+
+         Ficou gravada desde sempre — no diario, com o MOTIVO escrito pela IA.
+         Esta janela mostrava a categoria e a chave e engolia justamente o
+         texto que responde "o que ela disse". */
+      const deQuem = {
+        IA: "a IA leu o anexo",
+        PESSOA: "uma pessoa informou aqui",
+        CONCILIACAO: "o sistema conciliou",
+        PIPEFY: "ja veio do card do Pipefy",
+      }[j.origem] || j.origem;
       html += '<div class="prova-diario">O que ja esta gravado: <b>'
            + (esc(j.documentacao) || "sem categoria") + '</b>'
            + (j.chave ? ' · chave ' + esc(j.chave) : "")
-           + (j.origem ? ' · origem ' + esc(j.origem) : "")
-           + (j.por ? ' · por ' + esc(j.por) : "") + '</div>';
+           + (deQuem ? ' · ' + esc(deQuem) : "")
+           + (j.confianca ? " · confianca " + j.confianca + "%" : "")
+           + (j.por ? ' · por ' + esc(j.por) : "")
+           + (j.motivo
+              ? '<div class="prova-motivo">' + esc(j.motivo) + "</div>" : "")
+           + '</div>';
     }
 
     /* =====================================================================
@@ -1782,8 +1799,20 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
         + "vale avisar.</p>";
       return;
     }
+    /* ⚠️ A CAIXA DE MARCAR POR SP — *"as vezes nao queremos renomear todos os
+       lancamentos. O erro pode ter sido no CNPJ e nao somente o nome. Preciso
+       poder nao marcar algum."*
+
+       O caso que ele descreve e o que esta tela mais erra: quatro SPs com o
+       nome de uma locadora e o CNPJ de outra. Reescrever as quatro APAGA a
+       unica pista de que alguem digitou o CNPJ errado — depois disso elas
+       ficam identicas as certas e ninguem mais acha o erro. */
     var linhas = sps.map(function (s) {
-      return "<tr><td class=\"id\">" + escapar(s.id) + "</td>"
+      var fora = jaEstaDeFora(s.id);
+      return "<tr><td><input type=\"checkbox\" class=\"marcar-sp\" "
+        + 'data-sp="' + escapar(s.id) + '"' + (fora ? "" : " checked")
+        + ' title="Desmarque para NAO reescrever o nome desta SP"></td>'
+        + "<td class=\"id\">" + escapar(s.id) + "</td>"
         + "<td>" + escapar(s.credor) + "</td>"
         + "<td>" + escapar(s.valor) + "</td>"
         + "<td>" + escapar(s.vencimento) + "</td>"
@@ -1800,12 +1829,82 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
         + " mais recentes. Há mais SPs com este nome.</p>"
       : "";
     corpo.innerHTML = '<p class="cartao-dica">' + sps.length
-      + " SP(s) escritas como <b>" + escapar(nome) + "</b>.</p>"
+      + " SP(s) escritas como <b>" + escapar(nome) + "</b>. "
+      + "<b>Desmarque</b> as que NÃO devem ser renomeadas — use isso quando "
+      + "desconfiar de que o erro foi no CNPJ, e não no nome.</p>"
       + '<div style="max-height:60vh; overflow:auto">'
-      + '<table class="sps"><thead><tr><th>SP</th><th>Credor escrito</th>'
+      + '<table class="sps"><thead><tr><th></th><th>SP</th>'
+      + "<th>Credor escrito</th>"
       + "<th>Valor</th><th>Vencimento</th><th>Pagamento</th><th>Descrição</th>"
       + "<th>Card</th></tr></thead><tbody>" + linhas + "</tbody></table></div>"
       + aviso;
+
+    corpo.querySelectorAll(".marcar-sp").forEach(function (caixa) {
+      caixa.addEventListener("change", function () {
+        marcar(caixa.dataset.sp, caixa.checked);
+      });
+    });
+  }
+
+  /* ONDE A EXCLUSÃO FICA GUARDADA: num <input hidden> DENTRO do formulário
+     daquele fornecedor. Assim ela viaja com o "Usar este" sem estado nenhum
+     em variável solta — fechar a janela, reabrir, recarregar: o que estiver no
+     formulário é o que vale. */
+  function formularioDo(documento) {
+    var campos = document.querySelectorAll('input[name="documento"]');
+    for (var i = 0; i < campos.length; i++) {
+      if (campos[i].value === documento) { return campos[i].closest("form"); }
+    }
+    return null;
+  }
+
+  var documentoAberto = "";
+
+  function jaEstaDeFora(spId) {
+    var f = formularioDo(documentoAberto);
+    if (!f) { return false; }
+    return !!f.querySelector('input[name="nao_reescrever"][value="'
+                             + spId + '"]');
+  }
+
+  function marcar(spId, entra) {
+    var f = formularioDo(documentoAberto);
+    if (!f) { return; }
+    var existente = f.querySelector('input[name="nao_reescrever"][value="'
+                                    + spId + '"]');
+    if (entra) {
+      if (existente) { existente.remove(); }
+    } else if (!existente) {
+      var campo = document.createElement("input");
+      campo.type = "hidden";
+      campo.name = "nao_reescrever";
+      campo.value = spId;
+      f.appendChild(campo);
+    }
+    avisarQuantasDeFora(f);
+  }
+
+  /* O QUE FICOU DE FORA APARECE NA TELA, ao lado do botão. Exclusão que só
+     existe dentro de uma janela fechada é exclusão que se esquece — e aí ele
+     clica em "Usar este" achando que vai renomear tudo. */
+  function avisarQuantasDeFora(f) {
+    if (!f) { return; }
+    var quantas = f.querySelectorAll('input[name="nao_reescrever"]').length;
+    var recado = f.querySelector(".sps-de-fora");
+    if (!quantas) {
+      if (recado) { recado.remove(); }
+      return;
+    }
+    if (!recado) {
+      recado = document.createElement("span");
+      recado.className = "sps-de-fora";
+      var botao = f.querySelector("button[type=submit]");
+      if (botao) { botao.parentNode.insertBefore(recado, botao.nextSibling); }
+      else { f.appendChild(recado); }
+    }
+    recado.textContent = quantas === 1
+      ? "1 SP fora: não será renomeada"
+      : quantas + " SPs fora: não serão renomeadas";
   }
 
   document.addEventListener("click", function (ev) {
@@ -1818,6 +1917,7 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     ev.stopPropagation();
 
     var nome = botao.dataset.nome || "";
+    documentoAberto = botao.dataset.documento || "";
     titulo.textContent = "SPs escritas como “" + nome + "”";
     corpo.innerHTML = '<p class="cartao-dica">Buscando…</p>';
     if (typeof caixa.showModal === "function") { caixa.showModal(); }
@@ -1902,6 +2002,87 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
           erro.className = "associada-erro";
           erro.textContent = "✕ " + (e && e.message ? e.message : e);
           form.appendChild(erro);
+        });
+    });
+  });
+})();
+
+/* ==========================================================================
+   CONSULTAR O CNPJ NA RECEITA SEM A TELA SUBIR.
+
+   Reclamacao do dono em 13/09/2026: *"quando consulta o nome na Receita, a
+   tela sobe. O resultado deveria aparecer flutuante, ou de forma que nao mexa
+   na tela."*
+
+   A CAUSA: o botao era um envio de pagina inteira, e a resposta voltava como
+   um aviso no ALTO da tela. Ou seja: a resposta chegava longe da pergunta,
+   numa lista que pode ter dezenas de fornecedores, e ainda perdia o lugar onde
+   ele estava lendo.
+
+   Agora a consulta vai por tras e a resposta e escrita EXATAMENTE onde a
+   pergunta foi feita — logo acima do proprio botao. A rolagem nao se mexe.
+
+   SEM JAVASCRIPT CONTINUA FUNCIONANDO: o formulario e de verdade, e a rota so
+   responde diferente para quem manda o cabecalho.
+   ========================================================================== */
+(function () {
+  var formularios = document.querySelectorAll("form.consulta-form");
+  if (!formularios.length) { return; }
+
+  function limpo(t) {
+    var d = document.createElement("div");
+    d.textContent = t == null ? "" : String(t);
+    return d.innerHTML;
+  }
+
+  function escrever(form, d) {
+    /* Substitui a linha da Receita que ja exista para este fornecedor, em vez
+       de empilhar uma nova a cada "consultar de novo". */
+    var anterior = form.parentNode.querySelector(".consulta-receita");
+    var caixa = document.createElement("div");
+    var agora = new Date().toLocaleString("pt-BR");
+
+    if (!d.ok || d.erro_receita) {
+      caixa.className = "consulta-receita erro";
+      caixa.innerHTML = "<b>Receita:</b> "
+        + limpo(d.erro_receita || d.erro || "não consegui consultar")
+        + " <small>tentado em " + limpo(agora) + "</small>";
+    } else {
+      caixa.className = "consulta-receita";
+      caixa.innerHTML = "<b>Receita:</b> " + limpo(d.razao_social)
+        + (d.fantasia ? ' · fantasia "' + limpo(d.fantasia) + '"' : "")
+        + (d.situacao ? " · " + limpo(d.situacao) : "")
+        + (d.municipio ? " · " + limpo(d.municipio) + "/" + limpo(d.uf) : "")
+        + " <small>consultado em " + limpo(agora) + "</small>";
+    }
+
+    if (anterior) { anterior.replaceWith(caixa); }
+    else { form.parentNode.insertBefore(caixa, form); }
+  }
+
+  formularios.forEach(function (form) {
+    form.addEventListener("submit", function (ev) {
+      ev.preventDefault();
+      var botao = form.querySelector("button[type=submit]");
+      var antes = botao ? botao.textContent : "";
+      if (botao) { botao.disabled = true; botao.textContent = "consultando…"; }
+
+      fetch(form.action, {
+        method: "POST",
+        body: new FormData(form),
+        credentials: "same-origin",
+        headers: {"X-Sem-Recarregar": "1"},
+      }).then(function (r) { return r.json(); })
+        .then(function (d) { escrever(form, d); })
+        .catch(function (e) {
+          escrever(form, {ok: false,
+                          erro: "não consegui falar com o servidor: " + e});
+        })
+        .then(function () {
+          if (botao) {
+            botao.disabled = false;
+            botao.textContent = "↻ consultar de novo";
+          }
         });
     });
   });

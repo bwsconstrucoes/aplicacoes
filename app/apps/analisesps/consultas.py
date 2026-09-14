@@ -248,6 +248,39 @@ SITUACOES_FISCAIS = {
         "         WHERE a.sp_id = sps.id AND a.origem = 'PIPEFY')"),
     "com_anexo": "trim(coalesce(anexo_link,'')) <> ''",
     "sem_anexo": "trim(coalesce(anexo_link,'')) = ''",
+    # -----------------------------------------------------------------------
+    # A CONFIANÇA DO QUE ESTÁ GRAVADO — pedido do dono em 13/09/2026:
+    # *"deveria poder filtrar por confiança"*.
+    #
+    # ⚠️ E É PRECISO DIZER DE QUAL CONFIANÇA SE ESTÁ FALANDO, porque existem
+    # DUAS na tela e confundi-las daria um filtro que mente:
+    #
+    #   1. A que está GRAVADA no diário — a da IA, e a da proposta que alguém
+    #      já aprovou. Vive no banco, então dá para filtrar a base inteira.
+    #      É esta.
+    #   2. A do par que o sistema calcula AO ABRIR a tela, para a linha que
+    #      ainda não foi decidida. Ela não existe no banco: nasce e morre a
+    #      cada abertura, e só para as 200 linhas da página. Filtrar por ela
+    #      responderia "nesta página", que parece certo e não é.
+    #
+    # Os nomes na tela dizem "do que está gravado" justamente para não haver
+    # engano. Passar a segunda para o banco exige a varredura da base inteira
+    # em processo separado — está oferecido ao dono e ainda sem resposta.
+    # -----------------------------------------------------------------------
+    "confianca_alta": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id AND a.confianca >= 80)"),
+    "confianca_media": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id "
+        "           AND a.confianca >= 60 AND a.confianca < 80)"),
+    "confianca_baixa": (
+        "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "         WHERE a.sp_id = sps.id "
+        "           AND a.confianca > 0 AND a.confianca < 60)"),
+    "sem_confianca": (
+        "NOT EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+        "             WHERE a.sp_id = sps.id AND a.confianca > 0)"),
 }
 
 # ---------------------------------------------------------------------------
@@ -298,6 +331,16 @@ GRUPOS_DE_RECORTE = [
         ("confirmada", "Confirmado aqui, falta ir para o card", ""),
         ("escrita", "Já gravado no card do Pipefy", ""),
     ]),
+    ("A confiança do que está gravado", [
+        ("confianca_alta", "Alta — 80% ou mais",
+         "a IA ou a conciliação gravaram com pouca dúvida"),
+        ("confianca_media", "Média — de 60% a 79%",
+         "acima do corte para propor, mas vale conferir"),
+        ("confianca_baixa", "Baixa — abaixo de 60%",
+         "gravado, mas com dúvida; é onde olhar primeiro"),
+        ("sem_confianca", "Sem confiança gravada",
+         "nunca foi decidido, ou veio pronto do card"),
+    ]),
     ("O anexo da SP", [
         ("com_anexo", "Tem anexo", "dá para mandar para a IA ler"),
         ("sem_anexo", "Não tem anexo",
@@ -328,6 +371,10 @@ FRASE_DO_RECORTE = {
     "escrita": "já foi gravado no card",
     "com_anexo": "tem anexo",
     "sem_anexo": "não tem anexo",
+    "confianca_alta": "a confiança gravada é 80% ou mais",
+    "confianca_media": "a confiança gravada é de 60% a 79%",
+    "confianca_baixa": "a confiança gravada é menor que 60%",
+    "sem_confianca": "não há confiança gravada",
 }
 
 
@@ -1293,3 +1340,81 @@ def aging_vencidos(f: dict, periodo: str = "tudo") -> list[dict]:
     achados = {r[0]: {"faixa": r[0], "quantidade": r[1], "total": r[2]}
                for r in linhas}
     return [achados[nome] for _, _, nome in FAIXAS_ATRASO if nome in achados]
+
+
+# ===========================================================================
+# A TELA DE VER — "similar ao que eu visualizo na planilha"
+#
+# Cobrança do dono em 13/09/2026, e ela é antiga: *"desde o começo eu pedi uma
+# tela simples pra poder visualizar similar ao que eu visualizo na planilha.
+# Uma tela das notas e outra tela dos registros com os dados que estamos
+# trabalhando. Similar à planilha. Mas até agora não foi entregue."*
+#
+# ELE ESTÁ CERTO, E O QUE FALTAVA NÃO ERA DADO — era a TELA. Tudo o que este
+# módulo tem são telas de TRABALHO: cada uma mostra um recorte, com painel,
+# proposta, botão de agir. Nenhuma responde à pergunta mais simples que
+# existe, que é *"deixa eu ver os dados"*.
+#
+# O QUE FAZ ESTA TELA SER "A PLANILHA" e não mais uma tela de trabalho:
+#
+#   1. TODAS AS COLUNAS, na ORDEM DA PLANILHA (A, B, C…), e não na ordem de
+#      uso. Ele lê a SPsBD por posição — a coluna "O" é o Status Pgt, e ele
+#      sabe disso de cor.
+#   2. A LETRA DA COLUNA no cabeçalho. É o detalhe que faz reconhecer.
+#   3. NADA DE AÇÃO. Sem propor, sem confirmar, sem marcar. Olhar não é mexer.
+#   4. Uma busca só, e ordenar clicando no cabeçalho — como numa planilha.
+#
+# NÃO REUSA `listar`: aquela traz um punhado de colunas escolhidas e ainda
+# calcula risco, atraso e agendamento por linha. Aqui é o contrário — tudo, e
+# sem conta nenhuma por cima.
+# ===========================================================================
+# As colunas da planilha, na ordem dela, tirando as fórmulas que não guardamos.
+COLUNAS_DA_PLANILHA = [
+    (c.chave, c.letra, c.rotulo, c.tipo) for c in colunas.GUARDADAS]
+
+# Quantas linhas por página. O mesmo teto das outras telas: 200 linhas é o que
+# o navegador desenha sem engasgar, e a base tem 59 mil.
+POR_PAGINA_PLANILHA = 200
+
+
+def planilha_sps(busca: str = "", ordem: str = "id", desc: bool = False,
+                 pagina: int = 1) -> tuple[list, int]:
+    """As SPs como a planilha mostra: todas as colunas, na ordem dela."""
+    from .db import consultar, consultar_um
+
+    onde, params = [], []
+    termo = str(busca or "").strip()
+    if termo:
+        # A MESMA BUSCA LIVRE DAS OUTRAS TELAS, para não haver duas ideias de
+        # "procurar" no mesmo módulo.
+        alvo = " || ' ' || ".join(f"lower(coalesce({c},''))" for c in CAMPOS_BUSCA)
+        for pedaco in [t.strip().lower() for t in termo.split(",") if t.strip()]:
+            onde.append(f"({alvo}) LIKE ?")
+            params.append(f"%{_como_texto_literal(pedaco)}%")
+    where = (" WHERE " + " AND ".join(onde)) if onde else ""
+
+    # ⚠️ A ORDENAÇÃO SAI DE UMA LISTA FECHADA, e nunca do que vem no endereço:
+    # costurar o nome da coluna dentro do SQL é o caminho conhecido para
+    # alguém mandar comando pela barra do navegador.
+    permitidas = {c for c, _, _, _ in COLUNAS_DA_PLANILHA}
+    coluna = ordem if ordem in permitidas else "id"
+    # Data e valor ordenam pela versão CONVERTIDA: ordenar "10/01/2026" como
+    # texto põe outubro antes de fevereiro, e aí a tela mente.
+    real = colunas.DERIVADAS_DATA.get(coluna, coluna)
+    if coluna == colunas.DERIVADA_VALOR[0]:
+        real = colunas.DERIVADA_VALOR[1]
+    sentido = "DESC NULLS LAST" if desc else "ASC NULLS LAST"
+
+    pagina = max(1, int(pagina or 1))
+    campos = ", ".join(f'"{c}"' for c, _, _, _ in COLUNAS_DA_PLANILHA)
+    linhas = consultar(
+        f'SELECT {campos} FROM analisesps.sps{where} '
+        f' ORDER BY "{real}" {sentido}, id '
+        " LIMIT ? OFFSET ?",
+        tuple(params) + (POR_PAGINA_PLANILHA,
+                         (pagina - 1) * POR_PAGINA_PLANILHA))
+    total = consultar_um(
+        f"SELECT count(*) FROM analisesps.sps{where}", tuple(params))[0]
+
+    nomes = [c for c, _, _, _ in COLUNAS_DA_PLANILHA]
+    return [dict(zip(nomes, linha)) for linha in linhas], int(total or 0)

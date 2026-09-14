@@ -1368,3 +1368,108 @@ tr.nota-resolvida .nota-candidata { filter: grayscale(1); }
 .parcela-irma.outra_nota {
   border-color: #DC2626; color: #991B1B; font-weight: 600;
 }
+
+/* CONFERIR O CERTIFICADO SEM GUARDAR. Fechado por padrão: só interessa a quem
+   está com problema, e aberto ele competiria com o formulário de guardar. */
+.conferir-cert { margin-top: 14px; }
+.conferir-cert > summary {
+  cursor: pointer; font-size: 13px; font-weight: 600;
+  color: var(--azul-claro, #2563eb); padding: 6px 0;
+}
+
+/* QUEM PREENCHEU A CATEGORIA, na própria linha. *"Mandei pra IA e então, o que
+   foi que a IA disse? Ficou gravada essa informação onde?"* Ficava gravada e
+   não aparecia. */
+.quem-disse {
+  display: inline-block; font-size: 11px; padding: 1px 6px;
+  border-radius: 10px; border: 1px solid var(--borda, #cbd5e1);
+  color: #64748b; margin-top: 3px; cursor: help;
+}
+.quem-disse.ia { border-color: #8B5CF6; color: #5B21B6; background: #F5F3FF; }
+.quem-disse.pessoa { border-color: #0EA5E9; color: #075985; background: #F0F9FF; }
+.quem-disse.sistema { border-color: #10B981; color: #065F46; background: #ECFDF5; }
+.quem-disse.card { border-color: #cbd5e1; }
+/* O texto que a IA escreveu, na janela dos dados. */
+.prova-motivo {
+  margin-top: 6px; padding: 6px 8px; border-radius: 5px;
+  background: #F8FAFC; color: #334155; font-size: 12px; line-height: 1.5;
+}
+
+/* Cada SP fora da sugestão com o MOTIVO ao lado. *"A menos que a associação
+   esteja provavelmente errada"* — é aqui que se confere isso. */
+.fora-da-sugestao { margin-top: 3px; }
+
+/* AS SPs DEIXADAS DE FORA da equalização, dito ao lado do botão. Exclusão que
+   só existe dentro de uma janela fechada é exclusão que se esquece. */
+.sps-de-fora {
+  margin-left: 10px; font-size: 12px; font-weight: 600;
+  color: #92400E; background: #FFFBEB; border: 1px solid #FDE68A;
+  padding: 2px 8px; border-radius: 10px;
+}
+#sps-do-nome .marcar-sp { cursor: pointer; }
+
+/* ==========================================================================
+   A TELA DE VER — "similar ao que eu visualizo na planilha".
+
+   Densa de propósito: numa planilha cabem muitas linhas na tela, e é assim que
+   ele lê. Fonte menor, linhas apertadas, e o cabeçalho e a primeira coluna
+   GRUDADOS — que é o "congelar painéis" do Excel, e sem isso uma tabela de 34
+   colunas fica impossível de ler no meio.
+   ========================================================================== */
+.planilha-cartao { padding-bottom: 6px; }
+.planilha-abas { display: flex; gap: 6px; margin-left: auto; }
+.planilha-aba {
+  padding: 5px 12px; border-radius: 8px; font-size: 13px; font-weight: 600;
+  color: var(--tinta-fraca, #64748b); text-decoration: none;
+  border: 1px solid var(--borda, #e2e8f0);
+}
+.planilha-aba.atual {
+  background: var(--azul-claro, #2563eb); color: #fff;
+  border-color: var(--azul-claro, #2563eb);
+}
+.planilha-busca {
+  display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  margin: 6px 0 10px;
+}
+.planilha-busca .busca { flex: 1 1 320px; margin: 0; }
+.planilha-conta { font-size: 12px; color: #64748b; font-weight: 600; }
+
+.planilha-rolagem {
+  overflow: auto;
+  max-height: calc(100vh - 290px);
+  border: 1px solid var(--borda, #e2e8f0);
+  border-radius: 8px;
+}
+table.planilha { border-collapse: separate; border-spacing: 0; font-size: 12px; }
+table.planilha th, table.planilha td {
+  padding: 4px 8px; white-space: nowrap;
+  border-bottom: 1px solid var(--borda, #eef2f7);
+  border-right: 1px solid var(--borda, #eef2f7);
+}
+/* O cabeçalho fica; a tabela rola por baixo. */
+table.planilha thead th {
+  position: sticky; top: 0; z-index: 3;
+  background: #F8FAFC; text-align: left; font-weight: 700;
+}
+table.planilha thead th a { color: inherit; text-decoration: none; }
+table.planilha thead th a:hover { text-decoration: underline; }
+/* A primeira coluna (o ID da SP, a chave da nota) também fica: é por ela que
+   se sabe em que linha se está quando a tabela rola de lado. */
+table.planilha tbody td:first-child,
+table.planilha thead th:first-child {
+  position: sticky; left: 0; z-index: 2; background: #fff;
+  font-variant-numeric: tabular-nums; font-weight: 600;
+}
+table.planilha thead th:first-child { z-index: 4; background: #F1F5F9; }
+table.planilha tbody tr:nth-child(even) td { background: #FCFDFE; }
+table.planilha tbody tr:nth-child(even) td:first-child { background: #F7FAFC; }
+table.planilha tbody tr:hover td { background: #EFF6FF; }
+table.planilha td.num, table.planilha th.num {
+  text-align: right; font-variant-numeric: tabular-nums;
+}
+/* A letra da coluna, como na planilha. É o detalhe que faz reconhecer. */
+.planilha-letra {
+  display: inline-block; min-width: 20px; margin-right: 4px;
+  color: #94A3B8; font-weight: 600; font-size: 11px;
+}
+.planilha-vazio { color: #CBD5E1; }
