@@ -167,6 +167,7 @@ def atualizar(s: Session, codigo: str = PADRAO, *, desde: Optional[date] = None,
             atual.fonte = "BCB-SGS"
             atualizados += 1
     s.flush()
+    recalcular_numeros(s, codigo)
 
     resumo = {"codigo": codigo, "nome": nome, "serie": serie,
               "novos": novos, "atualizados": atualizados,
@@ -212,10 +213,59 @@ def lancar_manual(s: Session, *, codigo: str, competencia: date, variacao_pct: A
         linha.variacao_pct = valor
         linha.fonte = "MANUAL"
     s.flush()
+    # O mês lançado desloca todos os seguintes: a série inteira é refeita.
+    recalcular_numeros(s, codigo)
     registrar_evento(s, "indice", 0, "INDICE_LANCADO_A_MAO", {
         "codigo": codigo, "competencia": quando.isoformat(), "valor": str(valor)},
         usuario.id if usuario else None)
     return linha
+
+
+# ---------------------------------------------------------------------------
+# O NÚMERO-ÍNDICE (migração 068)
+# ---------------------------------------------------------------------------
+BASE_DO_NUMERO_INDICE = Decimal("100")
+
+
+def recalcular_numeros(s: Session, codigo: str = PADRAO) -> int:
+    """Refaz o número-índice da série inteira, do mês mais velho para o novo.
+
+    Pedido do dono em 14/09/2026: *"a gente precisa do índice mesmo, não só
+    variação (…) caso a gente queira saber qual índice inicial, qual índice
+    final"*.
+
+        índice do mês = índice do mês anterior × (1 + variação/100)
+
+    com **base 100 no mês mais antigo guardado**.
+
+    ⚠️ **O número absoluto não é o do boletim da FGV** — a base é outra. O que é
+    idêntico, e é o que vale, é a RAZÃO entre dois meses: dividir o índice final
+    pelo inicial dá o mesmo fator de reajuste da planilha. Reproduzir o número
+    da FGV exigiria a série do número-índice deles, que é licenciada; o Banco
+    Central republica só a variação.
+
+    **Refaz a série toda, e não só o mês novo**, de propósito: o Banco Central
+    revisa variação passada, e um mês revisado desloca todos os seguintes. Meia
+    série atualizada seria pior do que série nenhuma, porque a razão entre dois
+    meses de lados diferentes do remendo daria um fator errado — com cara de
+    certo.
+    """
+    codigo = (codigo or PADRAO).strip().upper()
+    linhas = list(s.scalars(select(IndiceEconomico).where(
+        IndiceEconomico.codigo == codigo)
+        .order_by(IndiceEconomico.competencia.asc())).all())
+    if not linhas:
+        return 0
+
+    # Acumula em precisão cheia e guarda arredondado: arredondar a cada passo
+    # empurraria o erro para a frente, mês após mês.
+    corrente = BASE_DO_NUMERO_INDICE
+    for i, linha in enumerate(linhas):
+        if i:
+            corrente *= (Decimal(1) + _dec(linha.variacao_pct) / 100)
+        linha.numero_indice = corrente.quantize(Decimal("0.000001"))
+    s.flush()
+    return len(linhas)
 
 
 def listar(s: Session, codigo: str = PADRAO, *, limite: int = 60) -> dict[str, Any]:
@@ -224,12 +274,23 @@ def listar(s: Session, codigo: str = PADRAO, *, limite: int = 60) -> dict[str, A
     linhas = list(s.scalars(select(IndiceEconomico).where(
         IndiceEconomico.codigo == codigo)
         .order_by(IndiceEconomico.competencia.desc()).limit(limite)).all())
+    mais_velho = s.scalars(select(IndiceEconomico.competencia).where(
+        IndiceEconomico.codigo == codigo)
+        .order_by(IndiceEconomico.competencia.asc()).limit(1)).first()
     return {
         "codigo": codigo,
         "nome": CATALOGO.get(codigo, (0, codigo))[1],
+        # Sem dizer a base, o número-índice vira um número solto: quem comparar
+        # com o boletim da FGV vai achar que está errado.
+        "base_do_numero": (f"100,000000 em {mais_velho.strftime('%m/%Y')}"
+                           if mais_velho else ""),
         "serie": CATALOGO.get(codigo, (0, ""))[0],
         "meses": [{"competencia": i.competencia.isoformat(),
                    "variacao_pct": float(i.variacao_pct),
+                   # O número-índice: é dele que saem "índice inicial" e
+                   # "índice final" do reajuste (migração 068).
+                   "numero_indice": (float(i.numero_indice)
+                                     if i.numero_indice is not None else None),
                    "fonte": i.fonte,
                    "coletado_em": i.coletado_em.isoformat() if i.coletado_em else None}
                   for i in linhas],

@@ -303,7 +303,7 @@ def preparar(s: Session, cotacao_id: int) -> dict[str, Any]:
             "ultimo_envio": ultimo,
         })
 
-    pode_empresa, falta = correio.conta_configurada(empresa)
+    pode_empresa, falta = correio.conta_configurada(empresa, s)
     mensagem = (montar_mensagem(s, cotacao_id, empresa) if empresa else
                 {"assunto": "", "corpo": ""})
     return {
@@ -335,7 +335,7 @@ def disparar(s: Session, cotacao_id: int, dados: dict[str, Any],
             f"proposta. Abra uma cotação nova.")
 
     empresa = _empresa_do_disparo(s, cotacao_id, dados.get("empresa_id"))
-    pode, falta = correio.conta_configurada(empresa)
+    pode, falta = correio.conta_configurada(empresa, s)
     if not pode:
         raise ErroValidacao(falta)
 
@@ -606,7 +606,7 @@ def preparar_pedido(s: Session, pedido_id: int) -> dict[str, Any]:
     envios = correio.historico(s, "pedido_compra", pedido_id)
     autorizado = pedido.status is StatusPedidoCompra.AUTORIZADO
 
-    pode_empresa, falta = correio.conta_configurada(empresa)
+    pode_empresa, falta = correio.conta_configurada(empresa, s)
     mensagem = ({"assunto": "", "corpo": ""} if empresa is None
                 else montar_pedido(s, pedido_id, empresa))
     return {
@@ -660,7 +660,7 @@ def disparar_pedido(s: Session, pedido_id: int, dados: dict[str, Any],
             "empresa em Administração › Empresas, ou marque uma como padrão.")
     empresa = svc_empresas.obter(s, int(empresa_id))
 
-    pode, falta = correio.conta_configurada(empresa)
+    pode, falta = correio.conta_configurada(empresa, s)
     if not pode:
         raise ErroValidacao(falta)
 

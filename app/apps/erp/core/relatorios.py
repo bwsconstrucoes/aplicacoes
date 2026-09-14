@@ -33,6 +33,13 @@ DIMENSOES = {
     # cada obra aponta para a empresa que a executa — era a única visão que os
     # relatórios não davam.
     "empresa": ("COALESCE(e.nome_fantasia, e.razao_social, 'Sem empresa')", "Empresa"),
+    # SOMADO POR PROJETO (13/09/2026). Pedido do dono: *"se a obra estiver
+    # dentro de algum projeto, tudo que eu for visualizar em relação a elas —
+    # relatórios, resultados, custos — eu poder visualizar o projeto, ou seja,
+    # o somatório daquelas obras"*. Obra fora de projeto cai numa linha só,
+    # com esse nome, em vez de sumir — número que some é pior que número
+    # errado, porque ninguém procura o que não sabe que falta.
+    "projeto": ("COALESCE(pr.codigo || ' · ' || pr.nome, 'Sem projeto')", "Projeto"),
     # ESPÉCIE existe como dimensão para o caso "os dois": sem ela, a linha de
     # receita e a de custo se somariam num número só.
     "especie": ("CASE t.especie::text WHEN 'RECEBER' THEN 'A receber' "
@@ -122,6 +129,9 @@ def _filtros(f: dict[str, Any], s: Session,
     if f.get("empresa_id"):
         cond.append("o.empresa_id = :empresa_id")
         p["empresa_id"] = int(f["empresa_id"])
+    if f.get("projeto_id"):
+        cond.append("o.projeto_id = :projeto_id")
+        p["projeto_id"] = int(f["projeto_id"])
     # A espécie é escolha EXPLÍCITA da tela, e o padrão é "a pagar": este é um
     # relatório de custo. Quem quer os dois pede os dois, e aí a tela mostra
     # qual foi a escolha — nada acontece calado.
@@ -153,6 +163,7 @@ def resumo(s: Session, dimensao: str, filtros: dict[str, Any],
           JOIN categorias c  ON c.id = COALESCE(r.categoria_id, t.categoria_id)
           JOIN obras o       ON o.id = r.obra_id
           LEFT JOIN empresas e ON e.id = o.empresa_id
+          LEFT JOIN projetos pr ON pr.id = o.projeto_id
           JOIN fornecedores f ON f.id = t.fornecedor_id{_JOIN_PAGO}
          WHERE {where}
          GROUP BY chave
@@ -192,6 +203,7 @@ def analitico(s: Session, filtros: dict[str, Any], usuario: Usuario,
           JOIN categorias c  ON c.id = COALESCE(r.categoria_id, t.categoria_id)
           JOIN obras o       ON o.id = r.obra_id
           LEFT JOIN empresas e ON e.id = o.empresa_id
+          LEFT JOIN projetos pr ON pr.id = o.projeto_id
           JOIN fornecedores f ON f.id = t.fornecedor_id
          WHERE {where}
          ORDER BY t.competencia DESC, t.numero_sp
@@ -222,6 +234,7 @@ def dre_gerencial(s: Session, filtros: dict[str, Any],
           JOIN categorias c ON c.id = COALESCE(r.categoria_id, t.categoria_id)
           JOIN obras o      ON o.id = r.obra_id
           LEFT JOIN empresas e ON e.id = o.empresa_id
+          LEFT JOIN projetos pr ON pr.id = o.projeto_id
           JOIN fornecedores f ON f.id = t.fornecedor_id
          WHERE {where}
          GROUP BY c.natureza, c.grupo_codigo, grupo_nome, sub_cod, sub_nome

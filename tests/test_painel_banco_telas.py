@@ -1160,3 +1160,63 @@ def test_a_cascata_nomeia_os_lancamentos_cortados(base_de_aportes):
     r = consultas.conferencia_dos_aportes()
     assert [l["codigo"] for l in r["comidos_trf"]] == [602]
     assert [l["codigo"] for l in r["comidos_pago"]] == [603]
+
+
+# ===========================================================================
+# Configurações tem de abrir rápido
+# ===========================================================================
+# 14/09/2026: empilhei três conferências pesadas nessa tela e deixei as três
+# ligadas por padrão. São ~12 varreduras na base de 186 mil linhas. A tela
+# parou de abrir para o dono no mesmo dia — e é JUSTAMENTE a tela onde se
+# aperta o botão de atualizar a base.
+
+@pytest.fixture()
+def cliente_config(base_para_explorar, monkeypatch):
+    monkeypatch.setenv("PAINEL_SENHA", "segredo-de-teste")
+    from app.main import create_app
+    app = create_app()
+    app.config.update(TESTING=True)
+    c = app.test_client()
+    c.post("/painel/entrar", data={"senha": "segredo-de-teste"})
+    return c
+
+
+def test_configuracoes_nao_roda_conferencia_sozinha(cliente_config, monkeypatch):
+    """Abrir a tela não pode disparar varredura nenhuma."""
+    from app.apps.painel import consultas
+    rodou = []
+    for nome in ("conferencia_do_pago", "titulos_que_sumiram",
+                 "conferencia_dos_aportes"):
+        monkeypatch.setattr(consultas, nome,
+                            lambda *a, _n=nome, **k: rodou.append(_n) or {})
+    r = cliente_config.get("/painel/configuracoes")
+    assert r.status_code == 200
+    assert rodou == [], f"abriu a tela e rodou {rodou}"
+    assert "Rodar as conferências" in r.get_data(as_text=True)
+
+
+def test_quem_pede_a_conferencia_recebe(cliente_config, monkeypatch):
+    """E o botão tem de funcionar, senão a conferência vira enfeite."""
+    from app.apps.painel import consultas
+    rodou = []
+    for nome in ("conferencia_do_pago", "titulos_que_sumiram",
+                 "conferencia_dos_aportes"):
+        monkeypatch.setattr(consultas, nome,
+                            lambda *a, _n=nome, **k: rodou.append(_n) or {})
+    r = cliente_config.get("/painel/configuracoes?conferir=1")
+    assert r.status_code == 200
+    assert sorted(rodou) == ["conferencia_do_pago", "conferencia_dos_aportes",
+                             "titulos_que_sumiram"]
+
+
+def test_procurar_um_valor_tambem_roda(cliente_config, monkeypatch):
+    """Quem cola um valor no campo está pedindo a conferência, sem clicar no
+    botão. Exigir os dois seria pegadinha."""
+    from app.apps.painel import consultas
+    rodou = []
+    monkeypatch.setattr(consultas, "titulos_que_sumiram",
+                        lambda *a, **k: rodou.append(1) or {})
+    monkeypatch.setattr(consultas, "conferencia_do_pago", lambda *a, **k: {})
+    monkeypatch.setattr(consultas, "conferencia_dos_aportes", lambda *a, **k: {})
+    r = cliente_config.get("/painel/configuracoes?procurar=784.647,07")
+    assert r.status_code == 200 and rodou
