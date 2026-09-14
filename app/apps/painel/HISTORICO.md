@@ -827,71 +827,66 @@ que adivinhar.
 
 ## O que falta
 
-Atualizado em **13/09/2026**, depois de refazer o Explorador. As migrações
-007 e 008 já foram aplicadas pelo dono e a `PAINEL_SENHA_ESCRITA` já existe no
-Render — o que era imediato saiu desta lista.
+Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte
+a tarde inteira.
 
-**Não há tela por escrever.** O painel faz tudo o que o Streamlit fazia, mais o
-que o Streamlit ganhou depois e voltou para cá no documento de repasse. O que
-resta é de dois tipos: **conferência com dado real** — que só o dono consegue
-fazer, porque exige abrir a tela publicada — e **saneamento da base no OMIE**,
-que agora tem ferramenta própria.
+### Esperando decisão do dono
 
-### Conferir com a base da empresa (só o dono consegue)
+1. **As duas regras de "foi pago" divergem** — a carga considera pago o título
+   cujo status diga *pago/recebido/conciliado* **ou** cuja baixa do OMIE diga
+   liquidado; as telas olham só o texto do status. **Medido na base real:
+   R$ 96.750,00 em 2 títulos** estão marcados como pagos e não são contados por
+   tela nenhuma. A conferência vive em Configurações e não altera nada.
+   O conserto é as telas lerem `situacao_vencimento = 'Quitado'`, que é a
+   decisão que a própria carga já grava — e a regra passa a existir num lugar
+   só. **Falta o dono dizer se pode**, porque números do DRE e da Visão Geral
+   vão subir (no máximo esse valor).
 
-1. **O bloco de aportes do DRE.** Nunca viu dado de verdade. É o pedaço mais
-   antigo nessa condição, e este módulo já mandou três erros de SQL para a
-   produção.
-2. **As duas datas e o atraso**, no Despesas Analítico, contra o OMIE.
-3. **Os cenários de rateio:** simular uma mudança óbvia e ver se o efeito bate
-   com a intuição de quem conhece as obras.
-4. **O PDF contra a planilha** do mesmo recorte. Por construção os dois saem das
-   mesmas abas — o teste é confirmar isso com dado real.
-5. **Se o arquivo do Analítico agora traz o mesmo número da tela.** Era 481 na
-   tela e 316 no arquivo; a causa foi corrigida em 04/09.
-6. **Se a Visão Geral agora bate com o DRE.** Eram R$ 888 mil contra R$ 931 mil,
-   diferença de R$ 43.298,13 de juros e multa que a Visão Geral não descontava.
-   Corrigido em 08/09 em todas as telas, prestação incluída.
-7. **A primeira escrita no OMIE nunca aconteceu.** O caminho de escrita foi
-   testado só contra dublê — a API real nunca recebeu um `AlterarContaPagar`
-   deste código. O protocolo é: **ensaio** (não grava nada, mostra o que
-   mudaria) → **um único título**, conferido dentro do OMIE com os olhos → só
-   então lote. Não pular o passo do meio.
+   Para orientar o conserto, falta ler na conferência **quais palavras de
+   situação** estão escapando e **em quais categorias** — está tudo na tela.
 
-### O que a base ainda tem de errado
+2. **Os valores do bloco Aportes e Dividendos do DRE parecem errados**, disse o
+   dono em 13/09. Não foi atacado: ele não chegou a dizer **quais** números
+   estão errados nem o que esperava ver. Sem isso só dá para levantar hipótese,
+   e a tarde de 13/09 mostrou o custo disso. **É o item mais importante da
+   lista** — este bloco nunca foi conferido contra dado real.
 
-8. **Mais principal de empréstimo pago do que tomado:** R$ 9,25 milhões contra
-   R$ 9,08 milhões. Isso não se sustenta — ninguém paga principal de dinheiro
-   que não tomou. Ou o empréstimo é anterior ao período que a base cobre, ou há
-   título de empréstimo classificado em outra categoria no OMIE; no segundo caso
-   ele está sendo contado como despesa de obra em **todas** as telas. Desde
-   09/09 a Necessidade de Caixa **diz isso na leitura em português** em vez de
-   deixar o número passar calado, e aponta o Explorador como o lugar de
-   corrigir. A correção em si é trabalho de base, não de código.
+### Buracos conhecidos, sem conserto ainda
+
+3. **Lançamento de conta corrente não entra no painel.** A carga lê Contas a
+   Pagar e a Receber; movimento sem título é descartado na gravação
+   (`gravar_movimentos` conta os ignorados e segue). Na conferência do dono, os
+   lançamentos de "Débito em Conta Corrente" de R$ 3,00 e R$ 1,00 não aparecem
+   por isso — e não vão aparecer por recálculo nenhum. Trazê-los exige decidir
+   antes se entram nas contas: somá-los junto com o título que eles quitam
+   contaria o mesmo dinheiro duas vezes. Provavelmente devem aparecer no
+   Explorador e ficar **fora** dos totais.
+
+4. **As colunas de dinheiro do espelho são `REAL` e perdem centavos acima de
+   R$ 131.072.** Ver a seção própria acima. Consertar é migração mais carga
+   completa (horas). O dono decidiu em 14/09 **não fazer agora** — o dano
+   prático era a busca, e ele está resolvido.
+
+5. **O ensaio da alteração no OMIE depende de a API estar no ar.** A recusa por
+   rateio sai do espelho do próprio painel e não precisaria de rede, mas hoje só
+   aparece depois que o painel fala com o OMIE.
+
+### Conferência com dado real (só o dono consegue)
+
+6. **A primeira escrita no OMIE nunca aconteceu.** Protocolo: ensaio → **um**
+   título conferido dentro do OMIE com os olhos → só então lote.
+7. **O PDF contra a planilha** do mesmo recorte.
+8. **Os cenários de rateio**, contra a intuição de quem conhece as obras.
 
 ### Fora desta área
 
 9. **O mesmo defeito da senha com acento existe no Análise de SPs**
-   (`analisesps/auth.py` linhas 120 e 271, `analisesps/web.py` 628). Não foi
-   mexido daqui — outra área, outro chat. **Avisado ao dono em 04/09.** O ERP
-   não tem o problema: lá a comparação é entre hashes, sempre ASCII.
-10. **Converter `app/apps/spsbd_app`.** Já está em andamento pelo chat da área,
-    que publicou várias vezes em 04/09.
+   (`analisesps/auth.py` 120 e 271, `analisesps/web.py` 628). Avisado em 04/09.
 
 ### Melhorias possíveis, nenhuma urgente
 
-11. **O que sobrou de lentidão está no banco, não no código.** Medido pelo dono
-    em 04/09: 478 ms de tela, 443 deles no banco — 93%. Otimizar Python daqui
-    não move o ponteiro; o que resta é SQL e índice.
-
-### Encerrado — não reabrir sem motivo novo
-
-- **Migração que cria coluna derivada agenda a reconstrução sozinha.** Aprovado
-  pelo dono em 04/09 e feito: a migração declara a marca `REFAZER-O-FATO` no
-  próprio arquivo e o painel dispara o recálculo ao terminar de aplicar.
-- **Os quatro itens do documento de repasse do Streamlit** (código e rótulo da
-  categoria, o Explorador, a edição no OMIE, o Rateio da Administração) e as
-  pendências 4.1 e 4.2 dele. Tudo publicado em 09/09.
+10. **O que sobrou de lentidão está no banco, não no código.** Medido pelo dono
+    em 04/09: 478 ms de tela, 443 deles no banco — 93%.
 
 ## Coisas pequenas que mordem
 
