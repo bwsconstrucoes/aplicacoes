@@ -144,6 +144,10 @@ TELAS = [
     ("relatorio",     "Relatório",     "analisesps.relatorio"),
     ("fiscal",        "Doc. Fiscal",   "analisesps.tela_fiscal"),
     ("agenda",        "Agenda",        "analisesps.tela_agenda"),
+    # A TELA DE VER entra AQUI, e não antes: a ordem até a Agenda é o caminho
+    # do dia dele, pedida com estas palavras — *"aí depois agenda, e pronto,
+    # aí pode seguir com os demais"*. Esta é "dos demais".
+    ("planilha",      "Ver os dados",  "analisesps.tela_planilha"),
     ("auditoria",     "Auditoria",     "analisesps.auditoria"),
     ("ratear",        "Ratear",        "analisesps.ratear"),
     ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
@@ -2420,6 +2424,55 @@ def subir_certificado():
         ". A busca de notas na Receita passa a usá-lo na próxima rodada.")))
 
 
+@bp.route("/certificados/conferir", methods=["POST"])
+@exige_operador
+def conferir_certificado():
+    """Tenta abrir o .pfx e CONTA o que aconteceu. NÃO GUARDA NADA.
+
+    Pedido do dono em 13/09/2026: *"suspeito que o certificado e a senha estejam
+    corretos, mas a mensagem é de certificado inválido ou senha. Existe algum
+    canto que eu possa tirar essa prova?"*
+
+    A desconfiança dele tinha fundamento: um espaço colado junto com a senha
+    dava exatamente a mesma mensagem de uma senha errada — e quem copia a senha
+    de um e-mail traz o espaço junto sem perceber. Ver `certificados._abrir`.
+
+    ⚠️ NÃO GUARDA E NÃO MEXE no que já está guardado: é só uma conferência. Por
+    isso dá para experimentar à vontade sem risco de estragar o certificado que
+    está em uso."""
+    from . import certificados
+
+    arquivo = request.files.get("certificado")
+    senha = request.form.get("senha") or ""
+    if not arquivo or not arquivo.filename:
+        return redirect(url_for("analisesps.configuracoes",
+                                aviso="Escolha o arquivo para conferir."))
+    try:
+        r = certificados.conferir(arquivo.read(), senha)
+    except Exception as e:  # noqa: BLE001
+        logger.exception("Análise de SPs: falhou conferir o certificado")
+        return redirect(url_for("analisesps.configuracoes",
+                                aviso=f"Não consegui conferir: {e}"))
+
+    if not r["ok"]:
+        aviso = "✕ " + r["motivo"]
+    else:
+        validade = (r["valido_ate"].strftime("%d/%m/%Y")
+                    if r.get("valido_ate") else "—")
+        aviso = (f"✔ O certificado ABRIU com esta senha. Titular: "
+                 f"{r['titular']} · CNPJ {r['cnpj']} · vale até {validade}.")
+        if r.get("senha_ajustada"):
+            aviso += (f" ⚠️ Abriu com a senha {r['senha_ajustada']} — ou seja, "
+                      "veio espaço junto no copiar e colar. A senha está certa; "
+                      "o espaço é que atrapalhava.")
+    # O nome do arquivo NÃO vai para o aviso: ele aparece no endereço da
+    # página, e nome de arquivo de certificado costuma trazer o CNPJ.
+    logger.info("Análise de SPs: %s conferiu um certificado — %s.",
+                auth.nome_atual() or auth.pessoa_atual(),
+                "abriu" if r["ok"] else "não abriu")
+    return redirect(url_for("analisesps.configuracoes", aviso=aviso))
+
+
 @bp.route("/certificados/remover", methods=["POST"])
 @exige_operador
 def remover_certificado():
@@ -2445,6 +2498,78 @@ def remover_certificado():
 # FORA DAS ABAS DE CIMA, e de propósito: isto é arrumação ocasional, não
 # trabalho do dia. A barra de abas é para o que se abre todo dia; encher ela
 # com manutenção faria o que importa ficar mais longe. Chega-se aqui por
+# ===========================================================================
+# A TELA DE VER — "similar ao que eu visualizo na planilha"
+#
+# Cobrança do dono em 13/09/2026, e ela é antiga: *"desde o começo eu pedi uma
+# tela simples pra poder visualizar similar ao que eu visualizo na planilha.
+# Uma tela das notas e outra tela dos registros com os dados que estamos
+# trabalhando. (…) Mas até agora não foi entregue."*
+#
+# Ele está certo. Todas as telas deste módulo são de TRABALHO — cada uma mostra
+# um recorte, com painel, proposta e botão de agir. Nenhuma respondia à
+# pergunta mais simples que existe: *"deixa eu ver os dados"*.
+#
+# É `@exige_consulta` de propósito: olhar não é mexer, e esta tela não tem uma
+# única ação. Quem só consulta entra.
+# ===========================================================================
+@bp.route("/planilha")
+@exige_consulta
+def tela_planilha():
+    """Os dados como a planilha mostra: tudo, sem recorte e sem ação."""
+    from . import consultas, fiscal
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+
+    aba = "notas" if request.args.get("aba") == "notas" else "lancamentos"
+    busca = (request.args.get("busca") or "").strip()
+    ordem = request.args.get("ordem") or ("emissao" if aba == "notas" else "id")
+    # O SENTIDO PADRÃO É DIFERENTE NAS DUAS ABAS, e isso é sobre como se lê:
+    # a nota mais recente é a que interessa primeiro (é a que acabou de
+    # chegar); a SP se lê do começo, pelo número, como na planilha. Só depois
+    # de ele clicar num cabeçalho o endereço passa a mandar.
+    if "desc" in request.args:
+        desc = request.args.get("desc") == "1"
+    else:
+        desc = (aba == "notas")
+    try:
+        pagina = max(1, int(request.args.get("pagina", 1)))
+    except ValueError:
+        pagina = 1
+
+    erro, linhas, total = None, [], 0
+    try:
+        if aba == "notas":
+            linhas, total = fiscal.planilha_notas(busca, ordem, desc, pagina)
+            cabecalhos = [(c, "", r, t)
+                          for c, r, t in fiscal.COLUNAS_DA_NOTA_NA_TELA]
+            por_pagina = fiscal.POR_PAGINA_PLANILHA
+        else:
+            linhas, total = consultas.planilha_sps(busca, ordem, desc, pagina)
+            cabecalhos = consultas.COLUNAS_DA_PLANILHA
+            por_pagina = consultas.POR_PAGINA_PLANILHA
+    except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
+        logger.exception("Análise de SPs: falhou montar a planilha")
+        cabecalhos, por_pagina = [], consultas.POR_PAGINA_PLANILHA
+        erro = ("Esta tela precisa da atualização do banco. Vá em "
+                "Configurações e aperte \"Aplicar atualizações do banco\". "
+                f"(detalhe: {e})")
+
+    ultima = (pagina - 1) * por_pagina + len(linhas)
+    return render_template(
+        "analisesps_planilha.html", aba="planilha", sub=aba, base=base,
+        linhas=linhas, cabecalhos=cabecalhos, total=total, erro=erro,
+        busca=busca, ordem=ordem, desc=desc, pagina=pagina,
+        primeira_linha=(pagina - 1) * por_pagina + 1, ultima_linha=ultima,
+        tem_proxima=ultima < total, args=request.args,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
 # Configurações, onde a contagem aparece.
 # ---------------------------------------------------------------------------
 @bp.route("/credores")
@@ -2489,16 +2614,29 @@ def consultar_cnpj_credor():
     e aí a consulta para de funcionar inclusive no caso em que importa."""
     from . import receita
 
+    # ⚠️ SEM RECARREGAR, quando quem pede é a tela por trás. Reclamação do dono
+    # em 13/09/2026: *"quando consulta o nome na Receita, a tela sobe. O
+    # resultado deveria aparecer flutuante, ou de forma que não mexa na tela."*
+    #
+    # O resultado desta consulta é sobre UM fornecedor específico, no meio de
+    # uma lista longa: mandá-lo para um aviso no alto da página, depois de
+    # recarregar tudo, é entregar a resposta longe da pergunta.
+    sem_recarregar = request.headers.get("X-Sem-Recarregar") == "1"
+
+    def falhou(mensagem: str):
+        if sem_recarregar:
+            return {"ok": False, "erro": mensagem}
+        return redirect(url_for("analisesps.tela_credores",
+                                aviso=f"Não consegui consultar: {mensagem}"))
+
     documento = (request.form.get("documento") or "").strip()
     try:
         dados = receita.consultar(documento, forcar=True)
     except receita.ErroDeConsulta as e:
-        return redirect(url_for("analisesps.tela_credores",
-                                aviso=f"Não consegui consultar: {e}"))
+        return falhou(str(e))
     except Exception as e:  # noqa: BLE001
         logger.exception("Análise de SPs: falhou consultar o CNPJ")
-        return redirect(url_for("analisesps.tela_credores",
-                                aviso=f"Não consegui consultar: {e}"))
+        return falhou(str(e))
 
     if dados.get("erro"):
         aviso = f"{documento}: {dados['erro']}"
@@ -2510,6 +2648,16 @@ def consultar_cnpj_credor():
                     if dados.get("situacao") else "") + ".")
     logger.info("Análise de SPs: %s consultou o CNPJ %s.",
                 auth.nome_atual() or auth.pessoa_atual(), documento)
+    if sem_recarregar:
+        # Os campos vão separados para a tela montar a linha do jeito dela —
+        # o mesmo formato da linha que já existe quando a página é desenhada.
+        return {"ok": True, "documento": documento, "aviso": aviso,
+                "erro_receita": dados.get("erro") or "",
+                "razao_social": dados.get("razao_social") or "",
+                "fantasia": dados.get("fantasia") or "",
+                "situacao": dados.get("situacao") or "",
+                "municipio": dados.get("municipio") or "",
+                "uf": dados.get("uf") or ""}
     return redirect(url_for("analisesps.tela_credores", aviso=aviso))
 
 
@@ -2570,12 +2718,19 @@ def aplicar_credor():
                                 aviso="Pedido incompleto. Tente de novo."))
 
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
-    mudadas, fornecedores, sem_efeito = 0, 0, 0
+    # AS SPs QUE ELE DESMARCOU. *"Às vezes não queremos renomear todos os
+    # lançamentos. O erro pode ter sido no CNPJ e não somente o nome. Preciso
+    # poder não marcar algum."* Vem uma lista só para a tela inteira; o id da
+    # SP é único, então não há como uma exclusão vazar para outro fornecedor.
+    de_fora = [i for i in request.form.getlist("nao_reescrever") if i.strip()]
+    mudadas, fornecedores, sem_efeito, ficaram_de_fora = 0, 0, 0, 0
     for documento, nome in zip(documentos, escolhidos):
         nome = (nome or "").strip()
         if not nome:
             continue
-        ids = credores.sps_para_reescrever(documento, nome)
+        todas = credores.sps_para_reescrever(documento, nome)
+        ids = credores.sps_para_reescrever(documento, nome, fora=de_fora)
+        ficaram_de_fora += len(todas) - len(ids)
         tipo = request.form.get(f"tipo-{documento}") or credores.DECIDIR
         if ids:
             # Em blocos: uma SP com muitos lançamentos do mesmo fornecedor
@@ -2599,6 +2754,11 @@ def aplicar_credor():
         if sem_efeito:
             aviso += (f" {sem_efeito} já estava(m) com o nome certo — ficou só "
                       "a decisão guardada.")
+        # O QUE FICOU DE FORA É DITO, e não engolido: ele desmarcou de
+        # propósito, e precisa ver que foi respeitado.
+        if ficaram_de_fora:
+            aviso += (f" {ficaram_de_fora} SP(s) você deixou de fora — "
+                      "continuam com o nome como estão.")
     logger.info("Análise de SPs: %s equalizou %d credor(es), %d SP(s).",
                 quem or "sem nome", fornecedores, mudadas)
 
@@ -2618,7 +2778,7 @@ def aplicar_credor():
     # normal — sem JavaScript a tela tem de continuar funcionando.
     if request.headers.get("X-Sem-Recarregar") == "1":
         return {"ok": True, "aviso": aviso, "fornecedores": fornecedores,
-                "sps": mudadas,
+                "sps": mudadas, "de_fora": ficaram_de_fora,
                 "documentos": documentos,
                 "nomes": [str(n or "").strip() for n in escolhidos]}
     return redirect(url_for("analisesps.tela_credores", aviso=aviso))

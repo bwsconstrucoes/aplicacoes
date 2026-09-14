@@ -100,8 +100,30 @@ def _certificado(cnpj: str):
     except certificados.ErroDeCertificado as e:
         raise SemCertificado(str(e)) from e
 
+    # ⚠️ EM BASE64, E NÃO CRU — e este foi o defeito que manteve a busca na
+    # Receita SEM FUNCIONAR desde que ela existe.
+    #
+    # O dono relatou em 13/09/2026, com a mensagem da tela na mão: *"o
+    # certificado continua em falha: tentou e NÃO conseguiu — Certificado ou
+    # senha inválida. Ele pode ter vencido."* E a desconfiança dele estava
+    # certa desde o começo: **a senha estava certa e o certificado estava
+    # válido**.
+    #
+    # A CAUSA, lida no código da `erpbrasil` e confirmada aqui: o construtor
+    # dela, ao receber `bytes`, chama `base64.b64decode` em cima — ele assume
+    # que bytes significa "conteúdo em base64". Mandando o `.pfx` cru, a
+    # biblioteca decodificava lixo, o `load_key_and_certificates` levantava
+    # `ValueError`, e ela traduzia isso para "Certificado ou senha
+    # inválida!!!".
+    #
+    # Ou seja: a mensagem acusava a senha, e o erro era de quem chamava. Pior
+    # tipo de erro — mandou o dono procurar no lugar errado por dias.
+    #
+    # MEDIDO com um .pfx de verdade e a senha certa:
+    #     Certificado(bruto, senha) .................. CertificadoSenhaInvalida
+    #     Certificado(base64encode(bruto), senha) .... abriu
     try:
-        return Certificado(conteudo, senha)
+        return Certificado(base64.b64encode(conteudo), senha)
     except Exception as e:  # noqa: BLE001 — a mensagem tem de dizer o que fazer
         raise SemCertificado(
             f"Não consegui abrir o certificado de {cnpj}: {e}. Ele pode ter "

@@ -610,6 +610,10 @@ def test_a_ordem_das_telas_e_a_que_o_dono_pediu():
     from app.apps.analisesps import web
     assert [c for c, _, _ in web.TELAS][:6] == [
         "solicitacoes", "lote", "comprovantes", "relatorio", "fiscal", "agenda"]
+    # ⚠️ TELA NOVA ENTRA DEPOIS DA AGENDA. *"Aí depois agenda, e pronto, aí
+    # pode seguir com os demais."* A "Ver os dados" furou esta ordem quando
+    # nasceu, e foi este teste que pegou.
+    assert "planilha" in [c for c, _, _ in web.TELAS][6:]
 
 
 def test_toda_tela_do_menu_aponta_para_uma_rota_QUE_EXISTE():
