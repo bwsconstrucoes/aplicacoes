@@ -188,6 +188,7 @@ seria ou perdido, ou versionado por engano.
 | `ANALISESPS_SENHA_CONSULTA` | senha de quem só olha. **Sem ela, ninguém consulta** |
 | `ANALISESPS_SECRET` | autoriza a chamada do agendador |
 | `ANALISESPS_HOOK_OMIE` | gancho do Make dos botões "Consulta" e "Atualizar" da ficha. **Opcional**: sem ela os dois botões não aparecem |
+| `ANALISESPS_CHAVE_COFRE` | frase secreta que cifra os certificados digitais no banco. **Sem ela, o sistema recusa guardar certificado** — e sem certificado a busca de notas na Receita não roda. ⚠️ **Trocar a frase torna ilegível o que já foi guardado**: os certificados teriam de ser subidos de novo |
 | `DATABASE_URL` | Postgres — já existe, é o do ERP |
 | `GOOGLE_CREDENTIALS_BASE64` | leitura da planilha — já existe |
 

@@ -1,0 +1,143 @@
+{% extends "analisesps_base.html" %}
+{% block titulo %}Ver os dados{% endblock %}
+{% block classe_corpo %}sem-filtros{% endblock %}
+
+{# ---------------------------------------------------------------------------
+   A TELA DE VER — "similar ao que eu visualizo na planilha".
+
+   Cobrança do dono em 13/09/2026, e ela é antiga: *"desde o começo eu pedi uma
+   tela simples pra poder visualizar similar ao que eu visualizo na planilha.
+   Uma tela das notas e outra tela dos registros com os dados que estamos
+   trabalhando. (…) Mas até agora não foi entregue."*
+
+   Ele está certo, e o que faltava não era dado: era a TELA. Todas as outras
+   são de TRABALHO — recorte, painel, proposta, botão de agir. Nenhuma
+   respondia à pergunta mais simples que existe, que é "deixa eu ver".
+
+   O QUE FAZ ESTA SER "A PLANILHA", e é por isso que ela é tão sem enfeite:
+
+     1. TODAS as colunas, na ORDEM DA PLANILHA (A, B, C…) — não na ordem de
+        uso. Ele lê a SPsBD por posição.
+     2. A LETRA da coluna no cabeçalho. É o detalhe que faz reconhecer.
+     3. NENHUMA AÇÃO. Sem propor, sem confirmar, sem marcar. Olhar não é mexer,
+        e é justamente isso que falta nas outras telas.
+     4. Uma busca só, e ordenar clicando no cabeçalho — como numa planilha.
+     5. Cabeçalho e primeira coluna GRUDADOS, que é o "congelar painéis".
+--------------------------------------------------------------------------- #}
+{% macro aba_link(chave, rotulo) %}
+  <a class="planilha-aba {{ 'atual' if sub == chave }}"
+     href="{{ url_for('analisesps.tela_planilha', aba=chave, busca=busca or None) }}">{{ rotulo }}</a>
+{% endmacro %}
+
+{% block conteudo %}
+<div class="cartao planilha-cartao">
+  <div class="cartao-cab">
+    <h2>Ver os dados</h2>
+    <div class="planilha-abas">
+      {{ aba_link('lancamentos', 'Lançamentos (SPs)') }}
+      {{ aba_link('notas', 'Notas fiscais') }}
+    </div>
+  </div>
+
+  <p class="cartao-dica">
+    É a planilha, do jeito que ela é: todas as colunas, na ordem dela, sem
+    recorte e <b>sem nada para clicar</b>. Para trabalhar, use
+    <a href="{{ url_for('analisesps.solicitacoes') }}">Solicitações</a> ou
+    <a href="{{ url_for('analisesps.tela_fiscal') }}">Doc. Fiscal</a>.
+  </p>
+
+  {% if erro %}
+    <div class="aviso atencao">{{ erro }}</div>
+  {% endif %}
+
+  <form method="get" class="planilha-busca" data-sem-aguarde="1">
+    <input type="hidden" name="aba" value="{{ sub }}">
+    <input type="hidden" name="ordem" value="{{ ordem }}">
+    {% if desc %}<input type="hidden" name="desc" value="1">{% endif %}
+    <div class="busca">
+      <span class="lupa">⌕</span>
+      <input type="search" name="busca" value="{{ busca }}"
+             placeholder="Procurar em tudo — SP, credor, CNPJ, nº da nota, chave…"
+             title="Vários termos separados por vírgula. Todos precisam aparecer.">
+    </div>
+    <button class="btn secundario" type="submit">Procurar</button>
+    {% if busca %}
+      <a class="link-btn"
+         href="{{ url_for('analisesps.tela_planilha', aba=sub) }}">limpar</a>
+    {% endif %}
+    <span class="planilha-conta">
+      {{ '{:,}'.format(total)|replace(',', '.') }} linha(s)
+    </span>
+  </form>
+
+  {% if not linhas %}
+    <p class="cartao-dica">
+      {% if busca %}Nada encontrado com esse texto.
+      {% else %}Não há nada aqui ainda.{% endif %}
+    </p>
+  {% else %}
+    <div class="planilha-rolagem">
+      <table class="planilha">
+        <thead>
+          <tr>
+            {% for chave, letra, rotulo, tipo in cabecalhos %}
+              {% set virando = (ordem == chave and not desc) %}
+              <th class="{{ 'num' if tipo == 'numero' }}">
+                {# ORDENAR CLICANDO NO CABEÇALHO, como na planilha. O mesmo
+                   clique inverte o sentido. #}
+                <a href="{{ url_for('analisesps.tela_planilha', aba=sub,
+                             busca=busca or None, ordem=chave,
+                             desc='1' if virando else '0') }}"
+                   title="Ordenar por {{ rotulo }}">
+                  {% if letra %}<span class="planilha-letra">{{ letra }}</span>{% endif %}
+                  {{ rotulo }}
+                  {% if ordem == chave %}{{ '▾' if desc else '▴' }}{% endif %}
+                </a>
+              </th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in linhas %}
+            <tr>
+              {% for chave, letra, rotulo, tipo in cabecalhos %}
+                {% set v = l.get(chave) %}
+                <td class="{{ 'num' if tipo == 'numero' }}">
+                  {%- if v is none or v == '' -%}
+                    <span class="planilha-vazio">—</span>
+                  {%- elif tipo == 'link' -%}
+                    <a href="{{ v }}" target="_blank" rel="noopener">abrir ↗</a>
+                  {%- elif tipo == 'numero' -%}
+                    {{ v|moeda }}
+                  {%- elif tipo == 'data' -%}
+                    {{ v }}
+                  {%- elif tipo == 'momento' -%}
+                    {{ v|momento_br }}
+                  {%- else -%}
+                    {{ v }}
+                  {%- endif -%}
+                </td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    {% set pag = args.to_dict(flat=false) %}
+    {% set _ = pag.pop('pagina', None) %}
+    <div class="paginacao">
+      {{ primeira_linha }}–{{ ultima_linha }} de
+      {{ '{:,}'.format(total)|replace(',', '.') }}
+      {% if pagina > 1 %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_planilha', **dict(pag, pagina=pagina-1)) }}">‹ Anterior</a>
+      {% endif %}
+      {% if tem_proxima %}
+        <a class="btn secundario"
+           href="{{ url_for('analisesps.tela_planilha', **dict(pag, pagina=pagina+1)) }}">Próxima ›</a>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+{% endblock %}

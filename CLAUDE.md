@@ -22,27 +22,70 @@ Isso muda a resposta, não o cuidado com o código.
   verificado são decisão de negócio — e a decisão é dele. Não esconder atrás de
   "está pronto".
 
-## Pedido com várias tarefas: execute TODAS antes de voltar
+## VÁRIAS TAREFAS NUM PEDIDO SÓ: vá até o fim, sem voltar no meio
 
-Reclamação do dono em 12/09/2026, e não foi a primeira vez: *"eu passo duas,
-três tarefas, ao invés de você executar as duas, três tarefas, você faz uma e
-para. Aí me pergunta se eu quero seguir. Se eu já estou dando três tarefas, por
-que tu não executa as três?"*
+**Esta é a regra que mais foi quebrada, e o dono já a pediu mais de uma vez.**
+Ele cobrou isso em DOIS chats diferentes no mesmo dia, 12/09/2026 — o que por
+si só mostra que não é manha de uma área:
 
-- **Ele mandou três coisas? Entregue as três**, e só então volte. Terminar a
-  primeira e perguntar "faço a próxima?" não é prudência — é devolver para ele
-  um trabalho que ele já mandou fazer.
-- **Ordem é escolha sua**, não pergunta. Se uma delas for maior, comece por
-  ela ou pela que destrava as outras — e diga no fim em que ordem foi.
-- **Dúvida de detalhe se resolve com um padrão sensato**, escrito na resposta
-  ("fiz assim, porque X; se preferir diferente, eu troco"). Pergunta que
-  INTERROMPE só quando seguir sem a resposta produziria trabalho inútil ou
-  perigoso — publicar na `main`, apagar dado, gastar dinheiro.
-- **Uma pergunta que ele já respondeu não se repete.** Se ele decidiu, use a
-  decisão e siga.
+> *"Eu passo uma demanda, aí só depois de um bom tempo eu volto pro Claude pra
+> olhar. Aí quando eu olho, como é que está, você fez uma e estavam pendentes as
+> outras duas, sem razão."*
 
-O que continua exigindo o "pode" dele, sempre: **juntar na `main`** (publica no
-Render na hora) e qualquer coisa destrutiva ou irreversível.
+> *"Eu passo duas, três tarefas, ao invés de você executar as duas, três
+> tarefas, você faz uma e para. Aí me pergunta se eu quero seguir. Se eu já
+> estou dando três tarefas, por que tu não executa as três?"*
+
+Quando o pedido traz **três, quatro, cinco tarefas** que não dependem umas das
+outras, aquilo é uma **FILA, não um cardápio**. Faça todas, uma atrás da outra,
+**sem voltar entre elas**.
+
+### O que fazer quando uma emperra
+
+**A dúvida trava SÓ a tarefa dela.** As outras seguem. Terminadas as que dá para
+terminar, aí sim volte — **uma vez** — com a lista: o que ficou pronto, o que
+ficou parado e a pergunta exata que destrava.
+
+**Dúvida de detalhe não é motivo nem para travar a tarefa dela**: resolva com um
+padrão sensato e escreva a escolha na resposta ("fiz assim, porque X; se
+preferir diferente, eu troco").
+
+### O que NÃO é motivo para parar
+
+Nenhum destes justifica devolver a conversa no meio da fila:
+
+- ter terminado uma tarefa e querer contar;
+- achar que "é muito trabalho para uma tanda só";
+- querer confirmar a abordagem de algo que ele **já decidiu** — pergunta que ele
+  já respondeu não se repete;
+- querer perguntar **por onde começar**. Se ele não disse a ordem, é porque
+  tanto faz — escolha (pela maior, ou pela que destrava as outras), siga, e diga
+  no fim em que ordem foi.
+
+### O que É motivo para parar
+
+Só três coisas:
+
+1. **Publicar.** Juntar na `main` sempre espera o "pode" dele — isso não muda.
+2. **Algo sem desfazer** que ele não autorizou (apagar dado, gastar dinheiro,
+   escrever em sistema de terceiro que não estava no pedido).
+3. **Uma dúvida que trava TODAS as tarefas que sobraram** — e aí volte, porque
+   não há mais o que fazer.
+
+### Por que isso acontece, para não acontecer de novo
+
+Registrado aqui porque entender o mecanismo é o que impede a repetição: parar e
+relatar **parece** cuidado, e é o contrário. Terminar um pedaço grande cria uma
+sensação de "bom lugar para conferir se estou no caminho certo" — mas essa
+conferência custa uma ida e volta dele, e ele pode demorar horas para ver.
+
+**Trocar tempo do dono por segurança minha é um mau negócio, e o erro está na
+conta:** seguir na direção errada numa tarefa independente custa uma tarefa
+refeita; parar no meio da fila custa horas paradas, garantidas, toda vez. O
+segundo é sempre mais caro — e, diferente do primeiro, é certo.
+
+**Na dúvida sobre parar ou seguir: siga.** E escreva no relatório final o que
+você assumiu.
 
 ## Quatro áreas, quatro chats — e a memória fica no repositório
 

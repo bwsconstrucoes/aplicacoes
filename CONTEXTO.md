@@ -799,6 +799,38 @@ Quando eu pedir nova feature ou adaptação:
   **Regra que fica: enxergar a empresa inteira é exceção, e a exceção tem
   nome.**
 
+- **2026-09-12 — Dependência nova: `erpbrasil.edoc` e `erpbrasil.assinatura`.**
+  Para a busca automática de notas na Receita, no Análise de SPs. **Autorizada
+  pelo dono**, que perguntou se "biblioteca" era código de terceiro, ouviu que
+  sim e mandou fazer. O que ela resolve é a **assinatura digital do pedido com
+  o certificado A1** — a parte onde escrever do zero custa caro, porque o erro
+  volta como "recusado" sem dizer por quê. Ela **não** cobre CT-e: esse pedido
+  é montado à mão, reusando o transporte dela. ~~Três variáveis novas no
+  Render: `ANALISESPS_CERT_A1_BASE64`, `ANALISESPS_CERT_A1_SENHA` e
+  `ANALISESPS_CNPJS`.~~ **Substituídas no mesmo dia** pelo cofre de
+  certificados (decisão seguinte). ⚠️ **O A1 vence em um ano** e a busca para
+  no dia seguinte — o motivo fica gravado no ponteiro, que é o que a tela
+  mostra.
+
+- **2026-09-12 — Credencial sensível entra pela TELA e fica cifrada no banco;
+  a chave mora no ambiente.** Dependência nova: `cryptography` (já era
+  dependência indireta de várias, agora é declarada). Motivo do dono: o
+  certificado digital A1 **vence todo ano**, e em variável de ambiente cada
+  troca é mexer no Render e reiniciar o serviço — além de uma variável por
+  empresa. Agora ele sobe pela tela de Configurações do Análise de SPs e fica
+  na tabela `analisesps.certificados`, com **arquivo e senha cifrados**
+  (Fernet, chave derivada de `ANALISESPS_CHAVE_COFRE`). **Regras que ficam,
+  para qualquer credencial guardada assim:** (1) a chave que cifra vive FORA
+  do banco, senão cifrar não protege de nada; (2) **sem a chave, recusa-se a
+  guardar** — nunca "em texto puro por enquanto"; (3) **não existe rota que
+  devolva** o segredo, só uso interno; (4) o que identifica a credencial
+  (titular, validade) é **lido de dentro do arquivo**, não digitado; (5)
+  remover apaga a linha, não marca um campo. ⚠️ **Trocar
+  `ANALISESPS_CHAVE_COFRE` torna ilegível o que já foi guardado** — não há
+  rotação implementada; seria preciso subir os certificados de novo. E a lista
+  de CNPJs vigiados pela busca da Receita **saiu de variável**: é quem tem
+  certificado válido guardado, para duas listas não divergirem.
+
 - **2026-09-12 — "CUSTO DA OBRA" tem definição fechada: despesa DIRETA de DRE,
   nas visões COMPROMETIDO e EXECUTADO.** Palavras do dono: *"o custo
   normalmente está associado só às despesas de DRE, nada de fluxo. E é o custo
@@ -812,16 +844,6 @@ Quando eu pedir nova feature ou adaptação:
   assistente, que estava parado esperando a palavra. **Regra que fica: a
   resposta mostra as duas leituras legítimas lado a lado em vez de escolher
   uma em silêncio.**
-
-- **2026-09-12 — Pedido com várias tarefas se executa INTEIRO antes de voltar.**
-  Reclamação do dono, e não a primeira: *"eu passo duas, três tarefas, ao invés
-  de você executar as duas, três tarefas, você faz uma e para. Aí me pergunta
-  se eu quero seguir"*. A regra entrou no `CLAUDE.md`, que é o que toda sessão
-  nova lê. **O que fica:** ordem é escolha de quem executa, não pergunta;
-  dúvida de detalhe vira padrão sensato escrito na resposta; pergunta que
-  interrompe só quando seguir sem a resposta produziria trabalho inútil ou
-  perigoso. Publicar na `main` continua exigindo o "pode" dele — isso nunca
-  foi o problema.
 
 - **2026-09-12 — Teto de IA é POR PESSOA, fica no cadastro dela, e BARRA.**
   Migração 064. US$ 5,00 de padrão para quem entra novo, editável um a um, e
@@ -847,6 +869,22 @@ Quando eu pedir nova feature ou adaptação:
   varredura estrutural cobrando as duas coisas: toda rota que gasta IA confere
   o teto, e a conferência fica fora do `try`. **Regra que fica: recusa
   ESPERADA não passa por tratamento de falha inesperada.**
+
+- **2026-09-12 — Pedido com várias tarefas é FILA, não cardápio.** O dono
+  cobrou isto em DOIS chats no mesmo dia, e nenhuma das duas vezes foi a
+  primeira: *"eu passo uma demanda, aí só depois de um bom tempo eu volto pro
+  Claude pra olhar. Aí quando eu olho, você fez uma e estavam pendentes as
+  outras duas, sem razão."* / *"Se eu já estou dando três tarefas, por que tu
+  não executa as três?"* **Regra que fica** (detalhada no `CLAUDE.md`, que toda
+  sessão nova lê): tarefas independentes num pedido só são executadas todas,
+  uma atrás da outra, sem devolver a conversa no meio. Ordem é escolha de quem
+  executa, não pergunta. Dúvida de detalhe vira padrão sensato escrito na
+  resposta; dúvida de verdade trava SÓ a tarefa dela, e as outras seguem. Só
+  três coisas param a fila: publicar, algo sem desfazer que ele não autorizou,
+  e uma dúvida que trava tudo o que sobrou. **A causa, escrita para não se
+  repetir:** parar e relatar parece cuidado e é o contrário — seguir errado
+  numa tarefa independente custa uma tarefa refeita; parar no meio custa horas
+  paradas do dono, garantidas.
 
 - **2026-09-12 — Botão que muda de estado tem de dizer o estado EM PALAVRAS.**
   O microfone do assistente só trocava o ícone e ficava vermelho; o dono, no

@@ -5,6 +5,8 @@
 {% block conteudo %}
 <h2>Configurações <small>versão publicada: {{ versao }}</small></h2>
 
+{% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
+
 {% if erro_banco %}
   <div class="aviso erro">
     <b>O banco não respondeu.</b> {{ erro_banco }}
@@ -54,6 +56,169 @@
   <div id="saida-migrar"></div>
 </div>
 
+{# ---------------------------------------------------------------------------
+   CERTIFICADO DIGITAL — o que autoriza buscar nota na Receita.
+
+   ⚠️ A CREDENCIAL MAIS SENSÍVEL DO SISTEMA: com o arquivo e a senha, qualquer
+   um emite nota em nome da empresa. Por isso a tela mostra de quem é, até
+   quando vale e quem subiu — e NUNCA o conteúdo. Não há como baixar de volta.
+
+   O aviso de vencimento é a razão de metade disto existir: o A1 vale um ano e
+   PARA DE FUNCIONAR CALADO no dia seguinte.
+--------------------------------------------------------------------------- #}
+<div class="cartao">
+  <div class="cartao-cab"><h3>Certificados digitais</h3></div>
+  <p class="cartao-dica">
+    É o certificado A1 que autoriza buscar na Receita as notas emitidas contra
+    o CNPJ da empresa — NF-e e CT-e. Um por empresa; para acrescentar outra,
+    basta subir o certificado dela.
+  </p>
+
+  {% if not cofre_ok %}
+    <div class="aviso atencao">
+      <b>Falta a chave que protege o certificado no banco.</b>
+      Sem ela o arquivo seria guardado aberto, e isso não vai acontecer —
+      configure <code>ANALISESPS_CHAVE_COFRE</code> no Render antes de subir.
+    </div>
+  {% endif %}
+
+  {% if certificados %}
+    <table class="sps">
+      {# ⚠️ A COLUNA "A BUSCA" É O QUE FALTAVA, e o buraco era grande.
+
+         *"O certificado continua uma incógnita. Eu coloco o certificado, boto
+         a senha, ele aceita, eu acho que a senha está certa, o certificado
+         está válido. Mas simplesmente nada é feito, nada é executado, e eu não
+         sei o que está acontecendo."*
+
+         Ele estava certo em duas coisas ao mesmo tempo: (1) guardar o
+         certificado NÃO dispara busca nenhuma — é preciso apertar o botão na
+         Documentação Fiscal —, e a tela nunca disse isso; e (2) quando a busca
+         rodava e falhava, nada era escrito em lugar nenhum que ele visse.
+         Agora as duas coisas aparecem AQUI, na tela em que ele acabou de subir
+         o certificado e fica esperando. #}
+      <thead><tr><th>Empresa</th><th>CNPJ</th><th>Vale até</th>
+                 <th>A busca na Receita</th>
+                 <th>Quem subiu</th><th></th></tr></thead>
+      <tbody>
+        {% for c in certificados %}
+          <tr class="{{ 'com-risco' if c.vencido or c.vencendo }}">
+            <td>{{ c.apelido or c.titular }}</td>
+            <td class="id">{{ c.cnpj }}</td>
+            <td>
+              {{ c.valido_ate|data_br or '—' }}
+              {% if c.vencido %}
+                <span class="etiqueta ruim">VENCIDO — a busca parou</span>
+              {% elif c.vencendo %}
+                <span class="etiqueta ruim">
+                  vence em {{ c.dias_para_vencer }} dia(s)</span>
+              {% endif %}
+            </td>
+            <td>
+              {% set b = buscas_por_cnpj.get(c.cnpj) %}
+              {% if not b %}
+                <span class="etiqueta">nunca rodou</span>
+                <small class="cartao-dica">guardar o certificado não dispara a
+                  busca. Vá em
+                  <a href="{{ url_for('analisesps.tela_fiscal', visao='notas') }}">Documentação
+                  Fiscal › Por nota</a> e aperte "Buscar notas na Receita".</small>
+              {% elif b.falhou %}
+                <span class="etiqueta ruim">tentou e NÃO conseguiu</span>
+                <small class="cartao-dica">{{ b.consultado_em|momento_br }} —
+                  {{ b.motivo_da_falha }}</small>
+              {% else %}
+                <span class="etiqueta boa">{{ b.documentos or 0 }} documento(s)</span>
+                <small class="cartao-dica">última em
+                  {{ b.consultado_em|momento_br if b.consultado_em else '—' }}
+                  {%- if b.faltam %} · faltam {{ b.faltam }} para buscar{% endif %}</small>
+              {% endif %}
+            </td>
+            <td>{{ c.subido_por or '—' }}</td>
+            <td>
+              {% if pode_operar %}
+                <form method="post"
+                      action="{{ url_for('analisesps.remover_certificado') }}"
+                      onsubmit="return confirm('Remover o certificado de {{ c.cnpj }}?\n\nA busca de notas desse CNPJ para na hora.')">
+                  <input type="hidden" name="cnpj" value="{{ c.cnpj }}">
+                  <button class="link-btn" type="submit">remover</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="cartao-dica">
+      Nenhum certificado guardado. Enquanto não houver, as notas só entram pelo
+      relatório do FSist colado na planilha.
+    </p>
+  {% endif %}
+
+  {% if pode_operar %}
+    <form method="post" enctype="multipart/form-data" style="margin-top:12px"
+          action="{{ url_for('analisesps.subir_certificado') }}">
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+        <label>
+          <span class="rotulo-campo">Arquivo (.pfx ou .p12)</span>
+          <input type="file" name="certificado" accept=".pfx,.p12" required>
+        </label>
+        <label>
+          <span class="rotulo-campo">Senha do certificado</span>
+          <input type="password" name="senha" required autocomplete="off">
+        </label>
+        <label>
+          <span class="rotulo-campo">Apelido (opcional)</span>
+          <input type="text" name="apelido" placeholder="BWS Nordeste">
+        </label>
+        <button class="btn" type="submit">Guardar certificado</button>
+      </div>
+      <p class="cartao-dica">
+        O CNPJ e a validade são lidos de dentro do arquivo — não precisa
+        digitar. Subir o certificado de um CNPJ que já existe substitui o
+        anterior, que é como se faz a troca anual.
+      </p>
+    </form>
+
+    {# -------------------------------------------------------------------
+       CONFERIR SEM GUARDAR — a prova que o dono pediu em 13/09/2026:
+       *"Suspeito que o certificado e a senha estejam corretos, mas a
+       mensagem é de certificado inválido ou senha. Existe algum canto que eu
+       possa tirar essa prova?"*
+
+       A desconfiança tinha fundamento, e a medição mostrou por quê: um espaço
+       colado junto com a senha dava EXATAMENTE a mesma mensagem de senha
+       errada. Quem copia a senha de um e-mail traz o espaço junto.
+
+       Aqui não guarda nada e não mexe no que já está guardado — dá para
+       experimentar à vontade.
+    ------------------------------------------------------------------- #}
+    <details class="conferir-cert">
+      <summary>O certificado não está sendo aceito? Confira aqui sem guardar</summary>
+      <p class="cartao-dica">
+        Isto só <b>tenta abrir</b> e conta o que aconteceu: se abriu, mostra o
+        titular, o CNPJ e a validade que estão <b>dentro</b> do arquivo. Se não
+        abriu, diz se o problema é o arquivo ou a senha.
+        <b>Não guarda nada</b> e não mexe no certificado que já está em uso.
+      </p>
+      <form method="post" enctype="multipart/form-data"
+            action="{{ url_for('analisesps.conferir_certificado') }}">
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end">
+          <label>
+            <span class="rotulo-campo">Arquivo (.pfx ou .p12)</span>
+            <input type="file" name="certificado" accept=".pfx,.p12" required>
+          </label>
+          <label>
+            <span class="rotulo-campo">Senha</span>
+            <input type="password" name="senha" autocomplete="off">
+          </label>
+          <button class="btn secundario" type="submit">Conferir</button>
+        </div>
+      </form>
+    </details>
+  {% endif %}
+</div>
+
 {# ARRUMAÇÃO DO CADASTRO — fica aqui, e não nas abas de cima, porque é trabalho
    ocasional. A barra de abas é para o que se abre todo dia. #}
 <div class="cartao">
@@ -101,17 +266,31 @@
   </div>
 
   {% if pode_operar %}
+    {# SÓ O QUE É CARGA DA BASE FICA AQUI.
+
+       Correção do dono em 13/09/2026: *"ao buscar na Receita as notas emitidas
+       contra a BWS, não tem absolutamente nada a ver eu estar com um botão
+       desse fora da tela de trabalho. (…) Ler, é pra estar dentro da tela.
+       Gravar nos cards, é pra estar dentro da tela."*
+
+       A causa do engano era boba e vale registrar: esta tela desenhava a
+       lista INTEIRA de modos como botão, então quem criasse um modo novo
+       ganhava um botão aqui sem querer. Agora a lista é explícita, e o
+       trabalho fiscal mora na tela de Documentação Fiscal. #}
     <div style="display:flex; gap:8px; flex-wrap:wrap; margin-top:10px">
-      {% for modo, descricao in modos.items() %}
+      {% for modo in modos_da_base %}
         <button class="btn {{ '' if modo == 'sincronizar' else 'secundario' }}"
-                data-modo="{{ modo }}" title="{{ descricao }}">
-          {{ descricao.split('—')[0].strip() }}
+                data-modo="{{ modo }}" title="{{ modos[modo] }}">
+          {{ modos[modo].split('—')[0].strip() }}
         </button>
       {% endfor %}
     </div>
     <p class="cartao-dica">
       Uma de cada vez. Se já houver carga rodando, a segunda é recusada em vez
-      de duplicar o trabalho.
+      de duplicar o trabalho. Buscar notas na Receita, importar o relatório do
+      FSist, ler com IA e gravar nos cards ficam na tela de
+      <a href="{{ url_for('analisesps.tela_fiscal') }}">Documentação
+      Fiscal</a>, que é onde esse trabalho é feito.
     </p>
   {% else %}
     <p class="cartao-dica">Só o perfil Operador dispara atualização.</p>

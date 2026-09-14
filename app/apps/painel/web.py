@@ -860,6 +860,7 @@ def _pedido_do_explorador():
         "grupos": request.args.getlist("grupo"),
         "categorias": request.args.getlist("categoria"),
         "obras": request.args.getlist("obra"),
+        "fornecedores": request.args.getlist("fornecedor"),
         "projetos": request.args.getlist("projeto"),
         "contas": request.args.getlist("conta"),
         "situacoes": request.args.getlist("situacao"),
@@ -884,8 +885,8 @@ def explorador():
     # so busca quando ha algum filtro: abrir a tela e varrer as 185 mil linhas
     # para mostrar as 3.000 mais recentes nao ajuda ninguem e custa caro
     escolheu = any(pedido[c] for c in ("tipo", "analises", "grupos", "categorias",
-                                       "obras", "projetos", "contas", "situacoes",
-                                       "busca", "de", "ate"))
+                                       "obras", "fornecedores", "projetos",
+                                       "contas", "situacoes", "busca", "de", "ate"))
     dados = consultas.explorar(pedido) if escolheu else None
     return render_template(
         "painel_explorador.html",
@@ -893,12 +894,15 @@ def explorador():
         pedido=pedido, escolheu=escolheu, dados=dados,
         resumo=consultas.resumo_do_explorador(pedido) if escolheu else [],
         opcoes=consultas.opcoes_do_explorador(),
+        fornecedores=consultas.fornecedores_do_recorte(dados),
         sem_obra=consultas.SEM_OBRA,
+        sem_fornecedor=consultas.SEM_FORNECEDOR,
         teto=consultas.TETO_DO_EXPLORADOR,
+        teto_do_lote=saneamento.TETO_POR_LOTE,
         escrita_ligada=saneamento.escrita_configurada(),
         categorias_omie=consultas.categorias_para_alterar(),
         obras_omie=consultas.departamentos_para_alterar(),
-        alteracao=None, erro_alteracao=None, marcados=[],
+        alteracao=None, erro_alteracao=None,
     )
 
 
@@ -911,9 +915,18 @@ def explorador_alterar():
     desfazer rateio e registro de tudo no banco."""
     from . import saneamento
 
-    codigos = request.form.getlist("codigo")
+    # A tela manda uma alteracao POR TITULO — cada linha pode ir para um lugar
+    # diferente. As tres listas andam juntas, na mesma ordem.
+    alvos = [{"codigo": c, "categoria": cat, "departamento": dep}
+             for c, cat, dep in zip(request.form.getlist("alvo_codigo"),
+                                    request.form.getlist("alvo_categoria"),
+                                    request.form.getlist("alvo_departamento"))]
+    # Sem JavaScript sobra a forma antiga: os marcados vao todos para o mesmo
+    # lugar. Continua valendo — e o caminho que funciona com o navegador travado.
     categoria = (request.form.get("categoria_nova") or "").strip()
     departamento = (request.form.get("departamento_novo") or "").strip()
+    if not alvos:
+        alvos = request.form.getlist("codigo")
     # SIMULAR e o padrao: so sai do ensaio quem marcar E acertar a senha
     executar = request.form.get("executar") == "1"
     aceita = request.form.get("aceita_desfazer_rateio") == "1"
@@ -930,27 +943,30 @@ def explorador_alterar():
     resultado = None
     if not erro:
         resultado = saneamento.aplicar(
-            codigos, categoria, departamento,
+            alvos, categoria, departamento,
             simulacao=not executar, aceita_desfazer_rateio=aceita)
         if not resultado.get("ok"):
             erro, resultado = resultado.get("erro"), None
 
     from . import consultas
     pedido = _pedido_do_explorador()
+    dados = consultas.explorar(pedido)
     return render_template(
         "painel_explorador.html",
         aba_ativa="config", abas=ABAS,
         pedido=pedido, escolheu=True,
-        dados=consultas.explorar(pedido),
+        dados=dados,
         resumo=consultas.resumo_do_explorador(pedido),
         opcoes=consultas.opcoes_do_explorador(),
+        fornecedores=consultas.fornecedores_do_recorte(dados),
         sem_obra=consultas.SEM_OBRA,
+        sem_fornecedor=consultas.SEM_FORNECEDOR,
         teto=consultas.TETO_DO_EXPLORADOR,
+        teto_do_lote=saneamento.TETO_POR_LOTE,
         escrita_ligada=saneamento.escrita_configurada(),
         categorias_omie=consultas.categorias_para_alterar(),
         obras_omie=consultas.departamentos_para_alterar(),
         alteracao=resultado, erro_alteracao=erro,
-        marcados=codigos,
     )
 
 
@@ -1083,6 +1099,8 @@ def configuracoes():
     # Se as tabelas ainda nao existem, nem tenta consultar a base.
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
+        conferencia = sumidos = aportes_conf = None
+        conferir = False
     else:
         from . import consultas
         # A caixa vermelha logo abaixo ja conta, com etapa e tempo de silencio,
@@ -1094,6 +1112,19 @@ def configuracoes():
             so_concluidas=bool(sincronizacao["interrompida"]))
         vazia = consultas.base_vazia()
         etapas = consultas.etapas_da_carga()
+        # So mede, nao corrige: quanto dinheiro a carga deu por realizado e as
+        # telas nao enxergam. Ver o comentario em `conferencia_do_pago`.
+        # AS CONFERENCIAS SO RODAM QUANDO ALGUEM PEDE. Sao ~12 varreduras na
+        # base inteira, e Configuracoes e a tela onde se aperta o botao de
+        # atualizar: ela TEM de abrir rapido. Deixei as tres ligadas por padrao
+        # em 14/09/2026 e a tela parou de abrir para o dono no mesmo dia.
+        conferir = request.args.get("conferir") == "1"
+        procurado = consultas._valor_procurado(request.args.get("procurar", ""))
+        conferencia = sumidos = aportes_conf = None
+        if not vazia and (conferir or procurado is not None):
+            conferencia = consultas.conferencia_do_pago()
+            sumidos = consultas.titulos_que_sumiram(procurado)
+            aportes_conf = consultas.conferencia_dos_aportes()
     return render_template(
         "painel_config.html", **contexto,
         migracoes=estado_migracoes,
@@ -1101,6 +1132,10 @@ def configuracoes():
         base_vazia=vazia,
         primeira=request.args.get("primeira") == "1",
         etapas=etapas,
+        conferir=conferir,
+        conferencia=conferencia,
+        sumidos=sumidos,
+        aportes_conf=aportes_conf,
         modos=tarefas.MODOS,
         sincronizacao=sincronizacao,
     )

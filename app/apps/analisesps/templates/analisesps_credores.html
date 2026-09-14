@@ -14,8 +14,70 @@
 --------------------------------------------------------------------------- #}
 {% block conteudo %}
 
-{% if aviso %}<div class="aviso">{{ aviso }}</div>{% endif %}
+{# O RECADO DO QUE ACABOU DE ACONTECER, em destaque. Reclamação do dono em
+   13/09/2026: *"eu clico em aplicar, e na tela nada acontece, eu não sei se foi
+   aplicado ou não."* O recado existia — voltava numa tarja discreta no alto,
+   e a equalização demora vários segundos: quando a tela finalmente voltava,
+   nada gritava que ela tinha voltado. #}
+{% if aviso %}
+  <div class="aviso destaque" id="aviso-credor">✔ {{ aviso }}</div>
+  <script>
+    // Leva o olho até o recado. A tela pode ter voltado com a rolagem no meio
+    // da lista, e o recado ficaria acima da dobra — invisível.
+    document.getElementById("aviso-credor")
+            .scrollIntoView({behavior: "smooth", block: "center"});
+  </script>
+{% endif %}
 {% if erro %}<div class="aviso atencao">{{ erro }}</div>{% endif %}
+
+{# ---------------------------------------------------------------------------
+   A TERCEIRA OPINIÃO: quem a Receita diz que é o dono do CNPJ.
+
+   Pedido do dono em 13/09/2026: *"quando você dá sugestão aqui, esse CNPJ é o
+   quê? Eu quero que você faça a consulta via API do credor desse CNPJ."*
+
+   A tela compara os nomes que a EQUIPE digitou entre si. Quando os dois são
+   diferentes de verdade, nenhuma regra sabe qual vale. A Receita dá uma opinião
+   que não veio de ninguém daqui.
+
+   E a suspeita de CNPJ ERRADO, o caso que ele descreveu: *"ela confundiu, olhou
+   o CNPJ da BWS e digitou o nome da empresa ao invés do CNPJ da nota."* Aí
+   nenhum nome ajuda — o erro está no número.
+--------------------------------------------------------------------------- #}
+{% macro receita(d) %}
+  {% if d.suspeita %}
+    <div class="suspeita-cnpj {{ d.suspeita.grau }}">
+      <b>{{ '⚠️ CNPJ errado' if d.suspeita.grau == 'certeza'
+            else '⚠️ pode ser CNPJ errado' }}</b> — {{ d.suspeita.motivo }}
+      <br><small>O que fazer: {{ d.suspeita.o_que_fazer }}</small>
+    </div>
+  {% endif %}
+  {% if d.consulta and not d.consulta.erro and d.consulta.razao_social %}
+    <div class="consulta-receita">
+      <b>Receita:</b> {{ d.consulta.razao_social }}
+      {%- if d.consulta.fantasia %} · fantasia "{{ d.consulta.fantasia }}"{% endif %}
+      {%- if d.consulta.situacao %} · {{ d.consulta.situacao }}{% endif %}
+      {%- if d.consulta.municipio %} · {{ d.consulta.municipio }}/{{ d.consulta.uf }}{% endif %}
+      <small>consultado em {{ d.consulta.consultado_em|momento_br }}</small>
+    </div>
+  {% elif d.consulta and d.consulta.erro %}
+    <div class="consulta-receita erro">
+      <b>Receita:</b> {{ d.consulta.erro }}
+      <small>tentado em {{ d.consulta.consultado_em|momento_br }}</small>
+    </div>
+  {% endif %}
+  {% if pode_operar and d.documento|replace('.','')|replace('/','')|replace('-','')|length == 14 %}
+    {# `data-sem-aguarde`: quem dá o retorno deste botão é o bloco da consulta,
+       que busca por trás e escreve a resposta AQUI, ao lado da pergunta. #}
+    <form method="post" class="consulta-form" data-sem-aguarde="1"
+          action="{{ url_for('analisesps.consultar_cnpj_credor') }}">
+      <input type="hidden" name="documento" value="{{ d.documento }}">
+      <button class="link-btn" type="submit">
+        {{ '↻ consultar de novo' if d.consulta else '🔎 consultar o CNPJ na Receita' }}
+      </button>
+    </form>
+  {% endif %}
+{% endmacro %}
 
 {% set decidir = divergencias|rejectattr('decidido')|rejectattr('automatico')|list %}
 {% set sozinho = divergencias|rejectattr('decidido')|selectattr('automatico')|list %}
@@ -43,7 +105,7 @@
       </p>
       <table class="sps">
         <thead><tr><th>CPF/CNPJ</th><th>Fica</th><th>No lugar de</th>
-                   <th>SPs</th><th>Por quê</th></tr></thead>
+                   <th>SPs</th><th>Por quê</th><th>Na Receita</th></tr></thead>
         <tbody>
           {% for d in sozinho %}
             <tr>
@@ -58,6 +120,7 @@
                   {% endfor %}{% endfor %}</td>
               <td>{{ d.fora }} de {{ d.sps }}</td>
               <td class="cartao-dica">{{ d.motivo }}</td>
+              <td>{{ receita(d) }}</td>
             </tr>
           {% endfor %}
         </tbody>
@@ -80,8 +143,12 @@
       volta a perguntar.
     </p>
     {% for d in decidir %}
+      {# `data-sem-aguarde`: quem dá o retorno deste botão é o bloco do
+         "Usar este" logo abaixo, que grava por trás e resolve o caso no lugar.
+         Sem isto, o bloco global trocaria o texto por "Aguarde…" por cima e os
+         dois brigariam pelo mesmo botão. #}
       <form method="post" action="{{ url_for('analisesps.aplicar_credor') }}"
-            class="credor-caso">
+            class="credor-caso" data-sem-aguarde="1">
         <input type="hidden" name="documento" value="{{ d.documento }}">
         <input type="hidden" name="tipo-{{ d.documento }}" value="DECIDIR">
         <div>
@@ -99,12 +166,32 @@
                 (também escrito: {{ v.grafias|reject('equalto', v.nome)|join('; ') }})
               </span>
             {% endif %}
+            {# -----------------------------------------------------------
+               VER AS SPs DESTA OPÇÃO, sem sair da tela.
+
+               *"Ele marca aqui uma, duas, três, quatro SPs que é de uma outra
+               locadora que não tem nada a ver, ou seja, aqui foi claramente um
+               erro. Só que a partir daqui eu não consigo ir a essas SPs que
+               estão erradas. Só pra poder confirmar se eu posso realmente
+               aplicar ou não, eu precisaria ver essas SPs e entender onde foi
+               o erro."*
+
+               A tela pedia uma decisão e escondia o dado que fundamenta a
+               decisão. "LOCADORA A (4 SPs)" contra "LOCADORA B (37 SPs)" não
+               diz nada; as quatro SPs dizem.
+            ----------------------------------------------------------- #}
+            <button type="button" class="link-btn ver-sps-do-nome"
+                    data-documento="{{ d.documento }}"
+                    data-nome="{{ v.nome }}"
+                    data-grafias="{{ v.grafias|join('\n') }}"
+                    title="Mostra as SPs escritas com este nome">ver as SPs</button>
           </label>
         {% endfor %}
         {% if pode_operar %}
           <button class="btn secundario" type="submit">Usar este</button>
         {% endif %}
       </form>
+      {{ receita(d) }}
     {% endfor %}
   </div>
 {% endif %}
@@ -133,4 +220,15 @@
   </div>
 {% endif %}
 
+<dialog id="sps-do-nome">
+  <h3 id="sps-do-nome-titulo">SPs deste nome</h3>
+  <div id="sps-do-nome-corpo">carregando…</div>
+  <div style="margin-top:12px; text-align:right">
+    <button class="btn secundario" type="button"
+            onclick="document.getElementById('sps-do-nome').close()">Fechar</button>
+  </div>
+</dialog>
+
+<div id="credores-config" hidden
+     data-url-sps="{{ url_for('analisesps.sps_do_nome_credor') }}"></div>
 {% endblock %}

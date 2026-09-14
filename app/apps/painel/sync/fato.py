@@ -380,7 +380,18 @@ def gerar_linhas_fato(conn):
                 grupo = info_log.get("Grupo", grupo)
                 analise = info_log.get("Análise") or _analise_por_heuristica(desc_cat, grupo)
 
+            # Fornecedor/cliente: NOME vindo do cadastro do OMIE. Se o catalogo
+            # ainda nao tem esse codigo, o nome vinha VAZIO — e uma linha sem nome
+            # e invisivel para quem procura pelo nome da empresa, que e como as
+            # pessoas procuram. O dono perdeu meia hora com isso em 13/09/2026:
+            # buscou as devolucoes de aporte de uma empresa pelo nome, achou
+            # poucas, e as que faltavam estavam la o tempo todo, sem nome.
+            #
+            # Mesmo cuidado que a conta corrente logo abaixo ja tinha: sem
+            # cadastro, cai para o codigo cru. A linha nunca perde a informacao.
             razao, cnpj = cli.get(ccli, ("", ""))
+            if not (razao or "").strip() and ccli not in (None, ""):
+                razao = f"(fornecedor {ccli})"
             link = pipefy_link(ndoc)
             # Conta corrente: NOME da conta. Se o catalogo ainda nao tem esse codigo
             # (conta criada depois do ultimo sync), cai para o codigo cru — assim a

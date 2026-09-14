@@ -1521,10 +1521,18 @@ def _robo_falso(por_leva):
     """Um `baixabradesco` de mentira: devolve o que o de verdade devolveria.
 
     O robô verdadeiro fala com Omie, Pipefy, Sheets e Dropbox — nenhum teste
-    encosta neles."""
+    encosta neles.
+
+    A RESPOSTA INCLUI A CONFIRMAÇÃO DO OMIE, e isso passou a importar depois do
+    defeito de 13/09/2026: "pode executar" não é "executou", e a tela só chama
+    de baixa o que o Omie confirmou. Um dublê que devolvesse só o plano estaria
+    imitando o ENSAIO, não a produção — e um teste que imita o defeito não
+    protege de nada."""
     def responder(pedaco, nome):
-        return {"planos": [
+        return {"modo_teste": False, "planos": [
             {"match": {"status": "localizado"}, "pode_executar": True,
+             "acao": "baixar_omie_atualizar_pipefy_sheets",
+             "responses": {"omie": [{"step": "baixar", "response": {"ok": True}}]},
              "receipt": {"page": n + 1, "id_pipefy": f"sp{n}",
                          "valor_pago": "10,00", "nome_recebedor": "FORNECEDOR"}}
             for n in range(por_leva)]}
@@ -1721,8 +1729,11 @@ def test_o_que_pede_acao_aparece_no_topo_da_lista(banco_analisesps, monkeypatch,
 
     monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
     monkeypatch.setattr(comprovantes, "_mandar_ao_robo", lambda p, n: {
+        "modo_teste": False,
         "planos": [
             {"match": {"status": "localizado"}, "pode_executar": True,
+             "acao": "baixar_omie_atualizar_pipefy_sheets",
+             "responses": {"omie": [{"step": "baixar", "response": {"ok": True}}]},
              "receipt": {"page": 1}},
             {"match": {"status": "nao_localizado", "motivo": "sem par"},
              "pode_executar": False, "receipt": {"page": 2}}]})
@@ -1896,7 +1907,7 @@ def _chave(cnpj, resto="550010000123456789012345"):
 
 
 def _guardar_nota(chave, numero, valor, emitente_doc, status="Autorizada",
-                  emissao="2026-06-18"):
+                  emissao="2026-06-18", destinatario="10656452007869"):
     from app.apps.analisesps.db import conexao
     with conexao() as conn:
         conn.execute(
@@ -1904,7 +1915,7 @@ def _guardar_nota(chave, numero, valor, emitente_doc, status="Autorizada",
             "(chave, emissao, numero, valor, status, emitente_doc, emitente, "
             " destinatario_doc) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (chave, emissao, numero, valor, status, emitente_doc,
-             "FORNECEDOR", "10656452007869"))
+             "FORNECEDOR", destinatario))
         conn.commit()
 
 
@@ -2426,3 +2437,2683 @@ def test_a_importacao_das_notas_e_CHAMADA_pela_atualizacao():
     fonte = Path("app/apps/analisesps/tarefas.py").read_text(encoding="utf-8")
     assert "sincronizar_notas_fiscais" in fonte, (
         "ninguém importa o relatório do FSist — a conciliação fica sem notas")
+
+
+# ---------------------------------------------------------------------------
+# O ARQUIVO PERMANENTE DE NOTAS
+#
+# É A BASE DO PLANO DO DONO, dito por ele em 12/09/2026: *"o passado é o que eu
+# tenho, que eu já baixei de relatório lá. O relatório mais antigo que eu tenho
+# a gente vai importar pra dentro do Análise de SPs, e deixar lá dentro; e a
+# partir de então você vai começar a fazer o download."*
+#
+# Ou seja: a aba do FSist é uma JANELA que ele troca, e a tabela aqui é o
+# ARQUIVO que só cresce. Se a importação apagasse o que não está no relatório
+# do dia, o histórico dele se perderia na primeira colagem — e é histórico que
+# não dá para recuperar, porque nem o FSist nem a Receita guardam o passado.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_relatorio_novo_NAO_apaga_as_notas_do_relatorio_anterior(banco_analisesps,
+                                                                 monkeypatch):
+    """O teste que sustenta o plano inteiro. Ele cola o relatório de janeiro,
+    depois o de fevereiro na MESMA aba — e as de janeiro têm de continuar
+    aqui."""
+    antiga = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    nova = _chave(CREDOR_CNPJ, "550010000222222222222222")
+
+    _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(antiga, numero="100")])
+    # A aba é trocada inteira pelo relatório seguinte: a nota antiga some DELA.
+    resultado = _importar(monkeypatch, [CABECALHO_NOTAS,
+                                        _linha_nota(nova, numero="200")])
+
+    from app.apps.analisesps.db import consultar
+    guardadas = sorted(l[0] for l in consultar(
+        "SELECT numero FROM analisesps.notas_fiscais"))
+    assert guardadas == ["100", "200"], (
+        "a importação apagou o histórico que não está no relatório do dia")
+    assert resultado["novas"] == 1
+
+
+@pytest.mark.banco
+def test_nenhum_caminho_do_modulo_apaga_nota_fiscal(banco_analisesps):
+    """A trava, escrita onde não depende de alguém lembrar: uma nota só sai
+    daqui se alguém escrever um DELETE de propósito. O histórico do dono não
+    pode depender de ninguém lembrar disso."""
+    from pathlib import Path
+
+    pasta = Path("app/apps/analisesps")
+    arquivos = list(pasta.glob("*.py")) + list(pasta.glob("migracoes/*.sql"))
+    for caminho in arquivos:
+        texto = caminho.read_text(encoding="utf-8").lower()
+        assert "delete from analisesps.notas_fiscais" not in texto, caminho
+        assert "truncate" not in texto, caminho
+
+
+# ---------------------------------------------------------------------------
+# A BUSCA NA RECEITA, com banco de verdade
+#
+# A conversa com a Receita é dublada — nenhum teste liga para ela. O que se
+# exercita é o laço: onde parou, quando parar, e a nota chegando na tabela.
+# ---------------------------------------------------------------------------
+def _resposta_sefaz(documentos=(), codigo="138", ultimo="10", maior="10"):
+    import base64 as _b64
+    import gzip as _gzip
+    import io as _io
+
+    def zipar(xml):
+        saco = _io.BytesIO()
+        with _gzip.GzipFile(fileobj=saco, mode="wb") as z:
+            z.write(xml.encode("utf-8"))
+        return _b64.b64encode(saco.getvalue()).decode("ascii")
+
+    zips = "".join(f"<docZip>{zipar(d)}</docZip>" for d in documentos)
+    return (f"<retDistDFeInt><cStat>{codigo}</cStat>"
+            f"<xMotivo>ok</xMotivo><ultNSU>{ultimo}</ultNSU>"
+            f"<maxNSU>{maior}</maxNSU>{zips}</retDistDFeInt>")
+
+
+def _resumo(chave, valor="269.00", situacao="1"):
+    return (f"<resNFe><chNFe>{chave}</chNFe><CNPJ>{CREDOR_CNPJ}</CNPJ>"
+            f"<xNome>SERTAO</xNome><dhEmi>2026-06-18T10:00:00-03:00</dhEmi>"
+            f"<vNF>{valor}</vNF><cSitNFe>{situacao}</cSitNFe></resNFe>")
+
+
+@pytest.mark.banco
+def test_a_nota_buscada_na_Receita_chega_na_tabela(banco_analisesps, monkeypatch):
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_resumo(chave)], ultimo="10", maior="10")))
+
+    resultado = sefaz.buscar_um("10.656.452/0078-69", sefaz.NFE)
+    assert resultado["trazidas"] == 1
+    assert consultar_um("SELECT emitente_doc, status FROM "
+                        " analisesps.notas_fiscais WHERE chave = ?",
+                        (chave,)) == (CREDOR_CNPJ, "Autorizada")
+
+
+@pytest.mark.banco
+def test_o_ponteiro_avanca_e_a_proxima_rodada_comeca_dali(banco_analisesps,
+                                                          monkeypatch):
+    """É o que impede reler tudo a cada rodada — e reler é o caminho curto
+    para a Receita bloquear por consulta demais."""
+    from app.apps.analisesps import sefaz
+
+    pedidos = []
+
+    def falso(cnpj, nsu):
+        pedidos.append(nsu)
+        return sefaz._ler_resposta(_resposta_sefaz(
+            [_resumo(_chave(CREDOR_CNPJ))], ultimo="25", maior="25"))
+
+    monkeypatch.setattr(sefaz, "_consultar_nfe", falso)
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+    assert sefaz.ponteiro("10656452007869", sefaz.NFE)["ultimo_nsu"] == \
+        "000000000000025"
+
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+    assert pedidos[-1] == "000000000000025", (
+        "a segunda rodada recomeçou do zero")
+
+
+@pytest.mark.banco
+def test_o_ponteiro_NUNCA_recua(banco_analisesps, monkeypatch):
+    """Uma resposta vazia traz NSU zero. Se ela fizesse o ponteiro voltar, a
+    rodada seguinte releria meses de documentos."""
+    from app.apps.analisesps import sefaz
+
+    sefaz.gravar_ponteiro("10656452007869", sefaz.NFE, "500", "500")
+    sefaz.gravar_ponteiro("10656452007869", sefaz.NFE, "0", "0", "vazio")
+    assert sefaz.ponteiro("10656452007869", sefaz.NFE)["ultimo_nsu"] == \
+        "000000000000500"
+
+
+@pytest.mark.banco
+def test_a_busca_para_quando_a_Receita_diz_que_nao_ha_mais(banco_analisesps,
+                                                           monkeypatch):
+    """Insistir depois do "não há nada novo" é o caminho curto para o bloqueio
+    por consulta demais. O teto de lotes é rede, não critério."""
+    from app.apps.analisesps import sefaz
+
+    chamadas = [0]
+
+    def falso(cnpj, nsu):
+        chamadas[0] += 1
+        return sefaz._ler_resposta(_resposta_sefaz(codigo="137", ultimo="0"))
+
+    monkeypatch.setattr(sefaz, "_consultar_nfe", falso)
+    resultado = sefaz.buscar_um("10656452007869", sefaz.NFE)
+    assert chamadas[0] == 1, f"insistiu {chamadas[0]} vezes depois do 'nada novo'"
+    assert resultado["trazidas"] == 0
+    assert "Nenhuma nota nova" in sefaz.ponteiro(
+        "10656452007869", sefaz.NFE)["ultimo_recado"]
+
+
+@pytest.mark.banco
+def test_a_busca_para_quando_o_ponteiro_nao_anda(banco_analisesps, monkeypatch):
+    """A terceira forma de saber que acabou, e a que protege de laço infinito:
+    a Receita responde "há mais" mas devolve o mesmo NSU."""
+    from app.apps.analisesps import sefaz
+
+    chamadas = [0]
+
+    def travado(cnpj, nsu):
+        chamadas[0] += 1
+        return sefaz._ler_resposta(_resposta_sefaz(codigo="138", ultimo="0",
+                                                   maior="999"))
+
+    monkeypatch.setattr(sefaz, "_consultar_nfe", travado)
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+    assert chamadas[0] == 1, f"ficou em laço: {chamadas[0]} consultas"
+
+
+@pytest.mark.banco
+def test_falha_de_rede_vira_RECADO_e_nao_queda(banco_analisesps, monkeypatch):
+    """"Consumo indevido" e "certificado vencido" chegam os dois como falha, e
+    pedem coisas completamente diferentes. O motivo fica gravado para a tela
+    poder dizer qual é."""
+    from app.apps.analisesps import sefaz
+
+    def cai(cnpj, nsu):
+        raise RuntimeError("certificado vencido")
+
+    monkeypatch.setattr(sefaz, "_consultar_nfe", cai)
+    resultado = sefaz.buscar_um("10656452007869", sefaz.NFE)
+    assert resultado["trazidas"] == 0 and "vencido" in resultado["erro"]
+    assert "vencido" in sefaz.ponteiro("10656452007869",
+                                       sefaz.NFE)["ultimo_recado"]
+
+
+@pytest.mark.banco
+def test_NFe_e_CTe_tem_ponteiros_SEPARADOS(banco_analisesps):
+    """São dois serviços da Receita, cada um com a sua contagem. Um ponteiro só
+    faria um sobrescrever o outro e perder notas em silêncio."""
+    from app.apps.analisesps import sefaz
+
+    sefaz.gravar_ponteiro("10656452007869", sefaz.NFE, "100", "100")
+    sefaz.gravar_ponteiro("10656452007869", sefaz.CTE, "7", "7")
+    assert sefaz.ponteiro("10656452007869", sefaz.NFE)["ultimo_nsu"] == \
+        "000000000000100"
+    assert sefaz.ponteiro("10656452007869", sefaz.CTE)["ultimo_nsu"] == \
+        "000000000000007"
+
+
+@pytest.mark.banco
+def test_a_nota_da_Receita_e_a_do_FSist_nao_viram_duas_linhas(banco_analisesps,
+                                                              monkeypatch):
+    """A MESMA nota chega pelas duas portas. Se virasse duas linhas, a
+    conciliação veria duas candidatas idênticas, chamaria de empate e seguraria
+    a proposta — em toda nota."""
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(chave)])
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz([_resumo(chave)])))
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+
+    assert consultar_um("SELECT count(*) FROM analisesps.notas_fiscais")[0] == 1
+
+
+@pytest.mark.banco
+def test_a_falha_do_CTe_nao_leva_a_busca_de_NFe_junto(banco_analisesps,
+                                                      monkeypatch):
+    """O caminho de CT-e nunca foi exercitado contra o serviço de verdade. Ele
+    não pode derrubar a busca de NF-e, que é a maior parte do volume."""
+    from app.apps.analisesps import sefaz
+
+    from app.apps.analisesps import certificados
+    monkeypatch.setattr(certificados, "cofre_configurado", lambda: True)
+    monkeypatch.setattr(certificados, "cnpjs_ativos", lambda: ["10656452007869"])
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_resumo(_chave(CREDOR_CNPJ))])))
+
+    def cte_quebrado(cnpj, nsu):
+        raise RuntimeError("o CT-e recusou")
+
+    monkeypatch.setattr(sefaz, "_consultar_cte", cte_quebrado)
+    resultado = sefaz.buscar_tudo()
+    assert resultado["trazidas"] == 1, "a NF-e se perdeu junto com o CT-e"
+    assert any("recusou" in (p.get("erro") or "") for p in resultado["por_cnpj"])
+
+
+# ---------------------------------------------------------------------------
+# O COFRE DOS CERTIFICADOS, com banco de verdade
+# ---------------------------------------------------------------------------
+def _pfx(cnpj="10656452007869", senha="senha-de-teste", vence=None):
+    import datetime as _dt
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import pkcs12
+    from cryptography.x509.oid import NameOID
+
+    vence = vence or _dt.datetime(2027, 1, 1)
+    # O "vale a partir de" tem de ser ANTES do "vale até" — inclusive no
+    # certificado já vencido que um dos testes usa, que é o caso real de quem
+    # esqueceu de renovar.
+    comeca = min(_dt.datetime(2026, 1, 1), vence - _dt.timedelta(days=365))
+    chave = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    titular = x509.Name([x509.NameAttribute(
+        NameOID.COMMON_NAME, f"BWS CONSTRUCOES LTDA:{cnpj}")])
+    cert = (x509.CertificateBuilder().subject_name(titular).issuer_name(titular)
+            .public_key(chave.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(comeca)
+            .not_valid_after(vence).sign(chave, hashes.SHA256()))
+    return pkcs12.serialize_key_and_certificates(
+        b"t", chave, cert, None,
+        serialization.BestAvailableEncryption(senha.encode()))
+
+
+@pytest.mark.banco
+def test_o_certificado_vai_e_volta_inteiro_pelo_cofre(banco_analisesps,
+                                                      monkeypatch):
+    """Ele tem de sair do banco byte a byte igual ao que entrou — um
+    certificado corrompido é recusado pela Receita sem dizer por quê."""
+    from app.apps.analisesps import certificados
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    original = _pfx()
+    certificados.guardar(original, "senha-de-teste", "BWS", "Marcelo")
+
+    conteudo, senha = certificados.abrir_para_uso("10.656.452/0078-69")
+    assert conteudo == original
+    assert senha == "senha-de-teste"
+
+
+@pytest.mark.banco
+def test_o_banco_guarda_CIFRADO_e_nao_o_arquivo(banco_analisesps, monkeypatch):
+    """A prova de que o vazamento do banco não entrega o certificado."""
+    from app.apps.analisesps import certificados
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    original = _pfx()
+    certificados.guardar(original, "senha-de-teste", "BWS", "Marcelo")
+
+    guardado = consultar_um(
+        "SELECT arquivo, senha FROM analisesps.certificados")
+    assert bytes(guardado[0]) != original, "o arquivo está aberto no banco"
+    assert b"senha-de-teste" not in bytes(guardado[1])
+
+
+@pytest.mark.banco
+def test_subir_de_novo_TROCA_o_certificado_daquele_CNPJ(banco_analisesps,
+                                                        monkeypatch):
+    """É como se faz a troca anual: sobe o novo por cima. Duas linhas para o
+    mesmo CNPJ fariam a busca usar o vencido metade das vezes."""
+    import datetime as _dt
+
+    from app.apps.analisesps import certificados
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    certificados.guardar(_pfx(vence=_dt.datetime(2027, 1, 1)),
+                         "senha-de-teste", "antigo", "Marcelo")
+    certificados.guardar(_pfx(vence=_dt.datetime(2028, 6, 30)),
+                         "senha-de-teste", "novo", "Marcelo")
+
+    assert consultar_um("SELECT count(*) FROM analisesps.certificados")[0] == 1
+    assert certificados.listar()[0]["valido_ate"] == _dt.date(2028, 6, 30)
+
+
+@pytest.mark.banco
+def test_o_CNPJ_com_certificado_VENCIDO_nao_e_consultado(banco_analisesps,
+                                                         monkeypatch):
+    """Consultar a Receita com certificado vencido só produz recusa — e a
+    recusa GASTA A COTA de consultas, que é limitada."""
+    import datetime as _dt
+
+    from app.apps.analisesps import certificados
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    certificados.guardar(_pfx(vence=_dt.datetime(2020, 1, 1)),
+                         "senha-de-teste", "vencido", "Marcelo")
+
+    assert certificados.cnpjs_ativos() == []
+    assert certificados.listar()[0]["vencido"] is True
+
+
+@pytest.mark.banco
+def test_a_lista_de_CNPJs_da_busca_SAI_do_cofre(banco_analisesps, monkeypatch):
+    """Duas listas — uma de CNPJs e outra de certificados — divergiriam no dia
+    em que alguém subisse um certificado e esquecesse de acrescentar o CNPJ, e
+    a busca ficaria sem rodar para aquela empresa sem ninguém entender."""
+    from app.apps.analisesps import certificados, sefaz
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    assert sefaz.cnpjs_vigiados() == []
+    assert sefaz.configurado() is False
+
+    certificados.guardar(_pfx(), "senha-de-teste", "BWS", "Marcelo")
+    assert sefaz.cnpjs_vigiados() == ["10656452007869"]
+    assert sefaz.configurado() is True
+
+
+@pytest.mark.banco
+def test_remover_apaga_de_verdade(banco_analisesps, monkeypatch):
+    """Guardar credencial "desativada" é guardar credencial — e o motivo de
+    tirar costuma ser justamente que ela não deveria mais existir."""
+    from app.apps.analisesps import certificados
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    certificados.guardar(_pfx(), "senha-de-teste", "BWS", "Marcelo")
+    assert certificados.remover("10.656.452/0078-69", "Marcelo") is True
+    assert consultar_um("SELECT count(*) FROM analisesps.certificados")[0] == 0
+    assert certificados.remover("10656452007869", "Marcelo") is False
+
+
+@pytest.mark.banco
+def test_a_tela_de_configuracoes_mostra_o_certificado_sem_o_conteudo(
+        banco_analisesps, monkeypatch):
+    from app.apps.analisesps import certificados
+
+    monkeypatch.setenv("ANALISESPS_CHAVE_COFRE", "chave-de-teste")
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    certificados.guardar(_pfx(), "senha-de-teste", "BWS Nordeste", "Marcelo")
+
+    import app.main as main
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as sessao:
+        sessao["analisesps_perfil"] = "operador"
+        sessao["analisesps_nome"] = "Marcelo"
+    html = cliente.get("/analisesps/configuracoes").get_data(as_text=True)
+
+    assert "BWS Nordeste" in html
+    assert "10656452007869" in html
+    assert "01/01/2027" in html
+    assert "senha-de-teste" not in html, "a senha vazou para a tela"
+
+
+# ---------------------------------------------------------------------------
+# O RECORTE E OS TOTALIZADORES DA DOCUMENTAÇÃO FISCAL — 13/09/2026
+#
+# Correção do dono depois de usar a tela: *"você replicou os filtros de
+# solicitações, mas não é o que a gente trabalha aqui (…) aqui era pra ter
+# filtro do tipo: o que já tem feito, o que está marcado, o que não está
+# marcado, o que está provavelmente errado"*.
+#
+# POR QUE ESTES TESTES PRECISAM DE BANCO. Todo o recorte é subconsulta
+# correlacionada (`sp_fiscal`, `sp_fiscal_analise`, `notas_fiscais`), e o
+# "provavelmente errado" lê o CNPJ de DENTRO da chave com `substring`. A sessão
+# dublada ignora WHERE — lá isto passaria mesmo escrito errado, e o erro
+# apareceria como tela em branco na mão de quem trabalha.
+# ---------------------------------------------------------------------------
+def _marcar_no_card(sp_id, doc_fiscal):
+    """O que a planilha de apoio traz do card — a outra porta da documentação."""
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute("INSERT INTO analisesps.sp_fiscal (sp_id, doc_fiscal) "
+                     "VALUES (?, ?) ON CONFLICT (sp_id) DO UPDATE "
+                     "   SET doc_fiscal = EXCLUDED.doc_fiscal",
+                     (str(sp_id), doc_fiscal))
+        conn.commit()
+
+
+def _diario(sp_id, **campos):
+    from app.apps.analisesps.db import conexao
+    colunas_ = ["sp_id"] + list(campos)
+    valores = [str(sp_id)] + list(campos.values())
+    marcas = ",".join(["?"] * len(colunas_))
+    with conexao() as conn:
+        conn.execute(
+            f"INSERT INTO analisesps.sp_fiscal_analise ({','.join(colunas_)}) "
+            f"VALUES ({marcas})", tuple(valores))
+        conn.commit()
+
+
+def _quantas(fiscais):
+    from app.apps.analisesps import consultas
+    return consultas.resumo({"fiscais": fiscais})["quantidade"]
+
+
+@pytest.mark.banco
+def test_todo_recorte_fiscal_e_SQL_QUE_O_BANCO_ACEITA(banco_analisesps):
+    """Um por um. Se qualquer um estiver mal escrito, é aqui que aparece — e
+    não como "Deu erro" na tela de quem foi trabalhar."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", credor="ACME", documento="11.222.333/0001-81",
+               valor="269,00")])
+    for chave in consultas.SITUACOES_FISCAIS:
+        assert _quantas([chave]) >= 0, chave
+
+
+@pytest.mark.banco
+def test_sem_documentacao_e_ja_categorizado_SE_COMPLETAM(banco_analisesps):
+    """Um recorte que deixasse SP de fora dos dois, ou pusesse nos dois, faria
+    os totalizadores não fecharem — e o dono confere somando."""
+    semear([sp("1", credor="A"), sp("2", credor="B"), sp("3", credor="C")])
+    _marcar_no_card("2", "NF-e (Mercadoria)")
+    _diario("3", documentacao="Ausente")
+
+    assert _quantas(["sem_marcacao"]) == 1
+    assert _quantas(["ja_marcado"]) == 2
+    assert _quantas(["sem_marcacao"]) + _quantas(["ja_marcado"]) == 3
+
+
+@pytest.mark.banco
+def test_o_DIARIO_manda_sobre_o_que_veio_do_card(banco_analisesps):
+    """A decisão tomada aqui é mais nova que a planilha de apoio. Se o card
+    mandasse, a SP recém-categorizada voltaria para a fila do "sem
+    documentação" na primeira carga."""
+    semear([sp("1", credor="A")])
+    _marcar_no_card("1", "")
+    _diario("1", documentacao="NF-e (Mercadoria)")
+    assert _quantas(["ja_marcado"]) == 1
+    assert _quantas(["sem_marcacao"]) == 0
+
+
+@pytest.mark.banco
+def test_provavelmente_errado_pega_a_nota_CANCELADA_do_card(banco_analisesps):
+    """O mais grave da lista: despesa contra documento que não existe mais."""
+    chave = _chave(CREDOR_CNPJ)
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52")])
+    _diario("1", documentacao="NF-e (Mercadoria)", chave=chave)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ, status="Cancelada")
+    assert _quantas(["provavel_erro"]) == 1
+
+
+@pytest.mark.banco
+def test_provavelmente_errado_pega_quem_AFIRMA_nota_e_nao_tem_chave(banco_analisesps):
+    """Classificado sem documento — ou a nota nunca foi anexada."""
+    semear([sp("1", credor="ACME")])
+    _diario("1", documentacao="NFS-e (Serviço)", chave="")
+    assert _quantas(["provavel_erro"]) == 1
+
+
+@pytest.mark.banco
+def test_provavelmente_errado_pega_a_chave_de_OUTRO_CNPJ(banco_analisesps):
+    """O sintoma clássico do anexo trocado entre dois lançamentos — e este é
+    detectado SEM depender de achar a nota, porque o CNPJ de quem emitiu está
+    dentro da própria chave."""
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52"),
+            sp("2", credor="OUTRA", documento="11.222.333/0001-81")])
+    _diario("1", documentacao="NF-e (Mercadoria)",
+            chave=_chave("11222333000181"))      # chave da OUTRA empresa
+    _diario("2", documentacao="NF-e (Mercadoria)",
+            chave=_chave("11222333000181"))      # esta é a dona da chave
+    assert _quantas(["provavel_erro"]) == 1
+
+
+@pytest.mark.banco
+def test_uma_SP_em_dia_NAO_entra_no_provavelmente_errado(banco_analisesps):
+    """O recorte que aponta erro onde não há é pior que recorte nenhum: em uma
+    semana ninguém olha mais para ele."""
+    chave = _chave(CREDOR_CNPJ)
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52")])
+    _diario("1", documentacao="NF-e (Mercadoria)", chave=chave)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    assert _quantas(["provavel_erro"]) == 0
+
+
+@pytest.mark.banco
+def test_CPF_de_credor_nao_vira_falso_erro(banco_analisesps):
+    """Pessoa física tem 11 dígitos e nunca bate com os 14 de dentro da chave.
+    Sem a conferência de tamanho, TODA SP de credor pessoa física apareceria
+    como provavelmente errada."""
+    semear([sp("1", credor="JOSE", documento="123.456.789-09")])
+    _diario("1", documentacao="NF-e (Mercadoria)", chave=_chave(CREDOR_CNPJ))
+    assert _quantas(["provavel_erro"]) == 0
+
+
+@pytest.mark.banco
+def test_marcar_DOIS_recortes_exige_os_dois(banco_analisesps):
+    """"Sem documentação" + "com anexo" é a fila mais útil da tela: o que dá
+    para resolver lendo o anexo."""
+    semear([sp("1", credor="A", anexo_link="http://x"),
+            sp("2", credor="B", anexo_link="")])
+    assert _quantas(["sem_marcacao"]) == 2
+    assert _quantas(["sem_marcacao", "com_anexo"]) == 1
+
+
+@pytest.mark.banco
+def test_os_totalizadores_sao_da_BASE_INTEIRA_e_nao_da_pagina(banco_analisesps):
+    """O ponto que torna a tela gerenciável: *"onde é que eu tenho que focar"*.
+    Contar as 200 linhas carregadas responderia "o que falta NESTA PÁGINA" — e
+    pareceria certo."""
+    from app.apps.analisesps import consultas
+
+    semear([sp(str(i), credor="A", valor="100,00") for i in range(1, 6)])
+    _marcar_no_card("1", "NF-e (Mercadoria)")
+
+    painel = consultas.painel_fiscal({})
+    assert painel["total"] == 5
+    assert painel["sem_marcacao"] == 4
+    assert painel["ja_marcado"] == 1
+    assert painel["valor_sem_marcacao"] == Decimal("400.00")
+
+
+@pytest.mark.banco
+def test_o_painel_RESPEITA_o_filtro_que_esta_na_tela(banco_analisesps):
+    """Os números são do recorte em que a pessoa está. Um painel que ignorasse
+    o filtro diria "faltam 1.200" enquanto a lista mostra três."""
+    from app.apps.analisesps import consultas
+    semear([sp("1", credor="ACME", tipo_despesa="Material"),
+            sp("2", credor="OUTRA", tipo_despesa="Serviço")])
+    painel = consultas.painel_fiscal({"tipo_despesa": ["Material"]})
+    assert painel["total"] == 1
+
+
+@pytest.mark.banco
+def test_o_painel_e_o_filtro_CONCORDAM_sempre(banco_analisesps):
+    """Saem dos mesmos pedaços de SQL. Este teste é o que garante que clicar
+    num total leva exatamente às linhas que ele contou."""
+    from app.apps.analisesps import consultas
+    semear([sp(str(i), credor="A") for i in range(1, 8)])
+    _marcar_no_card("1", "NF-e (Mercadoria)")
+    _marcar_no_card("2", "Ausente")
+
+    painel = consultas.painel_fiscal({})
+    for chave in ("sem_marcacao", "ja_marcado", "provavel_erro", "na_fila_ia",
+                  "confirmada", "escrita", "sem_anexo"):
+        assert painel[chave] == _quantas([chave]), chave
+
+
+@pytest.mark.banco
+def test_a_fila_da_IA_e_o_a_gravar_sao_recortes_diferentes(banco_analisesps):
+    """Um é o que espera a máquina; o outro é o que espera o Pipefy. Confundir
+    os dois faria a pessoa procurar trabalho no lugar errado."""
+    semear([sp("1", credor="A"), sp("2", credor="B"), sp("3", credor="C")])
+    _diario("1", situacao="NA_FILA_IA")
+    _diario("2", situacao="CONFIRMADA", documentacao="NF-e (Mercadoria)")
+    _diario("3", situacao="ESCRITA", documentacao="NF-e (Mercadoria)")
+
+    assert _quantas(["na_fila_ia"]) == 1
+    assert _quantas(["confirmada"]) == 1
+    assert _quantas(["escrita"]) == 1
+
+
+@pytest.mark.banco
+def test_o_que_JA_FOI_GRAVADO_no_card_sai_da_fila_de_gravar(banco_analisesps):
+    """`escrita_em` é o que separa "decidido" de "gravado". Sem ele, o mesmo
+    trabalho apareceria como pendente para sempre."""
+    from app.apps.analisesps.db import conexao
+    semear([sp("1", credor="A")])
+    _diario("1", situacao="CONFIRMADA", documentacao="NF-e (Mercadoria)")
+    assert _quantas(["confirmada"]) == 1
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.sp_fiscal_analise "
+                     "   SET escrita_em = now() WHERE sp_id = '1'")
+        conn.commit()
+    assert _quantas(["confirmada"]) == 0
+
+
+@pytest.mark.banco
+def test_os_numeros_do_lado_da_NOTA(banco_analisesps):
+    """A outra metade da gestão: quanta nota existe sem despesa nenhuma."""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1", 10.00, CREDOR_CNPJ)
+    _guardar_nota(_chave("11222333000181"), "2", 20.00, "11222333000181",
+                  status="Cancelada")
+    semear([sp("1", credor="A")])
+    _diario("1", chave=_chave(CREDOR_CNPJ))
+
+    painel = fiscal.painel_notas()
+    assert painel["total"] == 2
+    assert painel["canceladas"] == 1
+    # A associada saiu; a cancelada nunca entrou.
+    assert painel["sem_lancamento"] == 0
+
+
+@pytest.mark.banco
+def test_o_CTe_e_contado_pela_CHAVE_e_nao_pela_coluna_tipo(banco_analisesps):
+    """DEFEITO ACHADO exercitando a tela contra banco de verdade em 13/09/2026:
+    o contador dizia ZERO com CT-e na base.
+
+    A coluna `tipo` vem preenchida de jeitos diferentes conforme a porta de
+    entrada — a Receita grava "CT-e", e o relatório do FSist grava o que
+    estiver na coluna "Tipo" da planilha, que ninguém controla. As posições 21
+    e 22 da chave são o modelo do documento por definição da Receita, e valem
+    para toda nota tenha ela vindo por onde tiver vindo."""
+    from app.apps.analisesps import fiscal
+
+    # Um CT-e (modelo 57) com a coluna `tipo` VAZIA, que é como o relatório do
+    # FSist às vezes chega.
+    _guardar_nota(_chave(CREDOR_CNPJ, "570010000123456789012345"),
+                  "88", 90.00, CREDOR_CNPJ)
+    _guardar_nota(_chave("11222333000181"), "77", 20.00, "11222333000181")
+
+    assert fiscal.painel_notas()["ctes"] == 1
+
+
+@pytest.mark.banco
+def test_gravar_a_mao_TIRA_a_nota_da_lista_de_orfas(banco_analisesps):
+    """O caminho inteiro, da ponta à ponta: a nota órfã aparece, alguém
+    associa, e ela some — que é o que faz a lista encolher em vez de só
+    acusar."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00")])
+
+    orfas, total = fiscal.notas_orfas()
+    assert total == 1
+
+    fiscal.decidir_a_mao("1", "", chave, "MARCELO",
+                         {"documento": "29.066.773/0001-52"})
+
+    orfas, total = fiscal.notas_orfas()
+    assert total == 0
+    assert _quantas(["ja_marcado"]) == 1
+
+
+@pytest.mark.banco
+def test_a_LISTA_e_os_TOTAIS_leem_a_MESMA_documentacao(banco_analisesps):
+    """DEFEITO ACHADO abrindo a tela contra banco de verdade em 13/09/2026.
+
+    Os totalizadores contavam as duas portas da documentação (o diário deste
+    módulo e o espelho do card que a planilha de apoio traz) e a LISTA só olhava
+    o diário. Na tela isso virava o painel dizer "3 já categorizados" e a linha
+    mostrar "—" na coluna "Está como" — duas afirmações contrárias, e nenhuma
+    delas com jeito de errada.
+
+    Este teste é o que impede a volta: a mesma SP, marcada só no card, tem de
+    aparecer categorizada nos dois lugares."""
+    from app.apps.analisesps import fiscal
+
+    semear([sp("1", credor="ALUGUEL LTDA", valor="3.000,00")])
+    _marcar_no_card("1", "Contrato")
+
+    assert _quantas(["ja_marcado"]) == 1
+    assert fiscal.analises_guardadas(["1"])["1"]["documentacao"] == "Contrato"
+
+
+@pytest.mark.banco
+def test_o_DIARIO_manda_tambem_NA_LISTA(banco_analisesps):
+    """Mesma ordem de precedência do SQL dos totais: a decisão tomada aqui é
+    mais nova que a planilha de apoio."""
+    from app.apps.analisesps import fiscal
+
+    semear([sp("1", credor="A")])
+    _marcar_no_card("1", "Ausente")
+    _diario("1", documentacao="NF-e (Mercadoria)")
+    assert fiscal.analises_guardadas(["1"])["1"]["documentacao"] \
+        == "NF-e (Mercadoria)"
+
+
+@pytest.mark.banco
+def test_SP_sem_nenhuma_das_duas_portas_nao_aparece_no_diario(banco_analisesps):
+    """A busca do diário não pode inventar linha: uma SP sem documentação em
+    lugar nenhum tem de vir vazia, e não com um dicionário de campos nulos que
+    a tela leria como "já tem alguma coisa"."""
+    from app.apps.analisesps import fiscal
+
+    semear([sp("1", credor="A")])
+    assert fiscal.analises_guardadas(["1"]) == {}
+
+
+@pytest.mark.banco
+def test_QUEM_marcou_separa_pessoa_sistema_e_o_que_veio_do_card(banco_analisesps):
+    """Pergunta do dono em 13/09/2026: *"qual o filtro pra aparecer somente as
+    que o sistema marcou?"*
+
+    São três origens diferentes e elas não podem se misturar: o que uma pessoa
+    decidiu, o que o sistema decidiu (proposta aprovada ou leitura por IA), e o
+    que já veio preenchido do card antes desta tela existir. Essa última não é
+    decisão de ninguém aqui — contá-la como "o sistema marcou" faria o número
+    parecer trabalho feito pela ferramenta quando não foi."""
+    semear([sp(str(i), credor="A") for i in range(1, 5)])
+    _diario("1", documentacao="NF-e (Mercadoria)", origem="PESSOA")
+    _diario("2", documentacao="NF-e (Mercadoria)", origem="CONCILIACAO")
+    _diario("3", documentacao="NF-e (Mercadoria)", origem="IA")
+    _diario("4", documentacao="Contrato", origem="PIPEFY")
+
+    assert _quantas(["decidida_por_pessoa"]) == 1
+    assert _quantas(["decidida_pelo_sistema"]) == 2      # a conciliação e a IA
+    assert _quantas(["veio_do_card"]) == 1
+
+
+@pytest.mark.banco
+def test_o_painel_e_o_filtro_concordam_tambem_COM_JUNCAO(banco_analisesps):
+    """O painel passou a montar as regras por JUNÇÃO (rápido) enquanto o filtro
+    segue com subconsulta correlacionada (índice resolve linha a linha). São
+    duas escritas da MESMA regra, e o risco disso é óbvio.
+
+    Medido em 13/09/2026 com 59.000 SPs: 1,18s com subconsulta contra 0,14s com
+    junção, nesta máquina — e o banco do Render tem um décimo de um núcleo. A
+    otimização vale; este teste é o preço dela.
+
+    O caso é montado com as três portas da documentação ao mesmo tempo, que é
+    onde as duas escritas teriam mais chance de discordar."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A", documento="29.066.773/0001-52", valor="10,00"),
+            sp("2", credor="B", documento="11.222.333/0001-81", valor="20,00",
+               anexo_link="http://x"),
+            sp("3", credor="C", documento="123.456.789-09", valor="30,00"),
+            sp("4", credor="D", valor="40,00")])
+    _marcar_no_card("1", "Contrato")                       # só no card
+    _diario("2", documentacao="NF-e (Mercadoria)",         # chave de OUTRO CNPJ
+            chave=_chave(CREDOR_CNPJ), origem="PESSOA")
+    _diario("3", documentacao="NFS-e (Serviço)", chave="") # afirma nota sem ter
+    _diario("4", situacao="NA_FILA_IA")
+
+    painel = consultas.painel_fiscal({})
+    assert painel["total"] == 4
+    for chave in ("sem_marcacao", "ja_marcado", "provavel_erro", "com_chave",
+                  "na_fila_ia", "confirmada", "escrita", "sem_anexo"):
+        assert painel[chave] == _quantas([chave]), chave
+
+
+@pytest.mark.banco
+def test_a_busca_de_SPs_por_nota_traz_o_MESMO_em_lote_e_uma_a_uma(banco_analisesps):
+    """A busca virou duas consultas para a página inteira, em vez de uma por
+    nota — 28 segundos medidos com 59.000 SPs, e em produção a tela não abria.
+
+    Trocar o caminho não pode trocar o RESULTADO: este teste compara os dois."""
+    from app.apps.analisesps import fiscal
+
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52", valor="269,00"),
+            sp("2", credor="ACME", documento="29.066.773/0001-52", valor="500,00"),
+            sp("3", credor="OUTRA", documento="11.222.333/0001-81", valor="269,00")])
+    notas = [
+        {"chave": _chave(CREDOR_CNPJ), "valor": 269.00,
+         "emitente_doc": CREDOR_CNPJ},
+        {"chave": _chave("11222333000181"), "valor": 269.00,
+         "emitente_doc": "11222333000181"},
+    ]
+
+    em_lote = fiscal.sps_possiveis_das_notas(notas)
+    for nota in notas:
+        uma_a_uma = fiscal.sps_possiveis_da_nota(nota)
+        chave = fiscal.so_digitos(nota["chave"])
+        assert [s["id"] for s in em_lote[chave]] == [s["id"] for s in uma_a_uma]
+
+    # E a de valor IGUAL vem na frente — é a que fecha o par.
+    assert em_lote[fiscal.so_digitos(notas[0]["chave"])][0]["id"] == "1"
+
+
+@pytest.mark.banco
+def test_a_LISTA_de_notas_recorta_pelo_que_a_tela_oferece(banco_analisesps):
+    """*"Não consigo visualizar numa tela o que temos de notas e o que não
+    temos."* A lista era só das órfãs; agora é de tudo, e "sem lançamento" é um
+    recorte dela."""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1", 10.00, CREDOR_CNPJ)
+    _guardar_nota(_chave("11222333000181", "570010000123456789012345"),
+                  "2", 20.00, "11222333000181")
+    _guardar_nota(_chave("99888777000166"), "3", 30.00, "99888777000166",
+                  status="Cancelada")
+    semear([sp("1", credor="A")])
+    _diario("1", chave=_chave(CREDOR_CNPJ))
+
+    todas, resumo = fiscal.listar_notas({})
+    assert resumo["quantidade"] == 3
+    assert resumo["sem_lancamento"] == 2
+
+    orfas, _ = fiscal.listar_notas({"recortes": ["sem_lancamento"]})
+    assert len(orfas) == 2
+    ctes, _ = fiscal.listar_notas({"recortes": ["cte"]})
+    assert len(ctes) == 1
+    canceladas, _ = fiscal.listar_notas({"recortes": ["cancelada"]})
+    assert len(canceladas) == 1
+    # Dois recortes somam, como na tela de lançamentos.
+    nada, _ = fiscal.listar_notas({"recortes": ["cte", "cancelada"]})
+    assert nada == []
+
+
+@pytest.mark.banco
+def test_a_busca_da_lista_de_notas_acha_por_numero_CNPJ_e_chave(banco_analisesps):
+    """Os quatro jeitos de procurar uma nota que alguém tem na mão."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 10.00, CREDOR_CNPJ)
+    _guardar_nota(_chave("11222333000181"), "77", 20.00, "11222333000181")
+
+    for termo in ("1430", CREDOR_CNPJ, chave, "fornecedor"):
+        achadas, _ = fiscal.listar_notas({"busca": termo})
+        assert achadas, f"a busca por {termo!r} não achou nada"
+
+
+@pytest.mark.banco
+def test_o_recorte_de_EMISSAO_responde_as_notas_do_dia(banco_analisesps):
+    """*"Ver as notas do dia ou consultar as notas."*"""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1", 10.00, CREDOR_CNPJ,
+                  emissao="2026-09-10")
+    _guardar_nota(_chave("11222333000181"), "2", 20.00, "11222333000181",
+                  emissao="2026-09-12")
+
+    do_dia, _ = fiscal.listar_notas({"emissao_ini": "2026-09-10",
+                                     "emissao_fim": "2026-09-10"})
+    assert len(do_dia) == 1 and do_dia[0]["numero"] == "1"
+
+
+# ---------------------------------------------------------------------------
+# O RELATÓRIO DO FSIST SUBIDO COMO ARQUIVO — 13/09/2026
+#
+# *"Cadê a opção de incluir o arquivo? De onde vai tirar essa informação, se eu
+# não estou nem colocando?"* Aqui é o caminho inteiro, com banco de verdade:
+# arquivo entra, nota fica gravada, e reimportar não duplica.
+# ---------------------------------------------------------------------------
+def _relatorio_csv(linhas, separador=";"):
+    return "\r\n".join(separador.join(c for c in linha)
+                       for linha in linhas).encode("utf-8")
+
+
+_CAB_FSIST = ["Emissão", "Chave", "Número", "Série", "Valor", "Situação",
+              "Emitente CNPJ", "Emitente", "Emitente UF", "Destinatário CNPJ"]
+
+
+@pytest.mark.banco
+def test_o_arquivo_do_FSist_vira_nota_no_banco(banco_analisesps):
+    from app.apps.analisesps import sincronizacao
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    arquivo = _relatorio_csv([
+        ["Relatório de Notas de Compras"],          # o título, na linha 1
+        _CAB_FSIST,
+        ["01/09/2026", chave, "1430", "1", "269,00", "Autorizada",
+         "29.066.773/0001-52", "ACME MATERIAIS", "BA", "10.656.452/0078-69"]])
+
+    saida = sincronizacao.importar_notas_de_arquivo(arquivo, "fsist.csv")
+    assert saida["lidas"] == 1 and saida["novas"] == 1
+
+    linha = consultar_um(
+        "SELECT numero, valor, status, emitente_doc, emissao "
+        "  FROM analisesps.notas_fiscais WHERE chave = ?", (chave,))
+    assert linha[0] == "1430"
+    assert linha[1] == Decimal("269.00"), "o valor em português virou número"
+    assert linha[2] == "Autorizada"
+    assert linha[3] == CREDOR_CNPJ, "o CNPJ perdeu a pontuação"
+    assert linha[4] == dt.date(2026, 9, 1), "a data em DD/MM/AAAA virou data"
+
+
+@pytest.mark.banco
+def test_subir_o_MESMO_relatorio_duas_vezes_nao_duplica(banco_analisesps):
+    """A chave é a identidade. Reimportar é o que ele vai fazer sem pensar —
+    e tem de ser inofensivo."""
+    from app.apps.analisesps import sincronizacao
+    from app.apps.analisesps.db import consultar_um
+
+    arquivo = _relatorio_csv([
+        _CAB_FSIST,
+        ["01/09/2026", _chave(CREDOR_CNPJ), "1430", "1", "269,00",
+         "Autorizada", "29.066.773/0001-52", "ACME", "BA",
+         "10.656.452/0078-69"]])
+
+    sincronizacao.importar_notas_de_arquivo(arquivo, "fsist.csv")
+    segunda = sincronizacao.importar_notas_de_arquivo(arquivo, "fsist.csv")
+
+    assert consultar_um("SELECT count(*) FROM analisesps.notas_fiscais")[0] == 1
+    assert segunda["novas"] == 0
+
+
+@pytest.mark.banco
+def test_a_nota_que_voltou_CANCELADA_e_atualizada(banco_analisesps):
+    """É o achado que mais importa num reenvio do relatório: pagar contra nota
+    cancelada é problema fiscal."""
+    from app.apps.analisesps import sincronizacao
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+
+    def arquivo(status):
+        return _relatorio_csv([
+            _CAB_FSIST,
+            ["01/09/2026", chave, "1430", "1", "269,00", status,
+             "29.066.773/0001-52", "ACME", "BA", "10.656.452/0078-69"]])
+
+    sincronizacao.importar_notas_de_arquivo(arquivo("Autorizada"), "a.csv")
+    saida = sincronizacao.importar_notas_de_arquivo(arquivo("Cancelada"), "b.csv")
+
+    assert saida["novas"] == 0 and saida["atualizadas"] == 1
+    assert consultar_um("SELECT status FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,))[0] == "Cancelada"
+
+
+@pytest.mark.banco
+def test_linhas_de_rodape_e_totalizador_sao_IGNORADAS(banco_analisesps):
+    """O relatório traz total no fim e linhas em branco no meio. Elas não são
+    erro — são o formato — e não podem virar recado de falha."""
+    from app.apps.analisesps import sincronizacao
+
+    arquivo = _relatorio_csv([
+        _CAB_FSIST,
+        ["01/09/2026", _chave(CREDOR_CNPJ), "1430", "1", "269,00",
+         "Autorizada", "29.066.773/0001-52", "ACME", "BA", "10.656.452/0078-69"],
+        ["", "", "", "", "", "", "", "", "", ""],
+        ["TOTAL", "", "", "", "269,00", "", "", "", "", ""]])
+
+    saida = sincronizacao.importar_notas_de_arquivo(arquivo, "fsist.csv")
+    assert saida["lidas"] == 1
+    assert saida["ignoradas"] == 2
+
+
+@pytest.mark.banco
+def test_a_nota_do_arquivo_APARECE_na_tela_de_notas(banco_analisesps):
+    """O caminho da ponta à ponta: subiu o arquivo, a nota aparece na lista e
+    conta nos totais."""
+    from app.apps.analisesps import fiscal, sincronizacao
+
+    sincronizacao.importar_notas_de_arquivo(_relatorio_csv([
+        _CAB_FSIST,
+        ["01/09/2026", _chave(CREDOR_CNPJ), "1430", "1", "269,00",
+         "Autorizada", "29.066.773/0001-52", "ACME", "BA",
+         "10.656.452/0078-69"]]), "fsist.csv")
+
+    notas, resumo = fiscal.listar_notas({})
+    assert resumo["quantidade"] == 1
+    assert notas[0]["numero"] == "1430"
+    assert notas[0]["orfa"] is True
+    assert fiscal.painel_notas()["total"] == 1
+
+
+# ---------------------------------------------------------------------------
+# O PAR COM A SP, E O ALARME DA NOTA CANCELADA — 13/09/2026
+#
+# *"Nessas que estão aqui já verdinha pra associar (…) tem outra sim, o valor é
+# diferente. Tem que ter um tratamento aí."* E, mais grave: *"imagina, o
+# fornecedor emitiu e cancelou a nota. E a gente associou, pagou, e a nota virou
+# cancelada. A gente tem que ter um local de visualização disso."*
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_o_recorte_separa_a_que_FECHA_da_que_tem_valor_diferente(banco_analisesps):
+    """Três estados, e eles pedem coisas diferentes: a que fecha sem pensar, a
+    que tem SP do credor mas de outro valor (precisa de olho), e a que não tem
+    SP nenhuma daquele CNPJ (a despesa pode nem ter sido lançada)."""
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1", 269.00, CREDOR_CNPJ)
+    _guardar_nota(_chave("11222333000181"), "2", 500.00, "11222333000181")
+    _guardar_nota(_chave("99888777000166"), "3", 800.00, "99888777000166")
+    semear([
+        sp("1", credor="ACME", documento="29.066.773/0001-52", valor="269,00"),
+        sp("2", credor="BETA", documento="11.222.333/0001-81", valor="123,00"),
+    ])
+
+    fecha, _ = fiscal.listar_notas({"recortes": ["casa_valor"]})
+    assert [n["numero"] for n in fecha] == ["1"]
+
+    olho, _ = fiscal.listar_notas({"recortes": ["sem_valor_igual"]})
+    assert [n["numero"] for n in olho] == ["2"]
+
+    sem_sp, _ = fiscal.listar_notas({"recortes": ["sem_sp_do_credor"]})
+    assert [n["numero"] for n in sem_sp] == ["3"]
+
+
+@pytest.mark.banco
+def test_os_tres_recortes_do_par_se_COMPLETAM(banco_analisesps):
+    """Uma nota que ficasse de fora dos três, ou em dois, faria os números não
+    fecharem — e o dono confere somando."""
+    from app.apps.analisesps import fiscal
+
+    for i, cnpj in enumerate([CREDOR_CNPJ, "11222333000181", "99888777000166"]):
+        _guardar_nota(_chave(cnpj), str(i), 100.00 * (i + 1), cnpj)
+    semear([sp("1", credor="A", documento="29.066.773/0001-52", valor="100,00"),
+            sp("2", credor="B", documento="11.222.333/0001-81", valor="999,00")])
+
+    somados = sum(len(fiscal.listar_notas({"recortes": [r]})[0])
+                  for r in ("casa_valor", "sem_valor_igual", "sem_sp_do_credor"))
+    assert somados == 3
+
+
+@pytest.mark.banco
+def test_a_nota_CANCELADA_JA_ASSOCIADA_e_o_alarme(banco_analisesps):
+    """O caso mais grave desta tela, e o que ficava INVISÍVEL justamente por
+    estar "resolvido": a nota cancelada não é órfã — ela está associada —, então
+    não aparecia na lista das que precisam de despesa."""
+    from app.apps.analisesps import fiscal
+
+    boa = _chave(CREDOR_CNPJ)
+    ruim = _chave("11222333000181")
+    _guardar_nota(boa, "1", 100.00, CREDOR_CNPJ)
+    _guardar_nota(ruim, "2", 200.00, "11222333000181", status="Cancelada")
+    # Uma cancelada e SOLTA: não é alarme — cancelada sem despesa é o esperado.
+    _guardar_nota(_chave("99888777000166"), "3", 300.00, "99888777000166",
+                  status="Cancelada")
+    semear([sp("1", credor="A"), sp("2", credor="B")])
+    _diario("1", chave=boa)
+    _diario("2", chave=ruim, documentacao="NF-e (Mercadoria)")
+
+    assert fiscal.painel_notas()["canceladas_em_uso"] == 1
+    alarme, _ = fiscal.listar_notas({"recortes": ["cancelada_em_uso"]})
+    assert [n["numero"] for n in alarme] == ["2"]
+    # E a cancelada solta continua contando como cancelada, sem ser alarme.
+    assert fiscal.painel_notas()["canceladas"] == 2
+
+
+@pytest.mark.banco
+def test_cada_candidata_vem_com_o_PORQUE_escrito(banco_analisesps):
+    """*"Você bota 'mesmo valor'. Mas você está comparando o mesmo valor de
+    quê? Como é que chegou a essa informação?"* "Mesmo valor" sozinho dá ar de
+    conferência a uma coincidência."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ, emissao="2026-09-01")
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00", vencimento="10/09/2026", nf="1430")])
+
+    candidatas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ, "emissao": dt.date(2026, 9, 1)}])
+    sp1 = candidatas[chave][0]
+
+    rotulos = {r["rotulo"]: r["bate"] for r in sp1["razoes"]}
+    assert rotulos["CNPJ do credor é o de quem emitiu"] is True
+    assert rotulos["Valor igual"] is True
+    assert rotulos["Nº da nota no card"] is True
+    assert rotulos["Data compatível"] is True
+    assert sp1["confere"] == 4 and sp1["de"] == 4
+
+
+@pytest.mark.banco
+def test_a_candidata_de_valor_DIFERENTE_diz_os_dois_numeros(banco_analisesps):
+    """Ver "a SP é R$ 500,00 e a nota R$ 269,00" é o que impede associar por
+    engano — e é a informação que faltava."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="500,00")])
+
+    candidatas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])
+    razao = next(r for r in candidatas[chave][0]["razoes"]
+                 if "Valor" in r["rotulo"])
+    assert razao["bate"] is False
+    assert "500,00" in razao["detalhe"] and "269,00" in razao["detalhe"]
+
+
+@pytest.mark.banco
+def test_a_nota_associada_DIZ_em_qual_SP_esta(banco_analisesps):
+    """Dizer só "já está num lançamento" é meio caminho: na nota cancelada,
+    saber QUAL SP é o que permite agir — ver se foi paga e ligar para o
+    fornecedor. Sem o número, ele teria de procurar a chave na outra tela."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "555", 269.00, CREDOR_CNPJ, status="Cancelada")
+    semear([sp("1443253428", credor="ACME", status_pgt="Pago")])
+    _diario("1443253428", chave=chave, documentacao="NF-e (Mercadoria)")
+
+    notas, _ = fiscal.listar_notas({"recortes": ["cancelada_em_uso"]})
+    assert notas[0]["sp_id"] == "1443253428"
+    assert notas[0]["sp_status"] == "Pago", (
+        "sem saber que foi PAGA, não dá para medir a urgência")
+
+
+@pytest.mark.banco
+def test_as_ULTIMAS_rodadas_saem_UMA_POR_TIPO(banco_analisesps):
+    """A tela mostra o resultado da última vez que CADA botão rodou. Uma
+    consulta por tipo seriam cinco varreduras da mesma tabela num banco que tem
+    um décimo de um núcleo — por isso é uma só, com DISTINCT ON."""
+    from app.apps.analisesps import tarefas
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        for tipo, quando, ok, msg in [
+                ("fiscal", "2026-09-13 10:00", True, "3 card(s) gravado(s)"),
+                ("fiscal", "2026-09-13 14:00", True, "12 card(s) gravado(s)"),
+                ("notas_receita", "2026-09-13 13:00", False, "certificado vencido"),
+                ("carga_inicial", "2026-09-13 09:00", True, "não é fiscal")]:
+            conn.execute(
+                "INSERT INTO analisesps.execucoes "
+                "  (tipo, disparo, inicio, fim, ok, mensagem) "
+                "VALUES (?, 'manual', ?, ?, ?, ?)",
+                (tipo, quando, quando, ok, msg))
+        conn.commit()
+
+    ultimas = tarefas.ultimas_por_tipo(tarefas.MODOS_FISCAIS)
+    assert ultimas["fiscal"]["mensagem"] == "12 card(s) gravado(s)", (
+        "veio a rodada antiga, não a última")
+    assert ultimas["notas_receita"]["ok"] is False
+    assert "carga_inicial" not in ultimas, "trouxe um tipo que não foi pedido"
+
+
+@pytest.mark.banco
+def test_uma_rodada_que_NAO_TERMINOU_nao_conta_como_resultado(banco_analisesps):
+    """O que está rodando agora aparece no aviso de andamento; aqui é o que
+    TERMINOU. Misturar os dois faria a tela dizer "gravou" no meio da gravação."""
+    from app.apps.analisesps import tarefas
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.execucoes (tipo, disparo, inicio, fim) "
+            "VALUES ('fiscal', 'manual', now(), NULL)")
+        conn.commit()
+    assert tarefas.ultimas_por_tipo(["fiscal"]) == {}
+
+
+# ===========================================================================
+# A SP QUE JÁ TEM NOTA NÃO É SUGESTÃO — cobrança do dono em 13/09/2026
+#
+# *"Tem registro que está aparecendo aqui que ele já tem nota fiscal, já é um
+# registro que tem uma nota fiscal associada anteriormente, e inclusive já tem
+# o número da nota, já está associado lá na planilha de documentação fiscal,
+# ou seja, está tudo identificado — e ele está colocando aqui como sugestão de
+# uma nota pra associar. Qual é o sentido disso?"*
+#
+# Nenhum. E o risco não era só ocupar vaga: era ficar a um clique de gravar uma
+# SEGUNDA nota numa SP já conferida.
+# ===========================================================================
+@pytest.mark.banco
+def test_a_SP_que_ja_aponta_para_outra_nota_NAO_disputa_vaga(banco_analisesps):
+    """Trabalho já feito sai da fila de sugestões."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    # Duas SPs do mesmo CNPJ e do mesmo valor. A "2" já foi conferida antes,
+    # contra OUTRA nota.
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00"),
+            sp("2", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00")])
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('2', 'ESCRITA', ?)", (_chave("11222333000144"),))
+        conn.commit()
+
+    escolhidas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+
+    sugeridas = [c for c in escolhidas if not c["ja_tem_nota"]]
+    assert [c["id"] for c in sugeridas] == ["1"]
+
+
+@pytest.mark.banco
+def test_a_SP_que_ja_tem_nota_continua_VISIVEL_so_que_marcada(banco_analisesps):
+    """Sumir sem dizer seria esconder. Ela fica, contada e clicável, para dar
+    onde conferir que o corte não comeu nada por engano."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("2", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00")])
+    outra = _chave("11222333000144")
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('2', 'ESCRITA', ?)", (outra,))
+        conn.commit()
+
+    escolhidas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+
+    assert [c["id"] for c in escolhidas] == ["2"]
+    assert escolhidas[0]["ja_tem_nota"] is True
+    assert fiscal.so_digitos(escolhidas[0]["nota_que_ja_tem"]) == outra
+
+
+@pytest.mark.banco
+def test_a_SP_com_o_numero_da_NF_no_card_CONTINUA_sendo_sugerida(
+        banco_analisesps):
+    """⚠️ O CORTE É PELA CHAVE, NUNCA PELO Nº DA NF DIGITADO NO CARD.
+
+    A SP que tem o número escrito mas nunca foi associada é a MELHOR candidata
+    que existe — o número confere. Cortar por ele esconderia justamente o par
+    mais fácil da base, que é o contrário do que foi pedido."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00", nf="1430")])
+
+    escolhidas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+
+    assert [c["id"] for c in escolhidas] == ["1"]
+    assert escolhidas[0]["ja_tem_nota"] is False
+
+
+@pytest.mark.banco
+def test_a_SP_que_ja_aponta_para_ESTA_nota_some_de_vez(banco_analisesps):
+    """Se a SP já é desta nota, não é sugestão nem "já tem nota de outra": é o
+    que já existe. Mostrá-la seria oferecer o que já está feito."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00")])
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('1', 'ESCRITA', ?)", (chave[:22] + " " + chave[22:],))
+        conn.commit()
+
+    escolhidas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+
+    assert escolhidas == []
+
+
+# ===========================================================================
+# AS SPs POR TRÁS DE CADA NOME — cobrança do dono em 13/09/2026
+#
+# *"Eu estou diante de um determinado CNPJ, aí aparecem várias opções (…) ele
+# marca aqui uma, duas, três, quatro SPs que é de uma outra locadora que não
+# tem nada a ver, ou seja, aqui foi claramente um erro. Só que a partir daqui
+# eu não consigo ir a essas SPs que estão erradas. Só pra poder confirmar se eu
+# posso realmente aplicar ou não, eu precisaria ver essas SPs e entender onde
+# foi o erro."*
+# ===========================================================================
+@pytest.mark.banco
+def test_ver_as_SPs_de_um_nome_traz_so_as_daquele_nome(banco_analisesps):
+    """A conferência que fundamenta a decisão: quais SPs usam CADA nome."""
+    from app.apps.analisesps import credores
+
+    semear([
+        sp("1", credor="LOCADORA DO VALE LTDA",
+           documento="29.066.773/0001-52", valor="100,00"),
+        sp("2", credor="LOCADORA DO VALE LTDA",
+           documento="29066773000152", valor="200,00"),
+        sp("3", credor="LOCADORA SERRA NEGRA",
+           documento="29.066.773/0001-52", valor="300,00"),
+    ])
+
+    achadas = credores.sps_do_nome("29.066.773/0001-52",
+                                   ["LOCADORA SERRA NEGRA"])
+    assert [s_["id"] for s_ in achadas] == ["3"]
+
+
+@pytest.mark.banco
+def test_ver_as_SPs_junta_as_GRAFIAS_do_mesmo_nome(banco_analisesps):
+    """A opção da tela é um GRUPO de grafias ("SERVIÇOS" e "SERVICOS"). Se a
+    busca pegasse só a grafia escolhida, a tela diria "3 SPs" e a lista traria
+    2 — e uma conta que não fecha derruba a confiança na tela inteira."""
+    from app.apps.analisesps import credores
+
+    semear([
+        sp("1", credor="MASSA PRONTA SERVIÇOS", documento="29066773000152"),
+        sp("2", credor="MASSA PRONTA SERVICOS", documento="29066773000152"),
+        sp("3", credor="OUTRA EMPRESA", documento="29066773000152"),
+    ])
+
+    achadas = credores.sps_do_nome(
+        "29066773000152", ["MASSA PRONTA SERVIÇOS", "MASSA PRONTA SERVICOS"])
+    assert sorted(s_["id"] for s_ in achadas) == ["1", "2"]
+
+
+@pytest.mark.banco
+def test_ver_as_SPs_casa_o_CNPJ_escrito_de_qualquer_jeito(banco_analisesps):
+    """Na planilha o mesmo CNPJ vem pontuado numa linha e cru noutra. Casar
+    pelo texto faria o fornecedor virar dois — e a lista viria pela metade."""
+    from app.apps.analisesps import credores
+
+    semear([
+        sp("1", credor="ACME", documento="29.066.773/0001-52"),
+        sp("2", credor="ACME", documento="29066773000152"),
+    ])
+
+    achadas = credores.sps_do_nome("29066773000152", ["ACME"])
+    assert sorted(s_["id"] for s_ in achadas) == ["1", "2"]
+
+
+@pytest.mark.banco
+def test_ver_as_SPs_sem_documento_ou_sem_nome_nao_varre_a_base(banco_analisesps):
+    """Pedido vazio devolve vazio. Sem esta guarda, um clique com o campo em
+    branco traria a base inteira — 59 mil linhas na memória da instância que já
+    morreu disso em julho."""
+    from app.apps.analisesps import credores
+
+    semear([sp("1", credor="ACME", documento="29066773000152")])
+
+    assert credores.sps_do_nome("", ["ACME"]) == []
+    assert credores.sps_do_nome("29066773000152", []) == []
+    assert credores.sps_do_nome("29066773000152", ["  "]) == []
+
+
+@pytest.mark.banco
+def test_ver_as_SPs_tem_TETO(banco_analisesps):
+    """Ninguém confere novecentas linhas, e mandá-las para o navegador trava a
+    tela. O teto é dito na tela, não escondido."""
+    from app.apps.analisesps import credores
+
+    semear([sp(str(i), credor="ACME", documento="29066773000152",
+               valor="10,00") for i in range(1, credores.SPS_POR_NOME + 21)])
+
+    assert len(credores.sps_do_nome("29066773000152", ["ACME"])) == \
+        credores.SPS_POR_NOME
+
+
+# ===========================================================================
+# O ESCOPO DA DOCUMENTAÇÃO FISCAL — três cortes pedidos em 13/09/2026
+#
+# *"Os registros da documentação fiscal não devem retornar apenas os dados do
+# que venceu em 2026 ou do que foi pago em 2026, o restante ignorar."*
+# *"A princípio tudo que está com o Status Pgt = Cancelado não deveria ser
+# exibido, somente se colocássemos para exibir."*
+# *"Não deve ser exibido registros que contenham no Tipo de Despesa a
+# informação '(TRF)'."*
+#
+# ⚠️ CADA CORTE É COBRADO NA LISTA **E** NO PAINEL. Painel e lista lendo
+# universos diferentes é o defeito de 13/09 ("3 já categorizados" com a linha
+# mostrando "—"), e é o que mais destrói a confiança na tela.
+# ===========================================================================
+FISCAL = {"escopo_fiscal": True}
+
+
+@pytest.mark.banco
+def test_o_escopo_fiscal_deixa_de_fora_o_que_e_ANTERIOR_a_2026(banco_analisesps):
+    from app.apps.analisesps import consultas
+
+    semear([
+        sp("1", credor="ACME", vencimento="10/09/2026", valor="100,00"),
+        sp("2", credor="ACME", vencimento="10/09/2025", valor="100,00"),
+    ])
+
+    ids = [l["id"] for l in consultas.listar(dict(FISCAL), pagina=1)]
+    assert ids == ["1"]
+    assert consultas.resumo(dict(FISCAL))["quantidade"] == 1
+
+
+@pytest.mark.banco
+def test_vencida_em_2025_mas_PAGA_em_2026_continua_aparecendo(banco_analisesps):
+    """O ano vale pelo vencimento OU pelo pagamento. A SP que venceu em
+    dezembro e foi paga em janeiro é trabalho fiscal de 2026."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="ACME", vencimento="28/12/2025",
+               data_pagamento="05/01/2026", valor="100,00")])
+
+    assert [l["id"] for l in consultas.listar(dict(FISCAL), pagina=1)] == ["1"]
+
+
+@pytest.mark.banco
+def test_a_SP_SEM_DATA_NENHUMA_nao_some(banco_analisesps):
+    """⚠️ Sem data não é "velha", é *sem data*. Sumir com ela seria tirar da
+    conta um trabalho que ninguém mais veria — e some em silêncio é o defeito
+    que esta tela já teve duas vezes."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="ACME", valor="100,00")])
+
+    assert [l["id"] for l in consultas.listar(dict(FISCAL), pagina=1)] == ["1"]
+
+
+@pytest.mark.banco
+def test_o_CANCELADO_fica_de_fora_por_padrao(banco_analisesps):
+    from app.apps.analisesps import consultas
+
+    semear([
+        sp("1", credor="ACME", vencimento="10/09/2026", status_pgt="Pagar"),
+        sp("2", credor="ACME", vencimento="10/09/2026", status_pgt="Cancelado"),
+    ])
+
+    assert [l["id"] for l in consultas.listar(dict(FISCAL), pagina=1)] == ["1"]
+    assert consultas.resumo(dict(FISCAL))["quantidade"] == 1
+
+
+@pytest.mark.banco
+def test_o_CANCELADO_volta_quando_se_pede(banco_analisesps):
+    """*"somente se colocássemos para exibir"* — a volta é o que separa
+    "escondido" de "apagado"."""
+    from app.apps.analisesps import consultas
+
+    semear([
+        sp("1", credor="ACME", vencimento="10/09/2026", status_pgt="Pagar"),
+        sp("2", credor="ACME", vencimento="10/09/2026", status_pgt="Cancelado"),
+    ])
+
+    f = {"escopo_fiscal": True, "mostrar_canceladas": True}
+    assert sorted(l["id"] for l in consultas.listar(f, pagina=1)) == ["1", "2"]
+    assert consultas.resumo(f)["quantidade"] == 2
+
+
+@pytest.mark.banco
+def test_o_TRF_no_tipo_de_despesa_NUNCA_aparece(banco_analisesps):
+    """Transferência entre contas da empresa não gera documento fiscal. Este
+    corte não tem caixa para desligar, porque não foi pedido com volta."""
+    from app.apps.analisesps import consultas
+
+    semear([
+        sp("1", credor="ACME", vencimento="10/09/2026",
+           tipo_despesa="Material p/ Climatização"),
+        sp("2", credor="ACME", vencimento="10/09/2026",
+           tipo_despesa="Transferência entre contas (TRF)"),
+        sp("3", credor="ACME", vencimento="10/09/2026",
+           tipo_despesa="conta (trf) minúsculo"),
+    ])
+
+    assert [l["id"] for l in consultas.listar(dict(FISCAL), pagina=1)] == ["1"]
+    f = {"escopo_fiscal": True, "mostrar_canceladas": True}
+    assert [l["id"] for l in consultas.listar(f, pagina=1)] == ["1"]
+
+
+@pytest.mark.banco
+def test_o_PAINEL_conta_o_MESMO_universo_que_a_lista(banco_analisesps):
+    """⚠️ O defeito que não pode voltar: painel e lista lendo universos
+    diferentes. Aqui só a "1" sobrevive aos três cortes."""
+    from app.apps.analisesps import consultas
+
+    semear([
+        sp("1", credor="ACME", vencimento="10/09/2026", status_pgt="Pagar"),
+        sp("2", credor="ACME", vencimento="10/09/2025", status_pgt="Pagar"),
+        sp("3", credor="ACME", vencimento="10/09/2026", status_pgt="Cancelado"),
+        sp("4", credor="ACME", vencimento="10/09/2026", status_pgt="Pagar",
+           tipo_despesa="ajuste (TRF)"),
+    ])
+
+    painel = consultas.painel_fiscal(dict(FISCAL))
+    ids = [l["id"] for l in consultas.listar(dict(FISCAL), pagina=1)]
+    assert ids == ["1"]
+    assert painel["sem_marcacao"] == 1
+
+
+@pytest.mark.banco
+def test_Solicitacoes_NAO_herda_o_escopo_da_fiscal(banco_analisesps):
+    """Os cortes são da tela fiscal. Em Solicitações ele veria menos SPs do que
+    a planilha tem, e a conta dele deixaria de fechar com a SPsBD."""
+    from app.apps.analisesps import consultas
+
+    semear([
+        sp("1", credor="ACME", vencimento="10/09/2026", status_pgt="Pagar"),
+        sp("2", credor="ACME", vencimento="10/09/2020", status_pgt="Cancelado",
+           tipo_despesa="ajuste (TRF)"),
+    ])
+
+    assert consultas.resumo({})["quantidade"] == 2
+
+
+@pytest.mark.banco
+def test_a_SP_CANCELADA_nao_e_oferecida_para_associar_a_nota(banco_analisesps):
+    """Do lado da nota vale o mesmo escopo: oferecer para associar justamente
+    o que não deve ser associado seria as duas metades da tela discordando."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([
+        sp("1", credor="ACME", documento="29.066.773/0001-52",
+           valor="269,00", vencimento="10/09/2026", status_pgt="Pagar"),
+        sp("2", credor="ACME", documento="29.066.773/0001-52",
+           valor="269,00", vencimento="10/09/2026", status_pgt="Cancelado"),
+        sp("3", credor="ACME", documento="29.066.773/0001-52",
+           valor="269,00", vencimento="10/09/2026", tipo_despesa="x (TRF)"),
+    ])
+
+    escolhidas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+    assert [c["id"] for c in escolhidas] == ["1"]
+
+
+# ===========================================================================
+# AS DEMAIS PARCELAS RECEBEM A MESMA NOTA — *"o registro deveria ser associado
+# às demais parcelas"* (dono, 13/09/2026)
+#
+# Uma nota paga em três vezes gera TRÊS SPs. Associar a uma só deixa as outras
+# duas eternamente "sem documentação", e o painel cobra trabalho já feito.
+# ===========================================================================
+FRIGELAR_DOC = "92660406000623"
+
+
+def _tres_parcelas(nf="1002924", documento="92.660.406/0006-23"):
+    return [sp(f"900{i}", credor="FRIGELAR COMERCIO LTDA",
+               documento=documento, valor="696,34", parcela=f"{i}/3",
+               nf=nf, vencimento=f"3{i}/0{7 + i}/2026")
+            for i in (1, 2, 3)]
+
+
+@pytest.mark.banco
+def test_associar_uma_parcela_grava_a_nota_nas_TRES(banco_analisesps):
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import consultar
+
+    chave = _chave(FRIGELAR_DOC)
+    _guardar_nota(chave, "1002924", 2089.02, FRIGELAR_DOC)
+    semear(_tres_parcelas())
+
+    escolhida = {"id": "9003", "documento": "92.660.406/0006-23",
+                 "nf": "1002924", "parcela": "3/3"}
+    gravado = fiscal.decidir_a_mao("9003", "", chave, "MARCELO", escolhida)
+
+    assert sorted(gravado["parcelas_irmas"]) == ["9001", "9002"]
+    com_chave = {l[0] for l in consultar(
+        "SELECT sp_id FROM analisesps.sp_fiscal_analise "
+        " WHERE btrim(chave) <> ''")}
+    assert com_chave == {"9001", "9002", "9003"}
+
+
+@pytest.mark.banco
+def test_a_irma_que_JA_TEM_outra_nota_nao_e_sobrescrita(banco_analisesps):
+    """Quem já decidiu diferente mandou. Sobrescrever seria apagar a decisão de
+    uma pessoa sem ela saber — e o desempate é dela, não do sistema."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    chave = _chave(FRIGELAR_DOC)
+    outra = _chave("11222333000144")
+    _guardar_nota(chave, "1002924", 2089.02, FRIGELAR_DOC)
+    semear(_tres_parcelas())
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('9001', 'ESCRITA', ?)", (outra,))
+        conn.commit()
+
+    gravado = fiscal.decidir_a_mao(
+        "9003", "", chave, "MARCELO",
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": "3/3"})
+
+    assert gravado["parcelas_irmas"] == ["9002"]
+    assert consultar_um("SELECT chave FROM analisesps.sp_fiscal_analise "
+                        " WHERE sp_id = '9001'")[0] == outra
+
+
+@pytest.mark.banco
+def test_parcela_de_OUTRO_numero_de_nota_nao_e_irma(banco_analisesps):
+    """⚠️ O laço forte é o nº da nota. Sem ele, "parcela 2/3 de 696,34"
+    casaria com qualquer outro parcelamento de mesmo valor do mesmo credor —
+    que num fornecedor de aluguel mensal é o caso comum, não a exceção."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(FRIGELAR_DOC)
+    _guardar_nota(chave, "1002924", 2089.02, FRIGELAR_DOC)
+    semear(_tres_parcelas() + [
+        sp("9101", credor="FRIGELAR COMERCIO LTDA",
+           documento="92.660.406/0006-23", valor="696,34", parcela="2/3",
+           nf="7777777", vencimento="30/09/2026")])
+
+    gravado = fiscal.decidir_a_mao(
+        "9003", "", chave, "MARCELO",
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": "3/3"})
+    assert "9101" not in gravado["parcelas_irmas"]
+
+
+@pytest.mark.banco
+def test_parcela_de_OUTRO_denominador_nao_e_irma(banco_analisesps):
+    """2/3 é irmã de 3/3; 2/12 é outro parcelamento."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(FRIGELAR_DOC)
+    _guardar_nota(chave, "1002924", 2089.02, FRIGELAR_DOC)
+    semear(_tres_parcelas() + [
+        sp("9102", credor="FRIGELAR COMERCIO LTDA",
+           documento="92.660.406/0006-23", valor="696,34", parcela="2/12",
+           nf="1002924", vencimento="30/09/2026")])
+
+    gravado = fiscal.decidir_a_mao(
+        "9003", "", chave, "MARCELO",
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": "3/3"})
+    assert "9102" not in gravado["parcelas_irmas"]
+
+
+@pytest.mark.banco
+def test_sem_o_numero_da_nota_no_card_NAO_ha_irma(banco_analisesps):
+    """Adivinhar aqui custaria caro; conferir custa um clique."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(FRIGELAR_DOC)
+    _guardar_nota(chave, "1002924", 2089.02, FRIGELAR_DOC)
+    semear(_tres_parcelas(nf=""))
+
+    gravado = fiscal.decidir_a_mao(
+        "9003", "", chave, "MARCELO",
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "",
+         "parcela": "3/3"})
+    assert gravado["parcelas_irmas"] == []
+
+
+@pytest.mark.banco
+def test_sem_CHAVE_nao_se_espalha_categoria_para_as_irmas(banco_analisesps):
+    """Categoria sem nota apontada é decisão sobre AQUELA SP. Copiá-la para as
+    outras seria decidir por elas sem prova nenhuma."""
+    from app.apps.analisesps import fiscal
+
+    semear(_tres_parcelas())
+    gravado = fiscal.decidir_a_mao(
+        "9003", "Taxas Diversas", "", "MARCELO",
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": "3/3"})
+    assert gravado["parcelas_irmas"] == []
+
+
+# ===========================================================================
+# QUEM É "NÓS" — o defeito que o dono pegou com a tela NO AR, em 13/09/2026
+#
+# *"Na página de nomes está aparecendo um CNPJ errado e dizendo que é da BWS,
+# sendo que não tem nada a ver o CNPJ. Tem algum acusamento errado aí."*
+#
+# A causa estava escrita no comentário antigo: *"a BWS é sempre o
+# destinatário"*. Não é — a busca baixa também as notas que a BWS EMITE, e
+# nessas o destinatário é o CLIENTE. Cada cliente virava "um CNPJ nosso".
+# ===========================================================================
+BWS_DOC = "10656452007869"
+
+
+@pytest.mark.banco
+def test_o_CLIENTE_da_BWS_nao_vira_CNPJ_NOSSO(banco_analisesps):
+    """A nota que a BWS emite tem o cliente como destinatário. Ele recebe de um
+    emitente só; a BWS recebe de centenas — e é isso que os separa."""
+    from app.apps.analisesps import credores
+
+    # A BWS recebendo de 5 fornecedores diferentes.
+    for i in range(5):
+        emitente = "%014d" % (11111111000100 + i)
+        _guardar_nota(_chave(emitente), str(100 + i), 10.0, emitente,
+                      destinatario=BWS_DOC)
+    # E a BWS emitindo UMA nota para um cliente.
+    cliente = "99888777000166"
+    _guardar_nota(_chave(BWS_DOC), "900", 50.0, BWS_DOC, destinatario=cliente)
+
+    nossos = credores.cnpjs_da_empresa()
+    assert nossos.get(BWS_DOC) == "notas"
+    assert cliente not in nossos
+
+
+@pytest.mark.banco
+def test_o_CERTIFICADO_manda_e_da_CERTEZA(banco_analisesps):
+    """Certeza só vem do certificado: ali não há heurística nenhuma."""
+    from app.apps.analisesps import credores
+    from app.apps.analisesps.db import conexao
+
+    for i in range(5):
+        emitente = "%014d" % (11111111000100 + i)
+        _guardar_nota(_chave(emitente), str(100 + i), 10.0, emitente,
+                      destinatario=BWS_DOC)
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.certificados "
+            "(cnpj, apelido, arquivo, senha, valido_ate, ativo) "
+            "VALUES (?, 'BWS', 'x'::bytea, 'y'::bytea, '2027-01-01', true)",
+            (BWS_DOC,))
+        conn.commit()
+
+    assert credores.cnpjs_da_empresa().get(BWS_DOC) == "certificado"
+    achado = credores.suspeita_de_cnpj_errado(
+        BWS_DOC, ["FORNECEDOR QUALQUER"],
+        nossos=credores.cnpjs_da_empresa())
+    assert achado["grau"] == "certeza"
+
+
+@pytest.mark.banco
+def test_destinatario_de_POUCOS_emitentes_nao_e_nosso(banco_analisesps):
+    """Um destinatário que recebe de dois fornecedores é um cliente, não a
+    empresa. O corte existe para o alarme não gritar à toa."""
+    from app.apps.analisesps import credores
+
+    outro = "55444333000122"
+    for i in range(2):
+        emitente = "%014d" % (11111111000100 + i)
+        _guardar_nota(_chave(emitente), str(300 + i), 10.0, emitente,
+                      destinatario=outro)
+
+    assert outro not in credores.cnpjs_da_empresa()
+
+
+# ===========================================================================
+# A BUSCA QUE FALHA TEM DE DEIXAR RASTRO — 13/09/2026
+#
+# *"O certificado continua uma incógnita. Eu coloco o certificado, boto a
+# senha, ele aceita, eu acho que a senha está certa, o certificado está
+# válido. Mas simplesmente nada é feito, nada é executado, e eu não sei o que
+# está acontecendo."*
+#
+# A tela lia só o ponteiro, e o ponteiro só era escrito quando a busca DAVA
+# CERTO. O caso em que ele mais precisa saber o que houve era o único que não
+# contava nada.
+# ===========================================================================
+@pytest.mark.banco
+def test_a_busca_que_FALHA_grava_a_hora_e_o_motivo(banco_analisesps):
+    from app.apps.analisesps import sefaz
+
+    sefaz.registrar_falha("10656452007869", "NFE",
+                          "certificado recusado pela Receita")
+
+    estado = [e for e in sefaz.estado_das_buscas() if e["tipo"] == "NFE"][0]
+    assert estado["falhou"] is True
+    assert estado["motivo_da_falha"] == "certificado recusado pela Receita"
+    assert estado["consultado_em"] is not None
+    assert estado["em_dia"] is False
+
+
+@pytest.mark.banco
+def test_a_falha_NAO_MEXE_no_ponteiro_do_que_ja_foi_lido(banco_analisesps):
+    """⚠️ O ponteiro é só do que entrou de verdade. Se a falha o zerasse, a
+    próxima rodada releria tudo e bateria no limite da Receita — que é como se
+    perde o acesso ao serviço por consumo indevido."""
+    from app.apps.analisesps import sefaz
+
+    sefaz.gravar_ponteiro("10656452007869", "NFE", "120", "500",
+                          recado="", documentos=42)
+    sefaz.registrar_falha("10656452007869", "NFE", "rede fora do ar")
+
+    p = sefaz.ponteiro("10656452007869", "NFE")
+    assert p["ultimo_nsu"].lstrip("0") == "120"
+    assert p["maior_nsu"].lstrip("0") == "500"
+    assert p["documentos"] == 42
+
+
+@pytest.mark.banco
+def test_uma_busca_BEM_SUCEDIDA_apaga_a_marca_de_falha(banco_analisesps):
+    """A falha de ontem não pode continuar assustando depois de a busca voltar
+    a funcionar."""
+    from app.apps.analisesps import sefaz
+
+    sefaz.registrar_falha("10656452007869", "NFE", "rede fora do ar")
+    sefaz.gravar_ponteiro("10656452007869", "NFE", "10", "10",
+                          recado="", documentos=3)
+
+    estado = [e for e in sefaz.estado_das_buscas() if e["tipo"] == "NFE"][0]
+    assert estado["falhou"] is False
+    assert estado["em_dia"] is True
+
+
+# ===========================================================================
+# "USAR ESTE" SEM A TELA SUBIR — 13/09/2026, com a tela já publicada
+#
+# *"Clico usar este, continua subindo a tela. Clico em dois e acho que ele
+# somente resolve um."*
+#
+# Cada fornecedor é um formulário próprio, e cada envio era uma página inteira
+# indo e voltando: a rolagem voltava ao topo, e o segundo clique ABORTAVA o
+# primeiro, que ainda estava no ar.
+# ===========================================================================
+def _cliente_operador(monkeypatch):
+    import app.main as main
+    monkeypatch.setenv("ANALISESPS_SENHA_OPERADOR", "op")
+    cliente = main.app.test_client()
+    with cliente.session_transaction() as sessao:
+        sessao["analisesps_perfil"] = "operador"
+        sessao["analisesps_nome"] = "Marcelo"
+    return cliente
+
+
+@pytest.mark.banco
+def test_usar_este_responde_SEM_REDIRECIONAR_quando_a_tela_pede(
+        banco_analisesps, monkeypatch):
+    """É o cabeçalho que muda a resposta — e é ele que tira o recarregamento."""
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    resposta = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "09444530000101",
+              "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+              "tipo-09444530000101": "COMECO"})
+
+    assert resposta.status_code == 200
+    corpo = resposta.get_json()
+    assert corpo["ok"] is True
+    assert corpo["sps"] == 1
+    assert corpo["nomes"] == ["TRIBUNAL DE JUSTIÇA DO CEARÁ"]
+
+
+@pytest.mark.banco
+def test_usar_este_SEM_o_cabecalho_continua_redirecionando(
+        banco_analisesps, monkeypatch):
+    """⚠️ Sem JavaScript a tela tem de continuar funcionando. O formulário é de
+    verdade; o atalho é melhoria, não a única porta."""
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    resposta = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        data={"documento": "09444530000101",
+              "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+              "tipo-09444530000101": "COMECO"})
+
+    assert resposta.status_code == 302
+    assert "/analisesps/credores" in resposta.headers["Location"]
+
+
+@pytest.mark.banco
+def test_DOIS_usar_este_seguidos_resolvem_OS_DOIS(banco_analisesps, monkeypatch):
+    """*"Clico em dois e acho que ele somente resolve um."* Era isso: o
+    segundo envio cancelava o primeiro, que ainda estava no ar."""
+    from app.apps.analisesps.db import consultar
+
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ"),
+            _sp_credor("3", "11222333000144", "LOCADORA DO VALE"),
+            _sp_credor("4", "11222333000144", "LOCADORA DO VALE LTDA")])
+
+    cliente = _cliente_operador(monkeypatch)
+    for documento, nome in (("09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ"),
+                            ("11222333000144", "LOCADORA DO VALE LTDA")):
+        r = cliente.post("/analisesps/credores/aplicar",
+                         headers={"X-Sem-Recarregar": "1"},
+                         data={"documento": documento, "nome": nome,
+                               f"tipo-{documento}": "COMECO"})
+        assert r.get_json()["ok"] is True
+
+    decididos = {l[0] for l in consultar(
+        "SELECT documento FROM analisesps.credor_nome")}
+    assert decididos == {"09444530000101", "11222333000144"}
+
+
+# ===========================================================================
+# O PANORAMA DAS PARCELAS — dito ANTES do clique (13/09/2026)
+#
+# *"Clico em ver os dados de uma sugestão. Claramente é a situação de parcelas
+# que informei. Não deveria haver uma associação com as outras parcelas pra
+# vincular logo tudo? Ou avisar que já tá associado com outras?"*
+#
+# Gravar nas irmãs já acontecia — ele só descobria DEPOIS de clicar.
+# ===========================================================================
+@pytest.mark.banco
+def test_o_panorama_diz_quantas_parcelas_VAO_receber_a_nota(banco_analisesps):
+    from app.apps.analisesps import fiscal
+
+    semear(_tres_parcelas())
+    p = fiscal.panorama_das_parcelas(
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": "3/3"})
+
+    assert (p["qual"], p["de"]) == (3, 3)
+    assert p["livres"] == 2
+    assert sorted(i["id"] for i in p["irmas"]) == ["9001", "9002"]
+
+
+@pytest.mark.banco
+def test_o_panorama_AVISA_a_parcela_que_ja_esta_com_OUTRA_nota(banco_analisesps):
+    """⚠️ É a informação que responde "já tá associado com outras?" — e é a
+    única das três que `parcelas_irmas` esconde de propósito, porque aquela
+    lista é de quem VAI ser gravado."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    esta = _chave(FRIGELAR_DOC)
+    outra = _chave("11222333000144")
+    semear(_tres_parcelas())
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('9001', 'ESCRITA', ?)", (outra,))
+        conn.commit()
+
+    p = fiscal.panorama_das_parcelas(
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": "3/3"}, chave_em_questao=esta)
+
+    assert p["outra_nota"] == 1
+    assert p["livres"] == 1
+    presa = next(i for i in p["irmas"] if i["id"] == "9001")
+    assert presa["situacao"] == "outra_nota"
+
+
+@pytest.mark.banco
+def test_o_panorama_reconhece_a_irma_que_JA_ESTA_com_a_MESMA_nota(
+        banco_analisesps):
+    """"Já está com esta nota" e "está com outra" pedem reações opostas, e
+    misturar as duas seria pior do que não dizer nada."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    esta = _chave(FRIGELAR_DOC)
+    semear(_tres_parcelas())
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('9001', 'ESCRITA', ?)", (esta,))
+        conn.commit()
+
+    p = fiscal.panorama_das_parcelas(
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": "3/3"}, chave_em_questao=esta)
+
+    assert p["mesma_nota"] == 1 and p["outra_nota"] == 0
+
+
+@pytest.mark.banco
+def test_o_panorama_DIZ_quando_falta_o_numero_da_nota_no_card(banco_analisesps):
+    """Sem o nº da nota não há como achar as irmãs com segurança. Dizer isso é
+    melhor do que calar e deixar parecer que não há parcelamento."""
+    from app.apps.analisesps import fiscal
+
+    semear(_tres_parcelas(nf=""))
+    p = fiscal.panorama_das_parcelas(
+        {"id": "9003", "documento": "92.660.406/0006-23", "nf": "",
+         "parcela": "3/3"})
+
+    assert p["sem_numero"] is True and p["irmas"] == []
+
+
+@pytest.mark.banco
+def test_SP_que_nao_e_parcela_nao_tem_panorama(banco_analisesps):
+    from app.apps.analisesps import fiscal
+    assert fiscal.panorama_das_parcelas(
+        {"id": "1", "documento": "92.660.406/0006-23", "nf": "1002924",
+         "parcela": ""}) == {}
+
+
+# ===========================================================================
+# A CONSULTA À RECEITA SEM A TELA SUBIR — 13/09/2026
+#
+# *"Quando consulta o nome na Receita, a tela sobe. O resultado deveria
+# aparecer flutuante, ou de forma que não mexa na tela."*
+#
+# O resultado é sobre UM fornecedor no meio de uma lista longa: mandá-lo para
+# um aviso no alto da página, depois de recarregar tudo, é entregar a resposta
+# longe da pergunta.
+# ===========================================================================
+@pytest.mark.banco
+def test_consultar_o_CNPJ_responde_SEM_REDIRECIONAR_quando_a_tela_pede(
+        banco_analisesps, monkeypatch):
+    from app.apps.analisesps import receita
+
+    monkeypatch.setattr(receita, "consultar", lambda doc, forcar=False: {
+        "razao_social": "SERTAO CASA E CONSTRUCAO LTDA",
+        "fantasia": "", "situacao": "Ativa",
+        "municipio": "JUAZEIRO", "uf": "BA", "erro": ""})
+
+    resposta = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/consultar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "29.066.773/0001-52"})
+
+    assert resposta.status_code == 200
+    corpo = resposta.get_json()
+    assert corpo["ok"] is True
+    assert corpo["razao_social"] == "SERTAO CASA E CONSTRUCAO LTDA"
+    assert corpo["municipio"] == "JUAZEIRO" and corpo["uf"] == "BA"
+
+
+@pytest.mark.banco
+def test_consultar_o_CNPJ_SEM_o_cabecalho_continua_redirecionando(
+        banco_analisesps, monkeypatch):
+    """Sem JavaScript a tela tem de continuar funcionando."""
+    from app.apps.analisesps import receita
+
+    monkeypatch.setattr(receita, "consultar", lambda doc, forcar=False: {
+        "razao_social": "ACME", "situacao": "Ativa", "erro": ""})
+
+    resposta = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/consultar",
+        data={"documento": "29.066.773/0001-52"})
+
+    assert resposta.status_code == 302
+    assert "/analisesps/credores" in resposta.headers["Location"]
+
+
+@pytest.mark.banco
+def test_a_consulta_que_FALHA_devolve_o_motivo_na_propria_resposta(
+        banco_analisesps, monkeypatch):
+    """A falha também tem de chegar ao lado da pergunta, e não como um aviso
+    no alto de uma tela recarregada."""
+    from app.apps.analisesps import receita
+
+    def explode(doc, forcar=False):
+        raise receita.ErroDeConsulta("o serviço não respondeu a tempo")
+
+    monkeypatch.setattr(receita, "consultar", explode)
+
+    corpo = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/consultar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "29.066.773/0001-52"}).get_json()
+
+    assert corpo["ok"] is False
+    assert "não respondeu a tempo" in corpo["erro"]
+
+
+@pytest.mark.banco
+def test_CNPJ_que_a_Receita_NAO_CONHECE_chega_como_resultado(
+        banco_analisesps, monkeypatch):
+    """⚠️ "Não encontrado" é RESULTADO, não falha — e é um resultado que vale
+    ouro: quer dizer que o número foi digitado errado."""
+    from app.apps.analisesps import receita
+
+    monkeypatch.setattr(receita, "consultar", lambda doc, forcar=False: {
+        "erro": "CNPJ não encontrado na Receita", "razao_social": ""})
+
+    corpo = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/consultar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "29.066.773/0001-52"}).get_json()
+
+    assert corpo["ok"] is True
+    assert corpo["erro_receita"] == "CNPJ não encontrado na Receita"
+
+
+# ===========================================================================
+# O QUE A IA DISSE, E ONDE ISSO FICA — 13/09/2026
+#
+# *"Mandei pra IA e então, o que acontece? O que foi que a IA disse? O que foi
+# sugerido? Ficou gravada essa informação onde?"*
+#
+# Ficou gravada desde sempre — no diário, com a categoria, a chave, a confiança
+# e o MOTIVO escrito pela IA. Só que a tela não mostrava nada disso. Informação
+# guardada e não mostrada é informação que não existe para quem usa.
+# ===========================================================================
+@pytest.mark.banco
+def test_a_janela_dos_dados_DEVOLVE_o_que_a_IA_escreveu(banco_analisesps):
+    from app.apps.analisesps import consultas, fiscal
+    from app.apps.analisesps.db import conexao
+
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="100,00", vencimento="10/09/2026")])
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise "
+            "  (sp_id, situacao, documentacao, origem, motivo, confianca) "
+            "VALUES ('1', 'PROPOSTA', 'NF-e (Mercadoria)', 'IA', ?, 80)",
+            ("li o anexo: é uma NF-e de mercadoria, nº 1430, no valor de "
+             "R$ 100,00",))
+        conn.commit()
+
+    saida = fiscal.comparar(consultas.uma("1"))
+    diario = saida["diario"]
+    assert diario["origem"] == "IA"
+    assert diario["confianca"] == 80
+    assert "li o anexo" in diario["motivo"]
+
+
+@pytest.mark.banco
+def test_a_LISTA_traz_quem_preencheu_e_o_porque(banco_analisesps):
+    """A linha da tela lê `l.analise`, e é de lá que sai a etiqueta "a IA leu o
+    anexo". Sem origem e motivo ali, a etiqueta não teria o que mostrar."""
+    from app.apps.analisesps import consultas, fiscal
+    from app.apps.analisesps.db import conexao
+
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="100,00", vencimento="10/09/2026")])
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise "
+            "  (sp_id, situacao, documentacao, origem, motivo, confianca) "
+            "VALUES ('1', 'PROPOSTA', 'Recibo', 'IA', 'anexo ilegível', 30)")
+        conn.commit()
+
+    linha = fiscal.conciliar(consultas.listar({"escopo_fiscal": True},
+                                              pagina=1))[0]
+    assert linha["analise"]["origem"] == "IA"
+    assert linha["analise"]["confianca"] == 30
+    assert linha["analise"]["motivo"] == "anexo ilegível"
+
+
+@pytest.mark.banco
+def test_o_filtro_A_IA_JA_LEU_separa_o_que_voltou_da_IA(banco_analisesps):
+    """É o caminho para responder "o que foi sugerido?": filtrar o que a IA
+    leu e olhar linha a linha."""
+    from app.apps.analisesps import consultas
+    from app.apps.analisesps.db import conexao
+
+    semear([sp("1", credor="ACME", vencimento="10/09/2026"),
+            sp("2", credor="ACME", vencimento="10/09/2026")])
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise "
+            "  (sp_id, situacao, documentacao, origem) "
+            "VALUES ('2', 'PROPOSTA', 'Recibo', 'IA')")
+        conn.commit()
+
+    f = {"escopo_fiscal": True, "fiscais": ["lida_ia"]}
+    assert [l["id"] for l in consultas.listar(f, pagina=1)] == ["2"]
+
+
+# ===========================================================================
+# FILTRAR POR CONFIANÇA — *"deveria poder filtrar por confiança"* (13/09/2026)
+#
+# ⚠️ E É PRECISO DIZER DE QUAL CONFIANÇA SE FALA. Existem duas na tela:
+#   1. a GRAVADA no diário (da IA, e da proposta já aprovada) — vive no banco,
+#      e é esta que o filtro usa;
+#   2. a que o sistema calcula AO ABRIR a tela para a linha ainda não decidida
+#      — nasce e morre a cada abertura, e só para as 200 linhas da página.
+# Filtrar pela segunda responderia "nesta página", que parece certo e não é.
+# ===========================================================================
+@pytest.mark.banco
+def test_o_filtro_de_confianca_separa_as_tres_faixas(banco_analisesps):
+    from app.apps.analisesps import consultas
+    from app.apps.analisesps.db import conexao
+
+    semear([sp(str(i), credor="ACME", vencimento="10/09/2026")
+            for i in (1, 2, 3, 4)])
+    with conexao() as conn:
+        for sp_id, confianca in (("1", 95), ("2", 70), ("3", 40)):
+            conn.execute(
+                "INSERT INTO analisesps.sp_fiscal_analise "
+                "  (sp_id, situacao, documentacao, origem, confianca) "
+                "VALUES (?, 'PROPOSTA', 'Recibo', 'IA', ?)",
+                (sp_id, confianca))
+        conn.commit()
+
+    def com(chave):
+        return [l["id"] for l in consultas.listar(
+            {"escopo_fiscal": True, "fiscais": [chave]}, pagina=1)]
+
+    assert com("confianca_alta") == ["1"]
+    assert com("confianca_media") == ["2"]
+    assert com("confianca_baixa") == ["3"]
+    # A "4" nunca foi decidida — e a fronteira dos 80 e dos 60 é fechada em
+    # cima, aberta embaixo, então nenhuma faixa a pega.
+    assert com("sem_confianca") == ["4"]
+
+
+@pytest.mark.banco
+def test_as_faixas_de_confianca_NAO_SE_SOBREPOEM(banco_analisesps):
+    """Faixa que se sobrepõe faz a soma dos filtros passar do total, e aí
+    nenhum número da tela merece crédito. 80 é alta; 60 é média."""
+    from app.apps.analisesps import consultas
+    from app.apps.analisesps.db import conexao
+
+    semear([sp(str(i), credor="ACME", vencimento="10/09/2026")
+            for i in (1, 2)])
+    with conexao() as conn:
+        for sp_id, confianca in (("1", 80), ("2", 60)):
+            conn.execute(
+                "INSERT INTO analisesps.sp_fiscal_analise "
+                "  (sp_id, situacao, origem, confianca) "
+                "VALUES (?, 'PROPOSTA', 'IA', ?)", (sp_id, confianca))
+        conn.commit()
+
+    def com(chave):
+        return [l["id"] for l in consultas.listar(
+            {"escopo_fiscal": True, "fiscais": [chave]}, pagina=1)]
+
+    assert com("confianca_alta") == ["1"]
+    assert com("confianca_media") == ["2"]
+    assert com("confianca_baixa") == []
+
+
+@pytest.mark.banco
+def test_confianca_ZERO_conta_como_SEM_confianca_gravada(banco_analisesps):
+    """Zero não é "confiança baixa": é ausência de confiança. A linha que veio
+    pronta do card entra com zero, e chamá-la de "baixa" mandaria o dono
+    conferir o que ninguém aqui decidiu."""
+    from app.apps.analisesps import consultas
+    from app.apps.analisesps.db import conexao
+
+    semear([sp("1", credor="ACME", vencimento="10/09/2026")])
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise "
+            "  (sp_id, situacao, origem, confianca) "
+            "VALUES ('1', 'PROPOSTA', 'PIPEFY', 0)")
+        conn.commit()
+
+    def com(chave):
+        return [l["id"] for l in consultas.listar(
+            {"escopo_fiscal": True, "fiscais": [chave]}, pagina=1)]
+
+    assert com("sem_confianca") == ["1"]
+    assert com("confianca_baixa") == []
+
+
+def test_o_filtro_de_confianca_APARECE_na_barra_com_o_nome_do_dado():
+    """O nome do grupo diz "do que está gravado" de propósito: são DUAS
+    confianças na mesma tela, e o filtro só alcança uma delas."""
+    from app.apps.analisesps import consultas
+
+    titulos = [t for t, _ in consultas.GRUPOS_DE_RECORTE]
+    assert "A confiança do que está gravado" in titulos
+    for chave in ("confianca_alta", "confianca_media", "confianca_baixa",
+                  "sem_confianca"):
+        assert chave in consultas.SITUACOES_FISCAIS
+        assert chave in consultas.FRASE_DO_RECORTE
+
+
+# ===========================================================================
+# O SEGUNDO JEITO DE "JÁ ESTAR ASSOCIADO" — cobrança repetida em 13/09/2026
+#
+# *"Eu já havia comentado isso. Na tela por nota me aparece uma nota e vários
+# registros pra eu associar. Só que tá aparecendo registro já associado, não
+# tem sentido. A MENOS QUE A ASSOCIAÇÃO ESTEJA PROVAVELMENTE ERRADA."*
+#
+# Na primeira volta eu cortei só quem tem CHAVE gravada aqui. O card do Pipefy
+# também tem o campo "Nº NF": preenchido com um número DIFERENTE, aquela SP já
+# está falada por outra nota.
+# ===========================================================================
+@pytest.mark.banco
+def test_card_com_OUTRO_numero_de_nota_sai_da_sugestao(banco_analisesps):
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([
+        sp("1", credor="ACME", documento="29.066.773/0001-52",
+           valor="269,00", vencimento="10/09/2026"),
+        sp("2", credor="ACME", documento="29.066.773/0001-52",
+           valor="269,00", vencimento="10/09/2026", nf="7777"),
+    ])
+
+    todas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+
+    sugeridas = [c["id"] for c in todas if not c["ja_tem_nota"]]
+    fora = {c["id"]: c["porque_fora"] for c in todas if c["ja_tem_nota"]}
+    assert sugeridas == ["1"]
+    assert "7777" in fora["2"]
+
+
+@pytest.mark.banco
+def test_card_com_o_MESMO_numero_continua_sendo_a_MELHOR_sugestao(
+        banco_analisesps):
+    """⚠️ A distinção é o coração da coisa: número IGUAL confirma o par e é a
+    melhor candidata que existe; número DIFERENTE quer dizer que a SP já está
+    falada por outra nota. Cortar os dois esconderia o par mais fácil da base."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00", vencimento="10/09/2026", nf="1430")])
+
+    todas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+
+    assert [c["id"] for c in todas] == ["1"]
+    assert todas[0]["ja_tem_nota"] is False
+
+
+@pytest.mark.banco
+def test_o_numero_do_card_casa_IGNORANDO_zeros_e_pontuacao(banco_analisesps):
+    """A planilha traz "1.002.924", "0001430" e "1430" para o mesmo número.
+    Comparar o texto cru mandaria a melhor candidata para o balde errado."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00", vencimento="10/09/2026", nf="0001.430")])
+
+    todas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+    assert todas[0]["ja_tem_nota"] is False
+
+
+@pytest.mark.banco
+def test_a_SP_fora_da_sugestao_DIZ_POR_QUE(banco_analisesps):
+    """*"A menos que a associação esteja provavelmente errada."* Sem o motivo
+    escrito não há como conferir se a associação anterior está certa — e a
+    ressalva dele é justamente essa."""
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    chave = _chave(CREDOR_CNPJ)
+    outra = _chave("11222333000144")
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("2", credor="ACME", documento="29.066.773/0001-52",
+               valor="269,00", vencimento="10/09/2026")])
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.sp_fiscal_analise (sp_id, situacao, chave) "
+            "VALUES ('2', 'ESCRITA', ?)", (outra,))
+        conn.commit()
+
+    todas = fiscal.sps_possiveis_das_notas([
+        {"chave": chave, "valor": 269.00, "numero": "1430",
+         "emitente_doc": CREDOR_CNPJ}])[chave]
+
+    assert todas[0]["ja_tem_nota"] is True
+    assert "já aponta para a nota" in todas[0]["porque_fora"]
+
+
+# ===========================================================================
+# FILTRAR PELA QUALIDADE DO PAR — *"deveria poder também filtrar pela nota de
+# associação: 1-4, 2-4, ou pelo percentual também"* (dono, 13/09/2026)
+#
+# ⚠️ FEITO NO BANCO, E NÃO NA PÁGINA. O "X de 4" nasce em Python ao desenhar
+# cada linha; filtrar por ali responderia "das 200 desta página", e a
+# paginação passaria a mentir.
+#
+# O TESTE QUE IMPORTA é o último: o número do filtro (SQL) tem de bater com o
+# número que a linha mostra (Python). Se um dia divergirem, a tela traz a nota
+# e a linha diz que ela não confere — e aí nenhum dos dois merece crédito.
+# ===========================================================================
+def _nota_e_sp(numero, valor_nota, **campos_sp):
+    """Uma nota e uma SP do mesmo CNPJ, para medir quantos itens conferem."""
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, numero, valor_nota, CREDOR_CNPJ, emissao="2026-09-01")
+    base = {"credor": "ACME", "documento": "29.066.773/0001-52"}
+    base.update(campos_sp)
+    semear([sp("1", **base)])
+    return chave
+
+
+def _so_com(recorte):
+    from app.apps.analisesps import fiscal
+    notas, _ = fiscal.listar_notas({"recortes": [recorte]}, 1)
+    return [n["numero"] for n in notas]
+
+
+@pytest.mark.banco
+def test_confere_nos_QUATRO_quando_valor_numero_e_data_batem(banco_analisesps):
+    _nota_e_sp("1430", 269.00, valor="269,00", nf="1430",
+               vencimento="30/09/2026")
+    assert _so_com("confere_4") == ["1430"]
+
+
+@pytest.mark.banco
+def test_o_recorte_de_100_NAO_traz_a_nota_que_falha_num_item(banco_analisesps):
+    """Faltando o nº da nota no card, o par não fecha — e o recorte de 100%
+    não pode trazê-la, senão a pilha de "confirmar em lote" deixa de ser
+    confiável, que é a única coisa que ela precisa ser."""
+    _nota_e_sp("1430", 269.00, valor="269,00", nf="", vencimento="30/09/2026")
+    assert _so_com("confere_4") == []
+
+
+@pytest.mark.banco
+def test_o_recorte_de_100_por_cento_e_o_UNICO_oferecido(banco_analisesps):
+    """⚠️ As outras faixas foram construídas, MEDIDAS e tiradas.
+
+    Com 59.000 SPs e 4.000 notas, "3 ou mais" e "exatamente 3" custaram 0,7 s
+    POR CONSULTA — e a tela roda duas (a contagem e a página). No banco do
+    Render, que tem um décimo de um núcleo, isso é a tela que não abre: o
+    mesmo defeito que já custou duas correções nesta tela.
+
+    Este teste existe para que a volta delas seja uma DECISÃO, e não um
+    descuido — quem as reintroduzir tem de mexer aqui e ler o porquê."""
+    from app.apps.analisesps import fiscal
+
+    oferecidos = [o[0] for _, grupo in fiscal.GRUPOS_DE_NOTA for o in grupo
+                  if o[0].startswith("confere")]
+    assert oferecidos == ["confere_4"]
+    # E nada de recorte órfão: o que não está na tela não fica no dicionário
+    # fingindo que existe.
+    assert [k for k in fiscal.RECORTES_DE_NOTA
+            if k.startswith("confere")] == ["confere_4"]
+
+
+@pytest.mark.banco
+def test_a_linha_CONTINUA_contando_de_1_a_4(banco_analisesps):
+    """O "X de 4" não sumiu da tela — ele é calculado ao desenhar cada linha,
+    e é o que dá segurança a quem clica. O que saiu foi só o FILTRO das faixas
+    baixas, que é o que custava caro no banco."""
+    from app.apps.analisesps import fiscal
+
+    for campos, esperado in (
+            ({"valor": "269,00", "nf": "1430", "vencimento": "30/09/2026"}, 4),
+            ({"valor": "269,00", "nf": "", "vencimento": "30/09/2026"}, 3),
+            ({"valor": "500,00", "nf": "", "vencimento": "30/09/2026"}, 2),
+            ({"valor": "500,00", "nf": "9999", "vencimento": ""}, 1)):
+        from app.apps.analisesps.db import conexao
+        with conexao() as conn:
+            conn.execute("DELETE FROM analisesps.sps")
+            conn.execute("DELETE FROM analisesps.notas_fiscais")
+            conn.commit()
+
+        chave = _nota_e_sp("1430", 269.00, **campos)
+        candidata = fiscal.sps_possiveis_das_notas([
+            {"chave": chave, "valor": 269.00, "numero": "1430",
+             "emitente_doc": CREDOR_CNPJ,
+             "emissao": dt.date(2026, 9, 1)}])[chave][0]
+        assert candidata["confere"] == esperado, campos
+        assert candidata["de"] == 4
+
+
+@pytest.mark.banco
+def test_o_FILTRO_e_a_LINHA_contam_a_MESMA_coisa(banco_analisesps):
+    """⚠️ O teste que sustenta os outros: o "3 de 4" que o filtro usa (SQL) tem
+    de ser o mesmo "3 de 4" que a linha mostra (Python). Divergiram, a tela
+    traz a nota e diz que ela não confere."""
+    from app.apps.analisesps import fiscal
+
+    casos = [
+        ({"valor": "269,00", "nf": "1430", "vencimento": "30/09/2026"}, 4),
+    ]
+    for campos, esperado in casos:
+        from app.apps.analisesps.db import conexao
+        with conexao() as conn:
+            conn.execute("DELETE FROM analisesps.sps")
+            conn.execute("DELETE FROM analisesps.notas_fiscais")
+            conn.commit()
+
+        chave = _nota_e_sp("1430", 269.00, **campos)
+        # O lado SQL.
+        pelo_filtro = _so_com(f"confere_{esperado}")
+        # O lado Python — o mesmo que a tela escreve na linha.
+        candidata = fiscal.sps_possiveis_das_notas([
+            {"chave": chave, "valor": 269.00, "numero": "1430",
+             "emitente_doc": CREDOR_CNPJ,
+             "emissao": dt.date(2026, 9, 1)}])[chave][0]
+
+        assert pelo_filtro == ["1430"], f"SQL discordou em {campos}"
+        assert candidata["confere"] == esperado, f"Python discordou em {campos}"
+
+
+# ===========================================================================
+# DEIXAR SPs DE FORA DA EQUALIZAÇÃO — 13/09/2026
+#
+# *"Às vezes não queremos renomear todos os lançamentos. O erro pode ter sido
+# no CNPJ e não somente o nome. Preciso poder não marcar algum."*
+#
+# ⚠️ POR QUE ISSO É GRAVE, e não um refinamento: quatro SPs com o nome de uma
+# locadora e o CNPJ de outra. O nome "certo" daquele CNPJ é o das outras trinta
+# — e reescrever as quatro APAGA a única pista de que alguém digitou o CNPJ
+# errado. Depois disso elas ficam idênticas às certas, e ninguém mais acha.
+# ===========================================================================
+@pytest.mark.banco
+def test_a_SP_desmarcada_NAO_e_renomeada(banco_analisesps, monkeypatch):
+    from app.apps.analisesps.db import consultar
+
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRI"),
+            _sp_credor("3", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "09444530000101",
+              "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+              "tipo-09444530000101": "COMECO",
+              "nao_reescrever": "2"})
+
+    nomes = {l[0]: l[1] for l in consultar(
+        "SELECT id, credor FROM analisesps.sps")}
+    assert nomes["1"] == "TRIBUNAL DE JUSTIÇA DO CEARÁ"
+    # A "2" fica ERRADA DE PROPÓSITO, à vista, esperando a correção do número.
+    assert nomes["2"] == "TRI"
+
+
+@pytest.mark.banco
+def test_a_tela_DIZ_quantas_ficaram_de_fora(banco_analisesps, monkeypatch):
+    """Ele desmarcou de propósito e precisa ver que foi respeitado."""
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRI"),
+            _sp_credor("3", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    corpo = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "09444530000101",
+              "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+              "tipo-09444530000101": "COMECO",
+              "nao_reescrever": "2"}).get_json()
+
+    assert corpo["sps"] == 1
+    assert corpo["de_fora"] == 1
+    assert "deixou de fora" in corpo["aviso"]
+
+
+@pytest.mark.banco
+def test_a_exclusao_NAO_VAZA_para_outro_fornecedor(banco_analisesps,
+                                                   monkeypatch):
+    from werkzeug.datastructures import MultiDict
+
+    """A lista de exclusões vem única para a tela inteira. O id da SP é único,
+    então desmarcar numa não pode calar outra — mas isso tem de estar cravado,
+    porque a tela manda tudo junto."""
+    from app.apps.analisesps.db import consultar
+
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ"),
+            _sp_credor("9", "11222333000144", "LOCADORA"),
+            _sp_credor("10", "11222333000144", "LOCADORA DO VALE LTDA")])
+
+    _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data=MultiDict([("documento", "09444530000101"),
+                        ("nome", "TRIBUNAL DE JUSTIÇA DO CEARÁ"),
+                        ("tipo-09444530000101", "COMECO"),
+                        ("documento", "11222333000144"),
+                        ("nome", "LOCADORA DO VALE LTDA"),
+                        ("tipo-11222333000144", "COMECO"),
+                        ("nao_reescrever", "1")]))
+
+    nomes = {l[0]: l[1] for l in consultar(
+        "SELECT id, credor FROM analisesps.sps")}
+    assert nomes["1"] == "TRI"                      # desmarcada
+    assert nomes["9"] == "LOCADORA DO VALE LTDA"    # do outro, seguiu
+
+
+@pytest.mark.banco
+def test_sem_desmarcar_nada_continua_reescrevendo_TUDO(banco_analisesps,
+                                                       monkeypatch):
+    """O padrão não muda: quem não mexer em nada tem o comportamento de
+    sempre."""
+    from app.apps.analisesps.db import consultar
+
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRI"),
+            _sp_credor("3", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    corpo = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "09444530000101",
+              "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+              "tipo-09444530000101": "COMECO"}).get_json()
+
+    assert corpo["sps"] == 2 and corpo["de_fora"] == 0
+    assert consultar("SELECT count(*) FROM analisesps.sps "
+                     " WHERE credor = 'TRI'")[0][0] == 0
+
+
+# ===========================================================================
+# A TELA DE VER — "similar ao que eu visualizo na planilha" (13/09/2026)
+#
+# *"Desde o começo eu pedi uma tela simples pra poder visualizar similar ao que
+# eu visualizo na planilha. Uma tela das notas e outra tela dos registros com
+# os dados que estamos trabalhando. (…) Mas até agora não foi entregue."*
+#
+# O que faltava não era dado: era a TELA. Todas as outras são de trabalho —
+# recorte, painel, proposta, botão de agir.
+# ===========================================================================
+@pytest.mark.banco
+def test_a_planilha_traz_TODAS_as_colunas_na_ORDEM_da_planilha(banco_analisesps):
+    """⚠️ A ordem é a da planilha (A, B, C…), e não a de uso. Ele lê a SPsBD
+    por posição: a coluna "O" é o Status Pgt, e ele sabe disso de cor."""
+    from app.apps.analisesps import colunas, consultas
+
+    semear([sp("1", credor="ACME", vencimento="10/09/2026", valor="100,00")])
+    linhas, total = consultas.planilha_sps()
+
+    assert total == 1
+    # Todas as colunas guardadas, nenhuma a menos.
+    assert set(linhas[0]) == set(colunas.CHAVES)
+    # E na ordem das letras da planilha.
+    letras = [letra for _, letra, _, _ in consultas.COLUNAS_DA_PLANILHA]
+    assert letras[:5] == ["A", "B", "C", "D", "E"]
+
+
+@pytest.mark.banco
+def test_a_planilha_ordena_DATA_pela_data_e_nao_pelo_texto(banco_analisesps):
+    """⚠️ Ordenar "10/01/2026" como TEXTO põe outubro antes de fevereiro. A
+    tela passaria a mentir numa coisa que ele confere de olho."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A", vencimento="10/10/2026"),
+            sp("2", credor="B", vencimento="02/02/2026"),
+            sp("3", credor="C", vencimento="05/12/2026")])
+
+    linhas, _ = consultas.planilha_sps(ordem="vencimento")
+    assert [l["id"] for l in linhas] == ["2", "1", "3"]
+
+    linhas, _ = consultas.planilha_sps(ordem="vencimento", desc=True)
+    assert [l["id"] for l in linhas] == ["3", "1", "2"]
+
+
+@pytest.mark.banco
+def test_a_planilha_ordena_VALOR_pelo_numero(banco_analisesps):
+    """Mesma armadilha do texto: "1.000,00" vem antes de "9,00" no alfabeto."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A", valor="1.000,00"),
+            sp("2", credor="B", valor="9,00"),
+            sp("3", credor="C", valor="250,00")])
+
+    linhas, _ = consultas.planilha_sps(ordem="valor")
+    assert [l["id"] for l in linhas] == ["2", "3", "1"]
+
+
+@pytest.mark.banco
+def test_a_planilha_RECUSA_ordenacao_que_nao_conhece(banco_analisesps):
+    """⚠️ O nome da coluna vem do endereço. Costurá-lo dentro do SQL é o
+    caminho conhecido para alguém mandar comando pela barra do navegador."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A"), sp("2", credor="B")])
+    # Não explode, não executa nada: cai no padrão.
+    linhas, _ = consultas.planilha_sps(ordem="id; DROP TABLE analisesps.sps")
+    assert [l["id"] for l in linhas] == ["1", "2"]
+    assert consultas.planilha_sps()[1] == 2
+
+
+@pytest.mark.banco
+def test_a_planilha_de_NOTAS_traz_todas_as_colunas_da_nota(banco_analisesps):
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+    linhas, total = fiscal.planilha_notas()
+
+    assert total == 1
+    esperadas = {c for c, _, _ in fiscal.COLUNAS_DA_NOTA_NA_TELA}
+    assert set(linhas[0]) == esperadas
+    assert linhas[0]["numero"] == "1430"
+
+
+@pytest.mark.banco
+def test_a_planilha_de_NOTAS_recusa_ordenacao_desconhecida(banco_analisesps):
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+    linhas, _ = fiscal.planilha_notas(ordem="valor; DELETE FROM x")
+    assert len(linhas) == 1
+
+
+@pytest.mark.banco
+def test_a_busca_da_planilha_acha_por_credor_e_por_CNPJ(banco_analisesps):
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="LOCADORA DO VALE", documento="29066773000152"),
+            sp("2", credor="OUTRA EMPRESA", documento="11222333000144")])
+
+    achadas, _ = consultas.planilha_sps(busca="locadora")
+    assert [l["id"] for l in achadas] == ["1"]
+    achadas, _ = consultas.planilha_sps(busca="11222333")
+    assert [l["id"] for l in achadas] == ["2"]
+
+
+@pytest.mark.banco
+def test_a_planilha_NAO_herda_o_escopo_da_tela_fiscal(banco_analisesps):
+    """⚠️ Esta tela é "a planilha": ela mostra TUDO. Os cortes da Documentação
+    Fiscal (antes de 2026, cancelado, TRF) não valem aqui — senão a conta dele
+    deixaria de fechar com a SPsBD, que é exatamente o que ele vem conferir."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A", vencimento="10/09/2026", status_pgt="Pagar"),
+            sp("2", credor="B", vencimento="10/09/2020", status_pgt="Cancelado",
+               tipo_despesa="ajuste (TRF)")])
+
+    assert consultas.planilha_sps()[1] == 2

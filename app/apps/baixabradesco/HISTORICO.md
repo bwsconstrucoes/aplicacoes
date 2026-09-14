@@ -57,10 +57,10 @@ três foram tratadas em 04/09/2026:
    ver o incidente abaixo.
 2. **A trava contra pagar duas vezes só gravava, não conferia.** Corrigido — ver
    o incidente abaixo.
-3. **O leitor do Sicredi nunca é chamado.** Fica como está, por decisão do dono:
-   **a empresa não usa mais o Sicredi**. O arquivo continua no repositório, sem
-   ligação com o fluxo. Se voltar a usar, é ligar o desvio e cobrir com teste
-   antes.
+3. **O leitor do Sicredi nunca é chamado.** ❌ Registrado em 11/09/2026 como
+   decisão do dono — **e estava errado, por mal-entendido meu**. Ele havia dito
+   que não usava as outras duas contas **Somapay**; eu entendi Sicredi.
+   Corrigido em 13/09/2026: o leitor foi ligado. Ver o incidente no fim.
 
 ## Decisões já tomadas (e por quê)
 
@@ -561,4 +561,128 @@ blueprints subindo com os dois trabalhos juntos.
 - Pix, boleto, transferência comum, FGTS e BeeVale continuam **sem teste** sobre
   a leitura dos campos e a escolha da SP. Faltam comprovantes de exemplo de cada
   tipo.
-- O leitor do Sicredi segue desligado (a empresa não usa mais).
+
+### 13/09/2026 — o leitor do Sicredi estava desligado por um engano meu (publicado, `27f62fb`)
+
+Um comprovante real do Sicredi, de R$ 10.861,20, voltou `nao_localizado`. O robô
+mandava toda página para o leitor do **Bradesco**, e para esse papel ele saía
+**sem valor, sem conta e sem número de SP** — nada com que procurar.
+
+**A causa não foi o código, foi a leitura errada de uma frase.** Em 11/09/2026 o
+dono disse que não usava "as outras" — falando das duas contas **Somapay**
+(INFRADENDE e IFPESANTACRUZ), das quais só a BWS é usada para baixa. Eu entendi
+que o **Sicredi** não era mais usado, registrei isso no README e no HISTORICO
+como decisão dele, e deixei o leitor desligado. O Sicredi é usado normalmente.
+
+**Lição:** decisão do dono que desliga um caminho inteiro merece ser repetida de
+volta com o nome do caminho antes de virar registro. "Não usamos mais" é uma
+frase curta demais para uma consequência dessa.
+
+**O que o leitor certo enxerga, no mesmo papel:** valor 10.861,20 (o Sicredi
+escreve "Valor Pago (R$):", com o "(R$)" no meio, que o leitor do Bradesco não
+reconhece), cooperativa 02205 e conta de origem, e — o mais importante — **o
+número da SP**, que vem em "Descrição do Pagamento". Com o número, o casamento é
+o mais confiável que existe: não depende de valor nem de conta.
+
+**Como ficou:** o fluxo escolhe o leitor pelo formato do papel (cooperativa +
+conta de origem → Sicredi). O diagnóstico faz o mesmo desvio — diagnóstico que lê
+diferente do fluxo real mente para quem investiga.
+
+⚠️ **A palavra "sicredi" sozinha deixou de servir como pista**, de propósito: ela
+aparece em comprovante do **Bradesco** quando o destino é uma conta Sicredi, e
+mandá-lo para o leitor errado pode produzir valor errado. Não reconhecer é
+barato (cai no leitor do Bradesco, não acha SP, fica pendente e o aviso conta);
+ler errado, não.
+
+**Publicado em 13/09/2026 (`27f62fb`)**, com a `main` de dois dias de outros
+chats (40 commits) trazida para o ramo antes da junção: 2907 testes verdes e os
+blueprints subindo com tudo junto.
+
+**Conferir no primeiro comprovante Sicredi real:** que ele acha a SP pelo número
+que vem em "Descrição do Pagamento", e que a baixa cai na conta Sicredi certa.
+O leitor nunca rodou em produção — este será o primeiro uso de verdade.
+
+**Aberto, e é de decidir:** o aviso chegou ao dono **pelo Telegram**, não pelo
+WhatsApp. Isso quer dizer que a perna do WhatsApp não está entregando — e que o
+**financeiro provavelmente não recebeu nada**, porque o Telegram só alcança quem
+já conversou com o robô. O campo `aviso` da resposta ao Make diz o motivo em uma
+linha; ninguém foi atrás ainda.
+
+### 13/09/2026 — a baixa pela metade que o reenvio não consertava (publicado, `c4c4724`)
+
+Pergunta do dono: *"se eu enviar um comprovante que já foi baixado, ele checa por
+onde? É conferido se a baixa está no Omie e na planilha? Às vezes falha um dos
+dois e, se eu enviar novamente, é pra concluir a baixa."*
+
+**A resposta era não, e o desenho era o pior possível.** A baixa acontece em duas
+etapas: o Omie primeiro, a planilha depois, em segundo plano. A impressão digital
+do comprovante era registrada **assim que o Omie aceitava**. Se a gravação na
+planilha falhasse em seguida, três coisas aconteciam juntas:
+
+1. a SP ficava **"Pagar"** na planilha, para sempre;
+2. o erro sumia — `execute_spsbd_updates` engolia qualquer exceção num
+   `except: pass`, e o `_executar_sheets_async` engolia de novo;
+3. o comprovante reenviado era **barrado como repetido**, em silêncio.
+
+Ou seja: o único caminho de conserto estava fechado, e ninguém era avisado.
+
+**O que mudou:**
+
+- A lista de comprovantes já baixados passou a trazer **o número da SP** junto
+  da impressão digital (as duas colunas numa leitura só — a regra de uma leitura
+  por lote continua valendo).
+- Na conferência, se a SP daquele comprovante **ainda está entre as que faltam
+  pagar**, a baixa ficou pela metade e o reenvio **passa**. O Omie responde
+  "título já pago", o robô pula essa parte e termina o que faltava na planilha.
+  Esses casos aparecem no retorno em `baixas_concluidas`, separados dos
+  `duplicados_ja_baixados`.
+- **A gravação na planilha deixou de falhar em silêncio.** Ela agora diz se
+  gravou, e o erro vai para a fila de tentativas — como já acontecia com Pipefy
+  e WhatsApp. Era a única das três escritas que sumia sem deixar rastro.
+
+**O que continua não sendo feito, e é bom saber:** o robô **não** consulta o Omie
+nem lê a linha da SP para decidir se um comprovante é repetido. A decisão sai da
+lista dele mais o estado da SP na carga do lote, que já está em memória. Consultar
+o Omie por comprovante repetido custaria uma chamada por página, e a lista já
+responde bem.
+
+**Não verificado:** nada disso passou por produção. O caso exige que a gravação
+na planilha falhe de verdade, o que não dá para provocar daqui.
+
+### 13/09/2026 — a outra metade: planilha paga, Omie pendente, reenvio sem efeito (publicado, `c4c4724`)
+
+Na mesma conversa, o dono achou **duas SPs** com a planilha gravada por inteiro e
+o Omie **não** baixado — conferiu nas duas fontes. Reenviar o comprovante não
+fazia nada.
+
+**É o espelho do buraco anterior, e tinha causa própria.** Existe um caminho para
+"planilha paga, Omie pendente" (`load_spsbd_omie_pendente`), mas ele exigia a
+**data de pagamento vazia**. Só que a gravação escreve status, carimbo, data,
+comprovante e conta **de uma vez**: uma SP com a planilha completa ficava fora do
+índice. O caminho de conserto só servia para gravação pela metade — justamente o
+caso que **não** era o dele.
+
+**Como ficou:** o índice passou a aceitar também SP paga nos **últimos 30 dias**.
+A janela existe por memória: sem ela, "Pago + com comprovante" traria dezenas de
+milhares das ~52 mil linhas. Trinta dias é o tempo em que alguém ainda percebe e
+reenvia.
+
+**O que já funcionava e vale saber:** comprovante que traz o **número da SP** não
+depende de nada disso — o robô vai direto ao Omie por aquele número, mesmo com a
+SP já Pago na planilha. Quem dependia do índice era o comprovante sem número
+(depósito Somapay, transferência, boleto sem ID).
+
+**Não verificado:** as duas SPs do dono não foram consertadas por aqui. Depois de
+publicado, reenviar os comprovantes delas deve resolver — e é a primeira coisa a
+conferir.
+
+**Publicado em 13/09/2026 (`c4c4724`).** Junto veio da `main` um achado de outro
+chat que toca esta área: a tela de comprovantes do **Análise de SPs** chamava
+este robô **em modo de ensaio** — `modo_teste` é `True` por padrão quando o
+pedido não diz o contrário, e aquele pedido não dizia. Toda baixa feita por
+aquela tela desde a estreia foi simulação, e a tela ainda dizia "Baixado". O
+caminho do Make nunca foi afetado. Corrigido lá; fica registrado aqui porque o
+padrão perigoso é **deste** módulo.
+
+**Primeira coisa a conferir agora:** reenviar os comprovantes das duas SPs com
+planilha paga e Omie pendente. Devem concluir.

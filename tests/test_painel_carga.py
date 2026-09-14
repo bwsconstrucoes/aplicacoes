@@ -184,7 +184,7 @@ def test_a_observacao_do_backfill_nao_e_apagada(espelho_limpo):
 def test_rateio_que_nao_fecha_com_o_documento_e_denunciado(espelho_limpo):
     """Rateio que não soma o valor do título é inconsistência de origem. O
     título é gravado assim mesmo — mas o problema volta na lista, não some."""
-    from app.apps.painel.db import conexao
+    from app.apps.painel.db import conexao, consultar
     from app.apps.painel.sync import espelho
 
     torto = _titulo_do_omie(9, valor=1000.0)
@@ -266,7 +266,7 @@ def test_da_gravacao_do_omie_ate_o_numero_na_tela(espelho_limpo):
     """O caminho inteiro numa passada só: grava como o OMIE manda, reconstrói o
     fato e pergunta à consulta que a tela usa. É o que a primeira carga faz."""
     from app.apps.painel import consultas
-    from app.apps.painel.db import conexao
+    from app.apps.painel.db import conexao, consultar
     from app.apps.painel.sync import espelho, fato, projetos
 
     receber = _titulo_do_omie(1, valor=1000.0, natureza="R")
@@ -407,3 +407,31 @@ def test_o_codigo_da_categoria_chega_no_fato(espelho_limpo):
             assert codigo is None, "o retido é sintético: não tem código no OMIE"
         else:
             assert codigo, f"{categoria} veio sem código de categoria"
+
+
+def test_titulo_de_fornecedor_sem_cadastro_nao_fica_sem_nome(espelho_limpo):
+    """13/09/2026: o dono buscou as devoluções de aporte de uma empresa pelo
+    nome e achou menos do que existia. A linha cujo fornecedor não está no
+    catálogo do painel saía com o nome VAZIO — e linha sem nome é invisível para
+    quem procura por nome, que é como as pessoas procuram.
+
+    A conta corrente, no mesmo arquivo, já fazia certo: sem cadastro, cai para o
+    código cru. O fornecedor não fazia."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao, consultar
+    from app.apps.painel.sync import espelho, fato
+
+    titulo = _titulo_do_omie(9, valor=320000.0, status_titulo="PAGO")
+    titulo["codigo_cliente_fornecedor"] = 4242   # este NAO vai para o catalogo
+
+    with conexao() as conn:
+        espelho.gravar_titulos(conn, [titulo], "P")
+        espelho.gravar_categorias(conn, [_categoria_do_omie()])
+        fato.reconstruir_fato(conn)
+
+    nomes = [n for (n,) in consultar("SELECT razao_social FROM fato")]
+    assert nomes, "o título tem de existir no painel"
+    assert all((n or "").strip() for n in nomes), \
+        "nenhuma linha pode ficar sem nome: sem nome ela some de qualquer busca"
+    assert "4242" in nomes[0], \
+        "e o nome tem de carregar o código, senão não dá para saber de quem é"

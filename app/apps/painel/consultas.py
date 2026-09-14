@@ -289,6 +289,9 @@ def caixa_por_ano(f: Filtros) -> list[dict]:
 # Um lugar so: o Explorador filtra por ele, e dois nomes diferentes para a mesma
 # coisa fariam a busca nao achar nada.
 SEM_OBRA = "(não apropriado)"
+# Mesmo padrao do SEM_OBRA: um rotulo so, em toda a tela, para o que
+# nao tem fornecedor — senao filtrar por ele vira adivinhacao.
+SEM_FORNECEDOR = "(sem fornecedor)"
 OBRA_OU_SEM = f"COALESCE(NULLIF(TRIM(departamento),''), '{SEM_OBRA}')"
 
 ENCARGO = f"CASE WHEN {PAGO} THEN (juros + multa) ELSE 0 END"
@@ -1382,12 +1385,64 @@ def opcoes_do_explorador() -> dict:
     return _lembrando(("opcoes_do_explorador",), calcular)
 
 
+# Quantos fornecedores a barra lateral desenha. NAO e teto de busca: e teto de
+# HTML. Cada nome vira uma caixa de marcar no navegador, e uma base de verdade
+# tem milhares deles — desenhar todos custou 1,16 MB de pagina e deixou a tela
+# lenta assim que subiu, em 13/09/2026. O painel ja morreu de memoria uma vez.
+TETO_DE_FORNECEDORES = 600
+
+# Quanta folga a busca por valor dá. NÃO é capricho: o valor chega do OMIE numa
+# coluna de ponto flutuante de 4 bytes, que acima de uns R$ 131 mil não guarda
+# centavo. Procurar exato erra por um centavo e jura que o lançamento não
+# existe. Meio real acha o que se procura sem confundir dois títulos.
+TOLERANCIA_DE_VALOR = 0.5
+
+
+def fornecedores_do_recorte(dados: dict | None) -> dict:
+    """Os fornecedores QUE APARECEM na lista que está na tela.
+
+    Sai das linhas já buscadas — nenhuma consulta a mais. Isso importa: a
+    primeira versão disto perguntava ao banco de novo e a tela passou de 34 para
+    126 ms, além de desenhar os milhares de nomes da base inteira (1,16 MB de
+    página, 86% do peso dela). O dono sentiu na hora: "o painel tá super lento
+    agora".
+
+    Tirar da própria lista tem outra vantagem, que não é consolo: a barra
+    lateral passa a oferecer exatamente o que está à vista. Quem filtrou
+    "Devolução de Aportes" escolhe entre os poucos fornecedores daquilo, em vez
+    de rolar milhares de nomes que não vêm ao caso."""
+    if not dados or not dados.get("linhas"):
+        return {"itens": [], "cortou": False, "sem_recorte": True}
+    nomes = sorted({(l.get("razao_social") or "").strip() or SEM_FORNECEDOR
+                    for l in dados["linhas"]})
+    return {"itens": nomes[:TETO_DE_FORNECEDORES],
+            "cortou": len(nomes) > TETO_DE_FORNECEDORES or bool(dados.get("cortou")),
+            "sem_recorte": False}
+
+
 COLUNAS_DO_EXPLORADOR = (
     "codigo_lancamento", "data", "tipo", "analise", "grupo", "categoria",
     "codigo_categoria", "departamento", "projeto", "razao_social",
     "numero_documento", "conta_corrente", "situacao",
     "pago_recebido", "a_pagar_receber", "observacao",
 )
+
+
+def _valor_procurado(texto: str):
+    """O número que a pessoa digitou, ou None se não for número.
+
+    Aceita os formatos que aparecem na tela do OMIE e no copiar-colar:
+    `784.647,07`, `784647,07`, `784647.07`, `784647`. Texto com letra não é
+    valor — senão procurar por "NF 100" viraria uma busca por cem reais."""
+    limpo = (texto or "").strip().replace("R$", "").replace(" ", "")
+    if not limpo or any(c.isalpha() for c in limpo):
+        return None
+    if "," in limpo:                      # vírgula decimal: ponto é milhar
+        limpo = limpo.replace(".", "").replace(",", ".")
+    try:
+        return round(abs(float(limpo)), 2)
+    except ValueError:
+        return None
 
 
 def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
@@ -1399,14 +1454,27 @@ def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
         condicoes.append("tipo = ?")
         params.append(PAG if tipo == "pagar" else REC)
 
+    # O EXPLORADOR NÃO ESCONDE NADA. As telas de análise (DRE, Visão Geral,
+    # Resultado por Obra) tiram as transferências de propósito: são dinheiro
+    # trocando de conta da própria empresa, e somá-las contaria o mesmo valor
+    # duas vezes. Aqui é o contrário — a tela existe para ACHAR o que está
+    # classificado errado, e "lançado numa categoria marcada como transferência
+    # no OMIE" é justamente um desses erros. Esconder o que se procura é o
+    # oposto do trabalho.
+    #
+    # Até 13/09/2026 o padrão escondia TRF, e isso custou caro: o dono procurou
+    # uma devolução de aporte de 24/12/2025 conciliada, viu a devolução do lado
+    # aparecer e essa não, e não havia nada na tela explicando a diferença — a
+    # categoria dela está marcada como transferência no OMIE. A frase dele:
+    # "aqui era pra aparecer todos os lançamentos igual como aparece no
+    # relatório de conta corrente do OMIE".
+    #
+    # Quem quiser cortar por análise usa a lista Análise da barra lateral, onde
+    # DRE, Fluxo de Caixa e TRF são três caixas de marcar.
     analises = [a for a in pedido.get("analises") or [] if a]
     if analises:
         condicoes.append("analise = ANY(?)")
         params.append(analises)
-    elif not pedido.get("com_trf"):
-        # Transferência é dinheiro trocando de conta da própria empresa: ela
-        # dobra qualquer soma e polui a busca. Fica de fora até alguém pedir.
-        condicoes.append("COALESCE(analise,'') <> 'TRF'")
 
     for campo, coluna in (("grupos", "grupo"), ("categorias", "categoria"),
                           ("projetos", "projeto"), ("contas", "conta_corrente"),
@@ -1421,11 +1489,59 @@ def _onde_do_explorador(pedido: dict) -> tuple[str, list]:
         condicoes.append(f"{OBRA_OU_SEM} = ANY(?)")
         params.append(obras)
 
+    fornecedores = [f for f in pedido.get("fornecedores") or [] if f]
+    if fornecedores:
+        condicoes.append(
+            f"COALESCE(NULLIF(TRIM(razao_social),''), '{SEM_FORNECEDOR}') = ANY(?)")
+        params.append(fornecedores)
+
     busca = (pedido.get("busca") or "").strip()
     if busca:
-        condicoes.append("(" + " OR ".join(
-            f"{c} ILIKE ?" for c in BUSCA_DO_EXPLORADOR) + ")")
-        params.extend([f"%{busca}%"] * len(BUSCA_DO_EXPLORADOR))
+        # Procurar pelo NUMERO DO TITULO do OMIE tem de funcionar. Sem isso, a
+        # única maneira de perguntar "este título está no painel?" era procurar
+        # pelo nome do fornecedor e conferir a olho — e se o nome não estiver
+        # preenchido, nem isso. Em 13/09/2026 o dono passou meia hora atrás de um
+        # lançamento por falta desta busca.
+        alternativas = [f"{c} ILIKE ?" for c in BUSCA_DO_EXPLORADOR]
+        valores = [f"%{busca}%"] * len(BUSCA_DO_EXPLORADOR)
+        if busca.isdigit():
+            alternativas.append("codigo_lancamento = ?")
+            valores.append(int(busca))
+        # Procurar por VALOR. É o dado que a pessoa sempre tem à mão quando está
+        # conferindo o painel contra o OMIE lado a lado — e era o único jeito de
+        # perguntar "este lançamento está aqui?" que a tela não aceitava.
+        # Digitar 784.647,07 ou 784647.07 ou 784647 tem de achar o mesmo.
+        valor = _valor_procurado(busca)
+        if valor is not None:
+            # O VALOR DO TITULO INTEIRO, não o da linha. O painel quebra o
+            # título por obra: um título rateado entre três obras vira três
+            # linhas, cada uma com uma FRAÇÃO do valor. Nenhuma delas tem o
+            # número que está na tela do OMIE.
+            #
+            # Foi assim que três devoluções de aporte pareceram sumidas em
+            # 13/09/2026 — estavam na base o tempo todo, partidas entre obras.
+            # Comparar linha a linha acharia só o que está numa obra só, que é
+            # justamente o caso fácil.
+            # POR TOLERANCIA, nao por igualdade — e o motivo importa.
+            #
+            # O valor chega do OMIE numa coluna REAL (ponto flutuante de 4
+            # bytes, ~7 digitos significativos), entao acima de uns R$ 131 mil
+            # ele PERDE CENTAVOS: os R$ 784.647,07 da tela do OMIE estao
+            # gravados aqui como 784.647,06. Comparar exato errava por um
+            # centavo e dizia que o lancamento nao existia.
+            #
+            # Foi assim que uma devolucao de aporte de 24/12/2025 pareceu sumida
+            # a tarde inteira de 13/09/2026. Ela estava na base o tempo todo.
+            alternativas.append(
+                f"(ABS(ABS(pago_recebido) - ?) < {TOLERANCIA_DE_VALOR}"
+                f" OR ABS(ABS(a_pagar_receber) - ?) < {TOLERANCIA_DE_VALOR}"
+                " OR codigo_lancamento IN ("
+                "     SELECT codigo_lancamento FROM fato GROUP BY codigo_lancamento"
+                f"      HAVING ABS(ABS(SUM(pago_recebido)) - ?) < {TOLERANCIA_DE_VALOR}"
+                f"          OR ABS(ABS(SUM(a_pagar_receber)) - ?) < {TOLERANCIA_DE_VALOR}))")
+            valores.extend([valor, valor, valor, valor])
+        condicoes.append("(" + " OR ".join(alternativas) + ")")
+        params.extend(valores)
 
     # A faixa de data DEIXA PASSAR o que não tem data — ao contrário do
     # Analítico. Aqui a pergunta é "onde está o lançamento errado", e lançamento
@@ -1514,6 +1630,201 @@ def departamentos_para_alterar() -> list[dict]:
             "SELECT DISTINCT ccoddep, cdesdep FROM rateio "
             " WHERE COALESCE(TRIM(cdesdep),'') <> '' ORDER BY cdesdep")]
     return _lembrando(("departamentos_para_alterar",), calcular)
+
+
+# ---------------------------------------------------------------------------
+# Conferência: as duas definições de "foi pago" concordam?
+# ---------------------------------------------------------------------------
+# Existem duas, e elas DIVERGEM (descoberto em 13/09/2026, investigando valores
+# errados no bloco de Aportes e Dividendos do DRE):
+#
+#   CARGA (`sync/fato.py`): quitado = o texto do status diz pago/recebido/
+#     conciliado **OU** a baixa do OMIE diz liquidado ("cLiquidado = S").
+#   TELAS (o `PAGO` acima):  só a primeira metade — o texto do status.
+#
+# Um título liquidado cujo status use outra palavra ("Quitado", "Baixado") tem o
+# valor gravado como realizado na base e NÃO É CONTADO POR NENHUMA TELA. O
+# dinheiro existe no painel e não aparece em lugar nenhum. A regra do `PAGO`
+# aparece em dez lugares — DRE, Visão Geral, fluxo de caixa, aportes.
+#
+# Esta função NÃO CORRIGE NADA. Ela mede o estrago, para a decisão de corrigir
+# ser tomada com o número na mão. A carga grava a própria decisão na coluna
+# `situacao_vencimento` ('Quitado'), então dá para comparar as duas sem adivinhar.
+
+INVISIVEL_PARA_AS_TELAS = (
+    f"situacao_vencimento = 'Quitado' AND NOT ({PAGO}) AND pago_recebido <> 0")
+
+
+def conferencia_do_pago() -> dict:
+    """Quanto dinheiro a carga deu por realizado e as telas não enxergam.
+
+    Devolve o total, a contagem, e a lista dos textos de situação envolvidos —
+    que é o que diz QUAIS palavras o `PAGO` está deixando escapar."""
+    (quantos, valor, titulos) = consultar(
+        f"""SELECT COUNT(*), COALESCE(SUM(ABS(pago_recebido)), 0),
+                   COUNT(DISTINCT codigo_lancamento)
+              FROM fato WHERE {INVISIVEL_PARA_AS_TELAS}""")[0]
+
+    situacoes = [{"situacao": sit or "(vazia)", "linhas": n,
+                  "valor": float(v or 0)}
+                 for sit, n, v in consultar(
+        f"""SELECT situacao, COUNT(*), COALESCE(SUM(ABS(pago_recebido)), 0)
+              FROM fato WHERE {INVISIVEL_PARA_AS_TELAS}
+             GROUP BY 1 ORDER BY 2 DESC LIMIT 30""")]
+
+    categorias = [{"categoria": c or "(sem categoria)", "analise": a or "—",
+                   "linhas": n, "valor": float(v or 0)}
+                  for c, a, n, v in consultar(
+        f"""SELECT categoria, analise, COUNT(*),
+                   COALESCE(SUM(ABS(pago_recebido)), 0)
+              FROM fato WHERE {INVISIVEL_PARA_AS_TELAS}
+             GROUP BY 1, 2 ORDER BY 4 DESC LIMIT 30""")]
+
+    # o outro lado da moeda: o status diz pago mas a carga nao achou realizado.
+    # Nao some dinheiro por aqui, mas ajuda a saber se as duas regras batem.
+    (ao_contrario,) = consultar(
+        f"""SELECT COUNT(*) FROM fato
+             WHERE {PAGO} AND situacao_vencimento <> 'Quitado'""")[0]
+
+    return {"linhas": quantos or 0, "titulos": titulos or 0,
+            "valor": float(valor or 0), "situacoes": situacoes,
+            "categorias": categorias, "ao_contrario": ao_contrario or 0}
+
+
+def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:
+    """De onde a diferença do bloco de Aportes vem — corte a corte.
+
+    O dono, em 14/09/2026: o bloco mostra R$ 567 mil de devolvido para uma
+    empresa, e um único título dela é de R$ 784 mil. Ou seja, o bloco está
+    comendo lançamentos — e a pergunta "quais?" não tinha resposta na tela.
+
+    Em vez de apostar em qual dos cortes é o culpado, esta função mostra a
+    CASCATA: parte de tudo o que tem categoria de aporte, sem corte nenhum, e
+    desce um degrau por vez, dizendo quanto cada um levou. O degrau que come o
+    valor que falta é o culpado, e aparece na tela em vez de na minha cabeça.
+
+    Os degraus, na ordem em que o código os aplica:
+      1. tudo o que a categoria diz ser aporte (inclusive Dividendos);
+      2. menos o que NÃO entra no saldo — hoje, só Dividendos;
+      3. menos o que é transferência entre contas (`analise = 'TRF'`);
+      4. menos o que o `PAGO` não reconhece como pago;
+      5. o que sobra é o que o bloco mostra."""
+    f = f or Filtros()
+
+    def _soma(extra):
+        where, params = f.where(extra)
+        (ap, dev, n) = consultar(
+            f"""SELECT COALESCE({_APORTADO}, 0), COALESCE({_DEVOLVIDO}, 0), COUNT(*)
+                  FROM fato{where}""", params)[0]
+        return {"aportado": float(ap or 0), "devolvido": float(dev or 0),
+                "linhas": n or 0}
+
+    # o passo 1 ignora ate a exclusao de TRF que o Filtros aplica sozinho
+    sem_trf = Filtros(anos=f.anos, projetos=f.projetos,
+                      departamentos=f.departamentos, excluir_trf=False)
+
+    def _soma_larga(extra):
+        where, params = sem_trf.where(extra)
+        (ap, dev, n) = consultar(
+            f"""SELECT COALESCE({_APORTADO}, 0), COALESCE({_DEVOLVIDO}, 0), COUNT(*)
+                  FROM fato{where}""", params)[0]
+        return {"aportado": float(ap or 0), "devolvido": float(dev or 0),
+                "linhas": n or 0}
+
+    e_aporte = f"({TIPO_APORTE}) IS NOT NULL"
+    no_saldo = f"({TIPO_APORTE}) IN ({NO_SALDO})"
+
+    passos = [
+        ("Tudo com categoria de aporte", _soma_larga(e_aporte)),
+        ("Só o que entra no saldo (tira Dividendos)", _soma_larga(no_saldo)),
+        ("Tirando transferências entre contas", _soma(no_saldo)),
+        ("Tirando o que o painel não reconhece como pago",
+         _soma(f"{no_saldo} AND {PAGO}")),
+    ]
+    for i, (_rotulo, valores) in enumerate(passos):
+        anterior = passos[i - 1][1] if i else None
+        valores["comeu_devolvido"] = (
+            round(anterior["devolvido"] - valores["devolvido"], 2) if anterior else 0.0)
+        valores["comeu_aportado"] = (
+            round(anterior["aportado"] - valores["aportado"], 2) if anterior else 0.0)
+
+    # e QUEM foi comido, para nao virar outro numero sem nome
+    where_trf, params_trf = sem_trf.where(f"{no_saldo} AND analise = 'TRF'")
+    comidos_trf = _linhas_de_aporte_comidas(where_trf, params_trf)
+    where_pago, params_pago = f.where(f"{no_saldo} AND NOT ({PAGO}) AND pago_recebido <> 0")
+    comidos_pago = _linhas_de_aporte_comidas(where_pago, params_pago)
+
+    return {"passos": passos, "comidos_trf": comidos_trf,
+            "comidos_pago": comidos_pago}
+
+
+def _linhas_de_aporte_comidas(where, params) -> list[dict]:
+    """Os lançamentos que um degrau da cascata cortou, do maior para o menor."""
+    campos = ("codigo", "data", "socio", "categoria", "analise", "situacao",
+              "obra", "valor")
+    return [dict(zip(campos, (c, d, (so or "").strip() or "(sem contraparte)",
+                              cat, an, sit, ob, float(v or 0))))
+            for c, d, so, cat, an, sit, ob, v in consultar(
+        f"""SELECT codigo_lancamento, data, razao_social, categoria, analise,
+                   situacao, {OBRA_OU_SEM}, pago_recebido
+              FROM fato{where}
+             ORDER BY ABS(pago_recebido) DESC LIMIT 50""", params)]
+
+
+def titulos_que_sumiram(valor_procurado=None) -> dict:
+    """Títulos que a carga BAIXOU do OMIE e que não viraram linha nenhuma.
+
+    Se um lançamento existe no OMIE e não aparece em tela nenhuma, só há dois
+    caminhos: a carga nunca o baixou, ou baixou e descartou ao montar as linhas.
+    Esta conferência separa os dois — e é a diferença entre caçar na carga e
+    caçar na montagem.
+
+    Hoje o único descarte declarado é o status CANCELADO (`sync/fato.py`), mas
+    a conferência não confia nisso: ela compara as duas tabelas e mostra o que
+    achar, com o status de cada um. Se aparecer status que ninguém esperava, é
+    justamente o que se quer saber.
+
+    Nasceu em 13/09/2026, depois de uma tarde inteira de hipóteses minhas
+    derrubadas uma a uma pelo dono sobre uma devolução de aporte de 24/12/2025
+    que não aparecia. Perguntar ao banco é mais barato que adivinhar."""
+    sql_base = """
+          FROM titulos t
+         WHERE NOT EXISTS (SELECT 1 FROM fato f
+                            WHERE f.codigo_lancamento = t.codigo_lancamento_omie)"""
+
+    (quantos, valor) = consultar(
+        f"SELECT COUNT(*), COALESCE(SUM(ABS(valor_documento))::numeric, 0){sql_base}")[0]
+
+    por_status = [{"situacao": st or "(vazio)", "quantos": n, "valor": float(v or 0)}
+                  for st, n, v in consultar(
+        f"""SELECT t.status_titulo, COUNT(*),
+                   COALESCE(SUM(ABS(t.valor_documento))::numeric, 0){sql_base}
+             GROUP BY 1 ORDER BY 2 DESC LIMIT 30""")]
+
+    # e, quando se procura um valor especifico, os titulos com aquele valor —
+    # esteja ele nas linhas ou nao. E a pergunta "onde foi parar este numero?"
+    achados = []
+    if valor_procurado is not None:
+        achados = [{"codigo": c, "natureza": nat, "valor": float(v or 0),
+                    "situacao": st or "", "documento": doc or "",
+                    "vencimento": venc or "", "nas_telas": bool(n)}
+                   for c, nat, v, st, doc, venc, n in consultar(
+            """SELECT t.codigo_lancamento_omie, t.natureza, t.valor_documento,
+                      t.status_titulo, t.numero_documento, t.data_vencimento,
+                      (SELECT COUNT(*) FROM fato f
+                        WHERE f.codigo_lancamento = t.codigo_lancamento_omie)
+                 FROM titulos t
+                -- POR TOLERANCIA, nao por igualdade. `valor_documento` e REAL
+                -- (ponto flutuante de 4 bytes), que so guarda ~7 digitos
+                -- significativos: 784.647,07 vira 784.647,06 ao ser gravado.
+                -- Comparar exato nunca acharia lancamento grande nenhum. Meio
+                -- real de folga acha o que se procura sem confundir titulos.
+                WHERE ABS(ABS(COALESCE(t.valor_documento, 0)) - ?) < 0.5
+                ORDER BY 1 LIMIT 50""", [valor_procurado])]
+
+    return {"quantos": quantos or 0, "valor": float(valor or 0),
+            "por_status": por_status, "achados": achados,
+            "procurado": valor_procurado}
 
 
 # ---------------------------------------------------------------------------

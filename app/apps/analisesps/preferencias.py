@@ -25,6 +25,16 @@ logger = logging.getLogger("analisesps.preferencias")
 
 FILTRO = "ultimo_filtro"
 
+# O FILTRO DA DOCUMENTAÇÃO FISCAL MORA SEPARADO, e não é detalhe.
+#
+# Solicitações e Relatório dividem um filtro só de propósito: são a mesma
+# pergunta ("o que tem para pagar") vista de dois jeitos. A Documentação Fiscal
+# é outra pergunta — *"aqui o objetivo é categorizar a nota, o lançamento"*,
+# palavras do dono em 13/09/2026. Dividir o guardado faria cada visita a uma
+# tela desmontar o recorte da outra, e quem trabalha nas duas no mesmo dia
+# perderia o filtro toda vez.
+FILTRO_FISCAL = "ultimo_filtro_fiscal"
+
 # Teto do que se aceita guardar. Um filtro real tem alguns milhares de bytes no
 # pior caso (muitos centros de custo marcados). O teto existe para que um
 # defeito em outro lugar não escreva um texto enorme no banco sem ninguém ver.

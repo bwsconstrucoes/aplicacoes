@@ -239,6 +239,300 @@
     </tbody>
   </table>
 </div>
+
+{# ============ AS CONFERÊNCIAS, SÓ QUANDO ALGUÉM PEDE ============ #}
+{% if not base_vazia and not conferir and not conferencia %}
+<div class="cartao" style="margin-top:14px">
+  <div class="cartao-cab"><h3>Conferências da base</h3></div>
+  <p class="cartao-dica">
+    Três conferências que <b>só medem, não alteram nada</b>: dinheiro que as
+    telas não contam, de onde vem a diferença do bloco de Aportes do DRE, e
+    procurar um lançamento pelo valor na base crua.<br>
+    Elas varrem as 186 mil linhas e levam alguns segundos — por isso não rodam
+    sozinhas ao abrir esta tela.
+  </p>
+  <a class="btn" style="text-decoration:none"
+     href="{{ url_for('painel.configuracoes', conferir='1') }}">Rodar as conferências</a>
+</div>
+{% endif %}
+
+{# ============ CONFERÊNCIA: as duas regras de "foi pago" batem? ============ #}
+{% if conferencia %}
+<div class="cartao" style="margin-top:14px;
+     border-left:4px solid {{ 'var(--vermelho)' if conferencia.linhas else 'var(--verde)' }}">
+  <div class="cartao-cab"><h3>Conferência — dinheiro que as telas não contam</h3></div>
+
+  {% if not conferencia.linhas %}
+    <div class="aviso ok">
+      <b>As duas regras concordam.</b> Tudo o que a carga deu por realizado está
+      sendo contado pelas telas. Nada a fazer.
+    </div>
+  {% else %}
+    <div class="aviso erro">
+      <b>{{ brl(conferencia.valor) }}</b> em
+      <b>{{ conferencia.titulos }}</b> título(s) estão marcados como pagos pela
+      carga e <b>não são contados por nenhuma tela</b> — nem no DRE, nem na Visão
+      Geral, nem no fluxo de caixa, nem no bloco de aportes.
+    </div>
+    <p class="cartao-dica">
+      A causa: a carga considera pago o título cujo status diga <i>pago</i>,
+      <i>recebido</i> ou <i>conciliado</i> <b>ou</b> cuja baixa no OMIE diga
+      liquidado. As telas só olham a primeira metade — o texto do status. Quem
+      foi liquidado com outra palavra fica invisível. Abaixo, exatamente quais
+      palavras estão escapando.
+    </p>
+
+    <div class="tabela-rolagem" style="max-height:260px">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem">Situação escrita no OMIE</th>
+            <th class="sem-ordem direita">Linhas</th>
+            <th class="sem-ordem direita">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for s in conferencia.situacoes %}
+          <tr>
+            <td class="dados">{{ s.situacao }}</td>
+            <td class="dados direita">{{ s.linhas }}</td>
+            <td class="dados direita">{{ brl(s.valor) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <details style="margin-top:10px">
+      <summary style="cursor:pointer; font-weight:600">
+        Por categoria ({{ conferencia.categorias | length }})
+      </summary>
+      <div class="tabela-rolagem" style="max-height:260px; margin-top:8px">
+        <table>
+          <thead>
+            <tr>
+              <th class="sem-ordem">Categoria</th>
+              <th class="sem-ordem">Análise</th>
+              <th class="sem-ordem direita">Linhas</th>
+              <th class="sem-ordem direita">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for c in conferencia.categorias %}
+            <tr>
+              <td class="desc">{{ c.categoria }}</td>
+              <td><small>{{ c.analise }}</small></td>
+              <td class="dados direita">{{ c.linhas }}</td>
+              <td class="dados direita">{{ brl(c.valor) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+  {% endif %}
+
+  {% if conferencia.ao_contrario %}
+    <p class="cartao-dica" style="margin-top:8px">
+      No sentido inverso há {{ conferencia.ao_contrario }} linha(s): o status diz
+      pago e a carga não achou valor realizado. Aqui não some dinheiro — são
+      títulos com status de pago e baixa de valor zero.
+    </p>
+  {% endif %}
+
+  <p class="cartao-dica">
+    <b>Esta tela só mede: nada foi alterado.</b> Corrigir é fazer as telas lerem
+    a decisão que a própria carga já grava, em vez de refazer meia regra por
+    conta própria — e os números do DRE e da Visão Geral vão subir.
+  </p>
+</div>
+{% endif %}
+
+{# ========== ONDE FOI PARAR ESTE NÚMERO? ========== #}
+{% if sumidos %}
+<div class="cartao" style="margin-top:14px">
+  <div class="cartao-cab"><h3>Procurar um lançamento pelo valor, na base crua</h3></div>
+  <p class="cartao-dica">
+    O Explorador mostra as <b>linhas das telas</b>. Isto olha o que a carga
+    <b>baixou do OMIE</b>, antes de virar linha — e diz se o título chegou, se
+    foi descartado, ou se nunca veio. Use quando um lançamento existe no OMIE e
+    não aparece em lugar nenhum.
+  </p>
+  <form method="get">
+    <div class="form-grade">
+      <div class="campo">
+        <label for="procurar">Valor do lançamento</label>
+        <input id="procurar" name="procurar" type="search"
+               value="{{ request.args.get('procurar', '') }}"
+               placeholder="784.647,07">
+      </div>
+      <div class="campo" style="align-self:flex-end">
+        <button class="btn">Procurar na base crua</button>
+      </div>
+    </div>
+  </form>
+
+  {% if sumidos.procurado is not none %}
+    {% if not sumidos.achados %}
+      <div class="aviso erro" style="margin-top:10px">
+        <b>Nenhum título com esse valor foi baixado do OMIE.</b>
+        Não é descarte na montagem: a carga nunca trouxe esse lançamento. O
+        problema está na carga, não nas telas.
+      </div>
+    {% else %}
+      <div class="tabela-rolagem" style="margin-top:10px">
+        <table>
+          <thead>
+            <tr>
+              <th class="sem-ordem">Cód. OMIE</th>
+              <th class="sem-ordem">Tipo</th>
+              <th class="sem-ordem">Documento</th>
+              <th class="sem-ordem">Vencimento</th>
+              <th class="sem-ordem">Situação no OMIE</th>
+              <th class="sem-ordem direita">Valor</th>
+              <th class="sem-ordem">Aparece nas telas?</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for a in sumidos.achados %}
+            <tr>
+              <td class="dados">{{ a.codigo }}</td>
+              <td><small>{{ 'A pagar' if a.natureza == 'P' else 'A receber' }}</small></td>
+              <td class="dados">{{ a.documento or '—' }}</td>
+              <td class="dados">{{ a.vencimento or '—' }}</td>
+              <td class="desc">{{ a.situacao or '—' }}</td>
+              <td class="dados direita">{{ brl(a.valor) }}</td>
+              <td class="desc {{ '' if a.nas_telas else 'v-neg' }}">
+                {{ 'sim' if a.nas_telas else 'NÃO — baixado e descartado' }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  {% endif %}
+
+  {% if sumidos.quantos %}
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer; font-weight:600">
+      {{ sumidos.quantos }} título(s) baixados do OMIE não viraram linha nenhuma
+      ({{ brl(sumidos.valor) }})
+    </summary>
+    <p class="cartao-dica">
+      O único descarte previsto é o CANCELADO. Status diferente disso aqui é
+      coisa a investigar.
+    </p>
+    <div class="tabela-rolagem" style="max-height:240px">
+      <table>
+        <thead>
+          <tr>
+            <th class="sem-ordem">Situação no OMIE</th>
+            <th class="sem-ordem direita">Títulos</th>
+            <th class="sem-ordem direita">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+        {% for s in sumidos.por_status %}
+          <tr>
+            <td class="desc">{{ s.situacao }}</td>
+            <td class="dados direita">{{ s.quantos }}</td>
+            <td class="dados direita">{{ brl(s.valor) }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
+{# ========== DE ONDE VEM A DIFERENÇA DO BLOCO DE APORTES ========== #}
+{% if aportes_conf %}
+<div class="cartao" style="margin-top:14px">
+  <div class="cartao-cab"><h3>Aportes do DRE — onde os valores se perdem</h3></div>
+  <p class="cartao-dica">
+    O valor entra inteiro em cima e cada linha tira um pedaço. A linha que comer
+    o valor que está faltando é a culpada. A última linha é o que o bloco do DRE
+    mostra.
+  </p>
+  <div class="tabela-rolagem">
+    <table>
+      <thead>
+        <tr>
+          <th class="sem-ordem">Corte</th>
+          <th class="sem-ordem direita">Aportado</th>
+          <th class="sem-ordem direita">Devolvido</th>
+          <th class="sem-ordem direita">Quanto levou (devolvido)</th>
+          <th class="sem-ordem direita">Linhas</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for rotulo, v in aportes_conf.passos %}
+        <tr>
+          <td class="desc">{{ rotulo }}</td>
+          <td class="dados direita">{{ brl(v.aportado) }}</td>
+          <td class="dados direita">{{ brl(v.devolvido) }}</td>
+          <td class="dados direita {{ 'v-neg' if v.comeu_devolvido else '' }}">
+            {{ brl(v.comeu_devolvido) if v.comeu_devolvido else '—' }}</td>
+          <td class="dados direita">{{ v.linhas }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% for titulo, linhas in [('Cortados por serem transferência entre contas',
+                             aportes_conf.comidos_trf),
+                            ('Cortados por o painel não reconhecer como pagos',
+                             aportes_conf.comidos_pago)] %}
+    {% if linhas %}
+    <details style="margin-top:10px">
+      <summary style="cursor:pointer; font-weight:600">
+        {{ titulo }} ({{ linhas | length }})
+      </summary>
+      <div class="tabela-rolagem" style="max-height:260px; margin-top:8px">
+        <table>
+          <thead>
+            <tr>
+              <th class="sem-ordem">Cód. OMIE</th>
+              <th class="sem-ordem">Data</th>
+              <th class="sem-ordem">Contraparte</th>
+              <th class="sem-ordem">Categoria</th>
+              <th class="sem-ordem">Análise</th>
+              <th class="sem-ordem">Situação</th>
+              <th class="sem-ordem">Obra</th>
+              <th class="sem-ordem direita">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+          {% for l in linhas %}
+            <tr>
+              <td class="dados">{{ l.codigo }}</td>
+              <td class="dados">{{ l.data.strftime('%d/%m/%Y') if l.data else '—' }}</td>
+              <td class="desc">{{ l.socio }}</td>
+              <td class="desc">{{ l.categoria or '—' }}</td>
+              <td><small>{{ l.analise or '—' }}</small></td>
+              <td><small>{{ l.situacao or '—' }}</small></td>
+              <td class="desc">{{ l.obra }}</td>
+              <td class="dados direita {{ classe_valor(l.valor) }}">{{ brl(l.valor) }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+  {% endfor %}
+
+  <p class="cartao-dica">
+    <b>Atenção ao agrupamento por contraparte.</b> O bloco do DRE soma por
+    <b>nome</b>. A mesma empresa com mais de um cadastro no OMIE, ou com título
+    apontando para cadastro que o painel não tem, aparece em <b>linhas
+    separadas</b> — e cada uma parece menor do que a empresa é.
+  </p>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block scripts %}

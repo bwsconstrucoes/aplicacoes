@@ -56,7 +56,22 @@ MODOS = {
     "comprovantes": "Dar baixa nos comprovantes arrastados para a tela",
     "fiscal": "Gravar nos cards do Pipefy a análise fiscal confirmada",
     "fiscal_ia": "Ler com IA os anexos das SPs escolhidas",
+    "notas_receita": "Buscar na Receita as notas emitidas contra a BWS",
 }
+
+# QUAIS MODOS APARECEM EM CONFIGURAÇÕES, e quais são trabalho fiscal.
+#
+# Correção do dono em 13/09/2026: *"ao buscar na Receita as notas emitidas
+# contra a BWS, não tem absolutamente nada a ver eu estar com um botão desse
+# fora da tela de trabalho. (…) Ler, é pra estar dentro da tela. Gravar nos
+# cards, é pra estar dentro da tela."*
+#
+# A causa do engano era boba, e é o motivo de esta lista existir: a tela de
+# Configurações desenhava a lista INTEIRA de `MODOS` como botões, então quem
+# criasse um modo novo ganhava um botão lá sem querer. Agora a divisão é
+# explícita, e um modo novo só aparece onde alguém escreveu que ele aparece.
+MODOS_DA_BASE = ["sincronizar", "carga_inicial", "apoios", "fila",
+                 "comprovantes"]
 
 # As etapas de cada modo, na ordem. Servem para a retomada: o que já foi
 # marcado como pronto não roda de novo.
@@ -68,6 +83,7 @@ ETAPAS = {
     "comprovantes": ["comprovantes"],
     "fiscal": ["fiscal"],
     "fiscal_ia": ["fiscal_ia"],
+    "notas_receita": ["notas_receita"],
 }
 
 
@@ -255,6 +271,7 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
     ultimo_batimento = [0.0]
     total_linhas = [0]
     recado_apoios = [""]
+    recado_receita = [""]
 
     # Quem pediu: "tela aberta" é o disparo automático de 5 em 5 minutos;
     # qualquer outra coisa é gente apertando botão. A diferença decide se as
@@ -360,6 +377,17 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     + (f", {i['sem_anexo']} sem anexo" if i.get("sem_anexo") else "")
                     + (f", {len(i['falhas'])} com falha" if i.get("falhas") else ""))
 
+            elif etapa == "notas_receita":
+                # NO PROCESSO SEPARADO como tudo o que fala com fora: são
+                # vários lotes por CNPJ, cada um uma ida à Receita.
+                mudar_etapa("buscando notas na Receita")
+                from . import sefaz as _sefaz
+                b = _sefaz.buscar_tudo(anotar)
+                total_linhas[0] = b.get("trazidas", 0)
+                recado_apoios[0] = (
+                    f"{b.get('trazidas', 0)} nota(s) trazida(s) da Receita"
+                    + (f" — {b['erro']}" if b.get("erro") else ""))
+
             elif etapa == "apoios":
                 if automatica and _apoios_recentes():
                     logger.info("Análise de SPs: planilhas de apoio ainda "
@@ -374,6 +402,23 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                     # CHAMAVA: a tabela ficaria vazia para sempre, e a
                     # conciliação fiscal não teria contra o que casar.
                     # Achado em 12/09 procurando quem importava o relatório.
+                    # A BUSCA NA RECEITA VEM ANTES do relatório do FSist,
+                    # e a ordem importa: o relatório é a fonte do passado e
+                    # pode trazer a mesma nota com status mais velho. Quem
+                    # chega depois manda, então o FSist por último garante que
+                    # uma nota cancelada NO RELATÓRIO não seja sobrescrita pelo
+                    # "autorizada" que a Receita entregou antes do cancelamento.
+                    try:
+                        from . import sefaz as _sefaz
+                        if _sefaz.configurado():
+                            b = _sefaz.buscar_tudo(anotar)
+                            recado_receita[0] = (
+                                f"Receita: {b.get('trazidas', 0)} nota(s)"
+                                + (f" — {b['erro']}" if b.get("erro") else ""))
+                    except Exception as e:  # noqa: BLE001 — não derruba o apoio
+                        logger.exception("Análise de SPs: falhou a busca na "
+                                         "Receita")
+                        recado_receita[0] = f"Receita: falhou ({e})"
                     try:
                         n = sincronizacao.sincronizar_notas_fiscais(anotar)
                     except Exception as e:  # noqa: BLE001 — não derruba o apoio
@@ -397,7 +442,8 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                         # notícia) e o que já estava lá.
                         f"notas: {n.get('novas', 0)} nova(s), "
                         f"{n.get('mudaram', 0)} mudou/mudaram, "
-                        f"{n.get('ja_tinha', 0)} já tinha")
+                        f"{n.get('ja_tinha', 0)} já tinha"
+                        + (" · " + recado_receita[0] if recado_receita[0] else ""))
                     # SEM REPETIR: a aba "C. Diários" é lida por dois
                     # caminhos (as contas e as obras). Quando ela falta, as
                     # duas leituras reclamam a mesma coisa, e o recado saía
@@ -577,3 +623,43 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
 
     return {"ok": True, "modo": modo, "descricao": MODOS[modo],
             "execucao": execucao_id}
+
+
+# Os modos que a tela de Documentação Fiscal dispara. O resultado do último de
+# cada um é mostrado lá — ver `ultimas_por_tipo`.
+MODOS_FISCAIS = ["notas_receita", "apoios", "fiscal_ia", "fiscal", "fila"]
+
+
+def ultimas_por_tipo(tipos: list) -> dict:
+    """A última execução CONCLUÍDA de cada tipo pedido.
+
+    Existe por causa de uma reclamação do dono em 13/09/2026: *"eu clico gravar
+    no Pipefy, aí diz que está rodando no servidor, mas como é que a gente sabe
+    se rodou, se não rodou, se terminou? (…) Não aparece nada na tela, a tela
+    continua do mesmo jeito. Não deveria ter alguma coisa dizendo que gravou,
+    uma confirmação?"*
+
+    Ele está certo, e o dado sempre existiu: cada execução grava quando
+    terminou, se deu certo e um recado em português ("12 card(s) gravado(s), 2
+    recusado(s)"). Isso aparecia SÓ na tela de Configurações, que não é onde o
+    trabalho acontece. Aqui a tela de onde o botão foi apertado passa a mostrar
+    o que ele fez.
+
+    UMA CONSULTA SÓ, com `DISTINCT ON`: uma por tipo seriam cinco varreduras da
+    mesma tabela num banco que tem um décimo de um núcleo."""
+    tipos = [t for t in (tipos or []) if t]
+    if not tipos:
+        return {}
+    try:
+        from .db import consultar
+        marcas = ",".join(["?"] * len(tipos))
+        linhas = consultar(
+            "SELECT DISTINCT ON (tipo) tipo, fim, ok, mensagem, linhas, disparo "
+            "  FROM analisesps.execucoes "
+            f" WHERE fim IS NOT NULL AND tipo IN ({marcas}) "
+            " ORDER BY tipo, fim DESC", tuple(tipos))
+    except Exception:  # noqa: BLE001 — banco fora do ar, ou migração por aplicar
+        logger.exception("Análise de SPs: não consegui ler as últimas execuções")
+        return {}
+    nomes = ["tipo", "fim", "ok", "mensagem", "linhas", "disparo"]
+    return {l[0]: dict(zip(nomes, l)) for l in linhas}

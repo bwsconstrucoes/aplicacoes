@@ -591,6 +591,8 @@ def test_a_linha_sem_codigo_do_omie_fica_de_fora():
 # A LISTA É O TESTE. Quando um modo novo destes nascer, ele entra aqui e o
 # teste diz se alguém esqueceu de incluí-lo lá.
 MODOS_QUE_NAO_CONTAM_SPS = ("apoios", "comprovantes", "fiscal", "fiscal_ia")
+# "notas_receita" traz nota, e nota SE CONTA — por isso ele fica de fora desta
+# lista de propósito: "12 notas em 0,4 min" é exatamente o que se quer ler.
 
 
 def test_os_modos_que_nao_trazem_SP_nao_terminam_dizendo_zero_sps():

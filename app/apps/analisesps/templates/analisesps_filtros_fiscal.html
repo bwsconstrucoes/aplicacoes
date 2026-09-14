@@ -1,0 +1,282 @@
+{# ---------------------------------------------------------------------------
+   A BARRA DE FILTROS DA DOCUMENTAÇÃO FISCAL — e ela é OUTRA, de propósito.
+
+   Correção do dono em 13/09/2026, depois de usar a tela: *"você colocou os
+   filtros, mas focou nos mesmos filtros de solicitações, que não é bem a
+   necessidade que a gente tem aqui. (…) Aqui era pra ter filtro do tipo: o que
+   já tem feito, o que está marcado, o que não está marcado, o que está
+   provavelmente errado, o que está sendo sugerido pra analisar com IA. (…)
+   Porque aqui o objetivo é categorizar a nota, o lançamento."*
+
+   E ele mandou tirar o primeiro bloco: *"esse primeiro filtro aqui que fica
+   aberto, a situação, pendência, risco, isso aqui já já tira logo. Esse aqui já
+   não tem absolutamente nada a ver com isso aqui."* — é o bloco "Situação", que
+   fala de pagamento (pendências, boleto duplicado, risco de duplicidade).
+   Aqui ele não aparece.
+
+   O QUE SOBROU DA OUTRA BARRA fica, e também é pedido dele: *"os outros pode
+   até deixar"*. Credor, obra, tipo de despesa, período e valor são o jeito de
+   recortar um pedaço do trabalho ("as notas da creche de setembro") — só não
+   são a pergunta principal.
+
+   NÃO HÁ BOTÃO "APLICAR": marcar uma caixa já refaz a tela, esperando meio
+   segundo depois do último clique. O script é o mesmo da outra barra.
+--------------------------------------------------------------------------- #}
+{% set ordem = ordem|default('vencimento', true) %}
+
+{% macro caixas(nome, valores, marcados) %}
+  <div class="filtro-opcoes">
+    {% for v in valores %}
+      <label class="opcao">
+        <input type="checkbox" name="{{ nome }}" value="{{ v }}"
+               {% if v in marcados %}checked{% endif %}>
+        <span class="rotulo" title="{{ v }}">{{ v }}</span>
+      </label>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
+{% set PROCURA_A_PARTIR_DE = 12 %}
+
+{% macro bloco(titulo, nome, valores, marcados) %}
+  {% if valores %}
+    <div class="filtro {% if marcados %}aberto{% endif %}">
+      <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+        <span>{{ titulo }}</span>
+        {% if marcados %}<span class="filtro-badge">{{ marcados|length }}</span>{% endif %}
+        <span class="seta">▾</span>
+      </div>
+      <div class="filtro-cont">
+        {% if valores|length >= PROCURA_A_PARTIR_DE %}
+          <input type="search" class="procura-opcao" autocomplete="off"
+                 placeholder="Procurar {{ titulo|lower }}…"
+                 aria-label="Procurar em {{ titulo|lower }}">
+          <p class="procura-nada" hidden>Nenhuma opção com esse texto.</p>
+        {% endif %}
+        {{ caixas(nome, valores, marcados) }}
+      </div>
+    </div>
+  {% endif %}
+{% endmacro %}
+
+<form method="get" id="form-filtros"
+      action="{{ url_for('analisesps.tela_fiscal') }}">
+  <input type="hidden" name="f" value="1">
+  {# A visão (lançamento ou nota) viaja junto: mexer no filtro não pode jogar
+     quem está do lado da nota de volta para o lado do lançamento. #}
+  {% if request.args.get('visao') %}
+    <input type="hidden" name="visao" value="{{ request.args.get('visao') }}">
+  {% endif %}
+
+  <div class="filtros-cab">
+    <h2>Filtros</h2>
+    <span class="filtros-estado" id="filtros-estado" hidden>atualizando…</span>
+    <a class="link-btn" href="{{ url_for('analisesps.tela_fiscal', f=1,
+          visao=request.args.get('visao') or None) }}">Limpar</a>
+  </div>
+
+  <div class="busca">
+    <span class="lupa">⌕</span>
+    <input type="search" name="busca" value="{{ filtros.busca }}"
+           placeholder="SP, credor, nº da nota, descrição…"
+           title="Vários termos separados por vírgula. Todos precisam aparecer.">
+  </div>
+
+  {# ---------------------------------------------------------------------
+     O RECORTE PRINCIPAL — EM GRUPOS, E O TÍTULO DO GRUPO É O NOME DO DADO.
+
+     Refeito em 13/09/2026 depois de ele usar: *"a nomenclatura dos filtros tá
+     estranha, a compreensão tá ruim, muito ruim mesmo. Eu não consigo filtrar
+     como eu faria numa planilha facilmente. Não dá nem pra entender o que
+     estamos filtrando, quais dados."*
+
+     Ele está certo, e o erro era de NOME, não de função: os recortes estavam
+     numa lista corrida, sem dizer de que coluna cada um fala. Numa planilha
+     ele filtra clicando no cabeçalho — sabe exatamente o que está recortando.
+     Agora o título do grupo é o nome do dado, e cada opção traz a explicação
+     embaixo.
+  --------------------------------------------------------------------- #}
+  {% for titulo, opcoes_do_grupo in grupos_de_recorte %}
+    {% set marcadas_aqui = opcoes_do_grupo
+         | selectattr('0', 'in', filtros.fiscais) | list %}
+    <div class="filtro aberto filtro-trabalho">
+      <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+        <span>{{ titulo }}</span>
+        {% if marcadas_aqui %}
+          <span class="filtro-badge">{{ marcadas_aqui|length }}</span>
+        {% endif %}
+        <span class="seta">▾</span>
+      </div>
+      <div class="filtro-cont">
+        <div class="filtro-opcoes">
+          {% for chave, rotulo, explicacao in opcoes_do_grupo %}
+            <label class="opcao opcao-explicada">
+              <input type="checkbox" name="fiscais" value="{{ chave }}"
+                     {% if chave in filtros.fiscais %}checked{% endif %}>
+              <span class="rotulo">{{ rotulo }}
+                {% if explicacao %}
+                  <small>{{ explicacao }}</small>
+                {% endif %}
+              </span>
+            </label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+
+  <p class="cartao-dica" style="margin:2px 2px 14px">
+    Marcar dois recortes exige os dois ao mesmo tempo, como numa planilha com
+    dois filtros ligados.
+  </p>
+
+  {# ---------------------------------------------------------------------
+     O QUE ESTA TELA NEM OLHA — dito na cara, e não escondido no código.
+
+     Pedido do dono em 13/09/2026. São três cortes de escopo, e eles mudam o
+     TAMANHO do trabalho, não o recorte dele: sem dizer que existem, o painel
+     mostraria um número e a planilha outro, e ele passaria a desconfiar dos
+     dois. Só o dos cancelados tem volta, porque só esse ele pediu com volta.
+  --------------------------------------------------------------------- #}
+  <div class="filtro aberto filtro-escopo">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>O que esta tela nem olha</span>
+      {% if request.args.get('canceladas') == '1' %}
+        <span class="filtro-badge">1</span>
+      {% endif %}
+      <span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <ul class="escopo-lista">
+        <li>o que venceu <b>e</b> foi pago antes de 2026</li>
+        <li>tipo de despesa com <b>(TRF)</b> — transferência entre contas não
+          gera nota</li>
+      </ul>
+      <div class="filtro-opcoes">
+        <label class="opcao opcao-explicada">
+          <input type="checkbox" name="canceladas" value="1"
+                 {% if request.args.get('canceladas') == '1' %}checked{% endif %}>
+          <span class="rotulo">Trazer também os cancelados
+            <small>SPs com Status Pgt “Cancelado”, que ficam fora por
+              padrão</small>
+          </span>
+        </label>
+      </div>
+    </div>
+  </div>
+
+  {# O resto é recorte de contexto, não a pergunta da tela — por isso vem
+     depois e fechado. #}
+  {{ bloco('Tipo de despesa', 'tipo_despesa', opcoes.tipo_despesa, filtros.tipo_despesa) }}
+  {{ bloco('Obra (centro de custo)', 'centro_custo', opcoes.centro_custo, filtros.centro_custo) }}
+  {{ bloco('Projeto', 'projeto', opcoes.projeto, filtros.projeto) }}
+  {{ bloco('Status de pagamento', 'status_pgt', opcoes.status_pgt, filtros.status_pgt) }}
+  {{ bloco('Responsável', 'responsavel', opcoes.responsavel, filtros.responsavel) }}
+
+  <div class="filtro {% if filtros.periodo_ini or filtros.periodo_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Vencimento</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>De</label>
+          <input type="date" name="periodo_ini"
+                 value="{{ filtros.periodo_ini.isoformat() if filtros.periodo_ini else '' }}"></div>
+        <div><label>Até</label>
+          <input type="date" name="periodo_fim"
+                 value="{{ filtros.periodo_fim.isoformat() if filtros.periodo_fim else '' }}"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="filtro {% if filtros.valor_ini or filtros.valor_fim %}aberto{% endif %}">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Valor</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <div class="faixa">
+        <div><label>Mínimo</label>
+          <input type="text" name="valor_ini" inputmode="decimal" placeholder="0,00"
+                 value="{{ ('%.2f'|format(filtros.valor_ini))|replace('.', ',') if filtros.valor_ini is not none else '' }}"></div>
+        <div><label>Máximo</label>
+          <input type="text" name="valor_fim" inputmode="decimal" placeholder="0,00"
+                 value="{{ ('%.2f'|format(filtros.valor_fim))|replace('.', ',') if filtros.valor_fim is not none else '' }}"></div>
+      </div>
+    </div>
+  </div>
+
+  {# ORDENAR FICA — o dono olhou e disse "não, pode deixar. Ok." #}
+  <div class="filtro aberto">
+    <div class="filtro-cab" onclick="this.parentNode.classList.toggle('aberto')">
+      <span>Ordenar por</span><span class="seta">▾</span>
+    </div>
+    <div class="filtro-cont">
+      <select name="ordem" style="width:100%; padding:7px 8px; border:1px solid var(--borda-forte); border-radius:6px">
+        {% for chave, rotulo in [
+            ('vencimento','Vencimento (mais antigo)'),
+            ('vencimento_desc','Vencimento (mais novo)'),
+            ('valor_desc','Valor (maior)'),
+            ('valor','Valor (menor)'),
+            ('credor','Credor'),
+            ('id','ID')] %}
+          <option value="{{ chave }}" {% if ordem == chave %}selected{% endif %}>{{ rotulo }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <noscript>
+    <button class="btn" type="submit" style="width:100%; margin-top:14px">Aplicar filtros</button>
+  </noscript>
+</form>
+
+<script>
+// Mesmo comportamento da outra barra: aplica sozinha, esperando meio segundo
+// depois do último clique. Cinco caixas marcadas seguidas geram UMA consulta.
+(function () {
+  const form = document.getElementById("form-filtros");
+  if (!form) return;
+  const estado = document.getElementById("filtros-estado");
+  let relogio = null;
+
+  function agendar(espera) {
+    if (relogio) clearTimeout(relogio);
+    if (estado) estado.hidden = false;
+    relogio = setTimeout(() => form.submit(), espera);
+  }
+
+  form.addEventListener("change", e => {
+    if (e.target.matches("input[type=checkbox], select, input[type=date]")) agendar(500);
+  });
+  form.addEventListener("input", e => {
+    if (e.target.matches("input[type=search], input[type=text]")) agendar(900);
+  });
+  form.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); agendar(0); }
+  });
+
+  const semAcento = t => (t || "").normalize("NFD")
+      .replace(/[̀-ͯ]/g, "").toLowerCase();
+
+  form.querySelectorAll(".procura-opcao").forEach(campo => {
+    const cont = campo.closest(".filtro-cont");
+    const nada = cont.querySelector(".procura-nada");
+    const opcoes = Array.from(cont.querySelectorAll(".opcao"));
+    campo.addEventListener("input", () => {
+      const procurado = semAcento(campo.value.trim());
+      let visiveis = 0;
+      opcoes.forEach(o => {
+        const marcada = o.querySelector("input").checked;
+        const casa = !procurado || marcada
+                     || semAcento(o.textContent).includes(procurado);
+        o.hidden = !casa;
+        if (casa) visiveis++;
+      });
+      if (nada) nada.hidden = visiveis > 0;
+    });
+    campo.addEventListener("keydown", e => {
+      if (e.key === "Enter") { e.preventDefault(); e.stopPropagation(); }
+    });
+  });
+})();
+</script>

@@ -8,11 +8,26 @@ from .parser_bradesco import receipt_recusado
 
 
 def is_sicredi(text: str) -> bool:
-    """Detecta se o comprovante é do Sicredi."""
+    """Diz se o comprovante foi EMITIDO pelo Sicredi.
+
+    A conta de origem do Sicredi vem como cooperativa + conta, e é isso que se
+    procura — a estrutura do papel, não a marca.
+
+    ⚠️ A palavra "sicredi" sozinha **não** serve e foi tirada de propósito: ela
+    aparece em comprovante do Bradesco quando o destino é uma conta Sicredi, e
+    aí o papel iria para o leitor errado. Errar o leitor é pior do que não
+    reconhecer: um comprovante não reconhecido cai no leitor do Bradesco, não
+    acha SP e fica pendente (com aviso); um lido pelo leitor errado pode sair
+    com valor errado.
+    """
     n = normalize_text(text or '')
-    return ('sicredi' in n or
-            'cooperativa e conta origem' in n or
-            ('cooperativa origem' in n and 'conta origem' in n))
+    if 'cooperativa e conta origem' in n:
+        return True
+    if 'cooperativa origem' in n and 'conta origem' in n:
+        return True
+    if 'associado' in n and 'cooperativa' in n:
+        return True
+    return False
 
 
 def parse_sicredi_text(filename: str, page: int, text: str,

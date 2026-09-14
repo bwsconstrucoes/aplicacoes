@@ -152,6 +152,7 @@ def executar_diagnostico(payload: Dict[str, Any]) -> Dict[str, Any]:
     if pages_text:
         def parse_pages():
             from app.apps.baixabradesco.parser_bradesco import parse_bradesco_text
+            from app.apps.baixabradesco.parser_sicredi import is_sicredi, parse_sicredi_text
             from app.apps.baixabradesco.core import normalize_attachments
             atts = normalize_attachments(payload)
             filename = atts[0].filename if atts else 'comprovante.pdf'
@@ -160,7 +161,10 @@ def executar_diagnostico(payload: Dict[str, Any]) -> Dict[str, Any]:
                 if not txt or not txt.strip():
                     resultado.append({'pagina': num, 'status': 'sem_texto'})
                     continue
-                rec = parse_bradesco_text(filename=filename, page=num, text=txt)
+                # Mesmo desvio do fluxo real: o diagnóstico tem de ler o
+                # comprovante do mesmo jeito, senão ele mente.
+                ler = parse_sicredi_text if is_sicredi(txt) else parse_bradesco_text
+                rec = ler(filename=filename, page=num, text=txt)
                 d = {
                     'pagina':           num,
                     'tipo_comprovante': rec.tipo_comprovante,
