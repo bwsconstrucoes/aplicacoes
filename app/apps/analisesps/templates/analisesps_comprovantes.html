@@ -107,7 +107,25 @@
                   <td class="id">{{ i.sp_id or '—' }}</td>
                   <td>{{ i.valor or '—' }}</td>
                   <td>{{ i.recebedor or '—' }}</td>
-                  <td>{{ i.motivo or '' }}</td>
+                  <td>{{ i.motivo or '' }}
+                    {# ⚠️ A CONVERSA COM O OMIE, a um clique.
+
+                       *"A causa raiz é saber POR QUE não está baixando no
+                       Omie, porque se eu estou mandando pra baixar é pra
+                       baixar."* — e o Omie sempre respondeu por quê. A frase
+                       dele vai no motivo; aqui fica a sequência inteira
+                       (consultar → alterar → baixar), para o caso em que a
+                       frase não basta.
+
+                       Fechado por padrão: não é leitura do dia a dia. Mas
+                       quando faz falta, não pode estar noutro lugar. #}
+                    {% if i.conversa_omie %}
+                      <details class="conversa-omie">
+                        <summary>o que o Omie respondeu, passo a passo</summary>
+                        <pre>{{ i.conversa_omie }}</pre>
+                      </details>
+                    {% endif %}
+                  </td>
                 </tr>
               {% endfor %}
             </tbody>

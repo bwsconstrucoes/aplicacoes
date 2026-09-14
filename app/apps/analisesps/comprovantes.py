@@ -184,24 +184,70 @@ def _leitura_do_omie(plano: dict) -> dict:
                 return p or {}
         return None
 
+    # ⚠️ A CAMADA DE BAIXO: A FRASE DO PRÓPRIO OMIE.
+    #
+    # Cobrança do dono em 14/09/2026, e ela reenquadrou o problema: *"marcar a
+    # planilha só depois do Omie confirmar NÃO é resolver a causa raiz. A causa
+    # raiz é saber POR QUE não está baixando no Omie, porque se eu estou
+    # mandando pra baixar é pra baixar."*
+    #
+    # Ele está certo — e a resposta sempre esteve na mão. O Omie devolve o
+    # motivo em `faultstring` ("título já baixado", "conta corrente não
+    # encontrada", "valor maior que o saldo do título"…), e essa frase chega
+    # inteira até aqui dentro de `response.body`. O robô a resume num genérico
+    # "Falha ao lançar pagamento no Omie", e a tela mostrava o resumo.
+    #
+    # Resumo de erro é erro perdido. Quem vai agir precisa da frase do Omie.
+    def frase_do_omie(passo):
+        corpo = ((passo or {}).get("response") or {}).get("body") or {}
+        return (_texto(corpo.get("faultstring"))
+                or _texto(corpo.get("faultcode"))
+                or _texto(((passo or {}).get("response") or {}).get("raw"))[:200])
+
     baixas = [p for p in passos
               if _texto((p or {}).get("step")).lower() == "baixar"]
     if baixas:
         if any(((p or {}).get("response") or {}).get("ok") for p in baixas):
             return {"estado": "confirmou", "motivo": ""}
-        parada = passo_de("erro_baixa") or {}
+        # A FRASE DO OMIE PRIMEIRO, o resumo do robô depois. É a do Omie que
+        # diz o que fazer.
+        do_omie = frase_do_omie(baixas[-1])
+        resumo = _texto((passo_de("erro_baixa") or {}).get("motivo"))
         return {"estado": "recusou",
-                "motivo": _texto(parada.get("motivo"))}
+                "motivo": (f"O Omie respondeu: {do_omie}" if do_omie
+                           else resumo)}
 
     if passo_de("skip"):
         return {"estado": "ja_pago",
                 "motivo": _texto((passo_de("skip") or {}).get("motivo"))}
 
-    # Qualquer interrupção anterior à baixa: o motivo do robô é a resposta.
-    for nome in ("abort", "abort_apos_alterar", "abort_apos_transferencia"):
+    # Qualquer interrupção anterior à baixa. Aqui também vale a frase do Omie:
+    # o passo que falhou (consultar, alterar, transferir) traz a explicação
+    # dele, e o resumo do robô só diz que parou.
+    for nome, anterior in (("abort", "consultar"),
+                           ("abort_apos_alterar", "alterar_se_necessario"),
+                           ("abort_apos_transferencia", "")):
         parada = passo_de(nome)
         if parada:
-            return {"estado": "parou", "motivo": _texto(parada.get("motivo"))}
+            do_omie = frase_do_omie(passo_de(anterior)) if anterior else ""
+            resumo = _texto(parada.get("motivo"))
+            return {"estado": "parou",
+                    "motivo": (f"{resumo} O Omie respondeu: {do_omie}"
+                               if do_omie and resumo
+                               else (do_omie or resumo))}
+
+    # Último caso: a sequência acabou sem baixar e sem um passo de parada —
+    # o motivo, se houver, está no último passo que falhou.
+    falhos = [p for p in passos
+              if not ((p or {}).get("response") or {}).get("ok")
+              and (p or {}).get("response")]
+    if falhos:
+        do_omie = frase_do_omie(falhos[-1])
+        if do_omie:
+            return {"estado": "parou",
+                    "motivo": (f"O Omie respondeu, no passo "
+                               f"\"{_texto(falhos[-1].get('step'))}\": "
+                               f"{do_omie}")}
 
     return {"estado": "parou", "motivo": ""}
 
@@ -272,6 +318,39 @@ def _situacao_do_plano(plano: dict, ensaio: bool = False) -> tuple[str, str]:
     return BAIXADO, "Baixa confirmada no Omie. A planilha é atualizada logo em seguida."
 
 
+# Quanto da conversa com o Omie fica guardado. Duas mil letras pegam os três
+# passos com folga; o que passar disso é repetição de cabeçalho.
+TETO_DA_CONVERSA = 4000
+
+
+def _conversa_com_o_omie(plano: dict) -> str:
+    """A sequência de passos do Omie em texto, para ler depois.
+
+    Guarda o passo, se deu certo, e a frase que o Omie respondeu. Não guarda o
+    pedido — ele tem o valor e a conta, e o que falta responder é o "por quê",
+    que vem na resposta."""
+    passos = ((plano or {}).get("responses") or {}).get("omie") or []
+    if not passos:
+        return ""
+
+    linhas = []
+    for p in passos:
+        p = p or {}
+        resposta = p.get("response") or {}
+        corpo = resposta.get("body") or {}
+        frase = (_texto(corpo.get("faultstring")) or _texto(corpo.get("faultcode"))
+                 or _texto(p.get("motivo")))
+        if "response" in p:
+            estado = "ok" if resposta.get("ok") else "FALHOU"
+            http = resposta.get("status")
+            linhas.append(f"{_texto(p.get('step'))}: {estado}"
+                          + (f" (HTTP {http})" if http else "")
+                          + (f" — {frase}" if frase else ""))
+        else:
+            linhas.append(f"{_texto(p.get('step'))}: {frase}")
+    return "\n".join(linhas)[:TETO_DA_CONVERSA]
+
+
 def ler_resposta(resposta: dict, primeira_pagina: int = 1) -> list[dict]:
     """A resposta do robô virando linhas para o banco, uma por comprovante.
 
@@ -294,6 +373,11 @@ def ler_resposta(resposta: dict, primeira_pagina: int = 1) -> list[dict]:
             "valor": _texto(recibo.get("valor_pago")),
             "recebedor": _texto(recibo.get("nome_recebedor"))[:120],
             "motivo": _texto(motivo)[:500],
+            # ⚠️ A CONVERSA COM O OMIE, GUARDADA. Ver a migração 013 e o
+            # `_conversa_com_o_omie`: enquanto a falha não deixava rastro, ela
+            # era invisível — foi assim com o certificado digital, dois dias
+            # antes, e a lição custou dois dias dele.
+            "conversa_omie": _conversa_com_o_omie(bruto),
         })
 
     for item in resposta.get("duplicados") or []:
@@ -439,11 +523,13 @@ def _gravar_itens(conn, lote_id: int, linhas: list) -> None:
     for linha in linhas:
         conn.execute(
             "INSERT INTO analisesps.comprovantes_item "
-            "  (lote_id, pagina, situacao, sp_id, valor, recebedor, motivo) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "  (lote_id, pagina, situacao, sp_id, valor, recebedor, motivo, "
+            "   conversa_omie) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (lote_id, linha.get("pagina"), linha.get("situacao", ""),
              linha.get("sp_id", ""), linha.get("valor", ""),
-             linha.get("recebedor", ""), linha.get("motivo", "")))
+             linha.get("recebedor", ""), linha.get("motivo", ""),
+             linha.get("conversa_omie", "")))
     conn.commit()
 
 
@@ -599,12 +685,24 @@ def itens_do_lote(lote_id: int) -> list[dict]:
     from .db import consultar
 
     ordem = {s: n for n, s in enumerate(ORDEM)}
-    linhas = consultar(
-        "SELECT pagina, situacao, sp_id, valor, recebedor, motivo "
-        "  FROM analisesps.comprovantes_item WHERE lote_id = ? "
-        " ORDER BY pagina NULLS LAST", (lote_id,))
+    # A conversa com o Omie vem junto: é ela que responde "por que não baixou",
+    # e a tela a mostra escondida atrás de um clique — não é leitura do dia a
+    # dia, mas quando faz falta não pode estar noutro lugar.
+    try:
+        linhas = consultar(
+            "SELECT pagina, situacao, sp_id, valor, recebedor, motivo, "
+            "       conversa_omie "
+            "  FROM analisesps.comprovantes_item WHERE lote_id = ? "
+            " ORDER BY pagina NULLS LAST", (lote_id,))
+    except Exception:  # noqa: BLE001 — migração 013 ainda não aplicada
+        logger.exception("Análise de SPs: lendo os itens sem a conversa do Omie")
+        linhas = [tuple(l) + ("",) for l in consultar(
+            "SELECT pagina, situacao, sp_id, valor, recebedor, motivo "
+            "  FROM analisesps.comprovantes_item WHERE lote_id = ? "
+            " ORDER BY pagina NULLS LAST", (lote_id,))]
     itens = [{"pagina": l[0], "situacao": l[1], "rotulo": ROTULOS.get(l[1], l[1]),
-              "sp_id": l[2], "valor": l[3], "recebedor": l[4], "motivo": l[5]}
+              "sp_id": l[2], "valor": l[3], "recebedor": l[4], "motivo": l[5],
+              "conversa_omie": l[6] if len(l) > 6 else ""}
              for l in linhas]
     itens.sort(key=lambda i: (ordem.get(i["situacao"], 99),
                               i["pagina"] if i["pagina"] is not None else 10 ** 6))

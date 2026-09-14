@@ -1,0 +1,28 @@
+-- ---------------------------------------------------------------------------
+-- A CONVERSA COM O OMIE, GUARDADA — 14/09/2026
+--
+-- Cobranca do dono, e ela reenquadrou o problema: *"marcar a planilha so
+-- depois do Omie confirmar NAO e resolver a causa raiz. A causa raiz e saber
+-- POR QUE nao esta baixando no Omie, porque se eu estou mandando pra baixar e
+-- pra baixar."*
+--
+-- Ele esta certo. E a investigacao do certificado digital, dois dias antes,
+-- ensinou o caminho: enquanto a falha nao deixava rastro no banco, ela era
+-- invisivel e a tela dizia "nunca rodou". Bastou gravar o motivo para os
+-- defeitos aparecerem em uma tentativa.
+--
+-- Aqui e o mesmo: o Omie responde POR QUE recusa (em `faultstring`), e essa
+-- frase morria dentro da resposta do robo. A coluna guarda a sequencia inteira
+-- de passos daquela pagina — consultar, alterar, baixar — com o que cada um
+-- respondeu.
+--
+-- ⚠️ NAO GUARDA CREDENCIAL: o robo ja troca `app_key` e `app_secret` por
+-- "***REDACTED***" antes de devolver o plano (ver `ExecutionPlan.to_dict`), e
+-- o que entra aqui e o que ele devolveu.
+--
+-- TEXTO, e nao JSONB, de proposito: isto e material de diagnostico para ler,
+-- nao para consultar por dentro. JSONB pediria indice e disciplina de formato
+-- que este dado nao tem.
+-- ---------------------------------------------------------------------------
+ALTER TABLE analisesps.comprovantes_item
+    ADD COLUMN IF NOT EXISTS conversa_omie TEXT NOT NULL DEFAULT '';

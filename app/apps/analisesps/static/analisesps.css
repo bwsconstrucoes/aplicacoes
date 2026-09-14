@@ -1481,3 +1481,17 @@ table.planilha td.num, table.planilha th.num {
   border-left: 1px solid var(--borda, #e2e8f0);
   padding-left: 18px;
 }
+
+/* A CONVERSA COM O OMIE, atrás de um clique. Não é leitura do dia a dia — mas
+   quando faz falta, é a única coisa que responde "por que não baixou". */
+.conversa-omie { margin-top: 6px; }
+.conversa-omie > summary {
+  cursor: pointer; font-size: 12px; font-weight: 600;
+  color: var(--azul-claro, #2563eb);
+}
+.conversa-omie pre {
+  margin: 6px 0 0; padding: 8px 10px; border-radius: 6px;
+  background: #0F172A; color: #E2E8F0; font-size: 11.5px;
+  line-height: 1.55; white-space: pre-wrap; word-break: break-word;
+  max-height: 280px; overflow: auto;
+}
