@@ -240,6 +240,22 @@
   </table>
 </div>
 
+{# ============ AS CONFERÊNCIAS, SÓ QUANDO ALGUÉM PEDE ============ #}
+{% if not base_vazia and not conferir and not conferencia %}
+<div class="cartao" style="margin-top:14px">
+  <div class="cartao-cab"><h3>Conferências da base</h3></div>
+  <p class="cartao-dica">
+    Três conferências que <b>só medem, não alteram nada</b>: dinheiro que as
+    telas não contam, de onde vem a diferença do bloco de Aportes do DRE, e
+    procurar um lançamento pelo valor na base crua.<br>
+    Elas varrem as 186 mil linhas e levam alguns segundos — por isso não rodam
+    sozinhas ao abrir esta tela.
+  </p>
+  <a class="btn" style="text-decoration:none"
+     href="{{ url_for('painel.configuracoes', conferir='1') }}">Rodar as conferências</a>
+</div>
+{% endif %}
+
 {# ============ CONFERÊNCIA: as duas regras de "foi pago" batem? ============ #}
 {% if conferencia %}
 <div class="cartao" style="margin-top:14px;

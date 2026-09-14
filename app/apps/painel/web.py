@@ -1100,6 +1100,7 @@ def configuracoes():
     if estado_migracoes["pendentes"]:
         atualizacao, vazia, etapas = None, True, []
         conferencia = sumidos = aportes_conf = None
+        conferir = False
     else:
         from . import consultas
         # A caixa vermelha logo abaixo ja conta, com etapa e tempo de silencio,
@@ -1113,12 +1114,17 @@ def configuracoes():
         etapas = consultas.etapas_da_carga()
         # So mede, nao corrige: quanto dinheiro a carga deu por realizado e as
         # telas nao enxergam. Ver o comentario em `conferencia_do_pago`.
-        conferencia = None if vazia else consultas.conferencia_do_pago()
-        # "onde foi parar este numero?" — respondida pelo banco, nao por palpite
+        # AS CONFERENCIAS SO RODAM QUANDO ALGUEM PEDE. Sao ~12 varreduras na
+        # base inteira, e Configuracoes e a tela onde se aperta o botao de
+        # atualizar: ela TEM de abrir rapido. Deixei as tres ligadas por padrao
+        # em 14/09/2026 e a tela parou de abrir para o dono no mesmo dia.
+        conferir = request.args.get("conferir") == "1"
         procurado = consultas._valor_procurado(request.args.get("procurar", ""))
-        sumidos = None if vazia else consultas.titulos_que_sumiram(procurado)
-        # de onde vem a diferenca do bloco de Aportes do DRE, corte a corte
-        aportes_conf = None if vazia else consultas.conferencia_dos_aportes()
+        conferencia = sumidos = aportes_conf = None
+        if not vazia and (conferir or procurado is not None):
+            conferencia = consultas.conferencia_do_pago()
+            sumidos = consultas.titulos_que_sumiram(procurado)
+            aportes_conf = consultas.conferencia_dos_aportes()
     return render_template(
         "painel_config.html", **contexto,
         migracoes=estado_migracoes,
@@ -1126,6 +1132,7 @@ def configuracoes():
         base_vazia=vazia,
         primeira=request.args.get("primeira") == "1",
         etapas=etapas,
+        conferir=conferir,
         conferencia=conferencia,
         sumidos=sumidos,
         aportes_conf=aportes_conf,
