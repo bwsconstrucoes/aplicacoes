@@ -20,23 +20,27 @@ Resultado por Obra, Comprometido × Executado, Necessidade de Caixa, Prestação
 Contas e os Cenários de rateio — mais o relatório em PDF, o **Explorador** e o
 **Rateio da Administração**.
 
-**Estado em 09/09/2026:** a conversão terminou e o painel já passou do que o
-Streamlit fazia. Publicado neste dia (`07b026a`): o Explorador dos lançamentos,
-a **alteração de classificação no OMIE** (categoria e obra, escondida numa aba
-de Configurações, com senha própria) e o **Rateio da Administração**. Antes
-dele, em 08/09, os juros e multas passaram a contar como despesa em todas as
-telas — inclusive a Prestação de Contas — e os gráficos deixaram de sair
-desproporcionais.
+**Estado em 13/09/2026:** a conversão terminou e o painel já passou do que o
+Streamlit fazia. Em 09/09 (`07b026a`) subiram o Explorador, a **alteração de
+classificação no OMIE** e o **Rateio da Administração**; o dono aplicou as
+migrações 007 e 008 e criou a `PAINEL_SENHA_ESCRITA` no Render. Em 13/09 o
+Explorador foi **reprovado por ele e refeito**: filtros na barra da esquerda,
+com busca e marcação de vários, e **uma lista só**, editável linha a linha ou
+em lote — ver a seção própria mais abaixo.
 
 ### O que está pendente AGORA
 
-**Nada de código.** O que falta são três coisas, e nenhuma é escrever tela:
+**Nada de código.** O que falta é conferência com dado real, e duas coisas
+merecem destaque:
 
-1. **O dono apertar "Aplicar atualizações do banco"** — as migrações 007 e 008
-   subiram em 09/09 e o Explorador não funciona sem elas.
-2. **A variável `PAINEL_SENHA_ESCRITA` no Render** — sem ela a aba de alteração
-   no OMIE nem aparece, de propósito.
-3. **Conferência com dado real** — ver "O que falta" no fim deste arquivo.
+1. **A primeira escrita no OMIE nunca aconteceu.** O caminho que grava foi
+   testado só contra dublê. Protocolo: ensaio → **um** título conferido dentro
+   do OMIE com os olhos → só então lote.
+2. **O saneamento da base em si** — os empréstimos classificados fora do lugar,
+   os títulos sem obra. A ferramenta está pronta; o trabalho é de quem conhece
+   as obras.
+
+O resto está em "O que falta", no fim deste arquivo.
 
 <details>
 <summary>O que já foi publicado nesta leva (04/09/2026)</summary>
@@ -643,6 +647,99 @@ nunca rodou contra a base real**. Ele passou pelo parser do Postgres, pelo teste
 de portabilidade e pelos testes com dublê — nenhum dos três olha o número que
 sai.
 
+## O Explorador foi reprovado e refeito — 13/09/2026
+
+O dono abriu a primeira versão e reprovou, com razão. Três defeitos, e nenhum
+deles era detalhe:
+
+1. **Os filtros estavam no alto da tela**, e em todas as outras telas do painel
+   eles ficam na barra da esquerda. Quem usa o painel todo dia tropeça.
+2. **Escolher dois grupos ou duas categorias era, na prática, impossível.** Eram
+   listas de rolagem `<select multiple>`: aceitavam vários itens, sim, mas só
+   segurando Ctrl — e uma dica escrita embaixo não conserta uma interação que
+   ninguém descobre. Vale a frase dele: *"eu posso buscar só um grupo ou só uma
+   categoria, assim não funciona"*.
+3. **Havia DUAS listas de lançamentos**: a de procurar, embaixo, e outra dentro
+   do bloco "Alterar no OMIE", com as caixas de marcar. Quem achava o lançamento
+   numa tinha de reencontrá-lo na outra. *"Basta uma lista e a gente vai
+   trabalhar em cima dessa lista."*
+
+### Como ficou
+
+**Os filtros foram para a esquerda**, na mesma barra do resto do painel, e
+viraram listas de marcar com busca: análise, grupo, categoria, obra, projeto,
+conta corrente e situação. Marca-se quantos quiser em cada uma, a busca ignora
+acento, o que está marcado sobe para o topo, e há "marcar os que aparecem". Nada
+disso foi inventado: é a mesma peça que a barra padrão já usava — ela saiu de
+dentro do `painel_filtros.html` e virou `painel_filtros_lista.html` mais
+`static/filtros.js`, usados pelas duas. Uma cópia de cada lado divergiria na
+primeira correção.
+
+**Sobrou uma lista só, e é nela que se edita.** Dois jeitos de trabalhar, os
+dois que o dono descreveu:
+
+- **Um a um:** clicar na célula de Categoria ou de Obra de qualquer linha e
+  escolher a nova no seletor que abre ali.
+- **Em lote:** marcar várias linhas e usar os botões do alto — "Mudar a
+  categoria dos marcados", "Mudar a obra dos marcados" —, que valem para todas
+  de uma vez.
+
+Os dois se misturam à vontade: dá para mandar trinta títulos para uma obra e
+depois corrigir dois deles individualmente, tudo antes de enviar.
+
+### O que se decidiu no caminho
+
+**Nada é enviado enquanto se edita.** O que se monta na tela é um *rascunho*:
+a célula mostra `valor de hoje → valor novo`, a linha fica amarela, e um contador
+diz quantos títulos estão pendentes. Só o Ensaiar e o Alterar de verdade falam
+com o OMIE. Sem isso, um clique errado numa célula seria um envio.
+
+**Só a célula que mudou aparece riscada.** A primeira versão riscava a linha
+inteira — quem trocasse só a categoria via a obra riscada também, e a tela
+estava mentindo sobre o que o botão ia fazer. Apareceu em captura de tela do
+navegador, não em teste: número nenhum pega isso.
+
+**Um título rateado em três obras aparece em três linhas, mas é UM cadastro no
+OMIE.** Então marcar qualquer uma das linhas marca as três, editar uma edita as
+três, e o envio manda **uma** chamada. O contador diz "1 título marcado", não
+"3 linhas". Fingir que são registros separados seria mentir sobre o que o botão
+faz — e mandaria o mesmo título três vezes para o OMIE.
+
+**O servidor passou a aceitar um destino POR TÍTULO** (`normalizar_alvos`, em
+`saneamento.py`), em vez de um valor único para todos. A forma antiga continua
+valendo, e não por preguiça: é ela que funciona com o JavaScript travado, e é
+ela que os testes exercitam desde o começo.
+
+**O seletor de categoria é um só na tela inteira**, que se move para perto de
+quem o chamou. São centenas de categorias: desenhar a lista dentro de cada uma
+das até 3.000 linhas seriam centenas de milhares de elementos. Este painel já
+morreu de falta de memória uma vez (§9 do `CONTEXTO.md`) — não é hipótese.
+
+**O teto de 200 títulos por envio agora avisa enquanto se edita**, não só depois
+de enviar. Descobrir o limite depois de montar duzentas alterações seria cruel.
+
+### O que ficou de fora, e por quê
+
+**O ensaio depende do OMIE estar no ar.** A recusa por rateio é calculada pelo
+espelho do próprio painel e não precisaria de rede nenhuma, mas hoje ela só
+aparece depois de o painel conseguir falar com o OMIE. Se a API estiver fora, o
+ensaio inteiro falha em vez de ao menos listar os títulos rateados. Não mexi
+nisso agora: é o caminho que escreve, e alargá-lo sem pedido não vale o risco.
+
+**A escrita continua sem nunca ter tocado a API de verdade.** Nada nesta leva
+mudou isso. O protocolo segue igual: ensaio → **um** título conferido dentro do
+OMIE com os olhos → lote.
+
+### O que foi conferido antes de publicar
+
+Suíte completa com banco de verdade, já com o Análise de SPs junto na `main`:
+**5038 passaram, 129 pulados**. Os treze testes novos foram conferidos
+quebrando o código de propósito, um a um — inclusive o da trava do rateio, que
+passava sem provar nada até ganhar a asserção de que a mudança pedida acontece
+mesmo. A tela foi exercitada em navegador de verdade: editar uma linha, marcar
+três e mudar todas, desfazer, e o título rateado virando um envio só. Publicado
+em `86636c7`, sem migração.
+
 ## O empréstimo que devolveu mais do que entrou — 09/09/2026
 
 A base diz que a empresa pagou **R$ 9,25 milhões** de principal contra
@@ -666,84 +763,130 @@ A escolha foi deliberada: o painel não deve adivinhar nem "consertar" o número
 por dentro. Um ajuste automático esconderia o erro de classificação em vez de
 mostrá-lo, e o erro continuaria contaminando as outras telas em silêncio.
 
+## A tarde de 13/09/2026: um centavo custou uma tarde
+
+O dono quis conferir as devoluções de aporte de uma empresa contra a tela do
+OMIE. Sete lançamentos lá, dois no painel. Levantei **cinco** explicações e ele
+derrubou **quatro**, sempre com dado:
+
+1. *"A data do painel é outra"* → ele: está conciliado em 24/12, na data certa.
+2. *"É lançamento de conta corrente, não título"* → ele: os dois foram lançados
+   igual, e abriu os dois para conferir.
+3. *"A janela da carga de pagamentos não alcança data retroativa"* → ele tirou o
+   filtro de data e continuou sem aparecer.
+4. *"O nome do fornecedor está vazio"* → o recálculo já tinha a correção e não
+   mudou nada. (E eu ainda errei o fuso ao comparar os horários, e o fiz
+   recalcular à toa.)
+5. *"O título está rateado, então cada linha tem uma fração"* → ele: não é
+   rateado.
+
+**A causa real:** o lançamento estava no painel o tempo todo. A busca por valor
+comparava por **igualdade exata**, e o valor guardado é `784.647,06` — o OMIE
+mostra `784.647,07`. Um centavo. A busca errava por um centavo e afirmava que o
+lançamento não existia.
+
+### Por que falta esse centavo — e onde mais ele falta
+
+Todas as colunas de dinheiro do espelho (`titulos`, `movimentos`, `rateio`) são
+**`REAL`**: ponto flutuante de 4 bytes, ~7 dígitos significativos. Acima de
+**R$ 131.072** o menor passo representável passa de um centavo, e o valor gravado
+deixa de ser o valor real. Não é só o `valor_documento`: é o valor pago, juros,
+multa, os impostos retidos e os valores do rateio.
+
+A tabela `fato` usa `NUMERIC(16,2)`, exata — mas ela é **calculada a partir
+das colunas `REAL`**, então guarda com precisão um número que já veio errado.
+Ou seja: **as telas carregam esse erro de centavos em todo título grande.**
+
+**O tamanho, medido e não estimado no susto:** centavos por título, e só nos
+grandes. Um título de R$ 8 milhões pode estar até ~50 centavos fora. Somada a
+base inteira, a diferença deve ficar em poucos reais. Não move decisão de
+negócio nenhuma. **Atrapalha exatamente uma coisa: bater o painel com o OMIE no
+centavo** — que era o que o dono estava tentando fazer.
+
+### O que foi feito, e o que não foi
+
+**Feito:** toda busca por valor (no Explorador e na conferência da base crua)
+compara com **meia unidade de folga**, não por igualdade. Há teste provando que
+a folga acha o centavo perdido e que não confunde dois títulos próximos.
+
+**Não feito, e é decisão de negócio:** trocar as colunas para `NUMERIC`. Não
+adianta converter o que está gravado — a precisão se perdeu na escrita, o número
+certo não está mais lá. Seria migração **mais uma carga completa do OMIE**, que
+pelo próprio código leva horas. Recomendei não fazer agora: o dano prático era a
+busca, e ele está resolvido. Fica como dívida conhecida. No dia em que for
+preciso conferir no centavo, é isso que tem de ser feito.
+
+### A lição que vale mais que o conserto
+
+Gastei a tarde inteira raciocinando sobre o código sem enxergar a base do dono,
+e cada hipótese custou uma ida e volta com ele. **A ferramenta que resolveu — o
+campo "procurar na base crua", em Configurações — levou vinte minutos para ser
+feita e respondeu na primeira tentativa.** Devia ter sido a primeira coisa, não
+a sexta. Quando o dado está do outro lado, construir o instrumento é mais barato
+que adivinhar.
+
 ## O que falta
 
-Atualizado em **09/09/2026**, depois de publicar o Explorador, a alteração de
-classificação no OMIE e o Rateio da Administração (`07b026a`).
+Atualizado em **14/09/2026**, no fim da sessão que caçou uma devolução de aporte
+a tarde inteira.
 
-**Não há tela por escrever.** O painel faz tudo o que o Streamlit fazia, mais o
-que o Streamlit ganhou depois e voltou para cá no documento de repasse. O que
-resta é de dois tipos: **conferência com dado real** — que só o dono consegue
-fazer, porque exige abrir a tela publicada — e **saneamento da base no OMIE**,
-que agora tem ferramenta própria.
+### Esperando decisão do dono
 
-### Apertar o botão do banco (imediato)
+1. **As duas regras de "foi pago" divergem** — a carga considera pago o título
+   cujo status diga *pago/recebido/conciliado* **ou** cuja baixa do OMIE diga
+   liquidado; as telas olham só o texto do status. **Medido na base real:
+   R$ 96.750,00 em 2 títulos** estão marcados como pagos e não são contados por
+   tela nenhuma. A conferência vive em Configurações e não altera nada.
+   O conserto é as telas lerem `situacao_vencimento = 'Quitado'`, que é a
+   decisão que a própria carga já grava — e a regra passa a existir num lugar
+   só. **Falta o dono dizer se pode**, porque números do DRE e da Visão Geral
+   vão subir (no máximo esse valor).
 
-O pacote de 09/09 subiu com as migrações **007** (código da categoria no fato) e
-**008** (registro das alterações no OMIE). Enquanto o botão "Aplicar
-atualizações do banco" não for apertado, o Explorador e a tela de alteração não
-funcionam. A 007 se declara `REFAZER-O-FATO`: ao terminar, o painel dispara o
-recálculo sozinho e avisa na tela.
+   Para orientar o conserto, falta ler na conferência **quais palavras de
+   situação** estão escapando e **em quais categorias** — está tudo na tela.
 
-Para a alteração no OMIE funcionar falta também a variável
-**`PAINEL_SENHA_ESCRITA`** no Render. Sem ela a aba nem aparece — é de
-propósito: sem senha configurada, ninguém escreve no OMIE por engano.
+2. **Os valores do bloco Aportes e Dividendos do DRE parecem errados**, disse o
+   dono em 13/09. Não foi atacado: ele não chegou a dizer **quais** números
+   estão errados nem o que esperava ver. Sem isso só dá para levantar hipótese,
+   e a tarde de 13/09 mostrou o custo disso. **É o item mais importante da
+   lista** — este bloco nunca foi conferido contra dado real.
 
-### Conferir com a base da empresa (só o dono consegue)
+### Buracos conhecidos, sem conserto ainda
 
-1. **O bloco de aportes do DRE.** Nunca viu dado de verdade. É o pedaço mais
-   antigo nessa condição, e este módulo já mandou três erros de SQL para a
-   produção.
-2. **As duas datas e o atraso**, no Despesas Analítico, contra o OMIE.
-3. **Os cenários de rateio:** simular uma mudança óbvia e ver se o efeito bate
-   com a intuição de quem conhece as obras.
-4. **O PDF contra a planilha** do mesmo recorte. Por construção os dois saem das
-   mesmas abas — o teste é confirmar isso com dado real.
-5. **Se o arquivo do Analítico agora traz o mesmo número da tela.** Era 481 na
-   tela e 316 no arquivo; a causa foi corrigida em 04/09.
-6. **Se a Visão Geral agora bate com o DRE.** Eram R$ 888 mil contra R$ 931 mil,
-   diferença de R$ 43.298,13 de juros e multa que a Visão Geral não descontava.
-   Corrigido em 08/09 em todas as telas, prestação incluída.
-7. **A primeira escrita no OMIE nunca aconteceu.** O caminho de escrita foi
-   testado só contra dublê — a API real nunca recebeu um `AlterarContaPagar`
-   deste código. O protocolo é: **ensaio** (não grava nada, mostra o que
-   mudaria) → **um único título**, conferido dentro do OMIE com os olhos → só
-   então lote. Não pular o passo do meio.
+3. **Lançamento de conta corrente não entra no painel.** A carga lê Contas a
+   Pagar e a Receber; movimento sem título é descartado na gravação
+   (`gravar_movimentos` conta os ignorados e segue). Na conferência do dono, os
+   lançamentos de "Débito em Conta Corrente" de R$ 3,00 e R$ 1,00 não aparecem
+   por isso — e não vão aparecer por recálculo nenhum. Trazê-los exige decidir
+   antes se entram nas contas: somá-los junto com o título que eles quitam
+   contaria o mesmo dinheiro duas vezes. Provavelmente devem aparecer no
+   Explorador e ficar **fora** dos totais.
 
-### O que a base ainda tem de errado
+4. **As colunas de dinheiro do espelho são `REAL` e perdem centavos acima de
+   R$ 131.072.** Ver a seção própria acima. Consertar é migração mais carga
+   completa (horas). O dono decidiu em 14/09 **não fazer agora** — o dano
+   prático era a busca, e ele está resolvido.
 
-8. **Mais principal de empréstimo pago do que tomado:** R$ 9,25 milhões contra
-   R$ 9,08 milhões. Isso não se sustenta — ninguém paga principal de dinheiro
-   que não tomou. Ou o empréstimo é anterior ao período que a base cobre, ou há
-   título de empréstimo classificado em outra categoria no OMIE; no segundo caso
-   ele está sendo contado como despesa de obra em **todas** as telas. Desde
-   09/09 a Necessidade de Caixa **diz isso na leitura em português** em vez de
-   deixar o número passar calado, e aponta o Explorador como o lugar de
-   corrigir. A correção em si é trabalho de base, não de código.
+5. **O ensaio da alteração no OMIE depende de a API estar no ar.** A recusa por
+   rateio sai do espelho do próprio painel e não precisaria de rede, mas hoje só
+   aparece depois que o painel fala com o OMIE.
+
+### Conferência com dado real (só o dono consegue)
+
+6. **A primeira escrita no OMIE nunca aconteceu.** Protocolo: ensaio → **um**
+   título conferido dentro do OMIE com os olhos → só então lote.
+7. **O PDF contra a planilha** do mesmo recorte.
+8. **Os cenários de rateio**, contra a intuição de quem conhece as obras.
 
 ### Fora desta área
 
 9. **O mesmo defeito da senha com acento existe no Análise de SPs**
-   (`analisesps/auth.py` linhas 120 e 271, `analisesps/web.py` 628). Não foi
-   mexido daqui — outra área, outro chat. **Avisado ao dono em 04/09.** O ERP
-   não tem o problema: lá a comparação é entre hashes, sempre ASCII.
-10. **Converter `app/apps/spsbd_app`.** Já está em andamento pelo chat da área,
-    que publicou várias vezes em 04/09.
+   (`analisesps/auth.py` 120 e 271, `analisesps/web.py` 628). Avisado em 04/09.
 
 ### Melhorias possíveis, nenhuma urgente
 
-11. **O que sobrou de lentidão está no banco, não no código.** Medido pelo dono
-    em 04/09: 478 ms de tela, 443 deles no banco — 93%. Otimizar Python daqui
-    não move o ponteiro; o que resta é SQL e índice.
-
-### Encerrado — não reabrir sem motivo novo
-
-- **Migração que cria coluna derivada agenda a reconstrução sozinha.** Aprovado
-  pelo dono em 04/09 e feito: a migração declara a marca `REFAZER-O-FATO` no
-  próprio arquivo e o painel dispara o recálculo ao terminar de aplicar.
-- **Os quatro itens do documento de repasse do Streamlit** (código e rótulo da
-  categoria, o Explorador, a edição no OMIE, o Rateio da Administração) e as
-  pendências 4.1 e 4.2 dele. Tudo publicado em 09/09.
+10. **O que sobrou de lentidão está no banco, não no código.** Medido pelo dono
+    em 04/09: 478 ms de tela, 443 deles no banco — 93%.
 
 ## Coisas pequenas que mordem
 

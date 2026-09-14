@@ -657,6 +657,14 @@ def base_para_explorar(painel_no_banco):
     yield
 
 
+def _pedido_padrao(**extra):
+    base = {"tipo": "", "analises": [], "grupos": [], "categorias": [],
+            "obras": [], "fornecedores": [], "projetos": [], "contas": [],
+            "situacoes": [], "busca": "", "com_trf": False, "de": "", "ate": ""}
+    base.update(extra)
+    return base
+
+
 def _codigos(pedido):
     from app.apps.painel import consultas
     base = {"tipo": "", "analises": [], "grupos": [], "categorias": [],
@@ -672,11 +680,26 @@ def test_o_explorador_enxerga_fora_do_dre(base_para_explorar):
     assert _codigos({"busca": "SOCIO"}) == {702}
 
 
-def test_a_transferencia_so_aparece_quando_alguem_pede(base_para_explorar):
-    """Transferência é dinheiro trocando de conta da própria empresa: ela dobra
-    qualquer soma e polui a busca."""
-    assert 703 not in _codigos({"busca": "BANCO"})
-    assert _codigos({"busca": "BANCO", "com_trf": True}) == {703}
+def test_a_transferencia_aparece_sem_precisar_pedir(base_para_explorar):
+    """A regra era o contrário até 13/09/2026, e estava errada.
+
+    Transferência é dinheiro trocando de conta da própria empresa: nas telas de
+    análise ela fica fora, senão o mesmo valor conta duas vezes. Mas ESTA tela
+    existe para achar classificação errada, e "está numa categoria marcada como
+    transferência no OMIE sem ser uma" é exatamente um desses erros. Esconder o
+    que se procura é o oposto do trabalho.
+
+    O dono topou com isso procurando uma devolução de aporte de 24/12/2025:
+    "aqui era pra aparecer todos os lançamentos igual como aparece no relatório
+    de conta corrente do OMIE"."""
+    assert 703 in _codigos({"busca": "BANCO"})
+
+
+def test_quem_quiser_so_a_transferencia_marca_a_analise(base_para_explorar):
+    """Mostrar tudo por padrão não pode custar o corte: a lista Análise da barra
+    lateral continua separando DRE, Fluxo de Caixa e TRF."""
+    assert _codigos({"busca": "BANCO", "analises": ["TRF"]}) == {703}
+    assert 703 not in _codigos({"analises": ["DRE"]})
 
 
 def test_procurar_pelo_titulo_sem_apropriacao(base_para_explorar):
@@ -757,3 +780,311 @@ def test_o_explorador_exige_login(base_para_explorar, monkeypatch):
     app = create_app()
     app.config.update(TESTING=True)
     assert app.test_client().get("/painel/explorador").status_code == 302
+
+
+def test_procurar_pelo_numero_do_titulo_do_omie(base_para_explorar):
+    """A pergunta mais básica que se faz a esta tela — "o título 12345 está no
+    painel?" — não tinha resposta até 13/09/2026: a busca só olhava fornecedor,
+    documento e observação. Quem procurava um lançamento cujo fornecedor não
+    está preenchido não tinha como perguntar."""
+    assert _codigos({"busca": "703"}) == {703}
+
+
+def test_procurar_por_numero_nao_perde_o_documento_que_e_numero(base_para_explorar):
+    """Documento também costuma ser só dígitos. Somar a busca por código não
+    pode custar a busca por documento."""
+    from app.apps.painel.db import conexao
+    from app.apps.painel import consultas
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET numero_documento = '703' "
+                     " WHERE codigo_lancamento = 701")
+        conn.commit()
+    consultas.esquecer_listas()
+    # tem de achar os dois: o título 703 e o título 701, cujo documento é "703"
+    assert _codigos({"busca": "703"}) == {701, 703}
+
+
+# ===========================================================================
+# Fornecedor: filtro de lista, e nunca uma linha sem nome
+# ===========================================================================
+# 13/09/2026. O dono quis analisar as devoluções de aporte de uma empresa,
+# digitou o nome no Buscar e achou menos lançamentos do que existiam. Procurar
+# empresa digitando o nome obriga a acertar a grafia do cadastro do OMIE — e o
+# painel ainda deixava a linha SEM NOME quando o cadastro não estava na base,
+# tornando-a invisível para qualquer busca por nome.
+
+def test_fornecedor_e_filtro_de_lista_nao_so_texto(base_para_explorar):
+    """Marcar na lista não depende de acertar a grafia do cadastro do OMIE."""
+    from app.apps.painel import consultas
+    r = consultas.fornecedores_do_recorte(consultas.explorar(_pedido_padrao()))
+    assert r["itens"], "a barra lateral tem de oferecer os nomes para marcar"
+
+
+def test_filtrar_por_fornecedor_traz_so_os_dele(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET razao_social = 'CONSTRUTORA X LTDA'"
+                     " WHERE codigo_lancamento = 701")
+        conn.commit()
+    consultas.esquecer_listas()
+    assert _codigos({"fornecedores": ["CONSTRUTORA X LTDA"]}) == {701}
+
+
+def test_quem_esta_sem_fornecedor_pode_ser_achado(base_para_explorar):
+    """Antes, linha sem nome não tinha como ser encontrada — nem por busca nem
+    por filtro. Agora ela tem um rótulo próprio, como o "(não apropriado)" da
+    obra, e aparece na lista para ser marcada."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET razao_social = '' WHERE codigo_lancamento = 702")
+        conn.commit()
+    consultas.esquecer_listas()
+    r = consultas.fornecedores_do_recorte(consultas.explorar(_pedido_padrao()))
+    assert consultas.SEM_FORNECEDOR in r["itens"]
+    assert _codigos({"fornecedores": [consultas.SEM_FORNECEDOR]}) == {702}
+
+
+# ===========================================================================
+# A conferência das duas regras de "foi pago"
+# ===========================================================================
+# 13/09/2026, investigando valores errados no bloco de Aportes do DRE: a CARGA
+# considera pago o título cujo status diga pago/recebido/conciliado OU cuja
+# baixa do OMIE diga liquidado. As TELAS só olham o texto do status. Um título
+# liquidado com outra palavra tem valor gravado como realizado e não é contado
+# por nenhuma tela — o dinheiro existe na base e não aparece em lugar nenhum.
+#
+# Esta conferência MEDE o estrago, sem corrigir: o dono decide com o número.
+
+@pytest.fixture()
+def base_com_pago_invisivel(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        # a carga deu por QUITADO (a baixa do OMIE disse liquidado), mas o texto
+        # do status usa outra palavra — e e so o texto que as telas olham
+        conn.execute(
+            "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+            " situacao_vencimento, categoria, departamento, razao_social,"
+            " data, pago_recebido, a_pagar_receber, juros, multa)"
+            " VALUES (901,'2. Contas a Pagar','DRE','Baixado','Quitado',"
+            "         'Devolução de Aportes','CASA','SOCIO','2025-12-24',"
+            "         -320000,0,0,0)")
+        conn.commit()
+    consultas.esquecer_listas()
+    yield
+
+
+def test_a_conferencia_acha_o_dinheiro_que_as_telas_nao_contam(base_com_pago_invisivel):
+    from app.apps.painel import consultas
+    r = consultas.conferencia_do_pago()
+    assert r["titulos"] >= 1
+    assert r["valor"] >= 320000
+    assert any(s["situacao"] == "Baixado" for s in r["situacoes"]), \
+        "tem de dizer QUAL palavra está escapando — é isso que orienta a correção"
+
+
+def test_a_conferencia_nao_altera_nada(base_com_pago_invisivel):
+    """Ela mede. Se corrigisse por conta própria, os números do DRE mudariam
+    sem ninguém decidir — e o dono pediu para medir antes."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import consultar
+    antes = consultar("SELECT situacao, situacao_vencimento, pago_recebido"
+                      "  FROM fato WHERE codigo_lancamento = 901")
+    consultas.conferencia_do_pago()
+    depois = consultar("SELECT situacao, situacao_vencimento, pago_recebido"
+                       "  FROM fato WHERE codigo_lancamento = 901")
+    assert antes == depois
+
+
+def test_quando_as_duas_regras_concordam_a_conferencia_fica_limpa(base_para_explorar):
+    """Sem o caso ruim na base, ela não pode inventar alarme."""
+    from app.apps.painel import consultas
+    assert consultas.conferencia_do_pago()["titulos"] == 0
+
+
+def test_a_lista_de_fornecedores_nao_custa_consulta_nem_pagina(base_para_explorar):
+    """13/09/2026: a primeira versão deste filtro desenhava TODOS os
+    fornecedores da base. Com milhares deles a página foi a 1,16 MB — 86% do
+    peso dela — e o dono sentiu na hora: "o painel tá super lento agora".
+
+    A lista sai das linhas já buscadas: nenhuma consulta a mais, e ela oferece
+    exatamente o que está à vista."""
+    from app.apps.painel import consultas
+
+    dados = consultas.explorar(_pedido_padrao())
+    r = consultas.fornecedores_do_recorte(dados)
+    nomes_na_tela = {(l["razao_social"] or "").strip() or consultas.SEM_FORNECEDOR
+                     for l in dados["linhas"]}
+    assert set(r["itens"]) == nomes_na_tela
+    assert len(r["itens"]) <= consultas.TETO_DE_FORNECEDORES
+
+
+def test_sem_recorte_a_lista_de_fornecedores_nem_e_desenhada(base_para_explorar):
+    """Sem filtro a tela não lista lançamento nenhum. Desenhar milhares de
+    nomes ali seria peso pago à toa."""
+    from app.apps.painel import consultas
+    assert consultas.fornecedores_do_recorte(None)["sem_recorte"] is True
+    assert consultas.fornecedores_do_recorte({"linhas": []})["itens"] == []
+
+
+def test_a_lista_tem_teto_de_desenho(base_para_explorar):
+    """O teto não é de busca, é de HTML: cada nome vira uma caixa de marcar no
+    navegador."""
+    from app.apps.painel import consultas
+    falso = {"linhas": [{"razao_social": f"FORNECEDOR {i:05d}"} for i in range(5000)],
+             "cortou": False}
+    r = consultas.fornecedores_do_recorte(falso)
+    assert len(r["itens"]) == consultas.TETO_DE_FORNECEDORES
+    assert r["cortou"] is True, "e tem de AVISAR que cortou, senão some nome em silêncio"
+
+
+# ===========================================================================
+# Procurar por VALOR
+# ===========================================================================
+# 13/09/2026. O dono passou a tarde conferindo o painel contra a tela do OMIE
+# lado a lado, com os valores na mão — e era justamente o único jeito de
+# perguntar "este lançamento está aqui?" que a tela não aceitava. Sobrava
+# procurar por nome (que falha quando o nome está vazio) ou pelo número do
+# título (que ele não tem à mão no OMIE).
+
+def test_procurar_pelo_valor_do_lancamento(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET pago_recebido = -784647.07"
+                     "  WHERE codigo_lancamento = 701")
+        conn.commit()
+    consultas.esquecer_listas()
+    # os formatos que se copia da tela do OMIE têm de achar o mesmo lançamento
+    for digitado in ("784.647,07", "784647,07", "784647.07", "R$ 784.647,07"):
+        assert _codigos({"busca": digitado}) == {701}, digitado
+
+
+def test_o_valor_acha_tanto_o_pago_quanto_o_em_aberto(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET pago_recebido = 0, a_pagar_receber = -400000"
+                     "  WHERE codigo_lancamento = 702")
+        conn.commit()
+    consultas.esquecer_listas()
+    assert 702 in _codigos({"busca": "400.000,00"})
+
+
+def test_texto_com_letra_nao_vira_busca_por_valor(base_para_explorar):
+    """Procurar "NF 100" não pode virar uma busca por cem reais."""
+    from app.apps.painel import consultas
+    assert consultas._valor_procurado("NF 100") is None
+    assert consultas._valor_procurado("CONSTRUTORA") is None
+
+
+def test_o_valor_acha_o_titulo_rateado_entre_obras(base_para_explorar):
+    """O painel quebra o título por obra: um título rateado entre três obras
+    vira três linhas, cada uma com uma FRAÇÃO do valor. Nenhuma delas tem o
+    número que está na tela do OMIE.
+
+    Foi assim que três devoluções de aporte pareceram sumidas em 13/09/2026 —
+    estavam na base o tempo todo, partidas entre obras. Procurar pelo valor
+    cheio não achava nada, e passar o olho na lista também não."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM fato WHERE codigo_lancamento = 801")
+        for obra, parte in (("CASA", -300000.00), ("PREDIO", -250000.00),
+                            ("PONTE", -234647.07)):
+            conn.execute(
+                "INSERT INTO fato (codigo_lancamento, tipo, analise, situacao,"
+                " categoria, departamento, razao_social, data, pago_recebido,"
+                " a_pagar_receber, juros, multa)"
+                " VALUES (801,'2. Contas a Pagar','Fluxo de Caixa','PAGO',"
+                "         'Devolução de Aportes',?,'CONSTRUTORA','2025-12-24',"
+                "         ?,0,0,0)", (obra, parte))
+        conn.commit()
+    consultas.esquecer_listas()
+    # 300.000 + 250.000 + 234.647,07 = 784.647,07 — o valor que está no OMIE
+    assert 801 in _codigos({"busca": "784.647,07"}), \
+        "procurar pelo valor do OMIE tem de achar o título, mesmo partido entre obras"
+    # e as três linhas dele vêm juntas: é um título só
+    assert len([l for l in consultas.explorar(
+        _pedido_padrao(busca="784.647,07"))["linhas"]
+        if l["codigo_lancamento"] == 801]) == 3
+
+
+# ===========================================================================
+# "Onde foi parar este número?" — a base crua, antes de virar linha
+# ===========================================================================
+# 13/09/2026: uma tarde inteira de hipóteses minhas derrubadas uma a uma pelo
+# dono, sobre um lançamento que existia no OMIE e não aparecia em tela nenhuma.
+# Se isso acontece, só há dois caminhos — a carga nunca baixou, ou baixou e
+# descartou ao montar as linhas. Perguntar ao banco é mais barato que adivinhar.
+
+def test_diz_quando_o_titulo_foi_baixado_e_descartado(base_para_explorar):
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM titulos WHERE codigo_lancamento_omie = 9001")
+        conn.execute(
+            "INSERT INTO titulos (codigo_lancamento_omie, natureza,"
+            " valor_documento, status_titulo, numero_documento)"
+            " VALUES (9001,'P',784647.07,'CANCELADO','NF X')")
+        conn.commit()
+    r = consultas.titulos_que_sumiram(784647.07)
+    assert r["achados"], "tem de achar o título na base crua"
+    achado = r["achados"][0]
+    assert achado["codigo"] == 9001
+    assert achado["nas_telas"] is False, "e dizer que ele NÃO virou linha"
+    assert achado["situacao"] == "CANCELADO", "e por quê"
+
+
+def test_diz_quando_a_carga_nunca_trouxe(base_para_explorar):
+    """A outra metade da resposta, e a mais importante: se nem na base crua
+    está, o problema é a carga, não a montagem das linhas."""
+    from app.apps.painel import consultas
+    assert consultas.titulos_que_sumiram(99999999.99)["achados"] == []
+
+
+def test_titulo_que_virou_linha_aparece_como_presente(base_para_explorar):
+    """Sem isso a conferência acusaria todo mundo e não serviria para nada."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("DELETE FROM titulos WHERE codigo_lancamento_omie = 701")
+        conn.execute(
+            "INSERT INTO titulos (codigo_lancamento_omie, natureza,"
+            " valor_documento, status_titulo) VALUES (701,'P',12345.67,'PAGO')")
+        conn.commit()
+    achados = consultas.titulos_que_sumiram(12345.67)["achados"]
+    assert achados and achados[0]["nas_telas"] is True
+
+
+def test_a_busca_por_valor_perdoa_o_centavo_que_o_omie_perdeu(base_para_explorar):
+    """O caso que custou a tarde de 13/09/2026.
+
+    O valor chega do OMIE numa coluna de ponto flutuante de 4 bytes, que acima
+    de uns R$ 131 mil não guarda centavo: os R$ 784.647,07 da tela do OMIE ficam
+    gravados como 784.647,06. Comparar exato errava por um centavo e dizia que o
+    lançamento não existia — quando ele estava lá o tempo todo."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET pago_recebido = -784647.06"
+                     "  WHERE codigo_lancamento = 701")
+        conn.commit()
+    consultas.esquecer_listas()
+    # o que a pessoa digita é o que ela LÊ no OMIE, com o centavo certo
+    assert _codigos({"busca": "784.647,07"}) == {701}
+
+
+def test_a_folga_nao_confunde_titulos_diferentes(base_para_explorar):
+    """Meio real de folga não pode virar uma busca que traz o que não foi
+    pedido — senão a tela mente de outro jeito."""
+    from app.apps.painel import consultas
+    from app.apps.painel.db import conexao
+    with conexao() as conn:
+        conn.execute("UPDATE fato SET pago_recebido = -50000 WHERE codigo_lancamento = 701")
+        conn.execute("UPDATE fato SET pago_recebido = -50002 WHERE codigo_lancamento = 702")
+        conn.commit()
+    consultas.esquecer_listas()
+    assert _codigos({"busca": "50.000,00"}) == {701}
