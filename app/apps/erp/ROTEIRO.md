@@ -498,6 +498,17 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       no caso das notas está escrito que é de propósito. Recortar por obra é
       decisão de negócio, não correção.
 
+- [x] **UMA CONTA DE E-MAIL SERVINDO VÁRIAS EMPRESAS** — FEITO em 14/09/2026.
+      **TRAZ A MIGRAÇÃO 067.** Pergunta do dono: manter um e-mail principal e
+      mandar em nome das outras empresas. A empresa passa a poder usar a conta
+      de outra, aparecendo com o remetente dela. ⚠️ **Metade disso é fora do
+      ERP:** o provedor só costuma aceitar remetente do MESMO domínio da conta
+      (um alias); outro domínio depende de SPF/DKIM no DNS daquele domínio. A
+      tela avisa, e o teste de envio é o que confirma.
+      **Falta:** a logo da empresa é guardada e não aparece em lugar nenhum —
+      nem no PDF dos relatórios, nem no e-mail da cotação. Esperando o dono
+      dizer onde quer.
+
 - [x] **PROJETO AGRUPA OBRAS, E O ALCANCE GANHA EMPRESA E PROJETO** — FEITO em
       13/09/2026. **TRAZ A MIGRAÇÃO 066.** Pedido do dono: *"com projetos eu
       faço uma associação de algumas obras (…) eu poder visualizar o projeto,

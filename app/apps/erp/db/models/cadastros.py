@@ -1213,6 +1213,11 @@ class Empresa(Base):
     email: Mapped[Optional[str]] = mapped_column(Text)
     site: Mapped[Optional[str]] = mapped_column(Text)
 
+    # A empresa pode USAR A CONTA DE ENVIO DE OUTRA (migração 067): mesmo
+    # servidor, mesmo usuário e mesma senha, mudando só como ela aparece para
+    # quem recebe. Nulo = conta própria, que é o caso comum.
+    conta_email_de_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger, ForeignKey("empresas.id"))
     logo: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
     logo_mime: Mapped[Optional[str]] = mapped_column(Text)
     logo_nome: Mapped[Optional[str]] = mapped_column(Text)

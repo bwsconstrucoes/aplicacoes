@@ -692,6 +692,35 @@ O que ainda **não** responde:
 - FALTA **"Qual o resultado do projeto?"** — depende de fechar a palavra
   "resultado da obra", que segue indefinida.
 
+## 3l. De onde sai o e-mail de cada empresa
+
+Em 14/09/2026 uma empresa passou a poder **usar a conta de e-mail de outra**:
+o envio sai pela conta principal e aparece com o remetente de quem manda.
+
+Perguntas que passam a funcionar:
+
+- OK **Qual empresa manda e-mail por qual conta?**
+- OK **Alguma empresa está sem conta de e-mail?** — ela não dispara cotação, e
+  a tela de Empresas já conta quantas estão assim.
+- OK **Quando foi o último teste de envio que deu certo, por empresa?**
+- OK **O que falta na conta desta empresa?**
+
+⚠️ **Palavra ambígua: "o e-mail da empresa".** São três coisas diferentes, e
+confundi-las dá resposta errada com cara de certa:
+
+- **a conta que entra no servidor** (usuário e senha) — pode ser de outra
+  empresa;
+- **como aparece para quem recebe** (o remetente) — é sempre da empresa que
+  manda;
+- **o e-mail do cadastro**, que é só contato e não manda nada.
+
+O que ainda **não** responde:
+
+- FALTA **"Este e-mail chegou ou caiu no spam?"** — o ERP registra o que ele
+  entregou ao servidor; o que acontece depois é do provedor de quem recebe.
+- FALTA **"Este domínio está com SPF e DKIM certos?"** — é DNS, fora do ERP.
+  O que dá para fazer é mandar a mensagem de teste e olhar onde ela caiu.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

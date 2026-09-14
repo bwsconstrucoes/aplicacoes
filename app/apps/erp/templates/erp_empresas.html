@@ -155,7 +155,9 @@ function desenhar(){
       <td class="direita dados">${e.obras}</td>
       <td class="desc">${e.pode_enviar
         ? `<span class="selo aprovado">pronta</span>
-           <small>${e.smtp_usuario}</small>
+           <small>${e.conta_email_de_id
+             ? `sai pela conta de ${escapar(e.conta_email_de_nome)}`
+             : e.smtp_usuario}</small>
            ${e.conferido_em ? `<small>testada em ${dataBR((e.conferido_em||"").slice(0,10))}</small>`
                             : `<small style="color:var(--ambar)">nunca testada</small>`}`
         : `<span class="selo bloqueado">incompleta</span><small>${e.o_que_falta}</small>`}</td>
@@ -484,7 +486,34 @@ function painel(i, id){
       ${D.tem_chave_de_segredos ? "" : `<div class="aviso info">
         A senha não pode ser guardada agora: falta ERP_CHAVE_SEGREDOS na
         Environment do Render. Os demais campos salvam normalmente.</div>`}
-      <div class="form-grade" style="margin-top:12px">
+
+      {# UMA CONTA SERVINDO VÁRIAS EMPRESAS (14/09/2026). Pedido do dono: manter
+         um e-mail principal e mandar em nome das outras. O que o sistema faz é
+         só a metade dele; a outra metade é no provedor e no DNS, e está dita
+         no aviso abaixo para ninguém descobrir isso pelo silêncio. #}
+      <div class="campo" style="margin-top:12px"><label>De onde sai o e-mail desta empresa</label>
+        <select id="s-conta-de">
+          <option value="">Conta própria (configurada abaixo)</option>
+          ${(D.empresas || []).filter(x => x.id !== e.id && !x.conta_email_de_id
+                                         && x.pode_enviar)
+            .map(x => `<option value="${x.id}" ${String(e.conta_email_de_id) === String(x.id)
+              ? "selected" : ""}>Usar a conta de ${escapar(x.razao_social)}</option>`).join("")}
+        </select>
+        <div class="dica">Usando a conta de outra empresa, o e-mail <b>sai por
+          ela</b> (mesmo servidor, mesmo usuário, mesma senha) e <b>aparece com
+          o remetente desta</b>. Só os dois últimos campos desta tela contam.</div></div>
+
+      <div id="s-aviso-emprestada" class="aviso info" style="display:none">
+        <b>Depende do provedor, não do ERP.</b> Muitos servidores só deixam
+        mandar com um endereço <b>do mesmo domínio</b> da conta que entrou — um
+        alias, por exemplo. Endereço de <b>outro domínio</b> costuma ser
+        recusado, ou chega marcado como spam, a menos que aquele domínio
+        autorize este servidor no DNS (SPF e DKIM). Isso se acerta na Locaweb
+        (ou em quem hospeda o e-mail), não aqui. <b>Mande a mensagem de teste
+        antes de confiar.</b>
+      </div>
+
+      <div id="s-campos-proprios" class="form-grade" style="margin-top:12px">
         <div class="campo" style="grid-column:span 2"><label>Servidor de saída (SMTP)</label>
           <input id="s-servidor" value="${e.smtp_servidor}" placeholder="ex.: smtp.gmail.com"></div>
         <div class="campo"><label>Porta</label>
@@ -504,6 +533,8 @@ function painel(i, id){
           <div class="dica">No Gmail e no Google Workspace com verificação em duas
             etapas, use uma <b>senha de aplicativo</b>, não a senha de entrar no
             e-mail. A senha é guardada cifrada; ninguém a lê depois, nem eu.</div></div>
+      </div>
+      <div class="form-grade">
         <div class="campo" style="grid-column:span 3"><label>Como aparece para quem recebe</label>
           <input id="s-remetente" value="${e.smtp_remetente}"
             placeholder="ex.: BWS Construções &lt;compras@bwsconstrucoes.com.br&gt;"></div>
@@ -519,6 +550,14 @@ function painel(i, id){
       ${e.conferido_em ? `<div class="cartao-dica">Último teste que deu certo:
         ${dataBR((e.conferido_em || "").slice(0, 10))}.</div>` : ""}`;
 
+    function alternarConta(){
+      const emprestada = !!els("s-conta-de").value;
+      els("s-campos-proprios").style.display = emprestada ? "none" : "";
+      els("s-aviso-emprestada").style.display = emprestada ? "" : "none";
+    }
+    els("s-conta-de").addEventListener("change", alternarConta);
+    alternarConta();
+
     els("s-salvar").addEventListener("click", async () => {
       try {
         await api(`/erp/api/empresas/${id}/conta-email`, {method: "POST",
@@ -528,7 +567,8 @@ function painel(i, id){
             smtp_usuario: els("s-usuario").value, smtp_senha: els("s-senha").value,
             smtp_seguranca: els("s-seguranca").value,
             smtp_remetente: els("s-remetente").value,
-            smtp_responder_para: els("s-resposta").value})});
+            smtp_responder_para: els("s-resposta").value,
+            conta_email_de_id: els("s-conta-de").value || null})});
         aviso("ficha-msg", "Conta salva. Mande uma mensagem de teste para ter certeza.", "ok");
         await carregar();
         painel(1, id);

@@ -21,7 +21,12 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### TRAZ AS MIGRAÇÕES 061 A 066 — o botão tem de ser apertado junto com a publicação
+### TRAZ AS MIGRAÇÕES 061 A 067 — o botão tem de ser apertado junto com a publicação
+
+A **067** deixa uma empresa **usar a conta de e-mail de outra**: uma coluna
+nova em `empresas`, sem mexer em dado nenhum. Quem já tem conta própria
+continua exatamente como está.
+
 
 A **066** cria o **PROJETO** (um conjunto de obras que se olha somado) e o
 **alcance do operador por empresa e por projeto**, além da obra. Acrescenta a
@@ -117,6 +122,63 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
   algum mês antigo, é quase certo que seja isto: dois pagamentos iguais no
   mesmo dia viraram um. Reimportar o OFX daquele período resolve, porque a
   linha que falta passa a ter identidade própria.
+
+---
+
+**Estado em 14/09/2026 (vigésima terceira entrega):** **uma conta de e-mail
+pode servir várias empresas.** **TRAZ A MIGRAÇÃO 067.**
+
+### A pergunta do dono, e a resposta
+
+*"O ideal seria que a gente continuasse utilizando um e-mail principal para
+encaminhar de outras empresas, e de repente usar um alias — mas eu acho que
+não dá, né? (…) é e-mail da Locaweb."*
+
+**Dá, e metade disso é fora do ERP** — é a parte que precisa estar escrita,
+porque é onde a coisa falha em silêncio:
+
+- **o que o ERP faz:** a empresa deixa de ter conta própria e passa a usar a
+  de outra. O e-mail SAI pela conta principal (mesmo servidor, usuário e
+  senha) e APARECE com o remetente dela — "Como aparece" e "Responder para"
+  continuam sendo da empresa que está mandando;
+- **o que o ERP não faz:** o provedor aceitar um remetente de outro domínio.
+  Endereço do MESMO domínio (um alias) costuma passar direto; de domínio
+  diferente é recusado, ou chega marcado como spam, a menos que aquele
+  domínio autorize o servidor no DNS (SPF e DKIM). Isso se acerta na Locaweb.
+
+A tela diz isso com todas as letras no momento em que ele escolhe emprestar, e
+a recusa do servidor virou um recado que explica a causa em vez de despejar o
+erro do protocolo.
+
+### Como ficou
+
+Em **Configurações › Empresas › (empresa) › Conta de e-mail** há agora a
+escolha **"De onde sai o e-mail desta empresa"**: *conta própria* ou *usar a
+conta de <empresa>*. Emprestando, os campos de servidor, usuário e senha somem
+— não há o que preencher —, e a lista de empresas passa a mostrar "sai pela
+conta de X" em vez do usuário.
+
+**Três recusas no cadastro, cada uma por um motivo que morde:** apontar para si
+mesma (é conta própria escrita errado), apontar para quem também empresta
+(corrente com um elo mexido em outro dia é o "parou de mandar e ninguém sabe
+por quê") e apontar para conta incompleta (o erro só apareceria na hora de
+disparar a cotação).
+
+### Uma coisa que ele perguntou e ficou anotada
+
+**A logo da empresa é guardada e não é usada em lugar nenhum** além da própria
+tela de Empresas — nem no PDF dos relatórios, nem no e-mail da cotação. Ficou
+pronta a metade de guardar e faltou a de usar. Está na fila, esperando ele
+dizer onde quer.
+
+### Conferência
+
+- Suíte sem banco: passa.
+- `tests/test_conta_email_emprestada_banco.py`: 8 casos com Postgres de
+  verdade, inclusive o que confere que o cabeçalho da mensagem sai com o
+  remetente de quem manda, e não com o da conta que entrou no servidor.
+- Tela exercitada no navegador: escolher a conta emprestada, os campos
+  sumindo, o aviso aparecendo, salvar, e a lista mostrando "sai pela conta de".
 
 ---
 
