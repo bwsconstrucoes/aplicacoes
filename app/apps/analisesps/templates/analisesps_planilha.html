@@ -1,6 +1,6 @@
 {% extends "analisesps_base.html" %}
-{% block titulo %}Ver os dados{% endblock %}
-{% block classe_corpo %}sem-filtros{% endblock %}
+{% block titulo %}Documentação Fiscal — a planilha{% endblock %}
+
 
 {# ---------------------------------------------------------------------------
    A TELA DE VER — "similar ao que eu visualizo na planilha".
@@ -24,26 +24,25 @@
      4. Uma busca só, e ordenar clicando no cabeçalho — como numa planilha.
      5. Cabeçalho e primeira coluna GRUDADOS, que é o "congelar painéis".
 --------------------------------------------------------------------------- #}
-{% macro aba_link(chave, rotulo) %}
-  <a class="planilha-aba {{ 'atual' if sub == chave }}"
-     href="{{ url_for('analisesps.tela_planilha', aba=chave, busca=busca or None) }}">{{ rotulo }}</a>
-{% endmacro %}
 
 {% block conteudo %}
+{% from "analisesps_fiscal_visoes.html" import visoes %}
+{% set args_mantem_tudo = args.to_dict(flat=false) %}
+{% set _ = args_mantem_tudo.pop('visao', None) %}
+{% set _ = args_mantem_tudo.pop('pagina', None) %}
+{{ visoes('dados_sps' if sub == 'lancamentos' else 'dados_notas',
+          args_mantem_tudo) }}
+
 <div class="cartao planilha-cartao">
   <div class="cartao-cab">
-    <h2>Ver os dados</h2>
-    <div class="planilha-abas">
-      {{ aba_link('lancamentos', 'Lançamentos (SPs)') }}
-      {{ aba_link('notas', 'Notas fiscais') }}
-    </div>
+    <h2>{{ 'Planilha das SPs' if sub == 'lancamentos'
+           else 'Planilha das notas' }}</h2>
   </div>
 
   <p class="cartao-dica">
     É a planilha, do jeito que ela é: todas as colunas, na ordem dela, sem
-    recorte e <b>sem nada para clicar</b>. Para trabalhar, use
-    <a href="{{ url_for('analisesps.solicitacoes') }}">Solicitações</a> ou
-    <a href="{{ url_for('analisesps.tela_fiscal') }}">Doc. Fiscal</a>.
+    recorte e <b>sem nada para clicar</b>. Para trabalhar, volte em
+    <b>Por lançamento</b> ou <b>Por nota</b>, aqui em cima.
   </p>
 
   {% if erro %}
@@ -51,7 +50,9 @@
   {% endif %}
 
   <form method="get" class="planilha-busca" data-sem-aguarde="1">
-    <input type="hidden" name="aba" value="{{ sub }}">
+    <input type="hidden" name="visao"
+           value="{{ 'dados_sps' if sub == 'lancamentos'
+                     else 'dados_notas' }}">
     <input type="hidden" name="ordem" value="{{ ordem }}">
     {% if desc %}<input type="hidden" name="desc" value="1">{% endif %}
     <div class="busca">
@@ -63,7 +64,7 @@
     <button class="btn secundario" type="submit">Procurar</button>
     {% if busca %}
       <a class="link-btn"
-         href="{{ url_for('analisesps.tela_planilha', aba=sub) }}">limpar</a>
+         href="{{ url_for('analisesps.tela_fiscal', visao=('dados_sps' if sub == 'lancamentos' else 'dados_notas')) }}">limpar</a>
     {% endif %}
     <span class="planilha-conta">
       {{ '{:,}'.format(total)|replace(',', '.') }} linha(s)
@@ -85,7 +86,7 @@
               <th class="{{ 'num' if tipo == 'numero' }}">
                 {# ORDENAR CLICANDO NO CABEÇALHO, como na planilha. O mesmo
                    clique inverte o sentido. #}
-                <a href="{{ url_for('analisesps.tela_planilha', aba=sub,
+                <a href="{{ url_for('analisesps.tela_fiscal', visao=('dados_sps' if sub == 'lancamentos' else 'dados_notas'),
                              busca=busca or None, ordem=chave,
                              desc='1' if virando else '0') }}"
                    title="Ordenar por {{ rotulo }}">
@@ -131,11 +132,11 @@
       {{ '{:,}'.format(total)|replace(',', '.') }}
       {% if pagina > 1 %}
         <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_planilha', **dict(pag, pagina=pagina-1)) }}">‹ Anterior</a>
+           href="{{ url_for('analisesps.tela_fiscal', **dict(pag, pagina=pagina-1)) }}">‹ Anterior</a>
       {% endif %}
       {% if tem_proxima %}
         <a class="btn secundario"
-           href="{{ url_for('analisesps.tela_planilha', **dict(pag, pagina=pagina+1)) }}">Próxima ›</a>
+           href="{{ url_for('analisesps.tela_fiscal', **dict(pag, pagina=pagina+1)) }}">Próxima ›</a>
       {% endif %}
     </div>
   {% endif %}

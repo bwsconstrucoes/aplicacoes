@@ -610,10 +610,11 @@ def test_a_ordem_das_telas_e_a_que_o_dono_pediu():
     from app.apps.analisesps import web
     assert [c for c, _, _ in web.TELAS][:6] == [
         "solicitacoes", "lote", "comprovantes", "relatorio", "fiscal", "agenda"]
-    # ⚠️ TELA NOVA ENTRA DEPOIS DA AGENDA. *"Aí depois agenda, e pronto, aí
-    # pode seguir com os demais."* A "Ver os dados" furou esta ordem quando
-    # nasceu, e foi este teste que pegou.
-    assert "planilha" in [c for c, _, _ in web.TELAS][6:]
+    # ⚠️ A PLANILHA NÃO É UMA TELA DO MENU, e isso é decisão dele:
+    # *"está lá 'ver os dados', está muito solto, não tem vínculo com nada"*.
+    # Ela é uma VISÃO da Documentação Fiscal, ao lado de "Por lançamento" e
+    # "Por nota" — ver `_planilha_fiscal`.
+    assert "planilha" not in [c for c, _, _ in web.TELAS]
 
 
 def test_toda_tela_do_menu_aponta_para_uma_rota_QUE_EXISTE():
@@ -1036,3 +1037,71 @@ def test_a_nota_associada_mostra_a_SP_na_tela(app_fiscal, monkeypatch):
     # E, sendo cancelada numa SP paga, o alerta é explícito.
     assert "paga sem documento" in html
     assert "cancelada, e está na SP" in html
+
+
+# ===========================================================================
+# A PLANILHA É UMA VISÃO DA DOCUMENTAÇÃO FISCAL — 14/09/2026
+#
+# *"Está lá 'ver os dados', está muito solto, não tem vínculo com nada. Está
+# ruim da forma que está. Aqui tem 'por lançamento', 'por nota' — aí você
+# colocar aqui dentro. E 'ver os dados' também está foda, tem que ter uma
+# nomenclatura melhor."*
+#
+# Ele está certo nas duas coisas, e as duas são a mesma: a tela nasceu SEM
+# CONTEXTO. Ela é da Documentação Fiscal — é ali que ele está quando quer
+# conferir o dado cru contra o que a tela de trabalho afirma.
+# ===========================================================================
+def test_as_QUATRO_visoes_saem_de_uma_LISTA_SO():
+    """⚠️ Eram cópias da barra, uma por tela. No dia em que uma visão nova
+    entrasse — e entrou — ela apareceria só em algumas, e quem estivesse na
+    tela de fora não teria como descobrir que existe. Foi exatamente o que
+    aconteceu com a "Ver os dados"."""
+    import pathlib
+
+    pasta = pathlib.Path("app/apps/analisesps/templates")
+    partial = (pasta / "analisesps_fiscal_visoes.html").read_text(
+        encoding="utf-8")
+    for chave in ("Por lançamento", "Por nota", "Planilha das SPs",
+                  "Planilha das notas"):
+        assert chave in partial
+
+    # E nenhuma tela desenha a barra por conta própria.
+    for nome in ("analisesps_fiscal.html", "analisesps_fiscal_notas.html",
+                 "analisesps_planilha.html"):
+        texto = (pasta / nome).read_text(encoding="utf-8")
+        assert "analisesps_fiscal_visoes.html" in texto, nome
+        assert '<div class="fiscal-visoes">' not in texto, nome
+
+
+def test_o_nome_VER_OS_DADOS_nao_existe_mais_em_lugar_nenhum():
+    """*"'Ver os dados' também está foda, tem que ter uma nomenclatura
+    melhor."* O nome não dizia nada — podia ser qualquer coisa. Agora usa a
+    palavra que ele usa: planilha."""
+    import pathlib
+
+    for pasta in ("app/apps/analisesps/templates",
+                  "app/apps/analisesps"):
+        for caminho in pathlib.Path(pasta).glob("*.html"):
+            assert "Ver os dados" not in caminho.read_text(encoding="utf-8"), \
+                caminho
+
+
+def test_o_endereco_ANTIGO_da_tela_solta_continua_levando_a_algum_lugar():
+    """Ele pode ter guardado nos favoritos. Quebrar em silêncio seria pior do
+    que não ter mudado."""
+    from flask import Flask
+
+    from app.apps.analisesps import web
+    a = Flask(__name__)
+    a.secret_key = "x"
+    a.register_blueprint(web.bp)
+    cliente = a.test_client()
+    with cliente.session_transaction() as sessao:
+        sessao["analisesps_perfil"] = "consulta"
+
+    r = cliente.get("/analisesps/planilha")
+    assert r.status_code == 302
+    assert "visao=dados_sps" in r.headers["Location"]
+
+    r = cliente.get("/analisesps/planilha?aba=notas")
+    assert "visao=dados_notas" in r.headers["Location"]

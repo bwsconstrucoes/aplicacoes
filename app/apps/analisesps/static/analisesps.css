@@ -1473,3 +1473,11 @@ table.planilha td.num, table.planilha th.num {
   color: #94A3B8; font-weight: 600; font-size: 11px;
 }
 .planilha-vazio { color: #CBD5E1; }
+
+/* As duas visões de VER ficam separadas das duas de TRABALHAR: são coisas
+   diferentes, e a barra tem de mostrar isso sem precisar de legenda. */
+.fiscal-visoes .fiscal-visao.separa {
+  margin-left: 14px;
+  border-left: 1px solid var(--borda, #e2e8f0);
+  padding-left: 18px;
+}

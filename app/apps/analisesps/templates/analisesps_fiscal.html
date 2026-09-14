@@ -64,13 +64,8 @@
    notas. E outra é: eu estou olhando para as notas e buscando o registro
    financeiro."* Antes a segunda era um link no meio da tela, fácil de não ver.
 --------------------------------------------------------------------------- #}
-<div class="fiscal-visoes">
-  <span class="fiscal-visao ativa">Por lançamento</span>
-  <a class="fiscal-visao"
-     href="{{ url_for('analisesps.tela_fiscal', **dict(args_mantem_tudo, visao='notas')) }}">
-    Por nota{% if painel.sem_lancamento %}
-      <b>{{ painel.sem_lancamento }}</b> sem lançamento{% endif %}</a>
-</div>
+{% from "analisesps_fiscal_visoes.html" import visoes %}
+{{ visoes('lancamento', args_mantem_tudo, painel.sem_lancamento or 0) }}
 
 {# ---------------------------------------------------------------------------
    OS TOTALIZADORES — a gestão que faltava.

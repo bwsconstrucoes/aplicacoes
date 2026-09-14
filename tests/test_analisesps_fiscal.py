@@ -1371,3 +1371,54 @@ def test_a_falha_ao_abrir_para_a_Receita_vira_recado_com_o_que_fazer(
     with pytest.raises(sefaz.SemCertificado) as erro:
         sefaz._certificado("10656452007869")
     assert "Suba o novo em Configurações" in str(erro.value)
+
+
+# ===========================================================================
+# ⚠️ OS DOIS DEFEITOS QUE A PRODUÇÃO ACUSOU EM 14/09/2026
+#
+# Com o certificado já abrindo (o conserto do base64), a busca foi adiante e
+# parou em dois pontos — e os dois são da mesma família: usar a biblioteca de
+# um jeito que ela não suporta, com a mensagem apontando para outro lugar.
+#
+#   NF-e: "'TransmissaoSOAP' object does not support the context manager
+#          protocol" — a classe NÃO é um `with`; quem é o método `cliente()`
+#          dela. O erro estourava ANTES de qualquer conversa com a Receita.
+#
+#   CT-e: "403 Client Error: Forbidden" — a sessão que a classe guarda é
+#          COMUM; o certificado só é preso a ela dentro do `cliente()`.
+#          Postando pela sessão crua, a Receita via um visitante sem
+#          identidade e recusava.
+#
+# ⚠️ ESTE ARQUIVO NÃO PROVA QUE A BUSCA FUNCIONA — não há certificado nem
+# saída para a SEFAZ aqui. Ele prova que o código chama a biblioteca do jeito
+# que ela pede. É o que dá para travar daqui, e é melhor que nada: os dois
+# defeitos eram de CHAMADA, não de rede.
+# ===========================================================================
+def test_a_busca_de_NFe_NAO_usa_TransmissaoSOAP_como_context_manager():
+    """A classe não tem `__enter__`. Um `with` nela estoura antes de falar com
+    a Receita — e foi o que manteve a busca de NF-e parada."""
+    from erpbrasil.transmissao import TransmissaoSOAP
+
+    assert not hasattr(TransmissaoSOAP, "__enter__"), (
+        "a biblioteca passou a suportar `with` — reveja o comentário em "
+        "sefaz._consultar_nfe antes de mudar o código")
+
+    import inspect
+
+    from app.apps.analisesps import sefaz
+    fonte = inspect.getsource(sefaz._consultar_nfe)
+    assert "with TransmissaoSOAP" not in fonte
+
+
+def test_a_busca_de_CTe_manda_o_CERTIFICADO_na_conexao():
+    """Sem o certificado na conexão, a Receita responde 403 — foi o que ela
+    respondeu em produção. O `ArquivoCertificado` é o mesmo caminho que a
+    biblioteca usa por dentro."""
+    import inspect
+
+    from app.apps.analisesps import sefaz
+    fonte = inspect.getsource(sefaz._consultar_cte)
+    assert "ArquivoCertificado" in fonte
+    assert "sessao.cert" in fonte
+    # E NÃO pela sessão crua da TransmissaoSOAP, que é o defeito em pessoa.
+    assert 'getattr(transmissao, "session"' not in fonte

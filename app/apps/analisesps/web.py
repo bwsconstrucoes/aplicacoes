@@ -144,10 +144,6 @@ TELAS = [
     ("relatorio",     "Relatório",     "analisesps.relatorio"),
     ("fiscal",        "Doc. Fiscal",   "analisesps.tela_fiscal"),
     ("agenda",        "Agenda",        "analisesps.tela_agenda"),
-    # A TELA DE VER entra AQUI, e não antes: a ordem até a Agenda é o caminho
-    # do dia dele, pedida com estas palavras — *"aí depois agenda, e pronto,
-    # aí pode seguir com os demais"*. Esta é "dos demais".
-    ("planilha",      "Ver os dados",  "analisesps.tela_planilha"),
     ("auditoria",     "Auditoria",     "analisesps.auditoria"),
     ("ratear",        "Ratear",        "analisesps.ratear"),
     ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
@@ -2166,6 +2162,10 @@ def tela_fiscal():
         pagina = 1
     grupo = request.args.get("grupo") or ""
 
+    # AS VISÕES DE VER, dentro da Documentação Fiscal. Ver `_planilha_fiscal`.
+    if request.args.get("visao") in ("dados_sps", "dados_notas"):
+        return _planilha_fiscal(base, pagina)
+
     # A SEGUNDA VISÃO — nota → lançamento. É ela que fecha com a contabilidade:
     # *"se tem uma nota emitida, tem uma despesa para estar associada"*. Nota
     # órfã é problema fiscal, e hoje ninguém a enxerga.
@@ -2499,50 +2499,49 @@ def remover_certificado():
 # trabalho do dia. A barra de abas é para o que se abre todo dia; encher ela
 # com manutenção faria o que importa ficar mais longe. Chega-se aqui por
 # ===========================================================================
-# A TELA DE VER — "similar ao que eu visualizo na planilha"
+# A PLANILHA — dentro da Documentação Fiscal, e não solta no menu
 #
-# Cobrança do dono em 13/09/2026, e ela é antiga: *"desde o começo eu pedi uma
-# tela simples pra poder visualizar similar ao que eu visualizo na planilha.
-# Uma tela das notas e outra tela dos registros com os dados que estamos
-# trabalhando. (…) Mas até agora não foi entregue."*
+# Cobrança do dono em 13/09: *"desde o começo eu pedi uma tela simples pra
+# poder visualizar similar ao que eu visualizo na planilha."* Entregue no dia
+# seguinte — e ele olhou e disse o que faltava:
 #
-# Ele está certo. Todas as telas deste módulo são de TRABALHO — cada uma mostra
-# um recorte, com painel, proposta e botão de agir. Nenhuma respondia à
-# pergunta mais simples que existe: *"deixa eu ver os dados"*.
+#   *"Está lá 'ver os dados', está muito solto, não tem vínculo com nada. Está
+#   ruim da forma que está. Aqui tem 'por lançamento', 'por nota' — aí você
+#   colocar aqui dentro. E 'ver os dados' também está foda, tem que ter uma
+#   nomenclatura melhor."*
 #
-# É `@exige_consulta` de propósito: olhar não é mexer, e esta tela não tem uma
-# única ação. Quem só consulta entra.
+# ELE ESTÁ CERTO NAS DUAS COISAS, e as duas são a mesma: a tela nasceu **sem
+# contexto**. Ela é da Documentação Fiscal — é ali que ele está quando quer
+# conferir o dado cru contra o que a tela de trabalho está afirmando. Solta no
+# menu de cima, virava um destino sem volta e sem parentesco.
+#
+# E o nome não dizia nada: "ver os dados" pode ser qualquer coisa. Agora usa a
+# palavra que ELE usa o tempo todo — **planilha**.
+#
+# POR QUE É UMA FUNÇÃO, e não uma rota própria: as quatro visões dividem a
+# barra de filtros, a memória do filtro e a barra de visões. Rota separada
+# significaria manter tudo isso em dois lugares — e foi exatamente assim que a
+# tela ficou órfã da primeira vez.
 # ===========================================================================
-@bp.route("/planilha")
-@exige_consulta
-def tela_planilha():
-    """Os dados como a planilha mostra: tudo, sem recorte e sem ação."""
+def _planilha_fiscal(base, pagina: int):
+    """As duas visões de VER: todas as colunas, na ordem da planilha."""
     from . import consultas, fiscal
 
-    base = consultas.base_carregada()
-    if not base["pronta"]:
-        return render_template("analisesps_vazio.html", base=base,
-                               pode_operar=auth.pode_operar())
-
-    aba = "notas" if request.args.get("aba") == "notas" else "lancamentos"
+    sub = ("notas" if request.args.get("visao") == "dados_notas"
+           else "lancamentos")
     busca = (request.args.get("busca") or "").strip()
-    ordem = request.args.get("ordem") or ("emissao" if aba == "notas" else "id")
-    # O SENTIDO PADRÃO É DIFERENTE NAS DUAS ABAS, e isso é sobre como se lê:
-    # a nota mais recente é a que interessa primeiro (é a que acabou de
-    # chegar); a SP se lê do começo, pelo número, como na planilha. Só depois
-    # de ele clicar num cabeçalho o endereço passa a mandar.
+    ordem = request.args.get("ordem") or ("emissao" if sub == "notas" else "id")
+    # O SENTIDO PADRÃO É DIFERENTE NAS DUAS, e isso é sobre como se lê: a nota
+    # mais recente é a que interessa primeiro (acabou de chegar); a SP se lê do
+    # começo, pelo número, como na planilha.
     if "desc" in request.args:
         desc = request.args.get("desc") == "1"
     else:
-        desc = (aba == "notas")
-    try:
-        pagina = max(1, int(request.args.get("pagina", 1)))
-    except ValueError:
-        pagina = 1
+        desc = (sub == "notas")
 
     erro, linhas, total = None, [], 0
     try:
-        if aba == "notas":
+        if sub == "notas":
             linhas, total = fiscal.planilha_notas(busca, ordem, desc, pagina)
             cabecalhos = [(c, "", r, t)
                           for c, r, t in fiscal.COLUNAS_DA_NOTA_NA_TELA]
@@ -2560,7 +2559,7 @@ def tela_planilha():
 
     ultima = (pagina - 1) * por_pagina + len(linhas)
     return render_template(
-        "analisesps_planilha.html", aba="planilha", sub=aba, base=base,
+        "analisesps_planilha.html", aba="fiscal", sub=sub, base=base,
         linhas=linhas, cabecalhos=cabecalhos, total=total, erro=erro,
         busca=busca, ordem=ordem, desc=desc, pagina=pagina,
         primeira_linha=(pagina - 1) * por_pagina + 1, ultima_linha=ultima,
@@ -2568,6 +2567,18 @@ def tela_planilha():
         pode_operar=auth.pode_operar(),
         perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
         nome=auth.nome_atual())
+
+
+@bp.route("/planilha")
+@exige_consulta
+def tela_planilha():
+    """O endereço antigo, de quando a tela era solta no menu.
+
+    Fica só para não quebrar o que ele tiver guardado nos favoritos. Manda para
+    o lugar de verdade, dentro da Documentação Fiscal."""
+    destino = ("dados_notas" if request.args.get("aba") == "notas"
+               else "dados_sps")
+    return redirect(url_for("analisesps.tela_fiscal", visao=destino))
 
 
 # Configurações, onde a contagem aparece.
