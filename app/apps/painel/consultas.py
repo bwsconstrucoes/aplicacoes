@@ -1691,6 +1691,86 @@ def conferencia_do_pago() -> dict:
             "categorias": categorias, "ao_contrario": ao_contrario or 0}
 
 
+def conferencia_dos_aportes(f: "Filtros | None" = None) -> dict:
+    """De onde a diferença do bloco de Aportes vem — corte a corte.
+
+    O dono, em 14/09/2026: o bloco mostra R$ 567 mil de devolvido para uma
+    empresa, e um único título dela é de R$ 784 mil. Ou seja, o bloco está
+    comendo lançamentos — e a pergunta "quais?" não tinha resposta na tela.
+
+    Em vez de apostar em qual dos cortes é o culpado, esta função mostra a
+    CASCATA: parte de tudo o que tem categoria de aporte, sem corte nenhum, e
+    desce um degrau por vez, dizendo quanto cada um levou. O degrau que come o
+    valor que falta é o culpado, e aparece na tela em vez de na minha cabeça.
+
+    Os degraus, na ordem em que o código os aplica:
+      1. tudo o que a categoria diz ser aporte (inclusive Dividendos);
+      2. menos o que NÃO entra no saldo — hoje, só Dividendos;
+      3. menos o que é transferência entre contas (`analise = 'TRF'`);
+      4. menos o que o `PAGO` não reconhece como pago;
+      5. o que sobra é o que o bloco mostra."""
+    f = f or Filtros()
+
+    def _soma(extra):
+        where, params = f.where(extra)
+        (ap, dev, n) = consultar(
+            f"""SELECT COALESCE({_APORTADO}, 0), COALESCE({_DEVOLVIDO}, 0), COUNT(*)
+                  FROM fato{where}""", params)[0]
+        return {"aportado": float(ap or 0), "devolvido": float(dev or 0),
+                "linhas": n or 0}
+
+    # o passo 1 ignora ate a exclusao de TRF que o Filtros aplica sozinho
+    sem_trf = Filtros(anos=f.anos, projetos=f.projetos,
+                      departamentos=f.departamentos, excluir_trf=False)
+
+    def _soma_larga(extra):
+        where, params = sem_trf.where(extra)
+        (ap, dev, n) = consultar(
+            f"""SELECT COALESCE({_APORTADO}, 0), COALESCE({_DEVOLVIDO}, 0), COUNT(*)
+                  FROM fato{where}""", params)[0]
+        return {"aportado": float(ap or 0), "devolvido": float(dev or 0),
+                "linhas": n or 0}
+
+    e_aporte = f"({TIPO_APORTE}) IS NOT NULL"
+    no_saldo = f"({TIPO_APORTE}) IN ({NO_SALDO})"
+
+    passos = [
+        ("Tudo com categoria de aporte", _soma_larga(e_aporte)),
+        ("Só o que entra no saldo (tira Dividendos)", _soma_larga(no_saldo)),
+        ("Tirando transferências entre contas", _soma(no_saldo)),
+        ("Tirando o que o painel não reconhece como pago",
+         _soma(f"{no_saldo} AND {PAGO}")),
+    ]
+    for i, (_rotulo, valores) in enumerate(passos):
+        anterior = passos[i - 1][1] if i else None
+        valores["comeu_devolvido"] = (
+            round(anterior["devolvido"] - valores["devolvido"], 2) if anterior else 0.0)
+        valores["comeu_aportado"] = (
+            round(anterior["aportado"] - valores["aportado"], 2) if anterior else 0.0)
+
+    # e QUEM foi comido, para nao virar outro numero sem nome
+    where_trf, params_trf = sem_trf.where(f"{no_saldo} AND analise = 'TRF'")
+    comidos_trf = _linhas_de_aporte_comidas(where_trf, params_trf)
+    where_pago, params_pago = f.where(f"{no_saldo} AND NOT ({PAGO}) AND pago_recebido <> 0")
+    comidos_pago = _linhas_de_aporte_comidas(where_pago, params_pago)
+
+    return {"passos": passos, "comidos_trf": comidos_trf,
+            "comidos_pago": comidos_pago}
+
+
+def _linhas_de_aporte_comidas(where, params) -> list[dict]:
+    """Os lançamentos que um degrau da cascata cortou, do maior para o menor."""
+    campos = ("codigo", "data", "socio", "categoria", "analise", "situacao",
+              "obra", "valor")
+    return [dict(zip(campos, (c, d, (so or "").strip() or "(sem contraparte)",
+                              cat, an, sit, ob, float(v or 0))))
+            for c, d, so, cat, an, sit, ob, v in consultar(
+        f"""SELECT codigo_lancamento, data, razao_social, categoria, analise,
+                   situacao, {OBRA_OU_SEM}, pago_recebido
+              FROM fato{where}
+             ORDER BY ABS(pago_recebido) DESC LIMIT 50""", params)]
+
+
 def titulos_que_sumiram(valor_procurado=None) -> dict:
     """Títulos que a carga BAIXOU do OMIE e que não viraram linha nenhuma.
 
