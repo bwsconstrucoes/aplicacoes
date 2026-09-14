@@ -498,6 +498,15 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       no caso das notas está escrito que é de propósito. Recortar por obra é
       decisão de negócio, não correção.
 
+- [x] **O NÚMERO-ÍNDICE DO INCC, AO LADO DA VARIAÇÃO** — FEITO em 14/09/2026.
+      **TRAZ A MIGRAÇÃO 068.** Pedido do dono: *"a gente precisa do índice
+      mesmo, não só variação (…) qual índice inicial, qual índice final"*. A
+      coluna de percentual continua; a de índice tem seis casas. A previsão de
+      reajuste mostra a conta pelos dois caminhos.
+      ⚠️ **O número não é o do boletim da FGV** — a base é outra (100 no mês
+      mais antigo guardado), porque o Banco Central só republica a variação. A
+      RAZÃO entre dois meses é idêntica, e é ela que vira o fator.
+
 - [x] **UMA CONTA DE E-MAIL SERVINDO VÁRIAS EMPRESAS** — FEITO em 14/09/2026.
       **TRAZ A MIGRAÇÃO 067.** Pergunta do dono: manter um e-mail principal e
       mandar em nome das outras empresas. A empresa passa a poder usar a conta

@@ -21,7 +21,12 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### TRAZ AS MIGRAÇÕES 061 A 067 — o botão tem de ser apertado junto com a publicação
+### TRAZ AS MIGRAÇÕES 061 A 068 — o botão tem de ser apertado junto com a publicação
+
+A **068** acrescenta o **número-índice** à tabela de índices, ao lado da
+variação, e já preenche o que está guardado. Não tira nada: a coluna de
+percentual continua.
+
 
 A **067** deixa uma empresa **usar a conta de e-mail de outra**: uma coluna
 nova em `empresas`, sem mexer em dado nenhum. Quem já tem conta própria
@@ -122,6 +127,58 @@ migrações **058, 059 e 060 já foram aplicadas por ele em produção**.
   algum mês antigo, é quase certo que seja isto: dois pagamentos iguais no
   mesmo dia viraram um. Reimportar o OFX daquele período resolve, porque a
   linha que falta passa a ter identidade própria.
+
+---
+
+**Estado em 14/09/2026 (vigésima quarta entrega):** **o NÚMERO-ÍNDICE do INCC,
+ao lado da variação.** **TRAZ A MIGRAÇÃO 068.**
+
+### O pedido
+
+*"Você puxou e colocou a variação de um mês pro outro, mas a gente precisa do
+índice mesmo. Não só variação, porque normalmente a gente calcula através do
+índice (…) caso a gente queira saber qual índice inicial, qual índice final, a
+gente precisa visualizar eles dessa forma. (…) Pode manter a coluna de
+percentual, contanto que tenha também a de índice."*
+
+### Como ficou
+
+A tabela em **Configurações › Índices (INCC)** passou a ter a coluna
+**Índice**, com seis casas decimais, ao lado da variação — que ficou, como ele
+pediu. A previsão de reajuste também passou a mostrar a conta pelos índices:
+*"105,403139 ÷ 100,000000 = 1,054031"*, ao lado da conta por percentual.
+
+**De onde vem o número, e a ressalva que precisa estar escrita:** o Banco
+Central republica o INCC-DI como VARIAÇÃO mensal (série 192) — o número-índice
+da FGV é série licenciada, e não há como puxá-lo de graça. Então o índice é
+**acumulado pelo próprio sistema** a partir das variações, com **base 100 no
+mês mais antigo guardado**:
+
+> O número absoluto **não é igual ao do boletim da FGV**, porque a base é
+> outra. **A razão entre dois meses é idêntica** — e é ela que vira o fator de
+> reajuste (índice final ÷ índice inicial). A tela diz isso com todas as
+> letras, junto da base.
+
+### Duas decisões de engenharia que valem o registro
+
+1. **A série inteira é refeita a cada coleta ou lançamento**, e não só o mês
+   novo. O Banco Central revisa variação passada, e um mês revisado desloca
+   todos os seguintes: meia série atualizada daria, entre dois meses de lados
+   diferentes do remendo, um fator errado com cara de certo.
+2. **O acumulado é feito em precisão cheia e só o valor guardado é
+   arredondado.** Arredondar a cada passo empurraria o erro para a frente, mês
+   após mês.
+
+A migração já preenche o que está guardado, com a mesma conta escrita em SQL —
+conferida contra o cálculo do sistema, dígito por dígito.
+
+### Conferência
+
+- Suíte sem banco: passa.
+- `tests/test_numero_indice_banco.py`: 8 casos com Postgres de verdade, e o
+  que mais importa é o que prova que **índice final ÷ índice inicial dá
+  exatamente o mesmo fator** do acumulado por percentual.
+- Tela exercitada no navegador, com uma série de 12 meses.
 
 ---
 

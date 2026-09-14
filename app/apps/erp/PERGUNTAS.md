@@ -721,6 +721,34 @@ O que ainda **não** responde:
 - FALTA **"Este domínio está com SPF e DKIM certos?"** — é DNS, fora do ERP.
   O que dá para fazer é mandar a mensagem de teste e olhar onde ela caiu.
 
+## 3m. O índice do reajuste, e não só a variação
+
+Em 14/09/2026 a tabela de índices ganhou o **número-índice** ao lado da
+variação mensal.
+
+Perguntas que passam a funcionar:
+
+- OK **Qual o índice do INCC em tal mês?**
+- OK **Qual o índice inicial e o final deste reajuste?** — a previsão da
+  medição mostra os dois e a divisão entre eles.
+- OK **De quanto foi o reajuste acumulado da data-base até aqui?**
+- OK **Quais meses faltam na tabela do INCC?**
+
+⚠️ **Palavra ambígua: "o índice".** São duas coisas, e confundi-las dá erro de
+ordem de grandeza:
+
+- **a variação do mês** — 0,42%, que é o que o Banco Central publica;
+- **o número-índice** — 105,403139, que só serve dividido por outro.
+
+E uma ressalva que o sistema diz na tela: **o número-índice daqui não é o do
+boletim da FGV**, porque a base é outra. A divisão entre dois meses é que é
+igual — e é ela que vale.
+
+O que ainda **não** responde:
+
+- FALTA **"Qual o índice publicado pela FGV neste mês?"** — a série do
+  número-índice da FGV é licenciada; o Banco Central republica só a variação.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,

@@ -1320,6 +1320,14 @@ class IndiceEconomico(Base):
     codigo: Mapped[str] = mapped_column(Text, primary_key=True)
     competencia: Mapped[date] = mapped_column(Date, primary_key=True)
     variacao_pct: Mapped[Decimal] = mapped_column(Numeric(12, 6), nullable=False)
+    # O NÚMERO-ÍNDICE (migração 068), acumulado pelo sistema a partir das
+    # variações, base 100 no mês mais antigo da série. Pedido do dono: *"a
+    # gente precisa do índice mesmo, não só variação (…) caso a gente queira
+    # saber qual índice inicial, qual índice final"*.
+    #
+    # ⚠️ O número absoluto depende da base e NÃO é o do boletim da FGV; a RAZÃO
+    # entre dois meses é idêntica, e é ela que vira o fator de reajuste.
+    numero_indice: Mapped[Optional[Decimal]] = mapped_column(Numeric(18, 6))
     fonte: Mapped[str] = mapped_column(Text, nullable=False, default="BCB-SGS")
     coletado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now())

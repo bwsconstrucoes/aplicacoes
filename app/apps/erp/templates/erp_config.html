@@ -264,7 +264,12 @@
 
   <div id="ind-resultado"></div>
   <div class="tabela-rolagem" style="margin-top:12px; max-height:340px">
-    <table><thead><tr><th>Mês</th><th class="direita">Variação</th>
+    {# O NÚMERO-ÍNDICE ao lado da variação (14/09/2026). Pedido do dono: *"a
+       gente precisa do índice mesmo, não só variação (…) caso a gente queira
+       saber qual índice inicial, qual índice final"*. A variação fica — ele
+       pediu as duas. #}
+    <table><thead><tr><th>Mês</th><th class="direita">Índice</th>
+      <th class="direita">Variação</th>
       <th>Fonte</th><th>Coletado em</th></tr></thead>
       <tbody id="ind-corpo"></tbody></table>
   </div>
@@ -1849,11 +1854,20 @@ async function carregarIndices(){
       ? `<b>${escapar(d.nome)}</b> — ${d.meses.length} mês(es) guardados,
          o mais recente é ${escapar(d.ultimo.slice(5, 7) + "/" + d.ultimo.slice(0, 4))}.
          ${d.em_dia ? "A tabela está em dia."
-                    : "<b>A tabela está atrasada</b> — busque no Banco Central."}`
+                    : "<b>A tabela está atrasada</b> — busque no Banco Central."}
+         <br><b>Índice com base ${escapar(d.base_do_numero || "—")}.</b>
+         O reajuste é <b>índice final ÷ índice inicial</b>; o número em si
+         depende da base e <b>não é igual ao do boletim da FGV</b>, mas a
+         divisão entre dois meses dá exatamente o mesmo fator. O Banco Central
+         publica a variação mensal — o índice é acumulado aqui a partir dela.`
       : `<b>${escapar(d.nome)}</b> — nenhum mês guardado ainda.
          Aperte "Buscar no Banco Central" para trazer a série.`;
     els("ind-corpo").innerHTML = d.meses.map(m => `
       <tr><td>${escapar(m.competencia.slice(5, 7) + "/" + m.competencia.slice(0, 4))}</td>
+        <td class="direita mono">${m.numero_indice === null || m.numero_indice === undefined
+          ? "—"
+          : m.numero_indice.toLocaleString("pt-BR", {minimumFractionDigits: 6,
+                                                     maximumFractionDigits: 6})}</td>
         <td class="direita mono">${numero(m.variacao_pct)}%</td>
         <td>${m.fonte === "MANUAL"
               ? '<span class="selo aguardando">lançado à mão</span>'
