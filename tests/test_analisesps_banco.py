@@ -4889,3 +4889,112 @@ def test_o_FILTRO_e_a_LINHA_contam_a_MESMA_coisa(banco_analisesps):
 
         assert pelo_filtro == ["1430"], f"SQL discordou em {campos}"
         assert candidata["confere"] == esperado, f"Python discordou em {campos}"
+
+
+# ===========================================================================
+# DEIXAR SPs DE FORA DA EQUALIZAÇÃO — 13/09/2026
+#
+# *"Às vezes não queremos renomear todos os lançamentos. O erro pode ter sido
+# no CNPJ e não somente o nome. Preciso poder não marcar algum."*
+#
+# ⚠️ POR QUE ISSO É GRAVE, e não um refinamento: quatro SPs com o nome de uma
+# locadora e o CNPJ de outra. O nome "certo" daquele CNPJ é o das outras trinta
+# — e reescrever as quatro APAGA a única pista de que alguém digitou o CNPJ
+# errado. Depois disso elas ficam idênticas às certas, e ninguém mais acha.
+# ===========================================================================
+@pytest.mark.banco
+def test_a_SP_desmarcada_NAO_e_renomeada(banco_analisesps, monkeypatch):
+    from app.apps.analisesps.db import consultar
+
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRI"),
+            _sp_credor("3", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "09444530000101",
+              "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+              "tipo-09444530000101": "COMECO",
+              "nao_reescrever": "2"})
+
+    nomes = {l[0]: l[1] for l in consultar(
+        "SELECT id, credor FROM analisesps.sps")}
+    assert nomes["1"] == "TRIBUNAL DE JUSTIÇA DO CEARÁ"
+    # A "2" fica ERRADA DE PROPÓSITO, à vista, esperando a correção do número.
+    assert nomes["2"] == "TRI"
+
+
+@pytest.mark.banco
+def test_a_tela_DIZ_quantas_ficaram_de_fora(banco_analisesps, monkeypatch):
+    """Ele desmarcou de propósito e precisa ver que foi respeitado."""
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRI"),
+            _sp_credor("3", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    corpo = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "09444530000101",
+              "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+              "tipo-09444530000101": "COMECO",
+              "nao_reescrever": "2"}).get_json()
+
+    assert corpo["sps"] == 1
+    assert corpo["de_fora"] == 1
+    assert "deixou de fora" in corpo["aviso"]
+
+
+@pytest.mark.banco
+def test_a_exclusao_NAO_VAZA_para_outro_fornecedor(banco_analisesps,
+                                                   monkeypatch):
+    from werkzeug.datastructures import MultiDict
+
+    """A lista de exclusões vem única para a tela inteira. O id da SP é único,
+    então desmarcar numa não pode calar outra — mas isso tem de estar cravado,
+    porque a tela manda tudo junto."""
+    from app.apps.analisesps.db import consultar
+
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ"),
+            _sp_credor("9", "11222333000144", "LOCADORA"),
+            _sp_credor("10", "11222333000144", "LOCADORA DO VALE LTDA")])
+
+    _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data=MultiDict([("documento", "09444530000101"),
+                        ("nome", "TRIBUNAL DE JUSTIÇA DO CEARÁ"),
+                        ("tipo-09444530000101", "COMECO"),
+                        ("documento", "11222333000144"),
+                        ("nome", "LOCADORA DO VALE LTDA"),
+                        ("tipo-11222333000144", "COMECO"),
+                        ("nao_reescrever", "1")]))
+
+    nomes = {l[0]: l[1] for l in consultar(
+        "SELECT id, credor FROM analisesps.sps")}
+    assert nomes["1"] == "TRI"                      # desmarcada
+    assert nomes["9"] == "LOCADORA DO VALE LTDA"    # do outro, seguiu
+
+
+@pytest.mark.banco
+def test_sem_desmarcar_nada_continua_reescrevendo_TUDO(banco_analisesps,
+                                                       monkeypatch):
+    """O padrão não muda: quem não mexer em nada tem o comportamento de
+    sempre."""
+    from app.apps.analisesps.db import consultar
+
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRI"),
+            _sp_credor("3", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    corpo = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "09444530000101",
+              "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+              "tipo-09444530000101": "COMECO"}).get_json()
+
+    assert corpo["sps"] == 2 and corpo["de_fora"] == 0
+    assert consultar("SELECT count(*) FROM analisesps.sps "
+                     " WHERE credor = 'TRI'")[0][0] == 0

@@ -1306,3 +1306,68 @@ def test_conferir_um_arquivo_que_nao_e_certificado_NAO_LEVANTA_erro():
     assert r["ok"] is False
     assert "PDF" in r["motivo"]
     assert r["e_pkcs12"] is False
+
+
+# ===========================================================================
+# ⚠️ O DEFEITO QUE MANTEVE A BUSCA NA RECEITA SEM FUNCIONAR — 13/09/2026
+#
+# Relato do dono, com a mensagem da tela na mão: *"o certificado continua em
+# falha: tentou e NÃO conseguiu — Certificado ou senha inválida. Ele pode ter
+# vencido."* E a desconfiança dele estava certa desde o começo: **a senha
+# estava certa e o certificado estava válido**.
+#
+# A CAUSA: o construtor da `erpbrasil`, ao receber `bytes`, chama
+# `base64.b64decode` em cima — ele assume que bytes significa "conteúdo em
+# base64". Mandando o `.pfx` cru, a biblioteca decodificava lixo e traduzia o
+# erro para "Certificado ou senha inválida!!!".
+#
+# A mensagem acusava a SENHA e o erro era de quem chamava. É o pior tipo de
+# defeito: manda procurar no lugar errado, e não há como desconfiar dele
+# olhando a tela.
+# ===========================================================================
+def test_o_certificado_vai_para_a_Receita_em_BASE64_e_nao_cru(monkeypatch):
+    """Cravado no ponto exato do engano: o que chega à biblioteca tem de ser o
+    conteúdo em base64. Um dia alguém "simplifica" isso de volta."""
+    import base64
+
+    from app.apps.analisesps import sefaz
+
+    recebido = {}
+
+    class CertificadoFalso:
+        def __init__(self, arquivo, senha):
+            recebido["arquivo"] = arquivo
+            recebido["senha"] = senha
+
+    bruto = b"\x30\x82\x0a\x00 conteudo binario do pfx"
+    monkeypatch.setattr(
+        "erpbrasil.assinatura.certificado.Certificado", CertificadoFalso)
+    monkeypatch.setattr(
+        "app.apps.analisesps.certificados.abrir_para_uso",
+        lambda cnpj: (bruto, "SenhaCerta"))
+
+    sefaz._certificado("10656452007869")
+
+    assert recebido["arquivo"] == base64.b64encode(bruto)
+    assert base64.b64decode(recebido["arquivo"]) == bruto
+    assert recebido["senha"] == "SenhaCerta"
+
+
+def test_a_falha_ao_abrir_para_a_Receita_vira_recado_com_o_que_fazer(
+        monkeypatch):
+    """Quando falhar de verdade, a mensagem tem de dizer o passo seguinte — e
+    agora ela não é mais disparada por um engano nosso."""
+    from app.apps.analisesps import sefaz
+
+    def explode(arquivo, senha):
+        raise ValueError("Certificado ou senha inválida!!!")
+
+    monkeypatch.setattr(
+        "erpbrasil.assinatura.certificado.Certificado", explode)
+    monkeypatch.setattr(
+        "app.apps.analisesps.certificados.abrir_para_uso",
+        lambda cnpj: (b"x", "y"))
+
+    with pytest.raises(sefaz.SemCertificado) as erro:
+        sefaz._certificado("10656452007869")
+    assert "Suba o novo em Configurações" in str(erro.value)

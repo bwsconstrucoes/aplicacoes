@@ -349,12 +349,28 @@ def guardar_escolha(documento: str, nome: str, tipo: str, automatico: bool,
         conn.commit()
 
 
-def sps_para_reescrever(documento: str, nome: str) -> list:
+def sps_para_reescrever(documento: str, nome: str, fora=()) -> list:
     """Os IDs das SPs daquele CPF/CNPJ cujo credor está escrito diferente.
 
     COMPARA O TEXTO EXATO, e não a chave: o objetivo aqui é deixar a planilha
     toda com a MESMA grafia, então "SERVICOS" tem de virar "SERVIÇOS" mesmo
-    sendo a mesma palavra. É justo esse o pedido do dono."""
+    sendo a mesma palavra. É justo esse o pedido do dono.
+
+    ⚠️ `fora` SÃO AS SPs QUE ELE DESMARCOU, e isto não é refinamento: é o que
+    impede a tela de espalhar um erro.
+
+    Pedido do dono em 13/09/2026: *"às vezes não queremos renomear todos os
+    lançamentos. O erro pode ter sido no CNPJ e não somente o nome. Preciso
+    poder não marcar algum."*
+
+    Ele está descrevendo o caso que esta tela mais erra: quatro SPs com o nome
+    de uma locadora e o CNPJ de outra. O nome "certo" para aquele CNPJ é o das
+    outras trinta — e reescrever as quatro **apagaria a única pista** de que
+    alguém digitou o CNPJ errado. Depois disso ninguém mais acha o erro: as
+    quatro ficam idênticas às certas.
+
+    Por isso o que fica de fora fica ERRADO DE PROPÓSITO, à vista, esperando a
+    correção do número."""
     from .db import consultar
 
     linhas = consultar(
@@ -362,7 +378,8 @@ def sps_para_reescrever(documento: str, nome: str) -> list:
         " WHERE regexp_replace(coalesce(documento, ''), '\\D', '', 'g') = ? "
         "   AND trim(coalesce(credor, '')) <> ? "
         "   AND trim(coalesce(credor, '')) <> ''", (so_digitos(documento), nome))
-    return [str(l[0]) for l in linhas]
+    deixar_de_fora = {str(i).strip() for i in (fora or ()) if str(i).strip()}
+    return [str(l[0]) for l in linhas if str(l[0]) not in deixar_de_fora]
 
 
 # ---------------------------------------------------------------------------

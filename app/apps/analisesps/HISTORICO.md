@@ -3978,6 +3978,84 @@ anterior está errada.
   medido.
 
 ---
+
+### Quinquagésima leva (13/09) — ⚠️ o defeito que mantinha a busca na Receita SEM FUNCIONAR, e o "não marcar algum"
+
+#### 1. ⚠️ O CERTIFICADO — A CULPA ERA NOSSA, e o dono estava certo desde o começo
+
+Ele insistiu três vezes que a senha e o certificado estavam corretos. **Estavam.**
+A mensagem que ele mandou de produção fechou o caso:
+
+> *"tentou e NÃO conseguiu — Não consegui abrir o certificado de
+> 00079526000109: Certificado ou senha inválida!!!"*
+
+A causa está no construtor da `erpbrasil.assinatura.certificado.Certificado`:
+
+```
+elif isinstance(arquivo, bytes):
+    self._arquivo = base64.b64decode(arquivo)     # <- assume BASE64
+```
+
+Ao receber `bytes`, a biblioteca assume que é o conteúdo **em base64**.
+Mandávamos o `.pfx` **cru**. Ela decodificava lixo, o
+`load_key_and_certificates` levantava `ValueError`, e ela traduzia isso para
+**"Certificado ou senha inválida!!!"**.
+
+**MEDIDO, com um .pfx de verdade e a senha certa:**
+
+    Certificado(bruto, senha) ................. CertificadoSenhaInvalida
+    Certificado(base64encode(bruto), senha) ... abriu
+
+**É o pior tipo de defeito que existe:** a mensagem acusava a SENHA, o erro era
+de quem chamava, e não havia como desconfiar olhando a tela. Mandou o dono
+procurar no lugar errado por dias — trocar certificado, reconferir senha — e
+foi por isso que a busca na Receita **nunca trouxe nota nenhuma**.
+
+Duas coisas que a leva anterior fez e que foram o que permitiu achar isto:
+o rastro da falha gravado no banco (sem ele, a tela continuaria dizendo "nunca
+rodou") e o "conferir sem guardar" (que provou que o arquivo abria pelo nosso
+caminho). Sem as duas, este defeito continuaria invisível.
+
+Corrigido com teste cravando o ponto exato — um dia alguém "simplifica" isso de
+volta.
+
+#### 2. Deixar SPs de fora da equalização de nome
+
+*"Às vezes não queremos renomear todos os lançamentos. O erro pode ter sido no
+CNPJ e não somente o nome. Preciso poder não marcar algum."*
+
+⚠️ **Por que isso é grave e não é refinamento:** quatro SPs com o nome de uma
+locadora e o CNPJ de outra. O nome "certo" daquele CNPJ é o das outras trinta —
+e reescrever as quatro **apaga a única pista** de que alguém digitou o CNPJ
+errado. Depois disso elas ficam idênticas às certas e ninguém mais acha o erro.
+O que fica de fora fica **errado de propósito**, à vista, esperando a correção
+do número.
+
+- Caixa de marcar por SP dentro do "ver as SPs"; desmarcada vira um campo
+  escondido no formulário daquele fornecedor.
+- **Fica guardado no formulário, e não numa variável solta**: fechar a janela,
+  reabrir ou recarregar não perde a marcação.
+- O que ficou de fora **aparece ao lado do botão** ("2 SPs fora: não serão
+  renomeadas") e é dito de novo no aviso do resultado. Exclusão que só existe
+  dentro de uma janela fechada é exclusão que se esquece.
+
+#### O que foi verificado
+
+- Suíte completa com Postgres de verdade: **5.057 passaram, 129 pulados**.
+- A aplicação sobe (18 blueprints).
+- No Chromium: desmarcar cria o campo escondido, o aviso aparece ao lado do
+  botão, e a marcação **sobrevive a fechar e reabrir** a janela.
+- O conserto do certificado foi provado contra a biblioteca de verdade, com um
+  `.pfx` gerado aqui.
+
+#### O que NÃO foi verificado
+
+- **A busca na Receita ainda não rodou de verdade.** Esta máquina não fala com
+  a SEFAZ e não há certificado aqui. O conserto é certo no ponto do defeito,
+  mas só o primeiro clique em produção dirá se havia OUTRO problema atrás dele.
+- Nada rodou contra a base de produção.
+
+---
 ---
 
 ## Regras que não se discutem

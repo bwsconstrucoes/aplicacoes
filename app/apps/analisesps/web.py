@@ -2642,12 +2642,19 @@ def aplicar_credor():
                                 aviso="Pedido incompleto. Tente de novo."))
 
     quem = auth.nome_atual() or auth.ROTULOS.get(auth.perfil_atual(), "")
-    mudadas, fornecedores, sem_efeito = 0, 0, 0
+    # AS SPs QUE ELE DESMARCOU. *"Às vezes não queremos renomear todos os
+    # lançamentos. O erro pode ter sido no CNPJ e não somente o nome. Preciso
+    # poder não marcar algum."* Vem uma lista só para a tela inteira; o id da
+    # SP é único, então não há como uma exclusão vazar para outro fornecedor.
+    de_fora = [i for i in request.form.getlist("nao_reescrever") if i.strip()]
+    mudadas, fornecedores, sem_efeito, ficaram_de_fora = 0, 0, 0, 0
     for documento, nome in zip(documentos, escolhidos):
         nome = (nome or "").strip()
         if not nome:
             continue
-        ids = credores.sps_para_reescrever(documento, nome)
+        todas = credores.sps_para_reescrever(documento, nome)
+        ids = credores.sps_para_reescrever(documento, nome, fora=de_fora)
+        ficaram_de_fora += len(todas) - len(ids)
         tipo = request.form.get(f"tipo-{documento}") or credores.DECIDIR
         if ids:
             # Em blocos: uma SP com muitos lançamentos do mesmo fornecedor
@@ -2671,6 +2678,11 @@ def aplicar_credor():
         if sem_efeito:
             aviso += (f" {sem_efeito} já estava(m) com o nome certo — ficou só "
                       "a decisão guardada.")
+        # O QUE FICOU DE FORA É DITO, e não engolido: ele desmarcou de
+        # propósito, e precisa ver que foi respeitado.
+        if ficaram_de_fora:
+            aviso += (f" {ficaram_de_fora} SP(s) você deixou de fora — "
+                      "continuam com o nome como estão.")
     logger.info("Análise de SPs: %s equalizou %d credor(es), %d SP(s).",
                 quem or "sem nome", fornecedores, mudadas)
 
@@ -2690,7 +2702,7 @@ def aplicar_credor():
     # normal — sem JavaScript a tela tem de continuar funcionando.
     if request.headers.get("X-Sem-Recarregar") == "1":
         return {"ok": True, "aviso": aviso, "fornecedores": fornecedores,
-                "sps": mudadas,
+                "sps": mudadas, "de_fora": ficaram_de_fora,
                 "documentos": documentos,
                 "nomes": [str(n or "").strip() for n in escolhidos]}
     return redirect(url_for("analisesps.tela_credores", aviso=aviso))

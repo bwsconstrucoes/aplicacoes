@@ -1398,3 +1398,12 @@ tr.nota-resolvida .nota-candidata { filter: grayscale(1); }
 /* Cada SP fora da sugestão com o MOTIVO ao lado. *"A menos que a associação
    esteja provavelmente errada"* — é aqui que se confere isso. */
 .fora-da-sugestao { margin-top: 3px; }
+
+/* AS SPs DEIXADAS DE FORA da equalização, dito ao lado do botão. Exclusão que
+   só existe dentro de uma janela fechada é exclusão que se esquece. */
+.sps-de-fora {
+  margin-left: 10px; font-size: 12px; font-weight: 600;
+  color: #92400E; background: #FFFBEB; border: 1px solid #FDE68A;
+  padding: 2px 8px; border-radius: 10px;
+}
+#sps-do-nome .marcar-sp { cursor: pointer; }

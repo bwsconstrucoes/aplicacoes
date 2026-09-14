@@ -1799,8 +1799,20 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
         + "vale avisar.</p>";
       return;
     }
+    /* ⚠️ A CAIXA DE MARCAR POR SP — *"as vezes nao queremos renomear todos os
+       lancamentos. O erro pode ter sido no CNPJ e nao somente o nome. Preciso
+       poder nao marcar algum."*
+
+       O caso que ele descreve e o que esta tela mais erra: quatro SPs com o
+       nome de uma locadora e o CNPJ de outra. Reescrever as quatro APAGA a
+       unica pista de que alguem digitou o CNPJ errado — depois disso elas
+       ficam identicas as certas e ninguem mais acha o erro. */
     var linhas = sps.map(function (s) {
-      return "<tr><td class=\"id\">" + escapar(s.id) + "</td>"
+      var fora = jaEstaDeFora(s.id);
+      return "<tr><td><input type=\"checkbox\" class=\"marcar-sp\" "
+        + 'data-sp="' + escapar(s.id) + '"' + (fora ? "" : " checked")
+        + ' title="Desmarque para NAO reescrever o nome desta SP"></td>'
+        + "<td class=\"id\">" + escapar(s.id) + "</td>"
         + "<td>" + escapar(s.credor) + "</td>"
         + "<td>" + escapar(s.valor) + "</td>"
         + "<td>" + escapar(s.vencimento) + "</td>"
@@ -1817,12 +1829,82 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
         + " mais recentes. Há mais SPs com este nome.</p>"
       : "";
     corpo.innerHTML = '<p class="cartao-dica">' + sps.length
-      + " SP(s) escritas como <b>" + escapar(nome) + "</b>.</p>"
+      + " SP(s) escritas como <b>" + escapar(nome) + "</b>. "
+      + "<b>Desmarque</b> as que NÃO devem ser renomeadas — use isso quando "
+      + "desconfiar de que o erro foi no CNPJ, e não no nome.</p>"
       + '<div style="max-height:60vh; overflow:auto">'
-      + '<table class="sps"><thead><tr><th>SP</th><th>Credor escrito</th>'
+      + '<table class="sps"><thead><tr><th></th><th>SP</th>'
+      + "<th>Credor escrito</th>"
       + "<th>Valor</th><th>Vencimento</th><th>Pagamento</th><th>Descrição</th>"
       + "<th>Card</th></tr></thead><tbody>" + linhas + "</tbody></table></div>"
       + aviso;
+
+    corpo.querySelectorAll(".marcar-sp").forEach(function (caixa) {
+      caixa.addEventListener("change", function () {
+        marcar(caixa.dataset.sp, caixa.checked);
+      });
+    });
+  }
+
+  /* ONDE A EXCLUSÃO FICA GUARDADA: num <input hidden> DENTRO do formulário
+     daquele fornecedor. Assim ela viaja com o "Usar este" sem estado nenhum
+     em variável solta — fechar a janela, reabrir, recarregar: o que estiver no
+     formulário é o que vale. */
+  function formularioDo(documento) {
+    var campos = document.querySelectorAll('input[name="documento"]');
+    for (var i = 0; i < campos.length; i++) {
+      if (campos[i].value === documento) { return campos[i].closest("form"); }
+    }
+    return null;
+  }
+
+  var documentoAberto = "";
+
+  function jaEstaDeFora(spId) {
+    var f = formularioDo(documentoAberto);
+    if (!f) { return false; }
+    return !!f.querySelector('input[name="nao_reescrever"][value="'
+                             + spId + '"]');
+  }
+
+  function marcar(spId, entra) {
+    var f = formularioDo(documentoAberto);
+    if (!f) { return; }
+    var existente = f.querySelector('input[name="nao_reescrever"][value="'
+                                    + spId + '"]');
+    if (entra) {
+      if (existente) { existente.remove(); }
+    } else if (!existente) {
+      var campo = document.createElement("input");
+      campo.type = "hidden";
+      campo.name = "nao_reescrever";
+      campo.value = spId;
+      f.appendChild(campo);
+    }
+    avisarQuantasDeFora(f);
+  }
+
+  /* O QUE FICOU DE FORA APARECE NA TELA, ao lado do botão. Exclusão que só
+     existe dentro de uma janela fechada é exclusão que se esquece — e aí ele
+     clica em "Usar este" achando que vai renomear tudo. */
+  function avisarQuantasDeFora(f) {
+    if (!f) { return; }
+    var quantas = f.querySelectorAll('input[name="nao_reescrever"]').length;
+    var recado = f.querySelector(".sps-de-fora");
+    if (!quantas) {
+      if (recado) { recado.remove(); }
+      return;
+    }
+    if (!recado) {
+      recado = document.createElement("span");
+      recado.className = "sps-de-fora";
+      var botao = f.querySelector("button[type=submit]");
+      if (botao) { botao.parentNode.insertBefore(recado, botao.nextSibling); }
+      else { f.appendChild(recado); }
+    }
+    recado.textContent = quantas === 1
+      ? "1 SP fora: não será renomeada"
+      : quantas + " SPs fora: não serão renomeadas";
   }
 
   document.addEventListener("click", function (ev) {
@@ -1835,6 +1917,7 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     ev.stopPropagation();
 
     var nome = botao.dataset.nome || "";
+    documentoAberto = botao.dataset.documento || "";
     titulo.textContent = "SPs escritas como “" + nome + "”";
     corpo.innerHTML = '<p class="cartao-dica">Buscando…</p>';
     if (typeof caixa.showModal === "function") { caixa.showModal(); }
