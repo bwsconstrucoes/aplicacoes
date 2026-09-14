@@ -140,20 +140,70 @@ ACOES_SEM_SP = {
 }
 
 
-def _omie_respondeu_ok(plano: dict) -> bool | None:
-    """O Omie confirmou a baixa? `None` quando não deu para saber.
+# ⚠️ O ROBÔ SEMPRE DISSE POR QUE NÃO BAIXOU — ERA ESTA TELA QUE JOGAVA FORA
+#
+# Relato do dono em 14/09/2026, com quatro páginas na mão: *"baixam na planilha
+# mas não baixam no Omie. Não tem sentido. (…) Por que que não está baixando no
+# sistema Omie?"* — e as quatro linhas diziam a mesma frase vazia: *"Não recebi
+# confirmação do Omie para esta baixa."*
+#
+# A FRASE ERA NOSSA, e escondia a resposta. O robô interrompe a sequência do
+# Omie em vários pontos, e em CADA UM ele escreve o motivo:
+#
+#     skip ......................... "Título já consta PAGO no Omie."
+#     abort ........................ "Título não encontrado no Omie. Inclua o
+#                                     título primeiro."
+#     abort_apos_alterar ........... "Falha ao alterar título. Baixa cancelada."
+#     abort_apos_transferencia ..... "Falha na transferência. Baixa cancelada."
+#     erro_baixa ................... "Falha ao lançar pagamento no Omie."
+#
+# Em TODOS eles não existe um passo `baixar` com `ok`, e a leitura antiga
+# devolvia "não sei" — a tela então imprimia a frase genérica e a explicação de
+# verdade morria dentro do JSON. Ele ficou dois dias procurando no lugar errado
+# porque a tela não contava o que já sabia.
+#
+# E os dois primeiros casos são OPOSTOS: "já estava pago" não é erro nenhum;
+# "título não encontrado" é trabalho para ele fazer no Omie. Tratar os dois com
+# a mesma frase é pior do que não dizer nada.
+def _leitura_do_omie(plano: dict) -> dict:
+    """O que o Omie respondeu, com o motivo que o próprio robô escreveu.
 
-    Os três estados são diferentes e a tela precisa deles: confirmou, recusou,
-    ou não há resposta nenhuma para ler (é o caso do ensaio, e o de uma ação
-    que não chama o Omie)."""
+    Devolve {'estado': …, 'motivo': …}. Os estados:
+      'confirmou'  — houve passo `baixar` e ele voltou ok;
+      'recusou'    — houve passo `baixar` e ele falhou;
+      'ja_pago'    — o título já constava PAGO (não é erro);
+      'parou'      — a sequência foi interrompida antes de baixar;
+      'nao_chamou' — não houve chamada nenhuma ao Omie."""
     passos = (plano.get("responses") or {}).get("omie")
     if not passos:
+        return {"estado": "nao_chamou", "motivo": ""}
+
+    def passo_de(nome):
+        for p in passos:
+            if _texto((p or {}).get("step")).lower() == nome:
+                return p or {}
         return None
+
     baixas = [p for p in passos
               if _texto((p or {}).get("step")).lower() == "baixar"]
-    if not baixas:
-        return None
-    return any(((p or {}).get("response") or {}).get("ok") for p in baixas)
+    if baixas:
+        if any(((p or {}).get("response") or {}).get("ok") for p in baixas):
+            return {"estado": "confirmou", "motivo": ""}
+        parada = passo_de("erro_baixa") or {}
+        return {"estado": "recusou",
+                "motivo": _texto(parada.get("motivo"))}
+
+    if passo_de("skip"):
+        return {"estado": "ja_pago",
+                "motivo": _texto((passo_de("skip") or {}).get("motivo"))}
+
+    # Qualquer interrupção anterior à baixa: o motivo do robô é a resposta.
+    for nome in ("abort", "abort_apos_alterar", "abort_apos_transferencia"):
+        parada = passo_de(nome)
+        if parada:
+            return {"estado": "parou", "motivo": _texto(parada.get("motivo"))}
+
+    return {"estado": "parou", "motivo": ""}
 
 
 def _situacao_do_plano(plano: dict, ensaio: bool = False) -> tuple[str, str]:
@@ -185,10 +235,13 @@ def _situacao_do_plano(plano: dict, ensaio: bool = False) -> tuple[str, str]:
         return ERRO, ("O robô rodou em modo de ENSAIO e não gravou nada. "
                       "Nada foi baixado — reenvie este comprovante.")
 
-    confirmou = _omie_respondeu_ok(plano)
-    if confirmou is False:
-        return ERRO, ("O Omie não confirmou a baixa. Nada foi marcado como "
-                      "pago — este comprovante precisa ser reenviado.")
+    omie = _leitura_do_omie(plano)
+
+    if omie["estado"] == "recusou":
+        return ERRO, (omie["motivo"] or "O Omie recusou a baixa.") + (
+            " ⚠️ A planilha e o card PODEM ter sido marcados como pagos mesmo "
+            "assim — o robô os atualiza sem esperar a resposta do Omie. "
+            "Confira o título no Omie antes de reenviar.")
 
     if acao in ACOES_SEM_SP:
         # Baixa real, mas sem SP: dizer isso evita que ele vá procurar a SP na
@@ -196,9 +249,23 @@ def _situacao_do_plano(plano: dict, ensaio: bool = False) -> tuple[str, str]:
         return BAIXADO, (ACOES_SEM_SP[acao].capitalize()
                          + ". Não há SP para marcar como paga na planilha.")
 
-    if confirmou is None:
-        return ERRO, ("Não recebi confirmação do Omie para esta baixa. "
-                      "Confira na planilha antes de reenviar.")
+    # ⚠️ "JÁ ESTAVA PAGO" NÃO É ERRO, e chamar de erro faz ele reenviar um
+    # comprovante que não precisa — e reenviar é o caminho para pagar duas
+    # vezes. É a mesma família do "não juntar errado" da conciliação fiscal.
+    if omie["estado"] == "ja_pago":
+        return BAIXADO, (omie["motivo"]
+                         or "O título já constava PAGO no Omie.")
+
+    if omie["estado"] == "parou":
+        return ERRO, (omie["motivo"] or "A baixa parou antes de chegar ao Omie.") + (
+            " ⚠️ A planilha e o card PODEM ter sido marcados como pagos mesmo "
+            "assim. Confira o título no Omie.")
+
+    if omie["estado"] == "nao_chamou":
+        return ERRO, ("O robô NÃO chegou a chamar o Omie para esta página"
+                      + (f" (ação: {acao})" if acao else "")
+                      + ". Nada foi baixado lá. Confira a planilha antes de "
+                      "reenviar.")
 
     # A PLANILHA É ATUALIZADA EM SEGUNDO PLANO pelo robô, então a resposta dele
     # não diz se ela já mudou. Não se promete o que não se sabe.
