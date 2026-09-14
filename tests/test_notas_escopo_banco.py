@@ -59,15 +59,20 @@ def notas(sessao_real):
                     escopo_visao=EscopoVisao.OBRAS_DESIGNADAS)
         s.add(u)
         s.flush()
-        if obra is not None:
-            s.add(UsuarioObra(usuario_id=u.id, obra_id=obra.id))
+        for o in ([obra] if obra is not None and not isinstance(obra, (list, tuple))
+                  else list(obra or [])):
+            s.add(UsuarioObra(usuario_id=u.id, obra_id=o.id))
         for acao in acoes:
             s.add(UsuarioPermissao(usuario_id=u.id, acao=acao, concedida=True))
         s.flush()
         return u
 
     financeiro = pessoa("Financeiro", "fin@teste.bws.local", P.FINANCEIRO)
-    gestor = pessoa("Gestor de obras", "gestor@teste.bws.local", P.GESTOR_OBRA)
+    # O gestor passou a ser preso às obras designadas em 12/09/2026 (decisão do
+    # dono). Aqui ele tem as DUAS, porque o que este arquivo testa é outra
+    # coisa: que ele não vê a nota SOLTA, por não cruzar notas.
+    gestor = pessoa("Gestor de obras", "gestor@teste.bws.local", P.GESTOR_OBRA,
+                    [creche, escola])
     supervisor = pessoa("Supervisor da creche", "sup@teste.bws.local",
                         P.SUPERVISOR_OBRA, creche)
     # O comprador NÃO é do financeiro por cargo — a ação é marcada nele.
@@ -133,8 +138,8 @@ def test_o_comprador_tambem_ve_a_solta_porque_ele_cruza(notas):
 
 
 def test_o_gestor_de_obras_so_ve_as_ja_associadas(notas):
-    """Ele enxerga todas as obras, mas não cruza nota: a solta não é assunto
-    dele."""
+    """Ele alcança as duas obras, mas não cruza nota: a solta não é assunto
+    dele. As duas travas são independentes — obra e ação."""
     d = notas
     assert _numeros(d["s"], d["gestor"]) == {"1002", "1003"}
 

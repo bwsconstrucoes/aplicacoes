@@ -70,6 +70,16 @@ def _reais(v: Any) -> str:
     return _dinheiro_br(v)
 
 
+def _num_br(v: Any, casas: int = 6) -> str:
+    """Número com vírgula decimal e ponto de milhar — é assim que ele confere
+    o índice na planilha, e ponto no lugar da vírgula vira erro de leitura."""
+    try:
+        texto = f"{float(v):,.{casas}f}"
+    except (TypeError, ValueError):
+        return "—"
+    return texto.replace(",", "§").replace(".", ",").replace("§", ".")
+
+
 def _pct_br(v: Any) -> str:
     return f"{float(v):.4f}".rstrip("0").rstrip(".").replace(".", ",") + "%"
 
@@ -156,11 +166,26 @@ def acumulado(s: Session, *, indice: str, de: date, ate: date) -> dict[str, Any]
             meses += 1
         atual = _proximo_mes(atual)
 
+    # ÍNDICE INICIAL E FINAL (migração 068). Pedido do dono em 14/09/2026:
+    # *"caso a gente queira saber qual índice inicial, qual índice final"*.
+    # O inicial é o do MÊS DA DATA-BASE — o ponto zero, que já está dentro do
+    # preço contratado —, e por isso o acumulado acima começa no mês seguinte.
+    # Dividir um pelo outro dá o mesmo fator, e é assim que se confere na mão.
+    mes_base = _mes(de)
+    pontas = {i.competencia: i for i in s.scalars(select(IndiceEconomico).where(
+        IndiceEconomico.codigo == indice,
+        IndiceEconomico.competencia.in_([mes_base, fim]))).all()}
+    inicial = getattr(pontas.get(mes_base), "numero_indice", None)
+    final = getattr(pontas.get(fim), "numero_indice", None)
+
     return {
         "fator": fator, "meses": meses, "faltando": faltando,
         "completo": not faltando,
         "de": inicio.isoformat(), "ate": fim.isoformat(),
         "variacao_pct": float(((fator - 1) * 100).quantize(Decimal("0.0001"))),
+        "indice_inicial": float(inicial) if inicial is not None else None,
+        "indice_final": float(final) if final is not None else None,
+        "mes_do_indice_inicial": mes_base.isoformat(),
     }
 
 
@@ -225,6 +250,10 @@ def prever(s: Session, titulo_id: int) -> dict[str, Any]:
         "meses_no_calculo": acc["meses"],
         "fator": float(acc["fator"].quantize(Decimal("0.00000001"))),
         "variacao_pct": acc["variacao_pct"],
+        # Os dois números que o dono confere na mão: final ÷ inicial = fator.
+        "indice_inicial": acc.get("indice_inicial"),
+        "indice_final": acc.get("indice_final"),
+        "mes_do_indice_inicial": acc.get("mes_do_indice_inicial"),
         "base": float(base),
         "valor": float(valor),
         # A conta escrita como uma pessoa lê. Formato americano aqui seria
@@ -233,7 +262,11 @@ def prever(s: Session, titulo_id: int) -> dict[str, Any]:
             f"{cfg['indice']} acumulado de {_mes_br(acc['de'])} a "
             f"{_mes_br(acc['ate'])} ({acc['meses']} meses) = "
             f"{_pct_br(acc['variacao_pct'])}. Reajuste = {_reais(base)} × "
-            f"{_pct_br(acc['variacao_pct'])} = {_reais(valor)}."),
+            f"{_pct_br(acc['variacao_pct'])} = {_reais(valor)}."
+            + (f" Pelos números-índice: {_num_br(acc['indice_final'])} ÷ "
+               f"{_num_br(acc['indice_inicial'])} = "
+               f"{_num_br(float(acc['fator']), casas=6)}."
+               if acc.get("indice_inicial") and acc.get("indice_final") else "")),
         "ja_gerado": _reajuste_ja_gerado(s, titulo),
     }
 

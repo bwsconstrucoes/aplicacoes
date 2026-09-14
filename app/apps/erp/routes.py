@@ -23,7 +23,8 @@ from flask import (
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from app.apps.erp.core.auth.permissoes import (
-    ACAO_ROTULOS, PERMISSOES, PROTEGIDAS_DO_ADMIN, ROTULOS, decidir, pode,
+    ACAO_ROTULOS, PERMISSOES, PROTEGIDAS_DO_ADMIN, ROTULOS,
+    acoes_do_perfil_no_banco, decidir, pode,
 )
 from app.apps.erp.core.auth.service import ErroAutenticacao, autenticar
 from app.apps.erp.core.comum.auditoria import (
@@ -222,16 +223,68 @@ def _migracoes_pendentes() -> list[str]:
         return []
 
 
+def _acao_da_aba(rota: str) -> str:
+    """A ação que a TELA daquela aba exige, lida da própria declaração da rota.
+
+    Um lugar só: se a rota muda de ação, o menu acompanha sem ninguém lembrar.
+    Repetir a lista aqui criaria a segunda resposta possível para a mesma
+    pergunta — e um dia as duas discordariam.
+    """
+    return (_REGISTRO_PERMISSOES.get(rota) or {}).get("GET", "ver_erp")
+
+
+def _menu_da_pessoa(pode: dict[str, bool]) -> tuple[list[dict], dict[str, list]]:
+    """Os módulos e abas que esta pessoa PODE abrir.
+
+    Decisão do dono em 13/09/2026: *"se a pessoa está liberada apenas pra
+    visualizar lançamento financeiro, ela não tem que ver nada do suprimento
+    (…) ela não vai ver nada disso se eu não disponibilizar pra aquele
+    perfil"*.
+
+    Esconder não é trava — a trava continua sendo o `@permissao` de cada rota.
+    É para o menu não oferecer o que vai responder 403, e para uma área que a
+    pessoa não usa simplesmente não existir na tela dela.
+    """
+    abas_por_modulo = {}
+    modulos = []
+    for m in MODULOS:
+        visiveis = [a for a in m["abas"] if pode.get(_acao_da_aba(a[2]), False)]
+        abas_por_modulo[m["chave"]] = visiveis
+        if visiveis:
+            # O botão do módulo aponta para a primeira aba QUE ESTA PESSOA
+            # ABRE. Apontar para a primeira da lista mandaria justamente quem
+            # tem acesso parcial para uma tela que responde 403.
+            modulos.append({**m, "abas": visiveis})
+    return modulos, abas_por_modulo
+
+
+def _acoes_das_abas() -> tuple[str, ...]:
+    """As ações que decidem quais abas aparecem.
+
+    Calculada na hora, e não uma vez na importação: o registro de permissões é
+    preenchido pelos decoradores à medida que as rotas são declaradas, e neste
+    ponto do arquivo ele ainda está vazio. São ~27 consultas a um dicionário —
+    barato, e sem a chance de congelar uma lista errada.
+    """
+    return tuple(sorted({_acao_da_aba(rota)
+                         for m in MODULOS for _, _, rota in m["abas"]}))
+
+
 def _contexto(aba: str) -> dict:
     chave = _MODULO_DA_ABA.get(aba, "financeiro")
     modulo = next(m for m in MODULOS if m["chave"] == chave)
-    return {"modulos": MODULOS, "modulo": modulo, "abas": modulo["abas"],
+    # Uma leitura só para as duas perguntas: o que a tela esconde e o que o
+    # menu mostra. Duas chamadas seriam duas idas ao banco em TODA página.
+    pode = _pode_agora(*ACOES_NA_TELA, *_acoes_das_abas())
+    modulos_visiveis, abas_por_modulo = _menu_da_pessoa(pode)
+    return {"modulos": modulos_visiveis, "modulo": modulo,
+            "abas": abas_por_modulo.get(chave, modulo["abas"]),
             "aba_ativa": aba,
             "usuario_nome": session.get("erp_usuario_nome", ""),
             "usuario_perfil": session.get("erp_usuario_perfil", ""),
             # O que esta pessoa pode, para a tela não oferecer botão que vai
             # responder 403. NÃO é a trava — a trava é o @permissao da rota.
-            "pode": _pode_agora(*ACOES_NA_TELA),
+            "pode": pode,
             "migracoes_pendentes": _migracoes_pendentes()}
 _ABERTOS = ("EM_ANALISE", "AGUARDANDO_APROVACAO", "APROVADO", "BLOQUEADO", "PAGO_PARCIAL")
 
@@ -246,6 +299,7 @@ def _usuario_logado(s) -> Usuario | None:
     u = s.get(Usuario, uid)
     if u is not None:
         u.permissoes_extras = _excecoes_brutas(s, uid)
+        u.acoes_do_perfil = acoes_do_perfil_no_banco(s, uid)
     return u
 
 
@@ -452,6 +506,11 @@ def _guarda_permissao():
     with get_session() as s:
         perfil = _perfil_bruto(s)
         excecoes = _excecoes_brutas(s, session["erp_usuario_id"]) if perfil else {}
+        # O PERFIL CADASTRADO (migração 065) decide, quando existe. Devolve
+        # None enquanto a migração não rodou ou a pessoa não foi apontada para
+        # perfil nenhum — e aí vale o cargo, como antes.
+        acoes = (acoes_do_perfil_no_banco(s, session["erp_usuario_id"])
+                 if perfil else None)
     if not perfil:
         return None          # usuário sumiu do banco: a rota responde
     try:
@@ -460,7 +519,7 @@ def _guarda_permissao():
         logger.error("ERP/permissao: perfil desconhecido %r no usuário %s",
                      perfil, session.get("erp_usuario_id"))
         return jsonify({"ok": False, "erro": "Perfil de usuário inválido."}), 403
-    if not decidir(perfil_enum, acao, excecoes):
+    if not decidir(perfil_enum, acao, excecoes, acoes):
         logger.warning("ERP/permissao: %s negado ao usuário %s (%s) em %s",
                        acao, session.get("erp_usuario_id"), perfil, endpoint)
         return jsonify({"ok": False,
@@ -572,7 +631,7 @@ def sair():
 @bp.route("/erp/")
 @bp.route("/erp/titulos")
 @login_obrigatorio
-@permissao("ver_erp")
+@permissao("ver_titulos")
 def pagina_titulos():
     return render_template("erp_titulos.html", **_contexto("titulos"))
 
@@ -587,22 +646,32 @@ def pagina_inicio():
     # preço em toda visita. Quem sincroniza é a própria tela da agenda.
     # Se a migração 051 ainda não rodou, a porta de entrada abre do mesmo
     # jeito — ela não pode depender do que veio depois dela.
+    pode = _pode_agora(*ACOES_NA_TELA, *_acoes_das_abas())
     agenda = {}
-    try:
-        from app.apps.erp.core.agenda import service as svc_agenda
-        with get_session() as s:
-            agenda = svc_agenda.contagem(s, usuario=_usuario_logado(s))
-    except Exception:
-        logger.warning("ERP/agenda: contagem indisponível na tela de início "
-                       "(migração 051 pendente?)")
-    return render_template("erp_inicio.html", modulos=MODULOS, modulo=None,
+    # O aviso da agenda só aparece para quem tem a agenda. Mostrar "2
+    # obrigações vencidas" a quem não pode abrir a tela entrega informação de
+    # uma área que o perfil dela não libera — e ainda por cima sem ela poder
+    # fazer nada a respeito.
+    if pode.get("ver_agenda"):
+        try:
+            from app.apps.erp.core.agenda import service as svc_agenda
+            with get_session() as s:
+                agenda = svc_agenda.contagem(s, usuario=_usuario_logado(s))
+        except Exception:
+            logger.warning("ERP/agenda: contagem indisponível na tela de início "
+                           "(migração 051 pendente?)")
+    # A porta de entrada mostra os MÓDULOS QUE ESTA PESSOA ABRE, e não a lista
+    # inteira — é aqui que ela escolhe para onde ir, e oferecer uma área que
+    # responde 403 é pior do que não mostrá-la.
+    modulos_visiveis, _ = _menu_da_pessoa(pode)
+    return render_template("erp_inicio.html", modulos=modulos_visiveis, modulo=None,
                            abas=[], aba_ativa="", agenda=agenda,
                            usuario_nome=session.get("erp_usuario_nome", ""),
                            usuario_perfil=session.get("erp_usuario_perfil", ""),
                            # `pode` é do molde comum a todas as telas: o
                            # encadeamento lê daqui para não oferecer link que
                            # a pessoa não consegue abrir.
-                           pode=_pode_agora(*ACOES_NA_TELA),
+                           pode=pode,
                            migracoes_pendentes=_migracoes_pendentes())
 
 
@@ -615,7 +684,7 @@ def pagina_lancar():
 
 @bp.route("/erp/confirmar")
 @login_obrigatorio
-@permissao("ver_erp")
+@permissao("ver_titulos")
 def pagina_confirmar():
     return render_template("erp_confirmar.html", **_contexto("confirmar"))
 
@@ -629,14 +698,14 @@ def pagina_pagamentos():
 
 @bp.route("/erp/empreitas")
 @login_obrigatorio
-@permissao("ver_erp")
+@permissao("ver_empreitas")
 def pagina_empreitas():
     return render_template("erp_empreitas.html", **_contexto("empreitas"))
 
 
 @bp.route("/erp/suprimentos/locacoes")
 @login_obrigatorio
-@permissao("ver_erp")
+@permissao("ver_locacoes")
 def pagina_locacoes():
     """Locação de equipamento vive em SUPRIMENTOS, e não no financeiro.
 
@@ -650,7 +719,7 @@ def pagina_locacoes():
 
 @bp.route("/erp/locacoes")
 @login_obrigatorio
-@permissao("ver_erp")
+@permissao("ver_locacoes")
 def pagina_locacoes_antiga():
     """O endereço antigo, de quando Locações ficava no Financeiro. Continua
     respondendo porque há link salvo e gente com a tela nos favoritos."""
@@ -732,7 +801,7 @@ def pagina_receber():
 
 @bp.route("/erp/obras")
 @login_obrigatorio
-@permissao("ver_erp")
+@permissao("ver_obras")
 def pagina_obras():
     return render_template("erp_obras.html", **_contexto("obras"))
 
@@ -852,10 +921,11 @@ def _pode_agora(*acoes: str) -> dict[str, bool]:
         with get_session() as s:
             perfil = _perfil_bruto(s)
             excecoes = _excecoes_brutas(s, session["erp_usuario_id"]) if perfil else {}
+            do_perfil = acoes_do_perfil_no_banco(s, session["erp_usuario_id"])
         alvo = PerfilUsuario(perfil)
     except Exception:
         return {a: False for a in acoes}
-    return {a: decidir(alvo, a, excecoes) for a in acoes}
+    return {a: decidir(alvo, a, excecoes, do_perfil) for a in acoes}
 
 
 def _contexto_cadastros(sub: str) -> dict:
@@ -2740,7 +2810,7 @@ def api_uso_da_pessoa(usuario_id: int):
 
 @bp.route("/erp/prestacao")
 @login_obrigatorio
-@permissao("ver_erp")
+@permissao("ver_fundo_fixo")
 def pagina_prestacao():
     return render_template("erp_prestacao.html", **_contexto("prestacao"))
 
@@ -4893,6 +4963,10 @@ def api_obra(obra_id: int):
                     obra.prazo_execucao_dias = int(d["prazo_execucao_dias"] or 0) or None
                 if "conta_recebimento_id" in d:
                     obra.conta_recebimento_id = d["conta_recebimento_id"] or None
+                # O projeto que agrupa a obra (migração 066). Vazio = sem
+                # projeto, que é o caso comum.
+                if "projeto_id" in d:
+                    obra.projeto_id = int(d["projeto_id"]) if d["projeto_id"] else None
                 s.flush()
                 registrar_evento(s, "obra", obra.id, "ATUALIZADA",
                                  {"codigo": obra.codigo, "antes": antes}, usuario.id)
@@ -4909,7 +4983,7 @@ def api_obra(obra_id: int):
                 "engenheiro_fiscal ordem_servico indice_reajuste regime_obra status "
                 "observacoes_fiscais orgao_resumido codigo_omie_depto ref_pipefy "
                 "iss_retido inss_retido aceita_deducao_material prazo_execucao_dias "
-                "conta_recebimento_id").split()}
+                "conta_recebimento_id projeto_id").split()}
             for campo in ("valor_contrato", "latitude", "longitude",
                           "aliquota_iss", "aliquota_iss_pct",
                           "pct_servico_iss", "pct_servico_inss"):
@@ -6691,6 +6765,59 @@ def api_saude():
         return jsonify({"ok": True, **saude.panorama(s, dias=dias)})
 
 
+def _perfis_cadastrados(s) -> list[dict]:
+    """Os perfis de acesso cadastrados, para a caixa de escolha do operador.
+
+    Devolve lista vazia — e não erro — enquanto a migração 065 não rodou: a
+    tela de operadores continua funcionando com o cargo antigo, que é o que
+    segura o sistema na janela entre publicar e apertar o botão.
+    """
+    try:
+        from app.apps.erp.core.auth import perfis as svc_perfis
+        return svc_perfis.listar(s)
+    except Exception:
+        logger.warning("ERP: perfis indisponíveis (migração 065 pendente?)")
+        return []
+
+
+def _projetos_cadastrados(s) -> list[dict]:
+    """Os projetos, para a caixa de seleção do alcance do operador."""
+    try:
+        from app.apps.erp.core.cadastros import projetos as svc_projetos
+        return [{"id": p["id"], "codigo": p["codigo"], "nome": p["nome"],
+                 "quantas_obras": p["quantas_obras"]}
+                for p in svc_projetos.listar(s)]
+    except Exception:
+        logger.warning("ERP: projetos indisponíveis (migração 066 pendente?)")
+        return []
+
+
+def _empresas_cadastradas(s) -> list[dict]:
+    """As empresas do grupo, para a caixa de seleção do alcance do operador."""
+    from sqlalchemy import select as _select
+    from app.apps.erp.db.models.cadastros import Empresa
+    try:
+        return [{"id": e.id, "nome": e.nome_fantasia or e.razao_social}
+                for e in s.scalars(_select(Empresa).order_by(Empresa.razao_social)).all()]
+    except Exception:
+        return []
+
+
+def _aplicar_perfil_cadastrado(u, d: dict) -> None:
+    """Grava o perfil de acesso e a marca "enxerga todas as obras".
+
+    As duas coisas são diferentes de propósito, e foi o dono quem separou:
+    *"só que tem uma diferença do banco, porque tem a questão da obra"*. O
+    perfil diz O QUE a pessoa faz; as obras, ONDE. Duas pessoas do mesmo perfil
+    acompanham obras diferentes.
+    """
+    if "perfil_id" in d:
+        valor = d.get("perfil_id")
+        u.perfil_id = int(valor) if valor not in (None, "", 0, "0") else None
+    if "ve_todas_as_obras" in d:
+        u.ve_todas_as_obras = bool(d.get("ve_todas_as_obras"))
+
+
 @bp.route("/erp/api/usuarios", methods=["GET", "POST"])
 @login_obrigatorio
 @permissao("gerir_usuarios")
@@ -6709,6 +6836,8 @@ def api_usuarios():
             atual = _usuario_logado(s)
             if request.method == "GET":
                 usuarios = s.scalars(select(Usuario).order_by(Usuario.nome)).all()
+                from app.apps.erp.core.cadastros import vinculos as _vinc
+                alcance = {u.id: _vinc.alcance_do_operador(s, u.id) for u in usuarios}
                 vinculos: dict[int, list[str]] = {}
                 responde_por: dict[int, list[int]] = {}
                 for v in s.scalars(select(UsuarioObra)).all():
@@ -6730,6 +6859,16 @@ def api_usuarios():
                             UsuarioCategoria.usuario_id == u.id)).all()],
                     "perfil": u.perfil.value,
                     "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
+                    # O perfil CADASTRADO (migração 065) e as obras da pessoa.
+                    # É aqui que o dono mexe agora — o cargo acima ficou de
+                    # herança e sai quando nada mais o ler.
+                    "perfil_id": getattr(u, "perfil_id", None),
+                    "ve_todas_as_obras": getattr(u, "ve_todas_as_obras", None),
+                    # O alcance dito por PROJETO e por EMPRESA (migração 066).
+                    # A obra continua sendo a unidade: estes dois são jeitos de
+                    # nomear um conjunto de obras, resolvido na consulta.
+                    "projetos": alcance.get(u.id, {}).get("projetos", []),
+                    "empresas": alcance.get(u.id, {}).get("empresas", []),
                     "escopo_visao": escopo_visao(u).value,
                     # Teto de IA do mês desta pessoa e quanto dele já foi.
                     # Nulo = sem limite, e a tela escreve isso com todas as
@@ -6744,7 +6883,10 @@ def api_usuarios():
                     "obras_responsavel": responde_por.get(u.id, []),
                 } for u in usuarios], "perfis": [
                     {"chave": p.value, "rotulo": ROTULOS.get(p, p.value)}
-                    for p in PerfilUsuario]})
+                    for p in PerfilUsuario],
+                    "perfis_cadastrados": _perfis_cadastrados(s),
+                    "projetos_cadastrados": _projetos_cadastrados(s),
+                    "empresas_cadastradas": _empresas_cadastradas(s)})
 
             exigir(atual, "gerir_usuarios")
             d = request.get_json(silent=True) or {}
@@ -6757,6 +6899,13 @@ def api_usuarios():
             u.cpf = cpf or None
             u.telefone = somente_digitos(d.get("telefone") or "") or None
             u.observacoes = (d.get("observacoes") or "").strip() or None
+            _aplicar_perfil_cadastrado(u, d)
+            if d.get("projetos") or d.get("empresas"):
+                from app.apps.erp.core.cadastros import vinculos as _vinc
+                s.flush()
+                _vinc.definir_alcance_do_operador(
+                    s, u.id, projetos=d.get("projetos") or [],
+                    empresas=d.get("empresas") or [])
             # Escopo ausente ou desconhecido cai no mais restritivo.
             try:
                 u.escopo_visao = EscopoVisao(d.get("escopo_visao"))
@@ -6843,6 +6992,13 @@ def api_editar_usuario(usuario_id: int):
                     except _IE:
                         return jsonify({"ok": False,
                                         "erro": f"Valor inválido em {campo}."}), 400
+            _aplicar_perfil_cadastrado(u, d)
+            if "projetos" in d or "empresas" in d:
+                from app.apps.erp.core.cadastros import vinculos as _vinc
+                _vinc.definir_alcance_do_operador(
+                    s, u.id,
+                    projetos=d.get("projetos") if "projetos" in d else None,
+                    empresas=d.get("empresas") if "empresas" in d else None)
             if "obras" in d:
                 # Um caminho só, compartilhado com a tela da OBRA. Antes daqui
                 # esta rota apagava todos os vínculos e recriava — o que
@@ -6874,11 +7030,16 @@ def api_editar_usuario(usuario_id: int):
 @login_obrigatorio
 @permissao(GET="gerir_usuarios", POST="gerir_usuarios")
 def api_permissoes_do_usuario(usuario_id: int):
-    """As marcações de permissão de UMA pessoa, sobre o que o cargo já dá.
+    """As marcações de permissão de UMA pessoa, sobre o que o PERFIL dela já dá.
 
-    GET devolve, para cada ação: o que o cargo dá, o que está marcado à mão e o
-    resultado. POST grava as marcações — só as que diferem do cargo viram linha,
-    para o cadastro não guardar repetição do que o cargo já responde.
+    GET devolve, para cada ação: o que a base dá, o que está marcado à mão e o
+    resultado. POST grava as marcações — só as que diferem da base viram linha,
+    para o cadastro não guardar repetição do que a base já responde.
+
+    ⚠️ A BASE é o perfil cadastrado (migração 065) quando a pessoa tem um, e o
+    cargo antigo quando não tem. Comparar com o cargo depois que o perfil
+    passou a mandar criaria exceção onde não há diferença nenhuma — e, pior,
+    salvar a tela tiraria em silêncio uma ação que o perfil concede.
     """
     from sqlalchemy import select
     from app.apps.erp.core.auth.permissoes import exigir
@@ -6897,22 +7058,28 @@ def api_permissoes_do_usuario(usuario_id: int):
                     UsuarioPermissao.usuario_id == usuario_id)).all()
                 if r.usuario_id == usuario_id}
 
+            base = acoes_do_perfil_no_banco(s, usuario_id)
+
+            def _da_base(acao: str) -> bool:
+                return acao in base if base is not None else u.perfil in PERMISSOES[acao]
+
             if request.method == "GET":
                 acoes = []
                 for acao in sorted(PERMISSOES):
-                    do_cargo = u.perfil in PERMISSOES[acao]
+                    do_cargo = _da_base(acao)
                     marcada = marcadas.get(acao)
                     acoes.append({
                         "acao": acao,
                         "rotulo": ACAO_ROTULOS.get(acao, acao),
                         "do_cargo": do_cargo,
                         "marcada": marcada,
-                        "efetiva": decidir(u.perfil, acao, marcadas),
+                        "efetiva": decidir(u.perfil, acao, marcadas, base),
                         "travada": u.perfil is PerfilUsuario.ADMIN and acao in PROTEGIDAS_DO_ADMIN,
                     })
                 return jsonify({"ok": True, "usuario": {"id": u.id, "nome": u.nome,
                                                         "perfil": u.perfil.value,
-                                                        "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value)},
+                                                        "perfil_rotulo": ROTULOS.get(u.perfil, u.perfil.value),
+                                                        "tem_perfil_cadastrado": base is not None},
                                 "acoes": acoes})
 
             pedido = (request.get_json(silent=True) or {}).get("permissoes") or {}
@@ -6930,8 +7097,8 @@ def api_permissoes_do_usuario(usuario_id: int):
             gravadas = {}
             for acao, valor in pedido.items():
                 quer = bool(valor)
-                if quer == (u.perfil in PERMISSOES[acao]):
-                    continue          # igual ao cargo: não vira exceção
+                if quer == _da_base(acao):
+                    continue          # igual à base: não vira exceção
                 s.add(UsuarioPermissao(usuario_id=usuario_id, acao=acao,
                                        concedida=quer, definida_por=atual.id))
                 gravadas[acao] = quer
@@ -6948,6 +7115,145 @@ def api_permissoes_do_usuario(usuario_id: int):
         raise
     except Exception as e:
         logger.exception("ERP: falha ao ajustar permissões do operador")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/projetos", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="ver_erp", POST="configurar")
+def api_projetos():
+    """Os PROJETOS — o conjunto de obras que se olha junto (migração 066).
+
+    GET é aberto a quem entra no ERP porque o projeto é filtro de tela: sem a
+    lista, nem a caixa de seleção do relatório monta. Criar e editar exige
+    configurar, como todo cadastro estrutural.
+    """
+    from app.apps.erp.core.cadastros import projetos as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, "projetos": svc.listar(
+                    s, incluir_arquivados=request.args.get("todos") == "1")})
+            d = request.get_json(silent=True) or {}
+            projeto = svc.criar(s, d, atual)
+            s.commit()
+            logger.info("ERP: projeto %s criado por %s", projeto["codigo"], atual.id)
+        return jsonify({"ok": True, "projeto": projeto})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha no cadastro de projetos")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/projetos/<int:projeto_id>", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao("configurar")
+def api_projeto(projeto_id: int):
+    """Um projeto: ler, editar, ou arquivar (`{"arquivar": true}`).
+
+    ⚠️ Ler UM projeto exige `configurar`, e não `ver_erp` como a listagem: o
+    detalhe traz o NOME das obras que estão dentro dele, e quem é preso a uma
+    obra não tem por que saber o nome das outras. A listagem devolve só código,
+    nome e quantidade — o que a tela precisa para montar o filtro.
+    """
+    from app.apps.erp.core.cadastros import projetos as svc
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, "projeto": svc.obter(s, projeto_id)})
+            d = request.get_json(silent=True) or {}
+            if d.get("arquivar"):
+                projeto = svc.arquivar(s, projeto_id, atual)
+            else:
+                projeto = svc.editar(s, projeto_id, d, atual)
+            s.commit()
+        return jsonify({"ok": True, "projeto": projeto})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao editar projeto")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/perfis", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="gerir_usuarios", POST="gerir_usuarios")
+def api_perfis():
+    """O CADASTRO de perfis de acesso (migração 065).
+
+    GET devolve os perfis e o catálogo de seções — as telas do sistema
+    agrupadas por área, com o que "só olhar" e "olhar e mexer" liberam em cada
+    uma. POST cria um perfil novo, que nasce sem abrir porta nenhuma.
+    """
+    from app.apps.erp.core.auth import perfis as svc_perfis
+    from app.apps.erp.core.auth import secoes as cat
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({
+                    "ok": True,
+                    "perfis": svc_perfis.listar(
+                        s, incluir_arquivados=request.args.get("todos") == "1"),
+                    "catalogo": cat.para_a_tela(),
+                    "niveis": [{"chave": n, "rotulo": cat.NIVEL_ROTULOS[n]}
+                               for n in cat.NIVEIS],
+                })
+            d = request.get_json(silent=True) or {}
+            perfil = svc_perfis.criar(s, d, atual)
+            s.commit()
+            logger.info("ERP: perfil %s criado por %s", perfil["nome"], atual.id)
+        return jsonify({"ok": True, "perfil": perfil})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha no cadastro de perfis")
+        return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
+
+
+@bp.route("/erp/api/perfis/<int:perfil_id>", methods=["GET", "POST"])
+@login_obrigatorio
+@permissao(GET="gerir_usuarios", POST="gerir_usuarios")
+def api_perfil(perfil_id: int):
+    """Um perfil: ler, editar as seções, ou arquivar (`{"arquivar": true}`)."""
+    from app.apps.erp.core.auth import perfis as svc_perfis
+    try:
+        with get_session() as s:
+            atual = _usuario_logado(s)
+            if request.method == "GET":
+                return jsonify({"ok": True, "perfil": svc_perfis.obter(s, perfil_id),
+                                "acoes": sorted(svc_perfis.acoes_do_perfil(s, perfil_id))})
+            d = request.get_json(silent=True) or {}
+            if d.get("arquivar"):
+                perfil = svc_perfis.arquivar(s, perfil_id, atual)
+            else:
+                perfil = svc_perfis.editar(s, perfil_id, d, atual)
+            s.commit()
+            logger.info("ERP: perfil %s alterado por %s", perfil_id, atual.id)
+        return jsonify({"ok": True, "perfil": perfil})
+    except ErroValidacao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 400
+    except ErroPermissao as e:
+        return jsonify({"ok": False, "erro": str(e)}), 403
+    except ErroNaoEncontrado:
+        raise
+    except Exception as e:
+        logger.exception("ERP: falha ao editar perfil")
         return jsonify({"ok": False, "erro": recado_de_falha(e)}), 500
 
 
@@ -7367,11 +7673,20 @@ def api_listar_obras():
                                             if o.seguro_vigencia_fim else None),
                     "cno": o.cno, "art_rrt": o.art_rrt,
                     "conta_bancaria_id": o.conta_bancaria_id,
+                    # O projeto que agrupa a obra (migração 066): vira filtro
+                    # na tela e coluna no relatório somado por projeto.
+                    "projeto_id": getattr(o, "projeto_id", None),
                     "latitude": float(o.latitude) if o.latitude else None,
                     "longitude": float(o.longitude) if o.longitude else None,
                     "aliquota_iss": float(o.aliquota_iss_pct or 0) or None,
                 })
+            from app.apps.erp.core.cadastros import projetos as svc_projetos
+            try:
+                lista_projetos = svc_projetos.listar(s)
+            except Exception:
+                lista_projetos = []      # migração 066 ainda não aplicada
             return jsonify({"ok": True, "obras": linhas,
+                            "projetos": lista_projetos,
                             "fases": [{"chave": k, "rotulo": v} for k, v in FASES_OBRA]})
     except ErroNaoEncontrado:
         raise        # recusa de escopo vira 404, nunca 500

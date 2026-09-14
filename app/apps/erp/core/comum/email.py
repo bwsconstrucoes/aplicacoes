@@ -70,10 +70,48 @@ def remetente_de(empresa: Empresa) -> str:
     return formataddr((nome, conta)) if conta else nome
 
 
-def conta_configurada(empresa: Optional[Empresa]) -> tuple[bool, str]:
-    """(dá para enviar?, o que falta). A tela mostra o segundo valor."""
+def conta_de_envio(s: Optional[Session], empresa: Optional[Empresa]) -> Optional[Empresa]:
+    """De QUAL empresa saem servidor, usuário e senha deste envio.
+
+    Desde 14/09/2026 (migração 067) uma empresa pode **usar a conta de outra**:
+    o e-mail sai pela conta principal, mas aparece com o remetente dela. Pedido
+    do dono: *"o ideal seria que a gente continuasse utilizando um e-mail
+    principal para encaminhar de outras empresas"*.
+
+    **Um pulo só, de propósito.** Emprestar de quem também está emprestando
+    seria uma corrente — e uma corrente com um elo mexido em outro dia é a
+    receita do "parou de mandar e ninguém sabe por quê". O cadastro recusa
+    apontar para quem empresta (ver `cadastros/empresas.py`), e aqui o pulo
+    único é a segunda tranca.
+    """
+    if empresa is None:
+        return None
+    dona_id = getattr(empresa, "conta_email_de_id", None)
+    if not dona_id or dona_id == empresa.id or s is None:
+        return empresa
+    dona = s.get(type(empresa), dona_id)
+    return dona or empresa
+
+
+def conta_configurada(empresa: Optional[Empresa],
+                      s: Optional[Session] = None) -> tuple[bool, str]:
+    """(dá para enviar?, o que falta). A tela mostra o segundo valor.
+
+    Com a sessão, confere a conta DE ONDE o e-mail sai de verdade — que pode
+    ser a de outra empresa. Sem ela, confere a própria: é o comportamento de
+    antes, e o que vale enquanto a migração 067 não rodou.
+    """
     if empresa is None:
         return False, "Nenhuma empresa foi escolhida para este envio."
+    dona = conta_de_envio(s, empresa) or empresa
+    if dona.id != empresa.id:
+        pode, falta = conta_configurada(dona)
+        if not pode:
+            nome_dona = _texto(getattr(dona, "razao_social", "a outra empresa"))
+            return False, (f"Esta empresa usa a conta de {nome_dona}, e é essa "
+                           f"conta que está incompleta. {falta}")
+        return True, ""
+    empresa = dona
     faltando = []
     if not _texto(getattr(empresa, "smtp_servidor", "")):
         faltando.append("o servidor de saída")
@@ -148,8 +186,11 @@ def _entregar(empresa: Empresa, msg: EmailMessage, destinos: list[str]) -> None:
         raise ErroDeEnvio(f"O servidor recusou o(s) endereço(s): {recusados}.")
     except smtplib.SMTPSenderRefused:
         raise ErroDeEnvio(
-            f"O servidor recusou o remetente {remetente_de(empresa)!r}. "
-            f"Normalmente o remetente tem de ser a mesma conta que entrou.")
+            f"O servidor recusou o remetente. Normalmente ele tem de ser a "
+            f"mesma conta que entrou ({empresa.smtp_usuario}) ou um endereço "
+            f"do mesmo domínio, liberado como alias no provedor. Se esta "
+            f"empresa usa a conta de outra, é isto que está acontecendo: o "
+            f"provedor não deixa mandar com endereço de fora.")
     except (smtplib.SMTPConnectError, OSError) as e:
         raise ErroDeEnvio(
             f"Não foi possível falar com {servidor}:{porta} ({e}). Confira o "
@@ -185,9 +226,12 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
     if len(_texto(assunto)) < 3:
         raise ErroValidacao("Escreva um assunto para a mensagem.")
 
-    pode, falta = conta_configurada(empresa)
+    pode, falta = conta_configurada(empresa, s)
     if not pode:
         raise ErroValidacao(falta)
+    # De onde SAI (servidor, usuário, senha) pode ser outra empresa; COMO
+    # APARECE é sempre desta. É a separação que o dono pediu.
+    dona = conta_de_envio(s, empresa) or empresa
 
     registro = EnvioEmail(
         empresa_id=empresa.id, entidade_tipo=entidade_tipo,
@@ -202,7 +246,7 @@ def enviar(s: Session, *, empresa: Empresa, para: list[str], assunto: str,
     try:
         msg = _montar(empresa, para, _texto(assunto), corpo, copia,
                       responder_para, anexos)
-        _entregar(empresa, msg, para + copia)
+        _entregar(dona, msg, para + copia)
         logger.info("ERP/e-mail: %s %s enviado para %s pela empresa %s",
                     entidade_tipo, entidade_id, para, empresa.id)
     except ErroDeEnvio as e:

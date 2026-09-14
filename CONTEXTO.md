@@ -741,6 +741,64 @@ Quando eu pedir nova feature ou adaptação:
 
 > Lista para manter contexto de decisões já tomadas.
 
+- **2026-09-13 — PROJETO agrupa obras, e o alcance do operador tem três
+  alturas (migração 066).** Pedido do dono: *"com projetos eu faço uma
+  associação de algumas obras e coloco todas dentro do projeto (…) eu poder
+  visualizar o projeto, ou seja, o somatório daquelas obras"*, e *"poder
+  adicionar ao usuário a obra, ou um projeto, ou todas as obras, ou uma empresa
+  ou outra empresa"*. A hierarquia do sistema passou a ser **empresa › projeto
+  › obra**, com o projeto opcional.
+  **Regra de engenharia que fica: a OBRA continua sendo a unidade do recorte.**
+  Empresa e projeto são apenas jeitos de NOMEAR um conjunto de obras, e esse
+  conjunto é resolvido na CONSULTA (`permissoes._obras_designadas`), nunca
+  copiado para `usuario_obras` no momento da marcação. Duas consequências: obra
+  nova dentro de um projeto já marcado entra sozinha no alcance de quem tem o
+  projeto; e todo o recorte que já existia passou a obedecer empresa e projeto
+  sem uma linha a mais em cada tela.
+
+- **2026-09-13 — O PERFIL ESCONDE A ÁREA QUE NÃO LIBERA.** Decisão do dono:
+  *"se a pessoa está liberada apenas pra visualizar lançamento financeiro, ela
+  não tem que ver nada do suprimento"*. Módulo, abas e cartão da tela de início
+  passaram a ser filtrados pela ação que CADA TELA declara — lida do próprio
+  `@permissao`, e não de uma segunda lista. Para isso, cinco telas que só
+  pediam `ver_erp` ganharam ação própria (`ver_titulos`, `ver_fundo_fixo`,
+  `ver_empreitas`, `ver_obras`, `ver_locacoes`), todas nascendo liberadas para
+  os onze perfis prontos. **Regra que fica: aba de menu tem ação própria — se
+  ficar só com `ver_erp`, ela aparece para todo mundo, e há teste estrutural
+  cobrando isso.** Esconder não é trava: a trava segue sendo a recusa da rota.
+
+- **2026-09-13 — O PERFIL DE ACESSO VIROU CADASTRO (migração 065).** Pedido do
+  dono, no modelo do banco dele: *"eu cadastro usuários e cadastro perfil. O
+  perfil eu digo: esse perfil tem acesso a isso, aquilo e aquilo outro. E o
+  usuário está dentro daquele perfil (…) só que tem uma diferença do Bradesco,
+  porque tem a questão da obra"*. Ele veio com uma reclamação junto — *"não era
+  pra gente estar discutindo tanto isso repetidamente"* —, e a reclamação era
+  procedente: quem podia o quê estava colado ao NOME DO CARGO, em código, e
+  qualquer ajuste exigia programador.
+  **Como ficou:** perfil é cadastro, com um nível por seção (**NADA / LER /
+  EDITAR**) nas 23 seções do sistema, em `core/auth/secoes.py`; as **obras
+  continuam sendo do operador**, não do perfil, porque duas pessoas do mesmo
+  perfil acompanham obras diferentes. **A guarda de rota NÃO foi reescrita** —
+  as ações e o `@permissao` de cada rota são os mesmos; só mudou de onde sai o
+  conjunto de ações de uma pessoa. Se a camada nova falhar, ela concede de
+  MENOS, nunca de mais.
+  **O cargo (`usuarios.perfil`) continua existindo** e decide para quem ainda
+  não tem perfil apontado; sai numa migração futura. **Regra que fica: o
+  arquivo `.sql` que semeia os perfis é GERADO a partir da tabela de cargos, e
+  há teste com banco real cobrando que cada perfil pronto responda igual ao
+  cargo, ação por ação** — a versão escrita à mão dava aprovação de pagamento a
+  quem só confirma, e foi essa conferência que pegou.
+
+- **2026-09-12 — Só diretoria, financeiro e ADMIN enxergam a base inteira.**
+  Palavras do dono: *"com exceção dos perfis de diretoria e financeiro, o
+  natural é visualizar somente as obras associadas no cadastro do operador"*.
+  `VE_TUDO` encolheu de seis perfis para três; GESTOR_OBRA, APROVADOR e
+  CONSULTA passaram a enxergar só as obras marcadas no cadastro deles.
+  ⚠️ **Quem estiver sem obra marcada não vê quase nada** — sobra só a própria
+  autoria. É o padrão NEGAR, e exige ajuste de cadastro ao publicar.
+  **Regra que fica: enxergar a empresa inteira é exceção, e a exceção tem
+  nome.**
+
 - **2026-09-12 — Dependência nova: `erpbrasil.edoc` e `erpbrasil.assinatura`.**
   Para a busca automática de notas na Receita, no Análise de SPs. **Autorizada
   pelo dono**, que perguntou se "biblioteca" era código de terceiro, ouviu que
