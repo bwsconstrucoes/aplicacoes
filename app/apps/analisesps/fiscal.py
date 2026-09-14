@@ -2264,3 +2264,74 @@ def notas_por_dia(dias: int = 14) -> list:
         "                   - make_interval(days => ?) "
         " GROUP BY emissao ORDER BY emissao DESC", (int(dias),))
     return [{"dia": l[0], "quantas": l[1], "total": l[2]} for l in linhas]
+
+
+# ===========================================================================
+# A TELA DE VER AS NOTAS — o outro lado da cobrança de 13/09/2026
+#
+# *"Uma tela das notas e outra tela dos registros com os dados que estamos
+# trabalhando. Similar à planilha."*
+#
+# A tela "por nota" que existe é de TRABALHO: mostra as órfãs, propõe SPs,
+# associa. Esta aqui só MOSTRA — todas as notas, todas as colunas, sem recorte
+# e sem ação. Ver o bloco em `consultas.planilha_sps`.
+# ===========================================================================
+# As colunas da nota, na ordem em que ele lê no FSist: o que identifica
+# primeiro (chave, número, série), depois o dinheiro, depois quem emitiu.
+COLUNAS_DA_NOTA_NA_TELA = [
+    ("chave", "Chave de acesso", "texto"),
+    ("numero", "Número", "texto"),
+    ("serie", "Série", "texto"),
+    ("emissao", "Emissão", "data"),
+    ("valor", "Valor", "numero"),
+    ("status", "Situação", "texto"),
+    ("tipo", "Tipo", "texto"),
+    ("emitente", "Emitente", "texto"),
+    ("emitente_doc", "CNPJ do emitente", "texto"),
+    ("emitente_uf", "UF", "texto"),
+    ("destinatario", "Destinatário", "texto"),
+    ("destinatario_doc", "CNPJ do destinatário", "texto"),
+    ("chaves_nfe", "NF-e dentro do CT-e", "texto"),
+    ("importada_em", "Entrou aqui em", "momento"),
+]
+
+POR_PAGINA_PLANILHA = 200
+
+
+def planilha_notas(busca: str = "", ordem: str = "emissao", desc: bool = True,
+                   pagina: int = 1) -> tuple[list, int]:
+    """As notas como uma planilha: todas, todas as colunas, sem recorte."""
+    from .db import consultar, consultar_um
+
+    onde, params = [], []
+    termo = str(busca or "").strip()
+    if termo:
+        alvo = ("lower(coalesce(chave,'') || ' ' || coalesce(numero,'') || ' ' "
+                "|| coalesce(emitente,'') || ' ' || coalesce(emitente_doc,'') "
+                "|| ' ' || coalesce(destinatario,''))")
+        for pedaco in [t.strip().lower() for t in termo.split(",") if t.strip()]:
+            onde.append(f"({alvo}) LIKE ?")
+            params.append("%" + pedaco.replace("\\", "\\\\")
+                          .replace("%", "\\%").replace("_", "\\_") + "%")
+    where = (" WHERE " + " AND ".join(onde)) if onde else ""
+
+    # ⚠️ Lista fechada, como do outro lado: nome de coluna vindo do endereço
+    # nunca entra no SQL.
+    permitidas = {c for c, _, _ in COLUNAS_DA_NOTA_NA_TELA}
+    coluna = ordem if ordem in permitidas else "emissao"
+    sentido = "DESC NULLS LAST" if desc else "ASC NULLS LAST"
+
+    pagina = max(1, int(pagina or 1))
+    campos = ", ".join(c for c, _, _ in COLUNAS_DA_NOTA_NA_TELA)
+    linhas = consultar(
+        f"SELECT {campos} FROM analisesps.notas_fiscais{where} "
+        f" ORDER BY {coluna} {sentido}, chave "
+        " LIMIT ? OFFSET ?",
+        tuple(params) + (POR_PAGINA_PLANILHA,
+                         (pagina - 1) * POR_PAGINA_PLANILHA))
+    total = consultar_um(
+        f"SELECT count(*) FROM analisesps.notas_fiscais{where}",
+        tuple(params))[0]
+
+    nomes = [c for c, _, _ in COLUNAS_DA_NOTA_NA_TELA]
+    return [dict(zip(nomes, linha)) for linha in linhas], int(total or 0)

@@ -4998,3 +4998,122 @@ def test_sem_desmarcar_nada_continua_reescrevendo_TUDO(banco_analisesps,
     assert corpo["sps"] == 2 and corpo["de_fora"] == 0
     assert consultar("SELECT count(*) FROM analisesps.sps "
                      " WHERE credor = 'TRI'")[0][0] == 0
+
+
+# ===========================================================================
+# A TELA DE VER — "similar ao que eu visualizo na planilha" (13/09/2026)
+#
+# *"Desde o começo eu pedi uma tela simples pra poder visualizar similar ao que
+# eu visualizo na planilha. Uma tela das notas e outra tela dos registros com
+# os dados que estamos trabalhando. (…) Mas até agora não foi entregue."*
+#
+# O que faltava não era dado: era a TELA. Todas as outras são de trabalho —
+# recorte, painel, proposta, botão de agir.
+# ===========================================================================
+@pytest.mark.banco
+def test_a_planilha_traz_TODAS_as_colunas_na_ORDEM_da_planilha(banco_analisesps):
+    """⚠️ A ordem é a da planilha (A, B, C…), e não a de uso. Ele lê a SPsBD
+    por posição: a coluna "O" é o Status Pgt, e ele sabe disso de cor."""
+    from app.apps.analisesps import colunas, consultas
+
+    semear([sp("1", credor="ACME", vencimento="10/09/2026", valor="100,00")])
+    linhas, total = consultas.planilha_sps()
+
+    assert total == 1
+    # Todas as colunas guardadas, nenhuma a menos.
+    assert set(linhas[0]) == set(colunas.CHAVES)
+    # E na ordem das letras da planilha.
+    letras = [letra for _, letra, _, _ in consultas.COLUNAS_DA_PLANILHA]
+    assert letras[:5] == ["A", "B", "C", "D", "E"]
+
+
+@pytest.mark.banco
+def test_a_planilha_ordena_DATA_pela_data_e_nao_pelo_texto(banco_analisesps):
+    """⚠️ Ordenar "10/01/2026" como TEXTO põe outubro antes de fevereiro. A
+    tela passaria a mentir numa coisa que ele confere de olho."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A", vencimento="10/10/2026"),
+            sp("2", credor="B", vencimento="02/02/2026"),
+            sp("3", credor="C", vencimento="05/12/2026")])
+
+    linhas, _ = consultas.planilha_sps(ordem="vencimento")
+    assert [l["id"] for l in linhas] == ["2", "1", "3"]
+
+    linhas, _ = consultas.planilha_sps(ordem="vencimento", desc=True)
+    assert [l["id"] for l in linhas] == ["3", "1", "2"]
+
+
+@pytest.mark.banco
+def test_a_planilha_ordena_VALOR_pelo_numero(banco_analisesps):
+    """Mesma armadilha do texto: "1.000,00" vem antes de "9,00" no alfabeto."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A", valor="1.000,00"),
+            sp("2", credor="B", valor="9,00"),
+            sp("3", credor="C", valor="250,00")])
+
+    linhas, _ = consultas.planilha_sps(ordem="valor")
+    assert [l["id"] for l in linhas] == ["2", "3", "1"]
+
+
+@pytest.mark.banco
+def test_a_planilha_RECUSA_ordenacao_que_nao_conhece(banco_analisesps):
+    """⚠️ O nome da coluna vem do endereço. Costurá-lo dentro do SQL é o
+    caminho conhecido para alguém mandar comando pela barra do navegador."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A"), sp("2", credor="B")])
+    # Não explode, não executa nada: cai no padrão.
+    linhas, _ = consultas.planilha_sps(ordem="id; DROP TABLE analisesps.sps")
+    assert [l["id"] for l in linhas] == ["1", "2"]
+    assert consultas.planilha_sps()[1] == 2
+
+
+@pytest.mark.banco
+def test_a_planilha_de_NOTAS_traz_todas_as_colunas_da_nota(banco_analisesps):
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+    linhas, total = fiscal.planilha_notas()
+
+    assert total == 1
+    esperadas = {c for c, _, _ in fiscal.COLUNAS_DA_NOTA_NA_TELA}
+    assert set(linhas[0]) == esperadas
+    assert linhas[0]["numero"] == "1430"
+
+
+@pytest.mark.banco
+def test_a_planilha_de_NOTAS_recusa_ordenacao_desconhecida(banco_analisesps):
+    from app.apps.analisesps import fiscal
+
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+    linhas, _ = fiscal.planilha_notas(ordem="valor; DELETE FROM x")
+    assert len(linhas) == 1
+
+
+@pytest.mark.banco
+def test_a_busca_da_planilha_acha_por_credor_e_por_CNPJ(banco_analisesps):
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="LOCADORA DO VALE", documento="29066773000152"),
+            sp("2", credor="OUTRA EMPRESA", documento="11222333000144")])
+
+    achadas, _ = consultas.planilha_sps(busca="locadora")
+    assert [l["id"] for l in achadas] == ["1"]
+    achadas, _ = consultas.planilha_sps(busca="11222333")
+    assert [l["id"] for l in achadas] == ["2"]
+
+
+@pytest.mark.banco
+def test_a_planilha_NAO_herda_o_escopo_da_tela_fiscal(banco_analisesps):
+    """⚠️ Esta tela é "a planilha": ela mostra TUDO. Os cortes da Documentação
+    Fiscal (antes de 2026, cancelado, TRF) não valem aqui — senão a conta dele
+    deixaria de fechar com a SPsBD, que é exatamente o que ele vem conferir."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A", vencimento="10/09/2026", status_pgt="Pagar"),
+            sp("2", credor="B", vencimento="10/09/2020", status_pgt="Cancelado",
+               tipo_despesa="ajuste (TRF)")])
+
+    assert consultas.planilha_sps()[1] == 2

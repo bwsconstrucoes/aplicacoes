@@ -4056,6 +4056,75 @@ do número.
 - Nada rodou contra a base de produção.
 
 ---
+
+### Quinquagésima primeira leva (13/09) — a tela de VER, que ele pediu desde o começo
+
+*"Desde o começo eu pedi uma tela simples pra poder visualizar similar ao que
+eu visualizo na planilha. Uma tela das notas e outra tela dos registros com os
+dados que estamos trabalhando. Similar à planilha. Mas até agora não foi
+entregue."*
+
+**Ele está certo, e a cobrança é antiga.** O que faltava não era dado — era a
+TELA. Todas as telas deste módulo são de **trabalho**: cada uma mostra um
+recorte, com painel, proposta e botão de agir. Nenhuma respondia à pergunta
+mais simples que existe: *"deixa eu ver os dados"*.
+
+#### O que faz esta ser "a planilha", e não mais uma tela de trabalho
+
+1. **Todas as colunas, na ORDEM DA PLANILHA** (A, B, C…) — e não na ordem de
+   uso. Ele lê a SPsBD por posição; a coluna "O" é o Status Pgt, e ele sabe
+   disso de cor. São **34 colunas** do lado das SPs e 14 do lado das notas.
+2. **A letra da coluna no cabeçalho.** É o detalhe que faz reconhecer.
+3. **Nenhuma ação.** Sem propor, sem confirmar, sem marcar. Olhar não é mexer.
+4. Uma busca só, e **ordenar clicando no cabeçalho** — como numa planilha.
+5. **Cabeçalho e primeira coluna grudados**, que é o "congelar painéis": sem
+   isso, 34 colunas ficam impossíveis de ler no meio.
+
+#### Decisões que valem registro
+
+- **Não reusa `consultas.listar`.** Aquela traz um punhado de colunas
+  escolhidas e ainda calcula risco, atraso e agendamento por linha. Aqui é o
+  contrário: tudo, e sem conta nenhuma por cima.
+- **Data e valor ordenam pela versão CONVERTIDA.** Ordenar "10/01/2026" como
+  texto põe outubro antes de fevereiro — a tela passaria a mentir numa coisa
+  que ele confere de olho. Há teste para os dois.
+- **A ordenação sai de uma lista fechada.** O nome da coluna vem do endereço;
+  costurá-lo dentro do SQL é o caminho conhecido para mandar comando pela barra
+  do navegador. Teste cravando que `ordem=id; DROP TABLE …` cai no padrão.
+- **⚠️ NÃO herda o escopo da Documentação Fiscal.** Os cortes de lá (antes de
+  2026, cancelado, TRF) não valem aqui: esta tela é "a planilha", e se ela
+  escondesse linhas a conta dele deixaria de fechar com a SPsBD — que é
+  exatamente o que ele vem conferir.
+- **Sentido padrão diferente por aba:** a nota mais recente primeiro (é a que
+  acabou de chegar); a SP pelo número, como na planilha.
+- **Entra no menu DEPOIS da Agenda.** A ordem até ali é o caminho do dia dele,
+  pedida com todas as letras. ⚠️ A tela nasceu furando essa ordem e **foi o
+  teste que pegou** — agora o teste também crava que tela nova entra depois.
+
+#### Desempenho, medido com 59.000 SPs e 4.000 notas
+
+    lançamentos, 1ª página ...... 0,15 s
+    lançamentos por valor ....... 0,01 s
+    lançamentos, busca .......... 0,19 s (7.326 achadas)
+    lançamentos, página 50 ...... 0,03 s
+    notas, 1ª página ............ 0,00 s
+
+#### O que foi verificado
+
+- Suíte completa com Postgres de verdade: **5.067 passaram, 129 pulados**.
+- A aplicação sobe (18 blueprints).
+- No Chromium: 34 colunas com as letras (A ID, B Data, C Vencimento…),
+  cabeçalho e primeira coluna **grudados**, notas abrindo da mais recente (▾),
+  e **nenhum erro de console**.
+
+#### O que NÃO foi verificado
+
+- Nada rodou contra a base de produção.
+- A tela não foi vista em celular estreito.
+- Não há exportação para CSV nesta tela ainda — as outras têm; esta ficou só
+  de ver. Se ele quiser baixar, é acrescentar.
+
+---
 ---
 
 ## Regras que não se discutem

@@ -144,6 +144,10 @@ TELAS = [
     ("relatorio",     "Relatório",     "analisesps.relatorio"),
     ("fiscal",        "Doc. Fiscal",   "analisesps.tela_fiscal"),
     ("agenda",        "Agenda",        "analisesps.tela_agenda"),
+    # A TELA DE VER entra AQUI, e não antes: a ordem até a Agenda é o caminho
+    # do dia dele, pedida com estas palavras — *"aí depois agenda, e pronto,
+    # aí pode seguir com os demais"*. Esta é "dos demais".
+    ("planilha",      "Ver os dados",  "analisesps.tela_planilha"),
     ("auditoria",     "Auditoria",     "analisesps.auditoria"),
     ("ratear",        "Ratear",        "analisesps.ratear"),
     ("bradesco",      "Bradesco",      "analisesps.tela_bradesco"),
@@ -2494,6 +2498,78 @@ def remover_certificado():
 # FORA DAS ABAS DE CIMA, e de propósito: isto é arrumação ocasional, não
 # trabalho do dia. A barra de abas é para o que se abre todo dia; encher ela
 # com manutenção faria o que importa ficar mais longe. Chega-se aqui por
+# ===========================================================================
+# A TELA DE VER — "similar ao que eu visualizo na planilha"
+#
+# Cobrança do dono em 13/09/2026, e ela é antiga: *"desde o começo eu pedi uma
+# tela simples pra poder visualizar similar ao que eu visualizo na planilha.
+# Uma tela das notas e outra tela dos registros com os dados que estamos
+# trabalhando. (…) Mas até agora não foi entregue."*
+#
+# Ele está certo. Todas as telas deste módulo são de TRABALHO — cada uma mostra
+# um recorte, com painel, proposta e botão de agir. Nenhuma respondia à
+# pergunta mais simples que existe: *"deixa eu ver os dados"*.
+#
+# É `@exige_consulta` de propósito: olhar não é mexer, e esta tela não tem uma
+# única ação. Quem só consulta entra.
+# ===========================================================================
+@bp.route("/planilha")
+@exige_consulta
+def tela_planilha():
+    """Os dados como a planilha mostra: tudo, sem recorte e sem ação."""
+    from . import consultas, fiscal
+
+    base = consultas.base_carregada()
+    if not base["pronta"]:
+        return render_template("analisesps_vazio.html", base=base,
+                               pode_operar=auth.pode_operar())
+
+    aba = "notas" if request.args.get("aba") == "notas" else "lancamentos"
+    busca = (request.args.get("busca") or "").strip()
+    ordem = request.args.get("ordem") or ("emissao" if aba == "notas" else "id")
+    # O SENTIDO PADRÃO É DIFERENTE NAS DUAS ABAS, e isso é sobre como se lê:
+    # a nota mais recente é a que interessa primeiro (é a que acabou de
+    # chegar); a SP se lê do começo, pelo número, como na planilha. Só depois
+    # de ele clicar num cabeçalho o endereço passa a mandar.
+    if "desc" in request.args:
+        desc = request.args.get("desc") == "1"
+    else:
+        desc = (aba == "notas")
+    try:
+        pagina = max(1, int(request.args.get("pagina", 1)))
+    except ValueError:
+        pagina = 1
+
+    erro, linhas, total = None, [], 0
+    try:
+        if aba == "notas":
+            linhas, total = fiscal.planilha_notas(busca, ordem, desc, pagina)
+            cabecalhos = [(c, "", r, t)
+                          for c, r, t in fiscal.COLUNAS_DA_NOTA_NA_TELA]
+            por_pagina = fiscal.POR_PAGINA_PLANILHA
+        else:
+            linhas, total = consultas.planilha_sps(busca, ordem, desc, pagina)
+            cabecalhos = consultas.COLUNAS_DA_PLANILHA
+            por_pagina = consultas.POR_PAGINA_PLANILHA
+    except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
+        logger.exception("Análise de SPs: falhou montar a planilha")
+        cabecalhos, por_pagina = [], consultas.POR_PAGINA_PLANILHA
+        erro = ("Esta tela precisa da atualização do banco. Vá em "
+                "Configurações e aperte \"Aplicar atualizações do banco\". "
+                f"(detalhe: {e})")
+
+    ultima = (pagina - 1) * por_pagina + len(linhas)
+    return render_template(
+        "analisesps_planilha.html", aba="planilha", sub=aba, base=base,
+        linhas=linhas, cabecalhos=cabecalhos, total=total, erro=erro,
+        busca=busca, ordem=ordem, desc=desc, pagina=pagina,
+        primeira_linha=(pagina - 1) * por_pagina + 1, ultima_linha=ultima,
+        tem_proxima=ultima < total, args=request.args,
+        pode_operar=auth.pode_operar(),
+        perfil=auth.ROTULOS.get(auth.perfil_atual(), ""),
+        nome=auth.nome_atual())
+
+
 # Configurações, onde a contagem aparece.
 # ---------------------------------------------------------------------------
 @bp.route("/credores")
