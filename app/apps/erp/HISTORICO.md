@@ -23,6 +23,12 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ### TRAZ AS MIGRAÇÕES 061 A 068 — o botão tem de ser apertado junto com a publicação
 
+**Publicado na `main` em 14/09/2026** (commit `726a985`, autorizado pelo dono:
+*"eu falei ajusta e já publica"*). O Render já subiu o código; o botão
+**"Aplicar atualizações do banco"**, em Configurações do ERP, precisa ser
+apertado por um ADMIN. Enquanto não for, a coluna de índice não aparece e as
+telas de perfis/projetos não funcionam.
+
 A **068** acrescenta o **número-índice** à tabela de índices, ao lado da
 variação, e já preenche o que está guardado. Não tira nada: a coluna de
 percentual continua.
