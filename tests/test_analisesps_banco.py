@@ -5106,14 +5106,173 @@ def test_a_busca_da_planilha_acha_por_credor_e_por_CNPJ(banco_analisesps):
 
 
 @pytest.mark.banco
-def test_a_planilha_NAO_herda_o_escopo_da_tela_fiscal(banco_analisesps):
-    """⚠️ Esta tela é "a planilha": ela mostra TUDO. Os cortes da Documentação
-    Fiscal (antes de 2026, cancelado, TRF) não valem aqui — senão a conta dele
-    deixaria de fechar com a SPsBD, que é exatamente o que ele vem conferir."""
+def test_a_planilha_herda_SO_O_ANO_e_nao_os_outros_cortes(banco_analisesps):
+    """⚠️ ESTE TESTE MUDOU DE LADO EM 14/09/2026, e a história vale.
+
+    Ele nasceu afirmando o contrário: "a planilha mostra TUDO; os cortes da
+    Documentação Fiscal não valem aqui, senão a conta dele não fecha com a
+    SPsBD". O dono leu a tela e decidiu diferente — *"só me interessa 2026,
+    porque é o lucro real; antes era lucro presumido"*.
+
+    ELE ESTÁ CERTO E EU ESTAVA CERTO: o argumento de não esconder valia, e é
+    por isso que o corte é DITO na tela e tem volta. O que não valia era eu
+    decidir por ele qual recorte interessa.
+
+    O CORTE É SÓ O DO ANO. Cancelado e (TRF) continuam aparecendo: aqueles são
+    recortes do TRABALHO fiscal, e esta tela é de conferir o que existe."""
     from app.apps.analisesps import consultas
 
     semear([sp("1", credor="A", vencimento="10/09/2026", status_pgt="Pagar"),
-            sp("2", credor="B", vencimento="10/09/2020", status_pgt="Cancelado",
-               tipo_despesa="ajuste (TRF)")])
+            sp("2", credor="B", vencimento="10/09/2026", status_pgt="Cancelado",
+               tipo_despesa="ajuste (TRF)"),
+            sp("3", credor="C", vencimento="10/09/2020", status_pgt="Pagar")])
 
-    assert consultas.planilha_sps()[1] == 2
+    linhas, total = consultas.planilha_sps()
+    # A cancelada com (TRF) FICA — só a de 2020 sai.
+    assert sorted(l["id"] for l in linhas) == ["1", "2"]
+    assert total == 2
+
+
+# ===========================================================================
+# O QUADRO POR CATEGORIA — "quanto isso em VALORES" (dono, 14/09/2026)
+#
+# *"A parte de KPI, pra eu saber quanto tem analisado, quanto não tem, quanto
+# tem nota, quanto tem de contrato, quanto é fundo fixo, quanto está sem
+# informação nenhuma — quanto isso em valores, né? Quanto está pra ser
+# resolvido. E era interessante esse KPI direcionar pra uma tela com as
+# informações: eu clicar e mostrar 'olha, essas aqui são as de fundo fixo'."*
+#
+# ⚠️ O QUE ISTO TEM QUE OS TOTALIZADORES NÃO TÊM: valor. 4.000 SPs de R$ 50,00
+# e 4.000 de R$ 50.000,00 são problemas de tamanhos diferentes, e é o dinheiro
+# que diz por onde começar.
+# ===========================================================================
+def _com_categoria(sp_id, categoria, valor):
+    from app.apps.analisesps.db import conexao
+    semear([sp(sp_id, credor="ACME", vencimento="10/09/2026", valor=valor)])
+    if categoria:
+        with conexao() as conn:
+            conn.execute(
+                "INSERT INTO analisesps.sp_fiscal_analise "
+                "  (sp_id, situacao, documentacao) VALUES (?, 'PROPOSTA', ?)",
+                (sp_id, categoria))
+            conn.commit()
+
+
+@pytest.mark.banco
+def test_o_quadro_soma_o_DINHEIRO_de_cada_categoria(banco_analisesps):
+    from app.apps.analisesps import consultas
+
+    _com_categoria("1", "Fundo Fixo", "100,00")
+    _com_categoria("2", "Fundo Fixo", "250,00")
+    _com_categoria("3", "Contrato", "1.000,00")
+
+    quadro = {c["rotulo"]: c for c in
+              consultas.quadro_por_categoria({"escopo_fiscal": True})}
+    assert quadro["Fundo Fixo"]["quantas"] == 2
+    assert float(quadro["Fundo Fixo"]["valor"]) == 350.0
+    assert float(quadro["Contrato"]["valor"]) == 1000.0
+
+
+@pytest.mark.banco
+def test_o_quadro_tem_a_pilha_do_SEM_INFORMACAO(banco_analisesps):
+    """É a pilha que mais interessa: o que ninguém olhou ainda."""
+    from app.apps.analisesps import consultas
+
+    _com_categoria("1", "Contrato", "100,00")
+    _com_categoria("2", "", "900,00")
+
+    vazia = [c for c in consultas.quadro_por_categoria({"escopo_fiscal": True})
+             if c["vazia"]]
+    assert len(vazia) == 1
+    assert vazia[0]["rotulo"] == consultas.SEM_CATEGORIA
+    assert float(vazia[0]["valor"]) == 900.0
+
+
+@pytest.mark.banco
+def test_clicar_numa_categoria_FILTRA_a_lista(banco_analisesps):
+    """*"Eu clicar e mostrar: olha, essas aqui são as de fundo fixo, aí a
+    lista."* Ver um número e ter de procurá-lo no filtro seria meio caminho."""
+    from app.apps.analisesps import consultas
+
+    _com_categoria("1", "Fundo Fixo", "100,00")
+    _com_categoria("2", "Contrato", "200,00")
+
+    f = {"escopo_fiscal": True, "categoria": ["Fundo Fixo"]}
+    assert [l["id"] for l in consultas.listar(f, pagina=1)] == ["1"]
+
+
+@pytest.mark.banco
+def test_clicar_no_SEM_INFORMACAO_filtra_o_que_esta_vazio(banco_analisesps):
+    from app.apps.analisesps import consultas
+
+    _com_categoria("1", "Contrato", "100,00")
+    _com_categoria("2", "", "200,00")
+
+    f = {"escopo_fiscal": True, "sem_categoria": True}
+    assert [l["id"] for l in consultas.listar(f, pagina=1)] == ["2"]
+
+
+@pytest.mark.banco
+def test_o_quadro_e_a_lista_leem_o_MESMO_filtro(banco_analisesps):
+    """⚠️ Se o quadro somasse um universo e a lista mostrasse outro, os dois
+    números da mesma tela se contradiriam — é o defeito de 13/09 de novo."""
+    from app.apps.analisesps import consultas
+
+    _com_categoria("1", "Contrato", "100,00")
+    _com_categoria("2", "Contrato", "200,00")
+    semear([sp("3", credor="ACME", vencimento="10/09/2025", valor="900,00")])
+
+    f = {"escopo_fiscal": True}
+    do_quadro = sum(c["quantas"] for c in consultas.quadro_por_categoria(f))
+    da_lista = consultas.resumo(f)["quantidade"]
+    assert do_quadro == da_lista == 2   # a de 2025 fica fora nos dois
+
+
+@pytest.mark.banco
+def test_categoria_inventada_no_endereco_NAO_VIRA_SQL(banco_analisesps):
+    """O nome da categoria vem do endereço. Entra como parâmetro, sempre."""
+    from app.apps.analisesps import consultas
+
+    _com_categoria("1", "Contrato", "100,00")
+    f = {"escopo_fiscal": True,
+         "categoria": ["Contrato'; DROP TABLE analisesps.sps; --"]}
+    assert consultas.listar(f, pagina=1) == []
+    assert consultas.resumo({"escopo_fiscal": True})["quantidade"] == 1
+
+
+# ===========================================================================
+# A PLANILHA DAS SPs PASSA A CORTAR POR ANO — decisão dele, 14/09/2026
+#
+# *"Lembra que eu fiz um filtro pra exibir lá na parte do confronto só o que é
+# vencimento em 2026 ou pago em 2026? Então quero que você aplique esse mesmo
+# filtro lá. Porque só me interessa 2026, porque é o lucro real; antes era
+# lucro presumido, então não preciso dessa informação."*
+#
+# ⚠️ EU TINHA DECIDIDO O CONTRÁRIO, com teste e tudo: "a planilha mostra a
+# planilha, esconder linha faz a conta não fechar com a SPsBD". O argumento
+# estava certo no geral e ERRADO no caso dele — o que ele confere é 2026,
+# porque é o que o regime tributário torna relevante. Quem decide é ele.
+# ===========================================================================
+@pytest.mark.banco
+def test_a_planilha_das_SPs_mostra_so_de_2026_em_diante(banco_analisesps):
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A", vencimento="10/09/2026"),
+            sp("2", credor="B", vencimento="10/09/2025"),
+            sp("3", credor="C", vencimento="28/12/2025",
+               data_pagamento="05/01/2026")])
+
+    linhas, total = consultas.planilha_sps()
+    assert sorted(l["id"] for l in linhas) == ["1", "3"]
+    assert total == 2
+
+
+@pytest.mark.banco
+def test_a_planilha_das_SPs_tem_VOLTA_para_mostrar_tudo(banco_analisesps):
+    """Esconder sem volta seria trocar um problema por outro."""
+    from app.apps.analisesps import consultas
+
+    semear([sp("1", credor="A", vencimento="10/09/2026"),
+            sp("2", credor="B", vencimento="10/09/2020")])
+
+    assert consultas.planilha_sps(tudo=True)[1] == 2

@@ -331,10 +331,16 @@ def _consultar_nfe(cnpj: str, desde_nsu: str) -> dict:
     from erpbrasil.edoc.nfe import NFe
     from erpbrasil.transmissao import TransmissaoSOAP
 
-    with TransmissaoSOAP(_certificado(cnpj)) as transmissao:
-        servico = NFe(transmissao, UF, ambiente=AMBIENTE)
-        retorno = servico.consultar_distribuicao(
-            cnpj_cpf=re.sub(r"\D", "", cnpj), ultimo_nsu=_nsu(desde_nsu))
+    # ⚠️ SEM `with`, e isto veio da produção: *"'TransmissaoSOAP' object does
+    # not support the context manager protocol"* (14/09/2026).
+    #
+    # A classe NÃO é um gerenciador de contexto — quem é o método `cliente()`
+    # dela, que o serviço chama por dentro. O `with` daqui estourava ANTES de
+    # qualquer conversa com a Receita, e por isso nenhuma NF-e entrava.
+    transmissao = TransmissaoSOAP(_certificado(cnpj))
+    servico = NFe(transmissao, UF, ambiente=AMBIENTE)
+    retorno = servico.consultar_distribuicao(
+        cnpj_cpf=re.sub(r"\D", "", cnpj), ultimo_nsu=_nsu(desde_nsu))
     return _ler_resposta(getattr(retorno, "retorno", retorno))
 
 
@@ -349,7 +355,7 @@ def _consultar_cte(cnpj: str, desde_nsu: str) -> dict:
     há certificado fora do Render. Ele é chamado separado do de NF-e de
     propósito: se recusar, as NF-e do dia continuam entrando."""
     import requests
-    from erpbrasil.transmissao import TransmissaoSOAP
+    from erpbrasil.assinatura.certificado import ArquivoCertificado
 
     pedido = (
         '<?xml version="1.0" encoding="UTF-8"?>'
@@ -366,11 +372,24 @@ def _consultar_cte(cnpj: str, desde_nsu: str) -> dict:
         "</distDFeInt>"
         "</cteDadosMsg></cteDistDFeInteresse></soap12:Body></soap12:Envelope>")
 
-    transmissao = TransmissaoSOAP(_certificado(cnpj))
-    sessao = getattr(transmissao, "session", None) or requests.Session()
-    resposta = sessao.post(
-        URL_CTE_DISTRIBUICAO, data=pedido.encode("utf-8"), timeout=60,
-        headers={"Content-Type": "application/soap+xml; charset=utf-8"})
+    # ⚠️ O CERTIFICADO PRECISA IR NA CONEXÃO, e não ir era o defeito: a
+    # produção respondeu *"403 Client Error: Forbidden"* em 14/09/2026.
+    #
+    # A `session` que a `TransmissaoSOAP` guarda é uma sessão COMUM — o
+    # certificado só é preso a ela dentro do método `cliente()`, que grava a
+    # chave e o certificado em arquivos temporários. Postando pela sessão
+    # crua, a Receita via um visitante sem identidade e recusava. É a mesma
+    # família do defeito do base64: usar a biblioteca de um jeito que ela não
+    # suporta, e a mensagem de erro apontando para outro lugar.
+    #
+    # `ArquivoCertificado` é o mesmo caminho que a biblioteca usa por dentro, e
+    # apaga os arquivos ao sair do bloco.
+    with ArquivoCertificado(_certificado(cnpj), "w") as (chave, certificado):
+        sessao = requests.Session()
+        sessao.cert = (chave, certificado)
+        resposta = sessao.post(
+            URL_CTE_DISTRIBUICAO, data=pedido.encode("utf-8"), timeout=60,
+            headers={"Content-Type": "application/soap+xml; charset=utf-8"})
     resposta.raise_for_status()
     return _ler_resposta(resposta.text)
 

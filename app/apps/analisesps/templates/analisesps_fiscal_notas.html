@@ -117,11 +117,8 @@
 {% set args_troca_recorte = args_mantem_tudo.copy() %}
 {% set _ = args_troca_recorte.pop('nota', None) %}
 
-<div class="fiscal-visoes">
-  <a class="fiscal-visao"
-     href="{{ url_for('analisesps.tela_fiscal', **args_mantem_tudo) }}">Por lançamento</a>
-  <span class="fiscal-visao ativa">Por nota</span>
-</div>
+{% from "analisesps_fiscal_visoes.html" import visoes %}
+{{ visoes('notas', args_mantem_tudo) }}
 
 {% if filtros_nota.recortes %}
   <div class="fiscal-recorte">

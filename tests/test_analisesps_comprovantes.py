@@ -169,16 +169,22 @@ def test_resposta_em_ENSAIO_nunca_vira_BAIXADO():
 
 
 def test_plano_bom_SEM_resposta_do_Omie_nao_e_baixa():
-    """"Pode executar" não é "executou". Era exatamente essa confusão."""
+    """"Pode executar" não é "executou". Era exatamente essa confusão.
+
+    ⚠️ A FRASE MUDOU em 14/09/2026, e a mudança é o conserto: dizer "não
+    recebi confirmação" quando na verdade o Omie NEM FOI CHAMADO mandou o dono
+    procurar no lugar errado por dois dias."""
     linhas = comprovantes.ler_resposta({"planos": [_plano(respostas={})]})
     assert linhas[0]["situacao"] == comprovantes.ERRO
-    assert "confirmação do Omie" in linhas[0]["motivo"]
+    assert "NÃO chegou a chamar o Omie" in linhas[0]["motivo"]
 
 
 def test_Omie_que_RECUSOU_aparece_como_erro_e_nao_como_baixa():
     linhas = comprovantes.ler_resposta({"planos": [_plano(respostas=OMIE_RECUSOU)]})
     assert linhas[0]["situacao"] == comprovantes.ERRO
-    assert "não confirmou" in linhas[0]["motivo"]
+    assert "recusou a baixa" in linhas[0]["motivo"]
+    # E avisa da dessincronia: o robô grava planilha e card sem esperar o Omie.
+    assert "planilha" in linhas[0]["motivo"].lower()
 
 
 def test_baixa_SEM_SP_diz_que_nao_ha_SP_para_marcar_na_planilha():
@@ -274,3 +280,175 @@ def test_o_que_pede_acao_vem_ANTES_do_que_deu_certo():
     baixado = comprovantes.ORDEM.index(comprovantes.BAIXADO)
     for situacao in pede_acao:
         assert comprovantes.ORDEM.index(situacao) < baixado, situacao
+
+
+# ===========================================================================
+# ⚠️ O ROBÔ SEMPRE DISSE POR QUE NÃO BAIXOU — era esta tela que jogava fora
+#
+# Relato do dono em 14/09/2026, com quatro páginas na mão: *"baixam na planilha
+# mas não baixam no Omie. Não tem sentido. Por que que não está baixando no
+# sistema Omie?"* — e as quatro linhas diziam a mesma frase vazia: *"Não recebi
+# confirmação do Omie para esta baixa."*
+#
+# A frase era NOSSA. O robô interrompe a sequência do Omie em vários pontos e
+# em cada um escreve o motivo; a leitura antiga procurava só um passo `baixar`
+# com `ok`, não achava, e devolvia "não sei". A explicação morria no JSON.
+# ===========================================================================
+def _plano_omie(passos, acao="baixar_titulo", **extra):
+    base = {"match": {"status": "localizado", "id": "144"},
+            "pode_executar": True, "acao": acao,
+            "responses": {"omie": passos}}
+    base.update(extra)
+    return base
+
+
+def test_TITULO_NAO_ENCONTRADO_no_Omie_aparece_com_essas_palavras():
+    """É trabalho para ele fazer no Omie — e a tela dizia "não recebi
+    confirmação", que manda procurar no lugar errado."""
+    from app.apps.analisesps import comprovantes
+
+    situacao, motivo = comprovantes._situacao_do_plano(_plano_omie([
+        {"step": "consultar", "response": {"ok": False}},
+        {"step": "abort",
+         "motivo": "Título não encontrado no Omie. Inclua o título primeiro."},
+    ]))
+    assert situacao == comprovantes.ERRO
+    assert "não encontrado no Omie" in motivo
+    assert "Inclua o título primeiro" in motivo
+
+
+def test_TITULO_JA_PAGO_nao_e_erro(monkeypatch):
+    """⚠️ Chamar de erro faz ele REENVIAR um comprovante que não precisa — e
+    reenviar é o caminho para pagar duas vezes."""
+    from app.apps.analisesps import comprovantes
+
+    situacao, motivo = comprovantes._situacao_do_plano(_plano_omie([
+        {"step": "consultar", "response": {"ok": True}},
+        {"step": "skip", "motivo": "Título já consta PAGO no Omie."},
+    ]))
+    assert situacao == comprovantes.BAIXADO
+    assert "já consta PAGO" in motivo
+
+
+def test_a_BAIXA_RECUSADA_diz_o_motivo_E_avisa_da_planilha():
+    """⚠️ A dessincronia tem de ser dita: o robô atualiza planilha e card SEM
+    esperar a resposta do Omie. Quem lê precisa saber que os dois lados podem
+    ter ficado diferentes."""
+    from app.apps.analisesps import comprovantes
+
+    situacao, motivo = comprovantes._situacao_do_plano(_plano_omie([
+        {"step": "baixar", "response": {"ok": False}},
+        {"step": "erro_baixa", "motivo": "Falha ao lançar pagamento no Omie."},
+    ]))
+    assert situacao == comprovantes.ERRO
+    assert "Falha ao lançar pagamento" in motivo
+    assert "planilha" in motivo.lower()
+
+
+def test_quando_o_Omie_NEM_FOI_CHAMADO_a_tela_diz_isso():
+    """"Não recebi confirmação" e "não cheguei a perguntar" são coisas
+    diferentes, e só a segunda explica o que aconteceu."""
+    from app.apps.analisesps import comprovantes
+
+    situacao, motivo = comprovantes._situacao_do_plano(_plano_omie([]))
+    assert situacao == comprovantes.ERRO
+    assert "NÃO chegou a chamar o Omie" in motivo
+
+
+def test_a_baixa_CONFIRMADA_continua_dizendo_que_deu_certo():
+    from app.apps.analisesps import comprovantes
+
+    situacao, motivo = comprovantes._situacao_do_plano(_plano_omie([
+        {"step": "consultar", "response": {"ok": True}},
+        {"step": "baixar", "response": {"ok": True}},
+    ]))
+    assert situacao == comprovantes.BAIXADO
+    assert "confirmada no Omie" in motivo
+
+
+def test_a_frase_VAZIA_antiga_nao_existe_mais():
+    """Ela é o defeito em pessoa: dizia que não sabia, quando sabia."""
+    import pathlib
+    fonte = pathlib.Path(
+        "app/apps/analisesps/comprovantes.py").read_text(encoding="utf-8")
+    # Sobrou só dentro do comentário que conta a história.
+    assert fonte.count("Não recebi confirmação do Omie") <= 1
+
+
+# ===========================================================================
+# ⚠️ A FRASE DO PRÓPRIO OMIE — 14/09/2026
+#
+# O dono reenquadrou o problema: *"marcar a planilha só depois do Omie
+# confirmar NÃO é resolver a causa raiz. A causa raiz é saber POR QUE não está
+# baixando no Omie, porque se eu estou mandando pra baixar é pra baixar."*
+#
+# Ele está certo, e a resposta sempre esteve na mão: o Omie devolve o motivo em
+# `faultstring`, e essa frase chegava inteira até aqui. O robô a resumia num
+# genérico, e a tela mostrava o resumo. Resumo de erro é erro perdido.
+# ===========================================================================
+def _com_faultstring(step, frase, motivo_do_robo=""):
+    passos = [{"step": "consultar", "response": {"ok": True, "body": {}}}]
+    if step == "baixar":
+        passos.append({"step": "baixar",
+                       "response": {"ok": False, "status": 200,
+                                    "body": {"faultstring": frase}}})
+        passos.append({"step": "erro_baixa", "motivo": motivo_do_robo})
+    else:
+        passos[0] = {"step": "consultar",
+                     "response": {"ok": False, "status": 500,
+                                  "body": {"faultstring": frase}}}
+        passos.append({"step": "abort", "motivo": motivo_do_robo})
+    return _plano_omie(passos)
+
+
+def test_a_frase_DO_OMIE_aparece_quando_ele_recusa_a_baixa():
+    from app.apps.analisesps import comprovantes
+
+    _, motivo = comprovantes._situacao_do_plano(_com_faultstring(
+        "baixar", "ERROR: Titulo ja encontra-se baixado.",
+        "Falha ao lançar pagamento no Omie."))
+    assert "ja encontra-se baixado" in motivo
+    assert "O Omie respondeu" in motivo
+
+
+def test_a_frase_DO_OMIE_aparece_tambem_quando_a_sequencia_PARA_antes():
+    """O passo que falhou traz a explicação; o resumo do robô só diz que
+    parou. Os dois juntos dizem o que fazer."""
+    from app.apps.analisesps import comprovantes
+
+    _, motivo = comprovantes._situacao_do_plano(_com_faultstring(
+        "consultar", "ERROR: Nao existem registros para a consulta.",
+        "Título não encontrado no Omie. Inclua o título primeiro."))
+    assert "Nao existem registros" in motivo
+    assert "Inclua o título primeiro" in motivo
+
+
+def test_a_conversa_com_o_omie_e_guardada_passo_a_passo():
+    """⚠️ Enquanto a falha não deixava rastro no banco, ela era invisível — foi
+    assim com o certificado digital, dois dias antes, e custou dois dias dele.
+    Aqui o mesmo remédio: guardar a sequência inteira."""
+    from app.apps.analisesps import comprovantes
+
+    linhas = comprovantes.ler_resposta({"planos": [_com_faultstring(
+        "baixar", "ERROR: Conta corrente nao encontrada.",
+        "Falha ao lançar pagamento no Omie.")]})
+    conversa = linhas[0]["conversa_omie"]
+    assert "consultar: ok" in conversa
+    assert "baixar: FALHOU" in conversa
+    assert "Conta corrente nao encontrada" in conversa
+
+
+def test_a_conversa_guardada_tem_TETO():
+    """Uma resposta gigante do Omie não pode encher a coluna do banco."""
+    from app.apps.analisesps import comprovantes
+
+    enorme = "x" * 20000
+    linhas = comprovantes.ler_resposta({"planos": [_com_faultstring(
+        "baixar", enorme, "falhou")]})
+    assert len(linhas[0]["conversa_omie"]) <= comprovantes.TETO_DA_CONVERSA
+
+
+def test_sem_conversa_com_o_omie_a_coluna_fica_vazia_e_nao_quebra():
+    from app.apps.analisesps import comprovantes
+    linhas = comprovantes.ler_resposta({"planos": [_plano_omie([])]})
+    assert linhas[0]["conversa_omie"] == ""

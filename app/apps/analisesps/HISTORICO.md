@@ -4125,6 +4125,93 @@ mais simples que existe: *"deixa eu ver os dados"*.
   de ver. Se ele quiser baixar, é acrescentar.
 
 ---
+
+### Quinquagésima segunda leva (14/09) — ⚠️ a busca na Receita andou, e parou em dois pontos novos
+
+Publicadas na `main` antes desta: as levas 49, 50 e 51 (`64d8cf0`).
+
+#### 1. ⚠️ OS DOIS DEFEITOS QUE A PRODUÇÃO ACUSOU — e o rastro funcionou
+
+Com o certificado finalmente abrindo (o conserto do base64), a busca foi
+adiante. O dono mandou a coluna nova de Configurações, e ela entregou os dois
+erros com todas as letras:
+
+    00079526000109  Notas (NF-e)   'TransmissaoSOAP' object does not support
+                                   the context manager protocol
+    00079526000109  Fretes (CT-e)  403 Client Error: Forbidden for url:
+                                   https://www1.cte.fazenda.gov.br/…
+
+**É a prova de que o rastro da falha (leva 49) valeu a pena.** Sem ele, a tela
+continuaria dizendo "a busca nunca rodou" e estes dois defeitos seguiriam
+invisíveis.
+
+**Os dois são da MESMA FAMÍLIA do base64: usar a biblioteca de um jeito que ela
+não suporta, com a mensagem apontando para outro lugar.**
+
+**NF-e.** O código fazia `with TransmissaoSOAP(...)`. A classe **não** é um
+gerenciador de contexto — quem é o método `cliente()` dela, que o serviço chama
+por dentro. O `with` estourava ANTES de qualquer conversa com a Receita.
+
+**CT-e.** O pedido é montado à mão (a biblioteca não cobre CT-e) e era postado
+pela `session` que a `TransmissaoSOAP` guarda — que é uma sessão **comum**. O
+certificado só é preso a ela dentro do `cliente()`, que grava chave e
+certificado em arquivos temporários. Postando pela sessão crua, a Receita via
+um visitante sem identidade e respondia **403**. Agora usa `ArquivoCertificado`,
+o mesmo caminho que a biblioteca usa por dentro.
+
+⚠️ **O teste NÃO prova que a busca funciona** — não há certificado nem saída
+para a SEFAZ aqui. Ele prova que o código chama a biblioteca do jeito que ela
+pede, e crava os dois pontos exatos. Os dois defeitos eram de CHAMADA, não de
+rede, e é isso que dá para travar daqui.
+
+#### 2. A planilha saiu do menu e virou visão da Documentação Fiscal
+
+*"Está lá 'ver os dados', está muito solto, não tem vínculo com nada. Está ruim
+da forma que está. Aqui tem 'por lançamento', 'por nota' — aí você colocar aqui
+dentro. E 'ver os dados' também está foda, tem que ter uma nomenclatura
+melhor."*
+
+**Ele está certo nas duas coisas, e as duas são a mesma:** a tela nasceu **sem
+contexto**. Ela é da Documentação Fiscal — é ali que ele está quando quer
+conferir o dado cru contra o que a tela de trabalho está afirmando. Solta no
+menu de cima, virava destino sem volta e sem parentesco.
+
+E o nome não dizia nada: "ver os dados" pode ser qualquer coisa. Agora usa a
+palavra que ELE usa o tempo todo — **planilha**.
+
+A barra da Documentação Fiscal passou a ter **quatro visões**, com as duas
+famílias separadas por um traço:
+
+    Por lançamento | Por nota  ┊  Planilha das SPs | Planilha das notas
+    └─ trabalho ─────────────┘   └─ ver, sem nada para clicar ───────┘
+
+⚠️ **A barra virou UM arquivo só** (`analisesps_fiscal_visoes.html`). Eram
+cópias, uma por tela — e foi exatamente por isso que a visão nova nasceu órfã
+da primeira vez: quem estivesse na tela de fora não tinha como descobrir que
+ela existe. Há teste cravando que nenhuma tela desenha a barra por conta
+própria.
+
+- `/analisesps/planilha` continua existindo, redirecionando — ele pode ter
+  guardado nos favoritos, e quebrar em silêncio seria pior do que não ter
+  mudado.
+- Há teste garantindo que o texto "Ver os dados" não sobrou em template nenhum.
+
+#### O que foi verificado
+
+- A aplicação sobe (18 blueprints).
+- No Chromium: as quatro visões aparecem nas quatro telas, cada uma com a sua
+  acesa, **nenhum erro de console**, e o endereço antigo caindo no lugar certo.
+
+#### O que NÃO foi verificado
+
+- **A busca na Receita continua sem rodar de verdade daqui.** Os dois consertos
+  são certos no ponto do defeito, mas o próximo clique em produção pode revelar
+  um terceiro ponto atrás deles — foi assim nas duas últimas vezes.
+- Nada rodou contra a base de produção.
+- As quatro visões não foram vistas em celular estreito: a barra tem agora
+  quatro itens e pode quebrar.
+
+---
 ---
 
 ## Regras que não se discutem
