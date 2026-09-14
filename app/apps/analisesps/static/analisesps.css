@@ -1495,3 +1495,34 @@ table.planilha td.num, table.planilha th.num {
   line-height: 1.55; white-space: pre-wrap; word-break: break-word;
   max-height: 280px; overflow: auto;
 }
+
+/* O corte de ano da planilha, dito na cara. Esconder linha sem avisar faria a
+   conta dele não fechar com a SPsBD, e ele não teria como saber por quê. */
+.planilha-escopo {
+  margin: 0 0 10px; padding: 6px 10px; border-radius: 6px;
+  background: #F1F5F9; color: #475569; font-size: 12.5px;
+}
+
+/* ==========================================================================
+   O QUADRO POR CATEGORIA — quantas SPs e QUANTO em cada uma.
+
+   A barra é proporcional ao VALOR, e não à contagem: 4.000 SPs de R$ 50,00 e
+   4.000 de R$ 50.000,00 são problemas de tamanhos diferentes, e é o dinheiro
+   que diz por onde começar.
+   ========================================================================== */
+.quadro-categorias { margin: 0 2px 14px; }
+.quadro-categorias > summary {
+  cursor: pointer; padding: 8px 10px; border-radius: 8px;
+  background: #F8FAFC; border: 1px solid var(--borda, #e2e8f0);
+  font-size: 13px; color: var(--tinta, #0f172a);
+}
+.quadro-categorias > summary b { color: var(--azul-claro, #2563eb); }
+.quadro-tabela { margin-top: 10px; font-size: 12.5px; }
+.quadro-tabela tr.ligada td { background: #EFF6FF; font-weight: 600; }
+.quadro-tabela td.peso { width: 34%; min-width: 160px; }
+.peso-barra {
+  display: inline-block; height: 9px; border-radius: 5px;
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+  vertical-align: middle; margin-right: 6px; min-width: 2px;
+}
+.quadro-tabela td.peso small { color: #64748b; }

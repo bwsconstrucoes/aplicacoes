@@ -55,6 +55,12 @@
 
 {% set args_troca_recorte = args_mantem_tudo.copy() %}
 {% set _ = args_troca_recorte.pop('fiscais', None) %}
+{# A CATEGORIA SAI JUNTO, pelo mesmo motivo do `fiscais`: os atalhos que a
+   DEFINEM (o quadro por categoria, e o ✕ que a tira) precisam poder mandar o
+   valor novo. Deixá-la aqui faria o clique somar em vez de trocar — que foi
+   o defeito do "28 vira 2" de 13/09. #}
+{% set _ = args_troca_recorte.pop('categoria', None) %}
+{% set _ = args_troca_recorte.pop('sem_categoria', None) %}
 
 {# ---------------------------------------------------------------------------
    AS DUAS VISÕES, lado a lado e sempre visíveis.
@@ -103,6 +109,28 @@
    equivalente — as caixas marcadas ficam na barra lateral, fora do campo de
    visão de quem olha a tabela. Esta linha é o cabeçalho que faltava.
 --------------------------------------------------------------------------- #}
+{# A CATEGORIA ESCOLHIDA NO QUADRO TAMBÉM APARECE AQUI. Ela é um recorte como
+   qualquer outro, e deixá-la de fora desta linha traria de volta exatamente a
+   reclamação que esta linha existe para resolver: *"não dá nem pra entender o
+   que estamos filtrando"*. #}
+{% if filtros.categoria or args.get('sem_categoria') == '1' %}
+  <div class="fiscal-recorte">
+    <b>Mostrando as SPs da categoria</b>
+    {% for c in filtros.categoria %}
+      <span class="recorte-marca">{{ c }}<a
+         href="{{ url_for('analisesps.tela_fiscal',
+                  **dict(args_troca_recorte, f=1, categoria=[])) }}"
+         title="Tirar este recorte">✕</a></span>
+    {% endfor %}
+    {% if args.get('sem_categoria') == '1' %}
+      <span class="recorte-marca">sem informação nenhuma<a
+         href="{{ url_for('analisesps.tela_fiscal',
+                  **dict(args_troca_recorte, f=1)) }}"
+         title="Tirar este recorte">✕</a></span>
+    {% endif %}
+  </div>
+{% endif %}
+
 {% if filtros.fiscais %}
   <div class="fiscal-recorte">
     <b>Mostrando as SPs em que</b>
@@ -143,6 +171,76 @@
     O que está com a categoria vazia soma
     <b>{{ painel.valor_sem_marcacao|moeda }}</b>.
   </p>
+{% endif %}
+
+{# ---------------------------------------------------------------------------
+   O QUADRO POR CATEGORIA — quantas SPs e QUANTO DINHEIRO em cada uma.
+
+   *"A parte de KPI, pra eu saber quanto tem analisado, quanto não tem, quanto
+   tem nota, quanto tem de contrato, quanto é fundo fixo, quanto está sem
+   informação nenhuma — quanto isso em VALORES, né? Quanto está pra ser
+   resolvido. E era interessante esse KPI direcionar pra uma tela com as
+   informações: eu clicar e mostrar 'olha, essas aqui são as de fundo fixo',
+   aí a lista."* (dono, 14/09/2026)
+
+   ⚠️ O QUE ISTO TEM QUE OS NÚMEROS DE CIMA NÃO TÊM: **valor**. Aqueles contam
+   SPs — "faltam 4.000" —, e 4.000 SPs de R$ 50,00 e 4.000 de R$ 50.000,00 são
+   problemas de tamanhos completamente diferentes. Sem o dinheiro ao lado, o
+   número não diz por onde começar, que é exatamente a pergunta dele.
+
+   A BARRA É O GRÁFICO, e é proporcional ao VALOR, não à contagem — pelo mesmo
+   motivo. Desenhada com uma div e uma largura em porcentagem: gráfico de
+   verdade pediria uma biblioteca nova, e isto responde a pergunta inteira.
+
+   CADA LINHA É UM ATALHO: clicar filtra a lista por aquela categoria.
+--------------------------------------------------------------------------- #}
+{% if quadro_categorias %}
+  {% set maior = quadro_categorias|map(attribute='valor')|map('float')|max %}
+  {% set soma = quadro_categorias|map(attribute='valor')|map('float')|sum %}
+  <details class="quadro-categorias" {{ 'open' if filtros.categoria
+                                        or args.get('sem_categoria') }}>
+    <summary>
+      <b>Por categoria</b> — {{ quadro_categorias|length }} categoria(s),
+      {{ soma|moeda }} no total do filtro
+    </summary>
+    <table class="sps quadro-tabela">
+      <thead><tr>
+        <th>Categoria</th><th class="num">SPs</th><th class="num">Valor</th>
+        <th>Peso no valor</th>
+      </tr></thead>
+      <tbody>
+        {% for c in quadro_categorias %}
+          {% set ligada = (c.vazia and args.get('sem_categoria') == '1')
+                          or (not c.vazia and c.categoria in filtros.categoria) %}
+          <tr class="{{ 'ligada' if ligada }}">
+            <td>
+              <a href="{{ url_for('analisesps.tela_fiscal',
+                          **dict(args_troca_recorte, f=1,
+                                 categoria=([] if ligada or c.vazia
+                                            else [c.categoria]),
+                                 sem_categoria=(none if ligada or not c.vazia
+                                                else '1'))) }}"
+                 title="{{ 'Clique para tirar este recorte' if ligada
+                           else 'Clique para ver só estas' }}">
+                {{ c.rotulo }}</a>
+            </td>
+            <td class="num">{{ '{:,}'.format(c.quantas)|replace(',', '.') }}</td>
+            <td class="num">{{ c.valor|moeda }}</td>
+            <td class="peso">
+              <span class="peso-barra"
+                    style="width: {{ (c.valor|float / maior * 100)|round(1)
+                                     if maior else 0 }}%"></span>
+              <small>{{ (c.valor|float / soma * 100)|round(1) if soma else 0 }}%</small>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="cartao-dica">
+      Clique numa categoria para ver só as SPs dela. O total é o do filtro que
+      está valendo agora — mude o filtro e este quadro muda junto.
+    </p>
+  </details>
 {% endif %}
 
 {# ---------------------------------------------------------------------------

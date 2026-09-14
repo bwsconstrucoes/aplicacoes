@@ -2156,6 +2156,10 @@ def tela_fiscal():
     # trabalho que a lista não mostra.
     filtros["escopo_fiscal"] = True
     filtros["mostrar_canceladas"] = request.args.get("canceladas") == "1"
+    # O CLIQUE NO QUADRO POR CATEGORIA. Vem do endereço e entra como
+    # parâmetro; `sem_categoria` é a pilha do "(sem informação)".
+    filtros["categoria"] = request.args.getlist("categoria")
+    filtros["sem_categoria"] = request.args.get("sem_categoria") == "1"
     try:
         pagina = max(1, int(request.args.get("pagina", 1)))
     except ValueError:
@@ -2251,9 +2255,16 @@ def tela_fiscal():
         # "o que falta NESTA PÁGINA", que parece certo e não é.
         painel = consultas.painel_fiscal(filtros)
         painel["sem_lancamento"] = fiscal.painel_notas().get("sem_lancamento", 0)
+        # O QUADRO POR CATEGORIA, com o dinheiro ao lado da contagem. Ver
+        # `consultas.quadro_por_categoria`: é o "quanto isso em valores" dele.
+        #
+        # ⚠️ Sai do MESMO filtro da lista, então o que o quadro soma e o que a
+        # lista mostra não têm como divergir.
+        quadro_categorias = consultas.quadro_por_categoria(filtros)
         erro = None
     except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
         logger.exception("Análise de SPs: falhou a conciliação fiscal")
+        quadro_categorias = []
         conciliadas, resumo, painel, erro = [], {"quantidade": 0, "total": 0}, {}, (
             "Esta tela precisa da atualização do banco. Vá em Configurações e "
             f"aperte \"Aplicar atualizações do banco\". (detalhe: {e})")
@@ -2267,6 +2278,7 @@ def tela_fiscal():
         "analisesps_fiscal.html", aba="fiscal", base=base,
         linhas=conciliadas, contagem=contagem, grupo=grupo, erro=erro,
         resumo=resumo, filtros=filtros, args=request.args,
+        quadro_categorias=quadro_categorias,
         opcoes=_opcoes_dos_filtros(base.get("ultima")),
         pagina=pagina, por_pagina=consultas.POR_PAGINA,
         primeira_linha=(pagina - 1) * consultas.POR_PAGINA + 1,
@@ -2547,7 +2559,9 @@ def _planilha_fiscal(base, pagina: int):
                           for c, r, t in fiscal.COLUNAS_DA_NOTA_NA_TELA]
             por_pagina = fiscal.POR_PAGINA_PLANILHA
         else:
-            linhas, total = consultas.planilha_sps(busca, ordem, desc, pagina)
+            linhas, total = consultas.planilha_sps(
+                busca, ordem, desc, pagina,
+                tudo=request.args.get("tudo") == "1")
             cabecalhos = consultas.COLUNAS_DA_PLANILHA
             por_pagina = consultas.POR_PAGINA_PLANILHA
     except Exception as e:  # noqa: BLE001 — migração 005 ainda não aplicada
@@ -2562,6 +2576,8 @@ def _planilha_fiscal(base, pagina: int):
         "analisesps_planilha.html", aba="fiscal", sub=sub, base=base,
         linhas=linhas, cabecalhos=cabecalhos, total=total, erro=erro,
         busca=busca, ordem=ordem, desc=desc, pagina=pagina,
+        tudo=request.args.get("tudo") == "1",
+        ano_minimo=consultas.ANO_FISCAL_MINIMO,
         primeira_linha=(pagina - 1) * por_pagina + 1, ultima_linha=ultima,
         tem_proxima=ultima < total, args=request.args,
         pode_operar=auth.pode_operar(),

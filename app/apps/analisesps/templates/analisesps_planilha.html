@@ -40,10 +40,38 @@
   </div>
 
   <p class="cartao-dica">
-    É a planilha, do jeito que ela é: todas as colunas, na ordem dela, sem
-    recorte e <b>sem nada para clicar</b>. Para trabalhar, volte em
+    É a planilha, do jeito que ela é: todas as colunas, na ordem dela e
+    <b>sem nada para clicar</b>. Para trabalhar, volte em
     <b>Por lançamento</b> ou <b>Por nota</b>, aqui em cima.
   </p>
+
+  {# ---------------------------------------------------------------------
+     O CORTE DE ANO, DITO NA CARA — e com volta.
+
+     *"Só me interessa 2026, porque é o lucro real; antes era lucro
+     presumido, então não preciso dessa informação."* (dono, 14/09/2026)
+
+     Fica escrito porque esta tela é a que ele usa para CONFERIR: se ela
+     esconde linha sem avisar, a conta dele deixa de fechar com a SPsBD e
+     ele não tem como saber por quê.
+  --------------------------------------------------------------------- #}
+  {% if sub == 'lancamentos' %}
+    <p class="planilha-escopo">
+      {% if tudo %}
+        Mostrando <b>tudo</b>, inclusive o que venceu e foi pago antes de
+        {{ ano_minimo }}.
+        <a class="link-btn" href="{{ url_for('analisesps.tela_fiscal',
+             visao='dados_sps', busca=busca or None) }}">voltar para só
+          {{ ano_minimo }} em diante</a>
+      {% else %}
+        Mostrando só o que <b>vence</b> ou foi <b>pago de {{ ano_minimo }} em
+        diante</b> — é o que vale para o lucro real.
+        <a class="link-btn" href="{{ url_for('analisesps.tela_fiscal',
+             visao='dados_sps', busca=busca or None, tudo='1') }}">mostrar
+          tudo</a>
+      {% endif %}
+    </p>
+  {% endif %}
 
   {% if erro %}
     <div class="aviso atencao">{{ erro }}</div>
@@ -54,6 +82,7 @@
            value="{{ 'dados_sps' if sub == 'lancamentos'
                      else 'dados_notas' }}">
     <input type="hidden" name="ordem" value="{{ ordem }}">
+    {% if tudo %}<input type="hidden" name="tudo" value="1">{% endif %}
     {% if desc %}<input type="hidden" name="desc" value="1">{% endif %}
     <div class="busca">
       <span class="lupa">⌕</span>
