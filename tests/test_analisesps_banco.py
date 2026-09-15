@@ -5001,6 +5001,170 @@ def test_sem_desmarcar_nada_continua_reescrevendo_TUDO(banco_analisesps,
 
 
 # ===========================================================================
+# AS DUAS SELEÇÕES DA TELA DE CREDORES (15/09/2026)
+#
+# *"Você propõe qual selecionar pra poder equalizar o nome do fornecedor, só
+# que da lista às vezes tem grupos de SPs que eu não quero alterar. Ou seja,
+# tem que ter duas seleções: a do nome, e em quais grupos vamos aplicar."*
+#
+# São perguntas diferentes, e a tela fazia só a primeira: escolher o nome
+# reescrevia TUDO daquele CNPJ. O grupo que ele quer preservar é justamente o
+# suspeito de estar com o CNPJ errado — reescrevê-lo apaga a pista.
+#
+# A segunda seleção viaja em DOIS campos por fornecedor: `grupo-<documento>`
+# (escondido, diz o que a tela mostrou) e `aplicar-<documento>` (a caixa, diz o
+# que ficou ligado). Caixa desmarcada não é enviada pelo navegador — sem a
+# lista do que existia, "desmarcou" e "tela antiga" seriam indistinguíveis.
+# ===========================================================================
+@pytest.mark.banco
+def test_o_GRUPO_desmarcado_nao_e_reescrito(banco_analisesps):
+    """A unidade da segunda seleção é o grupo de escrita, não a SP."""
+    from app.apps.analisesps import credores
+
+    semear([_sp_credor("1", "09444530000101", "LOCADORA DO VALE"),
+            _sp_credor("2", "09444530000101", "LOCADORA DO VALE"),
+            _sp_credor("3", "09444530000101", "TRANSPORTES XYZ"),
+            _sp_credor("4", "09444530000101", "LOCADORA DO VALE LTDA")])
+
+    ids = credores.sps_para_reescrever(
+        "09444530000101", "LOCADORA DO VALE LTDA",
+        grafias_fora=["TRANSPORTES XYZ"])
+    assert sorted(ids) == ["1", "2"], (
+        "o grupo desmarcado entrou na reescrita — é ele que guarda a pista de "
+        "que o CNPJ pode ter sido digitado errado")
+
+
+@pytest.mark.banco
+def test_as_DUAS_exclusoes_somam(banco_analisesps):
+    """Desmarcar o grupo e, além disso, tirar uma SP avulsa de um grupo que
+    ficou ligado. As duas seleções convivem."""
+    from app.apps.analisesps import credores
+
+    semear([_sp_credor("1", "09444530000101", "LOCADORA DO VALE"),
+            _sp_credor("2", "09444530000101", "LOCADORA DO VALE"),
+            _sp_credor("3", "09444530000101", "TRANSPORTES XYZ"),
+            _sp_credor("4", "09444530000101", "LOCADORA DO VALE LTDA")])
+
+    ids = credores.sps_para_reescrever(
+        "09444530000101", "LOCADORA DO VALE LTDA",
+        fora=["2"], grafias_fora=["TRANSPORTES XYZ"])
+    assert ids == ["1"]
+
+
+@pytest.mark.banco
+def test_a_tela_manda_o_grupo_desmarcado_e_a_rota_RESPEITA(banco_analisesps,
+                                                           monkeypatch):
+    """O caminho inteiro, como a tela manda: o escondido com todos os grupos e
+    a caixa só com os que ficaram ligados."""
+    from werkzeug.datastructures import MultiDict
+    from app.apps.analisesps.db import consultar
+
+    semear([_sp_credor("1", "09444530000101", "LOCADORA DO VALE"),
+            _sp_credor("2", "09444530000101", "TRANSPORTES XYZ"),
+            _sp_credor("3", "09444530000101", "LOCADORA DO VALE LTDA")])
+
+    corpo = _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data=MultiDict([
+            ("documento", "09444530000101"),
+            ("nome", "LOCADORA DO VALE LTDA"),
+            ("tipo-09444530000101", "DECIDIR"),
+            # a tela mostrou os três grupos…
+            ("grupo-09444530000101", "LOCADORA DO VALE"),
+            ("grupo-09444530000101", "TRANSPORTES XYZ"),
+            ("grupo-09444530000101", "LOCADORA DO VALE LTDA"),
+            # …e ele deixou ligados só dois.
+            ("aplicar-09444530000101", "LOCADORA DO VALE"),
+            ("aplicar-09444530000101", "LOCADORA DO VALE LTDA"),
+        ])).get_json()
+
+    nomes = {l[0]: l[1] for l in consultar(
+        "SELECT id, credor FROM analisesps.sps")}
+    assert nomes["1"] == "LOCADORA DO VALE LTDA"
+    # Fica ERRADA DE PROPÓSITO, à vista, esperando a correção do número.
+    assert nomes["2"] == "TRANSPORTES XYZ"
+    assert corpo["sps"] == 1 and corpo["de_fora"] == 1
+    assert "deixou de fora" in corpo["aviso"]
+
+
+@pytest.mark.banco
+def test_o_grupo_desmarcado_NAO_VAZA_para_outro_fornecedor(banco_analisesps,
+                                                           monkeypatch):
+    """⚠️ Por isso o campo é nomeado por fornecedor. A pilha do "resolve
+    sozinho" manda vários no mesmo envio, e dois fornecedores diferentes podem
+    ter a MESMA escrita — uma lista única faria um calar o outro."""
+    from werkzeug.datastructures import MultiDict
+    from app.apps.analisesps.db import consultar
+
+    semear([_sp_credor("1", "09444530000101", "MATRIZ"),
+            _sp_credor("2", "09444530000101", "MATRIZ COMERCIO LTDA"),
+            _sp_credor("9", "11222333000144", "MATRIZ"),
+            _sp_credor("10", "11222333000144", "MATRIZ SERVICOS SA")])
+
+    _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data=MultiDict([
+            ("documento", "09444530000101"),
+            ("nome", "MATRIZ COMERCIO LTDA"),
+            ("tipo-09444530000101", "COMECO"),
+            ("grupo-09444530000101", "MATRIZ"),
+            # sem "aplicar-09444530000101": ele desmarcou este grupo
+            ("documento", "11222333000144"),
+            ("nome", "MATRIZ SERVICOS SA"),
+            ("tipo-11222333000144", "COMECO"),
+            ("grupo-11222333000144", "MATRIZ"),
+            ("aplicar-11222333000144", "MATRIZ"),
+        ]))
+
+    nomes = {l[0]: l[1] for l in consultar(
+        "SELECT id, credor FROM analisesps.sps")}
+    assert nomes["1"] == "MATRIZ"                  # desmarcado
+    assert nomes["9"] == "MATRIZ SERVICOS SA"      # do outro, seguiu
+
+
+@pytest.mark.banco
+def test_tela_que_nao_manda_grupo_nenhum_continua_reescrevendo_TUDO(
+        banco_analisesps, monkeypatch):
+    """A compatibilidade é o motivo de haver dois campos: sem a lista do que a
+    tela mostrou, o servidor não pode inventar exclusão."""
+    from app.apps.analisesps.db import consultar
+
+    semear([_sp_credor("1", "09444530000101", "TRI"),
+            _sp_credor("2", "09444530000101", "TRIBUNAL DE JUSTIÇA DO CEARÁ")])
+
+    _cliente_operador(monkeypatch).post(
+        "/analisesps/credores/aplicar",
+        headers={"X-Sem-Recarregar": "1"},
+        data={"documento": "09444530000101",
+              "nome": "TRIBUNAL DE JUSTIÇA DO CEARÁ",
+              "tipo-09444530000101": "COMECO"})
+
+    assert consultar("SELECT count(*) FROM analisesps.sps "
+                     " WHERE credor = 'TRI'")[0][0] == 0
+
+
+@pytest.mark.banco
+def test_a_TELA_desenha_as_duas_selecoes(banco_analisesps, monkeypatch):
+    """A bolinha do nome e a caixa do grupo, lado a lado — e o campo escondido
+    que diz quais grupos a tela mostrou. Sem ele a rota não teria como saber
+    que ele desmarcou algo."""
+    semear([_sp_credor("1", "09444530000101", "LOCADORA DO VALE LTDA"),
+            _sp_credor("2", "09444530000101", "LOCADORA DO VALE LTDA"),
+            _sp_credor("3", "09444530000101", "TRANSPORTES XYZ")])
+
+    html = _cliente_operador(monkeypatch).get(
+        "/analisesps/credores").get_data(as_text=True)
+
+    assert 'type="radio" name="nome"' in html, "sumiu a escolha do nome"
+    assert 'name="aplicar-09444530000101"' in html, "sumiu a escolha do grupo"
+    assert 'name="grupo-09444530000101"' in html, (
+        "sem a lista do que a tela mostrou, desmarcar não tem efeito nenhum")
+    assert "TRANSPORTES XYZ" in html
+
+
+# ===========================================================================
 # A TELA DE VER — "similar ao que eu visualizo na planilha" (13/09/2026)
 #
 # *"Desde o começo eu pedi uma tela simples pra poder visualizar similar ao que

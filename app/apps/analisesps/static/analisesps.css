@@ -1526,3 +1526,35 @@ table.planilha td.num, table.planilha th.num {
   vertical-align: middle; margin-right: 6px; min-width: 2px;
 }
 .quadro-tabela td.peso small { color: #64748b; }
+
+/* ==========================================================================
+   AS DUAS SELECOES DA TELA DE CREDORES — pedido do dono em 15/09/2026:
+   *"tem que ter duas selecoes: a do nome, e em quais grupos vamos aplicar."*
+
+   A bolinha responde "qual nome vale". A caixa responde "este grupo de SPs
+   deve ser reescrito". Ficam VISUALMENTE separadas, com o grupo recuado
+   debaixo do nome: sao perguntas diferentes, e misturar as duas na mesma
+   linha faria a caixa parecer um jeito de escolher o nome.
+   ========================================================================== */
+.credor-legenda { margin: 6px 0 4px; }
+.credor-opcao { flex-direction: column; align-items: stretch; }
+.credor-nome { display: flex; align-items: baseline; gap: 8px; cursor: pointer; }
+.credor-grupos { margin: 2px 0 6px 22px; }
+.credor-grupo {
+  display: flex; align-items: baseline; gap: 6px; cursor: pointer;
+  padding: 1px 0; font-size: 13px;
+}
+.credor-grupo input[type="checkbox"] { cursor: pointer; }
+.credor-grafia { color: #334155; }
+
+/* O GRUPO QUE JA ESTA COM O NOME ESCOLHIDO nao muda nada — a caixa dele nao
+   tem efeito nenhum. Marcar isso evita a pergunta "desmarquei e nao aconteceu
+   nada, esta quebrado?". Quem escreve a classe e o bloco de credores do JS,
+   a cada troca da bolinha. */
+.credor-grupo.grupo-igual { opacity: .55; }
+.credor-grupo.grupo-igual .credor-grafia { text-decoration: none; }
+.credor-grupo .grupo-nota { font-size: 12px; color: #64748b; }
+
+/* Na pilha do "resolve sozinho" os grupos moram dentro de uma celula da
+   tabela, sem o recuo — ali nao ha bolinha acima deles. */
+td.credor-grupos { margin: 0; }

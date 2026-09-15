@@ -4212,6 +4212,123 @@ própria.
   quatro itens e pode quebrar.
 
 ---
+
+### Quinquagésima terceira leva (15/09) — o porquê do Omie, o corte de 2026 na planilha e o quadro por categoria
+
+**Publicada na `main` em 15/09/2026 (`b9080c2`), junto com a leva 52.**
+
+#### 1. ⚠️ "Baixa na planilha e não baixa no Omie" — e a recusa de trocar o remendo pela causa
+
+*"Você marcar a planilha só depois do Omie confirmar NÃO é resolver a causa
+raiz. A causa raiz é saber POR QUE não está baixando no Omie, porque se eu
+estou mandando pra baixar é pra baixar."*
+
+Ele está certo, e a correção é de método: a primeira proposta era **esconder o
+sintoma** (só marcar a planilha quando o Omie confirmasse), o que deixaria o
+mesmo título sem baixa no Omie — só que agora em silêncio nos dois lados.
+
+O que a tela passou a fazer é **contar o que o Omie respondeu**. Cada
+comprovante guarda a conversa passo a passo, com a frase de recusa do próprio
+Omie (`faultstring`), e a tela mostra isso num link — "o que o Omie respondeu,
+passo a passo". Migração **013** (`conversa_omie TEXT`).
+
+⚠️ **A causa raiz continua EM ABERTO**, e isso é o que uma sessão nova precisa
+saber: sem a frase do Omie, qualquer conserto aqui é chute. A suspeita
+registrada — não comprovada — é que o `baixabradesco` manda uma **alteração no
+título antes da baixa** apoiado na ideia de que "o Omie aceita repetição sem
+reclamar", que nunca foi verificada. **Só o texto da conversa decide.**
+
+#### 2. A Planilha das SPs passou a respeitar o corte de 2026
+
+*"Eu fiz um filtro nelas pra exibir só o que é vencimento em 2026 ou pago em
+2026. Aplique essa mesma [regra] lá. Porque só me interessa 2026, que é o lucro
+real; antes era lucro presumido, não preciso dessa informação."*
+
+O corte já valia na Documentação Fiscal e a planilha nova nascera sem ele — duas
+telas do mesmo módulo dizendo números diferentes. Agora o corte é o mesmo, dito
+na tela (não escondido) e com um "mostrar tudo" para o caso pontual.
+
+#### 3. O quadro por categoria, com valores e com clique
+
+*"A parte de KPI, pra eu saber quanto tem analisado, quanto não tem, quanto tem
+nota, quanto tem contrato, quanto é fundo fixo, quanto está sem informação
+nenhuma — isso em valores. E era interessante o KPI direcionar pra uma tela com
+as informações."*
+
+Quantidade **e valor** por categoria, barra proporcional, ordenado pelo valor, e
+cada linha é um filtro: clicar leva à lista daquela categoria.
+
+⚠️ **Defeito meu, pego pela suíte antes de sair:** o quadro foi montado DENTRO
+do `try` da listagem. Uma falha nele apagava a tela inteira. Regra que fica:
+**o acessório não pode derrubar o principal** — cada bloco de enfeite tem o seu
+próprio `try`, com teste cravando isso.
+
+---
+
+### Quinquagésima quarta leva (15/09) — as DUAS seleções da tela de credores
+
+*"Você propõe qual selecionar pra poder equalizar o nome do fornecedor, só que
+da lista às vezes tem grupos de SPs que eu não quero alterar. Ou seja, tem que
+ter duas seleções: a do nome, e em quais grupos vamos aplicar."*
+
+**A tela fazia só metade da pergunta.** A bolinha escolhia o nome e, decidido
+isso, TODAS as SPs daquele CNPJ eram reescritas. Só que o nome certo para o CNPJ
+pode conviver com um grupo de SPs que não pertence àquele fornecedor — é o caso
+do **CNPJ digitado errado**, o que esta tela mais erra. Reescrever aquele grupo
+**apaga a única pista do erro**: depois disso as SPs erradas ficam idênticas às
+certas e ninguém mais as acha.
+
+Já havia a exclusão **SP a SP**, dentro da janela do "ver as SPs" (leva 50). Ela
+resolve o mesmo caso no tamanho errado: quatro cliques, e só para quem lembrar
+de abrir a janela. O grupo é a unidade que ele enxerga na lista.
+
+Agora cada escrita é uma linha com caixa própria, recuada debaixo do nome:
+
+    ( ) LOCADORA DO VALE LTDA        37 SP(s)
+        [x] LOCADORA DO VALE LTDA    31 SP(s)   ver as SPs
+        [x] LOCADORA DO VALE          6 SP(s)   ver as SPs
+    ( ) TRANSPORTES XYZ               4 SP(s)
+        [ ] TRANSPORTES XYZ           4 SP(s)   ver as SPs   ← fica como está
+
+**As duas seleções somam:** dá para desmarcar o grupo inteiro e ainda tirar uma
+SP avulsa de um grupo que ficou ligado. O aviso ao lado do botão conta as duas
+separadas — somar num número só contaria duas vezes a SP tirada a dedo de um
+grupo ligado.
+
+#### Decisões de desenho, com o motivo
+
+- **Dois campos por fornecedor**, e não um: o escondido (`grupo-<documento>`)
+  diz quais grupos a tela mostrou, a caixa (`aplicar-<documento>`) diz quais
+  ficaram ligados. Caixa desmarcada **não é enviada pelo navegador** — sem a
+  lista do que existia, o servidor não teria como distinguir "ele desmarcou" de
+  "esta tela é antiga e não manda isso". Tela que não manda grupo nenhum
+  continua reescrevendo tudo, como sempre.
+- **Nomeado por fornecedor** porque a pilha do "resolve sozinho" manda vários
+  no mesmo envio, e dois fornecedores diferentes podem ter a mesma escrita. Uma
+  lista única faria a exclusão de um calar a do outro. Há teste cravando isso.
+- **Vale nas duas pilhas.** Na do "resolve sozinho" a caixa importa até mais:
+  ela é aplicada em bloco, sem ninguém olhar linha a linha.
+- **Funciona sem JavaScript.** As caixas são HTML puro; quem lê o que ficou
+  marcado é a rota. O JavaScript só conta o que ficou de fora e apaga o grupo
+  que já está com o nome escolhido (aquele em que desmarcar não teria efeito
+  nenhum — e a pergunta "desmarquei e não aconteceu nada, quebrou?" seria certa).
+
+#### O que foi verificado
+
+- Seis testes novos com Postgres de verdade: grupo desmarcado não é reescrito;
+  as duas exclusões somam; o caminho inteiro pela rota; a exclusão não vaza
+  entre fornecedores; tela sem grupos continua reescrevendo tudo; a tela desenha
+  as duas seleções.
+- Suíte inteira verde.
+
+#### O que NÃO foi verificado
+
+- **Não foi exercitado com a base de produção** — aqui não há base real, e o
+  dono ainda não apertou "Aplicar atualizações do banco".
+- A tela não foi vista em celular estreito: a linha do grupo é recuada e pode
+  apertar em tela pequena.
+
+---
 ---
 
 ## Regras que não se discutem

@@ -2769,8 +2769,28 @@ def aplicar_credor():
         nome = (nome or "").strip()
         if not nome:
             continue
+        # OS GRUPOS DE ESCRITA QUE ELE DESMARCOU — a segunda seleção da tela.
+        # *"Tem que ter duas seleções: a do nome, e em quais grupos vamos
+        # aplicar."* (15/09/2026)
+        #
+        # Vem NOMEADO POR FORNECEDOR (`grupo-<documento>`) porque a pilha do
+        # "resolve sozinho" manda vários fornecedores no mesmo envio: uma lista
+        # única faria a grafia de um calar a do outro sempre que dois
+        # fornecedores tivessem a mesma escrita.
+        #
+        # E vem em DOIS campos de propósito: o escondido diz quais grupos a
+        # tela mostrou, o marcado diz quais ele deixou ligados. Caixa
+        # desmarcada não é enviada pelo navegador — sem a lista do que existia,
+        # o servidor não teria como distinguir "ele desmarcou" de "a tela é
+        # antiga e não manda isso".
+        mostrados = [g for g in request.form.getlist(f"grupo-{documento}")
+                     if str(g).strip()]
+        marcados = {g for g in request.form.getlist(f"aplicar-{documento}")
+                    if str(g).strip()}
+        grupos_fora = [g for g in mostrados if g not in marcados]
         todas = credores.sps_para_reescrever(documento, nome)
-        ids = credores.sps_para_reescrever(documento, nome, fora=de_fora)
+        ids = credores.sps_para_reescrever(documento, nome, fora=de_fora,
+                                           grafias_fora=grupos_fora)
         ficaram_de_fora += len(todas) - len(ids)
         tipo = request.form.get(f"tipo-{documento}") or credores.DECIDIR
         if ids:

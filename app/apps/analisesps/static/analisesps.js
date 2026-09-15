@@ -1886,12 +1886,23 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
 
   /* O QUE FICOU DE FORA APARECE NA TELA, ao lado do botão. Exclusão que só
      existe dentro de uma janela fechada é exclusão que se esquece — e aí ele
-     clica em "Usar este" achando que vai renomear tudo. */
+     clica em "Usar este" achando que vai renomear tudo.
+
+     Conta AS DUAS SELEÇÕES: o grupo inteiro que ele desmarcou na lista e a SP
+     avulsa que ele desmarcou dentro da janela. Elas são somadas SEPARADAS de
+     propósito — uma SP tirada a dedo de um grupo que ficou ligado seria
+     contada duas vezes se virassem um número só. */
   function avisarQuantasDeFora(f) {
     if (!f) { return; }
-    var quantas = f.querySelectorAll('input[name="nao_reescrever"]').length;
+    var avulsas = f.querySelectorAll('input[name="nao_reescrever"]').length;
+    var desmarcados = f.querySelectorAll(
+      'input[type=checkbox][name^="aplicar-"]:not(:checked)');
+    var spsDosGrupos = 0;
+    desmarcados.forEach(function (c) {
+      spsDosGrupos += parseInt(c.dataset.sps || "0", 10) || 0;
+    });
     var recado = f.querySelector(".sps-de-fora");
-    if (!quantas) {
+    if (!avulsas && !desmarcados.length) {
       if (recado) { recado.remove(); }
       return;
     }
@@ -1902,10 +1913,63 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
       if (botao) { botao.parentNode.insertBefore(recado, botao.nextSibling); }
       else { f.appendChild(recado); }
     }
-    recado.textContent = quantas === 1
-      ? "1 SP fora: não será renomeada"
-      : quantas + " SPs fora: não serão renomeadas";
+    var partes = [];
+    if (desmarcados.length) {
+      partes.push(desmarcados.length === 1
+        ? "1 grupo fora (" + spsDosGrupos + " SP(s))"
+        : desmarcados.length + " grupos fora (" + spsDosGrupos + " SP(s))");
+    }
+    if (avulsas) {
+      partes.push(avulsas === 1 ? "1 SP avulsa fora"
+                                : avulsas + " SPs avulsas fora");
+    }
+    recado.textContent = partes.join(" · ") + ": não serão renomeadas";
   }
+
+  /* A SEGUNDA SELEÇÃO — quais grupos de SPs vão ser reescritos.
+
+     Pedido do dono em 15/09/2026: *"você propõe qual selecionar pra poder
+     equalizar o nome do fornecedor, só que da lista às vezes tem grupos de SPs
+     que eu não quero alterar. Ou seja, tem que ter duas seleções: a do nome, e
+     em quais grupos vamos aplicar."*
+
+     A caixa em si é HTML puro e funciona sem JavaScript nenhum — quem lê o que
+     ficou marcado é o servidor. O que este bloco faz é só o aviso: contar o que
+     ficou de fora, e apagar o grupo que já está com o nome escolhido. */
+  document.addEventListener("change", function (ev) {
+    var alvo = ev.target;
+    if (!alvo || !alvo.name) { return; }
+    if (alvo.type === "checkbox" && alvo.name.indexOf("aplicar-") === 0) {
+      avisarQuantasDeFora(alvo.closest("form"));
+    } else if (alvo.type === "radio" && alvo.name === "nome") {
+      apagarGrupoIgual(alvo.closest("form"));
+    }
+  });
+
+  /* O GRUPO QUE JÁ ESTÁ COM O NOME ESCOLHIDO não muda nada: aquelas SPs já
+     estão escritas assim. Deixar a caixa dele com cara de caixa comum convida
+     a pergunta "desmarquei e não aconteceu nada, está quebrado?". */
+  function apagarGrupoIgual(f) {
+    if (!f) { return; }
+    var escolhido = f.querySelector('input[name="nome"]:checked');
+    var nome = escolhido ? escolhido.value : "";
+    f.querySelectorAll(".credor-grupo").forEach(function (g) {
+      var caixa = g.querySelector('input[type=checkbox][name^="aplicar-"]');
+      var igual = caixa && caixa.value === nome;
+      g.classList.toggle("grupo-igual", !!igual);
+      var nota = g.querySelector(".grupo-nota");
+      if (igual && !nota) {
+        nota = document.createElement("span");
+        nota.className = "grupo-nota";
+        nota.textContent = "— já está com este nome";
+        g.appendChild(nota);
+      } else if (!igual && nota) {
+        nota.remove();
+      }
+    });
+  }
+
+  document.querySelectorAll("form.credor-caso").forEach(apagarGrupoIgual);
 
   document.addEventListener("click", function (ev) {
     var botao = ev.target.closest && ev.target.closest(".ver-sps-do-nome");
@@ -1966,10 +2030,16 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     var caixa = document.createElement("div");
     caixa.className = "cartao credor-resolvido";
     var nome = (dados.nomes && dados.nomes[0]) || "";
+    /* O QUE FICOU DE FORA VAI JUNTO NO RECADO. Ele desmarcou grupo e SP de
+       propósito, e o retorno tem de dizer que foi respeitado — senão a única
+       forma de conferir seria reabrir a tela e recontar. */
+    var deFora = dados.de_fora
+      ? " " + dados.de_fora + " SP(s) você deixou de fora — continuam como estão."
+      : "";
     caixa.innerHTML = '<b>✔ ' + (nome ? nome.replace(/[<>&]/g, "") : "aplicado")
       + "</b> <span class=\"cartao-dica\">— " + (dados.sps || 0)
-      + " SP(s) reescrita(s). A planilha é atualizada na próxima "
-      + "sincronização.</span>";
+      + " SP(s) reescrita(s)." + deFora
+      + " A planilha é atualizada na próxima sincronização.</span>";
     /* O bloco da Receita vem LOGO DEPOIS do formulario; some junto, senao
        fica uma sugestao orfa embaixo de um caso ja decidido. */
     var depois = form.nextElementSibling;
