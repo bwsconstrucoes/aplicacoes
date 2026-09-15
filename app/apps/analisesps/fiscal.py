@@ -2307,7 +2307,7 @@ ROTULOS_DE_ORIGEM = {
     "receita": "🔎 busca na Receita",
     "fsist": "📄 relatório do FSist",
     "receita+fsist": "🔎 Receita + 📄 FSist",
-    "": "não sei (entrou antes deste controle)",
+    "": "— entrou antes deste controle",
 }
 
 POR_PAGINA_PLANILHA = 200
@@ -2326,6 +2326,39 @@ def colunas_da_nota_na_tela() -> list:
     return [c for c in COLUNAS_DA_NOTA_NA_TELA if c[0] != "origem"]
 
 
+def contagem_por_origem() -> dict:
+    """Quantas notas por porta de entrada — o número em cima de cada recorte.
+
+    ⚠️ O RECORTE PRECISA DIZER QUANTAS TEM ANTES DE SER CLICADO. Reclamação do
+    dono em 15/09/2026: *"se eu boto todas, aparecem seis mil e tantas; se eu
+    clico só as da Receita, não aparece nada; se eu clico só as do relatório,
+    não aparece nada."* Ele leu como defeito, e a leitura é justa: um recorte
+    que devolve vazio sem avisar não se distingue de uma tela quebrada.
+
+    Com o número ao lado, "0" deixa de ser surpresa — e a conta fecha com o
+    total, que é o que faz a tela merecer confiança."""
+    from .db import consultar_um, tem_coluna
+
+    if not tem_coluna("notas_fiscais", "origem"):
+        return {}
+    try:
+        linha = consultar_um(
+            "SELECT count(*), "
+            # `lower()` na coluna, e não LIKE cru: no Postgres o LIKE
+            # distingue maiúscula, e há teste de portabilidade cravando isto.
+            "       count(*) FILTER (WHERE lower(origem) LIKE '%receita%'), "
+            "       count(*) FILTER (WHERE lower(origem) LIKE '%fsist%'), "
+            "       count(*) FILTER (WHERE coalesce(origem, '') = '') "
+            "  FROM analisesps.notas_fiscais")
+    except Exception:  # noqa: BLE001 — a conta é acessório: não derruba a tela
+        logger.exception("Análise de SPs: não consegui contar a origem das notas")
+        return {}
+    if not linha:
+        return {}
+    return {"": int(linha[0] or 0), "receita": int(linha[1] or 0),
+            "fsist": int(linha[2] or 0), "sem": int(linha[3] or 0)}
+
+
 def planilha_notas(busca: str = "", ordem: str = "emissao", desc: bool = True,
                    pagina: int = 1, origem: str = "") -> tuple[list, int]:
     """As notas como uma planilha: todas, todas as colunas, sem recorte.
@@ -2339,11 +2372,17 @@ def planilha_notas(busca: str = "", ordem: str = "emissao", desc: bool = True,
     onde, params = [], []
     filtro = str(origem or "").strip().lower()
     if filtro and tem_coluna("notas_fiscais", "origem"):
-        # "receita" alcança também a nota que veio pelas DUAS portas: ela
-        # também foi trazida pela busca, e escondê-la responderia errado à
-        # pergunta "o que o certificado me trouxe?".
-        onde.append("origem LIKE ?")
-        params.append(f"%{filtro}%")
+        if filtro == "sem":
+            # AS QUE ENTRARAM ANTES DESTE CONTROLE. Elas existem, são a maior
+            # parte da base, e precisam de um lugar onde apareçam — senão a
+            # soma dos recortes não bate com o total e a tela parece quebrada.
+            onde.append("coalesce(origem, '') = ''")
+        else:
+            # "receita" alcança também a nota que veio pelas DUAS portas: ela
+            # também foi trazida pela busca, e escondê-la responderia errado à
+            # pergunta "o que o certificado me trouxe?".
+            onde.append("lower(origem) LIKE ?")
+            params.append(f"%{filtro}%")
     termo = str(busca or "").strip()
     if termo:
         alvo = ("lower(coalesce(chave,'') || ' ' || coalesce(numero,'') || ' ' "

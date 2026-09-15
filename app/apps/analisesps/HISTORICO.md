@@ -4451,6 +4451,61 @@ pé.
   esperar. A partir desta leva a tela mostra a frase dela; é o que decide.
 
 ---
+
+### Quinquagésima sétima leva (15/09) — o recorte que devolvia vazio nos dois lados
+
+Minutos depois de aplicar a migração 014, o dono voltou:
+
+> *"Tem algo errado com a atualização do banco agora. Se eu boto todas,
+> aparecem as notas aqui, seis mil e tantas. Se eu clico só as da Receita, não
+> aparece nada. Se eu clico só as do relatório, não aparece nada."*
+
+**Não estava errado, mas estava inútil — e para quem usa é a mesma coisa.** A
+coluna `origem` nasceu vazia para as 6 mil notas que já existiam, porque vazio
+é honesto: ninguém registrou por onde elas entraram. Só que **uma tela com dois
+recortes que não devolvem nada não se lê como "ainda não sei"; lê-se como
+"quebrou"** — e a leitura dele é a que vale.
+
+**A lição, que vale para a próxima coluna nova:** recorte novo sobre dado
+antigo nasce vazio, e isso tem de ser tratado NA MESMA LEVA — ou com
+preenchimento do passado, ou com o número à vista dizendo quantas são. Publicar
+o recorte e deixar a explicação para a conversa é transferir para ele o
+trabalho de descobrir que não está quebrado.
+
+#### O que mudou
+
+- **Migração 015 preenche o passado até onde dá para afirmar.** A busca na
+  Receita **não preenche o destinatário** (o resumo dela não traz); o relatório
+  do FSist preenche. Então destinatário preenchido é **certeza** de relatório.
+  ⚠️ **A regra só anda para um lado de propósito**: destinatário vazio fica
+  vazio MESMO. No pior caso ela deixa de marcar — não mente. Chutar faria a
+  tela responder com confiança uma pergunta que ninguém sabe responder.
+- **O número vem junto do recorte**, antes do clique: "todas (6.132) · busca na
+  Receita (147) · relatório do FSist (5.961) · entraram antes deste controle
+  (24)". A soma dos três fecha com o total — é isso que faz a tela merecer
+  confiança.
+- **Quarto recorte, para as que não têm origem registrada.** Sem ele, a maior
+  parte da base não teria onde aparecer e a conta não fecharia.
+- **Recorte vazio explica-se**: "Nenhuma nota com este recorte. As que entraram
+  antes de 15/09/2026 estão em 'entraram antes deste controle'."
+
+#### O que NÃO foi verificado
+
+- **Quanto do passado a migração 015 vai marcar na base de verdade** depende de
+  o relatório do FSist dele ter trazido a coluna do destinatário. Se não tiver,
+  aquelas notas ficam em "entraram antes deste controle" — visíveis e
+  contadas, mas sem origem. Elas ganham a marca na próxima passagem de
+  qualquer uma das duas portas.
+- Nada rodou contra a base de produção.
+
+#### Ficou pendente de perguntar
+
+Ele começou uma frase e trocou de assunto: *"era interessante também uns,
+nessa tela aqui na parte superior…"* — provavelmente totalizadores no alto da
+Planilha das notas, como o quadro por categoria da tela de lançamentos. **Não
+foi feito porque não dá para adivinhar o que ele quer somar.** Perguntar.
+
+---
 ---
 
 ## Regras que não se discutem

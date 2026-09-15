@@ -2591,8 +2591,17 @@ def _planilha_fiscal(base, pagina: int):
     # estou visualizando essas notas que foram baixadas?"* — a pergunta só tem
     # resposta se der para pedir "me mostre só o que a busca trouxe".
     origem = (request.args.get("origem") or "").strip().lower()
-    if origem not in ("receita", "fsist"):
+    if origem not in ("receita", "fsist", "sem"):
         origem = ""
+
+    # ⚠️ EM TRY PRÓPRIO: o acessório não pode derrubar o principal. A conta é
+    # enfeite; a lista é a tela.
+    contagem_origem = {}
+    if sub == "notas":
+        try:
+            contagem_origem = fiscal.contagem_por_origem()
+        except Exception:  # noqa: BLE001
+            logger.exception("Análise de SPs: falhou contar a origem das notas")
 
     erro, linhas, total = None, [], 0
     try:
@@ -2621,6 +2630,7 @@ def _planilha_fiscal(base, pagina: int):
         linhas=linhas, cabecalhos=cabecalhos, total=total, erro=erro,
         busca=busca, ordem=ordem, desc=desc, pagina=pagina, origem=origem,
         rotulos_de_origem=fiscal.ROTULOS_DE_ORIGEM,
+        contagem_origem=contagem_origem,
         tudo=request.args.get("tudo") == "1",
         ano_minimo=consultas.ANO_FISCAL_MINIMO,
         primeira_linha=(pagina - 1) * por_pagina + 1, ultima_linha=ultima,

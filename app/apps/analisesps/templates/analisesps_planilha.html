@@ -116,24 +116,44 @@
     <p class="planilha-origem">
       De onde veio:
       {% for chave, rotulo in [('', 'todas'),
-                               ('receita', '🔎 só as da busca na Receita'),
-                               ('fsist', '📄 só as do relatório do FSist')] %}
+                               ('receita', '🔎 busca na Receita'),
+                               ('fsist', '📄 relatório do FSist'),
+                               ('sem', '— entraram antes deste controle')] %}
+        {# ⚠️ O NÚMERO VEM JUNTO DO RECORTE, e não só depois do clique.
+           *"Se eu boto todas, aparecem seis mil e tantas; se eu clico só as da
+           Receita, não aparece nada."* Recorte que devolve vazio sem avisar
+           não se distingue de tela quebrada — e a soma dos três tem de fechar
+           com o total, senão a tela não merece confiança. #}
         <a class="etiqueta {{ 'ativa' if origem == chave }}"
            href="{{ url_for('analisesps.tela_fiscal', visao='dados_notas',
                             busca=busca or None, ordem=ordem,
                             desc='1' if desc else '0',
-                            origem=chave or None) }}">{{ rotulo }}</a>
+                            origem=chave or None) }}">{{ rotulo }}{%
+          if contagem_origem %} ({{ '{:,}'.format(
+              contagem_origem.get(chave, 0))|replace(',', '.') }}){% endif %}</a>
       {% endfor %}
       <br>
       <small class="cartao-dica">Para ver o que acabou de entrar, ordene pela
         coluna <b>"Entrou aqui em"</b> — ela é a hora em que a nota chegou
         aqui, e não a data de emissão.</small>
+      {% if contagem_origem and contagem_origem.get('sem') %}
+        <small class="cartao-dica">
+          <b>{{ '{:,}'.format(contagem_origem.get('sem'))|replace(',', '.') }}
+          nota(s) entraram antes de o sistema passar a registrar a porta de
+          entrada</b>, em 15/09/2026 — para elas não dá para afirmar de onde
+          vieram, e inventar seria pior. Cada uma ganha a marca na próxima vez
+          que a busca ou o relatório passar por ela.
+        </small>
+      {% endif %}
     </p>
   {% endif %}
 
   {% if not linhas %}
     <p class="cartao-dica">
-      {% if busca %}Nada encontrado com esse texto.
+      {% if origem %}Nenhuma nota com este recorte de origem.
+        {% if origem != 'sem' %}As que entraram antes de 15/09/2026 estão em
+          <b>"entraram antes deste controle"</b>.{% endif %}
+      {% elif busca %}Nada encontrado com esse texto.
       {% else %}Não há nada aqui ainda.{% endif %}
     </p>
   {% else %}

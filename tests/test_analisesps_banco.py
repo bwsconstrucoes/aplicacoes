@@ -2927,6 +2927,86 @@ def test_SEM_a_migracao_014_a_tela_e_a_gravacao_continuam_de_pe(
     db_analisesps.esquecer_colunas()
 
 
+@pytest.mark.banco
+def test_a_nota_ANTIGA_com_destinatario_vira_do_FSIST(banco_analisesps):
+    """A migração 015, que é a resposta ao relato: *"se eu clico só as da
+    Receita, não aparece nada; se eu clico só as do relatório, não aparece
+    nada."*
+
+    ⚠️ A REGRA SÓ ANDA PARA UM LADO. A busca na Receita não preenche o
+    destinatário (o resumo dela não traz); o relatório do FSist preenche. Então
+    destinatário preenchido é certeza de relatório — e destinatário vazio fica
+    VAZIO, porque não dá para saber e chutar seria pior."""
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    com_destinatario = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    sem_destinatario = _chave(CREDOR_CNPJ, "550010000222222222222222")
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.notas_fiscais "
+            "  (chave, numero, destinatario_doc, origem) "
+            "VALUES (?, '1', '10656452007869', '')", (com_destinatario,))
+        conn.execute(
+            "INSERT INTO analisesps.notas_fiscais (chave, numero, origem) "
+            "VALUES (?, '2', '')", (sem_destinatario,))
+        conn.commit()
+        caminho = (__import__("pathlib").Path(
+            __import__("app.apps.analisesps.db", fromlist=["db"]).__file__).parent
+            / "migracoes" / "015_origem_do_passado.sql")
+        conn.executescript(caminho.read_text(encoding="utf-8"))
+
+    assert consultar_um("SELECT origem FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (com_destinatario,))[0] == "fsist"
+    assert consultar_um("SELECT origem FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (sem_destinatario,))[0] == "", (
+        "marcou origem no chute — a tela passaria a afirmar o que ninguém sabe")
+
+
+@pytest.mark.banco
+def test_o_recorte_diz_QUANTAS_tem_antes_do_clique(banco_analisesps,
+                                                   monkeypatch):
+    """*"Se eu boto todas, aparecem seis mil e tantas; se eu clico só as da
+    Receita, não aparece nada."* Recorte que devolve vazio sem avisar não se
+    distingue de tela quebrada. E a soma tem de fechar com o total."""
+    from app.apps.analisesps import fiscal, sefaz
+    from app.apps.analisesps.db import conexao
+
+    chave_da_busca = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_resumo(chave_da_busca)])))
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+    with conexao() as conn:   # duas do passado, sem origem registrada
+        for i, ch in enumerate([_chave(CREDOR_CNPJ, "550010000222222222222222"),
+                                _chave(CREDOR_CNPJ, "550010000333333333333333")]):
+            conn.execute("INSERT INTO analisesps.notas_fiscais "
+                         "  (chave, numero, origem) VALUES (?, ?, '')",
+                         (ch, str(i)))
+        conn.commit()
+
+    conta = fiscal.contagem_por_origem()
+    assert conta[""] == 3 and conta["receita"] == 1 and conta["sem"] == 2
+    assert conta["receita"] + conta["fsist"] + conta["sem"] == conta[""], (
+        "a soma dos recortes não fecha com o total")
+
+    # E o recorte "sem" mostra de verdade as que entraram antes.
+    linhas, quantas = fiscal.planilha_notas(origem="sem")
+    assert quantas == 2 and all(not l["origem"] for l in linhas)
+
+
+@pytest.mark.banco
+def test_a_tela_das_notas_MOSTRA_os_numeros_de_cada_origem(banco_analisesps,
+                                                           monkeypatch):
+    semear([sp("1", credor="SERTAO", vencimento="10/09/2026", valor="100,00")])
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ)
+
+    html = _cliente_operador(monkeypatch).get(
+        "/analisesps/fiscal?visao=dados_notas").get_data(as_text=True)
+
+    assert "entraram antes deste controle" in html
+    assert "origem=sem" in html, "não dá para clicar no que entrou antes"
+
+
 # ---------------------------------------------------------------------------
 # O COFRE DOS CERTIFICADOS, com banco de verdade
 # ---------------------------------------------------------------------------
