@@ -1558,3 +1558,13 @@ table.planilha td.num, table.planilha th.num {
 /* Na pilha do "resolve sozinho" os grupos moram dentro de uma celula da
    tabela, sem o recuo — ali nao ha bolinha acima deles. */
 td.credor-grupos { margin: 0; }
+
+/* DE ONDE A NOTA VEIO — o recorte da planilha das notas. *"Como e que eu sei
+   que eu estou visualizando essas notas que foram baixadas?"* (15/09/2026) */
+.planilha-origem { margin: 6px 0 10px; font-size: 13px; }
+.planilha-origem .etiqueta { text-decoration: none; margin-right: 4px; }
+.planilha-origem .etiqueta.ativa { outline: 2px solid #1b6ec2; }
+.planilha-origem small { display: block; margin-top: 4px; }
+
+/* O recado da Receita que E problema, separado do que e so informacao. */
+.aviso-recado { color: #92400E; font-weight: 600; }

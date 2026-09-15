@@ -131,6 +131,13 @@
                 <small class="cartao-dica">última em
                   {{ b.consultado_em|momento_br if b.consultado_em else '—' }}
                   {%- if b.faltam %} · faltam {{ b.faltam }} para buscar{% endif %}</small>
+                {# O QUE A RECEITA DISSE, com as palavras dela — inclusive
+                   quando a notícia é boa. "0 documento(s)" sem explicação se lê
+                   como "não funcionou", e na maior parte das vezes quer dizer
+                   "não há nota nova". #}
+                {% if b.ultimo_recado %}
+                  <small class="cartao-dica">{{ b.ultimo_recado }}</small>
+                {% endif %}
               {% endif %}
             </td>
             <td>{{ c.subido_por or '—' }}</td>

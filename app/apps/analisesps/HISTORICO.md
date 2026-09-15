@@ -4387,6 +4387,70 @@ caro e silencioso.
   consome até ~1.000 por rodada, então são poucas rodadas.
 
 ---
+
+### Quinquagésima sexta leva (15/09) — a busca FUNCIONOU, e "para onde foram as notas?"
+
+**A prova chegou.** Depois do conserto do evento, o dono mandou a tela de
+Configurações:
+
+    BWSPE   112 documento(s)   15/09/2026 às 11:14
+    BWSSP     0 documento(s)   15/09/2026 às 11:14 · faltam 1030 para buscar
+    BWS      35 documento(s)   15/09/2026 às 11:14
+
+Ou seja: **147 documentos entraram pela busca automática**, pela primeira vez
+desde que este caminho foi escrito. E a pergunta seguinte dele é a boa:
+
+> *"Como é que eu sei que eu estou visualizando essas notas que foram baixadas?
+> (…) Eu só não sei pra onde é que elas estão indo. E se estão indo pra algum
+> canto que é, onde é esse canto que eu não estou enxergando direito."*
+
+**Ele está certo, e o buraco é de desenho:** a nota entra por DUAS portas — o
+relatório do FSist e a busca na Receita — e as duas gravavam na mesma tabela
+sem deixar dito qual trouxe a linha. As 147 de hoje eram indistinguíveis das
+que já estavam ali. A busca podia estar funcionando perfeitamente e ele
+continuaria sem ter como saber.
+
+#### O que mudou
+
+- **Migração 014**: coluna `origem` em `notas_fiscais`, com três valores —
+  `receita`, `fsist`, `receita+fsist`. ⚠️ A segunda porta **não apaga** a
+  primeira: soma. Se apagasse, o relatório do FSist (que roda a cada
+  sincronização, depois da busca) zeraria o rastro da Receita em todas as
+  notas — e a pergunta voltaria sem resposta na semana seguinte.
+- **Duas colunas novas na frente da tabela**, antes da chave: "De onde veio" e
+  "Entrou aqui em". A chave tem 44 dígitos; qualquer coluna depois dela só
+  aparece rolando a tabela para o lado, e resposta que precisa de rolagem é
+  resposta que não se acha.
+- **Recorte por origem** na Planilha das notas: todas / só as da busca / só as
+  do relatório. "Da Receita" inclui a que veio pelas duas — ela também foi
+  trazida pela busca.
+- **A data virou dd/mm/aaaa.** Estava saindo no formato do banco
+  (2026-06-18), porque a célula do tipo "data" era escrita crua. Pedido dele
+  na mesma mensagem.
+- **O evento aparece na contagem:** "0 documento(s)" agora vem acompanhado de
+  "N evento(s) da Receita (cancelamento, carta de correção) — não são notas".
+  Sem isso, uma rodada inteira de eventos se lê como "não veio nada".
+- **Recado da Receita deixou de ser pintado de vermelho.** Qualquer recado
+  virava alarme — inclusive "Nenhuma nota nova desde a última consulta", que é
+  a resposta boa. Alarme que toca no dia normal é alarme que se aprende a
+  ignorar.
+- **Configurações soma as duas buscas** (notas e fretes) por CNPJ. Mostrava só
+  uma delas: o "112" que ele leu era de uma linha só.
+
+⚠️ **A janela entre publicar e apertar o botão** vale aqui também: a coluna
+`origem` nasce na migração 014, e o código sobe antes. Tanto a gravação quanto
+a tela perguntam se a coluna existe (`tem_coluna`) e seguem sem ela. **Há teste
+que derruba a coluna de propósito** e exige que a busca e a tela continuem de
+pé.
+
+#### O que fica em aberto
+
+- **Por que a BWSSP traz 0 documentos** com 1.030 na fila. Ela não está
+  travada — o ponteiro anda —, mas em duas rodadas andou 100 NSUs e trouxe
+  nenhuma nota. Pode ser lote só de eventos, pode ser a Receita pedindo para
+  esperar. A partir desta leva a tela mostra a frase dela; é o que decide.
+
+---
 ---
 
 ## Regras que não se discutem

@@ -2807,6 +2807,127 @@ def test_registro_SEM_CHAVE_e_recusado_sem_derrubar_os_outros(banco_analisesps):
 
 
 # ---------------------------------------------------------------------------
+# DE ONDE VEIO CADA NOTA — migração 014, 15/09/2026
+#
+# *"Como é que eu sei que eu estou visualizando essas notas que foram baixadas?
+# (…) Eu só não sei pra onde é que elas estão indo. E se estão indo pra algum
+# canto que eu não estou enxergando direito."*
+#
+# A nota entra por duas portas e a tela não dizia por qual. Com isso, a busca
+# na Receita podia estar funcionando perfeitamente e ele continuaria sem ter
+# como saber.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_a_nota_da_busca_fica_marcada_como_da_RECEITA(banco_analisesps,
+                                                      monkeypatch):
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz([_resumo(chave)])))
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+
+    assert consultar_um("SELECT origem FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,))[0] == "receita"
+
+
+@pytest.mark.banco
+def test_a_nota_que_vem_pelas_DUAS_portas_guarda_as_duas(banco_analisesps,
+                                                         monkeypatch):
+    """⚠️ A segunda porta NÃO apaga a primeira. Se apagasse, o relatório do
+    FSist — que roda depois, a cada sincronização — zeraria o rastro da busca
+    em todas as notas, e a pergunta dele voltaria sem resposta."""
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz([_resumo(chave)])))
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+    _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(chave)])
+
+    assert consultar_um("SELECT origem FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,))[0] == "receita+fsist"
+
+
+@pytest.mark.banco
+def test_o_recorte_por_origem_na_planilha_das_notas(banco_analisesps,
+                                                    monkeypatch):
+    """E "da Receita" alcança também a que veio pelas duas: ela também foi
+    trazida pela busca."""
+    from app.apps.analisesps import fiscal, sefaz
+
+    da_busca = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    das_duas = _chave(CREDOR_CNPJ, "550010000222222222222222")
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_resumo(da_busca), _resumo(das_duas)])))
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+    _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(das_duas),
+                            _linha_nota(_chave(CREDOR_CNPJ,
+                                               "550010000333333333333333"))])
+
+    da_receita, quantas = fiscal.planilha_notas(origem="receita")
+    assert quantas == 2
+    assert {l["chave"] for l in da_receita} == {da_busca, das_duas}
+
+    do_fsist, quantas_fsist = fiscal.planilha_notas(origem="fsist")
+    assert quantas_fsist == 2, "a que veio pelas duas tem de aparecer aqui também"
+
+
+@pytest.mark.banco
+def test_a_tela_das_notas_mostra_a_data_NO_PADRAO_BRASILEIRO(banco_analisesps,
+                                                             monkeypatch):
+    """*"A data está ano, mês, dia. Vamos colocar o contrário, né? No padrão
+    dia, barra, mês, barra, ano."* (15/09/2026)"""
+    semear([sp("1", credor="SERTAO", vencimento="10/09/2026", valor="100,00")])
+    _guardar_nota(_chave(CREDOR_CNPJ), "1430", 269.00, CREDOR_CNPJ,
+                  emissao="2026-06-18")
+
+    html = _cliente_operador(monkeypatch).get(
+        "/analisesps/fiscal?visao=dados_notas").get_data(as_text=True)
+
+    assert "18/06/2026" in html
+    assert ">2026-06-18<" not in html
+
+
+@pytest.mark.banco
+def test_SEM_a_migracao_014_a_tela_e_a_gravacao_continuam_de_pe(
+        banco_analisesps, monkeypatch):
+    """⚠️ A JANELA ENTRE PUBLICAR E APERTAR O BOTÃO. O código sobe para o
+    Render antes de alguém aplicar as atualizações do banco. Nessa janela, uma
+    tela que peça a coluna nova responde erro, e uma gravação que a exija para
+    a busca de notas inteira."""
+    from app.apps.analisesps import db as db_analisesps
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao, consultar_um
+    from app.apps.analisesps.sincronizacao import ORIGEM_RECEITA, _gravar_notas
+
+    with conexao() as conn:
+        conn.execute("ALTER TABLE analisesps.notas_fiscais DROP COLUMN origem")
+        conn.commit()
+    db_analisesps.esquecer_colunas()
+
+    chave = _chave(CREDOR_CNPJ)
+    with conexao() as conn:
+        gravadas = _gravar_notas(conn, [{
+            "chave": chave, "emissao": "2026-06-18", "numero": "1430",
+            "serie": "1", "tipo": "NF-e", "valor": "269.00",
+            "status": "Autorizada", "emitente_doc": CREDOR_CNPJ,
+            "emitente": "SERTAO", "emitente_uf": "PE",
+            "destinatario_doc": "", "destinatario": "", "chaves_nfe": ""}],
+            origem=ORIGEM_RECEITA)
+
+    assert gravadas == 1, "a busca de notas parou por causa da coluna nova"
+    linhas, total = fiscal.planilha_notas()
+    assert total == 1 and "origem" not in linhas[0]
+    assert consultar_um("SELECT numero FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,))[0] == "1430"
+    db_analisesps.esquecer_colunas()
+
+
+# ---------------------------------------------------------------------------
 # O COFRE DOS CERTIFICADOS, com banco de verdade
 # ---------------------------------------------------------------------------
 def _pfx(cnpj="10656452007869", senha="senha-de-teste", vence=None):

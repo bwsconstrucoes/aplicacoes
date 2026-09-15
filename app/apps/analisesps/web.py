@@ -1024,13 +1024,35 @@ def configuracoes():
     # Fica o pior caso de cada CNPJ (a falha manda sobre o sucesso): duas
     # linhas por CNPJ — NF-e e CT-e — e mostrar só a primeira esconderia
     # justamente a que deu errado.
+    #
+    # ⚠️ AS DUAS LINHAS SOMAM. São duas buscas por CNPJ — notas e fretes — e
+    # mostrar só uma delas fazia a tela informar menos do que sabe: o dono viu
+    # "112 documento(s)" quando o número era a soma das duas. A falha continua
+    # mandando sobre o sucesso na hora de dizer a situação.
     buscas_por_cnpj: dict = {}
     try:
         from . import sefaz
         for b in sefaz.estado_das_buscas():
             atual = buscas_por_cnpj.get(b["cnpj"])
-            if atual is None or (b.get("falhou") and not atual.get("falhou")):
-                buscas_por_cnpj[b["cnpj"]] = b
+            if atual is None:
+                buscas_por_cnpj[b["cnpj"]] = dict(b)
+                continue
+            atual["documentos"] = (atual.get("documentos") or 0) + (
+                b.get("documentos") or 0)
+            atual["faltam"] = (atual.get("faltam") or 0) + (b.get("faltam") or 0)
+            if b.get("consultado_em") and (
+                    not atual.get("consultado_em")
+                    or b["consultado_em"] > atual["consultado_em"]):
+                atual["consultado_em"] = b["consultado_em"]
+            # A pior situação das duas é a que aparece: uma busca que falhou
+            # não pode ficar escondida atrás da outra, que deu certo.
+            if b.get("falhou") and not atual.get("falhou"):
+                atual["falhou"] = True
+                atual["motivo_da_falha"] = b.get("motivo_da_falha", "")
+            if b.get("alerta"):
+                atual["alerta"] = True
+            if b.get("ultimo_recado") and not atual.get("ultimo_recado"):
+                atual["ultimo_recado"] = b["ultimo_recado"]
     except Exception:  # noqa: BLE001 — migração 008 ainda não aplicada
         logger.exception("Análise de SPs: não consegui ler o estado da busca")
 
@@ -2565,12 +2587,20 @@ def _planilha_fiscal(base, pagina: int):
     else:
         desc = (sub == "notas")
 
+    # DE ONDE A NOTA VEIO, como recorte da tela. *"Como é que eu sei que eu
+    # estou visualizando essas notas que foram baixadas?"* — a pergunta só tem
+    # resposta se der para pedir "me mostre só o que a busca trouxe".
+    origem = (request.args.get("origem") or "").strip().lower()
+    if origem not in ("receita", "fsist"):
+        origem = ""
+
     erro, linhas, total = None, [], 0
     try:
         if sub == "notas":
-            linhas, total = fiscal.planilha_notas(busca, ordem, desc, pagina)
+            linhas, total = fiscal.planilha_notas(
+                busca, ordem, desc, pagina, origem=origem)
             cabecalhos = [(c, "", r, t)
-                          for c, r, t in fiscal.COLUNAS_DA_NOTA_NA_TELA]
+                          for c, r, t in fiscal.colunas_da_nota_na_tela()]
             por_pagina = fiscal.POR_PAGINA_PLANILHA
         else:
             linhas, total = consultas.planilha_sps(
@@ -2589,7 +2619,8 @@ def _planilha_fiscal(base, pagina: int):
     return render_template(
         "analisesps_planilha.html", aba="fiscal", sub=sub, base=base,
         linhas=linhas, cabecalhos=cabecalhos, total=total, erro=erro,
-        busca=busca, ordem=ordem, desc=desc, pagina=pagina,
+        busca=busca, ordem=ordem, desc=desc, pagina=pagina, origem=origem,
+        rotulos_de_origem=fiscal.ROTULOS_DE_ORIGEM,
         tudo=request.args.get("tudo") == "1",
         ano_minimo=consultas.ANO_FISCAL_MINIMO,
         primeira_linha=(pagina - 1) * por_pagina + 1, ultima_linha=ultima,

@@ -100,6 +100,37 @@
     </span>
   </form>
 
+  {% if sub == 'notas' %}
+    {# ---------------------------------------------------------------------
+       DE ONDE A NOTA VEIO. Pergunta do dono em 15/09/2026, no dia em que a
+       busca na Receita funcionou pela primeira vez: *"como é que eu sei que eu
+       estou visualizando essas notas que foram baixadas? (…) eu só não sei pra
+       onde é que elas estão indo."*
+
+       Ele está certo: a nota entra por duas portas e a tela não dizia por
+       qual. Trabalhando ou não, a busca ficava indistinguível.
+
+       "Da Receita" mostra também a que veio pelas DUAS — ela também foi
+       trazida pela busca, e escondê-la responderia errado à pergunta.
+    --------------------------------------------------------------------- #}
+    <p class="planilha-origem">
+      De onde veio:
+      {% for chave, rotulo in [('', 'todas'),
+                               ('receita', '🔎 só as da busca na Receita'),
+                               ('fsist', '📄 só as do relatório do FSist')] %}
+        <a class="etiqueta {{ 'ativa' if origem == chave }}"
+           href="{{ url_for('analisesps.tela_fiscal', visao='dados_notas',
+                            busca=busca or None, ordem=ordem,
+                            desc='1' if desc else '0',
+                            origem=chave or None) }}">{{ rotulo }}</a>
+      {% endfor %}
+      <br>
+      <small class="cartao-dica">Para ver o que acabou de entrar, ordene pela
+        coluna <b>"Entrou aqui em"</b> — ela é a hora em que a nota chegou
+        aqui, e não a data de emissão.</small>
+    </p>
+  {% endif %}
+
   {% if not linhas %}
     <p class="cartao-dica">
       {% if busca %}Nada encontrado com esse texto.
@@ -140,7 +171,11 @@
                   {%- elif tipo == 'numero' -%}
                     {{ v|moeda }}
                   {%- elif tipo == 'data' -%}
-                    {{ v }}
+                    {# dd/mm/aaaa, e não o formato do banco. *"A data está ano,
+                       mês, dia. Vamos colocar o contrário."* (15/09/2026) #}
+                    {{ v|data_br }}
+                  {%- elif tipo == 'origem' -%}
+                    {{ rotulos_de_origem.get(v, v) }}
                   {%- elif tipo == 'momento' -%}
                     {{ v|momento_br }}
                   {%- else -%}

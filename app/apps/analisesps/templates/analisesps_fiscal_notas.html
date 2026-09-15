@@ -234,7 +234,7 @@
         </thead>
         <tbody>
           {% for b in buscas %}
-            <tr class="{{ 'com-risco' if b.ultimo_recado }}">
+            <tr class="{{ 'com-risco' if b.alerta }}">
               <td class="id">{{ b.cnpj }}</td>
               <td>{{ b.rotulo_tipo }}</td>
               <td>{{ b.consultado_em|momento_br if b.consultado_em else 'nunca' }}</td>
@@ -251,12 +251,19 @@
                 {% if b.falhou %}
                   <span class="etiqueta ruim">tentou e NÃO conseguiu</span>
                   <small class="cartao-dica">{{ b.motivo_da_falha }}</small>
-                {% elif b.ultimo_recado %}
-                  <span class="etiqueta ruim">{{ b.ultimo_recado }}</span>
-                {% elif b.em_dia %}
-                  <span class="etiqueta boa">em dia</span>
                 {% else %}
-                  <span class="etiqueta">ainda há lote para buscar</span>
+                  {% if b.em_dia %}
+                    <span class="etiqueta boa">em dia</span>
+                  {% else %}
+                    <span class="etiqueta">ainda há lote para buscar</span>
+                  {% endif %}
+                  {# O QUE A RECEITA DISSE, com as palavras dela. Antes vinha
+                     pintado de vermelho mesmo quando era a resposta boa
+                     ("Nenhuma nota nova desde a última consulta"). #}
+                  {% if b.ultimo_recado %}
+                    <small class="cartao-dica {{ 'aviso-recado' if b.alerta }}">
+                      {{ b.ultimo_recado }}</small>
+                  {% endif %}
                 {% endif %}
               </td>
             </tr>

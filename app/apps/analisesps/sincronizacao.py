@@ -641,6 +641,55 @@ CAMPOS_NOTA = ("chave", "emissao", "numero", "serie", "tipo", "valor", "status",
                "emitente_doc", "emitente", "emitente_uf", "destinatario_doc",
                "destinatario", "chaves_nfe")
 
+# ---------------------------------------------------------------------------
+# DE ONDE VEIO A NOTA — migração 014, 15/09/2026
+#
+# *"Como é que eu sei que eu estou visualizando essas notas que foram baixadas?
+# (…) Eu só não sei pra onde é que elas estão indo."*
+#
+# A nota chega por duas portas — o relatório do FSist e a busca na Receita — e
+# as duas gravavam na mesma tabela sem dizer qual trouxe a linha. Com isso, a
+# busca podia estar funcionando perfeitamente e ele continuaria sem ter como
+# saber.
+#
+# A MESMA NOTA COSTUMA VIR PELAS DUAS, e é por isso que a segunda porta não
+# apaga a primeira: soma. Uma nota 'receita' que depois aparece no relatório
+# vira 'receita+fsist', e não 'fsist'.
+ORIGEM_RECEITA = "receita"
+ORIGEM_FSIST = "fsist"
+
+_SET_COMUM = (
+    "  emissao = EXCLUDED.emissao, numero = EXCLUDED.numero, "
+    "  serie = EXCLUDED.serie, tipo = EXCLUDED.tipo, "
+    "  valor = EXCLUDED.valor, status = EXCLUDED.status, "
+    "  emitente_doc = EXCLUDED.emitente_doc, "
+    "  emitente = EXCLUDED.emitente, emitente_uf = EXCLUDED.emitente_uf, "
+    "  destinatario_doc = EXCLUDED.destinatario_doc, "
+    "  destinatario = EXCLUDED.destinatario, "
+    "  chaves_nfe = EXCLUDED.chaves_nfe, importada_em = now()")
+
+_MUDOU_ALGO = (
+    " notas_fiscais.status IS DISTINCT FROM EXCLUDED.status "
+    "    OR notas_fiscais.valor IS DISTINCT FROM EXCLUDED.valor "
+    "    OR notas_fiscais.numero IS DISTINCT FROM EXCLUDED.numero "
+    "    OR notas_fiscais.emitente_doc IS DISTINCT FROM EXCLUDED.emitente_doc")
+
+SQL_NOTA_COM_ORIGEM = (
+    "INSERT INTO analisesps.notas_fiscais "
+    "  (chave, emissao, numero, serie, tipo, valor, status, "
+    "   emitente_doc, emitente, emitente_uf, destinatario_doc, "
+    "   destinatario, chaves_nfe, origem) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+    "ON CONFLICT (chave) DO UPDATE SET " + _SET_COMUM + ", "
+    "  origem = CASE WHEN notas_fiscais.origem IN ('', EXCLUDED.origem) "
+    "                THEN EXCLUDED.origem ELSE 'receita+fsist' END "
+    # Regrava também quando a ORIGEM passa a ser outra — é a única forma de a
+    # nota que já estava aqui aprender que a Receita também a trouxe. Acontece
+    # UMA vez por nota e por porta; depois disso a condição para de valer, e o
+    # banco não engorda de gravação inútil.
+    " WHERE" + _MUDOU_ALGO +
+    "    OR notas_fiscais.origem NOT IN ('receita+fsist', EXCLUDED.origem)")
+
 
 # As duas colunas da tabela de notas que TÊM TIPO: `emissao` é DATE e `valor`
 # é NUMERIC. Texto vazio não é data nem número — é o erro que a produção
@@ -685,7 +734,7 @@ def _linha_de_nota(registro) -> tuple | None:
     return tuple(saida)
 
 
-def _gravar_notas(conn, registros) -> int:
+def _gravar_notas(conn, registros, origem: str = "") -> int:
     """Grava um lote de notas. DUAS ORIGENS, UM CAMINHO SÓ.
 
     A nota chega por dois lugares — o relatório do FSist, colado na aba, e a
@@ -708,8 +757,20 @@ def _gravar_notas(conn, registros) -> int:
                        "válida — não gravados.", recusadas)
     if not linhas:
         return 0
+
+    # ⚠️ A COLUNA PODE AINDA NÃO EXISTIR. O código sobe para o Render antes de
+    # alguém apertar "Aplicar atualizações do banco" — e uma gravação que
+    # exigisse a coluna nova pararia a busca de notas e a importação do FSist
+    # nessa janela. Sem a coluna, grava como antes: a nota entra, só não fica
+    # dito de onde veio.
+    from .db import tem_coluna
+
+    com_origem = bool(origem) and tem_coluna("notas_fiscais", "origem")
+    sql = SQL_NOTA_COM_ORIGEM if com_origem else SQL_NOTA
+    if com_origem:
+        linhas = [tuple(l) + (origem,) for l in linhas]
     try:
-        conn.executemany(SQL_NOTA, linhas)
+        conn.executemany(sql, linhas)
         conn.commit()
         return len(linhas)
     except Exception:  # noqa: BLE001
@@ -722,7 +783,7 @@ def _gravar_notas(conn, registros) -> int:
         gravadas = 0
         for linha in linhas:
             try:
-                conn.executemany(SQL_NOTA, [linha])
+                conn.executemany(sql, [linha])
                 conn.commit()
                 gravadas += 1
             except Exception:  # noqa: BLE001
@@ -824,7 +885,7 @@ def sincronizar_notas_fiscais(anotar=None) -> dict:
         linha = cur.fetchone() or [0, None]
         antes, comeco = linha[0], linha[1]
         cur.close()
-        _gravar_notas(conn, registros)
+        _gravar_notas(conn, registros, origem=ORIGEM_FSIST)
         cur = conn.execute(
             "SELECT count(*), count(*) FILTER (WHERE importada_em >= ?) "
             "  FROM analisesps.notas_fiscais", (comeco,))
@@ -1390,7 +1451,7 @@ def importar_notas_de_arquivo(conteudo: bytes, nome: str) -> dict:
         linha = cur.fetchone() or [0, None]
         antes, comeco = linha[0], linha[1]
         cur.close()
-        _gravar_notas(conn, registros)
+        _gravar_notas(conn, registros, origem=ORIGEM_FSIST)
         cur = conn.execute(
             "SELECT count(*), count(*) FILTER (WHERE importada_em >= ?) "
             "  FROM analisesps.notas_fiscais", (comeco,))

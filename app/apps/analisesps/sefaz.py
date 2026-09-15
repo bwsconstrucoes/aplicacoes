@@ -569,13 +569,13 @@ def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
     "não há nada novo" é o caminho curto para o bloqueio por consulta demais.
     """
     from .db import conexao
-    from .sincronizacao import _gravar_notas
+    from .sincronizacao import ORIGEM_RECEITA, _gravar_notas
 
     anotar = anotar or (lambda *a, **k: None)
     consultar = _consultar_nfe if tipo == NFE else _consultar_cte
     onde = ponteiro(cnpj, tipo)
     nsu = onde["ultimo_nsu"]
-    trazidas, lotes = 0, 0
+    trazidas, lotes, eventos_vistos = 0, 0, 0
 
     for _ in range(LOTES_POR_RODADA):
         anotar("buscando notas na Receita",
@@ -604,7 +604,8 @@ def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
             # gravado, o que não dá é contado, e o ponteiro anda.
             try:
                 with conexao() as conn:
-                    gravadas = _gravar_notas(conn, documentos)
+                    gravadas = _gravar_notas(conn, documentos,
+                                             origem=ORIGEM_RECEITA)
                     canceladas = aplicar_cancelamentos(conn, eventos)
                 recusadas = max(0, len(documentos) - gravadas)
                 trazidas += gravadas
@@ -615,10 +616,20 @@ def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
                 resposta["motivo"] = (f"lote recebido, mas não consegui gravar: "
                                       f"{str(e)[:200]}")
 
+        eventos_vistos += len(eventos)
         codigo = resposta.get("codigo") or ""
         recado = RECADOS.get(codigo) or resposta.get("motivo") or ""
         # O QUE ACONTECEU COM O LOTE VAI PARA A TELA, e não só para o log: é o
         # que ele lê em Configurações para saber se a busca está funcionando.
+        #
+        # O EVENTO CONTA, mesmo não virando nota. Sem isto, uma rodada inteira
+        # de cancelamentos e cartas de correção aparece como "0 documento(s)" —
+        # que se lê como "não veio nada", quando na verdade veio bastante coisa
+        # e nada dela era nota.
+        if eventos_vistos:
+            recado = (f"{recado} · {eventos_vistos} evento(s) da Receita "
+                      "(cancelamento, carta de correção) — não são notas"
+                      ).strip(" ·")
         if canceladas:
             recado = (f"{recado} · {canceladas} nota(s) marcada(s) como "
                       "cancelada(s) por evento da Receita").strip(" ·")
@@ -719,6 +730,15 @@ def estado_das_buscas() -> list:
             if estado["falhou"] else "")
         if estado["falhou"]:
             estado["em_dia"] = False
+        # ⚠️ RECADO NÃO É ERRO. A tela pintava de vermelho QUALQUER recado — e
+        # o mais comum deles é "Nenhuma nota nova desde a última consulta",
+        # que é a resposta boa. Alarme que toca no dia normal é alarme que se
+        # aprende a ignorar, e aí o dia ruim passa despercebido.
+        texto = str(estado["ultimo_recado"] or "").lower()
+        estado["alerta"] = bool(estado["falhou"]) or any(
+            marca in texto for marca in ("não entraram", "nao entraram",
+                                         "não consegui", "nao consegui",
+                                         "esperar", "falhou"))
         estado["rotulo_tipo"] = {"NFE": "Notas (NF-e)",
                                  "CTE": "Fretes (CT-e)"}.get(estado["tipo"],
                                                              estado["tipo"])

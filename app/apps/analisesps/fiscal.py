@@ -2279,6 +2279,13 @@ def notas_por_dia(dias: int = 14) -> list:
 # As colunas da nota, na ordem em que ele lê no FSist: o que identifica
 # primeiro (chave, número, série), depois o dinheiro, depois quem emitiu.
 COLUNAS_DA_NOTA_NA_TELA = [
+    # ⚠️ ESTAS DUAS VÊM NA FRENTE, e não no fim como o resto. Elas respondem à
+    # pergunta que fez esta tela existir — *"como é que eu sei que eu estou
+    # visualizando essas notas que foram baixadas?"* — e a chave de acesso tem
+    # 44 dígitos: qualquer coisa depois dela exige rolar a tabela para o lado.
+    # Resposta que só aparece depois de rolar é resposta que não se acha.
+    ("origem", "De onde veio", "origem"),
+    ("importada_em", "Entrou aqui em", "momento"),
     ("chave", "Chave de acesso", "texto"),
     ("numero", "Número", "texto"),
     ("serie", "Série", "texto"),
@@ -2292,18 +2299,51 @@ COLUNAS_DA_NOTA_NA_TELA = [
     ("destinatario", "Destinatário", "texto"),
     ("destinatario_doc", "CNPJ do destinatário", "texto"),
     ("chaves_nfe", "NF-e dentro do CT-e", "texto"),
-    ("importada_em", "Entrou aqui em", "momento"),
 ]
+
+# Como a origem é escrita na tela. O banco guarda a palavra curta; aqui ela
+# vira frase, porque "fsist" não quer dizer nada para quem só usa o sistema.
+ROTULOS_DE_ORIGEM = {
+    "receita": "🔎 busca na Receita",
+    "fsist": "📄 relatório do FSist",
+    "receita+fsist": "🔎 Receita + 📄 FSist",
+    "": "não sei (entrou antes deste controle)",
+}
 
 POR_PAGINA_PLANILHA = 200
 
 
-def planilha_notas(busca: str = "", ordem: str = "emissao", desc: bool = True,
-                   pagina: int = 1) -> tuple[list, int]:
-    """As notas como uma planilha: todas, todas as colunas, sem recorte."""
-    from .db import consultar, consultar_um
+def colunas_da_nota_na_tela() -> list:
+    """As colunas da planilha de notas que o banco REALMENTE tem hoje.
 
+    ⚠️ A coluna `origem` nasce na migração 014, e o código sobe para o Render
+    antes de alguém apertar "Aplicar atualizações do banco". Pedir uma coluna
+    que ainda não existe derrubaria a tela inteira nessa janela."""
+    from .db import tem_coluna
+
+    if tem_coluna("notas_fiscais", "origem"):
+        return COLUNAS_DA_NOTA_NA_TELA
+    return [c for c in COLUNAS_DA_NOTA_NA_TELA if c[0] != "origem"]
+
+
+def planilha_notas(busca: str = "", ordem: str = "emissao", desc: bool = True,
+                   pagina: int = 1, origem: str = "") -> tuple[list, int]:
+    """As notas como uma planilha: todas, todas as colunas, sem recorte.
+
+    `origem` recorta por onde a nota entrou — pergunta do dono em 15/09/2026:
+    *"como é que eu sei que eu estou visualizando essas notas que foram
+    baixadas? (…) eu só não sei pra onde é que elas estão indo."*"""
+    from .db import consultar, consultar_um, tem_coluna
+
+    colunas = colunas_da_nota_na_tela()
     onde, params = [], []
+    filtro = str(origem or "").strip().lower()
+    if filtro and tem_coluna("notas_fiscais", "origem"):
+        # "receita" alcança também a nota que veio pelas DUAS portas: ela
+        # também foi trazida pela busca, e escondê-la responderia errado à
+        # pergunta "o que o certificado me trouxe?".
+        onde.append("origem LIKE ?")
+        params.append(f"%{filtro}%")
     termo = str(busca or "").strip()
     if termo:
         alvo = ("lower(coalesce(chave,'') || ' ' || coalesce(numero,'') || ' ' "
@@ -2317,12 +2357,12 @@ def planilha_notas(busca: str = "", ordem: str = "emissao", desc: bool = True,
 
     # ⚠️ Lista fechada, como do outro lado: nome de coluna vindo do endereço
     # nunca entra no SQL.
-    permitidas = {c for c, _, _ in COLUNAS_DA_NOTA_NA_TELA}
+    permitidas = {c for c, _, _ in colunas}
     coluna = ordem if ordem in permitidas else "emissao"
     sentido = "DESC NULLS LAST" if desc else "ASC NULLS LAST"
 
     pagina = max(1, int(pagina or 1))
-    campos = ", ".join(c for c, _, _ in COLUNAS_DA_NOTA_NA_TELA)
+    campos = ", ".join(c for c, _, _ in colunas)
     linhas = consultar(
         f"SELECT {campos} FROM analisesps.notas_fiscais{where} "
         f" ORDER BY {coluna} {sentido}, chave "
@@ -2333,5 +2373,5 @@ def planilha_notas(busca: str = "", ordem: str = "emissao", desc: bool = True,
         f"SELECT count(*) FROM analisesps.notas_fiscais{where}",
         tuple(params))[0]
 
-    nomes = [c for c, _, _ in COLUNAS_DA_NOTA_NA_TELA]
+    nomes = [c for c, _, _ in colunas]
     return [dict(zip(nomes, linha)) for linha in linhas], int(total or 0)
