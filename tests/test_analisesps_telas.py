@@ -2308,17 +2308,94 @@ def test_bradesco_sem_texto_avisa(app):
 
 
 def test_bradesco_cruza_o_que_foi_colado(app, monkeypatch):
+    """⚠️ O DUBLÊ USA AS CHAVES DE VERDADE, as que `_linha_doc` monta.
+
+    A versão anterior deste teste inventava chaves técnicas ("valor",
+    "credor") e por isso passava enquanto a tela de produção mostrava
+    "47 operação(ões)" com 47 linhas EM BRANCO: ele provava que o template
+    desenha o que recebe, não que recebe o que o código produz."""
     from app.apps.analisesps import bradesco, web
     monkeypatch.setattr(web, "_candidatas_bradesco", lambda: [])
     monkeypatch.setattr(bradesco, "cruzar_tudo", lambda raw, df, foco_agendados=True: {
-        "boletos": [{"empresa": "BWS", "conta_debito": "1234", "valor": "6.750,00",
-                     "id": "1384831053", "credor": "ACME", "alertas": "",
-                     "codigo_barras": "34191", "diff": ""}],
+        "boletos": [bradesco._linha_doc(
+            {"empresa": "BWS", "conta_debito": "1251 | 0002541-0",
+             "valor_display": "6.750,00", "valor_num": 6750.0,
+             "tipo": "boleto", "sp": "1384831053", "codigo": "34191"},
+            {"id": "1384831053", "credor": "ACME", "valor_num": 6750.0},
+            "SP OK", 99, [])],
         "pix": []})
     html = como(app, SENHA_CONSULTA).post(
         "/analisesps/bradesco", data={"extrato": "qualquer coisa"}).get_data(as_text=True)
     assert "1384831053" in html
     assert "6.750,00" in html
+    assert "ACME" in html
+
+
+def test_toda_coluna_da_tela_do_bradesco_EXISTE_na_linha():
+    """⚠️ Nome de campo que aparece em dois arquivos vira dois nomes diferentes
+    no dia em que um dos dois mudar. Foi isso que deixou a tela em branco."""
+    from app.apps.analisesps import bradesco
+
+    linha_doc = bradesco._linha_doc(
+        {"empresa": "BWS", "conta_debito": "1251 | 0002541-0",
+         "valor_display": "10,00", "valor_num": 10.0, "tipo": "boleto",
+         "sp": "1", "codigo": "3419"},
+        {"id": "1", "credor": "ACME", "valor_num": 10.0}, "SP OK", 99, [])
+    faltando = [c for _, c in bradesco.COLUNAS_BOLETO if c not in linha_doc]
+    assert not faltando, f"colunas de boleto sem campo na linha: {faltando}"
+
+    linha_pix = bradesco._linha_pix(
+        {"empresa": "BWS", "conta_debito": "1251 | 0002541-0",
+         "valor_display": "10,00", "valor_num": 10.0, "nome": "JOSE"},
+        {"id": "1", "credor": "ACME", "valor_num": 10.0}, "NOME OK", 95, [])
+    faltando = [c for _, c in bradesco.COLUNAS_PIX if c not in linha_pix]
+    assert not faltando, f"colunas de pix sem campo na linha: {faltando}"
+
+
+# O texto que o Bradesco entrega quando se copia "Detalhes das Operações": a
+# linha da operação tem data, agência | conta e valor, e as linhas seguintes
+# dizem o que é.
+EXTRATO_COLADO = (
+    "BWS CONSTRUCOES LTDA\n"
+    "CNPJ: 00.079.526/0001-09\n"
+    "15/09/2026\t1251 | 0002541-0\t6.750,00\n"
+    "Operação e Descrição: Pagamento de Boleto\n"
+    "Boleto de Cobrança - 34191790010104351004 - 1384831053 - 20/09/2026\n"
+    "15/09/2026\t1251 | 0002541-0\t1.200,00\n"
+    "Operação e Descrição: Pix Enviado\n"
+    "Nome: JOSE THIAGO DA SILVA\n")
+
+
+def test_bradesco_DE_PONTA_A_PONTA_desenha_o_que_o_codigo_produz(app, monkeypatch):
+    """⚠️ SEM DUBLÊ NENHUM no meio do caminho: cola o texto, cruza de verdade e
+    confere que a célula aparece preenchida.
+
+    É o teste que faltava. Os outros dublavam `cruzar_tudo`, e por isso a tela
+    pôde ficar com 47 linhas em branco sem a suíte reclamar.
+
+    ⚠️ E CONFERE PELO QUE **NÃO** ESTÁ NO TEXTO COLADO. O texto volta dentro da
+    caixa de digitação, então procurar por "6.750,00" no HTML daria certo mesmo
+    com a tabela inteira vazia — foi assim que a primeira versão deste teste
+    passou sem provar nada. O credor e a validação só existem se a linha da
+    tabela tiver sido desenhada."""
+    from app.apps.analisesps import web
+
+    monkeypatch.setattr(web, "_candidatas_bradesco", lambda: [
+        {"id": "1384831053", "credor": "ACME MATERIAIS", "valor": "6.750,00",
+         "valor_num": 6750.0, "status_agend": "Agendado", "status_pgt": "",
+         "codigo_barras": "34191790010104351004", "vencimento": "20/09/2026",
+         "conta": "", "doc_fiscal": "", "centro_custo": "",
+         "forma_pagamento": "Boleto"}])
+
+    html = como(app, SENHA_CONSULTA).post(
+        "/analisesps/bradesco", data={"extrato": EXTRATO_COLADO}
+        ).get_data(as_text=True)
+
+    assert "1 operação(ões)" in html          # um boleto
+    assert "ACME MATERIAIS" in html, "a coluna do credor saiu vazia"
+    assert "OK (ID+barras)" in html, "a coluna da validação saiu vazia"
+    assert "SEM MATCH" in html, "a tabela do Pix saiu vazia"
+    assert "BWS CONSTRUCOES LTDA" in html, "a coluna da empresa saiu vazia"
 
 
 def test_bradesco_nao_conclui_no_lugar_de_quem_le(app, monkeypatch):

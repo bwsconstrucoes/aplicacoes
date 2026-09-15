@@ -4635,6 +4635,50 @@ de gravações inúteis de 10/09.
   veio.
 
 ---
+
+### Sexagésima leva (15/09) — ⚠️ a tela do Bradesco mostrava 47 linhas EM BRANCO
+
+O dono colou o resultado da conferência e ele fala por si: *"47 operação(ões)"*
+seguidas de quarenta e sete linhas sem **nenhuma** célula preenchida. O mesmo
+nos oito Pix.
+
+**A CAUSA:** a linha da conferência é um dicionário com chaves **em
+português** — `"Valor (Bradesco)"`, `"Credor (SP)"`, `"SP"` — e o template
+pedia chaves **técnicas** — `valor`, `credor`, `id`. Nenhuma batia, e no Jinja
+uma chave que não existe vira vazio em silêncio. O contador vinha do
+`len()` da lista, e por isso continuava certo: a tela parecia funcionando.
+
+**⚠️ POR QUE A SUÍTE NÃO PEGOU — e esta é a parte que interessa para a próxima
+vez.** O teste da tela dublava `cruzar_tudo` e devolvia um dicionário com as
+chaves **que o template queria**. Ou seja: ele provava que o template desenha o
+que recebe, e **não** que recebe o que o código produz. O dublê escondia
+exatamente o defeito que existia.
+
+    # o que o teste mandava            # o que a produção mandava
+    {"valor": "6.750,00",              {"Valor (Bradesco)": "6.750,00",
+     "credor": "ACME"}                  "Credor (SP)": "ACME"}
+
+**O conserto, em três partes:**
+
+1. **As colunas saíram do template e foram morar em `bradesco.py`**
+   (`COLUNAS_BOLETO`, `COLUNAS_PIX`), ao lado da função que monta a linha.
+   Nome de campo que aparece em dois arquivos vira dois nomes diferentes no dia
+   em que um dos dois mudar.
+2. **Teste que percorre cada coluna** e exige que a chave exista na linha de
+   verdade.
+3. **Teste de ponta a ponta, sem dublê nenhum**: cola o texto do Bradesco,
+   cruza de verdade e confere que a célula aparece preenchida — e confere pelo
+   que **não** está no texto colado (o credor, a validação), porque o texto
+   volta dentro da caixa de digitação e procurar pelo valor no HTML daria certo
+   mesmo com a tabela vazia. A primeira versão deste teste passou sem provar
+   nada justamente por isso.
+
+**A tela ganhou colunas que já existiam no dado e não apareciam:** validação,
+vencimento, status de pagamento e o nº da SP como o banco o leu (separado do
+nº da SP que a conferência encontrou) — o que permite ver o caso em que os
+dois diferem.
+
+---
 ---
 
 ## Regras que não se discutem
