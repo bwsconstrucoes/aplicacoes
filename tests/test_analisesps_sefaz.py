@@ -112,6 +112,58 @@ def test_evento_no_meio_do_lote_NAO_vira_nota():
     assert sefaz.ler_documento("<qualquerCoisa/>") is None
 
 
+# ---------------------------------------------------------------------------
+# ⚠️ O EVENTO QUE PASSAVA POR NOTA — o defeito que a produção acusou em
+# 15/09/2026, no primeiro dia em que a busca funcionou de verdade:
+#
+#     invalid input syntax for type date: ""
+#     invalid input syntax for type numeric: ""
+#
+# O cancelamento, a carta de correção e a ciência da operação vêm no MESMO lote
+# das notas e carregam o `chNFe` DA NOTA a que se referem. O teste de então era
+# só o tamanho da chave — e o evento, que não tem data de emissão nem valor,
+# chegava ao banco e estourava as duas colunas com tipo. O lote inteiro morria,
+# e como o ponteiro só anda depois da gravação, a busca ficava presa no mesmo
+# lote, repetindo o mesmo erro a cada rodada.
+# ---------------------------------------------------------------------------
+def evento(ch=None, tipo="110111", descricao="Cancelamento"):
+    """Um evento como a Receita manda: COM a chave da nota, sem data e sem
+    valor. É esta forma que derrubava a gravação."""
+    ch = ch or chave()
+    return (f'<procEventoNFe><evento><infEvento><CNPJ>{CREDOR}</CNPJ>'
+            f"<chNFe>{ch}</chNFe><tpEvento>{tipo}</tpEvento>"
+            f"<nSeqEvento>1</nSeqEvento><dhEvento>2026-09-15T09:00:00-03:00</dhEvento>"
+            f"<detEvento><descEvento>{descricao}</descEvento></detEvento>"
+            "</infEvento></evento></procEventoNFe>")
+
+
+def test_evento_COM_A_CHAVE_DA_NOTA_nao_vira_nota():
+    """⚠️ Era exatamente este o caso que passava: chave de 44 dígitos, e nada
+    mais do que uma nota precisa."""
+    assert sefaz.ler_documento(evento()) is None
+    assert sefaz.ler_documento(evento(tipo="110110",
+                                      descricao="Carta de Correcao")) is None
+
+
+def test_o_evento_e_LIDO_e_nao_jogado_fora():
+    """O cancelamento é a notícia mais importante que esta busca traz: despesa
+    paga contra documento que não existe mais."""
+    lido = sefaz.ler_evento(evento())
+    assert lido["chave"] == chave() and lido["cancela"] is True
+    # A carta de correção NÃO cancela nada.
+    assert sefaz.ler_evento(
+        evento(tipo="110110", descricao="Carta de Correcao"))["cancela"] is False
+
+
+def test_a_resposta_separa_NOTA_de_EVENTO():
+    """Os dois vêm no mesmo lote e seguem caminhos diferentes: a nota é
+    gravada, o evento corrige o status de uma nota que já está aqui."""
+    lida = sefaz._ler_resposta(resposta([resumo_nfe(), evento()]))
+    assert len(lida["documentos"]) == 1
+    assert len(lida["eventos"]) == 1
+    assert lida["eventos"][0]["cancela"] is True
+
+
 def test_documento_ilegivel_nao_derruba_o_lote_inteiro():
     """Um documento torto não pode fazer perder os outros quarenta e nove."""
     bruto = (f"<retDistDFeInt><cStat>138</cStat><ultNSU>2</ultNSU>"

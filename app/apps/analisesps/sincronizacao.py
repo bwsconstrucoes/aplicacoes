@@ -642,6 +642,49 @@ CAMPOS_NOTA = ("chave", "emissao", "numero", "serie", "tipo", "valor", "status",
                "destinatario", "chaves_nfe")
 
 
+# As duas colunas da tabela de notas que TÊM TIPO: `emissao` é DATE e `valor`
+# é NUMERIC. Texto vazio não é data nem número — é o erro que a produção
+# acusou em 15/09/2026 (`invalid input syntax for type date: ""`). As outras
+# colunas são TEXT NOT NULL DEFAULT '', e para elas o vazio é o valor certo.
+CAMPOS_COM_TIPO = {"emissao": formatos.para_data, "valor": formatos.para_numero}
+
+
+def _linha_de_nota(registro) -> tuple | None:
+    """Um registro virando a tupla que vai para o banco, com os tipos certos.
+
+    ⚠️ VAZIO VIRA NULO nas duas colunas com tipo. A planilha já passava por
+    aqui convertida; a busca na Receita entregava texto cru, e bastou um
+    documento sem valor para o lote inteiro morrer — e, pior, para o ponteiro
+    parar de andar, prendendo a busca no mesmo lote.
+
+    Devolve None para o que não é nota: sem chave de 44 dígitos não há
+    identidade, e gravar seria criar linha que ninguém consegue achar."""
+    from . import fiscal
+
+    if isinstance(registro, (tuple, list)):
+        valores = dict(zip(CAMPOS_NOTA, registro))
+    else:
+        valores = {c: registro.get(c, "") for c in CAMPOS_NOTA}
+
+    if len(fiscal.so_digitos(valores.get("chave"))) != 44:
+        return None
+
+    saida = []
+    for campo in CAMPOS_NOTA:
+        valor = valores.get(campo)
+        converter = CAMPOS_COM_TIPO.get(campo)
+        if converter is None:
+            saida.append("" if valor is None else str(valor).strip())
+        elif isinstance(valor, str) or valor is None:
+            # Só o texto passa pela conversão. O que já vem tipado (a leitura
+            # da planilha entrega `date` e `Decimal`) segue direto — reconverter
+            # data já convertida daria None e apagaria o que estava certo.
+            saida.append(converter(valor))
+        else:
+            saida.append(valor)
+    return tuple(saida)
+
+
 def _gravar_notas(conn, registros) -> int:
     """Grava um lote de notas. DUAS ORIGENS, UM CAMINHO SÓ.
 
@@ -651,15 +694,42 @@ def _gravar_notas(conn, registros) -> int:
     diferente conforme a porta por onde entrou.
 
     Aceita tupla (como vem da leitura da planilha) ou dicionário (como vem da
-    Receita) — o que muda é de onde veio, não o que se grava."""
+    Receita) — o que muda é de onde veio, não o que se grava.
+
+    Devolve QUANTAS FORAM GRAVADAS, que pode ser menos do que o que entrou:
+    quem chama usa a diferença para dizer na tela que o lote veio com coisa
+    que não dava para guardar."""
     if not registros:
         return 0
-    linhas = [r if isinstance(r, (tuple, list))
-              else tuple(r.get(c, "") for c in CAMPOS_NOTA)
-              for r in registros]
-    conn.executemany(SQL_NOTA, linhas)
-    conn.commit()
-    return len(linhas)
+    linhas = [l for l in (_linha_de_nota(r) for r in registros) if l]
+    recusadas = len(registros) - len(linhas)
+    if recusadas:
+        logger.warning("Análise de SPs: %d registro(s) de nota sem chave "
+                       "válida — não gravados.", recusadas)
+    if not linhas:
+        return 0
+    try:
+        conn.executemany(SQL_NOTA, linhas)
+        conn.commit()
+        return len(linhas)
+    except Exception:  # noqa: BLE001
+        # ⚠️ UMA LINHA RUIM NÃO PODE LEVAR O LOTE INTEIRO. Depois do erro a
+        # transação está abortada no Postgres: sem o rollback, toda tentativa
+        # seguinte falha por causa da primeira.
+        logger.exception("Análise de SPs: o lote de notas não entrou de uma "
+                         "vez; tentando uma a uma")
+        conn.rollback()
+        gravadas = 0
+        for linha in linhas:
+            try:
+                conn.executemany(SQL_NOTA, [linha])
+                conn.commit()
+                gravadas += 1
+            except Exception:  # noqa: BLE001
+                conn.rollback()
+                logger.exception("Análise de SPs: nota recusada pelo banco "
+                                 "(chave %s)", linha[0] if linha else "?")
+        return gravadas
 
 
 def sincronizar_notas_fiscais(anotar=None) -> dict:

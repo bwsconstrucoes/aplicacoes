@@ -4329,6 +4329,64 @@ grupo ligado.
   apertar em tela pequena.
 
 ---
+
+### Quinquagésima quinta leva (15/09) — ⚠️ o EVENTO que passava por nota e prendia a busca
+
+**A busca na Receita FUNCIONOU pela primeira vez** — os consertos das levas 50
+e 52 pegaram. E o primeiro dia de funcionamento entregou o defeito seguinte,
+que só aparece com documento de verdade. O dono mandou a coluna de
+Configurações:
+
+    BWSPE   tentou e NÃO conseguiu — invalid input syntax for type date: ""
+            LINE 1: ... ('35260505061744000130550010001835971000670305', '', …
+    BWSSP   0 documento(s) · faltam 1130 para buscar
+    BWS     tentou e NÃO conseguiu — invalid input syntax for type numeric: ""
+            LINE 1: ...01365678191', '2026-06-16', '579630', '', 'CT-e', '', …
+
+**A causa:** a Receita entrega, no MESMO lote das notas, os **eventos** ligados
+a elas — cancelamento, carta de correção, ciência da operação. Todo evento
+carrega o `chNFe`/`chCTe` **da nota a que se refere**, e nenhum tem data de
+emissão nem valor. O teste em `ler_documento` era só o tamanho da chave: 44
+dígitos, logo é nota. O evento passava, chegava à gravação com `''` nas duas
+colunas que TÊM TIPO (`emissao DATE`, `valor NUMERIC`) e o Postgres recusava.
+
+**E o pior não era a linha perdida, era o travamento:** o ponteiro do "até onde
+já li" só anda DEPOIS da gravação. Com o lote morrendo no banco, a busca
+recomeçava do mesmo NSU a cada rodada, para sempre. Era isso que ele via como
+"tentou e NÃO conseguiu" duas vezes seguidas com a mesma mensagem.
+
+#### Os três consertos, em camadas
+
+1. **O evento é reconhecido** (`tpEvento`/`descEvento`/`nSeqEvento`) e não vira
+   nota. ⚠️ O teste antigo cobria só o evento SEM chave — era esse o buraco.
+2. **O evento de cancelamento vira notícia**, e não lixo: marca a nota que já
+   está aqui como Cancelada. É a informação mais importante que esta busca
+   traz — despesa paga contra documento que não existe mais. Ele **não cria**
+   nota a partir do evento: sem emitente, valor e data seria uma linha fantasma.
+3. **Vazio nunca chega a coluna com tipo** (`_linha_de_nota`, na gravação), e o
+   lote que ainda assim falhar é regravado **um a um**, com rollback entre as
+   tentativas — uma linha ruim não leva as outras quarenta e nove. O que não
+   entrou é contado e aparece na tela, e **o ponteiro anda**.
+
+**A regra que fica:** *nada que venha de fora pode travar o ponteiro*. Perder
+um documento estranho com recado visível é barato; parar a busca inteira é
+caro e silencioso.
+
+#### O que foi verificado
+
+- Oito testes novos (três sem banco, cinco com Postgres de verdade), inclusive
+  o caso exato da produção: lote com nota + evento → a nota entra, o evento
+  não, e o ponteiro avança.
+- Suíte inteira verde.
+
+#### O que NÃO foi verificado
+
+- **Contra a Receita de verdade, não.** Vale o mesmo de sempre: aqui não há
+  certificado nem saída para a SEFAZ. O próximo clique em produção é a prova.
+- O BWSSP não estava travado — está andando (faltavam 1.130 documentos). Ele
+  consome até ~1.000 por rodada, então são poucas rodadas.
+
+---
 ---
 
 ## Regras que não se discutem

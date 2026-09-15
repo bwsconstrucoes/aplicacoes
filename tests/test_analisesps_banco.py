@@ -2683,6 +2683,130 @@ def test_a_falha_do_CTe_nao_leva_a_busca_de_NFe_junto(banco_analisesps,
 
 
 # ---------------------------------------------------------------------------
+# ⚠️ O EVENTO QUE DERRUBAVA O LOTE — defeito acusado pela produção em
+# 15/09/2026, no primeiro dia em que a busca na Receita funcionou:
+#
+#     invalid input syntax for type date: ""
+#     invalid input syntax for type numeric: ""
+#
+# O evento (cancelamento, carta de correção) vem no mesmo lote e carrega a
+# chave DA NOTA. Passava por nota, chegava sem data e sem valor, e estourava as
+# duas colunas com tipo. Como o ponteiro só anda DEPOIS da gravação, a busca
+# ficava presa no mesmo lote — repetindo o mesmo erro a cada rodada, para
+# sempre. Era isso que o dono via como "tentou e NÃO conseguiu".
+# ---------------------------------------------------------------------------
+def _evento(chave, tipo="110111", descricao="Cancelamento"):
+    return (f"<procEventoNFe><evento><infEvento><CNPJ>{CREDOR_CNPJ}</CNPJ>"
+            f"<chNFe>{chave}</chNFe><tpEvento>{tipo}</tpEvento>"
+            f"<nSeqEvento>1</nSeqEvento>"
+            f"<detEvento><descEvento>{descricao}</descEvento></detEvento>"
+            "</infEvento></evento></procEventoNFe>")
+
+
+@pytest.mark.banco
+def test_o_evento_no_lote_NAO_derruba_a_gravacao_nem_trava_o_ponteiro(
+        banco_analisesps, monkeypatch):
+    """A nota do mesmo lote tem de entrar, e o ponteiro tem de andar."""
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_resumo(chave), _evento(_chave(CREDOR_CNPJ, "99"))],
+                            ultimo="31", maior="31")))
+
+    resultado = sefaz.buscar_um("10656452007869", sefaz.NFE)
+
+    assert resultado["trazidas"] == 1, "a nota do lote se perdeu"
+    assert consultar_um("SELECT count(*) FROM analisesps.notas_fiscais")[0] == 1
+    assert sefaz.ponteiro("10656452007869", sefaz.NFE)["ultimo_nsu"] == \
+        "000000000000031", "o ponteiro travou — a busca repetiria este lote"
+
+
+@pytest.mark.banco
+def test_o_evento_de_CANCELAMENTO_corrige_o_status_da_nota(banco_analisesps,
+                                                           monkeypatch):
+    """⚠️ Nota cancelada é despesa paga contra documento que não existe mais —
+    a notícia mais importante que esta busca traz."""
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz([_resumo(chave)])))
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+    assert consultar_um("SELECT status FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,))[0] == "Autorizada"
+
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_evento(chave)], ultimo="40", maior="40")))
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+
+    assert consultar_um("SELECT status FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,))[0] == "Cancelada"
+
+
+@pytest.mark.banco
+def test_o_evento_NAO_cria_nota_fantasma(banco_analisesps, monkeypatch):
+    """O evento não traz emitente, valor nem data. Inserir a partir dele
+    criaria uma linha que a conciliação nunca casaria com coisa nenhuma."""
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_evento(_chave(CREDOR_CNPJ))])))
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+
+    assert consultar_um("SELECT count(*) FROM analisesps.notas_fiscais")[0] == 0
+
+
+@pytest.mark.banco
+def test_nota_SEM_data_e_SEM_valor_entra_com_campo_VAZIO_e_nao_estoura(
+        banco_analisesps):
+    """⚠️ A trava de baixo. Mesmo que um documento novo passe pela leitura, o
+    texto vazio NUNCA pode chegar a uma coluna com tipo — vazio vira nulo.
+
+    E nulo não é zero: nota sem valor não é nota de R$ 0,00."""
+    from app.apps.analisesps.db import conexao, consultar_um
+    from app.apps.analisesps.sincronizacao import _gravar_notas
+
+    chave = _chave(CREDOR_CNPJ)
+    with conexao() as conn:
+        gravadas = _gravar_notas(conn, [{
+            "chave": chave, "emissao": "", "numero": "123", "serie": "",
+            "tipo": "CT-e", "valor": "", "status": "Autorizada",
+            "emitente_doc": CREDOR_CNPJ, "emitente": "TRANSPORTADORA",
+            "emitente_uf": "PE", "destinatario_doc": "", "destinatario": "",
+            "chaves_nfe": ""}])
+
+    assert gravadas == 1
+    assert consultar_um("SELECT emissao, valor FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,)) == (None, None)
+
+
+@pytest.mark.banco
+def test_registro_SEM_CHAVE_e_recusado_sem_derrubar_os_outros(banco_analisesps):
+    """Sem chave de 44 dígitos não há identidade: seria uma linha que ninguém
+    consegue achar depois."""
+    from app.apps.analisesps.db import conexao, consultar_um
+    from app.apps.analisesps.sincronizacao import _gravar_notas
+
+    chave = _chave(CREDOR_CNPJ)
+    boa = {"chave": chave, "emissao": "2026-06-18", "numero": "1",
+           "serie": "", "tipo": "NF-e", "valor": "10.00", "status": "Autorizada",
+           "emitente_doc": CREDOR_CNPJ, "emitente": "X", "emitente_uf": "PE",
+           "destinatario_doc": "", "destinatario": "", "chaves_nfe": ""}
+    with conexao() as conn:
+        gravadas = _gravar_notas(conn, [dict(boa, chave="123"), boa])
+
+    assert gravadas == 1
+    assert consultar_um("SELECT count(*) FROM analisesps.notas_fiscais")[0] == 1
+
+
+# ---------------------------------------------------------------------------
 # O COFRE DOS CERTIFICADOS, com banco de verdade
 # ---------------------------------------------------------------------------
 def _pfx(cnpj="10656452007869", senha="senha-de-teste", vence=None):

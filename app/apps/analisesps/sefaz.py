@@ -277,6 +277,24 @@ def ler_documento(xml: str) -> dict | None:
         # O lote traz eventos e avisos junto. Não é erro; é o esperado.
         return None
 
+    # ⚠️ EVENTO TEM CHAVE E NÃO É NOTA. Foi este o defeito que a produção
+    # acusou em 15/09/2026, depois que a busca finalmente andou:
+    #
+    #     invalid input syntax for type date: ""
+    #     invalid input syntax for type numeric: ""
+    #
+    # O cancelamento, a carta de correção e o "ciência da operação" vêm no
+    # MESMO lote das notas e carregam o `chNFe` da nota a que se referem. Como
+    # o teste aqui era só o tamanho da chave, o evento passava por nota — e
+    # chegava à gravação sem data de emissão e sem valor, que são as duas
+    # colunas com tipo no banco. O lote inteiro morria aí, e o ponteiro não
+    # andava: a busca ficava presa no mesmo lote para sempre.
+    #
+    # O evento NÃO é lixo — o de cancelamento é a notícia mais importante que
+    # esta busca traz. Ele é lido por `ler_evento` e vira correção de status.
+    if e_evento(xml):
+        return None
+
     emissao = (_tag(xml, "dhEmi") or _tag(xml, "dEmi")
                or _tag(xml, "dhRecbto"))[:10]
     valor = (_tag(xml, "vNF") or _tag(xml, "vTPrest") or _tag(xml, "vRec"))
@@ -311,6 +329,84 @@ def ler_documento(xml: str) -> dict | None:
 def _situacao(codigo: str) -> str:
     return {"1": "Autorizada", "2": "Denegada", "3": "Cancelada"}.get(
         str(codigo or "").strip(), "Autorizada")
+
+
+# ---------------------------------------------------------------------------
+# OS EVENTOS — o que não é nota, mas fala sobre uma nota
+#
+# A Receita entrega, no mesmo lote das notas, os eventos ligados a elas:
+# cancelamento, carta de correção, ciência da operação, manifestação do
+# destinatário. Todos carregam o `chNFe`/`chCTe` da nota a que se referem, e
+# nenhum tem data de emissão ou valor.
+#
+# O CANCELAMENTO É A NOTÍCIA MAIS IMPORTANTE QUE ESTA BUSCA TRAZ: significa
+# despesa paga contra documento que não existe mais. Por isso ele não é
+# descartado com o resto — vira correção do status da nota que já está aqui.
+# ---------------------------------------------------------------------------
+# 110111 é o cancelamento da NF-e e do CT-e; 110112, o cancelamento por
+# substituição do CT-e. A carta de correção (110110) NÃO cancela nada.
+EVENTOS_DE_CANCELAMENTO = {"110111", "110112"}
+
+
+def e_evento(xml: str) -> bool:
+    """O documento é um evento, e não uma nota.
+
+    Olha o que só existe em evento (`tpEvento`, `descEvento`, `nSeqEvento`), e
+    não a ausência de data ou de valor: nota emitida com campo em branco é
+    coisa de quem emitiu, e continuaria sendo nota."""
+    return bool(_tag(xml, "tpEvento") or _tag(xml, "descEvento")
+                or _tag(xml, "nSeqEvento"))
+
+
+def ler_evento(xml: str) -> dict | None:
+    """Um evento da Receita virando {chave, cancela, tipo, descricao}.
+
+    Devolve None para o que não for evento com chave legível."""
+    from . import fiscal
+
+    if not e_evento(xml):
+        return None
+    chave = fiscal.so_digitos(_tag(xml, "chNFe") or _tag(xml, "chCTe"))
+    if len(chave) != 44:
+        return None
+    tipo = re.sub(r"\D", "", _tag(xml, "tpEvento"))
+    descricao = _tag(xml, "descEvento") or _tag(xml, "xEvento")
+    # O código manda; a descrição é rede de segurança para o dia em que vier
+    # sem ele — e é comparada sem acento, que aparece dos dois jeitos.
+    sem_acento = (descricao.lower()
+                  .replace("ç", "c").replace("ã", "a").replace("á", "a"))
+    return {"chave": chave, "tipo": tipo, "descricao": descricao,
+            "cancela": tipo in EVENTOS_DE_CANCELAMENTO
+                       or "cancelamento" in sem_acento}
+
+
+def aplicar_cancelamentos(conn, eventos) -> int:
+    """Marca como Cancelada a nota que um evento cancelou. Devolve quantas.
+
+    SÓ MEXE NO QUE JÁ ESTÁ AQUI: o evento não traz emitente, valor nem data,
+    então inserir uma linha a partir dele criaria uma nota fantasma — pior do
+    que não ter a notícia. Se a nota chegar depois, ela chega com o status
+    certo da própria Receita.
+
+    E só grava quando MUDA de verdade (`IS DISTINCT FROM`), pelo motivo de
+    sempre: regravar o mesmo valor deixa lixo que engorda a tabela."""
+    chaves = [e["chave"] for e in (eventos or []) if e and e.get("cancela")]
+    if not chaves:
+        return 0
+    mudadas = 0
+    for chave in chaves:
+        cur = conn.execute(
+            "UPDATE analisesps.notas_fiscais SET status = 'Cancelada', "
+            "       importada_em = now() "
+            " WHERE chave = ? AND status IS DISTINCT FROM 'Cancelada'",
+            (chave,))
+        mudadas += max(0, cur.rowcount or 0)
+        cur.close()
+    conn.commit()
+    if mudadas:
+        logger.info("Análise de SPs: Receita — %d nota(s) marcada(s) como "
+                    "cancelada(s) por evento.", mudadas)
+    return mudadas
 
 
 # ---------------------------------------------------------------------------
@@ -412,21 +508,28 @@ def _ler_resposta(bruto) -> dict:
     caminho é um só — o que permite testar os dois com a mesma dublagem."""
     texto = bruto if isinstance(bruto, str) else _como_texto(bruto)
     motivo = _tag(texto, "xMotivo") or _tag(texto, "cStat")
-    documentos = []
+    documentos, eventos = [], []
     for compactado in re.findall(r"<docZip[^>]*>([^<]+)</docZip>", texto):
         try:
-            lido = ler_documento(_descompactar(compactado))
+            xml = _descompactar(compactado)
+            # DUAS COISAS VÊM NO MESMO LOTE, e a diferença importa: a nota é
+            # gravada, o evento corrige o status de uma nota que já está aqui.
+            lido = ler_documento(xml)
+            evento = ler_evento(xml) if lido is None else None
         except Exception:  # noqa: BLE001 — um documento torto não derruba o lote
             logger.exception("Análise de SPs: documento ilegível no lote")
             continue
         if lido:
             documentos.append(lido)
+        elif evento:
+            eventos.append(evento)
     return {
         "codigo": _tag(texto, "cStat"),
         "motivo": motivo,
         "ultimo_nsu": _tag(texto, "ultNSU"),
         "maior_nsu": _tag(texto, "maxNSU"),
         "documentos": documentos,
+        "eventos": eventos,
     }
 
 
@@ -489,13 +592,39 @@ def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
 
         lotes += 1
         documentos = resposta["documentos"]
-        if documentos:
-            with conexao() as conn:
-                _gravar_notas(conn, documentos)
-            trazidas += len(documentos)
+        eventos = resposta.get("eventos") or []
+        recusadas, canceladas = 0, 0
+        if documentos or eventos:
+            # ⚠️ A GRAVAÇÃO NÃO PODE DERRUBAR A BUSCA. Em 15/09/2026 um evento
+            # que passou por nota estourou o lote inteiro no banco, e como o
+            # ponteiro só anda DEPOIS da gravação, a busca ficou presa no mesmo
+            # lote — repetindo o mesmo erro a cada rodada, para sempre.
+            #
+            # Agora a falha vira número e recado: o que dá para gravar é
+            # gravado, o que não dá é contado, e o ponteiro anda.
+            try:
+                with conexao() as conn:
+                    gravadas = _gravar_notas(conn, documentos)
+                    canceladas = aplicar_cancelamentos(conn, eventos)
+                recusadas = max(0, len(documentos) - gravadas)
+                trazidas += gravadas
+            except Exception as e:  # noqa: BLE001
+                logger.exception("Análise de SPs: falhou gravar o lote de %s",
+                                 cnpj)
+                recusadas = len(documentos)
+                resposta["motivo"] = (f"lote recebido, mas não consegui gravar: "
+                                      f"{str(e)[:200]}")
 
         codigo = resposta.get("codigo") or ""
         recado = RECADOS.get(codigo) or resposta.get("motivo") or ""
+        # O QUE ACONTECEU COM O LOTE VAI PARA A TELA, e não só para o log: é o
+        # que ele lê em Configurações para saber se a busca está funcionando.
+        if canceladas:
+            recado = (f"{recado} · {canceladas} nota(s) marcada(s) como "
+                      "cancelada(s) por evento da Receita").strip(" ·")
+        if recusadas:
+            recado = (f"{recado} · {recusadas} documento(s) do lote não "
+                      "entraram (formato inesperado)").strip(" ·")
         novo_nsu = resposta.get("ultimo_nsu") or nsu
         gravar_ponteiro(cnpj, tipo, novo_nsu,
                         resposta.get("maior_nsu") or onde["maior_nsu"],
