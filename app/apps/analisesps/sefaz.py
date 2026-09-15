@@ -509,6 +509,7 @@ def _ler_resposta(bruto) -> dict:
     texto = bruto if isinstance(bruto, str) else _como_texto(bruto)
     motivo = _tag(texto, "xMotivo") or _tag(texto, "cStat")
     documentos, eventos = [], []
+    ilegiveis, nem_nota_nem_evento = 0, 0
     for compactado in re.findall(r"<docZip[^>]*>([^<]+)</docZip>", texto):
         try:
             xml = _descompactar(compactado)
@@ -518,11 +519,18 @@ def _ler_resposta(bruto) -> dict:
             evento = ler_evento(xml) if lido is None else None
         except Exception:  # noqa: BLE001 — um documento torto não derruba o lote
             logger.exception("Análise de SPs: documento ilegível no lote")
+            ilegiveis += 1
             continue
         if lido:
             documentos.append(lido)
         elif evento:
             eventos.append(evento)
+        else:
+            # ⚠️ O QUE NÃO É NOTA NEM EVENTO PRECISA SER CONTADO. Se um dia a
+            # Receita mandar um formato que esta leitura não reconhece, sem
+            # este número ele sumiria em silêncio — e a tela diria "recebi
+            # tudo" tendo jogado fora metade.
+            nem_nota_nem_evento += 1
     return {
         "codigo": _tag(texto, "cStat"),
         "motivo": motivo,
@@ -530,6 +538,8 @@ def _ler_resposta(bruto) -> dict:
         "maior_nsu": _tag(texto, "maxNSU"),
         "documentos": documentos,
         "eventos": eventos,
+        "ilegiveis": ilegiveis,
+        "nao_reconhecidos": nem_nota_nem_evento,
     }
 
 
@@ -561,6 +571,50 @@ RECADOS = {
 }
 
 
+def _quantas_notas() -> int:
+    """Quantas notas existem na tabela AGORA. É com isto que se sabe quantas
+    das que a Receita mandou eram realmente novas."""
+    from .db import consultar_um
+
+    try:
+        linha = consultar_um("SELECT count(*) FROM analisesps.notas_fiscais")
+        return int(linha[0] or 0) if linha else 0
+    except Exception:  # noqa: BLE001 — a contagem é acessório; a busca segue
+        logger.exception("Análise de SPs: não consegui contar as notas")
+        return 0
+
+
+def _resumo_da_rodada(recebidos: int, novas: int, tipos: dict, datas: list,
+                      eventos: int, perdidos: int = 0) -> str:
+    """A frase que a tela mostra depois da busca.
+
+    Os TRÊS números que faltavam: quantos documentos a Receita entregou,
+    quantos viraram nota NOVA aqui, e de que tipo e período eles são. Sem o
+    segundo, "112 documentos" se lê como "112 notas novas" — e foi exatamente
+    assim que o dono leu, com razão."""
+    partes = [f"{recebidos} documento(s) recebido(s) da Receita",
+              f"{novas} nota(s) nova(s) aqui"]
+    ja_tinha = max(0, recebidos - novas)
+    if ja_tinha:
+        partes.append(f"{ja_tinha} já estava(m) na base")
+    if tipos:
+        partes.append(" e ".join(f"{q} {nome}"
+                                 for nome, q in sorted(tipos.items())))
+    if datas:
+        de, ate = min(datas), max(datas)
+        def br(d):
+            pedacos = d.split("-")
+            return "/".join(reversed(pedacos)) if len(pedacos) == 3 else d
+        partes.append(f"emissão de {br(de)} a {br(ate)}"
+                      if de != ate else f"emissão em {br(de)}")
+    if eventos:
+        partes.append(f"{eventos} evento(s), que não são notas")
+    if perdidos:
+        partes.append(f"⚠️ {perdidos} documento(s) que não consegui ler — "
+                      "me avise, é formato novo")
+    return " · ".join(partes)
+
+
 def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
     """Traz os lotes pendentes de UM CNPJ e UM tipo, e guarda as notas.
 
@@ -576,6 +630,21 @@ def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
     onde = ponteiro(cnpj, tipo)
     nsu = onde["ultimo_nsu"]
     trazidas, lotes, eventos_vistos = 0, 0, 0
+    # ⚠️ "112 DOCUMENTOS" NÃO É "112 NOTAS NOVAS", e a tela deixava entender
+    # que sim. Reclamação do dono em 15/09/2026: *"em Configurações diz 112
+    # documentos; na planilha das notas, busca na Receita, só tem nove — e é
+    # tudo frete."*
+    #
+    # Ele está certo em achar estranho, e a resposta é que os dois números
+    # medem coisas diferentes: a Receita REENTREGA o histórico inteiro, e a
+    # maior parte do que ela manda já estava aqui pelo relatório do FSist. O
+    # que faltava era a tela dizer isso — quantas eram novas, de que tipo, e de
+    # que período. Sem esses três números não dá para saber se a busca está
+    # trazendo pouco ou se é a Receita que tem pouco para dar.
+    antes_de_tudo = _quantas_notas()
+    resumo_tipos: dict = {}
+    datas: list = []
+    perdidos = 0
 
     for _ in range(LOTES_POR_RODADA):
         anotar("buscando notas na Receita",
@@ -617,6 +686,13 @@ def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
                                       f"{str(e)[:200]}")
 
         eventos_vistos += len(eventos)
+        perdidos += (resposta.get("ilegiveis") or 0) + (
+            resposta.get("nao_reconhecidos") or 0)
+        for doc in documentos:
+            rotulo = doc.get("tipo") or "?"
+            resumo_tipos[rotulo] = resumo_tipos.get(rotulo, 0) + 1
+            if doc.get("emissao"):
+                datas.append(str(doc["emissao"])[:10])
         codigo = resposta.get("codigo") or ""
         recado = RECADOS.get(codigo) or resposta.get("motivo") or ""
         # O QUE ACONTECEU COM O LOTE VAI PARA A TELA, e não só para o log: é o
@@ -650,9 +726,16 @@ def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
         if _nsu(nsu) >= _nsu(resposta.get("maior_nsu") or "0"):
             break                      # chegou no fim da fila dela
 
-    logger.info("Análise de SPs: Receita — %s de %s: %d nota(s) em %d lote(s).",
-                tipo, cnpj, trazidas, lotes)
-    return {"trazidas": trazidas, "lotes": lotes, "erro": ""}
+    # O RESUMO DA RODADA, escrito onde ele lê. Vai num registro só no fim,
+    # com `documentos=0` para não contar duas vezes o que os lotes já contaram.
+    novas = max(0, _quantas_notas() - antes_de_tudo)
+    if trazidas or eventos_vistos:
+        gravar_ponteiro(cnpj, tipo, nsu, onde["maior_nsu"],
+                        _resumo_da_rodada(trazidas, novas, resumo_tipos, datas,
+                                          eventos_vistos, perdidos), 0)
+    logger.info("Análise de SPs: Receita — %s de %s: %d documento(s), %d nota(s) "
+                "nova(s), em %d lote(s).", tipo, cnpj, trazidas, novas, lotes)
+    return {"trazidas": trazidas, "novas": novas, "lotes": lotes, "erro": ""}
 
 
 def buscar_tudo(anotar=None) -> dict:

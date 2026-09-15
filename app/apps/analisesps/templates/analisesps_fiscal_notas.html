@@ -230,7 +230,8 @@
       <table class="sps">
         <thead>
           <tr><th>CNPJ</th><th>O quê</th><th>Última consulta</th>
-              <th>Documentos</th><th>Falta buscar</th><th>Situação</th></tr>
+              <th>Documentos recebidos</th><th>Falta buscar</th>
+              <th>Situação</th></tr>
         </thead>
         <tbody>
           {% for b in buscas %}
@@ -275,6 +276,16 @@
       "Falta buscar" é quanto a Receita ainda tem para entregar. Diferente de
       zero, vale apertar "Buscar notas na Receita" de novo — ela entrega em
       lotes, e uma rodada não traz tudo.
+    </p>
+    {# ⚠️ A CONFUSÃO QUE ESTE PARÁGRAFO DESFAZ, relatada em 15/09/2026: *"diz
+       112 documentos; na planilha das notas, busca na Receita, só tem nove."*
+       Os dois números são certos e medem coisas diferentes. #}
+    <p class="cartao-dica">
+      <b>"Documentos recebidos" não é "notas novas".</b> A Receita reentrega
+      todo o histórico dela, e a maior parte do que ela manda <b>já está
+      aqui</b>, trazida antes pelo relatório do FSist — nesse caso a nota não
+      é criada de novo, só confirmada. A coluna <b>Situação</b> diz, da última
+      rodada, quantas eram novas de verdade, de que tipo e de que período.
     </p>
     {% set sem_busca = cnpjs_com_certificado
          | reject('in', buscas|map(attribute='cnpj')|list) | list %}

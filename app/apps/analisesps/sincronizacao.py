@@ -613,30 +613,6 @@ COLUNAS_DAS_NOTAS = {
 COLUNAS_OBRIGATORIAS_DAS_NOTAS = ["chave"]
 
 
-SQL_NOTA = (
-    "INSERT INTO analisesps.notas_fiscais "
-    "  (chave, emissao, numero, serie, tipo, valor, status, "
-    "   emitente_doc, emitente, emitente_uf, destinatario_doc, "
-    "   destinatario, chaves_nfe) "
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-    "ON CONFLICT (chave) DO UPDATE SET "
-    "  emissao = EXCLUDED.emissao, numero = EXCLUDED.numero, "
-    "  serie = EXCLUDED.serie, tipo = EXCLUDED.tipo, "
-    "  valor = EXCLUDED.valor, status = EXCLUDED.status, "
-    "  emitente_doc = EXCLUDED.emitente_doc, "
-    "  emitente = EXCLUDED.emitente, emitente_uf = EXCLUDED.emitente_uf, "
-    "  destinatario_doc = EXCLUDED.destinatario_doc, "
-    "  destinatario = EXCLUDED.destinatario, "
-    "  chaves_nfe = EXCLUDED.chaves_nfe, importada_em = now() "
-    # SÓ REGRAVA O QUE MUDOU DE VERDADE. Regravar com o mesmo valor deixa lixo
-    # no banco (foi o que rendeu 14,3 milhões de gravações inúteis em 10/09) —
-    # e, aqui, ainda estragaria a contagem de "quantas mudaram", que é como se
-    # descobre uma nota que voltou cancelada.
-    " WHERE notas_fiscais.status IS DISTINCT FROM EXCLUDED.status "
-    "    OR notas_fiscais.valor IS DISTINCT FROM EXCLUDED.valor "
-    "    OR notas_fiscais.numero IS DISTINCT FROM EXCLUDED.numero "
-    "    OR notas_fiscais.emitente_doc IS DISTINCT FROM EXCLUDED.emitente_doc")
-
 CAMPOS_NOTA = ("chave", "emissao", "numero", "serie", "tipo", "valor", "status",
                "emitente_doc", "emitente", "emitente_uf", "destinatario_doc",
                "destinatario", "chaves_nfe")
@@ -658,21 +634,68 @@ CAMPOS_NOTA = ("chave", "emissao", "numero", "serie", "tipo", "valor", "status",
 ORIGEM_RECEITA = "receita"
 ORIGEM_FSIST = "fsist"
 
-_SET_COMUM = (
-    "  emissao = EXCLUDED.emissao, numero = EXCLUDED.numero, "
-    "  serie = EXCLUDED.serie, tipo = EXCLUDED.tipo, "
-    "  valor = EXCLUDED.valor, status = EXCLUDED.status, "
-    "  emitente_doc = EXCLUDED.emitente_doc, "
-    "  emitente = EXCLUDED.emitente, emitente_uf = EXCLUDED.emitente_uf, "
-    "  destinatario_doc = EXCLUDED.destinatario_doc, "
-    "  destinatario = EXCLUDED.destinatario, "
-    "  chaves_nfe = EXCLUDED.chaves_nfe, importada_em = now()")
+# ⚠️ QUEM CHEGA DEPOIS NÃO APAGA O QUE O OUTRO SABIA — 15/09/2026
+#
+# As duas portas entregam campos DIFERENTES da mesma nota: o resumo da Receita
+# não traz destinatário nem as NF-e de dentro do CT-e; o relatório do FSist
+# traz. Com `EXCLUDED.<campo>` puro, a segunda passagem gravava VAZIO por cima
+# do que a primeira tinha preenchido — e o destinatário, que é justamente o
+# sinal usado para saber de onde a nota veio, sumia sozinho.
+#
+# Por isso: campo que chega VAZIO não sobrescreve; campo preenchido manda. O
+# `status` é a exceção de propósito — ele tem de poder virar "Cancelada", e
+# sempre chega preenchido pelas duas portas.
+def _fica_o_preenchido(campo: str) -> str:
+    return (f"  {campo} = CASE WHEN coalesce(EXCLUDED.{campo}, '') <> '' "
+            f"                 THEN EXCLUDED.{campo} "
+            f"                 ELSE notas_fiscais.{campo} END")
 
+
+_SET_COMUM = ", ".join([
+    # Data e valor são colunas com tipo: vazio ali é NULO, e nulo não apaga.
+    "  emissao = coalesce(EXCLUDED.emissao, notas_fiscais.emissao)",
+    "  valor = coalesce(EXCLUDED.valor, notas_fiscais.valor)",
+    "  status = EXCLUDED.status",
+    "  tipo = EXCLUDED.tipo",
+    _fica_o_preenchido("numero"),
+    _fica_o_preenchido("serie"),
+    _fica_o_preenchido("emitente_doc"),
+    _fica_o_preenchido("emitente"),
+    _fica_o_preenchido("emitente_uf"),
+    _fica_o_preenchido("destinatario_doc"),
+    _fica_o_preenchido("destinatario"),
+    _fica_o_preenchido("chaves_nfe"),
+    "  importada_em = now()",
+])
+
+# ⚠️ COMPARA CONTRA O VALOR QUE DE FATO SERÁ GRAVADO, e não contra o que
+# chegou. Sem isto, uma nota cujo valor a Receita não manda entraria em
+# "mudou" a cada rodada e seria regravada para sempre — o caminho exato das
+# 14,3 milhões de gravações inúteis de 10/09.
 _MUDOU_ALGO = (
     " notas_fiscais.status IS DISTINCT FROM EXCLUDED.status "
-    "    OR notas_fiscais.valor IS DISTINCT FROM EXCLUDED.valor "
-    "    OR notas_fiscais.numero IS DISTINCT FROM EXCLUDED.numero "
-    "    OR notas_fiscais.emitente_doc IS DISTINCT FROM EXCLUDED.emitente_doc")
+    "    OR notas_fiscais.valor IS DISTINCT FROM "
+    "       coalesce(EXCLUDED.valor, notas_fiscais.valor) "
+    "    OR notas_fiscais.numero IS DISTINCT FROM "
+    "       (CASE WHEN coalesce(EXCLUDED.numero, '') <> '' "
+    "             THEN EXCLUDED.numero ELSE notas_fiscais.numero END) "
+    "    OR notas_fiscais.emitente_doc IS DISTINCT FROM "
+    "       (CASE WHEN coalesce(EXCLUDED.emitente_doc, '') <> '' "
+    "             THEN EXCLUDED.emitente_doc "
+    "             ELSE notas_fiscais.emitente_doc END)")
+
+# SÓ REGRAVA O QUE MUDOU DE VERDADE. Regravar com o mesmo valor deixa lixo no
+# banco (foi o que rendeu 14,3 milhões de gravações inúteis em 10/09) — e ainda
+# estragaria a contagem de "quantas mudaram", que é como se descobre uma nota
+# que voltou cancelada.
+SQL_NOTA = (
+    "INSERT INTO analisesps.notas_fiscais "
+    "  (chave, emissao, numero, serie, tipo, valor, status, "
+    "   emitente_doc, emitente, emitente_uf, destinatario_doc, "
+    "   destinatario, chaves_nfe) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+    "ON CONFLICT (chave) DO UPDATE SET " + _SET_COMUM +
+    " WHERE" + _MUDOU_ALGO)
 
 SQL_NOTA_COM_ORIGEM = (
     "INSERT INTO analisesps.notas_fiscais "

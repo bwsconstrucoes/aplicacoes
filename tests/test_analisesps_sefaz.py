@@ -164,6 +164,35 @@ def test_a_resposta_separa_NOTA_de_EVENTO():
     assert lida["eventos"][0]["cancela"] is True
 
 
+def test_o_que_NAO_DA_PARA_LER_e_contado_em_vez_de_sumir():
+    """⚠️ Se um dia a Receita mandar um formato que esta leitura não conhece,
+    sem este número ele sumiria em silêncio — e a tela diria "recebi tudo"
+    tendo jogado fora metade."""
+    bruto = (f"<retDistDFeInt><cStat>138</cStat><ultNSU>3</ultNSU>"
+             f"<maxNSU>3</maxNSU>"
+             f"<docZip>nao-e-base64-valido!!</docZip>"
+             f"<docZip>{_zipado('<coisaNova><x>1</x></coisaNova>')}</docZip>"
+             f"<docZip>{_zipado(resumo_nfe())}</docZip></retDistDFeInt>")
+    lida = sefaz._ler_resposta(bruto)
+    assert len(lida["documentos"]) == 1
+    # Os dois caem no mesmo balde, e está certo assim: o `docZip` que não é
+    # gzip válido é lido como texto puro (há documento que chega assim), então
+    # ele não estoura — chega até a leitura e não vira nem nota nem evento.
+    assert lida["ilegiveis"] + lida["nao_reconhecidos"] == 2
+
+
+def test_o_resumo_da_rodada_separa_RECEBIDO_de_NOVO():
+    """*"Diz 112 documentos; na planilha só tem nove."* Os dois números estão
+    certos: a Receita reentrega o histórico inteiro."""
+    frase = sefaz._resumo_da_rodada(112, 9, {"NF-e": 103, "CT-e": 9},
+                                    ["2026-09-01", "2026-09-15"], 40)
+    assert "112 documento(s) recebido(s)" in frase
+    assert "9 nota(s) nova(s)" in frase
+    assert "103 já estava(m) na base" in frase
+    assert "103 NF-e" in frase and "9 CT-e" in frase
+    assert "emissão de 01/09/2026 a 15/09/2026" in frase
+
+
 def test_documento_ilegivel_nao_derruba_o_lote_inteiro():
     """Um documento torto não pode fazer perder os outros quarenta e nove."""
     bruto = (f"<retDistDFeInt><cStat>138</cStat><ultNSU>2</ultNSU>"

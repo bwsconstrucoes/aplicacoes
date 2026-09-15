@@ -3160,6 +3160,92 @@ def test_a_migracao_016_usa_a_DATA_para_separar_as_duas_portas(banco_analisesps)
 
 
 # ---------------------------------------------------------------------------
+# ⚠️ QUEM CHEGA DEPOIS NÃO APAGA O QUE O OUTRO SABIA — 15/09/2026
+#
+# As duas portas entregam campos DIFERENTES da mesma nota: o resumo da Receita
+# não traz destinatário; o relatório do FSist traz. Com a gravação anterior, a
+# segunda passagem escrevia VAZIO por cima do que a primeira tinha preenchido.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_a_busca_NAO_apaga_o_destinatario_que_o_relatorio_trouxe(
+        banco_analisesps, monkeypatch):
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(chave)])
+    with __import__("app.apps.analisesps.db", fromlist=["db"]).conexao() as conn:
+        conn.execute("UPDATE analisesps.notas_fiscais "
+                     "   SET destinatario_doc = '10656452007869', "
+                     "       destinatario = 'BWS CONSTRUCOES' WHERE chave = ?",
+                     (chave,))
+        conn.commit()
+
+    # a busca reentrega a MESMA nota, com valor diferente (para forçar o update)
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_resumo(chave, valor="999.00")])))
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+
+    assert consultar_um("SELECT destinatario_doc, destinatario "
+                        "  FROM analisesps.notas_fiscais WHERE chave = ?",
+                        (chave,)) == ("10656452007869", "BWS CONSTRUCOES"), (
+        "a busca apagou o destinatário — e é justamente por ele que se sabe "
+        "de onde a nota veio")
+
+
+@pytest.mark.banco
+def test_rodar_a_busca_DE_NOVO_nao_regrava_a_mesma_nota(banco_analisesps,
+                                                        monkeypatch):
+    """⚠️ A lição das 14,3 milhões de gravações inúteis: regravar com o mesmo
+    valor deixa lixo que engorda a tabela. A comparação tem de ser contra o que
+    SERÁ gravado, e não contra o que chegou."""
+    from app.apps.analisesps import sefaz
+    from app.apps.analisesps.db import consultar_um
+
+    chave = _chave(CREDOR_CNPJ)
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz([_resumo(chave)])))
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+    primeira = consultar_um("SELECT importada_em FROM analisesps.notas_fiscais "
+                            " WHERE chave = ?", (chave,))[0]
+
+    sefaz.gravar_ponteiro("10656452007869", sefaz.NFE, "0", "0")  # volta ao começo
+    sefaz.buscar_um("10656452007869", sefaz.NFE)
+
+    assert consultar_um("SELECT importada_em FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (chave,))[0] == primeira
+
+
+@pytest.mark.banco
+def test_a_busca_diz_quantas_eram_NOVAS_de_verdade(banco_analisesps,
+                                                   monkeypatch):
+    """*"Em Configurações diz 112 documentos; na planilha das notas, busca na
+    Receita, só tem nove — e é tudo frete."*
+
+    Os dois números estão certos e medem coisas diferentes: a Receita
+    reentrega o histórico inteiro. O que faltava era a tela dizer isso."""
+    from app.apps.analisesps import sefaz
+
+    ja_tinha = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    nova = _chave(CREDOR_CNPJ, "550010000222222222222222")
+    _importar(monkeypatch, [CABECALHO_NOTAS, _linha_nota(ja_tinha)])
+
+    monkeypatch.setattr(sefaz, "_consultar_nfe", lambda cnpj, nsu:
+                        sefaz._ler_resposta(_resposta_sefaz(
+                            [_resumo(ja_tinha), _resumo(nova)])))
+    resultado = sefaz.buscar_um("10656452007869", sefaz.NFE)
+
+    assert resultado["trazidas"] == 2, "recebeu dois documentos"
+    assert resultado["novas"] == 1, "só um deles era nota nova aqui"
+    recado = sefaz.ponteiro("10656452007869", sefaz.NFE)["ultimo_recado"]
+    assert "2 documento(s) recebido(s)" in recado
+    assert "1 nota(s) nova(s)" in recado
+    assert "1 já estava(m) na base" in recado
+    assert "NF-e" in recado and "emissão" in recado
+
+
+# ---------------------------------------------------------------------------
 # O COFRE DOS CERTIFICADOS, com banco de verdade
 # ---------------------------------------------------------------------------
 def _pfx(cnpj="10656452007869", senha="senha-de-teste", vence=None):

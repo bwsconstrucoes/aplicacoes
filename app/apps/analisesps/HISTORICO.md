@@ -4578,6 +4578,63 @@ que tira o azul de link dos números.
   para fazer lá.
 
 ---
+
+### Quinquagésima nona leva (15/09) — "diz 112 documentos, mas só tem nove notas"
+
+> *"Em Configurações diz 112 documentos na BWSPE e 36 na BWS Construções.
+> Quando eu vou na planilha das notas, busca na Receita, só tem nove. E é tudo
+> coisa de frete. (…) Tá estranho, como se tivesse alguma coisa equivocada."*
+
+**Os dois números estão certos e medem coisas diferentes** — e a tela não
+dizia isso, que é o defeito de verdade:
+
+- **"documentos"** é o que a Receita ENTREGOU. Ela reentrega o histórico
+  inteiro a cada varredura, do NSU zero em diante.
+- **"notas da busca"** é o que virou linha NOVA aqui. A maior parte do que a
+  Receita manda já estava na base pelo relatório do FSist: a nota é
+  confirmada, não criada — e continua marcada como do relatório, que foi quem
+  a trouxe primeiro.
+
+#### O que mudou
+
+- **A busca passa a dizer os três números que faltavam**, no recado que
+  aparece em Doc. Fiscal › Por nota (coluna Situação): quantos documentos
+  recebeu, **quantos eram nota nova aqui**, quantos já estavam, de que tipo
+  (NF-e / CT-e) e **de que período de emissão**. É com o período que dá para
+  responder "a Receita já me entregou as notas do dia 9 ao 14?" sem adivinhar.
+- **"Documentos" virou "Documentos recebidos"** nas duas telas, com um
+  parágrafo explicando a diferença.
+- **O que a leitura não reconhece é contado**, em vez de sumir. Se a Receita
+  mandar um formato novo, ele aparece como "⚠️ N documento(s) que não consegui
+  ler" em vez de virar silêncio.
+
+#### ⚠️ E um defeito de verdade, achado no caminho
+
+**A segunda porta apagava o que a primeira sabia.** As duas entregam campos
+diferentes da mesma nota: o resumo da Receita não traz destinatário nem as
+NF-e de dentro do CT-e; o relatório do FSist traz. A gravação escrevia
+`EXCLUDED.<campo>` puro — ou seja, **vazio por cima do preenchido** — toda vez
+que a busca reentregava uma nota que o relatório já tinha trazido.
+
+Isso derrubava justamente o campo usado pelas migrações 015 e 016 para saber
+de onde a nota veio. Agora **campo que chega vazio não sobrescreve**; só o
+`status` manda sempre, porque precisa poder virar "Cancelada".
+
+Junto veio o cuidado que isso exige: a condição de "mudou alguma coisa"
+compara contra **o valor que de fato será gravado**, e não contra o que
+chegou. Sem isso, uma nota cujo valor a Receita não manda entraria em "mudou"
+a cada rodada e seria regravada para sempre — o caminho exato das 14,3 milhões
+de gravações inúteis de 10/09.
+
+#### O que continua em aberto
+
+- **As NF-e emitidas entre 9 e 14/09 não estão na base.** O relatório do FSist
+  dele vai até 8/09, e a busca trouxe nesse período só CT-e. Não dá para saber
+  daqui se a Receita ainda não as distribuiu ou se a leitura as descartou — a
+  próxima rodada responde, porque o recado agora diz tipo e período do que
+  veio.
+
+---
 ---
 
 ## Regras que não se discutem
