@@ -3008,6 +3008,158 @@ def test_a_tela_das_notas_MOSTRA_os_numeros_de_cada_origem(banco_analisesps,
 
 
 # ---------------------------------------------------------------------------
+# OS TOTALIZADORES DO ALTO DA PLANILHA DAS NOTAS — 15/09/2026
+#
+# *"Seriam os KPIs aí lá em cima, os totalizadores. Ficaria legal."*
+#
+# E, como no quadro por categoria: *"era interessante inclusive desse KPI ele
+# direcionar pra uma tela com as informações."*
+# ---------------------------------------------------------------------------
+def _nota_simples(chave, valor, status="Autorizada", tipo="NF-e", origem="fsist"):
+    from app.apps.analisesps.db import conexao
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.notas_fiscais "
+            "  (chave, numero, tipo, valor, status, emitente_doc, origem) "
+            "VALUES (?, '1', ?, ?, ?, ?, ?)",
+            (chave, tipo, valor, status, CREDOR_CNPJ, origem))
+        conn.commit()
+
+
+@pytest.mark.banco
+def test_o_quadro_das_notas_conta_o_que_diz_contar(banco_analisesps):
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    boa = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    cancelada = _chave(CREDOR_CNPJ, "550010000222222222222222")
+    frete = _chave(CREDOR_CNPJ, "570010000333333333333333")
+    _nota_simples(boa, 100)
+    _nota_simples(cancelada, 50, status="Cancelada")
+    _nota_simples(frete, 25, tipo="CT-e")
+    # uma delas JÁ tem lançamento declarando a chave
+    with conexao() as conn:
+        conn.execute("INSERT INTO analisesps.sp_fiscal_analise (sp_id, chave) "
+                     "VALUES ('1', ?)", (boa,))
+        conn.commit()
+
+    quadro = {k["chave"]: k for k in fiscal.quadro_das_notas()}
+    assert quadro["todas"]["quantas"] == 3
+    assert float(quadro["todas"]["valor"]) == 175
+    assert quadro["canceladas"]["quantas"] == 1
+    assert quadro["autorizadas"]["quantas"] == 2
+    assert quadro["fretes"]["quantas"] == 1
+    # ⚠️ A CANCELADA NÃO CONTA como "sem lançamento": nota cancelada sem
+    # despesa é o esperado, não um achado. É a mesma regra da visão "notas sem
+    # lançamento", e as duas TÊM de concordar.
+    assert quadro["sem_lancamento"]["quantas"] == 1
+    assert float(quadro["sem_lancamento"]["valor"]) == 25
+
+
+@pytest.mark.banco
+def test_o_quadro_conta_sobre_o_MESMO_recorte_da_lista(banco_analisesps):
+    """Se o quadro contasse a base inteira, ele diria uma coisa e a lista,
+    outra — e a tela perderia a confiança de quem lê."""
+    from app.apps.analisesps import fiscal
+
+    _nota_simples(_chave(CREDOR_CNPJ, "550010000111111111111111"), 100,
+                  origem="receita")
+    _nota_simples(_chave(CREDOR_CNPJ, "550010000222222222222222"), 70,
+                  origem="fsist")
+
+    quadro = {k["chave"]: k for k in fiscal.quadro_das_notas(origem="receita")}
+    _, quantas = fiscal.planilha_notas(origem="receita")
+    assert quadro["todas"]["quantas"] == quantas == 1
+    assert float(quadro["todas"]["valor"]) == 100
+
+
+@pytest.mark.banco
+def test_clicar_no_KPI_recorta_a_lista(banco_analisesps, monkeypatch):
+    from app.apps.analisesps import fiscal
+
+    boa = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    cancelada = _chave(CREDOR_CNPJ, "550010000222222222222222")
+    _nota_simples(boa, 100)
+    _nota_simples(cancelada, 50, status="Cancelada")
+
+    linhas, quantas = fiscal.planilha_notas(situacao="CANCELADA")
+    assert quantas == 1 and linhas[0]["chave"] == cancelada
+
+    linhas, quantas = fiscal.planilha_notas(sem_lancamento=True)
+    assert quantas == 1 and linhas[0]["chave"] == boa, (
+        "a cancelada entrou na conta do que falta lançar")
+
+
+@pytest.mark.banco
+def test_situacao_inventada_no_endereco_NAO_VIRA_SQL(banco_analisesps,
+                                                     monkeypatch):
+    """Lista fechada, como em toda esta tela: o que vem do endereço não vira
+    SQL por conta própria."""
+    semear([sp("1", credor="SERTAO", vencimento="10/09/2026", valor="100,00")])
+    _nota_simples(_chave(CREDOR_CNPJ), 100)
+
+    resposta = _cliente_operador(monkeypatch).get(
+        "/analisesps/fiscal?visao=dados_notas&situacao=' OR 1=1 --")
+
+    assert resposta.status_code == 200
+    assert b"1 linha(s)" in resposta.data.replace(b"&nbsp;", b" ")
+
+
+@pytest.mark.banco
+def test_o_QUADRO_das_notas_que_falha_NAO_derruba_a_tela(banco_analisesps,
+                                                         monkeypatch):
+    """⚠️ O acessório não pode derrubar o principal. A regra nasceu de um
+    defeito meu em 14/09, quando o quadro por categoria dentro do try da lista
+    apagou a tela inteira."""
+    from app.apps.analisesps import fiscal
+
+    semear([sp("1", credor="SERTAO", vencimento="10/09/2026", valor="100,00")])
+    _nota_simples(_chave(CREDOR_CNPJ), 100)
+    monkeypatch.setattr(fiscal, "quadro_das_notas",
+                        lambda *a, **k: 1 / 0)
+
+    resposta = _cliente_operador(monkeypatch).get(
+        "/analisesps/fiscal?visao=dados_notas")
+
+    assert resposta.status_code == 200
+    assert b"Planilha das notas" in resposta.data
+
+
+@pytest.mark.banco
+def test_a_migracao_016_usa_a_DATA_para_separar_as_duas_portas(banco_analisesps):
+    """O que o dono contou e o banco não sabia: *"tudo que já tem, que foi
+    importado, é tudo da planilha."*
+
+    ⚠️ A data é a linha divisória porque a busca na Receita NUNCA gravou uma
+    nota antes de 15/09/2026 — todas as tentativas anteriores falharam."""
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    velha = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    nova_da_busca = _chave(CREDOR_CNPJ, "550010000222222222222222")
+    with conexao() as conn:
+        conn.execute(
+            "INSERT INTO analisesps.notas_fiscais "
+            "  (chave, numero, origem, importada_em) "
+            "VALUES (?, '1', '', TIMESTAMPTZ '2026-09-10 10:00:00-03')",
+            (velha,))
+        conn.execute(
+            "INSERT INTO analisesps.notas_fiscais "
+            "  (chave, numero, origem, importada_em) "
+            "VALUES (?, '2', '', TIMESTAMPTZ '2026-09-15 11:14:00-03')",
+            (nova_da_busca,))
+        conn.commit()
+        caminho = (__import__("pathlib").Path(
+            __import__("app.apps.analisesps.db", fromlist=["db"]).__file__).parent
+            / "migracoes" / "016_origem_do_passado_pelo_dono.sql")
+        conn.executescript(caminho.read_text(encoding="utf-8"))
+
+    assert consultar_um("SELECT origem FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (velha,))[0] == "fsist"
+    assert consultar_um("SELECT origem FROM analisesps.notas_fiscais "
+                        " WHERE chave = ?", (nova_da_busca,))[0] == "receita"
+
+
+# ---------------------------------------------------------------------------
 # O COFRE DOS CERTIFICADOS, com banco de verdade
 # ---------------------------------------------------------------------------
 def _pfx(cnpj="10656452007869", senha="senha-de-teste", vence=None):

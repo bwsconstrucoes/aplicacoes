@@ -77,6 +77,63 @@
     <div class="aviso atencao">{{ erro }}</div>
   {% endif %}
 
+  {% if sub == 'notas' and quadro_notas %}
+    {# ---------------------------------------------------------------------
+       OS TOTALIZADORES DO ALTO. Pedido do dono em 15/09/2026: *"seriam os
+       KPIs aí lá em cima, os totalizadores. Ficaria legal."*
+
+       Cada número é um clique que recorta a lista logo abaixo — como no
+       quadro por categoria da tela de lançamentos: *"era interessante
+       inclusive desse KPI ele direcionar pra uma tela com as informações."*
+
+       Contam sobre o MESMO recorte da lista (busca e origem). O que o quadro
+       mede — situação e "sem lançamento" — fica de fora da conta, senão cada
+       número mediria a si mesmo.
+    --------------------------------------------------------------------- #}
+    {# `fiscal-kpis` é o MESMO modificador da tela de lançamentos: é ele que
+       tira o sublinhado e o azul de link dos cartões que são clicáveis. Sem
+       ele, os números saem com cara de link e a leitura fica poluída. #}
+    <div class="kpis fiscal-kpis">
+      {% for k in quadro_notas %}
+        {% set ligado = (k.filtro.get('situacao') and situacao == k.filtro.get('situacao'))
+                        or (k.filtro.get('sem_lancamento') and sem_lancamento) %}
+        {% set classes = ('ambar ' if k.alerta else '') ~ ('ligado' if ligado else '') %}
+        {% if k.filtro %}
+          <a class="kpi {{ classes }}"
+             title="{{ 'Clique para tirar este recorte' if ligado
+                       else 'Clique para ver só estas' }}"
+             href="{{ url_for('analisesps.tela_fiscal', visao='dados_notas',
+                              busca=busca or None, origem=origem or None,
+                              ordem=ordem, desc='1' if desc else '0',
+                              situacao=(none if ligado else k.filtro.get('situacao')),
+                              sem_lancamento=(none if ligado
+                                              else k.filtro.get('sem_lancamento'))) }}">
+            <div class="kpi-rotulo">{% if k.alerta %}⚠️ {% endif %}{{ k.rotulo }}</div>
+            <div class="kpi-valor">{{ '{:,}'.format(k.quantas)|replace(',', '.') }}</div>
+            <div class="kpi-sub"><b>{{ k.valor|moeda }}</b> · {{ k.dica }}</div>
+          </a>
+        {% else %}
+          <div class="kpi estatico {{ classes }}">
+            <div class="kpi-rotulo">{{ k.rotulo }}</div>
+            <div class="kpi-valor">{{ '{:,}'.format(k.quantas)|replace(',', '.') }}</div>
+            <div class="kpi-sub"><b>{{ k.valor|moeda }}</b> · {{ k.dica }}</div>
+          </div>
+        {% endif %}
+      {% endfor %}
+    </div>
+    {% if situacao or sem_lancamento %}
+      <p class="cartao-dica">
+        Recorte ligado:
+        <b>{% if sem_lancamento %}só as sem lançamento{% else %}só as
+          {{ situacao|lower }}s{% endif %}</b>.
+        <a class="link-btn"
+           href="{{ url_for('analisesps.tela_fiscal', visao='dados_notas',
+                            busca=busca or None, origem=origem or None) }}">tirar
+          o recorte</a>
+      </p>
+    {% endif %}
+  {% endif %}
+
   <form method="get" class="planilha-busca" data-sem-aguarde="1">
     <input type="hidden" name="visao"
            value="{{ 'dados_sps' if sub == 'lancamentos'

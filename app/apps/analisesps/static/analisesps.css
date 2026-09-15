@@ -1568,3 +1568,19 @@ td.credor-grupos { margin: 0; }
 
 /* O recado da Receita que E problema, separado do que e so informacao. */
 .aviso-recado { color: #92400E; font-weight: 600; }
+
+/* OS TOTALIZADORES DO ALTO DA PLANILHA DAS NOTAS — *"seriam os KPIs ai la em
+   cima, os totalizadores"* (dono, 15/09/2026).
+
+   ⚠️ REUSA O COMPONENTE QUE JA EXISTE (.kpis/.kpi/.kpi-rotulo/.kpi-valor), o
+   mesmo das outras seis telas. A primeira versao criou um cartao proprio e
+   quebrou na hora: ja havia um `a.kpi { display: block }` no arquivo, e o
+   cartao novo nasceu com rotulo e numero na mesma linha. Componente repetido
+   nao e so codigo a mais — e um jeito de a mesma tela ficar diferente de si
+   mesma no proximo ajuste.
+
+   Aqui so fica o que este uso tem de proprio: a legenda comprida embaixo do
+   numero, que nas outras telas nao existe. */
+.planilha-cartao .kpis { margin-top: 10px; }
+.planilha-cartao .kpi-sub { line-height: 1.35; }
+.planilha-cartao .kpi-sub b { color: var(--tinta); font-family: var(--fonte-dados); }

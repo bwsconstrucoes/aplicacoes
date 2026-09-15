@@ -2593,21 +2593,32 @@ def _planilha_fiscal(base, pagina: int):
     origem = (request.args.get("origem") or "").strip().lower()
     if origem not in ("receita", "fsist", "sem"):
         origem = ""
+    # O QUE O QUADRO DO ALTO RECORTA quando ele clica num número. Lista fechada:
+    # o que vem do endereço nunca vira SQL por conta própria.
+    situacao = (request.args.get("situacao") or "").strip().upper()
+    if situacao not in ("AUTORIZADA", "CANCELADA", "DENEGADA"):
+        situacao = ""
+    sem_lancamento = request.args.get("sem_lancamento") == "1"
 
     # ⚠️ EM TRY PRÓPRIO: o acessório não pode derrubar o principal. A conta é
     # enfeite; a lista é a tela.
-    contagem_origem = {}
+    contagem_origem, quadro_notas = {}, []
     if sub == "notas":
         try:
             contagem_origem = fiscal.contagem_por_origem()
         except Exception:  # noqa: BLE001
             logger.exception("Análise de SPs: falhou contar a origem das notas")
+        try:
+            quadro_notas = fiscal.quadro_das_notas(busca, origem)
+        except Exception:  # noqa: BLE001
+            logger.exception("Análise de SPs: falhou montar o quadro das notas")
 
     erro, linhas, total = None, [], 0
     try:
         if sub == "notas":
             linhas, total = fiscal.planilha_notas(
-                busca, ordem, desc, pagina, origem=origem)
+                busca, ordem, desc, pagina, origem=origem,
+                situacao=situacao, sem_lancamento=sem_lancamento)
             cabecalhos = [(c, "", r, t)
                           for c, r, t in fiscal.colunas_da_nota_na_tela()]
             por_pagina = fiscal.POR_PAGINA_PLANILHA
@@ -2630,7 +2641,8 @@ def _planilha_fiscal(base, pagina: int):
         linhas=linhas, cabecalhos=cabecalhos, total=total, erro=erro,
         busca=busca, ordem=ordem, desc=desc, pagina=pagina, origem=origem,
         rotulos_de_origem=fiscal.ROTULOS_DE_ORIGEM,
-        contagem_origem=contagem_origem,
+        contagem_origem=contagem_origem, quadro_notas=quadro_notas,
+        situacao=situacao, sem_lancamento=sem_lancamento,
         tudo=request.args.get("tudo") == "1",
         ano_minimo=consultas.ANO_FISCAL_MINIMO,
         primeira_linha=(pagina - 1) * por_pagina + 1, ultima_linha=ultima,

@@ -4506,6 +4506,78 @@ Planilha das notas, como o quadro por categoria da tela de lançamentos. **Não
 foi feito porque não dá para adivinhar o que ele quer somar.** Perguntar.
 
 ---
+
+### Quinquagésima oitava leva (15/09) — os totalizadores das notas, e o que só o dono sabia
+
+Duas coisas, uma dele e uma minha.
+
+#### 1. O que o dono sabe e o banco não
+
+> *"Em relação às notas, só pra explicar: tudo que já tem, que foi importado, é
+> tudo da planilha. Só não foi importado em relatório dentro do Análise de
+> SPs."*
+
+Isso é informação que **nenhuma consulta produz**. A migração 015 tinha marcado
+só o que dava para afirmar pelo dado (destinatário preenchido); o resto ficou
+vazio porque o banco não sabia. Agora sabe, porque ele contou.
+
+**Migração 016**, com a data como linha divisória — e ela é defensável: a busca
+na Receita **nunca gravou uma nota antes de 15/09/2026** (todas as tentativas
+anteriores falharam, e o próprio ponteiro registra isso):
+
+    entrou ANTES de 15/09/2026      →  'fsist'    (o dono afirma)
+    entrou HOJE, sem destinatário   →  'receita'  (só a busca grava assim)
+
+O único caso que pode errar é uma nota que o relatório tenha trazido HOJE sem
+destinatário — janela de horas, e o erro se conserta sozinho na próxima
+passagem do relatório (vira 'receita+fsist').
+
+**Também entrou o índice que faltava** para a pergunta "esta nota tem
+lançamento?": o índice existente era sobre a coluna crua e a consulta usa
+`regexp_replace`, então o Postgres varria o diário inteiro a cada pergunta. Com
+o KPI novo isso passaria a rodar a cada abertura da tela.
+
+#### 2. Os totalizadores do alto
+
+*"Seriam os KPIs aí lá em cima, os totalizadores. Ficaria legal."*
+
+Cinco números, cada um clicável (menos o total): **Notas**, **Sem lançamento**,
+**Autorizadas**, **Canceladas**, **Fretes (CT-e)** — quantidade e valor.
+
+- **"Sem lançamento" é a pergunta de dinheiro desta tela**: documento emitido
+  contra a empresa que nenhuma SP declarou. Canceladas ficam fora da conta,
+  pela mesma regra da visão "notas sem lançamento" — as duas têm de concordar.
+- **O quadro conta sobre o MESMO recorte da lista** (busca e origem), por um
+  filtro montado num lugar só (`recorte_das_notas`). Se cada lado montasse o
+  seu, bastaria um ganhar condição nova para o quadro dizer "12 canceladas" e a
+  lista mostrar outra coisa.
+- O que o quadro MEDE (situação, sem lançamento) não entra na conta dele,
+  senão cada número mediria a si mesmo.
+
+⚠️ **Defeito meu, pego na primeira olhada no navegador:** criei um cartão de
+KPI do zero — e o módulo **já tem** o componente (`.kpis/.kpi/.kpi-rotulo/
+.kpi-valor`, usado em seis telas). O cartão novo nasceu torto na hora, porque
+já existia um `a.kpi { display: block }` no arquivo. Componente repetido não é
+só código a mais: é um jeito de a mesma tela ficar diferente de si mesma no
+próximo ajuste. Agora usa o componente e o mesmo modificador (`fiscal-kpis`)
+que tira o azul de link dos números.
+
+#### O que foi verificado
+
+- Suíte inteira verde; seis testes novos com Postgres de verdade, inclusive o
+  que exige que a cancelada NÃO entre em "sem lançamento" e o que derruba o
+  quadro de propósito para garantir que a tela continua de pé.
+- No Chromium, com 40 notas semeadas: os cinco números batem com a base
+  (40 / 34 / 35 / 5 / 8), cada clique recorta a lista, e não há erro de
+  console.
+
+#### O que NÃO foi verificado
+
+- O custo do "sem lançamento" na base de verdade (6 mil notas × 59 mil SPs).
+  O índice novo é exatamente o que essa consulta pede, mas a medição só dá
+  para fazer lá.
+
+---
 ---
 
 ## Regras que não se discutem
