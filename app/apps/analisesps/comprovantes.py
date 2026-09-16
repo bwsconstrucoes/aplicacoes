@@ -520,16 +520,44 @@ def _mandar_ao_robo(pedaco: bytes, nome: str) -> dict:
 
 
 def _gravar_itens(conn, lote_id: int, linhas: list) -> None:
+    """Grava as linhas de uma leva.
+
+    ⚠️ SEM A COLUNA NOVA, GRAVA SEM ELA — e isto é a correção de um defeito meu,
+    relatado pelo dono em 16/09/2026 com o lote inteiro recusado:
+
+        column "conversa_omie" of relation "comprovantes_item" does not exist
+
+    A coluna nasce na migração 013, e **o código sobe para o Render antes de
+    alguém apertar "Aplicar atualizações do banco"**. Nessa janela, todo
+    comprovante arrastado falhava por inteiro — não é que ficasse sem a conversa
+    do Omie: a baixa não acontecia.
+
+    A LEITURA já tinha essa proteção; a GRAVAÇÃO não. É a regra do `CLAUDE.md`
+    que eu mesmo quebrei, e ela vale para os dois lados: enquanto a migração não
+    for aplicada, o sistema tem de funcionar **sem** a coluna, perdendo só o que
+    ela guarda."""
+    from .db import tem_coluna
+
+    tem_conversa = tem_coluna("comprovantes_item", "conversa_omie")
     for linha in linhas:
-        conn.execute(
-            "INSERT INTO analisesps.comprovantes_item "
-            "  (lote_id, pagina, situacao, sp_id, valor, recebedor, motivo, "
-            "   conversa_omie) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (lote_id, linha.get("pagina"), linha.get("situacao", ""),
-             linha.get("sp_id", ""), linha.get("valor", ""),
-             linha.get("recebedor", ""), linha.get("motivo", ""),
-             linha.get("conversa_omie", "")))
+        if tem_conversa:
+            conn.execute(
+                "INSERT INTO analisesps.comprovantes_item "
+                "  (lote_id, pagina, situacao, sp_id, valor, recebedor, motivo, "
+                "   conversa_omie) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (lote_id, linha.get("pagina"), linha.get("situacao", ""),
+                 linha.get("sp_id", ""), linha.get("valor", ""),
+                 linha.get("recebedor", ""), linha.get("motivo", ""),
+                 linha.get("conversa_omie", "")))
+        else:
+            conn.execute(
+                "INSERT INTO analisesps.comprovantes_item "
+                "  (lote_id, pagina, situacao, sp_id, valor, recebedor, motivo) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (lote_id, linha.get("pagina"), linha.get("situacao", ""),
+                 linha.get("sp_id", ""), linha.get("valor", ""),
+                 linha.get("recebedor", ""), linha.get("motivo", "")))
     conn.commit()
 
 
@@ -661,13 +689,37 @@ def historico(pessoa: str = "", quantos: int = 15) -> list[dict]:
     for lote_id, situacao, quantos_ in contagens:
         por_lote.setdefault(lote_id, {})[situacao] = quantos_
 
+    # ⚠️ HÁ QUANTO TEMPO ESTÁ ASSIM. A tela dizia "Ainda processando — as linhas
+    # vão aparecendo" para um lote parado desde as 7h47 da manhã. Isso não é
+    # informação, é engano: quem lê fica esperando uma coisa que não vem.
+    #
+    # O lote pode ficar parado por dois motivos, e os dois acontecem: ninguém
+    # começou a processar (ESPERANDO), ou o processo morreu no meio (RODANDO e
+    # o serviço reiniciou). Em nenhum dos dois alguém vai contar sozinho.
+    from .horario import agora
+
+    agora_ = agora()
+
+    def _minutos(quando):
+        if not quando:
+            return None
+        try:
+            return int((agora_ - quando).total_seconds() // 60)
+        except Exception:  # noqa: BLE001 — carimbo estranho não derruba a tela
+            return None
+
     saida = []
     for l in lotes:
         contagem = por_lote.get(l[0], {})
+        parado_ha = _minutos(l[8]) if l[4] in ("ESPERANDO", "RODANDO") else None
         saida.append({
             "id": l[0], "arquivo": l[1], "quem": l[2], "paginas": l[3],
             "situacao": l[4], "levas": l[5], "levas_feitas": l[6],
             "erro": l[7], "recebido_em": l[8], "terminado_em": l[9],
+            "parado_ha": parado_ha,
+            # Quinze minutos é folgado: um PDF de cinquenta páginas leva
+            # poucos minutos. Passou disso sem terminar, alguma coisa houve.
+            "parece_parado": bool(parado_ha is not None and parado_ha >= 15),
             "contagem": [(s, ROTULOS.get(s, s), contagem[s])
                          for s in ORDEM if contagem.get(s)],
             "resolvidos": contagem.get(BAIXADO, 0) + contagem.get(DUPLICADO, 0),

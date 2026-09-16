@@ -1258,7 +1258,19 @@ def sincronizar():
                        "válido e sem sessão de Operador.")
         return {"ok": False, "erro": "Não autorizado."}, 403
 
-    return tarefas.disparar(modo, disparo=disparo)
+    resultado = tarefas.disparar(modo, disparo=disparo)
+
+    # ⚠️ FORMULÁRIO DE VERDADE VOLTA PARA A TELA, e não para um JSON na cara de
+    # quem apertou. As telas disparam por `fetch`, mas o botão de retomar a fila
+    # dos comprovantes é um formulário comum — de propósito, porque ele precisa
+    # funcionar mesmo quando o JavaScript não carregou (é o botão de destravar).
+    if request.form.get("modo") and "application/json" not in (
+            request.headers.get("Accept") or ""):
+        aviso = ("Retomando a fila. As linhas vão aparecendo aqui embaixo."
+                 if resultado.get("ok")
+                 else f"Não consegui disparar: {resultado.get('erro', '')}")
+        return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
+    return resultado
 
 
 # ---------------------------------------------------------------------------

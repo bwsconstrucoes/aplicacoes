@@ -4833,6 +4833,45 @@ simples (não perguntar de novo, para um CNPJ já em dia, antes de passar uma
 hora) evitaria isso. **Fica proposto, não feito.**
 
 ---
+
+### Sexagésima terceira leva (16/09) — ⚠️ a coluna que ainda não existe derrubou a BAIXA
+
+Relato do dono, com o lote inteiro recusado:
+
+    column "conversa_omie" of relation "comprovantes_item" does not exist
+
+**É a regra deste repositório, quebrada por mim.** A coluna nasce na migração
+013; o código sobe para o Render **antes** de alguém apertar "Aplicar
+atualizações do banco". Nessa janela, todo comprovante arrastado **falhava por
+inteiro** — não é que ficasse sem a conversa do Omie: a baixa não acontecia.
+
+Pior: **a LEITURA tinha a proteção e a GRAVAÇÃO não.** Eu protegi o lado que só
+mostraria menos informação e deixei desprotegido o lado que perde trabalho. A
+proteção vale para os dois lados, e o lado da escrita é o que importa mais.
+
+Agora a gravação pergunta se a coluna existe (`tem_coluna`, o mesmo caminho do
+`origem` nas notas) e grava sem ela quando não existe. **Há teste que derruba a
+coluna de propósito** e exige que o comprovante ainda baixe.
+
+#### E o lote que ficava "ainda processando" para sempre
+
+Na mesma tela, dois lotes de 07:47 e um de 09:37 do dia anterior diziam *"Ainda
+processando — as linhas vão aparecendo"*. Não estavam processando: um estava na
+fila sem ninguém ter começado, os outros morreram no meio.
+
+- A tela passa a dizer **há quanto tempo** e, passados 15 minutos, **que está
+  parado** — com o motivo provável, que é diferente para cada caso (ninguém
+  começou × o serviço reiniciou no meio).
+- E ganhou o **botão que a mensagem prometia**: "Retomar a fila agora". Ele é
+  um formulário comum, não `fetch`, de propósito — é o botão de destravar, e
+  tem de funcionar mesmo se o JavaScript não carregar.
+
+⚠️ **O que continua pendente e é do dono:** apertar "Aplicar atualizações do
+banco". Sem isso a baixa funciona, mas a conversa com o Omie **não fica
+guardada** — e é ela que responde por que o Omie recusa, que é a investigação
+em aberto desde 14/09.
+
+---
 ---
 
 ## Regras que não se discutem

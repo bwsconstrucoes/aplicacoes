@@ -1560,6 +1560,73 @@ def test_o_resultado_do_comprovante_fica_GUARDADO(banco_analisesps, monkeypatch,
 
 
 @pytest.mark.banco
+def test_SEM_a_migracao_013_o_comprovante_ainda_BAIXA(banco_analisesps,
+                                                      monkeypatch, tmp_path):
+    """⚠️ A JANELA ENTRE PUBLICAR E APERTAR O BOTÃO, de novo — e desta vez doeu.
+
+    Relato do dono em 16/09/2026, com o lote inteiro recusado:
+
+        column "conversa_omie" of relation "comprovantes_item" does not exist
+
+    A coluna nasce na migração 013 e o código sobe antes do botão ser apertado.
+    Nessa janela **a baixa não acontecia** — não era só a conversa do Omie que
+    se perdia. A leitura já tinha a proteção; a gravação não tinha."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps import db as db_analisesps
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    with conexao() as conn:
+        conn.execute("ALTER TABLE analisesps.comprovantes_item "
+                     " DROP COLUMN conversa_omie")
+        conn.commit()
+    db_analisesps.esquecer_colunas()
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo",
+                        lambda pedaco, nome: {"planos": [
+                            {"match": {"status": "localizado"},
+                             "pode_executar": True, "receipt": {"page": 1}}]})
+
+    lote_id = comprovantes.guardar(_pdf(2), "x.pdf", "p", "P")
+    resultado = comprovantes.processar_um(lote_id)
+
+    assert resultado.get("ok") is not False, "o lote falhou por causa da coluna"
+    assert consultar_um("SELECT count(*) FROM analisesps.comprovantes_item "
+                        " WHERE lote_id = ?", (lote_id,))[0] > 0
+    assert comprovantes.historico()[0]["situacao"] == "PRONTO"
+    # E a tela lê sem a coluna, devolvendo a conversa vazia.
+    assert comprovantes.itens_do_lote(lote_id)[0]["conversa_omie"] == ""
+    db_analisesps.esquecer_colunas()
+
+
+@pytest.mark.banco
+def test_o_lote_PARADO_e_dito_como_parado(banco_analisesps, monkeypatch,
+                                          tmp_path):
+    """*"Ainda processando — as linhas vão aparecendo"* para um lote parado
+    desde as 7h47 da manhã não é informação, é engano."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "parado.pdf", "p", "P")
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET recebido_em = now() - interval '3 hours' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    lote = comprovantes.historico()[0]
+    assert lote["situacao"] == "ESPERANDO"
+    assert lote["parece_parado"] is True
+    assert lote["parado_ha"] >= 179
+
+    # E o lote recém-chegado NÃO é acusado de parado.
+    novo = comprovantes.guardar(_pdf(1), "novo.pdf", "p", "P")
+    recente = [l for l in comprovantes.historico() if l["id"] == novo][0]
+    assert recente["parece_parado"] is False
+
+
+@pytest.mark.banco
 def test_cada_leva_e_gravada_NA_HORA_e_nao_no_fim(banco_analisesps, monkeypatch,
                                                   tmp_path):
     """Se o serviço reiniciar no meio de um PDF de cinquenta páginas, as levas

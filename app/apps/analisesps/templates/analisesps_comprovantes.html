@@ -55,6 +55,25 @@
   {% else %}
     <p class="cartao-dica">O perfil Consulta vê o resultado, mas não envia.</p>
   {% endif %}
+
+  {# ⚠️ O BOTÃO QUE A MENSAGEM PROMETIA. A tela dizia "ainda processando" para
+     lotes parados havia horas, e não oferecia nada para destravar. Um lote fica
+     na fila sem começar quando o disparo se perdeu (o serviço reiniciou entre
+     o envio e o processamento), e ninguém percebe sozinho. #}
+  {% set parados = historico|selectattr('parece_parado')|list %}
+  {% if pode_operar and parados %}
+    <div class="aviso atencao" style="margin-top:12px">
+      <b>{{ parados|length }} lote(s) parado(s) há mais de 15 minutos.</b>
+      <form method="post" style="display:inline"
+            action="{{ url_for('analisesps.sincronizar') }}">
+        <input type="hidden" name="modo" value="comprovantes">
+        <button class="btn secundario" type="submit"
+                style="margin-left:8px">Retomar a fila agora</button>
+      </form>
+      <br><small>Retomar não baixa nada duas vezes: o que já foi baixado no
+        Omie é reconhecido e marcado como duplicado.</small>
+    </div>
+  {% endif %}
 </div>
 
 {% if andamento.rodando %}
@@ -131,7 +150,31 @@
             </tbody>
           </table>
         {% elif lote.situacao in ('ESPERANDO', 'RODANDO') %}
-          <p class="cartao-dica">Ainda processando — as linhas vão aparecendo.</p>
+          {# ⚠️ NÃO DIZER "ainda processando" PARA O QUE ESTÁ PARADO. A tela
+             dizia isso para um lote parado desde as 7h47 da manhã — quem lê
+             fica esperando uma coisa que não vem. Relato do dono em
+             16/09/2026. #}
+          {% if lote.parece_parado %}
+            <p class="aviso atencao">
+              <b>Parado há {{ lote.parado_ha }} minuto(s).</b>
+              {% if lote.situacao == 'ESPERANDO' %}
+                Este lote entrou na fila e ninguém começou a processar.
+                Aperte <b>"Retomar a fila agora"</b>, aqui em cima.
+              {% else %}
+                O processamento começou e parou no meio — costuma ser o serviço
+                do Render reiniciando. Arraste o PDF de novo: o que já baixou
+                não baixa duas vezes.
+              {% endif %}
+            </p>
+          {% else %}
+            <p class="cartao-dica">
+              {% if lote.situacao == 'ESPERANDO' %}Na fila, esperando começar.
+              {% else %}Processando — as linhas vão aparecendo.{% endif %}
+              {% if lote.parado_ha %}
+                <small>há {{ lote.parado_ha }} minuto(s)</small>
+              {% endif %}
+            </p>
+          {% endif %}
         {% endif %}
       </details>
     {% endfor %}
