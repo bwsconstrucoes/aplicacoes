@@ -4797,6 +4797,42 @@ envelope XML —, escrever à mão sai mais barato do que depurar às cegas. Qua
   os cinco pontos onde já deu errado.
 
 ---
+
+### ✔ A BUSCA NA RECEITA FUNCIONOU (15/09, 23:33) — a prova, para não se perder
+
+A linha que o dono mandou da tela, e ela encerra cinco dias de conserto em
+série:
+
+    00079526000109  Notas (NF-e)  501 documento(s) recebido(s) da Receita ·
+                                  15 nota(s) nova(s) aqui ·
+                                  486 já estava(m) na base · 501 NF-e ·
+                                  emissão de 15/06/2026 a 15/09/2026 ·
+                                  202 evento(s), que não são notas
+
+**O que isso prova, ponto a ponto:**
+
+- O envelope montado à mão **é aceito** pela Receita (o caminho da biblioteca
+  nunca chegou a falar com ela).
+- O certificado na conexão **autentica** — sem ele seria 403.
+- A leitura separa **nota de evento**: 501 notas e 202 eventos vieram no mesmo
+  lote, e os eventos não viraram linha (era o defeito que travava o ponteiro).
+- A gravação distingue **nova de já conhecida**: 15 contra 486.
+- E responde a dúvida dele de 15/09: **as NF-e de setembro existiam** — a
+  emissão vai até o dia 15. Elas não apareciam porque a NF-e nunca tinha
+  funcionado; o que a busca trazia era só CT-e.
+
+**As outras duas empresas levaram `cStat 656` ("consumo indevido")** na mesma
+rodada: a Receita bloqueia por cerca de uma hora quem consulta demais em pouco
+tempo, e elas foram consultadas várias vezes seguidas durante a depuração. Não
+é defeito, e a próxima rodada resolve sozinha.
+
+⚠️ **O que isso deixa como risco, e ainda NÃO foi tratado:** nada impede clicar
+"Buscar notas na Receita" cinco vezes seguidas e levar o bloqueio de novo — o
+sistema consulta mesmo quando o ponteiro já está no fim da fila. Uma trava
+simples (não perguntar de novo, para um CNPJ já em dia, antes de passar uma
+hora) evitaria isso. **Fica proposto, não feito.**
+
+---
 ---
 
 ## Regras que não se discutem
