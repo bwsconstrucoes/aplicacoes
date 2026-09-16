@@ -4872,6 +4872,45 @@ guardada** — e é ela que responde por que o Omie recusa, que é a investigaç
 em aberto desde 14/09.
 
 ---
+
+### Sexagésima quarta leva (16/09) — ⚠️ a baixa no Omie FUNCIONOU, e o botão que não retomava
+
+#### ✔ A prova
+
+O dono, depois de publicada a correção do nome da credencial: **"deu certo"**.
+A baixa no Omie voltou a acontecer pela tela do Análise de SPs. A causa era o
+nome da variável (`OMIE_KEY`/`OMIE_SECRET` no servidor, e este robô procurando
+só `OMIE_BWS_APP_KEY`) — ver `baixabradesco/HISTORICO.md`, 16/09.
+
+#### O botão "Retomar a fila agora" não retomava
+
+*"Clico nele e nada acontece. Como zerar ele ou fazer com que ele retome
+mesmo?"*
+
+**E não acontecia mesmo.** Retomar só pegava lote em **ESPERANDO**, e o dele
+estava em **RODANDO** — tinha começado e morrido no meio (o serviço do Render
+reinicia de tempos em tempos). Um lote em RODANDO ficava assim **para sempre**:
+nenhum processo o retomava, nenhum botão o alcançava, e a tela dizia que estava
+parado sem oferecer saída de verdade.
+
+Agora, antes de drenar a fila, o sistema **destrava o que ficou pelo caminho** —
+lotes em RODANDO parados há mais de 15 minutos:
+
+- **arquivo ainda no disco** → volta para ESPERANDO e é reprocessado (o que já
+  baixou no Omie é reconhecido como duplicado e não baixa duas vezes);
+- **arquivo sumiu** (o contêiner reiniciou e levou o disco) → vira FALHOU com o
+  motivo escrito e o pedido de arrastar o PDF de novo. **Deixar em RODANDO
+  seria mentir que ainda está trabalhando** — e era isso que acontecia.
+
+⚠️ **Lote recém-começado NÃO é destravado.** Destravar o que está trabalhando
+agora seria processá-lo duas vezes ao mesmo tempo. Há teste cravando os três
+casos.
+
+**E o botão passou a dizer o que fez.** Quando outra tarefa já está rodando, o
+disparo é recusado — e a tela não contava nada, o que era metade do "nada
+acontece". Agora responde: *"Não consegui começar agora: já está rodando."*
+
+---
 ---
 
 ## Regras que não se discutem

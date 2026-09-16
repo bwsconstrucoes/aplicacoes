@@ -1783,7 +1783,12 @@ def test_a_fila_pega_todos_os_lotes_esperando(banco_analisesps, monkeypatch,
     comprovantes.guardar(_pdf(1), "a.pdf", "p", "P")
     comprovantes.guardar(_pdf(1), "b.pdf", "p", "P")
 
-    assert comprovantes.processar_pendentes() == {"lotes": 2, "falhas": 0}
+    resultado = comprovantes.processar_pendentes()
+    assert resultado["lotes"] == 2 and resultado["falhas"] == 0
+    # `destravados`/`sem_arquivo` entraram em 16/09 — ver
+    # `test_processar_pendentes_DESTRAVA_antes_de_drenar`. Aqui não há lote
+    # parado, então os dois são zero.
+    assert resultado["destravados"] == 0 and resultado["sem_arquivo"] == 0
     assert all(l["situacao"] == "PRONTO" for l in comprovantes.historico())
 
 
@@ -6070,3 +6075,155 @@ def test_a_planilha_das_SPs_tem_VOLTA_para_mostrar_tudo(banco_analisesps):
             sp("2", credor="B", vencimento="10/09/2020")])
 
     assert consultas.planilha_sps(tudo=True)[1] == 2
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ O BOTÃO "RETOMAR A FILA" QUE NÃO RETOMAVA — 16/09/2026
+#
+# *"Clico nele e nada acontece. Como zerar ele ou fazer com que ele retome
+# mesmo?"*
+#
+# E não acontecia mesmo: retomar só pegava lote em ESPERANDO, e o lote dele
+# estava em RODANDO — começou e morreu no meio (o serviço do Render reinicia de
+# tempos em tempos). Um lote em RODANDO ficava assim PARA SEMPRE: nenhum
+# processo o retomava, e nenhum botão o alcançava.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_lote_parado_em_RODANDO_volta_para_a_fila(banco_analisesps, monkeypatch,
+                                                  tmp_path):
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "parado.pdf", "p", "P")
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'RODANDO', "
+                     "       recebido_em = now() - interval '3 hours' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    resultado = comprovantes.destravar_parados()
+
+    assert resultado["devolvidos"] == 1
+    assert consultar_um("SELECT situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (lote_id,))[0] == "ESPERANDO"
+
+
+@pytest.mark.banco
+def test_lote_parado_SEM_o_arquivo_vira_falha_com_o_motivo(banco_analisesps,
+                                                           monkeypatch,
+                                                           tmp_path):
+    """O contêiner reinicia e leva o disco junto. Deixar em RODANDO seria
+    mentir que ainda está trabalhando."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "sumiu.pdf", "p", "P")
+    caminho = consultar_um("SELECT caminho FROM analisesps.comprovantes_lote "
+                           " WHERE id = ?", (lote_id,))[0]
+    __import__("os").remove(caminho)
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'RODANDO', "
+                     "       recebido_em = now() - interval '3 hours' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    resultado = comprovantes.destravar_parados()
+
+    assert resultado["sem_arquivo"] == 1
+    situacao, erro = consultar_um(
+        "SELECT situacao, erro FROM analisesps.comprovantes_lote WHERE id = ?",
+        (lote_id,))
+    assert situacao == "FALHOU"
+    assert "Arraste o PDF de novo" in erro
+
+
+@pytest.mark.banco
+def test_lote_RECEM_comecado_NAO_e_destravado(banco_analisesps, monkeypatch,
+                                              tmp_path):
+    """Destravar um lote que está trabalhando agora seria processá-lo duas
+    vezes ao mesmo tempo."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    lote_id = comprovantes.guardar(_pdf(1), "agora.pdf", "p", "P")
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'RODANDO' WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    assert comprovantes.destravar_parados()["devolvidos"] == 0
+    assert consultar_um("SELECT situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (lote_id,))[0] == "RODANDO"
+
+
+@pytest.mark.banco
+def test_processar_pendentes_DESTRAVA_antes_de_drenar(banco_analisesps,
+                                                      monkeypatch, tmp_path):
+    """É o caminho que o botão dispara: sem destravar antes, o lote parado
+    continua invisível para a fila."""
+    from app.apps.analisesps import comprovantes
+    from app.apps.analisesps.db import conexao, consultar_um
+
+    monkeypatch.setattr(comprovantes, "PASTA", str(tmp_path))
+    monkeypatch.setattr(comprovantes, "_mandar_ao_robo",
+                        lambda pedaco, nome: {"planos": [
+                            {"match": {"status": "localizado", "id": "999"},
+                             "pode_executar": True, "receipt": {"page": 1}}]})
+    lote_id = comprovantes.guardar(_pdf(1), "parado.pdf", "p", "P")
+    with conexao() as conn:
+        conn.execute("UPDATE analisesps.comprovantes_lote "
+                     "   SET situacao = 'RODANDO', "
+                     "       recebido_em = now() - interval '3 hours' "
+                     " WHERE id = ?", (lote_id,))
+        conn.commit()
+
+    resultado = comprovantes.processar_pendentes()
+
+    assert resultado["destravados"] == 1
+    assert resultado["lotes"] == 1, "destravou e não processou"
+    assert consultar_um("SELECT situacao FROM analisesps.comprovantes_lote "
+                        " WHERE id = ?", (lote_id,))[0] == "PRONTO"
+
+
+@pytest.mark.banco
+def test_o_botao_de_retomar_VOLTA_para_a_tela_e_nao_para_um_JSON(
+        banco_analisesps, monkeypatch):
+    """O botão é um formulário comum, de propósito: é o de destravar, e tem de
+    funcionar sem JavaScript. Mas formulário que responde JSON deixa a pessoa
+    olhando para um texto técnico — e foi parte do *"clico e nada acontece"*."""
+    from app.apps.analisesps import tarefas
+
+    monkeypatch.setattr(tarefas, "disparar",
+                        lambda modo, disparo="manual": {"ok": True, "modo": modo})
+
+    resposta = _cliente_operador(monkeypatch).post(
+        "/analisesps/api/sincronizar", data={"modo": "comprovantes"})
+
+    assert resposta.status_code == 302
+    assert "/analisesps/comprovantes" in resposta.headers["Location"]
+    assert "aviso=" in resposta.headers["Location"]
+
+
+@pytest.mark.banco
+def test_quando_ja_ha_tarefa_rodando_o_botao_DIZ_isso(banco_analisesps,
+                                                      monkeypatch):
+    """Recusa silenciosa é a pior das duas: ele clica, nada muda, e não sabe
+    por quê."""
+    from app.apps.analisesps import tarefas
+
+    semear([sp("1", credor="ACME", vencimento="10/09/2026", valor="100,00")])
+    monkeypatch.setattr(tarefas, "disparar", lambda modo, disparo="manual": {
+        "ok": False, "erro": "já está rodando"})
+
+    resposta = _cliente_operador(monkeypatch).post(
+        "/analisesps/api/sincronizar", data={"modo": "comprovantes"},
+        follow_redirects=True)
+
+    corpo = resposta.get_data(as_text=True)
+    assert "Não consegui começar agora" in corpo
+    assert "já está rodando" in corpo

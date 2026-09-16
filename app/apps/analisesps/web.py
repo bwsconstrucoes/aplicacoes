@@ -1266,9 +1266,18 @@ def sincronizar():
     # funcionar mesmo quando o JavaScript não carregou (é o botão de destravar).
     if request.form.get("modo") and "application/json" not in (
             request.headers.get("Accept") or ""):
-        aviso = ("Retomando a fila. As linhas vão aparecendo aqui embaixo."
-                 if resultado.get("ok")
-                 else f"Não consegui disparar: {resultado.get('erro', '')}")
+        # ⚠️ O AVISO TEM DE DIZER SE COMEÇOU MESMO. *"Clico nele e nada
+        # acontece"* — e quando outra tarefa já estava rodando, o disparo era
+        # recusado e a tela não contava.
+        if resultado.get("ok"):
+            aviso = ("Retomando a fila. Os lotes parados voltam para a fila e "
+                     "são processados — acompanhe aqui embaixo, a tela se "
+                     "atualiza sozinha.")
+        else:
+            aviso = ("Não consegui começar agora: "
+                     + (resultado.get("erro") or "motivo desconhecido")
+                     + ". Se já há uma tarefa rodando, espere ela terminar e "
+                       "tente de novo.")
         return redirect(url_for("analisesps.tela_comprovantes", aviso=aviso))
     return resultado
 

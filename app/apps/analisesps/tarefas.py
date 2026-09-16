@@ -338,9 +338,16 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 from . import comprovantes as _comprovantes
                 c = _comprovantes.processar_pendentes(anotar)
                 total_linhas[0] = c.get("lotes", 0)
+                # O QUE FOI DESTRAVADO ENTRA NO RECADO. *"Clico nele e nada
+                # acontece"* — parte disso era o botão não alcançar o lote
+                # parado; a outra parte era não contar o que fez.
                 recado_apoios[0] = (
                     f"{c.get('lotes', 0)} arquivo(s) processado(s)"
-                    + (f", {c['falhas']} com falha" if c.get("falhas") else ""))
+                    + (f", {c['falhas']} com falha" if c.get("falhas") else "")
+                    + (f", {c['destravados']} destravado(s) da fila"
+                       if c.get("destravados") else "")
+                    + (f", {c['sem_arquivo']} sem o arquivo no servidor"
+                       if c.get("sem_arquivo") else ""))
 
             elif etapa == "fiscal":
                 # NO PROCESSO SEPARADO pelo mesmo motivo da baixa: são até
