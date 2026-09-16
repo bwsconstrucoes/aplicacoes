@@ -4679,6 +4679,77 @@ nº da SP que a conferência encontrou) — o que permite ver o caso em que os
 dois diferem.
 
 ---
+
+### Sexagésima primeira leva (16/09) — ⚠️ o QUARTO defeito da NF-e, e a tela que não dizia nada
+
+#### 1. `invalid literal for int() with base 10: 'PE'`
+
+Da tela dele, nas **três** empresas, em toda NF-e. A biblioteca faz
+`self.uf = int(uf)` no construtor: ela quer o **código do IBGE** (26), não a
+sigla. O código já existia neste módulo — era usado só na montagem do pedido de
+CT-e — e faltava neste caminho.
+
+**É o quarto defeito da mesma família**, e vale anotar o padrão: usar a
+biblioteca de um jeito que ela não aceita, com a mensagem apontando para outro
+lugar. Os quatro, em ordem: certificado entregue sem base64 → `with` numa classe
+que não é gerenciador de contexto → CT-e postado sem o certificado → UF como
+sigla. **Cada um só apareceu depois que o anterior foi corrigido**, porque o
+primeiro erro escondia o seguinte.
+
+⚠️ **E a conclusão que isso obriga:** a NF-e **nunca funcionou**. Os "112
+documentos" e os "36" que a tela mostrava eram **CT-e** — o que explica, sem
+mistério nenhum, por que as nove notas trazidas pela busca eram todas de frete.
+
+#### 2. A falha estava à vista e não se chamava falha
+
+O caminho que trata erro na consulta gravava a mensagem como **recado comum**.
+A tela então mostrava "ainda há lote para buscar" com o erro do Python
+pendurado ao lado, como se fosse informação. Agora esse caminho usa
+`registrar_falha`, e a linha aparece como **"tentou e NÃO conseguiu"**.
+
+Junto: **"em dia" passou a ser sobre a fila da Receita**, e não sobre haver
+recado. A tela dizia "Falta buscar: —" e, na célula ao lado, "ainda há lote
+para buscar". Duas células da mesma linha se contradizendo fazem quem lê
+desconfiar da tela inteira — com razão.
+
+#### 3. ⚠️ A tela que dizia "Disparado" e nunca mais dizia nada
+
+> *"Quando clicamos em buscar não vemos em canto nenhum se a busca está de
+> fato acontecendo, apenas uma mensagem dizendo que está sendo buscado. É ruim
+> isso, ainda mais que não tá funcionando ainda de fato."*
+
+**A CAUSA, e ela é sutil:** a tela só se recarregava depois de ter **visto** a
+tarefa rodando, e perguntava de quatro em quatro segundos. Uma rodada **curta**
+— e a busca estava falhando rápido, justamente por causa do defeito da UF —
+começa e termina **entre duas perguntas**. A tela nunca via nada, nunca
+recarregava, e ficava para sempre com "Disparado" na cara dele, mostrando o
+resultado da rodada **anterior** (a de 13/09, com o certificado ainda
+quebrado). Ou seja: **quanto mais rápido falhava, menos a tela contava**.
+
+Agora há **dois** jeitos de saber que acabou, e basta um: ter visto rodando, ou
+o carimbo da última execução concluída ter mudado desde o clique. E pergunta de
+segundo em segundo nos primeiros quinze segundos. Se em um minuto não vir nada,
+**diz isso** em vez de girar para sempre.
+
+#### 4. O botão que ele mandou tirar
+
+> *"Pra que diabo serve o botão 'Ler a aba do FSist na planilha'? Não tem
+> sentido isso. Vou importar o relatório no sistema."*
+
+Saiu do meio do trabalho fiscal. Era o caminho de antes de existir o formulário
+de subir o arquivo; manter os dois lado a lado obriga quem usa a escolher entre
+duas portas para a mesma coisa, e a certa depende de alguém ter colado o
+relatório numa aba antes. A varredura das planilhas de apoio **continua** em
+Configurações e na sincronização automática — saiu o atalho, não a função.
+
+#### O que NÃO foi verificado
+
+- **A NF-e contra a Receita de verdade.** O conserto é certo no ponto do erro
+  (a biblioteca faz `int(uf)`, e agora recebe `26`), mas o histórico desta
+  busca diz que **cada conserto revelou o próximo**. Só o clique em produção
+  responde.
+
+---
 ---
 
 ## Regras que não se discutem

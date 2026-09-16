@@ -1172,6 +1172,20 @@ def andamento():
         "etapa": detalhe.get("etapa"),
         "progresso": detalhe.get("progresso"),
         "visto_em": texto(detalhe.get("visto_em")) if detalhe else None,
+        # ⚠️ QUANDO A ÚLTIMA TAREFA TERMINOU — é isto que faz a tela perceber
+        # uma rodada CURTA. Reclamação do dono em 15/09/2026: *"quando clicamos
+        # em buscar não vemos em canto nenhum se a busca está de fato
+        # acontecendo, apenas uma mensagem dizendo que está sendo buscado."*
+        #
+        # A tela só se recarregava depois de ter VISTO a tarefa rodando, e ela
+        # perguntava de quatro em quatro segundos. Uma busca que falha rápido
+        # (foi o caso: a NF-e estourava na hora) começa e termina entre duas
+        # perguntas — a tela nunca via nada, nunca recarregava, e ficava para
+        # sempre com "Disparado" na cara dele, mostrando o resultado velho.
+        #
+        # Com este carimbo, terminar é visível mesmo sem nunca ter sido pega no
+        # meio: ele muda, a tela relê.
+        "ultimo_fim": tarefas.ultimo_fim(),
     }
 
 
@@ -1877,15 +1891,20 @@ ACOES_FISCAIS = [
     {"modo": "notas_receita", "rotulo": "Buscar notas na Receita",
      "ajuda": "Baixa da Receita as NF-e e CT-e emitidas contra os CNPJs que "
               "têm certificado guardado. Continua de onde parou da última vez."},
-    # O NOME DIZ DE ONDE ELE LÊ. Chamava-se "Importar o relatório do FSist", e
-    # o dono cobrou com razão: *"cadê a opção de incluir o arquivo? De onde vai
-    # tirar essa informação, se eu não estou nem colocando?"* Botão que pede um
-    # arquivo e não tem onde pôr é botão que mente. Para subir o arquivo há o
-    # formulário próprio, na tela das notas.
-    {"modo": "apoios", "rotulo": "Ler a aba do FSist na planilha",
-     "ajuda": "Lê a aba \"Relatório FSIST\" da planilha de apoio — o que "
-              "estiver colado lá. Para subir um arquivo, use \"Subir o "
-              "relatório do FSist\" na tela das notas."},
+    # ⚠️ O BOTÃO DA ABA DO FSIST SAIU DAQUI — 16/09/2026, pedido do dono:
+    # *"pra que diabo serve o botão 'Ler a aba do FSist na planilha'? Não tem
+    # sentido isso. Vou importar o relatório no sistema."*
+    #
+    # Ele está certo, e o motivo é de fluxo: ler uma aba da planilha era o
+    # caminho de antes de existir o formulário de subir o arquivo. Manter os
+    # dois lado a lado obriga quem usa a escolher entre duas portas para a
+    # mesma coisa — e a errada depende de alguém ter colado o relatório numa
+    # aba antes. Para subir o arquivo há "Subir o relatório do FSist", nesta
+    # mesma tela.
+    #
+    # A varredura das planilhas de apoio (que inclui aquela aba) CONTINUA
+    # existindo em Configurações e na sincronização automática: o que saiu foi
+    # o atalho no meio do trabalho fiscal, não a função.
     {"modo": "fiscal_ia", "rotulo": "Ler com IA os anexos escolhidos",
      "ajuda": "Só as SPs que você marcou. Cada leitura é cobrada."},
     {"modo": "fiscal", "rotulo": "Gravar no Pipefy o que foi confirmado",

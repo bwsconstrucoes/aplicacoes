@@ -184,10 +184,28 @@ def test_toda_acao_da_tela_fiscal_e_um_modo_QUE_EXISTE():
 def test_as_duas_fontes_de_nota_continuam_na_tela():
     """Pergunta do dono: *"eu não vou poder importar o relatório do FSist
     mais?"* Vai — a Receita só devolve o recente, e o histórico entra pelo
-    relatório. As duas precisam estar ao alcance de quem trabalha."""
+    relatório. As duas precisam estar ao alcance de quem trabalha.
+
+    ⚠️ MUDOU A PORTA DA SEGUNDA FONTE, em 16/09/2026, por decisão dele: *"pra
+    que diabo serve o botão 'Ler a aba do FSist na planilha'? Não tem sentido
+    isso. Vou importar o relatório no sistema."*
+
+    O relatório entra pelo formulário de SUBIR O ARQUIVO, e não mais por um
+    botão que lê uma aba onde alguém teria de ter colado antes. Duas portas
+    para a mesma coisa obrigam quem usa a escolher, e a certa depende de um
+    passo invisível."""
     from app.apps.analisesps import web
     modos = [a["modo"] for a in web.ACOES_FISCAIS]
-    assert "notas_receita" in modos and "apoios" in modos
+    assert "notas_receita" in modos
+    assert "apoios" not in modos, (
+        "o botão da aba do FSist voltou para o meio do trabalho fiscal")
+
+    caminho = (__import__("pathlib").Path(web.__file__).parent / "templates"
+               / "analisesps_fiscal_notas.html")
+    html = caminho.read_text(encoding="utf-8")
+    assert "Subir o relatório do FSist" in html, (
+        "sumiram as duas portas: sem o botão da aba E sem o formulário, o "
+        "histórico não tem por onde entrar")
 
 
 def test_todo_modo_da_base_e_conhecido():
@@ -423,7 +441,9 @@ def test_as_acoes_de_trabalho_fiscal_estao_NA_TELA(app_fiscal):
     assert 'data-modo="notas_receita"' in html
     assert 'data-modo="fiscal_ia"' in html
     assert 'data-modo="fiscal"' in html
-    assert 'data-modo="apoios"' in html
+    # ⚠️ "apoios" SAIU daqui em 16/09/2026, por decisão dele — ver
+    # `test_as_duas_fontes_de_nota_continuam_na_tela`.
+    assert 'data-modo="apoios"' not in html
 
 
 def test_quem_so_CONSULTA_nao_ve_os_botoes_que_disparam_trabalho(app_fiscal):

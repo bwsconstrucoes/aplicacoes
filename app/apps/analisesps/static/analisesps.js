@@ -968,15 +968,42 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
   const painelAndamento = document.getElementById("andamento-fiscal");
   let relogio = null;
 
-  function acompanhar() {
+  /* ⚠️ COMO A TELA SABE QUE ACABOU — reescrito em 16/09/2026.
+
+     Reclamacao do dono: *"quando clicamos em buscar nao vemos em canto nenhum
+     se a busca esta de fato acontecendo, apenas uma mensagem dizendo que esta
+     sendo buscado. E ruim isso, ainda mais que nao ta funcionando ainda de
+     fato."*
+
+     A CAUSA: a tela so recarregava depois de ter VISTO a tarefa rodando, e
+     perguntava de quatro em quatro segundos. Uma rodada curta — e a busca
+     estava falhando rapido — comeca e termina entre duas perguntas. A tela
+     nunca via nada, nunca recarregava, e ficava para sempre com "Disparado" na
+     cara dele, mostrando o resultado da rodada ANTERIOR. Ou seja: a tela dizia
+     "disparei" e depois nao dizia mais nada, para sempre.
+
+     Agora ha DOIS jeitos de saber que acabou, e basta um deles:
+       1. a tarefa foi vista rodando e depois nao esta mais;
+       2. o carimbo da ultima tarefa concluida MUDOU desde o clique.
+
+     O segundo cobre a rodada curta, que era o caso. E a pergunta passa a ser
+     de segundo em segundo nos primeiros 15 segundos — depois disso, de quatro
+     em quatro, porque ai ja e tarefa longa e nao ha pressa. */
+  function acompanhar(fimAntes) {
     if (!painelAndamento || !config.dataset.urlAndamento) return;
     if (relogio) clearInterval(relogio);
-    // SO RECARREGA DEPOIS DE TER VISTO A TAREFA VIVA. Entre o clique e a
-    // tarefa aparecer no banco passa um instante; sem esta trava, a primeira
-    // resposta ("nao ha nada rodando") recarregaria a tela na hora e daria a
-    // impressao de que o botao nao fez nada.
     let viuRodando = false;
-    relogio = setInterval(async () => {
+    let voltas = 0;
+
+    function terminou() {
+      if (relogio) { clearInterval(relogio); relogio = null; }
+      painelAndamento.innerHTML =
+          '<div class="aviso"><b>Terminou.</b> Atualizando a tela…</div>';
+      location.reload();
+    }
+
+    async function perguntar() {
+      voltas += 1;
       try {
         const r = await fetch(config.dataset.urlAndamento);
         const d = await r.json();
@@ -985,18 +1012,41 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
           painelAndamento.innerHTML =
               '<div class="aviso"><b>Rodando agora:</b> '
               + (d.etapa || "") + (d.progresso ? " — " + d.progresso : "")
+              + (d.visto_em ? ' <small>(sinal de vida: ' + d.visto_em
+                              + ')</small>' : "")
               + '<br><small>Pode continuar trabalhando: isto roda no servidor.'
               + '</small></div>';
-        } else if (viuRodando) {
-          // Terminou: a tela precisa ser relida, porque os numeros e a lista
-          // mudaram. Quem disparou uma busca de notas esta esperando
-          // justamente por isso.
-          clearInterval(relogio);
-          relogio = null;
-          location.reload();
+          return;
+        }
+        // Acabou de um dos dois jeitos.
+        if (viuRodando || (fimAntes !== undefined && d.ultimo_fim
+                           && d.ultimo_fim !== fimAntes)) {
+          terminou();
+          return;
+        }
+        // Ainda nao apareceu: entre o clique e a tarefa nascer passa um
+        // instante. Depois de um minuto sem sinal nenhum, para de perguntar e
+        // DIZ ISSO — ficar girando para sempre e o que ele reclamou.
+        if (voltas > 40) {
+          if (relogio) { clearInterval(relogio); relogio = null; }
+          painelAndamento.innerHTML =
+              '<div class="aviso atencao"><b>Disparei, mas nao vi a tarefa '
+              + 'comecar.</b><br><small>Pode ser que ela ja tenha terminado, ou '
+              + 'que o servidor esteja ocupado. Recarregue a tela para ver o '
+              + 'resultado; se nao mudar nada, me avise.</small></div>';
         }
       } catch (e) { /* rede oscilou; a proxima volta tenta de novo */ }
-    }, 4000);
+    }
+
+    perguntar();
+    relogio = setInterval(() => {
+      // Rapido no comeco (rodada curta), calmo depois (rodada longa).
+      if (voltas === 15) {
+        clearInterval(relogio);
+        relogio = setInterval(perguntar, 4000);
+      }
+      perguntar();
+    }, 1000);
   }
 
   document.querySelectorAll(".fiscal-acoes-tarefa button[data-modo]")
@@ -1007,6 +1057,12 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
     b.disabled = true;
     const antes = b.textContent;
     b.textContent = "Disparando…";
+    // Qual era o carimbo da ultima tarefa concluida ANTES de disparar.
+    let fimAntesDoClique;
+    try {
+      const r0 = await fetch(config.dataset.urlAndamento);
+      fimAntesDoClique = (await r0.json()).ultimo_fim;
+    } catch (e) { /* sem isto ainda funciona pelo caminho 1 */ }
     try {
       const r = await fetch(config.dataset.urlTarefa, {
         method: "POST", headers: {"Content-Type": "application/json"},
@@ -1020,7 +1076,9 @@ document.addEventListener("DOMContentLoaded", () => window.ligarFicha(document))
             + '<br><small>Pode continuar trabalhando: isto roda no servidor.'
             + '</small></div>';
       }
-      acompanhar();
+      // O carimbo de ANTES vai junto: e comparando com ele que a tela percebe
+      // uma rodada curta, que comeca e termina entre duas perguntas.
+      acompanhar(fimAntesDoClique);
     } catch (e) {
       alert("Nao consegui falar com o servidor: " + e);
     } finally {

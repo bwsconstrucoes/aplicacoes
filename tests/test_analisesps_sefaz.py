@@ -203,6 +203,58 @@ def test_documento_ilegivel_nao_derruba_o_lote_inteiro():
     assert len(lida["documentos"]) == 1
 
 
+def test_a_UF_vai_para_a_biblioteca_como_NUMERO(monkeypatch):
+    """⚠️ Defeito da produção em 15/09/2026: *"invalid literal for int() with
+    base 10: 'PE'"*, nas três empresas, em toda NF-e.
+
+    A biblioteca faz `int(uf)` no construtor — ela quer o código do IBGE, não a
+    sigla. O código já existia aqui; faltava neste caminho."""
+    from app.apps.analisesps import sefaz as s
+
+    recebidos = {}
+
+    class NFeFalsa:
+        def __init__(self, transmissao, uf, ambiente="2"):
+            recebidos["uf"] = uf
+            # É ISTO que a biblioteca de verdade faz, e é o que estourava.
+            int(uf)
+
+        def consultar_distribuicao(self, cnpj_cpf, ultimo_nsu):
+            return "<retDistDFeInt><cStat>137</cStat></retDistDFeInt>"
+
+    import erpbrasil.edoc.nfe as mod_nfe
+    import erpbrasil.transmissao as mod_tr
+    monkeypatch.setattr(mod_nfe, "NFe", NFeFalsa)
+    monkeypatch.setattr(mod_tr, "TransmissaoSOAP", lambda cert: object())
+    monkeypatch.setattr(s, "_certificado", lambda cnpj: object())
+
+    s._consultar_nfe("10656452007869", "0")
+
+    assert str(recebidos["uf"]).isdigit(), (
+        f"a UF foi para a biblioteca como {recebidos['uf']!r} — ela faz int()")
+
+
+def test_EM_DIA_e_sobre_a_fila_da_Receita_e_nao_sobre_haver_recado(monkeypatch):
+    """⚠️ Duas células da mesma linha não podem se contradizer.
+
+    A tela mostrava "Falta buscar: —" e, ao lado, "ainda há lote para buscar",
+    só porque havia um recado — inclusive "Nenhuma nota nova desde a última
+    consulta", que é a resposta boa."""
+    from app.apps.analisesps import sefaz as s
+
+    monkeypatch.setattr(s, "consultar", None, raising=False)
+    import app.apps.analisesps.db as db
+    monkeypatch.setattr(db, "consultar", lambda *a, **k: [
+        ("10656452007869", "NFE", "000000000000030", "000000000000030",
+         None, "Nenhuma nota nova desde a última consulta.", 12)])
+
+    linha = s.estado_das_buscas()[0]
+    assert linha["faltam"] == 0
+    assert linha["em_dia"] is True, "disse 'ainda há lote' com a fila zerada"
+    assert linha["falhou"] is False
+    assert linha["alerta"] is False, "pintou de alarme a resposta boa"
+
+
 # ---------------------------------------------------------------------------
 # O PONTEIRO — é ele que faz a busca funcionar
 # ---------------------------------------------------------------------------

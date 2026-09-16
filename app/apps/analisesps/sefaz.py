@@ -433,8 +433,20 @@ def _consultar_nfe(cnpj: str, desde_nsu: str) -> dict:
     # A classe NÃO é um gerenciador de contexto — quem é o método `cliente()`
     # dela, que o serviço chama por dentro. O `with` daqui estourava ANTES de
     # qualquer conversa com a Receita, e por isso nenhuma NF-e entrava.
+    # ⚠️ A UF VAI COMO NÚMERO, e isto veio da produção em 15/09/2026:
+    # *"invalid literal for int() with base 10: 'PE'"*, nas três empresas.
+    #
+    # A biblioteca faz `self.uf = int(uf)` no construtor: ela quer o código do
+    # IBGE (26), não a sigla. O código do estado já existia aqui — era usado só
+    # na montagem do pedido de CT-e — e faltava neste caminho.
+    #
+    # É o QUARTO defeito da mesma família: usar a biblioteca de um jeito que
+    # ela não aceita, com a mensagem apontando para outro lugar. Os outros três
+    # foram o certificado em base64, o `with` na transmissão e o certificado
+    # ausente no CT-e. Cada um só apareceu depois que o anterior foi corrigido,
+    # porque o primeiro erro escondia o seguinte.
     transmissao = TransmissaoSOAP(_certificado(cnpj))
-    servico = NFe(transmissao, UF, ambiente=AMBIENTE)
+    servico = NFe(transmissao, _codigo_uf(UF), ambiente=AMBIENTE)
     retorno = servico.consultar_distribuicao(
         cnpj_cpf=re.sub(r"\D", "", cnpj), ultimo_nsu=_nsu(desde_nsu))
     return _ler_resposta(getattr(retorno, "retorno", retorno))
@@ -656,7 +668,12 @@ def buscar_um(cnpj: str, tipo: str, anotar=None) -> dict:
         except Exception as e:  # noqa: BLE001 — a falha vira recado, não queda
             logger.exception("Análise de SPs: falhou consultar %s de %s",
                              tipo, cnpj)
-            gravar_ponteiro(cnpj, tipo, nsu, onde["maior_nsu"], str(e)[:400])
+            # ⚠️ FALHA TEM DE SE CHAMAR FALHA. Este caminho gravava o erro como
+            # recado comum, e a tela mostrava "ainda há lote para buscar" com a
+            # mensagem técnica do Python pendurada ao lado — como se fosse
+            # informação, não defeito. Foi assim que o erro da UF ficou três
+            # dias à vista sem ninguém (eu inclusive) tratar como falha.
+            registrar_falha(cnpj, tipo, str(e))
             return {"trazidas": trazidas, "lotes": lotes, "erro": str(e)}
 
         lotes += 1
@@ -802,7 +819,13 @@ def estado_das_buscas() -> list:
                                    - int(estado["ultimo_nsu"] or 0))
         except (TypeError, ValueError):
             estado["faltam"] = 0
-        estado["em_dia"] = estado["faltam"] == 0 and not estado["ultimo_recado"]
+        # ⚠️ "EM DIA" É SOBRE A FILA DA RECEITA, e não sobre haver recado.
+        # Antes, qualquer recado — inclusive "Nenhuma nota nova desde a última
+        # consulta", que é a resposta BOA — fazia a tela dizer "ainda há lote
+        # para buscar" com "Falta buscar: —" na coluna do lado. Duas células da
+        # mesma linha se contradizendo é o tipo de coisa que faz quem lê
+        # desconfiar da tela inteira, e com razão.
+        estado["em_dia"] = estado["faltam"] == 0
         # A TENTATIVA QUE FALHOU FICA MARCADA COMO FALHA, e não como "em dia
         # com um recado estranho". É a diferença entre a tela dizer "rodou" e
         # dizer "tentei e não consegui, por isto aqui".

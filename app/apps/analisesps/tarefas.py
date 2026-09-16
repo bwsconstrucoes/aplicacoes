@@ -384,9 +384,23 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
                 from . import sefaz as _sefaz
                 b = _sefaz.buscar_tudo(anotar)
                 total_linhas[0] = b.get("trazidas", 0)
+                # ⚠️ O RECADO DIZ AS DUAS COISAS, e a segunda é a que ele
+                # procura: quantos documentos vieram E quantas notas eram novas
+                # aqui. "0 nota(s) trazida(s)" sozinho se lê como "não
+                # funcionou", mesmo quando a Receita respondeu certo e só não
+                # tinha novidade.
+                #
+                # E A FALHA APARECE POR CNPJ. Antes vinha um erro só, o último,
+                # e as outras cinco linhas sumiam — foi assim que o erro da UF
+                # ficou escondido atrás do "0 nota(s)".
+                novas = sum(int(p.get("novas") or 0) for p in b.get("por_cnpj", []))
+                falhas = [f"{p['cnpj'][:8]}… {p['tipo']}: {p['erro']}"
+                          for p in b.get("por_cnpj", []) if p.get("erro")]
                 recado_apoios[0] = (
-                    f"{b.get('trazidas', 0)} nota(s) trazida(s) da Receita"
-                    + (f" — {b['erro']}" if b.get("erro") else ""))
+                    f"{b.get('trazidas', 0)} documento(s) recebido(s) da "
+                    f"Receita, {novas} nota(s) nova(s)"
+                    + (f" — {b['erro']}" if b.get("erro") else "")
+                    + (" — FALHOU em: " + "; ".join(falhas[:4]) if falhas else ""))
 
             elif etapa == "apoios":
                 if automatica and _apoios_recentes():
@@ -457,7 +471,8 @@ def executar_trabalho(modo: str, execucao_id: int) -> bool:
             _marcar_etapa_feita(execucao_id, etapa)
 
         duracao = (agora() - inicio).total_seconds()
-        if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia"):
+        if modo in ("apoios", "comprovantes", "fiscal", "fiscal_ia",
+                    "notas_receita"):
             # Neste modo nenhuma SP é trazida: dizer "0 SPs" fazia a tela
             # parecer que nada aconteceu justamente quando algo aconteceu.
             mensagem = (recado_apoios[0]
@@ -628,6 +643,24 @@ def disparar(modo: str, disparo: str = "manual") -> dict:
 # Os modos que a tela de Documentação Fiscal dispara. O resultado do último de
 # cada um é mostrado lá — ver `ultimas_por_tipo`.
 MODOS_FISCAIS = ["notas_receita", "apoios", "fiscal_ia", "fiscal", "fila"]
+
+
+def ultimo_fim() -> str:
+    """Quando a última tarefa CONCLUÍDA terminou, como texto comparável.
+
+    Serve para a tela perceber que uma rodada curta aconteceu: ela guarda este
+    valor ao disparar e recarrega quando ele muda. Sem isso, só dava para
+    perceber o fim de uma tarefa que a tela conseguisse flagrar RODANDO — e
+    tarefa que dura menos que o intervalo da pergunta nunca é flagrada."""
+    try:
+        from .db import consultar_um
+        linha = consultar_um(
+            "SELECT max(fim) FROM analisesps.execucoes WHERE fim IS NOT NULL")
+        return str(linha[0]) if linha and linha[0] else ""
+    except Exception:  # noqa: BLE001 — acessório: a tela funciona sem isto
+        logger.exception("Análise de SPs: não consegui ler o fim da última "
+                         "execução")
+        return ""
 
 
 def ultimas_por_tipo(tipos: list) -> dict:
