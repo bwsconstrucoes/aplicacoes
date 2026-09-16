@@ -203,56 +203,84 @@ def test_documento_ilegivel_nao_derruba_o_lote_inteiro():
     assert len(lida["documentos"]) == 1
 
 
-def test_a_UF_vai_para_a_biblioteca_como_NUMERO(monkeypatch):
-    """⚠️ Defeito da produção em 15/09/2026: *"invalid literal for int() with
-    base 10: 'PE'"*, nas três empresas, em toda NF-e.
-
-    A biblioteca faz `int(uf)` no construtor — ela quer o código do IBGE, não a
-    sigla. O código já existia aqui; faltava neste caminho."""
+def _envelope_espiao(monkeypatch, alvo):
+    """Troca a conexão por um espião e devolve o que seria postado."""
+    import erpbrasil.assinatura.certificado as cert_mod
     from app.apps.analisesps import sefaz as s
 
-    recebidos = {}
+    class CertFalso:
+        def __init__(self, *a, **k):
+            pass
 
-    class NFeFalsa:
-        def __init__(self, transmissao, uf, ambiente="2"):
-            recebidos["uf"] = uf
-            # É ISTO que a biblioteca de verdade faz, e é o que estourava.
-            int(uf)
+        def __enter__(self):
+            return ("/tmp/chave.pem", "/tmp/cert.pem")
 
-        def consultar_distribuicao(self, cnpj_cpf, ultimo_nsu):
-            return "<retDistDFeInt><cStat>137</cStat></retDistDFeInt>"
+        def __exit__(self, *a):
+            return False
 
-    import erpbrasil.edoc.nfe as mod_nfe
-    import erpbrasil.transmissao as mod_tr
-    monkeypatch.setattr(mod_nfe, "NFe", NFeFalsa)
-    monkeypatch.setattr(mod_tr, "TransmissaoSOAP", lambda cert: object())
+    class RespostaFalsa:
+        text = "<retDistDFeInt><cStat>137</cStat></retDistDFeInt>"
+
+        def raise_for_status(self):
+            return None
+
+    class SessaoFalsa:
+        cert = None
+
+        def post(self, url, data=None, timeout=None, headers=None):
+            alvo["url"] = url
+            alvo["pedido"] = data.decode("utf-8")
+            alvo["cert"] = self.cert
+            return RespostaFalsa()
+
+    import requests
+    monkeypatch.setattr(cert_mod, "ArquivoCertificado", CertFalso)
+    monkeypatch.setattr(requests, "Session", lambda: SessaoFalsa())
     monkeypatch.setattr(s, "_certificado", lambda cnpj: object())
 
-    s._consultar_nfe("10656452007869", "0")
 
-    assert str(recebidos["uf"]).isdigit(), (
-        f"a UF foi para a biblioteca como {recebidos['uf']!r} — ela faz int()")
+def test_a_NFE_e_pedida_SEM_a_biblioteca(monkeypatch):
+    """⚠️ Quinto defeito seguido neste caminho, e o último foi da própria
+    biblioteca: *"name 'distDFeInt' is not defined"*.
 
+    Ela importa os módulos do XML dentro de um `with suppress(ImportError)`: se
+    qualquer um falhar no ambiente, os nomes não existem e o erro só aparece na
+    hora de usar. O caminho de CT-e, montado à mão, funciona em produção há
+    dias — a NF-e passa a ser montada do mesmo jeito."""
+    import inspect
 
-def test_EM_DIA_e_sobre_a_fila_da_Receita_e_nao_sobre_haver_recado(monkeypatch):
-    """⚠️ Duas células da mesma linha não podem se contradizer.
-
-    A tela mostrava "Falta buscar: —" e, ao lado, "ainda há lote para buscar",
-    só porque havia um recado — inclusive "Nenhuma nota nova desde a última
-    consulta", que é a resposta boa."""
     from app.apps.analisesps import sefaz as s
 
-    monkeypatch.setattr(s, "consultar", None, raising=False)
-    import app.apps.analisesps.db as db
-    monkeypatch.setattr(db, "consultar", lambda *a, **k: [
-        ("10656452007869", "NFE", "000000000000030", "000000000000030",
-         None, "Nenhuma nota nova desde a última consulta.", 12)])
+    fonte = inspect.getsource(s._consultar_nfe)
+    assert "erpbrasil.edoc.nfe" not in fonte, (
+        "voltou a depender da biblioteca justamente no caminho que ela quebrou")
 
-    linha = s.estado_das_buscas()[0]
-    assert linha["faltam"] == 0
-    assert linha["em_dia"] is True, "disse 'ainda há lote' com a fila zerada"
-    assert linha["falhou"] is False
-    assert linha["alerta"] is False, "pintou de alarme a resposta boa"
+    alvo = {}
+    _envelope_espiao(monkeypatch, alvo)
+    s._consultar_nfe("10.656.452/0078-69", "30")
+
+    assert "NFeDistribuicaoDFe" in alvo["url"]
+    assert "<CNPJ>10656452007869</CNPJ>" in alvo["pedido"]
+    assert "<ultNSU>000000000000030</ultNSU>" in alvo["pedido"]
+    # A UF vai como NÚMERO — foi o defeito anterior, e ele não pode voltar.
+    assert "<cUFAutor>26</cUFAutor>" in alvo["pedido"]
+    assert 'xmlns="http://www.portalfiscal.inf.br/nfe"' in alvo["pedido"]
+    # ⚠️ E O CERTIFICADO VAI NA CONEXÃO — sem ele a Receita responde 403, que
+    # foi exatamente o que aconteceu com o CT-e em 14/09.
+    assert alvo["cert"] == ("/tmp/chave.pem", "/tmp/cert.pem")
+
+
+def test_o_CTE_continua_com_o_envelope_dele(monkeypatch):
+    """Os dois são pedidos separados, com namespace e endereço próprios.
+    Trocar um pelo outro devolveria "documento não localizado" para sempre."""
+    from app.apps.analisesps import sefaz as s
+
+    alvo = {}
+    _envelope_espiao(monkeypatch, alvo)
+    s._consultar_cte("10656452007869", "7")
+
+    assert "CTeDistribuicaoDFe" in alvo["url"]
+    assert 'xmlns="http://www.portalfiscal.inf.br/cte"' in alvo["pedido"]
 
 
 # ---------------------------------------------------------------------------

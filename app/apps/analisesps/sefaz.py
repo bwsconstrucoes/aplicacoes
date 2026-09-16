@@ -26,12 +26,22 @@ O QUE ELE TRAZ, E O QUE NÃO TRAZ:
   - **Não traz nota de serviço.** NFS-e é municipal, não tem serviço nacional.
     Decisão do dono em 12/09/2026: fora do escopo por enquanto.
 
-UMA PARTE VEM PRONTA E OUTRA NÃO, e isso está dito onde importa: a consulta de
-**NF-e** usa a biblioteca `erpbrasil.edoc`, que é código de terceiro usado por
-muita gente há anos — inclusive a assinatura digital, que é a parte onde errar
-é fácil e o erro chega como "recusado" sem dizer por quê. A de **CT-e** aquela
-biblioteca não cobre, então é montada aqui, reusando o transporte e o
-certificado dela.
+DE QUEM É CADA PEDAÇO — e isto mudou em 16/09/2026, depois de cinco defeitos
+seguidos:
+
+  - **Abrir o certificado A1** é da `erpbrasil.assinatura`. É a parte difícil e
+    perigosa (chave privada, formatos, senha), e ela faz isso há anos para
+    muita gente. Continua com ela.
+  - **Os dois pedidos de distribuição — NF-e e CT-e — são montados aqui.** São
+    dez linhas de envelope cada um, e o pedido de distribuição NÃO é assinado:
+    quem autentica é o certificado da conexão.
+
+A NF-e usava a `erpbrasil.edoc` e o preço apareceu: cinco defeitos em série
+neste único caminho, um escondendo o outro, o último deles dentro da própria
+biblioteca (`name 'distDFeInt' is not defined` — ela engole o erro de importação
+dos módulos de XML e só falha lá na frente, dizendo outra coisa). O caminho de
+CT-e, montado à mão, funcionava em produção o tempo todo. Então o de NF-e passou
+a ser igual.
 """
 from __future__ import annotations
 
@@ -60,10 +70,15 @@ UF = os.getenv("ANALISESPS_SEFAZ_UF", "PE")
 # seguidas: varrer tudo de uma vez é o jeito mais rápido de ser bloqueado.
 LOTES_POR_RODADA = 20
 
-# O endereço nacional da distribuição de CT-e. O da NF-e a biblioteca resolve
-# sozinha; este fica aqui porque ela não cobre CT-e.
+# Os dois endereços nacionais da distribuição de documentos. Os DOIS ficam
+# aqui, e isso mudou em 16/09/2026: o de NF-e era resolvido pela biblioteca, e
+# foi ela que quebrou em produção (ver `_consultar_nfe`).
 URL_CTE_DISTRIBUICAO = (
     "https://www1.cte.fazenda.gov.br/CTeDistribuicaoDFe/CTeDistribuicaoDFe.asmx")
+URL_NFE_DISTRIBUICAO = (
+    "https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx"
+    if AMBIENTE == "1" else
+    "https://hom.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx")
 
 
 class SemCertificado(RuntimeError):
@@ -420,36 +435,59 @@ def aplicar_cancelamentos(conn, eventos) -> int:
 def _consultar_nfe(cnpj: str, desde_nsu: str) -> dict:
     """Um lote de NF-e, a partir do NSU informado.
 
-    Usa a `erpbrasil.edoc` — código de terceiro, usado há anos por muita
-    empresa. É ela que assina o pedido com o certificado, e assinatura digital
-    é justamente onde escrever do zero custa caro: o erro volta como "recusado"
-    sem dizer por quê."""
-    from erpbrasil.edoc.nfe import NFe
-    from erpbrasil.transmissao import TransmissaoSOAP
+    ⚠️ MONTADO À MÃO, COMO O DE CT-E — mudou em 16/09/2026, e o motivo é a
+    produção. A biblioteca vinha falhando em série neste caminho, cada vez por
+    um motivo diferente, e o último foi dela mesma:
 
-    # ⚠️ SEM `with`, e isto veio da produção: *"'TransmissaoSOAP' object does
-    # not support the context manager protocol"* (14/09/2026).
-    #
-    # A classe NÃO é um gerenciador de contexto — quem é o método `cliente()`
-    # dela, que o serviço chama por dentro. O `with` daqui estourava ANTES de
-    # qualquer conversa com a Receita, e por isso nenhuma NF-e entrava.
-    # ⚠️ A UF VAI COMO NÚMERO, e isto veio da produção em 15/09/2026:
-    # *"invalid literal for int() with base 10: 'PE'"*, nas três empresas.
-    #
-    # A biblioteca faz `self.uf = int(uf)` no construtor: ela quer o código do
-    # IBGE (26), não a sigla. O código do estado já existia aqui — era usado só
-    # na montagem do pedido de CT-e — e faltava neste caminho.
-    #
-    # É o QUARTO defeito da mesma família: usar a biblioteca de um jeito que
-    # ela não aceita, com a mensagem apontando para outro lugar. Os outros três
-    # foram o certificado em base64, o `with` na transmissão e o certificado
-    # ausente no CT-e. Cada um só apareceu depois que o anterior foi corrigido,
-    # porque o primeiro erro escondia o seguinte.
-    transmissao = TransmissaoSOAP(_certificado(cnpj))
-    servico = NFe(transmissao, _codigo_uf(UF), ambiente=AMBIENTE)
-    retorno = servico.consultar_distribuicao(
-        cnpj_cpf=re.sub(r"\D", "", cnpj), ultimo_nsu=_nsu(desde_nsu))
-    return _ler_resposta(getattr(retorno, "retorno", retorno))
+        name 'distDFeInt' is not defined
+
+    Isso é um defeito DENTRO da `erpbrasil`: ela importa os módulos do XML
+    dentro de um `with suppress(ImportError)` e, se qualquer um dos onze falhar
+    no ambiente, os nomes simplesmente não existem — e o erro só aparece lá na
+    frente, na hora de usar, como se fosse outra coisa. Não há o que consertar
+    daqui, e não dá para saber, de fora, qual dos onze falha no Render.
+
+    **O caminho de CT-e, montado à mão, funciona em produção há dias** — foi
+    ele que trouxe os 112 documentos. O envelope da NF-e é o mesmo, com outro
+    namespace e outro endereço. Então este passa a ser montado do mesmo jeito.
+
+    O que a biblioteca continua fazendo é o que importa e é difícil: abrir o
+    certificado A1 e apresentar a identidade na conexão. O pedido de
+    distribuição NÃO é assinado — quem autentica é o certificado da conexão.
+
+    A conta a favor: sai da frente uma dependência que já produziu CINCO
+    defeitos seguidos neste único caminho, e entra um envelope de dez linhas
+    que dá para ler inteiro."""
+    import requests
+    from erpbrasil.assinatura.certificado import ArquivoCertificado
+
+    pedido = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<soap12:Envelope xmlns:soap12="http://www.w3.org/2003/05/soap-envelope">'
+        "<soap12:Body>"
+        '<nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/'
+        'NFeDistribuicaoDFe">'
+        "<nfeDadosMsg>"
+        '<distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">'
+        f"<tpAmb>{AMBIENTE}</tpAmb>"
+        f"<cUFAutor>{_codigo_uf(UF)}</cUFAutor>"
+        f"<CNPJ>{re.sub(r'[^0-9]', '', cnpj)}</CNPJ>"
+        f"<distNSU><ultNSU>{_nsu(desde_nsu)}</ultNSU></distNSU>"
+        "</distDFeInt>"
+        "</nfeDadosMsg></nfeDistDFeInteresse></soap12:Body></soap12:Envelope>")
+
+    # O certificado vai NA CONEXÃO — é assim que a Receita sabe quem pergunta.
+    # `ArquivoCertificado` grava chave e certificado em arquivos temporários e
+    # os apaga ao sair do bloco; é o mesmo caminho que a biblioteca usa por
+    # dentro, e o mesmo que o CT-e usa aqui do lado.
+    with ArquivoCertificado(_certificado(cnpj), "w") as (chave, certificado):
+        sessao = requests.Session()
+        sessao.cert = (chave, certificado)
+        resposta = sessao.post(
+            URL_NFE_DISTRIBUICAO, data=pedido.encode("utf-8"), timeout=60,
+            headers={"Content-Type": "application/soap+xml; charset=utf-8"})
+    resposta.raise_for_status()
+    return _ler_resposta(resposta.text)
 
 
 def _consultar_cte(cnpj: str, desde_nsu: str) -> dict:

@@ -4750,6 +4750,53 @@ Configurações e na sincronização automática — saiu o atalho, não a funç
   responde.
 
 ---
+
+### Sexagésima segunda leva (16/09) — a NF-e sai da biblioteca
+
+Quinto defeito seguido no mesmo caminho, e o último veio de dentro da própria
+`erpbrasil`:
+
+    name 'distDFeInt' is not defined
+
+**A causa, e ela é do tipo que não dá para consertar de fora:** a biblioteca
+importa os onze módulos de XML dentro de um `with suppress(ImportError)`. Se
+qualquer um deles falhar no ambiente, **os nomes simplesmente não existem** — e
+o erro não aparece na hora da importação, aparece lá na frente, na hora de
+usar, com uma mensagem que fala de outra coisa. Daqui não dá nem para saber
+qual dos onze falha no Render.
+
+**A decisão:** a NF-e passou a ser montada à mão, como o CT-e — que funciona em
+produção há dias e foi quem trouxe os 112 documentos. O envelope é o mesmo, com
+outro namespace e outro endereço; dez linhas que dá para ler inteiras. O pedido
+de distribuição **não é assinado**: quem autentica é o certificado da conexão.
+
+**O que continua na biblioteca é o que importa:** abrir o certificado A1. Essa
+é a parte difícil e perigosa (chave privada, formatos, senha), e ela faz isso
+há anos para muita gente.
+
+**A série inteira, para não se repetir** — cinco defeitos, cada um escondendo
+o próximo, todos no mesmo caminho e nenhum visível daqui:
+
+    1. certificado entregue sem base64        → "certificado ou senha inválida"
+    2. `with` numa classe que não é gerenciador → "does not support the
+                                                  context manager protocol"
+    3. CT-e postado sem o certificado         → 403 Forbidden
+    4. UF como sigla, não como código         → invalid literal for int(): 'PE'
+    5. import engolido dentro da biblioteca   → name 'distDFeInt' is not defined
+
+A lição: **dependência que só falha no ambiente do cliente custa uma ida e
+volta por defeito.** Quando o pedaço que ela faz é pequeno e legível — um
+envelope XML —, escrever à mão sai mais barato do que depurar às cegas. Quando
+é grande e perigoso — abrir a chave privada —, não sai.
+
+#### O que NÃO foi verificado
+
+- **A NF-e contra a Receita de verdade, de novo.** Aqui não há certificado nem
+  saída para a SEFAZ. O que os testes provam é que o envelope vai com o CNPJ, o
+  NSU, a UF como número, o namespace da NF-e e o certificado preso à conexão —
+  os cinco pontos onde já deu errado.
+
+---
 ---
 
 ## Regras que não se discutem
