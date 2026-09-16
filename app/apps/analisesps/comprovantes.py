@@ -153,6 +153,8 @@ ACOES_SEM_SP = {
 #     skip ......................... "Título já consta PAGO no Omie."
 #     abort ........................ "Título não encontrado no Omie. Inclua o
 #                                     título primeiro."
+#     abort_sem_credencial ......... "As credenciais do Omie não chegaram ao
+#                                     robô: falta OMIE_BWS_APP_KEY no servidor."
 #     abort_apos_alterar ........... "Falha ao alterar título. Baixa cancelada."
 #     abort_apos_transferencia ..... "Falha na transferência. Baixa cancelada."
 #     erro_baixa ................... "Falha ao lançar pagamento no Omie."
@@ -224,7 +226,8 @@ def _leitura_do_omie(plano: dict) -> dict:
     # Qualquer interrupção anterior à baixa. Aqui também vale a frase do Omie:
     # o passo que falhou (consultar, alterar, transferir) traz a explicação
     # dele, e o resumo do robô só diz que parou.
-    for nome, anterior in (("abort", "consultar"),
+    for nome, anterior in (("abort_sem_credencial", ""),
+                           ("abort", "consultar"),
                            ("abort_apos_alterar", "alterar_se_necessario"),
                            ("abort_apos_transferencia", "")):
         parada = passo_de(nome)
@@ -283,11 +286,20 @@ def _situacao_do_plano(plano: dict, ensaio: bool = False) -> tuple[str, str]:
 
     omie = _leitura_do_omie(plano)
 
+    # ⚠️ O QUE ACONTECEU COM A PLANILHA E COM O CARD, dito pelo próprio robô.
+    #
+    # Antes esta frase dizia "PODEM ter sido marcados", porque a planilha era
+    # atualizada sem esperar o Omie — e ninguém sabia. Desde 16/09/2026 o robô
+    # NÃO marca quando o Omie não confirma, e avisa que não marcou. Quando esse
+    # aviso vem, a frase deixa de ser "pode ser" e passa a ser certeza.
+    nao_marcou = _texto((plano.get("responses") or {}).get("nao_marcou"))
+    aviso_planilha = (
+        " " + nao_marcou if nao_marcou else
+        " ⚠️ A planilha e o card PODEM ter sido marcados como pagos mesmo "
+        "assim. Confira o título no Omie antes de reenviar.")
+
     if omie["estado"] == "recusou":
-        return ERRO, (omie["motivo"] or "O Omie recusou a baixa.") + (
-            " ⚠️ A planilha e o card PODEM ter sido marcados como pagos mesmo "
-            "assim — o robô os atualiza sem esperar a resposta do Omie. "
-            "Confira o título no Omie antes de reenviar.")
+        return ERRO, (omie["motivo"] or "O Omie recusou a baixa.") + aviso_planilha
 
     if acao in ACOES_SEM_SP:
         # Baixa real, mas sem SP: dizer isso evita que ele vá procurar a SP na
@@ -303,9 +315,8 @@ def _situacao_do_plano(plano: dict, ensaio: bool = False) -> tuple[str, str]:
                          or "O título já constava PAGO no Omie.")
 
     if omie["estado"] == "parou":
-        return ERRO, (omie["motivo"] or "A baixa parou antes de chegar ao Omie.") + (
-            " ⚠️ A planilha e o card PODEM ter sido marcados como pagos mesmo "
-            "assim. Confira o título no Omie.")
+        return ERRO, (omie["motivo"]
+                      or "A baixa parou antes de chegar ao Omie.") + aviso_planilha
 
     if omie["estado"] == "nao_chamou":
         return ERRO, ("O robô NÃO chegou a chamar o Omie para esta página"
@@ -366,10 +377,20 @@ def ler_resposta(resposta: dict, primeira_pagina: int = 1) -> list[dict]:
             pagina = int(recibo.get("page") or 0)
         except (TypeError, ValueError):
             pagina = 0
+        # ⚠️ A SP VEM DE DOIS LUGARES, e a tela lia só um. Relato do dono em
+        # 16/09/2026: a linha do erro mostrava "SP: —" e mandava "confira o
+        # título no Omie" — sem dizer QUAL título.
+        #
+        # O número que o comprovante traz impresso (`id_pipefy`) só existe em
+        # alguns bancos. O número que a conciliação ENCONTROU fica em
+        # `match.id`, e é justamente o que interessa quando algo deu errado:
+        # é por ele que se acha o título no Omie e o card no Pipefy.
+        achado = (bruto or {}).get("match") or {}
         linhas.append({
             "pagina": (primeira_pagina + pagina - 1) if pagina else None,
             "situacao": situacao,
-            "sp_id": _texto(recibo.get("id_pipefy")),
+            "sp_id": (_texto(recibo.get("id_pipefy"))
+                      or _texto(achado.get("id"))),
             "valor": _texto(recibo.get("valor_pago")),
             "recebedor": _texto(recibo.get("nome_recebedor"))[:120],
             "motivo": _texto(motivo)[:500],

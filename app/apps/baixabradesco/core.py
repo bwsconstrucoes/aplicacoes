@@ -294,6 +294,34 @@ def processar_baixabradesco(payload: Dict[str, Any]) -> Dict[str, Any]:
                         pass
                 threading.Thread(target=_reg, daemon=True).start()
 
+            # ⚠️ O OMIE MANDA NA PLANILHA E NO CARD — 16/09/2026.
+            #
+            # Cobrança do dono em 14/09: *"baixam na planilha, mas não baixam
+            # no Omie. Não tem sentido. (…) Se eu estou mandando pra baixar é
+            # pra baixar, tem que baixar as duas coisas."*
+            #
+            # A planilha e o card eram marcados como pagos INDEPENDENTE do que
+            # o Omie tivesse respondido. Quando o Omie recusava, a SP ficava
+            # "paga" em dois lugares e em aberto no terceiro — e ninguém
+            # descobria, porque a tela dizia que tinha dado certo.
+            #
+            # Agora: se a baixa no Omie era para acontecer e NÃO se confirmou,
+            # não se marca nada. É melhor a SP continuar aparecendo como a
+            # pagar (e alguém refazer) do que sumir da fila sem ter sido paga
+            # no sistema que a contabilidade lê.
+            #
+            # "Já estava paga no Omie" conta como confirmação: nesse caso a
+            # planilha e o card É QUE estão atrasados, e é para atualizá-los
+            # que este trecho existe.
+            devia_baixar = bool(plan.omie_requests and executar_omie)
+            omie_confirmou = bool(_omie_ok or _omie_ja_pago)
+            if devia_baixar and not omie_confirmou:
+                plan.responses['nao_marcou'] = (
+                    'A planilha e o card NÃO foram marcados: o Omie não '
+                    'confirmou a baixa. Resolva no Omie e reenvie o '
+                    'comprovante — ele não baixa duas vezes.')
+                continue
+
             # 2. Sheets SPsBD (em background para não atrasar resposta)
             if plan.sheets_updates and atualizar_spsbd:
                 _executar_sheets_async(plan, payload)
@@ -556,11 +584,98 @@ def _decidir_execucao(plan: ExecutionPlan, executar_omie: bool, atualizar_pipefy
     plan.pode_executar = True
 
 
+def _so_digitos(valor) -> str:
+    return ''.join(c for c in as_string(valor) if c.isdigit())
+
+
+def _como_numero(valor):
+    """"1.234,56" ou "1234.56" ou 1234.56 -> Decimal. None quando não dá."""
+    from decimal import Decimal, InvalidOperation
+
+    texto = as_string(valor).strip()
+    if not texto:
+        return None
+    if ',' in texto:
+        texto = texto.replace('.', '').replace(',', '.')
+    try:
+        return Decimal(texto)
+    except (InvalidOperation, ValueError):
+        return None
+
+
+def _precisa_alterar(titulo: dict, pedido_alterar: dict) -> bool:
+    """O título no Omie já está como a alteração deixaria?
+
+    Compara só o que a alteração mexe: o valor do documento e a conta
+    corrente. Igual nos dois, não há o que alterar — e o passo é pulado.
+
+    ⚠️ NA DÚVIDA, ALTERA. Se a consulta não trouxe os campos (título que veio
+    incompleto, resposta em formato novo), esta função responde True e o
+    comportamento volta a ser o de antes. Deixar de alterar um título que
+    PRECISA seria baixar com o valor errado — isso é pior do que uma alteração
+    a mais."""
+    if not titulo:
+        return True
+    try:
+        param = (pedido_alterar.get('param') or [{}])[0]
+    except (AttributeError, IndexError, TypeError):
+        return True
+
+    valor_novo = _como_numero(param.get('valor_documento'))
+    valor_atual = _como_numero(titulo.get('valor_documento'))
+    if valor_novo is None or valor_atual is None:
+        return True
+    if abs(valor_novo - valor_atual) > _como_numero('0.01'):
+        return True
+
+    conta_nova = _so_digitos(param.get('id_conta_corrente'))
+    conta_atual = _so_digitos(titulo.get('id_conta_corrente')
+                              or titulo.get('codigo_conta_corrente'))
+    if not conta_nova or not conta_atual:
+        return True
+    return conta_nova != conta_atual
+
+
 def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
     """Consulta → Altera (se necessário) → Baixa. Retorna log de cada step.
     Para Somapay, inclui step inicial de transferência (IncluirLancCC).
     """
     resultados = []
+    titulo_consultado: dict = {}
+
+    # ⚠️ SEM CREDENCIAL DO OMIE, NÃO COMEÇA — 16/09/2026.
+    #
+    # Pergunta do dono, e é a pergunta certa: *"só não compreendo por que o
+    # baixabradesco no método anterior funciona e via Análise não."*
+    #
+    # O robô é o mesmo; o que muda é de onde vem a chave de acesso do Omie. O
+    # Make manda `app_key` e `app_secret` DENTRO do pedido. O pedido que sai do
+    # Análise de SPs não manda — ele conta com as variáveis de ambiente
+    # (`OMIE_BWS_APP_KEY` / `OMIE_BWS_APP_SECRET`) do serviço.
+    #
+    # Se essas variáveis não estiverem no Render, o pedido sai com a chave
+    # VAZIA e o Omie responde, com essas palavras:
+    #
+    #     A chave de acesso não está preenchida ou não é válida.
+    #
+    # "Chave de acesso", no Omie, é a credencial da API — não é a chave do
+    # título. A mensagem parecia falar do título, e por isso a investigação
+    # olhou para o lado errado durante dois dias.
+    #
+    # Agora isto para ANTES de mandar qualquer coisa, e diz o que fazer.
+    from .omie import credentials_from_payload
+
+    app_key, app_secret = credentials_from_payload(payload)
+    if not app_key or not app_secret:
+        falta = ' e '.join(
+            nome for nome, valor in (('OMIE_BWS_APP_KEY', app_key),
+                                     ('OMIE_BWS_APP_SECRET', app_secret))
+            if not valor)
+        return [{'step': 'abort_sem_credencial',
+                 'motivo': ('As credenciais do Omie não chegaram ao robô: '
+                            f'falta {falta} no servidor. Nada foi alterado nem '
+                            'pago. Cadastre no Render e reenvie o comprovante.')}]
+
     for req in plan.omie_requests:
         # Step de transferência usa endpoint diferente (contacorrentelancamentos)
         if req.get('lanccc'):
@@ -569,6 +684,32 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
             if not resp.get('ok'):
                 resultados.append({'step': 'abort_apos_transferencia', 'motivo': 'Falha na transferência Bradesco -> Somapay. Baixa cancelada.'})
                 break
+            continue
+
+        # ⚠️ A ALTERAÇÃO SÓ ACONTECE SE ALGO DIVERGE — 16/09/2026.
+        #
+        # O que o Omie respondeu, pela boca dele, num comprovante do dono:
+        #
+        #     Falha ao alterar título. Baixa cancelada.
+        #     O Omie respondeu: A chave de acesso não está preenchida ou não
+        #     é válida.
+        #
+        # O passo de alterar rodava SEMPRE, apoiado num comentário que dizia
+        # "verificação simplificada: tenta sempre, Omie idempotente" — uma
+        # suposição que nunca foi verificada, e que é falsa. Quando o Omie
+        # recusa a alteração, a baixa é CANCELADA. Ou seja: um passo que na
+        # maioria das vezes não precisava acontecer estava impedindo o que
+        # precisava.
+        #
+        # É exatamente o que o dono cobrou em 14/09: *"se eu estou mandando
+        # pra baixar é pra baixar"*.
+        #
+        # Agora o título consultado manda: se o valor e a conta já estão como
+        # devem ficar, a alteração é PULADA — e a baixa segue.
+        if req['step'] == 'alterar_se_necessario' and not _precisa_alterar(
+                titulo_consultado, req['request']):
+            resultados.append({'step': 'alterar_nao_precisou',
+                               'motivo': 'O título já está com o valor e a conta certos no Omie.'})
             continue
 
         resp = execute_omie(req['request'])
@@ -580,15 +721,24 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
                 resultados.append({'step': 'skip', 'motivo': 'Título já consta PAGO no Omie.'})
                 plan._omie_ja_pago = True
                 break
-            # Se não encontrou o título, interrompe (não tenta alterar/baixar)
+            # ⚠️ CONSULTA QUE NÃO DEU CERTO INTERROMPE, QUALQUER QUE SEJA O
+            # MOTIVO. Antes só interrompia com "nao_encontrado" no faultcode ou
+            # HTTP 500 — e o Omie responde 200 com `faultstring` em vários
+            # casos. Esses passavam adiante e iam alterar um título que ninguém
+            # confirmou que existe. Se não deu para confirmar o título, não se
+            # mexe nele e não se paga.
             if not resp.get('ok'):
-                faultcode = as_string((body.get('faultcode') or ''))
-                if 'nao_encontrado' in faultcode.lower() or resp['status'] == 500:
-                    resultados.append({'step': 'abort', 'motivo': 'Título não encontrado no Omie. Inclua o título primeiro.'})
-                    break
+                faultstring = as_string(body.get('faultstring') or '')
+                resultados.append({
+                    'step': 'abort',
+                    'motivo': ('Não consegui confirmar o título no Omie'
+                               + (f' — o Omie respondeu: {faultstring}'
+                                  if faultstring else '')
+                               + '. Nada foi alterado nem pago.')})
+                break
+            titulo_consultado = body
 
         if req['step'] == 'alterar_se_necessario':
-            # Só altera se valor ou conta divergem (verificação simplificada: tenta sempre, Omie idempotente)
             if not resp.get('ok'):
                 resultados.append({'step': 'abort_apos_alterar', 'motivo': 'Falha ao alterar título. Baixa cancelada.'})
                 break

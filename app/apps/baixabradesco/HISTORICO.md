@@ -686,3 +686,64 @@ padrão perigoso é **deste** módulo.
 
 **Primeira coisa a conferir agora:** reenviar os comprovantes das duas SPs com
 planilha paga e Omie pendente. Devem concluir.
+
+---
+
+## 16/09/2026 — ⚠️ "A chave de acesso não está preenchida ou não é válida"
+
+**A frase que faltava há dois dias**, e ela é do Omie, num comprovante do Sicredi
+enviado pela tela do Análise de SPs:
+
+    Falha ao alterar título. Baixa cancelada.
+    O Omie respondeu: A chave de acesso não está preenchida ou não é válida.
+
+E a pergunta do dono, que é a que destrava: *"só não compreendo por que o
+baixabradesco no método anterior funciona e via Análise não."*
+
+**O robô é o MESMO. O que muda é de onde vem a chave de acesso do Omie:**
+
+- o **Make** manda `app_key` e `app_secret` **dentro do pedido**;
+- o pedido que sai do **Análise de SPs** não manda — ele conta com as variáveis
+  de ambiente do serviço (`OMIE_BWS_APP_KEY` / `OMIE_BWS_APP_SECRET`).
+
+Faltando as variáveis, o pedido sai com a chave **vazia**. E "chave de acesso",
+no vocabulário do Omie, é a **credencial da API** — não é a chave do título. A
+mensagem parecia falar do título, e por isso a investigação olhou para o lado
+errado durante dois dias.
+
+⚠️ **Isto ainda precisa ser confirmado pelo dono**: ver se as duas variáveis
+existem no Render. O código agora responde isso sozinho — ver abaixo.
+
+### Os quatro consertos
+
+1. **Sem credencial, não se manda nada.** A sequência para antes do primeiro
+   pedido e diz **qual variável falta**. Antes, mandava com a chave vazia e
+   colhia uma mensagem que falava de outra coisa.
+2. **Consulta que não deu certo interrompe.** Antes só interrompia com HTTP 500
+   ou faultcode `nao_encontrado` — e o Omie responde **200 com `faultstring`**
+   em vários casos. Esses passavam e iam alterar um título que ninguém
+   confirmou que existe.
+3. **A alteração só acontece se algo diverge de verdade.** O passo rodava
+   SEMPRE, apoiado num comentário que dizia *"verificação simplificada: tenta
+   sempre, Omie idempotente"* — suposição nunca verificada, e falsa: quando o
+   Omie recusa a alteração, a **baixa é cancelada**. Um passo que na maioria das
+   vezes não precisava acontecer estava impedindo o que precisava. Agora o
+   título consultado manda: valor e conta já certos, alteração pulada.
+   ⚠️ **Na dúvida, altera** — consulta incompleta volta ao comportamento antigo,
+   porque deixar de alterar um título que precisa seria baixar com valor errado.
+4. **O Omie manda na planilha e no card.** Eram marcados como pagos
+   **independente** do que o Omie respondesse — a dessincronia que o dono
+   relatou em 14/09 (*"baixam na planilha, mas não baixam no Omie"*). Agora: se
+   a baixa era para acontecer e não se confirmou, **não se marca nada**, e a
+   tela diz que não marcou. "Já estava pago no Omie" conta como confirmação.
+
+### A lição, e ela vale para o monorepo inteiro
+
+**Mensagem de terceiro não se lê pelo que ela parece dizer.** "Chave de acesso"
+podia ser a chave do título ou a credencial da API, e a diferença é tudo. O que
+resolveu foi a mesma coisa de sempre: **guardar a frase inteira do outro lado**
+e mostrá-la a quem pode agir.
+
+**Não verificado:** nada disto rodou contra o Omie de verdade — não há
+credencial neste ambiente. O que os testes provam é que, sem credencial, nenhum
+pedido sai; que consulta falha interrompe; e que título já certo não é alterado.
