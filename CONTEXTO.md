@@ -420,8 +420,16 @@ por obra/autoria é um `WHERE`. Por isso há uma segunda camada, marcada
 
 ### 4.5 Omie
 
-- `OMIE_BWS_APP_KEY`
-- `OMIE_BWS_APP_SECRET`
+- `OMIE_KEY` — a `app_key` da API. **É este o nome cadastrado no Render.**
+- `OMIE_SECRET` — o `app_secret`.
+
+⚠️ `OMIE_BWS_APP_KEY` / `OMIE_BWS_APP_SECRET` são **apelidos antigos**, aceitos
+para não quebrar `.env` local. Esta seção listava só eles, e isso custou dois
+dias em 16/09/2026: o `baixabradesco` procurava **apenas** pelo apelido antigo,
+não achava a credencial no Render, mandava o pedido com a chave vazia, e o Omie
+respondia *"A chave de acesso não está preenchida ou não é válida"* — mensagem
+que parece falar da chave do TÍTULO. Os três módulos que falam com o Omie
+(`painel`, `emissaonf`, `baixabradesco`) aceitam os dois nomes, na mesma ordem.
 
 ### 4.6 Pipefy
 

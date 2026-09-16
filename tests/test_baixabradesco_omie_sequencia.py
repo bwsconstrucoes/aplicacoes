@@ -245,3 +245,81 @@ def test_ja_pago_no_omie_CONTA_como_confirmacao():
     """Aí a planilha e o card É QUE estão atrasados — e é para atualizá-los que
     aquele trecho existe."""
     assert '_omie_ok or _omie_ja_pago' in FONTE
+
+
+# ── 5. O NOME da variável no servidor ────────────────────────────────────────
+#
+# ⚠️ O defeito que fez tudo isto acontecer, e ele é de nome, não de lógica.
+#
+# Este módulo procurava SÓ por OMIE_BWS_APP_KEY/OMIE_BWS_APP_SECRET. No Render
+# as variáveis chamam-se OMIE_KEY/OMIE_SECRET — que é o nome que o resto do
+# monorepo já aceitava há meses (painel e emissaonf resolvem os dois apelidos).
+#
+# Resultado: o painel e a emissão de NF achavam a credencial, e este robô não.
+# Pelo Make nunca apareceu, porque o Make manda a chave dentro do pedido.
+
+NOMES_OMIE = ('OMIE_KEY', 'OMIE_SECRET', 'OMIE_BWS_APP_KEY',
+              'OMIE_BWS_APP_SECRET', 'OMIE_APP_KEY', 'OMIE_APP_SECRET')
+
+
+@pytest.fixture
+def ambiente_limpo(monkeypatch):
+    for nome in NOMES_OMIE:
+        monkeypatch.delenv(nome, raising=False)
+
+
+def test_aceita_OMIE_KEY_e_OMIE_SECRET_que_e_o_nome_do_servidor(
+        ambiente_limpo, monkeypatch):
+    from app.apps.baixabradesco.omie import credentials_from_payload
+
+    monkeypatch.setenv('OMIE_KEY', 'a-chave')
+    monkeypatch.setenv('OMIE_SECRET', 'o-segredo')
+
+    assert credentials_from_payload({}) == ('a-chave', 'o-segredo')
+
+
+def test_continua_aceitando_o_apelido_ANTIGO(ambiente_limpo, monkeypatch):
+    """Quem tem `.env` local com o nome velho não pode quebrar."""
+    from app.apps.baixabradesco.omie import credentials_from_payload
+
+    monkeypatch.setenv('OMIE_BWS_APP_KEY', 'a-chave')
+    monkeypatch.setenv('OMIE_BWS_APP_SECRET', 'o-segredo')
+
+    assert credentials_from_payload({}) == ('a-chave', 'o-segredo')
+
+
+def test_os_MESMOS_apelidos_dos_outros_modulos(ambiente_limpo):
+    """⚠️ Apelido resolvido em três lugares diferentes é apelido que vai
+    divergir — e foi exatamente o que aconteceu aqui."""
+    import inspect
+
+    from app.apps.baixabradesco import omie as omie_bradesco
+    from app.apps.painel.sync import omie_client
+
+    fonte_painel = inspect.getsource(omie_client.OmieClient.de_ambiente)
+    for nome in omie_bradesco.NOMES_APP_KEY:
+        assert nome in fonte_painel, (
+            f'{nome} é aceito aqui e não no painel — os dois vão divergir')
+
+
+def test_a_credencial_do_portal_vem_com_espaco_e_e_limpa(ambiente_limpo,
+                                                         monkeypatch):
+    """Copiar e colar do portal do Omie traz espaço e caractere invisível
+    grudado. É o mesmo tratamento que o painel faz."""
+    from app.apps.baixabradesco.omie import credentials_from_payload
+
+    monkeypatch.setenv('OMIE_KEY', '  1234567890​ ')
+    monkeypatch.setenv('OMIE_SECRET', 'abc﻿def ')
+
+    assert credentials_from_payload({}) == ('1234567890', 'abcdef')
+
+
+def test_a_mensagem_de_falta_DIZ_TODOS_os_nomes_aceitos(ambiente_limpo):
+    """Quem vai cadastrar precisa saber quais nomes valem — dizer um só manda
+    a pessoa criar uma variável que já existia com outro nome."""
+    plano = _plano()
+    resultados = core._executar_sequencia_omie(plano, {})
+
+    motivo = resultados[0]['motivo']
+    assert 'OMIE_KEY' in motivo and 'OMIE_SECRET' in motivo
+    assert 'OMIE_BWS_APP_KEY' in motivo

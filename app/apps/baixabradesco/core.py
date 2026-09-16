@@ -663,13 +663,18 @@ def _executar_sequencia_omie(plan: ExecutionPlan, payload: dict) -> List[dict]:
     # olhou para o lado errado durante dois dias.
     #
     # Agora isto para ANTES de mandar qualquer coisa, e diz o que fazer.
-    from .omie import credentials_from_payload
+    from .omie import (NOMES_APP_KEY, NOMES_APP_SECRET,
+                       credentials_from_payload)
 
     app_key, app_secret = credentials_from_payload(payload)
     if not app_key or not app_secret:
+        # DIZ TODOS OS NOMES ACEITOS, e não um só: o servidor pode ter a
+        # variável com qualquer um dos apelidos, e quem vai cadastrar precisa
+        # saber quais valem.
         falta = ' e '.join(
-            nome for nome, valor in (('OMIE_BWS_APP_KEY', app_key),
-                                     ('OMIE_BWS_APP_SECRET', app_secret))
+            ' ou '.join(nomes)
+            for nomes, valor in ((NOMES_APP_KEY, app_key),
+                                 (NOMES_APP_SECRET, app_secret))
             if not valor)
         return [{'step': 'abort_sem_credencial',
                  'motivo': ('As credenciais do Omie não chegaram ao robô: '

@@ -704,15 +704,32 @@ baixabradesco no método anterior funciona e via Análise não."*
 
 - o **Make** manda `app_key` e `app_secret` **dentro do pedido**;
 - o pedido que sai do **Análise de SPs** não manda — ele conta com as variáveis
-  de ambiente do serviço (`OMIE_BWS_APP_KEY` / `OMIE_BWS_APP_SECRET`).
+  de ambiente do serviço.
 
-Faltando as variáveis, o pedido sai com a chave **vazia**. E "chave de acesso",
+**E aqui está o defeito, que é de NOME e não de lógica** — confirmado pelo dono
+mandando a lista de variáveis do Render:
+
+| Onde | O que o código procurava | O que existe no Render |
+|---|---|---|
+| `painel`, `emissaonf` | `OMIE_KEY`, `OMIE_SECRET` (+ apelidos) | ✔ acha |
+| `baixabradesco` | **só** `OMIE_BWS_APP_KEY`/`SECRET` | ✘ não acha |
+
+Os outros dois módulos aceitam os dois apelidos **há meses**. Este aceitava só o
+antigo. Por isso o painel e a emissão de NF funcionavam com o Omie e este robô
+não — e pelo Make nunca apareceu, porque o Make manda a chave no pedido.
+
+Faltando a variável, o pedido saía com a chave **vazia**, e o Omie respondia
+*"A chave de acesso não está preenchida ou não é válida"*. "Chave de acesso",
 no vocabulário do Omie, é a **credencial da API** — não é a chave do título. A
-mensagem parecia falar do título, e por isso a investigação olhou para o lado
-errado durante dois dias.
+mensagem parecia falar do título, e a investigação olhou para o lado errado
+durante dois dias.
 
-⚠️ **Isto ainda precisa ser confirmado pelo dono**: ver se as duas variáveis
-existem no Render. O código agora responde isso sozinho — ver abaixo.
+⚠️ **E o `CONTEXTO.md` ajudou a esconder:** a seção 4.5 listava só
+`OMIE_BWS_APP_KEY`/`SECRET` como se fossem os nomes em uso. Corrigido junto.
+
+**A lição:** apelido de variável resolvido em três arquivos diferentes vira três
+regras diferentes no dia em que alguém cadastra a variável com um dos nomes. Há
+teste agora exigindo que os nomes aceitos aqui sejam os mesmos do painel.
 
 ### Os quatro consertos
 
