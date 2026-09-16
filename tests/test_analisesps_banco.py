@@ -6227,3 +6227,109 @@ def test_quando_ja_ha_tarefa_rodando_o_botao_DIZ_isso(banco_analisesps,
     corpo = resposta.get_data(as_text=True)
     assert "Não consegui começar agora" in corpo
     assert "já está rodando" in corpo
+
+
+# ---------------------------------------------------------------------------
+# ⚠️ "JÁ ASSOCIADA" TEM DOIS SIGNIFICADOS — 16/09/2026
+#
+# *"Tava associando as notas e estranhei a quantidade. Quando abri algumas,
+# muitas eram notas que já haviam sido associadas na planilha. Não era pra
+# precisar fazer de novo."*
+#
+# Uma nota pode já ter dono de duas formas: pelo diário deste módulo (a chave
+# de acesso inteira) ou pelo CARD — o número da nota que a equipe escreveu na
+# coluna "Nº NF" da SPsBD, muito antes desta tela existir. A tela só olhava a
+# primeira, e mandava refazer o que já estava feito.
+# ---------------------------------------------------------------------------
+@pytest.mark.banco
+def test_nota_ja_apontada_PELO_CARD_nao_e_orfa(banco_analisesps):
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)          # emitente = CREDOR_CNPJ
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    # A SP do MESMO fornecedor já diz, no card, que é a nota 1430.
+    semear([sp("1", credor="SERTAO", documento=CREDOR_CNPJ, nf="0001430",
+               vencimento="18/06/2026", valor="269,00")])
+
+    orfas, quantas = fiscal.notas_orfas()
+
+    assert quantas == 0, "mandou associar de novo uma nota que o card já aponta"
+    assert orfas == []
+
+
+@pytest.mark.banco
+def test_o_MESMO_numero_em_OUTRO_fornecedor_nao_conta(banco_analisesps):
+    """⚠️ Número sozinho não basta: "nota 1430" existe em dezenas de
+    fornecedores. Com raiz de CNPJ diferente, a nota continua órfã."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="OUTRA EMPRESA", documento="11222333000181",
+               nf="1430", vencimento="18/06/2026", valor="269,00")])
+
+    _, quantas = fiscal.notas_orfas()
+
+    assert quantas == 1, "sumiu uma nota órfã por causa de outro fornecedor"
+
+
+@pytest.mark.banco
+def test_o_numero_com_ZEROS_e_com_PONTO_e_o_mesmo_numero(banco_analisesps):
+    """A planilha traz "1.002.924", "0001430" e "1430" para a mesma coisa."""
+    from app.apps.analisesps import fiscal
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1002924", 500.00, CREDOR_CNPJ)
+    semear([sp("1", credor="SERTAO", documento=CREDOR_CNPJ, nf="1.002.924",
+               vencimento="18/06/2026", valor="500,00")])
+
+    _, quantas = fiscal.notas_orfas()
+
+    assert quantas == 0
+
+
+@pytest.mark.banco
+def test_a_LISTA_o_QUADRO_e_o_RECORTE_contam_a_mesma_coisa(banco_analisesps):
+    """⚠️ Três lugares perguntando "esta nota tem lançamento?" de jeitos
+    diferentes é três respostas diferentes na mesma tela."""
+    from app.apps.analisesps import fiscal
+
+    com_dono = _chave(CREDOR_CNPJ, "550010000111111111111111")
+    orfa = _chave(CREDOR_CNPJ, "550010000222222222222222")
+    _guardar_nota(com_dono, "1430", 269.00, CREDOR_CNPJ)
+    _guardar_nota(orfa, "9999", 100.00, CREDOR_CNPJ)
+    semear([sp("1", credor="SERTAO", documento=CREDOR_CNPJ, nf="1430",
+               vencimento="18/06/2026", valor="269,00")])
+
+    _, quantas_orfas = fiscal.notas_orfas()
+    _, resumo = fiscal.listar_notas({"recortes": []})
+    quadro = {k["chave"]: k for k in fiscal.quadro_das_notas()}
+    notas_do_recorte, _ = fiscal.listar_notas({"recortes": ["sem_lancamento"]})
+
+    assert quantas_orfas == 1
+    assert resumo["sem_lancamento"] == 1, "o resumo da lista discorda"
+    assert quadro["sem_lancamento"]["quantas"] == 1, "o quadro do alto discorda"
+    assert [n["chave"] for n in notas_do_recorte] == [orfa]
+
+
+@pytest.mark.banco
+def test_SEM_a_migracao_012_a_tela_de_notas_continua_de_pe(banco_analisesps):
+    """A coluna `nf_num` nasce na migração 012. Sem ela vale só o diário — o
+    comportamento antigo — e nada quebra."""
+    from app.apps.analisesps import db as db_analisesps
+    from app.apps.analisesps import fiscal
+    from app.apps.analisesps.db import conexao
+
+    with conexao() as conn:
+        conn.execute("ALTER TABLE analisesps.sps DROP COLUMN nf_num")
+        conn.commit()
+    db_analisesps.esquecer_colunas()
+
+    chave = _chave(CREDOR_CNPJ)
+    _guardar_nota(chave, "1430", 269.00, CREDOR_CNPJ)
+    semear([sp("1", credor="SERTAO", documento=CREDOR_CNPJ, nf="1430",
+               vencimento="18/06/2026", valor="269,00")])
+
+    _, quantas = fiscal.notas_orfas()
+    assert quantas == 1, "sem a coluna, vale o diário — e a tela não pode cair"
+    db_analisesps.esquecer_colunas()

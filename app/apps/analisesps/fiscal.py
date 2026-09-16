@@ -1013,12 +1013,11 @@ def notas_orfas(pagina: int = 1, por_pagina: int = 200) -> tuple:
     um achado. Listá-las faria esta visão nascer cheia de ruído."""
     from .db import consultar, consultar_um
 
-    onde = ("""
-         WHERE upper(trim(coalesce(status, ''))) <> 'CANCELADA'
-           AND NOT EXISTS (
-               SELECT 1 FROM analisesps.sp_fiscal_analise a
-                WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g')
-                      = notas_fiscais.chave)""")
+    # A MESMA REGRA DA LISTA E DO QUADRO — ver `_sem_lancamento_sql`. Três
+    # lugares perguntando "esta nota tem lançamento?" de jeitos diferentes é
+    # três respostas diferentes na mesma tela.
+    onde = (" WHERE upper(trim(coalesce(status, ''))) <> 'CANCELADA' "
+            "   AND " + _sem_lancamento_sql())
 
     total = consultar_um(
         "SELECT count(*) FROM analisesps.notas_fiscais" + onde)
@@ -1958,10 +1957,61 @@ def comparar(lancamento: dict) -> dict:
 # ---------------------------------------------------------------------------
 NOTAS_POR_PAGINA = 200
 
-SEM_LANCAMENTO_SQL = (
-    "NOT EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
-    "             WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') "
-    "                   = notas_fiscais.chave)")
+# ---------------------------------------------------------------------------
+# ⚠️ "JÁ ASSOCIADA" TEM DOIS SIGNIFICADOS, E A TELA SÓ CONHECIA UM — 16/09/2026
+#
+# Relato do dono: *"tava associando as notas e estranhei a quantidade. Quando
+# abri algumas, muitas eram notas que já haviam sido associadas na planilha.
+# Não era pra precisar fazer de novo."*
+#
+# Ele está certo. Uma nota pode já ter dono de duas formas:
+#
+#   1. **o diário deste módulo** (`sp_fiscal_analise.chave`) — a associação
+#      feita AQUI, guardando a chave de acesso inteira;
+#   2. **o card/planilha** (`sps.nf` → `nf_num`) — o número da nota que a
+#      equipe escreveu na coluna "Nº NF" da SPsBD, muito antes desta tela
+#      existir. É a maior parte do trabalho já feito.
+#
+# A tela só olhava a primeira, e por isso mandava refazer o que já estava
+# feito — justamente o que esta tela existe para evitar.
+#
+# ⚠️ NÚMERO SOZINHO NÃO BASTA: "nota 1430" existe em dezenas de fornecedores.
+# Por isso a conferência exige o MESMO EMITENTE (raiz do CNPJ, 8 dígitos) além
+# do número — o mesmo par que a conciliação já usa como sinal forte. Com raiz
+# diferente, a nota continua órfã, que é o certo.
+#
+# O par (raiz, nf_num) é exatamente o índice composto da migração 012, então
+# isto não custa varredura.
+_JA_TEM_DONO_PELO_DIARIO = (
+    "EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
+    "         WHERE regexp_replace(coalesce(a.chave, ''), '\\D', '', 'g') "
+    "               = notas_fiscais.chave)")
+
+_JA_TEM_DONO_PELO_CARD = (
+    "EXISTS (SELECT 1 FROM analisesps.sps s "
+    "         WHERE left(regexp_replace(coalesce(s.documento, ''), "
+    "                                   '\\D', '', 'g'), 8) "
+    "               = left(substring(notas_fiscais.chave from 7 for 14), 8) "
+    "           AND s.nf_num <> '' "
+    "           AND s.nf_num = ltrim(regexp_replace("
+    "                 coalesce(notas_fiscais.numero, ''), '\\D', '', 'g'), '0'))")
+
+
+def _sem_lancamento_sql() -> str:
+    """A condição de "esta nota não tem lançamento nenhum".
+
+    ⚠️ A coluna `nf_num` nasce na migração 012. Sem ela, vale só o diário — é o
+    comportamento antigo, e a tela continua de pé."""
+    from .db import tem_coluna
+
+    if tem_coluna("sps", "nf_num"):
+        return (f"NOT ({_JA_TEM_DONO_PELO_DIARIO} OR {_JA_TEM_DONO_PELO_CARD})")
+    return f"NOT {_JA_TEM_DONO_PELO_DIARIO}"
+
+
+# Mantido pelo nome antigo para quem já lia daqui; hoje é o caso sem a coluna
+# gerada. Quem monta consulta nova usa `_sem_lancamento_sql()`.
+SEM_LANCAMENTO_SQL = f"NOT {_JA_TEM_DONO_PELO_DIARIO}"
 
 # Os recortes da lista de notas. Mesma ideia da tela de lançamentos: o nome do
 # grupo diz de que dado se está falando.
@@ -2173,13 +2223,27 @@ FRASE_DA_NOTA = {
 }
 
 
+def recortes_de_nota() -> dict:
+    """Os recortes com o "sem lançamento" resolvido AGORA.
+
+    O dicionário de cima é montado na importação do módulo, quando ainda não dá
+    para perguntar ao banco se a coluna `nf_num` existe. Estes dois recortes
+    dependem disso, então são resolvidos na hora da consulta."""
+    saida = dict(RECORTES_DE_NOTA)
+    sem = _sem_lancamento_sql()
+    saida["sem_lancamento"] = sem
+    saida["com_lancamento"] = "NOT (" + sem + ")"
+    return saida
+
+
 def _where_das_notas(filtros: dict) -> tuple:
     """Traduz os recortes da tela em SQL. Tudo entra como parâmetro."""
     onde, params = [], []
 
+    recortes = recortes_de_nota()
     for chave in (filtros.get("recortes") or []):
-        if chave in RECORTES_DE_NOTA:
-            onde.append("(" + RECORTES_DE_NOTA[chave] + ")")
+        if chave in recortes:
+            onde.append("(" + recortes[chave] + ")")
 
     busca = str(filtros.get("busca") or "").strip()
     if busca:
@@ -2206,16 +2270,17 @@ def listar_notas(filtros: dict, pagina: int = 1) -> tuple:
     from .db import consultar, consultar_um
 
     where, params = _where_das_notas(filtros or {})
+    sem_lancamento = _sem_lancamento_sql()
     resumo = consultar_um(
         "SELECT count(*), coalesce(sum(valor), 0), "
-        f"       count(*) FILTER (WHERE {SEM_LANCAMENTO_SQL}) "
+        f"       count(*) FILTER (WHERE {sem_lancamento}) "
         f"  FROM analisesps.notas_fiscais{where}", tuple(params))
 
     pagina = max(1, int(pagina or 1))
     linhas = consultar(
         "SELECT chave, emissao, numero, serie, valor, status, emitente_doc, "
         "       emitente, emitente_uf, importada_em, "
-        f"       {SEM_LANCAMENTO_SQL} AS orfa, "
+        f"       {sem_lancamento} AS orfa, "
         # EM QUAL SP ELA ESTÁ. Dizer só "já está num lançamento" é meio
         # caminho: na nota cancelada, saber QUAL SP é o que permite agir — ver
         # se foi paga e ligar para o fornecedor. Sem o número, ele teria de
@@ -2371,12 +2436,14 @@ def contagem_por_origem() -> dict:
 # Nota que a conciliação ainda não casou com lançamento nenhum. As CANCELADAS
 # ficam fora: nota cancelada sem despesa é o esperado, não um achado — é a
 # mesma regra da visão "notas sem lançamento", e as duas têm de concordar.
-SQL_SEM_LANCAMENTO = (
-    "upper(trim(coalesce(status, ''))) <> 'CANCELADA' "
-    "   AND NOT EXISTS (SELECT 1 FROM analisesps.sp_fiscal_analise a "
-    "                    WHERE regexp_replace(coalesce(a.chave, ''), "
-    "                                         '\\D', '', 'g') "
-    "                          = notas_fiscais.chave)")
+def _sql_sem_lancamento_do_quadro() -> str:
+    """"Sem lançamento" para o quadro do alto — a MESMA regra da lista.
+
+    ⚠️ Se as duas divergirem, o quadro diz um número e a lista mostra outro. A
+    diferença aqui é só a nota cancelada, que fica de fora: nota cancelada sem
+    despesa é o esperado, não um achado."""
+    return ("upper(trim(coalesce(status, ''))) <> 'CANCELADA' "
+            "   AND " + _sem_lancamento_sql())
 
 
 def recorte_das_notas(busca: str = "", origem: str = "", situacao: str = "",
@@ -2405,7 +2472,7 @@ def recorte_das_notas(busca: str = "", origem: str = "", situacao: str = "",
         params.append(qual)
 
     if sem_lancamento:
-        onde.append(SQL_SEM_LANCAMENTO)
+        onde.append(_sql_sem_lancamento_do_quadro())
 
     termo = str(busca or "").strip()
     if termo:

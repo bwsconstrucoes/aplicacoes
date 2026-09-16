@@ -4911,6 +4911,48 @@ disparo é recusado — e a tela não contava nada, o que era metade do "nada
 acontece". Agora responde: *"Não consegui começar agora: já está rodando."*
 
 ---
+
+### Sexagésima quinta leva (16/09) — "já associada" tinha dois significados, e a tela só conhecia um
+
+> *"Tava associando as notas e estranhei a quantidade. Quando abri algumas,
+> muitas eram notas que já haviam sido associadas na planilha. Não era pra
+> precisar fazer de novo."*
+
+**Ele está certo, e o defeito é conceitual.** Uma nota pode já ter dono de duas
+formas:
+
+1. **pelo diário deste módulo** (`sp_fiscal_analise.chave`) — a associação
+   feita AQUI, guardando a chave de acesso inteira;
+2. **pelo card** (`sps.nf` → coluna gerada `nf_num`) — o **número da nota** que
+   a equipe escreveu na coluna "Nº NF" da SPsBD, muito antes desta tela
+   existir. **É a maior parte do trabalho já feito.**
+
+A tela só olhava a primeira. Resultado: mandava refazer o que já estava feito —
+exatamente o que ela existe para evitar. E pior do que o trabalho repetido é o
+risco: associar de novo uma nota que já tem dono cria a chance de apontá-la
+para a SP errada.
+
+⚠️ **Número sozinho não basta**, e é por isso que a regra tem duas partes:
+"nota 1430" existe em dezenas de fornecedores. A conferência exige o **mesmo
+emitente** (raiz do CNPJ, 8 dígitos) **e** o mesmo número, sem zeros à esquerda
+e sem pontuação — o mesmo par que a conciliação já usa como sinal forte. Com
+raiz diferente, a nota continua órfã, que é o certo.
+
+**O par (raiz, nf_num) é exatamente o índice composto da migração 012**, então a
+conta nova não custa varredura.
+
+#### E as TRÊS perguntas viraram uma
+
+"Esta nota tem lançamento?" era perguntada em três lugares — a lista, o quadro
+do alto e a visão das órfãs — e cada um perguntava do seu jeito. Três respostas
+diferentes na mesma tela é o caminho mais curto para ninguém acreditar em
+nenhuma. Agora as três chamam a mesma função, e há teste exigindo que os três
+números batam.
+
+⚠️ **A coluna `nf_num` nasce na migração 012.** Sem ela, vale só o diário — o
+comportamento antigo — e a tela continua de pé. Há teste que derruba a coluna.
+
+---
 ---
 
 ## Regras que não se discutem
