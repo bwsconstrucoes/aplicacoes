@@ -425,6 +425,81 @@ def exigir_documento_no_escopo(s: Session, usuario: Optional[Usuario],
         raise ErroNaoEncontrado("Documento não encontrado.")
 
 
+def substituir_arquivo(s: Session, documento_id: int, conteudo: bytes,
+                       nome_arquivo: str, *, motivo: str = "",
+                       usuario: Optional[Usuario] = None) -> Documento:
+    """Troca o ARQUIVO de um documento já arquivado, mantendo o registro.
+
+    Dono, 17/09/2026: *"anexei uma ART e depois percebi que era o documento
+    errado, e eu queria substituir aquele documento"*. Sem isto restavam dois
+    caminhos ruins: apagar e arquivar de novo (perde a trilha e o vínculo com a
+    obra, e quem tinha o link antigo fica sem nada) ou deixar o errado ali.
+
+    O que MUDA: o arquivo, o texto de dentro dele (senão a busca continuaria
+    achando o conteúdo velho) e o tamanho. O que NÃO muda: o tipo, o dono, as
+    datas, a referência e o nome padronizado — quem quiser mexer nisso tem o
+    "Datas" e, para tipo ou dono, arquiva de novo, porque aí é outro documento.
+
+    ⚠️ **O arquivo anterior é apagado**, do banco e do Drive. É o que se espera
+    de "substituir o errado", e deixar um arquivo solto sem dono seria lixo que
+    ninguém acharia depois. A trilha guarda nome, tamanho e a impressão digital
+    (hash) do que saiu, mais o motivo digitado — a história fica, o arquivo não.
+    """
+    from app.apps.erp.core.documentos.armazenamento import (
+        excluir as excluir_anexo, salvar)
+
+    d = s.get(Documento, documento_id)
+    if d is None:
+        raise ErroNaoEncontrado("Documento não encontrado.")
+    if not conteudo:
+        raise ErroValidacao("O arquivo novo veio vazio.")
+
+    antigo = s.get(Anexo, d.anexo_id)
+    retrato = {"nome": getattr(antigo, "nome_arquivo", ""),
+               "tamanho_kb": round((getattr(antigo, "tamanho_bytes", 0) or 0) / 1024, 1),
+               "hash": getattr(antigo, "hash_sha256", "")}
+
+    # O arquivo novo entra com o MESMO nome padronizado: é o mesmo documento,
+    # com o papel certo desta vez.
+    novo = salvar(s, conteudo, d.nome_padronizado,
+                  entidade_tipo=antigo.entidade_tipo if antigo else "documento",
+                  entidade_id=antigo.entidade_id if antigo else 0,
+                  categoria=getattr(antigo, "categoria_anexo", None) or "OUTRO",
+                  descricao=d.tipo.nome if d.tipo else d.tipo_codigo,
+                  usuario=usuario)
+    if novo.id == d.anexo_id:
+        # Mesmo conteúdo: o armazenamento devolve o anexo que já existia.
+        raise ErroValidacao("O arquivo escolhido é idêntico ao que já está "
+                            "guardado — nada foi trocado.")
+
+    anexo_velho = d.anexo_id
+    d.anexo_id = novo.id
+    d.nome_original = nome_arquivo or d.nome_original
+
+    # O TEXTO DE DENTRO tem de acompanhar o arquivo novo: senão a busca por
+    # palavra e a pergunta sobre o documento responderiam pelo papel errado.
+    try:
+        from app.apps.erp.core.arquivo import texto as svc_texto
+        d.texto = svc_texto.extrair(conteudo, nome_arquivo or d.nome_padronizado) or ""
+    except Exception as e:                                   # pragma: no cover
+        logger.warning("ERP/arquivo: não deu para reler o texto do documento "
+                       "%s (%s) — o documento fica sem texto de busca", d.id, e)
+        d.texto = ""
+    s.flush()
+
+    registrar_evento(s, "documento", d.id, "ARQUIVO_SUBSTITUIDO",
+                     {"motivo": (motivo or "").strip()[:300],
+                      "saiu": retrato,
+                      "entrou": {"nome": nome_arquivo,
+                                 "tamanho_kb": round(len(conteudo) / 1024, 1)}},
+                     usuario.id if usuario else None)
+    excluir_anexo(s, anexo_velho, usuario)
+    # O `flush` aqui não é enfeite: sem ele o arquivo antigo só sai do banco no
+    # commit, e qualquer leitura no meio do caminho ainda o encontra.
+    s.flush()
+    return d
+
+
 def excluir(s: Session, documento_id: int, usuario: Usuario) -> None:
     """Apaga o documento e o arquivo guardado com ele.
 

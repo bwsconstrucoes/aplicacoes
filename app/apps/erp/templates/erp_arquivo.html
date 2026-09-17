@@ -89,6 +89,11 @@
 
 <div class="tabela-wrap">
   <div class="tabela-barra"><span class="resumo" id="resumo"></span></div>
+  {# O ARQUIVO DA TROCA. Fica aqui, escondido, em vez de nascer no JavaScript:
+     elemento que só existe em tempo de execução some da conferência das telas,
+     e é assim que um botão quebra sem ninguém ver. #}
+  <input type="file" id="troca-arq" hidden accept=".pdf,.png,.jpg,.jpeg,.webp">
+
   <div class="tabela-rolagem">
     <table><thead><tr>
       {# O TIPO VEM PRIMEIRO: é o que a pessoa procura. O nome do arquivo é
@@ -335,6 +340,9 @@ function desenhar(){
          está vencido porque eu escrevi a validade errado. Eu queria daqui ir
          para o cadastro e editar isso direto, como se fosse um pulo"*. #}
       <td style="white-space:nowrap">
+        ${PODE_ARQUIVAR ? `<button class="btn secundario" data-trocar="${d.id}"
+          data-dnome="${escapar(d.tipo_nome)}"
+          title="Anexou o arquivo errado? Troque sem perder o registro">Trocar arquivo</button>` : ""}
         ${PODE_ARQUIVAR ? `<button class="btn secundario" data-datas="${d.id}"
           data-emissao="${d.emissao||""}" data-validade="${d.validade||""}"
           data-comp="${d.competencia||""}" data-ref="${escapar(d.referencia||"")}"
@@ -346,6 +354,15 @@ function desenhar(){
         ${PODE_ARQUIVAR ? `<button class="btn secundario" data-excluir="${d.id}">Excluir</button>` : ""}</td>
     </tr>`;
   }).join("");
+
+  // TROCAR O ARQUIVO ERRADO, sem perder o registro (dono, 17/09/2026).
+  document.querySelectorAll("[data-trocar]").forEach(b => b.addEventListener("click", () => {
+    const campo = els("troca-arq");
+    campo.value = "";
+    campo.dataset.doc = b.dataset.trocar;
+    campo.dataset.dnome = b.dataset.dnome;
+    campo.click();          // o seletor de arquivo do sistema, e só depois o motivo
+  }));
 
   document.querySelectorAll("[data-datas]").forEach(b => b.addEventListener("click", async () => {
     const resposta = await perguntar({
@@ -784,5 +801,37 @@ async function carregarBlocos(){
 }
 
 (async () => { await carregarListas(); await carregarBlocos(); carregar(); })();
+
+// TROCAR O ARQUIVO ERRADO, sem perder o registro (dono, 17/09/2026: *"anexei
+// uma ART e depois percebi que era o documento errado, e queria substituir"*).
+// O motivo é perguntado DEPOIS de escolher o arquivo: perguntar antes, sem a
+// pessoa ter visto qual arquivo escolheu, é pedir resposta no escuro.
+els("troca-arq").addEventListener("change", async () => {
+  const campo = els("troca-arq");
+  const arq = campo.files[0];
+  if (!arq) return;
+  const r = await perguntar({
+    titulo: "Trocar o arquivo do documento",
+    textoOk: "Trocar",
+    aviso: `Entra <b>${escapar(arq.name)}</b> no lugar do arquivo atual de `
+         + `<b>${escapar(campo.dataset.dnome || "documento")}</b>. O arquivo `
+         + `anterior é apagado; o registro, as datas e o vínculo com a obra `
+         + `continuam os mesmos, e a troca fica na trilha.`,
+    campos: [{nome: "motivo", rotulo: "Por que está trocando?", largura: 3,
+              exemplo: "era a ART de outra obra"}]});
+  if (!r) { campo.value = ""; return; }
+  try {
+    const fd = new FormData();
+    fd.append("arquivo", arq);
+    fd.append("motivo", r.motivo || "");
+    await api(`/erp/api/documentos/${campo.dataset.doc}/arquivo`,
+              {method:"POST", body: fd});
+    aviso("mensagem", "Arquivo trocado. O registro e as datas continuam os "
+          + "mesmos; a troca ficou na trilha.", "ok");
+    carregar();
+  } catch(e){ aviso("mensagem", e.message, "erro"); }
+  campo.value = "";
+});
+
 </script>
 {% endblock %}

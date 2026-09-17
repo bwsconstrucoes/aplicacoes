@@ -54,13 +54,62 @@ transação. Sem arquivo, é o cadastro de sempre. A pessoa não escolhe caminho
 escolhe se tem o papel à mão.
 
 
+### TRÊS ACERTOS DE USO, 17/09/2026 (sem migração)
+
+Os três saíram do dono usando o sistema, não de backlog.
+
+**1. Trocar o arquivo errado sem perder o registro.** *"Anexei uma ART e depois
+percebi que aquele documento foi o documento errado."* Na tela do Arquivo, o
+botão **"Trocar arquivo"** substitui o PDF mantendo o mesmo registro — tipo,
+datas, nome padronizado, obra e histórico ficam de pé. O texto é lido de novo
+(a busca por conteúdo passa a achar o papel certo), **o anexo antigo é apagado
+de propósito** — ele não deveria estar ali — e a troca fica registrada com quem
+trocou, o arquivo que saiu, o que entrou e o motivo escrito.
+
+  ⚠️ **Trocar ≠ atualizar.** Trocar é para papel errado. Licença renovada é
+  documento NOVO: o antigo tem de continuar existindo, porque prova o que valia
+  naquele período. Não use "Trocar arquivo" para renovação.
+
+**2. Empresa da obra editável depois de criada.** *"Depois de criada a obra, tem
+como selecionar a empresa fácil?"* Não tinha: o campo só existia na criação, e
+as obras que nasceram soltas (antes de ele virar obrigatório) não tinham
+conserto pela tela. Agora está na **aba Cadastro** da ficha, com o mesmo "+ Nova"
+do resto. A mudança entra no histórico da obra como `EMPRESA_DEFINIDA`.
+
+**3. O selo de alerta virou atalho.** *"Quando a gente está naquelas tags de
+alerta do painel de obras (…) seria legal que a partir dali eu já conseguisse
+clicar e ser direcionado para a área de anexar o documento (…) rápido e fácil
+para a tela apropriada."* Cada selo do painel agora é clicável e abre a ficha
+**já na aba que resolve aquilo, com o cursor no campo**:
+
+  | Selo | Abre em | Onde o cursor cai |
+  |---|---|---|
+  | Sem responsável | Cadastro | a lista de quem responde |
+  | Sem empresa | Cadastro | o campo Empresa |
+  | Vigência vencida / a vencer | Contrato | fim da vigência |
+  | Reajuste vencido / a vencer | Contrato | data-base do orçamento |
+  | Sem ISS | Tributação | alíquota de ISS |
+  | Sem CNO | Documentos | "jogue o documento aqui" |
+  | Gasto > recebido | Movimento | — |
+
+  Sem CNO leva aos **Documentos**, e não ao campo: a matrícula CNO chega como
+  papel, e jogar o papel preenche o número sozinho. A mesma linha "Atenção" do
+  Resumo da ficha leva aos mesmos lugares.
+
+  Detalhe que morde se alguém mexer: o clique no selo faz `stopPropagation`,
+  senão dispararia junto o clique da linha, que abre no Resumo e anularia o
+  atalho.
+
+
 ### A EMPRESA NASCE DO CARTÃO CNPJ (sem migração)
 
-**Onde fica o botão, corrigido em seguida:** ele nasceu só no caminho da nova
+**Onde fica, depois de duas correções:** o caminho nasceu só dentro da nova
 obra, e o dono foi procurar no lugar óbvio — *"estou na tela da nova empresa mas
-não tem como adicionar o cartão CNPJ"*. Agora está nos DOIS: em **Configurações
-→ Empresas**, na barra da lista ("Cadastrar pelo Cartão CNPJ", ao lado de
-"+ Nova empresa (digitando)"), e no campo de empresa da nova obra.
+não tem como adicionar o cartão CNPJ"*. Botei um segundo botão em Configurações
+→ Empresas, e aí ele reprovou os dois botões lado a lado (a regra "uma porta",
+acima). **Estado final:** um botão só, "+ Nova empresa", nos dois lugares
+(Empresas e criação de obra), abrindo o mesmo formulário — com o bloco de leitura
+do Cartão CNPJ dentro dele.
 
 17/09/2026, completando o pedido anterior: *"e eu conseguiria cadastrá-la a
 partir do Cartão CNPJ?"*.

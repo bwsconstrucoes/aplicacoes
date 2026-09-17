@@ -812,6 +812,48 @@ O que ainda **não** responde:
   texto corrido a leitura não converte isso em regra de cálculo — quem decide
   data-base, índice e periodicidade continua sendo uma pessoa.
 
+## 3o. Trocar o documento errado, ligar a obra à empresa, e o alerta que leva ao lugar
+
+Três mudanças de 17/09/2026, todas nascidas de uso: o dono anexou uma ART
+errada e não tinha como trocar; criou obra sem empresa e não tinha onde
+consertar depois; e via os alertas do painel de obras sem poder clicar neles.
+
+Perguntas que passam a funcionar:
+
+- OK **Quais documentos já foram substituídos, e por quem?** — a troca fica no
+  histórico do documento, com o arquivo que saiu, o que entrou e o motivo.
+- OK **Quais obras estão sem empresa?** 🔒 (escopo por obra) — antes a resposta
+  seria sempre "nenhuma", porque a obra nem nascia ligada; hoje é uma lista de
+  verdade e o alerta do painel leva direto ao campo.
+- OK **Quantas obras tenho em cada empresa?** 🔒 (escopo por obra)
+- OK **Quais obras estão com alguma pendência de cadastro?** — sem empresa, sem
+  responsável, sem ISS, sem CNO, vigência ou reajuste vencidos. É a mesma
+  lista dos selos do painel.
+- OK **Quem trocou este arquivo, e quando?** — o registro guarda a pessoa, a
+  hora e o motivo escrito.
+
+⚠️ **Palavra ambígua: "trocar o documento".** São duas coisas diferentes:
+
+- **trocar o ARQUIVO** — o papel estava errado (foi a ART de outra obra). O
+  registro continua o mesmo, com as mesmas datas e o mesmo tipo; só o PDF muda,
+  e o antigo é apagado de propósito, porque ele não deveria estar ali;
+- **ATUALIZAR o documento** — o papel venceu e veio uma via nova (licença
+  renovada). Aí são dois documentos, e o antigo precisa continuar existindo,
+  porque ele prova o que valia naquele período. Esse caso se resolve
+  arquivando o novo, não trocando o arquivo do velho.
+
+⚠️ **Palavra ambígua: "empresa da obra".** Na obra pública há duas empresas na
+mesma conversa: a **contratante** (o órgão, que no cadastro chama-se *cliente*)
+e a **contratada** (uma das empresas da casa, que assina e emite a nota). O
+campo *Empresa* é sempre a segunda. Pergunta com "empresa" solta deve dizer qual
+das duas usou.
+
+O que ainda **não** responde:
+
+- FALTA **"Quais obras mudaram de empresa depois de criadas?"** — a mudança fica
+  registrada como evento no histórico da obra, mas não existe consulta que leia
+  o histórico; hoje só dá para abrir obra por obra.
+
 ## 4. Como esta lista vira código
 
 Cada pergunta daqui vira uma função em `core/perguntas/respostas.py`, com nome,
