@@ -765,7 +765,7 @@ e mostrá-la a quem pode agir.
 credencial neste ambiente. O que os testes provam é que, sem credencial, nenhum
 pedido sai; que consulta falha interrompe; e que título já certo não é alterado.
 
-### 17/09/2026 — dois Pix diferentes que o robô achou que eram o mesmo
+### 17/09/2026 — dois Pix diferentes que o robô achou que eram o mesmo (publicado, `16e3a51`)
 
 Dois Pix do Sicredi de R$ 7.300,00, para duas SPs de mesmo valor, as duas
 agendadas (1445859706 e 1445866267). O desempate por lote recusou distribuir:
@@ -800,3 +800,21 @@ provar. O defeito estava na leitura, não na regra.
 identificadores saem diferentes e as duas SPs são distribuídas.
 **Não verificado:** não passou por produção.
 
+**Publicado em 17/09/2026 (`16e3a51`)**, com a `main` de quatro dias de outros
+chats (80 commits) trazida para o ramo antes da junção: 3122 testes verdes e os
+blueprints subindo com tudo junto.
+
+⚠️ **Dependência nova no monorepo** (`erpbrasil.edoc`, `erpbrasil.assinatura`),
+trazida por outro chat para a conciliação fiscal do Análise de SPs. Sessão que
+rodar a suíte sem instalar o `requirements.txt` atualizado vê cinco testes
+falharem por módulo ausente — não é defeito.
+
+**Nesta mesma junção veio, de outro chat, a causa raiz do "baixa na planilha e
+não baixa no Omie"**: a credencial do Omie chega pelo pedido quando é o Make, e
+por variável de ambiente quando é a tela do Análise de SPs — que estava sem
+elas. A mensagem do Omie ("chave de acesso não está preenchida") fala da
+CREDENCIAL DA API, não da chave do título, e isso desviou a investigação por
+dois dias. Junto vieram três endurecimentos no `core.py` deste módulo: não
+mandar pedido sem credencial, interromper quando a consulta não confirma o
+título, e só alterar o título quando algo diverge de verdade. Vale ler o
+registro daquele chat antes de mexer na sequência do Omie.
