@@ -507,6 +507,26 @@ categoria; **e também AGIR** — cadastrar insumo, lançar título. Com **áudi
       mais antigo guardado), porque o Banco Central só republica a variação. A
       RAZÃO entre dois meses é idêntica, e é ela que vira o fator.
 
+- [x] **O DOCUMENTO LIDO ABRE OS CAMPOS QUE FALTARAM** — FEITO em 14/09/2026.
+      **Sem migração.** O dono, importando um contrato: *"não aparece o campo de
+      vigência (…) não permite avançar porque ela é obrigatória. Aí era para
+      abrir os campos, né?"*. As datas do documento passam a aparecer sempre e
+      editáveis, e os campos de cadastro sem resposta abrem numa gaveta.
+      "Vale até" espelha no fim da vigência da obra — no contrato é a mesma data.
+      ⚠️ **No colaborador foram só as datas**: lá o preenchimento tem a trava do
+      CPF e campos resolvidos por nome, e abrir a gaveta pede cuidado próprio.
+
+- [x] **ALINHAR O ÍNDICE COM O BOLETIM** — FEITO em 14/09/2026.
+      **TRAZ A MIGRAÇÃO 069.** O dono, vendo a coluna acima: *"apareceram os
+      índices, mas os números estão diferentes do que eu costumo ver — veja o
+      de 08/2026, 305,943822"*. Estava certo, e noutra régua. Agora ele informa
+      o índice de UM mês, como o boletim mostra, e a série inteira se desloca —
+      para a frente multiplicando, para trás dividindo. **Nenhum reajuste muda
+      de valor**, e há teste com banco de verdade cobrando isso.
+      ⚠️ **Só bate se for o MESMO índice.** Digitar o número de um INCC
+      diferente (o -M no lugar do -DI) deixa a tela plausível e errada; o
+      reajuste continua certo, porque não usa o número absoluto.
+
 - [x] **UMA CONTA DE E-MAIL SERVINDO VÁRIAS EMPRESAS** — FEITO em 14/09/2026.
       **TRAZ A MIGRAÇÃO 067.** Pergunta do dono: manter um e-mail principal e
       mandar em nome das outras empresas. A empresa passa a poder usar a conta

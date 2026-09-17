@@ -21,7 +21,76 @@ serviço. Contas a pagar completo; Pessoal, Empreitas e Locações em uso;
 
 ## ⚑ PENDENTE AGORA — leia isto antes de qualquer coisa
 
-### TRAZ AS MIGRAÇÕES 061 A 068 — o botão tem de ser apertado junto com a publicação
+### O DOCUMENTO LIDO AGORA ABRE OS CAMPOS QUE A IA NÃO ACHOU (sem migração)
+
+14/09/2026, o dono importando um contrato para criar obra: *"ele fez a leitura,
+ok, só que aí não aparece o campo de vigência. E quando eu boto criar obra e
+arquivar, aparece 'contrato da obra vence, informe até quando vale' (…) não tem
+opção, não aparece o campo, ele leu o contrato, talvez não leu essa informação,
+e não permite avançar porque ela é obrigatória. Aí era para abrir os campos,
+né?"*
+
+**Era exatamente isso, e o fluxo ficava trancado.** A tela mandava para o
+servidor só o que a leitura tinha achado. Contrato que não escreve a vigência
+dentro do texto — e há muitos — batia na recusa do arquivamento (a regra é
+antiga e está certa: tipo que vence exige até quando vale, senão a agenda não
+avisa) **sem ter onde digitar a data cobrada**. Não havia saída pela tela.
+
+O que mudou, nas três telas que leem documento (ficha da obra, obra nova pelo
+documento, documento do colaborador):
+
+- **"Datas do documento" aparece sempre** — emissão, "vale até" e competência —,
+  preenchida com o que a leitura achou e **editável**. O que o tipo exige vem
+  marcado com `*`, e falta de data obrigatória é avisada ALI, antes de mandar,
+  em vez de virar recusa no fim.
+- **Os campos de cadastro que vieram vazios abrem numa gaveta** ("Preencher o
+  que o documento não disse"). Antes, campo sem resposta simplesmente não
+  existia na tela. Nada ali entra marcado: o que não for digitado continua
+  vazio.
+- **"Vale até" espelha no "Fim da vigência"** do cadastro da obra, porque num
+  contrato são a mesma data. Digitar duas vezes é convite a digitar diferente,
+  e aí a agenda e a ficha da obra passariam a discordar.
+
+⚠️ **No colaborador foram só as datas**, não a gaveta de campos: ali o
+preenchimento tem a trava do CPF (documento de pessoa errada preenchendo
+cadastro vai parar em holerite) e campos que se resolvem por nome, como a
+função. Abrir a gaveta ali pede cuidado próprio — ficou de fora, de propósito.
+
+
+### A 069 ALINHA O ÍNDICE COM O BOLETIM DO DONO — e ele precisa informar UM número
+
+Publicada a 068, o dono olhou a tela e disse: *"apareceram os índices, mas os
+números estão diferentes do que eu costumo ver. Veja o de 08/2026:
+305,943822."*
+
+**Ele estava certo, e o número não estava errado — estava noutra régua.** O
+Banco Central republica só a VARIAÇÃO mensal do INCC-DI (série 192); a série do
+número-índice da FGV é licenciada. Então o sistema acumula o índice sozinho, e
+acumular obriga a escolher onde a contagem começa: começava em **100 no mês
+mais antigo guardado (01/2010)**. Com essa régua, 08/2026 dá 305,943822 — o
+custo da construção multiplicado por 3,059 desde janeiro de 2010. O boletim
+dele usa outra base e mostra outro número para o mesmo mês.
+
+A 069 resolve **sem inventar número**: na tela de índices ele digita o índice de
+**um** mês, como o boletim dele mostra, e a série inteira se desloca para bater
+— para a frente multiplicando pelas variações, para trás dividindo.
+
+- **Nenhum reajuste muda de valor.** O fator é índice final ÷ índice inicial, e
+  essa divisão dá o mesmo resultado em qualquer régua. Há teste com banco de
+  verdade cobrando exatamente isso (`tests/test_indice_ancora_banco.py`).
+- **Uma âncora por índice**, de propósito: duas que não fechem entre si
+  partiriam a série em dois trechos incompatíveis, e o fator entre meses de
+  lados diferentes sairia errado com cara de certo.
+- **O que o sistema não consegue conferir:** se alguém digitar o número de um
+  INCC diferente (o -M em vez do -DI), a tela fica plausível e errada. O
+  reajuste continua certo — ele não usa o número absoluto —, mas a conferência
+  visual passa a mentir.
+
+**Pendente do lado dele:** informar esse número. Enquanto não informar, a tela
+diz com todas as letras que a régua é a do sistema e não a do boletim.
+
+
+### TRAZ AS MIGRAÇÕES 061 A 069 — o botão tem de ser apertado junto com a publicação
 
 **Publicado na `main` em 14/09/2026** (commit `726a985`, autorizado pelo dono:
 *"eu falei ajusta e já publica"*). O Render já subiu o código; o botão

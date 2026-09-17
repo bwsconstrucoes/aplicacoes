@@ -125,7 +125,9 @@ def test_a_tela_recebe_o_indice_e_a_base(sessao_real):
     _serie(s, ["0.00", "1.00"])
     bcb.recalcular_numeros(s, "INCC-DI")
     painel = bcb.listar(s, "INCC-DI")
-    assert painel["base_do_numero"] == "100,000000 em 01/2025"
+    # A frase ganhou o aviso da régua (migração 069): sem âncora, o número
+    # não é o do boletim, e a tela tem de dizer isso.
+    assert painel["base_do_numero"].startswith("100,000000 em 01/2025")
     assert painel["meses"][0]["numero_indice"] == 101.0
     # A variação continua na resposta: o dono pediu as DUAS colunas.
     assert painel["meses"][0]["variacao_pct"] == 1.0

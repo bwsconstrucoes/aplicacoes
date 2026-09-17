@@ -349,6 +349,13 @@ def sugerir(s: Session, conteudo: bytes, nome_arquivo: str, *,
     return {
         "tipo_codigo": tipo.codigo if tipo is not None else "",
         "tipo_nome": tipo.nome if tipo is not None else "",
+        # O que o TIPO exige, para a tela pedir na hora em vez de deixar o
+        # arquivamento ser recusado no fim (14/09/2026 — o dono tentou criar
+        # obra por um contrato sem data no texto e ficou preso: o sistema
+        # cobrava a validade e não abria campo nenhum para digitá-la).
+        "tipo_vence": bool(tipo.vence) if tipo is not None else False,
+        "tipo_por_competencia": (bool(tipo.por_competencia)
+                                 if tipo is not None else False),
         "tipo_motivo": (bruto.get("tipo_motivo") or "").strip()[:200],
         "empresa_id": dono["empresa_id"], "obra_id": dono["obra_id"],
         "colaborador_id": dono["colaborador_id"], "fornecedor_id": dono["fornecedor_id"],

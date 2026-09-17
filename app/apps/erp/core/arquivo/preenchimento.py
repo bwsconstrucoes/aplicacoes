@@ -339,6 +339,31 @@ def _limpo_para_comparar(x: Any) -> str:
 # ---------------------------------------------------------------------------
 # Sugerir
 # ---------------------------------------------------------------------------
+def _vazios(permitidos, extraidos: dict[str, Any], alvo) -> list[dict[str, Any]]:
+    """Os campos que este tipo preenche e que continuam SEM resposta.
+
+    ⚠️ **Por que isto existe**, 14/09/2026: a leitura só devolvia o que achou no
+    documento. Contrato que não escreve a vigência (e há muitos) simplesmente
+    não mostrava o campo — e aí o arquivamento era recusado lá no fim, por
+    faltar justamente a data que a tela não deixava digitar. O dono ficou preso
+    nisso: *"não tem opção, não aparece o campo (…) aí era para abrir os
+    campos, né?"*.
+
+    Devolve em branco, para a tela oferecer. Nada aqui entra marcado: campo que
+    a pessoa não digitar continua vazio, como estava.
+    """
+    fora: list[dict[str, Any]] = []
+    for campo in permitidos:
+        rotulo, feitio, ajuda = CAMPOS[campo]
+        if _converter(feitio, extraidos.get(campo)) not in (None, ""):
+            continue                      # a leitura trouxe: já está na lista
+        if alvo is not None and getattr(alvo, campo, None) not in (None, ""):
+            continue                      # o cadastro já tem: não se mexe aqui
+        fora.append({"campo": campo, "rotulo": rotulo, "feitio": feitio,
+                     "ajuda": ajuda})
+    return fora
+
+
 def sugerir_para_obra(s: Session, obra_id: int, tipo_codigo: str,
                       dados: dict[str, Any]) -> dict[str, Any]:
     """O que este documento preencheria no cadastro da obra.
@@ -380,6 +405,9 @@ def sugerir_para_obra(s: Session, obra_id: int, tipo_codigo: str,
         "obra_id": obra.id, "obra": obra.codigo,
         "tipo": (tipo_codigo or "").strip().upper(),
         "campos": campos,
+        # O que este tipo de documento preencheria e ninguém tem ainda — nem a
+        # leitura achou, nem o cadastro tem. Vai em branco para a tela abrir.
+        "campos_vazios": _vazios(permitidos, extraidos, obra),
         "aditivo": aditivo,
         "nada_a_preencher": not campos and aditivo is None,
         "tipo_nao_preenche": (tipo_codigo or "").strip().upper() not in POR_TIPO,
@@ -537,6 +565,8 @@ def sugerir_para_nova_obra(s: Session, tipo_codigo: str,
         "obra_id": None, "obra": "",
         "tipo": tipo,
         "campos": campos,
+        # Obra que ainda vai nascer: tudo que a leitura não trouxe está vazio.
+        "campos_vazios": _vazios(permitidos, extraidos, None),
         "aditivo": aditivo,
         "nome_sugerido": nome_de_obra_sugerido(extraidos),
         "parecidas": obras_parecidas(
