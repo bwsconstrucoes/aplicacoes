@@ -97,7 +97,15 @@ def test_o_arquivo_guardado_NAO_e_legivel(cofre):
     original = pfx()
     guardado = certificados._cofre().encrypt(original)
     assert original not in guardado
-    assert b"BWS" not in guardado
+    # ⚠️ Aqui havia `assert b"BWS" not in guardado`, e ele QUEBRAVA SOZINHO de
+    # vez em quando (17/09/2026, travando uma publicação do ERP): o cifrado é
+    # base64 com nonce novo a cada chamada, e três letras aparecem por acaso num
+    # texto desse tamanho mais cedo ou mais tarde. Teste que falha sem defeito
+    # nenhum é pior do que teste nenhum — ensina a equipe a rodar de novo até
+    # passar. O que interessa provar é que nenhum PEDAÇO RECONHECÍVEL do
+    # certificado sobrevive, e isso se faz com trechos do próprio original.
+    for pedaco in (original[:24], original[len(original) // 2:][:24], original[-24:]):
+        assert pedaco not in guardado
     assert certificados._cofre().decrypt(guardado) == original
 
 

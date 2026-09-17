@@ -747,6 +747,24 @@ Quando eu pedir nova feature ou adaptação:
 
 ## 9. Histórico de decisões arquiteturais
 
+### 17/09/2026 — um teste do Análise de SPs quebrava sozinho (atravessa áreas)
+
+`tests/test_analisesps_certificados.py::test_o_arquivo_guardado_NAO_e_legivel`
+conferia `b"BWS" not in <cifrado>`. O cifrado é base64 com nonce novo a cada
+chamada: três letras aparecem por acaso num texto desse tamanho mais cedo ou
+mais tarde — e apareceram, travando uma publicação do ERP que não tinha nada a
+ver com certificados.
+
+Passou a conferir **trechos do próprio certificado** (24 bytes do começo, do
+meio e do fim), que é o que o teste realmente quer provar: nenhum pedaço
+reconhecível sobrevive à cifra. A garantia continua de pé e o resultado deixa de
+depender de sorte.
+
+**A regra que fica:** teste que falha sem defeito nenhum é pior do que teste
+nenhum — ensina a equipe a rodar de novo até passar, e no dia do defeito de
+verdade ninguém acredita nele.
+
+
 > Lista para manter contexto de decisões já tomadas.
 
 - **2026-09-13 — PROJETO agrupa obras, e o alcance do operador tem três

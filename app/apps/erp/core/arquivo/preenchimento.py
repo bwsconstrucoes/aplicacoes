@@ -318,6 +318,115 @@ Regras da extração:
         ",\n".join(linhas))
 
 
+# ---------------------------------------------------------------------------
+# A EMPRESA QUE NASCE DO CARTÃO CNPJ
+#
+# Dono, 17/09/2026, ao ver que a obra exigia empresa: *"e eu conseguiria
+# cadastrá-la a partir do Cartão CNPJ?"*. É o mesmo princípio de sempre nesta
+# casa — o documento que já existe preenche o cadastro, em vez de alguém
+# redigitar o que está no papel.
+#
+# O Cartão CNPJ (o Comprovante de Inscrição e de Situação Cadastral da Receita)
+# traz tudo o que o cadastro precisa para nascer: razão social, nome fantasia,
+# CNPJ, endereço completo e a situação. Inscrição estadual e municipal NÃO estão
+# nele — são de outros órgãos —, e por isso não se pedem aqui: inventar uma
+# inscrição é pior do que deixar em branco.
+# ---------------------------------------------------------------------------
+CAMPOS_EMPRESA: dict[str, tuple[str, str, str]] = {
+    "razao_social": ("Razão social", "texto", "razão social ou NOME EMPRESARIAL, exatamente como está escrito"),
+    "nome_fantasia": ("Nome fantasia", "texto", "título do estabelecimento (nome de fantasia), se houver"),
+    "cnpj": ("CNPJ", "documento", "número de inscrição (CNPJ), só dígitos"),
+    "cep": ("CEP", "texto", "CEP do endereço, só dígitos"),
+    "logradouro": ("Logradouro", "texto", "logradouro, sem o número"),
+    "numero": ("Número", "texto", "número do endereço"),
+    "complemento": ("Complemento", "texto", "complemento do endereço, se houver"),
+    "bairro": ("Bairro", "texto", "bairro ou distrito"),
+    "municipio": ("Município", "texto", "município"),
+    "uf": ("UF", "texto", "sigla do estado"),
+    "telefone": ("Telefone", "texto", "telefone de contato, se houver"),
+    "email": ("E-mail", "texto", "endereço eletrônico, se houver"),
+}
+
+POR_TIPO_EMPRESA: dict[str, tuple[str, ...]] = {
+    "CARTAO-CNPJ": tuple(CAMPOS_EMPRESA),
+    # Contrato social confirma razão social e endereço, mas o que vale para
+    # cadastro é o que a Receita publica — por isso ele não entra aqui.
+}
+
+
+def instrucao_de_extracao_empresa() -> str:
+    """O pedaço da pergunta à IA que trata do cadastro da EMPRESA."""
+    linhas = [f' "{campo}": "{pedido}"'
+              for campo, (_, _, pedido) in CAMPOS_EMPRESA.items()]
+    return """
+Além disso, quando o documento for o CARTÃO CNPJ (Comprovante de Inscrição e de
+Situação Cadastral) ou outro documento cadastral de EMPRESA, extraia o que der
+para o cadastro dela, dentro de "dados_extraidos". Campo que o documento não
+disser fica vazio — NUNCA deduza nem invente:
+
+ "dados_extraidos": {
+%s,
+  "situacao_cadastral": "ATIVA, SUSPENSA, INAPTA, BAIXADA — como estiver escrito",
+  "abertura": "AAAA-MM-DD, data de abertura"
+ }
+
+Regras da extração:
+- O CNPJ vem só com dígitos, sem ponto, barra ou traço.
+- "razao_social" é o NOME EMPRESARIAL; "nome_fantasia" é o TÍTULO DO
+  ESTABELECIMENTO. Quando só houver um deles, preencha o que existe e deixe o
+  outro vazio — repetir o mesmo nome nos dois não ajuda ninguém.
+- Inscrição estadual e municipal NÃO estão no Cartão CNPJ: deixe-as de fora.""" % (
+        ",\n".join(linhas))
+
+
+def sugerir_para_nova_empresa(s: Session, tipo_codigo: str,
+                              dados: dict[str, Any]) -> dict[str, Any]:
+    """O que este documento preencheria numa empresa que ainda vai nascer."""
+    tipo = (tipo_codigo or "").strip().upper()
+    permitidos = POR_TIPO_EMPRESA.get(tipo, ())
+    extraidos = dados.get("dados_extraidos") or {}
+
+    campos: list[dict[str, Any]] = []
+    for campo in permitidos:
+        rotulo, feitio, _ = CAMPOS_EMPRESA[campo]
+        novo = _converter(feitio, extraidos.get(campo))
+        if novo in (None, ""):
+            continue
+        campos.append({"campo": campo, "rotulo": rotulo, "feitio": feitio,
+                       "valor": _mostrar(feitio, novo), "valor_atual": "",
+                       "conflito": False, "marcar": True})
+
+    marcados = {c["campo"] for c in campos}
+    vazios = [{"campo": c, "rotulo": CAMPOS_EMPRESA[c][0],
+               "feitio": CAMPOS_EMPRESA[c][1], "ajuda": CAMPOS_EMPRESA[c][2]}
+              for c in permitidos if c not in marcados]
+
+    # JÁ EXISTE? O CNPJ é único no banco, e descobrir isso só na hora de gravar
+    # devolveria um erro seco depois de a pessoa conferir tudo.
+    from app.apps.erp.db.models.cadastros import Empresa
+    cnpj = _digitos(extraidos.get("cnpj")) or ""
+    ja = None
+    if cnpj:
+        for e in s.scalars(select(Empresa)).all():
+            if _digitos(e.cnpj) == cnpj:
+                ja = {"id": e.id, "nome": e.nome_fantasia or e.razao_social,
+                      "cnpj": e.cnpj}
+                break
+
+    situacao = _texto(extraidos.get("situacao_cadastral")) or ""
+    avisos = []
+    if situacao and "ATIVA" not in situacao.upper():
+        avisos.append(f"O Cartão CNPJ diz que a situação cadastral é "
+                      f"“{situacao}”. Empresa não ativa não emite nota.")
+    if not cnpj:
+        avisos.append("Não consegui ler o CNPJ. Sem ele a empresa não é criada "
+                      "— digite abaixo.")
+    return {"tipo": tipo, "campos": campos, "campos_vazios": vazios,
+            "ja_cadastrada": ja, "situacao_cadastral": situacao,
+            "avisos": avisos,
+            "tipo_nao_preenche": tipo not in POR_TIPO_EMPRESA}
+
+
 def instrucao_de_extracao_pessoa() -> str:
     """O pedaço da pergunta à IA que trata do cadastro do colaborador."""
     linhas = [f' "{campo}": "{pedido}"'
